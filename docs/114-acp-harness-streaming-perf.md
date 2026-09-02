@@ -1,16 +1,17 @@
 # 114. ACP Harness Streaming Performance Audit & Fixes
 
-> Status: Implemented (rev 14 — composer key edits pin a stuck transcript in the same turn; rev 13 — a scroll-sourced sticky-drift heal pins synchronously, before paint; rev 12 — sticky-drift heal: a stuck lane short of the bottom is re-pinned; rev 11 — keyboard scroll up always unsticks; rev 10 — scroll stickiness measured at event dispatch, committed in the RAF; rev 9 — usage and plan events stay off the full lane rebuild; rev 8 — streaming tool output patches the output block in place; rev 7 — streaming smooth-follow scroll; rev 6 — stop and MCP stats stay off the full dashboard rebuild; thought/user seal matches assistant)
+> Status: Implemented (rev 15 — smooth-follow does not replay a glide when the scroll target is unchanged; rev 14 — composer key edits pin a stuck transcript in the same turn; rev 13 — a scroll-sourced sticky-drift heal pins synchronously, before paint; rev 12 — sticky-drift heal: a stuck lane short of the bottom is re-pinned; rev 11 — keyboard scroll up always unsticks; rev 10 — scroll stickiness measured at event dispatch, committed in the RAF; rev 9 — usage and plan events stay off the full lane rebuild; rev 8 — streaming tool output patches the output block in place; rev 7 — streaming smooth-follow scroll; rev 6 — stop and MCP stats stay off the full dashboard rebuild; thought/user seal matches assistant)
 > Date: 2026-05-22
 > Milestone: ACP harness — performance hardening
 > Builds on: Spec 94 (render batching + caching), Spec 103 (tail-window rendering)
 > Amended (assistant kind only) by: Spec 117 — assistant rows now use optimistic streaming-markdown rendering instead of plain-until-seal. Thought / user rows still follow §1 of this spec until seal, then stamp the sealed signature in place.
 > Amended (rev 5) by: tool_call / tool_call_update and sealStreaming use `scheduleStreamingBodyOnly` instead of `scheduleLaneRender`. Existing transcript rows patch in place (`replaceChildren`); pending and in_progress share one signature so an in-flight status tick does not remount the row.
-> Amended (rev 6) by: `stop` sets `needsRender = false` and patches lane chrome + composer (`patchLaneTurnChrome`) instead of `renderActiveLane`. `refreshMcpStats` calls `refreshMetricsRender` instead of `this.render()`. Thought/user seal stamps the wrapper signature like assistant. `layoutPretextRows` skips rows whose DOM already matches the line cache. In-flight tools beat thinking on the action HUD so a Read scan does not restart on empty thought chunks.
+> Amended (rev 6) by: `stop` sets `needsRender = false` and patches lane chrome + composer (`patchLaneTurnChrome`) instead of `renderActiveLane`. `refreshMcpStats` calls `refreshMetricsRender` instead of `this.render()`. Thought/user seal stamps the wrapper signature like assistant. `layoutPretextRows` skips rows whose DOM already matches the line cache.
 > Amended (rev 7) by: streaming smooth-follow scroll (§5) — while a lane streams, sticky scroll glides to the bottom with a per-frame exponential chase instead of teleporting; keyboard/wheel user-intent detection replaces the scroll-event heuristic while the glide holds suppression.
 > Amended (rev 8) by: streaming tool output (§6) — an in-flight tool's section text stays out of `transcriptRenderSignature`; the body-only pass swaps just the `.acp-harness__tool-output` block (`patchStreamingToolBody`) instead of `replaceChildren` on the whole row. Spinner glyph seeds the live ticker frame. `fs_activity` moves to the body-only path.
 > Amended (rev 10) by: `onTranscriptScroll` (§2) — stickiness is **measured at event dispatch, committed in the RAF**. The "go look later" model re-read `scrollHeight` inside the RAF; an unsuppressed scroll event (keyboard `scrollBy`, browser clamp after content shrank) dispatching just before a streaming chunk grew the body would then measure the *post-growth* distance, flip `stickToBottom` off, and kill autoscroll for the rest of the stream. The handler now snapshots `{laneId, scrollTop, distance, suppressScrollToken}` at dispatch; the RAF commits the frame's last sample and drops it when suppression, the token, or the active lane changed in between. `noteUserScroll` additionally swallows its `scrollBy`'s own async scroll event with a begin/release pair (intent is already recorded synchronously; the echo could otherwise re-measure after growth).
 > Amended (rev 11) by: three scroll fixes. (a) `noteUserScroll` (§5) — a keyboard scroll **up** always unsticks. Recomputing from `STICK_THRESHOLD_PX` (32px) meant one `k` (24px) still read as "at bottom", so any following sticky pass (streamed chunk, or the full `render()` on the `i`/`Escape` focus switch to the composer) pulled the transcript back to the bottom. (b) `onTranscriptScroll` (§2) — an unstuck lane may only **re-stick when the sample moved down** toward the bottom; a stray unsuppressed event landing within the threshold without downward motion (WebKit clamp after the streaming tool row shrank, a `scrollBy` echo escaping the 2-RAF release under load) used to flip `stickToBottom` back on 24px from the bottom and undo (a). (c) the glide gate (§5) — `applyStickyScroll`/`scheduleStreamingBodyOnly`/`scheduleStickyScroll` now gate on `isLaneLive` (busy status OR open text row), not `isLaneStreaming` alone: every `tool_call` seals the text row, so tool-dominated turns (Claude) teleport-pinned on every streaming tool-output delta while text-heavy turns (Grok) glided.
+> Amended (rev 15) by: same-target smooth-follow suppression (§5). Streaming execute output keeps a bounded rolling tail (`boundedOutputLines`), so a `tool_call_update` can replace `.acp-harness__tool-output` without moving the transcript's bottom. Every body-only pass still called `nudgeSmoothFollow()`, which started a glide from whatever `scrollTop` the replace (or the unidentified 14 px writer) had left. The same visible rows then eased toward a bottom that had not grown. `planSmoothFollow(scrollTop, scrollHeight, clientHeight, previousTarget)` is the pure decision: idle when already at the bottom, pin (same-frame, no chase) when the parked target did not grow, chase only when it did — restoring to the parked bottom first if a clamp dropped `scrollTop` so the glide covers new content only. `nudgeSmoothFollow` parks the target on idle/pin/catch-up; unstick (`cancelSmoothFollow`, scroll-away) forgets it. The 2 s metrics heal still glides: it clears the park before `scheduleStickyScroll` so a remainder that has already been on screen eases back rather than snapping. Keyboard/wheel unstick is unchanged (rev 11). [#18](https://github.com/wk-j/krypton/issues/18).
 > Amended (rev 14) by: composer-key sticky pin (§2). Rev 13 only heals when a scroll event is delivered. Keystrokes inside the 2-RAF programmatic-scroll suppression window, or while a smooth-follow glide is already running (`smoothFollowRaf !== 0`, which skips the heal), still painted the 14 px jump. `setDraft` / `setDraftCursor` / `applyHistoryDraft` now call `pinStickyAfterComposerKey()` in the same turn as `renderComposer()`: if the active lane is stuck, write `scrollTop = scrollHeight` under programmatic-scroll suppression, even when a glide is in flight. The 1 s composer tick does **not** pin — it does not reproduce the writer, and a hard pin would snap a live glide once a second. The writer remains unidentified ([#17](https://github.com/wk-j/krypton/issues/17)).
 > Amended (rev 13) by: synchronous heal on the scroll path (§2). Frame-by-frame analysis of a user recording (2026-09-02, 20 fps, lane busy in zen mode, user typing in the composer) showed the transcript jumping 14 CSS px down on every character inserted and then gliding back over ~150 ms — a visible oscillation on each keystroke. The jump is the rev 12 drift (same 14 px, idempotent: keystrokes landing on an already-drifted lane changed nothing); the glide back was the rev 12 heal itself, which answered the drift's scroll event with `scheduleStickyScroll()` — a RAF in the *next* frame that then started the rev 7 glide, so the displaced position painted for two frames before the chase. Keystrokes that landed inside the 2-RAF programmatic-scroll suppression window (right after a glide finished) had their scroll event swallowed, and the lane sat drifted until the next 2 s poll heal — which is why some keystrokes shook and others did not. The writer is still unidentified; it fires on composer keystrokes (not on the 1 s composer tick, whose `renderComposer()` is the only work a keystroke does), fires a scroll event, and is independent of composer geometry (the composer did not move in any frame). Fix: `healStickyScroll('scroll')` pins synchronously inside the scroll handler's RAF, which runs in the same rendering update as the scroll event and before paint, so the displaced frame never reaches the screen. The `'metrics'` source keeps the glide. Dev builds additionally wrap the `scrollTop` setter (`installLaneBodyScrollTracer`) to stack-trace any JS writer that leaves a lane body short of its bottom. The user-visible jump is tracked in [#17](https://github.com/wk-j/krypton/issues/17) (closed after the composer-key pin made the shake invisible; the writer is still unidentified).
 > Amended (rev 12) by: sticky-drift heal (§2). Frame captures of the live app (2026-09-02) showed the pinned transcript sitting exactly 14 CSS px above the bottom — content and box unchanged, scrollbar thumb 2 device px higher — from the moment a tool finished and the model went quiet until the next transcript event, up to 21 s. During that silence Claude emits empty thought deltas that only drive the rail veil (`thought-veil:` id, no row), so no sticky pass ran. The writer of the 14 px is still unidentified. `healStickyScroll(source)` makes the outcome independent of it: when the active lane is stuck, no glide is chasing, no upward wheel landed in the last `STICKY_DRIFT_WHEEL_GRACE_MS` (600 ms), and `scrollHeight − scrollTop − clientHeight` is in `(STICKY_DRIFT_EPSILON_PX, STICK_THRESHOLD_PX]` = (1, 32] px, it calls `scheduleStickyScroll()`. Two triggers: the `onTranscriptScroll` commit (an unsuppressed event that left a stuck lane short) and the existing 2 s metrics poll (one `scrollHeight` read, no new timer). Keyboard scrolls are unaffected: intent is recorded synchronously and an upward key always unsticks (rev 11), so the heal never sees a stuck lane after `k`. Dev builds (`SPEC114_DEV`) `console.warn` + `console.trace` on every heal to locate the writer.
@@ -198,9 +199,9 @@ flickered.
 Rev 5:
 
 - Those two events set `needsRender = false` and call `scheduleToolRender`,
-  which sets a HUD flag and reuses `scheduleStreamingBodyOnly`.
-- The coalesced RAF paints `renderActiveTranscript` and, when the HUD flag
-  is set, `renderLaneAction` plus an in-place peek HUD patch. It does
+  which sets a peek-tool flag and reuses `scheduleStreamingBodyOnly`.
+- The coalesced RAF paints `renderActiveTranscript` and, when the flag
+  is set, an in-place peek tool-row patch. It does
   **not** rebuild composer, lane head, peek card, plan, pin, or queue.
 - `renderActiveTranscript` keeps the existing `.acp-harness__msg` node on
   a signature mismatch (`className` + `replaceChildren`). `replaceWith`
@@ -210,13 +211,13 @@ Rev 5:
   status, output, diffs, and command/title changes still patch the row.
 - Empty live `thought_chunk`s do not insert a transcript row. The rail
   veil owns that state; inserting then dropping the row on `tool_call`
-  was jumping the list. The thought slot hide is delayed (`ACTION_HUD_HIDE_MS`)
+  was jumping the list. The thought slot hide is delayed (`THOUGHT_SLOT_HIDE_MS`)
   so the card does not collapse on the same frame as the next tool.
 
 ### 1c. Turn-end and MCP stats stay off the full dashboard (rev 6)
 
 `stop` used to leave `needsRender = true`, so `finishTurn` → `scheduleLaneRender`
-→ `renderActiveLane` rewrote head, stats, composer, peek, thought, HUD, plan,
+→ `renderActiveLane` rewrote head, stats, composer, peek, thought, plan,
 pin, and queue in one frame. Combined with `refreshMcpStats()` calling
 `this.render()` on every `acp-harness-mcp-touched` (handoff / attention /
 peer / artifact at the end of a turn), the whole dashboard flashed when the
@@ -230,10 +231,6 @@ Rev 6:
   rebuild the dashboard.
 - `layoutPretextRows` skips a row whose `.acp-harness__pretext-line` children
   already match the cached line texts.
-- Action HUD: in-flight tools beat `activity: thinking`; an omitted thinking
-  HUD (thought slot already live) does not start the 2s hide timer, so the
-  last Read card stays instead of remounting with `acp-action-deploy` + scan.
-
 **Fallback styling** — `src/styles/acp-harness.css`:
 
 - `.acp-harness__msg-body--markdown` keeps its current styling.
@@ -392,6 +389,11 @@ still pins instantly.
   cannot stall, and snaps exactly once within `SMOOTH_FOLLOW_SNAP_PX`
   (0.5) — including when content shrank and the browser clamped
   `scrollTop`.
+- `planSmoothFollow(scrollTop, scrollHeight, clientHeight, previousTarget)`
+  — exported pure decision (rev 15): `idle` when already at the bottom,
+  `pin` when the parked target did not grow, `chase` (via `smoothFollowStep`)
+  when it did. A chase that starts below the parked bottom restores there
+  first so a `replaceWith` clamp does not replay already-visible rows.
 - `nudgeSmoothFollow()` — RAF loop around the step. Parks when caught up
   (the next chunk re-nudges), so idle streaming frames cost nothing. Every
   frame re-reads live state (`activeLane`, `activeTranscriptBody`,
@@ -400,6 +402,14 @@ still pins instantly.
   `beginProgrammaticScroll`/`releaseProgrammaticScroll`; successive begins
   bump the token, so suppression holds continuously across the glide and
   lifts two RAFs after the last write — same contract as the instant pin.
+  - **(rev 15)** Before starting a chase, `planSmoothFollow` compares the
+    live bottom to the last parked target for this body. Unchanged target
+    → idle (already there) or pin (clamp/drift, written in this turn so it
+    never paints). Grown target → chase, but if `scrollTop` is below the
+    parked bottom the first write restores there so the glide does not
+    replay already-visible rows. `cancelSmoothFollow` forgets the park
+    (keyboard/wheel unstick). The metrics heal clears the park first so
+    its 2 s catch-up still glides.
 - `applyStickyScroll()` routes the `stickToBottom` branch to the follower
   when the lane is **live** **or** a glide is already in flight (so
   the turn-end triple-pin lets an unfinished glide finish smoothly
@@ -441,7 +451,9 @@ still pins instantly.
 - `dispose()` cancels the follower RAF.
 
 Effect: the transcript glides at chunk boundaries instead of jumping, and
-the glide also absorbs the seal-reparse height jump. Perf cost is one
+the glide also absorbs the seal-reparse height jump. A chunk that does
+not move the bottom (bounded execute-output tail, replaceWith clamp)
+idles or pins instead of replaying that glide (rev 15). Perf cost is one
 `scrollHeight` read + one `scrollTop` write per frame, only while behind
 the bottom.
 

@@ -62,9 +62,9 @@ stats row prints for the active lane is visible whenever the composer is.
 look alike in a screenshot because the last transcript row is usually the running tool, but they are
 different data and the composer's was the only leading indicator.
 
-**Amendment (spec 231):** that leading indicator moved to the rail action HUD. The composer no longer
-carries an `activity` segment. The uniqueness argument above still holds — the HUD is now the unique
-home, not the chip.
+**Amendment (spec 231, then removed):** that leading indicator left the composer and is not
+coming back. The composer still has no `activity` segment. A busy peeked lane shows a
+flat `tool` row; the transcript and thought slot carry the rest.
 
 **Why the branch stays in the composer for now.** It is the one project readout unique to an
 *unfocused* harness window (the workspace footer shows only the focused pane; the window footer's

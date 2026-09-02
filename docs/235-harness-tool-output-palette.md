@@ -169,7 +169,7 @@ Dump body (plain `<pre>`, grep rows, git-rich) inherits that size. Kind chips, `
 
 ## Out of Scope
 
-- Recoloring the spec 231 action HUD.
+- Recoloring a rail action HUD (spec 231 is removed).
 - Language syntax highlighting (JS/Java/TOML) inside dumps.
 - Changing assistant markdown heading cyan.
 - Boxing or background-glowing the output group.
@@ -177,8 +177,7 @@ Dump body (plain `<pre>`, grep rows, git-rich) inherits that size. Kind chips, `
 ## Resources
 
 - `src/acp/harness-tool-render.ts` — current dump + git rich path
-- `src/styles/acp-harness.css` — `--acp-tool-section-color`, HUD kind accents
+- `src/styles/acp-harness.css` — `--acp-tool-section-color`
 - `docs/72-acp-harness-view.md` — existing "plain monospace / no syntax highlight" rule
-- `docs/231-lane-peek-action-hud.md` — kind accent map
 - DESIGN.md 1.2.1 — side-stripe ban
 - Claude Code CLI execute stream — the cyan wall this rejects

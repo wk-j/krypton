@@ -16,6 +16,7 @@ import {
   laneThoughtHasContent,
   pinPeekThoughtToLatest,
   smoothFollowStep,
+  planSmoothFollow,
   resolveLaneThoughtSnapshot,
   schedulePeekThoughtPin,
   deriveLanePairHeat,
@@ -76,7 +77,7 @@ import {
 } from './harness-transcript-render';
 import { peekThoughtMarkdownHtml } from './harness-markdown';
 import { collapseThoughtBlankLines } from './harness-format';
-import { peekEmbedsActionHud, peekEventRowDuplicatesHud } from './lane-peek';
+import { peekShowsActiveTool, peekEventRowDuplicatesTool, renderLanePeekToolRow } from './lane-peek';
 
 import type { PermissionOption, ToolCall } from './types';
 import type {
@@ -249,7 +250,7 @@ describe('assistant reference Git state', () => {
     expect(viewSrc).toMatch(/shouldPaintThoughtTranscriptRow/);
     expect(viewSrc).toMatch(/thought-veil:/);
     expect(viewSrc).toMatch(/scheduleThoughtSlotHide/);
-    expect(viewSrc).toMatch(/ACTION_HUD_HIDE_MS/);
+    expect(viewSrc).toMatch(/THOUGHT_SLOT_HIDE_MS/);
     expect(viewSrc).not.toMatch(/if \(!snapshot\) \{\s*slot\.replaceChildren\(\);\s*slot\.hidden = true;/);
   });
 
@@ -276,7 +277,8 @@ describe('assistant reference Git state', () => {
     expect(stop?.[0]).not.toMatch(/scheduleLaneRender/);
     expect(viewSrc).toMatch(/private patchLaneTurnChrome\(/);
     expect(viewSrc).toMatch(/this\.sealStreamingTextRow\(/);
-    expect(viewSrc).toMatch(/hasOmittedRailLiveAction/);
+    expect(viewSrc).not.toMatch(/harness-action-hud/);
+    expect(viewSrc).not.toMatch(/actionSlotEl/);
     const mcp = viewSrc.match(/private async refreshMcpStats\(\)[\s\S]*?\n  \}/);
     expect(mcp?.[0]).toMatch(/this\.refreshMetricsRender\(\)/);
     expect(mcp?.[0]).not.toMatch(/this\.render\(\)/);
@@ -1359,6 +1361,76 @@ describe('ACP peer activity UI (spec 118)', () => {
     });
   });
 
+  describe('planSmoothFollow (spec 114 rev 15)', () => {
+    it('idles when already at the bottom, even on a repeated update', () => {
+      expect(planSmoothFollow(4_400, 5_000, 600, null)).toEqual({
+        action: 'idle', scrollTop: 4_400, done: true,
+      });
+      expect(planSmoothFollow(4_400, 5_000, 600, 4_400)).toEqual({
+        action: 'idle', scrollTop: 4_400, done: true,
+      });
+    });
+
+    it('pins rather than chasing when the parked target did not grow', () => {
+      // Bounded execute tail / replaceWith clamp: same bottom, viewport short.
+      expect(planSmoothFollow(4_200, 5_000, 600, 4_400)).toEqual({
+        action: 'pin', scrollTop: 4_400, done: true,
+      });
+      expect(planSmoothFollow(4_386, 5_000, 600, 4_400)).toEqual({
+        action: 'pin', scrollTop: 4_400, done: true,
+      });
+    });
+
+    it('chases when the target grew and the viewport is still at the previous bottom', () => {
+      const plan = planSmoothFollow(4_400, 5_100, 600, 4_400);
+      const step = smoothFollowStep(4_400, 5_100, 600);
+      expect(plan).toEqual({ action: 'chase', scrollTop: step.scrollTop, done: step.done });
+      expect(plan.done).toBe(false);
+      expect(plan.scrollTop).toBeGreaterThan(4_400);
+    });
+
+    it('restores to the parked bottom before chasing so a clamp does not replay visible content', () => {
+      const plan = planSmoothFollow(4_200, 5_100, 600, 4_400);
+      const fromRestored = smoothFollowStep(4_400, 5_100, 600);
+      expect(plan.action).toBe('chase');
+      expect(plan.scrollTop).toBe(fromRestored.scrollTop);
+      expect(plan.scrollTop).toBeGreaterThan(4_400);
+    });
+
+    it('chases a large first catch-up when there is no parked target', () => {
+      const plan = planSmoothFollow(0, 5_000, 600, null);
+      const step = smoothFollowStep(0, 5_000, 600);
+      expect(plan).toEqual({ action: 'chase', scrollTop: step.scrollTop, done: step.done });
+    });
+
+    it('chases a short remainder when there is no parked target (metrics heal)', () => {
+      const plan = planSmoothFollow(4_386, 5_000, 600, null);
+      expect(plan.action).toBe('chase');
+      expect(plan.done).toBe(false);
+    });
+
+    it('nudgeSmoothFollow plans against the parked target and cancel clears it', () => {
+      const here = dirname(fileURLToPath(import.meta.url));
+      const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+      function methodSource(name: string): string {
+        const start = src.indexOf(`private ${name}(`);
+        expect(start).toBeGreaterThanOrEqual(0);
+        const next = src.indexOf('\n  private ', start + 1);
+        return src.slice(start, next === -1 ? undefined : next);
+      }
+      const nudge = methodSource('nudgeSmoothFollow');
+      expect(nudge).toContain('planSmoothFollow');
+      expect(nudge).toContain('parkedSmoothFollowTarget');
+      expect(nudge).toContain("plan.action === 'idle'");
+      expect(nudge).toContain("plan.action === 'pin'");
+      const cancel = methodSource('cancelSmoothFollow');
+      expect(cancel).toContain('clearSmoothFollowPark');
+      const heal = methodSource('healStickyScroll');
+      expect(heal).toContain('clearSmoothFollowPark');
+      expect(heal).toContain('parkSmoothFollowTarget');
+    });
+  });
+
   describe('composer-key sticky pin (spec 114 rev 14)', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
@@ -1510,7 +1582,7 @@ describe('ACP peer activity UI (spec 118)', () => {
   });
 });
 
-describe('peek action HUD vs activity event row', () => {
+describe('peek tool row vs activity event row', () => {
   const busyTool = laneSnapshot({
     laneId: 'claude',
     displayName: 'Claude-1',
@@ -1532,28 +1604,33 @@ describe('peek action HUD vs activity event row', () => {
     };
   }
 
-  it('embeds the HUD on a busy peeked lane with an active tool', () => {
-    expect(peekEmbedsActionHud(busyTool)).toBe(true);
-    expect(peekEmbedsActionHud(laneSnapshot({ laneId: 'claude', status: 'idle' }))).toBe(false);
+  it('shows a flat tool row on a busy peeked lane with an active tool', () => {
+    expect(peekShowsActiveTool(busyTool)).toBe(true);
+    expect(peekShowsActiveTool(laneSnapshot({ laneId: 'claude', status: 'idle' }))).toBe(false);
+    const html = renderLanePeekToolRow(busyTool.activeTool!);
+    expect(html).toContain('data-peek-row="tool"');
+    expect(html).toContain('execute');
+    expect(html).toContain('Terminal');
+    expect(html).not.toContain('acp-harness__action-hud');
   });
 
-  it('drops the activity event row that restates the HUD', () => {
-    expect(peekEventRowDuplicatesHud(
+  it('drops the activity event row that restates the tool row', () => {
+    expect(peekEventRowDuplicatesTool(
       candidate('recent-activity', { kind: 'activity', label: 'execute Terminal', ageLabel: '1m+' }),
       busyTool,
     )).toBe(true);
-    expect(peekEventRowDuplicatesHud(
+    expect(peekEventRowDuplicatesTool(
       candidate('lane-shell', { kind: 'activity', label: 'shell command running', ageLabel: 'now' }),
       busyTool,
     )).toBe(true);
   });
 
-  it('keeps peer, permission, error, and inbox event rows beside the HUD', () => {
-    expect(peekEventRowDuplicatesHud(
+  it('keeps peer, permission, error, and inbox event rows beside the tool row', () => {
+    expect(peekEventRowDuplicatesTool(
       candidate('inbound-peer', { kind: 'peer', direction: 'in', peerDisplayName: 'Grok-1', ageLabel: 'now' }),
       busyTool,
     )).toBe(false);
-    expect(peekEventRowDuplicatesHud(
+    expect(peekEventRowDuplicatesTool(
       candidate('lane-permission', {
         kind: 'permission',
         toolName: 'bash',
@@ -1562,11 +1639,11 @@ describe('peek action HUD vs activity event row', () => {
       }),
       busyTool,
     )).toBe(false);
-    expect(peekEventRowDuplicatesHud(
+    expect(peekEventRowDuplicatesTool(
       candidate('lane-error', { kind: 'error', message: 'failed' }),
       busyTool,
     )).toBe(false);
-    expect(peekEventRowDuplicatesHud(
+    expect(peekEventRowDuplicatesTool(
       candidate('lane-inbox', { kind: 'activity', label: 'inbox 2', ageLabel: 'now' }),
       busyTool,
     )).toBe(false);

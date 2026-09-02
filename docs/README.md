@@ -234,7 +234,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 228 | [ACP fs Image / Binary Reads](./228-acp-fs-image-reads.md) |
 | 229 | [Grok `ask_user_question` ACP Client Method](./229-grok-ask-user-question.md) |
 | 230 | [Xenon Review Source Excerpts](./230-xenon-review-excerpts.md) |
-| 231 | [Lane Peek Action HUD](./231-lane-peek-action-hud.md) |
+| 231 | [Lane Peek Action HUD](./231-lane-peek-action-hud.md) (removed) |
 | 232 | [Thought Teletype HUD](./232-thought-teletype-hud.md) |
 | 233 | [4px Container Radius](./233-four-pixel-container-radius.md) (superseded by 234) |
 | 234 | [8px Container Radius](./234-eight-pixel-container-radius.md) |

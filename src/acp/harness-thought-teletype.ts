@@ -6,6 +6,10 @@
 
 export const THOUGHT_TELETYPE_FRESH = 10;
 export const THOUGHT_TELETYPE_MAX_BEHIND = 16;
+/** Delay emptying the thought slot so a think→tool interleave does not
+ *  collapse the card on the same frame. Was ACTION_HUD_HIDE_MS while spec
+ *  231 owned a sibling hide timer; the HUD is gone, the delay stays. */
+export const THOUGHT_SLOT_HIDE_MS = 2000;
 
 export interface ThoughtTeletypeState {
   source: string;

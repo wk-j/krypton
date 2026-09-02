@@ -104,21 +104,6 @@ export const HARNESS_ICON_SVG_DEFS = [
   '<symbol id="krypton-icon-tool" viewBox="0 0 16 16"><path d="M11.2 2.4 a2.8 2.8 0 0 0 -3.5 3.5 L2.8 10.8 a1.25 1.25 0 0 0 1.8 1.8 L9.5 7.5 a2.8 2.8 0 0 0 3.5 -3.5 L11 6 L9.4 6 L9.4 4.4 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>',
 ].join('');
 
-// spec 231 — 16px action-well instruments. currentColor so the HUD recolours
-// per kind via CSS. Geometry is the same set as docs/prototypes/231-lane-action-hud.html.
-export const ACTION_HUD_SVG_DEFS = [
-  '<symbol id="krypton-action-edit" viewBox="0 0 16 16"><path d="M3 13 L3 10 L11 2 L14 5 L6 13 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M9.5 3.5 L12.5 6.5" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>',
-  '<symbol id="krypton-action-read" viewBox="0 0 16 16"><rect x="3" y="2.5" width="10" height="11" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5 6h6M5 8.5h6M5 11h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>',
-  '<symbol id="krypton-action-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="3.4" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M9.6 9.6 L13 13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>',
-  '<symbol id="krypton-action-execute" viewBox="0 0 16 16"><path d="M4 5 L7 8 L4 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
-  '<symbol id="krypton-action-delete" viewBox="0 0 16 16"><path d="M4 4 L12 12 M12 4 L4 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>',
-  '<symbol id="krypton-action-move" viewBox="0 0 16 16"><path d="M3 8 H12 M9 5 L12 8 L9 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
-  '<symbol id="krypton-action-fetch" viewBox="0 0 16 16"><path d="M8 3 V12 M5 9 L8 12 L11 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
-  '<symbol id="krypton-action-thinking" viewBox="0 0 16 16"><circle cx="5" cy="9" r="1" fill="currentColor"/><circle cx="8" cy="9" r="1" fill="currentColor"/><circle cx="11" cy="9" r="1" fill="currentColor"/></symbol>',
-  '<symbol id="krypton-action-writing" viewBox="0 0 16 16"><path d="M3 12 H13 M3 4 h7 l3 3 v5 H3 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>',
-  '<symbol id="krypton-action-other" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6 8 h4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>',
-].join('');
-
 const SYMBOL_DEFS_ID = 'krypton-harness-symbol-defs';
 
 /** Inject the backend-logo + lane-bar icon `<symbol>` defs into the document,
@@ -136,7 +121,7 @@ export function ensureHarnessSymbolDefs(): void {
   defs.setAttribute('height', '0');
   defs.setAttribute('aria-hidden', 'true');
   defs.style.position = 'absolute';
-  defs.innerHTML = `<defs>${BACKEND_LOGO_SVG_DEFS}${HARNESS_ICON_SVG_DEFS}${ACTION_HUD_SVG_DEFS}</defs>`;
+  defs.innerHTML = `<defs>${BACKEND_LOGO_SVG_DEFS}${HARNESS_ICON_SVG_DEFS}</defs>`;
   document.body.appendChild(defs);
 }
 
@@ -146,7 +131,4 @@ export function harnessIcon(id: string, cls = ''): string {
   return `<svg class="acp-harness__icon${cls ? ` ${cls}` : ''}" aria-hidden="true"><use href="#krypton-icon-${id}"/></svg>`;
 }
 
-/** spec 231 — action-well glyph. `kind` is an ActionHudKind string. */
-export function actionHudIcon(kind: string): string {
-  return `<svg class="acp-harness__action-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><use href="#krypton-action-${kind}"/></svg>`;
-}
+

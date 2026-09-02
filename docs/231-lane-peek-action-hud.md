@@ -1,9 +1,10 @@
 # Lane Peek Action HUD — Implementation Spec
 
-> Status: Implemented (rev 3 — subject keeps the basename; well is a locked 28px flex column)
+> Status: Removed (rev 4 — the live-action HUD is gone)
 > Date: 2026-08-18
 > Amended (rev 2, 2026-09-02): `RailLiveActionLane.live` — `renderLaneAction()` passes `status === 'busy' || status === 'needs_permission'`; `deriveRailLiveActions` / `hasOmittedRailLiveAction` skip a lane with `live: false` before reading its tool map. Observed: Claude's background `Bash` (`run_in_background`) leaves an `execute` tool call titled `Terminal` in `in_progress` after the turn (the adapter never sends the terminal update), so the `EXECUTE / Terminal` card stayed on the rail through idle. Lane status is authoritative for the rail; the transcript row and `toolCalls` are untouched.
 > Amended (rev 3, 2026-09-02): `hudPath` was last-2, so a 40-char ticket folder became the visible prefix and CSS `ellipsis` ate the filename (`…/2026-09-02-1183-security-401-403-l…` instead of `docs/…/review.md`). Subject is now `head/…/basename` with start-ellipsis. The well is `flex: 0 0 28px` (`contain: paint`, SVG has an intrinsic 16px size) so a default 300×150 `<svg>` cannot blow the card and stack the copy under the pencil.
+> Removed (rev 4, 2026-09-02): the rail `[data-slot="action"]` stack and the peek-embedded HUD are deleted. Kind wells, instrument motion, and the 2s hide timer were broken (wrong kind/subject, overlay covering the transcript) and are not replaced. Peek is back to a flat `tool` row (`data-peek-row="tool"`) for a busy lane's in-flight call. The composer still has no activity segment (that move from spec 156/221 stays). Thought-slot hide delay lives as `THOUGHT_SLOT_HIDE_MS` on the thought teletype module. Files `harness-action-hud.ts` / `.test.ts` and the `krypton-action-*` SVG symbols are gone. The rest of this spec is historical.
 > Milestone: ACP Harness polish
 > Related: `docs/109-acp-contextual-lane-peek.md`, `docs/111-harness-right-rail.md`, `docs/156-lane-activity-ticker.md`, `docs/216-workspace-thought-field.md`, `docs/221-harness-status-line-density.md`
 

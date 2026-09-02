@@ -33,7 +33,7 @@ import {
 } from './harness-format';
 import { awaitingPeerText, formatAwaitingPeerAge, statusLabel } from './harness-lane-chrome';
 import { installThoughtVeil, renderPeekThoughtMarkdown } from './harness-markdown';
-import { actionHudMarkup, liveActionFromPeekTool, liveActionFromToolCall } from './harness-action-hud';
+import { cleanToolTitle, extractCommandLineRaw, inferToolLabel } from './harness-tool-render';
 import {
   applyThoughtTeletype,
   clearThoughtTeletype,
@@ -315,22 +315,65 @@ export function lanePeekPriorityClass(candidate: LanePeekCandidate): 'high' | 'w
   return 'info';
 }
 
-/** Peek embeds the spec 231 HUD when the peeked lane has a live tool. */
-export function peekEmbedsActionHud(snapshot: LanePeekSnapshot | null | undefined): boolean {
+/** Peek shows a flat `tool` row when the peeked lane has a live tool. */
+export function peekShowsActiveTool(snapshot: LanePeekSnapshot | null | undefined): boolean {
   return snapshot != null && snapshot.status === 'busy' && snapshot.activeTool != null;
 }
 
 /**
  * The activity event row (`▸ execute Terminal`) is the same signal as the
- * live-action HUD. Peer / permission / error / inbox rows are different
+ * peek `tool` row. Peer / permission / error / inbox rows are different
  * signals and stay.
  */
-export function peekEventRowDuplicatesHud(
+export function peekEventRowDuplicatesTool(
   candidate: LanePeekCandidate,
   snapshot: LanePeekSnapshot | null | undefined,
 ): boolean {
-  if (!peekEmbedsActionHud(snapshot)) return false;
+  if (!peekShowsActiveTool(snapshot)) return false;
   return candidate.reasonKey === 'recent-activity' || candidate.reasonKey === 'lane-shell';
+}
+
+export function renderLanePeekToolRow(tool: NonNullable<LanePeekSnapshot['activeTool']>): string {
+  const subject = tool.subject
+    ? ` · ${esc(truncateInline(tool.subject, 36))}`
+    : '';
+  return (
+    `<div class="acp-harness__lane-peek-row" data-peek-row="tool">` +
+      `<span class="acp-harness__lane-peek-prefix">tool</span>` +
+      `<span class="acp-harness__lane-peek-value"><b>${esc(tool.name)}</b>${subject}</span>` +
+    `</div>`
+  );
+}
+
+/** Patch the peek card's tool row in place so a tool delta does not remount
+ *  the card or the heat ring. */
+export function patchPeekActiveTool(
+  card: HTMLElement,
+  snapshot: LanePeekSnapshot,
+  candidate?: LanePeekCandidate | null,
+): void {
+  if (candidate && peekEventRowDuplicatesTool(candidate, snapshot)) {
+    card.querySelector('.acp-harness__lane-peek-event')?.remove();
+  }
+  const existing = card.querySelector<HTMLElement>('[data-peek-row="tool"]');
+  const tool = snapshot.status === 'busy' ? snapshot.activeTool : null;
+  if (!tool) {
+    existing?.remove();
+    return;
+  }
+  const wrap = document.createElement('div');
+  wrap.innerHTML = renderLanePeekToolRow(tool);
+  const next = wrap.firstElementChild;
+  if (!(next instanceof HTMLElement)) return;
+  if (existing) {
+    existing.replaceWith(next);
+    return;
+  }
+  const event = card.querySelector('.acp-harness__lane-peek-event');
+  const head = card.querySelector('.acp-harness__lane-peek-head');
+  if (event) event.after(next);
+  else if (head) head.after(next);
+  else card.insertBefore(next, card.firstChild);
 }
 
 export function renderLanePeekEventRow(candidate: LanePeekCandidate): string {
@@ -438,7 +481,7 @@ export function renderLanePeek(
       `<span class="acp-harness__lane-peek-status">${esc(statusText)}</span>` +
       (age ? `<span class="acp-harness__lane-peek-age">${esc(age)}</span>` : '') +
     `</header>`;
-  if (!peekEventRowDuplicatesHud(candidate, snapshot)) {
+  if (!peekEventRowDuplicatesTool(candidate, snapshot)) {
     html += renderLanePeekEventRow(candidate);
   }
 
@@ -449,7 +492,7 @@ export function renderLanePeek(
   }
 
   if (snapshot?.activeTool && snapshot.status === 'busy') {
-    html += actionHudMarkup(liveActionFromPeekTool(snapshot.activeTool), 'peek');
+    html += renderLanePeekToolRow(snapshot.activeTool);
   } else if (snapshot?.latestMeaningful && candidate.summary.payload?.kind !== 'activity') {
     const label = truncateInline(snapshot.latestMeaningful.label, 40);
     html += renderLanePeekRow('last', esc(label));
@@ -1021,10 +1064,14 @@ export function deriveActiveToolForPeek(lane: HarnessLane, now: number): LanePee
   // is insertion order so the first match is also the oldest.
   for (const call of lane.toolCalls.values()) {
     if (call.status !== 'in_progress' && call.status !== 'pending') continue;
-    const action = liveActionFromToolCall(call);
+    const name = inferToolLabel(call);
+    const loc = call.locations?.[0]?.path ?? null;
+    const command = extractCommandLineRaw(call.rawInput).replace(/\s+/g, ' ').trim();
+    const leftover = cleanToolTitle(call.title, 'tool');
+    const subject = loc ? basename(loc) : command || leftover || null;
     return {
-      name: action.title,
-      subject: action.subject,
+      name,
+      subject,
       startedAt: lane.activeTurnStartedAt ?? now,
     };
   }

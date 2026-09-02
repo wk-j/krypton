@@ -746,9 +746,13 @@ PUBLISH
     e. Full lane renders still rebuild chrome (head, composer, peek, plan), but
        the active transcript body is preserved and rows are patched by signature.
     f. tool_call / tool_call_update (spec 114 rev 5) use scheduleStreamingBodyOnly
-       with a HUD flag: they patch the tool row and the action/peek HUD, and they
-       do not innerHTML the composer or lane head. Pending and in_progress share
-       one transcript signature so a status-only tick does not remount the row.
+       with a peek-tool flag: they patch the transcript tool row and the peek
+       tool row, and they do not innerHTML the composer or lane head. Pending
+       and in_progress share one transcript signature so a status-only tick
+       does not remount the row.
+       Sticky follow on that pass (rev 15) idles or pins when the transcript
+       bottom did not grow, so a bounded execute-output tail does not replay a
+       glide over already-visible rows.
     g. stop (spec 114 rev 6) does not scheduleLaneRender. finishTurn patches
        lane chrome + composer (`patchLaneTurnChrome`) and seals the transcript
        body-only. refreshMcpStats updates heads via refreshMetricsRender and

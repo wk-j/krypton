@@ -383,23 +383,14 @@ import {
   latestInterLaneForPeek,
   latestMeaningfulForPeek,
   latestPermissionForPeek,
-  isLivePeekThought,
-  peekEventRowDuplicatesHud,
+  patchPeekActiveTool,
   renderLanePeek,
   renderRailPeerSpans,
   selectLanePeekCandidate,
   shouldPreemptPeekDismissal,
 } from './lane-peek';
 import {
-  ACTION_HUD_HIDE_MS,
-  deriveRailLiveActions,
-  hasOmittedRailLiveAction,
-  liveActionFromPeekTool,
-  patchActionHud,
-  renderActionHud,
-  syncActionHudSlot,
-} from './harness-action-hud';
-import {
+  THOUGHT_SLOT_HIDE_MS,
   thoughtTeletypeCatchUpPending,
   tickThoughtTeletype,
 } from './harness-thought-teletype';
@@ -665,6 +656,40 @@ export function smoothFollowStep(
   const next = scrollTop + Math.max(1, delta * SMOOTH_FOLLOW_LERP);
   if (target - next <= SMOOTH_FOLLOW_SNAP_PX) return { scrollTop: target, done: true };
   return { scrollTop: next, done: false };
+}
+
+export type SmoothFollowPlan = {
+  action: 'idle' | 'pin' | 'chase';
+  scrollTop: number;
+  done: boolean;
+};
+
+/** Spec 114 rev 15: decide whether a sticky pass should glide, snap, or
+ *  stay put. Streaming execute output is a bounded tail, so an update can
+ *  replace the visible dump without moving the bottom; chasing that (or a
+ *  `replaceWith` clamp back to the same target) replays already-visible
+ *  transcript as motion. */
+export function planSmoothFollow(
+  scrollTop: number,
+  scrollHeight: number,
+  clientHeight: number,
+  previousTarget: number | null,
+): SmoothFollowPlan {
+  const target = Math.max(0, scrollHeight - clientHeight);
+  const remaining = target - scrollTop;
+  if (remaining <= SMOOTH_FOLLOW_SNAP_PX) {
+    return { action: 'idle', scrollTop: target, done: true };
+  }
+  const targetGrew = previousTarget === null
+    || target > previousTarget + SMOOTH_FOLLOW_SNAP_PX;
+  if (!targetGrew) {
+    return { action: 'pin', scrollTop: target, done: true };
+  }
+  const from = previousTarget !== null && scrollTop < previousTarget - SMOOTH_FOLLOW_SNAP_PX
+    ? Math.min(previousTarget, target)
+    : scrollTop;
+  const step = smoothFollowStep(from, scrollHeight, clientHeight);
+  return { action: 'chase', scrollTop: step.scrollTop, done: step.done };
 }
 
 const METRICS_POLL_MS = 2000;
@@ -1089,7 +1114,6 @@ export class AcpHarnessView implements ContentView {
   private referenceGitRefreshGeneration = 0;
   private referenceGitDisposed = false;
   private composerTickTimer: number | null = null;
-  private actionHudHideTimer: number | null = null;
   private thoughtHideTimer: number | null = null;
   private toolTickTimer: number | null = null;
   private metricsBySession = new Map<number, AcpLaneMetrics>();
@@ -1177,7 +1201,6 @@ export class AcpHarnessView implements ContentView {
   private laneRailEl!: HTMLElement;
   private planSlotEl!: HTMLElement;
   private peekSlotEl!: HTMLElement;
-  private actionSlotEl!: HTMLElement;
   private thoughtSlotEl!: HTMLElement;
   private queueSlotEl!: HTMLElement;
   private composerEl!: HTMLElement;
@@ -1186,7 +1209,7 @@ export class AcpHarnessView implements ContentView {
   private renderRaf = false;
   private streamingBodyRaf = false;
   /** Set before scheduleStreamingBodyOnly so a coalesced text-chunk RAF also
-   *  patches the action / peek HUD after a tool delta. */
+   *  patches the peek tool row after a tool delta. */
   private pendingToolHud = false;
   private thoughtTeletypeRaf = 0;
   // Spec 114: coalesces scroll-event storms into one anchor capture per
@@ -1204,6 +1227,12 @@ export class AcpHarnessView implements ContentView {
   // The loop re-reads live state every frame, so lane switches and unsticks
   // terminate it without explicit bookkeeping at every call site.
   private smoothFollowRaf = 0;
+  // Spec 114 rev 15: last parked bottom for the body we last followed. A
+  // later sticky pass only chases when this target grew; same-target
+  // updates (bounded tool-output tails, replaceWith clamps) pin or idle.
+  private lastSmoothFollowBody: HTMLElement | null = null;
+  private lastSmoothFollowTarget: number | null = null;
+  private smoothFollowBusy = false;
   private suppressScrollListener = false;
   private suppressScrollToken = 0;
   /** Spec 114 rev 12: last upward wheel on the transcript (performance.now()).
@@ -4323,7 +4352,6 @@ export class AcpHarnessView implements ContentView {
     this.orchestratorLaneBusUnsub?.();
     this.orchestratorLaneBusUnsub = null;
     this.stopComposerTick();
-    this.cancelActionHudHide();
     this.cancelThoughtSlotHide();
     this.cancelSmoothFollow();
     this.stopThoughtTeletypeTick();
@@ -5940,19 +5968,6 @@ export class AcpHarnessView implements ContentView {
     this.planSlotEl.hidden = true;
     this.planSlotEl.appendChild(this.planEl);
     this.laneRailEl.appendChild(this.planSlotEl);
-    this.actionSlotEl = document.createElement('div');
-    this.actionSlotEl.className = 'acp-harness__lane-rail__slot acp-harness__lane-rail__slot--compact';
-    this.actionSlotEl.dataset.slot = 'action';
-    this.actionSlotEl.hidden = true;
-    this.actionSlotEl.addEventListener('click', (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const hud = target.closest<HTMLElement>('.acp-harness__action-hud');
-      const laneId = hud?.dataset.laneId;
-      if (!laneId || laneId === this.activeLaneId) return;
-      this.activateLane(laneId);
-    });
-    this.laneRailEl.appendChild(this.actionSlotEl);
     this.peekSlotEl = document.createElement('div');
     this.peekSlotEl.className = 'acp-harness__lane-rail__slot';
     this.peekSlotEl.dataset.slot = 'peek';
@@ -11200,7 +11215,6 @@ export class AcpHarnessView implements ContentView {
   private scheduleLaneRender(lane: HarnessLane): void {
     if (lane.id !== this.activeLaneId) {
       this.refreshMetricsRender();
-      this.renderLaneAction();
       return;
     }
     if (this.renderRaf) return;
@@ -11229,12 +11243,11 @@ export class AcpHarnessView implements ContentView {
 
   // Spec 114 rev 4/5: text chunks and tool deltas update the transcript
   // body (+ one sticky scroll write). Lane chrome, composer, peek card,
-  // and plan are not rebuilt. Tool events also patch the action HUD.
+  // and plan are not rebuilt. Tool events also patch the peek tool row.
   private scheduleStreamingBodyOnly(lane: HarnessLane): void {
     if (lane.id !== this.activeLaneId) {
       this.refreshMetricsRender();
       this.patchPeekThoughtIfLane(lane);
-      this.renderLaneAction();
       this.flushPendingToolHud(lane);
       return;
     }
@@ -11273,13 +11286,12 @@ export class AcpHarnessView implements ContentView {
   private flushPendingToolHud(lane: HarnessLane): void {
     if (!this.pendingToolHud) return;
     this.pendingToolHud = false;
-    this.renderLaneAction();
-    this.syncPeekToolHud(lane);
+    this.syncPeekToolRow(lane);
   }
 
-  /** Patch the already-visible peek HUD for this lane. Do not remount the
+  /** Patch the already-visible peek tool row for this lane. Do not remount the
    *  peek card or heat ring — those rebuilds flash the rail on every tool. */
-  private syncPeekToolHud(lane: HarnessLane): void {
+  private syncPeekToolRow(lane: HarnessLane): void {
     if (!this.peekSlotEl || this.peekSlotEl.hidden) return;
     const card = this.peekSlotEl.querySelector<HTMLElement>('.acp-harness__lane-peek');
     if (!card || card.dataset.laneId !== lane.id) return;
@@ -11287,20 +11299,11 @@ export class AcpHarnessView implements ContentView {
     const snapshot = snapshots.find((row) => row.laneId === lane.id);
     if (!snapshot) return;
     const candidate = this.bestLanePeekCandidate({ snapshots });
-    if (candidate?.laneId === lane.id) {
-      this.syncPeekActionHud(card, snapshot, candidate);
-      return;
-    }
-    const existing = card.querySelector<HTMLElement>('.acp-harness__action-hud');
-    const action = snapshot.activeTool && snapshot.status === 'busy'
-      ? liveActionFromPeekTool(snapshot.activeTool)
-      : null;
-    if (!action) {
-      existing?.remove();
-      return;
-    }
-    if (existing) patchActionHud(existing, action);
-    else card.insertBefore(renderActionHud(action, 'peek'), card.firstChild);
+    patchPeekActiveTool(
+      card,
+      snapshot,
+      candidate?.laneId === lane.id ? candidate : null,
+    );
   }
 
   private patchPeekThoughtIfLane(lane: HarnessLane): void {
@@ -11310,7 +11313,6 @@ export class AcpHarnessView implements ContentView {
     const target = this.resolveThoughtTarget();
     if (showing === lane.id || target?.laneId === lane.id || (!target && showing)) {
       this.renderLaneThought();
-      this.renderLaneAction();
     }
   }
 
@@ -11327,7 +11329,6 @@ export class AcpHarnessView implements ContentView {
     this.renderActiveTranscript(lane);
     this.renderLanePeek();
     this.renderLaneThought();
-    this.renderLaneAction();
     this.renderPlanPanel(lane);
     this.renderActiveLaneQueue();
     this.renderComposer();
@@ -11617,93 +11618,8 @@ export class AcpHarnessView implements ContentView {
       this.mountLanePeekHeat(heatRoot, candidate, activeLane, peekLane, now);
     }
     if (!sameCard) slot.replaceChildren(card);
-    this.syncPeekActionHud(card, snapshot, candidate);
+    patchPeekActiveTool(card, snapshot, candidate);
     slot.hidden = false;
-  }
-
-  /** spec 231 — keep the peeked lane's HUD current without remounting the card
-   *  (sig/kind changes patch in place so the entrance animation does not replay). */
-  private syncPeekActionHud(
-    card: HTMLElement,
-    snapshot: LanePeekSnapshot,
-    candidate: LanePeekCandidate,
-  ): void {
-    if (peekEventRowDuplicatesHud(candidate, snapshot)) {
-      card.querySelector('.acp-harness__lane-peek-event')?.remove();
-    }
-    const existing = card.querySelector<HTMLElement>('.acp-harness__action-hud');
-    const action = snapshot.activeTool && snapshot.status === 'busy'
-      ? liveActionFromPeekTool(snapshot.activeTool)
-      : null;
-    if (!action) {
-      existing?.remove();
-      return;
-    }
-    if (existing) {
-      patchActionHud(existing, action);
-      return;
-    }
-    const next = renderActionHud(action, 'peek');
-    const event = card.querySelector('.acp-harness__lane-peek-event');
-    const head = card.querySelector('.acp-harness__lane-peek-head');
-    if (event) event.after(next);
-    else if (head) head.after(next);
-    else card.insertBefore(next, card.firstChild);
-  }
-
-  private renderLaneAction(): void {
-    const slot = this.actionSlotEl;
-    if (!slot || !this.peekSlotEl) return;
-    const snapshots = this.lanePeekSnapshots();
-    const peekId = this.showingPeekLaneId();
-    const thought = resolveLaneThoughtSnapshot(snapshots, peekId);
-    const peekSnap = peekId ? snapshots.find((row) => row.laneId === peekId) ?? null : null;
-    const peekHudLaneId = peekSnap?.activeTool && peekSnap.status === 'busy' ? peekId : null;
-    const railInput = {
-      lanes: this.lanes
-        .filter((lane) => lane.status !== 'stopped')
-        .map((lane) => ({
-          id: lane.id,
-          displayName: lane.displayName,
-          active: lane.id === this.activeLaneId,
-          activity: lane.activity,
-          toolCalls: lane.toolCalls,
-          // Spec 231 rev 2: a finished turn hides the card even if the adapter
-          // left a tool call open (background terminal never reports completion).
-          live: lane.status === 'busy' || lane.status === 'needs_permission',
-        })),
-      thoughtLaneId: thought?.laneId ?? null,
-      thoughtLive: isLivePeekThought(thought?.thought),
-      peekHudLaneId,
-    };
-    const rows = deriveRailLiveActions(railInput);
-    if (rows.length === 0) {
-      if (hasOmittedRailLiveAction(railInput)) {
-        this.cancelActionHudHide();
-        return;
-      }
-      this.scheduleActionHudHide();
-      return;
-    }
-    this.cancelActionHudHide();
-    syncActionHudSlot(slot, rows, this.lanes.length > 1);
-    slot.hidden = false;
-  }
-
-  private scheduleActionHudHide(): void {
-    if (this.actionHudHideTimer !== null) return;
-    if (this.actionSlotEl.hidden) return;
-    this.actionHudHideTimer = window.setTimeout(() => {
-      this.actionHudHideTimer = null;
-      this.actionSlotEl.replaceChildren();
-      this.actionSlotEl.hidden = true;
-    }, ACTION_HUD_HIDE_MS);
-  }
-
-  private cancelActionHudHide(): void {
-    if (this.actionHudHideTimer === null) return;
-    window.clearTimeout(this.actionHudHideTimer);
-    this.actionHudHideTimer = null;
   }
 
   private showingPeekLaneId(): string | null {
@@ -11746,7 +11662,7 @@ export class AcpHarnessView implements ContentView {
       this.thoughtSlotEl.replaceChildren();
       this.thoughtSlotEl.hidden = true;
       this.stopThoughtTeletypeTick();
-    }, ACTION_HUD_HIDE_MS);
+    }, THOUGHT_SLOT_HIDE_MS);
   }
 
   private cancelThoughtSlotHide(): void {
@@ -12383,7 +12299,6 @@ export class AcpHarnessView implements ContentView {
       this.renderActiveTranscript(activeLane);
       this.renderLanePeek();
       this.renderLaneThought();
-      this.renderLaneAction();
     }
     this.observeActiveTranscriptBody();
     if (activeLane && activeLane.stickToBottom) {
@@ -12704,12 +12619,10 @@ export class AcpHarnessView implements ContentView {
     if (shouldTick && this.composerTickTimer === null) {
       this.composerTickTimer = window.setInterval(() => {
         this.renderComposer();
-        this.renderLaneAction();
       }, 1000);
     } else if (!shouldTick) {
       this.stopComposerTick();
     }
-    this.renderLaneAction();
   }
 
   private stopComposerTick(): void {
@@ -13886,6 +13799,7 @@ export class AcpHarnessView implements ContentView {
     const token = this.beginProgrammaticScroll();
     body.scrollTop = body.scrollHeight;
     this.releaseProgrammaticScroll(token);
+    this.parkSmoothFollowTarget(body);
   }
 
   private setDraft(lane: HarnessLane, text: string, cursor: number): void {
@@ -14220,6 +14134,7 @@ export class AcpHarnessView implements ContentView {
       const token = this.beginProgrammaticScroll();
       body.scrollTop = body.scrollHeight;
       this.releaseProgrammaticScroll(token);
+      this.parkSmoothFollowTarget(body);
       return;
     }
     const token = this.beginProgrammaticScroll();
@@ -14232,31 +14147,76 @@ export class AcpHarnessView implements ContentView {
   }
 
   // Spec 114 rev 7: per-frame exponential chase toward the growing bottom.
-  // Runs only while behind — it parks once caught up and the next chunk
-  // re-nudges — so idle streaming frames cost nothing. Each frame writes
-  // under programmatic-scroll suppression; successive begins bump the token,
-  // so suppression holds continuously across the glide and lifts two RAFs
-  // after the last write, same contract as the instant pin.
+  // Rev 15: a pass whose bottom did not grow (bounded tool-output tail,
+  // replaceWith clamp) pins or idles instead of replaying a glide over
+  // already-visible transcript. Runs only while behind — it parks once
+  // caught up and the next chunk re-nudges — so idle streaming frames cost
+  // nothing. Each frame writes under programmatic-scroll suppression;
+  // successive begins bump the token, so suppression holds continuously
+  // across the glide and lifts two RAFs after the last write, same contract
+  // as the instant pin.
+  private parkedSmoothFollowTarget(body: HTMLElement): number | null {
+    return this.lastSmoothFollowBody === body ? this.lastSmoothFollowTarget : null;
+  }
+
+  private parkSmoothFollowTarget(body: HTMLElement): void {
+    this.lastSmoothFollowBody = body;
+    this.lastSmoothFollowTarget = Math.max(0, body.scrollHeight - body.clientHeight);
+  }
+
+  private clearSmoothFollowPark(): void {
+    this.lastSmoothFollowBody = null;
+    this.lastSmoothFollowTarget = null;
+  }
+
   private nudgeSmoothFollow(): void {
-    if (this.smoothFollowRaf !== 0) return;
-    const step = (): void => {
-      this.smoothFollowRaf = 0;
+    if (this.smoothFollowRaf !== 0 || this.smoothFollowBusy) return;
+    this.smoothFollowBusy = true;
+    try {
       const lane = this.activeLane();
       const body = this.activeTranscriptBody();
       if (!lane || !body || !lane.stickToBottom) return;
-      const next = smoothFollowStep(body.scrollTop, body.scrollHeight, body.clientHeight);
+      const plan = planSmoothFollow(
+        body.scrollTop,
+        body.scrollHeight,
+        body.clientHeight,
+        this.parkedSmoothFollowTarget(body),
+      );
+      if (plan.action === 'idle') {
+        this.parkSmoothFollowTarget(body);
+        return;
+      }
       const token = this.beginProgrammaticScroll();
-      body.scrollTop = next.scrollTop;
+      body.scrollTop = plan.scrollTop;
       this.releaseProgrammaticScroll(token);
-      if (!next.done) this.smoothFollowRaf = requestAnimationFrame(step);
-    };
-    this.smoothFollowRaf = requestAnimationFrame(step);
+      if (plan.action === 'pin' || plan.done) {
+        this.parkSmoothFollowTarget(body);
+        return;
+      }
+      const step = (): void => {
+        this.smoothFollowRaf = 0;
+        const liveLane = this.activeLane();
+        const liveBody = this.activeTranscriptBody();
+        if (!liveLane || !liveBody || !liveLane.stickToBottom) return;
+        const next = smoothFollowStep(liveBody.scrollTop, liveBody.scrollHeight, liveBody.clientHeight);
+        const inner = this.beginProgrammaticScroll();
+        liveBody.scrollTop = next.scrollTop;
+        this.releaseProgrammaticScroll(inner);
+        if (next.done) this.parkSmoothFollowTarget(liveBody);
+        else this.smoothFollowRaf = requestAnimationFrame(step);
+      };
+      this.smoothFollowRaf = requestAnimationFrame(step);
+    } finally {
+      this.smoothFollowBusy = false;
+    }
   }
 
   private cancelSmoothFollow(): void {
-    if (this.smoothFollowRaf === 0) return;
-    cancelAnimationFrame(this.smoothFollowRaf);
-    this.smoothFollowRaf = 0;
+    if (this.smoothFollowRaf !== 0) {
+      cancelAnimationFrame(this.smoothFollowRaf);
+      this.smoothFollowRaf = 0;
+    }
+    this.clearSmoothFollowPark();
   }
 
   /** Keyboard scrolls mutate scrollTop synchronously; record stickiness in
@@ -14431,6 +14391,7 @@ export class AcpHarnessView implements ContentView {
       else if (atBottom && sample.scrollTop > live.savedScrollTop) live.stickToBottom = true;
       live.savedScrollTop = sample.scrollTop;
       live.savedScrollAnchor = live.stickToBottom ? null : this.captureTranscriptScrollAnchor(liveBody);
+      if (!live.stickToBottom) this.clearSmoothFollowPark();
       // Rev 12: stuck means stuck. An unsuppressed event that leaves a stuck
       // lane short of the bottom (but inside the threshold) is drift, not
       // intent — keyboard intent is recorded synchronously and its echo is
@@ -14478,8 +14439,13 @@ export class AcpHarnessView implements ContentView {
       const token = this.beginProgrammaticScroll();
       body.scrollTop = body.scrollHeight;
       this.releaseProgrammaticScroll(token);
+      this.parkSmoothFollowTarget(body);
       return;
     }
+    // Rev 13: the 2s poll keeps the glide — drift it finds has already been
+    // on screen. Forget the parked target so rev 15's same-target pin does
+    // not snap a remainder that should ease back.
+    this.clearSmoothFollowPark();
     this.scheduleStickyScroll();
   }
 

@@ -179,11 +179,11 @@ Placement:
 
 - The peek lives inside the **lane rail overlay** (`.acp-harness__lane-rail` — see `docs/111-harness-right-rail.md`), anchored top-right of the active lane and stacked below the plan slot.
 - The rail container handles positioning (`position: absolute`, no `backdrop-filter`); the peek itself is a normal flex-flow child of its rail slot.
-- Peek chrome (and the sibling thought / plan / action-HUD cards) uses `--krypton-border-radius` (8px bevel). An earlier 4px sweep missed these because they never declared a radius.
+- Peek chrome (and the sibling thought / plan cards) uses `--krypton-border-radius` (8px bevel). An earlier 4px sweep missed these because they never declared a radius.
 - It must not cover the composer, permission banner, or lane header.
 - It reserves no permanent vertical transcript space (the rail is an overlay, not a reserved column).
 - It must not compete with #104 titlebar HUD; the peek lives inside ACP content, while #104 HUD lives in native window chrome/titlebar.
-- Spec 231: live tool/think/write signals are a **sibling** rail slot (`[data-slot="action"]`) stacked immediately above this card — one labeled HUD per busy lane, not a peek payload. When the peeked lane itself is busy, this card embeds the same action HUD in place of the old flat `tool` row, and that lane is omitted from the rail stack so it is not painted twice. The HUD also replaces the peek **activity** event row (`recent-activity` / `lane-shell`); do not stack `▸ execute Terminal` above `EXECUTE Terminal`. Peer, permission, error, and inbox event rows still render above the HUD.
+- Spec 231 (removed): there is no rail action HUD. A busy peeked lane with an in-flight tool paints a flat `tool` row (`data-peek-row="tool"`) on this card. That row replaces the peek **activity** event row (`recent-activity` / `lane-shell`); do not stack `▸ execute Terminal` above `tool execute · Terminal`. Peer, permission, error, and inbox event rows still render.
 
 Shape:
 

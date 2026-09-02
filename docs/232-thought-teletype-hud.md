@@ -146,7 +146,7 @@ None.
 - Source shrink / rewrite → `shown = source.length`.
 - Empty live deltas → veil, not an empty teletype.
 - Concise mode → transcript thought still hidden; this slot still types.
-- Action HUD still omits a duplicate `thinking` well when this slot is live for the active lane (231).
+- Spec 231's action HUD is gone; this slot is the only thinking instrument.
 - Native webview / Live Assist → unchanged.
 
 ## Open Questions
@@ -164,7 +164,7 @@ None. Visual locks: Teletype HUD, no scan, no brackets, instrument, live only.
 
 - [docs/216-workspace-thought-field.md](216-workspace-thought-field.md) — slot, phases, occupancy
 - [docs/93-acp-harness-text-animation.md](93-acp-harness-text-animation.md) — why not pretext stagger
-- [docs/231-lane-peek-action-hud.md](231-lane-peek-action-hud.md) — omit thinking HUD when thought is live
+- [docs/231-lane-peek-action-hud.md](231-lane-peek-action-hud.md) — action HUD removed; thought slot is the thinking instrument
 - [docs/34-background-animations.md](34-background-animations.md) / [64](64-matrix-animation-cpu-burn.md) — do not canvas this
 - [DESIGN.md](../DESIGN.md) — motion as state, reduced-motion, no `backdrop-filter`
 - Artifact `art-54-1f633f70` — chosen mock

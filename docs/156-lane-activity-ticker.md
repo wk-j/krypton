@@ -27,9 +27,9 @@ Claude-1 running · 8:24 · thinking… · 12.6k tok · Ctrl+C cancel
 Superseded shape — spec 221 kept the activity segment (it is the row's only leading
 indicator) and deleted everything around it that another surface already prints: the
 lane name, the token count, the cancel hint and the generic `running` verb. Spec 231
-then moved the activity itself off the composer and into the rail action HUD, so the
-chip is now `HANDLING PEER · 8:24` (verb + elapsed) and the live tool/think/write
-signal lives in `[data-slot="action"]`. See `docs/221-harness-status-line-density.md`
+then moved the activity itself off the composer and into a rail action HUD; that HUD
+is now removed. The chip is `HANDLING PEER · 8:24` (verb + elapsed). A busy peeked
+lane shows a flat `tool` row. See `docs/221-harness-status-line-density.md`
 and `docs/231-lane-peek-action-hud.md`.
 
 ## Research
@@ -45,7 +45,7 @@ and `docs/231-lane-peek-action-hud.md`.
 - Streaming chunk handlers and `tool_call` / `tool_call_update` skip full
   re-renders (`needsRender = false`; spec 114 body-only RAF) — the activity
   setter must follow suit: **field writes only**, let the 1 s tick paint the
-  composer chip. Tool events still patch the transcript row and action HUD.
+  composer chip. Tool events still patch the transcript row and the peek tool row.
   No per-chunk chrome rebuild.
 - Alternative considered: rotating flavor verbs (Claude Code style "Reticulating
   splines…"). Ruled out — pure decoration; the user chose real signal over whimsy.

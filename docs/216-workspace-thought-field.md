@@ -69,7 +69,6 @@ thought: {
 .acp-harness__lane-rail          320px
   [data-slot="pins"]             320px
   [data-slot="plan"]             320px
-  [data-slot="action"]           320px   — spec 231 live-action HUD
   [data-slot="peek"]             320px   — spec 109 card only
   [data-slot="thought"]          320px   — spec 216 card only
   [data-slot="queue"]            320px
@@ -87,7 +86,7 @@ Peek hide / `Esc` / no 109 candidate never empty this slot by themselves. Rankin
 
 - `.acp-harness__lane-thought` with a name header and `.acp-harness__lane-thought-body`.
 - Body max-height ≈ 10 line-heights, `overflow: auto`, pin to latest line after layout.
-- Live (`delta`): catch-up teletype, plain `pre-wrap` text, block caret, last ~10 glyphs brighter (spec 232). Sealed: GFM via `marked` (same parser as sealed assistant rows). Veil: `installThoughtVeil`. Empty seal: hide the slot (no content), delayed by `ACTION_HUD_HIDE_MS` so thinking → tool interleave does not collapse the slot on the same frame.
+- Live (`delta`): catch-up teletype, plain `pre-wrap` text, block caret, last ~10 glyphs brighter (spec 232). Sealed: GFM via `marked` (same parser as sealed assistant rows). Veil: `installThoughtVeil`. Empty seal: hide the slot (no content), delayed by `THOUGHT_SLOT_HIDE_MS` so thinking → tool interleave does not collapse the slot on the same frame.
 - Empty live thought (providers that stream blank `thought_chunk`s) is **rail veil only**. Do not insert a transcript thought row for empty text — `dropVeiledThoughtRow` used to paint that row and delete it on the next `tool_call`, which jumped the transcript up and down.
 - Same-lane refresh patches the body — do not `replaceChildren` the card on every chunk.
 - Ghost type. Lane accent only on the name. Caret only while `delta`. No scan wipe, no corner brackets, no grid, no wallpaper motion.
