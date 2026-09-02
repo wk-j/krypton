@@ -11481,6 +11481,13 @@ export class AcpHarnessView implements ContentView {
       const signature = transcriptRenderSignature(item, streaming);
       const isIndicator = item.id === HIDDEN_INDICATOR_ID;
       if (current) {
+        // Spec 103 rev 2: keep DOM order = itemsToRender order. The hidden-rows
+        // indicator used to be appended at the END when it first appeared
+        // (previous === null fell through to appendChild) and then stayed there
+        // for the life of the lane. Pointer compare only; a row already in
+        // place never moves.
+        const ref: ChildNode | null = previous ? previous.nextSibling : body.firstChild;
+        if (current !== ref) body.insertBefore(current, ref);
         if (current.dataset.renderSignature === signature) {
           // Spec 114 rev 8: an in-flight tool keeps a stable structural
           // signature while its output streams (section text is excluded) —
@@ -11505,8 +11512,9 @@ export class AcpHarnessView implements ContentView {
       } else {
         const next = renderTranscriptItem(item, isNew, streaming, lane, this.projectDir);
         if (isIndicator) next.classList.add('acp-harness__msg--hidden-indicator');
-        if (previous?.nextSibling) body.insertBefore(next, previous.nextSibling);
-        else body.appendChild(next);
+        // First item (previous === null) goes BEFORE the current first row, not
+        // at the end (spec 103 rev 2). insertBefore(node, null) appends.
+        body.insertBefore(next, previous ? previous.nextSibling : body.firstChild);
         previous = next;
       }
       lane.seenTranscriptIds.add(item.id);

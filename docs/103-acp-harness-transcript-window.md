@@ -1,7 +1,8 @@
 # 103. ACP Harness Transcript Visible Window
 
-> Status: Implemented
+> Status: Implemented (rev 2 — indicator row placement fix)
 > Date: 2026-05-13
+> Amended (rev 2, 2026-09-02): the indicator was rendered at the **bottom** of the transcript, right above the composer, not at the top. In `renderActiveTranscript()` a new node for the first item (`previous === null`) fell through to `body.appendChild`, and an existing node was never repositioned, so once the indicator appeared it stayed last for the life of the lane. New nodes now use `body.insertBefore(next, previous ? previous.nextSibling : body.firstChild)`, and an existing node that is not at `previous ? previous.nextSibling : body.firstChild` is moved there (pointer compare, so in-place rows never move). Verified against frame captures of the live app.
 > Milestone: ACP harness — performance hardening
 
 ## Problem
