@@ -227,11 +227,13 @@ describe('deriveRailLiveActions', () => {
     active?: boolean;
     activity?: { kind: 'tool' | 'thinking' | 'writing'; label: string } | null;
     toolCalls?: ToolCall[];
+    live?: boolean;
   }) {
     return {
       id: over.id,
       displayName: over.displayName ?? over.id,
       active: over.active ?? false,
+      ...(over.live === undefined ? {} : { live: over.live }),
       activity: 'activity' in over ? over.activity ?? null : { kind: 'tool' as const, label: 'Edit src/a.ts' },
       toolCalls: over.toolCalls ?? [call({
         kind: 'edit',
@@ -299,6 +301,27 @@ describe('deriveRailLiveActions', () => {
       thoughtLive: false,
       peekHudLaneId: null,
     })).toEqual([]);
+  });
+
+  it('drops a lane whose turn ended even when a tool call is still in_progress (rev 2)', () => {
+    // Background terminal the adapter never closed: toolCalls keeps an
+    // in_progress execute forever. Lane status wins — no card, no omitted flag,
+    // so the 2s hide timer is allowed to run.
+    const stale = lane({
+      id: 'claude',
+      activity: null,
+      toolCalls: [call({ kind: 'execute', title: 'Terminal' })],
+      live: false,
+    });
+    const input = { lanes: [stale], thoughtLaneId: null, thoughtLive: false, peekHudLaneId: null };
+    expect(deriveRailLiveActions(input)).toEqual([]);
+    expect(hasOmittedRailLiveAction(input)).toBe(false);
+    // The same lane while live still paints its card.
+    expect(deriveRailLiveActions({ ...input, lanes: [{ ...stale, live: true }] }).map((row) => row.laneId))
+      .toEqual(['claude']);
+    // Callers that do not pass `live` keep the pre-rev-2 behaviour.
+    expect(deriveRailLiveActions({ ...input, lanes: [lane({ id: 'legacy', toolCalls: [call({ kind: 'execute', title: 'x' })] })] }))
+      .toHaveLength(1);
   });
 
   it('flags omitted thinking so the hide timer does not clear the last tool card', () => {

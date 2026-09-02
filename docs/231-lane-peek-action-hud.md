@@ -1,7 +1,8 @@
 # Lane Peek Action HUD — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented (rev 2 — rail cards are gated on lane status; a tool call the adapter never closed no longer pins the card after the turn ends)
 > Date: 2026-08-18
+> Amended (rev 2, 2026-09-02): `RailLiveActionLane.live` — `renderLaneAction()` passes `status === 'busy' || status === 'needs_permission'`; `deriveRailLiveActions` / `hasOmittedRailLiveAction` skip a lane with `live: false` before reading its tool map. Observed: Claude's background `Bash` (`run_in_background`) leaves an `execute` tool call titled `Terminal` in `in_progress` after the turn (the adapter never sends the terminal update), so the `EXECUTE / Terminal` card stayed on the rail through idle. Lane status is authoritative for the rail; the transcript row and `toolCalls` are untouched.
 > Milestone: ACP Harness polish
 > Related: `docs/109-acp-contextual-lane-peek.md`, `docs/111-harness-right-rail.md`, `docs/156-lane-activity-ticker.md`, `docs/216-workspace-thought-field.md`, `docs/221-harness-status-line-density.md`
 
@@ -120,7 +121,7 @@ interface LiveAction {
   [data-slot="queue"]
 ```
 
-Show the action slot when `deriveRailLiveActions(lanes)` is non-empty. A lane is listed when `deriveLiveAction(lane)` is non-null **and not** (`kind === 'thinking'` AND the thought slot is already showing that lane's live thought) **and not** (the 109 peek card is visible and already embedding that lane's HUD). Hide the slot when the list is empty. Independent of peek `Esc` dismiss. No new keybinding. Clicking a non-active card activates that lane.
+Show the action slot when `deriveRailLiveActions(lanes)` is non-empty. A lane is listed when it is **live** (rev 2: `status` is `busy` or `needs_permission` — an ended turn lists nothing, even if `toolCalls` still holds an `in_progress` entry) and `deriveLiveAction(lane)` is non-null **and not** (`kind === 'thinking'` AND the thought slot is already showing that lane's live thought) **and not** (the 109 peek card is visible and already embedding that lane's HUD). Hide the slot when the list is empty. Independent of peek `Esc` dismiss. No new keybinding. Clicking a non-active card activates that lane.
 
 ### UI
 
@@ -168,7 +169,7 @@ All infinite motion uses DESIGN.md tokens (`--krypton-motion-data-stream` 1.8s l
 3. deriveRailLiveActions(lanes) → empty **and no omitted thinking HUD**? arm a 2s hide (`ACTION_HUD_HIDE_MS`); keep the last HUD until it fires. Empty **because thinking is omitted** (thought slot already live for that lane) cancels the timer and leaves the last tool card in place — do not remount, do not replay `acp-action-deploy` / scan.
 4. live rows return before the delay? cancel hide; same lane patches (no remount — new sig/kind included). In-flight tools beat `activity: thinking`, so a Read that is still pending does not swap to the thinking well on an empty thought chunk.
 5. new lane, or labeled-chrome mismatch? remount that card — entrance plays
-6. finishTurn / error → activity null → after the hide delay, that card drops; slot hides when none remain
+6. finishTurn / error → activity null, and (rev 2) the lane is no longer live → after the hide delay, that card drops; slot hides when none remain. A tool call the adapter never closed cannot keep the card alive.
 ```
 
 Show is immediate. Hide is delayed 2s so thinking/writing interleave does not play `acp-action-deploy` on every gap. The hide timer is cancelled on dispose. No per-chunk DOM work.
@@ -187,6 +188,7 @@ Show is immediate. Hide is delayed 2s so thinking/writing interleave does not pl
 - **Writing + thought slot** — HUD stays (`writing`); thought is a different signal.
 - **Thinking/writing interleave** — thinking is omitted when the thought slot is live. Hide waits 2s (`ACTION_HUD_HIDE_MS`) only for a true idle (no action at all). An omitted-thinking empty stack does not hide, so a long Claude think after a Read does not remount the card.
 - **Multiple in-flight tools** — oldest pending/in_progress, same as peek today.
+- **Tool call left open after the turn (rev 2)** — e.g. Claude's background `Bash` creates a terminal the adapter never reports as completed, so `toolCalls` keeps an `in_progress` `execute` titled `Terminal`. The rail reads lane status first: once the turn ends the lane is not live, no row is derived, the 2s hide runs and the card drops. Only the rail stack is gated; the peek HUD already required `status === 'busy'`.
 - **Live Assist** — untouched (spec 209).
 - **Zen / view-split / narrow rail** — slot uses the existing `max-width: calc(100% - 24px)` rail rule; subject ellipsizes.
 - **Long / multiline command title** — Grok often puts the whole `cd …; actionlint …` line in `title` with `kind: other` and no `rawInput.command` yet. Kind stays the short verb (`execute`); subject is that command collapsed to one line and CSS-ellipsized. The untruncated command stays on the tooltip. Never dump the command into the uppercase kind label — that wraps inside the 72px slot.

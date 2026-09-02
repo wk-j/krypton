@@ -51,6 +51,13 @@ export interface RailLiveActionLane extends LiveActionSource {
   id: string;
   displayName: string;
   active: boolean;
+  /** Spec 231 rev 2: false once the lane's turn has ended (status is not
+   *  busy / needs_permission). A tool call the adapter never closed — a
+   *  background terminal that keeps running after the turn, for instance —
+   *  stays `in_progress` in `toolCalls` forever and used to pin its card on
+   *  the rail indefinitely. Lane status is authoritative: a lane that is not
+   *  live has no live action, whatever its tool map says. */
+  live?: boolean;
 }
 
 export interface RailLiveAction {
@@ -277,6 +284,7 @@ function omitOpts(input: DeriveRailLiveActionsInput, laneId: string): {
  *  hide timer must not fire in this case — the last Read/edit card stays. */
 export function hasOmittedRailLiveAction(input: DeriveRailLiveActionsInput): boolean {
   for (const lane of input.lanes) {
+    if (lane.live === false) continue;
     if (input.peekHudLaneId && lane.id === input.peekHudLaneId) continue;
     const action = deriveLiveAction(lane);
     if (action && shouldOmitActionHud(action, omitOpts(input, lane.id))) return true;
@@ -289,6 +297,8 @@ export function hasOmittedRailLiveAction(input: DeriveRailLiveActionsInput): boo
 export function deriveRailLiveActions(input: DeriveRailLiveActionsInput): RailLiveAction[] {
   const out: RailLiveAction[] = [];
   for (const lane of input.lanes) {
+    // Not live → no card, even with a stale in_progress tool (see RailLiveActionLane.live).
+    if (lane.live === false) continue;
     if (input.peekHudLaneId && lane.id === input.peekHudLaneId) continue;
     const action = deriveLiveAction(lane);
     if (shouldOmitActionHud(action, omitOpts(input, lane.id))) continue;

@@ -11615,6 +11615,9 @@ export class AcpHarnessView implements ContentView {
           active: lane.id === this.activeLaneId,
           activity: lane.activity,
           toolCalls: lane.toolCalls,
+          // Spec 231 rev 2: a finished turn hides the card even if the adapter
+          // left a tool call open (background terminal never reports completion).
+          live: lane.status === 'busy' || lane.status === 'needs_permission',
         })),
       thoughtLaneId: thought?.laneId ?? null,
       thoughtLive: isLivePeekThought(thought?.thought),
