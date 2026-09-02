@@ -13874,6 +13874,20 @@ export class AcpHarnessView implements ContentView {
     this.renderComposer();
   }
 
+  /** Spec 114 rev 14: composer key edits pin a stuck transcript in this turn.
+   *  Rev 13 only heals from a delivered scroll event, so keys inside the 2-RAF
+   *  suppression window (or while a glide is already running) still paint the
+   *  14px jump. The 1s composer tick does not call this — it does not reproduce
+   *  the writer, and a hard pin would snap a live glide once a second. */
+  private pinStickyAfterComposerKey(): void {
+    const lane = this.activeLane();
+    const body = this.activeTranscriptBody();
+    if (!lane || !body || !lane.stickToBottom) return;
+    const token = this.beginProgrammaticScroll();
+    body.scrollTop = body.scrollHeight;
+    this.releaseProgrammaticScroll(token);
+  }
+
   private setDraft(lane: HarnessLane, text: string, cursor: number): void {
     lane.draft = text;
     lane.cursor = Math.max(0, Math.min(cursor, text.length));
@@ -13892,6 +13906,7 @@ export class AcpHarnessView implements ContentView {
     lane.historyIndex = null;
     lane.historySavedDraft = null;
     this.renderComposer();
+    this.pinStickyAfterComposerKey();
   }
 
   private applyHistoryDraft(lane: HarnessLane, text: string): void {
@@ -13905,6 +13920,7 @@ export class AcpHarnessView implements ContentView {
     lane.hashPaletteIndex = 0;
     lane.hashPaletteDismissed = false;
     this.renderComposer();
+    this.pinStickyAfterComposerKey();
   }
 
   private cursorOnFirstLine(lane: HarnessLane): boolean {
@@ -13955,6 +13971,7 @@ export class AcpHarnessView implements ContentView {
   private setDraftCursor(lane: HarnessLane, cursor: number): void {
     lane.cursor = Math.max(0, Math.min(cursor, lane.draft.length));
     this.renderComposer();
+    this.pinStickyAfterComposerKey();
   }
 
   private activeLane(): HarnessLane | null {
@@ -14440,7 +14457,11 @@ export class AcpHarnessView implements ContentView {
    *  14 px oscillation on every keystroke. A scroll-sourced heal now pins
    *  synchronously, so the displaced frame never paints. The 2 s poll keeps
    *  the glide: drift it finds has already been on screen for up to 2 s, and
-   *  a gentle catch-up reads better there than a snap. */
+   *  a gentle catch-up reads better there than a snap.
+   *
+   *  Rev 14: composer key edits also pin in the same turn
+   *  (`pinStickyAfterComposerKey`). Rev 13 still misses keys whose scroll
+   *  event is swallowed (suppression window, or `smoothFollowRaf !== 0`). */
   private healStickyScroll(source: 'scroll' | 'metrics'): void {
     const lane = this.activeLane();
     const body = this.activeTranscriptBody();

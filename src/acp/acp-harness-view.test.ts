@@ -1359,6 +1359,44 @@ describe('ACP peer activity UI (spec 118)', () => {
     });
   });
 
+  describe('composer-key sticky pin (spec 114 rev 14)', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+
+    function methodSource(name: string): string {
+      const start = src.indexOf(`private ${name}(`);
+      expect(start).toBeGreaterThanOrEqual(0);
+      const next = src.indexOf('\n  private ', start + 1);
+      return src.slice(start, next === -1 ? undefined : next);
+    }
+
+    it('pins scrollTop in the same turn as a composer key edit', () => {
+      const pin = methodSource('pinStickyAfterComposerKey');
+      expect(pin).toContain('lane.stickToBottom');
+      expect(pin).toContain('body.scrollTop = body.scrollHeight');
+      expect(pin).toContain('beginProgrammaticScroll');
+      expect(pin).not.toContain('smoothFollowRaf');
+    });
+
+    it('runs after renderComposer on draft, cursor, and history edits', () => {
+      for (const name of ['setDraft', 'setDraftCursor', 'applyHistoryDraft']) {
+        const body = methodSource(name);
+        const renderAt = body.indexOf('this.renderComposer();');
+        const pinAt = body.indexOf('this.pinStickyAfterComposerKey();');
+        expect(renderAt, name).toBeGreaterThanOrEqual(0);
+        expect(pinAt, name).toBeGreaterThan(renderAt);
+      }
+    });
+
+    it('does not pin on the 1s composer tick', () => {
+      const tick = src.match(
+        /this\.composerTickTimer = window\.setInterval\(\(\) => \{([\s\S]*?)\}, 1000\)/,
+      );
+      expect(tick?.[1]).toContain('this.renderComposer();');
+      expect(tick?.[1]).not.toContain('pinStickyAfterComposerKey');
+    });
+  });
+
   it('schedulePeekThoughtPin pins now and again after layout', () => {
     const frames: FrameRequestCallback[] = [];
     const host = globalThis as { requestAnimationFrame?: typeof requestAnimationFrame };
