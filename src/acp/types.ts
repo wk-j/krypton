@@ -371,6 +371,41 @@ export interface DocArtifactRequestEnvelope {
   sentAt: number;
 }
 
+// ─── Transcript annotations (spec 240) ───
+// Human points at a span in a sealed assistant reply, types a note, batches
+// several, then sends one system turn to the same lane. Sibling to spec 158:
+// same drain-on-idle delivery, different surface (transcript vs working diff).
+
+export type AnnotationStatus = 'unsent' | 'sent' | 'drained';
+
+export interface TranscriptAnnotation {
+  /** stable client id, for de-dupe at drain (spec 158 recoverability). */
+  id: string;
+  /** HarnessTranscriptItem.id of the assistant row. */
+  itemId: string;
+  /** window.getSelection().toString(), capped. */
+  quote: string;
+  /** 0-based occurrence of `quote` in the annotatable body's textContent. */
+  quoteIndex: number;
+  /** nearest preceding h1–h6 in that row, if any. */
+  heading?: string;
+  /** the human's note, capped. */
+  body: string;
+  /** unsent = local batch; sent = in the drain queue; drained = injected. */
+  status: AnnotationStatus;
+  /** wrap failed on last paint — rail still shows the note. */
+  drifted?: boolean;
+  createdAt: number;
+}
+
+export interface TranscriptAnnotationEnvelope {
+  kind: 'transcript_annotation';
+  batchId: string;
+  laneId: string;
+  comments: TranscriptAnnotation[];
+  sentAt: number;
+}
+
 // ─── Diff review comments (spec 158) ───
 // Human→lane inline review on the working diff. A comment carries a precise
 // file:line anchor (intrinsic to the diff, no synthesized selector) plus the

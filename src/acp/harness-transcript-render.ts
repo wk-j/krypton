@@ -41,6 +41,7 @@ import {
   mergeMessageResources,
   resourceDisplayTarget,
 } from './message-resources';
+import { annotationSignature, applyTranscriptAnnotations } from './transcript-annotation';
 
 export function applyCoordinatorProvenanceToItem(lane: HarnessLane, item: HarnessTranscriptItem): void {
   if (item.kind !== 'assistant' || lane.coordinatorDrainProvenanceUsed) return;
@@ -163,6 +164,7 @@ export function renderTranscriptItem(
       prov.textContent = formatLaneMailProvenanceLine(item.replyingToLaneMail);
       body.appendChild(prov);
     }
+    body.dataset.annotatable = '1';
     if (streaming && lane) {
       // Spec 117: initialise the lane's streaming-markdown parser bound to this
       // body and seed it with the current item.text. The fast path in
@@ -197,6 +199,7 @@ export function renderTranscriptItem(
       }
     }
     if (!streaming) {
+      applyTranscriptAnnotations(body, item);
       scanMessageResourceBody(body, item, projectDir);
       appendMessageResourceRail(body, item, projectDir);
     }
@@ -414,6 +417,7 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
     artifact,
     resources,
     item.resourceOverflow ?? 0,
+    annotationSignature(item),
   ].join('\u001d');
 }
 

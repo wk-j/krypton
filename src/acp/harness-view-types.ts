@@ -29,6 +29,7 @@ import type {
   ProviderErrorPayload,
   ToolCall,
   ToolCallUpdate,
+  TranscriptAnnotation,
   UsageInfo,
 } from './types';
 import type { CoordinatorDrainContext, InterLaneRowChannel, PendingPeerSummary } from './inter-lane';
@@ -122,6 +123,8 @@ export interface HarnessTranscriptItem {
   resourceOverflow?: number;
   /** True after the sealed Markdown DOM has been scanned exactly once. */
   resourcesScanned?: boolean;
+  /** spec 240: human notes pinned to spans in this assistant reply. */
+  annotations?: TranscriptAnnotation[];
 }
 
 /** spec 133 — transcript card for a registered HTML artifact. */

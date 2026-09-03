@@ -424,6 +424,27 @@ PULL (window ← harness), on open and on every auto-refresh:
    (under-collapse, never over-collapse; ADR-0009).
 ```
 
+## Harness Transcript Annotation Flow (spec 240)
+
+```
+1. User selects text in a sealed (or already-written streaming) assistant body.
+   Mouseup arms a target and shows a `c annotate` pill. Any other composer
+   letter disarms without consuming the key. Esc disarms.
+2. `c` (armed, or transcript focus with no selection → nearest visible block)
+   opens the annotate overlay. Enter adds an unsent note to that transcript
+   item; the lane is not contacted. Repeat.
+3. `s` (transcript) or the rail send control copies every unsent note into one
+   envelope, marks them sent, TranscriptAnnotationQueue.accept().
+4. If the lane is idle/awaiting_peer, the queue drains immediately; if busy,
+   it waits for the next idle. Peer mail still wins a contested idle;
+   annotations beat artifact/docs/diff/review-board drains.
+5. composeAnnotationPrompt emits one trusted framing line plus a raw JSON
+   array (no markdown fence) → enqueueSystemPrompt labelled `annotation`.
+6. Sealed paint wraps the Nth quote occurrence in <mark> and appends the
+   notes rail (before the spec-206 resource rail). Marks are not stored in
+   markdownHtml. Unsent notes are in-memory only.
+```
+
 ## Window AI Credit Status Flow
 
 ```

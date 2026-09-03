@@ -47,6 +47,7 @@ import type {
   StopReason,
   ToolCall,
   ToolCallUpdate,
+  TranscriptAnnotation,
   UsageInfo,
 } from './types';
 import { LaneBus } from './lane-bus';
@@ -63,6 +64,16 @@ import {
 } from './review-priority-overlay';
 import { ArtifactFeedbackQueue, DocArtifactRequestQueue, DocFeedbackQueue } from './artifact-feedback';
 import { DiffReviewQueue } from './diff-review';
+import {
+  ANNOTATION_CAP,
+  annotationPressure,
+  capNote,
+  capQuote,
+  collectUnsent,
+  headingNear,
+  occurrenceIndex,
+  TranscriptAnnotationQueue,
+} from './transcript-annotation';
 import { ReviewResponseQueue } from './review-response-queue';
 import {
   InterLaneCoordinator,
@@ -1077,6 +1088,21 @@ export class AcpHarnessView implements ContentView {
   private docsFeedbackQueue: DocFeedbackQueue;
   private docsArtifactQueue: DocArtifactRequestQueue;
   private diffReviewQueue: DiffReviewQueue;
+  /** spec 240: human transcript annotations. Constructed immediately after the
+   *  coordinator so they beat artifact/docs/diff/review-board drains. */
+  private annotationQueue: TranscriptAnnotationQueue;
+  private annotationOverlayEl!: HTMLElement;
+  private annotationQuoteEl!: HTMLElement;
+  private annotationInputEl!: HTMLTextAreaElement;
+  private annotationOverlayOpen = false;
+  private annotationArmed: {
+    itemId: string;
+    quote: string;
+    quoteIndex: number;
+    heading?: string;
+    rect: DOMRect;
+  } | null = null;
+  private annotationSeq = 0;
   private telemetryPublisher: HarnessTelemetryPublisher | null = null;
   private feedbackUnlisten: UnlistenFn | null = null;
   private docsFeedbackUnlisten: UnlistenFn | null = null;
@@ -1265,6 +1291,20 @@ export class AcpHarnessView implements ContentView {
     this.element.tabIndex = 0;
     if (SPEC114_DEV) installLaneBodyScrollTracer();
     this.coordinator = new InterLaneCoordinator(this.laneBus, this.buildLaneHost());
+    // spec 240: transcript annotations drain on idle like other human→lane
+    // queues. Constructed immediately after the coordinator so peer mail still
+    // wins, but a human pointing at the reply they are reading beats artifact /
+    // docs / diff / review-board drains. Re-checks status before inject.
+    this.annotationQueue = new TranscriptAnnotationQueue(this.laneBus, {
+      getLaneStatus: (laneId) => this.lanes.find((l) => l.id === laneId)?.status ?? null,
+      injectAnnotationTurn: (laneId, text, ids) => {
+        const lane = this.lanes.find((l) => l.id === laneId);
+        if (!lane?.client) return;
+        if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') return;
+        this.markAnnotationsStatus(lane, ids, 'drained');
+        void this.enqueueSystemPrompt(lane, text, undefined, 'annotation');
+      },
+    });
     // spec 149: artifact feedback drains on the lane's next idle, like peer mail,
     // but through its own queue (human→lane review, not lane↔lane mail).
     // ORDERING MATTERS: construct this AFTER the coordinator. LaneBus dispatches
@@ -3702,6 +3742,29 @@ export class AcpHarnessView implements ContentView {
       return true;
     }
     if (this.memoryDrawerOpen && this.handleMemoryKey(e)) return true;
+    if (this.annotationOverlayOpen) {
+      if (e.key === 'Escape') {
+        this.closeAnnotationOverlay();
+        return true;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        this.addAnnotationNote();
+        return true;
+      }
+      return false;
+    }
+    if (this.annotationArmed) {
+      const noMod = !e.ctrlKey && !e.metaKey && !e.altKey;
+      if (e.key === 'c' && noMod) {
+        this.openAnnotationOverlay();
+        return true;
+      }
+      if (e.key === 'Escape') {
+        this.disarmAnnotation();
+        return true;
+      }
+      if (e.key.length === 1 && noMod) this.disarmAnnotation();
+    }
     if ((e.key === 'n' || e.key === 'N' || e.key === 'p' || e.key === 'P') && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       const composerLane = this.focus === 'text' ? this.activeLane() : null;
       if (composerLane && this.mentionPaletteVisibleFor(composerLane)) {
@@ -3818,7 +3881,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   handlePaste(e: ClipboardEvent): void {
-    if (this.helpOpen || this.memoryDrawerOpen) return;
+    if (this.helpOpen || this.memoryDrawerOpen || this.annotationOverlayOpen) return;
     const lane = this.activeLane();
     if (!lane || lane.pendingPermissions.length > 0 || lane.pendingQuestions.length > 0) return;
     const items = e.clipboardData?.items;
@@ -4449,6 +4512,7 @@ export class AcpHarnessView implements ContentView {
     this.docsArtifactQueue.dispose();
     this.diffReviewQueue.dispose();
     this.reviewResponseQueue.dispose();
+    this.annotationQueue.dispose();
     this.usageProviderListeners.clear();
     if (this.transcriptResizeObserver) {
       this.transcriptResizeObserver.disconnect();
@@ -5841,6 +5905,9 @@ export class AcpHarnessView implements ContentView {
       },
       { capture: true, passive: true },
     );
+    this.dashboardEl.addEventListener('mouseup', () => {
+      window.requestAnimationFrame(() => this.armAnnotationFromSelection());
+    });
     body.appendChild(this.dashboardEl);
 
     this.ticketDockEl = document.createElement('aside');
@@ -5857,6 +5924,17 @@ export class AcpHarnessView implements ContentView {
     this.element.addEventListener('click', (e: MouseEvent) => {
       const target = e.target;
       if (!(target instanceof Element)) return;
+      if (target.closest('[data-anno-send]')) {
+        e.preventDefault();
+        this.sendAnnotationBatch();
+        return;
+      }
+      const del = target.closest<HTMLElement>('[data-anno-del]');
+      if (del?.dataset.annoDel) {
+        e.preventDefault();
+        this.deleteAnnotationById(del.dataset.annoDel);
+        return;
+      }
       const resourceButton = target.closest<HTMLElement>('[data-response-resource]');
       if (resourceButton?.dataset.responseResource) {
         e.preventDefault();
@@ -6024,6 +6102,24 @@ export class AcpHarnessView implements ContentView {
     commandCenter.className = 'acp-harness__command-center';
     // spec 128: the open-count gauge lives in the global workspace footer, not
     // here — see renderTriageGaugeEl / WorkspaceFooter. Overlay opens via `;`.
+    this.annotationOverlayEl = document.createElement('div');
+    this.annotationOverlayEl.className = 'acp-harness__anno-overlay';
+    this.annotationOverlayEl.hidden = true;
+    const annoLabel = document.createElement('div');
+    annoLabel.className = 'acp-harness__anno-overlay-label';
+    annoLabel.textContent = 'annotate';
+    this.annotationQuoteEl = document.createElement('div');
+    this.annotationQuoteEl.className = 'acp-harness__anno-overlay-quote';
+    this.annotationInputEl = document.createElement('textarea');
+    this.annotationInputEl.className = 'acp-harness__anno-overlay-input';
+    this.annotationInputEl.rows = 2;
+    this.annotationInputEl.setAttribute('placeholder', 'your note to the lane');
+    const annoHint = document.createElement('div');
+    annoHint.className = 'acp-harness__anno-overlay-hint';
+    annoHint.textContent = 'Enter add · Shift+Enter newline · Esc cancel';
+    this.annotationOverlayEl.append(annoLabel, this.annotationQuoteEl, this.annotationInputEl, annoHint);
+    commandCenter.appendChild(this.annotationOverlayEl);
+
     this.composerEl = document.createElement('div');
     this.composerEl.className = 'acp-harness__composer';
     this.composerEl.addEventListener('click', (e: MouseEvent) => {
@@ -9459,6 +9555,7 @@ export class AcpHarnessView implements ContentView {
     this.docsFeedbackQueue.dropLane(lane.id);
     this.docsArtifactQueue.dropLane(lane.id);
     this.diffReviewQueue.dropLane(lane.id);
+    this.annotationQueue.dropLane(lane.id);
     // spec 160: the lane's diff review-priority report describes a diff its now
     // dead session produced — drop it so the Diff Window stops triaging by it.
     // The store re-emits `review:priority`, ticking the footer/overlay down.
@@ -11582,6 +11679,7 @@ export class AcpHarnessView implements ContentView {
     }
     this.observeActiveTranscriptBody();
     this.schedulePretextLayout();
+    this.syncAnnotationPill();
   }
 
   private renderLanePeek(): void {
@@ -12585,7 +12683,12 @@ export class AcpHarnessView implements ContentView {
    *  no lane-head chip. */
   private composerStatusChip(lane: HarnessLane): MetaSegment[] {
     if (this.openHintMode) return textSegments('open reference: press label · Esc cancel');
-    if (this.focus === 'transcript') return textSegments('command mode: 1-9 lanes · ^M memory · f open reference · r refresh Git · ? help · i/Esc input');
+    if (this.annotationArmed) return textSegments('selection armed · c annotate · Esc dismiss');
+    if (this.focus === 'transcript') {
+      const unsent = collectUnsent(lane.transcript).length;
+      const send = unsent > 0 ? ` · s send ${unsent}` : '';
+      return textSegments(`command mode: 1-9 lanes · c annotate${send} · f open reference · r refresh Git · ? help · i/Esc input`);
+    }
     if (lane.status === 'busy') {
       return buildBusySegments({
         // Custom commands name the operation (reviewing / saving to wiki / …) so
@@ -12908,6 +13011,9 @@ export class AcpHarnessView implements ContentView {
             <dt>j / k</dt><dd>Scroll line by line</dd>
             <dt>Ctrl+d / Ctrl+u</dt><dd>Page down / up</dd>
             <dt>g / G</dt><dd>Top / bottom</dd>
+            <dt>c</dt><dd>Annotate selection (or nearest block)</dd>
+            <dt>s</dt><dd>Send unsent annotations as one turn</dd>
+            <dt>d</dt><dd>Delete last unsent annotation</dd>
             <dt>q</dt><dd>Close harness tab</dd>
           </dl>
         </section>
@@ -13568,6 +13674,272 @@ export class AcpHarnessView implements ContentView {
     return e.ctrlKey && !e.metaKey && !e.altKey && (key === 'n' || key === 'p');
   }
 
+  private armAnnotationFromSelection(): void {
+    if (this.annotationOverlayOpen) return;
+    const captured = this.captureAnnotationFromSelection();
+    if (captured === 'outside') {
+      this.disarmAnnotation();
+      this.flashChip('select inside one reply');
+      return;
+    }
+    if (!captured) {
+      this.disarmAnnotation();
+      return;
+    }
+    this.annotationArmed = captured;
+    this.syncAnnotationPill();
+    this.renderComposer();
+  }
+
+  private captureAnnotationFromSelection():
+    | {
+      itemId: string;
+      quote: string;
+      quoteIndex: number;
+      heading?: string;
+      rect: DOMRect;
+    }
+    | 'outside'
+    | null {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0);
+    const startNode = range.commonAncestorContainer;
+    const startEl = startNode.nodeType === Node.ELEMENT_NODE
+      ? startNode as Element
+      : startNode.parentElement;
+    if (!startEl) return null;
+    const annotatable = startEl.closest<HTMLElement>('[data-annotatable]');
+    if (!annotatable) {
+      if (startEl.closest('.acp-harness__lane-body')) return 'outside';
+      return null;
+    }
+    const endEl = range.endContainer.nodeType === Node.ELEMENT_NODE
+      ? range.endContainer as Element
+      : range.endContainer.parentElement;
+    if (endEl && endEl.closest('[data-annotatable]') !== annotatable) return 'outside';
+    const msg = annotatable.closest<HTMLElement>('.acp-harness__msg');
+    const itemId = msg?.dataset.msgId;
+    if (!itemId) return null;
+    const quote = capQuote(range.toString());
+    if (!quote.trim()) return null;
+    const heading = headingNear(range.startContainer, annotatable);
+    return {
+      itemId,
+      quote,
+      quoteIndex: occurrenceIndex(annotatable, quote, range),
+      heading: heading || undefined,
+      rect: range.getBoundingClientRect(),
+    };
+  }
+
+  private nearestAnnotationTarget(): {
+    itemId: string;
+    quote: string;
+    quoteIndex: number;
+    heading?: string;
+    rect: DOMRect;
+  } | null {
+    const body = this.activeTranscriptBody();
+    if (!body) return null;
+    const nodes = Array.from(body.querySelectorAll<HTMLElement>('[data-annotatable]'));
+    const target = nodes[nodes.length - 1];
+    if (!target) return null;
+    const itemId = target.closest<HTMLElement>('.acp-harness__msg')?.dataset.msgId;
+    if (!itemId) return null;
+    const bodyRect = body.getBoundingClientRect();
+    const blocks = Array.from(target.children).filter((el) => {
+      return !el.classList.contains('acp-harness__anno-rail')
+        && !el.classList.contains('acp-harness__resources')
+        && !el.classList.contains('acp-harness__lane-mail-provenance');
+    });
+    let chosen: Element = blocks[0] ?? target;
+    for (const el of blocks) {
+      if (el.getBoundingClientRect().bottom > bodyRect.top + 8) {
+        chosen = el;
+        break;
+      }
+    }
+    const quote = capQuote((chosen.textContent ?? '').trim());
+    if (!quote) return null;
+    const range = document.createRange();
+    range.selectNodeContents(chosen);
+    const heading = headingNear(chosen, target);
+    return {
+      itemId,
+      quote,
+      quoteIndex: occurrenceIndex(target, quote, range),
+      heading: heading || undefined,
+      rect: chosen.getBoundingClientRect(),
+    };
+  }
+
+  private disarmAnnotation(): void {
+    this.annotationArmed = null;
+    this.removeAnnotationPill();
+    this.renderComposer();
+  }
+
+  private openAnnotationOverlay(): void {
+    if (!this.annotationArmed) {
+      if (this.focus !== 'transcript') {
+        this.flashChip('select inside one reply');
+        return;
+      }
+      const nearest = this.nearestAnnotationTarget();
+      if (!nearest) {
+        this.flashChip('no reply to annotate');
+        return;
+      }
+      this.annotationArmed = nearest;
+    }
+    const quote = this.annotationArmed.quote.replace(/\s+/g, ' ');
+    this.annotationQuoteEl.textContent = `“${quote.slice(0, 160)}${quote.length > 160 ? '…' : ''}”`;
+    this.annotationInputEl.value = '';
+    this.annotationOverlayOpen = true;
+    this.annotationOverlayEl.hidden = false;
+    this.removeAnnotationPill();
+    this.annotationInputEl.focus();
+  }
+
+  private closeAnnotationOverlay(): void {
+    this.annotationOverlayOpen = false;
+    this.annotationOverlayEl.hidden = true;
+    this.disarmAnnotation();
+  }
+
+  private addAnnotationNote(): void {
+    const lane = this.activeLane();
+    const armed = this.annotationArmed;
+    if (!lane || !armed) return;
+    const note = capNote(this.annotationInputEl.value.trim());
+    if (!note) return;
+    if (annotationPressure(lane.transcript) >= ANNOTATION_CAP) {
+      this.flashChip('annotation queue full');
+      return;
+    }
+    const item = lane.transcript.find((row) => row.id === armed.itemId);
+    if (!item || item.kind !== 'assistant') {
+      this.flashChip('select inside one reply');
+      return;
+    }
+    const annotation: TranscriptAnnotation = {
+      id: `anno-${Date.now()}-${++this.annotationSeq}`,
+      itemId: armed.itemId,
+      quote: armed.quote,
+      quoteIndex: armed.quoteIndex,
+      heading: armed.heading,
+      body: note,
+      status: 'unsent',
+      createdAt: Date.now(),
+    };
+    item.annotations = [...(item.annotations ?? []), annotation];
+    this.annotationOverlayOpen = false;
+    this.annotationOverlayEl.hidden = true;
+    this.annotationArmed = null;
+    window.getSelection()?.removeAllRanges();
+    this.removeAnnotationPill();
+    this.renderActiveTranscript(lane);
+    this.renderComposer();
+    this.flashChip(`added · s to send ${collectUnsent(lane.transcript).length}`);
+  }
+
+  private sendAnnotationBatch(): void {
+    const lane = this.activeLane();
+    if (!lane) return;
+    const unsent = collectUnsent(lane.transcript);
+    if (unsent.length === 0) {
+      this.flashChip('nothing to send');
+      return;
+    }
+    for (const a of unsent) a.status = 'sent';
+    const outcome = this.annotationQueue.accept(lane.id, {
+      kind: 'transcript_annotation',
+      batchId: crypto.randomUUID(),
+      laneId: lane.id,
+      comments: unsent,
+      sentAt: Date.now(),
+    });
+    if (outcome === 'duplicate') {
+      this.flashChip('already sent');
+    } else {
+      this.flashChip(`sent ${unsent.length} annotation${unsent.length === 1 ? '' : 's'}`);
+    }
+    this.renderActiveTranscript(lane);
+    this.renderComposer();
+  }
+
+  private deleteLastUnsentAnnotation(): void {
+    const lane = this.activeLane();
+    if (!lane) return;
+    for (let i = lane.transcript.length - 1; i >= 0; i--) {
+      const item = lane.transcript[i];
+      const list = item.annotations;
+      if (!list || list.length === 0) continue;
+      for (let j = list.length - 1; j >= 0; j--) {
+        if (list[j].status === 'unsent') {
+          list.splice(j, 1);
+          if (list.length === 0) item.annotations = undefined;
+          this.renderActiveTranscript(lane);
+          this.renderComposer();
+          return;
+        }
+      }
+    }
+    this.flashChip('nothing unsent to delete');
+  }
+
+  private deleteAnnotationById(id: string): void {
+    const lane = this.activeLane();
+    if (!lane) return;
+    for (const item of lane.transcript) {
+      const list = item.annotations;
+      if (!list) continue;
+      const idx = list.findIndex((a) => a.id === id && a.status === 'unsent');
+      if (idx < 0) continue;
+      list.splice(idx, 1);
+      if (list.length === 0) item.annotations = undefined;
+      this.renderActiveTranscript(lane);
+      this.renderComposer();
+      return;
+    }
+  }
+
+  private markAnnotationsStatus(lane: HarnessLane, ids: string[], status: TranscriptAnnotation['status']): void {
+    const wanted = new Set(ids);
+    for (const item of lane.transcript) {
+      for (const a of item.annotations ?? []) {
+        if (wanted.has(a.id)) a.status = status;
+      }
+    }
+  }
+
+  private removeAnnotationPill(): void {
+    this.activeTranscriptBody()?.querySelector('.acp-harness__anno-pill')?.remove();
+  }
+
+  private syncAnnotationPill(): void {
+    this.removeAnnotationPill();
+    if (!this.annotationArmed || this.annotationOverlayOpen) return;
+    const body = this.activeTranscriptBody();
+    if (!body) return;
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = 'acp-harness__anno-pill';
+    pill.innerHTML = '<kbd>c</kbd> annotate · Esc dismiss';
+    const rect = this.annotationArmed.rect;
+    const br = body.getBoundingClientRect();
+    pill.style.top = `${rect.bottom - br.top + body.scrollTop + 6}px`;
+    pill.style.left = `${Math.max(8, rect.left - br.left)}px`;
+    pill.addEventListener('mousedown', (e) => e.preventDefault());
+    pill.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.openAnnotationOverlay();
+    });
+    body.appendChild(pill);
+  }
+
   private handleTranscriptKey(e: KeyboardEvent): boolean {
     const body = this.dashboardEl.querySelector<HTMLElement>('.acp-harness__lane--active .acp-harness__lane-body');
     if (!body) return false;
@@ -13584,6 +13956,21 @@ export class AcpHarnessView implements ContentView {
     if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       this.toggleHelp(true);
+      return true;
+    }
+    if (e.key === 'c' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      this.openAnnotationOverlay();
+      return true;
+    }
+    if (e.key === 's' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      this.sendAnnotationBatch();
+      return true;
+    }
+    if (e.key === 'd' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      this.deleteLastUnsentAnnotation();
       return true;
     }
     if (e.key === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey) {

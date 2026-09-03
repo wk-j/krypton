@@ -958,6 +958,7 @@
 }
 
 .acp-harness__lane-body {
+  position: relative;
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
@@ -5201,4 +5202,210 @@
   font-size: 0.8em;
   color: rgba(216, 232, 240, 0.5);
   word-break: break-all;
+}
+
+/* spec 240 — transcript annotations */
+.acp-harness__anno-mark {
+  background: color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 32%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 0.08em;
+}
+
+.acp-harness__anno-mark--sent {
+  background: color-mix(in srgb, var(--agent-gold, #ffd166) 22%, transparent);
+}
+
+.acp-harness__anno-mark--drained {
+  background: color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 14%, transparent);
+}
+
+.acp-harness__anno-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--acp-border, rgba(216, 232, 216, 0.14));
+  border-radius: var(--krypton-border-radius, 8px);
+  background: color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 6%, transparent);
+}
+
+.acp-harness__anno-rail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.7em;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgba(185, 245, 255, 0.68);
+}
+
+.acp-harness__anno-send {
+  appearance: none;
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--acp-accent-quote, #d6b8ff);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 45%, transparent);
+  border-radius: 5px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.acp-harness__anno-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+  color: rgba(216, 232, 216, 0.42);
+  border-color: rgba(216, 232, 216, 0.14);
+}
+
+.acp-harness__anno-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.acp-harness__anno-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.92em;
+  line-height: 1.4;
+}
+
+.acp-harness__anno-note::before {
+  content: "· ";
+  color: var(--acp-accent-quote, #d6b8ff);
+}
+
+.acp-harness__anno-item--unsent .acp-harness__anno-note {
+  color: var(--acp-accent-quote, #d6b8ff);
+}
+
+.acp-harness__anno-item--sent .acp-harness__anno-note {
+  color: var(--agent-gold, #ffd166);
+}
+
+.acp-harness__anno-item--sent .acp-harness__anno-note::before {
+  color: var(--agent-gold, #ffd166);
+}
+
+.acp-harness__anno-item--drained .acp-harness__anno-note,
+.acp-harness__anno-item--drained .acp-harness__anno-note::before {
+  color: rgba(216, 232, 216, 0.45);
+}
+
+.acp-harness__anno-item--drifted .acp-harness__anno-note::after {
+  content: " (drifted)";
+  color: var(--agent-error, #ff6d8a);
+}
+
+.acp-harness__anno-del {
+  appearance: none;
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(216, 232, 216, 0.45);
+  background: transparent;
+  border: 1px solid rgba(216, 232, 216, 0.14);
+  border-radius: 4px;
+  padding: 0 6px;
+  cursor: pointer;
+}
+
+.acp-harness__anno-pill {
+  position: absolute;
+  z-index: 4;
+  font: inherit;
+  font-size: 11px;
+  color: var(--agent-text, #eaf3ea);
+  background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
+  border: 1px solid var(--acp-accent-quote, #d6b8ff);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.acp-harness__anno-pill kbd {
+  font: inherit;
+  color: var(--acp-accent-quote, #d6b8ff);
+}
+
+.acp-harness__anno-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 45%, transparent);
+  background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
+}
+
+/* The annotation editor belongs to the active conversation, not the global
+   command-center chrome. Keep its horizontal bounds aligned with the
+   dashboard's conversation column in layouts that reserve side rails. */
+.acp-harness--zen .acp-harness__anno-overlay {
+  margin-left: clamp(180px, 14vw, 240px);
+}
+
+.acp-harness--ticket-active .acp-harness__anno-overlay {
+  margin-right: 352px;
+}
+
+.acp-harness--ticket-collapsed .acp-harness__anno-overlay {
+  margin-right: 46px;
+}
+
+@container (max-width: 959px) {
+  .acp-harness--ticket-expanded .acp-harness__anno-overlay {
+    margin-right: 0;
+  }
+}
+
+.acp-harness__anno-overlay[hidden] {
+  display: none;
+}
+
+.acp-harness__anno-overlay-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--acp-accent-quote, #d6b8ff);
+}
+
+.acp-harness__anno-overlay-quote {
+  font-size: 1em;
+  color: rgba(216, 232, 216, 0.62);
+  max-height: 3.2em;
+  overflow: hidden;
+}
+
+.acp-harness__anno-overlay-input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  min-height: 52px;
+  font: inherit;
+  font-size: 1em;
+  color: var(--agent-text, #eaf3ea);
+  background: rgba(216, 232, 216, 0.04);
+  border: 1px solid color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 35%, transparent);
+  border-radius: var(--krypton-border-radius, 8px);
+  padding: 6px 8px;
+  outline: none;
+}
+
+.acp-harness__anno-overlay-input:focus {
+  border-color: var(--acp-accent-quote, #d6b8ff);
+}
+
+.acp-harness__anno-overlay-hint {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: rgba(216, 232, 216, 0.42);
 }
