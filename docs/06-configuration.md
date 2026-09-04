@@ -403,12 +403,23 @@ cwd = ""                       # working directory override (empty = $HOME)
 
 [workspaces]
 startup = "coding"           # workspace to activate on launch
-gap = 8                      # pixel gap between tiled windows
-padding = 8                  # inner margin of the workspace
+# default_layout = "focus"   # grid | focus | depth | scroll
+gap = 6                      # space between tiled windows, and the workspace
+                             # edge inset in Grid/Scroll (0-64, live on Reload Config)
+padding = 0                  # reserved: parsed but not applied yet
 resize_step = 20             # pixels per arrow key press in resize mode
 move_step = 20               # pixels per arrow key press in move mode
 resize_step_large = 100      # pixels per Shift+Arrow in resize mode
 move_step_large = 100        # pixels per Shift+Arrow in move mode
+
+# Scroll layout (spec 241). Only used when default_layout = "scroll"
+# or after Leader f cycles into Scroll.
+# [workspaces.scroll]
+# default_column_width = 0.5
+# default_window_height = 1.0              # 0.15–1.0 of usable height; 1.0 = fill
+# preset_column_widths = [0.33333, 0.5, 0.66667]
+# center_focused_column = "never"          # never | always | on-overflow
+# always_center_single_column = true
 
 # Built-in presets (single, 2-column, 3-column, 2x2-grid, main+sidebar,
 # main+bottom) are always available. User definitions below can override them.
@@ -897,9 +908,14 @@ Built-in extensions (system-level, not user-configurable): Java Resource Monitor
 | Section | Key | Type | Default | Description |
 |---------|-----|------|---------|-------------|
 | `[workspaces]` | `startup` | string | `"single"` | Workspace to activate on launch |
-| `[workspaces]` | `default_layout` | string | `"focus"` | Default layout mode: `"grid"`, `"focus"`, or `"depth"` |
-| `[workspaces]` | `gap` | int | `0` | Pixel gap between tiled windows |
-| `[workspaces]` | `padding` | int | `0` | Inner margin of the workspace |
+| `[workspaces]` | `default_layout` | string | `"focus"` | Default layout mode: `"grid"`, `"focus"`, `"depth"`, or `"scroll"` |
+| `[workspaces.scroll]` | `default_column_width` | float | `0.5` | New-column width as a fraction of the usable viewport (Scroll layout) |
+| `[workspaces.scroll]` | `default_window_height` | float | `1.0` | New-window height as a fraction of the usable viewport (Scroll layout). `1.0` fills the column; smaller values top-align and leave empty space below. Clamped to `0.15`–`1.0`. Live: Resize `↓`/`↑`. |
+| `[workspaces.scroll]` | `preset_column_widths` | float[] | `[0.33333, 0.5, 0.66667]` | Widths cycled by `Leader =` in Scroll |
+| `[workspaces.scroll]` | `center_focused_column` | string | `"never"` | Camera: `"never"`, `"always"`, or `"on-overflow"` |
+| `[workspaces.scroll]` | `always_center_single_column` | bool | `true` | Center a lone column regardless of `center_focused_column` |
+| `[workspaces]` | `gap` | int | `6` | Pixel space between tiled windows. Also the workspace edge inset in **Grid** and **Scroll** (windows sit `gap` px in from the viewport edges); in **Scroll** it is both the column gap and the gap between stacked windows in a column. Clamped to `0`–`64`. Applies on **Reload Config** — no restart. **Depth** ignores it (ratio-centered), as does a lone Grid window. |
+| `[workspaces]` | `padding` | int | `0` | Reserved — parsed but not yet applied. Use `gap` for both window spacing and the workspace edge inset. |
 | `[workspaces]` | `resize_step` | int | `20` | Pixels per arrow key press in resize mode |
 | `[workspaces]` | `move_step` | int | `20` | Pixels per arrow key press in move mode |
 | `[workspaces]` | `resize_step_large` | int | `100` | Pixels per Shift+Arrow in resize mode |

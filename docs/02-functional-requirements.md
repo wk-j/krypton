@@ -97,7 +97,7 @@
 | FR-INP-034 | The system shall support **maximizing** the focused window (expand to fill workspace) and restoring via keybinding. | Must |
 | FR-INP-035 | The system shall support **swapping** two windows' positions via keybinding (e.g., `Leader+S` then select target window). | Should |
 | FR-INP-036 | The system shall support resetting the current workspace to its default layout via keybinding. | Should |
-| FR-INP-037 | The system shall support toggling a **focus layout** (`Leader+F`) where the focused window occupies the left column at full height and remaining windows stack vertically on the right. Changing focus swaps the newly focused window to the left column. New windows replace the current left window, pushing it to the stack. Toggling again returns to the default grid layout. | Should |
+| FR-INP-037 | The system shall support cycling workspace layout modes with `Leader+F`: **Grid** → **Focus** → **Depth** → **Scroll** → Grid. Focus layout puts the focused window in the left column at full height with the rest stacked on the right. Scroll layout (spec 241) places windows in columns on a horizontal strip so a new window does not resize existing ones; `Cmd+Shift+</>` cycles focus in strip order without wrapping. | Should |
 | FR-INP-038 | The system shall support toggling the workspace footer between compact and detail density via keyboard (`Leader ?`) and command palette action. | Should |
 
 ### 3.5.5 Tab Navigation (Keyboard)
@@ -167,7 +167,8 @@
 | FR-WIN-009 | Windows shall be resizable via keyboard (primary) and optionally via mouse drag on edges/corners (secondary). | Must |
 | FR-WIN-010 | The system shall support **pinning** a window via keybinding (`Leader p` toggle). A pinned window sticks to the right column in Focus layout and is skipped during focus cycling (`Cmd+Shift+</>`) but can receive focus via click or directional navigation. | Should |
 | FR-WIN-011 | Pinned windows shall display a visual indicator (icon in title bar) distinguishing them from unpinned windows. | Should |
-| FR-WIN-012 | Pin state shall only affect Focus layout; in Grid layout pinned windows tile normally. | Should |
+| FR-WIN-012 | Pin state shall only affect Focus layout; in Grid, Depth, and Scroll layouts pinned windows tile (or stack) normally. | Should |
+| FR-WS-040 | The system shall support a **Scroll** layout (spec 241): windows sit in columns on a horizontal strip; a new window does not resize existing columns. New windows take `[workspaces.scroll] default_column_width` and `default_window_height`. `Leader h/l` focus columns, `Leader j/k` focus within a column, `Leader ,` / `Leader .` consume or expel (unless the focused view owns those keys), `Leader =` cycles preset column widths, Resize `↓`/`↑` change window height, and `Cmd+Shift+</>` cycles strip order. Strip navigation shall not wrap: `Leader h/l`, `Leader j/k`, and `Cmd+Shift+</>` are no-ops at the ends of the strip or column (no circular scroll). | Should |
 
 ### 3.8.3 Layout Positioning
 
@@ -179,7 +180,7 @@
 | FR-WS-023 | Grid positions shall be defined as `{ col, row, col_span, row_span }` within an `N x M` grid. | Must |
 | FR-WS-024 | The workspace fills the full screen; window positions are calculated from the screen dimensions and the grid definition. | Must |
 | FR-WS-025 | The system shall recalculate window positions if screen resolution changes. | Must |
-| FR-WS-026 | The system shall support a `gap` property (in pixels) for spacing between tiled windows. | Should |
+| FR-WS-026 | The system shall support a `[workspaces] gap` property (in pixels, default `6`, clamped `0`–`64`) for the space between tiled windows, which also serves as the workspace edge inset in Grid and Scroll. Changing it shall take effect on **Reload Config** without a restart, and shall not change the layout mode the user cycled to. | Should |
 | FR-WS-027 | The system shall support a `padding` property for inner margins of the workspace. | Should |
 | FR-WS-028 | Each window in a workspace may optionally specify a shell command, working directory, or profile to auto-launch. | Should |
 

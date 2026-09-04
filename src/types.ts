@@ -91,7 +91,33 @@ export enum LayoutMode {
   Focus = 'Focus',
   /** Z-Stack: windows layered in depth like cards, focused at front */
   Depth = 'Depth',
+  /** niri-style: columns on an infinite horizontal strip (spec 241) */
+  Scroll = 'Scroll',
 }
+
+/** Width of a Scroll-layout column. v1 is proportion of usable viewport width. */
+export interface ColumnWidth {
+  kind: 'proportion';
+  value: number;
+}
+
+/** One column on the Scroll strip. `windowIds` is top → bottom and never empty. */
+export interface ScrollColumn {
+  windowIds: WindowId[];
+  width: ColumnWidth;
+  /**
+   * Height of each window as a proportion of usable viewport height,
+   * parallel to `windowIds`. Short arrays pack as 1 (fill).
+   */
+  heights: number[];
+}
+
+export interface ScrollState {
+  columns: ScrollColumn[];
+  cameraX: number;
+}
+
+export type CenterFocusedColumn = 'never' | 'always' | 'on-overflow';
 
 /** A slot in the grid layout */
 export interface GridSlot {

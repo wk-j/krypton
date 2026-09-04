@@ -4,7 +4,7 @@
 
 import { invoke } from './profiler/ipc';
 import { Compositor } from './compositor';
-import type { DashboardShortcut } from './types';
+import { LayoutMode, type DashboardShortcut } from './types';
 import type { PaletteAction, PaletteContext, PaletteSection } from './palette-types';
 import type { WorkspaceFooter } from './workspace-footer';
 
@@ -592,10 +592,34 @@ export class CommandPalette {
     // ── Layout actions ──
     this.register({
       id: 'layout.toggle',
-      label: 'Toggle Grid/Focus Layout',
+      label: 'Cycle Layout (Grid/Focus/Depth/Scroll)',
       category: 'Layout',
       keybinding: 'Leader f',
       execute: () => c.toggleFocusLayout(),
+    });
+    this.register({
+      id: 'layout.scroll',
+      label: 'Layout: Scroll',
+      category: 'Layout',
+      execute: () => c.applyLayoutMode(LayoutMode.Scroll),
+    });
+    this.register({
+      id: 'layout.grid',
+      label: 'Layout: Grid',
+      category: 'Layout',
+      execute: () => c.applyLayoutMode(LayoutMode.Grid),
+    });
+    this.register({
+      id: 'layout.focus',
+      label: 'Layout: Focus',
+      category: 'Layout',
+      execute: () => c.applyLayoutMode(LayoutMode.Focus),
+    });
+    this.register({
+      id: 'layout.depth',
+      label: 'Layout: Depth',
+      category: 'Layout',
+      execute: () => c.applyLayoutMode(LayoutMode.Depth),
     });
 
     // ── Tab actions ──

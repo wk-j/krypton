@@ -26,6 +26,7 @@ type ModeChangeCallback = (
   mode: Mode,
   contentType: PaneContentType | null,
   leaderKeys: LeaderKeyBinding[],
+  layoutMode: LayoutMode,
 ) => void;
 
 export class InputRouter {
@@ -340,8 +341,9 @@ export class InputRouter {
 
     const contentType = this.compositor.getFocusedContentType();
     const leaderKeys = mode === Mode.Compositor ? this.getEnabledFocusedLeaderKeyBindings() : [];
+    const layoutMode = this.compositor.currentLayoutMode;
     for (const cb of this.modeChangeCallbacks) {
-      cb(mode, contentType, leaderKeys);
+      cb(mode, contentType, leaderKeys, layoutMode);
     }
   }
 
@@ -430,13 +432,13 @@ export class InputRouter {
         }
       }
 
-      // Global: Cmd+Shift+< cycle focus next (forward through stack)
-      // Global: Cmd+Shift+> cycle focus previous (backward through stack)
+      // Global: Cmd+Shift+> cycle focus next (forward: right/down in visual order)
+      // Global: Cmd+Shift+< cycle focus previous (backward)
       // Match on code (Comma/Period) since key value varies with Cmd held on macOS
       if (e.metaKey && e.shiftKey && (e.code === 'Comma' || e.code === 'Period')) {
         e.preventDefault();
         e.stopPropagation();
-        this.compositor.focusCycle(e.code === 'Comma' ? 1 : -1);
+        this.compositor.focusCycle(e.code === 'Period' ? 1 : -1);
         return;
       }
 
@@ -828,6 +830,26 @@ export class InputRouter {
       // Toggle workspace footer compact/detail density
       case '?':
         this.workspaceFooter?.toggleDensity();
+        break;
+
+      // Scroll tiling: consume-or-expel (niri Mod+, / Mod+.)
+      case ',':
+        if (this.compositor.currentLayoutMode === LayoutMode.Scroll) {
+          this.compositor.scrollConsumeOrExpel(-1);
+        }
+        this.toNormal();
+        break;
+      case '.':
+        if (this.compositor.currentLayoutMode === LayoutMode.Scroll) {
+          this.compositor.scrollConsumeOrExpel(1);
+        }
+        this.toNormal();
+        break;
+      case '=':
+        if (this.compositor.currentLayoutMode === LayoutMode.Scroll) {
+          this.compositor.scrollCycleColumnWidth();
+        }
+        this.toNormal();
         break;
 
       // Toggle maximize

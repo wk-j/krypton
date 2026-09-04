@@ -143,6 +143,17 @@ pub struct WorkspacesConfig {
     pub move_step: u32,
     pub resize_step_large: u32,
     pub move_step_large: u32,
+    pub scroll: ScrollLayoutConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScrollLayoutConfig {
+    pub default_column_width: f64,
+    pub default_window_height: f64,
+    pub preset_column_widths: Vec<f64>,
+    pub center_focused_column: String,
+    pub always_center_single_column: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -784,6 +795,19 @@ impl Default for WorkspacesConfig {
             move_step: 20,
             resize_step_large: 100,
             move_step_large: 100,
+            scroll: ScrollLayoutConfig::default(),
+        }
+    }
+}
+
+impl Default for ScrollLayoutConfig {
+    fn default() -> Self {
+        Self {
+            default_column_width: 0.5,
+            default_window_height: 1.0,
+            preset_column_widths: vec![1.0 / 3.0, 0.5, 2.0 / 3.0],
+            center_focused_column: "never".to_string(),
+            always_center_single_column: true,
         }
     }
 }

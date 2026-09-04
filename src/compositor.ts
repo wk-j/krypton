@@ -34,8 +34,32 @@ import {
   type ProcessInfo,
   type ProcessCandidate,
   type CapturedImage,
+  type ScrollState,
 } from './types';
 import { autoTile, focusTile, resolveGridSlot } from './layout';
+import {
+  adjustColumnWidth,
+  adjustWindowHeight,
+  applyScrollCamera,
+  boundsForPack,
+  clampScrollCamera,
+  columnsFromWindowOrder,
+  consumeOrExpel,
+  cyclePresetWidth,
+  DEFAULT_SCROLL_LAYOUT,
+  findWindowInStrip,
+  insertColumnAfter,
+  moveScrollColumn,
+  nextInStripOrder,
+  packColumns,
+  parseCenterMode,
+  removeWindowFromStrip,
+  reorderScrollWindow,
+  stripOrder,
+  syncScrollColumns,
+  usableViewport,
+  type ScrollLayoutConfig,
+} from './scroll-layout';
 import { AnimationEngine, BoundsSnapshot } from './animation';
 import { SoundEngine } from './sound';
 import { ShaderEngine } from './shaders';
@@ -280,6 +304,10 @@ export class Compositor {
   private focusVisualOrder: WindowId[] = [];
   /** Ordered list of window IDs from front (index 0) to back in Depth layout. */
   private depthOrder: WindowId[] = [];
+  /** niri-style strip (spec 241). Meaningful only while layoutMode === Scroll. */
+  private scrollState: ScrollState = { columns: [], cameraX: 0 };
+  private scrollConfig: ScrollLayoutConfig = { ...DEFAULT_SCROLL_LAYOUT };
+  private scrollPrevFocusCol = 0;
   /** When a window is maximized, store its ID here. Only one window can be maximized at a time. */
   private maximizedWindowId: WindowId | null = null;
   /** Animation engine for layout transitions and window effects */
@@ -323,8 +351,10 @@ export class Compositor {
   private cursorBlink = true;
   /** Pixels per arrow key step in resize/move mode */
   private stepSize = 20;
-  /** Window gap in pixels */
+  /** Window gap in pixels — space between tiled windows (`[workspaces] gap`) */
   private windowGap = 6;
+  /** False until the first applyConfig(); later applies are hot reloads. */
+  private configApplied = false;
   /** Config-driven window backdrop opacity (overrides theme alpha) */
   private configOpacity: number | null = null;
 
@@ -501,19 +531,39 @@ export class Compositor {
       animation: validAnims.includes(qtAnim as any) ? qtAnim as QuickTerminalAnimation : 'slide',
     };
 
-    // Workspaces
-    this.windowGap = config.workspaces.gap;
+    // Workspaces. The gap is the space between tiled windows and doubles as
+    // the workspace edge inset (Grid/Scroll); clamped so a bad TOML value
+    // cannot collapse or eat the viewport.
+    this.windowGap = Math.max(0, Math.min(64, Math.round(config.workspaces.gap)));
     this.stepSize = config.workspaces.resize_step;
 
-    // Default layout mode
-    const layoutStr = config.workspaces.default_layout?.toLowerCase();
-    if (layoutStr === 'grid') {
-      this.layoutMode = LayoutMode.Grid;
-    } else if (layoutStr === 'depth') {
-      this.layoutMode = LayoutMode.Depth;
-    } else {
-      this.layoutMode = LayoutMode.Focus;
+    // Default layout mode — startup only. A hot reload must not yank the user
+    // out of the layout they cycled to with `Leader f`.
+    if (!this.configApplied) {
+      const layoutStr = config.workspaces.default_layout?.toLowerCase();
+      if (layoutStr === 'grid') {
+        this.layoutMode = LayoutMode.Grid;
+      } else if (layoutStr === 'depth') {
+        this.layoutMode = LayoutMode.Depth;
+      } else if (layoutStr === 'scroll') {
+        this.layoutMode = LayoutMode.Scroll;
+      } else {
+        this.layoutMode = LayoutMode.Focus;
+      }
     }
+
+    const scrollCfg = config.workspaces.scroll;
+    this.scrollConfig = {
+      defaultColumnWidth: scrollCfg?.default_column_width ?? DEFAULT_SCROLL_LAYOUT.defaultColumnWidth,
+      defaultWindowHeight: scrollCfg?.default_window_height ?? DEFAULT_SCROLL_LAYOUT.defaultWindowHeight,
+      presetColumnWidths: scrollCfg?.preset_column_widths?.length
+        ? scrollCfg.preset_column_widths
+        : DEFAULT_SCROLL_LAYOUT.presetColumnWidths,
+      centerFocusedColumn: parseCenterMode(scrollCfg?.center_focused_column),
+      alwaysCenterSingleColumn: scrollCfg?.always_center_single_column ?? true,
+      minColumnPx: DEFAULT_SCROLL_LAYOUT.minColumnPx,
+      minWindowPx: DEFAULT_SCROLL_LAYOUT.minWindowPx,
+    };
 
     // Sound
     this.sound.applyConfig(config.sound);
@@ -610,6 +660,21 @@ export class Compositor {
         config.visual.window_border === false,
       );
     }
+
+    this.configApplied = true;
+  }
+
+  /** Re-tile after a config reload so layout-affecting values (window gap,
+   *  resize step) take effect without a restart. */
+  private relayoutAfterConfig(): void {
+    if (this.windows.size === 0) return;
+    // A maximized window owns the whole workspace; leave it alone and let the
+    // new gap apply when the user restores.
+    if (this.maximizedWindowId) return;
+    const snapshots = this.snapshotBounds();
+    this.relayout();
+    this.fitAll();
+    this.animateRelayout(snapshots);
   }
 
   /** Reload config and theme from the backend and re-apply everything.
@@ -642,6 +707,8 @@ export class Compositor {
       cb(config);
     }
 
+    this.relayoutAfterConfig();
+
     console.log('[Krypton] Config reloaded via command palette');
   }
 
@@ -651,6 +718,7 @@ export class Compositor {
     for (const cb of this.onConfigReloadCallbacks) {
       cb(config);
     }
+    this.relayoutAfterConfig();
   }
 
   /** Register a callback to be invoked after config reload with the fresh config. */
@@ -2207,7 +2275,9 @@ export class Compositor {
 
     // Focus the new window BEFORE relayout so that Focus layout
     // places it on the left (main) column immediately.
+    const previousFocus = this.focusedWindowId;
     this.focusWindowQuiet(id);
+    this.scrollInsertNewWindow(id, previousFocus);
 
     // Snapshot existing window positions, relayout, then animate the transition
     const snapshots = this.snapshotBounds();
@@ -2394,7 +2464,9 @@ export class Compositor {
     this.updateTabBar(win);
     this.syncWindowFooter(win);
 
+    const previousFocus = this.focusedWindowId;
     this.focusWindowQuiet(id);
+    this.scrollInsertNewWindow(id, previousFocus);
     const snapshots = this.snapshotBounds();
     this.relayout();
     await this.nextFrame();
@@ -4139,13 +4211,21 @@ export class Compositor {
     win.element.remove();
 
     // Snapshot remaining windows before relayout
+    const scrollClose = this.layoutMode === LayoutMode.Scroll
+      ? removeWindowFromStrip(this.scrollState.columns, id)
+      : null;
+    if (scrollClose) this.scrollState.columns = scrollClose.columns;
+
     this.windows.delete(id);
     const snapshots = this.snapshotBounds();
 
     if (this.focusedWindowId === id) {
       const remaining = this.windowIds;
-      if (remaining.length > 0) {
-        this.focusWindow(remaining[remaining.length - 1]);
+      const nextId = scrollClose?.focusId && this.windows.has(scrollClose.focusId)
+        ? scrollClose.focusId
+        : remaining.length > 0 ? remaining[remaining.length - 1] : null;
+      if (nextId) {
+        this.focusWindowQuiet(nextId);
       } else {
         this.focusedWindowId = null;
         this.notifyFocusChange();
@@ -4209,7 +4289,12 @@ export class Compositor {
     // In Focus layout, the focused window is always the left (main) panel.
     // Relayout so the newly focused window swaps to the left and the
     // previously focused window moves into the right stack.
-    if ((this.layoutMode === LayoutMode.Focus || this.layoutMode === LayoutMode.Depth) && previousId !== id && this.windows.size > 1) {
+    // Scroll: camera follows the newly focused column.
+    const needsRelayout = previousId !== id && (
+      this.layoutMode === LayoutMode.Scroll
+      || ((this.layoutMode === LayoutMode.Focus || this.layoutMode === LayoutMode.Depth) && this.windows.size > 1)
+    );
+    if (needsRelayout) {
       const snapshots = this.snapshotBounds();
       this.relayout();
       this.fitAll();
@@ -4219,6 +4304,14 @@ export class Compositor {
 
   /** Focus window by direction relative to current focused window */
   focusDirection(direction: 'left' | 'down' | 'up' | 'right'): void {
+    if (this.layoutMode === LayoutMode.Scroll) {
+      if (direction === 'left' || direction === 'right') {
+        this.scrollFocusColumn(direction === 'left' ? -1 : 1);
+      } else {
+        this.scrollFocusRow(direction === 'up' ? -1 : 1);
+      }
+      return;
+    }
     if (!this.focusedWindowId || this.windows.size <= 1) return;
     const bestId = this.findWindowInDirection(this.focusedWindowId, direction);
     if (bestId) {
@@ -4232,6 +4325,11 @@ export class Compositor {
    * The order wraps around so all windows are always reachable.
    */
   focusByIndex(index: number): void {
+    if (this.layoutMode === LayoutMode.Scroll) {
+      const order = stripOrder(this.scrollState.columns);
+      if (index >= 1 && index <= order.length) this.focusWindow(order[index - 1]);
+      return;
+    }
     const ids = this.windowIds;
     if (ids.length === 0 || index < 1 || index > ids.length) return;
 
@@ -4248,6 +4346,10 @@ export class Compositor {
    * the originally focused window (now at the target's old position).
    */
   swapInDirection(direction: 'left' | 'down' | 'up' | 'right'): void {
+    if (this.layoutMode === LayoutMode.Scroll) {
+      this.scrollMove(direction);
+      return;
+    }
     if (!this.focusedWindowId) return;
     const current = this.windows.get(this.focusedWindowId);
     if (!current) return;
@@ -4358,6 +4460,13 @@ export class Compositor {
    */
   focusCycle(direction: 1 | -1): void {
     if (this.windows.size <= 1) return;
+
+    if (this.layoutMode === LayoutMode.Scroll) {
+      // Scroll never wraps: stop at either end of the strip (spec 241).
+      const next = nextInStripOrder(this.scrollState.columns, this.focusedWindowId, direction);
+      if (next) this.focusWindow(next);
+      return;
+    }
 
     if (this.layoutMode === LayoutMode.Focus && this.focusVisualOrder.length > 1) {
       // Use the visual order captured during the last relayout,
@@ -4601,27 +4710,32 @@ export class Compositor {
     return this.layoutMode;
   }
 
-  /** Cycle layout modes: Grid → Focus → Depth → Grid */
+  /** Cycle layout modes: Grid → Focus → Depth → Scroll → Grid */
   async toggleFocusLayout(): Promise<void> {
+    const order: LayoutMode[] = [
+      LayoutMode.Grid,
+      LayoutMode.Focus,
+      LayoutMode.Depth,
+      LayoutMode.Scroll,
+    ];
+    const idx = order.indexOf(this.layoutMode);
+    const next = order[(idx + 1) % order.length];
+    await this.applyLayoutMode(next);
+  }
+
+  /** Jump to a layout mode, converting strip/grid state as needed. */
+  async applyLayoutMode(mode: LayoutMode): Promise<void> {
+    if (this.layoutMode === mode) return;
     this.sound.play('layout.toggle');
     const snapshots = this.snapshotBounds();
     const prev = this.layoutMode;
 
-    // Cycle: Grid → Focus → Depth → Grid
-    if (prev === LayoutMode.Grid) {
-      this.layoutMode = LayoutMode.Focus;
-    } else if (prev === LayoutMode.Focus) {
-      this.layoutMode = LayoutMode.Depth;
-    } else {
-      this.layoutMode = LayoutMode.Grid;
-    }
+    if (prev === LayoutMode.Depth) this.clearDepthStyles();
+    if (prev === LayoutMode.Scroll) this.leaveScrollLayout();
 
-    // Clear depth styles when leaving Depth mode
-    if (prev === LayoutMode.Depth) {
-      this.clearDepthStyles();
-    }
+    this.layoutMode = mode;
+    if (mode === LayoutMode.Scroll) this.enterScrollLayout();
 
-    // Exit maximize when switching layout
     this.maximizedWindowId = null;
     this.showAllWindows();
     this.relayout();
@@ -5699,6 +5813,10 @@ export class Compositor {
 
   /** Resize the focused window by a directional step */
   resizeFocused(direction: 'left' | 'down' | 'up' | 'right'): void {
+    if (this.layoutMode === LayoutMode.Scroll) {
+      this.resizeScrollColumn(direction);
+      return;
+    }
     if (!this.focusedWindowId) return;
     const win = this.windows.get(this.focusedWindowId);
     if (!win) return;
@@ -5726,6 +5844,10 @@ export class Compositor {
 
   /** Move the focused window by a directional step */
   moveFocused(direction: 'left' | 'down' | 'up' | 'right'): void {
+    if (this.layoutMode === LayoutMode.Scroll) {
+      this.scrollMove(direction);
+      return;
+    }
     if (!this.focusedWindowId) return;
     const win = this.windows.get(this.focusedWindowId);
     if (!win) return;
@@ -5806,7 +5928,6 @@ export class Compositor {
   /** Single grid window: size as fraction of viewport (centered, not filled) */
   private static readonly DEFAULT_WIDTH_RATIO = 0.95;
   private static readonly DEFAULT_HEIGHT_RATIO = 0.90;
-  private static readonly WINDOW_GAP = 6;
   /** Height of the fixed bottom workspace footer rail (matches
    *  .krypton-workspace-footer height in workspace-footer.css). Grid layouts
    *  reserve this space so windows don't overlap the status bar. */
@@ -5825,6 +5946,12 @@ export class Compositor {
 
     const vw = window.innerWidth;
     const vh = window.innerHeight;
+
+    if (this.layoutMode === LayoutMode.Scroll) {
+      this.relayoutScroll(vw, vh, true);
+      collector.layoutEnd();
+      return;
+    }
 
     // Single window
     if (count === 1) {
@@ -6201,6 +6328,215 @@ export class Compositor {
     }
     await this.animation.depthShuffle(layers, 'backward');
     this.replayBufferedInput();
+  }
+
+  // ─── Scroll tiling (spec 241) ────────────────────────────────────
+
+  private enterScrollLayout(): void {
+    const wins = Array.from(this.windows.values()).sort((a, b) => {
+      const dx = a.bounds.x - b.bounds.x;
+      return dx !== 0 ? dx : a.bounds.y - b.bounds.y;
+    });
+    this.scrollState = {
+      columns: columnsFromWindowOrder(
+        wins.map((w) => w.id),
+        this.scrollConfig.defaultColumnWidth,
+        this.scrollConfig.defaultWindowHeight,
+      ),
+      cameraX: 0,
+    };
+    this.scrollPrevFocusCol = 0;
+  }
+
+  private leaveScrollLayout(): void {
+    const next = new Map<WindowId, KryptonWindow>();
+    for (const id of stripOrder(this.scrollState.columns)) {
+      const win = this.windows.get(id);
+      if (win) next.set(id, win);
+    }
+    for (const [id, win] of this.windows) {
+      if (!next.has(id)) next.set(id, win);
+    }
+    this.windows = next;
+    this.scrollState = { columns: [], cameraX: 0 };
+    this.scrollPrevFocusCol = 0;
+  }
+
+  private scrollInsertNewWindow(id: WindowId, previousFocus: WindowId | null): void {
+    if (this.layoutMode !== LayoutMode.Scroll) return;
+    const loc = previousFocus && previousFocus !== id
+      ? findWindowInStrip(this.scrollState.columns, previousFocus)
+      : null;
+    const focusedCol = loc ? loc.col : Math.max(0, this.scrollState.columns.length - 1);
+    this.scrollState.columns = insertColumnAfter(
+      this.scrollState.columns,
+      focusedCol,
+      id,
+      this.scrollConfig.defaultColumnWidth,
+      this.scrollConfig.defaultWindowHeight,
+    );
+  }
+
+  private relayoutScroll(vw: number, vh: number, snap: boolean): void {
+    this.scrollState.columns = syncScrollColumns(
+      this.scrollState.columns,
+      this.windowIds,
+      this.scrollConfig.defaultColumnWidth,
+      this.scrollConfig.defaultWindowHeight,
+    );
+    const gap = this.windowGap;
+    const { usableW, usableH } = usableViewport(vw, vh, gap, Compositor.FOOTER_HEIGHT);
+    const packed = packColumns(
+      this.scrollState.columns,
+      usableW,
+      usableH,
+      gap,
+      this.scrollConfig.minColumnPx,
+      this.scrollConfig.minWindowPx,
+    );
+    const loc = this.focusedWindowId
+      ? findWindowInStrip(this.scrollState.columns, this.focusedWindowId)
+      : null;
+    const focusedCol = loc?.col ?? 0;
+    if (snap) {
+      this.scrollState.cameraX = applyScrollCamera(
+        packed,
+        this.scrollState.cameraX,
+        focusedCol,
+        this.scrollPrevFocusCol,
+        this.scrollConfig,
+      );
+    } else {
+      this.scrollState.cameraX = clampScrollCamera(this.scrollState.cameraX, packed);
+    }
+    this.scrollPrevFocusCol = focusedCol;
+
+    const bounds = boundsForPack(packed, this.scrollState.cameraX);
+    for (const [id, b] of bounds) {
+      const win = this.windows.get(id);
+      if (!win) continue;
+      const at = findWindowInStrip(this.scrollState.columns, id);
+      win.gridSlot = { col: at?.col ?? 0, row: at?.row ?? 0, colSpan: 1, rowSpan: 1 };
+      win.bounds = {
+        x: Math.round(b.x),
+        y: Math.round(b.y),
+        width: Math.round(b.width),
+        height: Math.round(b.height),
+      };
+      this.applyBounds(win);
+    }
+  }
+
+  private scrollFocusColumn(dir: -1 | 1): void {
+    if (!this.focusedWindowId) return;
+    const loc = findWindowInStrip(this.scrollState.columns, this.focusedWindowId);
+    if (!loc) return;
+    const dest = loc.col + dir;
+    const col = this.scrollState.columns[dest];
+    if (!col) return;
+    const row = Math.min(loc.row, col.windowIds.length - 1);
+    this.focusWindow(col.windowIds[row]);
+  }
+
+  private scrollFocusRow(dir: -1 | 1): void {
+    if (!this.focusedWindowId) return;
+    const loc = findWindowInStrip(this.scrollState.columns, this.focusedWindowId);
+    if (!loc) return;
+    const col = this.scrollState.columns[loc.col];
+    const dest = loc.row + dir;
+    if (!col || dest < 0 || dest >= col.windowIds.length) return;
+    this.focusWindow(col.windowIds[dest]);
+  }
+
+  scrollConsumeOrExpel(dir: -1 | 1): void {
+    if (this.layoutMode !== LayoutMode.Scroll || !this.focusedWindowId) return;
+    const result = consumeOrExpel(
+      this.scrollState.columns,
+      this.focusedWindowId,
+      dir,
+      this.scrollConfig.defaultColumnWidth,
+    );
+    if (!result) return;
+    const snapshots = this.snapshotBounds();
+    this.scrollState.columns = result.columns;
+    this.focusWindowQuiet(result.focusId);
+    this.relayout();
+    this.fitAll();
+    this.animateRelayout(snapshots);
+    this.sound.play('swap.complete');
+  }
+
+  scrollCycleColumnWidth(): void {
+    if (this.layoutMode !== LayoutMode.Scroll || !this.focusedWindowId) return;
+    const loc = findWindowInStrip(this.scrollState.columns, this.focusedWindowId);
+    if (!loc) return;
+    const snapshots = this.snapshotBounds();
+    const next = this.scrollState.columns.slice();
+    const src = next[loc.col];
+    next[loc.col] = {
+      windowIds: src.windowIds.slice(),
+      width: cyclePresetWidth(src.width, this.scrollConfig.presetColumnWidths),
+      heights: src.heights.slice(),
+    };
+    this.scrollState.columns = next;
+    this.relayout();
+    this.fitAll();
+    this.animateRelayout(snapshots);
+    this.sound.play('resize.step');
+  }
+
+  private resizeScrollColumn(direction: 'left' | 'down' | 'up' | 'right'): void {
+    if (!this.focusedWindowId) return;
+    const loc = findWindowInStrip(this.scrollState.columns, this.focusedWindowId);
+    if (!loc) return;
+    const { usableW, usableH } = usableViewport(
+      window.innerWidth,
+      window.innerHeight,
+      this.windowGap,
+      Compositor.FOOTER_HEIGHT,
+    );
+    if (direction === 'up' || direction === 'down') {
+      const delta = this.stepSize / usableH;
+      this.scrollState.columns = adjustWindowHeight(
+        this.scrollState.columns,
+        loc.col,
+        loc.row,
+        direction === 'down' ? delta : -delta,
+      );
+    } else {
+      const delta = this.stepSize / usableW;
+      this.scrollState.columns = adjustColumnWidth(
+        this.scrollState.columns,
+        loc.col,
+        direction === 'right' ? delta : -delta,
+      );
+    }
+    this.relayout();
+    this.fitAll();
+  }
+
+  private scrollMove(direction: 'left' | 'down' | 'up' | 'right'): void {
+    if (!this.focusedWindowId) return;
+    const loc = findWindowInStrip(this.scrollState.columns, this.focusedWindowId);
+    if (!loc) return;
+    const snapshots = this.snapshotBounds();
+    if (direction === 'left' || direction === 'right') {
+      this.scrollState.columns = moveScrollColumn(
+        this.scrollState.columns,
+        loc.col,
+        direction === 'left' ? -1 : 1,
+      );
+    } else {
+      this.scrollState.columns = reorderScrollWindow(
+        this.scrollState.columns,
+        loc.col,
+        loc.row,
+        direction === 'up' ? -1 : 1,
+      );
+    }
+    this.relayout();
+    this.fitAll();
+    this.animateRelayout(snapshots);
   }
 
   /** Fit all terminals to their containers and resize PTYs */
@@ -6660,6 +6996,16 @@ export class Compositor {
   // ─── Window Resize Handler ───────────────────────────────────────
 
   private setupResizeHandler(): void {
+    this.workspace.addEventListener('wheel', (e: WheelEvent) => {
+      if (this.layoutMode !== LayoutMode.Scroll) return;
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('.krypton-window, .krypton-workspace-footer')) return;
+      e.preventDefault();
+      this.scrollState.cameraX += e.deltaX + e.deltaY;
+      this.relayoutScroll(window.innerWidth, window.innerHeight, false);
+    }, { passive: false });
+
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     window.addEventListener('resize', () => {
       if (resizeTimer) clearTimeout(resizeTimer);

@@ -163,7 +163,7 @@ The compositor is a TypeScript module running in the webview that manages worksp
 
 1. **Workspace rendering** — display the active workspace; show/hide windows when switching workspaces
 2. **Window rendering** — create/destroy window DOM containers, each hosting an xterm.js instance with custom chrome
-3. **Layout engine** — compute window positions from grid definitions relative to the workspace (full screen). Supports multiple layout modes: **Grid** (balanced auto-tile) and **Focus** (focused window on left at full height, remaining windows stacked on right)
+3. **Layout engine** — compute window positions from grid definitions relative to the workspace (full screen). Supports four layout modes: **Grid** (balanced auto-tile), **Focus** (focused window on left at full height, remaining windows stacked on right), **Depth** (Z-stack card deck), and **Scroll** (niri-style columns on a horizontal strip; new windows use `default_column_width` and `default_window_height`; spec 241)
 4. **Input routing & mode management** — manage keyboard modes (normal, compositor, resize, move) and route keys accordingly
 5. **Focus management** — track which window is focused; route keyboard events to the focused window's PTY in normal mode
 6. **Keyboard-driven window control** — handle window move, resize, swap, maximize, and focus cycling via keybindings
@@ -405,7 +405,7 @@ The Config Manager (`src-tauri/src/config.rs`) handles loading and serving the T
 - **Shell config**: `spawn_pty` command accepts optional `shell`/`shell_args` params from the frontend, falling back to config values, then `$SHELL`.
 - **Exit detection**: each PTY session has a reader thread for output/progress events and a child wait thread for lifecycle events. Either PTY EOF/error or child exit emits `pty-exit`; the frontend de-duplicates duplicate exit events.
 
-Frontend counterpart: `src/config.ts` defines matching TypeScript interfaces and a `loadConfig()` function. The compositor's `applyConfig()` method applies settings (font, terminal, theme colors, Quick Terminal sizing, workspace gap/step sizes) before the first window is created.
+Frontend counterpart: `src/config.ts` defines matching TypeScript interfaces and a `loadConfig()` function. The compositor's `applyConfig()` method applies settings (font, terminal, theme colors, Quick Terminal sizing, workspace gap/step sizes) before the first window is created. It is also re-run on **Reload Config** / the `config-changed` event, after which `relayoutAfterConfig()` re-tiles so a changed `[workspaces] gap` lands without a restart (skipped while a window is maximized). `default_layout` is honored on the **first** apply only, so a reload never yanks the user out of the layout they cycled into with `Leader f`.
 
 ## 5.6 Workspace Manager (Backend)
 

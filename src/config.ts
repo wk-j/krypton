@@ -60,6 +60,14 @@ export interface QuickTerminalConfig {
   cwd: string;
 }
 
+export interface WorkspacesScrollConfig {
+  default_column_width: number;
+  default_window_height: number;
+  preset_column_widths: number[];
+  center_focused_column: string;
+  always_center_single_column: boolean;
+}
+
 export interface WorkspacesConfig {
   startup: string;
   default_layout: string;
@@ -69,6 +77,7 @@ export interface WorkspacesConfig {
   move_step: number;
   resize_step_large: number;
   move_step_large: number;
+  scroll?: WorkspacesScrollConfig;
 }
 
 export interface SoundConfig {

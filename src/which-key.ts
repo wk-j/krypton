@@ -3,7 +3,7 @@
 // when entering a non-Normal mode.
 
 import type { LeaderKeyBinding, PaneContentType } from './types';
-import { Mode } from './types';
+import { LayoutMode, Mode } from './types';
 
 /** A single keybinding entry displayed in the popup */
 interface KeyEntry {
@@ -30,6 +30,25 @@ function groupEntries(group: string, entries: KeyEntry[]): KeyEntry[] {
 }
 
 /** Keybindings per mode — compositor keys are content-type-aware */
+const SCROLL_WINDOW_KEYS: KeyEntry[] = groupEntries('Windows', [
+  { key: 'n', label: 'New Window' },
+  { key: 'x', label: 'Close Window', effect: 'danger' },
+  { key: 'h', label: 'Column Left' },
+  { key: 'j', label: 'Window Down' },
+  { key: 'k', label: 'Window Up' },
+  { key: 'l', label: 'Column Right' },
+  { key: ',', label: 'Consume/Expel Left' },
+  { key: '.', label: 'Consume/Expel Right' },
+  { key: '=', label: 'Cycle Column Width' },
+  { key: '1-9', label: 'Focus By Index' },
+  { key: 'f', label: 'Cycle Layout' },
+  { key: 'r', label: 'Resize Mode', effect: 'important' },
+  { key: 'm', label: 'Move Mode', effect: 'important' },
+  { key: 's', label: 'Swap Mode', effect: 'important' },
+  { key: 'z', label: 'Maximize', effect: 'important' },
+  { key: 'p', label: 'Pin Window' },
+]);
+
 const COMPOSITOR_KEYS: KeyEntry[] = [
   ...groupEntries('Windows', [
     { key: 'n', label: 'New Window' },
@@ -39,7 +58,7 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
     { key: 'k', label: 'Focus Up' },
     { key: 'l', label: 'Focus Right' },
     { key: '1-9', label: 'Focus By Index' },
-    { key: 'f', label: 'Focus Layout' },
+    { key: 'f', label: 'Cycle Layout' },
     { key: 'r', label: 'Resize Mode', effect: 'important' },  // Shift+R = Review Board (AI group)
     { key: 'm', label: 'Move Mode', effect: 'important' },
     { key: 's', label: 'Swap Mode', effect: 'important' },
@@ -98,6 +117,11 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
   ...groupEntries('Markdown', [
     { key: 'o', label: 'Markdown Viewer', effect: 'important', contentTypes: ['markdown'] },
   ]),
+];
+
+const SCROLL_COMPOSITOR_KEYS: KeyEntry[] = [
+  ...SCROLL_WINDOW_KEYS,
+  ...COMPOSITOR_KEYS.filter((e) => e.group !== 'Windows'),
 ];
 
 const RESIZE_KEYS: KeyEntry[] = [
@@ -195,6 +219,7 @@ export class WhichKey {
     mode: Mode,
     contentType: PaneContentType | null = null,
     focusedLeaderKeys: LeaderKeyBinding[] = [],
+    layoutMode: LayoutMode = LayoutMode.Focus,
   ): void {
     if (mode === Mode.Normal) {
       this.hide();
@@ -207,12 +232,17 @@ export class WhichKey {
     switch (mode) {
       case Mode.Compositor:
         entries = [
-          ...filterByContentType(COMPOSITOR_KEYS, contentType),
+          ...filterByContentType(
+            layoutMode === LayoutMode.Scroll ? SCROLL_COMPOSITOR_KEYS : COMPOSITOR_KEYS,
+            contentType,
+          ),
           ...leaderBindingsToEntries(focusedLeaderKeys),
         ];
         titleText = contentType
           ? `Compositor · ${contentType}`
-          : 'Compositor';
+          : layoutMode === LayoutMode.Scroll
+            ? 'Compositor · Scroll'
+            : 'Compositor';
         break;
       case Mode.Resize:
         entries = RESIZE_KEYS;
