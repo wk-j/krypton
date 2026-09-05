@@ -806,7 +806,7 @@ impl Default for ScrollLayoutConfig {
             default_column_width: 0.5,
             default_window_height: 1.0,
             preset_column_widths: vec![1.0 / 3.0, 0.5, 2.0 / 3.0],
-            center_focused_column: "never".to_string(),
+            center_focused_column: "always".to_string(),
             always_center_single_column: true,
         }
     }

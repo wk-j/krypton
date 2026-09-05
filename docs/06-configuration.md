@@ -418,7 +418,7 @@ move_step_large = 100        # pixels per Shift+Arrow in move mode
 # default_column_width = 0.5
 # default_window_height = 1.0              # 0.15–1.0 of usable height; 1.0 = fill
 # preset_column_widths = [0.33333, 0.5, 0.66667]
-# center_focused_column = "never"          # never | always | on-overflow
+# center_focused_column = "always"         # never | always | on-overflow
 # always_center_single_column = true
 
 # Built-in presets (single, 2-column, 3-column, 2x2-grid, main+sidebar,
@@ -912,7 +912,7 @@ Built-in extensions (system-level, not user-configurable): Java Resource Monitor
 | `[workspaces.scroll]` | `default_column_width` | float | `0.5` | New-column width as a fraction of the usable viewport (Scroll layout) |
 | `[workspaces.scroll]` | `default_window_height` | float | `1.0` | New-window height as a fraction of the usable viewport (Scroll layout). `1.0` fills the column; smaller values top-align and leave empty space below. Clamped to `0.15`–`1.0`. Live: Resize `↓`/`↑`. |
 | `[workspaces.scroll]` | `preset_column_widths` | float[] | `[0.33333, 0.5, 0.66667]` | Widths cycled by `Leader =` in Scroll |
-| `[workspaces.scroll]` | `center_focused_column` | string | `"never"` | Camera: `"never"`, `"always"`, or `"on-overflow"` |
+| `[workspaces.scroll]` | `center_focused_column` | string | `"always"` | Camera: `"always"` keeps the focused column in the horizontal center of the screen; `"never"` snaps it to the near edge; `"on-overflow"` centers only when the previous and focused columns cannot both fit |
 | `[workspaces.scroll]` | `always_center_single_column` | bool | `true` | Center a lone column regardless of `center_focused_column` |
 | `[workspaces]` | `gap` | int | `6` | Pixel space between tiled windows. Also the workspace edge inset in **Grid** and **Scroll** (windows sit `gap` px in from the viewport edges); in **Scroll** it is both the column gap and the gap between stacked windows in a column. Clamped to `0`–`64`. Applies on **Reload Config** — no restart. **Depth** ignores it (ratio-centered), as does a lone Grid window. |
 | `[workspaces]` | `padding` | int | `0` | Reserved — parsed but not yet applied. Use `gap` for both window spacing and the workspace edge inset. |

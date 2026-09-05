@@ -13,6 +13,7 @@ import {
   insertColumnAfter,
   nextInStripOrder,
   packColumns,
+  parseCenterMode,
   proportionWidth,
   removeWindowFromStrip,
   stripOrder,
@@ -106,7 +107,8 @@ describe('scroll camera', () => {
   it('never-mode snaps an off-screen focused column onto the right edge', () => {
     const columns = [col(['a']), col(['b']), col(['c'])];
     const packed = pack(columns);
-    const cam = applyScrollCamera(packed, 0, 2, 0, DEFAULT_SCROLL_LAYOUT);
+    const config = { ...DEFAULT_SCROLL_LAYOUT, centerFocusedColumn: 'never' as const };
+    const cam = applyScrollCamera(packed, 0, 2, 0, config);
     const focused = packed.columns[2];
     expect(focused.stripX).toBeGreaterThanOrEqual(cam - 0.5);
     expect(focused.stripX + focused.pixelW).toBeLessThanOrEqual(cam + packed.usableW + 0.5);
@@ -125,6 +127,24 @@ describe('scroll camera', () => {
     const cam = applyScrollCamera(packed, 0, 1, 0, config);
     const col1 = packed.columns[1];
     expect(cam).toBeCloseTo(col1.stripX + col1.pixelW / 2 - packed.usableW / 2);
+  });
+
+  it('ships always-center so the focused column sits in the middle of the screen', () => {
+    expect(DEFAULT_SCROLL_LAYOUT.centerFocusedColumn).toBe('always');
+    const packed = pack([col(['a']), col(['b']), col(['c'])]);
+    const cam = applyScrollCamera(packed, 0, 2, 0, DEFAULT_SCROLL_LAYOUT);
+    const focused = packed.columns[2];
+    const bounds = boundsForPack(packed, cam).get('c')!;
+    expect(cam).toBeCloseTo(focused.stripX + focused.pixelW / 2 - packed.usableW / 2);
+    expect(bounds.x + bounds.width / 2).toBeCloseTo(VW / 2, 0);
+  });
+
+  it('parses missing or unknown center mode as always', () => {
+    expect(parseCenterMode(undefined)).toBe('always');
+    expect(parseCenterMode('always')).toBe('always');
+    expect(parseCenterMode('never')).toBe('never');
+    expect(parseCenterMode('on-overflow')).toBe('on-overflow');
+    expect(parseCenterMode('nope')).toBe('always');
   });
 });
 

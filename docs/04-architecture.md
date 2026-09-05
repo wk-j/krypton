@@ -163,7 +163,7 @@ The compositor is a TypeScript module running in the webview that manages worksp
 
 1. **Workspace rendering** — display the active workspace; show/hide windows when switching workspaces
 2. **Window rendering** — create/destroy window DOM containers, each hosting an xterm.js instance with custom chrome
-3. **Layout engine** — compute window positions from grid definitions relative to the workspace (full screen). Supports four layout modes: **Grid** (balanced auto-tile), **Focus** (focused window on left at full height, remaining windows stacked on right), **Depth** (Z-stack card deck), and **Scroll** (niri-style columns on a horizontal strip; new windows use `default_column_width` and `default_window_height`; spec 241)
+3. **Layout engine** — compute window positions from grid definitions relative to the workspace (full screen). Supports four layout modes: **Grid** (balanced auto-tile), **Focus** (focused window on left at full height, remaining windows stacked on right), **Depth** (Z-stack card deck), and **Scroll** (niri-style columns on a horizontal strip; camera centers the focused column; new windows use `default_column_width` and `default_window_height`; spec 241)
 4. **Input routing & mode management** — manage keyboard modes (normal, compositor, resize, move) and route keys accordingly
 5. **Focus management** — track which window is focused; route keyboard events to the focused window's PTY in normal mode
 6. **Keyboard-driven window control** — handle window move, resize, swap, maximize, and focus cycling via keybindings

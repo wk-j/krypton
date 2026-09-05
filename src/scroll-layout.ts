@@ -24,7 +24,7 @@ export const DEFAULT_SCROLL_LAYOUT: ScrollLayoutConfig = {
   defaultColumnWidth: 0.5,
   defaultWindowHeight: 1,
   presetColumnWidths: [1 / 3, 0.5, 2 / 3],
-  centerFocusedColumn: 'never',
+  centerFocusedColumn: 'always',
   alwaysCenterSingleColumn: true,
   minColumnPx: 160,
   minWindowPx: 120,
@@ -58,8 +58,8 @@ export interface WindowLocation {
 }
 
 export function parseCenterMode(value: string | undefined): CenterFocusedColumn {
-  if (value === 'always' || value === 'on-overflow') return value;
-  return 'never';
+  if (value === 'never' || value === 'on-overflow' || value === 'always') return value;
+  return 'always';
 }
 
 export function proportionWidth(value: number): ColumnWidth {

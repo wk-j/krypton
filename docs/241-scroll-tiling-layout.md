@@ -12,7 +12,7 @@ Krypton's Grid and Focus modes **reflow** every window when one is created or cl
 
 Add a fourth compositor mode, **`Scroll`**, modeled on niri's scrollable tiling (not niri's workspaces, overview, or tabbed columns).
 
-Windows sit in **columns** on a horizontal strip. A column is one or more Krypton windows stacked full-height. New windows become a new column to the right of focus at a default width; other columns keep their widths. A **camera** (`scrollCameraX`) pans so the focused column is fully on screen. Off-strip neighbors peek in leftover viewport space.
+Windows sit in **columns** on a horizontal strip. A column is one or more Krypton windows stacked full-height. New windows become a new column to the right of focus at a default width; other columns keep their widths. A **camera** (`scrollCameraX`) pans so the focused column stays in the horizontal center of the screen. Off-strip neighbors peek in leftover viewport space.
 
 **Why not replace Grid:** Grid/Focus/Depth stay. Scroll is opt-in via `Leader f` cycle and `[workspaces].default_layout = "scroll"`.
 
@@ -46,7 +46,7 @@ Windows keep `position: absolute` bounds (`applyBounds`). The camera is applied 
 | **i3 / Sway / Zellij / tmux** | Tree or auto-tile; new pane **reflows** siblings | Opposite of niri; matches Krypton Grid today |
 | **Krypton Grid/Focus** | Auto-tile / 65–35 main+stack; every add/close relayouts all | What Scroll must not do |
 
-**Krypton delta** — match niri's two rules: *new window does not resize others*; *focused window does not jump when something changes to its left*. Diverge: no niri workspaces/overview/floating/tabbed-columns; keys stay on the Leader map (`h/j/k/l`, `,` `.`, `=`) instead of Super; mouse wheel is secondary.
+**Krypton delta** — match niri's two rules: *new window does not resize others*; *focused window does not jump when something changes to its left*. Diverge: shipped camera is `center_focused_column = "always"` (niri ships `never`) so the active window stays in the center of the screen; no niri workspaces/overview/floating/tabbed-columns; keys stay on the Leader map (`h/j/k/l`, `,` `.`, `=`) instead of Super; mouse wheel is secondary.
 
 ## Affected Files
 
@@ -105,11 +105,11 @@ Usable viewport: `vw - 2*gap` wide, `vh - FOOTER_HEIGHT - 2*gap` tall (same inse
 
 **Pack.** Left-to-right: `pixelW = clamp(proportion * usableW, MIN_COL_PX, usableW)`; `stripX` accumulates `pixelW + gap`. Each window stores a height proportion of usableH (default `default_window_height`, shipped `1` = fill). Requested `px = proportion * usableH`. The stack is **vertically centered** in the column: if it plus gaps fits, leftover space is split evenly above and below; if it overflows, scale all heights in that column so they fit (leftover 0, so centering is a no-op). A column of all-`1` windows therefore still splits equally — same as v1.
 
-**Camera (`never`, default).** Keep the focused column fully visible: if it starts left of `cameraX`, snap left; if it ends right of `cameraX + usableW`, snap right. Clamp to `[0, max(0, stripW - usableW)]` except:
+**Camera (`always`, default).** Center the focused column: `cameraX = colMid - usableW/2` (may be negative so a first, last, or narrow column sits in the middle of the screen). Neighbors peek in leftover space.
 
-- `always`: `cameraX = colMid - usableW/2` (may be negative so a narrow column centers).
-- `always-center-single-column` (default **true**): one column is always centered.
+- `never`: keep the focused column fully visible — if it starts left of `cameraX`, snap left; if it ends right of `cameraX + usableW`, snap right. Clamp to `[0, max(0, stripW - usableW)]`.
 - `on-overflow`: center only when focused + previously focused do not both fit.
+- `always-center-single-column` (default **true**): one column is always centered, even if the user sets `center_focused_column = "never"`.
 
 **Stationary focus.** Inserting/closing a column **to the left** of the focused column shifts `cameraX` by the same delta so the focused column's screen X does not jump. Inserting to the right does not move `cameraX` except to bring a newly focused column on screen.
 
@@ -174,7 +174,7 @@ default_layout = "focus"   # now also: "scroll"
 default_column_width = 0.5
 default_window_height = 1.0              # 0.15–1.0 of usable height; 1.0 = fill
 preset_column_widths = [0.33333, 0.5, 0.66667]
-center_focused_column = "never"          # never | always | on-overflow
+center_focused_column = "always"         # never | always | on-overflow
 always_center_single_column = true
 ```
 
