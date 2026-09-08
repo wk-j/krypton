@@ -548,7 +548,7 @@ Gemini is available only in the standalone ACP agent view. The multi-lane ACP Ha
 | Cursor | `cursor-agent acp` |
 | Junie | `junie --acp true` |
 | OMP | `omp acp` |
-| Grok | `grok agent stdio` |
+| Grok | `grok --trust agent stdio` |
 | Copilot | `copilot --acp --stdio` |
 | MiMo | `mimo acp` |
 | Cline | `cline --acp` |
@@ -622,7 +622,7 @@ OMP is a regular permission-gated lane, but it native-loads project root `.mcp.j
 
 Optional: `acp_harness.lane_models.omp.active` is accepted for the lane model chip, but Krypton does not pass it to OMP at spawn or via `session/set_model` until either path is verified to take effect under `omp acp`.
 
-**Grok lane prerequisites.** The Grok lane uses xAI Grok Build's native ACP mode (`grok agent stdio`). Install the CLI (macOS/Linux):
+**Grok lane prerequisites.** The Grok lane uses xAI Grok Build's native ACP mode (`grok --trust agent stdio`). `--trust` is required because Grok 1.0.13 skips every repo-local MCP server (project `.mcp.json`) until the folder is in `~/.grok/trusted_folders.toml`; ACP has no TUI `/hooks-trust` prompt, so without the flag `search_tool` returns an empty catalog. The flag records the cwd as trusted (same store as the TUI). Install the CLI (macOS/Linux):
 
 ```sh
 curl -fsSL https://x.ai/cli/install.sh | bash

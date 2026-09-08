@@ -42,19 +42,19 @@ Adopt Grok Build's **native** ACP mode (`grok agent stdio`) as the 10th harness 
 | Krypton (9 existing lanes) | `builtin_backends()` hard-codes `(id, command, args, display_name)`. Regular lanes (Codex/Claude/Gemini/OpenCode/Droid) get the `.mcp.json` bridge + memory MCP + permission rail; lean lanes (Pi) skip it. Lanes are user-added via the lane picker (`acp_list_backends`); there is no default-spawn list. |
 | Droid (Spec 86) | Native ACP `droid exec --output-format acp`; model via `-m` at spawn; regular lane. Closest sibling to Grok. |
 
-**Krypton delta** — match xAI's documented invocation exactly (`grok agent stdio`). Treat Grok as a "regular" lane (full bridge, memory MCP, permission rail). The only Krypton concession is the OAuth-needs-TTY caveat shared with Pi/Claude/Cursor/Junie (document, don't wrap). Net-new vs. the Droid template: a 10th accent color, since the palette currently holds 9.
+**Krypton delta** — spawn `grok --trust agent stdio` (`--trust` is a global flag and must precede `agent`; `grok agent --trust` is rejected). ACP has no TUI `/hooks-trust` prompt, so without `--trust` Grok 1.0.13 silently skips every repo-local MCP server in an untrusted folder (`search_tool` returns `results: []` / "No MCP tools are available in this session"). `--trust` records the cwd in `~/.grok/trusted_folders.toml` (same store as the TUI). Opening a Grok lane is implicit workspace trust — Claude/Codex already load `.mcp.json` via the spec-83 bridge without this gate. Treat Grok as a "regular" lane (full bridge, memory MCP, permission rail). The other Krypton concession is the OAuth-needs-TTY caveat shared with Pi/Claude/Cursor/Junie (document, don't wrap). Net-new vs. the Droid template: a 10th accent color, since the palette currently holds 9.
 
 ## Affected Files
 
 | File | Change |
 |------|--------|
-| `src-tauri/src/acp.rs` | Add `("grok", AcpBackend { command: "grok", args: ["agent", "stdio"], display_name: "Grok" })` to `builtin_backends()`. Add `grok` arm to `startup_hint()` (install/auth/version hints). **No** model-flag arm in v1 — see Model Override. |
+| `src-tauri/src/acp.rs` | Add `("grok", AcpBackend { command: "grok", args: ["--trust", "agent", "stdio"], display_name: "Grok" })` to `builtin_backends()`. `--trust` is required so repo-local MCP starts without a TUI trust prompt. Add `grok` arm to `startup_hint()` (install/auth/version hints). **No** model-flag arm in v1 — see Model Override. |
 | `src-tauri/src/acp_harness_config.rs` | Add `"grok"` to `BUILTIN_BACKEND_IDS` (`:23`). Its doc comment states it mirrors the frontend `BACKEND_LABELS` keys; without this, directive management rejects `grok` as an unknown backend target (`:195`). |
 | `src/acp/acp-harness-view.ts` | `BACKEND_LABELS`: add `grok: 'Grok'`. `backendLogoId`: add `case 'grok' → 'krypton-logo-grok'`. `BACKEND_LOGO_SVG_DEFS`: add a `krypton-logo-grok` `<symbol>`. `laneAccentForLabel`: add `if (/grok/i.test(label)) return laneAccent(10);`. `laneAccent`: append a 10th accent color. No `inferLaneModelName` change (Grok reports its model via `initialize`; config override already handled generically). No `mcpServersForLane` skip clause. |
 | `src/styles/acp-harness.css` | Add backend palette token `--krypton-backend-grok` (`:31-39` block) + tint classes `.acp-harness__rail-logo--grok` (`:2387`) and `.acp-harness__directive-logo--grok` (`:3357`). The TS render path derives the class suffix from `BACKEND_LABELS[...] ? backendId : 'omp'`, so without these the Grok glyph renders but is **untinted**. This `--krypton-backend-*` system is separate from the positional `laneAccent` rail palette. |
 | `src/acp/acp-harness-view.test.ts` | Add `laneAccentForLabel('Grok-1') === laneAccent(10)` + `!== laneAccent(1)`; `backendLogoId('grok') === 'krypton-logo-grok'`; update the existing "keeps the N-color palette" test to assert **10** distinct slots `[1..10]`. |
 | `docs/PROGRESS.md` | Record Spec 135 under M-ACP. |
-| `docs/04-architecture.md` | Add Grok to the lane list: regular lane (bridge + memory MCP), auth `XAI_API_KEY` / browser-OAuth-needs-TTY, command `grok agent stdio`. |
+| `docs/04-architecture.md` | Add Grok to the lane list: regular lane (bridge + memory MCP), auth `XAI_API_KEY` / browser-OAuth-needs-TTY, command `grok --trust agent stdio`. |
 | `docs/06-configuration.md` | New "Grok lane prerequisites" subsection: install, `XAI_API_KEY`, optional `[acp_harness.lane_models.grok]`. |
 
 No changes to `src/acp/types.ts`, `src/acp/client.ts`, `src/acp/mcp-bridge.ts`. No new Tauri commands. Grok surfaces in the lane picker automatically once in `builtin_backends()` (picker reads `acp_list_backends`). Optionally refresh the supported-backend doc comments in `src-tauri/src/config.rs` / `src/config.ts` if they enumerate backends (cosmetic, non-blocking).
@@ -73,7 +73,11 @@ No new types.
     "grok",
     AcpBackend {
         command: "grok".to_string(),
-        args: vec!["agent".to_string(), "stdio".to_string()],
+        args: vec![
+            "--trust".to_string(),
+            "agent".to_string(),
+            "stdio".to_string(),
+        ],
         display_name: "Grok".to_string(),
     },
 ),
@@ -100,7 +104,9 @@ Scope note: `laneAccentForLabel('Grok-1') → laneAccent(10)` only fixes the **b
 
 ### MCP Bridge
 
-Unchanged code path. `mcpServersForLane` applies the `.mcp.json` bridge + `memoryServerForLane` (per-lane HTTP memory) for Grok, capability-gated against `mcpCapabilities`. No skip clause. If a live Grok build ignores `session/new mcpServers` (Cursor-style regression), follow up with a native-config workaround in a fast-follow — not in this spec's baseline.
+Unchanged code path for *which* servers are injected. `mcpServersForLane` applies the `.mcp.json` bridge + `memoryServerForLane` (per-lane HTTP memory) for Grok, capability-gated against `mcpCapabilities`. No skip clause. If a live Grok build ignores `session/new mcpServers` (Cursor-style regression), follow up with a native-config workaround in a fast-follow — not in this spec's baseline.
+
+Grok *also* native-loads project `.mcp.json` (and compat sources) itself. Those repo-local servers are gated on folder trust (`~/.grok/trusted_folders.toml`). The TUI prompts `/hooks-trust` on first open; `grok agent stdio` has no such prompt and skips them with `folder untrusted: skipping repo-local (project-scoped) MCP server`. Spawn therefore includes `--trust` so a Grok lane in a new repo actually starts those servers (and so `search_tool` is not an empty catalog). The grant persists for later TUI/ACP sessions in that folder.
 
 ### Permission & Tool-call Flow
 
@@ -147,6 +153,7 @@ export XAI_API_KEY="xai-..."
 - **Browser-OAuth path** → no TTY in Krypton; user runs `grok` once outside, cached creds cover the lane.
 - **Configured model not honored** → v1 has no spawn flag, so a bad model id surfaces non-fatally via `apply_session_model` (logged `session/set_model failed`), not a spawn crash; the lane still starts on Grok's default.
 - **Grok ignores `session/new mcpServers`** (Cursor-style) → memory MCP silently absent; detected during verification → native-config fast-follow.
+- **Untrusted folder** → Grok 1.0.13 starts zero repo-local MCP servers (`grok mcp doctor` reports `folder untrusted` / "re-run with `--trust`"). ACP spawn always passes `--trust` so this does not depend on a prior TUI session. `--trust` writes `~/.grok/trusted_folders.toml`; it does not change permission mode.
 - **Image paste** → only if Grok advertises `promptCapabilities.image`. Existing gating handles it.
 - **Agent image file reads** → Spec 228: Grok does not get `readTextFile`, so `read_file` on png/jpeg/webp uses Grok's native embed path. A leftover `fs/read_text_file` on a binary file returns `binary file (<kind>, N bytes); fs/read_text_file is text-only` instead of Rust's UTF-8 IO string.
 - **Plan mode** → session-dir write allowlist + auto-approve `_x.ai/exit_plan_mode` (see above). Interactive plan review UI is not implemented; exit is auto-approved so the lane can continue.

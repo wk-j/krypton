@@ -126,7 +126,18 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
             "grok",
             AcpBackend {
                 command: "grok".to_string(),
-                args: vec!["agent".to_string(), "stdio".to_string()],
+                // `--trust` is a global grok flag (must precede `agent`). ACP has
+                // no TUI `/hooks-trust` prompt, so without it Grok 1.0.13 skips
+                // every repo-local MCP server in an untrusted folder
+                // (`search_tool` returns an empty catalog). Opening a Grok lane
+                // is implicit workspace trust — same as Claude already loading
+                // `.mcp.json` via the spec-83 bridge. Records the cwd in
+                // `~/.grok/trusted_folders.toml`.
+                args: vec![
+                    "--trust".to_string(),
+                    "agent".to_string(),
+                    "stdio".to_string(),
+                ],
                 display_name: "Grok".to_string(),
             },
         ),
@@ -2705,7 +2716,8 @@ mod tests {
     use super::{
         advertise_read_text_file, binary_read_error, disconnect_detail, effective_spawn_model,
         fs_path_in_scope, grok_ask_user_ext_response, grok_ask_user_skip, grok_session_dir_for_cwd,
-        is_under_grok_session_dir, percent_encode_path, sniff_binary_kind, startup_hint, FsAccess,
+        is_under_grok_session_dir, percent_encode_path, resolve_backend, sniff_binary_kind,
+        startup_hint, FsAccess,
     };
     use serde_json::json;
     use std::path::{Path, PathBuf};
@@ -3144,6 +3156,16 @@ mod tests {
         let hint = startup_hint("claude", "omp: unknown command acp");
 
         assert!(!hint.contains("OMP CLI predates native ACP mode"));
+    }
+
+    #[test]
+    fn grok_spawn_passes_trust_before_agent_stdio() {
+        // `grok agent --trust` is rejected; the flag is global and must precede
+        // the `agent` subcommand. Without it, untrusted folders silently start
+        // zero repo-local MCP servers (tli-migration: empty search_tool catalog).
+        let grok = resolve_backend("grok").expect("grok backend");
+        assert_eq!(grok.command, "grok");
+        assert_eq!(grok.args, ["--trust", "agent", "stdio"]);
     }
 
     #[test]
