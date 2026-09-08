@@ -88,7 +88,7 @@ describe('usage summaries', () => {
     ).toEqual([]);
   });
 
-  it('labels codex windows by their actual duration, not a fixed 5h/week slot', () => {
+  it('shows only account-level codex windows and excludes model buckets', () => {
     // Post-mid-2026 Codex payload: primary IS the weekly window, no secondary.
     const weeklyOnly: CodexUsage = {
       primary: { usedPercent: 19, windowMinutes: 10080, resetsAt: 1784783452 },
@@ -126,11 +126,7 @@ describe('usage summaries', () => {
     };
     expect(
       summarizeUsage({ provider: 'codex', data: multiBucket, error: null, pending: false }).quotas,
-    ).toEqual([
-      { label: 'week', usedPercent: 19 },
-      { label: 'spark 5h', usedPercent: 42 },
-      { label: 'spark week', usedPercent: 7 },
-    ]);
+    ).toEqual([{ label: 'week', usedPercent: 19 }]);
   });
 
   it('derives codex window labels from minutes', () => {

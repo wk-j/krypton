@@ -160,8 +160,7 @@ export function providerForBackend(backendId: string): UsageProvider | null {
 }
 
 /** Codex quota label derived from the window's ACTUAL duration. Slot meaning
- *  is not fixed: the default bucket can be weekly-only while a model-scoped
- *  bucket carries both 5h and weekly windows. */
+ *  is not fixed: the default bucket can be weekly-only. */
 export function codexWindowLabel(windowMinutes: number): string {
   if (!Number.isFinite(windowMinutes) || windowMinutes <= 0) return 'window';
   if (windowMinutes % 10080 === 0) {
@@ -171,10 +170,6 @@ export function codexWindowLabel(windowMinutes: number): string {
   if (windowMinutes % 1440 === 0) return `${windowMinutes / 1440}d`;
   if (windowMinutes % 60 === 0) return `${windowMinutes / 60}h`;
   return `${windowMinutes}m`;
-}
-
-function codexScopedLabel(name: string): string {
-  return name.replace(/^gpt-[\d.]+-codex-/i, '').toLowerCase();
 }
 
 export function summarizeUsage(state: ProviderUsageState): ProviderUsageSummary {
@@ -193,15 +188,6 @@ export function summarizeUsage(state: ProviderUsageState): ProviderUsageSummary 
     const u = data as CodexUsage;
     if (u.primary) quotas.push(quota(codexWindowLabel(u.primary.windowMinutes), u.primary.usedPercent));
     if (u.secondary) quotas.push(quota(codexWindowLabel(u.secondary.windowMinutes), u.secondary.usedPercent));
-    for (const scoped of u.scopedLimits ?? []) {
-      const name = codexScopedLabel(scoped.name);
-      if (scoped.primary) {
-        quotas.push(quota(`${name} ${codexWindowLabel(scoped.primary.windowMinutes)}`, scoped.primary.usedPercent));
-      }
-      if (scoped.secondary) {
-        quotas.push(quota(`${name} ${codexWindowLabel(scoped.secondary.windowMinutes)}`, scoped.secondary.usedPercent));
-      }
-    }
   } else if (state.provider === 'copilot' && data) {
     const u = data as CopilotUsage;
     if (u.premium && !u.premium.unlimited) quotas.push(quota('premium', u.premium.usedPercent));

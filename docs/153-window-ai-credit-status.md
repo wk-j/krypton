@@ -130,7 +130,7 @@ when membership changes, not for lane status/model changes.
 | Provider | Normal-width quota labels | Notes |
 |----------|---------------------------|-------|
 | Claude | `5h`, `week`, optional `opus`, optional `sonnet`, one label per model-scoped weekly window (lowercased name, e.g. `fable` — spec 187) | Extra-credit dollars remain detail-view only |
-| Codex | `5h`, `week` | Local snapshot may be stale |
+| Codex | account-level `5h`, `week` | Model-specific buckets remain in the detailed `Leader $` view and do not clutter the window footer |
 | Copilot | `premium`, `chat`, `complete` | Unlimited quotas omitted |
 | Cursor | `month`; legacy fallback `requests` | Spend dollars remain detail-view only |
 
@@ -185,6 +185,9 @@ The existing footer becomes:
   `ContentView` contract. The quotas are the compressible half — the lane strip is
   `flex: none`, so a narrow window loses quota detail before lane identity.
 - Normal width shows every primary quota for every declared provider.
+- Codex renders only the account-level `5h` and `week` windows, matching the
+  compact status in ChatGPT. Named model buckets such as Spark and GPT Reserve
+  remain available in the detailed `Leader $` usage view.
 - When the footer cannot fit, CSS hides secondary quotas and leaves one
   `mostConstrained` quota per provider.
 - If provider segments still cannot fit, the whole usage status clips with an
