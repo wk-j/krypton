@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (241)
+## Specs (242)
 
 | # | Spec |
 |---|------|
@@ -245,6 +245,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 239 | [Agent Ticket Management](./239-agent-ticket-management.md) |
 | 240 | [Harness Transcript Annotation](./240-harness-transcript-annotation.md) |
 | 241 | [Scroll Tiling Layout (niri-style)](./241-scroll-tiling-layout.md) |
+| 242 | [`#ticket github` Browser Opener](./242-ticket-github-browser-opener.md) |
 
 ## ADRs (20)
 
