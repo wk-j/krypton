@@ -7,6 +7,39 @@ type SidebarMode = 'files' | 'backlinks' | 'outline' | 'tags';
 type FileSortField = 'title' | 'updated' | 'modified' | 'name' | 'type';
 type FileSortOrder = 'asc' | 'desc';
 
+const VAULT_SCROLL_LERP = 0.24;
+const VAULT_SCROLL_SNAP_PX = 0.5;
+
+/** Advance one frame toward a keyboard-scroll target. Exported so the motion
+ *  contract stays testable without a browser or timing-sensitive assertions. */
+export function smoothVaultScrollStep(
+  scrollTop: number,
+  target: number,
+): { scrollTop: number; done: boolean } {
+  const delta = target - scrollTop;
+  const distance = Math.abs(delta);
+  if (distance <= VAULT_SCROLL_SNAP_PX) return { scrollTop: target, done: true };
+
+  const travel = Math.min(distance, Math.max(1, distance * VAULT_SCROLL_LERP));
+  const next = scrollTop + Math.sign(delta) * travel;
+  if (Math.abs(target - next) <= VAULT_SCROLL_SNAP_PX) {
+    return { scrollTop: target, done: true };
+  }
+  return { scrollTop: next, done: false };
+}
+
+export function nextVaultScrollTarget(
+  scrollTop: number,
+  activeTarget: number | null,
+  delta: number,
+  max: number,
+): number {
+  const activeDelta = activeTarget === null ? 0 : activeTarget - scrollTop;
+  const continuing = activeDelta !== 0 && Math.sign(activeDelta) === Math.sign(delta);
+  const base = continuing && activeTarget !== null ? activeTarget : scrollTop;
+  return Math.max(0, Math.min(base + delta, max));
+}
+
 export class VaultContentView implements ContentView {
   readonly type: PaneContentType = 'vault';
   readonly element: HTMLElement;
@@ -39,6 +72,8 @@ export class VaultContentView implements ContentView {
   private linkHintMap: Map<string, HTMLAnchorElement> = new Map();
   private linkHintInput = '';
   private statusFlashTimer: number | null = null;
+  private contentScrollRaf = 0;
+  private contentScrollTarget: number | null = null;
 
   private sidebarEl: HTMLElement;
   private sidebarHeaderEl: HTMLElement;
@@ -124,6 +159,10 @@ export class VaultContentView implements ContentView {
 
     this.contentEl = document.createElement('div');
     this.contentEl.className = 'krypton-vault__content';
+    this.contentEl.addEventListener('wheel', this.cancelContentScrollOnUserInput, {
+      passive: true,
+    });
+    this.contentEl.addEventListener('pointerdown', this.cancelContentScrollOnUserInput);
 
     this.statusBarEl = document.createElement('div');
     this.statusBarEl.className = 'krypton-vault__status-bar';
@@ -466,6 +505,7 @@ export class VaultContentView implements ContentView {
   }
 
   private renderMarkdown(content: string, file: VaultFile): void {
+    this.cancelContentScroll();
     this.contentEl.innerHTML = '';
 
     if (Object.keys(file.frontmatter).length > 0) {
@@ -505,7 +545,7 @@ export class VaultContentView implements ContentView {
     });
 
     this.contentEl.appendChild(article);
-    this.contentEl.scrollTop = 0;
+    this.contentEl.scrollTo({ top: 0, behavior: 'instant' });
   }
 
   private resolveLink(target: string): string | null {
@@ -711,8 +751,16 @@ export class VaultContentView implements ContentView {
         if (!file) break;
         const heading = file.headings[idx];
         if (heading) {
-          const target = this.contentEl.querySelector(`#${heading.id}`);
-          target?.scrollIntoView({ behavior: 'smooth' });
+          const target = this.contentEl.querySelector<HTMLElement>(`#${heading.id}`);
+          if (target) {
+            const contentRect = this.contentEl.getBoundingClientRect();
+            const targetRect = target.getBoundingClientRect();
+            const centeredTop = this.contentEl.scrollTop
+              + targetRect.top
+              - contentRect.top
+              - (this.contentEl.clientHeight - targetRect.height) / 2;
+            this.scrollContentTo(centeredTop);
+          }
         }
         break;
       }
@@ -864,6 +912,56 @@ export class VaultContentView implements ContentView {
     return true;
   }
 
+  private readonly cancelContentScrollOnUserInput = (): void => {
+    this.cancelContentScroll();
+  };
+
+  private cancelContentScroll(): void {
+    if (this.contentScrollRaf !== 0) {
+      window.cancelAnimationFrame(this.contentScrollRaf);
+      this.contentScrollRaf = 0;
+    }
+    this.contentScrollTarget = null;
+  }
+
+  private scrollContentBy(delta: number): void {
+    const max = Math.max(0, this.contentEl.scrollHeight - this.contentEl.clientHeight);
+    const target = nextVaultScrollTarget(
+      this.contentEl.scrollTop,
+      this.contentScrollTarget,
+      delta,
+      max,
+    );
+    this.scrollContentTo(target);
+  }
+
+  private scrollContentTo(target: number): void {
+    const max = Math.max(0, this.contentEl.scrollHeight - this.contentEl.clientHeight);
+    const clampedTarget = Math.max(0, Math.min(target, max));
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.cancelContentScroll();
+      this.contentEl.scrollTop = clampedTarget;
+      return;
+    }
+
+    this.contentScrollTarget = clampedTarget;
+    if (this.contentScrollRaf !== 0) return;
+
+    const step = (): void => {
+      this.contentScrollRaf = 0;
+      if (this.contentScrollTarget === null) return;
+
+      const next = smoothVaultScrollStep(this.contentEl.scrollTop, this.contentScrollTarget);
+      this.contentEl.scrollTop = next.scrollTop;
+      if (next.done) {
+        this.contentScrollTarget = null;
+        return;
+      }
+      this.contentScrollRaf = window.requestAnimationFrame(step);
+    };
+    this.contentScrollRaf = window.requestAnimationFrame(step);
+  }
+
   onKeyDown(e: KeyboardEvent): boolean {
     if (this.linkHintActive) return this.handleLinkHintKey(e);
     if (this.filterActive) return false;
@@ -881,11 +979,11 @@ export class VaultContentView implements ContentView {
 
     switch (key) {
       case 'J':
-        this.contentEl.scrollBy(0, 60);
+        this.scrollContentBy(60);
         return true;
 
       case 'K':
-        this.contentEl.scrollBy(0, -60);
+        this.scrollContentBy(-60);
         return true;
 
       case 'j': {
@@ -999,9 +1097,9 @@ export class VaultContentView implements ContentView {
 
       case 'g':
         if (e.shiftKey) {
-          this.contentEl.scrollTo(0, this.contentEl.scrollHeight);
+          this.scrollContentTo(this.contentEl.scrollHeight);
         } else {
-          this.contentEl.scrollTo(0, 0);
+          this.scrollContentTo(0);
         }
         return true;
 
@@ -1238,6 +1336,9 @@ export class VaultContentView implements ContentView {
   }
 
   dispose(): void {
+    this.cancelContentScroll();
+    this.contentEl.removeEventListener('wheel', this.cancelContentScrollOnUserInput);
+    this.contentEl.removeEventListener('pointerdown', this.cancelContentScrollOnUserInput);
     if (this.pickerOverlay) {
       this.pickerOverlay.remove();
       this.pickerOverlay = null;

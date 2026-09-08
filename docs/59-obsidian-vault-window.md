@@ -204,6 +204,7 @@ The vault window CSS is **fully self-contained** in `vault-view.css`, scoped und
 | Active item | Backlit highlight with stepped border, no clip-path |
 | Animations | Mechanical stepped transitions, cursor blink, no breathing pulse |
 | Scrollbar | Custom thin scrollbar matching sky blue |
+| Content scrolling | A coalesced `requestAnimationFrame` chase keeps repeated `J` / `K` input continuous; `g` / `G` and outline navigation use the same motion path. Outline targets align to the viewport center. Reduced motion and note-open resets are instant. Wheel and trackpad input cancel the chase and retain native scrolling. |
 | Wikilinks | Underlined with phosphor glow on hover |
 
 ### Tauri Commands Needed

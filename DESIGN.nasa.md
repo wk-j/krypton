@@ -67,7 +67,7 @@ forbidden:
 
 ## Overview
 
-A cool, instrumented look modeled on 1960s–1970s Mission Control consoles and high-end scientific instrument panels. The interface reads like a phosphor data screen seen through a dark room — cyan light bleeding into navy void, soft vignette at the edges, tight monospace typography, and *no motion*.
+A cool, instrumented look modeled on 1960s–1970s Mission Control consoles and high-end scientific instrument panels. The interface reads like a phosphor data screen seen through a dark room — cyan light bleeding into navy void, soft vignette at the edges, tight monospace typography, and *no decorative motion*.
 
 This identity is applied to the **Vault Viewer** (`.krypton-vault`, `src/styles/vault-view.css`). It is a deliberate alternative to the default Krypton Dark cyberpunk identity — used where the content (long-form notes, archived material) wants a calmer, more "library" feel than the active terminal chrome.
 
@@ -116,9 +116,9 @@ Single, measured layers — no multi-layer bloom stacking. The look is *the phos
 
 ## Motion
 
-**There is no motion.** Transitions are limited to `0.1s–0.15s` on `color` and `border-color` for tab/item hovers. No keyframe animations exist in this aesthetic.
+**There is no decorative motion.** Transitions are limited to `0.1s–0.15s` on `color` and `border-color` for tab/item hovers. No keyframe animations exist in this aesthetic.
 
-This is intentional — the NASA Mission Control mood depends on *stillness*. Movement would break the "looking at a measurement screen" frame.
+The NASA Mission Control mood depends on *stillness*. User-directed content navigation uses a short frame-coalesced scroll chase to help readers keep their place, with instant scrolling when reduced motion is requested. Opening a note always resets to the top instantly.
 
 ## When to Use This Aesthetic
 
