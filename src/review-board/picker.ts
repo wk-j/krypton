@@ -15,6 +15,13 @@ import type { ReviewBundle } from '../acp/types';
 /** Result of a pick: the bundle to open, or null when the human dismissed it. */
 export type ReviewPickResult = ReviewBundle | null;
 
+/** Vim and arrow navigation stay available while the title filter has focus. */
+export function reviewPickerNavigationDelta(key: string): -1 | 0 | 1 {
+  if (key === 'j' || key === 'ArrowDown') return 1;
+  if (key === 'k' || key === 'ArrowUp') return -1;
+  return 0;
+}
+
 /** Load every bundle known to a harness, newest first. */
 export async function listReviewBundles(harnessId: string): Promise<ReviewBundle[]> {
   try {
@@ -127,9 +134,16 @@ export function pickReview(bundles: readonly ReviewBundle[]): Promise<ReviewPick
     };
 
     const onKey = (e: KeyboardEvent): void => {
-      // While the filter input has focus it owns typing; only the control keys
-      // below are intercepted.
+      // While the filter input has focus it owns typing except for the picker's
+      // documented j/k and arrow navigation keys.
       if (filtering && document.activeElement === filterInput) {
+        const navigationDelta = reviewPickerNavigationDelta(e.key);
+        if (navigationDelta !== 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          move(navigationDelta);
+          return;
+        }
         if (e.key === 'Escape') {
           e.preventDefault();
           e.stopPropagation();
@@ -146,11 +160,6 @@ export function pickReview(bundles: readonly ReviewBundle[]): Promise<ReviewPick
           filtering = false;
           filterInput.blur();
           return;
-        }
-        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-          e.preventDefault();
-          e.stopPropagation();
-          move(e.key === 'ArrowDown' ? 1 : -1);
         }
         return;
       }

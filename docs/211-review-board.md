@@ -33,6 +33,11 @@
 > `r` would also fail the leader-key conflict test. `Leader Shift+R` keeps the mnemonic and follows
 > the house pattern of pairing a Shift variant onto an existing case (`d`/`Shift+D` for the Diff
 > Window, `l`/`Shift+L` for the dashboard). Every other keybinding in this spec landed as written.
+>
+> **Polished (2026-09-08):** main-body keyboard navigation now shares one coalesced RAF scroll
+> target. Repeated `j`/`k` input extends the active motion; block, walkthrough, search, and `g`/`G`
+> jumps use the same path. Wheel/pointer input cancels the animation, reduced-motion stays instant,
+> and each frame re-clamps against live scroll geometry so a resize cannot leave an idle RAF loop.
 
 ## Problem
 
@@ -166,7 +171,7 @@ Three ways in, so a Board is never reachable only through a transcript line that
 | Path | Behaviour |
 |---|---|
 | **Hint label on the REVIEW card** | The card `review_register` raises in the transcript is hintable like the artifact card (spec 133). Pressing its label opens the Board immediately. The path for a review that just arrived. |
-| **`Leader Shift+R`** | Opens the **review picker** — a summon overlay listing bundles from `list_review_bundles` (newest first: date, title, lane, step/finding counts, status), `j`/`k` to move, `Enter` to open, `/` to filter by title. The path for reopening anything, including reviews from previous sessions. |
+| **`Leader Shift+R`** | Opens the **review picker** — a summon overlay listing bundles from `list_review_bundles` (newest first: date, title, lane, step/finding counts, status), `j`/`k` to move, `Enter` to open, `/` to filter by title. While the filter input has focus, `j`/`k` and the arrow keys still move the list; every other printable key edits the query. The path for reopening anything, including reviews from previous sessions. |
 | **Command palette → `review.open`** | Same picker, registered as a `Window`-category action with keybinding `Leader Shift+R`, mirroring `diff.open` / `analyses.open`. |
 
 `Leader Shift+R` keeps the `R`-for-review mnemonic while leaving `Leader r` on Resize mode, which
@@ -601,11 +606,11 @@ An unknown fence stays a plain code block, same as in the Board.
 
 | Key | Action |
 |---|---|
-| `j` / `k` | Scroll |
-| `n` / `N` | Next / previous block (moves the block cursor) |
-| `}` / `{` | Next / previous **unanswered** finding or decision |
-| `Tab` / `Shift+Tab` | Next / previous **walkthrough step** — the guided read; each step scrolls the Diff Window to its anchor if one is open |
-| `g` / `G` | Top / bottom |
+| `j` / `k` | Smooth 60 px scroll; repeated keys extend one active target |
+| `n` / `N` | Next / previous block (moves the block cursor and scrolls it smoothly into view) |
+| `}` / `{` | Next / previous **unanswered** finding or decision, smoothly revealed |
+| `Tab` / `Shift+Tab` | Next / previous **walkthrough step** — the guided read; the Board centers the step smoothly and the Diff Window follows its anchor if one is open |
+| `g` / `G` | Smooth jump to top / bottom |
 | `Enter` | Context action: expand a folded block; on an anchored finding, open the Diff Window at `file:line` |
 | `c` | Comment on the focused block (selection quoted if any, else the block's head) |
 | `a` / `x` | Accept / dismiss the focused finding |

@@ -62,6 +62,44 @@ const AUTOSAVE_DEBOUNCE_MS = 400;
 /** Cap on a quoted selection stored with a comment. */
 const QUOTE_CAP = 2000;
 
+const REVIEW_SCROLL_LERP = 0.24;
+const REVIEW_SCROLL_SNAP_PX = 0.5;
+
+/** Advance one frame toward the current scroll target. `max` is live geometry,
+ *  so a resize or content shrink cannot leave the RAF chasing an unreachable value. */
+export function smoothReviewScrollStep(
+  scrollTop: number,
+  target: number,
+  max: number,
+): { scrollTop: number; target: number; done: boolean } {
+  const clampedTarget = clamp(target, 0, max);
+  const delta = clampedTarget - scrollTop;
+  const distance = Math.abs(delta);
+  if (distance <= REVIEW_SCROLL_SNAP_PX) {
+    return { scrollTop: clampedTarget, target: clampedTarget, done: true };
+  }
+
+  const travel = Math.min(distance, Math.max(1, distance * REVIEW_SCROLL_LERP));
+  const next = scrollTop + Math.sign(delta) * travel;
+  if (Math.abs(clampedTarget - next) <= REVIEW_SCROLL_SNAP_PX) {
+    return { scrollTop: clampedTarget, target: clampedTarget, done: true };
+  }
+  return { scrollTop: next, target: clampedTarget, done: false };
+}
+
+/** Extend repeated movement in the same direction; reverse from what is visible. */
+export function nextReviewScrollTarget(
+  scrollTop: number,
+  activeTarget: number | null,
+  delta: number,
+  max: number,
+): number {
+  const activeDelta = activeTarget === null ? 0 : activeTarget - scrollTop;
+  const continuing = activeDelta !== 0 && Math.sign(activeDelta) === Math.sign(delta);
+  const base = continuing && activeTarget !== null ? activeTarget : scrollTop;
+  return clamp(base + delta, 0, max);
+}
+
 /** Where a walkthrough step or an anchored finding should open. */
 export interface ReviewJumpTarget {
   path: string;
@@ -151,6 +189,8 @@ export class ReviewBoardView implements ContentView {
   private body: HTMLElement;
   private closeCallback: (() => void) | null = null;
   private disposeListeners: (() => void)[] = [];
+  private bodyScrollRaf = 0;
+  private bodyScrollTarget: number | null = null;
 
   constructor(container: HTMLElement, private options: ReviewBoardOptions) {
     this.dir = options.dir;
@@ -171,6 +211,8 @@ export class ReviewBoardView implements ContentView {
 
     this.body = document.createElement('div');
     this.body.className = 'krypton-review__body';
+    this.body.addEventListener('wheel', this.cancelBodyScrollOnUserInput, { passive: true });
+    this.body.addEventListener('pointerdown', this.cancelBodyScrollOnUserInput);
     this.element.appendChild(this.body);
 
     // Clicking a block moves the cursor there, so the mouse is never a dead end
@@ -222,6 +264,7 @@ export class ReviewBoardView implements ContentView {
     const priorCursorId = preserveCursor ? this.doc.blocks[this.cursor]?.id ?? null : null;
     const priorStepKey = preserveCursor ? this.steps[this.stepCursor] ?? null : null;
 
+    this.cancelBodyScroll();
     this.doc = parseReviewDocument(files.review);
     if (this.doc.laneName) this.laneName = this.doc.laneName;
     this.rebuildSteps();
@@ -426,7 +469,7 @@ export class ReviewBoardView implements ContentView {
     });
 
     const cursorEl = this.body.querySelector('.krypton-review__block--cursor');
-    cursorEl?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+    this.scrollElementIntoView(cursorEl, 'nearest');
   }
 
   private markCurrentStep(blockEl: HTMLElement, blockId: string): void {
@@ -439,6 +482,92 @@ export class ReviewBoardView implements ContentView {
   }
 
   // ─── Cursor movement ────────────────────────────────────────────────────
+
+  private readonly cancelBodyScrollOnUserInput = (): void => {
+    this.cancelBodyScroll();
+  };
+
+  private cancelBodyScroll(): void {
+    if (this.bodyScrollRaf !== 0) {
+      window.cancelAnimationFrame(this.bodyScrollRaf);
+      this.bodyScrollRaf = 0;
+    }
+    this.bodyScrollTarget = null;
+  }
+
+  private scrollBodyBy(delta: number): void {
+    const max = Math.max(0, this.body.scrollHeight - this.body.clientHeight);
+    const target = nextReviewScrollTarget(
+      this.body.scrollTop,
+      this.bodyScrollTarget,
+      delta,
+      max,
+    );
+    this.scrollBodyTo(target);
+  }
+
+  private scrollBodyTo(target: number): void {
+    const max = Math.max(0, this.body.scrollHeight - this.body.clientHeight);
+    const clampedTarget = clamp(target, 0, max);
+    if (Math.abs(clampedTarget - this.body.scrollTop) <= REVIEW_SCROLL_SNAP_PX) {
+      this.cancelBodyScroll();
+      this.body.scrollTop = clampedTarget;
+      return;
+    }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.cancelBodyScroll();
+      this.body.scrollTop = clampedTarget;
+      return;
+    }
+
+    this.bodyScrollTarget = clampedTarget;
+    if (this.bodyScrollRaf !== 0) return;
+
+    const step = (): void => {
+      this.bodyScrollRaf = 0;
+      if (this.bodyScrollTarget === null) return;
+
+      const liveMax = Math.max(0, this.body.scrollHeight - this.body.clientHeight);
+      const next = smoothReviewScrollStep(
+        this.body.scrollTop,
+        this.bodyScrollTarget,
+        liveMax,
+      );
+      this.bodyScrollTarget = next.target;
+      this.body.scrollTop = next.scrollTop;
+      if (next.done) {
+        this.bodyScrollTarget = null;
+        return;
+      }
+      this.bodyScrollRaf = window.requestAnimationFrame(step);
+    };
+    this.bodyScrollRaf = window.requestAnimationFrame(step);
+  }
+
+  private scrollElementIntoView(
+    target: Element | null,
+    block: 'nearest' | 'center',
+  ): void {
+    if (!target) return;
+    const containerRect = this.body.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const targetTop = targetRect.top - containerRect.top + this.body.scrollTop;
+    let top = targetTop;
+
+    if (block === 'center') {
+      top -= (this.body.clientHeight - targetRect.height) / 2;
+    } else {
+      const targetBottom = targetTop + targetRect.height;
+      const visibleBottom = this.body.scrollTop + this.body.clientHeight;
+      if (targetTop >= this.body.scrollTop && targetBottom <= visibleBottom) {
+        top = this.body.scrollTop;
+      } else if (targetBottom > visibleBottom) {
+        top = targetBottom - this.body.clientHeight;
+      }
+    }
+
+    this.scrollBodyTo(top);
+  }
 
   private moveCursor(delta: number): void {
     if (this.doc.blocks.length === 0) return;
@@ -479,9 +608,10 @@ export class ReviewBoardView implements ContentView {
     const blockIndex = this.doc.blocks.findIndex((b) => b.id === step.blockId);
     if (blockIndex >= 0) this.cursor = blockIndex;
     this.render();
-    this.body
-      .querySelector('.krypton-review__step--current')
-      ?.scrollIntoView({ block: 'center', behavior: 'auto' });
+    this.scrollElementIntoView(
+      this.body.querySelector('.krypton-review__step--current'),
+      'center',
+    );
     this.jumpToAnchor(step.at, { quiet: true });
   }
 
@@ -1045,7 +1175,7 @@ export class ReviewBoardView implements ContentView {
     this.searchIndex = ((this.searchIndex + delta) % n + n) % n;
     const current = this.searchMatches[this.searchIndex];
     current.classList.add('krypton-review__match--current');
-    current.scrollIntoView({ behavior: 'auto', block: 'center' });
+    this.scrollElementIntoView(current, 'center');
     this.updateSearchCount();
   }
 
@@ -1139,10 +1269,10 @@ export class ReviewBoardView implements ContentView {
 
     switch (e.key) {
       case 'j':
-        this.body.scrollBy({ top: 60, behavior: 'auto' });
+        this.scrollBodyBy(60);
         return true;
       case 'k':
-        this.body.scrollBy({ top: -60, behavior: 'auto' });
+        this.scrollBodyBy(-60);
         return true;
       case 'n':
         this.moveCursor(1);
@@ -1157,14 +1287,14 @@ export class ReviewBoardView implements ContentView {
         this.moveToUnanswered(-1);
         return true;
       case 'g':
-        if (e.shiftKey) {
-          this.cursor = Math.max(0, this.doc.blocks.length - 1);
-          this.body.scrollTo({ top: this.body.scrollHeight, behavior: 'auto' });
-        } else {
-          this.cursor = this.doc.blocks.length > 0 ? 0 : -1;
-          this.body.scrollTo({ top: 0, behavior: 'auto' });
-        }
+        this.cursor = this.doc.blocks.length > 0 ? 0 : -1;
         this.render();
+        this.scrollBodyTo(0);
+        return true;
+      case 'G':
+        this.cursor = Math.max(0, this.doc.blocks.length - 1);
+        this.render();
+        this.scrollBodyTo(this.body.scrollHeight);
         return true;
       case 'Enter':
         this.contextAction();
@@ -1218,6 +1348,9 @@ export class ReviewBoardView implements ContentView {
   }
 
   dispose(): void {
+    this.cancelBodyScroll();
+    this.body.removeEventListener('wheel', this.cancelBodyScrollOnUserInput);
+    this.body.removeEventListener('pointerdown', this.cancelBodyScrollOnUserInput);
     // Flush a pending autosave so the last keystroke before a close is not lost.
     // Fire-and-forget: `dispose` is synchronous by contract, and the answers are
     // already fully determined — nothing here can change them.
