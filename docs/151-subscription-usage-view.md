@@ -169,7 +169,9 @@ None. Poll cadences are fixed (180 s / 60 s); provider sections appear by auto-d
 - **429 / network failure / offline** → keep showing last successful payload with “stale · Xm ago”. Network errors retry on the next cycle; a 429 arms a `Retry-After` backoff so polls short-circuit in Rust (no HTTP) until the penalty lapses, with a countdown in the foot line when there is no payload to show.
 - **App restart during a rate-limit window** → the disk cache restores the last good payload immediately, so the widget never opens blank just because the process restarted (dev iteration restarts used to cost one request each and start empty).
 - **`codex exec`-only recent activity** (`rate_limits: null`) → scanner keeps walking older events/files; if nothing in ~7 days → “no recent data — run codex once”.
-- **Multiple Codex rate-limit buckets** → render the default bucket first, then named model buckets with their own duration-derived labels (for example, `session 5h · gpt-5.3-codex-spark`). Never merge windows from separate rollout sessions or accounts.
+- **Multiple Codex rate-limit buckets** → render only the account-level 5-hour
+  and weekly windows. Keep named model buckets in the backend payload for source
+  fidelity, but do not display them or merge windows from separate accounts.
 - **`seven_day_opus`/`seven_day_sonnet` null** → row hidden, no empty gauge.
 - **`weekly_scoped` entry duplicating a legacy top-level window** (same model
   name) → the scoped entry wins; the top-level one is dropped at parse time

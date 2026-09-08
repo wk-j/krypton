@@ -172,6 +172,11 @@ export function codexWindowLabel(windowMinutes: number): string {
   return `${windowMinutes}m`;
 }
 
+/** Account-level Codex windows shown in both the detailed view and window chrome. */
+export function codexAccountWindows(data: CodexUsage): readonly CodexWindow[] {
+  return [data.primary, data.secondary].filter((window): window is CodexWindow => window !== null);
+}
+
 export function summarizeUsage(state: ProviderUsageState): ProviderUsageSummary {
   const quotas: UsageQuotaSummary[] = [];
   const data = state.data;
@@ -186,8 +191,9 @@ export function summarizeUsage(state: ProviderUsageState): ProviderUsageSummary 
     }
   } else if (state.provider === 'codex' && data) {
     const u = data as CodexUsage;
-    if (u.primary) quotas.push(quota(codexWindowLabel(u.primary.windowMinutes), u.primary.usedPercent));
-    if (u.secondary) quotas.push(quota(codexWindowLabel(u.secondary.windowMinutes), u.secondary.usedPercent));
+    for (const window of codexAccountWindows(u)) {
+      quotas.push(quota(codexWindowLabel(window.windowMinutes), window.usedPercent));
+    }
   } else if (state.provider === 'copilot' && data) {
     const u = data as CopilotUsage;
     if (u.premium && !u.premium.unlimited) quotas.push(quota('premium', u.premium.usedPercent));

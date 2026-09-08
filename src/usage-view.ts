@@ -10,6 +10,7 @@
 import type { ContentView, PaneContentType } from './types';
 import type { PaletteAction } from './palette-types';
 import {
+  codexAccountWindows,
   codexWindowLabel,
   usageStore,
   type CodexWindow,
@@ -335,36 +336,14 @@ export class UsageContentView implements ContentView {
     const widget = this.widget('codex', metaParts.join(' · '), widgetState);
 
     if (u) {
-      // Label each window by its actual duration. The default bucket can be
-      // weekly-only while a model-scoped bucket carries the 5h window.
+      // Label each account-level window by its actual duration. Named model
+      // buckets remain in the payload but are intentionally not displayed.
       const gaugeLabel = (w: CodexWindow): string =>
         w.windowMinutes > 0 && w.windowMinutes < 1440
           ? `session ${codexWindowLabel(w.windowMinutes)}`
           : codexWindowLabel(w.windowMinutes);
-      if (u.primary) {
-        this.gauge(widget, gaugeLabel(u.primary), u.primary.usedPercent, u.primary.resetsAt * 1000);
-      }
-      if (u.secondary) {
-        this.gauge(widget, gaugeLabel(u.secondary), u.secondary.usedPercent, u.secondary.resetsAt * 1000);
-      }
-      for (const scoped of u.scopedLimits ?? []) {
-        const name = scoped.name.toLowerCase();
-        if (scoped.primary) {
-          this.gauge(
-            widget,
-            `${gaugeLabel(scoped.primary)} · ${name}`,
-            scoped.primary.usedPercent,
-            scoped.primary.resetsAt * 1000,
-          );
-        }
-        if (scoped.secondary) {
-          this.gauge(
-            widget,
-            `${gaugeLabel(scoped.secondary)} · ${name}`,
-            scoped.secondary.usedPercent,
-            scoped.secondary.resetsAt * 1000,
-          );
-        }
+      for (const window of codexAccountWindows(u)) {
+        this.gauge(widget, gaugeLabel(window), window.usedPercent, window.resetsAt * 1000);
       }
       const observed = Date.parse(u.observedAt);
       const error = state.error;

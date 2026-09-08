@@ -478,9 +478,9 @@ PULL (window ← harness), on open and on every auto-refresh:
 4. Rust usage.rs returns cached-or-live provider data; UsageStore keeps the last
    good payload on failure and marks it stale.
 5. Compositor normalizes the snapshot into quota labels and renders the left side
-   of the visible window's .krypton-window__footer. Codex chrome keeps only its
-   account-level 5-hour and weekly windows; named model buckets remain exclusive
-   to the detailed Usage view.
+   of the visible window's .krypton-window__footer. Codex chrome and the detailed
+   Usage view both keep only the account-level 5-hour and weekly windows; named
+   model buckets are not displayed.
 6. CSS shows all quota windows at normal width and hides secondary quotas at
    constrained widths; the provider's most-used quota remains.
 7. Tab/pane focus changes or Harness provider-membership changes replace the
