@@ -1469,6 +1469,24 @@ describe('ACP peer activity UI (spec 118)', () => {
     });
   });
 
+  describe('sealed assistant sticky guard (spec 114 rev 16)', () => {
+    it('suppresses table and reference-rail layout scroll before finalising the live body', () => {
+      const here = dirname(fileURLToPath(import.meta.url));
+      const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+      const start = src.indexOf('private sealStreaming(');
+      const end = src.indexOf('\n  private sealStreamingTextRow(', start);
+      const seal = src.slice(start, end);
+      const beginAt = seal.indexOf('this.beginProgrammaticScroll()');
+      const finaliseAt = seal.indexOf('this.sealAssistantStreamingMarkdown(lane, item);');
+      const releaseAt = seal.indexOf('this.releaseProgrammaticScroll(suppressToken);');
+
+      expect(seal).toContain("lane.id === this.activeLaneId && lane.stickToBottom");
+      expect(beginAt).toBeGreaterThanOrEqual(0);
+      expect(finaliseAt).toBeGreaterThan(beginAt);
+      expect(releaseAt).toBeGreaterThan(finaliseAt);
+    });
+  });
+
   it('schedulePeekThoughtPin pins now and again after layout', () => {
     const frames: FrameRequestCallback[] = [];
     const host = globalThis as { requestAnimationFrame?: typeof requestAnimationFrame };

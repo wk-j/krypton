@@ -13350,7 +13350,20 @@ export class AcpHarnessView implements ContentView {
         // in the background and never created a parser (branch B). Either way,
         // populate the markdownSource/markdownHtml cache so future renders skip
         // marked.parse for this row.
-        this.sealAssistantStreamingMarkdown(lane, item);
+        // Finalising a live assistant body can replace a streaming GFM table
+        // and append the reference rail. Both mutate the scroll container's
+        // height before the body-only pass gets a chance to follow it. Guard
+        // that browser-generated scroll event just like a scrollTop write, or
+        // onTranscriptScroll can mistake the late layout for user intent and
+        // permanently unstick an otherwise pinned lane.
+        const suppressToken = lane.id === this.activeLaneId && lane.stickToBottom
+          ? this.beginProgrammaticScroll()
+          : null;
+        try {
+          this.sealAssistantStreamingMarkdown(lane, item);
+        } finally {
+          if (suppressToken !== null) this.releaseProgrammaticScroll(suppressToken);
+        }
         item.streamPlainLength = undefined;
         item.streamingMarkdownWritten = undefined;
       }
