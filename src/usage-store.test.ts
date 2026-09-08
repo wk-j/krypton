@@ -93,6 +93,7 @@ describe('usage summaries', () => {
     const weeklyOnly: CodexUsage = {
       primary: { usedPercent: 19, windowMinutes: 10080, resetsAt: 1784783452 },
       secondary: null,
+      scopedLimits: [],
       planType: 'plus',
       observedAt: '2026-07-16T17:11:11Z',
       sessionFile: '/tmp/rollout.jsonl',
@@ -112,6 +113,23 @@ describe('usage summaries', () => {
     ).toEqual([
       { label: '5h', usedPercent: 3 },
       { label: 'week', usedPercent: 34 },
+    ]);
+
+    const multiBucket: CodexUsage = {
+      ...weeklyOnly,
+      scopedLimits: [{
+        id: 'codex_bengalfox',
+        name: 'GPT-5.3-Codex-Spark',
+        primary: { usedPercent: 42, windowMinutes: 300, resetsAt: 1788789902 },
+        secondary: { usedPercent: 7, windowMinutes: 10080, resetsAt: 1789368883 },
+      }],
+    };
+    expect(
+      summarizeUsage({ provider: 'codex', data: multiBucket, error: null, pending: false }).quotas,
+    ).toEqual([
+      { label: 'week', usedPercent: 19 },
+      { label: 'spark 5h', usedPercent: 42 },
+      { label: 'spark week', usedPercent: 7 },
     ]);
   });
 

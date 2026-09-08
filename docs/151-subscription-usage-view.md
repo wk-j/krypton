@@ -13,7 +13,7 @@ Krypton users drive Claude and Codex lanes against *subscription* quotas (Claude
 A new keyboard-summoned **content-view window** (`PaneContentType` `'usage'`, same pattern as the Vault/Diff/Hurl views) that renders per-provider utilization gauges. Data sources are provider-native and read-only:
 
 - **Claude** — the OAuth usage endpoint (`GET https://api.anthropic.com/api/oauth/usage`), authenticated with the token Claude Code already maintains on this machine. Authoritative server-side window state (same data as `/usage`).
-- **Codex** — the most recent `token_count` event with a non-null `rate_limits` object from the local rollout JSONL under `~/.codex/sessions/`. Snapshot as-of last Codex activity (Codex exposes no public usage API).
+- **Codex** — the active account's `account/rateLimits/read` snapshot from the locally installed Codex app-server. The response includes both the backward-compatible default bucket and `rateLimitsByLimitId`, where separately metered models such as GPT-5.3-Codex-Spark expose their own 5-hour and weekly windows. Local rollout JSONL under `~/.codex/sessions/` remains a compatibility fallback for Codex builds that predate the app-server method.
 - **Copilot** (added post-implementation, user request) — `GET https://api.github.com/copilot_internal/user` with the `oauth_token` from `~/.config/github-copilot/apps.json` (or `hosts.json`); `quota_snapshots` carries `premium_interactions` / `chat` / `completions` with `percent_remaining`, `entitlement`, `unlimited`, plus `copilot_plan` and monthly `quota_reset_date`. Verified live on this machine.
 - **Cursor** (added post-implementation, user request; endpoint upgraded by spec 152) — `POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage` with `Authorization: Bearer <jwt>` (JWT from macOS Keychain service `cursor-access-token`; `~/.cursor/cli-config.json` `authInfo` validates the login). Returns authoritative billing-cycle spend (`planUsage`: spend in cents, `totalPercentUsed`, cycle bounds) — the same data Cursor's own dashboard renders. The original `cursor.com/api/usage` request counters (null on usage-based plans) were replaced; the request gauge remains only as a fallback rendering slot for legacy capped plans, and "quota not exposed" is the final fallback when the RPC returns no `planUsage`. See `docs/152-cursor-real-usage.md`.
 - **Grok** (added post-implementation, user request; spec 193) — `GET https://cli-chat-proxy.grok.com/v1/billing` with `Authorization: Bearer <token>` (JWT read from `~/.grok/auth.json`, the freshest issuer-keyed entry; no Keychain — Grok stores creds in a plain file). Returns the monthly credit balance (`config.used` / `config.monthlyLimit`, each `{ "val": N }`, plus billing-cycle bounds); the view draws a single `credits` gauge. Grok persists no rate-limit data locally, so this billing endpoint is the only pollable surface (the gateway's per-turn `RateLimitsUpdated` WS event is push-only). 180 s cache + disk-persist, same stale-fallback ladder; 401/403 → `token-expired`. See `docs/193-grok-usage-meter.md`.
@@ -30,6 +30,7 @@ window-credit status segments. No token refresh or credential writes occur.
 - **Codex rollout JSONL** (verified against a real session file on this machine, `~/.codex/sessions/2026/06/10/rollout-*.jsonl`): `event_msg` payloads of `type: "token_count"` carry
   `rate_limits: { primary: { used_percent, window_minutes: 300, resets_at(epoch s) }, secondary: { used_percent, window_minutes: 10080, resets_at }, plan_type, credits, rate_limit_reached_type }`
   plus `info.total_token_usage` / `info.model_context_window`. Caveat from upstream issues: `codex exec` (non-interactive) writes `rate_limits: null`, so the scanner must skip null entries and keep looking backwards/in older files.
+- **Codex app-server** (verified against Codex CLI 0.153.4): after `initialize`, `account/rateLimits/read` returns an active-account `rateLimits` bucket plus `rateLimitsByLimitId`. The default `codex` bucket can be weekly-only while a named model bucket independently carries a 300-minute primary window and 10080-minute secondary window. Reading only the legacy bucket therefore hides a real 5-hour allowance. The response also carries `accountId`, so this path cannot accidentally combine historical rollout snapshots from different logins.
 - **Prior art in this codebase**: `UsageInfo` (`src/acp/types.ts:197`) already streams *per-turn token usage* through ACP events but says nothing about account quota — different layer; this spec deliberately does not touch it. Closest UI precedents: review-quality overlay (spec 146) for store/refresh patterns, and `VaultContentView` → `createContentTab()` (`compositor.ts:2064`, `2098`) for window-level content views — the user asked for a *window*, so the content-view pattern wins over a Leader overlay.
 - **Ruled out**: getting quota over ACP (no such capability in the protocol); refreshing the OAuth token ourselves (rotation races against Claude Code's own refresh and could log the user out); shelling out to `claude`/`codex` CLIs (slow, parses TUI output); `@tauri-apps/plugin-http` (not installed; a plain Rust HTTP client is simpler).
 
@@ -48,7 +49,7 @@ window-credit status segments. No token refresh or credential writes occur.
 
 | File | Change |
 |------|--------|
-| `src-tauri/src/usage.rs` | **New** — credential loading, OAuth usage fetch (180 s cache), codex rollout scanner |
+| `src-tauri/src/usage.rs` | **New** — credential loading, OAuth usage fetch (180 s cache), Codex app-server rate-limit read with rollout fallback |
 | `src-tauri/src/lib.rs` | Register `usage_fetch_claude`, `usage_fetch_codex`; `mod usage;` |
 | `src-tauri/Cargo.toml` | Add `reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }` |
 | `src/usage-view.ts` | **New** — `UsageContentView implements ContentView` |
@@ -81,12 +82,20 @@ struct ClaudeUsage {
 
 struct CodexWindow { used_percent: f64, window_minutes: u64, resets_at: i64 } // epoch s
 
+struct CodexScopedLimit {
+    id: String,                              // metered limit_id
+    name: String,                            // backend display name
+    primary: Option<CodexWindow>,
+    secondary: Option<CodexWindow>,
+}
+
 struct CodexUsage {
-    primary: Option<CodexWindow>,           // 5h (window_minutes 300)
-    secondary: Option<CodexWindow>,         // weekly (10080)
-    plan_type: Option<String>,              // "plus", "pro"
-    observed_at: String,                    // timestamp of the JSONL event ("as of")
-    session_file: String,                   // basename, for debugging display
+    primary: Option<CodexWindow>,           // default bucket; duration is authoritative
+    secondary: Option<CodexWindow>,
+    scoped_limits: Vec<CodexScopedLimit>,   // named app-server buckets
+    plan_type: Option<String>,              // "plus", "pro", "prolite", ...
+    observed_at: String,                    // app-server read or fallback-event time
+    session_file: String,                   // "app-server" or fallback basename
 }
 ```
 
@@ -98,7 +107,7 @@ struct CodexUsage {
   3. Serve from in-memory cache if `< 180 s` old (per-token); on a memory miss, warm from the disk cache (`<OS cache dir>/krypton/claude-usage.json`, keyed by a token hash — the token itself is never written) so app restarts don't cost a request. Otherwise GET the endpoint with the three required headers (`User-Agent: claude-code/2.0`) and a 10 s timeout.
   4. On 429 → honor `Retry-After` (capped at 1 h; one poll cycle if absent): no network until the penalty lapses (the server counts down a fixed window — requests during it are wasted). Keep serving cache; surface `Err("rate-limited:<epochMs>")` only if no cache exists, and the UI renders a live countdown from the deadline ("rate limited — retry in 28m").
 - `usage_fetch_codex() -> Result<CodexUsage, String>`
-  Walk `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-*.jsonl` newest-first (by path order, limit ~10 files / 7 days), scan each file *backwards* for the last `token_count` with `rate_limits != null`. Pure local read, no cache needed. Honors `CODEX_HOME` env override.
+  Spawn the installed `codex app-server`, initialize JSON-RPC over stdio, and call `account/rateLimits/read` with a 5 s total timeout. Parse the active account's default bucket and every named entry from `rateLimitsByLimitId`; do not duplicate the default `limitId`. If Codex is missing, too old, times out, or returns an unsupported shape, walk `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-*.jsonl` newest-first and use the previous scanner as a compatibility fallback. Honors `CODEX_HOME` and the cached login-shell environment used by GUI launches.
 - `usage_fetch_copilot() -> Result<CopilotUsage, String>` — token from `apps.json`/`hosts.json`, GET `copilot_internal/user`, 180 s cache, same stale-fallback ladder; 401/403 → `token-expired`.
 - `usage_fetch_cursor() -> Result<CursorUsage, String>` — Keychain JWT (macOS only; elsewhere `not-connected`; login validated against `cli-config.json`), POST `api2.cursor.sh/.../GetCurrentPeriodUsage` (Connect protocol, `Bearer` auth), 180 s cache, same ladder (spec 152).
 - `usage_fetch_grok() -> Result<GrokUsage, String>` — Bearer JWT from `~/.grok/auth.json` (freshest entry; `tier` decoded from the JWT `tier` claim for the meta line), GET `cli-chat-proxy.grok.com/v1/billing`, 180 s cache + disk-persist, same ladder; 401/403 → `token-expired` (spec 193).
@@ -112,7 +121,8 @@ struct CodexUsage {
 2. input-router → compositor.openUsageView() → new UsageContentView → createContentTab('USAGE // credits', view)
 3. View invokes usage_fetch_claude + usage_fetch_codex in parallel (Promise.allSettled)
 4. Rust: claude → credentials file/Keychain → cached-or-live GET api.anthropic.com/api/oauth/usage
-         codex  → newest rollout JSONL → last non-null rate_limits event
+         codex  → app-server account/rateLimits/read → default + named model buckets
+                  ↳ incompatible/failed app-server → newest rollout JSONL fallback
 5. View renders provider sections; per-provider errors render inline (one failing never blanks the other)
 6. While the view exists, it subscribes all providers to the shared UsageStore;
    reset countdowns tick every 1 s (single interval, cleared in dispose())
@@ -144,7 +154,7 @@ One provider per **widget** — a single flat surface (full 1px border + backgro
 ```
 
 - Bars are single-element flat fills (no stacked pseudo-element layers); fill and percentage shift color at ≥ 80 % (warn, `--krypton-warning-rgb`) and ≥ 95 % (critical, `--krypton-danger-rgb`); chrome labels in chrome font, numbers bold `tabular-nums`.
-- Widget states (dot + foot text, always paired): **loading** (skeleton rows, “connecting…” / “reading sessions…”), **ok** (`live · updated Xs ago`; Codex says `as of X ago` since its snapshot is only as fresh as the last Codex activity), **stale** (last good gauges + amber foot `stale · Xm — <hint>`), **off** (no data: `not connected` / `token expired — open a Claude lane or run claude to refresh` / `no recent data — run codex once`).
+- Widget states (dot + foot text, always paired): **loading** (skeleton rows, “connecting…” / “reading limits…”), **ok** (`live · updated Xs ago`; Codex says `as of X ago` for both the live point-in-time account read and its rollout fallback), **stale** (last good gauges + amber foot `stale · Xm — <hint>`), **off** (no data: `not connected` / `token expired — open a Claude lane or run claude to refresh` / `no recent data — run codex once`).
 
 ### Configuration
 
@@ -158,6 +168,7 @@ None. Poll cadences are fixed (180 s / 60 s); provider sections appear by auto-d
 - **429 / network failure / offline** → keep showing last successful payload with “stale · Xm ago”. Network errors retry on the next cycle; a 429 arms a `Retry-After` backoff so polls short-circuit in Rust (no HTTP) until the penalty lapses, with a countdown in the foot line when there is no payload to show.
 - **App restart during a rate-limit window** → the disk cache restores the last good payload immediately, so the widget never opens blank just because the process restarted (dev iteration restarts used to cost one request each and start empty).
 - **`codex exec`-only recent activity** (`rate_limits: null`) → scanner keeps walking older events/files; if nothing in ~7 days → “no recent data — run codex once”.
+- **Multiple Codex rate-limit buckets** → render the default bucket first, then named model buckets with their own duration-derived labels (for example, `session 5h · gpt-5.3-codex-spark`). Never merge windows from separate rollout sessions or accounts.
 - **`seven_day_opus`/`seven_day_sonnet` null** → row hidden, no empty gauge.
 - **`weekly_scoped` entry duplicating a legacy top-level window** (same model
   name) → the scoped entry wins; the top-level one is dropped at parse time

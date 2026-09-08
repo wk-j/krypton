@@ -9,8 +9,9 @@
 //     so restarts don't cost a request or blank the widget. A 429 arms a
 //     Retry-After backoff: no network until the penalty lapses, and the
 //     error sentinel carries the deadline ("rate-limited:<epochMs>").
-//   - Codex: newest `token_count` event with a non-null `rate_limits` object
-//     from the local rollout JSONL under ~/.codex/sessions (CODEX_HOME aware).
+//   - Codex: active-account snapshot from Codex app-server's
+//     `account/rateLimits/read`, including model-scoped buckets. Local rollout
+//     JSONL remains the compatibility fallback for older Codex builds.
 //
 // Tokens are never logged and never leave this module except as the
 // Authorization header to api.anthropic.com. Error strings are static
@@ -21,12 +22,15 @@ use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_CACHE_TTL_MS: i64 = 180_000;
 const CODEX_MAX_FILES: usize = 10;
+const CODEX_APP_SERVER_TIMEOUT: Duration = Duration::from_secs(5);
 const GROK_USAGE_URL: &str = "https://cli-chat-proxy.grok.com/v1/billing";
 // Sent defensively so the request looks like the CLI's own; the endpoint
 // accepts a bare Bearer without it (verified), so it is not required.
@@ -88,9 +92,19 @@ pub struct CodexWindow {
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct CodexScopedLimit {
+    pub id: String,
+    pub name: String,
+    pub primary: Option<CodexWindow>,
+    pub secondary: Option<CodexWindow>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct CodexUsage {
     pub primary: Option<CodexWindow>,
     pub secondary: Option<CodexWindow>,
+    pub scoped_limits: Vec<CodexScopedLimit>,
     pub plan_type: Option<String>,
     pub observed_at: String,
     pub session_file: String,
@@ -561,7 +575,7 @@ fn newest_rollout_files(sessions: &PathBuf, limit: usize) -> Vec<PathBuf> {
     files
 }
 
-fn codex_window_from(v: Option<&Value>, event_epoch_s: i64) -> Option<CodexWindow> {
+fn codex_rollout_window_from(v: Option<&Value>, event_epoch_s: i64) -> Option<CodexWindow> {
     let obj = v?.as_object()?;
     let used_percent = obj.get("used_percent").and_then(Value::as_f64)?;
     let window_minutes = obj.get("window_minutes").and_then(Value::as_u64)?;
@@ -576,6 +590,71 @@ fn codex_window_from(v: Option<&Value>, event_epoch_s: i64) -> Option<CodexWindo
         used_percent,
         window_minutes,
         resets_at,
+    })
+}
+
+fn codex_app_server_window_from(v: Option<&Value>) -> Option<CodexWindow> {
+    let obj = v?.as_object()?;
+    Some(CodexWindow {
+        used_percent: obj.get("usedPercent")?.as_f64()?,
+        window_minutes: obj.get("windowDurationMins")?.as_u64()?,
+        resets_at: obj.get("resetsAt")?.as_i64()?,
+    })
+}
+
+fn codex_usage_from_app_server(result: &Value, observed_at: String) -> Option<CodexUsage> {
+    let default = result.get("rateLimits")?.as_object()?;
+    let default_id = default
+        .get("limitId")
+        .and_then(Value::as_str)
+        .unwrap_or("codex");
+    let primary = codex_app_server_window_from(default.get("primary"));
+    let secondary = codex_app_server_window_from(default.get("secondary"));
+    if primary.is_none() && secondary.is_none() {
+        return None;
+    }
+
+    let mut scoped_limits = result
+        .get("rateLimitsByLimitId")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|limits| limits.iter())
+        .filter_map(|(id, raw)| {
+            if id == default_id {
+                return None;
+            }
+            let obj = raw.as_object()?;
+            let primary = codex_app_server_window_from(obj.get("primary"));
+            let secondary = codex_app_server_window_from(obj.get("secondary"));
+            if primary.is_none() && secondary.is_none() {
+                return None;
+            }
+            let name = obj
+                .get("limitName")
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty())
+                .unwrap_or(id)
+                .to_string();
+            Some(CodexScopedLimit {
+                id: id.clone(),
+                name,
+                primary,
+                secondary,
+            })
+        })
+        .collect::<Vec<_>>();
+    scoped_limits.sort_by(|a, b| a.name.cmp(&b.name));
+
+    Some(CodexUsage {
+        primary,
+        secondary,
+        scoped_limits,
+        plan_type: default
+            .get("planType")
+            .and_then(Value::as_str)
+            .map(String::from),
+        observed_at,
+        session_file: "app-server".to_string(),
     })
 }
 
@@ -603,14 +682,15 @@ fn scan_rollout_file(path: &PathBuf) -> Option<CodexUsage> {
             .unwrap_or("")
             .to_string();
         let event_epoch_s = chrono_free_epoch(&observed_at).unwrap_or_else(|| now_ms() / 1000);
-        let primary = codex_window_from(rl.get("primary"), event_epoch_s);
-        let secondary = codex_window_from(rl.get("secondary"), event_epoch_s);
+        let primary = codex_rollout_window_from(rl.get("primary"), event_epoch_s);
+        let secondary = codex_rollout_window_from(rl.get("secondary"), event_epoch_s);
         if primary.is_none() && secondary.is_none() {
             continue;
         }
         return Some(CodexUsage {
             primary,
             secondary,
+            scoped_limits: Vec::new(),
             plan_type: rl
                 .get("plan_type")
                 .and_then(Value::as_str)
@@ -624,6 +704,75 @@ fn scan_rollout_file(path: &PathBuf) -> Option<CodexUsage> {
         });
     }
     None
+}
+
+async fn read_codex_rpc_result<R>(lines: &mut Lines<R>, id: i64) -> Result<Value, String>
+where
+    R: tokio::io::AsyncBufRead + Unpin,
+{
+    while let Some(line) = lines
+        .next_line()
+        .await
+        .map_err(|_| "unexpected-response".to_string())?
+    {
+        let Ok(message) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if message.get("id").and_then(Value::as_i64) != Some(id) {
+            continue;
+        }
+        if message.get("error").is_some() {
+            return Err("unexpected-response".to_string());
+        }
+        return message
+            .get("result")
+            .cloned()
+            .ok_or_else(|| "unexpected-response".to_string());
+    }
+    Err("unexpected-response".to_string())
+}
+
+async fn fetch_codex_app_server() -> Result<CodexUsage, String> {
+    let mut child = tokio::process::Command::new("codex")
+        .args(["app-server", "--listen", "stdio://"])
+        .envs(crate::pty::cached_login_env().iter())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|_| "not-connected".to_string())?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "unexpected-response".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "unexpected-response".to_string())?;
+    let mut lines = BufReader::new(stdout).lines();
+
+    stdin
+        .write_all(
+            b"{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"krypton\",\"version\":\"0.1\"},\"capabilities\":{\"experimentalApi\":true}}}\n",
+        )
+        .await
+        .map_err(|_| "unexpected-response".to_string())?;
+    read_codex_rpc_result(&mut lines, 1).await?;
+
+    stdin
+        .write_all(b"{\"id\":2,\"method\":\"account/rateLimits/read\",\"params\":null}\n")
+        .await
+        .map_err(|_| "unexpected-response".to_string())?;
+    stdin
+        .flush()
+        .await
+        .map_err(|_| "unexpected-response".to_string())?;
+    let result = read_codex_rpc_result(&mut lines, 2).await?;
+    let _ = child.kill().await;
+    let observed_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    codex_usage_from_app_server(&result, observed_at)
+        .ok_or_else(|| "unexpected-response".to_string())
 }
 
 /// Parse "2026-06-10T05:03:41.492Z" to epoch seconds without a chrono dep.
@@ -653,7 +802,13 @@ fn chrono_free_epoch(iso: &str) -> Option<i64> {
 }
 
 #[tauri::command]
-pub fn usage_fetch_codex() -> Result<CodexUsage, String> {
+pub async fn usage_fetch_codex() -> Result<CodexUsage, String> {
+    if let Ok(Ok(usage)) =
+        tokio::time::timeout(CODEX_APP_SERVER_TIMEOUT, fetch_codex_app_server()).await
+    {
+        return Ok(usage);
+    }
+
     let sessions = codex_sessions_dir().ok_or_else(|| "not-connected".to_string())?;
     for file in newest_rollout_files(&sessions, CODEX_MAX_FILES) {
         if let Some(usage) = scan_rollout_file(&file) {
@@ -1201,6 +1356,61 @@ mod tests {
         assert_eq!(usage.plan_type.as_deref(), Some("plus"));
 
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn parses_codex_app_server_model_scoped_limits() {
+        let result: Value = serde_json::from_str(
+            r#"{
+              "rateLimits": {
+                "limitId": "codex", "limitName": null,
+                "primary": {"usedPercent": 4, "windowDurationMins": 10080, "resetsAt": 1789369000},
+                "secondary": null, "planType": "prolite"
+              },
+              "rateLimitsByLimitId": {
+                "codex": {
+                  "limitId": "codex", "limitName": null,
+                  "primary": {"usedPercent": 4, "windowDurationMins": 10080, "resetsAt": 1789369000},
+                  "secondary": null, "planType": "prolite"
+                },
+                "codex_bengalfox": {
+                  "limitId": "codex_bengalfox", "limitName": "GPT-5.3-Codex-Spark",
+                  "primary": {"usedPercent": 2, "windowDurationMins": 300, "resetsAt": 1788789902},
+                  "secondary": {"usedPercent": 1, "windowDurationMins": 10080, "resetsAt": 1789368883},
+                  "planType": "prolite"
+                }
+              }
+            }"#,
+        )
+        .expect("fixture json");
+
+        let usage = codex_usage_from_app_server(&result, "2026-09-07T09:00:00Z".into())
+            .expect("should parse");
+        assert_eq!(
+            usage.primary.expect("default primary").window_minutes,
+            10080
+        );
+        assert_eq!(usage.scoped_limits.len(), 1);
+        let spark = &usage.scoped_limits[0];
+        assert_eq!(spark.name, "GPT-5.3-Codex-Spark");
+        assert_eq!(
+            spark
+                .primary
+                .as_ref()
+                .expect("spark primary")
+                .window_minutes,
+            300
+        );
+        assert_eq!(
+            spark
+                .secondary
+                .as_ref()
+                .expect("spark secondary")
+                .window_minutes,
+            10080
+        );
+        assert_eq!(usage.plan_type.as_deref(), Some("prolite"));
+        assert_eq!(usage.session_file, "app-server");
     }
 
     #[test]
