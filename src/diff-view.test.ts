@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { priorityForLineRange } from './diff-view';
+import {
+  nextDiffScrollTarget,
+  priorityForLineRange,
+  smoothDiffScrollStep,
+} from './diff-view';
 import type { ReviewPriorityRange } from './acp/types';
 
 // spec 160 — the fold/mark authority: a hunk takes the HIGHEST priority of any
@@ -45,5 +49,46 @@ describe('priorityForLineRange (spec 160)', () => {
     // Just-past the edge is not an overlap.
     expect(priorityForLineRange(10, 20, [r(21, 30, 'routine')])).toBe('normal');
     expect(priorityForLineRange(10, 20, [r(1, 9, 'routine')])).toBe('normal');
+  });
+});
+
+describe('Diff view smooth scrolling (spec 243)', () => {
+  it('approaches a lower target monotonically and lands exactly', () => {
+    let scrollTop = 0;
+    const positions: number[] = [];
+
+    for (let frame = 0; frame < 100; frame++) {
+      const next = smoothDiffScrollStep(scrollTop, 180);
+      expect(next.scrollTop).toBeGreaterThanOrEqual(scrollTop);
+      expect(next.scrollTop).toBeLessThanOrEqual(180);
+      scrollTop = next.scrollTop;
+      positions.push(scrollTop);
+      if (next.done) break;
+    }
+
+    expect(positions.length).toBeGreaterThan(1);
+    expect(scrollTop).toBe(180);
+  });
+
+  it('reverses without overshooting and snaps subpixel remainders', () => {
+    let scrollTop = 180;
+
+    for (let frame = 0; frame < 100; frame++) {
+      const next = smoothDiffScrollStep(scrollTop, 60);
+      expect(next.scrollTop).toBeLessThanOrEqual(scrollTop);
+      expect(next.scrollTop).toBeGreaterThanOrEqual(60);
+      scrollTop = next.scrollTop;
+      if (next.done) break;
+    }
+
+    expect(scrollTop).toBe(60);
+    expect(smoothDiffScrollStep(59.75, 60)).toEqual({ scrollTop: 60, done: true });
+  });
+
+  it('extends repeated input, reverses from the viewport, and clamps bounds', () => {
+    expect(nextDiffScrollTarget(20, 60, 40, 500)).toBe(100);
+    expect(nextDiffScrollTarget(20, 100, -40, 500)).toBe(0);
+    expect(nextDiffScrollTarget(480, null, 40, 500)).toBe(500);
+    expect(nextDiffScrollTarget(20, null, -40, 500)).toBe(0);
   });
 });

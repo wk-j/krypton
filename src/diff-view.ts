@@ -106,6 +106,39 @@ export function priorityForLineRange(
   return result;
 }
 
+const DIFF_SCROLL_LERP = 0.24;
+const DIFF_SCROLL_SNAP_PX = 0.5;
+
+/** Advance one frame toward a keyboard-scroll target without overshooting. */
+export function smoothDiffScrollStep(
+  scrollTop: number,
+  target: number,
+): { scrollTop: number; done: boolean } {
+  const delta = target - scrollTop;
+  const distance = Math.abs(delta);
+  if (distance <= DIFF_SCROLL_SNAP_PX) return { scrollTop: target, done: true };
+
+  const travel = Math.min(distance, Math.max(1, distance * DIFF_SCROLL_LERP));
+  const next = scrollTop + Math.sign(delta) * travel;
+  if (Math.abs(target - next) <= DIFF_SCROLL_SNAP_PX) {
+    return { scrollTop: target, done: true };
+  }
+  return { scrollTop: next, done: false };
+}
+
+/** Extend repeated movement in the same direction; reverse from what is visible. */
+export function nextDiffScrollTarget(
+  scrollTop: number,
+  activeTarget: number | null,
+  delta: number,
+  max: number,
+): number {
+  const activeDelta = activeTarget === null ? 0 : activeTarget - scrollTop;
+  const continuing = activeDelta !== 0 && Math.sign(activeDelta) === Math.sign(delta);
+  const base = continuing && activeTarget !== null ? activeTarget : scrollTop;
+  return Math.max(0, Math.min(base + delta, max));
+}
+
 /** A review comment plus its local send state. The shared payload is never
  *  mutated after capture, so the line/quote anchor the lane receives stays
  *  exactly what the human saw, even after the diff refreshes (Codex-1 B4: a
@@ -218,6 +251,9 @@ export class DiffContentView implements ContentView {
   /** Index of the currently-marked focus hunk in `focusCache`, or -1. Lets the
    *  scroll handler skip all DOM work while the focus hunk is unchanged. */
   private focusIndex = -1;
+  /** One coalesced vertical keyboard-scroll animation for the main diff canvas. */
+  private verticalScrollRaf = 0;
+  private verticalScrollTarget: number | null = null;
 
   constructor(unifiedDiff: string, container: HTMLElement, options?: DiffViewOptions) {
     this.refreshProvider = options?.refreshProvider ?? null;
@@ -275,6 +311,14 @@ export class DiffContentView implements ContentView {
     };
     this.fileContainer.addEventListener('scroll', onScroll, { passive: true });
     this.disposeListeners.push(() => this.fileContainer.removeEventListener('scroll', onScroll));
+    this.fileContainer.addEventListener('wheel', this.cancelVerticalScrollOnUserInput, {
+      passive: true,
+    });
+    this.fileContainer.addEventListener('pointerdown', this.cancelVerticalScrollOnUserInput);
+    this.disposeListeners.push(() => {
+      this.fileContainer.removeEventListener('wheel', this.cancelVerticalScrollOnUserInput);
+      this.fileContainer.removeEventListener('pointerdown', this.cancelVerticalScrollOnUserInput);
+    });
 
     // Priority panel (spec 160 ext) — docked, hidden until toggled with `p`.
     if (this.reviewPriority) {
@@ -330,6 +374,7 @@ export class DiffContentView implements ContentView {
   }
 
   private renderEmpty(): void {
+    this.cancelVerticalScroll();
     this.closeFileList();
     this.navEl.innerHTML = '';
     this.appendReviewIndicator();
@@ -826,6 +871,7 @@ export class DiffContentView implements ContentView {
     if (idx >= 0 && idx !== this.currentFileIndex) {
       this.currentFileIndex = idx;
       this.renderCurrentFile();
+      this.fileContainer.scrollTop = 0;
     }
     this.scrollToLine(c.side, c.lineStart);
   }
@@ -833,7 +879,7 @@ export class DiffContentView implements ContentView {
   /** Scroll the matching line into view, if it can still be located. */
   private scrollToLine(side: 'old' | 'new', line: number): void {
     const cell = this.findLineCell(side, line);
-    cell?.closest('tr')?.scrollIntoView({ behavior: 'auto', block: 'center' });
+    this.scrollElementVerticallyIntoView(cell?.closest('tr') ?? null, 'center');
   }
 
   private async sendComments(): Promise<void> {
@@ -995,6 +1041,7 @@ export class DiffContentView implements ContentView {
   }
 
   private renderCurrentFile(): void {
+    this.cancelVerticalScroll();
     this.renderNav();
     this.fileContainer.innerHTML = '';
 
@@ -1190,6 +1237,7 @@ export class DiffContentView implements ContentView {
   private navigateHighHunk(delta: number): void {
     if (this.highHunkAnchors.length === 0) return;
     const scrollTop = this.fileContainer.scrollTop;
+    const navigationTop = this.verticalNavigationTop(delta);
     const containerTop = this.fileContainer.getBoundingClientRect().top;
     const offsets = this.highHunkAnchors.map(
       (el) => el.getBoundingClientRect().top - containerTop + scrollTop,
@@ -1197,7 +1245,7 @@ export class DiffContentView implements ContentView {
     let target: Element | null = null;
     if (delta > 0) {
       for (let i = 0; i < offsets.length; i++) {
-        if (offsets[i] > scrollTop + 10) {
+        if (offsets[i] > navigationTop + 10) {
           target = this.highHunkAnchors[i];
           break;
         }
@@ -1205,14 +1253,14 @@ export class DiffContentView implements ContentView {
       target = target ?? this.highHunkAnchors[0]; // wrap to first
     } else {
       for (let i = offsets.length - 1; i >= 0; i--) {
-        if (offsets[i] < scrollTop - 10) {
+        if (offsets[i] < navigationTop - 10) {
           target = this.highHunkAnchors[i];
           break;
         }
       }
       target = target ?? this.highHunkAnchors[this.highHunkAnchors.length - 1];
     }
-    target?.scrollIntoView({ behavior: 'auto', block: 'start' });
+    this.scrollElementVerticallyIntoView(target, 'start');
   }
 
   /** Expand the routine fold nearest the top of the viewport (Enter). Returns
@@ -1373,6 +1421,7 @@ export class DiffContentView implements ContentView {
    *  routine hunk the content rows are hidden, so tint + scroll its block header
    *  / fold summary row instead. Best-effort, like the high marker. */
   private highlightAndScrollToRange(range: ReviewPriorityRange): void {
+    this.cancelVerticalScroll();
     this.clearPreviewHighlight();
     const panels = Array.from(this.fileContainer.querySelectorAll('.d2h-file-side-diff'));
     const sideBySide = panels.length > 1;
@@ -1479,6 +1528,86 @@ export class DiffContentView implements ContentView {
       ?.scrollIntoView({ block: 'nearest' });
   }
 
+  private readonly cancelVerticalScrollOnUserInput = (): void => {
+    this.cancelVerticalScroll();
+  };
+
+  private cancelVerticalScroll(): void {
+    if (this.verticalScrollRaf !== 0) {
+      window.cancelAnimationFrame(this.verticalScrollRaf);
+      this.verticalScrollRaf = 0;
+    }
+    this.verticalScrollTarget = null;
+  }
+
+  /** The pending target is the navigation origin only while input continues in
+   *  the same direction. Reversal starts from the currently visible position. */
+  private verticalNavigationTop(delta: number): number {
+    const scrollTop = this.fileContainer.scrollTop;
+    if (this.verticalScrollTarget === null) return scrollTop;
+    const activeDelta = this.verticalScrollTarget - scrollTop;
+    return activeDelta !== 0 && Math.sign(activeDelta) === Math.sign(delta)
+      ? this.verticalScrollTarget
+      : scrollTop;
+  }
+
+  private scrollVerticallyBy(delta: number): void {
+    const max = Math.max(0, this.fileContainer.scrollHeight - this.fileContainer.clientHeight);
+    const target = nextDiffScrollTarget(
+      this.fileContainer.scrollTop,
+      this.verticalScrollTarget,
+      delta,
+      max,
+    );
+    this.scrollVerticallyTo(target);
+  }
+
+  private scrollVerticallyTo(target: number): void {
+    const max = Math.max(0, this.fileContainer.scrollHeight - this.fileContainer.clientHeight);
+    const clampedTarget = Math.max(0, Math.min(target, max));
+    if (Math.abs(clampedTarget - this.fileContainer.scrollTop) <= DIFF_SCROLL_SNAP_PX) {
+      this.cancelVerticalScroll();
+      this.fileContainer.scrollTop = clampedTarget;
+      return;
+    }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.cancelVerticalScroll();
+      this.fileContainer.scrollTop = clampedTarget;
+      return;
+    }
+
+    this.verticalScrollTarget = clampedTarget;
+    if (this.verticalScrollRaf !== 0) return;
+
+    const step = (): void => {
+      this.verticalScrollRaf = 0;
+      if (this.verticalScrollTarget === null) return;
+
+      const next = smoothDiffScrollStep(this.fileContainer.scrollTop, this.verticalScrollTarget);
+      this.fileContainer.scrollTop = next.scrollTop;
+      if (next.done) {
+        this.verticalScrollTarget = null;
+        return;
+      }
+      this.verticalScrollRaf = window.requestAnimationFrame(step);
+    };
+    this.verticalScrollRaf = window.requestAnimationFrame(step);
+  }
+
+  private scrollElementVerticallyIntoView(
+    target: Element | null,
+    block: 'start' | 'center',
+  ): void {
+    if (!target) return;
+    const containerRect = this.fileContainer.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    let top = targetRect.top - containerRect.top + this.fileContainer.scrollTop;
+    if (block === 'center') {
+      top -= (this.fileContainer.clientHeight - targetRect.height) / 2;
+    }
+    this.scrollVerticallyTo(top);
+  }
+
   onKeyDown(e: KeyboardEvent): boolean {
     // Composer is a focused <textarea>: intercept only submit/cancel, let every
     // other key fall through (return false) so typing reaches the textarea.
@@ -1530,10 +1659,10 @@ export class DiffContentView implements ContentView {
 
     switch (e.key) {
       case 'j':
-        this.fileContainer.scrollBy({ top: 40, behavior: 'auto' });
+        this.scrollVerticallyBy(40);
         return true;
       case 'k':
-        this.fileContainer.scrollBy({ top: -40, behavior: 'auto' });
+        this.scrollVerticallyBy(-40);
         return true;
       case 'h':
         this.scrollHorizontal(-40);
@@ -1542,16 +1671,16 @@ export class DiffContentView implements ContentView {
         this.scrollHorizontal(40);
         return true;
       case 'f':
-        this.fileContainer.scrollBy({ top: this.fileContainer.clientHeight * 0.9, behavior: 'auto' });
+        this.scrollVerticallyBy(this.fileContainer.clientHeight * 0.9);
         return true;
       case 'b':
-        this.fileContainer.scrollBy({ top: -this.fileContainer.clientHeight * 0.9, behavior: 'auto' });
+        this.scrollVerticallyBy(-this.fileContainer.clientHeight * 0.9);
         return true;
       case 'g':
         if (e.shiftKey) {
-          this.fileContainer.scrollTo({ top: this.fileContainer.scrollHeight, behavior: 'auto' });
+          this.scrollVerticallyTo(this.fileContainer.scrollHeight);
         } else {
-          this.fileContainer.scrollTo({ top: 0, behavior: 'auto' });
+          this.scrollVerticallyTo(0);
         }
         return true;
       case 'n':
@@ -1623,18 +1752,19 @@ export class DiffContentView implements ContentView {
       .map((h) => h.header ?? h.rows[0])
       .filter((e): e is Element => !!e);
     if (anchors.length === 0) {
-      this.fileContainer.scrollBy({ top: delta * 200, behavior: 'auto' });
+      this.scrollVerticallyBy(delta * 200);
       return;
     }
 
     const scrollTop = this.fileContainer.scrollTop;
+    const navigationTop = this.verticalNavigationTop(delta);
     const containerTop = this.fileContainer.getBoundingClientRect().top;
     let target: Element | null = null;
 
     if (delta > 0) {
       for (const anchor of anchors) {
         const offset = anchor.getBoundingClientRect().top - containerTop + scrollTop;
-        if (offset > scrollTop + 10) {
+        if (offset > navigationTop + 10) {
           target = anchor;
           break;
         }
@@ -1642,16 +1772,14 @@ export class DiffContentView implements ContentView {
     } else {
       for (let i = anchors.length - 1; i >= 0; i--) {
         const offset = anchors[i].getBoundingClientRect().top - containerTop + scrollTop;
-        if (offset < scrollTop - 10) {
+        if (offset < navigationTop - 10) {
           target = anchors[i];
           break;
         }
       }
     }
 
-    if (target) {
-      target.scrollIntoView({ behavior: 'auto', block: 'start' });
-    }
+    this.scrollElementVerticallyIntoView(target, 'start');
   }
 
   private toggleDiffStyle(): void {
@@ -1965,11 +2093,12 @@ export class DiffContentView implements ContentView {
     if (index !== this.currentFileIndex) {
       this.currentFileIndex = index;
       this.renderCurrentFile();
+      this.fileContainer.scrollTop = 0;
     }
     if (line !== undefined) {
       this.scrollToLine('new', line);
     } else {
-      this.fileContainer.scrollTo({ top: 0, behavior: 'auto' });
+      this.scrollVerticallyTo(0);
     }
     return true;
   }
@@ -2144,6 +2273,7 @@ export class DiffContentView implements ContentView {
   }
 
   dispose(): void {
+    this.cancelVerticalScroll();
     if (this.debounceTimer !== null) {
       window.clearTimeout(this.debounceTimer);
       this.debounceTimer = null;

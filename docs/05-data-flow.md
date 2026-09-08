@@ -427,6 +427,24 @@ PULL (window ← harness), on open and on every auto-refresh:
    (under-collapse, never over-collapse; ADR-0009).
 ```
 
+## Diff View Smooth Keyboard Scrolling Flow (spec 243)
+
+```text
+1. DiffContentView receives a main-canvas vertical navigation key: j/k, f/b,
+   g/G, n/N, or }/{; comment and Review Board line reveals use the same path.
+2. The view resolves and clamps the target once. Repeated input in the same
+   direction extends the pending target; reversal starts from visible scrollTop.
+3. With prefers-reduced-motion: reduce, the view writes scrollTop immediately.
+4. Otherwise one requestAnimationFrame loop advances scrollTop 24% toward the
+   latest target per frame and snaps the final 0.5 px exactly.
+5. The ordinary passive scroll listener updates the cached focus-hunk marker at
+   most once per frame; it performs no layout walk inside the animation.
+6. Exact landing, wheel/pointer input, a content redraw, or dispose cancels the
+   animation and clears its target, leaving no idle RAF.
+7. Horizontal h/l, wheel/trackpad momentum, priority live preview, overlay-list
+   movement, and restored scroll positions remain immediate.
+```
+
 ## Harness Transcript Annotation Flow (spec 240)
 
 ```

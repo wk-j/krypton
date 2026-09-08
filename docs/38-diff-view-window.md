@@ -7,6 +7,7 @@
 > **Implementation notes (post-spec):**
 > - The shipped renderer is **`diff2html`** (+ highlight.js), not `@pierre/diffs` as designed below — the design's `FileDiff`/`processPatch` details are historical.
 > - Spec 155 (`docs/155-live-working-diff.md`) made the window **live**: it re-collects the working diff at lane quiet points (ADR-0008), supports manual refresh (`r`), includes untracked files via the `collect_working_diff` Tauri command, and preserves file + scroll position across refreshes.
+> - Spec 243 (`docs/243-diff-view-smooth-scrolling.md`) gives main-canvas vertical keyboard navigation one coalesced smooth-scroll path. Wheel/trackpad, horizontal movement, overlays, and state restoration remain immediate.
 > - The diff2html dark-scheme wrapper is **transparent** so the compositor window backdrop (and desktop) show through, matching terminals and the harness. `[visual] opacity` / `chrome.backdrop` therefore reach the code surface. Sticky line-number gutters keep diff2html's opaque fill so horizontally scrolled code does not bleed under the numbers. Light scheme (`html[data-theme-scheme=light]`) keeps the GitHub-dark slab because the renderer is still `d2h-dark-color-scheme` (light syntax on frost would vanish). Overlays (file list, comments, help, composer, priority panel) stay elevated/opaque. No `backdrop-filter`.
 
 ## Problem
@@ -195,6 +196,13 @@ openDiffView(options?: { staged?: boolean; path?: string }): Promise<void>
 | `Enter` / `Shift+Enter` / `Esc` | Comment composer open | Add comment / newline / cancel (spec 158) |
 | `j` / `k`, Enter, `d`, `[` `]` / Tab, `s`, Esc | Comments overlay open | Move / jump / delete / retarget / send / close (spec 158) |
 | `?` / `q` / `Esc` | Help overlay open | Close the keybindings help overlay |
+
+Since spec 243, the main reading canvas animates vertical keyboard movement for
+`j`/`k`, `f`/`b`, `g`/`G`, `n`/`N`, `}`/`{`, and line reveals. Repeated keys
+extend one mutable target rather than restarting native browser easing. Reversing
+direction starts from the visible position. Wheel/trackpad input, horizontal
+`h`/`l`, priority live previews, overlay lists, and refresh/file-state restoration
+remain immediate. `prefers-reduced-motion: reduce` makes every routed jump instant.
 
 ### Review comments (spec 158)
 
