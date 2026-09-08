@@ -10,11 +10,12 @@
 //     Retry-After backoff: no network until the penalty lapses, and the
 //     error sentinel carries the deadline ("rate-limited:<epochMs>").
 //   - Codex: active-account snapshot from Codex app-server's
-//     `account/rateLimits/read`, including model-scoped buckets. Local rollout
-//     JSONL remains the compatibility fallback for older Codex builds.
+//     `account/rateLimits/read`, including model-scoped buckets. The ChatGPT
+//     usage backend supplements a missing default 5-hour window; local rollout
+//     JSONL remains the final compatibility fallback for older Codex builds.
 //
-// Tokens are never logged and never leave this module except as the
-// Authorization header to api.anthropic.com. Error strings are static
+// Tokens are never logged or persisted by this module. They leave it only as
+// Authorization headers to their owning provider. Error strings are static
 // sentinels — never raw HTTP bodies.
 
 use serde::{Deserialize, Serialize};
@@ -29,8 +30,10 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_CACHE_TTL_MS: i64 = 180_000;
+const CODEX_USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 const CODEX_MAX_FILES: usize = 10;
 const CODEX_APP_SERVER_TIMEOUT: Duration = Duration::from_secs(5);
+const CODEX_BACKEND_TIMEOUT: Duration = Duration::from_secs(10);
 const GROK_USAGE_URL: &str = "https://cli-chat-proxy.grok.com/v1/billing";
 // Sent defensively so the request looks like the CLI's own; the endpoint
 // accepts a bare Bearer without it (verified), so it is not required.
@@ -519,13 +522,22 @@ pub async fn usage_fetch_claude() -> Result<ClaudeUsage, String> {
 
 // ─── Codex rollout scanner ───────────────────────────────────────────────────
 
-fn codex_sessions_dir() -> Option<PathBuf> {
-    let home = std::env::var("CODEX_HOME")
+fn codex_home_dir() -> Option<PathBuf> {
+    std::env::var("CODEX_HOME")
         .ok()
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
-        .or_else(|| dirs::home_dir().map(|h| h.join(".codex")))?;
-    let sessions = home.join("sessions");
+        .or_else(|| {
+            crate::pty::cached_login_env()
+                .get("CODEX_HOME")
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
+        })
+        .or_else(|| dirs::home_dir().map(|h| h.join(".codex")))
+}
+
+fn codex_sessions_dir() -> Option<PathBuf> {
+    let sessions = codex_home_dir()?.join("sessions");
     sessions.is_dir().then_some(sessions)
 }
 
@@ -602,6 +614,16 @@ fn codex_app_server_window_from(v: Option<&Value>) -> Option<CodexWindow> {
     })
 }
 
+fn codex_backend_window_from(v: Option<&Value>) -> Option<CodexWindow> {
+    let obj = v?.as_object()?;
+    let seconds = obj.get("limit_window_seconds")?.as_u64()?;
+    Some(CodexWindow {
+        used_percent: obj.get("used_percent")?.as_f64()?,
+        window_minutes: seconds.div_ceil(60),
+        resets_at: obj.get("reset_at")?.as_i64()?,
+    })
+}
+
 fn codex_usage_from_app_server(result: &Value, observed_at: String) -> Option<CodexUsage> {
     let default = result.get("rateLimits")?.as_object()?;
     let default_id = default
@@ -656,6 +678,99 @@ fn codex_usage_from_app_server(result: &Value, observed_at: String) -> Option<Co
         observed_at,
         session_file: "app-server".to_string(),
     })
+}
+
+fn codex_usage_from_backend(result: &Value, observed_at: String) -> Option<CodexUsage> {
+    let rate_limit = result.get("rate_limit")?.as_object()?;
+    let primary = codex_backend_window_from(rate_limit.get("primary_window"));
+    let secondary = codex_backend_window_from(rate_limit.get("secondary_window"));
+    if primary.is_none() && secondary.is_none() {
+        return None;
+    }
+
+    Some(CodexUsage {
+        primary,
+        secondary,
+        scoped_limits: Vec::new(),
+        plan_type: result
+            .get("plan_type")
+            .and_then(Value::as_str)
+            .map(String::from),
+        observed_at,
+        session_file: "backend".to_string(),
+    })
+}
+
+fn supplement_codex_usage(mut usage: CodexUsage, backend: CodexUsage) -> CodexUsage {
+    let mut windows = [usage.primary.take(), usage.secondary.take()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    for window in [backend.primary, backend.secondary].into_iter().flatten() {
+        if !windows
+            .iter()
+            .any(|existing| existing.window_minutes == window.window_minutes)
+        {
+            windows.push(window);
+        }
+    }
+    windows.sort_by_key(|window| window.window_minutes);
+    usage.primary = windows.first().cloned();
+    usage.secondary = windows.get(1).cloned();
+    if usage.plan_type.is_none() {
+        usage.plan_type = backend.plan_type;
+    }
+    usage
+}
+
+fn parse_codex_backend_credentials(raw: &str) -> Option<(String, Option<String>)> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    let tokens = value.get("tokens")?;
+    let access_token = tokens.get("access_token")?.as_str()?.to_string();
+    let account_id = tokens
+        .get("account_id")
+        .and_then(Value::as_str)
+        .map(String::from);
+    Some((access_token, account_id))
+}
+
+async fn fetch_codex_backend() -> Result<CodexUsage, String> {
+    let auth_path = codex_home_dir()
+        .ok_or_else(|| "not-connected".to_string())?
+        .join("auth.json");
+    let raw = std::fs::read_to_string(auth_path).map_err(|_| "not-connected".to_string())?;
+    let (access_token, account_id) =
+        parse_codex_backend_credentials(&raw).ok_or_else(|| "not-connected".to_string())?;
+    let client = reqwest::Client::builder()
+        .timeout(CODEX_BACKEND_TIMEOUT)
+        .build()
+        .map_err(|_| "network-error".to_string())?;
+    let mut request = client
+        .get(CODEX_USAGE_URL)
+        .header("Authorization", format!("Bearer {access_token}"))
+        .header("User-Agent", "codex-cli")
+        .header("OpenAI-Beta", "codex-1")
+        .header("originator", "Codex Desktop");
+    if let Some(account_id) = account_id {
+        request = request.header("ChatGPT-Account-Id", account_id);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|_| "network-error".to_string())?;
+    let status = response.status();
+    if status.as_u16() == 401 || status.as_u16() == 403 {
+        return Err("token-expired".to_string());
+    }
+    if !status.is_success() {
+        return Err(format!("http-{}", status.as_u16()));
+    }
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|_| "unexpected-response".to_string())?;
+    let observed_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    codex_usage_from_backend(&body, observed_at).ok_or_else(|| "unexpected-response".to_string())
 }
 
 fn scan_rollout_file(path: &PathBuf) -> Option<CodexUsage> {
@@ -733,9 +848,26 @@ where
 }
 
 async fn fetch_codex_app_server() -> Result<CodexUsage, String> {
-    let mut child = tokio::process::Command::new("codex")
-        .args(["app-server", "--listen", "stdio://"])
-        .envs(crate::pty::cached_login_env().iter())
+    let mut command = tokio::process::Command::new("codex");
+    command
+        .args([
+            "-c",
+            "approval_policy=never",
+            "-s",
+            "read-only",
+            "-a",
+            "never",
+            "app-server",
+            "--listen",
+            "stdio://",
+        ])
+        .envs(crate::pty::cached_login_env().iter());
+    // Keep the app-server and direct-backend paths on the exact same account,
+    // even when the GUI process and cached login shell disagree on CODEX_HOME.
+    if let Some(codex_home) = codex_home_dir() {
+        command.env("CODEX_HOME", codex_home);
+    }
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -803,9 +935,26 @@ fn chrono_free_epoch(iso: &str) -> Option<i64> {
 
 #[tauri::command]
 pub async fn usage_fetch_codex() -> Result<CodexUsage, String> {
-    if let Ok(Ok(usage)) =
+    if let Ok(Ok(mut usage)) =
         tokio::time::timeout(CODEX_APP_SERVER_TIMEOUT, fetch_codex_app_server()).await
     {
+        let has_session = [usage.primary.as_ref(), usage.secondary.as_ref()]
+            .into_iter()
+            .flatten()
+            .any(|window| window.window_minutes.abs_diff(300) <= 1);
+        let has_weekly = [usage.primary.as_ref(), usage.secondary.as_ref()]
+            .into_iter()
+            .flatten()
+            .any(|window| window.window_minutes.abs_diff(10_080) <= 1);
+        if !has_session && has_weekly {
+            if let Ok(backend) = fetch_codex_backend().await {
+                usage = supplement_codex_usage(usage, backend);
+            }
+        }
+        return Ok(usage);
+    }
+
+    if let Ok(usage) = fetch_codex_backend().await {
         return Ok(usage);
     }
 
@@ -1411,6 +1560,76 @@ mod tests {
         );
         assert_eq!(usage.plan_type.as_deref(), Some("prolite"));
         assert_eq!(usage.session_file, "app-server");
+    }
+
+    #[test]
+    fn parses_and_supplements_codex_backend_usage() {
+        let body: Value = serde_json::from_str(
+            r#"{
+              "plan_type": "prolite",
+              "rate_limit": {
+                "primary_window": {
+                  "used_percent": 3,
+                  "limit_window_seconds": 18000,
+                  "reset_at": 1788789902
+                },
+                "secondary_window": {
+                  "used_percent": 4,
+                  "limit_window_seconds": 604800,
+                  "reset_at": 1789369000
+                }
+              }
+            }"#,
+        )
+        .expect("fixture json");
+        let backend =
+            codex_usage_from_backend(&body, "2026-09-07T09:00:00Z".into()).expect("backend usage");
+        assert_eq!(
+            backend.primary.as_ref().expect("primary").window_minutes,
+            300
+        );
+        assert_eq!(
+            backend
+                .secondary
+                .as_ref()
+                .expect("secondary")
+                .window_minutes,
+            10_080
+        );
+
+        let app_server = CodexUsage {
+            primary: Some(CodexWindow {
+                used_percent: 1.0,
+                window_minutes: 10_080,
+                resets_at: 1789369000,
+            }),
+            secondary: None,
+            scoped_limits: vec![CodexScopedLimit {
+                id: "codex_bengalfox".into(),
+                name: "GPT-5.3-Codex-Spark".into(),
+                primary: None,
+                secondary: None,
+            }],
+            plan_type: None,
+            observed_at: "2026-09-07T09:00:00Z".into(),
+            session_file: "app-server".into(),
+        };
+        let merged = supplement_codex_usage(app_server, backend);
+        assert_eq!(merged.primary.expect("session").window_minutes, 300);
+        assert_eq!(merged.secondary.expect("weekly").used_percent, 1.0);
+        assert_eq!(merged.scoped_limits.len(), 1);
+        assert_eq!(merged.plan_type.as_deref(), Some("prolite"));
+        assert_eq!(merged.session_file, "app-server");
+    }
+
+    #[test]
+    fn parses_codex_backend_credentials() {
+        let credentials = parse_codex_backend_credentials(
+            r#"{"tokens":{"access_token":"secret","account_id":"acct-1"}}"#,
+        )
+        .expect("credentials");
+        assert_eq!(credentials.0, "secret");
+        assert_eq!(credentials.1.as_deref(), Some("acct-1"));
     }
 
     #[test]
