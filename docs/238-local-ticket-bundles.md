@@ -250,6 +250,12 @@ Picker เดิมยังเป็น flat amber modal: section `LOCAL` โ�
 แบบ asynchronous โดยไม่บล็อก local row GitHub row ใช้ badge `LOCAL` หรือ `IMPORT` และ action
 Analyze, Post comment, Fix here ใช้ได้เฉพาะเมื่อมี GitHub reference
 
+รายการแยกสองแท็บ **Open** / **Closed** (นับจำนวนบนปุ่ม): Open คือ local ที่ยังไม่ `done`
+(`todo` / `in_progress` / `blocked`) บวก GitHub issue ที่ยังเปิด และแถว GitHub unavailable;
+Closed คือ local `done` และ GitHub `closed` ถ้ามี `gh issue list` ค่าเริ่มต้นยังเป็น open อย่างเดียว
+ดังนั้น Closed จะเป็น local ที่ปิดเป็นหลัก `Tab` สลับแท็บ, คลิกปุ่มก็ได้; filter อยู่กับแท็บปัจจุบัน
+และรีเซ็ตแถวที่เลือกเมื่อเปลี่ยนแท็บ
+
 Ticket Panel เป็น split pane ชิดขอบขวาของ harness แยกจาก lane rail — ส่วนของหน้าต่างหลัก
 ไม่ใช่ nested card ที่ลอยใน pane แถบ `acp-harness__ticket-bar` ใน pin slot ของ spec 194
 เลิกใช้แล้ว Ticket Panel คือ chrome เดียวบนจอ (picker ยังเป็น modal ตามเดิม):
@@ -296,7 +302,8 @@ Ticket Panel เป็น split pane ชิดขอบขวาของ harnes
 - **project read-only:** list bundle ได้ แต่ create/note/add/link แจ้ง read-only และไม่แก้ active pointer
 - **`gh` ไม่มีหรือ login ไม่ผ่าน:** local section ทำงานครบ GitHub section แสดง unavailable
 - **GitHub issue ถูกลบหรือเข้าไม่ได้:** เก็บ reference และ snapshot ล่าสุดไว้พร้อมสถานะ stale
-- **GitHub closed แต่ local ticket ยังทำอยู่:** แสดงสองสถานะแยกกัน ห้าม auto-close local ticket
+- **GitHub closed แต่ local ticket ยังทำอยู่:** แสดงสองสถานะแยกกัน ห้าม auto-close local ticket; ใน picker แถว local ไปแท็บตาม `status` ของ bundle (`done` → Closed, อื่น ๆ → Open) ไม่ตาม GitHub state
+- **Local ticket ที่ `done`:** อยู่แท็บ Closed เท่านั้น ไม่ปะปนกับ Open issues; เลือกแล้ว Set ticket ยังใช้ได้ (ไม่ได้ลบ bundle)
 - **แก้ไฟล์จาก terminal:** `#ticket refresh` reload `ticket.md` และ resource scan ไม่มี filesystem watcher
 - **metadata เสีย:** ข้าม bundle นั้นใน picker, log path กับ parse error และไม่ลบไฟล์
 - **resource หายจาก disk:** scan รอบถัดไปลด count โดยไม่เขียน entry ค้างใน metadata

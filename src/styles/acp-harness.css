@@ -3201,7 +3201,7 @@
 .acp-ticket__panel {
   display: flex;
   flex-direction: column;
-  width: clamp(480px, 58vw, 820px);
+  width: clamp(640px, 78vw, 1120px);
   max-width: calc(100% - 24px);
   max-height: 72vh;
   background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
@@ -3233,6 +3233,55 @@
   text-transform: none;
 }
 
+.acp-ticket__tabs {
+  display: flex;
+  gap: 6px;
+  padding: 6px 14px;
+  border-bottom: 1px solid rgba(255, 176, 0, 0.14);
+}
+
+.acp-ticket__tab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: transparent;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+  font: inherit;
+  font-size: 0.86em;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+  cursor: default;
+}
+
+.acp-ticket__tab:hover {
+  border-color: rgba(255, 176, 0, 0.22);
+  color: #ffd880;
+}
+
+.acp-ticket__tab--active {
+  border-color: rgba(255, 176, 0, 0.42);
+  background: rgba(255, 176, 0, 0.10);
+  color: #ffd880;
+}
+
+.acp-ticket__tab:focus-visible {
+  outline: 1px solid #ffd880;
+  outline-offset: 2px;
+}
+
+.acp-ticket__tab-count {
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  opacity: 0.72;
+  text-transform: none;
+}
+
 .acp-ticket__filter {
   padding: 6px 14px;
   border-bottom: 1px solid rgba(255, 176, 0, 0.14);
@@ -3251,11 +3300,15 @@
 }
 
 .acp-ticket__row {
-  display: flex;
+  display: grid;
+  grid-template-areas:
+    'title title title'
+    'identity labels age';
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
   align-items: baseline;
-  gap: 10px;
+  gap: 2px 12px;
   width: 100%;
-  padding: 5px 14px;
+  padding: 7px 14px;
   border: 0;
   border-radius: var(--krypton-border-radius, 8px);
   background: transparent;
@@ -3281,10 +3334,21 @@
   box-shadow: 0 0 7px rgba(255, 176, 0, 0.42);
 }
 
+.acp-ticket__identity {
+  grid-area: identity;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
 .acp-ticket__num {
-  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
   color: #ffd880;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .acp-ticket__badge {
@@ -3300,23 +3364,26 @@
 }
 
 .acp-ticket__title {
-  flex: 0 1 auto;
+  grid-area: title;
   min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.acp-ticket__labels {
+  grid-area: labels;
+  max-width: 40ch;
   overflow: hidden;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+  font-style: italic;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.acp-ticket__labels {
-  flex: 0 0 auto;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
-  font-style: italic;
-}
-
 .acp-ticket__age {
-  flex: 0 0 auto;
-  margin-left: auto;
+  grid-area: age;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+  white-space: nowrap;
 }
 
 .acp-ticket__empty {

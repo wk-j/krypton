@@ -62,6 +62,9 @@ import {
   armConsolePermissionFlags,
   seatPromptDisabledReason,
   ticketPickerActionForKey,
+  ticketPickerRowIsClosed,
+  ticketPickerTabCounts,
+  filterTicketPickerRows,
   ticketWorkActionDisabledReason,
   PointerPersistGate,
   githubIssueRefRequiredMessage,
@@ -391,11 +394,98 @@ describe('consumeOptimisticUserEcho', () => {
   });
 });
 
+describe('ticket picker open/closed tabs', () => {
+  const localOpen = {
+    kind: 'local' as const,
+    ticketId: '2026-09-08-auth-timeout',
+    title: 'Login timeout',
+    labels: [],
+    state: 'in_progress' as const,
+  };
+  const localBlocked = {
+    kind: 'local' as const,
+    ticketId: '2026-09-08-blocked',
+    title: 'Waiting on review',
+    labels: [],
+    state: 'blocked' as const,
+  };
+  const localDone = {
+    kind: 'local' as const,
+    ticketId: '2026-09-01-old-bug',
+    title: 'Old bug',
+    labels: [],
+    state: 'done' as const,
+  };
+  const githubOpen = {
+    kind: 'github' as const,
+    number: 242,
+    title: 'Open issue',
+    labels: ['acp'],
+    state: 'open' as const,
+    url: 'https://github.com/wk-j/krypton/issues/242',
+  };
+  const githubClosed = {
+    kind: 'github' as const,
+    number: 11,
+    title: 'Closed issue',
+    labels: [],
+    state: 'closed' as const,
+    url: 'https://github.com/wk-j/krypton/issues/11',
+  };
+  const unavailable = {
+    kind: 'unavailable' as const,
+    title: 'GitHub unavailable',
+    labels: [],
+    state: 'open' as const,
+  };
+  const rows = [localOpen, localBlocked, localDone, githubOpen, githubClosed, unavailable];
+
+  it('treats local done and GitHub closed as closed, blocked as open', () => {
+    expect(ticketPickerRowIsClosed(localDone)).toBe(true);
+    expect(ticketPickerRowIsClosed(githubClosed)).toBe(true);
+    expect(ticketPickerRowIsClosed(localOpen)).toBe(false);
+    expect(ticketPickerRowIsClosed(localBlocked)).toBe(false);
+    expect(ticketPickerRowIsClosed(githubOpen)).toBe(false);
+    expect(ticketPickerTabCounts(rows)).toEqual({ open: 4, closed: 2 });
+  });
+
+  it('keeps closed local tickets off the Open tab', () => {
+    expect(filterTicketPickerRows(rows, '', 'open').map((row) => row.title)).toEqual([
+      'Login timeout',
+      'Waiting on review',
+      'Open issue',
+      'GitHub unavailable',
+    ]);
+    expect(filterTicketPickerRows(rows, '', 'closed').map((row) => row.title)).toEqual([
+      'Old bug',
+      'Closed issue',
+    ]);
+  });
+
+  it('filters inside the active tab only', () => {
+    expect(filterTicketPickerRows(rows, 'bug', 'closed').map((row) => row.title)).toEqual(['Old bug']);
+    expect(filterTicketPickerRows(rows, 'bug', 'open')).toEqual([]);
+    expect(filterTicketPickerRows(rows, 'timeout', 'open').map((row) => row.title)).toEqual(['Login timeout']);
+  });
+});
+
 describe('ticket picker direct actions', () => {
   type TicketActionRunner = {
     runTicketPickerAction(action: 'set-ticket' | 'analyze-github-issue' | 'post-github-comment' | 'fix-github-issue'): Promise<void>;
   };
   const runTicketPickerAction = (AcpHarnessView.prototype as unknown as TicketActionRunner).runTicketPickerAction;
+
+  it('gives the complete issue title a wrapping row above its metadata', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    const css = readFileSync(join(here, '../styles/acp-harness.css'), 'utf8');
+    const titleRule = css.match(/\.acp-ticket__title\s*\{([^}]*)\}/);
+
+    expect(viewSrc).toMatch(/acp-ticket__title[\s\S]{0,160}acp-ticket__identity/);
+    expect(titleRule?.[1]).toMatch(/grid-area:\s*title/);
+    expect(titleRule?.[1]).toMatch(/white-space:\s*normal/);
+    expect(titleRule?.[1]).not.toMatch(/text-overflow:\s*ellipsis/);
+  });
 
   it('maps Enter and modified number keys without stealing filter text', () => {
     expect(ticketPickerActionForKey({ key: 'Enter', metaKey: false, ctrlKey: false })).toBe('set-ticket');
@@ -450,7 +540,7 @@ describe('ticket picker direct actions', () => {
       },
     };
     const target = {
-      ticketPicker: { rows: [row], filter: '', index: 0 },
+      ticketPicker: { rows: [row], filter: '', index: 0, tab: 'open' },
       ticketPickerMatches: () => [row],
       parseIssueRef: () => ({ repo: 'wk-j/krypton', number: 203, url: row.url }),
       activeLane: () => lane,
@@ -484,7 +574,7 @@ describe('ticket picker direct actions', () => {
     const flashes: string[] = [];
     const setRefs: unknown[] = [];
     const target = {
-      ticketPicker: { rows: [row], filter: '', index: 0 },
+      ticketPicker: { rows: [row], filter: '', index: 0, tab: 'open' },
       ticketPickerMatches: () => [row],
       parseIssueRef: () => ({ repo: 'wk-j/krypton', number: 203, url: row.url }),
       activeLane: () => ({ displayName: 'Codex-1', status: 'busy', client: {} }),

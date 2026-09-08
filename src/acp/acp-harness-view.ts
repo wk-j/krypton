@@ -530,6 +530,8 @@ export type TicketPickerAction =
   | 'post-github-comment'
   | 'fix-github-issue';
 
+export type TicketPickerTab = 'open' | 'closed';
+
 export function ticketPickerActionForKey(
   event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey'>,
 ): TicketPickerAction | null {
@@ -539,6 +541,38 @@ export function ticketPickerActionForKey(
   if (event.key === '2') return 'post-github-comment';
   if (event.key === '3') return 'fix-github-issue';
   return null;
+}
+
+/** Local `done` and GitHub `closed` share the Closed tab so finished work
+ *  is not mixed into the Open list. Blocked stays Open — it is still live. */
+export function ticketPickerRowIsClosed(row: Pick<TicketPickerRow, 'state'>): boolean {
+  return row.state === 'done' || row.state === 'closed';
+}
+
+export function ticketPickerTabCounts(rows: TicketPickerRow[]): { open: number; closed: number } {
+  let open = 0;
+  let closed = 0;
+  for (const row of rows) {
+    if (ticketPickerRowIsClosed(row)) closed += 1;
+    else open += 1;
+  }
+  return { open, closed };
+}
+
+export function filterTicketPickerRows(
+  rows: TicketPickerRow[],
+  filter: string,
+  tab: TicketPickerTab,
+): TicketPickerRow[] {
+  const wantClosed = tab === 'closed';
+  const query = filter.trim().toLowerCase();
+  return rows.filter((row) => {
+    if (ticketPickerRowIsClosed(row) !== wantClosed) return false;
+    if (!query) return true;
+    return `${row.kind} ${row.ticketId ?? ''} #${row.number ?? ''} ${row.title} ${row.labels.join(' ')}`
+      .toLowerCase()
+      .includes(query);
+  });
 }
 
 export function ticketWorkActionDisabledReason(
@@ -1017,7 +1051,12 @@ export class AcpHarnessView implements ContentView {
   /** spec 194: open `#ticket` picker — its own modal dialog (not a composer
    *  popup); the filter is typed live into the dialog (the draft was consumed
    *  by #ticket). */
-  private ticketPicker: { rows: TicketPickerRow[]; filter: string; index: number } | null = null;
+  private ticketPicker: {
+    rows: TicketPickerRow[];
+    filter: string;
+    index: number;
+    tab: TicketPickerTab;
+  } | null = null;
   private issueReportUnlisten: UnlistenFn | null = null;
   private ticketProgressUnlisten: UnlistenFn | null = null;
   private ticketWorkerUnlisten: UnlistenFn | null = null;
@@ -4087,6 +4126,7 @@ export class AcpHarnessView implements ContentView {
     this.ticketOverlayEl.hidden = !picker;
     if (!picker) return;
     const matches = this.ticketPickerMatches();
+    const counts = ticketPickerTabCounts(picker.rows);
     const safeIndex = Math.max(0, Math.min(picker.index, matches.length - 1));
     const selectedRow = matches[safeIndex];
     const lane = this.activeLane();
@@ -4103,8 +4143,21 @@ export class AcpHarnessView implements ContentView {
     const filter = picker.filter
       ? esc(picker.filter)
       : `<span class="acp-ticket__filter-hint">type to filter</span>`;
+    const tabButton = (id: TicketPickerTab, label: string, count: number): string => {
+      const active = picker.tab === id ? ' acp-ticket__tab--active' : '';
+      return (
+        `<button class="acp-ticket__tab${active}" type="button" role="tab" ` +
+        `aria-selected="${picker.tab === id}" data-ticket-tab="${id}">` +
+        `${label} <span class="acp-ticket__tab-count">${count}</span></button>`
+      );
+    };
+    const empty = picker.filter.trim()
+      ? 'no matching tickets'
+      : picker.tab === 'closed'
+        ? 'no closed tickets'
+        : 'no open tickets';
     const rows = matches.length === 0
-      ? `<div class="acp-ticket__empty">no matching tickets</div>`
+      ? `<div class="acp-ticket__empty">${empty}</div>`
       : matches
           .map((row, i) => {
             const sel = i === safeIndex ? ' acp-ticket__row--selected' : '';
@@ -4130,9 +4183,11 @@ export class AcpHarnessView implements ContentView {
               `<${tag} class="acp-ticket__row${sel}${row.kind === 'unavailable' ? ' acp-ticket__row--unavailable' : ''}"${typeAttr} role="option" ` +
               `aria-selected="${i === safeIndex}" data-ticket-index="${i}"` +
               `${row.kind === 'unavailable' ? ' aria-disabled="true"' : ''}>` +
+              `<span class="acp-ticket__title">${esc(row.title)}</span>` +
+              `<span class="acp-ticket__identity">` +
               `<span class="acp-ticket__num">${esc(key)}</span>` +
               badge +
-              `<span class="acp-ticket__title">${esc(row.title)}</span>` +
+              `</span>` +
               labels +
               `<span class="acp-ticket__age">${esc(age)}${state}</span>` +
               `</${tag}>`
@@ -4142,6 +4197,10 @@ export class AcpHarnessView implements ContentView {
     this.ticketPanelEl.innerHTML =
       `<header class="acp-ticket__head">local tickets + GitHub` +
       `<span class="acp-ticket__sub">${target}</span></header>` +
+      `<div class="acp-ticket__tabs" role="tablist" aria-label="Ticket status">` +
+      tabButton('open', 'Open', counts.open) +
+      tabButton('closed', 'Closed', counts.closed) +
+      `</div>` +
       `<div class="acp-ticket__filter">${filter}<span class="acp-harness__caret">█</span></div>` +
       `<div class="acp-ticket__rows" role="listbox" data-count="${matches.length}">${rows}</div>` +
       `<div class="acp-ticket__actions" aria-label="Selected ticket actions">` +
@@ -4158,7 +4217,7 @@ export class AcpHarnessView implements ContentView {
       `<span class="acp-ticket__action-key">⌘3</span> Fix here</button>` +
       `</div>` +
       `<footer class="acp-ticket__foot">` +
-      `<span>↑↓ / ⌃n⌃p select · Esc dismiss</span>` +
+      `<span>Tab open/closed · ↑↓ / ⌃n⌃p select · Esc dismiss</span>` +
       `<span>shared with all ${this.lanes.length} lanes · work runs in ${esc(lane?.displayName ?? 'no lane')}</span>` +
       `</footer>`;
     this.ticketPanelEl.querySelector('.acp-ticket__row--selected')?.scrollIntoView({ block: 'nearest' });
@@ -7257,7 +7316,7 @@ export class AcpHarnessView implements ContentView {
         updatedAt: new Date(ticket.updatedAt).toISOString(),
         url: ticket.github?.issueUrl,
       }));
-      const started = { rows, filter: '', index: 0 };
+      const started = { rows, filter: '', index: 0, tab: 'open' as const };
       this.ticketPicker = started;
       this.renderTicketOverlayEl();
 
@@ -7321,17 +7380,25 @@ export class AcpHarnessView implements ContentView {
   private ticketPickerMatches(): TicketPickerRow[] {
     const picker = this.ticketPicker;
     if (!picker) return [];
-    const filter = picker.filter.trim().toLowerCase();
-    if (!filter) return picker.rows;
-    return picker.rows.filter((r) =>
-      `${r.kind} ${r.ticketId ?? ''} #${r.number ?? ''} ${r.title} ${r.labels.join(' ')}`
-        .toLowerCase()
-        .includes(filter),
-    );
+    return filterTicketPickerRows(picker.rows, picker.filter, picker.tab);
+  }
+
+  private setTicketPickerTab(tab: TicketPickerTab): void {
+    const picker = this.ticketPicker;
+    if (!picker || picker.tab === tab) return;
+    picker.tab = tab;
+    picker.index = 0;
+    this.renderTicketOverlayEl();
   }
 
   private handleTicketPickerClick(event: MouseEvent): void {
     if (!this.ticketPicker || !(event.target instanceof Element)) return;
+    const tabButton = event.target.closest<HTMLButtonElement>('[data-ticket-tab]');
+    if (tabButton && this.ticketPanelEl.contains(tabButton)) {
+      const tab = tabButton.dataset.ticketTab;
+      if (tab === 'open' || tab === 'closed') this.setTicketPickerTab(tab);
+      return;
+    }
     const actionButton = event.target.closest<HTMLButtonElement>('[data-ticket-action]');
     if (actionButton && this.ticketPanelEl.contains(actionButton)) {
       const action = actionButton.dataset.ticketAction as TicketPickerAction | undefined;
@@ -7403,10 +7470,10 @@ export class AcpHarnessView implements ContentView {
     if (lane) await this.runGithubIssuePromptVerb(lane, action, [ticket.github.issueUrl]);
   }
 
-  /** Modal-dialog key handling while the ticket picker is open: printable keys
-   *  build the filter, ↑↓/⌃n⌃p move, Enter selects, modified numbers run the
-   *  selected ticket, and Esc dismisses. Unclaimed combos fall through so
-   *  app-level shortcuts keep working. */
+  /** Modal-dialog key handling while the ticket picker is open: Tab switches
+   *  Open/Closed, printable keys build the filter, ↑↓/⌃n⌃p move, Enter selects,
+   *  modified numbers run the selected ticket, and Esc dismisses. Unclaimed
+   *  combos fall through so app-level shortcuts keep working. */
   private handleTicketPickerKey(e: KeyboardEvent): boolean {
     const picker = this.ticketPicker;
     if (!picker) return false;
@@ -7415,6 +7482,11 @@ export class AcpHarnessView implements ContentView {
       e.preventDefault();
       this.ticketPicker = null;
       this.renderTicketOverlayEl();
+      return true;
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      this.setTicketPickerTab(picker.tab === 'open' ? 'closed' : 'open');
       return true;
     }
     if (e.key === 'ArrowDown' || (e.ctrlKey && (e.key === 'n' || e.key === 'N'))) {

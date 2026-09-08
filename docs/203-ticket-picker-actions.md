@@ -90,7 +90,7 @@ type TicketPickerAction =
 The existing picker state remains unchanged:
 
 ```ts
-{ rows: TicketPickerRow[]; filter: string; index: number }
+{ rows: TicketPickerRow[]; filter: string; index: number; tab: 'open' | 'closed' }
 ```
 
 The selected row stays derived from `ticketPickerMatches()` and `index`; there is no
@@ -130,7 +130,8 @@ the dialog stays open and explains why the work actions are unavailable.
 | Key | Dialog action |
 |-----|---------------|
 | `↑` / `↓`, `Ctrl+P` / `Ctrl+N` | Move selected issue |
-| Printable text / `Backspace` | Filter issues |
+| `Tab` | Toggle Open / Closed tab |
+| Printable text / `Backspace` | Filter the active tab |
 | `Enter` | Set selected issue as working ticket |
 | `Cmd/Ctrl+1` | Analyze selected issue in the active lane |
 | `Cmd/Ctrl+2` | Post a comment through the active lane |
@@ -146,6 +147,7 @@ The panel keeps one flat surface and gains a footer action band:
 
 ```text
 ┌ working ticket ───────────── target: Codex-1 · idle ┐
+│ [ Open 12 ] [ Closed 3 ]                            │
 │ filter…                                             │
 │ #31  selected issue title                 2h        │
 │ #32  another issue                        1d        │
@@ -160,6 +162,9 @@ The panel keeps one flat surface and gains a footer action band:
 - Work buttons are disabled when there is no runnable active lane. The action band
   names the target lane and status so "Fix here" is unambiguous.
 - The selected row is clickable; click changes selection but does not execute.
+- Each row gives the complete issue title its own wrapping line. Ticket identity,
+  labels, age, and state stay on a quieter metadata line below it so they never
+  truncate the title.
 - Action buttons use the existing amber secondary-button vocabulary: full 1px border,
   transparent background, square geometry, visible `:focus-visible`, and no left rail.
 - Buttons wrap as a single flex row on narrow panels. The list keeps the remaining

@@ -373,7 +373,10 @@
        app's watcher embeds them; tldraw Offline remains the sole document owner.
     h. #ticket is local-first (spec 238). With no arguments it renders
        `.krypton/tickets/` immediately, then adds unlinked GitHub issues when
-       `gh issue list` completes. Creating or selecting a ticket persists only a
+       `gh issue list` completes. The picker splits Open (live local tickets
+       plus open GitHub issues) from Closed (local `done`, and GitHub `closed`
+       if present). Tab toggles the tab; the live filter applies only to the
+       visible tab. Creating or selecting a ticket persists only a
        version-2 active pointer; Rust owns `ticket.json`, `ticket.md`, resource
        copy/validation, and the derived `.krypton/analyses/<owner>/<repo>/<id>/`
        summary. `#ticket work`, Analyze, and Fix here bind the active ticket to

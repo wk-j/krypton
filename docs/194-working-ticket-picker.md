@@ -130,7 +130,7 @@ Issue fetching reuses `run_command` + `gh`:
 
 | Input | Action |
 |-------|--------|
-| `#ticket` | Open picker modal: fuzzy-filterable list `#N · title · labels · age`, ↑↓/⌃n⌃p select, Enter set, Cmd/Ctrl+1/2/3 Analyze / Post comment / Fix here, Esc dismiss |
+| `#ticket` | Open picker modal: Open/Closed tabs, fuzzy-filterable list `#N · title · labels · age`, Tab switches tabs, ↑↓/⌃n⌃p select, Enter set, Cmd/Ctrl+1/2/3 Analyze / Post comment / Fix here, Esc dismiss |
 | `#ticket <url \| owner/repo#123>` | Set directly (any repo, explicit ref) — enrich via `gh` in background like `autoBindIssue` |
 | `#ticket refresh` | Re-fetch snapshot, bump `revision` |
 | `#ticket clear` | Clear ticket (pin disappears from next prompts) |
@@ -176,7 +176,8 @@ surrounding prompt's subject.
   rail pin slot still holds the spec-148 goal bar when a goal is set.
 - Picker: standalone modal dialog (`.acp-harness__ticket-overlay` backdrop +
   `.acp-ticket__panel`) centered over the harness, amber-tinted to match the ticket
-  bar; keeps the slash-palette keyboard grammar (↑↓/⌃n⌃p, Enter, Esc, live filter).
+  bar; Open / Closed tabs keep finished local tickets (`done`) off the live list;
+  keeps the slash-palette keyboard grammar (Tab switches tabs, ↑↓/⌃n⌃p, Enter, Esc, live filter).
 
 ### Data Flow
 
@@ -199,7 +200,8 @@ surrounding prompt's subject.
 | Key | Action |
 |-----|--------|
 | `↑` / `↓`, `Ctrl+P` / `Ctrl+N` | Select issue |
-| Printable text / `Backspace` | Filter issues |
+| `Tab` | Toggle Open / Closed tab |
+| Printable text / `Backspace` | Filter the active tab |
 | `Enter` | Set the selected working ticket |
 | `Cmd/Ctrl+1` | Analyze in the active lane |
 | `Cmd/Ctrl+2` | Post a comment through the active lane |
