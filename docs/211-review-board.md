@@ -265,7 +265,7 @@ into the same long-lived lane as a system turn. No browser, no PR, no clipboard.
 | `src/review-board/parse.test.ts` | **New.** Block typing, malformed-block degradation, id stability across edits. |
 | `src/review-board/render.ts` | **New.** Per-block DOM builders (markdown passthrough, diff via `diff2html`, finding, decision, chart→SVG, metrics, sanitized svg). |
 | `src/review-board/render.test.ts` | **New.** Chart geometry, SVG sanitizer, finding/decision markup. |
-| `src/review-board/view.ts` | **New.** `ReviewBoardView implements ContentView` — block cursor, keymap, comment composer, outline overlay, send-preview, live refresh. |
+| `src/review-board/view.ts` | **New.** `ReviewBoardView implements ContentView` — block cursor, keymap, comment composer, Review Map, send-preview, live refresh. (Spec 244 replaced the original outline overlay with the Review Map.) |
 | `src/review-board/response.ts` | **New.** `ReviewResponse` model + `composeResponsePrompt()` (JSON-payload framing, mirroring `diff-review.ts`). |
 | `src/review-board/response-file.ts` | **New.** Serialize/parse `response.md` (YAML frontmatter = state, body = generated readable rendering); debounced autosave. |
 | `src/review-board/response-file.test.ts` | **New.** Round-trip, unknown-key tolerance, corrupt-frontmatter degradation, body regeneration. |
@@ -610,23 +610,31 @@ An unknown fence stays a plain code block, same as in the Board.
 | `n` / `N` | Next / previous block (moves the block cursor and scrolls it smoothly into view) |
 | `}` / `{` | Next / previous **unanswered** finding or decision, smoothly revealed |
 | `Tab` / `Shift+Tab` | Next / previous **walkthrough step** — the guided read; the Board centers the step smoothly and the Diff Window follows its anchor if one is open |
-| `g` / `G` | Smooth jump to top / bottom |
+| `g` / `G` | Smooth jump to top / bottom of the **current view** (spec 244) |
+| `[` / `]` | Previous / next chapter (spec 244) |
 | `Enter` | Context action: expand a folded block; on an anchored finding, open the Diff Window at `file:line` |
 | `c` | Comment on the focused block (selection quoted if any, else the block's head) |
 | `a` / `x` | Accept / dismiss the focused finding |
 | `1`…`9` | Answer the focused decision with that option |
-| `o` | Outline overlay — block list with kind + answered state, `j`/`k` + `Enter` to jump |
+| `o` | Review Map — chapters + `Overview` / `Open items` / `Full document`, `j`/`k` + `Enter` (spec 244; replaced the block outline overlay) |
+| `O` | Overview — identity, open work by severity, chapter list, resume point (spec 244) |
 | `/` `n` `N` | In-doc search (inherited from the Markdown Viewer, spec 137) |
 | `s` | Send preview → confirm to send the response |
 | `r` | Reload the file now |
-| `q` / `Esc` | Close |
+| `Esc` | Back out of `Overview` / `Open items` / `Full document` to the chapter; closes the Board only from chapter view (spec 244) |
+| `q` | Close |
 
 ### UI
 
-A single reading column in Krypton Dark chrome — **no persistent sidebar** (it would steal width
-from the content, and the outline is one keystroke away).
+> **Superseded in part by spec 244.** The Board is now a chaptered reader: one chapter at a time,
+> with a 272px **Review Map** beside the 860px reading column on panes at least 1180px wide and an
+> on-demand overlay below that. The reading column itself is unchanged — the map only uses width
+> the column was never going to take. Chapters are derived from the document's own `H1`/`H2`
+> headings; `review.md` gained no new syntax.
 
-- **Header:** `REVIEW // <title>` · authoring lane · `block 4/17` · `2 unanswered` · sync age.
+- **Header:** `REVIEW // <title>` · authoring lane · `chapter 2/5 · block 8/19` · `2 unanswered` ·
+  sync age. Segments shed in a fixed order (slug, lane, steps) as the pane narrows, so the header
+  stays one line.
 - **Block cursor:** the focused block takes a full-width background tint (`rgba(accent, .10)`) —
   no left accent rail, per the house rule.
 - **Walkthrough block:** numbered steps, each `at` rendered as a dim monospace anchor and `say` as

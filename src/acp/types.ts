@@ -594,6 +594,21 @@ export type ReviewBlock =
   | (ReviewBlockMeta & { kind: 'metrics'; data: ReviewMetricsBlock })
   | (ReviewBlockMeta & { kind: 'svg'; data: ReviewSvgBlock });
 
+/** A chapter of a review, derived from the document's own `H1`/`H2` headings
+ *  (spec 244). Derived state only: never serialized into `review.md`,
+ *  `response.md`, an IPC payload, or lane memory. */
+export interface ReviewSection {
+  /** `section:<heading-block-id>`, or a reserved synthetic id. */
+  id: string;
+  title: string;
+  /** Authored heading depth; synthetic sections use 1. */
+  depth: 1 | 2;
+  /** Half-open range into `ReviewDocument.blocks`. */
+  startBlock: number;
+  endBlock: number;
+  synthetic: boolean;
+}
+
 /** A parsed review document: its blocks plus the frontmatter stamp `review.md`
  *  carries so a bundle is self-describing on disk. */
 export interface ReviewDocument {
@@ -601,6 +616,8 @@ export interface ReviewDocument {
   laneName: string | null;
   subject: string | null;
   blocks: ReviewBlock[];
+  /** Derived chapters, in document order. Empty only when `blocks` is empty. */
+  sections: ReviewSection[];
 }
 
 export interface ReviewComment {

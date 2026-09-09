@@ -29,6 +29,14 @@ export function contentRootIsInFocusedWindow(root: { closest(selector: string): 
   return root.closest('.krypton-window--focused') != null;
 }
 
+/** A summon overlay owns keyboard routing until it closes. The document-level
+ *  overlay listener still receives the event after InputRouter returns. */
+export function summonOverlayOwnsKeyboard(
+  root: { querySelector(selector: string): unknown },
+): boolean {
+  return root.querySelector('.krypton-review-picker') != null;
+}
+
 export function shouldRetargetContentPaste(opts: {
   modeIsNormal: boolean;
   quickTerminalVisible: boolean;

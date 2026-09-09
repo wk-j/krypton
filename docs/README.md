@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (243)
+## Specs (244)
 
 | # | Spec |
 |---|------|
@@ -247,6 +247,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 241 | [Scroll Tiling Layout (niri-style)](./241-scroll-tiling-layout.md) |
 | 242 | [`#ticket github` Browser Opener](./242-ticket-github-browser-opener.md) |
 | 243 | [Diff View Smooth Keyboard Scrolling](./243-diff-view-smooth-scrolling.md) |
+| 244 | [Review Board Chapters and Review Map](./244-review-board-chapters.md) |
 
 ## ADRs (20)
 

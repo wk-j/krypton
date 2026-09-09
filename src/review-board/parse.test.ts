@@ -6,7 +6,10 @@ import {
   parseBlockBody,
   parseReviewDocument,
   parseWalkthroughAnchor,
+  headingLabel,
   reattachBlockId,
+  SECTION_TITLE_CAP,
+  sectionIndexOfBlock,
   walkthroughStepCount,
 } from './parse';
 import type { ReviewBlock } from '../acp/types';
@@ -285,5 +288,116 @@ describe('derived counts and anchors', () => {
 
   it('treats a descending line range as a single line rather than inverting it', () => {
     expect(parseWalkthroughAnchor('a.ts:20-10')).toEqual({ path: 'a.ts', line: 20, lineEnd: undefined });
+  });
+});
+
+// spec 244 — chapters are DERIVED from the document's own headings. Nothing is
+// added to `review.md`, so every bundle ever written still parses.
+
+describe('chapter derivation', () => {
+  it('splits on H1/H2 and leaves H3 inside its chapter', () => {
+    const doc = parseReviewDocument(
+      ['# One', 'alpha', '## Two', '### Still two', 'beta', '# Three', 'gamma'].join('\n\n'),
+    );
+    // Two H1s, so the title rule does not apply and every heading is a chapter.
+    expect(doc.sections.map((s) => s.title)).toEqual(['One', 'Two', 'Three']);
+    expect(doc.sections.map((s) => s.synthetic)).toEqual([false, false, false]);
+    const two = doc.sections[1];
+    // `### Still two` and its prose belong to chapter Two, not a fourth chapter.
+    expect(two.endBlock - two.startBlock).toBe(3);
+    expect(doc.sections[2].endBlock).toBe(doc.blocks.length);
+  });
+
+  it('treats a single leading H1 as the title, chaptering on H2 instead', () => {
+    const doc = parseReviewDocument(
+      ['# Review of the parser', 'preamble', '## Findings', 'a', '## Decisions', 'b'].join('\n\n'),
+    );
+    expect(doc.sections.map((s) => s.title)).toEqual(['Introduction', 'Findings', 'Decisions']);
+    expect(doc.sections[0].synthetic).toBe(true);
+    // The title and its preamble land in the Introduction, not a chapter of
+    // their own — otherwise every review opens on a near-empty title chapter.
+    expect(doc.sections[0].startBlock).toBe(0);
+    expect(doc.sections[0].endBlock).toBe(2);
+  });
+
+  it('puts blocks before the first heading into a synthetic Introduction', () => {
+    const doc = parseReviewDocument(['loose prose', '## First', 'a', '## Second', 'b'].join('\n\n'));
+    expect(doc.sections[0]).toMatchObject({
+      id: 'section:introduction',
+      title: 'Introduction',
+      synthetic: true,
+      startBlock: 0,
+      endBlock: 1,
+    });
+    expect(doc.sections).toHaveLength(3);
+  });
+
+  it('gives a heading-free document one synthetic chapter', () => {
+    const doc = parseReviewDocument('just prose\n\nand more prose\n');
+    expect(doc.sections).toEqual([
+      {
+        id: 'section:document',
+        title: 'Review',
+        depth: 1,
+        startBlock: 0,
+        endBlock: 2,
+        synthetic: true,
+      },
+    ]);
+  });
+
+  it('gives a title-only document one synthetic chapter too', () => {
+    const doc = parseReviewDocument('# Only a title\n\nbody\n');
+    expect(doc.sections).toHaveLength(1);
+    expect(doc.sections[0].id).toBe('section:document');
+  });
+
+  it('has no sections for an empty document', () => {
+    expect(parseReviewDocument('').sections).toEqual([]);
+  });
+
+  it('flattens inline markdown in a chapter label', () => {
+    const doc = parseReviewDocument(
+      ['## `parse.ts` and **the** [lexer](https://x)', 'a', '## Second', 'b'].join('\n\n'),
+    );
+    expect(doc.sections.map((s) => s.title)).toEqual(['parse.ts and the lexer', 'Second']);
+  });
+
+  it('ids a chapter by its heading BLOCK, so duplicate titles stay distinct', () => {
+    const doc = parseReviewDocument(['## Same', 'a', '## Same', 'b'].join('\n\n'));
+    expect(doc.sections[0].id).not.toBe(doc.sections[1].id);
+    expect(doc.sections[0].id).toBe(`section:${doc.blocks[0].id}`);
+  });
+
+  it('does not treat a heading inside a typed fence as a chapter', () => {
+    const doc = parseReviewDocument(
+      ['## Real', '```review:finding\nseverity: blocking\ntitle: # not a heading\n```', 'x'].join(
+        '\n\n',
+      ),
+    );
+    expect(doc.sections.map((s) => s.title)).toEqual(['Real']);
+  });
+});
+
+describe('headingLabel', () => {
+  it('falls back and truncates rather than reflowing the map', () => {
+    expect(headingLabel('**  **')).toBe('untitled section');
+    expect(headingLabel('word '.repeat(40)).length).toBe(SECTION_TITLE_CAP);
+    expect(headingLabel('Closed ATX ##')).toBe('Closed ATX');
+  });
+});
+
+describe('sectionIndexOfBlock', () => {
+  const sections = [
+    { id: 'a', title: 'a', depth: 1 as const, startBlock: 0, endBlock: 2, synthetic: false },
+    { id: 'b', title: 'b', depth: 2 as const, startBlock: 2, endBlock: 5, synthetic: false },
+  ];
+
+  it('finds the containing chapter and never returns a bad index', () => {
+    expect(sectionIndexOfBlock(sections, 0)).toBe(0);
+    expect(sectionIndexOfBlock(sections, 4)).toBe(1);
+    // Out of range (a refresh shrank the document): land somewhere real.
+    expect(sectionIndexOfBlock(sections, 99)).toBe(0);
+    expect(sectionIndexOfBlock([], 3)).toBe(0);
   });
 });

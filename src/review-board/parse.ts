@@ -16,6 +16,7 @@ import { Lexer } from 'marked';
 
 import type {
   ReviewBlock,
+  ReviewSection,
   ReviewBlockKind,
   ReviewBlockMeta,
   ReviewBlockSeverity,
@@ -453,12 +454,14 @@ function splitFrontMatter(source: string): { front: Record<string, string>; body
   return { front, body: source.slice(match[0].length) };
 }
 
-/** The fenced-code shape `marked`'s lexer emits, narrowed to what we read. */
+/** The token shape `marked`'s lexer emits, narrowed to what we read: the fenced
+ *  code fields plus `depth`, which only heading tokens carry (spec 244). */
 interface FenceToken {
   type: string;
   raw: string;
   lang?: string;
   text?: string;
+  depth?: number;
 }
 
 /** Resolve a fence info string to a block kind, or null when it is ordinary code. */
@@ -485,17 +488,20 @@ export function parseReviewDocument(source: string): ReviewDocument {
     tokens = Lexer.lex(body, { gfm: true }) as unknown as FenceToken[];
   } catch {
     // A lexer failure is not a reason to lose the review — show the whole file.
+    const fallback: ReviewBlock[] =
+      body.trim().length > 0
+        ? [{ id: blockId(1, body), kind: 'markdown', raw: body, diagnostic: 'could not be parsed as Markdown' }]
+        : [];
     return {
       title: front.title ?? null,
       laneName: front.lane ?? null,
       subject: front.subject ?? null,
-      blocks:
-        body.trim().length > 0
-          ? [{ id: blockId(1, body), kind: 'markdown', raw: body, diagnostic: 'could not be parsed as Markdown' }]
-          : [],
+      blocks: fallback,
+      sections: deriveSections(fallback, []),
     };
   }
 
+  const headings: StructuralHeading[] = [];
   let ordinal = 0;
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index];
@@ -506,6 +512,13 @@ export function parseReviewDocument(source: string): ReviewDocument {
     const meta = { id, raw };
 
     if (token.type !== 'code') {
+      if (token.type === 'heading' && (token.depth === 1 || token.depth === 2)) {
+        headings.push({
+          blockIndex: blocks.length,
+          depth: token.depth,
+          title: headingLabel(token.text ?? ''),
+        });
+      }
       blocks.push({ ...meta, kind: 'markdown' });
       continue;
     }
@@ -560,7 +573,117 @@ export function parseReviewDocument(source: string): ReviewDocument {
     laneName: front.lane ?? null,
     subject: front.subject ?? null,
     blocks,
+    sections: deriveSections(blocks, headings),
   };
+}
+
+// ─── Chapters (spec 244) ─────────────────────────────────────────────────
+// Chapters are DERIVED: `review.md` never gains a chapter fence, so every bundle
+// ever written keeps working and a lane keeps authoring plain Markdown.
+
+/** Reserved ids for the two sections that have no heading of their own. */
+export const SECTION_INTRO_ID = 'section:introduction';
+export const SECTION_DOCUMENT_ID = 'section:document';
+
+/** Map-row labels are one line; a lane that writes a sentence as a heading gets
+ *  truncated rather than allowed to reflow the map. */
+export const SECTION_TITLE_CAP = 80;
+
+/** A depth-1-or-2 heading found during the token pass, before the title rule
+ *  decides which of them actually open chapters. */
+export interface StructuralHeading {
+  blockIndex: number;
+  depth: 1 | 2;
+  title: string;
+}
+
+/**
+ * Flatten a heading's inline Markdown to the plain text a map row shows. Not a
+ * renderer — `marked` already parsed it; this only removes the syntax that would
+ * otherwise appear literally in the sidebar.
+ */
+export function headingLabel(raw: string): string {
+  const text = raw
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // images → alt text
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // links → label
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/[*_~]{1,3}/g, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+#*\s*$/, '') // closed ATX heading
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (text.length === 0) return 'untitled section';
+  return text.length > SECTION_TITLE_CAP ? `${text.slice(0, SECTION_TITLE_CAP - 1)}…` : text;
+}
+
+/**
+ * Turn structural headings into half-open block ranges.
+ *
+ * The one non-obvious rule is the title rule: reviews are written as a single
+ * `# Title` followed by `##` sections, so treating that `H1` as a chapter would
+ * put a near-empty title chapter in front of every document. When there is
+ * exactly one `H1` and it opens the file, chapters come from the `H2`s and the
+ * title falls into the Introduction with whatever prose follows it.
+ */
+export function deriveSections(
+  blocks: readonly ReviewBlock[],
+  headings: readonly StructuralHeading[],
+): ReviewSection[] {
+  if (blocks.length === 0) return [];
+
+  const h1Count = headings.filter((h) => h.depth === 1).length;
+  const titleOnly = headings.length > 0 && headings[0].depth === 1 && h1Count === 1;
+  const chapters = titleOnly ? headings.filter((h) => h.depth === 2) : headings;
+
+  // No structure at all (or only a title): one synthetic chapter over the whole
+  // document, so the map still offers Overview / Open items / Full document.
+  if (chapters.length === 0) {
+    return [
+      {
+        id: SECTION_DOCUMENT_ID,
+        title: 'Review',
+        depth: 1,
+        startBlock: 0,
+        endBlock: blocks.length,
+        synthetic: true,
+      },
+    ];
+  }
+
+  const sections: ReviewSection[] = [];
+  if (chapters[0].blockIndex > 0) {
+    sections.push({
+      id: SECTION_INTRO_ID,
+      title: 'Introduction',
+      depth: 1,
+      startBlock: 0,
+      endBlock: chapters[0].blockIndex,
+      synthetic: true,
+    });
+  }
+  chapters.forEach((heading, i) => {
+    sections.push({
+      // Id comes from the heading's BLOCK id, not its text: two chapters may be
+      // called the same thing, and renaming one must not orphan the reader.
+      id: `section:${blocks[heading.blockIndex].id}`,
+      title: heading.title,
+      depth: heading.depth,
+      startBlock: heading.blockIndex,
+      endBlock: i + 1 < chapters.length ? chapters[i + 1].blockIndex : blocks.length,
+      synthetic: false,
+    });
+  });
+  return sections;
+}
+
+/** Index of the section containing `blockIndex`; 0 when nothing matches, so the
+ *  reader always lands somewhere real. */
+export function sectionIndexOfBlock(
+  sections: readonly ReviewSection[],
+  blockIndex: number,
+): number {
+  const found = sections.findIndex((s) => blockIndex >= s.startBlock && blockIndex < s.endBlock);
+  return found === -1 ? 0 : found;
 }
 
 /** Append a decoded typed block, or degrade it to a diagnostic-carrying

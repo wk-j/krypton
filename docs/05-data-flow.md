@@ -852,12 +852,21 @@ Reading and answering (card/picker → Board → disk)
    picker (list_review_bundles = a DIRECTORY WALK, so previous app runs appear) →
    Enter. Compositor.openReviewBoard is idempotent on the slug — an open review is
    focused, never opened twice
-5. read_review_bundle → parse.ts → ReviewBlock[]; response.md (if any) is parsed
-   and its answers re-attached BY BLOCK ID; render.ts builds the DOM; the block
-   cursor starts at the first unanswered finding/decision, else block 1
-6. Human walks it: n/N blocks, }/{ unanswered, Tab steps (each → Diff Window
-   revealLocation, falling back to a reader when the path is not in the diff),
-   c comments, a/x triages, 1-9 answers decisions
+5. read_review_bundle → parse.ts → ReviewBlock[] PLUS derived H1/H2 chapters
+   (spec 244: `ReviewDocument.sections`, half-open block ranges; a single leading
+   H1 is the title, not a chapter); response.md (if any) is parsed and its answers
+   re-attached BY BLOCK ID; the block cursor starts at the first unanswered
+   finding/decision, else block 1, and the ACTIVE CHAPTER is derived from that
+   cursor; render.ts builds the DOM for the visible blocks only
+6. Human walks it: n/N blocks (continuing into the adjacent chapter at a chapter
+   edge), [ ] chapters, o the Review Map, O the Overview, }/{ unanswered, Tab
+   steps (each → Diff Window revealLocation, falling back to a reader when the
+   path is not in the diff), c comments, a/x triages, 1-9 answers decisions.
+   }/{ and Tab are GLOBAL: they switch chapter to reveal their target. Cursor
+   moves inside one chapter only re-class the cursor element — no rebuild
+6b. / search renders the FULL document for the duration (DOM highlighting is
+   whole-document by contract), then closing lands on the match in its chapter,
+   or restores the prior view when there was no match
 7. EVERY answer → debounced (400ms) write_review_response → response.md.
    Closing the window now loses nothing
 
@@ -871,7 +880,12 @@ Sending (Board → lane)
    → composeResponsePrompt: one trusted framing line, then ONE JSON value, no
      markdown fence → enqueueSystemPrompt as a system turn
 10. `harness:lane-idle` (same-repo) → the Board re-reads review.md, re-parses,
-    and restores the cursor + answers by block id (ADR-0008; manual `r` too)
+    and restores the cursor + answers by block id (ADR-0008; manual `r` too).
+    Chapters are re-derived, then the active chapter is recovered FROM the
+    restored cursor — a renamed heading never costs the reader their place
+10b. A pane resize crosses 1180px → the view's own ResizeObserver switches the
+    Review Map between a persistent column and an on-demand overlay. This is
+    presentation only; `ContentView.onResize` is never called by the compositor
 
 Later
 11. Days later: the picker's directory walk finds the bundle — no session state

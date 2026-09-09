@@ -27,6 +27,7 @@ import type {
   ReviewDocument,
   ReviewResponse,
   ReviewResponseSendResult,
+  ReviewSection,
 } from '../acp/types';
 
 import {
@@ -34,6 +35,7 @@ import {
   parseReviewDocument,
   parseWalkthroughAnchor,
   reattachBlockId,
+  sectionIndexOfBlock,
 } from './parse';
 import { renderBlock, type BlockAnswerState, type RenderContext } from './render';
 import {
@@ -58,6 +60,10 @@ export const REVIEW_BOARD_LEADER_KEYS: readonly LeaderKeySpec[] = [];
  *  of findings is one write, short enough that closing the window right after a
  *  keystroke has already saved. */
 const AUTOSAVE_DEBOUNCE_MS = 400;
+
+/** Keys that address the focused block. Inert in `overview`, which renders no
+ *  authored block — acting on an off-screen one would be a silent edit. */
+const BLOCK_ACTION_KEYS: ReadonlySet<string> = new Set(['a', 'x', 'c', 'Enter']);
 
 /** Cap on a quoted selection stored with a comment. */
 const QUOTE_CAP = 2000;
@@ -101,6 +107,91 @@ export function nextReviewScrollTarget(
 }
 
 /** Where a walkthrough step or an anchored finding should open. */
+// ─── Chapter navigation (spec 244) ───────────────────────────────────────
+// Everything below is pure: the Board's navigation rules are decided here and
+// only applied to the DOM by the class, so they are testable without a webview.
+
+/** Which blocks the body is showing. `overview` shows none of them — it is a
+ *  summary surface that renders no authored block, so it can reorder nothing. */
+export type ReviewViewMode = 'overview' | 'section' | 'document' | 'open';
+
+export type ReviewMapRow =
+  | { kind: 'overview' }
+  | { kind: 'section'; index: number }
+  | { kind: 'open' }
+  | { kind: 'document' };
+
+/** Map rows top to bottom: Overview, the authored chapters, then the two
+ *  cross-document views. */
+export function reviewMapRows(sectionCount: number): ReviewMapRow[] {
+  const rows: ReviewMapRow[] = [{ kind: 'overview' }];
+  for (let i = 0; i < sectionCount; i++) rows.push({ kind: 'section', index: i });
+  rows.push({ kind: 'open' }, { kind: 'document' });
+  return rows;
+}
+
+/** Global block indices the body renders, in document order. */
+export function visibleBlockIndices(opts: {
+  mode: ReviewViewMode;
+  blockCount: number;
+  section: { startBlock: number; endBlock: number } | null;
+  openIndices: readonly number[];
+}): number[] {
+  const all = (): number[] => Array.from({ length: opts.blockCount }, (_, i) => i);
+  switch (opts.mode) {
+    case 'overview':
+      return [];
+    case 'document':
+      return all();
+    case 'open':
+      return [...opts.openIndices];
+    case 'section': {
+      if (!opts.section) return all();
+      const out: number[] = [];
+      for (let i = opts.section.startBlock; i < Math.min(opts.section.endBlock, opts.blockCount); i++) {
+        out.push(i);
+      }
+      return out;
+    }
+  }
+}
+
+/** Where `n` / `N` lands. At a chapter edge in section mode the move becomes a
+ *  chapter step rather than a dead end, so continuous reading stays one key. */
+export function stepVisibleCursor(
+  visible: readonly number[],
+  cursor: number,
+  delta: number,
+  allowChapterEdge: boolean,
+): { block: number | null; section: -1 | 0 | 1 } {
+  if (visible.length === 0) return { block: null, section: 0 };
+  const at = visible.indexOf(cursor);
+  // Cursor outside the visible set (a chapter switch just happened): enter from
+  // the end the move came from rather than refusing it.
+  if (at === -1) return { block: delta > 0 ? visible[0] : visible[visible.length - 1], section: 0 };
+  const next = at + delta;
+  if (next >= 0 && next < visible.length) return { block: visible[next], section: 0 };
+  if (!allowChapterEdge) return { block: null, section: 0 };
+  return { block: null, section: delta > 0 ? 1 : -1 };
+}
+
+/** Cursor for a chapter the reader just opened: its first unanswered block, else
+ *  its first block. */
+export function sectionEntryBlock(
+  section: { startBlock: number; endBlock: number },
+  openIndices: readonly number[],
+): number {
+  const open = openIndices.find((i) => i >= section.startBlock && i < section.endBlock);
+  return open ?? section.startBlock;
+}
+
+/** After an answer removes the current item from `Open items`: the next item,
+ *  else the previous one. `null` when nothing is left to answer. */
+export function reconcileOpenCursor(visible: readonly number[], cursor: number): number | null {
+  if (visible.length === 0) return null;
+  return visible.find((i) => i >= cursor) ?? visible[visible.length - 1];
+}
+
 export interface ReviewJumpTarget {
   path: string;
   line?: number;
@@ -135,7 +226,11 @@ export interface ReviewBoardOptions {
   review?: ReviewSendChannel;
 }
 
-type Overlay = 'none' | 'outline' | 'comment' | 'send';
+type Overlay = 'none' | 'comment' | 'send';
+
+/** Pane width at which the Review Map stops being an overlay and becomes a
+ *  permanent column. 860px of reading column + 272px of map + gutters. */
+export const REVIEW_MAP_WIDE_MIN_PX = 1180;
 
 export class ReviewBoardView implements ContentView {
   readonly type: PaneContentType = 'review';
@@ -147,7 +242,7 @@ export class ReviewBoardView implements ContentView {
   private readonly jumpTo: ((target: ReviewJumpTarget) => void) | null;
   private readonly review: ReviewSendChannel | null;
 
-  private doc: ReviewDocument = { title: null, laneName: null, subject: null, blocks: [] };
+  private doc: ReviewDocument = { title: null, laneName: null, subject: null, blocks: [], sections: [] };
   private answers: ReviewAnswers = emptyAnswers();
   private laneName: string;
 
@@ -159,9 +254,19 @@ export class ReviewBoardView implements ContentView {
   /** Diff blocks the human expanded past the summary threshold. */
   private expandedDiffs = new Set<string>();
 
+  /** Which blocks the body shows (spec 244). Presentation only — never written
+   *  to `response.md` and never persisted across a restart. */
+  private viewMode: ReviewViewMode = 'section';
+  private sectionIndex = 0;
+  /** Review Map keyboard state. `mapFocused` is a focus mode, not a view. */
+  private mapFocused = false;
+  private mapIndex = 0;
+  /** Narrow panes hide the map until `o` reveals it. */
+  private mapRevealed = false;
+  private wide = true;
+
   private overlay: Overlay = 'none';
   private overlayEl: HTMLElement | null = null;
-  private outlineIndex = 0;
   private commentInput: HTMLTextAreaElement | null = null;
   private commentQuote = '';
   private commentBlockId: string | null = null;
@@ -183,10 +288,15 @@ export class ReviewBoardView implements ContentView {
   private searchMatches: HTMLElement[] = [];
   private searchIndex = -1;
   private searchDebounce: number | null = null;
+  /** View to restore when search closes with no match (spec 244). */
+  private searchReturn: { mode: ReviewViewMode; sectionIndex: number; cursor: number } | null = null;
   private static readonly SEARCH_MATCH_CAP = 500;
 
   private header: HTMLElement;
+  private content: HTMLElement;
+  private map: HTMLElement;
   private body: HTMLElement;
+  private resizeObs: ResizeObserver | null = null;
   private closeCallback: (() => void) | null = null;
   private disposeListeners: (() => void)[] = [];
   private bodyScrollRaf = 0;
@@ -209,11 +319,19 @@ export class ReviewBoardView implements ContentView {
     this.header.className = 'krypton-review__header';
     this.element.appendChild(this.header);
 
+    this.content = document.createElement('div');
+    this.content.className = 'krypton-review__content';
+    this.element.appendChild(this.content);
+
+    this.map = document.createElement('aside');
+    this.map.className = 'krypton-review__map';
+    this.content.appendChild(this.map);
+
     this.body = document.createElement('div');
     this.body.className = 'krypton-review__body';
     this.body.addEventListener('wheel', this.cancelBodyScrollOnUserInput, { passive: true });
     this.body.addEventListener('pointerdown', this.cancelBodyScrollOnUserInput);
-    this.element.appendChild(this.body);
+    this.content.appendChild(this.body);
 
     // Clicking a block moves the cursor there, so the mouse is never a dead end
     // even though the whole surface is designed for the keyboard.
@@ -221,8 +339,27 @@ export class ReviewBoardView implements ContentView {
       const block = (e.target as HTMLElement).closest<HTMLElement>('[data-block-id]');
       if (!block) return;
       const index = this.doc.blocks.findIndex((b) => b.id === block.dataset.blockId);
-      if (index >= 0) this.moveCursor(index - this.cursor);
+      if (index >= 0) this.setCursor(index);
     });
+
+    // Pointer activation of a map row, so the map is not keyboard-only either.
+    this.map.addEventListener('click', (e) => {
+      const row = (e.target as HTMLElement).closest<HTMLElement>('[data-map-row]');
+      if (!row) return;
+      const index = Number(row.dataset.mapRow);
+      if (!Number.isNaN(index)) this.activateMapRow(index);
+    });
+
+    // `ContentView.onResize` is declared but never called by the compositor, so
+    // the layout switch has to observe its own pane (spec 244).
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObs = new ResizeObserver((entries) => {
+        const width = entries[0]?.contentRect.width ?? this.element.clientWidth;
+        this.applyLayout(width);
+      });
+      this.resizeObs.observe(this.element);
+    }
+    this.element.dataset.layout = 'wide';
 
     void this.load();
   }
@@ -307,6 +444,11 @@ export class ReviewBoardView implements ContentView {
       );
     }
 
+    // Chapters are re-derived on every parse, so recover the reader's chapter
+    // from the restored block cursor rather than from a section id — a renamed
+    // heading must not cost them their place (spec 244).
+    this.sectionIndex = sectionIndexOfBlock(this.doc.sections, Math.max(0, this.cursor));
+
     this.lastSyncAt = Date.now();
     this.render();
   }
@@ -378,9 +520,12 @@ export class ReviewBoardView implements ContentView {
     return convertFileSrc(`/${parts.join('/')}`);
   }
 
+  /** Full rebuild. Cursor movement inside one chapter deliberately does NOT come
+   *  through here — see `setCursor()`. */
   private render(): void {
     this.renderHeader();
     this.renderBody();
+    this.renderMap();
     this.renderOverlay();
   }
 
@@ -399,9 +544,12 @@ export class ReviewBoardView implements ContentView {
     this.header.appendChild(seg('krypton-review__seg--slug', this.slug));
 
     if (this.doc.blocks.length > 0) {
-      this.header.appendChild(
-        seg('krypton-review__seg--pos', `block ${this.cursor + 1}/${this.doc.blocks.length}`),
-      );
+      this.header.appendChild(seg('krypton-review__seg--pos', this.positionLabel()));
+    }
+    // Search renders the whole document temporarily; say so rather than letting
+    // the chapter appear to vanish.
+    if (this.searchActive) {
+      this.header.appendChild(seg('krypton-review__seg--search', 'search · full document'));
     }
     if (this.steps.length > 0) {
       const at = this.stepCursor >= 0 ? `${this.stepCursor + 1}/` : '';
@@ -424,6 +572,21 @@ export class ReviewBoardView implements ContentView {
 
     this.header.appendChild(seg('krypton-review__seg--save', this.saveLabel()));
     this.header.appendChild(seg('krypton-review__seg--sync', this.syncLabel()));
+  }
+
+  /** Chapter + block position, in the terms of the current view. */
+  private positionLabel(): string {
+    const total = this.doc.blocks.length;
+    if (this.viewMode === 'overview') return 'overview';
+    if (this.viewMode === 'open') {
+      const visible = this.openIndices();
+      const at = visible.indexOf(this.cursor);
+      return `open items · block ${at + 1 || 0}/${visible.length}`;
+    }
+    if (this.viewMode === 'document' || this.doc.sections.length === 0) {
+      return `block ${this.cursor + 1}/${total}`;
+    }
+    return `chapter ${this.sectionIndex + 1}/${this.doc.sections.length} · block ${this.cursor + 1}/${total}`;
   }
 
   private saveLabel(): string {
@@ -459,17 +622,239 @@ export class ReviewBoardView implements ContentView {
       return;
     }
 
+    if (this.viewMode === 'overview') {
+      this.renderOverview();
+      return;
+    }
+
+    const visible = this.visibleIndices();
+    if (visible.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'krypton-review__empty';
+      empty.textContent =
+        this.viewMode !== 'open'
+          ? 'this chapter is empty'
+          : answerableBlocks(this.doc.blocks).length === 0
+            ? 'nothing to answer — this Board is a reference'
+            : 'everything is answered';
+      this.body.appendChild(empty);
+      return;
+    }
+
     const ctx = this.renderContext();
-    this.doc.blocks.forEach((block, index) => {
+    for (const index of visible) {
+      const block = this.doc.blocks[index];
       const el = renderBlock(block, ctx);
       if (index === this.cursor) el.classList.add('krypton-review__block--cursor');
       // Only mark the walkthrough step the guided read is on.
       if (block.kind === 'walkthrough') this.markCurrentStep(el, block.id);
       this.body.appendChild(el);
-    });
+    }
 
     const cursorEl = this.body.querySelector('.krypton-review__block--cursor');
     this.scrollElementIntoView(cursorEl, 'nearest');
+  }
+
+  // ─── Chapters, Review Map, Overview (spec 244) ──────────────────────────
+
+  /** Findings and decisions with nothing recorded, as block indices. */
+  private openIndices(): number[] {
+    const open = new Set(unansweredBlocks(this.doc.blocks, this.answers).map((b) => b.id));
+    const out: number[] = [];
+    this.doc.blocks.forEach((b, i) => {
+      if (open.has(b.id)) out.push(i);
+    });
+    return out;
+  }
+
+  private activeSection(): ReviewSection | null {
+    return this.doc.sections[this.sectionIndex] ?? null;
+  }
+
+  private visibleIndices(): number[] {
+    return visibleBlockIndices({
+      mode: this.viewMode,
+      blockCount: this.doc.blocks.length,
+      section: this.activeSection(),
+      openIndices: this.openIndices(),
+    });
+  }
+
+  private renderMap(): void {
+    this.map.innerHTML = '';
+    this.map.dataset.state = this.wide || this.mapRevealed ? 'open' : 'hidden';
+    this.map.classList.toggle('krypton-review__map--focused', this.mapFocused);
+    if (this.map.dataset.state === 'hidden') return;
+
+    const openIndices = this.openIndices();
+    const answerable = answerableBlocks(this.doc.blocks).length;
+
+    const head = document.createElement('div');
+    head.className = 'krypton-review__map-head';
+    head.append(
+      span('krypton-review__map-count', `${this.doc.blocks.length} blocks`),
+      span('krypton-review__map-count', `${answerable} answerable`),
+      span(
+        openIndices.length > 0
+          ? 'krypton-review__map-count krypton-review__map-count--open'
+          : 'krypton-review__map-count',
+        answerable === 0 ? 'reference' : `${openIndices.length} unanswered`,
+      ),
+    );
+    this.map.appendChild(head);
+
+    const rows = reviewMapRows(this.doc.sections.length);
+    const list = document.createElement('div');
+    list.className = 'krypton-review__map-rows';
+    rows.forEach((row, index) => {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'krypton-review__map-row';
+      el.dataset.mapRow = String(index);
+      if (this.mapFocused && index === this.mapIndex) {
+        el.classList.add('krypton-review__map-row--selected');
+      }
+      if (this.isActiveRow(row)) {
+        el.classList.add('krypton-review__map-row--active');
+        el.setAttribute('aria-current', 'page');
+      }
+      if (row.kind === 'section') {
+        const section = this.doc.sections[row.index];
+        const open = openIndices.filter(
+          (i) => i >= section.startBlock && i < section.endBlock,
+        ).length;
+        el.dataset.depth = String(section.depth);
+        el.append(
+          span('krypton-review__map-index', String(row.index + 1)),
+          span('krypton-review__map-label', section.title),
+          span('krypton-review__map-blocks', String(section.endBlock - section.startBlock)),
+        );
+        if (open > 0) el.appendChild(span('krypton-review__map-open', String(open)));
+      } else {
+        el.classList.add('krypton-review__map-row--smart');
+        const label =
+          row.kind === 'overview'
+            ? 'Overview'
+            : row.kind === 'open'
+              ? 'Open items'
+              : 'Full document';
+        el.append(span('krypton-review__map-label', label));
+        if (row.kind === 'open' && openIndices.length > 0) {
+          el.appendChild(span('krypton-review__map-open', String(openIndices.length)));
+        }
+        if (row.kind === 'document') {
+          el.appendChild(span('krypton-review__map-blocks', String(this.doc.blocks.length)));
+        }
+      }
+      list.appendChild(el);
+    });
+    this.map.appendChild(list);
+
+    const foot = document.createElement('div');
+    foot.className = 'krypton-review__map-foot';
+    foot.textContent = this.mapFocused
+      ? 'j/k move · Enter open · Esc back'
+      : 'o map · [ ] chapter · O overview';
+    this.map.appendChild(foot);
+
+    list
+      .querySelector('.krypton-review__map-row--selected')
+      ?.scrollIntoView({ block: 'nearest' });
+  }
+
+  private isActiveRow(row: ReviewMapRow): boolean {
+    if (row.kind === 'section') {
+      return this.viewMode === 'section' && row.index === this.sectionIndex;
+    }
+    return this.viewMode === row.kind;
+  }
+
+  /**
+   * `Overview` — a read-only landing surface. It renders NO authored block, so it
+   * cannot reorder or hide what the lane wrote, and it reports raw counts only:
+   * never a percentage, bar, or grade (the same rule the header follows, ADR-0004).
+   */
+  private renderOverview(): void {
+    const root = document.createElement('div');
+    root.className = 'krypton-review__overview';
+
+    const identity = document.createElement('div');
+    identity.className = 'krypton-review__overview-identity';
+    identity.appendChild(span('krypton-review__overview-title', this.doc.title ?? this.slug));
+    if (this.doc.subject) {
+      identity.appendChild(span('krypton-review__overview-subject', this.doc.subject));
+    }
+    identity.appendChild(span('krypton-review__overview-meta', `${this.laneName} · ${this.slug}`));
+    root.appendChild(identity);
+
+    const answerable = answerableBlocks(this.doc.blocks);
+    const openBlocks = unansweredBlocks(this.doc.blocks, this.answers);
+    if (answerable.length === 0) {
+      root.appendChild(
+        // Not "0 unanswered": a Board with nothing to answer is an explanation
+        // to come back to, not a task list (ADR-0004).
+        this.overviewSection('work remaining', [['nothing to answer', 'reference']]),
+      );
+    } else {
+      const severity = (level: string): number =>
+        openBlocks.filter((b) => b.kind === 'finding' && b.data.severity === level).length;
+      const rows: [string, string][] = [
+        ['blocking findings', String(severity('blocking'))],
+        ['non-blocking findings', String(severity('non-blocking'))],
+        ['suggestions', String(severity('suggestion'))],
+        ['decisions', String(openBlocks.filter((b) => b.kind === 'decision').length)],
+      ];
+      root.appendChild(this.overviewSection('open work', rows));
+    }
+
+    if (this.doc.sections.length > 0) {
+      const openIndices = this.openIndices();
+      const rows: [string, string][] = this.doc.sections.map((section, i) => {
+        const open = openIndices.filter(
+          (n) => n >= section.startBlock && n < section.endBlock,
+        ).length;
+        const blocks = section.endBlock - section.startBlock;
+        return [
+          `${i + 1}. ${section.title}`,
+          open > 0 ? `${blocks} blocks · ${open} open` : `${blocks} blocks`,
+        ];
+      });
+      root.appendChild(this.overviewSection('chapters', rows));
+    }
+
+    const tail: [string, string][] = [];
+    if (this.steps.length > 0) {
+      tail.push(['walkthrough', `${this.steps.length} steps · Tab to start the guided read`]);
+    }
+    const at = this.doc.blocks[this.cursor];
+    if (at) {
+      const section = this.doc.sections[sectionIndexOfBlock(this.doc.sections, this.cursor)];
+      tail.push([
+        'resume at',
+        section
+          ? `block ${this.cursor + 1} · ${section.title}`
+          : `block ${this.cursor + 1}`,
+      ]);
+    }
+    if (tail.length > 0) root.appendChild(this.overviewSection('reading', tail));
+
+    this.body.appendChild(root);
+  }
+
+  private overviewSection(title: string, rows: readonly (readonly [string, string])[]): HTMLElement {
+    const el = document.createElement('section');
+    el.className = 'krypton-review__overview-group';
+    el.appendChild(span('krypton-review__overview-heading', title));
+    for (const [label, value] of rows) {
+      const row = document.createElement('div');
+      row.className = 'krypton-review__overview-row';
+      row.append(
+        span('krypton-review__overview-label', label),
+        span('krypton-review__overview-value', value),
+      );
+      el.appendChild(row);
+    }
+    return el;
   }
 
   private markCurrentStep(blockEl: HTMLElement, blockId: string): void {
@@ -569,10 +954,195 @@ export class ReviewBoardView implements ContentView {
     this.scrollBodyTo(top);
   }
 
+  /**
+   * Put the cursor on a global block index. When that block is already rendered
+   * this only moves a class — the whole point of splitting the render paths, so
+   * `n` / `N` never rebuild a document (spec 244).
+   */
+  private setCursor(index: number, scroll: 'center' | 'nearest' = 'nearest'): void {
+    if (index < 0 || index >= this.doc.blocks.length) return;
+    this.cursor = index;
+    let el = this.blockEl(index);
+    if (el) {
+      this.body
+        .querySelector('.krypton-review__block--cursor')
+        ?.classList.remove('krypton-review__block--cursor');
+      el.classList.add('krypton-review__block--cursor');
+      this.renderHeader();
+    } else {
+      // Not on screen. In section mode the block lives in another chapter; in
+      // Overview or Open items it is filtered out entirely. Either way the fix
+      // is the same — reveal it in its own chapter. `Full document` already
+      // shows everything, so it never lands here.
+      if (this.viewMode !== 'document') {
+        this.viewMode = 'section';
+        this.sectionIndex = sectionIndexOfBlock(this.doc.sections, index);
+      }
+      this.cancelBodyScroll();
+      this.renderHeader();
+      this.renderBody();
+      this.renderMap();
+      el = this.blockEl(index);
+    }
+    this.scrollElementIntoView(el, scroll);
+  }
+
+  private blockEl(index: number): HTMLElement | null {
+    const id = this.doc.blocks[index]?.id;
+    if (!id) return null;
+    return this.body.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(id)}"]`);
+  }
+
+  /** `n` / `N` — next/previous VISIBLE block, continuing into the adjacent
+   *  chapter at a section edge rather than dead-ending there. */
   private moveCursor(delta: number): void {
     if (this.doc.blocks.length === 0) return;
-    this.cursor = clamp(this.cursor + delta, 0, this.doc.blocks.length - 1);
+    const step = stepVisibleCursor(
+      this.visibleIndices(),
+      this.cursor,
+      delta,
+      this.viewMode === 'section',
+    );
+    if (step.block !== null) {
+      this.setCursor(step.block);
+      return;
+    }
+    if (step.section === 0) return;
+    const target = this.sectionIndex + step.section;
+    const section = this.doc.sections[target];
+    if (!section) return; // ends of the document still stop
+    this.gotoSection(target, step.section > 0 ? section.startBlock : section.endBlock - 1);
+  }
+
+  /** Open a chapter. Entry block defaults to its first unanswered block. */
+  private gotoSection(index: number, block?: number): void {
+    const section = this.doc.sections[index];
+    if (!section) return;
+    this.cancelBodyScroll();
+    this.viewMode = 'section';
+    this.sectionIndex = index;
+    this.cursor = block ?? sectionEntryBlock(section, this.openIndices());
+    // A new chapter starts at its top; `render()` then reveals the entry block if
+    // it happens to sit below the fold. Doing it in this order means the reader
+    // never lands mid-chapter with a cursor they cannot see.
+    this.body.scrollTop = 0;
     this.render();
+  }
+
+  /** `[` / `]` — adjacent chapter, stopping at the ends. */
+  private stepSection(delta: number): void {
+    if (this.doc.sections.length === 0) return;
+    if (this.viewMode !== 'section') {
+      this.gotoSection(clamp(this.sectionIndex, 0, this.doc.sections.length - 1));
+      return;
+    }
+    const next = this.sectionIndex + delta;
+    if (next < 0 || next >= this.doc.sections.length) {
+      this.flash(delta > 0 ? 'last chapter' : 'first chapter');
+      return;
+    }
+    this.gotoSection(next);
+  }
+
+  /** Switch which blocks the body shows. Presentation only — never touches an
+   *  answer, and never persists. */
+  private setViewMode(mode: ReviewViewMode): void {
+    this.cancelBodyScroll();
+    this.viewMode = mode;
+    if (mode === 'section') {
+      this.sectionIndex = sectionIndexOfBlock(this.doc.sections, Math.max(0, this.cursor));
+    } else if (mode === 'open') {
+      const open = this.openIndices();
+      if (open.length > 0) this.cursor = reconcileOpenCursor(open, this.cursor) ?? open[0];
+    }
+    this.body.scrollTop = 0;
+    this.render();
+  }
+
+  /** `Escape` backs out one level: a non-section view returns to the chapter the
+   *  cursor is in, and only section mode closes the Board. `q` still closes from
+   *  anywhere, so the one-key exit is never lost. */
+  private backOut(): boolean {
+    if (this.viewMode === 'section') return false;
+    this.setViewMode('section');
+    return true;
+  }
+
+  // ─── Review Map focus ───────────────────────────────────────────────────
+
+  private openMap(): void {
+    if (this.doc.sections.length === 0 && this.doc.blocks.length === 0) return;
+    if (!this.wide) this.mapRevealed = true;
+    this.mapFocused = true;
+    this.mapIndex = reviewMapRows(this.doc.sections.length).findIndex((row) =>
+      this.isActiveRow(row),
+    );
+    if (this.mapIndex < 0) this.mapIndex = 0;
+    this.renderMap();
+  }
+
+  private closeMap(): void {
+    this.mapFocused = false;
+    this.mapRevealed = false;
+    this.renderMap();
+    this.element.focus();
+  }
+
+  private activateMapRow(index: number): void {
+    const row = reviewMapRows(this.doc.sections.length)[index];
+    if (!row) return;
+    this.mapIndex = index;
+    if (row.kind === 'section') this.gotoSection(row.index);
+    else this.setViewMode(row.kind);
+    // A narrow overlay closes on selection; a persistent map stays put but hands
+    // the keyboard back to the reading column.
+    this.mapFocused = false;
+    this.mapRevealed = false;
+    this.renderMap();
+    this.element.focus();
+  }
+
+  private onMapKey(e: KeyboardEvent): boolean {
+    const rows = reviewMapRows(this.doc.sections.length);
+    switch (e.key) {
+      case 'j':
+      case 'ArrowDown':
+        this.mapIndex = clamp(this.mapIndex + 1, 0, rows.length - 1);
+        this.renderMap();
+        return true;
+      case 'k':
+      case 'ArrowUp':
+        this.mapIndex = clamp(this.mapIndex - 1, 0, rows.length - 1);
+        this.renderMap();
+        return true;
+      case 'g':
+        this.mapIndex = e.shiftKey ? rows.length - 1 : 0;
+        this.renderMap();
+        return true;
+      case 'Enter':
+        this.activateMapRow(this.mapIndex);
+        return true;
+      case 'o':
+      case 'q':
+      case 'Escape':
+        this.closeMap();
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /** Pane width decides whether the map is a column or an overlay. Three tiers,
+   *  because the header also sheds segments as the pane narrows. */
+  private applyLayout(width: number): void {
+    const wide = width >= REVIEW_MAP_WIDE_MIN_PX;
+    this.element.dataset.layout = wide ? 'wide' : width >= 760 ? 'narrow' : 'tight';
+    if (wide === this.wide) return;
+    this.wide = wide;
+    // Crossing the threshold must not strand map focus or a floating overlay.
+    this.mapFocused = false;
+    this.mapRevealed = false;
+    this.renderMap();
   }
 
   /** `}` / `{` — jump between findings and decisions with nothing recorded. */
@@ -591,8 +1161,8 @@ export class ReviewBoardView implements ContentView {
       delta > 0
         ? indices.find((i) => i > this.cursor) ?? indices[0]
         : [...indices].reverse().find((i) => i < this.cursor) ?? indices[indices.length - 1];
-    this.cursor = next;
-    this.render();
+    // Global by design: section mode follows the target into its chapter.
+    this.setCursor(next);
   }
 
   /** `Tab` / `Shift+Tab` — the guided read. Each step scrolls the block cursor to
@@ -606,8 +1176,10 @@ export class ReviewBoardView implements ContentView {
     this.stepCursor = this.stepCursor < 0 && delta < 0 ? n - 1 : ((this.stepCursor + delta) % n + n) % n;
     const step = this.steps[this.stepCursor];
     const blockIndex = this.doc.blocks.findIndex((b) => b.id === step.blockId);
-    if (blockIndex >= 0) this.cursor = blockIndex;
-    this.render();
+    // The guided read is global too: follow the step into whatever chapter (or
+    // out of whatever filtered view) it lives in.
+    if (blockIndex >= 0) this.setCursor(blockIndex);
+    else this.render();
     this.scrollElementIntoView(
       this.body.querySelector('.krypton-review__step--current'),
       'center',
@@ -647,8 +1219,7 @@ export class ReviewBoardView implements ContentView {
     }
     if (this.answers.findings.get(block.id) === state) this.answers.findings.delete(block.id);
     else this.answers.findings.set(block.id, state);
-    this.scheduleSave();
-    this.render();
+    this.afterAnswer();
   }
 
   /** `1`…`9` — answer the focused decision. Re-pressing the chosen option clears it. */
@@ -664,7 +1235,18 @@ export class ReviewBoardView implements ContentView {
     }
     if (this.answers.decisions.get(block.id) === option) this.answers.decisions.delete(block.id);
     else this.answers.decisions.set(block.id, option);
+    this.afterAnswer();
+  }
+
+  /** Save, then re-render. In `Open items` the answered block leaves the visible
+   *  set, so the cursor moves to the next item (else the previous one) rather
+   *  than pointing at something that is no longer on screen. */
+  private afterAnswer(): void {
     this.scheduleSave();
+    if (this.viewMode === 'open') {
+      const next = reconcileOpenCursor(this.openIndices(), this.cursor);
+      if (next !== null) this.cursor = next;
+    }
     this.render();
   }
 
@@ -792,56 +1374,8 @@ export class ReviewBoardView implements ContentView {
 
   private renderOverlay(): void {
     if (!this.overlayEl) return;
-    if (this.overlay === 'outline') this.renderOutline();
-    else if (this.overlay === 'comment') this.renderCommentComposer();
+    if (this.overlay === 'comment') this.renderCommentComposer();
     else if (this.overlay === 'send') this.renderSendPreview();
-  }
-
-  /** `o` — the outline: every block with its kind and answered state. This is what
-   *  stands in for a persistent sidebar, which would steal reading width. */
-  private renderOutline(): void {
-    const root = this.overlayEl;
-    if (!root) return;
-    root.innerHTML = '';
-    const head = document.createElement('div');
-    head.className = 'krypton-review__overlay-head';
-    head.textContent = `outline · ${this.doc.blocks.length} blocks · j/k move · Enter jump · Esc close`;
-    root.appendChild(head);
-
-    const list = document.createElement('div');
-    list.className = 'krypton-review__outline';
-    this.doc.blocks.forEach((block, index) => {
-      const row = document.createElement('div');
-      row.className = 'krypton-review__outline-row';
-      if (index === this.outlineIndex) row.classList.add('krypton-review__outline-row--selected');
-      const state = this.answerStateOf(block.id);
-      const mark =
-        block.kind === 'finding'
-          ? state.findingState === 'accepted'
-            ? '✓'
-            : state.findingState === 'dismissed'
-              ? '✗'
-              : '·'
-          : block.kind === 'decision'
-            ? state.chosen !== null
-              ? String(state.chosen)
-              : '·'
-            : ' ';
-      row.append(
-        span('krypton-review__outline-num', String(index + 1)),
-        span('krypton-review__outline-kind', block.kind),
-        span('krypton-review__outline-mark', mark),
-        span('krypton-review__outline-label', this.blockLabel(block.id)),
-      );
-      if (state.commentCount > 0) {
-        row.appendChild(span('krypton-review__outline-comments', `✎ ${state.commentCount}`));
-      }
-      list.appendChild(row);
-    });
-    root.appendChild(list);
-    list
-      .querySelector('.krypton-review__outline-row--selected')
-      ?.scrollIntoView({ block: 'nearest' });
   }
 
   /** `c` — comment on the focused block. The selection is quoted when there is
@@ -1033,40 +1567,26 @@ export class ReviewBoardView implements ContentView {
     this.renderOverlay();
   }
 
-  private onOutlineKey(e: KeyboardEvent): boolean {
-    switch (e.key) {
-      case 'j':
-      case 'ArrowDown':
-        this.outlineIndex = clamp(this.outlineIndex + 1, 0, this.doc.blocks.length - 1);
-        this.renderOutline();
-        return true;
-      case 'k':
-      case 'ArrowUp':
-        this.outlineIndex = clamp(this.outlineIndex - 1, 0, this.doc.blocks.length - 1);
-        this.renderOutline();
-        return true;
-      case 'g':
-        this.outlineIndex = e.shiftKey ? this.doc.blocks.length - 1 : 0;
-        this.renderOutline();
-        return true;
-      case 'Enter':
-        this.cursor = this.outlineIndex;
-        this.closeOverlay();
-        this.render();
-        return true;
-      case 'o':
-      case 'q':
-      case 'Escape':
-        this.closeOverlay();
-        return true;
-      default:
-        return false;
-    }
-  }
-
   // ─── In-doc search (spec 137 behaviour) ─────────────────────────────────
 
   private openSearch(): void {
+    if (!this.searchActive) {
+      // Search is whole-document by contract (spec 137), and it highlights
+      // rendered DOM — so a chaptered body would only ever find the chapter it
+      // is showing. Render everything for the duration and land back in the
+      // chapter the match turns out to be in.
+      this.searchReturn = {
+        mode: this.viewMode,
+        sectionIndex: this.sectionIndex,
+        cursor: this.cursor,
+      };
+      if (this.viewMode !== 'document') {
+        this.cancelBodyScroll();
+        this.viewMode = 'document';
+        this.renderBody();
+        this.renderMap();
+      }
+    }
     if (!this.searchHud) {
       this.searchHud = document.createElement('div');
       this.searchHud.className = 'krypton-review__search';
@@ -1084,6 +1604,7 @@ export class ReviewBoardView implements ContentView {
       this.element.appendChild(this.searchHud);
     }
     this.searchActive = true;
+    this.renderHeader();
     this.searchHud.style.display = '';
     this.searchInput?.focus();
     this.searchInput?.select();
@@ -1206,9 +1727,34 @@ export class ReviewBoardView implements ContentView {
       clearTimeout(this.searchDebounce);
       this.searchDebounce = null;
     }
+    // Read the landing block BEFORE unwrapping — that is what destroys the marks.
+    const current = this.searchIndex >= 0 ? this.searchMatches[this.searchIndex] ?? null : null;
+    const landingId = current?.closest<HTMLElement>('[data-block-id]')?.dataset.blockId ?? null;
     this.unwrapMatches();
     this.searchActive = false;
     if (this.searchHud) this.searchHud.style.display = 'none';
+
+    const back = this.searchReturn;
+    this.searchReturn = null;
+    const landing = landingId ? this.doc.blocks.findIndex((b) => b.id === landingId) : -1;
+    if (landing >= 0) {
+      // There was a match: keep it, in its own chapter.
+      if (back?.mode !== 'document') {
+        this.viewMode = 'section';
+        this.sectionIndex = sectionIndexOfBlock(this.doc.sections, landing);
+      }
+      this.cursor = landing;
+      this.render();
+      this.scrollElementIntoView(this.blockEl(landing), 'center');
+    } else if (back) {
+      // Nothing found: put the reader back exactly where search took them from.
+      this.viewMode = back.mode;
+      this.sectionIndex = back.sectionIndex;
+      this.cursor = back.cursor;
+      this.render();
+    } else {
+      this.renderHeader();
+    }
     this.element.focus();
   }
 
@@ -1221,7 +1767,7 @@ export class ReviewBoardView implements ContentView {
       return false;
     }
 
-    if (this.overlay === 'outline') return this.onOutlineKey(e);
+    if (this.mapFocused) return this.onMapKey(e);
     if (this.overlay === 'comment' || this.overlay === 'send') {
       if (e.key === 'Escape' || e.key === 'q') {
         this.closeOverlay();
@@ -1262,6 +1808,11 @@ export class ReviewBoardView implements ContentView {
       return true;
     }
 
+    if (this.viewMode === 'overview' && (BLOCK_ACTION_KEYS.has(e.key) || /^[1-9]$/.test(e.key))) {
+      this.flash('open a chapter first');
+      return true;
+    }
+
     if (/^[1-9]$/.test(e.key)) {
       this.answerDecision(Number(e.key));
       return true;
@@ -1286,16 +1837,25 @@ export class ReviewBoardView implements ContentView {
       case '{':
         this.moveToUnanswered(-1);
         return true;
-      case 'g':
-        this.cursor = this.doc.blocks.length > 0 ? 0 : -1;
-        this.render();
+      case '[':
+        this.stepSection(-1);
+        return true;
+      case ']':
+        this.stepSection(1);
+        return true;
+      case 'g': {
+        // `g` / `G` are the top and bottom of the CURRENT view, not the document.
+        const visible = this.visibleIndices();
+        if (visible.length > 0) this.setCursor(visible[0]);
         this.scrollBodyTo(0);
         return true;
-      case 'G':
-        this.cursor = Math.max(0, this.doc.blocks.length - 1);
-        this.render();
+      }
+      case 'G': {
+        const visible = this.visibleIndices();
+        if (visible.length > 0) this.setCursor(visible[visible.length - 1]);
         this.scrollBodyTo(this.body.scrollHeight);
         return true;
+      }
       case 'Enter':
         this.contextAction();
         return true;
@@ -1309,8 +1869,10 @@ export class ReviewBoardView implements ContentView {
         this.triageFinding('dismissed');
         return true;
       case 'o':
-        this.outlineIndex = Math.max(0, this.cursor);
-        this.openOverlay('outline');
+        this.openMap();
+        return true;
+      case 'O':
+        this.setViewMode('overview');
         return true;
       case '/':
         this.openSearch();
@@ -1322,8 +1884,14 @@ export class ReviewBoardView implements ContentView {
         this.requestRefresh();
         this.flash('reloading review.md');
         return true;
-      case 'q':
       case 'Escape':
+        // Back out one level first: Overview / Open items / Full document return
+        // to the chapter, so `O` then `Esc` is not a way to close a review by
+        // accident. `q` below is still the unconditional exit.
+        if (this.backOut()) return true;
+        if (this.closeCallback) this.closeCallback();
+        return true;
+      case 'q':
         if (this.closeCallback) this.closeCallback();
         return true;
       default:
@@ -1344,11 +1912,14 @@ export class ReviewBoardView implements ContentView {
   }
 
   onResize(): void {
-    // A single reading column — nothing to recompute.
+    // Declared by `ContentView`, but the compositor never calls it — the layout
+    // switch runs off this view's own ResizeObserver instead (spec 244).
   }
 
   dispose(): void {
     this.cancelBodyScroll();
+    this.resizeObs?.disconnect();
+    this.resizeObs = null;
     this.body.removeEventListener('wheel', this.cancelBodyScrollOnUserInput);
     this.body.removeEventListener('pointerdown', this.cancelBodyScrollOnUserInput);
     // Flush a pending autosave so the last keystroke before a close is not lost.

@@ -5,6 +5,7 @@ import {
   isTextEntryTarget,
   paneContentHoldsFocus,
   shouldRetargetContentPaste,
+  summonOverlayOwnsKeyboard,
 } from './content-focus';
 
 describe('isTextEntryTarget', () => {
@@ -38,6 +39,13 @@ describe('contentRootIsInFocusedWindow', () => {
   it('follows the compositor focused-window class', () => {
     expect(contentRootIsInFocusedWindow({ closest: (sel) => (sel === '.krypton-window--focused' ? {} : null) })).toBe(true);
     expect(contentRootIsInFocusedWindow({ closest: () => null })).toBe(false);
+  });
+});
+
+describe('summonOverlayOwnsKeyboard', () => {
+  it('blocks content routing while the review picker exists', () => {
+    expect(summonOverlayOwnsKeyboard({ querySelector: () => ({}) })).toBe(true);
+    expect(summonOverlayOwnsKeyboard({ querySelector: () => null })).toBe(false);
   });
 });
 

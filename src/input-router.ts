@@ -14,7 +14,7 @@ import { PromptDialog } from './prompt-dialog';
 import { QuickFileSearch } from './quick-file-search';
 import { QuickOverview } from './quick-overview';
 import { GLOBAL_LEADER_RESERVED_KEYS, normalizeLeaderKeyEvent } from './leader-keys';
-import { shouldRetargetContentPaste } from './content-focus';
+import { shouldRetargetContentPaste, summonOverlayOwnsKeyboard } from './content-focus';
 
 import type { MusicPlayer } from './music';
 import type { WorkspaceFooter } from './workspace-footer';
@@ -373,6 +373,11 @@ export class InputRouter {
 
   private setupKeyHandler(): void {
     document.addEventListener('keydown', (e: KeyboardEvent) => {
+      // Summon overlays register their document-capture listener after this
+      // router. Return without stopping the event so that listener can own it;
+      // most importantly, never dispatch it into the focused content view.
+      if (summonOverlayOwnsKeyboard(document)) return;
+
       // Debug: log all key events when not in Normal mode, or modifier combos
       if (this.mode !== Mode.Normal || e.ctrlKey || e.metaKey) {
         console.log(`[InputRouter] mode=${this.mode} key="${e.key}" code="${e.code}" ctrl=${e.ctrlKey} meta=${e.metaKey} alt=${e.altKey}`);
