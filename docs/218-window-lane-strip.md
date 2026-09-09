@@ -1,8 +1,9 @@
 # Window Status Bar Lane Strip — Implementation Spec
 
-> Status: Implemented (rev 2 — explicit 16×16 logo viewport; static magnification)
+> Status: Implemented (rev 3 — official Codex/Grok geometry; static magnification)
 > Date: 2026-08-14
 > Amended (rev 2, 2026-09-02): the active logo no longer runs a scale/overshoot keyframe when its footer node is rebuilt. Composer typing and other chrome refreshes can therefore never replay motion against the content window. The outer `<svg>` now declares `viewBox="0 0 16 16"` plus `width`/`height` so backend symbols render from a stable square viewport instead of relying on SVG defaults.
+> Amended (rev 3, 2026-09-09): Codex and Grok symbols preserve their official source viewBoxes and path geometry from `src/code-agent-logos.ts`. Every footer, rail, header, and Usage instance therefore renders the same mark instead of the former hex-dot and bolt placeholders.
 > Milestone: M9 — harness observability
 
 ## Problem

@@ -7,6 +7,7 @@
 // in wide windows, stacked in narrow ones). Each widget is a single
 // surface — full border + background tint, no inner boxes.
 
+import { CODEX_LOGO_MARK, GROK_LOGO_MARK, codeAgentLogoSvg } from './code-agent-logos';
 import type { ContentView, PaneContentType } from './types';
 import type { PaletteAction } from './palette-types';
 import {
@@ -43,10 +44,9 @@ const TOKEN_EXPIRED_HINTS: Record<UsageProvider, string> = {
 /** Widget freshness states — dot color is always paired with the foot text. */
 type WidgetState = 'loading' | 'ok' | 'stale' | 'off';
 
-// Provider marks. Geometry mirrors BACKEND_LOGO_SVG_DEFS in
-// src/acp/acp-harness-view.ts (spec 125) — keep in sync if iterated; not
-// imported from there so this lazy chunk stays free of the harness module.
-// currentColor strokes/fills so CSS recolors them like any glyph.
+// Provider marks. Official Codex/Grok geometry comes from the shared pure-data
+// module; the remaining compact marks mirror the harness symbols (spec 125).
+// currentColor strokes/fills let CSS recolor every mark like any other glyph.
 const PROVIDER_LOGOS: Record<string, string> = {
   claude:
     '<svg class="krypton-usage__logo" viewBox="0 0 16 16" aria-hidden="true">' +
@@ -56,11 +56,7 @@ const PROVIDER_LOGOS: Record<string, string> = {
     '<line x1="3.8" y1="3.8" x2="12.2" y2="12.2"/>' +
     '<line x1="3.8" y1="12.2" x2="12.2" y2="3.8"/>' +
     '</g></svg>',
-  codex:
-    '<svg class="krypton-usage__logo" viewBox="0 0 16 16" aria-hidden="true">' +
-    '<polygon points="8,1.6 13.6,5 13.6,11 8,14.4 2.4,11 2.4,5" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
-    '<circle cx="8" cy="8" r="1.6" fill="currentColor"/>' +
-    '</svg>',
+  codex: codeAgentLogoSvg(CODEX_LOGO_MARK, 'krypton-usage__logo'),
   copilot:
     '<svg class="krypton-usage__logo" viewBox="0 0 16 16" aria-hidden="true">' +
     '<path d="M8 5 V3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
@@ -72,11 +68,7 @@ const PROVIDER_LOGOS: Record<string, string> = {
     '<svg class="krypton-usage__logo" viewBox="0 0 16 16" aria-hidden="true">' +
     '<path d="M3 2 L13 8.5 L8.4 9.4 L10.7 13.8 L9.2 14.6 L6.9 10.2 L4 12.5 Z" fill="currentColor"/>' +
     '</svg>',
-  // grok/xai: angular bolt — mirrors krypton-logo-grok in acp-harness-view.ts.
-  grok:
-    '<svg class="krypton-usage__logo" viewBox="0 0 16 16" aria-hidden="true">' +
-    '<path d="M9.2 1.5 L3.8 8.8 H6.9 L5.8 14.5 L12.2 6.6 H8.8 Z" fill="currentColor"/>' +
-    '</svg>',
+  grok: codeAgentLogoSvg(GROK_LOGO_MARK, 'krypton-usage__logo'),
 };
 
 function errorHint(err: unknown, provider: UsageProvider): string {

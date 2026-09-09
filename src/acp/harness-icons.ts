@@ -4,10 +4,12 @@
 // harness DOM by buildDOM(); every symbol uses currentColor so callers recolour
 // via CSS alone.
 
-// Inline <symbol> defs for the thirteen built-in backends. Geometry is copied
-// from docs/prototypes/125-lane-rail-disambiguation.html — keep both sides
-// in sync if iterated. All strokes/fills use currentColor so the rail can
-// recolor via a single CSS class.
+import { CODEX_LOGO_MARK, GROK_LOGO_MARK } from '../code-agent-logos';
+
+// Inline <symbol> defs for the thirteen built-in backends. Codex and Grok use
+// the official shared geometry above; the remaining compact marks come from
+// docs/prototypes/125-lane-rail-disambiguation.html. All strokes/fills use
+// currentColor so the rail can recolor via a single CSS class.
 export const BACKEND_LOGO_SVG_DEFS = [
   // claude: 8-spoke asterisk
   '<symbol id="krypton-logo-claude" viewBox="0 0 16 16">' +
@@ -17,11 +19,8 @@ export const BACKEND_LOGO_SVG_DEFS = [
     '<line x1="3.8" y1="3.8" x2="12.2" y2="12.2"/>' +
     '<line x1="3.8" y1="12.2" x2="12.2" y2="3.8"/>' +
     '</g></symbol>',
-  // codex/openai: hex ring with dot
-  '<symbol id="krypton-logo-codex" viewBox="0 0 16 16">' +
-    '<polygon points="8,1.6 13.6,5 13.6,11 8,14.4 2.4,11 2.4,5" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
-    '<circle cx="8" cy="8" r="1.6" fill="currentColor"/>' +
-    '</symbol>',
+  // codex/openai: official OpenAI blossom
+  `<symbol id="krypton-logo-codex" viewBox="${CODEX_LOGO_MARK.viewBox}">${CODEX_LOGO_MARK.body}</symbol>`,
   // opencode: curly braces
   '<symbol id="krypton-logo-opencode" viewBox="0 0 16 16">' +
     '<path d="M6 2 Q3.5 2 3.5 4.5 V7 Q3.5 8 2.2 8 Q3.5 8 3.5 9 V11.5 Q3.5 14 6 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
@@ -56,10 +55,8 @@ export const BACKEND_LOGO_SVG_DEFS = [
     '<circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
     '<circle cx="8" cy="8" r="0.6" fill="currentColor"/>' +
     '</symbol>',
-  // grok/xai: angular bolt (hard-edged, x.ai identity)
-  '<symbol id="krypton-logo-grok" viewBox="0 0 16 16">' +
-    '<path d="M9.2 1.5 L3.8 8.8 H6.9 L5.8 14.5 L12.2 6.6 H8.8 Z" fill="currentColor"/>' +
-    '</symbol>',
+  // grok/xai: official Grok foreground mark
+  `<symbol id="krypton-logo-grok" viewBox="${GROK_LOGO_MARK.viewBox}">${GROK_LOGO_MARK.body}</symbol>`,
   // copilot: rounded goggle/visor head + antenna (GitHub Copilot mascot)
   '<symbol id="krypton-logo-copilot" viewBox="0 0 16 16">' +
     '<path d="M8 5 V3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
@@ -130,5 +127,3 @@ export function ensureHarnessSymbolDefs(): void {
 export function harnessIcon(id: string, cls = ''): string {
   return `<svg class="acp-harness__icon${cls ? ` ${cls}` : ''}" aria-hidden="true"><use href="#krypton-icon-${id}"/></svg>`;
 }
-
-

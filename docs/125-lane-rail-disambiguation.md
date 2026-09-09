@@ -4,6 +4,11 @@
 > Date: 2026-05-28
 > Milestone: M8 — Polish
 
+> Amended (2026-09-09): Codex and Grok no longer use the prototype monograms.
+> Their official monochrome path geometry is centralized in `src/code-agent-logos.ts`
+> and reused by the harness symbols, window lane strip, and Usage view. The other
+> backend marks remain the compact monograms approved by this spec.
+
 ## Problem
 
 Every lane in the ACP Harness rail currently renders the same shape: a status dot, the lane display name, and a single-line meta row that shows the directive's `icon` (a user-defined glyph) plus its `title`. In practice this collapses into visual noise because (a) most users either leave `icon` empty (Krypton's `fallback_icon()` derives a single up-cased character from `task`/`backend`/`id`, which trends to the same letters across same-backend lanes) or set the same decorative glyph everywhere, and (b) the directive `title` repeats the model name as a prefix ("Claude Issue Analysis", "Codex Review Changed Code") so the eye lands on the same word for every Claude or Codex lane. The user reports having to read every directive title in full to tell lanes apart at a glance — the rail is supposed to be a glanceable list, not a reading exercise.
@@ -25,7 +30,7 @@ Prototype: [`docs/prototypes/125-lane-rail-disambiguation.html`](prototypes/125-
 - `renderRailEntry()` at `src/acp/acp-harness-view.ts:4477-4551` produces the rail entry today. The meta row (`acp-harness__rail-meta`) prints `metaDirective.icon || '◇'` followed by `metaDirective.title.trim() || metaDirective.id` and an optional pending hint. `directive.task` is not consulted anywhere in the rail render — it only flows out through MCP via `LaneSummary.activeDirective.task` at `src/acp/types.ts:264`.
 - `HarnessDirective` carries `icon`, `title`, and `task` already (`src/config.ts:188-199`). `task` is documented as "Free-form task key (implementation/review/research/...)" and is exactly the field needed for the role tag.
 - `BACKEND_LABELS` at `src/acp/acp-harness-view.ts:502-512` enumerates all nine built-in backends — same set as `BUILTIN_BACKEND_IDS` at `src-tauri/src/acp_harness_config.rs:23-25`. A 1:1 backend → SVG `<symbol>` table can be built against this list with no new config.
-- The project ships no SVG asset for backends (`src-tauri/icons/` only contains the Krypton app icon). The prototype uses small geometric monograms drawn inline; these are placeholders that hint at each brand without copying the real marks. Production can swap in vetted brand assets later under `src/assets/backends/*.svg` without touching the lookup function.
+- The original implementation shipped no SVG asset for backends (`src-tauri/icons/` only contained the Krypton app icon), so the prototype used small geometric monograms drawn inline. Codex now uses the OpenAI blossom from the official `openai/openai-agents-python` asset, and Grok uses the foreground paths from the official `grok.com` favicon. Both stay inline and theme-tinted through `currentColor`; the remaining backend marks are still the compact monograms from this spec.
 - Status symbol rendering (`statusSymbol()` / `.acp-harness__rail-dot`) already encodes idle/active/busy, so the new logo cell carries no state and need not animate.
 - `directive.icon` is user-editable and shows in the directive picker. The rail render currently exposes it; this spec removes it from the rail (the picker still shows it) because the new logo + role tag together carry more information per pixel and the user-icon was redundant in practice.
 - The harness rail-entry tooltip (`entry.title` at `acp-harness-view.ts:4515`) still includes the canonical `directive.id` and pending hints; no a11y or hover info is lost when the title text is trimmed for display.
@@ -266,7 +271,7 @@ Hues are picked to be distinguishable on the Krypton Dark background and to roug
 
 ## Out of Scope
 
-- Bringing in real, licensed brand assets for the nine backends. v1 uses the placeholder inline SVG monograms from the prototype.
+- Bringing in vetted brand assets for the remaining backend monograms. Codex and Grok now use official source geometry; the other marks retain the v1 inline monograms.
 - Animation on logo or tag (hover, swap, status change). The rail must stay glanceable; animation defeats that.
 - Light theme support — `html[data-theme-scheme="light"]` now supplies darkened backend/role inks and an ink-wash chip fill (`src/styles/theme-scheme.css`). Further per-backend licensed marks remain out of scope.
 - Re-exposing `directive.icon` on the rail. The picker continues to show it. Users who want a personal mark in the rail can revisit later if there is demand.
@@ -274,7 +279,7 @@ Hues are picked to be distinguishable on the Krypton Dark background and to roug
 
 ## Open Questions
 
-- **Inline SVG monograms vs licensed assets.** The placeholders are intentionally distinct from each brand's official mark; if any look misleading we should swap them out before shipping. Decision deferred until visual review.
+- **Inline SVG monograms vs official geometry.** Codex and Grok were the misleading marks found in visual review, so their official source paths now replace the hex-dot and bolt placeholders. The paths remain inline and share the existing `currentColor` treatment so lane identity and theme contrast do not regress.
 - **Picker congruence.** The directive picker (`acp-harness-view.ts:4273-4275`) still shows `directive.icon` + `directive.title` in full. Should the picker mirror the rail's role-tag + trimmed title for consistency? Out of scope for v1; revisit if user feedback says the picker is now the odd one out.
 
 ## Revision History

@@ -94,7 +94,7 @@ gauge rows (spec 151); the window chrome chip comes free via `summarizeUsage`.
 | `src-tauri/src/usage.rs` | `GrokUsage` struct; `GrokCreds` + `load_grok_creds`; `usage_fetch_grok` command; 180 s in-mem cache + disk cache (`grok-usage.json`); JWT-`tier` decode helper; parse test |
 | `src-tauri/src/lib.rs` | Register `usage::usage_fetch_grok` in `invoke_handler` |
 | `src/usage-store.ts` | `'grok'` in `UsageProvider`, `PROVIDERS`, `POLL_MS`, `UsagePayloads`, `providerForBackend`; `GrokUsage` interface; `summarizeUsage` branch |
-| `src/usage-view.ts` | `'grok'` in `providers`; `PROVIDER_LOGOS.grok` (reuse harness bolt geometry); `renderGrok()` |
+| `src/usage-view.ts` | `'grok'` in `providers`; `PROVIDER_LOGOS.grok` (reuse the official shared Grok mark); `renderGrok()` |
 | `src/usage-store.test.ts` | Summary test covering a Grok credit payload |
 | `docs/151-…`, `docs/153-…`, `docs/PROGRESS.md` | Document the new provider (at implementation time) |
 
@@ -165,14 +165,12 @@ Constants: `GROK_USAGE_URL = "https://cli-chat-proxy.grok.com/v1/billing"`,
 
 ### UI Changes
 
-One `.krypton-usage__widget` for `grok`: head (bolt logo + `email · tier 3`
+One `.krypton-usage__widget` for `grok`: head (official Grok mark + `email · tier 3`
 meta + dot), a `credits` gauge (`used / monthlyLimit` %, reset countdown to
 `periodEnd`), a note line `14 / 4000 credits this cycle`, and the standard
-`live · updated …` foot. Logo reuses the `krypton-logo-grok` bolt geometry
-(`M9.2 1.5 L3.8 8.8 H6.9 L5.8 14.5 L12.2 6.6 H8.8 Z`, `fill="currentColor"`)
-from `acp-harness-view.ts` (spec 125), copied inline like the other
-`PROVIDER_LOGOS` entries so the lazy chunk stays free of the harness module. No
-new CSS.
+`live · updated …` foot. Logo reuses the same official geometry as
+`krypton-logo-grok` through `src/code-agent-logos.ts`, so the Usage lazy chunk
+and harness surfaces cannot drift apart. No new CSS.
 
 ### Configuration
 

@@ -4,6 +4,10 @@
 > Date: 2026-05-31
 > Milestone: M-ACP — Harness convergence
 
+> Amended (2026-09-09): `krypton-logo-grok` now uses the foreground path geometry
+> from Grok's official web-app favicon, shared through `src/code-agent-logos.ts`.
+> The earlier angular bolt was only a placeholder and is no longer rendered.
+
 ## Problem
 
 The ACP harness ships nine lanes (Codex, Claude, Gemini, OpenCode, Pi, Droid, Cursor, Junie, OMP). xAI shipped **Grok Build**, a terminal coding agent with first-party ACP support, on 2026-05-14. Krypton has no lane for it, so users can't compare Grok's `grok-build-0.1` (256K context) against the other lanes in the same multi-lane transcript.
@@ -91,7 +95,7 @@ The CLI `-m` flag is documented for Grok's *headless/print* path, not verified f
 
 ### Logo Glyph
 
-A new `krypton-logo-grok` `<symbol>` (16×16 viewBox, `currentColor`, in `BACKEND_LOGO_SVG_DEFS`) so the rail recolors via CSS like the others. Proposed motif: a hard-edged angular slash/bolt (Grok/X identity) — final geometry per `docs/132` brand-glyph conventions. Distinct from existing nine glyphs.
+A `krypton-logo-grok` `<symbol>` using Grok's official `512×512` foreground paths and `currentColor` in `BACKEND_LOGO_SVG_DEFS`, so the rail recolors via CSS like the others while preserving the real mark geometry. The original hard-edged angular bolt was a temporary implementation placeholder.
 
 ### Accent Palette Extension
 
