@@ -7,6 +7,8 @@
 > Amended (2026-09-09): `krypton-logo-grok` now uses the foreground path geometry
 > from Grok's official web-app favicon, shared through `src/code-agent-logos.ts`.
 > The earlier angular bolt was only a placeholder and is no longer rendered.
+> The favicon's 512² canvas is a rounded app tile; the glyph viewBox is the X's
+> ink square so a 16×16 slot shows the mark at the same visual size as siblings.
 
 ## Problem
 
@@ -95,7 +97,7 @@ The CLI `-m` flag is documented for Grok's *headless/print* path, not verified f
 
 ### Logo Glyph
 
-A `krypton-logo-grok` `<symbol>` using Grok's official `512×512` foreground paths and `currentColor` in `BACKEND_LOGO_SVG_DEFS`, so the rail recolors via CSS like the others while preserving the real mark geometry. The original hard-edged angular bolt was a temporary implementation placeholder.
+A `krypton-logo-grok` `<symbol>` using Grok's official foreground paths and `currentColor` in `BACKEND_LOGO_SVG_DEFS`, fitted into the same `0 0 16 16` slot as the other backend marks so the rail recolors via CSS like the others. The favicon source is a 512² rounded tile; the glyph crops to the X's ink square. The original hard-edged angular bolt was a temporary implementation placeholder.
 
 ### Accent Palette Extension
 

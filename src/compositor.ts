@@ -81,6 +81,7 @@ import { WebviewContentView } from './webview-view';
 import { usageStore, type ProviderUsageSummary, type UsageProvider } from './usage-store';
 import {
   capLaneMarks,
+  laneDropCap,
   laneStripKey,
   laneStripLabel,
   type HarnessLaneMark,
@@ -96,8 +97,6 @@ import {
   resolveDisplayName,
   harnessEntry,
 } from './acp/harness-directory';
-import { backendLogoId } from './acp/harness-lane-identity';
-import { ensureHarnessSymbolDefs } from './acp/harness-icons';
 import { getHomeLikePrefix } from './acp/harness-format';
 import type {
   DiffReviewBatch,
@@ -1490,18 +1489,15 @@ export class Compositor {
   }
 
   /**
-   * spec 218: the lane strip — one backend mark per lane of the harness in this
-   * window's focused pane, with the active lane highlighted.
+   * spec 218: the lane strip — one two-letter drop cap per lane of the harness
+   * in this window's focused pane, with the active lane's full name tail.
    *
    * Per *window*, not per workspace: a window is what hosts a harness, so its
    * own 28px rail is where "which lane am I driving here" belongs, and two
    * harness windows each answer for themselves instead of competing for one
-   * global highlight. Only the active mark renders a name, which makes the state
-   * readable in grayscale — lane accents repeat past 13 lanes, so hue cannot be
-   * load-bearing. Flat like the rest of the rail: no border box, no underline.
-   * The active mark's logo also carries a static macOS-Dock-style zoom (CSS
-   * only). It never animates when the mark is rebuilt, so composer typing and
-   * other chrome refreshes cannot shake the content window. Hidden entirely
+   * global highlight. The active mark magnifies its first two letters the same
+   * way the project badge magnifies `KR` — scaled type, one shared baseline,
+   * no SVG. Inactive marks are the two letters at rail size. Hidden entirely
    * when the focused pane has no lanes.
    */
   private renderWindowLaneStrip(win: KryptonWindow, lanes: readonly HarnessLaneMark[]): void {
@@ -1526,9 +1522,6 @@ export class Compositor {
       // re-appends itself on every focus change, so DOM position cannot.
       footer.appendChild(root);
     }
-    // The <symbol> defs live at document level; the footer is outside the
-    // harness view's subtree, so it cannot rely on that view having injected them.
-    ensureHarnessSymbolDefs();
     root.replaceChildren(...marks.map((mark) => this.buildWindowLaneMark(mark)));
     if (overflow > 0) {
       const more = document.createElement('span');
@@ -1539,29 +1532,25 @@ export class Compositor {
     root.setAttribute('aria-label', laneStripLabel(marks, overflow));
   }
 
-  /** One lane mark: the backend logo, plus the display name for the active lane
-   *  only. The accent rides in as an inline custom property so a single CSS rule
-   *  colours logo and name together through `currentColor`. */
+  /** One lane mark: a two-letter drop cap of the display name, plus the name's
+   *  tail for the active lane only — the same split as the project badge beside
+   *  it, so `GR`/`ok-1` sits on one baseline with `KR`/`ypton`. The accent rides
+   *  in as an inline custom property so a single CSS rule colours both halves. */
   private buildWindowLaneMark(mark: HarnessLaneMark): HTMLElement {
     const el = document.createElement('span');
     el.className =
       'krypton-window__lane' + (mark.active ? ' krypton-window__lane--active' : '');
     el.style.setProperty('--krypton-lane-accent', mark.accent);
-    const logo = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    logo.setAttribute('class', 'krypton-window__lane-logo');
-    logo.setAttribute('viewBox', '0 0 16 16');
-    logo.setAttribute('width', '16');
-    logo.setAttribute('height', '16');
-    logo.setAttribute('aria-hidden', 'true');
-    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    use.setAttribute('href', `#${backendLogoId(mark.backendId)}`);
-    logo.appendChild(use);
-    el.appendChild(logo);
-    if (mark.active) {
-      const name = document.createElement('span');
-      name.className = 'krypton-window__lane-name';
-      name.textContent = mark.displayName;
-      el.appendChild(name);
+    const { initials, rest } = laneDropCap(mark.displayName);
+    const head = document.createElement('span');
+    head.className = 'krypton-window__lane-initials';
+    head.textContent = initials;
+    el.appendChild(head);
+    if (mark.active && rest) {
+      const tail = document.createElement('span');
+      tail.className = 'krypton-window__lane-rest';
+      tail.textContent = rest;
+      el.appendChild(tail);
     }
     el.title = `${mark.displayName} · ${mark.backendId}${mark.active ? ' · active lane' : ''}`;
     return el;
@@ -1686,15 +1675,14 @@ export class Compositor {
    * of the 28px rail so several tiled windows can be told apart at scanning
    * distance without focusing one to read it.
    *
-   * It trails the rail, immediately left of the lane strip's dock-zoomed logo, so
+   * It trails the rail, immediately left of the lane strip's drop-capped name, so
    * "which project" and "which lane" read as one glance target at the right end
    * instead of two at opposite corners. Only the name's first two characters
    * magnify — a drop cap — so the glance target stays a fixed size no matter how
    * long the project is called,
    * while the rest of the name stays readable at the rail's own size. The
-   * magnification is `font-size`, not the lane logo's `transform`: a transform is
-   * invisible to layout, which is fine for a 1em square but would lay the head
-   * straight over the quotas. Removed entirely when the focused pane has no
+   * magnification is `font-size` on both the project pair and the active lane,
+   * so they share one baseline. Removed entirely when the focused pane has no
    * project (a terminal), so a terminal-only window's rail is unchanged.
    */
   private renderWindowProjectBadge(win: KryptonWindow, badge: ProjectBadge | null): void {

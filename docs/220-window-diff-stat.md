@@ -14,9 +14,9 @@ a shell and `git diff --stat`, for a number that is two integers wide.
 ## Solution
 
 Render the repo's uncommitted line counts — `+added −removed` — into the window's own status bar,
-immediately right of the project badge and **magnified by the same factor as the lane logo and the
+immediately right of the project badge and **magnified by the same factor as the lane drop cap and the
 project drop cap**, so project, volume-of-change and active lane form one oversized glance phrase
-at the rail's right end (`krypton +214 -37 ⟨logo⟩`). The counts cover the
+at the rail's right end (`krypton +214 -37 GR ok-1`). The counts cover the
 **whole working tree against `HEAD`** (staged +
 unstaged + untracked additions), come from one `git diff --numstat` in the Rust backend, and are
 kept current by a **per-repo polling store** (ref-counted, single-flight, paused while the app is
@@ -221,14 +221,14 @@ None. It is a readout. (`Cmd+P d` already opens the Diff Window for the detail.)
 </span>
 ```
 
-Painted left to right: `quotas … notification | krypton +214 -37 ⟨lane logo⟩ CLAUDE-1`, where the
-project's drop cap, both counts and the lane logo are all magnified ~2.9× and share one baseline,
-overgrowing upward out of the 28px rail.
+Painted left to right: `quotas … notification | krypton +214 -37 GR ok-1`, where the
+project's drop cap, both counts and the active lane's two-letter head are all magnified ~2.9×
+and share one baseline, overgrowing upward out of the 28px rail.
 
 | Concern | Rule | Why |
 |---------|------|-----|
 | Placement | `order: 2`, lane strip moves to `order: 3`, `margin-left: 6px`, `flex: none` | Immediately right of the name, so name and volume read as one phrase. It is never present without the badge (both derive from the same cwd), so it never needs the group's `margin-left: auto` — that rule stays on the badge untouched |
-| Size | `font-size: calc(var(--krypton-chrome-font-size, 11px) * var(--krypton-window-diff-zoom, 2.9))`, where `--krypton-window-diff-zoom` is declared on `.krypton-window__footer` alongside the other two | Magnified to the same level as the lane logo and the project drop cap: the rail's right end is one oversized phrase — *project, volume, lane* — read at scanning distance. Its own variable rather than reusing `--krypton-window-project-zoom`, because the three marks scale from different ink (a glyph pair, digits, an SVG) and a theme that retunes the rail will want them independent — the shared default 2.9 is what makes them agree today |
+| Size | `font-size: calc(var(--krypton-chrome-font-size, 11px) * var(--krypton-window-diff-zoom, 2.9))`, where `--krypton-window-diff-zoom` is declared on `.krypton-window__footer` alongside the other two | Magnified to the same level as the lane drop cap and the project drop cap: the rail's right end is one oversized phrase — *project, volume, lane* — read at scanning distance. Its own variable rather than reusing `--krypton-window-project-zoom`, because a theme that retunes the rail will want them independent — the shared default 2.9 is what makes them agree today |
 | Why `font-size`, not `transform` | Same as spec 219 | A transform is invisible to layout, so a magnified count would paint straight over the quotas to its left. Scaled type carries its true painted width, and the quotas are already the rail's compressible half (spec 153) |
 | Baseline | `align-self: flex-end` + the same `margin-bottom` calc as `.krypton-window__project`, `line-height: 1`, `position: relative` | Same floor as the badge, so at equal font size the drop cap and the counts share one baseline and the overgrowth escapes upward together. `position: relative` for spec 219's reason: `.krypton-pane` paints in the positioned phase and would otherwise slice the escaped pixels flat at the rail's top edge |
 | Narrow window | `@container (max-width: 620px)` drops `--krypton-window-diff-zoom` to `1` | The magnified pair costs ~150px of rail; on a narrow window that is the difference between the quotas rendering and not. Degrading the *size* keeps the information — the same trade the existing 620px rule makes when it drops secondary quotas |
@@ -253,7 +253,7 @@ None. `DIFF_STAT_POLL_MS` is a single exported constant. A TOML knob is delibera
 | Clean tree (`files === 0`) | No element — Starship's `only_nonzero_diffs` rule |
 | Deletions only | `+0` is still rendered beside `-37`, so the pair never reads as a lone stray number |
 | Counts ≥ 1 000 / ≥ 10 000 | `+1.2k` / `+12k` — five characters maximum per token, so the magnified pair has a fixed worst-case width |
-| Window narrower than 620px | Counts drop to rail size (still shown); the drop cap and lane logo keep their zoom, as today |
+| Window narrower than 620px | Counts drop to rail size (still shown); the project and lane drop caps keep their zoom, as today |
 | Fresh repo, no commits | Empty-tree fallback: every tracked file counts as additions |
 | Binary / >1 MiB / unreadable untracked file | Counts toward `files`, contributes 0 lines, sets `truncated` |
 | Binary tracked change (numstat `-` `-`) | Same: file counted, lines not, `truncated` set |

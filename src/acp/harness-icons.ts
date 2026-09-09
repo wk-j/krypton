@@ -4,7 +4,7 @@
 // harness DOM by buildDOM(); every symbol uses currentColor so callers recolour
 // via CSS alone.
 
-import { CODEX_LOGO_MARK, GROK_LOGO_MARK } from '../code-agent-logos';
+import { CODEX_LOGO_MARK, GROK_LOGO_MARK, codeAgentLogoSymbol } from '../code-agent-logos';
 
 // Inline <symbol> defs for the thirteen built-in backends. Codex and Grok use
 // the official shared geometry above; the remaining compact marks come from
@@ -19,8 +19,8 @@ export const BACKEND_LOGO_SVG_DEFS = [
     '<line x1="3.8" y1="3.8" x2="12.2" y2="12.2"/>' +
     '<line x1="3.8" y1="12.2" x2="12.2" y2="3.8"/>' +
     '</g></symbol>',
-  // codex/openai: official OpenAI blossom
-  `<symbol id="krypton-logo-codex" viewBox="${CODEX_LOGO_MARK.viewBox}">${CODEX_LOGO_MARK.body}</symbol>`,
+  // codex/openai: official OpenAI blossom, fitted into the 16×16 slot
+  codeAgentLogoSymbol(CODEX_LOGO_MARK, 'krypton-logo-codex'),
   // opencode: curly braces
   '<symbol id="krypton-logo-opencode" viewBox="0 0 16 16">' +
     '<path d="M6 2 Q3.5 2 3.5 4.5 V7 Q3.5 8 2.2 8 Q3.5 8 3.5 9 V11.5 Q3.5 14 6 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
@@ -55,8 +55,8 @@ export const BACKEND_LOGO_SVG_DEFS = [
     '<circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
     '<circle cx="8" cy="8" r="0.6" fill="currentColor"/>' +
     '</symbol>',
-  // grok/xai: official Grok foreground mark
-  `<symbol id="krypton-logo-grok" viewBox="${GROK_LOGO_MARK.viewBox}">${GROK_LOGO_MARK.body}</symbol>`,
+  // grok/xai: official Grok foreground mark, fitted into the 16×16 slot
+  codeAgentLogoSymbol(GROK_LOGO_MARK, 'krypton-logo-grok'),
   // copilot: rounded goggle/visor head + antenna (GitHub Copilot mascot)
   '<symbol id="krypton-logo-copilot" viewBox="0 0 16 16">' +
     '<path d="M8 5 V3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +

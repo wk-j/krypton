@@ -19,8 +19,8 @@ One token, `--krypton-border-radius`, default `4px` from
 token. True circles stay `50%`. NASA Vault and Amber Agent keep their sibling
 geometry (vault frame 3px / diamond dots; agent window 0px).
 
-Windows stay `overflow: visible` so the 2.9× title tail and dock-zoomed lane
-logo can hang off the rail. Titlebar and footer inherit the top/bottom radii
+Windows stay `overflow: visible` so the 2.9× title tail and footer drop caps
+can hang off the rail. Titlebar and footer inherit the top/bottom radii
 so square children do not poke through the 4px curve.
 
 ## Research

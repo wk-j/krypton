@@ -107,8 +107,8 @@ html[data-theme-scheme='light'] .krypton-window__lane {
   opacity: 1;
 }
 
-html[data-theme-scheme='light'] .krypton-window__lane--active {
-  background: color-mix(in srgb, var(--krypton-lane-accent, #007799) 16%, transparent);
+html[data-theme-scheme='light'] .krypton-window__lane--active .krypton-window__lane-initials {
+  color: color-mix(in srgb, var(--krypton-lane-accent, var(--krypton-window-accent, #007799)) 88%, var(--krypton-ink));
 }
 
 /* ── Workspace footer: was a hardcoded navy slab ── */

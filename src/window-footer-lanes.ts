@@ -2,9 +2,12 @@
 //
 // Each window renders the lane roster of the ACP Harness in its own focused
 // pane, in its own `.krypton-window__footer`. Everything that decides what the
-// strip actually shows — the icon cap and its `+N` tail, the repaint key, the
+// strip actually shows — the mark cap and its `+N` tail, the drop-cap split, the
+// repaint key, the
 // a11y label — lives here, side-effect free, so it is testable without a
 // compositor or a DOM.
+
+import { INITIALS_LEN } from './window-footer-project';
 
 /** spec 218: one lane's presentation identity in a window's status-bar strip.
  *  Presentation-only — no status, no counts (those have their own indicators),
@@ -12,9 +15,10 @@
 export interface HarnessLaneMark {
   /** Stable lane id — the strip's DOM key. */
   id: string;
-  /** e.g. "Claude-1". Rendered as text for the active lane only. */
+  /** e.g. "Claude-1". Split into a two-letter drop cap; the tail renders for
+   *  the active lane only. */
   displayName: string;
-  /** Backend id → `backendLogoId()` → the `#krypton-logo-*` symbol to `<use>`. */
+  /** Backend id — tooltip / identity only. The strip no longer paints a logo. */
   backendId: string;
   /** Lane accent CSS value (`laneAccent(index)`), applied inline as
    *  `--krypton-lane-accent`. Lane 1's `var(--krypton-window-accent, #0cf)`
@@ -51,8 +55,19 @@ export function laneStripKey(marks: readonly HarnessLaneMark[], overflow: number
   return `${parts.join('|')}#${overflow}`;
 }
 
-/** Screen-reader label for the strip — the marks carry no text of their own
- *  except on the active lane, so the roster is spelled out here. */
+/** Cut a lane display name into the magnified two-letter head and the rail-sized
+ *  tail — the same split spec 219 uses for the project badge, so `Grok-1` reads
+ *  as `GR` + `ok-1` next to `KR` + `ypton`. Split by code point. */
+export function laneDropCap(displayName: string): { initials: string; rest: string } {
+  const chars = [...displayName];
+  return {
+    initials: chars.slice(0, INITIALS_LEN).join(''),
+    rest: chars.slice(INITIALS_LEN).join(''),
+  };
+}
+
+/** Screen-reader label for the strip — inactive marks show only two letters, so
+ *  the roster is spelled out here. */
 export function laneStripLabel(marks: readonly HarnessLaneMark[], overflow: number): string {
   if (marks.length === 0) return 'no harness lanes';
   const names = marks.map((m) => (m.active ? `${m.displayName} (active)` : m.displayName));

@@ -1,9 +1,10 @@
 # Window Status Bar Lane Strip — Implementation Spec
 
-> Status: Implemented (rev 3 — official Codex/Grok geometry; static magnification)
+> Status: Implemented (rev 4 — drop-cap name, no footer logo)
 > Date: 2026-08-14
 > Amended (rev 2, 2026-09-02): the active logo no longer runs a scale/overshoot keyframe when its footer node is rebuilt. Composer typing and other chrome refreshes can therefore never replay motion against the content window. The outer `<svg>` now declares `viewBox="0 0 16 16"` plus `width`/`height` so backend symbols render from a stable square viewport instead of relying on SVG defaults.
-> Amended (rev 3, 2026-09-09): Codex and Grok symbols preserve their official source viewBoxes and path geometry from `src/code-agent-logos.ts`. Every footer, rail, header, and Usage instance therefore renders the same mark instead of the former hex-dot and bolt placeholders.
+> Amended (rev 3, 2026-09-09): Codex and Grok use official path geometry from `src/code-agent-logos.ts`, fitted into the same 16×16 symbol slot as the other backend marks (source canvases are app-icon tiles; the glyph viewBox is the ink square so the mark is not inset). Every footer, rail, header, and Usage instance therefore renders the same mark instead of the former hex-dot and bolt placeholders.
+> Amended (rev 4, 2026-09-09): the window-footer strip no longer paints a backend logo. The active lane magnifies the first two letters of its display name — the same drop cap as spec 219's `KR` — so project, volume and lane are one oversized phrase on one typographic baseline. Inactive lanes are the two letters at rail size. Backend logos stay on the harness rail, lane heads, and Usage.
 > Milestone: M9 — harness observability
 
 ## Problem
@@ -21,9 +22,10 @@ workspace. A window is what hosts a harness, so each window reports its own lane
 
 ## Solution
 
-Add a **lane strip** to the window status bar: one backend logo per lane of the ACP Harness
+Add a **lane strip** to the window status bar: one two-letter drop cap per lane of the ACP Harness
 in this window's active tab's focused pane, in lane order, with the active lane rendered in
-its lane accent and carrying its display name; the others are dimmed icon-only marks.
+its lane accent and carrying the rest of its display name (`GR` `ok-1`); the others are dimmed
+two-letter marks at rail size.
 
 The strip follows focus *within the window*, exactly like the spec-153 quota readout beside
 it: the compositor reads the focused pane's `ContentView.getLaneMarks()` and subscribes to
@@ -83,11 +85,11 @@ keybinding; lane switching stays where it is (`⌘P` lane picker, `⌃1..9`).
 | Krypton — AI credit status (spec 153) | Focused view's quotas rendered into `.krypton-window__footer` | The window-scoped footer contract this spec reuses verbatim |
 
 **Krypton delta** — matches the tmux/Zellij convention (render all, restyle the active one)
-and Krypton's own live-assist strip, but diverges on three points: it is **icon-first**
-(backend logo, name only for the active lane) because the rail is 28px and the human is
-keyboard-only, so the strip is a glance target and never a click target; it is **static**
-(no pulse, no spinner) per the footer's standing no-motion rule; and it is **flat** — accent
-colour plus a background tint, with no border box, no underline, and no left-edge rail.
+and Krypton's own live-assist strip, but diverges on three points: it is **type-first**
+(two-letter drop cap, name tail only for the active lane) so the strip shares a baseline
+with the project badge and the diff stat rather than mixing an SVG into a line of type;
+it is **static** (no pulse, no spinner) per the footer's standing no-motion rule; and it is
+**flat** — accent colour, no border box, no underline, no left-edge rail, no logo.
 
 ## Affected Files
 
@@ -99,7 +101,7 @@ colour plus a background tint, with no border box, no underline, and no left-edg
 | `src/acp/acp-harness-view.ts` | Implement both hooks; `notifyLaneMarksChanged()` (deduped) from `render()`; use the shared defs helper |
 | `src/acp/harness-icons.ts` | New `ensureHarnessSymbolDefs()` — idempotent document-level `<defs>` injection |
 | `src/compositor.ts` | `syncWindowFooter()` (usage + lanes), `syncWindowLaneStrip()`, `renderWindowLaneStrip()`, `buildWindowLaneMark()`, teardown in `closeWindow()` |
-| `src/styles/window.css` | `__lane-strip`, `__lane`, `__lane--active`, `__lane-logo`, `__lane-name`, `__lane-more` |
+| `src/styles/window.css` | `__lane-strip`, `__lane`, `__lane--active`, `__lane-initials`, `__lane-rest`, `__lane-more` |
 | `docs/153-window-ai-credit-status.md` | Note the shared window-footer sync path |
 | `docs/04-architecture.md`, `docs/05-data-flow.md` | The window footer's second readout and its flow |
 | `docs/02-functional-requirements.md` | New FR for the per-window lane roster |
@@ -116,9 +118,10 @@ colour plus a background tint, with no border box, no underline, and no left-edg
 export interface HarnessLaneMark {
   /** Stable lane id; the strip's DOM key. */
   id: string;
-  /** e.g. "Claude-1" — rendered as text for the active lane only. */
+  /** e.g. "Claude-1" — split into a two-letter drop cap; the tail renders for
+   *  the active lane only. */
   displayName: string;
-  /** Backend id → `backendLogoId()` → `#krypton-logo-*` symbol. */
+  /** Backend id — tooltip / identity only. The strip does not paint a logo. */
   backendId: string;
   /** Lane accent CSS value (`laneAccent(index)`), applied inline as
    *  `--krypton-lane-accent`. Lane 1's `var(--krypton-window-accent, #0cf)`
@@ -155,8 +158,9 @@ onLaneMarksChange?(cb: () => void): () => void;
 
 ### API / Commands
 
-No Tauri commands, no IPC, no `ViewBus` signal. Two optional `ContentView` methods and one
-exported helper (`ensureHarnessSymbolDefs()`); everything else is internal to the compositor.
+No Tauri commands, no IPC, no `ViewBus` signal. Two optional `ContentView` methods;
+everything else is internal to the compositor. (Backend logo `<symbol>` defs stay a
+harness-view concern — the footer strip no longer paints them.)
 
 The strip deliberately does **not** ride the `ViewBus`. The bus carries workspace-level
 signals for the workspace footer; this is window chrome describing the pane the window is
@@ -174,9 +178,8 @@ at the other end of the same rail).
 4. On change it invokes the compositor's per-window listener
 5. renderWindowLaneStrip() caps the roster at 8, compares laneStripKey against the
    window's rendered key, and rebuilds the ≤9 nodes only when it differs
-6. Each mark is a <use href="#krypton-logo-*"> resolved from the document-level
-   symbol defs (ensureHarnessSymbolDefs), coloured by an inline
-   --krypton-lane-accent; only the active mark renders a name
+6. Each mark is a two-letter drop cap (`laneDropCap`) coloured by an inline
+   --krypton-lane-accent; only the active mark renders the name tail
 7. Focus moving to another pane, a tab switch, or a window create calls
    syncWindowFooter(win) → syncWindowLaneStrip(win), which resubscribes to the
    newly focused view and re-renders (a terminal reports no lanes → strip removed)
@@ -193,13 +196,12 @@ None. The strip is a readout; lane switching keeps its existing bindings (`⌘P`
 Pinned to the window footer's **right edge**, past the notification control and far right of
 the spec-153 quotas. (Since spec 219 the strip's immediate left neighbour is the project badge,
 whose drop cap is magnified the same way — the two magnified marks sit together on purpose, so
-"which project" and "which lane" are read in one glance. They cannot collide: the badge scales
-`font-size`, so its box is its painted width, and the logo's transform overgrowth is reserved by
-its own `margin-inline`. The badge also takes over the right-pinning `margin-left: auto`, leaving
-the strip a plain 10px gap whenever a badge is present. Since spec 220 the diff stat sits between
-the two at `order: 2`, magnified by the same factor — so the rail's right end is one oversized
-phrase, *project · volume · lane*. It never claims the free space: it cannot appear without the
-badge, so the pushing arrangement below is unchanged.)
+"which project" and "which lane" are read in one glance. They cannot collide: both scale
+`font-size`, so each box is its painted width. The badge also takes over the right-pinning
+`margin-left: auto`, leaving the strip a plain 10px gap whenever a badge is present. Since spec
+220 the diff stat sits between the two at `order: 2`, magnified by the same factor — so the
+rail's right end is one oversized phrase, *project · volume · lane*. It never claims the free
+space: it cannot appear without the badge, so the pushing arrangement below is unchanged.)
 
 ```html
 <div class="krypton-window__footer">
@@ -212,12 +214,12 @@ badge, so the pushing arrangement below is unchanged.)
        aria-label="harness lanes: Claude-1 (active), Grok-1">
     <span class="krypton-window__lane krypton-window__lane--active"
           style="--krypton-lane-accent: #8effb0" title="Claude-1 · claude · active lane">
-      <svg class="krypton-window__lane-logo" viewBox="0 0 16 16" width="16" height="16"><use href="#krypton-logo-claude"/></svg>
-      <span class="krypton-window__lane-name">Claude-1</span>
+      <span class="krypton-window__lane-initials">Cl</span>
+      <span class="krypton-window__lane-rest">aude-1</span>
     </span>
     <span class="krypton-window__lane" style="--krypton-lane-accent: #5ce6a8"
           title="Grok-1 · grok">
-      <svg class="krypton-window__lane-logo" viewBox="0 0 16 16" width="16" height="16"><use href="#krypton-logo-grok"/></svg>
+      <span class="krypton-window__lane-initials">Gr</span>
     </span>
   </div>
 </div>
@@ -243,42 +245,36 @@ lane already *has* a colour, and lane hues repeat past 13 lanes):
 
 | Cue | Active lane | Every other lane |
 |-----|-------------|------------------|
-| **Size** | logo magnified `2.9×` out of the rail, macOS-Dock style | `1em`, on the rail's baseline |
-| **Name text** | display name rendered (`Claude-1`) | icon only — no text at all |
-| **Weight** | full-strength lane accent + 12% tint of the same colour | `opacity: .45`, no tint |
+| **Size** | first two letters magnified `2.9×` — the same drop cap as `KR` | two letters at the rail's 11px |
+| **Name tail** | rest of the display name (`ok-1`) | none — initials only |
+| **Weight** | full-strength lane accent on the pair | `opacity: .45` |
 
-The name is the load-bearing cue: **exactly one mark in the strip ever has text**, which reads
+The name is the load-bearing cue: **exactly one mark in the strip ever has a tail**, which reads
 in grayscale, at a glance, and without knowing the palette. No underline, no border box, no
-left rail — the chip is flat, one surface: colour, tint, size, and text do all the work.
+left rail, no logo.
 
-#### Dock-style zoom on the active mark
+#### Drop cap on the active mark
 
-The active logo magnifies out of the 28px rail the way a Dock icon rises off the dock, so the
-driven lane is readable across the screen without reading the name. Two deliberate departures
-from the Dock:
-
-- **Anchored on the active lane, not a pointer.** The compositor is keyboard-driven, so the
-  bump moves with `⌃1..9` / `⌘P`, not with the mouse.
-- **No neighbour falloff curve.** The Dock has no hierarchy, so its magnification is a pure
-  cursor affordance; this strip *does* have one, and growing a deliberately dimmed lane
-  (spec 215) would contradict the de-emphasis that dimming is carrying.
+The active lane magnifies its first two letters out of the 28px rail the same way spec 219
+magnifies the project name — scaled `font-size`, not a transform — so `KR ypton +87 -22 GR ok-1`
+is one oversized phrase on one typographic baseline. An SVG on that line could not share it
+(the dock-style logo sat off the drop-cap floor); dropping the logo is how the three marks
+agree.
 
 Mechanics, all in `src/styles/window.css`:
 
 | Concern | Rule | Why |
 |---------|------|-----|
-| Growth | `transform: scale(var(--krypton-lane-zoom, 2.9))` | A transform never reflows the rail, so quotas and notification do not shift when the active lane changes. |
-| Direction | `align-self: flex-end` + `transform-origin: bottom center` | Puts the glyph on the chip's floor and sends every pixel of growth *upward*, over the pane — never down through the window's bottom edge. |
-| Room | `margin-inline: 10px` | A transform is invisible to layout; this is what reserves the ≈10px of horizontal overgrowth per side so the glyph cannot land on its neighbour. |
-| Motion | None | Magnification is a standing identity cue. A rebuilt footer node paints directly at its final scale, so typing or chrome refreshes cannot replay motion or shake the window. |
-| SVG viewport | `viewBox="0 0 16 16" width="16" height="16"` | Keeps every backend symbol in a stable square coordinate system before CSS applies the `1em` box and static scale. |
+| Growth | `font-size: calc(11px * var(--krypton-lane-zoom, 2.9))` on `.krypton-window__lane-initials` of the active mark | Scaled type carries its painted width, so the head cannot sit on top of the counts. Same factor as the project pair and the diff stat. |
+| Baseline | `align-items: baseline` + `align-self: flex-end` + the same `margin-bottom` calc as `.krypton-window__project` | The three magnified marks pin to one floor and overgrow the pane together. |
+| Split | `laneDropCap(displayName)` — two code points, same `INITIALS_LEN` as spec 219 | `Grok-1` → `GR` + `ok-1`. CSS `text-transform: uppercase` on the head. |
+| Motion | None | Magnification is a standing identity cue. A rebuilt footer node paints directly at its final size. |
 
-At the default 28px footer and 11px chrome font this renders a glyph about as tall as the rail
-itself, whose ink clears the rail's top edge by ~6px (measured). `--krypton-lane-zoom` is
-declared on `.krypton-window__lane-strip` so the factor is tunable in one place — the right
-value depends on the rail height, which is themeable via `--krypton-footer-height`.
+`--krypton-lane-zoom` is declared on `.krypton-window__lane-strip` so the factor is tunable in
+one place — the right value depends on the rail height, which is themeable via
+`--krypton-footer-height`.
 
-- Logo `1em` square, `currentColor`, `3px` gap; strip is `flex: none`, so it never shrinks —
+- Strip is `flex: none`, so it never shrinks —
   the quotas at the other end of the rail (`min-width: 0; overflow: hidden`) compress first.
   That ordering is deliberate: which lane this window is driving outranks how much credit is
   left.
@@ -302,7 +298,7 @@ None.
 | Focus moves to a background tab's harness | Only the *active* tab's focused pane is read, so a hidden tab's lanes never show |
 | More than 13 lanes | Lane accents repeat (`laneAccent` wraps the palette) — which is exactly why the name cue exists and colour is not load-bearing |
 | More than 8 lanes | First 8 marks plus `+N`; the active lane can therefore be inside the `+N` tail — acceptable, since the harness view itself is the full roster and 8 lanes in one harness is already far past normal |
-| Unknown/new backend id | `backendLogoId()` already falls back to `krypton-logo-omp` |
+| Unknown/new backend id | The strip no longer paints a logo; the display name's two-letter head is the mark |
 | Rapid status churn (busy → idle → busy) | The dedupe key excludes status, so nothing notifies and the strip never churns |
 | Two harness panes both injecting defs | `ensureHarnessSymbolDefs()` is idempotent on a document-level id, removing today's duplicate-id situation |
 

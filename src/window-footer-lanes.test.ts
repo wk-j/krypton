@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   capLaneMarks,
+  laneDropCap,
   laneStripKey,
   laneStripLabel,
   LANE_STRIP_MAX,
@@ -91,23 +92,51 @@ describe('laneStripLabel', () => {
   });
 });
 
-describe('window footer lane logo chrome', () => {
+describe('laneDropCap', () => {
+  it('splits a display name into a two-letter head and the rail-sized tail', () => {
+    expect(laneDropCap('Grok-1')).toEqual({ initials: 'Gr', rest: 'ok-1' });
+    expect(laneDropCap('OpenCode-1')).toEqual({ initials: 'Op', rest: 'enCode-1' });
+    expect(laneDropCap('Claude-1')).toEqual({ initials: 'Cl', rest: 'aude-1' });
+  });
+
+  it('leaves an empty tail for a name no longer than the head', () => {
+    expect(laneDropCap('AB')).toEqual({ initials: 'AB', rest: '' });
+    expect(laneDropCap('A')).toEqual({ initials: 'A', rest: '' });
+  });
+
+  it('splits by code point, so an astral first character is not cut in half', () => {
+    expect(laneDropCap('🚀-1')).toEqual({ initials: '🚀-', rest: '1' });
+  });
+});
+
+describe('window footer lane drop-cap chrome', () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const compositor = readFileSync(join(here, 'compositor.ts'), 'utf8');
   const css = readFileSync(join(here, 'styles/window.css'), 'utf8');
 
-  it('gives the backend logo an explicit square SVG viewport', () => {
-    expect(compositor).toContain("logo.setAttribute('viewBox', '0 0 16 16')");
-    expect(compositor).toContain("logo.setAttribute('width', '16')");
-    expect(compositor).toContain("logo.setAttribute('height', '16')");
+  it('renders initials and the active tail, never a footer logo', () => {
+    expect(compositor).toContain("head.className = 'krypton-window__lane-initials'");
+    expect(compositor).toContain("tail.className = 'krypton-window__lane-rest'");
+    expect(compositor).toContain('laneDropCap(mark.displayName)');
+    expect(compositor).not.toContain('krypton-window__lane-logo');
+    expect(compositor).not.toContain('ensureHarnessSymbolDefs');
   });
 
-  it('keeps the magnified active logo static when footer nodes rebuild', () => {
-    const activeLogoRule = css.match(
-      /\.krypton-window__lane--active \.krypton-window__lane-logo\s*\{([^}]*)\}/,
+  it('magnifies only the active lane\'s two-letter head via font-size', () => {
+    const head = css.match(/\.krypton-window__lane-initials\s*\{([^}]*)\}/)?.[1] ?? '';
+    const activeHead = css.match(
+      /\.krypton-window__lane--active \.krypton-window__lane-initials\s*\{([^}]*)\}/,
     );
-    expect(activeLogoRule?.[1]).toContain('transform: scale');
-    expect(activeLogoRule?.[1]).not.toContain('animation:');
-    expect(css).not.toContain('@keyframes krypton-lane-dock-pop');
+    expect(head).toMatch(/text-transform:\s*uppercase/);
+    expect(activeHead?.[1]).toContain('--krypton-lane-zoom');
+    expect(css).not.toContain('.krypton-window__lane-logo');
+    expect(css).not.toContain('krypton-lane-dock-pop');
+  });
+
+  it('pins the strip to the same type line as the project badge and diff stat', () => {
+    const strip = css.match(/\.krypton-window__lane-strip\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(strip).toMatch(/align-items:\s*baseline/);
+    expect(strip).toMatch(/align-self:\s*flex-end/);
+    expect(strip).toContain('--krypton-lane-chip-height');
   });
 });
