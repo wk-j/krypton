@@ -47,6 +47,16 @@ export interface BoundsSnapshot {
   bounds: WindowBounds;
 }
 
+export interface StageTransitionLayer {
+  element: HTMLElement;
+  fromTransform: string;
+  toTransform: string;
+  fromOpacity: number;
+  toOpacity: number;
+  fromFilter: string;
+  toFilter: string;
+}
+
 export class AnimationEngine {
   private config: AnimationConfig;
   private running: Animation[] = [];
@@ -458,6 +468,48 @@ export class AnimationEngine {
         }
         break;
       }
+    }
+  }
+
+  // ─── Stage Transition Animation ───────────────────────────────────
+
+  /** Animate between visual Stage placements while preserving final inline styles. */
+  async stageTransition(layers: Map<WindowId, StageTransitionLayer>): Promise<void> {
+    if (this.config.style === AnimationStyle.None || this.config.duration === 0) return;
+    if (layers.size === 0) return;
+
+    this.cancelAll();
+    this._isAnimating = true;
+    const reducedMotion = typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const duration = Math.min(this.config.duration, reducedMotion ? 120 : 200);
+    const easing = resolveEasing(AnimationEasing.EaseOut);
+    const running: Animation[] = [];
+
+    for (const [, layer] of layers) {
+      const animation = layer.element.animate(
+        [
+          {
+            transform: layer.fromTransform,
+            opacity: layer.fromOpacity,
+            filter: layer.fromFilter,
+          },
+          {
+            transform: layer.toTransform,
+            opacity: layer.toOpacity,
+            filter: layer.toFilter,
+          },
+        ],
+        { duration, easing, fill: 'none' },
+      );
+      running.push(animation);
+    }
+
+    this.running = running;
+    await Promise.all(running.map((animation) => animation.finished.catch(() => {})));
+    if (this.running === running) {
+      this.running = [];
+      this._isAnimating = false;
     }
   }
 

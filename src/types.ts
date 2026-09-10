@@ -93,6 +93,8 @@ export enum LayoutMode {
   Depth = 'Depth',
   /** niri-style: columns on an infinite horizontal strip (spec 241) */
   Scroll = 'Scroll',
+  /** macOS Stage Manager-inspired: active window plus recent-window shelf */
+  Stage = 'Stage',
 }
 
 /** Width of a Scroll-layout column. v1 is proportion of usable viewport width. */
@@ -115,6 +117,33 @@ export interface ScrollColumn {
 export interface ScrollState {
   columns: ScrollColumn[];
   cameraX: number;
+}
+
+/** Shared active-window frame for Stage layout, normalized to the viewport. */
+export interface NormalizedStageFrame {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Stage ring: index 0 is active, remaining windows fill the recent shelf. */
+export interface StageState {
+  order: WindowId[];
+  frame: NormalizedStageFrame;
+}
+
+/** Final visual role and transform for one Stage-layout window. */
+export interface StagePlacement {
+  id: WindowId;
+  role: 'active' | 'shelf' | 'hidden';
+  baseBounds: WindowBounds;
+  translateX: number;
+  translateY: number;
+  scale: number;
+  opacity: number;
+  zIndex: number;
+  shelfIndex: number | null;
 }
 
 export type CenterFocusedColumn = 'never' | 'always' | 'on-overflow';

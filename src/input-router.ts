@@ -756,6 +756,8 @@ export class InputRouter {
         if (e.shiftKey) {
           // Shift+H: enter hint mode
           this.enterHintMode();
+        } else if (this.compositor.currentLayoutMode === LayoutMode.Stage) {
+          this.compositor.stagePrevious().then(() => this.toNormal());
         } else {
           this.compositor.focusDirection('left');
           this.toNormal();
@@ -764,6 +766,8 @@ export class InputRouter {
       case 'j':
         if (this.compositor.currentLayoutMode === LayoutMode.Depth) {
           this.compositor.depthPullForward().then(() => this.toNormal());
+        } else if (this.compositor.currentLayoutMode === LayoutMode.Stage) {
+          this.compositor.stageNext().then(() => this.toNormal());
         } else {
           this.compositor.focusDirection('down');
           this.toNormal();
@@ -772,6 +776,8 @@ export class InputRouter {
       case 'k':
         if (this.compositor.currentLayoutMode === LayoutMode.Depth) {
           this.compositor.depthPushBack().then(() => this.toNormal());
+        } else if (this.compositor.currentLayoutMode === LayoutMode.Stage) {
+          this.compositor.stagePrevious().then(() => this.toNormal());
         } else {
           this.compositor.focusDirection('up');
           this.toNormal();
@@ -780,6 +786,8 @@ export class InputRouter {
       case 'l':
         if (e.shiftKey) {
           this.compositor.openDashboard().then(() => this.toNormal());
+        } else if (this.compositor.currentLayoutMode === LayoutMode.Stage) {
+          this.compositor.stageNext().then(() => this.toNormal());
         } else {
           this.compositor.focusDirection('right');
           this.toNormal();
@@ -853,6 +861,8 @@ export class InputRouter {
       case '=':
         if (this.compositor.currentLayoutMode === LayoutMode.Scroll) {
           this.compositor.scrollCycleColumnWidth();
+        } else if (this.compositor.currentLayoutMode === LayoutMode.Stage) {
+          void this.compositor.resetStageLayout();
         }
         this.toNormal();
         break;

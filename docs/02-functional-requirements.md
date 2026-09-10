@@ -97,7 +97,7 @@
 | FR-INP-034 | The system shall support **maximizing** the focused window (expand to fill workspace) and restoring via keybinding. | Must |
 | FR-INP-035 | The system shall support **swapping** two windows' positions via keybinding (e.g., `Leader+S` then select target window). | Should |
 | FR-INP-036 | The system shall support resetting the current workspace to its default layout via keybinding. | Should |
-| FR-INP-037 | The system shall support cycling workspace layout modes with `Leader+F`: **Grid** → **Focus** → **Depth** → **Scroll** → Grid. Focus layout puts the focused window in the left column at full height with the rest stacked on the right. Scroll layout (spec 241) places windows in columns on a horizontal strip so a new window does not resize existing ones; `Cmd+Shift+</>` cycles focus in strip order without wrapping. | Should |
+| FR-INP-037 | The system shall support cycling workspace layout modes with `Leader+F`: **Grid** → **Focus** → **Depth** → **Scroll** → **Stage** → Grid. Focus layout puts the focused window in the left column at full height. Scroll layout (spec 241) places windows on a horizontal strip without resizing existing columns. Stage layout (spec 245) keeps one active window large with recent live previews on a left shelf. | Should |
 | FR-INP-038 | The system shall support toggling the workspace footer between compact and detail density via keyboard (`Leader ?`) and command palette action. | Should |
 
 ### 3.5.5 Tab Navigation (Keyboard)
@@ -167,8 +167,9 @@
 | FR-WIN-009 | Windows shall be resizable via keyboard (primary) and optionally via mouse drag on edges/corners (secondary). | Must |
 | FR-WIN-010 | The system shall support **pinning** a window via keybinding (`Leader p` toggle). A pinned window sticks to the right column in Focus layout and is skipped during focus cycling (`Cmd+Shift+</>`) but can receive focus via click or directional navigation. | Should |
 | FR-WIN-011 | Pinned windows shall display a visual indicator (icon in title bar) distinguishing them from unpinned windows. | Should |
-| FR-WIN-012 | Pin state shall only affect Focus layout; in Grid, Depth, and Scroll layouts pinned windows tile (or stack) normally. | Should |
+| FR-WIN-012 | Pin state shall only affect Focus layout; in Grid, Depth, Scroll, and Stage layouts pinned windows follow the normal layout behavior. | Should |
 | FR-WS-040 | The system shall support a **Scroll** layout (spec 241): windows sit in columns on a horizontal strip; a new window does not resize existing columns. New windows take `[workspaces.scroll] default_column_width` and `default_window_height`. The camera shall keep the focused column in the horizontal center of the screen (`center_focused_column = "always"` by default). `Leader h/l` focus columns, `Leader j/k` focus within a column, `Leader ,` / `Leader .` consume or expel (unless the focused view owns those keys), `Leader =` cycles preset column widths, Resize `↓`/`↑` change window height, and `Cmd+Shift+</>` cycles strip order. Strip navigation shall not wrap: `Leader h/l`, `Leader j/k`, and `Cmd+Shift+</>` are no-ops at the ends of the strip or column (no circular scroll). | Should |
+| FR-WS-041 | The system shall support a **Stage** layout (spec 245): one active Krypton window occupies a shared large frame and up to five recent windows remain visible as scaled live previews on a left shelf. Switching stages shall not resize PTYs. `Leader h/k` activates the previous stage, `Leader j/l` activates the next stage, `Leader 1-9` activates by stage order, and `Leader =` resets the shared frame. | Should |
 
 ### 3.8.3 Layout Positioning
 

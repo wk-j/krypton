@@ -173,17 +173,17 @@ Uses WAAPI keyframes on `transform`, `opacity`, and `filter` simultaneously. Dur
 
 ### Mode Toggle Cycle
 
-Update `toggleFocusLayout()` to cycle through three modes:
+The cycle now includes Scroll (spec 241) and Stage (spec 245):
 
 ```
-Grid → Focus → Depth → Grid
+Grid → Focus → Depth → Scroll → Stage → Grid
 ```
 
 ### Keybindings
 
 | Key | Context | Action |
 |-----|---------|--------|
-| `f` | Compositor mode | Cycle layout: Grid → Focus → Depth → Grid (existing key, extended cycle) |
+| `f` | Compositor mode | Cycle layout: Grid → Focus → Depth → Scroll → Stage → Grid |
 | `j` | Compositor + Depth layout | Push back (send front to back of deck) |
 | `k` | Compositor + Depth layout | Pull forward (bring next card to front) |
 | `1-9` | Compositor + Depth layout | Jump to window N (reorder deck so that window is at front) |

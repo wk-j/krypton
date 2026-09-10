@@ -403,7 +403,7 @@ cwd = ""                       # working directory override (empty = $HOME)
 
 [workspaces]
 startup = "coding"           # workspace to activate on launch
-# default_layout = "focus"   # grid | focus | depth | scroll
+# default_layout = "focus"   # grid | focus | depth | scroll | stage
 gap = 6                      # space between tiled windows, and the workspace
                              # edge inset in Grid/Scroll (0-64, live on Reload Config)
 padding = 0                  # reserved: parsed but not applied yet
@@ -908,13 +908,13 @@ Built-in extensions (system-level, not user-configurable): Java Resource Monitor
 | Section | Key | Type | Default | Description |
 |---------|-----|------|---------|-------------|
 | `[workspaces]` | `startup` | string | `"single"` | Workspace to activate on launch |
-| `[workspaces]` | `default_layout` | string | `"focus"` | Default layout mode: `"grid"`, `"focus"`, `"depth"`, or `"scroll"` |
+| `[workspaces]` | `default_layout` | string | `"focus"` | Default layout mode: `"grid"`, `"focus"`, `"depth"`, `"scroll"`, or `"stage"` |
 | `[workspaces.scroll]` | `default_column_width` | float | `0.5` | New-column width as a fraction of the usable viewport (Scroll layout) |
 | `[workspaces.scroll]` | `default_window_height` | float | `1.0` | New-window height as a fraction of the usable viewport (Scroll layout). `1.0` fills the column; smaller values top-align and leave empty space below. Clamped to `0.15`–`1.0`. Live: Resize `↓`/`↑`. |
 | `[workspaces.scroll]` | `preset_column_widths` | float[] | `[0.33333, 0.5, 0.66667]` | Widths cycled by `Leader =` in Scroll |
 | `[workspaces.scroll]` | `center_focused_column` | string | `"always"` | Camera: `"always"` keeps the focused column in the horizontal center of the screen; `"never"` snaps it to the near edge; `"on-overflow"` centers only when the previous and focused columns cannot both fit |
 | `[workspaces.scroll]` | `always_center_single_column` | bool | `true` | Center a lone column regardless of `center_focused_column` |
-| `[workspaces]` | `gap` | int | `6` | Pixel space between tiled windows. Also the workspace edge inset in **Grid** and **Scroll** (windows sit `gap` px in from the viewport edges); in **Scroll** it is both the column gap and the gap between stacked windows in a column. Clamped to `0`–`64`. Applies on **Reload Config** — no restart. **Depth** ignores it (ratio-centered), as does a lone Grid window. |
+| `[workspaces]` | `gap` | int | `6` | Pixel space between tiled windows. Also the workspace edge inset in **Grid**, **Scroll**, and **Stage**; Stage also uses it between recent-window previews. Clamped to `0`–`64`. Applies on **Reload Config** — no restart. **Depth** ignores it (ratio-centered), as does a lone Grid window. |
 | `[workspaces]` | `padding` | int | `0` | Reserved — parsed but not yet applied. Use `gap` for both window spacing and the workspace edge inset. |
 | `[workspaces]` | `resize_step` | int | `20` | Pixels per arrow key press in resize mode |
 | `[workspaces]` | `move_step` | int | `20` | Pixels per arrow key press in move mode |

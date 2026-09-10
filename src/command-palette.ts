@@ -592,7 +592,7 @@ export class CommandPalette {
     // ── Layout actions ──
     this.register({
       id: 'layout.toggle',
-      label: 'Cycle Layout (Grid/Focus/Depth/Scroll)',
+      label: 'Cycle Layout (Grid/Focus/Depth/Scroll/Stage)',
       category: 'Layout',
       keybinding: 'Leader f',
       execute: () => c.toggleFocusLayout(),
@@ -620,6 +620,12 @@ export class CommandPalette {
       label: 'Layout: Depth',
       category: 'Layout',
       execute: () => c.applyLayoutMode(LayoutMode.Depth),
+    });
+    this.register({
+      id: 'layout.stage',
+      label: 'Layout: Stage',
+      category: 'Layout',
+      execute: () => c.applyLayoutMode(LayoutMode.Stage),
     });
 
     // ── Tab actions ──

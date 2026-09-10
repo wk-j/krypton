@@ -110,6 +110,16 @@
 3. **Backend resizes PTY** -> `TIOCSWINSZ` ioctl (POSIX) / `ResizePseudoConsole` (Windows)
 4. **Shell redraws** -> Shell receives `SIGWINCH`, redraws output
 
+## Stage Layout Focus Flow
+
+1. `Leader f`, `Layout: Stage`, or `default_layout = "stage"` enters Stage mode.
+2. Compositor orders live windows with the focused window first and computes one shared active frame plus up to five shelf transforms.
+3. Every Stage window keeps the same unscaled bounds. Shelf windows are visually reduced with CSS `translate(...) scale(...)`; they are not fitted to thumbnail dimensions.
+4. `Leader h/k`, `Leader j/l`, `Cmd+Shift+</>`, `Leader 1-9`, or the first click on a shelf preview selects another stage.
+5. Compositor updates focus and animates old-to-new visual rectangles with the Stage-specific WAAPI transition. It does **not** run xterm fit during an ordinary stage switch, so no `resize_pty` or `SIGWINCH` is emitted.
+6. Creating, closing, resizing, resetting, entering, or leaving Stage may change the shared base frame; those structural changes run fit for visible windows after layout.
+7. Hidden stages remain in the DOM with `visibility: hidden`, receive no pointer events, and keep their sessions alive.
+
 ## Config Loading Flow (on app startup)
 
 ```

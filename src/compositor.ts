@@ -35,6 +35,8 @@ import {
   type ProcessCandidate,
   type CapturedImage,
   type ScrollState,
+  type StagePlacement,
+  type StageState,
 } from './types';
 import { autoTile, focusTile, resolveGridSlot } from './layout';
 import {
@@ -60,7 +62,14 @@ import {
   usableViewport,
   type ScrollLayoutConfig,
 } from './scroll-layout';
-import { AnimationEngine, BoundsSnapshot } from './animation';
+import {
+  computeStageLayout,
+  defaultStageFrame,
+  focusStage,
+  rotateStageOrder,
+  syncStageOrder,
+} from './stage-layout';
+import { AnimationEngine, BoundsSnapshot, type StageTransitionLayer } from './animation';
 import { SoundEngine } from './sound';
 import { ShaderEngine } from './shaders';
 import type { ShaderPreset } from './shaders';
@@ -177,6 +186,13 @@ interface SessionLocation {
   paneId: PaneId;
 }
 
+interface StageVisualSnapshot {
+  bounds: WindowBounds;
+  opacity: number;
+  filter: string;
+  visible: boolean;
+}
+
 /**
  * Abbreviate an absolute path for display in the title bar.
  * - Replaces $HOME with ~
@@ -291,6 +307,9 @@ export class Compositor {
   private focusedWindowId: WindowId | null = null;
   /** ID of the dedicated AI agent window (at most one at a time) */
   private workspace: HTMLElement;
+  private readonly stagePointerDownHandler = (event: MouseEvent): void => {
+    this.handleStagePointerDown(event);
+  };
   private onFocusChangeCallbacks: Array<(id: WindowId | null) => void> = [];
   private onRelayoutCallbacks: Array<() => void> = [];
   /** Global ViewBus, captured in attachToBus; passed to views that publish
@@ -307,6 +326,13 @@ export class Compositor {
   private scrollState: ScrollState = { columns: [], cameraX: 0 };
   private scrollConfig: ScrollLayoutConfig = { ...DEFAULT_SCROLL_LAYOUT };
   private scrollPrevFocusCol = 0;
+  /** Active window + recent-window ring (spec 245). */
+  private stageState: StageState = {
+    order: [],
+    frame: { x: 0, y: 0.05, width: 0.78, height: 0.9 },
+  };
+  private stageFrameInitialized = false;
+  private stageTransitionVersion = 0;
   /** When a window is maximized, store its ID here. Only one window can be maximized at a time. */
   private maximizedWindowId: WindowId | null = null;
   /** Animation engine for layout transitions and window effects */
@@ -433,6 +459,7 @@ export class Compositor {
     });
     this.setupResizeHandler();
     this.setupPtyListeners();
+    this.workspace.addEventListener('mousedown', this.stagePointerDownHandler, true);
 
     // Initialize extension manager with host callbacks
     const host: ExtensionHost = {
@@ -546,6 +573,8 @@ export class Compositor {
         this.layoutMode = LayoutMode.Depth;
       } else if (layoutStr === 'scroll') {
         this.layoutMode = LayoutMode.Scroll;
+      } else if (layoutStr === 'stage') {
+        this.layoutMode = LayoutMode.Stage;
       } else {
         this.layoutMode = LayoutMode.Focus;
       }
@@ -2257,6 +2286,9 @@ export class Compositor {
       pinned: false,
       headerScope,
     };
+    const stageSnapshots = this.layoutMode === LayoutMode.Stage
+      ? this.snapshotStageVisuals()
+      : null;
     this.windows.set(id, win);
     this.updateTabBar(win);
     this.syncWindowFooter(win);
@@ -2266,6 +2298,7 @@ export class Compositor {
     const previousFocus = this.focusedWindowId;
     this.focusWindowQuiet(id);
     this.scrollInsertNewWindow(id, previousFocus);
+    this.stageInsertNewWindow(id);
 
     // Snapshot existing window positions, relayout, then animate the transition
     const snapshots = this.snapshotBounds();
@@ -2274,8 +2307,12 @@ export class Compositor {
     this.fitAll();
 
     // Animate: morph existing windows + entrance effect on new window
-    this.animation.entrance(el);
-    this.animateRelayout(snapshots.filter((s) => s.id !== id));
+    if (stageSnapshots) {
+      void this.animateStageTransition(stageSnapshots);
+    } else {
+      this.animation.entrance(el);
+      this.animateRelayout(snapshots.filter((s) => s.id !== id));
+    }
 
     // Sound: window create
     this.sound.play('window.create');
@@ -2448,6 +2485,9 @@ export class Compositor {
       pinned: false,
       headerScope,
     };
+    const stageSnapshots = this.layoutMode === LayoutMode.Stage
+      ? this.snapshotStageVisuals()
+      : null;
     this.windows.set(id, win);
     this.updateTabBar(win);
     this.syncWindowFooter(win);
@@ -2455,13 +2495,18 @@ export class Compositor {
     const previousFocus = this.focusedWindowId;
     this.focusWindowQuiet(id);
     this.scrollInsertNewWindow(id, previousFocus);
+    this.stageInsertNewWindow(id);
     const snapshots = this.snapshotBounds();
     this.relayout();
     await this.nextFrame();
     this.fitAll();
 
-    this.animation.entrance(el);
-    this.animateRelayout(snapshots.filter((s) => s.id !== id));
+    if (stageSnapshots) {
+      void this.animateStageTransition(stageSnapshots);
+    } else {
+      this.animation.entrance(el);
+      this.animateRelayout(snapshots.filter((s) => s.id !== id));
+    }
     this.sound.play('window.create');
 
     // Focus the content view
@@ -4151,6 +4196,12 @@ export class Compositor {
   async closeWindow(id: WindowId): Promise<void> {
     const win = this.windows.get(id);
     if (!win) return;
+    const stageSnapshots = this.layoutMode === LayoutMode.Stage
+      ? this.snapshotStageVisuals()
+      : null;
+    const stageNextFocus = stageSnapshots
+      ? this.stageState.order.find((candidate) => candidate !== id && this.windows.has(candidate)) ?? null
+      : null;
     this.usageUnsubscribeByWindow.get(id)?.();
     this.usageUnsubscribeByWindow.delete(id);
     this.usageProvidersUnsubscribeByWindow.get(id)?.();
@@ -4205,11 +4256,16 @@ export class Compositor {
     if (scrollClose) this.scrollState.columns = scrollClose.columns;
 
     this.windows.delete(id);
+    if (stageSnapshots) {
+      this.stageState.order = syncStageOrder(this.stageState.order, this.windowIds, stageNextFocus);
+    }
     const snapshots = this.snapshotBounds();
 
     if (this.focusedWindowId === id) {
       const remaining = this.windowIds;
-      const nextId = scrollClose?.focusId && this.windows.has(scrollClose.focusId)
+      const nextId = stageNextFocus && this.windows.has(stageNextFocus)
+        ? stageNextFocus
+        : scrollClose?.focusId && this.windows.has(scrollClose.focusId)
         ? scrollClose.focusId
         : remaining.length > 0 ? remaining[remaining.length - 1] : null;
       if (nextId) {
@@ -4226,7 +4282,11 @@ export class Compositor {
     this.relayout();
     await this.nextFrame();
     this.fitAll();
-    this.animateRelayout(snapshots);
+    if (stageSnapshots) {
+      void this.animateStageTransition(stageSnapshots);
+    } else {
+      this.animateRelayout(snapshots);
+    }
 
     // Re-focus the terminal after relayout/fit — the fit cycle can steal focus
     this.refocusTerminal();
@@ -4267,12 +4327,22 @@ export class Compositor {
   focusWindow(id: WindowId): void {
     if (!this.windows.has(id)) return;
     const previousId = this.focusedWindowId;
+    const stageSnapshots = previousId !== id && this.layoutMode === LayoutMode.Stage
+      ? this.snapshotStageVisuals()
+      : null;
 
     if (previousId !== id) {
       this.sound.play('window.focus');
     }
 
     this.focusWindowQuiet(id);
+
+    if (stageSnapshots) {
+      this.stageState.order = focusStage(this.stageState.order, id);
+      this.relayout();
+      void this.animateStageTransition(stageSnapshots);
+      return;
+    }
 
     // In Focus layout, the focused window is always the left (main) panel.
     // Relayout so the newly focused window swaps to the left and the
@@ -4292,6 +4362,14 @@ export class Compositor {
 
   /** Focus window by direction relative to current focused window */
   focusDirection(direction: 'left' | 'down' | 'up' | 'right'): void {
+    if (this.layoutMode === LayoutMode.Stage) {
+      if (direction === 'left' || direction === 'up') {
+        void this.stagePrevious();
+      } else {
+        void this.stageNext();
+      }
+      return;
+    }
     if (this.layoutMode === LayoutMode.Scroll) {
       if (direction === 'left' || direction === 'right') {
         this.scrollFocusColumn(direction === 'left' ? -1 : 1);
@@ -4313,6 +4391,11 @@ export class Compositor {
    * The order wraps around so all windows are always reachable.
    */
   focusByIndex(index: number): void {
+    if (this.layoutMode === LayoutMode.Stage) {
+      const id = this.stageState.order[index - 1];
+      if (id) this.focusWindow(id);
+      return;
+    }
     if (this.layoutMode === LayoutMode.Scroll) {
       const order = stripOrder(this.scrollState.columns);
       if (index >= 1 && index <= order.length) this.focusWindow(order[index - 1]);
@@ -4448,6 +4531,12 @@ export class Compositor {
    */
   focusCycle(direction: 1 | -1): void {
     if (this.windows.size <= 1) return;
+
+    if (this.layoutMode === LayoutMode.Stage) {
+      if (direction > 0) void this.stageNext();
+      else void this.stagePrevious();
+      return;
+    }
 
     if (this.layoutMode === LayoutMode.Scroll) {
       // Scroll never wraps: stop at either end of the strip (spec 241).
@@ -4698,13 +4787,14 @@ export class Compositor {
     return this.layoutMode;
   }
 
-  /** Cycle layout modes: Grid → Focus → Depth → Scroll → Grid */
+  /** Cycle layout modes: Grid → Focus → Depth → Scroll → Stage → Grid */
   async toggleFocusLayout(): Promise<void> {
     const order: LayoutMode[] = [
       LayoutMode.Grid,
       LayoutMode.Focus,
       LayoutMode.Depth,
       LayoutMode.Scroll,
+      LayoutMode.Stage,
     ];
     const idx = order.indexOf(this.layoutMode);
     const next = order[(idx + 1) % order.length];
@@ -4717,19 +4807,28 @@ export class Compositor {
     this.sound.play('layout.toggle');
     const snapshots = this.snapshotBounds();
     const prev = this.layoutMode;
+    const stageSnapshots = prev === LayoutMode.Stage || mode === LayoutMode.Stage
+      ? this.snapshotStageVisuals()
+      : null;
 
     if (prev === LayoutMode.Depth) this.clearDepthStyles();
     if (prev === LayoutMode.Scroll) this.leaveScrollLayout();
+    if (prev === LayoutMode.Stage) this.leaveStageLayout();
 
     this.layoutMode = mode;
     if (mode === LayoutMode.Scroll) this.enterScrollLayout();
+    if (mode === LayoutMode.Stage) this.enterStageLayout();
 
     this.maximizedWindowId = null;
     this.showAllWindows();
     this.relayout();
     await this.nextFrame();
     this.fitAll();
-    this.animateRelayout(snapshots);
+    if (stageSnapshots) {
+      await this.animateStageTransition(stageSnapshots);
+    } else {
+      this.animateRelayout(snapshots);
+    }
   }
 
   /** Whether a window is currently maximized */
@@ -5801,6 +5900,22 @@ export class Compositor {
 
   /** Resize the focused window by a directional step */
   resizeFocused(direction: 'left' | 'down' | 'up' | 'right'): void {
+    if (this.layoutMode === LayoutMode.Stage) {
+      const usableH = Math.max(
+        1,
+        window.innerHeight - Compositor.FOOTER_HEIGHT - this.windowGap * 2,
+      );
+      if (direction === 'left' || direction === 'right') {
+        this.stageState.frame.width += (direction === 'right' ? 1 : -1)
+          * this.stepSize / Math.max(1, window.innerWidth);
+      } else {
+        this.stageState.frame.height += (direction === 'down' ? 1 : -1)
+          * this.stepSize / usableH;
+      }
+      this.relayout();
+      this.fitAll();
+      return;
+    }
     if (this.layoutMode === LayoutMode.Scroll) {
       this.resizeScrollColumn(direction);
       return;
@@ -5832,6 +5947,21 @@ export class Compositor {
 
   /** Move the focused window by a directional step */
   moveFocused(direction: 'left' | 'down' | 'up' | 'right'): void {
+    if (this.layoutMode === LayoutMode.Stage) {
+      const usableH = Math.max(
+        1,
+        window.innerHeight - Compositor.FOOTER_HEIGHT - this.windowGap * 2,
+      );
+      if (direction === 'left' || direction === 'right') {
+        this.stageState.frame.x += (direction === 'right' ? 1 : -1)
+          * this.stepSize / Math.max(1, window.innerWidth);
+      } else {
+        this.stageState.frame.y += (direction === 'down' ? 1 : -1)
+          * this.stepSize / usableH;
+      }
+      this.relayout();
+      return;
+    }
     if (this.layoutMode === LayoutMode.Scroll) {
       this.scrollMove(direction);
       return;
@@ -5937,6 +6067,12 @@ export class Compositor {
 
     if (this.layoutMode === LayoutMode.Scroll) {
       this.relayoutScroll(vw, vh, true);
+      collector.layoutEnd();
+      return;
+    }
+
+    if (this.layoutMode === LayoutMode.Stage) {
+      this.relayoutStage(vw, vh);
       collector.layoutEnd();
       return;
     }
@@ -6318,6 +6454,222 @@ export class Compositor {
     this.replayBufferedInput();
   }
 
+  // ─── Stage layout (spec 245) ────────────────────────────────────
+
+  private enterStageLayout(): void {
+    if (!this.stageFrameInitialized) {
+      this.stageState.frame = defaultStageFrame(
+        window.innerWidth,
+        window.innerHeight,
+        this.windowGap,
+        Compositor.FOOTER_HEIGHT,
+      );
+      this.stageFrameInitialized = true;
+    }
+    const visualOrder = Array.from(this.windows.values())
+      .sort((a, b) => a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y)
+      .map((win) => win.id);
+    this.stageState.order = syncStageOrder([], visualOrder, this.focusedWindowId);
+  }
+
+  private leaveStageLayout(): void {
+    const next = new Map<WindowId, KryptonWindow>();
+    for (const id of this.stageState.order) {
+      const win = this.windows.get(id);
+      if (win) next.set(id, win);
+    }
+    for (const [id, win] of this.windows) {
+      if (!next.has(id)) next.set(id, win);
+    }
+    this.windows = next;
+    this.clearStageStyles();
+    this.stageState.order = [];
+  }
+
+  private stageInsertNewWindow(id: WindowId): void {
+    if (this.layoutMode !== LayoutMode.Stage) return;
+    this.stageState.order = syncStageOrder(
+      this.stageState.order,
+      this.windowIds,
+      id,
+    );
+  }
+
+  private relayoutStage(vw: number, vh: number): void {
+    if (!this.stageFrameInitialized) {
+      this.stageState.frame = defaultStageFrame(
+        vw,
+        vh,
+        this.windowGap,
+        Compositor.FOOTER_HEIGHT,
+      );
+      this.stageFrameInitialized = true;
+    }
+    this.stageState.order = syncStageOrder(
+      this.stageState.order,
+      this.windowIds,
+      this.focusedWindowId,
+    );
+    const result = computeStageLayout({
+      order: this.stageState.order,
+      frame: this.stageState.frame,
+      viewportWidth: vw,
+      viewportHeight: vh,
+      gap: this.windowGap,
+      footerHeight: Compositor.FOOTER_HEIGHT,
+    });
+    this.stageState.frame = result.frame;
+
+    for (let i = 0; i < result.placements.length; i++) {
+      const placement = result.placements[i];
+      const win = this.windows.get(placement.id);
+      if (!win) continue;
+      win.gridSlot = { col: placement.role === 'active' ? 1 : 0, row: i, colSpan: 1, rowSpan: 1 };
+      this.applyStagePlacement(win, placement, i + 1);
+    }
+  }
+
+  private applyStagePlacement(
+    win: KryptonWindow,
+    placement: StagePlacement,
+    index: number,
+  ): void {
+    const el = win.element;
+    win.bounds = { ...placement.baseBounds };
+    this.applyBounds(win);
+    el.classList.add('krypton-window--stage');
+    el.dataset.stageRole = placement.role;
+    el.dataset.stageIndex = String(index);
+    el.style.transformOrigin = 'top left';
+    el.style.transform = placement.role === 'active'
+      ? 'none'
+      : `translate(${placement.translateX}px, ${placement.translateY}px) scale(${placement.scale})`;
+    el.style.opacity = `${placement.opacity}`;
+    el.style.filter = placement.role === 'shelf' ? 'brightness(0.78)' : '';
+    if (placement.role === 'shelf') {
+      el.style.setProperty('--krypton-stage-inverse-scale', `${1 / placement.scale}`);
+    } else {
+      el.style.removeProperty('--krypton-stage-inverse-scale');
+    }
+    el.style.zIndex = `${placement.zIndex}`;
+    el.style.visibility = placement.role === 'hidden' ? 'hidden' : '';
+    el.style.pointerEvents = placement.role === 'hidden' ? 'none' : 'auto';
+  }
+
+  private clearStageStyles(): void {
+    for (const [, win] of this.windows) {
+      const el = win.element;
+      el.classList.remove('krypton-window--stage');
+      delete el.dataset.stageRole;
+      delete el.dataset.stageIndex;
+      el.style.transform = '';
+      el.style.transformOrigin = '';
+      el.style.opacity = '';
+      el.style.filter = '';
+      el.style.zIndex = '';
+      el.style.visibility = '';
+      el.style.pointerEvents = '';
+      el.style.removeProperty('--krypton-stage-inverse-scale');
+    }
+  }
+
+  private snapshotStageVisuals(): Map<WindowId, StageVisualSnapshot> {
+    const snapshots = new Map<WindowId, StageVisualSnapshot>();
+    for (const [id, win] of this.windows) {
+      const rect = win.element.getBoundingClientRect();
+      const style = getComputedStyle(win.element);
+      const opacity = Number.parseFloat(style.opacity);
+      snapshots.set(id, {
+        bounds: {
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height,
+        },
+        opacity: Number.isFinite(opacity) ? opacity : 1,
+        filter: style.filter || 'none',
+        visible: style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0,
+      });
+    }
+    return snapshots;
+  }
+
+  private async animateStageTransition(
+    snapshots: Map<WindowId, StageVisualSnapshot>,
+  ): Promise<void> {
+    const transitionVersion = ++this.stageTransitionVersion;
+    const layers = new Map<WindowId, StageTransitionLayer>();
+    for (const [id, win] of this.windows) {
+      if (win.element.dataset.stageRole === 'hidden') continue;
+      const old = snapshots.get(id);
+      const base = win.bounds;
+      const fromTransform = old?.visible
+        ? `translate(${old.bounds.x - base.x}px, ${old.bounds.y - base.y}px) scale(${old.bounds.width / Math.max(1, base.width)}, ${old.bounds.height / Math.max(1, base.height)})`
+        : 'translateY(12px) scale(0.96)';
+      const toOpacity = Number.parseFloat(win.element.style.opacity);
+      layers.set(id, {
+        element: win.element,
+        fromTransform,
+        toTransform: win.element.style.transform || 'none',
+        fromOpacity: old?.visible ? old.opacity : 0,
+        toOpacity: Number.isFinite(toOpacity) ? toOpacity : 1,
+        fromFilter: old?.visible ? old.filter : 'none',
+        toFilter: win.element.style.filter || 'none',
+      });
+    }
+    await this.animation.stageTransition(layers);
+    if (transitionVersion === this.stageTransitionVersion) {
+      this.replayBufferedInput();
+    }
+  }
+
+  async stageNext(): Promise<void> {
+    await this.rotateStage(1);
+  }
+
+  async stagePrevious(): Promise<void> {
+    await this.rotateStage(-1);
+  }
+
+  async resetStageLayout(): Promise<void> {
+    if (this.layoutMode !== LayoutMode.Stage) return;
+    const snapshots = this.snapshotStageVisuals();
+    this.stageState.frame = defaultStageFrame(
+      window.innerWidth,
+      window.innerHeight,
+      this.windowGap,
+      Compositor.FOOTER_HEIGHT,
+    );
+    this.stageState.order = syncStageOrder([], this.windowIds, this.focusedWindowId);
+    this.relayout();
+    await this.nextFrame();
+    this.fitAll();
+    await this.animateStageTransition(snapshots);
+  }
+
+  private async rotateStage(direction: 1 | -1): Promise<void> {
+    if (this.layoutMode !== LayoutMode.Stage || this.stageState.order.length < 2) return;
+    const snapshots = this.snapshotStageVisuals();
+    this.stageState.order = rotateStageOrder(this.stageState.order, direction);
+    const nextId = this.stageState.order[0];
+    this.sound.play('window.focus');
+    this.focusWindowQuiet(nextId);
+    this.relayout();
+    await this.animateStageTransition(snapshots);
+  }
+
+  private handleStagePointerDown(event: MouseEvent): void {
+    if (this.layoutMode !== LayoutMode.Stage) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const element = target.closest<HTMLElement>('.krypton-window--stage[data-stage-role="shelf"]');
+    const id = element?.dataset.windowId;
+    if (!id || id === this.focusedWindowId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.focusWindow(id);
+  }
+
   // ─── Scroll tiling (spec 241) ────────────────────────────────────
 
   private enterScrollLayout(): void {
@@ -6530,6 +6882,9 @@ export class Compositor {
   /** Fit all terminals to their containers and resize PTYs */
   fitAll(): void {
     for (const [, win] of this.windows) {
+      if (this.layoutMode === LayoutMode.Stage && win.element.dataset.stageRole === 'hidden') {
+        continue;
+      }
       this.fitWindow(win.id);
     }
     // Resize flame canvases to match new window dimensions

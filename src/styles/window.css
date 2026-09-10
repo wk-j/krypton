@@ -876,3 +876,34 @@
               filter 200ms cubic-bezier(0, 0, 0.2, 1);
   transform-origin: center top;
 }
+
+/* ─── Stage Layout (spec 245) ─── */
+.krypton-window--stage {
+  transform-origin: top left;
+}
+
+.krypton-window--stage[data-stage-role='shelf'] {
+  cursor: pointer;
+}
+
+.krypton-window--stage[data-stage-role='shelf']::after {
+  content: attr(data-stage-index);
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
+  border-radius: 50%;
+  background: rgba(6, 10, 18, 0.88);
+  color: var(--krypton-window-accent, var(--krypton-titlebar-text, #0cf));
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: 10px;
+  line-height: 1;
+  transform: scale(var(--krypton-stage-inverse-scale, 1));
+  transform-origin: top right;
+  pointer-events: none;
+}

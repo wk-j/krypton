@@ -49,6 +49,20 @@ const SCROLL_WINDOW_KEYS: KeyEntry[] = groupEntries('Windows', [
   { key: 'p', label: 'Pin Window' },
 ]);
 
+const STAGE_WINDOW_KEYS: KeyEntry[] = groupEntries('Windows', [
+  { key: 'n', label: 'New Window' },
+  { key: 'x', label: 'Close Window', effect: 'danger' },
+  { key: 'h/k', label: 'Previous Stage' },
+  { key: 'j/l', label: 'Next Stage' },
+  { key: '1-9', label: 'Activate Stage' },
+  { key: 'f', label: 'Cycle Layout' },
+  { key: 'r', label: 'Resize Stage', effect: 'important' },
+  { key: 'm', label: 'Move Stage', effect: 'important' },
+  { key: '=', label: 'Reset Stage Frame' },
+  { key: 'z', label: 'Maximize', effect: 'important' },
+  { key: 'p', label: 'Pin (No Stage Effect)' },
+]);
+
 const COMPOSITOR_KEYS: KeyEntry[] = [
   ...groupEntries('Windows', [
     { key: 'n', label: 'New Window' },
@@ -121,6 +135,11 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
 
 const SCROLL_COMPOSITOR_KEYS: KeyEntry[] = [
   ...SCROLL_WINDOW_KEYS,
+  ...COMPOSITOR_KEYS.filter((e) => e.group !== 'Windows'),
+];
+
+const STAGE_COMPOSITOR_KEYS: KeyEntry[] = [
+  ...STAGE_WINDOW_KEYS,
   ...COMPOSITOR_KEYS.filter((e) => e.group !== 'Windows'),
 ];
 
@@ -233,7 +252,11 @@ export class WhichKey {
       case Mode.Compositor:
         entries = [
           ...filterByContentType(
-            layoutMode === LayoutMode.Scroll ? SCROLL_COMPOSITOR_KEYS : COMPOSITOR_KEYS,
+            layoutMode === LayoutMode.Scroll
+              ? SCROLL_COMPOSITOR_KEYS
+              : layoutMode === LayoutMode.Stage
+                ? STAGE_COMPOSITOR_KEYS
+                : COMPOSITOR_KEYS,
             contentType,
           ),
           ...leaderBindingsToEntries(focusedLeaderKeys),
@@ -242,6 +265,8 @@ export class WhichKey {
           ? `Compositor · ${contentType}`
           : layoutMode === LayoutMode.Scroll
             ? 'Compositor · Scroll'
+            : layoutMode === LayoutMode.Stage
+              ? 'Compositor · Stage'
             : 'Compositor';
         break;
       case Mode.Resize:

@@ -14,7 +14,7 @@ Add a fourth compositor mode, **`Scroll`**, modeled on niri's scrollable tiling 
 
 Windows sit in **columns** on a horizontal strip. A column is one or more Krypton windows stacked full-height. New windows become a new column to the right of focus at a default width; other columns keep their widths. A **camera** (`scrollCameraX`) pans so the focused column stays in the horizontal center of the screen. Off-strip neighbors peek in leftover viewport space.
 
-**Why not replace Grid:** Grid/Focus/Depth stay. Scroll is opt-in via `Leader f` cycle and `[workspaces].default_layout = "scroll"`.
+**Why not replace Grid:** Grid/Focus/Depth/Stage stay. Scroll is opt-in via `Leader f` cycle and `[workspaces].default_layout = "scroll"`.
 
 **Why stack windows in a column (not 1:1):** that is the niri primitive (consume/expel). Intra-window pane splits (`Leader \ / -`) stay a different grain — same chrome, same PTY tree — while a column stack is two windows with independent tabs, titles, and views.
 
@@ -123,12 +123,12 @@ Usable viewport: `vw - 2*gap` wide, `vh - FOOTER_HEIGHT - 2*gap` tall (same inse
 
 **Enter Scroll** from Grid/Focus/Depth: sort current windows by `(bounds.x, bounds.y)`; each becomes its own column at `default_column_width` × `default_window_height`; camera shows the focused window. Do not try to preserve Focus stacking.
 
-**Leave Scroll:** flatten columns left-to-right, top-to-bottom into compositor window order so Grid/Focus/Depth get a stable sequence. Clear any Scroll-only inline styles.
+**Leave Scroll:** flatten columns left-to-right, top-to-bottom into compositor window order so Grid/Focus/Depth/Stage get a stable sequence. Clear any Scroll-only inline styles.
 
 `toggleFocusLayout()` cycle:
 
 ```
-Grid → Focus → Depth → Scroll → Grid
+Grid → Focus → Depth → Scroll → Stage → Grid
 ```
 
 ### Create / close / maximize / pin
@@ -145,7 +145,7 @@ Existing `h/j/k/l` already mean "focus in that direction". In Scroll they mean c
 
 | Key | Context | Action |
 |-----|---------|--------|
-| `f` | Compositor | Cycle Grid → Focus → Depth → Scroll → Grid |
+| `f` | Compositor | Cycle Grid → Focus → Depth → Scroll → Stage → Grid |
 | `h` / `l` | Compositor + Scroll | Focus column left / right (camera follows) |
 | `j` / `k` | Compositor + Scroll | Focus window down / up in the column |
 | `,` | Compositor + Scroll | Consume-or-expel left. Not globally reserved: a focused view that owns `,` (ACP Harness model picker) keeps it. |
