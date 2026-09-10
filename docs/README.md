@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (245)
+## Specs (246)
 
 | # | Spec |
 |---|------|
@@ -249,6 +249,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 243 | [Diff View Smooth Keyboard Scrolling](./243-diff-view-smooth-scrolling.md) |
 | 244 | [Review Board Chapters and Review Map](./244-review-board-chapters.md) |
 | 245 | [Stage Layout (macOS Stage Manager-inspired)](./245-stage-layout.md) |
+| 246 | [ACP Harness Dictation](./246-harness-dictation.md) |
 
 ## ADRs (20)
 
