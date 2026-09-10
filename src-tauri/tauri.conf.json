@@ -35,6 +35,7 @@
     "active": true,
     "targets": "all",
     "macOS": {
+      "entitlements": "Entitlements.plist",
       "signingIdentity": "Krypton Dev"
     },
     "resources": [
