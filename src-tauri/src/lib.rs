@@ -26,6 +26,7 @@ pub mod usage;
 pub mod usage_log;
 pub mod util;
 pub mod webview;
+mod workspace_state;
 pub mod xenon;
 
 use std::sync::{Arc, Mutex, RwLock};
@@ -147,12 +148,15 @@ pub fn run() {
         .manage(Arc::new(webview::WebviewRegistry::new()))
         .manage(Arc::new(process_metrics::MetricsSampler::new()))
         .manage(Arc::new(usage_log::UsageOutbox::new()))
+        .manage(workspace_state::WorkspaceState::default())
         // MusicEngine is initialized in .setup() because it needs app_handle
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
             commands::get_pty_cwd,
             commands::write_to_pty,
             commands::resize_pty,
+            workspace_state::load_workspace_bootstrap,
+            workspace_state::save_workspace_state,
             commands::get_config,
             commands::get_theme,
             commands::list_themes,

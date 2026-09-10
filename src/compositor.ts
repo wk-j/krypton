@@ -117,6 +117,14 @@ import type {
   ReviewResponse,
   ReviewResponseSendResult,
 } from './acp/types';
+import {
+  WORKSPACE_SNAPSHOT_VERSION,
+  planWorkspaceRecovery,
+  type WorkspaceBootstrap,
+  type WorkspacePaneSnapshot,
+  type WorkspaceSnapshot,
+  type WorkspaceWindowSnapshot,
+} from './workspace-recovery';
 
 interface AcpLanePeekCommands {
   showLanePeek(): void;
@@ -191,6 +199,23 @@ interface StageVisualSnapshot {
   opacity: number;
   filter: string;
   visible: boolean;
+}
+
+interface CreateWindowOptions {
+  restoring?: boolean;
+}
+
+export interface WorkspaceRestoreResult {
+  reattachedSessions: number;
+  missingSessions: number;
+  lostContentViews: number;
+  orphanSessions: number;
+}
+
+interface RestoreCounters {
+  reattachedSessions: number;
+  missingSessions: number;
+  lostContentViews: number;
 }
 
 /**
@@ -335,6 +360,13 @@ export class Compositor {
   private stageTransitionVersion = 0;
   /** When a window is maximized, store its ID here. Only one window can be maximized at a time. */
   private maximizedWindowId: WindowId | null = null;
+  /** The snapshot lives in the Rust process so it survives a WebContent death,
+   *  but disappears with a true application exit. */
+  private workspacePersistenceEnabled = false;
+  private workspaceSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastWorkspaceSnapshotJson = '';
+  private workspaceSaveChain: Promise<void> = Promise.resolve();
+  private restoredQuickTerminalSessionId: number | null = null;
   /** Animation engine for layout transitions and window effects */
   private animation: AnimationEngine = new AnimationEngine();
   /** Sound engine for procedural sound effects */
@@ -907,6 +939,7 @@ export class Compositor {
       last = pending;
       apply(pending);
       pending = null;
+      this.scheduleWorkspaceStateSave();
     };
     terminal.onTitleChange((title: string) => {
       if (!title) return;
@@ -937,6 +970,7 @@ export class Compositor {
       this.sessionMap.set(sessionId, { windowId, tabId, paneId: pane.id });
       this.flushPendingPtyOutput(sessionId, pane.terminal);
       this.flushPendingInput(pane);
+      this.scheduleWorkspaceStateSave();
       this.closePaneIfSessionAlreadyExited(sessionId);
     } catch (e) {
       console.error(`Failed to spawn PTY for pane ${pane.id}:`, e);
@@ -1334,6 +1368,7 @@ export class Compositor {
       const role: PaneContentType = focused?.contentView?.type ?? 'terminal';
       (el as HTMLElement).dataset.role = role;
     });
+    this.scheduleWorkspaceStateSave();
   }
 
   /** Build a single tab DOM element with index, dot, and title */
@@ -2158,7 +2193,8 @@ export class Compositor {
   }
 
   /** Create a new terminal window, spawn a PTY, and add it to the layout */
-  async createWindow(): Promise<WindowId> {
+  async createWindow(options: CreateWindowOptions = {}): Promise<WindowId> {
+    const restoring = options.restoring === true;
     // Exit maximize mode when creating a new window
     if (this.maximizedWindowId) {
       this.maximizedWindowId = null;
@@ -2307,7 +2343,9 @@ export class Compositor {
     this.fitAll();
 
     // Animate: morph existing windows + entrance effect on new window
-    if (stageSnapshots) {
+    if (restoring) {
+      // The temporary pane is replaced by restoreWorkspace() immediately.
+    } else if (stageSnapshots) {
       void this.animateStageTransition(stageSnapshots);
     } else {
       this.animation.entrance(el);
@@ -2315,7 +2353,7 @@ export class Compositor {
     }
 
     // Sound: window create
-    this.sound.play('window.create');
+    if (!restoring) this.sound.play('window.create');
 
     // Listen for shell title changes (OSC 0/2 sequences)
     this.wireTitleSync(
@@ -2333,15 +2371,19 @@ export class Compositor {
       },
     );
 
-    // Wire input BEFORE spawning so xterm.js replies (e.g. fish DA1 reply)
-    // emitted during shell startup are buffered and flushed.
-    this.wirePaneInput(pane);
-    await this.spawnPaneSession(pane, id, tabId, cwd);
+    if (!restoring) {
+      // Wire input BEFORE spawning so xterm.js replies (e.g. fish DA1 reply)
+      // emitted during shell startup are buffered and flushed.
+      this.wirePaneInput(pane);
+      await this.spawnPaneSession(pane, id, tabId, cwd);
+    }
 
     if (pane.sessionId !== null) {
       this.paintWindowLabel(label, tail, `session_${String(pane.sessionId).padStart(2, '0')}`);
       ptyStatus.textContent = 'pty // active';
       this.updateWindowCwd(pane.sessionId, ptyStatus);
+    } else if (restoring) {
+      ptyStatus.textContent = 'workspace // restoring';
     } else {
       ptyStatus.textContent = 'pty // failed';
     }
@@ -2352,6 +2394,396 @@ export class Compositor {
     });
 
     return id;
+  }
+
+  /** Ask the long-lived Rust process whether this is the first frontend load or
+   *  a replacement WebContent process. */
+  async loadWorkspaceBootstrap(): Promise<WorkspaceBootstrap> {
+    return invoke<WorkspaceBootstrap>('load_workspace_bootstrap');
+  }
+
+  /** Start change-triggered persistence after startup/restore has reached a
+   *  coherent state. `visibilitychange` gives the backend one final snapshot
+   *  before WebKit begins background scheduling. */
+  startWorkspacePersistence(): void {
+    if (this.workspacePersistenceEnabled) return;
+    this.workspacePersistenceEnabled = true;
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) void this.persistWorkspaceState();
+    });
+    this.scheduleWorkspaceStateSave();
+  }
+
+  private scheduleWorkspaceStateSave(): void {
+    if (!this.workspacePersistenceEnabled) return;
+    if (this.workspaceSaveTimer) clearTimeout(this.workspaceSaveTimer);
+    this.workspaceSaveTimer = setTimeout(() => {
+      this.workspaceSaveTimer = null;
+      void this.persistWorkspaceState();
+    }, 100);
+  }
+
+  private async persistWorkspaceState(): Promise<void> {
+    if (!this.workspacePersistenceEnabled || this.windows.size === 0) return;
+    if (this.workspaceSaveTimer) {
+      clearTimeout(this.workspaceSaveTimer);
+      this.workspaceSaveTimer = null;
+    }
+    const snapshot = this.createWorkspaceSnapshot();
+    const serialized = JSON.stringify(snapshot);
+    if (serialized === this.lastWorkspaceSnapshotJson) return;
+    this.lastWorkspaceSnapshotJson = serialized;
+    this.workspaceSaveChain = this.workspaceSaveChain.then(async () => {
+      try {
+        await invoke('save_workspace_state', { snapshot });
+      } catch (e) {
+        if (this.lastWorkspaceSnapshotJson === serialized) this.lastWorkspaceSnapshotJson = '';
+        console.error('[Krypton] Failed to persist workspace state:', e);
+      }
+    });
+    await this.workspaceSaveChain;
+  }
+
+  private snapshotPaneTree(node: PaneNode): WorkspacePaneSnapshot {
+    if (node.type === 'leaf') {
+      return {
+        type: 'leaf',
+        sessionId: node.pane.sessionId,
+        contentType: node.pane.contentView?.type ?? 'terminal',
+      };
+    }
+    return {
+      type: 'split',
+      direction: node.direction,
+      ratio: node.ratio,
+      first: this.snapshotPaneTree(node.first),
+      second: this.snapshotPaneTree(node.second),
+    };
+  }
+
+  private createWorkspaceSnapshot(): WorkspaceSnapshot {
+    const windows = Array.from(this.windows.values());
+    const indexes = new Map(windows.map((win, index) => [win.id, index]));
+    const indexOf = (id: WindowId | null): number => id === null ? -1 : indexes.get(id) ?? -1;
+    return {
+      version: WORKSPACE_SNAPSHOT_VERSION,
+      layoutMode: this.layoutMode,
+      focusedWindowIndex: Math.max(0, indexOf(this.focusedWindowId)),
+      maximizedWindowIndex: this.maximizedWindowId === null
+        ? null
+        : Math.max(0, indexOf(this.maximizedWindowId)),
+      windows: windows.map((win) => ({
+        activeTabIndex: win.activeTabIndex,
+        pinned: win.pinned,
+        tabs: win.tabs.map((tab) => ({
+          title: tab.title,
+          focusedPaneIndex: Math.max(
+            0,
+            this.collectPanes(tab.paneTree).findIndex((pane) => pane.id === tab.focusedPaneId),
+          ),
+          paneTree: this.snapshotPaneTree(tab.paneTree),
+        })),
+      })),
+      depthOrder: this.depthOrder.map(indexOf).filter((index) => index >= 0),
+      scrollState: {
+        columns: this.scrollState.columns.map((column) => ({
+          windowIndexes: column.windowIds.map(indexOf).filter((index) => index >= 0),
+          width: column.width.value,
+          heights: column.heights.slice(),
+        })),
+        cameraX: this.scrollState.cameraX,
+      },
+      stageState: {
+        order: this.stageState.order.map(indexOf).filter((index) => index >= 0),
+        frame: { ...this.stageState.frame },
+      },
+      quickTerminalSessionId: this.qtSessionId ?? this.restoredQuickTerminalSessionId,
+      quickTerminalVisible: this.qtVisible,
+    };
+  }
+
+  /** Rebuild the compositor around live backend PTYs. Content-only views cannot
+   *  be recreated safely because their JS state died with WebContent, so their
+   *  exact pane position is retained as an explicit recovery notice. */
+  async restoreWorkspace(bootstrap: WorkspaceBootstrap): Promise<WorkspaceRestoreResult> {
+    const plan = planWorkspaceRecovery(bootstrap.snapshot, bootstrap.activeSessionIds);
+    const usedSessions = new Set<number>();
+    const counters: RestoreCounters = {
+      reattachedSessions: 0,
+      missingSessions: 0,
+      lostContentViews: 0,
+    };
+    const restoredWindowIds: WindowId[] = [];
+    const snapshot = plan.snapshot;
+
+    if (snapshot) {
+      this.layoutMode = snapshot.layoutMode;
+      for (const windowSnapshot of snapshot.windows) {
+        restoredWindowIds.push(await this.restoreWindow(windowSnapshot, plan.activeSessionIds, usedSessions, counters));
+      }
+    }
+
+    for (const sessionId of plan.orphanSessionIds) {
+      if (usedSessions.has(sessionId)) continue;
+      const orphan: WorkspaceWindowSnapshot = {
+        activeTabIndex: 0,
+        pinned: false,
+        tabs: [{
+          title: `Recovered PTY ${sessionId}`,
+          focusedPaneIndex: 0,
+          paneTree: {
+            type: 'leaf',
+            sessionId,
+            contentType: 'terminal',
+          },
+        }],
+      };
+      restoredWindowIds.push(await this.restoreWindow(orphan, plan.activeSessionIds, usedSessions, counters));
+    }
+
+    if (snapshot?.quickTerminalSessionId !== null
+        && snapshot?.quickTerminalSessionId !== undefined
+        && plan.activeSessionIds.has(snapshot.quickTerminalSessionId)
+        && !usedSessions.has(snapshot.quickTerminalSessionId)) {
+      this.restoredQuickTerminalSessionId = snapshot.quickTerminalSessionId;
+      usedSessions.add(snapshot.quickTerminalSessionId);
+      counters.reattachedSessions++;
+    }
+
+    if (restoredWindowIds.length === 0) return { ...counters, orphanSessions: plan.orphanSessionIds.length };
+
+    const idAt = (index: number): WindowId | null => restoredWindowIds[index] ?? null;
+    if (snapshot) {
+      this.depthOrder = snapshot.depthOrder.map(idAt).filter((id): id is WindowId => id !== null);
+      this.scrollState = {
+        columns: snapshot.scrollState.columns.map((column) => ({
+          windowIds: column.windowIndexes.map(idAt).filter((id): id is WindowId => id !== null),
+          width: { kind: 'proportion' as const, value: column.width },
+          heights: column.heights.slice(),
+        })).filter((column) => column.windowIds.length > 0),
+        cameraX: snapshot.scrollState.cameraX,
+      };
+      this.stageState = {
+        order: snapshot.stageState.order.map(idAt).filter((id): id is WindowId => id !== null),
+        frame: { ...snapshot.stageState.frame },
+      };
+      this.stageFrameInitialized = true;
+      const focusId = idAt(snapshot.focusedWindowIndex) ?? restoredWindowIds[0];
+      this.focusWindowQuiet(focusId);
+      this.maximizedWindowId = idAt(snapshot.maximizedWindowIndex ?? -1);
+    } else {
+      this.focusWindowQuiet(restoredWindowIds[0]);
+    }
+
+    this.relayout();
+    if (this.maximizedWindowId) this.applyRestoredMaximize(this.maximizedWindowId);
+    await this.nextFrame();
+    this.fitAll();
+    this.refocusTerminal();
+
+    if (snapshot?.quickTerminalVisible && this.restoredQuickTerminalSessionId !== null) {
+      await this.showQuickTerminal();
+    }
+
+    queueMicrotask(() => {
+      for (const sessionId of usedSessions) this.closePaneIfSessionAlreadyExited(sessionId);
+    });
+
+    return { ...counters, orphanSessions: plan.orphanSessionIds.length };
+  }
+
+  private async restoreWindow(
+    snapshot: WorkspaceWindowSnapshot,
+    activeSessions: ReadonlySet<number>,
+    usedSessions: Set<number>,
+    counters: RestoreCounters,
+  ): Promise<WindowId> {
+    const id = await this.createWindow({ restoring: true });
+    const win = this.windows.get(id);
+    if (!win) throw new Error(`Restored window ${id} disappeared during reconstruction`);
+
+    const initialTab = win.tabs[0];
+    this.disposePaneTree(initialTab.paneTree);
+    initialTab.contentWrapperEl?.remove();
+    win.tabs = [];
+    win.tabBarElement.innerHTML = '';
+
+    for (let tabIndex = 0; tabIndex < snapshot.tabs.length; tabIndex++) {
+      const tabSnapshot = snapshot.tabs[tabIndex];
+      const wrapper = this.createTabWrapper(win.contentElement);
+      const tabId = nextTabId();
+      let tab!: Tab;
+      const paneTree = this.restorePaneTree(
+        tabSnapshot.paneTree,
+        wrapper,
+        id,
+        tabId,
+        activeSessions,
+        usedSessions,
+        counters,
+        (styled) => {
+          if (!tab) return;
+          tab.title = styled;
+          const titleEl = tab.element.querySelector('.krypton-tab__title');
+          if (titleEl) titleEl.textContent = styled;
+          if (win.tabs[win.activeTabIndex] === tab) this.paintWindowLabelFromEl(win.element, styled);
+        },
+      );
+      const panes = this.collectPanes(paneTree);
+      const focusedPane = panes[Math.min(tabSnapshot.focusedPaneIndex, panes.length - 1)] ?? panes[0];
+      const tabEl = this.buildTabElement(tabId, tabIndex, tabSnapshot.title);
+      tab = {
+        id: tabId,
+        title: tabSnapshot.title,
+        paneTree,
+        focusedPaneId: focusedPane.id,
+        element: tabEl,
+        contentWrapperEl: wrapper,
+      };
+      win.tabs.push(tab);
+    }
+
+    win.activeTabIndex = Math.min(snapshot.activeTabIndex, win.tabs.length - 1);
+    win.pinned = snapshot.pinned;
+    win.element.classList.toggle('krypton-window--pinned', win.pinned);
+    this.rebuildTabBar(win);
+    this.showActiveTab(win);
+    this.updatePaneFocusIndicator(win.tabs[win.activeTabIndex]);
+    this.paintWindowLabelFromEl(win.element, win.tabs[win.activeTabIndex].title);
+    const status = this.findPtyStatus(win.element);
+    const hasLivePty = snapshot.tabs.some((tab) => this.snapshotHasLiveSession(tab.paneTree, activeSessions));
+    if (status) status.textContent = hasLivePty ? 'pty // reattached' : 'view // recovery';
+    return id;
+  }
+
+  private snapshotHasLiveSession(node: WorkspacePaneSnapshot, activeSessions: ReadonlySet<number>): boolean {
+    if (node.type === 'leaf') return node.sessionId !== null && activeSessions.has(node.sessionId);
+    return this.snapshotHasLiveSession(node.first, activeSessions)
+      || this.snapshotHasLiveSession(node.second, activeSessions);
+  }
+
+  private restorePaneTree(
+    snapshot: WorkspacePaneSnapshot,
+    container: HTMLElement,
+    windowId: WindowId,
+    tabId: TabId,
+    activeSessions: ReadonlySet<number>,
+    usedSessions: Set<number>,
+    counters: RestoreCounters,
+    onTitle: (title: string) => void,
+  ): PaneNode {
+    if (snapshot.type === 'leaf') {
+      const canAttach = snapshot.contentType === 'terminal'
+        && snapshot.sessionId !== null
+        && activeSessions.has(snapshot.sessionId)
+        && !usedSessions.has(snapshot.sessionId);
+      if (!canAttach) {
+        const missingPty = snapshot.contentType === 'terminal';
+        if (missingPty) counters.missingSessions++;
+        else counters.lostContentViews++;
+        return {
+          type: 'leaf',
+          pane: this.createRecoveryPane(container, snapshot, missingPty),
+        };
+      }
+
+      const sessionId = snapshot.sessionId!;
+      const pane = this.createPane(container);
+      this.wirePaneInput(pane, { bufferBeforeSession: false });
+      pane.sessionId = sessionId;
+      usedSessions.add(sessionId);
+      counters.reattachedSessions++;
+      this.sessionMap.set(sessionId, { windowId, tabId, paneId: pane.id });
+      this.flushPendingPtyOutput(sessionId, pane.terminal);
+      pane.terminal?.write(
+        `\r\n\x1b[33m[Krypton] WebContent reloaded; PTY ${sessionId} reattached. Previous on-screen scrollback was not retained.\x1b[0m\r\n`,
+      );
+      if (pane.terminal) this.wireTitleSync(pane.terminal, onTitle);
+      return { type: 'leaf', pane };
+    }
+
+    const splitEl = document.createElement('div');
+    splitEl.className = `krypton-split krypton-split--${snapshot.direction}`;
+    container.appendChild(splitEl);
+    const first = this.restorePaneTree(
+      snapshot.first, splitEl, windowId, tabId, activeSessions, usedSessions, counters, onTitle,
+    );
+    const divider = document.createElement('div');
+    divider.className = 'krypton-split__divider';
+    splitEl.appendChild(divider);
+    const second = this.restorePaneTree(
+      snapshot.second, splitEl, windowId, tabId, activeSessions, usedSessions, counters, onTitle,
+    );
+    this.paneNodeElement(first).style.flex = `${snapshot.ratio} 1 0`;
+    this.paneNodeElement(second).style.flex = `${1 - snapshot.ratio} 1 0`;
+    return {
+      type: 'split',
+      direction: snapshot.direction,
+      ratio: snapshot.ratio,
+      first,
+      second,
+      element: splitEl,
+    };
+  }
+
+  private paneNodeElement(node: PaneNode): HTMLElement {
+    return node.type === 'leaf' ? node.pane.element : node.element;
+  }
+
+  private createRecoveryPane(
+    container: HTMLElement,
+    snapshot: Extract<WorkspacePaneSnapshot, { type: 'leaf' }>,
+    missingPty: boolean,
+  ): Pane {
+    const paneId = nextPaneId();
+    const paneEl = document.createElement('div');
+    paneEl.className = 'krypton-pane krypton-pane--recovery';
+    paneEl.dataset.paneId = paneId;
+    const notice = document.createElement('div');
+    notice.className = 'krypton-recovery-notice';
+    notice.tabIndex = 0;
+    const heading = document.createElement('strong');
+    heading.textContent = missingPty ? 'PTY SESSION UNAVAILABLE' : `${snapshot.contentType.toUpperCase()} VIEW RELOAD`;
+    const detail = document.createElement('span');
+    detail.textContent = missingPty
+      ? 'The saved shell no longer exists. Krypton did not silently replace it with a new shell.'
+      : 'The WebContent process was replaced. This view\'s JavaScript state could not be reattached; live PTY panes were preserved.';
+    notice.append(heading, detail);
+    paneEl.appendChild(notice);
+    container.appendChild(paneEl);
+    const contentView: ContentView = {
+      type: snapshot.contentType,
+      element: notice,
+      onKeyDown: () => false,
+      focusView: () => notice.focus({ preventScroll: true }),
+      dispose: () => {},
+    };
+    return {
+      id: paneId,
+      viewId: crypto.randomUUID(),
+      sessionId: null,
+      terminal: null,
+      fitAddon: null,
+      element: paneEl,
+      shaderInstance: null,
+      contentView,
+      pendingInput: [],
+    };
+  }
+
+  private applyRestoredMaximize(id: WindowId): void {
+    const win = this.windows.get(id);
+    if (!win) return;
+    for (const [otherId, other] of this.windows) {
+      other.element.style.display = otherId === id ? '' : 'none';
+    }
+    win.bounds = {
+      x: 0,
+      y: 0,
+      width: window.innerWidth,
+      height: window.innerHeight - Compositor.FOOTER_HEIGHT,
+    };
+    this.applyBounds(win);
   }
 
   /**
@@ -5446,6 +5878,7 @@ export class Compositor {
     }
     const win = [...this.windows.values()].find((candidate) => candidate.tabs[candidate.activeTabIndex] === tab);
     if (win) this.syncWindowFooter(win);
+    this.scheduleWorkspaceStateSave();
   }
 
   // ─── Quick Terminal ───────────────────────────────────────────────
@@ -5490,6 +5923,7 @@ export class Compositor {
     // Show the element
     this.qtElement.classList.add('krypton-quick-terminal--visible');
     this.qtVisible = true;
+    this.scheduleWorkspaceStateSave();
 
     // Unfocus workspace window visually and blur any focused content view
     if (this.focusedWindowId) {
@@ -5560,6 +5994,7 @@ export class Compositor {
     // Cancel fill-forwards so next show starts clean
     if (anim) anim.cancel();
     this.qtVisible = false;
+    this.scheduleWorkspaceStateSave();
 
     // Blur the Quick Terminal's xterm.js so browser focus is released
     if (this.qtTerminal) {
@@ -5617,7 +6052,9 @@ export class Compositor {
 
     // Reset state so next toggle lazy-creates everything fresh
     this.qtSessionId = null;
+    this.restoredQuickTerminalSessionId = null;
     this.qtInitialized = false;
+    this.scheduleWorkspaceStateSave();
   }
 
   /** Lazily initialize the Quick Terminal DOM + PTY */
@@ -5751,16 +6188,18 @@ export class Compositor {
       }
     });
 
-    // Spawn PTY for Quick Terminal — inherit CWD from focused window
-    const inheritedCwd = await this.getFocusedCwd();
+    // Reattach the pre-reload Quick Terminal PTY when available. Only a true
+    // first initialization spawns a new shell.
+    const restoredSessionId = this.restoredQuickTerminalSessionId;
     try {
-      const sessionId = await invoke<number>('spawn_pty', {
+      const sessionId = restoredSessionId ?? await invoke<number>('spawn_pty', {
         cols: terminal.cols,
         rows: terminal.rows,
-        cwd: inheritedCwd,
+        cwd: await this.getFocusedCwd(),
       });
       this.qtSessionId = sessionId;
-      qtPtyStatus.textContent = 'pty // active';
+      this.restoredQuickTerminalSessionId = null;
+      qtPtyStatus.textContent = restoredSessionId === null ? 'pty // active' : 'pty // reattached';
 
       // Drain backend pty-output that arrived before this sid was registered.
       this.flushPendingPtyOutput(sessionId, terminal);
@@ -5769,6 +6208,13 @@ export class Compositor {
         const drained = qtPendingInput.splice(0);
         invoke('write_to_pty', { sessionId, data: drained })
           .catch((e) => console.error('QT flush pending input failed:', e));
+      }
+
+      if (restoredSessionId !== null) {
+        terminal.write(
+          `\r\n\x1b[33m[Krypton] WebContent reloaded; Quick Terminal PTY ${sessionId} reattached. Previous on-screen scrollback was not retained.\x1b[0m\r\n`,
+        );
+        await invoke('resize_pty', { sessionId, cols: terminal.cols, rows: terminal.rows });
       }
 
       // Fetch initial CWD for Quick Terminal
@@ -5788,6 +6234,7 @@ export class Compositor {
     this.wireCopyOnSelect(terminal);
 
     this.qtInitialized = true;
+    this.scheduleWorkspaceStateSave();
   }
 
   /** Position the Quick Terminal centered on the viewport */
@@ -6913,6 +7360,7 @@ export class Compositor {
     el.style.height = `${b.height}px`;
     el.style.right = 'auto';
     el.style.bottom = 'auto';
+    this.scheduleWorkspaceStateSave();
   }
 
   // ─── OSC 7 CWD Tracking ──────────────────────────────────────────
@@ -7379,5 +7827,6 @@ export class Compositor {
     for (const cb of this.onFocusChangeCallbacks) {
       cb(this.focusedWindowId);
     }
+    this.scheduleWorkspaceStateSave();
   }
 }

@@ -22,8 +22,9 @@
      the compositor to snapshot (freeze) the desktop behind the element when the
      window is focused, breaking live wallpaper / video desktop transparency.
      The semi-transparent background color alone provides the tinted overlay. */
-  /* GPU-composited layer for smooth animations (transform, opacity) */
-  will-change: transform, opacity;
+  /* WAAPI promotes windows only while they animate. A permanent will-change
+     here allocates a full-window backing store per terminal on Retina screens
+     and can push WebContent over macOS's inactive-process memory limit. */
   transform-origin: top left;
 }
 
@@ -836,6 +837,30 @@
 
 .krypton-pane--focused {
   box-shadow: inset 0 0 0 1px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
+}
+
+.krypton-pane--recovery {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.krypton-recovery-notice {
+  display: grid;
+  gap: 10px;
+  max-width: 560px;
+  padding: 20px;
+  border: 1px solid rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.55);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: rgba(6, 10, 18, 0.72);
+  color: var(--krypton-foreground, #b0c4d8);
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  line-height: var(--krypton-content-line-height, 1.4);
+}
+
+.krypton-recovery-notice strong {
+  color: var(--krypton-warning, #e8c547);
+  letter-spacing: 0.08em;
 }
 
 .krypton-split {

@@ -1,7 +1,7 @@
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use tauri::AppHandle;
 
@@ -313,14 +313,24 @@ struct PtySession {
 
 /// Manages all active PTY sessions, keyed by session ID.
 pub struct PtyManager {
-    sessions: Mutex<HashMap<u32, PtySession>>,
+    sessions: Arc<Mutex<HashMap<u32, PtySession>>>,
     next_id: Mutex<u32>,
+}
+
+fn remove_finished_session(sessions: &Mutex<HashMap<u32, PtySession>>, session_id: u32) -> bool {
+    match sessions.lock() {
+        Ok(mut sessions) => sessions.remove(&session_id).is_some(),
+        Err(error) => {
+            log::error!("PTY session lock poisoned while removing {session_id}: {error}");
+            false
+        }
+    }
 }
 
 impl PtyManager {
     pub fn new() -> Self {
         Self {
-            sessions: Mutex::new(HashMap::new()),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
             next_id: Mutex::new(0),
         }
     }
@@ -434,13 +444,16 @@ impl PtyManager {
         // Spawn a background reader thread that emits output events
         let handle = app_handle.clone();
         let sid = session_id;
+        let sessions_for_reader = self.sessions.clone();
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             let mut osc_parser = OscProgressParser::new();
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => {
-                        handle.emit_or_log("pty-exit", sid);
+                        if remove_finished_session(&sessions_for_reader, sid) {
+                            handle.emit_or_log("pty-exit", sid);
+                        }
                         break;
                     }
                     Ok(n) => {
@@ -457,7 +470,9 @@ impl PtyManager {
                     }
                     Err(e) => {
                         log::error!("PTY read error for session {sid}: {e}");
-                        handle.emit_or_log("pty-exit", sid);
+                        if remove_finished_session(&sessions_for_reader, sid) {
+                            handle.emit_or_log("pty-exit", sid);
+                        }
                         break;
                     }
                 }
@@ -469,14 +484,19 @@ impl PtyManager {
         // app like `hx` directly instead of a persistent shell.
         let handle = app_handle.clone();
         let sid = session_id;
+        let sessions_for_wait = self.sessions.clone();
         thread::spawn(move || match child.wait() {
             Ok(status) => {
                 log::info!("PTY child for session {sid} exited with status {status:?}");
-                handle.emit_or_log("pty-exit", sid);
+                if remove_finished_session(&sessions_for_wait, sid) {
+                    handle.emit_or_log("pty-exit", sid);
+                }
             }
             Err(e) => {
                 log::error!("Failed to wait for PTY child {sid}: {e}");
-                handle.emit_or_log("pty-exit", sid);
+                if remove_finished_session(&sessions_for_wait, sid) {
+                    handle.emit_or_log("pty-exit", sid);
+                }
             }
         });
 

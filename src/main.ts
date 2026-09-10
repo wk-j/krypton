@@ -233,8 +233,40 @@ async function main(): Promise<void> {
     console.warn('[Krypton] Claude hook integration unavailable:', e);
   });
 
-  // Create the first terminal window
-  await compositor.createWindow();
+  // A WebContent process can be replaced while the Rust backend and PTYs stay
+  // alive. Rebuild from the backend-held snapshot instead of treating every
+  // frontend bootstrap as a true application launch.
+  try {
+    const bootstrap = await compositor.loadWorkspaceBootstrap();
+    if (bootstrap.lifecycle === 'reload') {
+      const restored = await compositor.restoreWorkspace(bootstrap);
+      console.info(
+        `[Krypton] WebContent reload: reattached ${restored.reattachedSessions} PTY session(s), `
+        + `${restored.lostContentViews} content view(s) require recovery`,
+      );
+      if (compositor.windowCount === 0) await compositor.createWindow();
+      if (restored.missingSessions > 0 || restored.lostContentViews > 0) {
+        notifications.warn(
+          `WebContent reloaded: ${restored.reattachedSessions} PTY(s) reattached; `
+          + `${restored.missingSessions + restored.lostContentViews} pane(s) could not be resumed.`,
+          { label: 'RECOVERY', duration: 0 },
+        );
+      } else {
+        notifications.success(
+          `WebContent reloaded: ${restored.reattachedSessions} PTY session(s) reattached.`,
+          { label: 'RECOVERY' },
+        );
+      }
+    } else {
+      console.info('[Krypton] Application startup: creating initial terminal');
+      await compositor.createWindow();
+    }
+  } catch (e) {
+    console.error('[Krypton] Workspace bootstrap failed; creating a fresh terminal:', e);
+    await compositor.createWindow();
+    notifications.warn('Workspace recovery failed; a fresh terminal was created.', { label: 'RECOVERY' });
+  }
+  compositor.startWorkspacePersistence();
 
   // Initialize cursor trail (rainbow flame effect on mouse + text cursor).
   // Disabled via [terminal] cursor_trail = false; hot-reload toggles it live.

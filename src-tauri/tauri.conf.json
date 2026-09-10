@@ -20,6 +20,7 @@
         "shadow": false,
         "resizable": true,
         "alwaysOnTop": false,
+        "backgroundThrottling": "disabled",
         "skipTaskbar": false
       }
     ],

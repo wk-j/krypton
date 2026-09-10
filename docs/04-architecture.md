@@ -627,6 +627,23 @@ CSS `backdrop-filter: blur()` on macOS transparent WKWebView windows causes the 
 
 **Fix:** All `backdrop-filter` / `-webkit-backdrop-filter` declarations were removed from `src/styles.css`. Semi-transparent `background` colors (rgba with alpha) remain, providing a tinted overlay without triggering the snapshot. Affected elements: `.krypton-window`, `.krypton-quick-terminal`, `.krypton-whichkey__popup`, `.krypton-hint-toast`, `.krypton-palette__container`, `.krypton-dashboard__backdrop`.
 
+### macOS Space Occlusion and WebContent Lifetime
+
+The main window sets `backgroundThrottling: "disabled"` in
+`src-tauri/tauri.conf.json`. On macOS 14+, Tauri/Wry maps this to WebKit's
+inactive scheduling policy so moving Krypton to a hidden Space does not suspend
+and jetsam WebContent solely because the native window became `NotVisible`.
+Do not remove this setting or restore permanent full-window `will-change`
+promotion without measuring WebContent physical footprint on a Retina display.
+
+Compositor state is mirrored into `WorkspaceState` in the Rust process. A new
+frontend calls `load_workspace_bootstrap`: `startup` creates the initial shell;
+`reload` reconstructs the saved window/tab/pane topology and reattaches every
+still-active PTY. This is crash containment, not cross-launch persistence.
+Terminal scrollback and content-view JavaScript state remain frontend-owned, so
+their recovery limitations are shown explicitly rather than hidden behind a new
+shell. See `docs/66-invisible-window-recovery.md`.
+
 Additionally, xterm.js's internal color parser rejects alpha < 255, falling back to opaque `#000000` on `.xterm-scrollable-element`. A CSS `!important` override was added for that element.
 
 Config/theme keys `blur`, `backdrop_blur` remain in parsers for forward compatibility but are currently **inert**.
