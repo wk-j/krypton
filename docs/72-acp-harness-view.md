@@ -334,9 +334,15 @@ DOM shape:
       <button class="acp-harness__tab acp-harness__tab--permission">[!4] Droid-1</button>
     </nav>
     <div class="acp-harness__composer">
-      <div class="acp-harness__composer-meta">
-        <span class="acp-harness__memory-chip">memory: 3/21</span>
-        <span class="acp-harness__project-status">⎇ main</span>
+      <div class="acp-harness__composer-chrome">
+        <div class="acp-harness__composer-meta">
+          <span class="acp-harness__memory-chip">memory: 3/21</span>
+          <span class="acp-harness__project-status">⎇ main</span>
+        </div>
+        <div class="acp-harness__composer-tools">
+          <span class="acp-harness__help-hint">? help</span>
+          <button class="acp-harness__dictation" type="button">MIC</button>
+        </div>
       </div>
       <span class="acp-harness__prompt">›</span>
       <span class="acp-harness__input"></span>
@@ -418,6 +424,7 @@ ACP HARNESS  ~/krypton   2 idle · 1 busy · 1 perm
   - `×N` prefix on tabs whose lane is errored (error color).
   - `●N` (subtle) when busy, optional; status is primarily on the dashboard row.
 - **Per-tab draft preservation**: each lane's tab keeps its own composer draft. Switching tabs swaps the visible composer to that tab's draft; nothing is lost. Drafts are tab-local only and are dropped when the harness closes.
+- **Dictation**: when the host webview exposes the Web Speech API, the composer status row shows a `MIC` button in `.acp-harness__composer-tools` (right of the meta chips, not on the input line — the window footer's magnified KR/GR marks overflow upward over that corner). `Cmd+D` (or the button) starts English (`en-US`) recognition; `Cmd+Shift+D` starts Thai (`th-TH`). Final text uses the normal composer colour, interim text is dimmed and underlined, and the status advances through `MIC EN`/`MIC TH`, `● REC EN`/`● REC TH`, and `FINALIZING…`. Stopping inserts the recognized text at the saved cursor but does not send it; the user reviews it and presses `Enter` separately. `Esc` restores the exact saved draft/cursor. Lane switch/close, Harness disposal, permission/question pre-emption, and focus leaving the Harness abort capture so no hidden microphone session survives. Unsupported webviews omit the button and report `dictation unavailable in this webview` for either chord. Krypton does not retain or attach audio, but the user-agent recognition service may process it remotely. See `docs/246-harness-dictation.md`.
 - **Memory chip** (`memory: 3/3`) sits above the composer line. Counts show up to 10 displayed lane summaries over total lane summaries. During an active turn it changes to the elapsed clock `m:ss` with a subtle lane-accent pulse so long silent agent runs still show liveness. The busy form is built from segments rather than one string (spec 221); the lane name is **not** repeated here — the lane head carries it for the active lane in every layout, including Zen Mode. Nor is a generic `running` verb: the spinner on the input line, the accented chip and the ticking clock are the busy cue. Cancel is `Ctrl+C` / `#cancel` (workspace footer `#cancel running`); there is no lane-head chip. A **named** operation still leads the chip (`reviewing · 0:41 · …` for a custom command such as `#review`), and `running` survives only as a fallback for the frame before the clock and activity exist.
 - The composer has no target chip, no broadcast warning border, and no marked-mode indicator. The active tab is always the destination.
 - The composer is a flush command line (`border-radius: 0`), not an 8px container card. The host window chrome (frame, titlebar, footer) keeps the theme 8px bevel — the prompt is inside the pane, above the footer, so squaring the window does not change the prompt and only removes the manufactured corner from the tile. The add-lane picker is a floating overlay: one `.acp-harness__picker-panel` with the theme 8px bevel (not two independently rounded boxes).
@@ -518,6 +525,10 @@ The default focus is the composer. Almost every key acts on the composer or on o
 | `Tab` / `Shift+Tab` | Composer text mode | Cycle to next/previous lane tab. |
 | `Enter` | Composer text mode | Send prompt to active tab's lane. |
 | `Shift+Enter` | Composer text mode | Insert newline. |
+| `Cmd+D` / click `MIC` | Composer text mode, speech recognition available | Start English dictation; repeat to stop and keep editable text. |
+| `Cmd+Shift+D` | Composer text mode, speech recognition available | Start Thai dictation; repeat to stop and keep editable text. |
+| `Enter` | Dictation active | Stop and keep recognized text; do not submit on the same keypress. |
+| `Esc` | Dictation active | Abort capture and restore the saved draft/cursor. |
 | `#` | Composer text mode | Open hash-command autocomplete. |
 | `Tab` / `Enter` | Hash autocomplete | Accept selected command. |
 | `Esc` | Hash autocomplete | Dismiss popup (text preserved). |
@@ -598,6 +609,8 @@ No TOML keys are wired for the harness. The default roster is code-defined, and 
 - **Drawer cursor row is on a row that gets removed (cap overflow):** snap the cursor to the nearest surviving row.
 - **Image paste/drop/screen capture:** images stage only for the active lane. If the lane has a pending permission prompt, the user must resolve it before staging another image. If the active backend does not advertise image support, the harness shows a warning chip but still sends the image because some ACP adapters under-report capabilities. The visible placeholder chip is transient, individually removable before submit, and clears after submit; the ACP image block still carries a local `file://` URI for adapters that need a filesystem path.
 - **Cmd+V text/image paste with multiple Harness windows:** paste applies only to the compositor-focused Harness. Window/pane focus moves DOM focus onto that view (native paste follows `document.activeElement`). A paste that still lands on a background Harness is ignored there and retargeted to the focused view's composer. Overlay text fields (pickers, dialogs) keep native paste.
+- **Speech recognition unavailable or denied:** the normal text composer remains usable. Unsupported runtimes omit `MIC`; permission, device, service, and network errors preserve the original draft unless recognized text already exists, in which case the latest text is committed for review but never sent.
+- **Dictation lifecycle changes:** `Esc`, active-lane switch/close, a permission or question taking the composer, focus leaving the Harness, and Harness disposal invalidate callbacks before aborting recognition. Late results therefore cannot alter another lane or revive a closed view.
 
 ## Open Questions
 
@@ -612,6 +625,7 @@ Assumptions for v1:
 ## Out of Scope
 
 - **Broadcast or multi-target prompts.** Each prompt has exactly one destination: the active tab's lane. No `selected/all_idle/marked` modes, no marked lanes, no `synchronize-panes`-style fan-out.
+- **Voice conversation and spoken replies.** Dictation produces editable composer text only; it does not auto-submit, read agent replies aloud, listen continuously, or guarantee on-device recognition.
 - **User-authored memory entries through the harness UI.** No `#mem add`, no manual notes, no manual decisions. Agents update memory through MCP tools.
 - **`#pullmem` or any user-triggered extraction.** The harness does not infer memory from transcripts or tools.
 - **Inline-secret detection in memory documents.** v1 does not scan summaries/details for AWS keys, API tokens, JWTs, or similar patterns. Agents should avoid writing secrets to shared memory.

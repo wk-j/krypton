@@ -293,6 +293,14 @@
    a. OMP lanes skip Krypton's project `.mcp.json` bridge because OMP native-loads
       root `.mcp.json` in ACP mode; they still receive the per-lane
       `krypton-harness-memory` MCP server.
+   b. In composer text mode, `Cmd+D` or the `MIC` control starts one frontend
+      Web Speech recognition session in English (`en-US`); `Cmd+Shift+D` starts
+      the same session in Thai (`th-TH`) when the host webview exposes it.
+      Interim results patch dedicated composer spans without rebuilding the lane
+      or mutating its draft. Stop inserts the latest text at the saved cursor;
+      `Esc`, lane/view teardown, composer pre-emption, or focus leaving the
+      Harness aborts capture and restores the saved draft. Dictation never calls
+      ACP and never submits automatically.
 7. On Enter, the active lane's draft is sent through acp_prompt with a short
    lane-context stub: the lane's own label, the full lane roster, and a
    one-line nudge describing the krypton-harness-memory MCP tools. Memory
