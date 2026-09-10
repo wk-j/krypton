@@ -89,6 +89,7 @@ import type {
   LanePeekCandidate,
   MessageResource,
 } from './harness-view-types';
+import type { HarnessDictationSession, SpeechRecognitionLike } from './harness-dictation';
 
 function permissionFor(toolCall: Partial<ToolCall>, options: PermissionOption[] = []): { toolCall: ToolCall; options: PermissionOption[] } {
   return {
@@ -391,6 +392,133 @@ describe('consumeOptimisticUserEcho', () => {
       matched: false,
       received: 'Hello world',
     });
+  });
+});
+
+describe('ACP Harness dictation lifecycle', () => {
+  type DictationInternals = {
+    finishDictation(token: number, message?: string): void;
+    abortDictation(render?: boolean): void;
+  };
+  type ActiveDictation = HarnessDictationSession & { recognition: SpeechRecognitionLike };
+  const finish = (AcpHarnessView.prototype as unknown as DictationInternals).finishDictation;
+  const abort = (AcpHarnessView.prototype as unknown as DictationInternals).abortDictation;
+
+  function recognition(): SpeechRecognitionLike {
+    return {
+      continuous: true,
+      interimResults: true,
+      lang: 'en-US',
+      onstart: vi.fn(),
+      onresult: vi.fn(),
+      onerror: vi.fn(),
+      onend: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
+      abort: vi.fn(),
+    };
+  }
+
+  it('ignores a stale recognizer callback token', () => {
+    const active = {
+      token: 4,
+      laneId: 'lane-1',
+      phase: 'listening',
+      lang: 'en-US',
+      baseDraft: 'base',
+      insertAt: 4,
+      finalText: 'voice',
+      interimText: '',
+      cancelRequested: false,
+      recognition: recognition(),
+    } satisfies ActiveDictation;
+    const target = {
+      dictation: active,
+      dictationToken: 4,
+      lanes: [],
+      renderComposer: vi.fn(),
+      setDraft: vi.fn(),
+      flashChip: vi.fn(),
+    };
+
+    finish.call(target, 3);
+
+    expect(target.dictation).toBe(active);
+    expect(target.setDraft).not.toHaveBeenCalled();
+  });
+
+  it('commits recognized text at the saved cursor without submitting', () => {
+    const lane = { id: 'lane-1' } as HarnessLane;
+    const active = {
+      token: 5,
+      laneId: lane.id,
+      phase: 'stopping',
+      lang: 'en-US',
+      baseDraft: 'showrows',
+      insertAt: 4,
+      finalText: 'old records',
+      interimText: '',
+      cancelRequested: false,
+      recognition: recognition(),
+    } satisfies ActiveDictation;
+    const target = {
+      dictation: active as ActiveDictation | null,
+      dictationToken: 5,
+      lanes: [lane],
+      activeLaneId: lane.id,
+      element: { focus: vi.fn() },
+      renderComposer: vi.fn(),
+      setDraft: vi.fn(),
+      flashChip: vi.fn(),
+    };
+
+    finish.call(target, 5);
+
+    expect(target.setDraft).toHaveBeenCalledWith(lane, 'show old records rows', 17);
+    expect(target.dictation).toBeNull();
+  });
+
+  it('aborts capture and restores the exact saved draft and cursor', () => {
+    const lane = { id: 'lane-1', draft: 'changed', cursor: 7 } as HarnessLane;
+    const active = {
+      token: 6,
+      laneId: lane.id,
+      phase: 'listening',
+      lang: 'th-TH',
+      baseDraft: 'base draft',
+      insertAt: 4,
+      finalText: 'ignored',
+      interimText: '',
+      cancelRequested: false,
+      recognition: recognition(),
+    } satisfies ActiveDictation;
+    const target = {
+      dictation: active as ActiveDictation | null,
+      dictationToken: 6,
+      lanes: [lane],
+      renderComposer: vi.fn(),
+    };
+
+    abort.call(target, false);
+
+    expect(lane.draft).toBe('base draft');
+    expect(lane.cursor).toBe(4);
+    expect(active.recognition.abort).toHaveBeenCalledOnce();
+    expect(target.dictation).toBeNull();
+  });
+
+  it('renders MIC on the status chrome, not the input line', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    const start = src.indexOf('private renderComposer(');
+    const end = src.indexOf('\n  private renderDictationInput(', start);
+    const body = src.slice(start, end === -1 ? undefined : end);
+    expect(body).toContain('acp-harness__composer-chrome');
+    expect(body).toContain('acp-harness__composer-tools');
+    expect(body).toContain('${dictationControl}');
+    const inputLine = body.slice(body.indexOf('acp-harness__input-line'));
+    expect(inputLine).not.toContain('dictationControl');
+    expect(inputLine).not.toContain('help-hint');
   });
 });
 

@@ -8,6 +8,21 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { openExternalUrl } from '../external-url';
 import { AcpClient } from './client';
 import {
+  DICTATION_LANG_ENGLISH,
+  collectDictationResults,
+  combineDictationText,
+  dictationErrorMessage,
+  dictationLanguageFromShift,
+  dictationLanguageLabel,
+  dictationPreviewParts,
+  insertDictationText,
+  speechRecognitionConstructor,
+  type HarnessDictationSession,
+  type SpeechRecognitionErrorEventLike,
+  type SpeechRecognitionEventLike,
+  type SpeechRecognitionLike,
+} from './harness-dictation';
+import {
   applyAskUserKey,
   createAskUserCardState,
   parseAskUserQuestions,
@@ -1175,6 +1190,13 @@ export class AcpHarnessView implements ContentView {
   private focus: ComposerFocus = 'text';
   private chip: string | null = null;
   private chipTimer: number | null = null;
+  private dictationToken = 0;
+  private dictation: (HarnessDictationSession & { recognition: SpeechRecognitionLike }) | null = null;
+  private readonly dictationFocusOutHandler = (event: FocusEvent): void => {
+    const next = event.relatedTarget;
+    if (next instanceof Node && this.element.contains(next)) return;
+    this.abortDictation();
+  };
   private referenceGitRefreshTimer: number | null = null;
   private referenceGitRefreshGeneration = 0;
   private referenceGitDisposed = false;
@@ -3707,6 +3729,16 @@ export class AcpHarnessView implements ContentView {
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
+    const dictationChord = (e.code === 'KeyD' || e.key.toLowerCase() === 'd')
+      && e.metaKey
+      && !e.ctrlKey
+      && !e.altKey;
+    if (this.dictation) {
+      e.preventDefault();
+      if (e.key === 'Escape') this.abortDictation();
+      else if (dictationChord || (e.key === 'Enter' && !e.shiftKey)) this.stopDictation();
+      return true;
+    }
     // spec 206: unified open-hint mode swallows keys while active (read-only
     // transcript exception, active only in hint mode).
     if (this.openHintMode) return this.handleOpenHintKey(e);
@@ -3860,6 +3892,12 @@ export class AcpHarnessView implements ContentView {
     const pendingReview = this.firstUnresolvedFsReview(lane);
     if (pendingReview) {
       return this.handleFsReviewKey(e, lane, pendingReview);
+    }
+
+    if (dictationChord && this.focus === 'text') {
+      e.preventDefault();
+      this.startDictation(lane, dictationLanguageFromShift(e.shiftKey));
+      return true;
     }
 
     if (e.key === 'Escape') {
@@ -4437,6 +4475,8 @@ export class AcpHarnessView implements ContentView {
   }
 
   dispose(): void {
+    this.element.removeEventListener('focusout', this.dictationFocusOutHandler);
+    this.abortDictation(false);
     // spec 141: leave the cross-harness directory FIRST — flip `alive` false (so
     // any delivery already past resolveDisplayName is rejected deterministically)
     // and unregister (which captures a close snapshot from the still-intact lanes
@@ -6184,6 +6224,14 @@ export class AcpHarnessView implements ContentView {
     this.composerEl.addEventListener('click', (e: MouseEvent) => {
       const target = e.target;
       if (!(target instanceof HTMLElement)) return;
+      if (target.closest('[data-dictation-toggle]')) {
+        e.preventDefault();
+        const lane = this.activeLane();
+        if (!lane) return;
+        if (this.dictation) this.stopDictation();
+        else this.startDictation(lane, DICTATION_LANG_ENGLISH);
+        return;
+      }
       if (target.closest('[data-open-directive-picker]')) {
         e.preventDefault();
         void this.openDirectivePicker();
@@ -6200,6 +6248,8 @@ export class AcpHarnessView implements ContentView {
     });
     commandCenter.appendChild(this.composerEl);
     this.element.appendChild(commandCenter);
+
+    this.element.addEventListener('focusout', this.dictationFocusOutHandler);
 
     this.element.addEventListener('paste', (e: ClipboardEvent) => {
       if (!contentRootIsInFocusedWindow(this.element)) return;
@@ -10330,6 +10380,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private async closeLane(lane: HarnessLane): Promise<void> {
+    if (this.dictation?.laneId === lane.id) this.abortDictation(false);
     lane.spawnEpoch += 1;
     this.publishStream(lane, 'lane_closed', {
       sessionId: lane.sessionId,
@@ -12635,8 +12686,15 @@ export class AcpHarnessView implements ContentView {
   private renderComposer(): void {
     const lane = this.activeLane();
     if (!lane) {
+      this.abortDictation(false);
       this.composerEl.textContent = 'no lanes';
       return;
+    }
+    if (
+      this.dictation?.laneId === lane.id
+      && (lane.pendingPermissions.length > 0 || lane.pendingQuestions.length > 0)
+    ) {
+      this.abortDictation(false);
     }
     if (lane.pendingPermissions.length > 0) {
       // The pending request's command/subject already renders in the transcript
@@ -12660,10 +12718,12 @@ export class AcpHarnessView implements ContentView {
     }
     this.composerEl.className =
       `acp-harness__composer${this.focus === 'transcript' ? ' acp-harness__composer--command' : ''}` +
-      `${this.memoryDrawerOpen ? ' acp-harness__composer--memory' : ''}`;
+      `${this.memoryDrawerOpen ? ' acp-harness__composer--memory' : ''}` +
+      `${this.dictation?.laneId === lane.id ? ' acp-harness__composer--dictating' : ''}`;
     const chip = this.chip !== null ? textSegments(this.chip) : this.composerStatusChip(lane);
     const chipClass = `acp-harness__memory-chip${!this.chip && lane.status === 'busy' ? ' acp-harness__memory-chip--running' : ''}`;
     const projectStatus = this.renderComposerProjectStatus();
+    const dictation = this.dictation?.laneId === lane.id ? this.dictation : null;
     const before = lane.draft.slice(0, lane.cursor);
     const after = lane.draft.slice(lane.cursor);
     this.composerEl.style.setProperty('--acp-lane-accent', lane.accent);
@@ -12693,7 +12753,12 @@ export class AcpHarnessView implements ContentView {
       this.coordinator.pendingPeersFor(lane.id),
       this.coordinator.inboxDepth(lane.id),
     );
+    const input = dictation
+      ? this.renderDictationInput(dictation)
+      : `${esc(before)}<span class="acp-harness__caret">█</span>${esc(after)}`;
+    const dictationControl = this.renderDictationControl(lane, dictation);
     this.composerEl.innerHTML =
+      `<div class="acp-harness__composer-chrome">` +
       `<div class="acp-harness__composer-meta">` +
       `<span class="${chipClass}">${renderStatusSegments(chip)}</span>` +
       // spec 221: no concise tag here either — the collapsed tool cards are the
@@ -12705,6 +12770,8 @@ export class AcpHarnessView implements ContentView {
       this.renderDirectiveChip(lane) +
       projectStatus +
       `</div>` +
+      `<div class="acp-harness__composer-tools">` +
+      `<span class="acp-harness__help-hint">? help</span>${dictationControl}</div></div>` +
       peerStrip +
       staging +
       mentionPalette +
@@ -12716,8 +12783,224 @@ export class AcpHarnessView implements ContentView {
       `<span class="acp-harness__prompt">${lane.status === 'busy'
         ? `<span class="acp-harness__spinner">${SPINNER_FRAMES[0]}</span>`
         : SPINNER_FRAMES[0]}</span>` +
-      `<span class="acp-harness__input">${esc(before)}<span class="acp-harness__caret">█</span>${esc(after)}</span>` +
-      `<span class="acp-harness__help-hint">? help</span></div>`;
+      `<span class="acp-harness__input">${input}</span></div>`;
+  }
+
+  private renderDictationInput(
+    session: HarnessDictationSession & { recognition: SpeechRecognitionLike },
+  ): string {
+    const parts = dictationPreviewParts(
+      session.baseDraft,
+      session.insertAt,
+      session.finalText,
+      session.interimText,
+    );
+    return (
+      `${esc(parts.before)}` +
+      `<span data-dictation-leading>${esc(parts.leading)}</span>` +
+      `<span class="acp-harness__dictation-final" data-dictation-final>${esc(parts.finalText)}</span>` +
+      `<span class="acp-harness__dictation-interim" data-dictation-interim>${esc(parts.interimText)}</span>` +
+      `<span data-dictation-trailing>${esc(parts.trailing)}</span>` +
+      `<span class="acp-harness__caret">█</span>${esc(parts.after)}`
+    );
+  }
+
+  private renderDictationControl(
+    lane: HarnessLane,
+    session: (HarnessDictationSession & { recognition: SpeechRecognitionLike }) | null,
+  ): string {
+    if (!session && !speechRecognitionConstructor()) return '';
+    const active = session?.laneId === lane.id;
+    const phase = active ? session.phase : 'idle';
+    const language = dictationLanguageLabel(session?.lang ?? DICTATION_LANG_ENGLISH);
+    const label = phase === 'starting'
+      ? `MIC ${language}`
+      : phase === 'listening'
+        ? `REC ${language}`
+        : phase === 'stopping'
+          ? 'FINALIZING…'
+          : 'MIC';
+    const ariaLabel = active ? 'Stop dictation' : 'Start English dictation';
+    const title = active
+      ? 'Stop dictation (Cmd+D)'
+      : 'English: Cmd+D · Thai: Cmd+Shift+D';
+    const keys = active
+      ? '<span class="acp-harness__dictation-key">⌘D</span>'
+      : '<span class="acp-harness__dictation-key">⌘D</span>'
+        + '<span class="acp-harness__dictation-key">⇧D</span>';
+    return (
+      `<button class="acp-harness__dictation acp-harness__dictation--${phase}" type="button" ` +
+      `data-dictation-toggle aria-label="${ariaLabel}" aria-pressed="${active}" title="${title}">` +
+      `<span class="acp-harness__dictation-dot" aria-hidden="true">●</span>` +
+      `<span data-dictation-label aria-live="polite">${label}</span>` +
+      `${keys}</button>`
+    );
+  }
+
+  private patchDictationComposer(): void {
+    const session = this.dictation;
+    if (!session || session.laneId !== this.activeLaneId) return;
+    const parts = dictationPreviewParts(
+      session.baseDraft,
+      session.insertAt,
+      session.finalText,
+      session.interimText,
+    );
+    const updates: Array<[string, string]> = [
+      ['[data-dictation-leading]', parts.leading],
+      ['[data-dictation-final]', parts.finalText],
+      ['[data-dictation-interim]', parts.interimText],
+      ['[data-dictation-trailing]', parts.trailing],
+    ];
+    for (const [selector, text] of updates) {
+      const element = this.composerEl.querySelector<HTMLElement>(selector);
+      if (element) element.textContent = text;
+    }
+    const button = this.composerEl.querySelector<HTMLButtonElement>('[data-dictation-toggle]');
+    const label = button?.querySelector<HTMLElement>('[data-dictation-label]');
+    if (!button || !label) return;
+    button.className = `acp-harness__dictation acp-harness__dictation--${session.phase}`;
+    const language = dictationLanguageLabel(session.lang);
+    label.textContent = session.phase === 'starting'
+      ? `MIC ${language}`
+      : session.phase === 'listening'
+        ? `REC ${language}`
+        : 'FINALIZING…';
+  }
+
+  private startDictation(lane: HarnessLane, lang: string): void {
+    if (
+      this.dictation
+      || this.focus !== 'text'
+      || lane.pendingPermissions.length > 0
+      || lane.pendingQuestions.length > 0
+      || this.firstUnresolvedFsReview(lane) !== null
+      || this.helpOpen
+      || this.memoryDrawerOpen
+      || this.annotationOverlayOpen
+      || this.sessionPicker.open
+      || this.pickerOpen
+      || this.directivePickerOpen
+      || this.modelPickerOpen
+      || this.ticketPicker !== null
+      || this.triageOverlayOpen
+      || this.reviewMatrixOverlayOpen
+      || this.reviewPriorityOverlayOpen
+      || this.orchestratorConsoleOpen
+      || this.metricsPanelOpen
+      || this.openHintMode
+    ) return;
+    const Recognition = speechRecognitionConstructor();
+    if (!Recognition) {
+      this.flashChip('dictation unavailable in this webview');
+      return;
+    }
+
+    let recognition: SpeechRecognitionLike;
+    try {
+      recognition = new Recognition();
+    } catch {
+      this.flashChip('dictation failed to start');
+      return;
+    }
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = lang;
+    const token = ++this.dictationToken;
+    const session: HarnessDictationSession & { recognition: SpeechRecognitionLike } = {
+      token,
+      laneId: lane.id,
+      phase: 'starting',
+      lang,
+      baseDraft: lane.draft,
+      insertAt: lane.cursor,
+      finalText: '',
+      interimText: '',
+      cancelRequested: false,
+      recognition,
+    };
+    this.dictation = session;
+    recognition.onstart = (): void => {
+      if (this.dictation?.token !== token || session.phase !== 'starting') return;
+      session.phase = 'listening';
+      this.patchDictationComposer();
+    };
+    recognition.onresult = (event: SpeechRecognitionEventLike): void => {
+      if (this.dictation?.token !== token) return;
+      const result = collectDictationResults(event);
+      session.finalText = result.finalText;
+      session.interimText = result.interimText;
+      this.patchDictationComposer();
+    };
+    recognition.onerror = (event: SpeechRecognitionErrorEventLike): void => {
+      if (this.dictation?.token !== token) return;
+      this.finishDictation(token, dictationErrorMessage(event.error));
+    };
+    recognition.onend = (): void => this.finishDictation(token);
+    this.element.focus({ preventScroll: true });
+    this.renderComposer();
+    try {
+      recognition.start();
+    } catch {
+      this.finishDictation(token, 'dictation failed to start');
+    }
+  }
+
+  private stopDictation(): void {
+    const session = this.dictation;
+    if (!session || session.phase === 'stopping') return;
+    session.phase = 'stopping';
+    this.patchDictationComposer();
+    try {
+      session.recognition.stop();
+    } catch {
+      this.finishDictation(session.token, 'dictation failed to stop');
+    }
+  }
+
+  private finishDictation(token: number, message?: string): void {
+    const session = this.dictation;
+    if (!session || session.token !== token || session.cancelRequested) return;
+    this.dictation = null;
+    this.dictationToken += 1;
+    session.recognition.onstart = null;
+    session.recognition.onresult = null;
+    session.recognition.onerror = null;
+    session.recognition.onend = null;
+    const lane = this.lanes.find((candidate) => candidate.id === session.laneId);
+    const speech = combineDictationText(session.finalText, session.interimText);
+    if (lane && speech) {
+      const inserted = insertDictationText(session.baseDraft, session.insertAt, speech);
+      this.setDraft(lane, inserted.text, inserted.cursor);
+    } else {
+      this.renderComposer();
+    }
+    if (lane?.id === this.activeLaneId) this.element.focus({ preventScroll: true });
+    if (message) this.flashChip(message);
+    else if (!speech) this.flashChip('no speech heard');
+  }
+
+  private abortDictation(render = true): void {
+    const session = this.dictation;
+    if (!session) return;
+    session.cancelRequested = true;
+    this.dictation = null;
+    this.dictationToken += 1;
+    session.recognition.onstart = null;
+    session.recognition.onresult = null;
+    session.recognition.onerror = null;
+    session.recognition.onend = null;
+    const lane = this.lanes.find((candidate) => candidate.id === session.laneId);
+    if (lane) {
+      lane.draft = session.baseDraft;
+      lane.cursor = session.insertAt;
+    }
+    try {
+      session.recognition.abort();
+    } catch {
+      // Best-effort teardown: state and callbacks are already invalidated.
+    }
+    if (render) this.renderComposer();
   }
 
   /** Composer directive chip: clickable, opens the picker. Keyboard users use
@@ -13046,6 +13329,8 @@ export class AcpHarnessView implements ContentView {
             <dt>Ctrl+Left / Ctrl+Right</dt><dd>Word back / forward</dd>
             <dt>Ctrl+H</dt><dd>Backspace</dd>
             <dt>Ctrl+D</dt><dd>Delete char forward</dd>
+            <dt>Cmd+D</dt><dd>Start / stop English dictation (when available)</dd>
+            <dt>Cmd+Shift+D</dt><dd>Start / stop Thai dictation (when available)</dd>
             <dt>Ctrl+W</dt><dd>Delete word backward (kill)</dd>
             <dt>Ctrl+U</dt><dd>Kill to start of line</dd>
             <dt>Ctrl+K</dt><dd>Kill to end of line</dd>
@@ -14488,6 +14773,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private activateLane(id: string): void {
+    if (id !== this.activeLaneId) this.abortDictation(false);
     this.activeLaneId = id;
     this.focus = 'text';
     this.lanePeek.visible = true;
