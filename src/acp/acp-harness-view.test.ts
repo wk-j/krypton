@@ -301,6 +301,27 @@ describe('assistant reference Git state', () => {
     expect(mcp?.[0]).not.toMatch(/this\.render\(\)/);
   });
 
+  it('reloads the active ticket without remounting the dashboard', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    const reloadStart = viewSrc.indexOf('private async reloadActiveTicket(');
+    const reloadEnd = viewSrc.indexOf('\n  private async ', reloadStart + 1);
+    const reload = viewSrc.slice(reloadStart, reloadEnd);
+    const success = reload.slice(reload.indexOf('this.activeTicket = detail;'));
+    expect(success).toMatch(/this\.renderTicketDock\(\)/);
+    expect(success).toMatch(/if \(this\.ticketPicker\) this\.renderTicketOverlayEl\(\)/);
+    expect(success).not.toMatch(/this\.render\(\);/);
+    expect(viewSrc).toMatch(
+      /if \(this\.ticketWorker\?\.laneId === lane\.id\) void this\.reloadActiveTicket\(false\)/,
+    );
+    const enrichStart = viewSrc.indexOf('private async enrichActiveTicket(');
+    const enrichEnd = viewSrc.indexOf('\n  private async ', enrichStart + 1);
+    const enrich = viewSrc.slice(enrichStart, enrichEnd);
+    const enrichSuccess = enrich.slice(enrich.indexOf('this.activeTicket = detail;'));
+    expect(enrichSuccess).toMatch(/this\.renderTicketDock\(\)/);
+    expect(enrichSuccess).not.toMatch(/this\.render\(\);/);
+  });
+
   it('seals a live thought before the first assistant chunk replaces its stream kind', () => {
     type AppendStreamingTarget = {
       appendStreaming(

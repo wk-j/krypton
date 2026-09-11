@@ -6615,7 +6615,8 @@ export class AcpHarnessView implements ContentView {
       });
       if (this.activeTicket?.id === ticketId) {
         this.activeTicket = detail;
-        this.render();
+        this.renderTicketDock();
+        if (this.ticketPicker) this.renderTicketOverlayEl();
       }
     } catch (e) {
       console.warn('[acp-harness] ticket GitHub refresh failed; local ticket remains usable:', e);
@@ -6745,7 +6746,10 @@ export class AcpHarnessView implements ContentView {
         return null;
       }
       this.activeTicket = detail;
-      this.render();
+      // Ticket chrome only. A full dashboard remount here flashed the harness
+      // when the worker lane went idle (setLaneStatus → this reload).
+      this.renderTicketDock();
+      if (this.ticketPicker) this.renderTicketOverlayEl();
       if (refreshGithub && detail.github) void this.enrichActiveTicket(ticketId, detail.github);
       return detail;
     } catch (e) {
