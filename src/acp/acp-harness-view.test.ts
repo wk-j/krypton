@@ -78,7 +78,7 @@ import {
   referenceGitAccessibleSummary,
   transcriptRenderSignature,
 } from './harness-transcript-render';
-import { peekThoughtMarkdownHtml } from './harness-markdown';
+import { peekThoughtMarkdownHtml, sealStreamingTextBody } from './harness-markdown';
 import { collapseThoughtBlankLines } from './harness-format';
 import { peekShowsActiveTool, peekEventRowDuplicatesTool, renderLanePeekToolRow } from './lane-peek';
 
@@ -348,6 +348,45 @@ describe('assistant reference Git state', () => {
     expect(sealStreamingTextRow).toHaveBeenCalledOnce();
     expect(lane.currentThoughtId).toBeNull();
     expect(assistant.text).toBe('answer');
+  });
+
+  it('seals a live thought without replacing its stable text node', () => {
+    const textNode = { nodeType: 3, textContent: 'reasoning' };
+    let textContent = 'reasoning';
+    let textWrites = 0;
+    const dataset = {
+      pretext: 'true',
+      rawText: 'stale',
+      rowId: 'thought-1',
+    } as unknown as DOMStringMap;
+    const body = {
+      classList: { remove: vi.fn() },
+      dataset,
+      childNodes: [textNode],
+      firstChild: textNode,
+      get textContent(): string {
+        return textContent;
+      },
+      set textContent(value: string | null) {
+        textWrites += 1;
+        textContent = value ?? '';
+      },
+    } as unknown as HTMLElement;
+    const item = {
+      id: 'thought-1',
+      kind: 'thought',
+      text: 'reasoning',
+      streamPlainLength: 'reasoning'.length,
+    } as HarnessTranscriptItem;
+
+    sealStreamingTextBody(body, item);
+
+    expect(textWrites).toBe(0);
+    expect(body.firstChild).toBe(textNode);
+    expect(dataset.pretext).toBeUndefined();
+    expect(dataset.rawText).toBeUndefined();
+    expect(dataset.rowId).toBeUndefined();
+    expect(item.streamPlainLength).toBeUndefined();
   });
 
   it('formats accessible line, binary, and unavailable summaries', () => {

@@ -352,10 +352,10 @@ export function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscri
   }
 }
 
-/** Convert a sealed thought/user body to the pretext-ready dataset in place.
- *  The wrapper node stays; `layoutPretextRows` splits lines on the next RAF.
- *  Matching the assistant seal, the caller then stamps the sealed signature
- *  so the following transcript pass is a no-op instead of replaceChildren. */
+/** Settle a streaming thought/user body without replacing its wrapper.
+ *  Thoughts keep their live plain-text node; users become Pretext-ready and
+ *  split into measured lines on the next RAF. The caller stamps the sealed
+ *  signature so the following transcript pass is a no-op. */
 export function sealStreamingTextBody(body: HTMLElement, item: HarnessTranscriptItem): void {
   const text = item.kind === 'thought' ? collapseThoughtBlankLines(item.text) : item.text;
   body.classList.remove(
@@ -363,6 +363,22 @@ export function sealStreamingTextBody(body: HTMLElement, item: HarnessTranscript
     'acp-harness__msg-body--thought-veil',
     'acp-harness__msg-body--markdown',
   );
+  if (item.kind === 'thought') {
+    // The live thought is already a collapsed plain-text node. Promoting it to
+    // Pretext at the thought→assistant/tool/stop boundary replaced that node
+    // and laid the row out again, which WebKit could paint as a brief flash.
+    // Keep the stable node and native wrapping after seal; only repair the DOM
+    // when it does not match the final text.
+    delete body.dataset.pretext;
+    delete body.dataset.rawText;
+    delete body.dataset.rowId;
+    const textNode = body.childNodes.length === 1 && body.firstChild?.nodeType === 3
+      ? body.firstChild
+      : null;
+    if (!textNode || textNode.textContent !== text) body.textContent = text;
+    item.streamPlainLength = undefined;
+    return;
+  }
   body.dataset.pretext = 'true';
   body.dataset.rawText = text;
   body.dataset.rowId = item.id;
