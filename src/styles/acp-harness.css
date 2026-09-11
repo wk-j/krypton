@@ -3831,7 +3831,10 @@
 }
 
 .acp-harness__msg--enter {
-  animation: acp-harness-msg-enter 220ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  /* A forward-filled transform can keep each completed row on its own WebKit
+     compositing backing. The row removes this class when the effect settles;
+     no fill is the safety net if that event is missed. */
+  animation: acp-harness-msg-enter 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 @keyframes acp-harness-msg-enter {
@@ -3842,6 +3845,12 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acp-harness__msg--enter {
+    animation: none;
   }
 }
 

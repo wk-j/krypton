@@ -1,8 +1,9 @@
 # 103. ACP Harness Transcript Visible Window
 
-> Status: Implemented (rev 2 — indicator row placement fix)
+> Status: Implemented (rev 3 — bounded tool-call payload retention)
 > Date: 2026-05-13
 > Amended (rev 2, 2026-09-02): the indicator was rendered at the **bottom** of the transcript, right above the composer, not at the top. In `renderActiveTranscript()` a new node for the first item (`previous === null`) fell through to `body.appendChild`, and an existing node was never repositioned, so once the indicator appeared it stayed last for the life of the lane. New nodes now use `body.insertBefore(next, previous ? previous.nextSibling : body.firstChild)`, and an existing node that is not at `previous ? previous.nextSibling : body.firstChild` is moved there (pointer compare, so in-place rows never move). Verified against frame captures of the live app.
+> Amended (rev 3, 2026-09-11): the 300-row cap now releases the matching completed `toolCalls` merge payload when it evicts a tool row. Active tools retain bounded merge state until their terminal update, while orphan `tool_call_update` events are ignored instead of recreating an evicted completed row. Raw merge state is capped at 64 KiB per tool call; transcript diff previews are capped at 64 KiB total, 16 KiB per side, and eight files. `#new`, lane close, and Harness disposal explicitly clear transcript/tool retention state. This closes issue #23's unbounded WebContent retention path; runtime soak remains part of issue #22.
 > Milestone: ACP harness — performance hardening
 
 ## Problem
@@ -92,7 +93,8 @@ as a backstop, and deliberately *does not* attempt full virtualization
 
 | File | Change |
 |------|--------|
-| `src/acp/acp-harness-view.ts` | Add `transcriptWindow` to `HarnessLane`; slice the transcript in `renderActiveTranscript()`; render the hidden-rows indicator; add the cycle keybinding handler; reset window on `#new`/`#restart`/lane create |
+| `src/acp/acp-harness-view.ts` | Add `transcriptWindow` to `HarnessLane`; slice the transcript in `renderActiveTranscript()`; render the hidden-rows indicator; add the cycle keybinding handler; reset window on `#new`/`#restart`/lane create; release completed tool merge state with row eviction |
+| `src/acp/harness-tool-retention.ts` | Bound raw merge state and diff previews; preserve active tools under pressure; reject orphan late updates; centralize reset/dispose cleanup |
 | `src/styles/acp-harness.css` | Style the `.acp-harness__msg--hidden-indicator` row (one-line muted text, no glow stack — per "no layered UI" preference) |
 | `docs/PROGRESS.md` | Add a line under the ACP harness section noting this change |
 | `docs/72-acp-harness-view.md` | Document the new keybinding and indicator row |

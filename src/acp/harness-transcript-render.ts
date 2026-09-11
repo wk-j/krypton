@@ -145,6 +145,16 @@ export function renderTranscriptItem(
     `${streaming ? ' acp-harness__msg--streaming' : ''}`;
   el.dataset.msgId = item.id;
   el.dataset.renderSignature = transcriptRenderSignature(item, streaming);
+  if (isNew) {
+    const releaseEntryAnimation = (event: AnimationEvent): void => {
+      if (event.target !== el || event.animationName !== 'acp-harness-msg-enter') return;
+      el.classList.remove('acp-harness__msg--enter');
+      el.removeEventListener('animationend', releaseEntryAnimation);
+      el.removeEventListener('animationcancel', releaseEntryAnimation);
+    };
+    el.addEventListener('animationend', releaseEntryAnimation);
+    el.addEventListener('animationcancel', releaseEntryAnimation);
+  }
   const label = document.createElement('div');
   label.className = 'acp-harness__msg-label';
   label.textContent = transcriptLabel(item.kind);

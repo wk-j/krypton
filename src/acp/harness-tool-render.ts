@@ -12,6 +12,12 @@ import { classifyBashCommand } from '../agent/tools';
 import type { ContentBlock, ToolCall, ToolCallUpdate } from './types';
 import type { ArtifactCardPayload, ReviewCardPayload, ToolPayload } from './harness-view-types';
 import {
+  TOOL_DIFF_DISPLAY_CHAR_LIMIT,
+  TOOL_DIFF_DISPLAY_COUNT_LIMIT,
+  TOOL_DIFF_TEXT_CHAR_LIMIT,
+  boundToolDiffText,
+} from './harness-tool-retention';
+import {
   truncateInline,
 } from './harness-format';
 
@@ -517,12 +523,24 @@ export function formatToolElapsed(ms: number): string {
 
 export function extractToolDiffs(content: ToolCall['content']): Array<{ path: string; oldText: string; newText: string }> {
   const out: Array<{ path: string; oldText: string; newText: string }> = [];
+  let remaining = TOOL_DIFF_DISPLAY_CHAR_LIMIT;
   for (const item of content ?? []) {
+    if (out.length >= TOOL_DIFF_DISPLAY_COUNT_LIMIT || remaining <= 0) break;
     if (item.type === 'diff' && (item.newText !== undefined || item.oldText !== undefined)) {
+      const oldText = boundToolDiffText(
+        item.oldText ?? '',
+        Math.min(remaining, TOOL_DIFF_TEXT_CHAR_LIMIT),
+      );
+      remaining -= oldText.length;
+      const newText = boundToolDiffText(
+        item.newText ?? '',
+        Math.min(remaining, TOOL_DIFF_TEXT_CHAR_LIMIT),
+      );
+      remaining -= newText.length;
       out.push({
         path: item.path ?? '',
-        oldText: item.oldText ?? '',
-        newText: item.newText ?? '',
+        oldText,
+        newText,
       });
     }
   }

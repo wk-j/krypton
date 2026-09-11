@@ -273,6 +273,19 @@ describe('assistant reference Git state', () => {
     expect(viewSrc).toMatch(/current\.replaceChildren\(\.\.\.Array\.from\(next\.childNodes\)\)/);
   });
 
+  it('releases the transcript row entrance transform after animation settles', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const renderSrc = readFileSync(join(here, 'harness-transcript-render.ts'), 'utf8');
+    const css = readFileSync(join(here, '../styles/acp-harness.css'), 'utf8');
+    const entryRule = css.match(/\.acp-harness__msg--enter\s*\{([\s\S]*?)\}/)?.[1];
+
+    expect(renderSrc).toMatch(/classList\.remove\('acp-harness__msg--enter'\)/);
+    expect(renderSrc).toMatch(/addEventListener\('animationend', releaseEntryAnimation\)/);
+    expect(renderSrc).toMatch(/addEventListener\('animationcancel', releaseEntryAnimation\)/);
+    expect(entryRule).toBeDefined();
+    expect(entryRule).not.toMatch(/\bboth\b|animation-fill-mode/);
+  });
+
   it('does not full-render the dashboard on stop or MCP stats (turn-end flicker)', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
@@ -286,6 +299,55 @@ describe('assistant reference Git state', () => {
     const mcp = viewSrc.match(/private async refreshMcpStats\(\)[\s\S]*?\n  \}/);
     expect(mcp?.[0]).toMatch(/this\.refreshMetricsRender\(\)/);
     expect(mcp?.[0]).not.toMatch(/this\.render\(\)/);
+  });
+
+  it('seals a live thought before the first assistant chunk replaces its stream kind', () => {
+    type AppendStreamingTarget = {
+      appendStreaming(
+        lane: HarnessLane,
+        kind: 'user' | 'assistant' | 'thought',
+        text: string,
+      ): void;
+    };
+    const appendStreaming = (
+      AcpHarnessView.prototype as unknown as AppendStreamingTarget
+    ).appendStreaming;
+    const thought: HarnessTranscriptItem = {
+      id: 'thought-1',
+      kind: 'thought',
+      text: 'reasoning',
+    };
+    const assistant: HarnessTranscriptItem = {
+      id: 'assistant-1',
+      kind: 'assistant',
+      text: '',
+    };
+    const lane = {
+      currentUserId: null,
+      currentAssistantId: null,
+      currentAssistantMessageId: null,
+      currentThoughtId: thought.id,
+      transcript: [thought],
+    } as HarnessLane;
+    const sealStreamingTextRow = vi.fn((_lane: HarnessLane, id: string | null) => {
+      expect(id).toBe(thought.id);
+      expect(lane.currentThoughtId).toBe(thought.id);
+    });
+    const target = {
+      dropVeiledThoughtRow: vi.fn(),
+      sealStreamingTextRow,
+      appendTranscript: vi.fn(() => {
+        lane.transcript.push(assistant);
+        return assistant;
+      }),
+      onOutputPump: vi.fn(),
+    };
+
+    appendStreaming.call(target, lane, 'assistant', 'answer');
+
+    expect(sealStreamingTextRow).toHaveBeenCalledOnce();
+    expect(lane.currentThoughtId).toBeNull();
+    expect(assistant.text).toBe('answer');
   });
 
   it('formats accessible line, binary, and unavailable summaries', () => {

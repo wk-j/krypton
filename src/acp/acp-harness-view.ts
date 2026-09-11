@@ -330,6 +330,13 @@ import {
   patchStreamingToolBody,
   setToolSpinnerGlyph,
 } from './harness-tool-render';
+import {
+  appendBoundedTranscriptItem,
+  clearToolTranscriptRetention,
+  compactToolCallForRetention,
+  isOrphanToolCallUpdate,
+  mergeToolPayloadForUpdate,
+} from './harness-tool-retention';
 export {
   boundedOutputLines,
   permissionCommandIsHighRisk,
@@ -4538,6 +4545,7 @@ export class AcpHarnessView implements ContentView {
       lane.streamingMarkdownParser = null;
       lane.streamingMarkdownBody = null;
       lane.streamingMarkdownItemId = null;
+      clearToolTranscriptRetention(lane);
     }
     if (this.memoryUnlisten) {
       this.memoryUnlisten();
@@ -8276,13 +8284,13 @@ export class AcpHarnessView implements ContentView {
         break;
       case 'tool_call':
         this.sealStreaming(lane);
-        this.renderTool(lane, event.call);
+        this.renderTool(lane, event.call, false);
         this.noteToolActivity(lane, event.call.toolCallId);
         this.scheduleToolRender(lane);
         needsRender = false;
         break;
       case 'tool_call_update':
-        this.renderTool(lane, event.update);
+        this.renderTool(lane, event.update, true);
         this.noteToolActivity(lane, event.update.toolCallId);
         this.observeFileTouch(lane, event.update);
         if (isMemoryTool(event.update)) void this.refreshMemory();
@@ -10432,8 +10440,10 @@ export class AcpHarnessView implements ContentView {
       this.orchestratorLaneId = null;
       this.closeOrchestratorConsole();
     }
+    clearToolTranscriptRetention(lane);
     const index = this.lanes.findIndex((l) => l.id === lane.id);
     if (index !== -1) this.lanes.splice(index, 1);
+    this.updateToolTick();
     await this.clearTicketWorkerForLane(lane.id);
     this.notifyUsageProvidersChanged();
     this.mcpStatsByLane.delete(lane.displayName);
@@ -10671,7 +10681,9 @@ export class AcpHarnessView implements ContentView {
     lane.pendingTurnExtractions = [];
     lane.stagedImages = [];
     lane.queuedPrompts = []; // spec 136: fresh session — drop queued prompts
-    lane.transcript = [{ id: makeId(), kind: 'system', text: `starting fresh ${lane.displayName}...` }];
+    clearToolTranscriptRetention(lane);
+    this.updateToolTick();
+    lane.transcript.push({ id: makeId(), kind: 'system', text: `starting fresh ${lane.displayName}...` });
     lane.usage = null;
     lane.sessionId = null;
     lane.modelName = null;
@@ -10688,9 +10700,6 @@ export class AcpHarnessView implements ContentView {
     lane.currentAssistantId = null;
     lane.currentAssistantMessageId = null;
     lane.currentThoughtId = null;
-    lane.toolTranscriptIds = new Map();
-    lane.toolCalls = new Map();
-    lane.seenTranscriptIds = new Set();
     lane.stickToBottom = true;
     lane.pendingShellId = null;
     lane.activeTurnStartedAt = null;
@@ -13414,29 +13423,8 @@ export class AcpHarnessView implements ContentView {
     metadata: Pick<HarnessTranscriptItem, 'imageCount' | 'telegramProvenance'> = {},
   ): HarnessTranscriptItem {
     const item: HarnessTranscriptItem = { id: makeId(), kind, text, createdAt: Date.now(), ...metadata };
-    lane.transcript.push(item);
-    if (lane.transcript.length > 300) {
-      const dropped = lane.transcript.shift();
-      if (dropped) {
-        lane.seenTranscriptIds.delete(dropped.id);
-        // Spec 114: keep `activeToolCount` and the `toolTranscriptIds`
-        // map in sync when the cap shifts a tool row out. Without this,
-        // an active tool dropped from the prefix would leave the
-        // spinner timer running forever and a late toolCall update for
-        // the same id would resurrect a phantom row.
-        if (dropped.kind === 'tool') {
-          const wasActive = dropped.toolStartedAt !== undefined && dropped.toolEndedAt === undefined;
-          if (wasActive && lane.activeToolCount > 0) lane.activeToolCount -= 1;
-          for (const [callId, transcriptId] of lane.toolTranscriptIds) {
-            if (transcriptId === dropped.id) {
-              lane.toolTranscriptIds.delete(callId);
-              break;
-            }
-          }
-          if (SPEC114_DEV) assertActiveToolCount(lane);
-        }
-      }
-    }
+    const dropped = appendBoundedTranscriptItem(lane, item);
+    if (SPEC114_DEV && dropped?.kind === 'tool') assertActiveToolCount(lane);
     return item;
   }
 
@@ -13602,7 +13590,12 @@ export class AcpHarnessView implements ContentView {
     if (kind !== 'assistant') lane.currentAssistantId = null;
     if (kind !== 'assistant') lane.currentAssistantMessageId = null;
     if (kind !== 'thought') {
+      const thoughtId = lane.currentThoughtId;
       this.dropVeiledThoughtRow(lane);
+      // The first assistant/user chunk is the only boundary ACP gives us for
+      // a completed thought. Seal its live wrapper before clearing the pointer
+      // so the body-only pass keeps the row DOM instead of remounting it.
+      this.sealStreamingTextRow(lane, thoughtId);
       lane.currentThoughtId = null;
     }
     const currentId = kind === 'user'
@@ -13849,10 +13842,17 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
-  private renderTool(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
+  private renderTool(
+    lane: HarnessLane,
+    call: ToolCall | ToolCallUpdate,
+    updateOnly: boolean,
+  ): void {
     if (!call.toolCallId) return;
+    // ACP field updates require an earlier tool_call. Active tools retain their
+    // bounded merge state even after row eviction; a missing entry therefore
+    // means this is a late update for completed state that has been released.
+    if (updateOnly && isOrphanToolCallUpdate(lane, call.toolCallId)) return;
     const merged = mergeToolCall(lane.toolCalls.get(call.toolCallId), call);
-    lane.toolCalls.set(call.toolCallId, merged);
     const status = merged.status ?? 'pending';
     const existingId = lane.toolTranscriptIds.get(merged.toolCallId);
     const existing = existingId ? lane.transcript.find((item) => item.id === existingId) : null;
@@ -13871,7 +13871,11 @@ export class AcpHarnessView implements ContentView {
     if (wasActive !== isActive) {
       lane.activeToolCount += isActive ? 1 : -1;
     }
-    const tool = buildToolPayload(merged, status, target.toolStartedAt, target.toolEndedAt);
+    const tool = mergeToolPayloadForUpdate(
+      target.tool,
+      buildToolPayload(merged, status, target.toolStartedAt, target.toolEndedAt),
+      call,
+    );
     // spec 133: redact write/edit cards on an artifact path to path + bytes +
     // hash — HTML must never reach the transcript model under the write tool
     // (the real spec-103 fix). Match the registry when known, but ALSO redact on
@@ -13899,6 +13903,9 @@ export class AcpHarnessView implements ContentView {
     target.status = status;
     target.tool = tool;
     if (!existing) lane.toolTranscriptIds.set(merged.toolCallId, target.id);
+    // The transcript now owns the bounded display payload. Keep only bounded
+    // wire state for partial ACP updates; completed state is pruned with its row.
+    lane.toolCalls.set(merged.toolCallId, compactToolCallForRetention(merged));
     if (SPEC114_DEV) assertActiveToolCount(lane);
     this.updateToolTick();
   }
