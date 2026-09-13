@@ -85,7 +85,6 @@ import type { NotificationController } from './notification';
 import { installPerspectiveMouseFix } from './perspective-fix';
 import { HeaderScope } from './header-scope';
 import { ProgressGauge } from './progress-gauge';
-import { parseOsc7Sequences } from './osc7';
 import { probeRemoteCwd, type SshConnectionInfo } from './ssh-session';
 import { WebviewContentView } from './webview-view';
 import { usageStore, type ProviderUsageSummary, type UsageProvider } from './usage-store';
@@ -7461,21 +7460,6 @@ export class Compositor {
     this.scheduleWorkspaceStateSave();
   }
 
-  // ─── OSC 7 CWD Tracking ──────────────────────────────────────────
-
-  /**
-   * Scan raw PTY output for OSC 7 escape sequences that report the current
-   * working directory and forward each to the backend so SSH clone can use it
-   * as the remote CWD. (The workspace footer reacts to the same sequences via
-   * the PTY→ViewBus bridge's `view:cwd` signal — see `pty-bridge.ts`.)
-   */
-  private parseOsc7(sessionId: number, data: number[]): void {
-    for (const { hostname, path } of parseOsc7Sequences(data)) {
-      invoke('set_ssh_remote_cwd', { sessionId, cwd: path, hostname })
-        .catch(() => { /* ignore — ssh feature may be disabled */ });
-    }
-  }
-
   // ─── PTY Events ──────────────────────────────────────────────────
 
   private setupPtyListeners(): void {
@@ -7507,10 +7491,6 @@ export class Compositor {
           }
         }
       }
-
-      // Detect OSC 7 (current directory reporting): ESC ] 7 ; <uri> BEL/ST
-      // Used to track the remote working directory for SSH clone.
-      this.parseOsc7(sid, data);
 
       // Check Quick Terminal first
       if (this.qtSessionId === sid && this.qtTerminal) {

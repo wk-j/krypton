@@ -4,6 +4,7 @@
 > Date: 2026-08-13
 > Milestone: M8 — Polish
 > Supersedes: thought-inside-peek (same-day first landing) and the earlier workspace Thought Field wallpaper drafts
+> Amended: 2026-09-13 — live delta-to-seal preserves the teletype DOM; historical mounts remain GFM
 
 ## Problem
 
@@ -13,7 +14,7 @@ Live model thinking is easy to miss: it lives in a clamped transcript row, and c
 
 Stream thought into a **new rail slot** (`thoughtSlotEl` / `[data-slot="thought"]` / `.acp-harness__lane-thought`). Peek, pins, plan, queue, and thought share the original 320px column. Thought is a sibling card, always independent of peek hide/show.
 
-- The thought card is its own chrome (header + clamped GFM body). It is never mounted inside `.acp-harness__lane-peek`.
+- The thought card is its own chrome (header + clamped thought body). It is never mounted inside `.acp-harness__lane-peek`.
 - Source: peeked lane’s thought when a 109 peek card is actually showing and that lane has thought; otherwise the active lane. Hide the slot when neither has content.
 - Hide / `Esc` dismiss a ranked 109 peek only. They never hide the thought slot.
 - Reuse `installThoughtVeil` / `renderPeekThoughtMarkdown`. Concise mode still hides transcript thought rows; the thought slot stays.
@@ -42,8 +43,9 @@ Wallpaper remains out of scope.
 |------|--------|
 | `src/acp/lane-peek.ts` | `renderLaneThought` / `patchLaneThoughtCard` / `resolveLaneThoughtSnapshot`. Peek render no longer embeds a thought body. |
 | `src/acp/harness-markdown.ts` | Unchanged GFM helpers (`peekThoughtMarkdownHtml` / `renderPeekThoughtMarkdown`). |
+| `src/acp/harness-thought-teletype.ts` | Settle a live thought in place at seal without replacing its painted spans. |
 | `src/acp/acp-harness-view.ts` | New `thoughtSlotEl`. `renderLaneThought()` independent of `renderLanePeek()`. Stream patches the thought card only. |
-| `src/acp/acp-harness-view.test.ts` | Source + content resolution: peek has no thought node; rail stays 320px. |
+| `src/acp/acp-harness-view.test.ts` | Source/content resolution plus live seal DOM-preservation coverage. |
 | `src/styles/acp-harness.css` | `.acp-harness__lane-thought*` + thought slot height only. Rail stays 320px. |
 | `docs/109-acp-contextual-lane-peek.md` | Thought is a sibling slot, not a peek body. |
 | `docs/72-acp-harness-view.md` | One line under peek. |
@@ -86,7 +88,7 @@ Peek hide / `Esc` / no 109 candidate never empty this slot by themselves. Rankin
 
 - `.acp-harness__lane-thought` with a name header and `.acp-harness__lane-thought-body`.
 - Body max-height ≈ 10 line-heights, `overflow: auto`, pin to latest line after layout.
-- Live (`delta`): catch-up teletype, plain `pre-wrap` text, block caret, last ~10 glyphs brighter (spec 232). Sealed: GFM via `marked` (same parser as sealed assistant rows). Veil: `installThoughtVeil`. Empty seal: hide the slot (no content), delayed by `THOUGHT_SLOT_HIDE_MS` so thinking → tool interleave does not collapse the slot on the same frame.
+- Live (`delta`): catch-up teletype, plain `pre-wrap` text, block caret, last ~10 glyphs brighter (spec 232). At the live `delta` → `seal` boundary, keep those span nodes, reveal the complete collapsed text, remove the caret/highlight, and retain plain wrapping so WebKit has no body replacement or Markdown reflow to repaint. A sealed thought mounted later from history still renders as GFM via `marked` (same parser as sealed assistant rows). Veil: `installThoughtVeil`. Empty seal: hide the slot (no content), delayed by `THOUGHT_SLOT_HIDE_MS` so thinking → tool interleave does not collapse the slot on the same frame.
 - Empty live thought (providers that stream blank `thought_chunk`s) is **rail veil only**. Do not insert a transcript thought row for empty text — `dropVeiledThoughtRow` used to paint that row and delete it on the next `tool_call`, which jumped the transcript up and down.
 - Same-lane refresh patches the body — do not `replaceChildren` the card on every chunk.
 - Ghost type. Lane accent only on the name. Caret only while `delta`. No scan wipe, no corner brackets, no grid, no wallpaper motion.

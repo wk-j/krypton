@@ -73,6 +73,24 @@ describe('pty-bridge', () => {
     expect(bus.snapshot().signals).toHaveLength(0);
   });
 
+  it('forwards SSH CWD for an unmapped Quick Terminal session', async () => {
+    const reports: Array<{ sessionId: SessionId; cwd: string; hostname: string }> = [];
+    await startPtyBridge(bus, resolver, {
+      listen: listener.listen,
+      now,
+      onCwd: (sessionId, cwd, hostname) => reports.push({ sessionId, cwd, hostname }),
+    });
+
+    listener.fire('pty-output', [42, osc7('remote.example/srv/quick')]);
+
+    expect(bus.snapshot().signals).toHaveLength(0);
+    expect(reports).toEqual([{
+      sessionId: 42,
+      cwd: '/srv/quick',
+      hostname: 'remote.example',
+    }]);
+  });
+
   it('emits view:throughput at most once per 200ms window', async () => {
     resolver.set(1, addr(1));
     await startPtyBridge(bus, resolver, { listen: listener.listen, now });
@@ -127,15 +145,26 @@ describe('pty-bridge', () => {
 
   it('reassembles an OSC 7 sequence split across two pty-output chunks', async () => {
     resolver.set(1, addr(1));
-    await startPtyBridge(bus, resolver, { listen: listener.listen, now });
-    const full = osc7('/Users/wk/split');
+    const reports: Array<{ sessionId: SessionId; cwd: string; hostname: string }> = [];
+    await startPtyBridge(bus, resolver, {
+      listen: listener.listen,
+      now,
+      onCwd: (sessionId, cwd, hostname) => reports.push({ sessionId, cwd, hostname }),
+    });
+    const full = osc7('remote.example/srv/krypton');
     const cut = 8; // mid-sequence boundary
     listener.fire('pty-output', [1, full.slice(0, cut)]);
     expect(bus.snapshot().signals.filter((s) => s.kind === 'view:cwd')).toHaveLength(0);
+    expect(reports).toHaveLength(0);
     listener.fire('pty-output', [1, full.slice(cut)]);
     const cwd = bus.snapshot().signals.filter((s) => s.kind === 'view:cwd');
     expect(cwd).toHaveLength(1);
-    expect(cwd[0].value).toEqual({ cwd: '/Users/wk/split' });
+    expect(cwd[0].value).toEqual({ cwd: '/srv/krypton' });
+    expect(reports).toEqual([{
+      sessionId: 1,
+      cwd: '/srv/krypton',
+      hostname: 'remote.example',
+    }]);
   });
 
   it('emits view:exit with null code on pty-exit', async () => {

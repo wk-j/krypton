@@ -80,7 +80,12 @@ import {
 } from './harness-transcript-render';
 import { peekThoughtMarkdownHtml, sealStreamingTextBody } from './harness-markdown';
 import { collapseThoughtBlankLines } from './harness-format';
-import { peekShowsActiveTool, peekEventRowDuplicatesTool, renderLanePeekToolRow } from './lane-peek';
+import {
+  peekShowsActiveTool,
+  peekEventRowDuplicatesTool,
+  renderLanePeekToolRow,
+  syncPeekThoughtBody,
+} from './lane-peek';
 
 import type { PermissionOption, ToolCall } from './types';
 import type {
@@ -1555,6 +1560,59 @@ describe('ACP peer activity UI (spec 118)', () => {
     expect(thoughtBodyRenderKind({ phase: 'delta', text: '' })).toBe('veil');
     expect(thoughtBodyRenderKind({ phase: 'delta', text: 'streaming' })).toBe('teletype');
     expect(thoughtBodyRenderKind({ phase: 'seal', text: 'done' })).toBe('markdown');
+  });
+
+  it('keeps the live rail thought DOM when the stream seals', () => {
+    const frames: FrameRequestCallback[] = [];
+    const host = globalThis as { requestAnimationFrame?: typeof requestAnimationFrame };
+    const previous = host.requestAnimationFrame;
+    host.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    const classes = new Set([
+      'acp-harness__msg-body--stream-plain',
+      'acp-harness__msg-body--thought-teletype',
+    ]);
+    const ghost = { textContent: 'partial' };
+    const fresh = { textContent: ' text' };
+    const caret = { remove: vi.fn() };
+    const body = {
+      classList: {
+        add: (...names: string[]) => names.forEach((name) => classes.add(name)),
+        contains: (name: string) => classes.has(name),
+        remove: (...names: string[]) => names.forEach((name) => classes.delete(name)),
+      },
+      dataset: {},
+      querySelector: (selector: string) => {
+        if (selector.includes('thought-ghost')) return ghost;
+        if (selector.includes('thought-fresh')) return fresh;
+        if (selector.includes('thought-caret')) return caret;
+        return null;
+      },
+      scrollHeight: 180,
+      scrollTop: 0,
+    } as unknown as HTMLElement;
+
+    try {
+      expect(syncPeekThoughtBody(body, { phase: 'seal', text: '**streaming**\n\ncomplete' })).toBe(false);
+      expect(ghost.textContent).toBe('**streaming**\ncomplete');
+      expect(fresh.textContent).toBe('');
+      expect(caret.remove).toHaveBeenCalledOnce();
+      expect(classes.has('acp-harness__msg-body--thought-teletype')).toBe(false);
+      expect(classes.has('acp-harness__msg-body--markdown')).toBe(false);
+      expect(body.dataset.peekRender).toBe('sealed-plain');
+      expect(body.dataset.peekSrc).toBe('**streaming**\ncomplete');
+
+      // Later idle/chrome refreshes keep the same child objects instead of
+      // falling through to renderPeekThoughtMarkdown and replacing the body.
+      expect(syncPeekThoughtBody(body, { phase: 'seal', text: '**streaming**\n\ncomplete' })).toBe(false);
+      expect(caret.remove).toHaveBeenCalledOnce();
+      expect(frames).toHaveLength(2);
+    } finally {
+      if (previous) host.requestAnimationFrame = previous;
+      else delete host.requestAnimationFrame;
+    }
   });
 
   it('thought display drops repeated blank lines without dropping message text', () => {

@@ -89,7 +89,12 @@ async function main(): Promise<void> {
     console.error('[Krypton] Failed to start ACP control bridge:', e);
   }
   try {
-    await startPtyBridge(bus, compositor);
+    await startPtyBridge(bus, compositor, {
+      onCwd: (sessionId, cwd, hostname) => {
+        void invoke('set_ssh_remote_cwd', { sessionId, cwd, hostname })
+          .catch(() => { /* ignore — ssh feature may be disabled */ });
+      },
+    });
   } catch (e) {
     console.error('[Krypton] Failed to start PTY bridge:', e);
   }

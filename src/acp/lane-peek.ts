@@ -37,6 +37,7 @@ import { cleanToolTitle, extractCommandLineRaw, inferToolLabel } from './harness
 import {
   applyThoughtTeletype,
   clearThoughtTeletype,
+  sealThoughtTeletype,
 } from './harness-thought-teletype';
 
 /** spec 118 — peer peek tiers: awaiting 10, inbound 20, counterpart 30 */
@@ -1037,6 +1038,7 @@ export function syncPeekThoughtBody(
     );
     delete body.dataset.peekLen;
     delete body.dataset.peekSrc;
+    delete body.dataset.peekRender;
     return false;
   }
   body.hidden = false;
@@ -1046,12 +1048,32 @@ export function syncPeekThoughtBody(
     installThoughtVeil(body);
     delete body.dataset.peekLen;
     delete body.dataset.peekSrc;
+    delete body.dataset.peekRender;
     return false;
   }
   if (kind === 'teletype' && thought) {
     const pending = applyThoughtTeletype(body, collapseThoughtBlankLines(thought.text));
     schedulePeekThoughtPin(body);
     return pending;
+  }
+  const sealedText = collapseThoughtBlankLines(thought?.text ?? '');
+  if (
+    body.dataset.peekRender === 'sealed-plain'
+    && body.dataset.peekSrc === sealedText
+  ) {
+    schedulePeekThoughtPin(body);
+    return false;
+  }
+  if (sealThoughtTeletype(body, sealedText)) {
+    body.classList.remove('acp-harness__msg-body--markdown');
+    body.dataset.peekRender = 'sealed-plain';
+    body.dataset.peekSrc = sealedText;
+    schedulePeekThoughtPin(body);
+    return false;
+  }
+  if (body.dataset.peekRender === 'sealed-plain') {
+    delete body.dataset.peekRender;
+    delete body.dataset.peekSrc;
   }
   clearThoughtTeletype(body);
   renderPeekThoughtMarkdown(body, thought?.text ?? '', projectDir);

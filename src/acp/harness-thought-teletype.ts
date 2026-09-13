@@ -77,6 +77,20 @@ export function clearThoughtTeletype(body: HTMLElement): void {
   body.classList.remove('acp-harness__msg-body--thought-teletype');
 }
 
+/** Settle a live rail thought without replacing its painted child nodes. */
+export function sealThoughtTeletype(body: HTMLElement, source: string): boolean {
+  if (!body.classList.contains('acp-harness__msg-body--thought-teletype')) return false;
+  const ghost = body.querySelector<HTMLElement>(':scope > .acp-harness__thought-ghost');
+  const fresh = body.querySelector<HTMLElement>(':scope > .acp-harness__thought-fresh');
+  if (!ghost || !fresh) return false;
+  states.delete(body);
+  ghost.textContent = source;
+  fresh.textContent = '';
+  body.querySelector<HTMLElement>(':scope > .acp-harness__thought-caret')?.remove();
+  body.classList.remove('acp-harness__msg-body--thought-teletype');
+  return true;
+}
+
 export function applyThoughtTeletype(
   body: HTMLElement,
   source: string,
@@ -122,6 +136,7 @@ export function paintThoughtTeletype(
   );
   delete body.dataset.peekSrc;
   delete body.dataset.peekLen;
+  delete body.dataset.peekRender;
   delete body.dataset.pretext;
   delete body.dataset.rawText;
   delete body.dataset.rowId;

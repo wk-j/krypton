@@ -26,6 +26,8 @@ export interface PtyBridgeDeps {
   ) => Promise<() => void>;
   /** Monotonic clock in ms. Defaults to `performance.now`. */
   now?: () => number;
+  /** Forward a complete OSC 7 report to backend-owned SSH CWD tracking. */
+  onCwd?: (sessionId: SessionId, cwd: string, hostname: string) => void;
 }
 
 const THROUGHPUT_INTERVAL_MS = 200; // 5 Hz
@@ -59,25 +61,16 @@ export async function startPtyBridge(
 
   const offOutput = await listen<[SessionId, number[]]>('pty-output', (event) => {
     const [sid, data] = event.payload;
-    const addr = resolver.addressFromSession(sid);
-    if (!addr) {
-      osc7Carry.delete(sid);
-      return;
-    }
 
-    // OSC 7 cwd reports fire on every prompt — surface the latest so the footer
-    // reflects a `cd` immediately (event-driven, no polling). Prepend any
-    // carried partial so a sequence split across chunks is still seen.
+    // Parse OSC 7 before resolving a pane address: Quick Terminal sessions are
+    // not in the compositor's pane map but their SSH CWD still belongs in the
+    // backend cache. Prepend any carried partial so a split sequence is seen.
     const prev = osc7Carry.get(sid);
     const buf = prev ? prev.concat(data) : data;
     const cwds = parseOsc7Sequences(buf);
-    if (cwds.length > 0) {
-      bus.publishSignal({
-        kind: 'view:cwd',
-        source: addr,
-        value: { cwd: cwds[cwds.length - 1].path },
-      });
-    }
+    const latest = cwds.length > 0 ? cwds[cwds.length - 1] : null;
+    if (latest) deps.onCwd?.(sid, latest.path, latest.hostname);
+
     // Carry only a bounded unterminated tail; the carry point is never inside a
     // completed sequence, so this can't re-emit an already-published cwd.
     const tailFrom = trailingEscStart(buf);
@@ -85,6 +78,19 @@ export async function startPtyBridge(
       osc7Carry.set(sid, buf.slice(tailFrom));
     } else {
       osc7Carry.delete(sid);
+    }
+
+    const addr = resolver.addressFromSession(sid);
+    if (!addr) return;
+
+    // OSC 7 cwd reports fire on every prompt — surface the latest so the footer
+    // reflects a `cd` immediately (event-driven, no polling).
+    if (cwds.length > 0) {
+      bus.publishSignal({
+        kind: 'view:cwd',
+        source: addr,
+        value: { cwd: cwds[cwds.length - 1].path },
+      });
     }
 
     const state = throughput.get(sid) ?? {

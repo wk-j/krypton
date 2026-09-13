@@ -68,6 +68,7 @@ The execution target belongs to the whole Harness, not an individual lane. Every
 | `src/acp/harness-directory.ts` | Carry a host-qualified workspace key so equal remote paths on different hosts do not collide. |
 | `src/acp/acp-harness-view.ts` | Own one immutable workspace target, route project operations, show remote state, and recover lanes after reconnect. |
 | `src/acp/remote-harness-picker.ts` | New keyboard-first picker for the focused SSH terminal and configured profiles, including missing-CWD and connection errors. |
+| `src/pty-bridge.ts`, `src/main.ts` | Reassemble split OSC 7 reports and forward their path and hostname to Rust's filtered remote-CWD cache. |
 | `src/ssh-session.ts` | Expose detected SSH metadata and passive remote-CWD state without injecting a probe command. |
 | `src/compositor.ts` | Open a remote Harness and preserve its workspace identity when opening related views. |
 | `src/input-router.ts` / `src/which-key.ts` | Add `Leader Shift+S` for the remote Harness profile picker. |
@@ -138,7 +139,7 @@ pub struct RemoteHarnessProfile {
 
 For a profile or focused session without a reusable master, Krypton sets `BatchMode=yes`, `ControlMaster=auto`, a Krypton-owned `ControlPath`, `ControlPersist=60`, `ServerAliveInterval=15`, `ServerAliveCountMax=2`, and `ExitOnForwardFailure=yes`. Password/passphrase and host-key prompts are not collected; failure tells the user to establish `ssh <host>` in a terminal.
 
-For `focused_ssh`, Rust calls the existing `detect_ssh_session`, accepts only its structured destination, port, identity-file, and jump-host fields, and resolves effective settings with `ssh -G`. It uses the passively cached OSC 7 CWD; if none exists, the picker requires an absolute project path. This flow never calls `probeRemoteCwd` or writes into the active PTY. If the detected or resolved `ControlPath` passes `ssh -O check`, Krypton borrows it; otherwise it opens a new Krypton-owned master and may require authentication.
+For `focused_ssh`, Rust calls the existing `detect_ssh_session`, accepts only its structured destination, port, identity-file, and jump-host fields, and resolves effective settings with `ssh -G`. The PTY bridge reassembles OSC 7 sequences split across output chunks and forwards the latest complete report to Rust, whose hostname filter rejects local-shell CWDs before caching the active remote path. The picker uses that cached path by default; if none exists, it requires an absolute project path. This flow never calls `probeRemoteCwd` or writes into the active PTY. If the detected or resolved `ControlPath` passes `ssh -O check`, Krypton borrows it; otherwise it opens a new Krypton-owned master and may require authentication.
 
 ```rust
 enum ControlMasterLease {
@@ -236,8 +237,9 @@ Local `kryptonctl`, Telegram, browser extension, queues, orchestration, permissi
 1. User focuses an SSH terminal, presses Leader Shift+S, or selects Open Remote
    ACP Harness…
 2. The picker shows Current SSH first when detection succeeds, followed by
-   configured profiles. If passive remote CWD is missing, Current SSH requires
-   the user to enter an absolute project path.
+   configured profiles. Current SSH preselects the active remote CWD from the
+   Rust OSC 7 cache. If it is missing, the user must enter an absolute project
+   path.
 3. Local Rust resolves the selected launch source. It borrows a verified active
    ControlMaster when available; otherwise it starts a dedicated one for the
    same destination.
@@ -285,7 +287,7 @@ If SSH drops, the Harness becomes `disconnected`, in-flight requests become outc
   helper still disagrees, abort before lanes.
 - **Host key/password needed:** `BatchMode` fails with bounded stderr and tells the user to connect once in a terminal.
 - **Focused terminal is not SSH:** omit Current SSH and leave configured profiles available.
-- **Focused SSH has no passive CWD:** request an absolute project path; never inject `pwd` into the PTY or silently use remote `$HOME`.
+- **Focused SSH has no cached remote CWD:** request an absolute project path; never inject `pwd` into the PTY or silently use remote `$HOME`.
 - **Active SSH has no reusable master:** connect separately to the detected destination and state that authentication may be required.
 - **Borrowed master disappears:** mark the Harness disconnected and use the resolved descriptor to reconnect through an owned master; never replay an in-flight prompt.
 - **Invalid remote path:** hello returns `invalid_workspace`; never fall back to `$HOME`.
@@ -305,9 +307,9 @@ If SSH drops, the Harness becomes `disconnected`, in-flight requests become outc
   runtime-overlay scoping, the read-only command allowlist, profile validation,
   safe SSH argument reuse, focused-session identity validation, platform
   normalization, versioned paths, and SHA-256 verification.
-- TypeScript tests cover picker ordering, missing passive CWD, and host-qualified
-  workspace identity; the full existing frontend suite guards the shared
-  ACP/Harness UI.
+- TypeScript tests cover picker ordering, split OSC 7 forwarding, missing
+  passive CWD, and host-qualified workspace identity; the full existing
+  frontend suite guards the shared ACP/Harness UI.
 - Direct stdio smoke tests cover hello/shutdown, workspace write/read/remove,
   agent stdout forwarding, and agent exit.
 - `npm test`, `npm run check`, `npm run build`, `cargo fmt -- --check`, targeted
