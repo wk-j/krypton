@@ -260,6 +260,19 @@ For v1, auth is the user's responsibility outside Krypton (`claude /login`, `gem
 
 None.
 
+## Remote Harness transport
+
+Standalone ACP windows remain local. Spec 247 adds SSH execution only to the
+multi-lane ACP Harness: `AcpClient.spawn` may name a live remote runtime, while
+the same frontend event model and permission flow remain local. The companion
+inherits the remote login environment; Krypton forwards no local environment or
+credentials wholesale.
+
+The remote computer must already contain and authenticate the selected agent
+CLI/adapter. Krypton installs its own version-matched `krypton-remote` companion
+automatically in the remote user's cache; no remote Rust toolchain, `sudo`, or
+manual `PATH` change is required. Missing adapters fail only their lane.
+
 ## Out of Scope
 
 - Touching `src/agent/` (pi-agent), `docs/42-pi-agent-integration.md`, or any pi-agent behavior.

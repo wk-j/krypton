@@ -10,6 +10,7 @@ export interface SshConnectionInfo {
   host: string;
   port: number;
   control_socket: string | null;
+  active_control_socket: string | null;
   extra_args: string[];
 }
 

@@ -232,6 +232,7 @@ export function rerenderAssistantMarkdownWithMarked(
   body: HTMLElement,
   text: string,
   projectDir: string | null,
+  resolveLocalImages = true,
 ): void {
   const prov = body.querySelector<HTMLElement>(
     ':scope > .acp-harness__lane-mail-provenance',
@@ -245,7 +246,7 @@ export function rerenderAssistantMarkdownWithMarked(
   }
   body.innerHTML = html;
   if (prov) body.insertBefore(prov, body.firstChild);
-  resolveLocalImageSrcs(body, projectDir);
+  if (resolveLocalImages) resolveLocalImageSrcs(body, projectDir);
 }
 
 /** Spec 216: peek thought uses the same marked GFM as sealed assistant rows. */

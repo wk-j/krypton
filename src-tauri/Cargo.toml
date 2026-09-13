@@ -1,3 +1,8 @@
+[workspace]
+members = ["remote-protocol", "remote-runtime"]
+default-members = ["."]
+resolver = "2"
+
 [package]
 name = "app"
 default-run = "app"
@@ -38,15 +43,16 @@ comrak = { version = "0.49", default-features = false }
 base64 = "0.22"
 tauri-plugin-global-shortcut = "2"
 axum = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "process", "time", "io-util", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "process", "time", "io-util", "macros", "fs"] }
 sha2 = "0.10"
 getrandom = "0.2"
 tower-http = { version = "0.6", features = ["cors"] }
 fff-search = "0.6"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 keyring = { version = "3.6.3", default-features = false, features = ["apple-native", "windows-native", "linux-native-sync-persistent", "crypto-rust"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+krypton-remote-protocol = { path = "remote-protocol" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"

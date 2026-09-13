@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "stage:remote-runtime": "scripts/stage-remote-runtime.sh release",
+    "stage:remote-runtime:dev": "scripts/stage-remote-runtime.sh debug",
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "test": "vitest run",

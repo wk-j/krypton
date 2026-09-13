@@ -660,10 +660,32 @@ See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-
 |---------|-----|------|---------|-------------|
 | `[acp_harness]` | `idle_flash_sound` | bool | `true` | Reserved for the soft cue when an active lane returns idle while its draft is non-empty |
 | `[acp_harness]` | `memory_footer` | bool | `true` | Append the MEMORY footer to each harness prompt so agents can publish short shared-memory bullets |
+| `[[acp_harness.remote_profiles]]` | `name` | string | — | Unique picker label for an SSH Harness target |
+| `[[acp_harness.remote_profiles]]` | `host` | string | — | OpenSSH host alias; user, port, identity and ProxyJump remain in `~/.ssh/config` |
+| `[[acp_harness.remote_profiles]]` | `project_dir` | absolute path | — | Remote project root sent through the runtime protocol, never a shell command |
+| `[[acp_harness.remote_profiles]]` | `connect_timeout_seconds` | integer | `15` | Bounded hello-handshake timeout |
 | `[acp_harness.lane_models.<backend>]` | `active` | string | `""` | Model id/alias applied to the lane (CLI flag at spawn, or `session/set_model`/`set_config_option` after `session/new`). Empty = use the adapter default, except MiMo uses its anonymous free `mimo/mimo-auto` model |
 | `[acp_harness.lane_models.<backend>]` | `models` | array | `[]` | Informational allow-list (not enforced). The in-harness picker (spec 127) sources its options from the agent-advertised `availableModels`, not this array |
 
 The ACP Harness backend picker is code-defined in v1: installed built-in backends are listed, and the harness starts with no lanes until the user spawns one via `Cmd+P → +`. Shared memory is tab-local and is dropped when the harness tab closes. See `docs/72-acp-harness-view.md`.
+
+Remote profiles are optional. Krypton automatically probes the remote user cache,
+detects macOS/Linux plus arm64/x86_64, and uploads the matching `krypton-remote`
+companion when required. The remote computer does not need Krypton source, Rust,
+`sudo`, or a manual `PATH` installation. A same-platform helper is bundled with
+the app; cross-platform helpers are downloaded from the matching Krypton release,
+verified against its SHA-256 file, and cached locally before upload. Krypton uses
+`BatchMode=yes`, so password, passphrase, and first-time host-key prompts must be
+completed with ordinary `ssh <host>` before opening the Harness. Agent CLIs and
+their authentication still belong on the remote computer.
+
+```toml
+[[acp_harness.remote_profiles]]
+name = "buildbox"
+host = "buildbox"
+project_dir = "/srv/repos/krypton"
+connect_timeout_seconds = 15
+```
 
 **Lane model selection.** `<backend>` keys match the ACP Harness backend ids: `opencode`, `droid`, `cursor`, `claude`, `codex`, `pi-acp`, `junie`, `omp`, `grok`, `copilot`, `mimo`, and `cline`. Krypton applies `active` only for backends that support model selection in v1:
 

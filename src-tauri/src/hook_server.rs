@@ -2305,7 +2305,14 @@ async fn handle_harness_memory_mcp(
                 },
             }))
         }
-        "tools/list" => Ok(json!({ "tools": bus_tool_descriptors() })),
+        "tools/list" => Ok(json!({
+            "tools": bus_tool_descriptors_for_project(
+                state
+                    .hook_server
+                    .project_dir_for_harness(&harness_id)
+                    .is_some(),
+            )
+        })),
         "tools/call" => {
             let params = request.get("params").cloned().unwrap_or(Value::Null);
             handle_bus_tool_call(&state, &harness_id, &lane_label, params).await
@@ -3542,6 +3549,20 @@ async fn handle_bus_tool_call(
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| json!({}));
+    if project_backed_bus_tool(name)
+        && state
+            .hook_server
+            .project_dir_for_harness(harness_id)
+            .is_none()
+    {
+        return Ok(json!({
+            "content": [{
+                "type": "text",
+                "text": format!("{name} is unavailable without a local project workspace")
+            }],
+            "isError": true,
+        }));
+    }
     let outcome = match name {
         "handoff_set" => handoff_set(&state.hook_server, harness_id, lane_label, arguments),
         "handoff_get" => handoff_get(&state.hook_server, harness_id, arguments),
@@ -5271,6 +5292,39 @@ fn bus_tool_descriptors() -> Value {
         }
     }
     tools
+}
+
+fn bus_tool_descriptors_for_project(has_local_project: bool) -> Value {
+    let mut tools = bus_tool_descriptors();
+    if !has_local_project {
+        if let Value::Array(ref mut descriptors) = tools {
+            descriptors.retain(|descriptor| {
+                descriptor
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(|name| !project_backed_bus_tool(name))
+                    .unwrap_or(true)
+            });
+        }
+    }
+    tools
+}
+
+fn project_backed_bus_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "artifact_new"
+            | "artifact_register"
+            | "artifact_cancel"
+            | "review_new"
+            | "review_register"
+            | "review_cancel"
+            | "issue_progress"
+            | "ticket_progress"
+            | "ticket_note"
+            | "ticket_add_resource"
+            | "ticket_link"
+    )
 }
 
 /// spec 128: descriptors for `attention_flag` / `attention_resolve`. Spec 134
@@ -8686,6 +8740,36 @@ mod tests {
             names.contains(&"attention_resolve"),
             "attention_resolve should be advertised without per-lane opt-in"
         );
+    }
+
+    #[test]
+    fn in_memory_harness_omits_project_backed_tools() {
+        let tools = bus_tool_descriptors_for_project(false);
+        let names: Vec<&str> = tools
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .filter_map(|tool| tool.get("name").and_then(|name| name.as_str()))
+            .collect();
+        for safe in [
+            "handoff_set",
+            "peer_send",
+            "attention_flag",
+            "mark_review_priority",
+        ] {
+            assert!(names.contains(&safe), "{safe} should remain available");
+        }
+        for project_backed in [
+            "artifact_new",
+            "review_new",
+            "issue_progress",
+            "ticket_note",
+        ] {
+            assert!(
+                !names.contains(&project_backed),
+                "{project_backed} should require a local project"
+            );
+        }
     }
 
     // ─── Artifacts (spec 133) ───────────────────────────────────────────────

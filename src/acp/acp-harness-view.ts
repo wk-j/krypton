@@ -200,7 +200,9 @@ import type {
   LeaderKeyBinding,
   LeaderKeySpec,
   PaneContentType,
+  WorkspaceRef,
 } from '../types';
+import { workspaceKey } from '../types';
 import { contentRootIsInFocusedWindow } from '../content-focus';
 import type { PaletteAction, PaletteContext } from '../palette-types';
 import type { ViewBus } from '../view-bus';
@@ -769,6 +771,13 @@ const REFERENCE_GIT_REFRESH_MS = 150;
 // metrics-poll head rebuild, the 1s composer tick), reading as a stutter / snap.
 const SPINNER_INTERVAL_MS = 80;
 
+const REMOTE_UNSUPPORTED_HASH_COMMANDS = new Set([
+  '#gallery', '#docs', '#analyses', '#reviews', '#push', '#usage', '#daily',
+  '#xenon', '#termctrl', '#hurl', '#draw', '#ticket', '#review', '#directive',
+  '#analyze-github-issue', '#create-github-issue', '#dispatch-github-issue',
+  '#fix-github-issue', '#handle-github-issue', '#post-github-comment', '#tag-github-issue',
+]);
+
 export const ACP_HARNESS_LEADER_KEYS: readonly LeaderKeySpec[] = [
   { key: '+', label: 'Add Lane', group: 'Harness' },
   { key: '_', label: 'Close Active Lane', group: 'Harness', effect: 'danger' },
@@ -1028,6 +1037,12 @@ export class AcpHarnessView implements ContentView {
   onOutputPump?: (chars: number) => void;
 
   private projectDir: string | null;
+  private readonly workspace: WorkspaceRef;
+  private readonly remoteRuntimeId: string | null;
+  private remoteMemoryPort: number | null = null;
+  private remoteConnectionState: 'connecting' | 'connected' | 'disconnected' | 'closing' = 'connected';
+  private remoteConnectionMessage: string | null = null;
+  private remoteConnectionUnlisten: UnlistenFn | null = null;
   /** spec 128: global ViewBus, used to publish the open attention count so the
    * workspace footer can show it regardless of which view is focused. */
   private viewBus: ViewBus | null = null;
@@ -1298,6 +1313,7 @@ export class AcpHarnessView implements ContentView {
   private thoughtSlotEl!: HTMLElement;
   private queueSlotEl!: HTMLElement;
   private composerEl!: HTMLElement;
+  private remoteStatusEl: HTMLElement | null = null;
   private pretextRaf = false;
   private scrollRaf = false;
   private renderRaf = false;
@@ -1345,8 +1361,11 @@ export class AcpHarnessView implements ContentView {
       | ((options: { dir: string; slug: string; laneName?: string; cwd?: string }) => void)
       | null = null,
     openMarkdownView: ((path: string) => Promise<void>) | null = null,
+    workspace: WorkspaceRef = { kind: 'local', path: projectDir },
   ) {
     this.projectDir = projectDir;
+    this.workspace = Object.freeze({ ...workspace }) as WorkspaceRef;
+    this.remoteRuntimeId = workspace.kind === 'ssh' ? workspace.runtimeId : null;
     this.viewBus = bus;
     this.openTelegramSettingsCb = openTelegramSettings;
     this.openFileReferenceCb = openFileReference;
@@ -1452,6 +1471,7 @@ export class AcpHarnessView implements ContentView {
     });
     this.buildDOM();
     this.render();
+    if (this.remoteRuntimeId) void this.subscribeRemoteConnection();
     void this.refreshGitBranch();
     void this.start();
     this.startMetricsTick();
@@ -1486,7 +1506,7 @@ export class AcpHarnessView implements ContentView {
     // spec 155: a transition into `idle` is a lane quiet point (ADR-0008) —
     // announce it globally so a Diff Window over the same repo refreshes its
     // working diff. Payload is just the projectDir; no lane identity needed.
-    if (next === 'idle' && this.projectDir) {
+    if (next === 'idle' && this.projectDir && !this.remoteRuntimeId) {
       this.viewBus?.publishSignal({
         kind: 'harness:lane-idle',
         source: SYSTEM_SOURCE,
@@ -1588,6 +1608,7 @@ export class AcpHarnessView implements ContentView {
     const entry: HarnessEntry = {
       harnessId: this.harnessMemoryId,
       cwd: this.projectDir,
+      workspaceKey: workspaceKey(this.workspace),
       alive: true,
       isFocused: () => this.element.contains(document.activeElement),
       listLanes: () => this.coordinator.listLanes(),
@@ -1641,6 +1662,12 @@ export class AcpHarnessView implements ContentView {
     params: Record<string, unknown>,
     caller?: ControlCaller,
   ): Promise<unknown> {
+    if (
+      this.remoteRuntimeId
+      && (operation.startsWith('xenon.') || operation.startsWith('github.'))
+    ) {
+      throw controlError('unsupported_operation', `${operation} is unavailable for a remote Harness`);
+    }
     if (operation === 'lane.list') return this.controlLaneList();
     if (operation === 'lane.spawn') {
       const backendId = requiredString(params, 'backendId');
@@ -2835,6 +2862,7 @@ export class AcpHarnessView implements ContentView {
    * failure, which `#xenon status` reports through the queue depth.
    */
   private async autoPushAttention(): Promise<void> {
+    if (this.remoteRuntimeId) return;
     const cwd = this.projectDir || (await invoke<string>('get_app_cwd').catch(() => null));
     if (!cwd) return;
     try {
@@ -2870,6 +2898,7 @@ export class AcpHarnessView implements ContentView {
    * Runs after the bus reply, so a slow git probe never trips the bus timeout.
    */
   private async enrichJudgementDiffstat(itemId: string): Promise<void> {
+    if (this.remoteRuntimeId) return;
     const item = this.triageStore.get(itemId);
     if (!item) return; // already resolved/closed
     const cwd = this.projectDir ?? '';
@@ -3628,6 +3657,10 @@ export class AcpHarnessView implements ContentView {
     return this.projectDir;
   }
 
+  getWorkspace(): WorkspaceRef {
+    return this.workspace;
+  }
+
   onClose(cb: () => void): void {
     this.closeCb = cb;
   }
@@ -3973,6 +4006,10 @@ export class AcpHarnessView implements ContentView {
       for (const item of Array.from(items)) {
         if (item.type.startsWith('image/')) {
           e.preventDefault();
+          if (this.remoteRuntimeId) {
+            this.flashChip('local image paste is unavailable in a remote Harness');
+            return;
+          }
           const file = item.getAsFile();
           if (file) this.stageImageFile(lane, file);
           return;
@@ -4551,6 +4588,10 @@ export class AcpHarnessView implements ContentView {
       this.memoryUnlisten();
       this.memoryUnlisten = null;
     }
+    if (this.remoteConnectionUnlisten) {
+      this.remoteConnectionUnlisten();
+      this.remoteConnectionUnlisten = null;
+    }
     if (this.interLaneUnlisten) {
       this.interLaneUnlisten();
       this.interLaneUnlisten = null;
@@ -4630,12 +4671,20 @@ export class AcpHarnessView implements ContentView {
     if (this.harnessMemoryId) {
       void invoke('dispose_harness_memory', { harnessId: this.harnessMemoryId });
     }
+    if (this.remoteRuntimeId) {
+      this.remoteConnectionState = 'closing';
+      void invoke('remote_harness_disconnect', { runtimeId: this.remoteRuntimeId });
+    }
     this.ticketPanelEl?.removeEventListener('click', this.ticketPanelClickHandler);
     this.ticketDockEl?.removeEventListener('click', this.ticketDockClickHandler);
     this.ticketDockEl?.removeEventListener('keydown', this.ticketDockKeyHandler);
   }
 
   stageCapturedImage(image: CapturedImage): boolean {
+    if (this.remoteRuntimeId) {
+      this.flashChip('local image capture is unavailable in a remote Harness');
+      return true;
+    }
     const lane = this.activeLane();
     if (!lane) return false;
     if (this.helpOpen || this.memoryDrawerOpen) {
@@ -5988,6 +6037,24 @@ export class AcpHarnessView implements ContentView {
     // register the same ids twice.
     ensureHarnessSymbolDefs();
 
+    if (this.workspace.kind === 'ssh') {
+      this.remoteStatusEl = document.createElement('div');
+      this.remoteStatusEl.className = 'acp-harness__remote-status';
+      this.remoteStatusEl.dataset.state = this.remoteConnectionState;
+      this.remoteStatusEl.tabIndex = 0;
+      this.remoteStatusEl.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key === 'Enter' && this.remoteConnectionState === 'disconnected') {
+          event.preventDefault();
+          void this.reconnectRemoteHarness();
+        }
+      });
+      this.remoteStatusEl.addEventListener('click', () => {
+        if (this.remoteConnectionState === 'disconnected') void this.reconnectRemoteHarness();
+      });
+      this.element.appendChild(this.remoteStatusEl);
+      this.renderRemoteStatus();
+    }
+
     const body = document.createElement('div');
     body.className = 'acp-harness__body';
     this.dashboardEl = document.createElement('div');
@@ -6277,6 +6344,10 @@ export class AcpHarnessView implements ContentView {
     this.element.addEventListener('drop', (e: DragEvent) => {
       e.preventDefault();
       this.element.classList.remove('acp-harness--drag-over');
+      if (this.remoteRuntimeId) {
+        this.flashChip('local image files are unavailable in a remote Harness');
+        return;
+      }
       const lane = this.activeLane();
       if (!lane || lane.pendingPermissions.length > 0 || lane.pendingQuestions.length > 0) return;
       const files = e.dataTransfer?.files;
@@ -6288,6 +6359,87 @@ export class AcpHarnessView implements ContentView {
         }
       }
     });
+  }
+
+  private async subscribeRemoteConnection(): Promise<void> {
+    if (!this.remoteRuntimeId || this.remoteConnectionUnlisten) return;
+    this.remoteConnectionUnlisten = await listen<{ state: string; message?: string | null }>(
+      `remote-harness-event-${this.remoteRuntimeId}`,
+      (event) => {
+        const state = event.payload.state;
+        if (state === 'connected' || state === 'disconnected' || state === 'closing') {
+          this.remoteConnectionState = state;
+          this.remoteConnectionMessage = event.payload.message ?? null;
+          this.renderRemoteStatus();
+          if (state === 'disconnected') {
+            for (const lane of this.lanes) {
+              if (lane.status !== 'stopped') {
+                this.setLaneStatus(lane, 'error');
+                this.appendTranscript(lane, 'system', 'remote connection lost; in-flight outcome is unknown');
+              }
+            }
+            this.render();
+          }
+        }
+      },
+    );
+  }
+
+  private renderRemoteStatus(): void {
+    if (!this.remoteStatusEl || this.workspace.kind !== 'ssh') return;
+    const target = this.workspace.profile
+      ? this.workspace.profile
+      : `${this.workspace.user}@${this.workspace.host}:${this.workspace.port}`;
+    this.remoteStatusEl.dataset.state = this.remoteConnectionState;
+    const retry = this.remoteConnectionState === 'disconnected' ? ' · Enter to reconnect' : '';
+    this.remoteStatusEl.textContent = `SSH ${target} · ${this.workspace.path} · ${this.remoteConnectionState}`
+      + (this.remoteConnectionMessage ? ` · ${this.remoteConnectionMessage}` : '');
+    this.remoteStatusEl.textContent += retry;
+  }
+
+  public async reconnectRemoteHarness(): Promise<void> {
+    if (!this.remoteRuntimeId || this.remoteConnectionState !== 'disconnected') return;
+    this.remoteConnectionState = 'connecting';
+    this.remoteConnectionMessage = null;
+    this.renderRemoteStatus();
+    const sessions = new Map(this.lanes.map((lane) => [lane.id, lane.sessionId]));
+    for (const lane of this.lanes) {
+      lane.spawnEpoch += 1;
+      const client = lane.client;
+      lane.client = null;
+      lane.sessionId = null;
+      this.setLaneStatus(lane, 'starting');
+      if (client) {
+        try {
+          await client.dispose();
+        } catch {
+          // The transport is already gone; local ACP session cleanup is best-effort.
+        }
+      }
+    }
+    try {
+      await invoke('remote_harness_reconnect', { runtimeId: this.remoteRuntimeId });
+      if (this.harnessMemoryPort) {
+        this.remoteMemoryPort = await invoke<number>('remote_harness_forward_memory', {
+          runtimeId: this.remoteRuntimeId,
+          localPort: this.harnessMemoryPort,
+        }).catch(() => null);
+      }
+      this.remoteConnectionState = 'connected';
+      for (const lane of this.lanes) {
+        this.appendTranscript(lane, 'restart', '--- remote connection restored ---');
+        await this.spawnLane(lane, sessions.get(lane.id) ?? null);
+      }
+    } catch (error) {
+      this.remoteConnectionState = 'disconnected';
+      this.remoteConnectionMessage = errorText(error);
+      for (const lane of this.lanes) {
+        this.setLaneStatus(lane, 'error');
+        lane.error = this.remoteConnectionMessage;
+      }
+    }
+    this.renderRemoteStatus();
+    this.render();
   }
 
   private async start(): Promise<void> {
@@ -6318,12 +6470,18 @@ export class AcpHarnessView implements ContentView {
       this.pickerEntries = harnessBackends(await AcpClient.listBackends());
       this.systemRows = [
         ...(this.harnessMemoryWarning ? [`memory warning: ${this.harnessMemoryWarning}`] : []),
+        ...(this.remoteRuntimeId
+          ? ['remote mode: local editors, tickets, docs, artifacts, daily and Xenon are unavailable']
+          : []),
         'no lanes running',
         'press Cmd+P then + to add a lane',
       ];
     } catch (e) {
       this.systemRows = [
         ...(this.harnessMemoryWarning ? [`memory warning: ${this.harnessMemoryWarning}`] : []),
+        ...(this.remoteRuntimeId
+          ? ['remote mode: local editors, tickets, docs, artifacts, daily and Xenon are unavailable']
+          : []),
         `backend list failed: ${errorText(e)}`,
       ];
     }
@@ -6346,15 +6504,31 @@ export class AcpHarnessView implements ContentView {
     // use. Without this, a view constructed with projectDir=null reports cwd:null to
     // cross-harness peers even though it actually resolved get_app_cwd here.
     this.projectDir = projectDir;
-    const session = await invoke<HarnessMemorySession>('create_harness_memory', { projectDir });
+    // A remote absolute path is meaningless on the local machine. Keep the
+    // hook server in-memory and route only its loopback MCP traffic over SSH;
+    // project-backed persistence must never touch the same-looking local path.
+    const session = await invoke<HarnessMemorySession>('create_harness_memory', {
+      projectDir: this.remoteRuntimeId ? null : projectDir,
+    });
     this.harnessMemoryId = session.harnessId;
     this.harnessMemoryPort = session.hookPort;
     this.harnessMemoryWarning = null;
+    if (this.remoteRuntimeId) {
+      try {
+        this.remoteMemoryPort = await invoke<number>('remote_harness_forward_memory', {
+          runtimeId: this.remoteRuntimeId,
+          localPort: session.hookPort,
+        });
+      } catch (e) {
+        this.remoteMemoryPort = null;
+        this.harnessMemoryWarning = `reverse SSH forward failed: ${errorText(e)}`;
+      }
+    }
     // spec 214: tell the usage sender which project it is recording for, and
     // let it drain anything a previous session recorded but never delivered.
     // Without this, a backlog would sit until the first turn of this session —
     // and a session with no turns would never upload the last one's.
-    if (projectDir) {
+    if (projectDir && !this.remoteRuntimeId) {
       void invoke('usage_flush', { cwd: projectDir }).catch(() => {
         /* recording is unaffected; the sender retries on its own */
       });
@@ -6368,12 +6542,12 @@ export class AcpHarnessView implements ContentView {
       console.warn('[acp-harness] store command manifest failed:', e);
     }
     try {
-      await gcJunieMcpOverlays(session.harnessId);
+      await gcJunieMcpOverlays(session.harnessId, this.remoteRuntimeId, projectDir);
     } catch (e) {
       console.warn('[acp-harness] gc junie mcp overlays failed:', e);
     }
     try {
-      await gcClineMcpOverlays(session.harnessId);
+      await gcClineMcpOverlays(session.harnessId, this.remoteRuntimeId, projectDir);
     } catch (e) {
       console.warn('[acp-harness] gc cline mcp overlays failed:', e);
     }
@@ -6445,11 +6619,10 @@ export class AcpHarnessView implements ContentView {
     issueNumber: number,
   ): Promise<{ title?: string; body?: string } | null> {
     try {
-      const raw = await invoke<string>('run_command', {
-        program: 'gh',
-        args: ['issue', 'view', String(issueNumber), '-R', repo, '--json', 'title,body'],
-        cwd: this.projectDir ?? undefined,
-      });
+      const raw = await this.runWorkspaceCommand(
+        'gh',
+        ['issue', 'view', String(issueNumber), '-R', repo, '--json', 'title,body'],
+      );
       return JSON.parse(raw) as { title?: string; body?: string };
     } catch (e) {
       console.warn('[acp-harness] gh issue view failed (falling back to URL-only):', e);
@@ -6588,11 +6761,10 @@ export class AcpHarnessView implements ContentView {
   private async enrichActiveTicket(ticketId: string, github: GithubTicketReference): Promise<void> {
     if (!this.harnessMemoryId) return;
     try {
-      const raw = await invoke<string>('run_command', {
-        program: 'gh',
-        args: ['issue', 'view', String(github.number), '-R', github.repo, '--json', 'title,state,labels,updatedAt'],
-        cwd: this.projectDir ?? undefined,
-      });
+      const raw = await this.runWorkspaceCommand(
+        'gh',
+        ['issue', 'view', String(github.number), '-R', github.repo, '--json', 'title,state,labels,updatedAt'],
+      );
       const meta = JSON.parse(raw) as {
         title?: string;
         state?: string;
@@ -6886,7 +7058,7 @@ export class AcpHarnessView implements ContentView {
     summary: string,
     meta: Record<string, unknown> = {},
   ): void {
-    if (!this.projectDir) return;
+    if (!this.projectDir || this.remoteRuntimeId) return;
     const lane = this.lanes.find((l) => l.displayName === laneLabel);
     void journalAppend(
       this.projectDir,
@@ -7383,11 +7555,10 @@ export class AcpHarnessView implements ContentView {
       this.renderTicketOverlayEl();
 
       try {
-        const raw = await invoke<string>('run_command', {
-          program: 'gh',
-          args: ['issue', 'list', '--json', 'number,title,labels,state,updatedAt,url', '--limit', '50'],
-          cwd: this.projectDir ?? undefined,
-        });
+        const raw = await this.runWorkspaceCommand(
+          'gh',
+          ['issue', 'list', '--json', 'number,title,labels,state,updatedAt,url', '--limit', '50'],
+        );
         const parsed = JSON.parse(raw) as {
           number: number;
           title?: string;
@@ -7773,18 +7944,10 @@ export class AcpHarnessView implements ContentView {
 
     let branch: string | null = null;
     try {
-      const rawBranch = await invoke<string>('run_command', {
-        program: 'git',
-        args: ['branch', '--show-current'],
-        cwd,
-      });
+      const rawBranch = await this.runWorkspaceCommand('git', ['branch', '--show-current'], cwd);
       branch = rawBranch.trim() || null;
       if (!branch) {
-        const rawHead = await invoke<string>('run_command', {
-          program: 'git',
-          args: ['rev-parse', '--short', 'HEAD'],
-          cwd,
-        });
+        const rawHead = await this.runWorkspaceCommand('git', ['rev-parse', '--short', 'HEAD'], cwd);
         const head = rawHead.trim();
         if (head) branch = `HEAD ${head}`;
       }
@@ -7796,6 +7959,34 @@ export class AcpHarnessView implements ContentView {
     this.gitBranch = branch;
     this.gitBranchLoading = false;
     this.render();
+  }
+
+  private async runWorkspaceCommand(
+    program: string,
+    args: string[],
+    cwd: string | null = this.projectDir,
+  ): Promise<string> {
+    if (!this.remoteRuntimeId) {
+      return invoke<string>('run_command', {
+        program,
+        args,
+        cwd: cwd ?? undefined,
+      });
+    }
+    const result = await invoke<{
+      success: boolean;
+      code: number | null;
+      stdout: string;
+      stderr: string;
+    }>('remote_harness_request', {
+      runtimeId: this.remoteRuntimeId,
+      method: 'run',
+      params: { program, args, cwd },
+    });
+    if (!result.success) {
+      throw new Error(result.stderr.trim() || `${program} exited ${result.code ?? 'without status'}`);
+    }
+    return result.stdout;
   }
 
   private referencedFileResources(): Array<{ lane: HarnessLane; resource: MessageResource }> {
@@ -7812,7 +8003,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private scheduleReferenceGitRefresh(): void {
-    if (this.referenceGitDisposed || !this.projectDir) return;
+    if (this.referenceGitDisposed || !this.projectDir || this.remoteRuntimeId) return;
     this.referenceGitRefreshGeneration += 1;
     if (this.referenceGitRefreshTimer !== null) {
       window.clearTimeout(this.referenceGitRefreshTimer);
@@ -7827,6 +8018,10 @@ export class AcpHarnessView implements ContentView {
     if (this.referenceGitRefreshTimer !== null) {
       window.clearTimeout(this.referenceGitRefreshTimer);
       this.referenceGitRefreshTimer = null;
+    }
+    if (this.remoteRuntimeId) {
+      if (manual) this.flashChip('reference Git status is unavailable in a remote Harness');
+      return;
     }
     const cwd = this.projectDir;
     const references = this.referencedFileResources();
@@ -8004,6 +8199,8 @@ export class AcpHarnessView implements ContentView {
             this.harnessMemoryId,
             lane.displayName,
             overlayServers,
+            this.remoteRuntimeId,
+            this.projectDir,
           );
           lane.junieMcpOverlayDir = junieMcpLocation;
         }
@@ -8018,6 +8215,8 @@ export class AcpHarnessView implements ContentView {
             this.harnessMemoryId,
             lane.displayName,
             overlayServers,
+            this.remoteRuntimeId,
+            this.projectDir,
           );
           lane.clineMcpOverlayDir = clineMcpSettingsPath;
         }
@@ -8031,6 +8230,7 @@ export class AcpHarnessView implements ContentView {
             lane.cursorMcpNames = await prepareCursorMcp(
               this.projectDir,
               this.memoryServerForLane(lane),
+              this.remoteRuntimeId,
             );
           } catch (e) {
             console.warn('[acp-harness] prepare cursor mcp failed:', e);
@@ -8044,6 +8244,7 @@ export class AcpHarnessView implements ContentView {
         seedMcp,
         junieMcpLocation,
         clineMcpSettingsPath,
+        this.remoteRuntimeId,
       );
       if (lane.spawnEpoch !== spawnEpoch) {
         await client.dispose();
@@ -8143,7 +8344,7 @@ export class AcpHarnessView implements ContentView {
 
   private async junieOverlayServersForLane(lane: HarnessLane): Promise<AcpMcpServerDescriptor[]> {
     const memoryServers = this.memoryServerForLane(lane);
-    const projectServers = await loadProjectMcpServers(this.projectDir);
+    const projectServers = await loadProjectMcpServers(this.projectDir, this.remoteRuntimeId);
     if (projectServers.length === 0) return memoryServers;
     const gated = filterByCapability(projectServers, JUNIE_MCP_CAPABILITIES);
     return dedupeByName(gated, memoryServers);
@@ -8154,7 +8355,7 @@ export class AcpHarnessView implements ContentView {
     // capability gating is needed — forward the per-lane memory server plus the
     // project `.mcp.json` bridge (spec 83) as-is.
     const memoryServers = this.memoryServerForLane(lane);
-    const projectServers = await loadProjectMcpServers(this.projectDir);
+    const projectServers = await loadProjectMcpServers(this.projectDir, this.remoteRuntimeId);
     if (projectServers.length === 0) return memoryServers;
     return dedupeByName(projectServers, memoryServers);
   }
@@ -8162,13 +8363,14 @@ export class AcpHarnessView implements ContentView {
   private memoryServerForLane(lane: HarnessLane): AcpMcpServerDescriptor[] {
     // Pi has no MCP host — emit nothing rather than ship an unreachable URL.
     if (lane.backendId === 'pi-acp') return [];
-    if (!this.harnessMemoryId || !this.harnessMemoryPort) return [];
+    const memoryPort = this.remoteRuntimeId ? this.remoteMemoryPort : this.harnessMemoryPort;
+    if (!this.harnessMemoryId || !memoryPort) return [];
     const harness = encodeURIComponent(this.harnessMemoryId);
     const laneLabel = encodeURIComponent(lane.displayName);
     return [{
       name: 'krypton-harness-memory',
       type: 'http',
-      url: `http://127.0.0.1:${this.harnessMemoryPort}/mcp/harness/${harness}/lane/${laneLabel}`,
+      url: `http://127.0.0.1:${memoryPort}/mcp/harness/${harness}/lane/${laneLabel}`,
       headers: [],
     }];
   }
@@ -8199,7 +8401,7 @@ export class AcpHarnessView implements ContentView {
         ? []
         : memoryServers;
     }
-    const projectServers = await loadProjectMcpServers(this.projectDir);
+    const projectServers = await loadProjectMcpServers(this.projectDir, this.remoteRuntimeId);
     if (projectServers.length === 0) return memoryServers;
     const mcpCaps = (caps as { mcpCapabilities?: AcpMcpCapabilities } | null)?.mcpCapabilities;
     const gated = filterByCapability(projectServers, mcpCaps);
@@ -8889,6 +9091,7 @@ export class AcpHarnessView implements ContentView {
     // Nothing ran — a spawn error or a stray stop, not a turn.
     if (lane.activeTurnStartedAt === null && !lane.lastTurnUsage) return;
 
+    if (this.remoteRuntimeId) return;
     const cwd = this.projectDir;
     if (!cwd) return;
 
@@ -10217,7 +10420,7 @@ export class AcpHarnessView implements ContentView {
     this.render();
     let client: AcpClient | null = null;
     try {
-      client = await AcpClient.spawn(backendId, this.projectDir, []);
+      client = await AcpClient.spawn(backendId, this.projectDir, [], null, null, this.remoteRuntimeId);
       const init = await client.initializeOnly();
       const capabilities = sessionCapabilitiesFromAgent(init.agent_capabilities);
       if (!capabilities.canList) {
@@ -10418,19 +10621,29 @@ export class AcpHarnessView implements ContentView {
       }
     }
     if (lane.backendId === 'junie' && this.harnessMemoryId) {
-      void removeJunieMcpOverlay(this.harnessMemoryId, lane.displayName).catch((e) => {
+      void removeJunieMcpOverlay(
+        this.harnessMemoryId,
+        lane.displayName,
+        this.remoteRuntimeId,
+        this.projectDir,
+      ).catch((e) => {
         console.warn('[acp-harness] remove junie mcp overlay failed:', e);
       });
     }
     lane.junieMcpOverlayDir = null;
     if (lane.backendId === 'cline' && this.harnessMemoryId) {
-      void removeClineMcpOverlay(this.harnessMemoryId, lane.displayName).catch((e) => {
+      void removeClineMcpOverlay(
+        this.harnessMemoryId,
+        lane.displayName,
+        this.remoteRuntimeId,
+        this.projectDir,
+      ).catch((e) => {
         console.warn('[acp-harness] remove cline mcp overlay failed:', e);
       });
     }
     lane.clineMcpOverlayDir = null;
     if (lane.backendId === 'cursor' && lane.cursorMcpNames?.length && this.projectDir) {
-      void cleanupCursorMcp(this.projectDir, lane.cursorMcpNames).catch((e) => {
+      void cleanupCursorMcp(this.projectDir, lane.cursorMcpNames, this.remoteRuntimeId).catch((e) => {
         console.warn('[acp-harness] cleanup cursor mcp failed:', e);
       });
     }
@@ -10475,7 +10688,12 @@ export class AcpHarnessView implements ContentView {
     // views so a cross-view initiator waiting on it isn't left in awaiting_peer.
     // (Whole-harness dispose goes through unregisterHarness instead.)
     if (this.directoryEntry) {
-      notifyForeignLaneClosed(this.directoryEntry.harnessId, lane.displayName, this.projectDir);
+      notifyForeignLaneClosed(
+        this.directoryEntry.harnessId,
+        lane.displayName,
+        this.projectDir,
+        workspaceKey(this.workspace),
+      );
     }
     if (this.lanes.length === 0) {
       this.activeLaneId = '';
@@ -10736,6 +10954,10 @@ export class AcpHarnessView implements ContentView {
 
   private async runHashCommand(lane: HarnessLane, text: string): Promise<void> {
     const parts = text.trim().split(/\s+/);
+    if (this.remoteRuntimeId && REMOTE_UNSUPPORTED_HASH_COMMANDS.has(parts[0])) {
+      this.flashChip(`${parts[0]} is unavailable in a remote Harness`);
+      return;
+    }
     if (parts[0] === '#new') {
       this.setDraft(lane, '', 0);
       await this.newLaneSession(lane, { clearMemory: false });
@@ -11375,6 +11597,10 @@ export class AcpHarnessView implements ContentView {
   }
 
   private async runShellCommand(lane: HarnessLane, command: string): Promise<void> {
+    if (this.remoteRuntimeId) {
+      this.flashChip('!shell is unavailable in a remote Harness');
+      return;
+    }
     if (lane.pendingShellId) {
       this.flashChip('shell already running');
       return;
@@ -11785,7 +12011,14 @@ export class AcpHarnessView implements ContentView {
           }
           previous = current;
         } else {
-          const next = renderTranscriptItem(item, false, streaming, lane, this.projectDir);
+          const next = renderTranscriptItem(
+            item,
+            false,
+            streaming,
+            lane,
+            this.projectDir,
+            !this.remoteRuntimeId,
+          );
           if (isIndicator) next.classList.add('acp-harness__msg--hidden-indicator');
           // Keep the existing row node. replaceWith on every tool status /
           // output tick remounted the TOOL label and jumped the list.
@@ -11797,7 +12030,14 @@ export class AcpHarnessView implements ContentView {
           previous = current;
         }
       } else {
-        const next = renderTranscriptItem(item, isNew, streaming, lane, this.projectDir);
+        const next = renderTranscriptItem(
+          item,
+          isNew,
+          streaming,
+          lane,
+          this.projectDir,
+          !this.remoteRuntimeId,
+        );
         if (isIndicator) next.classList.add('acp-harness__msg--hidden-indicator');
         // First item (previous === null) goes BEFORE the current first row, not
         // at the end (spec 103 rev 2). insertBefore(node, null) appends.
@@ -13800,8 +14040,13 @@ export class AcpHarnessView implements ContentView {
       // not re-rendered (renderSignature is stabilised below), so this is the
       // only chance to fix its <img> srcs.
       if (hasMarkdownTable(item.text)) {
-        rerenderAssistantMarkdownWithMarked(body, item.text, this.projectDir);
-      } else {
+        rerenderAssistantMarkdownWithMarked(
+          body,
+          item.text,
+          this.projectDir,
+          !this.remoteRuntimeId,
+        );
+      } else if (!this.remoteRuntimeId) {
         resolveLocalImageSrcs(body, this.projectDir);
       }
       item.markdownHtml = body.innerHTML;
@@ -13829,7 +14074,7 @@ export class AcpHarnessView implements ContentView {
           smd.parser_write(parser, item.text);
           smd.parser_end(parser);
         }
-        resolveLocalImageSrcs(offscreen, this.projectDir);
+        if (!this.remoteRuntimeId) resolveLocalImageSrcs(offscreen, this.projectDir);
         item.markdownHtml = offscreen.innerHTML;
         item.markdownSource = item.text;
         scanMessageResourceBody(offscreen, item, this.projectDir);
@@ -14714,8 +14959,17 @@ export class AcpHarnessView implements ContentView {
 
   getPaletteActions(_ctx: PaletteContext): readonly PaletteAction[] {
     const lane = this.activeLane();
-    if (!lane) return [];
     const out: PaletteAction[] = [];
+
+    if (this.remoteRuntimeId && this.remoteConnectionState === 'disconnected') {
+      out.push({
+        id: 'acp.harness.reconnect-remote',
+        label: 'Reconnect Remote Harness',
+        category: 'ACP Harness',
+        execute: () => this.reconnectRemoteHarness(),
+      });
+    }
+    if (!lane) return out;
 
     if (
       lane.pendingShellId ||

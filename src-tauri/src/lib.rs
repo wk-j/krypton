@@ -14,6 +14,7 @@ pub mod pencil;
 mod process_metrics;
 mod pty;
 mod quick_search;
+pub mod remote_harness;
 mod review_excerpt;
 mod session;
 pub mod sound;
@@ -99,6 +100,7 @@ pub fn run() {
     let ssh_manager = Arc::new(ssh::SshManager::new(ssh_socket_dir, ssh_persist));
     // Clean up stale sockets from previous runs
     ssh_manager.cleanup_sockets();
+    let remote_harness_registry = Arc::new(remote_harness::RemoteHarnessRegistry::new());
 
     tauri::Builder::default()
         .plugin(
@@ -138,6 +140,7 @@ pub fn run() {
         .manage(theme_engine)
         .manage(sound_engine)
         .manage(ssh_manager)
+        .manage(remote_harness_registry)
         .manage(hook_server.clone())
         .manage(control_server.clone())
         .manage(telegram_service.clone())
@@ -241,6 +244,12 @@ pub fn run() {
             commands::set_ssh_remote_cwd,
             commands::detect_ssh_session,
             commands::clone_ssh_session,
+            remote_harness::remote_harness_choices,
+            remote_harness::remote_harness_connect,
+            remote_harness::remote_harness_forward_memory,
+            remote_harness::remote_harness_reconnect,
+            remote_harness::remote_harness_request,
+            remote_harness::remote_harness_disconnect,
             sound::sound_play,
             sound::sound_play_keypress,
             sound::sound_apply_config,
@@ -533,11 +542,16 @@ pub fn run() {
                 // process groups (including MCP servers) don't outlive the app
                 // and get reparented to launchd.
                 let registry = app.state::<Arc<acp::AcpRegistry>>().inner().clone();
+                let remote_registry = app
+                    .state::<Arc<remote_harness::RemoteHarnessRegistry>>()
+                    .inner()
+                    .clone();
                 let control = app.state::<Arc<control::ControlServer>>().inner().clone();
                 app.state::<telegram::TelegramService>().shutdown();
                 control.remove_descriptor();
                 tauri::async_runtime::block_on(async move {
                     acp::dispose_all(&registry).await;
+                    remote_registry.dispose_all().await;
                 });
             }
         });

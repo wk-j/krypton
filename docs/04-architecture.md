@@ -865,3 +865,22 @@ notifies the frontend, which reconciles the real lane id). Every agent write
 re-emits `acp-ticket-progress` so the Ticket Panel refreshes without a
 filesystem watcher. GitHub-facing `issue_progress` remains independent,
 so the browser extension contract is unchanged.
+
+## Remote ACP Harness runtime
+
+Spec 247 adds a local-UI/remote-execution split for ACP Harnesses. The desktop
+backend starts a separate, no-PTY OpenSSH channel whose only fixed remote command
+is the versioned user-cache `krypton-remote serve --stdio`. Before launch it
+probes that exact helper, detects the remote OS/architecture when missing, and
+atomically uploads a bundled or SHA-256-verified release binary. A shared protocol crate defines bounded
+newline-delimited JSON frames. The companion owns remote ACP child process groups
+and workspace-confined file/process operations; `acp.rs` retains JSON-RPC request
+correlation, permissions, lane state, and Tauri events locally.
+
+One immutable `WorkspaceRef` belongs to the whole Harness. Local and SSH lanes
+cannot mix. The SSH manager may borrow a verified ControlMaster discovered from
+the focused terminal, but never writes commands into that interactive PTY. When
+it cannot borrow a master, Krypton owns a dedicated socket and closes only that
+socket during teardown. Project-backed local surfaces are disabled for SSH
+workspaces until the hook server gains target-aware storage; they never receive
+the remote path as a local filesystem path.

@@ -37,6 +37,7 @@ import {
   type ScrollState,
   type StagePlacement,
   type StageState,
+  type WorkspaceRef,
 } from './types';
 import { autoTile, focusTile, resolveGridSlot } from './layout';
 import {
@@ -2192,6 +2193,16 @@ export class Compositor {
     return pane.contentView?.getWorkingDirectory?.() ?? null;
   }
 
+  private getFocusedWorkspace(): WorkspaceRef | null {
+    return this.getFocusedPane()?.contentView?.getWorkspace?.() ?? null;
+  }
+
+  private blockLocalViewForRemote(label: string): boolean {
+    if (this.getFocusedWorkspace()?.kind !== 'ssh') return false;
+    this.showNotification(`${label} is not available for remote Harness files`);
+    return true;
+  }
+
   /** Create a new terminal window, spawn a PTY, and add it to the layout */
   async createWindow(options: CreateWindowOptions = {}): Promise<WindowId> {
     const restoring = options.restoring === true;
@@ -3286,6 +3297,32 @@ export class Compositor {
    * the focused view's CWD. Live-refreshes at lane quiet points (spec 155).
    */
   async openDiffView(options?: { staged?: boolean }): Promise<void> {
+    const workspace = this.getFocusedWorkspace();
+    if (workspace?.kind === 'ssh') {
+      const staged = options?.staged ?? false;
+      try {
+        const result = await invoke<{ success: boolean; stdout: string; stderr: string }>(
+          'remote_harness_request',
+          {
+            runtimeId: workspace.runtimeId,
+            method: 'run',
+            params: {
+              program: 'git',
+              args: staged
+                ? ['diff', '--cached', '--no-ext-diff', '--binary']
+                : ['diff', 'HEAD', '--no-ext-diff', '--binary'],
+              cwd: workspace.path,
+            },
+          },
+        );
+        if (!result.success) throw new Error(result.stderr);
+        await this.openDiffFromString(result.stdout, staged ? 'Remote staged diff' : 'Remote working diff');
+      } catch (error) {
+        console.warn('remote git diff failed:', error);
+        this.showNotification('Remote git diff unavailable');
+      }
+      return;
+    }
     const cwd = await this.getFocusedCwd();
     if (!cwd) {
       this.showNotification('Not a git repository — diff view unavailable');
@@ -3379,6 +3416,7 @@ export class Compositor {
    * Open a markdown viewer window listing .md files from the focused terminal's CWD.
    */
   async openMarkdownView(initialFile?: string): Promise<void> {
+    if (this.blockLocalViewForRemote('Markdown viewer')) return;
     const cwd = await this.getFocusedCwd() ?? undefined;
     // Skip the git-repo gate when caller targets a specific file (e.g.,
     // opening a .md from hint mode outside a git repo).
@@ -3441,6 +3479,7 @@ export class Compositor {
    * Starts in the focused terminal's CWD.
    */
   async openFileManager(): Promise<void> {
+    if (this.blockLocalViewForRemote('File manager')) return;
     const cwd = await this.getFocusedCwd() ?? '/';
 
     const { FileManagerView } = await import('./file-manager');
@@ -3463,6 +3502,7 @@ export class Compositor {
    * Open an Obsidian vault viewer window.
    */
   async openVault(vaultPath?: string): Promise<void> {
+    if (this.blockLocalViewForRemote('Vault')) return;
     const entries = await this.getVaultEntries();
 
     let path = vaultPath;
@@ -3658,6 +3698,7 @@ export class Compositor {
    * directly (refocusing an existing tab if the same file is already open).
    */
   async openPencil(filePath?: string): Promise<void> {
+    if (this.blockLocalViewForRemote('Pencil')) return;
     let path = filePath;
 
     if (!path) {
@@ -4150,6 +4191,7 @@ export class Compositor {
    * Open the Hurl client window for the focused terminal's cwd.
    */
   async openHurlClient(): Promise<void> {
+    if (this.blockLocalViewForRemote('Hurl')) return;
     const cwd = await this.getFocusedCwd() ?? '/';
 
     const { HurlContentView } = await import('./hurl-view');
@@ -4437,6 +4479,7 @@ export class Compositor {
    * At most one agent window exists at a time; subsequent calls focus the existing one.
    */
   async openAgentView(): Promise<void> {
+    if (this.blockLocalViewForRemote('Local AI Agent')) return;
     const { AgentView } = await import('./agent/agent-view');
 
     // Resolve CWD from the focused pane for per-project session and tool scoping.
@@ -4465,6 +4508,7 @@ export class Compositor {
    * and view header.
    */
   async openAcpView(backendId: string, displayName: string): Promise<void> {
+    if (this.blockLocalViewForRemote('Single-lane ACP')) return;
     const { AcpView } = await import('./acp/acp-view');
 
     // Resolve CWD from the focused pane — handles both PTY panes (via
@@ -4488,6 +4532,7 @@ export class Compositor {
   async openAcpHarnessView(projectDirOverride: string | null = null): Promise<void> {
     const { AcpHarnessView } = await import('./acp/acp-harness-view');
     const projectDir = projectDirOverride ?? await this.getFocusedCwd();
+    const workspace: WorkspaceRef = { kind: 'local', path: projectDir };
     const view = new AcpHarnessView(
       projectDir,
       this.bus,
@@ -4497,7 +4542,60 @@ export class Compositor {
       // card's bundle back here rather than opening a window itself.
       (options) => void this.openReviewBoard(options),
       (path) => this.openMarkdownView(path),
+      workspace,
     );
+
+    await this.mountAcpHarnessView(view);
+  }
+
+  /** Open one Harness whose agents and project operations execute through SSH. */
+  async openRemoteAcpHarnessView(): Promise<void> {
+    const launchPane = this.getFocusedPane();
+    const terminalSessionId = launchPane?.contentView ? null : launchPane?.sessionId ?? null;
+    const { showRemoteHarnessPicker } = await import('./acp/remote-harness-picker');
+    const choices = await invoke<import('./acp/remote-harness-picker').RemoteHarnessChoices>(
+      'remote_harness_choices',
+      { terminalSessionId },
+    );
+    const launch = await showRemoteHarnessPicker(this.workspace, choices);
+    if (!launch) return;
+
+    this.notifController?.show({ message: 'Connecting remote ACP Harness…', level: 'info' });
+    let remote: import('./acp/remote-harness-picker').RemoteHarnessWorkspace;
+    try {
+      remote = await invoke('remote_harness_connect', { launch });
+    } catch (error) {
+      this.notifController?.show({
+        message: `Remote Harness connection failed: ${String(error)}`,
+        level: 'error',
+      });
+      return;
+    }
+
+    const { AcpHarnessView } = await import('./acp/acp-harness-view');
+    const workspace: WorkspaceRef = {
+      kind: 'ssh',
+      source: remote.source,
+      profile: remote.profile,
+      user: remote.user,
+      host: remote.host,
+      port: remote.port,
+      path: remote.path,
+      runtimeId: remote.runtimeId,
+    };
+    const view = new AcpHarnessView(
+      remote.path,
+      this.bus,
+      () => this.openTelegramSettings(),
+      null,
+      null,
+      null,
+      workspace,
+    );
+    await this.mountAcpHarnessView(view);
+  }
+
+  private async mountAcpHarnessView(view: import('./acp/acp-harness-view').AcpHarnessView): Promise<void> {
 
     // Replace the launching terminal tab: open the harness as a content tab in
     // the SAME window, then close the terminal tab it launched from — so the

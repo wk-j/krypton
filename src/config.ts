@@ -169,9 +169,17 @@ export interface LaneModelConfig {
   models: string[];
 }
 
+export interface RemoteHarnessProfile {
+  name: string;
+  host: string;
+  project_dir: string;
+  connect_timeout_seconds: number;
+}
+
 export interface AcpHarnessConfig {
   idle_flash_sound: boolean;
   memory_footer: boolean;
+  remote_profiles: RemoteHarnessProfile[];
   /** Per-backend model selection. Keyed by backend id (`gemini`, `opencode`,
    * `droid`, `cursor`, `claude`, `codex`, `junie`, `omp`, `grok`, `copilot`,
    * `mimo`, `cline`).

@@ -18,6 +18,9 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tauri::{AppHandle, State};
 
+use crate::remote_harness::{
+    RemoteAgentEvent, RemoteAgentTransport, RemoteHarnessRegistry, RemoteRuntimeClient,
+};
 use crate::util::emit::EmitExt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
@@ -334,12 +337,17 @@ fn set_client_session_id(client: &AcpClient, session_id: &str) {
 
 // ─── AcpClient ─────────────────────────────────────────────────────
 
+enum AcpTransport {
+    Local { stdin: ChildStdin, child: Child },
+    Remote(RemoteAgentTransport),
+}
+
 struct AcpClient {
     krypton_session: u64,
     backend_id: String,
     #[allow(dead_code)]
     display_name: String,
-    stdin: Mutex<Option<ChildStdin>>,
+    transport: Mutex<Option<AcpTransport>>,
     pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
     perm_pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
     /// `_x.ai/ask_user_question` parked while the human answers the card.
@@ -357,8 +365,6 @@ struct AcpClient {
     /// disconnects mid-flight so `request()` can report the real cause
     /// (a stderr tail when captured) instead of a bare "closed before reply".
     disconnect_reason: RwLock<Option<String>>,
-    /// Holds the child handle so we can SIGTERM/SIGKILL it; None after dispose.
-    child: Mutex<Option<Child>>,
     /// PID of the spawned adapter, set right after `cmd.spawn()`. 0 = unset
     /// (pre-spawn or post-dispose). Read by the metrics sampler to walk the
     /// adapter's process tree without taking the `child` mutex.
@@ -373,6 +379,9 @@ struct AcpClient {
     /// (currently OpenCode). For backends that take a CLI flag (Gemini), the
     /// override is applied to spawn args before the client is created.
     model_override: RwLock<Option<String>>,
+    /// Present only for remote lanes. Filesystem callbacks use the same runtime
+    /// as the agent so a remote path can never fall through to local `std::fs`.
+    remote_workspace: RwLock<Option<Arc<RemoteRuntimeClient>>>,
     /// Latch: once true, no more events fire.
     disposed: std::sync::atomic::AtomicBool,
 }
@@ -383,7 +392,7 @@ impl AcpClient {
             krypton_session,
             backend_id,
             display_name,
-            stdin: Mutex::new(None),
+            transport: Mutex::new(None),
             pending: Mutex::new(HashMap::new()),
             perm_pending: Mutex::new(HashMap::new()),
             ask_pending: Mutex::new(HashMap::new()),
@@ -393,11 +402,11 @@ impl AcpClient {
             acp_session_id: RwLock::new(None),
             stderr_buf: Mutex::new(String::new()),
             disconnect_reason: RwLock::new(None),
-            child: Mutex::new(None),
             child_pid: AtomicU32::new(0),
             cwd: RwLock::new(None),
             mcp_servers: RwLock::new(Vec::new()),
             model_override: RwLock::new(None),
+            remote_workspace: RwLock::new(None),
             disposed: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -455,16 +464,20 @@ impl AcpClient {
     async fn write_line(&self, value: &Value) -> Result<(), String> {
         let mut text = serde_json::to_string(value).map_err(|e| format!("serialize: {e}"))?;
         text.push('\n');
-        let mut guard = self.stdin.lock().await;
-        let stdin = guard
+        let mut guard = self.transport.lock().await;
+        let transport = guard
             .as_mut()
             .ok_or_else(|| "ACP stdin closed".to_string())?;
-        stdin
-            .write_all(text.as_bytes())
-            .await
-            .map_err(|e| format!("write: {e}"))?;
-        stdin.flush().await.map_err(|e| format!("flush: {e}"))?;
-        Ok(())
+        match transport {
+            AcpTransport::Local { stdin, .. } => {
+                stdin
+                    .write_all(text.as_bytes())
+                    .await
+                    .map_err(|e| format!("write: {e}"))?;
+                stdin.flush().await.map_err(|e| format!("flush: {e}"))
+            }
+            AcpTransport::Remote(remote) => remote.write(text).await,
+        }
     }
 
     /// Reply to an inbound JSON-RPC request from the agent.
@@ -517,21 +530,7 @@ where
                 break;
             }
             Ok(_) => {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
-                let value: Value = match serde_json::from_str(trimmed) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        log::debug!(
-                            "[acp:{}] dropping non-JSON line ({e}): {trimmed}",
-                            client.krypton_session
-                        );
-                        continue;
-                    }
-                };
-                dispatch_message(&client, &app, value).await;
+                dispatch_output_line(&client, &app, &line).await;
             }
             Err(e) => {
                 log::warn!("[acp:{}] read error: {e}", client.krypton_session);
@@ -540,6 +539,48 @@ where
         }
     }
     finalize_disconnect(&client, &app).await;
+}
+
+async fn run_remote_reader(
+    client: Arc<AcpClient>,
+    app: AppHandle,
+    mut events: tokio::sync::mpsc::UnboundedReceiver<RemoteAgentEvent>,
+) {
+    while let Some(event) = events.recv().await {
+        match event {
+            RemoteAgentEvent::Stdout(line) => dispatch_output_line(&client, &app, &line).await,
+            RemoteAgentEvent::Stderr(line) => {
+                log::debug!("[acp:{}] remote stderr: {line}", client.krypton_session);
+                client.append_stderr(&format!("{line}\n")).await;
+            }
+            RemoteAgentEvent::Exit(code) => {
+                log::info!(
+                    "[acp:{}] remote adapter exited code={code:?}",
+                    client.krypton_session
+                );
+                break;
+            }
+        }
+    }
+    finalize_disconnect(&client, &app).await;
+}
+
+async fn dispatch_output_line(client: &Arc<AcpClient>, app: &AppHandle, line: &str) {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    let value: Value = match serde_json::from_str(trimmed) {
+        Ok(value) => value,
+        Err(error) => {
+            log::debug!(
+                "[acp:{}] dropping non-JSON line ({error}): {trimmed}",
+                client.krypton_session
+            );
+            return;
+        }
+    };
+    dispatch_message(client, app, value).await;
 }
 
 async fn dispatch_message(client: &Arc<AcpClient>, app: &AppHandle, value: Value) {
@@ -729,6 +770,31 @@ async fn validate_fs_path(
     let Some(cwd) = cwd_opt else {
         return Ok(());
     };
+    if let Some(runtime) = client
+        .remote_workspace
+        .read()
+        .ok()
+        .and_then(|workspace| workspace.clone())
+    {
+        let candidate = if std::path::Path::new(raw_path).is_absolute() {
+            raw_path.to_string()
+        } else {
+            std::path::Path::new(&cwd)
+                .join(raw_path)
+                .to_string_lossy()
+                .to_string()
+        };
+        return runtime
+            .canonicalize(&candidate)
+            .await
+            .map(|_| ())
+            .map_err(|_| {
+                json!({
+                    "code": -32602,
+                    "message": format!("Path outside remote project root: {raw_path}"),
+                })
+            });
+    }
     let root = match std::fs::canonicalize(&cwd) {
         Ok(p) => p,
         Err(_) => return Ok(()),
@@ -745,6 +811,14 @@ async fn validate_fs_path(
 
 /// Whether this path is Grok session scratch (auto-write, no review card).
 async fn is_grok_session_scratch_path(client: &Arc<AcpClient>, raw_path: &str) -> bool {
+    if client
+        .remote_workspace
+        .read()
+        .map(|workspace| workspace.is_some())
+        .unwrap_or(false)
+    {
+        return false;
+    }
     let cwd_opt = match client.cwd.read() {
         Ok(g) => g.clone(),
         Err(_) => return false,
@@ -766,6 +840,44 @@ fn apply_fs_write(path: &str, content: &str) -> Result<Value, Value> {
     match std::fs::write(path, content) {
         Ok(_) => Ok(json!({})),
         Err(e) => Err(json!({ "code": -32000, "message": format!("write: {e}") })),
+    }
+}
+
+async fn read_client_text(client: &AcpClient, path: &str) -> Result<Option<String>, String> {
+    let remote = client
+        .remote_workspace
+        .read()
+        .ok()
+        .and_then(|workspace| workspace.clone());
+    if let Some(remote) = remote {
+        remote.read_text(path).await
+    } else {
+        match std::fs::read_to_string(path) {
+            Ok(content) => Ok(Some(content)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+}
+
+async fn apply_client_fs_write(
+    client: &AcpClient,
+    path: &str,
+    content: &str,
+) -> Result<Value, Value> {
+    let remote = client
+        .remote_workspace
+        .read()
+        .ok()
+        .and_then(|workspace| workspace.clone());
+    if let Some(remote) = remote {
+        remote
+            .write_text(path, content)
+            .await
+            .map(|_| json!({}))
+            .map_err(|error| json!({ "code": -32000, "message": error }))
+    } else {
+        apply_fs_write(path, content)
     }
 }
 
@@ -956,27 +1068,32 @@ async fn handle_inbound_request(
                 let _ = client.reply(id, Err(err)).await;
                 return;
             }
-            let result = match std::fs::read_to_string(&path) {
-                Ok(content) => {
+            let result = match read_client_text(&client, &path).await {
+                Ok(Some(content)) => {
                     emit_fs_activity(&client, &app, "read", &path, true, None);
                     Ok(json!({ "content": content }))
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                Ok(None) => {
                     log::debug!("[acp] fs/read_text_file: {path} not found, returning empty");
                     // NotFound returns empty content per existing behavior; surface
                     // it as a successful read so users still see the access attempt.
                     emit_fs_activity(&client, &app, "read", &path, true, None);
                     Ok(json!({ "content": "" }))
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-                    let msg = binary_read_error(&path);
+                Err(e) => {
+                    let msg = if client
+                        .remote_workspace
+                        .read()
+                        .map(|workspace| workspace.is_none())
+                        .unwrap_or(false)
+                        && e.contains("stream did not contain valid UTF-8")
+                    {
+                        binary_read_error(&path)
+                    } else {
+                        e
+                    };
                     emit_fs_activity(&client, &app, "read", &path, false, Some(&msg));
                     Err(json!({ "code": -32000, "message": format!("fs/read_text_file: {msg}") }))
-                }
-                Err(e) => {
-                    let msg = format!("{e}");
-                    emit_fs_activity(&client, &app, "read", &path, false, Some(&msg));
-                    Err(json!({ "code": -32000, "message": format!("fs/read_text_file: {e}") }))
                 }
             };
             let _ = client.reply(id, result).await;
@@ -1011,7 +1128,7 @@ async fn handle_inbound_request(
             // Grok plan.md / session files: auto-apply (matches Grok TUI plan-mode
             // auto-approve for the plan file; no review card spam).
             if is_grok_session_scratch_path(&client, &path).await {
-                let result = apply_fs_write(&path, &content);
+                let result = apply_client_fs_write(&client, &path, &content).await;
                 match &result {
                     Ok(_) => emit_fs_activity(&client, &app, "write", &path, true, None),
                     Err(err) => {
@@ -1027,7 +1144,11 @@ async fn handle_inbound_request(
                 return;
             }
             // Compute oldText against current disk content for the diff preview.
-            let old_text = std::fs::read_to_string(&path).unwrap_or_default();
+            let old_text = read_client_text(&client, &path)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default();
             let request_id = id.as_u64().unwrap_or(0);
             let (tx, rx) = oneshot::channel::<Result<Value, Value>>();
             {
@@ -1431,8 +1552,10 @@ pub async fn acp_spawn(
     mcp_servers: Option<Vec<Value>>,
     junie_mcp_location: Option<String>,
     cline_mcp_settings_path: Option<String>,
+    remote_runtime_id: Option<String>,
     app: AppHandle,
     registry: State<'_, Arc<AcpRegistry>>,
+    remote_registry: State<'_, Arc<RemoteHarnessRegistry>>,
     config: State<'_, Arc<RwLock<crate::config::KryptonConfig>>>,
 ) -> Result<u64, String> {
     let mut backend =
@@ -1473,60 +1596,8 @@ pub async fn acp_spawn(
         }
     }
 
-    let mut cmd = Command::new(&backend.command);
-    cmd.args(&backend.args)
-        .envs(crate::pty::cached_login_env().iter())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    // Put the adapter into its own process group so we can signal the entire
-    // tree (adapter + grandchild MCP servers) at once on dispose. Without this
-    // the MCP servers it spawns get reparented to launchd if the adapter dies
-    // ungracefully, leaving zombies. See acp_dispose.
-    #[cfg(unix)]
-    cmd.process_group(0);
-    if let Some(d) = cwd.as_ref() {
-        cmd.current_dir(d);
-    }
-    // Cline reads MCP servers from `cline_mcp_settings.json`, not ACP
-    // `session/new` (no `mcpCapabilities` advertised). Point it at the per-lane
-    // overlay so the harness-memory server lands; global `~/.cline` auth is left
-    // intact (we override only the MCP settings file path, not the data dir).
-    if backend_id == "cline" {
-        if let Some(p) = cline_mcp_settings_path.filter(|s| !s.is_empty()) {
-            cmd.env("CLINE_MCP_SETTINGS_PATH", p);
-        }
-    }
-
-    let mut child = cmd.spawn().map_err(|e| {
-        let message = e.to_string();
-        format!(
-            "Failed to spawn {} {}: {e}. {}",
-            backend.command,
-            backend.args.join(" "),
-            startup_hint(&backend_id, &message)
-        )
-    })?;
-
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "child stdin missing".to_string())?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "child stdout missing".to_string())?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "child stderr missing".to_string())?;
-
     let session = registry.allocate_session();
     let client = Arc::new(AcpClient::new(session, backend_id.clone(), display_name));
-    if let Some(pid) = child.id() {
-        client.child_pid.store(pid, Ordering::Relaxed);
-    }
     if let Ok(mut g) = client.cwd.write() {
         *g = cwd.clone();
     }
@@ -1536,28 +1607,98 @@ pub async fn acp_spawn(
     if let Ok(mut g) = client.model_override.write() {
         *g = configured_model.clone();
     }
-    {
-        let mut g = client.stdin.lock().await;
-        *g = Some(stdin);
-    }
-    {
-        let mut g = client.child.lock().await;
-        *g = Some(child);
-    }
-    registry.insert(session, client.clone());
 
-    // Reader + stderr tasks.
-    let reader_client = client.clone();
-    let reader_app = app.clone();
-    tokio::spawn(async move {
-        let buf = BufReader::new(stdout);
-        run_reader(reader_client, reader_app, buf).await;
-    });
-    let stderr_client = client.clone();
-    tokio::spawn(async move {
-        let buf = BufReader::new(stderr);
-        run_stderr_capture(stderr_client, buf).await;
-    });
+    if let Some(runtime_id) = remote_runtime_id.filter(|id| !id.is_empty()) {
+        let runtime = remote_registry
+            .get(&runtime_id)
+            .ok_or_else(|| format!("Unknown remote Harness: {runtime_id}"))?;
+        let remote_cwd = cwd
+            .clone()
+            .ok_or_else(|| "remote ACP spawn requires a working directory".to_string())?;
+        let mut env = HashMap::new();
+        if backend_id == "cline" {
+            if let Some(path) = cline_mcp_settings_path.filter(|path| !path.is_empty()) {
+                env.insert("CLINE_MCP_SETTINGS_PATH".to_string(), path);
+            }
+        }
+        let handle = runtime
+            .spawn_agent(
+                backend.command.clone(),
+                backend.args.clone(),
+                remote_cwd,
+                env,
+            )
+            .await
+            .map_err(|error| {
+                format!(
+                    "Failed to spawn remote {} {}: {error}. {}",
+                    backend.command,
+                    backend.args.join(" "),
+                    startup_hint(&backend_id, &error)
+                )
+            })?;
+        if let Ok(mut workspace) = client.remote_workspace.write() {
+            *workspace = Some(runtime);
+        }
+        let crate::remote_harness::RemoteAgentHandle { transport, events } = handle;
+        *client.transport.lock().await = Some(AcpTransport::Remote(transport));
+        registry.insert(session, client.clone());
+        tokio::spawn(run_remote_reader(client, app, events));
+    } else {
+        let mut cmd = Command::new(&backend.command);
+        cmd.args(&backend.args)
+            .envs(crate::pty::cached_login_env().iter())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        #[cfg(unix)]
+        cmd.process_group(0);
+        if let Some(d) = cwd.as_ref() {
+            cmd.current_dir(d);
+        }
+        if backend_id == "cline" {
+            if let Some(path) = cline_mcp_settings_path.filter(|path| !path.is_empty()) {
+                cmd.env("CLINE_MCP_SETTINGS_PATH", path);
+            }
+        }
+        let mut child = cmd.spawn().map_err(|e| {
+            let message = e.to_string();
+            format!(
+                "Failed to spawn {} {}: {e}. {}",
+                backend.command,
+                backend.args.join(" "),
+                startup_hint(&backend_id, &message)
+            )
+        })?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "child stdin missing".to_string())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "child stdout missing".to_string())?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "child stderr missing".to_string())?;
+        if let Some(pid) = child.id() {
+            client.child_pid.store(pid, Ordering::Relaxed);
+        }
+        *client.transport.lock().await = Some(AcpTransport::Local { stdin, child });
+        registry.insert(session, client.clone());
+        let reader_client = client.clone();
+        let reader_app = app.clone();
+        tokio::spawn(async move {
+            let buf = BufReader::new(stdout);
+            run_reader(reader_client, reader_app, buf).await;
+        });
+        tokio::spawn(async move {
+            let buf = BufReader::new(stderr);
+            run_stderr_capture(client, buf).await;
+        });
+    }
 
     Ok(session)
 }
@@ -2084,7 +2225,7 @@ pub async fn acp_fs_write_response(
         return Ok(());
     };
     let outcome: Result<Value, Value> = if accept {
-        apply_fs_write(&ctx.path, &ctx.new_content)
+        apply_client_fs_write(&client, &ctx.path, &ctx.new_content).await
     } else {
         Err(json!({ "code": -32000, "message": "User rejected the write" }))
     };
@@ -2120,36 +2261,38 @@ pub async fn dispose_all(registry: &AcpRegistry) {
 async fn dispose_client(client: &AcpClient) {
     client.disposed.store(true, Ordering::Relaxed);
     client.child_pid.store(0, Ordering::Relaxed);
-    // Drop stdin to signal EOF.
-    {
-        let mut g = client.stdin.lock().await;
-        *g = None;
-    }
-    let mut child_guard = client.child.lock().await;
-    if let Some(mut child) = child_guard.take() {
-        #[cfg(unix)]
-        {
-            if let Some(pid) = child.id() {
-                // Negative pid = signal whole process group (cleans up
-                // grandchildren like MCP servers spawned by the adapter).
-                unsafe {
-                    libc::kill(-(pid as i32), libc::SIGTERM);
-                }
-            }
+    let transport = client.transport.lock().await.take();
+    match transport {
+        Some(AcpTransport::Remote(remote)) => {
+            let _ = remote.terminate().await;
         }
-        let wait_result = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
-        if wait_result.is_err() {
+        Some(AcpTransport::Local { stdin, mut child }) => {
+            drop(stdin);
             #[cfg(unix)]
             {
                 if let Some(pid) = child.id() {
+                    // Negative pid = signal whole process group (cleans up
+                    // grandchildren like MCP servers spawned by the adapter).
                     unsafe {
-                        libc::kill(-(pid as i32), libc::SIGKILL);
+                        libc::kill(-(pid as i32), libc::SIGTERM);
                     }
                 }
             }
-            let _ = child.start_kill();
-            let _ = child.wait().await;
+            let wait_result = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+            if wait_result.is_err() {
+                #[cfg(unix)]
+                {
+                    if let Some(pid) = child.id() {
+                        unsafe {
+                            libc::kill(-(pid as i32), libc::SIGKILL);
+                        }
+                    }
+                }
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+            }
         }
+        None => {}
     }
 }
 

@@ -714,6 +714,7 @@ export interface LaneSummary {
   harnessId?: string;
   local?: boolean;
   cwd?: string | null;
+  workspaceKey?: string;
   /** spec 124: lane-scope directive binding, if any. Surfaced via peer_list so
    * callers can pick the lane whose role fits the job. Reflects
    * `activeDirectiveId` only — one-shot `turnDirectiveOverride` is excluded

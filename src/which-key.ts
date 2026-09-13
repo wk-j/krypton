@@ -111,6 +111,7 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
     { key: 'E', label: 'Gemini ACP', effect: 'important' },
     { key: 'I', label: 'Codex ACP', effect: 'important' },
     { key: 'Y', label: 'ACP Harness', effect: 'important' },
+    { key: 'S', label: 'Remote ACP Harness', effect: 'important' },
     // spec 211. Shift-only: bare `r` is Resize Mode, listed under Windows.
     { key: 'R', label: 'Review Board', effect: 'important' },
   ]),

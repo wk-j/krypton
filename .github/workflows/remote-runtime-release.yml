@@ -1,0 +1,52 @@
+name: Remote runtime release assets
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust target
+        run: rustup target add "${{ matrix.target }}"
+      - name: Verify release version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          app_version="$(sed -n '/^name = "app"$/,/^$/s/^version = "\([^"]*\)"$/\1/p' src-tauri/Cargo.toml)"
+          crate_version="$(sed -n '/^name = "krypton-remote"$/,/^$/s/^version = "\([^"]*\)"$/\1/p' src-tauri/remote-runtime/Cargo.toml)"
+          test "$app_version" = "$crate_version"
+          test "v$crate_version" = "$RELEASE_TAG"
+      - name: Build companion
+        run: cargo build --release --locked --manifest-path src-tauri/Cargo.toml -p krypton-remote --target "${{ matrix.target }}"
+      - name: Prepare checksummed asset
+        run: |
+          asset="krypton-remote-${{ matrix.target }}"
+          cp "src-tauri/target/${{ matrix.target }}/release/krypton-remote" "$asset"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$asset" > "$asset.sha256"
+          else
+            shasum -a 256 "$asset" > "$asset.sha256"
+          fi
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "krypton-remote-${{ matrix.target }}" "krypton-remote-${{ matrix.target }}.sha256" --clobber

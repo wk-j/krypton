@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+src-tauri/remote-binaries/*/krypton-remote
 
 # Rust build output (src-tauri has its own .gitignore for target/)
 

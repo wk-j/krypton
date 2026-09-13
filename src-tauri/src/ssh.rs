@@ -16,6 +16,10 @@ pub struct SshConnectionInfo {
     pub port: u16,
     /// Path to the ControlMaster socket managed by Krypton.
     pub control_socket: Option<String>,
+    /// Control socket explicitly supplied to the detected SSH process. This is
+    /// only borrowed after a successful `ssh -O check`.
+    #[serde(default)]
+    pub active_control_socket: Option<String>,
     /// Additional SSH args to preserve (e.g., -i, -J).
     pub extra_args: Vec<String>,
 }
@@ -97,6 +101,10 @@ impl SshManager {
         }
 
         Some(info)
+    }
+
+    pub fn control_persist(&self) -> u64 {
+        self.control_persist
     }
 
     /// Build the ssh command to clone a session using ControlMaster multiplexing.
@@ -375,6 +383,7 @@ fn parse_ssh_args(args: &[String]) -> Option<SshConnectionInfo> {
     let mut host: Option<String> = None;
     let mut port: u16 = 22;
     let mut extra_args: Vec<String> = Vec::new();
+    let mut active_control_socket: Option<String> = None;
 
     // Skip the "ssh" binary name
     let start = if args[0].ends_with("ssh") || args[0] == "ssh" {
@@ -426,8 +435,10 @@ fn parse_ssh_args(args: &[String]) -> Option<SshConnectionInfo> {
                 // but preserve everything else
                 if let Some(opt) = args.get(i + 1) {
                     let opt_lower = opt.to_lowercase();
-                    if !opt_lower.starts_with("controlmaster=")
-                        && !opt_lower.starts_with("controlpath=")
+                    if opt_lower.starts_with("controlpath=") {
+                        active_control_socket =
+                            opt.split_once('=').map(|(_, value)| value.to_string());
+                    } else if !opt_lower.starts_with("controlmaster=")
                         && !opt_lower.starts_with("controlpersist=")
                     {
                         extra_args.push("-o".to_string());
@@ -438,7 +449,9 @@ fn parse_ssh_args(args: &[String]) -> Option<SshConnectionInfo> {
                 }
             }
             "-S" => {
-                // Control socket — skip, we manage our own
+                if let Some(socket) = args.get(i + 1) {
+                    active_control_socket = Some(socket.clone());
+                }
                 i += 2;
                 continue;
             }
@@ -497,6 +510,7 @@ fn parse_ssh_args(args: &[String]) -> Option<SshConnectionInfo> {
         host,
         port,
         control_socket: None,
+        active_control_socket,
         extra_args,
     })
 }
@@ -577,6 +591,23 @@ mod tests {
         ];
         let info = parse_ssh_args(&args).unwrap();
         assert_eq!(info.extra_args, vec!["-o", "ServerAliveInterval=60"]);
+        assert_eq!(info.active_control_socket.as_deref(), Some("/tmp/sock"));
+    }
+
+    #[test]
+    fn test_parse_captures_explicit_control_socket_flag() {
+        let args = vec![
+            "ssh".into(),
+            "-S".into(),
+            "/tmp/existing-master".into(),
+            "user@host".into(),
+        ];
+        let info = parse_ssh_args(&args).unwrap();
+        assert_eq!(
+            info.active_control_socket.as_deref(),
+            Some("/tmp/existing-master")
+        );
+        assert!(info.extra_args.is_empty());
     }
 
     #[test]
@@ -601,6 +632,7 @@ mod tests {
             host: "example.com".into(),
             port: 22,
             control_socket: Some("/tmp/test-sockets/alice@example.com:22".into()),
+            active_control_socket: None,
             extra_args: vec![],
         };
 
@@ -630,6 +662,7 @@ mod tests {
             host: "server.io".into(),
             port: 2222,
             control_socket: Some("/tmp/test-sockets/bob@server.io:2222".into()),
+            active_control_socket: None,
             extra_args: vec!["-i".into(), "~/.ssh/key".into()],
         };
 
@@ -656,6 +689,7 @@ mod tests {
             host: "example.com".into(),
             port: 22,
             control_socket: Some("/tmp/test-sockets/alice@example.com:22".into()),
+            active_control_socket: None,
             extra_args: vec![],
         };
 

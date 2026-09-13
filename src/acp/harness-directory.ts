@@ -44,6 +44,7 @@ export function nextLaneNumber(labelPrefix: string): number {
 export interface HarnessEntrySnapshot {
   harnessId: string;
   cwd: string | null;
+  workspaceKey?: string;
   /** Foreign lanes that may have pending sends toward them — captured before
    *  unregister, since the metadata is gone afterward. */
   displayNames: string[];
@@ -52,6 +53,7 @@ export interface HarnessEntrySnapshot {
 export interface HarnessEntry {
   harnessId: string; // 'hm-42' — identity only, not part of any address
   cwd: string | null; // the view's working directory, exposed on registration
+  workspaceKey?: string; // host-qualified execution target identity
   alive: boolean; // flipped false at the start of dispose(), before teardown
   /** True only when this Harness owns the main webview's retained DOM focus. */
   isFocused?(): boolean;
@@ -91,6 +93,7 @@ export function unregisterHarness(harnessId: string): void {
   const snapshot: HarnessEntrySnapshot = {
     harnessId: closing.harnessId,
     cwd: closing.cwd,
+    workspaceKey: closing.workspaceKey,
     displayNames: closing.listLanes().map((l) => l.displayName),
   };
   harnesses.delete(harnessId);
@@ -114,8 +117,14 @@ export function notifyForeignLaneClosed(
   harnessId: string,
   displayName: string,
   cwd: string | null,
+  targetWorkspaceKey?: string,
 ): void {
-  const snapshot: HarnessEntrySnapshot = { harnessId, cwd, displayNames: [displayName] };
+  const snapshot: HarnessEntrySnapshot = {
+    harnessId,
+    cwd,
+    workspaceKey: targetWorkspaceKey ?? `local:${cwd ?? ''}`,
+    displayNames: [displayName],
+  };
   for (const other of harnesses.values()) {
     if (other.harnessId === harnessId || !other.alive) continue;
     try {
@@ -133,7 +142,13 @@ export function peersFor(harnessId: string): LaneSummary[] {
   for (const entry of harnesses.values()) {
     if (entry.harnessId === harnessId || !entry.alive) continue;
     for (const lane of entry.listLanes()) {
-      out.push({ ...lane, local: false, harnessId: entry.harnessId, cwd: entry.cwd });
+      out.push({
+        ...lane,
+        local: false,
+        harnessId: entry.harnessId,
+        cwd: entry.cwd,
+        workspaceKey: entry.workspaceKey,
+      });
     }
   }
   return out;

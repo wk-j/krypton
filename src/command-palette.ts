@@ -1092,6 +1092,13 @@ export class CommandPalette {
       keybinding: 'Leader Shift y',
       execute: () => c.openAcpHarnessView(),
     });
+    this.actions.push({
+      id: 'acp.harness.open-remote',
+      label: 'Open Remote ACP Harness…',
+      category: 'Window',
+      keybinding: 'Leader Shift s',
+      execute: () => c.openRemoteAcpHarnessView(),
+    });
     for (const b of this.acpBackends) {
       const kb =
         b.id === 'claude'

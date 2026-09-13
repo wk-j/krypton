@@ -887,7 +887,12 @@ export class InputRouter {
 
       // Enter Swap mode
       case 's':
-        this.setMode(Mode.Swap);
+        if (e.shiftKey) {
+          this.toNormal();
+          void this.compositor.openRemoteAcpHarnessView();
+        } else {
+          this.setMode(Mode.Swap);
+        }
         break;
 
       // Enter Move mode / Shift+M: toggle music dashboard

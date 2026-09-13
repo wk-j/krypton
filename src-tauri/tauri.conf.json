@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeDevCommand": "npm run stage:remote-runtime:dev && npm run dev",
+    "beforeBuildCommand": "npm run stage:remote-runtime && npm run build"
   },
   "app": {
     "macOSPrivateApi": true,
@@ -40,7 +40,8 @@
       "signingIdentity": "Krypton Dev"
     },
     "resources": [
-      "sounds/**/*"
+      "sounds/**/*",
+      "remote-binaries/**/*"
     ],
     "icon": [
       "icons/32x32.png",

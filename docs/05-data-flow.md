@@ -1233,3 +1233,26 @@ the local Telegram Settings view accepts it.
    using listing relative paths (run from the session cwd). See
    `docs/237-hurl-copy-curl.md`.
 9. See `docs/227-hurl-web-client.md`.
+
+## Remote ACP Harness launch and reconnect
+
+1. `Leader Shift+S` captures the focused terminal session id and requests remote
+   choices. Rust detects SSH metadata and reads only passively cached OSC 7 CWD.
+2. The picker returns either a configured profile or the focused SSH target plus
+   an absolute project path. No probe command is injected into the terminal.
+3. Rust resolves OpenSSH config and borrows a verified ControlMaster when possible.
+   It probes the versioned remote user cache; on a miss, it detects the target,
+   resolves a bundled or SHA-256-verified release helper, uploads it atomically,
+   and verifies the installed version.
+4. Rust starts the exact cached `krypton-remote serve --stdio` path and completes
+   the protocol hello before the compositor replaces the launch tab.
+5. Every lane spawn sends command/argv/cwd as JSON. Remote stdout events feed the
+   existing local ACP dispatcher; `fs/read_text_file` and gated writes call the
+   same runtime's workspace methods.
+6. The local hook server opens a dynamic reverse forward. Remote agents use the
+   allocated remote-loopback port for Harness memory MCP; no public listener is
+   created.
+7. On disconnect, in-flight work becomes outcome-unknown and is never replayed.
+   Reconnect starts a fresh companion under the same runtime identity and tries
+   ACP resume/load for each saved session before falling back to a warned fresh
+   session.

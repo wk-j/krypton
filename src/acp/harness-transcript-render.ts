@@ -136,6 +136,7 @@ export function renderTranscriptItem(
   streaming: boolean,
   lane: HarnessLane | null,
   projectDir: string | null,
+  resolveLocalImages = true,
 ): HTMLElement {
   const el = document.createElement('div');
   el.className =
@@ -203,7 +204,7 @@ export function renderTranscriptItem(
         body.innerHTML = item.markdownHtml;
         // Resolve agent-emitted local image paths (marked cold-load output, or a
         // cached seal that has not yet been rewritten) to loadable asset URLs.
-        resolveLocalImageSrcs(body, projectDir);
+        if (resolveLocalImages) resolveLocalImageSrcs(body, projectDir);
       } else {
         body.textContent = item.text;
       }

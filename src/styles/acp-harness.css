@@ -58,6 +58,106 @@
   --acp-accent-danger:     #ff7878;
 }
 
+.acp-harness__remote-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid rgba(109, 208, 255, 0.26);
+  background: rgba(21, 45, 57, 0.48);
+  color: var(--agent-user, #6dd0ff);
+  font-size: 0.82em;
+}
+
+.acp-harness__remote-status[data-state='disconnected'] {
+  border-color: rgba(255, 109, 138, 0.42);
+  background: rgba(69, 22, 35, 0.52);
+  color: var(--agent-error, #ff6d8a);
+}
+
+.acp-harness__remote-status[data-state='connecting'],
+.acp-harness__remote-status[data-state='closing'] {
+  opacity: 0.72;
+}
+
+.remote-harness-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  background: rgba(3, 8, 12, 0.72);
+  outline: none;
+}
+
+.remote-harness-picker__panel {
+  width: min(620px, calc(100vw - 48px));
+  max-height: min(620px, calc(100vh - 48px));
+  overflow: auto;
+  border: 1px solid rgba(109, 208, 255, 0.42);
+  background: #0a1118;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+}
+
+.remote-harness-picker__head,
+.remote-harness-picker__hint {
+  padding: 11px 14px;
+  color: var(--agent-user, #6dd0ff);
+  letter-spacing: 0.12em;
+}
+
+.remote-harness-picker__head {
+  border-bottom: 1px solid rgba(109, 208, 255, 0.22);
+}
+
+.remote-harness-picker__hint {
+  border-top: 1px solid rgba(109, 208, 255, 0.16);
+  font-size: 0.82em;
+  letter-spacing: 0;
+}
+
+.remote-harness-picker__list {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+}
+
+.remote-harness-picker__row {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--agent-text, #d8e8d8);
+  font: inherit;
+  text-align: left;
+}
+
+.remote-harness-picker__row span {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+  font-size: 0.85em;
+}
+
+.remote-harness-picker__row--active {
+  border-color: rgba(109, 208, 255, 0.54);
+  background: rgba(109, 208, 255, 0.1);
+}
+
+.remote-harness-picker__path {
+  box-sizing: border-box;
+  width: calc(100% - 16px);
+  margin: 0 8px 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(109, 208, 255, 0.5);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--agent-text, #d8e8d8);
+  font: inherit;
+  outline: none;
+}
+
 /* spec 238: the active ticket is a flush split pane of the harness window,
    not a nested 8px card. Dashboard yields exactly the panel width; Lane Peek
    keeps its own 12px rail inset. Compact state is a 46px expand handle. */

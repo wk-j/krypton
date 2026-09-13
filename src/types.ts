@@ -202,6 +202,26 @@ export interface LeaderKeyBinding extends LeaderKeySpec {
   disabledReason?(): string;
 }
 
+/** Execution target for views whose project may live on another computer. */
+export type WorkspaceRef =
+  | { kind: 'local'; path: string | null }
+  | {
+      kind: 'ssh';
+      source: 'profile' | 'focused_ssh';
+      profile: string | null;
+      user: string;
+      host: string;
+      port: number;
+      path: string;
+      runtimeId: string;
+    };
+
+/** Stable target identity. Live runtime ids are deliberately excluded. */
+export function workspaceKey(workspace: WorkspaceRef): string {
+  if (workspace.kind === 'local') return `local:${workspace.path ?? ''}`;
+  return `ssh:${workspace.user}@${workspace.host}:${workspace.port}:${workspace.path}`;
+}
+
 /** Interface for non-terminal content views */
 export interface ContentView {
   type: PaneContentType;
@@ -226,6 +246,8 @@ export interface ContentView {
   onOutputPump?: (chars: number) => void;
   /** Optional working directory associated with this content view */
   getWorkingDirectory?(): string | null;
+  /** Authoritative workspace identity for target-aware project operations. */
+  getWorkspace?(): WorkspaceRef;
   /** AI subscription providers represented by this view in window chrome. */
   getUsageProviders?(): readonly UsageProvider[];
   /** Subscribe to provider-membership changes. Returns an unsubscribe function. */

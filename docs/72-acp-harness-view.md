@@ -583,7 +583,9 @@ Removed from earlier drafts:
 
 ### Configuration
 
-No TOML keys are wired for the harness. The default roster is code-defined, and memory persistence is always keyed by project directory.
+The default roster remains code-defined. Optional `[[acp_harness.remote_profiles]]`
+entries provide SSH aliases and absolute remote project paths (spec 247); local
+Harness memory persistence remains keyed by project directory.
 
 ## Edge Cases
 
@@ -621,6 +623,30 @@ Assumptions for v1:
 - "Same project" means every ACP subprocess receives the same `cwd`, not separate git worktrees.
 - "Shared memory" means visible Krypton-owned memory injected into prompts, not direct agent-to-agent messaging and not provider-private memory files.
 - "Shared memory" is loaded into a tab-local harness store at runtime and persisted per project directory. Closing the harness drops transcripts and in-RAM lane state, but saved memory is restored next time the same project opens.
+
+## Remote execution target (spec 247)
+
+`Leader Shift+S` opens a keyboard-first target picker. A detected focused SSH
+session appears first, followed by `[[acp_harness.remote_profiles]]`. Detection
+uses structured process metadata and passive OSC 7 CWD only; the Harness never
+drives the existing interactive shell. If no passive CWD exists, the picker asks
+for an absolute remote project path.
+
+The resulting Harness owns one immutable SSH workspace for all lanes. Its header
+shows the profile or resolved `user@host:port`, remote path, and connection state.
+On first connection Krypton installs the matching helper automatically under the
+remote user's versioned cache, using a bundled binary when possible and a
+SHA-256-verified release asset otherwise. No manual `krypton-remote` install is
+required; only the selected agent CLI and its authentication must already exist.
+When the stream drops, Enter on the disconnected header (or “Reconnect Remote
+Harness” in the contextual command palette) starts a fresh companion and resumes
+saved agent sessions without replaying an in-flight prompt.
+
+Remote mode currently supports ACP lane lifecycle, permissions, remote fs
+callbacks, project MCP discovery/overlays, tunneled in-memory Harness MCP, Git
+branch, and explicit diff opens. Local editor/file views, images, project-backed
+tickets/docs/artifacts, daily notes, usage persistence, Hurl and Xenon are visibly
+unavailable rather than accidentally operating on a same-looking local path.
 
 ## Out of Scope
 

@@ -65,6 +65,17 @@ export const JUNIE_MCP_CAPABILITIES: AcpMcpCapabilities = { http: true, sse: tru
 let loginEnvPromise: Promise<Record<string, string>> | null = null;
 const projectCache = new Map<string, AcpMcpServerDescriptor[]>();
 
+interface RemoteRunResult {
+  success: boolean;
+  code: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function remoteRequest<T>(runtimeId: string, method: string, params: Record<string, unknown>): Promise<T> {
+  return invoke<T>('remote_harness_request', { runtimeId, method, params });
+}
+
 function loadLoginEnv(): Promise<Record<string, string>> {
   if (!loginEnvPromise) {
     loginEnvPromise = invoke<Record<string, string>>('acp_login_env').catch((e) => {
@@ -73,6 +84,32 @@ function loadLoginEnv(): Promise<Record<string, string>> {
     });
   }
   return loginEnvPromise;
+}
+
+async function loadReferencedRemoteEnv(
+  runtimeId: string,
+  projectDir: string,
+  source: string,
+): Promise<Record<string, string>> {
+  const names = new Set<string>();
+  for (const match of source.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-.*?)?\}/g)) {
+    if (match[1]) names.add(match[1]);
+  }
+  const env: Record<string, string> = {};
+  await Promise.all(Array.from(names).map(async (name) => {
+    try {
+      const result = await remoteRequest<RemoteRunResult>(runtimeId, 'run', {
+        program: 'printenv',
+        args: [name],
+        cwd: projectDir,
+      });
+      if (result.success) env[name] = result.stdout.replace(/\r?\n$/, '');
+    } catch {
+      // Missing variables stay absent so `${VAR:-default}` and required-var
+      // behavior remain identical to the local bridge.
+    }
+  }));
+  return env;
 }
 
 /** Expand `${VAR}` and `${VAR:-default}`. Returns null if a required var is
@@ -205,22 +242,33 @@ function translate(
  *  lifetime; call `invalidateMcpBridgeCache(projectDir?)` on project change. */
 export async function loadProjectMcpServers(
   projectDir: string | null | undefined,
+  remoteRuntimeId?: string | null,
 ): Promise<AcpMcpServerDescriptor[]> {
   if (!projectDir) return [];
-  const cached = projectCache.get(projectDir);
+  const cacheKey = `${remoteRuntimeId ?? 'local'}:${projectDir}`;
+  const cached = projectCache.get(cacheKey);
   if (cached) return cached;
 
   const path = `${projectDir.replace(/\/$/, '')}/.mcp.json`;
   let raw: string | null;
   try {
-    raw = await invoke<string | null>('read_mcp_config_file', { path });
+    if (remoteRuntimeId) {
+      const response = await remoteRequest<{ exists: boolean; content: string }>(
+        remoteRuntimeId,
+        'read',
+        { path },
+      );
+      raw = response.exists ? response.content : null;
+    } else {
+      raw = await invoke<string | null>('read_mcp_config_file', { path });
+    }
   } catch (e) {
     console.warn(`[mcp-bridge] read failed: ${String(e)}`);
-    projectCache.set(projectDir, []);
+    projectCache.set(cacheKey, []);
     return [];
   }
   if (!raw) {
-    projectCache.set(projectDir, []);
+    projectCache.set(cacheKey, []);
     return [];
   }
 
@@ -229,29 +277,36 @@ export async function loadProjectMcpServers(
     parsed = JSON.parse(raw) as ClaudeMcpFile;
   } catch (e) {
     console.warn(`[mcp-bridge] ${path}: invalid JSON: ${String(e)}`);
-    projectCache.set(projectDir, []);
+    projectCache.set(cacheKey, []);
     return [];
   }
   const servers = parsed?.mcpServers;
   if (!servers || typeof servers !== 'object') {
-    projectCache.set(projectDir, []);
+    projectCache.set(cacheKey, []);
     return [];
   }
 
-  const env = await loadLoginEnv();
+  const env = remoteRuntimeId
+    ? await loadReferencedRemoteEnv(remoteRuntimeId, projectDir, raw)
+    : await loadLoginEnv();
   const result: AcpMcpServerDescriptor[] = [];
   for (const [name, server] of Object.entries(servers)) {
     if (!server || typeof server !== 'object') continue;
     const descriptor = translate(name, server as ClaudeMcpServer, env);
     if (descriptor) result.push(descriptor);
   }
-  projectCache.set(projectDir, result);
+  projectCache.set(cacheKey, result);
   return result;
 }
 
 export function invalidateMcpBridgeCache(projectDir?: string): void {
-  if (projectDir) projectCache.delete(projectDir);
-  else projectCache.clear();
+  if (!projectDir) {
+    projectCache.clear();
+    return;
+  }
+  for (const key of projectCache.keys()) {
+    if (key.endsWith(`:${projectDir}`)) projectCache.delete(key);
+  }
 }
 
 /** Filter http/sse servers that the agent did not advertise support for.
@@ -364,16 +419,52 @@ export async function writeClineMcpOverlay(
   harnessId: string,
   laneLabel: string,
   servers: AcpMcpServerDescriptor[],
+  remoteRuntimeId?: string | null,
+  projectDir?: string | null,
 ): Promise<string> {
   const content = JSON.stringify(toClineMcpFile(servers), null, 2);
+  if (remoteRuntimeId && projectDir) {
+    const overlay = await remoteRequest<{ path: string }>(remoteRuntimeId, 'overlay_write', {
+      backend: 'cline',
+      harnessId,
+      laneLabel,
+      fileName: 'cline_mcp_settings.json',
+      content,
+    });
+    return overlay.path;
+  }
   return invoke<string>('write_cline_mcp_overlay', { harnessId, laneLabel, content });
 }
 
-export async function removeClineMcpOverlay(harnessId: string, laneLabel: string): Promise<void> {
+export async function removeClineMcpOverlay(
+  harnessId: string,
+  laneLabel: string,
+  remoteRuntimeId?: string | null,
+  projectDir?: string | null,
+): Promise<void> {
+  if (remoteRuntimeId && projectDir) {
+    await remoteRequest(remoteRuntimeId, 'overlay_remove', {
+      backend: 'cline',
+      harnessId,
+      laneLabel,
+    });
+    return;
+  }
   await invoke('remove_cline_mcp_overlay', { harnessId, laneLabel });
 }
 
-export async function gcClineMcpOverlays(harnessId: string): Promise<void> {
+export async function gcClineMcpOverlays(
+  harnessId: string,
+  remoteRuntimeId?: string | null,
+  projectDir?: string | null,
+): Promise<void> {
+  if (remoteRuntimeId && projectDir) {
+    await remoteRequest(remoteRuntimeId, 'overlay_remove', {
+      backend: 'cline',
+      harnessId,
+    });
+    return;
+  }
   await invoke('gc_cline_mcp_overlays', { harnessId });
 }
 
@@ -382,12 +473,37 @@ export async function writeJunieMcpOverlay(
   harnessId: string,
   laneLabel: string,
   servers: AcpMcpServerDescriptor[],
+  remoteRuntimeId?: string | null,
+  projectDir?: string | null,
 ): Promise<string> {
   const content = JSON.stringify(toClaudeMcpFile(servers), null, 2);
+  if (remoteRuntimeId && projectDir) {
+    const overlay = await remoteRequest<{ dir: string }>(remoteRuntimeId, 'overlay_write', {
+      backend: 'junie',
+      harnessId,
+      laneLabel,
+      fileName: 'mcp.json',
+      content,
+    });
+    return overlay.dir;
+  }
   return invoke<string>('write_junie_mcp_overlay', { harnessId, laneLabel, content });
 }
 
-export async function removeJunieMcpOverlay(harnessId: string, laneLabel: string): Promise<void> {
+export async function removeJunieMcpOverlay(
+  harnessId: string,
+  laneLabel: string,
+  remoteRuntimeId?: string | null,
+  projectDir?: string | null,
+): Promise<void> {
+  if (remoteRuntimeId && projectDir) {
+    await remoteRequest(remoteRuntimeId, 'overlay_remove', {
+      backend: 'junie',
+      harnessId,
+      laneLabel,
+    });
+    return;
+  }
   await invoke('remove_junie_mcp_overlay', { harnessId, laneLabel });
 }
 
@@ -398,16 +514,87 @@ export async function removeJunieMcpOverlay(harnessId: string, laneLabel: string
 export async function prepareCursorMcp(
   projectDir: string,
   servers: AcpMcpServerDescriptor[],
+  remoteRuntimeId?: string | null,
 ): Promise<string[]> {
   const file = toClaudeMcpFile(servers);
+  if (remoteRuntimeId) {
+    const path = `${projectDir.replace(/\/$/, '')}/.cursor/mcp.json`;
+    const current = await readRemoteJson(remoteRuntimeId, path);
+    const root = isRecord(current) ? current : {};
+    const existing = isRecord(root.mcpServers) ? root.mcpServers : {};
+    const incoming = file.mcpServers ?? {};
+    root.mcpServers = { ...existing, ...incoming };
+    await remoteRequest(remoteRuntimeId, 'write', {
+      path,
+      content: JSON.stringify(root, null, 2),
+    });
+    const names = Object.keys(incoming);
+    await Promise.all(names.map(async (name) => {
+      try {
+        await remoteRequest(remoteRuntimeId, 'run', {
+          program: 'cursor-agent',
+          args: ['mcp', 'enable', name],
+          cwd: projectDir,
+        });
+      } catch (e) {
+        console.warn(`[mcp-bridge] remote cursor-agent mcp enable ${name} failed:`, e);
+      }
+    }));
+    return names;
+  }
   return invoke<string[]>('prepare_cursor_mcp', { projectDir, servers: file.mcpServers ?? {} });
 }
 
 /** Remove the krypton-injected entries from `<projectDir>/.cursor/mcp.json`. */
-export async function cleanupCursorMcp(projectDir: string, names: string[]): Promise<void> {
+export async function cleanupCursorMcp(
+  projectDir: string,
+  names: string[],
+  remoteRuntimeId?: string | null,
+): Promise<void> {
+  if (remoteRuntimeId) {
+    const path = `${projectDir.replace(/\/$/, '')}/.cursor/mcp.json`;
+    const root = await readRemoteJson(remoteRuntimeId, path);
+    if (!isRecord(root) || !isRecord(root.mcpServers)) return;
+    for (const name of names) delete root.mcpServers[name];
+    if (Object.keys(root).length === 1 && Object.keys(root.mcpServers).length === 0) {
+      await remoteRequest(remoteRuntimeId, 'remove', { path, recursive: false });
+    } else {
+      await remoteRequest(remoteRuntimeId, 'write', {
+        path,
+        content: JSON.stringify(root, null, 2),
+      });
+    }
+    return;
+  }
   await invoke('cleanup_cursor_mcp', { projectDir, names });
 }
 
-export async function gcJunieMcpOverlays(harnessId: string): Promise<void> {
+export async function gcJunieMcpOverlays(
+  harnessId: string,
+  remoteRuntimeId?: string | null,
+  projectDir?: string | null,
+): Promise<void> {
+  if (remoteRuntimeId && projectDir) {
+    await remoteRequest(remoteRuntimeId, 'overlay_remove', {
+      backend: 'junie',
+      harnessId,
+    });
+    return;
+  }
   await invoke('gc_junie_mcp_overlays', { harnessId });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function readRemoteJson(runtimeId: string, path: string): Promise<Record<string, unknown>> {
+  const response = await remoteRequest<{ exists: boolean; content: string }>(runtimeId, 'read', { path });
+  if (!response.exists || !response.content) return {};
+  try {
+    const value: unknown = JSON.parse(response.content);
+    return isRecord(value) ? value : {};
+  } catch {
+    return {};
+  }
 }

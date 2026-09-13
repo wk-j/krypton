@@ -653,6 +653,10 @@ pub struct PencilConfig {
 pub struct AcpHarnessConfig {
     pub idle_flash_sound: bool,
     pub memory_footer: bool,
+    /// Optional SSH targets for remote ACP Harnesses. Connection/auth details
+    /// stay in the user's OpenSSH config; Krypton stores only the alias and
+    /// absolute remote project directory.
+    pub remote_profiles: Vec<RemoteHarnessProfile>,
     /// Per-backend model selection. Keyed by backend id (`gemini`, `opencode`,
     /// `claude`, `codex`, `cursor`, `droid`, `junie`, `mimo`, `cline`). `active` is the
     /// model applied to the lane: Gemini via `--model`, Droid via `-m`, OpenCode
@@ -669,6 +673,26 @@ pub struct AcpHarnessConfig {
     /// spawn: editing it takes effect only on the next spawn/`#new`/`#new!`/lane
     /// restart, never on a live lane (respawn-to-apply).
     pub lane_models: HashMap<String, LaneModelConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RemoteHarnessProfile {
+    pub name: String,
+    pub host: String,
+    pub project_dir: String,
+    pub connect_timeout_seconds: u64,
+}
+
+impl Default for RemoteHarnessProfile {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            host: String::new(),
+            project_dir: String::new(),
+            connect_timeout_seconds: 15,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -723,6 +747,7 @@ impl Default for AcpHarnessConfig {
         Self {
             idle_flash_sound: true,
             memory_footer: true,
+            remote_profiles: Vec::new(),
             lane_models: HashMap::new(),
         }
     }

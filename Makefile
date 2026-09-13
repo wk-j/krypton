@@ -1,4 +1,4 @@
-.PHONY: dev build install uninstall clean extension
+.PHONY: dev build install uninstall clean extension remote-runtime
 
 APP_NAME := Krypton
 BUNDLE_PATH := src-tauri/target/release/bundle/macos/$(APP_NAME).app
@@ -7,6 +7,7 @@ CLI_NAME := kryptonctl
 CLI_PATH := src-tauri/target/release/$(CLI_NAME)
 BRIDGE_NAME := krypton-bridge
 BRIDGE_PATH := src-tauri/target/release/$(BRIDGE_NAME)
+REMOTE_RUNTIME_PATH := src-tauri/target/release/krypton-remote
 CLI_INSTALL_DIR ?= $(HOME)/.local/bin
 
 # Start development server with hot-reload
@@ -30,6 +31,11 @@ extension:
 	@echo "Building browser-extension content bundle..."
 	@npm --prefix extension ci
 	@npm --prefix extension run build
+
+# Build the headless companion locally. Normal app builds stage it automatically.
+remote-runtime:
+	cargo build --release --manifest-path src-tauri/Cargo.toml -p krypton-remote
+	@echo "Built $(REMOTE_RUNTIME_PATH)"
 
 # Build and install to /Applications
 install: build extension
