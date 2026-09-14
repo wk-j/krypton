@@ -12,9 +12,11 @@
 > ends in turn text: the convening lane now composes a **Review Board** for the synthesis
 > (`review_new` → write the document → `review_register`), because turn text scrolls away, carries
 > no reading order, and gives the human no structured way to answer. A clean all-LGTM round still
-> produces a Board — prose, a walkthrough, metrics, zero findings — so the `/reviews` archive stays
-> complete. `review_outcome` is still called with the same counts, and the review-quality matrix
-> (spec 146) is unchanged.
+> produces a Board — a short summary and, for multi-file work, a focused walkthrough — so the
+> `/reviews` archive stays complete. Since 2026-09-13 the synthesis is skim-first: it omits process
+> narration and zero-value metrics, limits walkthroughs to key stops, and keeps each finding to its
+> evidence, impact, and suggested fix. `review_outcome` is still called with the same counts, and the
+> review-quality matrix (spec 146) is unchanged.
 
 ## Problem
 

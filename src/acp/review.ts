@@ -146,13 +146,16 @@ export function reviewRequestPrompt(input: ReviewRequestPromptInput): string {
   lines.push(
     '4. Compose a **Review Board** for the synthesis instead of reporting it in your turn text: call ' +
       '`review_new { title, subject }`, write the document at the returned path with your edit tool, then ' +
-      'call `review_register { id }`. The Board must lead with an EXPLANATION, not a findings list: prose ' +
-      'on what this change is and how it works, plus a ```review:walkthrough (an ordered `- at: path:line` / ' +
-      '`say: …` tour) whenever the subject spans more than one file. Then add a ```review:finding per ' +
-      'clustered concern (severity blocking|non-blocking|suggestion, file/line where you have one, prose ' +
-      'after the fence for the detail), a ```review:decision for any genuine fork between reviewers, and ' +
-      '```review:metrics / ```review:chart where a number or a shape helps. A Board that is only a findings ' +
-      'list is a regression to what this command already did in turn text.',
+      'call `review_register { id }`. Make the Board a SKIM, not an essay. Start with `## สรุป` and ' +
+      '3–5 short bullets covering what changed, the verdict, and what the human should do next. When the ' +
+      'subject spans more than one file, add one ```review:walkthrough with only the 3–5 most important ' +
+      '`- at: path:line` / `say: …` steps. Add one ```review:finding per actionable concern; make its title ' +
+      'state the concrete impact, and keep its detail to at most three short sentences: evidence, impact, ' +
+      'and suggested fix. Add a ```review:decision only for a genuine fork. Do not repeat a concern across ' +
+      'the summary, walkthrough, and finding detail. Omit reviewer-process narration, empty categories, ' +
+      'zero-count commentary, and `review:metrics` / `review:chart` / `review:svg` unless they reveal a ' +
+      'relationship that concise prose cannot. Exceed these limits only when the user explicitly asks for ' +
+      'an exhaustive review.',
   );
   // The Board is read by a Thai human; the parser is not. Free text goes to the
   // human, the fence grammar goes to `src/review-board/parse.ts`, and the title
@@ -171,10 +174,8 @@ export function reviewRequestPrompt(input: ReviewRequestPromptInput): string {
   );
   lines.push(
     '5. **A clean review still gets a Board, and it is not an empty one.** If every reviewer said LGTM, ' +
-      'compose prose on what the change does, a walkthrough of it, metrics, and zero findings. That is the ' +
-      'NORMAL shape of a review under this design, not a degenerate case — the human learns what now exists ' +
-      'even when nothing is wrong, and the archive stays complete (a missing entry would mean both "never ' +
-      'reviewed" and "reviewed and clean").',
+      'write the same short summary and, for a multi-file subject, the compact walkthrough; add no findings ' +
+      'and no zero-value metrics. This keeps the archive complete without making the human read ceremony.',
   );
   lines.push(
     '6. After registering the Board (not on #cancel), call `review_outcome` once with the totals — ' +

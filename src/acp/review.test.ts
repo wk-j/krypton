@@ -108,6 +108,19 @@ describe('reviewRequestPrompt', () => {
     expect(prompt).toContain('short and in English');
   });
 
+  it('requires a concise, action-oriented Review Board', () => {
+    const prompt = reviewRequestPrompt({ reviewers: ['A'], subject: diffSubject, intent: '' });
+    expect(prompt).toContain('Make the Board a SKIM, not an essay');
+    expect(prompt).toContain('3–5 short bullets');
+    expect(prompt).toContain('3–5 most important');
+    expect(prompt).toContain('at most three short sentences');
+    expect(prompt).toContain('evidence, impact, and suggested fix');
+    expect(prompt).toContain('Omit reviewer-process narration');
+    expect(prompt).toContain('zero-count commentary');
+    expect(prompt).toContain('unless they reveal a relationship that concise prose cannot');
+    expect(prompt).toContain('only when the user explicitly asks for an exhaustive review');
+  });
+
   it('instructs a review_outcome summary call after synthesis (spec 146)', () => {
     const prompt = reviewRequestPrompt({
       reviewers: ['A', 'B', 'C'],

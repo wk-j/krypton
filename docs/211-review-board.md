@@ -11,7 +11,7 @@
 > sending to the lane as a separate explicit act. See Design → Storage layout.
 >
 > **Redirected (2026-08-07):** the Board's primary job is **helping a developer understand the
-> code**, not logging issues. Explanation is the spine (`walkthrough` block + prose); findings and
+> code**, not logging issues. A concise summary plus a focused `walkthrough` is the spine; findings and
 > decisions are optional additions; the subject may be existing code, not only a diff. See Problem
 > and Solution.
 >
@@ -75,7 +75,7 @@ blocks — and lets the human read it in a guided order, jump from any point int
 annotate any block, triage findings, answer decisions, and send one structured response back to
 the lane.
 
-**A review document is an explanation first.** Its spine is prose and a `walkthrough` — an ordered
+**A review document is an explanation first.** Its spine is a concise summary and a `walkthrough` — an ordered
 tour of the change, each step anchored to `file:line`, so `Enter` on a step opens exactly that code
 in the Diff Window. Findings and decisions are *additions* to that spine, present when the lane has
 them and absent when it does not. A Board with zero findings is a perfectly good review: it means
@@ -142,8 +142,9 @@ unsolicited dashboards" clause on `artifact_new` and the "never flag proactively
 `attention_flag`.
 
 **A clean `#review` still produces a Board — and it is not an empty one.** When every reviewer says
-LGTM, the convening lane still composes a Board: prose on what the change does, a `walkthrough` of
-it, metrics, zero findings. That is the *normal* shape of a review under this design, not a
+LGTM, the convening lane still composes a Board: a short summary of what changed and, for a
+multi-file subject, a focused `walkthrough`; no zero-value metrics or findings. That is the *normal*
+shape of a review under this design, not a
 degenerate case — the human learns what now exists even when nothing is wrong. It also keeps
 `/reviews` a **complete** archive: an archive with holes cannot answer "did anyone ever review X?",
 because a missing entry would mean both "never reviewed" and "reviewed and clean".
@@ -160,9 +161,13 @@ short and latin, because `review_slug` derives the bundle directory from it and 
 collapses to `<date>-review`.
 
 **What every Board must contain.** The `#review` prompt and the `review_new` tool description both
-require an explanation spine — at minimum, prose on *what this is and how it works*, plus a
-`walkthrough` when the subject spans more than one file. A Board that is only a findings list is a
-regression to what `#review` already did in turn text, and reviewers are told so explicitly.
+require a skim-first explanation: `## สรุป` with 3–5 short bullets covering the change, verdict,
+and next action, plus one `walkthrough` with only the 3–5 most important steps when the subject spans
+more than one file. Each actionable finding states the concrete impact in its title and limits the
+detail to evidence, impact, and suggested fix in at most three short sentences. Do not repeat points
+between sections or narrate the review process, empty categories, or zero counts. Metrics, charts,
+and diagrams are opt-in: use them only when they expose a relationship that concise prose cannot.
+These limits may be exceeded only when the user explicitly asks for an exhaustive review.
 
 ## Opening the Board
 
