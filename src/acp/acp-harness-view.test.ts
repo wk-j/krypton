@@ -1951,6 +1951,11 @@ describe('ACP peer activity UI (spec 118)', () => {
     expect(css).toMatch(
       /\.acp-harness__ticket-dock section h3\s*\{[^}]*font-size:\s*var\(--krypton-chrome-font-size/,
     );
+    expect(viewSrc).toMatch(
+      /class="acp-ticket-dock__issue-link" href="\$\{esc\(ticket\.github\.issueUrl\)\}"/,
+    );
+    expect(viewSrc).toMatch(/>#\$\{ticket\.github\.number\}<\/a>/);
+    expect(css).toMatch(/\.acp-ticket-dock__issue-link:focus-visible\s*\{/);
   });
 
   it('thought lives in its own rail slot, not inside peek', () => {

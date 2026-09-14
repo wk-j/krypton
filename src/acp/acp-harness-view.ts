@@ -4332,8 +4332,10 @@ export class AcpHarnessView implements ContentView {
     }
     const github = ticket.github
       ? `<div class="acp-ticket-dock__meta"><span>GitHub</span>` +
-        `<strong>${esc(ticket.github.issueKey)}</strong>` +
-        `<em>${esc(ticket.github.state ?? 'unknown')}</em></div>`
+        `<strong title="${esc(ticket.github.issueKey)}">${esc(ticket.github.repo)}</strong>` +
+        `<em><a class="acp-ticket-dock__issue-link" href="${esc(ticket.github.issueUrl)}" ` +
+        `aria-label="Open ${esc(ticket.github.issueKey)} on GitHub">#${ticket.github.number}</a>` +
+        ` · ${esc(ticket.github.state ?? 'unknown')}</em></div>`
       : `<div class="acp-ticket-dock__meta"><span>GitHub</span><em>not linked</em></div>`;
     const worker = this.ticketWorker
       ? `<strong>${esc(this.ticketWorker.laneDisplayName)}</strong>`
@@ -6092,9 +6094,9 @@ export class AcpHarnessView implements ContentView {
     this.ticketDockEl.addEventListener('keydown', this.ticketDockKeyHandler);
     body.appendChild(this.ticketDockEl);
 
-    // Agent-rendered markdown anchors (the only <a> elements anywhere in this
-    // view — transcript, peek, plan) always open in the OS browser; the click
-    // is intercepted so the app webview never navigates. See agentLinkOpenAction.
+    // Anchors in this view — agent-rendered markdown and ticket links — always
+    // open in the OS browser; intercept clicks so the app webview never navigates.
+    // See agentLinkOpenAction.
     this.element.addEventListener('click', (e: MouseEvent) => {
       const target = e.target;
       if (!(target instanceof Element)) return;

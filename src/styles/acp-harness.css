@@ -311,6 +311,7 @@
 .acp-ticket-dock__meta em {
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.44);
   font-style: normal;
+  white-space: nowrap;
 }
 
 .acp-ticket-dock__meta strong {
@@ -320,6 +321,23 @@
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.acp-ticket-dock__issue-link {
+  color: var(--agent-user, #6dd0ff);
+  text-decoration: underline;
+  text-decoration-color: rgba(109, 208, 255, 0.55);
+  text-underline-offset: 2px;
+}
+
+.acp-ticket-dock__issue-link:hover {
+  color: var(--agent-cyan, #b9f5ff);
+  text-decoration-color: currentColor;
+}
+
+.acp-ticket-dock__issue-link:focus-visible {
+  outline: 1px solid var(--agent-cyan, #b9f5ff);
+  outline-offset: 2px;
 }
 
 .acp-harness__ticket-dock section {

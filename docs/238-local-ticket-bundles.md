@@ -265,7 +265,8 @@ Ticket Panel เป็น split pane ชิดขอบขวาของ harnes
   ของ panel (ไม่มี gutter 12px ซ้อน) collapsed rail เป็นปุ่ม handle กว้าง 46px ไม่แสดง status
   หรือ title (ตัวหนังสือแนวตั้งอ่านไม่ได้และไม่มีประโยชน์) เหลือแค่ chevron `‹` เป็น
   expand affordance; ชื่อตั๋วอยู่ใน `aria-label` เท่านั้น; ไม่แสดง body/footer
-- header แสดง title, local status, GitHub state และ worker แยกกัน; body แสดง context excerpt,
+- header แสดง title, local status, GitHub repo/issue number/state และ worker แยกกัน โดย issue number
+  เป็น link ที่เปิด issue ใน OS browser; body แสดง context excerpt,
   managed resources, derived analysis และ progress summary
   uppercase labels (`ACTIVE TICKET`, `CONTEXT`, …) ใช้ `--krypton-chrome-font-size` (11px)
   ให้สมดุลกับ window chrome ไม่ใช้ body `1em`
