@@ -6,12 +6,16 @@
  * content column never gets narrower than it is today.
  *
  * House rules honoured here:
- *   • No left accent rails. The block cursor is a full-width background tint;
- *     severity and state are carried by heading colour, a full border, and chips.
+ *   • No left accent rails. The block cursor is a compact glyph in the existing
+ *     content gutter; severity and state stay on heading colour, borders, and chips.
  *   • No nested containers. A block is ONE surface — a card does not sit inside a
  *     panel inside a frame.
- *   • The reading surface uses the user's configured terminal font, not the chrome
- *     font and size. Labels inherit that size too; only headings scale upward.
+ *   • Chrome (header, Review Map, picker, overlays) uses
+ *     `--krypton-chrome-font-size`, derived from `[font].size`. The reading
+ *     column uses `--krypton-font-size` so authored text matches the terminal.
+ *     Headings scale up from that reading size.
+ *   • Chrome labels are mixed-case. Never `text-transform: uppercase` on this
+ *     surface — shouting the whole reader looks ugly. Paths stay `none`.
  */
 
 .krypton-review {
@@ -25,7 +29,7 @@
   background: rgba(var(--krypton-bg-rgb), 0.72);
   color: rgb(var(--krypton-fg-rgb));
   font-family: var(--krypton-font-family);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 /* ── Header ───────────────────────────────────────────────────────────── */
@@ -45,7 +49,6 @@
 
 .krypton-review__seg {
   color: rgba(var(--krypton-fg-rgb), 0.5);
-  text-transform: uppercase;
 }
 
 .krypton-review__seg--title {
@@ -55,13 +58,10 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* A review title is authored text, not a chrome label — don't shout it. */
-  text-transform: none;
 }
 
 .krypton-review__seg--lane {
   color: rgba(var(--krypton-fg-rgb), 0.75);
-  text-transform: none;
 }
 
 .krypton-review__seg--slug {
@@ -92,7 +92,6 @@
 .krypton-review__seg--flash {
   margin-left: 0;
   color: rgb(var(--krypton-accent-rgb));
-  text-transform: none;
 }
 
 .krypton-review[data-layout='narrow'] .krypton-review__seg--slug,
@@ -106,7 +105,6 @@
 
 .krypton-review__seg--search {
   color: rgb(var(--krypton-accent-rgb));
-  text-transform: none;
 }
 
 /* ── Content: reading column, optionally beside the Review Map ────────── */
@@ -128,6 +126,9 @@
   padding: 18px 0 60px;
   scrollbar-width: thin;
   scrollbar-color: rgba(var(--krypton-accent-rgb), 0.3) transparent;
+  font-family: var(--krypton-font-family);
+  font-size: var(--krypton-font-size);
+  line-height: var(--krypton-prose-line-height, var(--krypton-line-height, 1.2));
 }
 
 .krypton-review__banner {
@@ -157,9 +158,14 @@
   contain-intrinsic-size: auto 120px;
 }
 
-.krypton-review__block--cursor {
-  /* Full-width background tint, never a left rail. */
-  background: rgba(var(--krypton-accent-rgb), 0.1);
+.krypton-review__block--cursor::before {
+  /* The row already reserves a 20px gutter, so this adds no container or fill. */
+  content: '›';
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  color: rgba(var(--krypton-accent-rgb), 0.85);
+  font-weight: 700;
 }
 
 /* The walkthrough is what the human reads first: full width, never folded. */
@@ -182,7 +188,7 @@
 /* ── Markdown passthrough ─────────────────────────────────────────────── */
 
 .krypton-review__md {
-  line-height: 1.6;
+  line-height: inherit;
 }
 
 .krypton-review__md > :first-child {
@@ -243,6 +249,7 @@
   padding: 0.1em 0.3em;
   background: rgba(var(--krypton-fg-rgb), 0.08);
   color: rgb(var(--krypton-accent-rgb));
+  font-family: var(--krypton-font-family);
 }
 
 .krypton-review__md pre {
@@ -252,6 +259,7 @@
   background: rgba(var(--krypton-bg-rgb), 0.6);
   border: 1px solid rgba(var(--krypton-fg-rgb), 0.12);
   border-radius: var(--krypton-border-radius, 8px);
+  font-family: var(--krypton-font-family);
   line-height: 1.45;
 }
 
@@ -309,8 +317,7 @@
 
 .krypton-review__walkthrough-title {
   margin-bottom: 8px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: rgba(var(--krypton-fg-rgb), 0.45);
 }
 
@@ -465,8 +472,7 @@
 .krypton-review__option-rec {
   flex-shrink: 0;
   margin-left: auto;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: rgba(var(--krypton-fg-rgb), 0.4);
 }
 
@@ -480,8 +486,7 @@
 
 .krypton-review__chart-title {
   margin-bottom: 8px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: rgba(var(--krypton-fg-rgb), 0.45);
 }
 
@@ -690,8 +695,7 @@
   flex-shrink: 0;
   min-width: 7em;
   color: rgb(var(--krypton-accent-rgb));
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .krypton-review__send-label {
@@ -720,7 +724,7 @@
   border-radius: var(--krypton-border-radius, 8px);
   color: rgb(var(--krypton-fg-rgb));
   font-family: var(--krypton-font-family);
-  font-size: var(--krypton-font-size);
+  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-review-picker__head {
@@ -859,8 +863,7 @@
   gap: 4px 10px;
   padding: 8px 12px;
   border-bottom: 1px solid rgba(var(--krypton-accent-rgb), 0.18);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: rgba(var(--krypton-fg-rgb), 0.42);
 }
 
@@ -920,8 +923,7 @@
 
 .krypton-review__map-row--smart .krypton-review__map-label {
   color: rgba(var(--krypton-accent-rgb), 0.85);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .krypton-review__map-index {
@@ -1000,8 +1002,7 @@
   display: block;
   margin-bottom: 6px;
   color: rgba(var(--krypton-accent-rgb), 0.75);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .krypton-review__overview-row {

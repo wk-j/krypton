@@ -47,11 +47,11 @@ export const DIFF_SUMMARY_THRESHOLD = 2000;
 export function severityChip(severity: ReviewBlockSeverity): { label: string; tone: string } {
   switch (severity) {
     case 'blocking':
-      return { label: 'BLOCK', tone: 'blocking' };
+      return { label: 'block', tone: 'blocking' };
     case 'non-blocking':
-      return { label: 'WARN', tone: 'warn' };
+      return { label: 'warn', tone: 'warn' };
     case 'suggestion':
-      return { label: 'SUGG', tone: 'sugg' };
+      return { label: 'sugg', tone: 'sugg' };
   }
 }
 

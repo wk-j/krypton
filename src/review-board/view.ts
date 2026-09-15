@@ -539,7 +539,7 @@ export class ReviewBoardView implements ContentView {
     };
 
     const title = this.doc.title ?? this.slug;
-    this.header.appendChild(seg('krypton-review__seg--title', `REVIEW // ${title}`));
+    this.header.appendChild(seg('krypton-review__seg--title', `Review // ${title}`));
     this.header.appendChild(seg('krypton-review__seg--lane', this.laneName));
     this.header.appendChild(seg('krypton-review__seg--slug', this.slug));
 

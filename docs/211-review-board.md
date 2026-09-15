@@ -637,16 +637,20 @@ An unknown fence stays a plain code block, same as in the Board.
 > the column was never going to take. Chapters are derived from the document's own `H1`/`H2`
 > headings; `review.md` gained no new syntax.
 
-- **Header:** `REVIEW // <title>` · authoring lane · `chapter 2/5 · block 8/19` · `2 unanswered` ·
+- **Header:** `Review // <title>` · authoring lane · `chapter 2/5 · block 8/19` · `2 unanswered` ·
   sync age. Segments shed in a fixed order (slug, lane, steps) as the pane narrows, so the header
-  stays one line.
-- **Block cursor:** the focused block takes a full-width background tint (`rgba(accent, .10)`) —
-  no left accent rail, per the house rule.
+  stays one line. Header, Review Map, picker, and overlays use `--krypton-chrome-font-size`
+  (derived from `[font].size`); the reading column uses `--krypton-font-size` so authored
+  text matches the terminal. Every Review Board element, including inline code and code blocks,
+  uses `--krypton-font-family` derived from `[font].family`; the Board has no independent font
+  stack. Chrome labels are mixed-case — never `text-transform: uppercase`.
+- **Block cursor:** the focused block shows a compact accent `›` in its existing content gutter.
+  It adds no fill, border, or container, so finding severity remains the dominant visual signal.
 - **Walkthrough block:** numbered steps, each `at` rendered as a dim monospace anchor and `say` as
   the explanation. The current step (driven by `Tab`) takes an accent tint; `Enter` opens its
   anchor in the Diff Window. This is the block the human reads first, so it renders full-width and
   is never folded.
-- **Finding block:** severity chip (`BLOCK` error accent / `WARN` amber / `SUGG` muted), title,
+- **Finding block:** severity chip (`block` error accent / `warn` amber / `sugg` muted), title,
   optional `file:line` in the corner, state glyph (`·` open, `✓` accepted, `✗` dismissed).
 - **Decision block:** the question, then numbered options; the lane's recommendation is marked
   `rec`; the chosen one takes an accent tint. Unanswered decisions are what `}` hunts.

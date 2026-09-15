@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -138,5 +142,34 @@ describe('reviewMapRows', () => {
     ]);
     // A document with no chapters keeps the map: the smart views still help.
     expect(reviewMapRows(0)).toHaveLength(3);
+  });
+});
+
+describe('Review Board font tokens', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const css = readFileSync(join(here, '../styles/review-board.css'), 'utf8');
+
+  it('uses the configured font family throughout and config size for the reading column', () => {
+    const root = css.match(/^\.krypton-review\s*\{[^}]*\}/m)?.[0] ?? '';
+    const body = css.match(/\.krypton-review__body\s*\{[^}]*\}/)?.[0] ?? '';
+    const code = css.match(/\.krypton-review__md code\s*\{[^}]*\}/)?.[0] ?? '';
+    const pre = css.match(/\.krypton-review__md pre\s*\{[^}]*\}/)?.[0] ?? '';
+    const picker = css.match(/\.krypton-review-picker\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(root).toMatch(/font-family:\s*var\(--krypton-font-family\)/);
+    expect(body).toMatch(/font-family:\s*var\(--krypton-font-family\)/);
+    expect(code).toMatch(/font-family:\s*var\(--krypton-font-family\)/);
+    expect(pre).toMatch(/font-family:\s*var\(--krypton-font-family\)/);
+    expect(picker).toMatch(/font-family:\s*var\(--krypton-font-family\)/);
+    expect(root).toMatch(/font-size:\s*var\(--krypton-chrome-font-size,\s*11px\)/);
+    expect(root).not.toMatch(/font-size:\s*var\(--krypton-font-size\)/);
+    expect(body).toMatch(/font-size:\s*var\(--krypton-font-size\)/);
+    expect(picker).toMatch(/font-size:\s*var\(--krypton-chrome-font-size,\s*11px\)/);
+  });
+
+  it('does not shout chrome labels with text-transform: uppercase', () => {
+    expect(css).not.toMatch(/text-transform:\s*uppercase\s*;/);
+    const view = readFileSync(join(here, 'view.ts'), 'utf8');
+    expect(view).toContain('Review // ${title}');
+    expect(view).not.toContain('REVIEW //');
   });
 });

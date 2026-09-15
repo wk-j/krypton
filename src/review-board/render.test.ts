@@ -29,9 +29,9 @@ const chart = (
 
 describe('severity vocabulary', () => {
   it('maps each severity to a chip label and tone', () => {
-    expect(severityChip('blocking')).toEqual({ label: 'BLOCK', tone: 'blocking' });
-    expect(severityChip('non-blocking')).toEqual({ label: 'WARN', tone: 'warn' });
-    expect(severityChip('suggestion')).toEqual({ label: 'SUGG', tone: 'sugg' });
+    expect(severityChip('blocking')).toEqual({ label: 'block', tone: 'blocking' });
+    expect(severityChip('non-blocking')).toEqual({ label: 'warn', tone: 'warn' });
+    expect(severityChip('suggestion')).toEqual({ label: 'sugg', tone: 'sugg' });
   });
 
   it('renders the triage state as a glyph, open by default', () => {
