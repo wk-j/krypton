@@ -190,6 +190,8 @@ of the tool title than today while a narrow one ellipsizes; the cap is now only 
 5. Window resize → @container re-evaluates the branch rule; no JS involved
 ```
 
+The branch is not a chip segment. `renderComposerProjectStatus()` reads `this.gitBranch`, probed at harness open and re-probed when a tool ends, a lane goes idle, `projectDir` resolves, or the user presses `r`. Later probes keep the last ref until the new one arrives.
+
 No new IPC, no new state, no `ResizeObserver`, no extra render pass.
 
 ### Keybindings / Configuration

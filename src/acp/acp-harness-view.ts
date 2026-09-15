@@ -694,6 +694,20 @@ export function referenceGitResponseIsCurrent(
   return !disposed && generation === currentGeneration && requestCwd === currentCwd;
 }
 
+/** `git branch --show-current`, falling back to a detached `HEAD <sha>`. */
+export function gitBranchLabel(showCurrent: string, shortHead: string): string | null {
+  const branch = showCurrent.trim();
+  if (branch) return branch;
+  const head = shortHead.trim();
+  return head ? `HEAD ${head}` : null;
+}
+
+/** First probe may show `...`; later probes keep the last ref until the new one arrives. */
+export function gitBranchDisplay(branch: string | null, loading: boolean): string {
+  if (branch) return branch;
+  return loading ? '...' : '';
+}
+
 const STICK_THRESHOLD_PX = 32;
 // Spec 114 rev 12: a stuck lane more than this short of the bottom (and still
 // inside STICK_THRESHOLD_PX) is drift and gets re-pinned. Sub-pixel scroll
@@ -763,6 +777,7 @@ export function planSmoothFollow(
 
 const METRICS_POLL_MS = 2000;
 const REFERENCE_GIT_REFRESH_MS = 150;
+const GIT_BRANCH_REFRESH_MS = 150;
 
 // Braille spinner frames driven by a single JS interval (mirrors the agent
 // view's SPINNER_FRAMES). A shared frame counter, re-applied to every spinner
@@ -1144,6 +1159,8 @@ export class AcpHarnessView implements ContentView {
   private gitBranch: string | null = null;
   private gitBranchLoading = false;
   private gitBranchProjectDir: string | null = null;
+  private gitBranchRefreshTimer: number | null = null;
+  private gitBranchRefreshGeneration = 0;
   private memoryUnlisten: UnlistenFn | null = null;
   private mcpStatsByLane = new Map<string, HarnessMcpLaneStats>();
   private mcpUnlisten: UnlistenFn | null = null;
@@ -1513,6 +1530,7 @@ export class AcpHarnessView implements ContentView {
         value: { cwd: this.projectDir },
       });
       this.scheduleReferenceGitRefresh();
+      this.scheduleGitBranchRefresh();
       if (this.ticketWorker?.laneId === lane.id) void this.reloadActiveTicket(false);
     }
     // Composer peer-strip age depends on lane status (busy / awaiting_peer)
@@ -4571,6 +4589,11 @@ export class AcpHarnessView implements ContentView {
       window.clearTimeout(this.referenceGitRefreshTimer);
       this.referenceGitRefreshTimer = null;
     }
+    this.gitBranchRefreshGeneration += 1;
+    if (this.gitBranchRefreshTimer !== null) {
+      window.clearTimeout(this.gitBranchRefreshTimer);
+      this.gitBranchRefreshTimer = null;
+    }
     if (this.toolTickTimer !== null) {
       window.clearInterval(this.toolTickTimer);
       this.toolTickTimer = null;
@@ -6506,6 +6529,7 @@ export class AcpHarnessView implements ContentView {
     // use. Without this, a view constructed with projectDir=null reports cwd:null to
     // cross-harness peers even though it actually resolved get_app_cwd here.
     this.projectDir = projectDir;
+    void this.refreshGitBranch();
     // A remote absolute path is meaningless on the local machine. Keep the
     // hook server in-memory and route only its loopback MCP traffic over SSH;
     // project-backed persistence must never touch the same-looking local path.
@@ -7933,34 +7957,53 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  private scheduleGitBranchRefresh(): void {
+    if (this.gitBranchRefreshTimer !== null) {
+      window.clearTimeout(this.gitBranchRefreshTimer);
+    }
+    this.gitBranchRefreshTimer = window.setTimeout(() => {
+      this.gitBranchRefreshTimer = null;
+      void this.refreshGitBranch();
+    }, GIT_BRANCH_REFRESH_MS);
+  }
+
   private async refreshGitBranch(): Promise<void> {
     const cwd = this.projectDir;
-    this.gitBranch = null;
+    const generation = ++this.gitBranchRefreshGeneration;
     this.gitBranchProjectDir = cwd;
-    this.gitBranchLoading = Boolean(cwd);
-    this.render();
     if (!cwd) {
+      const changed = this.gitBranch !== null || this.gitBranchLoading;
+      this.gitBranch = null;
       this.gitBranchLoading = false;
+      if (changed) this.renderComposer();
       return;
+    }
+
+    // Keep the last ref visible across later probes so a checkout does not
+    // flash the composer empty / `...` while git runs.
+    if (this.gitBranch === null) {
+      this.gitBranchLoading = true;
+      this.renderComposer();
     }
 
     let branch: string | null = null;
     try {
       const rawBranch = await this.runWorkspaceCommand('git', ['branch', '--show-current'], cwd);
-      branch = rawBranch.trim() || null;
-      if (!branch) {
-        const rawHead = await this.runWorkspaceCommand('git', ['rev-parse', '--short', 'HEAD'], cwd);
-        const head = rawHead.trim();
-        if (head) branch = `HEAD ${head}`;
+      let rawHead = '';
+      if (!rawBranch.trim()) {
+        rawHead = await this.runWorkspaceCommand('git', ['rev-parse', '--short', 'HEAD'], cwd);
       }
+      branch = gitBranchLabel(rawBranch, rawHead);
     } catch {
       branch = null;
     }
 
-    if (this.gitBranchProjectDir !== cwd) return;
+    if (generation !== this.gitBranchRefreshGeneration) return;
+    if (this.projectDir !== cwd) return;
+    const changed = this.gitBranch !== branch || this.gitBranchLoading;
     this.gitBranch = branch;
     this.gitBranchLoading = false;
-    this.render();
+    if (changed) this.renderComposer();
   }
 
   private async runWorkspaceCommand(
@@ -13536,7 +13579,7 @@ export class AcpHarnessView implements ContentView {
    *  workspace footer carries the full path for the focused pane. The branch is
    *  the one part with no other home once this window loses focus. */
   private renderComposerProjectStatus(): string {
-    const branch = this.gitBranchLoading ? '...' : this.gitBranch;
+    const branch = gitBranchDisplay(this.gitBranch, this.gitBranchLoading);
     if (!branch) return '';
     const title = this.projectDir ? `${this.projectDir}${this.gitBranch ? ` on ${this.gitBranch}` : ''}` : '';
     return (
@@ -13564,7 +13607,7 @@ export class AcpHarnessView implements ContentView {
             <dt>Cmd+P then 0</dt><dd>Resume/load a project session for the active backend</dd>
             <dt>Ctrl+N / Ctrl+P</dt><dd>Next / previous lane</dd>
             <dt>Esc, then 1-9</dt><dd>Switch lane in transcript mode</dd>
-            <dt>Esc, then r</dt><dd>Refresh Git status and line counts for file references</dd>
+            <dt>Esc, then r</dt><dd>Refresh Git branch and file-reference line counts</dd>
             <dt>Esc, then ?</dt><dd>Open help</dd>
             <dt>Tab buttons</dt><dd>Click a lane directly</dd>
             <dt>Enter</dt><dd>Send prompt to active lane only</dd>
@@ -14117,6 +14160,7 @@ export class AcpHarnessView implements ContentView {
     if (target.toolStartedAt === undefined) target.toolStartedAt = performance.now();
     if (justEnded) {
       target.toolEndedAt = performance.now();
+      this.scheduleGitBranchRefresh();
     }
     const isActive = target.toolStartedAt !== undefined && target.toolEndedAt === undefined;
     if (wasActive !== isActive) {
@@ -14609,6 +14653,7 @@ export class AcpHarnessView implements ContentView {
     if (e.key === 'r' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       void this.refreshReferenceGitState(true);
+      void this.refreshGitBranch();
       return true;
     }
     if (e.key === 'j') { e.preventDefault(); body.scrollBy({ top: 24, behavior: 'instant' }); this.noteUserScroll(body, 'down'); return true; }

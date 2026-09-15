@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AcpHarnessView,
   applyReferenceGitChanges,
+  gitBranchDisplay,
+  gitBranchLabel,
   referenceGitResponseIsCurrent,
   backendLogoId,
   buildComposerPeerStrip,
@@ -433,10 +435,12 @@ describe('assistant reference Git state', () => {
     };
     const handle = (AcpHarnessView.prototype as unknown as TranscriptKeyTarget).handleTranscriptKey;
     const refresh = vi.fn();
+    const refreshBranch = vi.fn();
     const preventDefault = vi.fn();
     const target = {
       dashboardEl: { querySelector: () => ({}) },
       refreshReferenceGitState: refresh,
+      refreshGitBranch: refreshBranch,
     };
     const handled = handle.call(target, {
       key: 'r',
@@ -450,6 +454,21 @@ describe('assistant reference Git state', () => {
     expect(handled).toBe(true);
     expect(preventDefault).toHaveBeenCalledOnce();
     expect(refresh).toHaveBeenCalledWith(true);
+    expect(refreshBranch).toHaveBeenCalledOnce();
+  });
+
+  it('formats the composer branch from show-current, then detached HEAD', () => {
+    expect(gitBranchLabel('feat/4-wpg-migration-scope\n', '')).toBe('feat/4-wpg-migration-scope');
+    expect(gitBranchLabel('  main  ', 'ignored')).toBe('main');
+    expect(gitBranchLabel('', 'a1b2c3d\n')).toBe('HEAD a1b2c3d');
+    expect(gitBranchLabel('  \n', '  \n')).toBeNull();
+  });
+
+  it('keeps a resolved composer branch visible while a later probe is in flight', () => {
+    expect(gitBranchDisplay('main', true)).toBe('main');
+    expect(gitBranchDisplay('main', false)).toBe('main');
+    expect(gitBranchDisplay(null, true)).toBe('...');
+    expect(gitBranchDisplay(null, false)).toBe('');
   });
 
   it('rejects stale, cross-project, and post-dispose snapshots', () => {
@@ -457,6 +476,33 @@ describe('assistant reference Git state', () => {
     expect(referenceGitResponseIsCurrent(3, 4, '/repo', '/repo', false)).toBe(false);
     expect(referenceGitResponseIsCurrent(4, 4, '/repo', '/other', false)).toBe(false);
     expect(referenceGitResponseIsCurrent(4, 4, '/repo', '/repo', true)).toBe(false);
+  });
+});
+
+describe('composer git branch refresh', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+
+  function methodSource(name: string): string {
+    let start = src.indexOf(`private async ${name}(`);
+    if (start < 0) start = src.indexOf(`private ${name}(`);
+    expect(start).toBeGreaterThanOrEqual(0);
+    const next = src.indexOf('\n  private ', start + 1);
+    return src.slice(start, next === -1 ? undefined : next);
+  }
+
+  it('does not clear the last composer branch before a later probe returns', () => {
+    const body = methodSource('refreshGitBranch');
+    expect(body).not.toMatch(/this\.gitBranch = null;\s*this\.gitBranchProjectDir/);
+    expect(body).toContain('gitBranchLabel(');
+    expect(body).toContain('this.renderComposer()');
+    expect(body).not.toContain('this.render();');
+  });
+
+  it('re-probes after a tool ends, a lane goes idle, and projectDir resolves', () => {
+    expect(methodSource('renderTool')).toContain('this.scheduleGitBranchRefresh()');
+    expect(methodSource('setLaneStatus')).toContain('this.scheduleGitBranchRefresh()');
+    expect(methodSource('initializeHarnessMemory')).toContain('this.refreshGitBranch()');
   });
 });
 
