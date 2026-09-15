@@ -912,7 +912,7 @@
 }
 
 .krypton-window--stage[data-stage-role='shelf']::after {
-  content: attr(data-stage-index);
+  content: attr(data-window-number);
   position: absolute;
   top: 6px;
   right: 6px;

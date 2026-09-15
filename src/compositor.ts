@@ -2220,6 +2220,7 @@ export class Compositor {
     el.id = id;
     el.className = 'krypton-window';
     el.dataset.windowId = id;
+    el.dataset.windowNumber = String(windowIdCounter);
 
     // Assign unique accent color
     const accentColor = this.allocateAccentColor(id);
@@ -2811,6 +2812,7 @@ export class Compositor {
     el.id = id;
     el.className = 'krypton-window';
     el.dataset.windowId = id;
+    el.dataset.windowNumber = String(windowIdCounter);
     el.dataset.contentType = contentView.type;
 
     const accentColor = this.allocateAccentColor(id);
@@ -7069,21 +7071,19 @@ export class Compositor {
       const win = this.windows.get(placement.id);
       if (!win) continue;
       win.gridSlot = { col: placement.role === 'active' ? 1 : 0, row: i, colSpan: 1, rowSpan: 1 };
-      this.applyStagePlacement(win, placement, i + 1);
+      this.applyStagePlacement(win, placement);
     }
   }
 
   private applyStagePlacement(
     win: KryptonWindow,
     placement: StagePlacement,
-    index: number,
   ): void {
     const el = win.element;
     win.bounds = { ...placement.baseBounds };
     this.applyBounds(win);
     el.classList.add('krypton-window--stage');
     el.dataset.stageRole = placement.role;
-    el.dataset.stageIndex = String(index);
     el.style.transformOrigin = 'top left';
     el.style.transform = placement.role === 'active'
       ? 'none'
@@ -7105,7 +7105,6 @@ export class Compositor {
       const el = win.element;
       el.classList.remove('krypton-window--stage');
       delete el.dataset.stageRole;
-      delete el.dataset.stageIndex;
       el.style.transform = '';
       el.style.transformOrigin = '';
       el.style.opacity = '';
