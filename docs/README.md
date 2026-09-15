@@ -251,6 +251,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 245 | [Stage Layout (macOS Stage Manager-inspired)](./245-stage-layout.md) |
 | 246 | [ACP Harness Dictation](./246-harness-dictation.md) |
 | 247 | [Remote ACP Harness via SSH Runtime](./247-remote-acp-harness.md) |
+| 248 | [Layout Switcher Popup](./248-layout-switcher-popup.md) |
 
 ## ADRs (20)
 
