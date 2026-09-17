@@ -278,15 +278,29 @@ No new leader key, and **no command is required to publish**. `#usage` is a read
 
 | Command | Action |
 |---|---|
-| `#usage` | today's totals from the local log: turns, in/out, cached, reported cost, per-model split, plus the unsent count when non-zero |
+| `#usage` | today's totals from the local log: turns, in/out, cache hit + raw cache counters, reported cost, per-model split, plus the unsent count when non-zero |
 | `#usage <YYYY-MM-DD>` | the same for one past day still on disk |
 | `#usage flush` | drain the outbox now instead of waiting for backoff — for after fixing a token or URL |
 | `#usage open` | open `<base_url>/p/<project>/usage` in the OS browser |
 
 ### UI Changes
 
-Krypton: transcript system lines only — no new DOM, no chip, no panel. The live per-lane token chip
-(spec 156) is unchanged and remains the in-the-moment view.
+The existing active-lane stats cache cell is the in-the-moment view: it reads one coherent
+token-bearing event, shows `cache N%` for the latest complete turn, and keeps read/write/input counts
+in its tooltip. A merged `lane.usage` snapshot is never used for percentage arithmetic; missing
+required counters fall back to raw counts. `#daily` adds a `Hit` column to its lane table.
+
+Spec 250 renders a successful non-empty `#usage` result as one bounded transcript telemetry card.
+The day cache hit and proportional input/cache bar are the visual anchor, followed by visible
+Input, Output, Cache read and Cache write values and compact per-model rows. Reported cost,
+unmeasured turns, and unsent rows remain explicit footer notices. The card has no timers, listeners,
+or animation; it is a one-shot render of the existing rollup. At narrow widths metrics reflow from
+four columns to `2 × 2`, model values stack below the model name, and the bar moves below the hit
+rate. The item still stores `describeUsage()` as plain text for Live Assist and any generic
+projection. Recording-off and empty-day results remain plain system messages.
+
+The lane cell, card, fallback text, and `#daily` all use
+`cachedRead / (input + cachedRead + cachedWrite)`.
 
 Xenon `/p/<project>/usage`: a date-range header, a totals row, and two tables (by model, by lane) with
 columns *turns · input · output · cached read · cached write · reported · estimated*. Per

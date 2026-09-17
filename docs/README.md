@@ -252,6 +252,9 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 246 | [ACP Harness Dictation](./246-harness-dictation.md) |
 | 247 | [Remote ACP Harness via SSH Runtime](./247-remote-acp-harness.md) |
 | 248 | [Layout Switcher Popup](./248-layout-switcher-popup.md) |
+| 249 | [Harness Prompt-Cache Hit Rate](./249-harness-cache-hit-rate.md) |
+| 250 | [Harness Usage Visual Summary](./250-usage-visual-summary.md) |
+| 251 | [Harness Panel Visibility Command](./251-harness-panel-visibility-command.md) |
 
 ## ADRs (20)
 

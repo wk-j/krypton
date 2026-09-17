@@ -22,6 +22,15 @@ export interface TurnTokens {
   total?: number;
 }
 
+/** The counters needed for cache arithmetic, preserved exactly as reported.
+ *  Unlike persisted TurnTokens, missing input must stay missing: zero would
+ *  invent a denominator for adapters that do not expose that counter. */
+export interface CacheTokenTuple {
+  input?: number;
+  cachedRead?: number;
+  cachedWrite?: number;
+}
+
 export interface TurnUsageRecord {
   v: 1;
   /** Idempotency key. Generated once, here — a retry after an ambiguous POST
@@ -62,6 +71,43 @@ export interface TurnUsageRecord {
 export function isTurnUsage(usage: UsageInfo | null | undefined): boolean {
   if (!usage) return false;
   return typeof usage.inputTokens === 'number' || typeof usage.outputTokens === 'number';
+}
+
+export function extractCacheTokens(
+  usage: UsageInfo | null | undefined,
+): CacheTokenTuple | null {
+  if (!isTurnUsage(usage) || !usage) return null;
+  const tokens: CacheTokenTuple = {};
+  if (typeof usage.inputTokens === 'number') tokens.input = usage.inputTokens;
+  if (typeof usage.cachedReadTokens === 'number') tokens.cachedRead = usage.cachedReadTokens;
+  if (typeof usage.cachedWriteTokens === 'number') tokens.cachedWrite = usage.cachedWriteTokens;
+  return tokens;
+}
+
+/** Anthropic-style disjoint counters:
+ *  cache read / (uncached input + cache read + cache write). */
+export function cacheHitRate(tokens: CacheTokenTuple): number | null {
+  const { input, cachedRead } = tokens;
+  const cachedWrite = tokens.cachedWrite ?? 0;
+  if (
+    typeof input !== 'number' ||
+    typeof cachedRead !== 'number' ||
+    !Number.isFinite(input) ||
+    !Number.isFinite(cachedRead) ||
+    !Number.isFinite(cachedWrite) ||
+    input < 0 ||
+    cachedRead < 0 ||
+    cachedWrite < 0
+  ) {
+    return null;
+  }
+  const denominator = input + cachedRead + cachedWrite;
+  return denominator > 0 ? cachedRead / denominator : null;
+}
+
+export function formatCacheHitPercent(rate: number): string {
+  const bounded = Math.min(1, Math.max(0, rate));
+  return `${Math.round(bounded * 100)}%`;
 }
 
 /** A turn longer than this is a slept laptop or a skewed clock, not work. */
@@ -173,10 +219,87 @@ export interface UsageGroup {
   reportedCost: number;
 }
 
+export type UsageMetricTone = 'input' | 'output' | 'cache-read' | 'cache-write';
+
+/** Pure presentation data for the structured #usage transcript row. Keeping
+ *  this free of DOM lets formatting and cache arithmetic stay unit-testable. */
+export interface UsageVisualSummary {
+  date: string;
+  turns: string;
+  cachePercent: string | null;
+  segments: {
+    input: number;
+    cachedRead: number;
+    cachedWrite: number;
+  };
+  metrics: Array<{ label: string; value: string; tone: UsageMetricTone }>;
+  models: Array<{
+    name: string;
+    turns: string;
+    input: string;
+    output: string;
+  }>;
+  cost: string | null;
+  notices: string[];
+}
+
 export function formatTokenCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
+}
+
+export function buildUsageVisualSummary(rollup: UsageRollup): UsageVisualSummary {
+  const hasCache = rollup.cachedReadTokens > 0 || rollup.cachedWriteTokens > 0;
+  const cacheRate = hasCache
+    ? cacheHitRate({
+        input: rollup.inputTokens,
+        cachedRead: rollup.cachedReadTokens,
+        cachedWrite: rollup.cachedWriteTokens,
+      })
+    : null;
+  const metrics: UsageVisualSummary['metrics'] = [
+    { label: 'Input', value: formatTokenCount(rollup.inputTokens), tone: 'input' },
+    { label: 'Output', value: formatTokenCount(rollup.outputTokens), tone: 'output' },
+  ];
+  if (hasCache) {
+    metrics.push(
+      { label: 'Cache read', value: formatTokenCount(rollup.cachedReadTokens), tone: 'cache-read' },
+      { label: 'Cache write', value: formatTokenCount(rollup.cachedWriteTokens), tone: 'cache-write' },
+    );
+  }
+
+  const notices: string[] = [];
+  if (rollup.turnsWithoutTokens > 0) {
+    const noun = rollup.turnsWithoutTokens === 1 ? 'turn' : 'turns';
+    notices.push(`${rollup.turnsWithoutTokens} ${noun} reported no token counters`);
+  }
+  if (rollup.unsent > 0) {
+    notices.push(`${rollup.unsent} rows not yet accepted by Xenon (will retry)`);
+  }
+
+  return {
+    date: rollup.date,
+    turns: `${rollup.turns} ${rollup.turns === 1 ? 'turn' : 'turns'}`,
+    cachePercent: cacheRate === null ? null : formatCacheHitPercent(cacheRate),
+    segments: {
+      input: Math.max(0, rollup.inputTokens),
+      cachedRead: Math.max(0, rollup.cachedReadTokens),
+      cachedWrite: Math.max(0, rollup.cachedWriteTokens),
+    },
+    metrics,
+    models: rollup.byModel.map((model) => ({
+      name: model.key,
+      turns: String(model.turns),
+      input: formatTokenCount(model.inputTokens),
+      output: formatTokenCount(model.outputTokens),
+    })),
+    cost: rollup.reportedCostTurns > 0
+      ? `${rollup.currency} ${rollup.reportedCost.toFixed(4)} reported ` +
+        `(${rollup.reportedCostTurns} ${rollup.reportedCostTurns === 1 ? 'turn' : 'turns'})`
+      : null,
+    notices,
+  };
 }
 
 /**
@@ -199,8 +322,14 @@ export function describeUsage(rollup: UsageRollup): string {
     `↑${formatTokenCount(rollup.inputTokens)} ↓${formatTokenCount(rollup.outputTokens)}`,
   );
   if (rollup.cachedReadTokens > 0 || rollup.cachedWriteTokens > 0) {
+    const rate = cacheHitRate({
+      input: rollup.inputTokens,
+      cachedRead: rollup.cachedReadTokens,
+      cachedWrite: rollup.cachedWriteTokens,
+    });
     head.push(
-      `cache r${formatTokenCount(rollup.cachedReadTokens)} w${formatTokenCount(rollup.cachedWriteTokens)}`,
+      `cache ${rate === null ? '' : `${formatCacheHitPercent(rate)} `}` +
+      `r${formatTokenCount(rollup.cachedReadTokens)} w${formatTokenCount(rollup.cachedWriteTokens)}`,
     );
   }
   if (rollup.reportedCostTurns > 0) {

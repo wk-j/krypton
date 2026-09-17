@@ -219,6 +219,19 @@ describe('renderDigestForBrief', () => {
     expect(note).toContain('| Lane | Turns | Lane wall-clock |');
     expect(note).toContain('| Grok-2 | 26 | 3.32 h |');
     expect(note).toContain('213.7k');
+    expect(note).toContain('| 36.9M | 100% |');
+  });
+
+  it('shows no lane cache rate when no cache counters were reported', () => {
+    const note = renderDigestForBrief(
+      digest({
+        project: project({
+          byLane: [group('Codex-1', { turns: 2, inputTokens: 2400 })],
+          laneWallClockMs: [['Codex-1', 60_000]],
+        }),
+      }),
+    );
+    expect(note).toContain('| Codex-1 | 2 | 0.02 h | 0 | 0 | — |');
   });
 
   it('names an unreadable extra project instead of dropping it silently', () => {

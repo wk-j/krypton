@@ -25,6 +25,7 @@ import type {
 import { harnessIcon } from './harness-icons';
 import { backendLogoId } from './harness-lane-identity';
 import { harnessAutoAllowToolName } from './harness-permission-scan';
+import { cacheHitRate, formatCacheHitPercent } from './usage-log';
 import {
   cleanToolTitle,
   extractCommandLine,
@@ -454,13 +455,34 @@ export function renderLaneStats(lane: HarnessLane, projectDir: string | null): s
         : formatCount(usage.used);
       spans.push(cell(`${harnessIcon('gauge')}${esc(val)}`, `context ${val}`));
     }
-    if (typeof usage.cachedReadTokens === 'number' || typeof usage.cachedWriteTokens === 'number') {
-      const r = formatCount(usage.cachedReadTokens ?? 0);
-      const w = formatCount(usage.cachedWriteTokens ?? 0);
+    const hitRate = lane.lastTurnTokens ? cacheHitRate(lane.lastTurnTokens) : null;
+    if (hitRate !== null && lane.lastTurnTokens) {
+      const percent = formatCacheHitPercent(hitRate);
+      const r = formatCount(lane.lastTurnTokens.cachedRead ?? 0);
+      const w = formatCount(lane.lastTurnTokens.cachedWrite ?? 0);
+      const input = formatCount(lane.lastTurnTokens.input ?? 0);
       spans.push(cell(
-        `cache ${esc(r)}${harnessIcon('dl', 'acp-harness__icon--dot')}${esc(w)}${harnessIcon('ul', 'acp-harness__icon--dot')}`,
-        `cache read ${r}, write ${w}`,
+        `cache ${esc(percent)}`,
+        `this turn ${percent} · read ${r} · write ${w} · input ${input}`,
       ));
+    } else {
+      // Prefer the coherent latest turn even for the raw fallback; the merged
+      // display aggregate may retain cache fields that this turn omitted.
+      const rawCache = lane.lastTurnTokens ?? {
+        cachedRead: usage.cachedReadTokens,
+        cachedWrite: usage.cachedWriteTokens,
+      };
+      if (
+        typeof rawCache.cachedRead === 'number' ||
+        typeof rawCache.cachedWrite === 'number'
+      ) {
+        const r = formatCount(rawCache.cachedRead ?? 0);
+        const w = formatCount(rawCache.cachedWrite ?? 0);
+        spans.push(cell(
+          `cache ${esc(r)}${harnessIcon('dl', 'acp-harness__icon--dot')}${esc(w)}${harnessIcon('ul', 'acp-harness__icon--dot')}`,
+          `cache read ${r}, write ${w}`,
+        ));
+      }
     }
     if (typeof usage.inputTokens === 'number' || typeof usage.outputTokens === 'number') {
       spans.push(text(`in ${formatCount(usage.inputTokens ?? 0)} out ${formatCount(usage.outputTokens ?? 0)}`));

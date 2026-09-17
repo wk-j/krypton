@@ -17,7 +17,7 @@
 // for keeps its meaning everywhere.
 
 import type { UsageGroup } from './usage-log';
-import { formatTokenCount } from './usage-log';
+import { cacheHitRate, formatCacheHitPercent, formatTokenCount } from './usage-log';
 import type { JournalEvent, JournalKind } from './journal';
 
 // --------------------------------------------------------------- digest types
@@ -257,13 +257,21 @@ function laneTable(project: ProjectDigest): string[] {
   const out = [
     '## Lane ที่ลงแรง',
     '',
-    '| Lane | Turns | Lane wall-clock | Output | Cached read |',
-    '|---|---:|---:|---:|---:|',
+    '| Lane | Turns | Lane wall-clock | Output | Cached read | Hit |',
+    '|---|---:|---:|---:|---:|---:|',
   ];
   for (const group of project.byLane) {
+    const hitRate = group.cachedReadTokens > 0 || group.cachedWriteTokens > 0
+      ? cacheHitRate({
+          input: group.inputTokens,
+          cachedRead: group.cachedReadTokens,
+          cachedWrite: group.cachedWriteTokens,
+        })
+      : null;
     out.push(
       `| ${group.key} | ${group.turns} | ${hours(wallClock.get(group.key) ?? 0)} | ` +
-        `${formatTokenCount(group.outputTokens)} | ${formatTokenCount(group.cachedReadTokens)} |`,
+        `${formatTokenCount(group.outputTokens)} | ${formatTokenCount(group.cachedReadTokens)} | ` +
+        `${hitRate === null ? '—' : formatCacheHitPercent(hitRate)} |`,
     );
   }
   out.push('');

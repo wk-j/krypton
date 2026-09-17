@@ -42,6 +42,7 @@ import {
   resourceDisplayTarget,
 } from './message-resources';
 import { annotationSignature, applyTranscriptAnnotations } from './transcript-annotation';
+import { buildUsageVisualSummary, type UsageRollup } from './usage-log';
 
 export function applyCoordinatorProvenanceToItem(lane: HarnessLane, item: HarnessTranscriptItem): void {
   if (item.kind !== 'assistant' || lane.coordinatorDrainProvenanceUsed) return;
@@ -128,6 +129,134 @@ export function paintPretextLines(row: HTMLElement, lines: string[]): void {
     lineEl.textContent = text;
     row.appendChild(lineEl);
   }
+}
+
+/** Paint one completed #usage rollup. The transcript item's plain `text`
+ *  remains the fallback for renderers that do not consume this structured DOM. */
+export function renderUsageSummaryBody(body: HTMLElement, rollup: UsageRollup): void {
+  const summary = buildUsageVisualSummary(rollup);
+  body.classList.add('acp-harness__usage');
+
+  const card = document.createElement('section');
+  card.className = 'acp-harness__usage-card';
+  card.setAttribute('aria-label', `Usage for ${summary.date}`);
+
+  const head = document.createElement('header');
+  head.className = 'acp-harness__usage-head';
+  const date = document.createElement('span');
+  date.className = 'acp-harness__usage-date';
+  date.textContent = summary.date;
+  const turns = document.createElement('span');
+  turns.className = 'acp-harness__usage-turns';
+  turns.textContent = summary.turns;
+  head.append(date, turns);
+  card.appendChild(head);
+
+  const hasCache = summary.segments.cachedRead > 0 || summary.segments.cachedWrite > 0;
+  if (hasCache) {
+    const cache = document.createElement('div');
+    cache.className = 'acp-harness__usage-cache';
+    const cacheLabel = document.createElement('span');
+    cacheLabel.className = 'acp-harness__usage-cache-label';
+    cacheLabel.textContent = 'Cache hit';
+    const cacheValue = document.createElement('strong');
+    cacheValue.className = 'acp-harness__usage-cache-value';
+    cacheValue.textContent = summary.cachePercent ?? 'unavailable';
+    cache.append(cacheLabel, cacheValue);
+
+    if (summary.cachePercent !== null) {
+      const track = document.createElement('div');
+      track.className = 'acp-harness__usage-cache-track';
+      track.setAttribute('aria-hidden', 'true');
+      const segments = [
+        ['cache-read', summary.segments.cachedRead],
+        ['cache-write', summary.segments.cachedWrite],
+        ['input', summary.segments.input],
+      ] as const;
+      const total = segments.reduce((sum, [, value]) => sum + value, 0);
+      for (const [tone, value] of segments) {
+        if (value <= 0 || total <= 0) continue;
+        const segment = document.createElement('span');
+        segment.className = `acp-harness__usage-cache-segment acp-harness__usage-cache-segment--${tone}`;
+        segment.style.flexGrow = String(value / total);
+        track.appendChild(segment);
+      }
+      cache.appendChild(track);
+    }
+    card.appendChild(cache);
+  }
+
+  const metrics = document.createElement('dl');
+  metrics.className = `acp-harness__usage-metrics acp-harness__usage-metrics--${summary.metrics.length}`;
+  for (const metric of summary.metrics) {
+    const item = document.createElement('div');
+    item.className = `acp-harness__usage-metric acp-harness__usage-metric--${metric.tone}`;
+    const label = document.createElement('dt');
+    label.textContent = metric.label;
+    const value = document.createElement('dd');
+    value.textContent = metric.value;
+    item.append(label, value);
+    metrics.appendChild(item);
+  }
+  card.appendChild(metrics);
+
+  if (summary.models.length > 0) {
+    const models = document.createElement('div');
+    models.className = 'acp-harness__usage-models';
+    const modelHead = document.createElement('div');
+    modelHead.className = 'acp-harness__usage-model-head';
+    for (const text of ['Model', 'Turns', 'Input', 'Output']) {
+      const label = document.createElement('span');
+      label.textContent = text;
+      modelHead.appendChild(label);
+    }
+    models.appendChild(modelHead);
+
+    for (const model of summary.models) {
+      const row = document.createElement('div');
+      row.className = 'acp-harness__usage-model';
+      const name = document.createElement('span');
+      name.className = 'acp-harness__usage-model-name';
+      name.textContent = model.name;
+      name.title = model.name;
+      row.appendChild(name);
+      for (const [label, value] of [
+        ['Turns', model.turns],
+        ['Input', model.input],
+        ['Output', model.output],
+      ]) {
+        const stat = document.createElement('span');
+        stat.className = 'acp-harness__usage-model-stat';
+        const statLabel = document.createElement('span');
+        statLabel.className = 'acp-harness__usage-model-stat-label';
+        statLabel.textContent = label;
+        const statValue = document.createElement('span');
+        statValue.textContent = value;
+        stat.append(statLabel, statValue);
+        row.appendChild(stat);
+      }
+      models.appendChild(row);
+    }
+    card.appendChild(models);
+  }
+
+  if (summary.cost || summary.notices.length > 0) {
+    const foot = document.createElement('footer');
+    foot.className = 'acp-harness__usage-foot';
+    if (summary.cost) {
+      const cost = document.createElement('span');
+      cost.textContent = summary.cost;
+      foot.appendChild(cost);
+    }
+    for (const noticeText of summary.notices) {
+      const notice = document.createElement('span');
+      notice.textContent = noticeText;
+      foot.appendChild(notice);
+    }
+    card.appendChild(foot);
+  }
+
+  body.replaceChildren(card);
 }
 
 export function renderTranscriptItem(
@@ -241,6 +370,10 @@ export function renderTranscriptItem(
     el.classList.add('acp-harness__msg--inter_lane', `acp-harness__msg--mail-${direction}`);
     if (done) el.classList.add('acp-harness__msg--mail-done');
     renderLaneMailBody(body, item, item.interLane, item.text);
+  } else if (item.kind === 'system' && item.usage) {
+    label.textContent = 'usage';
+    el.classList.add('acp-harness__msg--usage');
+    renderUsageSummaryBody(body, item.usage);
   } else if (item.kind === 'system' && item.text.startsWith('[inter-lane]')) {
     label.textContent = 'event';
     el.classList.add('acp-harness__msg--harness-event');

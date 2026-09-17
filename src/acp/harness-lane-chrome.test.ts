@@ -2,7 +2,7 @@
 // the active and collapsed branches, so lane identity survives de-focus.
 import { describe, expect, it } from 'vitest';
 
-import { renderLaneHead } from './harness-lane-chrome';
+import { renderLaneHead, renderLaneStats } from './harness-lane-chrome';
 import { backendLogoId } from './harness-lane-identity';
 import type { HarnessLane } from './harness-view-types';
 
@@ -89,5 +89,44 @@ describe('renderLaneHead — no cancel chip', () => {
     );
     expect(html).not.toContain('acp-harness__lane-cancel-hint');
     expect(html).not.toContain('force restart');
+  });
+});
+
+describe('renderLaneStats — spec 249 prompt-cache hit rate', () => {
+  it('shows the coherent last-turn rate and keeps counts in the tooltip', () => {
+    const html = renderLaneStats(makeLane({
+      sessionId: 'session-123',
+      usage: {
+        inputTokens: 1200,
+        outputTokens: 340,
+        cachedReadTokens: 90_000,
+      },
+      lastTurnTokens: { input: 1200, cachedRead: 90_000 },
+    }), '/Users/wk/Source/krypton');
+
+    expect(html).toContain('cache 99%');
+    expect(html).toContain('this turn 99% · read 90.0k · write 0 · input 1.2k');
+    expect(html).not.toContain('cache 90k');
+  });
+
+  it('keeps raw counts when the adapter omitted input', () => {
+    const html = renderLaneStats(makeLane({
+      usage: { outputTokens: 340, cachedReadTokens: 90_000, cachedWriteTokens: 8000 },
+      lastTurnTokens: { cachedRead: 90_000 },
+    }), null);
+
+    expect(html).toContain('cache 90.0k');
+    expect(html).toContain('cache read 90.0k, write 0');
+    expect(html).not.toContain('cache 99%');
+    expect(html).not.toContain('write 8.0k');
+  });
+
+  it('does not revive stale cache counts when the latest turn omitted them', () => {
+    const html = renderLaneStats(makeLane({
+      usage: { inputTokens: 1200, outputTokens: 340, cachedReadTokens: 90_000 },
+      lastTurnTokens: { input: 1200 },
+    }), null);
+
+    expect(html).not.toContain('cache ');
   });
 });

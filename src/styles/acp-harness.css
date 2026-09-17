@@ -1741,6 +1741,268 @@
   overflow-wrap: anywhere;
 }
 
+/* spec 250 — #usage keeps a plain-text transcript fallback, but the primary
+   harness renderer uses one bounded telemetry card. No timers or animations:
+   this is a historical readout, not a live status surface. */
+.acp-harness__msg--usage {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.acp-harness__msg--usage .acp-harness__msg-label {
+  color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+  text-shadow:
+    0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 34%, transparent),
+    0 0 18px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 12%, transparent);
+}
+
+.acp-harness__msg--usage .acp-harness__msg-body {
+  font-size: 0.88em;
+  white-space: normal;
+}
+
+.acp-harness__usage-card {
+  box-sizing: border-box;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 30%, transparent);
+  border-radius: var(--krypton-border-radius, 8px);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 7%, transparent),
+      transparent 52%
+    ),
+    var(--agent-surface-low, rgba(6, 10, 18, 0.35));
+  box-shadow:
+    inset 0 0 34px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 3%, transparent),
+    0 0 14px rgba(0, 0, 0, 0.18);
+  contain: content;
+}
+
+.acp-harness__usage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+}
+
+.acp-harness__usage-date,
+.acp-harness__usage-turns,
+.acp-harness__usage-cache-label,
+.acp-harness__usage-metric dt,
+.acp-harness__usage-model-head,
+.acp-harness__usage-model-stat-label {
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.acp-harness__usage-date {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9);
+}
+
+.acp-harness__usage-turns {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
+.acp-harness__usage-cache {
+  display: grid;
+  grid-template-columns: auto auto minmax(80px, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+}
+
+.acp-harness__usage-cache-label {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+}
+
+.acp-harness__usage-cache-value {
+  min-width: 4ch;
+  color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+  font-size: 1.48em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-shadow:
+    0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 34%, transparent),
+    0 0 20px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 12%, transparent);
+}
+
+.acp-harness__usage-cache-track {
+  display: flex;
+  min-width: 0;
+  height: 7px;
+  overflow: hidden;
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+  border-radius: 999px;
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.05);
+}
+
+.acp-harness__usage-cache-segment {
+  flex-basis: 0;
+  min-width: 1px;
+}
+
+.acp-harness__usage-cache-segment--cache-read {
+  background: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+}
+
+.acp-harness__usage-cache-segment--cache-write {
+  background: var(--agent-gold, #ffd166);
+}
+
+.acp-harness__usage-cache-segment--input {
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28);
+}
+
+.acp-harness__usage-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0 10px 10px;
+}
+
+.acp-harness__usage-metrics--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.acp-harness__usage-metric {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+  border-radius: max(2px, calc(var(--krypton-border-radius, 8px) - 4px));
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.025);
+}
+
+.acp-harness__usage-metric dt,
+.acp-harness__usage-metric dd {
+  margin: 0;
+}
+
+.acp-harness__usage-metric dt {
+  overflow: hidden;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acp-harness__usage-metric dd {
+  margin-top: 2px;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+  font-size: 1.12em;
+  font-variant-numeric: tabular-nums;
+}
+
+.acp-harness__usage-metric--output dd {
+  color: var(--agent-user, #6dd0ff);
+}
+
+.acp-harness__usage-metric--cache-read dd {
+  color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+}
+
+.acp-harness__usage-metric--cache-write dd {
+  color: var(--agent-gold, #ffd166);
+}
+
+.acp-harness__usage-models {
+  padding: 0 10px 10px;
+}
+
+.acp-harness__usage-model-head,
+.acp-harness__usage-model {
+  display: grid;
+  grid-template-columns: minmax(12ch, 1fr) repeat(3, minmax(5ch, auto));
+  gap: 12px;
+  align-items: center;
+}
+
+.acp-harness__usage-model-head {
+  padding: 5px 8px;
+  border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34);
+}
+
+.acp-harness__usage-model-head span:not(:first-child),
+.acp-harness__usage-model-stat {
+  text-align: right;
+}
+
+.acp-harness__usage-model {
+  padding: 6px 8px;
+  border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+  font-variant-numeric: tabular-nums;
+}
+
+.acp-harness__usage-model-name {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acp-harness__usage-model-stat-label {
+  display: none;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34);
+}
+
+.acp-harness__usage-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  padding: 7px 10px;
+  border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+  font-size: 0.82em;
+}
+
+@container (max-width: 680px) {
+  .acp-harness__usage-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .acp-harness__usage-model-head {
+    display: none;
+  }
+
+  .acp-harness__usage-model {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px 8px;
+  }
+
+  .acp-harness__usage-model-name {
+    grid-column: 1 / -1;
+  }
+
+  .acp-harness__usage-model-stat {
+    display: flex;
+    justify-content: space-between;
+    gap: 4px;
+  }
+
+  .acp-harness__usage-model-stat-label {
+    display: inline;
+  }
+}
+
+@container (max-width: 420px) {
+  .acp-harness__usage-cache {
+    grid-template-columns: 1fr auto;
+  }
+
+  .acp-harness__usage-cache-track {
+    grid-column: 1 / -1;
+  }
+}
+
 .acp-harness__msg-text {
   min-width: 0;
 }
@@ -4332,6 +4594,32 @@
 @keyframes acp-harness-zen-attention {
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.4); opacity: 0.6; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PANEL VISIBILITY — #panels hide/show/toggle (spec 251)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Persistent supporting surfaces disappear as one reversible layer. The
+   transcript, composer, lane identity/status, and summon-on-demand overlays
+   remain available. */
+.acp-harness--panels-hidden .acp-harness__lane-rail,
+.acp-harness--panels-hidden .acp-harness__ticket-dock,
+.acp-harness--panels-hidden .acp-harness__rail {
+  display: none;
+}
+
+/* The ticket dock reserves width on the dashboard even when collapsed. Return
+   that space without mutating the dock's expanded/collapsed state. */
+.acp-harness--panels-hidden.acp-harness--ticket-active .acp-harness__dashboard,
+.acp-harness--panels-hidden.acp-harness--ticket-collapsed .acp-harness__dashboard {
+  margin-right: 0;
+}
+
+/* Zen normally allocates a left navigation column. With panels hidden the
+   active lane keeps the same body and fills the reclaimed column. */
+.acp-harness--panels-hidden.acp-harness--zen .acp-harness__dashboard {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .acp-harness__rail-name {

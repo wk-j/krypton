@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildTurnRecord,
+  buildUsageVisualSummary,
+  cacheHitRate,
   describeUsage,
+  extractCacheTokens,
+  formatCacheHitPercent,
   isTurnUsage,
   type TurnRecordInput,
   type UsageRollup,
@@ -60,6 +64,32 @@ describe('isTurnUsage', () => {
     expect(isTurnUsage({ used: 5, cost: { amount: 0.2, currency: 'USD' } })).toBe(false);
     expect(isTurnUsage(null)).toBe(false);
     expect(isTurnUsage(undefined)).toBe(false);
+  });
+});
+
+describe('prompt-cache hit rate', () => {
+  it('uses disjoint cache read, cache write, and uncached input counters', () => {
+    expect(cacheHitRate({ input: 1200, cachedRead: 90_000 })).toBeCloseTo(90_000 / 91_200);
+    expect(formatCacheHitPercent(cacheHitRate({ input: 1200, cachedRead: 90_000 })!)).toBe('99%');
+    expect(formatCacheHitPercent(cacheHitRate({
+      input: 8000,
+      cachedRead: 0,
+      cachedWrite: 8000,
+    })!)).toBe('0%');
+  });
+
+  it('refuses to invent a rate without input, cache read, or a denominator', () => {
+    expect(cacheHitRate({ cachedRead: 90_000 })).toBeNull();
+    expect(cacheHitRate({ input: 1200 })).toBeNull();
+    expect(cacheHitRate({ input: 0, cachedRead: 0, cachedWrite: 0 })).toBeNull();
+  });
+
+  it('preserves missing counters in the live cache tuple', () => {
+    expect(extractCacheTokens({
+      outputTokens: 3,
+      cachedReadTokens: 90_000,
+    })).toEqual({ cachedRead: 90_000 });
+    expect(extractCacheTokens({ used: 20, size: 100 })).toBeNull();
   });
 });
 
@@ -152,5 +182,75 @@ describe('describeUsage', () => {
 
   it('omits the cost segment when no adapter reported one', () => {
     expect(describeUsage(rollup({ turns: 1 }))).not.toContain('reported (');
+  });
+
+  it('reports the daily cache hit rate before the raw counters', () => {
+    const text = describeUsage(rollup({
+      turns: 12,
+      inputTokens: 18_400,
+      cachedReadTokens: 1_100_000,
+      cachedWriteTokens: 8000,
+    }));
+    expect(text).toContain('cache 98% r1.1M w8.0k');
+  });
+});
+
+describe('buildUsageVisualSummary', () => {
+  it('builds a cache-led card model without dropping raw counters or notices', () => {
+    const summary = buildUsageVisualSummary(rollup({
+      date: '2026-09-16',
+      turns: 5,
+      turnsWithoutTokens: 1,
+      inputTokens: 9000,
+      outputTokens: 2300,
+      cachedReadTokens: 456_700,
+      cachedWriteTokens: 0,
+      reportedCost: 1.25,
+      reportedCostTurns: 4,
+      byModel: [{
+        key: 'gpt-5.6-sol[high]',
+        turns: 5,
+        inputTokens: 9000,
+        outputTokens: 2300,
+        cachedReadTokens: 456_700,
+        cachedWriteTokens: 0,
+        reportedCost: 1.25,
+      }],
+      unsent: 2,
+    }));
+
+    expect(summary.cachePercent).toBe('98%');
+    expect(summary.segments).toEqual({ input: 9000, cachedRead: 456_700, cachedWrite: 0 });
+    expect(summary.metrics.map((metric) => [metric.label, metric.value])).toEqual([
+      ['Input', '9.0k'],
+      ['Output', '2.3k'],
+      ['Cache read', '456.7k'],
+      ['Cache write', '0'],
+    ]);
+    expect(summary.models).toEqual([{
+      name: 'gpt-5.6-sol[high]',
+      turns: '5',
+      input: '9.0k',
+      output: '2.3k',
+    }]);
+    expect(summary.cost).toBe('USD 1.2500 reported (4 turns)');
+    expect(summary.notices).toEqual([
+      '1 turn reported no token counters',
+      '2 rows not yet accepted by Xenon (will retry)',
+    ]);
+  });
+
+  it('keeps a no-cache day compact and does not invent a hit rate', () => {
+    const summary = buildUsageVisualSummary(rollup({
+      turns: 1,
+      inputTokens: 1200,
+      outputTokens: 340,
+    }));
+
+    expect(summary.turns).toBe('1 turn');
+    expect(summary.cachePercent).toBeNull();
+    expect(summary.metrics.map((metric) => metric.label)).toEqual(['Input', 'Output']);
+    expect(summary.cost).toBeNull();
+    expect(summary.notices).toEqual([]);
   });
 });

@@ -37,6 +37,7 @@ import type { TelegramControlCaller } from './control-types';
 import type { DebbyBuiltinRole } from './debby';
 import type { SaltyRole } from './salty';
 import type { AcpLaneMetrics } from '../types';
+import type { CacheTokenTuple, UsageRollup } from './usage-log';
 
 export type ComposerFocus = 'text' | 'transcript';
 export type PendingExtraction = never;
@@ -111,6 +112,9 @@ export interface HarnessTranscriptItem {
   fsReview?: FsWriteReviewPayload;
   interLane?: InterLanePayload;
   providerError?: ProviderErrorPayload;
+  /** spec 250: structured payload for the visual #usage transcript summary.
+   *  `text` remains the portable fallback for projections such as Live Assist. */
+  usage?: UsageRollup;
   /** spec 120: first assistant row after coordinator drain. */
   replyingToLaneMail?: LaneMailProvenance;
   /** spec 133: hintable HTML artifact card. */
@@ -479,6 +483,9 @@ export interface HarnessLane {
    *  would destroy exactly the per-turn numbers the log exists to record.
    *  Cleared by `finishTurn` once the row is emitted. */
   lastTurnUsage: UsageInfo | null;
+  /** spec 249: last token-bearing event as one coherent tuple for cache-rate
+   *  display. It survives turn recording and is cleared with session usage. */
+  lastTurnTokens: CacheTokenTuple | null;
   /** spec 214: 1-based turn counter within the current session. Reset on
    *  respawn, which is why a row also carries `sessionId`. */
   turnSeq: number;

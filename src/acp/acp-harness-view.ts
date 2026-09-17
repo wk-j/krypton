@@ -357,6 +357,7 @@ import {
 import {
   buildTurnRecord,
   describeUsage,
+  extractCacheTokens,
   formatTokenCount,
   isTurnUsage,
   type UsageRollup,
@@ -866,6 +867,7 @@ const LANE_DEFAULTS = {
   spawnEpoch: 0,
   usage: null,
   lastTurnUsage: null,
+  lastTurnTokens: null,
   turnSeq: 0,
   sessionId: null,
   modelName: null,
@@ -1225,6 +1227,8 @@ export class AcpHarnessView implements ContentView {
   private zenMode = false;
   /** spec 157: collapse tool cards to their head line, hide side-channel rows. */
   private conciseMode = false;
+  /** spec 251: hide persistent auxiliary panels without discarding their state. */
+  private panelsHidden = false;
   private memoryCursorRowId: string | null = null;
   private focus: ComposerFocus = 'text';
   private chip: string | null = null;
@@ -1390,6 +1394,7 @@ export class AcpHarnessView implements ContentView {
     this.openMarkdownViewCb = openMarkdownView;
     this.zenMode = readZenModePreference(projectDir);
     this.conciseMode = readConciseModePreference(projectDir);
+    this.panelsHidden = readPanelsHiddenPreference(projectDir);
     this.element = document.createElement('div');
     this.element.className = 'acp-harness';
     this.element.tabIndex = 0;
@@ -4325,7 +4330,7 @@ export class AcpHarnessView implements ContentView {
 
   private renderTicketDock(): void {
     const ticket = this.activeTicket;
-    this.ticketDockEl.hidden = !ticket;
+    this.ticketDockEl.hidden = !ticket || this.panelsHidden;
     this.element.classList.toggle('acp-harness--ticket-active', ticket !== null);
     this.element.classList.toggle(
       'acp-harness--ticket-collapsed',
@@ -4339,6 +4344,7 @@ export class AcpHarnessView implements ContentView {
       this.ticketDockEl.innerHTML = '';
       return;
     }
+    if (this.panelsHidden) return;
     const expanded = !this.ticketPanelCollapsed;
     this.ticketDockEl.setAttribute('aria-expanded', String(expanded));
     if (!expanded) {
@@ -7276,7 +7282,8 @@ export class AcpHarnessView implements ContentView {
     }
     try {
       const rollup = await invoke<UsageRollup>('usage_today', { cwd, date });
-      this.appendTranscript(lane, 'system', `[usage] ${describeUsage(rollup)}`);
+      const item = this.appendTranscript(lane, 'system', `[usage] ${describeUsage(rollup)}`);
+      if (rollup.recording && rollup.turns > 0) item.usage = rollup;
       this.flashChip(
         rollup.recording
           ? `${rollup.turns} turns · ↑${formatTokenCount(rollup.inputTokens)} ↓${formatTokenCount(rollup.outputTokens)}`
@@ -8570,7 +8577,10 @@ export class AcpHarnessView implements ContentView {
         // spec 214: only the prompt-response variant carries token counters;
         // a `usage_update` notification carries the context level and would
         // otherwise be mistaken for a completed turn's spend.
-        if (isTurnUsage(event.usage)) lane.lastTurnUsage = event.usage;
+        if (isTurnUsage(event.usage)) {
+          lane.lastTurnUsage = event.usage;
+          lane.lastTurnTokens = extractCacheTokens(event.usage);
+        }
         // Spec 114 rev 9: usage arrives once per API round-trip mid-turn (an
         // agentic turn with N tool calls emits N+), and a full lane render per
         // event flashed the whole lane while tools ran. Usage only surfaces on
@@ -10952,6 +10962,7 @@ export class AcpHarnessView implements ContentView {
     this.updateToolTick();
     lane.transcript.push({ id: makeId(), kind: 'system', text: `starting fresh ${lane.displayName}...` });
     lane.usage = null;
+    lane.lastTurnTokens = null;
     lane.sessionId = null;
     lane.modelName = null;
     lane.modelApplyFailed = false;
@@ -11047,6 +11058,22 @@ export class AcpHarnessView implements ContentView {
       this.setDraft(lane, '', 0);
       await this.printMcpStatus(lane);
       this.render();
+      return;
+    }
+    if (parts[0] === '#panels') {
+      this.setDraft(lane, '', 0);
+      const action = parts[1]?.toLowerCase() ?? 'toggle';
+      if (parts.length > 2 || !['hide', 'show', 'toggle'].includes(action)) {
+        this.flashChip('usage: #panels [hide | show | toggle]');
+        return;
+      }
+      const hidden = action === 'hide'
+        ? true
+        : action === 'show'
+          ? false
+          : !this.panelsHidden;
+      this.setPanelsHidden(hidden);
+      this.flashChip(hidden ? 'panels hidden · #panels show' : 'panels shown');
       return;
     }
     if (parts.length === 1 && parts[0] === '#telegram') {
@@ -11692,6 +11719,7 @@ export class AcpHarnessView implements ContentView {
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
     this.element.classList.toggle('acp-harness--zen', this.zenMode);
     this.element.classList.toggle('acp-harness--concise', this.conciseMode);
+    this.element.classList.toggle('acp-harness--panels-hidden', this.panelsHidden);
     this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
     this.applyActiveLaneAccent();
     this.renderDashboard();
@@ -11796,7 +11824,7 @@ export class AcpHarnessView implements ContentView {
   /** Patch the already-visible peek tool row for this lane. Do not remount the
    *  peek card or heat ring — those rebuilds flash the rail on every tool. */
   private syncPeekToolRow(lane: HarnessLane): void {
-    if (!this.peekSlotEl || this.peekSlotEl.hidden) return;
+    if (this.panelsHidden || !this.peekSlotEl || this.peekSlotEl.hidden) return;
     const card = this.peekSlotEl.querySelector<HTMLElement>('.acp-harness__lane-peek');
     if (!card || card.dataset.laneId !== lane.id) return;
     const snapshots = this.lanePeekSnapshots();
@@ -11811,6 +11839,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private patchPeekThoughtIfLane(lane: HarnessLane): void {
+    if (this.panelsHidden) return;
     const slot = this.thoughtSlotEl;
     const card = slot?.querySelector<HTMLElement>('.acp-harness__lane-thought');
     const showing = card?.dataset.laneId ?? null;
@@ -11828,6 +11857,7 @@ export class AcpHarnessView implements ContentView {
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
     this.element.classList.toggle('acp-harness--zen', this.zenMode);
     this.element.classList.toggle('acp-harness--concise', this.conciseMode);
+    this.element.classList.toggle('acp-harness--panels-hidden', this.panelsHidden);
     this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
     this.renderActiveLaneChrome(lane);
     this.renderActiveTranscript(lane);
@@ -11845,6 +11875,7 @@ export class AcpHarnessView implements ContentView {
    *  follows the active lane there as well. Numbered drain-order rows, ▸ head
    *  marker (dimmed when the queue is held/paused), per-item →lane / img×N tags. */
   private renderActiveLaneQueue(): void {
+    if (this.panelsHidden) return;
     const slot = this.queueSlotEl;
     const lane = this.activeLane();
     if (!lane || lane.queuedPrompts.length === 0) {
@@ -12104,6 +12135,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderLanePeek(): void {
+    if (this.panelsHidden) return;
     const now = Date.now();
     this.maybeRecordLaneMetricSamples(now);
     const slot = this.peekSlotEl;
@@ -12151,6 +12183,10 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderLaneThought(): void {
+    if (this.panelsHidden) {
+      this.stopThoughtTeletypeTick();
+      return;
+    }
     const slot = this.thoughtSlotEl;
     const snapshot = this.resolveThoughtTarget();
     if (!snapshot) {
@@ -13692,6 +13728,7 @@ export class AcpHarnessView implements ContentView {
             <dt>#draw &lt;request&gt;</dt><dd>Draw in an open tldraw Offline document (focused or named) — static shapes or durable document scripts</dd>
             <dt>#telegram</dt><dd>Open Telegram controller settings</dd>
             <dt>#mcp</dt><dd>Show MCP endpoint and lane status</dd>
+            <dt>#panels [hide | show | toggle]</dt><dd>Hide or restore persistent Harness panels</dd>
             <dt>#queue [clear | edit N]</dt><dd>Manage prompts queued while the lane is busy</dd>
             <dt>#unqueue [N]</dt><dd>Remove the last (or Nth) queued prompt</dd>
             <dt>!cmd</dt><dd>Run shell command in project cwd, output goes to transcript</dd>
@@ -14211,6 +14248,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderPlanPanel(lane: HarnessLane | null): void {
+    if (this.panelsHidden) return;
     if (!lane || !lane.plan || lane.plan.length === 0) {
       this.planEl.hidden = true;
       this.planEl.innerHTML = '';
@@ -15134,6 +15172,13 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
+  private setPanelsHidden(hidden: boolean): void {
+    this.panelsHidden = hidden;
+    writePanelsHiddenPreference(this.projectDir, hidden);
+    if (hidden) this.stopThoughtTeletypeTick();
+    this.render();
+  }
+
   private sortedMemoryRows(): HarnessMemoryEntry[] {
     return this.memoryEntries.slice().sort((a, b) => b.updatedAt - a.updatedAt);
   }
@@ -15638,6 +15683,27 @@ function writeConciseModePreference(projectDir: string | null, value: boolean): 
   try {
     if (value) localStorage.setItem(conciseModeStorageKey(projectDir), '1');
     else localStorage.removeItem(conciseModeStorageKey(projectDir));
+  } catch {
+    // localStorage unavailable — preference simply won't persist
+  }
+}
+
+function panelsHiddenStorageKey(projectDir: string | null): string {
+  return `krypton:acp-harness:panels-hidden:${projectDir ?? ''}`;
+}
+
+function readPanelsHiddenPreference(projectDir: string | null): boolean {
+  try {
+    return localStorage.getItem(panelsHiddenStorageKey(projectDir)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writePanelsHiddenPreference(projectDir: string | null, value: boolean): void {
+  try {
+    if (value) localStorage.setItem(panelsHiddenStorageKey(projectDir), '1');
+    else localStorage.removeItem(panelsHiddenStorageKey(projectDir));
   } catch {
     // localStorage unavailable — preference simply won't persist
   }

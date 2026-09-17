@@ -249,6 +249,10 @@ describe('assistant reference Git state', () => {
     expect(viewSrc).toMatch(
       /case 'usage':[\s\S]{0,900}?renderActiveLaneChrome\(lane\);[\s\S]{0,120}?renderLanePeek\(\);[\s\S]{0,60}?needsRender = false;[\s\S]{0,40}?break;/,
     );
+    expect(viewSrc).toMatch(
+      /if \(isTurnUsage\(event\.usage\)\) \{[\s\S]{0,160}?lane\.lastTurnTokens = extractCacheTokens\(event\.usage\);/,
+    );
+    expect(viewSrc).toMatch(/lane\.usage = null;\s+lane\.lastTurnTokens = null;/);
     // plan on the active lane is already patched by renderPlan; no full render.
     expect(viewSrc).toMatch(
       /case 'plan':[\s\S]{0,700}?renderPlan\(lane, event\.entries\);[\s\S]{0,500}?if \(lane\.id === this\.activeLaneId\) needsRender = false;[\s\S]{0,40}?break;/,
@@ -3009,6 +3013,85 @@ describe('#telegram dispatch', () => {
 
     expect(opens).toBe(0);
     expect(flashes).toEqual(['unknown command']);
+  });
+});
+
+describe('#panels dispatch (spec 251)', () => {
+  type TestLane = { status: string };
+  type PanelsRunner = { runHashCommand(lane: TestLane, text: string): Promise<void> };
+  const runHashCommand = (AcpHarnessView.prototype as unknown as PanelsRunner).runHashCommand;
+
+  function harnessDouble(hidden = false): {
+    target: Record<string, unknown>;
+    drafts: string[];
+    flashes: string[];
+    states: boolean[];
+  } {
+    const drafts: string[] = [];
+    const flashes: string[] = [];
+    const states: boolean[] = [];
+    const target: Record<string, unknown> = {
+      panelsHidden: hidden,
+      setDraft: (_lane: TestLane, value: string) => drafts.push(value),
+      flashChip: (value: string) => flashes.push(value),
+      setPanelsHidden: (value: boolean) => {
+        target.panelsHidden = value;
+        states.push(value);
+      },
+    };
+    return { target, drafts, flashes, states };
+  }
+
+  it('toggles with the bare command and accepts explicit hide/show', async () => {
+    const h = harnessDouble();
+
+    await runHashCommand.call(h.target, { status: 'busy' }, '#panels');
+    await runHashCommand.call(h.target, { status: 'busy' }, '#panels show');
+    await runHashCommand.call(h.target, { status: 'busy' }, '#panels hide');
+    await runHashCommand.call(h.target, { status: 'busy' }, '#panels toggle');
+
+    expect(h.drafts).toEqual(['', '', '', '']);
+    expect(h.states).toEqual([true, false, true, false]);
+    expect(h.flashes).toEqual([
+      'panels hidden · #panels show',
+      'panels shown',
+      'panels hidden · #panels show',
+      'panels shown',
+    ]);
+  });
+
+  it('rejects unknown or extra arguments without changing visibility', async () => {
+    const h = harnessDouble(true);
+
+    await runHashCommand.call(h.target, { status: 'idle' }, '#panels maybe');
+    await runHashCommand.call(h.target, { status: 'idle' }, '#panels hide now');
+
+    expect(h.states).toEqual([]);
+    expect(h.target.panelsHidden).toBe(true);
+    expect(h.flashes).toEqual([
+      'usage: #panels [hide | show | toggle]',
+      'usage: #panels [hide | show | toggle]',
+    ]);
+  });
+
+  it('applies one root class, preserves modal access, and pauses hidden thought animation', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    const css = readFileSync(join(here, '../styles/acp-harness.css'), 'utf8');
+
+    expect(viewSrc.match(/classList\.toggle\('acp-harness--panels-hidden'/g)).toHaveLength(2);
+    expect(viewSrc).toMatch(
+      /private renderLaneThought\(\): void \{\s*if \(this\.panelsHidden\) \{\s*this\.stopThoughtTeletypeTick\(\);\s*return;/,
+    );
+    expect(viewSrc).toMatch(/private syncPeekToolRow[\s\S]{0,160}if \(this\.panelsHidden/);
+    expect(viewSrc).toMatch(/private renderActiveLaneQueue[\s\S]{0,120}if \(this\.panelsHidden\) return;/);
+    expect(viewSrc).toMatch(/private renderPlanPanel[\s\S]{0,120}if \(this\.panelsHidden\) return;/);
+    expect(css).toContain('.acp-harness--panels-hidden .acp-harness__lane-rail');
+    expect(css).toContain('.acp-harness--panels-hidden .acp-harness__ticket-dock');
+    expect(css).toContain('.acp-harness--panels-hidden .acp-harness__rail');
+    expect(css).toContain('.acp-harness--panels-hidden.acp-harness--zen .acp-harness__dashboard');
+    expect(css).not.toContain('.acp-harness--panels-hidden .acp-harness__memory-overlay');
+    expect(css).not.toContain('.acp-harness--panels-hidden .acp-harness__help-overlay');
   });
 });
 

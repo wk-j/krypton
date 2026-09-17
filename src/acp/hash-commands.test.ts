@@ -85,11 +85,14 @@ describe('buildCommandManifest', () => {
   it('includes browser surfaces and the github-issue verbs in the palette roster', () => {
     const names = HASH_COMMANDS.map((c) => c.name);
     expect(names).toContain('docs');
+    expect(names).toContain('panels');
     expect(names).toContain('termctrl');
     expect(names).toContain('hurl');
     expect(names).toContain('dispatch-github-issue');
     expect(names).not.toContain('fix-issue');
     expect(byName.get('docs')?.badges).not.toContain('hidden');
+    expect(byName.get('panels')?.category).toBe('surface');
+    expect(byName.get('panels')?.args).toBe('[hide | show | toggle]');
     expect(byName.get('termctrl')?.category).toBe('surface');
     expect(byName.get('dispatch-github-issue')?.badges).not.toContain('hidden');
     expect(byName.get('dispatch-github-issue')?.alias).toBeUndefined();

@@ -57,6 +57,11 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'restart', args: '', description: 'restart the lane backend process' },
   { name: 'mem', args: '[clear]', description: 'memory commands (clear lane memory)' },
   { name: 'mcp', args: '', description: 'print harness MCP server status' },
+  {
+    name: 'panels',
+    args: '[hide | show | toggle]',
+    description: 'hide or restore persistent harness panels',
+  },
   { name: 'dashboard', args: '', description: 'open the live harness dashboard in a browser' },
   { name: 'gallery', args: '', description: 'open the artifact gallery (pending + live artifacts) in a browser' },
   { name: 'docs', args: '', description: 'open the repo docs browser in a browser' },
@@ -72,7 +77,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
     name: 'usage',
     args: '[<YYYY-MM-DD> | flush | open]',
     description:
-      "today's LLM turn statistics (tokens, models, reported cost); rows stream to Xenon on their own",
+      "today's LLM turn statistics (tokens, cache hit, models, reported cost); rows stream to Xenon on their own",
   },
   {
     name: 'daily',
@@ -217,6 +222,7 @@ export function commandMeta(): Record<string, CommandMeta> {
     restart: { category: 'session', badges: [] },
     mem: { category: 'session', badges: [] },
     mcp: { category: 'session', badges: [] },
+    panels: { category: 'surface', badges: [] },
     queue: { category: 'session', badges: [] },
     unqueue: { category: 'session', badges: [] },
     dashboard: { category: 'surface', badges: [] },
