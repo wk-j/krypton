@@ -89,6 +89,7 @@ fn tool_category(name: &str) -> &'static str {
         "peer_send" | "peer_list" => "peering",
         "artifact_new" | "artifact_register" | "artifact_cancel" => "artifacts",
         "attention_flag" | "attention_resolve" => "attention",
+        "timeline_suggest" => "timeline",
         "review_outcome" | "mark_review_priority" => "review",
         "issue_progress" => "issues",
         _ => "other", // forward-compat: unmapped tools still render

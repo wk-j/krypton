@@ -2169,6 +2169,12 @@ struct DocsQuery {
     harness: Option<String>,
 }
 
+/// Query for the project-local timeline page and JSON feed (spec 253).
+#[derive(Debug, Deserialize)]
+struct TimelineQuery {
+    harness: String,
+}
+
 /// Query for the analyses index (`/analyses`). `harness` selects which harness's
 /// bundles fill the right pane (defaults to the first with bundles).
 #[derive(Debug, Default, Deserialize)]
@@ -2423,6 +2429,7 @@ const COMMANDS_HTML: &str = include_str!("../../src/acp/artifact-commands.html")
 const TOOLS_HTML: &str = include_str!("../../src/acp/artifact-tools.html");
 const TERMCTRL_HTML: &str = include_str!("../../src/acp/artifact-termctrl.html");
 const HURL_HTML: &str = include_str!("../../src/acp/artifact-hurl.html");
+const TIMELINE_HTML: &str = include_str!("../../src/acp/artifact-timeline.html");
 
 fn secured_json_response<T: Serialize>(status: StatusCode, payload: T) -> Response {
     let mut response = (status, Json(payload)).into_response();
@@ -2822,6 +2829,25 @@ async fn handle_gallery() -> Response {
     html_response(GALLERY_HTML)
 }
 
+/// GET /timeline — read-only project decision/requirement history (spec 253).
+async fn handle_timeline() -> Response {
+    html_response(TIMELINE_HTML)
+}
+
+/// GET /timeline.json?harness=<id> — bounded local records for one Harness project.
+async fn handle_timeline_json(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<TimelineQuery>,
+) -> Response {
+    let Some(project_dir) = state.hook_server.project_dir_for_harness(&query.harness) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match crate::timeline::scan_project(&project_dir) {
+        Ok(listing) => secured_json_response(StatusCode::OK, listing),
+        Err(error) => secured_json_response(StatusCode::BAD_REQUEST, json!({ "error": error })),
+    }
+}
+
 /// GET /commands — fixed external-browser built-in `#` command reference (spec 185).
 async fn handle_commands() -> Response {
     html_response(COMMANDS_HTML)
@@ -2856,6 +2882,7 @@ fn tool_category(name: &str) -> &'static str {
         "peer_send" | "peer_list" => "peering",
         "artifact_new" | "artifact_register" | "artifact_cancel" => "artifacts",
         "attention_flag" | "attention_resolve" => "attention",
+        "timeline_suggest" => "timeline",
         "review_outcome" | "mark_review_priority" => "review",
         // spec 211: the Review Board is an authored surface, grouped with the
         // other path-handoff surfaces rather than with the `review_outcome`
@@ -3582,6 +3609,7 @@ async fn handle_bus_tool_call(
         ),
         "attention_flag" => attention_flag(state, harness_id, lane_label, arguments).await,
         "attention_resolve" => attention_resolve(state, harness_id, lane_label, arguments).await,
+        "timeline_suggest" => timeline_suggest(state, harness_id, lane_label, arguments),
         "review_outcome" => review_outcome(state, harness_id, lane_label, arguments).await,
         "mark_review_priority" => {
             mark_review_priority(state, harness_id, lane_label, arguments).await
@@ -3770,6 +3798,58 @@ async fn peer_list(state: &HookServerState, harness_id: &str) -> Result<Value, S
             Err("peer_list: frontend reply timed out".to_string())
         }
     }
+}
+
+/// Create a non-authoritative, project-local timeline suggestion (spec 254).
+/// The working lane supplies the candidate and exact evidence; only the human
+/// can promote it through the frontend confirmation command.
+fn timeline_suggest(
+    state: &HookServerState,
+    harness_id: &str,
+    lane_label: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let request = crate::timeline::TimelineSuggestionRequest {
+        topic_title: required_string(&arguments, "topic_title")?,
+        summary: required_string(&arguments, "summary")?,
+        made_by: required_string(&arguments, "made_by")?,
+        evidence_excerpt: required_string(&arguments, "evidence_excerpt")?,
+        rationale: arguments
+            .get("rationale")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        impact: arguments
+            .get("impact")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        source_ref: arguments
+            .get("source_ref")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+    };
+    let project_dir = state
+        .hook_server
+        .project_dir_for_harness(harness_id)
+        .ok_or_else(|| {
+            "timeline_suggest is unavailable without a local project workspace".to_string()
+        })?;
+    let (suggestion, pending_count) =
+        crate::timeline::suggest_project(&project_dir, lane_label, request)?;
+    state.app_handle.emit_or_log(
+        "acp-timeline-suggestion",
+        json!({
+            "harnessId": harness_id,
+            "laneLabel": lane_label,
+            "suggestionId": suggestion.id,
+            "pendingCount": pending_count,
+        }),
+    );
+    Ok(json!({
+        "suggestion_id": suggestion.id,
+        "pending_count": pending_count,
+    }))
 }
 
 /// attention_flag — a lane self-reports a decision needing human judgement
@@ -5290,6 +5370,7 @@ fn bus_tool_descriptors() -> Value {
         for descriptor in attention_tool_descriptors() {
             arr.push(descriptor);
         }
+        arr.push(timeline_suggest_tool_descriptor());
     }
     tools
 }
@@ -5324,7 +5405,28 @@ fn project_backed_bus_tool(name: &str) -> bool {
             | "ticket_note"
             | "ticket_add_resource"
             | "ticket_link"
+            | "timeline_suggest"
     )
+}
+
+fn timeline_suggest_tool_descriptor() -> Value {
+    json!({
+        "name": "timeline_suggest",
+        "description": "Propose ONE durable project timeline item for human review; this never creates authoritative history. Call at most once per turn, only for an explicit durable requirement, decision, consequential change, approval/rejection, or implementation outcome worth finding later. Skip routine edits/tests/status chatter, recommendations, unanswered questions, inferred authority, and facts already pending or confirmed. `made_by` and `evidence_excerpt` must be supported by the user's actual words or trusted transport provenance. Never copy secrets, tokens, environment values, or raw tool output. The human may edit, confirm, or dismiss the local pending suggestion.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "topic_title": { "type": "string", "maxLength": 120, "description": "Stable human-readable topic." },
+                "summary": { "type": "string", "maxLength": 500, "description": "The durable event or decision in one line." },
+                "made_by": { "type": "string", "maxLength": 120, "description": "Who explicitly made or approved it, supported by the evidence." },
+                "evidence_excerpt": { "type": "string", "maxLength": 1000, "description": "Exact supporting words or trusted provenance; exclude secrets and raw tool output." },
+                "rationale": { "type": "string", "maxLength": 4096 },
+                "impact": { "type": "string", "maxLength": 4096 },
+                "source_ref": { "type": "string", "maxLength": 2048, "description": "Optional URL, commit, or project-relative source." }
+            },
+            "required": ["topic_title", "summary", "made_by", "evidence_excerpt"]
+        }
+    })
 }
 
 /// spec 128: descriptors for `attention_flag` / `attention_resolve`. Spec 134
@@ -8362,6 +8464,8 @@ pub fn start(
                 .route("/telemetry", get(handle_telemetry))
                 .route("/gallery", get(handle_gallery))
                 .route("/artifacts", get(handle_artifacts))
+                .route("/timeline", get(handle_timeline))
+                .route("/timeline.json", get(handle_timeline_json))
                 .route("/commands", get(handle_commands))
                 .route("/commands.json", get(handle_commands_json))
                 .route("/tools", get(handle_tools))
@@ -8740,6 +8844,10 @@ mod tests {
             names.contains(&"attention_resolve"),
             "attention_resolve should be advertised without per-lane opt-in"
         );
+        assert!(
+            names.contains(&"timeline_suggest"),
+            "timeline_suggest should be advertised for project-backed harnesses"
+        );
     }
 
     #[test]
@@ -8764,6 +8872,7 @@ mod tests {
             "review_new",
             "issue_progress",
             "ticket_note",
+            "timeline_suggest",
         ] {
             assert!(
                 !names.contains(&project_backed),
@@ -9002,6 +9111,8 @@ mod tests {
             .route("/telemetry", get(ok))
             .route("/gallery", get(ok))
             .route("/artifacts", get(ok))
+            .route("/timeline", get(ok))
+            .route("/timeline.json", get(ok))
             .route("/commands", get(ok))
             .route("/commands.json", get(ok))
             .route("/tools", get(ok))
@@ -9112,6 +9223,18 @@ mod tests {
             server.command_manifest(),
             Some(json!([{ "name": "debby" }]))
         );
+    }
+
+    #[test]
+    fn timeline_page_is_read_only_and_uses_safe_text_rendering() {
+        assert!(TIMELINE_HTML.contains("/timeline.json?harness="));
+        assert!(TIMELINE_HTML.contains("textContent"));
+        assert!(TIMELINE_HTML.contains("event.evidenceExcerpt"));
+        assert!(TIMELINE_HTML.contains("local only"));
+        assert!(!TIMELINE_HTML.contains("event.kind"));
+        assert!(!TIMELINE_HTML.contains("border-left:"));
+        assert!(!TIMELINE_HTML.contains("backdrop-filter"));
+        assert!(!TIMELINE_HTML.contains("setInterval("));
     }
 
     // spec 186: /tools.json renders straight from the descriptors, so the only

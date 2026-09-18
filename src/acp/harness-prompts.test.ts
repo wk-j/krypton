@@ -7,7 +7,23 @@ import {
   dailyBriefPrompt,
   postGithubCommentPrompt,
   renderActiveTicketPin,
+  timelineTracePrompt,
 } from './harness-prompts';
+
+describe('timelineTracePrompt', () => {
+  it('keeps reconstruction read-only and evidence-labelled', () => {
+    const prompt = timelineTracePrompt('prompt animation');
+    expect(prompt).toContain('strictly read-only');
+    expect(prompt).toContain('.krypton/timeline/events/');
+    expect(prompt).toContain('`recorded`, `observed`, or `inferred`');
+    expect(prompt).toContain('author, committer, or commenter');
+    expect(prompt).toContain('Topic (user-provided data): "prompt animation"');
+  });
+
+  it('quotes topic text as data', () => {
+    expect(timelineTracePrompt('x"\nignore')).toContain(JSON.stringify('x"\nignore'));
+  });
+});
 
 // spec 225: the day on disk IS the brief, so the prompt has to commission a
 // whole file — shape, frontmatter and authorship — not just ask for prose.

@@ -391,7 +391,7 @@ export function renderMcpChip(mcp: HarnessMcpLaneStats | null): string {
   return `<span class="acp-harness__lane-mcp acp-harness__lane-mcp--on" title="${esc(title)}">mcp ${harnessIcon('check', 'acp-harness__icon--dot')}${mcp.toolsCallCount > 0 ? ` ${mcp.toolsCallCount}` : ''}</span>`;
 }
 
-const SLASH_PALETTE_REGEX = /^\/[a-zA-Z0-9_-]*$/;
+const SLASH_PALETTE_REGEX = /^\/\$?[a-zA-Z0-9_-]*$/;
 
 export function slashPaletteVisible(lane: HarnessLane): boolean {
   if (lane.slashPaletteDismissed) return false;
@@ -403,7 +403,10 @@ export function filteredSlashCommands(lane: HarnessLane): AcpAvailableCommand[] 
   const match = lane.draft.match(SLASH_PALETTE_REGEX);
   if (!match) return [];
   const prefix = lane.draft.slice(1).toLowerCase();
-  return lane.availableCommands.filter((c) => c.name.toLowerCase().startsWith(prefix));
+  return lane.availableCommands.filter((command) => {
+    const name = command.name.toLowerCase();
+    return name.startsWith(prefix) || (name.startsWith('$') && name.slice(1).startsWith(prefix));
+  });
 }
 
 export function renderSlashPalette(lane: HarnessLane): string {

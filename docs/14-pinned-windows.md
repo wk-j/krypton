@@ -6,13 +6,13 @@
 
 ## Problem
 
-In Focus layout, all windows participate in the focus cycle (Cmd+Shift+</>). Users often want a reference terminal (logs, docs, monitoring) permanently visible on the right side of the screen while cycling through other windows in the main (left) position. Currently there is no way to exclude a window from the focus cycle or anchor it to a fixed position.
+In Focus layout, users often want a reference terminal (logs, docs, monitoring) permanently visible on the right side of the screen. Pinning must anchor that window without making a shown window unreachable from the global clockwise/counterclockwise focus cycle.
 
 ## Solution
 
 Add a **pin** toggle to any terminal window. A pinned window:
 1. Sticks to the **right column** in Focus layout (never moves to the main/left position)
-2. Is **skipped** during focus cycling (Cmd+Shift+</>)
+2. Remains in the **clockwise focus cycle** (Cmd+Shift+</>) without moving to the main column
 3. Can still receive focus via direct click or directional focus (h/j/k/l)
 4. Shows a visual pin indicator in its title bar
 5. In Grid layout, pinned windows participate normally (pin only affects Focus layout behavior)
@@ -22,7 +22,7 @@ Add a **pin** toggle to any terminal window. A pinned window:
 | File | Change |
 |------|--------|
 | `src/types.ts` | Add `pinned: boolean` to `KryptonWindow` |
-| `src/compositor.ts` | Pin/unpin toggle, skip pinned in `focusCycle()`, adjust `relayoutFocus()` to keep pinned windows in right stack |
+| `src/compositor.ts` | Pin/unpin toggle, include visible pinned windows in `focusCycle()`, adjust `relayoutFocus()` to keep pinned windows in right stack |
 | `src/input-router.ts` | Add `p` key in Compositor mode to toggle pin |
 | `src/layout.ts` | Update `focusTile()` to accept pinned indices |
 | `src/which-key.ts` | Add pin entry to Compositor mode key list |
@@ -68,9 +68,9 @@ togglePin(windowId?: WindowId): void
 
 **Focus cycling with pinned windows:**
 1. User presses Cmd+Shift+< or Cmd+Shift+>
-2. `focusCycle()` filters pinned windows out of the cycle order
-3. Only unpinned windows are cycled through
-4. If ALL windows are pinned, cycling does nothing
+2. `focusCycle()` walks the visible layout clockwise or counterclockwise
+3. Pinned windows receive focus in place and remain in the right stack
+4. If all windows are pinned, the focused window takes the main position and the others remain reachable
 
 **Focus layout with pinned windows:**
 1. `relayoutFocus()` separates windows into unpinned and pinned lists
@@ -97,7 +97,7 @@ togglePin(windowId?: WindowId): void
 | Case | Behavior |
 |------|----------|
 | Pin the only window | Allowed; no visible layout change (single window stays in main position) |
-| Pin all windows | Focus cycling becomes a no-op. All windows participate in layout normally. |
+| Pin all windows | The focused pinned window takes the main position; focus cycling still reaches every shown window. |
 | Pin the currently focused (main) window in Focus layout | Window moves to right column; the next unpinned window takes the main position |
 | Unpin while in right column | Window rejoins the unpinned pool; layout recalculates |
 | Close a pinned window | Normal close behavior; pin state discarded |

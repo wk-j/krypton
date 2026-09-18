@@ -25,6 +25,7 @@ import {
   postGithubCommentPrompt,
   renderActiveTicketPin,
   tagGithubIssuePrompt,
+  timelineTracePrompt,
   tldrawDrawPrompt,
   wikiIngestPrompt,
   wikiRecallPrompt,
@@ -67,6 +68,11 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'docs', args: '', description: 'open the repo docs browser in a browser' },
   { name: 'analyses', args: '', description: 'open the GitHub issue analysis viewer in a browser' },
   { name: 'reviews', args: '', description: 'browse every Review Board ever composed, in a browser (read-only)' },
+  {
+    name: 'timeline',
+    args: '[open [<topic>] | add [<topic>] | review | auto [on|off] | trace <topic> | <topic>]',
+    description: 'record, review, or trace local project requirements and decisions',
+  },
   {
     name: 'push',
     args: '[--force] [<kind> [<slug>]]',
@@ -230,6 +236,11 @@ export function commandMeta(): Record<string, CommandMeta> {
     docs: { category: 'surface', badges: [] },
     analyses: { category: 'surface', badges: [] },
     reviews: { category: 'surface', badges: [] },
+    timeline: {
+      category: 'surface',
+      badges: [],
+      prompt: timelineTracePrompt('<topic>'),
+    },
     push: { category: 'surface', badges: [] },
     usage: { category: 'surface', badges: [] },
     daily: {

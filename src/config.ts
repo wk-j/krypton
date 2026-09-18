@@ -179,6 +179,10 @@ export interface RemoteHarnessProfile {
 export interface AcpHarnessConfig {
   idle_flash_sound: boolean;
   memory_footer: boolean;
+  /** spec 252: fading letter afterimage on harness composer insertion. */
+  composer_bloom: boolean;
+  composer_bloom_ms: number;
+  composer_bloom_trail: number;
   remote_profiles: RemoteHarnessProfile[];
   /** Per-backend model selection. Keyed by backend id (`gemini`, `opencode`,
    * `droid`, `cursor`, `claude`, `codex`, `junie`, `omp`, `grok`, `copilot`,

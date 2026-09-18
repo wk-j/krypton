@@ -2,7 +2,7 @@
 // Resolves grid slots to pixel coordinates within the workspace.
 // Supports Grid (auto-tile) and Focus (main + stack) layout modes.
 
-import { GridSlot, WindowBounds } from './types';
+import { GridSlot, WindowBounds, WindowId } from './types';
 
 /** Layout configuration */
 export interface LayoutConfig {
@@ -16,6 +16,58 @@ const DEFAULT_CONFIG: LayoutConfig = {
   workspacePadding: 0,
   windowGap: 6,
 };
+
+/** Order visible windows clockwise around their collective center. */
+export function clockwiseWindowOrder(
+  windows: ReadonlyArray<{ id: WindowId; bounds: WindowBounds }>,
+): WindowId[] {
+  if (windows.length <= 2) return windows.map((win) => win.id);
+
+  const centers = windows.map((win, index) => ({
+    id: win.id,
+    index,
+    x: win.bounds.x + win.bounds.width / 2,
+    y: win.bounds.y + win.bounds.height / 2,
+  }));
+  const centerX = centers.reduce((sum, point) => sum + point.x, 0) / centers.length;
+  const centerY = centers.reduce((sum, point) => sum + point.y, 0) / centers.length;
+
+  return centers
+    .map((point) => ({
+      ...point,
+      angle: Math.atan2(point.y - centerY, point.x - centerX),
+      radiusSquared: (point.x - centerX) ** 2 + (point.y - centerY) ** 2,
+    }))
+    .sort((a, b) => a.angle - b.angle || a.radiusSquared - b.radiusSquared || a.index - b.index)
+    .map((point) => point.id);
+}
+
+export interface FocusLayoutFrame {
+  main: WindowBounds;
+  stack: WindowBounds;
+}
+
+/** Resolve Focus layout inside the same outer gap used by Grid. */
+export function resolveFocusLayout(
+  viewportWidth: number,
+  viewportHeight: number,
+  gap: number,
+  footerHeight: number,
+  mainRatio: number,
+): FocusLayoutFrame {
+  const width = viewportWidth - gap * 2;
+  const height = viewportHeight - footerHeight - gap * 2;
+  const mainWidth = Math.round(width * mainRatio);
+  return {
+    main: { x: gap, y: gap, width: mainWidth, height },
+    stack: {
+      x: gap + mainWidth + gap,
+      y: gap,
+      width: width - mainWidth - gap,
+      height,
+    },
+  };
+}
 
 /**
  * Compute pixel bounds for a grid slot given the total grid dimensions

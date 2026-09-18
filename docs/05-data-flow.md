@@ -301,6 +301,16 @@
       `Esc`, lane/view teardown, composer pre-emption, or focus leaving the
       Harness aborts capture and restores the saved draft. Dictation never calls
       ACP and never submits automatically.
+   c. Printable keys, `Shift+Enter`, plain-text paste, and `Ctrl+Y` converge on
+      `insertDraft()`. It arms a lane-scoped `{ laneId, inserted }` marker only
+      around the synchronous `setDraft()` → `renderComposer()` call, so the real
+      text and inline caret update immediately. After that HTML rebuild the view
+      reattaches an overlay and spawns at most `composer_bloom_trail` letter
+      afterimages at the inserted visible graphemes. Each copy ignites, drifts
+      upward 3px, and dissolves. `finally` clears
+      the marker so a later status tick cannot spawn again. Reduce Motion or
+      `composer_bloom = false` skips the overlay. Deletes, cursor movement,
+      programmatic draft rewrites, and dictation never arm it (spec 252).
 7. On Enter, the active lane's draft is sent through acp_prompt with a short
    lane-context stub: the lane's own label, the full lane roster, and a
    one-line nudge describing the krypton-harness-memory MCP tools. Memory
@@ -409,6 +419,29 @@
        snapshot enrichment. A GitHub-linked work prompt reports `issue_progress`
        separately, so the browser extension remains GitHub-status-only while
        the docked Ticket Panel shows local status and resources.
+    i. #timeline is local-first (spec 253). Bare/open resolves the current
+       Harness id to its registered project and launches `/timeline`; `add`
+       loads bounded records, opens a native-form capture sheet, and sends the
+       confirmed event to `timeline_record`. Rust validates the fields and any
+       related event, then creates one new Markdown file with `create_new` under
+       `.krypton/timeline/events/`. The browser fetches `/timeline.json` once,
+       groups records by stable `topic_id`, and derives superseded state without
+       a persisted index or Git process. `trace <topic>` is the only lane turn:
+       it remains read-only, labels recorded/observed/inferred evidence, and is
+       also the only timeline path available in a Remote Harness.
+    j. Automatic timeline intake is proposal-first (spec 254). A local
+       MCP-capable lane receives the short `timeline_suggest` rule in turn
+       context and may call it once for an explicit durable project event.
+       HookServer resolves the registered project, checks the default-on
+       `.krypton/timeline/settings.json` switch, validates/deduplicates the
+       payload, creates `pending/<reserved-event-id>.md`, and emits
+       `acp-timeline-suggestion`. The Harness updates a project-wide count but
+       does not open an overlay or start another turn. `#timeline review` (or
+       the badge) loads the oldest pending item into the capture sheet. Confirm
+       creates `events/<same-id>.md` with evidence and suggesting-lane
+       provenance before removing pending; dismiss atomically moves it to
+       `dismissed/`. `#timeline auto off` suppresses future prompt instructions
+       and makes the backend reject late calls without deleting stored state.
 
 ```
 PUSH (lane → harness), at end of an editing turn:

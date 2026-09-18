@@ -31,6 +31,9 @@ const HARNESS_ATTENTION_TOOL_NAMES = new Set(['attention_flag', 'attention_resol
 // reports diff reading-order hints at end-of-turn; a permission prompt there
 // would interrupt the turn boundary for a purely-advisory signal.
 const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_outcome', 'mark_review_priority']);
+// spec 254: this tool can only create a local, non-authoritative pending
+// suggestion. Confirmation and dismissal remain human-only Tauri commands.
+const HARNESS_TIMELINE_TOOL_NAMES = new Set(['timeline_suggest']);
 // specs 178/238/239: progress and ticket tools are default-on built-in
 // harness-bus tooling. Backend validation confines every write to the active
 // ticket bundle: `ticket_progress`/`ticket_link` require (or first-claim) the
@@ -48,6 +51,7 @@ const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
   ...HARNESS_PEER_TOOL_NAMES,
   ...HARNESS_ATTENTION_TOOL_NAMES,
   ...HARNESS_REVIEW_TOOL_NAMES,
+  ...HARNESS_TIMELINE_TOOL_NAMES,
   ...HARNESS_ISSUE_TOOL_NAMES,
 ]);
 const HARNESS_SERVER_MARKERS = ['krypton-harness-bus', 'krypton_harness_bus', 'krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
@@ -139,7 +143,7 @@ export function harnessToolNameFromString(value: string | undefined): string | n
   for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
     if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
   }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|handoff_get|handoff_list|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link)(?:$|[^a-z0-9_])/);
+  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|handoff_get|handoff_list|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|timeline_suggest|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link)(?:$|[^a-z0-9_])/);
   return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 
@@ -148,6 +152,7 @@ export function harnessToolFamily(toolName: string): HarnessToolFamily | null {
   if (HARNESS_PEER_TOOL_NAMES.has(toolName)) return 'peer';
   if (HARNESS_ATTENTION_TOOL_NAMES.has(toolName)) return 'attention';
   if (HARNESS_REVIEW_TOOL_NAMES.has(toolName)) return 'review';
+  if (HARNESS_TIMELINE_TOOL_NAMES.has(toolName)) return 'timeline';
   return null;
 }
 

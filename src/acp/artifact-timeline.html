@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Krypton Timeline</title>
+<style>
+  :root {
+    --bg: #17191d; --fg: #eaecef; --text: #b7bdc6; --muted: #707a8a;
+    --border: #2f353d; --accent: #fcd535; --card: #21242a; --code-bg: #1d1f24;
+    --add: #0ecb81; --del: #f6465d; color-scheme: dark;
+    --sans: 'BinanceNova', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: 'BinancePlex', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fafafa; --fg: #0d1117; --text: #474d57; --muted: #707a8a;
+      --border: #eaecef; --accent: #c99400; --card: #fff; --code-bg: #f5f5f5;
+      --add: #018f6c; --del: #cf304a; color-scheme: light;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); }
+  header {
+    height: 52px; display: flex; align-items: center; gap: 14px; padding: 0 18px;
+    border-bottom: 1px solid var(--border); background: var(--card); position: sticky; top: 0; z-index: 2;
+  }
+  .brand { color: var(--fg); font-weight: 700; }
+  .local { color: var(--accent); border: 1px solid var(--accent); border-radius: 5px; padding: 2px 7px; font: 10px var(--mono); }
+  .search { margin-left: auto; width: min(360px, 45vw); }
+  input {
+    width: 100%; border: 1px solid var(--border); border-radius: 6px; background: var(--code-bg);
+    color: var(--fg); padding: 8px 10px; font: 12px var(--mono); outline: none;
+  }
+  input:focus { border-color: var(--accent); }
+  .layout { display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); max-width: 1240px; min-height: calc(100vh - 52px); margin: 0 auto; }
+  aside { border-right: 1px solid var(--border); padding: 16px 12px; }
+  .aside-title, .hint { color: var(--muted); font: 11px var(--mono); }
+  .topic-list { display: grid; gap: 5px; margin-top: 10px; }
+  .topic {
+    width: 100%; text-align: left; border: 1px solid transparent; border-radius: 6px;
+    color: var(--text); background: transparent; padding: 8px 9px; cursor: pointer;
+  }
+  .topic:hover, .topic.active { color: var(--accent); background: rgba(252, 213, 53, .06); border-color: var(--border); }
+  .topic strong { display: block; color: inherit; font-size: 13px; font-weight: 600; }
+  .topic span { display: block; margin-top: 2px; color: var(--muted); font: 10px var(--mono); }
+  main { min-width: 0; padding: 24px 28px 48px; }
+  .summary { display: flex; align-items: baseline; gap: 12px; margin-bottom: 18px; }
+  h1 { margin: 0; color: var(--fg); font-size: 24px; }
+  .count { color: var(--muted); font: 11px var(--mono); }
+  .events { display: grid; gap: 12px; }
+  .event { border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 14px 16px; outline: none; }
+  .event:focus, .event.selected { border-color: var(--accent); background: rgba(252, 213, 53, .04); }
+  .event.superseded { opacity: .7; }
+  .event-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .event-time, .pill, dt, .source, .relation { font-family: var(--mono); }
+  .event-time { color: var(--muted); font-size: 11px; }
+  .pill { border: 1px solid var(--border); border-radius: 5px; padding: 2px 7px; color: var(--accent); font-size: 10px; }
+  .event h2 { margin: 9px 0 10px; color: var(--fg); font-size: 17px; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+  dt { color: var(--muted); font-size: 11px; }
+  dd { margin: 0; color: var(--text); }
+  .copy { margin-top: 11px; white-space: pre-wrap; }
+  .copy strong { color: var(--fg); }
+  .relation { margin-top: 10px; color: var(--muted); font-size: 11px; }
+  .source { display: inline-block; margin-top: 10px; color: var(--accent); font-size: 11px; word-break: break-all; }
+  .diagnostics { margin-top: 22px; padding: 12px; border: 1px solid var(--del); border-radius: 8px; background: rgba(246, 70, 93, .05); }
+  .diagnostics h2 { margin: 0 0 8px; color: var(--del); font-size: 14px; }
+  .diagnostics li { margin: 4px 0; font: 11px var(--mono); }
+  .empty { padding: 40px 0; text-align: center; color: var(--muted); font: 12px var(--mono); }
+  footer { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 12px; color: var(--muted); font: 10px var(--mono); }
+  @media (max-width: 720px) {
+    .layout { grid-template-columns: 1fr; }
+    aside { border-right: 0; border-bottom: 1px solid var(--border); }
+    main { padding: 18px 16px 32px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">Krypton Timeline</span>
+  <span class="local">local only</span>
+  <label class="search"><input id="search" type="search" placeholder="Search topics, summaries, actors, sources · /" autocomplete="off"></label>
+</header>
+<div class="layout">
+  <aside>
+    <div class="aside-title">Topics · [ ] switch</div>
+    <div id="topics" class="topic-list"></div>
+  </aside>
+  <main>
+    <div class="summary"><h1 id="title">Timeline</h1><span id="count" class="count"></span></div>
+    <div id="events" class="events"></div>
+    <section id="diagnostics" class="diagnostics" hidden><h2>Diagnostics</h2><ul></ul></section>
+    <footer>j/k events · Enter source · / search · Esc clear · refresh reads disk again</footer>
+  </main>
+</div>
+<script>
+(function () {
+  'use strict';
+  var params = new URLSearchParams(location.search);
+  var harness = params.get('harness') || '';
+  var initialQuery = params.get('topic') || '';
+  var search = document.getElementById('search');
+  var topicsEl = document.getElementById('topics');
+  var eventsEl = document.getElementById('events');
+  var titleEl = document.getElementById('title');
+  var countEl = document.getElementById('count');
+  var diagnosticsEl = document.getElementById('diagnostics');
+  var payload = { events: [], diagnostics: [] };
+  var selectedTopic = '';
+  var selectedEvent = 0;
+
+  function lower(value) { return String(value || '').toLocaleLowerCase(); }
+  function latestTopics(events) {
+    var map = new Map();
+    events.forEach(function (event) {
+      var prior = map.get(event.topicId);
+      if (!prior || event.occurredAt >= prior.occurredAt) {
+        map.set(event.topicId, { id: event.topicId, title: event.topicTitle, occurredAt: event.occurredAt, count: 0 });
+      }
+    });
+    events.forEach(function (event) { var topic = map.get(event.topicId); if (topic) topic.count += 1; });
+    return Array.from(map.values()).sort(function (a, b) { return b.occurredAt.localeCompare(a.occurredAt); });
+  }
+  function eventMatches(event, query) {
+    if (!query) return true;
+    return lower([event.topicTitle, event.summary, event.madeBy, event.recordedBy, event.evidenceExcerpt || '', event.sourceRef || ''].join(' ')).includes(query);
+  }
+  function sourceHref(source) {
+    if (!source) return '';
+    if (/^https?:\/\//i.test(source)) return source;
+    if (/\.md(?:#.*)?$/i.test(source) && !source.startsWith('/')) {
+      var parts = source.split('#');
+      return '/doc?harness=' + encodeURIComponent(harness) + '&path=' + encodeURIComponent(parts[0]) + (parts[1] ? '#' + encodeURIComponent(parts[1]) : '');
+    }
+    return '';
+  }
+  function addText(parent, tag, className, text) {
+    var element = document.createElement(tag);
+    if (className) element.className = className;
+    element.textContent = text;
+    parent.appendChild(element);
+    return element;
+  }
+  function renderTopics(topics, query) {
+    topicsEl.replaceChildren();
+    var visible = topics.filter(function (topic) { return !query || lower(topic.title).includes(query); });
+    var all = document.createElement('button');
+    all.type = 'button'; all.className = 'topic' + (selectedTopic ? '' : ' active');
+    addText(all, 'strong', '', 'All events'); addText(all, 'span', '', payload.events.length + ' records');
+    all.addEventListener('click', function () { selectedTopic = ''; selectedEvent = 0; render(); });
+    topicsEl.appendChild(all);
+    visible.forEach(function (topic) {
+      var button = document.createElement('button');
+      button.type = 'button'; button.className = 'topic' + (selectedTopic === topic.id ? ' active' : '');
+      addText(button, 'strong', '', topic.title); addText(button, 'span', '', topic.count + ' records · ' + topic.occurredAt.slice(0, 10));
+      button.addEventListener('click', function () { selectedTopic = topic.id; selectedEvent = 0; render(); });
+      topicsEl.appendChild(button);
+    });
+  }
+  function renderEvent(event, index) {
+    var card = document.createElement('article');
+    card.className = 'event' + (event.superseded ? ' superseded' : '') + (index === selectedEvent ? ' selected' : '');
+    card.tabIndex = 0; card.dataset.eventIndex = String(index);
+    var head = document.createElement('div'); head.className = 'event-head'; card.appendChild(head);
+    addText(head, 'span', 'event-time', new Date(event.occurredAt).toLocaleString());
+    if (event.superseded) addText(head, 'span', 'pill', 'superseded');
+    addText(card, 'h2', '', event.summary);
+    var details = document.createElement('dl'); card.appendChild(details);
+    [['made by', event.madeBy], ['recorded by', event.recordedBy + ' · ' + event.recorderLane], ['topic', event.topicTitle]].forEach(function (row) {
+      addText(details, 'dt', '', row[0]); addText(details, 'dd', '', row[1]);
+    });
+    if (event.suggestedByLane) {
+      addText(details, 'dt', '', 'suggested by'); addText(details, 'dd', '', event.suggestedByLane);
+    }
+    if (event.evidenceExcerpt) { var evidence = addText(card, 'div', 'copy', ''); addText(evidence, 'strong', '', 'Evidence · '); evidence.append(document.createTextNode(event.evidenceExcerpt)); }
+    if (event.rationale) { var rationale = addText(card, 'div', 'copy', ''); addText(rationale, 'strong', '', 'Rationale · '); rationale.append(document.createTextNode(event.rationale)); }
+    if (event.impact) { var impact = addText(card, 'div', 'copy', ''); addText(impact, 'strong', '', 'Impact · '); impact.append(document.createTextNode(event.impact)); }
+    if (event.relation && event.relatedEvent) addText(card, 'div', 'relation', event.relation.replace('_', ' ') + ' · ' + event.relatedEvent);
+    if (event.sourceRef) {
+      var href = sourceHref(event.sourceRef);
+      if (href) { var link = addText(card, 'a', 'source', event.sourceRef); link.href = href; link.target = '_blank'; link.rel = 'noopener noreferrer'; }
+      else addText(card, 'span', 'source', event.sourceRef);
+    } else addText(card, 'span', 'source', 'asserted · no linked evidence');
+    card.addEventListener('focus', function () { selectedEvent = index; selectVisibleCard(); });
+    card.addEventListener('click', function () { selectedEvent = index; selectVisibleCard(); });
+    return card;
+  }
+  function visibleEvents() {
+    var query = lower(search.value.trim());
+    return payload.events.filter(function (event) {
+      return (!selectedTopic || event.topicId === selectedTopic) && eventMatches(event, query);
+    });
+  }
+  function selectVisibleCard() {
+    eventsEl.querySelectorAll('.event').forEach(function (card, index) { card.classList.toggle('selected', index === selectedEvent); });
+  }
+  function renderDiagnostics() {
+    diagnosticsEl.hidden = payload.diagnostics.length === 0;
+    var list = diagnosticsEl.querySelector('ul'); list.replaceChildren();
+    payload.diagnostics.forEach(function (item) { addText(list, 'li', '', item.path + ' · ' + item.error); });
+  }
+  function render() {
+    var topics = latestTopics(payload.events);
+    var query = lower(search.value.trim());
+    renderTopics(topics, query);
+    var events = visibleEvents();
+    if (selectedEvent >= events.length) selectedEvent = Math.max(0, events.length - 1);
+    eventsEl.replaceChildren();
+    if (events.length === 0) addText(eventsEl, 'div', 'empty', 'No matching timeline events');
+    else events.forEach(function (event, index) { eventsEl.appendChild(renderEvent(event, index)); });
+    var selected = topics.find(function (topic) { return topic.id === selectedTopic; });
+    titleEl.textContent = selected ? selected.title : 'Timeline';
+    countEl.textContent = events.length + ' event' + (events.length === 1 ? '' : 's');
+    renderDiagnostics();
+  }
+  function switchTopic(delta) {
+    var ids = [''].concat(latestTopics(payload.events).map(function (topic) { return topic.id; }));
+    var index = Math.max(0, ids.indexOf(selectedTopic));
+    selectedTopic = ids[(index + delta + ids.length) % ids.length]; selectedEvent = 0; render();
+  }
+  search.value = initialQuery;
+  search.addEventListener('input', function () { selectedEvent = 0; render(); });
+  document.addEventListener('keydown', function (event) {
+    if (event.key === '/' && document.activeElement !== search) { event.preventDefault(); search.focus(); search.select(); return; }
+    if (event.key === 'Escape') { search.value = ''; selectedEvent = 0; search.blur(); render(); return; }
+    if (document.activeElement === search) return;
+    if (event.key === '[') { event.preventDefault(); switchTopic(-1); return; }
+    if (event.key === ']') { event.preventDefault(); switchTopic(1); return; }
+    var events = visibleEvents();
+    if (event.key === 'j' || event.key === 'k') {
+      event.preventDefault();
+      selectedEvent = Math.max(0, Math.min(events.length - 1, selectedEvent + (event.key === 'j' ? 1 : -1)));
+      selectVisibleCard();
+      var card = eventsEl.querySelector('[data-event-index="' + selectedEvent + '"]'); if (card) card.focus();
+    }
+    if (event.key === 'Enter' && events[selectedEvent]) {
+      var href = sourceHref(events[selectedEvent].sourceRef); if (href) window.open(href, '_blank', 'noopener');
+    }
+  });
+  if (!harness) { eventsEl.textContent = 'Missing harness id'; return; }
+  fetch('/timeline.json?harness=' + encodeURIComponent(harness), { cache: 'no-store' })
+    .then(function (response) { if (!response.ok) throw new Error('timeline request failed (' + response.status + ')'); return response.json(); })
+    .then(function (data) {
+      payload = data;
+      if (initialQuery) {
+        var match = latestTopics(payload.events).find(function (topic) { return lower(topic.title) === lower(initialQuery) || lower(topic.id) === lower(initialQuery); });
+        if (match) { selectedTopic = match.id; search.value = ''; }
+      }
+      render();
+    })
+    .catch(function (error) { eventsEl.textContent = error.message; });
+}());
+</script>
+</body>
+</html>

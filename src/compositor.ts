@@ -39,7 +39,13 @@ import {
   type StageState,
   type WorkspaceRef,
 } from './types';
-import { autoTile, focusTile, resolveGridSlot } from './layout';
+import {
+  autoTile,
+  clockwiseWindowOrder,
+  focusTile,
+  resolveFocusLayout,
+  resolveGridSlot,
+} from './layout';
 import {
   adjustColumnWidth,
   adjustWindowHeight,
@@ -75,6 +81,7 @@ import { SoundEngine } from './sound';
 import { ShaderEngine } from './shaders';
 import type { ShaderPreset } from './shaders';
 import type { KryptonConfig, TabsConfig, ShaderConfig } from './config';
+import { applyComposerBloomSettings } from './acp/harness-composer-bloom';
 import { DEFAULT_SHADER_CONFIG, loadConfig } from './config';
 import type { FrontendThemeEngine } from './theme';
 import { ExtensionManager } from './extensions';
@@ -641,6 +648,14 @@ export class Compositor {
         animate: config.shader.animate,
       });
     }
+
+    // spec 252: live composer letter-afterimage tokens. Reload Config applies
+    // them without restarting the harness view.
+    applyComposerBloomSettings(document.documentElement, {
+      enabled: config.acp_harness?.composer_bloom,
+      durationMs: config.acp_harness?.composer_bloom_ms,
+      trail: config.acp_harness?.composer_bloom_trail,
+    });
 
     // Extensions — enable/disable context extensions
     if (config.extensions) {
@@ -5058,7 +5073,7 @@ export class Compositor {
    * Pressing "next" (Cmd+Shift+.) goes: left -> top of right stack -> downward -> wrap to left.
    * Pressing "prev" (Cmd+Shift+,) goes the opposite direction.
    *
-   * In Grid layout, cycling follows creation order.
+   * In Grid layout, cycling follows the clockwise visual order.
    */
   focusCycle(direction: 1 | -1): void {
     if (this.windows.size <= 1) return;
@@ -5077,20 +5092,17 @@ export class Compositor {
     }
 
     if (this.layoutMode === LayoutMode.Focus && this.focusVisualOrder.length > 1) {
-      // Use the visual order captured during the last relayout,
-      // but skip pinned windows — they don't participate in the cycle.
-      const order = this.focusVisualOrder.filter((id) => {
-        const w = this.windows.get(id);
-        return w && !w.pinned;
-      });
-      if (order.length <= 1) return; // all pinned or only one unpinned
+      // Use the visual order captured during the last relayout. Pinned windows
+      // stay in the right stack but remain reachable in the clockwise cycle.
+      const order = this.focusVisualOrder;
       const currentIdx = this.focusedWindowId ? order.indexOf(this.focusedWindowId) : 0;
       const startIdx = currentIdx === -1 ? 0 : currentIdx;
       const nextIdx = (startIdx + direction + order.length) % order.length;
       this.focusWindow(order[nextIdx]);
     } else {
-      // Grid layout: cycle by creation order (pinned windows participate normally).
-      const ids = this.windowIds;
+      const ids = this.layoutMode === LayoutMode.Grid
+        ? clockwiseWindowOrder(Array.from(this.windows.values()))
+        : this.windowIds;
       const currentIdx = this.focusedWindowId ? ids.indexOf(this.focusedWindowId) : 0;
       const nextIdx = (currentIdx + direction + ids.length) % ids.length;
       this.focusWindow(ids[nextIdx]);
@@ -5099,7 +5111,7 @@ export class Compositor {
 
   /**
    * Toggle pin state of a window. Pinned windows stick to the right column
-   * in Focus layout and are skipped during focus cycling.
+   * in Focus layout while remaining reachable during focus cycling.
    * If no windowId is provided, toggles the focused window.
    */
   async togglePin(windowId?: WindowId): Promise<void> {
@@ -6629,11 +6641,16 @@ export class Compositor {
       if (!win) return;
 
       if (this.layoutMode === LayoutMode.Focus) {
-        // Focus mode: full height, 65% width, left-aligned.
-        // Reserve the bottom footer rail so the window doesn't overlap it.
-        const w = Math.round(vw * Compositor.FOCUS_MAIN_RATIO);
+        // Focus mode: full height, 65% width, inset by the configured gap.
+        const frame = resolveFocusLayout(
+          vw,
+          vh,
+          this.windowGap,
+          Compositor.FOOTER_HEIGHT,
+          Compositor.FOCUS_MAIN_RATIO,
+        );
         win.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: 1 };
-        win.bounds = { x: 0, y: 0, width: w, height: vh - Compositor.FOOTER_HEIGHT };
+        win.bounds = frame.main;
       } else if (this.layoutMode === LayoutMode.Depth) {
         // Depth mode: centered inset, single window
         const w = Math.round(vw * Compositor.DEPTH_WIDTH_RATIO);
@@ -6716,11 +6733,15 @@ export class Compositor {
   private relayoutFocus(vw: number, vh: number, count: number): void {
     const ids = this.windowIds;
     const gap = this.windowGap;
-    const mainW = Math.round(vw * Compositor.FOCUS_MAIN_RATIO);
-    const stackW = vw - mainW - gap;
-    // Reserve the fixed bottom footer rail so windows don't overlap the
-    // workspace status bar (Grid does the same in relayoutGrid).
-    const availH = vh - Compositor.FOOTER_HEIGHT;
+    const frame = resolveFocusLayout(
+      vw,
+      vh,
+      gap,
+      Compositor.FOOTER_HEIGHT,
+      Compositor.FOCUS_MAIN_RATIO,
+    );
+    const stackW = frame.stack.width;
+    const availH = frame.main.height;
 
     // Separate windows into unpinned and pinned lists (preserving creation order)
     const unpinnedIds: WindowId[] = [];
@@ -6788,12 +6809,12 @@ export class Compositor {
     const mainWin = this.windows.get(mainId);
     if (mainWin) {
       mainWin.gridSlot = { col: 0, row: 0, colSpan: 1, rowSpan: Math.max(1, stackCount) };
-      mainWin.bounds = { x: 0, y: 0, width: mainW, height: availH };
+      mainWin.bounds = frame.main;
       this.applyBounds(mainWin);
     }
 
     // Right-column windows
-    let y = 0;
+    let y = frame.stack.y;
     for (let i = 0; i < rightStack.length; i++) {
       const winId = rightStack[i];
       const win = this.windows.get(winId);
@@ -6808,7 +6829,7 @@ export class Compositor {
 
       win.gridSlot = { col: 1, row: i, colSpan: 1, rowSpan: 1 };
       win.bounds = {
-        x: mainW + gap,
+        x: frame.stack.x,
         y: Math.round(y),
         width: stackW,
         height: Math.round(stackCellH),

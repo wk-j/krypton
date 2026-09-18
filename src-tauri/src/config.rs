@@ -653,6 +653,12 @@ pub struct PencilConfig {
 pub struct AcpHarnessConfig {
     pub idle_flash_sound: bool,
     pub memory_footer: bool,
+    /// spec 252: fading letter afterimage on the harness composer prompt.
+    pub composer_bloom: bool,
+    /// Afterimage duration in milliseconds. Prototype range 180–700; default 320.
+    pub composer_bloom_ms: u32,
+    /// How many inserted graphemes receive an afterimage on one paste. Prototype range 1–12; default 5.
+    pub composer_bloom_trail: u32,
     /// Optional SSH targets for remote ACP Harnesses. Connection/auth details
     /// stay in the user's OpenSSH config; Krypton stores only the alias and
     /// absolute remote project directory.
@@ -747,6 +753,9 @@ impl Default for AcpHarnessConfig {
         Self {
             idle_flash_sound: true,
             memory_footer: true,
+            composer_bloom: true,
+            composer_bloom_ms: 320,
+            composer_bloom_trail: 5,
             remote_profiles: Vec::new(),
             lane_models: HashMap::new(),
         }
@@ -1024,5 +1033,15 @@ mod tests {
     fn sanitize_drops_path_chars() {
         assert_eq!(sanitize_theme_name("Foo/Bar.toml"), "foobartoml");
         assert_eq!(sanitize_theme_name("Legacy-Radiance"), "legacy-radiance");
+    }
+
+    #[test]
+    fn acp_harness_bloom_defaults_when_omitted() {
+        let cfg: KryptonConfig =
+            toml::from_str("[acp_harness]\nidle_flash_sound = false\n").unwrap();
+        assert!(!cfg.acp_harness.idle_flash_sound);
+        assert!(cfg.acp_harness.composer_bloom);
+        assert_eq!(cfg.acp_harness.composer_bloom_ms, 320);
+        assert_eq!(cfg.acp_harness.composer_bloom_trail, 5);
     }
 }

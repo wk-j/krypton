@@ -153,9 +153,14 @@ Inserted in `renderLaneHead()` between `modelChip` and `mcpChip`.
 
 ### Slash palette UX
 
-Trigger condition: composer is focused AND `lane.draft === '/'` (single-character draft starting with `/`) OR draft matches `/^\/[a-zA-Z0-9_-]*$/`.
+Trigger condition: composer is focused AND `lane.draft === '/'` (single-character draft starting with `/`) OR draft matches `/^\/\$?[a-zA-Z0-9_-]*$/`.
 
 Render as absolutely-positioned overlay anchored above the composer. Each row: `<span class="cmd-name">/${name}</span> <span class="cmd-desc">${description ?? ''}</span>`. Filter list by case-insensitive prefix match on `name` against the substring after the leading `/`.
+
+Command names are opaque agent-provided values. Codex ACP advertises skills with a leading `$`
+(for example, `$grill-with-docs`). The filter accepts either `/grill-with-docs` or
+`/$grill-with-docs` while typing, but selection inserts the advertised form unchanged:
+`/$grill-with-docs `. Ordinary commands such as `/status` keep their existing behavior.
 
 Keys (intercepted before xterm.js / draft handler):
 | Key | Action |
@@ -196,6 +201,7 @@ CSS additions echo existing chip patterns:
 - **Multiple lanes, focus shifts mid-stream** → each lane stores its own `availableCommands` / `currentMode`, no cross-talk.
 - **Pi-1 lane** — pi-acp does not implement these notifications. Both fields stay default (empty / null). No `⚠` chip change.
 - **Palette open while agent emits a new `available_commands_update`** → re-filter against the new list on next keystroke; if currently-highlighted name vanishes, snap to row 0.
+- **Codex skill advertised as `$name`** → both `/name` and `/$name` find it; insertion preserves `/$name` for the adapter.
 
 ## Open Questions
 

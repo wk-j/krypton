@@ -2,7 +2,13 @@
 // the active and collapsed branches, so lane identity survives de-focus.
 import { describe, expect, it } from 'vitest';
 
-import { renderLaneHead, renderLaneStats } from './harness-lane-chrome';
+import {
+  filteredSlashCommands,
+  renderLaneHead,
+  renderLaneStats,
+  renderSlashPalette,
+  slashPaletteVisible,
+} from './harness-lane-chrome';
 import { backendLogoId } from './harness-lane-identity';
 import type { HarnessLane } from './harness-view-types';
 
@@ -89,6 +95,45 @@ describe('renderLaneHead — no cancel chip', () => {
     );
     expect(html).not.toContain('acp-harness__lane-cancel-hint');
     expect(html).not.toContain('force restart');
+  });
+});
+
+describe('slash palette — Codex skills', () => {
+  const availableCommands = [
+    { name: 'status', description: 'Display session status.' },
+    { name: '$grill-with-docs', description: 'Stress-test a document.' },
+    { name: '$grilling', description: 'Stress-test an idea.' },
+  ];
+
+  it('matches a Codex skill without requiring the dollar marker', () => {
+    const lane = makeLane({ draft: '/grill-with-d', availableCommands });
+
+    expect(slashPaletteVisible(lane)).toBe(true);
+    expect(filteredSlashCommands(lane).map((command) => command.name)).toEqual([
+      '$grill-with-docs',
+    ]);
+  });
+
+  it('matches a Codex skill when the dollar marker is typed explicitly', () => {
+    const lane = makeLane({ draft: '/$grill', availableCommands });
+
+    expect(slashPaletteVisible(lane)).toBe(true);
+    expect(filteredSlashCommands(lane).map((command) => command.name)).toEqual([
+      '$grill-with-docs',
+      '$grilling',
+    ]);
+  });
+
+  it('keeps ordinary ACP slash commands unchanged', () => {
+    const lane = makeLane({ draft: '/sta', availableCommands });
+
+    expect(filteredSlashCommands(lane).map((command) => command.name)).toEqual(['status']);
+  });
+
+  it('renders the advertised Codex skill name unchanged for insertion', () => {
+    const lane = makeLane({ draft: '/grill-with-d', availableCommands });
+
+    expect(renderSlashPalette(lane)).toContain('/$grill-with-docs');
   });
 });
 

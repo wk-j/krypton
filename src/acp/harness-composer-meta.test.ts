@@ -122,6 +122,46 @@ describe('composer prompt geometry', () => {
   });
 });
 
+describe('composer input bloom', () => {
+  const css = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),
+    'utf8',
+  );
+
+  it('paints overlay letter copies, not a caret pseudo-element or ellipse boom', () => {
+    expect(css).toContain('.acp-harness__composer-blooms');
+    expect(css).toContain('.acp-harness__composer-bloom');
+    expect(css).not.toContain('.acp-harness__caret--bloom');
+    const particle = css.match(/\.acp-harness__composer-bloom\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(particle).toContain('pointer-events: none');
+    expect(particle).toContain('font: inherit');
+    expect(particle).toContain('text-shadow');
+    expect(particle).toContain('rgba(110, 231, 231');
+    expect(particle).not.toContain('26px');
+    expect(particle).not.toContain('22px');
+    expect(particle).not.toContain('radial-gradient');
+    expect(particle).not.toContain('--acp-lane-accent');
+  });
+
+  it('ignites, drifts, and dissolves the letter without a scale boom or blur', () => {
+    const keyframes = css.match(
+      /@keyframes acp-harness-composer-bloom\s*\{([\s\S]*?)\n\}/,
+    )?.[1] ?? '';
+    expect(keyframes).toContain('opacity:');
+    expect(keyframes).toContain('translate3d(0, -3px, 0)');
+    expect(keyframes).not.toContain('scale(');
+    expect(keyframes).not.toMatch(/filter|blur/);
+    expect(css).toContain('will-change: opacity, transform');
+  });
+
+  it('drops afterimages under reduced motion and when the setting is off', () => {
+    expect(css).toContain('html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom');
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.acp-harness__composer-bloom/,
+    );
+  });
+});
+
 describe('lane picker chrome', () => {
   const css = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),

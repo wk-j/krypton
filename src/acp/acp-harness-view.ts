@@ -142,10 +142,22 @@ import {
   postGithubCommentPrompt,
   renderActiveTicketPin,
   tagGithubIssuePrompt,
+  timelineTracePrompt,
   tldrawDrawPrompt,
   wikiIngestPrompt,
   wikiRecallPrompt,
 } from './harness-prompts';
+import { TimelineCapture } from './timeline-capture';
+import {
+  TIMELINE_USAGE,
+  parseTimelineCommand,
+  type TimelineEvent,
+  type TimelineListResponse,
+  type TimelineRecordRequest,
+  type TimelineSuggestion,
+  type TimelineSuggestionListResponse,
+  type TimelineSuggestionSettings,
+} from './timeline';
 import { hasVerbTokens, resolveVerbTokens } from './verb-compose';
 import { injectableVerbNames, injectableVerbPrompt } from './verb-registry';
 import { applyVerbSelection, filteredVerbNames, verbPaletteContext } from './verb-palette';
@@ -217,6 +229,10 @@ import {
   type LaneModelConfig,
   type HarnessDirective,
 } from '../config';
+import {
+  ensureComposerBloomLayer,
+  spawnComposerBlooms,
+} from './harness-composer-bloom';
 import { extractModifiedPath } from './acp-harness-memory';
 import { classifyProviderError, shouldAppendProviderError } from './provider-error';
 import {
@@ -1045,6 +1061,11 @@ export function orchestratorInputHtml(draft: string, placeholder: string): strin
     : `${caret}<span class="acp-orchestrator__dispatch-placeholder">${esc(placeholder)}</span>`;
 }
 
+interface PendingComposerBloom {
+  laneId: string;
+  inserted: string;
+}
+
 export class AcpHarnessView implements ContentView {
   readonly type: PaneContentType = 'acp_harness';
   readonly element: HTMLElement;
@@ -1111,6 +1132,12 @@ export class AcpHarnessView implements ContentView {
     index: number;
     tab: TicketPickerTab;
   } | null = null;
+  /** spec 253: keyboard-first project timeline capture sheet. */
+  private timelineCapture: TimelineCapture | null = null;
+  /** spec 254: project-wide pending suggestion count and default-on setting. */
+  private timelinePendingCount = 0;
+  private timelineAutomaticSuggestions = true;
+  private timelineSuggestionUnlisten: UnlistenFn | null = null;
   private issueReportUnlisten: UnlistenFn | null = null;
   private ticketProgressUnlisten: UnlistenFn | null = null;
   private ticketWorkerUnlisten: UnlistenFn | null = null;
@@ -1231,6 +1258,10 @@ export class AcpHarnessView implements ContentView {
   private panelsHidden = false;
   private memoryCursorRowId: string | null = null;
   private focus: ComposerFocus = 'text';
+  /** spec 252: direct-insertion letter afterimage consumed by the synchronous composer render. */
+  private pendingComposerBloom: PendingComposerBloom | null = null;
+  private composerBloomLayer: HTMLElement | null = null;
+  private composerBloomLaneId: string | null = null;
   private chip: string | null = null;
   private chipTimer: number | null = null;
   private dictationToken = 0;
@@ -3842,6 +3873,7 @@ export class AcpHarnessView implements ContentView {
       void this.handleModelPickerKey(e);
       return true;
     }
+    if (this.timelineCapture) return this.timelineCapture.handleKeyDown(e);
     // spec 194: `#ticket` picker modal — owns typing/arrows/Enter/Esc while
     // open, regardless of composer/transcript focus. Unclaimed combos (e.g.
     // Cmd+W) fall through so app-level shortcuts keep working.
@@ -4547,6 +4579,9 @@ export class AcpHarnessView implements ContentView {
   dispose(): void {
     this.element.removeEventListener('focusout', this.dictationFocusOutHandler);
     this.abortDictation(false);
+    this.composerBloomLayer?.replaceChildren();
+    this.composerBloomLayer = null;
+    this.composerBloomLaneId = null;
     // spec 141: leave the cross-harness directory FIRST — flip `alive` false (so
     // any delivery already past resolveDisplayName is rejected deterministically)
     // and unregister (which captures a close snapshot from the still-intact lanes
@@ -4655,6 +4690,10 @@ export class AcpHarnessView implements ContentView {
       this.reviewPriorityUnlisten();
       this.reviewPriorityUnlisten = null;
     }
+    if (this.timelineSuggestionUnlisten) {
+      this.timelineSuggestionUnlisten();
+      this.timelineSuggestionUnlisten = null;
+    }
     // The store is a private member GC'd with the view, and dispose already
     // re-published `highCount: 0` to the footer above — no explicit clear needed
     // (mirrors ReviewQualityStore; OpenCode-1 review W2).
@@ -4692,6 +4731,8 @@ export class AcpHarnessView implements ContentView {
     this.diffReviewQueue.dispose();
     this.reviewResponseQueue.dispose();
     this.annotationQueue.dispose();
+    this.timelineCapture?.dispose();
+    this.timelineCapture = null;
     this.usageProviderListeners.clear();
     if (this.transcriptResizeObserver) {
       this.transcriptResizeObserver.disconnect();
@@ -4718,7 +4759,7 @@ export class AcpHarnessView implements ContentView {
     }
     const lane = this.activeLane();
     if (!lane) return false;
-    if (this.helpOpen || this.memoryDrawerOpen) {
+    if (this.helpOpen || this.memoryDrawerOpen || this.timelineCapture) {
       this.flashChip('close overlay to stage capture');
       return true;
     }
@@ -5491,6 +5532,7 @@ export class AcpHarnessView implements ContentView {
       || this.directivePickerOpen
       || this.modelPickerOpen
       || this.sessionPicker.open
+      || this.timelineCapture !== null
       || this.triageOverlayOpen
       || this.reviewMatrixOverlayOpen
       || this.reviewPriorityOverlayOpen
@@ -6129,6 +6171,12 @@ export class AcpHarnessView implements ContentView {
     this.element.addEventListener('click', (e: MouseEvent) => {
       const target = e.target;
       if (!(target instanceof Element)) return;
+      if (target.closest('[data-timeline-review]')) {
+        e.preventDefault();
+        const lane = this.activeLane();
+        if (lane) void this.openTimelineSuggestionReview(lane);
+        return;
+      }
       if (target.closest('[data-anno-send]')) {
         e.preventDefault();
         this.sendAnnotationBatch();
@@ -6595,11 +6643,25 @@ export class AcpHarnessView implements ContentView {
     this.reviewUnlisten = await listen<ReviewEventPayload>('acp-harness-review', (event) => {
       if (event.payload.harnessId === this.harnessMemoryId) this.handleReviewEvent(event.payload);
     });
+    this.timelineSuggestionUnlisten = await listen<{
+      harnessId: string;
+      laneLabel: string;
+      suggestionId: string;
+      pendingCount: number;
+    }>('acp-timeline-suggestion', (event) => {
+      if (event.payload.harnessId !== this.harnessMemoryId) return;
+      this.timelinePendingCount = Math.max(0, event.payload.pendingCount);
+      this.flashChip(`timeline · ${this.timelinePendingCount} pending · #timeline review`);
+      this.render();
+      void this.refreshTimelineSuggestions();
+    });
     await this.refreshMemory();
     await this.refreshMcpStats();
     await this.refreshArtifacts();
     await this.refreshIssueBindings();
     await this.refreshActiveTicket();
+    await this.refreshTimelineSuggestions();
+    await this.refreshTimelineSuggestionSettings();
   }
 
   // ─── spec 178: GitHub issue fixing ────────────────────────────────────────
@@ -9039,6 +9101,11 @@ export class AcpHarnessView implements ContentView {
     lines.push(
       'Diff reading priority: at the end of a turn where you edited files, you MAY call mark_review_priority { ranges } to tell the human\'s Diff Window where to spend reading attention. Report only the non-default ranges — `high` for core logic / interface / risk to read first, `routine` for mechanical churn (generated code, renames, imports, formatting) — anchored on the NEW side (the post-change line numbers you wrote); each range may include an optional short `reason` explaining why it was marked. Everything you omit stays `normal` and renders in full. The Window only folds `routine` (always one keystroke from full) and marks/navigates `high`; it never hides or reorders, so a small honest report is right and silence yields the full diff. At most once per turn, only when you changed files.',
     );
+    if (this.timelineAutomaticSuggestions && !this.remoteRuntimeId && lane.backendId !== 'pi-acp') {
+      lines.push(
+        'Project timeline: at most once per turn, use timeline_suggest only when this turn establishes an explicit durable requirement, decision, consequential change, approval/rejection, or implementation outcome worth finding later. Skip routine edits/tests/status chatter, recommendations, unanswered questions, inferred authority, and anything already pending or recorded. `made_by` and `evidence_excerpt` must be supported by the user\'s actual words or trusted provenance. Never include secrets, environment values, or raw tool output. This creates a pending local suggestion only; the human confirms or dismisses it.',
+      );
+    }
     // spec 146: review_outcome is default-on but only used during a #review
     // round (which needs reviewer lanes), so name it for discoverability only
     // when peers exist. The #review prompt already instructs the call; this just
@@ -11008,6 +11075,216 @@ export class AcpHarnessView implements ContentView {
     if (showSuccess) this.flashChip(`memory cleared for ${lane.displayName}`);
   }
 
+  private closeTimelineCapture(): void {
+    if (!this.timelineCapture) return;
+    this.timelineCapture.dispose();
+    this.timelineCapture = null;
+    this.syncOrchestratorConsoleVisibility();
+  }
+
+  private async refreshTimelineSuggestions(): Promise<TimelineSuggestionListResponse | null> {
+    if (!this.harnessMemoryId || this.remoteRuntimeId) {
+      this.timelinePendingCount = 0;
+      return null;
+    }
+    try {
+      const listing = await invoke<TimelineSuggestionListResponse>('timeline_suggestion_list', {
+        harnessId: this.harnessMemoryId,
+      });
+      this.timelinePendingCount = listing.suggestions.length;
+      this.render();
+      return listing;
+    } catch (e) {
+      console.warn('[acp-harness] timeline suggestion refresh failed:', e);
+      return null;
+    }
+  }
+
+  private async refreshTimelineSuggestionSettings(): Promise<void> {
+    if (!this.harnessMemoryId || this.remoteRuntimeId) return;
+    try {
+      const settings = await invoke<TimelineSuggestionSettings>('timeline_suggestion_settings', {
+        harnessId: this.harnessMemoryId,
+      });
+      this.timelineAutomaticSuggestions = settings.automaticSuggestions;
+    } catch (e) {
+      console.warn('[acp-harness] timeline settings refresh failed:', e);
+    }
+  }
+
+  private async openTimelineSuggestionReview(lane: HarnessLane): Promise<void> {
+    if (!this.harnessMemoryId) {
+      this.flashChip('timeline unavailable - harness project not registered');
+      return;
+    }
+    try {
+      const [pending, listing] = await Promise.all([
+        invoke<TimelineSuggestionListResponse>('timeline_suggestion_list', {
+          harnessId: this.harnessMemoryId,
+        }),
+        invoke<TimelineListResponse>('timeline_list', { harnessId: this.harnessMemoryId }),
+      ]);
+      this.timelinePendingCount = pending.suggestions.length;
+      const suggestion = pending.suggestions[0];
+      if (!suggestion) {
+        this.flashChip('timeline · no pending suggestions');
+        this.render();
+        return;
+      }
+      this.closeTimelineCapture();
+      const harnessId = this.harnessMemoryId;
+      this.timelineCapture = new TimelineCapture({
+        mount: this.element,
+        events: listing.events,
+        recorderLane: lane.displayName,
+        suggestion,
+        save: (request) => invoke<TimelineEvent>('timeline_suggestion_confirm', {
+          harnessId,
+          suggestionId: suggestion.id,
+          request,
+        }),
+        dismiss: () => invoke<TimelineSuggestion>('timeline_suggestion_dismiss', {
+          harnessId,
+          suggestionId: suggestion.id,
+        }).then(() => undefined),
+        close: () => this.closeTimelineCapture(),
+        saved: (event) => {
+          this.closeTimelineCapture();
+          this.appendTranscript(lane, 'system', `timeline confirmed · ${event.id} · ${event.path}`);
+          this.flashChip(`timeline confirmed · ${event.path}`);
+          void this.refreshTimelineSuggestions();
+        },
+        dismissed: () => {
+          this.closeTimelineCapture();
+          this.appendTranscript(lane, 'system', `timeline suggestion dismissed · ${suggestion.id}`);
+          this.flashChip(`timeline dismissed · ${suggestion.id}`);
+          void this.refreshTimelineSuggestions();
+        },
+      });
+      this.syncOrchestratorConsoleVisibility();
+      const malformed = pending.diagnostics.length + listing.diagnostics.length;
+      if (malformed > 0) this.flashChip(`timeline review opened · ${malformed} malformed record${malformed === 1 ? '' : 's'}`);
+    } catch (e) {
+      this.flashChip(`timeline review failed: ${errorText(e)}`);
+    }
+  }
+
+  private async openTimelineBrowser(topic: string): Promise<void> {
+    if (!this.harnessMemoryId) {
+      this.flashChip('timeline unavailable - harness project not registered');
+      return;
+    }
+    const port = await invoke<number>('get_hook_server_port').catch(() => 0);
+    if (!port) {
+      this.flashChip('timeline unavailable - hook server not ready');
+      return;
+    }
+    const query = new URLSearchParams({ harness: this.harnessMemoryId });
+    if (topic) query.set('topic', topic);
+    const url = `http://127.0.0.1:${port}/timeline?${query.toString()}`;
+    try {
+      await invoke('open_url', { url });
+      this.flashChip(url);
+    } catch (e) {
+      this.flashChip(`timeline open failed: ${errorText(e)}`);
+    }
+  }
+
+  private async openTimelineCapture(
+    lane: HarnessLane,
+    initialTopic: string,
+  ): Promise<void> {
+    if (!this.harnessMemoryId) {
+      this.flashChip('timeline unavailable - harness project not registered');
+      return;
+    }
+    try {
+      const listing = await invoke<TimelineListResponse>('timeline_list', {
+        harnessId: this.harnessMemoryId,
+      });
+      this.closeTimelineCapture();
+      const harnessId = this.harnessMemoryId;
+      this.timelineCapture = new TimelineCapture({
+        mount: this.element,
+        events: listing.events,
+        recorderLane: lane.displayName,
+        initialTopic,
+        save: (request) => invoke<TimelineEvent>('timeline_record', { harnessId, request }),
+        close: () => this.closeTimelineCapture(),
+        saved: (event) => {
+          this.closeTimelineCapture();
+          this.appendTranscript(lane, 'system', `timeline recorded · ${event.id} · ${event.path}`);
+          this.flashChip(`timeline recorded · ${event.path}`);
+          this.render();
+        },
+      });
+      this.syncOrchestratorConsoleVisibility();
+      if (listing.diagnostics.length > 0) {
+        const suffix = listing.diagnostics.length === 1 ? '' : 's';
+        this.flashChip(`timeline opened · ${listing.diagnostics.length} malformed record${suffix}`);
+      }
+    } catch (e) {
+      this.flashChip(`timeline capture failed: ${errorText(e)}`);
+    }
+  }
+
+  private async runTimelineCommand(lane: HarnessLane, text: string): Promise<void> {
+    const command = parseTimelineCommand(text);
+    if (command.kind === 'usage') {
+      this.flashChip(TIMELINE_USAGE);
+      return;
+    }
+    if (command.kind === 'trace') {
+      if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
+        this.flashChip('lane busy - #cancel first');
+        return;
+      }
+      await this.enqueueSystemPrompt(
+        lane,
+        timelineTracePrompt(command.topic),
+        undefined,
+        'tracing timeline',
+      );
+      return;
+    }
+    if (this.remoteRuntimeId) {
+      this.flashChip(
+        '#timeline local storage/review/browser is unavailable in a remote Harness; trace remains available',
+      );
+      return;
+    }
+    if (command.kind === 'review') {
+      await this.openTimelineSuggestionReview(lane);
+      return;
+    }
+    if (command.kind === 'auto') {
+      if (!this.harnessMemoryId) {
+        this.flashChip('timeline unavailable - harness project not registered');
+        return;
+      }
+      try {
+        if (command.state === 'status') {
+          await this.refreshTimelineSuggestionSettings();
+        } else {
+          const settings = await invoke<TimelineSuggestionSettings>('timeline_suggestion_set_enabled', {
+            harnessId: this.harnessMemoryId,
+            enabled: command.state === 'on',
+          });
+          this.timelineAutomaticSuggestions = settings.automaticSuggestions;
+        }
+        this.flashChip(`timeline automatic suggestions · ${this.timelineAutomaticSuggestions ? 'on' : 'off'}`);
+      } catch (e) {
+        this.flashChip(`timeline setting failed: ${errorText(e)}`);
+      }
+      return;
+    }
+    if (command.kind === 'add') {
+      await this.openTimelineCapture(lane, command.topic);
+      return;
+    }
+    await this.openTimelineBrowser(command.topic);
+  }
+
   private async runHashCommand(lane: HarnessLane, text: string): Promise<void> {
     const parts = text.trim().split(/\s+/);
     if (this.remoteRuntimeId && REMOTE_UNSUPPORTED_HASH_COMMANDS.has(parts[0])) {
@@ -11028,6 +11305,11 @@ export class AcpHarnessView implements ContentView {
     if (parts[0] === '#ticket') {
       this.setDraft(lane, '', 0);
       await this.runTicketCommand(parts.slice(1));
+      return;
+    }
+    if (parts[0] === '#timeline') {
+      this.setDraft(lane, '', 0);
+      await this.runTimelineCommand(lane, text);
       return;
     }
     if (parts[0] === '#cancel') {
@@ -12829,6 +13111,18 @@ export class AcpHarnessView implements ContentView {
         this.coordinator.pendingPeersFor(lane.id),
         lane.id === this.orchestratorLaneId,
       );
+      if (active && this.timelinePendingCount > 0 && !this.remoteRuntimeId) {
+        const timelineBadge = document.createElement('button');
+        timelineBadge.type = 'button';
+        timelineBadge.className = 'acp-harness__timeline-badge';
+        timelineBadge.dataset.timelineReview = '';
+        timelineBadge.textContent = `timeline ${this.timelinePendingCount}`;
+        timelineBadge.setAttribute(
+          'aria-label',
+          `Review ${this.timelinePendingCount} pending timeline suggestion${this.timelinePendingCount === 1 ? '' : 's'}`,
+        );
+        head.appendChild(timelineBadge);
+      }
       laneEl.appendChild(head);
       if (active) {
         const stats = document.createElement('div');
@@ -13021,6 +13315,7 @@ export class AcpHarnessView implements ContentView {
     const lane = this.activeLane();
     if (!lane) {
       this.abortDictation(false);
+      this.composerBloomLayer?.replaceChildren();
       this.composerEl.textContent = 'no lanes';
       return;
     }
@@ -13040,6 +13335,7 @@ export class AcpHarnessView implements ContentView {
       this.composerEl.innerHTML =
         `<div class="acp-harness__composer-meta">perm</div>` +
         `<div class="acp-harness__permission-options">a accept · A all · r reject · R all · Esc</div>`;
+      this.composerBloomLayer?.replaceChildren();
       return;
     }
     if (lane.pendingQuestions.length > 0) {
@@ -13048,6 +13344,7 @@ export class AcpHarnessView implements ContentView {
       this.composerEl.innerHTML =
         `<div class="acp-harness__composer-meta">ask</div>` +
         `<div class="acp-harness__permission-options">1–9 pick · Enter · x skip · z other</div>`;
+      this.composerBloomLayer?.replaceChildren();
       return;
     }
     this.composerEl.className =
@@ -13118,6 +13415,23 @@ export class AcpHarnessView implements ContentView {
         ? `<span class="acp-harness__spinner">${SPINNER_FRAMES[0]}</span>`
         : SPINNER_FRAMES[0]}</span>` +
       `<span class="acp-harness__input">${input}</span></div>`;
+    this.syncComposerBloomLayer(lane, dictation ? null : this.pendingComposerBloom);
+  }
+
+  private syncComposerBloomLayer(
+    lane: HarnessLane,
+    pending: PendingComposerBloom | null,
+  ): void {
+    if (this.composerBloomLaneId !== lane.id) {
+      this.composerBloomLayer?.replaceChildren();
+      this.composerBloomLaneId = lane.id;
+    }
+    const inputEl = this.composerEl.querySelector('.acp-harness__input');
+    if (!(inputEl instanceof HTMLElement)) return;
+    this.composerBloomLayer = ensureComposerBloomLayer(inputEl, this.composerBloomLayer);
+    if (pending?.laneId === lane.id && pending.inserted) {
+      spawnComposerBlooms(inputEl, this.composerBloomLayer, pending.inserted);
+    }
   }
 
   private renderDictationInput(
@@ -13729,6 +14043,7 @@ export class AcpHarnessView implements ContentView {
             <dt>#telegram</dt><dd>Open Telegram controller settings</dd>
             <dt>#mcp</dt><dd>Show MCP endpoint and lane status</dd>
             <dt>#panels [hide | show | toggle]</dt><dd>Hide or restore persistent Harness panels</dd>
+            <dt>#timeline [open | add | review | auto | trace]</dt><dd>Record, review suggestions, browse, or trace local project history</dd>
             <dt>#queue [clear | edit N]</dt><dd>Manage prompts queued while the lane is busy</dd>
             <dt>#unqueue [N]</dt><dd>Remove the last (or Nth) queued prompt</dd>
             <dt>!cmd</dt><dd>Run shell command in project cwd, output goes to transcript</dd>
@@ -14820,7 +15135,17 @@ export class AcpHarnessView implements ContentView {
   }
 
   private insertDraft(lane: HarnessLane, text: string): void {
-    this.setDraft(lane, lane.draft.slice(0, lane.cursor) + text + lane.draft.slice(lane.cursor), lane.cursor + text.length);
+    if (!text) return;
+    this.pendingComposerBloom = { laneId: lane.id, inserted: text };
+    try {
+      this.setDraft(
+        lane,
+        lane.draft.slice(0, lane.cursor) + text + lane.draft.slice(lane.cursor),
+        lane.cursor + text.length,
+      );
+    } finally {
+      this.pendingComposerBloom = null;
+    }
   }
 
   private stageImageFile(lane: HarnessLane, file: File): void {

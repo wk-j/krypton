@@ -699,6 +699,54 @@ describe('ACP Harness dictation lifecycle', () => {
   });
 });
 
+describe('composer insertion afterimage (spec 252)', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+
+  function methodSource(name: string): string {
+    const start = src.indexOf(`private ${name}(`);
+    expect(start).toBeGreaterThanOrEqual(0);
+    const next = src.indexOf('\n  private ', start + 1);
+    return src.slice(start, next === -1 ? undefined : next);
+  }
+
+  it('arms one lane only around the synchronous insertion render', () => {
+    const body = methodSource('insertDraft');
+    const armAt = body.indexOf('this.pendingComposerBloom = { laneId: lane.id, inserted: text };');
+    const renderAt = body.indexOf('this.setDraft(');
+    const clearAt = body.indexOf('this.pendingComposerBloom = null;');
+
+    expect(body).toContain('if (!text) return;');
+    expect(armAt).toBeGreaterThanOrEqual(0);
+    expect(renderAt).toBeGreaterThan(armAt);
+    expect(clearAt).toBeGreaterThan(renderAt);
+    expect(body).toContain('finally');
+    expect(body).not.toContain('setTimeout');
+    expect(body).not.toContain('requestAnimationFrame');
+  });
+
+  it('reattaches the letter overlay after the existing caret render', () => {
+    const render = methodSource('renderComposer');
+    const dictation = methodSource('renderDictationInput');
+    const sync = methodSource('syncComposerBloomLayer');
+
+    expect(render).toContain('<span class="acp-harness__caret">█</span>');
+    expect(render).toContain('this.syncComposerBloomLayer(lane, dictation ? null : this.pendingComposerBloom)');
+    expect(render).not.toContain('acp-harness__caret--bloom');
+    expect(dictation).not.toContain('spawnComposerBlooms');
+    expect(sync).toContain('ensureComposerBloomLayer');
+    expect(sync).toContain('spawnComposerBlooms');
+    expect(sync).toContain('pending?.laneId === lane.id');
+    expect(sync).toContain('replaceChildren');
+  });
+
+  it('does not arm motion for delete, cursor, or generic draft rewrites', () => {
+    expect(methodSource('handleEditingKey')).not.toContain('pendingComposerBloom');
+    expect(methodSource('setDraft')).not.toContain('pendingComposerBloom');
+    expect(methodSource('setDraftCursor')).not.toContain('pendingComposerBloom');
+  });
+});
+
 describe('ticket picker open/closed tabs', () => {
   const localOpen = {
     kind: 'local' as const,
@@ -1034,6 +1082,20 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
 });
 
 describe('ACP harness auto-allow permission detection', () => {
+  it('auto-allows only the pending-only built-in timeline suggestion tool', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'mcp__krypton_harness_bus__timeline_suggest',
+      rawInput: {
+        toolName: 'mcp__krypton_harness_bus__timeline_suggest',
+        arguments: { topic_title: 'Auth', summary: 'Use passkeys' },
+      },
+    }))).toBe('timeline_suggest');
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'timeline_confirm',
+      rawInput: { name: 'timeline_confirm', server: 'krypton-harness-bus' },
+    }))).toBeNull();
+  });
+
   it('auto-allows the built-in local ticket progress tool', () => {
     expect(harnessAutoAllowToolName(permissionFor({
       title: 'mcp__krypton_harness_memory__ticket_progress',
@@ -2970,6 +3032,69 @@ describe('#draw dispatch', () => {
     await runHashCommand.call(h.target, { status: 'busy' }, '#draw a box');
     expect(h.enqueued).toEqual([]);
     expect(h.flashes).toEqual(['lane busy - #cancel first']);
+  });
+});
+
+describe('#timeline dispatch (spec 253)', () => {
+  type TestLane = { status: string };
+  type TimelineRunner = { runTimelineCommand(lane: TestLane, text: string): Promise<void> };
+  const runTimelineCommand = (AcpHarnessView.prototype as unknown as TimelineRunner).runTimelineCommand;
+
+  it('injects one read-only trace turn for an idle lane', async () => {
+    const enqueued: Array<{ prompt: string; label: string | undefined }> = [];
+    await runTimelineCommand.call(
+      {
+        remoteRuntimeId: null,
+        flashChip: () => {},
+        enqueueSystemPrompt: async (
+          _lane: TestLane,
+          prompt: string,
+          _images: undefined,
+          label: string | undefined,
+        ) => enqueued.push({ prompt, label }),
+      },
+      { status: 'idle' },
+      '#timeline trace prompt animation',
+    );
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]?.label).toBe('tracing timeline');
+    expect(enqueued[0]?.prompt).toContain('strictly read-only');
+    expect(enqueued[0]?.prompt).toContain('"prompt animation"');
+  });
+
+  it('keeps local record/browser operations unavailable in a remote Harness', async () => {
+    const flashes: string[] = [];
+    await runTimelineCommand.call(
+      { remoteRuntimeId: 'remote-1', flashChip: (value: string) => flashes.push(value) },
+      { status: 'idle' },
+      '#timeline add auth',
+    );
+    expect(flashes).toEqual([
+      '#timeline local storage/review/browser is unavailable in a remote Harness; trace remains available',
+    ]);
+  });
+
+  it('opens the oldest pending suggestion through the local review command', async () => {
+    let opened = 0;
+    await runTimelineCommand.call(
+      {
+        remoteRuntimeId: null,
+        openTimelineSuggestionReview: async () => { opened++; },
+        flashChip: () => {},
+      },
+      { status: 'idle' },
+      '#timeline review',
+    );
+    expect(opened).toBe(1);
+  });
+
+  it('advertises automatic suggestions only for enabled local MCP-capable lanes', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    expect(source).toContain(
+      "this.timelineAutomaticSuggestions && !this.remoteRuntimeId && lane.backendId !== 'pi-acp'",
+    );
+    expect(source).toContain('use timeline_suggest only when this turn establishes an explicit durable requirement');
   });
 });
 

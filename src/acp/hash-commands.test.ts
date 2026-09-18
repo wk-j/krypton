@@ -86,6 +86,7 @@ describe('buildCommandManifest', () => {
     const names = HASH_COMMANDS.map((c) => c.name);
     expect(names).toContain('docs');
     expect(names).toContain('panels');
+    expect(names).toContain('timeline');
     expect(names).toContain('termctrl');
     expect(names).toContain('hurl');
     expect(names).toContain('dispatch-github-issue');
@@ -93,6 +94,9 @@ describe('buildCommandManifest', () => {
     expect(byName.get('docs')?.badges).not.toContain('hidden');
     expect(byName.get('panels')?.category).toBe('surface');
     expect(byName.get('panels')?.args).toBe('[hide | show | toggle]');
+    expect(byName.get('timeline')?.args).toBe(
+      '[open [<topic>] | add [<topic>] | review | auto [on|off] | trace <topic> | <topic>]',
+    );
     expect(byName.get('termctrl')?.category).toBe('surface');
     expect(byName.get('dispatch-github-issue')?.badges).not.toContain('hidden');
     expect(byName.get('dispatch-github-issue')?.alias).toBeUndefined();

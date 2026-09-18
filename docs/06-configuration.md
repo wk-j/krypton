@@ -379,6 +379,9 @@ max_tokens = 8192
 [acp_harness]
 idle_flash_sound = true        # play soft cue when a busy lane becomes idle with a draft
 memory_footer = true           # append MEMORY footer for automatic shared-memory extraction
+composer_bloom = true          # fading letter afterimage on the prompt (spec 252)
+composer_bloom_ms = 320        # afterimage duration in ms (180–700)
+composer_bloom_trail = 5       # visible graphemes that flash on one paste (1–12)
 
 # --- Context Extensions ---
 # Built-in extensions that activate when specific processes are detected
@@ -660,6 +663,9 @@ See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-
 |---------|-----|------|---------|-------------|
 | `[acp_harness]` | `idle_flash_sound` | bool | `true` | Reserved for the soft cue when an active lane returns idle while its draft is non-empty |
 | `[acp_harness]` | `memory_footer` | bool | `true` | Append the MEMORY footer to each harness prompt so agents can publish short shared-memory bullets |
+| `[acp_harness]` | `composer_bloom` | bool | `true` | Fading letter afterimage on direct composer insertion (spec 252). System Reduce Motion still wins. |
+| `[acp_harness]` | `composer_bloom_ms` | int | `320` | Afterimage duration in milliseconds, clamped to 180–700 |
+| `[acp_harness]` | `composer_bloom_trail` | int | `5` | How many inserted visible graphemes receive an afterimage on one paste, clamped to 1–12 |
 | `[[acp_harness.remote_profiles]]` | `name` | string | — | Unique picker label for an SSH Harness target |
 | `[[acp_harness.remote_profiles]]` | `host` | string | — | OpenSSH host alias; user, port, identity and ProxyJump remain in `~/.ssh/config` |
 | `[[acp_harness.remote_profiles]]` | `project_dir` | absolute path | — | Remote project root sent through the runtime protocol, never a shell command |

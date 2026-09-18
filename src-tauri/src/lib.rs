@@ -23,6 +23,7 @@ pub mod telegram;
 pub mod termctrl_monitor;
 pub mod theme;
 pub mod ticket_bundle;
+pub mod timeline;
 pub mod usage;
 pub mod usage_log;
 pub mod util;
@@ -233,6 +234,13 @@ pub fn run() {
             ticket_bundle::acp_update_ticket_status,
             ticket_bundle::acp_update_ticket_github,
             ticket_bundle::acp_set_ticket_worker,
+            timeline::timeline_list,
+            timeline::timeline_record,
+            timeline::timeline_suggestion_list,
+            timeline::timeline_suggestion_confirm,
+            timeline::timeline_suggestion_dismiss,
+            timeline::timeline_suggestion_settings,
+            timeline::timeline_suggestion_set_enabled,
             commands::save_temp_image,
             commands::capture_screen,
             commands::get_env_var,
