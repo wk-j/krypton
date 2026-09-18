@@ -31,9 +31,11 @@ const HARNESS_ATTENTION_TOOL_NAMES = new Set(['attention_flag', 'attention_resol
 // reports diff reading-order hints at end-of-turn; a permission prompt there
 // would interrupt the turn boundary for a purely-advisory signal.
 const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_outcome', 'mark_review_priority']);
-// spec 254: this tool can only create a local, non-authoritative pending
-// suggestion. Confirmation and dismissal remain human-only Tauri commands.
-const HARNESS_TIMELINE_TOOL_NAMES = new Set(['timeline_suggest']);
+// specs 254/255: timeline_suggest only creates pending state; timeline_record
+// is authoritative but is restricted to an explicit current-turn user request
+// whose exact words are stored with the event. Both are bounded project-local
+// writes and must not interrupt the authorizing turn with another confirmation.
+const HARNESS_TIMELINE_TOOL_NAMES = new Set(['timeline_suggest', 'timeline_record']);
 // specs 178/238/239: progress and ticket tools are default-on built-in
 // harness-bus tooling. Backend validation confines every write to the active
 // ticket bundle: `ticket_progress`/`ticket_link` require (or first-claim) the
@@ -143,7 +145,7 @@ export function harnessToolNameFromString(value: string | undefined): string | n
   for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
     if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
   }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|handoff_get|handoff_list|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|timeline_suggest|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link)(?:$|[^a-z0-9_])/);
+  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|handoff_get|handoff_list|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|timeline_suggest|timeline_record|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link)(?:$|[^a-z0-9_])/);
   return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 

@@ -2882,7 +2882,7 @@ fn tool_category(name: &str) -> &'static str {
         "peer_send" | "peer_list" => "peering",
         "artifact_new" | "artifact_register" | "artifact_cancel" => "artifacts",
         "attention_flag" | "attention_resolve" => "attention",
-        "timeline_suggest" => "timeline",
+        "timeline_suggest" | "timeline_record" => "timeline",
         "review_outcome" | "mark_review_priority" => "review",
         // spec 211: the Review Board is an authored surface, grouped with the
         // other path-handoff surfaces rather than with the `review_outcome`
@@ -3610,6 +3610,7 @@ async fn handle_bus_tool_call(
         "attention_flag" => attention_flag(state, harness_id, lane_label, arguments).await,
         "attention_resolve" => attention_resolve(state, harness_id, lane_label, arguments).await,
         "timeline_suggest" => timeline_suggest(state, harness_id, lane_label, arguments),
+        "timeline_record" => timeline_record(state, harness_id, lane_label, arguments),
         "review_outcome" => review_outcome(state, harness_id, lane_label, arguments).await,
         "mark_review_priority" => {
             mark_review_priority(state, harness_id, lane_label, arguments).await
@@ -3849,6 +3850,32 @@ fn timeline_suggest(
     Ok(json!({
         "suggestion_id": suggestion.id,
         "pending_count": pending_count,
+    }))
+}
+
+/// Persist an authoritative project timeline event when the current human turn
+/// explicitly requested it (spec 255). The exact authorizing words are stored
+/// with the event; unsolicited capture must continue to use timeline_suggest.
+fn timeline_record(
+    state: &HookServerState,
+    harness_id: &str,
+    lane_label: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let request: crate::timeline::TimelineDirectRecordRequest =
+        serde_json::from_value(arguments)
+            .map_err(|error| format!("invalid timeline_record arguments: {error}"))?;
+    let project_dir = state
+        .hook_server
+        .project_dir_for_harness(harness_id)
+        .ok_or_else(|| {
+            "timeline_record is unavailable without a local project workspace".to_string()
+        })?;
+    let result = crate::timeline::record_direct_project(&project_dir, lane_label, request)?;
+    Ok(json!({
+        "event_id": result.event.id,
+        "path": result.event.path,
+        "disposition": result.disposition,
     }))
 }
 
@@ -5371,6 +5398,7 @@ fn bus_tool_descriptors() -> Value {
             arr.push(descriptor);
         }
         arr.push(timeline_suggest_tool_descriptor());
+        arr.push(timeline_record_tool_descriptor());
     }
     tools
 }
@@ -5406,7 +5434,31 @@ fn project_backed_bus_tool(name: &str) -> bool {
             | "ticket_add_resource"
             | "ticket_link"
             | "timeline_suggest"
+            | "timeline_record"
     )
+}
+
+fn timeline_record_tool_descriptor() -> Value {
+    json!({
+        "name": "timeline_record",
+        "description": "Persist ONE authoritative project timeline event without confirmation UI, but ONLY when the current human message explicitly asks to record, remember, persist, or add it to the timeline. The user's request is the confirmation. Copy the exact authorizing words into `instruction_excerpt`; do not paraphrase them there. If the current user is the authority and no more specific identity is given, use `Current user` for `made_by`. Do not call this because an event merely seems important: use timeline_suggest for unsolicited capture. For a traced chronology, record only sourced recorded/observed events, never inferred rows. Never copy secrets, tokens, environment values, or raw tool output. Report the returned event ID/path to the user.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "topic_title": { "type": "string", "maxLength": 120, "description": "Stable human-readable topic." },
+                "summary": { "type": "string", "maxLength": 500, "description": "The durable event or decision in one line." },
+                "made_by": { "type": "string", "maxLength": 120, "description": "Who explicitly made or approved it; use Current user when this prompt is the authority." },
+                "instruction_excerpt": { "type": "string", "maxLength": 1000, "description": "Exact words from the current human message that authorize timeline persistence." },
+                "occurred_at": { "type": "string", "description": "Optional RFC 3339 occurrence time; defaults to now or the matching pending suggestion time." },
+                "rationale": { "type": "string", "maxLength": 4096 },
+                "impact": { "type": "string", "maxLength": 4096 },
+                "source_ref": { "type": "string", "maxLength": 2048, "description": "Optional URL, commit, or project-relative source." },
+                "relation": { "type": "string", "enum": ["supersedes", "refines", "implements", "supports", "caused_by"] },
+                "related_event": { "type": "string", "maxLength": 64 }
+            },
+            "required": ["topic_title", "summary", "made_by", "instruction_excerpt"]
+        }
+    })
 }
 
 fn timeline_suggest_tool_descriptor() -> Value {
@@ -8848,6 +8900,27 @@ mod tests {
             names.contains(&"timeline_suggest"),
             "timeline_suggest should be advertised for project-backed harnesses"
         );
+        assert!(
+            names.contains(&"timeline_record"),
+            "timeline_record should be advertised for explicit user requests"
+        );
+        let direct = tools
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .find(|tool| tool.get("name").and_then(Value::as_str) == Some("timeline_record"))
+            .expect("timeline_record descriptor");
+        assert!(direct
+            .get("description")
+            .and_then(Value::as_str)
+            .is_some_and(|description| description.contains("current human message")));
+        assert_eq!(
+            direct
+                .pointer("/inputSchema/required")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(4)
+        );
     }
 
     #[test]
@@ -8873,6 +8946,7 @@ mod tests {
             "issue_progress",
             "ticket_note",
             "timeline_suggest",
+            "timeline_record",
         ] {
             assert!(
                 !names.contains(&project_backed),
@@ -9230,6 +9304,7 @@ mod tests {
         assert!(TIMELINE_HTML.contains("/timeline.json?harness="));
         assert!(TIMELINE_HTML.contains("textContent"));
         assert!(TIMELINE_HTML.contains("event.evidenceExcerpt"));
+        assert!(TIMELINE_HTML.contains("event.instructionExcerpt"));
         assert!(TIMELINE_HTML.contains("local only"));
         assert!(!TIMELINE_HTML.contains("event.kind"));
         assert!(!TIMELINE_HTML.contains("border-left:"));

@@ -1,6 +1,6 @@
 # Natural-Language Timeline Recording — Implementation Spec
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-09-18
 > Milestone: ACP Harness — project provenance
 
@@ -59,7 +59,8 @@ bounded schema, and is corrected later with a superseding event rather than sile
 | `src/acp/harness-permission-scan.ts` | Auto-allow the exact built-in direct-record tool so no permission UI interrupts it |
 | `src/acp/acp-harness-view.ts` | Add the explicit-vs-unsolicited timeline rule to local lane context |
 | `src/acp/acp-harness-view.test.ts` | Cover tool discoverability and lane-context wording |
-| `src/acp/harness-permission-scan.test.ts` | Cover narrow auto-approval and near-name rejection |
+| `src/acp/timeline.ts` | Expose the optional authorizing instruction on listed events |
+| `src/acp/artifact-timeline.html` | Search and display the stored authorizing instruction |
 | `docs/02-functional-requirements.md` | Add conversational direct recording requirement |
 | `docs/04-architecture.md`, `docs/05-data-flow.md` | Document trust boundary, persistence, and direct flow |
 | `docs/72-acp-harness-view.md` | Document natural-language examples and no-modal behavior |
@@ -69,7 +70,7 @@ bounded schema, and is corrected later with a superseding event rather than sile
 | `docs/254-automatic-timeline-suggestions.md` | Clarify that pending review remains only for unsolicited capture |
 | `docs/README.md` | Index this specification |
 
-No CSS, capture-sheet, browser-page, configuration, or ACP protocol change is required.
+No CSS, capture-sheet, configuration, or ACP protocol change is required.
 
 ## Design
 
@@ -176,9 +177,10 @@ section, so all existing events remain readable.
 
 ### UI Changes
 
-None. The existing structured tool card and assistant response are the audit surface. `#timeline`
-continues to open the read-only browser, while `#timeline add` and `#timeline review` remain available
-for manual capture and unsolicited suggestions.
+No new interactive UI. The existing structured tool card and assistant response are the immediate
+audit surface, and the read-only `#timeline` browser shows the stored authorizing instruction on the
+event card. `#timeline add` and `#timeline review` remain available for manual capture and
+unsolicited suggestions.
 
 ## Edge Cases
 

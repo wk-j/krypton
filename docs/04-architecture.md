@@ -888,6 +888,17 @@ the passive count badge and the human review sheet. Confirmation alone creates
 dismissal moves the candidate to `.krypton/timeline/dismissed/`. Pending files
 never appear in `timeline_list` or `/timeline.json`.
 
+Spec 255 adds a second, explicit-intent path without changing that unsolicited
+capture boundary. The project-backed `timeline_record` MCP tool is available to
+local MCP-capable lanes only when the current human turn directly asks to persist
+timeline history. HookServer supplies the lane identity; `timeline.rs` validates
+the agent-structured fields, stores the exact authorizing instruction, derives or
+reuses the topic ID, and writes directly to `events/` without a frontend modal. A
+matching pending suggestion is promoted under its reserved ID; an identical retry
+returns the existing event. `timeline_record` is narrowly auto-approved because
+the user's current instruction is the confirmation, while self-selected events
+must still use `timeline_suggest`.
+
 ## Remote ACP Harness runtime
 
 Spec 247 adds a local-UI/remote-execution split for ACP Harnesses. The desktop

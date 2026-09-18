@@ -1082,7 +1082,7 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
 });
 
 describe('ACP harness auto-allow permission detection', () => {
-  it('auto-allows only the pending-only built-in timeline suggestion tool', () => {
+  it('auto-allows only the two exact built-in timeline write tools', () => {
     expect(harnessAutoAllowToolName(permissionFor({
       title: 'mcp__krypton_harness_bus__timeline_suggest',
       rawInput: {
@@ -1091,8 +1091,19 @@ describe('ACP harness auto-allow permission detection', () => {
       },
     }))).toBe('timeline_suggest');
     expect(harnessAutoAllowToolName(permissionFor({
+      title: 'mcp__krypton_harness_bus__timeline_record',
+      rawInput: {
+        toolName: 'mcp__krypton_harness_bus__timeline_record',
+        arguments: { topic_title: 'Auth', summary: 'Use passkeys' },
+      },
+    }))).toBe('timeline_record');
+    expect(harnessAutoAllowToolName(permissionFor({
       title: 'timeline_confirm',
       rawInput: { name: 'timeline_confirm', server: 'krypton-harness-bus' },
+    }))).toBeNull();
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'timeline_record_all',
+      rawInput: { name: 'timeline_record_all', server: 'krypton-harness-bus' },
     }))).toBeNull();
   });
 
@@ -3088,13 +3099,15 @@ describe('#timeline dispatch (spec 253)', () => {
     expect(opened).toBe(1);
   });
 
-  it('advertises automatic suggestions only for enabled local MCP-capable lanes', () => {
+  it('advertises direct recording and separately gates automatic suggestions', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
     expect(source).toContain(
       "this.timelineAutomaticSuggestions && !this.remoteRuntimeId && lane.backendId !== 'pi-acp'",
     );
     expect(source).toContain('use timeline_suggest only when this turn establishes an explicit durable requirement');
+    expect(source).toContain('Their request is the confirmation; copy the exact authorizing words');
+    expect(source).toContain('unsolicited capture stays timeline_suggest');
   });
 });
 

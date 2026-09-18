@@ -124,7 +124,7 @@
   }
   function eventMatches(event, query) {
     if (!query) return true;
-    return lower([event.topicTitle, event.summary, event.madeBy, event.recordedBy, event.evidenceExcerpt || '', event.sourceRef || ''].join(' ')).includes(query);
+    return lower([event.topicTitle, event.summary, event.madeBy, event.recordedBy, event.evidenceExcerpt || '', event.instructionExcerpt || '', event.sourceRef || ''].join(' ')).includes(query);
   }
   function sourceHref(source) {
     if (!source) return '';
@@ -174,6 +174,7 @@
       addText(details, 'dt', '', 'suggested by'); addText(details, 'dd', '', event.suggestedByLane);
     }
     if (event.evidenceExcerpt) { var evidence = addText(card, 'div', 'copy', ''); addText(evidence, 'strong', '', 'Evidence · '); evidence.append(document.createTextNode(event.evidenceExcerpt)); }
+    if (event.instructionExcerpt) { var instruction = addText(card, 'div', 'copy', ''); addText(instruction, 'strong', '', 'Authorizing instruction · '); instruction.append(document.createTextNode(event.instructionExcerpt)); }
     if (event.rationale) { var rationale = addText(card, 'div', 'copy', ''); addText(rationale, 'strong', '', 'Rationale · '); rationale.append(document.createTextNode(event.rationale)); }
     if (event.impact) { var impact = addText(card, 'div', 'copy', ''); addText(impact, 'strong', '', 'Impact · '); impact.append(document.createTextNode(event.impact)); }
     if (event.relation && event.relatedEvent) addText(card, 'div', 'relation', event.relation.replace('_', ' ') + ' · ' + event.relatedEvent);

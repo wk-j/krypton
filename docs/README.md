@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (254)
+## Specs (255)
 
 | # | Spec |
 |---|------|
@@ -258,6 +258,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 252 | [ACP Harness Composer Soft Bloom](./252-harness-composer-soft-bloom.md) |
 | 253 | [Project Decision & Requirement Timeline](./253-project-decision-requirement-timeline.md) |
 | 254 | [Automatic Timeline Suggestions](./254-automatic-timeline-suggestions.md) |
+| 255 | [Natural-Language Timeline Recording](./255-natural-language-timeline-recording.md) |
 
 ## ADRs (20)
 

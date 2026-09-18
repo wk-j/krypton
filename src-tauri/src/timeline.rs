@@ -82,6 +82,42 @@ pub struct TimelineSuggestionRequest {
     pub source_ref: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub struct TimelineDirectRecordRequest {
+    pub topic_title: String,
+    pub summary: String,
+    pub made_by: String,
+    pub instruction_excerpt: String,
+    #[serde(default)]
+    pub occurred_at: Option<String>,
+    #[serde(default)]
+    pub rationale: String,
+    #[serde(default)]
+    pub impact: String,
+    #[serde(default)]
+    pub source_ref: Option<String>,
+    #[serde(default)]
+    pub relation: Option<TimelineRelation>,
+    #[serde(default)]
+    pub related_event: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TimelineDirectRecordDisposition {
+    Created,
+    Existing,
+    PromotedPending,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineDirectRecordResult {
+    pub event: TimelineEvent,
+    pub disposition: TimelineDirectRecordDisposition,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineSuggestion {
@@ -146,6 +182,8 @@ pub struct TimelineEvent {
     pub suggested_by_lane: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evidence_excerpt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instruction_excerpt: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggestion_id: Option<String>,
     pub rationale: String,
@@ -303,10 +341,12 @@ fn validate_body(name: &str, value: &str) -> Result<String, String> {
             "{name} must be at most {MAX_BODY_CHARS} Unicode characters"
         ));
     }
-    if value
-        .lines()
-        .any(|line| matches!(line.trim(), "## Evidence" | "## Rationale" | "## Impact"))
-    {
+    if value.lines().any(|line| {
+        matches!(
+            line.trim(),
+            "## Evidence" | "## Authorizing instruction" | "## Rationale" | "## Impact"
+        )
+    }) {
         return Err(format!(
             "{name} cannot contain the reserved timeline section headings"
         ));
@@ -517,8 +557,24 @@ fn parse_event(project: &Path, path: &Path, source: &str) -> Result<TimelineEven
         .find_map(|line| line.strip_prefix("# "))
         .ok_or_else(|| "missing event summary heading".to_string())?;
     let summary = validate_single_line("summary", summary, MAX_SUMMARY_CHARS)?;
+    let instruction_excerpt = {
+        let instruction = body_section(&body, "Authorizing instruction", Some("Rationale"));
+        if instruction.is_empty() {
+            None
+        } else {
+            Some(validate_body_with_limit(
+                "instructionExcerpt",
+                &instruction,
+                MAX_EVIDENCE_CHARS,
+            )?)
+        }
+    };
     let evidence_excerpt = {
-        let evidence = body_section(&body, "Evidence", Some("Rationale"));
+        let next = instruction_excerpt
+            .as_ref()
+            .map(|_| "Authorizing instruction")
+            .unwrap_or("Rationale");
+        let evidence = body_section(&body, "Evidence", Some(next));
         if evidence.is_empty() {
             None
         } else {
@@ -551,6 +607,7 @@ fn parse_event(project: &Path, path: &Path, source: &str) -> Result<TimelineEven
         related_event,
         suggested_by_lane,
         evidence_excerpt,
+        instruction_excerpt,
         suggestion_id,
         rationale,
         impact,
@@ -860,7 +917,9 @@ fn render_event_markdown(
     id: &str,
     recorded_at: &str,
     request: &TimelineRecordRequest,
+    recorded_by: &str,
     suggestion: Option<&TimelineSuggestion>,
+    instruction_excerpt: Option<&str>,
 ) -> Result<String, String> {
     let mut frontmatter = vec![
         "---".to_string(),
@@ -872,7 +931,7 @@ fn render_event_markdown(
         format!("occurred_at: {}", yaml_string(&request.occurred_at)?),
         format!("made_by: {}", yaml_string(&request.made_by)?),
         format!("recorded_at: {}", yaml_string(recorded_at)?),
-        format!("recorded_by: {}", yaml_string("Local user")?),
+        format!("recorded_by: {}", yaml_string(recorded_by)?),
         format!("recorder_lane: {}", yaml_string(&request.recorder_lane)?),
     ];
     if let Some(source_ref) = &request.source_ref {
@@ -893,17 +952,16 @@ fn render_event_markdown(
         frontmatter.push(format!("suggestion_id: {}", yaml_string(&suggestion.id)?));
     }
     frontmatter.push("---".to_string());
-    let evidence = suggestion
-        .map(|suggestion| format!("\n## Evidence\n{}\n", suggestion.evidence_excerpt))
-        .unwrap_or_default();
-    Ok(format!(
-        "{}\n# {}\n{}\n## Rationale\n{}\n\n## Impact\n{}\n",
-        frontmatter.join("\n"),
-        request.summary,
-        evidence,
-        request.rationale,
-        request.impact,
-    ))
+    let mut sections = vec![frontmatter.join("\n"), format!("# {}", request.summary)];
+    if let Some(suggestion) = suggestion {
+        sections.push(format!("## Evidence\n{}", suggestion.evidence_excerpt));
+    }
+    if let Some(instruction_excerpt) = instruction_excerpt {
+        sections.push(format!("## Authorizing instruction\n{instruction_excerpt}"));
+    }
+    sections.push(format!("## Rationale\n{}", request.rationale));
+    sections.push(format!("## Impact\n{}", request.impact));
+    Ok(format!("{}\n", sections.join("\n\n")))
 }
 
 fn validate_record_request(
@@ -942,6 +1000,15 @@ pub(crate) fn record_project(
     project_dir: &Path,
     request: TimelineRecordRequest,
 ) -> Result<TimelineEvent, String> {
+    record_project_with_provenance(project_dir, request, "Local user", None)
+}
+
+fn record_project_with_provenance(
+    project_dir: &Path,
+    request: TimelineRecordRequest,
+    recorded_by: &str,
+    instruction_excerpt: Option<&str>,
+) -> Result<TimelineEvent, String> {
     let request = validate_record_request(project_dir, request)?;
     let (project, root) = writable_event_root(project_dir)?;
     let recorded_at = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
@@ -952,7 +1019,14 @@ pub(crate) fn record_project(
             random_hex()?
         );
         let path = root.join(format!("{id}.md"));
-        let markdown = render_event_markdown(&id, &recorded_at, &request, None)?;
+        let markdown = render_event_markdown(
+            &id,
+            &recorded_at,
+            &request,
+            recorded_by,
+            None,
+            instruction_excerpt,
+        )?;
         match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(mut file) => {
                 file.write_all(markdown.as_bytes())
@@ -980,6 +1054,195 @@ fn normalized_dedup_key(topic_title: &str, summary: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn normalized_text(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn topic_title_id(title: &str) -> String {
+    let mut slug = String::new();
+    let mut pending_dash = false;
+    for ch in title.to_lowercase().chars() {
+        if ch.is_ascii_alphanumeric() {
+            if pending_dash && !slug.is_empty() && slug.chars().count() < 56 {
+                slug.push('-');
+            }
+            pending_dash = false;
+            if slug.chars().count() < 56 {
+                slug.push(ch);
+            }
+        } else if !slug.is_empty() {
+            pending_dash = true;
+        }
+    }
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+    if !slug.is_empty() {
+        return format!("topic-{slug}");
+    }
+    format!("topic-{:08x}", title_hash(title))
+}
+
+fn title_hash(title: &str) -> u32 {
+    title.chars().fold(0x811c9dc5_u32, |hash, ch| {
+        (hash ^ ch as u32).wrapping_mul(0x01000193)
+    })
+}
+
+fn direct_topic_id(title: &str, events: &[TimelineEvent]) -> String {
+    let normalized = normalized_text(title);
+    if let Some(existing) = events
+        .iter()
+        .rev()
+        .find(|event| normalized_text(&event.topic_title) == normalized)
+    {
+        return existing.topic_id.clone();
+    }
+    let base = topic_title_id(title);
+    if !events.iter().any(|event| event.topic_id == base) {
+        return base;
+    }
+    let hashed = format!("{base}-{:06x}", title_hash(title) >> 8);
+    if !events.iter().any(|event| event.topic_id == hashed) {
+        return hashed;
+    }
+    for suffix in 2..=999 {
+        let candidate = format!("{hashed}-{suffix}");
+        if !events.iter().any(|event| event.topic_id == candidate) {
+            return candidate;
+        }
+    }
+    hashed
+}
+
+fn validate_direct_request(
+    mut request: TimelineDirectRecordRequest,
+) -> Result<TimelineDirectRecordRequest, String> {
+    request.topic_title =
+        validate_single_line("topicTitle", &request.topic_title, MAX_TOPIC_CHARS)?;
+    request.summary = validate_single_line("summary", &request.summary, MAX_SUMMARY_CHARS)?;
+    request.made_by = validate_single_line("madeBy", &request.made_by, MAX_ACTOR_CHARS)?;
+    request.instruction_excerpt = validate_body_with_limit(
+        "instructionExcerpt",
+        &request.instruction_excerpt,
+        MAX_EVIDENCE_CHARS,
+    )?;
+    if request.instruction_excerpt.is_empty() {
+        return Err("instructionExcerpt is required".to_string());
+    }
+    request.rationale = validate_body("rationale", &request.rationale)?;
+    request.impact = validate_body("impact", &request.impact)?;
+    request.source_ref =
+        validate_optional_single_line("sourceRef", request.source_ref, MAX_SOURCE_CHARS)?;
+    request.occurred_at = match request.occurred_at {
+        Some(value) if value.trim().is_empty() => None,
+        Some(value) => {
+            DateTime::parse_from_rfc3339(value.trim())
+                .map_err(|error| format!("occurredAt must be RFC 3339: {error}"))?;
+            Some(value.trim().to_string())
+        }
+        None => None,
+    };
+    if request.relation.is_some() != request.related_event.is_some() {
+        return Err("relation and relatedEvent must be supplied together".to_string());
+    }
+    if let Some(related) = request.related_event.take() {
+        request.related_event = Some(validate_event_id(&related)?);
+    }
+    Ok(request)
+}
+
+fn direct_event_matches(event: &TimelineEvent, request: &TimelineDirectRecordRequest) -> bool {
+    normalized_text(&event.topic_title) == normalized_text(&request.topic_title)
+        && normalized_text(&event.summary) == normalized_text(&request.summary)
+        && event.instruction_excerpt.as_deref().is_some_and(|value| {
+            normalized_text(value) == normalized_text(&request.instruction_excerpt)
+        })
+        && event.source_ref.as_deref().map(normalized_text)
+            == request.source_ref.as_deref().map(normalized_text)
+}
+
+pub(crate) fn record_direct_project(
+    project_dir: &Path,
+    lane_label: &str,
+    request: TimelineDirectRecordRequest,
+) -> Result<TimelineDirectRecordResult, String> {
+    let _guard = TIMELINE_MUTATION_LOCK
+        .lock()
+        .map_err(|_| "timeline mutation lock is unavailable".to_string())?;
+    let request = validate_direct_request(request)?;
+    let lane_label = validate_single_line("recorderLane", lane_label, MAX_ACTOR_CHARS)?;
+    let listing = scan_project(project_dir)?;
+    if let Some(event) = listing
+        .events
+        .iter()
+        .find(|event| direct_event_matches(event, &request))
+    {
+        return Ok(TimelineDirectRecordResult {
+            event: event.clone(),
+            disposition: TimelineDirectRecordDisposition::Existing,
+        });
+    }
+    let pending = scan_suggestions_project(project_dir)?
+        .suggestions
+        .into_iter()
+        .find(|suggestion| {
+            normalized_dedup_key(&suggestion.topic_title, &suggestion.summary)
+                == normalized_dedup_key(&request.topic_title, &request.summary)
+        });
+    let occurred_at = request
+        .occurred_at
+        .clone()
+        .or_else(|| {
+            pending
+                .as_ref()
+                .map(|suggestion| suggestion.occurred_at.clone())
+        })
+        .unwrap_or_else(|| Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true));
+    let record_request = TimelineRecordRequest {
+        topic_id: direct_topic_id(&request.topic_title, &listing.events),
+        topic_title: request.topic_title.clone(),
+        summary: request.summary.clone(),
+        occurred_at,
+        made_by: request.made_by.clone(),
+        rationale: request.rationale.clone(),
+        impact: request.impact.clone(),
+        source_ref: request.source_ref.clone(),
+        relation: request.relation,
+        related_event: request.related_event.clone(),
+        recorder_lane: lane_label,
+    };
+    let instruction_excerpt = request.instruction_excerpt.as_str();
+    let event = if let Some(suggestion) = pending.as_ref() {
+        confirm_suggestion_project_locked(
+            project_dir,
+            &suggestion.id,
+            record_request,
+            "Agent via explicit user instruction",
+            Some(instruction_excerpt),
+        )?
+    } else {
+        record_project_with_provenance(
+            project_dir,
+            record_request,
+            "Agent via explicit user instruction",
+            Some(instruction_excerpt),
+        )?
+    };
+    Ok(TimelineDirectRecordResult {
+        event,
+        disposition: if pending.is_some() {
+            TimelineDirectRecordDisposition::PromotedPending
+        } else {
+            TimelineDirectRecordDisposition::Created
+        },
+    })
 }
 
 fn render_suggestion_markdown(suggestion: &TimelineSuggestion) -> Result<String, String> {
@@ -1193,6 +1456,16 @@ pub(crate) fn confirm_suggestion_project(
     let _guard = TIMELINE_MUTATION_LOCK
         .lock()
         .map_err(|_| "timeline mutation lock is unavailable".to_string())?;
+    confirm_suggestion_project_locked(project_dir, suggestion_id, request, "Local user", None)
+}
+
+fn confirm_suggestion_project_locked(
+    project_dir: &Path,
+    suggestion_id: &str,
+    request: TimelineRecordRequest,
+    recorded_by: &str,
+    instruction_excerpt: Option<&str>,
+) -> Result<TimelineEvent, String> {
     let suggestion_id = validate_event_id(suggestion_id)?;
     if let Some(event) = scan_project(project_dir)?
         .events
@@ -1211,8 +1484,14 @@ pub(crate) fn confirm_suggestion_project(
     let (project, root) = writable_event_root(project_dir)?;
     let path = root.join(format!("{suggestion_id}.md"));
     let recorded_at = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
-    let markdown =
-        render_event_markdown(&suggestion_id, &recorded_at, &request, Some(&suggestion))?;
+    let markdown = render_event_markdown(
+        &suggestion_id,
+        &recorded_at,
+        &request,
+        recorded_by,
+        Some(&suggestion),
+        instruction_excerpt,
+    )?;
     match OpenOptions::new().write(true).create_new(true).open(&path) {
         Ok(mut file) => {
             file.write_all(markdown.as_bytes())
@@ -1413,6 +1692,21 @@ mod tests {
         }
     }
 
+    fn direct_request() -> TimelineDirectRecordRequest {
+        TimelineDirectRecordRequest {
+            topic_title: "Upload validation".to_string(),
+            summary: "Metadata transfer is required".to_string(),
+            made_by: "Current user".to_string(),
+            instruction_excerpt: "Record this decision in the timeline.".to_string(),
+            occurred_at: Some("2026-09-18T08:20:00Z".to_string()),
+            rationale: "The consumer needs metadata.".to_string(),
+            impact: "Revise completion handling.".to_string(),
+            source_ref: Some("conversation:turn-5".to_string()),
+            relation: None,
+            related_event: None,
+        }
+    }
+
     #[test]
     fn record_and_scan_round_trip_local_markdown() {
         let dir = TestDir::new("round-trip");
@@ -1567,6 +1861,63 @@ mod tests {
             scan_suggestions_project(&dir.0).unwrap().suggestions,
             vec![saved]
         );
+    }
+
+    #[test]
+    fn direct_record_writes_authorizing_instruction_and_is_idempotent() {
+        let dir = TestDir::new("direct-record");
+        let created = record_direct_project(&dir.0, "Codex-2", direct_request()).unwrap();
+        assert_eq!(
+            created.disposition,
+            TimelineDirectRecordDisposition::Created
+        );
+        assert_eq!(
+            created.event.recorded_by,
+            "Agent via explicit user instruction"
+        );
+        assert_eq!(created.event.recorder_lane, "Codex-2");
+        assert_eq!(created.event.topic_id, "topic-upload-validation");
+        assert_eq!(
+            created.event.instruction_excerpt.as_deref(),
+            Some("Record this decision in the timeline.")
+        );
+        let body = fs::read_to_string(dir.0.join(&created.event.path)).unwrap();
+        assert!(body.contains("## Authorizing instruction\nRecord this decision in the timeline."));
+
+        let retried = record_direct_project(&dir.0, "Codex-2", direct_request()).unwrap();
+        assert_eq!(
+            retried.disposition,
+            TimelineDirectRecordDisposition::Existing
+        );
+        assert_eq!(retried.event.id, created.event.id);
+        assert_eq!(scan_project(&dir.0).unwrap().events.len(), 1);
+    }
+
+    #[test]
+    fn direct_record_promotes_matching_pending_without_review() {
+        let dir = TestDir::new("direct-promote");
+        let (suggestion, _) = suggest_project(&dir.0, "Codex-1", suggestion_request()).unwrap();
+        set_suggestion_enabled_project(&dir.0, false).unwrap();
+
+        let promoted = record_direct_project(&dir.0, "Codex-2", direct_request()).unwrap();
+        assert_eq!(
+            promoted.disposition,
+            TimelineDirectRecordDisposition::PromotedPending
+        );
+        assert_eq!(promoted.event.id, suggestion.id);
+        assert_eq!(promoted.event.suggested_by_lane.as_deref(), Some("Codex-1"));
+        assert_eq!(
+            promoted.event.evidence_excerpt.as_deref(),
+            Some("We require metadata transfer before completion.")
+        );
+        assert_eq!(
+            promoted.event.instruction_excerpt.as_deref(),
+            Some("Record this decision in the timeline.")
+        );
+        assert!(scan_suggestions_project(&dir.0)
+            .unwrap()
+            .suggestions
+            .is_empty());
     }
 
     #[test]

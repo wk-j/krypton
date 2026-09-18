@@ -16,7 +16,9 @@ problem: plausible but incorrect history.
 Add an agent-facing `timeline_suggest` MCP tool that creates a durable **pending suggestion** during
 the agent's normal turn. The active Harness shows a persistent pending count and lets the human
 review, edit, confirm, or dismiss each suggestion. Only confirmation promotes a suggestion into the
-append-only event store; an agent can never create an authoritative timeline event directly.
+append-only event store through this unsolicited path. Spec 255 separately permits direct recording
+only when the current human message explicitly requests persistence; it does not promote automatic
+agent judgement into authoritative history.
 
 Automatic suggestions are enabled by default for local MCP-capable Harness lanes and can be turned
 off per project with `#timeline auto off`. This uses the model already doing the work—no sidecar
@@ -56,7 +58,8 @@ model, hidden follow-up turn, network request, or post-turn delay.
 
 **Krypton delta** — Timeline suggestions preserve exact evidence and remain non-authoritative until
 confirmed. Unlike preference memory, a confirmed timeline event is append-only provenance and is
-never automatically merged, rewritten, expired, or used to infer a decision maker.
+never automatically merged, rewritten, expired, or used to infer a decision maker. A later explicit
+user request may promote a matching pending item without opening the review sheet (spec 255).
 
 ## Affected Files
 
@@ -255,6 +258,8 @@ Dismiss
   the descriptor's one-per-turn rule limits semantic flooding.
 - **Two lanes suggest the same event** — first pending candidate wins deduplication; evidence and
   suggesting lane remain inspectable.
+- **Human explicitly asks to persist a matching event** — `timeline_record` promotes the reserved
+  pending ID directly and preserves suggestion plus authorizing-instruction provenance.
 - **Agent invents authority or quote** — nothing enters history until the human sees and confirms
   the candidate; edit or dismiss is available.
 - **Confirm interrupted after event creation** — retry finds the same suggestion ID in the final

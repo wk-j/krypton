@@ -442,6 +442,15 @@
        provenance before removing pending; dismiss atomically moves it to
        `dismissed/`. `#timeline auto off` suppresses future prompt instructions
        and makes the backend reject late calls without deleting stored state.
+    k. Explicit natural-language timeline recording (spec 255) is direct. When
+       the current human prompt asks to record/remember/persist an event, the
+       lane calls `timeline_record` with structured fields plus the exact
+       authorizing excerpt. HookServer resolves the project and authenticated
+       lane label; `timeline.rs` validates, reuses or derives `topic_id`, returns
+       an identical confirmed event on retry, promotes a matching pending
+       suggestion when present, or appends a new event. The tool result returns
+       ID/path/disposition in the same turn. No capture, review, or permission
+       overlay opens; unsolicited capture remains `timeline_suggest`.
 
 ```
 PUSH (lane → harness), at end of an editing turn:

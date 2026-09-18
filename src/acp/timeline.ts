@@ -20,6 +20,7 @@ export interface TimelineEvent {
   relatedEvent?: string;
   suggestedByLane?: string;
   evidenceExcerpt?: string;
+  instructionExcerpt?: string;
   suggestionId?: string;
   rationale: string;
   impact: string;

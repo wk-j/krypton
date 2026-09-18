@@ -219,6 +219,7 @@ row with the event ID and project-relative path; validation or I/O failure leave
   `topic_title` as display text;
 - chronological event cards with full borders (never left accent rails);
 - explicit **made by** and **recorded by** rows plus a visible `local only` marker;
+- the exact authorizing instruction when an explicit natural-language request created the event;
 - relation links such as `supersedes` and derived `superseded` state;
 - source links, with HTTP(S) opened normally and repo-relative docs routed through `/doc`;
 - diagnostics for malformed or missing linked local events.
@@ -242,7 +243,8 @@ operation `tracing timeline`. The prompt requires the lane to:
 7. remain read-only and state gaps plainly.
 
 This path helps with history that predates the ledger. It never writes or backfills events; the
-human can confirm a reconstructed event through `#timeline add` afterward.
+human can confirm a reconstructed event through `#timeline add` afterward, or explicitly ask the
+lane to persist sourced rows through the direct natural-language path in spec 255.
 
 ### Data Flow
 
@@ -313,12 +315,14 @@ Trace old behavior
 
 None. The base design chooses explicit capture plus read-only reconstruction, gitignored local
 project files, separate authority/recorder identities, and additive supersession. Spec 254 extends
-it with agent-proposed pending candidates that still require human confirmation.
+it with agent-proposed pending candidates that still require human confirmation. Spec 255 adds a
+direct MCP path only when the current human message explicitly requests persistence.
 
 ## Out of Scope
 
 - Silent automatic creation of authoritative events. Spec 254 permits at most one agent-proposed
-  pending candidate per turn and requires human confirmation.
+  pending candidate per turn and requires human confirmation; spec 255 permits direct creation only
+  when the current human instruction is itself the confirmation.
 - Timeline export, sync, backup, commit, push, GitHub comment, or issue mutation
 - Treating Git authorship as proof of product/business authority
 - Editing or deleting prior timeline events through Krypton
