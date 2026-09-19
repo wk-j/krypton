@@ -86,7 +86,7 @@ export type TimelineCommand =
   | { kind: 'usage' };
 
 export const TIMELINE_USAGE =
-  'usage: #timeline [open [<topic>] | add [<topic>] | review | auto [on|off] | trace <topic> | <topic>]';
+  'วิธีใช้: #timeline [open [<topic>] | add [<topic>] | review | auto [on|off] | trace <topic> | <topic>]';
 
 export function parseTimelineCommand(text: string): TimelineCommand {
   const args = text.trim().split(/\s+/).slice(1);
@@ -197,10 +197,10 @@ export const TIMELINE_CAPTURE_FIELDS = [
 ] as const;
 
 export function validateTimelineRecord(request: TimelineRecordRequest): string | null {
-  if (!request.topicTitle.trim()) return 'topic is required';
-  if (!request.summary.trim()) return 'summary is required';
-  if (!request.madeBy.trim()) return 'made by is required';
-  if (!request.occurredAt || Number.isNaN(Date.parse(request.occurredAt))) return 'occurred at must be a valid date';
-  if (!!request.relation !== !!request.relatedEvent) return 'relation and related event must be selected together';
+  if (!request.topicTitle.trim()) return 'กรุณาระบุหัวข้อ';
+  if (!request.summary.trim()) return 'กรุณาระบุสรุป';
+  if (!request.madeBy.trim()) return 'กรุณาระบุผู้ขอหรือผู้อนุมัติ';
+  if (!request.occurredAt || Number.isNaN(Date.parse(request.occurredAt))) return 'วันเวลาที่เกิดเหตุการณ์ไม่ถูกต้อง';
+  if (!!request.relation !== !!request.relatedEvent) return 'กรุณาเลือกความสัมพันธ์และเหตุการณ์ที่เกี่ยวข้องพร้อมกัน';
   return null;
 }

@@ -213,20 +213,38 @@ row with the event ID and project-relative path; validation or I/O failure leave
 ### Browser Surface
 
 `GET /timeline?harness=<id>&topic=<query>` serves a reader-style Binance surface that fetches
-`GET /timeline.json` for the same project. It shows:
+`GET /timeline.json` for the same project. The page is a scan-first list, not a stack of cards: one
+row per event, and only the selected event expands. It shows:
 
 - searchable topic list grouped by stable `topic_id`, ordered by latest activity, with the newest
-  `topic_title` as display text;
-- chronological event cards with full borders (never left accent rails);
-- explicit **made by** and **recorded by** rows plus a visible `local only` marker;
-- the exact authorizing instruction when an explicit natural-language request created the event;
-- relation links such as `supersedes` and derived `superseded` state;
+  `topic_title` shown in full as display text (wrapping rather than ellipsizing) and a record count;
+- day headers that stick under the header while scrolling, so position in the chronology stays
+  visible;
+- one compact row per event — time, the full summary (wrapping onto extra lines rather than
+  ellipsizing), **made by**, and small state pills (topic while unfiltered, `superseded`, `src`)
+  — separated by full-width rules, never left accent rails;
+- the selected row expanded in place with **recorded by**, topic, suggesting lane, evidence, the
+  exact authorizing instruction when a natural-language request created the event, rationale,
+  impact, relation such as `supersedes`, and the source link; at most one row is expanded, so the
+  detail block is the only heavy DOM on the page;
 - source links, with HTTP(S) opened normally and repo-relative docs routed through `/doc`;
-- diagnostics for malformed or missing linked local events.
+- a visible `local only` marker and diagnostics for malformed or missing linked local events.
 
-Keyboard: `/` search, `j`/`k` move events, `Enter` opens the selected source, `[`/`]` move between
-topics, and `Esc` clears the active filter. The page follows OS light/dark preference like the docs
-reader. It polls nothing; refresh reads disk again. All event text is inserted with `textContent`.
+Keyboard: `/` search, `j`/`k` move (and expand) events, `Enter` opens the selected source, `[`/`]`
+move between topics, `r` reverses chronological order (oldest first by default, shown next to the
+count), and `Esc` clears the active filter. Moving the selection only re-renders the two affected
+rows; filter, search, order, and topic changes re-render the list. The page follows OS light/dark
+preference like the docs reader. It polls nothing; refresh reads disk again. All event text is
+inserted with `textContent`.
+
+### Language Contract
+
+Timeline chrome and agent-composed topic, summary, rationale, impact, and trace prose use natural
+Thai. Technical terms stay English inside Thai sentences. Evidence, exact authorizing instructions,
+identities, source references, identifiers, paths, URLs, commit hashes, enum values, quoted source
+text, manual input, and existing records remain verbatim. The browser declares `lang="th"` and uses
+the `th-TH` locale for day headings; the persisted schema and machine values remain unchanged. See
+spec 256.
 
 ### Trace Prompt
 
@@ -240,7 +258,9 @@ operation `tracing timeline`. The prompt requires the lane to:
 5. name a **decision maker** only when an explicit source attributes the decision;
 6. call a Git/GitHub actor **author**, **committer**, or **commenter**, never decision maker by
    implication;
-7. remain read-only and state gaps plainly.
+7. remain read-only and state gaps plainly;
+8. answer in natural Thai while keeping technical terms, citations, quotes, and the `recorded` /
+   `observed` / `inferred` labels verbatim.
 
 This path helps with history that predates the ledger. It never writes or backfills events; the
 human can confirm a reconstructed event through `#timeline add` afterward, or explicitly ask the

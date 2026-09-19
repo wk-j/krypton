@@ -42,6 +42,17 @@ function appendTextOption(select: HTMLSelectElement, value: string, label: strin
   select.appendChild(option);
 }
 
+function relationLabel(value: string): string {
+  switch (value) {
+    case 'supersedes': return 'แทนที่';
+    case 'refines': return 'ปรับรายละเอียดของ';
+    case 'implements': return 'นำไปใช้จาก';
+    case 'supports': return 'สนับสนุน';
+    case 'caused_by': return 'เกิดจาก';
+    default: return value;
+  }
+}
+
 export class TimelineCapture {
   readonly element: HTMLElement;
   private readonly form: HTMLFormElement;
@@ -67,10 +78,10 @@ export class TimelineCapture {
 
     const title = document.createElement('h2');
     title.id = 'timeline-capture-title';
-    title.textContent = options.suggestion ? 'Review timeline suggestion' : 'Record timeline event';
+    title.textContent = options.suggestion ? 'ตรวจทานข้อเสนอ Timeline' : 'บันทึกเหตุการณ์ใน Timeline';
     const subtitle = document.createElement('p');
     subtitle.className = 'acp-timeline__subtitle';
-    subtitle.textContent = 'Saves locally under .krypton/timeline — not tracked by Git';
+    subtitle.textContent = '.krypton/timeline เก็บไว้เฉพาะเครื่องนี้ Git ไม่ติดตามไฟล์';
     panel.append(title, subtitle);
 
     this.form = document.createElement('form');
@@ -90,7 +101,7 @@ export class TimelineCapture {
       option.value = event.topicTitle;
       topicList.appendChild(option);
     }
-    this.topicInput = this.addInput('topic', 'Topic', 'text');
+    this.topicInput = this.addInput('topic', 'หัวข้อ', 'text');
     this.topicInput.setAttribute('list', topicList.id);
     this.topicInput.maxLength = 120;
     this.topicInput.value = options.suggestion?.topicTitle ?? options.initialTopic ?? '';
@@ -114,38 +125,38 @@ export class TimelineCapture {
     this.duplicateBox.append(this.duplicateConfirm, duplicateText);
     this.form.appendChild(this.duplicateBox);
 
-    const summary = this.addInput('summary', 'Summary', 'text');
+    const summary = this.addInput('summary', 'สรุป', 'text');
     summary.maxLength = 500;
     summary.value = options.suggestion?.summary ?? '';
-    const madeBy = this.addInput('madeBy', 'Made by', 'text');
+    const madeBy = this.addInput('madeBy', 'ผู้ขอหรือผู้อนุมัติ', 'text');
     madeBy.maxLength = 120;
-    madeBy.placeholder = 'Who requested or approved this?';
+    madeBy.placeholder = 'ใครเป็นผู้ขอหรืออนุมัติเรื่องนี้';
     madeBy.value = options.suggestion?.madeBy ?? '';
-    const occurredAt = this.addInput('occurredAt', 'Occurred at', 'datetime-local');
+    const occurredAt = this.addInput('occurredAt', 'เกิดขึ้นเมื่อ', 'datetime-local');
     occurredAt.value = localDateTimeValue(
       options.suggestion ? new Date(options.suggestion.occurredAt) : new Date(),
     );
-    const sourceRef = this.addInput('sourceRef', 'Source reference', 'text');
+    const sourceRef = this.addInput('sourceRef', 'แหล่งอ้างอิง', 'text');
     sourceRef.maxLength = 2048;
-    sourceRef.placeholder = 'URL, commit, or project-relative document';
+    sourceRef.placeholder = 'URL, commit หรือเอกสารที่อ้างจาก project';
     sourceRef.value = options.suggestion?.sourceRef ?? '';
 
     if (options.suggestion) {
       const evidence = document.createElement('section');
       evidence.className = 'acp-timeline__evidence';
       const evidenceTitle = document.createElement('h3');
-      evidenceTitle.textContent = `Evidence · ${options.suggestion.suggestedByLane}`;
+      evidenceTitle.textContent = `หลักฐาน · ${options.suggestion.suggestedByLane}`;
       const evidenceText = document.createElement('p');
       evidenceText.textContent = options.suggestion.evidenceExcerpt;
       evidence.append(evidenceTitle, evidenceText);
       this.form.appendChild(evidence);
     }
 
-    const relation = this.addSelect('relation', 'Relation');
-    appendTextOption(relation, '', 'none');
-    for (const value of TIMELINE_RELATIONS) appendTextOption(relation, value, value.replace('_', ' '));
-    const relatedEvent = this.addSelect('relatedEvent', 'Related event');
-    appendTextOption(relatedEvent, '', 'none');
+    const relation = this.addSelect('relation', 'ความสัมพันธ์');
+    appendTextOption(relation, '', 'ไม่มี');
+    for (const value of TIMELINE_RELATIONS) appendTextOption(relation, value, relationLabel(value));
+    const relatedEvent = this.addSelect('relatedEvent', 'เหตุการณ์ที่เกี่ยวข้อง');
+    appendTextOption(relatedEvent, '', 'ไม่มี');
     for (const event of [...options.events].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))) {
       appendTextOption(relatedEvent, event.id, `${event.occurredAt.slice(0, 10)} · ${event.topicTitle} · ${event.summary}`);
     }
@@ -159,9 +170,9 @@ export class TimelineCapture {
       }
     });
 
-    const rationale = this.addTextarea('rationale', 'Rationale', 4096);
+    const rationale = this.addTextarea('rationale', 'เหตุผล', 4096);
     rationale.value = options.suggestion?.rationale ?? '';
-    const impact = this.addTextarea('impact', 'Impact', 4096);
+    const impact = this.addTextarea('impact', 'ผลกระทบ', 4096);
     impact.value = options.suggestion?.impact ?? '';
 
     this.errorEl = document.createElement('p');
@@ -173,18 +184,18 @@ export class TimelineCapture {
     actions.className = 'acp-timeline__actions';
     const cancel = document.createElement('button');
     cancel.type = 'button';
-    cancel.textContent = 'Cancel · Esc';
+    cancel.textContent = 'ยกเลิก · Esc';
     cancel.addEventListener('click', () => options.close());
     const submit = document.createElement('button');
     submit.type = 'submit';
     submit.className = 'acp-timeline__save';
-    submit.textContent = options.suggestion ? 'Confirm · Cmd/Ctrl+Enter' : 'Save · Cmd/Ctrl+Enter';
+    submit.textContent = options.suggestion ? 'ยืนยัน · Cmd/Ctrl+Enter' : 'บันทึก · Cmd/Ctrl+Enter';
     actions.appendChild(cancel);
     if (options.suggestion && options.dismiss) {
       const dismiss = document.createElement('button');
       dismiss.type = 'button';
       dismiss.className = 'acp-timeline__dismiss';
-      dismiss.textContent = 'Dismiss · Cmd/Ctrl+D';
+      dismiss.textContent = 'ไม่รับข้อเสนอ · Cmd/Ctrl+D';
       dismiss.addEventListener('click', () => void this.dismiss());
       actions.appendChild(dismiss);
     }
@@ -263,7 +274,7 @@ export class TimelineCapture {
     this.duplicateBox.hidden = similar.length === 0;
     this.duplicateConfirm.checked = false;
     const text = this.duplicateBox.querySelector<HTMLElement>('[data-timeline-duplicate-text]');
-    if (text) text.textContent = `Create a new topic despite similar topic: ${similar.map((topic) => topic.title).join(', ')}`;
+    if (text) text.textContent = `สร้างหัวข้อใหม่แม้มีหัวข้อใกล้เคียง: ${similar.map((topic) => topic.title).join(', ')}`;
     this.refreshTopicMatches();
   }
 
@@ -328,7 +339,7 @@ export class TimelineCapture {
     try {
       request = this.request();
     } catch {
-      this.errorEl.textContent = 'occurred at must be a valid date';
+      this.errorEl.textContent = 'วันเวลาที่เกิดเหตุการณ์ไม่ถูกต้อง';
       return;
     }
     const error = validateTimelineRecord(request);
@@ -337,7 +348,7 @@ export class TimelineCapture {
       return;
     }
     if (!this.duplicateBox.hidden && !this.duplicateConfirm.checked) {
-      this.errorEl.textContent = 'confirm the similar topic before creating a new one';
+      this.errorEl.textContent = 'กรุณายืนยันก่อนสร้างหัวข้อใหม่ที่คล้ายหัวข้อเดิม';
       return;
     }
     this.saving = true;

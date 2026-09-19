@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="th">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,6 +9,7 @@
     --bg: #17191d; --fg: #eaecef; --text: #b7bdc6; --muted: #707a8a;
     --border: #2f353d; --accent: #fcd535; --card: #21242a; --code-bg: #1d1f24;
     --add: #0ecb81; --del: #f6465d; color-scheme: dark;
+    --tint: rgba(252, 213, 53, .07);
     --sans: 'BinanceNova', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     --mono: 'BinancePlex', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
   }
@@ -17,81 +18,100 @@
       --bg: #fafafa; --fg: #0d1117; --text: #474d57; --muted: #707a8a;
       --border: #eaecef; --accent: #c99400; --card: #fff; --code-bg: #f5f5f5;
       --add: #018f6c; --del: #cf304a; color-scheme: light;
+      --tint: rgba(201, 148, 0, .08);
     }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); }
   header {
-    height: 52px; display: flex; align-items: center; gap: 14px; padding: 0 18px;
-    border-bottom: 1px solid var(--border); background: var(--card); position: sticky; top: 0; z-index: 2;
+    height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 18px;
+    border-bottom: 1px solid var(--border); background: var(--card); position: sticky; top: 0; z-index: 3;
   }
   .brand { color: var(--fg); font-weight: 700; }
   .local { color: var(--accent); border: 1px solid var(--accent); border-radius: 5px; padding: 2px 7px; font: 10px var(--mono); }
-  .search { margin-left: auto; width: min(360px, 45vw); }
+  .search { margin-left: auto; width: min(320px, 42vw); }
   input {
     width: 100%; border: 1px solid var(--border); border-radius: 6px; background: var(--code-bg);
-    color: var(--fg); padding: 8px 10px; font: 12px var(--mono); outline: none;
+    color: var(--fg); padding: 6px 9px; font: 12px var(--mono); outline: none;
   }
   input:focus { border-color: var(--accent); }
-  .layout { display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); max-width: 1240px; min-height: calc(100vh - 52px); margin: 0 auto; }
-  aside { border-right: 1px solid var(--border); padding: 16px 12px; }
-  .aside-title, .hint { color: var(--muted); font: 11px var(--mono); }
-  .topic-list { display: grid; gap: 5px; margin-top: 10px; }
+  .layout { display: grid; grid-template-columns: minmax(200px, 250px) minmax(0, 1fr); max-width: 1180px; min-height: calc(100vh - 48px); margin: 0 auto; }
+  aside { border-right: 1px solid var(--border); padding: 14px 10px; }
+  .aside-title { color: var(--muted); font: 10px var(--mono); padding: 0 8px; }
+  .topic-list { display: grid; gap: 1px; margin-top: 8px; }
   .topic {
-    width: 100%; text-align: left; border: 1px solid transparent; border-radius: 6px;
-    color: var(--text); background: transparent; padding: 8px 9px; cursor: pointer;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: baseline;
+    width: 100%; text-align: left; border: 0; border-radius: 5px;
+    color: var(--text); background: transparent; padding: 5px 8px; cursor: pointer; font: inherit;
   }
-  .topic:hover, .topic.active { color: var(--accent); background: rgba(252, 213, 53, .06); border-color: var(--border); }
-  .topic strong { display: block; color: inherit; font-size: 13px; font-weight: 600; }
-  .topic span { display: block; margin-top: 2px; color: var(--muted); font: 10px var(--mono); }
-  main { min-width: 0; padding: 24px 28px 48px; }
-  .summary { display: flex; align-items: baseline; gap: 12px; margin-bottom: 18px; }
-  h1 { margin: 0; color: var(--fg); font-size: 24px; }
-  .count { color: var(--muted); font: 11px var(--mono); }
-  .events { display: grid; gap: 12px; }
-  .event { border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 14px 16px; outline: none; }
-  .event:focus, .event.selected { border-color: var(--accent); background: rgba(252, 213, 53, .04); }
-  .event.superseded { opacity: .7; }
-  .event-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .event-time, .pill, dt, .source, .relation { font-family: var(--mono); }
+  .topic:hover { color: var(--fg); background: var(--code-bg); }
+  .topic.active { color: var(--accent); background: var(--tint); }
+  .topic strong { font-size: 12.5px; font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
+  .topic span { color: var(--muted); font: 10px var(--mono); }
+  main { min-width: 0; padding: 18px 24px 48px; }
+  .summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: baseline; margin-bottom: 4px; }
+  h1 { margin: 0; color: var(--fg); font-size: 19px; min-width: 0; overflow-wrap: anywhere; }
+  .count { color: var(--muted); font: 10px var(--mono); white-space: nowrap; }
+  .events { border-top: 1px solid var(--border); margin-top: 10px; }
+  .day {
+    position: sticky; top: 48px; z-index: 1; background: var(--bg);
+    padding: 8px 0 5px; color: var(--muted); font: 10px var(--mono);
+    border-bottom: 1px solid var(--border);
+  }
+  .event { border-bottom: 1px solid var(--border); padding: 7px 8px; cursor: pointer; outline: none; }
+  .event:hover { background: var(--code-bg); }
+  .event.selected { background: var(--tint); }
+  .event.superseded .event-summary { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--border); }
+  .event-head { display: grid; grid-template-columns: 42px minmax(0, 1fr) minmax(0, auto); gap: 12px; align-items: baseline; }
+  .event-time, .pill, dt, .source, .relation, .label { font-family: var(--mono); }
   .event-time { color: var(--muted); font-size: 11px; }
-  .pill { border: 1px solid var(--border); border-radius: 5px; padding: 2px 7px; color: var(--accent); font-size: 10px; }
-  .event h2 { margin: 9px 0 10px; color: var(--fg); font-size: 17px; }
-  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
-  dt { color: var(--muted); font-size: 11px; }
-  dd { margin: 0; color: var(--text); }
-  .copy { margin-top: 11px; white-space: pre-wrap; }
-  .copy strong { color: var(--fg); }
-  .relation { margin-top: 10px; color: var(--muted); font-size: 11px; }
-  .source { display: inline-block; margin-top: 10px; color: var(--accent); font-size: 11px; word-break: break-all; }
-  .diagnostics { margin-top: 22px; padding: 12px; border: 1px solid var(--del); border-radius: 8px; background: rgba(246, 70, 93, .05); }
-  .diagnostics h2 { margin: 0 0 8px; color: var(--del); font-size: 14px; }
-  .diagnostics li { margin: 4px 0; font: 11px var(--mono); }
-  .empty { padding: 40px 0; text-align: center; color: var(--muted); font: 12px var(--mono); }
-  footer { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 12px; color: var(--muted); font: 10px var(--mono); }
+  .event-summary { color: var(--fg); font-size: 13.5px; min-width: 0; overflow-wrap: anywhere; }
+  .event.selected .event-summary { color: var(--accent); }
+  .event-meta { display: flex; gap: 8px; align-items: baseline; color: var(--muted); font: 10px var(--mono); }
+  .event-meta .who { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill { border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--muted); font-size: 9px; white-space: nowrap; max-width: 20ch; overflow: hidden; text-overflow: ellipsis; }
+  .pill.state { color: var(--accent); border-color: var(--accent); }
+  .detail { margin: 8px 0 4px 54px; display: grid; gap: 7px; }
+  dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 12px; margin: 0; }
+  dt { color: var(--muted); font-size: 10px; }
+  dd { margin: 0; color: var(--text); font-size: 12.5px; }
+  .copy { white-space: pre-wrap; font-size: 13px; }
+  .label { color: var(--muted); font-size: 10px; }
+  .relation { color: var(--muted); font-size: 11px; }
+  .source { color: var(--accent); font-size: 11px; word-break: break-all; }
+  .source.none { color: var(--muted); }
+  .diagnostics { margin-top: 20px; padding: 10px 12px; border: 1px solid var(--del); border-radius: 8px; background: rgba(246, 70, 93, .05); }
+  .diagnostics h2 { margin: 0 0 6px; color: var(--del); font-size: 13px; }
+  .diagnostics li { margin: 3px 0; font: 11px var(--mono); }
+  .empty { padding: 36px 0; text-align: center; color: var(--muted); font: 12px var(--mono); }
+  footer { margin-top: 18px; color: var(--muted); font: 10px var(--mono); }
+  @media (max-width: 980px) { .event-meta .who { display: none; } }
+  @media (max-width: 760px) { .event-meta .pill.topic { display: none; } }
   @media (max-width: 720px) {
     .layout { grid-template-columns: 1fr; }
     aside { border-right: 0; border-bottom: 1px solid var(--border); }
-    main { padding: 18px 16px 32px; }
+    main { padding: 14px 14px 32px; }
+    .summary { grid-template-columns: 1fr; }
+    .detail { margin-left: 0; }
   }
 </style>
 </head>
 <body>
 <header>
   <span class="brand">Krypton Timeline</span>
-  <span class="local">local only</span>
-  <label class="search"><input id="search" type="search" placeholder="Search topics, summaries, actors, sources · /" autocomplete="off"></label>
+  <span class="local">เฉพาะเครื่องนี้</span>
+  <label class="search"><input id="search" type="search" placeholder="ค้นหาสรุป ผู้เกี่ยวข้อง และแหล่งอ้างอิง · /" autocomplete="off"></label>
 </header>
 <div class="layout">
   <aside>
-    <div class="aside-title">Topics · [ ] switch</div>
+    <div class="aside-title">หัวข้อ · [ ] เปลี่ยน</div>
     <div id="topics" class="topic-list"></div>
   </aside>
   <main>
-    <div class="summary"><h1 id="title">Timeline</h1><span id="count" class="count"></span></div>
+    <div class="summary"><h1 id="title">ลำดับเหตุการณ์</h1><span id="count" class="count"></span></div>
     <div id="events" class="events"></div>
-    <section id="diagnostics" class="diagnostics" hidden><h2>Diagnostics</h2><ul></ul></section>
-    <footer>j/k events · Enter source · / search · Esc clear · refresh reads disk again</footer>
+    <section id="diagnostics" class="diagnostics" hidden><h2>ข้อมูลผิดพลาด</h2><ul></ul></section>
+    <footer>j/k เลื่อน · Enter เปิดแหล่งอ้างอิง · r สลับลำดับ · / ค้นหา · [ ] เปลี่ยนหัวข้อ · Esc ล้างตัวกรอง · refresh เพื่ออ่านจาก disk ใหม่</footer>
   </main>
 </div>
 <script>
@@ -109,8 +129,21 @@
   var payload = { events: [], diagnostics: [] };
   var selectedTopic = '';
   var selectedEvent = 0;
+  var newestFirst = false;
+  // Rows of the last render, index-aligned with visibleEvents(); the selected
+  // row is the only one that ever holds a detail block, so the DOM stays small.
+  var rows = [];
 
-  function lower(value) { return String(value || '').toLocaleLowerCase(); }
+  function lower(value) { return String(value || '').toLocaleLowerCase('th-TH'); }
+  function relationLabel(value) {
+    return {
+      supersedes: 'แทนที่',
+      refines: 'ปรับรายละเอียดของ',
+      implements: 'นำไปใช้จาก',
+      supports: 'สนับสนุน',
+      caused_by: 'เกิดจาก'
+    }[value] || value;
+  }
   function latestTopics(events) {
     var map = new Map();
     events.forEach(function (event) {
@@ -124,7 +157,7 @@
   }
   function eventMatches(event, query) {
     if (!query) return true;
-    return lower([event.topicTitle, event.summary, event.madeBy, event.recordedBy, event.evidenceExcerpt || '', event.instructionExcerpt || '', event.sourceRef || ''].join(' ')).includes(query);
+    return lower([event.topicTitle, event.summary, event.madeBy, event.recordedBy, event.evidenceExcerpt || '', event.instructionExcerpt || '', event.rationale || '', event.impact || '', event.sourceRef || ''].join(' ')).includes(query);
   }
   function sourceHref(source) {
     if (!source) return '';
@@ -142,59 +175,93 @@
     parent.appendChild(element);
     return element;
   }
+  function addCopy(parent, label, text) {
+    var block = addText(parent, 'div', 'copy', '');
+    addText(block, 'span', 'label', label + ' · ');
+    block.append(document.createTextNode(text));
+  }
   function renderTopics(topics, query) {
     topicsEl.replaceChildren();
     var visible = topics.filter(function (topic) { return !query || lower(topic.title).includes(query); });
     var all = document.createElement('button');
     all.type = 'button'; all.className = 'topic' + (selectedTopic ? '' : ' active');
-    addText(all, 'strong', '', 'All events'); addText(all, 'span', '', payload.events.length + ' records');
+    addText(all, 'strong', '', 'ทุกรายการ'); addText(all, 'span', '', String(payload.events.length));
     all.addEventListener('click', function () { selectedTopic = ''; selectedEvent = 0; render(); });
     topicsEl.appendChild(all);
     visible.forEach(function (topic) {
       var button = document.createElement('button');
       button.type = 'button'; button.className = 'topic' + (selectedTopic === topic.id ? ' active' : '');
-      addText(button, 'strong', '', topic.title); addText(button, 'span', '', topic.count + ' records · ' + topic.occurredAt.slice(0, 10));
+      button.title = topic.title + ' · ' + topic.occurredAt.slice(0, 10);
+      addText(button, 'strong', '', topic.title); addText(button, 'span', '', String(topic.count));
       button.addEventListener('click', function () { selectedTopic = topic.id; selectedEvent = 0; render(); });
       topicsEl.appendChild(button);
     });
   }
-  function renderEvent(event, index) {
+  /** Collapsed row: time, full wrapping summary, who decided, state pills. */
+  function renderRow(event, index) {
     var card = document.createElement('article');
-    card.className = 'event' + (event.superseded ? ' superseded' : '') + (index === selectedEvent ? ' selected' : '');
+    card.className = 'event' + (event.superseded ? ' superseded' : '');
     card.tabIndex = 0; card.dataset.eventIndex = String(index);
     var head = document.createElement('div'); head.className = 'event-head'; card.appendChild(head);
-    addText(head, 'span', 'event-time', new Date(event.occurredAt).toLocaleString());
-    if (event.superseded) addText(head, 'span', 'pill', 'superseded');
-    addText(card, 'h2', '', event.summary);
-    var details = document.createElement('dl'); card.appendChild(details);
-    [['made by', event.madeBy], ['recorded by', event.recordedBy + ' · ' + event.recorderLane], ['topic', event.topicTitle]].forEach(function (row) {
+    var occurred = new Date(event.occurredAt);
+    addText(head, 'span', 'event-time', isNaN(occurred) ? event.occurredAt.slice(11, 16) : occurred.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }));
+    var summary = addText(head, 'span', 'event-summary', event.summary);
+    summary.title = event.summary;
+    var meta = document.createElement('div'); meta.className = 'event-meta'; head.appendChild(meta);
+    addText(meta, 'span', 'who', event.madeBy);
+    if (!selectedTopic) addText(meta, 'span', 'pill topic', event.topicTitle);
+    if (event.superseded) addText(meta, 'span', 'pill state', 'แทนที่แล้ว');
+    if (event.sourceRef) addText(meta, 'span', 'pill', 'มีแหล่งอ้างอิง');
+    card.addEventListener('click', function () { select(index, false); });
+    card.addEventListener('focus', function () { select(index, false); });
+    return card;
+  }
+  /** Expanded body for the selected row only — the full record, still flat. */
+  function renderDetail(event) {
+    var detail = document.createElement('div'); detail.className = 'detail';
+    var details = document.createElement('dl'); detail.appendChild(details);
+    [['บันทึกโดย', event.recordedBy + ' · ' + event.recorderLane], ['หัวข้อ', event.topicTitle]].forEach(function (row) {
       addText(details, 'dt', '', row[0]); addText(details, 'dd', '', row[1]);
     });
-    if (event.suggestedByLane) {
-      addText(details, 'dt', '', 'suggested by'); addText(details, 'dd', '', event.suggestedByLane);
-    }
-    if (event.evidenceExcerpt) { var evidence = addText(card, 'div', 'copy', ''); addText(evidence, 'strong', '', 'Evidence · '); evidence.append(document.createTextNode(event.evidenceExcerpt)); }
-    if (event.instructionExcerpt) { var instruction = addText(card, 'div', 'copy', ''); addText(instruction, 'strong', '', 'Authorizing instruction · '); instruction.append(document.createTextNode(event.instructionExcerpt)); }
-    if (event.rationale) { var rationale = addText(card, 'div', 'copy', ''); addText(rationale, 'strong', '', 'Rationale · '); rationale.append(document.createTextNode(event.rationale)); }
-    if (event.impact) { var impact = addText(card, 'div', 'copy', ''); addText(impact, 'strong', '', 'Impact · '); impact.append(document.createTextNode(event.impact)); }
-    if (event.relation && event.relatedEvent) addText(card, 'div', 'relation', event.relation.replace('_', ' ') + ' · ' + event.relatedEvent);
+    if (event.suggestedByLane) { addText(details, 'dt', '', 'เสนอโดย'); addText(details, 'dd', '', event.suggestedByLane); }
+    if (event.evidenceExcerpt) addCopy(detail, 'หลักฐาน', event.evidenceExcerpt);
+    if (event.instructionExcerpt) addCopy(detail, 'คำสั่งที่อนุญาตให้บันทึก', event.instructionExcerpt);
+    if (event.rationale) addCopy(detail, 'เหตุผล', event.rationale);
+    if (event.impact) addCopy(detail, 'ผลกระทบ', event.impact);
+    if (event.relation && event.relatedEvent) addText(detail, 'div', 'relation', relationLabel(event.relation) + ' · ' + event.relatedEvent);
     if (event.sourceRef) {
       var href = sourceHref(event.sourceRef);
-      if (href) { var link = addText(card, 'a', 'source', event.sourceRef); link.href = href; link.target = '_blank'; link.rel = 'noopener noreferrer'; }
-      else addText(card, 'span', 'source', event.sourceRef);
-    } else addText(card, 'span', 'source', 'asserted · no linked evidence');
-    card.addEventListener('focus', function () { selectedEvent = index; selectVisibleCard(); });
-    card.addEventListener('click', function () { selectedEvent = index; selectVisibleCard(); });
-    return card;
+      if (href) { var link = addText(detail, 'a', 'source', event.sourceRef); link.href = href; link.target = '_blank'; link.rel = 'noopener noreferrer'; }
+      else addText(detail, 'span', 'source', event.sourceRef);
+    } else addText(detail, 'span', 'source none', 'ระบุโดยไม่มีแหล่งอ้างอิงเชื่อมโยง');
+    return detail;
   }
   function visibleEvents() {
     var query = lower(search.value.trim());
-    return payload.events.filter(function (event) {
+    var events = payload.events.filter(function (event) {
       return (!selectedTopic || event.topicId === selectedTopic) && eventMatches(event, query);
     });
+    return newestFirst ? events.slice().reverse() : events;
   }
-  function selectVisibleCard() {
-    eventsEl.querySelectorAll('.event').forEach(function (card, index) { card.classList.toggle('selected', index === selectedEvent); });
+  /** Move the single open detail block, without re-rendering the whole list. */
+  function select(index, scroll) {
+    var events = visibleEvents();
+    if (events.length === 0) return;
+    selectedEvent = Math.max(0, Math.min(events.length - 1, index));
+    rows.forEach(function (row, rowIndex) {
+      var open = rowIndex === selectedEvent;
+      row.classList.toggle('selected', open);
+      var detail = row.querySelector('.detail');
+      if (open && !detail) row.appendChild(renderDetail(events[rowIndex]));
+      else if (!open && detail) detail.remove();
+    });
+    var card = rows[selectedEvent];
+    if (card && scroll) { card.focus({ preventScroll: true }); card.scrollIntoView({ block: 'nearest' }); }
+  }
+  function dayLabel(value) {
+    var date = new Date(value);
+    if (isNaN(date)) return value.slice(0, 10);
+    return date.toLocaleDateString('th-TH', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
   }
   function renderDiagnostics() {
     diagnosticsEl.hidden = payload.diagnostics.length === 0;
@@ -208,11 +275,22 @@
     var events = visibleEvents();
     if (selectedEvent >= events.length) selectedEvent = Math.max(0, events.length - 1);
     eventsEl.replaceChildren();
-    if (events.length === 0) addText(eventsEl, 'div', 'empty', 'No matching timeline events');
-    else events.forEach(function (event, index) { eventsEl.appendChild(renderEvent(event, index)); });
+    rows = [];
+    if (events.length === 0) addText(eventsEl, 'div', 'empty', 'ไม่พบเหตุการณ์ที่ตรงกับตัวกรอง');
+    else {
+      var day = '';
+      events.forEach(function (event, index) {
+        var key = String(event.occurredAt).slice(0, 10);
+        if (key !== day) { day = key; addText(eventsEl, 'div', 'day', dayLabel(event.occurredAt)); }
+        var row = renderRow(event, index);
+        rows.push(row);
+        eventsEl.appendChild(row);
+      });
+    }
     var selected = topics.find(function (topic) { return topic.id === selectedTopic; });
-    titleEl.textContent = selected ? selected.title : 'Timeline';
-    countEl.textContent = events.length + ' event' + (events.length === 1 ? '' : 's');
+    titleEl.textContent = selected ? selected.title : 'ลำดับเหตุการณ์';
+    countEl.textContent = events.length + ' รายการ · ' + (newestFirst ? 'ใหม่ไปเก่า' : 'เก่าไปใหม่');
+    if (events.length > 0) select(selectedEvent, false);
     renderDiagnostics();
   }
   function switchTopic(delta) {
@@ -228,20 +306,19 @@
     if (document.activeElement === search) return;
     if (event.key === '[') { event.preventDefault(); switchTopic(-1); return; }
     if (event.key === ']') { event.preventDefault(); switchTopic(1); return; }
+    if (event.key === 'r') { event.preventDefault(); newestFirst = !newestFirst; selectedEvent = 0; render(); return; }
     var events = visibleEvents();
     if (event.key === 'j' || event.key === 'k') {
       event.preventDefault();
-      selectedEvent = Math.max(0, Math.min(events.length - 1, selectedEvent + (event.key === 'j' ? 1 : -1)));
-      selectVisibleCard();
-      var card = eventsEl.querySelector('[data-event-index="' + selectedEvent + '"]'); if (card) card.focus();
+      select(selectedEvent + (event.key === 'j' ? 1 : -1), true);
     }
     if (event.key === 'Enter' && events[selectedEvent]) {
       var href = sourceHref(events[selectedEvent].sourceRef); if (href) window.open(href, '_blank', 'noopener');
     }
   });
-  if (!harness) { eventsEl.textContent = 'Missing harness id'; return; }
+  if (!harness) { eventsEl.textContent = 'ไม่พบ harness id'; return; }
   fetch('/timeline.json?harness=' + encodeURIComponent(harness), { cache: 'no-store' })
-    .then(function (response) { if (!response.ok) throw new Error('timeline request failed (' + response.status + ')'); return response.json(); })
+    .then(function (response) { if (!response.ok) throw new Error('โหลด timeline ไม่สำเร็จ (' + response.status + ')'); return response.json(); })
     .then(function (data) {
       payload = data;
       if (initialQuery) {

@@ -259,6 +259,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 253 | [Project Decision & Requirement Timeline](./253-project-decision-requirement-timeline.md) |
 | 254 | [Automatic Timeline Suggestions](./254-automatic-timeline-suggestions.md) |
 | 255 | [Natural-Language Timeline Recording](./255-natural-language-timeline-recording.md) |
+| 256 | [Thai Timeline Language](./256-thai-timeline-language.md) |
 
 ## ADRs (20)
 

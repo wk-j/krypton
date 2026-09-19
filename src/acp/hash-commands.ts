@@ -71,7 +71,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   {
     name: 'timeline',
     args: '[open [<topic>] | add [<topic>] | review | auto [on|off] | trace <topic> | <topic>]',
-    description: 'record, review, or trace local project requirements and decisions',
+    description: 'บันทึก ตรวจทาน หรือไล่ requirements และ decisions ของ project ในเครื่อง',
   },
   {
     name: 'push',

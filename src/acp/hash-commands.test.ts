@@ -65,6 +65,27 @@ describe('filteredHashCommands', () => {
   });
 });
 
+describe('autocomplete palette layout', () => {
+  const css = readFileSync(join(__dirname, '../styles/acp-harness.css'), 'utf8');
+  const view = readFileSync(join(__dirname, 'acp-harness-view.ts'), 'utf8');
+
+  it('keeps long palettes inside the Harness while preserving the input line', () => {
+    expect(css).toMatch(
+      /\.acp-harness__command-center\s*\{[^}]*max-height: 50%;[^}]*overflow: hidden;/s,
+    );
+    expect(css).toMatch(
+      /\.acp-harness__composer:not\(\.acp-harness__composer--permission\) \.acp-harness__slash-palette\s*\{[^}]*min-height: 0;[^}]*overflow-y: auto;/s,
+    );
+    expect(css).toMatch(
+      /\.acp-harness__composer:not\(\.acp-harness__composer--permission\) \.acp-harness__input-line\s*\{\s*flex: 0 0 auto;/,
+    );
+  });
+
+  it('keeps keyboard selection visible after the composer rerenders', () => {
+    expect(view).toContain("selectedPaletteRow.scrollIntoView({ block: 'nearest' })");
+  });
+});
+
 // spec 185: the /commands reference page renders this manifest — coverage here
 // is the drift guard (a command added without manifest metadata fails).
 describe('buildCommandManifest', () => {

@@ -181,6 +181,10 @@ The descriptor and lane-context instruction impose these rules:
   questions, inferred authority, or facts already represented by a pending/confirmed event.
 - `made_by` and `evidence_excerpt` must be supported by the user's actual words or trusted transport
   provenance. The tool's output is a suggestion, never confirmation.
+- Write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai while
+  keeping technical terms in English. Preserve `evidence_excerpt`, `made_by`, `source_ref`,
+  identifiers, paths, URLs, commit hashes, and quoted source text verbatim. The review sheet uses
+  Thai chrome without translating stored values. See spec 256.
 
 The command family becomes:
 

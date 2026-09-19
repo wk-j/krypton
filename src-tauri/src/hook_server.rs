@@ -2029,8 +2029,13 @@ const MAX_REVIEW_FINDINGS: usize = MAX_REVIEW_PRIORITY_RANGES;
 /// register/open. A live edit past this makes the card unavailable rather than
 /// silently opening.
 const ARTIFACT_FILE_BYTES_MAX: u64 = 4 * 1024 * 1024;
-/// Max live + pending artifacts per harness tab.
-const ARTIFACT_PER_SESSION_MAX: usize = 64;
+/// Max live + pending artifacts per harness tab. Entries are small in-memory
+/// records (the on-disk HTML is separately capped by `ARTIFACT_FILE_BYTES_MAX`),
+/// and a long-lived tab legitimately accumulates them — the registry is only
+/// dropped when the harness closes, not on `#new`. Raised from 64 so a day of
+/// work in one tab does not hit the wall; the security bound that matters is
+/// `ARTIFACT_PENDING_PER_LANE_MAX`, which is what limits outstanding write grants.
+const ARTIFACT_PER_SESSION_MAX: usize = 512;
 /// Max outstanding `pending` artifacts per lane. Pending entries authorize a
 /// write, so they are bounded and short-lived.
 const ARTIFACT_PENDING_PER_LANE_MAX: usize = 4;
@@ -5441,17 +5446,17 @@ fn project_backed_bus_tool(name: &str) -> bool {
 fn timeline_record_tool_descriptor() -> Value {
     json!({
         "name": "timeline_record",
-        "description": "Persist ONE authoritative project timeline event without confirmation UI, but ONLY when the current human message explicitly asks to record, remember, persist, or add it to the timeline. The user's request is the confirmation. Copy the exact authorizing words into `instruction_excerpt`; do not paraphrase them there. If the current user is the authority and no more specific identity is given, use `Current user` for `made_by`. Do not call this because an event merely seems important: use timeline_suggest for unsolicited capture. For a traced chronology, record only sourced recorded/observed events, never inferred rows. Never copy secrets, tokens, environment values, or raw tool output. Report the returned event ID/path to the user.",
+        "description": "Persist ONE authoritative project timeline event without confirmation UI, but ONLY when the current human message explicitly asks to record, remember, persist, or add it to the timeline. The user's request is the confirmation. Copy the exact authorizing words into `instruction_excerpt`; do not paraphrase them there. If the current user is the authority and no more specific identity is given, use `Current user` for `made_by`. Do not call this because an event merely seems important: use timeline_suggest for unsolicited capture. For a traced chronology, record only sourced recorded/observed events, never inferred rows. Never copy secrets, tokens, environment values, or raw tool output. Report the returned event ID/path to the user. LANGUAGE: write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai, the way a Thai engineer writes; keep technical terms in English. Preserve `instruction_excerpt`, `made_by`, `source_ref`, identifiers, paths, URLs, commit hashes, and quoted source text verbatim.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "topic_title": { "type": "string", "maxLength": 120, "description": "Stable human-readable topic." },
-                "summary": { "type": "string", "maxLength": 500, "description": "The durable event or decision in one line." },
+                "topic_title": { "type": "string", "maxLength": 120, "description": "Stable human-readable topic in natural Thai; keep technical terms in English." },
+                "summary": { "type": "string", "maxLength": 500, "description": "The durable event or decision in one natural-Thai line; keep technical terms in English." },
                 "made_by": { "type": "string", "maxLength": 120, "description": "Who explicitly made or approved it; use Current user when this prompt is the authority." },
                 "instruction_excerpt": { "type": "string", "maxLength": 1000, "description": "Exact words from the current human message that authorize timeline persistence." },
                 "occurred_at": { "type": "string", "description": "Optional RFC 3339 occurrence time; defaults to now or the matching pending suggestion time." },
-                "rationale": { "type": "string", "maxLength": 4096 },
-                "impact": { "type": "string", "maxLength": 4096 },
+                "rationale": { "type": "string", "maxLength": 4096, "description": "Optional natural-Thai rationale; keep technical terms in English." },
+                "impact": { "type": "string", "maxLength": 4096, "description": "Optional natural-Thai impact; keep technical terms in English." },
                 "source_ref": { "type": "string", "maxLength": 2048, "description": "Optional URL, commit, or project-relative source." },
                 "relation": { "type": "string", "enum": ["supersedes", "refines", "implements", "supports", "caused_by"] },
                 "related_event": { "type": "string", "maxLength": 64 }
@@ -5464,16 +5469,16 @@ fn timeline_record_tool_descriptor() -> Value {
 fn timeline_suggest_tool_descriptor() -> Value {
     json!({
         "name": "timeline_suggest",
-        "description": "Propose ONE durable project timeline item for human review; this never creates authoritative history. Call at most once per turn, only for an explicit durable requirement, decision, consequential change, approval/rejection, or implementation outcome worth finding later. Skip routine edits/tests/status chatter, recommendations, unanswered questions, inferred authority, and facts already pending or confirmed. `made_by` and `evidence_excerpt` must be supported by the user's actual words or trusted transport provenance. Never copy secrets, tokens, environment values, or raw tool output. The human may edit, confirm, or dismiss the local pending suggestion.",
+        "description": "Propose ONE durable project timeline item for human review; this never creates authoritative history. Call at most once per turn, only for an explicit durable requirement, decision, consequential change, approval/rejection, or implementation outcome worth finding later. Skip routine edits/tests/status chatter, recommendations, unanswered questions, inferred authority, and facts already pending or confirmed. `made_by` and `evidence_excerpt` must be supported by the user's actual words or trusted transport provenance. Never copy secrets, tokens, environment values, or raw tool output. The human may edit, confirm, or dismiss the local pending suggestion. LANGUAGE: write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai, the way a Thai engineer writes; keep technical terms in English. Preserve `evidence_excerpt`, `made_by`, `source_ref`, identifiers, paths, URLs, commit hashes, and quoted source text verbatim.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "topic_title": { "type": "string", "maxLength": 120, "description": "Stable human-readable topic." },
-                "summary": { "type": "string", "maxLength": 500, "description": "The durable event or decision in one line." },
+                "topic_title": { "type": "string", "maxLength": 120, "description": "Stable human-readable topic in natural Thai; keep technical terms in English." },
+                "summary": { "type": "string", "maxLength": 500, "description": "The durable event or decision in one natural-Thai line; keep technical terms in English." },
                 "made_by": { "type": "string", "maxLength": 120, "description": "Who explicitly made or approved it, supported by the evidence." },
                 "evidence_excerpt": { "type": "string", "maxLength": 1000, "description": "Exact supporting words or trusted provenance; exclude secrets and raw tool output." },
-                "rationale": { "type": "string", "maxLength": 4096 },
-                "impact": { "type": "string", "maxLength": 4096 },
+                "rationale": { "type": "string", "maxLength": 4096, "description": "Optional natural-Thai rationale; keep technical terms in English." },
+                "impact": { "type": "string", "maxLength": 4096, "description": "Optional natural-Thai impact; keep technical terms in English." },
                 "source_ref": { "type": "string", "maxLength": 2048, "description": "Optional URL, commit, or project-relative source." }
             },
             "required": ["topic_title", "summary", "made_by", "evidence_excerpt"]
@@ -8914,6 +8919,22 @@ mod tests {
             .get("description")
             .and_then(Value::as_str)
             .is_some_and(|description| description.contains("current human message")));
+        assert!(direct
+            .get("description")
+            .and_then(Value::as_str)
+            .is_some_and(|description| description.contains("natural Thai")
+                && description.contains("Preserve `instruction_excerpt`")));
+        let suggestion = tools
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .find(|tool| tool.get("name").and_then(Value::as_str) == Some("timeline_suggest"))
+            .expect("timeline_suggest descriptor");
+        assert!(suggestion
+            .get("description")
+            .and_then(Value::as_str)
+            .is_some_and(|description| description.contains("natural Thai")
+                && description.contains("Preserve `evidence_excerpt`")));
         assert_eq!(
             direct
                 .pointer("/inputSchema/required")
@@ -9305,11 +9326,24 @@ mod tests {
         assert!(TIMELINE_HTML.contains("textContent"));
         assert!(TIMELINE_HTML.contains("event.evidenceExcerpt"));
         assert!(TIMELINE_HTML.contains("event.instructionExcerpt"));
-        assert!(TIMELINE_HTML.contains("local only"));
+        assert!(TIMELINE_HTML.contains("<html lang=\"th\">"));
+        assert!(TIMELINE_HTML.contains("เฉพาะเครื่องนี้"));
+        assert!(TIMELINE_HTML.contains("toLocaleDateString('th-TH'"));
         assert!(!TIMELINE_HTML.contains("event.kind"));
         assert!(!TIMELINE_HTML.contains("border-left:"));
         assert!(!TIMELINE_HTML.contains("backdrop-filter"));
         assert!(!TIMELINE_HTML.contains("setInterval("));
+        let marker = "\n  .event-summary {";
+        let start = TIMELINE_HTML.find(marker).expect("event-summary CSS rule") + marker.len();
+        let summary_rule = TIMELINE_HTML[start..]
+            .split('}')
+            .next()
+            .expect("event-summary CSS rule body");
+        assert!(
+            !summary_rule.contains("text-overflow: ellipsis")
+                && !summary_rule.contains("white-space: nowrap"),
+            "collapsed event titles must wrap in full, not ellipsize: {summary_rule}"
+        );
     }
 
     // spec 186: /tools.json renders straight from the descriptors, so the only

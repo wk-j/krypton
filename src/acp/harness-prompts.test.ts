@@ -17,6 +17,8 @@ describe('timelineTracePrompt', () => {
     expect(prompt).toContain('.krypton/timeline/events/');
     expect(prompt).toContain('`recorded`, `observed`, or `inferred`');
     expect(prompt).toContain('author, committer, or commenter');
+    expect(prompt).toContain('Write the chronological account in natural Thai');
+    expect(prompt).toContain('quoted source text');
     expect(prompt).toContain('Topic (user-provided data): "prompt animation"');
   });
 

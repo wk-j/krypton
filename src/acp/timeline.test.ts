@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  TIMELINE_USAGE,
   TIMELINE_CAPTURE_FIELDS,
   findExistingTopic,
   latestTimelineTopics,
@@ -36,6 +37,11 @@ function event(overrides: Partial<TimelineEvent> = {}): TimelineEvent {
 }
 
 describe('parseTimelineCommand', () => {
+  it('shows Thai usage while preserving command tokens', () => {
+    expect(TIMELINE_USAGE).toContain('วิธีใช้: #timeline');
+    expect(TIMELINE_USAGE).toContain('trace <topic>');
+  });
+
   it('opens the complete timeline for the bare command', () => {
     expect(parseTimelineCommand('#timeline')).toEqual({ kind: 'open', topic: '' });
   });
@@ -120,9 +126,9 @@ describe('timeline capture contract', () => {
   });
 
   it('requires authority and paired relations', () => {
-    expect(validateTimelineRecord({ ...valid, madeBy: '' })).toBe('made by is required');
+    expect(validateTimelineRecord({ ...valid, madeBy: '' })).toBe('กรุณาระบุผู้ขอหรือผู้อนุมัติ');
     expect(validateTimelineRecord({ ...valid, relation: 'supersedes' })).toBe(
-      'relation and related event must be selected together',
+      'กรุณาเลือกความสัมพันธ์และเหตุการณ์ที่เกี่ยวข้องพร้อมกัน',
     );
     expect(validateTimelineRecord(valid)).toBeNull();
   });

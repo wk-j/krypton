@@ -3068,7 +3068,7 @@ describe('#timeline dispatch (spec 253)', () => {
       '#timeline trace prompt animation',
     );
     expect(enqueued).toHaveLength(1);
-    expect(enqueued[0]?.label).toBe('tracing timeline');
+    expect(enqueued[0]?.label).toBe('กำลังไล่ timeline');
     expect(enqueued[0]?.prompt).toContain('strictly read-only');
     expect(enqueued[0]?.prompt).toContain('"prompt animation"');
   });
@@ -3081,7 +3081,7 @@ describe('#timeline dispatch (spec 253)', () => {
       '#timeline add auth',
     );
     expect(flashes).toEqual([
-      '#timeline local storage/review/browser is unavailable in a remote Harness; trace remains available',
+      '#timeline แบบ local storage/review/browser ใช้ไม่ได้ใน remote Harness แต่ยังใช้ trace ได้',
     ]);
   });
 
@@ -3108,6 +3108,17 @@ describe('#timeline dispatch (spec 253)', () => {
     expect(source).toContain('use timeline_suggest only when this turn establishes an explicit durable requirement');
     expect(source).toContain('Their request is the confirmation; copy the exact authorizing words');
     expect(source).toContain('unsolicited capture stays timeline_suggest');
+    expect(source.match(/write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai/g)).toHaveLength(2);
+    expect(source).toContain('Preserve `instruction_excerpt`, `made_by`, `source_ref`');
+    expect(source).toContain('Preserve `evidence_excerpt`, `made_by`, `source_ref`');
+  });
+
+  it('uses Thai chrome in the timeline capture sheet', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(join(here, 'timeline-capture.ts'), 'utf8');
+    expect(source).toContain("'บันทึกเหตุการณ์ใน Timeline'");
+    expect(source).toContain("'ผู้ขอหรือผู้อนุมัติ'");
+    expect(source).toContain("'ไม่รับข้อเสนอ · Cmd/Ctrl+D'");
   });
 });
 

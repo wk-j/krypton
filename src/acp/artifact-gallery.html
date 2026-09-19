@@ -36,7 +36,19 @@
   .stat span { font-size: 10px; color: var(--muted); }
   .state { padding: 10px 12px; margin-bottom: 14px; background: rgba(252,213,53,.06);
            border: 1px solid var(--border); border-radius: 8px; color: var(--accent); }
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; align-items: center;
+          position: sticky; top: 0; z-index: 2; background: var(--bg);
+          padding: 6px 0 8px; border-bottom: 1px solid var(--border); }
+  .tab { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; cursor: pointer;
+         color: var(--muted); background: transparent; border: 1px solid transparent;
+         border-radius: 6px; padding: 5px 10px; }
+  .tab:hover { color: var(--fg); background: var(--code-bg); }
+  .tab.active { color: var(--accent); background: rgba(252,213,53,.07); border-color: var(--accent); }
+  .tab b { font-weight: 400; color: var(--muted); margin-left: 6px; font-variant-numeric: tabular-nums; }
+  .tab.active b { color: var(--accent); }
+  .tab-key { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: auto; }
   .harness { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .harness:first-child { margin-top: 0; padding-top: 14px; border-top: 0; }
   .harness-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
   .harness-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
   .empty { text-align: center; color: var(--muted); font-family: var(--mono); font-size: 12px;
@@ -84,8 +96,9 @@
     </div>
   </div>
   <div class="state" id="state">connecting...</div>
+  <nav class="tabs" id="tabs" hidden></nav>
   <div id="harnesses"></div>
-  <div class="footer">read-only gallery &middot; polls /artifacts &middot; open links serve the registered artifact on this origin</div>
+  <div class="footer">read-only gallery &middot; polls /artifacts &middot; [ ] switch lane &middot; 1-9 jump &middot; 0 all lanes &middot; open links serve the registered artifact on this origin</div>
 </main>
 
 <script>
@@ -97,6 +110,9 @@
   var lastSignature = "";
   var hasSuccessfulPoll = false;
   var pollInFlight = false;
+  // "" = the All tab. Kept across polls so a 1 s refresh never yanks the
+  // reader back to another lane; falls back to All if the lane disappears.
+  var activeLane = "";
 
   function R(id) { return document.getElementById(id); }
   function esc(s) {
@@ -124,22 +140,77 @@
     return '<div class="art">' +
       '<div class="art-head"><div class="art-title">' + esc(art.title || "untitled") + '</div>' +
       '<span class="pill st-' + sk + '">' + esc(sk) + '</span></div>' +
-      '<div class="art-lane">' + esc(art.laneLabel || "?") + '</div>' +
+      (activeLane ? '' : '<div class="art-lane">' + esc(art.laneLabel || "?") + '</div>') +
       '<div class="art-meta"><span class="art-size">' + size + '</span></div>' +
       '<div class="art-tail">' + hashPrefix + esc(art.tail || "") + '</div>' +
       open +
       '</div>';
   }
 
-  function renderHarness(snap) {
+  function renderHarness(snap, showHead) {
     var id = snap.harnessId || "harness";
     var arts = Array.isArray(snap.artifacts) ? snap.artifacts : [];
     var cards = arts.map(renderArtifact).join("");
-    return '<section class="harness">' +
-      '<div class="harness-head"><div><h2>' + esc(id) + '</h2></div>' +
-      '<div class="harness-meta">' + arts.length + (arts.length === 1 ? " artifact" : " artifacts") + '</div></div>' +
-      '<div class="cards">' + cards + '</div>' +
-      '</section>';
+    var head = showHead
+      ? '<div class="harness-head"><div><h2>' + esc(id) + '</h2></div>' +
+        '<div class="harness-meta">' + arts.length + (arts.length === 1 ? " artifact" : " artifacts") + '</div></div>'
+      : '';
+    return '<section class="harness">' + head + '<div class="cards">' + cards + '</div></section>';
+  }
+
+  /** Lane labels across every harness, natural-sorted (Claude-2 before Claude-10). */
+  function laneTabs(next) {
+    var counts = new Map();
+    next.forEach(function (snap) {
+      (snap.artifacts || []).forEach(function (art) {
+        var label = art.laneLabel || "?";
+        counts.set(label, (counts.get(label) || 0) + 1);
+      });
+    });
+    return Array.from(counts.entries())
+      .map(function (entry) { return { label: entry[0], count: entry[1] }; })
+      .sort(function (a, b) {
+        return a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" });
+      });
+  }
+
+  /** Per-harness artifacts of the open tab, harnesses with no match dropped. */
+  function visibleHarnesses() {
+    return snapshots
+      .map(function (snap) {
+        return {
+          harnessId: snap.harnessId,
+          artifacts: (snap.artifacts || []).filter(function (art) {
+            return !activeLane || (art.laneLabel || "?") === activeLane;
+          })
+        };
+      })
+      .filter(function (snap) { return snap.artifacts.length > 0; });
+  }
+
+  function renderTabs(tabs, total) {
+    var el = R("tabs");
+    el.hidden = tabs.length === 0;
+    if (tabs.length === 0) { el.innerHTML = ""; return; }
+    var buttons = ['<button type="button" class="tab' + (activeLane ? '' : ' active') +
+      '" data-lane="">all<b>' + total + '</b></button>'];
+    tabs.forEach(function (tab, index) {
+      var key = index < 9 ? ' title="' + (index + 1) + '"' : '';
+      buttons.push('<button type="button" class="tab' + (activeLane === tab.label ? ' active' : '') +
+        '" data-lane="' + esc(tab.label) + '"' + key + '>' + esc(tab.label) + '<b>' + tab.count + '</b></button>');
+    });
+    buttons.push('<span class="tab-key">[ ] switch &middot; 1-9 jump &middot; 0 all</span>');
+    el.innerHTML = buttons.join("");
+  }
+
+  function renderContent() {
+    var visible = visibleHarnesses();
+    if (visible.length === 0) {
+      R("harnesses").innerHTML = '<div class="empty">No artifacts for ' + esc(activeLane || "this view") + '.</div>';
+      return;
+    }
+    var showHead = visible.length > 1;
+    R("harnesses").innerHTML = visible.map(function (snap) { return renderHarness(snap, showHead); }).join("");
   }
 
   function apply(next) {
@@ -157,17 +228,48 @@
     R("dot").classList.toggle("live", total > 0);
     R("session").textContent = total > 0 ? "live" : "no artifacts yet";
     if (total === 0) {
+      activeLane = "";
+      renderTabs([], 0);
       R("harnesses").innerHTML =
         '<div class="empty">No artifacts yet — lanes will surface HTML artifacts here as they register them.</div>';
       R("state").textContent = "no artifacts yet";
       return;
     }
-    R("harnesses").innerHTML = next
-      .filter(function (snap) { return (snap.artifacts || []).length > 0; })
-      .map(renderHarness)
-      .join("");
-    R("state").textContent = "live gallery";
+    var tabs = laneTabs(next);
+    if (activeLane && !tabs.some(function (tab) { return tab.label === activeLane; })) activeLane = "";
+    renderTabs(tabs, total);
+    renderContent();
+    R("state").textContent = activeLane ? "live gallery · " + activeLane : "live gallery";
   }
+
+  function selectLane(label) {
+    if (activeLane === label) return;
+    activeLane = label;
+    apply(snapshots);
+    window.scrollTo({ top: 0 });
+  }
+
+  R("tabs").addEventListener("click", function (event) {
+    var button = event.target.closest(".tab");
+    if (button) selectLane(button.getAttribute("data-lane") || "");
+  });
+  document.addEventListener("keydown", function (event) {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    var tabs = laneTabs(snapshots);
+    if (tabs.length === 0) return;
+    var labels = [""].concat(tabs.map(function (tab) { return tab.label; }));
+    if (event.key === "[" || event.key === "]") {
+      event.preventDefault();
+      var index = Math.max(0, labels.indexOf(activeLane));
+      selectLane(labels[(index + (event.key === "]" ? 1 : -1) + labels.length) % labels.length]);
+      return;
+    }
+    if (event.key === "0") { event.preventDefault(); selectLane(""); return; }
+    if (/^[1-9]$/.test(event.key)) {
+      var target = tabs[Number(event.key) - 1];
+      if (target) { event.preventDefault(); selectLane(target.label); }
+    }
+  });
 
   function poll() {
     if (pollInFlight) return;

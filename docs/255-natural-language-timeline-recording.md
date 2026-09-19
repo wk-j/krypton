@@ -138,6 +138,9 @@ The descriptor and lane context impose these rules:
 - Call only when the current human message explicitly asks to record, remember, persist, or add
   something to the project timeline. The wording may be any language.
 - The exact supporting phrase goes in `instruction_excerpt`; do not paraphrase it there.
+- Write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai while
+  keeping technical terms in English. Preserve `instruction_excerpt`, `made_by`, `source_ref`,
+  identifiers, paths, URLs, commit hashes, and quoted source text verbatim. See spec 256.
 - Do not call merely because an event seems important. That remains `timeline_suggest` territory.
 - Record one file per distinct event. If the user asks to persist a traced chronology, record only
   `recorded`/`observed` items supported by their sources; do not turn `inferred` rows into facts.
@@ -178,9 +181,9 @@ section, so all existing events remain readable.
 ### UI Changes
 
 No new interactive UI. The existing structured tool card and assistant response are the immediate
-audit surface, and the read-only `#timeline` browser shows the stored authorizing instruction on the
-event card. `#timeline add` and `#timeline review` remain available for manual capture and
-unsolicited suggestions.
+audit surface, and the read-only `#timeline` browser shows the stored authorizing instruction in the
+expanded detail of the selected event row. `#timeline add` and `#timeline review` remain available
+for manual capture and unsolicited suggestions.
 
 ## Edge Cases
 

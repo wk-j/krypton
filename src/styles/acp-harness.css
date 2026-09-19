@@ -3412,6 +3412,11 @@
 .acp-harness__command-center {
   position: relative;
   flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 50%;
+  overflow: hidden;
   background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
 }
 
@@ -3454,6 +3459,34 @@
     color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 5%, var(--agent-surface-solid, rgba(2, 5, 10, 0.96))),
     var(--agent-surface-solid, rgba(2, 5, 10, 0.96)) 46%
   );
+}
+
+/* Autocomplete can contain the full command catalog. Keep the input line in
+   view and let only the palette consume/scroll through the remaining half of
+   the Harness instead of growing beneath the workspace footer. */
+.acp-harness__composer:not(.acp-harness__composer--permission) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 42px;
+  overflow: hidden;
+}
+
+.acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__composer-chrome,
+.acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__input-line {
+  flex: 0 0 auto;
+}
+
+.acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__slash-palette {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__slash-palette-meta,
+.acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__slash-palette-row {
+  flex: 0 0 auto;
 }
 
 .acp-harness__composer--permission {

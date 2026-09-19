@@ -6651,7 +6651,7 @@ export class AcpHarnessView implements ContentView {
     }>('acp-timeline-suggestion', (event) => {
       if (event.payload.harnessId !== this.harnessMemoryId) return;
       this.timelinePendingCount = Math.max(0, event.payload.pendingCount);
-      this.flashChip(`timeline · ${this.timelinePendingCount} pending · #timeline review`);
+      this.flashChip(`timeline · รอตรวจทาน ${this.timelinePendingCount} รายการ · #timeline review`);
       this.render();
       void this.refreshTimelineSuggestions();
     });
@@ -9103,12 +9103,12 @@ export class AcpHarnessView implements ContentView {
     );
     if (!this.remoteRuntimeId && lane.backendId !== 'pi-acp') {
       lines.push(
-        'Project timeline direct record: when the current human message explicitly asks you to record, remember, persist, or add something to the project timeline, call timeline_record in that same turn. Their request is the confirmation; copy the exact authorizing words into `instruction_excerpt`, report the returned event ID/path, and do not ask for another confirmation or open a review UI. Use `made_by: "Current user"` when this prompt is the authority and no more specific identity is given. For a traced chronology, persist only sourced `recorded`/`observed` events, never `inferred` rows. Never call timeline_record merely because something seems important; unsolicited capture stays timeline_suggest. Never include secrets, environment values, or raw tool output.',
+        'Project timeline direct record: when the current human message explicitly asks you to record, remember, persist, or add something to the project timeline, call timeline_record in that same turn. Their request is the confirmation; copy the exact authorizing words into `instruction_excerpt`, report the returned event ID/path, and do not ask for another confirmation or open a review UI. Use `made_by: "Current user"` when this prompt is the authority and no more specific identity is given. For a traced chronology, persist only sourced `recorded`/`observed` events, never `inferred` rows. Never call timeline_record merely because something seems important; unsolicited capture stays timeline_suggest. Never include secrets, environment values, or raw tool output. LANGUAGE: write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai, the way a Thai engineer writes; keep technical terms in English. Preserve `instruction_excerpt`, `made_by`, `source_ref`, identifiers, paths, URLs, commit hashes, and quoted source text verbatim.',
       );
     }
     if (this.timelineAutomaticSuggestions && !this.remoteRuntimeId && lane.backendId !== 'pi-acp') {
       lines.push(
-        'Project timeline: at most once per turn, use timeline_suggest only when this turn establishes an explicit durable requirement, decision, consequential change, approval/rejection, or implementation outcome worth finding later. Skip routine edits/tests/status chatter, recommendations, unanswered questions, inferred authority, and anything already pending or recorded. `made_by` and `evidence_excerpt` must be supported by the user\'s actual words or trusted provenance. Never include secrets, environment values, or raw tool output. This creates a pending local suggestion only; the human confirms or dismisses it.',
+        'Project timeline: at most once per turn, use timeline_suggest only when this turn establishes an explicit durable requirement, decision, consequential change, approval/rejection, or implementation outcome worth finding later. Skip routine edits/tests/status chatter, recommendations, unanswered questions, inferred authority, and anything already pending or recorded. `made_by` and `evidence_excerpt` must be supported by the user\'s actual words or trusted provenance. Never include secrets, environment values, or raw tool output. This creates a pending local suggestion only; the human confirms or dismisses it. LANGUAGE: write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai, the way a Thai engineer writes; keep technical terms in English. Preserve `evidence_excerpt`, `made_by`, `source_ref`, identifiers, paths, URLs, commit hashes, and quoted source text verbatim.',
       );
     }
     // spec 146: review_outcome is default-on but only used during a #review
@@ -11119,7 +11119,7 @@ export class AcpHarnessView implements ContentView {
 
   private async openTimelineSuggestionReview(lane: HarnessLane): Promise<void> {
     if (!this.harnessMemoryId) {
-      this.flashChip('timeline unavailable - harness project not registered');
+      this.flashChip('ใช้ timeline ไม่ได้: ยังไม่ได้ลงทะเบียน project กับ Harness');
       return;
     }
     try {
@@ -11132,7 +11132,7 @@ export class AcpHarnessView implements ContentView {
       this.timelinePendingCount = pending.suggestions.length;
       const suggestion = pending.suggestions[0];
       if (!suggestion) {
-        this.flashChip('timeline · no pending suggestions');
+        this.flashChip('timeline · ไม่มีข้อเสนอที่รอตรวจทาน');
         this.render();
         return;
       }
@@ -11155,33 +11155,33 @@ export class AcpHarnessView implements ContentView {
         close: () => this.closeTimelineCapture(),
         saved: (event) => {
           this.closeTimelineCapture();
-          this.appendTranscript(lane, 'system', `timeline confirmed · ${event.id} · ${event.path}`);
-          this.flashChip(`timeline confirmed · ${event.path}`);
+          this.appendTranscript(lane, 'system', `ยืนยัน timeline แล้ว · ${event.id} · ${event.path}`);
+          this.flashChip(`ยืนยัน timeline แล้ว · ${event.path}`);
           void this.refreshTimelineSuggestions();
         },
         dismissed: () => {
           this.closeTimelineCapture();
-          this.appendTranscript(lane, 'system', `timeline suggestion dismissed · ${suggestion.id}`);
-          this.flashChip(`timeline dismissed · ${suggestion.id}`);
+          this.appendTranscript(lane, 'system', `ยกเลิกข้อเสนอ timeline แล้ว · ${suggestion.id}`);
+          this.flashChip(`ยกเลิก timeline แล้ว · ${suggestion.id}`);
           void this.refreshTimelineSuggestions();
         },
       });
       this.syncOrchestratorConsoleVisibility();
       const malformed = pending.diagnostics.length + listing.diagnostics.length;
-      if (malformed > 0) this.flashChip(`timeline review opened · ${malformed} malformed record${malformed === 1 ? '' : 's'}`);
+      if (malformed > 0) this.flashChip(`เปิดหน้าตรวจทาน timeline แล้ว · พบ record ผิดรูปแบบ ${malformed} รายการ`);
     } catch (e) {
-      this.flashChip(`timeline review failed: ${errorText(e)}`);
+      this.flashChip(`เปิดหน้าตรวจทาน timeline ไม่สำเร็จ: ${errorText(e)}`);
     }
   }
 
   private async openTimelineBrowser(topic: string): Promise<void> {
     if (!this.harnessMemoryId) {
-      this.flashChip('timeline unavailable - harness project not registered');
+      this.flashChip('ใช้ timeline ไม่ได้: ยังไม่ได้ลงทะเบียน project กับ Harness');
       return;
     }
     const port = await invoke<number>('get_hook_server_port').catch(() => 0);
     if (!port) {
-      this.flashChip('timeline unavailable - hook server not ready');
+      this.flashChip('ใช้ timeline ไม่ได้: hook server ยังไม่พร้อม');
       return;
     }
     const query = new URLSearchParams({ harness: this.harnessMemoryId });
@@ -11191,7 +11191,7 @@ export class AcpHarnessView implements ContentView {
       await invoke('open_url', { url });
       this.flashChip(url);
     } catch (e) {
-      this.flashChip(`timeline open failed: ${errorText(e)}`);
+      this.flashChip(`เปิด timeline ไม่สำเร็จ: ${errorText(e)}`);
     }
   }
 
@@ -11200,7 +11200,7 @@ export class AcpHarnessView implements ContentView {
     initialTopic: string,
   ): Promise<void> {
     if (!this.harnessMemoryId) {
-      this.flashChip('timeline unavailable - harness project not registered');
+      this.flashChip('ใช้ timeline ไม่ได้: ยังไม่ได้ลงทะเบียน project กับ Harness');
       return;
     }
     try {
@@ -11218,18 +11218,17 @@ export class AcpHarnessView implements ContentView {
         close: () => this.closeTimelineCapture(),
         saved: (event) => {
           this.closeTimelineCapture();
-          this.appendTranscript(lane, 'system', `timeline recorded · ${event.id} · ${event.path}`);
-          this.flashChip(`timeline recorded · ${event.path}`);
+          this.appendTranscript(lane, 'system', `บันทึก timeline แล้ว · ${event.id} · ${event.path}`);
+          this.flashChip(`บันทึก timeline แล้ว · ${event.path}`);
           this.render();
         },
       });
       this.syncOrchestratorConsoleVisibility();
       if (listing.diagnostics.length > 0) {
-        const suffix = listing.diagnostics.length === 1 ? '' : 's';
-        this.flashChip(`timeline opened · ${listing.diagnostics.length} malformed record${suffix}`);
+        this.flashChip(`เปิด timeline แล้ว · พบ record ผิดรูปแบบ ${listing.diagnostics.length} รายการ`);
       }
     } catch (e) {
-      this.flashChip(`timeline capture failed: ${errorText(e)}`);
+      this.flashChip(`เปิดแบบฟอร์ม timeline ไม่สำเร็จ: ${errorText(e)}`);
     }
   }
 
@@ -11248,13 +11247,13 @@ export class AcpHarnessView implements ContentView {
         lane,
         timelineTracePrompt(command.topic),
         undefined,
-        'tracing timeline',
+        'กำลังไล่ timeline',
       );
       return;
     }
     if (this.remoteRuntimeId) {
       this.flashChip(
-        '#timeline local storage/review/browser is unavailable in a remote Harness; trace remains available',
+        '#timeline แบบ local storage/review/browser ใช้ไม่ได้ใน remote Harness แต่ยังใช้ trace ได้',
       );
       return;
     }
@@ -11264,7 +11263,7 @@ export class AcpHarnessView implements ContentView {
     }
     if (command.kind === 'auto') {
       if (!this.harnessMemoryId) {
-        this.flashChip('timeline unavailable - harness project not registered');
+        this.flashChip('ใช้ timeline ไม่ได้: ยังไม่ได้ลงทะเบียน project กับ Harness');
         return;
       }
       try {
@@ -11277,9 +11276,9 @@ export class AcpHarnessView implements ContentView {
           });
           this.timelineAutomaticSuggestions = settings.automaticSuggestions;
         }
-        this.flashChip(`timeline automatic suggestions · ${this.timelineAutomaticSuggestions ? 'on' : 'off'}`);
+        this.flashChip(`ข้อเสนอ timeline อัตโนมัติ · ${this.timelineAutomaticSuggestions ? 'เปิด' : 'ปิด'}`);
       } catch (e) {
-        this.flashChip(`timeline setting failed: ${errorText(e)}`);
+        this.flashChip(`ตั้งค่า timeline ไม่สำเร็จ: ${errorText(e)}`);
       }
       return;
     }
@@ -13124,7 +13123,7 @@ export class AcpHarnessView implements ContentView {
         timelineBadge.textContent = `timeline ${this.timelinePendingCount}`;
         timelineBadge.setAttribute(
           'aria-label',
-          `Review ${this.timelinePendingCount} pending timeline suggestion${this.timelinePendingCount === 1 ? '' : 's'}`,
+          `ตรวจทานข้อเสนอ timeline ที่รออยู่ ${this.timelinePendingCount} รายการ`,
         );
         head.appendChild(timelineBadge);
       }
@@ -13420,6 +13419,12 @@ export class AcpHarnessView implements ContentView {
         ? `<span class="acp-harness__spinner">${SPINNER_FRAMES[0]}</span>`
         : SPINNER_FRAMES[0]}</span>` +
       `<span class="acp-harness__input">${input}</span></div>`;
+    const selectedPaletteRow = this.composerEl.querySelector<HTMLElement>(
+      '.acp-harness__slash-palette-row--selected',
+    );
+    if (typeof selectedPaletteRow?.scrollIntoView === 'function') {
+      selectedPaletteRow.scrollIntoView({ block: 'nearest' });
+    }
     this.syncComposerBloomLayer(lane, dictation ? null : this.pendingComposerBloom);
   }
 
@@ -14048,7 +14053,7 @@ export class AcpHarnessView implements ContentView {
             <dt>#telegram</dt><dd>Open Telegram controller settings</dd>
             <dt>#mcp</dt><dd>Show MCP endpoint and lane status</dd>
             <dt>#panels [hide | show | toggle]</dt><dd>Hide or restore persistent Harness panels</dd>
-            <dt>#timeline [open | add | review | auto | trace]</dt><dd>Record, review suggestions, browse, or trace local project history</dd>
+            <dt>#timeline [open | add | review | auto | trace]</dt><dd>บันทึก ตรวจทานข้อเสนอ เปิดดู หรือไล่ประวัติ project ในเครื่อง</dd>
             <dt>#queue [clear | edit N]</dt><dd>Manage prompts queued while the lane is busy</dd>
             <dt>#unqueue [N]</dt><dd>Remove the last (or Nth) queued prompt</dd>
             <dt>!cmd</dt><dd>Run shell command in project cwd, output goes to transcript</dd>

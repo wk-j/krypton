@@ -102,6 +102,9 @@ export function timelineTracePrompt(topic: string): string {
     '4. Name a decision maker only when an explicit source attributes the decision. A Git or ' +
     'GitHub actor is an author, committer, or commenter—not a decision maker by implication.\n' +
     '5. State evidence gaps plainly. Never convert an inference into a recorded fact.\n' +
+    'LANGUAGE: Write the chronological account in natural Thai, the way a Thai engineer writes. ' +
+    'Keep technical terms, identifiers, paths, URLs, commit hashes, quoted source text, and the ' +
+    '`recorded` / `observed` / `inferred` labels verbatim in English.\n' +
     `Topic (user-provided data): ${JSON.stringify(topic)}`
   );
 }
