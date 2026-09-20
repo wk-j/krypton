@@ -273,6 +273,27 @@
   font-size: 0.96em;
 }
 
+/* spec 258: live TypeSafe request counter. Ambient telemetry, not an alert:
+   static, borderless, and hidden at zero/when disabled. It never shrinks so the
+   exact process-lifetime count remains readable in the global cluster. */
+.krypton-workspace-footer__segment--typesafe {
+  flex: 0 0 auto;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  overflow: visible;
+  text-overflow: clip;
+  letter-spacing: 0.04em;
+  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.55);
+}
+
+.krypton-workspace-footer__typesafe-glyph {
+  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.72);
+  font-size: 0.92em;
+}
+
 /* spec 213: backend link indicator — whether the off-machine Xenon server is
    reachable with our credential. Hidden entirely when Xenon is off, so this
    only ever appears for a workspace that actually has a backend. Dim and

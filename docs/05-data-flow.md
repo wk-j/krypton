@@ -463,6 +463,17 @@
        `topic_id` to the existing save flow. Off, shadow, missing-key, timeout,
        low-confidence, invalid-response, and network-failure outcomes leave the
        deterministic offline flow unchanged.
+    m. TypeSafe call metrics (spec 258) update at the shared Rust transport
+       boundary. Immediately before each `call_once`, `TypeSafeState` counts one
+       outbound request; attempt zero also counts one logical operation, while
+       later attempts count retries. Settlement adds one suggestion or fallback
+       plus end-to-end latency. Each mutation emits the aggregate
+       `typesafe-metrics-changed` snapshot, which `main.ts` publishes as
+       `system:typesafe-metrics`. The Workspace Footer updates `⚡ TS N` directly
+       from that signal. Opening the Profiler performs one read-only
+       `typesafe_metrics` snapshot to cover missed startup events, then follows
+       the same event stream. No timer polls TypeSafe and no request content is
+       carried into the frontend.
 
 ```
 PUSH (lane → harness), at end of an editing turn:

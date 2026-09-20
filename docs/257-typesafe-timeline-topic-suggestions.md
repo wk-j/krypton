@@ -292,8 +292,10 @@ The checked-in fixture records only synthetic or explicitly sanitized drafts and
 4. `create_new` accuracy and ambiguity abstention.
 5. p50/p95 latency and fallback success.
 
-Shadow mode retains only aggregate suggestion/fallback counts and total latency in memory. It does
-not persist titles, summaries, request/response bodies, or per-record predictions. Visible `suggest`
+Shadow mode retains only aggregate request/operation/retry, suggestion/fallback, and latency metrics
+in memory. Spec 258 exposes those aggregates in the Workspace Footer and Profiler while preserving
+the process-lifetime reset boundary. It does not persist titles, summaries, request/response bodies,
+or per-record predictions. Visible `suggest`
 mode is not a release default until an explicit Krypton fixture run reaches
 candidate recall >= 90%, wrong-topic visible suggestions <= 5%, `create_new` accuracy >= 90%, and
 p95 <= 1200 ms. Exact-match, missing-key, and network-failure suites run fully

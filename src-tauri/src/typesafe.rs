@@ -4,12 +4,13 @@
 //! validated decisions and non-sensitive failure categories.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tauri::{AppHandle, Emitter};
 use tokio::sync::oneshot;
 
 use crate::config::TypeSafeConfig;
@@ -92,11 +93,39 @@ struct TypeSafeHealth {
     open_until: Option<Instant>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, Default)]
 struct TypeSafeMetrics {
+    api_requests: u64,
+    logical_operations: u64,
+    retries: u64,
     suggestions: u64,
     fallbacks: u64,
     latency_ms_total: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeSafeMetricsSnapshot {
+    pub api_requests: u64,
+    pub logical_operations: u64,
+    pub retries: u64,
+    pub suggestions: u64,
+    pub fallbacks: u64,
+    pub average_latency_ms: Option<u64>,
+}
+
+impl From<TypeSafeMetrics> for TypeSafeMetricsSnapshot {
+    fn from(metrics: TypeSafeMetrics) -> Self {
+        let completed = metrics.suggestions.saturating_add(metrics.fallbacks);
+        Self {
+            api_requests: metrics.api_requests,
+            logical_operations: metrics.logical_operations,
+            retries: metrics.retries,
+            suggestions: metrics.suggestions,
+            fallbacks: metrics.fallbacks,
+            average_latency_ms: (completed > 0).then(|| metrics.latency_ms_total / completed),
+        }
+    }
 }
 
 pub struct TypeSafeState {
@@ -104,6 +133,7 @@ pub struct TypeSafeState {
     pending: Mutex<HashMap<String, oneshot::Sender<()>>>,
     health: Mutex<TypeSafeHealth>,
     metrics: Mutex<TypeSafeMetrics>,
+    event_app: OnceLock<AppHandle>,
 }
 
 impl Default for TypeSafeState {
@@ -113,6 +143,7 @@ impl Default for TypeSafeState {
             pending: Mutex::new(HashMap::new()),
             health: Mutex::new(TypeSafeHealth::default()),
             metrics: Mutex::new(TypeSafeMetrics::default()),
+            event_app: OnceLock::new(),
         }
     }
 }
@@ -143,6 +174,17 @@ struct CallFailure {
 }
 
 impl TypeSafeState {
+    pub fn bind_app_handle(&self, app: AppHandle) {
+        let _ = self.event_app.set(app);
+    }
+
+    pub fn metrics_snapshot(&self) -> Result<TypeSafeMetricsSnapshot, String> {
+        self.metrics
+            .lock()
+            .map(|metrics| TypeSafeMetricsSnapshot::from(*metrics))
+            .map_err(|_| "TypeSafe metrics lock is unavailable".to_string())
+    }
+
     pub fn cancel(&self, request_id: &str) -> bool {
         self.pending
             .lock()
@@ -279,6 +321,7 @@ impl TypeSafeState {
     ) -> Result<SystemOneResponse, CallFailure> {
         let max_retries = config.max_retries.min(2);
         for attempt in 0..=max_retries {
+            self.record_attempt(attempt > 0);
             match call_once(client, config, api_key, &body).await {
                 Ok(response) => return Ok(response),
                 Err(failure) if failure.retryable && attempt < max_retries => {
@@ -330,19 +373,51 @@ impl TypeSafeState {
     }
 
     fn record_metrics(&self, result: &TimelineTopicSemanticResult) {
-        if let Ok(mut metrics) = self.metrics.lock() {
-            match result {
-                TimelineTopicSemanticResult::Suggestion { latency_ms, .. } => {
-                    metrics.suggestions += 1;
-                    metrics.latency_ms_total += latency_ms;
-                }
-                TimelineTopicSemanticResult::Fallback { latency_ms, .. } => {
-                    metrics.fallbacks += 1;
-                    metrics.latency_ms_total += latency_ms;
-                }
+        self.update_metrics(|metrics| match result {
+            TimelineTopicSemanticResult::Suggestion { latency_ms, .. } => {
+                metrics.suggestions = metrics.suggestions.saturating_add(1);
+                metrics.latency_ms_total = metrics.latency_ms_total.saturating_add(*latency_ms);
+            }
+            TimelineTopicSemanticResult::Fallback { latency_ms, .. } => {
+                metrics.fallbacks = metrics.fallbacks.saturating_add(1);
+                metrics.latency_ms_total = metrics.latency_ms_total.saturating_add(*latency_ms);
+            }
+        });
+    }
+
+    fn record_attempt(&self, is_retry: bool) {
+        self.update_metrics(|metrics| {
+            metrics.api_requests = metrics.api_requests.saturating_add(1);
+            if is_retry {
+                metrics.retries = metrics.retries.saturating_add(1);
+            } else {
+                metrics.logical_operations = metrics.logical_operations.saturating_add(1);
+            }
+        });
+    }
+
+    fn update_metrics(&self, update: impl FnOnce(&mut TypeSafeMetrics)) {
+        let snapshot = {
+            let Ok(mut metrics) = self.metrics.lock() else {
+                log::warn!("TypeSafe metrics update skipped because the lock is unavailable");
+                return;
+            };
+            update(&mut metrics);
+            TypeSafeMetricsSnapshot::from(*metrics)
+        };
+        if let Some(app) = self.event_app.get() {
+            if let Err(error) = app.emit("typesafe-metrics-changed", snapshot) {
+                log::debug!("failed to emit TypeSafe metrics update: {error}");
             }
         }
     }
+}
+
+#[tauri::command]
+pub fn typesafe_metrics(
+    typesafe: tauri::State<'_, Arc<TypeSafeState>>,
+) -> Result<TypeSafeMetricsSnapshot, String> {
+    typesafe.metrics_snapshot()
 }
 
 async fn call_once(
@@ -836,6 +911,58 @@ mod tests {
         assert!(status_failure(StatusCode::TOO_MANY_REQUESTS, None).retryable);
         assert!(status_failure(StatusCode::from_u16(529).unwrap(), None).retryable);
         assert_eq!(parse_retry_after(None), None);
+    }
+
+    #[test]
+    fn metrics_count_network_attempts_retries_and_completed_operations() {
+        let state = TypeSafeState::default();
+        state.record_attempt(false);
+        state.record_attempt(true);
+        state.record_metrics(&TimelineTopicSemanticResult::Suggestion {
+            request_id: "timeline-1".to_string(),
+            topic_id: "topic-upload-validation".to_string(),
+            title: "Upload validation".to_string(),
+            confidence: 0.9,
+            probability: 0.8,
+            model: "jev-1.13.0".to_string(),
+            latency_ms: 412,
+        });
+
+        assert_eq!(
+            state.metrics_snapshot().unwrap(),
+            TypeSafeMetricsSnapshot {
+                api_requests: 2,
+                logical_operations: 1,
+                retries: 1,
+                suggestions: 1,
+                fallbacks: 0,
+                average_latency_ms: Some(412),
+            }
+        );
+    }
+
+    #[test]
+    fn metrics_use_saturating_counters() {
+        let state = TypeSafeState::default();
+        {
+            let mut metrics = state.metrics.lock().unwrap();
+            metrics.api_requests = u64::MAX;
+            metrics.logical_operations = u64::MAX;
+            metrics.fallbacks = u64::MAX;
+            metrics.latency_ms_total = u64::MAX;
+        }
+
+        state.record_attempt(false);
+        state.record_metrics(&TimelineTopicSemanticResult::Fallback {
+            request_id: "timeline-1".to_string(),
+            reason: TimelineTopicFallbackReason::Timeout,
+            latency_ms: 1,
+        });
+
+        let snapshot = state.metrics_snapshot().unwrap();
+        assert_eq!(snapshot.api_requests, u64::MAX);
+        assert_eq!(snapshot.logical_operations, u64::MAX);
+        assert_eq!(snapshot.fallbacks, u64::MAX);
     }
 
     #[tokio::test]

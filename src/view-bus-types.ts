@@ -2,6 +2,7 @@
 // See docs/105-view-protocol.md.
 
 import type { PaneContentType, PaneId, ProgressState, TabId, WindowId } from './types';
+import type { TypeSafeMetricsSnapshot } from './typesafe-metrics';
 
 export interface ViewAddress {
   viewId: string;
@@ -91,6 +92,10 @@ export interface SignalValueMap {
     /** Unix seconds. */
     checkedAt: number;
   };
+  // spec 258: process-lifetime TypeSafe call telemetry. Rust publishes after
+  // every outbound attempt and settled operation; the footer and Profiler
+  // consume the same immutable snapshot without polling.
+  'system:typesafe-metrics': TypeSafeMetricsSnapshot;
   // spec 155: published by an ACP harness whenever one of its lanes
   // transitions to `idle` — a lane quiet point (ADR-0008). `cwd` is the
   // harness's projectDir; consumers (the Diff Window) resolve it to a repo

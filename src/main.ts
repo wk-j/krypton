@@ -27,6 +27,8 @@ import { getViewBus } from './view-bus';
 import { startPtyBridge } from './pty-bridge';
 import { startChromeSignals } from './chrome-signals';
 import { startAcpControlBridge } from './acp/control-bridge';
+import type { TypeSafeMetricsSnapshot } from './typesafe-metrics';
+import { SYSTEM_SOURCE } from './view-bus-types';
 
 interface CaptureResult {
   path: string;
@@ -83,6 +85,13 @@ async function main(): Promise<void> {
   const bus = getViewBus();
   compositor.attachToBus(bus);
   startChromeSignals(bus, compositor);
+  void listen<TypeSafeMetricsSnapshot>('typesafe-metrics-changed', (event) => {
+    bus.publishSignal({
+      kind: 'system:typesafe-metrics',
+      source: SYSTEM_SOURCE,
+      value: event.payload,
+    });
+  });
   try {
     await startAcpControlBridge(compositor);
   } catch (e) {
@@ -127,6 +136,16 @@ async function main(): Promise<void> {
     bus,
   });
   workspaceFooter.start();
+  workspaceFooter.setTypeSafeEnabled(Boolean(config?.typesafe?.enabled));
+  void invoke<TypeSafeMetricsSnapshot>('typesafe_metrics')
+    .then((metrics) => {
+      bus.publishSignal({
+        kind: 'system:typesafe-metrics',
+        source: SYSTEM_SOURCE,
+        value: metrics,
+      });
+    })
+    .catch((e) => console.debug('[Krypton] TypeSafe metrics unavailable:', e));
   inputRouter.setWorkspaceFooter(workspaceFooter);
   commandPalette.setWorkspaceFooter(workspaceFooter);
 
@@ -206,6 +225,7 @@ async function main(): Promise<void> {
       musicPlayer.applyConfig(newConfig.music);
     }
     backendLink.setIntervalSecs(newConfig.xenon?.probe_interval_secs ?? 60);
+    workspaceFooter.setTypeSafeEnabled(Boolean(newConfig.typesafe?.enabled));
     // `[xenon].enabled` / `base_url` are read per-probe in Rust, so one probe
     // now is all a hot-reload needs to reflect a config change in the footer.
     void backendLink.probeNow();

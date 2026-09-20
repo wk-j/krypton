@@ -911,6 +911,16 @@ It never receives persistence authority: all saves still pass through the
 existing Timeline record or suggestion-confirm paths, and every optional-service
 failure falls back to the unchanged offline UI.
 
+Spec 258 makes the shared TypeSafe transport observable without recording
+request content. `TypeSafeState` counts each started `POST /v1/systemone`
+attempt (including retries), logical operations, settled outcomes, and total
+latency in process memory. Counter changes emit an aggregate
+`typesafe-metrics-changed` snapshot; `main.ts` republishes it on the typed
+ViewBus for the static Workspace Footer counter, while the Profiler reads one
+current snapshot through `typesafe_metrics` when opened and follows the same
+events. The counters reset on backend restart and expose no credentials,
+request/response bodies, topic text, or per-lane attribution.
+
 ## Remote ACP Harness runtime
 
 Spec 247 adds a local-UI/remote-execution split for ACP Harnesses. The desktop

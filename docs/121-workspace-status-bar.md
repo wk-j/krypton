@@ -177,6 +177,15 @@ New input action:
 | Center | CWD, git ref/dirty summary, process, counts, activity/progress | Main compression zone; each segment has a priority class. |
 | Right | Music segment when active, otherwise one contextual hint | Music gets reserved width while active; hints disappear before core status. |
 
+Spec 258 extends the right zone with a global `⚡ TS N` segment immediately
+before the Xenon link indicator. It is hidden while TypeSafe is disabled or the
+process-lifetime request count is zero. Compact density shows requests only;
+detail density adds logical operations and retries, while the tooltip names the
+completed count, average latency, run scope, and Profiler shortcut. The segment
+subscribes to `system:typesafe-metrics`, adds no polling, focus target, mouse
+interaction, or animation, and uses tabular numerics so changing counts do not
+jitter the rail.
+
 ### Priority Tiers
 
 | Tier | Content | Compact Behavior |

@@ -245,6 +245,7 @@ pub fn run() {
             timeline::timeline_suggestion_set_enabled,
             timeline::timeline_topic_suggest,
             timeline::timeline_topic_suggest_cancel,
+            typesafe::typesafe_metrics,
             commands::save_temp_image,
             commands::capture_screen,
             commands::get_env_var,
@@ -377,6 +378,9 @@ pub fn run() {
                     .level(log::LevelFilter::Info)
                     .build(),
             )?;
+
+            app.state::<Arc<typesafe::TypeSafeState>>()
+                .bind_app_handle(app.handle().clone());
 
             // Size the window to cover the entire screen including menu bar and dock
             // (macOS fullscreen mode breaks transparency, so we manually set position/size)

@@ -3,6 +3,11 @@ import { invoke } from './profiler/ipc';
 import { Mode, ProgressState, type PaneContentType } from './types';
 import type { Compositor } from './compositor';
 import type { InputRouter } from './input-router';
+import {
+  formatTypeSafeFooterLabel,
+  formatTypeSafeTooltip,
+  type TypeSafeMetricsSnapshot,
+} from './typesafe-metrics';
 import type { ViewBus } from './view-bus';
 import type {
   AttentionTier,
@@ -271,6 +276,9 @@ export class WorkspaceFooter {
   /** spec 162: count of `high` review-priority ranges per publishing harness,
    * summed for the neutral "read these first" depth indicator. */
   private priorityBySource = new Map<string, number>();
+  private typesafeEl: HTMLElement;
+  private typesafeEnabled = false;
+  private typesafeMetrics: TypeSafeMetricsSnapshot | null = null;
   private linkEl: HTMLElement;
   /** spec 213: latest link report per off-machine backend, keyed by backendId.
    * `xenon` is the only publisher today; the map is what lets a second backend
@@ -352,6 +360,13 @@ export class WorkspaceFooter {
     this.priorityEl.className =
       'krypton-workspace-footer__segment krypton-workspace-footer__segment--priority';
     this.priorityEl.hidden = true;
+    // spec 258: process-lifetime TypeSafe API request count. It leads the
+    // global cluster and stays hidden until TypeSafe is enabled and a real
+    // network attempt has started.
+    this.typesafeEl = document.createElement('span');
+    this.typesafeEl.className =
+      'krypton-workspace-footer__segment krypton-workspace-footer__segment--typesafe';
+    this.typesafeEl.hidden = true;
     // spec 213: backend link indicator — whether the off-machine Xenon server
     // is actually reachable with our credential. Unlike the two depth gauges
     // above it IS coloured when faulted (ADR-0017): a broken link silently
@@ -367,10 +382,11 @@ export class WorkspaceFooter {
     this.musicProgressFillEl = document.createElement('div');
     this.musicProgressFillEl.className = 'krypton-workspace-footer__music-progress-fill';
 
-    // The link segment leads the global cluster, at its outer edge — where
-    // VS Code puts its remote indicator, and far enough from the focus-scoped
-    // segments that it reads as a property of the machine, not the pane.
+    // TypeSafe activity and the backend link lead the global cluster, at its
+    // outer edge and far enough from the focus-scoped segments that both read
+    // as properties of the app/machine, not the pane.
     this.rightEl.append(
+      this.typesafeEl,
       this.linkEl,
       this.priorityEl,
       this.reviewsEl,
@@ -457,6 +473,11 @@ export class WorkspaceFooter {
       this.renderLink();
     });
 
+    this.bus.onSignal({ kind: 'system:typesafe-metrics' }, (s) => {
+      this.typesafeMetrics = s.value;
+      this.renderTypeSafe();
+    });
+
     this.timer = setInterval(() => {
       if (this.density === 'detail') this.refresh('timer');
     }, 1000);
@@ -498,6 +519,11 @@ export class WorkspaceFooter {
     this.density = this.density === 'compact' ? 'detail' : 'compact';
     this.root.dataset.density = this.density;
     this.refresh('config');
+  }
+
+  setTypeSafeEnabled(enabled: boolean): void {
+    this.typesafeEnabled = enabled;
+    this.renderTypeSafe();
   }
 
   setMusicSegment(segment: MusicFooterSegment | null): void {
@@ -608,11 +634,35 @@ export class WorkspaceFooter {
     const hint = this.hintFor(summary);
     this.hintEl.setAttribute('aria-label', hint);
     fillHint(this.hintEl, hint);
+    this.renderTypeSafe();
     this.renderLink();
     this.renderPriority();
     this.renderReviews();
     this.renderAttention();
     this.renderMusic();
+  }
+
+  /** spec 258: exact outbound TypeSafe request attempts in this app run.
+   * Hidden while disabled or at zero; static and event-driven once visible. */
+  private renderTypeSafe(): void {
+    const metrics = this.typesafeMetrics;
+    if (!this.typesafeEnabled || !metrics || metrics.apiRequests <= 0) {
+      this.typesafeEl.hidden = true;
+      this.typesafeEl.replaceChildren();
+      this.typesafeEl.removeAttribute('title');
+      this.typesafeEl.removeAttribute('aria-label');
+      return;
+    }
+
+    this.typesafeEl.hidden = false;
+    const glyph = document.createElement('span');
+    glyph.className = 'krypton-workspace-footer__typesafe-glyph';
+    glyph.textContent = '⚡';
+    const label = document.createElement('span');
+    label.textContent = formatTypeSafeFooterLabel(metrics, this.density === 'detail');
+    this.typesafeEl.replaceChildren(glyph, label);
+    this.typesafeEl.title = formatTypeSafeTooltip(metrics);
+    this.typesafeEl.setAttribute('aria-label', `TypeSafe API requests ${metrics.apiRequests}`);
   }
 
   /**

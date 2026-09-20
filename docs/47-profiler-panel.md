@@ -18,7 +18,7 @@ Data is gathered by instrumenting the IPC layer, PTY event stream, compositor la
 
 | File | Change |
 |------|--------|
-| `src/profiler/profiler-hud.ts` | **New** — HUD overlay: DOM construction, render loop, show/hide |
+| `src/profiler/profiler-hud.ts` | **New** — HUD overlay: DOM construction, render loop, show/hide; spec 258 adds the TypeSafe matrix |
 | `src/profiler/metrics.ts` | **New** — singleton metrics collector and data store |
 | `src/profiler/ipc.ts` | **New** — instrumented `invoke()` wrapper |
 | `src/styles/profiler.css` | **New** — HUD styling |
@@ -109,6 +109,14 @@ A singleton `MetricsCollector` class. Collects data **from app startup** regardl
 - **DOM nodes**: `document.querySelectorAll('*').length` — sampled once per render tick (1s).
 - **Heap**: `(performance as any).memory?.usedJSHeapSize` — null if unavailable in WKWebView.
 
+Spec 258 adds one backend-owned metric source. On show, the HUD invokes
+`typesafe_metrics` once through the raw Tauri API so reading the profiler does
+not inflate its own instrumented IPC table. It then consumes
+`typesafe-metrics-changed` events for live updates. The section reports exact
+process-lifetime requests, logical operations, retries, completed outcomes,
+suggestions, fallbacks, and average end-to-end latency in a two-column matrix.
+It never receives TypeSafe request content or credentials.
+
 ```typescript
 export const collector = new MetricsCollector();
 ```
@@ -187,6 +195,12 @@ Compact monospace text, docked top-right. Themed with `--krypton-*` CSS custom p
 │  resize_pty    ×24  avg 1.1  │
 │  get_pty_cwd   ×12  avg 2.1  │
 │  get_env_var    ×1  avg 182  │
+│                              │
+│  TYPESAFE · THIS APP RUN     │
+│  requests 12  operations 10  │
+│  retries  2   completed  10  │
+│  suggestions 4 fallbacks  6  │
+│  avg latency 412ms            │
 │                              │
 │  PTY                         │
 │  #1  24.3 KB/s   1.2 MB     │
