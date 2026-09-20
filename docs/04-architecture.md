@@ -899,6 +899,18 @@ returns the existing event. `timeline_record` is narrowly auto-approved because
 the user's current instruction is the confirmation, while self-selected events
 must still use `timeline_suggest`.
 
+Spec 257 adds an optional semantic aid at the existing Timeline capture boundary.
+The frontend keeps exact-title reuse authoritative, builds a deterministic
+shortlist of at most 12 local topics, and owns debounce, stale-result rejection,
+and the explicit use-existing/create-new decision. The Rust-only `typesafe.rs`
+client resolves the API key from the configured environment variable, sends only
+the bounded draft and candidate semantic state to TypeSafe System One, validates
+the complete closed-set `Choice` distribution, applies confidence/probability/
+margin gates, and contains retries, cancellation, deadlines, and circuit state.
+It never receives persistence authority: all saves still pass through the
+existing Timeline record or suggestion-confirm paths, and every optional-service
+failure falls back to the unchanged offline UI.
+
 ## Remote ACP Harness runtime
 
 Spec 247 adds a local-UI/remote-execution split for ACP Harnesses. The desktop

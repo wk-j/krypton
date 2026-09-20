@@ -77,6 +77,39 @@ export interface TimelineRecordRequest {
   recorderLane: string;
 }
 
+export interface TimelineTopicCandidate {
+  topicId: string;
+  title: string;
+  occurredAt: string;
+  recentSummaries: string[];
+  lexicalScore: number;
+}
+
+export interface TimelineTopicSemanticRequest {
+  requestId: string;
+  draft: { title: string; summary: string };
+  candidates: TimelineTopicCandidate[];
+}
+
+export type TimelineTopicSemanticResult =
+  | {
+      kind: 'suggestion';
+      requestId: string;
+      topicId: string;
+      title: string;
+      confidence: number;
+      probability: number;
+      model: string;
+      latencyMs: number;
+    }
+  | {
+      kind: 'fallback';
+      requestId: string;
+      reason: 'create_new' | 'low_confidence' | 'disabled' | 'shadow' | 'missing_key'
+        | 'cooldown' | 'cancelled' | 'timeout' | 'unavailable' | 'invalid_response';
+      latencyMs: number;
+    };
+
 export type TimelineCommand =
   | { kind: 'open'; topic: string }
   | { kind: 'add'; topic: string }
@@ -182,6 +215,58 @@ export function similarTimelineTopics(title: string, events: TimelineEvent[]): A
       return candidate.includes(normalized) || normalized.includes(candidate);
     })
     .map(({ id, title: topicTitle }) => ({ id, title: topicTitle }));
+}
+
+function truncateScalars(value: string, max: number): string {
+  return Array.from(value).slice(0, max).join('');
+}
+
+/** Build the only Timeline data allowed to leave the app for semantic matching. */
+export function buildTimelineTopicCandidates(
+  draft: { title: string; summary: string },
+  events: TimelineEvent[],
+  requestedMaxCandidates: number,
+): TimelineTopicCandidate[] {
+  const title = draft.title.trim();
+  const summary = draft.summary.trim();
+  if (!title && !summary) return [];
+  const maxCandidates = Math.max(2, Math.min(20, Math.floor(requestedMaxCandidates)));
+  const grouped = new Map<string, TimelineEvent[]>();
+  for (const event of [...events].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))) {
+    const topicEvents = grouped.get(event.topicId) ?? [];
+    topicEvents.push(event);
+    grouped.set(event.topicId, topicEvents);
+  }
+  const candidates = [...grouped.entries()].map(([topicId, topicEvents]) => {
+    const latest = topicEvents[0];
+    const recentSummaries = [...new Set(topicEvents.map((event) => event.summary.trim()).filter(Boolean))]
+      .slice(0, 2)
+      .map((value) => truncateScalars(value, 240));
+    const lexicalScore = topicEvents.reduce((best, event) => {
+      const titleScore = title ? topicMatchScore(title, event) : 0;
+      const summaryScore = summary ? topicMatchScore(summary, event) : 0;
+      return Math.max(best, titleScore, summaryScore);
+    }, 0);
+    return {
+      topicId,
+      title: latest.topicTitle,
+      occurredAt: latest.occurredAt,
+      recentSummaries,
+      lexicalScore,
+    };
+  });
+  const ranked = candidates.sort((left, right) => (
+    right.lexicalScore - left.lexicalScore || right.occurredAt.localeCompare(left.occurredAt)
+  ));
+  if (ranked.length <= maxCandidates) return ranked;
+  const positive = ranked.filter((candidate) => candidate.lexicalScore > 0);
+  if (positive.length === 0) return [];
+  const selected = positive.slice(0, Math.min(8, maxCandidates));
+  const selectedIds = new Set(selected.map((candidate) => candidate.topicId));
+  const recent = [...candidates]
+    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
+    .filter((candidate) => !selectedIds.has(candidate.topicId));
+  return [...selected, ...recent.slice(0, maxCandidates - selected.length)];
 }
 
 export const TIMELINE_CAPTURE_FIELDS = [

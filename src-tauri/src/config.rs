@@ -53,6 +53,7 @@ pub struct KryptonConfig {
     pub xenon: XenonConfig,
     pub usage_log: UsageLogConfig,
     pub daily_note: DailyNoteConfig,
+    pub typesafe: TypeSafeConfig,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -560,6 +561,66 @@ impl Default for DailyNoteConfig {
             retain_days: 400,
             output_dir: ".krypton/journal".to_string(),
             extra_projects: Vec::new(),
+        }
+    }
+}
+
+// ─── TypeSafe semantic suggestions (spec 257) ────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TypeSafeConfig {
+    pub enabled: bool,
+    pub api_key_env: String,
+    pub base_url: String,
+    pub model: String,
+    pub connect_timeout_ms: u64,
+    pub attempt_timeout_ms: u64,
+    pub overall_deadline_ms: u64,
+    pub max_retries: u8,
+    pub failure_threshold: u32,
+    pub cooldown_secs: u64,
+    pub timeline_topics: TypeSafeTimelineTopicsConfig,
+}
+
+impl Default for TypeSafeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            api_key_env: "TYPESAFE_API_KEY".to_string(),
+            base_url: "https://api.typesafe.ai".to_string(),
+            model: "jev-1.13.0".to_string(),
+            connect_timeout_ms: 300,
+            attempt_timeout_ms: 650,
+            overall_deadline_ms: 1_600,
+            max_retries: 1,
+            failure_threshold: 3,
+            cooldown_secs: 30,
+            timeline_topics: TypeSafeTimelineTopicsConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TypeSafeTimelineTopicsConfig {
+    pub mode: String,
+    pub debounce_ms: u64,
+    pub min_confidence: f64,
+    pub min_probability: f64,
+    pub min_margin: f64,
+    pub max_candidates: usize,
+}
+
+impl Default for TypeSafeTimelineTopicsConfig {
+    fn default() -> Self {
+        Self {
+            mode: "off".to_string(),
+            debounce_ms: 350,
+            min_confidence: 0.65,
+            min_probability: 0.55,
+            min_margin: 0.15,
+            max_candidates: 12,
         }
     }
 }

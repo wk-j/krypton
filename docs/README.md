@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (255)
+## Specs (257)
 
 | # | Spec |
 |---|------|
@@ -260,6 +260,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 254 | [Automatic Timeline Suggestions](./254-automatic-timeline-suggestions.md) |
 | 255 | [Natural-Language Timeline Recording](./255-natural-language-timeline-recording.md) |
 | 256 | [Thai Timeline Language](./256-thai-timeline-language.md) |
+| 257 | [TypeSafe Timeline Topic Suggestions](./257-typesafe-timeline-topic-suggestions.md) |
 
 ## ADRs (20)
 

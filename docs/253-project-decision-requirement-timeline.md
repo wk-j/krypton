@@ -336,7 +336,9 @@ Trace old behavior
 None. The base design chooses explicit capture plus read-only reconstruction, gitignored local
 project files, separate authority/recorder identities, and additive supersession. Spec 254 extends
 it with agent-proposed pending candidates that still require human confirmation. Spec 255 adds a
-direct MCP path only when the current human message explicitly requests persistence.
+direct MCP path only when the current human message explicitly requests persistence. Spec 257 adds
+an opt-in semantic existing-topic suggestion to the add/review sheet; it does not change persistence,
+authority, or the deterministic exact-match path.
 
 ## Out of Scope
 

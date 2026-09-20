@@ -15,6 +15,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::hook_server::HookServer;
+use crate::typesafe::{TimelineTopicSemanticRequest, TimelineTopicSemanticResult, TypeSafeState};
 
 const SCHEMA_VERSION: u8 = 1;
 const MAX_EVENTS: usize = 2_000;
@@ -25,6 +26,7 @@ const MAX_ACTOR_CHARS: usize = 120;
 const MAX_BODY_CHARS: usize = 4 * 1024;
 const MAX_SOURCE_CHARS: usize = 2 * 1024;
 const MAX_EVIDENCE_CHARS: usize = 1_000;
+const MAX_SEMANTIC_SUMMARY_CHARS: usize = 240;
 const MAX_PENDING_SUGGESTIONS: usize = 100;
 static TIMELINE_MUTATION_LOCK: Mutex<()> = Mutex::new(());
 
@@ -1639,6 +1641,81 @@ pub fn timeline_suggestion_set_enabled(
     set_suggestion_enabled_project(&project_dir(&hook_server, &harness_id)?, enabled)
 }
 
+fn validate_semantic_candidates(
+    events: &[TimelineEvent],
+    request: &TimelineTopicSemanticRequest,
+) -> Result<(), String> {
+    for candidate in &request.candidates {
+        let topic_events: Vec<&TimelineEvent> = events
+            .iter()
+            .filter(|event| event.topic_id == candidate.topic_id)
+            .collect();
+        if topic_events.is_empty()
+            || !topic_events.iter().any(|event| {
+                event.topic_title == candidate.title && event.occurred_at == candidate.occurred_at
+            })
+        {
+            return Err(format!(
+                "TypeSafe timeline topic candidate is stale or unknown: {}",
+                candidate.topic_id
+            ));
+        }
+        let summaries: HashSet<String> = topic_events
+            .iter()
+            .map(|event| {
+                event
+                    .summary
+                    .trim()
+                    .chars()
+                    .take(MAX_SEMANTIC_SUMMARY_CHARS)
+                    .collect()
+            })
+            .collect();
+        if candidate
+            .recent_summaries
+            .iter()
+            .any(|summary| !summaries.contains(summary))
+        {
+            return Err(format!(
+                "TypeSafe timeline topic candidate summary is not project-backed: {}",
+                candidate.topic_id
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn timeline_topic_suggest(
+    harness_id: String,
+    request: TimelineTopicSemanticRequest,
+    hook_server: tauri::State<'_, Arc<HookServer>>,
+    config: tauri::State<'_, Arc<std::sync::RwLock<crate::config::KryptonConfig>>>,
+    typesafe: tauri::State<'_, Arc<TypeSafeState>>,
+) -> Result<TimelineTopicSemanticResult, String> {
+    // Resolve the harness before any credential or network work. Timeline
+    // semantic suggestions are local-project UI, never a generic proxy.
+    let project = project_dir(&hook_server, &harness_id)?;
+    let listing = scan_project(&project)?;
+    validate_semantic_candidates(&listing.events, &request)?;
+    let typesafe_config = config
+        .read()
+        .map_err(|_| "config lock is unavailable".to_string())?
+        .typesafe
+        .clone();
+    typesafe
+        .suggest_timeline_topic(typesafe_config, request)
+        .await
+}
+
+#[tauri::command]
+pub fn timeline_topic_suggest_cancel(
+    request_id: String,
+    typesafe: tauri::State<'_, Arc<TypeSafeState>>,
+) -> bool {
+    typesafe.cancel(&request_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1959,6 +2036,31 @@ mod tests {
         let retried = confirm_suggestion_project(&dir.0, &suggestion.id, request()).unwrap();
         assert_eq!(retried.id, event.id);
         assert_eq!(scan_project(&dir.0).unwrap().events.len(), 1);
+    }
+
+    #[test]
+    fn semantic_candidates_must_come_from_the_registered_project_timeline() {
+        let dir = TestDir::new("semantic-candidates");
+        let event = record_project(&dir.0, request()).unwrap();
+        let mut semantic = TimelineTopicSemanticRequest {
+            request_id: "timeline-1".to_string(),
+            draft: crate::typesafe::TimelineTopicDraft {
+                title: "ตรวจ metadata ก่อน upload".to_string(),
+                summary: "ตรวจข้อมูลก่อนส่งเอกสาร".to_string(),
+            },
+            candidates: vec![crate::typesafe::TimelineTopicCandidate {
+                topic_id: event.topic_id.clone(),
+                title: event.topic_title.clone(),
+                occurred_at: event.occurred_at.clone(),
+                recent_summaries: vec![event.summary.clone()],
+                lexical_score: 20,
+            }],
+        };
+        assert!(validate_semantic_candidates(&[event.clone()], &semantic).is_ok());
+        semantic.candidates[0].recent_summaries = vec!["untrusted transcript text".to_string()];
+        assert!(validate_semantic_candidates(&[event], &semantic)
+            .unwrap_err()
+            .contains("not project-backed"));
     }
 
     #[test]

@@ -451,6 +451,18 @@
        suggestion when present, or appends a new event. The tool result returns
        ID/path/disposition in the same turn. No capture, review, or permission
        overlay opens; unsolicited capture remains `timeline_suggest`.
+    l. Optional semantic topic reuse (spec 257) stays inside local capture and
+       pending-suggestion review. After exact-title reuse fails, the frontend
+       groups the bounded Timeline listing into candidate topics and debounces a
+       `timeline_topic_suggest` request. Rust first resolves the Harness project,
+       then checks opt-in config, resolves the TypeSafe key without serializing
+       it, sends only draft/candidate semantic fields, and validates/gates the
+       closed-set result. Cancellation plus a frontend generation token reject
+       stale completions. A visible result remains unresolved until the human
+       chooses use-existing or create-new; only the former supplies a stable
+       `topic_id` to the existing save flow. Off, shadow, missing-key, timeout,
+       low-confidence, invalid-response, and network-failure outcomes leave the
+       deterministic offline flow unchanged.
 
 ```
 PUSH (lane → harness), at end of an editing turn:

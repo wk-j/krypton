@@ -205,6 +205,30 @@ export interface XenonConfig {
   probe_interval_secs: number;
 }
 
+export interface TypeSafeTimelineTopicsConfig {
+  mode: 'off' | 'shadow' | 'suggest' | string;
+  debounce_ms: number;
+  min_confidence: number;
+  min_probability: number;
+  min_margin: number;
+  max_candidates: number;
+}
+
+/** Non-secret TypeSafe settings. `api_key_env` is only the variable name. */
+export interface TypeSafeConfig {
+  enabled: boolean;
+  api_key_env: string;
+  base_url: string;
+  model: string;
+  connect_timeout_ms: number;
+  attempt_timeout_ms: number;
+  overall_deadline_ms: number;
+  max_retries: number;
+  failure_threshold: number;
+  cooldown_secs: number;
+  timeline_topics: TypeSafeTimelineTopicsConfig;
+}
+
 export interface KryptonConfig {
   shell: ShellConfig;
   font: FontConfig;
@@ -223,6 +247,7 @@ export interface KryptonConfig {
   music: MusicConfig;
   acp_harness: AcpHarnessConfig;
   xenon: XenonConfig;
+  typesafe?: TypeSafeConfig;
 }
 
 /** Load configuration from the Rust backend */

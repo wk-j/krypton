@@ -1,5 +1,6 @@
 import {
   TIMELINE_RELATIONS,
+  buildTimelineTopicCandidates,
   findExistingTopic,
   latestTimelineTopics,
   similarTimelineTopics,
@@ -9,6 +10,8 @@ import {
   type TimelineEvent,
   type TimelineRecordRequest,
   type TimelineSuggestion,
+  type TimelineTopicSemanticRequest,
+  type TimelineTopicSemanticResult,
 } from './timeline';
 
 export interface TimelineCaptureOptions {
@@ -22,6 +25,13 @@ export interface TimelineCaptureOptions {
   close: () => void;
   saved: (event: TimelineEvent) => void;
   dismissed?: () => void;
+  semantic?: {
+    mode: 'shadow' | 'suggest';
+    debounceMs: number;
+    maxCandidates: number;
+    suggest: (request: TimelineTopicSemanticRequest) => Promise<TimelineTopicSemanticResult>;
+    cancel: (requestId: string) => Promise<boolean>;
+  };
 }
 
 function field<T extends HTMLElement>(form: HTMLFormElement, name: string): T {
@@ -58,11 +68,19 @@ export class TimelineCapture {
   private readonly form: HTMLFormElement;
   private readonly options: TimelineCaptureOptions;
   private readonly topicInput: HTMLInputElement;
+  private readonly summaryInput: HTMLInputElement;
   private readonly duplicateBox: HTMLElement;
   private readonly duplicateConfirm: HTMLInputElement;
   private readonly errorEl: HTMLElement;
   private readonly topicMatches: HTMLElement;
+  private readonly semanticMatchEl: HTMLElement;
   private selectedTopicId: string | null = null;
+  private semanticMatch: Extract<TimelineTopicSemanticResult, { kind: 'suggestion' }> | null = null;
+  private semanticDecision: 'existing' | 'new' | null = null;
+  private semanticTimer: ReturnType<typeof setTimeout> | null = null;
+  private semanticRequestId: string | null = null;
+  private semanticGeneration = 0;
+  private disposed = false;
   private saving = false;
 
   constructor(options: TimelineCaptureOptions) {
@@ -115,6 +133,12 @@ export class TimelineCapture {
     this.topicMatches.className = 'acp-timeline__topic-matches';
     this.form.appendChild(this.topicMatches);
 
+    this.semanticMatchEl = document.createElement('section');
+    this.semanticMatchEl.className = 'acp-timeline__semantic-match';
+    this.semanticMatchEl.setAttribute('aria-live', 'polite');
+    this.semanticMatchEl.hidden = true;
+    this.form.appendChild(this.semanticMatchEl);
+
     this.duplicateBox = document.createElement('label');
     this.duplicateBox.className = 'acp-timeline__duplicate';
     this.duplicateBox.hidden = true;
@@ -125,9 +149,10 @@ export class TimelineCapture {
     this.duplicateBox.append(this.duplicateConfirm, duplicateText);
     this.form.appendChild(this.duplicateBox);
 
-    const summary = this.addInput('summary', 'สรุป', 'text');
-    summary.maxLength = 500;
-    summary.value = options.suggestion?.summary ?? '';
+    this.summaryInput = this.addInput('summary', 'สรุป', 'text');
+    this.summaryInput.maxLength = 500;
+    this.summaryInput.value = options.suggestion?.summary ?? '';
+    this.summaryInput.addEventListener('input', () => this.scheduleSemanticSuggestion());
     const madeBy = this.addInput('madeBy', 'ผู้ขอหรือผู้อนุมัติ', 'text');
     madeBy.maxLength = 120;
     madeBy.placeholder = 'ใครเป็นผู้ขอหรืออนุมัติเรื่องนี้';
@@ -228,6 +253,10 @@ export class TimelineCapture {
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.semanticGeneration += 1;
+    this.clearSemanticTimer();
+    this.cancelSemanticRequest();
     this.element.remove();
   }
 
@@ -276,6 +305,102 @@ export class TimelineCapture {
     const text = this.duplicateBox.querySelector<HTMLElement>('[data-timeline-duplicate-text]');
     if (text) text.textContent = `สร้างหัวข้อใหม่แม้มีหัวข้อใกล้เคียง: ${similar.map((topic) => topic.title).join(', ')}`;
     this.refreshTopicMatches();
+    this.scheduleSemanticSuggestion();
+  }
+
+  private clearSemanticTimer(): void {
+    if (this.semanticTimer === null) return;
+    clearTimeout(this.semanticTimer);
+    this.semanticTimer = null;
+  }
+
+  private cancelSemanticRequest(): void {
+    const requestId = this.semanticRequestId;
+    this.semanticRequestId = null;
+    if (requestId && this.options.semantic) {
+      void this.options.semantic.cancel(requestId).catch(() => false);
+    }
+  }
+
+  private clearSemanticMatch(): void {
+    this.semanticMatch = null;
+    this.semanticDecision = null;
+    this.semanticMatchEl.hidden = true;
+    this.semanticMatchEl.replaceChildren();
+  }
+
+  private scheduleSemanticSuggestion(): void {
+    this.semanticGeneration += 1;
+    const generation = this.semanticGeneration;
+    this.clearSemanticTimer();
+    this.cancelSemanticRequest();
+    this.clearSemanticMatch();
+    const semantic = this.options.semantic;
+    const title = this.topicInput.value.trim();
+    if (!semantic || !title || findExistingTopic(title, this.options.events)) return;
+    const candidates = buildTimelineTopicCandidates(
+      { title, summary: this.summaryInput.value.trim() },
+      this.options.events,
+      semantic.maxCandidates,
+    );
+    if (candidates.length < 2) return;
+    const delay = Math.max(150, Math.min(1_500, Math.round(semantic.debounceMs)));
+    this.semanticTimer = setTimeout(() => {
+      this.semanticTimer = null;
+      const requestId = `timeline_${Date.now()}_${generation}`;
+      this.semanticRequestId = requestId;
+      void semantic.suggest({
+        requestId,
+        draft: { title, summary: this.summaryInput.value.trim() },
+        candidates,
+      }).then((result) => {
+        if (this.disposed || generation !== this.semanticGeneration || result.requestId !== requestId) return;
+        this.semanticRequestId = null;
+        if (semantic.mode === 'suggest' && result.kind === 'suggestion') {
+          this.semanticMatch = result;
+          this.renderSemanticMatch();
+        }
+      }).catch(() => {
+        // TypeSafe is optional. Backend and transport failures retain the
+        // deterministic Timeline UI without surfacing a form error.
+      });
+    }, delay);
+  }
+
+  private renderSemanticMatch(): void {
+    this.semanticMatchEl.replaceChildren();
+    const match = this.semanticMatch;
+    if (!match) {
+      this.semanticMatchEl.hidden = true;
+      return;
+    }
+    this.semanticMatchEl.hidden = false;
+    const label = document.createElement('p');
+    label.textContent = `หัวข้อที่น่าจะตรง · ${match.title} · confidence ${Math.round(match.confidence * 100)}%`;
+    const actions = document.createElement('div');
+    const useExisting = document.createElement('button');
+    useExisting.type = 'button';
+    useExisting.textContent = 'ใช้หัวข้อนี้';
+    useExisting.dataset.selected = String(this.semanticDecision === 'existing');
+    useExisting.addEventListener('click', () => {
+      this.semanticDecision = 'existing';
+      this.selectedTopicId = match.topicId;
+      this.topicInput.value = match.title;
+      this.refreshDuplicateWarning();
+      this.topicInput.focus();
+    });
+    const createNew = document.createElement('button');
+    createNew.type = 'button';
+    createNew.textContent = 'สร้างหัวข้อใหม่';
+    createNew.dataset.selected = String(this.semanticDecision === 'new');
+    createNew.addEventListener('click', () => {
+      this.semanticDecision = 'new';
+      this.selectedTopicId = null;
+      this.renderSemanticMatch();
+      this.topicInput.focus();
+    });
+    actions.append(useExisting, createNew);
+    this.semanticMatchEl.append(label, actions);
   }
 
   private refreshTopicMatches(): void {
@@ -345,6 +470,10 @@ export class TimelineCapture {
     const error = validateTimelineRecord(request);
     if (error) {
       this.errorEl.textContent = error;
+      return;
+    }
+    if (this.semanticMatch && this.semanticDecision === null) {
+      this.errorEl.textContent = 'กรุณาเลือกใช้หัวข้อที่แนะนำ หรือยืนยันว่าจะสร้างหัวข้อใหม่';
       return;
     }
     if (!this.duplicateBox.hidden && !this.duplicateConfirm.checked) {

@@ -24,6 +24,7 @@ pub mod termctrl_monitor;
 pub mod theme;
 pub mod ticket_bundle;
 pub mod timeline;
+pub mod typesafe;
 pub mod usage;
 pub mod usage_log;
 pub mod util;
@@ -152,6 +153,7 @@ pub fn run() {
         .manage(Arc::new(webview::WebviewRegistry::new()))
         .manage(Arc::new(process_metrics::MetricsSampler::new()))
         .manage(Arc::new(usage_log::UsageOutbox::new()))
+        .manage(Arc::new(typesafe::TypeSafeState::default()))
         .manage(workspace_state::WorkspaceState::default())
         // MusicEngine is initialized in .setup() because it needs app_handle
         .invoke_handler(tauri::generate_handler![
@@ -241,6 +243,8 @@ pub fn run() {
             timeline::timeline_suggestion_dismiss,
             timeline::timeline_suggestion_settings,
             timeline::timeline_suggestion_set_enabled,
+            timeline::timeline_topic_suggest,
+            timeline::timeline_topic_suggest_cancel,
             commands::save_temp_image,
             commands::capture_screen,
             commands::get_env_var,

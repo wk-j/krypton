@@ -324,6 +324,30 @@ output_dir = ".krypton/journal"
 # disk.
 extra_projects = []
 
+# --- TypeSafe semantic suggestions (spec 257) ---
+# Disabled by default. The API key value is read by Rust from the named
+# environment variable and is never stored in this file or returned to the UI.
+
+[typesafe]
+enabled = false
+api_key_env = "TYPESAFE_API_KEY"
+base_url = "https://api.typesafe.ai"
+model = "jev-1.13.0"
+connect_timeout_ms = 300
+attempt_timeout_ms = 650
+overall_deadline_ms = 1600
+max_retries = 1
+failure_threshold = 3
+cooldown_secs = 30
+
+[typesafe.timeline_topics]
+mode = "off"                 # off | shadow | suggest
+debounce_ms = 350
+min_confidence = 0.65
+min_probability = 0.55
+min_margin = 0.15
+max_candidates = 12
+
 # Telegram Harness Controller is intentionally NOT configured here. Krypton's
 # Settings view owns ~/.config/krypton/telegram.toml, while the Bot API token
 # lives in the operating-system credential vault. See the section below.
@@ -533,6 +557,33 @@ name = "custom-fixed"
 | `[[agent.models]]` | `max_tokens` | int | `8192` | Maximum output tokens per response |
 
 To switch models, change `active` to the name of another preset. Changes take effect on next agent session (reset the agent or open a new agent window).
+
+### TypeSafe Semantic Suggestions
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[typesafe]` | `enabled` | bool | `false` | Master opt-in; when false, Krypton makes no TypeSafe request |
+| `[typesafe]` | `api_key_env` | string | `"TYPESAFE_API_KEY"` | Environment-variable name resolved only by Rust; this is not the secret value |
+| `[typesafe]` | `base_url` | string | `"https://api.typesafe.ai"` | System One API root |
+| `[typesafe]` | `model` | string | `"jev-1.13.0"` | Pinned model used for calibrated gates |
+| `[typesafe]` | `connect_timeout_ms` | int | `300` | HTTP connect timeout; runtime clamps to 100–5000 ms |
+| `[typesafe]` | `attempt_timeout_ms` | int | `650` | Timeout for one attempt; runtime clamps to 100–5000 ms |
+| `[typesafe]` | `overall_deadline_ms` | int | `1600` | Hard deadline across attempts; runtime clamps to 100–5000 ms |
+| `[typesafe]` | `max_retries` | int | `1` | Retries for transient failures; runtime caps at 2 |
+| `[typesafe]` | `failure_threshold` | int | `3` | Consecutive transient failures before opening the in-memory circuit; minimum 1 |
+| `[typesafe]` | `cooldown_secs` | int | `30` | Circuit cooldown before a fresh request |
+| `[typesafe.timeline_topics]` | `mode` | string | `"off"` | `off`, hidden-observation `shadow`, or visible `suggest`; any other value acts as off |
+| `[typesafe.timeline_topics]` | `debounce_ms` | int | `350` | Delay after topic/summary edits; frontend clamps to 150–1500 ms |
+| `[typesafe.timeline_topics]` | `min_confidence` | float | `0.65` | Minimum response confidence; runtime clamps to 0–1 |
+| `[typesafe.timeline_topics]` | `min_probability` | float | `0.55` | Minimum chosen-option probability; runtime clamps to 0–1 |
+| `[typesafe.timeline_topics]` | `min_margin` | float | `0.15` | Minimum probability lead over the runner-up; runtime clamps to 0–1 |
+| `[typesafe.timeline_topics]` | `max_candidates` | int | `12` | Maximum bounded shortlist size; frontend and backend clamp to 2–20 |
+
+TypeSafe topic matching applies only to local `#timeline add` and `#timeline review` sheets. Exact
+normalized-title reuse remains deterministic and bypasses the network. `shadow` runs the same
+bounded request without showing a choice; `suggest` shows one result but never selects it. Reloading
+configuration affects sheets opened after the reload and their later requests. Missing credentials,
+low confidence, timeouts, cancellation, and service failures remain silent and do not block saving.
 
 ### ACP Agent Backends
 

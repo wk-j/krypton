@@ -3705,6 +3705,7 @@
 
 .acp-timeline__field:has(textarea),
 .acp-timeline__topic-matches,
+.acp-timeline__semantic-match,
 .acp-timeline__duplicate,
 .acp-timeline__evidence,
 .acp-timeline__error,
@@ -3761,6 +3762,49 @@
 
 .acp-timeline__topic-matches button:focus,
 .acp-timeline__topic-matches button:hover {
+  border-color: var(--krypton-accent, #00ccff);
+  color: var(--krypton-accent, #00ccff);
+}
+
+.acp-timeline__semantic-match {
+  display: grid;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.34);
+  border-radius: calc(var(--krypton-border-radius, 8px) / 2);
+  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.06);
+}
+
+.acp-timeline__semantic-match[hidden] {
+  display: none;
+}
+
+.acp-timeline__semantic-match p {
+  margin: 0;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
+  font-size: 0.76em;
+}
+
+.acp-timeline__semantic-match div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.acp-timeline__semantic-match button {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.28);
+  border-radius: calc(var(--krypton-border-radius, 8px) / 2);
+  background: transparent;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+  font: inherit;
+  font-size: 0.74em;
+}
+
+.acp-timeline__semantic-match button:hover,
+.acp-timeline__semantic-match button:focus,
+.acp-timeline__semantic-match button[data-selected='true'] {
   border-color: var(--krypton-accent, #00ccff);
   color: var(--krypton-accent, #00ccff);
 }

@@ -278,7 +278,9 @@ Dismiss
 ## Open Questions
 
 None. The design fixes the detection path as agent self-report, requires human confirmation, is
-default-on with a per-project off switch, preserves evidence, and never runs a sidecar model.
+default-on with a per-project off switch, preserves evidence, and never runs a sidecar model. Spec
+257 may help the human reuse an existing topic while reviewing a pending candidate, but it runs only
+inside the explicitly opened capture sheet and does not participate in candidate creation.
 
 ## Out of Scope
 

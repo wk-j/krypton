@@ -147,7 +147,7 @@ import {
   wikiIngestPrompt,
   wikiRecallPrompt,
 } from './harness-prompts';
-import { TimelineCapture } from './timeline-capture';
+import { TimelineCapture, type TimelineCaptureOptions } from './timeline-capture';
 import {
   TIMELINE_USAGE,
   parseTimelineCommand,
@@ -157,6 +157,7 @@ import {
   type TimelineSuggestion,
   type TimelineSuggestionListResponse,
   type TimelineSuggestionSettings,
+  type TimelineTopicSemanticResult,
 } from './timeline';
 import { hasVerbTokens, resolveVerbTokens } from './verb-compose';
 import { injectableVerbNames, injectableVerbPrompt } from './verb-registry';
@@ -11117,17 +11118,37 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  private timelineSemanticOptions(
+    harnessId: string,
+    config: Awaited<ReturnType<typeof loadConfig>>,
+  ): TimelineCaptureOptions['semantic'] {
+    const typesafe = config.typesafe;
+    const mode = typesafe?.timeline_topics.mode;
+    if (!typesafe?.enabled || (mode !== 'shadow' && mode !== 'suggest')) return undefined;
+    return {
+      mode,
+      debounceMs: typesafe.timeline_topics.debounce_ms,
+      maxCandidates: typesafe.timeline_topics.max_candidates,
+      suggest: (request) => invoke<TimelineTopicSemanticResult>('timeline_topic_suggest', {
+        harnessId,
+        request,
+      }),
+      cancel: (requestId) => invoke<boolean>('timeline_topic_suggest_cancel', { requestId }),
+    };
+  }
+
   private async openTimelineSuggestionReview(lane: HarnessLane): Promise<void> {
     if (!this.harnessMemoryId) {
       this.flashChip('ใช้ timeline ไม่ได้: ยังไม่ได้ลงทะเบียน project กับ Harness');
       return;
     }
     try {
-      const [pending, listing] = await Promise.all([
+      const [pending, listing, config] = await Promise.all([
         invoke<TimelineSuggestionListResponse>('timeline_suggestion_list', {
           harnessId: this.harnessMemoryId,
         }),
         invoke<TimelineListResponse>('timeline_list', { harnessId: this.harnessMemoryId }),
+        loadConfig(),
       ]);
       this.timelinePendingCount = pending.suggestions.length;
       const suggestion = pending.suggestions[0];
@@ -11143,6 +11164,7 @@ export class AcpHarnessView implements ContentView {
         events: listing.events,
         recorderLane: lane.displayName,
         suggestion,
+        semantic: this.timelineSemanticOptions(harnessId, config),
         save: (request) => invoke<TimelineEvent>('timeline_suggestion_confirm', {
           harnessId,
           suggestionId: suggestion.id,
@@ -11204,9 +11226,10 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     try {
-      const listing = await invoke<TimelineListResponse>('timeline_list', {
-        harnessId: this.harnessMemoryId,
-      });
+      const [listing, config] = await Promise.all([
+        invoke<TimelineListResponse>('timeline_list', { harnessId: this.harnessMemoryId }),
+        loadConfig(),
+      ]);
       this.closeTimelineCapture();
       const harnessId = this.harnessMemoryId;
       this.timelineCapture = new TimelineCapture({
@@ -11214,6 +11237,7 @@ export class AcpHarnessView implements ContentView {
         events: listing.events,
         recorderLane: lane.displayName,
         initialTopic,
+        semantic: this.timelineSemanticOptions(harnessId, config),
         save: (request) => invoke<TimelineEvent>('timeline_record', { harnessId, request }),
         close: () => this.closeTimelineCapture(),
         saved: (event) => {

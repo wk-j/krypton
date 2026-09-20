@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
   TIMELINE_USAGE,
   TIMELINE_CAPTURE_FIELDS,
+  buildTimelineTopicCandidates,
   findExistingTopic,
   latestTimelineTopics,
   parseTimelineCommand,
@@ -103,6 +106,92 @@ describe('timeline topics', () => {
     expect(similarTimelineTopics('upload', events)).toEqual([{ id: 'topic-upload', title: 'Upload validation' }]);
     expect(topicMatchScore('metadata checksum', event())).toBe(0);
     expect(topicMatchScore('metadata', event())).toBe(20);
+  });
+
+  it('builds a bounded semantic shortlist without provenance fields', () => {
+    const events = [
+      event(),
+      event({
+        id: 'tl-2',
+        topicId: 'topic-review',
+        topicTitle: 'Review workflow',
+        summary: 'Review the proposed design',
+        occurredAt: '2026-09-19T08:00:00Z',
+      }),
+    ];
+    expect(buildTimelineTopicCandidates({ title: 'metadata', summary: '' }, events, 12)).toEqual([
+      {
+        topicId: 'topic-upload',
+        title: 'Upload validation',
+        occurredAt: '2026-09-18T08:00:00Z',
+        recentSummaries: ['Require metadata transfer'],
+        lexicalScore: 20,
+      },
+      {
+        topicId: 'topic-review',
+        title: 'Review workflow',
+        occurredAt: '2026-09-19T08:00:00Z',
+        recentSummaries: ['Review the proposed design'],
+        lexicalScore: 0,
+      },
+    ]);
+  });
+
+  it('declines an arbitrary partial corpus without a lexical signal', () => {
+    const events = Array.from({ length: 13 }, (_, index) => event({
+      id: `tl-${index}`,
+      topicId: `topic-${index}`,
+      topicTitle: `Topic ${index}`,
+      summary: `Summary ${index}`,
+      occurredAt: `2026-09-${String(index + 1).padStart(2, '0')}T08:00:00Z`,
+    }));
+    expect(buildTimelineTopicCandidates({ title: 'ไม่เกี่ยวข้อง', summary: '' }, events, 12)).toEqual([]);
+  });
+
+  it('caps large candidate sets and keeps lexical matches first', () => {
+    const events = Array.from({ length: 15 }, (_, index) => event({
+      id: `tl-${index}`,
+      topicId: `topic-${index}`,
+      topicTitle: index === 0 ? 'Upload metadata' : `Topic ${index}`,
+      summary: `Summary ${index}`,
+      occurredAt: `2026-09-${String(index + 1).padStart(2, '0')}T08:00:00Z`,
+    }));
+    const candidates = buildTimelineTopicCandidates({ title: 'upload', summary: '' }, events, 12);
+    expect(candidates).toHaveLength(12);
+    expect(candidates[0].topicId).toBe('topic-0');
+  });
+
+  it('keeps every expected existing topic in the checked-in evaluation shortlist', () => {
+    const fixturePath = fileURLToPath(new URL('./fixtures/timeline-topic-semantic.json', import.meta.url));
+    const cases = JSON.parse(readFileSync(fixturePath, 'utf8')) as Array<{
+      case: string;
+      draft: { title: string; summary: string };
+      topics: Array<{ topicId: string; title: string; summaries: string[] }>;
+      expected: string;
+    }>;
+    for (const fixture of cases) {
+      const events = fixture.topics.flatMap((topic, topicIndex) => (
+        (topic.summaries.length > 0 ? topic.summaries : ['']).map((summary, summaryIndex) => event({
+          id: `${fixture.case}-${topicIndex}-${summaryIndex}`,
+          topicId: topic.topicId,
+          topicTitle: topic.title,
+          summary,
+          occurredAt: `2026-09-${String(topicIndex + 1).padStart(2, '0')}T08:00:00Z`,
+        }))
+      ));
+      if (fixture.expected === 'exact_bypass') {
+        expect(findExistingTopic(fixture.draft.title, events)?.id, fixture.case)
+          .toBe('topic-upload-validation');
+        continue;
+      }
+      const candidateIds = buildTimelineTopicCandidates(fixture.draft, events, 12)
+        .map((candidate) => candidate.topicId);
+      if (fixture.expected.startsWith('topic-')) {
+        expect(candidateIds, fixture.case).toContain(fixture.expected);
+      } else {
+        expect(candidateIds.length, fixture.case).toBeGreaterThanOrEqual(2);
+      }
+    }
   });
 });
 

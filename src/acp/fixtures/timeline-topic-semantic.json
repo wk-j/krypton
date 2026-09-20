@@ -1,0 +1,38 @@
+[
+  {
+    "case": "thai-english-synonym",
+    "draft": { "title": "ตรวจ metadata ก่อน upload", "summary": "ต้องตรวจข้อมูลก่อนส่งเอกสาร" },
+    "topics": [
+      { "topicId": "topic-upload-validation", "title": "Upload validation", "summaries": ["Require metadata transfer"] },
+      { "topicId": "topic-review", "title": "Review workflow", "summaries": ["Review proposed changes"] }
+    ],
+    "expected": "topic-upload-validation"
+  },
+  {
+    "case": "ambiguous",
+    "draft": { "title": "ปรับ upload", "summary": "เปลี่ยนขั้นตอน upload" },
+    "topics": [
+      { "topicId": "topic-upload-validation", "title": "Upload validation", "summaries": [] },
+      { "topicId": "topic-upload-retry", "title": "Upload retry", "summaries": [] }
+    ],
+    "expected": "abstain"
+  },
+  {
+    "case": "new-topic",
+    "draft": { "title": "Release signing", "summary": "เพิ่มการ sign package ก่อน publish" },
+    "topics": [
+      { "topicId": "topic-upload-validation", "title": "Upload validation", "summaries": [] },
+      { "topicId": "topic-review", "title": "Review workflow", "summaries": [] }
+    ],
+    "expected": "create_new"
+  },
+  {
+    "case": "exact-bypass",
+    "draft": { "title": "Upload validation", "summary": "เพิ่ม checksum" },
+    "topics": [
+      { "topicId": "topic-upload-validation", "title": "Upload validation", "summaries": [] },
+      { "topicId": "topic-review", "title": "Review workflow", "summaries": [] }
+    ],
+    "expected": "exact_bypass"
+  }
+]
