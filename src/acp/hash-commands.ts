@@ -77,7 +77,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
     name: 'push',
     args: '[--force] [<kind> [<slug>]]',
     description:
-      'publish resources (review, analysis, artifact, doc, attention, daily) to the Xenon server',
+      'publish resources (review, analysis, artifact, doc, attention, daily, timeline) to the Xenon server',
   },
   {
     name: 'usage',
@@ -93,9 +93,9 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   },
   {
     name: 'xenon',
-    args: '[status | token <token> | token clear]',
+    args: '[status | timeline [<topic>] | token <token> | token clear]',
     description:
-      "open this project's page on the Xenon server, show push status, or store the API token",
+      "open this project's page or timeline on the Xenon server, show push status, or store the API token",
   },
   { name: 'termctrl', args: '', description: 'open the read-only Terminal Control monitor in a browser' },
   { name: 'hurl', args: '', description: 'open the Hurl web client in a browser' },

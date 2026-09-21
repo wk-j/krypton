@@ -368,6 +368,7 @@ import {
   linkEvidenceFromPush,
   parsePushCommand,
   summarizePush,
+  xenonProjectUrl,
   type PushReport,
   type XenonStatus,
 } from './xenon-push';
@@ -7367,7 +7368,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   /**
-   * spec 212: `#xenon [status | token <token> | token clear]`.
+   * spec 212/259: `#xenon [status | timeline [<topic>] | token <token> | token clear]`.
    *
    * Bare `#xenon` opens the project page. `token` is the one way to get a
    * bearer token into the OS credential vault — the token is never echoed to
@@ -7434,7 +7435,9 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     try {
-      const url = `${status.baseUrl}/p/${encodeURIComponent(status.project)}`;
+      const url = args[0] === 'timeline'
+        ? xenonProjectUrl(status, args.slice(1).join(' '))
+        : xenonProjectUrl(status);
       await invoke('open_url', { url });
       this.flashChip(url);
     } catch (e) {

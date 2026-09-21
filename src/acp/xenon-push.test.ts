@@ -5,7 +5,9 @@ import {
   linkEvidenceFromPush,
   parsePushCommand,
   summarizePush,
+  xenonProjectUrl,
   type PushReport,
+  type XenonStatus,
 } from './xenon-push';
 
 function report(overrides: Partial<PushReport> = {}): PushReport {
@@ -67,6 +69,13 @@ describe('parsePushCommand', () => {
     });
   });
 
+  it('accepts timeline and a confirmed event id', () => {
+    expect(parsePushCommand('#push timeline tl-20260920T100000Z-abcd1234')).toEqual({
+      ok: true,
+      args: { kind: 'timeline', slug: 'tl-20260920T100000Z-abcd1234', force: false },
+    });
+  });
+
   it('rejects an unknown kind rather than silently pushing everything', () => {
     const result = parsePushCommand('#push reviews');
     expect(result.ok).toBe(false);
@@ -87,6 +96,27 @@ describe('parsePushCommand', () => {
 
   it('refuses input that is not #push at all', () => {
     expect(parsePushCommand('#pull review').ok).toBe(false);
+  });
+});
+
+describe('xenonProjectUrl', () => {
+  const status: XenonStatus = {
+    enabled: true,
+    configured: true,
+    baseUrl: 'https://xenon.example.com',
+    project: 'wk-j/krypton',
+    token: 'configured',
+    queued: 0,
+    autoPush: [],
+  };
+
+  it('opens the project timeline and safely encodes an optional topic', () => {
+    expect(xenonProjectUrl(status, '')).toBe(
+      'https://xenon.example.com/p/wk-j%2Fkrypton/timeline',
+    );
+    expect(xenonProjectUrl(status, 'Release / cutover')).toBe(
+      'https://xenon.example.com/p/wk-j%2Fkrypton/timeline?topic=Release%20%2F%20cutover',
+    );
   });
 });
 

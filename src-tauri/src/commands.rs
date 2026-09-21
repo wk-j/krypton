@@ -1493,6 +1493,7 @@ pub async fn xenon_push(
     };
 
     let mut resources = Vec::new();
+    let mut collection_failures = Vec::new();
     for kind in &kinds {
         if kind == "attention" {
             // Attention flags never touch disk — the frontend hands them over.
@@ -1500,6 +1501,12 @@ pub async fn xenon_push(
                 &cwd_path,
                 attention.clone().unwrap_or_default(),
             )?);
+            continue;
+        }
+        if kind == "timeline" {
+            let collected = crate::xenon::collect_timeline(&cwd_path, slug.as_deref())?;
+            resources.extend(collected.resources);
+            collection_failures.extend(collected.failures);
             continue;
         }
         resources.extend(crate::xenon::collect(
@@ -1515,6 +1522,8 @@ pub async fn xenon_push(
         project: publisher.project().to_string(),
         ..Default::default()
     };
+    report.failed = collection_failures.len();
+    report.items.extend(collection_failures);
     let mut queue = Vec::new();
     for resource in resources {
         let item = publisher.push_resource(resource).await;

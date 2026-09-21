@@ -6,7 +6,15 @@
 // Mirrors `xenon::KINDS` (Rust). Both lists validate, so both must be extended
 // together — the frontend rejects an unknown kind before the command is ever
 // invoked. `daily` is spec 224.
-export const XENON_KINDS = ['artifact', 'review', 'analysis', 'doc', 'attention', 'daily'] as const;
+export const XENON_KINDS = [
+  'artifact',
+  'review',
+  'analysis',
+  'doc',
+  'attention',
+  'daily',
+  'timeline',
+] as const;
 
 export type XenonKind = (typeof XENON_KINDS)[number];
 
@@ -85,6 +93,14 @@ export interface XenonStatus {
   token: string;
   queued: number;
   autoPush: string[];
+}
+
+export function xenonProjectUrl(status: XenonStatus, timelineTopic?: string): string {
+  const project = encodeURIComponent(status.project);
+  if (timelineTopic === undefined) return `${status.baseUrl}/p/${project}`;
+  const topic = timelineTopic.trim();
+  const query = topic ? `?topic=${encodeURIComponent(topic)}` : '';
+  return `${status.baseUrl}/p/${project}/timeline${query}`;
 }
 
 /**

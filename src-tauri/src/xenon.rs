@@ -30,13 +30,14 @@ const PROBE_TIMEOUT_SECS: u64 = 5;
 const MAX_BLOB_BYTES: u64 = 64 * 1024 * 1024;
 const QUEUE_FILE: &str = "xenon-queue.json";
 
-pub const KINDS: [&str; 6] = [
+pub const KINDS: [&str; 7] = [
     "artifact",
     "review",
     "analysis",
     "doc",
     "attention",
     "daily",
+    "timeline",
 ];
 
 // ------------------------------------------------------------------- types
@@ -125,6 +126,12 @@ pub struct PushReport {
     pub items: Vec<PushItem>,
     pub base_url: String,
     pub project: String,
+}
+
+#[derive(Debug, Default)]
+pub struct TimelineCollection {
+    pub resources: Vec<LocalResource>,
+    pub failures: Vec<PushItem>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -455,6 +462,7 @@ pub fn collect(
         "artifact" => collect_artifacts(cwd)?,
         "doc" => collect_docs(cwd)?,
         "daily" => collect_daily(cwd, daily_dir)?,
+        "timeline" => collect_timeline(cwd, slug_filter)?.resources,
         "attention" => Vec::new(), // supplied by the frontend, never read from disk
         other => return Err(format!("unknown resource kind: {other}")),
     };
@@ -469,6 +477,92 @@ pub fn collect(
         }
     }
     Ok(found)
+}
+
+/// Confirmed timeline events publish one-for-one as immutable source documents.
+/// Pending and dismissed suggestions live outside the confirmed event directory,
+/// so the timeline scanner intentionally never returns them.
+pub fn collect_timeline(
+    cwd: &Path,
+    slug_filter: Option<&str>,
+) -> Result<TimelineCollection, String> {
+    if !cwd.is_dir() {
+        return Ok(TimelineCollection::default());
+    }
+    let scanned = crate::timeline::scan_project(cwd)?;
+    let mut collected = TimelineCollection::default();
+
+    for event in scanned.events {
+        if slug_filter.is_some_and(|want| want != event.id) {
+            continue;
+        }
+        let occurred_at_ms = chrono::DateTime::parse_from_rfc3339(&event.occurred_at)
+            .map_err(|error| format!("invalid occurredAt for {}: {error}", event.id))?
+            .timestamp_millis();
+        let recorded_at_ms = chrono::DateTime::parse_from_rfc3339(&event.recorded_at)
+            .map_err(|error| format!("invalid recordedAt for {}: {error}", event.id))?
+            .timestamp_millis();
+        let mut sources = BTreeMap::new();
+        sources.insert("event.md".to_string(), cwd.join(&event.path));
+        collected.resources.push(LocalResource {
+            manifest: ResourceManifest {
+                kind: "timeline".to_string(),
+                slug: event.id.clone(),
+                title: event.summary.chars().take(300).collect(),
+                origin: origin_value(cwd),
+                meta: serde_json::json!({
+                    "schema": event.schema,
+                    "eventId": event.id,
+                    "topicId": event.topic_id,
+                    "topicTitle": event.topic_title,
+                    "summary": event.summary,
+                    "occurredAt": event.occurred_at,
+                    "occurredAtMs": occurred_at_ms,
+                    "madeBy": event.made_by,
+                    "recordedAt": event.recorded_at,
+                    "recordedAtMs": recorded_at_ms,
+                    "recordedBy": event.recorded_by,
+                    "recorderLane": event.recorder_lane.clone(),
+                    "sourceRef": event.source_ref,
+                    "relation": event.relation,
+                    "relatedEvent": event.related_event,
+                    "suggestedByLane": event.suggested_by_lane,
+                    "suggestionId": event.suggestion_id,
+                    "lane": event.recorder_lane,
+                }),
+                files: Vec::new(),
+            },
+            sources,
+            inline: BTreeMap::new(),
+        });
+    }
+
+    for diagnostic in scanned.diagnostics {
+        let slug = Path::new(&diagnostic.path)
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or(&diagnostic.path)
+            .to_string();
+        if slug_filter.is_some_and(|want| want != slug) {
+            continue;
+        }
+        collected.failures.push(PushItem {
+            kind: "timeline".to_string(),
+            slug,
+            title: "Invalid timeline event".to_string(),
+            outcome: PushOutcome::Failed {
+                reason: format!("{}: {}", diagnostic.path, diagnostic.error),
+                retryable: false,
+            },
+        });
+    }
+
+    if let Some(want) = slug_filter {
+        if collected.resources.is_empty() && collected.failures.is_empty() {
+            return Err(format!("no confirmed timeline event for {want}"));
+        }
+    }
+    Ok(collected)
 }
 
 /// Bundle kinds are directories at a fixed depth under `.krypton/<root>/`:
@@ -1592,6 +1686,65 @@ mod tests {
         assert_eq!(found[0].manifest.title, "regenerated");
         assert_eq!(found[0].manifest.meta["handEdited"], true);
         assert!(found[0].sources["daily.md"].ends_with("2026-08-15.generated.md"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn timeline_collection_publishes_confirmed_events_and_surfaces_bad_files() {
+        let dir = std::env::temp_dir().join(format!(
+            "krypton-xenon-timeline-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let event = crate::timeline::record_project(
+            &dir,
+            crate::timeline::TimelineRecordRequest {
+                topic_id: "topic-xenon".into(),
+                topic_title: "Xenon timeline".into(),
+                summary: "Publish confirmed timeline events".into(),
+                occurred_at: "2026-09-20T10:00:00+07:00".into(),
+                made_by: "Current user".into(),
+                rationale: "Share durable project history".into(),
+                impact: "Readers can browse it remotely".into(),
+                source_ref: Some("docs/259-timeline-xenon-publishing.md".into()),
+                relation: None,
+                related_event: None,
+                recorder_lane: "Codex-1".into(),
+            },
+        )
+        .unwrap();
+        let pending = dir.join(".krypton/timeline/pending");
+        std::fs::create_dir_all(&pending).unwrap();
+        std::fs::write(pending.join("pending.md"), "not confirmed").unwrap();
+        std::fs::write(
+            dir.join(".krypton/timeline/events/broken.md"),
+            "not timeline frontmatter",
+        )
+        .unwrap();
+
+        let found = collect_timeline(&dir, None).unwrap();
+        assert_eq!(found.resources.len(), 1, "pending items must not publish");
+        assert_eq!(found.failures.len(), 1, "bad events remain visible");
+        let resource = &found.resources[0];
+        assert_eq!(resource.manifest.slug, event.id);
+        assert_eq!(resource.manifest.kind, "timeline");
+        assert_eq!(resource.manifest.meta["topicId"], "topic-xenon");
+        assert_eq!(resource.manifest.meta["madeBy"], "Current user");
+        assert_eq!(
+            resource.manifest.meta["occurredAtMs"],
+            1_789_873_200_000_i64
+        );
+        assert!(resource.sources["event.md"].is_file());
+
+        let targeted = collect_timeline(&dir, Some(&event.id)).unwrap();
+        assert_eq!(targeted.resources.len(), 1);
+        assert!(targeted.failures.is_empty());
+        assert!(collect_timeline(&dir, Some("tl-missing")).is_err());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

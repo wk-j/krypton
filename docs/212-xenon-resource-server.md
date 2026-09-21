@@ -263,7 +263,7 @@ No new global leader key — `#push` is a composer hash-command, consistent with
 | Command | Action |
 |---|---|
 | `#push` | push every kind listed in `[xenon].auto_push`, or all kinds if unset |
-| `#push <kind>` | push one kind (`review`, `analysis`, `artifact`, `doc`, `attention`, `daily`) |
+| `#push <kind>` | push one kind (`review`, `analysis`, `artifact`, `doc`, `attention`, `daily`, `timeline`; timeline contract in spec 259) |
 | `#push <kind> <slug>` | push one resource |
 | `#push --force …` | override the secret pre-scan after the human has read the hit |
 | `#xenon` | open the configured Xenon project page in the OS browser |

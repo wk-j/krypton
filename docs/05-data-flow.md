@@ -721,6 +721,13 @@ PUBLISH
 14. #push daily collects one resource per day holding ONE file, keyed daily.md
     (spec 225). The pair of note.md + brief.md is gone, so a reader lands on
     prose instead of a file switcher.
+15. #push timeline [event-id] asks timeline::scan_project for confirmed events,
+    converts each valid event to one Xenon resource (`event.md` plus bounded
+    list metadata), and sends it through the existing secret scan and
+    content-addressed publisher. Pending/dismissed suggestions are outside the
+    scan. Invalid event files become non-retryable failed report items while
+    other events and resource kinds continue. #xenon timeline [topic] opens the
+    server-rendered project chronology; no Xenon route writes back locally.
 ```
     e. #mem clear clears the active lane memory document for future prompts only.
     f. #cancel also clears the lane's prompt queue. #unqueue [N] removes the
