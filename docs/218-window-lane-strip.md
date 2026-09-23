@@ -1,10 +1,11 @@
 # Window Status Bar Lane Strip — Implementation Spec
 
-> Status: Implemented (rev 4 — drop-cap name, no footer logo)
+> Status: Implemented (rev 5 — active lane tab surface)
 > Date: 2026-08-14
 > Amended (rev 2, 2026-09-02): the active logo no longer runs a scale/overshoot keyframe when its footer node is rebuilt. Composer typing and other chrome refreshes can therefore never replay motion against the content window. The outer `<svg>` now declares `viewBox="0 0 16 16"` plus `width`/`height` so backend symbols render from a stable square viewport instead of relying on SVG defaults.
 > Amended (rev 3, 2026-09-09): Codex and Grok use official path geometry from `src/code-agent-logos.ts`, fitted into the same 16×16 symbol slot as the other backend marks (source canvases are app-icon tiles; the glyph viewBox is the ink square so the mark is not inset). Every footer, rail, header, and Usage instance therefore renders the same mark instead of the former hex-dot and bolt placeholders.
 > Amended (rev 4, 2026-09-09): the window-footer strip no longer paints a backend logo. The active lane magnifies the first two letters of its display name — the same drop cap as spec 219's `KR` — so project, volume and lane are one oversized phrase on one typographic baseline. Inactive lanes are the two letters at rail size. Backend logos stay on the harness rail, lane heads, and Usage.
+> Amended (rev 5, 2026-09-23): the active lane name gains a tinted tab surface without a border; its tail is brighter. The surface is absolutely positioned behind the existing text, preserving the shared baseline and footer layout; inactive marks remain flat.
 > Milestone: M9 — harness observability
 
 ## Problem
@@ -88,8 +89,8 @@ keybinding; lane switching stays where it is (`⌘P` lane picker, `⌃1..9`).
 and Krypton's own live-assist strip, but diverges on three points: it is **type-first**
 (two-letter drop cap, name tail only for the active lane) so the strip shares a baseline
 with the project badge and the diff stat rather than mixing an SVG into a line of type;
-it is **static** (no pulse, no spinner) per the footer's standing no-motion rule; and it is
-**flat** — accent colour, no border box, no underline, no left-edge rail, no logo.
+it is **static** (no pulse, no spinner) per the footer's standing no-motion rule; and the
+active mark uses a compact tab surface with its own lane accent while inactive marks stay flat.
 
 ## Affected Files
 
@@ -240,18 +241,20 @@ The `:not()` matters because a decayed notification is `display: none` (spec 40)
 the DOM, so a bare `:has(.krypton-notif)` would hand the strip a `10px` margin with nothing left
 in the rail to push it right.
 
-**Three cues mark the one active lane** — so identification never rests on colour alone (every
+**Four cues mark the one active lane** — so identification never rests on colour alone (every
 lane already *has* a colour, and lane hues repeat past 13 lanes):
 
 | Cue | Active lane | Every other lane |
 |-----|-------------|------------------|
 | **Size** | first two letters magnified `2.9×` — the same drop cap as `KR` | two letters at the rail's 11px |
 | **Name tail** | rest of the display name (`ok-1`) | none — initials only |
-| **Weight** | full-strength lane accent on the pair | `opacity: .45` |
+| **Weight** | full-strength accent on the pair, 78% on the name tail | `opacity: .45` |
+| **Tab surface** | tinted background with no border | none |
 
 The name is the load-bearing cue: **exactly one mark in the strip ever has a tail**, which reads
-in grayscale, at a glance, and without knowing the palette. No underline, no border box, no
-left rail, no logo.
+in grayscale, at a glance, and without knowing the palette. The active surface is painted by
+an absolute pseudo-element, so its background does not change the text baseline or the strip's
+width. No border, left rail, or logo.
 
 #### Drop cap on the active mark
 
@@ -268,6 +271,7 @@ Mechanics, all in `src/styles/window.css`:
 | Growth | `font-size: calc(11px * var(--krypton-lane-zoom, 2.9))` on `.krypton-window__lane-initials` of the active mark | Scaled type carries its painted width, so the head cannot sit on top of the counts. Same factor as the project pair and the diff stat. |
 | Baseline | `align-items: baseline` + `align-self: flex-end` + the same `margin-bottom` calc as `.krypton-window__project` | The three magnified marks pin to one floor and overgrow the pane together. |
 | Split | `laneDropCap(displayName)` — two code points, same `INITIALS_LEN` as spec 219 | `Grok-1` → `GR` + `ok-1`. CSS `text-transform: uppercase` on the head. |
+| Active tab | `::before` for the tinted background | Positioned behind the mark without moving its text or changing the footer's layout. No bottom edge. |
 | Motion | None | Magnification is a standing identity cue. A rebuilt footer node paints directly at its final size. |
 
 `--krypton-lane-zoom` is declared on `.krypton-window__lane-strip` so the factor is tunable in

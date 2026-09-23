@@ -421,8 +421,8 @@
    unfocused. Pinned to the rail's right edge, past the notification control.
    The active lane magnifies its first two letters the same way the project
    badge magnifies `KR` — scaled `font-size`, one shared baseline, no SVG.
-   Inactive lanes are the two letters at rail size. Flat — no border box, no
-   underline, no left rail, no logo. */
+   Inactive lanes are the two letters at rail size. The active name has a
+   quiet tinted tab surface, without a border, logo, or motion. */
 
 .krypton-window__lane-strip {
   display: flex;
@@ -487,10 +487,19 @@
 }
 
 .krypton-window__lane--active {
+  position: relative;
+  isolation: isolate;
   opacity: 1;
-  /* Tail colour. The two-letter head is full-strength accent; this stays quiet,
-     matching the project badge's `ypton` beside `KR`. */
-  color: color-mix(in srgb, var(--krypton-lane-accent, #00c8ff) 45%, transparent);
+  color: color-mix(in srgb, var(--krypton-lane-accent, #00c8ff) 78%, transparent);
+}
+
+.krypton-window__lane--active::before {
+  content: '';
+  position: absolute;
+  inset: -4px -6px -5px;
+  z-index: -1;
+  border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
+  background: color-mix(in srgb, var(--krypton-lane-accent, #00c8ff) 16%, var(--krypton-backdrop-color, #060a12));
 }
 
 .krypton-window__lane-initials {
