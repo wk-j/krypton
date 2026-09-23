@@ -238,6 +238,8 @@ pub fn run() {
             ticket_bundle::acp_set_ticket_worker,
             timeline::timeline_list,
             timeline::timeline_record,
+            timeline::timeline_merge_topics,
+            timeline::timeline_merge_undo,
             timeline::timeline_suggestion_list,
             timeline::timeline_suggestion_confirm,
             timeline::timeline_suggestion_dismiss,

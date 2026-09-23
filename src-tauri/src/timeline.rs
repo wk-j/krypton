@@ -28,6 +28,20 @@ const MAX_SOURCE_CHARS: usize = 2 * 1024;
 const MAX_EVIDENCE_CHARS: usize = 1_000;
 const MAX_SEMANTIC_SUMMARY_CHARS: usize = 240;
 const MAX_PENDING_SUGGESTIONS: usize = 100;
+// spec 262: bounds for the agent-facing read path. A lane pays for every token
+// it reads, so topic listings stay short by default and carry a `truncated`
+// flag instead of a pagination cursor.
+const DEFAULT_TOPIC_LIST_LIMIT: usize = 20;
+const MAX_TOPIC_LIST_LIMIT: usize = 50;
+const MAX_TOPIC_QUERY_CHARS: usize = 120;
+const MAX_TOPIC_PREVIEW_CHARS: usize = 200;
+const MAX_RECORD_ACK_TOPICS: usize = 10;
+// spec 263: how many topics an ambiguous merge selector lists back.
+const MAX_MERGE_CANDIDATES: usize = 5;
+// spec 262: `occurred_at` further ahead than this is reported back to the lane.
+// The write still happens — a human authorized it — but a chronology dated
+// months from the source it cites is almost always a mistake.
+const MAX_FUTURE_SKEW_HOURS: i64 = 24;
 static TIMELINE_MUTATION_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -87,6 +101,8 @@ pub struct TimelineSuggestionRequest {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct TimelineDirectRecordRequest {
+    #[serde(default)]
+    pub topic_id: Option<String>,
     pub topic_title: String,
     pub summary: String,
     pub made_by: String,
@@ -118,6 +134,73 @@ pub enum TimelineDirectRecordDisposition {
 pub struct TimelineDirectRecordResult {
     pub event: TimelineEvent,
     pub disposition: TimelineDirectRecordDisposition,
+    /// spec 262: true when this call is the first event under its resolved
+    /// topic. The MCP ack uses it to warn a lane that skipped `timeline_list`
+    /// that it just opened a second chronology for one subject.
+    pub new_topic: bool,
+    /// spec 262: advisory only — the topics that already existed when a new
+    /// topic was created. Nothing is merged or re-parented on this path.
+    pub existing_topics: Vec<TimelineTopicRef>,
+    /// spec 262: non-fatal notices the lane must relay (e.g. an `occurred_at`
+    /// far in the future). The event is written regardless: the human
+    /// authorized it, so the system reports rather than refuses.
+    pub warnings: Vec<String>,
+}
+
+/// spec 262: compact per-topic digest returned by the read-only `timeline_list`
+/// MCP tool. `topic_id` leads because that — not the human title — is the value
+/// a lane must copy back into `timeline_record`.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TimelineTopicDigest {
+    pub topic_id: String,
+    pub topic_title: String,
+    pub event_count: usize,
+    pub first_occurred_at: String,
+    pub last_occurred_at: String,
+    pub latest_summary: String,
+}
+
+/// spec 262: the lighter shape used inside a `timeline_record` ack, where the
+/// lane only needs enough to recognize a subject it already has a topic for.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TimelineTopicRef {
+    pub topic_id: String,
+    pub topic_title: String,
+    pub event_count: usize,
+    pub last_occurred_at: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+pub struct TimelineTopicListing {
+    pub topics: Vec<TimelineTopicDigest>,
+    /// Topics matching the request, before `limit` truncation.
+    pub total_topics: usize,
+    /// Topics stored in total, so an empty filtered result is distinguishable
+    /// from an empty timeline without a second call.
+    pub total_topics_all: usize,
+    pub truncated: bool,
+}
+
+/// spec 262: one line of a topic's chronology. Deliberately narrower than
+/// [`TimelineEvent`] — audit fields stay in the browser, not in lane context.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TimelineTopicEvent {
+    pub event_id: String,
+    pub occurred_at: String,
+    pub summary: String,
+    pub made_by: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_ref: Option<String>,
+    pub superseded: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TimelineTopicEventListing {
+    pub topic_id: String,
+    pub topic_title: String,
+    pub events: Vec<TimelineTopicEvent>,
+    pub total_events: usize,
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -908,6 +991,535 @@ pub(crate) fn scan_project(project_dir: &Path) -> Result<TimelineListResponse, S
     Ok(response)
 }
 
+/// spec 262: clamp a caller-supplied listing bound into the advertised range.
+/// `0` means "unspecified" and falls back to the default.
+fn topic_list_limit(limit: usize) -> usize {
+    if limit == 0 {
+        DEFAULT_TOPIC_LIST_LIMIT
+    } else {
+        limit.min(MAX_TOPIC_LIST_LIMIT)
+    }
+}
+
+fn topic_query(query: Option<&str>) -> Result<Option<String>, String> {
+    let Some(query) = query else {
+        return Ok(None);
+    };
+    if query.chars().count() > MAX_TOPIC_QUERY_CHARS {
+        return Err(format!(
+            "query must be {MAX_TOPIC_QUERY_CHARS} characters or fewer"
+        ));
+    }
+    let normalized = normalized_text(query);
+    Ok(if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    })
+}
+
+fn preview_text(value: &str) -> String {
+    if value.chars().count() <= MAX_TOPIC_PREVIEW_CHARS {
+        return value.to_string();
+    }
+    let mut preview: String = value.chars().take(MAX_TOPIC_PREVIEW_CHARS).collect();
+    preview.push('…');
+    preview
+}
+
+fn event_matches_query(event: &TimelineEvent, needle: &str) -> bool {
+    normalized_text(&event.topic_title).contains(needle)
+        || normalized_text(&event.summary).contains(needle)
+}
+
+/// spec 262: fold the single `scan_project` pass into one digest per topic.
+/// Events arrive ordered by `(occurred_at, recorded_at, id)`, so the last event
+/// seen for a topic is its newest: that one supplies the display title and
+/// preview. Topics come back newest-activity first.
+fn fold_topic_digests(events: &[TimelineEvent], needle: Option<&str>) -> Vec<TimelineTopicDigest> {
+    let mut order: Vec<String> = Vec::new();
+    let mut digests: HashMap<String, TimelineTopicDigest> = HashMap::new();
+    let mut matched: HashSet<String> = HashSet::new();
+    for event in events {
+        let digest = digests.entry(event.topic_id.clone()).or_insert_with(|| {
+            order.push(event.topic_id.clone());
+            TimelineTopicDigest {
+                topic_id: event.topic_id.clone(),
+                topic_title: String::new(),
+                event_count: 0,
+                first_occurred_at: event.occurred_at.clone(),
+                last_occurred_at: String::new(),
+                latest_summary: String::new(),
+            }
+        });
+        digest.event_count += 1;
+        digest.topic_title.clone_from(&event.topic_title);
+        digest.last_occurred_at.clone_from(&event.occurred_at);
+        digest.latest_summary = preview_text(&event.summary);
+        if needle.is_some_and(|needle| event_matches_query(event, needle)) {
+            matched.insert(event.topic_id.clone());
+        }
+    }
+    let mut topics: Vec<TimelineTopicDigest> = order
+        .into_iter()
+        .filter(|topic_id| needle.is_none() || matched.contains(topic_id))
+        .filter_map(|topic_id| digests.remove(&topic_id))
+        .collect();
+    topics.sort_by(|left, right| {
+        right
+            .last_occurred_at
+            .cmp(&left.last_occurred_at)
+            .then(left.topic_id.cmp(&right.topic_id))
+    });
+    topics
+}
+
+/// spec 262: read-only topic discovery for a lane that is about to record.
+/// Without this a fresh session cannot learn a `topic_id` it did not create
+/// itself, and exact-title reuse never fires across languages.
+pub(crate) fn list_topics_project(
+    project_dir: &Path,
+    query: Option<&str>,
+    limit: usize,
+) -> Result<TimelineTopicListing, String> {
+    let needle = topic_query(query)?;
+    let limit = topic_list_limit(limit);
+    let listing = scan_project(project_dir)?;
+    let total_topics_all = fold_topic_digests(&listing.events, None).len();
+    let mut topics = fold_topic_digests(&listing.events, needle.as_deref());
+    let total_topics = topics.len();
+    topics.truncate(limit);
+    Ok(TimelineTopicListing {
+        topics,
+        total_topics,
+        total_topics_all,
+        truncated: total_topics > limit,
+    })
+}
+
+/// spec 262: read one topic's chronology, newest first, without handing the
+/// lane the full audit record of every event.
+pub(crate) fn list_topic_events_project(
+    project_dir: &Path,
+    topic_id: &str,
+    query: Option<&str>,
+    limit: usize,
+) -> Result<TimelineTopicEventListing, String> {
+    let needle = topic_query(query)?;
+    let limit = topic_list_limit(limit);
+    let topic_id = validate_topic_id(topic_id)?;
+    let listing = scan_project(project_dir)?;
+    let topic_events: Vec<&TimelineEvent> = listing
+        .events
+        .iter()
+        .filter(|event| event.topic_id == topic_id)
+        .collect();
+    let Some(newest) = topic_events.last() else {
+        return Err(format!(
+            "timeline topic does not exist: {topic_id}; call timeline_list without topicId to see every topic"
+        ));
+    };
+    let topic_title = newest.topic_title.clone();
+    let mut events: Vec<TimelineTopicEvent> = topic_events
+        .into_iter()
+        .rev()
+        .filter(|event| match needle.as_deref() {
+            Some(needle) => event_matches_query(event, needle),
+            None => true,
+        })
+        .map(|event| TimelineTopicEvent {
+            event_id: event.id.clone(),
+            occurred_at: event.occurred_at.clone(),
+            summary: event.summary.clone(),
+            made_by: event.made_by.clone(),
+            source_ref: event.source_ref.clone(),
+            superseded: event.superseded,
+        })
+        .collect();
+    let total_events = events.len();
+    events.truncate(limit);
+    Ok(TimelineTopicEventListing {
+        topic_id,
+        topic_title,
+        events,
+        total_events,
+        truncated: total_events > limit,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// spec 263: topic merge. Human-only repair for topics that were already split
+// before spec 262 closed the discovery gap. Agents never get this path: the
+// persistence contract is that confirmed history is only appended to.
+// ---------------------------------------------------------------------------
+
+fn backup_root(project: &Path) -> PathBuf {
+    project.join(".krypton").join("timeline").join("backups")
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TimelineMergeManifest {
+    pub schema: u8,
+    pub merge_id: String,
+    pub from_topic_id: String,
+    pub into_topic_id: String,
+    pub merged_at: String,
+    pub files: Vec<String>,
+    /// spec 263: present when a lane performed the merge on an explicit human
+    /// instruction. Absent for the `#timeline merge` keyboard path, where the
+    /// human typed it themselves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merged_by_lane: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instruction_excerpt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undone_at: Option<String>,
+}
+
+/// spec 263: who authorized a merge. `#timeline merge` passes `None`; a lane
+/// calling `timeline_merge` must supply the human's exact authorizing words,
+/// which are stored in the undo manifest.
+#[derive(Debug, Clone)]
+pub struct TimelineMergeAuthorization {
+    pub lane_label: String,
+    pub instruction_excerpt: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineMergeResult {
+    pub merge_id: String,
+    pub from_topic_id: String,
+    pub from_topic_title: String,
+    pub into_topic_id: String,
+    pub into_topic_title: String,
+    pub moved_events: usize,
+    pub backup_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineMergeUndoResult {
+    pub merge_id: String,
+    pub from_topic_id: String,
+    pub into_topic_id: String,
+    pub restored_events: usize,
+}
+
+/// Accept either an exact `topic-…` ID or a unique case-insensitive substring of
+/// a topic title. The browser shows titles, so requiring an ID would mean
+/// reading frontmatter by hand.
+fn resolve_topic_selector(
+    field: &str,
+    selector: &str,
+    events: &[TimelineEvent],
+) -> Result<(String, String), String> {
+    let selector = selector.trim();
+    if selector.is_empty() {
+        return Err(format!("{field} topic is required"));
+    }
+    let digests = fold_topic_digests(events, None);
+    if let Some(digest) = digests
+        .iter()
+        .find(|digest| digest.topic_id == selector.to_lowercase())
+    {
+        return Ok((digest.topic_id.clone(), digest.topic_title.clone()));
+    }
+    let needle = normalized_text(selector);
+    let matches: Vec<&TimelineTopicDigest> = digests
+        .iter()
+        .filter(|digest| {
+            normalized_text(&digest.topic_title).contains(&needle)
+                || digest.topic_id.contains(&needle)
+        })
+        .collect();
+    match matches.len() {
+        0 => Err(format!("no timeline topic matches {field} {selector:?}")),
+        1 => Ok((matches[0].topic_id.clone(), matches[0].topic_title.clone())),
+        _ => {
+            let candidates: Vec<String> = matches
+                .iter()
+                .take(MAX_MERGE_CANDIDATES)
+                .map(|digest| format!("{} ({})", digest.topic_id, digest.topic_title))
+                .collect();
+            Err(format!(
+                "{field} topic {selector:?} matches {} topics: {}",
+                matches.len(),
+                candidates.join(", ")
+            ))
+        }
+    }
+}
+
+/// Replace only the frontmatter `topic_id` line. Everything else — including
+/// body text, ordering, and line endings — is preserved byte-for-byte so the
+/// rewritten file still parses and still reads as the same record.
+fn rewrite_topic_id(source: &str, topic_id: &str) -> Result<String, String> {
+    let value = yaml_string(topic_id)?;
+    let mut out = String::with_capacity(source.len() + value.len());
+    let mut in_frontmatter = false;
+    let mut closed = false;
+    let mut replaced = false;
+    for (index, line) in source.split('\n').enumerate() {
+        if index > 0 {
+            out.push('\n');
+        }
+        let trimmed = line.trim_end_matches('\r');
+        if index == 0 {
+            if trimmed != "---" {
+                return Err("missing opening frontmatter delimiter".to_string());
+            }
+            in_frontmatter = true;
+            out.push_str(line);
+            continue;
+        }
+        if in_frontmatter && trimmed == "---" {
+            in_frontmatter = false;
+            closed = true;
+            out.push_str(line);
+            continue;
+        }
+        if in_frontmatter
+            && !replaced
+            && trimmed
+                .split_once(':')
+                .is_some_and(|(name, _)| name.trim() == "topic_id")
+        {
+            replaced = true;
+            out.push_str("topic_id: ");
+            out.push_str(&value);
+            if line.ends_with('\r') {
+                out.push('\r');
+            }
+            continue;
+        }
+        out.push_str(line);
+    }
+    if !closed {
+        return Err("missing closing frontmatter delimiter".to_string());
+    }
+    if !replaced {
+        return Err("timeline event has no topic_id field".to_string());
+    }
+    Ok(out)
+}
+
+fn restore_backup(
+    events_root: &Path,
+    backup_dir: &Path,
+    files: &[String],
+) -> Result<usize, String> {
+    let mut restored = 0;
+    for file in files {
+        let source = fs::read_to_string(backup_dir.join(file))
+            .map_err(|error| format!("failed to read timeline backup {file}: {error}"))?;
+        fs::write(events_root.join(file), source)
+            .map_err(|error| format!("failed to restore timeline event {file}: {error}"))?;
+        restored += 1;
+    }
+    Ok(restored)
+}
+
+fn write_manifest(path: &Path, manifest: &TimelineMergeManifest) -> Result<(), String> {
+    let encoded = serde_json::to_string_pretty(manifest)
+        .map_err(|error| format!("failed to encode timeline merge manifest: {error}"))?;
+    fs::write(path, encoded)
+        .map_err(|error| format!("failed to write timeline merge manifest: {error}"))
+}
+
+/// Move every event of one topic into another. `.krypton/` is gitignored, so the
+/// backup written here is the only recovery path — it is taken, and the undo
+/// manifest written, before the first rewrite.
+pub(crate) fn merge_topics_project(
+    project_dir: &Path,
+    from_selector: &str,
+    into_selector: &str,
+    authorization: Option<TimelineMergeAuthorization>,
+) -> Result<TimelineMergeResult, String> {
+    let _guard = TIMELINE_MUTATION_LOCK
+        .lock()
+        .map_err(|_| "timeline mutation lock is unavailable".to_string())?;
+    let authorization = authorization
+        .map(
+            |authorization| -> Result<TimelineMergeAuthorization, String> {
+                Ok(TimelineMergeAuthorization {
+                    lane_label: validate_single_line(
+                        "recorderLane",
+                        &authorization.lane_label,
+                        MAX_ACTOR_CHARS,
+                    )?,
+                    instruction_excerpt: validate_body_with_limit(
+                        "instructionExcerpt",
+                        &authorization.instruction_excerpt,
+                        MAX_EVIDENCE_CHARS,
+                    )
+                    .and_then(|value| {
+                        if value.is_empty() {
+                            Err("instructionExcerpt is required".to_string())
+                        } else {
+                            Ok(value)
+                        }
+                    })?,
+                })
+            },
+        )
+        .transpose()?;
+    let listing = scan_project(project_dir)?;
+    if listing.events.is_empty() {
+        return Err("the project timeline has no events yet".to_string());
+    }
+    let (from_topic_id, from_topic_title) =
+        resolve_topic_selector("source", from_selector, &listing.events)?;
+    let (into_topic_id, into_topic_title) =
+        resolve_topic_selector("target", into_selector, &listing.events)?;
+    if from_topic_id == into_topic_id {
+        return Err(format!(
+            "source and target resolve to the same topic: {from_topic_id}"
+        ));
+    }
+    let files: Vec<String> = listing
+        .events
+        .iter()
+        .filter(|event| event.topic_id == from_topic_id)
+        .map(|event| format!("{}.md", event.id))
+        .collect();
+    if files.is_empty() {
+        return Err(format!("topic {from_topic_id} has no events to move"));
+    }
+    let (project, events_root) = writable_event_root(project_dir)?;
+    let merge_id = format!(
+        "mrg-{}-{}",
+        Utc::now().format("%Y%m%dT%H%M%SZ"),
+        random_hex()?
+    );
+    let backup_dir = backup_root(&project).join(&merge_id);
+    fs::create_dir_all(&backup_dir)
+        .map_err(|error| format!("failed to create timeline backup directory: {error}"))?;
+    for file in &files {
+        let source = fs::read_to_string(events_root.join(file))
+            .map_err(|error| format!("failed to read timeline event {file}: {error}"))?;
+        fs::write(backup_dir.join(file), source)
+            .map_err(|error| format!("failed to back up timeline event {file}: {error}"))?;
+    }
+    let mut manifest = TimelineMergeManifest {
+        schema: SCHEMA_VERSION,
+        merge_id: merge_id.clone(),
+        from_topic_id: from_topic_id.clone(),
+        into_topic_id: into_topic_id.clone(),
+        merged_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        files: files.clone(),
+        merged_by_lane: authorization
+            .as_ref()
+            .map(|authorization| authorization.lane_label.clone()),
+        instruction_excerpt: authorization
+            .as_ref()
+            .map(|authorization| authorization.instruction_excerpt.clone()),
+        undone_at: None,
+    };
+    let manifest_path = backup_dir.join("manifest.json");
+    write_manifest(&manifest_path, &manifest)?;
+    for file in &files {
+        let path = events_root.join(file);
+        let rewritten = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read timeline event {file}: {error}"))
+            .and_then(|source| rewrite_topic_id(&source, &into_topic_id))
+            .and_then(|rewritten| {
+                fs::write(&path, rewritten)
+                    .map_err(|error| format!("failed to rewrite timeline event {file}: {error}"))
+            });
+        if let Err(error) = rewritten {
+            // Put every file back before reporting: a half-merged topic is worse
+            // than no merge at all.
+            let restored = restore_backup(&events_root, &backup_dir, &files);
+            manifest.undone_at = Some(Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true));
+            let _ = write_manifest(&manifest_path, &manifest);
+            return Err(match restored {
+                Ok(_) => format!("{error}; the merge was rolled back and nothing changed"),
+                Err(restore_error) => format!(
+                    "{error}; automatic rollback also failed ({restore_error}) — run `#timeline merge undo` or restore from .krypton/timeline/backups/{merge_id}"
+                ),
+            });
+        }
+    }
+    Ok(TimelineMergeResult {
+        merge_id,
+        from_topic_id,
+        from_topic_title,
+        into_topic_id,
+        into_topic_title,
+        moved_events: files.len(),
+        backup_path: relative_path(&project, &backup_dir),
+    })
+}
+
+/// Restore the most recent merge that has not been undone yet.
+pub(crate) fn undo_last_merge_project(
+    project_dir: &Path,
+) -> Result<TimelineMergeUndoResult, String> {
+    let _guard = TIMELINE_MUTATION_LOCK
+        .lock()
+        .map_err(|_| "timeline mutation lock is unavailable".to_string())?;
+    let project = canonical_project(project_dir)?;
+    let root = backup_root(&project);
+    if !root.exists() {
+        return Err("there is no timeline merge to undo".to_string());
+    }
+    let entries =
+        fs::read_dir(&root).map_err(|error| format!("failed to list timeline backups: {error}"))?;
+    let mut newest: Option<(TimelineMergeManifest, PathBuf)> = None;
+    for entry in entries {
+        let Ok(entry) = entry else { continue };
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let manifest_path = dir.join("manifest.json");
+        let Ok(source) = fs::read_to_string(&manifest_path) else {
+            continue;
+        };
+        let Ok(manifest) = serde_json::from_str::<TimelineMergeManifest>(&source) else {
+            continue;
+        };
+        if manifest.undone_at.is_some() {
+            continue;
+        }
+        let is_newer = match newest.as_ref() {
+            Some((current, _)) => manifest.merged_at > current.merged_at,
+            None => true,
+        };
+        if is_newer {
+            newest = Some((manifest, dir));
+        }
+    }
+    let Some((mut manifest, backup_dir)) = newest else {
+        return Err("there is no timeline merge to undo".to_string());
+    };
+    let (_, events_root) = writable_event_root(project_dir)?;
+    let restored = restore_backup(&events_root, &backup_dir, &manifest.files)?;
+    manifest.undone_at = Some(Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true));
+    write_manifest(&backup_dir.join("manifest.json"), &manifest)?;
+    Ok(TimelineMergeUndoResult {
+        merge_id: manifest.merge_id,
+        from_topic_id: manifest.from_topic_id,
+        into_topic_id: manifest.into_topic_id,
+        restored_events: restored,
+    })
+}
+
+/// spec 262: a non-fatal notice when a recorded occurrence time sits far in the
+/// future. Reported, never enforced — the human authorized the write.
+fn future_occurrence_warning(occurred_at: &str, now: DateTime<Utc>) -> Option<String> {
+    let parsed = DateTime::parse_from_rfc3339(occurred_at).ok()?;
+    let ahead = parsed.with_timezone(&Utc) - now;
+    if ahead.num_hours() <= MAX_FUTURE_SKEW_HOURS {
+        return None;
+    }
+    let days = ahead.num_days().max(1);
+    Some(format!(
+        "occurredAt is {days} day(s) in the future relative to the recording time; check it against the source you cited"
+    ))
+}
+
 fn random_hex() -> Result<String, String> {
     let mut bytes = [0_u8; 3];
     getrandom::getrandom(&mut bytes)
@@ -1123,9 +1735,31 @@ fn direct_topic_id(title: &str, events: &[TimelineEvent]) -> String {
     hashed
 }
 
+fn resolve_direct_topic_id(
+    requested_topic_id: Option<&str>,
+    topic_title: &str,
+    events: &[TimelineEvent],
+) -> Result<String, String> {
+    let Some(topic_id) = requested_topic_id else {
+        return Ok(direct_topic_id(topic_title, events));
+    };
+    if events.iter().any(|event| event.topic_id == topic_id) {
+        Ok(topic_id.to_string())
+    } else {
+        Err(format!(
+            "timeline topic does not exist: {topic_id}; omit topicId to create a new topic or use an existing timeline topic id"
+        ))
+    }
+}
+
 fn validate_direct_request(
     mut request: TimelineDirectRecordRequest,
 ) -> Result<TimelineDirectRecordRequest, String> {
+    request.topic_id = request
+        .topic_id
+        .take()
+        .map(|value| validate_topic_id(&value))
+        .transpose()?;
     request.topic_title =
         validate_single_line("topicTitle", &request.topic_title, MAX_TOPIC_CHARS)?;
     request.summary = validate_single_line("summary", &request.summary, MAX_SUMMARY_CHARS)?;
@@ -1160,8 +1794,12 @@ fn validate_direct_request(
     Ok(request)
 }
 
-fn direct_event_matches(event: &TimelineEvent, request: &TimelineDirectRecordRequest) -> bool {
-    normalized_text(&event.topic_title) == normalized_text(&request.topic_title)
+fn direct_event_matches(
+    event: &TimelineEvent,
+    topic_id: &str,
+    request: &TimelineDirectRecordRequest,
+) -> bool {
+    event.topic_id == topic_id
         && normalized_text(&event.summary) == normalized_text(&request.summary)
         && event.instruction_excerpt.as_deref().is_some_and(|value| {
             normalized_text(value) == normalized_text(&request.instruction_excerpt)
@@ -1181,14 +1819,47 @@ pub(crate) fn record_direct_project(
     let request = validate_direct_request(request)?;
     let lane_label = validate_single_line("recorderLane", lane_label, MAX_ACTOR_CHARS)?;
     let listing = scan_project(project_dir)?;
+    let topic_id = resolve_direct_topic_id(
+        request.topic_id.as_deref(),
+        &request.topic_title,
+        &listing.events,
+    )?;
+    // spec 262: a topic nobody has written to yet means the lane is opening a
+    // second chronology for a subject that may already have one. The ack says
+    // so and names the alternatives; nothing is merged here.
+    let new_topic = !listing
+        .events
+        .iter()
+        .any(|event| event.topic_id == topic_id);
+    let existing_topics = if new_topic {
+        fold_topic_digests(&listing.events, None)
+            .into_iter()
+            .take(MAX_RECORD_ACK_TOPICS)
+            .map(|digest| TimelineTopicRef {
+                topic_id: digest.topic_id,
+                topic_title: digest.topic_title,
+                event_count: digest.event_count,
+                last_occurred_at: digest.last_occurred_at,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let now = Utc::now();
     if let Some(event) = listing
         .events
         .iter()
-        .find(|event| direct_event_matches(event, &request))
+        .find(|event| direct_event_matches(event, &topic_id, &request))
     {
+        let warnings = future_occurrence_warning(&event.occurred_at, now)
+            .into_iter()
+            .collect();
         return Ok(TimelineDirectRecordResult {
             event: event.clone(),
             disposition: TimelineDirectRecordDisposition::Existing,
+            new_topic: false,
+            existing_topics: Vec::new(),
+            warnings,
         });
     }
     let pending = scan_suggestions_project(project_dir)?
@@ -1208,7 +1879,7 @@ pub(crate) fn record_direct_project(
         })
         .unwrap_or_else(|| Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true));
     let record_request = TimelineRecordRequest {
-        topic_id: direct_topic_id(&request.topic_title, &listing.events),
+        topic_id,
         topic_title: request.topic_title.clone(),
         summary: request.summary.clone(),
         occurred_at,
@@ -1237,6 +1908,9 @@ pub(crate) fn record_direct_project(
             Some(instruction_excerpt),
         )?
     };
+    let warnings = future_occurrence_warning(&event.occurred_at, now)
+        .into_iter()
+        .collect();
     Ok(TimelineDirectRecordResult {
         event,
         disposition: if pending.is_some() {
@@ -1244,6 +1918,9 @@ pub(crate) fn record_direct_project(
         } else {
             TimelineDirectRecordDisposition::Created
         },
+        new_topic,
+        existing_topics,
+        warnings,
     })
 }
 
@@ -1593,6 +2270,26 @@ pub fn timeline_record(
     record_project(&project_dir(&hook_server, &harness_id)?, request)
 }
 
+/// spec 263: human-only repair for topics that were split before spec 262.
+/// Deliberately a Tauri command and not an MCP tool.
+#[tauri::command]
+pub fn timeline_merge_topics(
+    harness_id: String,
+    from: String,
+    into: String,
+    hook_server: tauri::State<'_, Arc<HookServer>>,
+) -> Result<TimelineMergeResult, String> {
+    merge_topics_project(&project_dir(&hook_server, &harness_id)?, &from, &into, None)
+}
+
+#[tauri::command]
+pub fn timeline_merge_undo(
+    harness_id: String,
+    hook_server: tauri::State<'_, Arc<HookServer>>,
+) -> Result<TimelineMergeUndoResult, String> {
+    undo_last_merge_project(&project_dir(&hook_server, &harness_id)?)
+}
+
 #[tauri::command]
 pub fn timeline_suggestion_list(
     harness_id: String,
@@ -1771,6 +2468,7 @@ mod tests {
 
     fn direct_request() -> TimelineDirectRecordRequest {
         TimelineDirectRecordRequest {
+            topic_id: None,
             topic_title: "Upload validation".to_string(),
             summary: "Metadata transfer is required".to_string(),
             made_by: "Current user".to_string(),
@@ -1968,6 +2666,313 @@ mod tests {
         );
         assert_eq!(retried.event.id, created.event.id);
         assert_eq!(scan_project(&dir.0).unwrap().events.len(), 1);
+    }
+
+    #[test]
+    fn direct_record_reuses_explicit_topic_id_across_title_changes() {
+        let dir = TestDir::new("direct-topic-id");
+        let first = record_direct_project(&dir.0, "Codex-2", direct_request()).unwrap();
+
+        let mut second_request = direct_request();
+        second_request.topic_id = Some(first.event.topic_id.clone());
+        second_request.topic_title = "Upload metadata requirement refined".to_string();
+        second_request.summary = "Metadata is checked before completion".to_string();
+        second_request.occurred_at = Some("2026-09-19T08:20:00Z".to_string());
+        second_request.source_ref = Some("conversation:turn-6".to_string());
+        let second = record_direct_project(&dir.0, "Claude-1", second_request.clone()).unwrap();
+
+        assert_eq!(second.disposition, TimelineDirectRecordDisposition::Created);
+        assert_eq!(second.event.topic_id, first.event.topic_id);
+        assert_eq!(
+            second.event.topic_title,
+            "Upload metadata requirement refined"
+        );
+        assert_eq!(scan_project(&dir.0).unwrap().events.len(), 2);
+
+        second_request.topic_title = "Another wording for the same topic".to_string();
+        let retried = record_direct_project(&dir.0, "Claude-1", second_request).unwrap();
+        assert_eq!(
+            retried.disposition,
+            TimelineDirectRecordDisposition::Existing
+        );
+        assert_eq!(retried.event.id, second.event.id);
+        assert_eq!(scan_project(&dir.0).unwrap().events.len(), 2);
+    }
+
+    #[test]
+    fn direct_record_rejects_unknown_explicit_topic_id_without_writing() {
+        let dir = TestDir::new("direct-unknown-topic-id");
+        let mut request = direct_request();
+        request.topic_id = Some("topic-missing".to_string());
+
+        let error = record_direct_project(&dir.0, "Codex-2", request).unwrap_err();
+        assert!(error.contains("timeline topic does not exist: topic-missing"));
+        assert!(scan_project(&dir.0).unwrap().events.is_empty());
+    }
+
+    #[test]
+    fn topic_listing_groups_by_id_and_reports_bounds() {
+        let dir = TestDir::new("topic-listing");
+        let first = record_direct_project(&dir.0, "Codex-2", direct_request()).unwrap();
+
+        let mut follow_up = direct_request();
+        follow_up.topic_id = Some(first.event.topic_id.clone());
+        follow_up.topic_title = "Upload validation refined".to_string();
+        follow_up.summary = "Metadata is checked before completion".to_string();
+        follow_up.occurred_at = Some("2026-09-19T08:20:00Z".to_string());
+        record_direct_project(&dir.0, "Claude-1", follow_up).unwrap();
+
+        let mut other = direct_request();
+        other.topic_title = "Session resume".to_string();
+        other.summary = "Lanes resume from the stored session id".to_string();
+        other.occurred_at = Some("2026-09-20T08:20:00Z".to_string());
+        let other = record_direct_project(&dir.0, "Claude-1", other).unwrap();
+
+        let listing = list_topics_project(&dir.0, None, 0).unwrap();
+        assert_eq!(listing.total_topics, 2);
+        assert_eq!(listing.total_topics_all, 2);
+        assert!(!listing.truncated);
+        // newest activity first, regardless of creation order
+        assert_eq!(listing.topics[0].topic_id, other.event.topic_id);
+        assert_eq!(listing.topics[1].topic_id, first.event.topic_id);
+        // the newest event supplies the display title and preview
+        assert_eq!(listing.topics[1].topic_title, "Upload validation refined");
+        assert_eq!(
+            listing.topics[1].latest_summary,
+            "Metadata is checked before completion"
+        );
+        assert_eq!(listing.topics[1].event_count, 2);
+        assert_eq!(listing.topics[1].first_occurred_at, "2026-09-18T08:20:00Z");
+        assert_eq!(listing.topics[1].last_occurred_at, "2026-09-19T08:20:00Z");
+
+        let bounded = list_topics_project(&dir.0, None, 1).unwrap();
+        assert_eq!(bounded.topics.len(), 1);
+        assert_eq!(bounded.total_topics, 2);
+        assert!(bounded.truncated);
+
+        // a query may match an older event's summary and still return the topic
+        let filtered = list_topics_project(&dir.0, Some("  METADATA transfer "), 0).unwrap();
+        assert_eq!(filtered.total_topics, 1);
+        assert_eq!(filtered.topics[0].topic_id, first.event.topic_id);
+
+        let missed = list_topics_project(&dir.0, Some("nothing matches this"), 0).unwrap();
+        assert!(missed.topics.is_empty());
+        assert_eq!(missed.total_topics, 0);
+        // an empty result is still distinguishable from an empty timeline
+        assert_eq!(missed.total_topics_all, 2);
+
+        assert!(list_topics_project(&dir.0, Some(&"x".repeat(121)), 0)
+            .unwrap_err()
+            .contains("query must be"));
+    }
+
+    #[test]
+    fn topic_event_listing_reads_newest_first_and_rejects_unknown_topic() {
+        let dir = TestDir::new("topic-events");
+        let first = record_direct_project(&dir.0, "Codex-2", direct_request()).unwrap();
+        let mut follow_up = direct_request();
+        follow_up.topic_id = Some(first.event.topic_id.clone());
+        follow_up.topic_title = "Upload validation refined".to_string();
+        follow_up.summary = "Metadata is checked before completion".to_string();
+        follow_up.occurred_at = Some("2026-09-19T08:20:00Z".to_string());
+        let second = record_direct_project(&dir.0, "Claude-1", follow_up).unwrap();
+
+        let listing = list_topic_events_project(&dir.0, &first.event.topic_id, None, 0).unwrap();
+        assert_eq!(listing.topic_id, first.event.topic_id);
+        assert_eq!(listing.topic_title, "Upload validation refined");
+        assert_eq!(listing.total_events, 2);
+        assert!(!listing.truncated);
+        assert_eq!(listing.events[0].event_id, second.event.id);
+        assert_eq!(listing.events[1].event_id, first.event.id);
+        assert_eq!(
+            listing.events[1].source_ref.as_deref(),
+            Some("conversation:turn-5")
+        );
+
+        let bounded = list_topic_events_project(&dir.0, &first.event.topic_id, None, 1).unwrap();
+        assert_eq!(bounded.events.len(), 1);
+        assert_eq!(bounded.total_events, 2);
+        assert!(bounded.truncated);
+
+        let error = list_topic_events_project(&dir.0, "topic-missing", None, 0).unwrap_err();
+        assert!(error.contains("timeline topic does not exist: topic-missing"));
+    }
+
+    #[test]
+    fn direct_record_reports_new_topic_with_existing_alternatives() {
+        let dir = TestDir::new("direct-new-topic");
+        let first = record_direct_project(&dir.0, "Codex-2", direct_request()).unwrap();
+        assert!(first.new_topic);
+        // nothing else existed yet, so there is no alternative to name
+        assert!(first.existing_topics.is_empty());
+
+        let mut unrelated = direct_request();
+        unrelated.topic_title = "การตรวจสอบ metadata ตอน upload".to_string();
+        unrelated.summary = "บันทึกเรื่องเดิมด้วยชื่อคนละภาษา".to_string();
+        unrelated.occurred_at = Some("2026-09-19T08:20:00Z".to_string());
+        let split = record_direct_project(&dir.0, "Claude-1", unrelated).unwrap();
+        assert!(split.new_topic);
+        assert_ne!(split.event.topic_id, first.event.topic_id);
+        assert_eq!(split.existing_topics.len(), 1);
+        assert_eq!(split.existing_topics[0].topic_id, first.event.topic_id);
+        assert_eq!(split.existing_topics[0].event_count, 1);
+
+        let mut reused = direct_request();
+        reused.topic_id = Some(first.event.topic_id.clone());
+        reused.summary = "Metadata is checked before completion".to_string();
+        reused.occurred_at = Some("2026-09-20T08:20:00Z".to_string());
+        let reused = record_direct_project(&dir.0, "Claude-1", reused).unwrap();
+        assert!(!reused.new_topic);
+        assert!(reused.existing_topics.is_empty());
+    }
+
+    #[test]
+    fn direct_record_warns_without_refusing_a_future_occurrence() {
+        let dir = TestDir::new("direct-future-date");
+        let recorded = record_direct_project(&dir.0, "Codex-2", direct_request()).unwrap();
+        assert!(recorded.warnings.is_empty());
+
+        let mut ahead = direct_request();
+        ahead.topic_id = Some(recorded.event.topic_id.clone());
+        ahead.summary = "Event dated far past the commit it cites".to_string();
+        ahead.occurred_at = Some("2099-01-01T00:00:00Z".to_string());
+        let ahead = record_direct_project(&dir.0, "Codex-2", ahead).unwrap();
+        assert_eq!(ahead.disposition, TimelineDirectRecordDisposition::Created);
+        assert_eq!(ahead.warnings.len(), 1);
+        assert!(ahead.warnings[0].contains("in the future"));
+        // the write still happened: a human authorized it
+        assert_eq!(scan_project(&dir.0).unwrap().events.len(), 2);
+    }
+
+    #[test]
+    fn merging_a_topic_moves_events_and_leaves_every_other_field_intact() {
+        let dir = TestDir::new("topic-merge");
+        let keeper = record_direct_project(&dir.0, "Codex-2", direct_request()).unwrap();
+
+        let mut split = direct_request();
+        split.topic_title = "การตรวจสอบ metadata ตอน upload".to_string();
+        split.summary = "เรื่องเดียวกันแต่ถูกบันทึกเป็นอีก topic".to_string();
+        split.occurred_at = Some("2026-09-19T08:20:00Z".to_string());
+        let split = record_direct_project(&dir.0, "Claude-1", split).unwrap();
+        let before = fs::read_to_string(dir.0.join(&split.event.path)).unwrap();
+
+        let merged = merge_topics_project(
+            &dir.0,
+            "การตรวจสอบ metadata",
+            &keeper.event.topic_id,
+            Some(TimelineMergeAuthorization {
+                lane_label: "Claude-2".to_string(),
+                instruction_excerpt: "รวมสองหัวข้อนี้เข้าด้วยกัน".to_string(),
+            }),
+        )
+        .unwrap();
+        assert_eq!(merged.from_topic_id, split.event.topic_id);
+        assert_eq!(merged.into_topic_id, keeper.event.topic_id);
+        assert_eq!(merged.moved_events, 1);
+        assert!(merged
+            .backup_path
+            .starts_with(".krypton/timeline/backups/mrg-"));
+        // an agent-performed merge is traceable: the manifest keeps the lane and
+        // the human's authorizing words
+        let manifest: TimelineMergeManifest = serde_json::from_str(
+            &fs::read_to_string(dir.0.join(&merged.backup_path).join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest.merged_by_lane.as_deref(), Some("Claude-2"));
+        assert_eq!(
+            manifest.instruction_excerpt.as_deref(),
+            Some("รวมสองหัวข้อนี้เข้าด้วยกัน")
+        );
+        assert_eq!(manifest.files.len(), 1);
+
+        let events = scan_project(&dir.0).unwrap().events;
+        assert_eq!(events.len(), 2);
+        assert!(events
+            .iter()
+            .all(|event| event.topic_id == keeper.event.topic_id));
+        let moved = events
+            .iter()
+            .find(|event| event.id == split.event.id)
+            .expect("moved event");
+        // only the grouping key changed
+        assert_eq!(moved.topic_title, "การตรวจสอบ metadata ตอน upload");
+        assert_eq!(moved.summary, split.event.summary);
+        assert_eq!(moved.recorder_lane, "Claude-1");
+        assert_eq!(moved.occurred_at, "2026-09-19T08:20:00Z");
+        let after = fs::read_to_string(dir.0.join(&split.event.path)).unwrap();
+        assert_eq!(
+            after.replace(&keeper.event.topic_id, "TOPIC"),
+            before.replace(&split.event.topic_id, "TOPIC")
+        );
+
+        let undone = undo_last_merge_project(&dir.0).unwrap();
+        assert_eq!(undone.merge_id, merged.merge_id);
+        assert_eq!(undone.restored_events, 1);
+        assert_eq!(
+            fs::read_to_string(dir.0.join(&split.event.path)).unwrap(),
+            before
+        );
+        // one merge cannot be undone twice
+        assert!(undo_last_merge_project(&dir.0)
+            .unwrap_err()
+            .contains("no timeline merge to undo"));
+    }
+
+    #[test]
+    fn merge_refuses_ambiguous_unknown_and_self_targets_without_writing() {
+        let dir = TestDir::new("topic-merge-refusals");
+        assert!(merge_topics_project(&dir.0, "a", "b", None)
+            .unwrap_err()
+            .contains("no events yet"));
+
+        let first = record_direct_project(&dir.0, "Codex-2", direct_request()).unwrap();
+        let mut second = direct_request();
+        second.topic_title = "Upload validation follow-up".to_string();
+        second.summary = "A second topic that shares the same words".to_string();
+        second.occurred_at = Some("2026-09-19T08:20:00Z".to_string());
+        record_direct_project(&dir.0, "Claude-1", second).unwrap();
+
+        let ambiguous =
+            merge_topics_project(&dir.0, "upload", &first.event.topic_id, None).unwrap_err();
+        assert!(ambiguous.contains("matches 2 topics"));
+        assert!(ambiguous.contains(&first.event.topic_id));
+
+        assert!(
+            merge_topics_project(&dir.0, "nothing here", &first.event.topic_id, None)
+                .unwrap_err()
+                .contains("no timeline topic matches")
+        );
+        assert!(
+            merge_topics_project(&dir.0, &first.event.topic_id, &first.event.topic_id, None)
+                .unwrap_err()
+                .contains("same topic")
+        );
+
+        // every refusal happened before any write
+        assert!(!dir.0.join(".krypton/timeline/backups").exists());
+        let events = scan_project(&dir.0).unwrap().events;
+        assert_eq!(events.len(), 2);
+        assert_ne!(events[0].topic_id, events[1].topic_id);
+    }
+
+    #[test]
+    fn topic_id_rewrite_preserves_body_and_rejects_malformed_records() {
+        let source = "---\nschema: 1\ntopic_id: \"topic-old\"\ntopic_title: \"Keep\"\n---\n\n## Impact\ntopic_id: not frontmatter\n";
+        let rewritten = rewrite_topic_id(source, "topic-new").unwrap();
+        assert!(rewritten.contains("topic_id: \"topic-new\""));
+        // the body line that merely looks like frontmatter is untouched
+        assert!(rewritten.ends_with("## Impact\ntopic_id: not frontmatter\n"));
+        assert_eq!(rewritten.matches("topic-new").count(), 1);
+
+        assert!(rewrite_topic_id("no frontmatter here", "topic-new")
+            .unwrap_err()
+            .contains("missing opening frontmatter"));
+        assert!(rewrite_topic_id(
+            "---\nschema: 1\ntopic_title: \"Keep\"\n---\n\nBody\n",
+            "topic-new"
+        )
+        .unwrap_err()
+        .contains("no topic_id field"));
     }
 
     #[test]

@@ -1335,21 +1335,63 @@ impl HookServer {
             .clone()
     }
 
-    /// Read-only artifact gallery listing: every live harness store and its
-    /// pending + registered artifacts. Within each harness, artifacts are ordered
-    /// latest-creation-first for `/artifacts` (newest at the top of the gallery).
-    /// The `art-<seq>-<hex>` seq is monotonic per session, so a descending seq sort
-    /// is the creation order; ids aren't zero-padded, so we compare the parsed seq
-    /// rather than the raw string (which would put `art-10` before `art-2`).
+    /// Read-only artifact gallery listing grouped by project. Multiple harnesses
+    /// can rehydrate the same project tree, so rows are unioned by artifact id
+    /// before serialization rather than exposing duplicate harness groups.
     pub fn list_all_artifacts_for_gallery(&self) -> Vec<Value> {
         let artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
-        let mut harness_ids: Vec<&String> = artifacts.keys().collect();
-        harness_ids.sort();
-        harness_ids
+        let mut projects: HashMap<String, GalleryProjectAccumulator> = HashMap::new();
+
+        for (harness_id, store) in artifacts.iter() {
+            let Some(project_dir) = store.project_dir.as_deref() else {
+                continue;
+            };
+            if store.entries.is_empty() {
+                continue;
+            }
+            let Some((project_id, project_name)) = gallery_project_identity(project_dir) else {
+                continue;
+            };
+            let project = projects
+                .entry(project_id)
+                .or_insert_with(|| GalleryProjectAccumulator {
+                    project_name,
+                    entries: HashMap::new(),
+                });
+
+            for entry in store.entries.values() {
+                let replace = project.entries.get(&entry.id).map_or(true, |current| {
+                    prefer_gallery_candidate(harness_id, entry, current)
+                });
+                if replace {
+                    project.entries.insert(
+                        entry.id.clone(),
+                        GalleryArtifactCandidate {
+                            harness_id: harness_id.clone(),
+                            entry: entry.clone(),
+                        },
+                    );
+                }
+            }
+        }
+
+        let mut project_rows: Vec<(String, GalleryProjectAccumulator)> =
+            projects.into_iter().collect();
+        project_rows.sort_by(|(id_a, a), (id_b, b)| {
+            a.project_name
+                .to_lowercase()
+                .cmp(&b.project_name.to_lowercase())
+                .then_with(|| id_a.cmp(id_b))
+        });
+
+        project_rows
             .into_iter()
-            .map(|harness_id| {
-                let store = &artifacts[harness_id];
-                let mut entries: Vec<&ArtifactEntry> = store.entries.values().collect();
+            .map(|(project_id, project)| {
+                let mut entries: Vec<ArtifactEntry> = project
+                    .entries
+                    .into_values()
+                    .map(|candidate| candidate.entry)
+                    .collect();
                 entries.sort_by(|a, b| {
                     let sa = parse_artifact_seq(&a.id).unwrap_or(0);
                     let sb = parse_artifact_seq(&b.id).unwrap_or(0);
@@ -1376,7 +1418,8 @@ impl HookServer {
                     })
                     .collect();
                 json!({
-                    "harnessId": harness_id,
+                    "projectId": project_id,
+                    "projectName": project.project_name,
                     "artifacts": artifact_rows,
                 })
             })
@@ -2087,6 +2130,18 @@ struct HarnessArtifactStore {
     project_dir: Option<String>,
     /// Key: artifact id.
     entries: HashMap<String, ArtifactEntry>,
+}
+
+#[derive(Debug)]
+struct GalleryArtifactCandidate {
+    harness_id: String,
+    entry: ArtifactEntry,
+}
+
+#[derive(Debug)]
+struct GalleryProjectAccumulator {
+    project_name: String,
+    entries: HashMap<String, GalleryArtifactCandidate>,
 }
 
 // ─── Review Board (spec 211) ────────────────────────────────────────────────
@@ -2887,7 +2942,7 @@ fn tool_category(name: &str) -> &'static str {
         "peer_send" | "peer_list" => "peering",
         "artifact_new" | "artifact_register" | "artifact_cancel" => "artifacts",
         "attention_flag" | "attention_resolve" => "attention",
-        "timeline_suggest" | "timeline_record" => "timeline",
+        "timeline_suggest" | "timeline_record" | "timeline_list" | "timeline_merge" => "timeline",
         "review_outcome" | "mark_review_priority" => "review",
         // spec 211: the Review Board is an authored surface, grouped with the
         // other path-handoff surfaces rather than with the `review_outcome`
@@ -2931,10 +2986,10 @@ async fn handle_tools_json() -> Response {
     resp
 }
 
-/// GET /artifacts — read-only artifact listings for all live harness stores.
+/// GET /artifacts — read-only artifact listings grouped by project.
 async fn handle_artifacts(AxumState(state): AxumState<Arc<HookServerState>>) -> Response {
     let mut resp = Json(json!({
-        "harnesses": state.hook_server.list_all_artifacts_for_gallery(),
+        "projects": state.hook_server.list_all_artifacts_for_gallery(),
     }))
     .into_response();
     resp.headers_mut().insert(
@@ -3616,6 +3671,8 @@ async fn handle_bus_tool_call(
         "attention_resolve" => attention_resolve(state, harness_id, lane_label, arguments).await,
         "timeline_suggest" => timeline_suggest(state, harness_id, lane_label, arguments),
         "timeline_record" => timeline_record(state, harness_id, lane_label, arguments),
+        "timeline_list" => timeline_list(state, harness_id, arguments),
+        "timeline_merge" => timeline_merge(state, harness_id, lane_label, arguments),
         "review_outcome" => review_outcome(state, harness_id, lane_label, arguments).await,
         "mark_review_priority" => {
             mark_review_priority(state, harness_id, lane_label, arguments).await
@@ -3877,11 +3934,143 @@ fn timeline_record(
             "timeline_record is unavailable without a local project workspace".to_string()
         })?;
     let result = crate::timeline::record_direct_project(&project_dir, lane_label, request)?;
-    Ok(json!({
+    let mut ack = json!({
         "event_id": result.event.id,
+        "topic_id": result.event.topic_id,
         "path": result.event.path,
         "disposition": result.disposition,
+        "new_topic": result.new_topic,
+    });
+    // spec 262: advisory tail. Present only when it carries information, so the
+    // common "appended to the topic I was given" ack stays small.
+    if let Value::Object(ref mut object) = ack {
+        if !result.existing_topics.is_empty() {
+            object.insert(
+                "existing_topics".to_string(),
+                serde_json::to_value(&result.existing_topics)
+                    .map_err(|error| format!("failed to encode timeline topics: {error}"))?,
+            );
+            object.insert(
+                "notice".to_string(),
+                json!(
+                    "This created a NEW topic. If existing_topics already contains this subject, \
+                     pass that topic_id for the remaining events of this chronology and tell the \
+                     user which topic ended up split."
+                ),
+            );
+        }
+        if !result.warnings.is_empty() {
+            object.insert("warnings".to_string(), json!(result.warnings));
+        }
+    }
+    Ok(ack)
+}
+
+/// spec 263: move every event of one topic into another, or undo the last such
+/// merge. Reverses this spec's original human-only stance so the human can ask
+/// in plain language; the explicit `instruction_excerpt` is what separates an
+/// authorized repair from an agent deciding two topics look alike.
+fn timeline_merge(
+    state: &HookServerState,
+    harness_id: &str,
+    lane_label: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let instruction_excerpt = required_string(&arguments, "instruction_excerpt")?;
+    let undo = arguments
+        .get("undo")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let from = arguments
+        .get("from")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let into = arguments
+        .get("into")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let project_dir = state
+        .hook_server
+        .project_dir_for_harness(harness_id)
+        .ok_or_else(|| {
+            "timeline_merge is unavailable without a local project workspace".to_string()
+        })?;
+    if undo {
+        if from.is_some() || into.is_some() {
+            return Err("undo reverses the most recent merge: omit from and into".to_string());
+        }
+        let undone = crate::timeline::undo_last_merge_project(&project_dir)?;
+        return Ok(json!({
+            "merge_id": undone.merge_id,
+            "restored_events": undone.restored_events,
+            "from_topic_id": undone.from_topic_id,
+            "into_topic_id": undone.into_topic_id,
+        }));
+    }
+    let (Some(from), Some(into)) = (from, into) else {
+        return Err("from and into are required unless undo is true".to_string());
+    };
+    let merged = crate::timeline::merge_topics_project(
+        &project_dir,
+        from,
+        into,
+        Some(crate::timeline::TimelineMergeAuthorization {
+            lane_label: lane_label.to_string(),
+            instruction_excerpt,
+        }),
+    )?;
+    Ok(json!({
+        "merge_id": merged.merge_id,
+        "moved_events": merged.moved_events,
+        "from_topic_id": merged.from_topic_id,
+        "from_topic_title": merged.from_topic_title,
+        "into_topic_id": merged.into_topic_id,
+        "into_topic_title": merged.into_topic_title,
+        "backup_path": merged.backup_path,
+        "undo": "call timeline_merge with undo: true to reverse this",
     }))
+}
+
+/// Read-only project timeline discovery (spec 262). A lane that cannot see the
+/// existing topics invents a new one every session, so one subject fragments
+/// across several `topic_id` values (wk-j/krypton#27). Writes nothing.
+fn timeline_list(
+    state: &HookServerState,
+    harness_id: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let topic_id = arguments
+        .get("topic_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let query = arguments.get("query").and_then(Value::as_str);
+    let limit = arguments
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or_default() as usize;
+    let project_dir = state
+        .hook_server
+        .project_dir_for_harness(harness_id)
+        .ok_or_else(|| {
+            "timeline_list is unavailable without a local project workspace".to_string()
+        })?;
+    let value = match topic_id {
+        Some(topic_id) => serde_json::to_value(crate::timeline::list_topic_events_project(
+            &project_dir,
+            topic_id,
+            query,
+            limit,
+        )?),
+        None => serde_json::to_value(crate::timeline::list_topics_project(
+            &project_dir,
+            query,
+            limit,
+        )?),
+    };
+    value.map_err(|error| format!("failed to encode timeline listing: {error}"))
 }
 
 /// attention_flag — a lane self-reports a decision needing human judgement
@@ -5404,6 +5593,8 @@ fn bus_tool_descriptors() -> Value {
         }
         arr.push(timeline_suggest_tool_descriptor());
         arr.push(timeline_record_tool_descriptor());
+        arr.push(timeline_list_tool_descriptor());
+        arr.push(timeline_merge_tool_descriptor());
     }
     tools
 }
@@ -5440,16 +5631,19 @@ fn project_backed_bus_tool(name: &str) -> bool {
             | "ticket_link"
             | "timeline_suggest"
             | "timeline_record"
+            | "timeline_list"
+            | "timeline_merge"
     )
 }
 
 fn timeline_record_tool_descriptor() -> Value {
     json!({
         "name": "timeline_record",
-        "description": "Persist ONE authoritative project timeline event without confirmation UI, but ONLY when the current human message explicitly asks to record, remember, persist, or add it to the timeline. The user's request is the confirmation. Copy the exact authorizing words into `instruction_excerpt`; do not paraphrase them there. If the current user is the authority and no more specific identity is given, use `Current user` for `made_by`. Do not call this because an event merely seems important: use timeline_suggest for unsolicited capture. For a traced chronology, record only sourced recorded/observed events, never inferred rows. Never copy secrets, tokens, environment values, or raw tool output. Report the returned event ID/path to the user. LANGUAGE: write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai, the way a Thai engineer writes; keep technical terms in English. Preserve `instruction_excerpt`, `made_by`, `source_ref`, identifiers, paths, URLs, commit hashes, and quoted source text verbatim.",
+        "description": "Persist ONE authoritative project timeline event without confirmation UI, but ONLY when the current human message explicitly asks to record, remember, persist, or add it to the timeline. The user's request is the confirmation. Copy the exact authorizing words into `instruction_excerpt`; do not paraphrase them there. If the current user is the authority and no more specific identity is given, use `Current user` for `made_by`. Do not call this because an event merely seems important: use timeline_suggest for unsolicited capture. For a traced chronology, record only sourced recorded/observed events, never inferred rows. Call timeline_list FIRST and reuse the `topic_id` of the topic that already covers this subject — titles differ across sessions and languages, so a matching title is not what identifies a topic. Omit `topic_id` only when no existing topic covers it, then reuse the returned ID for every remaining event; keep event-specific wording in `summary`, not `topic_title`. Never copy secrets, tokens, environment values, or raw tool output. Report every returned event ID, topic ID, and path to the user. LANGUAGE: write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai, the way a Thai engineer writes; keep technical terms in English. Preserve `instruction_excerpt`, `made_by`, `source_ref`, identifiers, paths, URLs, commit hashes, and quoted source text verbatim.",
         "inputSchema": {
             "type": "object",
             "properties": {
+                "topic_id": { "type": "string", "maxLength": 80, "pattern": "^topic-[a-z0-9-]+$", "description": "Existing topic ID from timeline_list or an earlier timeline_record. Reuse it for every later event in one traced chronology, and for a subject the timeline already covers; omit it only when timeline_list shows no topic for this subject." },
                 "topic_title": { "type": "string", "maxLength": 120, "description": "Stable human-readable topic in natural Thai; keep technical terms in English." },
                 "summary": { "type": "string", "maxLength": 500, "description": "The durable event or decision in one natural-Thai line; keep technical terms in English." },
                 "made_by": { "type": "string", "maxLength": 120, "description": "Who explicitly made or approved it; use Current user when this prompt is the authority." },
@@ -5462,6 +5656,47 @@ fn timeline_record_tool_descriptor() -> Value {
                 "related_event": { "type": "string", "maxLength": 64 }
             },
             "required": ["topic_title", "summary", "made_by", "instruction_excerpt"]
+        }
+    })
+}
+
+/// spec 262: the read half of the timeline contract. Without it a lane has no
+/// way to learn a `topic_id` it did not create itself, and every session starts
+/// a duplicate topic for the same subject.
+fn timeline_list_tool_descriptor() -> Value {
+    json!({
+        "name": "timeline_list",
+        "description": "Read the project timeline. Call this BEFORE the first timeline_record about a subject, and whenever you need the existing history: it is read-only, writes nothing, and opens no UI. With no arguments it returns the stored topics, most recent activity first, each with the `topic_id` you must pass back to timeline_record to keep one subject in one chronology. Titles are not identity — the same subject is often titled differently per session and per language, so scan the summaries and reuse the matching topic's ID instead of creating a new topic. Pass `topic_id` to read that topic's events newest-first before adding to it, so you do not record a fact it already contains.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "topic_id": { "type": "string", "maxLength": 80, "pattern": "^topic-[a-z0-9-]+$", "description": "Optional: read this topic's events instead of the topic list." },
+                "query": { "type": "string", "maxLength": 120, "description": "Optional case-insensitive substring filter over topic titles and event summaries. It cannot match across languages, so prefer the unfiltered list when looking for an existing topic." },
+                "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Optional maximum rows to return; defaults to 20. The response reports the full count and whether it was truncated." }
+            }
+        }
+    })
+}
+
+/// spec 263: agent-invoked topic repair. Originally human-only; opened to lanes
+/// so the human can ask in plain language instead of typing the
+/// `#timeline merge <from> into <into>` grammar. The guards are the explicit
+/// authorizing instruction, a deterministic selector that refuses ambiguity, the
+/// automatic backup, and a permission prompt — this is the one timeline tool
+/// deliberately left out of the built-in auto-allow set.
+fn timeline_merge_tool_descriptor() -> Value {
+    json!({
+        "name": "timeline_merge",
+        "description": "Repair project timeline grouping by moving every event of one topic into another, ONLY when the current human message explicitly asks to merge, combine, or join timeline topics (or to undo that). Their request is the confirmation; copy their exact authorizing words into `instruction_excerpt`. Call timeline_list first and pass the two `topic_id` values you found — a selector matching several topics is refused rather than guessed. Only the grouping changes: every event keeps its own title, summary, provenance, and ID. Pass `undo: true` (with no from/into) to reverse the most recent merge. Every touched file is backed up before the rewrite; report the moved count, both topics, and the backup path to the user. Never merge because topics merely look similar to you: without an explicit human instruction, say what you would merge and let them decide.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "from": { "type": "string", "maxLength": 120, "description": "Source topic to empty: a topic_id from timeline_list, or a unique substring of its title." },
+                "into": { "type": "string", "maxLength": 120, "description": "Target topic that keeps the events: a topic_id from timeline_list, or a unique substring of its title." },
+                "undo": { "type": "boolean", "description": "Reverse the most recent merge instead of merging. Omit from and into when true." },
+                "instruction_excerpt": { "type": "string", "maxLength": 1000, "description": "Exact words from the current human message that authorize this merge or undo." }
+            },
+            "required": ["instruction_excerpt"]
         }
     })
 }
@@ -5803,6 +6038,43 @@ fn parse_artifact_seq(id: &str) -> Option<u64> {
         return None;
     }
     seq.parse::<u64>().ok()
+}
+
+/// Spec 265: stable, path-free project identity for the loopback gallery.
+fn gallery_project_identity(project_dir: &str) -> Option<(String, String)> {
+    if project_dir.is_empty() {
+        return None;
+    }
+    let canonical = StdPath::new(project_dir)
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(project_dir));
+    let mut hasher = Sha256::new();
+    hasher.update(canonical.to_string_lossy().as_bytes());
+    let hash = format!("{:x}", hasher.finalize());
+    let project_name = canonical
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("project")
+        .to_string();
+    Some((format!("project-{}", &hash[..16]), project_name))
+}
+
+/// Prefer the most complete same-project copy, then the lowest harness id so
+/// deduplication remains stable even when two live harnesses rehydrate one tree.
+fn prefer_gallery_candidate(
+    candidate_harness_id: &str,
+    candidate: &ArtifactEntry,
+    current: &GalleryArtifactCandidate,
+) -> bool {
+    let candidate_state = u8::from(candidate.state == ArtifactState::RegisteredLive);
+    let current_state = u8::from(current.entry.state == ArtifactState::RegisteredLive);
+    let candidate_hash = u8::from(!candidate.hash.is_empty());
+    let current_hash = u8::from(!current.entry.hash.is_empty());
+
+    (candidate_state, candidate_hash) > (current_state, current_hash)
+        || ((candidate_state, candidate_hash) == (current_state, current_hash)
+            && candidate_harness_id < current.harness_id.as_str())
 }
 
 /// spec 173: pull the `<title>…</title>` text back out of a served artifact file
@@ -8909,6 +9181,14 @@ mod tests {
             names.contains(&"timeline_record"),
             "timeline_record should be advertised for explicit user requests"
         );
+        assert!(
+            names.contains(&"timeline_list"),
+            "timeline_list should be advertised so a lane can find an existing topic"
+        );
+        assert!(
+            names.contains(&"timeline_merge"),
+            "timeline_merge should be advertised so the human can ask for topic repair in prose"
+        );
         let direct = tools
             .as_array()
             .expect("tools array")
@@ -8923,7 +9203,13 @@ mod tests {
             .get("description")
             .and_then(Value::as_str)
             .is_some_and(|description| description.contains("natural Thai")
-                && description.contains("Preserve `instruction_excerpt`")));
+                && description.contains("Preserve `instruction_excerpt`")
+                && description.contains("Call timeline_list FIRST")
+                && description.contains("reuse the returned ID for every remaining event")));
+        assert_eq!(
+            direct.pointer("/inputSchema/properties/topic_id/type"),
+            Some(&Value::String("string".to_string()))
+        );
         let suggestion = tools
             .as_array()
             .expect("tools array")
@@ -8942,6 +9228,46 @@ mod tests {
                 .map(Vec::len),
             Some(4)
         );
+        // spec 262: the read tool must be callable with no arguments at all —
+        // an orientation call the lane makes before it knows anything.
+        let lister = tools
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .find(|tool| tool.get("name").and_then(Value::as_str) == Some("timeline_list"))
+            .expect("timeline_list descriptor");
+        assert!(lister.pointer("/inputSchema/required").is_none());
+        assert!(lister
+            .get("description")
+            .and_then(Value::as_str)
+            .is_some_and(|description| description.contains("read-only")
+                && description.contains("BEFORE the first timeline_record")
+                && description.contains("Titles are not identity")));
+        assert_eq!(
+            lister.pointer("/inputSchema/properties/limit/maximum"),
+            Some(&json!(50))
+        );
+        // spec 263: the only timeline tool that rewrites confirmed records. The
+        // authorizing instruction is the required field, not the topics.
+        let merger = tools
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .find(|tool| tool.get("name").and_then(Value::as_str) == Some("timeline_merge"))
+            .expect("timeline_merge descriptor");
+        assert_eq!(
+            merger
+                .pointer("/inputSchema/required")
+                .and_then(Value::as_array)
+                .map(Vec::as_slice),
+            Some([json!("instruction_excerpt")].as_slice())
+        );
+        assert!(merger
+            .get("description")
+            .and_then(Value::as_str)
+            .is_some_and(|description| description
+                .contains("ONLY when the current human message")
+                && description.contains("Never merge because topics merely look similar")));
     }
 
     #[test]
@@ -8968,6 +9294,8 @@ mod tests {
             "ticket_note",
             "timeline_suggest",
             "timeline_record",
+            "timeline_list",
+            "timeline_merge",
         ] {
             assert!(
                 !names.contains(&project_backed),
@@ -9107,14 +9435,9 @@ mod tests {
         server.artifact_cancel("hm-2", "Claude-1", &id).unwrap();
         assert!(path.exists(), "cancel must preserve the on-disk file");
         let listing = server.list_all_artifacts_for_gallery();
-        assert_eq!(listing.len(), 1);
         assert!(
-            listing[0]["artifacts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|a| a["id"].as_str() != Some(id.as_str())),
-            "cancelled artifact must be delisted from gallery"
+            listing.is_empty(),
+            "a project with only a cancelled artifact must be omitted"
         );
         // register-after-cancel errors.
         assert!(server.artifact_register("hm-2", "Claude-1", &id).is_err());
@@ -9326,6 +9649,11 @@ mod tests {
         assert!(TIMELINE_HTML.contains("textContent"));
         assert!(TIMELINE_HTML.contains("event.evidenceExcerpt"));
         assert!(TIMELINE_HTML.contains("event.instructionExcerpt"));
+        assert!(TIMELINE_HTML.contains("event.key === ' '"));
+        assert!(TIMELINE_HTML.contains("event.key === 'i'"));
+        assert!(TIMELINE_HTML.contains("aria-expanded"));
+        assert!(TIMELINE_HTML.contains("detailMode"));
+        assert!(TIMELINE_HTML.contains("isGenericActor"));
         assert!(TIMELINE_HTML.contains("<html lang=\"th\">"));
         assert!(TIMELINE_HTML.contains("เฉพาะเครื่องนี้"));
         assert!(TIMELINE_HTML.contains("toLocaleDateString('th-TH'"));
@@ -9853,10 +10181,12 @@ mod tests {
         let s2 = HookServer::new();
         s2.init_harness_artifacts("hm-99", Some(project.clone()));
 
-        // Re-listed in the gallery under the live harness.
+        // Re-listed in the gallery under its stable project identity.
         let gallery = s2.list_all_artifacts_for_gallery();
         assert_eq!(gallery.len(), 1);
-        assert_eq!(gallery[0]["harnessId"], "hm-99");
+        let (project_id, project_name) = gallery_project_identity(&project).unwrap();
+        assert_eq!(gallery[0]["projectId"], project_id);
+        assert_eq!(gallery[0]["projectName"], project_name);
         let rows = gallery[0]["artifacts"].as_array().unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0]["id"], id);
@@ -9964,7 +10294,7 @@ mod tests {
     }
 
     #[test]
-    fn gallery_lists_pending_and_live_across_two_harnesses() {
+    fn gallery_lists_pending_and_live_across_two_projects() {
         let server = HookServer::new();
         let tmp_a = std::env::temp_dir().join(format!("krypton-gal-a-{}", rand_suffix()));
         let tmp_b = std::env::temp_dir().join(format!("krypton-gal-b-{}", rand_suffix()));
@@ -9994,13 +10324,25 @@ mod tests {
 
         let listing = server.list_all_artifacts_for_gallery();
         assert_eq!(listing.len(), 2);
-        assert_eq!(listing[0]["harnessId"], json!("hm-a"));
-        assert_eq!(listing[1]["harnessId"], json!("hm-b"));
+        let (project_a_id, project_a_name) =
+            gallery_project_identity(tmp_a.to_string_lossy().as_ref()).unwrap();
+        let (project_b_id, project_b_name) =
+            gallery_project_identity(tmp_b.to_string_lossy().as_ref()).unwrap();
+        let project_a = listing
+            .iter()
+            .find(|project| project["projectId"] == project_a_id)
+            .unwrap();
+        let project_b = listing
+            .iter()
+            .find(|project| project["projectId"] == project_b_id)
+            .unwrap();
+        assert_eq!(project_a["projectName"], project_a_name);
+        assert_eq!(project_b["projectName"], project_b_name);
 
-        let hm_a = &listing[0]["artifacts"];
-        assert_eq!(hm_a.as_array().unwrap().len(), 1);
+        let project_a_artifacts = &project_a["artifacts"];
+        assert_eq!(project_a_artifacts.as_array().unwrap().len(), 1);
         assert_eq!(
-            hm_a[0],
+            project_a_artifacts[0],
             json!({
                 "id": pending_id,
                 "laneLabel": "Cursor-1",
@@ -10013,35 +10355,58 @@ mod tests {
             })
         );
 
-        let hm_b = &listing[1]["artifacts"];
-        assert_eq!(hm_b.as_array().unwrap().len(), 1);
-        assert_eq!(hm_b[0]["state"], json!("live"));
-        assert_eq!(hm_b[0]["size"], json!(live_size));
-        assert_eq!(hm_b[0]["hash"], json!(live_hash));
-        assert_eq!(hm_b[0]["laneLabel"], json!("OpenCode-1"));
-        assert_eq!(hm_b[0]["title"], json!("Live dashboard"));
-        assert_eq!(hm_b[0]["tail"], json!(live_tail));
-        assert_eq!(hm_b[0]["token"], json!(live_token));
+        let project_b_artifacts = &project_b["artifacts"];
+        assert_eq!(project_b_artifacts.as_array().unwrap().len(), 1);
+        assert_eq!(project_b_artifacts[0]["state"], json!("live"));
+        assert_eq!(project_b_artifacts[0]["size"], json!(live_size));
+        assert_eq!(project_b_artifacts[0]["hash"], json!(live_hash));
+        assert_eq!(project_b_artifacts[0]["laneLabel"], json!("OpenCode-1"));
+        assert_eq!(project_b_artifacts[0]["title"], json!("Live dashboard"));
+        assert_eq!(project_b_artifacts[0]["tail"], json!(live_tail));
+        assert_eq!(project_b_artifacts[0]["token"], json!(live_token));
 
         let _ = std::fs::remove_dir_all(&tmp_a);
         let _ = std::fs::remove_dir_all(&tmp_b);
     }
 
     #[test]
-    fn gallery_includes_empty_live_harness() {
+    fn gallery_omits_empty_projects() {
         let server = HookServer::new();
         let tmp = std::env::temp_dir().join(format!("krypton-gal-empty-{}", rand_suffix()));
         std::fs::create_dir_all(&tmp).unwrap();
         server.init_harness_artifacts("hm-empty", Some(tmp.to_string_lossy().to_string()));
 
         let listing = server.list_all_artifacts_for_gallery();
-        assert_eq!(
-            listing,
-            vec![json!({
-                "harnessId": "hm-empty",
-                "artifacts": [],
-            })]
-        );
+        assert!(listing.is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn gallery_deduplicates_same_project_across_live_harnesses() {
+        let server = HookServer::new();
+        let tmp = std::env::temp_dir().join(format!("krypton-gal-shared-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let project = tmp.to_string_lossy().to_string();
+        server.init_harness_artifacts("hm-a", Some(project.clone()));
+
+        let issued = server
+            .artifact_new("hm-a", "Codex-4", "Shared project artifact")
+            .unwrap();
+        let artifact_id = issued["id"].as_str().unwrap().to_string();
+
+        // The second live harness rehydrates the same file as registered/live.
+        // The gallery must show one project and one row, preferring that complete
+        // copy over the still-pending entry in hm-a.
+        server.init_harness_artifacts("hm-b", Some(project.clone()));
+
+        let listing = server.list_all_artifacts_for_gallery();
+        assert_eq!(listing.len(), 1);
+        let artifacts = listing[0]["artifacts"].as_array().unwrap();
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0]["id"], artifact_id);
+        assert_eq!(artifacts[0]["state"], "live");
+        assert!(!artifacts[0]["hash"].as_str().unwrap().is_empty());
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -10074,7 +10439,6 @@ mod tests {
 
         let listing = server.list_all_artifacts_for_gallery();
         assert_eq!(listing.len(), 1);
-        assert_eq!(listing[0]["harnessId"], json!("hm-sort"));
         let arts = listing[0]["artifacts"].as_array().unwrap();
         assert_eq!(arts.len(), 11);
 
@@ -10125,7 +10489,6 @@ mod tests {
 
         let after = server.list_all_artifacts_for_gallery();
         assert_eq!(after.len(), 1);
-        assert_eq!(after[0]["harnessId"], json!("hm-cancel"));
         let arts = after[0]["artifacts"].as_array().unwrap();
         assert_eq!(arts.len(), 1);
         assert_eq!(arts[0]["id"], json!(keep_id));
@@ -10141,7 +10504,7 @@ mod tests {
 
     fn artifacts_contract_response(server: &HookServer) -> Response {
         let mut resp = Json(json!({
-            "harnesses": server.list_all_artifacts_for_gallery(),
+            "projects": server.list_all_artifacts_for_gallery(),
         }))
         .into_response();
         resp.headers_mut().insert(
@@ -10200,17 +10563,20 @@ mod tests {
         let (status, cache_control, body) = artifacts_response(&server).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(cache_control.as_deref(), Some("no-store"));
-        assert_eq!(body["harnesses"].as_array().unwrap().len(), 1);
-        assert_eq!(body["harnesses"][0]["harnessId"], json!("hm-route"));
+        assert_eq!(body["projects"].as_array().unwrap().len(), 1);
+        let (project_id, project_name) =
+            gallery_project_identity(tmp.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(body["projects"][0]["projectId"], project_id);
+        assert_eq!(body["projects"][0]["projectName"], project_name);
         assert_eq!(
-            body["harnesses"][0]["artifacts"][0]["id"],
+            body["projects"][0]["artifacts"][0]["id"],
             json!(artifact_id)
         );
         assert_eq!(
-            body["harnesses"][0]["artifacts"][0]["state"],
+            body["projects"][0]["artifacts"][0]["state"],
             json!("pending")
         );
-        assert_eq!(body["harnesses"][0]["artifacts"][0]["token"], json!(token));
+        assert_eq!(body["projects"][0]["artifacts"][0]["token"], json!(token));
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

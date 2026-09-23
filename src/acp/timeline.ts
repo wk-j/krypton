@@ -116,10 +116,32 @@ export type TimelineCommand =
   | { kind: 'trace'; topic: string }
   | { kind: 'review' }
   | { kind: 'auto'; state: 'status' | 'on' | 'off' }
+  // spec 263: human-only repair for topics that were split before spec 262.
+  | { kind: 'merge'; from: string; into: string }
+  | { kind: 'mergeUndo' }
   | { kind: 'usage' };
 
+/** spec 263: result of `#timeline merge <from> into <into>`. */
+export interface TimelineMergeResult {
+  mergeId: string;
+  fromTopicId: string;
+  fromTopicTitle: string;
+  intoTopicId: string;
+  intoTopicTitle: string;
+  movedEvents: number;
+  backupPath: string;
+}
+
+export interface TimelineMergeUndoResult {
+  mergeId: string;
+  fromTopicId: string;
+  intoTopicId: string;
+  restoredEvents: number;
+}
+
 export const TIMELINE_USAGE =
-  'วิธีใช้: #timeline [open [<topic>] | add [<topic>] | review | auto [on|off] | trace <topic> | <topic>]';
+  'วิธีใช้: #timeline [open [<topic>] | add [<topic>] | review | auto [on|off] '
+  + '| merge <topic> into <topic> | merge undo | trace <topic> | <topic>]';
 
 export function parseTimelineCommand(text: string): TimelineCommand {
   const args = text.trim().split(/\s+/).slice(1);
@@ -136,6 +158,16 @@ export function parseTimelineCommand(text: string): TimelineCommand {
     const state = args[1].toLowerCase();
     if (args.length === 2 && (state === 'on' || state === 'off')) return { kind: 'auto', state };
     return { kind: 'usage' };
+  }
+  if (action === 'merge') {
+    const rest = args.slice(1).join(' ').trim();
+    if (!rest) return { kind: 'usage' };
+    if (rest.toLowerCase() === 'undo') return { kind: 'mergeUndo' };
+    // greedy left side: the LAST ` into ` separates, so a source title that
+    // itself contains the word still resolves.
+    const parts = /^(.*\S)\s+into\s+(\S.*)$/i.exec(rest);
+    if (!parts) return { kind: 'usage' };
+    return { kind: 'merge', from: parts[1].trim(), into: parts[2].trim() };
   }
   if (action === 'add') {
     return {

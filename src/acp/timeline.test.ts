@@ -78,6 +78,26 @@ describe('parseTimelineCommand', () => {
     expect(parseTimelineCommand('#timeline auto maybe')).toEqual({ kind: 'usage' });
     expect(parseTimelineCommand('#timeline review extra')).toEqual({ kind: 'usage' });
   });
+
+  // spec 263: topic repair. The separator is the LAST ` into `, so a source
+  // title containing the word still resolves.
+  it('parses topic merge and its undo', () => {
+    expect(parseTimelineCommand('#timeline merge topic-old into topic-new')).toEqual({
+      kind: 'merge',
+      from: 'topic-old',
+      into: 'topic-new',
+    });
+    expect(parseTimelineCommand('#timeline merge looking into uploads into upload validation')).toEqual({
+      kind: 'merge',
+      from: 'looking into uploads',
+      into: 'upload validation',
+    });
+    expect(parseTimelineCommand('#timeline merge undo')).toEqual({ kind: 'mergeUndo' });
+    expect(parseTimelineCommand('#timeline merge UNDO')).toEqual({ kind: 'mergeUndo' });
+    expect(parseTimelineCommand('#timeline merge')).toEqual({ kind: 'usage' });
+    expect(parseTimelineCommand('#timeline merge topic-old')).toEqual({ kind: 'usage' });
+    expect(parseTimelineCommand('#timeline merge into topic-new')).toEqual({ kind: 'usage' });
+  });
 });
 
 describe('timeline topics', () => {

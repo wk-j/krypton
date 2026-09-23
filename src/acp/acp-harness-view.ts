@@ -153,6 +153,8 @@ import {
   parseTimelineCommand,
   type TimelineEvent,
   type TimelineListResponse,
+  type TimelineMergeResult,
+  type TimelineMergeUndoResult,
   type TimelineRecordRequest,
   type TimelineSuggestion,
   type TimelineSuggestionListResponse,
@@ -9107,7 +9109,12 @@ export class AcpHarnessView implements ContentView {
     );
     if (!this.remoteRuntimeId && lane.backendId !== 'pi-acp') {
       lines.push(
-        'Project timeline direct record: when the current human message explicitly asks you to record, remember, persist, or add something to the project timeline, call timeline_record in that same turn. Their request is the confirmation; copy the exact authorizing words into `instruction_excerpt`, report the returned event ID/path, and do not ask for another confirmation or open a review UI. Use `made_by: "Current user"` when this prompt is the authority and no more specific identity is given. For a traced chronology, persist only sourced `recorded`/`observed` events, never `inferred` rows. Never call timeline_record merely because something seems important; unsolicited capture stays timeline_suggest. Never include secrets, environment values, or raw tool output. LANGUAGE: write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai, the way a Thai engineer writes; keep technical terms in English. Preserve `instruction_excerpt`, `made_by`, `source_ref`, identifiers, paths, URLs, commit hashes, and quoted source text verbatim.',
+        'Project timeline direct record: when the current human message explicitly asks you to record, remember, persist, or add something to the project timeline, call timeline_record in that same turn. Their request is the confirmation; copy the exact authorizing words into `instruction_excerpt`, report every returned event ID, topic ID, and path, and do not ask for another confirmation or open a review UI. Use `made_by: "Current user"` when this prompt is the authority and no more specific identity is given. Before the first timeline_record about a subject, call timeline_list (read-only) and reuse the `topic_id` of the topic that already covers it — topic titles vary per session and per language, so a title that does not match does not mean the topic is new; omit `topic_id` only when no existing topic covers the subject. For a traced chronology, persist only sourced `recorded`/`observed` events, never `inferred` rows: reuse one `topic_id` for every event in the trace and keep event-specific wording in `summary`, not `topic_title`. If an ack comes back with `new_topic: true` and `existing_topics`, check whether one of them is the same subject, use its ID for the remaining events, and tell the user. Never call timeline_record merely because something seems important; unsolicited capture stays timeline_suggest. Never include secrets, environment values, or raw tool output. LANGUAGE: write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai, the way a Thai engineer writes; keep technical terms in English. Preserve `instruction_excerpt`, `made_by`, `source_ref`, identifiers, paths, URLs, commit hashes, and quoted source text verbatim.',
+      );
+      // spec 263: the human should be able to ask for topic repair in plain
+      // language instead of typing the `#timeline merge … into …` grammar.
+      lines.push(
+        'Project timeline topic repair: when the human explicitly asks to merge, combine, or join timeline topics — or to undo that — call timeline_merge in the same turn. Read timeline_list first, pass the two `topic_id` values you found plus their exact authorizing words in `instruction_excerpt`, and report the moved count, both topic titles, and the backup path. `undo: true` with no from/into reverses the most recent merge. Only the grouping changes; every event keeps its own title, summary, provenance, and ID. Never merge because two topics merely look similar to you: without an explicit instruction, name what you would merge and let the human decide.',
       );
     }
     if (this.timelineAutomaticSuggestions && !this.remoteRuntimeId && lane.backendId !== 'pi-acp') {
@@ -11309,11 +11316,51 @@ export class AcpHarnessView implements ContentView {
       }
       return;
     }
+    if (command.kind === 'merge' || command.kind === 'mergeUndo') {
+      await this.runTimelineMerge(lane, command);
+      return;
+    }
     if (command.kind === 'add') {
       await this.openTimelineCapture(lane, command.topic);
       return;
     }
     await this.openTimelineBrowser(command.topic);
+  }
+
+  /**
+   * spec 263: repair topics that were already split. `.krypton/` is gitignored,
+   * so the backend backs every touched file up before rewriting and this reports
+   * the undo in the same line — the human should never have to find it later.
+   */
+  private async runTimelineMerge(
+    lane: HarnessLane,
+    command: { kind: 'merge'; from: string; into: string } | { kind: 'mergeUndo' },
+  ): Promise<void> {
+    if (!this.harnessMemoryId) {
+      this.flashChip('ใช้ timeline ไม่ได้: ยังไม่ได้ลงทะเบียน project กับ Harness');
+      return;
+    }
+    try {
+      if (command.kind === 'mergeUndo') {
+        const undone = await invoke<TimelineMergeUndoResult>('timeline_merge_undo', {
+          harnessId: this.harnessMemoryId,
+        });
+        const message = `ย้อน merge timeline แล้ว · คืน ${undone.restoredEvents} event กลับไปที่ ${undone.fromTopicId}`;
+        this.appendTranscript(lane, 'system', message);
+        this.flashChip(message);
+        return;
+      }
+      const merged = await invoke<TimelineMergeResult>('timeline_merge_topics', {
+        harnessId: this.harnessMemoryId,
+        from: command.from,
+        into: command.into,
+      });
+      const message = `รวม topic timeline แล้ว · ย้าย ${merged.movedEvents} event จาก "${merged.fromTopicTitle}" ไปที่ "${merged.intoTopicTitle}" (${merged.intoTopicId}) · สำรองไฟล์เดิมไว้ที่ ${merged.backupPath} · ย้อนกลับด้วย #timeline merge undo`;
+      this.appendTranscript(lane, 'system', message);
+      this.flashChip(message);
+    } catch (e) {
+      this.flashChip(`รวม topic timeline ไม่สำเร็จ: ${errorText(e)}`);
+    }
   }
 
   private async runHashCommand(lane: HarnessLane, text: string): Promise<void> {

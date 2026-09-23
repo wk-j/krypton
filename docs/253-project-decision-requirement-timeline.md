@@ -121,7 +121,10 @@ Every save creates exactly one local-only file:
 existing path is never overwritten. Correcting an event creates a new event related by
 `supersedes`. The repository already ignores `.krypton/`, so records stay on this machine and never
 enter the normal commit/review/push workflow. Cloning the repository or deleting `.krypton/` does
-not preserve them; export, sync, and backup are deliberately outside v1.
+not preserve them; export, sync, and backup are deliberately outside v1. The one exception is the
+topic-merge backup added by spec 263: `#timeline merge` copies every file it will touch into
+`.krypton/timeline/backups/<merge-id>/` with an undo manifest before rewriting its `topic_id`, since
+a gitignored record has no other recovery path.
 
 There is no persisted index file. Browse/capture scans the bounded `events/` directory and groups
 valid records by stable `topic_id`, so concurrent saves cannot leave a separate index out of sync.
@@ -214,26 +217,27 @@ row with the event ID and project-relative path; validation or I/O failure leave
 
 `GET /timeline?harness=<id>&topic=<query>` serves a reader-style Binance surface that fetches
 `GET /timeline.json` for the same project. The page is a scan-first list, not a stack of cards: one
-row per event, and only the selected event expands. It shows:
+compact row per event, with context and audit detail disclosed only on explicit action. It shows:
 
 - searchable topic list grouped by stable `topic_id`, ordered by latest activity, with the newest
   `topic_title` shown in full as display text (wrapping rather than ellipsizing) and a record count;
 - day headers that stick under the header while scrolling, so position in the chronology stays
   visible;
 - one compact row per event — time, the full summary (wrapping onto extra lines rather than
-  ellipsizing), **made by**, and small state pills (topic while unfiltered, `superseded`, `src`)
-  — separated by full-width rules, never left accent rails;
-- the selected row expanded in place with **recorded by**, topic, suggesting lane, evidence, the
-  exact authorizing instruction when a natural-language request created the event, rationale,
-  impact, relation such as `supersedes`, and the source link; at most one row is expanded, so the
-  detail block is the only heavy DOM on the page;
+  ellipsizing), meaningful **made by** values, and small state pills (topic while unfiltered,
+  `superseded`, `src`) — separated by full-width rules, never left accent rails;
+- an opt-in context block with non-empty rationale, impact, relation, and a compact source link;
+- a separate opt-in audit block with recorder/lane, topic and event IDs, suggestion/evidence,
+  authorizing instruction, related event, and the full source reference; at most one row owns detail
+  DOM at a time;
 - source links, with HTTP(S) opened normally and repo-relative docs routed through `/doc`;
 - a visible `local only` marker and diagnostics for malformed or missing linked local events.
 
-Keyboard: `/` search, `j`/`k` move (and expand) events, `Enter` opens the selected source, `[`/`]`
-move between topics, `r` reverses chronological order (oldest first by default, shown next to the
-count), and `Esc` clears the active filter. Moving the selection only re-renders the two affected
-rows; filter, search, order, and topic changes re-render the list. The page follows OS light/dark
+Keyboard: `/` search, `j`/`k` move without expanding, `Space` toggles context, `i` toggles audit,
+`Enter` opens the selected source, `[`/`]` move between topics, `r` reverses chronological order
+(oldest first by default, shown next to the count), and `Esc` clears the active filter. Moving the
+selection only updates the two affected rows; filter, search, order, and topic changes re-render
+the list. The page follows OS light/dark
 preference like the docs reader. It polls nothing; refresh reads disk again. All event text is
 inserted with `textContent`.
 

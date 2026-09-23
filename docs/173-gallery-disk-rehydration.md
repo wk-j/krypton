@@ -1,6 +1,6 @@
 # Artifact Gallery — Disk Rehydration on Startup — Implementation Spec
 
-> Status: Implemented (rev 2)
+> Status: Implemented (rev 3; project grouping amended by spec 265)
 > Date: 2026-06-23
 > Milestone: ACP Harness — observability
 > Builds on / amends: `docs/170-artifact-gallery-endpoint.md` (reverses its "registry NOT disk" decision), `docs/133-harness-html-artifacts.md` (artifact registry + the `acp-harness-artifact` mirror event), `docs/149-artifact-inline-feedback.md` (per-artifact feedback token + the frontend feedback guards)
@@ -97,7 +97,7 @@ All rehydrated entries are `RegisteredLive` (a persisted file is finished histor
 | File without a parseable token | Skipped + `debug`-logged. |
 | Same `art-N` seq across old sessions | Distinct full ids via random suffix → distinct keys; both list. |
 | Artifact's lane label is **not** a live lane this run | Lists in the gallery + serves; feedback POST returns `no_live_lane` (409) — identical to a same-session artifact whose lane stopped. Inherent: feedback can only inject into a live lane. Not a separate pattern. |
-| Two live harnesses share one `project_dir` | Both scan the same tree → gallery shows the set under each harness group; the token map's `harness_id` is last-writer-wins. Documented; uncommon. |
+| Two live harnesses share one `project_dir` | Both scan the same tree, then the gallery's project projection unions their stores and deduplicates by artifact ID. The token map's `harness_id` remains last-writer-wins for feedback routing. |
 | Harness close | Unchanged: registry + tokens dropped, files preserved; a re-open re-rehydrates. |
 | Large history (no GC) | Startup scan + hash cost grows with disk size — accepted (no retention). |
 
@@ -110,7 +110,7 @@ None blocking. Acknowledged, non-fork limitation: feedback only *lands* when the
 - Retention / GC / size bounds (explicitly none).
 - A second "archived, read-only, no-feedback" mode (ruled out).
 - Reconstructing `Pending` state across restarts.
-- Any change to the gallery page, `/artifacts` JSON shape, feedback endpoints, or `handleArtifactEvent` itself — all unchanged; rehydration reuses them.
+- Feedback endpoints and `handleArtifactEvent` itself remain unchanged. Spec 265 later changed the gallery page and `/artifacts` JSON shape without changing this rehydration flow.
 
 ## Resources
 

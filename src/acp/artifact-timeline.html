@@ -63,7 +63,7 @@
   .event.selected { background: var(--tint); }
   .event.superseded .event-summary { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--border); }
   .event-head { display: grid; grid-template-columns: 42px minmax(0, 1fr) minmax(0, auto); gap: 12px; align-items: baseline; }
-  .event-time, .pill, dt, .source, .relation, .label { font-family: var(--mono); }
+  .event-time, .pill, dt, .source, .relation, .label, .detail-toggle { font-family: var(--mono); }
   .event-time { color: var(--muted); font-size: 11px; }
   .event-summary { color: var(--fg); font-size: 13.5px; min-width: 0; overflow-wrap: anywhere; }
   .event.selected .event-summary { color: var(--accent); }
@@ -71,7 +71,15 @@
   .event-meta .who { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pill { border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--muted); font-size: 9px; white-space: nowrap; max-width: 20ch; overflow: hidden; text-overflow: ellipsis; }
   .pill.state { color: var(--accent); border-color: var(--accent); }
-  .detail { margin: 8px 0 4px 54px; display: grid; gap: 7px; }
+  .detail-toggle {
+    border: 0; padding: 1px 0; color: var(--muted); background: transparent;
+    font-size: 9px; cursor: pointer; white-space: nowrap;
+  }
+  .detail-toggle:hover, .detail-toggle:focus-visible { color: var(--accent); outline: none; }
+  .detail-toggle::before { content: '▸ '; }
+  .detail-toggle[aria-expanded="true"]::before { content: '▾ '; }
+  .detail { margin: 8px 0 4px 54px; display: grid; gap: 7px; color: var(--text); }
+  .detail--audit { padding-top: 8px; border-top: 1px solid var(--border); }
   dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 12px; margin: 0; }
   dt { color: var(--muted); font-size: 10px; }
   dd { margin: 0; color: var(--text); font-size: 12.5px; }
@@ -79,7 +87,7 @@
   .label { color: var(--muted); font-size: 10px; }
   .relation { color: var(--muted); font-size: 11px; }
   .source { color: var(--accent); font-size: 11px; word-break: break-all; }
-  .source.none { color: var(--muted); }
+  .source-ref { color: var(--muted); font: 10px var(--mono); word-break: break-all; }
   .diagnostics { margin-top: 20px; padding: 10px 12px; border: 1px solid var(--del); border-radius: 8px; background: rgba(246, 70, 93, .05); }
   .diagnostics h2 { margin: 0 0 6px; color: var(--del); font-size: 13px; }
   .diagnostics li { margin: 3px 0; font: 11px var(--mono); }
@@ -111,7 +119,7 @@
     <div class="summary"><h1 id="title">ลำดับเหตุการณ์</h1><span id="count" class="count"></span></div>
     <div id="events" class="events"></div>
     <section id="diagnostics" class="diagnostics" hidden><h2>ข้อมูลผิดพลาด</h2><ul></ul></section>
-    <footer>j/k เลื่อน · Enter เปิดแหล่งอ้างอิง · r สลับลำดับ · / ค้นหา · [ ] เปลี่ยนหัวข้อ · Esc ล้างตัวกรอง · refresh เพื่ออ่านจาก disk ใหม่</footer>
+    <footer>j/k เลื่อน · Space รายละเอียด · i ข้อมูลการบันทึก · Enter เปิดแหล่งอ้างอิง · r สลับลำดับ · / ค้นหา · [ ] เปลี่ยนหัวข้อ · Esc ล้างตัวกรอง · refresh เพื่ออ่านจาก disk ใหม่</footer>
   </main>
 </div>
 <script>
@@ -130,8 +138,9 @@
   var selectedTopic = '';
   var selectedEvent = 0;
   var newestFirst = false;
-  // Rows of the last render, index-aligned with visibleEvents(); the selected
-  // row is the only one that ever holds a detail block, so the DOM stays small.
+  var detailMode = '';
+  // Rows of the last render, index-aligned with visibleEvents(). Detail DOM is
+  // opt-in and exists on the selected row only.
   var rows = [];
 
   function lower(value) { return String(value || '').toLocaleLowerCase('th-TH'); }
@@ -180,6 +189,13 @@
     addText(block, 'span', 'label', label + ' · ');
     block.append(document.createTextNode(text));
   }
+  function isGenericActor(value) {
+    var actor = lower(value).trim();
+    return actor === 'current user' || actor === 'local user';
+  }
+  function hasContext(event) {
+    return Boolean(event.rationale || event.impact || (event.relation && event.relatedEvent) || event.sourceRef);
+  }
   function renderTopics(topics, query) {
     topicsEl.replaceChildren();
     var visible = topics.filter(function (topic) { return !query || lower(topic.title).includes(query); });
@@ -208,32 +224,48 @@
     var summary = addText(head, 'span', 'event-summary', event.summary);
     summary.title = event.summary;
     var meta = document.createElement('div'); meta.className = 'event-meta'; head.appendChild(meta);
-    addText(meta, 'span', 'who', event.madeBy);
+    if (!isGenericActor(event.madeBy)) addText(meta, 'span', 'who', event.madeBy);
     if (!selectedTopic) addText(meta, 'span', 'pill topic', event.topicTitle);
     if (event.superseded) addText(meta, 'span', 'pill state', 'แทนที่แล้ว');
-    if (event.sourceRef) addText(meta, 'span', 'pill', 'มีแหล่งอ้างอิง');
-    card.addEventListener('click', function () { select(index, false); });
-    card.addEventListener('focus', function () { select(index, false); });
+    if (event.sourceRef) addText(meta, 'span', 'pill', 'อ้างอิง');
+    var toggle = addText(meta, 'button', 'detail-toggle', hasContext(event) ? 'รายละเอียด' : 'ข้อมูลบันทึก');
+    toggle.type = 'button';
+    toggle.dataset.detailMode = hasContext(event) ? 'context' : 'audit';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', 'timeline-detail-' + event.id);
+    card.setAttribute('aria-label', event.summary);
     return card;
   }
-  /** Expanded body for the selected row only — the full record, still flat. */
-  function renderDetail(event) {
-    var detail = document.createElement('div'); detail.className = 'detail';
-    var details = document.createElement('dl'); detail.appendChild(details);
-    [['บันทึกโดย', event.recordedBy + ' · ' + event.recorderLane], ['หัวข้อ', event.topicTitle]].forEach(function (row) {
-      addText(details, 'dt', '', row[0]); addText(details, 'dd', '', row[1]);
-    });
-    if (event.suggestedByLane) { addText(details, 'dt', '', 'เสนอโดย'); addText(details, 'dd', '', event.suggestedByLane); }
-    if (event.evidenceExcerpt) addCopy(detail, 'หลักฐาน', event.evidenceExcerpt);
-    if (event.instructionExcerpt) addCopy(detail, 'คำสั่งที่อนุญาตให้บันทึก', event.instructionExcerpt);
+  /** Opt-in context/audit body for the selected row only. */
+  function renderDetail(event, mode) {
+    var detail = document.createElement('div');
+    detail.className = 'detail detail--' + mode;
+    detail.id = 'timeline-detail-' + event.id;
     if (event.rationale) addCopy(detail, 'เหตุผล', event.rationale);
     if (event.impact) addCopy(detail, 'ผลกระทบ', event.impact);
-    if (event.relation && event.relatedEvent) addText(detail, 'div', 'relation', relationLabel(event.relation) + ' · ' + event.relatedEvent);
+    if (event.relation && event.relatedEvent) addText(detail, 'div', 'relation', relationLabel(event.relation) + 'เหตุการณ์ก่อนหน้า');
     if (event.sourceRef) {
       var href = sourceHref(event.sourceRef);
-      if (href) { var link = addText(detail, 'a', 'source', event.sourceRef); link.href = href; link.target = '_blank'; link.rel = 'noopener noreferrer'; }
-      else addText(detail, 'span', 'source', event.sourceRef);
-    } else addText(detail, 'span', 'source none', 'ระบุโดยไม่มีแหล่งอ้างอิงเชื่อมโยง');
+      if (href) {
+        var link = addText(detail, 'a', 'source', 'เปิดแหล่งอ้างอิง ↗');
+        link.href = href; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.title = event.sourceRef;
+      }
+    }
+    if (mode === 'audit') {
+      var details = document.createElement('dl'); detail.appendChild(details);
+      [
+        ['บันทึกโดย', event.recordedBy + ' · ' + event.recorderLane],
+        ['หัวข้อ', event.topicTitle + ' · ' + event.topicId],
+        ['เหตุการณ์', event.id]
+      ].forEach(function (row) {
+        addText(details, 'dt', '', row[0]); addText(details, 'dd', '', row[1]);
+      });
+      if (event.suggestedByLane) { addText(details, 'dt', '', 'เสนอโดย'); addText(details, 'dd', '', event.suggestedByLane); }
+      if (event.relatedEvent) { addText(details, 'dt', '', 'เหตุการณ์ที่เกี่ยวข้อง'); addText(details, 'dd', '', event.relatedEvent); }
+      if (event.evidenceExcerpt) addCopy(detail, 'หลักฐาน', event.evidenceExcerpt);
+      if (event.instructionExcerpt) addCopy(detail, 'คำสั่งที่อนุญาตให้บันทึก', event.instructionExcerpt);
+      if (event.sourceRef) addText(detail, 'div', 'source-ref', event.sourceRef);
+    }
     return detail;
   }
   function visibleEvents() {
@@ -243,20 +275,36 @@
     });
     return newestFirst ? events.slice().reverse() : events;
   }
-  /** Move the single open detail block, without re-rendering the whole list. */
+  function updateRow(index, selected, event) {
+    var row = rows[index];
+    if (!row) return;
+    row.classList.toggle('selected', selected);
+    var toggle = row.querySelector('.detail-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded', String(selected && Boolean(detailMode)));
+    var detail = row.querySelector('.detail');
+    if (detail) detail.remove();
+    if (selected && detailMode) row.appendChild(renderDetail(event, detailMode));
+  }
+  /** Move selection without opening provenance or rebuilding the list. */
   function select(index, scroll) {
     var events = visibleEvents();
     if (events.length === 0) return;
-    selectedEvent = Math.max(0, Math.min(events.length - 1, index));
-    rows.forEach(function (row, rowIndex) {
-      var open = rowIndex === selectedEvent;
-      row.classList.toggle('selected', open);
-      var detail = row.querySelector('.detail');
-      if (open && !detail) row.appendChild(renderDetail(events[rowIndex]));
-      else if (!open && detail) detail.remove();
-    });
+    var previous = selectedEvent;
+    var next = Math.max(0, Math.min(events.length - 1, index));
+    if (previous !== next) {
+      updateRow(previous, false, events[previous]);
+      selectedEvent = next;
+      detailMode = '';
+    }
+    updateRow(selectedEvent, true, events[selectedEvent]);
     var card = rows[selectedEvent];
     if (card && scroll) { card.focus({ preventScroll: true }); card.scrollIntoView({ block: 'nearest' }); }
+  }
+  function toggleDetail(mode) {
+    var events = visibleEvents();
+    if (!events[selectedEvent]) return;
+    detailMode = detailMode === mode ? '' : mode;
+    updateRow(selectedEvent, true, events[selectedEvent]);
   }
   function dayLabel(value) {
     var date = new Date(value);
@@ -269,6 +317,7 @@
     payload.diagnostics.forEach(function (item) { addText(list, 'li', '', item.path + ' · ' + item.error); });
   }
   function render() {
+    detailMode = '';
     var topics = latestTopics(payload.events);
     var query = lower(search.value.trim());
     renderTopics(topics, query);
@@ -298,6 +347,20 @@
     var index = Math.max(0, ids.indexOf(selectedTopic));
     selectedTopic = ids[(index + delta + ids.length) % ids.length]; selectedEvent = 0; render();
   }
+  eventsEl.addEventListener('click', function (event) {
+    var target = event.target instanceof Element ? event.target : null;
+    var row = target && target.closest('.event');
+    if (!row) return;
+    var index = Number(row.dataset.eventIndex);
+    select(index, false);
+    var toggle = target.closest('.detail-toggle');
+    if (toggle) toggleDetail(toggle.dataset.detailMode || 'context');
+  });
+  eventsEl.addEventListener('focusin', function (event) {
+    var target = event.target instanceof Element ? event.target : null;
+    var row = target && target.closest('.event');
+    if (row) select(Number(row.dataset.eventIndex), false);
+  });
   search.value = initialQuery;
   search.addEventListener('input', function () { selectedEvent = 0; render(); });
   document.addEventListener('keydown', function (event) {
@@ -307,10 +370,20 @@
     if (event.key === '[') { event.preventDefault(); switchTopic(-1); return; }
     if (event.key === ']') { event.preventDefault(); switchTopic(1); return; }
     if (event.key === 'r') { event.preventDefault(); newestFirst = !newestFirst; selectedEvent = 0; render(); return; }
+    var target = event.target instanceof Element ? event.target : null;
+    if (target && target.closest('button, a')) return;
     var events = visibleEvents();
     if (event.key === 'j' || event.key === 'k') {
       event.preventDefault();
       select(selectedEvent + (event.key === 'j' ? 1 : -1), true);
+    }
+    if (event.key === ' ' && events[selectedEvent]) {
+      event.preventDefault();
+      toggleDetail(hasContext(events[selectedEvent]) ? 'context' : 'audit');
+    }
+    if (event.key === 'i' && events[selectedEvent]) {
+      event.preventDefault();
+      toggleDetail('audit');
     }
     if (event.key === 'Enter' && events[selectedEvent]) {
       var href = sourceHref(events[selectedEvent].sourceRef); if (href) window.open(href, '_blank', 'noopener');

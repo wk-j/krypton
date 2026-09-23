@@ -263,6 +263,11 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 257 | [TypeSafe Timeline Topic Suggestions](./257-typesafe-timeline-topic-suggestions.md) |
 | 258 | [TypeSafe API Call Metrics](./258-typesafe-api-call-metrics.md) |
 | 259 | [Publish Project Timeline to Xenon](./259-timeline-xenon-publishing.md) |
+| 261 | [Timeline Reading and Stable Topic Identity](./261-timeline-reading-and-topic-identity.md) |
+| 262 | [Agent-Side Timeline Topic Discovery](./262-agent-timeline-topic-discovery.md) |
+| 263 | [Timeline Topic Merge and Undo](./263-timeline-topic-merge.md) |
+| 264 | [Xenon Timeline UI Parity](./264-xenon-timeline-ui-parity.md) |
+| 265 | [Artifact Gallery Project Grouping](./265-artifact-gallery-project-grouping.md) |
 
 ## ADRs (20)
 

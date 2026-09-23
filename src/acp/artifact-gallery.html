@@ -47,10 +47,10 @@
   .tab b { font-weight: 400; color: var(--muted); margin-left: 6px; font-variant-numeric: tabular-nums; }
   .tab.active b { color: var(--accent); }
   .tab-key { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: auto; }
-  .harness { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
-  .harness:first-child { margin-top: 0; padding-top: 14px; border-top: 0; }
-  .harness-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-  .harness-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .project { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .project:first-child { margin-top: 0; padding-top: 14px; border-top: 0; }
+  .project-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .project-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
   .empty { text-align: center; color: var(--muted); font-family: var(--mono); font-size: 12px;
            padding: 64px 16px; }
   .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 12px; }
@@ -97,8 +97,8 @@
   </div>
   <div class="state" id="state">connecting...</div>
   <nav class="tabs" id="tabs" hidden></nav>
-  <div id="harnesses"></div>
-  <div class="footer">read-only gallery &middot; polls /artifacts &middot; [ ] switch lane &middot; 1-9 jump &middot; 0 all lanes &middot; open links serve the registered artifact on this origin</div>
+  <div id="projects"></div>
+  <div class="footer">read-only gallery &middot; polls /artifacts &middot; [ ] switch project &middot; 1-9 jump &middot; 0 all projects &middot; open links serve the registered artifact on this origin</div>
 </main>
 
 <script>
@@ -106,13 +106,14 @@
   "use strict";
 
   var POLL_MS = 1000;
-  var snapshots = [];
+  var projects = [];
+  var projectLabels = new Map();
   var lastSignature = "";
   var hasSuccessfulPoll = false;
   var pollInFlight = false;
   // "" = the All tab. Kept across polls so a 1 s refresh never yanks the
-  // reader back to another lane; falls back to All if the lane disappears.
-  var activeLane = "";
+  // reader back to another project; falls back to All if the project disappears.
+  var activeProject = "";
 
   function R(id) { return document.getElementById(id); }
   function esc(s) {
@@ -140,84 +141,80 @@
     return '<div class="art">' +
       '<div class="art-head"><div class="art-title">' + esc(art.title || "untitled") + '</div>' +
       '<span class="pill st-' + sk + '">' + esc(sk) + '</span></div>' +
-      (activeLane ? '' : '<div class="art-lane">' + esc(art.laneLabel || "?") + '</div>') +
+      '<div class="art-lane">' + esc(art.laneLabel || "?") + '</div>' +
       '<div class="art-meta"><span class="art-size">' + size + '</span></div>' +
       '<div class="art-tail">' + hashPrefix + esc(art.tail || "") + '</div>' +
       open +
       '</div>';
   }
 
-  function renderHarness(snap, showHead) {
-    var id = snap.harnessId || "harness";
-    var arts = Array.isArray(snap.artifacts) ? snap.artifacts : [];
+  function renderProject(project, showHead) {
+    var arts = Array.isArray(project.artifacts) ? project.artifacts : [];
+    var label = projectLabels.get(project.projectId) || project.projectName || "project";
     var cards = arts.map(renderArtifact).join("");
     var head = showHead
-      ? '<div class="harness-head"><div><h2>' + esc(id) + '</h2></div>' +
-        '<div class="harness-meta">' + arts.length + (arts.length === 1 ? " artifact" : " artifacts") + '</div></div>'
+      ? '<div class="project-head"><div><h2>' + esc(label) + '</h2></div>' +
+        '<div class="project-meta">' + arts.length + (arts.length === 1 ? " artifact" : " artifacts") + '</div></div>'
       : '';
-    return '<section class="harness">' + head + '<div class="cards">' + cards + '</div></section>';
+    return '<section class="project">' + head + '<div class="cards">' + cards + '</div></section>';
   }
 
-  /** Lane labels across every harness, natural-sorted (Claude-2 before Claude-10). */
-  function laneTabs(next) {
+  function buildProjectLabels(next) {
     var counts = new Map();
-    next.forEach(function (snap) {
-      (snap.artifacts || []).forEach(function (art) {
-        var label = art.laneLabel || "?";
-        counts.set(label, (counts.get(label) || 0) + 1);
-      });
+    next.forEach(function (project) {
+      var name = project.projectName || "project";
+      counts.set(name, (counts.get(name) || 0) + 1);
     });
-    return Array.from(counts.entries())
-      .map(function (entry) { return { label: entry[0], count: entry[1] }; })
-      .sort(function (a, b) {
-        return a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" });
-      });
+    var labels = new Map();
+    next.forEach(function (project) {
+      var name = project.projectName || "project";
+      var suffix = String(project.projectId || "").replace(/^project-/, "").slice(-6);
+      labels.set(project.projectId, counts.get(name) > 1 ? name + " · " + suffix : name);
+    });
+    return labels;
   }
 
-  /** Per-harness artifacts of the open tab, harnesses with no match dropped. */
-  function visibleHarnesses() {
-    return snapshots
-      .map(function (snap) {
-        return {
-          harnessId: snap.harnessId,
-          artifacts: (snap.artifacts || []).filter(function (art) {
-            return !activeLane || (art.laneLabel || "?") === activeLane;
-          })
-        };
-      })
-      .filter(function (snap) { return snap.artifacts.length > 0; });
+  function visibleProjects() {
+    if (!activeProject) return projects;
+    return projects.filter(function (project) { return project.projectId === activeProject; });
   }
 
-  function renderTabs(tabs, total) {
+  function renderTabs(total) {
     var el = R("tabs");
-    el.hidden = tabs.length === 0;
-    if (tabs.length === 0) { el.innerHTML = ""; return; }
-    var buttons = ['<button type="button" class="tab' + (activeLane ? '' : ' active') +
-      '" data-lane="">all<b>' + total + '</b></button>'];
-    tabs.forEach(function (tab, index) {
+    el.hidden = projects.length === 0;
+    if (projects.length === 0) { el.innerHTML = ""; return; }
+    var buttons = ['<button type="button" class="tab' + (activeProject ? '' : ' active') +
+      '" data-project="">all<b>' + total + '</b></button>'];
+    projects.forEach(function (project, index) {
       var key = index < 9 ? ' title="' + (index + 1) + '"' : '';
-      buttons.push('<button type="button" class="tab' + (activeLane === tab.label ? ' active' : '') +
-        '" data-lane="' + esc(tab.label) + '"' + key + '>' + esc(tab.label) + '<b>' + tab.count + '</b></button>');
+      var id = project.projectId || "";
+      var label = projectLabels.get(id) || project.projectName || "project";
+      var count = Array.isArray(project.artifacts) ? project.artifacts.length : 0;
+      buttons.push('<button type="button" class="tab' + (activeProject === id ? ' active' : '') +
+        '" data-project="' + esc(id) + '"' + key + '>' + esc(label) + '<b>' + count + '</b></button>');
     });
     buttons.push('<span class="tab-key">[ ] switch &middot; 1-9 jump &middot; 0 all</span>');
     el.innerHTML = buttons.join("");
   }
 
   function renderContent() {
-    var visible = visibleHarnesses();
+    var visible = visibleProjects();
     if (visible.length === 0) {
-      R("harnesses").innerHTML = '<div class="empty">No artifacts for ' + esc(activeLane || "this view") + '.</div>';
+      R("projects").innerHTML = '<div class="empty">No artifacts for this project.</div>';
       return;
     }
-    var showHead = visible.length > 1;
-    R("harnesses").innerHTML = visible.map(function (snap) { return renderHarness(snap, showHead); }).join("");
+    var showHead = !activeProject;
+    R("projects").innerHTML = visible.map(function (project) {
+      return renderProject(project, showHead);
+    }).join("");
   }
 
   function apply(next) {
-    snapshots = next;
+    projects = next;
+    projectLabels = buildProjectLabels(next);
     var total = 0, live = 0, pending = 0;
-    next.forEach(function (snap) {
-      (snap.artifacts || []).forEach(function (art) {
+    next.forEach(function (project) {
+      (project.artifacts || []).forEach(function (art) {
         total++;
         if (stateKey(art.state) === "live") live++; else pending++;
       });
@@ -228,46 +225,48 @@
     R("dot").classList.toggle("live", total > 0);
     R("session").textContent = total > 0 ? "live" : "no artifacts yet";
     if (total === 0) {
-      activeLane = "";
-      renderTabs([], 0);
-      R("harnesses").innerHTML =
+      activeProject = "";
+      renderTabs(0);
+      R("projects").innerHTML =
         '<div class="empty">No artifacts yet — lanes will surface HTML artifacts here as they register them.</div>';
       R("state").textContent = "no artifacts yet";
       return;
     }
-    var tabs = laneTabs(next);
-    if (activeLane && !tabs.some(function (tab) { return tab.label === activeLane; })) activeLane = "";
-    renderTabs(tabs, total);
+    if (activeProject && !projects.some(function (project) {
+      return project.projectId === activeProject;
+    })) activeProject = "";
+    renderTabs(total);
     renderContent();
-    R("state").textContent = activeLane ? "live gallery · " + activeLane : "live gallery";
+    R("state").textContent = activeProject
+      ? "live gallery · " + (projectLabels.get(activeProject) || "project")
+      : "live gallery";
   }
 
-  function selectLane(label) {
-    if (activeLane === label) return;
-    activeLane = label;
-    apply(snapshots);
+  function selectProject(projectId) {
+    if (activeProject === projectId) return;
+    activeProject = projectId;
+    apply(projects);
     window.scrollTo({ top: 0 });
   }
 
   R("tabs").addEventListener("click", function (event) {
     var button = event.target.closest(".tab");
-    if (button) selectLane(button.getAttribute("data-lane") || "");
+    if (button) selectProject(button.getAttribute("data-project") || "");
   });
   document.addEventListener("keydown", function (event) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    var tabs = laneTabs(snapshots);
-    if (tabs.length === 0) return;
-    var labels = [""].concat(tabs.map(function (tab) { return tab.label; }));
+    if (projects.length === 0) return;
+    var projectIds = [""].concat(projects.map(function (project) { return project.projectId; }));
     if (event.key === "[" || event.key === "]") {
       event.preventDefault();
-      var index = Math.max(0, labels.indexOf(activeLane));
-      selectLane(labels[(index + (event.key === "]" ? 1 : -1) + labels.length) % labels.length]);
+      var index = Math.max(0, projectIds.indexOf(activeProject));
+      selectProject(projectIds[(index + (event.key === "]" ? 1 : -1) + projectIds.length) % projectIds.length]);
       return;
     }
-    if (event.key === "0") { event.preventDefault(); selectLane(""); return; }
+    if (event.key === "0") { event.preventDefault(); selectProject(""); return; }
     if (/^[1-9]$/.test(event.key)) {
-      var target = tabs[Number(event.key) - 1];
-      if (target) { event.preventDefault(); selectLane(target.label); }
+      var target = projects[Number(event.key) - 1];
+      if (target) { event.preventDefault(); selectProject(target.projectId); }
     }
   });
 
@@ -278,10 +277,10 @@
       if (!res.ok) throw new Error("http " + res.status);
       return res.json();
     }).then(function (body) {
-      var next = Array.isArray(body && body.harnesses) ? body.harnesses : [];
+      var next = Array.isArray(body && body.projects) ? body.projects : [];
       hasSuccessfulPoll = true;
-      var sig = JSON.stringify(next.map(function (snap) {
-        return [snap.harnessId, (snap.artifacts || []).map(function (a) {
+      var sig = JSON.stringify(next.map(function (project) {
+        return [project.projectId, project.projectName, (project.artifacts || []).map(function (a) {
           return [a.id, a.state, a.size, a.hash, a.token, a.title, a.laneLabel, a.tail];
         })];
       }));
@@ -290,8 +289,8 @@
         apply(next);
       }
     }).catch(function () {
-      R("state").textContent = snapshots.length || hasSuccessfulPoll ? "reconnecting..." : "connecting...";
-      R("session").textContent = snapshots.length || hasSuccessfulPoll ? "reconnecting..." : "connecting...";
+      R("state").textContent = projects.length || hasSuccessfulPoll ? "reconnecting..." : "connecting...";
+      R("session").textContent = projects.length || hasSuccessfulPoll ? "reconnecting..." : "connecting...";
     }).finally(function () {
       pollInFlight = false;
     });

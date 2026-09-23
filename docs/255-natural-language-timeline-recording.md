@@ -78,6 +78,7 @@ No CSS, capture-sheet, configuration, or ACP protocol change is required.
 
 ```rust
 struct TimelineDirectRecordRequest {
+    topic_id: Option<String>,
     topic_title: String,
     summary: String,
     made_by: String,
@@ -108,14 +109,26 @@ instruction"` and the MCP lane label as `recorder_lane`. If the current user is 
 authority and no more specific identity is available, `made_by` is `Current user`; a named third
 party may be used only when the prompt or cited source attributes the decision to them.
 
-The backend derives `topic_id`: reuse the newest case-insensitive exact `topic_title` match;
-otherwise generate the same stable slug/fallback-hash shape used by the capture sheet and avoid
-collisions with existing topic IDs.
+When `topic_id` is absent, the backend reuses the newest case-insensitive exact `topic_title` match
+or derives the same stable slug/fallback-hash shape used by the capture sheet. When `topic_id` is
+present, it must identify an existing local topic and is authoritative even if the display title has
+changed. Unknown explicit IDs fail before writing. Relations remain independent from topic identity.
 
 ### MCP Tool
 
 ```text
+timeline_list {
+  topic_id?,
+  query?,
+  limit?
+} -> {
+  topics[] | events[],
+  total_topics | total_events,
+  truncated
+}
+
 timeline_record {
+  topic_id?,
   topic_title,
   summary,
   made_by,
@@ -128,10 +141,23 @@ timeline_record {
   related_event?
 } -> {
   event_id,
+  topic_id,
   path,
-  disposition: "created" | "existing" | "promoted_pending"
+  disposition: "created" | "existing" | "promoted_pending",
+  new_topic,
+  existing_topics?,
+  notice?,
+  warnings?
 }
 ```
+
+Spec 262 adds the read half. `timeline_list` is read-only: with no arguments it returns bounded topic
+digests (stable ID, newest title, event count, time span, newest summary) newest-activity first; with
+`topic_id` it returns that topic's events newest-first. Without it a fresh session cannot obtain an ID
+it did not create, so exact-title reuse never fires across sessions or languages and one subject
+splits into several topics. `existing_topics`/`notice` appear only when a record opened a new topic;
+`warnings` carries non-fatal notices such as an `occurred_at` far in the future. Both are advisory:
+nothing is merged, re-parented, or refused on the persistence path.
 
 The descriptor and lane context impose these rules:
 
@@ -142,11 +168,15 @@ The descriptor and lane context impose these rules:
   keeping technical terms in English. Preserve `instruction_excerpt`, `made_by`, `source_ref`,
   identifiers, paths, URLs, commit hashes, and quoted source text verbatim. See spec 256.
 - Do not call merely because an event seems important. That remains `timeline_suggest` territory.
+- Call `timeline_list` before the first record about a subject and reuse the `topic_id` of the topic
+  that already covers it. A title that does not match does not mean the topic is new.
 - Record one file per distinct event. If the user asks to persist a traced chronology, record only
   `recorded`/`observed` items supported by their sources; do not turn `inferred` rows into facts.
+  Omit `topic_id` only when no existing topic covers the subject, then reuse the returned ID for
+  every remaining event and keep event-specific wording in `summary`, not `topic_title`.
 - Never copy secrets, tokens, environment values, or raw tool output.
-- Report every resulting event ID/path in the assistant response so the write is visible without a
-  separate UI.
+- Report every resulting event ID/topic ID/path in the assistant response so the write is visible
+  without a separate UI.
 
 The tool is advertised only for a local project-backed Harness, is included in the exact built-in
 auto-approval allowlist, and is independent of the `automaticSuggestions` setting. Remote Harnesses
@@ -155,8 +185,9 @@ and Pi retain the existing read-only/manual fallbacks.
 ### Persistence and Idempotency
 
 1. Validate and normalize the direct request with the existing timeline limits.
-2. Scan confirmed events. An exact normalized match on topic title, summary, authorizing excerpt,
-   and source returns the existing event with `disposition: existing`.
+2. Resolve topic identity from an explicit existing ID or the exact-title/new-topic fallback. A
+   normalized match on resolved topic ID, summary, authorizing excerpt, and source returns the
+   existing event with `disposition: existing`; title-only rewording cannot duplicate that retry.
 3. If a pending suggestion has the same normalized topic title and summary, promote its reserved ID
    atomically, preserve its suggestion provenance/evidence, add the authorizing instruction, remove
    the pending file, and return `promoted_pending`.
@@ -174,15 +205,15 @@ section, so all existing events remain readable.
 3. HookServer resolves the local project from harness ID and supplies the authenticated lane label.
 4. timeline.rs validates, deduplicates, optionally promotes a matching pending item, and appends the
    final Markdown event under .krypton/timeline/events/.
-5. The MCP result returns event ID, path, and disposition in the same turn.
+5. The MCP result returns event ID, topic ID, path, and disposition in the same turn.
 6. Lane tells the human what was recorded; no capture/review/permission modal opens.
 ```
 
 ### UI Changes
 
 No new interactive UI. The existing structured tool card and assistant response are the immediate
-audit surface, and the read-only `#timeline` browser shows the stored authorizing instruction in the
-expanded detail of the selected event row. `#timeline add` and `#timeline review` remain available
+audit surface, and the read-only `#timeline` browser shows the stored authorizing instruction only
+in the event's explicit audit disclosure. `#timeline add` and `#timeline review` remain available
 for manual capture and unsolicited suggestions.
 
 ## Edge Cases

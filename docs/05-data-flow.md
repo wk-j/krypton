@@ -448,8 +448,15 @@
        authorizing excerpt. HookServer resolves the project and authenticated
        lane label; `timeline.rs` validates, reuses or derives `topic_id`, returns
        an identical confirmed event on retry, promotes a matching pending
-       suggestion when present, or appends a new event. The tool result returns
-       ID/path/disposition in the same turn. No capture, review, or permission
+       suggestion when present, or appends a new event. The first traced event may
+       derive its topic from the title; the result returns `topic_id`, and later
+       calls pass that explicit existing ID even if their display wording changes.
+       The tool result returns event ID/topic ID/path/disposition in the same turn.
+       Before that first record the lane reads `timeline_list` (topic digests, or
+       one topic's events) to find the topic already covering the subject; when a
+       record opens a new topic the ack reports `new_topic` plus the existing
+       topics so the rest of the chronology can be corrected in the same turn.
+       No capture, review, or permission
        overlay opens; unsolicited capture remains `timeline_suggest`.
     l. Optional semantic topic reuse (spec 257) stays inside local capture and
        pending-suggestion review. After exact-title reuse fails, the frontend
@@ -508,6 +515,23 @@ PULL (window ← harness), on open and on every auto-refresh:
    full-then-folded flash); expandedHunks (session-remembered) keeps the human's
    expanded folds open. A range that maps to no hunk is dropped -> normal
    (under-collapse, never over-collapse; ADR-0009).
+```
+
+## Artifact Gallery Project Grouping Flow (spec 265)
+
+```text
+1. Each live harness keeps its project_dir plus pending and registered ArtifactEntry rows.
+2. GET /artifacts locks the registry for one snapshot and skips stores with no project or artifacts.
+3. Rust canonicalizes each project path, hashes it to project-<16 hex>, and groups stores by that
+   opaque ID; only the directory basename becomes projectName.
+4. Within a project, duplicate artifact IDs collapse deterministically: registered/live beats
+   pending, a non-empty hash beats an empty hash, then the lowest harness ID breaks a tie.
+5. Rust sorts projects case-insensitively by name then ID, sorts artifacts newest-first by parsed
+   art-<seq>-<hex>, and returns { projects } without raw project paths or harness IDs.
+6. The browser polls once per second. A JSON signature guard redraws only when the project snapshot
+   changes; the active project survives redraws and falls back to all only if it disappears.
+7. The all view renders one section per project. A project tab renders its card grid directly;
+   every card retains laneLabel as provenance, and [ / ], 1-9, and 0 navigate the project tabs.
 ```
 
 ## Diff View Smooth Keyboard Scrolling Flow (spec 243)

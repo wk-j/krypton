@@ -104,6 +104,12 @@ async fn handle_tools_json() -> Response {
 
 Payload shape: `{ "tools": [ { name, description, inputSchema, category } ] }`.
 
+The page therefore picks up additive tool-contract changes without a separate manifest edit. For
+example, `timeline_record` now exposes an optional existing `topic_id` so a traced chronology can
+reuse stable identity; its result returns that resolved ID beside event ID/path/disposition (spec
+261). The reference renders the input field directly from the Rust descriptor. The read-only
+`timeline_list` tool (spec 262) appears the same way, under the existing `timeline` category.
+
 ### Data Flow
 
 ```

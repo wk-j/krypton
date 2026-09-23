@@ -1,26 +1,26 @@
 # Artifact Gallery (Loopback Web Endpoint) — Implementation Spec
 
-> Status: Implemented (rev 1)
+> Status: Implemented (rev 2; project grouping amended by spec 265)
 > Date: 2026-06-21
 > Milestone: ACP Harness — observability
 > Builds on: `docs/168-harness-lane-monitor.md` (the loopback dashboard pattern), `docs/133-harness-html-artifacts.md` (the artifact registry), `docs/149-artifact-inline-feedback.md` (the per-artifact feedback token)
 
 ## Architecture
 
-The artifact gallery is a **second fixed page served by the built-in loopback HTTP server**, opened in an external browser — a direct sibling of the lane-monitor dashboard (spec 168). It surfaces every live HTML artifact across every open harness in one glanceable grid, **tabbed per lane** (with an `all` tab) and grouped by harness inside a tab, with one-click open.
+The artifact gallery is a **second fixed page served by the built-in loopback HTTP server**, opened in an external browser — a direct sibling of the lane-monitor dashboard (spec 168). It surfaces every live HTML artifact across every open project in one glanceable grid, **tabbed and grouped by project** (with an `all` tab), with one-click open. The creating lane stays visible as card provenance rather than primary navigation (spec 265).
 
 - `GET /gallery` — serves a standalone HTML page (`src/acp/artifact-gallery.html`, embedded via `include_str!`). No token, no auth, loopback-only. Same response headers as `/dashboard` (`text/html`, `nosniff`, `no-referrer`, `no-store`).
 - `GET /artifacts` — token-free JSON the page polls ~1 s:
   ```json
-  { "harnesses": [ { "harnessId": "hm-1", "artifacts": [
+  { "projects": [ { "projectId": "project-7f0fd0b70a8f4c21", "projectName": "krypton", "artifacts": [
     { "id": "art-3-...", "laneLabel": "Cursor-1", "title": "...",
       "state": "live" | "pending", "size": 12345, "hash": "<sha256hex>",
       "tail": ".krypton/artifacts/hm-1/cursor-1/art-3-....html",
       "token": "<feedbackToken>" } ] } ] }
   ```
-  Deterministic ordering: harnesses by id asc; artifacts within a harness **latest-creation-first** (newest at the top), comparing the parsed `art-<seq>-<hex>` seq descending (ids aren't zero-padded, so the raw string would mis-order `art-10` vs `art-2`). Includes both `pending` and `live` artifacts. Backed by `HookServer::list_all_artifacts_for_gallery()` — a read-only iteration over the in-memory `artifacts` registry.
+  Deterministic ordering: projects case-insensitively by name then opaque ID; artifacts within a project **latest-creation-first** (newest at the top), comparing the parsed `art-<seq>-<hex>` seq descending (ids aren't zero-padded, so the raw string would mis-order `art-10` vs `art-2`). Multiple live harness stores for the same canonical project are unioned by artifact ID before serialization; `live` wins over `pending`, then a non-empty hash wins, then the lowest harness ID breaks a tie. Raw project paths and harness IDs are not returned. Includes both `pending` and `live` artifacts. Backed by `HookServer::list_all_artifacts_for_gallery()`.
 - **Open commands** (mirror the dashboard wiring exactly): command palette `Open Artifact Gallery` (`gallery.open`) → `compositor.openGallery()`; the harness **`#gallery`** composer command. Both build the URL from `get_hook_server_port` + `open_url`. No dedicated keybinding (the dashboard's `Leader Shift+L` slot is taken; palette + `#gallery` are sufficient).
-- **The gallery page** (`src/acp/artifact-gallery.html`) reuses the dashboard's exact Binance-dark shell (`:root` vars, `.top` brand bar, `.dot.live` beacon, `.stats`, `.state` banner, mono fonts, `@media (max-width: 780px)`) and adds a sticky lane tab strip above a `.cards` grid of artifact cards. The strip lists `all` plus one tab per distinct `laneLabel` seen across every harness, natural-sorted (`Claude-2` before `Claude-10`), each with its artifact count; the open tab filters the grid, is kept across the 1 s poll (a refresh never yanks the reader to another lane), and falls back to `all` when its lane stops reporting. Inside a lane tab the harness heading appears only when that lane's artifacts span more than one harness, and the per-card lane line is dropped as redundant. Keyboard: `[`/`]` cycle tabs, `1`-`9` jump, `0` returns to `all`. Each card shows title (2-line clamp), lane, a `live`/`pending` state pill, human-readable size, the hash prefix + tail, and an **Open** link — same-origin relative `href="/artifact/<encodeURIComponent(token)>"` with `target="_blank" rel="noopener"`. Pending cards render a disabled chip (no open) + "writing..." size. A 1 s `setInterval` poll with a JSON-signature stale check avoids DOM thrash; bad fetches fall back to a `reconnecting...` banner and retain the last good render. The Open link derives the origin from `window.location`, so the page is build-time-port-free.
+- **The gallery page** (`src/acp/artifact-gallery.html`) reuses the dashboard's exact Binance-dark shell (`:root` vars, `.top` brand bar, `.dot.live` beacon, `.stats`, `.state` banner, mono fonts, `@media (max-width: 780px)`) and adds a sticky project tab strip above a `.cards` grid. The strip lists `all` plus one tab per project; `all` renders named project sections, while a selected tab renders that project directly. Same-basename projects gain an opaque ID suffix. The open tab is kept across the 1 s poll and falls back to `all` only when its project disappears. Keyboard: `[`/`]` cycle tabs, `1`-`9` jump, `0` returns to `all`. Every card shows title (2-line clamp), lane provenance, a `live`/`pending` state pill, human-readable size, the hash prefix + tail, and an **Open** link — same-origin relative `href="/artifact/<encodeURIComponent(token)>"` with `target="_blank" rel="noopener"`. Pending cards render a disabled chip (no open) + "writing..." size. A 1 s `setInterval` poll with a JSON-signature stale check avoids DOM thrash; bad fetches fall back to a `reconnecting...` banner and retain the last good render. The Open link derives the origin from `window.location`, so the page is build-time-port-free.
 
 ## Gallery = active set (registry), NOT disk
 
@@ -68,8 +68,8 @@ Shipped as-is (Option A) because:
 
 | File | Change |
 |------|--------|
-| `src-tauri/src/hook_server.rs` | `list_all_artifacts_for_gallery()` pub method (read-only iteration of the registry); `handle_gallery()` + `handle_artifacts()` handlers; `GET /gallery` + `GET /artifacts` routes (+ the route-existence probe); `GALLERY_HTML` const (`include_str!` of the gallery page). Slice 4: removed all four file-deletion paths; `sweep_stale_artifacts` fully deleted; `init_harness_artifacts` lost its `live_harness_ids` param. |
-| `src/acp/artifact-gallery.html` | **New.** Standalone gallery page; polls `/artifacts` ~1 s, renders the lane-tabbed, harness-grouped card grid, reuses the dashboard's Binance-dark shell. |
+| `src-tauri/src/hook_server.rs` | `list_all_artifacts_for_gallery()` projects the registry by hashed canonical project, deduplicates same-project artifacts, and feeds `handle_artifacts()`; `handle_gallery()` + `GET /gallery` serve the embedded page. Slice 4 removed all four file-deletion paths; `sweep_stale_artifacts` was fully deleted; `init_harness_artifacts` lost its `live_harness_ids` param. |
+| `src/acp/artifact-gallery.html` | Standalone gallery page; polls `/artifacts` ~1 s, renders project tabs and project sections while retaining lane provenance, and reuses the dashboard's Binance-dark shell. |
 | `src/compositor.ts` | `openGallery()` — mirror of `openDashboard()` pointed at `/gallery`. |
 | `src/command-palette.ts` | `gallery.open` entry — "Open Artifact Gallery". |
 | `src/acp/acp-harness-view.ts` | `#gallery` composer command — mirror of `#dashboard`. |
@@ -78,10 +78,11 @@ Shipped as-is (Option A) because:
 ## Tests
 
 `cargo test hook_server` — 31 tests, 0 failures. Gallery-specific:
-- `gallery_lists_pending_and_live_across_two_harnesses` — JSON shape, states, tokens, tails, sort across harnesses.
-- `gallery_includes_empty_live_harness` — `{ harnessId, artifacts: [] }` for a zero-artifact live harness.
-- `gallery_and_artifacts_routes_return_expected_shapes` — `GET /gallery` → 200 + `text/html`; `GET /artifacts` → 200 + `{ harnesses: [...] }` + `no-store`.
-- `gallery_orders_artifacts_latest_creation_first` — locks down the within-harness ordering (newest seq first).
+- `gallery_lists_pending_and_live_across_two_projects` — project JSON shape, states, tokens, tails, and opaque identities.
+- `gallery_omits_empty_projects` — a zero-artifact store does not create an empty project tab.
+- `gallery_deduplicates_same_project_across_live_harnesses` — same-project rehydration collapses to one row and the live copy wins.
+- `gallery_and_artifacts_routes_return_expected_shapes` — `GET /gallery` → 200 + `text/html`; `GET /artifacts` → 200 + `{ projects: [...] }` + `no-store`.
+- `gallery_orders_artifacts_latest_creation_first` — locks down within-project ordering (newest seq first).
 - `gallery_omits_cancelled_artifact` — cancelled id absent from the listing (security-model guarantee).
 - `cancel_preserves_pending_artifact_file` — cancel drops the entry but the file remains on disk.
 - `dispose_preserves_artifact_files_on_close` — dispose drops registry + token + telemetry, but the file remains on disk AND the harness delists from the gallery.

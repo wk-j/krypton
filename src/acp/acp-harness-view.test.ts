@@ -1082,7 +1082,7 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
 });
 
 describe('ACP harness auto-allow permission detection', () => {
-  it('auto-allows only the two exact built-in timeline write tools', () => {
+  it('auto-allows only the exact built-in timeline tools', () => {
     expect(harnessAutoAllowToolName(permissionFor({
       title: 'mcp__krypton_harness_bus__timeline_suggest',
       rawInput: {
@@ -1097,6 +1097,24 @@ describe('ACP harness auto-allow permission detection', () => {
         arguments: { topic_title: 'Auth', summary: 'Use passkeys' },
       },
     }))).toBe('timeline_record');
+    // spec 262: the read-only lister must not cost a prompt, or lanes go back
+    // to guessing a fresh topic every session.
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'mcp__krypton_harness_memory__timeline_list',
+      rawInput: {
+        toolName: 'mcp__krypton_harness_memory__timeline_list',
+        arguments: { limit: 20 },
+      },
+    }))).toBe('timeline_list');
+    // spec 263: timeline_merge rewrites confirmed records, so it stays OUT of
+    // the built-in allow set and asks the human once.
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'mcp__krypton_harness_memory__timeline_merge',
+      rawInput: {
+        toolName: 'mcp__krypton_harness_memory__timeline_merge',
+        arguments: { from: 'topic-a', into: 'topic-b' },
+      },
+    }))).toBeNull();
     expect(harnessAutoAllowToolName(permissionFor({
       title: 'timeline_confirm',
       rawInput: { name: 'timeline_confirm', server: 'krypton-harness-bus' },
@@ -3099,6 +3117,32 @@ describe('#timeline dispatch (spec 253)', () => {
     expect(opened).toBe(1);
   });
 
+  // spec 263: repairing already-split topics is a human, local-only action.
+  it('routes topic merge and undo to the local repair path', async () => {
+    const seen: unknown[] = [];
+    const chips: string[] = [];
+    const context = {
+      remoteRuntimeId: null,
+      flashChip: (text: string) => { chips.push(text); },
+      runTimelineMerge: async (_lane: TestLane, command: unknown) => { seen.push(command); },
+    };
+    await runTimelineCommand.call(context, { status: 'idle' }, '#timeline merge topic-a into topic-b');
+    await runTimelineCommand.call(context, { status: 'idle' }, '#timeline merge undo');
+    expect(seen).toEqual([
+      { kind: 'merge', from: 'topic-a', into: 'topic-b' },
+      { kind: 'mergeUndo' },
+    ]);
+    expect(chips).toEqual([]);
+
+    await runTimelineCommand.call(
+      { ...context, remoteRuntimeId: 'remote-1' },
+      { status: 'idle' },
+      '#timeline merge topic-a into topic-b',
+    );
+    expect(seen).toHaveLength(2);
+    expect(chips[0]).toContain('remote Harness');
+  });
+
   it('advertises direct recording and separately gates automatic suggestions', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
@@ -3107,6 +3151,16 @@ describe('#timeline dispatch (spec 253)', () => {
     );
     expect(source).toContain('use timeline_suggest only when this turn establishes an explicit durable requirement');
     expect(source).toContain('Their request is the confirmation; copy the exact authorizing words');
+    expect(source).toContain('reuse one `topic_id` for every event in the trace');
+    expect(source).toContain('keep event-specific wording in `summary`, not `topic_title`');
+    // spec 262: read-before-write is the instruction that stops one subject
+    // from fragmenting into a fresh topic every session.
+    expect(source).toContain('call timeline_list (read-only) and reuse the `topic_id` of the topic that already covers it');
+    expect(source).toContain('If an ack comes back with `new_topic: true` and `existing_topics`');
+    // spec 263: topic repair is reachable from plain language, not only the
+    // `#timeline merge … into …` grammar.
+    expect(source).toContain('call timeline_merge in the same turn');
+    expect(source).toContain('Never merge because two topics merely look similar to you');
     expect(source).toContain('unsolicited capture stays timeline_suggest');
     expect(source.match(/write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai/g)).toHaveLength(2);
     expect(source).toContain('Preserve `instruction_excerpt`, `made_by`, `source_ref`');

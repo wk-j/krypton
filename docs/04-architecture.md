@@ -253,6 +253,8 @@ The compositor is a TypeScript module running in the webview that manages worksp
 37. **LLM usage log (spec 214)** — The project's answer to "what did this cost, on which model, in which lane?". At every turn end `finishTurn` builds one **numeric** row — tokens in/out/cached, model (with a flag for agent-confirmed vs configured intent), lane, backend, stop reason, duration, context level, and the adapter's own cost when it reports one — and hands it to Rust without awaiting. The unit is a *turn* because that is the unit ACP reports: the `session/prompt` response carries `usage` for that turn (`client.ts:196`), and the `usage_update` notification carries only the context *level*, so presence of a token field is the sole discriminator between the two (`isTurnUsage`). `usage_log.rs` appends the row to `.krypton/usage/<YYYY-MM-DD>.jsonl` **before** any network call and only then wakes a long-lived sender task, which POSTs it to `POST /v1/projects/{p}/usage/turns` — normally within a second. An ack cursor (`.krypton/usage/.cursor.json`) advances only on a 2xx, so a crash, a dead link, or a closed laptop costs nothing, and the row's client-generated `id` makes a retry after an ambiguous timeout a server-side duplicate rather than a second charge. Xenon stores rows in a dedicated `usage_turn` table and prices them **at read time** from `prices.json`, so correcting a rate corrects history; reported and estimated cost stay in separate columns and an unmatched model renders blank and is named, never zeroed (ADR-0018). Unlike every other thing that leaves this machine, usage is **not** a spec-212 resource and needs no `#push`: a row carries no prompt or response text, which is exactly what earns it an exemption from ADR-0016's explicit-publish rule (ADR-0019). `#usage` reads the local log (so it answers offline), `#usage open` opens the server ledger, `#usage flush` skips the retry backoff. A turn whose adapter reports no counters still produces a row with `tokens: null` — an unmeasured lane must not look like an idle one. Spec 249 derives prompt-cache hit rate as `cachedRead / (input + cachedRead + cachedWrite)`: the live stats cell uses a separate coherent last-turn tuple, while `#usage` and `#daily` use recorded day totals; missing counters never become a guessed percentage. Spec 250 carries a non-empty `#usage` rollup on its system transcript item and renders it as a bounded telemetry card; the existing summary text stays on the same item as the Live Assist and generic-renderer fallback. See `docs/214-llm-usage-statistics.md`.
 
 
+38. **Project-grouped Artifact Gallery (spec 265)** — The loopback `GET /artifacts` projection groups the in-memory `HarnessArtifactStore` registry by an opaque hash of each canonical project path, not by transient harness or lane. Stores for the same project are unioned and artifacts are deduplicated by ID (`RegisteredLive` over `Pending`, then non-empty hash, then lowest harness ID), so disk rehydration from multiple live harnesses cannot duplicate cards. The response exposes `projectId`, basename `projectName`, and artifact rows without absolute paths or harness IDs. `src/acp/artifact-gallery.html` uses those projects for its `all` + project tabs and section headings; lane labels remain visible on every card as provenance. See `docs/265-artifact-gallery-project-grouping.md`.
+
 ### Window DOM Structure
 
 Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with session label and PTY status, a **tab bar** (auto-shown when multiple tabs exist), and a **content area** containing the active tab's pane tree. Pane trees are binary splits — each leaf is a `.krypton-pane` hosting an xterm.js instance, and splits are `.krypton-split` containers with a `.krypton-split__divider` between two children.
@@ -873,8 +875,10 @@ per event to `.krypton/timeline/events/`, validates bounded schema-1 records,
 and derives topic groups and superseded state at read time—there is no index
 file to drift. `#timeline add` opens a keyboard-first in-app capture sheet;
 `#timeline` opens the read-only `/timeline` browser page backed by one
-`/timeline.json` fetch; and `#timeline trace <topic>` injects a read-only lane
-prompt for older Git/docs/issue evidence. Timeline records are gitignored and
+`/timeline.json` fetch. Its chronology stays compact while selection moves;
+context and full audit provenance are separate explicit disclosures. `#timeline
+trace <topic>` injects a read-only lane prompt for older Git/docs/issue evidence.
+Timeline records are gitignored and
 not encrypted, synced, committed, or published automatically.
 
 Spec 254 adds a non-authoritative intake queue beside that ledger. The built-in
@@ -892,10 +896,23 @@ Spec 255 adds a second, explicit-intent path without changing that unsolicited
 capture boundary. The project-backed `timeline_record` MCP tool is available to
 local MCP-capable lanes only when the current human turn directly asks to persist
 timeline history. HookServer supplies the lane identity; `timeline.rs` validates
-the agent-structured fields, stores the exact authorizing instruction, derives or
-reuses the topic ID, and writes directly to `events/` without a frontend modal. A
+the agent-structured fields, stores the exact authorizing instruction, derives a
+topic ID for the first event or validates an explicit existing ID for continuation,
+and writes directly to `events/` without a frontend modal. The MCP result returns
+that stable topic ID so every later event in one traced chronology can reuse it. A
 matching pending suggestion is promoted under its reserved ID; an identical retry
-returns the existing event. `timeline_record` is narrowly auto-approved because
+returns the existing event. Spec 262 completes that contract with the read-only
+`timeline_list` tool: without it a fresh session cannot learn a topic ID it did
+not create, so exact-title reuse never fires across sessions or languages and one
+subject fragments into several topics. It returns bounded topic digests, or one
+topic's events, and writes nothing. A `timeline_record` that opens a new topic
+says so in its ack and names the topics that already existed — advice only,
+nothing is merged or re-parented on the persistence path. Repairing topics that were already split is
+spec 263's `#timeline merge <from> into <into>` / `#timeline merge undo`, which rewrites just the
+`topic_id` line of the moved files after copying them into `.krypton/timeline/backups/<merge-id>/`
+and writing the undo manifest. The same repair is reachable in prose through the `timeline_merge`
+MCP tool, which additionally requires the human's exact authorizing words, records them and the
+acting lane in that manifest, and is the one timeline tool excluded from built-in auto-approval. `timeline_record` is narrowly auto-approved because
 the user's current instruction is the confirmation, while self-selected events
 must still use `timeline_suggest`.
 
