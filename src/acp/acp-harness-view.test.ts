@@ -36,8 +36,10 @@ import {
   normalizeArtifactPath,
   hashBucket,
   isDirectPeerPeekReasonKey,
+  LANE_ACCENT_PALETTE,
   laneAccent,
   laneAccentForLabel,
+  pickLaneAccent,
   parseQueueIndex,
   permissionArgsPreview,
   renderPermissionBody,
@@ -2351,6 +2353,32 @@ describe('laneAccentForLabel', () => {
     // laneAccent(13) wraps modulo to Codex blue.
     const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(laneAccent);
     expect(new Set(slots).size).toBe(13);
+  });
+});
+
+describe('pickLaneAccent', () => {
+  it('never hands out a color a live lane already holds', () => {
+    const taken = LANE_ACCENT_PALETTE.slice(0, 12).map((entry) => entry.color);
+    expect(pickLaneAccent(taken, () => 0)).toBe(LANE_ACCENT_PALETTE[12]);
+    expect(pickLaneAccent(taken, () => 0.999)).toBe(LANE_ACCENT_PALETTE[12]);
+  });
+
+  it('picks from the free colors by the random draw', () => {
+    const taken = [LANE_ACCENT_PALETTE[0].color];
+    expect(pickLaneAccent(taken, () => 0)).toBe(LANE_ACCENT_PALETTE[1]);
+    expect(pickLaneAccent(taken, () => 0.999)).toBe(LANE_ACCENT_PALETTE[12]);
+  });
+
+  it('falls back to the whole palette once every color is taken', () => {
+    const taken = LANE_ACCENT_PALETTE.map((entry) => entry.color);
+    expect(pickLaneAccent(taken, () => 0)).toBe(LANE_ACCENT_PALETTE[0]);
+  });
+
+  it('never uses the self-referential window accent var', () => {
+    for (const entry of LANE_ACCENT_PALETTE) {
+      expect(entry.color).not.toContain('--krypton-window-accent');
+      expect(entry.rgb).not.toContain('--krypton-window-accent');
+    }
   });
 });
 

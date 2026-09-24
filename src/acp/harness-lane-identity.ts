@@ -158,6 +158,43 @@ export function laneAccent(index: number): string {
   return accents[(index - 1) % accents.length];
 }
 
+/** A lane identity color: `color` feeds `--acp-lane-accent`, `rgb` (a bare
+ * `r, g, b` tuple or a var resolving to one) feeds the host window's
+ * `--krypton-window-accent-rgb`. The first entry follows the active color
+ * theme instead of a fixed hex; every entry is concrete (never the
+ * self-referential `--krypton-window-accent`). */
+export interface LaneAccentColor {
+  color: string;
+  rgb: string;
+}
+
+export const LANE_ACCENT_PALETTE: readonly LaneAccentColor[] = [
+  { color: 'var(--krypton-focused-accent, #00ccff)', rgb: 'var(--krypton-accent-rgb, 0, 204, 255)' },
+  { color: '#8effb0', rgb: '142, 255, 176' },
+  { color: '#ffd166', rgb: '255, 209, 102' },
+  { color: '#c77dff', rgb: '199, 125, 255' },
+  { color: '#ff6b8b', rgb: '255, 107, 139' },
+  { color: '#5fb3b3', rgb: '95, 179, 179' },
+  { color: '#ff9f1c', rgb: '255, 159, 28' },
+  { color: '#b18cff', rgb: '177, 140, 255' },
+  { color: '#4dd0ff', rgb: '77, 208, 255' },
+  { color: '#5ce6a8', rgb: '92, 230, 168' },
+  { color: '#7fa8ff', rgb: '127, 168, 255' },
+  { color: '#ff8552', rgb: '255, 133, 82' },
+  { color: '#56d6c0', rgb: '86, 214, 192' },
+];
+
+/** Picks a random palette color no live lane is using. Falls back to the whole
+ * palette once every color is taken (more lanes than colors). */
+export function pickLaneAccent(
+  inUse: readonly string[],
+  random: () => number = Math.random,
+): LaneAccentColor {
+  const free = LANE_ACCENT_PALETTE.filter((entry) => !inUse.includes(entry.color));
+  const pool = free.length > 0 ? free : LANE_ACCENT_PALETTE;
+  return pool[Math.floor(random() * pool.length)];
+}
+
 export function laneAccentForLabel(label: string): string {
   if (/codex/i.test(label)) return laneAccent(1);
   if (/claude/i.test(label)) return laneAccent(2);

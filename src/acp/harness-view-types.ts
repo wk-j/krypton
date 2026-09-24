@@ -468,7 +468,11 @@ export interface HarnessLane {
   index: number;
   backendId: string;
   displayName: string;
+  /** Identity color, picked at random from `LANE_ACCENT_PALETTE` at creation
+   * (never one a live lane holds) and never mutated. */
   accent: string;
+  /** `r, g, b` tuple (or var) matching `accent`, for the host window glow. */
+  accentRgb: string;
   client: AcpClient | null;
   status: HarnessLaneStatus;
   draft: string;

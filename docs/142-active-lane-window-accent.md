@@ -1,6 +1,7 @@
 # Active-Lane → Window Accent — Implementation Spec
 
-> Status: Implemented (rev. 3 — cascade scope corrected during implementation; user-approved 2026-06-04)
+> Status: Implemented (rev. 4 — random lane colors; rev. 3 — cascade scope corrected during implementation; user-approved 2026-06-04)
+> **Rev. 4 (2026-09-24, user-chosen option A):** lane colors are no longer derived from `lane.index`. `createLane()` calls `pickLaneAccent()` (`harness-lane-identity.ts`), which picks at random from the 13-entry `LANE_ACCENT_PALETTE`, skipping every color a live lane already holds (whole palette once all 13 are taken). Each lane stores `accent` + `accentRgb`, never mutated; colors are not persisted, so they re-roll on every harness start. The theme-following entry is now a concrete `var(--krypton-focused-accent, #00ccff)` rather than the self-referential `var(--krypton-window-accent, #0cf)` — which fixes lane 1's name tracking whatever lane was active. The host window no longer uses 10 slot rules: `applyActiveLaneAccent()` sets `data-lane-accent` (marker) plus inline `--acp-host-lane-accent` / `--acp-host-lane-accent-rgb`, and one `.krypton-window[data-lane-accent]` rule maps them onto the window accent vars with `!important`. The separate var names leave the compositor's inline `--krypton-window-accent*` untouched, so the rev. 2/3 cascade and revert-on-dispose reasoning below still holds. `laneAccent(index)` / `laneAccentForLabel()` remain for label-keyed surfaces (memory source chips). Where the text below says slot/index, read "the active lane's stored color".
 > **Rev. 3 (implementation finding):** the `data-signal` `--krypton-window-accent-rgb` retarget (`window.css:40-44`) is a **normal** stylesheet declaration, while the compositor sets `--krypton-window-accent-rgb` as a **normal inline** style on every window (`compositor.ts:1597/1788`). Inline normal beats stylesheet normal, so the signal `-rgb` override is **already dominated on every window today** (the original spec-104 design used a separate `--krypton-color-signal` var, docs/104:88-91; the shipped code retargets the accent var instead). Rev. 2 planned to add `!important` to the signal rules so the signal would win over the lane base — but that would **globally activate the currently-dormant signal-border recolor on all windows**, which is out of scope for "harness tracks active lane." So `!important` is scoped to the **lane rules only** (they match exclusively when the harness sets `data-lane-accent`); the signal rules are left unchanged. Consequence: the harness window wears its active lane's identity color, and a status signal does **not** recolor that window's border (consistent with today — it never did). See Open Question O2 + the flagged decision.
 > Date: 2026-06-04
 > Milestone: M-ACP — Harness Multi-Agent
@@ -54,15 +55,17 @@ Editors that color-code the active context in chrome: VS Code's `workbench.color
 
 ## Affected Files
 
+(Original rev. 1–3 plan; see the rev. 4 note for the current slot-free shape.)
+
 | File | Change |
 |------|--------|
 | `src/acp/acp-harness-view.ts` | Add a private helper `applyActiveLaneAccent()`: look up `this.activeLane()`; if present resolve `const slot = ((lane.index - 1) % 10) + 1` (from `lane.index`, **never** `lane.accent` — slot 1 is the self-referential var) and set `hostWindowEl.dataset.laneAccent = String(slot)` via `this.element.closest('.krypton-window')` (guard null — not mounted in tests); if absent (`activeLaneId === ''`) `delete hostWindowEl.dataset.laneAccent`. Call it from: (a) `activateLane(id)` after the `activeLaneId` assignment; (b) **`closeActiveLane()`** after **both** branches reassign `activeLaneId` (`:5014` empty / `:5022` next) — this path bypasses `activateLane` (Codex-1 High 2); (c) initial mount/render when a lane already exists. In `dispose()`, `delete hostWindowEl.dataset.laneAccent` (inline compositor vars remain underneath → window reverts). Consider extracting a `setActiveLaneId(id)` that wraps the assignment + `applyActiveLaneAccent()` so future active-lane writes can't bypass it. |
 | `src/styles/window.css` | Add the 10-slot lane palette as `.krypton-window[data-lane-accent='N'] { --krypton-window-accent: <hex> !important; --krypton-window-accent-rgb: <r,g,b> !important; }` rules, placed before the existing `data-signal` rules. **Leave the `data-signal` rules unchanged** (no `!important`) — see "Cascade resolution". |
 | `docs/PROGRESS.md`, `docs/04-architecture.md` | Doc sync — note the harness host window tracks the active lane accent, layered under the view-protocol signal. |
 
-### The slot palette (concrete values)
+### The lane palette (concrete values)
 
-Mirrors `laneAccent()` (`acp-harness-view.ts:9634`). Slot 1 follows the color theme:
+`LANE_ACCENT_PALETTE` in `harness-lane-identity.ts` (rev. 4: 13 entries, random pick; rows 11–13 are `#7fa8ff` / `127, 168, 255`, `#ff8552` / `255, 133, 82`, `#56d6c0` / `86, 214, 192`). The first entry follows the color theme:
 
 | slot | hex | rgb |
 |------|-----|-----|
@@ -111,5 +114,5 @@ The compositor sets `--krypton-window-accent` / `-rgb` as **normal inline style*
 - **Focused/unfocused breathing glow** keeps animating and reads the current lane rgb (keyframes resolve the var at computed-style time — no break).
 - Dispose the harness pane while the host window survives (sibling pane promoted) → window keeps its compositor-allocated color (NOT cyan fallback), confirming inline vars were never removed.
 - Dispose the harness / close the window → no console errors; remaining windows keep their compositor colors.
-- Lane index > 10 → wraps via the slot modulo and still paints a valid palette color.
+- Rev. 4: open several lanes → each gets a different color (until more than 13 lanes); relaunching the harness can re-roll them. Lane 1's name no longer changes color when another lane becomes active. `pickLaneAccent` is unit-tested in `acp-harness-view.test.ts`.
 - `npm run check` clean; manual verify in `npx tauri dev`.

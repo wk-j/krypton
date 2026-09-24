@@ -20,10 +20,8 @@ export interface HarnessLaneMark {
   displayName: string;
   /** Backend id — tooltip / identity only. The strip no longer paints a logo. */
   backendId: string;
-  /** Lane accent CSS value (`laneAccent(index)`), applied inline as
-   *  `--krypton-lane-accent`. Lane 1's `var(--krypton-window-accent, #0cf)`
-   *  resolves against the window's own accent here — the footer is inside the
-   *  window's cascade, so lane 1 agrees with the window chrome. */
+  /** Lane accent CSS value (`lane.accent`, picked at random per lane by
+   *  `pickLaneAccent`), applied inline as `--krypton-lane-accent`. */
   accent: string;
   /** The lane this window's harness is currently driving. At most one. */
   active: boolean;

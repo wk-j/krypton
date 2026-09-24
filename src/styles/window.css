@@ -57,27 +57,21 @@
    for descendants (corners, border, header accent, edge glow) — no per-element
    rule changes needed. */
 /* ─── Active-lane accent (spec 142) ─── */
-/* The ACP harness sets data-lane-accent="<slot 1–10>" on its host window when
-   the active lane changes; these rules map the slot to the lane's identity
-   color. `!important` beats the compositor's NORMAL inline accent vars
+/* The ACP harness sets data-lane-accent on its host window when the active
+   lane changes, plus the lane's identity color in --acp-host-lane-accent /
+   --acp-host-lane-accent-rgb (picked at random per lane, see pickLaneAccent()
+   in harness-lane-identity.ts). This rule maps them onto the window accent
+   vars. `!important` beats the compositor's NORMAL inline accent vars
    (compositor.ts applyAccentColor) without removing them — so dropping the
    attribute on dispose reverts the window to its allocated color cleanly.
-   Mirrors laneAccent() (acp-harness-view.ts); slot 1 follows the active color
-   theme (`--krypton-focused-accent` / `--krypton-accent-rgb`) so the first lane
-   chrome tracks krypton-dark cyan vs legacy-radiance green. Other slots stay
-   identity colors. The `!important` is scoped to harness windows only — these
-   selectors match exclusively when the harness sets data-lane-accent — so
-   non-harness windows are untouched. See docs/142-active-lane-window-accent.md. */
-.krypton-window[data-lane-accent='1']  { --krypton-window-accent: var(--krypton-focused-accent, #00ccff) !important; --krypton-window-accent-rgb: var(--krypton-accent-rgb, 0, 204, 255) !important; }
-.krypton-window[data-lane-accent='2']  { --krypton-window-accent: #8effb0 !important; --krypton-window-accent-rgb: 142, 255, 176 !important; }
-.krypton-window[data-lane-accent='3']  { --krypton-window-accent: #ffd166 !important; --krypton-window-accent-rgb: 255, 209, 102 !important; }
-.krypton-window[data-lane-accent='4']  { --krypton-window-accent: #c77dff !important; --krypton-window-accent-rgb: 199, 125, 255 !important; }
-.krypton-window[data-lane-accent='5']  { --krypton-window-accent: #ff6b8b !important; --krypton-window-accent-rgb: 255, 107, 139 !important; }
-.krypton-window[data-lane-accent='6']  { --krypton-window-accent: #5fb3b3 !important; --krypton-window-accent-rgb: 95, 179, 179 !important; }
-.krypton-window[data-lane-accent='7']  { --krypton-window-accent: #ff9f1c !important; --krypton-window-accent-rgb: 255, 159, 28 !important; }
-.krypton-window[data-lane-accent='8']  { --krypton-window-accent: #b18cff !important; --krypton-window-accent-rgb: 177, 140, 255 !important; }
-.krypton-window[data-lane-accent='9']  { --krypton-window-accent: #4dd0ff !important; --krypton-window-accent-rgb: 77, 208, 255 !important; }
-.krypton-window[data-lane-accent='10'] { --krypton-window-accent: #5ce6a8 !important; --krypton-window-accent-rgb: 92, 230, 168 !important; }
+   The theme-following palette entry resolves through --krypton-focused-accent /
+   --krypton-accent-rgb, so it tracks krypton-dark cyan vs legacy-radiance
+   green. Scoped to harness windows only — non-harness windows never carry the
+   attribute. See docs/142-active-lane-window-accent.md. */
+.krypton-window[data-lane-accent] {
+  --krypton-window-accent: var(--acp-host-lane-accent, #00ccff) !important;
+  --krypton-window-accent-rgb: var(--acp-host-lane-accent-rgb, 0, 204, 255) !important;
+}
 
 .krypton-window[data-signal='ok']      { --krypton-window-accent-rgb: var(--krypton-success-rgb); }
 .krypton-window[data-signal='warn']    { --krypton-window-accent-rgb: var(--krypton-warning-rgb); }

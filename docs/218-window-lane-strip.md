@@ -50,7 +50,7 @@ keybinding; lane switching stays where it is (`⌘P` lane picker, `⌃1..9`).
   `notifyLaneMarksChanged()` alongside it costs a string compare per frame.
 - **The logos exist and are already lane-identity-correct.** `BACKEND_LOGO_SVG_DEFS` +
   `backendLogoId()` (spec 125) give a `<symbol>` per backend that recolours via
-  `currentColor`; `laneAccent(index)` (spec 142/215) gives the per-lane hue the window chrome
+  `currentColor`; `lane.accent` (random per lane via `pickLaneAccent`, spec 142 rev. 4) gives the per-lane hue the window chrome
   and rail already use, so the status bar agrees with the harness on lane colour.
 - **Constraint discovered — the symbol defs were injected per harness view**
   (`acp-harness-view.ts` appended them into `this.element`). The window footer is chrome: a
@@ -124,10 +124,8 @@ export interface HarnessLaneMark {
   displayName: string;
   /** Backend id — tooltip / identity only. The strip does not paint a logo. */
   backendId: string;
-  /** Lane accent CSS value (`laneAccent(index)`), applied inline as
-   *  `--krypton-lane-accent`. Lane 1's `var(--krypton-window-accent, #0cf)`
-   *  resolves against this window's accent — the footer is inside the window's
-   *  cascade, so lane 1 agrees with the window chrome. */
+  /** Lane accent CSS value (`lane.accent`, picked at random per lane by
+   *  `pickLaneAccent`), applied inline as `--krypton-lane-accent`. */
   accent: string;
   active: boolean;
 }
@@ -297,7 +295,7 @@ None.
 | Harness pane closed | `closePaneInTab` → `updatePaneFocusIndicator` → `syncWindowFooter` re-renders from the newly focused pane |
 | Window closed | `closeWindow()` fires the lane unsubscribe and drops the cached key |
 | Focus moves to a background tab's harness | Only the *active* tab's focused pane is read, so a hidden tab's lanes never show |
-| More than 13 lanes | Lane accents repeat (`laneAccent` wraps the palette) — which is exactly why the name cue exists and colour is not load-bearing |
+| More than 13 lanes | Lane accents repeat (`pickLaneAccent` falls back to the whole palette) — which is exactly why the name cue exists and colour is not load-bearing |
 | More than 8 lanes | First 8 marks plus `+N`; the active lane can therefore be inside the `+N` tail — acceptable, since the harness view itself is the full roster and 8 lanes in one harness is already far past normal |
 | Unknown/new backend id | The strip no longer paints a logo; the display name's two-letter head is the mark |
 | Rapid status churn (busy → idle → busy) | The dedupe key excludes status, so nothing notifies and the strip never churns |
