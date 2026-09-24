@@ -98,6 +98,7 @@ import { usageStore, type ProviderUsageSummary, type UsageProvider } from './usa
 import {
   capLaneMarks,
   laneDropCap,
+  laneNumber,
   laneStripKey,
   laneStripLabel,
   type HarnessLaneMark,
@@ -1467,6 +1468,19 @@ export class Compositor {
     // Last, so its `prepend` lands ahead of the quotas': DOM order is what a
     // screen reader follows, and CSS `order` puts the badge first visually.
     this.syncWindowProjectBadge(win);
+    this.syncStageProjectInitials(win);
+  }
+
+  private syncStageProjectInitials(win: KryptonWindow, titleOverride?: string): void {
+    if (this.layoutMode !== LayoutMode.Stage) return;
+    const title = titleOverride ?? win.tabs[win.activeTabIndex]?.title ?? '';
+    const dir = this.focusedProjectDir(win);
+    const status = this.findPtyStatus(win.element)?.textContent ?? '';
+    const path = title.startsWith('/') || title.startsWith('~/')
+      ? title
+      : status.startsWith('/') || status.startsWith('~/') ? status : null;
+    const initials = projectBadge(dir ?? path)?.initials ?? title.trim();
+    win.element.dataset.stageProjectInitials = [...initials.toUpperCase()].slice(0, 2).join('');
   }
 
   /** Follow the active tab's focused content view and render its provider quotas. */
@@ -1569,7 +1583,7 @@ export class Compositor {
 
   /**
    * spec 218: the lane strip — one two-letter drop cap per lane of the harness
-   * in this window's focused pane, with the active lane's full name tail.
+   * in this window's focused pane, with the active lane's small number.
    *
    * Per *window*, not per workspace: a window is what hosts a harness, so its
    * own 28px rail is where "which lane am I driving here" belongs, and two
@@ -1611,25 +1625,24 @@ export class Compositor {
     root.setAttribute('aria-label', laneStripLabel(marks, overflow));
   }
 
-  /** One lane mark: a two-letter drop cap of the display name, plus the name's
-   *  tail for the active lane only — the same split as the project badge beside
-   *  it, so `GR`/`ok-1` sits on one baseline with `KR`/`ypton`. The accent rides
-   *  in as an inline custom property so a single CSS rule colours both halves. */
+  /** One lane mark: two initials, plus the active lane's number when present.
+   * The full name remains in the title and strip's accessible label. */
   private buildWindowLaneMark(mark: HarnessLaneMark): HTMLElement {
     const el = document.createElement('span');
     el.className =
       'krypton-window__lane' + (mark.active ? ' krypton-window__lane--active' : '');
     el.style.setProperty('--krypton-lane-accent', mark.accent);
-    const { initials, rest } = laneDropCap(mark.displayName);
+    const { initials } = laneDropCap(mark.displayName);
     const head = document.createElement('span');
     head.className = 'krypton-window__lane-initials';
     head.textContent = initials;
     el.appendChild(head);
-    if (mark.active && rest) {
-      const tail = document.createElement('span');
-      tail.className = 'krypton-window__lane-rest';
-      tail.textContent = rest;
-      el.appendChild(tail);
+    const number = mark.active ? laneNumber(mark.displayName) : null;
+    if (number) {
+      const superscript = document.createElement('sup');
+      superscript.className = 'krypton-window__lane-number';
+      superscript.textContent = number;
+      el.appendChild(superscript);
     }
     el.title = `${mark.displayName} · ${mark.backendId}${mark.active ? ' · active lane' : ''}`;
     return el;
@@ -7105,6 +7118,7 @@ export class Compositor {
     this.applyBounds(win);
     el.classList.add('krypton-window--stage');
     el.dataset.stageRole = placement.role;
+    this.syncStageProjectInitials(win);
     el.style.transformOrigin = 'top left';
     el.style.transform = placement.role === 'active'
       ? 'none'
@@ -7126,6 +7140,7 @@ export class Compositor {
       const el = win.element;
       el.classList.remove('krypton-window--stage');
       delete el.dataset.stageRole;
+      delete el.dataset.stageProjectInitials;
       el.style.transform = '';
       el.style.transformOrigin = '';
       el.style.opacity = '';
@@ -7830,6 +7845,8 @@ export class Compositor {
       const cwd = await invoke<string | null>('get_pty_cwd', { sessionId });
       if (cwd) {
         statusEl.textContent = abbreviatePath(cwd);
+        const win = this.windows.get(statusEl.closest<HTMLElement>('.krypton-window')?.id ?? '');
+        if (win) this.syncStageProjectInitials(win);
       }
     } catch {
       // Session may have exited — ignore
@@ -7873,6 +7890,8 @@ export class Compositor {
     label.textContent = parts.rest;
     tail.textContent = parts.tail;
     tail.hidden = parts.tail.length === 0;
+    const win = this.windows.get(label.closest<HTMLElement>('.krypton-window')?.id ?? '');
+    if (win) this.syncStageProjectInitials(win, text);
   }
 
   private paintWindowLabelFromEl(windowEl: HTMLElement, text: string): void {

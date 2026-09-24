@@ -15,8 +15,8 @@ import { INITIALS_LEN } from './window-footer-project';
 export interface HarnessLaneMark {
   /** Stable lane id — the strip's DOM key. */
   id: string;
-  /** e.g. "Claude-1". Split into a two-letter drop cap; the tail renders for
-   *  the active lane only. */
+  /** e.g. "Claude-1". The active mark shows two initials and the trailing
+   *  number; the full name remains available to assistive technology. */
   displayName: string;
   /** Backend id — tooltip / identity only. The strip no longer paints a logo. */
   backendId: string;
@@ -55,15 +55,20 @@ export function laneStripKey(marks: readonly HarnessLaneMark[], overflow: number
   return `${parts.join('|')}#${overflow}`;
 }
 
-/** Cut a lane display name into the magnified two-letter head and the rail-sized
- *  tail — the same split spec 219 uses for the project badge, so `Grok-1` reads
- *  as `GR` + `ok-1` next to `KR` + `ypton`. Split by code point. */
+/** Cut a lane display name into its two-letter mark and remaining name.
+ * The footer renders the mark; the full name stays in the tooltip and a11y label.
+ * Split by code point. */
 export function laneDropCap(displayName: string): { initials: string; rest: string } {
   const chars = [...displayName];
   return {
     initials: chars.slice(0, INITIALS_LEN).join(''),
     rest: chars.slice(INITIALS_LEN).join(''),
   };
+}
+
+/** Lane number shown beside the active mark when the display name ends in -N. */
+export function laneNumber(displayName: string): string | null {
+  return /-(\d+)$/.exec(displayName)?.[1] ?? null;
 }
 
 /** Screen-reader label for the strip — inactive marks show only two letters, so

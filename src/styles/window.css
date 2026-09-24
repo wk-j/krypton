@@ -420,9 +420,8 @@
    the window's own rail — with the harness scrolled, zen-collapsed, or
    unfocused. Pinned to the rail's right edge, past the notification control.
    The active lane magnifies its first two letters the same way the project
-   badge magnifies `KR` — scaled `font-size`, one shared baseline, no SVG.
-   Inactive lanes are the two letters at rail size. The active name has a
-   quiet tinted tab surface, without a border, logo, or motion. */
+   badge magnifies `KR` and adds a small lane number. Inactive lanes are the
+   two letters at rail size. No tab surface or motion. */
 
 .krypton-window__lane-strip {
   display: flex;
@@ -487,19 +486,8 @@
 }
 
 .krypton-window__lane--active {
-  position: relative;
-  isolation: isolate;
   opacity: 1;
-  color: color-mix(in srgb, var(--krypton-lane-accent, #00c8ff) 78%, transparent);
-}
-
-.krypton-window__lane--active::before {
-  content: '';
-  position: absolute;
-  inset: -4px -6px -5px;
-  z-index: -1;
-  border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
-  background: color-mix(in srgb, var(--krypton-lane-accent, #00c8ff) 16%, var(--krypton-backdrop-color, #060a12));
+  gap: 2px;
 }
 
 .krypton-window__lane-initials {
@@ -516,10 +504,12 @@
   color: var(--krypton-lane-accent, var(--krypton-window-accent, #00c8ff));
 }
 
-.krypton-window__lane-rest {
-  min-width: 0;
-  font-weight: 500;
-  letter-spacing: 0.04em;
+.krypton-window__lane-number {
+  align-self: flex-start;
+  margin-top: 1px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-weight: 700;
+  line-height: 1;
 }
 
 .krypton-window__lane-more {
@@ -920,24 +910,21 @@
   cursor: pointer;
 }
 
-.krypton-window--stage[data-stage-role='shelf']::after {
-  content: attr(data-window-number);
+.krypton-window--stage[data-stage-role='shelf']::before {
+  content: attr(data-stage-project-initials);
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 50%;
+  left: 50%;
   z-index: 20;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
-  border-radius: 50%;
-  background: rgba(6, 10, 18, 0.88);
   color: var(--krypton-window-accent, var(--krypton-titlebar-text, #0cf));
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 10px;
+  font-size: 56px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   line-height: 1;
-  transform: scale(var(--krypton-stage-inverse-scale, 1));
-  transform-origin: top right;
+  white-space: nowrap;
+  text-shadow: 0 2px 8px #060a12, 0 0 18px #060a12;
+  transform: scale(var(--krypton-stage-inverse-scale, 1)) translate(-50%, -50%);
+  transform-origin: top left;
   pointer-events: none;
 }

@@ -114,9 +114,10 @@ export function computeStageLayout(input: StageLayoutInput): StageLayoutResult;
 - Every window receives the same unscaled `baseBounds`. Only the visual transform changes by role. This keeps xterm rows/columns stable when stages switch.
 - Shelf cards preserve the active-frame aspect ratio. Scale is the smaller of the available shelf width and per-card height ratios.
 - Up to five recent windows are visible, vertically centered with `gap` between cards. Additional windows use role `hidden` and `visibility: hidden`, not removal; their PTY sessions remain alive.
-- Each shelf badge shows the window's stable, one-based creation number (`win-0` → `1`).
-  Promoting or rotating stages does not relabel windows. `Leader 1-9` remains relative to
-  `StageState.order`; the badge identifies the window rather than advertising that shortcut.
+- Each shelf preview shows only two large uppercase project initials at its center, with no
+  window-number badge. Content views use their focused working directory; terminals use the
+  live path title when available, then their PTY working directory or title. The initials are
+  scaled back up to shelf size while the live preview remains scaled, so the PTY size does not change.
 
 For a shelf card, the final transform is:
 
@@ -186,8 +187,8 @@ Both directional pairs are intentional aliases: `h/l` match left/right switching
 
 ### Animation and Styling
 
-- Add `.krypton-window--stage` plus `data-stage-role`; each window's persistent
-  `data-window-number` supplies the shelf badge.
+- Add `.krypton-window--stage` plus `data-stage-role`; `data-stage-project-initials`
+  supplies the centered shelf initials.
 - Use full existing window chrome in previews; no duplicate thumbnail DOM and no bitmap capture pipeline.
 - Stage transitions animate `transform`, `opacity`, and `filter` for 200ms with the existing ease-out curve.
 - Shelf cards use reduced brightness and opacity; the active card keeps its normal focus border and layered glow.

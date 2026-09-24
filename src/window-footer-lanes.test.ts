@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   capLaneMarks,
   laneDropCap,
+  laneNumber,
   laneStripKey,
   laneStripLabel,
   LANE_STRIP_MAX,
@@ -109,15 +110,26 @@ describe('laneDropCap', () => {
   });
 });
 
+describe('laneNumber', () => {
+  it('uses the trailing lane number and leaves custom names without one', () => {
+    expect(laneNumber('Claude-2')).toBe('2');
+    expect(laneNumber('Codex-12')).toBe('12');
+    expect(laneNumber('Custom')).toBeNull();
+    expect(laneNumber('Custom-2x')).toBeNull();
+  });
+});
+
 describe('window footer lane drop-cap chrome', () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const compositor = readFileSync(join(here, 'compositor.ts'), 'utf8');
   const css = readFileSync(join(here, 'styles/window.css'), 'utf8');
 
-  it('renders initials and the active tail, never a footer logo', () => {
+  it('renders initials and the active number, never a footer logo', () => {
     expect(compositor).toContain("head.className = 'krypton-window__lane-initials'");
-    expect(compositor).toContain("tail.className = 'krypton-window__lane-rest'");
+    expect(compositor).toContain("superscript.className = 'krypton-window__lane-number'");
     expect(compositor).toContain('laneDropCap(mark.displayName)');
+    expect(compositor).toContain('laneNumber(mark.displayName)');
+    expect(compositor).not.toContain('krypton-window__lane-rest');
     expect(compositor).not.toContain('krypton-window__lane-logo');
     expect(compositor).not.toContain('ensureHarnessSymbolDefs');
   });
@@ -129,6 +141,8 @@ describe('window footer lane drop-cap chrome', () => {
     );
     expect(head).toMatch(/text-transform:\s*uppercase/);
     expect(activeHead?.[1]).toContain('--krypton-lane-zoom');
+    expect(css).toContain('.krypton-window__lane-number');
+    expect(css).not.toContain('.krypton-window__lane--active::before');
     expect(css).not.toContain('.krypton-window__lane-logo');
     expect(css).not.toContain('krypton-lane-dock-pop');
   });

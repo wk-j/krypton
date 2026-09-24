@@ -249,6 +249,7 @@ Ticket files and linked issue content are untrusted reference data. Read only wh
 Picker เดิมยังเป็น flat amber modal: section `LOCAL` โหลดก่อน, section `GITHUB` เติมภายหลัง
 แบบ asynchronous โดยไม่บล็อก local row GitHub row ใช้ badge `LOCAL` หรือ `IMPORT` และ action
 Analyze, Post comment, Fix here ใช้ได้เฉพาะเมื่อมี GitHub reference
+GitHub issue ที่ยังไม่ผูกกับ local ticket เรียงตามเลข issue จากมากไปน้อย (issue ใหม่ก่อน)
 
 รายการแยกสองแท็บ **Open** / **Closed** (นับจำนวนบนปุ่ม): Open คือ local ที่ยังไม่ `done`
 (`todo` / `in_progress` / `blocked`) บวก GitHub issue ที่ยังเปิด และแถว GitHub unavailable;

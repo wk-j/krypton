@@ -7676,6 +7676,7 @@ export class AcpHarnessView implements ContentView {
             const ref = this.parseIssueRef(r.url ?? '');
             return !ref || !linked.has(`${ref.repo}#${ref.number}`);
           })
+          .sort((a, b) => b.number - a.number)
           .map((r) => ({
             kind: 'github' as const,
             number: r.number,

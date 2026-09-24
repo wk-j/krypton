@@ -598,11 +598,14 @@ export function statusIconId(status: HarnessLaneStatus): string {
 // Row-1 leading status glyph as an SVG, in a state-tinted wrapper so CSS can
 // colour idle/busy/permission/peer/error distinctly (was Unicode · ○ ● ! ⇆ ×).
 export function renderLaneSymbol(status: HarnessLaneStatus): string {
-  // busy → braille spinner glyph advanced by the JS ticker (tickSpinner); every
-  // other status → static SVG status icon.
+  // busy → braille spinner glyph advanced by the JS ticker (tickSpinner);
+  // idle → no glyph (the empty wrapper keeps the column aligned); every other
+  // status → static SVG status icon.
   const inner = status === 'busy'
     ? `<span class="acp-harness__spinner">${SPINNER_FRAMES[0]}</span>`
-    : harnessIcon(statusIconId(status));
+    : status === 'idle'
+      ? ''
+      : harnessIcon(statusIconId(status));
   return (
     `<span class="acp-harness__lane-symbol acp-harness__lane-symbol--${status}">` +
     inner +
