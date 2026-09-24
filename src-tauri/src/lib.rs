@@ -24,6 +24,7 @@ pub mod termctrl_monitor;
 pub mod theme;
 pub mod ticket_bundle;
 pub mod timeline;
+pub mod timeline_conflicts;
 pub mod typesafe;
 pub mod usage;
 pub mod usage_log;
@@ -247,6 +248,10 @@ pub fn run() {
             timeline::timeline_suggestion_set_enabled,
             timeline::timeline_topic_suggest,
             timeline::timeline_topic_suggest_cancel,
+            timeline_conflicts::timeline_conflict_list,
+            timeline_conflicts::timeline_conflict_propose,
+            timeline_conflicts::timeline_conflict_review,
+            timeline_conflicts::timeline_conflict_scan,
             typesafe::typesafe_metrics,
             commands::save_temp_image,
             commands::capture_screen,

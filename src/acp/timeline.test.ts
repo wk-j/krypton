@@ -7,6 +7,7 @@ import {
   TIMELINE_CAPTURE_FIELDS,
   buildTimelineTopicCandidates,
   findExistingTopic,
+  isHighlightedConflict,
   latestTimelineTopics,
   parseTimelineCommand,
   similarTimelineTopics,
@@ -72,6 +73,8 @@ describe('parseTimelineCommand', () => {
 
   it('parses pending review and automatic suggestion controls', () => {
     expect(parseTimelineCommand('#timeline review')).toEqual({ kind: 'review' });
+    expect(parseTimelineCommand('#timeline conflicts')).toEqual({ kind: 'conflicts' });
+    expect(parseTimelineCommand('#timeline conflicts extra')).toEqual({ kind: 'usage' });
     expect(parseTimelineCommand('#timeline auto')).toEqual({ kind: 'auto', state: 'status' });
     expect(parseTimelineCommand('#timeline auto on')).toEqual({ kind: 'auto', state: 'on' });
     expect(parseTimelineCommand('#timeline auto off')).toEqual({ kind: 'auto', state: 'off' });
@@ -240,5 +243,20 @@ describe('timeline capture contract', () => {
       'กรุณาเลือกความสัมพันธ์และเหตุการณ์ที่เกี่ยวข้องพร้อมกัน',
     );
     expect(validateTimelineRecord(valid)).toBeNull();
+  });
+});
+
+describe('timeline conflict highlight (spec 266)', () => {
+  it('marks only pairs still to review or confirmed and open', () => {
+    expect(isHighlightedConflict('unreviewed')).toBe(true);
+    expect(isHighlightedConflict('insufficient_evidence')).toBe(true);
+    expect(isHighlightedConflict('confirmed')).toBe(true);
+    expect(isHighlightedConflict('dismissed')).toBe(false);
+    expect(isHighlightedConflict('resolved')).toBe(false);
+    expect(isHighlightedConflict('historical')).toBe(false);
+  });
+
+  it('lists conflicts in the usage text', () => {
+    expect(TIMELINE_USAGE).toContain('conflicts');
   });
 });

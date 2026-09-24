@@ -214,6 +214,14 @@ export interface TypeSafeTimelineTopicsConfig {
   max_candidates: number;
 }
 
+/** spec 266: user-started conflict screening; only `suggest` runs. */
+export interface TypeSafeTimelineConflictsConfig {
+  mode: 'off' | 'suggest' | string;
+  min_confidence: number;
+  min_probability: number;
+  min_margin: number;
+}
+
 /** Non-secret TypeSafe settings. `api_key_env` is only the variable name. */
 export interface TypeSafeConfig {
   enabled: boolean;
@@ -227,6 +235,7 @@ export interface TypeSafeConfig {
   failure_threshold: number;
   cooldown_secs: number;
   timeline_topics: TypeSafeTimelineTopicsConfig;
+  timeline_conflicts: TypeSafeTimelineConflictsConfig;
 }
 
 export interface KryptonConfig {

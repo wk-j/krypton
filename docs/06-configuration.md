@@ -348,6 +348,12 @@ min_probability = 0.55
 min_margin = 0.15
 max_candidates = 12
 
+[typesafe.timeline_conflicts]
+mode = "off"                 # off | suggest — user-started scan only
+min_confidence = 0.65
+min_probability = 0.70
+min_margin = 0.15
+
 # Telegram Harness Controller is intentionally NOT configured here. Krypton's
 # Settings view owns ~/.config/krypton/telegram.toml, while the Bot API token
 # lives in the operating-system credential vault. See the section below.
@@ -578,6 +584,16 @@ To switch models, change `active` to the name of another preset. Changes take ef
 | `[typesafe.timeline_topics]` | `min_probability` | float | `0.55` | Minimum chosen-option probability; runtime clamps to 0–1 |
 | `[typesafe.timeline_topics]` | `min_margin` | float | `0.15` | Minimum probability lead over the runner-up; runtime clamps to 0–1 |
 | `[typesafe.timeline_topics]` | `max_candidates` | int | `12` | Maximum bounded shortlist size; frontend and backend clamp to 2–20 |
+| `[typesafe.timeline_conflicts]` | `mode` | string | `"off"` | `suggest` lets `s` in `#timeline conflicts` start a scan; any other value keeps the scan off. Opening Timeline never calls the network |
+| `[typesafe.timeline_conflicts]` | `min_confidence` | float | `0.65` | Minimum response confidence for a `possible_conflict` proposal; runtime clamps to 0–1 |
+| `[typesafe.timeline_conflicts]` | `min_probability` | float | `0.70` | Minimum `possible_conflict` probability; runtime clamps to 0–1 |
+| `[typesafe.timeline_conflicts]` | `min_margin` | float | `0.15` | Minimum lead over the runner-up option; runtime clamps to 0–1 |
+
+The conflict scan (spec 266) sends at most 40 shortlisted pairs per run, packed into System One
+requests of at most 8 KiB, each carrying only event IDs, topic titles, and summaries truncated to
+240 characters. Because it is an explicit batch action, each request uses at least a 4 s attempt
+timeout and a 10–15 s deadline instead of the interactive topic-suggestion budget. A scan only
+creates proposals for a human to review; it never records a verdict.
 
 TypeSafe topic matching applies only to local `#timeline add` and `#timeline review` sheets. Exact
 normalized-title reuse remains deterministic and bypasses the network. `shadow` runs the same

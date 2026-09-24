@@ -42,7 +42,7 @@ const MAX_MERGE_CANDIDATES: usize = 5;
 // The write still happens — a human authorized it — but a chronology dated
 // months from the source it cites is almost always a mistake.
 const MAX_FUTURE_SKEW_HOURS: i64 = 24;
-static TIMELINE_MUTATION_LOCK: Mutex<()> = Mutex::new(());
+pub(crate) static TIMELINE_MUTATION_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -351,7 +351,7 @@ fn writable_event_root(project_dir: &Path) -> Result<(PathBuf, PathBuf), String>
     Ok((project, canonical))
 }
 
-fn existing_confined_root(
+pub(crate) fn existing_confined_root(
     project_dir: &Path,
     requested: PathBuf,
     label: &str,
@@ -369,7 +369,7 @@ fn existing_confined_root(
     Ok(Some((project, canonical)))
 }
 
-fn writable_confined_root(
+pub(crate) fn writable_confined_root(
     project_dir: &Path,
     requested: PathBuf,
     label: &str,
@@ -386,14 +386,14 @@ fn writable_confined_root(
     Ok((project, canonical))
 }
 
-fn relative_path(project: &Path, path: &Path) -> String {
+pub(crate) fn relative_path(project: &Path, path: &Path) -> String {
     path.strip_prefix(project)
         .unwrap_or(path)
         .to_string_lossy()
         .replace('\\', "/")
 }
 
-fn validate_single_line(name: &str, value: &str, max: usize) -> Result<String, String> {
+pub(crate) fn validate_single_line(name: &str, value: &str, max: usize) -> Result<String, String> {
     let value = value.trim();
     if value.is_empty() {
         return Err(format!("{name} is required"));
@@ -407,7 +407,7 @@ fn validate_single_line(name: &str, value: &str, max: usize) -> Result<String, S
     Ok(value.to_string())
 }
 
-fn validate_optional_single_line(
+pub(crate) fn validate_optional_single_line(
     name: &str,
     value: Option<String>,
     max: usize,
@@ -452,7 +452,7 @@ fn validate_topic_id(value: &str) -> Result<String, String> {
     Ok(value.to_string())
 }
 
-fn validate_event_id(value: &str) -> Result<String, String> {
+pub(crate) fn validate_event_id(value: &str) -> Result<String, String> {
     let value = value.trim();
     if !value.starts_with("tl-")
         || value.len() > 64
@@ -701,7 +701,11 @@ fn parse_event(project: &Path, path: &Path, source: &str) -> Result<TimelineEven
     })
 }
 
-fn validate_body_with_limit(name: &str, value: &str, max: usize) -> Result<String, String> {
+pub(crate) fn validate_body_with_limit(
+    name: &str,
+    value: &str,
+    max: usize,
+) -> Result<String, String> {
     let value = validate_body(name, value)?;
     if value.chars().count() > max {
         return Err(format!("{name} must be at most {max} Unicode characters"));
@@ -1520,7 +1524,7 @@ fn future_occurrence_warning(occurred_at: &str, now: DateTime<Utc>) -> Option<St
     ))
 }
 
-fn random_hex() -> Result<String, String> {
+pub(crate) fn random_hex() -> Result<String, String> {
     let mut bytes = [0_u8; 3];
     getrandom::getrandom(&mut bytes)
         .map_err(|error| format!("failed to generate timeline event id: {error}"))?;
@@ -1670,7 +1674,7 @@ fn normalized_dedup_key(topic_title: &str, summary: &str) -> String {
         .join("\n")
 }
 
-fn normalized_text(value: &str) -> String {
+pub(crate) fn normalized_text(value: &str) -> String {
     value
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -2244,7 +2248,7 @@ pub(crate) fn dismiss_suggestion_project(
     }
 }
 
-fn project_dir(
+pub(crate) fn project_dir(
     hook_server: &tauri::State<'_, Arc<HookServer>>,
     harness_id: &str,
 ) -> Result<PathBuf, String> {

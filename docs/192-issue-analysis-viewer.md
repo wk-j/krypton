@@ -14,6 +14,17 @@
 > post-pass** (`render_review_blocks`) over comrak output to render the typed review blocks that
 > comrak would otherwise emit as plain code blocks.
 
+> **Project navigation update (2026-09-23).** The viewer now shows one tab per
+> project, matching the Artifact Gallery's project identity (spec 265). The
+> original harness grouping described below is historical. Multiple live
+> harnesses for the same canonical project produce one tab and one copy of each
+> issue. `/analyses?project=<opaque-id>` and
+> `/analysis?project=<opaque-id>&issue=<owner/repo/number>` are the current links;
+> old `harness=` bookmarks still select that harness's project. Repository and
+> issue navigation stays within the selected project, while `harness` remains
+> an internal key for serving images through `/analysis-asset`. Project tabs
+> support normal Tab/Enter navigation plus `[` / `]` and `1`–`9` shortcuts.
+
 ## Problem
 
 `#analyze-github-issue` writes a lane's findings as Thai-language markdown
@@ -81,7 +92,7 @@ own loopback surfaces and general doc viewers.
 | Surface / App | Implementation | Notes |
 |---------------|----------------|-------|
 | Krypton Docs browser (`/docs`) | comrak-rendered repo `.md`, tree sidebar, `#docs` opener | Direct template; excludes gitignored dirs |
-| Krypton Artifact gallery (`/gallery`) | lists per-harness artifacts, newest first, `#gallery` opener | Grouping/index precedent |
+| Krypton Artifact gallery (`/gallery`) | lists project-grouped artifacts, newest first, `#gallery` opener | Project-tab precedent |
 | GitHub issue "linked analysis" | markdown comment thread with inline images | Convention: analysis reads top-down as prose + images |
 | VS Code Markdown preview | side-by-side rendered `.md` with resolved local images | Convention: local image paths resolve relative to the file |
 
@@ -130,14 +141,17 @@ No serde types cross IPC — the surface is HTML-over-HTTP like the Docs browser
 ### API / Routes
 
 ```
-GET /analyses                              → index: all bundles, grouped owner/repo → #number
-GET /analysis?harness=<id>&issue=<owner/repo/number>[&file=<name.md>]
+GET /analyses[?project=<id>]               → selected project's bundles, grouped owner/repo → #number
+GET /analysis?project=<id>&issue=<owner/repo/number>[&file=<name.md>]
                                            → one bundle: file strip + the selected .md; asset strip
 GET /analysis-asset?harness=<id>&path=<rel-within-.krypton/analyses>
                                            → serve a downloaded image (png/jpg/jpeg/gif/svg/webp)
 ```
 
-- All three take `harness` like `/docs` (defaults to first harness when omitted).
+- `/analyses` and `/analysis` accept an opaque project ID. Old `harness=` links
+  select the harness's project; a bare `/analysis?issue=…` still finds the first
+  project containing that issue. `/analysis-asset` keeps the internal harness key
+  and its existing path validation.
 - `/analysis` orders `.md` files with `root-cause.md`, then `fix-plan.md`, then the
   rest alphabetically. `file` picks which one to render (by filename); omitted or
   unknown falls back to the first in that order, so old bookmarks resolve. When the
@@ -152,10 +166,11 @@ GET /analysis-asset?harness=<id>&path=<rel-within-.krypton/analyses>
 1. User types #analyses in a harness lane composer.
 2. acp-harness-view dispatch invokes get_hook_server_port, opens
    http://127.0.0.1:<port>/analyses via open_url, flashes the URL chip.
-3. handle_analyses → analyses_index_page(): for each harness project_dir, walk
-   <dir>/.krypton/analyses/*/*/*/ (unfiltered), build AnalysisBundle list.
-4. Render index into ANALYSES_HTML shell (grouped list + link to each /analysis).
-5. User clicks an issue → GET /analysis?harness=&issue=owner/repo/number.
+3. handle_analyses groups harnesses by canonical project identity, then walks
+   <dir>/.krypton/analyses/*/*/*/ once per project (unfiltered).
+4. Render project tabs, a repository/issue sidebar, and the selected project's
+   issue rows into ANALYSES_HTML.
+5. User clicks an issue → GET /analysis?project=<id>&issue=owner/repo/number.
 6. render_analysis_bundle(): build the file strip from md_files, validate the
    selected .md under analyses_root, render_markdown_doc it; build asset strip
    with <img src="/analysis-asset?…">.
@@ -196,8 +211,9 @@ None.
 - **Path traversal / symlinks / non-image asset requested via `/analysis-asset`** →
   `validate_doc_path` rejects (400/404), same guard as `/doc-asset`.
 - **Very large logs among assets** → not rendered inline; only listed by name.
-- **Multiple harnesses** → index groups by harness like `/docs` (harness selector in
-  the query), so two repos' analyses don't collide.
+- **Multiple harnesses** → project tabs separate distinct working directories;
+  harnesses sharing one canonical directory reuse one bundle listing. Two
+  projects with the same directory basename show distinct ID suffixes.
 
 ## Open Questions
 

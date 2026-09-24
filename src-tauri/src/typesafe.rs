@@ -86,6 +86,58 @@ pub enum TimelineTopicSemanticResult {
     },
 }
 
+/// spec 266: one side of a pair sent for conflict screening. Only the event ID,
+/// topic title, and a truncated summary ever leave the app.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TimelineConflictSide {
+    pub id: String,
+    pub topic: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TimelineConflictCandidate {
+    pub pair_id: String,
+    pub a: TimelineConflictSide,
+    pub b: TimelineConflictSide,
+}
+
+/// Screening outcome for one pair. Only `PossibleConflict` becomes a proposal;
+/// it is never a verdict.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TimelineConflictOutcome {
+    PossibleConflict,
+    CompatibleOrDuplicate,
+    Unrelated,
+    InsufficientEvidence,
+    Inconclusive,
+    InvalidResponse,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TimelineConflictJudgement {
+    pub pair_id: String,
+    pub outcome: TimelineConflictOutcome,
+    pub probability: Option<f64>,
+}
+
+/// Pairs without a judgement were not checked; `failure` says why the scan
+/// stopped early.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TimelineConflictClassification {
+    pub model: String,
+    pub judgements: Vec<TimelineConflictJudgement>,
+    pub failure: Option<TimelineTopicFallbackReason>,
+}
+
+const CONFLICT_OPTIONS: [&str; 4] = [
+    "possible_conflict",
+    "compatible_or_duplicate",
+    "unrelated",
+    "insufficient_evidence",
+];
+
 #[derive(Default)]
 struct TypeSafeHealth {
     fingerprint: String,
@@ -291,6 +343,85 @@ impl TypeSafeState {
             }
         };
         self.record_metrics(&result);
+        Ok(result)
+    }
+
+    /// spec 266: user-started screening of timeline pairs. Pairs are packed
+    /// into System One requests of at most 8 KiB; the first failure stops the
+    /// scan so the caller reports it as partial instead of "no conflicts".
+    pub async fn classify_timeline_conflicts(
+        &self,
+        config: TypeSafeConfig,
+        pairs: Vec<TimelineConflictCandidate>,
+    ) -> Result<TimelineConflictClassification, String> {
+        let mut result = TimelineConflictClassification {
+            model: config.model.clone(),
+            judgements: Vec::new(),
+            failure: None,
+        };
+        if !config.timeline_conflict_scan_enabled() {
+            result.failure = Some(TimelineTopicFallbackReason::Disabled);
+            return Ok(result);
+        }
+        if pairs.is_empty() {
+            return Ok(result);
+        }
+        let batches = pack_conflict_batches(&config, &pairs)?;
+        let fingerprint = format!(
+            "{}\0{}\0{}",
+            config.base_url, config.model, config.api_key_env
+        );
+        if self.in_cooldown(&fingerprint) {
+            result.failure = Some(TimelineTopicFallbackReason::Cooldown);
+            return Ok(result);
+        }
+        let key_name = config.api_key_env.clone();
+        let api_key = tokio::task::spawn_blocking(move || crate::commands::get_env_var(key_name))
+            .await
+            .map_err(|error| format!("TypeSafe credential lookup failed: {error}"))?;
+        let Some(api_key) = api_key.filter(|value| !value.trim().is_empty()) else {
+            result.failure = Some(TimelineTopicFallbackReason::MissingKey);
+            return Ok(result);
+        };
+
+        // A scan is an explicit batch action, not an interactive keystroke
+        // path, so it gets a longer budget than topic suggestions.
+        let mut scan_config = config.clone();
+        scan_config.attempt_timeout_ms = scan_config.attempt_timeout_ms.max(4_000);
+        let overall = Duration::from_millis(config.overall_deadline_ms.clamp(10_000, 15_000));
+        let client = self.client(config.connect_timeout_ms.clamp(100, 5_000))?;
+        for range in batches {
+            let batch = &pairs[range];
+            let body = build_conflict_body(&config, batch)?;
+            let outcome = tokio::time::timeout(
+                overall,
+                self.call_with_retries(&client, &scan_config, &api_key, body),
+            )
+            .await
+            .unwrap_or({
+                Err(CallFailure {
+                    reason: TimelineTopicFallbackReason::Timeout,
+                    retryable: true,
+                    retry_after: None,
+                })
+            });
+            match outcome {
+                Ok(response) => {
+                    self.note_success(&fingerprint);
+                    result.model = response.model.clone();
+                    result
+                        .judgements
+                        .extend(gate_conflict_response(&config, batch, &response));
+                }
+                Err(failure) => {
+                    if failure.retryable {
+                        self.note_failure(&fingerprint, &config);
+                    }
+                    result.failure = Some(failure.reason);
+                    break;
+                }
+            }
+        }
         Ok(result)
     }
 
@@ -605,6 +736,142 @@ fn gate_response(
     })
 }
 
+fn conflict_question_key(index: usize) -> String {
+    format!("p{index}")
+}
+
+fn build_conflict_body(
+    config: &TypeSafeConfig,
+    pairs: &[TimelineConflictCandidate],
+) -> Result<Value, String> {
+    let mut state_pairs = Vec::with_capacity(pairs.len());
+    let mut questions = serde_json::Map::new();
+    for (index, pair) in pairs.iter().enumerate() {
+        let key = conflict_question_key(index);
+        state_pairs.push(json!({
+            "key": key,
+            "a": { "id": pair.a.id, "topic": pair.a.topic, "summary": pair.a.summary },
+            "b": { "id": pair.b.id, "topic": pair.b.topic, "summary": pair.b.summary },
+        }));
+        questions.insert(
+            key.clone(),
+            json!({
+                "type": "choice",
+                "instructions": {
+                    "question": format!("For state.pairs entry {key}, do record a and record b give different directions for the same project subject?"),
+                    "rule": "Different wording, translation, or restatement of one decision is compatible_or_duplicate. Records about different subjects are unrelated. Choose insufficient_evidence when the text is too short to tell."
+                },
+                "criteria": {
+                    "possible_conflict": "Both records decide the same subject in incompatible directions",
+                    "compatible_or_duplicate": "Both records agree, repeat, refine, or translate the same decision",
+                    "unrelated": "The records are about different subjects",
+                    "insufficient_evidence": "The text does not say enough to decide"
+                }
+            }),
+        );
+    }
+    let body = json!({
+        "model": config.model,
+        "state": { "pairs": state_pairs },
+        "questions": questions,
+    });
+    let size = serde_json::to_vec(&body)
+        .map_err(|error| format!("failed to encode TypeSafe request: {error}"))?
+        .len();
+    if size > MAX_REQUEST_BYTES {
+        return Err("TypeSafe timeline conflict request exceeds 8 KiB".to_string());
+    }
+    Ok(body)
+}
+
+/// Greedy, order-preserving packing so every request stays within 8 KiB.
+fn pack_conflict_batches(
+    config: &TypeSafeConfig,
+    pairs: &[TimelineConflictCandidate],
+) -> Result<Vec<std::ops::Range<usize>>, String> {
+    let mut batches = Vec::new();
+    let mut start = 0;
+    while start < pairs.len() {
+        build_conflict_body(config, &pairs[start..start + 1])?;
+        let mut end = start + 1;
+        while end < pairs.len() && build_conflict_body(config, &pairs[start..end + 1]).is_ok() {
+            end += 1;
+        }
+        batches.push(start..end);
+        start = end;
+    }
+    Ok(batches)
+}
+
+fn gate_conflict_response(
+    config: &TypeSafeConfig,
+    pairs: &[TimelineConflictCandidate],
+    response: &SystemOneResponse,
+) -> Vec<TimelineConflictJudgement> {
+    pairs
+        .iter()
+        .enumerate()
+        .map(|(index, pair)| {
+            let (outcome, probability) =
+                gate_conflict_answer(config, response.answers.get(&conflict_question_key(index)));
+            TimelineConflictJudgement {
+                pair_id: pair.pair_id.clone(),
+                outcome,
+                probability,
+            }
+        })
+        .collect()
+}
+
+fn gate_conflict_answer(
+    config: &TypeSafeConfig,
+    answer: Option<&ChoiceAnswer>,
+) -> (TimelineConflictOutcome, Option<f64>) {
+    let Some(answer) = answer.filter(|answer| answer.answer_type == "choice") else {
+        return (TimelineConflictOutcome::InvalidResponse, None);
+    };
+    let expected: HashSet<&str> = CONFLICT_OPTIONS.into_iter().collect();
+    let actual: HashSet<&str> = answer.probabilities.keys().map(String::as_str).collect();
+    let finite = answer.confidence.is_finite()
+        && (0.0..=1.0).contains(&answer.confidence)
+        && answer
+            .probabilities
+            .values()
+            .all(|value| value.is_finite() && (0.0..=1.0).contains(value));
+    let sum: f64 = answer.probabilities.values().sum();
+    if !finite
+        || expected != actual
+        || !expected.contains(answer.choice.as_str())
+        || (sum - 1.0).abs() > 0.01
+    {
+        return (TimelineConflictOutcome::InvalidResponse, None);
+    }
+    let probability = answer.probabilities[&answer.choice];
+    let outcome = match answer.choice.as_str() {
+        "possible_conflict" => {
+            let runner_up = answer
+                .probabilities
+                .iter()
+                .filter(|(key, _)| key.as_str() != answer.choice)
+                .map(|(_, value)| *value)
+                .fold(0.0_f64, f64::max);
+            let settings = &config.timeline_conflicts;
+            if answer.confidence >= clamp_probability(settings.min_confidence)
+                && probability >= clamp_probability(settings.min_probability)
+                && probability - runner_up >= clamp_probability(settings.min_margin)
+            {
+                TimelineConflictOutcome::PossibleConflict
+            } else {
+                TimelineConflictOutcome::Inconclusive
+            }
+        }
+        "compatible_or_duplicate" => TimelineConflictOutcome::CompatibleOrDuplicate,
+        "unrelated" => TimelineConflictOutcome::Unrelated,
+        _ => TimelineConflictOutcome::InsufficientEvidence,
+    };
+    (outcome, Some(probability))
+}
+
 fn validate_request(
     config: &TypeSafeConfig,
     request: &TimelineTopicSemanticRequest,
@@ -796,6 +1063,95 @@ mod tests {
             )]),
             usage: json!({"input_tokens": 10, "output_tokens": 3}),
         }
+    }
+
+    fn conflict_answer(choice: &str, confidence: f64, probs: [f64; 4]) -> ChoiceAnswer {
+        ChoiceAnswer {
+            answer_type: "choice".to_string(),
+            choice: choice.to_string(),
+            probabilities: CONFLICT_OPTIONS
+                .iter()
+                .zip(probs)
+                .map(|(key, value)| (key.to_string(), value))
+                .collect(),
+            confidence,
+        }
+    }
+
+    fn conflict_pair(index: usize, summary_len: usize) -> TimelineConflictCandidate {
+        let side = |label: &str| TimelineConflictSide {
+            id: format!("tl-20260920T103000Z-{label}{index:04}"),
+            topic: "connection สำรอง".to_string(),
+            summary: "ก".repeat(summary_len),
+        };
+        TimelineConflictCandidate {
+            pair_id: format!("pair-{index}"),
+            a: side("a"),
+            b: side("b"),
+        }
+    }
+
+    #[test]
+    fn conflict_scan_is_off_by_default() {
+        let mut config = TypeSafeConfig::default();
+        assert_eq!(config.timeline_conflicts.mode, "off");
+        assert!(!config.timeline_conflict_scan_enabled());
+        config.timeline_conflicts.mode = "suggest".to_string();
+        assert!(!config.timeline_conflict_scan_enabled());
+        config.enabled = true;
+        assert!(config.timeline_conflict_scan_enabled());
+    }
+
+    #[test]
+    fn conflict_gate_proposes_only_strong_possible_conflicts() {
+        let config = TypeSafeConfig::default();
+        let strong = conflict_answer("possible_conflict", 0.8, [0.82, 0.08, 0.05, 0.05]);
+        assert_eq!(
+            gate_conflict_answer(&config, Some(&strong)),
+            (TimelineConflictOutcome::PossibleConflict, Some(0.82))
+        );
+        let low_probability = conflict_answer("possible_conflict", 0.8, [0.6, 0.2, 0.1, 0.1]);
+        assert_eq!(
+            gate_conflict_answer(&config, Some(&low_probability)).0,
+            TimelineConflictOutcome::Inconclusive
+        );
+        let low_confidence = conflict_answer("possible_conflict", 0.5, [0.8, 0.1, 0.05, 0.05]);
+        assert_eq!(
+            gate_conflict_answer(&config, Some(&low_confidence)).0,
+            TimelineConflictOutcome::Inconclusive
+        );
+        let duplicate = conflict_answer("compatible_or_duplicate", 0.9, [0.1, 0.8, 0.05, 0.05]);
+        assert_eq!(
+            gate_conflict_answer(&config, Some(&duplicate)).0,
+            TimelineConflictOutcome::CompatibleOrDuplicate
+        );
+        let bad_sum = conflict_answer("unrelated", 0.9, [0.5, 0.5, 0.5, 0.0]);
+        assert_eq!(
+            gate_conflict_answer(&config, Some(&bad_sum)).0,
+            TimelineConflictOutcome::InvalidResponse
+        );
+        assert_eq!(
+            gate_conflict_answer(&config, None).0,
+            TimelineConflictOutcome::InvalidResponse
+        );
+    }
+
+    #[test]
+    fn conflict_batches_stay_under_8_kib_and_keep_order() {
+        let config = TypeSafeConfig::default();
+        let pairs: Vec<_> = (0..40).map(|index| conflict_pair(index, 240)).collect();
+        let batches = pack_conflict_batches(&config, &pairs).unwrap();
+        assert!(batches.len() > 1);
+        let mut next = 0;
+        for range in batches {
+            assert_eq!(range.start, next);
+            next = range.end;
+            let body = build_conflict_body(&config, &pairs[range]).unwrap();
+            assert!(serde_json::to_vec(&body).unwrap().len() <= MAX_REQUEST_BYTES);
+            let text = body.to_string();
+            assert!(!text.contains("source"));
+        }
+        assert_eq!(next, pairs.len());
     }
 
     #[test]

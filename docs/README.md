@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (258)
+## Specs (259)
 
 | # | Spec |
 |---|------|
@@ -268,6 +268,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 263 | [Timeline Topic Merge and Undo](./263-timeline-topic-merge.md) |
 | 264 | [Xenon Timeline UI Parity](./264-xenon-timeline-ui-parity.md) |
 | 265 | [Artifact Gallery Project Grouping](./265-artifact-gallery-project-grouping.md) |
+| 266 | [Timeline Decision Trace and Conflict Review](./266-timeline-decision-trace-and-conflicts.md) |
 
 ## ADRs (20)
 

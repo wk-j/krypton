@@ -6,12 +6,12 @@
 <title><!--ANALYSES_TITLE--></title>
 <!--
   Issue Analysis Viewer shell (spec 192). Server-rendered full page. The Rust
-  backend (hook_server.rs) reads this file via include_str! and replaces three
+  backend (hook_server.rs) reads this file via include_str! and replaces four
   placeholder comments by global string substitution. The placeholder tokens are
   intentionally NOT written literally in this comment (a literal would terminate
   this block early and also be replaced) — they are the ANALYSES_TITLE comment
-  (in <title> and the header subtitle), the ANALYSES_TREE comment (inside
-  nav.tree-pane), and the ANALYSES_CONTENT comment (inside article.doc). CONTENT
+  (in <title> and the header subtitle), ANALYSES_TABS (the project navigation),
+  ANALYSES_TREE (inside nav.tree-pane), and ANALYSES_CONTENT (inside article.doc). CONTENT
   is injected last; the per-file bodies are raw comrak GFM output.
 
   This is a read-only viewer for the gitignored `.krypton/analyses/<owner>/
@@ -64,6 +64,20 @@
     font-family: var(--mono); font-size: 12px; color: var(--muted);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  .project-tabs {
+    flex-shrink: 0; display: flex; gap: 6px; overflow-x: auto;
+    width: 100%; max-width: 1180px; margin: 0 auto; padding: 9px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .project-tab {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 7px;
+    padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); background: var(--card); text-decoration: none;
+    font: 12px var(--mono);
+  }
+  .project-tab:hover, .project-tab:focus-visible { color: var(--accent); border-color: var(--accent); }
+  .project-tab.is-active { color: var(--accent); border-color: var(--accent); background: rgba(252, 213, 53, .08); }
+  .project-tab span { color: var(--muted); font-size: 10px; }
   .layout {
     flex: 1; display: flex; min-height: 0; overflow: hidden;
     width: 100%; max-width: 1180px; margin: 0 auto;
@@ -234,6 +248,7 @@
   <span class="header__brand">Issue analyses</span>
   <span class="header__title"><!--ANALYSES_TITLE--></span>
 </header>
+<!--ANALYSES_TABS-->
 <div class="layout">
   <nav class="tree-pane"><!--ANALYSES_TREE--></nav>
   <div class="content-pane">
@@ -259,11 +274,12 @@
   // Preserve the sidebar scroll position across the full-page reloads that issue
   // navigation triggers (a fresh full page per click). Each click is a new URL,
   // so the browser does not restore scroll and the sidebar snaps to the top; we
-  // stash scrollTop per harness and restore it on load.
+  // stash scrollTop per project and restore it on load.
   (function () {
     var pane = document.querySelector('nav.tree-pane');
     if (!pane) return;
-    var KEY = 'kav:' + (new URLSearchParams(location.search).get('harness') || '');
+    var active = document.querySelector('.project-tab.is-active');
+    var KEY = 'kav:' + (active ? active.getAttribute('href') : '');
     try {
       var y = sessionStorage.getItem(KEY);
       if (y != null) pane.scrollTop = +y;
@@ -277,6 +293,20 @@
       });
     }, { passive: true });
   })();
+</script>
+<script>
+  // Project tabs are ordinary links; these keys make switching fast from the reader.
+  document.addEventListener('keydown', function (event) {
+    var target = event.target instanceof Element ? event.target : null;
+    if (event.altKey || event.ctrlKey || event.metaKey || (target && target.closest('input, textarea, select, [contenteditable]'))) return;
+    var tabs = Array.from(document.querySelectorAll('.project-tab'));
+    var active = tabs.findIndex(function (tab) { return tab.classList.contains('is-active'); });
+    var next = event.key === ']' ? active + 1 : event.key === '[' ? active - 1 : -1;
+    if (/^[1-9]$/.test(event.key)) next = Number(event.key) - 1;
+    if (next < 0 || next >= tabs.length) return;
+    event.preventDefault();
+    tabs[next].click();
+  });
 </script>
 </body>
 </html>

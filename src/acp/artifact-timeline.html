@@ -64,7 +64,10 @@
   .event.superseded .event-summary { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--border); }
   .event-head { display: grid; grid-template-columns: 42px minmax(0, 1fr) minmax(0, auto); gap: 12px; align-items: baseline; }
   .event-time, .pill, dt, .source, .relation, .label, .detail-toggle { font-family: var(--mono); }
-  .event-time { color: var(--muted); font-size: 11px; }
+  .event-time { color: var(--muted); font-size: 11px; justify-self: start; }
+  /* spec 266: a pair still to review (or confirmed and open) marks only the
+     time cell; the row background stays the selection signal. */
+  .event.conflict .event-time { padding: 0 4px; border-radius: 3px; background: var(--accent); color: #181a20; }
   .event-summary { color: var(--fg); font-size: 13.5px; min-width: 0; overflow-wrap: anywhere; }
   .event.selected .event-summary { color: var(--accent); }
   .event-meta { display: flex; gap: 8px; align-items: baseline; color: var(--muted); font: 10px var(--mono); }
@@ -88,6 +91,10 @@
   .relation { color: var(--muted); font-size: 11px; }
   .source { color: var(--accent); font-size: 11px; word-break: break-all; }
   .source-ref { color: var(--muted); font: 10px var(--mono); word-break: break-all; }
+  .jump { border: 0; padding: 0; background: transparent; color: var(--accent); font: inherit; text-align: left; cursor: pointer; }
+  .jump:hover, .jump:focus-visible { text-decoration: underline; outline: none; }
+  .conflict-note { display: grid; gap: 2px; font-size: 12.5px; }
+  .conflict-note .label { font-family: var(--mono); }
   .diagnostics { margin-top: 20px; padding: 10px 12px; border: 1px solid var(--del); border-radius: 8px; background: rgba(246, 70, 93, .05); }
   .diagnostics h2 { margin: 0 0 6px; color: var(--del); font-size: 13px; }
   .diagnostics li { margin: 3px 0; font: 11px var(--mono); }
@@ -119,7 +126,7 @@
     <div class="summary"><h1 id="title">ลำดับเหตุการณ์</h1><span id="count" class="count"></span></div>
     <div id="events" class="events"></div>
     <section id="diagnostics" class="diagnostics" hidden><h2>ข้อมูลผิดพลาด</h2><ul></ul></section>
-    <footer>j/k เลื่อน · Space รายละเอียด · i ข้อมูลการบันทึก · Enter เปิดแหล่งอ้างอิง · r สลับลำดับ · / ค้นหา · [ ] เปลี่ยนหัวข้อ · Esc ล้างตัวกรอง · refresh เพื่ออ่านจาก disk ใหม่</footer>
+    <footer>j/k เลื่อน · Space รายละเอียด · i ข้อมูลการบันทึก · p ไปอีกรายการของคู่ · Enter เปิดแหล่งอ้างอิง · r สลับลำดับ · / ค้นหา · [ ] เปลี่ยนหัวข้อ · Esc ล้างตัวกรอง · refresh เพื่ออ่านจาก disk ใหม่<br>เวลาที่มีพื้นสี = มีบันทึกอีกข้อให้คำสั่งต่างกัน ยังไม่ได้ตัดสินว่าข้อใดถูก · ตรวจใน Krypton ด้วย #timeline conflicts</footer>
   </main>
 </div>
 <script>
@@ -128,13 +135,18 @@
   var params = new URLSearchParams(location.search);
   var harness = params.get('harness') || '';
   var initialQuery = params.get('topic') || '';
+  var initialEvent = params.get('event') || '';
   var search = document.getElementById('search');
   var topicsEl = document.getElementById('topics');
   var eventsEl = document.getElementById('events');
   var titleEl = document.getElementById('title');
   var countEl = document.getElementById('count');
   var diagnosticsEl = document.getElementById('diagnostics');
-  var payload = { events: [], diagnostics: [] };
+  var payload = { events: [], diagnostics: [], conflictPairs: [] };
+  // spec 266: eventId -> pairs it belongs to, and eventId -> events that supersede it.
+  var pairsByEvent = new Map();
+  var supersededBy = new Map();
+  var eventsById = new Map();
   var selectedTopic = '';
   var selectedEvent = 0;
   var newestFirst = false;
@@ -189,12 +201,42 @@
     addText(block, 'span', 'label', label + ' · ');
     block.append(document.createTextNode(text));
   }
-  function isGenericActor(value) {
-    var actor = lower(value).trim();
-    return actor === 'current user' || actor === 'local user';
+  function stateLabel(state) {
+    return {
+      unreviewed: 'ยังไม่ตรวจ',
+      confirmed: 'ยืนยันว่าขัดกัน',
+      dismissed: 'ไม่ขัดกัน',
+      insufficient_evidence: 'หลักฐานไม่พอ',
+      resolved: 'แก้แล้ว',
+      historical: 'เป็นประวัติแล้ว'
+    }[state] || state;
+  }
+  function isHighlighted(pair) {
+    return pair.state === 'unreviewed' || pair.state === 'insufficient_evidence' || pair.state === 'confirmed';
+  }
+  function openPairs(event) {
+    return (pairsByEvent.get(event.id) || []).filter(isHighlighted);
+  }
+  function partnerId(pair, id) { return pair.eventA === id ? pair.eventB : pair.eventA; }
+  function indexPayload() {
+    pairsByEvent = new Map(); supersededBy = new Map(); eventsById = new Map();
+    payload.events.forEach(function (event) {
+      eventsById.set(event.id, event);
+      if (event.relation === 'supersedes' && event.relatedEvent) {
+        var list = supersededBy.get(event.relatedEvent) || [];
+        list.push(event); supersededBy.set(event.relatedEvent, list);
+      }
+    });
+    (payload.conflictPairs || []).forEach(function (pair) {
+      [pair.eventA, pair.eventB].forEach(function (id) {
+        var list = pairsByEvent.get(id) || [];
+        list.push(pair); pairsByEvent.set(id, list);
+      });
+    });
   }
   function hasContext(event) {
-    return Boolean(event.rationale || event.impact || (event.relation && event.relatedEvent) || event.sourceRef);
+    return Boolean(event.rationale || event.impact || (event.relation && event.relatedEvent) || event.sourceRef
+      || supersededBy.has(event.id) || pairsByEvent.has(event.id));
   }
   function renderTopics(topics, query) {
     topicsEl.replaceChildren();
@@ -216,7 +258,8 @@
   /** Collapsed row: time, full wrapping summary, who decided, state pills. */
   function renderRow(event, index) {
     var card = document.createElement('article');
-    card.className = 'event' + (event.superseded ? ' superseded' : '');
+    var conflicts = openPairs(event);
+    card.className = 'event' + (event.superseded ? ' superseded' : '') + (conflicts.length ? ' conflict' : '');
     card.tabIndex = 0; card.dataset.eventIndex = String(index);
     var head = document.createElement('div'); head.className = 'event-head'; card.appendChild(head);
     var occurred = new Date(event.occurredAt);
@@ -224,16 +267,14 @@
     var summary = addText(head, 'span', 'event-summary', event.summary);
     summary.title = event.summary;
     var meta = document.createElement('div'); meta.className = 'event-meta'; head.appendChild(meta);
-    if (!isGenericActor(event.madeBy)) addText(meta, 'span', 'who', event.madeBy);
+    addText(meta, 'span', 'who', event.madeBy).title = event.madeBy;
     if (!selectedTopic) addText(meta, 'span', 'pill topic', event.topicTitle);
-    if (event.superseded) addText(meta, 'span', 'pill state', 'แทนที่แล้ว');
-    if (event.sourceRef) addText(meta, 'span', 'pill', 'อ้างอิง');
     var toggle = addText(meta, 'button', 'detail-toggle', hasContext(event) ? 'รายละเอียด' : 'ข้อมูลบันทึก');
     toggle.type = 'button';
     toggle.dataset.detailMode = hasContext(event) ? 'context' : 'audit';
     toggle.setAttribute('aria-expanded', 'false');
     toggle.setAttribute('aria-controls', 'timeline-detail-' + event.id);
-    card.setAttribute('aria-label', event.summary);
+    card.setAttribute('aria-label', conflicts.length ? event.summary + ' — มีบันทึกอีกข้อที่ให้คำสั่งต่างกัน' : event.summary);
     return card;
   }
   /** Opt-in context/audit body for the selected row only. */
@@ -243,7 +284,26 @@
     detail.id = 'timeline-detail-' + event.id;
     if (event.rationale) addCopy(detail, 'เหตุผล', event.rationale);
     if (event.impact) addCopy(detail, 'ผลกระทบ', event.impact);
-    if (event.relation && event.relatedEvent) addText(detail, 'div', 'relation', relationLabel(event.relation) + 'เหตุการณ์ก่อนหน้า');
+    if (event.relation && event.relatedEvent) {
+      var related = eventsById.get(event.relatedEvent);
+      var relation = addText(detail, 'div', 'relation', relationLabel(event.relation) + ' · ');
+      if (related) addJump(relation, related.summary, related.id);
+      else relation.append(document.createTextNode(event.relatedEvent));
+    }
+    (supersededBy.get(event.id) || []).forEach(function (newer) {
+      var line = addText(detail, 'div', 'relation', 'ถูกแทนที่โดย · ');
+      addJump(line, newer.summary, newer.id);
+    });
+    (pairsByEvent.get(event.id) || []).forEach(function (pair) {
+      var partner = eventsById.get(partnerId(pair, event.id));
+      var note = addText(detail, 'div', 'conflict-note', '');
+      var head = addText(note, 'div', '', '');
+      addText(head, 'span', 'label', stateLabel(pair.state) + ' · อีกรายการ · ');
+      if (partner) addJump(head, partner.summary + ' (' + partner.madeBy + ')', partner.id);
+      var latest = pair.reviews && pair.reviews.length ? pair.reviews[pair.reviews.length - 1] : null;
+      if (latest) addText(note, 'div', 'label', 'ผลตรวจ · ' + latest.rationale + ' · ' + latest.reviewedBy + ' · ' + latest.reviewedAt.slice(0, 10));
+      else addText(note, 'div', 'label', 'เหตุที่นำมาดู · ' + pair.basis);
+    });
     if (event.sourceRef) {
       var href = sourceHref(event.sourceRef);
       if (href) {
@@ -267,6 +327,30 @@
       if (event.sourceRef) addText(detail, 'div', 'source-ref', event.sourceRef);
     }
     return detail;
+  }
+  function addJump(parent, text, id) {
+    var button = addText(parent, 'button', 'jump', text);
+    button.type = 'button';
+    button.addEventListener('click', function (event) { event.stopPropagation(); jumpTo(id); });
+    return button;
+  }
+  /** Select an event by ID, widening the filter if it is hidden, and keep the URL shareable. */
+  function jumpTo(id) {
+    var target = eventsById.get(id);
+    if (!target) return;
+    var index = visibleEvents().findIndex(function (event) { return event.id === id; });
+    if (index < 0) {
+      search.value = '';
+      if (selectedTopic && selectedTopic !== target.topicId) selectedTopic = target.topicId;
+      render();
+      index = visibleEvents().findIndex(function (event) { return event.id === id; });
+    }
+    if (index < 0) return;
+    select(index, true);
+    var query = new URLSearchParams(location.search);
+    if (selectedTopic) query.set('topic', selectedTopic); else query.delete('topic');
+    query.set('event', id);
+    history.replaceState(null, '', location.pathname + '?' + query.toString());
   }
   function visibleEvents() {
     var query = lower(search.value.trim());
@@ -338,7 +422,9 @@
     }
     var selected = topics.find(function (topic) { return topic.id === selectedTopic; });
     titleEl.textContent = selected ? selected.title : 'ลำดับเหตุการณ์';
-    countEl.textContent = events.length + ' รายการ · ' + (newestFirst ? 'ใหม่ไปเก่า' : 'เก่าไปใหม่');
+    var pending = new Set();
+    events.forEach(function (event) { openPairs(event).forEach(function (pair) { pending.add(pair.pairId); }); });
+    countEl.textContent = events.length + ' รายการ' + (pending.size ? ' · ' + pending.size + ' คู่ให้คำสั่งต่างกัน' : '') + ' · ' + (newestFirst ? 'ใหม่ไปเก่า' : 'เก่าไปใหม่');
     if (events.length > 0) select(selectedEvent, false);
     renderDiagnostics();
   }
@@ -385,6 +471,11 @@
       event.preventDefault();
       toggleDetail('audit');
     }
+    if (event.key === 'p' && events[selectedEvent]) {
+      var pairs = openPairs(events[selectedEvent]);
+      var all = pairs.length ? pairs : (pairsByEvent.get(events[selectedEvent].id) || []);
+      if (all.length) { event.preventDefault(); jumpTo(partnerId(all[0], events[selectedEvent].id)); }
+    }
     if (event.key === 'Enter' && events[selectedEvent]) {
       var href = sourceHref(events[selectedEvent].sourceRef); if (href) window.open(href, '_blank', 'noopener');
     }
@@ -394,11 +485,14 @@
     .then(function (response) { if (!response.ok) throw new Error('โหลด timeline ไม่สำเร็จ (' + response.status + ')'); return response.json(); })
     .then(function (data) {
       payload = data;
+      payload.conflictPairs = payload.conflictPairs || [];
+      indexPayload();
       if (initialQuery) {
         var match = latestTopics(payload.events).find(function (topic) { return lower(topic.title) === lower(initialQuery) || lower(topic.id) === lower(initialQuery); });
         if (match) { selectedTopic = match.id; search.value = ''; }
       }
       render();
+      if (initialEvent) jumpTo(initialEvent);
     })
     .catch(function (error) { eventsEl.textContent = error.message; });
 }());

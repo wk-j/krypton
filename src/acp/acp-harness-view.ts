@@ -148,6 +148,7 @@ import {
   wikiRecallPrompt,
 } from './harness-prompts';
 import { TimelineCapture, type TimelineCaptureOptions } from './timeline-capture';
+import { TimelineConflicts } from './timeline-conflicts';
 import {
   TIMELINE_USAGE,
   parseTimelineCommand,
@@ -156,10 +157,14 @@ import {
   type TimelineMergeResult,
   type TimelineMergeUndoResult,
   type TimelineRecordRequest,
+  type TimelineConflictPair,
+  type TimelineConflictScan,
+  type TimelineConflictVerdict,
   type TimelineSuggestion,
   type TimelineSuggestionListResponse,
   type TimelineSuggestionSettings,
   type TimelineTopicSemanticResult,
+  type TimelineTraceResponse,
 } from './timeline';
 import { hasVerbTokens, resolveVerbTokens } from './verb-compose';
 import { injectableVerbNames, injectableVerbPrompt } from './verb-registry';
@@ -1136,8 +1141,8 @@ export class AcpHarnessView implements ContentView {
     index: number;
     tab: TicketPickerTab;
   } | null = null;
-  /** spec 253: keyboard-first project timeline capture sheet. */
-  private timelineCapture: TimelineCapture | null = null;
+  /** spec 253/266: keyboard-first timeline sheet (capture/review or conflicts). */
+  private timelineCapture: TimelineCapture | TimelineConflicts | null = null;
   /** spec 254: project-wide pending suggestion count and default-on setting. */
   private timelinePendingCount = 0;
   private timelineAutomaticSuggestions = true;
@@ -11206,6 +11211,35 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  /** spec 266: human-only conflict review; the browser page stays read-only. */
+  private openTimelineConflicts(lane: HarnessLane): void {
+    if (!this.harnessMemoryId) {
+      this.flashChip('ใช้ timeline ไม่ได้: ยังไม่ได้ลงทะเบียน project กับ Harness');
+      return;
+    }
+    const harnessId = this.harnessMemoryId;
+    this.closeTimelineCapture();
+    this.timelineCapture = new TimelineConflicts({
+      mount: this.element,
+      load: () => invoke<TimelineTraceResponse>('timeline_conflict_list', { harnessId }),
+      propose: (eventA, eventB, rationale) => invoke<TimelineConflictPair>('timeline_conflict_propose', {
+        harnessId, eventA, eventB, rationale,
+      }),
+      review: (pairId: string, verdict: TimelineConflictVerdict, rationale: string, sourceRef: string | null, resolutionEventId: string | null) => (
+        invoke<TimelineConflictPair>('timeline_conflict_review', {
+          harnessId, pairId, verdict, rationale, sourceRef, resolutionEventId,
+        })
+      ),
+      scan: () => invoke<TimelineConflictScan>('timeline_conflict_scan', { harnessId }),
+      close: () => this.closeTimelineCapture(),
+      notify: (message, record) => {
+        this.flashChip(`timeline · ${message}`);
+        if (record) this.appendTranscript(lane, 'system', `timeline conflicts · ${message}`);
+      },
+    });
+    this.syncOrchestratorConsoleVisibility();
+  }
+
   private async openTimelineBrowser(topic: string): Promise<void> {
     if (!this.harnessMemoryId) {
       this.flashChip('ใช้ timeline ไม่ได้: ยังไม่ได้ลงทะเบียน project กับ Harness');
@@ -11293,6 +11327,10 @@ export class AcpHarnessView implements ContentView {
     }
     if (command.kind === 'review') {
       await this.openTimelineSuggestionReview(lane);
+      return;
+    }
+    if (command.kind === 'conflicts') {
+      this.openTimelineConflicts(lane);
       return;
     }
     if (command.kind === 'auto') {

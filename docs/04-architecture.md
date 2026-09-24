@@ -916,6 +916,20 @@ acting lane in that manifest, and is the one timeline tool excluded from built-i
 the user's current instruction is the confirmation, while self-selected events
 must still use `timeline_suggest`.
 
+Spec 266 adds a decision trace and human conflict review on top of the same
+events without editing them. `timeline_conflicts.rs` projects verified
+`supersedes` links into chains (branches kept, cycles reported as diagnostics)
+and reads three bounded, append-only sidecar folders under
+`.krypton/timeline/conflicts/`: `proposals/<event-a>--<event-b>.json` (canonical
+pair ID, `create_new`), `reviews/<review-id>.json` (newest review is the pair's
+state), and `scans/<scan-id>.json` (what one TypeSafe scan checked). Everything
+keys on event IDs, so topic renames and merges never orphan a pair; a pair whose
+side is later superseded becomes `historical`. `/timeline.json` returns this
+trace additively and the page marks only the time cell of rows in an open pair.
+Proposing, reviewing, and scanning are Tauri commands behind `#timeline
+conflicts` — never MCP tools — so an agent cannot create or settle a conflict,
+and `reviewed_by` is always the local user.
+
 Spec 259 adds explicit off-machine publication without changing Timeline authority.
 `#push timeline [<event-id>]` turns only confirmed events into Xenon resources;
 pending and dismissed suggestions stay local. Each resource keeps the original

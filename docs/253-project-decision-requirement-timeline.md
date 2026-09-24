@@ -79,6 +79,7 @@ into the decision-maker field.
 | `#timeline <topic>` | Shorthand for `open <topic>` |
 | `#timeline add [<topic>]` | Open the keyboard-first capture sheet with an optional prefilled topic |
 | `#timeline trace <topic>` | Start a read-only evidence-tracing lane turn; no files are changed |
+| `#timeline conflicts` | Open the spec 266 conflict review sheet (propose a pair, record a verdict, start a TypeSafe scan); events are never edited |
 
 `trace` requires a non-empty topic. Any other text after `#timeline` is the documented topic
 shorthand. Topic text is treated as data, not instructions.

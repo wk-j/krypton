@@ -1548,56 +1548,76 @@ impl HookServer {
         ))
     }
 
-    /// Discover analysis bundles for every harness: `(harness_id, project_dir,
-    /// bundles)`. One filesystem walk per harness; callers reuse this for both the
-    /// index/bundle content AND the sidebar so `/analysis` walks the tree once.
-    fn discover_analyses_per_harness(&self) -> Vec<(String, String, Vec<AnalysisBundle>)> {
-        self.docs_project_dirs()
-            .into_iter()
-            .map(|(id, path)| {
-                let bundles = discover_analysis_bundles(&path);
-                (id, path, bundles)
-            })
-            .collect()
+    /// One filesystem walk per project, even when several harnesses point at it.
+    /// The chosen harness remains an internal key for serving local images.
+    fn discover_analyses_per_project(&self) -> Vec<AnalysisProject> {
+        let mut projects = HashMap::new();
+        for (harness_id, project_dir) in self.docs_project_dirs() {
+            let Some((project_id, project_name)) = gallery_project_identity(&project_dir) else {
+                continue;
+            };
+            projects
+                .entry(project_id.clone())
+                .or_insert_with(|| AnalysisProject {
+                    project_id,
+                    project_name,
+                    harness_id,
+                    bundles: discover_analysis_bundles(&project_dir),
+                    project_dir,
+                });
+        }
+        let mut projects: Vec<AnalysisProject> = projects
+            .into_values()
+            .filter(|project| !project.bundles.is_empty())
+            .collect();
+        projects.sort_by(|a, b| {
+            a.project_name
+                .to_lowercase()
+                .cmp(&b.project_name.to_lowercase())
+                .then(a.project_id.cmp(&b.project_id))
+        });
+        projects
     }
 
-    /// Render the `/analyses` index: every harness's analysis bundles in the
-    /// sidebar, the selected harness's bundles as rows on the right. `sel_harness`
-    /// defaults to the first harness that actually has bundles.
-    fn analyses_index_page(&self, sel_harness: Option<&str>) -> Response {
-        let per = self.discover_analyses_per_harness();
-        if per.is_empty() {
+    fn analysis_project_id_for_harness(&self, harness_id: &str) -> Option<String> {
+        self.docs_project_dir(harness_id)
+            .and_then(|dir| gallery_project_identity(&dir).map(|(id, _)| id))
+    }
+
+    /// Render one project at a time; an old `harness=` bookmark still selects
+    /// that harness's project, regardless of which harness represents it now.
+    fn analyses_index_page(
+        &self,
+        sel_project: Option<&str>,
+        sel_harness: Option<&str>,
+    ) -> Response {
+        let projects = self.discover_analyses_per_project();
+        if projects.is_empty() {
             return render_analyses_page(
                 "Issue analyses",
+                "",
                 Some(""),
-                "<p class=\"welcome\">No harness working directory is available.</p>",
+                "<p class=\"welcome\">ยังไม่มีบทวิเคราะห์ issue — รัน #analyze-github-issue ในเลนเพื่อสร้างบทวิเคราะห์</p>",
             );
         }
-        let selected = sel_harness
-            .filter(|h| per.iter().any(|(id, _, b)| id == h && !b.is_empty()))
-            .map(str::to_string)
+        let legacy_project = sel_harness.and_then(|id| self.analysis_project_id_for_harness(id));
+        let selected = projects
+            .iter()
+            .find(|project| Some(project.project_id.as_str()) == sel_project)
             .or_else(|| {
-                per.iter()
-                    .find(|(_, _, b)| !b.is_empty())
-                    .map(|(id, _, _)| id.clone())
-            });
-        let nav = render_analyses_nav(&per, selected.as_deref().unwrap_or(""), "");
-        let content = match &selected {
-            Some(harness_id) => {
-                let bundles = per
+                projects
                     .iter()
-                    .find(|(id, _, _)| id == harness_id)
-                    .map(|(_, _, b)| b.as_slice())
-                    .unwrap_or(&[]);
-                render_analyses_index(harness_id, bundles)
-            }
-            None => "<p class=\"welcome\">ยังไม่มีบทวิเคราะห์ issue — รัน #analyze-github-issue ในเลนเพื่อสร้างบทวิเคราะห์</p>".to_string(),
-        };
-        let title = match &selected {
-            Some(harness_id) => format!("Issue analyses · {harness_id}"),
-            None => "Issue analyses".to_string(),
-        };
-        render_analyses_page(&title, Some(&nav), &content)
+                    .find(|project| Some(project.project_id.as_str()) == legacy_project.as_deref())
+            })
+            .unwrap_or(&projects[0]);
+        let tabs = render_analyses_tabs(&projects, &selected.project_id);
+        let nav = render_analyses_nav(selected, "");
+        let content = render_analyses_index(selected);
+        let title = format!(
+            "Issue analyses · {}",
+            analysis_project_label(&projects, selected)
+        );
+        render_analyses_page(&title, &tabs, Some(&nav), &content)
     }
 
     /// Discover review bundles for every harness: `(harness_id, project_dir,
@@ -2235,22 +2255,21 @@ struct TimelineQuery {
     harness: String,
 }
 
-/// Query for the analyses index (`/analyses`). `harness` selects which harness's
-/// bundles fill the right pane (defaults to the first with bundles).
+/// `project` selects the visible tab; `harness` keeps old bookmarks working.
 #[derive(Debug, Default, Deserialize)]
 struct AnalysesQuery {
+    project: Option<String>,
     harness: Option<String>,
 }
 
 /// Query for one issue's analysis bundle (`/analysis`). `issue` is the
-/// `owner/repo/number` path (slash-joined, NOT `owner/repo#number`). `harness` is
-/// optional (like `/docs`): when omitted, the handler picks the harness that owns
-/// the issue, else the first harness with bundles — so a bare
-/// `/analysis?issue=…` bookmark still resolves. `file` selects which `.md` in the
-/// bundle to render (by filename); omitted or unknown falls back to the first
-/// file in bundle order (root-cause.md when present), so old bookmarks resolve.
+/// `owner/repo/number` path (slash-joined, NOT `owner/repo#number`). `project`
+/// selects a project tab; old `harness` links map to that harness's project. A
+/// bare `/analysis?issue=…` finds the first project containing the issue.
+/// `file` selects one `.md` by filename; omitted or unknown uses bundle order.
 #[derive(Debug, Deserialize)]
 struct AnalysisQuery {
+    project: Option<String>,
     harness: Option<String>,
     issue: String,
     file: Option<String>,
@@ -2894,7 +2913,9 @@ async fn handle_timeline() -> Response {
     html_response(TIMELINE_HTML)
 }
 
-/// GET /timeline.json?harness=<id> — bounded local records for one Harness project.
+/// GET /timeline.json?harness=<id> — bounded local records for one Harness
+/// project plus the spec 266 trace (chains, conflict pairs, scan state).
+/// Read-only: it never calls TypeSafe or writes sidecar files.
 async fn handle_timeline_json(
     AxumState(state): AxumState<Arc<HookServerState>>,
     Query(query): Query<TimelineQuery>,
@@ -2902,7 +2923,12 @@ async fn handle_timeline_json(
     let Some(project_dir) = state.hook_server.project_dir_for_harness(&query.harness) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    match crate::timeline::scan_project(&project_dir) {
+    let scan_enabled = state
+        .config
+        .read()
+        .map(|config| config.typesafe.timeline_conflict_scan_enabled())
+        .unwrap_or(false);
+    match crate::timeline_conflicts::trace_project(&project_dir, scan_enabled) {
         Ok(listing) => secured_json_response(StatusCode::OK, listing),
         Err(error) => secured_json_response(StatusCode::BAD_REQUEST, json!({ "error": error })),
     }
@@ -3071,49 +3097,54 @@ async fn handle_doc_asset(
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
-/// GET /analyses?harness=<id> — the Issue Analysis Viewer index (spec 192).
+/// GET /analyses?project=<id> — the project-tabbed Issue Analysis Viewer.
 async fn handle_analyses(
     AxumState(state): AxumState<Arc<HookServerState>>,
     Query(query): Query<AnalysesQuery>,
 ) -> Response {
     state
         .hook_server
-        .analyses_index_page(query.harness.as_deref())
+        .analyses_index_page(query.project.as_deref(), query.harness.as_deref())
 }
 
-/// GET /analysis?harness=<id>&issue=<owner/repo/number> — one issue's bundle.
-/// `harness` is optional: without it we pick the harness that owns the issue,
-/// else the first harness with bundles (a bare `?issue=…` bookmark resolves).
-/// One filesystem walk feeds both the bundle content and the sidebar.
+/// GET /analysis?project=<id>&issue=<owner/repo/number> — one issue's bundle.
+/// Old `harness=` and bare `issue=` bookmarks remain valid.
 async fn handle_analysis(
     AxumState(state): AxumState<Arc<HookServerState>>,
     Query(query): Query<AnalysisQuery>,
 ) -> Response {
-    let per = state.hook_server.discover_analyses_per_harness();
-    // Resolve the harness: an explicit (existing) one, else the harness that owns
-    // this issue, else the first harness that has any bundle.
-    let harness_id = query
+    let projects = state.hook_server.discover_analyses_per_project();
+    let legacy_project = query
         .harness
         .as_deref()
-        .filter(|h| per.iter().any(|(id, _, _)| id == h))
-        .map(str::to_string)
+        .and_then(|id| state.hook_server.analysis_project_id_for_harness(id));
+    if query.project.is_some()
+        && !projects
+            .iter()
+            .any(|p| Some(p.project_id.as_str()) == query.project.as_deref())
+    {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let Some(project) = projects
+        .iter()
+        .find(|p| Some(p.project_id.as_str()) == query.project.as_deref())
         .or_else(|| {
-            per.iter()
-                .find(|(_, _, b)| b.iter().any(|x| bundle_matches_issue(x, &query.issue)))
-                .map(|(id, _, _)| id.clone())
+            projects
+                .iter()
+                .find(|p| Some(p.project_id.as_str()) == legacy_project.as_deref())
         })
         .or_else(|| {
-            per.iter()
-                .find(|(_, _, b)| !b.is_empty())
-                .map(|(id, _, _)| id.clone())
-        });
-    let Some(harness_id) = harness_id else {
+            projects.iter().find(|p| {
+                p.bundles
+                    .iter()
+                    .any(|b| bundle_matches_issue(b, &query.issue))
+            })
+        })
+    else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let Some((_, project_dir, bundles)) = per.iter().find(|(id, _, _)| id == &harness_id) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    let Some(bundle) = bundles
+    let Some(bundle) = project
+        .bundles
         .iter()
         .find(|b| bundle_matches_issue(b, &query.issue))
     else {
@@ -3132,10 +3163,17 @@ async fn handle_analysis(
         })
         .or_else(|| bundle.md_files.first())
         .cloned();
-    let content = render_analysis_bundle(project_dir, &harness_id, bundle, sel_file.as_deref());
+    let content = render_analysis_bundle(
+        &project.project_dir,
+        &project.harness_id,
+        &project.project_id,
+        bundle,
+        sel_file.as_deref(),
+    );
     let issue_ref = format!("{}/{}/{}", bundle.owner, bundle.repo, bundle.number);
-    let nav = render_analyses_nav(&per, &harness_id, &issue_ref);
-    render_analyses_page(&bundle.issue_key, Some(&nav), &content)
+    let tabs = render_analyses_tabs(&projects, &project.project_id);
+    let nav = render_analyses_nav(project, &issue_ref);
+    render_analyses_page(&bundle.issue_key, &tabs, Some(&nav), &content)
 }
 
 /// GET /analysis-asset?harness=<id>&path=<rel> — serve a whitelisted image from
@@ -6539,6 +6577,15 @@ struct AnalysisBundle {
     modified: Option<SystemTime>,
 }
 
+/// One project owns each bundle set, however many harnesses currently open it.
+struct AnalysisProject {
+    project_id: String,
+    project_name: String,
+    project_dir: String,
+    harness_id: String,
+    bundles: Vec<AnalysisBundle>,
+}
+
 /// Order within a bundle: `root-cause.md`, then `fix-plan.md`, then the rest.
 fn analysis_md_rank(name: &str) -> u8 {
     match name.to_ascii_lowercase().as_str() {
@@ -6647,7 +6694,7 @@ fn discover_analysis_bundles(project_dir: &str) -> Vec<AnalysisBundle> {
     bundles
 }
 
-fn render_analyses_page(title: &str, tree: Option<&str>, content: &str) -> Response {
+fn render_analyses_page(title: &str, tabs: &str, tree: Option<&str>, content: &str) -> Response {
     let escaped_title = html_escape(title);
     let nav = match tree {
         Some(tree) => format!("<nav class=\"tree-pane\">{tree}</nav>"),
@@ -6655,6 +6702,7 @@ fn render_analyses_page(title: &str, tree: Option<&str>, content: &str) -> Respo
     };
     let html = ANALYSES_HTML
         .replace("<!--ANALYSES_TITLE-->", &escaped_title)
+        .replace("<!--ANALYSES_TABS-->", tabs)
         .replace("<nav class=\"tree-pane\"><!--ANALYSES_TREE--></nav>", &nav)
         .replace(
             "<article class=\"doc\"><!--ANALYSES_CONTENT--></article>",
@@ -6663,69 +6711,84 @@ fn render_analyses_page(title: &str, tree: Option<&str>, content: &str) -> Respo
     html_response(html)
 }
 
-/// Sidebar: every harness with bundles, grouped by `owner/repo`, each issue a
-/// link to `/analysis`. The current issue (bundle page) gets `is-active`.
-fn render_analyses_nav(
-    per: &[(String, String, Vec<AnalysisBundle>)],
-    sel_harness: &str,
-    sel_issue: &str,
-) -> String {
-    let multi = per.iter().filter(|(_, _, b)| !b.is_empty()).count() > 1;
+fn analysis_project_label(projects: &[AnalysisProject], project: &AnalysisProject) -> String {
+    let duplicates = projects
+        .iter()
+        .filter(|p| p.project_name == project.project_name)
+        .count();
+    if duplicates > 1 {
+        let suffix = &project.project_id[project.project_id.len() - 6..];
+        format!("{} · {suffix}", project.project_name)
+    } else {
+        project.project_name.clone()
+    }
+}
+
+fn render_analyses_tabs(projects: &[AnalysisProject], selected_id: &str) -> String {
+    let mut out = String::from("<nav class=\"project-tabs\" aria-label=\"Projects\">");
+    for project in projects {
+        out.push_str("<a class=\"project-tab");
+        if project.project_id == selected_id {
+            out.push_str(" is-active");
+        }
+        out.push_str("\" href=\"/analyses?project=");
+        out.push_str(&url_encode(&project.project_id));
+        if project.project_id == selected_id {
+            out.push_str("\" aria-current=\"page");
+        }
+        out.push_str("\">");
+        out.push_str(&html_escape(&analysis_project_label(projects, project)));
+        out.push_str(" <span>");
+        out.push_str(&project.bundles.len().to_string());
+        out.push_str("</span></a>");
+    }
+    out.push_str("</nav>");
+    out
+}
+
+/// Sidebar: repository groups and issue links within the selected project.
+fn render_analyses_nav(project: &AnalysisProject, sel_issue: &str) -> String {
     let mut out = String::from("<ul class=\"tree\">");
-    for (harness_id, _project_dir, bundles) in per {
-        if bundles.is_empty() {
-            continue;
-        }
-        let mut cur_repo = String::new();
-        for bundle in bundles {
-            let repo_full = format!("{}/{}", bundle.owner, bundle.repo);
-            if repo_full != cur_repo {
-                if !cur_repo.is_empty() {
-                    out.push_str("</ul></li>");
-                }
-                cur_repo = repo_full.clone();
-                let label = if multi {
-                    format!("{harness_id} · {repo_full}")
-                } else {
-                    repo_full.clone()
-                };
-                out.push_str("<li class=\"tree-group\"><div class=\"tree-group__label\">");
-                out.push_str(&html_escape(&label));
-                out.push_str("</div><ul class=\"tree\">");
+    let mut cur_repo = String::new();
+    for bundle in &project.bundles {
+        let repo_full = format!("{}/{}", bundle.owner, bundle.repo);
+        if repo_full != cur_repo {
+            if !cur_repo.is_empty() {
+                out.push_str("</ul></li>");
             }
-            let issue_ref = format!("{}/{}/{}", bundle.owner, bundle.repo, bundle.number);
-            let active = harness_id == sel_harness && issue_ref == sel_issue;
-            out.push_str("<li class=\"tree-file\"><a");
-            if active {
-                out.push_str(" class=\"is-active\"");
-            }
-            out.push_str(" href=\"/analysis?harness=");
-            out.push_str(&url_encode(harness_id));
-            out.push_str("&amp;issue=");
-            out.push_str(&url_encode(&issue_ref));
-            out.push_str("\">#");
-            out.push_str(&html_escape(&bundle.number));
-            out.push_str(" <span class=\"tree-file__count\">");
-            out.push_str(&html_escape(&analysis_count_label(bundle.md_files.len())));
-            out.push_str("</span></a></li>");
+            cur_repo = repo_full.clone();
+            out.push_str("<li class=\"tree-group\"><div class=\"tree-group__label\">");
+            out.push_str(&html_escape(&repo_full));
+            out.push_str("</div><ul class=\"tree\">");
         }
-        if !cur_repo.is_empty() {
-            out.push_str("</ul></li>");
+        let issue_ref = format!("{}/{}/{}", bundle.owner, bundle.repo, bundle.number);
+        let active = issue_ref == sel_issue;
+        out.push_str("<li class=\"tree-file\"><a");
+        if active {
+            out.push_str(" class=\"is-active\"");
         }
+        out.push_str(" href=\"/analysis?project=");
+        out.push_str(&url_encode(&project.project_id));
+        out.push_str("&amp;issue=");
+        out.push_str(&url_encode(&issue_ref));
+        out.push_str("\">#");
+        out.push_str(&html_escape(&bundle.number));
+        out.push_str(" <span class=\"tree-file__count\">");
+        out.push_str(&html_escape(&analysis_count_label(bundle.md_files.len())));
+        out.push_str("</span></a></li>");
+    }
+    if !cur_repo.is_empty() {
+        out.push_str("</ul></li>");
     }
     out.push_str("</ul>");
     out
 }
 
-/// Right pane of `/analyses`: one selected harness's bundles as rows grouped by
-/// repo, each linking to its `/analysis` page with a GitHub deep link.
-fn render_analyses_index(harness_id: &str, bundles: &[AnalysisBundle]) -> String {
-    if bundles.is_empty() {
-        return "<p class=\"welcome\">ยังไม่มีบทวิเคราะห์ issue สำหรับเลนนี้ — รัน #analyze-github-issue ในเลนเพื่อสร้างบทวิเคราะห์</p>".to_string();
-    }
+/// Right pane of `/analyses`: selected project's bundles grouped by repo.
+fn render_analyses_index(project: &AnalysisProject) -> String {
     let mut out = String::from("<ul class=\"analyses-index\">");
     let mut cur_repo = String::new();
-    for bundle in bundles {
+    for bundle in &project.bundles {
         let repo_full = format!("{}/{}", bundle.owner, bundle.repo);
         if repo_full != cur_repo {
             cur_repo = repo_full.clone();
@@ -6734,8 +6797,8 @@ fn render_analyses_index(harness_id: &str, bundles: &[AnalysisBundle]) -> String
             out.push_str("</li>");
         }
         let issue_ref = format!("{}/{}/{}", bundle.owner, bundle.repo, bundle.number);
-        out.push_str("<li class=\"ai-row\"><a class=\"ai-row__main\" href=\"/analysis?harness=");
-        out.push_str(&url_encode(harness_id));
+        out.push_str("<li class=\"ai-row\"><a class=\"ai-row__main\" href=\"/analysis?project=");
+        out.push_str(&url_encode(&project.project_id));
         out.push_str("&amp;issue=");
         out.push_str(&url_encode(&issue_ref));
         out.push_str("\"><span class=\"ai-row__key\">");
@@ -6797,6 +6860,7 @@ fn human_size(bytes: u64) -> String {
 fn render_analysis_bundle(
     project_dir: &str,
     harness_id: &str,
+    project_id: &str,
     bundle: &AnalysisBundle,
     sel_file: Option<&str>,
 ) -> String {
@@ -6811,8 +6875,8 @@ fn render_analysis_bundle(
             if Some(rel.as_str()) == sel_file {
                 content.push_str(" class=\"is-active\"");
             }
-            content.push_str(" href=\"/analysis?harness=");
-            content.push_str(&url_encode(harness_id));
+            content.push_str(" href=\"/analysis?project=");
+            content.push_str(&url_encode(project_id));
             content.push_str("&amp;issue=");
             content.push_str(&url_encode(&issue_ref));
             content.push_str("&amp;file=");
@@ -9653,7 +9717,12 @@ mod tests {
         assert!(TIMELINE_HTML.contains("event.key === 'i'"));
         assert!(TIMELINE_HTML.contains("aria-expanded"));
         assert!(TIMELINE_HTML.contains("detailMode"));
-        assert!(TIMELINE_HTML.contains("isGenericActor"));
+        // spec 266: made_by is shown as recorded; open conflict pairs mark the
+        // time cell only and announce the pair to screen readers.
+        assert!(!TIMELINE_HTML.contains("isGenericActor"));
+        assert!(TIMELINE_HTML.contains(".event.conflict .event-time"));
+        assert!(TIMELINE_HTML.contains("มีบันทึกอีกข้อที่ให้คำสั่งต่างกัน"));
+        assert!(!TIMELINE_HTML.contains("method: 'POST'"));
         assert!(TIMELINE_HTML.contains("<html lang=\"th\">"));
         assert!(TIMELINE_HTML.contains("เฉพาะเครื่องนี้"));
         assert!(TIMELINE_HTML.contains("toLocaleDateString('th-TH'"));
@@ -10886,13 +10955,23 @@ mod git_state_tests {
         seed_analysis_file(&tmp, "acme", "widget", "12", "root-cause.md", "r");
         let bundles = discover_analysis_bundles(&tmp.to_string_lossy());
 
-        let index = render_analyses_index("hm-1", &bundles);
+        let (project_id, project_name) = gallery_project_identity(&tmp.to_string_lossy()).unwrap();
+        let project = AnalysisProject {
+            project_id: project_id.clone(),
+            project_name,
+            project_dir: tmp.to_string_lossy().to_string(),
+            harness_id: "hm-1".to_string(),
+            bundles,
+        };
+        let index = render_analyses_index(&project);
         assert!(
             index.contains("acme/widget#12"),
             "index shows the issue key: {index}"
         );
         assert!(
-            index.contains("/analysis?harness=hm-1&amp;issue=acme%2Fwidget%2F12"),
+            index.contains(&format!(
+                "/analysis?project={project_id}&amp;issue=acme%2Fwidget%2F12"
+            )),
             "index row links to the bundle page: {index}"
         );
         assert!(
@@ -10900,13 +10979,9 @@ mod git_state_tests {
             "index row has a GitHub deep link: {index}"
         );
 
-        let per = vec![(
-            "hm-1".to_string(),
-            tmp.to_string_lossy().to_string(),
-            bundles,
-        )];
-        let nav = render_analyses_nav(&per, "hm-1", "acme/widget/12");
+        let nav = render_analyses_nav(&project, "acme/widget/12");
         assert!(nav.contains("acme/widget"), "sidebar groups by repo: {nav}");
+        assert!(!nav.contains("hm-1"), "harness is not visible: {nav}");
         assert!(
             nav.contains("class=\"is-active\""),
             "current issue is highlighted: {nav}"
@@ -10915,9 +10990,57 @@ mod git_state_tests {
     }
 
     #[tokio::test]
+    async fn analyses_tabs_group_harnesses_by_project() {
+        let root = std::env::temp_dir().join(format!("krypton-analyses-tabs-{}", rand_suffix()));
+        let first = root.join("first").join("shared");
+        let second = root.join("second").join("shared");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        seed_analysis_file(&first, "acme", "widget", "12", "root-cause.md", "first");
+        seed_analysis_file(&second, "acme", "widget", "13", "root-cause.md", "second");
+        let server = HookServer::new();
+        server.init_harness_artifacts("hm-1", Some(first.to_string_lossy().to_string()));
+        server.init_harness_artifacts("hm-2", Some(first.to_string_lossy().to_string()));
+        server.init_harness_artifacts("hm-3", Some(second.to_string_lossy().to_string()));
+
+        let projects = server.discover_analyses_per_project();
+        assert_eq!(projects.len(), 2, "two harnesses share one project tab");
+        assert_eq!(projects[0].bundles.len(), 1, "issue is not repeated");
+        let first_id = gallery_project_identity(&first.to_string_lossy())
+            .unwrap()
+            .0;
+        let page = server.analyses_index_page(Some(&first_id), None);
+        let body = String::from_utf8(
+            axum::body::to_bytes(page.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+        assert_eq!(body.matches("href=\"/analyses?project=").count(), 2);
+        assert!(body.contains(&format!("shared · {}", &first_id[first_id.len() - 6..])));
+        assert!(body.contains("acme/widget#12"));
+        assert!(!body.contains("acme/widget#13"));
+        assert!(!body.contains("hm-1 ·") && !body.contains("hm-2 ·"));
+
+        let legacy = server.analyses_index_page(None, Some("hm-2"));
+        let legacy_body = String::from_utf8(
+            axum::body::to_bytes(legacy.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+        assert!(legacy_body.contains("acme/widget#12"));
+        assert!(!legacy_body.contains("acme/widget#13"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
     async fn render_analyses_page_substitutes_placeholders() {
         let page = render_analyses_page(
-            "Issue analyses · hm-1",
+            "Issue analyses · widget",
+            "<nav class=\"project-tabs\"></nav>",
             Some("<ul class=\"tree\"></ul>"),
             "<p>hi</p>",
         );
@@ -10928,7 +11051,8 @@ mod git_state_tests {
                 .to_vec(),
         )
         .unwrap();
-        assert!(body.contains("<title>Issue analyses · hm-1</title>"));
+        assert!(body.contains("<title>Issue analyses · widget</title>"));
+        assert!(body.contains("<nav class=\"project-tabs\"></nav>"));
         assert!(body.contains("<p>hi</p>"));
         assert!(
             body.contains("<ul class=\"tree\">"),
@@ -10939,6 +11063,7 @@ mod git_state_tests {
         assert!(!body.contains("<!--ANALYSES_CONTENT-->"));
         assert!(!body.contains("<!--ANALYSES_TREE-->"));
         assert!(!body.contains("<!--ANALYSES_TITLE-->"));
+        assert!(!body.contains("<!--ANALYSES_TABS-->"));
     }
 
     #[test]
@@ -10966,6 +11091,7 @@ mod git_state_tests {
         let html = render_analysis_bundle(
             &tmp.to_string_lossy(),
             "hm-1",
+            "project-test",
             &bundles[0],
             bundles[0].md_files.first().map(String::as_str),
         );
@@ -11001,6 +11127,7 @@ mod git_state_tests {
         let html = render_analysis_bundle(
             &dir,
             "hm-1",
+            "project-test",
             &bundles[0],
             bundles[0].md_files.first().map(String::as_str),
         );
@@ -11018,6 +11145,10 @@ mod git_state_tests {
             html.contains("&amp;file=fix-plan.md") && html.contains("&amp;file=notes.md"),
             "strip links carry the file param: {html}"
         );
+        assert!(
+            html.contains("/analysis?project=project-test&amp;issue="),
+            "file navigation retains the project: {html}"
+        );
         let active = html
             .split("<a class=\"is-active\"")
             .nth(1)
@@ -11033,7 +11164,7 @@ mod git_state_tests {
             .iter()
             .find(|rel| rel.ends_with("notes.md"))
             .unwrap();
-        let html = render_analysis_bundle(&dir, "hm-1", &bundles[0], Some(sel));
+        let html = render_analysis_bundle(&dir, "hm-1", "project-test", &bundles[0], Some(sel));
         assert!(html.contains("โน้ต"), "notes.md rendered: {html}");
         assert!(!html.contains("สาเหตุ"), "root-cause not rendered: {html}");
         let _ = std::fs::remove_dir_all(&tmp);
