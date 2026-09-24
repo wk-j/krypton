@@ -1106,6 +1106,14 @@ describe('ACP harness auto-allow permission detection', () => {
         arguments: { limit: 20 },
       },
     }))).toBe('timeline_list');
+    // spec 267: conflict review is agent-run end to end, so none of its tools
+    // may stop for a human confirmation.
+    for (const name of ['timeline_conflict_list', 'timeline_conflict_record', 'timeline_conflict_checked']) {
+      expect(harnessAutoAllowToolName(permissionFor({
+        title: `mcp__krypton_harness_memory__${name}`,
+        rawInput: { toolName: `mcp__krypton_harness_memory__${name}`, arguments: {} },
+      }))).toBe(name);
+    }
     // spec 263: timeline_merge rewrites confirmed records, so it stays OUT of
     // the built-in allow set and asks the human once.
     expect(harnessAutoAllowToolName(permissionFor({

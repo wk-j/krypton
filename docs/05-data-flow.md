@@ -470,22 +470,22 @@
        `topic_id` to the existing save flow. Off, shadow, missing-key, timeout,
        low-confidence, invalid-response, and network-failure outcomes leave the
        deterministic offline flow unchanged.
-    m2. Timeline conflict review (spec 266). `/timeline.json` and
-       `timeline_conflict_list` call `timeline_conflicts::trace_project`, which
-       runs `scan_project`, builds `supersedes` chains, and joins the proposal,
-       review, and scan sidecars by event ID; nothing is written and no model is
-       called. `#timeline conflicts` opens the in-app sheet. A manual pair runs
-       `timeline_conflict_propose`: Rust checks both IDs exist and differ, then
-       writes the canonical proposal with `create_new` under the timeline lock.
-       A verdict runs `timeline_conflict_review`, which requires a proposal and a
-       rationale (plus a resolving event or source for `resolved`) and appends a
-       new review file. `s` runs `timeline_conflict_scan` only when
-       `[typesafe.timeline_conflicts] mode = "suggest"`: Rust builds a
-       deterministic shortlist (same topic, then shared source, then shared
-       keyword), skips pairs already proposed or already checked with the same
-       input hash, classifies up to 40 pairs, writes proposals for gated
-       `possible_conflict` results, and records the scan. A refresh of the
-       browser page then shows the new state.
+    m2. Timeline conflict review (spec 266, agent-run since spec 267).
+       `/timeline.json` calls `timeline_conflicts::trace_project`, which runs
+       `scan_project`, builds `supersedes` chains, and joins the proposal and
+       review sidecars by event ID; nothing is written. The lane agent does the
+       review through MCP tools: after each `timeline_record` it compares only
+       the new event with its topic's live events, calls
+       `timeline_conflict_record` for a real finding (Rust validates IDs, refuses
+       pairs on one `supersedes` chain, writes the proposal with `create_new` if
+       new, then appends a review attributed to the calling lane), and calls
+       `timeline_conflict_checked` to add the compared IDs to
+       `checked/<topic_id>.json`. `#timeline conflicts [<topic>]` enqueues
+       `timelineConflictsPrompt`: the agent reads `timeline_conflict_list`
+       (open pairs plus `unchecked` topics with `new_event_ids`), works through
+       one topic or at most five unchecked topics, and compares only unchecked
+       events, so reruns never rescan the project. A refresh of the browser
+       page then shows the new state.
     m. TypeSafe call metrics (spec 258) update at the shared Rust transport
        boundary. Immediately before each `call_once`, `TypeSafeState` counts one
        outbound request; attempt zero also counts one logical operation, while

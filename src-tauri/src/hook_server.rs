@@ -2914,8 +2914,8 @@ async fn handle_timeline() -> Response {
 }
 
 /// GET /timeline.json?harness=<id> — bounded local records for one Harness
-/// project plus the spec 266 trace (chains, conflict pairs, scan state).
-/// Read-only: it never calls TypeSafe or writes sidecar files.
+/// project plus the spec 266 trace (chains, conflict pairs).
+/// Read-only: it never writes sidecar files.
 async fn handle_timeline_json(
     AxumState(state): AxumState<Arc<HookServerState>>,
     Query(query): Query<TimelineQuery>,
@@ -2923,12 +2923,7 @@ async fn handle_timeline_json(
     let Some(project_dir) = state.hook_server.project_dir_for_harness(&query.harness) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let scan_enabled = state
-        .config
-        .read()
-        .map(|config| config.typesafe.timeline_conflict_scan_enabled())
-        .unwrap_or(false);
-    match crate::timeline_conflicts::trace_project(&project_dir, scan_enabled) {
+    match crate::timeline_conflicts::trace_project(&project_dir) {
         Ok(listing) => secured_json_response(StatusCode::OK, listing),
         Err(error) => secured_json_response(StatusCode::BAD_REQUEST, json!({ "error": error })),
     }
@@ -2968,7 +2963,13 @@ fn tool_category(name: &str) -> &'static str {
         "peer_send" | "peer_list" => "peering",
         "artifact_new" | "artifact_register" | "artifact_cancel" => "artifacts",
         "attention_flag" | "attention_resolve" => "attention",
-        "timeline_suggest" | "timeline_record" | "timeline_list" | "timeline_merge" => "timeline",
+        "timeline_suggest"
+        | "timeline_record"
+        | "timeline_list"
+        | "timeline_merge"
+        | "timeline_conflict_list"
+        | "timeline_conflict_record"
+        | "timeline_conflict_checked" => "timeline",
         "review_outcome" | "mark_review_priority" => "review",
         // spec 211: the Review Board is an authored surface, grouped with the
         // other path-handoff surfaces rather than with the `review_outcome`
@@ -3711,6 +3712,13 @@ async fn handle_bus_tool_call(
         "timeline_record" => timeline_record(state, harness_id, lane_label, arguments),
         "timeline_list" => timeline_list(state, harness_id, arguments),
         "timeline_merge" => timeline_merge(state, harness_id, lane_label, arguments),
+        "timeline_conflict_list" => timeline_conflict_list(state, harness_id, arguments),
+        "timeline_conflict_record" => {
+            timeline_conflict_record(state, harness_id, lane_label, arguments)
+        }
+        "timeline_conflict_checked" => {
+            timeline_conflict_checked(state, harness_id, lane_label, arguments)
+        }
         "review_outcome" => review_outcome(state, harness_id, lane_label, arguments).await,
         "mark_review_priority" => {
             mark_review_priority(state, harness_id, lane_label, arguments).await
@@ -4109,6 +4117,101 @@ fn timeline_list(
         )?),
     };
     value.map_err(|error| format!("failed to encode timeline listing: {error}"))
+}
+
+fn timeline_project_dir(
+    state: &HookServerState,
+    harness_id: &str,
+    tool: &str,
+) -> Result<std::path::PathBuf, String> {
+    state
+        .hook_server
+        .project_dir_for_harness(harness_id)
+        .ok_or_else(|| format!("{tool} is unavailable without a local project workspace"))
+}
+
+/// spec 267: read half of agent-run conflict review — open pairs plus the
+/// topics whose live events no agent has compared yet. Writes nothing.
+fn timeline_conflict_list(
+    state: &HookServerState,
+    harness_id: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let topic_id = arguments.get("topic_id").and_then(Value::as_str);
+    let include_closed = arguments.get("state").and_then(Value::as_str) == Some("all");
+    let project_dir = timeline_project_dir(state, harness_id, "timeline_conflict_list")?;
+    serde_json::to_value(crate::timeline_conflicts::agent_list_project(
+        &project_dir,
+        topic_id,
+        include_closed,
+    )?)
+    .map_err(|error| format!("failed to encode conflict listing: {error}"))
+}
+
+/// spec 267: the lane agent records a pair and its verdict in one call; the
+/// reviewer is the calling lane, never a payload field.
+fn timeline_conflict_record(
+    state: &HookServerState,
+    harness_id: &str,
+    lane_label: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let verdict: crate::timeline_conflicts::TimelineConflictVerdict = serde_json::from_value(
+        arguments.get("verdict").cloned().unwrap_or(Value::Null),
+    )
+    .map_err(|_| {
+        "verdict must be confirmed, dismissed, insufficient_evidence, or resolved".to_string()
+    })?;
+    let optional = |key: &str| {
+        arguments
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    };
+    let request = crate::timeline_conflicts::ConflictRecordRequest {
+        event_a: required_string(&arguments, "event_a")?,
+        event_b: required_string(&arguments, "event_b")?,
+        verdict,
+        rationale: required_string(&arguments, "rationale")?,
+        source_ref: optional("source_ref"),
+        resolution_event_id: optional("resolution_event_id"),
+    };
+    let project_dir = timeline_project_dir(state, harness_id, "timeline_conflict_record")?;
+    serde_json::to_value(crate::timeline_conflicts::record_conflict_project(
+        &project_dir,
+        request,
+        lane_label,
+    )?)
+    .map_err(|error| format!("failed to encode conflict record: {error}"))
+}
+
+/// spec 267: mark the events an agent compared so the next check reads only
+/// newer ones.
+fn timeline_conflict_checked(
+    state: &HookServerState,
+    harness_id: &str,
+    lane_label: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let topic_id = required_string(&arguments, "topic_id")?;
+    let event_ids: Vec<String> = arguments
+        .get("event_ids")
+        .and_then(Value::as_array)
+        .map(|ids| {
+            ids.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let project_dir = timeline_project_dir(state, harness_id, "timeline_conflict_checked")?;
+    serde_json::to_value(crate::timeline_conflicts::mark_checked_project(
+        &project_dir,
+        &topic_id,
+        &event_ids,
+        lane_label,
+    )?)
+    .map_err(|error| format!("failed to encode conflict checkpoint: {error}"))
 }
 
 /// attention_flag — a lane self-reports a decision needing human judgement
@@ -5633,6 +5736,9 @@ fn bus_tool_descriptors() -> Value {
         arr.push(timeline_record_tool_descriptor());
         arr.push(timeline_list_tool_descriptor());
         arr.push(timeline_merge_tool_descriptor());
+        arr.push(timeline_conflict_list_tool_descriptor());
+        arr.push(timeline_conflict_record_tool_descriptor());
+        arr.push(timeline_conflict_checked_tool_descriptor());
     }
     tools
 }
@@ -5671,6 +5777,9 @@ fn project_backed_bus_tool(name: &str) -> bool {
             | "timeline_record"
             | "timeline_list"
             | "timeline_merge"
+            | "timeline_conflict_list"
+            | "timeline_conflict_record"
+            | "timeline_conflict_checked"
     )
 }
 
@@ -5735,6 +5844,56 @@ fn timeline_merge_tool_descriptor() -> Value {
                 "instruction_excerpt": { "type": "string", "maxLength": 1000, "description": "Exact words from the current human message that authorize this merge or undo." }
             },
             "required": ["instruction_excerpt"]
+        }
+    })
+}
+
+/// spec 267: conflict review is the lane agent's job end to end — find pairs,
+/// judge them, close them. The human only reads the result on `/timeline`.
+fn timeline_conflict_list_tool_descriptor() -> Value {
+    json!({
+        "name": "timeline_conflict_list",
+        "description": "Read-only view of timeline conflict review; writes nothing and opens no UI. Returns the open conflict pairs (needs review or confirmed) with the latest verdict, and `unchecked`: topics whose live events no agent has compared yet, each with `new_event_ids` (newest first) and how many events were already checked. Use it to scope work: compare ONLY `new_event_ids` against the topic's other live events (read them with timeline_list { topic_id }); never re-compare events that are already checked. Pass `topic_id` to narrow to one topic, `state: \"all\"` to include dismissed/resolved/historical pairs.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "topic_id": { "type": "string", "maxLength": 80, "pattern": "^topic-[a-z0-9-]+$", "description": "Optional: only this topic's pairs and unchecked events." },
+                "state": { "type": "string", "enum": ["open", "all"], "description": "Optional: `open` (default) or `all`." }
+            }
+        }
+    })
+}
+
+fn timeline_conflict_record_tool_descriptor() -> Value {
+    json!({
+        "name": "timeline_conflict_record",
+        "description": "Record your verdict on two timeline events in one call: creates the pair if it is new, otherwise appends a newer verdict (the latest wins). You decide; no human confirmation is needed. Verdicts: `confirmed` = same subject, opposite decisions, and no newer event settles it; `resolved` = they conflicted but a newer event settled it (pass its ID as `resolution_event_id`, or a `source_ref`); `insufficient_evidence` = only when the records genuinely cannot tell; `dismissed` = different subjects, duplicates, or an understanding that evolved — record `dismissed` only to close a pair that was open, not for every unrelated pair. Events linked by `supersedes` are change history and are refused. Never guess who had authority and never edit the events themselves. LANGUAGE: write `rationale` in natural Thai, the way a Thai engineer writes; keep technical terms and IDs in English.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "event_a": { "type": "string", "maxLength": 64, "description": "Event ID from timeline_list." },
+                "event_b": { "type": "string", "maxLength": 64, "description": "The other event ID." },
+                "verdict": { "type": "string", "enum": ["confirmed", "dismissed", "insufficient_evidence", "resolved"] },
+                "rationale": { "type": "string", "maxLength": 1000, "description": "Why, in natural Thai: what each event decided and why they do or do not conflict." },
+                "resolution_event_id": { "type": "string", "maxLength": 64, "description": "For resolved: the newer event that settled the conflict." },
+                "source_ref": { "type": "string", "maxLength": 2048, "description": "Optional URL, commit, or project-relative source supporting the verdict." }
+            },
+            "required": ["event_a", "event_b", "verdict", "rationale"]
+        }
+    })
+}
+
+fn timeline_conflict_checked_tool_descriptor() -> Value {
+    json!({
+        "name": "timeline_conflict_checked",
+        "description": "After comparing a topic's new events, mark them checked so later checks skip them. Call it even when you found no conflict. Pass exactly the event IDs you compared (usually `new_event_ids` from timeline_conflict_list, or the event you just recorded); anything recorded meanwhile stays unchecked. Returns how many live events in the topic are still unchecked.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "topic_id": { "type": "string", "maxLength": 80, "pattern": "^topic-[a-z0-9-]+$" },
+                "event_ids": { "type": "array", "minItems": 1, "maxItems": 200, "items": { "type": "string", "maxLength": 64 } }
+            },
+            "required": ["topic_id", "event_ids"]
         }
     })
 }
@@ -9253,6 +9412,16 @@ mod tests {
             names.contains(&"timeline_merge"),
             "timeline_merge should be advertised so the human can ask for topic repair in prose"
         );
+        for tool in [
+            "timeline_conflict_list",
+            "timeline_conflict_record",
+            "timeline_conflict_checked",
+        ] {
+            assert!(
+                names.contains(&tool),
+                "{tool} should be advertised so the lane agent runs conflict review (spec 267)"
+            );
+        }
         let direct = tools
             .as_array()
             .expect("tools array")
@@ -9360,6 +9529,9 @@ mod tests {
             "timeline_record",
             "timeline_list",
             "timeline_merge",
+            "timeline_conflict_list",
+            "timeline_conflict_record",
+            "timeline_conflict_checked",
         ] {
             assert!(
                 !names.contains(&project_backed),

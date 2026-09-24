@@ -922,13 +922,16 @@ events without editing them. `timeline_conflicts.rs` projects verified
 and reads three bounded, append-only sidecar folders under
 `.krypton/timeline/conflicts/`: `proposals/<event-a>--<event-b>.json` (canonical
 pair ID, `create_new`), `reviews/<review-id>.json` (newest review is the pair's
-state), and `scans/<scan-id>.json` (what one TypeSafe scan checked). Everything
+state), and `checked/<topic_id>.json` (spec 267: event IDs an agent already
+compared, rewritten atomically). Everything
 keys on event IDs, so topic renames and merges never orphan a pair; a pair whose
 side is later superseded becomes `historical`. `/timeline.json` returns this
 trace additively and the page marks only the time cell of rows in an open pair.
-Proposing, reviewing, and scanning are Tauri commands behind `#timeline
-conflicts` — never MCP tools — so an agent cannot create or settle a conflict,
-and `reviewed_by` is always the local user.
+Spec 267 hands the whole review to the lane agent: the MCP tools
+`timeline_conflict_list` (read-only; open pairs plus unchecked topics),
+`timeline_conflict_record` (pair + verdict in one call, `reviewed_by` = calling
+lane) and `timeline_conflict_checked` (checkpoint) replace the in-app sheet and
+the TypeSafe scan. There is no human verdict UI.
 
 Spec 259 adds explicit off-machine publication without changing Timeline authority.
 `#push timeline [<event-id>]` turns only confirmed events into Xenon resources;

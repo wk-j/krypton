@@ -1,55 +1,48 @@
-//! Timeline decision trace and conflict review (spec 266).
+//! Timeline decision trace and conflict review (spec 266, reworked by spec 267).
 //!
 //! Confirmed timeline events stay untouched. `supersedes` links project into
 //! chains; pairs that may conflict live in append-only sidecar files under
 //! `.krypton/timeline/conflicts/`, always keyed by event ID so topic renames
-//! and merges never orphan them. A proposal only says "look at this pair"; the
-//! human review is the only thing that records a verdict, and the newest review
-//! of a pair is its current state.
+//! and merges never orphan them. Spec 267: the lane agent finds, judges, and
+//! closes pairs through MCP tools; each call appends a review and the newest
+//! review of a pair is its current state. Per-topic checkpoints record which
+//! events an agent has already compared, so a later check only reads new ones.
 
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use chrono::{SecondsFormat, Utc};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
-use crate::hook_server::HookServer;
 use crate::timeline::{
-    existing_confined_root, normalized_text, project_dir, random_hex, relative_path, scan_project,
-    validate_event_id, validate_optional_single_line, writable_confined_root, TimelineDiagnostic,
-    TimelineEvent, TimelineListResponse, TimelineRelation, TIMELINE_MUTATION_LOCK,
-};
-use crate::typesafe::{
-    TimelineConflictCandidate, TimelineConflictOutcome, TimelineConflictSide,
-    TimelineTopicFallbackReason, TypeSafeState,
+    existing_confined_root, random_hex, relative_path, scan_project, validate_event_id,
+    validate_optional_single_line, writable_confined_root, TimelineDiagnostic, TimelineEvent,
+    TimelineListResponse, TimelineRelation, TIMELINE_MUTATION_LOCK,
 };
 
 const SIDECAR_SCHEMA: u8 = 1;
 const MAX_SIDECAR_BYTES: u64 = 16 * 1024;
+const MAX_CHECKPOINT_BYTES: u64 = 64 * 1024;
 const MAX_PROPOSALS: usize = 500;
 const MAX_REVIEWS: usize = 2_000;
-const MAX_SCANS: usize = 200;
+const MAX_CHECKPOINTS: usize = 500;
+const MAX_CHECKPOINT_EVENTS: usize = 1_000;
 const MAX_RATIONALE_CHARS: usize = 1_000;
 const MAX_SOURCE_CHARS: usize = 2 * 1024;
-const MAX_SCAN_PAIRS: usize = 40;
-const MAX_SCAN_SUMMARY_CHARS: usize = 240;
-const MAX_SCAN_TOPIC_CHARS: usize = 120;
-const MIN_KEYWORD_CHARS: usize = 3;
-/// Reviews come from the local app user, never from a payload field.
-const LOCAL_REVIEWER: &str = "Local user";
-const TYPESAFE_BASIS: &str =
-    "TypeSafe คัดกรองจากข้อความสรุปเท่านั้น ไม่ใช่หลักฐาน — เปิดต้นทางทั้งสองรายการเพื่อตรวจเอง";
+const MAX_UNCHECKED_TOPICS: usize = 20;
+const MAX_LIST_PAIRS: usize = 50;
 
 // ─── Sidecar files (snake_case on disk) ──────────────────────────────
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TimelineConflictOrigin {
+    /// Spec 267: recorded by a lane agent through `timeline_conflict_record`.
+    Agent,
+    /// Spec 266 sidecars (in-app sheet / TypeSafe scan); still readable.
     Manual,
     Typesafe,
 }
@@ -97,36 +90,16 @@ struct ReviewFile {
     reviewed_by: String,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum TimelineScanRunState {
-    Completed,
-    Partial,
-}
-
+/// One topic's checkpoint: event IDs a lane agent has already compared.
+/// Rewritten (not appended) on every `timeline_conflict_checked` call.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ScanCheck {
-    pair_id: String,
-    input_hash: String,
-    outcome: TimelineConflictOutcome,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ScanFile {
+struct CheckpointFile {
     schema: u8,
-    id: String,
-    model: String,
-    completed_at: String,
-    state: TimelineScanRunState,
-    checked_pairs: u32,
-    skipped_pairs: u32,
-    proposed_pairs: u32,
-    inconclusive_pairs: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
-    checked: Vec<ScanCheck>,
+    topic_id: String,
+    checked_event_ids: Vec<String>,
+    checked_by: String,
+    checked_at: String,
 }
 
 // ─── Read model (camelCase over IPC and /timeline.json) ──────────────
@@ -195,28 +168,6 @@ pub struct TimelineConflictPair {
     pub reviews: Vec<TimelineConflictReview>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum TimelineScanState {
-    NeverRun,
-    Completed,
-    Partial,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct TimelineScanSummary {
-    pub enabled: bool,
-    pub state: TimelineScanState,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_completed_at: Option<String>,
-    pub checked_pairs: u32,
-    pub skipped_pairs: u32,
-    pub inconclusive_pairs: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-}
-
 /// Counts are project-wide and count each pair once; a cross-topic pair
 /// appears in both topics' filtered views but not twice here.
 #[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq)]
@@ -234,21 +185,6 @@ pub struct TimelineTraceResponse {
     pub chains: Vec<TimelineChain>,
     pub conflict_pairs: Vec<TimelineConflictPair>,
     pub conflict_counts: TimelineConflictCounts,
-    pub scan: TimelineScanSummary,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct TimelineConflictScan {
-    pub state: TimelineScanRunState,
-    pub checked_pairs: u32,
-    pub skipped_pairs: u32,
-    pub proposed_pairs: u32,
-    pub inconclusive_pairs: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
 }
 
 // ─── Paths and file IO ───────────────────────────────────────────────
@@ -268,8 +204,8 @@ fn reviews_dir(project_dir: &Path) -> PathBuf {
     conflicts_root(project_dir).join("reviews")
 }
 
-fn scans_dir(project_dir: &Path) -> PathBuf {
-    conflicts_root(project_dir).join("scans")
+fn checked_dir(project_dir: &Path) -> PathBuf {
+    conflicts_root(project_dir).join("checked")
 }
 
 /// Canonical, order-independent pair ID so the same two events can never be
@@ -328,6 +264,7 @@ fn read_sidecars<T: DeserializeOwned>(
     requested: PathBuf,
     label: &str,
     cap: usize,
+    max_bytes: u64,
     diagnostics: &mut Vec<TimelineDiagnostic>,
 ) -> Vec<(T, String, String)> {
     let (project, root) = match existing_confined_root(project_dir, requested, label) {
@@ -379,10 +316,10 @@ fn read_sidecars<T: DeserializeOwned>(
             continue;
         };
         match entry.metadata() {
-            Ok(metadata) if metadata.len() > MAX_SIDECAR_BYTES => {
+            Ok(metadata) if metadata.len() > max_bytes => {
                 diagnostics.push(TimelineDiagnostic {
                     path: display,
-                    error: format!("{label} file exceeds {MAX_SIDECAR_BYTES} bytes"),
+                    error: format!("{label} file exceeds {max_bytes} bytes"),
                 });
                 continue;
             }
@@ -589,7 +526,7 @@ fn in_cycle(components: &Components, id: &str) -> bool {
 struct LoadedSidecars {
     proposals: Vec<ProposalFile>,
     reviews: HashMap<String, Vec<ReviewFile>>,
-    scans: Vec<ScanFile>,
+    checked: HashMap<String, HashSet<String>>,
 }
 
 fn load_sidecars(
@@ -604,6 +541,7 @@ fn load_sidecars(
         proposals_dir(project_dir),
         "conflict proposal",
         MAX_PROPOSALS,
+        MAX_SIDECAR_BYTES,
         diagnostics,
     ) {
         let valid = proposal.schema == SIDECAR_SCHEMA
@@ -638,6 +576,7 @@ fn load_sidecars(
         reviews_dir(project_dir),
         "conflict review",
         MAX_REVIEWS,
+        MAX_SIDECAR_BYTES,
         diagnostics,
     ) {
         if review.schema != SIDECAR_SCHEMA
@@ -670,33 +609,31 @@ fn load_sidecars(
         });
     }
 
-    let mut scans = Vec::new();
-    for (scan, stem, display) in read_sidecars::<ScanFile>(
+    let mut checked = HashMap::new();
+    for (checkpoint, stem, display) in read_sidecars::<CheckpointFile>(
         project_dir,
-        scans_dir(project_dir),
-        "conflict scan",
-        MAX_SCANS,
+        checked_dir(project_dir),
+        "conflict checkpoint",
+        MAX_CHECKPOINTS,
+        MAX_CHECKPOINT_BYTES,
         diagnostics,
     ) {
-        if scan.schema != SIDECAR_SCHEMA || stem != scan.id || !validate_sidecar_id(&scan.id, "cs-")
-        {
+        if checkpoint.schema != SIDECAR_SCHEMA || stem != checkpoint.topic_id {
             diagnostics.push(TimelineDiagnostic {
                 path: display,
-                error: "conflict scan has an invalid schema or id".to_string(),
+                error: "conflict checkpoint has an invalid schema or topic id".to_string(),
             });
             continue;
         }
-        scans.push(scan);
+        checked.insert(
+            checkpoint.topic_id,
+            checkpoint.checked_event_ids.into_iter().collect(),
+        );
     }
-    scans.sort_by(|left, right| {
-        left.completed_at
-            .cmp(&right.completed_at)
-            .then(left.id.cmp(&right.id))
-    });
     LoadedSidecars {
         proposals,
         reviews,
-        scans,
+        checked,
     }
 }
 
@@ -724,39 +661,13 @@ fn pair_state(
     }
 }
 
-fn scan_summary(scans: &[ScanFile], enabled: bool) -> TimelineScanSummary {
-    match scans.last() {
-        None => TimelineScanSummary {
-            enabled,
-            state: TimelineScanState::NeverRun,
-            last_completed_at: None,
-            checked_pairs: 0,
-            skipped_pairs: 0,
-            inconclusive_pairs: 0,
-            reason: None,
-        },
-        Some(scan) => TimelineScanSummary {
-            enabled,
-            state: match scan.state {
-                TimelineScanRunState::Completed => TimelineScanState::Completed,
-                TimelineScanRunState::Partial => TimelineScanState::Partial,
-            },
-            last_completed_at: Some(scan.completed_at.clone()),
-            checked_pairs: scan.checked_pairs,
-            skipped_pairs: scan.skipped_pairs,
-            inconclusive_pairs: scan.inconclusive_pairs,
-            reason: scan.reason.clone(),
-        },
-    }
-}
-
 struct TraceContext {
     response: TimelineTraceResponse,
     components: Components,
-    scans: Vec<ScanFile>,
+    checked: HashMap<String, HashSet<String>>,
 }
 
-fn build_trace_context(project_dir: &Path, scan_enabled: bool) -> Result<TraceContext, String> {
+fn build_trace_context(project_dir: &Path) -> Result<TraceContext, String> {
     let mut listing = scan_project(project_dir)?;
     let (chains, components) = build_chains(&listing.events, &mut listing.diagnostics);
     let event_ids: HashSet<&str> = listing
@@ -813,137 +724,293 @@ fn build_trace_context(project_dir: &Path, scan_enabled: bool) -> Result<TraceCo
         });
     }
     listing.diagnostics.extend(diagnostics);
-    let scan = scan_summary(&sidecars.scans, scan_enabled);
     Ok(TraceContext {
         response: TimelineTraceResponse {
             listing,
             chains,
             conflict_pairs: pairs,
             conflict_counts: counts,
-            scan,
         },
         components,
-        scans: sidecars.scans,
+        checked: sidecars.checked,
     })
 }
 
-pub(crate) fn trace_project(
+pub(crate) fn trace_project(project_dir: &Path) -> Result<TimelineTraceResponse, String> {
+    build_trace_context(project_dir).map(|context| context.response)
+}
+
+// ─── Agent-facing read (spec 267) ────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct AgentConflictPair {
+    pub pair_id: String,
+    pub event_a: String,
+    pub event_b: String,
+    pub state: TimelineConflictState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verdict_by: Option<String>,
+    pub rationale: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct UncheckedTopic {
+    pub topic_id: String,
+    pub topic_title: String,
+    /// Live (not superseded) events no agent has compared yet, newest first.
+    pub new_event_ids: Vec<String>,
+    /// Live events already compared; the new ones are checked against these.
+    pub checked_event_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct AgentConflictList {
+    pub pairs: Vec<AgentConflictPair>,
+    pub pairs_truncated: bool,
+    pub counts: TimelineConflictCounts,
+    pub unchecked: Vec<UncheckedTopic>,
+    pub unchecked_topic_total: usize,
+    pub diagnostics: usize,
+}
+
+fn live_events(context: &TraceContext) -> impl Iterator<Item = &TimelineEvent> {
+    context
+        .response
+        .listing
+        .events
+        .iter()
+        .filter(|event| !event.superseded && !in_cycle(&context.components, &event.id))
+}
+
+fn unchecked_topics(context: &TraceContext, topic_id: Option<&str>) -> Vec<UncheckedTopic> {
+    // topic_id -> (title, newest occurred_at, new ids, checked count)
+    let mut topics: HashMap<&str, (&str, &str, Vec<&TimelineEvent>, usize)> = HashMap::new();
+    for event in live_events(context) {
+        if topic_id.is_some_and(|id| id != event.topic_id) {
+            continue;
+        }
+        let entry = topics.entry(event.topic_id.as_str()).or_insert((
+            event.topic_title.as_str(),
+            "",
+            Vec::new(),
+            0,
+        ));
+        // Events are chronological, so the last title seen is the current one.
+        entry.0 = event.topic_title.as_str();
+        let done = context
+            .checked
+            .get(&event.topic_id)
+            .is_some_and(|ids| ids.contains(&event.id));
+        if done {
+            entry.3 += 1;
+        } else {
+            entry.1 = entry.1.max(event.occurred_at.as_str());
+            entry.2.push(event);
+        }
+    }
+    let mut out: Vec<(&str, UncheckedTopic)> = topics
+        .into_iter()
+        .filter(|(_, (_, _, fresh, _))| !fresh.is_empty())
+        .map(|(id, (title, newest, mut fresh, checked))| {
+            fresh.sort_by(|left, right| right.occurred_at.cmp(&left.occurred_at));
+            (
+                newest,
+                UncheckedTopic {
+                    topic_id: id.to_string(),
+                    topic_title: title.to_string(),
+                    new_event_ids: fresh.iter().map(|event| event.id.clone()).collect(),
+                    checked_event_count: checked,
+                },
+            )
+        })
+        .collect();
+    out.sort_by(|left, right| {
+        right
+            .0
+            .cmp(left.0)
+            .then(left.1.topic_id.cmp(&right.1.topic_id))
+    });
+    out.into_iter().map(|(_, topic)| topic).collect()
+}
+
+/// `timeline_conflict_list`: open (or all) pairs plus the topics whose live
+/// events have not been compared yet. `topic_id` narrows both halves.
+pub(crate) fn agent_list_project(
     project_dir: &Path,
-    scan_enabled: bool,
-) -> Result<TimelineTraceResponse, String> {
-    build_trace_context(project_dir, scan_enabled).map(|context| context.response)
+    topic_id: Option<&str>,
+    include_closed: bool,
+) -> Result<AgentConflictList, String> {
+    let topic_id = topic_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(crate::timeline::validate_topic_id)
+        .transpose()?;
+    let context = build_trace_context(project_dir)?;
+    let topic_of: HashMap<&str, &str> = context
+        .response
+        .listing
+        .events
+        .iter()
+        .map(|event| (event.id.as_str(), event.topic_id.as_str()))
+        .collect();
+    let in_topic = |id: &str| match &topic_id {
+        None => true,
+        Some(topic) => topic_of
+            .get(id)
+            .is_some_and(|value| *value == topic.as_str()),
+    };
+    let mut pairs: Vec<AgentConflictPair> = context
+        .response
+        .conflict_pairs
+        .iter()
+        .filter(|pair| {
+            include_closed
+                || pair.state.needs_review()
+                || pair.state == TimelineConflictState::Confirmed
+        })
+        .filter(|pair| in_topic(&pair.event_a) || in_topic(&pair.event_b))
+        .map(|pair| {
+            let latest = pair.reviews.last();
+            AgentConflictPair {
+                pair_id: pair.pair_id.clone(),
+                event_a: pair.event_a.clone(),
+                event_b: pair.event_b.clone(),
+                state: pair.state,
+                verdict_by: latest.map(|review| review.reviewed_by.clone()),
+                rationale: latest
+                    .map(|review| review.rationale.clone())
+                    .unwrap_or_else(|| pair.basis.clone()),
+                updated_at: latest
+                    .map(|review| review.reviewed_at.clone())
+                    .unwrap_or_else(|| pair.suggested_at.clone()),
+            }
+        })
+        .collect();
+    pairs.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+    let pairs_truncated = pairs.len() > MAX_LIST_PAIRS;
+    pairs.truncate(MAX_LIST_PAIRS);
+    let mut unchecked = unchecked_topics(&context, topic_id.as_deref());
+    let unchecked_topic_total = unchecked.len();
+    unchecked.truncate(MAX_UNCHECKED_TOPICS);
+    Ok(AgentConflictList {
+        pairs,
+        pairs_truncated,
+        counts: context.response.conflict_counts,
+        unchecked,
+        unchecked_topic_total,
+        diagnostics: context.response.listing.diagnostics.len(),
+    })
 }
 
 // ─── Writes ──────────────────────────────────────────────────────────
 
-fn find_pair(
-    project_dir: &Path,
-    pair_id: &str,
-    scan_enabled: bool,
-) -> Result<TimelineConflictPair, String> {
-    trace_project(project_dir, scan_enabled)?
+fn find_pair(project_dir: &Path, pair_id: &str) -> Result<TimelineConflictPair, String> {
+    trace_project(project_dir)?
         .conflict_pairs
         .into_iter()
         .find(|pair| pair.pair_id == pair_id)
         .ok_or_else(|| format!("timeline conflict pair is not available: {pair_id}"))
 }
 
-pub(crate) fn propose_project(
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct AgentConflictRecord {
+    pub pair_id: String,
+    pub state: TimelineConflictState,
+    pub new_pair: bool,
+}
+
+pub(crate) struct ConflictRecordRequest {
+    pub event_a: String,
+    pub event_b: String,
+    pub verdict: TimelineConflictVerdict,
+    pub rationale: String,
+    pub source_ref: Option<String>,
+    pub resolution_event_id: Option<String>,
+}
+
+/// `timeline_conflict_record`: create the pair's proposal when missing, then
+/// append the agent's verdict. `reviewer` is the lane label from the MCP
+/// transport, never a payload field.
+pub(crate) fn record_conflict_project(
     project_dir: &Path,
-    event_a: &str,
-    event_b: &str,
-    rationale: &str,
-) -> Result<TimelineConflictPair, String> {
-    let event_a = validate_event_id(event_a).map_err(|_| "eventA is not a valid event id")?;
-    let event_b = validate_event_id(event_b).map_err(|_| "eventB is not a valid event id")?;
+    request: ConflictRecordRequest,
+    reviewer: &str,
+) -> Result<AgentConflictRecord, String> {
+    let event_a =
+        validate_event_id(&request.event_a).map_err(|_| "event_a is not a valid event id")?;
+    let event_b =
+        validate_event_id(&request.event_b).map_err(|_| "event_b is not a valid event id")?;
     if event_a == event_b {
         return Err("a conflict pair needs two different events".to_string());
     }
-    let rationale = validate_rationale(rationale)?;
-    let (event_a, event_b, pair_id) = canonical_pair(&event_a, &event_b);
-    {
-        let _guard = TIMELINE_MUTATION_LOCK
-            .lock()
-            .map_err(|_| "timeline lock is unavailable".to_string())?;
-        let listing = scan_project(project_dir)?;
-        for id in [&event_a, &event_b] {
-            if !listing.events.iter().any(|event| &event.id == id) {
-                return Err(format!(
-                    "timeline event does not exist in this project: {id}"
-                ));
-            }
-        }
-        let (_, root) =
-            writable_confined_root(project_dir, proposals_dir(project_dir), "conflict proposal")?;
-        let proposal = ProposalFile {
-            schema: SIDECAR_SCHEMA,
-            pair_id: pair_id.clone(),
-            event_a,
-            event_b,
-            origin: TimelineConflictOrigin::Manual,
-            suggested_at: now_millis(),
-            model: None,
-            probability: None,
-            input_hash: None,
-            basis: rationale,
-        };
-        if !write_new_json(&root.join(format!("{pair_id}.json")), &proposal)? {
-            return Err(format!("this pair was already proposed: {pair_id}"));
-        }
-    }
-    find_pair(project_dir, &pair_id, false)
-}
-
-pub(crate) fn review_project(
-    project_dir: &Path,
-    pair_id: &str,
-    verdict: TimelineConflictVerdict,
-    rationale: &str,
-    source_ref: Option<String>,
-    resolution_event_id: Option<String>,
-) -> Result<TimelineConflictPair, String> {
-    let (_, _, pair_id) = validate_pair_id(pair_id)?;
-    let rationale = validate_rationale(rationale)?;
-    let source_ref = validate_optional_single_line("sourceRef", source_ref, MAX_SOURCE_CHARS)?;
-    let resolution_event_id = match resolution_event_id.map(|id| id.trim().to_string()) {
-        Some(id) if !id.is_empty() => {
-            Some(validate_event_id(&id).map_err(|_| "resolutionEventId is not a valid event id")?)
-        }
+    let rationale = validate_rationale(&request.rationale)?;
+    let source_ref =
+        validate_optional_single_line("source_ref", request.source_ref, MAX_SOURCE_CHARS)?;
+    let resolution_event_id = match request.resolution_event_id.map(|id| id.trim().to_string()) {
+        Some(id) if !id.is_empty() => Some(
+            validate_event_id(&id).map_err(|_| "resolution_event_id is not a valid event id")?,
+        ),
         _ => None,
     };
+    let verdict = request.verdict;
     if verdict == TimelineConflictVerdict::Resolved
         && source_ref.is_none()
         && resolution_event_id.is_none()
     {
         return Err(
-            "resolved needs the event that ended the conflict or a source reference".to_string(),
+            "resolved needs resolution_event_id (the event that ended the conflict) or source_ref"
+                .to_string(),
         );
     }
+    let (event_a, event_b, pair_id) = canonical_pair(&event_a, &event_b);
+    let new_pair;
     {
         let _guard = TIMELINE_MUTATION_LOCK
             .lock()
             .map_err(|_| "timeline lock is unavailable".to_string())?;
-        let context = build_trace_context(project_dir, false)?;
-        if !context
-            .response
-            .conflict_pairs
-            .iter()
-            .any(|pair| pair.pair_id == pair_id)
+        let context = build_trace_context(project_dir)?;
+        let events = &context.response.listing.events;
+        for id in [Some(&event_a), Some(&event_b), resolution_event_id.as_ref()]
+            .into_iter()
+            .flatten()
         {
-            return Err(format!("no proposal exists for this pair: {pair_id}"));
-        }
-        if let Some(id) = &resolution_event_id {
-            if !context
-                .response
-                .listing
-                .events
-                .iter()
-                .any(|event| &event.id == id)
-            {
+            if !events.iter().any(|event| &event.id == id) {
                 return Err(format!(
                     "timeline event does not exist in this project: {id}"
                 ));
             }
+        }
+        if same_chain(&context.components, &event_a, &event_b) {
+            return Err(
+                "these events are linked by supersedes: that is change history, not a conflict"
+                    .to_string(),
+            );
+        }
+        new_pair = !context
+            .response
+            .conflict_pairs
+            .iter()
+            .any(|pair| pair.pair_id == pair_id);
+        if new_pair {
+            let (_, root) = writable_confined_root(
+                project_dir,
+                proposals_dir(project_dir),
+                "conflict proposal",
+            )?;
+            let proposal = ProposalFile {
+                schema: SIDECAR_SCHEMA,
+                pair_id: pair_id.clone(),
+                event_a,
+                event_b,
+                origin: TimelineConflictOrigin::Agent,
+                suggested_at: now_millis(),
+                model: None,
+                probability: None,
+                input_hash: None,
+                basis: rationale.clone(),
+            };
+            write_new_json(&root.join(format!("{pair_id}.json")), &proposal)?;
         }
         let (_, root) =
             writable_confined_root(project_dir, reviews_dir(project_dir), "conflict review")?;
@@ -958,7 +1025,7 @@ pub(crate) fn review_project(
                 source_ref: source_ref.clone(),
                 resolution_event_id: resolution_event_id.clone(),
                 reviewed_at: now_millis(),
-                reviewed_by: LOCAL_REVIEWER.to_string(),
+                reviewed_by: reviewer.to_string(),
             };
             if write_new_json(&root.join(format!("{}.json", review.id)), &review)? {
                 written = true;
@@ -969,324 +1036,113 @@ pub(crate) fn review_project(
             return Err("failed to allocate a unique conflict review id".to_string());
         }
     }
-    find_pair(project_dir, &pair_id, false)
+    let pair = find_pair(project_dir, &pair_id)?;
+    Ok(AgentConflictRecord {
+        pair_id: pair.pair_id,
+        state: pair.state,
+        new_pair,
+    })
 }
 
-// ─── Scan shortlist ──────────────────────────────────────────────────
-
-fn keywords(event: &TimelineEvent) -> HashSet<String> {
-    format!("{} {}", event.topic_title, event.summary)
-        .to_lowercase()
-        .split(|ch: char| ch.is_whitespace() || ch.is_ascii_punctuation())
-        .filter(|token| token.chars().count() >= MIN_KEYWORD_CHARS)
-        .map(str::to_string)
-        .collect()
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct AgentConflictChecked {
+    pub topic_id: String,
+    pub checked_event_count: usize,
+    pub remaining_unchecked: usize,
 }
 
-fn truncate(value: &str, max: usize) -> String {
-    value.trim().chars().take(max).collect()
-}
-
-fn scan_side(event: &TimelineEvent) -> TimelineConflictSide {
-    TimelineConflictSide {
-        id: event.id.clone(),
-        topic: truncate(&event.topic_title, MAX_SCAN_TOPIC_CHARS),
-        summary: truncate(&event.summary, MAX_SCAN_SUMMARY_CHARS),
+/// `timeline_conflict_checked`: add the compared event IDs to the topic's
+/// checkpoint. Only IDs the caller names are marked, so an event recorded
+/// while the agent was reading stays unchecked for the next pass.
+pub(crate) fn mark_checked_project(
+    project_dir: &Path,
+    topic_id: &str,
+    event_ids: &[String],
+    checked_by: &str,
+) -> Result<AgentConflictChecked, String> {
+    let topic_id = crate::timeline::validate_topic_id(topic_id)?;
+    if event_ids.is_empty() {
+        return Err("event_ids must name at least one compared event".to_string());
     }
-}
-
-fn input_hash(candidate: &TimelineConflictCandidate) -> String {
-    let mut hasher = Sha256::new();
-    for side in [&candidate.a, &candidate.b] {
-        for part in [&side.id, &side.topic, &side.summary] {
-            hasher.update(part.as_bytes());
-            hasher.update([0]);
-        }
+    let mut marked = Vec::new();
+    for id in event_ids {
+        marked.push(validate_event_id(id).map_err(|_| format!("not a valid event id: {id}"))?);
     }
-    hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-/// Deterministic shortlist: same-topic pairs first, then cross-topic pairs that
-/// share a `source_ref`, then cross-topic pairs that share a keyword; newest
-/// first inside each group, pair ID as the tie-break. Cross-topic pairs with
-/// neither signal are never considered, which the UI discloses.
-fn shortlist(context: &TraceContext) -> Vec<TimelineConflictCandidate> {
-    let events: Vec<&TimelineEvent> = context
+    let _guard = TIMELINE_MUTATION_LOCK
+        .lock()
+        .map_err(|_| "timeline lock is unavailable".to_string())?;
+    let context = build_trace_context(project_dir)?;
+    let topic_events: HashSet<&str> = context
         .response
         .listing
         .events
         .iter()
-        .filter(|event| !event.superseded && !in_cycle(&context.components, &event.id))
+        .filter(|event| event.topic_id == topic_id)
+        .map(|event| event.id.as_str())
         .collect();
-    let proposed: HashSet<&str> = context
-        .response
-        .conflict_pairs
-        .iter()
-        .map(|pair| pair.pair_id.as_str())
-        .collect();
-    let already_checked: HashSet<(&str, &str)> = context
-        .scans
-        .iter()
-        .flat_map(|scan| scan.checked.iter())
-        .map(|check| (check.pair_id.as_str(), check.input_hash.as_str()))
-        .collect();
-    let tokens: Vec<HashSet<String>> = events.iter().map(|event| keywords(event)).collect();
-    let mut ranked: Vec<(u8, String, TimelineConflictCandidate)> = Vec::new();
-    for left in 0..events.len() {
-        for right in left + 1..events.len() {
-            let (a, b) = (events[left], events[right]);
-            let group = if a.topic_id == b.topic_id {
-                0
-            } else if a.source_ref.is_some() && a.source_ref == b.source_ref {
-                1
-            } else if !tokens[left].is_disjoint(&tokens[right]) {
-                2
-            } else {
-                continue;
-            };
-            if same_chain(&context.components, &a.id, &b.id)
-                || (normalized_text(&a.summary) == normalized_text(&b.summary)
-                    && a.source_ref == b.source_ref)
-            {
-                continue;
-            }
-            let (first, second) = if a.id <= b.id { (a, b) } else { (b, a) };
-            let (_, _, pair_id) = canonical_pair(&first.id, &second.id);
-            if proposed.contains(pair_id.as_str()) {
-                continue;
-            }
-            let candidate = TimelineConflictCandidate {
-                pair_id,
-                a: scan_side(first),
-                b: scan_side(second),
-            };
-            if already_checked
-                .contains(&(candidate.pair_id.as_str(), input_hash(&candidate).as_str()))
-            {
-                continue;
-            }
-            let newest = a.occurred_at.clone().max(b.occurred_at.clone());
-            ranked.push((group, newest, candidate));
+    if topic_events.is_empty() {
+        return Err(format!(
+            "timeline topic does not exist in this project: {topic_id}"
+        ));
+    }
+    for id in &marked {
+        if !topic_events.contains(id.as_str()) {
+            return Err(format!("event {id} is not in topic {topic_id}"));
         }
     }
-    ranked.sort_by(|left, right| {
-        left.0
-            .cmp(&right.0)
-            .then(right.1.cmp(&left.1))
-            .then(left.2.pair_id.cmp(&right.2.pair_id))
-    });
-    ranked
+    // Keep only IDs still in the topic (merges move events out) plus the new ones.
+    let mut ids: Vec<String> = context
+        .checked
+        .get(&topic_id)
         .into_iter()
-        .map(|(_, _, candidate)| candidate)
-        .collect()
-}
-
-fn failure_reason(reason: TimelineTopicFallbackReason) -> String {
-    serde_json::to_value(reason)
-        .ok()
-        .and_then(|value| value.as_str().map(str::to_string))
-        .unwrap_or_else(|| "unavailable".to_string())
-}
-
-/// Persist one scan: proposals for pairs that passed the gate plus a scan
-/// record of every checked pair, so a reload never changes what "scanned"
-/// meant and unchanged pairs are not re-sent next time.
-fn persist_scan(
-    project_dir: &Path,
-    candidates: &[TimelineConflictCandidate],
-    skipped_beyond_limit: usize,
-    classification: &crate::typesafe::TimelineConflictClassification,
-) -> Result<TimelineConflictScan, String> {
-    let _guard = TIMELINE_MUTATION_LOCK
-        .lock()
-        .map_err(|_| "timeline lock is unavailable".to_string())?;
-    let by_pair: HashMap<&str, &TimelineConflictCandidate> = candidates
-        .iter()
-        .map(|candidate| (candidate.pair_id.as_str(), candidate))
+        .flatten()
+        .filter(|id| topic_events.contains(id.as_str()))
+        .cloned()
+        .chain(marked)
+        .collect::<HashSet<_>>()
+        .into_iter()
         .collect();
-    let completed_at = now_millis();
-    let mut checked = Vec::new();
-    let mut proposed = 0_u32;
-    let mut inconclusive = 0_u32;
-    for judgement in &classification.judgements {
-        let Some(candidate) = by_pair.get(judgement.pair_id.as_str()) else {
-            continue;
-        };
-        let hash = input_hash(candidate);
-        match judgement.outcome {
-            TimelineConflictOutcome::PossibleConflict => {
-                let (_, root) = writable_confined_root(
-                    project_dir,
-                    proposals_dir(project_dir),
-                    "conflict proposal",
-                )?;
-                let proposal = ProposalFile {
-                    schema: SIDECAR_SCHEMA,
-                    pair_id: candidate.pair_id.clone(),
-                    event_a: candidate.a.id.clone(),
-                    event_b: candidate.b.id.clone(),
-                    origin: TimelineConflictOrigin::Typesafe,
-                    suggested_at: completed_at.clone(),
-                    model: Some(classification.model.clone()),
-                    probability: judgement.probability,
-                    input_hash: Some(hash.clone()),
-                    basis: TYPESAFE_BASIS.to_string(),
-                };
-                if write_new_json(&root.join(format!("{}.json", candidate.pair_id)), &proposal)? {
-                    proposed += 1;
-                }
-            }
-            TimelineConflictOutcome::Inconclusive
-            | TimelineConflictOutcome::InsufficientEvidence => inconclusive += 1,
-            _ => {}
-        }
-        // Invalid answers are not recorded as checked, so the pair is retried.
-        if judgement.outcome != TimelineConflictOutcome::InvalidResponse {
-            checked.push(ScanCheck {
-                pair_id: candidate.pair_id.clone(),
-                input_hash: hash,
-                outcome: judgement.outcome,
-            });
-        }
+    ids.sort();
+    if ids.len() > MAX_CHECKPOINT_EVENTS {
+        return Err(format!(
+            "topic checkpoint would exceed {MAX_CHECKPOINT_EVENTS} events"
+        ));
     }
-    let unchecked = candidates.len().saturating_sub(checked.len());
-    let skipped = (skipped_beyond_limit + unchecked) as u32;
-    let state = if skipped == 0 && classification.failure.is_none() {
-        TimelineScanRunState::Completed
-    } else {
-        TimelineScanRunState::Partial
-    };
-    let reason = classification
-        .failure
-        .map(failure_reason)
-        .or_else(|| (skipped_beyond_limit > 0).then(|| format!("limit_{MAX_SCAN_PAIRS}_pairs")));
-    let (project, root) =
-        writable_confined_root(project_dir, scans_dir(project_dir), "conflict scan")?;
-    let scan = ScanFile {
+    let (_, root) =
+        writable_confined_root(project_dir, checked_dir(project_dir), "conflict checkpoint")?;
+    let checkpoint = CheckpointFile {
         schema: SIDECAR_SCHEMA,
-        id: new_sidecar_id("cs-")?,
-        model: classification.model.clone(),
-        completed_at,
-        state,
-        checked_pairs: checked.len() as u32,
-        skipped_pairs: skipped,
-        proposed_pairs: proposed,
-        inconclusive_pairs: inconclusive,
-        reason: reason.clone(),
-        checked,
+        topic_id: topic_id.clone(),
+        checked_event_ids: ids,
+        checked_by: checked_by.to_string(),
+        checked_at: now_millis(),
     };
-    let path = root.join(format!("{}.json", scan.id));
-    if !write_new_json(&path, &scan)? {
-        return Err("failed to allocate a unique conflict scan id".to_string());
-    }
-    Ok(TimelineConflictScan {
-        state,
-        checked_pairs: scan.checked_pairs,
-        skipped_pairs: scan.skipped_pairs,
-        proposed_pairs: proposed,
-        inconclusive_pairs: inconclusive,
-        reason,
-        path: Some(relative_path(&project, &path)),
+    let body = serde_json::to_vec_pretty(&checkpoint)
+        .map_err(|error| format!("failed to encode conflict checkpoint: {error}"))?;
+    let path = root.join(format!("{topic_id}.json"));
+    let temp = root.join(format!(".{topic_id}.{}.tmp", random_hex()?));
+    fs::write(&temp, &body)
+        .and_then(|()| fs::rename(&temp, &path))
+        .map_err(|error| {
+            let _ = fs::remove_file(&temp);
+            format!("failed to write conflict checkpoint: {error}")
+        })?;
+    let checked_event_count = checkpoint.checked_event_ids.len();
+    let remaining_unchecked = live_events(&context)
+        .filter(|event| event.topic_id == topic_id)
+        .filter(|event| !checkpoint.checked_event_ids.contains(&event.id))
+        .count();
+    Ok(AgentConflictChecked {
+        topic_id,
+        checked_event_count,
+        remaining_unchecked,
     })
-}
-
-// ─── Tauri commands (app only — deliberately not MCP tools) ─────────
-
-fn scan_enabled(
-    config: &tauri::State<'_, Arc<std::sync::RwLock<crate::config::KryptonConfig>>>,
-) -> bool {
-    config
-        .read()
-        .map(|config| config.typesafe.timeline_conflict_scan_enabled())
-        .unwrap_or(false)
-}
-
-#[tauri::command]
-pub fn timeline_conflict_list(
-    harness_id: String,
-    hook_server: tauri::State<'_, Arc<HookServer>>,
-    config: tauri::State<'_, Arc<std::sync::RwLock<crate::config::KryptonConfig>>>,
-) -> Result<TimelineTraceResponse, String> {
-    trace_project(
-        &project_dir(&hook_server, &harness_id)?,
-        scan_enabled(&config),
-    )
-}
-
-#[tauri::command]
-pub fn timeline_conflict_propose(
-    harness_id: String,
-    event_a: String,
-    event_b: String,
-    rationale: String,
-    hook_server: tauri::State<'_, Arc<HookServer>>,
-) -> Result<TimelineConflictPair, String> {
-    propose_project(
-        &project_dir(&hook_server, &harness_id)?,
-        &event_a,
-        &event_b,
-        &rationale,
-    )
-}
-
-#[tauri::command]
-pub fn timeline_conflict_review(
-    harness_id: String,
-    pair_id: String,
-    verdict: TimelineConflictVerdict,
-    rationale: String,
-    source_ref: Option<String>,
-    resolution_event_id: Option<String>,
-    hook_server: tauri::State<'_, Arc<HookServer>>,
-) -> Result<TimelineConflictPair, String> {
-    review_project(
-        &project_dir(&hook_server, &harness_id)?,
-        &pair_id,
-        verdict,
-        &rationale,
-        source_ref,
-        resolution_event_id,
-    )
-}
-
-#[tauri::command]
-pub async fn timeline_conflict_scan(
-    harness_id: String,
-    hook_server: tauri::State<'_, Arc<HookServer>>,
-    config: tauri::State<'_, Arc<std::sync::RwLock<crate::config::KryptonConfig>>>,
-    typesafe: tauri::State<'_, Arc<TypeSafeState>>,
-) -> Result<TimelineConflictScan, String> {
-    let project = project_dir(&hook_server, &harness_id)?;
-    let typesafe_config = config
-        .read()
-        .map_err(|_| "config lock is unavailable".to_string())?
-        .typesafe
-        .clone();
-    if !typesafe_config.timeline_conflict_scan_enabled() {
-        return Err(
-            "conflict scan is off: set [typesafe] enabled = true and [typesafe.timeline_conflicts] mode = \"suggest\""
-                .to_string(),
-        );
-    }
-    let context = build_trace_context(&project, true)?;
-    let mut candidates = shortlist(&context);
-    let beyond_limit = candidates.len().saturating_sub(MAX_SCAN_PAIRS);
-    candidates.truncate(MAX_SCAN_PAIRS);
-    let classification = typesafe
-        .classify_timeline_conflicts(typesafe_config, candidates.clone())
-        .await?;
-    persist_scan(&project, &candidates, beyond_limit, &classification)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::timeline::{record_project, TimelineRecordRequest};
-    use crate::typesafe::{TimelineConflictClassification, TimelineConflictJudgement};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     struct TestDir(PathBuf);
@@ -1360,7 +1216,7 @@ mod tests {
             "2026-09-22T10:00:00Z",
             Some(&b.id),
         );
-        let trace = trace_project(&dir.0, false).unwrap();
+        let trace = trace_project(&dir.0).unwrap();
         assert_eq!(trace.chains.len(), 1);
         assert_eq!(
             trace.chains[0].event_ids,
@@ -1368,7 +1224,6 @@ mod tests {
         );
         assert_eq!(trace.chains[0].links.len(), 2);
         assert_eq!(trace.conflict_counts, TimelineConflictCounts::default());
-        assert_eq!(trace.scan.state, TimelineScanState::NeverRun);
     }
 
     #[test]
@@ -1389,7 +1244,7 @@ mod tests {
             "2026-09-21T11:00:00Z",
             Some(&a.id),
         );
-        let trace = trace_project(&dir.0, false).unwrap();
+        let trace = trace_project(&dir.0).unwrap();
         assert_eq!(trace.chains.len(), 1);
         assert_eq!(trace.chains[0].event_ids.len(), 3);
         assert_eq!(trace.chains[0].links.len(), 2);
@@ -1419,7 +1274,7 @@ mod tests {
             1,
         );
         fs::write(&path, patched).unwrap();
-        let trace = trace_project(&dir.0, false).unwrap();
+        let trace = trace_project(&dir.0).unwrap();
         assert!(trace.chains.is_empty());
         assert!(trace
             .listing
@@ -1428,9 +1283,31 @@ mod tests {
             .any(|item| item.error.contains("cycle")));
     }
 
+    fn agent_record(
+        dir: &Path,
+        a: &str,
+        b: &str,
+        verdict: TimelineConflictVerdict,
+        rationale: &str,
+        resolution: Option<&str>,
+    ) -> Result<AgentConflictRecord, String> {
+        record_conflict_project(
+            dir,
+            ConflictRecordRequest {
+                event_a: a.to_string(),
+                event_b: b.to_string(),
+                verdict,
+                rationale: rationale.to_string(),
+                source_ref: None,
+                resolution_event_id: resolution.map(str::to_string),
+            },
+            "Claude-1",
+        )
+    }
+
     #[test]
-    fn manual_proposal_is_canonical_and_idempotent() {
-        let dir = TestDir::new("propose");
+    fn agent_record_creates_canonical_pair_and_appends_reviews() {
+        let dir = TestDir::new("record");
         let a = record(
             &dir.0,
             "backup",
@@ -1445,83 +1322,104 @@ mod tests {
             "2026-09-21T16:05:00Z",
             None,
         );
-        let pair = propose_project(&dir.0, &b.id, &a.id, "same subject, opposite call").unwrap();
-        let (first, second) = if a.id < b.id {
+        let first = agent_record(
+            &dir.0,
+            &b.id,
+            &a.id,
+            TimelineConflictVerdict::Confirmed,
+            "same subject, opposite call",
+            None,
+        )
+        .unwrap();
+        let (x, y) = if a.id < b.id {
             (&a.id, &b.id)
         } else {
             (&b.id, &a.id)
         };
-        assert_eq!(pair.pair_id, format!("{first}--{second}"));
-        assert_eq!(pair.state, TimelineConflictState::Unreviewed);
-        assert_eq!(pair.origin, TimelineConflictOrigin::Manual);
-        let again = propose_project(&dir.0, &a.id, &b.id, "again").unwrap_err();
-        assert!(again.contains("already proposed"));
-        assert!(propose_project(&dir.0, &a.id, &a.id, "self").is_err());
-        assert!(propose_project(&dir.0, &a.id, "tl-missing", "gone").is_err());
-        let trace = trace_project(&dir.0, false).unwrap();
-        assert_eq!(trace.conflict_counts.needs_review, 1);
-    }
+        assert_eq!(first.pair_id, format!("{x}--{y}"));
+        assert!(first.new_pair);
+        assert_eq!(first.state, TimelineConflictState::Confirmed);
+        let trace = trace_project(&dir.0).unwrap();
+        assert_eq!(
+            trace.conflict_pairs[0].origin,
+            TimelineConflictOrigin::Agent
+        );
+        assert_eq!(trace.conflict_pairs[0].reviews[0].reviewed_by, "Claude-1");
+        assert_eq!(trace.conflict_counts.confirmed, 1);
 
-    #[test]
-    fn reviews_are_append_only_and_latest_wins() {
-        let dir = TestDir::new("review");
-        let a = record(
+        assert!(agent_record(
             &dir.0,
-            "backup",
-            "remove backup connection",
-            "2026-09-20T10:30:00Z",
-            None,
-        );
-        let b = record(
-            &dir.0,
-            "backup",
-            "keep backup connection",
-            "2026-09-21T16:05:00Z",
-            None,
-        );
-        let pair = propose_project(&dir.0, &a.id, &b.id, "opposite call").unwrap();
-        let confirmed = review_project(
-            &dir.0,
-            &pair.pair_id,
-            TimelineConflictVerdict::Confirmed,
-            "both still stand",
-            None,
-            None,
-        )
-        .unwrap();
-        assert_eq!(confirmed.state, TimelineConflictState::Confirmed);
-        assert_eq!(confirmed.reviews[0].reviewed_by, "Local user");
-        assert!(review_project(
-            &dir.0,
-            &pair.pair_id,
+            &a.id,
+            &b.id,
             TimelineConflictVerdict::Resolved,
             "fixed",
-            None,
             None
         )
         .unwrap_err()
         .contains("resolved needs"));
-        let resolved = review_project(
+        let c = record(
             &dir.0,
-            &pair.pair_id,
-            TimelineConflictVerdict::Resolved,
-            "release lead decided",
-            Some("PLAN-03".to_string()),
+            "backup",
+            "release lead keeps backup connection",
+            "2026-09-22T09:00:00Z",
             None,
+        );
+        let second = agent_record(
+            &dir.0,
+            &a.id,
+            &b.id,
+            TimelineConflictVerdict::Resolved,
+            "newer decision settles it",
+            Some(&c.id),
         )
         .unwrap();
-        assert_eq!(resolved.state, TimelineConflictState::Resolved);
-        assert_eq!(resolved.reviews.len(), 2);
+        assert!(!second.new_pair);
+        assert_eq!(second.state, TimelineConflictState::Resolved);
         assert_eq!(fs::read_dir(reviews_dir(&dir.0)).unwrap().count(), 2);
-        assert!(review_project(
+        assert_eq!(fs::read_dir(proposals_dir(&dir.0)).unwrap().count(), 1);
+
+        assert!(agent_record(
             &dir.0,
-            &format!("{}--tl-zzz", a.id),
-            TimelineConflictVerdict::Dismissed,
-            "no proposal",
-            None,
+            &a.id,
+            &a.id,
+            TimelineConflictVerdict::Confirmed,
+            "self",
             None
         )
         .is_err());
+        assert!(agent_record(
+            &dir.0,
+            &a.id,
+            "tl-20260101T000000Z-aaaaaa",
+            TimelineConflictVerdict::Confirmed,
+            "gone",
+            None
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn agent_record_rejects_supersedes_history() {
+        let dir = TestDir::new("record-chain");
+        let a = record(&dir.0, "api", "use REST", "2026-09-20T10:00:00Z", None);
+        let b = record(
+            &dir.0,
+            "api",
+            "use gRPC",
+            "2026-09-21T10:00:00Z",
+            Some(&a.id),
+        );
+        let error = agent_record(
+            &dir.0,
+            &a.id,
+            &b.id,
+            TimelineConflictVerdict::Confirmed,
+            "opposite",
+            None,
+        )
+        .unwrap_err();
+        assert!(error.contains("change history"));
+        assert!(!proposals_dir(&dir.0).exists());
     }
 
     #[test]
@@ -1541,13 +1439,12 @@ mod tests {
             "2026-09-21T16:05:00Z",
             None,
         );
-        let pair = propose_project(&dir.0, &a.id, &b.id, "opposite call").unwrap();
-        review_project(
+        agent_record(
             &dir.0,
-            &pair.pair_id,
+            &a.id,
+            &b.id,
             TimelineConflictVerdict::Confirmed,
             "yes",
-            None,
             None,
         )
         .unwrap();
@@ -1558,7 +1455,7 @@ mod tests {
             "2026-09-22T09:00:00Z",
             Some(&a.id),
         );
-        let trace = trace_project(&dir.0, false).unwrap();
+        let trace = trace_project(&dir.0).unwrap();
         let pair = &trace.conflict_pairs[0];
         assert_eq!(pair.state, TimelineConflictState::Historical);
         assert_eq!(pair.reviews.len(), 1);
@@ -1582,12 +1479,94 @@ mod tests {
             "2026-09-21T16:05:00Z",
             None,
         );
-        let pair = propose_project(&dir.0, &a.id, &b.id, "cross topic").unwrap();
+        let pair = agent_record(
+            &dir.0,
+            &a.id,
+            &b.id,
+            TimelineConflictVerdict::InsufficientEvidence,
+            "cross topic",
+            None,
+        )
+        .unwrap();
         crate::timeline::merge_topics_project(&dir.0, &a.topic_id, &b.topic_id, None).unwrap();
-        let trace = trace_project(&dir.0, false).unwrap();
+        let trace = trace_project(&dir.0).unwrap();
         assert_eq!(trace.conflict_pairs.len(), 1);
         assert_eq!(trace.conflict_pairs[0].pair_id, pair.pair_id);
         assert_eq!(trace.conflict_counts.needs_review, 1);
+    }
+
+    #[test]
+    fn checkpoints_leave_only_new_events_unchecked() {
+        let dir = TestDir::new("checkpoint");
+        let a = record(
+            &dir.0,
+            "backup",
+            "remove backup",
+            "2026-09-20T10:30:00Z",
+            None,
+        );
+        let b = record(
+            &dir.0,
+            "backup",
+            "keep backup",
+            "2026-09-21T10:30:00Z",
+            None,
+        );
+        let other = record(
+            &dir.0,
+            "release",
+            "ship Friday",
+            "2026-09-22T10:30:00Z",
+            None,
+        );
+        let list = agent_list_project(&dir.0, None, false).unwrap();
+        assert_eq!(list.unchecked.len(), 2);
+        assert_eq!(list.unchecked[0].topic_id, other.topic_id);
+        assert_eq!(
+            list.unchecked[1].new_event_ids,
+            vec![b.id.clone(), a.id.clone()]
+        );
+
+        let checked = mark_checked_project(
+            &dir.0,
+            &a.topic_id,
+            &[a.id.clone(), b.id.clone()],
+            "Claude-1",
+        )
+        .unwrap();
+        assert_eq!(checked.remaining_unchecked, 0);
+        let c = record(
+            &dir.0,
+            "backup",
+            "backup timeout 5s",
+            "2026-09-23T10:30:00Z",
+            None,
+        );
+        let list = agent_list_project(&dir.0, Some(&a.topic_id), false).unwrap();
+        assert_eq!(list.unchecked.len(), 1);
+        assert_eq!(list.unchecked[0].new_event_ids, vec![c.id.clone()]);
+        assert_eq!(list.unchecked[0].checked_event_count, 2);
+
+        assert!(mark_checked_project(
+            &dir.0,
+            &a.topic_id,
+            std::slice::from_ref(&other.id),
+            "Claude-1"
+        )
+        .unwrap_err()
+        .contains("is not in topic"));
+        assert!(mark_checked_project(
+            &dir.0,
+            "topic-missing",
+            std::slice::from_ref(&a.id),
+            "Claude-1"
+        )
+        .is_err());
+
+        // Merged-in events were never compared against the target topic.
+        crate::timeline::merge_topics_project(&dir.0, &other.topic_id, &a.topic_id, None).unwrap();
+        let list = agent_list_project(&dir.0, Some(&a.topic_id), false).unwrap();
+        assert!(list.unchecked[0].new_event_ids.contains(&other.id));
     }
 
     #[test]
@@ -1621,118 +1600,9 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        let trace = trace_project(&dir.0, false).unwrap();
+        let trace = trace_project(&dir.0).unwrap();
         assert!(trace.conflict_pairs.is_empty());
         assert_eq!(trace.listing.diagnostics.len(), 2);
-    }
-
-    #[test]
-    fn shortlist_orders_groups_and_skips_linked_duplicate_and_proposed_pairs() {
-        let dir = TestDir::new("shortlist");
-        let a = record(
-            &dir.0,
-            "backup",
-            "remove backup connection",
-            "2026-09-20T10:30:00Z",
-            None,
-        );
-        let b = record(
-            &dir.0,
-            "backup",
-            "keep backup connection",
-            "2026-09-21T16:05:00Z",
-            None,
-        );
-        let c = record(
-            &dir.0,
-            "release",
-            "connection pool size stays at 10",
-            "2026-09-22T09:00:00Z",
-            None,
-        );
-        let d = record(
-            &dir.0,
-            "release",
-            "ship on Friday",
-            "2026-09-23T09:00:00Z",
-            None,
-        );
-        record(
-            &dir.0,
-            "backup",
-            "keep backup connection",
-            "2026-09-23T10:00:00Z",
-            Some(&b.id),
-        );
-        let context = build_trace_context(&dir.0, true).unwrap();
-        let ids: Vec<String> = shortlist(&context).into_iter().map(|c| c.pair_id).collect();
-        // b is superseded; the duplicate replacement is linked to b.
-        assert!(!ids.iter().any(|id| id.contains(&b.id)));
-        let same_topic = canonical_pair(&c.id, &d.id).2;
-        let cross_keyword = canonical_pair(&a.id, &c.id).2;
-        let same_idx = ids.iter().position(|id| *id == same_topic).unwrap();
-        let cross_idx = ids.iter().position(|id| *id == cross_keyword).unwrap();
-        assert!(same_idx < cross_idx);
-
-        propose_project(&dir.0, &c.id, &d.id, "manual").unwrap();
-        let context = build_trace_context(&dir.0, true).unwrap();
-        assert!(!shortlist(&context).iter().any(|c| c.pair_id == same_topic));
-    }
-
-    #[test]
-    fn scan_records_checked_pairs_and_marks_partial_on_failure() {
-        let dir = TestDir::new("scan");
-        let a = record(
-            &dir.0,
-            "backup",
-            "remove backup connection",
-            "2026-09-20T10:30:00Z",
-            None,
-        );
-        let b = record(
-            &dir.0,
-            "backup",
-            "keep backup connection",
-            "2026-09-21T16:05:00Z",
-            None,
-        );
-        record(
-            &dir.0,
-            "backup",
-            "backup connection timeout 5s",
-            "2026-09-22T10:00:00Z",
-            None,
-        );
-        let context = build_trace_context(&dir.0, true).unwrap();
-        let candidates = shortlist(&context);
-        assert_eq!(candidates.len(), 3);
-        let conflict_pair = canonical_pair(&a.id, &b.id).2;
-        let classification = TimelineConflictClassification {
-            model: "jev-test".to_string(),
-            judgements: vec![TimelineConflictJudgement {
-                pair_id: conflict_pair.clone(),
-                outcome: TimelineConflictOutcome::PossibleConflict,
-                probability: Some(0.9),
-            }],
-            failure: Some(TimelineTopicFallbackReason::Timeout),
-        };
-        let scan = persist_scan(&dir.0, &candidates, 0, &classification).unwrap();
-        assert_eq!(scan.state, TimelineScanRunState::Partial);
-        assert_eq!(scan.checked_pairs, 1);
-        assert_eq!(scan.skipped_pairs, 2);
-        assert_eq!(scan.proposed_pairs, 1);
-        assert_eq!(scan.reason.as_deref(), Some("timeout"));
-
-        let trace = trace_project(&dir.0, true).unwrap();
-        assert_eq!(trace.scan.state, TimelineScanState::Partial);
-        assert_eq!(
-            trace.conflict_pairs[0].origin,
-            TimelineConflictOrigin::Typesafe
-        );
-        assert_eq!(trace.conflict_pairs[0].pair_id, conflict_pair);
-        // The proposed pair is not re-sent; the two unchecked pairs are.
-        let context = build_trace_context(&dir.0, true).unwrap();
-        assert_eq!(shortlist(&context).len(), 2);
     }
 
     #[test]

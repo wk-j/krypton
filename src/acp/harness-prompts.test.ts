@@ -7,8 +7,27 @@ import {
   dailyBriefPrompt,
   postGithubCommentPrompt,
   renderActiveTicketPin,
+  timelineConflictsPrompt,
   timelineTracePrompt,
 } from './harness-prompts';
+
+describe('timelineConflictsPrompt', () => {
+  it('hands the whole review to the agent and stays incremental', () => {
+    const prompt = timelineConflictsPrompt('');
+    expect(prompt).toContain('Do not ask the human');
+    expect(prompt).toContain('timeline_conflict_list');
+    expect(prompt).toContain('at most 5');
+    expect(prompt).toContain('Compare ONLY the `new_event_ids`');
+    expect(prompt).toContain('timeline_conflict_checked');
+    expect(prompt).not.toContain('Topic (user-provided data)');
+  });
+
+  it('scopes to one topic and quotes it as data', () => {
+    const prompt = timelineConflictsPrompt('backup "db"');
+    expect(prompt).toContain('only the topic below');
+    expect(prompt).toContain(`Topic (user-provided data): ${JSON.stringify('backup "db"')}`);
+  });
+});
 
 describe('timelineTracePrompt', () => {
   it('keeps reconstruction read-only and evidence-labelled', () => {

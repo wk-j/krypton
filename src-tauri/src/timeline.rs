@@ -439,7 +439,7 @@ fn validate_body(name: &str, value: &str) -> Result<String, String> {
     Ok(value.to_string())
 }
 
-fn validate_topic_id(value: &str) -> Result<String, String> {
+pub(crate) fn validate_topic_id(value: &str) -> Result<String, String> {
     let value = value.trim();
     if !value.starts_with("topic-")
         || value.len() > 80

@@ -116,7 +116,7 @@ describe('buildCommandManifest', () => {
     expect(byName.get('panels')?.category).toBe('surface');
     expect(byName.get('panels')?.args).toBe('[hide | show | toggle]');
     expect(byName.get('timeline')?.args).toBe(
-      '[open [<topic>] | add [<topic>] | review | conflicts | auto [on|off] | merge <topic> into <topic> | merge undo | trace <topic> | <topic>]',
+      '[open [<topic>] | add [<topic>] | review | conflicts [<topic>] | auto [on|off] | merge <topic> into <topic> | merge undo | trace <topic> | <topic>]',
     );
     expect(byName.get('termctrl')?.category).toBe('surface');
     expect(byName.get('dispatch-github-issue')?.badges).not.toContain('hidden');

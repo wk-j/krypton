@@ -1,6 +1,6 @@
 # Timeline Decision Trace and Conflict Review — Implementation Spec
 
-> Status: Implemented (live TypeSafe calibration pending — see Validation)
+> Status: Implemented — review/scan parts superseded by [spec 267](./267-timeline-conflicts-by-agent.md) (the in-app sheet, manual proposals, human verdicts, and TypeSafe scan were removed; the lane agent now does all of it)
 > Date: 2026-09-23
 > Milestone: ACP Harness — project provenance
 > Issue: [wk-j/krypton#28](https://github.com/wk-j/krypton/issues/28)

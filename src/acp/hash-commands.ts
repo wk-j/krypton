@@ -70,7 +70,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'reviews', args: '', description: 'browse every Review Board ever composed, in a browser (read-only)' },
   {
     name: 'timeline',
-    args: '[open [<topic>] | add [<topic>] | review | conflicts | auto [on|off] | merge <topic> into <topic> | merge undo | trace <topic> | <topic>]',
+    args: '[open [<topic>] | add [<topic>] | review | conflicts [<topic>] | auto [on|off] | merge <topic> into <topic> | merge undo | trace <topic> | <topic>]',
     description: 'บันทึก ตรวจทาน ตรวจคำตัดสินที่ขัดกัน หรือไล่ requirements และ decisions ของ project ในเครื่อง',
   },
   {

@@ -142,13 +142,13 @@ import {
   postGithubCommentPrompt,
   renderActiveTicketPin,
   tagGithubIssuePrompt,
+  timelineConflictsPrompt,
   timelineTracePrompt,
   tldrawDrawPrompt,
   wikiIngestPrompt,
   wikiRecallPrompt,
 } from './harness-prompts';
 import { TimelineCapture, type TimelineCaptureOptions } from './timeline-capture';
-import { TimelineConflicts } from './timeline-conflicts';
 import {
   TIMELINE_USAGE,
   parseTimelineCommand,
@@ -157,14 +157,10 @@ import {
   type TimelineMergeResult,
   type TimelineMergeUndoResult,
   type TimelineRecordRequest,
-  type TimelineConflictPair,
-  type TimelineConflictScan,
-  type TimelineConflictVerdict,
   type TimelineSuggestion,
   type TimelineSuggestionListResponse,
   type TimelineSuggestionSettings,
   type TimelineTopicSemanticResult,
-  type TimelineTraceResponse,
 } from './timeline';
 import { hasVerbTokens, resolveVerbTokens } from './verb-compose';
 import { injectableVerbNames, injectableVerbPrompt } from './verb-registry';
@@ -1142,7 +1138,7 @@ export class AcpHarnessView implements ContentView {
     tab: TicketPickerTab;
   } | null = null;
   /** spec 253/266: keyboard-first timeline sheet (capture/review or conflicts). */
-  private timelineCapture: TimelineCapture | TimelineConflicts | null = null;
+  private timelineCapture: TimelineCapture | null = null;
   /** spec 254: project-wide pending suggestion count and default-on setting. */
   private timelinePendingCount = 0;
   private timelineAutomaticSuggestions = true;
@@ -9120,6 +9116,7 @@ export class AcpHarnessView implements ContentView {
       // language instead of typing the `#timeline merge … into …` grammar.
       lines.push(
         'Project timeline topic repair: when the human explicitly asks to merge, combine, or join timeline topics — or to undo that — call timeline_merge in the same turn. Read timeline_list first, pass the two `topic_id` values you found plus their exact authorizing words in `instruction_excerpt`, and report the moved count, both topic titles, and the backup path. `undo: true` with no from/into reverses the most recent merge. Only the grouping changes; every event keeps its own title, summary, provenance, and ID. Never merge because two topics merely look similar to you: without an explicit instruction, name what you would merge and let the human decide.',
+        'Project timeline conflicts: after every successful timeline_record, compare ONLY the new event against the other live events of its topic (timeline_list { topic_id }). If they decide the same subject in opposite directions with nothing newer settling it, call timeline_conflict_record with `confirmed`; if the new event settles an open pair, record `resolved` with it as `resolution_event_id`. Then call timeline_conflict_checked { topic_id, event_ids: [new event ID] } even when nothing conflicted. Decide yourself — never ask the human to pick pairs or confirm verdicts, never re-compare events that are already checked, and never scan other topics unasked. Events linked by `supersedes` are change history, not conflicts. Write `rationale` in natural Thai; keep technical terms and IDs in English.',
       );
     }
     if (this.timelineAutomaticSuggestions && !this.remoteRuntimeId && lane.backendId !== 'pi-acp') {
@@ -11211,35 +11208,6 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
-  /** spec 266: human-only conflict review; the browser page stays read-only. */
-  private openTimelineConflicts(lane: HarnessLane): void {
-    if (!this.harnessMemoryId) {
-      this.flashChip('ใช้ timeline ไม่ได้: ยังไม่ได้ลงทะเบียน project กับ Harness');
-      return;
-    }
-    const harnessId = this.harnessMemoryId;
-    this.closeTimelineCapture();
-    this.timelineCapture = new TimelineConflicts({
-      mount: this.element,
-      load: () => invoke<TimelineTraceResponse>('timeline_conflict_list', { harnessId }),
-      propose: (eventA, eventB, rationale) => invoke<TimelineConflictPair>('timeline_conflict_propose', {
-        harnessId, eventA, eventB, rationale,
-      }),
-      review: (pairId: string, verdict: TimelineConflictVerdict, rationale: string, sourceRef: string | null, resolutionEventId: string | null) => (
-        invoke<TimelineConflictPair>('timeline_conflict_review', {
-          harnessId, pairId, verdict, rationale, sourceRef, resolutionEventId,
-        })
-      ),
-      scan: () => invoke<TimelineConflictScan>('timeline_conflict_scan', { harnessId }),
-      close: () => this.closeTimelineCapture(),
-      notify: (message, record) => {
-        this.flashChip(`timeline · ${message}`);
-        if (record) this.appendTranscript(lane, 'system', `timeline conflicts · ${message}`);
-      },
-    });
-    this.syncOrchestratorConsoleVisibility();
-  }
-
   private async openTimelineBrowser(topic: string): Promise<void> {
     if (!this.harnessMemoryId) {
       this.flashChip('ใช้ timeline ไม่ได้: ยังไม่ได้ลงทะเบียน project กับ Harness');
@@ -11330,7 +11298,17 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     if (command.kind === 'conflicts') {
-      this.openTimelineConflicts(lane);
+      // spec 267: the lane agent finds, judges, and closes conflicts itself.
+      if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
+        this.flashChip('lane busy - #cancel first');
+        return;
+      }
+      await this.enqueueSystemPrompt(
+        lane,
+        timelineConflictsPrompt(command.topic),
+        undefined,
+        'กำลังตรวจข้อขัดกันใน timeline',
+      );
       return;
     }
     if (command.kind === 'auto') {

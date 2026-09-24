@@ -63,7 +63,7 @@ export interface TimelineListResponse {
   diagnostics: TimelineDiagnostic[];
 }
 
-/** spec 266: `supersedes` chains and human-reviewed conflict pairs. */
+/** spec 266: `supersedes` chains and conflict pairs (judged by the lane agent since spec 267). */
 export type TimelineConflictState =
   | 'unreviewed' | 'confirmed' | 'dismissed' | 'insufficient_evidence' | 'resolved' | 'historical';
 export type TimelineConflictVerdict = 'confirmed' | 'dismissed' | 'insufficient_evidence' | 'resolved';
@@ -83,7 +83,7 @@ export interface TimelineConflictPair {
   eventA: string;
   eventB: string;
   state: TimelineConflictState;
-  origin: 'manual' | 'typesafe';
+  origin: 'agent' | 'manual' | 'typesafe';
   basis: string;
   suggestedAt: string;
   model?: string;
@@ -91,31 +91,10 @@ export interface TimelineConflictPair {
   reviews: TimelineConflictReview[];
 }
 
-export interface TimelineScanSummary {
-  enabled: boolean;
-  state: 'never_run' | 'completed' | 'partial';
-  lastCompletedAt?: string;
-  checkedPairs: number;
-  skippedPairs: number;
-  inconclusivePairs: number;
-  reason?: string;
-}
-
 export interface TimelineTraceResponse extends TimelineListResponse {
   chains: Array<{ topicId: string; eventIds: string[]; links: Array<{ from: string; to: string; kind: 'supersedes' }> }>;
   conflictPairs: TimelineConflictPair[];
   conflictCounts: { needsReview: number; confirmed: number };
-  scan: TimelineScanSummary;
-}
-
-export interface TimelineConflictScan {
-  state: 'completed' | 'partial';
-  checkedPairs: number;
-  skippedPairs: number;
-  proposedPairs: number;
-  inconclusivePairs: number;
-  reason?: string;
-  path?: string;
 }
 
 /** Pairs whose time cell is marked: still to review, or confirmed and open. */
@@ -186,8 +165,8 @@ export type TimelineCommand =
   | { kind: 'add'; topic: string }
   | { kind: 'trace'; topic: string }
   | { kind: 'review' }
-  // spec 266: in-app conflict review sheet (propose / review / scan).
-  | { kind: 'conflicts' }
+  // spec 267: the lane agent checks unchecked events (optionally one topic).
+  | { kind: 'conflicts'; topic: string }
   | { kind: 'auto'; state: 'status' | 'on' | 'off' }
   // spec 263: human-only repair for topics that were split before spec 262.
   | { kind: 'merge'; from: string; into: string }
@@ -213,7 +192,7 @@ export interface TimelineMergeUndoResult {
 }
 
 export const TIMELINE_USAGE =
-  'วิธีใช้: #timeline [open [<topic>] | add [<topic>] | review | conflicts | auto [on|off] '
+  'วิธีใช้: #timeline [open [<topic>] | add [<topic>] | review | conflicts [<topic>] | auto [on|off] '
   + '| merge <topic> into <topic> | merge undo | trace <topic> | <topic>]';
 
 export function parseTimelineCommand(text: string): TimelineCommand {
@@ -226,7 +205,7 @@ export function parseTimelineCommand(text: string): TimelineCommand {
     return topic ? { kind: 'trace', topic } : { kind: 'usage' };
   }
   if (action === 'review') return args.length === 1 ? { kind: 'review' } : { kind: 'usage' };
-  if (action === 'conflicts') return args.length === 1 ? { kind: 'conflicts' } : { kind: 'usage' };
+  if (action === 'conflicts') return { kind: 'conflicts', topic: args.slice(1).join(' ').trim() };
   if (action === 'auto') {
     if (args.length === 1) return { kind: 'auto', state: 'status' };
     const state = args[1].toLowerCase();

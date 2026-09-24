@@ -73,8 +73,8 @@ describe('parseTimelineCommand', () => {
 
   it('parses pending review and automatic suggestion controls', () => {
     expect(parseTimelineCommand('#timeline review')).toEqual({ kind: 'review' });
-    expect(parseTimelineCommand('#timeline conflicts')).toEqual({ kind: 'conflicts' });
-    expect(parseTimelineCommand('#timeline conflicts extra')).toEqual({ kind: 'usage' });
+    expect(parseTimelineCommand('#timeline conflicts')).toEqual({ kind: 'conflicts', topic: '' });
+    expect(parseTimelineCommand('#timeline conflicts backup db')).toEqual({ kind: 'conflicts', topic: 'backup db' });
     expect(parseTimelineCommand('#timeline auto')).toEqual({ kind: 'auto', state: 'status' });
     expect(parseTimelineCommand('#timeline auto on')).toEqual({ kind: 'auto', state: 'on' });
     expect(parseTimelineCommand('#timeline auto off')).toEqual({ kind: 'auto', state: 'off' });

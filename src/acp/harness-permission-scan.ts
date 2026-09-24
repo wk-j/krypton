@@ -38,7 +38,16 @@ const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_outcome', 'mark_review_priori
 // spec 262: timeline_list is the read-only half of the same contract — a lane
 // must be able to look up existing topics before recording, and a permission
 // prompt on a read would push lanes back to guessing a fresh topic.
-const HARNESS_TIMELINE_TOOL_NAMES = new Set(['timeline_suggest', 'timeline_record', 'timeline_list']);
+// spec 267: conflict review is the lane agent's job end to end; a prompt on
+// every verdict or checkpoint would push the work back onto the human.
+const HARNESS_TIMELINE_TOOL_NAMES = new Set([
+  'timeline_suggest',
+  'timeline_record',
+  'timeline_list',
+  'timeline_conflict_list',
+  'timeline_conflict_record',
+  'timeline_conflict_checked',
+]);
 // specs 178/238/239: progress and ticket tools are default-on built-in
 // harness-bus tooling. Backend validation confines every write to the active
 // ticket bundle: `ticket_progress`/`ticket_link` require (or first-claim) the
@@ -148,7 +157,7 @@ export function harnessToolNameFromString(value: string | undefined): string | n
   for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
     if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
   }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|handoff_get|handoff_list|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|timeline_suggest|timeline_record|timeline_list|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link)(?:$|[^a-z0-9_])/);
+  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|handoff_get|handoff_list|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|timeline_suggest|timeline_record|timeline_list|timeline_conflict_list|timeline_conflict_record|timeline_conflict_checked|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link)(?:$|[^a-z0-9_])/);
   return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 

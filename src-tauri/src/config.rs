@@ -581,7 +581,6 @@ pub struct TypeSafeConfig {
     pub failure_threshold: u32,
     pub cooldown_secs: u64,
     pub timeline_topics: TypeSafeTimelineTopicsConfig,
-    pub timeline_conflicts: TypeSafeTimelineConflictsConfig,
 }
 
 impl Default for TypeSafeConfig {
@@ -598,7 +597,6 @@ impl Default for TypeSafeConfig {
             failure_threshold: 3,
             cooldown_secs: 30,
             timeline_topics: TypeSafeTimelineTopicsConfig::default(),
-            timeline_conflicts: TypeSafeTimelineConflictsConfig::default(),
         }
     }
 }
@@ -624,36 +622,6 @@ impl Default for TypeSafeTimelineTopicsConfig {
             min_margin: 0.15,
             max_candidates: 12,
         }
-    }
-}
-
-/// spec 266: user-started screening for timeline decisions that may conflict.
-/// Only `suggest` runs; the scan never decides a conflict, it proposes pairs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct TypeSafeTimelineConflictsConfig {
-    pub mode: String,
-    pub min_confidence: f64,
-    pub min_probability: f64,
-    pub min_margin: f64,
-}
-
-impl Default for TypeSafeTimelineConflictsConfig {
-    fn default() -> Self {
-        Self {
-            mode: "off".to_string(),
-            min_confidence: 0.65,
-            min_probability: 0.70,
-            min_margin: 0.15,
-        }
-    }
-}
-
-impl TypeSafeConfig {
-    /// spec 266: the conflict scan runs only with the master switch on and
-    /// `[typesafe.timeline_conflicts] mode = "suggest"`.
-    pub fn timeline_conflict_scan_enabled(&self) -> bool {
-        self.enabled && self.timeline_conflicts.mode == "suggest"
     }
 }
 
