@@ -49,9 +49,11 @@
   .topic strong { font-size: 12.5px; font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
   .topic span { color: var(--muted); font: 10px var(--mono); }
   main { min-width: 0; padding: 18px 24px 48px; }
-  .summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: baseline; margin-bottom: 4px; }
+  .summary { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 10px; align-items: baseline; margin-bottom: 4px; }
   h1 { margin: 0; color: var(--fg); font-size: 19px; min-width: 0; overflow-wrap: anywhere; }
   .count { color: var(--muted); font: 10px var(--mono); white-space: nowrap; }
+  .history-toggle { border: 0; padding: 0; color: var(--muted); background: transparent; font: 10px var(--mono); cursor: pointer; white-space: nowrap; }
+  .history-toggle:hover, .history-toggle:focus-visible { color: var(--accent); outline: none; }
   .events { border-top: 1px solid var(--border); margin-top: 10px; }
   .day {
     position: sticky; top: 48px; z-index: 1; background: var(--bg);
@@ -123,10 +125,10 @@
     <div id="topics" class="topic-list"></div>
   </aside>
   <main>
-    <div class="summary"><h1 id="title">ลำดับเหตุการณ์</h1><span id="count" class="count"></span></div>
+    <div class="summary"><h1 id="title">ลำดับเหตุการณ์</h1><span id="count" class="count"></span><button id="history-toggle" class="history-toggle" type="button" aria-pressed="false" hidden></button></div>
     <div id="events" class="events"></div>
     <section id="diagnostics" class="diagnostics" hidden><h2>ข้อมูลผิดพลาด</h2><ul></ul></section>
-    <footer>j/k เลื่อน · Space รายละเอียด · i ข้อมูลการบันทึก · p ไปอีกรายการของคู่ · Enter เปิดแหล่งอ้างอิง · r สลับลำดับ · / ค้นหา · [ ] เปลี่ยนหัวข้อ · Esc ล้างตัวกรอง · refresh เพื่ออ่านจาก disk ใหม่<br>เวลาที่มีพื้นสี = มีบันทึกอีกข้อให้คำสั่งต่างกัน ยังไม่ได้ตัดสินว่าข้อใดถูก · ตรวจใน Krypton ด้วย #timeline conflicts</footer>
+    <footer>j/k เลื่อน · Space รายละเอียด · i ข้อมูลการบันทึก · p ไปอีกรายการของคู่ · h แสดง/ซ่อนรายการที่ถูกแทนที่ · Enter เปิดแหล่งอ้างอิง · r สลับลำดับ · / ค้นหา · [ ] เปลี่ยนหัวข้อ · Esc ล้างตัวกรอง · refresh เพื่ออ่านจาก disk ใหม่<br>เวลาที่มีพื้นสี = มีบันทึกอีกข้อให้คำสั่งต่างกัน ยังไม่ได้ตัดสินว่าข้อใดถูก · ตรวจใน Krypton ด้วย #timeline conflicts</footer>
   </main>
 </div>
 <script>
@@ -141,6 +143,7 @@
   var eventsEl = document.getElementById('events');
   var titleEl = document.getElementById('title');
   var countEl = document.getElementById('count');
+  var historyToggle = document.getElementById('history-toggle');
   var diagnosticsEl = document.getElementById('diagnostics');
   var payload = { events: [], diagnostics: [], conflictPairs: [] };
   // spec 266: eventId -> pairs it belongs to, and eventId -> events that supersede it.
@@ -150,6 +153,7 @@
   var selectedTopic = '';
   var selectedEvent = 0;
   var newestFirst = false;
+  var showSuperseded = false;
   var detailMode = '';
   // Rows of the last render, index-aligned with visibleEvents(). Detail DOM is
   // opt-in and exists on the selected row only.
@@ -243,7 +247,7 @@
     var visible = topics.filter(function (topic) { return !query || lower(topic.title).includes(query); });
     var all = document.createElement('button');
     all.type = 'button'; all.className = 'topic' + (selectedTopic ? '' : ' active');
-    addText(all, 'strong', '', 'ทุกรายการ'); addText(all, 'span', '', String(payload.events.length));
+    addText(all, 'strong', '', 'ทุกรายการ'); addText(all, 'span', '', String(displayEvents().length));
     all.addEventListener('click', function () { selectedTopic = ''; selectedEvent = 0; render(); });
     topicsEl.appendChild(all);
     visible.forEach(function (topic) {
@@ -338,6 +342,7 @@
   function jumpTo(id) {
     var target = eventsById.get(id);
     if (!target) return;
+    if (target.superseded && !showSuperseded) { showSuperseded = true; render(); }
     var index = visibleEvents().findIndex(function (event) { return event.id === id; });
     if (index < 0) {
       search.value = '';
@@ -352,9 +357,12 @@
     query.set('event', id);
     history.replaceState(null, '', location.pathname + '?' + query.toString());
   }
+  function displayEvents() {
+    return showSuperseded ? payload.events : payload.events.filter(function (event) { return !event.superseded; });
+  }
   function visibleEvents() {
     var query = lower(search.value.trim());
-    var events = payload.events.filter(function (event) {
+    var events = displayEvents().filter(function (event) {
       return (!selectedTopic || event.topicId === selectedTopic) && eventMatches(event, query);
     });
     return newestFirst ? events.slice().reverse() : events;
@@ -402,9 +410,14 @@
   }
   function render() {
     detailMode = '';
-    var topics = latestTopics(payload.events);
+    var topics = latestTopics(displayEvents());
+    if (selectedTopic && !topics.some(function (topic) { return topic.id === selectedTopic; })) selectedTopic = '';
     var query = lower(search.value.trim());
     renderTopics(topics, query);
+    var supersededCount = payload.events.filter(function (event) { return event.superseded; }).length;
+    historyToggle.hidden = supersededCount === 0;
+    historyToggle.textContent = showSuperseded ? 'ซ่อนรายการที่ถูกแทนที่' : 'แสดงรายการที่ถูกแทนที่ (' + supersededCount + ')';
+    historyToggle.setAttribute('aria-pressed', String(showSuperseded));
     var events = visibleEvents();
     if (selectedEvent >= events.length) selectedEvent = Math.max(0, events.length - 1);
     eventsEl.replaceChildren();
@@ -429,10 +442,18 @@
     renderDiagnostics();
   }
   function switchTopic(delta) {
-    var ids = [''].concat(latestTopics(payload.events).map(function (topic) { return topic.id; }));
+    var ids = [''].concat(latestTopics(displayEvents()).map(function (topic) { return topic.id; }));
     var index = Math.max(0, ids.indexOf(selectedTopic));
     selectedTopic = ids[(index + delta + ids.length) % ids.length]; selectedEvent = 0; render();
   }
+  function toggleSuperseded() {
+    var selected = visibleEvents()[selectedEvent];
+    showSuperseded = !showSuperseded;
+    render();
+    var next = selected && (showSuperseded || !selected.superseded) ? selected : visibleEvents()[selectedEvent];
+    if (next) jumpTo(next.id);
+  }
+  historyToggle.addEventListener('click', toggleSuperseded);
   eventsEl.addEventListener('click', function (event) {
     var target = event.target instanceof Element ? event.target : null;
     var row = target && target.closest('.event');
@@ -453,6 +474,7 @@
     if (event.key === '/' && document.activeElement !== search) { event.preventDefault(); search.focus(); search.select(); return; }
     if (event.key === 'Escape') { search.value = ''; selectedEvent = 0; search.blur(); render(); return; }
     if (document.activeElement === search) return;
+    if (event.key === 'h') { event.preventDefault(); toggleSuperseded(); return; }
     if (event.key === '[') { event.preventDefault(); switchTopic(-1); return; }
     if (event.key === ']') { event.preventDefault(); switchTopic(1); return; }
     if (event.key === 'r') { event.preventDefault(); newestFirst = !newestFirst; selectedEvent = 0; render(); return; }
@@ -481,20 +503,40 @@
     }
   });
   if (!harness) { eventsEl.textContent = 'ไม่พบ harness id'; return; }
-  fetch('/timeline.json?harness=' + encodeURIComponent(harness), { cache: 'no-store' })
-    .then(function (response) { if (!response.ok) throw new Error('โหลด timeline ไม่สำเร็จ (' + response.status + ')'); return response.json(); })
-    .then(function (data) {
-      payload = data;
-      payload.conflictPairs = payload.conflictPairs || [];
-      indexPayload();
-      if (initialQuery) {
-        var match = latestTopics(payload.events).find(function (topic) { return lower(topic.title) === lower(initialQuery) || lower(topic.id) === lower(initialQuery); });
-        if (match) { selectedTopic = match.id; search.value = ''; }
-      }
-      render();
-      if (initialEvent) jumpTo(initialEvent);
-    })
-    .catch(function (error) { eventsEl.textContent = error.message; });
+  var loading = false;
+  var lastLoadedAt = 0;
+  function loadTimeline(refresh) {
+    if (loading) return;
+    loading = true;
+    var selected = refresh ? visibleEvents()[selectedEvent] : null;
+    var selectedId = selected && selected.id;
+    fetch('/timeline.json?harness=' + encodeURIComponent(harness), { cache: 'no-store' })
+      .then(function (response) { if (!response.ok) throw new Error('โหลด timeline ไม่สำเร็จ (' + response.status + ')'); return response.json(); })
+      .then(function (data) {
+        payload = data;
+        payload.conflictPairs = payload.conflictPairs || [];
+        indexPayload();
+        if (!refresh && initialQuery) {
+          var match = latestTopics(payload.events).find(function (topic) { return lower(topic.title) === lower(initialQuery) || lower(topic.id) === lower(initialQuery); });
+          if (match) { selectedTopic = match.id; search.value = ''; }
+        }
+        render();
+        if (refresh && selectedId) jumpTo(selectedId);
+        else if (!refresh && initialEvent) jumpTo(initialEvent);
+        lastLoadedAt = Date.now();
+      })
+      .catch(function (error) {
+        if (!refresh) eventsEl.textContent = error.message;
+        else if (!countEl.textContent.includes('โหลดข้อมูลล่าสุดไม่สำเร็จ')) countEl.textContent += ' · โหลดข้อมูลล่าสุดไม่สำเร็จ';
+      })
+      .finally(function () { loading = false; });
+  }
+  function refreshWhenActive() {
+    if (!document.hidden && Date.now() - lastLoadedAt > 1000) loadTimeline(true);
+  }
+  window.addEventListener('focus', refreshWhenActive);
+  document.addEventListener('visibilitychange', refreshWhenActive);
+  loadTimeline(false);
 }());
 </script>
 </body>
