@@ -417,8 +417,14 @@
        real lane id). Each write emits `acp-ticket-progress` with the fresh
        bundle detail, and an agent-set GitHub link triggers the existing `gh`
        snapshot enrichment. A GitHub-linked work prompt reports `issue_progress`
-       separately, so the browser extension remains GitHub-status-only while
-       the docked Ticket Panel shows local status and resources.
+       separately, so the injected GitHub issue card remains GitHub-status-only
+       while the docked Ticket Panel shows local status and resources.
+       The browser extension popup now also reads that local Ticket Panel state
+       via `ticket.active` for its selected lane (spec 268). The control bridge
+       resolves the lane's harness; `AcpHarnessView` returns only a bounded
+       display snapshot. The popup refetches on open, lane change, focus, and
+       every three seconds while open. This read does not change ticket state;
+       the injected GitHub issue card continues to show `issue_progress`.
     i. #timeline is local-first (spec 253). Bare/open resolves the current
        Harness id to its registered project and launches `/timeline`; `add`
        loads bounded records, opens a native-form capture sheet, and sends the

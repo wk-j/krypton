@@ -977,6 +977,48 @@ describe('ticket picker direct actions', () => {
 });
 
 describe('local ticket pointer and GitHub-ref helpers', () => {
+  it('exposes only the bounded active Ticket Panel projection to control clients', async () => {
+    const target = Object.assign(Object.create(AcpHarnessView.prototype), {
+      harnessMemoryId: 'hm-1',
+      lanes: [{ displayName: 'Codex-1' }],
+      activeTicket: {
+        id: '2026-09-25-retry', title: 'Retry safely', status: 'in_progress',
+        contextExcerpt: 'Check uncertain batches', contextMarkdown: 'private full context',
+        relativePath: '.krypton/tickets/2026-09-25-retry/', resourceCount: 7,
+        resources: Array.from({ length: 7 }, (_, i) => ({
+          name: `file-${i}.txt`, sizeBytes: i + 10, relativePath: `resources/file-${i}.txt`,
+        })),
+        analysis: { markdownCount: 1, attachmentCount: 2, relativePath: '.krypton/analyses/x/' },
+        github: { issueKey: 'acme/terminal#42', issueUrl: 'https://github.com/acme/terminal/issues/42', state: 'open', fetchedAt: 1 },
+        lastProgressSummary: 'Reproduced timeout',
+      },
+      ticketWorker: { ticketId: '2026-09-25-retry', laneDisplayName: 'Codex-1' },
+    }) as AcpHarnessView;
+
+    const snapshot = await target.handleControlOperation('ticket.active', { lane: 'Codex-1' });
+    expect(snapshot).toMatchObject({
+      harnessId: 'hm-1',
+      ticket: {
+        id: '2026-09-25-retry', status: 'in_progress',
+        worker: { laneDisplayName: 'Codex-1' },
+        contextExcerpt: 'Check uncertain batches', resourceCount: 7,
+        analysis: { markdownCount: 1, attachmentCount: 2 },
+      },
+    });
+    const data = (snapshot as { ticket: { resources: unknown[] } }).ticket;
+    expect(data.resources).toHaveLength(6);
+    expect(JSON.stringify(snapshot)).not.toMatch(/private full context|relativePath|fetchedAt/);
+    await expect(target.handleControlOperation('ticket.active', { lane: 'Other-1' }))
+      .rejects.toMatchObject({ code: 'unknown_lane' });
+  });
+
+  it('returns no ticket after the active pointer is cleared', async () => {
+    const target = Object.assign(Object.create(AcpHarnessView.prototype), {
+      harnessMemoryId: 'hm-1', lanes: [{ displayName: 'Codex-1' }], activeTicket: null,
+    }) as AcpHarnessView;
+    await expect(target.handleControlOperation('ticket.active', { lane: 'Codex-1' }))
+      .resolves.toEqual({ harnessId: 'hm-1', ticket: null });
+  });
   it('treats a later persist generation as superseding an earlier write', () => {
     const gate = new PointerPersistGate();
     const first = gate.begin();

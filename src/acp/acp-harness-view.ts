@@ -257,6 +257,7 @@ import { FILE_TOUCH_WINDOW_MS } from './harness-view-types';
 import type {
   ActiveWorkTicket,
   ActiveTicketPointer,
+  ActiveTicketSnapshot,
   ArtifactCardPayload,
   ArtifactEventPayload,
   ComposerFocus,
@@ -1738,6 +1739,7 @@ export class AcpHarnessView implements ContentView {
       throw controlError('unsupported_operation', `${operation} is unavailable for a remote Harness`);
     }
     if (operation === 'lane.list') return this.controlLaneList();
+    if (operation === 'ticket.active') return this.controlActiveTicket(params);
     if (operation === 'lane.spawn') {
       const backendId = requiredString(params, 'backendId');
       if (!this.pickerEntries.some((entry) => entry.id === backendId)) {
@@ -2105,6 +2107,40 @@ export class AcpHarnessView implements ContentView {
       permissionMode: lane.permissionMode,
       active: lane.id === this.activeLaneId,
     }));
+  }
+
+  private controlActiveTicket(params: Record<string, unknown>): ActiveTicketSnapshot {
+    this.controlLane(params);
+    if (!this.harnessMemoryId) throw controlError('unknown_harness', 'harness is not ready');
+    const ticket = this.activeTicket;
+    if (!ticket) return { harnessId: this.harnessMemoryId, ticket: null };
+    return {
+      harnessId: this.harnessMemoryId,
+      ticket: {
+        id: ticket.id,
+        title: ticket.title,
+        status: ticket.status,
+        github: ticket.github ? {
+          issueKey: ticket.github.issueKey,
+          issueUrl: ticket.github.issueUrl,
+          state: ticket.github.state,
+        } : null,
+        worker: this.ticketWorker?.ticketId === ticket.id
+          ? { laneDisplayName: this.ticketWorker.laneDisplayName }
+          : null,
+        contextExcerpt: ticket.contextExcerpt ?? null,
+        resourceCount: ticket.resourceCount,
+        resources: ticket.resources.slice(0, 6).map((resource) => ({
+          name: resource.name,
+          sizeBytes: resource.sizeBytes,
+        })),
+        analysis: ticket.analysis ? {
+          markdownCount: ticket.analysis.markdownCount,
+          attachmentCount: ticket.analysis.attachmentCount,
+        } : null,
+        lastProgressSummary: ticket.lastProgressSummary ?? null,
+      },
+    };
   }
 
   private controlLane(params: Record<string, unknown>): HarnessLane {

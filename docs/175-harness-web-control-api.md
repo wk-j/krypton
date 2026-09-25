@@ -3,6 +3,8 @@
 > Status: Implemented
 > Date: 2026-06-26
 > Milestone: M-ACP — Harness convergence
+> Amended by: spec 268 — authenticated `ticket.active { lane }` returns the
+> selected lane's harness-local active Ticket Panel snapshot.
 
 ## Trusted Live Assist adapter (spec 208)
 

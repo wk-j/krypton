@@ -830,6 +830,15 @@ manifest into the browser's `NativeMessagingHosts` dir on launch
 (`src-tauri/src/native_host.rs`). The control API binds a fixed loopback port
 (default `8766`) so the extension needs no port discovery.
 
+The popup reads the selected lane's harness-local active ticket through the
+authenticated `ticket.active` control operation (spec 268). The frontend
+projects only the Ticket Panel's bounded display fields: title, local status,
+GitHub reference, worker, context excerpt, resource names and counts, analysis
+counts, and latest progress. The extension refreshes this snapshot only while
+the popup is open; it stores no ticket copy and receives no ticket file paths or
+full Markdown. The GitHub issue page card still reports the separate
+`github.issue-status` fixing binding.
+
 When the popup is opened with **no text selected**, the extension extracts the
 page's main content as Markdown client-side (doc 177): it injects a bundled
 **Defuddle** (`extension/content-extract.src.js` → `dist/content.bundle.js`, built

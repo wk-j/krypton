@@ -72,6 +72,7 @@ pub const ADVERTISED_OPERATIONS: &[&str] = &[
     "github.issue-status",
     "github.list-issues",
     "github.unlink-issue",
+    "ticket.active",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

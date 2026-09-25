@@ -6,6 +6,8 @@
       :root { color-scheme: dark; }
       body {
         width: 320px;
+        max-height: 600px;
+        overflow-y: auto;
         margin: 0;
         padding: 12px;
         font: 13px/1.45 -apple-system, system-ui, sans-serif;
@@ -54,12 +56,62 @@
       #status.ok { color: #0ecb81; }
       #note-row { display: none; }
       #note-row.show { display: block; }
+      [hidden] { display: none !important; }
+      .ticket-panel { margin-top: 12px; border: 1px solid #45412d; border-radius: 7px; background: #1b1c20; overflow: hidden; }
+      .ticket-panel__head { display: flex; align-items: center; gap: 6px; padding: 8px 9px 0; }
+      .ticket-panel__head strong { flex: 1; color: #f0b90b; font: 10px/1.3 ui-monospace, monospace; letter-spacing: 0.09em; }
+      .ticket-panel__head span { color: #8f949d; font: 10px/1.3 ui-monospace, monospace; }
+      .ticket-panel__refresh { background: #25272c; color: #d4d8df; border: 1px solid #383b41; padding: 2px 5px; font: 11px/1 ui-monospace, monospace; }
+      .ticket-panel__state { margin: 0; padding: 8px 9px; color: #a6abb4; font-size: 11px; }
+      .ticket-panel__title { margin: 5px 9px 7px; font-size: 14px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+      .ticket-panel__identity { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 9px 8px; }
+      .ticket-panel__pill { border: 1px solid #806a2e; border-radius: 999px; padding: 1px 6px; color: #ffd880; font: 10px/1.5 ui-monospace, monospace; }
+      .ticket-panel__pill--blocked { border-color: #98515d; color: #ff9caf; }
+      .ticket-panel__pill--done { border-color: #4f8263; color: #a8ffbf; }
+      .ticket-panel__id { min-width: 0; color: #90949c; font: 10px/1.3 ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .ticket-panel__progress { margin: 0; border-top: 1px solid #30323a; padding: 7px 9px; color: #c8cbd1; font-size: 11px; overflow-wrap: anywhere; }
+      .ticket-panel__expand { width: 100%; text-align: left; border: 0; border-top: 1px solid #30323a; border-radius: 0; padding: 6px 9px; background: #22242a; color: #f0b90b; font: 11px/1.3 ui-monospace, monospace; }
+      .ticket-panel__details { padding: 0 9px 6px; }
+      .ticket-panel__row { display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 5px; padding: 6px 0; border-top: 1px solid #30323a; font-size: 11px; }
+      .ticket-panel__row > span:first-child { color: #8c929c; }
+      .ticket-panel__row > span:last-child { overflow-wrap: anywhere; }
+      .ticket-panel__row a { color: #ffd880; }
+      .ticket-panel__section { border-top: 1px solid #30323a; padding: 6px 0; font-size: 11px; }
+      .ticket-panel__section strong { display: block; color: #e8c879; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+      .ticket-panel__section p { margin: 3px 0 0; color: #c1c4cb; overflow-wrap: anywhere; }
+      .ticket-panel__section ul { list-style: none; padding: 0; margin: 3px 0 0; }
+      .ticket-panel__section li { display: flex; justify-content: space-between; gap: 8px; color: #c1c4cb; }
+      .ticket-panel__section li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .ticket-panel__section li em { color: #8c929c; font-style: normal; white-space: nowrap; }
+      .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     </style>
   </head>
   <body>
     <h1>KRYPTON HARNESS</h1>
     <label for="lane">Lane</label>
     <select id="lane"></select>
+    <section id="ticket-panel" class="ticket-panel" aria-label="Active ticket" hidden>
+      <div class="ticket-panel__head">
+        <strong>ACTIVE TICKET</strong>
+        <span id="ticket-sync-label"></span>
+        <button id="ticket-refresh" class="ticket-panel__refresh" type="button" aria-label="Refresh ticket">⟳</button>
+      </div>
+      <p id="ticket-state" class="ticket-panel__state" aria-live="polite"></p>
+      <div id="ticket-content" hidden>
+        <h2 id="ticket-title" class="ticket-panel__title"></h2>
+        <div class="ticket-panel__identity"><span id="ticket-pill" class="ticket-panel__pill"></span><span id="ticket-id" class="ticket-panel__id"></span></div>
+        <p id="ticket-progress" class="ticket-panel__progress"></p>
+        <button id="ticket-expand" class="ticket-panel__expand" type="button" aria-expanded="false" aria-controls="ticket-details">Show ticket details ▾</button>
+        <div id="ticket-details" class="ticket-panel__details" hidden>
+          <div class="ticket-panel__row"><span>GitHub</span><span><a id="ticket-github-link" target="_blank" rel="noopener noreferrer" hidden></a><span id="ticket-github-plain"></span><span id="ticket-github-state"></span></span></div>
+          <div class="ticket-panel__row"><span>Worker</span><span id="ticket-worker"></span></div>
+          <div class="ticket-panel__section"><strong>Context</strong><p id="ticket-context"></p></div>
+          <div class="ticket-panel__section"><strong id="ticket-resources-heading"></strong><ul id="ticket-resources"></ul></div>
+          <div class="ticket-panel__section"><strong>Analysis</strong><p id="ticket-analysis"></p></div>
+        </div>
+      </div>
+      <div id="ticket-announce" class="sr-only" aria-live="polite"></div>
+    </section>
     <label>Context</label>
     <div id="selection"></div>
     <div id="note-row">

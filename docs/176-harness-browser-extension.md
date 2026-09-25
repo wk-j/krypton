@@ -3,6 +3,8 @@
 > Status: Implemented
 > Date: 2026-06-26
 > Milestone: M-ACP — Harness convergence
+> Amended by: spec 268 — the popup also reads the active local ticket through
+> `ticket.active`; the original send-only scope below describes v1.
 
 ## Problem
 

@@ -153,6 +153,25 @@ describe('control-bridge route: github.dispatch-issue', () => {
   });
 });
 
+describe('control-bridge route: ticket.active', () => {
+  beforeEach(() => __resetHarnessDirectoryForTests());
+  afterEach(() => __resetHarnessDirectoryForTests());
+
+  it('routes the selected lane to its harness without reading another project', async () => {
+    const a = makeHarness('hm-a', ['Claude-1']);
+    const b = makeHarness('hm-b', ['Codex-1']);
+    registerHarness(a.entry);
+    registerHarness(b.entry);
+
+    await expect(route('ticket.active', { lane: 'Codex-1' })).resolves.toMatchObject({
+      harnessId: 'hm-b',
+      lane: null,
+    });
+    expect(a.calls).toHaveLength(0);
+    expect(b.calls).toEqual([{ operation: 'ticket.active', params: { lane: 'Codex-1' }, caller: undefined }]);
+  });
+});
+
 describe('control-bridge route: live_assist.bootstrap', () => {
   beforeEach(() => __resetHarnessDirectoryForTests());
   afterEach(() => __resetHarnessDirectoryForTests());

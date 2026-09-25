@@ -84,6 +84,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse({ ok: true, lanes });
           break;
         }
+        case 'activeTicket': {
+          const snapshot = await controlOp('ticket.active', { lane: msg.lane });
+          sendResponse({ ok: true, snapshot });
+          break;
+        }
         case 'send': {
           const result = await controlOp('lane.send', { lane: msg.lane, text: msg.text });
           sendResponse({ ok: true, result });

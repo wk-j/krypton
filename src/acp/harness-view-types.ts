@@ -746,6 +746,23 @@ export interface TicketWorkerBinding {
   assignedAt: number;
 }
 
+/** Bounded, read-only projection of the docked Ticket Panel for control clients. */
+export interface ActiveTicketSnapshot {
+  harnessId: string;
+  ticket: null | {
+    id: string;
+    title: string;
+    status: LocalTicketStatus;
+    github: null | { issueKey: string; issueUrl: string; state?: string };
+    worker: null | { laneDisplayName: string };
+    contextExcerpt: string | null;
+    resourceCount: number;
+    resources: Array<{ name: string; sizeBytes: number }>;
+    analysis: null | { markdownCount: number; attachmentCount: number };
+    lastProgressSummary: string | null;
+  };
+}
+
 /** spec 194/238: one row in the `#ticket` picker. */
 export interface TicketPickerRow {
   kind: 'local' | 'github' | 'unavailable';
