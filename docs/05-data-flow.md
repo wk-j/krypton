@@ -982,6 +982,10 @@ Composing (lane → disk → card)
    → validate_review_file (basename, bundle depth, symlink/hardlink, size cap)
    → count_review_blocks (fence-aware line scan) → `registered_live`
    → emits { state: 'registered' } → raiseReviewCard → a hintable REVIEW card
+   → when `[xenon].auto_push` contains `review`, the first registration also
+     starts `xenon_push` for that bundle's slug without delaying the card; the
+     existing secret scan and retry report apply. Refresh registration and later
+     `response.md` saves do not auto-publish (spec 269)
 
 Reading and answering (card/picker → Board → disk)
 4. Human opens it: the card's hint label (`f` then label), or `Leader Shift+R` →

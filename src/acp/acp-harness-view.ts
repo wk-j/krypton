@@ -9728,6 +9728,38 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     this.raiseReviewCard(record);
+    if (payload.registered === true) void this.autoPushRegisteredReview(record);
+  }
+
+  /** Publish only the first completed Board when this project opted in. */
+  private async autoPushRegisteredReview(record: HarnessReviewRecord): Promise<void> {
+    if (this.remoteRuntimeId || !this.projectDir || !record.slug) return;
+    const cwd = this.projectDir;
+    const reportToLane = (message: string): void => {
+      const lane = this.lanes.find((candidate) => candidate.displayName === record.laneLabel);
+      if (!lane) return;
+      this.appendTranscript(lane, 'system', `[xenon] review auto-push: ${message}`);
+      this.scheduleLaneRender(lane);
+    };
+    try {
+      const status = await invoke<XenonStatus>('xenon_status', { cwd });
+      if (!status.enabled || !status.autoPush.includes('review')) return;
+      if (!status.configured) {
+        reportToLane('Xenon is not ready; run #xenon status');
+        return;
+      }
+      const report = await invoke<PushReport>('xenon_push', {
+        cwd,
+        kind: 'review',
+        slug: record.slug,
+        force: false,
+        attention: [],
+      });
+      reportToLane(describePush(report));
+      this.publishLinkFromPushReport(report);
+    } catch (error) {
+      reportToLane(`failed: ${errorText(error)}`);
+    }
   }
 
   /** Append a hintable Review Board card to the owning lane's transcript. */

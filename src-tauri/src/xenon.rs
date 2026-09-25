@@ -4,10 +4,8 @@
 // pushes them to a Xenon server with the three-step content-addressed protocol
 // (manifest → missing blobs → commit).
 //
-// Publishing is deliberately explicit. `.krypton/` is gitignored working
-// knowledge that can contain source, absolute paths, and secrets, so sending it
-// to a server is *publishing*, not syncing — `#push` is a user action, and a
-// secret pre-scan blocks a resource rather than leaking it.
+// Publishing is deliberate: `#push` is the default, while configured review and
+// attention events can publish automatically. The secret pre-scan applies to both.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -1362,6 +1360,30 @@ pub fn read_queue(cwd: &Path) -> Vec<QueueEntry> {
         .unwrap_or_default()
 }
 
+/// Reconcile only resources this push attempted; failures from other pushes
+/// remain pending. Repeating the same kind/slug replaces its previous result.
+pub fn merge_queue(mut existing: Vec<QueueEntry>, items: &[PushItem]) -> Vec<QueueEntry> {
+    for item in items {
+        existing.retain(|entry| entry.kind != item.kind || entry.slug != item.slug);
+        if let PushOutcome::Failed {
+            reason,
+            retryable: true,
+        } = &item.outcome
+        {
+            existing.push(QueueEntry {
+                kind: item.kind.clone(),
+                slug: item.slug.clone(),
+                reason: reason.clone(),
+                queued_at: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0),
+            });
+        }
+    }
+    existing
+}
+
 pub fn write_queue(cwd: &Path, entries: &[QueueEntry]) -> Result<(), String> {
     let path = queue_path(cwd);
     if entries.is_empty() {
@@ -1375,7 +1397,12 @@ pub fn write_queue(cwd: &Path, entries: &[QueueEntry]) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| format!("create .krypton: {e}"))?;
     }
     let body = serde_json::to_string_pretty(entries).map_err(|e| e.to_string())?;
-    std::fs::write(&path, body).map_err(|e| format!("write xenon queue: {e}"))
+    let temp = path.with_extension(format!("json.tmp-{}", std::process::id()));
+    std::fs::write(&temp, body).map_err(|e| format!("write xenon queue: {e}"))?;
+    std::fs::rename(&temp, &path).map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        format!("replace xenon queue: {e}")
+    })
 }
 
 #[cfg(test)]
@@ -1620,6 +1647,17 @@ mod tests {
         }];
         write_queue(&dir, &entries).unwrap();
         assert_eq!(read_queue(&dir).len(), 1);
+        let replacement = vec![QueueEntry {
+            kind: "attention".into(),
+            slug: "jdg-1".into(),
+            reason: "offline".into(),
+            queued_at: 2,
+        }];
+        write_queue(&dir, &replacement).unwrap();
+        assert_eq!(read_queue(&dir)[0].slug, "jdg-1");
+        assert!(!queue_path(&dir)
+            .with_extension(format!("json.tmp-{}", std::process::id()))
+            .exists());
         write_queue(&dir, &[]).unwrap();
         assert!(
             read_queue(&dir).is_empty(),
@@ -1627,6 +1665,49 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn queue_merge_retains_other_failures_and_clears_retried_resource() {
+        let existing = vec![
+            QueueEntry {
+                kind: "attention".into(),
+                slug: "jdg-1".into(),
+                reason: "offline".into(),
+                queued_at: 1,
+            },
+            QueueEntry {
+                kind: "review".into(),
+                slug: "review-a".into(),
+                reason: "old failure".into(),
+                queued_at: 1,
+            },
+        ];
+        let failed = PushItem {
+            kind: "review".into(),
+            slug: "review-a".into(),
+            title: "Review A".into(),
+            outcome: PushOutcome::Failed {
+                reason: "new failure".into(),
+                retryable: true,
+            },
+        };
+        let queue = merge_queue(existing, &[failed]);
+        assert_eq!(queue.len(), 2);
+        assert_eq!(queue[0].slug, "jdg-1");
+        assert_eq!(queue[1].reason, "new failure");
+
+        let succeeded = PushItem {
+            kind: "review".into(),
+            slug: "review-a".into(),
+            title: "Review A".into(),
+            outcome: PushOutcome::Unchanged {
+                url: "https://xenon.example/review-a".into(),
+            },
+        };
+        let queue = merge_queue(queue, &[succeeded]);
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue[0].slug, "jdg-1");
     }
 
     /// spec 225: a day is one resource holding one file, so a reader lands on

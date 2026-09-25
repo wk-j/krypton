@@ -47,9 +47,10 @@ the central store for Krypton-generated resources, plus a **publisher** in Krypt
   review whose `response.md` changed transfers one small file, and interrupted pushes resume.
 - **Immutable blobs, append-only revisions.** A resource's history is a chain of sealed revisions;
   the latest is the current view. Nothing is ever silently overwritten.
-- **Push is explicit and opt-in.** `.krypton/` is gitignored working knowledge that can contain
-  source, paths, and secrets; sending it to a server is publishing. Manual `#push` is the default,
-  with per-kind `auto_push` available in config.
+- **Push is explicit by default.** `.krypton/` is gitignored working knowledge that can contain
+  source, paths, and secrets; sending it to a server is publishing. Manual `#push` is the default.
+  Listing `review` or `attention` in `auto_push` opts those kinds into a defined event trigger
+  (spec 269 and ADR-0016); other kinds remain manual.
 - **Accounts own projects; tokens are the only machine credential.** A person registers, logs into
   the browse UI with a session cookie, and mints scoped API tokens from a settings page — one for
   their Krypton install, others for external services. Tokens are shown once and stored hashed.
@@ -102,7 +103,8 @@ Krypton is off. *Store resources in git* — spec 133/211 deliberately keep `.kr
 
 **Krypton delta.** No terminal emulator or agent harness has this — the market equivalent is CI
 artifact hosting, so the prior art is CI/report servers rather than iTerm2/WezTerm/tmux. Xenon
-diverges in three ways: uploads are **explicit and keyboard-driven** (`#push`), never ambient sync,
+diverges in three ways: uploads are **keyboard-driven by default** (`#push`), with opt-in review
+and attention triggers but no ambient sync,
 because the payload is gitignored working knowledge rather than build output; resources are
 **mutable via revisions**, unlike CI artifacts, because a review bundle is a living document; and the
 browse surface follows `DESIGN.binance.md`, so a pushed resource looks identical hosted and local.
@@ -290,7 +292,7 @@ enabled   = false              # bool — master switch; false disables #push en
 base_url  = ""                 # string — e.g. "https://xenon.example.com"; empty = unconfigured
 project   = ""                 # string — override; default derived from the git remote, else
                                #          "local/<basename>-<8 hex of abs path>"
-auto_push = []                 # array — kinds pushed automatically when sealed, e.g. ["review"]
+auto_push = []                 # array — bare #push kinds; review registration and attention creation also trigger publication when listed
 ```
 
 The bearer token is **never** in TOML. It lives in the OS keychain under service `krypton-xenon`,
@@ -326,8 +328,9 @@ or a compose file. Env: `XENON_PORT`, `XENON_DATA_DIR`, `XENON_SESSION_SECRET`, 
 - **Secret in a bundle** — pre-scan (AWS keys, `gh[pousr]_`, `sk-`/`sk-ant-`, PEM headers, generic
   `[A-Za-z0-9_\-]{32,}` assigned to a `token|secret|password|api_key` name) blocks the push and names
   the file; `#push --force <kind> <slug>` overrides after the human has looked.
-- **Xenon unreachable / 5xx** — the resource is appended to `.krypton/xenon-queue.json` and retried
-  with exponential backoff on the next push or app start. `#push` reports the queue depth.
+- **Xenon unreachable / 5xx** — the resource is retained in `.krypton/xenon-queue.json`; other
+  pending entries survive later pushes. `#xenon status` reports the saved queue depth, and
+  `#push <kind> <slug>` retries explicitly. There is no background replay.
 - **`enabled = false` or no token** — `#push` flashes the chip and does nothing, like `#mem` with
   memory unavailable.
 - **Blob over the cap** — `413`; the publisher marks that resource `failed` and continues with the rest.

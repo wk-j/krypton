@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use tauri::{AppHandle, State};
 
 static SHELL_PIDS: OnceLock<Mutex<HashMap<String, u32>>> = OnceLock::new();
+static XENON_PUSH_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
 fn shell_pids() -> &'static Mutex<HashMap<String, u32>> {
     SHELL_PIDS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -1462,6 +1463,12 @@ pub async fn xenon_push(
     force: Option<bool>,
     attention: Option<Vec<serde_json::Value>>,
 ) -> Result<crate::xenon::PushReport, String> {
+    // Automatic review/attention pushes and manual pushes share one queue file
+    // per project. Keep publication and its queue update in one ordered turn.
+    let _push_guard = XENON_PUSH_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
     let xenon_config = {
         let cfg = lock_read(&config, "Config")?;
         cfg.xenon.clone()
@@ -1524,35 +1531,26 @@ pub async fn xenon_push(
     };
     report.failed = collection_failures.len();
     report.items.extend(collection_failures);
-    let mut queue = Vec::new();
     for resource in resources {
         let item = publisher.push_resource(resource).await;
         match &item.outcome {
             crate::xenon::PushOutcome::Pushed { .. } => report.pushed += 1,
             crate::xenon::PushOutcome::Unchanged { .. } => report.unchanged += 1,
             crate::xenon::PushOutcome::Blocked { .. } => report.blocked += 1,
-            crate::xenon::PushOutcome::Failed { reason, retryable } => {
+            crate::xenon::PushOutcome::Failed { retryable, .. } => {
                 report.failed += 1;
                 if *retryable {
-                    queue.push(crate::xenon::QueueEntry {
-                        kind: item.kind.clone(),
-                        slug: item.slug.clone(),
-                        reason: reason.clone(),
-                        queued_at: std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_secs() as i64)
-                            .unwrap_or(0),
-                    });
+                    report.queued += 1;
                 }
             }
         }
         report.items.push(item);
     }
 
-    report.queued = queue.len();
-    if let Err(e) = crate::xenon::write_queue(&cwd_path, &queue) {
-        log::warn!("could not persist the Xenon retry queue: {e}");
-    }
+    let queue = crate::xenon::merge_queue(crate::xenon::read_queue(&cwd_path), &report.items);
+    crate::xenon::write_queue(&cwd_path, &queue).map_err(|e| {
+        format!("Xenon push may have completed, but retry status was not saved: {e}")
+    })?;
     Ok(report)
 }
 

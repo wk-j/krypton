@@ -471,11 +471,9 @@ pub struct XenonConfig {
     pub project: String,
     /// Which kinds a bare `#push` covers; empty means all of them.
     ///
-    /// Listing `attention` additionally makes that ONE kind publish by itself,
-    /// the moment a lane raises a flag. It is the exception because an attention
-    /// flag has no on-disk form: it lives only in the running frontend, so a
-    /// flag nobody remembers to `#push` is simply lost when the app closes.
-    /// Every other kind is already durable on disk and stays manual.
+    /// Listing `review` also publishes a Board on first registration. Listing
+    /// `attention` publishes a flag when raised, because the flag has no on-disk
+    /// form. Later review edits and all other kinds stay manual.
     pub auto_push: Vec<String>,
     /// spec 213: how often the workspace footer's backend-link segment probes
     /// the server, in seconds. `0` disables the interval, leaving the segment

@@ -1,6 +1,6 @@
 # Review Board Auto-Push to Xenon — Implementation Spec
 
-> Status: Approved
+> Status: Implemented
 > Date: 2026-09-25
 > Milestone: M-ACP — Harness convergence
 > Builds on: 211, 212, 230, 259 · ADR-0016
@@ -60,9 +60,10 @@ or a later revised bundle.
 | File | Change after approval |
 |---|---|
 | `src/acp/acp-harness-view.ts` | Push the first registered review when opted in; report the outcome to its lane. |
-| `src/acp/acp-harness-view.test.ts` | Cover eligibility, one-bundle scope, repeat registration, and failure feedback. |
+| `src/acp/review-auto-push.test.ts` | Cover eligibility, one-bundle scope, repeat registration, and failure feedback. |
 | `src-tauri/src/commands.rs` | Serialize `xenon_push` calls and merge retry status by resource identity. |
 | `src-tauri/src/xenon.rs` | Make retry-queue writes atomic and test retention/removal behavior. |
+| `src-tauri/src/config.rs` | Clarify the `auto_push` field's two automatic triggers. |
 | `docs/04-architecture.md`, `docs/05-data-flow.md`, `docs/06-configuration.md` | Describe the implemented trigger and status. |
 | `docs/212-xenon-resource-server.md`, `docs/259-timeline-xenon-publishing.md`, `docs/adr/0016-generated-resources-publish-to-xenon.md` | Amend the older manual-only statements: `review` is a second opt-in exception; timeline remains explicit. |
 
@@ -141,6 +142,12 @@ remain the keyboard paths for retry and diagnosis.
 - Manual smoke: with `auto_push = ["review"]`, register one Board against a
   reachable test Xenon and verify its permalink; repeat registration and confirm
   no new revision; block one secret and confirm no bytes were uploaded.
+
+Implementation checks: 3,563 frontend tests and production build passed;
+25 Xenon-focused Rust tests passed. The full Rust suite passed 402 tests in the
+sandbox, and its one listener test passed on an isolated unsandboxed retry.
+`cargo clippy --lib -- -D warnings` passed; `--all-targets` still finds three
+warnings in untouched test files. The live-app/Xenon smoke above was not run.
 
 ## Open Questions
 

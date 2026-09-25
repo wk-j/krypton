@@ -51,8 +51,8 @@ changing the local `#timeline` command.
   preserves stable event permalinks, uploads only new/changed events, and lets Xenon derive topic
   views without rewriting an ever-growing blob. Topic bundles would make cross-topic relations and
   targeted publishing harder; a project bundle would transfer the full ledger on every addition.
-- Timeline files are durable on disk, unlike in-memory attention flags. They therefore do not gain
-  attention's auto-push-on-create exception; ADR-0016 continues to require an explicit publish.
+- Timeline files are durable on disk and have no automatic publish trigger. ADR-0016
+  continues to require an explicit publish for timeline events.
 - A malformed local event must be visible without preventing unrelated resource kinds from being
   pushed. Timeline collection reports a non-retryable failed item for each diagnostic while still
   returning valid events.
@@ -206,8 +206,9 @@ No new key. `timeline` becomes a valid `[xenon].auto_push` value:
 auto_push = ["review", "timeline"]
 ```
 
-This affects what an explicit bare `#push` includes. It does **not** publish when an event is
-created or confirmed. Attention remains the only `auto_push` kind with an on-create exception.
+For `timeline`, this affects what an explicit bare `#push` includes. It does **not** publish when an event is
+created or confirmed. Review registration and attention creation are the two
+opt-in automatic triggers (spec 269 and ADR-0016).
 
 ### Deployment Order
 
