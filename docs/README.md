@@ -270,6 +270,8 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 265 | [Artifact Gallery Project Grouping](./265-artifact-gallery-project-grouping.md) |
 | 266 | [Timeline Decision Trace and Conflict Review](./266-timeline-decision-trace-and-conflicts.md) |
 | 267 | [Timeline Conflicts Completed by the Lane Agent](./267-timeline-conflicts-by-agent.md) |
+| 268 | [Browser Extension Active Ticket Sync](./268-browser-extension-active-ticket-sync.md) |
+| 269 | [Review Board Auto-Push to Xenon](./269-review-auto-push-xenon.md) |
 
 ## ADRs (20)
 
