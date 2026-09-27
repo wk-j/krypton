@@ -720,6 +720,18 @@ None.
   than its own shows a banner offering `r` to reload. Sends stay per-window, de-duped per comment
   id by the queue.
 
+## Review Thread Extension (spec 270)
+
+Review threads wrap this Board as a Guide beside a fixed diff and a verdict
+panel. The Guide remains lane-authored and uses the same bundle parser,
+`review_register`, block comments, and `response.md` autosave. In thread mode,
+`s` opens Submit Review, where the human must choose Approve or Request
+Changes; the ordinary Board's `s` response flow remains unchanged.
+The thread's snapshot, line comments, and verdict history live separately in
+`.krypton/review-threads/<id>/`, so a configured Xenon review auto-push publishes
+only the Guide bundle. `Leader Shift+R` recognizes thread-linked bundles and
+opens the combined view. See `docs/270-review-threads-without-worktrees.md`.
+
 ## Out of Scope
 
 - **Interactive/scripted content.** Blocks are declarative and sanitized; no JS in a review. When

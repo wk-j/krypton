@@ -254,6 +254,8 @@ import {
   JUNIE_MCP_CAPABILITIES,
 } from './mcp-bridge';
 import { FILE_TOUCH_WINDOW_MS } from './harness-view-types';
+import { matchesReviewThreadParent, reviewThreadGuidePrompt, reviewThreadVerdictPrompt } from './review-thread';
+import type { ReviewThread, ReviewThreadVerdict } from './review-thread';
 import type {
   ActiveWorkTicket,
   ActiveTicketPointer,
@@ -821,7 +823,7 @@ const SPINNER_INTERVAL_MS = 80;
 
 const REMOTE_UNSUPPORTED_HASH_COMMANDS = new Set([
   '#gallery', '#docs', '#analyses', '#reviews', '#push', '#usage', '#daily',
-  '#xenon', '#termctrl', '#hurl', '#draw', '#ticket', '#review', '#directive',
+  '#xenon', '#termctrl', '#hurl', '#draw', '#ticket', '#review', '#review-thread', '#directive',
   '#analyze-github-issue', '#create-github-issue', '#dispatch-github-issue',
   '#fix-github-issue', '#handle-github-issue', '#post-github-comment', '#tag-github-issue',
 ]);
@@ -1216,6 +1218,12 @@ export class AcpHarnessView implements ContentView {
    *  lives here — the bundle on disk outlives the entry, the lane, and the app,
    *  and is rediscovered by the picker's directory walk. */
   private reviews = new Map<string, HarnessReviewRecord>();
+  private reviewThreadsByReviewId = new Map<string, string>();
+  private reviewThreadCounts = new Map<string, number>();
+  private reviewThreadPickerCancel: (() => void) | null = null;
+  private pendingThreadVerdicts = new Map<string, {
+    thread: ReviewThread; verdict: ReviewThreadVerdict; laneId: string;
+  }>();
   private reviewUnlisten: UnlistenFn | null = null;
   /** spec 211: per-lane review-response queue, drained on the lane's next idle.
    *  Third sibling of the artifact-feedback and diff-review queues. */
@@ -1337,7 +1345,7 @@ export class AcpHarnessView implements ContentView {
   /** spec 211: open a Review Board content window over a durable bundle. Injected
    *  by the compositor, which owns tab creation; null when unavailable. */
   private readonly openReviewBoardCb:
-    | ((options: { dir: string; slug: string; laneName?: string; cwd?: string }) => void)
+    | ((options: { dir: string; slug: string; laneName?: string; cwd?: string; threadId?: string }) => void)
     | null;
   /** spec 238: open `ticket.md` in the Markdown Viewer, not Helix. */
   private readonly openMarkdownViewCb: ((path: string) => Promise<void>) | null;
@@ -1426,7 +1434,7 @@ export class AcpHarnessView implements ContentView {
     openTelegramSettings: (() => Promise<void>) | null = null,
     openFileReference: ((path: string, line?: number, column?: number) => Promise<boolean>) | null = null,
     openReviewBoard:
-      | ((options: { dir: string; slug: string; laneName?: string; cwd?: string }) => void)
+      | ((options: { dir: string; slug: string; laneName?: string; cwd?: string; threadId?: string }) => void)
       | null = null,
     openMarkdownView: ((path: string) => Promise<void>) | null = null,
     workspace: WorkspaceRef = { kind: 'local', path: projectDir },
@@ -1519,6 +1527,15 @@ export class AcpHarnessView implements ContentView {
         const lane = this.lanes.find((l) => l.id === laneId);
         if (lane) void this.enqueueSystemPrompt(lane, text, undefined, 'review response');
       },
+    });
+    this.laneBus.subscribe((event) => {
+      if (event.type === 'lane:status' && event.payload.next === 'idle') {
+        void this.drainReviewThreadVerdicts(event.payload.laneId);
+      } else if (event.type === 'lane:closed') {
+        for (const [id, pending] of this.pendingThreadVerdicts) {
+          if (pending.laneId === event.payload.laneId) this.pendingThreadVerdicts.delete(id);
+        }
+      }
     });
     // spec 128: refresh the backpressure gauge (and the overlay, if open) on
     // every queue mutation the store emits.
@@ -1804,6 +1821,78 @@ export class AcpHarnessView implements ContentView {
         sentAt: Date.now(),
       });
       return { status: outcome === 'duplicate' ? 'duplicate' : 'accepted' };
+    }
+    if (operation === 'review.thread.deliver') {
+      const cwd = requiredString(params, 'cwd');
+      const threadId = requiredString(params, 'threadId');
+      const verdictId = requiredString(params, 'verdictId');
+      const localRoot = this.projectDir
+        ? await invoke<{ repoRoot: string }>('collect_working_diff', {
+            cwd: this.projectDir, staged: false,
+          }).then((value) => value.repoRoot).catch(() => null)
+        : null;
+      if (localRoot !== cwd) {
+        return { status: 'no-live-lane' };
+      }
+      const { thread } = await invoke<{ thread: ReviewThread }>('review_thread_read', { cwd, threadId });
+      const verdict = thread.verdicts.find((item) => item.id === verdictId);
+      if (!verdict) return { status: 'no-live-lane' };
+      if (verdict.delivery === 'handed_off' || this.pendingThreadVerdicts.has(verdictId)) {
+        return { status: 'duplicate' };
+      }
+      const lane = this.lanes.find((item) =>
+        matchesReviewThreadParent(thread, item) &&
+        item.status !== 'stopped' && item.status !== 'error',
+      );
+      if (!lane) return { status: 'no-live-lane' };
+      await invoke('review_thread_mark_delivery', {
+        cwd, threadId, verdictId, state: 'queued',
+      });
+      this.pendingThreadVerdicts.set(verdictId, { thread, verdict, laneId: lane.id });
+      void this.drainReviewThreadVerdicts(lane.id);
+      return { status: 'accepted' };
+    }
+    if (operation === 'review.thread.retry-guide') {
+      const cwd = requiredString(params, 'cwd');
+      const threadId = requiredString(params, 'threadId');
+      if (!this.harnessMemoryId || !this.projectDir) return { status: 'no-live-lane' };
+      const localRoot = await invoke<{ repoRoot: string }>('collect_working_diff', {
+        cwd: this.projectDir, staged: false,
+      }).then((value) => value.repoRoot).catch(() => null);
+      if (localRoot !== cwd) return { status: 'no-live-lane' };
+      const { thread } = await invoke<{ thread: ReviewThread }>('review_thread_read', { cwd, threadId });
+      const lane = this.lanes.find((item) =>
+        matchesReviewThreadParent(thread, item) &&
+        item.status === 'idle',
+      );
+      if (!lane) return { status: 'no-live-lane' };
+      const created = await invoke<{
+        reviewId: string; reviewSlug: string; reviewDir: string; reviewPath: string;
+      }>('review_thread_reissue_guide', {
+        cwd, harnessId: this.harnessMemoryId, threadId,
+      });
+      this.publishReviewThreadStatus(threadId);
+      this.reviewThreadsByReviewId.set(created.reviewId, threadId);
+      this.openReviewBoardCb?.({
+        dir: created.reviewDir, slug: created.reviewSlug,
+        laneName: lane.displayName, cwd, threadId,
+      });
+      const path = `${thread.repoRoot}/.krypton/review-threads/${threadId}/snapshot.diff`;
+      const retried = { ...thread, reviewId: created.reviewId };
+      try {
+        const started = await this.enqueueSystemPrompt(
+          lane, reviewThreadGuidePrompt(retried, path, created.reviewPath),
+          undefined, 'preparing review guide',
+        );
+        if (!started) throw new Error('lane became busy before Guide turn');
+      } catch (error) {
+        await invoke('review_thread_cancel_guide', {
+          cwd, harnessId: this.harnessMemoryId,
+          laneLabel: lane.displayName, threadId, reviewId: created.reviewId,
+        }).catch(() => undefined);
+        throw error;
+      }
+      return { status: 'accepted' };
     }
     if (operation === 'diff.review-send') {
       const target = requiredString(params, 'target');
@@ -2232,11 +2321,12 @@ export class AcpHarnessView implements ContentView {
     text: string,
     drain?: CoordinatorDrainContext,
     label?: string,
-  ): Promise<void> {
-    if (!lane.client) return;
-    if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') return;
+  ): Promise<boolean> {
+    if (!lane.client) return false;
+    if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') return false;
     this.beginSystemTurn(lane, drain, label);
     await this.dispatchTurn(lane, text);
+    return true;
   }
 
   /** Turn-start bookkeeping shared by enqueueSystemPrompt and the reserve-then-send
@@ -3053,6 +3143,198 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  /** A keyboard-first, local preview. Enter freezes exactly the previewed diff. */
+  private async pickReviewThreadBase(cwd: string): Promise<{ base: string; fingerprint: string } | null> {
+    return new Promise((resolve) => {
+      const root = document.createElement('div');
+      root.className = 'acp-review-thread-picker';
+      root.tabIndex = -1;
+      const panel = document.createElement('form');
+      panel.className = 'acp-review-thread-picker__panel';
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-modal', 'true');
+      panel.setAttribute('aria-label', 'Start Review Thread');
+      panel.addEventListener('submit', (event) => event.preventDefault());
+      const title = document.createElement('h2');
+      title.textContent = 'Start Review Thread';
+      const baseGroup = document.createElement('fieldset');
+      baseGroup.className = 'acp-review-thread-picker__bases';
+      const legend = document.createElement('legend');
+      legend.textContent = 'Compare against';
+      baseGroup.appendChild(legend);
+      const baseInputs: HTMLInputElement[] = [];
+      for (const [value, label, description] of [
+        ['upstream', 'Upstream merge-base', 'Changes since the tracked branch, including local work'],
+        ['head', 'HEAD', 'Working tree changes only'],
+      ]) {
+        const choice = document.createElement('label');
+        choice.className = 'acp-review-thread-picker__choice';
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.name = 'review-thread-base';
+        input.value = value;
+        input.checked = value === 'upstream';
+        const copy = document.createElement('span');
+        const name = document.createElement('strong');
+        name.textContent = label;
+        const hint = document.createElement('small');
+        hint.textContent = description;
+        copy.append(name, hint);
+        choice.append(input, copy);
+        baseGroup.appendChild(choice);
+        baseInputs.push(input);
+      }
+      const selectedBase = (): string => baseInputs.find((input) => input.checked)?.value ?? 'upstream';
+      const details = document.createElement('pre');
+      details.className = 'acp-review-thread-picker__details';
+      details.setAttribute('aria-live', 'polite');
+      details.textContent = 'กำลังเก็บ preview…';
+      const confirm = document.createElement('button');
+      confirm.type = 'button';
+      confirm.textContent = 'Start Review · Enter';
+      confirm.disabled = true;
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.textContent = 'Cancel · Esc';
+      const actions = document.createElement('div');
+      actions.className = 'acp-review-thread-picker__actions';
+      actions.append(confirm, cancel);
+      panel.append(title, baseGroup, details, actions);
+      root.appendChild(panel);
+      const previousFocus = this.element.contains(document.activeElement)
+        && document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      this.element.appendChild(root);
+      let fingerprint = '';
+      let generation = 0;
+      let settled = false;
+      const update = async (): Promise<void> => {
+        const current = ++generation;
+        const base = selectedBase();
+        fingerprint = '';
+        confirm.disabled = true;
+        details.textContent = 'กำลังเก็บ preview…';
+        try {
+          const value = await invoke<{
+            fingerprint: string; baseRef: string; baseOid: string;
+            files: number; omitted: Array<{ path: string; reason: string }>;
+          }>('review_thread_preview', { cwd, base });
+          if (current !== generation || settled) return;
+          fingerprint = value.fingerprint;
+          details.textContent = `${value.files} files · base ${value.baseRef} @ ${value.baseOid.slice(0, 8)}` +
+            (value.omitted.length
+              ? `\nไม่อยู่ใน diff: ${value.omitted.map((o) => `${o.path} (${o.reason})`).join(', ')}`
+              : '');
+          confirm.disabled = false;
+        } catch (error) {
+          if (current === generation && !settled) details.textContent = String(error);
+        }
+      };
+      const finish = (value: { base: string; fingerprint: string } | null): void => {
+        if (settled) return;
+        settled = true;
+        generation++;
+        this.reviewThreadPickerCancel = null;
+        document.removeEventListener('keydown', onKey, true);
+        root.remove();
+        if (this.element.isConnected) {
+          (previousFocus?.isConnected ? previousFocus : this.element).focus({ preventScroll: true });
+        }
+        resolve(value);
+      };
+      const onKey = (event: KeyboardEvent): void => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          finish(null);
+        } else if (event.key === 'Enter' && !confirm.disabled && document.activeElement !== cancel) {
+          event.preventDefault();
+          event.stopPropagation();
+          finish({ base: selectedBase(), fingerprint });
+        } else if (event.key === 'Tab') {
+          const first = baseInputs.find((input) => input.checked) ?? baseInputs[0];
+          const last = cancel;
+          if (event.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && (document.activeElement === last || !panel.contains(document.activeElement))) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+      };
+      baseGroup.addEventListener('change', () => { void update(); });
+      confirm.addEventListener('click', () => finish({ base: selectedBase(), fingerprint }));
+      cancel.addEventListener('click', () => finish(null));
+      document.addEventListener('keydown', onKey, true);
+      this.reviewThreadPickerCancel = () => finish(null);
+      baseInputs[0].focus({ preventScroll: true });
+      void update();
+    });
+  }
+
+  private async startReviewThread(lane: HarnessLane): Promise<void> {
+    if (this.reviewThreadPickerCancel) return;
+    if (this.remoteRuntimeId || !this.projectDir || !this.harnessMemoryId || !this.openReviewBoardCb) {
+      this.flashChip('Review thread requires a local project and Review Board');
+      return;
+    }
+    if (!lane.client || !lane.sessionId || lane.status !== 'idle') {
+      this.flashChip('รอให้ lane พร้อมก่อนเริ่ม Review');
+      return;
+    }
+    const cwd = this.projectDir;
+    const picked = await this.pickReviewThreadBase(cwd);
+    if (!picked) return;
+    if (lane.status !== 'idle' || !lane.client || !lane.sessionId) {
+      this.flashChip('lane changed while preview was open');
+      return;
+    }
+    let issued: { threadId: string; reviewId: string } | null = null;
+    try {
+      const created = await invoke<{
+        threadId: string; reviewId: string; reviewSlug: string;
+        reviewDir: string; reviewPath: string;
+      }>('review_thread_create', {
+        cwd, harnessId: this.harnessMemoryId,
+        parentBackendId: lane.backendId,
+        parentSessionId: lane.sessionId,
+        parentLaneName: lane.displayName,
+        base: picked.base, fingerprint: picked.fingerprint,
+      });
+      issued = { threadId: created.threadId, reviewId: created.reviewId };
+      this.reviewThreadsByReviewId.set(created.reviewId, created.threadId);
+      this.openReviewBoardCb({
+        dir: created.reviewDir, slug: created.reviewSlug,
+        laneName: lane.displayName, cwd, threadId: created.threadId,
+      });
+      this.appendTranscript(lane, 'system', `[review thread] ${created.threadId} · กำลังเตรียม Guide`);
+      const read = await invoke<{ thread: ReviewThread }>('review_thread_read', {
+        cwd, threadId: created.threadId,
+      });
+      this.reviewThreadCounts.set(
+        read.thread.parentSessionId,
+        (this.reviewThreadCounts.get(read.thread.parentSessionId) ?? 0) + 1,
+      );
+      const path = `${read.thread.repoRoot}/.krypton/review-threads/${created.threadId}/snapshot.diff`;
+      const started = await this.enqueueSystemPrompt(
+        lane,
+        reviewThreadGuidePrompt(read.thread, path, created.reviewPath),
+        undefined,
+        'preparing review guide',
+      );
+      if (!started) throw new Error('lane became busy before Guide turn');
+    } catch (error) {
+      if (issued && this.harnessMemoryId) {
+        await invoke('review_thread_cancel_guide', {
+          cwd, harnessId: this.harnessMemoryId,
+          laneLabel: lane.displayName, threadId: issued.threadId,
+          reviewId: issued.reviewId,
+        }).catch(() => undefined);
+      }
+      this.flashChip(`Review thread: ${errorText(error)}`);
+    }
+  }
+
   /**
    * spec 145: user-triggered `#review [<lane> ...] [-- <docpath | note>]`.
    * Agent-orchestrated: collect the review subject (working diff or a design
@@ -3756,6 +4038,44 @@ export class AcpHarnessView implements ContentView {
     });
     await this.dispatchTurn(lane, prompt);
     this.flashChip(`#salty → ${roster.executors.map((e) => e.displayName).join(', ')}`);
+  }
+
+  private async drainReviewThreadVerdicts(laneId: string): Promise<void> {
+    const lane = this.lanes.find((item) => item.id === laneId);
+    if (!lane?.client || lane.status !== 'idle') return;
+    const queued = [...this.pendingThreadVerdicts.values()].find((item) => item.laneId === laneId);
+    if (!queued) return;
+    if (!matchesReviewThreadParent(queued.thread, lane)) {
+      this.pendingThreadVerdicts.delete(queued.verdict.id);
+      return;
+    }
+    this.pendingThreadVerdicts.delete(queued.verdict.id);
+    try {
+      const started = await this.enqueueSystemPrompt(
+        lane,
+        reviewThreadVerdictPrompt(queued.thread, queued.verdict),
+        undefined,
+        'review verdict',
+      );
+      if (!started) {
+        this.pendingThreadVerdicts.set(queued.verdict.id, queued);
+        return;
+      }
+      await invoke('review_thread_mark_delivery', {
+        cwd: queued.thread.repoRoot,
+        threadId: queued.thread.id,
+        verdictId: queued.verdict.id,
+        state: 'handed_off',
+      });
+    } catch (error) {
+      await invoke('review_thread_mark_delivery', {
+        cwd: queued.thread.repoRoot,
+        threadId: queued.thread.id,
+        verdictId: queued.verdict.id,
+        state: 'uncertain',
+      }).catch(() => undefined);
+      this.flashChip(`review verdict delivery uncertain: ${errorText(error)}`);
+    }
   }
 
   getWorkingDirectory(): string | null {
@@ -4675,6 +4995,9 @@ export class AcpHarnessView implements ContentView {
     this.stopThoughtTeletypeTick();
     this.stopMetricsTick();
     this.stopSpinnerTicker();
+    this.reviewThreadPickerCancel?.();
+    this.reviewThreadPickerCancel = null;
+    this.pendingThreadVerdicts.clear();
     this.referenceGitDisposed = true;
     this.referenceGitRefreshGeneration += 1;
     if (this.referenceGitRefreshTimer !== null) {
@@ -6644,6 +6967,21 @@ export class AcpHarnessView implements ContentView {
     this.harnessMemoryId = session.harnessId;
     this.harnessMemoryPort = session.hookPort;
     this.harnessMemoryWarning = null;
+    if (!this.remoteRuntimeId) {
+      void invoke<ReviewThread[]>('review_thread_list', { cwd: projectDir })
+        .then((threads) => {
+          this.reviewThreadCounts.clear();
+          for (const thread of threads) {
+            if (thread.reviewId) this.reviewThreadsByReviewId.set(thread.reviewId, thread.id);
+            this.reviewThreadCounts.set(
+              thread.parentSessionId,
+              (this.reviewThreadCounts.get(thread.parentSessionId) ?? 0) + 1,
+            );
+          }
+          this.render();
+        })
+        .catch(() => undefined);
+    }
     if (this.remoteRuntimeId) {
       try {
         this.remoteMemoryPort = await invoke<number>('remote_harness_forward_memory', {
@@ -9696,11 +10034,32 @@ export class AcpHarnessView implements ContentView {
 
   // ─── Review Boards (spec 211) ───────────────────────────────────────────
 
+  private publishReviewThreadStatus(threadId: string): void {
+    if (!this.projectDir) return;
+    this.viewBus?.publishSignal({
+      kind: 'harness:review-thread-status',
+      source: SYSTEM_SOURCE,
+      value: { cwd: this.projectDir, threadId },
+    });
+  }
+
+  private async markReviewThreadGuide(threadId: string, ready: boolean): Promise<void> {
+    if (!this.projectDir) return;
+    await invoke('review_thread_mark_guide', {
+      cwd: this.projectDir, threadId, ready,
+    });
+    this.publishReviewThreadStatus(threadId);
+  }
+
   /** Apply a Rust review registry event: update the mirror + the card. */
   private handleReviewEvent(payload: ReviewEventPayload): void {
     const { id, laneLabel, state } = payload;
+    if (payload.threadId) this.reviewThreadsByReviewId.set(id, payload.threadId);
+    const threadId = this.reviewThreadsByReviewId.get(id);
     if (state === 'cancelled') {
       this.reviews.delete(id);
+      this.reviewThreadsByReviewId.delete(id);
+      if (threadId) this.publishReviewThreadStatus(threadId);
       // No "unavailable" state: a cancelled review was never registered, so it
       // never had a card. A REGISTERED review's card stays valid forever, because
       // the bundle on disk outlives the registry entry.
@@ -9723,6 +10082,10 @@ export class AcpHarnessView implements ContentView {
     };
     this.reviews.set(id, record);
     if (state === 'pending') return;
+    if (threadId && this.projectDir && state === 'registered') {
+      void this.markReviewThreadGuide(threadId, true)
+        .catch((error) => console.warn('[review-thread] guide status update failed', error));
+    }
     if (payload.registered === false) {
       this.updateReviewCard(record);
       return;
@@ -9893,6 +10256,7 @@ export class AcpHarnessView implements ContentView {
       slug: card.slug,
       laneName: card.laneLabel,
       cwd: this.projectDir ?? undefined,
+      threadId: this.reviewThreadsByReviewId.get(card.id),
     });
     this.flashChip(`opening ${card.title}`);
   }
@@ -9909,9 +10273,16 @@ export class AcpHarnessView implements ContentView {
       }
     }
     if (!hadPending || !this.harnessMemoryId) return;
-    void invoke('acp_cancel_pending_reviews', {
+    void invoke<string[]>('acp_cancel_pending_reviews', {
       harnessId: this.harnessMemoryId,
       laneLabel: lane.displayName,
+    }).then((cancelled) => {
+      if (!this.projectDir) return;
+      for (const id of cancelled) {
+        const threadId = this.reviewThreadsByReviewId.get(id);
+        if (!threadId) continue;
+        void this.markReviewThreadGuide(threadId, false).catch(() => undefined);
+      }
     }).catch(() => undefined);
   }
 
@@ -11818,6 +12189,11 @@ export class AcpHarnessView implements ContentView {
       this.render();
       return;
     }
+    if (parts[0] === '#review-thread') {
+      this.setDraft(lane, '', 0);
+      await this.startReviewThread(lane);
+      return;
+    }
     if (parts[0] === '#polly') {
       this.setDraft(lane, '', 0);
       const task = parsePollyTask(text);
@@ -12399,6 +12775,17 @@ export class AcpHarnessView implements ContentView {
         this.coordinator.pendingPeersFor(lane.id),
         lane.id === this.orchestratorLaneId,
       );
+      if (active && !this.remoteRuntimeId && this.projectDir && lane.sessionId) {
+        const reviewButton = document.createElement('button');
+        reviewButton.type = 'button';
+        reviewButton.className = 'acp-harness__review-thread-action';
+        const reviewCount = this.reviewThreadCounts.get(lane.sessionId) ?? 0;
+        reviewButton.textContent = reviewCount ? `Start Review · ${reviewCount}` : 'Start Review';
+        reviewButton.title = lane.status === 'idle' ? 'Start Review Thread' : 'รอให้ turn จบ';
+        reviewButton.disabled = lane.status !== 'idle';
+        reviewButton.addEventListener('click', () => { void this.startReviewThread(lane); });
+        head.appendChild(reviewButton);
+      }
     }
     const stats = laneEl.querySelector<HTMLElement>('.acp-harness__lane-stats');
     if (stats) stats.innerHTML = renderLaneStats(lane, this.projectDir);
@@ -13442,6 +13829,15 @@ export class AcpHarnessView implements ContentView {
       logoHtml +
       headHtml +
       metaHtml;
+    const reviewCount = lane.sessionId
+      ? this.reviewThreadCounts.get(lane.sessionId) ?? 0
+      : 0;
+    if (reviewCount > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'acp-harness__rail-review-count';
+      badge.textContent = `${reviewCount} reviews`;
+      entry.appendChild(badge);
+    }
     return entry;
   }
 
@@ -14210,6 +14606,7 @@ export class AcpHarnessView implements ContentView {
             <dt>#new</dt><dd>Start fresh active lane, keep memory</dd>
             <dt>#new!</dt><dd>Start fresh active lane and clear its memory</dd>
             <dt>#review [&lt;lane&gt; …] [-- &lt;docpath | note&gt;]</dt><dd>Fan a review of your diff or a design doc out to other lanes (all live lanes if none named)</dd>
+            <dt>#review-thread</dt><dd>Start a Review Thread for the active lane's diff, with a fixed snapshot and human verdict</dd>
             <dt>#polly &lt;task&gt;</dt><dd>Polly orchestration from this lane — auto-spawns two other Cursor/Claude/Codex workers (orchestrator covers its own backend when in pool)</dd>
             <dt>#debby &lt;question&gt;</dt><dd>Debby brainstorming from this lane — auto-spawns Claude and Codex heads as plain responders</dd>
             <dt>#restart</dt><dd>Respawn active lane when error or stopped</dd>
@@ -15563,6 +15960,14 @@ export class AcpHarnessView implements ContentView {
       });
     }
     if (!lane) return out;
+    if (!this.remoteRuntimeId && this.projectDir && lane.status === 'idle' && lane.sessionId) {
+      out.push({
+        id: 'acp.harness.start-review-thread',
+        label: 'Start Review Thread',
+        category: 'ACP Harness',
+        execute: () => { void this.startReviewThread(lane); },
+      });
+    }
 
     if (
       lane.pendingShellId ||

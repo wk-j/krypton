@@ -1022,6 +1022,27 @@ impl HookServer {
         }))
     }
 
+    /// Allocate a normal Review Board for a user-started review thread. The
+    /// command layer emits the same pending event as the MCP tool afterwards.
+    pub fn review_new_for_thread(
+        &self,
+        harness_id: &str,
+        lane_label: &str,
+        title: &str,
+        subject: &str,
+    ) -> Result<Value, String> {
+        self.review_new(harness_id, lane_label, title, Some(subject))
+    }
+
+    pub fn cancel_review_for_thread(
+        &self,
+        harness_id: &str,
+        lane_label: &str,
+        id: &str,
+    ) -> Result<Value, String> {
+        self.review_cancel(harness_id, lane_label, id)
+    }
+
     /// `review_register` — validate `review.md`, count its blocks, and transition
     /// `pending → registered_live`. A repeat call on a live id is an idempotent
     /// refresh (re-reads and re-counts), so a lane that keeps iterating can keep

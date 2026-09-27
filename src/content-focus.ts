@@ -34,7 +34,7 @@ export function contentRootIsInFocusedWindow(root: { closest(selector: string): 
 export function summonOverlayOwnsKeyboard(
   root: { querySelector(selector: string): unknown },
 ): boolean {
-  return root.querySelector('.krypton-review-picker') != null;
+  return root.querySelector('.krypton-review-picker, .acp-review-thread-picker') != null;
 }
 
 export function shouldRetargetContentPaste(opts: {

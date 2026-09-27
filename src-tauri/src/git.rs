@@ -7,6 +7,7 @@
 // drift apart on root resolution, git invocation, or binary detection.
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -270,6 +271,207 @@ fn diff_base(root: &Path) -> Result<String, String> {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "could not derive empty Git tree".to_string())
+}
+
+/// A fixed review round includes committed changes from the selected base and
+/// all current index/worktree changes. The live Diff Window deliberately keeps
+/// staged and unstaged views separate; review threads must not.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewSnapshot {
+    pub repo_root: String,
+    pub base_ref: String,
+    pub base_oid: String,
+    pub head_oid: Option<String>,
+    pub diff: String,
+    pub omitted: Vec<SkippedFile>,
+    pub files: usize,
+    pub fingerprint: String,
+}
+
+pub fn collect_review_snapshot(cwd: &str, selected_base: &str) -> Result<ReviewSnapshot, String> {
+    collect_review_snapshot_internal(cwd, selected_base, None, false)
+}
+
+pub fn collect_review_snapshot_fixed(
+    cwd: &str,
+    base_oid: &str,
+    base_ref: &str,
+) -> Result<ReviewSnapshot, String> {
+    if !(base_oid.len() == 40 || base_oid.len() == 64)
+        || !base_oid.bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return Err("invalid review base OID".to_string());
+    }
+    collect_review_snapshot_internal(cwd, "head", Some((base_ref, base_oid)), true)
+}
+
+fn collect_review_snapshot_internal(
+    cwd: &str,
+    selected_base: &str,
+    fixed: Option<(&str, &str)>,
+    allow_empty: bool,
+) -> Result<ReviewSnapshot, String> {
+    let root = repo_root(Path::new(cwd)).ok_or_else(|| "not a git repository".to_string())?;
+    let root_path = Path::new(&root);
+    let head = run_git(root_path, &["rev-parse", "--verify", "HEAD"]).map(|s| s.trim().to_string());
+    let (base_ref, base_oid) = if let Some((label, oid)) = fixed {
+        (label.to_string(), oid.to_string())
+    } else if selected_base == "upstream" && head.is_some() {
+        let upstream = run_git(
+            root_path,
+            &[
+                "rev-parse",
+                "--abbrev-ref",
+                "--symbolic-full-name",
+                "@{upstream}",
+            ],
+        )
+        .map(|s| s.trim().to_string());
+        if let Some(upstream) = upstream {
+            let oid = run_git(root_path, &["merge-base", "HEAD", &upstream])
+                .ok_or_else(|| "could not find upstream merge-base".to_string())?;
+            (upstream, oid.trim().to_string())
+        } else {
+            ("HEAD".to_string(), head.clone().unwrap_or_default())
+        }
+    } else if selected_base == "head" || selected_base == "upstream" {
+        (
+            "HEAD".to_string(),
+            head.clone().unwrap_or(diff_base(root_path)?),
+        )
+    } else {
+        return Err("base must be upstream or head".to_string());
+    };
+    let mut diff = run_git(
+        root_path,
+        &[
+            "--no-pager",
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "-M",
+            &base_oid,
+            "--",
+        ],
+    )
+    .ok_or_else(|| "git review diff failed".to_string())?;
+    let mut omitted = Vec::new();
+    let untracked = run_git_bytes(
+        root_path,
+        &["ls-files", "--others", "--exclude-standard", "-z"],
+    )
+    .ok_or_else(|| "git untracked listing failed".to_string())?;
+    for raw in untracked.split(|b| *b == 0).filter(|p| !p.is_empty()) {
+        let path = String::from_utf8(raw.to_vec())
+            .map_err(|_| "non-UTF-8 untracked path cannot be reviewed".to_string())?;
+        if path.chars().any(|c| matches!(c, '\n' | '\r' | '\t')) {
+            omitted.push(SkippedFile {
+                path,
+                reason: "unsupported_path".to_string(),
+            });
+            continue;
+        }
+        let full = root_path.join(&path);
+        let meta = std::fs::symlink_metadata(&full);
+        if meta.as_ref().is_ok_and(|m| m.file_type().is_symlink()) {
+            omitted.push(SkippedFile {
+                path,
+                reason: "symlink".to_string(),
+            });
+            continue;
+        }
+        if meta.as_ref().is_ok_and(|m| m.len() > UNTRACKED_MAX_BYTES) {
+            omitted.push(SkippedFile {
+                path,
+                reason: "too_large".to_string(),
+            });
+            continue;
+        }
+        let bytes = match std::fs::read(&full) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                omitted.push(SkippedFile {
+                    path,
+                    reason: "unreadable".to_string(),
+                });
+                continue;
+            }
+        };
+        if looks_binary(&bytes) {
+            omitted.push(SkippedFile {
+                path,
+                reason: "binary".to_string(),
+            });
+            continue;
+        }
+        if !diff.is_empty() && !diff.ends_with('\n') {
+            diff.push('\n');
+        }
+        diff.push_str(&untracked_addition_diff(&path, &bytes));
+    }
+    // Tracked binary files have name-only entries in git's regular diff. Keep
+    // the metadata visible while making the missing content explicit.
+    let numstat = run_git_bytes(
+        root_path,
+        &[
+            "--no-pager",
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-renames",
+            "--numstat",
+            "-z",
+            &base_oid,
+            "--",
+        ],
+    )
+    .ok_or_else(|| "git review numstat failed".to_string())?;
+    for row in numstat.split(|b| *b == 0).filter(|p| !p.is_empty()) {
+        let Some(first_tab) = row.iter().position(|b| *b == b'\t') else {
+            continue;
+        };
+        let rest = &row[first_tab + 1..];
+        let Some(second_tab) = rest.iter().position(|b| *b == b'\t') else {
+            continue;
+        };
+        if &row[..first_tab] == b"-" && &rest[..second_tab] == b"-" {
+            omitted.push(SkippedFile {
+                path: String::from_utf8_lossy(&rest[second_tab + 1..]).to_string(),
+                reason: "binary".to_string(),
+            });
+        }
+    }
+    omitted.sort_by(|a, b| a.path.cmp(&b.path));
+    if diff.len() > 4 * 1024 * 1024 {
+        return Err("review snapshot exceeds 4 MiB".to_string());
+    }
+    if diff.is_empty() && omitted.is_empty() && !allow_empty {
+        return Err("no changes to review".to_string());
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(base_oid.as_bytes());
+    hasher.update(diff.as_bytes());
+    for entry in &omitted {
+        hasher.update(entry.path.as_bytes());
+        hasher.update(entry.reason.as_bytes());
+    }
+    let fingerprint = format!("{:x}", hasher.finalize());
+    let files = diff.matches("diff --git ").count()
+        + omitted
+            .iter()
+            .filter(|item| !diff.contains(&format!("b/{}", item.path)))
+            .count();
+    Ok(ReviewSnapshot {
+        repo_root: root,
+        base_ref,
+        base_oid,
+        head_oid: head,
+        diff,
+        omitted,
+        files,
+        fingerprint,
+    })
 }
 
 /// Collect current working-tree status and line counts only for assistant file
@@ -606,6 +808,59 @@ mod tests {
             "git {args:?} failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+
+    #[test]
+    fn review_snapshot_includes_committed_staged_unstaged_and_untracked() {
+        let dir = test_repo("review-snapshot");
+        std::fs::write(dir.join("committed.txt"), "before\n").expect("seed");
+        std::fs::write(dir.join("staged.txt"), "before\n").expect("seed");
+        std::fs::write(dir.join("unstaged.txt"), "before\n").expect("seed");
+        git_ok(&dir, &["add", "."]);
+        git_ok(&dir, &["commit", "-qm", "base"]);
+        git_ok(&dir, &["branch", "review-base"]);
+        git_ok(&dir, &["checkout", "-qb", "review-work"]);
+        std::fs::write(dir.join("committed.txt"), "after\n").expect("committed change");
+        git_ok(&dir, &["commit", "-qam", "committed"]);
+        git_ok(
+            &dir,
+            &["branch", "--set-upstream-to=review-base", "review-work"],
+        );
+        std::fs::write(dir.join("staged.txt"), "staged\n").expect("staged change");
+        git_ok(&dir, &["add", "staged.txt"]);
+        std::fs::write(dir.join("unstaged.txt"), "unstaged\n").expect("unstaged change");
+        std::fs::write(dir.join("new.txt"), "new\n").expect("untracked change");
+
+        let snapshot = collect_review_snapshot(dir.to_str().expect("utf8"), "upstream")
+            .expect("collect review");
+        for path in ["committed.txt", "staged.txt", "unstaged.txt", "new.txt"] {
+            assert!(
+                snapshot.diff.contains(&format!("b/{path}")),
+                "missing {path}"
+            );
+        }
+        assert_eq!(snapshot.files, 4);
+        assert_eq!(snapshot.base_ref, "review-base");
+        let again = collect_review_snapshot(dir.to_str().expect("utf8"), "upstream")
+            .expect("collect again");
+        assert_eq!(snapshot.fingerprint, again.fingerprint);
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[test]
+    fn review_snapshot_handles_unborn_head_and_lists_binary_omission() {
+        let dir = test_repo("review-unborn");
+        std::fs::write(dir.join("staged.txt"), "hello\n").expect("staged");
+        git_ok(&dir, &["add", "staged.txt"]);
+        std::fs::write(dir.join("binary.dat"), [0, 1, 2]).expect("binary");
+        let snapshot = collect_review_snapshot(dir.to_str().expect("utf8"), "head")
+            .expect("collect unborn review");
+        assert!(snapshot.diff.contains("b/staged.txt"));
+        assert!(snapshot
+            .omitted
+            .iter()
+            .any(|x| x.path == "binary.dat" && x.reason == "binary"));
+        std::fs::remove_dir_all(dir).expect("cleanup");
     }
 
     #[test]

@@ -301,6 +301,7 @@ export class ReviewBoardView implements ContentView {
   private disposeListeners: (() => void)[] = [];
   private bodyScrollRaf = 0;
   private bodyScrollTarget: number | null = null;
+  private readonly initialLoad: Promise<void>;
 
   constructor(container: HTMLElement, private options: ReviewBoardOptions) {
     this.dir = options.dir;
@@ -361,7 +362,7 @@ export class ReviewBoardView implements ContentView {
     }
     this.element.dataset.layout = 'wide';
 
-    void this.load();
+    this.initialLoad = this.load();
   }
 
   onClose(cb: () => void): void {
@@ -383,6 +384,23 @@ export class ReviewBoardView implements ContentView {
   /** Bundle slug — the durable id, so the compositor can de-dupe open Boards. */
   bundleSlug(): string {
     return this.slug;
+  }
+
+  /** Snapshot the human's current Board answers for a review-thread verdict. */
+  draftResponse(): ReviewResponse {
+    return toResponse(this.slug, this.answers, this.doc.blocks);
+  }
+
+  async flushDraft(): Promise<void> {
+    await this.initialLoad;
+    if (this.saveTimer !== null) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    await this.saveNow();
+    if (this.saveState === 'error') {
+      throw new Error(this.banner ?? 'could not save Review Board answers');
+    }
   }
 
   // ─── Loading and refresh ────────────────────────────────────────────────
@@ -472,8 +490,8 @@ export class ReviewBoardView implements ContentView {
   }
 
   /** Re-read the file now (ADR-0008: lane quiet points + a manual `r`). */
-  requestRefresh(): void {
-    void this.load(true);
+  requestRefresh(): Promise<void> {
+    return this.initialLoad.then(() => this.load(true));
   }
 
   private rebuildSteps(): void {

@@ -16,6 +16,7 @@ mod pty;
 mod quick_search;
 pub mod remote_harness;
 mod review_excerpt;
+mod review_threads;
 mod session;
 pub mod sound;
 pub mod ssh;
@@ -210,6 +211,17 @@ pub fn run() {
             commands::get_acp_harness_config_path,
             commands::acp_collect_review_git_state,
             commands::collect_working_diff,
+            commands::review_thread_preview,
+            commands::review_thread_create,
+            commands::review_thread_reissue_guide,
+            commands::review_thread_cancel_guide,
+            commands::review_thread_list,
+            commands::review_thread_read,
+            commands::review_thread_save_draft,
+            commands::review_thread_check,
+            commands::review_thread_submit,
+            commands::review_thread_mark_delivery,
+            commands::review_thread_mark_guide,
             commands::working_diff_stat,
             commands::collect_reference_git_state,
             commands::list_harness_mcp_stats,

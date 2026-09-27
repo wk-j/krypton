@@ -109,6 +109,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'directive', args: '<what to create/change>', description: 'author a reusable harness directive' },
   { name: 'draw', args: '<request>', description: 'draw in an open tldraw Offline canvas (focused or named)' },
   { name: 'review', args: '[<lane>…] [-- <doc | note>]', description: 'run a multi-reviewer design/diff review' },
+  { name: 'review-thread', args: '', description: 'review the current lane diff with a fixed snapshot and human verdict' },
   { name: 'orchestrator', args: '', description: 'designate this lane the orchestrator seat + open the console' },
   { name: 'polly', args: '<task>', description: 'Polly orchestration — spawns Cursor + Claude + Codex workers' },
   { name: 'debby', args: '<question>', description: 'Debby brainstorming — asks Claude + Codex heads' },
@@ -309,6 +310,7 @@ export function commandMeta(): Record<string, CommandMeta> {
         intent: '<intent>',
       }),
     },
+    'review-thread': { category: 'agent', badges: [], lanes: 'same lane' },
     orchestrator: { category: 'agent', badges: [], alias: 'console' },
     polly: {
       category: 'agent',

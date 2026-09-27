@@ -275,6 +275,9 @@ project = ""
 # flag has no on-disk form. Other kinds remain manual; later review edits and
 # responses also require `#push review [<slug>]`.
 auto_push = []
+# Review threads (spec 270) add no TOML key. Only their Guide's Review Board
+# bundle follows the opt-in review auto-push rule; the private diff snapshot,
+# line comments, and verdict history remain local.
 # How often the workspace footer's backend-link segment probes the server
 # (spec 213). The segment is the only place that tells you whether the link is
 # actually alive — `#xenon status` reports configuration, never connectivity.

@@ -417,6 +417,258 @@ pub fn collect_working_diff(cwd: String, staged: bool) -> Result<crate::git::Wor
     crate::git::collect_working_diff(&cwd, staged)
 }
 
+/// spec 270: preview and freeze one review round without a worktree.
+#[tauri::command]
+pub fn review_thread_preview(cwd: String, base: String) -> Result<serde_json::Value, String> {
+    let snapshot = crate::review_threads::preview(&cwd, &base)?;
+    Ok(serde_json::json!({
+        "fingerprint": snapshot.fingerprint,
+        "baseRef": snapshot.base_ref,
+        "baseOid": snapshot.base_oid,
+        "files": snapshot.files,
+        "omitted": snapshot.omitted,
+    }))
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn review_thread_create(
+    app_handle: AppHandle,
+    hook_server: State<'_, Arc<HookServer>>,
+    cwd: String,
+    harness_id: String,
+    parent_backend_id: String,
+    parent_session_id: String,
+    parent_lane_name: String,
+    base: String,
+    fingerprint: String,
+) -> Result<serde_json::Value, String> {
+    let thread = crate::review_threads::create(
+        &cwd,
+        &base,
+        &fingerprint,
+        &parent_backend_id,
+        &parent_session_id,
+        &parent_lane_name,
+    )?;
+    let board = match hook_server.review_new_for_thread(
+        &harness_id,
+        &parent_lane_name,
+        &format!("Review {}", thread.id),
+        &format!(
+            "Review thread {} · snapshot {}",
+            thread.id, thread.snapshot_hash
+        ),
+    ) {
+        Ok(board) => board,
+        Err(error) => {
+            let _ = crate::review_threads::remove(&cwd, &thread.id);
+            return Err(error);
+        }
+    };
+    let board_fields = || -> Result<(&str, &str, &str), String> {
+        Ok((
+            board["id"].as_str().ok_or("review id missing")?,
+            board["slug"].as_str().ok_or("review slug missing")?,
+            board["dir"].as_str().ok_or("review dir missing")?,
+        ))
+    };
+    let (review_id, slug, dir) = match board_fields() {
+        Ok(fields) => fields,
+        Err(error) => {
+            if let Some(id) = board["id"].as_str() {
+                let _ = hook_server.cancel_review_for_thread(&harness_id, &parent_lane_name, id);
+            }
+            let _ = crate::review_threads::remove(&cwd, &thread.id);
+            return Err(error);
+        }
+    };
+    if let Err(error) = crate::review_threads::attach_board(&cwd, &thread.id, review_id, slug, dir)
+    {
+        let _ = hook_server.cancel_review_for_thread(&harness_id, &parent_lane_name, review_id);
+        let _ = crate::review_threads::remove(&cwd, &thread.id);
+        return Err(error);
+    }
+    app_handle.emit_or_log(
+        "acp-harness-review",
+        serde_json::json!({
+            "harnessId": harness_id,
+            "laneLabel": parent_lane_name,
+            "id": review_id,
+            "slug": slug,
+            "dir": dir,
+            "path": board["path"],
+            "tail": board["tail"],
+            "title": board["title"],
+            "threadId": thread.id,
+            "state": "pending",
+        }),
+    );
+    Ok(serde_json::json!({
+        "threadId": thread.id,
+        "reviewId": review_id,
+        "reviewSlug": slug,
+        "reviewDir": dir,
+        "reviewPath": board["path"],
+        "snapshotHash": thread.snapshot_hash,
+        "omitted": thread.omitted,
+    }))
+}
+
+#[tauri::command]
+pub fn review_thread_reissue_guide(
+    app_handle: AppHandle,
+    hook_server: State<'_, Arc<HookServer>>,
+    cwd: String,
+    harness_id: String,
+    thread_id: String,
+) -> Result<serde_json::Value, String> {
+    let read = crate::review_threads::read(&cwd, &thread_id)?;
+    if read.thread.phase != "guide_failed" {
+        return Err("Guide can only be retried after a failed turn".to_string());
+    }
+    let lane_label = &read.thread.parent_lane_name;
+    let board = hook_server.review_new_for_thread(
+        &harness_id,
+        lane_label,
+        &format!("Review {}", thread_id),
+        &format!(
+            "Review thread {} · snapshot {}",
+            thread_id, read.thread.snapshot_hash
+        ),
+    )?;
+    let board_fields = || -> Result<(&str, &str, &str), String> {
+        Ok((
+            board["id"].as_str().ok_or("review id missing")?,
+            board["slug"].as_str().ok_or("review slug missing")?,
+            board["dir"].as_str().ok_or("review dir missing")?,
+        ))
+    };
+    let (review_id, slug, dir) = match board_fields() {
+        Ok(fields) => fields,
+        Err(error) => {
+            if let Some(id) = board["id"].as_str() {
+                let _ = hook_server.cancel_review_for_thread(&harness_id, lane_label, id);
+            }
+            return Err(error);
+        }
+    };
+    if let Err(error) = crate::review_threads::attach_board(&cwd, &thread_id, review_id, slug, dir)
+    {
+        let _ = hook_server.cancel_review_for_thread(&harness_id, lane_label, review_id);
+        return Err(error);
+    }
+    app_handle.emit_or_log(
+        "acp-harness-review",
+        serde_json::json!({
+            "harnessId": harness_id,
+            "laneLabel": lane_label,
+            "id": review_id,
+            "slug": slug,
+            "dir": dir,
+            "path": board["path"],
+            "tail": board["tail"],
+            "title": board["title"],
+            "threadId": thread_id,
+            "state": "pending",
+        }),
+    );
+    Ok(serde_json::json!({
+        "reviewId": review_id,
+        "reviewSlug": slug,
+        "reviewDir": dir,
+        "reviewPath": board["path"],
+    }))
+}
+
+#[tauri::command]
+pub fn review_thread_cancel_guide(
+    app_handle: AppHandle,
+    hook_server: State<'_, Arc<HookServer>>,
+    cwd: String,
+    harness_id: String,
+    lane_label: String,
+    thread_id: String,
+    review_id: String,
+) -> Result<(), String> {
+    hook_server.cancel_review_for_thread(&harness_id, &lane_label, &review_id)?;
+    crate::review_threads::mark_guide(&cwd, &thread_id, false)?;
+    app_handle.emit_or_log(
+        "acp-harness-review",
+        serde_json::json!({
+            "harnessId": harness_id,
+            "laneLabel": lane_label,
+            "id": review_id,
+            "state": "cancelled",
+        }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub fn review_thread_list(cwd: String) -> Result<Vec<crate::review_threads::ReviewThread>, String> {
+    crate::review_threads::list(&cwd)
+}
+
+#[tauri::command]
+pub fn review_thread_read(
+    cwd: String,
+    thread_id: String,
+) -> Result<crate::review_threads::ThreadRead, String> {
+    crate::review_threads::read(&cwd, &thread_id)
+}
+
+#[tauri::command]
+pub fn review_thread_save_draft(
+    cwd: String,
+    thread_id: String,
+    comments: Vec<crate::review_threads::ReviewLineComment>,
+) -> Result<(), String> {
+    crate::review_threads::save_draft(&cwd, &thread_id, comments)
+}
+
+#[tauri::command]
+pub fn review_thread_check(
+    cwd: String,
+    thread_id: String,
+) -> Result<crate::review_threads::ThreadCheck, String> {
+    crate::review_threads::check(&cwd, &thread_id)
+}
+
+#[tauri::command]
+pub fn review_thread_submit(
+    cwd: String,
+    thread_id: String,
+    verdict: String,
+    summary: String,
+    response: serde_json::Value,
+    accept_omitted: bool,
+) -> Result<crate::review_threads::ReviewVerdict, String> {
+    crate::review_threads::submit(
+        &cwd,
+        &thread_id,
+        &verdict,
+        &summary,
+        response,
+        accept_omitted,
+    )
+}
+
+#[tauri::command]
+pub fn review_thread_mark_delivery(
+    cwd: String,
+    thread_id: String,
+    verdict_id: String,
+    state: String,
+) -> Result<(), String> {
+    crate::review_threads::mark_delivery(&cwd, &thread_id, &verdict_id, &state)
+}
+
+#[tauri::command]
+pub fn review_thread_mark_guide(cwd: String, thread_id: String, ready: bool) -> Result<(), String> {
+    crate::review_threads::mark_guide(&cwd, &thread_id, ready)
+}
+
 /// spec 220: total uncommitted line volume for the window status bar's diff
 /// readout — `+added -removed` vs `HEAD` for the repo containing `cwd`. Polled
 /// a few seconds apart per repo, so it deliberately returns totals rather than

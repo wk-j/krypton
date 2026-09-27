@@ -102,6 +102,8 @@ export interface SignalValueMap {
   // root and refresh when it matches their own. Deliberately carries no lane
   // identity: the only meaning is "a lane in this project just went quiet".
   'harness:lane-idle': { cwd: string };
+  // spec 270: refresh an open Review thread when its Guide becomes ready or fails.
+  'harness:review-thread-status': { cwd: string; threadId: string };
 }
 
 /** spec 138: reversibility tier of the heaviest open attention item, ordered

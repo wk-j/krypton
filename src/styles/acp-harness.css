@@ -5,6 +5,7 @@
 
 .acp-harness {
   container-type: inline-size;
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -6338,4 +6339,150 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
   font-size: 10px;
   letter-spacing: 0.06em;
   color: rgba(216, 232, 216, 0.42);
+}
+.acp-harness__review-thread-action {
+  margin-left: auto;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: var(--agent-accent);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--agent-accent) 35%, transparent);
+  border-radius: var(--krypton-border-radius, 8px);
+  cursor: pointer;
+}
+
+.acp-harness__review-thread-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.acp-harness__rail-review-count {
+  margin-left: auto;
+  padding: 2px 5px;
+  color: var(--agent-accent);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.acp-review-thread-picker {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.acp-review-thread-picker__panel {
+  box-sizing: border-box;
+  width: min(520px, 100%);
+  max-height: 90%;
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--agent-accent);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: rgba(var(--krypton-bg-rgb), 0.94);
+  color: var(--agent-text);
+}
+
+.acp-review-thread-picker__panel h2 {
+  margin: 0 0 16px;
+  font-size: 1.1em;
+}
+
+.acp-review-thread-picker__bases {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.acp-review-thread-picker__bases legend {
+  margin-bottom: 8px;
+  padding: 0;
+  color: color-mix(in srgb, var(--agent-text) 65%, transparent);
+  font-size: 0.8em;
+}
+
+.acp-review-thread-picker__choice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--agent-accent) 32%, transparent);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: rgba(var(--krypton-bg-rgb), 0.5);
+  cursor: pointer;
+}
+
+.acp-review-thread-picker__choice:has(input:checked) {
+  border-color: var(--agent-accent);
+  background: color-mix(in srgb, var(--agent-accent) 8%, transparent);
+}
+
+.acp-review-thread-picker__choice:focus-within {
+  outline: 2px solid var(--agent-accent);
+  outline-offset: 2px;
+}
+
+.acp-review-thread-picker__choice input {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--agent-accent);
+}
+
+.acp-review-thread-picker__choice strong,
+.acp-review-thread-picker__choice small {
+  display: block;
+}
+
+.acp-review-thread-picker__choice small {
+  margin-top: 3px;
+  color: color-mix(in srgb, var(--agent-text) 65%, transparent);
+  font-size: 0.78em;
+  line-height: 1.35;
+}
+
+.acp-review-thread-picker__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.acp-review-thread-picker__panel button {
+  padding: 6px 10px;
+  font: inherit;
+  color: inherit;
+  background: rgb(var(--krypton-bg-rgb));
+  border: 1px solid color-mix(in srgb, var(--agent-accent) 40%, transparent);
+  border-radius: var(--krypton-border-radius, 8px);
+}
+
+.acp-review-thread-picker__panel button:focus-visible {
+  outline: 2px solid var(--agent-accent);
+  outline-offset: 2px;
+}
+
+.acp-review-thread-picker__panel button:disabled {
+  opacity: 0.5;
+}
+
+.acp-review-thread-picker__details {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--agent-accent) 24%, transparent);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: rgba(var(--krypton-bg-rgb), 0.5);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 30vh;
+  overflow: auto;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
 }

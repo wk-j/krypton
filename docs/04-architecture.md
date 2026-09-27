@@ -989,3 +989,23 @@ it cannot borrow a master, Krypton owns a dedicated socket and closes only that
 socket during teardown. Project-backed local surfaces are disabled for SSH
 workspaces until the hook server gains target-aware storage; they never receive
 the remote path as a local filesystem path.
+
+## Review Threads (spec 270)
+
+A human starts a fixed review round from an idle local ACP lane through
+`#review-thread`, its lane-head action, or the Command Palette. Rust captures one
+diff against the local upstream merge-base (or `HEAD`), including committed,
+staged, unstaged, and untracked text changes. The private
+`.krypton/review-threads/<id>/` directory keeps the immutable snapshot and
+verdict history.
+
+`ReviewThreadView` composes the existing Review Board Guide and
+`DiffContentView` under one tab. Guide authoring uses an issued Review Board
+bundle and `review_register`; a failed Guide turn cancels that pending write
+grant, and Retry Guide issues a fresh bundle. Line comments remain drafts until
+the human submits Approve or Request Changes. `AcpHarnessView` routes the saved
+verdict to the exact backend/session ID at the next idle point, then records
+whether dispatch began. The private thread directory is outside Xenon's
+review-bundle collector; configured Review Board auto-push applies only to the
+Guide bundle. No reviewer ACP lane or Git worktree is created. See
+`docs/270-review-threads-without-worktrees.md`.

@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (260)
+## Specs (257)
 
 | # | Spec |
 |---|------|
@@ -272,6 +272,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 267 | [Timeline Conflicts Completed by the Lane Agent](./267-timeline-conflicts-by-agent.md) |
 | 268 | [Browser Extension Active Ticket Sync](./268-browser-extension-active-ticket-sync.md) |
 | 269 | [Review Board Auto-Push to Xenon](./269-review-auto-push-xenon.md) |
+| 270 | [Review Threads Without Worktrees](./270-review-threads-without-worktrees.md) |
 
 ## ADRs (20)
 

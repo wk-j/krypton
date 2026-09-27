@@ -1035,6 +1035,31 @@ Later
 12. `#reviews` → GET /reviews (read-only archive; no browser→app write path)
 ```
 
+## Review Thread Flow (spec 270)
+
+1. `#review-thread`, the active lane-head action, or the Command Palette checks
+   that a local ACP session is idle. A keyboard-operated preview chooses the
+   upstream merge-base or `HEAD` and shows the file count and omitted files.
+2. `review_thread_create` checks the preview fingerprint again, stores an
+   immutable diff and thread metadata under `.krypton/review-threads/<id>/`,
+   and issues a normal Review Board bundle. The thread tab opens immediately
+   while the parent lane reads the snapshot and writes the Guide.
+3. `review_register` makes the Guide ready. A failed turn cancels the pending
+   bundle's write grant while keeping the snapshot; Retry Guide issues a new
+   bundle for that thread. The fixed Diff view never receives live-refresh
+   events. Line comments autosave to the private thread record, while Guide
+   block comments continue to autosave to `response.md`.
+4. Submit flushes both drafts and checks the current diff against the original
+   base OID. Approve requires a ready Guide and a fresh snapshot; Request
+   Changes may refer to a stale snapshot. The verdict is persisted before
+   routing. Omitted files require explicit confirmation for Approve.
+5. The compositor asks each live harness to deliver the verdict. Only the
+   backend/session ID stored in the thread can receive it. A busy lane keeps
+   the verdict queued until idle; a missing lane keeps it on disk for Send
+   again. The prompt frames human text and quoted code as JSON data. A
+   successful turn dispatch marks `handed_off`; an uncertain dispatch stays
+   visible for manual retry.
+
 ## Workspace Lifecycle Flow
 
 ### Startup

@@ -125,6 +125,7 @@ import type {
   ReviewResponse,
   ReviewResponseSendResult,
 } from './acp/types';
+import type { ReviewThread, ReviewThreadVerdict } from './acp/review-thread';
 import {
   WORKSPACE_SNAPSHOT_VERSION,
   planWorkspaceRecovery,
@@ -3120,6 +3121,33 @@ export class Compositor {
     return res ?? { status: 'no-live-lane' };
   }
 
+  private async sendReviewThreadVerdict(
+    thread: ReviewThread,
+    verdict: ReviewThreadVerdict,
+  ): Promise<'accepted' | 'no-live-lane' | 'duplicate'> {
+    for (const entry of listHarnessEntries()) {
+      if (!entry.alive || !entry.control) continue;
+      const result = await entry.control('review.thread.deliver', {
+        threadId: thread.id,
+        verdictId: verdict.id,
+        cwd: thread.repoRoot,
+      }) as { status?: string } | undefined;
+      if (result?.status === 'accepted' || result?.status === 'duplicate') return result.status;
+    }
+    return 'no-live-lane';
+  }
+
+  private async retryReviewThreadGuide(thread: ReviewThread): Promise<boolean> {
+    for (const entry of listHarnessEntries()) {
+      if (!entry.alive || !entry.control) continue;
+      const result = await entry.control('review.thread.retry-guide', {
+        threadId: thread.id, cwd: thread.repoRoot,
+      }) as { status?: string } | undefined;
+      if (result?.status === 'accepted') return true;
+    }
+    return false;
+  }
+
   /**
    * spec 211: open a Review Board over a durable bundle directory. Idempotent on
    * the slug: a review already open is focused rather than opened twice, because
@@ -3130,6 +3158,7 @@ export class Compositor {
     slug: string;
     laneName?: string;
     cwd?: string;
+    threadId?: string;
   }): Promise<void> {
     const existing = this.findReviewBoardTab(options.slug);
     if (existing) {
@@ -3137,12 +3166,11 @@ export class Compositor {
       return;
     }
 
-    const { ReviewBoardView } = await import('./review-board/view');
     const container = document.createElement('div');
     container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
 
     const cwd = options.cwd ?? (await this.getFocusedCwd()) ?? undefined;
-    const view = new ReviewBoardView(container, {
+    const boardOptions: import('./review-board/view').ReviewBoardOptions = {
       dir: options.dir,
       slug: options.slug,
       laneName: options.laneName,
@@ -3153,7 +3181,18 @@ export class Compositor {
       // no diff at all.
       jump: (target) => void this.jumpToReviewAnchor(target, cwd),
       review: { send: (payload) => this.sendReviewResponse(payload) },
-    });
+    };
+    const view = options.threadId && cwd
+      ? new (await import('./review-board/thread-view')).ReviewThreadView(container, {
+          cwd,
+          threadId: options.threadId,
+          dir: options.dir,
+          slug: options.slug,
+          laneName: options.laneName ?? '—',
+          deliver: (thread, verdict) => this.sendReviewThreadVerdict(thread, verdict),
+          retryGuide: (thread) => this.retryReviewThreadGuide(thread),
+        })
+      : new (await import('./review-board/view')).ReviewBoardView(container, boardOptions);
 
     const title = options.slug.length > 28 ? `${options.slug.slice(0, 27)}…` : options.slug;
     await this.createContentTab(`REVIEW // ${title}`, view);
@@ -3168,6 +3207,13 @@ export class Compositor {
         });
       });
       view.addDisposeListener(unsub);
+      if (options.threadId) {
+        const threadId = options.threadId;
+        const unsubStatus = this.bus.onSignal({ kind: 'harness:review-thread-status' }, (sig) => {
+          if (sig.value.threadId === threadId) view.requestRefresh();
+        });
+        view.addDisposeListener(unsubStatus);
+      }
     }
 
     view.onClose(() => {
@@ -3258,10 +3304,16 @@ export class Compositor {
 
     const { listReviewBundles, pickReview } = await import('./review-board/picker');
     // Bundles from every open harness, newest first across all of them.
-    const collected: { bundle: ReviewBundle; cwd: string | null }[] = [];
+    const collected: { bundle: ReviewBundle; cwd: string | null; threadId?: string }[] = [];
     for (const entry of entries) {
+      const threads = entry.cwd
+        ? await invoke<ReviewThread[]>('review_thread_list', { cwd: entry.cwd }).catch(() => [])
+        : [];
       for (const bundle of await listReviewBundles(entry.harnessId)) {
-        collected.push({ bundle, cwd: entry.cwd ?? null });
+        collected.push({
+          bundle, cwd: entry.cwd ?? null,
+          threadId: threads.find((thread) => thread.reviewSlug === bundle.slug)?.id,
+        });
       }
     }
     collected.sort((a, b) => b.bundle.slug.localeCompare(a.bundle.slug));
@@ -3274,6 +3326,7 @@ export class Compositor {
       slug: picked.slug,
       laneName: picked.laneName,
       cwd: owner?.cwd ?? undefined,
+      threadId: owner?.threadId,
     });
   }
 

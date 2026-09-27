@@ -52,11 +52,16 @@ describe('filteredHashCommands', () => {
       'resume',
       'recall',
       'review',
+      'review-thread',
     ]);
   });
 
   it('matches the bang variant', () => {
     expect(filteredHashCommands('#new').map((c) => c.name)).toEqual(['new', 'new!']);
+  });
+
+  it('offers the review-thread command by its full prefix', () => {
+    expect(filteredHashCommands('#review-thread').map((c) => c.name)).toEqual(['review-thread']);
   });
 
   it('returns nothing for an unknown prefix or non-palette draft', () => {

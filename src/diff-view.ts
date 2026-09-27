@@ -55,6 +55,10 @@ export interface DiffViewOptions {
   refreshProvider?: () => Promise<WorkingDiffResult>;
   /** Inline review comments (spec 158). Absent when no harness backs the repo. */
   review?: DiffReviewChannel;
+  /** spec 270: comments stay local until the parent review verdict is submitted. */
+  draftOnly?: boolean;
+  onDraftChange?: (comments: DiffReviewComment[]) => void;
+  initialComments?: DiffReviewComment[];
   /** Lane-reported reading-order hints (spec 160). Absent when no harness backs
    *  the repo; when present the view pre-triages the diff (fold/mark). */
   reviewPriority?: ReviewPriorityChannel;
@@ -201,6 +205,8 @@ export class DiffContentView implements ContentView {
   // Review comments (spec 158)
   private review: DiffReviewChannel | null;
   private comments: PendingComment[] = [];
+  private draftOnly = false;
+  private onDraftChange: ((comments: DiffReviewComment[]) => void) | null = null;
   private targets: DiffReviewTargets = { lanes: [], default: null };
   private reviewTarget: string | null = null;
   private composerEl: HTMLElement | null = null;
@@ -258,6 +264,9 @@ export class DiffContentView implements ContentView {
   constructor(unifiedDiff: string, container: HTMLElement, options?: DiffViewOptions) {
     this.refreshProvider = options?.refreshProvider ?? null;
     this.review = options?.review ?? null;
+    this.draftOnly = options?.draftOnly ?? false;
+    this.onDraftChange = options?.onDraftChange ?? null;
+    this.comments = (options?.initialComments ?? []).map((c) => ({ ...c, sent: false }));
     this.reviewPriority = options?.reviewPriority ?? null;
     this.skipped = options?.skipped ?? [];
     if (this.refreshProvider) this.lastSyncedAt = new Date();
@@ -781,6 +790,7 @@ export class DiffContentView implements ContentView {
       createdAt: Date.now(),
       sent: false,
     });
+    this.notifyDraftChange();
     this.reviewNotice = '';
     this.closeComposer();
     this.renderNav();
@@ -858,6 +868,7 @@ export class DiffContentView implements ContentView {
     const c = this.comments[this.commentsSelectedIndex];
     if (!c) return;
     this.comments.splice(this.commentsSelectedIndex, 1);
+    this.notifyDraftChange();
     this.commentsSelectedIndex = Math.min(this.commentsSelectedIndex, Math.max(0, this.comments.length - 1));
     this.renderCommentsOverlay();
     this.renderNav();
@@ -883,6 +894,11 @@ export class DiffContentView implements ContentView {
   }
 
   private async sendComments(): Promise<void> {
+    if (this.draftOnly) {
+      this.reviewNotice = 'comments saved as draft — submit a Review thread verdict to send';
+      this.renderCommentsOverlay();
+      return;
+    }
     // In-flight guard: a second `s` while a send is pending would mint a new
     // batchId for the same comments (Codex-1 W2). The queue de-dupes per comment
     // so it could not double-deliver, but the guard avoids redundant round-trips.
@@ -929,6 +945,14 @@ export class DiffContentView implements ContentView {
     }
     this.renderCommentsOverlay();
     this.renderNav();
+  }
+
+  draftComments(): DiffReviewComment[] {
+    return this.comments.map(({ sent: _sent, ...comment }) => ({ ...comment }));
+  }
+
+  private notifyDraftChange(): void {
+    this.onDraftChange?.(this.draftComments());
   }
 
   private renderCommentsOverlay(): void {

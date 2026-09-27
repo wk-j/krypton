@@ -409,6 +409,7 @@ export interface ReviewEventPayload {
   harnessId: string;
   laneLabel: string;
   id: string;
+  threadId?: string;
   slug?: string;
   dir?: string;
   path?: string;
