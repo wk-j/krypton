@@ -1036,7 +1036,7 @@
   color: rgb(var(--krypton-fg-rgb));
   background: rgba(var(--krypton-bg-rgb), 0.72);
   font-family: var(--krypton-font-family);
-  font-size: min(var(--krypton-chrome-font-size, 11px), 14px);
+  font-size: var(--krypton-font-size);
   contain: layout;
 }
 

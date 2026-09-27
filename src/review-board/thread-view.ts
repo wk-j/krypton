@@ -444,6 +444,10 @@ export class ReviewThreadView implements ContentView {
       void this.submit();
       return true;
     }
+    if (this.mode === 'diff' && e.target instanceof HTMLTextAreaElement &&
+        this.diff?.element.contains(e.target)) {
+      return this.diff.onKeyDown(e);
+    }
     if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) {
       if (e.key === 'Escape') { this.showMode('guide'); return true; }
       return false;
