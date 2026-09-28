@@ -774,7 +774,10 @@ export class InputRouter {
         }
         break;
       case 'k':
-        if (this.compositor.currentLayoutMode === LayoutMode.Depth) {
+        if (e.shiftKey) {
+          // Shift+K: toggle the keyboard overlay (spec 271)
+          this.compositor.toggleKeyboardOverlay().then(() => this.toNormal());
+        } else if (this.compositor.currentLayoutMode === LayoutMode.Depth) {
           this.compositor.depthPushBack().then(() => this.toNormal());
         } else if (this.compositor.currentLayoutMode === LayoutMode.Stage) {
           this.compositor.stagePrevious().then(() => this.toNormal());

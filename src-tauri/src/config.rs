@@ -54,6 +54,7 @@ pub struct KryptonConfig {
     pub usage_log: UsageLogConfig,
     pub daily_note: DailyNoteConfig,
     pub typesafe: TypeSafeConfig,
+    pub keyboard_overlay: KeyboardOverlayConfig,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -341,6 +342,40 @@ impl Default for VisualConfig {
             blur: 12,
             glow_intensity: 0.8,
             window_border: true,
+        }
+    }
+}
+
+// ─── Keyboard Overlay (spec 271) ───────────────────────────────────
+
+/// Read-only on-screen keyboard with wireframe hands, docked center-bottom of
+/// the workspace screen. Mirrors the "Keyboard study: ghost hands" artifact.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct KeyboardOverlayConfig {
+    /// Show the overlay at startup. Leader `Shift+K` toggles it at runtime.
+    pub enabled: bool,
+    /// Key label set: "auto" (follows typed script, us <-> th), "us", "de", "th".
+    pub layout: String,
+    /// Overlay width as a fraction of the workspace width (0.2–0.8).
+    pub width_ratio: f64,
+    /// Whole-overlay alpha (0.1–1.0).
+    pub opacity: f64,
+    /// Hide keys while a terminal password prompt has echo off.
+    pub mask_secure_input: bool,
+    /// After 5 s idle, the hands play demo phrases (visual only, never typed).
+    pub idle_ghost: bool,
+}
+
+impl Default for KeyboardOverlayConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            layout: "auto".to_string(),
+            width_ratio: 0.36,
+            opacity: 0.7,
+            mask_secure_input: true,
+            idle_ghost: false,
         }
     }
 }

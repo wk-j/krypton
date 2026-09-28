@@ -8,6 +8,7 @@
 @import './dashboard.css';
 @import './hooks.css';
 @import './cursor-trail.css';
+@import './keyboard-overlay.css';
 @import './diff-view.css';
 @import './markdown-view.css';
 @import './agent.css';

@@ -626,6 +626,30 @@ impl PtyManager {
         None
     }
 
+    /// Whether the PTY is sitting at a password-style prompt (spec 271).
+    ///
+    /// `readpassphrase(3)` (sudo, ssh passphrase) clears `ECHO` but keeps
+    /// `ICANON`; raw TUIs (zsh ZLE, vim, tmux, an ssh session) clear both, so
+    /// `!ECHO && ICANON` flags password prompts without masking every TUI.
+    /// `None` when the session is gone or its termios can't be read.
+    #[cfg(unix)]
+    pub fn is_secure_input(&self, session_id: u32) -> Option<bool> {
+        let sessions = self.sessions.lock().ok()?;
+        let session = sessions.get(&session_id)?;
+        let fd = session.master.as_raw_fd()?;
+        // SAFETY: `termios` is plain old data; tcgetattr fills it on success.
+        let mut termios: libc::termios = unsafe { std::mem::zeroed() };
+        if unsafe { libc::tcgetattr(fd, &mut termios) } != 0 {
+            return None;
+        }
+        Some(is_password_prompt_lflag(termios.c_lflag))
+    }
+
+    #[cfg(not(unix))]
+    pub fn is_secure_input(&self, _session_id: u32) -> Option<bool> {
+        None
+    }
+
     /// Get the shell's child PID for a session (used to search the full process tree).
     pub fn get_shell_pid(&self, session_id: u32) -> Option<u32> {
         let sessions = self.sessions.lock().ok()?;
@@ -637,6 +661,12 @@ impl PtyManager {
 // ─── Native Process Inspection (sysinfo + netstat2) ──────────────
 
 use sysinfo::System;
+
+/// `ECHO` off with `ICANON` on — the termios shape of a password prompt.
+#[cfg(unix)]
+fn is_password_prompt_lflag(lflag: libc::tcflag_t) -> bool {
+    lflag & libc::ECHO == 0 && lflag & libc::ICANON != 0
+}
 
 /// Names of common shell interpreters.
 const SHELL_NAMES: &[&str] = &["sh", "bash", "zsh", "dash", "fish", "ksh", "csh", "tcsh"];
@@ -1148,4 +1178,20 @@ fn read_process_cwd(pid: u32) -> Option<String> {
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn read_process_cwd(_pid: u32) -> Option<String> {
     None
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::is_password_prompt_lflag;
+
+    #[test]
+    fn password_prompt_is_echo_off_canonical() {
+        // sudo / readpassphrase: canonical line input, echo off
+        assert!(is_password_prompt_lflag(libc::ICANON | libc::ISIG));
+        // normal cooked shell input: echo on
+        assert!(!is_password_prompt_lflag(libc::ICANON | libc::ECHO));
+        // raw TUI (zsh ZLE, vim, ssh session): echo off and non-canonical
+        assert!(!is_password_prompt_lflag(libc::ISIG));
+        assert!(!is_password_prompt_lflag(0));
+    }
 }

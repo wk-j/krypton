@@ -172,6 +172,7 @@ pub fn run() {
             commands::reload_config,
             commands::open_url,
             commands::get_foreground_process,
+            commands::get_pty_secure_input,
             commands::get_java_stats,
             commands::find_java_pid,
             commands::find_java_server,

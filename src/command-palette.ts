@@ -573,6 +573,13 @@ export class CommandPalette {
       category: 'Workspace',
       execute: () => this.workspaceFooter?.toggleVisible(),
     });
+    this.register({
+      id: 'workspace.keyboard-overlay.toggle',
+      label: 'Toggle Keyboard Overlay',
+      category: 'Workspace',
+      keybinding: 'Leader Shift+K',
+      execute: () => c.toggleKeyboardOverlay(),
+    });
 
     this.register({
       id: 'window.focus-next',

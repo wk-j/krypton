@@ -80,7 +80,7 @@ import { AnimationEngine, BoundsSnapshot, type StageTransitionLayer } from './an
 import { SoundEngine } from './sound';
 import { ShaderEngine } from './shaders';
 import type { ShaderPreset } from './shaders';
-import type { KryptonConfig, TabsConfig, ShaderConfig } from './config';
+import type { KryptonConfig, TabsConfig, ShaderConfig, KeyboardOverlayConfig } from './config';
 import { applyComposerBloomSettings } from './acp/harness-composer-bloom';
 import { DEFAULT_SHADER_CONFIG, loadConfig } from './config';
 import type { FrontendThemeEngine } from './theme';
@@ -465,6 +465,12 @@ export class Compositor {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private profilerHud: any = null;
 
+  /** Keyboard overlay (spec 271) — lazy-imported on first show */
+  private keyboardOverlay: import('./keyboard-overlay').KeyboardOverlay | null = null;
+  private keyboardOverlayLoading: Promise<import('./keyboard-overlay').KeyboardOverlay> | null = null;
+  private keyboardOverlayConfig: KeyboardOverlayConfig | null = null;
+  private keyboardOverlayFooterVisible = true;
+
   /** Active inline AI overlay (at most one) */
   private inlineAI: import('./inline-ai').InlineAIOverlay | null = null;
 
@@ -737,6 +743,8 @@ export class Compositor {
         config.visual.window_border === false,
       );
     }
+
+    void this.applyKeyboardOverlayConfig(config.keyboard_overlay);
 
     this.configApplied = true;
   }
@@ -4779,6 +4787,46 @@ export class Compositor {
       this.profilerHud = new ProfilerHud();
     }
     this.profilerHud.toggle();
+  }
+
+  /** Toggle the keyboard overlay (Leader Shift+K / palette). Runtime-only, not persisted. */
+  async toggleKeyboardOverlay(): Promise<void> {
+    const overlay = await this.ensureKeyboardOverlay();
+    overlay.setEnabled(!overlay.isEnabled);
+  }
+
+  /** Workspace footer visibility, so the overlay docks above the rail or the screen edge. */
+  setKeyboardOverlayFooterVisible(visible: boolean): void {
+    this.keyboardOverlayFooterVisible = visible;
+    this.keyboardOverlay?.setFooterVisible(visible);
+  }
+
+  /** Apply `[keyboard_overlay]` at startup and on reload. `enabled` only changes
+   *  visibility when its value changes, so a runtime toggle survives unrelated reloads. */
+  private async applyKeyboardOverlayConfig(config: KeyboardOverlayConfig | undefined): Promise<void> {
+    if (!config) return;
+    const previous = this.keyboardOverlayConfig;
+    this.keyboardOverlayConfig = config;
+    if (!this.keyboardOverlay && !this.keyboardOverlayLoading && !config.enabled) return;
+    const overlay = await this.ensureKeyboardOverlay();
+    overlay.applyConfig(config);
+    if (!previous || previous.enabled !== config.enabled) overlay.setEnabled(config.enabled);
+  }
+
+  private ensureKeyboardOverlay(): Promise<import('./keyboard-overlay').KeyboardOverlay> {
+    if (this.keyboardOverlay) return Promise.resolve(this.keyboardOverlay);
+    this.keyboardOverlayLoading ??= import('./keyboard-overlay').then(
+      ({ KeyboardOverlay, DEFAULT_KEYBOARD_OVERLAY_CONFIG }) => {
+        const overlay = new KeyboardOverlay(
+          () => this.getFocusedSessionId(),
+          this.keyboardOverlayConfig ?? DEFAULT_KEYBOARD_OVERLAY_CONFIG,
+        );
+        overlay.setFooterVisible(this.keyboardOverlayFooterVisible);
+        this.keyboardOverlay = overlay;
+        return overlay;
+      },
+    );
+    return this.keyboardOverlayLoading;
   }
 
   /**

@@ -273,6 +273,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 268 | [Browser Extension Active Ticket Sync](./268-browser-extension-active-ticket-sync.md) |
 | 269 | [Review Board Auto-Push to Xenon](./269-review-auto-push-xenon.md) |
 | 270 | [Review Threads Without Worktrees](./270-review-threads-without-worktrees.md) |
+| 271 | [Keyboard Overlay (Ghost Hands)](./271-keyboard-overlay.md) |
 
 ## ADRs (20)
 

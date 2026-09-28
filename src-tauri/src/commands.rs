@@ -175,6 +175,16 @@ pub fn get_foreground_process(
     pty_manager.get_foreground_process(session_id)
 }
 
+/// Whether a PTY session is at a password prompt (echo off, canonical mode).
+/// Used by the keyboard overlay to hide keys (spec 271).
+#[tauri::command]
+pub fn get_pty_secure_input(
+    pty_manager: State<'_, Arc<PtyManager>>,
+    session_id: u32,
+) -> Result<Option<bool>, String> {
+    Ok(pty_manager.is_secure_input(session_id))
+}
+
 /// Get JVM + OS resource stats for a Java process.
 #[tauri::command]
 pub fn get_java_stats(pid: u32) -> Result<crate::pty::JavaStats, String> {

@@ -148,6 +148,9 @@ async function main(): Promise<void> {
     .catch((e) => console.debug('[Krypton] TypeSafe metrics unavailable:', e));
   inputRouter.setWorkspaceFooter(workspaceFooter);
   commandPalette.setWorkspaceFooter(workspaceFooter);
+  // Keyboard overlay (spec 271) docks above the footer rail, or the screen edge when hidden.
+  compositor.setKeyboardOverlayFooterVisible(workspaceFooter.isVisible);
+  workspaceFooter.onVisibleChange((visible) => compositor.setKeyboardOverlayFooterVisible(visible));
 
   // Initialize smart prompt dialog (Cmd+Shift+K → dispatch prompt to Claude tab)
   const promptDialog = new PromptDialog(compositor, () => inputRouter.exitPromptDialog());

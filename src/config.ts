@@ -139,6 +139,16 @@ export interface VisualConfig {
   window_border: boolean;    // false = hide the accent outline around windows
 }
 
+/** `[keyboard_overlay]` — read-only on-screen keyboard + wireframe hands (spec 271). */
+export interface KeyboardOverlayConfig {
+  enabled: boolean;              // shown at startup; Leader Shift+K toggles at runtime
+  layout: 'auto' | 'us' | 'de' | 'th'; // key labels; auto follows typed script (us ↔ th)
+  width_ratio: number;           // overlay width ÷ workspace width (0.2–0.8)
+  opacity: number;               // whole-overlay alpha (0.1–1.0)
+  mask_secure_input: boolean;    // hide keys at terminal password prompts
+  idle_ghost: boolean;           // hands-only demo phrases after 5 s idle
+}
+
 export interface ExtensionsConfig {
   enabled: boolean;
   poll_interval_ms: number;
@@ -248,6 +258,7 @@ export interface KryptonConfig {
   acp_harness: AcpHarnessConfig;
   xenon: XenonConfig;
   typesafe?: TypeSafeConfig;
+  keyboard_overlay?: KeyboardOverlayConfig;
 }
 
 /** Load configuration from the Rust backend */

@@ -81,6 +81,29 @@
    compositor closes the editor tab.
 ```
 
+## Keyboard Overlay Observe Flow (spec 271)
+
+```
+1. User presses a key anywhere while the overlay is shown (Leader Shift+K or
+   [keyboard_overlay].enabled)
+2. KeyboardOverlay's passive window-capture keydown listener runs first; it never
+   calls preventDefault/stopPropagation, so InputRouter, xterm.js and content views
+   receive the key unchanged
+3. Skip e.repeat and Cmd combos (app shortcuts incl. the Cmd+P leader)
+4. layout = "auto": a Thai e.key switches labels to Kedmanee, an ASCII letter back to
+   QWERTY → post { type: 'config' }
+5. resolveCode(e.code, e.key) → a drawn physical key, or skip (arrows, Tab, F-keys…)
+6. mask_secure_input + focused pane has a PTY session:
+   a. secure flag cached < 250 ms → reuse it
+   b. else invoke('get_pty_secure_input', { sessionId }) → Rust tcgetattr on the PTY
+      master: ECHO off && ICANON on → true (password prompt)
+   c. secure → drop the key; error/None → treat as not secure
+7. post { type: 'key', code } to the worker (or the main-thread fallback driver)
+8. KeyboardOverlayDriver: finger reaches, key glows, rAF loop (re)starts
+9. When every glow has faded and the hands settle (< 0.1 px/frame), the loop stops —
+   an idle overlay draws 0 frames. idle_ghost re-arms a 5 s timer instead.
+```
+
 ## Quick Terminal Toggle Flow (e.g., user presses Cmd+I)
 
 ```
