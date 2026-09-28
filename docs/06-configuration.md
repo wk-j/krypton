@@ -232,14 +232,18 @@ window_border = true           # Show the accent-colored outline around terminal
 enabled = false                # Show at startup. The runtime toggle is not persisted.
 layout = "auto"                # auto | us | de | th. auto shows QWERTY and switches
                                # to Kedmanee labels while you type Thai.
-width_ratio = 0.36             # Overlay width as a fraction of the workspace width
-                               # (0.2–0.8). Height follows at 8.1/15.4 of the width.
+width_ratio = 0.36             # Keyboard width as a fraction of the workspace width
+                               # (0.2–0.8). Height follows at 8.1/15.4 of it; the
+                               # mouse pad adds ~40% width (capped at the workspace).
 opacity = 0.7                  # Whole-overlay alpha (0.1–1.0)
 mask_secure_input = true       # Hide keys while the focused terminal is at a
                                # password prompt (termios ECHO off + ICANON on).
                                # A remote sudo inside ssh/tmux is NOT detectable.
 idle_ghost = false             # After 5 s idle the hands play demo phrases.
                                # Visual only (never typed); keeps a 60 fps loop.
+mouse = true                   # Draw a mouse right of the keyboard. The right hand
+                               # grips it while the pointer moves and lights its
+                               # buttons on click. false = compact keyboard only.
 
 # --- Claude Code Hooks ---
 # HTTP server for receiving Claude Code hook events (toast notifications, status).
@@ -555,10 +559,11 @@ name = "custom-fixed"
 | `[terminal]` | `cursor_trail` | bool | `true` | Rainbow flame trail following the mouse and text cursor |
 | `[keyboard_overlay]` | `enabled` | bool | `false` | Show the ghost-hands keyboard overlay at startup; `Leader Shift+K` toggles it at runtime (spec 271) |
 | `[keyboard_overlay]` | `layout` | string | `"auto"` | Key labels: `auto` (QWERTY, Kedmanee while typing Thai), `us`, `de`, `th` |
-| `[keyboard_overlay]` | `width_ratio` | float | `0.36` | Overlay width ÷ workspace width, clamped to 0.2–0.8 |
+| `[keyboard_overlay]` | `width_ratio` | float | `0.36` | Keyboard width ÷ workspace width, clamped to 0.2–0.8; the mouse pad adds to it, and the whole overlay is capped at the workspace width |
 | `[keyboard_overlay]` | `opacity` | float | `0.7` | Whole-overlay alpha, clamped to 0.1–1.0 |
 | `[keyboard_overlay]` | `mask_secure_input` | bool | `true` | Hide keys at a local terminal password prompt (`ECHO` off, `ICANON` on) |
 | `[keyboard_overlay]` | `idle_ghost` | bool | `false` | Hands-only demo phrases after 5 s idle; never typed into a terminal |
+| `[keyboard_overlay]` | `mouse` | bool | `true` | Draw a mouse the right hand grips while the pointer moves; clicks light its buttons. `false` keeps the compact keyboard-only overlay |
 | `[theme]` | `name` | string | `"krypton-dark"` | Built-in or custom theme name (see [Theme Specification](./10-theme-specification.md)). Command palette **Color Theme** actions call `set_theme` and persist this key. File edits apply on **Reload Config** or the next launch. |
 | `[theme.colors]` | *(various)* | string | — | Hex color overrides (applied on top of named theme) |
 | `[keybindings]` | `leader` | string | `"Ctrl+Space"` | Leader key to enter compositor mode |

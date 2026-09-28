@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   CHAR_TO_CODE,
   FINGER_MAP,
+  KEY_UNITS_TALL,
+  KEY_UNITS_WIDE,
+  KEY_UNITS_WIDE_MOUSE,
   KeyboardOverlayRenderer,
   LABELS,
   detectLayout,
@@ -80,15 +83,27 @@ describe('keyboard overlay auto layout', () => {
 
 describe('keyboard overlay geometry', () => {
   it('sizes from the workspace width at a 15.4 × 8.1 key-unit aspect', () => {
-    const { width, height } = overlaySize(2000, 0.36);
+    const { width, height } = overlaySize(2000, 0.36, false);
     expect(width).toBe(720);
     expect(height).toBe(Math.round((720 / 15.4) * 8.1));
   });
 
   it('clamps width_ratio to 0.2–0.8 and the key unit to 12px', () => {
-    expect(overlaySize(1000, 5).width).toBe(overlaySize(1000, 0.8).width);
-    expect(overlaySize(1000, 0).width).toBe(overlaySize(1000, 0.2).width);
-    expect(overlaySize(100, 0.36).width).toBe(Math.round(12 * 15.4));
+    expect(overlaySize(1000, 5, false).width).toBe(overlaySize(1000, 0.8, false).width);
+    expect(overlaySize(1000, 0, false).width).toBe(overlaySize(1000, 0.2, false).width);
+    expect(overlaySize(100, 0.36, false).width).toBe(Math.round(12 * 15.4));
+  });
+
+  it('adds the mouse pad to the right at the same key size and height', () => {
+    const unit = (2000 * 0.36) / KEY_UNITS_WIDE;
+    const { width, height } = overlaySize(2000, 0.36, true);
+    expect(width).toBe(Math.round(unit * KEY_UNITS_WIDE_MOUSE));
+    expect(height).toBe(overlaySize(2000, 0.36, false).height);
+    expect(height).toBe(Math.round(unit * KEY_UNITS_TALL));
+  });
+
+  it('never lets the mouse overlay outgrow the workspace', () => {
+    expect(overlaySize(1000, 0.8, true).width).toBeLessThanOrEqual(1000);
   });
 
   it('uses the touch-typing finger map from the artifact', () => {
@@ -133,5 +148,66 @@ describe('keyboard overlay renderer loop', () => {
     expect(r.msUntilGhost(2100)).toBe(3000);
     expect(r.frame(ctx, 5200)).toBe(true);
     expect(r.msUntilGhost(5300)).toBeNull();
+  });
+});
+
+describe('keyboard overlay mouse', () => {
+  function mouseRenderer(): { r: KeyboardOverlayRenderer; ctx: CanvasRenderingContext2D } {
+    const r = new KeyboardOverlayRenderer();
+    const ctx = stubContext();
+    r.setMouse(true);
+    r.resize(800, 300);
+    framesUntilIdle(r, ctx, 0);
+    return { r, ctx };
+  }
+
+  it('moves the right hand onto the mouse when the pointer moves, then stops the loop', () => {
+    const { r, ctx } = mouseRenderer();
+    r.movePointer(0.2, 0.8, 1000);
+    const settle = framesUntilIdle(r, ctx, 1000);
+    expect(settle).toBeLessThan(300);
+    expect(r.mouseGrip).toBeGreaterThan(0.9);
+    expect(r.frame(ctx, 20_000)).toBe(false);
+  });
+
+  it('waits 0.7 s after the last key before reaching for the mouse', () => {
+    const { r, ctx } = mouseRenderer();
+    r.press('KeyA', false, 1000);
+    r.movePointer(0.5, 0.5, 1100);
+    r.frame(ctx, 1200);
+    expect(r.mouseGrip).toBe(0);
+    framesUntilIdle(r, ctx, 1200);
+    expect(r.mouseGrip).toBeGreaterThan(0.9);
+  });
+
+  it('returns the right hand to the keys on a right-hand key', () => {
+    const { r, ctx } = mouseRenderer();
+    r.movePointer(0.5, 0.5, 1000);
+    framesUntilIdle(r, ctx, 1000);
+    r.press('KeyJ', false, 10_000);
+    framesUntilIdle(r, ctx, 10_000);
+    expect(r.mouseGrip).toBeLessThan(0.1);
+  });
+
+  it('animates a click and settles after release', () => {
+    const { r, ctx } = mouseRenderer();
+    r.movePointer(0.5, 0.5, 1000);
+    framesUntilIdle(r, ctx, 1000);
+    r.pressButton('left', true, 10_000);
+    r.pressButton('left', false, 10_050);
+    const settle = framesUntilIdle(r, ctx, 10_050);
+    expect(settle).toBeGreaterThan(1);
+    expect(settle).toBeLessThan(300);
+  });
+
+  it('ignores the pointer when the mouse is off', () => {
+    const r = new KeyboardOverlayRenderer();
+    const ctx = stubContext();
+    r.resize(560, 305);
+    framesUntilIdle(r, ctx, 0);
+    r.movePointer(0.5, 0.5, 1000);
+    r.pressButton('left', true, 1000);
+    expect(r.frame(ctx, 1016)).toBe(false);
+    expect(r.mouseGrip).toBe(0);
   });
 });

@@ -1,7 +1,7 @@
 // Krypton — Keyboard overlay (spec 271)
 // Read-only on-screen keyboard with wireframe "ghost hands", docked at the
-// center-bottom of the workspace screen. It only observes keydown events —
-// never preventDefault/stopPropagation, never writes to a PTY. Rendering runs
+// center-bottom of the workspace screen. It only observes keydown and pointer
+// events — never preventDefault/stopPropagation, never writes to a PTY. Rendering runs
 // in a worker on an OffscreenCanvas; the main thread falls back to the same
 // driver when OffscreenCanvas is unavailable.
 
@@ -30,6 +30,7 @@ export const DEFAULT_KEYBOARD_OVERLAY_CONFIG: KeyboardOverlayConfig = {
   opacity: 0.7,
   mask_secure_input: true,
   idle_ghost: false,
+  mouse: true,
 };
 
 interface SecureCache {
@@ -49,6 +50,9 @@ export class KeyboardOverlay {
   private secureCache: SecureCache | null = null;
   private styleKey = '';
   private styleRaf = 0;
+  private pointerX = 0;
+  private pointerY = 0;
+  private pointerRaf = 0;
 
   constructor(
     private readonly getFocusedSessionId: () => number | null,
@@ -70,6 +74,9 @@ export class KeyboardOverlay {
 
     document.body.appendChild(this.canvas);
     window.addEventListener('keydown', this.onKeyDown, { capture: true, passive: true });
+    window.addEventListener('pointermove', this.onPointerMove, { capture: true, passive: true });
+    window.addEventListener('pointerdown', this.onPointerButton, { capture: true, passive: true });
+    window.addEventListener('pointerup', this.onPointerButton, { capture: true, passive: true });
     window.addEventListener('resize', this.onResize);
     // Theme and font changes land as inline custom properties on <html>.
     this.styleObserver = new MutationObserver(this.scheduleStyle);
@@ -112,9 +119,13 @@ export class KeyboardOverlay {
 
   destroy(): void {
     window.removeEventListener('keydown', this.onKeyDown, { capture: true });
+    window.removeEventListener('pointermove', this.onPointerMove, { capture: true });
+    window.removeEventListener('pointerdown', this.onPointerButton, { capture: true });
+    window.removeEventListener('pointerup', this.onPointerButton, { capture: true });
     window.removeEventListener('resize', this.onResize);
     this.styleObserver.disconnect();
     if (this.styleRaf) cancelAnimationFrame(this.styleRaf);
+    if (this.pointerRaf) cancelAnimationFrame(this.pointerRaf);
     this.post({ type: 'dispose' });
     this.worker?.terminate();
     this.canvas.remove();
@@ -136,11 +147,11 @@ export class KeyboardOverlay {
   }
 
   private postConfig(): void {
-    this.post({ type: 'config', layout: this.layout, ghost: this.config.idle_ghost });
+    this.post({ type: 'config', layout: this.layout, ghost: this.config.idle_ghost, mouse: this.config.mouse });
   }
 
   private resize(): void {
-    const { width, height } = overlaySize(window.innerWidth, this.config.width_ratio);
+    const { width, height } = overlaySize(window.innerWidth, this.config.width_ratio, this.config.mouse);
     this.canvas.style.width = `${width}px`;
     this.canvas.style.height = `${height}px`;
     this.post({ type: 'resize', width, height, dpr: window.devicePixelRatio || 1 });
@@ -197,6 +208,33 @@ export class KeyboardOverlay {
     }
     void this.checkSecure(sessionId).then((secure) => {
       if (!secure && this.enabled) this.post({ type: 'key', code, shift: false });
+    });
+  };
+
+  // Passive pointer observers: the drawn mouse follows the real pointer, one post per frame.
+  private onPointerMove = (e: PointerEvent): void => {
+    if (!this.enabled || !this.config.mouse || e.pointerType === 'touch') return;
+    this.pointerX = e.clientX;
+    this.pointerY = e.clientY;
+    this.pointerRaf ||= requestAnimationFrame(this.flushPointer);
+  };
+
+  private onPointerButton = (e: PointerEvent): void => {
+    if (!this.enabled || !this.config.mouse || e.pointerType === 'touch') return;
+    if (e.button !== 0 && e.button !== 2) return;
+    this.pointerX = e.clientX;
+    this.pointerY = e.clientY;
+    if (this.pointerRaf) cancelAnimationFrame(this.pointerRaf);
+    this.flushPointer();
+    this.post({ type: 'button', button: e.button === 0 ? 'left' : 'right', down: e.type === 'pointerdown' });
+  };
+
+  private flushPointer = (): void => {
+    this.pointerRaf = 0;
+    this.post({
+      type: 'pointer',
+      x: this.pointerX / Math.max(1, window.innerWidth),
+      y: this.pointerY / Math.max(1, window.innerHeight),
     });
   };
 

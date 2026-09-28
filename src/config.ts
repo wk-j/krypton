@@ -143,10 +143,11 @@ export interface VisualConfig {
 export interface KeyboardOverlayConfig {
   enabled: boolean;              // shown at startup; Leader Shift+K toggles at runtime
   layout: 'auto' | 'us' | 'de' | 'th'; // key labels; auto follows typed script (us ↔ th)
-  width_ratio: number;           // overlay width ÷ workspace width (0.2–0.8)
+  width_ratio: number;           // keyboard width ÷ workspace width (0.2–0.8); the mouse adds to it
   opacity: number;               // whole-overlay alpha (0.1–1.0)
   mask_secure_input: boolean;    // hide keys at terminal password prompts
   idle_ghost: boolean;           // hands-only demo phrases after 5 s idle
+  mouse: boolean;                // draw a mouse; the right hand grips it while you use the pointer
 }
 
 export interface ExtensionsConfig {

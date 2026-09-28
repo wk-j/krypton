@@ -1,8 +1,9 @@
 // Krypton — Keyboard overlay model (spec 271)
 // Geometry, label tables, touch-typing finger map, hand pose and the canvas
 // renderer for the ghost-hands keyboard overlay. Ported from the "Keyboard
-// study: ghost hands" artifact, minus the mouse grip. No DOM access: the same
-// driver runs inside the overlay worker or on the main thread as a fallback.
+// study: ghost hands" artifact, including its optional mouse grip. No DOM
+// access: the same driver runs inside the overlay worker or on the main thread
+// as a fallback.
 
 export type OverlayLayout = 'us' | 'de' | 'th';
 export type OverlayLayoutSetting = OverlayLayout | 'auto';
@@ -19,10 +20,13 @@ interface KeyRow {
 }
 
 /** Overlay footprint in key units (COMPACT geometry: no mouse pad). The height
- *  ends just under the lowest hand box: a bottom-row reach drops the wrist to
- *  7.72U, plus the 0.3U box pad = 8.02U, so the overlay docks flush. */
+ *  ends just under the lowest wrist: a bottom-row reach drops it to 7.72U,
+ *  plus a 0.3U margin = 8.02U, so the overlay docks flush. */
 export const KEY_UNITS_WIDE = 15.4;
 export const KEY_UNITS_TALL = 8.1;
+/** With the mouse: its pad sits right of the keyboard and the gripping pinky
+ *  reaches 1.6U past the pad's right edge (19.9U), so 21.6U wide. */
+export const KEY_UNITS_WIDE_MOUSE = 21.6;
 const MIN_UNIT = 12;
 
 // ─── Physical keys (positions in key units) ─────────────────────
@@ -40,6 +44,15 @@ export const ROWS: readonly KeyRow[] = [
   },
 ];
 const SPACE = { x0: 5.0, x1: 11.5, row: 4 };
+/** Mouse travel pad (key units from the keyboard origin). The artifact's pad is
+ *  3.0U tall; 2.4U keeps the gripping wrist (mouse + 3.7U ≤ 7.7U) inside the
+ *  8.1U height and the mouse body (mouse − 1.53U ≥ 0.07U) under the top edge. */
+const PAD = { x: 16.4, y: 1.1, w: 3.4, h: 2.4 };
+const MOUSE_W = 2.3;
+const MOUSE_H = 3.4;
+/** The right hand takes the mouse when the pointer moved within 1.5 s and no key in 0.7 s. */
+const MOUSE_MOVE_MS = 1500;
+const MOUSE_TYPE_QUIET_MS = 700;
 
 export const LAYOUTS: Record<OverlayLayout, readonly (readonly string[])[]> = {
   us: [
@@ -134,16 +147,24 @@ export function initialLayout(setting: string): OverlayLayout {
   return setting === 'us' || setting === 'de' || setting === 'th' ? setting : 'us';
 }
 
-/** CSS size of the overlay for a workspace width and `width_ratio`. */
-export function overlaySize(workspaceWidth: number, widthRatio: number): { width: number; height: number } {
+/** CSS size of the overlay. `width_ratio` sizes the keyboard; the mouse pad is
+ *  added to its right, and the whole overlay never exceeds the workspace. */
+export function overlaySize(
+  workspaceWidth: number,
+  widthRatio: number,
+  mouse: boolean,
+): { width: number; height: number } {
   const ratio = clamp(Number.isFinite(widthRatio) ? widthRatio : 0.36, 0.2, 0.8);
-  const unit = Math.max(MIN_UNIT, (workspaceWidth * ratio) / KEY_UNITS_WIDE);
-  return { width: Math.round(unit * KEY_UNITS_WIDE), height: Math.round(unit * KEY_UNITS_TALL) };
+  const cols = mouse ? KEY_UNITS_WIDE_MOUSE : KEY_UNITS_WIDE;
+  const unit = Math.max(MIN_UNIT, Math.min((workspaceWidth * ratio) / KEY_UNITS_WIDE, workspaceWidth / cols));
+  return { width: Math.round(unit * cols), height: Math.round(unit * KEY_UNITS_TALL) };
 }
 
 export function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
 }
+
+const smooth = (t: number): number => t * t * (3 - 2 * t);
 
 // ─── Renderer ───────────────────────────────────────────────────
 
@@ -155,6 +176,7 @@ export interface OverlayStyle {
 }
 
 type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+export type MouseButton = 'left' | 'right';
 
 interface Finger {
   key: string | null;
@@ -168,8 +190,6 @@ interface Hand {
   inner: number;
   fingers: Finger[];
   off: Point;
-  act: number;
-  u: number;
   snap: boolean;
   pts: Point[];
 }
@@ -186,8 +206,6 @@ function makeHand(side: Side): Hand {
     inner: side === 'L' ? 1 : -1,
     fingers: [0, 1, 2, 3, 4].map(() => ({ key: null, hold: 0, ret: 0, tip: { x: 0, y: 0 } })),
     off: { x: 0, y: 0 },
-    act: 0,
-    u: 0.46,
     snap: true,
     pts: [],
   };
@@ -217,12 +235,25 @@ export class KeyboardOverlayRenderer {
   private ghostNext = 0;
   private ghostIndex = 0;
   private lastUserAt = 0;
+  private lastTypeAt = -Infinity;
   private lastFrameAt = 0;
+  private mouseEnabled = false;
+  /** Right hand: 0 on the keys … 1 holding the mouse. */
+  private grip = 0;
+  private gripTarget = 0;
+  /** Mouse position in pad units (0–1) and button levels (1 held, < 1 fading). */
+  private readonly mouse = { x: 0.5, y: 0.5, left: 0, right: 0 };
+  /** Latest real pointer position, normalized to the workspace (0–1). */
+  private readonly pointer = { x: 0.5, y: 0.5, has: false, movedAt: -Infinity };
 
   resize(width: number, height: number): void {
     this.W = width;
     this.H = height;
-    this.U = Math.max(MIN_UNIT, width / KEY_UNITS_WIDE);
+    this.layoutKeys();
+  }
+
+  private layoutKeys(): void {
+    this.U = Math.max(MIN_UNIT, this.W / (this.mouseEnabled ? KEY_UNITS_WIDE_MOUSE : KEY_UNITS_WIDE));
     const U = this.U;
     this.OX = U * 0.1;
     this.OY = U * 0.5;
@@ -247,6 +278,40 @@ export class KeyboardOverlayRenderer {
 
   setGhost(enabled: boolean, now: number): void {
     this.ghostEnabled = enabled;
+    this.lastUserAt = now;
+    this.resetGhost();
+  }
+
+  /** Draw the mouse pad and let the right hand grip it (`[keyboard_overlay].mouse`). */
+  setMouse(enabled: boolean): void {
+    if (this.mouseEnabled === enabled) return;
+    this.mouseEnabled = enabled;
+    this.grip = 0;
+    this.gripTarget = 0;
+    if (this.W) this.layoutKeys();
+  }
+
+  /** 0 while the right hand is on the keys, 1 while it holds the mouse. */
+  get mouseGrip(): number {
+    return this.grip;
+  }
+
+  /** Real pointer movement, normalized to the workspace (0–1). */
+  movePointer(x: number, y: number, now: number): void {
+    if (!this.mouseEnabled) return;
+    this.pointer.x = clamp(x, 0, 1);
+    this.pointer.y = clamp(y, 0, 1);
+    this.pointer.has = true;
+    this.pointer.movedAt = now;
+    this.lastUserAt = now;
+    this.resetGhost();
+  }
+
+  /** A real mouse button: lights that half of the mouse and presses the fingertip. */
+  pressButton(button: MouseButton, down: boolean, now: number): void {
+    if (!this.mouseEnabled || (!down && this.mouse[button] === 0)) return;
+    this.mouse[button] = down ? 1 : 0.99;
+    this.pointer.movedAt = now;
     this.lastUserAt = now;
     this.resetGhost();
   }
@@ -276,9 +341,12 @@ export class KeyboardOverlayRenderer {
     if (!this.W || !this.pos.KeyF) return false;
     this.tickGhost(now);
     const moved = this.updateHands(now);
+    const clicking = this.fadeButtons(dt);
     const glowing = this.draw(ctx, now, dt);
     const reaching = this.hands.some((h) => h.fingers.some((f) => f.key !== null && now < f.ret));
-    const busy = glowing || reaching || moved >= 0.1 || this.ghostOn;
+    // Keep running while a recent pointer move may still hand the mouse over.
+    const mouseDue = this.mouseEnabled && this.gripTarget === 0 && now - this.pointer.movedAt < MOUSE_MOVE_MS;
+    const busy = glowing || reaching || clicking || mouseDue || moved >= 0.1 || this.ghostOn;
     if (!busy) this.lastFrameAt = 0;
     return busy;
   }
@@ -290,21 +358,22 @@ export class KeyboardOverlayRenderer {
 
   private pressKey(code: string, shift: boolean, now: number): void {
     if (!this.pos[code]) return;
+    this.lastTypeAt = now;
     let side: Side;
     let fi: number;
     if (code === 'Space') {
-      side = 'R';
+      side = this.grip > 0.5 ? 'L' : 'R';
       fi = 0;
     } else {
       [side, fi] = FINGER_MAP[code] ?? ['R', 1];
     }
     if (shift) this.pressKey(side === 'L' ? 'ShiftRight' : 'ShiftLeft', false, now);
     const hand = side === 'L' ? this.left : this.right;
+    if (hand === this.right) this.gripTarget = 0;
     const finger = hand.fingers[fi];
     finger.key = code;
     finger.hold = now + 140;
     finger.ret = now + 450;
-    hand.act = 1;
     this.glow[code] = 1;
   }
 
@@ -409,11 +478,82 @@ export class KeyboardOverlayRenderer {
     return pts;
   }
 
+  /** The right hand around the mouse (MediaPipe order, like `keyboardPose`). */
+  private gripPose(): Point[] {
+    const U = this.U;
+    const c = this.mousePoint();
+    const P = (x: number, y: number): Point => ({ x: c.x + x * U, y: c.y + y * U });
+    const click = this.mouse.left * 0.1;
+    const rclick = this.mouse.right * 0.1;
+    return [
+      P(0.25, 3.7),
+      P(-0.55, 2.7), P(-1.05, 1.9), P(-1.35, 1.1), P(-1.35, 0.35), // thumb along the left side
+      P(-0.55, 1.0), P(-0.6, 0.1), P(-0.55, -0.7), P(-0.5, -1.35 + click), // index on the left button
+      P(0.2, 0.95), P(0.35, 0.05), P(0.45, -0.75), P(0.5, -1.35 + rclick), // middle on the right button
+      P(0.85, 1.1), P(1.1, 0.5), P(1.25, 0.0), P(1.25, -0.35), // ring curls on the side
+      P(1.35, 1.4), P(1.55, 1.0), P(1.6, 0.7), P(1.55, 0.45), // pinky
+    ];
+  }
+
+  private mousePoint(): Point {
+    return {
+      x: this.OX + (PAD.x + this.mouse.x * PAD.w) * this.U,
+      y: this.OY + (PAD.y + this.mouse.y * PAD.h) * this.U,
+    };
+  }
+
+  /** Ease the right hand between its keyboard pose and the mouse grip, lifting mid-way. */
+  private blendGrip(kb: Point[], instant: boolean): Point[] {
+    this.grip += (this.gripTarget - this.grip) * (instant ? 1 : 0.08);
+    if (Math.abs(this.gripTarget - this.grip) < 0.001) this.grip = this.gripTarget;
+    const mm = smooth(clamp(this.grip, 0, 1));
+    if (mm <= 0.001) return kb;
+    const g = this.gripPose();
+    const lift = this.style.reducedMotion ? 0 : Math.sin(mm * Math.PI) * 0.7 * this.U;
+    return kb.map((p, i) => ({ x: p.x + (g[i].x - p.x) * mm, y: p.y + (g[i].y - p.y) * mm - lift }));
+  }
+
+  /** While held, the mouse follows the pointer inside its pad; returns its movement (px). */
+  private followPointer(): number {
+    if (!this.mouseEnabled || !this.pointer.has || this.grip <= 0.6) return 0;
+    const m = this.mouse;
+    const e = this.style.reducedMotion ? 1 : 0.25;
+    const dx = (this.pointer.x - m.x) * e;
+    const dy = (this.pointer.y - m.y) * e;
+    const px = (Math.abs(dx) * PAD.w + Math.abs(dy) * PAD.h) * this.U;
+    if (px < 0.05) {
+      m.x = this.pointer.x;
+      m.y = this.pointer.y;
+      return px;
+    }
+    m.x += dx;
+    m.y += dy;
+    return px;
+  }
+
+  /** Released buttons fade out at 6/s; true while any is still fading. */
+  private fadeButtons(dt: number): boolean {
+    let fading = false;
+    for (const b of ['left', 'right'] as const) {
+      const v = this.mouse[b];
+      if (v > 0 && v < 1) {
+        this.mouse[b] = Math.max(0, v - dt * 6);
+        fading = true;
+      }
+    }
+    return fading;
+  }
+
   /** Advance both hands; returns the largest point movement this frame (px). */
   private updateHands(now: number): number {
+    const p = this.pointer;
+    if (this.mouseEnabled && p.has && now - p.movedAt < MOUSE_MOVE_MS && now - this.lastTypeAt > MOUSE_TYPE_QUIET_MS) {
+      this.gripTarget = 1;
+    }
     let moved = 0;
     for (const h of this.hands) {
-      const next = this.keyboardPose(h, now);
+      let next = this.keyboardPose(h, now);
+      if (h === this.right && this.mouseEnabled) next = this.blendGrip(next, h.snap || this.style.reducedMotion);
       if (h.pts.length && !h.snap) {
         for (let i = 0; i < next.length; i++) {
           moved = Math.max(moved, Math.abs(next[i].x - h.pts[i].x) + Math.abs(next[i].y - h.pts[i].y));
@@ -422,12 +562,9 @@ export class KeyboardOverlayRenderer {
         moved = Infinity;
       }
       h.pts = next;
-      h.act *= 0.96;
-      const reach = Math.tanh(Math.hypot(h.off.x, h.off.y) / this.U);
-      h.u += (0.46 + 0.05 * reach + 0.08 * h.act - h.u) * 0.2;
       h.snap = false;
     }
-    return moved;
+    return Math.max(moved, this.followPointer());
   }
 
   /** Draw keys + hands; returns true while any key is still glowing. */
@@ -475,11 +612,10 @@ export class KeyboardOverlayRenderer {
     x.lineTo(this.OX + SPACE.x1 * U, P.Space.y);
     x.stroke();
 
-    // Hands: bones, joints, pressed tips, full bounding box + debug label.
-    x.font = `${Math.max(9, U * 0.26)}px ${font}`;
-    x.textAlign = 'left';
-    x.textBaseline = 'alphabetic';
-    this.hands.forEach((h, hi) => {
+    if (this.mouseEnabled) this.drawMouse(x);
+
+    // Hands: bones, joints, pressed tips.
+    this.hands.forEach((h) => {
       const pts = h.pts;
       if (!pts.length) return;
       x.globalAlpha = 0.55;
@@ -499,35 +635,65 @@ export class KeyboardOverlayRenderer {
       });
       x.fillStyle = accent;
       h.fingers.forEach((F, f) => {
-        if (F.key && now < F.hold) {
+        const clicking = h === this.right && this.grip > 0.6
+          && ((f === 1 && this.mouse.left > 0.5) || (f === 2 && this.mouse.right > 0.5));
+        if ((F.key && now < F.hold) || clicking) {
           const p = pts[f * 4 + 4];
           x.fillRect(p.x - 4, p.y - 4, 8, 8);
         }
       });
-      let x0 = Infinity;
-      let y0 = Infinity;
-      let x1 = -Infinity;
-      let y1 = -Infinity;
-      for (const p of pts) {
-        x0 = Math.min(x0, p.x);
-        y0 = Math.min(y0, p.y);
-        x1 = Math.max(x1, p.x);
-        y1 = Math.max(y1, p.y);
-      }
-      const pad = 0.3 * U;
-      x.globalAlpha = 0.32;
-      x.strokeStyle = ink;
-      x.strokeRect(
-        Math.round(x0 - pad) + 0.5, Math.round(y0 - pad) + 0.5,
-        Math.round(x1 - x0 + pad * 2), Math.round(y1 - y0 + pad * 2),
-      );
-      x.globalAlpha = 0.8;
-      x.fillStyle = ink;
-      const tag = U < 30 ? `hand${hi} ${h.u.toFixed(4)}` : `['hand${hi}:u'] ${h.u.toFixed(7)}`;
-      x.fillText(tag, x0 - pad, y0 - pad - 5);
     });
     x.globalAlpha = 1;
     return glowing;
+  }
+
+  /** Mouse outline, button split, lit button halves and the scroll wheel. */
+  private drawMouse(x: Ctx2D): void {
+    const { ink, accent } = this.style;
+    const U = this.U;
+    const c = this.mousePoint();
+    const mw = MOUSE_W * U;
+    const mh = MOUSE_H * U;
+    const mx = c.x - mw / 2;
+    const my = c.y - mh * 0.45;
+    const split = my + mh * 0.36;
+    const held = this.grip > 0.5;
+    x.globalAlpha = held ? 0.9 : 0.4;
+    x.strokeStyle = ink;
+    x.lineWidth = 1;
+    x.beginPath();
+    x.roundRect(mx, my, mw, mh, mw / 2);
+    x.stroke();
+    x.beginPath();
+    x.moveTo(c.x, my);
+    x.lineTo(c.x, split);
+    x.moveTo(mx, split);
+    x.lineTo(mx + mw, split);
+    x.stroke();
+    x.fillStyle = accent;
+    if (this.mouse.left > 0.05) {
+      x.globalAlpha = 0.35 * this.mouse.left;
+      x.beginPath();
+      x.moveTo(c.x, my);
+      x.lineTo(c.x, split);
+      x.lineTo(mx, split);
+      x.arcTo(mx, my, c.x, my, mw / 2);
+      x.closePath();
+      x.fill();
+    }
+    if (this.mouse.right > 0.05) {
+      x.globalAlpha = 0.35 * this.mouse.right;
+      x.beginPath();
+      x.moveTo(c.x, my);
+      x.arcTo(mx + mw, my, mx + mw, split, mw / 2);
+      x.lineTo(mx + mw, split);
+      x.lineTo(c.x, split);
+      x.closePath();
+      x.fill();
+    }
+    x.globalAlpha = held ? 1 : 0.4;
+    x.fillStyle = ink;
+    x.fillRect(c.x - 1, my + mh * 0.1, 2, mh * 0.12);
   }
 }
 
@@ -539,8 +705,10 @@ export type OverlayMessage =
   | { type: 'init'; canvas: OverlayCanvas }
   | { type: 'resize'; width: number; height: number; dpr: number }
   | { type: 'style'; style: OverlayStyle }
-  | { type: 'config'; layout: OverlayLayout; ghost: boolean }
+  | { type: 'config'; layout: OverlayLayout; ghost: boolean; mouse: boolean }
   | { type: 'key'; code: string; shift: boolean }
+  | { type: 'pointer'; x: number; y: number }
+  | { type: 'button'; button: MouseButton; down: boolean }
   | { type: 'visible'; visible: boolean }
   | { type: 'dispose' };
 
@@ -580,11 +748,22 @@ export class KeyboardOverlayDriver {
       case 'config':
         this.renderer.setLayout(msg.layout);
         this.renderer.setGhost(msg.ghost, performance.now());
+        this.renderer.setMouse(msg.mouse);
         this.wake();
         break;
       case 'key':
         if (!this.visible) break;
         this.renderer.press(msg.code, msg.shift, performance.now());
+        this.wake();
+        break;
+      case 'pointer':
+        if (!this.visible) break;
+        this.renderer.movePointer(msg.x, msg.y, performance.now());
+        this.wake();
+        break;
+      case 'button':
+        if (!this.visible) break;
+        this.renderer.pressButton(msg.button, msg.down, performance.now());
         this.wake();
         break;
       case 'visible':

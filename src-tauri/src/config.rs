@@ -357,7 +357,8 @@ pub struct KeyboardOverlayConfig {
     pub enabled: bool,
     /// Key label set: "auto" (follows typed script, us <-> th), "us", "de", "th".
     pub layout: String,
-    /// Overlay width as a fraction of the workspace width (0.2–0.8).
+    /// Keyboard width as a fraction of the workspace width (0.2–0.8). The
+    /// mouse pad adds to it; the whole overlay is capped at the workspace width.
     pub width_ratio: f64,
     /// Whole-overlay alpha (0.1–1.0).
     pub opacity: f64,
@@ -365,6 +366,9 @@ pub struct KeyboardOverlayConfig {
     pub mask_secure_input: bool,
     /// After 5 s idle, the hands play demo phrases (visual only, never typed).
     pub idle_ghost: bool,
+    /// Draw a mouse right of the keyboard; the right hand grips it while the
+    /// pointer moves and lights its buttons on click.
+    pub mouse: bool,
 }
 
 impl Default for KeyboardOverlayConfig {
@@ -376,6 +380,7 @@ impl Default for KeyboardOverlayConfig {
             opacity: 0.7,
             mask_secure_input: true,
             idle_ghost: false,
+            mouse: true,
         }
     }
 }

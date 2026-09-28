@@ -102,6 +102,15 @@
 8. KeyboardOverlayDriver: finger reaches, key glows, rAF loop (re)starts
 9. When every glow has faded and the hands settle (< 0.1 px/frame), the loop stops —
    an idle overlay draws 0 frames. idle_ghost re-arms a 5 s timer instead.
+
+Pointer ([keyboard_overlay].mouse = true):
+a. Passive window-capture pointermove/pointerdown/pointerup listeners (consume nothing)
+b. pointermove → post { type: 'pointer', x, y } (0–1 of the workspace), at most once per
+   animation frame; a left/right pointerdown/up posts { pointer } then { type: 'button' }
+c. Worker: pointer moved < 1.5 s ago and no key for 0.7 s → the right hand eases onto the
+   drawn mouse, which then mirrors the pointer inside its pad; a right-hand key or Space
+   returns the hand to the keys
+d. The loop stops once the grip, the mouse and the button fades settle
 ```
 
 ## Quick Terminal Toggle Flow (e.g., user presses Cmd+I)

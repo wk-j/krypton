@@ -10,7 +10,7 @@ Krypton can't show which keys are being pressed. You can't see the keyboard whil
 
 ## Solution
 
-Port the artifact's keyboard and hand renderer into a **read-only visual overlay**. It is docked at the **center-bottom of the workspace screen**, not of any terminal window, flush on the workspace footer rail. It **observes** keydown events without consuming them, draws on an OffscreenCanvas in a Web Worker (the spec 48 pattern), and stops its animation loop when the hands settle. It never writes to a PTY. The mouse-grip pose is dropped because Krypton is keyboard-only. Password entry is masked using a termios check in the backend.
+Port the artifact's keyboard and hand renderer into a **read-only visual overlay**. It is docked at the **center-bottom of the workspace screen**, not of any terminal window, flush on the workspace footer rail. It **observes** keydown and pointer events without consuming them, draws on an OffscreenCanvas in a Web Worker (the spec 48 pattern), and stops its animation loop when the hands settle. It never writes to a PTY. The artifact's mouse is kept as an option (`mouse`, default on): a mouse drawn right of the keyboard that the right hand grips while you use the pointer. Password entry is masked using a termios check in the backend.
 
 ## Research
 
@@ -42,7 +42,7 @@ Port the artifact's keyboard and hand renderer into a **read-only visual overlay
 
 **Krypton delta:** it follows the common convention of a bottom-center placement and a toggle from both the palette and a key. It differs in three ways:
 1. It draws a full physical keyboard with animated wireframe hands instead of key chips.
-2. It is strictly an observer: no clicking, no input injection, mouse ignored.
+2. It is strictly an observer: no clicking through it, no input injection. The pointer is only mirrored onto the drawn mouse.
 3. It masks keys at terminal-level password prompts, using termios rather than OS Secure Input.
 
 ## Affected Files
@@ -52,7 +52,7 @@ Port the artifact's keyboard and hand renderer into a **read-only visual overlay
 | `src/keyboard-overlay-model.ts` | **New** — no DOM: `ROWS`, `LAYOUTS` (us/de/th), `FINGER_MAP`, `resolveCode()`, `detectLayout()`, `overlaySize()`, `KeyboardOverlayRenderer` (hand pose + drawing + ghost) and `KeyboardOverlayDriver` (canvas, rAF loop, idle stop) shared by the worker and the fallback |
 | `src/keyboard-overlay-model.test.ts` | **New** — code resolution, Thai auto-detect, finger mapping, settle detection |
 | `src/keyboard-overlay-worker.ts` | **New** — thin worker entry: forwards messages to a `KeyboardOverlayDriver` on the OffscreenCanvas |
-| `src/keyboard-overlay.ts` | **New** — `KeyboardOverlay` main-thread proxy: canvas mount, key observer, secure-input check, theme/font/size messages, main-thread fallback |
+| `src/keyboard-overlay.ts` | **New** — `KeyboardOverlay` main-thread proxy: canvas mount, key + pointer observers, secure-input check, theme/font/size messages, main-thread fallback |
 | `src/styles/keyboard-overlay.css` | **New** — `.krypton-keyboard-overlay` placement; `@import` in `src/styles/index.css` |
 | `src/compositor.ts` | `toggleKeyboardOverlay()` (lazy import, like `toggleProfilerHud`); `applyConfig()` forwards `[keyboard_overlay]` at startup and reload; `setKeyboardOverlayFooterVisible()` |
 | `src/main.ts` | Feed workspace-footer visibility (`isVisible` + `onVisibleChange`) to the compositor |
@@ -74,10 +74,11 @@ Port the artifact's keyboard and hand renderer into a **read-only visual overlay
 export interface KeyboardOverlayConfig {
   enabled: boolean;          // shown at startup (default false)
   layout: 'auto' | 'us' | 'de' | 'th'; // label set (default 'auto')
-  width_ratio: number;       // overlay width ÷ workspace width, clamp 0.2–0.8 (default 0.36)
+  width_ratio: number;       // keyboard width ÷ workspace width, clamp 0.2–0.8 (default 0.36)
   opacity: number;           // 0.1–1.0 whole-overlay alpha (default 0.7)
   mask_secure_input: boolean; // suppress glow/reach at password prompts (default true)
   idle_ghost: boolean;       // hands-only phrase animation after 5 s idle (default false)
+  mouse: boolean;            // draw a mouse the right hand grips while the pointer moves (default true)
 }
 
 // main → worker (or the main-thread fallback driver)
@@ -85,8 +86,10 @@ type OverlayMessage =
   | { type: 'init'; canvas: OffscreenCanvas | HTMLCanvasElement }
   | { type: 'resize'; width: number; height: number; dpr: number }
   | { type: 'style'; style: { ink: string; accent: string; font: string; reducedMotion: boolean } }
-  | { type: 'config'; layout: 'us' | 'de' | 'th'; ghost: boolean }
+  | { type: 'config'; layout: 'us' | 'de' | 'th'; ghost: boolean; mouse: boolean }
   | { type: 'key'; code: string; shift: boolean }   // already resolved + unmasked
+  | { type: 'pointer'; x: number; y: number }       // clientX/Y ÷ innerWidth/Height, one per frame
+  | { type: 'button'; button: 'left' | 'right'; down: boolean }
   | { type: 'visible'; visible: boolean }
   | { type: 'dispose' };
 ```
@@ -95,7 +98,7 @@ type OverlayMessage =
 // src-tauri/src/config.rs — #[serde(default)], field `keyboard_overlay` on KryptonConfig
 pub struct KeyboardOverlayConfig {
     pub enabled: bool, pub layout: String, pub width_ratio: f64,
-    pub opacity: f64, pub mask_secure_input: bool, pub idle_ghost: bool,
+    pub opacity: f64, pub mask_secure_input: bool, pub idle_ghost: bool, pub mouse: bool,
 }
 ```
 
@@ -121,6 +124,25 @@ pub struct KeyboardOverlayConfig {
    and ghost is off/not due → stop the loop (0 frames at idle).
 ```
 
+Pointer (`mouse = true`):
+
+```
+1. pointermove / pointerdown / pointerup → window-level capture listeners (passive,
+   consume nothing). Skip if hidden, mouse off, or a touch pointer.
+2. pointermove: keep the latest clientX/Y and post { pointer } at most once per animation
+   frame, normalized to the workspace (0–1).
+   pointerdown/up (left or right button): post { pointer } now, then { button, down }.
+3. Worker: a pointer move within 1.5 s and no key within 0.7 s → the right hand eases onto
+   the drawn mouse (grip 0 → 1, lifting mid-way). A right-hand key, or Space, sends it back
+   to the keys; Space uses the left thumb while the right hand holds the mouse.
+4. While held (grip > 0.6) the mouse follows the pointer inside its pad. The screen is
+   mapped onto the pad, so the drawn mouse mirrors where the real pointer is.
+5. A held button lights its half of the mouse and presses the index (left) or middle
+   (right) fingertip. After release, both fade out at 6/s.
+6. The loop stops once the grip, the mouse and the button fades settle. A recent pointer
+   move keeps it running for up to 1.5 s, in case it can still hand the mouse over.
+```
+
 Other inputs:
 - `theme-changed`/config reload: re-read `--krypton-fg`, `--krypton-accent`, and the terminal font family, then post `{style}`.
 - `window` resize: post `{resize}`.
@@ -137,17 +159,18 @@ Other inputs:
 
 - One `<canvas class="krypton-keyboard-overlay">` is appended to `document.body`:
   - Positioning: `position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%)`. That puts it flush on the 28 px footer. With `--no-footer` it sits at `bottom: 0`.
-  - Size: width `round(innerWidth × width_ratio)`, height `width × 8.1 / 15.4`, using the artifact's COMPACT geometry. The top margin is tightened from 0.7U to 0.5U (the artifact's 9.6U height reserved space for the mouse). The height ends just under the lowest hand box: a bottom-row reach drops the wrist to 7.72U, plus the 0.3U box pad = 8.02U.
+  - Size: the keyboard is `round(innerWidth × width_ratio)` wide, and the height is `keyboard width × 8.1 / 15.4`, using the artifact's COMPACT geometry. With `mouse = true` the canvas is 21.6U wide instead of 15.4U, so keys stay the same size and the overlay gets about 40% wider. The whole overlay is capped at the workspace width, and the keys shrink if it would overflow. The top margin is tightened from 0.7U to 0.5U (the artifact's 9.6U height reserved space for the mouse). The height ends just under the lowest wrist: a bottom-row reach drops it to 7.72U, plus a 0.3U margin = 8.02U.
   - Layering: `pointer-events: none; z-index: 7900`, above windows and the Quick Terminal (5000), below inline AI / Markdown AI prompts (8000), the hint overlay and footer (9000), the profiler (10000), palette/overlays, and the cursor trail (99999).
   - Visibility: `opacity: var(--kb-opacity)`, with a 150 ms fade on show and hide.
-- Background: none. The canvas is fully transparent, so no card, no border, and no L-brackets (constraint 9). Only three things are drawn:
+- Background: none. The canvas is fully transparent, so no card, no border, and no L-brackets (constraint 9). Only these things are drawn:
   - Key labels, in the ink color at 28% alpha, rising to 100% while lit, plus a 1 px full-square outline while lit.
   - The spacebar, as a single rule.
-  - The hands: 1 px bone lines at 55% alpha, 2.4 px joint squares, an 8 px solid square on a pressed fingertip, a 1 px dim full bounding box, and the artifact's debug label (`['hand0:u'] 0.4600000`).
+  - The hands: 1 px bone lines at 55% alpha, 2.4 px joint squares, and an 8 px solid square on a pressed fingertip. The artifact's bounding box and debug labels (`['hand0:u'] 0.4600000`, `['mouse:u'] …`) are not drawn.
+  - The mouse (`mouse = true`): a 2.3U × 3.4U pill outline with a button split and a scroll-wheel tick, at 90% alpha while held and 40% otherwise. A pressed button's half is filled with the accent color at 35% alpha. Its travel pad starts at 16.4U. The pad is 3.4U × 2.4U, not the artifact's 3.0U tall, so the gripping wrist (mouse + 3.7U ≤ 7.7U) fits inside the 8.1U height.
 - Colors: ink = `--krypton-fg`; the lit outline and pressed tip use `--krypton-accent`; dim = ink at 45% alpha.
 - Font: the user's configured terminal font family, per the reading-surface rule, not the artifact's IBM Plex.
 - Reduced motion: tips and palm snap without lerp.
-- Removed from the artifact: the mouse and grip pose, the `<input>` line, the header, the stats footer, the layout buttons, and pointer-driven key presses.
+- Removed from the artifact: the `<input>` line, the header, the stats footer, the layout buttons, pointer-driven key presses, and the "pointer over the keyboard" check (the overlay is `pointer-events: none`).
 
 ### Configuration
 
@@ -155,10 +178,11 @@ Other inputs:
 [keyboard_overlay]
 enabled = false            # show at startup; Leader Shift+K toggles at runtime (not persisted)
 layout = "auto"            # auto | us | de | th — auto follows typed script (us ↔ th)
-width_ratio = 0.36         # overlay width as a fraction of the workspace width (0.2–0.8)
+width_ratio = 0.36         # keyboard width as a fraction of the workspace width (0.2–0.8)
 opacity = 0.7              # whole-overlay alpha (0.1–1.0)
 mask_secure_input = true   # hide keys while a terminal password prompt has echo off
 idle_ghost = false         # after 5 s idle, hands play demo phrases (visual only, never typed)
+mouse = true               # draw a mouse; the right hand grips it while the pointer moves
 ```
 
 Reload Config applies every key live. `enabled` only changes visibility on reload when the value changes.
@@ -173,7 +197,10 @@ Reload Config applies every key live. `enabled` only changes visibility on reloa
 - **Web fonts**: the worker can only use system-installed fonts, so a document-only webfont falls back to `monospace`.
 - **Workspace switch, maximize, Quick Terminal**: the overlay is fixed to the viewport and unaffected. It stays above windows and below modal overlays.
 - **Very small screens**: the key unit is clamped to at least 12 px, matching the artifact, so labels stay legible.
-- **Hidden overlay**: the key listener returns at step 2, no IPC runs, and the worker loop is stopped.
+- **Hidden overlay**: the key listener returns at step 2, no IPC runs, and the worker loop is stopped. The pointer listeners return at their first check too.
+- **Mouse in a keyboard-only app**: the right hand only leaves the keys when the pointer actually moves, so pure keyboard use animates the same as with `mouse = false`. Only the idle mouse outline and the wider canvas differ. Set `mouse = false` to get the compact 15.4U overlay back.
+- **Clicks are not masked**: `mask_secure_input` only suppresses keys. A click reveals nothing typed.
+- **Pointer outside the Krypton window** (another display): no events arrive, so the drawn mouse keeps its last spot.
 
 ## Open Questions
 
@@ -183,7 +210,6 @@ None. The user fixed the placement (center-bottom of the workspace screen). The 
 
 - Clicking or typing through the overlay (it is not an input device).
 - Chord chips or keystroke history text (Screenkey-style).
-- A mouse pose.
 - Per-window placement.
 - Persisting the runtime toggle.
 - Layouts beyond us/de/th.
@@ -197,6 +223,7 @@ Deviations from the approved draft, made during implementation:
 - **One driver for both paths.** The renderer and the rAF/idle-stop loop live in `keyboard-overlay-model.ts` as `KeyboardOverlayRenderer` + `KeyboardOverlayDriver`. The worker is a thin message forwarder and the main-thread fallback runs the same driver, so the two paths cannot drift.
 - **Thai labels are drawn without "◌".** On a worker canvas, "◌" + a combining mark (◌ุ ◌ั ◌ี ◌้ …) split across fonts and rendered as tofu. A bare mark renders, and the Thai font draws its own dotted circle, so `LABELS` stores stripped labels and the style font appends `Thonburi, 'Noto Sans Thai', sans-serif`.
 - **Docked lower, flush on the footer.** At the user's request the overlay moved down: the 8 px gap above the footer was dropped (`bottom: 36px` → `28px`, no footer `8px` → `0`), and the height was trimmed from 8.4U to 8.1U. The resting hands left about 0.8U of empty canvas below them, and even a bottom-row reach only needs 8.02U, so the resting hands now sit 0.3U + 8 px lower (≈ 18 px at `width_ratio = 0.36` on a 1440 px workspace). The remaining 0.5U below them is reach headroom; lowering further would let bottom-row reaches cross into the footer rail.
+- **Mouse restored (follow-up).** v1 dropped the artifact's mouse. At the user's request it is back behind `mouse` (default `true`). Keys keep their size and the canvas widens from 15.4U to 21.6U. The pad is shortened to 2.4U so the overlay height stays 8.1U, and the docked position is unchanged. The mouse position is stored in pad units (0–1), so a resize doesn't move it off the pad.
 - **Theme/font pickup** uses a `MutationObserver` on `<html>`'s inline `style` (where both the theme engine and `Compositor.applyConfig` write `--krypton-*`), coalesced to one read per frame. No new event subscription was needed.
 
 ## Resources
