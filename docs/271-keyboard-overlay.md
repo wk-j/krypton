@@ -104,7 +104,7 @@ pub struct KeyboardOverlayConfig {
 
 ### API / Commands
 
-- `get_pty_secure_input(session_id: u32) -> Result<Option<bool>, String>`. It returns `Some(true)` when the PTY termios has `ECHO` cleared and `ICANON` set, `Some(false)` otherwise, and `None` when the session is gone, the fd is unavailable, or on non-Unix platforms. It is read-only and has no events.
+- `get_pty_secure_input(session_id: u32) -> Result<Option<bool>, String>`. It returns `Some(true)` when the PTY termios has `ECHO` cleared and `ICANON` set, `Some(false)` otherwise, and `None` when the session is gone, the fd is unavailable, or on non-Unix platforms. It is read-only and has no events. It is an `async` command that runs on the blocking pool (`spawn_blocking`): it takes the same session lock the process poller holds for up to ~13 ms per tick (`refresh_processes(All)` + `ps`), and a sync command would wait for that lock on the macOS main thread, stalling key delivery to the webview.
 - `Compositor.toggleKeyboardOverlay(): Promise<void>` and `KeyboardOverlay.setEnabled(on: boolean)` / `applyConfig(cfg)`.
 
 ### Data Flow
@@ -119,6 +119,7 @@ pub struct KeyboardOverlayConfig {
 4. mask_secure_input && compositor.getFocusedSessionId() !== null:
    cached flag < 250 ms old → use it; else invoke('get_pty_secure_input') and decide when it
    resolves (≈1 ms). secure → drop the key. Error/None → treat as not secure.
+   Keys typed while a check is in flight await that same call instead of issuing another.
 5. post {key, code, shift} → worker sets finger target + glow, (re)starts its rAF loop.
 6. Worker loop: pose → draw → when every glow is 0, every tip is within 0.1 px of its target,
    and ghost is off/not due → stop the loop (0 frames at idle).

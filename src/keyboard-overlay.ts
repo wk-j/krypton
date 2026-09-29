@@ -48,6 +48,7 @@ export class KeyboardOverlay {
   private layout: OverlayLayout = 'us';
   private enabled = false;
   private secureCache: SecureCache | null = null;
+  private secureCheck: { sessionId: number; promise: Promise<boolean> } | null = null;
   private styleKey = '';
   private styleRaf = 0;
   private pointerX = 0;
@@ -238,14 +239,23 @@ export class KeyboardOverlay {
     });
   };
 
-  /** Ask the backend whether the PTY is at a password prompt. Errors → not secure. */
-  private async checkSecure(sessionId: number): Promise<boolean> {
-    try {
-      const secure = (await invoke<boolean | null>('get_pty_secure_input', { sessionId })) === true;
-      this.secureCache = { sessionId, secure, at: performance.now() };
-      return secure;
-    } catch {
-      return false;
-    }
+  /** Ask the backend whether the PTY is at a password prompt. Keys typed while a
+   *  check is in flight share it, so a busy IPC queue never gets one call per key.
+   *  Errors → not secure. */
+  private checkSecure(sessionId: number): Promise<boolean> {
+    const pending = this.secureCheck;
+    if (pending && pending.sessionId === sessionId) return pending.promise;
+    const promise = invoke<boolean | null>('get_pty_secure_input', { sessionId })
+      .then((result) => {
+        const secure = result === true;
+        this.secureCache = { sessionId, secure, at: performance.now() };
+        return secure;
+      })
+      .catch(() => false)
+      .finally(() => {
+        if (this.secureCheck?.promise === promise) this.secureCheck = null;
+      });
+    this.secureCheck = { sessionId, promise };
+    return promise;
   }
 }

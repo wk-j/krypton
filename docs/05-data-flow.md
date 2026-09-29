@@ -96,7 +96,9 @@
 6. mask_secure_input + focused pane has a PTY session:
    a. secure flag cached < 250 ms → reuse it
    b. else invoke('get_pty_secure_input', { sessionId }) → Rust tcgetattr on the PTY
-      master: ECHO off && ICANON on → true (password prompt)
+      master: ECHO off && ICANON on → true (password prompt). The command is async
+      (blocking pool), so waiting on the session lock never holds the main thread, and
+      keys typed while a check is in flight share that one call
    c. secure → drop the key; error/None → treat as not secure
 7. post { type: 'key', code } to the worker (or the main-thread fallback driver)
 8. KeyboardOverlayDriver: finger reaches, key glows, rAF loop (re)starts

@@ -176,13 +176,18 @@ pub fn get_foreground_process(
 }
 
 /// Whether a PTY session is at a password prompt (echo off, canonical mode).
-/// Used by the keyboard overlay to hide keys (spec 271).
+/// Used by the keyboard overlay to hide keys (spec 271). Runs on the blocking
+/// pool: the process poller can hold the session lock for several ms, and a
+/// sync command would wait for it on the main thread and stall input delivery.
 #[tauri::command]
-pub fn get_pty_secure_input(
+pub async fn get_pty_secure_input(
     pty_manager: State<'_, Arc<PtyManager>>,
     session_id: u32,
 ) -> Result<Option<bool>, String> {
-    Ok(pty_manager.is_secure_input(session_id))
+    let pty_manager = Arc::clone(&pty_manager);
+    tauri::async_runtime::spawn_blocking(move || pty_manager.is_secure_input(session_id))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))
 }
 
 /// Get JVM + OS resource stats for a Java process.
