@@ -1,12 +1,13 @@
 // Krypton — Wheel rail (spec 272)
 // The arc navigation rail of the Wheel layout: a canvas arc furred with
 // tufts (static texture plus live per-window throughput), a faint card orbit,
-// one card + label per window, a caret on the active card, and a position
-// caption. Cards near the active one carry the real window, scaled onto the
-// card (spec 273); the rail owns those transforms and the dock morph that flies
-// windows between card and main frame. The rAF loop runs only while the wheel
-// is rotating, a window is docking, or a tuft is still decaying, so an idle
-// rail costs 0 CPU. Activity-only frames are capped at 30 fps (2 fps under
+// one card + label per window except the focused one (it fills the main frame,
+// so its apex slot stays empty), a caret on the card a mouse-wheel scroll is
+// about to pick, and a position caption. Cards near the active one carry the
+// real window, scaled onto the card (spec 273); the rail owns those transforms
+// and the dock morph that flies windows between card and main frame. The rAF
+// loop runs only while the wheel is rotating, a window is docking, or a tuft
+// is still decaying, so an idle rail costs 0 CPU. Activity-only frames are capped at 30 fps (2 fps under
 // reduced motion).
 
 import type { WindowBounds, WindowId } from './types';
@@ -384,7 +385,8 @@ export class WheelRail {
     const shown = pose.opacity * edge;
     el.style.transform = wheelPreviewTransform(pose, this.railBounds, main, entry.dock);
     el.style.opacity = (1 + (shown - 1) * entry.dock).toFixed(3);
-    this.setCardLive(entry, active ? 0 : entry.dock * edge);
+    // A window flying back stays live on its card, so no schematic flashes in first.
+    this.setCardLive(entry, active ? 0 : edge);
   }
 
   // ─── Render loop ─────────────────────────────────────────────────
@@ -458,9 +460,12 @@ export class WheelRail {
       const entry = this.entries[i];
       const pose = wheelItemPose(i, this.pos, this.geo);
       const on = i === highlighted;
+      // The focused window fills the main frame, so its card and label leave
+      // the rail and its apex slot stays empty.
+      const shown = !pose.hidden && i !== this.activeIndex;
       const cardStyle = entry.card.style;
       const labelStyle = entry.label.style;
-      const visibility = pose.hidden ? 'hidden' : 'visible';
+      const visibility = shown ? 'visible' : 'hidden';
       const opacity = pose.opacity.toFixed(3);
       cardStyle.visibility = visibility;
       labelStyle.visibility = visibility;
@@ -470,7 +475,7 @@ export class WheelRail {
       entry.card.classList.toggle('krypton-wheel__card--active', on);
       entry.label.classList.toggle('krypton-wheel__label--active', on);
       this.placePreview(entry, i, pose);
-      if (pose.hidden) continue;
+      if (!shown) continue;
 
       cardStyle.transform = `translate(${pose.x.toFixed(2)}px, ${pose.y.toFixed(2)}px) translate(-50%, -50%) rotate(${pose.rotate.toFixed(4)}rad) scale(${pose.scale.toFixed(3)})`;
       // Labels stay upright; they are pinned to a point on the leaning card.
