@@ -24,9 +24,9 @@ export const WHEEL_CARD_GAP = 4;
 /** Gap between two idle cards. */
 export const WHEEL_IDLE_GAP = 8;
 export const WHEEL_LABEL_GAP = 8;
-/** Extra room under the active card for its label. */
-export const WHEEL_ACTIVE_LABEL_ROOM = 18;
 export const WHEEL_LABEL_MAX_WIDTH = 90;
+/** Characters a rail label shows; the full label stays on the card's aria-label. */
+export const WHEEL_LABEL_CHARS = 2;
 /** Least room kept left of the arc for tuft strands. */
 export const WHEEL_MIN_ARC_X = 34;
 /** The arc meets the rail's top and bottom edges this far inside its right edge. */
@@ -67,8 +67,6 @@ export interface WheelGeometry {
   step: number;
   /** Angle between two idle neighbours, further out. */
   idleStep: number;
-  /** Extra angle that opens below the active card for its label. */
-  labelStep: number;
   /** Half-angle at which the arc leaves the rail's top and bottom edges. */
   arcExtent: number;
 }
@@ -191,7 +189,6 @@ export function wheelGeometry(
     cardRadius,
     step,
     idleStep,
-    labelStep: WHEEL_ACTIVE_LABEL_ROOM / cardRadius,
     arcExtent: Math.asin(Math.min(1, half / radius)),
   };
 }
@@ -202,12 +199,12 @@ export function wheelArcPoint(t: number, r: number, geo: WheelGeometry): [number
 }
 
 /** Arc angle of the item `offset` slots from `pos`. The first slot out uses
- *  `step` (room for the enlarged active card; items below it add `labelStep`),
- *  later slots the tighter `idleStep`. Continuous in `offset`, so cards glide
+ *  `step` (room for the enlarged active card), later slots the tighter
+ *  `idleStep`. Continuous in `offset`, so cards glide
  *  as the wheel turns. */
 export function wheelItemAngle(offset: number, geo: WheelGeometry): number {
   const d = Math.abs(offset);
-  const near = Math.min(1, d) * (geo.step + (offset > 0 ? geo.labelStep : 0));
+  const near = Math.min(1, d) * geo.step;
   if (d <= 1) return Math.sign(offset) * near;
   // Past the first slot a card's lean trails the orbit tangent by k·t, so the
   // spacing it needs grows as 1 / cos(k·t): dt/dn = idleStep / cos(k·t), solved.
@@ -396,6 +393,12 @@ export function wheelLabel(projectName: string | null, fallback: string): string
       : `${projectName}/`;
   }
   return fallback.trim();
+}
+
+/** The rail's visible label: the label's first WHEEL_LABEL_CHARS characters
+ *  (code points, so an emoji is not split), case kept: `krypton/` → `kr`. */
+export function wheelLabelHead(label: string): string {
+  return Array.from(label).slice(0, WHEEL_LABEL_CHARS).join('');
 }
 
 function clamp(value: number, min: number, max: number): number {

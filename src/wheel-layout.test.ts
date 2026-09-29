@@ -31,6 +31,7 @@ import {
   wheelItemKey,
   wheelItemPose,
   wheelLabel,
+  wheelLabelHead,
   wheelPreviewTransform,
   wheelRailWidth,
   wheelSchematic,
@@ -113,12 +114,12 @@ describe('wheel geometry', () => {
     }
   });
 
-  it('keeps every neighbouring pair of cards apart, with label room under the active one', () => {
+  it('keeps every neighbouring pair of cards apart', () => {
     for (const [w, h] of [[400, 1061], [363, 917], [280, 700], [400, 600]]) {
       const geo = wheelGeometry(w, h);
       const poses = [-3, -2, -1, 0, 1, 2, 3].map((i) => wheelItemPose(i, 0, geo));
       expect(clearance(poses[2], poses[3])).toBeGreaterThanOrEqual(WHEEL_CARD_GAP - 0.5);
-      expect(clearance(poses[3], poses[4])).toBeGreaterThanOrEqual(WHEEL_CARD_GAP + 14);
+      expect(clearance(poses[3], poses[4])).toBeGreaterThanOrEqual(WHEEL_CARD_GAP - 0.5);
       for (const [a, b] of [[0, 1], [1, 2], [4, 5], [5, 6]]) {
         if (poses[a].hidden || poses[b].hidden) continue;
         expect(clearance(poses[a], poses[b])).toBeGreaterThan(0);
@@ -144,11 +145,11 @@ describe('wheel poses', () => {
     expect(pose.hidden).toBe(false);
   });
 
-  it('leans neighbours by half their arc angle and opens label room below the active card', () => {
+  it('leans neighbours by half their arc angle, spaced evenly around the active card', () => {
     const below = wheelItemPose(4, 3, geo);
     const above = wheelItemPose(2, 3, geo);
     expect(above.y).toBeLessThan(railH / 2);
-    expect(below.y - railH / 2).toBeGreaterThan(railH / 2 - above.y);
+    expect(below.y - railH / 2).toBeCloseTo(railH / 2 - above.y);
     expect(above.rotate).toBeCloseTo(geo.step * WHEEL_TILT);
     expect(below.rotate).toBeCloseTo(-wheelItemAngle(1, geo) * WHEEL_TILT);
     expect(below.scale).toBe(1);
@@ -158,7 +159,7 @@ describe('wheel poses', () => {
   it('eases scale and spacing continuously as the wheel turns', () => {
     expect(wheelItemPose(3, 3.5, geo).scale).toBeCloseTo(1 + (WHEEL_ACTIVE_SCALE - 1) / 2);
     expect(wheelItemAngle(0, geo)).toBe(0);
-    expect(wheelItemAngle(1, geo)).toBeCloseTo(geo.step + geo.labelStep);
+    expect(wheelItemAngle(1, geo)).toBeCloseTo(geo.step);
     expect(wheelItemAngle(-2, geo)).toBeCloseTo(-(geo.step + geo.idleStep));
     expect(wheelItemAngle(1.0001, geo) - wheelItemAngle(0.9999, geo)).toBeLessThan(0.001);
   });
@@ -322,5 +323,13 @@ describe('wheel schematic', () => {
     expect(wheelLabel('/', 'x')).toBe('/');
     expect(wheelLabel('obsidian-clippe…', 'x')).toBe('obsidian-clippe…');
     expect(wheelLabel(null, ' DIFF // 3 files ')).toBe('DIFF // 3 files');
+  });
+
+  it('shows only the first two characters of a label, case kept', () => {
+    expect(wheelLabelHead('krypton/')).toBe('kr');
+    expect(wheelLabelHead('DIFF // 3 files')).toBe('DI');
+    expect(wheelLabelHead('~')).toBe('~');
+    expect(wheelLabelHead('')).toBe('');
+    expect(wheelLabelHead('🦊fox/')).toBe('🦊f');
   });
 });

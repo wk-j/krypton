@@ -27,6 +27,7 @@ import {
   wheelIsLiveSlot,
   wheelItemAngle,
   wheelItemPose,
+  wheelLabelHead,
   wheelPreviewTransform,
   wheelRandom,
   type WheelGeometry,
@@ -41,6 +42,8 @@ const ACTIVITY_FRAME_MS = 33;
 const REDUCED_ACTIVITY_FRAME_MS = 500;
 const ACTIVE_LABEL_GAP = 6;
 const CARET_GAP = 5;
+/** Matches `.krypton-wheel__caret` width. */
+const CARET_WIDTH = 7;
 const FUR_ALPHA = 0.8;
 const ORBIT_ALPHA = 0.3;
 const DEFAULT_ACCENT_RGB = '0, 204, 255';
@@ -302,7 +305,7 @@ export class WheelRail {
 
   private paintEntry(entry: WheelEntry, item: WheelItem): void {
     entry.card.setAttribute('aria-label', item.label);
-    entry.label.textContent = item.label;
+    entry.label.textContent = wheelLabelHead(item.label);
     entry.card.replaceChildren(buildSchematicSvg(item, this.cardHeight));
   }
 
@@ -472,23 +475,19 @@ export class WheelRail {
       cardStyle.transform = `translate(${pose.x.toFixed(2)}px, ${pose.y.toFixed(2)}px) translate(-50%, -50%) rotate(${pose.rotate.toFixed(4)}rad) scale(${pose.scale.toFixed(3)})`;
       // Labels stay upright; they are pinned to a point on the leaning card.
       const halfW = (WHEEL_CARD_WIDTH / 2) * pose.scale;
-      const halfH = (this.geo.cardHeight / 2) * pose.scale;
       const cos = Math.cos(pose.rotate);
       const sin = Math.sin(pose.rotate);
       const pinX = (dx: number, dy: number): number => pose.x + dx * cos - dy * sin;
       const pinY = (dx: number, dy: number): number => pose.y + dx * sin + dy * cos;
       const pin = (dx: number, dy: number): string =>
         `translate(${pinX(dx, dy).toFixed(2)}px, ${pinY(dx, dy).toFixed(2)}px)`;
-      let labelX: number;
+      // Every label sits inline with its card; the active one past the caret.
+      const labelDx = on ? halfW + CARET_GAP + CARET_WIDTH + ACTIVE_LABEL_GAP : halfW + WHEEL_LABEL_GAP;
+      const labelX = pinX(labelDx, 0);
+      labelStyle.transform = `${pin(labelDx, 0)} translateY(-50%)`;
       if (on) {
-        // The active label sits under the card's bottom-left corner.
-        labelX = pinX(-halfW, halfH + ACTIVE_LABEL_GAP);
-        labelStyle.transform = pin(-halfW, halfH + ACTIVE_LABEL_GAP);
         caretShown = true;
         this.caret.style.transform = `${pin(halfW + CARET_GAP, 0)} translateY(-50%)`;
-      } else {
-        labelX = pinX(halfW + WHEEL_LABEL_GAP, 0);
-        labelStyle.transform = `${pin(halfW + WHEEL_LABEL_GAP, 0)} translateY(-50%)`;
       }
       // Ellipsize at the rail edge instead of letting the rail clip the text.
       const room = Math.max(0, Math.floor(this.width - labelX - 6));
