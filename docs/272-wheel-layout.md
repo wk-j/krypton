@@ -158,7 +158,7 @@ Superseded by [spec 273](./273-wheel-live-previews.md). `WheelRail` flies the in
 2. applyLayoutMode(Wheel) → relayout(); the first relayoutWheel() lazily creates the WheelRail (so default_layout and workspace restore work too)
 3. relayoutWheel(): computeWheelFrame → every window gets baseBounds = main; set active and hidden roles
 4. nextFrame → fitAll() (all windows) → WheelRail.setActive(index) → rAF rotates to target, then stops
-5. Leader j / Cmd+Shift+> → compositor.wheelNext() → focusWindow(next)
+5. Leader j / Cmd+Shift+< → compositor.wheelNext() → focusWindow(next)
 6. focusWindow → syncWheelFocus → set roles (active / preview ±3 / hidden) → suspend/resume webviews → wheel.setActive(i) → rail rotates and docks
 7. PTY output → headerScope.pump(n) + wheelRail.pump(id, n); content views → pumpWindowActivity(id, n) → same pair → tuft grows, loop runs until decayed
 8. Leaving Wheel: wheel.dispose(); clear the --wheel class, role, visibility, pointer, opacity, transform; resume webviews
@@ -176,7 +176,7 @@ The cycle becomes Grid → Focus → Depth → Scroll → Stage → **Wheel** �
 | `h` / `k` | Compositor + Wheel | Previous window (rotate up, wraps) |
 | `j` / `l` | Compositor + Wheel | Next window (rotate down, wraps) |
 | `1-9` | Compositor + Wheel | Jump to the Nth window in wheel order (absolute) |
-| `Cmd+Shift+<` / `>` | Global + Wheel | Previous / next window |
+| `Cmd+Shift+>` / `<` | Global + Wheel | Previous / next window, reversed from the other layouts: `>` picks the card above, `<` the card below. Palette **Focus Next / Previous** keep their meaning |
 | `s` then arrows / `hjkl` | Swap + Wheel | Move the active window earlier / later in the wheel |
 | `z` | Compositor + Wheel | Maximize: hide rail, active fills the workspace; restore brings it back |
 

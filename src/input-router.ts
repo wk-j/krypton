@@ -440,10 +440,12 @@ export class InputRouter {
       // Global: Cmd+Shift+> cycle focus next (forward: right/down in visual order)
       // Global: Cmd+Shift+< cycle focus previous (backward)
       // Match on code (Comma/Period) since key value varies with Cmd held on macOS
+      // Wheel reverses them: > picks the card above (previous), < the card below (next)
       if (e.metaKey && e.shiftKey && (e.code === 'Comma' || e.code === 'Period')) {
         e.preventDefault();
         e.stopPropagation();
-        this.compositor.focusCycle(e.code === 'Period' ? 1 : -1);
+        const wheel = this.compositor.currentLayoutMode === LayoutMode.Wheel;
+        this.compositor.focusCycle((e.code === 'Period') !== wheel ? 1 : -1);
         return;
       }
 
