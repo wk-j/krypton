@@ -1,6 +1,6 @@
 /* ─── Wheel layout rail (spec 272) ───
    The arc navigation rail on the left of the Wheel layout. Colours come from
-   the theme accent; cards use a full 1px border (no corner brackets, no blur).
+   the theme accent; cards are borderless (no frame, no glow, no blur).
    Transforms are written per frame by WheelRail only while the wheel moves.
    The root sets no z-index on purpose: it must not form a stacking context, so
    live preview windows (z 2, spec 273) slot between the arc (z 1) and the
@@ -36,7 +36,7 @@
   height: var(--krypton-wheel-card-height, 70px);
   margin: 0;
   padding: 0;
-  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.28);
+  border: none;
   border-radius: var(--krypton-border-radius, 8px);
   /* --krypton-wheel-live: 0 = schematic, 1 = the live window shows through. */
   background: rgba(var(--krypton-bg-rgb, 6, 10, 18), calc(0.86 * (1 - var(--krypton-wheel-live, 0))));
@@ -47,14 +47,8 @@
   will-change: transform, opacity;
 }
 
-.krypton-wheel__card--live {
-  border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.5);
-}
-
 .krypton-wheel__card--active {
-  border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.9);
   color: var(--krypton-accent, #0cf);
-  box-shadow: 0 0 6px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.45);
 }
 
 .krypton-wheel__card:focus-visible {
@@ -69,7 +63,7 @@
   opacity: calc(1 - var(--krypton-wheel-live, 0));
 }
 
-/* Split dividers; the card border is the only frame. */
+/* Split dividers; the card itself has no frame. */
 .krypton-wheel__divider {
   stroke: currentColor;
   stroke-width: 1;

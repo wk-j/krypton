@@ -94,7 +94,7 @@ Keystrokes are never buffered for the morph. The incoming window has DOM focus a
 
 ### UI Changes
 
-- **Card, live:** `krypton-wheel__card--live`. Transparent background; the schematic SVG is hidden; the 1px card border and active glow sit on top of the scaled window. The window's own chrome is scaled with it (its titlebar reads as a thin strip, like Stage).
+- **Card, live:** `krypton-wheel__card--live`. Transparent background; the schematic SVG is hidden; the card draws no border over the scaled window. The window's own chrome is scaled with it (its titlebar reads as a thin strip, like Stage).
 - **Card, schematic:** unchanged. Used for the active slot (its window is the main frame), cards beyond ±3, and whenever a preview has faded out.
 - **Edge fade:** when a live card's rotated bounds come within `WHEEL_EDGE_FADE` px of the rail's right, top, or bottom edge, `edgeFade` drops to 0 and the schematic fades in. Previews never overlap the main frame or footer.
 - **Z-order** in the workspace: arc canvas 1 · preview windows 2 · active window 2 (no overlap) · cards 3 · labels and caret 4.

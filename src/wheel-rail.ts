@@ -645,7 +645,7 @@ function buildSchematicSvg(item: WheelItem, cardHeight: number): SVGSVGElement {
     const y = y0 + pane.y * areaH;
     const w = pane.w * areaW;
     const h = pane.h * areaH;
-    // Splits are drawn as divider lines; the card border is the outer frame.
+    // Splits are drawn as divider lines; the card has no outer frame.
     if (split && pane.focused) {
       svg.appendChild(svgRect(x, y, w, h, 'krypton-wheel__pane--focused'));
     }
