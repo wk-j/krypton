@@ -128,7 +128,7 @@ Usable viewport: `vw - 2*gap` wide, `vh - FOOTER_HEIGHT - 2*gap` tall (same inse
 `toggleFocusLayout()` cycle:
 
 ```
-Grid → Focus → Depth → Scroll → Stage → Grid
+Grid → Focus → Depth → Scroll → Stage → Wheel → Grid   (Stage: spec 245, Wheel: spec 272)
 ```
 
 ### Create / close / maximize / pin
@@ -145,7 +145,7 @@ Existing `h/j/k/l` already mean "focus in that direction". In Scroll they mean c
 
 | Key | Context | Action |
 |-----|---------|--------|
-| `f` | Compositor | Cycle Grid → Focus → Depth → Scroll → Stage → Grid |
+| `f` | Compositor | Cycle Grid → Focus → Depth → Scroll → Stage → Wheel → Grid |
 | `h` / `l` | Compositor + Scroll | Focus column left / right (camera follows) |
 | `j` / `k` | Compositor + Scroll | Focus window down / up in the column |
 | `,` | Compositor + Scroll | Consume-or-expel left. Not globally reserved: a focused view that owns `,` (ACP Harness model picker) keeps it. |

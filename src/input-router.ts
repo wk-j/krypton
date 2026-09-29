@@ -758,6 +758,8 @@ export class InputRouter {
           this.enterHintMode();
         } else if (this.compositor.currentLayoutMode === LayoutMode.Stage) {
           this.compositor.stagePrevious().then(() => this.toNormal());
+        } else if (this.compositor.currentLayoutMode === LayoutMode.Wheel) {
+          this.compositor.wheelPrevious().then(() => this.toNormal());
         } else {
           this.compositor.focusDirection('left');
           this.toNormal();
@@ -768,6 +770,8 @@ export class InputRouter {
           this.compositor.depthPullForward().then(() => this.toNormal());
         } else if (this.compositor.currentLayoutMode === LayoutMode.Stage) {
           this.compositor.stageNext().then(() => this.toNormal());
+        } else if (this.compositor.currentLayoutMode === LayoutMode.Wheel) {
+          this.compositor.wheelNext().then(() => this.toNormal());
         } else {
           this.compositor.focusDirection('down');
           this.toNormal();
@@ -781,6 +785,8 @@ export class InputRouter {
           this.compositor.depthPushBack().then(() => this.toNormal());
         } else if (this.compositor.currentLayoutMode === LayoutMode.Stage) {
           this.compositor.stagePrevious().then(() => this.toNormal());
+        } else if (this.compositor.currentLayoutMode === LayoutMode.Wheel) {
+          this.compositor.wheelPrevious().then(() => this.toNormal());
         } else {
           this.compositor.focusDirection('up');
           this.toNormal();
@@ -791,6 +797,8 @@ export class InputRouter {
           this.compositor.openDashboard().then(() => this.toNormal());
         } else if (this.compositor.currentLayoutMode === LayoutMode.Stage) {
           this.compositor.stageNext().then(() => this.toNormal());
+        } else if (this.compositor.currentLayoutMode === LayoutMode.Wheel) {
+          this.compositor.wheelNext().then(() => this.toNormal());
         } else {
           this.compositor.focusDirection('right');
           this.toNormal();

@@ -63,6 +63,18 @@ const STAGE_WINDOW_KEYS: KeyEntry[] = groupEntries('Windows', [
   { key: 'p', label: 'Pin (No Stage Effect)' },
 ]);
 
+// spec 272: resize/move/pin/= have no Wheel effect, so they are not listed.
+const WHEEL_WINDOW_KEYS: KeyEntry[] = groupEntries('Windows', [
+  { key: 'n', label: 'New Window' },
+  { key: 'x', label: 'Close Window', effect: 'danger' },
+  { key: 'h/k', label: 'Previous Window' },
+  { key: 'j/l', label: 'Next Window' },
+  { key: '1-9', label: 'Jump To Window' },
+  { key: 'f', label: 'Cycle Layout' },
+  { key: 's', label: 'Reorder Wheel', effect: 'important' },
+  { key: 'z', label: 'Maximize', effect: 'important' },
+]);
+
 const COMPOSITOR_KEYS: KeyEntry[] = [
   ...groupEntries('Windows', [
     { key: 'n', label: 'New Window' },
@@ -142,6 +154,11 @@ const SCROLL_COMPOSITOR_KEYS: KeyEntry[] = [
 
 const STAGE_COMPOSITOR_KEYS: KeyEntry[] = [
   ...STAGE_WINDOW_KEYS,
+  ...COMPOSITOR_KEYS.filter((e) => e.group !== 'Windows'),
+];
+
+const WHEEL_COMPOSITOR_KEYS: KeyEntry[] = [
+  ...WHEEL_WINDOW_KEYS,
   ...COMPOSITOR_KEYS.filter((e) => e.group !== 'Windows'),
 ];
 
@@ -258,7 +275,9 @@ export class WhichKey {
               ? SCROLL_COMPOSITOR_KEYS
               : layoutMode === LayoutMode.Stage
                 ? STAGE_COMPOSITOR_KEYS
-                : COMPOSITOR_KEYS,
+                : layoutMode === LayoutMode.Wheel
+                  ? WHEEL_COMPOSITOR_KEYS
+                  : COMPOSITOR_KEYS,
             contentType,
           ),
           ...leaderBindingsToEntries(focusedLeaderKeys),
@@ -269,6 +288,8 @@ export class WhichKey {
             ? 'Compositor · Scroll'
             : layoutMode === LayoutMode.Stage
               ? 'Compositor · Stage'
+            : layoutMode === LayoutMode.Wheel
+              ? 'Compositor · Wheel'
             : 'Compositor';
         break;
       case Mode.Resize:

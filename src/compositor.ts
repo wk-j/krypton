@@ -76,6 +76,19 @@ import {
   rotateStageOrder,
   syncStageOrder,
 } from './stage-layout';
+import {
+  WHEEL_LIVE_SLOTS,
+  computeWheelFrame,
+  wheelItemKey,
+  wheelLabel,
+  wheelSchematic,
+  wheelTextSilhouette,
+  wrapWheelIndex,
+  type WheelItem,
+  type WheelLine,
+  type WheelPaneNode,
+} from './wheel-layout';
+import { WheelRail } from './wheel-rail';
 import { AnimationEngine, BoundsSnapshot, type StageTransitionLayer } from './animation';
 import { SoundEngine } from './sound';
 import { ShaderEngine } from './shaders';
@@ -367,6 +380,14 @@ export class Compositor {
   };
   private stageFrameInitialized = false;
   private stageTransitionVersion = 0;
+  /** Arc navigation rail (spec 272); created lazily while layoutMode === Wheel. */
+  private wheelRail: WheelRail | null = null;
+  private wheelTransitionVersion = 0;
+  /** Pending card refreshes after PTY output, one per window (spec 272). */
+  private wheelRefreshTimers = new Map<WindowId, ReturnType<typeof setTimeout>>();
+  /** True while an overlay mode has every webview suspended. Wheel activation
+   *  must not resume a webview underneath that overlay. */
+  private webviewsSuspended = false;
   /** When a window is maximized, store its ID here. Only one window can be maximized at a time. */
   private maximizedWindowId: WindowId | null = null;
   /** The snapshot lives in the Rust process so it survives a WebContent death,
@@ -622,6 +643,8 @@ export class Compositor {
         this.layoutMode = LayoutMode.Scroll;
       } else if (layoutStr === 'stage') {
         this.layoutMode = LayoutMode.Stage;
+      } else if (layoutStr === 'wheel') {
+        this.layoutMode = LayoutMode.Wheel;
       } else {
         this.layoutMode = LayoutMode.Focus;
       }
@@ -1478,17 +1501,23 @@ export class Compositor {
     // screen reader follows, and CSS `order` puts the badge first visually.
     this.syncWindowProjectBadge(win);
     this.syncStageProjectInitials(win);
+    this.syncWheelItem(win);
+  }
+
+  /** The window's project path: the focused content view's working directory,
+   *  else a path-like terminal title, else the PTY cwd status text. */
+  private windowProjectPath(win: KryptonWindow, title: string): string | null {
+    const dir = this.focusedProjectDir(win);
+    if (dir) return dir;
+    const status = this.findPtyStatus(win.element)?.textContent ?? '';
+    if (title.startsWith('/') || title.startsWith('~/')) return title;
+    return status.startsWith('/') || status.startsWith('~/') ? status : null;
   }
 
   private syncStageProjectInitials(win: KryptonWindow, titleOverride?: string): void {
     if (this.layoutMode !== LayoutMode.Stage) return;
     const title = titleOverride ?? win.tabs[win.activeTabIndex]?.title ?? '';
-    const dir = this.focusedProjectDir(win);
-    const status = this.findPtyStatus(win.element)?.textContent ?? '';
-    const path = title.startsWith('/') || title.startsWith('~/')
-      ? title
-      : status.startsWith('/') || status.startsWith('~/') ? status : null;
-    const initials = projectBadge(dir ?? path)?.initials ?? title.trim();
+    const initials = projectBadge(this.windowProjectPath(win, title))?.initials ?? title.trim();
     win.element.dataset.stageProjectInitials = [...initials.toUpperCase()].slice(0, 2).join('');
   }
 
@@ -1921,6 +1950,7 @@ export class Compositor {
     // Refresh oscilloscope band accents (per-lane color may have changed)
     for (const [, win] of this.windows) win.headerScope?.refreshColor();
     this.qtHeaderScope?.refreshColor();
+    this.wheelRail?.refreshColors();
   }
 
   /**
@@ -2395,6 +2425,8 @@ export class Compositor {
       // The temporary pane is replaced by restoreWorkspace() immediately.
     } else if (stageSnapshots) {
       void this.animateStageTransition(stageSnapshots);
+    } else if (this.layoutMode === LayoutMode.Wheel) {
+      void this.syncWheelFocus();
     } else {
       this.animation.entrance(el);
       this.animateRelayout(snapshots.filter((s) => s.id !== id));
@@ -2885,10 +2917,9 @@ export class Compositor {
 
     // Header accent bar below titlebar — live oscilloscope (fed by the content
     // view's streamed output) or the static striped div, per theme config.
+    // The same pump also feeds the Wheel rail's activity tuft (spec 272).
     const headerScope = this.buildHeaderAccent(chrome);
-    if (headerScope) {
-      contentView.onOutputPump = (chars: number): void => headerScope.pump(chars);
-    }
+    contentView.onOutputPump = (chars: number): void => this.pumpWindowActivity(id, chars);
 
     const tabBar = document.createElement('div');
     tabBar.className = 'krypton-window__tabbar';
@@ -2984,6 +3015,8 @@ export class Compositor {
 
     if (stageSnapshots) {
       void this.animateStageTransition(stageSnapshots);
+    } else if (this.layoutMode === LayoutMode.Wheel) {
+      void this.syncWheelFocus();
     } else {
       this.animation.entrance(el);
       this.animateRelayout(snapshots.filter((s) => s.id !== id));
@@ -4862,6 +4895,12 @@ export class Compositor {
     const stageNextFocus = stageSnapshots
       ? this.stageState.order.find((candidate) => candidate !== id && this.windows.has(candidate)) ?? null
       : null;
+    // Wheel: the window that slides into the closed slot, else the one before it.
+    const wheelIds = this.layoutMode === LayoutMode.Wheel ? this.windowIds : null;
+    const wheelIndex = wheelIds ? wheelIds.indexOf(id) : -1;
+    const wheelNextFocus = wheelIds
+      ? wheelIds[wheelIndex + 1] ?? wheelIds[wheelIndex - 1] ?? null
+      : null;
     this.usageUnsubscribeByWindow.get(id)?.();
     this.usageUnsubscribeByWindow.delete(id);
     this.usageProvidersUnsubscribeByWindow.get(id)?.();
@@ -4925,6 +4964,8 @@ export class Compositor {
       const remaining = this.windowIds;
       const nextId = stageNextFocus && this.windows.has(stageNextFocus)
         ? stageNextFocus
+        : wheelNextFocus && this.windows.has(wheelNextFocus)
+        ? wheelNextFocus
         : scrollClose?.focusId && this.windows.has(scrollClose.focusId)
         ? scrollClose.focusId
         : remaining.length > 0 ? remaining[remaining.length - 1] : null;
@@ -4944,6 +4985,8 @@ export class Compositor {
     this.fitAll();
     if (stageSnapshots) {
       void this.animateStageTransition(stageSnapshots);
+    } else if (this.layoutMode === LayoutMode.Wheel) {
+      void this.syncWheelFocus();
     } else {
       this.animateRelayout(snapshots);
     }
@@ -5004,6 +5047,12 @@ export class Compositor {
       return;
     }
 
+    // Wheel: roles flip and the rail rotates + docks; no bounds change, so no fit.
+    if (previousId !== id && this.layoutMode === LayoutMode.Wheel) {
+      void this.syncWheelFocus();
+      return;
+    }
+
     // In Focus layout, the focused window is always the left (main) panel.
     // Relayout so the newly focused window swaps to the left and the
     // previously focused window moves into the right stack.
@@ -5022,6 +5071,10 @@ export class Compositor {
 
   /** Focus window by direction relative to current focused window */
   focusDirection(direction: 'left' | 'down' | 'up' | 'right'): void {
+    if (this.layoutMode === LayoutMode.Wheel) {
+      void this.wheelStep(direction === 'left' || direction === 'up' ? -1 : 1);
+      return;
+    }
     if (this.layoutMode === LayoutMode.Stage) {
       if (direction === 'left' || direction === 'up') {
         void this.stagePrevious();
@@ -5051,6 +5104,12 @@ export class Compositor {
    * The order wraps around so all windows are always reachable.
    */
   focusByIndex(index: number): void {
+    if (this.layoutMode === LayoutMode.Wheel) {
+      // Absolute position on the wheel, not relative to the focused window.
+      const id = this.windowIds[index - 1];
+      if (id) this.focusWindow(id);
+      return;
+    }
     if (this.layoutMode === LayoutMode.Stage) {
       const id = this.stageState.order[index - 1];
       if (id) this.focusWindow(id);
@@ -5077,6 +5136,10 @@ export class Compositor {
    * the originally focused window (now at the target's old position).
    */
   swapInDirection(direction: 'left' | 'down' | 'up' | 'right'): void {
+    if (this.layoutMode === LayoutMode.Wheel) {
+      this.wheelMove(direction === 'left' || direction === 'up' ? -1 : 1);
+      return;
+    }
     if (this.layoutMode === LayoutMode.Scroll) {
       this.scrollMove(direction);
       return;
@@ -5191,6 +5254,11 @@ export class Compositor {
    */
   focusCycle(direction: 1 | -1): void {
     if (this.windows.size <= 1) return;
+
+    if (this.layoutMode === LayoutMode.Wheel) {
+      void this.wheelStep(direction);
+      return;
+    }
 
     if (this.layoutMode === LayoutMode.Stage) {
       if (direction > 0) void this.stageNext();
@@ -5444,7 +5512,7 @@ export class Compositor {
     return this.layoutMode;
   }
 
-  /** Cycle layout modes: Grid → Focus → Depth → Scroll → Stage → Grid */
+  /** Cycle layout modes: Grid → Focus → Depth → Scroll → Stage → Wheel → Grid */
   async toggleFocusLayout(): Promise<void> {
     const order: LayoutMode[] = [
       LayoutMode.Grid,
@@ -5452,6 +5520,7 @@ export class Compositor {
       LayoutMode.Depth,
       LayoutMode.Scroll,
       LayoutMode.Stage,
+      LayoutMode.Wheel,
     ];
     const idx = order.indexOf(this.layoutMode);
     const next = order[(idx + 1) % order.length];
@@ -5471,6 +5540,7 @@ export class Compositor {
     if (prev === LayoutMode.Depth) this.clearDepthStyles();
     if (prev === LayoutMode.Scroll) this.leaveScrollLayout();
     if (prev === LayoutMode.Stage) this.leaveStageLayout();
+    if (prev === LayoutMode.Wheel) this.leaveWheelLayout();
 
     this.layoutMode = mode;
     if (mode === LayoutMode.Scroll) this.enterScrollLayout();
@@ -5483,6 +5553,9 @@ export class Compositor {
     this.fitAll();
     if (stageSnapshots) {
       await this.animateStageTransition(stageSnapshots);
+    } else if (mode === LayoutMode.Wheel) {
+      // Previews carry rail-owned transforms that a relayout morph would override.
+      this.animateRelayout(snapshots.filter((s) => s.id === this.focusedWindowId));
     } else {
       this.animateRelayout(snapshots);
     }
@@ -5527,6 +5600,8 @@ export class Compositor {
           w.element.style.display = 'none';
         }
       }
+      // Wheel: the rail hides with them; restore's relayout brings it back.
+      this.wheelRail?.setBounds(null);
 
       // Expand to fill the workspace area: full width, but full height MINUS the
       // fixed bottom footer rail — otherwise the maximized window overlaps the
@@ -5651,11 +5726,9 @@ export class Compositor {
     // output (spec 189). The band lives on the window chrome and is shared by
     // every tab/pane, so a content tab pumps the same scope the launching
     // terminal fed — matching the "all panes pump the single window band" rule.
-    // Null when the header-accent style is 'ticks' (pump stays unwired → no-op).
-    const scope = win.headerScope;
-    if (scope) {
-      contentView.onOutputPump = (chars: number): void => scope.pump(chars);
-    }
+    // The scope is null when the header-accent style is 'ticks'; the pump still
+    // feeds the Wheel rail's activity tuft (spec 272).
+    contentView.onOutputPump = (chars: number): void => this.pumpWindowActivity(win.id, chars);
 
     const pane: Pane = {
       id: paneId,
@@ -5710,12 +5783,25 @@ export class Compositor {
   /** Hide all in-app webviews; used before opening overlays that native
    *  child webviews would otherwise occlude (palette, dashboard, hints). */
   suspendAllWebviews(): void {
+    this.webviewsSuspended = true;
     this.forEachWebviewView((v) => v.suspend());
   }
 
-  /** Restore previously-suspended webviews. Bounds are re-synced. */
+  /** Restore previously-suspended webviews. Bounds are re-synced. Webviews in
+   *  windows the Wheel layout keeps hidden stay suspended: a native webview
+   *  ignores `visibility: hidden` and would cover the active window. */
   resumeAllWebviews(): void {
-    this.forEachWebviewView((v) => v.resume());
+    this.webviewsSuspended = false;
+    for (const win of this.windows.values()) {
+      if (win.element.dataset.wheelRole === 'hidden') continue;
+      this.setWindowWebviewsSuspended(win, false);
+    }
+  }
+
+  private setWindowWebviewsSuspended(win: KryptonWindow, suspended: boolean): void {
+    for (const tab of win.tabs) {
+      this.walkPaneTreeForWebviews(tab.paneTree, (v) => (suspended ? v.suspend() : v.resume()));
+    }
   }
 
   private forEachWebviewView(fn: (view: WebviewContentView) => void): void {
@@ -6722,6 +6808,8 @@ export class Compositor {
    *  .krypton-workspace-footer height in workspace-footer.css). Grid layouts
    *  reserve this space so windows don't overlap the status bar. */
   private static readonly FOOTER_HEIGHT = 28;
+  /** Trailing delay before a Wheel card redraws its text silhouette after PTY output. */
+  private static readonly WHEEL_REFRESH_MS = 1000;
   /** Depth layout: window size as fraction of viewport */
   private static readonly DEPTH_WIDTH_RATIO = 0.88;
   private static readonly DEPTH_HEIGHT_RATIO = 0.90;
@@ -6745,6 +6833,12 @@ export class Compositor {
 
     if (this.layoutMode === LayoutMode.Stage) {
       this.relayoutStage(vw, vh);
+      collector.layoutEnd();
+      return;
+    }
+
+    if (this.layoutMode === LayoutMode.Wheel) {
+      this.relayoutWheel(vw, vh);
       collector.layoutEnd();
       return;
     }
@@ -7350,6 +7444,208 @@ export class Compositor {
     this.focusWindow(id);
   }
 
+  // ─── Wheel layout (spec 272) ────────────────────────────────────
+
+  private ensureWheelRail(): WheelRail {
+    if (!this.wheelRail) {
+      this.wheelRail = new WheelRail(this.workspace, {
+        onActivate: (id) => this.focusWindow(id),
+        previewElement: (id) => this.windows.get(id)?.element ?? null,
+        motionEnabled: () => this.animation.motionEnabled,
+      });
+    }
+    return this.wheelRail;
+  }
+
+  private leaveWheelLayout(): void {
+    this.wheelTransitionVersion++;
+    this.wheelRail?.dispose();
+    this.wheelRail = null;
+    for (const timer of this.wheelRefreshTimers.values()) clearTimeout(timer);
+    this.wheelRefreshTimers.clear();
+    for (const win of this.windows.values()) {
+      const el = win.element;
+      el.classList.remove('krypton-window--wheel');
+      delete el.dataset.wheelRole;
+      el.style.visibility = '';
+      el.style.pointerEvents = '';
+      el.style.zIndex = '';
+      // The rail already released its previews; clear anything left mid-morph.
+      el.style.transform = '';
+      el.style.transformOrigin = '';
+      el.style.opacity = '';
+      if (!this.webviewsSuspended) this.setWindowWebviewsSuspended(win, false);
+    }
+  }
+
+  /** Every window shares the main frame; only the focused one is visible. */
+  private relayoutWheel(vw: number, vh: number): void {
+    const rail = this.ensureWheelRail();
+    const frame = computeWheelFrame(vw, vh, this.windowGap, Compositor.FOOTER_HEIGHT);
+    const maximizedId = this.maximizedWindowId && this.windows.has(this.maximizedWindowId)
+      ? this.maximizedWindowId
+      : null;
+    let row = 0;
+    for (const win of this.windows.values()) {
+      win.gridSlot = { col: 1, row: row++, colSpan: 1, rowSpan: 1 };
+      win.bounds = win.id === maximizedId
+        ? { x: 0, y: 0, width: vw, height: vh - Compositor.FOOTER_HEIGHT }
+        : { ...frame.main };
+      this.applyBounds(win);
+    }
+    rail.setBounds(maximizedId ? null : frame.rail, frame.main);
+    this.syncWheelRoles();
+  }
+
+  /** Roles: `active` fills the main frame; `preview` is a live window the rail
+   *  scales onto a card within WHEEL_LIVE_SLOTS of it (spec 273); the rest are
+   *  `hidden`. Previews never take input and keep their webviews suspended. */
+  private syncWheelRoles(): void {
+    if (this.layoutMode !== LayoutMode.Wheel) return;
+    const ids = this.windowIds;
+    const activeId = this.focusedWindowId && this.windows.has(this.focusedWindowId)
+      ? this.focusedWindowId
+      : ids[0] ?? null;
+    const activeIndex = activeId ? ids.indexOf(activeId) : 0;
+    const previews = this.wheelRail?.isVisible ?? false;
+    for (const win of this.windows.values()) {
+      const active = win.id === activeId;
+      const preview = !active && previews
+        && Math.abs(ids.indexOf(win.id) - activeIndex) <= WHEEL_LIVE_SLOTS;
+      const el = win.element;
+      el.classList.add('krypton-window--wheel');
+      el.dataset.wheelRole = active ? 'active' : preview ? 'preview' : 'hidden';
+      el.style.visibility = active || preview ? '' : 'hidden';
+      el.style.pointerEvents = active ? '' : 'none';
+      el.style.zIndex = active || preview ? '2' : '1';
+      if (!active) {
+        this.setWindowWebviewsSuspended(win, true);
+      } else if (!this.webviewsSuspended) {
+        this.setWindowWebviewsSuspended(win, false);
+      }
+    }
+    if (this.wheelRail) {
+      this.wheelRail.setItems(Array.from(this.windows.values(), (win) => this.buildWheelItem(win)));
+      this.wheelRail.setActive(activeId ? ids.indexOf(activeId) : 0);
+    }
+  }
+
+  /** Refresh one card after a title, cwd, tab, or pane change. */
+  private syncWheelItem(win: KryptonWindow, titleOverride?: string): void {
+    if (this.layoutMode !== LayoutMode.Wheel || !this.wheelRail) return;
+    this.wheelRail.updateItem(this.buildWheelItem(win, titleOverride));
+  }
+
+  /** PTY output changes a card's text silhouette; rebuild it at most once a second per window. */
+  private scheduleWheelItemRefresh(win: KryptonWindow): void {
+    if (!this.wheelRail || this.wheelRefreshTimers.has(win.id)) return;
+    this.wheelRefreshTimers.set(win.id, setTimeout(() => {
+      this.wheelRefreshTimers.delete(win.id);
+      if (this.windows.get(win.id) === win) this.syncWheelItem(win);
+    }, Compositor.WHEEL_REFRESH_MS));
+  }
+
+  /** Output throughput from a content view: header band + Wheel tuft. */
+  private pumpWindowActivity(id: WindowId, bytes: number): void {
+    this.windows.get(id)?.headerScope?.pump(bytes);
+    this.wheelRail?.pump(id, bytes);
+  }
+
+  private buildWheelItem(win: KryptonWindow, titleOverride?: string): WheelItem {
+    const tab = win.tabs[win.activeTabIndex];
+    const title = titleOverride ?? this.findLabel(win.element)?.dataset.title ?? tab?.title ?? '';
+    const badge = projectBadge(this.windowProjectPath(win, title), getHomeLikePrefix());
+    const label = wheelLabel(badge?.label ?? null, title);
+    const schematic = tab ? wheelSchematic(this.toWheelPaneNode(tab.paneTree), tab.focusedPaneId) : [];
+    const tabCount = win.tabs.length;
+    return { id: win.id, label, schematic, tabCount, key: wheelItemKey(label, schematic, tabCount) };
+  }
+
+  private toWheelPaneNode(node: PaneNode): WheelPaneNode {
+    if (node.type === 'leaf') {
+      const { pane } = node;
+      if (!pane.contentView && pane.terminal) {
+        return { type: 'leaf', id: pane.id, contentType: 'terminal', lines: this.terminalSilhouette(pane.terminal) };
+      }
+      return { type: 'leaf', id: pane.id, contentType: pane.contentView?.type ?? 'terminal' };
+    }
+    return {
+      type: 'split',
+      direction: node.direction,
+      ratio: node.ratio,
+      first: this.toWheelPaneNode(node.first),
+      second: this.toWheelPaneNode(node.second),
+    };
+  }
+
+  /** The terminal's visible rows as text bars for its Wheel card. */
+  private terminalSilhouette(term: Terminal): WheelLine[] {
+    const buffer = term.buffer.active;
+    const rows: string[] = [];
+    for (let r = 0; r < term.rows; r++) {
+      rows.push(buffer.getLine(buffer.viewportY + r)?.translateToString(true) ?? '');
+    }
+    return wheelTextSilhouette(rows, term.cols);
+  }
+
+  /** Next (1) / previous (-1) window on the wheel, wrapping at both ends. */
+  async wheelStep(direction: 1 | -1): Promise<void> {
+    if (this.layoutMode !== LayoutMode.Wheel || this.windows.size < 2) return;
+    const ids = this.windowIds;
+    const current = this.focusedWindowId ? ids.indexOf(this.focusedWindowId) : 0;
+    const nextId = ids[wrapWheelIndex(current + direction, ids.length)];
+    if (!nextId || nextId === this.focusedWindowId) return;
+    this.sound.play('window.focus');
+    this.focusWindowQuiet(nextId);
+    await this.syncWheelFocus();
+  }
+
+  async wheelNext(): Promise<void> {
+    await this.wheelStep(1);
+  }
+
+  async wheelPrevious(): Promise<void> {
+    await this.wheelStep(-1);
+  }
+
+  /** Swap mode: move the focused window one slot earlier/later on the wheel. */
+  private wheelMove(delta: 1 | -1): void {
+    if (!this.focusedWindowId) return;
+    const entries = Array.from(this.windows.entries());
+    const from = entries.findIndex(([id]) => id === this.focusedWindowId);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= entries.length) return;
+    [entries[from], entries[to]] = [entries[to], entries[from]];
+    this.windows = new Map(entries);
+    this.syncWheelRoles();
+    this.scheduleWorkspaceStateSave();
+  }
+
+  /**
+   * Show the focused window in the main frame: flip roles, rotate the rail,
+   * and slide the incoming window in. A switch away from a maximized window
+   * restores the Wheel frame first so the new window is not left hidden.
+   */
+  /** Apply a Wheel focus change. The rail rotates and flies the incoming window
+   *  from its card into the main frame and the outgoing one back (spec 273). */
+  private async syncWheelFocus(): Promise<void> {
+    const version = ++this.wheelTransitionVersion;
+    if (this.maximizedWindowId && this.maximizedWindowId !== this.focusedWindowId) {
+      this.maximizedWindowId = null;
+      this.showAllWindows();
+      this.relayout();
+      await this.nextFrame();
+      if (version !== this.wheelTransitionVersion) return;
+      this.fitAll();
+    } else {
+      this.syncWheelRoles();
+    }
+    // focusWindowQuiet ran while this window was still `visibility: hidden`,
+    // which cannot take DOM focus — focus it again now that it is visible.
+    if (!this.qtVisible) this.refocusTerminal();
+    if (version === this.wheelTransitionVersion) this.replayBufferedInput();
+  }
+
   // ─── Scroll tiling (spec 241) ────────────────────────────────────
 
   private enterScrollLayout(): void {
@@ -7640,8 +7936,10 @@ export class Compositor {
       if (loc) {
         const win = this.windows.get(loc.windowId);
         if (win) {
-          // Drive the window's oscilloscope band with output throughput.
+          // Drive the window's oscilloscope band and Wheel tuft with output throughput.
           win.headerScope?.pump(data.length);
+          this.wheelRail?.pump(win.id, data.length);
+          this.scheduleWheelItemRefresh(win);
           const tab = win.tabs.find((t) => t.id === loc.tabId);
           if (tab) {
             const pane = this.findPaneInTree(tab.paneTree, loc.paneId);
@@ -7947,7 +8245,10 @@ export class Compositor {
       if (cwd) {
         statusEl.textContent = abbreviatePath(cwd);
         const win = this.windows.get(statusEl.closest<HTMLElement>('.krypton-window')?.id ?? '');
-        if (win) this.syncStageProjectInitials(win);
+        if (win) {
+          this.syncStageProjectInitials(win);
+          this.syncWheelItem(win);
+        }
       }
     } catch {
       // Session may have exited — ignore
@@ -7992,7 +8293,10 @@ export class Compositor {
     tail.textContent = parts.tail;
     tail.hidden = parts.tail.length === 0;
     const win = this.windows.get(label.closest<HTMLElement>('.krypton-window')?.id ?? '');
-    if (win) this.syncStageProjectInitials(win, text);
+    if (win) {
+      this.syncStageProjectInitials(win, text);
+      this.syncWheelItem(win, text);
+    }
   }
 
   private paintWindowLabelFromEl(windowEl: HTMLElement, text: string): void {

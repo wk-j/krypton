@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (257)
+## Specs (258)
 
 | # | Spec |
 |---|------|
@@ -274,6 +274,8 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 269 | [Review Board Auto-Push to Xenon](./269-review-auto-push-xenon.md) |
 | 270 | [Review Threads Without Worktrees](./270-review-threads-without-worktrees.md) |
 | 271 | [Keyboard Overlay (Ghost Hands)](./271-keyboard-overlay.md) |
+| 272 | [Wheel Layout (arc navigation wheel)](./272-wheel-layout.md) |
+| 273 | [Wheel Live Previews](./273-wheel-live-previews.md) |
 
 ## ADRs (20)
 

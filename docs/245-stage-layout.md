@@ -162,12 +162,12 @@ async stagePrevious(): Promise<void>;
 `Leader f` cycle becomes:
 
 ```text
-Grid → Focus → Depth → Scroll → Stage → Grid
+Grid → Focus → Depth → Scroll → Stage → Wheel → Grid   (Wheel added by spec 272)
 ```
 
 | Key | Context | Action |
 |-----|---------|--------|
-| `f` | Compositor | Cycle through all five layouts |
+| `f` | Compositor | Cycle through all layouts (six since spec 272) |
 | `h` / `k` | Compositor + Stage | Previous stage in the ring |
 | `j` / `l` | Compositor + Stage | Next stage in the ring |
 | `1-9` | Compositor + Stage | Activate the numbered active/shelf/ring window |

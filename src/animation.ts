@@ -82,6 +82,11 @@ export class AnimationEngine {
     return { ...this.config };
   }
 
+  /** False when the configured style is `none` or the duration is 0. */
+  get motionEnabled(): boolean {
+    return this.config.style !== AnimationStyle.None && this.config.duration > 0;
+  }
+
   // ─── Input Buffering ─────────────────────────────────────────────
 
   /**

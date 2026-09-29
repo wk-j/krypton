@@ -152,6 +152,16 @@ d. The loop stops once the grip, the mouse and the button fades settle
 6. Creating, closing, resizing, resetting, entering, or leaving Stage may change the shared base frame; those structural changes run fit for visible windows after layout.
 7. Hidden stages remain in the DOM with `visibility: hidden`, receive no pointer events, and keep their sessions alive.
 
+## Wheel Layout Focus Flow
+
+1. `Leader f`, `Layout: Wheel`, `default_layout = "wheel"`, or a restored Wheel workspace enters Wheel mode; the first relayout lazily creates the `WheelRail`.
+2. `computeWheelFrame()` returns the rail bounds and one shared main frame. Every window receives the main frame. The focused window gets `data-wheel-role="active"`. Windows within 3 slots of it get `preview`: visible, no pointer events, webviews suspended, and `WheelRail` scales each one onto its card with an inline transform (spec 273). The rest get `hidden` (`visibility: hidden`).
+3. `fitAll()` fits every window, hidden ones included, on entry, viewport resize, and maximize restore — `visibility: hidden` keeps layout, so hidden PTYs already have the frame's size.
+4. `Leader h/k`, `Leader j/l`, `Cmd+Shift+</>`, `Leader 1-9`, a card click, or a settled mouse-wheel scroll over the rail focuses another window.
+5. `syncWheelFocus()` flips the roles, refocuses the now-visible pane, and calls `setActive`. The rail rotates and runs the dock morph in its own rAF loop: the incoming window flies from its card into the main frame, then its transform is cleared; the outgoing one flies back onto its card. Input is not buffered, because the incoming pane already has focus. No fit runs, so no `resize_pty` or `SIGWINCH` is emitted.
+6. PTY output and content-view output pumps feed both the window's header band and `WheelRail.pump()`; tufts decay with a 1.5 s half-life and the rail loop stops once all are below threshold.
+7. Leaving Wheel disposes the rail, which releases every preview transform, then clears the Wheel class, role, visibility, pointer, z-index, transform, and opacity styles and resumes webviews. Entering Wheel morphs only the focused window with `animateRelayout`; previews start on their cards.
+
 ## Config Loading Flow (on app startup)
 
 ```

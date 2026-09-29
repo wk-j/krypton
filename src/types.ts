@@ -95,6 +95,8 @@ export enum LayoutMode {
   Scroll = 'Scroll',
   /** macOS Stage Manager-inspired: active window plus recent-window shelf */
   Stage = 'Stage',
+  /** Arc navigation wheel: schematic window cards on a left rail (spec 272) */
+  Wheel = 'Wheel',
 }
 
 /** Width of a Scroll-layout column. v1 is proportion of usable viewport width. */
