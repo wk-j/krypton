@@ -98,18 +98,26 @@
 }
 
 /* A label is the first two characters of the path or project name, set big so
-   windows are told apart at a glance. Case is kept — never uppercased. */
+   windows are told apart at a glance. Case is kept — never uppercased.
+   The rail is transparent over the wallpaper, so the label sits on a chip of
+   the card's own surface to stay legible on light and dark backdrops alike.
+   border-box keeps the rail-edge max-width covering the whole chip. */
 .krypton-wheel__label {
   position: absolute;
   left: 0;
   top: 0;
+  box-sizing: border-box;
   max-width: 90px;
+  padding: 4px 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 20px;
+  font-size: 28px;
+  font-weight: 700;
   line-height: 1;
-  color: var(--krypton-fg-dim, #4d6f8f);
+  color: var(--krypton-fg, #b0c4d8);
+  background: rgba(var(--krypton-bg-rgb, 6, 10, 18), 0.86);
+  border-radius: 4px;
   transform-origin: 0 0;
   pointer-events: none;
   z-index: 5;
@@ -118,8 +126,7 @@
 
 .krypton-wheel__label--active {
   max-width: 180px;
-  font-size: 32px;
-  color: var(--krypton-fg, #b0c4d8);
+  font-size: 40px;
 }
 
 .krypton-wheel__caret {
