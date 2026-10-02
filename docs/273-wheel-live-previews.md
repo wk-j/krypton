@@ -11,7 +11,7 @@ Wheel cards (spec 272) show a schematic: pane dividers, a content glyph, and a t
 
 ## Solution
 
-Reuse Stage's proven technique (spec 245): each nearby card is the **real window element**, visually scaled, leaned, and translated onto its card pose. There is no thumbnail DOM and no bitmap capture. Only the six cards nearest the active one are live (±3 slots); cards further out keep the schematic. This bounds GPU memory to the same order as Stage's five-card shelf. `WheelRail` owns every preview transform in its existing rAF loop. When focus changes, the rail also runs the **dock morph**: the incoming window flies from its card into the main frame, and the outgoing one flies back to its card. The morph composes with the wheel's rotation instead of fighting it. The active slot shows no card, because the live window is the main frame beside it (revised: it first kept a schematic card, see spec 272 Implementation Notes).
+Reuse Stage's proven technique (spec 245): each nearby card is the **real window element**, visually scaled, leaned, and translated onto its card pose. There is no thumbnail DOM and no bitmap capture. Only the six cards nearest the active one are live (±3 slots); cards further out keep the schematic. This bounds GPU memory to the same order as Stage's five-card shelf. `WheelRail` owns every preview transform in its existing rAF loop. When focus changes, the rail also runs the **dock morph**: the incoming window flies from its card into the main frame, and the outgoing one flies back to its card. The morph composes with the wheel's rotation instead of fighting it. The active slot keeps its card, because the live window is the main frame beside it (briefly dropped, then restored; see spec 272 Implementation Notes). That card shows the ghost eye (spec 274) instead of a schematic.
 
 ## Research
 
@@ -95,7 +95,7 @@ Keystrokes are never buffered for the morph. The incoming window has DOM focus a
 ### UI Changes
 
 - **Card, live:** `krypton-wheel__card--live`. Transparent background; the schematic SVG is hidden; the card draws no border over the scaled window. The window's own chrome is scaled with it (its titlebar reads as a thin strip, like Stage).
-- **Card, schematic:** unchanged. Used for cards beyond ±3 and whenever a preview has faded out. The active slot has no card: its window is the main frame.
+- **Card, schematic:** unchanged. Used for cards beyond ±3, and whenever a preview has faded out. The active slot shows the ghost eye instead (spec 274).
 - **Edge fade:** when a live card's rotated bounds come within `WHEEL_EDGE_FADE` px of the rail's right, top, or bottom edge, `edgeFade` drops to 0 and the schematic fades in. Previews never overlap the main frame or footer.
 - **Z-order** in the workspace: arc canvas 1 · preview windows 2 · active window 2 (no overlap) · cards 3 · labels and caret 4.
 - **Card height** follows the main frame's aspect: 112 × 92 on a 1728 × 1117 screen with a 400px rail. Geometry spacing already derives from card height, so the arc stays consistent.
@@ -120,7 +120,7 @@ None. `WHEEL_LIVE_SLOTS` is a constant. The GPU budget is not something users sh
 
 ## Open Questions
 
-None. Decisions taken: live range ±3 (GPU budget ≈ Stage); the active slot shows no card (first shipped as a schematic card, then dropped); cards take the window aspect; the rail owns the morph, replacing `wheelSwap` for Wheel.
+None. Decisions taken: live range ±3 (GPU budget ≈ Stage); the active slot keeps a card (briefly dropped, then restored; it now shows the spec 274 ghost eye); cards take the window aspect; the rail owns the morph, replacing `wheelSwap` for Wheel.
 
 ## Out of Scope
 

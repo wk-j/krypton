@@ -1,9 +1,9 @@
 // Krypton — Wheel rail (spec 272)
 // The arc navigation rail of the Wheel layout: a canvas arc furred with
 // tufts (static texture plus live per-window throughput), a faint card orbit,
-// one card + label per window except the focused one (it fills the main frame,
-// so its apex slot stays empty), a caret on the card a mouse-wheel scroll is
-// about to pick, and a position caption. Cards near the active one carry the
+// one card + label per window, a caret and big label on the active card at the
+// apex, the ghost eye on that card (spec 274, `WheelEye`), and a position
+// caption. Cards near the active one carry the
 // real window, scaled onto the card (spec 273); the rail owns those transforms
 // and the dock morph that flies windows between card and main frame. The rAF
 // loop runs only while the wheel is rotating, a window is docking, or a tuft
@@ -11,10 +11,14 @@
 // reduced motion).
 
 import type { WindowBounds, WindowId } from './types';
+import { WheelEye, wheelEyeWatch, type WheelEyeCentre, type WheelEyePoint } from './wheel-eye';
 import {
+  WHEEL_ACTIVE_LABEL_GAP,
   WHEEL_ACTIVITY_EPS,
   WHEEL_CARD_HEIGHT,
   WHEEL_CARD_WIDTH,
+  WHEEL_CARET_GAP,
+  WHEEL_CARET_WIDTH,
   WHEEL_FUR_PER_SLOT,
   WHEEL_LABEL_GAP,
   WHEEL_LERP,
@@ -41,13 +45,11 @@ const SCROLL_SENSITIVITY = 0.004;
 const SCROLL_SNAP_MS = 140;
 const ACTIVITY_FRAME_MS = 33;
 const REDUCED_ACTIVITY_FRAME_MS = 500;
-const ACTIVE_LABEL_GAP = 6;
-const CARET_GAP = 5;
-/** Matches `.krypton-wheel__caret` width. */
-const CARET_WIDTH = 7;
 const FUR_ALPHA = 0.8;
 const ORBIT_ALPHA = 0.3;
 const DEFAULT_ACCENT_RGB = '0, 204, 255';
+const DEFAULT_FG_RGB = '176, 196, 216';
+const DEFAULT_DANGER_RGB = '255, 85, 85';
 /** Dock morph ease per frame (~200 ms to settle at 60 fps). */
 const DOCK_LERP = 0.22;
 const DOCK_EPS = 0.002;
@@ -87,6 +89,7 @@ export class WheelRail {
   private readonly hint: HTMLDivElement;
   private readonly callbacks: WheelRailCallbacks;
   private readonly reduceMotion: MediaQueryList;
+  private readonly eye: WheelEye;
   private entries: WheelEntry[] = [];
   private byId = new Map<WindowId, WheelEntry>();
   private target = 0;
@@ -97,6 +100,8 @@ export class WheelRail {
   private geo: WheelGeometry = wheelGeometry(0, 0);
   private cardHeight = WHEEL_CARD_HEIGHT;
   private railBounds: WindowBounds = { x: 0, y: 0, width: 0, height: 0 };
+  /** The rail's viewport rect for the eye's gaze, read lazily once per setBounds. */
+  private clientRect: DOMRect | null = null;
   private main: WindowBounds | null = null;
   /** Focused window's index; drives dock targets and the live slots. */
   private activeIndex = 0;
@@ -132,6 +137,12 @@ export class WheelRail {
     this.root.append(this.canvas, this.caret, this.hint);
     this.root.addEventListener('wheel', this.onWheel, { passive: false });
     host.appendChild(this.root);
+    this.eye = new WheelEye({
+      centre: () => this.eyeCentre(),
+      activity: () => this.eyeActivity(),
+      ownActivity: () => this.entries[this.activeIndex]?.activity ?? 0,
+      motionEnabled: () => !this.reduceMotion.matches && this.callbacks.motionEnabled(),
+    });
     this.refreshColors();
   }
 
@@ -149,6 +160,7 @@ export class WheelRail {
       this.root.hidden = true;
       this.stopLoop();
       this.releaseAll();
+      this.eye.setRunning(false);
       return;
     }
     const wasVisible = this.visible;
@@ -157,6 +169,7 @@ export class WheelRail {
     this.root.hidden = false;
     this.railBounds = { ...bounds };
     this.main = { ...main };
+    this.clientRect = null;
     const style = this.root.style;
     style.left = `${bounds.x}px`;
     style.top = `${bounds.y}px`;
@@ -168,6 +181,8 @@ export class WheelRail {
       style.setProperty('--krypton-wheel-card-height', `${cardHeight}px`);
       for (const entry of this.entries) this.paintEntry(entry, entry.item);
     }
+    this.eye.resize(cardHeight);
+    this.eye.setRunning(true);
     if (bounds.width !== this.width || bounds.height !== this.height || cardHeight !== this.geo.cardHeight) {
       this.width = bounds.width;
       this.height = bounds.height;
@@ -241,6 +256,8 @@ export class WheelRail {
       this.settleDocks();
       this.render();
     }
+    const entry = this.entries[this.activeIndex];
+    if (entry) this.eye.mount(entry.card, entry.item.eyeText, entry.item.tabCount);
     this.kick();
   }
 
@@ -249,19 +266,28 @@ export class WheelRail {
     const entry = this.byId.get(id);
     if (!entry) return;
     entry.activity = bumpActivity(entry.activity, bytes);
+    this.eye.wake();
     this.kick();
   }
 
   /** Re-read theme colors; call on theme change. */
   refreshColors(): void {
-    const rgb = getComputedStyle(this.root).getPropertyValue('--krypton-accent-rgb').trim();
+    const css = getComputedStyle(this.root);
+    const rgb = css.getPropertyValue('--krypton-accent-rgb').trim();
     this.accentRgb = rgb || DEFAULT_ACCENT_RGB;
+    this.eye.setStyle({
+      fontFamily: css.fontFamily,
+      accentRgb: this.accentRgb,
+      fgRgb: css.getPropertyValue('--krypton-fg-rgb').trim() || DEFAULT_FG_RGB,
+      dangerRgb: css.getPropertyValue('--krypton-danger-rgb').trim() || DEFAULT_DANGER_RGB,
+    });
     if (this.visible) this.render();
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.releaseAll();
+    this.eye.dispose();
     this.disposed = true;
     this.stopLoop();
     if (this.snapTimer) clearTimeout(this.snapTimer);
@@ -281,7 +307,11 @@ export class WheelRail {
     card.dataset.windowId = item.id;
     // Keep DOM focus on the terminal; the click alone switches windows.
     card.addEventListener('mousedown', (event) => event.preventDefault());
-    card.addEventListener('click', () => this.callbacks.onActivate(item.id));
+    card.addEventListener('click', () => {
+      // Clicking the eye's own card blinks it (the study's click-to-blink).
+      if (this.eye.isOn(card)) this.eye.blink();
+      this.callbacks.onActivate(item.id);
+    });
 
     const label = document.createElement('span');
     label.className = 'krypton-wheel__label';
@@ -308,6 +338,41 @@ export class WheelRail {
     entry.card.setAttribute('aria-label', item.label);
     entry.label.textContent = wheelLabelHead(item.label);
     entry.card.replaceChildren(buildSchematicSvg(item, this.cardHeight));
+    // The repaint dropped the eye's canvas from its card; put it back.
+    if (this.eye.isOn(entry.card)) this.eye.mount(entry.card, item.eyeText, item.tabCount);
+  }
+
+  // ─── Ghost eye (spec 274) ────────────────────────────────────────
+
+  private railRect(): DOMRect {
+    if (!this.clientRect) this.clientRect = this.root.getBoundingClientRect();
+    return this.clientRect;
+  }
+
+  private eyeCentre(): WheelEyeCentre | null {
+    if (!this.visible || !this.entries[this.activeIndex]) return null;
+    const rect = this.railRect();
+    const pose = wheelItemPose(this.activeIndex, this.pos, this.geo);
+    return { x: rect.left + pose.x, y: rect.top + pose.y, rotate: pose.rotate, scale: pose.scale };
+  }
+
+  /** The busiest window for the eye to watch: the main frame when it is the
+   *  focused one, otherwise that window's card centre on the orbit. */
+  private eyeActivity(): WheelEyePoint | null {
+    const main = this.main;
+    if (!this.visible || !main) return null;
+    const watch = wheelEyeWatch(this.entries.map((entry) => entry.activity), this.activeIndex);
+    if (!watch) return null;
+    const rect = this.railRect();
+    if (watch.index === this.activeIndex) {
+      return {
+        x: rect.left - this.railBounds.x + main.x + main.width / 2,
+        y: rect.top - this.railBounds.y + main.y + main.height / 2,
+        level: watch.level,
+      };
+    }
+    const pose = wheelItemPose(watch.index, this.pos, this.geo);
+    return { x: rect.left + pose.x, y: rect.top + pose.y, level: watch.level };
   }
 
   // ─── Live previews (spec 273) ────────────────────────────────────
@@ -460,12 +525,9 @@ export class WheelRail {
       const entry = this.entries[i];
       const pose = wheelItemPose(i, this.pos, this.geo);
       const on = i === highlighted;
-      // The focused window fills the main frame, so its card and label leave
-      // the rail and its apex slot stays empty.
-      const shown = !pose.hidden && i !== this.activeIndex;
       const cardStyle = entry.card.style;
       const labelStyle = entry.label.style;
-      const visibility = shown ? 'visible' : 'hidden';
+      const visibility = pose.hidden ? 'hidden' : 'visible';
       const opacity = pose.opacity.toFixed(3);
       cardStyle.visibility = visibility;
       labelStyle.visibility = visibility;
@@ -475,7 +537,7 @@ export class WheelRail {
       entry.card.classList.toggle('krypton-wheel__card--active', on);
       entry.label.classList.toggle('krypton-wheel__label--active', on);
       this.placePreview(entry, i, pose);
-      if (!shown) continue;
+      if (pose.hidden) continue;
 
       cardStyle.transform = `translate(${pose.x.toFixed(2)}px, ${pose.y.toFixed(2)}px) translate(-50%, -50%) rotate(${pose.rotate.toFixed(4)}rad) scale(${pose.scale.toFixed(3)})`;
       // Labels stay upright; they are pinned to a point on the leaning card.
@@ -487,12 +549,14 @@ export class WheelRail {
       const pin = (dx: number, dy: number): string =>
         `translate(${pinX(dx, dy).toFixed(2)}px, ${pinY(dx, dy).toFixed(2)}px)`;
       // Every label sits inline with its card; the active one past the caret.
-      const labelDx = on ? halfW + CARET_GAP + CARET_WIDTH + ACTIVE_LABEL_GAP : halfW + WHEEL_LABEL_GAP;
+      const labelDx = on
+        ? halfW + WHEEL_CARET_GAP + WHEEL_CARET_WIDTH + WHEEL_ACTIVE_LABEL_GAP
+        : halfW + WHEEL_LABEL_GAP;
       const labelX = pinX(labelDx, 0);
       labelStyle.transform = `${pin(labelDx, 0)} translateY(-50%)`;
       if (on) {
         caretShown = true;
-        this.caret.style.transform = `${pin(halfW + CARET_GAP, 0)} translateY(-50%)`;
+        this.caret.style.transform = `${pin(halfW + WHEEL_CARET_GAP, 0)} translateY(-50%)`;
       }
       // Ellipsize at the rail edge instead of letting the rail clip the text.
       const room = Math.max(0, Math.floor(this.width - labelX - 6));

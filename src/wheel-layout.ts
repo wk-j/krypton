@@ -25,6 +25,14 @@ export const WHEEL_CARD_GAP = 4;
 export const WHEEL_IDLE_GAP = 8;
 export const WHEEL_LABEL_GAP = 8;
 export const WHEEL_LABEL_MAX_WIDTH = 90;
+/** The active card's caret: its gap from the card, its width (matches
+ *  `.krypton-wheel__caret`), then the gap to the label. */
+export const WHEEL_CARET_GAP = 5;
+export const WHEEL_CARET_WIDTH = 7;
+export const WHEEL_ACTIVE_LABEL_GAP = 6;
+/** Room for the 40px two-character active label chip (~60px in a 0.6em mono
+ *  font) plus the 6px it keeps from the rail edge. */
+export const WHEEL_ACTIVE_LABEL_ROOM = 66;
 /** Characters a rail label shows; the full label stays on the card's aria-label. */
 export const WHEEL_LABEL_CHARS = 2;
 /** Least room kept left of the arc for tuft strands. */
@@ -101,6 +109,8 @@ export interface WheelItem {
   label: string;
   schematic: WheelPaneRect[];
   tabCount: number;
+  /** Text the active card's ghost eye is made of (spec 274): label plus tab title. */
+  eyeText: string;
   /** Changes whenever the card DOM must be rebuilt. */
   key: string;
 }
@@ -157,10 +167,14 @@ export function wheelGeometry(
   const w = Math.max(1, railWidth);
   const h = Math.max(1, railHeight);
   const cardH = Math.max(1, cardHeight);
-  const orbitGap = (WHEEL_CARD_WIDTH * WHEEL_ACTIVE_SCALE) / 2 + WHEEL_ARC_GAP;
-  // Right of the apex: the active card's orbit gap, then an idle card half and its label.
-  const cardSpan = orbitGap + WHEEL_CARD_WIDTH / 2 + WHEEL_LABEL_GAP + WHEEL_LABEL_MAX_WIDTH;
-  const arcX = Math.max(WHEEL_MIN_ARC_X, w - cardSpan);
+  const activeHalfW = (WHEEL_CARD_WIDTH * WHEEL_ACTIVE_SCALE) / 2;
+  const orbitGap = activeHalfW + WHEEL_ARC_GAP;
+  // Right of the apex: the active card's orbit gap, then whichever is wider —
+  // an idle card half and its label, or the active card half, caret, and label.
+  const idleSpan = WHEEL_CARD_WIDTH / 2 + WHEEL_LABEL_GAP + WHEEL_LABEL_MAX_WIDTH;
+  const activeSpan = activeHalfW + WHEEL_CARET_GAP + WHEEL_CARET_WIDTH + WHEEL_ACTIVE_LABEL_GAP
+    + WHEEL_ACTIVE_LABEL_ROOM;
+  const arcX = Math.max(WHEEL_MIN_ARC_X, w - orbitGap - Math.max(idleSpan, activeSpan));
   // The circle through the apex and the two inset right-hand rail corners, so
   // the arc spans the full rail height and bows toward the main frame.
   const bow = Math.max(40, w - WHEEL_ARC_END_INSET - arcX);
@@ -175,10 +189,7 @@ export function wheelGeometry(
     for (let i = 0; i < 4; i++) step = (pitch + halfW * Math.sin(step * WHEEL_TILT)) / cardRadius;
     return step;
   };
-  const step = settle(
-    (cardH * (WHEEL_ACTIVE_SCALE + 1)) / 2 + WHEEL_CARD_GAP,
-    (WHEEL_CARD_WIDTH * WHEEL_ACTIVE_SCALE) / 2,
-  );
+  const step = settle((cardH * (WHEEL_ACTIVE_SCALE + 1)) / 2 + WHEEL_CARD_GAP, activeHalfW);
   const idleStep = settle(cardH + WHEEL_IDLE_GAP, WHEEL_CARD_WIDTH / 2);
   return {
     railWidth: w,
@@ -350,14 +361,19 @@ export function wheelSchematic(node: WheelPaneNode, focusedId: string): WheelPan
   return out;
 }
 
-export function wheelItemKey(label: string, schematic: WheelPaneRect[], tabCount: number): string {
+export function wheelItemKey(
+  label: string,
+  schematic: WheelPaneRect[],
+  tabCount: number,
+  eyeText = '',
+): string {
   const rects = schematic
     .map((r) => {
       const lines = r.lines?.map(([a, b]) => `${Math.round(a * 50)}-${Math.round(b * 50)}`).join(' ') ?? '';
       return `${r.x.toFixed(3)},${r.y.toFixed(3)},${r.w.toFixed(3)},${r.h.toFixed(3)},${r.focused ? 1 : 0},${r.glyph},${lines}`;
     })
     .join(';');
-  return `${label}|${tabCount}|${rects}`;
+  return `${label}|${tabCount}|${eyeText}|${rects}`;
 }
 
 /** Bucket a terminal's visible rows into at most WHEEL_SILHOUETTE_ROWS bars.

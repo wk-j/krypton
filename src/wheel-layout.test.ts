@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  WHEEL_ACTIVE_LABEL_GAP,
+  WHEEL_ACTIVE_LABEL_ROOM,
   WHEEL_ACTIVE_SCALE,
   WHEEL_ARC_END_INSET,
   WHEEL_ARC_GAP,
@@ -9,6 +11,8 @@ import {
   WHEEL_CARD_MAX_HEIGHT,
   WHEEL_CARD_MIN_HEIGHT,
   WHEEL_CARD_WIDTH,
+  WHEEL_CARET_GAP,
+  WHEEL_CARET_WIDTH,
   WHEEL_EDGE_FADE,
   WHEEL_IDLE_GAP,
   WHEEL_LABEL_GAP,
@@ -93,10 +97,13 @@ describe('wheel frame', () => {
 describe('wheel geometry', () => {
   const activeHalfW = (WHEEL_CARD_WIDTH * WHEEL_ACTIVE_SCALE) / 2;
 
-  it('leaves the tuft margin left of the arc and fits an idle card plus label right of it', () => {
+  it('leaves the tuft margin left of the arc and fits the active and idle labels right of it', () => {
     const geo = wheelGeometry(400, 1061);
-    const idleRight = geo.arcX + activeHalfW + WHEEL_ARC_GAP + WHEEL_CARD_WIDTH / 2;
-    expect(idleRight + WHEEL_LABEL_GAP + WHEEL_LABEL_MAX_WIDTH).toBeCloseTo(400);
+    const centre = geo.arcX + activeHalfW + WHEEL_ARC_GAP;
+    const activeLabelX = centre + activeHalfW + WHEEL_CARET_GAP + WHEEL_CARET_WIDTH + WHEEL_ACTIVE_LABEL_GAP;
+    expect(activeLabelX + WHEEL_ACTIVE_LABEL_ROOM).toBeCloseTo(400);
+    const idleRight = centre + WHEEL_CARD_WIDTH / 2;
+    expect(idleRight + WHEEL_LABEL_GAP + WHEEL_LABEL_MAX_WIDTH).toBeLessThanOrEqual(400);
     expect(geo.arcX).toBeGreaterThan(100);
     expect(wheelGeometry(280, 700).arcX).toBe(WHEEL_MIN_ARC_X);
   });

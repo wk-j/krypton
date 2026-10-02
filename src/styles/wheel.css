@@ -63,6 +63,22 @@
   opacity: calc(1 - var(--krypton-wheel-live, 0));
 }
 
+/* Ghost eye (spec 274): a canvas that fills the focused window's card and
+   stands in for its schematic. Clicks fall through to the card (blink). */
+.krypton-wheel__card--eye .krypton-wheel__schematic {
+  display: none;
+}
+
+.krypton-wheel__eye {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 /* Split dividers; the card itself has no frame. */
 .krypton-wheel__divider {
   stroke: currentColor;

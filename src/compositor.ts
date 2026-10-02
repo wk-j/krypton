@@ -88,6 +88,7 @@ import {
   type WheelLine,
   type WheelPaneNode,
 } from './wheel-layout';
+import { wheelEyeText } from './wheel-eye';
 import { WheelRail } from './wheel-rail';
 import { AnimationEngine, BoundsSnapshot, type StageTransitionLayer } from './animation';
 import { SoundEngine } from './sound';
@@ -7558,7 +7559,8 @@ export class Compositor {
     const label = wheelLabel(badge?.label ?? null, title);
     const schematic = tab ? wheelSchematic(this.toWheelPaneNode(tab.paneTree), tab.focusedPaneId) : [];
     const tabCount = win.tabs.length;
-    return { id: win.id, label, schematic, tabCount, key: wheelItemKey(label, schematic, tabCount) };
+    const eyeText = wheelEyeText(label, title);
+    return { id: win.id, label, schematic, tabCount, eyeText, key: wheelItemKey(label, schematic, tabCount, eyeText) };
   }
 
   private toWheelPaneNode(node: PaneNode): WheelPaneNode {
