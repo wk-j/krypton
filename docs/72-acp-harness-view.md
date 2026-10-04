@@ -76,6 +76,7 @@ If the localhost hook server cannot start, harness memory setup surfaces the rec
 | `src/acp/types.ts` | Add harness-facing lane state types if they are not local to the view. |
 | `src/acp/acp-harness-memory.ts` | Helpers for identifying modified paths and memory tool calls in ACP tool updates. |
 | `src/acp/acp-harness-view.ts` | New `ContentView` that manages multiple ACP clients, lane state, file-touch tracking, prompt dispatch, lane rendering, permissions, hash commands, restart, fresh session, and cancel/dispose. |
+| `src/acp/harness-*-controller.ts` | Spec 275: dictation, timeline and ticket state/behavior live in per-feature controllers that reach the view only through the `src/acp/harness-view-host.ts` contracts. |
 | `src/acp/index.ts` | Export `AcpHarnessView`. |
 | `src/styles/acp-harness.css` | New harness-specific BEM CSS using existing ACP/agent theme variables. |
 | `src/styles/index.css` | Import `acp-harness.css`. |

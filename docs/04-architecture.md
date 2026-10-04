@@ -209,6 +209,16 @@ The compositor is a TypeScript module running in the webview that manages worksp
     peek card). The view re-exports every previously-public symbol, so old import sites still resolve;
     new code should import from the owning module. See `docs/204-harness-view-split.md`.
 
+    **Feature controllers (spec 275).** Three features' state and behavior moved out of the class into
+    per-feature controllers: `harness-dictation-controller.ts` (spec 246 speech session),
+    `harness-timeline-controller.ts` (`#timeline`, capture/review sheet, pending-suggestion count) and
+    `harness-ticket-controller.ts` (active ticket, worker binding, `#ticket` picker, ticket dock), with
+    pure ticket helpers in `harness-ticket-helpers.ts`. A controller owns its state and reaches the view
+    only through a narrow host contract from `harness-view-host.ts`, which the view builds from
+    getters/closures so its own members stay private. Controllers that listen to backend events expose
+    `subscribe()`/`dispose()`; ones that own DOM expose `mount*()`. Orchestrator console, review, lane
+    lifecycle and composer are still in the class. See `docs/275-harness-view-controllers.md`.
+
     **Assistant response resources (spec 206).** ACP `resource_link` and embedded-resource
     chunks remain typed through `AcpClient` instead of being collapsed to empty text. At each
     assistant-message seal, the harness merges those blocks with explicit anchors from the final

@@ -98,7 +98,30 @@ import type {
   LanePeekCandidate,
   MessageResource,
 } from './harness-view-types';
-import type { HarnessDictationSession, SpeechRecognitionLike } from './harness-dictation';
+import type { SpeechRecognitionLike } from './harness-dictation';
+import { HarnessDictationController, type ActiveDictationSession } from './harness-dictation-controller';
+import type { HarnessDictationHost } from './harness-view-host';
+import { HarnessTimelineController } from './harness-timeline-controller';
+import { HarnessTicketController } from './harness-ticket-controller';
+
+/** Ticket controller methods reach the view through `this.host`; a flat test
+ *  double can serve as its own host. */
+function selfHost<T extends object>(target: T): T {
+  return Object.assign(target, { host: target });
+}
+
+/** Give a prototype-backed view double the ticket controller it delegates to. */
+function withTicketCtl<T extends object>(view: T): T {
+  const fields = view as T & { activeTicket?: unknown; ticketWorker?: unknown };
+  return Object.assign(view, {
+    ticketCtl: Object.assign(Object.create(HarnessTicketController.prototype), {
+      activeTicket: fields.activeTicket ?? null,
+      ticketWorker: fields.ticketWorker ?? null,
+      legacyActiveTicket: null,
+      host: view,
+    }),
+  });
+}
 
 function permissionFor(toolCall: Partial<ToolCall>, options: PermissionOption[] = []): { toolCall: ToolCall; options: PermissionOption[] } {
   return {
@@ -317,19 +340,20 @@ describe('assistant reference Git state', () => {
   it('reloads the active ticket without remounting the dashboard', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
-    const reloadStart = viewSrc.indexOf('private async reloadActiveTicket(');
-    const reloadEnd = viewSrc.indexOf('\n  private async ', reloadStart + 1);
-    const reload = viewSrc.slice(reloadStart, reloadEnd);
+    const ticketSrc = readFileSync(join(here, 'harness-ticket-controller.ts'), 'utf8');
+    const reloadStart = ticketSrc.indexOf('  async reloadActiveTicket(');
+    const reloadEnd = ticketSrc.indexOf('\n  async ', reloadStart + 1);
+    const reload = ticketSrc.slice(reloadStart, reloadEnd);
     const success = reload.slice(reload.indexOf('this.activeTicket = detail;'));
     expect(success).toMatch(/this\.renderTicketDock\(\)/);
     expect(success).toMatch(/if \(this\.ticketPicker\) this\.renderTicketOverlayEl\(\)/);
     expect(success).not.toMatch(/this\.render\(\);/);
     expect(viewSrc).toMatch(
-      /if \(this\.ticketWorker\?\.laneId === lane\.id\) void this\.reloadActiveTicket\(false\)/,
+      /if \(this\.ticketCtl\.ticketWorker\?\.laneId === lane\.id\) void this\.ticketCtl\.reloadActiveTicket\(false\)/,
     );
-    const enrichStart = viewSrc.indexOf('private async enrichActiveTicket(');
-    const enrichEnd = viewSrc.indexOf('\n  private async ', enrichStart + 1);
-    const enrich = viewSrc.slice(enrichStart, enrichEnd);
+    const enrichStart = ticketSrc.indexOf('  async enrichActiveTicket(');
+    const enrichEnd = ticketSrc.indexOf('\n  async ', enrichStart + 1);
+    const enrich = ticketSrc.slice(enrichStart, enrichEnd);
     const enrichSuccess = enrich.slice(enrich.indexOf('this.activeTicket = detail;'));
     expect(enrichSuccess).toMatch(/this\.renderTicketDock\(\)/);
     expect(enrichSuccess).not.toMatch(/this\.render\(\);/);
@@ -575,13 +599,27 @@ describe('consumeOptimisticUserEcho', () => {
 });
 
 describe('ACP Harness dictation lifecycle', () => {
-  type DictationInternals = {
-    finishDictation(token: number, message?: string): void;
-    abortDictation(render?: boolean): void;
-  };
-  type ActiveDictation = HarnessDictationSession & { recognition: SpeechRecognitionLike };
-  const finish = (AcpHarnessView.prototype as unknown as DictationInternals).finishDictation;
-  const abort = (AcpHarnessView.prototype as unknown as DictationInternals).abortDictation;
+  type ActiveDictation = ActiveDictationSession;
+
+  function controller(
+    active: ActiveDictation,
+    host: Partial<HarnessDictationHost>,
+  ): HarnessDictationController {
+    const ctl = new HarnessDictationController({
+      element: { focus: vi.fn() } as unknown as HTMLElement,
+      composerEl: {} as HTMLElement,
+      lanes: [],
+      activeLaneId: '',
+      canStartDictation: () => true,
+      flashChip: vi.fn(),
+      renderComposer: vi.fn(),
+      setDraft: vi.fn(),
+      ...host,
+    });
+    ctl.session = active;
+    ctl.token = active.token;
+    return ctl;
+  }
 
   function recognition(): SpeechRecognitionLike {
     return {
@@ -611,19 +649,13 @@ describe('ACP Harness dictation lifecycle', () => {
       cancelRequested: false,
       recognition: recognition(),
     } satisfies ActiveDictation;
-    const target = {
-      dictation: active,
-      dictationToken: 4,
-      lanes: [],
-      renderComposer: vi.fn(),
-      setDraft: vi.fn(),
-      flashChip: vi.fn(),
-    };
+    const setDraft = vi.fn();
+    const ctl = controller(active, { setDraft });
 
-    finish.call(target, 3);
+    ctl.finish(3);
 
-    expect(target.dictation).toBe(active);
-    expect(target.setDraft).not.toHaveBeenCalled();
+    expect(ctl.session).toBe(active);
+    expect(setDraft).not.toHaveBeenCalled();
   });
 
   it('commits recognized text at the saved cursor without submitting', () => {
@@ -640,21 +672,13 @@ describe('ACP Harness dictation lifecycle', () => {
       cancelRequested: false,
       recognition: recognition(),
     } satisfies ActiveDictation;
-    const target = {
-      dictation: active as ActiveDictation | null,
-      dictationToken: 5,
-      lanes: [lane],
-      activeLaneId: lane.id,
-      element: { focus: vi.fn() },
-      renderComposer: vi.fn(),
-      setDraft: vi.fn(),
-      flashChip: vi.fn(),
-    };
+    const setDraft = vi.fn();
+    const ctl = controller(active, { lanes: [lane], activeLaneId: lane.id, setDraft });
 
-    finish.call(target, 5);
+    ctl.finish(5);
 
-    expect(target.setDraft).toHaveBeenCalledWith(lane, 'show old records rows', 17);
-    expect(target.dictation).toBeNull();
+    expect(setDraft).toHaveBeenCalledWith(lane, 'show old records rows', 17);
+    expect(ctl.session).toBeNull();
   });
 
   it('aborts capture and restores the exact saved draft and cursor', () => {
@@ -671,26 +695,21 @@ describe('ACP Harness dictation lifecycle', () => {
       cancelRequested: false,
       recognition: recognition(),
     } satisfies ActiveDictation;
-    const target = {
-      dictation: active as ActiveDictation | null,
-      dictationToken: 6,
-      lanes: [lane],
-      renderComposer: vi.fn(),
-    };
+    const ctl = controller(active, { lanes: [lane] });
 
-    abort.call(target, false);
+    ctl.abort(false);
 
     expect(lane.draft).toBe('base draft');
     expect(lane.cursor).toBe(4);
     expect(active.recognition.abort).toHaveBeenCalledOnce();
-    expect(target.dictation).toBeNull();
+    expect(ctl.session).toBeNull();
   });
 
   it('renders MIC on the status chrome, not the input line', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
     const start = src.indexOf('private renderComposer(');
-    const end = src.indexOf('\n  private renderDictationInput(', start);
+    const end = src.indexOf('\n  private ', start + 1);
     const body = src.slice(start, end === -1 ? undefined : end);
     expect(body).toContain('acp-harness__composer-chrome');
     expect(body).toContain('acp-harness__composer-tools');
@@ -729,7 +748,10 @@ describe('composer insertion afterimage (spec 252)', () => {
 
   it('reattaches the letter overlay after the existing caret render', () => {
     const render = methodSource('renderComposer');
-    const dictation = methodSource('renderDictationInput');
+    const ctlSrc = readFileSync(join(here, 'harness-dictation-controller.ts'), 'utf8');
+    const dictationStart = ctlSrc.indexOf('  renderInput(');
+    expect(dictationStart).toBeGreaterThanOrEqual(0);
+    const dictation = ctlSrc.slice(dictationStart, ctlSrc.indexOf('\n  renderControl(', dictationStart));
     const sync = methodSource('syncComposerBloomLayer');
 
     expect(render).toContain('<span class="acp-harness__caret">█</span>');
@@ -828,11 +850,12 @@ describe('ticket picker direct actions', () => {
   type TicketActionRunner = {
     runTicketPickerAction(action: 'set-ticket' | 'analyze-github-issue' | 'post-github-comment' | 'fix-github-issue'): Promise<void>;
   };
-  const runTicketPickerAction = (AcpHarnessView.prototype as unknown as TicketActionRunner).runTicketPickerAction;
+  const runTicketPickerAction = (HarnessTicketController.prototype as unknown as TicketActionRunner).runTicketPickerAction;
 
   it('gives the complete issue title a wrapping row above its metadata', () => {
     const here = dirname(fileURLToPath(import.meta.url));
-    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8')
+      + readFileSync(join(here, 'harness-ticket-controller.ts'), 'utf8');
     const css = readFileSync(join(here, '../styles/acp-harness.css'), 'utf8');
     const titleRule = css.match(/\.acp-ticket__title\s*\{([^}]*)\}/);
 
@@ -910,7 +933,7 @@ describe('ticket picker direct actions', () => {
       flashChip: () => {},
     };
 
-    await runTicketPickerAction.call(target, 'fix-github-issue');
+    await runTicketPickerAction.call(selfHost(target), 'fix-github-issue');
 
     expect(target.ticketPicker).toBeNull();
     expect(setRefs).toEqual([{ repo: 'wk-j/krypton', number: 203, url: row.url }]);
@@ -939,11 +962,22 @@ describe('ticket picker direct actions', () => {
       flashChip: (message: string) => flashes.push(message),
     };
 
-    await runTicketPickerAction.call(target, 'analyze-github-issue');
+    await runTicketPickerAction.call(selfHost(target), 'analyze-github-issue');
 
     expect(target.ticketPicker).not.toBeNull();
     expect(setRefs).toEqual([]);
     expect(flashes).toEqual(['Codex-1 is busy']);
+  });
+
+  // spec 275: the ticket host is built in a field initializer, before the
+  // constructor assigns the opener callbacks — it must read them lazily.
+  it('reads the file-opener callbacks through live getters on the ticket host', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    const start = viewSrc.indexOf('private ticketHost(): HarnessTicketHost {');
+    const body = viewSrc.slice(start, viewSrc.indexOf('\n  private ', start + 1));
+    expect(body).toContain('get openMarkdownViewCb() { return view.openMarkdownViewCb; }');
+    expect(body).toContain('get openFileReferenceCb() { return view.openFileReferenceCb; }');
   });
 
   it('opens ticket.md through the markdown viewer callback, not Helix', async () => {
@@ -951,7 +985,7 @@ describe('ticket picker direct actions', () => {
     const helix: string[] = [];
     const flashes: string[] = [];
     const openActiveTicketContext = (
-      AcpHarnessView.prototype as unknown as {
+      HarnessTicketController.prototype as unknown as {
         openActiveTicketContext(): Promise<void>;
       }
     ).openActiveTicketContext;
@@ -968,7 +1002,7 @@ describe('ticket picker direct actions', () => {
       flashChip: (message: string) => flashes.push(message),
     };
 
-    await openActiveTicketContext.call(target);
+    await openActiveTicketContext.call(selfHost(target));
 
     expect(opened).toEqual(['/proj/.krypton/tickets/2026-08-31-auth-timeout/ticket.md']);
     expect(helix).toEqual([]);
@@ -994,6 +1028,7 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
       },
       ticketWorker: { ticketId: '2026-09-25-retry', laneDisplayName: 'Codex-1' },
     }) as AcpHarnessView;
+    withTicketCtl(target);
 
     const snapshot = await target.handleControlOperation('ticket.active', { lane: 'Codex-1' });
     expect(snapshot).toMatchObject({
@@ -1016,6 +1051,7 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
     const target = Object.assign(Object.create(AcpHarnessView.prototype), {
       harnessMemoryId: 'hm-1', lanes: [{ displayName: 'Codex-1' }], activeTicket: null,
     }) as AcpHarnessView;
+    withTicketCtl(target);
     await expect(target.handleControlOperation('ticket.active', { lane: 'Codex-1' }))
       .resolves.toEqual({ harnessId: 'hm-1', ticket: null });
   });
@@ -1050,7 +1086,7 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
   it('clears the runtime worker for a restarted lane', async () => {
     const workerSets: unknown[] = [];
     const clearTicketWorkerForLane = (
-      AcpHarnessView.prototype as unknown as {
+      HarnessTicketController.prototype as unknown as {
         clearTicketWorkerForLane(laneId: string): Promise<void>;
       }
     ).clearTicketWorkerForLane;
@@ -1066,7 +1102,7 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
       },
     };
 
-    await clearTicketWorkerForLane.call(target, 'lane-1');
+    await clearTicketWorkerForLane.call(selfHost(target), 'lane-1');
 
     expect(target.ticketWorker).toBeNull();
     expect(workerSets).toEqual([null]);
@@ -1078,7 +1114,7 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
     const workerSets: unknown[] = [];
     const journal: string[] = [];
     const handleTicketWorkerClaim = (
-      AcpHarnessView.prototype as unknown as {
+      HarnessTicketController.prototype as unknown as {
         handleTicketWorkerClaim(env: { ticketId: string; laneDisplayName: string }): void;
       }
     ).handleTicketWorkerClaim;
@@ -1095,7 +1131,7 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
       renderTicketDock: () => {},
     };
 
-    handleTicketWorkerClaim.call(target, {
+    handleTicketWorkerClaim.call(selfHost(target), {
       ticketId: '2026-08-31-auth-timeout',
       laneDisplayName: 'Claude-1',
     });
@@ -2123,7 +2159,8 @@ describe('ACP peer activity UI (spec 118)', () => {
 
   it('does not paint a pin-slot ticket bar next to the Ticket Panel (spec 238)', () => {
     const here = dirname(fileURLToPath(import.meta.url));
-    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8')
+      + readFileSync(join(here, 'harness-ticket-controller.ts'), 'utf8');
     const css = readFileSync(join(here, '../styles/acp-harness.css'), 'utf8');
     expect(viewSrc).not.toMatch(/acp-harness__ticket-bar/);
     expect(viewSrc).not.toMatch(/renderTicketBar/);
@@ -3144,8 +3181,21 @@ describe('#draw dispatch', () => {
 
 describe('#timeline dispatch (spec 253)', () => {
   type TestLane = { status: string };
-  type TimelineRunner = { runTimelineCommand(lane: TestLane, text: string): Promise<void> };
-  const runTimelineCommand = (AcpHarnessView.prototype as unknown as TimelineRunner).runTimelineCommand;
+  const runCommand = HarnessTimelineController.prototype.runCommand;
+  // The controller reaches the view only through `host`; stub that, plus the
+  // controller's own review/merge entry points the dispatcher delegates to.
+  const runTimelineCommand = {
+    call: (ctx: Record<string, unknown>, lane: TestLane, text: string): Promise<void> =>
+      runCommand.call(
+        {
+          host: ctx,
+          openSuggestionReview: ctx.openTimelineSuggestionReview,
+          runMerge: ctx.runTimelineMerge,
+        } as unknown as HarnessTimelineController,
+        lane as HarnessLane,
+        text,
+      ),
+  };
 
   it('injects one read-only trace turn for an idle lane', async () => {
     const enqueued: Array<{ prompt: string; label: string | undefined }> = [];
@@ -3225,7 +3275,7 @@ describe('#timeline dispatch (spec 253)', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
     expect(source).toContain(
-      "this.timelineAutomaticSuggestions && !this.remoteRuntimeId && lane.backendId !== 'pi-acp'",
+      "this.timelineCtl.automaticSuggestions && !this.remoteRuntimeId && lane.backendId !== 'pi-acp'",
     );
     expect(source).toContain('use timeline_suggest only when this turn establishes an explicit durable requirement');
     expect(source).toContain('Their request is the confirmation; copy the exact authorizing words');
@@ -3923,7 +3973,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
       dropVeiledThoughtRow: () => {},
       cancelPendingArtifactsForLane: () => {},
       cancelPendingReviewsForLane: () => {},
-      clearTicketWorkerForLane: async () => {},
+      ticketCtl: { clearTicketWorkerForLane: async () => {} },
       clearCancelEscalation: clear,
       spawnLane: async (_l: EscLane, resumeSessionId?: string | null) => {
         resumed.push(resumeSessionId);
