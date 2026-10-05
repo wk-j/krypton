@@ -1104,6 +1104,39 @@ Later
    successful turn dispatch marks `handed_off`; an uncertain dispatch stays
    visible for manual retry.
 
+## Review Till Pass Flow (spec 276)
+
+The harness owns the rounds (ADR-0021); the lanes only review and fix. Reviewer
+replies never wake the authoring lane — the controller reads them.
+
+```
+1. `#review pass [N] [<lane>…] [-- <doc|note>]` → runHashCommand → reviewLoopCtl.start(L, rest)
+   (lane idle, no pending peer, ≥1 live reviewer; N default 3, max 8)
+2. Round k: reserveCommandTurn(L, 'review pass k/N') → collectReviewSubject (shared with #review)
+   → k ≥ 2 and fingerprint == round k−1's → stop `no_change`
+3. coordinator.deliverMentionFanOut(L, reviewers, body, {replyConsumer:'harness'})
+   → releaseReservedTurn(L, 'awaiting_peer'); the body asks for a final `VERDICT:` line
+4. Each reviewer drains the [mention] request on idle and peer_sends its reply to L
+5. L's drain(): the reply clears a pending entry whose consumer is 'harness'
+   → `in` row rendered, LaneHost.onHarnessReply(L, reply), NO prompt composed for L
+6. All replies in → parseReviewerReply ×N → matrix row (spec 146) + `round k/N` row
+   → evaluateRound: pass | max_rounds | no_progress | no_findings | inconclusive | no_structure → stop
+                    otherwise → fix turn ('fixing k/N': Blockers only, resolves at turn end) → round k+1
+7. Stop with ≥1 completed round → summary turn ('review pass summary') → ONE Review Board
+   Stop with none, `#cancel`/Ctrl+C, or the lane gone → system row only
+```
+
+`#review stop` is graceful: pending requests are cancelled and the loop goes to the
+summary, or a running fix turn finishes first. Every wait for the lane checks its
+status in a microtask, so a drain-on-idle queue (specs 136/158/211) that claims a
+contested idle runs first.
+
+Spec 277 mirrors the loop to the browser lane monitor: every loop state change (start,
+phase change, reply, completed round, end) calls `loopChanged()` → the telemetry
+publisher's 300 ms debounce → `TelemetryLane.reviewLoop` in the next snapshot. The page
+polls `/telemetry`, renders the lane card's `review pass` section, and ticks elapsed
+times itself between polls.
+
 ## Workspace Lifecycle Flow
 
 ### Startup

@@ -149,6 +149,10 @@ _Avoid_: artifact scratch (`.krypton/artifacts/` is session-keyed and swept; a b
 A per-session, in-memory surface that accumulates a small **summary** of each `#review` round against an [[Authoring lane]]'s work — the raw blocker/warning counts the reviewers reported (plus a subject label and reviewer count), shown as *history per lane*. An **observation, not a score**: it never blends those counts into a single quality number, never grades, and never ranks lanes — it shows how many problems reviewers kept finding so the human eyeballs a trend. The authoring lane self-reports the summary at synthesis time; the matrix keeps no fine-grained per-review detail (no stored diff size, no jump-back-to-transcript anchor) — the real reviewer replies live in scrollback. Surfaced exactly like attention triage: a neutral depth indicator in the workspace status bar (a count of reviews recorded, *not* an alarm) plus a summon-on-demand overlay.
 _Avoid_: quality score (the explicit thing it refuses to be), lane grade, verdict, leaderboard, ranking
 
+**Review loop** (spec 276):
+A `#review pass` run: review rounds on one [[Authoring lane]]'s subject, each followed by one fix turn, until every reviewer's `VERDICT` is PASS or a stop rule fires (round limit, nothing changed, no progress, nothing actionable, no verdict line twice). Unlike a plain `#review` round, the **harness** sequences it — it sends the requests, reads the replies, and decides the next step — so neither the author nor a reviewer judges whether the loop is done. Each completed round adds one row to the [[Review quality matrix]] (parsed by the harness, still raw counts); the loop ends in at most one [[Review Board]].
+_Avoid_: goal loop (works toward a stated goal, not toward surviving review), auto-review, review thread (spec 270: a human verdict on one snapshot)
+
 ### Orchestration
 
 **Orchestrator** (spec 180):

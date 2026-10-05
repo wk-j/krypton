@@ -77,10 +77,12 @@ interface TelemetryLane {
                          // "observed turns", NOT throughput (no completed-turn counter exists)
   inboxDepth: number;    // queued peer envelopes
   attnOpen: number; reviews: number; highPriority: number;  // per-lane store reads (shown once, on chips)
+  reviewLoop: TelemetryReviewLoop | null;  // spec 277 (schema v4) — the lane's `#review pass` loop,
+                                           // running or last ended; see docs/277-review-pass-dashboard.md
 }
 // kind is a closed enum; the dashboard templates the human-readable text client-side from
 // the structured fields — keeps the feed a clean status strip, not an open log console. [Codex W/S3]
-type EventKind = 'status'|'attention'|'review'|'priority'|'peer'|'lane';
+type EventKind = 'status'|'attention'|'review'|'priority'|'peer'|'lane'|'loop';  // 'loop': spec 277
 interface TelemetryEvent { at: number; laneName: string; kind: EventKind; detail?: string }
 
 interface TelemetrySnapshot {
@@ -141,6 +143,7 @@ The dashboard (Binance-dark scaffold + cyberpunk layer; **flat chrome** — no c
 
 - **Primary glance zone** — the **attention triage** half-gauge + the **active-lane cards** are the focal answer. The gauge column now includes the open `attention_flag` details (lane, reversibility, question, rationale, chosen path, uncertainty, trade-offs) so the browser dashboard can answer *what needs judgement*, not only *how many*. Each lane card: a status pill + attn/rev/pri/peer chips (owning lane ringed), plus an **activity pulse** canvas rendered ONLY for active lanes (`busy`/`needs_permission`/`awaiting_peer`); idle/stopped lanes show a flat muted line (cuts ~3–4 always-on animators). [Cursor B3/S4]
 - **History** — the **event stream** (≤14 rows) fed by `recentEvents`, text templated client-side from each `kind`; peer traffic is read here (and on the per-lane `peer` chip) rather than as a separate visual. [radar removed — human decision]
+- **Review pass (spec 277)** — when a lane runs or last ran a `#review pass` loop, its card gains a flat `review pass` section below the chips: round k/N with the phase and elapsed time, a per-round Blocker strip, one row per reviewer, and the subject or stop reason. See `docs/277-review-pass-dashboard.md`.
 
 **Each metric is surfaced exactly once** [Cursor B2]: rev/pri/peer live on the lane chips only (the duplicate "signals" bars are removed); attention lives in the gauge (+ per-lane chip). Top bar = one derived triage line (e.g. `2 busy · 1 awaiting · 3 flags`) + uptime — **no `tok/s`** (out of scope; false signal). [Cursor B1, Codex W6]
 

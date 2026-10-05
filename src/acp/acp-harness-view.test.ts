@@ -3922,6 +3922,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
     const host = {
       lanes: [lane],
       coordinator: { pendingPeersFor: () => [] },
+      reviewLoopCtl: { onLaneCancelled: () => {} },
       appendTranscript: (_l: EscLane, _kind: string, text: string) => rows.push(text),
       render: () => {},
       armCancelEscalation: arm,
@@ -3945,6 +3946,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
     const forcedWith: EscLane[] = [];
     const host = {
       coordinator: { pendingPeersFor: () => [] },
+      reviewLoopCtl: { onLaneCancelled: () => {} },
       appendTranscript: () => {},
       render: () => {},
       forceRestartLane: async (l: EscLane) => { forcedWith.push(l); },

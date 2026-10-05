@@ -278,6 +278,8 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 273 | [Wheel Live Previews](./273-wheel-live-previews.md) |
 | 274 | [Wheel Ghost Eye (active card)](./274-wheel-ghost-eye.md) |
 | 275 | [ACP Harness view feature controllers](./275-harness-view-controllers.md) |
+| 276 | [Review Till Pass (`#review pass`)](./276-review-till-pass.md) |
+| 277 | [Review Pass on the Lane Monitor](./277-review-pass-dashboard.md) |
 
 ## ADRs (20)
 
@@ -303,6 +305,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 18 | [LLM usage is priced by Xenon at read time, not by Krypton](./adr/0018-llm-usage-is-priced-by-xenon-not-krypton.md) |
 | 19 | [Per-turn usage is streamed telemetry, not a published resource](./adr/0019-usage-is-telemetry-not-a-published-resource.md) |
 | 20 | [The status-bar diff stat polls; the Diff Window still does not](./adr/0020-diff-stat-polls-diff-window-does-not.md) |
+| 21 | [Review-till-pass rounds are harness-sequenced; plain `#review` stays agent-orchestrated](./adr/0021-review-loop-rounds-are-harness-sequenced.md) |
 
 ## Also
 

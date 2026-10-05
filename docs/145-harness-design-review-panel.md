@@ -8,6 +8,10 @@
 > Reviewed by lanes Codex-2 (architecture/correctness) and Cursor-1
 > (requirements-fit/simplicity); their findings are folded in below.
 >
+> **Extended by spec 276 (`#review pass`), 2026-10-04.** Plain `#review` is unchanged and stays
+> agent-orchestrated (B2). The new `#review pass` loop is harness-sequenced instead (ADR-0021): the
+> harness fans each round out, reads the reviewers' `VERDICT:` lines, and sends Blockers back as fix turns.
+>
 > **Amended by spec 211 (Review Board), 2026-08-07.** Step 3 of `reviewRequestPrompt` no longer
 > ends in turn text: the convening lane now composes a **Review Board** for the synthesis
 > (`review_new` → write the document → `review_register`), because turn text scrolls away, carries

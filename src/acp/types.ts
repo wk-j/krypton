@@ -282,6 +282,9 @@ export interface InterLaneEnvelope {
   kind?: 'peer' | 'mention_request';
   /** spec 115: correlates fan-out replies on the requester. */
   mentionPacketId?: string;
+  /** spec 276: replies to this request are consumed by the harness (the
+   *  `#review pass` loop), not composed into a turn for the requester. */
+  replyConsumer?: 'harness';
 }
 
 // Artifact inline feedback (spec 149). The browser POSTs a batch of comments

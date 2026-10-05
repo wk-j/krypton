@@ -82,6 +82,16 @@ export interface LaneHost {
   ): void;
   /** Surface a synthesized notice (e.g. "peer cancelled") to the user. */
   appendSystemNotice(laneId: string, text: string): void;
+  /** spec 276: a reply to a harness-consumed request was drained into `laneId`.
+   *  The reply is rendered as usual but is not turned into a prompt. */
+  onHarnessReply?(laneId: string, reply: HarnessConsumedReply): void;
+}
+
+export interface HarnessConsumedReply {
+  packetId: string | null;
+  fromLaneId: string;
+  fromDisplayName: string;
+  message: string;
 }
 
 interface PendingSend {
@@ -89,6 +99,8 @@ interface PendingSend {
   toLaneId: string;
   sentAt: number;
   mentionPacketId?: string;
+  /** spec 276: the harness, not the requester, reads the reply. */
+  consumer?: 'harness';
 }
 
 export interface PendingPeerSummary {
@@ -308,13 +320,15 @@ export class InterLaneCoordinator {
       );
     }
     if (shouldTrackPending(env) && !classification.senderIsReplier) {
-      this.trackPending(fromLaneId, env.id, target.key, env.sentAt, env.mentionPacketId);
+      this.trackPending(fromLaneId, env.id, target.key, env.sentAt, env.mentionPacketId, env.replyConsumer);
     }
     this.recomputePeerStatus(fromLaneId);
   }
 
   /**
    * spec 115: fan-out one body to multiple lanes from the composer (@mention).
+   * spec 276: `replyConsumer: 'harness'` routes the replies to
+   * `LaneHost.onHarnessReply` instead of a turn for the requester.
    */
   deliverMentionFanOut(
     requesterId: string,
@@ -322,6 +336,7 @@ export class InterLaneCoordinator {
     targets: MentionFanOutTarget[],
     body: string,
     harnessId?: string,
+    opts: { replyConsumer?: 'harness' } = {},
   ): MentionFanOutResult {
     const packetId = `mnt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const delivered: string[] = [];
@@ -341,6 +356,7 @@ export class InterLaneCoordinator {
         harnessId,
         kind: 'mention_request',
         mentionPacketId: packetId,
+        ...(opts.replyConsumer ? { replyConsumer: opts.replyConsumer } : {}),
       };
       const result = this.deliver(env);
       if (result.delivered) {
@@ -352,10 +368,12 @@ export class InterLaneCoordinator {
     return { packetId, delivered, failed };
   }
 
-  /** spec 116: set idle vs awaiting_peer from outstanding pending peers. */
+  /** spec 116: set idle vs awaiting_peer from outstanding pending peers. A
+   *  stopped or errored lane keeps its status — it has no agent to wait with. */
   recomputePeerStatus(laneId: string): void {
     const lane = this.host.getLane(laneId);
     if (!lane || lane.status === 'busy' || lane.status === 'needs_permission') return;
+    if (lane.status === 'stopped' || lane.status === 'error') return;
     const pending = this.pendingPeersFor(laneId).length;
     this.host.setLaneStatus(laneId, pending > 0 ? 'awaiting_peer' : 'idle');
   }
@@ -437,12 +455,18 @@ export class InterLaneCoordinator {
     return null;
   }
 
-  /** User ran #cancel on a lane in awaiting_peer (or any lane mid-conversation). */
-  cancelConversationsFor(laneId: string): void {
+  /** User ran #cancel on a lane in awaiting_peer (or any lane mid-conversation).
+   *  spec 276: `consumer: 'harness'` withdraws only a `#review pass` loop's
+   *  review requests and keeps the lane's own peer waits. */
+  cancelConversationsFor(laneId: string, opts: { consumer?: 'harness' } = {}): void {
     const pending = this.pending.get(laneId);
     if (!pending || pending.length === 0) return;
-    const peers = new Set(pending.map((p) => p.toLaneId));
-    this.pending.delete(laneId);
+    const cancelled = opts.consumer ? pending.filter((p) => p.consumer === opts.consumer) : pending;
+    if (cancelled.length === 0) return;
+    const peers = new Set(cancelled.map((p) => p.toLaneId));
+    const kept = pending.filter((p) => !cancelled.includes(p));
+    if (kept.length > 0) this.pending.set(laneId, kept);
+    else this.pending.delete(laneId);
     const senderInfo = this.host.getLane(laneId);
     const senderName = senderInfo?.displayName ?? laneId;
     for (const peerKey of peers) {
@@ -623,34 +647,40 @@ export class InterLaneCoordinator {
     toLaneId: string,
     sentAt: number,
     mentionPacketId?: string,
+    consumer?: 'harness',
   ): void {
     const list = this.pending.get(senderId) ?? [];
-    list.push({ envelopeId, toLaneId, sentAt, mentionPacketId });
+    list.push({ envelopeId, toLaneId, sentAt, mentionPacketId, ...(consumer ? { consumer } : {}) });
     this.pending.set(senderId, list);
   }
 
-  /** Clear requester pending when an inbound reply is drained (spec 115/116). */
+  /** Clear requester pending when an inbound reply is drained (spec 115/116).
+   *  Returns the first cleared entry so drain can tell a harness-consumed reply
+   *  (spec 276) from one the requester answers itself. */
   private clearPendingFromPeer(
     requesterId: string,
     replierId: string,
     envelopeId?: string,
-  ): void {
+  ): PendingSend | null {
     const sends = this.pending.get(requesterId);
-    if (!sends) return;
+    if (!sends) return null;
     let remaining: PendingSend[];
+    let cleared: PendingSend | null;
     if (!envelopeId) {
       const idx = sends.findIndex((s) => s.toLaneId === replierId);
-      if (idx === -1) return;
+      if (idx === -1) return null;
+      cleared = sends[idx] ?? null;
       remaining = sends.filter((_, i) => i !== idx);
     } else {
-      remaining = sends.filter((s) => {
-        if (s.toLaneId !== replierId) return true;
-        return s.envelopeId !== envelopeId && s.mentionPacketId !== envelopeId;
-      });
+      const matches = (s: PendingSend): boolean =>
+        s.toLaneId === replierId && (s.envelopeId === envelopeId || s.mentionPacketId === envelopeId);
+      cleared = sends.find(matches) ?? null;
+      remaining = sends.filter((s) => !matches(s));
     }
     if (remaining.length === 0) this.pending.delete(requesterId);
     else this.pending.set(requesterId, remaining);
     this.recomputePeerStatus(requesterId);
+    return cleared;
   }
 
   private onBus(event: LaneBusEvent): void {
@@ -680,6 +710,8 @@ export class InterLaneCoordinator {
 
     // Render the inbound rows in the recipient's transcript first.
     let drainedHarnessNotice = false;
+    // spec 276: replies the harness reads itself — rendered, never composed.
+    const harnessConsumed = new Set<string>();
     for (const env of envelopes) {
       if (env.fromLaneId === '__harness__') {
         // Synthetic — notice already rendered as a system row. Mark that the
@@ -716,7 +748,16 @@ export class InterLaneCoordinator {
       // Clear requester pending only on inbound replies — not when draining an
       // outbound consult the target received (spec 115/116).
       if (!isInboundRequestEnvelope(env)) {
-        this.clearPendingFromPeer(laneId, env.fromLaneId, env.mentionPacketId);
+        const cleared = this.clearPendingFromPeer(laneId, env.fromLaneId, env.mentionPacketId);
+        if (cleared?.consumer === 'harness') {
+          harnessConsumed.add(env.id);
+          this.host.onHarnessReply?.(laneId, {
+            packetId: cleared.mentionPacketId ?? null,
+            fromLaneId: env.fromLaneId,
+            fromDisplayName: senderName,
+            message: env.message,
+          });
+        }
       }
     }
     if (drainedHarnessNotice) {
@@ -728,7 +769,9 @@ export class InterLaneCoordinator {
       }
     }
 
-    const mailEnvelopes = envelopes.filter((env) => env.fromLaneId !== '__harness__');
+    const composed = envelopes.filter((env) => !harnessConsumed.has(env.id));
+    if (composed.length === 0) return;
+    const mailEnvelopes = composed.filter((env) => env.fromLaneId !== '__harness__');
     const firstMail = mailEnvelopes[0];
     const primaryPeerDisplayName = firstMail
       ? (this.host.getLane(firstMail.fromLaneId)?.displayName ??
@@ -748,7 +791,7 @@ export class InterLaneCoordinator {
           !recipientWasInitiator.get(env.id) &&
           this.host.getLane(env.fromLaneId) !== null,
       );
-    const text = this.composePrompt(envelopes, recipientWasInitiator);
+    const text = this.composePrompt(composed, recipientWasInitiator);
     this.host.enqueueSystemPrompt(laneId, text, {
       envelopeIds: mailEnvelopes.map((env) => env.id),
       primaryPeerDisplayName,

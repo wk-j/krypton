@@ -11,6 +11,7 @@ import { DICTATION_LANG_ENGLISH, dictationLanguageFromShift } from './harness-di
 import { HarnessDictationController } from './harness-dictation-controller';
 import { HarnessTimelineController } from './harness-timeline-controller';
 import { HarnessTicketController } from './harness-ticket-controller';
+import { HarnessReviewLoopController } from './harness-review-loop-controller';
 import {
   controlError,
   githubIssueRefRequiredMessage,
@@ -28,7 +29,13 @@ export {
   ticketMarkdownPath,
   isSameTicketPicker,
 } from './harness-ticket-helpers';
-import type { HarnessDictationHost, HarnessTicketHost, HarnessTimelineHost } from './harness-view-host';
+import type {
+  HarnessDictationHost,
+  HarnessReviewLoopHost,
+  HarnessTicketHost,
+  HarnessTimelineHost,
+  ReviewSubjectResult,
+} from './harness-view-host';
 import {
   applyAskUserKey,
   createAskUserCardState,
@@ -189,6 +196,7 @@ import {
   type SaltyRoster,
 } from './salty';
 import {
+  parseReviewCommandArgs,
   reviewRequestPrompt,
   REVIEW_INTENT_CAP,
   type ReviewSubject,
@@ -1011,6 +1019,8 @@ export class AcpHarnessView implements ContentView {
   /** spec 253/266: keyboard-first timeline sheet (capture/review or conflicts). */
   /** spec 254: project-wide pending suggestion count and default-on setting. */
   private readonly timelineCtl = new HarnessTimelineController(this.timelineHost());
+  /** spec 276: `#review pass` — harness-sequenced review → fix → re-review rounds. */
+  private readonly reviewLoopCtl = new HarnessReviewLoopController(this.reviewLoopHost());
   private issueReportUnlisten: UnlistenFn | null = null;
   /** spec 146: review quality matrix — summary-only #review history per lane. */
   private reviewQualityStore = new ReviewQualityStore(this.laneBus);
@@ -1373,6 +1383,9 @@ export class AcpHarnessView implements ContentView {
         }
       }
     });
+    // spec 276: subscribed after every drain-on-idle queue; it defers its idle
+    // check to a microtask, so whichever queue claims a contested idle wins.
+    this.reviewLoopCtl.subscribe();
     // spec 128: refresh the backpressure gauge (and the overlay, if open) on
     // every queue mutation the store emits.
     this.laneBus.subscribe((e) => {
@@ -1517,6 +1530,7 @@ export class AcpHarnessView implements ContentView {
         this.appendTranscript(l, 'system', `[inter-lane] ${text}`);
         this.scheduleLaneRender(l);
       },
+      onHarnessReply: (id, reply) => this.reviewLoopCtl.onHarnessReply(id, reply),
     };
   }
 
@@ -1577,6 +1591,7 @@ export class AcpHarnessView implements ContentView {
       reviewQualityStore: this.reviewQualityStore,
       reviewPriorityStore: this.reviewPriorityStore,
       metricsFor: (laneId) => this.laneResourceSample(laneId),
+      reviewLoopFor: (laneId) => this.reviewLoopCtl.telemetry(laneId),
     });
   }
 
@@ -2203,11 +2218,12 @@ export class AcpHarnessView implements ContentView {
 
   /** Undo a reserveCommandTurn when the command bails before dispatch (bad subject,
    *  git collection failed): return the lane to idle so it drains held peer mail and
-   *  accepts input again. setLaneStatus(idle) clears activeSystemLabel. */
-  private releaseReservedTurn(lane: HarnessLane): void {
+   *  accepts input again. setLaneStatus(idle) clears activeSystemLabel. spec 276:
+   *  `#review pass` releases into `awaiting_peer` after its harness fan-out. */
+  private releaseReservedTurn(lane: HarnessLane, next: 'idle' | 'awaiting_peer' = 'idle'): void {
     lane.activeTurnStartedAt = null;
     lane.pendingCoordinatorDrain = null;
-    this.setLaneStatus(lane, 'idle');
+    this.setLaneStatus(lane, next);
     this.updateComposerTick();
     this.render();
   }
@@ -2750,24 +2766,44 @@ export class AcpHarnessView implements ContentView {
   }): { recorded: boolean; reason?: string } {
     const lane = this.lanes.find((l) => l.displayName === env.fromLaneId);
     if (!lane) return { recorded: false, reason: 'unknown_sender' };
-    const label = env.subjectLabel.trim() || '(review)';
-    const findings = parseReviewFindings(env.findings);
+    this.recordReviewOutcomeFor(lane, {
+      subjectLabel: env.subjectLabel,
+      reviewerCount: env.reviewerCount,
+      blockers: env.blockers,
+      warnings: env.warnings,
+      findings: parseReviewFindings(env.findings),
+    });
+    return { recorded: true };
+  }
+
+  /** spec 146 matrix row + transcript line. Shared by the lane's `review_outcome`
+   *  self-report and the harness-parsed `#review pass` rounds (spec 276). */
+  private recordReviewOutcomeFor(
+    lane: HarnessLane,
+    outcome: {
+      subjectLabel: string;
+      reviewerCount: number;
+      blockers: number;
+      warnings: number;
+      findings?: ReviewFinding[];
+    },
+  ): void {
+    const label = outcome.subjectLabel.trim() || '(review)';
     this.reviewQualityStore.record({
       authoringLaneId: lane.id,
       authoringLaneName: lane.displayName,
       subjectLabel: label,
-      reviewerCount: Math.max(0, Math.trunc(env.reviewerCount)),
-      blockers: Math.max(0, Math.trunc(env.blockers)),
-      warnings: Math.max(0, Math.trunc(env.warnings)),
-      findings,
+      reviewerCount: Math.max(0, Math.trunc(outcome.reviewerCount)),
+      blockers: Math.max(0, Math.trunc(outcome.blockers)),
+      warnings: Math.max(0, Math.trunc(outcome.warnings)),
+      findings: outcome.findings,
     });
     this.appendTranscript(
       lane,
       'system',
-      `[review] recorded: ${label} — ${env.blockers} blocker${env.blockers === 1 ? '' : 's'}, ${env.warnings} warning${env.warnings === 1 ? '' : 's'} across ${env.reviewerCount} reviewer${env.reviewerCount === 1 ? '' : 's'}`,
+      `[review] recorded: ${label} — ${outcome.blockers} blocker${outcome.blockers === 1 ? '' : 's'}, ${outcome.warnings} warning${outcome.warnings === 1 ? '' : 's'} across ${outcome.reviewerCount} reviewer${outcome.reviewerCount === 1 ? '' : 's'}`,
     );
     this.scheduleLaneRender(lane);
-    return { recorded: true };
   }
 
   /**
@@ -2902,18 +2938,61 @@ export class AcpHarnessView implements ContentView {
    * is treated as a focus note instead, so `#review -- /etc/passwd` can't leak an
    * arbitrary file to reviewers. (A directory that happens to exist is a residual
    * edge: `stat_files` reports only mtime, so the agent would try to read it as a
-   * doc and report that it can't — low harm.)
+   * doc and report that it can't — low harm.) Returns the doc's mtime (seconds),
+   * or 0 when the token is not a doc — spec 276 fingerprints a doc subject by it.
    */
-  private async docPathExists(token: string): Promise<boolean> {
+  private async docPathMtime(token: string): Promise<number> {
     const dir = this.projectDir ?? '';
-    if (!dir) return false;
-    if (token.startsWith('/') || token.split('/').includes('..')) return false;
+    if (!dir) return 0;
+    if (token.startsWith('/') || token.split('/').includes('..')) return 0;
     try {
       const mtimes = await invoke<number[]>('stat_files', { paths: [`${dir}/${token}`] });
-      return (mtimes[0] ?? 0) > 0;
+      return mtimes[0] ?? 0;
     } catch {
-      return false;
+      return 0;
     }
+  }
+
+  /** spec 145 reviewer set: the named subset (case-insensitive, never self, live
+   *  only) or — when none is named — every other live local lane. Named lanes that
+   *  did not resolve come back in `skipped` so a request is never dropped silently. */
+  private resolveReviewers(
+    lane: HarnessLane,
+    nameTokens: string[],
+  ): { reviewers: HarnessLane[]; skipped: string[] } {
+    if (nameTokens.length === 0) {
+      return { reviewers: this.lanes.filter((l) => l.id !== lane.id && isReviewerLive(l)), skipped: [] };
+    }
+    const wanted = nameTokens.map((t) => t.toLowerCase());
+    const reviewers = this.lanes.filter(
+      (l) => l.id !== lane.id && isReviewerLive(l) && wanted.includes(l.displayName.toLowerCase()),
+    );
+    const matched = new Set(reviewers.map((r) => r.displayName.toLowerCase()));
+    return { reviewers, skipped: nameTokens.filter((t) => !matched.has(t.toLowerCase())) };
+  }
+
+  /** Classify the `--` tail: an existing repo file is the design-doc subject;
+   *  anything else is a free focus note over the working diff. */
+  private async collectReviewSubject(tail: string): Promise<ReviewSubjectResult> {
+    const docMtime = tail.length > 0 ? await this.docPathMtime(tail) : 0;
+    if (docMtime > 0) return { subject: { kind: 'doc', path: tail }, docMtime };
+    const note = tail.length > 0 ? tail : undefined;
+    let git: ReviewGitState | null = null;
+    try {
+      git = await invoke<ReviewGitState>('acp_collect_review_git_state', { cwd: this.projectDir });
+    } catch (e) {
+      return { error: `#review: git collection failed: ${String(e)}` };
+    }
+    if (!git?.hasGitRepo) return { error: '#review: no git repo in lane cwd' };
+    const subject: ReviewSubject = {
+      kind: 'diff',
+      repoRoot: git.repoRoot,
+      isUnbornHead: git.isUnbornHead,
+      diffstat: git.diffstat,
+      diff: git.diff,
+      untracked: git.untracked,
+    };
+    return { subject, note };
   }
 
   /** A keyboard-first, local preview. Enter freezes exactly the previewed diff. */
@@ -3134,24 +3213,7 @@ export class AcpHarnessView implements ContentView {
     // Split `<lane> ... -- <docpath | note>`: tokens before `--` name reviewers,
     // the tail after `--` is a doc path or a free focus note.
     const { nameTokens, tail } = parseReviewCommandArgs(rest);
-
-    // Resolve reviewers: named subset (case-insensitive, exclude self,
-    // exclude stopped/error) or — when none named — every other live local lane.
-    const isLive = (l: HarnessLane): boolean => l.status !== 'stopped' && l.status !== 'error';
-    let reviewers: HarnessLane[];
-    let skipped: string[] = [];
-    if (nameTokens.length > 0) {
-      const wanted = nameTokens.map((t) => t.toLowerCase());
-      reviewers = this.lanes.filter(
-        (l) => l.id !== lane.id && isLive(l) && wanted.includes(l.displayName.toLowerCase()),
-      );
-      // Surface named reviewers that didn't resolve (unknown/self/stopped) so a
-      // requested reviewer is never silently dropped from the fan-out.
-      const matched = new Set(reviewers.map((r) => r.displayName.toLowerCase()));
-      skipped = nameTokens.filter((t) => !matched.has(t.toLowerCase()));
-    } else {
-      reviewers = this.lanes.filter((l) => l.id !== lane.id && isLive(l));
-    }
+    const { reviewers, skipped } = this.resolveReviewers(lane, nameTokens);
     if (reviewers.length === 0) {
       this.flashChip('#review: no reviewable lanes');
       return;
@@ -3171,42 +3233,18 @@ export class AcpHarnessView implements ContentView {
     this.reserveCommandTurn(lane, 'reviewing');
     this.flashChip(`#review → ${reviewers.map((l) => l.displayName).join(', ')}: collecting subject…`);
 
-    // Classify the tail: an existing repo file is the design-doc subject;
-    // anything else is a free focus note over the working diff.
-    let subject: ReviewSubject;
-    let note: string | undefined;
-    if (tail.length > 0 && (await this.docPathExists(tail))) {
-      subject = { kind: 'doc', path: tail };
-    } else {
-      if (tail.length > 0) note = tail;
-      const cwd = this.projectDir;
-      let git: ReviewGitState | null = null;
-      try {
-        git = await invoke<ReviewGitState>('acp_collect_review_git_state', { cwd });
-      } catch (e) {
-        this.releaseReservedTurn(lane);
-        this.flashChip(`#review: git collection failed: ${String(e)}`);
-        return;
-      }
-      if (!git?.hasGitRepo) {
-        this.releaseReservedTurn(lane);
-        this.flashChip('#review: no git repo in lane cwd');
-        return;
-      }
-      subject = {
-        kind: 'diff',
-        repoRoot: git.repoRoot,
-        isUnbornHead: git.isUnbornHead,
-        diffstat: git.diffstat,
-        diff: git.diff,
-        untracked: git.untracked,
-      };
+    const collected = await this.collectReviewSubject(tail);
+    if ('error' in collected) {
+      this.releaseReservedTurn(lane);
+      this.flashChip(collected.error);
+      return;
     }
+    const { subject, note } = collected;
 
     // Revalidate reviewers (Codex-1 W2): a lane may have closed or errored during
     // the async collection. Drop any no longer live so the prompt never advertises
     // a dead reviewer; bail (releasing the reservation) if none survive.
-    const liveReviewers = reviewers.filter((r) => this.lanes.includes(r) && isLive(r));
+    const liveReviewers = reviewers.filter((r) => this.lanes.includes(r) && isReviewerLive(r));
     if (liveReviewers.length === 0) {
       this.releaseReservedTurn(lane);
       this.flashChip('#review: reviewers no longer available');
@@ -4643,6 +4681,7 @@ export class AcpHarnessView implements ContentView {
       this.reviewPriorityUnlisten = null;
     }
     this.timelineCtl.dispose();
+    this.reviewLoopCtl.dispose();
     // The store is a private member GC'd with the view, and dispose already
     // re-published `highCount: 0` to the footer above — no explicit clear needed
     // (mirrors ReviewQualityStore; OpenCode-1 review W2).
@@ -10108,9 +10147,15 @@ export class AcpHarnessView implements ContentView {
     // spec 136: #cancel / Ctrl+C is the explicit "stop" gesture — drop the prompt
     // queue here, before any early return, so it can't be left half-cleared.
     lane.queuedPrompts = [];
-    const pending = this.coordinator.pendingPeersFor(lane.id);
     // spec 116: busy cancel stops the ACP turn only — keep outstanding peer waits.
-    if (lane.status === 'awaiting_peer' || (lane.status === 'idle' && pending.length > 0)) {
+    // Decided before the loop hook, which can settle an awaiting_peer lane to idle.
+    const peerWaitOnly =
+      lane.status === 'awaiting_peer'
+      || (lane.status === 'idle' && this.coordinator.pendingPeersFor(lane.id).length > 0);
+    // spec 276: the same gesture hard-stops a `#review pass` loop (no summary)
+    // and withdraws its review requests, busy or not.
+    this.reviewLoopCtl.onLaneCancelled(lane.id);
+    if (peerWaitOnly) {
       this.coordinator.cancelConversationsFor(lane.id);
       this.coordinator.recomputePeerStatus(lane.id);
       this.render();
@@ -10701,7 +10746,11 @@ export class AcpHarnessView implements ContentView {
     }
     if (parts[0] === '#review') {
       this.setDraft(lane, '', 0);
-      await this.runReviewCommand(lane, parts.slice(1));
+      // spec 276: `pass` / `stop` drive the review-till-pass loop; anything
+      // else is the one-shot spec 145 review (lane names never equal either).
+      if (parts[1] === 'pass') await this.reviewLoopCtl.start(lane, parts.slice(2));
+      else if (parts[1] === 'stop') this.reviewLoopCtl.stop(lane);
+      else await this.runReviewCommand(lane, parts.slice(1));
       this.render();
       return;
     }
@@ -12585,7 +12634,8 @@ export class AcpHarnessView implements ContentView {
     }
     const pending = this.coordinator.pendingPeersFor(lane.id);
     if (pending.length > 0 && (lane.status === 'awaiting_peer' || lane.status === 'idle')) {
-      return textSegments(`${lane.displayName} · ${awaitingPeerText(pending)}`);
+      const loop = this.reviewLoopCtl.chipPrefix(lane.id);
+      return textSegments(`${loop ? `${loop} · ` : ''}${lane.displayName} · ${awaitingPeerText(pending)}`);
     }
     if (lane.status === 'awaiting_peer') return textSegments(`${lane.displayName} ${awaitingPeerText(pending)}`);
     if (this.harnessMemoryWarning) return textSegments(`memory off: ${truncate(this.harnessMemoryWarning, 64)}`);
@@ -12905,6 +12955,8 @@ export class AcpHarnessView implements ContentView {
             <dt>#new</dt><dd>Start fresh active lane, keep memory</dd>
             <dt>#new!</dt><dd>Start fresh active lane and clear its memory</dd>
             <dt>#review [&lt;lane&gt; …] [-- &lt;docpath | note&gt;]</dt><dd>Fan a review of your diff or a design doc out to other lanes (all live lanes if none named)</dd>
+            <dt>#review pass [N] [&lt;lane&gt; …] [-- &lt;docpath | note&gt;]</dt><dd>Review, fix the Blockers, re-review — until every reviewer passes or N rounds (default 3, max 8); one summary Board at the end</dd>
+            <dt>#review stop</dt><dd>Stop a review pass after the current step and write its summary (#cancel stops it with no summary)</dd>
             <dt>#review-thread</dt><dd>Start a Review Thread for the active lane's diff, with a fixed snapshot and human verdict</dd>
             <dt>#polly &lt;task&gt;</dt><dd>Polly orchestration from this lane — auto-spawns two other Cursor/Claude/Codex workers (orchestrator covers its own backend when in pool)</dd>
             <dt>#debby &lt;question&gt;</dt><dd>Debby brainstorming from this lane — auto-spawns Claude and Codex heads as plain responders</dd>
@@ -14899,6 +14951,59 @@ export class AcpHarnessView implements ContentView {
     };
   }
 
+  private reviewLoopHost(): HarnessReviewLoopHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const view = this;
+    return {
+      get element() { return view.element; },
+      get lanes() { return view.lanes; },
+      get activeLaneId() { return view.activeLaneId; },
+      get projectDir() { return view.projectDir; },
+      flashChip: (text) => view.flashChip(text),
+      subscribeLaneBus: (handler) => view.laneBus.subscribe(handler),
+      render: () => view.render(),
+      appendTranscript: (lane, kind, text) => {
+        view.appendTranscript(lane, kind, text);
+        view.scheduleLaneRender(lane);
+      },
+      reserveCommandTurn: (lane, label) => view.reserveCommandTurn(lane, label),
+      releaseReservedTurn: (lane, next) => view.releaseReservedTurn(lane, next),
+      enqueueSystemPrompt: (lane, text, drain, label) => view.enqueueSystemPrompt(lane, text, drain, label),
+      resolveReviewers: (lane, nameTokens) => view.resolveReviewers(lane, nameTokens),
+      collectReviewSubject: (_lane, tail) => view.collectReviewSubject(tail),
+      collectReviewIntent: (lane) => view.collectReviewIntent(lane),
+      fanOutReview: (lane, targets, body) =>
+        view.coordinator.deliverMentionFanOut(
+          lane.id,
+          lane.displayName,
+          targets,
+          body,
+          view.harnessMemoryId ?? undefined,
+          { replyConsumer: 'harness' },
+        ),
+      cancelPeerConversations: (lane) => {
+        view.coordinator.cancelConversationsFor(lane.id, { consumer: 'harness' });
+        view.coordinator.recomputePeerStatus(lane.id);
+      },
+      pendingPeerCount: (lane) => view.coordinator.pendingPeersFor(lane.id).length,
+      loopChanged: () => view.telemetryPublisher?.schedule(),
+      recordReviewOutcome: (lane, outcome) => {
+        view.recordReviewOutcomeFor(lane, outcome);
+        view.recordJournal(
+          lane.displayName,
+          'review',
+          `${outcome.subjectLabel} — ${outcome.blockers} blockers, ${outcome.warnings} warnings, ${outcome.reviewerCount} reviewers`,
+          {
+            blockers: outcome.blockers,
+            warnings: outcome.warnings,
+            reviewerCount: outcome.reviewerCount,
+            subjectLabel: outcome.subjectLabel,
+          },
+        );
+      },
+    };
+  }
+
   private dictationHost(): HarnessDictationHost {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const view = this;
@@ -15027,17 +15132,13 @@ export function parseQueueIndex(arg: string | undefined): number | null {
   return Number(arg);
 }
 
-/**
- * spec 145: split `#review` args into reviewer name tokens (before `--`) and the
- * trailing doc-path-or-note (after `--`). With no `--`, every token is a name.
- */
-export function parseReviewCommandArgs(rest: string[]): { nameTokens: string[]; tail: string } {
-  const sepIdx = rest.indexOf('--');
-  const nameTokens = (sepIdx === -1 ? rest : rest.slice(0, sepIdx))
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
-  const tail = sepIdx === -1 ? '' : rest.slice(sepIdx + 1).join(' ').trim();
-  return { nameTokens, tail };
+// spec 145: moved to review.ts so the spec 276 loop shares it; re-exported for
+// existing import sites.
+export { parseReviewCommandArgs } from './review';
+
+/** A lane that can review: not stopped and not errored. */
+function isReviewerLive(lane: HarnessLane): boolean {
+  return lane.status !== 'stopped' && lane.status !== 'error';
 }
 
 function mergeUsage(prev: UsageInfo | null, next: UsageInfo): UsageInfo {

@@ -87,6 +87,34 @@
           background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; }
   .chip b { color: var(--accent); font-variant-numeric: tabular-nums; }
   .chip.alert b { color: var(--del); }
+  /* spec 277 — review pass loop: flat on the lane card, one hairline above, no inner box */
+  .loop { margin-top: 11px; padding-top: 9px; border-top: 1px solid var(--border); }
+  .loop-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .loop-head .res-lbl { white-space: nowrap; }
+  .loop-state, .loop-phase { font-family: var(--mono); font-size: 11px; color: var(--fg);
+                             font-variant-numeric: tabular-nums; }
+  .loop-phase { margin-top: 1px; }
+  .loop-phase .ph { color: var(--accent); }
+  .loop-rounds { display: flex; gap: 4px; margin: 7px 0 6px; }
+  .loop-rounds i { width: 22px; height: 18px; border-radius: 5px; background: var(--code-bg);
+                   border: 1px solid var(--border); font-style: normal; font-family: var(--mono);
+                   font-size: 10px; display: flex; align-items: center; justify-content: center;
+                   color: var(--muted); font-variant-numeric: tabular-nums; }
+  .loop-rounds i.cur { border-color: var(--accent); }
+  .loop-rounds i.pass { color: var(--add); }
+  .loop-rounds i.fail { color: var(--del); }
+  .loop-rounds i.partial { color: var(--accent); }
+  .rv { display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+        font-family: var(--mono); font-size: 11px; padding: 2px 0; }
+  .rv-name { color: var(--fg); }
+  .rv-state { color: var(--muted); margin-left: 6px; }
+  .rv .chip { white-space: nowrap; }
+  .chip b.v-pass { color: var(--add); }
+  .chip b.v-fail { color: var(--del); }
+  .chip b.v-partial { color: var(--accent); }
+  .loop-note { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 4px;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .loop-note.stop { color: var(--fg); white-space: normal; }
   .foreign { font-family: var(--mono); font-size: 11px; color: var(--muted); margin: 14px 0 0; padding: 0; list-style: none; }
   .foreign li { padding: 3px 0; border-bottom: 1px solid var(--border); }
   .foreign li:last-child { border-bottom: none; }
@@ -128,7 +156,7 @@
 (function () {
   "use strict";
 
-  var SCHEMA_VERSION = 3;
+  var SCHEMA_VERSION = 4;
   var POLL_MS = 1000;
   var FEED_CAP = 14;
   var MEM_FULL_MB = 2048;   // memory-bar full scale (spec 169)
@@ -138,6 +166,7 @@
     needs_permission: "#fcd535", awaiting_peer: "#f6465d",
     error: "#f6465d", stopped: "#707a8a", unknown: "#707a8a"
   };
+  var PHASE_LABEL = { collecting: "collecting", reviewing: "reviewing", fixing: "fixing", summarizing: "writing summary" };
   var STATUS_LABEL = {
     starting: "starting", idle: "idle", busy: "busy",
     needs_permission: "needs permission", awaiting_peer: "awaiting peer",
@@ -232,6 +261,7 @@
       case "priority": return formatDelta("high-priority hunks", d);
       case "peer": return formatDelta("peer inbox", d);
       case "lane": return d === "spawned" ? "lane spawned" : d === "closed" ? "lane closed" : "lane " + d;
+      case "loop": return "review pass " + d;
       default: return d || String(ev.kind || "event");
     }
   }
@@ -287,6 +317,68 @@
         '</div></div>';
     }).join("");
   }
+  // spec 277 — the lane's #review pass loop. Elapsed/age spans carry their
+  // timestamp in data-since / data-ago so frame() can tick them between polls.
+  function sinceSpan(ts) {
+    return '<span data-since="' + esc(ts) + '">' + esc(formatElapsed(Date.now() - ts)) + '</span>';
+  }
+  function agoSpan(ts) {
+    return '<span data-ago="' + esc(ts) + '">' + esc(formatAge(ts)) + '</span>';
+  }
+  function verdictChip(rv) {
+    if (rv.state !== "replied") return "";
+    var v = rv.verdict;
+    var cls = v === "pass" ? "v-pass" : v === "fail" ? "v-fail" : "v-partial";
+    var word = v === "fail" ? "FAIL" + (rv.blockers ? " " + rv.blockers : "")
+      : v === "missing" ? "no verdict" : String(v || "").toUpperCase();
+    return '<span class="chip"><b class="' + cls + '">' + esc(word) + '</b></span>';
+  }
+  function reviewerState(loop, rv) {
+    if (rv.state === "replied") return rv.repliedAt ? "replied " + agoSpan(rv.repliedAt) : "replied";
+    if (rv.state === "not_sent") return "not sent";
+    // Withdrawn or never answered: nothing is pending once the round stopped.
+    if (loop.phase !== "reviewing") return "no reply";
+    return "pending " + sinceSpan(loop.phaseSince);
+  }
+  function renderLoop(el, loop) {
+    if (!loop) {
+      el.hidden = true;
+      el.innerHTML = "";
+      return;
+    }
+    el.hidden = false;
+    var rounds = loop.rounds || [];
+    var cells = [];
+    for (var i = 0; i < loop.maxRounds; i++) {
+      var r = rounds[i];
+      var cls = (r ? r.verdict : "") + (loop.running && i === loop.round - 1 ? " cur" : "");
+      cells.push('<i class="' + esc(cls.trim()) + '">' + (r ? esc(r.blockers) : "") + '</i>');
+    }
+    var phase = loop.running
+      ? '<span class="ph">' + esc(PHASE_LABEL[loop.phase] || loop.phase || "") + '</span> · ' + sinceSpan(loop.phaseSince)
+      : "ended " + agoSpan(loop.endedAt);
+    var reviewers = (loop.reviewers || []).map(function (rv) {
+      return '<div class="rv"><span><span class="rv-name">' + esc(rv.name) + '</span><span class="rv-state">' +
+        reviewerState(loop, rv) + '</span></span>' + verdictChip(rv) + '</div>';
+    }).join("");
+    var note = loop.stopLabel
+      ? '<div class="loop-note stop">' + esc(loop.running ? "stop: " + loop.stopLabel : loop.stopLabel) + '</div>'
+      : loop.subjectLabel ? '<div class="loop-note">' + esc(loop.subjectLabel) + '</div>' : "";
+    el.innerHTML =
+      '<div class="loop-head"><span class="res-lbl">review pass</span><span class="loop-state">' +
+        esc(loop.round + "/" + loop.maxRounds) + '</span></div>' +
+      '<div class="loop-phase">' + phase + '</div>' +
+      '<div class="loop-rounds">' + cells.join("") + '</div>' + reviewers + note;
+  }
+  function tickLoop(card) {
+    var spans = card.querySelectorAll(".loop [data-since], .loop [data-ago]");
+    for (var i = 0; i < spans.length; i++) {
+      var el = spans[i];
+      el.textContent = el.dataset.since
+        ? formatElapsed(Date.now() - Number(el.dataset.since))
+        : formatAge(Number(el.dataset.ago));
+    }
+  }
   function harnessShell(snap) {
     var id = snap.harnessId || "harness";
     var el = harnessEls[id];
@@ -323,7 +415,8 @@
         '<div class="res-bar"><i></i></div></div>' +
         '<div class="chips">' +
         '<span class="chip">attn <b class="c-attn">0</b></span><span class="chip">rev <b class="c-rev">0</b></span>' +
-        '<span class="chip">pri <b class="c-pri">0</b></span><span class="chip">peer <b class="c-peer">0</b></span></div>';
+        '<span class="chip">pri <b class="c-pri">0</b></span><span class="chip">peer <b class="c-peer">0</b></span></div>' +
+        '<div class="loop" hidden></div>';
       wrap.appendChild(card);
       rt.beat = card.querySelector(".beat");
       rt.bC = fit(rt.beat, 22);
@@ -342,6 +435,7 @@
     card.querySelector(".c-pri").textContent = lane.highPriority || 0;
     card.querySelector(".c-peer").textContent = lane.inboxDepth || 0;
     card.querySelector(".c-attn").parentElement.classList.toggle("alert", (lane.attnOpen || 0) > 0);
+    renderLoop(card.querySelector(".loop"), lane.reviewLoop || null);
     rt.status = lane.status;
     rt.turnActiveSince = lane.turnActiveSince;
     // spec 169 — resource status. lane.rootAlive false / null cpu → "—" + flat line.
@@ -540,7 +634,9 @@
         var el = harnessEls[snap.harnessId || "harness"];
         if (!el) return;
         var card = el.querySelector('[data-lane-id="' + CSS.escape(lane.id) + '"]');
-        if (card) card.querySelector(".turn").textContent = turnLine(lane);
+        if (!card) return;
+        card.querySelector(".turn").textContent = turnLine(lane);
+        tickLoop(card);
       });
     });
     Object.keys(harnessEls).forEach(function (id) {

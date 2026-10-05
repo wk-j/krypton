@@ -13,6 +13,8 @@
 > 2026-06 update: the record now remains count-first but can also carry
 > optional embedded reviewer findings detail. See
 > `docs/adr/0004-review-matrix-observation-not-score.md` for the evolution note.
+> 2026-10-04 (spec 276): `#review pass` rounds record one row each, parsed by the harness from the
+> reviewers' replies rather than self-reported by the lane — still raw counts, still no verdict.
 
 ## Problem
 

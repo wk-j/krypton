@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 import { peersFor } from './harness-directory';
 import type { LaneBus } from './lane-bus';
+import type { ReviewLoopStop, ReviewerVerdict } from './review-loop';
 import type {
   HarnessLaneStatus,
   JudgementItem,
@@ -16,12 +17,12 @@ import type {
   ReviewOutcome,
 } from './types';
 
-const TELEMETRY_SCHEMA_VERSION = 3;
+const TELEMETRY_SCHEMA_VERSION = 4;
 const TELEMETRY_DEBOUNCE_MS = 300;
 const RECENT_EVENT_CAP = 14;
 
 export type LaneStatus = HarnessLaneStatus;
-export type EventKind = 'status' | 'attention' | 'review' | 'priority' | 'peer' | 'lane';
+export type EventKind = 'status' | 'attention' | 'review' | 'priority' | 'peer' | 'lane' | 'loop';
 
 export interface TelemetryLane {
   id: string;
@@ -40,6 +41,43 @@ export interface TelemetryLane {
   rssMb: number | null; // total_rss_mb
   procCount: number; // proc_count (0 when no live process)
   rootAlive: boolean; // false → dashboard renders "—" + flat baseline, never "0%"
+  // spec 277 — the lane's `#review pass` loop (running, or the last one ended); authoring lane only.
+  reviewLoop: TelemetryReviewLoop | null;
+}
+
+export interface TelemetryReviewLoopReviewer {
+  name: string;
+  /** This round: not asked yet (subject still collecting), waiting, or answered. */
+  state: 'not_sent' | 'pending' | 'replied';
+  verdict: ReviewerVerdict | null;
+  blockers: number;
+  repliedAt: number | null;
+}
+
+export interface TelemetryReviewLoopRound {
+  round: number;
+  verdict: 'pass' | 'fail' | 'partial';
+  blockers: number;
+  warnings: number;
+}
+
+export interface TelemetryReviewLoop {
+  running: boolean;
+  /** null once the loop ended. */
+  phase: 'collecting' | 'reviewing' | 'fixing' | 'summarizing' | null;
+  round: number;
+  maxRounds: number;
+  /** Diffstat headline or doc path; '' until round 1 has collected its subject. */
+  subjectLabel: string;
+  startedAt: number;
+  phaseSince: number;
+  /** The current round's reviewers (the final round's once ended). */
+  reviewers: TelemetryReviewLoopReviewer[];
+  /** Completed rounds, oldest first. */
+  rounds: TelemetryReviewLoopRound[];
+  stopReason: ReviewLoopStop | null;
+  stopLabel: string | null;
+  endedAt: number | null;
 }
 
 export interface TelemetryEvent {
@@ -121,6 +159,8 @@ export interface HarnessTelemetryPublisherOptions {
   // client session yet. Maps lane.id → lane.client.sessionId → metricsBySession
   // inside AcpHarnessView (the publisher never sees the numeric-session dual key).
   metricsFor: (laneId: string) => LaneResourceSample | null;
+  // spec 277 — the lane's review-till-pass loop, or null when it has none.
+  reviewLoopFor: (laneId: string) => TelemetryReviewLoop | null;
 }
 
 export interface LaneResourceSample {
@@ -251,6 +291,7 @@ export class HarnessTelemetryPublisher {
         rssMb: metrics ? metrics.rssMb : null,
         procCount: metrics ? metrics.procCount : 0,
         rootAlive: metrics ? metrics.rootAlive : false,
+        reviewLoop: this.options.reviewLoopFor(lane.laneId),
       };
     });
   }
@@ -282,6 +323,9 @@ export class HarnessTelemetryPublisher {
       if (prev.highPriority !== lane.highPriority) {
         this.appendEvent({ at: now, laneName: lane.displayName, kind: 'priority', detail: `${prev.highPriority}->${lane.highPriority}` });
       }
+      for (const detail of loopEventDetails(prev.reviewLoop, lane.reviewLoop)) {
+        this.appendEvent({ at: now, laneName: lane.displayName, kind: 'loop', detail });
+      }
     }
 
     for (const prev of previous.lanes) {
@@ -297,4 +341,27 @@ export class HarnessTelemetryPublisher {
       this.recentEvents = this.recentEvents.slice(-RECENT_EVENT_CAP);
     }
   }
+}
+
+/** spec 277: feed milestones between two snapshots of one lane's loop —
+ *  started, each completed round, and ended. */
+export function loopEventDetails(
+  prev: TelemetryReviewLoop | null,
+  next: TelemetryReviewLoop | null,
+): string[] {
+  if (!next) return [];
+  const details: string[] = [];
+  const sameLoop = prev !== null && prev.startedAt === next.startedAt;
+  // A loop can start and end inside one debounce window; it still started.
+  if (!sameLoop) details.push(`started → ${next.reviewers.map((r) => r.name).join(', ')}`);
+  const seen = sameLoop ? prev.rounds.length : 0;
+  for (const r of next.rounds.slice(seen)) {
+    details.push(
+      `round ${r.round}/${next.maxRounds} ${r.verdict.toUpperCase()} · ${r.blockers} blocker${r.blockers === 1 ? '' : 's'}`,
+    );
+  }
+  if (!next.running && (!sameLoop || prev.running)) {
+    details.push(`ended: ${next.stopLabel ?? 'ended'}`);
+  }
+  return details;
 }

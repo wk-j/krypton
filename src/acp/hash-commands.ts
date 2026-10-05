@@ -108,7 +108,11 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'recall', args: '<question>', description: 'answer a question from the repo wiki' },
   { name: 'directive', args: '<what to create/change>', description: 'author a reusable harness directive' },
   { name: 'draw', args: '<request>', description: 'draw in an open tldraw Offline canvas (focused or named)' },
-  { name: 'review', args: '[<lane>…] [-- <doc | note>]', description: 'run a multi-reviewer design/diff review' },
+  {
+    name: 'review',
+    args: '[pass [N] | stop] [<lane>…] [-- <doc | note>]',
+    description: 'run a multi-reviewer design/diff review; pass = fix and re-review until it passes',
+  },
   { name: 'review-thread', args: '', description: 'review the current lane diff with a fixed snapshot and human verdict' },
   { name: 'orchestrator', args: '', description: 'designate this lane the orchestrator seat + open the console' },
   { name: 'polly', args: '<task>', description: 'Polly orchestration — spawns Cursor + Claude + Codex workers' },
@@ -302,7 +306,9 @@ export function commandMeta(): Record<string, CommandMeta> {
     review: {
       category: 'agent',
       badges: ['workflow'],
-      anatomy: 'pick reviewer lanes → peer_send review request → collect verdicts → summary',
+      anatomy:
+        'pick reviewer lanes → peer_send review request → collect verdicts → summary · ' +
+        'pass: harness fan-out → VERDICT lines → fix turn → re-review → one summary Board',
       lanes: 'N lanes',
       prompt: reviewRequestPrompt({
         reviewers: ['<reviewer-1>', '<reviewer-2>'],

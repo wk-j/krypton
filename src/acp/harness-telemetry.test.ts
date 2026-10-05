@@ -10,8 +10,10 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 import {
   HarnessTelemetryPublisher,
+  loopEventDetails,
   type LaneResourceSample,
   type TelemetryEvent,
+  type TelemetryReviewLoop,
   type TelemetrySnapshot,
 } from './harness-telemetry';
 import { LaneBus } from './lane-bus';
@@ -26,6 +28,7 @@ interface TestHarness {
   reviews: Map<string, ReviewOutcome[]>;
   priorities: Map<string, number>;
   metrics: Map<string, LaneResourceSample>;
+  loops: Map<string, TelemetryReviewLoop>;
 }
 
 function laneSummary(
@@ -85,6 +88,25 @@ function makeHarness(): TestHarness {
     reviews: new Map(),
     priorities: new Map(),
     metrics: new Map(),
+    loops: new Map(),
+  };
+}
+
+function reviewLoop(overrides: Partial<TelemetryReviewLoop> = {}): TelemetryReviewLoop {
+  return {
+    running: true,
+    phase: 'reviewing',
+    round: 1,
+    maxRounds: 3,
+    subjectLabel: '1 file changed, +1 / -0',
+    startedAt: 100,
+    phaseSince: 100,
+    reviewers: [{ name: 'Codex-1', state: 'pending', verdict: null, blockers: 0, repliedAt: null }],
+    rounds: [],
+    stopReason: null,
+    stopLabel: null,
+    endedAt: null,
+    ...overrides,
   };
 }
 
@@ -109,6 +131,7 @@ function makePublisher(harness: TestHarness): HarnessTelemetryPublisher {
       highCountFor: (laneId) => harness.priorities.get(laneId) ?? 0,
     },
     metricsFor: (laneId) => harness.metrics.get(laneId) ?? null,
+    reviewLoopFor: (laneId) => harness.loops.get(laneId) ?? null,
   });
 }
 
@@ -197,6 +220,44 @@ describe('HarnessTelemetryPublisher', () => {
     expect(after.rssMb).toBeNull();
     expect(after.procCount).toBe(0);
     expect(after.rootAlive).toBe(false);
+  });
+
+  it('folds the review pass loop into its lane and logs its milestones (spec 277)', async () => {
+    const harness = makeHarness();
+    makePublisher(harness);
+    await flushPublish();
+    expect(lastSnapshot().schemaVersion).toBe(4);
+    expect(lastSnapshot().lanes[0].reviewLoop).toBeNull();
+
+    harness.loops.set('lane-1', reviewLoop());
+    harness.bus.emit({ type: 'lane:status', payload: { laneId: 'lane-1', prev: 'idle', next: 'awaiting_peer', at: 1 } });
+    await flushPublish();
+    expect(lastSnapshot().lanes[0].reviewLoop?.phase).toBe('reviewing');
+
+    harness.loops.set(
+      'lane-1',
+      reviewLoop({
+        running: false,
+        phase: null,
+        rounds: [{ round: 1, verdict: 'pass', blockers: 0, warnings: 1 }],
+        stopReason: 'pass',
+        stopLabel: 'every reviewer passed',
+        endedAt: 200,
+      }),
+    );
+    harness.bus.emit({ type: 'lane:status', payload: { laneId: 'lane-1', prev: 'awaiting_peer', next: 'idle', at: 2 } });
+    await flushPublish();
+
+    const loopEvents = lastSnapshot().recentEvents.filter((e) => e.kind === 'loop').map((e) => e.detail);
+    expect(loopEvents).toEqual(['started → Codex-1', 'round 1/3 PASS · 0 blockers', 'ended: every reviewer passed']);
+  });
+
+  it('logs a loop that started and ended inside one publish window', () => {
+    const ended = reviewLoop({ running: false, phase: null, stopReason: 'subject_error', stopLabel: 'x', endedAt: 1 });
+    expect(loopEventDetails(null, ended)).toEqual(['started → Codex-1', 'ended: x']);
+    // An unchanged ended loop logs nothing; a new loop after it logs a fresh start.
+    expect(loopEventDetails(ended, ended)).toEqual([]);
+    expect(loopEventDetails(ended, reviewLoop({ startedAt: 500 }))).toEqual(['started → Codex-1']);
   });
 
   it('publishes open attention flag details for the browser dashboard', async () => {
@@ -291,6 +352,7 @@ describe('HarnessTelemetryPublisher', () => {
         highCountFor: () => 0,
       },
       metricsFor: () => null,
+      reviewLoopFor: () => null,
     });
 
     await flushPublish();

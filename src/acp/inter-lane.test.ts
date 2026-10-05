@@ -158,3 +158,136 @@ describe('InterLaneCoordinator.deliverAcknowledge (spec 183)', () => {
     expect(coordinator.deliverAcknowledge('ghost-9')).toEqual({ delivered: false, reason: 'unknown_lane' });
   });
 });
+
+describe('harness-consumed review replies (spec 276)', () => {
+  function makeHost(): LaneHost & {
+    prompts: Array<{ laneId: string; text: string }>;
+    rows: Array<{ laneId: string; direction: 'in' | 'out'; message: string }>;
+    replies: Array<{ laneId: string; packetId: string | null; fromLaneId: string; message: string }>;
+    statuses: Map<string, HarnessLaneStatus>;
+  } {
+    const statuses = new Map<string, HarnessLaneStatus>([
+      ['claude-1', 'idle'],
+      ['grok-1', 'idle'],
+    ]);
+    const names = new Map([
+      ['claude-1', 'Claude-1'],
+      ['grok-1', 'Grok-1'],
+    ]);
+    const prompts: Array<{ laneId: string; text: string }> = [];
+    const rows: Array<{ laneId: string; direction: 'in' | 'out'; message: string }> = [];
+    const replies: Array<{ laneId: string; packetId: string | null; fromLaneId: string; message: string }> = [];
+    return {
+      prompts,
+      rows,
+      replies,
+      statuses,
+      listLanes: () => [],
+      getLane: (laneId) => {
+        const status = statuses.get(laneId);
+        return status ? { status, displayName: names.get(laneId) ?? laneId } : null;
+      },
+      setLaneStatus: (laneId, next) => {
+        statuses.set(laneId, next);
+      },
+      enqueueSystemPrompt: (laneId, text) => {
+        prompts.push({ laneId, text });
+      },
+      appendInterLaneRow: (laneId, direction, _peer, message) => {
+        rows.push({ laneId, direction, message });
+      },
+      appendSystemNotice: () => {},
+      onHarnessReply: (laneId, reply) => {
+        replies.push({ laneId, packetId: reply.packetId, fromLaneId: reply.fromLaneId, message: reply.message });
+      },
+    };
+  }
+
+  function reply(message: string) {
+    return { id: `env-${message}`, fromLaneId: 'grok-1', toLaneId: 'claude-1', message, done: false, sentAt: 2 };
+  }
+
+  it('routes the reply to the harness and injects no turn into the requester', () => {
+    const host = makeHost();
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+    const fanOut = coordinator.deliverMentionFanOut(
+      'claude-1',
+      'Claude-1',
+      [{ laneId: 'grok-1', displayName: 'Grok-1' }],
+      'review this',
+      undefined,
+      { replyConsumer: 'harness' },
+    );
+    expect(fanOut.delivered).toEqual(['Grok-1']);
+    host.statuses.set('claude-1', 'awaiting_peer');
+    host.prompts.length = 0;
+
+    coordinator.deliver(reply('VERDICT: PASS'));
+
+    expect(host.replies).toEqual([
+      { laneId: 'claude-1', packetId: fanOut.packetId, fromLaneId: 'grok-1', message: 'VERDICT: PASS' },
+    ]);
+    expect(host.prompts.filter((p) => p.laneId === 'claude-1')).toEqual([]);
+    expect(host.rows.some((r) => r.laneId === 'claude-1' && r.direction === 'in')).toBe(true);
+    expect(coordinator.pendingPeersFor('claude-1')).toEqual([]);
+    expect(host.statuses.get('claude-1')).toBe('idle');
+  });
+
+  it('withdraws only the harness-consumed requests and keeps the lane\'s own peer waits', () => {
+    const host = makeHost();
+    host.statuses.set('codex-1', 'idle');
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+    coordinator.deliverMentionFanOut(
+      'claude-1',
+      'Claude-1',
+      [{ laneId: 'grok-1', displayName: 'Grok-1' }],
+      'review this',
+      undefined,
+      { replyConsumer: 'harness' },
+    );
+    coordinator.deliver({ id: 'env-own', fromLaneId: 'claude-1', toLaneId: 'codex-1', message: 'q', done: false, sentAt: 1 });
+    host.statuses.set('claude-1', 'busy');
+    // Still reviewing, so the cancellation notice waits in its inbox.
+    host.statuses.set('grok-1', 'busy');
+
+    coordinator.cancelConversationsFor('claude-1', { consumer: 'harness' });
+
+    expect(coordinator.pendingPeersFor('claude-1').map((p) => p.toLaneId)).toEqual(['codex-1']);
+    expect(host.statuses.get('claude-1')).toBe('busy');
+    // The withdrawn reviewer's late reply is dropped.
+    expect(coordinator.deliver(reply('VERDICT: PASS'))).toMatchObject({ delivered: false, reason: 'conversation_cancelled' });
+    expect(host.replies).toEqual([]);
+  });
+
+  it('clears the requests of an errored requester without reviving it to idle', () => {
+    const host = makeHost();
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+    coordinator.deliverMentionFanOut(
+      'claude-1',
+      'Claude-1',
+      [{ laneId: 'grok-1', displayName: 'Grok-1' }],
+      'review this',
+      undefined,
+      { replyConsumer: 'harness' },
+    );
+    host.statuses.set('claude-1', 'error');
+
+    coordinator.cancelConversationsFor('claude-1', { consumer: 'harness' });
+
+    expect(coordinator.pendingPeersFor('claude-1')).toEqual([]);
+    expect(host.statuses.get('claude-1')).toBe('error');
+  });
+
+  it('still composes a turn for an ordinary mention reply', () => {
+    const host = makeHost();
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+    coordinator.deliverMentionFanOut('claude-1', 'Claude-1', [{ laneId: 'grok-1', displayName: 'Grok-1' }], 'q');
+    host.statuses.set('claude-1', 'awaiting_peer');
+    host.prompts.length = 0;
+
+    coordinator.deliver(reply('answer'));
+
+    expect(host.replies).toEqual([]);
+    expect(host.prompts.filter((p) => p.laneId === 'claude-1')).toHaveLength(1);
+  });
+});

@@ -42,7 +42,20 @@ export interface ReviewRequestPromptInput {
   note?: string;
 }
 
-function diffstatHeadline(diffstat: ReviewDiffstatEntry[]): string {
+/**
+ * spec 145: split `#review` args into reviewer name tokens (before `--`) and the
+ * trailing doc-path-or-note (after `--`). With no `--`, every token is a name.
+ */
+export function parseReviewCommandArgs(rest: string[]): { nameTokens: string[]; tail: string } {
+  const sepIdx = rest.indexOf('--');
+  const nameTokens = (sepIdx === -1 ? rest : rest.slice(0, sepIdx))
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+  const tail = sepIdx === -1 ? '' : rest.slice(sepIdx + 1).join(' ').trim();
+  return { nameTokens, tail };
+}
+
+export function diffstatHeadline(diffstat: ReviewDiffstatEntry[]): string {
   if (diffstat.length === 0) return '(no tracked changes)';
   const added = diffstat.reduce((s, e) => s + e.added, 0);
   const removed = diffstat.reduce((s, e) => s + e.removed, 0);
@@ -58,8 +71,16 @@ function subjectBlock(subject: ReviewSubject): string {
       'peer_send message so reviewers can judge the design before any code is written.'
     );
   }
+  return [
+    'The review subject is the working git diff (vs HEAD). Forward it to each reviewer.',
+    ...diffSubjectLines(subject),
+  ].join('\n');
+}
+
+/** The diffstat, diff, and untracked excerpts of a diff subject — shared by the
+ *  `#review` prompt and the `#review pass` reviewer request (spec 276). */
+export function diffSubjectLines(subject: Extract<ReviewSubject, { kind: 'diff' }>): string[] {
   const lines: string[] = [];
-  lines.push('The review subject is the working git diff (vs HEAD). Forward it to each reviewer.');
   lines.push(`Diffstat: ${diffstatHeadline(subject.diffstat)}`);
   if (subject.isUnbornHead) {
     lines.push(
@@ -85,8 +106,37 @@ function subjectBlock(subject: ReviewSubject): string {
       for (const ln of u.head.split('\n')) lines.push(`    ${ln}`);
     }
   }
-  return lines.join('\n');
+  return lines;
 }
+
+/** spec 211 Board shape, shared by `#review` synthesis and the `#review pass`
+ *  summary (spec 276). Follows the `review_register { id }` instruction. */
+export const REVIEW_BOARD_SKIM_RULES =
+  'Make the Board a SKIM, not an essay. Start with `## สรุป` and ' +
+  '3–5 short bullets covering what changed, the verdict, and what the human should do next. When the ' +
+  'subject spans more than one file, add one ```review:walkthrough with only the 3–5 most important ' +
+  '`- at: path:line` / `say: …` steps. Add one ```review:finding per actionable concern; make its title ' +
+  'state the concrete impact, and keep its detail to at most three short sentences: evidence, impact, ' +
+  'and suggested fix. Add a ```review:decision only for a genuine fork. Do not repeat a concern across ' +
+  'the summary, walkthrough, and finding detail. Omit reviewer-process narration, empty categories, ' +
+  'zero-count commentary, and `review:metrics` / `review:chart` / `review:svg` unless they reveal a ' +
+  'relationship that concise prose cannot. Exceed these limits only when the user explicitly asks for ' +
+  'an exhaustive review.';
+
+// The Board is read by a Thai human; the parser is not. Free text goes to the
+// human, the fence grammar goes to `src/review-board/parse.ts`, and the title
+// becomes a directory name — hence the three-way split spelled out here.
+export const REVIEW_BOARD_LANGUAGE_RULE =
+  'LANGUAGE — write everything the human reads in NATURAL THAI: the prose, every `say:`, finding ' +
+  'titles and the prose under them, decision questions and options, metric and chart labels. Write the ' +
+  'way a Thai engineer actually writes, NOT a word-for-word rendering of an English sentence — if a Thai ' +
+  'phrase only makes sense next to the English it came from, it is the wrong phrase. Do NOT translate ' +
+  'technical terms: API and type names, tool names, flags, file paths, identifiers, and established ' +
+  'jargon (race, guard, fan-out, diff, permission, …) stay in English inside the Thai sentence. Keep the ' +
+  'machine-parsed parts in English or the document mis-parses: fence names, field keys (`title:`, ' +
+  '`severity:`, `steps:`, `at:`, `say:`, `question:`, `options:`, `recommended:`, `kind:`, `data:`), and ' +
+  'the severity values `blocking` / `non-blocking` / `suggestion`. The `review_new { title }` argument is ' +
+  'the one exception: short and in English, because it becomes the bundle directory name on disk.';
 
 /**
  * One-shot instruction telling the convening lane to fan a review subject out to
@@ -146,32 +196,9 @@ export function reviewRequestPrompt(input: ReviewRequestPromptInput): string {
   lines.push(
     '4. Compose a **Review Board** for the synthesis instead of reporting it in your turn text: call ' +
       '`review_new { title, subject }`, write the document at the returned path with your edit tool, then ' +
-      'call `review_register { id }`. Make the Board a SKIM, not an essay. Start with `## สรุป` and ' +
-      '3–5 short bullets covering what changed, the verdict, and what the human should do next. When the ' +
-      'subject spans more than one file, add one ```review:walkthrough with only the 3–5 most important ' +
-      '`- at: path:line` / `say: …` steps. Add one ```review:finding per actionable concern; make its title ' +
-      'state the concrete impact, and keep its detail to at most three short sentences: evidence, impact, ' +
-      'and suggested fix. Add a ```review:decision only for a genuine fork. Do not repeat a concern across ' +
-      'the summary, walkthrough, and finding detail. Omit reviewer-process narration, empty categories, ' +
-      'zero-count commentary, and `review:metrics` / `review:chart` / `review:svg` unless they reveal a ' +
-      'relationship that concise prose cannot. Exceed these limits only when the user explicitly asks for ' +
-      'an exhaustive review.',
+      `call \`review_register { id }\`. ${REVIEW_BOARD_SKIM_RULES}`,
   );
-  // The Board is read by a Thai human; the parser is not. Free text goes to the
-  // human, the fence grammar goes to `src/review-board/parse.ts`, and the title
-  // becomes a directory name — hence the three-way split spelled out here.
-  lines.push(
-    '4b. LANGUAGE — write everything the human reads in NATURAL THAI: the prose, every `say:`, finding ' +
-      'titles and the prose under them, decision questions and options, metric and chart labels. Write the ' +
-      'way a Thai engineer actually writes, NOT a word-for-word rendering of an English sentence — if a Thai ' +
-      'phrase only makes sense next to the English it came from, it is the wrong phrase. Do NOT translate ' +
-      'technical terms: API and type names, tool names, flags, file paths, identifiers, and established ' +
-      'jargon (race, guard, fan-out, diff, permission, …) stay in English inside the Thai sentence. Keep the ' +
-      'machine-parsed parts in English or the document mis-parses: fence names, field keys (`title:`, ' +
-      '`severity:`, `steps:`, `at:`, `say:`, `question:`, `options:`, `recommended:`, `kind:`, `data:`), and ' +
-      'the severity values `blocking` / `non-blocking` / `suggestion`. The `review_new { title }` argument is ' +
-      'the one exception: short and in English, because it becomes the bundle directory name on disk.',
-  );
+  lines.push(`4b. ${REVIEW_BOARD_LANGUAGE_RULE}`);
   lines.push(
     '5. **A clean review still gets a Board, and it is not an empty one.** If every reviewer said LGTM, ' +
       'write the same short summary and, for a multi-file subject, the compact walkthrough; add no findings ' +

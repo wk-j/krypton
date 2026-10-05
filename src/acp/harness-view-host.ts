@@ -5,10 +5,12 @@
 // so the view's private state stays private and every dependency a controller
 // has on the view is named here.
 
-import type { CoordinatorDrainContext } from './inter-lane';
+import type { CoordinatorDrainContext, MentionFanOutResult, MentionFanOutTarget } from './inter-lane';
 import type { JournalKind } from './journal';
 import type { GithubTicketReference } from './harness-view-types';
 import type { HarnessLane, HarnessTranscriptItem } from './harness-view-types';
+import type { ReviewSubject } from './review';
+import type { LaneBusEvent, ReviewFinding } from './types';
 
 /** Capabilities every harness controller may rely on. */
 export interface HarnessViewHost {
@@ -40,6 +42,46 @@ export interface HarnessTimelineHost extends HarnessViewHost {
     label?: string,
   ): Promise<boolean>;
   syncOrchestratorConsoleVisibility(): void;
+}
+
+/** A `#review` subject collected from the lane's worktree, or why it could not be. */
+export type ReviewSubjectResult =
+  | { subject: ReviewSubject; note?: string; docMtime?: number }
+  | { error: string };
+
+/** Spec 276 `#review pass` loop controller host. */
+export interface HarnessReviewLoopHost extends HarnessViewHost {
+  readonly projectDir: string | null;
+  subscribeLaneBus(handler: (event: LaneBusEvent) => void): () => void;
+  render(): void;
+  appendTranscript(lane: HarnessLane, kind: HarnessTranscriptItem['kind'], text: string): void;
+  reserveCommandTurn(lane: HarnessLane, label: string): void;
+  releaseReservedTurn(lane: HarnessLane, next?: 'idle' | 'awaiting_peer'): void;
+  enqueueSystemPrompt(
+    lane: HarnessLane,
+    text: string,
+    drain?: CoordinatorDrainContext,
+    label?: string,
+  ): Promise<boolean>;
+  resolveReviewers(lane: HarnessLane, nameTokens: string[]): { reviewers: HarnessLane[]; skipped: string[] };
+  collectReviewSubject(lane: HarnessLane, tail: string): Promise<ReviewSubjectResult>;
+  collectReviewIntent(lane: HarnessLane): string;
+  fanOutReview(lane: HarnessLane, targets: MentionFanOutTarget[], body: string): MentionFanOutResult;
+  /** Withdraw the loop's harness-consumed review requests; the lane's own peer waits stay. */
+  cancelPeerConversations(lane: HarnessLane): void;
+  /** spec 277: loop state changed — republish the lane-monitor telemetry. */
+  loopChanged(): void;
+  pendingPeerCount(lane: HarnessLane): number;
+  recordReviewOutcome(
+    lane: HarnessLane,
+    outcome: {
+      subjectLabel: string;
+      reviewerCount: number;
+      blockers: number;
+      warnings: number;
+      findings?: ReviewFinding[];
+    },
+  ): void;
 }
 
 export type GithubIssueRef = { repo: string; number: number; url: string };
