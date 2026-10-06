@@ -344,6 +344,7 @@ pub fn run() {
             acp::acp_session_load,
             acp::acp_set_lane_model,
             acp::acp_prompt,
+            acp::acp_steer,
             acp::acp_cancel,
             acp::acp_permission_response,
             acp::acp_ask_user_response,

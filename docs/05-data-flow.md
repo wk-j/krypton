@@ -368,6 +368,30 @@ d. The loop stops once the grip, the mouse and the button fades settle
       synchronous peer-mail drain wins). sendUserPrompt is the shared dispatch
       core (immediate + drain) and never clears the live draft. A drained
       mention whose target vanished re-arms the drain so the queue can't stall.
+   b. Mid-turn steering (Spec 278): when the busy lane's adapter advertised
+      `_meta.steering.supported` at initialize (claude-agent-acp, codex-acp),
+      plain Enter steers instead of queueing; Cmd+Enter still queues. The
+      steer controller seals the streaming row, appends a `steer…` user row,
+      and sends only the user's image/text blocks through acp_steer
+      (`_session/steering`, idleBehavior `promptRequired`).
+      - injected → the row reads `steer`; the agent answers inside the turn.
+      - promptRequired / failed / JSON-RPC error → the row is removed and the
+        text goes to the HEAD of queuedPrompts (after a cancel: a
+        `steer not delivered` line instead).
+      - startedNewTurn (Codex: the turn ended first) → a turn no
+        session/prompt resolves. After a cancel it is cancelled at once.
+      Ordering: invoke results reach the frontend in no fixed order relative
+      to events, so acp_prompt / acp_steer mark their request ids and the Rust
+      reader emits a `turn_marker` event for those replies in stdout order with
+      codex-acp's session_info_update `_meta.codex.threadStatus` (`turn_state`
+      events). After the prompt marker, the controller counts startedNewTurn
+      markers and active → idle pairs; the steer-started turns are over when
+      the pairs catch up.
+      Missed steers re-queue in typing order. The `stop` event goes to
+      steerCtl.onStop: while a steer is in flight or a steer-started turn
+      runs, the stop is held and finishTurn runs whole only after both end,
+      so turn-end cleanup never hits the newer turn and no peer-mail or queue
+      drain can send a colliding session/prompt.
 8. MCP-capable agents call handoff_set, handoff_get, and handoff_list against
    /mcp/harness/<harnessId>/lane/<laneLabel>.
    a. handoff_set overwrites the caller's own document in RAM.

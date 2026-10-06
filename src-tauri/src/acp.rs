@@ -223,6 +223,9 @@ pub struct AgentInitInfo {
     pub agent_protocol_version: i64,
     pub auth_methods: Vec<Value>,
     pub agent_capabilities: Value,
+    /// spec 278: the agent advertised the `_session/steering` extension in the
+    /// top-level initialize `_meta` (a sibling of `agentCapabilities`).
+    pub steering_supported: bool,
 }
 
 /// One agent-advertised model entry, mapped from the ACP `session/new`
@@ -349,6 +352,9 @@ struct AcpClient {
     display_name: String,
     transport: Mutex<Option<AcpTransport>>,
     pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
+    /// spec 278: requests whose response the reader also announces on the
+    /// event stream as a `turn_marker`, in stdout order with session updates.
+    turn_markers: Mutex<HashMap<u64, &'static str>>,
     perm_pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
     /// `_x.ai/ask_user_question` parked while the human answers the card.
     ask_pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
@@ -394,6 +400,7 @@ impl AcpClient {
             display_name,
             transport: Mutex::new(None),
             pending: Mutex::new(HashMap::new()),
+            turn_markers: Mutex::new(HashMap::new()),
             perm_pending: Mutex::new(HashMap::new()),
             ask_pending: Mutex::new(HashMap::new()),
             fs_write_pending: Mutex::new(HashMap::new()),
@@ -417,7 +424,30 @@ impl AcpClient {
 
     /// Send a JSON-RPC request (with id) and await the response.
     async fn request(&self, method: &str, params: Value) -> Result<Value, String> {
+        self.request_with_id(self.next_request_id(), method, params)
+            .await
+    }
+
+    /// spec 278: like `request`, but the reader also emits a `turn_marker`
+    /// event when the response arrives — ordered with the session updates
+    /// around it, which an invoke result is not. Returns the request id too.
+    async fn request_marked(
+        &self,
+        method: &str,
+        params: Value,
+        kind: &'static str,
+    ) -> Result<(u64, Value), String> {
         let id = self.next_request_id();
+        self.turn_markers.lock().await.insert(id, kind);
+        let result = self.request_with_id(id, method, params).await;
+        if result.is_err() {
+            // Never written or never answered: no marker will consume it.
+            self.turn_markers.lock().await.remove(&id);
+        }
+        result.map(|value| (id, value))
+    }
+
+    async fn request_with_id(&self, id: u64, method: &str, params: Value) -> Result<Value, String> {
         let (tx, rx) = oneshot::channel();
         {
             let mut pending = self.pending.lock().await;
@@ -607,6 +637,10 @@ async fn dispatch_message(client: &Arc<AcpClient>, app: &AppHandle, value: Value
     if has_id {
         // Response to one of our requests.
         let id = value.get("id").and_then(|v| v.as_u64()).unwrap_or(u64::MAX);
+        let marker = client.turn_markers.lock().await.remove(&id);
+        if let Some(kind) = marker {
+            client.emit_event(app, turn_marker_event(kind, id, &value));
+        }
         let mut pending = client.pending.lock().await;
         if let Some(tx) = pending.remove(&id) {
             let _ = tx.send(value);
@@ -1761,6 +1795,8 @@ pub async fn acp_initialize(
         .cloned()
         .unwrap_or(Value::Null);
 
+    let steering_supported = steering_supported(&init);
+
     if let Ok(mut g) = client.agent_capabilities.write() {
         *g = Some(capabilities.clone());
     }
@@ -1769,7 +1805,38 @@ pub async fn acp_initialize(
         agent_protocol_version: proto,
         auth_methods,
         agent_capabilities: capabilities,
+        steering_supported,
     })
+}
+
+/// spec 278: the `turn_marker` event for a marked response. `outcome` is the
+/// steering result's outcome (null for a prompt or an error response).
+fn turn_marker_event(kind: &str, id: u64, response: &Value) -> Value {
+    let outcome = response
+        .get("result")
+        .and_then(|r| r.get("outcome"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    json!({ "type": "turn_marker", "kind": kind, "requestId": id, "outcome": outcome })
+}
+
+/// Copy the JSON-RPC id into an object result so the frontend can match it
+/// with its `turn_marker`.
+fn with_request_id(mut result: Value, id: u64) -> Value {
+    if let Some(obj) = result.as_object_mut() {
+        obj.insert("_kryptonRequestId".to_string(), json!(id));
+    }
+    result
+}
+
+/// spec 278: `_meta.steering.supported` on the initialize response — the
+/// vendor steering extension claude-agent-acp and codex-acp both advertise.
+fn steering_supported(init: &Value) -> bool {
+    init.get("_meta")
+        .and_then(|m| m.get("steering"))
+        .and_then(|s| s.get("supported"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
 }
 
 /// Replace the `mcpServers` list that `acp_session_new` will forward to the
@@ -2140,13 +2207,49 @@ pub async fn acp_prompt(
         .ok()
         .and_then(|g| g.clone())
         .ok_or_else(|| "session not initialized".to_string())?;
-    let result = client
-        .request(
+    // spec 278: marked, so the reply's place among the session updates is known.
+    let (id, result) = client
+        .request_marked(
             "session/prompt",
             json!({ "sessionId": acp_session_id, "prompt": blocks }),
+            "prompt",
         )
         .await?;
-    Ok(result)
+    Ok(with_request_id(result, id))
+}
+
+/// spec 278: inject a user message into the running turn through the
+/// `_session/steering` extension. Returns the raw `{ outcome }` result plus
+/// `_kryptonRequestId`, which its ordered `turn_marker` carries too. The
+/// `promptRequired` idle behavior keeps claude-agent-acp from starting a turn
+/// the harness never sees; adapters that don't know it ignore the `_meta`.
+#[tauri::command]
+pub async fn acp_steer(
+    session: u64,
+    blocks: Value,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<Value, String> {
+    let client = registry
+        .get(session)
+        .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+    let acp_session_id = client
+        .acp_session_id
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .ok_or_else(|| "session not initialized".to_string())?;
+    let (id, result) = client
+        .request_marked(
+            "_session/steering",
+            json!({
+                "sessionId": acp_session_id,
+                "prompt": blocks,
+                "_meta": { "steering": { "idleBehavior": "promptRequired" } },
+            }),
+            "steer",
+        )
+        .await?;
+    Ok(with_request_id(result, id))
 }
 
 #[tauri::command]
@@ -2860,9 +2963,9 @@ mod tests {
         advertise_read_text_file, binary_read_error, disconnect_detail, effective_spawn_model,
         fs_path_in_scope, grok_ask_user_ext_response, grok_ask_user_skip, grok_session_dir_for_cwd,
         is_under_grok_session_dir, percent_encode_path, resolve_backend, sniff_binary_kind,
-        startup_hint, FsAccess,
+        startup_hint, steering_supported, turn_marker_event, with_request_id, FsAccess,
     };
-    use serde_json::json;
+    use serde_json::{json, Value};
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -3496,5 +3599,51 @@ mod tests {
                     .to_string_lossy()
                     .ends_with("Cline-1\\cline_mcp_settings.json")
         );
+    }
+
+    #[test]
+    fn turn_marker_event_carries_the_steering_outcome() {
+        let steer = turn_marker_event(
+            "steer",
+            7,
+            &json!({ "id": 7, "result": { "outcome": "startedNewTurn" } }),
+        );
+        assert_eq!(
+            steer,
+            json!({ "type": "turn_marker", "kind": "steer", "requestId": 7, "outcome": "startedNewTurn" })
+        );
+        let failed =
+            turn_marker_event("steer", 8, &json!({ "id": 8, "error": { "code": -32601 } }));
+        assert_eq!(failed["outcome"], Value::Null);
+        let prompt = turn_marker_event(
+            "prompt",
+            9,
+            &json!({ "id": 9, "result": { "stopReason": "end_turn" } }),
+        );
+        assert_eq!(prompt["kind"], "prompt");
+        assert_eq!(prompt["outcome"], Value::Null);
+    }
+
+    #[test]
+    fn with_request_id_tags_object_results_only() {
+        assert_eq!(
+            with_request_id(json!({ "stopReason": "end_turn" }), 3),
+            json!({ "stopReason": "end_turn", "_kryptonRequestId": 3 })
+        );
+        assert_eq!(with_request_id(Value::Null, 3), Value::Null);
+    }
+
+    #[test]
+    fn steering_supported_reads_top_level_meta_only() {
+        assert!(steering_supported(&json!({
+            "agentCapabilities": {},
+            "_meta": { "steering": { "supported": true } },
+        })));
+        // Inside agentCapabilities is not the extension contract.
+        assert!(!steering_supported(&json!({
+            "agentCapabilities": { "_meta": { "steering": { "supported": true } } },
+        })));
+        assert!(!steering_supported(&json!({ "_meta": { "steering": {} } })));
+        assert!(!steering_supported(&json!({})));
     }
 }

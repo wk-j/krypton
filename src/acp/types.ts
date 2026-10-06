@@ -96,13 +96,20 @@ export interface AgentInfo {
   /** spec 127: agent-advertised models + confirmed current id (from session/new). */
   available_models?: ModelInfo[];
   current_model_id?: string | null;
+  /** spec 278: the agent advertised the `_session/steering` extension. */
+  steering_supported?: boolean;
 }
 
 export interface AgentInitInfo {
   agent_protocol_version: number;
   auth_methods: unknown[];
   agent_capabilities: AgentInfo['agent_capabilities'];
+  /** spec 278: see AgentInfo.steering_supported. */
+  steering_supported?: boolean;
 }
+
+/** spec 278: `_session/steering` result. Unknown outcomes map to 'failed'. */
+export type SteerOutcome = 'injected' | 'startedNewTurn' | 'promptRequired' | 'failed';
 
 export interface AgentSessionInfo {
   session_id: string;
@@ -886,4 +893,11 @@ export type AcpEvent =
   | { type: 'fs_write_pending'; requestId: number; path: string; oldText: string; newText: string }
   | { type: 'provider_error'; payload: ProviderErrorPayload }
   | { type: 'stop'; stopReason: StopReason; reason?: string }
+  /** spec 278: agent thread state, from codex-acp's `session_info_update`
+   *  `_meta.codex.threadStatus` — the only end signal of a turn a steer started. */
+  | { type: 'turn_state'; state: 'active' | 'idle' }
+  /** spec 278: a `session/prompt` or `_session/steering` reply, announced by the
+   *  Rust reader in stdout order with the session updates around it (the
+   *  invoke result is not). `outcome` is the steering outcome, else null. */
+  | { type: 'turn_marker'; kind: 'prompt' | 'steer'; requestId: number; outcome: SteerOutcome | null }
   | { type: 'error'; message: string };

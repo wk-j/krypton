@@ -8,9 +8,9 @@
 import type { CoordinatorDrainContext, MentionFanOutResult, MentionFanOutTarget } from './inter-lane';
 import type { JournalKind } from './journal';
 import type { GithubTicketReference } from './harness-view-types';
-import type { HarnessLane, HarnessTranscriptItem } from './harness-view-types';
+import type { HarnessLane, HarnessTranscriptItem, StagedImage } from './harness-view-types';
 import type { ReviewSubject } from './review';
-import type { LaneBusEvent, ReviewFinding } from './types';
+import type { ContentBlock, LaneBusEvent, ReviewFinding, StopReason } from './types';
 
 /** Capabilities every harness controller may rely on. */
 export interface HarnessViewHost {
@@ -105,4 +105,22 @@ export interface HarnessTicketHost extends HarnessViewHost {
     verb: 'analyze-github-issue' | 'fix-github-issue' | 'tag-github-issue' | 'post-github-comment' | 'handle-github-issue',
     args: string[],
   ): Promise<void>;
+}
+
+/** Spec 278 mid-turn steering controller host. */
+export interface HarnessSteerHost extends HarnessViewHost {
+  render(): void;
+  sealStreaming(lane: HarnessLane): void;
+  appendTranscript(
+    lane: HarnessLane,
+    kind: HarnessTranscriptItem['kind'],
+    text: string,
+    metadata?: Pick<HarnessTranscriptItem, 'imageCount' | 'steer'>,
+  ): HarnessTranscriptItem;
+  removeTranscriptItem(lane: HarnessLane, itemId: string): void;
+  /** The user's own blocks (images, then text) — no lane-context packet. */
+  steerBlocks(text: string, images: StagedImage[]): ContentBlock[];
+  /** The turn-end path, once no steer work is outstanding. */
+  finishTurn(lane: HarnessLane, stopReason: StopReason, reason?: string): void;
+  drainPromptQueue(lane: HarnessLane): void;
 }

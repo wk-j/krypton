@@ -101,6 +101,9 @@ export interface HarnessTranscriptItem {
   pretextLines?: string[];
   imageCount?: number;
   telegramProvenance?: TelegramControlCaller;
+  /** spec 278: a user row sent into a running turn — 'pending' until the
+   *  adapter takes it. A steer that misses is removed and re-queued. */
+  steer?: 'pending' | 'injected';
   status?: string;
   diff?: { title: string; unified: string };
   tool?: ToolPayload;
@@ -538,6 +541,9 @@ export interface HarnessLane {
   pendingShellId: string | null;
   stagedImages: StagedImage[];
   supportsImages: boolean;
+  /** spec 278: the adapter advertised `_session/steering`; Enter on a busy lane
+   *  steers instead of queueing. Cleared if a steer gets "method not found". */
+  supportsSteering: boolean;
   activeTurnStartedAt: number | null;
   /** Human label for a custom-command-driven turn (e.g. 'reviewing', 'ingesting
    *  wiki') so the busy chip reads as that operation, not a generic 'running'.
@@ -788,6 +794,10 @@ export interface IssueStatusSnapshot {
 }
 
 /** spec 136: one user prompt captured while the lane was busy, awaiting drain. */
+/** spec 278: what a busy lane does with a submitted prompt — 'steer' sends it
+ *  into the running turn when the adapter supports that; 'queue' always queues. */
+export type PromptDelivery = 'steer' | 'queue';
+
 export interface QueuedPrompt {
   /** Trimmed prompt text as submitted. */
   text: string;

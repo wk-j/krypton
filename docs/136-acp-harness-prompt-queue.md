@@ -3,6 +3,7 @@
 > Status: Implemented (after Codex-1 ×2 + Grok-1 + Claude-2 adversarial reviews, 2026-05-31)
 > Date: 2026-05-31
 > Milestone: M-ACP — Harness convergence
+> Amended by spec 278: on a lane whose adapter supports `_session/steering`, plain `Enter` on a busy lane steers the running turn; `Cmd+Enter` queues. A missed steer re-enters this queue at the head.
 
 ## Problem
 

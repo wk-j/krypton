@@ -288,6 +288,12 @@ export function renderTranscriptItem(
   const label = document.createElement('div');
   label.className = 'acp-harness__msg-label';
   label.textContent = transcriptLabel(item.kind);
+  if (item.kind === 'user' && item.steer) {
+    // spec 278: a message sent into the running turn — `steer…` until taken.
+    label.textContent = item.steer === 'pending' ? 'steer…' : 'steer';
+    label.classList.add('acp-harness__msg-label--steer');
+    if (item.steer === 'pending') label.classList.add('acp-harness__msg-label--steer-pending');
+  }
   if (item.kind === 'thought') {
     label.classList.add('acp-harness__msg-label--thought');
     // No meter while the row is veiled (zero text) — a "brief" reading on
@@ -549,6 +555,7 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
     item.kind === 'tool' ? toolStatusSignature(item.status ?? '') : (item.status ?? ''),
     item.text,
     item.imageCount ?? '',
+    item.steer ?? '',
     streaming ? '1' : '0',
     tool,
     permission,

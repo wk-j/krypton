@@ -3923,6 +3923,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
       lanes: [lane],
       coordinator: { pendingPeersFor: () => [] },
       reviewLoopCtl: { onLaneCancelled: () => {} },
+      steerCtl: { onCancel: () => {} },
       appendTranscript: (_l: EscLane, _kind: string, text: string) => rows.push(text),
       render: () => {},
       armCancelEscalation: arm,
@@ -3947,6 +3948,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
     const host = {
       coordinator: { pendingPeersFor: () => [] },
       reviewLoopCtl: { onLaneCancelled: () => {} },
+      steerCtl: { onCancel: () => {} },
       appendTranscript: () => {},
       render: () => {},
       forceRestartLane: async (l: EscLane) => { forcedWith.push(l); },
@@ -4011,5 +4013,95 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
     await forceRestartLane.call(host, makeLane({ client: null }));
 
     expect(spawns).toEqual([]);
+  });
+});
+
+describe('mid-turn steering routing (spec 278)', () => {
+  type RouteLane = {
+    id: string;
+    status: string;
+    client: object | null;
+    queuedPrompts: Array<{ text: string }>;
+  };
+  type RouteHost = {
+    submitLanePrompt(
+      lane: RouteLane,
+      text: string,
+      images: unknown[],
+      clearComposer?: () => void,
+      delivery?: 'steer' | 'queue',
+    ): Promise<void>;
+  };
+  const submitLanePrompt = (AcpHarnessView.prototype as unknown as RouteHost).submitLanePrompt;
+
+  const routeHost = (canSteer: boolean, mentions: string[] = []) => {
+    const steered: string[] = [];
+    const host = {
+      steerCtl: {
+        canSteer: () => canSteer,
+        steer: async (_l: RouteLane, text: string) => { steered.push(text); },
+      },
+      resolveMentionTargets: () => mentions,
+      flashChip: () => {},
+      render: () => {},
+    };
+    return { host, steered };
+  };
+  const busyLane = (): RouteLane => ({ id: 'l', status: 'busy', client: {}, queuedPrompts: [] });
+
+  it('steers a busy lane on Enter when the adapter supports it', async () => {
+    const lane = busyLane();
+    const { host, steered } = routeHost(true);
+    let cleared = 0;
+    await submitLanePrompt.call(host, lane, 'middleware first', [], () => { cleared++; }, 'steer');
+    expect(steered).toEqual(['middleware first']);
+    expect(lane.queuedPrompts).toEqual([]);
+    expect(cleared).toBe(1);
+  });
+
+  it('queues on Cmd+Enter, without steering support, and for an @mention', async () => {
+    for (const [delivery, canSteer, mentions] of [
+      ['queue', true, []],
+      ['steer', false, []],
+      ['steer', true, ['Codex-1']],
+    ] as const) {
+      const lane = busyLane();
+      const { host, steered } = routeHost(canSteer, [...mentions]);
+      await submitLanePrompt.call(host, lane, 'next', [], undefined, delivery);
+      expect(steered).toEqual([]);
+      expect(lane.queuedPrompts.map((q) => q.text)).toEqual(['next']);
+    }
+  });
+});
+
+describe('turn end routes through the steer controller (spec 278)', () => {
+  type EventHost = { onLaneEvent(lane: object, event: object): void };
+  const onLaneEvent = (AcpHarnessView.prototype as unknown as EventHost).onLaneEvent;
+
+  it('hands the prompt stop, turn markers and Codex thread state to the steer controller', () => {
+    const calls: unknown[][] = [];
+    let finished = 0;
+    const host = {
+      publishStream: () => {},
+      refreshMemory: async () => {},
+      scheduleLaneRender: () => {},
+      finishTurn: () => { finished++; },
+      steerCtl: {
+        onStop: (...args: unknown[]) => calls.push(['stop', ...args.slice(1)]),
+        onTurnState: (...args: unknown[]) => calls.push(['turn_state', ...args.slice(1)]),
+        onTurnMarker: (...args: unknown[]) => calls.push(['turn_marker', ...args.slice(1)]),
+      },
+    };
+    const lane = { id: 'l' };
+    onLaneEvent.call(host, lane, { type: 'turn_state', state: 'idle' });
+    onLaneEvent.call(host, lane, { type: 'turn_marker', kind: 'steer', requestId: 4, outcome: 'startedNewTurn' });
+    onLaneEvent.call(host, lane, { type: 'stop', stopReason: 'end_turn' });
+    expect(calls).toEqual([
+      ['turn_state', 'idle'],
+      ['turn_marker', 'steer', 4, 'startedNewTurn'],
+      ['stop', 'end_turn', undefined],
+    ]);
+    // finishTurn is the controller's call, never the event's.
+    expect(finished).toBe(0);
   });
 });

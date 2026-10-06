@@ -441,6 +441,7 @@ Composer text mode:
 - `Shift+Enter` inserts a newline.
 - Composer auto-grows up to 6 lines, then scrolls internally.
 - If the active lane is busy or in `needs_permission`, `Enter` **enqueues** the prompt (FIFO `queuedPrompts`, cap 10) and flashes `queued (N)`; it drains one item per idle transition (spec 136). Managed via `#unqueue [N]` / `#queue clear` / `#queue edit N`.
+- **Steering (spec 278):** when the busy lane's adapter advertises `_session/steering` (claude-agent-acp, codex-acp), `Enter` sends the prompt **into the running turn** instead (row label `steer…` → `steer`, chip `steered`). `Cmd+Enter` always queues. A steer that misses (turn already over, unsteerable turn, adapter error) moves to the head of the queue. `@mention` prompts and the orchestrator console always queue. See `docs/278-acp-harness-steering.md`.
 - While the active lane is busy, the composer chip updates every second with elapsed runtime. The timer clears when the turn stops, errors, or the lane is restarted.
 - **Activity ticker (spec 156 / 231)**: the live action is no longer a composer segment, and the spec 231 rail action HUD is gone. `lane.activity` is still written as a field on the hot path. A busy peeked lane paints a flat `tool` row on the 109 card (and drops the activity event row that would restate it). The composer busy chip keeps verb / elapsed / queued only. See `docs/156-lane-activity-ticker.md` and `docs/231-lane-peek-action-hud.md`.
 - **Idle flash**: when the active lane transitions `busy → idle` and the composer holds a non-empty draft **and the prompt queue is empty**, the chip flashes `lane idle — Enter to send` for 2 seconds, then returns to the memory chip. The prompt is **not** auto-dispatched; the user must press Enter. (When the queue is non-empty the flash is suppressed — a queued prompt is about to drain the lane back to busy.) An optional sound cue (single soft tick from the existing sound engine) plays in parallel; this can be disabled in config.
@@ -541,7 +542,8 @@ The default focus is the composer. Almost every key acts on the composer or on o
 |-----|---------|--------|
 | `Leader Y` | Compositor mode | Open ACP Harness. |
 | `Tab` / `Shift+Tab` | Composer text mode | Cycle to next/previous lane tab. |
-| `Enter` | Composer text mode | Send prompt to active tab's lane. |
+| `Enter` | Composer text mode | Send prompt to active tab's lane. Busy lane: steer the running turn if the adapter supports `_session/steering`, else queue (spec 278). |
+| `Cmd+Enter` | Composer text mode, busy lane | Queue as a follow-up for the next turn (spec 136/278). |
 | `Shift+Enter` | Composer text mode | Insert newline. |
 | `Cmd+D` / click `MIC` | Composer text mode, speech recognition available | Start English dictation; repeat to stop and keep editable text. |
 | `Cmd+Shift+D` | Composer text mode, speech recognition available | Start Thai dictation; repeat to stop and keep editable text. |

@@ -3004,6 +3004,17 @@
   color: var(--agent-user, #6dd0ff);
 }
 
+/* spec 278 — a user message steered into the running turn. Text only: no
+   border, no rail. Dimmed until the adapter takes it. */
+.acp-harness__msg--user .acp-harness__msg-label--steer {
+  color: var(--agent-user, #6dd0ff);
+  letter-spacing: 0.12em;
+}
+
+.acp-harness__msg--user .acp-harness__msg-label--steer-pending {
+  opacity: 0.55;
+}
+
 .acp-harness__msg--assistant .acp-harness__msg-label {
   color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
 }

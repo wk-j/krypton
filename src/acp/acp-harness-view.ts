@@ -12,6 +12,7 @@ import { HarnessDictationController } from './harness-dictation-controller';
 import { HarnessTimelineController } from './harness-timeline-controller';
 import { HarnessTicketController } from './harness-ticket-controller';
 import { HarnessReviewLoopController } from './harness-review-loop-controller';
+import { HarnessSteerController } from './harness-steer-controller';
 import {
   controlError,
   githubIssueRefRequiredMessage,
@@ -32,6 +33,7 @@ export {
 import type {
   HarnessDictationHost,
   HarnessReviewLoopHost,
+  HarnessSteerHost,
   HarnessTicketHost,
   HarnessTimelineHost,
   ReviewSubjectResult,
@@ -282,6 +284,7 @@ import type {
   PendingModelSwitch,
   PermissionDecision,
   PermissionPayload,
+  PromptDelivery,
   SessionPickerState,
   StagedImage,
   TranscriptScrollAnchor,
@@ -809,6 +812,7 @@ const LANE_DEFAULTS = {
   savedScrollAnchor: null,
   pendingShellId: null,
   supportsImages: false,
+  supportsSteering: false,
   activeTurnStartedAt: null,
   activeSystemLabel: null,
   activity: null,
@@ -1152,6 +1156,7 @@ export class AcpHarnessView implements ContentView {
   private chip: string | null = null;
   private chipTimer: number | null = null;
   private readonly dictationCtl = new HarnessDictationController(this.dictationHost());
+  private readonly steerCtl = new HarnessSteerController(this.steerHost());
   private readonly dictationFocusOutHandler = (event: FocusEvent): void => {
     const next = event.relatedTarget;
     if (next instanceof Node && this.element.contains(next)) return;
@@ -2195,6 +2200,7 @@ export class AcpHarnessView implements ContentView {
       await promptClient.prompt([{ type: 'text', text }]);
     } catch (e) {
       if (lane.spawnEpoch !== promptEpoch || lane.client !== promptClient) return;
+      this.steerCtl.onPromptFailed(lane); // spec 278
       this.setLaneStatus(lane, 'error');
       lane.error = String(e);
       // spec 143: the turn never started — clear the arm so it cannot leak into a
@@ -4217,7 +4223,10 @@ export class AcpHarnessView implements ContentView {
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      void this.submitActiveLane().catch((error: unknown) => this.handleSubmitError(error));
+      // spec 278: on a busy lane, Enter steers the running turn (when the
+      // adapter supports it) and Cmd+Enter queues a follow-up (spec 136).
+      const delivery: PromptDelivery = e.metaKey ? 'queue' : 'steer';
+      void this.submitActiveLane(delivery).catch((error: unknown) => this.handleSubmitError(error));
       return true;
     }
 
@@ -7769,6 +7778,7 @@ export class AcpHarnessView implements ContentView {
     lane.currentModelId = (info as AgentInfo).current_model_id ?? null;
     lane.supportsEmbeddedContext = !!info.agent_capabilities?.promptCapabilities?.embeddedContext;
     lane.supportsImages = !!info.agent_capabilities?.promptCapabilities?.image;
+    lane.supportsSteering = info.steering_supported === true;
     lane.modesById = new Map();
     const availableModes = (info.agent_capabilities as { availableModes?: unknown } | null)?.availableModes;
     if (Array.isArray(availableModes)) {
@@ -7929,8 +7939,20 @@ export class AcpHarnessView implements ContentView {
         this.sealStreaming(lane);
         this.appendProviderError(lane, event.payload);
         break;
+      case 'turn_state':
+        // spec 278: follows a turn a steer started; finishTurn patches chrome.
+        this.steerCtl.onTurnState(lane, event.state);
+        needsRender = false;
+        break;
+      case 'turn_marker':
+        // spec 278: a prompt/steer reply's place in the stream.
+        this.steerCtl.onTurnMarker(lane, event.kind, event.requestId, event.outcome);
+        needsRender = false;
+        break;
       case 'stop':
-        this.finishTurn(lane, event.stopReason, event.reason);
+        // spec 278: finishTurn runs once no steer is in flight and no turn a
+        // steer started is still running.
+        this.steerCtl.onStop(lane, event.stopReason, event.reason);
         void this.refreshMemory();
         // Chrome+composer patch inside finishTurn; transcript seal is body-only.
         // A full renderActiveLane here remounted peek/thought/HUD/plan/pin/queue
@@ -7947,6 +7969,7 @@ export class AcpHarnessView implements ContentView {
         // spec 214: an errored turn still spent whatever the adapter had
         // already billed. Recorded before activeTurnStartedAt is cleared.
         this.recordTurnUsage(lane, 'error');
+        this.steerCtl.onPromptFailed(lane); // spec 278
         this.setLaneStatus(lane, 'error');
         lane.error = event.message;
         lane.activeTurnStartedAt = null;
@@ -7976,7 +7999,7 @@ export class AcpHarnessView implements ContentView {
     lane.activity = { kind: 'tool', label: merged.title ?? merged.kind ?? 'tool' };
   }
 
-  private async submitActiveLane(): Promise<void> {
+  private async submitActiveLane(delivery: PromptDelivery = 'queue'): Promise<void> {
     const lane = this.activeLane();
     if (!lane) return;
     const text = lane.draft.trim();
@@ -7995,7 +8018,7 @@ export class AcpHarnessView implements ContentView {
     await this.submitLanePrompt(lane, text, images, () => {
       this.setDraft(lane, '', 0);
       lane.stagedImages = [];
-    });
+    }, delivery);
   }
 
   /**
@@ -8005,12 +8028,16 @@ export class AcpHarnessView implements ContentView {
    * busy-queue, and the mention-aware send identically for both. `clearComposer`
    * (optional) lets a composer caller clear its draft/staged images at the right
    * moment; the console passes nothing (it has no composer draft).
+   * `delivery` (spec 278) says what a busy lane does with the prompt: 'steer'
+   * sends it into the running turn when the adapter supports that, 'queue'
+   * (the console, Cmd+Enter) always queues it.
    */
   private async submitLanePrompt(
     lane: HarnessLane,
     text: string,
     images: StagedImage[],
     clearComposer?: () => void,
+    delivery: PromptDelivery = 'queue',
   ): Promise<void> {
     if (text.startsWith('#')) {
       await this.runHashCommand(lane, text);
@@ -8046,6 +8073,17 @@ export class AcpHarnessView implements ContentView {
       }
     }
     if (lane.status === 'busy' || lane.status === 'needs_permission') {
+      // spec 278: steer into the running turn. An @mention routes to other
+      // lanes rather than redirecting this one, so it still queues.
+      if (
+        delivery === 'steer'
+        && this.steerCtl.canSteer(lane)
+        && this.resolveMentionTargets(text, lane).length === 0
+      ) {
+        clearComposer?.();
+        await this.steerCtl.steer(lane, text, images);
+        return;
+      }
       // spec 136: queue the prompt instead of discarding it — it drains on the
       // next idle transition. Capture text + a frozen image snapshot + resolved
       // mention targets, then clear the composer so the user can type the next.
@@ -8130,6 +8168,7 @@ export class AcpHarnessView implements ContentView {
       if (lane.spawnEpoch !== promptEpoch || lane.client !== promptClient) {
         return { handled: true, delivered: true };
       }
+      this.steerCtl.onPromptFailed(lane); // spec 278
       const message = String(e);
       this.sealStreaming(lane);
       // Reset this turn's pointers first, matching finishTurn — an errored (or
@@ -8217,7 +8256,9 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
-  private buildPromptBlocks(lane: HarnessLane, userText: string, images: StagedImage[] = []): ContentBlock[] {
+  /** The user's own blocks — images, then text. spec 278: a steer sends only
+   *  these; the lane-context packet and directive are already in the turn. */
+  private buildUserBlocks(userText: string, images: StagedImage[]): ContentBlock[] {
     const imageBlocks: ContentBlock[] = images.map((img) => ({
       type: 'image',
       data: img.data,
@@ -8226,7 +8267,11 @@ export class AcpHarnessView implements ContentView {
     }));
     const userBlocks: ContentBlock[] = [];
     if (userText) userBlocks.push({ type: 'text', text: userText });
-    const tail = [...imageBlocks, ...userBlocks];
+    return [...imageBlocks, ...userBlocks];
+  }
+
+  private buildPromptBlocks(lane: HarnessLane, userText: string, images: StagedImage[] = []): ContentBlock[] {
+    const tail = this.buildUserBlocks(userText, images);
     // spec 124: the directive block rides inside the SAME leading packet as the
     // lane-context stub so adapters that only honor the first resource/text
     // block still see both. Never emit the directive as a second block.
@@ -10093,6 +10138,7 @@ export class AcpHarnessView implements ContentView {
     clearToolTranscriptRetention(lane);
     const index = this.lanes.findIndex((l) => l.id === lane.id);
     if (index !== -1) this.lanes.splice(index, 1);
+    this.steerCtl.resetLane(lane.id); // spec 278
     this.updateToolTick();
     await this.ticketCtl.clearTicketWorkerForLane(lane.id);
     this.notifyUsageProvidersChanged();
@@ -10147,6 +10193,8 @@ export class AcpHarnessView implements ContentView {
     // spec 136: #cancel / Ctrl+C is the explicit "stop" gesture — drop the prompt
     // queue here, before any early return, so it can't be left half-cleared.
     lane.queuedPrompts = [];
+    // spec 278: a steer already in flight is not re-queued if it misses.
+    this.steerCtl.onCancel(lane);
     // spec 116: busy cancel stops the ACP turn only — keep outstanding peer waits.
     // Decided before the loop hook, which can settle an awaiting_peer lane to idle.
     const peerWaitOnly =
@@ -10282,6 +10330,7 @@ export class AcpHarnessView implements ContentView {
     lane.plan = null;
     lane.planCollapsed = false;
     lane.queuedPrompts = []; // spec 136: fresh session — queued prompts were for the old context
+    this.steerCtl.resetLane(lane.id); // spec 278
     this.clearPollyBuiltinRole(lane);
     this.clearDebbyBuiltinRole(lane);
     this.clearSaltyBuiltinRole(lane);
@@ -10342,6 +10391,7 @@ export class AcpHarnessView implements ContentView {
     lane.pendingTurnExtractions = [];
     lane.stagedImages = [];
     lane.queuedPrompts = []; // spec 136: fresh session — drop queued prompts
+    this.steerCtl.resetLane(lane.id); // spec 278
     clearToolTranscriptRetention(lane);
     this.updateToolTick();
     lane.transcript.push({ id: makeId(), kind: 'system', text: `starting fresh ${lane.displayName}...` });
@@ -10352,6 +10402,7 @@ export class AcpHarnessView implements ContentView {
     lane.modelApplyFailed = false;
     lane.supportsEmbeddedContext = false;
     lane.supportsImages = false;
+    lane.supportsSteering = false;
     lane.error = null;
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
@@ -12886,7 +12937,8 @@ export class AcpHarnessView implements ContentView {
             <dt>Esc, then r</dt><dd>Refresh Git branch and file-reference line counts</dd>
             <dt>Esc, then ?</dt><dd>Open help</dd>
             <dt>Tab buttons</dt><dd>Click a lane directly</dd>
-            <dt>Enter</dt><dd>Send prompt to active lane only</dd>
+            <dt>Enter</dt><dd>Send prompt to active lane only (busy lane: steer the running turn when the agent supports it, else queue)</dd>
+            <dt>Cmd+Enter</dt><dd>Busy lane: queue as a follow-up for the next turn</dd>
             <dt>Shift+Enter</dt><dd>Insert newline</dd>
             <dt>Ctrl+C</dt><dd>Cancel active busy lane</dd>
             <dt>Ctrl+Shift+J / Ctrl+Shift+K</dt><dd>Scroll transcript down / up (works in composer)</dd>
@@ -12990,12 +13042,20 @@ export class AcpHarnessView implements ContentView {
     lane: HarnessLane,
     kind: HarnessTranscriptItem['kind'],
     text: string,
-    metadata: Pick<HarnessTranscriptItem, 'imageCount' | 'telegramProvenance'> = {},
+    metadata: Pick<HarnessTranscriptItem, 'imageCount' | 'telegramProvenance' | 'steer'> = {},
   ): HarnessTranscriptItem {
     const item: HarnessTranscriptItem = { id: makeId(), kind, text, createdAt: Date.now(), ...metadata };
     const dropped = appendBoundedTranscriptItem(lane, item);
     if (SPEC114_DEV && dropped?.kind === 'tool') assertActiveToolCount(lane);
     return item;
+  }
+
+  /** spec 278: drop a transcript row (a steer that missed and was re-queued). */
+  private removeTranscriptItem(lane: HarnessLane, itemId: string): void {
+    const idx = lane.transcript.findIndex((entry) => entry.id === itemId);
+    if (idx === -1) return;
+    lane.transcript.splice(idx, 1);
+    if (lane.currentUserId === itemId) lane.currentUserId = null;
   }
 
   private appendFsActivity(
@@ -15001,6 +15061,24 @@ export class AcpHarnessView implements ContentView {
           },
         );
       },
+    };
+  }
+
+  private steerHost(): HarnessSteerHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const view = this;
+    return {
+      get element() { return view.element; },
+      get lanes() { return view.lanes; },
+      get activeLaneId() { return view.activeLaneId; },
+      flashChip: (text) => view.flashChip(text),
+      render: () => view.render(),
+      sealStreaming: (lane) => view.sealStreaming(lane),
+      appendTranscript: (lane, kind, text, metadata) => view.appendTranscript(lane, kind, text, metadata),
+      removeTranscriptItem: (lane, itemId) => view.removeTranscriptItem(lane, itemId),
+      steerBlocks: (text, images) => view.buildUserBlocks(text, images),
+      finishTurn: (lane, stopReason, reason) => view.finishTurn(lane, stopReason, reason),
+      drainPromptQueue: (lane) => queueMicrotask(() => view.maybeDrainPromptQueue(lane)),
     };
   }
 

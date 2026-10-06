@@ -19,6 +19,7 @@ import type {
   PermissionOption,
   PlanEntry,
   ProviderErrorPayload,
+  SteerOutcome,
   StopReason,
   ToolCall,
   ToolCallUpdate,
@@ -26,7 +27,7 @@ import type {
 } from './types';
 
 interface RawAcpEvent {
-  type: 'session_update' | 'permission_request' | 'ask_user_question' | 'stop' | 'error' | 'fs_activity' | 'fs_write_pending' | 'provider_error';
+  type: 'session_update' | 'permission_request' | 'ask_user_question' | 'stop' | 'error' | 'fs_activity' | 'fs_write_pending' | 'provider_error' | 'turn_marker';
   // session_update:
   kind?: string;
   update?: {
@@ -58,6 +59,8 @@ interface RawAcpEvent {
   newText?: string;
   // provider_error:
   payload?: ProviderErrorPayload;
+  // turn_marker (spec 278; requestId above):
+  outcome?: unknown;
 }
 
 export class AcpClient {
@@ -130,6 +133,7 @@ export class AcpClient {
       // spec 127: carry the agent-advertised model list + current id through.
       available_models: sn.available_models ?? [],
       current_model_id: sn.current_model_id ?? null,
+      steering_supported: init.steering_supported ?? false,
     } as AgentInfo;
   }
 
@@ -204,6 +208,18 @@ export class AcpClient {
     // event stream so the view can clear `turnActive`.
     for (const cb of this.listeners.slice()) cb({ type: 'stop', stopReason });
     return stopReason;
+  }
+
+  /** spec 278: inject `blocks` into the running turn via `_session/steering`.
+   *  Rejects on a JSON-RPC error (e.g. method not found, unsteerable turn).
+   *  `requestId` matches the reply's ordered `turn_marker` event. */
+  async steer(blocks: ContentBlock[]): Promise<{ outcome: SteerOutcome; requestId: number | null }> {
+    const result = await invoke<{ outcome?: unknown; _kryptonRequestId?: unknown } | null>('acp_steer', {
+      session: this.session,
+      blocks,
+    });
+    const requestId = typeof result?._kryptonRequestId === 'number' ? result._kryptonRequestId : null;
+    return { outcome: steerOutcome(result?.outcome), requestId };
   }
 
   async cancel(): Promise<void> {
@@ -314,6 +330,12 @@ export class AcpClient {
             event = { type: 'mode_update', modeId };
             break;
           }
+          case 'session_info_update': {
+            // spec 278: only codex-acp's thread status is consumed (title etc. are not).
+            const state = codexThreadState(update._meta);
+            if (state) event = { type: 'turn_state', state };
+            break;
+          }
         }
         break;
       }
@@ -360,6 +382,16 @@ export class AcpClient {
         };
         break;
       }
+      case 'turn_marker':
+        if (typeof raw.requestId === 'number' && (raw.kind === 'prompt' || raw.kind === 'steer')) {
+          event = {
+            type: 'turn_marker',
+            kind: raw.kind,
+            requestId: raw.requestId,
+            outcome: raw.kind === 'steer' ? steerOutcome(raw.outcome) : null,
+          };
+        }
+        break;
       case 'stop':
         event = {
           type: 'stop',
@@ -375,6 +407,24 @@ export class AcpClient {
       for (const cb of this.listeners.slice()) cb(event);
     }
   }
+}
+
+/** spec 278: a `_session/steering` outcome; unknown or missing → 'failed'. */
+function steerOutcome(value: unknown): SteerOutcome {
+  return value === 'injected' || value === 'startedNewTurn' || value === 'promptRequired'
+    ? value
+    : 'failed';
+}
+
+/** spec 278: `_meta.codex.threadStatus.type` → turn state; anything else → null. */
+export function codexThreadState(meta: unknown): 'active' | 'idle' | null {
+  if (!meta || typeof meta !== 'object') return null;
+  const codex = (meta as { codex?: unknown }).codex;
+  if (!codex || typeof codex !== 'object') return null;
+  const status = (codex as { threadStatus?: unknown }).threadStatus;
+  if (!status || typeof status !== 'object') return null;
+  const type = (status as { type?: unknown }).type;
+  return type === 'active' || type === 'idle' ? type : null;
 }
 
 function extractText(content: unknown): string {

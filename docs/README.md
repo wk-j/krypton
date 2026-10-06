@@ -280,6 +280,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 275 | [ACP Harness view feature controllers](./275-harness-view-controllers.md) |
 | 276 | [Review Till Pass (`#review pass`)](./276-review-till-pass.md) |
 | 277 | [Review Pass on the Lane Monitor](./277-review-pass-dashboard.md) |
+| 278 | [ACP Harness Mid-Turn Steering](./278-acp-harness-steering.md) |
 
 ## ADRs (20)
 
