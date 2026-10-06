@@ -3335,32 +3335,50 @@ export class Compositor {
 
   /**
    * spec 211: `Leader Shift+R` — the review picker. Lists every durable bundle
-   * (a directory walk, so previous sessions are included), newest first.
+   * (a directory walk, so previous sessions are included), newest first, for the
+   * project the focused pane sits in; every open project only when it is in none.
    */
   async openReviewPicker(): Promise<void> {
-    const entries = listHarnessEntries().filter((e) => e.cwd);
-    if (entries.length === 0) {
+    const open = listHarnessEntries().filter((e) => e.cwd);
+    if (open.length === 0) {
       this.showNotification('no harness open — reviews are composed by a lane');
       return;
     }
 
-    const { listReviewBundles, pickReview } = await import('./review-board/picker');
-    // Bundles from every open harness, newest first across all of them.
-    const collected: { bundle: ReviewBundle; cwd: string | null; threadId?: string }[] = [];
+    const { listReviewBundles, pickReview, projectLabel, scopeToFocusedProject } =
+      await import('./review-board/picker');
+    const { root, entries } = scopeToFocusedProject(open, await this.getFocusedCwd());
+    const collected: {
+      bundle: ReviewBundle;
+      cwd: string | null;
+      threadId?: string;
+      project: string;
+    }[] = [];
+    const seen = new Set<string>();
     for (const entry of entries) {
       const threads = entry.cwd
         ? await invoke<ReviewThread[]>('review_thread_list', { cwd: entry.cwd }).catch(() => [])
         : [];
       for (const bundle of await listReviewBundles(entry.harnessId)) {
+        // Two harnesses on one project walk the same `.krypton/reviews/`.
+        if (seen.has(bundle.dir)) continue;
+        seen.add(bundle.dir);
         collected.push({
           bundle, cwd: entry.cwd ?? null,
           threadId: threads.find((thread) => thread.reviewSlug === bundle.slug)?.id,
+          project: projectLabel(entry.cwd ?? ''),
         });
       }
     }
     collected.sort((a, b) => b.bundle.slug.localeCompare(a.bundle.slug));
 
-    const picked = await pickReview(collected.map((c) => c.bundle));
+    const projectByDir = new Map(collected.map((c) => [c.bundle.dir, c.project]));
+    const picked = await pickReview(
+      collected.map((c) => c.bundle),
+      root
+        ? { kind: 'project', label: projectLabel(root) }
+        : { kind: 'all', projectOf: (bundle) => projectByDir.get(bundle.dir) ?? '—' },
+    );
     if (!picked) return;
     const owner = collected.find((c) => c.bundle.dir === picked.dir);
     await this.openReviewBoard({

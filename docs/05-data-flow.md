@@ -1057,7 +1057,9 @@ Composing (lane → disk → card)
 
 Reading and answering (card/picker → Board → disk)
 4. Human opens it: the card's hint label (`f` then label), or `Leader Shift+R` →
-   picker (list_review_bundles = a DIRECTORY WALK, so previous app runs appear) →
+   picker (list_review_bundles = a DIRECTORY WALK, so previous app runs appear;
+   only the harnesses of the project holding the focused pane's cwd, else every
+   open project with a project column; de-duplicated by bundle dir) →
    Enter. Compositor.openReviewBoard is idempotent on the slug — an open review is
    focused, never opened twice
 5. read_review_bundle → parse.ts → ReviewBlock[] PLUS derived H1/H2 chapters

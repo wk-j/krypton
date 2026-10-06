@@ -15,6 +15,55 @@ import type { ReviewBundle } from '../acp/types';
 /** Result of a pick: the bundle to open, or null when the human dismissed it. */
 export type ReviewPickResult = ReviewBundle | null;
 
+/**
+ * Which projects the picker lists. `project` is the normal case — the project the
+ * focused pane sits in — so one project's reviews never mix with another's. `all`
+ * is the fallback when the focus is in no open project, and then every row names
+ * its project: lane names (`Claude-1`) restart each app run, so they can't.
+ */
+export type ReviewPickerScope =
+  | { kind: 'project'; label: string }
+  | { kind: 'all'; projectOf: (bundle: ReviewBundle) => string };
+
+/** `/a/b/` and `/a/b` are the same project root; `/` stays `/`. */
+function trimSlash(path: string): string {
+  const trimmed = path.replace(/\/+$/, '');
+  return trimmed === '' ? '/' : trimmed;
+}
+
+/** A project's display name — the last segment of its root, never uppercased. */
+export function projectLabel(root: string): string {
+  const trimmed = trimSlash(root);
+  return trimmed.slice(trimmed.lastIndexOf('/') + 1) || trimmed;
+}
+
+/**
+ * Narrow the open harnesses to the project the focused cwd sits in: the deepest
+ * harness root equal to or containing it, so a terminal in `krypton/src` still
+ * scopes to `krypton`. Every harness (and a null root) when the cwd is unknown or
+ * outside all of them.
+ */
+export function scopeToFocusedProject<T extends { cwd: string | null }>(
+  entries: readonly T[],
+  focusedCwd: string | null,
+): { root: string | null; entries: T[] } {
+  if (focusedCwd) {
+    const target = trimSlash(focusedCwd);
+    let root: string | null = null;
+    for (const entry of entries) {
+      if (!entry.cwd) continue;
+      const candidate = trimSlash(entry.cwd);
+      const inside =
+        target === candidate || target.startsWith(candidate === '/' ? '/' : `${candidate}/`);
+      if (inside && (root === null || candidate.length > root.length)) root = candidate;
+    }
+    if (root !== null) {
+      return { root, entries: entries.filter((e) => e.cwd && trimSlash(e.cwd) === root) };
+    }
+  }
+  return { root: null, entries: [...entries] };
+}
+
 /** Vim and arrow navigation stay available while the title filter has focus. */
 export function reviewPickerNavigationDelta(key: string): -1 | 0 | 1 {
   if (key === 'j' || key === 'ArrowDown') return 1;
@@ -39,7 +88,10 @@ export async function listReviewBundles(harnessId: string): Promise<ReviewBundle
  * as the other summon overlays: the caller is expected to have left compositor
  * mode first, so the router is not competing for these keys.
  */
-export function pickReview(bundles: readonly ReviewBundle[]): Promise<ReviewPickResult> {
+export function pickReview(
+  bundles: readonly ReviewBundle[],
+  scope: ReviewPickerScope,
+): Promise<ReviewPickResult> {
   return new Promise((resolve) => {
     const root = document.createElement('div');
     root.className = 'krypton-review-picker';
@@ -67,9 +119,12 @@ export function pickReview(bundles: readonly ReviewBundle[]): Promise<ReviewPick
     let filtered = [...bundles];
     let selected = 0;
 
+    const projectOf = scope.kind === 'all' ? scope.projectOf : null;
+    const scopeLabel = scope.kind === 'project' ? scope.label : 'all projects';
+
     const render = (): void => {
       head.textContent =
-        `reviews · ${filtered.length}/${bundles.length}` +
+        `reviews · ${scopeLabel} · ${filtered.length}/${bundles.length}` +
         ' · j/k move · Enter open · / filter · Esc close';
       list.innerHTML = '';
       if (filtered.length === 0) {
@@ -86,8 +141,9 @@ export function pickReview(bundles: readonly ReviewBundle[]): Promise<ReviewPick
         const row = document.createElement('div');
         row.className = 'krypton-review-picker__row';
         if (i === selected) row.classList.add('krypton-review-picker__row--selected');
+        row.append(cell('krypton-review-picker__date', formatDate(bundle.createdAt)));
+        if (projectOf) row.append(cell('krypton-review-picker__project', projectOf(bundle)));
         row.append(
-          cell('krypton-review-picker__date', formatDate(bundle.createdAt)),
           cell('krypton-review-picker__title', bundle.title),
           cell('krypton-review-picker__lane', bundle.laneName),
           cell('krypton-review-picker__counts', countsLabel(bundle)),
@@ -111,7 +167,8 @@ export function pickReview(bundles: readonly ReviewBundle[]): Promise<ReviewPick
             (b) =>
               b.title.toLowerCase().includes(q) ||
               b.slug.toLowerCase().includes(q) ||
-              b.laneName.toLowerCase().includes(q),
+              b.laneName.toLowerCase().includes(q) ||
+              (projectOf?.(b).toLowerCase().includes(q) ?? false),
           )
         : [...bundles];
       selected = 0;

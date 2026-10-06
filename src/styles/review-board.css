@@ -783,6 +783,15 @@
   color: rgba(var(--krypton-fg-rgb), 0.4);
 }
 
+.krypton-review-picker__project {
+  flex-shrink: 0;
+  width: 9em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgba(var(--krypton-fg-rgb), 0.6);
+}
+
 .krypton-review-picker__title {
   flex: 1;
   min-width: 0;
