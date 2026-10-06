@@ -535,6 +535,10 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
     : item.tool?.artifactRedaction
       ? `red|${item.tool.artifactRedaction.tail}|${item.tool.artifactRedaction.size ?? ''}|${item.tool.artifactRedaction.hash ?? ''}|${item.tool.artifactRedaction.pending ? '1' : '0'}`
       : '';
+  // spec 211: the Review Board card shows its counts and, in open-hint mode, its label.
+  const review = item.review
+    ? `${item.review.id}|${item.review.title}|${item.review.blocks}|${item.review.steps}|${item.review.findings}|${item.review.decisions}|${item.review.hintLabel ?? ''}`
+    : '';
   const resources = (item.resources ?? [])
     .map((resource) => [
       resource.key,
@@ -566,6 +570,7 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
     interLane,
     provenance,
     artifact,
+    review,
     resources,
     item.resourceOverflow ?? 0,
     annotationSignature(item),

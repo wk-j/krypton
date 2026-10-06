@@ -193,6 +193,17 @@ describe('assistant reference Git state', () => {
     expect(transcriptRenderSignature(item, false)).not.toBe(clean);
   });
 
+  it('rebuilds a Review Board card when open-hint mode labels it', () => {
+    const review = {
+      id: 'rev-1', slug: '2026-10-06-x', dir: '/r/x', title: 'x', laneLabel: 'OMP-2',
+      blocks: 7, steps: 5, findings: 2, decisions: 0, hintLabel: null as string | null,
+    };
+    const item: HarnessTranscriptItem = { id: 'r1', kind: 'review', text: 'x', review };
+    const unlabeled = transcriptRenderSignature(item, false);
+    review.hintLabel = 'a';
+    expect(transcriptRenderSignature(item, false)).not.toBe(unlabeled);
+  });
+
   it('does not rebuild a tool row when status stays in-flight (pending → in_progress)', () => {
     const tool = {
       glyph: '⠋',
