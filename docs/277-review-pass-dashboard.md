@@ -19,7 +19,8 @@ phase, one row per reviewer (pending with elapsed time / replied with verdict), 
 that shows the Blocker count per round. The controller already holds all of this state; it only gains
 timestamps, a stop reason, and a `telemetry(laneId)` reader, and it asks the publisher to republish
 on every change. The snapshot is pass-through JSON in Rust, so there is no backend change. The page
-and the publisher bump the schema version together (v3 → v4).
+and the publisher bump the schema version together (v3 → v4). The same view is also projected into
+the in-app contextual lane peek (spec 109) as compact rows — see *In-app lane peek* below.
 
 ## Research
 
@@ -69,7 +70,11 @@ read-only, as all loopback surfaces are.
 | `src/acp/harness-telemetry.ts` | `TelemetryReviewLoop` types, `reviewLoopFor` option, `TelemetryLane.reviewLoop`, `'loop'` feed events, schema v4 |
 | `src/acp/acp-harness-view.ts` | Wire `reviewLoopFor` and `loopChanged → telemetryPublisher?.schedule()` |
 | `src/acp/artifact-dashboard.html` | `SCHEMA_VERSION = 4`; loop section in the lane card; `'loop'` feed label; elapsed tick in `frame()` |
-| `src/acp/harness-telemetry.test.ts`, `src/acp/harness-review-loop-controller.test.ts` | Snapshot field, feed events, retained/cleared ended view, notifications |
+| `src/acp/harness-view-types.ts` | `LanePeekSnapshot.reviewLoop?: TelemetryReviewLoop \| null` |
+| `src/acp/lane-peek.ts` | `peekReviewLoop`, `renderLanePeekReviewLoop`, `patchPeekReviewLoop`; `lane-review-pass` candidate (priority 68) |
+| `src/acp/acp-harness-view.ts` (peek) | `lanePeekSnapshots()` fills `reviewLoop` from `reviewLoopCtl.telemetry()`; `renderLanePeek()` patches the loop rows; `loopChanged` also calls `renderLanePeek()` |
+| `src/styles/acp-harness.css` | `.acp-harness__lane-peek-loop` (`display: contents`) and `.acp-harness__lane-peek-verdict[data-verdict]` colors |
+| `src/acp/harness-telemetry.test.ts`, `src/acp/harness-review-loop-controller.test.ts`, `src/acp/acp-harness-view.test.ts` | Snapshot field, feed events, retained/cleared ended view, notifications, peek ranking + rows |
 | `docs/168-harness-lane-monitor.md`, `docs/276-review-till-pass.md`, `docs/04-architecture.md`, `docs/README.md` | Snapshot contract, UI section, index |
 
 ## Design
@@ -190,8 +195,35 @@ loop states.
 - `frame()` updates only the header elapsed text and the pending/replied age text, the same way it
   already refreshes `.turn`.
 
-No in-app DOM or CSS changes. No keybindings: the dashboard already opens with `Leader Shift+L` /
-`#dashboard`.
+No keybindings: the dashboard already opens with `Leader Shift+L` / `#dashboard`.
+
+### In-app lane peek (spec 109)
+
+The same `TelemetryReviewLoop` view is projected into the harness rail's contextual lane peek, so the
+user sees the loop without leaving the app. It is view-local: no new state, no publish.
+
+- **Data:** `lanePeekSnapshots()` sets `reviewLoop: this.reviewLoopCtl.telemetry(lane.id)` on every
+  snapshot. Only the authoring lane has a loop, so reviewer lanes' peeks are unchanged.
+- **Ranking:** a non-active lane with a **running** loop is a `lane-review-pass` candidate at priority
+  68 (after `lane-shell` 65, before `lane-inbox` 70 and `recent-activity` 80), dated by `phaseSince`.
+  Peer, permission, and error reasons still win. An ended loop is never a peek reason.
+- **Rows:** whenever the peeked lane's loop is running, or ended within the last 5 minutes
+  (`peekReviewLoop`), the card shows up to three `.acp-harness__lane-peek-row`s, grouped in a
+  `display: contents` wrapper `[data-peek-row="review-loop"]` just above the heat ring:
+  ```
+  review   pass 2/3 · reviewing          (ended: "pass 2/3 · ended · <stopLabel>")
+  replies  Codex-1 FAIL 1 · Grok-1 pending
+  rounds   2 → 1                          (per-round Blocker count; omitted before round 1 ends)
+  ```
+  Reviewer words match the dashboard (`not sent` / `pending` / `no reply` / verdict); only the verdict
+  and round numerals carry color (pass accent, fail red, partial yellow). With reason
+  `lane-review-pass` the generic `▸ review pass k/N` event row is dropped — the loop rows say more.
+- **Update path:** a reviewer reply changes no lane status, so `loopChanged()` calls
+  `renderLanePeek()` beside `telemetryPublisher.schedule()`. A same-lane/same-reason card is not
+  remounted; `patchPeekReviewLoop` replaces only the wrapper (or inserts/removes it), leaving the
+  heat ring intact.
+- **Limit:** the peek never shows the active lane (spec 109), so while you sit on the authoring lane
+  its loop is visible in its own transcript rows and composer chip, and on the dashboard.
 
 ## Edge Cases
 

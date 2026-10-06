@@ -436,6 +436,7 @@ import {
   latestMeaningfulForPeek,
   latestPermissionForPeek,
   patchPeekActiveTool,
+  patchPeekReviewLoop,
   renderLanePeek,
   renderRailPeerSpans,
   selectLanePeekCandidate,
@@ -11630,6 +11631,7 @@ export class AcpHarnessView implements ContentView {
     }
     if (!sameCard) slot.replaceChildren(card);
     patchPeekActiveTool(card, snapshot, candidate);
+    patchPeekReviewLoop(card, snapshot, now);
     slot.hidden = false;
   }
 
@@ -11982,6 +11984,7 @@ export class AcpHarnessView implements ContentView {
         recentFiles: deriveRecentFilesForPeek(lane.id, this.fileTouchMap, now),
         pendingShell: lane.pendingShellId !== null,
         thought: deriveThoughtForPeek(lane, now),
+        reviewLoop: this.reviewLoopCtl.telemetry(lane.id),
       };
     });
   }
@@ -15046,7 +15049,12 @@ export class AcpHarnessView implements ContentView {
         view.coordinator.recomputePeerStatus(lane.id);
       },
       pendingPeerCount: (lane) => view.coordinator.pendingPeersFor(lane.id).length,
-      loopChanged: () => view.telemetryPublisher?.schedule(),
+      // spec 277: a reviewer reply changes no lane status, so nothing else
+      // repaints the peek — refresh it beside the dashboard publish.
+      loopChanged: () => {
+        view.telemetryPublisher?.schedule();
+        view.renderLanePeek();
+      },
       recordReviewOutcome: (lane, outcome) => {
         view.recordReviewOutcomeFor(lane, outcome);
         view.recordJournal(

@@ -184,6 +184,7 @@ Placement:
 - It reserves no permanent vertical transcript space (the rail is an overlay, not a reserved column).
 - It must not compete with #104 titlebar HUD; the peek lives inside ACP content, while #104 HUD lives in native window chrome/titlebar.
 - Spec 231 (removed): there is no rail action HUD. A busy peeked lane with an in-flight tool paints a flat `tool` row (`data-peek-row="tool"`) on this card. That row replaces the peek **activity** event row (`recent-activity` / `lane-shell`); do not stack `▸ execute Terminal` above `tool execute · Terminal`. Peer, permission, error, and inbox event rows still render.
+- Spec 277: a non-active lane running a `#review pass` loop is a `lane-review-pass` peek reason (priority 68, between `lane-shell` and `lane-inbox`). Whenever the peeked lane's loop is running or ended within 5 minutes, the card shows `review` / `replies` / `rounds` rows (`data-peek-row="review-loop"`), patched in place on each reviewer reply. See `docs/277-review-pass-dashboard.md` *In-app lane peek*.
 
 Shape:
 

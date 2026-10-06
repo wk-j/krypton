@@ -87,6 +87,8 @@ import { collapseThoughtBlankLines } from './harness-format';
 import {
   peekShowsActiveTool,
   peekEventRowDuplicatesTool,
+  peekReviewLoop,
+  renderLanePeekReviewLoop,
   renderLanePeekToolRow,
   syncPeekThoughtBody,
 } from './lane-peek';
@@ -98,6 +100,7 @@ import type {
   LanePeekCandidate,
   MessageResource,
 } from './harness-view-types';
+import type { TelemetryReviewLoop } from './harness-telemetry';
 import type { SpeechRecognitionLike } from './harness-dictation';
 import { HarnessDictationController, type ActiveDictationSession } from './harness-dictation-controller';
 import type { HarnessDictationHost } from './harness-view-host';
@@ -149,6 +152,7 @@ function laneSnapshot(partial: Partial<LanePeekSnapshot> & { laneId: string }): 
     error: partial.error ?? null,
     thought: partial.thought ?? null,
     activeTool: partial.activeTool ?? null,
+    reviewLoop: partial.reviewLoop ?? null,
   };
 }
 
@@ -2298,6 +2302,81 @@ describe('peek tool row vs activity event row', () => {
       candidate('lane-inbox', { kind: 'activity', label: 'inbox 2', ageLabel: 'now' }),
       busyTool,
     )).toBe(false);
+  });
+});
+
+describe('peek review pass (spec 277)', () => {
+  const now = 1_000_000;
+  function loop(partial: Partial<TelemetryReviewLoop> = {}): TelemetryReviewLoop {
+    return {
+      running: true,
+      phase: 'reviewing',
+      round: 2,
+      maxRounds: 3,
+      subjectLabel: 'docs/277-review-pass-dashboard.md',
+      startedAt: now - 60_000,
+      phaseSince: now - 10_000,
+      reviewers: [
+        { name: 'Codex-1', state: 'replied', verdict: 'fail', blockers: 1, repliedAt: now - 5_000 },
+        { name: 'Grok-1', state: 'pending', verdict: null, blockers: 0, repliedAt: null },
+      ],
+      rounds: [{ round: 1, verdict: 'fail', blockers: 2, warnings: 0 }],
+      stopReason: null,
+      stopLabel: null,
+      endedAt: null,
+      ...partial,
+    };
+  }
+
+  it('ranks a non-active author lane with a running loop above inbox and recent activity', () => {
+    const candidates = buildLanePeekCandidates([
+      laneSnapshot({ laneId: 'codex', active: true }),
+      laneSnapshot({ laneId: 'grok', visualIndex: 1, inboxDepth: 1 }),
+      laneSnapshot({ laneId: 'omp', visualIndex: 2, status: 'awaiting_peer', reviewLoop: loop() }),
+    ], now);
+    expect(candidates[0]).toMatchObject({ laneId: 'omp', reasonKey: 'lane-review-pass' });
+  });
+
+  it('never makes an ended loop a peek reason', () => {
+    const ended = loop({ running: false, phase: null, endedAt: now - 1_000, stopLabel: 'every reviewer passed' });
+    expect(buildLanePeekCandidates([
+      laneSnapshot({ laneId: 'codex', active: true }),
+      laneSnapshot({ laneId: 'omp', visualIndex: 1, reviewLoop: ended }),
+    ], now)).toEqual([]);
+  });
+
+  it('keeps an ended loop on the peek only for the recent window', () => {
+    const snap = (endedAt: number): LanePeekSnapshot =>
+      laneSnapshot({ laneId: 'omp', reviewLoop: loop({ running: false, phase: null, endedAt }) });
+    expect(peekReviewLoop(snap(now - 60_000), now)).not.toBeNull();
+    expect(peekReviewLoop(snap(now - 6 * 60_000), now)).toBeNull();
+    expect(peekReviewLoop(laneSnapshot({ laneId: 'omp' }), now)).toBeNull();
+  });
+
+  it('renders round, phase, reviewer verdicts, and the Blocker trend', () => {
+    const html = renderLanePeekReviewLoop(loop({
+      rounds: [
+        { round: 1, verdict: 'fail', blockers: 2, warnings: 0 },
+        { round: 2, verdict: 'pass', blockers: 0, warnings: 1 },
+      ],
+    }));
+    expect(html).toContain('<b>2/3</b> · reviewing');
+    expect(html).toContain('Codex-1 <span class="acp-harness__lane-peek-verdict" data-verdict="fail">FAIL 1</span>');
+    expect(html).toContain('Grok-1 pending');
+    expect(html).toContain('data-verdict="fail">2</span> → <span class="acp-harness__lane-peek-verdict" data-verdict="pass">0</span>');
+  });
+
+  it('shows no reply instead of pending once the round stopped, and the stop label once ended', () => {
+    const html = renderLanePeekReviewLoop(loop({
+      running: false,
+      phase: null,
+      endedAt: now,
+      stopReason: 'reviewer_lost',
+      stopLabel: 'a reviewer is no longer available',
+    }));
+    expect(html).toContain('ended · a reviewer is no longer');
+    expect(html).toContain('Grok-1 no reply');
+    expect(html).not.toContain('pending');
   });
 });
 

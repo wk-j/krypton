@@ -14,6 +14,7 @@ import type {
   QuestionPayload,
 } from './ask-user-question';
 import type { AcpClient } from './client';
+import type { TelemetryReviewLoop } from './harness-telemetry';
 import type {
   AcpAgentMode,
   AcpAvailableCommand,
@@ -303,6 +304,8 @@ export interface LanePeekSnapshot {
   pendingShell?: boolean;
   /** spec 216 — live or last thought for the dedicated thought slot. */
   thought?: { phase: 'delta' | 'veil' | 'seal'; text: string } | null;
+  /** spec 277 — the lane's `#review pass` loop (authoring lane only), as the dashboard sees it. */
+  reviewLoop?: TelemetryReviewLoop | null;
 }
 
 /** Slice 109 — lane-pair activity heat (peek rail). */

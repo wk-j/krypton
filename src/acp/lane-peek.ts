@@ -7,6 +7,7 @@
 
 import type { HarnessLaneStatus } from './types';
 import type { PendingPeerSummary } from './inter-lane';
+import type { TelemetryReviewLoop, TelemetryReviewLoopReviewer } from './harness-telemetry';
 import { FILE_TOUCH_WINDOW_MS } from './harness-view-types';
 import type {
   FileTouchRecord,
@@ -47,6 +48,17 @@ const LANE_PEEK_HEAT_TAIL = 200;
 const LANE_PEEK_HEAT_SESSION_TAIL = 400;
 const LANE_PEEK_HEAT_PENDING_PEER_WEIGHT = 2;
 const LANE_PEEK_DWELL_MS = 8_000;
+/** spec 277 — an ended `#review pass` loop stays on the peek this long; the
+ *  dashboard keeps it until the next loop. */
+const LANE_PEEK_LOOP_ENDED_MS = LANE_PEEK_RECENT_MS;
+/** spec 277 — between `lane-shell` (65) and `lane-inbox` (70). */
+const LANE_PEEK_REVIEW_LOOP_PRIORITY = 68;
+const PEEK_LOOP_PHASE: Record<NonNullable<TelemetryReviewLoop['phase']>, string> = {
+  collecting: 'collecting',
+  reviewing: 'reviewing',
+  fixing: 'fixing',
+  summarizing: 'writing summary',
+};
 
 export function isDirectPeerPeekReasonKey(reasonKey: string): boolean {
   return reasonKey === 'awaiting-peer' || reasonKey === 'inbound-peer' || reasonKey === 'peer-counterpart';
@@ -413,6 +425,77 @@ export function renderLanePeekRow(prefix: string, value: string): string {
   );
 }
 
+/** spec 277: the peeked lane's `#review pass` loop — running, or ended within
+ *  the last few minutes — else null. Only the authoring lane carries a loop. */
+export function peekReviewLoop(
+  snapshot: LanePeekSnapshot | null | undefined,
+  now: number,
+): TelemetryReviewLoop | null {
+  const loop = snapshot?.reviewLoop ?? null;
+  if (!loop) return null;
+  if (loop.running) return loop;
+  return loop.endedAt !== null && now - loop.endedAt <= LANE_PEEK_LOOP_ENDED_MS ? loop : null;
+}
+
+function peekReviewerState(loop: TelemetryReviewLoop, rv: TelemetryReviewLoopReviewer): string {
+  if (rv.state === 'replied') {
+    const word = rv.verdict === 'fail'
+      ? `FAIL${rv.blockers ? ` ${rv.blockers}` : ''}`
+      : rv.verdict === 'missing' ? 'no verdict' : String(rv.verdict ?? '').toUpperCase();
+    const verdict = rv.verdict === 'pass' || rv.verdict === 'fail' ? rv.verdict : 'partial';
+    return `<span class="acp-harness__lane-peek-verdict" data-verdict="${verdict}">${esc(word)}</span>`;
+  }
+  if (rv.state === 'not_sent') return 'not sent';
+  // Withdrawn or never answered: nothing is pending once the round stopped.
+  return loop.phase === 'reviewing' ? 'pending' : 'no reply';
+}
+
+/** spec 277: compact projection of the dashboard's loop section — round +
+ *  phase, one verdict per reviewer, and the per-round Blocker trend. */
+export function renderLanePeekReviewLoop(loop: TelemetryReviewLoop): string {
+  const state = loop.running
+    ? esc(loop.phase ? PEEK_LOOP_PHASE[loop.phase] : '')
+    : `ended · ${esc(truncateInline(loop.stopLabel ?? 'ended', 28))}`;
+  let html = renderLanePeekRow('review', `pass <b>${loop.round}/${loop.maxRounds}</b> · ${state}`);
+  if (loop.reviewers.length > 0) {
+    html += renderLanePeekRow(
+      'replies',
+      loop.reviewers.map((rv) => `${esc(rv.name)} ${peekReviewerState(loop, rv)}`).join(' · '),
+    );
+  }
+  if (loop.rounds.length > 0) {
+    html += renderLanePeekRow(
+      'rounds',
+      loop.rounds
+        .map((r) => `<span class="acp-harness__lane-peek-verdict" data-verdict="${r.verdict}">${r.blockers}</span>`)
+        .join(' → '),
+    );
+  }
+  return `<div class="acp-harness__lane-peek-loop" data-peek-row="review-loop">${html}</div>`;
+}
+
+/** Patch the loop rows in place: a reviewer reply changes no lane status and
+ *  must not remount the card or its heat ring. */
+export function patchPeekReviewLoop(card: HTMLElement, snapshot: LanePeekSnapshot, now: number): void {
+  const existing = card.querySelector<HTMLElement>('[data-peek-row="review-loop"]');
+  const loop = peekReviewLoop(snapshot, now);
+  if (!loop) {
+    existing?.remove();
+    return;
+  }
+  const wrap = document.createElement('div');
+  wrap.innerHTML = renderLanePeekReviewLoop(loop);
+  const next = wrap.firstElementChild;
+  if (!(next instanceof HTMLElement)) return;
+  if (existing) {
+    if (existing.innerHTML !== next.innerHTML) existing.replaceWith(next);
+    return;
+  }
+  const heat = card.querySelector('.acp-harness__lane-peek-heat-root');
+  if (heat) heat.before(next);
+  else card.appendChild(next);
+}
+
 export function renderLanePeekPlanRow(plan: NonNullable<LanePeekSnapshot['plan']>): string {
   const text = plan.activeText ? truncateInline(plan.activeText, 32) : 'all done';
   return (
@@ -482,7 +565,9 @@ export function renderLanePeek(
       `<span class="acp-harness__lane-peek-status">${esc(statusText)}</span>` +
       (age ? `<span class="acp-harness__lane-peek-age">${esc(age)}</span>` : '') +
     `</header>`;
-  if (!peekEventRowDuplicatesTool(candidate, snapshot)) {
+  const loop = peekReviewLoop(snapshot, now);
+  // A `lane-review-pass` peek's reason is the loop itself; its rows say more.
+  if (!peekEventRowDuplicatesTool(candidate, snapshot) && !(loop && candidate.reasonKey === 'lane-review-pass')) {
     html += renderLanePeekEventRow(candidate);
   }
 
@@ -507,6 +592,8 @@ export function renderLanePeek(
   if (snapshot && snapshot.inboxDepth > 0) {
     html += renderLanePeekRow('inbox', `<b>${snapshot.inboxDepth}</b> pending`);
   }
+
+  if (loop) html += renderLanePeekReviewLoop(loop);
 
   if (snapshot) {
     html += '<div class="acp-harness__lane-peek-heat-root"></div>';
@@ -734,6 +821,19 @@ export function buildLanePeekCandidates(snapshots: LanePeekSnapshot[], now: numb
     }
     if (lane.pendingShell) {
       add(makeActivityCandidate(lane, 65, false, 'lane-shell', 'shell running', 'shell command running', now, now));
+    }
+    if (lane.reviewLoop?.running) {
+      const loop = lane.reviewLoop;
+      add(makeActivityCandidate(
+        lane,
+        LANE_PEEK_REVIEW_LOOP_PRIORITY,
+        false,
+        'lane-review-pass',
+        'review pass',
+        `review pass ${loop.round}/${loop.maxRounds}`,
+        loop.phaseSince,
+        now,
+      ));
     }
     if (lane.inboxDepth > 0) add(makeActivityCandidate(lane, 70, false, 'lane-inbox', 'inbox pending', `inbox ${lane.inboxDepth}`, now, now));
     if (lane.latestMeaningful && now - lane.latestMeaningful.at <= LANE_PEEK_RECENT_MS) {

@@ -1335,6 +1335,13 @@
 }
 .acp-harness__lane-peek-value b { color: #ffd27a; font-weight: normal; }
 
+/* spec 277 — `#review pass` rows; the wrapper only groups them for in-place patching. */
+.acp-harness__lane-peek-loop { display: contents; }
+.acp-harness__lane-peek-verdict { font-variant-numeric: tabular-nums; }
+.acp-harness__lane-peek-verdict[data-verdict="pass"] { color: var(--agent-accent, #8effb0); }
+.acp-harness__lane-peek-verdict[data-verdict="fail"] { color: #ff8b8b; }
+.acp-harness__lane-peek-verdict[data-verdict="partial"] { color: #ffd27a; }
+
 .acp-harness__lane-peek-plan {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
