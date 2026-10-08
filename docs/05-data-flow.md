@@ -359,7 +359,11 @@ d. The loop stops once the grip, the mouse and the button fades settle
    lane-context stub: the lane's own label, the full lane roster, and a
    one-line nudge describing the krypton-harness-memory MCP tools. Memory
    bodies (summary + detail) are not injected — agents call handoff_list /
-   handoff_get on demand (Spec 98).
+   handoff_get on demand (Spec 98). Exception (Spec 279): a draft whose first
+   token is one of the lane's advertised `available_commands` (`/review`,
+   `/$skill …`) is sent bare — no stub, no directive — because adapters such
+   as OMP join all prompt blocks and only parse a command at the start of the
+   joined text. A one-shot directive override waits for the next normal turn.
    a. Prompt queue (Spec 136): if the active lane is busy / needs_permission,
       Enter does NOT discard the prompt — it captures {text, frozen image
       snapshot, mention targets} into the lane's FIFO queuedPrompts (cap 10).
@@ -960,6 +964,18 @@ PUBLISH
        `x` replies `{ outcome: "skip_interview" }`. Permission modes do not
        auto-answer. A second request skip-interviews the previous oneshot.
        Disconnect / cancel / dispose also skip so Grok does not hang.
+    i. ACP form elicitation (spec 279): `initialize` advertises
+       `clientCapabilities.elicitation.form` to every backend. An inbound
+       `elicitation/create` with `mode: "form"` parks a oneshot in
+       `elicit_pending` keyed by a per-client sequence (other modes →
+       `{ action: "decline" }`) and emits `elicitation_request`
+       { requestId, message, requestedSchema, toolCallId }. `elicitation.ts`
+       turns each schema property into a question-card question (enum /
+       oneOf / boolean as closed pickers, array as multi-select, string /
+       number / integer as typed answers). Enter replies `{ action: "accept",
+       content }`, `x` replies `decline`, lane cancel / error / dispose
+       reply `cancel`. Cards queue FIFO. OMP uses this for `/review`, plan
+       approval and extension select / confirm / input / editor dialogs.
 19. tool_call.content[].diff rendering (Spec 89):
     Whenever a tool_call or tool_call_update arrives with a content entry of
     type 'diff' (oldText + newText), buildToolPayload extracts it into

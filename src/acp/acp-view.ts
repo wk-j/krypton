@@ -15,11 +15,12 @@ import {
   createAskUserCardState,
   optionHotkey,
   parseAskUserQuestions,
-  skipInterviewDecision,
+  questionActionsHint,
   type AskUserCardState,
-  type AskUserDecision,
   type AskUserQuestion,
+  type AskUserReply,
 } from './ask-user-question';
+import { parseElicitationForm, type QuestionTarget } from './elicitation';
 import { renderDiffPreview as sharedRenderDiffPreview, countDiff as sharedCountDiff } from './diff-render';
 import type {
   AcpEvent,
@@ -136,9 +137,9 @@ interface PermissionBlock {
   options: PermissionOption[];
 }
 
-interface AskUserBlock {
-  el: HTMLElement;
-  requestId: number;
+interface AskUserBlock extends QuestionTarget {
+  /** Mounted when the block becomes the active card. */
+  el: HTMLElement | null;
   questions: AskUserQuestion[];
   card: AskUserCardState;
 }
@@ -190,7 +191,9 @@ export class AcpView implements ContentView {
   private currentThought: StreamBlock | null = null;
   private toolBlocks = new Map<string, ToolBlock>();
   private permissionBlocks = new Map<number, PermissionBlock>();
+  /** Active card; `askUserQueue` holds parked elicitations waiting behind it. */
   private askUserBlock: AskUserBlock | null = null;
+  private askUserQueue: AskUserBlock[] = [];
   private focusedPermissionId: number | null = null;
   private focusedToolId: string | null = null;
 
@@ -808,37 +811,67 @@ export class AcpView implements ContentView {
     this.scrollToBottom();
   }
 
-  // ─── Grok ask_user_question (spec 229) ──────────────────────────
+  // ─── Question card: Grok ask_user_question (spec 229) + ACP elicitation (spec 279)
 
   private renderAskUser(requestId: number, raw: unknown): void {
-    if (this.askUserBlock) {
-      this.askUserBlock.el.classList.add('acp-view__ask--resolved');
-      this.askUserBlock.el.innerHTML = `<div class="acp-view__ask-title">⏵ skipped</div>`;
-    }
+    // Grok replaces its active question (Rust already answered the old one).
+    if (this.askUserBlock?.wire === 'grok') this.closeAskUserBlock(this.askUserBlock, 'skipped');
+    this.askUserQueue = this.askUserQueue.filter((block) => block.wire !== 'grok');
+    if (this.askUserBlock?.wire === 'grok') this.askUserBlock = null;
     const questions = Array.isArray(raw)
       ? parseAskUserQuestions({ questions: raw })
       : parseAskUserQuestions(raw);
     if (questions.length === 0) {
-      if (this.client) void this.client.respondAskUser(requestId, skipInterviewDecision());
+      if (this.client) void this.client.respondQuestion({ requestId, wire: 'grok' }, { kind: 'cancel' });
+      if (!this.askUserBlock) this.activateNextAskUser();
       return;
     }
-    const el = document.createElement('div');
-    el.className = 'acp-view__ask';
-    this.messagesEl.appendChild(el);
-    this.askUserBlock = {
-      el,
+    this.enqueueAskUser({ el: null, requestId, wire: 'grok', questions, card: createAskUserCardState(questions) });
+  }
+
+  private renderElicitation(requestId: number, message: string, schema: unknown): void {
+    const form = parseElicitationForm(message, schema);
+    if (!form) {
+      if (this.client) void this.client.respondQuestion({ requestId, wire: 'elicitation' }, { kind: 'decline' });
+      this.appendSystemMessage(`elicitation declined: unsupported form (${message || 'no message'})`);
+      return;
+    }
+    this.enqueueAskUser({
+      el: null,
       requestId,
-      questions,
-      card: createAskUserCardState(questions),
-    };
-    this.paintAskUser(this.askUserBlock);
+      wire: 'elicitation',
+      fields: form.fields,
+      questions: form.questions,
+      card: createAskUserCardState(form.questions),
+    });
+  }
+
+  private enqueueAskUser(block: AskUserBlock): void {
+    this.askUserQueue.push(block);
+    if (!this.askUserBlock) this.activateNextAskUser();
+  }
+
+  private activateNextAskUser(): void {
+    const next = this.askUserQueue.shift();
+    if (!next) return;
+    next.el = document.createElement('div');
+    next.el.className = 'acp-view__ask';
+    this.messagesEl.appendChild(next.el);
+    this.askUserBlock = next;
+    this.paintAskUser(next);
     this.scrollToBottom();
+  }
+
+  private closeAskUserBlock(block: AskUserBlock, label: string): void {
+    if (!block.el) return;
+    block.el.classList.add('acp-view__ask--resolved');
+    block.el.innerHTML = `<div class="acp-view__ask-title">⏵ ${esc(label)}</div>`;
   }
 
   private paintAskUser(block: AskUserBlock): void {
     const q = block.questions[block.card.questionIndex];
-    if (!q) return;
-    const opts = block.questions[block.card.questionIndex].options.map((option, index) => {
+    if (!q || !block.el) return;
+    const opts = q.options.map((option, index) => {
       const focus = !block.card.otherFocused && index === block.card.optionIndex ? ' acp-view__ask-opt--focus' : '';
       const on = (block.card.selected[block.card.questionIndex] ?? []).includes(option.label)
         ? ' acp-view__ask-opt--on'
@@ -848,33 +881,50 @@ export class AcpView implements ContentView {
     const otherFocus = block.card.otherFocused || block.card.optionIndex >= q.options.length
       ? ' acp-view__ask-opt--focus'
       : '';
-    const other = `<div class="acp-view__ask-opt${otherFocus}"><kbd>z</kbd> ${esc(block.card.otherFocused ? (block.card.otherDraft || '…') : 'Other')}</div>`;
+    const otherLabel = block.card.otherFocused ? (block.card.otherDraft || '…') : (q.textOnly ? 'type answer' : 'Other');
+    const other = q.allowOther === false
+      ? ''
+      : `<div class="acp-view__ask-opt${otherFocus}"><kbd>z</kbd> ${esc(otherLabel)}</div>`;
     const pos = block.questions.length > 1
       ? ` ${block.card.questionIndex + 1}/${block.questions.length}`
       : '';
+    const detail = q.detail ? `<div class="acp-view__ask-detail">${esc(q.detail)}</div>` : '';
     block.el.innerHTML =
       `<div class="acp-view__ask-title">⏵ ask${esc(pos)}: ${esc(q.question)}</div>` +
-      `<div class="acp-view__ask-opts">${opts}${other}</div>`;
+      detail +
+      `<div class="acp-view__ask-opts">${opts}${other}</div>` +
+      `<div class="acp-view__ask-hint">${esc(questionActionsHint(q, block.wire, block.card.otherFocused))}</div>`;
+    block.el.querySelector('.acp-view__ask-opt--focus')?.scrollIntoView({ block: 'nearest' });
   }
 
-  private async resolveAskUser(
-    decision: AskUserDecision,
-    label: string,
-  ): Promise<void> {
+  private async resolveAskUser(reply: AskUserReply): Promise<void> {
     const block = this.askUserBlock;
     if (!block) return;
     this.askUserBlock = null;
-    block.el.classList.add('acp-view__ask--resolved');
-    const detail = decision.outcome === 'accepted'
-      ? decision.answers.flatMap((a) => a.selected_labels).join(', ')
-      : label;
-    block.el.innerHTML = `<div class="acp-view__ask-title">⏵ ${esc(detail || label)}</div>`;
+    const answered = reply.kind === 'accept' && reply.decision.outcome === 'accepted'
+      ? reply.decision.answers.flatMap((a) => a.selected_labels).join(', ')
+      : '';
+    const fallback = reply.kind === 'accept'
+      ? 'answered'
+      : block.wire === 'grok' ? 'skipped' : reply.kind === 'decline' ? 'declined' : 'cancelled';
+    this.closeAskUserBlock(block, answered || fallback);
+    this.activateNextAskUser();
     if (this.client) {
       try {
-        await this.client.respondAskUser(block.requestId, decision);
+        await this.client.respondQuestion(block, reply);
       } catch (e) {
         this.appendSystemMessage(`ask reply failed: ${e}`);
       }
+    }
+  }
+
+  /** Turn end / error: answer every parked card `cancel` so the agent never hangs. */
+  private abandonAskUser(): void {
+    const blocks = [...(this.askUserBlock ? [this.askUserBlock] : []), ...this.askUserQueue.splice(0)];
+    this.askUserBlock = null;
+    for (const block of blocks) {
+      this.closeAskUserBlock(block, block.wire === 'grok' ? 'skipped' : 'cancelled');
+      if (this.client) void this.client.respondQuestion(block, { kind: 'cancel' });
     }
   }
 
@@ -983,12 +1033,16 @@ export class AcpView implements ContentView {
         this.sealStreamingBlocks();
         this.renderAskUser(e.requestId, e.questions);
         break;
+      case 'elicitation_request':
+        this.sealStreamingBlocks();
+        this.renderElicitation(e.requestId, e.message, e.requestedSchema);
+        break;
       case 'usage':
         this.usage = mergeUsage(this.usage, e.usage);
         this.updateStatus();
         break;
       case 'stop':
-        if (this.askUserBlock) void this.resolveAskUser(skipInterviewDecision(), 'skipped');
+        this.abandonAskUser();
         this.sealStreamingBlocks();
         this.turnActive = false;
         this.updateStatus();
@@ -997,7 +1051,7 @@ export class AcpView implements ContentView {
         }
         break;
       case 'error':
-        if (this.askUserBlock) void this.resolveAskUser(skipInterviewDecision(), 'skipped');
+        this.abandonAskUser();
         this.appendSystemMessage(`error: ${e.message}`);
         this.turnActive = false;
         this.updateStatus();
@@ -1081,9 +1135,9 @@ export class AcpView implements ContentView {
       block.card = result.state;
       this.paintAskUser(block);
       if (result.action.type === 'skip') {
-        void this.resolveAskUser(skipInterviewDecision(), 'skipped');
+        void this.resolveAskUser({ kind: 'decline' });
       } else if (result.action.type === 'submit') {
-        void this.resolveAskUser(result.action.decision, 'accepted');
+        void this.resolveAskUser({ kind: 'accept', decision: result.action.decision });
       }
       return true;
     }

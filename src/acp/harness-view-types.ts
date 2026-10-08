@@ -14,6 +14,7 @@ import type {
   QuestionPayload,
 } from './ask-user-question';
 import type { AcpClient } from './client';
+import type { QuestionTarget } from './elicitation';
 import type { TelemetryReviewLoop } from './harness-telemetry';
 import type {
   AcpAgentMode,
@@ -52,8 +53,7 @@ export interface HarnessPermission {
   transcriptItem?: HarnessTranscriptItem;
 }
 
-export interface HarnessAskUser {
-  requestId: number;
+export interface HarnessAskUser extends QuestionTarget {
   questions: AskUserQuestion[];
   toolCallId?: string;
   card: AskUserCardState;

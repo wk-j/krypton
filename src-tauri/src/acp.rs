@@ -358,6 +358,11 @@ struct AcpClient {
     perm_pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
     /// `_x.ai/ask_user_question` parked while the human answers the card.
     ask_pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
+    /// spec 279: ACP `elicitation/create` (form mode) parked while the human
+    /// answers the card. Keyed by `elicit_seq`, not the JSON-RPC id, so string
+    /// or zero ids from the agent can never collide.
+    elicit_pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
+    elicit_seq: AtomicU64,
     /// fs/write_text_file requests parked while waiting for user accept/reject.
     fs_write_pending: Mutex<HashMap<u64, FsWriteCtx>>,
     next_id: AtomicU64,
@@ -403,6 +408,8 @@ impl AcpClient {
             turn_markers: Mutex::new(HashMap::new()),
             perm_pending: Mutex::new(HashMap::new()),
             ask_pending: Mutex::new(HashMap::new()),
+            elicit_pending: Mutex::new(HashMap::new()),
+            elicit_seq: AtomicU64::new(1),
             fs_write_pending: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
             agent_capabilities: RwLock::new(None),
@@ -1025,6 +1032,28 @@ fn grok_ask_user_skip() -> Value {
     json!({ "outcome": "skip_interview" })
 }
 
+fn elicitation_cancel() -> Value {
+    json!({ "action": "cancel" })
+}
+
+/// spec 279: ACP `CreateElicitationResponse` is `accept` | `decline` | `cancel`.
+/// Anything malformed from the frontend collapses to `cancel` so the agent
+/// never receives an invalid response shape.
+fn elicitation_reply(response: Value) -> Value {
+    match response.get("action").and_then(Value::as_str) {
+        Some("accept") => {
+            let content = response
+                .get("content")
+                .filter(|c| c.is_object())
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            json!({ "action": "accept", "content": content })
+        }
+        Some("decline") => json!({ "action": "decline" }),
+        _ => elicitation_cancel(),
+    }
+}
+
 /// Normalize Grok's ask_user_question params into `{ question, options, multiSelect }`.
 fn extract_ask_questions(params: &Value) -> Vec<Value> {
     let raw = params.get("questions").or_else(|| {
@@ -1340,6 +1369,49 @@ async fn handle_inbound_request(
             };
             let _ = client.reply(id, Ok(decision)).await;
         }
+        // spec 279: ACP form elicitation (OMP `/review` menu, plan approval,
+        // extension select/confirm/input/editor; any agent may send it because
+        // `initialize` advertises `elicitation.form`). Park until the frontend
+        // card answers; never auto-answer.
+        "elicitation/create" => {
+            let mode = params.get("mode").and_then(Value::as_str).unwrap_or("");
+            let schema = params.get("requestedSchema").filter(|s| s.is_object());
+            let Some(schema) = schema.filter(|_| mode == "form").cloned() else {
+                log::info!(
+                    "[acp:{}] elicitation/create: declining unsupported mode {mode:?}",
+                    client.krypton_session
+                );
+                let _ = client.reply(id, Ok(json!({ "action": "decline" }))).await;
+                return;
+            };
+            let message = params
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let tool_call_id = params
+                .get("toolCallId")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let request_id = client.elicit_seq.fetch_add(1, Ordering::Relaxed);
+            let (tx, rx) = oneshot::channel();
+            client.elicit_pending.lock().await.insert(request_id, tx);
+            client.emit_event(
+                &app,
+                json!({
+                    "type": "elicitation_request",
+                    "requestId": request_id,
+                    "message": message,
+                    "requestedSchema": schema,
+                    "toolCallId": tool_call_id,
+                }),
+            );
+            let response = match rx.await {
+                Ok(value) => elicitation_reply(value),
+                Err(_) => elicitation_cancel(),
+            };
+            let _ = client.reply(id, Ok(response)).await;
+        }
         "session/request_permission" => {
             // Bridge to the frontend.
             let request_id = id.as_u64().unwrap_or(0);
@@ -1452,6 +1524,10 @@ async fn finalize_disconnect(client: &Arc<AcpClient>, app: &AppHandle) {
     {
         let mut asks = client.ask_pending.lock().await;
         asks.clear();
+    }
+    {
+        let mut elicits = client.elicit_pending.lock().await;
+        elicits.clear();
     }
     {
         let mut writes = client.fs_write_pending.lock().await;
@@ -1754,6 +1830,8 @@ pub async fn acp_initialize(
                 "writeTextFile": true,
             },
             "terminal": false,
+            // spec 279: every lane renders form elicitations as a question card.
+            "elicitation": { "form": {} },
         },
         "clientInfo": { "name": "krypton", "version": env!("CARGO_PKG_VERSION") },
     });
@@ -2263,6 +2341,12 @@ pub async fn acp_cancel(session: u64, registry: State<'_, Arc<AcpRegistry>>) -> 
             let _ = tx.send(grok_ask_user_skip());
         }
     }
+    {
+        let mut elicits = client.elicit_pending.lock().await;
+        for (_, tx) in elicits.drain() {
+            let _ = tx.send(elicitation_cancel());
+        }
+    }
     let acp_session_id = match client.acp_session_id.read().ok().and_then(|g| g.clone()) {
         Some(s) => s,
         None => return Ok(()),
@@ -2306,6 +2390,23 @@ pub async fn acp_ask_user_response(
     let mut pending = client.ask_pending.lock().await;
     if let Some(tx) = pending.remove(&request_id) {
         let _ = tx.send(grok_ask_user_ext_response(decision));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn acp_elicitation_response(
+    session: u64,
+    request_id: u64,
+    response: Value,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<(), String> {
+    let client = registry
+        .get(session)
+        .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+    let mut pending = client.elicit_pending.lock().await;
+    if let Some(tx) = pending.remove(&request_id) {
+        let _ = tx.send(response);
     }
     Ok(())
 }
@@ -2961,12 +3062,34 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
 mod tests {
     use super::{
         advertise_read_text_file, binary_read_error, disconnect_detail, effective_spawn_model,
-        fs_path_in_scope, grok_ask_user_ext_response, grok_ask_user_skip, grok_session_dir_for_cwd,
-        is_under_grok_session_dir, percent_encode_path, resolve_backend, sniff_binary_kind,
-        startup_hint, steering_supported, turn_marker_event, with_request_id, FsAccess,
+        elicitation_reply, fs_path_in_scope, grok_ask_user_ext_response, grok_ask_user_skip,
+        grok_session_dir_for_cwd, is_under_grok_session_dir, percent_encode_path, resolve_backend,
+        sniff_binary_kind, startup_hint, steering_supported, turn_marker_event, with_request_id,
+        FsAccess,
     };
     use serde_json::{json, Value};
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn elicitation_reply_keeps_valid_actions_and_cancels_malformed() {
+        assert_eq!(
+            elicitation_reply(json!({ "action": "accept", "content": { "value": "2. Review" } })),
+            json!({ "action": "accept", "content": { "value": "2. Review" } })
+        );
+        // accept without an object content still yields a schema-valid reply.
+        assert_eq!(
+            elicitation_reply(json!({ "action": "accept", "content": "oops" })),
+            json!({ "action": "accept", "content": {} })
+        );
+        assert_eq!(
+            elicitation_reply(json!({ "action": "decline", "content": { "value": 1 } })),
+            json!({ "action": "decline" })
+        );
+        assert_eq!(
+            elicitation_reply(json!({ "type": "accepted" })),
+            json!({ "action": "cancel" })
+        );
+    }
 
     #[test]
     fn grok_ask_user_ext_response_retags_type_to_outcome() {

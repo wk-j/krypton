@@ -6,6 +6,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { type UnlistenFn } from '@tauri-apps/api/event';
 
 import { setupListener } from '../util/listener';
+import { skipInterviewDecision, type AskUserReply } from './ask-user-question';
+import { elicitationResponse, type QuestionTarget } from './elicitation';
 import type {
   AcpAvailableCommand,
   AcpBackendDescriptor,
@@ -27,7 +29,7 @@ import type {
 } from './types';
 
 interface RawAcpEvent {
-  type: 'session_update' | 'permission_request' | 'ask_user_question' | 'stop' | 'error' | 'fs_activity' | 'fs_write_pending' | 'provider_error' | 'turn_marker';
+  type: 'session_update' | 'permission_request' | 'ask_user_question' | 'elicitation_request' | 'stop' | 'error' | 'fs_activity' | 'fs_write_pending' | 'provider_error' | 'turn_marker';
   // session_update:
   kind?: string;
   update?: {
@@ -35,10 +37,11 @@ interface RawAcpEvent {
     content?: ContentBlock | { type: 'text'; text: string };
     [k: string]: unknown;
   };
-  // permission_request / ask_user_question:
+  // permission_request / ask_user_question / elicitation_request:
   requestId?: number;
   questions?: unknown;
   toolCallId?: string;
+  requestedSchema?: unknown;
   params?: {
     toolCall?: ToolCall;
     options?: PermissionOption[];
@@ -234,11 +237,20 @@ export class AcpClient {
     });
   }
 
-  async respondAskUser(requestId: number, decision: unknown): Promise<void> {
+  /** Answer a parked question card on its wire (Grok ext method or ACP elicitation). */
+  async respondQuestion(target: QuestionTarget, reply: AskUserReply): Promise<void> {
+    if (target.wire === 'elicitation') {
+      await invoke('acp_elicitation_response', {
+        session: this.session,
+        requestId: target.requestId,
+        response: elicitationResponse(target.fields ?? [], reply),
+      });
+      return;
+    }
     await invoke('acp_ask_user_response', {
       session: this.session,
-      requestId,
-      decision,
+      requestId: target.requestId,
+      decision: reply.kind === 'accept' ? reply.decision : skipInterviewDecision(),
     });
   }
 
@@ -378,6 +390,16 @@ export class AcpClient {
           type: 'ask_user_question',
           requestId: raw.requestId ?? 0,
           questions: raw.questions,
+          toolCallId: typeof raw.toolCallId === 'string' ? raw.toolCallId : undefined,
+        };
+        break;
+      }
+      case 'elicitation_request': {
+        event = {
+          type: 'elicitation_request',
+          requestId: raw.requestId ?? 0,
+          message: typeof raw.message === 'string' ? raw.message : '',
+          requestedSchema: raw.requestedSchema,
           toolCallId: typeof raw.toolCallId === 'string' ? raw.toolCallId : undefined,
         };
         break;

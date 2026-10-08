@@ -43,9 +43,10 @@ import {
   createAskUserCardState,
   parseAskUserQuestions,
   payloadFromCard,
-  skipInterviewDecision,
-  type AskUserDecision,
+  questionActionsHint,
+  type AskUserReply,
 } from './ask-user-question';
+import { parseElicitationForm } from './elicitation';
 import type {
   AcpBackendDescriptor,
   AcpEvent,
@@ -391,6 +392,7 @@ import {
   compactPermissionLabel,
   compactPermissionMeta,
   filteredSlashCommands,
+  isAgentSlashCommand,
   inferLaneModelName,
   renderLaneHead,
   renderLaneStats,
@@ -7880,6 +7882,10 @@ export class AcpHarnessView implements ContentView {
         this.sealStreaming(lane);
         this.addAskUser(lane, event.requestId, event.questions, event.toolCallId);
         break;
+      case 'elicitation_request':
+        this.sealStreaming(lane);
+        this.addElicitation(lane, event.requestId, event.message, event.requestedSchema, event.toolCallId);
+        break;
       case 'usage':
         lane.usage = mergeUsage(lane.usage, event.usage);
         // spec 214: only the prompt-response variant carries token counters;
@@ -8151,8 +8157,15 @@ export class AcpHarnessView implements ContentView {
       lane.pendingDirectiveChange = null;
       this.refreshTriageEquip(lane); // spec 130: keep audit/default state coherent
     }
-    const blocks = this.buildPromptBlocks(lane, text, images);
-    if (lane.turnDirectiveOverride) {
+    // spec 279: an advertised agent slash command (`/review`) goes out bare —
+    // OMP joins all prompt blocks and only parses a command at the very start,
+    // so a leading lane-context packet turns it into plain model text. The
+    // one-shot directive override then waits for the next ordinary turn.
+    const agentCommand = isAgentSlashCommand(text, lane.availableCommands);
+    const blocks = agentCommand
+      ? this.buildUserBlocks(text, images)
+      : this.buildPromptBlocks(lane, text, images);
+    if (!agentCommand && lane.turnDirectiveOverride) {
       lane.turnDirectiveOverride = null;
       lane.previousDirectiveId = null;
     }
@@ -8557,20 +8570,60 @@ export class AcpHarnessView implements ContentView {
       ? parseAskUserQuestions({ questions: raw })
       : parseAskUserQuestions(raw);
     if (questions.length === 0) {
-      if (lane.client) void lane.client.respondAskUser(requestId, skipInterviewDecision());
+      if (lane.client) void lane.client.respondQuestion({ requestId, wire: 'grok' }, { kind: 'cancel' });
       this.appendTranscript(lane, 'system', 'ask_user_question: no questions provided');
       return;
     }
-    this.abandonPendingQuestions(lane, false);
-    const card = createAskUserCardState(questions);
-    const pending: HarnessAskUser = { requestId, questions, toolCallId, card };
-    const item = this.appendTranscript(lane, 'question', questions[0]?.question || 'question');
-    item.question = payloadFromCard(requestId, questions, card);
-    pending.transcriptItem = item;
+    // Grok replaces its active question (Rust already answered the old one
+    // with skip_interview). Parked elicitations are a different request and stay.
+    lane.pendingQuestions = lane.pendingQuestions.filter((ask) => {
+      if (ask.wire !== 'grok') return true;
+      this.markQuestionClosed(ask, 'skipped');
+      return false;
+    });
+    this.queueQuestion(lane, { requestId, wire: 'grok', questions, toolCallId, card: createAskUserCardState(questions) });
+  }
+
+  /** spec 279: ACP form elicitation → question card (any backend). */
+  private addElicitation(
+    lane: HarnessLane,
+    requestId: number,
+    message: string,
+    schema: unknown,
+    toolCallId?: string,
+  ): void {
+    const form = parseElicitationForm(message, schema);
+    if (!form) {
+      if (lane.client) void lane.client.respondQuestion({ requestId, wire: 'elicitation' }, { kind: 'decline' });
+      this.appendTranscript(lane, 'system', `elicitation declined: unsupported form (${message || 'no message'})`);
+      return;
+    }
+    this.queueQuestion(lane, {
+      requestId,
+      wire: 'elicitation',
+      fields: form.fields,
+      questions: form.questions,
+      toolCallId,
+      card: createAskUserCardState(form.questions),
+    });
+  }
+
+  private queueQuestion(lane: HarnessLane, pending: HarnessAskUser): void {
     lane.pendingQuestions.push(pending);
+    this.mountHeadQuestion(lane);
     this.setLaneStatus(lane, 'needs_permission');
     this.refreshOrchestratorConsole();
     this.updateComposerTick();
+  }
+
+  /** Only the head card takes keys, so only it gets a transcript row; queued
+   *  cards mount when they reach the head (no inert-but-live-looking cards). */
+  private mountHeadQuestion(lane: HarnessLane): void {
+    const head = lane.pendingQuestions[0];
+    if (!head || head.transcriptItem) return;
+    const item = this.appendTranscript(lane, 'question', head.questions[0]?.question || 'question');
+    item.question = payloadFromCard(head.requestId, head.questions, head.card, head.wire);
+    head.transcriptItem = item;
   }
 
   private syncAskUserCard(ask: HarnessAskUser): void {
@@ -8579,40 +8632,41 @@ export class AcpHarnessView implements ContentView {
       ask.requestId,
       ask.questions,
       ask.card,
+      ask.wire,
       ask.transcriptItem.question?.decision ?? 'pending',
       ask.transcriptItem.question?.decisionLabel,
     );
   }
 
-  private abandonPendingQuestions(lane: HarnessLane, respond = true): void {
-    const pending = lane.pendingQuestions.splice(0);
-    for (const ask of pending) {
-      if (ask.transcriptItem?.question) {
-        ask.transcriptItem.question.decision = 'skipped';
-        ask.transcriptItem.question.decisionLabel = 'skipped';
-      }
-      if (respond && lane.client) {
-        void lane.client.respondAskUser(ask.requestId, skipInterviewDecision());
-      }
+  private markQuestionClosed(ask: HarnessAskUser, label: string): void {
+    if (!ask.transcriptItem?.question) return;
+    ask.transcriptItem.question.decision = 'skipped';
+    ask.transcriptItem.question.decisionLabel = label;
+  }
+
+  /** Lane cancel / error / restart: every parked card is answered `cancel`. */
+  private abandonPendingQuestions(lane: HarnessLane): void {
+    for (const ask of lane.pendingQuestions.splice(0)) {
+      this.markQuestionClosed(ask, ask.wire === 'elicitation' ? 'cancelled' : 'skipped');
+      if (lane.client) void lane.client.respondQuestion(ask, { kind: 'cancel' });
     }
   }
 
-  private async resolveAskUser(
-    lane: HarnessLane,
-    decision: AskUserDecision,
-    kind: 'accepted' | 'skipped',
-  ): Promise<void> {
+  private async resolveAskUser(lane: HarnessLane, reply: AskUserReply): Promise<void> {
     const ask = lane.pendingQuestions.shift();
     if (!ask || !lane.client) return;
-    const labels = decision.outcome === 'accepted'
-      ? decision.answers.flatMap((answer) => answer.selected_labels)
-      : [];
     if (ask.transcriptItem?.question) {
-      ask.transcriptItem.question.decision = kind;
-      ask.transcriptItem.question.decisionLabel = kind === 'accepted'
-        ? (labels.join(', ') || 'answered')
-        : 'skipped';
+      if (reply.kind === 'accept') {
+        const labels = reply.decision.outcome === 'accepted'
+          ? reply.decision.answers.flatMap((answer) => answer.selected_labels)
+          : [];
+        ask.transcriptItem.question.decision = 'accepted';
+        ask.transcriptItem.question.decisionLabel = labels.join(', ') || 'answered';
+      } else {
+        this.markQuestionClosed(ask, ask.wire === 'elicitation' ? 'declined' : 'skipped');
+      }
     }
+    this.mountHeadQuestion(lane);
     if (
       lane.pendingQuestions.length === 0
       && lane.pendingPermissions.length === 0
@@ -8624,7 +8678,7 @@ export class AcpHarnessView implements ContentView {
     this.render();
     this.refreshOrchestratorConsole();
     try {
-      await lane.client.respondAskUser(ask.requestId, decision);
+      await lane.client.respondQuestion(ask, reply);
     } catch (e) {
       lane.pendingQuestions.unshift(ask);
       this.setLaneStatus(lane, 'needs_permission');
@@ -12427,7 +12481,7 @@ export class AcpHarnessView implements ContentView {
       const permissionMeta = lane.status === 'needs_permission' && lane.pendingPermissions.length > 0
         ? compactPermissionMeta(lane.pendingPermissions[0])
         : lane.status === 'needs_permission' && lane.pendingQuestions.length > 0
-          ? 'ask · 1–9/Enter · x skip'
+          ? `ask · 1–9/Enter · x ${lane.pendingQuestions[0]?.wire === 'elicitation' ? 'decline' : 'skip'}`
           : statusLabel(lane.status);
       metaHtml =
         `<span class="acp-harness__rail-meta">` +
@@ -12528,12 +12582,14 @@ export class AcpHarnessView implements ContentView {
       this.composerBloomLayer?.replaceChildren();
       return;
     }
-    if (lane.pendingQuestions.length > 0) {
+    const ask = lane.pendingQuestions[0];
+    if (ask) {
       this.composerEl.className = 'acp-harness__composer acp-harness__composer--permission';
       this.composerEl.style.setProperty('--acp-lane-accent', lane.accent);
+      const hint = questionActionsHint(ask.questions[ask.card.questionIndex], ask.wire, ask.card.otherFocused);
       this.composerEl.innerHTML =
         `<div class="acp-harness__composer-meta">ask</div>` +
-        `<div class="acp-harness__permission-options">1–9 pick · Enter · x skip · z other</div>`;
+        `<div class="acp-harness__permission-options">${esc(hint)}</div>`;
       this.composerBloomLayer?.replaceChildren();
       return;
     }
@@ -13636,9 +13692,9 @@ export class AcpHarnessView implements ContentView {
     ask.card = result.state;
     this.syncAskUserCard(ask);
     if (result.action.type === 'skip') {
-      void this.resolveAskUser(lane, skipInterviewDecision(), 'skipped');
+      void this.resolveAskUser(lane, { kind: 'decline' });
     } else if (result.action.type === 'submit') {
-      void this.resolveAskUser(lane, result.action.decision, 'accepted');
+      void this.resolveAskUser(lane, { kind: 'accept', decision: result.action.decision });
     } else {
       this.scheduleLaneRender(lane);
       this.updateComposerTick();

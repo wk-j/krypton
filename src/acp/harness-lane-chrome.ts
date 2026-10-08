@@ -409,6 +409,20 @@ export function filteredSlashCommands(lane: HarnessLane): AcpAvailableCommand[] 
   });
 }
 
+/**
+ * A prompt that invokes one of the agent's advertised slash commands
+ * (`/review`, `/$skill args`). Adapters such as OMP join every prompt block
+ * into one string and only parse a command when that string starts with `/`,
+ * so these turns must reach the agent without the lane-context packet.
+ * Unadvertised tokens (`/Users/wk/…` paths) stay ordinary prompts.
+ */
+export function isAgentSlashCommand(text: string, commands: AcpAvailableCommand[]): boolean {
+  const match = /^\/(\S+)/.exec(text);
+  if (!match) return false;
+  const token = match[1].toLowerCase();
+  return commands.some((command) => command.name.toLowerCase() === token);
+}
+
 export function renderSlashPalette(lane: HarnessLane): string {
   if (!slashPaletteVisible(lane)) return '';
   const matches = filteredSlashCommands(lane);

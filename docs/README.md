@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (262)
+## Specs (263)
 
 | # | Spec |
 |---|------|
@@ -281,6 +281,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 276 | [Review Till Pass (`#review pass`)](./276-review-till-pass.md) |
 | 277 | [Review Pass on the Lane Monitor](./277-review-pass-dashboard.md) |
 | 278 | [ACP Harness Mid-Turn Steering](./278-acp-harness-steering.md) |
+| 279 | [ACP Form Elicitation (Agent Options Dialogs)](./279-acp-elicitation-options.md) |
 
 ## ADRs (20)
 

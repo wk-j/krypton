@@ -20,7 +20,7 @@ import type {
   MessageResource,
   PermissionPayload,
 } from './harness-view-types';
-import { optionHotkey, type QuestionPayload } from './ask-user-question';
+import { optionHotkey, questionActionsHint, type QuestionPayload } from './ask-user-question';
 import { backendLogoId } from './harness-lane-identity';
 import { transcriptLabel } from './harness-lane-chrome';
 import { collapseThoughtBlankLines } from './harness-format';
@@ -997,6 +997,13 @@ export function renderQuestionBody(body: HTMLElement, payload: QuestionPayload):
   body.appendChild(head);
   if (!pending || !current) return;
 
+  if (current.detail) {
+    const detail = document.createElement('div');
+    detail.className = 'acp-harness__question-detail';
+    detail.textContent = current.detail;
+    body.appendChild(detail);
+  }
+
   const list = document.createElement('div');
   list.className = 'acp-harness__question-options';
   current.options.forEach((option, index) => {
@@ -1020,28 +1027,40 @@ export function renderQuestionBody(body: HTMLElement, payload: QuestionPayload):
     }
     list.appendChild(row);
   });
-  const other = document.createElement('div');
-  other.className = 'acp-harness__question-option'
-    + (payload.otherFocused || payload.optionIndex >= current.options.length
-      ? ' acp-harness__question-option--focus'
-      : '');
-  const otherKey = document.createElement('span');
-  otherKey.className = 'acp-harness__question-key';
-  otherKey.textContent = 'z';
-  const otherLabel = document.createElement('span');
-  otherLabel.className = 'acp-harness__question-label';
-  otherLabel.textContent = payload.otherFocused
-    ? (payload.otherDraft || '…')
-    : 'Other';
-  other.append(otherKey, otherLabel);
-  list.appendChild(other);
+  if (current.allowOther !== false) {
+    const other = document.createElement('div');
+    other.className = 'acp-harness__question-option'
+      + (payload.otherFocused || payload.optionIndex >= current.options.length
+        ? ' acp-harness__question-option--focus'
+        : '');
+    const otherKey = document.createElement('span');
+    otherKey.className = 'acp-harness__question-key';
+    otherKey.textContent = 'z';
+    const otherLabel = document.createElement('span');
+    otherLabel.className = 'acp-harness__question-label';
+    otherLabel.textContent = payload.otherFocused
+      ? (payload.otherDraft || '…')
+      : (current.textOnly ? 'type answer' : 'Other');
+    other.append(otherKey, otherLabel);
+    list.appendChild(other);
+  }
   body.appendChild(list);
+  // Long pickers (branches, commits) scroll inside the list; keep the focused
+  // row visible without moving the transcript itself.
+  const focused = list.querySelector<HTMLElement>('.acp-harness__question-option--focus');
+  if (focused) {
+    requestAnimationFrame(() => {
+      if (list.scrollHeight <= list.clientHeight) return;
+      const top = focused.offsetTop;
+      const bottom = top + focused.offsetHeight;
+      if (top < list.scrollTop) list.scrollTop = top;
+      else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
+    });
+  }
 
   const actions = document.createElement('div');
   actions.className = 'acp-harness__question-actions';
-  actions.textContent = payload.otherFocused
-    ? 'type · Enter submit · Esc back'
-    : '1–9 pick · Enter · x skip · z other';
+  actions.textContent = questionActionsHint(current, payload.wire, payload.otherFocused);
   body.appendChild(actions);
 }
 

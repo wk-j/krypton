@@ -4516,9 +4516,23 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
   font-size: 0.82em;
 }
 
+.acp-harness__question-detail {
+  max-height: 12.5em;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+  font-size: 0.9em;
+}
+
+/* spec 279: long pickers (branches, commits) scroll inside the card;
+   position:relative makes option offsetTop list-relative for focus tracking. */
 .acp-harness__question-options {
+  position: relative;
   display: grid;
   gap: 2px;
+  max-height: 16em;
+  overflow-y: auto;
 }
 
 .acp-harness__question-option {

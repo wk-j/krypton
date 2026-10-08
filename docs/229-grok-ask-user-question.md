@@ -4,6 +4,7 @@
 > Date: 2026-08-17
 > Milestone: M-ACP — Harness convergence
 > Builds on: `docs/135-acp-grok-lane.md` (`_x.ai/exit_plan_mode`), `docs/69-acp-agent-support.md` (permission oneshot)
+> Extended by: `docs/279-acp-elicitation-options.md` (the same card answers ACP form elicitations from any lane)
 
 ## Problem
 

@@ -886,6 +886,7 @@ export type AcpEvent =
   | { type: 'plan'; entries: PlanEntry[] }
   | { type: 'permission_request'; requestId: number; toolCall: ToolCall; options: PermissionOption[] }
   | { type: 'ask_user_question'; requestId: number; questions: unknown; toolCallId?: string }
+  | { type: 'elicitation_request'; requestId: number; message: string; requestedSchema: unknown; toolCallId?: string }
   | { type: 'usage'; usage: UsageInfo }
   | { type: 'available_commands'; commands: AcpAvailableCommand[] }
   | { type: 'mode_update'; modeId: string }

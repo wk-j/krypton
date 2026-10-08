@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   filteredSlashCommands,
+  isAgentSlashCommand,
   renderLaneHead,
   renderLaneStats,
   renderSlashPalette,
@@ -134,6 +135,26 @@ describe('slash palette — Codex skills', () => {
     const lane = makeLane({ draft: '/grill-with-d', availableCommands });
 
     expect(renderSlashPalette(lane)).toContain('/$grill-with-docs');
+  });
+});
+
+describe('isAgentSlashCommand — spec 279 bare command turns', () => {
+  const commands = [
+    { name: 'review', description: 'Review changes.' },
+    { name: '$grill-with-docs', description: 'Stress-test a document.' },
+  ];
+
+  it('recognises an advertised command, with or without arguments', () => {
+    expect(isAgentSlashCommand('/review', commands)).toBe(true);
+    expect(isAgentSlashCommand('/review uncommitted changes', commands)).toBe(true);
+    expect(isAgentSlashCommand('/$grill-with-docs docs/279.md', commands)).toBe(true);
+  });
+
+  it('keeps paths, unknown commands, and mid-text slashes as ordinary prompts', () => {
+    expect(isAgentSlashCommand('/Users/wk/Source/krypton is broken', commands)).toBe(false);
+    expect(isAgentSlashCommand('/reviewer', commands)).toBe(false);
+    expect(isAgentSlashCommand('please run /review', commands)).toBe(false);
+    expect(isAgentSlashCommand('/review', [])).toBe(false);
   });
 });
 
