@@ -11,6 +11,7 @@ import type { GithubTicketReference } from './harness-view-types';
 import type { HarnessLane, HarnessTranscriptItem, StagedImage } from './harness-view-types';
 import type { ReviewSubject } from './review';
 import type { ContentBlock, LaneBusEvent, ReviewFinding, StopReason } from './types';
+import type { LiveDelivery } from './live-voice';
 
 /** Capabilities every harness controller may rely on. */
 export interface HarnessViewHost {
@@ -27,6 +28,16 @@ export interface HarnessDictationHost extends HarnessViewHost {
   canStartDictation(lane: HarnessLane): boolean;
   renderComposer(): void;
   setDraft(lane: HarnessLane, text: string, cursor: number): void;
+}
+
+/** Spec 280 live voice controller host. */
+export interface HarnessLiveVoiceHost extends HarnessViewHost {
+  readonly composerEl: HTMLElement;
+  render(): void;
+  /** Same routing as composer Enter on a busy lane: steer (spec 278), else
+   *  queue (spec 136); an idle lane starts the turn. The prompt carries
+   *  `delegationId` so the turn that consumes it reports back. */
+  deliverLivePrompt(lane: HarnessLane, text: string, delegationId: string): Promise<LiveDelivery>;
 }
 
 /** Specs 253–267 timeline controller host. */
@@ -115,7 +126,7 @@ export interface HarnessSteerHost extends HarnessViewHost {
     lane: HarnessLane,
     kind: HarnessTranscriptItem['kind'],
     text: string,
-    metadata?: Pick<HarnessTranscriptItem, 'imageCount' | 'steer'>,
+    metadata?: Pick<HarnessTranscriptItem, 'imageCount' | 'steer' | 'voice'>,
   ): HarnessTranscriptItem;
   removeTranscriptItem(lane: HarnessLane, itemId: string): void;
   /** The user's own blocks (images, then text) — no lane-context packet. */

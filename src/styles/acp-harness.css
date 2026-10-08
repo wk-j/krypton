@@ -4383,6 +4383,95 @@
   }
 }
 
+/* spec 280: live voice strip — full 1px border, lane-accent tint, no rail. */
+.acp-harness__live {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 4px 0;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 40%, transparent);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 7%, transparent);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+  font-size: 0.82em;
+  line-height: 1.3;
+}
+
+.acp-harness__live-label {
+  flex: none;
+  color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+
+.acp-harness__live-phase,
+.acp-harness__live-voice,
+.acp-harness__live-keys {
+  flex: none;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.acp-harness__live-voice,
+.acp-harness__live-keys {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+}
+
+.acp-harness__live-meter {
+  flex: none;
+  font-size: 0.8em;
+  letter-spacing: -0.04em;
+  color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 70%, transparent);
+}
+
+.acp-harness__live-meter--out {
+  color: var(--agent-user, #6dd0ff);
+}
+
+.acp-harness__live-line {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acp-harness__live--speaking .acp-harness__live-phase {
+  color: var(--agent-user, #6dd0ff);
+}
+
+.acp-harness__live--working .acp-harness__live-phase {
+  color: var(--agent-gold, #ffd166);
+}
+
+.acp-harness__live--muted .acp-harness__live-phase,
+.acp-harness__live--ended .acp-harness__live-label {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+}
+
+.acp-harness__live--error {
+  border-color: color-mix(in srgb, var(--agent-error, #ff6b8b) 50%, transparent);
+  background: color-mix(in srgb, var(--agent-error, #ff6b8b) 8%, transparent);
+}
+
+.acp-harness__live--error .acp-harness__live-label,
+.acp-harness__live--error .acp-harness__live-line {
+  color: var(--agent-error, #ff6b8b);
+}
+
+.acp-harness__msg--user .acp-harness__msg-label--voice {
+  color: var(--agent-user, #6dd0ff);
+}
+
+@container (max-width: 480px) {
+  .acp-harness__live-keys,
+  .acp-harness__live-voice {
+    display: none;
+  }
+}
+
 .acp-harness__composer--command .acp-harness__input {
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
 }

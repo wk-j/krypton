@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Krypton uses the microphone to transcribe speech into an ACP Harness prompt.</string>
+  <string>Krypton uses the microphone to transcribe speech into an ACP Harness prompt and for live voice sessions with a Harness lane.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
   <string>Krypton uses speech recognition to turn spoken words into an ACP Harness prompt.</string>
 </dict>

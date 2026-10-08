@@ -522,7 +522,7 @@ pub async fn usage_fetch_claude() -> Result<ClaudeUsage, String> {
 
 // ─── Codex rollout scanner ───────────────────────────────────────────────────
 
-fn codex_home_dir() -> Option<PathBuf> {
+pub(crate) fn codex_home_dir() -> Option<PathBuf> {
     std::env::var("CODEX_HOME")
         .ok()
         .filter(|s| !s.is_empty())
@@ -723,7 +723,7 @@ fn supplement_codex_usage(mut usage: CodexUsage, backend: CodexUsage) -> CodexUs
     usage
 }
 
-fn parse_codex_backend_credentials(raw: &str) -> Option<(String, Option<String>)> {
+pub(crate) fn parse_codex_backend_credentials(raw: &str) -> Option<(String, Option<String>)> {
     let value: Value = serde_json::from_str(raw).ok()?;
     let tokens = value.get("tokens")?;
     let access_token = tokens.get("access_token")?.as_str()?.to_string();

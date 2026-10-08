@@ -549,6 +549,8 @@ The default focus is the composer. Almost every key acts on the composer or on o
 | `Cmd+Shift+D` | Composer text mode, speech recognition available | Start Thai dictation; repeat to stop and keep editable text. |
 | `Enter` | Dictation active | Stop and keep recognized text; do not submit on the same keypress. |
 | `Esc` | Dictation active | Abort capture and restore the saved draft/cursor. |
+| `Cmd+Shift+L` / `#live [voice]` | Harness focused | Start a live voice session on the active lane; repeat (or `#live stop`) to end it (spec 280). |
+| `Cmd+Alt+L` / `#live mute` | Live voice running | Toggle the microphone. |
 | `#` | Composer text mode | Open hash-command autocomplete. |
 | `Tab` / `Enter` | Hash autocomplete | Accept selected command. |
 | `Esc` | Hash autocomplete | Dismiss popup (text preserved). |

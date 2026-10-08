@@ -8,6 +8,7 @@ pub mod hook_server;
 pub mod hurl;
 pub mod journal;
 pub mod live_assist;
+mod live_voice;
 pub mod music;
 pub mod native_host;
 pub mod pencil;
@@ -150,6 +151,7 @@ pub fn run() {
         .manage(telegram_service.clone())
         .manage(hurl_state.clone())
         .manage(live_assist::LiveAssistState::default())
+        .manage(live_voice::LiveVoiceState::default())
         .manage(quick_search::QuickSearchState::new())
         .manage(Arc::new(acp::AcpRegistry::new()))
         .manage(Arc::new(webview::WebviewRegistry::new()))
@@ -367,6 +369,10 @@ pub fn run() {
             usage::usage_fetch_copilot,
             usage::usage_fetch_cursor,
             usage::usage_fetch_grok,
+            live_voice::live_voice_signal,
+            live_voice::live_voice_open_sideband,
+            live_voice::live_voice_send,
+            live_voice::live_voice_close,
             pencil::read_pencil_file,
             pencil::write_pencil_file,
             pencil::rename_pencil_file,

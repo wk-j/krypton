@@ -396,6 +396,28 @@ d. The loop stops once the grip, the mouse and the button fades settle
       runs, the stop is held and finishTurn runs whole only after both end,
       so turn-end cleanup never hits the newer turn and no peer-mail or queue
       drain can send a colliding session/prompt.
+   c. Live voice (Spec 280): `#live [voice]` or Cmd+Shift+L on a lane.
+      1. HarnessLiveVoiceController: getUserMedia (echo cancellation) →
+         RTCPeerConnection + mic track + `oai-events` data channel → offer.
+      2. invoke live_voice_signal(offerSdp, instructions, voice): Rust reads
+         ~/.codex/auth.json, POSTs the offer with Codex Desktop headers, keeps
+         the token, returns {generation, answerSdp, callId}.
+      3. setRemoteDescription(answer) → data channel open →
+         invoke live_voice_open_sideband(generation). Rust forwards each
+         sideband text frame as `live-voice-event` {generation, payload};
+         an unexpected socket end emits `live-voice-closed`.
+      4. Transcript frames update the composer's live strip only.
+         `delegation.created` → deliverLivePrompt: idle lane → sendUserPrompt
+         (row tagged `voice`); busy lane → steer (spec 278) or queue with
+         `liveDelegationId`; the delegation binds when its turn starts.
+      5. Lane message_chunk text accumulates; each tool_call sends it as a
+         `commentary` append; a needs_permission transition sends an
+         `"Agent Permission Request"`; finishTurn sends
+         `"Agent Final Message"` (or `"Agent Turn Cancelled"`) — all via
+         live_voice_send, serialized per session — and the model speaks it.
+      6. Stop (Cmd+Shift+L, `#live stop`, lane closed/error/restart/new):
+         send `session.close`, then live_voice_close(generation); release
+         the mic, peer, and audio context.
 8. MCP-capable agents call handoff_set, handoff_get, and handoff_list against
    /mcp/harness/<harnessId>/lane/<laneLabel>.
    a. handoff_set overwrites the caller's own document in RAM.

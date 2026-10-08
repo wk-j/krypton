@@ -3987,6 +3987,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
       updateComposerTick: () => {},
       updateSpinnerTicker: () => {},
       clearCancelEscalation: clear,
+      liveVoiceCtl: { onLaneStatus: () => {} },
     };
 
     // busy → needs_permission is the same turn: escalation survives.

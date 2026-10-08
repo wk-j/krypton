@@ -48,11 +48,12 @@ sha2 = "0.10"
 getrandom = "0.2"
 tower-http = { version = "0.6", features = ["cors"] }
 fff-search = "0.6"
-futures-util = { version = "0.3", default-features = false, features = ["std"] }
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 keyring = { version = "3.6.3", default-features = false, features = ["apple-native", "windows-native", "linux-native-sync-persistent", "crypto-rust"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 krypton-remote-protocol = { path = "remote-protocol" }
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"

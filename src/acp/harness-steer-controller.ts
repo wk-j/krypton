@@ -63,7 +63,9 @@ export class HarnessSteerController {
     return lane.supportsSteering && lane.status === 'busy' && lane.client !== null;
   }
 
-  async steer(lane: HarnessLane, text: string, images: StagedImage[]): Promise<void> {
+  /** `liveDelegationId` (spec 280): a voice delegation; a missed steer keeps it
+   *  on the re-queued prompt so the turn that finally runs it reports back. */
+  async steer(lane: HarnessLane, text: string, images: StagedImage[], liveDelegationId?: string): Promise<void> {
     const client = lane.client;
     if (!client) return;
     const state = this.stateFor(lane);
@@ -74,6 +76,7 @@ export class HarnessSteerController {
     const item = this.host.appendTranscript(lane, 'user', text, {
       imageCount: images.length,
       steer: 'pending',
+      ...(liveDelegationId ? { voice: true as const } : {}),
     });
     lane.pendingUserEcho = { itemId: item.id, text, received: '' };
     state.inFlight += 1;
@@ -109,7 +112,7 @@ export class HarnessSteerController {
       if (!cancelled) this.host.flashChip('steered');
     } else {
       if (error) console.warn('[acp-harness] steer failed', error);
-      this.requeue(lane, item.id, text, images, seq, cancelled, error);
+      this.requeue(lane, item.id, text, images, seq, cancelled, error, liveDelegationId);
     }
     this.maybeFinish(lane, state);
     this.host.render();
@@ -189,6 +192,7 @@ export class HarnessSteerController {
     seq: number,
     cancelled: boolean,
     error: unknown,
+    liveDelegationId: string | undefined,
   ): void {
     this.host.removeTranscriptItem(lane, itemId);
     if (lane.pendingUserEcho?.itemId === itemId) lane.pendingUserEcho = null;
@@ -199,7 +203,7 @@ export class HarnessSteerController {
     }
     // Head of the queue, behind missed steers typed earlier. The cap (spec 136)
     // is not applied — a missed steer is never dropped.
-    const prompt: QueuedPrompt = { text, images, mentionTargets: [] };
+    const prompt: QueuedPrompt = { text, images, mentionTargets: [], ...(liveDelegationId ? { liveDelegationId } : {}) };
     let at = 0;
     while (at < lane.queuedPrompts.length) {
       const earlier = this.requeuedSeq.get(lane.queuedPrompts[at]);

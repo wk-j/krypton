@@ -294,6 +294,11 @@ export function renderTranscriptItem(
     label.classList.add('acp-harness__msg-label--steer');
     if (item.steer === 'pending') label.classList.add('acp-harness__msg-label--steer-pending');
   }
+  if (item.kind === 'user' && item.voice) {
+    // spec 280: the row came from the live voice session.
+    label.textContent = `${label.textContent} · voice`;
+    label.classList.add('acp-harness__msg-label--voice');
+  }
   if (item.kind === 'thought') {
     label.classList.add('acp-harness__msg-label--thought');
     // No meter while the row is veiled (zero text) — a "brief" reading on

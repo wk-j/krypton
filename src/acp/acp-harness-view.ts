@@ -9,6 +9,8 @@ import { openExternalUrl } from '../external-url';
 import { AcpClient } from './client';
 import { DICTATION_LANG_ENGLISH, dictationLanguageFromShift } from './harness-dictation';
 import { HarnessDictationController } from './harness-dictation-controller';
+import { HarnessLiveVoiceController } from './harness-live-voice-controller';
+import { DEFAULT_LIVE_VOICE, type LiveDelivery } from './live-voice';
 import { HarnessTimelineController } from './harness-timeline-controller';
 import { HarnessTicketController } from './harness-ticket-controller';
 import { HarnessReviewLoopController } from './harness-review-loop-controller';
@@ -32,6 +34,7 @@ export {
 } from './harness-ticket-helpers';
 import type {
   HarnessDictationHost,
+  HarnessLiveVoiceHost,
   HarnessReviewLoopHost,
   HarnessSteerHost,
   HarnessTicketHost,
@@ -1159,6 +1162,8 @@ export class AcpHarnessView implements ContentView {
   private chip: string | null = null;
   private chipTimer: number | null = null;
   private readonly dictationCtl = new HarnessDictationController(this.dictationHost());
+  /** spec 280: realtime voice session bound to one lane. */
+  private readonly liveVoiceCtl = new HarnessLiveVoiceController(this.liveVoiceHost());
   private readonly steerCtl = new HarnessSteerController(this.steerHost());
   private readonly dictationFocusOutHandler = (event: FocusEvent): void => {
     const next = event.relatedTarget;
@@ -1446,6 +1451,7 @@ export class AcpHarnessView implements ContentView {
     // Mirror status transitions to the control SSE stream (doc 175) so a web
     // mirror sees the lane go busy/idle/error without polling.
     this.publishStream(lane, 'status', { prev, next });
+    this.liveVoiceCtl.onLaneStatus(lane, next); // spec 280
     // spec 155: a transition into `idle` is a lane quiet point (ADR-0008) —
     // announce it globally so a Diff Window over the same repo refreshes its
     // working diff. Payload is just the projectDir; no lane identity needed.
@@ -4027,6 +4033,20 @@ export class AcpHarnessView implements ContentView {
     // spec 206: unified open-hint mode swallows keys while active (read-only
     // transcript exception, active only in hint mode).
     if (this.openHintMode) return this.handleOpenHintKey(e);
+    // spec 280: live voice — Cmd+Shift+L starts on the active lane or stops;
+    // Cmd+Alt+L toggles the mic. `code`, since Option rewrites `key` on macOS.
+    if (e.code === 'KeyL' && e.metaKey && !e.ctrlKey && e.shiftKey !== e.altKey) {
+      e.preventDefault();
+      if (e.altKey) {
+        this.liveVoiceCtl.toggleMute();
+      } else if (this.liveVoiceCtl.laneId) {
+        this.liveVoiceCtl.stop('stopped');
+      } else {
+        const lane = this.activeLane();
+        if (lane) void this.liveVoiceCtl.start(lane, DEFAULT_LIVE_VOICE);
+      }
+      return true;
+    }
     if (e.key === '.' && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
       e.preventDefault();
       this.toggleZenMode();
@@ -4585,6 +4605,7 @@ export class AcpHarnessView implements ContentView {
   dispose(): void {
     this.element.removeEventListener('focusout', this.dictationFocusOutHandler);
     this.dictationCtl.abort(false);
+    this.liveVoiceCtl.dispose();
     this.composerBloomLayer?.replaceChildren();
     this.composerBloomLayer = null;
     this.composerBloomLaneId = null;
@@ -7834,6 +7855,7 @@ export class AcpHarnessView implements ContentView {
         if (event.messageId) lane.currentAssistantMessageId = event.messageId;
         if (event.content.type === 'text') {
           this.appendStreaming(lane, 'assistant', event.text);
+          this.liveVoiceCtl.onMessageText(lane, event.text); // spec 280
           this.scheduleStreamingBodyOnly(lane);
           needsRender = false;
         } else {
@@ -7852,6 +7874,7 @@ export class AcpHarnessView implements ContentView {
         break;
       case 'tool_call':
         this.sealStreaming(lane);
+        this.liveVoiceCtl.onToolCall(lane); // spec 280: progress so far → commentary
         this.renderTool(lane, event.call, false);
         this.noteToolActivity(lane, event.call.toolCallId);
         this.scheduleToolRender(lane);
@@ -8113,6 +8136,28 @@ export class AcpHarnessView implements ContentView {
     await this.sendUserPrompt(lane, text, images);
   }
 
+  /** spec 280: hand a voice delegation to `lane` the way composer Enter would —
+   *  steer a busy lane that supports it, else queue; an idle lane starts now. */
+  private async deliverLivePrompt(lane: HarnessLane, text: string, delegationId: string): Promise<LiveDelivery> {
+    if (!lane.client || lane.status === 'starting' || lane.status === 'error' || lane.status === 'stopped') {
+      return 'rejected';
+    }
+    if (lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer') {
+      if (this.steerCtl.canSteer(lane)) {
+        await this.steerCtl.steer(lane, text, [], delegationId);
+        // A missed steer re-queues the prompt with its delegation tag.
+        return lane.queuedPrompts.some((p) => p.liveDelegationId === delegationId) ? 'queued' : 'steered';
+      }
+      if (lane.queuedPrompts.length >= PROMPT_QUEUE_MAX) return 'rejected';
+      lane.queuedPrompts.push({ text, images: [], mentionTargets: [], liveDelegationId: delegationId });
+      this.flashChip(`voice queued (${lane.queuedPrompts.length})`);
+      this.render();
+      return 'queued';
+    }
+    void this.sendUserPrompt(lane, text, [], { liveDelegationId: delegationId });
+    return 'started';
+  }
+
   /**
    * spec 136: dispatch a user prompt to the agent — the back half of the old
    * submitActiveLane, shared by the immediate composer submit and the queued
@@ -8129,6 +8174,7 @@ export class AcpHarnessView implements ContentView {
     opts?: {
       clearDraft?: boolean;
       telegramCaller?: TelegramControlCaller;
+      liveDelegationId?: string;
     },
   ): Promise<{ handled: boolean; delivered: boolean }> {
     if (!lane.client) return { handled: false, delivered: false };
@@ -8140,9 +8186,11 @@ export class AcpHarnessView implements ContentView {
     const userItem = this.appendTranscript(lane, 'user', text, {
       imageCount: images.length,
       ...(opts?.telegramCaller ? { telegramProvenance: opts.telegramCaller } : {}),
+      ...(opts?.liveDelegationId ? { voice: true as const } : {}),
     });
     lane.pendingUserEcho = { itemId: userItem.id, text, received: '' };
     this.setLaneStatus(lane, 'busy');
+    if (opts?.liveDelegationId) this.liveVoiceCtl.onPromptStarted(lane, opts.liveDelegationId); // spec 280
     lane.activeTurnStartedAt = Date.now();
     lane.pendingTurnExtractions = [];
     lane.currentAssistantId = null;
@@ -8241,6 +8289,7 @@ export class AcpHarnessView implements ContentView {
     void this.sendUserPrompt(lane, next.text, next.images, {
       clearDraft: false,
       telegramCaller: next.telegramCaller,
+      liveDelegationId: next.liveDelegationId,
     })
       .then((r) => {
         if (r.delivered) return; // a turn started; the next finishTurn drains the rest
@@ -8437,6 +8486,8 @@ export class AcpHarnessView implements ContentView {
     // synchronous peer-mail drain in setLaneStatus can stamp the next turn's
     // value before this method resumes.
     this.recordTurnUsage(lane, stopReason);
+    // spec 280: before the status change below can start the next turn.
+    this.liveVoiceCtl.onTurnEnd(lane, stopReason);
     if (stopReason === 'cancelled') {
       // `reason` is set only for harness-synthesized stops (e.g. the subprocess
       // exited mid-turn) — distinguish that from a user-initiated cancel so a
@@ -10129,6 +10180,7 @@ export class AcpHarnessView implements ContentView {
 
   private async closeLane(lane: HarnessLane): Promise<void> {
     if (this.dictationCtl.session?.laneId === lane.id) this.dictationCtl.abort(false);
+    this.liveVoiceCtl.onLaneGone(lane); // spec 280
     lane.spawnEpoch += 1;
     this.publishStream(lane, 'lane_closed', {
       sessionId: lane.sessionId,
@@ -10386,6 +10438,7 @@ export class AcpHarnessView implements ContentView {
     lane.planCollapsed = false;
     lane.queuedPrompts = []; // spec 136: fresh session — queued prompts were for the old context
     this.steerCtl.resetLane(lane.id); // spec 278
+    this.liveVoiceCtl.onLaneGone(lane); // spec 280: the voice session spoke to the old session
     this.clearPollyBuiltinRole(lane);
     this.clearDebbyBuiltinRole(lane);
     this.clearSaltyBuiltinRole(lane);
@@ -10447,6 +10500,7 @@ export class AcpHarnessView implements ContentView {
     lane.stagedImages = [];
     lane.queuedPrompts = []; // spec 136: fresh session — drop queued prompts
     this.steerCtl.resetLane(lane.id); // spec 278
+    this.liveVoiceCtl.onLaneGone(lane); // spec 280: the voice session spoke to the old session
     clearToolTranscriptRetention(lane);
     this.updateToolTick();
     lane.transcript.push({ id: makeId(), kind: 'system', text: `starting fresh ${lane.displayName}...` });
@@ -10848,6 +10902,13 @@ export class AcpHarnessView implements ContentView {
         return;
       }
       await this.enqueueSystemPrompt(lane, tldrawDrawPrompt(intent), undefined, 'drawing in tldraw');
+      return;
+    }
+    // spec 280: realtime voice bound to this lane.
+    if (parts[0] === '#live') {
+      this.setDraft(lane, '', 0);
+      await this.liveVoiceCtl.runCommand(lane, parts.slice(1));
+      this.render();
       return;
     }
     if (parts[0] === '#review') {
@@ -12650,6 +12711,7 @@ export class AcpHarnessView implements ContentView {
       `<div class="acp-harness__composer-tools">` +
       `<span class="acp-harness__help-hint">? help</span>${dictationControl}</div></div>` +
       peerStrip +
+      this.liveVoiceCtl.renderStrip(lane) +
       staging +
       mentionPalette +
       palette +
@@ -13101,7 +13163,7 @@ export class AcpHarnessView implements ContentView {
     lane: HarnessLane,
     kind: HarnessTranscriptItem['kind'],
     text: string,
-    metadata: Pick<HarnessTranscriptItem, 'imageCount' | 'telegramProvenance' | 'steer'> = {},
+    metadata: Pick<HarnessTranscriptItem, 'imageCount' | 'telegramProvenance' | 'steer' | 'voice'> = {},
   ): HarnessTranscriptItem {
     const item: HarnessTranscriptItem = { id: makeId(), kind, text, createdAt: Date.now(), ...metadata };
     const dropped = appendBoundedTranscriptItem(lane, item);
@@ -15158,6 +15220,20 @@ export class AcpHarnessView implements ContentView {
       flashChip: (text) => view.flashChip(text),
       renderComposer: () => view.renderComposer(),
       setDraft: (lane, text, cursor) => view.setDraft(lane, text, cursor),
+    };
+  }
+
+  private liveVoiceHost(): HarnessLiveVoiceHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const view = this;
+    return {
+      get element() { return view.element; },
+      get composerEl() { return view.composerEl; },
+      get lanes() { return view.lanes; },
+      get activeLaneId() { return view.activeLaneId; },
+      flashChip: (text) => view.flashChip(text),
+      render: () => view.renderComposer(),
+      deliverLivePrompt: (lane, text, delegationId) => view.deliverLivePrompt(lane, text, delegationId),
     };
   }
 

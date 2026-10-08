@@ -105,6 +105,8 @@ export interface HarnessTranscriptItem {
   /** spec 278: a user row sent into a running turn — 'pending' until the
    *  adapter takes it. A steer that misses is removed and re-queued. */
   steer?: 'pending' | 'injected';
+  /** spec 280: a user row that came from the live voice session. */
+  voice?: true;
   status?: string;
   diff?: { title: string; unified: string };
   tool?: ToolPayload;
@@ -811,6 +813,9 @@ export interface QueuedPrompt {
   mentionTargets: string[];
   /** Frozen trusted origin; a queued Telegram turn keeps its one-turn bypass. */
   telegramCaller?: TelegramControlCaller;
+  /** spec 280: the live voice delegation this prompt answers; the turn that
+   *  consumes it reports its progress and final text back to that delegation. */
+  liveDelegationId?: string;
 }
 
 export interface TranscriptScrollAnchor {
