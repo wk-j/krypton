@@ -3510,16 +3510,26 @@
 
 .acp-harness__composer--permission {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  justify-content: center;
   min-height: 32px;
   padding-block: 5px;
   background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-gold, #ffd166)) 8%, transparent);
 }
 
+.acp-harness__permission-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
 .acp-harness__composer--permission .acp-harness__composer-meta {
   /* Don't grow: keep the "perm" label and the action buttons grouped together
-     on the left rather than pushing the buttons to the far right edge. */
+     on the left rather than pushing the buttons to the far right edge. The base
+     rule's inline-size containment would size this non-growing label to 0 and
+     clip it, so it is opted out here. */
+  container-type: normal;
   flex: 0 0 auto;
   min-width: 0;
   color: #ffe3a0;
@@ -4419,6 +4429,22 @@
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
 }
 
+/* The phase flips listening ↔ speaking up to every level tick; reserve the
+ * widest label so the voice, meters and line never shift sideways. */
+.acp-harness__live-phase {
+  display: inline-grid;
+}
+
+.acp-harness__live-phase > *,
+.acp-harness__live-phase::after {
+  grid-area: 1 / 1;
+}
+
+.acp-harness__live-phase::after {
+  content: 'connecting';
+  visibility: hidden;
+}
+
 .acp-harness__live-meter {
   flex: none;
   font-size: 0.8em;
@@ -4459,6 +4485,11 @@
 .acp-harness__live--error .acp-harness__live-label,
 .acp-harness__live--error .acp-harness__live-line {
   color: var(--agent-error, #ff6b8b);
+}
+
+/* Muted: the hint now reads "unmute" — make the state visible at a glance. */
+.acp-harness__live--muted .acp-harness__live-keys {
+  color: var(--agent-gold, #ffd166);
 }
 
 .acp-harness__msg--user .acp-harness__msg-label--voice {

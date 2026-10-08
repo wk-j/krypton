@@ -4166,28 +4166,49 @@ describe('mid-turn steering routing (spec 278)', () => {
 });
 
 describe('live voice delegation routing (spec 280)', () => {
-  type LiveLane = { id: string; status: string; client: object | null; queuedPrompts: Array<{ text: string }> };
+  type LiveLane = {
+    id: string;
+    status: string;
+    client: object | null;
+    queuedPrompts: Array<{ text: string; liveDelegationId?: string }>;
+  };
   type LiveHost = {
     deliverLivePrompt(lane: LiveLane, text: string, delegationId: string): Promise<string>;
   };
   const deliverLivePrompt = (AcpHarnessView.prototype as unknown as LiveHost).deliverLivePrompt;
+  const unsteerableHost = (steered: string[]): object => ({
+    steerCtl: {
+      canSteer: () => false,
+      steer: async (_l: LiveLane, text: string) => { steered.push(text); },
+    },
+    flashChip: () => {},
+    render: () => {},
+  });
 
-  it('never queues a delegation on a busy lane that cannot be steered', async () => {
+  it('queues a delegation on a mid-turn lane that cannot be steered, tagged for report-back', async () => {
     for (const status of ['busy', 'needs_permission', 'awaiting_peer']) {
-      const lane: LiveLane = { id: 'l', status, client: {}, queuedPrompts: [] };
+      const lane: LiveLane = { id: 'l', status, client: {}, queuedPrompts: [{ text: 'typed' }] };
       const steered: string[] = [];
-      const host = {
-        steerCtl: {
-          canSteer: () => false,
-          steer: async (_l: LiveLane, text: string) => { steered.push(text); },
-        },
-        flashChip: () => {},
-        render: () => {},
-      };
-      expect(await deliverLivePrompt.call(host, lane, 'nothing to approve', 'd1')).toBe('busy');
-      expect(lane.queuedPrompts).toEqual([]);
+      expect(await deliverLivePrompt.call(unsteerableHost(steered), lane, 'run the tests', 'd1')).toBe('queued');
+      expect(lane.queuedPrompts.map((p) => [p.text, p.liveDelegationId])).toEqual([
+        ['typed', undefined],
+        ['run the tests', 'd1'],
+      ]);
       expect(steered).toEqual([]);
     }
+  });
+
+  it('rejects a delegation once the lane prompt queue is full', async () => {
+    // PROMPT_QUEUE_MAX = 10 (spec 136).
+    const lane: LiveLane = {
+      id: 'l',
+      status: 'busy',
+      client: {},
+      queuedPrompts: Array.from({ length: 9 }, (_, i) => ({ text: `q${i}` })),
+    };
+    expect(await deliverLivePrompt.call(unsteerableHost([]), lane, 'tenth', 'd10')).toBe('queued');
+    expect(await deliverLivePrompt.call(unsteerableHost([]), lane, 'eleventh', 'd11')).toBe('rejected');
+    expect(lane.queuedPrompts).toHaveLength(10);
   });
 
   it('tells the voice session only about permissions that wait for the human', () => {

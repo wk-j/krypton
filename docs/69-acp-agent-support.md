@@ -233,7 +233,7 @@ For v1, auth is the user's responsibility outside Krypton (`claude /login`, `gem
 |-----|---------|--------|
 | `Leader A` (Shift+a) | Compositor mode | Open ACP backend picker (palette filtered to ACP entries). |
 | `a` / `A` / `r` / `R` | Permission prompt focused | allow_once / allow_always / reject_once / reject_always (passes `optionId` to adapter). |
-| `Esc` | Permission prompt focused | Respond `cancelled` outcome. |
+| `Esc` | Permission prompt focused | No-op — never answers a permission (a stray Esc used to cancel a tool call the user meant to allow). Use the option keys. |
 | `o` or `Enter` | Tool block with diff focused | Open full diff in Diff Viewer window via `openDiffFromString`. |
 | `Ctrl+C` | AcpView input focused, turn active | `acp_cancel` (sends `session/cancel`; does not kill subprocess). |
 | `Ctrl+C` | AcpView input focused, idle | Clear input buffer if non-empty; otherwise no-op. |

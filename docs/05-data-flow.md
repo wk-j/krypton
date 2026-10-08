@@ -408,10 +408,10 @@ d. The loop stops once the grip, the mouse and the button fades settle
          an unexpected socket end emits `live-voice-closed`.
       4. Transcript frames update the composer's live strip only.
          `delegation.created` → deliverLivePrompt: idle lane → sendUserPrompt
-         (row tagged `voice`); busy lane → steer (spec 278), else `busy`:
-         nothing is queued and `"Agent Busy"` goes back to the model. Only a
-         missed steer re-queues with `liveDelegationId`; that delegation binds
-         when its turn starts.
+         (row tagged `voice`); busy lane → steer (spec 278), else queue with
+         `liveDelegationId` (spec 136) and `"Agent Queued"` goes back to the
+         model; a missed steer re-queues the same way. A queued delegation
+         binds when its turn starts.
       5. Lane message_chunk text accumulates; each tool_call sends it as a
          `commentary` append; a permission that waits for the human (not
          auto-accepted by mode, turn-wide accept, peer/Telegram rules) sends an

@@ -6,6 +6,7 @@ import * as smd from 'streaming-markdown';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { openExternalUrl } from '../external-url';
+import { nextPermissionMode, permissionModeDescription } from '../agent/permission-mode';
 import { AcpClient } from './client';
 import { DICTATION_LANG_ENGLISH, dictationLanguageFromShift } from './harness-dictation';
 import { HarnessDictationController } from './harness-dictation-controller';
@@ -400,6 +401,7 @@ import {
   renderLaneHead,
   renderLaneStats,
   renderProcessTree,
+  renderPermissionModeChip,
   renderSaltyBypassChip,
   renderSlashPalette,
   slashPaletteVisible,
@@ -4186,9 +4188,18 @@ export class AcpHarnessView implements ContentView {
       return this.handleQuestionKey(e, laneForAsk);
     }
 
+    const lane = this.activeLane();
+    // A pending permission / write review owns a/A/r/R in every focus. Transcript
+    // focus would otherwise eat them (r = git refresh, the rest hit its printable
+    // catch-all) while the composer still advertises them as the way out.
+    if (lane && (e.key === 'a' || e.key === 'A' || e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (lane.pendingPermissions.length > 0) return this.handlePermissionKey(e, lane);
+      const review = this.firstUnresolvedFsReview(lane);
+      if (review) return this.handleFsReviewKey(e, lane, review);
+    }
+
     if (this.focus === 'transcript' && this.handleTranscriptKey(e)) return true;
 
-    const lane = this.activeLane();
     if (!lane) return false;
 
     if (lane.pendingPermissions.length > 0) {
@@ -4256,6 +4267,15 @@ export class AcpHarnessView implements ContentView {
     if (this.handleSlashPaletteKey(e, lane)) return true;
     if (this.handleHashPaletteKey(e, lane)) return true;
     if (this.handleInlineVerbPaletteKey(e, lane)) return true;
+    // Persistent per-lane permission mode (normal → acceptEdits → bypass), the
+    // Harness twin of the Agent view's Shift+Tab. Open palettes keep Tab above.
+    if (e.key === 'Tab' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      lane.permissionMode = nextPermissionMode(lane.permissionMode);
+      this.flashChip(`${lane.displayName} · ${permissionModeDescription(lane.permissionMode)}`);
+      this.render();
+      return true;
+    }
     if (this.handleHistoryKey(e, lane)) return true;
     if (this.handleEditingKey(e, lane)) return true;
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -8136,19 +8156,24 @@ export class AcpHarnessView implements ContentView {
     await this.sendUserPrompt(lane, text, images);
   }
 
-  /** spec 280: hand a voice delegation to `lane` — steer a busy lane that
-   *  supports it, start an idle one now. A busy lane that cannot be steered is
-   *  rejected rather than queued: the voice session already answered the
-   *  utterance, so replaying it after the turn would be a stale duplicate. */
+  /** spec 280: hand a voice delegation to `lane` — start an idle lane now,
+   *  steer a busy one that supports it, else queue it (spec 136) so the request
+   *  still reaches the lane once the current turn ends. */
   private async deliverLivePrompt(lane: HarnessLane, text: string, delegationId: string): Promise<LiveDelivery> {
     if (!lane.client || lane.status === 'starting' || lane.status === 'error' || lane.status === 'stopped') {
       return 'rejected';
     }
     if (lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer') {
-      if (!this.steerCtl.canSteer(lane)) return 'busy';
-      await this.steerCtl.steer(lane, text, [], delegationId);
-      // A missed steer re-queues the prompt with its delegation tag.
-      return lane.queuedPrompts.some((p) => p.liveDelegationId === delegationId) ? 'queued' : 'steered';
+      if (this.steerCtl.canSteer(lane)) {
+        await this.steerCtl.steer(lane, text, [], delegationId);
+        // A missed steer re-queues the prompt with its delegation tag.
+        return lane.queuedPrompts.some((p) => p.liveDelegationId === delegationId) ? 'queued' : 'steered';
+      }
+      if (lane.queuedPrompts.length >= PROMPT_QUEUE_MAX) return 'rejected';
+      lane.queuedPrompts.push({ text, images: [], mentionTargets: [], liveDelegationId: delegationId });
+      this.flashChip(`voice queued (${lane.queuedPrompts.length})`);
+      this.render();
+      return 'queued';
     }
     void this.sendUserPrompt(lane, text, [], { liveDelegationId: delegationId });
     return 'started';
@@ -12635,23 +12660,13 @@ export class AcpHarnessView implements ContentView {
       // permission row directly above; repeating it here just prints the command
       // twice. The composer is the decision surface, so it carries only the
       // "perm" prompt label and the action buttons.
-      this.composerEl.className = 'acp-harness__composer acp-harness__composer--permission';
-      this.composerEl.style.setProperty('--acp-lane-accent', lane.accent);
-      this.composerEl.innerHTML =
-        `<div class="acp-harness__composer-meta">perm</div>` +
-        `<div class="acp-harness__permission-options">a accept · A all · r reject · R all · Esc</div>`;
-      this.composerBloomLayer?.replaceChildren();
+      this.renderDecisionComposer(lane, 'perm', 'a accept · A all · r reject · R all');
       return;
     }
     const ask = lane.pendingQuestions[0];
     if (ask) {
-      this.composerEl.className = 'acp-harness__composer acp-harness__composer--permission';
-      this.composerEl.style.setProperty('--acp-lane-accent', lane.accent);
       const hint = questionActionsHint(ask.questions[ask.card.questionIndex], ask.wire, ask.card.otherFocused);
-      this.composerEl.innerHTML =
-        `<div class="acp-harness__composer-meta">ask</div>` +
-        `<div class="acp-harness__permission-options">${esc(hint)}</div>`;
-      this.composerBloomLayer?.replaceChildren();
+      this.renderDecisionComposer(lane, 'ask', hint);
       return;
     }
     this.composerEl.className =
@@ -12705,6 +12720,7 @@ export class AcpHarnessView implements ContentView {
       // `polly-bypass` for the active lane. Salty has no lane-stats cell, so
       // dropping it too would lose the readout rather than deduplicate it.
       renderSaltyBypassChip(lane) +
+      renderPermissionModeChip(lane) +
       this.renderDirectiveChip(lane) +
       projectStatus +
       `</div>` +
@@ -12730,6 +12746,20 @@ export class AcpHarnessView implements ContentView {
       selectedPaletteRow.scrollIntoView({ block: 'nearest' });
     }
     this.syncComposerBloomLayer(lane, dictation ? null : this.pendingComposerBloom);
+  }
+
+  /** Permission / ask composer. A live voice session can answer the same
+   *  request by voice, so its strip stays mounted above the decision row. */
+  private renderDecisionComposer(lane: HarnessLane, label: string, hint: string): void {
+    this.composerEl.className = 'acp-harness__composer acp-harness__composer--permission';
+    this.composerEl.style.setProperty('--acp-lane-accent', lane.accent);
+    this.composerEl.innerHTML =
+      this.liveVoiceCtl.renderStrip(lane) +
+      `<div class="acp-harness__permission-row">` +
+      `<div class="acp-harness__composer-meta">${esc(label)}</div>` +
+      `<div class="acp-harness__permission-options">${esc(hint)}</div>` +
+      `</div>`;
+    this.composerBloomLayer?.replaceChildren();
   }
 
   private syncComposerBloomLayer(
@@ -13060,6 +13090,7 @@ export class AcpHarnessView implements ContentView {
             <dt>Tab buttons</dt><dd>Click a lane directly</dd>
             <dt>Enter</dt><dd>Send prompt to active lane only (busy lane: steer the running turn when the agent supports it, else queue)</dd>
             <dt>Cmd+Enter</dt><dd>Busy lane: queue as a follow-up for the next turn</dd>
+            <dt>Shift+Tab</dt><dd>Cycle the lane's permission mode: normal → auto-edit (file edits auto-accepted) → bypass (everything auto-accepted, including high-risk)</dd>
             <dt>Shift+Enter</dt><dd>Insert newline</dd>
             <dt>Ctrl+C</dt><dd>Cancel active busy lane</dd>
             <dt>Ctrl+Shift+J / Ctrl+Shift+K</dt><dd>Scroll transcript down / up (works in composer)</dd>
@@ -13093,7 +13124,7 @@ export class AcpHarnessView implements ContentView {
             <dt>A</dt><dd>Accept all for current turn</dd>
             <dt>r</dt><dd>Reject current request once</dd>
             <dt>R</dt><dd>Reject all for current turn</dd>
-            <dt>Esc</dt><dd>Reject / cancel request</dd>
+            <dt>Esc</dt><dd>Never answers a request — only <kbd>r</kbd> / <kbd>R</kbd> reject</dd>
           </dl>
         </section>
         <section class="acp-harness__help-section">
@@ -13734,9 +13765,16 @@ export class AcpHarnessView implements ContentView {
 
   private handleFsReviewKey(e: KeyboardEvent, lane: HarnessLane, item: HarnessTranscriptItem): boolean {
     if (!item.fsReview) return false;
-    if (e.key === 'a' || e.key === 'A' || e.key === 'r' || e.key === 'R' || e.key === 'Escape') {
+    // Esc never rejects: a stray Esc (leaving the composer, closing a popup)
+    // must not throw away a write or tool call the user meant to accept.
+    if (e.key === 'Escape') {
       e.preventDefault();
-      const reject = e.key === 'r' || e.key === 'R' || e.key === 'Escape';
+      this.flashChip('write review pending — a accept · r reject');
+      return true;
+    }
+    if (e.key === 'a' || e.key === 'A' || e.key === 'r' || e.key === 'R') {
+      e.preventDefault();
+      const reject = e.key === 'r' || e.key === 'R';
       if (e.key === 'A') lane.acceptAllForTurn = true;
       if (e.key === 'R') lane.rejectAllForTurn = true;
       void this.resolveFsWriteReview(lane, item.id, reject ? 'rejected' : 'accepted', e.key === 'A' || e.key === 'R');
@@ -13765,9 +13803,15 @@ export class AcpHarnessView implements ContentView {
   }
 
   private handlePermissionKey(e: KeyboardEvent, lane: HarnessLane): boolean {
-    if (e.key === 'a' || e.key === 'A' || e.key === 'r' || e.key === 'R' || e.key === 'Escape') {
+    // Esc never rejects (see handleFsReviewKey).
+    if (e.key === 'Escape') {
       e.preventDefault();
-      const reject = e.key === 'r' || e.key === 'R' || e.key === 'Escape';
+      this.flashChip('permission pending — a accept · r reject');
+      return true;
+    }
+    if (e.key === 'a' || e.key === 'A' || e.key === 'r' || e.key === 'R') {
+      e.preventDefault();
+      const reject = e.key === 'r' || e.key === 'R';
       if (e.key === 'A') lane.acceptAllForTurn = true;
       if (e.key === 'R') lane.rejectAllForTurn = true;
       void this.resolvePermission(lane, reject ? 'reject' : 'accept', e.key === 'A' || e.key === 'R');

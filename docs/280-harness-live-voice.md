@@ -165,9 +165,9 @@ interface LiveSession {
 }
 interface HarnessLiveVoiceHost extends HarnessViewHost {
   render(): void;
-  /** Start an idle lane, steer a busy one (spec 278); a busy lane that cannot be steered → 'busy', never queued. */
+  /** Start an idle lane, steer a busy one (spec 278), else queue it (spec 136); full queue → 'rejected'. */
   deliverLivePrompt(lane: HarnessLane, text: string, delegationId: string):
-    Promise<'started' | 'steered' | 'queued' | 'busy' | 'rejected'>;
+    Promise<'started' | 'steered' | 'queued' | 'rejected'>;
 }
 ```
 
@@ -187,11 +187,12 @@ when a queued prompt tagged with a delegation starts its turn.
 5. Speech: input/output transcript events update the live strip only. They are not persisted.
 6. `delegation.created {id, text}` → phase working → host.deliverLivePrompt(lane, text, id):
      started/steered → currentDelegationId = id
-     busy            → lane mid-turn and not steerable: nothing is queued; append
-                       `"Agent Busy": <lane> is <status>; this request was not sent or queued.`
-     queued          → only a missed steer re-queues; the id rides on QueuedPrompt.liveDelegationId
-                       and onPromptStarted sets it later
-     rejected        → session.context.append "Agent could not start: <lane status>"
+     queued          → lane mid-turn and not steerable (or a missed steer): the id rides on
+                       QueuedPrompt.liveDelegationId and onPromptStarted sets it later; append
+                       `"Agent Queued": <lane> is still on earlier work; this request is queued
+                       (position N) and runs as soon as that work finishes.`
+     rejected        → session.context.append "Agent Could Not Start: <lane status>" (a mid-turn
+                       lane: "<lane> prompt queue is full")
    The user row in the lane transcript carries `voice: true` (rendered as a `voice` tag).
 7. Lane `message_chunk` text → progressBuffer. `tool_call` → append progressBuffer as
    `commentary` chunks, then clear it.
@@ -216,10 +217,14 @@ message. That matches OMP, where one active delegation id is overwritten.
 ### Instructions
 
 These follow OMP's `live-instructions.md` with three changes: "Krypton Live, voice surface of the
-`<lane>` lane"; "reply in the language the user speaks"; and rules for
+`<lane>` lane"; "always speak Thai, technical terms in English" (the user speaks Thai, and speech
+recognition can mistake Thai for another language, so following the detected language is not
+reliable); and rules for
 `"Agent Permission Request"` (say what needs approval and that it is approved on screen; never
-claim it was approved before `"Agent Permission Resolved"`) and `"Agent Permission Resolved"`
-(never ask for that approval again).
+claim it was approved before `"Agent Permission Resolved"`), `"Agent Permission Resolved"`
+(never ask for that approval again), and `"Agent Queued"` (say it is queued; never create the same
+delegation again). Remarks about approvals and other conversation are never delegations, because
+every delegation reaches the lane.
 
 ### Keybindings
 
@@ -235,10 +240,15 @@ Neither chord is used by the input router or Harness today (`Cmd+Shift+M` and `C
 
 An `.acp-harness__live` strip sits above the composer of the bound lane only:
 `LIVE · <phase> · <voice>`, two 8-segment level meters (`__live-meter--in/--out`), and one
-ellipsized line with the latest user or assistant transcript. The phase colors the label through the
+ellipsized line with the latest user or assistant transcript, then the key hint
+`⌘⇧L stop · ⌘⌥L mute`. While muted the hint reads `unmute` in the gold token, so mute state is visible
+at the end of the strip. The phase label reserves the width of its longest value (`connecting`), so a
+listening ↔ speaking flip never shifts the rest of the strip. The phase colors the label through the
 lane accent. Error uses the existing error token. There is no left-border rail and no corner
-bracket. The meters are text (`█░`), so there is no motion to reduce. The strip is hidden while the
-composer shows a permission or question prompt.
+bracket. The meters are text (`█░`), so there is no motion to reduce. The strip stays above the
+permission / question prompt row while the composer shows one — the live session announces that
+request by voice, so hiding the strip there removed the only live readout at the moment it mattered
+(user report, 2026-10-08).
 
 ## Edge Cases
 
@@ -248,10 +258,11 @@ composer shows a permission or question prompt.
   **Other non-2xx:** show the bounded body.
 - **Sideband drops mid-session:** the session ends with an error; no auto-reconnect.
 - **Lane busy at delegation and the adapter cannot steer** (or the lane is in `needs_permission` /
-  `awaiting_peer`): the delegation is **not** queued. The voice session already answered that
-  utterance, so replaying it as a lane prompt after the turn would be a stale duplicate (user report,
-  2026-10-08: remarks like "there's nothing to approve" piled up in the prompt queue). The model gets
-  `"Agent Busy"` and offers to ask again later. A steer that misses still re-queues (spec 278).
+  `awaiting_peer`): the prompt is queued (spec 136) and the model hears `"Agent Queued"`;
+  `queue_full` → rejected path. Dropping these instead (2026-10-08, after remarks like "there's
+  nothing to approve" piled up in the queue) lost every real request made while the lane worked, so
+  it was reverted the same day. The pile-up is handled at its source: `"Agent Permission Resolved"`
+  tells the model an approval is done, and the instructions forbid delegating remarks.
 - **Turn starts from someone else (peer mail, user typing):** it is not tagged, so its final message
   is not spoken. `currentDelegationId` stays tied to tagged prompts.
 - **Krypton not frontmost:** capture and playback continue. Phase 0 verifies that WebKit does not

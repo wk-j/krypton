@@ -354,6 +354,18 @@ export function renderSaltyBypassChip(lane: HarnessLane): string {
   return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">salty-bypass</span>`;
 }
 
+/** The lane's persistent permission mode when it is not `normal` (Shift+Tab
+ *  cycles it). Polly/Salty bypass already carries its own chip. */
+export function renderPermissionModeChip(lane: HarnessLane): string {
+  if (lane.permissionMode === 'normal' || isPollyImplementerBypass(lane) || isSaltyExecutorBypass(lane)) return '';
+  const bypass = lane.permissionMode === 'bypass';
+  const title = bypass
+    ? 'Bypass — every tool permission is auto-accepted, including high-risk commands. Shift+Tab to change.'
+    : 'Auto-edit — file edits are auto-accepted; commands still ask. Shift+Tab to change.';
+  const label = bypass ? `${harnessIcon('warn', 'acp-harness__icon--dot')} bypass ⇧⇥` : 'auto-edit ⇧⇥';
+  return `<span class="acp-harness__lane-sandbox" title="${esc(title)}">${label}</span>`;
+}
+
 export function renderSandboxChip(lane: HarnessLane): string {
   // Surface backend-specific safety caveats directly in the lane chrome:
   // Pi is known to bypass the permission rail; Junie still needs manual

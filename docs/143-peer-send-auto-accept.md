@@ -86,8 +86,8 @@ blanket-approves commands" stance, generalized via the spec 140 `highRisk`
 classifier (destructive verbs + conservative unknowns still prompt). Diverge:
 the grant is set by a *peer agent* (made legible with a chip + named system line),
 scoped to a single injected turn, refused across the cross-harness trust boundary,
-and disarmed only by `#cancel` / turn end (harness `Esc` on a permission row =
-reject, NOT disarm — unlike agent-view spec 140).
+and disarmed only by `#cancel` / turn end (harness `Esc` on a permission row
+never answers or disarms; only `r`/`R` reject — unlike agent-view spec 140).
 
 ## Affected Files
 

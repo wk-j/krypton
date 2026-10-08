@@ -945,7 +945,7 @@ export class AcpView implements ContentView {
     el.dataset.acpPermId = String(requestId);
     el.innerHTML = `
       <div class="acp-view__perm-title">⏵ permission: ${esc(kind)}  ${esc(target)}</div>
-      <div class="acp-view__perm-opts">${optsHtml}<span class="acp-view__perm-opt"><kbd>Esc</kbd> cancel</span></div>
+      <div class="acp-view__perm-opts">${optsHtml}</div>
     `;
     this.messagesEl.appendChild(el);
     this.permissionBlocks.set(requestId, { el, requestId, options });
@@ -1146,9 +1146,10 @@ export class AcpView implements ContentView {
     if (this.focusedPermissionId !== null) {
       const block = this.permissionBlocks.get(this.focusedPermissionId);
       if (block) {
+        // Esc never answers a permission: a stray Esc must not reject a tool
+        // call the user meant to allow. Swallow it; only the option keys resolve.
         if (e.key === 'Escape') {
           e.preventDefault();
-          void this.resolvePermission(block.requestId, null);
           return true;
         }
         const optId = pickPermissionOption(block.options, e.key);

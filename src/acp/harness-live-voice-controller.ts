@@ -19,7 +19,6 @@ import {
   LiveTranscript,
   SESSION_CLOSE,
   TURN_CANCELLED_TEXT,
-  busyDelegationText,
   delegationAppends,
   finalMessageText,
   liveErrorMessage,
@@ -27,6 +26,7 @@ import {
   parseLiveServerEvent,
   permissionResolvedText,
   permissionRequestText,
+  queuedDelegationText,
   rejectedDelegationText,
   renderLiveInstructions,
   type LiveClientMessage,
@@ -85,6 +85,12 @@ function meter(level: number): string {
   const on = Math.min(METER_SEGMENTS, Math.round(level * 40));
   return '█'.repeat(on) + '░'.repeat(METER_SEGMENTS - on);
 }
+
+/** The strip's key hint names the action the mute chord takes next. */
+const LIVE_KEYS = {
+  mute: '⌘⇧L stop · ⌘⌥L mute',
+  unmute: '⌘⇧L stop · ⌘⌥L unmute',
+} as const;
 
 export class HarnessLiveVoiceController {
   private session: LiveSession | null = null;
@@ -297,10 +303,15 @@ export class HarnessLiveVoiceController {
     if (this.session !== s) return;
     s.delivering -= 1;
     s.ledger.delivered(id, outcome);
-    if (outcome === 'busy') {
-      this.send(s, delegationAppends(id, busyDelegationText(lane.displayName, lane.status)));
+    if (outcome === 'queued') {
+      const position = lane.queuedPrompts.findIndex((p) => p.liveDelegationId === id) + 1;
+      this.send(s, delegationAppends(id, queuedDelegationText(lane.displayName, position)));
     } else if (outcome === 'rejected') {
-      this.send(s, delegationAppends(id, rejectedDelegationText(`${lane.displayName} is ${lane.status}`)));
+      // On a mid-turn lane the only rejection is a full spec 136 queue.
+      const reason = lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer'
+        ? `${lane.displayName} prompt queue is full`
+        : `${lane.displayName} is ${lane.status}`;
+      this.send(s, delegationAppends(id, rejectedDelegationText(reason)));
     }
     this.refreshPhase(s);
   }
@@ -453,12 +464,12 @@ export class HarnessLiveVoiceController {
       return (
         `<div class="acp-harness__live acp-harness__live--${s.phase}" data-live-strip>` +
         `<span class="acp-harness__live-label">LIVE</span>` +
-        `<span class="acp-harness__live-phase" data-live-phase>${s.phase}</span>` +
+        `<span class="acp-harness__live-phase"><span data-live-phase>${s.phase}</span></span>` +
         `<span class="acp-harness__live-voice">${esc(s.voice)}</span>` +
         `<span class="acp-harness__live-meter acp-harness__live-meter--in" data-live-in>${meter(s.inputLevel)}</span>` +
         `<span class="acp-harness__live-meter acp-harness__live-meter--out" data-live-out>${meter(s.outputLevel)}</span>` +
         `<span class="acp-harness__live-line" data-live-line>${esc(this.lineText(s))}</span>` +
-        `<span class="acp-harness__live-keys">⌘⇧L stop · ⌘⌥L mute</span>` +
+        `<span class="acp-harness__live-keys" data-live-keys>${LIVE_KEYS[s.muted ? 'unmute' : 'mute']}</span>` +
         `</div>`
       );
     }
@@ -492,5 +503,6 @@ export class HarnessLiveVoiceController {
     set('[data-live-in]', meter(s.inputLevel));
     set('[data-live-out]', meter(s.outputLevel));
     set('[data-live-line]', this.lineText(s));
+    set('[data-live-keys]', LIVE_KEYS[s.muted ? 'unmute' : 'mute']);
   }
 }

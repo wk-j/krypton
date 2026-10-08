@@ -458,7 +458,7 @@ When the active tab's lane has a pending permission, the composer pre-empts text
 ! permission required — see lane
   a accept           A accept-all-from-this-lane
   r reject           R reject-all-from-this-lane
-  Esc cancel (rejects)
+  Esc never answers — it only flashes this hint
 ```
 
 - The banner does **not** include path, diff, or size. That detail (and the cross-lane file-touch warning, when applicable) lives in the active lane's transcript on the dashboard. The user is expected to read context there before responding.
@@ -477,7 +477,9 @@ Permission option mapping:
 - `A` sets `acceptAllForTurn = true` and resolves the current request with the first `allow_once` option. If `allow_once` is absent, use `allow_always`; the flag is still cleared at turn end and is not treated as a standing grant by Krypton. If no allow option exists, show chip `no accept option`.
 - `r` selects the first option whose `kind === 'reject_once'`. If absent, select the first option whose `kind === 'reject_always'`. If neither exists, call `respondPermission(requestId, null)`.
 - `R` sets `rejectAllForTurn = true` and resolves the current request with the first `reject_once` option. If `reject_once` is absent, use `reject_always`; if no reject option exists, call `respondPermission(requestId, null)`.
-- `Esc` always rejects/cancels the focused request by using the same mapping as `r`.
+- `Esc` never resolves a request (permission or file-write review). It flashes the `a accept · r reject` hint instead, because a stray Esc — leaving the composer or closing a popup — used to reject a write the user meant to accept (user report, 2026-10-08). Rejecting always takes `r`/`R`.
+- `a`/`A`/`r`/`R` answer a pending permission or file-write review in **both** composer and transcript (command) focus. Transcript focus otherwise owns printable keys (`r` refreshes reference Git state, the rest are swallowed), so before this rule an `Esc` into command focus followed by a permission request left the banner advertising keys that did nothing (user report, 2026-10-08). While a request is pending, transcript `r` is shadowed by reject; `j`/`k`/`g`/`G` still scroll the request context.
+- The banner keeps the `perm` / `ask` label visible: the base `.acp-harness__composer-meta` is an inline-size container, which sized the non-growing label to 0 px and clipped it, so the permission rule opts out with `container-type: normal`.
 - When `acceptAllForTurn` or `rejectAllForTurn` auto-resolves a later request, use the same option lookup against that later request's own `PermissionOption[]`; if the required option is missing, fall back as above and append the actual option label to the transcript resolution row.
 - After a permission key is accepted, the harness immediately appends the resolution row and returns the lane to `busy` before awaiting the ACP permission-response IPC. If that IPC fails, the same permission is restored and the composer re-enters permission mode so the user can retry.
 
@@ -557,12 +559,13 @@ The default focus is the composer. Almost every key acts on the composer or on o
 | `?` | Transcript scroll focus | Toggle help overlay. |
 | `Esc` / `?` / `q` | Help overlay open | Close help overlay. |
 | `Ctrl+C` | Composer text mode, active lane busy | Cancel active lane. |
+| `Shift+Tab` | Composer text mode (no palette open) | Cycle the active lane's persistent permission mode `normal` → `acceptEdits` → `bypass` (same order as the Agent view). `acceptEdits` auto-accepts file edits only; `bypass` auto-accepts every request, including high-risk. A non-`normal` mode shows a composer-meta chip (`auto-edit ⇧⇥` / `⚠ bypass ⇧⇥`); Polly/Salty bypass keeps its own chip. The mode survives turns; `kryptonctl acp permission-mode` and Raycast set the same field. |
 | `Esc` | Composer text mode | Enter transcript/command focus. Composer is disabled until `i` or `Esc` returns to input. |
-| `a` | Composer permission mode | Accept the focused permission. |
-| `A` | Composer permission mode | Accept-all-from-this-lane for the **current `session/prompt` turn only**; clears when the turn returns. |
-| `r` | Composer permission mode | Reject the focused permission. |
-| `R` | Composer permission mode | Reject-all-from-this-lane for the **current `session/prompt` turn only**; clears when the turn returns. |
-| `Esc` | Composer permission mode | Cancel pending permission (rejects). |
+| `a` | Permission pending (composer or transcript focus) | Accept the focused permission. |
+| `A` | Permission pending (composer or transcript focus) | Accept-all-from-this-lane for the **current `session/prompt` turn only**; clears when the turn returns. |
+| `r` | Permission pending (composer or transcript focus) | Reject the focused permission. |
+| `R` | Permission pending (composer or transcript focus) | Reject-all-from-this-lane for the **current `session/prompt` turn only**; clears when the turn returns. |
+| `Esc` | Composer permission mode | No-op: flashes `a accept · r reject`. Never rejects. |
 | `Ctrl+M` / `Cmd+M` | Composer or transcript context | Toggle memory drawer overlay. |
 | `Ctrl+N` / `Ctrl+P`, `ArrowDown` / `ArrowUp`, `PageDown` / `PageUp` | Memory drawer open | Move cursor row. |
 | `Home` / `End` | Memory drawer open | Jump cursor to top/bottom of list. |

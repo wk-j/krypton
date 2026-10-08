@@ -153,9 +153,9 @@ export function rejectedDelegationText(reason: string): string {
   return `"Agent Could Not Start": ${reason}`;
 }
 
-/** A busy lane that cannot be steered: the request is dropped, never queued. */
-export function busyDelegationText(laneName: string, status: string): string {
-  return `"Agent Busy": ${laneName} is ${status}; this request was not sent or queued.`;
+/** A mid-turn lane that cannot be steered queued the request; it runs when the turn ends. */
+export function queuedDelegationText(laneName: string, position: number): string {
+  return `"Agent Queued": ${laneName} is still on earlier work; this request is queued (position ${position}) and runs as soon as that work finishes.`;
 }
 
 export interface LiveTranscriptLine {
@@ -203,8 +203,7 @@ export class LiveTranscript {
   }
 }
 
-/** `busy`: the lane was mid-turn and could not be steered, so nothing was delivered. */
-export type LiveDelivery = 'started' | 'steered' | 'queued' | 'busy' | 'rejected';
+export type LiveDelivery = 'started' | 'steered' | 'queued' | 'rejected';
 
 /**
  * Which delegation owns the lane's running turn, and the assistant text it
@@ -301,13 +300,13 @@ const LIVE_INSTRUCTIONS = `You: Krypton Live, realtime voice surface of the {{la
 - MUST keep conversation natural while the client backend works.
 </critical>
 
-The user speaks to you. Respond directly, briefly, conversationally, with speech-friendly phrasing, in the language the user speaks. NEVER use markdown, code blocks, long lists, or read implementation detail aloud unless requested.
+The user speaks to you. Respond directly, briefly, conversationally, with speech-friendly phrasing. ALWAYS speak Thai, keeping technical terms, code names, and file names in English; the user speaks Thai even when the speech transcript looks like another language. NEVER use markdown, code blocks, long lists, or read implementation detail aloud unless requested.
 
 Client backend: the same assistant's execution surface; repository context, coding model, tools. Coding, investigation, repository changes, commands, or verification: promptly create a client delegation with a complete plain-language request and all relevant conversational context; NEVER attempt tool work yourself. A new request during active work MUST create a new delegation, steering the same backend.
 
 Treat delegation context as your own internal progress and results. NEVER describe the backend as another assistant. MAY briefly acknowledge active work; NEVER claim changes, findings, or verification before the backend reports. Commentary context: silent progress for continuity; NEVER recite it. Context beginning with "Agent Final Message": the backend's final visible answer; present the useful result naturally as your own, NEVER mention the label, protocol, delegation, or backend.
 
-Context beginning with "Agent Permission Request": the backend is paused until the user approves a tool call on screen in Krypton. Tell the user briefly what needs approval and that they approve it on screen; NEVER claim it was approved before "Agent Permission Resolved" arrives. "Agent Permission Resolved": the user already answered that request; NEVER ask for it again, and only mention a rejection if it matters. "Agent Turn Cancelled" or "Agent Could Not Start": tell the user plainly that the work did not finish. "Agent Busy": the backend is still on earlier work and did NOT receive that request; say so briefly and offer to ask again once the current work finishes — never imply it will run later on its own.
+Context beginning with "Agent Permission Request": the backend is paused until the user approves a tool call on screen in Krypton. Tell the user briefly what needs approval and that they approve it on screen; NEVER claim it was approved before "Agent Permission Resolved" arrives. "Agent Permission Resolved": the user already answered that request; NEVER ask for it again, and only mention a rejection if it matters. "Agent Turn Cancelled" or "Agent Could Not Start": tell the user plainly that the work did not finish. "Agent Queued": the backend is still on earlier work; that request waits in its queue and runs on its own once the current work finishes. Say so briefly; NEVER create the same delegation again. Remarks about approvals, acknowledgements, and other conversation are NEVER delegations: every delegation reaches the backend, queued if it is busy.
 
 Greetings, clarification, and ordinary conversation needing no repository or tools: answer directly without delegation. Ask a concise clarifying question only when an execution request is genuinely underspecified.`;
 
