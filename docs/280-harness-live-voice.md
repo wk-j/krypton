@@ -165,9 +165,9 @@ interface LiveSession {
 }
 interface HarnessLiveVoiceHost extends HarnessViewHost {
   render(): void;
-  /** Same routing as composer Enter with delivery 'steer' (spec 278 → 136 → send). */
+  /** Start an idle lane, steer a busy one (spec 278); a busy lane that cannot be steered → 'busy', never queued. */
   deliverLivePrompt(lane: HarnessLane, text: string, delegationId: string):
-    Promise<'started' | 'steered' | 'queued' | 'rejected'>;
+    Promise<'started' | 'steered' | 'queued' | 'busy' | 'rejected'>;
 }
 ```
 
@@ -187,7 +187,10 @@ when a queued prompt tagged with a delegation starts its turn.
 5. Speech: input/output transcript events update the live strip only. They are not persisted.
 6. `delegation.created {id, text}` → phase working → host.deliverLivePrompt(lane, text, id):
      started/steered → currentDelegationId = id
-     queued          → the id rides on QueuedPrompt.liveDelegationId; onPromptStarted sets it later
+     busy            → lane mid-turn and not steerable: nothing is queued; append
+                       `"Agent Busy": <lane> is <status>; this request was not sent or queued.`
+     queued          → only a missed steer re-queues; the id rides on QueuedPrompt.liveDelegationId
+                       and onPromptStarted sets it later
      rejected        → session.context.append "Agent could not start: <lane status>"
    The user row in the lane transcript carries `voice: true` (rendered as a `voice` tag).
 7. Lane `message_chunk` text → progressBuffer. `tool_call` → append progressBuffer as
@@ -195,8 +198,13 @@ when a queued prompt tagged with a delegation starts its turn.
 8. finishTurn → append `"Agent Final Message":\n\n<progressBuffer or "(no text reply)">` to
    currentDelegationId; cancelled turns send `"Agent Turn Cancelled"`. Clear it; phase returns to
    listening/speaking from output level.
-9. Lane enters needs_permission → append (speakable) `"Agent Permission Request": <tool title>`.
-   The user approves with the existing Harness keys.
+9. A permission that waits for the human (`addPermission` after every auto-accept rule: permission
+   mode, turn-wide accept/reject, peer-auto, Telegram) → append (speakable)
+   `"Agent Permission Request": <tool title>`. The user approves with the existing Harness keys (or
+   Live Assist / console); `resolvePermission` then appends `"Agent Permission Resolved": approved |
+   rejected` to the same delegation. Without that second append the model never learned the request
+   was answered and kept asking (user report, 2026-10-08); auto-accepted requests in `bypass` mode
+   used to announce themselves too, because the notice rode the `needs_permission` status change.
 10. Cmd+Shift+L / `#live stop` / lane closed / lane error → send `session.close`, close the peer,
     stop mic tracks, invoke live_voice_close; the strip shows the end reason for 4 s.
 ```
@@ -208,9 +216,10 @@ message. That matches OMP, where one active delegation id is overwritten.
 ### Instructions
 
 These follow OMP's `live-instructions.md` with three changes: "Krypton Live, voice surface of the
-`<lane>` lane"; "reply in the language the user speaks"; and a rule for
+`<lane>` lane"; "reply in the language the user speaks"; and rules for
 `"Agent Permission Request"` (say what needs approval and that it is approved on screen; never
-claim it was approved).
+claim it was approved before `"Agent Permission Resolved"`) and `"Agent Permission Resolved"`
+(never ask for that approval again).
 
 ### Keybindings
 
@@ -238,8 +247,11 @@ composer shows a permission or question prompt.
 - **401/403 from signaling:** `codex auth rejected — run codex once to refresh`.
   **Other non-2xx:** show the bounded body.
 - **Sideband drops mid-session:** the session ends with an error; no auto-reconnect.
-- **Lane busy at delegation and the adapter cannot steer:** the prompt is queued (spec 136);
-  `queue_full` → rejected path.
+- **Lane busy at delegation and the adapter cannot steer** (or the lane is in `needs_permission` /
+  `awaiting_peer`): the delegation is **not** queued. The voice session already answered that
+  utterance, so replaying it as a lane prompt after the turn would be a stale duplicate (user report,
+  2026-10-08: remarks like "there's nothing to approve" piled up in the prompt queue). The model gets
+  `"Agent Busy"` and offers to ask again later. A steer that misses still re-queues (spec 278).
 - **Turn starts from someone else (peer mail, user typing):** it is not tagged, so its final message
   is not spoken. `currentDelegationId` stays tied to tagged prompts.
 - **Krypton not frontmost:** capture and playback continue. Phase 0 verifies that WebKit does not

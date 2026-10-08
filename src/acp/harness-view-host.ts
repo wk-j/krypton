@@ -34,9 +34,9 @@ export interface HarnessDictationHost extends HarnessViewHost {
 export interface HarnessLiveVoiceHost extends HarnessViewHost {
   readonly composerEl: HTMLElement;
   render(): void;
-  /** Same routing as composer Enter on a busy lane: steer (spec 278), else
-   *  queue (spec 136); an idle lane starts the turn. The prompt carries
-   *  `delegationId` so the turn that consumes it reports back. */
+  /** An idle lane starts the turn; a busy lane is steered (spec 278). A busy
+   *  lane that cannot be steered returns 'busy' and queues nothing. The prompt
+   *  carries `delegationId` so the turn that consumes it reports back. */
   deliverLivePrompt(lane: HarnessLane, text: string, delegationId: string): Promise<LiveDelivery>;
 }
 

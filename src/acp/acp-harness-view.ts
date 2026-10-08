@@ -8136,23 +8136,19 @@ export class AcpHarnessView implements ContentView {
     await this.sendUserPrompt(lane, text, images);
   }
 
-  /** spec 280: hand a voice delegation to `lane` the way composer Enter would —
-   *  steer a busy lane that supports it, else queue; an idle lane starts now. */
+  /** spec 280: hand a voice delegation to `lane` — steer a busy lane that
+   *  supports it, start an idle one now. A busy lane that cannot be steered is
+   *  rejected rather than queued: the voice session already answered the
+   *  utterance, so replaying it after the turn would be a stale duplicate. */
   private async deliverLivePrompt(lane: HarnessLane, text: string, delegationId: string): Promise<LiveDelivery> {
     if (!lane.client || lane.status === 'starting' || lane.status === 'error' || lane.status === 'stopped') {
       return 'rejected';
     }
     if (lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer') {
-      if (this.steerCtl.canSteer(lane)) {
-        await this.steerCtl.steer(lane, text, [], delegationId);
-        // A missed steer re-queues the prompt with its delegation tag.
-        return lane.queuedPrompts.some((p) => p.liveDelegationId === delegationId) ? 'queued' : 'steered';
-      }
-      if (lane.queuedPrompts.length >= PROMPT_QUEUE_MAX) return 'rejected';
-      lane.queuedPrompts.push({ text, images: [], mentionTargets: [], liveDelegationId: delegationId });
-      this.flashChip(`voice queued (${lane.queuedPrompts.length})`);
-      this.render();
-      return 'queued';
+      if (!this.steerCtl.canSteer(lane)) return 'busy';
+      await this.steerCtl.steer(lane, text, [], delegationId);
+      // A missed steer re-queues the prompt with its delegation tag.
+      return lane.queuedPrompts.some((p) => p.liveDelegationId === delegationId) ? 'queued' : 'steered';
     }
     void this.sendUserPrompt(lane, text, [], { liveDelegationId: delegationId });
     return 'started';
@@ -8797,7 +8793,10 @@ export class AcpHarnessView implements ContentView {
     // destructive/unparseable command falls through to the human permission gate.
     if (lane.peerAutoAcceptForTurn && !this.isHighRiskPermission(permission)) {
       void this.resolvePermission(lane, 'accept', true, 'peer-auto');
+      return;
     }
+    // spec 280: only a request that actually waits for the human reaches the voice session.
+    this.liveVoiceCtl.onPermissionRequested(lane, requestId, toolCall.title ?? '');
   }
 
   /** spec 143: is this permission a high-risk command (destructive verb, dangerous
@@ -8850,6 +8849,7 @@ export class AcpHarnessView implements ContentView {
       auto,
       reason: auto ? autoReason : 'operator',
     });
+    this.liveVoiceCtl.onPermissionResolved(lane, permission.requestId, action); // spec 280
     this.render();
   }
 

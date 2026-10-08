@@ -4165,6 +4165,55 @@ describe('mid-turn steering routing (spec 278)', () => {
   });
 });
 
+describe('live voice delegation routing (spec 280)', () => {
+  type LiveLane = { id: string; status: string; client: object | null; queuedPrompts: Array<{ text: string }> };
+  type LiveHost = {
+    deliverLivePrompt(lane: LiveLane, text: string, delegationId: string): Promise<string>;
+  };
+  const deliverLivePrompt = (AcpHarnessView.prototype as unknown as LiveHost).deliverLivePrompt;
+
+  it('never queues a delegation on a busy lane that cannot be steered', async () => {
+    for (const status of ['busy', 'needs_permission', 'awaiting_peer']) {
+      const lane: LiveLane = { id: 'l', status, client: {}, queuedPrompts: [] };
+      const steered: string[] = [];
+      const host = {
+        steerCtl: {
+          canSteer: () => false,
+          steer: async (_l: LiveLane, text: string) => { steered.push(text); },
+        },
+        flashChip: () => {},
+        render: () => {},
+      };
+      expect(await deliverLivePrompt.call(host, lane, 'nothing to approve', 'd1')).toBe('busy');
+      expect(lane.queuedPrompts).toEqual([]);
+      expect(steered).toEqual([]);
+    }
+  });
+
+  it('tells the voice session only about permissions that wait for the human', () => {
+    type PermHost = { addPermission(lane: object, requestId: number, toolCall: object, options: object[]): void };
+    const addPermission = (AcpHarnessView.prototype as unknown as PermHost).addPermission;
+    for (const [permissionMode, expected] of [['bypass', []], ['normal', [7]]] as const) {
+      const announced: number[] = [];
+      const host = {
+        describePermission: () => ({}),
+        appendPermissionTranscript: () => ({}),
+        matchArtifactWriteForGrant: () => null,
+        matchReviewWriteForGrant: () => null,
+        setLaneStatus: () => {},
+        refreshOrchestratorConsole: () => {},
+        resolvePermission: async () => {},
+        liveVoiceCtl: { onPermissionRequested: (_l: object, id: number) => announced.push(id) },
+      };
+      const lane = { pendingPermissions: [], permissionMode, activeTelegramTurn: null };
+      addPermission.call(host, lane, 7, { title: 'Bash', kind: 'execute' }, [
+        { optionId: 'a', kind: 'allow_once', name: 'Allow' },
+      ]);
+      expect(announced).toEqual(expected);
+    }
+  });
+});
+
 describe('turn end routes through the steer controller (spec 278)', () => {
   type EventHost = { onLaneEvent(lane: object, event: object): void };
   const onLaneEvent = (AcpHarnessView.prototype as unknown as EventHost).onLaneEvent;

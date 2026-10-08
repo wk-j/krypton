@@ -19,11 +19,13 @@ import {
   LiveTranscript,
   SESSION_CLOSE,
   TURN_CANCELLED_TEXT,
+  busyDelegationText,
   delegationAppends,
   finalMessageText,
   liveErrorMessage,
   parseLiveCommand,
   parseLiveServerEvent,
+  permissionResolvedText,
   permissionRequestText,
   rejectedDelegationText,
   renderLiveInstructions,
@@ -55,6 +57,8 @@ interface LiveSession {
   muted: boolean;
   delivering: number;
   ledger: LiveDelegationLedger;
+  /** Permission requests the model was told about → the delegation told. */
+  askedPermissions: Map<number, string>;
   transcript: LiveTranscript;
   inputLevel: number;
   outputLevel: number;
@@ -152,6 +156,7 @@ export class HarnessLiveVoiceController {
       muted: false,
       delivering: 0,
       ledger: new LiveDelegationLedger(),
+      askedPermissions: new Map(),
       transcript: new LiveTranscript(),
       inputLevel: 0,
       outputLevel: 0,
@@ -292,7 +297,9 @@ export class HarnessLiveVoiceController {
     if (this.session !== s) return;
     s.delivering -= 1;
     s.ledger.delivered(id, outcome);
-    if (outcome === 'rejected') {
+    if (outcome === 'busy') {
+      this.send(s, delegationAppends(id, busyDelegationText(lane.displayName, lane.status)));
+    } else if (outcome === 'rejected') {
       this.send(s, delegationAppends(id, rejectedDelegationText(`${lane.displayName} is ${lane.status}`)));
     }
     this.refreshPhase(s);
@@ -315,6 +322,7 @@ export class HarnessLiveVoiceController {
     const s = this.session;
     if (s?.laneId !== lane.id) return;
     const final = s.ledger.takeFinal();
+    s.askedPermissions.clear(); // unanswered requests die with the turn
     if (final) {
       const text = stopReason === 'cancelled' ? TURN_CANCELLED_TEXT : finalMessageText(final.text);
       this.send(s, delegationAppends(final.id, text));
@@ -336,11 +344,25 @@ export class HarnessLiveVoiceController {
       this.stop(`live ended: ${lane.displayName} ${status}`, true);
       return;
     }
-    const current = s.ledger.current;
-    if (status === 'needs_permission' && current) {
-      const title = lane.pendingPermissions[0]?.toolCall.title ?? '';
-      this.send(s, delegationAppends(current, permissionRequestText(title)));
-    }
+  }
+
+  /** A permission now waits for the human; tell the delegation that owns the turn. */
+  onPermissionRequested(lane: HarnessLane, requestId: number, title: string): void {
+    const s = this.session;
+    const current = s?.ledger.current;
+    if (!s || s.laneId !== lane.id || !current) return;
+    s.askedPermissions.set(requestId, current);
+    this.send(s, delegationAppends(current, permissionRequestText(title)));
+  }
+
+  /** The human (or a turn-wide accept/reject) answered a request the model was told about. */
+  onPermissionResolved(lane: HarnessLane, requestId: number, action: 'accept' | 'reject'): void {
+    const s = this.session;
+    if (s?.laneId !== lane.id) return;
+    const delegationId = s.askedPermissions.get(requestId);
+    if (!delegationId) return;
+    s.askedPermissions.delete(requestId);
+    this.send(s, delegationAppends(delegationId, permissionResolvedText(action)));
   }
 
   onLaneGone(lane: HarnessLane): void {
