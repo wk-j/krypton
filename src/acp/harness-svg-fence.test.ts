@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { fenceSourceText, svgFrame, themeSvgSource, type SvgPalette } from './harness-svg-fence';
+import { fenceSourceText, svgBaseSize, svgFrame, themeSvgSource, type SvgPalette } from './harness-svg-fence';
 import { transcriptRenderSignature } from './harness-transcript-render';
 import type { HarnessTranscriptItem, SvgFenceEntry } from './harness-view-types';
 
@@ -68,6 +68,20 @@ describe('svgFrame', () => {
     expect(svgFrame('<svg viewBox="0 0 0 0" width="100" height="50">')).toEqual({ ratio: '100 / 50', width: 100 });
     expect(svgFrame('<svg width="100%" height="50">')).toEqual({ ratio: null, width: null });
     expect(svgFrame('<div>')).toEqual({ ratio: null, width: null });
+  });
+});
+
+describe('svgBaseSize', () => {
+  it('prefers explicit width/height, then fills a missing side from the viewBox', () => {
+    expect(svgBaseSize('<svg viewBox="0 0 900 640" width="450" height="100">')).toEqual({ width: 450, height: 100 });
+    expect(svgBaseSize('<svg viewBox="0 0 900 600" width="300">')).toEqual({ width: 300, height: 200 });
+    expect(svgBaseSize('<svg viewBox="0 0 900 600" height="300">')).toEqual({ width: 450, height: 300 });
+    expect(svgBaseSize('<svg viewBox="0 0 900 640">')).toEqual({ width: 900, height: 640 });
+  });
+
+  it('falls back to the 300×150 replaced-element default without a usable size', () => {
+    expect(svgBaseSize('<svg width="100%" height="100%">')).toEqual({ width: 300, height: 150 });
+    expect(svgBaseSize('<svg width="120">')).toEqual({ width: 120, height: 150 });
   });
 });
 

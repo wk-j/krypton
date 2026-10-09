@@ -11,6 +11,7 @@
 - **Root `fill` default.** `themeSvgSource` also injects `fill="<fg>"` when the root has none. This departs from OMP: SVG's initial fill is black, so unstyled text vanished on a dark theme during smoke testing.
 - **Signature carries non-default state only.** `transcriptRenderSignature` includes a card only when it is labelled or showing source. Decorating a fresh row therefore never forces an extra rebuild.
 - **`HarnessOpenTarget` union** in `acp-harness-view.ts` replaces the inline target union, which had grown to six members.
+- **Zoom (added after ship; was Out of Scope).** Clicking a card's preview, or its `f` label while it shows the preview, opens the spec 281 image viewer in SVG mode (`HarnessImageViewer.openSvg`). The viewer re-themes `entry.source` through `svgViewerSource`, which returns the data URL plus `svgBaseSize` (explicit `width`/`height`, then the `viewBox` for a missing side, then 300×150). The SVG is not added to the lane image list, so `n`/`p` and `o` are inert. Fit fills the stage (vectors upscale; bitmaps still cap at 100%), and zoom lays the `<img>` out at the zoomed size instead of transform-scaling it, so text stays sharp. `s` closes the viewer and flips the card to Source. Because the plain label now zooms, a card already showing Source uses its plain label to return to Preview.
 
 ## Problem
 
@@ -26,7 +27,7 @@ Before encoding, the source is **themed** the way OMP does it: every `var(--name
 
 A one-line **per-turn guidance** tells every lane that ` ```svg ` renders and names the palette variables. The palette names are the same as OMP's, so one SVG renders correctly in both the OMP TUI and Krypton.
 
-Each card is a new target type in the existing `f` open-hint mode: `<label>` toggles Source/Preview, `Shift+<label>` copies the source. Fences render only at seal, not while streaming. This is frontend only.
+Each card is a new target type in the existing `f` open-hint mode: `<label>` zooms the preview in the image viewer (or returns a Source card to Preview), `Shift+<label>` copies the source. Fences render only at seal, not while streaming. This is frontend only.
 
 ## Research
 
@@ -165,8 +166,10 @@ Fences render only at seal; while streaming they stay plain code. This is a deli
 4. Theme switch / Reload Config: ThemeEngine.apply → Compositor.updateTerminalThemes
    → refreshSvgFencePreviews(document) re-themes visible cards in place
 5. f → SVG cards get labels (after artifact/review/resources/images/subagents)
-6. <label> → entry.showSource = !entry.showSource; render() (signature changed)
+6. <label> → Source card: entry.showSource = false; render()
+            Preview card: imageViewer.openSvg(svgViewerSource(entry.source))
    Shift+<label> → navigator.clipboard.writeText(source); flashChip('copied svg')
+7. Viewer: =/- zoom · 0 fit · 1 100% · hjkl pan · s → close + showSource · Esc close
 ```
 
 ### Keybindings
@@ -174,10 +177,14 @@ Fences render only at seal; while streaming they stay plain code. This is a deli
 | Key | Context | Action |
 |-----|---------|--------|
 | `f` | Transcript | Enter open-hint mode (existing); SVG cards receive labels |
-| `<label>` | Open-hint mode, SVG card | Toggle Preview ↔ Source, exit hint mode |
+| `<label>` | Open-hint mode, SVG card showing Preview | Zoom the SVG in the image viewer, exit hint mode |
+| `<label>` | Open-hint mode, SVG card showing Source | Return to Preview, exit hint mode |
 | `Shift+<label>` | Open-hint mode, SVG card | Copy the original (unthemed) SVG source, exit hint mode |
+| `=` / `-` / `0` / `1` / `hjkl` | Image viewer, SVG | Zoom in / out / fit / 100% / pan |
+| `s` | Image viewer, SVG | Close the viewer and show the card's Source |
+| `Esc` | Image viewer, SVG | Close |
 
-Mouse is secondary. The toolbar `Source` and `Copy` buttons carry `data-svg-toggle` / `data-svg-copy` plus `data-svg-index`, handled by the delegated click listener at `acp-harness-view.ts:6250`.
+Mouse is secondary. The toolbar `Source` and `Copy` buttons carry `data-svg-toggle` / `data-svg-copy`, and the preview `<img>` carries `data-svg-zoom` (cursor `zoom-in`); all three also carry `data-svg-index` and are handled by the delegated transcript click listener in `acp-harness-view.ts`.
 
 ### UI Changes
 
@@ -190,7 +197,7 @@ Mouse is secondary. The toolbar `Source` and `Copy` buttons carry `data-svg-togg
     <button data-svg-copy data-svg-index="0">Copy</button>
   </div>
   <div class="acp-harness__svg-card-preview">
-    <img alt="SVG preview" decoding="async" style="aspect-ratio: W / H" src="data:image/svg+xml;charset=utf-8,…">
+    <img alt="SVG preview" decoding="async" data-svg-zoom data-svg-index="0" style="aspect-ratio: W / H" src="data:image/svg+xml;charset=utf-8,…">
   </div>
   <pre><code class="…svg">…</code></pre>                         <!-- hidden unless --source -->
 </figure>
@@ -227,7 +234,7 @@ None.
 
 - Lane-mail bodies, peek-thought cards, Live Assist, and the legacy ACP/agent views. Their fences stay code.
 - Mermaid or other diagram fences.
-- Opening SVG in the image viewer, saving it, or zooming.
+- Saving SVG to disk, and stepping between SVG cards with `n`/`p` in the viewer.
 - A config switch for the guidance line.
 - The existing gap where marked passes raw inline HTML (`<img onerror>`, raw `<svg>`) into transcript DOM on cold-load paths. That is a separate security fix.
 

@@ -106,20 +106,44 @@ export interface SvgFrame {
   width: number | null;
 }
 
+function viewBoxSize(tag: string): { width: number; height: number } | null {
+  const viewBox = /\sviewBox\s*=\s*["']([^"']*)["']/.exec(tag)?.[1];
+  if (!viewBox) return null;
+  const parts = viewBox.trim().split(/[\s,]+/).map(Number);
+  return parts.length === 4 && parts[2] > 0 && parts[3] > 0 ? { width: parts[2], height: parts[3] } : null;
+}
+
 /** Size hints from the root tag's viewBox / width / height. */
 export function svgFrame(source: string): SvgFrame {
   const tag = ROOT_RE.exec(source)?.[0];
   if (!tag) return { ratio: null, width: null };
   const width = numericAttr(tag, 'width');
   const height = numericAttr(tag, 'height');
-  const viewBox = /\sviewBox\s*=\s*["']([^"']*)["']/.exec(tag)?.[1];
-  if (viewBox) {
-    const parts = viewBox.trim().split(/[\s,]+/).map(Number);
-    if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
-      return { ratio: `${parts[2]} / ${parts[3]}`, width };
-    }
-  }
+  const box = viewBoxSize(tag);
+  if (box) return { ratio: `${box.width} / ${box.height}`, width };
   return { ratio: width && height ? `${width} / ${height}` : null, width };
+}
+
+/** The 100% size the viewer zooms from: explicit width/height win, the viewBox
+ *  supplies a missing side (or both), and HTML's 300×150 default is the last resort. */
+export function svgBaseSize(source: string): { width: number; height: number } {
+  const tag = ROOT_RE.exec(source)?.[0] ?? '';
+  const width = numericAttr(tag, 'width');
+  const height = numericAttr(tag, 'height');
+  if (width && height) return { width, height };
+  const box = viewBoxSize(tag);
+  if (box) {
+    if (width) return { width, height: (width * box.height) / box.width };
+    if (height) return { width: (height * box.width) / box.height, height };
+    return box;
+  }
+  return { width: width ?? 300, height: height ?? 150 };
+}
+
+/** spec 283: what the image viewer needs to zoom a fence — the themed data URL and its base size. */
+export function svgViewerSource(source: string): { src: string; width: number; height: number } {
+  const themed = themeSvgSource(source, readSvgPalette());
+  return { src: SVG_DATA_URL_PREFIX + encodeURIComponent(themed), ...svgBaseSize(themed) };
 }
 
 /** Fence text as written; marked-highlight appends one trailing newline. */
@@ -171,6 +195,9 @@ function buildCard(pre: HTMLElement, themed: string, index: number): HTMLElement
   const img = document.createElement('img');
   img.alt = 'SVG preview';
   img.decoding = 'async';
+  // Click zooms the card in the image viewer.
+  img.dataset.svgZoom = '';
+  img.dataset.svgIndex = String(index);
   // A source the engine still refuses: show the code, drop the toggle.
   img.addEventListener('error', () => card.classList.add(`${CARD}--broken`), { once: true });
   setPreview(img, themed);

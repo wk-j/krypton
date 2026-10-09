@@ -3090,6 +3090,7 @@
   object-fit: contain;
   border: none;
   border-radius: 0;
+  cursor: zoom-in;
 }
 
 .acp-harness__msg-body--markdown .acp-harness__svg-card-preview img.acp-harness__svg-card-img--fill {

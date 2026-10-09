@@ -323,7 +323,7 @@ import {
   updateStreamingTextBody,
 } from './harness-markdown';
 export { agentLinkOpenAction, hasMarkdownTable } from './harness-markdown';
-import { decorateSvgFences, SVG_FENCE_GUIDANCE } from './harness-svg-fence';
+import { decorateSvgFences, SVG_FENCE_GUIDANCE, svgViewerSource } from './harness-svg-fence';
 import {
   basename,
   esc,
@@ -6292,16 +6292,17 @@ export class AcpHarnessView implements ContentView {
         if (resource) void this.openMessageResource(resource);
         return;
       }
-      // spec 283: SVG card toolbar — Source/Preview toggle and Copy.
-      const svgButton = target.closest<HTMLElement>('[data-svg-toggle], [data-svg-copy]');
+      // spec 283: SVG card — click the preview to zoom; toolbar Source/Preview and Copy.
+      const svgButton = target.closest<HTMLElement>('[data-svg-toggle], [data-svg-copy], [data-svg-zoom]');
       const svgMsg = svgButton?.closest<HTMLElement>('.acp-harness__msg[data-msg-id]');
       if (svgButton && svgMsg?.dataset.msgId) {
         e.preventDefault();
         const lane = this.activeLane();
         const item = lane?.transcript.find((row) => row.id === svgMsg.dataset.msgId);
         const entry = item?.svgFences?.find((fence) => String(fence.index) === svgButton.dataset.svgIndex);
-        if (lane && entry) {
-          if (svgButton.dataset.svgCopy !== undefined) void this.copySvgFence(entry);
+        if (lane && item && entry) {
+          if (svgButton.dataset.svgZoom !== undefined) this.openSvgViewer(item.id, entry);
+          else if (svgButton.dataset.svgCopy !== undefined) void this.copySvgFence(entry);
           else this.toggleSvgFence(lane, entry);
         }
         return;
@@ -6346,6 +6347,11 @@ export class AcpHarnessView implements ContentView {
       laneImages: () => this.activeLane()?.transcript.flatMap((item) => item.images ?? []) ?? [],
       ensureLive: (image) => this.reloadReleasedImage(image),
       openPath: (path) => this.openImageFile(path),
+      hasSvgFence: (itemId, index) => this.findSvgFence(itemId, index) !== undefined,
+      showSvgSource: (itemId, index) => {
+        const entry = this.findSvgFence(itemId, index);
+        if (entry && !entry.showSource) this.toggleSvgFence(this.activeLane(), entry);
+      },
       onClose: () => this.renderComposer(),
     });
     body.appendChild(this.imageViewer.el);
@@ -9464,7 +9470,7 @@ export class AcpHarnessView implements ContentView {
       targets.push(...(item.images ?? []).filter(isOpenableImage));
       // spec 282: each spawned agent toggles its inline detail.
       targets.push(...(item.tool?.subagents?.agents ?? []));
-      // spec 283: each SVG card toggles Source/Preview (Shift copies).
+      // spec 283: each SVG card zooms (or returns to Preview from Source); Shift copies.
       targets.push(...(item.svgFences ?? []));
     }
     return targets;
@@ -9520,8 +9526,11 @@ export class AcpHarnessView implements ContentView {
     const exact = targets.find((target) => target.hintLabel === candidate);
     if (exact) {
       if ('showSource' in exact) {
+        const lane = this.activeLane();
+        const owner = lane?.transcript.find((row) => row.svgFences?.includes(exact));
         if (e.shiftKey) void this.copySvgFence(exact);
-        else this.toggleSvgFence(this.activeLane(), exact);
+        else if (exact.showSource) this.toggleSvgFence(lane, exact);
+        else if (owner) this.openSvgViewer(owner.id, exact);
       } else if ('imageId' in exact) this.openImageViewer(exact.imageId);
       else if ('recentTools' in exact) this.toggleSubagentDetail(this.activeLane(), exact);
       else if ('available' in exact) void this.openArtifact(exact);
@@ -12965,6 +12974,9 @@ export class AcpHarnessView implements ContentView {
    *  Cancel is Ctrl+C / #cancel (workspace footer `#cancel running`); there is
    *  no lane-head chip. */
   private composerStatusChip(lane: HarnessLane): MetaSegment[] {
+    if (this.imageViewer?.isSvg) {
+      return textSegments('svg viewer · =/- zoom · 0 fit · 1 100% · hjkl pan · s source · Esc close');
+    }
     if (this.imageViewer?.isOpen) {
       return textSegments('image viewer · n/p next · =/- zoom · 0 fit · 1 100% · o open · Esc close');
     }
@@ -13931,6 +13943,18 @@ export class AcpHarnessView implements ContentView {
     if (!lane?.transcript.some((row) => row.svgFences?.includes(entry))) return;
     entry.showSource = !entry.showSource;
     this.scheduleStreamingBodyOnly(lane);
+  }
+
+  private findSvgFence(itemId: string, index: number): SvgFenceEntry | undefined {
+    return this.activeLane()?.transcript
+      .find((row) => row.id === itemId)
+      ?.svgFences?.find((fence) => fence.index === index);
+  }
+
+  /** spec 283: zoom an SVG card in the image viewer (click or open-hint label). */
+  private openSvgViewer(itemId: string, entry: SvgFenceEntry): void {
+    this.imageViewer.openSvg({ itemId, index: entry.index, label: `svg ${entry.index + 1}`, ...svgViewerSource(entry.source) });
+    this.renderComposer();
   }
 
   /** spec 283: copy the fence as the agent wrote it (unthemed). */

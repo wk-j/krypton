@@ -2,6 +2,8 @@
 // Keyboard-first: n/p step through the lane's images, =/- zoom, 0 fit,
 // 1 actual size, hjkl pan, o open the file, Esc close. Zoom/pan are a single
 // transform on the stage image (no layout per frame).
+// spec 283: also zooms one ```svg card; vector content is laid out at the
+// zoomed size instead of transform-scaled, so it stays sharp.
 
 import type { HarnessImage } from './harness-view-types';
 import { formatImageBytes, isOpenableImage } from './harness-images';
@@ -12,7 +14,23 @@ export interface ImageViewerHost {
   /** Reload a released path image; resolves true once it is live again. */
   ensureLive(image: HarnessImage): Promise<boolean>;
   openPath(path: string): void;
+  /** spec 283: whether the SVG fence still exists in the active lane. */
+  hasSvgFence(itemId: string, index: number): boolean;
+  /** spec 283: flip the fence's card to Source (called after the viewer closed). */
+  showSvgSource(itemId: string, index: number): void;
   onClose(): void;
+}
+
+/** spec 283: an SVG fence shown in the viewer; not part of the lane image list. */
+export interface SvgViewerItem {
+  itemId: string;
+  index: number;
+  label: string;
+  /** Themed `data:image/svg+xml` URL. */
+  src: string;
+  /** 100% size, from `svgBaseSize`. */
+  width: number;
+  height: number;
 }
 
 const ZOOM_STEP = 1.25;
@@ -26,6 +44,7 @@ export class HarnessImageViewer {
   private readonly tile: HTMLElement;
   private readonly meta: HTMLElement;
   private imageId: string | null = null;
+  private svg: SvgViewerItem | null = null;
   private scale = 1;
   private fit = true;
   private panX = 0;
@@ -56,7 +75,11 @@ export class HarnessImageViewer {
   }
 
   get isOpen(): boolean {
-    return this.imageId !== null;
+    return this.imageId !== null || this.svg !== null;
+  }
+
+  get isSvg(): boolean {
+    return this.svg !== null;
   }
 
   get currentImageId(): string | null {
@@ -64,22 +87,43 @@ export class HarnessImageViewer {
   }
 
   open(imageId: string): void {
+    this.svg = null;
     this.imageId = imageId;
     this.el.hidden = false;
     this.show(true);
   }
 
+  openSvg(item: SvgViewerItem): void {
+    this.imageId = null;
+    this.svg = item;
+    this.el.hidden = false;
+    this.fit = true;
+    this.panX = 0;
+    this.panY = 0;
+    this.tile.hidden = true;
+    this.img.hidden = false;
+    this.img.alt = item.label;
+    this.img.src = item.src;
+    this.applyTransform();
+  }
+
   close(): void {
     if (!this.isOpen) return;
     this.imageId = null;
+    this.svg = null;
     this.el.hidden = true;
     this.img.removeAttribute('src');
+    this.clearSvgSize();
     this.host.onClose();
   }
 
   /** Lane images changed (release, eviction, clear): repaint, advance past a
    *  vanished image, or close when nothing openable is left. */
   refresh(): void {
+    if (this.svg) {
+      if (!this.host.hasSvgFence(this.svg.itemId, this.svg.index)) this.close();
+      return;
+    }
     if (!this.imageId) return;
     const openable = this.openable();
     if (openable.some((image) => image.imageId === this.imageId)) {
@@ -104,10 +148,10 @@ export class HarnessImageViewer {
         this.close();
         break;
       case 'n':
-        this.step(1);
+        if (!this.svg) this.step(1);
         break;
       case 'p':
-        this.step(-1);
+        if (!this.svg) this.step(-1);
         break;
       case '=':
       case '+':
@@ -147,6 +191,13 @@ export class HarnessImageViewer {
       case 'o': {
         const image = this.current();
         if (image?.path) this.host.openPath(image.path);
+        break;
+      }
+      case 's': {
+        if (!this.svg) break;
+        const { itemId, index } = this.svg;
+        this.close();
+        this.host.showSvgSource(itemId, index);
         break;
       }
       default:
@@ -189,6 +240,7 @@ export class HarnessImageViewer {
     if (image.state === 'live' && image.objectUrl) {
       this.tile.hidden = true;
       this.img.hidden = false;
+      this.clearSvgSize();
       if (this.img.getAttribute('src') !== image.objectUrl) this.img.src = image.objectUrl;
       this.img.alt = image.label;
       this.applyTransform();
@@ -220,12 +272,25 @@ export class HarnessImageViewer {
     this.meta.textContent = `${parts.join(' · ')}   n/p next · =/- zoom · 0 fit · 1 100% · hjkl pan${image.path ? ' · o open' : ''} · Esc close`;
   }
 
+  private renderSvgMeta(item: SvgViewerItem): void {
+    const size = `${Math.round(item.width)}×${Math.round(item.height)}`;
+    const zoom = `${Math.round(this.effectiveScale() * 100)}%`;
+    this.meta.textContent = `${item.label} · ${size} · ${zoom}   =/- zoom · 0 fit · 1 100% · hjkl pan · s source · Esc close`;
+  }
+
+  /** 100% size: the SVG's declared size, else the decoded bitmap's. */
+  private baseSize(): { width: number; height: number } {
+    if (this.svg) return { width: this.svg.width, height: this.svg.height };
+    return { width: this.img.naturalWidth, height: this.img.naturalHeight };
+  }
+
   private fitScale(): number {
-    const width = this.img.naturalWidth;
-    const height = this.img.naturalHeight;
+    const { width, height } = this.baseSize();
     const rect = this.stage.getBoundingClientRect();
     if (width === 0 || height === 0 || rect.width === 0 || rect.height === 0) return 1;
-    return Math.min(rect.width / width, rect.height / height, 1);
+    // Bitmaps never upscale to fit; vectors fill the stage.
+    const cap = this.svg ? Infinity : 1;
+    return Math.min(rect.width / width, rect.height / height, cap);
   }
 
   private effectiveScale(): number {
@@ -233,7 +298,9 @@ export class HarnessImageViewer {
   }
 
   private zoomBy(factor: number): void {
-    const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.effectiveScale() * factor));
+    // A small vector can fit above ZOOM_MAX; measure its ceiling from the fit so `=` never zooms out.
+    const max = this.svg ? ZOOM_MAX * Math.max(1, this.fitScale()) : ZOOM_MAX;
+    const next = Math.min(max, Math.max(ZOOM_MIN, this.effectiveScale() * factor));
     this.fit = false;
     this.scale = next;
     this.applyTransform();
@@ -247,15 +314,29 @@ export class HarnessImageViewer {
     this.applyTransform();
   }
 
+  private clearSvgSize(): void {
+    this.img.style.width = '';
+    this.img.style.height = '';
+  }
+
   private applyTransform(): void {
     const scale = this.effectiveScale();
+    const { width, height } = this.baseSize();
     const rect = this.stage.getBoundingClientRect();
-    const maxX = Math.max(0, (this.img.naturalWidth * scale - rect.width) / 2);
-    const maxY = Math.max(0, (this.img.naturalHeight * scale - rect.height) / 2);
+    const maxX = Math.max(0, (width * scale - rect.width) / 2);
+    const maxY = Math.max(0, (height * scale - rect.height) / 2);
     this.panX = Math.min(maxX, Math.max(-maxX, this.panX));
     this.panY = Math.min(maxY, Math.max(-maxY, this.panY));
-    this.img.style.transform =
-      `translate(-50%, -50%) translate(${this.panX}px, ${this.panY}px) scale(${scale})`;
+    const shift = `translate(-50%, -50%) translate(${this.panX}px, ${this.panY}px)`;
+    if (this.svg) {
+      // A transform would scale the 100% raster and blur; lay out at the zoomed size instead.
+      this.img.style.width = `${width * scale}px`;
+      this.img.style.height = `${height * scale}px`;
+      this.img.style.transform = shift;
+      this.renderSvgMeta(this.svg);
+      return;
+    }
+    this.img.style.transform = `${shift} scale(${scale})`;
     const image = this.current();
     if (image) this.renderMeta(image);
   }
