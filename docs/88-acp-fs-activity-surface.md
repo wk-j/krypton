@@ -35,7 +35,7 @@ So the infrastructure is there. We add an emit-before-reply for the fs methods, 
 
 ### Why agents already use these methods
 
-`acp.rs` initialize declares `clientCapabilities.fs.writeTextFile = true` for every backend and `readTextFile = true` for every backend **except Grok** (spec 228: Grok remaps `read_file` through ACP when the flag is on, which makes screenshots fail UTF-8). Per ACP spec, agents that see `readTextFile` *prefer* ACP fs over their internal tools because it lets the client gate/diff/audit. Claude's adapter (`@zed-industries/claude-code-acp`) routes nearly all reads/writes through here; Codex and Gemini route some. Grok writes still go through ACP; Grok reads use the native tool (image embed) and show as `tool_call` chips, not `FS 📖`.
+`acp.rs` initialize declares `clientCapabilities.fs.writeTextFile = true` for every backend and `readTextFile = true` for every backend **except Grok and OMP**. Grok remaps `read_file` through ACP when the flag is on, which makes screenshots fail UTF-8 (spec 228). OMP tries ACP first and falls back to disk, so every out-of-root read left a red `Path outside project root` chip even though the read succeeded (spec 122). Per ACP spec, agents that see `readTextFile` *prefer* ACP fs over their internal tools because it lets the client gate/diff/audit. Claude's adapter (`@zed-industries/claude-code-acp`) routes nearly all reads/writes through here; Codex and Gemini route some. Grok and OMP writes still go through ACP. Their reads use the native tool and show as `tool_call` chips, not `FS 📖`.
 
 Non-UTF-8 `fs/read_text_file` replies `-32000` with `binary file (<kind>, N bytes); fs/read_text_file is text-only` (magic then extension) instead of Rust's `stream did not contain valid UTF-8`. NotFound is still empty-success.
 
@@ -49,6 +49,7 @@ Non-UTF-8 `fs/read_text_file` replies `-32000` with `binary file (<kind>, N byte
 | OpenCode-1 | Unknown — verify in implementation |
 | Droid-1 | Unknown — verify in implementation |
 | Grok-1 | **No** (spec 228 — `readTextFile` not advertised; native `read_file`) | Yes (writes + plan scratch) |
+| OMP-1 | **No** (spec 122 — `readTextFile` not advertised; native `read`) | Yes |
 | Pi-1 | **No** — pi-acp does not request the capability; Pi reads/writes via internal tool calls (lean lane) |
 
 Pi-1 stays N/A. The visibility chip will simply never fire for Pi.

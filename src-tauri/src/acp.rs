@@ -930,10 +930,12 @@ struct FsWriteCtx {
 }
 
 /// Grok remaps every `read_file` through ACP when this is true, which
-/// makes screenshots fail UTF-8. Other lanes keep the capability so
-/// reads stay auditable. Writes stay advertised for every backend.
+/// makes screenshots fail UTF-8 (spec 228). OMP tries ACP first and falls
+/// back to disk, so every out-of-root read left a red
+/// `Path outside project root` chip despite succeeding. Other lanes keep the
+/// capability so reads stay auditable. Writes stay advertised for every backend.
 fn advertise_read_text_file(backend_id: &str) -> bool {
-    backend_id != "grok"
+    !matches!(backend_id, "grok" | "omp")
 }
 
 /// Sniff for the error chip only — not a general mime detector.
@@ -3279,8 +3281,9 @@ mod tests {
     }
 
     #[test]
-    fn advertise_read_text_file_is_off_only_for_grok() {
+    fn advertise_read_text_file_is_off_for_grok_and_omp() {
         assert!(!advertise_read_text_file("grok"));
+        assert!(!advertise_read_text_file("omp"));
         for id in ["claude", "codex", "copilot", "droid", "gemini", "opencode"] {
             assert!(advertise_read_text_file(id), "{id}");
         }
