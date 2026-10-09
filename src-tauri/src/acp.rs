@@ -759,11 +759,13 @@ fn resolve_fs_path(cwd: &str, raw_path: &str) -> std::path::PathBuf {
 /// leftover ACP reads and all Grok writes still hit this gate. Grok
 /// `fs/*` is unrestricted: its list/grep/bash already escape the
 /// project, so scoping ACP I/O only broke sibling repos (and hid the
-/// write-review card). Other lanes keep Spec 89 scoping — their shell
-/// tools are permission-gated, so ACP fs was the last unprompted path.
-/// Grok writes still go through the Spec 89 review card (or session-
-/// scratch auto-apply); this enum only decides whether the request is
-/// rejected before that gate.
+/// write-review card). OMP gets the same out-of-root pass: it reads disk
+/// natively (spec 122) and its only fs/* traffic is `edit`/`write`, which
+/// would otherwise die as "Path outside project root" (e.g. `/tmp` scratch).
+/// Other lanes keep Spec 89 scoping — their shell tools are permission-gated,
+/// so ACP fs was the last unprompted path. Grok/OMP writes still go through
+/// the Spec 89 review card (or Grok session-scratch auto-apply); this enum
+/// only decides whether the request is rejected before that gate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FsAccess {
     Read,
@@ -772,7 +774,7 @@ enum FsAccess {
 
 /// Whether `resolved` may be served for this access + backend.
 /// Project root and the current project's Grok session tree always pass
-/// (reads and writes). Out-of-root Grok fs/* also passes — writes still
+/// (reads and writes). Out-of-root Grok/OMP fs/* also passes — writes still
 /// wait on the review card. Other lanes stay Spec 89 scoped.
 fn fs_path_in_scope(
     root: &std::path::Path,
@@ -785,16 +787,16 @@ fn fs_path_in_scope(
     if resolved.starts_with(root) || is_under_grok_session_dir(cwd, resolved) {
         return true;
     }
-    // Out-of-root: Grok only. Not a second scope check — there is
+    // Out-of-root: Grok and OMP only. Not a second scope check — there is
     // no remaining path filter once this matches. Writes still hit
     // the review card in handle_inbound_request.
-    backend_id == "grok"
+    matches!(backend_id, "grok" | "omp")
 }
 
 /// Reject fs/* requests that escape the lane's project root — except Grok's
 /// session scratch under `~/.grok/sessions/<encoded-cwd>/` (every file there,
-/// not just plan.md). Grok `fs/*` is additionally unscoped (see `FsAccess`);
-/// out-of-root Grok writes still wait on the review card. When `cwd` is
+/// not just plan.md). Grok/OMP `fs/*` is additionally unscoped (see `FsAccess`);
+/// out-of-root Grok/OMP writes still wait on the review card. When `cwd` is
 /// unset (rare — fallback session), we pass through without enforcement.
 async fn validate_fs_path(
     client: &Arc<AcpClient>,
@@ -1177,7 +1179,7 @@ async fn handle_inbound_request(
             // Path scoping (Spec 89 Phase C): reject *writes* outside the lane's
             // project root (Grok session scratch under ~/.grok/sessions/<encoded-cwd>/
             // is allowed — every file in that tree, not just plan.md).
-            // Grok fs/* is unrestricted so sibling-repo writes reach the
+            // Grok/OMP fs/* is unrestricted so out-of-root writes reach the
             // review card instead of dying as "Path outside project root";
             // other lanes stay Spec-89 scoped.
             if let Err(err) = validate_fs_path(&client, &path, FsAccess::Write).await {
@@ -3170,7 +3172,7 @@ mod tests {
     }
 
     #[test]
-    fn fs_path_in_scope_grok_escapes_but_other_lanes_do_not() {
+    fn fs_path_in_scope_grok_and_omp_escape_but_other_lanes_do_not() {
         let cwd = "/Users/wk/Source/xenon";
         let root = Path::new(cwd);
         let in_project = PathBuf::from("/Users/wk/Source/xenon/src/main.rs");
@@ -3227,6 +3229,23 @@ mod tests {
             "grok"
         ));
         assert!(fs_path_in_scope(root, cwd, &skill, FsAccess::Write, "grok"));
+
+        // Live failure: OMP `edit` of `/tmp/i186/sim.py` died before the review card.
+        let tmp_scratch = PathBuf::from("/tmp/i186/sim.py");
+        assert!(fs_path_in_scope(
+            root,
+            cwd,
+            &tmp_scratch,
+            FsAccess::Write,
+            "omp"
+        ));
+        assert!(fs_path_in_scope(
+            root,
+            cwd,
+            &sibling,
+            FsAccess::Write,
+            "omp"
+        ));
 
         // Other lanes keep Spec 89 scoping (Claude-1 review).
         assert!(!fs_path_in_scope(

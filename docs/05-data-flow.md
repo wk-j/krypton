@@ -962,11 +962,13 @@ PUBLISH
        plan.md); anything else is rejected with an fs_activity error chip.
        Grok fs/* is not scoped (native list/grep/bash already escape), so
        a sibling-repo write reaches the review card instead of dying as
-       "Path outside project root"; other lanes keep Spec 89 scoping so
+       "Path outside project root". OMP writes are unscoped the same way
+       (its `edit`/`write` to a sibling repo or `/tmp` scratch reaches the
+       review card; see docs/122). Other lanes keep Spec 89 scoping so
        ACP fs is not an unprompted path (see docs/135).
     b. Paths under that Grok session tree auto-apply immediately (mkdir +
        write, no review card), matching Grok TUI plan-file auto-approve.
-    c. For other allowed paths (in-project, or any Grok path), the handler
+    c. For other allowed paths (in-project, or any Grok/OMP path), the handler
        reads the current disk content
        as oldText, parks a oneshot::Sender<Result<Value, Value>> in
        fs_write_pending keyed by the JSON-RPC id, and emits an `fs_write_pending`
