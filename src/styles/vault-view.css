@@ -107,40 +107,18 @@
   margin: 0 !important;
 }
 
-/* ─── Tab Bar ─── */
-
-.krypton-window[data-content-type="vault"] .krypton-window__tabbar {
-  background: none !important;
-}
-
-.krypton-window[data-content-type="vault"] .krypton-window__tabbar::before {
-  display: none !important;
-}
+/* ─── Tabs ─── */
+/* Pill tabs in the titlebar row; the vault keeps its uppercase readout voice. */
 
 .krypton-window[data-content-type="vault"] .krypton-tab {
   font-family: var(--vault-font-data) !important;
   letter-spacing: 0.1em !important;
-  border-radius: var(--vault-radius) var(--vault-radius) 0 0 !important;
-  clip-path: none !important;
+  text-transform: uppercase;
+  border-radius: var(--vault-radius) !important;
 }
 
 .krypton-window[data-content-type="vault"] .krypton-tab--active {
   background: rgba(var(--vault-primary-rgb), 0.08) !important;
-  border-left: 2px solid var(--vault-primary) !important;
-  color: var(--vault-primary) !important;
-  animation: none !important;
-  clip-path: none !important;
-}
-
-.krypton-window[data-content-type="vault"] .krypton-tab--active::before,
-.krypton-window[data-content-type="vault"] .krypton-tab--active::after {
-  display: none !important;
-}
-
-/* Tab separator → vertical pipe */
-.krypton-window[data-content-type="vault"] .krypton-tab + .krypton-tab::before {
-  transform: none !important;
-  background: rgba(var(--vault-primary-rgb), 0.15) !important;
 }
 
 /* ─── Edge Glow → Disabled ─── */

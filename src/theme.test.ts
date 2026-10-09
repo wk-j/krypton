@@ -86,7 +86,6 @@ function theme(overrides: {
         background: 'transparent',
         active_color: accent,
         inactive_color: 'rgba(0, 200, 255, 0.3)',
-        font_size: 11,
       },
     },
     focused: {

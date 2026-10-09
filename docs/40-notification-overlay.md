@@ -198,8 +198,7 @@ private handleKittyNotification(data: string): void {
 **DOM structure — notification lives inside the window footer:**
 ```html
 <div class="krypton-window">
-  <div class="krypton-window__chrome">...</div>       <!-- titlebar + header accent -->
-  <div class="krypton-window__tabbar">...</div>
+  <div class="krypton-window__chrome">...</div>       <!-- titlebar (incl. tab strip) + header accent -->
   <div class="krypton-window__perspective">...</div>   <!-- terminal content -->
   <div class="krypton-window__footer">                 <!-- footer bar -->
     <div class="krypton-notif krypton-notif--info">    <!-- notification (moved on focus) -->

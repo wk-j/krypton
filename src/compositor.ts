@@ -1407,15 +1407,10 @@ export class Compositor {
     const shouldShow = this.tabsConfig.always_show_tabbar || win.tabs.length > 1;
     win.tabBarElement.classList.toggle('krypton-window__tabbar--visible', shouldShow);
 
-    // Update active indicators + role attribute used by per-role tab chamfer.
+    // Update active indicators.
     const tabEls = win.tabBarElement.querySelectorAll('.krypton-tab');
     tabEls.forEach((el, i) => {
       el.classList.toggle('krypton-tab--active', i === win.activeTabIndex);
-      const tab = win.tabs[i];
-      if (!tab) return;
-      const focused = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
-      const role: PaneContentType = focused?.contentView?.type ?? 'terminal';
-      (el as HTMLElement).dataset.role = role;
     });
     this.scheduleWorkspaceStateSave();
   }
@@ -2330,17 +2325,18 @@ export class Compositor {
     if (this.claudeHookManager) titleEndChildren.push(this.claudeHookManager.createToolIndicator());
     titleEndChildren.push(ptyStatus, tail);
 
+    // Tab bar lives in the titlebar row, between the label and the end cluster.
+    const tabBar = document.createElement('div');
+    tabBar.className = 'krypton-window__tabbar';
+
     titlebar.appendChild(labelGroup);
+    titlebar.appendChild(tabBar);
     titlebar.appendChild(this.createTitlebarEnd(...titleEndChildren));
     chrome.appendChild(titlebar);
 
     // Header accent bar below titlebar — live oscilloscope (fed by PTY
     // throughput) or the static striped div, per theme config.
     const headerScope = this.buildHeaderAccent(chrome);
-
-    // Tab bar
-    const tabBar = document.createElement('div');
-    tabBar.className = 'krypton-window__tabbar';
 
     // Content area
     const content = document.createElement('div');
@@ -2364,7 +2360,6 @@ export class Compositor {
     footer.className = 'krypton-window__footer';
 
     el.appendChild(chrome);
-    el.appendChild(tabBar);
     el.appendChild(perspectiveWrap);
     el.appendChild(footer);
     this.workspace.appendChild(el);
@@ -2912,7 +2907,11 @@ export class Compositor {
     ptyStatus.className = 'krypton-window__pty-status';
     ptyStatus.textContent = contentView.type.toUpperCase();
 
+    const tabBar = document.createElement('div');
+    tabBar.className = 'krypton-window__tabbar';
+
     titlebar.appendChild(labelGroup);
+    titlebar.appendChild(tabBar);
     titlebar.appendChild(this.createTitlebarEnd(ptyStatus, tail));
     chrome.appendChild(titlebar);
 
@@ -2921,9 +2920,6 @@ export class Compositor {
     // The same pump also feeds the Wheel rail's activity tuft (spec 272).
     const headerScope = this.buildHeaderAccent(chrome);
     contentView.onOutputPump = (chars: number): void => this.pumpWindowActivity(id, chars);
-
-    const tabBar = document.createElement('div');
-    tabBar.className = 'krypton-window__tabbar';
 
     const content = document.createElement('div');
     content.className = 'krypton-window__content';
@@ -2936,7 +2932,6 @@ export class Compositor {
     footer.className = 'krypton-window__footer';
 
     el.appendChild(chrome);
-    el.appendChild(tabBar);
     el.appendChild(perspectiveWrap);
     el.appendChild(footer);
     this.workspace.appendChild(el);

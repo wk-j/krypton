@@ -243,20 +243,28 @@ This factory is used by: window creation (first tab, first pane), new tab creati
 
 ### Tab Bar UI
 
-The tab bar is a horizontal strip inserted between `.krypton-window__chrome` and `.krypton-window__content`:
+The tab bar is a horizontal strip **inside the titlebar row**, between `.krypton-window__label-group` and `.krypton-window__titlebar-end`:
 
 ```html
-<div class="krypton-window__tabbar">
-  <div class="krypton-tab krypton-tab--active" data-tab-id="tab-0">
-    <span class="krypton-tab__title">Shell 1</span>
+<div class="krypton-window__titlebar">
+  <div class="krypton-window__label-group">…</div>
+  <div class="krypton-window__tabbar krypton-window__tabbar--visible">
+    <div class="krypton-tab krypton-tab--active" data-tab-id="tab-0">
+      <span class="krypton-tab__index">01</span>
+      <span class="krypton-tab__dot"></span>
+      <span class="krypton-tab__title">Shell 1</span>
+    </div>
+    <div class="krypton-tab" data-tab-id="tab-1">
+      <span class="krypton-tab__index">02</span>
+      <span class="krypton-tab__dot"></span>
+      <span class="krypton-tab__title">Shell 2</span>
+    </div>
   </div>
-  <div class="krypton-tab" data-tab-id="tab-1">
-    <span class="krypton-tab__title">Shell 2</span>
-  </div>
+  <div class="krypton-window__titlebar-end">…</div>
 </div>
 ```
 
-The tab bar is **hidden when there is only one tab** (no visual clutter for single-tab windows). It appears automatically when a second tab is created.
+The tab bar is **hidden when there is only one tab** (no visual clutter for single-tab windows). It appears automatically when a second tab is created. While it is visible the window label text hides (it would repeat the active tab), and on narrow windows the PTY status yields first: it ellipsizes (down to nothing) before any tab title shrinks, while the session mark keeps its width. Tabs are rounded pills (see `DESIGN.md` § Geometry).
 
 ### Pane Container DOM
 
@@ -295,7 +303,7 @@ The focused pane within a window gets a subtle inner border glow (thinner than t
 
 | Class | Purpose |
 |-------|---------|
-| `.krypton-window__tabbar` | Tab bar container (flex row, hidden when 1 tab) |
+| `.krypton-window__tabbar` | Tab strip inside the titlebar row (flex row, hidden when 1 tab) |
 | `.krypton-tab` | Individual tab element |
 | `.krypton-tab--active` | Active tab styling |
 | `.krypton-tab__title` | Tab title text |
@@ -324,11 +332,10 @@ The existing `ChromeTabs` theme structure is already parsed. Apply it as CSS cus
 
 ```typescript
 // In FrontendThemeEngine.applyTheme():
-style.setProperty('--krypton-tab-height', `${theme.chrome.tabs.height}px`);
+style.setProperty('--krypton-tab-height', `${theme.chrome.tabs.height}px`); // pill = height − 6px, capped by the titlebar
 style.setProperty('--krypton-tab-background', theme.chrome.tabs.background);
 style.setProperty('--krypton-tab-active-color', theme.chrome.tabs.active_color);
 style.setProperty('--krypton-tab-inactive-color', theme.chrome.tabs.inactive_color);
-style.setProperty('--krypton-tab-font-size', `${theme.chrome.tabs.font_size}px`);
 ```
 
 ### Sound Events

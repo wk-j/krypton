@@ -235,7 +235,7 @@ A single accent color stretches across the entire UI via opacity layering. Use t
 
 Monospace everywhere. The terminal nature of the product is the brand — proportional fonts would betray it. Default to **Mononoki** or **JetBrains Mono**.
 
-- **Labels** (titlebar, tab text, badges) are uppercase with `0.08em` letter-spacing. This is the "panel labeling" voice — feels engraved into the chrome.
+- **Labels** (titlebar, badges) are uppercase with `0.08em` letter-spacing. This is the "panel labeling" voice — feels engraved into the chrome. **Tab titles are the exception**: they keep their natural case (a tab title is a path, command, or document name the user reads).
 - **Body** is mixed case, normal spacing — reserved for content that the user actually reads (terminal output, prompts, dialog text).
 - **Display** (large numerics, mode indicators) is uppercase with `0.2em` letter-spacing — wide, instrumented, console-readout feel.
 - **Numerics in HUD** (gauges, timers, counters, byte sizes) **must** use `font-variant-numeric: tabular-nums`. Without it, digits jitter as values tick and the instrumented feel collapses.
@@ -243,9 +243,9 @@ Monospace everywhere. The terminal nature of the product is the brand — propor
 
 ## Geometry
 
-**8px corner radius is the default** on every rectangular Krypton Dark container: windows, panels, palettes, dialogs, toasts, chips, buttons, inputs, tabs. The curve is a manufactured bevel, not a pillow. True circles (`50%`) stay circles (status discs, remove buttons). Do not mix 0/2/3/4/12px on the same surface. NASA Vault uses the same 8px token (diamond status dots stay 0). Amber Agent frames stay 0px. The ACP harness composer and the docked ticket panel stay 0px (interior panes, not cards); the host window uses the 8px token.
+**8px corner radius is the default** on every rectangular Krypton Dark container: windows, panels, palettes, dialogs, toasts, chips, buttons, inputs. The curve is a manufactured bevel, not a pillow. True circles (`50%`) stay circles (status discs, remove buttons). Do not mix 0/2/3/4/12px on the same surface. The one deliberate exception is the **6px tab pill**: it sits inside the 28px titlebar rail, where 8px reads as a capsule. NASA Vault uses the same 8px token (diamond status dots stay 0), including its tab pills. Amber Agent frames stay 0px. The ACP harness composer and the docked ticket panel stay 0px (interior panes, not cards); the host window uses the 8px token.
 
-**Angled clip-paths** appear on active tabs (chamfered top corners), giving an industrial "machined" silhouette. Diagonals also appear in tab separators (12° rotation) — a subtle "this is not a spreadsheet" cue.
+**Tabs are rounded pills in the titlebar row.** With 2+ tabs (or `always_show_tabbar`), the tab strip sits between the status dot and the end cluster, and the window label text hides (it would repeat the active tab). Inactive tabs are bare muted fg text; the active tab gets a soft neutral fill (`fg` @ 9%) with 6px radius. No underline, no chamfer, no glow. The tab's status dot keeps the window accent.
 
 No surface carries L-shaped corner ornament — not windows, not vault, not agent, not harness, not toasts. Two-side HUD ticks (`border-top` + `border-left` 10px arms, `┌┐└┘` glyphs) are banned. The chrome is the 1px accent-tinted border plus the multi-layer outer glow — the whole frame reads as a single luminous edge rather than discrete brackets.
 
@@ -254,6 +254,7 @@ No surface carries L-shaped corner ornament — not windows, not vault, not agen
 ```
 ┌──────────────────────────────────────────────────────────┐
 │ ▌ TITLE · 28px · status dot 6px         session NN     │  ← ID fills the rail when focused
+│   (2+ tabs: ▌ [01 · tab] ( 02 · active ) [03 · tab]  NN) │  ← tab pills replace the title text
 ├──────────────────────────────────────────────────────────┤
 │ ░░░ edge glow ░░░ (5em tall, fades into pane)            │
 │                                                          │

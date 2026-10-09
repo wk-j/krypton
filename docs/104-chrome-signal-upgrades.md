@@ -48,9 +48,9 @@ Alternatives ruled out:
 
 | File | Change |
 |------|--------|
-| `src/styles/window.css` | Add state modifier rules for `.krypton-window__corner` (color/glow); add `--krypton-edge-intensity` CSS var consumed by `.krypton-glow-overlay`; add `clip-path` rule on `.krypton-tab--active` with `data-role` switch; add `.krypton-window__hud` block; add `.krypton-window__titlebar--ack` one-shot rule and `krypton-ack-wipe` keyframes; add `krypton-breathing` keyframes that target `--krypton-color-primary-shift` |
+| `src/styles/window.css` | Add state modifier rules for `.krypton-window__corner` (color/glow); add `--krypton-edge-intensity` CSS var consumed by `.krypton-glow-overlay`; ~~add `clip-path` rule on `.krypton-tab--active` with `data-role` switch~~ (superseded: pill tabs, see item 3); add `.krypton-window__hud` block; add `.krypton-window__titlebar--ack` one-shot rule and `krypton-ack-wipe` keyframes; add `krypton-breathing` keyframes that target `--krypton-color-primary-shift` |
 | `src/styles/overlays.css` *(or new `src/styles/display-flash.css` imported from `main.ts`)* | `.krypton-display-flash` element used by mode entry (and later, workspace switch) |
-| `src/compositor.ts` | (a) read PTY-output activity rate per window → write `--krypton-edge-intensity`; (b) add `data-role` to tabs (`shell` \| `agent` \| `quick` \| `vault` \| `webview`); (c) build `.krypton-window__hud` DOM in `renderTitlebar()`; (d) expose `flashAck(windowId)` that adds/removes `--ack` class on titlebar |
+| `src/compositor.ts` | (a) read PTY-output activity rate per window → write `--krypton-edge-intensity`; ~~(b) add `data-role` to tabs~~ (superseded: removed with the pill tabs, see item 3); (c) build `.krypton-window__hud` DOM in `renderTitlebar()`; (d) expose `flashAck(windowId)` that adds/removes `--ack` class on titlebar |
 | `src/input-router.ts` | In `setMode()`, schedule `showDisplayFlash(modeName)` after 120ms for non-Normal modes; cancel if the mode exits before the timeout fires (so single-action keys that pop straight back to Normal stay silent) |
 | `src/window-state.ts` *(or wherever window state enum lives)* | Add `signalState: 'normal' \| 'ok' \| 'warn' \| 'err' \| 'special'` on `WindowState` |
 | `src-tauri/src/pty.rs` | Emit lightweight `pty-activity` event (bytes since last tick, 200ms tick) for the edge-glow coupling — *only if not already inferable from existing `pty-output` event volume on the frontend* (verify before adding) |
@@ -97,7 +97,7 @@ type PaneRole = 'shell' | 'agent' | 'quick' | 'vault' | 'webview';
 
 **2. Activity-coupled edge glow.** `.krypton-glow-overlay` linear-gradient alpha pulled from `--krypton-edge-intensity` (default 0.35). Compositor maintains a 200ms-EMA of bytes/s per window from existing `pty-output` events (no new Rust event needed — verify by inspecting current event payload size). Map: `intensity = clamp(0.2 + bytesPerSecond/16384, 0.2, 0.7)`. Updates throttled to one `style.setProperty` call per 200ms.
 
-**3. Per-role tab chamfer.** `.krypton-tab--active` gains `clip-path: polygon(…)` with the angle controlled by `--krypton-tab-chamfer`. Defaults: shell 12°, agent 24°, quick 0° (flat top), vault 6°, webview 18°. Driven by `[data-role="…"]` on the tab DOM (set in `compositor.ts` where tabs are rendered).
+**3. Per-role tab chamfer.** *(Superseded: tabs are now rounded pills inside the titlebar row — see `DESIGN.md` § Geometry. The chamfer clip-path and the tab `data-role` attribute were removed.)* `.krypton-tab--active` gains `clip-path: polygon(…)` with the angle controlled by `--krypton-tab-chamfer`. Defaults: shell 12°, agent 24°, quick 0° (flat top), vault 6°, webview 18°. Driven by `[data-role="…"]` on the tab DOM (set in `compositor.ts` where tabs are rendered).
 
 **4. Display-typography moments.** A single shared `<div class="krypton-display-flash">` mounted in `index.html`; `showDisplayFlash(text, ms)` sets text, adds `--visible` modifier, removes after `ms`. Used by **mode entry**: 120ms after entering a non-Normal mode (Compositor / Resize / Move / Swap / Hint / TabMove), flash the mode name in display typography for 400ms — e.g. `"RESIZE"`, `"HINT"`. If the mode exits before the 120ms timeout (single-action Compositor keys that auto-return to Normal), no flash fires. Workspace-switch flash (`"WS 03"`) is **deferred** until workspace switching is implemented; the same `showDisplayFlash()` API will be reused. Display typography is `display` tier from `DESIGN.md` (28px / 0.2em uppercase). Centered with `position: fixed; inset: 0; display: grid; place-items: center; z-index: var(--krypton-z-hint)`. Pointer-events none. Coexists with the which-key popup (which sits in a corner) — the flash is centered display-typography, the popup is corner key-list, no visual conflict.
 
@@ -131,7 +131,7 @@ No new keybindings. Display flash piggybacks on the existing mode state machine 
 ### UI Changes
 
 - `data-signal` attribute on `.krypton-window`
-- `data-role` attribute on `.krypton-tab`
+- ~~`data-role` attribute on `.krypton-tab`~~ (superseded, see item 3)
 - New `.krypton-window__hud` block replaces single-line PTY status
 - New `.krypton-display-flash` singleton, mounted once at app boot
 - New `--ack` modifier on `.krypton-window__titlebar`
@@ -144,7 +144,7 @@ New optional TOML keys in `krypton.toml` under `[chrome.signals]`:
 [chrome.signals]
 state_corner_colors = true        # default true; off → corners always primary
 edge_glow_dynamic = true          # default true; off → fixed 0.35
-tab_chamfer_by_role = true        # default true; off → uniform 12° on all
+tab_chamfer_by_role = true        # superseded (item 3): never shipped; tabs are rounded pills
 hud_numerics = true               # default true; off → fall back to PTY status text
 display_flash = true              # default true; off → no mode-entry flash
 breathing_peak_shift = true       # default true; off → no brightCyan peak

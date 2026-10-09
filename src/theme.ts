@@ -186,7 +186,6 @@ export interface ChromeTabs {
   background: string;
   active_color: string;
   inactive_color: string;
-  font_size: number;
 }
 
 export interface ChromeConfig {
@@ -406,7 +405,6 @@ export function themeCssProperties(theme: FullTheme): Record<string, string> {
     '--krypton-tab-background': theme.chrome.tabs.background,
     '--krypton-tab-active-color': theme.chrome.tabs.active_color,
     '--krypton-tab-inactive-color': theme.chrome.tabs.inactive_color,
-    '--krypton-tab-font-size': `${theme.chrome.tabs.font_size}px`,
 
     '--krypton-focused-border': theme.focused.border_color,
     '--krypton-focused-shadow': theme.focused.shadow_color,

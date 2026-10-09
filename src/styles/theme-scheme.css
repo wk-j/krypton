@@ -22,25 +22,25 @@ html[data-theme-scheme='light'] {
 /* ── Window chrome: tabs, title, usage ── */
 
 html[data-theme-scheme='light'] .krypton-tab__title {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 28%, var(--krypton-ink));
+  color: color-mix(in srgb, var(--krypton-ink) 55%, transparent);
 }
 
 html[data-theme-scheme='light'] .krypton-tab--active .krypton-tab__title {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 48%, var(--krypton-ink));
+  color: var(--krypton-ink);
   font-weight: 600;
 }
 
 html[data-theme-scheme='light'] .krypton-tab__index {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 18%, var(--krypton-ink));
+  color: color-mix(in srgb, var(--krypton-ink) 35%, transparent);
 }
 
 html[data-theme-scheme='light'] .krypton-tab--active .krypton-tab__index {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 48%, var(--krypton-ink));
+  color: color-mix(in srgb, var(--krypton-ink) 65%, transparent);
 }
 
 html[data-theme-scheme='light'] .krypton-tab:not(.krypton-tab--active):hover .krypton-tab__title,
 html[data-theme-scheme='light'] .krypton-tab:not(.krypton-tab--active):hover .krypton-tab__index {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 48%, var(--krypton-ink));
+  color: color-mix(in srgb, var(--krypton-ink) 80%, transparent);
 }
 
 html[data-theme-scheme='light'] .krypton-tab__dot {

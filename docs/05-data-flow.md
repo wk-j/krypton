@@ -941,10 +941,11 @@ PUBLISH
 17. fs/* activity surfacing:
     a. When the agent calls fs/read_text_file or fs/write_text_file as an inbound
        JSON-RPC request, src-tauri/src/acp.rs handles the I/O locally, then
-       calls emit_fs_activity() before replying. Grok initialize sets
-       `readTextFile: false` (spec 228) so Grok file reads stay on native
-       `read_file` (image embed) and appear as tool_call chips, not FS chips.
-       Grok writes still use fs/write_text_file.
+       calls emit_fs_activity() before replying. Grok and OMP initialize set
+       `readTextFile: false` (specs 228, 122) so their file reads stay on the
+       native tool (Grok image embed; OMP no longer tries ACP then falls back
+       to disk with a red out-of-root chip) and appear as tool_call chips, not
+       FS chips. Grok and OMP writes still use fs/write_text_file.
     b. emit_fs_activity emits an `fs_activity` payload on acp-event-<session>
        with method/path/ok/error fields.
     c. The TS dispatcher converts it into an `fs_activity` AcpEvent; the harness

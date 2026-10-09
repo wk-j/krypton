@@ -115,11 +115,6 @@
   ) !important;
 }
 
-.krypton-window[data-content-type="agent"] .krypton-window__tabbar {
-  border-top: 1px solid rgba(var(--agent-primary-rgb), 0.12) !important;
-  background: var(--agent-surface-mid) !important;
-}
-
 .krypton-window[data-content-type="agent"] .krypton-window__tab {
   color: var(--agent-text-dim) !important;
   border: none !important;

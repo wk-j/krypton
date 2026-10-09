@@ -601,15 +601,15 @@
 }
 
 /* ─── Tab Bar ─── */
+/* Lives inside the titlebar row (between label group and end cluster), like a
+   browser tab strip. Hidden for single-tab windows unless always_show_tabbar. */
 .krypton-window__tabbar {
   display: none;
-  flex-shrink: 0;
-  height: var(--krypton-tab-height, 28px);
-  padding: 0 6px;
-  gap: 0;
-  align-items: stretch;
-  background: transparent;
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06);
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  gap: 2px;
+  align-items: center;
   overflow: hidden;
 }
 
@@ -617,61 +617,61 @@
   display: flex;
 }
 
+/* With the strip visible the label would just repeat the active tab's title:
+   keep the status dot (and badges), drop the text, give the width to tabs. */
+.krypton-window__titlebar:has(> .krypton-window__tabbar--visible) .krypton-window__label-group {
+  flex: none;
+}
+
+.krypton-window__titlebar:has(> .krypton-window__tabbar--visible) .krypton-window__label {
+  display: none;
+}
+
+/* On narrow tiles the PTY status yields first: it ellipsizes before any tab
+   title shrinks, while the session mark (and tool HUD) keep their width.
+   `display: contents` lifts the end cluster's children into the titlebar row
+   so the status can carry its own (huge) shrink factor. */
+.krypton-window__titlebar:has(> .krypton-window__tabbar--visible) .krypton-window__titlebar-end {
+  display: contents;
+}
+
+.krypton-window__titlebar:has(> .krypton-window__tabbar--visible) .krypton-window__pty-status {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ─── Tab ─── */
+/* Rounded pill: inactive tabs are bare muted text, the active tab gets a soft
+   neutral fill. No underline, no chamfer, no glow. */
 .krypton-tab {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 14px;
+  gap: 7px;
+  min-width: 0;
+  /* `[chrome.tabs] height` sizes the pill row; the pill never outgrows the rail. */
+  height: min(
+    calc(var(--krypton-tab-height, 28px) - 6px),
+    calc(var(--krypton-titlebar-height, 28px) - 6px)
+  );
+  padding: 0 10px;
   cursor: default;
   -webkit-user-select: none;
   user-select: none;
-  position: relative;
   overflow: hidden;
-  border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
-  transition: color 0.15s ease;
+  border-radius: 6px;
+  background: transparent;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
-/* Active tab: a single thin bottom rule, no glow, no animation */
-.krypton-tab--active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
+.krypton-tab:not(.krypton-tab--active):hover {
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
 }
-
-/* Per-role tab chamfer (DESIGN.md § Geometry — angled clip-paths on active tab).
-   Different pane roles get different chamfer offsets so the user can identify
-   pane type with peripheral vision. Values are in px (height = 28px tab). */
-.krypton-tab[data-role='terminal']     { --krypton-tab-chamfer: 4px; }
-.krypton-tab[data-role='agent']        { --krypton-tab-chamfer: 8px; }
-.krypton-tab[data-role='acp_harness']  { --krypton-tab-chamfer: 8px; }
-.krypton-tab[data-role='acp']          { --krypton-tab-chamfer: 8px; }
-.krypton-tab[data-role='diff']         { --krypton-tab-chamfer: 4px; }
-.krypton-tab[data-role='markdown']     { --krypton-tab-chamfer: 4px; }
-.krypton-tab[data-role='vault']        { --krypton-tab-chamfer: 2px; }
-.krypton-tab[data-role='webview']      { --krypton-tab-chamfer: 6px; }
-.krypton-tab[data-role='file_manager'] { --krypton-tab-chamfer: 0px; }
-.krypton-tab[data-role='context']      { --krypton-tab-chamfer: 4px; }
-.krypton-tab[data-role='hurl']         { --krypton-tab-chamfer: 6px; }
-.krypton-tab[data-role='pencil']       { --krypton-tab-chamfer: 4px; }
 
 .krypton-tab--active {
-  clip-path: polygon(
-    var(--krypton-tab-chamfer, 4px) 0,
-    calc(100% - var(--krypton-tab-chamfer, 4px)) 0,
-    100% 100%,
-    0 100%
-  );
-}
-
-/* Inactive tab hover — just lift the text a hair */
-.krypton-tab:not(.krypton-tab--active):hover .krypton-tab__title,
-.krypton-tab:not(.krypton-tab--active):hover .krypton-tab__index {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.09);
 }
 
 /* ─── Tab Index ─── */
@@ -680,24 +680,21 @@
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.08em;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
-  min-width: 16px;
-  text-align: right;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28);
   flex-shrink: 0;
 }
 
 .krypton-tab--active .krypton-tab__index {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
 }
 
 /* ─── Tab Dot (status indicator) ─── */
 .krypton-tab__dot {
-  width: 3px;
-  height: 3px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.18);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
 }
 
 .krypton-tab--active .krypton-tab__dot {
@@ -707,19 +704,20 @@
 /* ─── Tab Title ─── */
 .krypton-tab__title {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-tab-font-size, var(--krypton-chrome-font-size, 11px));
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25);
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.krypton-tab:not(.krypton-tab--active):hover .krypton-tab__title {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+}
+
 .krypton-tab--active .krypton-tab__title {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.95);
-  font-weight: 500;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.95);
 }
 
 /* ─── Window content area (body + sidebar) ─── */

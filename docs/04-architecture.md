@@ -190,7 +190,7 @@ The compositor is a TypeScript module running in the webview that manages worksp
 
 22. **ACP extended session updates** — beyond `agent_message_chunk`, `agent_thought_chunk`, `tool_call(_update)`, `plan`, and `usage_update`, the harness also consumes `available_commands_update` (per-lane slash-command catalog) and `current_mode_update` (e.g. Claude plan-mode ↔ edit-mode). Each lane stores its own command list and current mode in `HarnessLane.availableCommands` / `currentMode` (with `modesById` looked up from `agentCapabilities.availableModes`). The lane head paints a purple mode chip via `renderModeChip()`, and the composer pops a slash-command palette when the draft matches `/^\/[a-zA-Z0-9_-]*$/` — `↑↓` selects, `Enter`/`Tab` inserts `/<name> ` at the cursor, `Esc` dismisses for the current draft. The Rust forwarder already whitelists both kinds in `handle_notification`; the gap was purely on the TS dispatcher side. Pi-1 emits neither so both surfaces stay quiet for it. See `docs/87-acp-extended-session-updates.md`.
 
-23. **ACP fs activity surface** — Krypton's Rust ACP backend implements `fs/read_text_file` and `fs/write_text_file` as inbound JSON-RPC requests (declared via `clientCapabilities.fs`) so agents that prefer ACP file primitives over their internal tools route reads/writes through the harness. Grok is the exception on reads: initialize sets `readTextFile: false` so screenshots stay on Grok's native image embed (spec 228); Grok writes still go through ACP. Every ACP read and write emits an `fs_activity` event (success and failure), and the lane transcript renders a `📖 read` / `✏️ wrote` / `✗ failed` chip with the affected path. Non-UTF-8 reads fail with `binary file (<kind>, N bytes); fs/read_text_file is text-only` instead of Rust's UTF-8 IO string. This is visibility-only — the writes still go through immediately and there is no diff preview yet. Pi-1 stays N/A because pi-acp does not request the fs capability. See `docs/88-acp-fs-activity-surface.md`.
+23. **ACP fs activity surface** — Krypton's Rust ACP backend implements `fs/read_text_file` and `fs/write_text_file` as inbound JSON-RPC requests (declared via `clientCapabilities.fs`) so agents that prefer ACP file primitives over their internal tools route reads/writes through the harness. Grok and OMP are the exceptions on reads: initialize sets `readTextFile: false` so Grok screenshots stay on its native image embed (spec 228) and OMP reads go straight to disk instead of an ACP attempt that fails with `Path outside project root` before OMP falls back (spec 122). Grok and OMP writes still go through ACP. Every ACP read and write emits an `fs_activity` event (success and failure), and the lane transcript renders a `📖 read` / `✏️ wrote` / `✗ failed` chip with the affected path. Non-UTF-8 reads fail with `binary file (<kind>, N bytes); fs/read_text_file is text-only` instead of Rust's UTF-8 IO string. This is visibility-only — the writes still go through immediately and there is no diff preview yet. Pi-1 stays N/A because pi-acp does not request the fs capability. See `docs/88-acp-fs-activity-surface.md`.
 
 24. **ACP diff preview & gated writes** — `tool_call.content[].type === 'diff'` payloads (sent by Codex/Claude/Gemini with `oldText`+`newText`) now render in the harness as inline +/- hunks with line numbers via the shared `src/acp/diff-render.ts` module (extracted from `acp-view.ts`). For `fs/write_text_file`, the Rust handler holds the JSON-RPC reply on a `oneshot` channel (mirroring `session/request_permission`), reads the current disk content as `oldText`, emits a `fs_write_pending` event, and waits for the user's accept/reject decision through the new `acp_fs_write_response` Tauri command before writing or replying with a JSON-RPC error. `fs/write_text_file` goes through `validate_fs_path` (write), which canonicalizes the requested path and rejects anything outside the lane's project root (Grok session scratch under `~/.grok/sessions/<encoded-cwd>/` is allowlisted for every file in that tree). Grok ACP writes (and leftover reads) are not project-scoped — Grok's grep/list/bash already reach those paths, and scoping ACP I/O broke sibling-repo specs, `~/.agents` skills, and hid the write-review card for out-of-root edits. Grok file reads are native after spec 228. Grok writes still wait on that card. Other ACP lanes keep Spec 89 scoping. Keys: `a` accept, `r` reject, `A` accept-all-this-turn, `R` reject-all-this-turn — reusing the `acceptAllForTurn`/`rejectAllForTurn` flags introduced for permissions. See `docs/89-acp-diff-preview.md`.
 
@@ -275,7 +275,7 @@ The compositor is a TypeScript module running in the webview that manages worksp
 
 ### Window DOM Structure
 
-Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with session label and PTY status, a **tab bar** (auto-shown when multiple tabs exist), and a **content area** containing the active tab's pane tree. Pane trees are binary splits — each leaf is a `.krypton-pane` hosting an xterm.js instance, and splits are `.krypton-split` containers with a `.krypton-split__divider` between two children.
+Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with session label and PTY status, a **tab bar** inside the titlebar row (auto-shown when multiple tabs exist; while visible the label text hides and the tabs take its width), and a **content area** containing the active tab's pane tree. Pane trees are binary splits — each leaf is a `.krypton-pane` hosting an xterm.js instance, and splits are `.krypton-split` containers with a `.krypton-split__divider` between two children.
 
 ```html
 <html style="background: transparent">
@@ -291,6 +291,20 @@ Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with se
             <div class="krypton-window__status-dot"></div>
             <span class="krypton-window__label" data-title="session_01">session_</span>
           </div>
+          <!-- Tab bar: auto-shown when >1 tab or always_show_tabbar = true.
+               Rounded pills; hides .krypton-window__label while visible. -->
+          <div class="krypton-window__tabbar krypton-window__tabbar--visible">
+            <div class="krypton-tab krypton-tab--active" data-tab-id="tab-0">
+              <span class="krypton-tab__index">01</span>
+              <span class="krypton-tab__dot"></span>
+              <span class="krypton-tab__title">Shell 1</span>
+            </div>
+            <div class="krypton-tab" data-tab-id="tab-1">
+              <span class="krypton-tab__index">02</span>
+              <span class="krypton-tab__dot"></span>
+              <span class="krypton-tab__title">Shell 2</span>
+            </div>
+          </div>
           <div class="krypton-window__titlebar-end">
             <span class="krypton-window__pty-status">~/projects</span>
             <span class="krypton-window__label-tail">01</span>
@@ -303,17 +317,6 @@ Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with se
              idle. See specs 188 and 189. -->
         <canvas class="krypton-window__header-accent krypton-window__header-accent--scope"></canvas>
       </div>
-
-      <!-- Tab bar: auto-shown when >1 tab or always_show_tabbar = true -->
-      <div class="krypton-window__tabbar krypton-window__tabbar--visible">
-        <div class="krypton-tab krypton-tab--active" data-tab-id="tab-0">
-          <span class="krypton-tab__title">Shell 1</span>
-        </div>
-        <div class="krypton-tab" data-tab-id="tab-1">
-          <span class="krypton-tab__title">Shell 2</span>
-        </div>
-      </div>
-
       <!-- Content area: hosts the active tab's pane tree -->
       <div class="krypton-window__content">
         <!-- Single pane (leaf node) -->

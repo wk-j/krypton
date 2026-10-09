@@ -89,7 +89,6 @@ height = 28
 background = "transparent"
 active_color = "#006688"
 inactive_color = "#3a5568"
-font_size = 11
 
 [focused]
 border_color = "rgba(0, 102, 136, 0.78)"

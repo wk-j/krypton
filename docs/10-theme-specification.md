@@ -281,24 +281,22 @@ color = "rgba(0, 200, 255, 0.4)"    # Accent color (unfocused)
 
 #### `[chrome.tabs]`
 
-Tab bar styling (when tabs are enabled within a window).
+Tab strip styling (when tabs are enabled within a window). The strip lives inside the titlebar row. Tab labels (index and title) have no theme font size: they use `--krypton-chrome-font-size`, derived from `[font].size` (`round(size × 0.786)`), like every other chrome label.
 
 ```toml
 [chrome.tabs]
-height = 28                         # Tab bar height in pixels
+height = 28                         # Tab row height; pill = height − 6px, capped by the titlebar
 background = "transparent"          # Tab bar background
 active_color = "#0cf"               # Active tab text/indicator color
 inactive_color = "rgba(0, 200, 255, 0.3)"
-font_size = 11                      # Tab font size in pixels
 ```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `height` | int | `28` | Tab bar height (px) |
+| `height` | int | `28` | Tab row height (px); the pill is `height − 6px`, never taller than `titlebar height − 6px` |
 | `background` | color | `"transparent"` | Tab bar background |
 | `active_color` | color | `"#0cf"` | Active tab text/indicator |
 | `inactive_color` | color | `"rgba(0, 200, 255, 0.3)"` | Inactive tab text |
-| `font_size` | int | `11` | Tab label font size (px) |
 
 ---
 
@@ -620,7 +618,6 @@ height = 28
 background = "transparent"
 active_color = "#ff44cc"
 inactive_color = "rgba(255, 68, 204, 0.3)"
-font_size = 11
 
 [focused]
 border_color = "rgba(255, 68, 204, 0.5)"

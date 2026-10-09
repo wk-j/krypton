@@ -153,7 +153,6 @@ pub struct ChromeTabs {
     pub background: String,
     pub active_color: String,
     pub inactive_color: String,
-    pub font_size: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -389,7 +388,6 @@ impl Default for ChromeTabs {
             background: "transparent".to_string(),
             active_color: "#0cf".to_string(),
             inactive_color: "rgba(0, 200, 255, 0.3)".to_string(),
-            font_size: 11,
         }
     }
 }
