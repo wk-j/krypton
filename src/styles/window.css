@@ -677,7 +677,7 @@
 /* ─── Tab Index ─── */
 .krypton-tab__index {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-chrome-font-size, 11px);
+  font-size: var(--krypton-font-size, 14px);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28);
@@ -704,7 +704,7 @@
 /* ─── Tab Title ─── */
 .krypton-tab__title {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-chrome-font-size, 11px);
+  font-size: var(--krypton-font-size, 14px);
   font-weight: 500;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
   white-space: nowrap;

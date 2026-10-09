@@ -281,7 +281,7 @@ color = "rgba(0, 200, 255, 0.4)"    # Accent color (unfocused)
 
 #### `[chrome.tabs]`
 
-Tab strip styling (when tabs are enabled within a window). The strip lives inside the titlebar row. Tab labels (index and title) have no theme font size: they use `--krypton-chrome-font-size`, derived from `[font].size` (`round(size × 0.786)`), like every other chrome label.
+Tab strip styling (when tabs are enabled within a window). The strip lives inside the titlebar row. Tab labels (index and title) have no theme font size: they use `--krypton-font-size`, the unscaled `[font].size`, unlike other chrome labels which use the scaled `--krypton-chrome-font-size` (`round(size × 0.786)`).
 
 ```toml
 [chrome.tabs]
