@@ -21,7 +21,8 @@ export const ANNOTATION_CAP = 20;
 
 const MARK_CLASS = 'acp-harness__anno-mark';
 const RAIL_CLASS = 'acp-harness__anno-rail';
-const SKIP_WRAP = '.acp-harness__anno-rail, .acp-harness__resources, .acp-harness__lane-mail-provenance';
+const SKIP_WRAP =
+  '.acp-harness__anno-rail, .acp-harness__resources, .acp-harness__lane-mail-provenance, .acp-harness__svg-card-bar';
 
 function canDrain(status: HarnessLaneStatus): boolean {
   return status === 'idle' || status === 'awaiting_peer';

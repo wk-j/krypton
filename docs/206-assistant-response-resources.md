@@ -253,6 +253,10 @@ agent  Implemented the parser in `client.ts` and documented the ACP contract.
 
 Hint targets are assigned in transcript order, so resources stay associated
 with their message and existing artifact cards retain the same interaction.
+Later specs add more target types to the same mode: images open the image
+viewer (spec 281), subagent card rows toggle their inline detail
+(spec 282), and ```svg fence cards toggle Source/Preview, with `Shift+<label>`
+copying the SVG source (spec 283).
 
 - File resource: callback to `Compositor.openHelixTab(path, line, column)`;
   failure reports through the harness status chip.
@@ -316,8 +320,9 @@ remain inert; the reference rail is their explicit, keyboard-safe open path.
   correct side of that tool.
 - Session replay follows the same chunk/seal path, so loaded resources are not a
   separate renderer case.
-- If an agent sends an image/audio block, existing behavior is unchanged; this
-  spec does not coerce it into a resource.
+- If an agent sends an image/audio block, this spec does not coerce it into a
+  resource. Spec 281 renders image blocks and image file references as a
+  thumbnail strip on the row and adds images to the same `f` hint mode.
 
 ## Open Questions
 
@@ -330,7 +335,7 @@ None. The initial scope and fallback policy are fully specified for approval.
 - A second AI classifier or custom structured-output prompt
 - Fetching URL titles, favicons, previews, or Open Graph metadata
 - Reading file metadata/content for previews
-- Inline image/audio/PDF preview in the resource rail
+- Inline image/audio/PDF preview in the resource rail (images: spec 281 strip)
 - New ACP adapter behavior that forces agents to emit `resource_link`
 - Standalone `AcpView`, embedded `AgentView`, Telegram, or browser dashboard
   rendering; v1 is scoped to the ACP Harness

@@ -24,6 +24,8 @@ import { optionHotkey, questionActionsHint, type QuestionPayload } from './ask-u
 import { backendLogoId } from './harness-lane-identity';
 import { transcriptLabel } from './harness-lane-chrome';
 import { collapseThoughtBlankLines } from './harness-format';
+import { formatImageBytes } from './harness-images';
+import { subagentLiveSignature, subagentStructureSignature } from './harness-subagents';
 import {
   isTerminalToolStatus,
   renderArtifactCardBody,
@@ -36,6 +38,7 @@ import {
   md,
   resolveLocalImageSrcs,
 } from './harness-markdown';
+import { decorateSvgFences } from './harness-svg-fence';
 import {
   extractResourcesFromBody,
   mergeMessageResources,
@@ -350,13 +353,15 @@ export function renderTranscriptItem(
       }
     }
     if (!streaming) {
+      // spec 283: before annotations so SKIP_WRAP keeps toolbar text out of offsets.
+      decorateSvgFences(body, item);
       applyTranscriptAnnotations(body, item);
       scanMessageResourceBody(body, item, projectDir);
       appendMessageResourceRail(body, item, projectDir);
     }
   } else if (item.kind === 'tool' && item.tool) {
     body.classList.add('acp-harness__tool');
-    renderToolBody(body, item.tool);
+    renderToolBody(body, item.tool, item.subagentExpanded);
   } else if (item.kind === 'permission' && item.permission) {
     body.classList.add('acp-harness__perm');
     renderPermissionBody(body, item.permission);
@@ -422,14 +427,6 @@ export function renderTranscriptItem(
       pre.appendChild(row);
     }
     body.appendChild(pre);
-  } else if (item.kind === 'user' && item.imageCount && item.imageCount > 0) {
-    if (item.text) {
-      const textEl = document.createElement('div');
-      textEl.className = 'acp-harness__msg-text';
-      textEl.textContent = item.text;
-      body.appendChild(textEl);
-    }
-    body.appendChild(renderImageAttachmentChip(item.imageCount));
   } else if (usesPretext(item.kind)) {
     // While streaming, use the same append-only plain TextNode path as
     // assistant (fast path in renderActiveTranscript). Pretext layout runs
@@ -455,6 +452,8 @@ export function renderTranscriptItem(
   }
   el.appendChild(label);
   el.appendChild(body);
+  const strip = renderImageStrip(item);
+  if (strip) el.appendChild(strip);
   // Rendering may populate provenance or sealed resource state, so capture the
   // post-render signature rather than the pre-render snapshot assigned above.
   el.dataset.renderSignature = transcriptRenderSignature(item, streaming);
@@ -477,7 +476,11 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
   // flashed. The body-only pass patches the output block in place instead
   // (patchStreamingToolBody); the terminal transition re-includes the text
   // for one final full rebuild.
-  const toolInFlight = item.tool ? !isTerminalToolStatus(item.tool.status) : false;
+  // spec 282: an OMP background spawn keeps streaming progress after the task
+  // tool itself completed — keep patching it in place like an in-flight tool.
+  const toolInFlight = item.tool
+    ? !isTerminalToolStatus(item.tool.status) || item.tool.subagents?.background === true
+    : false;
   const tool = item.tool
     ? [
       toolStatusSignature(item.tool.status),
@@ -490,6 +493,9 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
         ? item.tool.sections.map((section) => section.label).join('\u001f')
         : item.tool.sections.map((section) => `${section.label}:${section.text}`).join('\u001f'),
       item.tool.diffs.map((diff) => `${diff.path}:${diff.oldText}:${diff.newText}`).join('\u001f'),
+      subagentStructureSignature(item.tool.subagents, item.subagentExpanded ?? []),
+      // A settled card re-renders once with its final live fields.
+      item.tool.subagents && !toolInFlight ? subagentLiveSignature(item.tool.subagents) : '',
     ].join('\u001e')
     : '';
   const permission = item.permission
@@ -559,11 +565,17 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
       resource.git?.countKind ?? '',
     ].join('\u001e'))
     .join('\u001f');
+  // spec 283: only non-default card state — a freshly decorated row (no label,
+  // preview showing) must keep the signature it was built with.
+  const svgFences = (item.svgFences ?? [])
+    .filter((entry) => entry.hintLabel !== null || entry.showSource)
+    .map((entry) => `${entry.index}:${entry.hintLabel ?? ''}:${entry.showSource ? '1' : '0'}`)
+    .join('\u001f');
   return [
     item.kind,
     item.kind === 'tool' ? toolStatusSignature(item.status ?? '') : (item.status ?? ''),
     item.text,
-    item.imageCount ?? '',
+    imageSignature(item),
     item.steer ?? '',
     streaming ? '1' : '0',
     tool,
@@ -578,6 +590,7 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
     review,
     resources,
     item.resourceOverflow ?? 0,
+    svgFences,
     annotationSignature(item),
   ].join('\u001d');
 }
@@ -1084,12 +1097,78 @@ export function permissionDecisionLabel(perm: PermissionPayload): string {
   }
 }
 
-export function renderImageAttachmentChip(count: number): HTMLElement {
-  const chip = document.createElement('div');
-  chip.className = 'acp-harness__msg-attachment';
-  chip.title = `${count} image${count === 1 ? '' : 's'} attached`;
-  chip.textContent = `▧ ${count} image${count === 1 ? '' : 's'}`;
-  return chip;
+/** spec 281: thumbnail strip beneath a row body. Scanned path images stay
+ *  invisible until they load — a scanner hit that is not a real image file
+ *  must leave no trace. Built with createElement/textContent only. */
+export function renderImageStrip(item: HarnessTranscriptItem): HTMLElement | null {
+  const images = (item.images ?? []).filter(
+    (image) => !(image.discovery === 'scanned' && image.state === 'loading'),
+  );
+  const overflow = item.imageOverflow ?? 0;
+  if (images.length === 0 && overflow === 0) return null;
+  const strip = document.createElement('div');
+  strip.className = 'acp-harness__images';
+  for (const image of images) {
+    if (image.state === 'live' && image.objectUrl) {
+      const figure = document.createElement('figure');
+      figure.className = 'acp-harness__image-thumb';
+      if (image.hintLabel) figure.classList.add('acp-harness__image-thumb--hinted');
+      figure.dataset.imageId = image.imageId;
+      figure.title = image.path ?? image.label;
+      const img = document.createElement('img');
+      img.src = image.objectUrl;
+      img.alt = image.label;
+      img.decoding = 'async';
+      img.loading = 'lazy';
+      const caption = document.createElement('figcaption');
+      caption.textContent = `${image.label} · ${formatImageBytes(image.bytes)}`;
+      figure.append(img, caption);
+      if (image.hintLabel) {
+        const hint = document.createElement('span');
+        hint.className = 'acp-harness__image-hint';
+        hint.textContent = image.hintLabel;
+        figure.appendChild(hint);
+      }
+      strip.appendChild(figure);
+      continue;
+    }
+    const tile = document.createElement('div');
+    tile.className = `acp-harness__image-tile acp-harness__image-tile--${image.state}`;
+    tile.title = image.path ?? image.label;
+    if (image.state === 'released' && image.origin === 'path') {
+      tile.dataset.imageId = image.imageId;
+      if (image.hintLabel) {
+        const hint = document.createElement('span');
+        hint.className = 'acp-harness__image-hint';
+        hint.textContent = image.hintLabel;
+        tile.appendChild(hint);
+      }
+    }
+    const size = image.bytes > 0 ? ` ${formatImageBytes(image.bytes)}` : '';
+    const text = image.state === 'loading'
+      ? `IMG LOADING // ${image.label}`
+      : image.state === 'released'
+        ? `IMG RELEASED // ${image.label}${size}`
+        : image.state === 'missing'
+          ? `IMG MISSING // ${image.path ?? image.label}`
+          : `IMG REJECTED // ${image.rejectReason ?? image.mimeType ?? 'unknown'}${size}`;
+    tile.appendChild(document.createTextNode(text));
+    strip.appendChild(tile);
+  }
+  if (overflow > 0) {
+    const more = document.createElement('div');
+    more.className = 'acp-harness__image-tile acp-harness__image-tile--overflow';
+    more.textContent = `+${overflow} more`;
+    strip.appendChild(more);
+  }
+  return strip;
+}
+
+function imageSignature(item: HarnessTranscriptItem): string {
+  const images = (item.images ?? [])
+    .map((image) => `${image.imageId}:${image.state}:${image.hintLabel ?? ''}`)
+    .join(',');
+  return `${images}|${item.imageOverflow ?? 0}`;
 }
 
 export function usesPretext(kind: HarnessTranscriptItem['kind']): boolean {

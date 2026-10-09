@@ -48,6 +48,8 @@ export interface ToolCall {
   locations?: ToolCallLocation[];
   rawInput?: unknown;
   rawOutput?: unknown;
+  /** Adapter extension metadata (spec 282 reads claudeCode / codex subagent keys). */
+  _meta?: unknown;
 }
 
 export interface ToolCallUpdate {
@@ -59,6 +61,7 @@ export interface ToolCallUpdate {
   locations?: ToolCallLocation[];
   rawInput?: unknown;
   rawOutput?: unknown;
+  _meta?: unknown;
 }
 
 export interface PlanEntry {
@@ -878,9 +881,10 @@ export type LaneBusEvent =
   | { type: 'review:priority'; payload: { highCount: number } };
 
 export type AcpEvent =
-  | { type: 'user_message_chunk'; text: string }
-  | { type: 'message_chunk'; text: string; content: ContentBlock; messageId?: string }
-  | { type: 'thought_chunk'; text: string }
+  | { type: 'user_message_chunk'; text: string; content: ContentBlock }
+  /** `parentToolUseId` (spec 282): Claude subagent output, stamped with its Task call id. */
+  | { type: 'message_chunk'; text: string; content: ContentBlock; messageId?: string; parentToolUseId?: string }
+  | { type: 'thought_chunk'; text: string; parentToolUseId?: string }
   | { type: 'tool_call'; call: ToolCall }
   | { type: 'tool_call_update'; update: ToolCallUpdate }
   | { type: 'plan'; entries: PlanEntry[] }

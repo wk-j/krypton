@@ -314,11 +314,21 @@ html[data-theme-scheme='light'] .acp-harness__msg--shell.acp-harness__msg--faile
   color: var(--agent-error, #c42b4a);
 }
 
-html[data-theme-scheme='light'] .acp-harness__msg-attachment {
+html[data-theme-scheme='light'] .acp-harness__image-thumb,
+html[data-theme-scheme='light'] .acp-harness__image-tile {
   color: var(--agent-user, #007799);
   background: color-mix(in srgb, var(--agent-user, #007799) 8%, transparent);
   border-color: color-mix(in srgb, var(--agent-user, #007799) 28%, transparent);
-  text-shadow: none;
+}
+
+html[data-theme-scheme='light'] .acp-harness__image-thumb figcaption {
+  color: var(--agent-user, #007799);
+}
+
+html[data-theme-scheme='light'] .acp-harness__image-tile--missing,
+html[data-theme-scheme='light'] .acp-harness__image-tile--rejected {
+  color: var(--agent-error, #c42b4a);
+  border-color: color-mix(in srgb, var(--agent-error, #c42b4a) 40%, transparent);
 }
 
 html[data-theme-scheme='light'] .acp-harness__transcript-empty {

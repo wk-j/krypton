@@ -872,6 +872,47 @@ pub fn save_temp_image(data: String, mime_type: String) -> Result<String, String
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Per-image cap for the harness image strip (spec 281). Mirrors
+/// `IMAGE_MAX_BYTES` in `src/acp/harness-images.ts`.
+const READ_IMAGE_MAX_BYTES: u64 = 10 * 1024 * 1024;
+
+/// Resolve, bound, and magic-sniff one local image. Returns the bytes only
+/// when they are png/jpeg/gif/webp — a `.png` name on a non-image file fails.
+fn read_image_bytes(path: &str) -> Result<Vec<u8>, String> {
+    let expanded = match path.strip_prefix("~/") {
+        Some(rest) => dirs::home_dir()
+            .ok_or_else(|| "not found".to_string())?
+            .join(rest),
+        None => std::path::PathBuf::from(path),
+    };
+    if !expanded.is_absolute() {
+        return Err("not absolute".into());
+    }
+    let canonical = std::fs::canonicalize(&expanded).map_err(|_| "not found".to_string())?;
+    let meta = std::fs::metadata(&canonical).map_err(|_| "not found".to_string())?;
+    if !meta.is_file() {
+        return Err("not found".into());
+    }
+    if meta.len() > READ_IMAGE_MAX_BYTES {
+        return Err("too large".into());
+    }
+    let bytes = std::fs::read(&canonical).map_err(|_| "not found".to_string())?;
+    if crate::acp::sniff_image_magic(&bytes).is_none() {
+        return Err("not an image".into());
+    }
+    Ok(bytes)
+}
+
+/// Raw bytes of a local image for the ACP harness image strip (spec 281).
+/// Errors: "not found", "not absolute", "too large", "not an image".
+#[tauri::command]
+pub async fn read_image_file(path: String) -> Result<tauri::ipc::Response, String> {
+    let bytes = tokio::task::spawn_blocking(move || read_image_bytes(&path))
+        .await
+        .map_err(|e| format!("read_image_file task: {e}"))??;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 /// Result returned by capture_screen: the saved path and base64-encoded PNG.
 #[derive(serde::Serialize)]
 pub struct CaptureResult {
@@ -2034,4 +2075,49 @@ pub fn xenon_set_token(
         return Err("set [xenon].base_url before storing a token".to_string());
     }
     crate::xenon::store_token(&base_url, &token)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_image_bytes;
+
+    fn temp_file(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("krypton-read-image-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join(name);
+        std::fs::write(&path, bytes).expect("write temp file");
+        path
+    }
+
+    #[test]
+    fn read_image_bytes_returns_only_magic_sniffed_images() {
+        let png = temp_file("ok.png", b"\x89PNG\r\n\x1a\nrest");
+        assert_eq!(
+            read_image_bytes(png.to_str().unwrap()).unwrap(),
+            b"\x89PNG\r\n\x1a\nrest"
+        );
+        // The extension is never trusted: a text file named .png is refused.
+        let fake = temp_file("fake.png", b"#!/bin/sh\necho secret\n");
+        assert_eq!(
+            read_image_bytes(fake.to_str().unwrap()).unwrap_err(),
+            "not an image"
+        );
+    }
+
+    #[test]
+    fn read_image_bytes_rejects_relative_missing_and_directories() {
+        assert_eq!(read_image_bytes("shot.png").unwrap_err(), "not absolute");
+        assert_eq!(
+            read_image_bytes("/definitely/not/here.png").unwrap_err(),
+            "not found"
+        );
+        let dir = temp_file("probe.png", b"GIF89a")
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        assert_eq!(
+            read_image_bytes(dir.to_str().unwrap()).unwrap_err(),
+            "not found"
+        );
+    }
 }

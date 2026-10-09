@@ -277,6 +277,9 @@ import type {
   IssuePhase,
   IssueStatusSnapshot,
   GithubTicketReference,
+  HarnessImage,
+  SubagentEntry,
+  SvgFenceEntry,
   LaneActivitySample,
   LaneHeatSide,
   LanePeekCandidate,
@@ -286,6 +289,7 @@ import type {
   LanePeekSnapshot,
   LanePeekState,
   MessageResource,
+  PendingImagePath,
   PendingModelSwitch,
   PermissionDecision,
   PermissionPayload,
@@ -319,6 +323,7 @@ import {
   updateStreamingTextBody,
 } from './harness-markdown';
 export { agentLinkOpenAction, hasMarkdownTable } from './harness-markdown';
+import { decorateSvgFences, SVG_FENCE_GUIDANCE } from './harness-svg-fence';
 import {
   basename,
   esc,
@@ -476,6 +481,7 @@ import {
   applyCoordinatorProvenanceToItem,
   appendMessageResourceRail,
   paintPretextLines,
+  renderImageStrip,
   renderTranscriptItem,
   scanMessageResourceBody,
   syncThoughtEffortMeter,
@@ -490,6 +496,33 @@ import {
   mergeMessageResources,
   resourceFromContentBlock,
 } from './message-resources';
+import {
+  bytesImageKey,
+  createBytesImage,
+  createLaneImageState,
+  createPathImage,
+  disposeAllImages,
+  disposeImages,
+  findImagePaths,
+  imageBytesSource,
+  imagePathFromBlock,
+  isImagePath,
+  isOpenableImage,
+  makePathImageLive,
+  MAX_PATH_IMAGES_PER_ROW,
+  readImageFile,
+  resolveImagePath,
+  retainImage,
+  scanValueForImagePaths,
+} from './harness-images';
+import {
+  absorbChildToolCall,
+  appendChildOutput,
+  claudeParentToolUseId,
+  codexSubagentName,
+  parseSubagentPayload,
+} from './harness-subagents';
+import { HarnessImageViewer } from './harness-image-viewer';
 
 export {
   artifactWritePathMatches,
@@ -535,6 +568,15 @@ export type {
   LanePeekSnapshot,
   LanePeekSummary,
 } from './harness-view-types';
+
+/** Everything `f` open-hint mode can label (spec 206 and later target types). */
+type HarnessOpenTarget =
+  | ArtifactCardPayload
+  | ReviewCardPayload
+  | MessageResource
+  | HarnessImage
+  | SubagentEntry
+  | SvgFenceEntry;
 
 const LANE_PEEK_HEAT_RING_MAX = 240;
 const LANE_PEEK_HEAT_RING_MS = 10 * 60_000;
@@ -1131,6 +1173,8 @@ export class AcpHarnessView implements ContentView {
   /** spec 206: unified transcript hint mode for artifacts and references. */
   private openHintMode = false;
   private openHintBuffer = '';
+  /** spec 281: keyboard image viewer overlay. */
+  private imageViewer!: HarnessImageViewer;
   private fileTouchMap = new Map<string, FileTouchRecord>();
   private lanePeek: LanePeekState = {
     visible: true,
@@ -4034,6 +4078,8 @@ export class AcpHarnessView implements ContentView {
     }
     // spec 206: unified open-hint mode swallows keys while active (read-only
     // transcript exception, active only in hint mode).
+    // spec 281: the image viewer owns every key while open.
+    if (this.imageViewer?.isOpen) return this.imageViewer.handleKey(e);
     if (this.openHintMode) return this.handleOpenHintKey(e);
     // spec 280: live voice — Cmd+Shift+L starts on the active lane or stops;
     // Cmd+Alt+L toggles the mic. `code`, since Option rewrites `key` on macOS.
@@ -4698,6 +4744,9 @@ export class AcpHarnessView implements ContentView {
       lane.streamingMarkdownParser = null;
       lane.streamingMarkdownBody = null;
       lane.streamingMarkdownItemId = null;
+      disposeAllImages(lane.imageState);
+      lane.subagentChildren.clear();
+      lane.codexAgentNames.clear();
       clearToolTranscriptRetention(lane);
     }
     if (this.memoryUnlisten) {
@@ -6218,6 +6267,22 @@ export class AcpHarnessView implements ContentView {
         this.deleteAnnotationById(del.dataset.annoDel);
         return;
       }
+      const subagentRow = target.closest<HTMLElement>('[data-subagent-id]');
+      const subagentMsg = subagentRow?.closest<HTMLElement>('.acp-harness__msg[data-msg-id]');
+      if (subagentRow?.dataset.subagentId && subagentMsg?.dataset.msgId) {
+        e.preventDefault();
+        const lane = this.activeLane();
+        const item = lane?.transcript.find((entry) => entry.id === subagentMsg.dataset.msgId);
+        const entry = item?.tool?.subagents?.agents.find((agent) => agent.id === subagentRow.dataset.subagentId);
+        if (lane && entry) this.toggleSubagentDetail(lane, entry);
+        return;
+      }
+      const thumb = target.closest<HTMLElement>('[data-image-id]');
+      if (thumb?.dataset.imageId) {
+        e.preventDefault();
+        this.openImageViewer(thumb.dataset.imageId);
+        return;
+      }
       const resourceButton = target.closest<HTMLElement>('[data-response-resource]');
       if (resourceButton?.dataset.responseResource) {
         e.preventDefault();
@@ -6225,6 +6290,20 @@ export class AcpHarnessView implements ContentView {
           .flatMap((item) => item.resources ?? [])
           .find((candidate) => candidate.key === resourceButton.dataset.responseResource);
         if (resource) void this.openMessageResource(resource);
+        return;
+      }
+      // spec 283: SVG card toolbar — Source/Preview toggle and Copy.
+      const svgButton = target.closest<HTMLElement>('[data-svg-toggle], [data-svg-copy]');
+      const svgMsg = svgButton?.closest<HTMLElement>('.acp-harness__msg[data-msg-id]');
+      if (svgButton && svgMsg?.dataset.msgId) {
+        e.preventDefault();
+        const lane = this.activeLane();
+        const item = lane?.transcript.find((row) => row.id === svgMsg.dataset.msgId);
+        const entry = item?.svgFences?.find((fence) => String(fence.index) === svgButton.dataset.svgIndex);
+        if (lane && entry) {
+          if (svgButton.dataset.svgCopy !== undefined) void this.copySvgFence(entry);
+          else this.toggleSvgFence(lane, entry);
+        }
         return;
       }
       const anchor = target.closest<HTMLAnchorElement>('a[href]');
@@ -6262,6 +6341,14 @@ export class AcpHarnessView implements ContentView {
     this.helpOverlayEl.className = 'acp-harness__help-overlay';
     this.helpOverlayEl.hidden = true;
     body.appendChild(this.helpOverlayEl);
+
+    this.imageViewer = new HarnessImageViewer({
+      laneImages: () => this.activeLane()?.transcript.flatMap((item) => item.images ?? []) ?? [],
+      ensureLive: (image) => this.reloadReleasedImage(image),
+      openPath: (path) => this.openImageFile(path),
+      onClose: () => this.renderComposer(),
+    });
+    body.appendChild(this.imageViewer.el);
 
     this.metricsOverlayEl = document.createElement('aside');
     this.metricsOverlayEl.className = 'acp-harness__metrics-overlay';
@@ -7560,6 +7647,9 @@ export class AcpHarnessView implements ContentView {
       pendingQuestions: [],
       pendingTurnExtractions: [],
       stagedImages: [],
+      imageState: createLaneImageState(),
+      subagentChildren: new Map(),
+      codexAgentNames: new Map(),
       transcript: [{ id: makeId(), kind: 'system', text: `starting ${displayName}...` }],
       toolTranscriptIds: new Map(),
       toolCalls: new Map(),
@@ -7859,11 +7949,25 @@ export class AcpHarnessView implements ContentView {
     let needsRender = true;
     switch (event.type) {
       case 'user_message_chunk':
-        this.appendUserStreaming(lane, event.text);
+        if (event.content.type === 'text') {
+          this.appendUserStreaming(lane, event.text);
+        } else {
+          // spec 281: session/load replays the user's own image blocks.
+          this.appendUserStreaming(lane, '');
+          const userItem = lane.currentUserId
+            ? lane.transcript.find((entry) => entry.id === lane.currentUserId)
+            : null;
+          if (userItem) this.attachBlockImage(lane, userItem, event.content, 'user');
+        }
         this.scheduleStreamingBodyOnly(lane);
         needsRender = false;
         break;
       case 'message_chunk':
+        // spec 282: Claude subagent text streams into its Task card.
+        if (event.parentToolUseId && this.absorbSubagentOutput(lane, event.parentToolUseId, event.text, false)) {
+          needsRender = false;
+          break;
+        }
         lane.activity = { kind: 'writing', label: '' };
         if (
           event.messageId &&
@@ -7881,27 +7985,50 @@ export class AcpHarnessView implements ContentView {
         } else {
           const resource = resourceFromContentBlock(event.content, this.projectDir);
           if (resource) this.appendAssistantResource(lane, resource);
-          // References stay visually deferred until seal; unsupported non-text
-          // blocks retain today's no-op behavior.
+          // spec 281: image bytes / image links paint in the row's strip.
+          if (imageBytesSource(event.content) || imagePathFromBlock(event.content)) {
+            this.appendStreaming(lane, 'assistant', '');
+            const assistantItem = lane.currentAssistantId
+              ? lane.transcript.find((entry) => entry.id === lane.currentAssistantId)
+              : null;
+            if (assistantItem) this.attachBlockImage(lane, assistantItem, event.content, 'agent');
+          }
+          // References stay visually deferred until seal.
           needsRender = false;
         }
         break;
       case 'thought_chunk':
+        if (event.parentToolUseId && this.absorbSubagentOutput(lane, event.parentToolUseId, event.text, true)) {
+          needsRender = false;
+          break;
+        }
         lane.activity = { kind: 'thinking', label: '' };
         this.appendStreaming(lane, 'thought', event.text);
         this.scheduleStreamingBodyOnly(lane);
         needsRender = false;
         break;
       case 'tool_call':
+        // spec 282: a Claude subagent's own tool call folds into its Task card.
+        if (this.absorbSubagentChild(lane, event.call)) {
+          needsRender = false;
+          break;
+        }
         this.sealStreaming(lane);
         this.liveVoiceCtl.onToolCall(lane); // spec 280: progress so far → commentary
         this.renderTool(lane, event.call, false);
+        this.collectToolImages(lane, event.call);
         this.noteToolActivity(lane, event.call.toolCallId);
         this.scheduleToolRender(lane);
         needsRender = false;
         break;
       case 'tool_call_update':
+        if (this.absorbSubagentChild(lane, event.update)) {
+          this.observeFileTouch(lane, event.update);
+          needsRender = false;
+          break;
+        }
         this.renderTool(lane, event.update, true);
+        this.collectToolImages(lane, event.update);
         this.noteToolActivity(lane, event.update.toolCallId);
         this.observeFileTouch(lane, event.update);
         if (isMemoryTool(event.update)) void this.refreshMemory();
@@ -8205,7 +8332,7 @@ export class AcpHarnessView implements ContentView {
     if (mention.handled) return mention;
     lane.activeTelegramTurn = opts?.telegramCaller ?? null;
     const userItem = this.appendTranscript(lane, 'user', text, {
-      imageCount: images.length,
+      stagedImages: images,
       ...(opts?.telegramCaller ? { telegramProvenance: opts.telegramCaller } : {}),
       ...(opts?.liveDelegationId ? { voice: true as const } : {}),
     });
@@ -8431,6 +8558,7 @@ export class AcpHarnessView implements ContentView {
       lines.push('Shared Krypton memory is unavailable in this harness because the localhost hook server did not initialize. Continue without krypton-harness-memory MCP tools.');
       this.insertTelegramProvenance(lines, lane);
       this.ticketCtl.insertTicketPin(lines, lane);
+      lines.push(SVG_FENCE_GUIDANCE);
       return lines.join('\n');
     }
     // Memory is intentionally NOT advertised here. Per the handoff-only decision,
@@ -8495,6 +8623,8 @@ export class AcpHarnessView implements ContentView {
     lines.push(
       'HTML artifacts: when the user asks for a visual or interactive view (side-by-side, diagram, annotated diff, dashboard), call artifact_new { title }. It returns a path to a file that ALREADY EXISTS — a styled scaffold (Binance dark theme + light/auto toggle); EDIT it with your normal edit tool (do not recreate it with Write) to replace the placeholder inside <main data-artifact-content>, then artifact_register { id }; the user opens it in their browser. Opt-in only — keep ordinary prose, plans, and answers in your turn text. Style rule: never color-code blocks with left accent borders (border-left rails) — use a full border, background tint, or heading color; the scaffold strips left-only borders at runtime.',
     );
+    // spec 283: SVG guidance needs no MCP tool — also pushed in the memory-unavailable branch.
+    lines.push(SVG_FENCE_GUIDANCE);
     this.insertTelegramProvenance(lines, lane);
     this.ticketCtl.insertTicketPin(lines, lane);
     return lines.join('\n');
@@ -9319,17 +9449,23 @@ export class AcpHarnessView implements ContentView {
 
   // ─── Transcript open-hint mode ──────────────────────────────────────────
 
-  /** Live artifacts, Review Boards, and message references in transcript order. */
-  private activeLaneOpenTargets(): Array<ArtifactCardPayload | ReviewCardPayload | MessageResource> {
+  /** Live artifacts, Review Boards, message references, images, subagents, and SVG cards in transcript order. */
+  private activeLaneOpenTargets(): HarnessOpenTarget[] {
     const lane = this.activeLane();
     if (!lane) return [];
-    const targets: Array<ArtifactCardPayload | ReviewCardPayload | MessageResource> = [];
+    const targets: HarnessOpenTarget[] = [];
     for (const item of lane.transcript) {
       if (item.artifact?.available) targets.push(item.artifact);
       // spec 211: a review card has no `available` flag — the bundle is a durable
       // record, so the card stays openable even after the lane dies.
       if (item.review) targets.push(item.review);
       targets.push(...(item.resources ?? []));
+      // spec 281: live (or reloadable) images open in the image viewer.
+      targets.push(...(item.images ?? []).filter(isOpenableImage));
+      // spec 282: each spawned agent toggles its inline detail.
+      targets.push(...(item.tool?.subagents?.agents ?? []));
+      // spec 283: each SVG card toggles Source/Preview (Shift copies).
+      targets.push(...(item.svgFences ?? []));
     }
     return targets;
   }
@@ -9355,6 +9491,9 @@ export class AcpHarnessView implements ContentView {
       if (item.artifact) item.artifact.hintLabel = null;
       if (item.review) item.review.hintLabel = null;
       for (const resource of item.resources ?? []) resource.hintLabel = null;
+      for (const image of item.images ?? []) image.hintLabel = null;
+      for (const agent of item.tool?.subagents?.agents ?? []) agent.hintLabel = null;
+      for (const fence of item.svgFences ?? []) fence.hintLabel = null;
     }
     this.render();
   }
@@ -9380,7 +9519,12 @@ export class AcpHarnessView implements ContentView {
     const targets = this.activeLaneOpenTargets();
     const exact = targets.find((target) => target.hintLabel === candidate);
     if (exact) {
-      if ('available' in exact) void this.openArtifact(exact);
+      if ('showSource' in exact) {
+        if (e.shiftKey) void this.copySvgFence(exact);
+        else this.toggleSvgFence(this.activeLane(), exact);
+      } else if ('imageId' in exact) this.openImageViewer(exact.imageId);
+      else if ('recentTools' in exact) this.toggleSubagentDetail(this.activeLane(), exact);
+      else if ('available' in exact) void this.openArtifact(exact);
       else if ('slug' in exact) void this.openReviewBoard(exact);
       else void this.openMessageResource(exact);
       this.exitOpenHintMode();
@@ -10267,6 +10411,9 @@ export class AcpHarnessView implements ContentView {
       this.orchestratorLaneId = null;
       this.closeOrchestratorConsole();
     }
+    disposeAllImages(lane.imageState);
+    lane.subagentChildren.clear();
+    lane.codexAgentNames.clear();
     clearToolTranscriptRetention(lane);
     const index = this.lanes.findIndex((l) => l.id === lane.id);
     if (index !== -1) this.lanes.splice(index, 1);
@@ -10526,8 +10673,12 @@ export class AcpHarnessView implements ContentView {
     lane.queuedPrompts = []; // spec 136: fresh session — drop queued prompts
     this.steerCtl.resetLane(lane.id); // spec 278
     this.liveVoiceCtl.onLaneGone(lane); // spec 280: the voice session spoke to the old session
+    disposeAllImages(lane.imageState);
+    lane.subagentChildren.clear();
+    lane.codexAgentNames.clear();
     clearToolTranscriptRetention(lane);
     this.updateToolTick();
+    this.imageViewer.refresh();
     lane.transcript.push({ id: makeId(), kind: 'system', text: `starting fresh ${lane.displayName}...` });
     lane.usage = null;
     lane.lastTurnTokens = null;
@@ -11649,8 +11800,7 @@ export class AcpHarnessView implements ContentView {
         current &&
         streaming &&
         streamingTextRow &&
-        (item.kind === 'assistant' || item.kind === 'thought' ||
-          (item.kind === 'user' && !(item.imageCount && item.imageCount > 0)))
+        (item.kind === 'assistant' || item.kind === 'thought' || item.kind === 'user')
       ) {
         const body = current.querySelector<HTMLElement>('.acp-harness__msg-body');
         if (body) {
@@ -11682,9 +11832,12 @@ export class AcpHarnessView implements ContentView {
           // Spec 114 rev 8: an in-flight tool keeps a stable structural
           // signature while its output streams (section text is excluded) —
           // patch the output block in place instead of rebuilding the row.
-          if (item.kind === 'tool' && item.tool && !isTerminalToolStatus(item.tool.status)) {
+          if (
+            item.kind === 'tool' && item.tool &&
+            (!isTerminalToolStatus(item.tool.status) || item.tool.subagents?.background === true)
+          ) {
             const toolBody = current.querySelector<HTMLElement>('.acp-harness__msg-body');
-            if (toolBody) patchStreamingToolBody(toolBody, item.tool);
+            if (toolBody) patchStreamingToolBody(toolBody, item.tool, item.subagentExpanded);
           }
           previous = current;
         } else {
@@ -12812,6 +12965,9 @@ export class AcpHarnessView implements ContentView {
    *  Cancel is Ctrl+C / #cancel (workspace footer `#cancel running`); there is
    *  no lane-head chip. */
   private composerStatusChip(lane: HarnessLane): MetaSegment[] {
+    if (this.imageViewer?.isOpen) {
+      return textSegments('image viewer · n/p next · =/- zoom · 0 fit · 1 100% · o open · Esc close');
+    }
     if (this.openHintMode) return textSegments('open reference: press label · Esc cancel');
     if (this.annotationArmed) return textSegments('selection armed · c annotate · Esc dismiss');
     if (this.focus === 'transcript') {
@@ -13194,11 +13350,26 @@ export class AcpHarnessView implements ContentView {
     lane: HarnessLane,
     kind: HarnessTranscriptItem['kind'],
     text: string,
-    metadata: Pick<HarnessTranscriptItem, 'imageCount' | 'telegramProvenance' | 'steer' | 'voice'> = {},
+    metadata: Pick<HarnessTranscriptItem, 'telegramProvenance' | 'steer' | 'voice'> & {
+      stagedImages?: StagedImage[];
+    } = {},
   ): HarnessTranscriptItem {
-    const item: HarnessTranscriptItem = { id: makeId(), kind, text, createdAt: Date.now(), ...metadata };
+    const { stagedImages, ...rowMetadata } = metadata;
+    const item: HarnessTranscriptItem = { id: makeId(), kind, text, createdAt: Date.now(), ...rowMetadata };
+    // spec 281: a user row opens a new per-turn image-path dedupe window.
+    if (kind === 'user') lane.imageState.turnPaths.clear();
     const dropped = appendBoundedTranscriptItem(lane, item);
+    if (dropped) {
+      disposeImages(lane.imageState, dropped.images);
+      // spec 282: forget Claude children whose Task card left the transcript.
+      if (dropped.tool?.subagents?.source === 'claude') {
+        for (const [childId, parentId] of lane.subagentChildren) {
+          if (!lane.toolTranscriptIds.has(parentId)) lane.subagentChildren.delete(childId);
+        }
+      }
+    }
     if (SPEC114_DEV && dropped?.kind === 'tool') assertActiveToolCount(lane);
+    if (kind === 'user') this.attachUserPromptImages(lane, item, stagedImages ?? []);
     return item;
   }
 
@@ -13206,7 +13377,8 @@ export class AcpHarnessView implements ContentView {
   private removeTranscriptItem(lane: HarnessLane, itemId: string): void {
     const idx = lane.transcript.findIndex((entry) => entry.id === itemId);
     if (idx === -1) return;
-    lane.transcript.splice(idx, 1);
+    const [removed] = lane.transcript.splice(idx, 1);
+    disposeImages(lane.imageState, removed?.images);
     if (lane.currentUserId === itemId) lane.currentUserId = null;
   }
 
@@ -13436,6 +13608,352 @@ export class AcpHarnessView implements ContentView {
     item.resourceOverflow = merged.overflow;
   }
 
+  // ─── spec 281: inline images ───────────────────────────────────────────
+
+  /** One ACP block on a row: bytes (`image` / image `resource` blob) or an
+   *  explicit local path (image `resource_link`, data-less `image` + uri). */
+  private attachBlockImage(
+    lane: HarnessLane,
+    item: HarnessTranscriptItem,
+    block: ContentBlock,
+    source: HarnessImage['source'],
+  ): void {
+    const bytes = imageBytesSource(block);
+    if (bytes) {
+      const path = bytes.uri ? resolveImagePath(bytes.uri, this.projectDir) : null;
+      this.attachBytesImage(lane, item, bytes, source, path);
+    } else {
+      const raw = imagePathFromBlock(block);
+      const path = raw ? resolveImagePath(raw, this.projectDir) : null;
+      if (path) this.queueImagePaths(item, [{ path, discovery: 'explicit', force: false }], 0);
+      this.flushImagePaths(lane, item, source);
+    }
+    this.syncImageStrip(lane, item);
+  }
+
+  /** Decode a byte image onto a row unless the row already holds it or this
+   *  turn already showed the same file in another row. */
+  private attachBytesImage(
+    lane: HarnessLane,
+    item: HarnessTranscriptItem,
+    src: { data: string; mimeType: string; uri?: string },
+    source: HarnessImage['source'],
+    path: string | null,
+  ): void {
+    const images = (item.images ??= []);
+    const key = bytesImageKey(src.mimeType, src.data);
+    if (images.some((image) => image.key === key)) return;
+    const state = lane.imageState;
+    const owner = path ? state.turnPaths.get(path) : undefined;
+    if (owner && state.live.some((image) => image.imageId === owner)) return;
+    const image = createBytesImage(item.id, source, src, images.length, path);
+    images.push(image);
+    if (image.state !== 'live') return;
+    if (path) state.turnPaths.set(path, image.imageId);
+    this.repaintReleasedImages(lane, retainImage(state, image));
+  }
+
+  private queueImagePaths(item: HarnessTranscriptItem, candidates: PendingImagePath[], overflow: number): void {
+    const pending = (item.pendingImagePaths ??= []);
+    for (const candidate of candidates) {
+      if (item.images?.some((image) => image.path === candidate.path)) continue;
+      const existing = pending.find((entry) => entry.path === candidate.path);
+      if (!existing) {
+        pending.push(candidate);
+        continue;
+      }
+      if (candidate.discovery === 'explicit') existing.discovery = 'explicit';
+      existing.force ||= candidate.force;
+    }
+    if (overflow > 0) item.imageOverflow = Math.max(item.imageOverflow ?? 0, overflow);
+  }
+
+  /** Turn a row's pending paths into loading images (capped per row). */
+  private flushImagePaths(lane: HarnessLane, item: HarnessTranscriptItem, source: HarnessImage['source']): void {
+    const pending = item.pendingImagePaths;
+    if (!pending || pending.length === 0) return;
+    item.pendingImagePaths = [];
+    if (this.remoteRuntimeId) return;
+    const images = (item.images ??= []);
+    const state = lane.imageState;
+    let pathCount = images.filter((image) => image.path !== null).length;
+    for (const candidate of pending) {
+      if (images.some((image) => image.path === candidate.path)) continue;
+      const owner = state.turnPaths.get(candidate.path);
+      if (!candidate.force && owner && state.live.some((image) => image.imageId === owner)) continue;
+      if (pathCount >= MAX_PATH_IMAGES_PER_ROW) {
+        item.imageOverflow = (item.imageOverflow ?? 0) + 1;
+        continue;
+      }
+      const image = createPathImage(item.id, source, candidate.path, candidate.discovery);
+      images.push(image);
+      pathCount += 1;
+      void this.loadPathImage(lane, item, image, candidate.force);
+    }
+  }
+
+  /** Serial per-lane `read_image_file`. A failed scanned hit vanishes; a
+   *  failed explicit path stays as a MISSING / REJECTED tile. */
+  private loadPathImage(
+    lane: HarnessLane,
+    item: HarnessTranscriptItem,
+    image: HarnessImage,
+    force: boolean,
+  ): Promise<void> {
+    const state = lane.imageState;
+    const path = image.path;
+    if (!path) return Promise.resolve();
+    state.queue = state.queue.then(async () => {
+      const result = await readImageFile(path);
+      if (lane.imageState !== state || !lane.transcript.includes(item) || !item.images?.includes(image)) return;
+      const owner = state.turnPaths.get(path);
+      const shownElsewhere = !force && owner !== undefined && owner !== image.imageId &&
+        state.live.some((other) => other.imageId === owner);
+      if (!result.ok || shownElsewhere) {
+        if (!result.ok && image.discovery === 'explicit') {
+          image.state = result.reason === 'not found' || result.reason === 'not absolute' ? 'missing' : 'rejected';
+          image.rejectReason = result.reason;
+        } else {
+          item.images = item.images.filter((other) => other !== image);
+        }
+      } else {
+        // A reload replaces this image's previous bytes in the budget.
+        const liveIdx = state.live.indexOf(image);
+        if (liveIdx !== -1) {
+          state.live.splice(liveIdx, 1);
+          state.bytes -= image.bytes;
+        }
+        makePathImageLive(image, result.bytes, result.mimeType);
+        state.turnPaths.set(path, image.imageId);
+        this.repaintReleasedImages(lane, retainImage(state, image));
+      }
+      this.syncImageStrip(lane, item);
+      if (this.imageViewer.isOpen) this.imageViewer.refresh();
+    });
+    return state.queue;
+  }
+
+  /** spec 281: staged prompt images + image paths typed in the prompt. */
+  private attachUserPromptImages(lane: HarnessLane, item: HarnessTranscriptItem, staged: StagedImage[]): void {
+    for (const image of staged) {
+      this.attachBytesImage(lane, item, image, 'user', image.path);
+    }
+    if (item.text) this.collectTextImagePaths(lane, item, 'user');
+  }
+
+  /** Scanned image paths in a row's own text (sealed reply, user prompt) plus
+   *  the reply's explicit file references (spec 206). Loads immediately. */
+  private collectTextImagePaths(lane: HarnessLane, item: HarnessTranscriptItem, source: HarnessImage['source']): void {
+    if (this.remoteRuntimeId) return;
+    const candidates: PendingImagePath[] = [];
+    for (const resource of item.resources ?? []) {
+      if (resource.kind === 'file' && isImagePath(resource.target)) {
+        candidates.push({ path: resource.target, discovery: 'explicit', force: false });
+      }
+    }
+    const scan = findImagePaths(item.text);
+    for (const raw of scan.paths) {
+      const path = resolveImagePath(raw, this.projectDir);
+      if (path) candidates.push({ path, discovery: 'scanned', force: false });
+    }
+    if (candidates.length === 0) return;
+    this.queueImagePaths(item, candidates, scan.overflow);
+    this.flushImagePaths(lane, item, source);
+    this.syncImageStrip(lane, item);
+  }
+
+  /** spec 281: images a tool touched — bytes in `content`, explicit
+   *  `resource_link` / `locations`, and paths scanned from rawInput, rawOutput,
+   *  and text output. Path loads wait for the terminal status (a download only
+   *  exists once it finishes); `read` tools load at once. */
+  private collectToolImages(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
+    const itemId = lane.toolTranscriptIds.get(call.toolCallId);
+    const item = itemId ? lane.transcript.find((entry) => entry.id === itemId) : null;
+    if (!item || item.tool?.artifactRedaction) return;
+    const kind = call.kind ?? lane.toolCalls.get(call.toolCallId)?.kind;
+    const blocks = (call.content ?? [])
+      .filter((entry) => entry.type === 'content' && entry.content)
+      .map((entry) => entry.content as ContentBlock);
+    const locations = (call.locations ?? [])
+      .map((location) => resolveImagePath(location.path, this.projectDir))
+      .filter((path): path is string => path !== null);
+
+    const byteSources = blocks
+      .map((block) => imageBytesSource(block))
+      .filter((src): src is NonNullable<typeof src> => src !== null);
+    if (byteSources.length > 0) {
+      // A content update replaces the tool's byte images; unchanged keys stay.
+      const keys = new Set(byteSources.map((src) => bytesImageKey(src.mimeType, src.data)));
+      const stale = (item.images ?? []).filter((image) => image.origin === 'bytes' && !keys.has(image.key));
+      if (stale.length > 0) {
+        disposeImages(lane.imageState, stale);
+        item.images = (item.images ?? []).filter((image) => !stale.includes(image));
+      }
+      // Claude `Read` sends the bytes plus `locations` — pair them so the file
+      // is shown once and the per-turn dedupe knows its path.
+      const pairPath = byteSources.length === 1 ? (locations[0] ?? null) : null;
+      for (const src of byteSources) {
+        const path = src.uri ? resolveImagePath(src.uri, this.projectDir) : pairPath;
+        this.attachBytesImage(lane, item, src, 'tool', path);
+      }
+    }
+
+    if (!this.remoteRuntimeId) {
+      const candidates: PendingImagePath[] = [];
+      const force = kind === 'edit';
+      for (const block of blocks) {
+        const raw = imagePathFromBlock(block);
+        const path = raw ? resolveImagePath(raw, this.projectDir) : null;
+        if (path) candidates.push({ path, discovery: 'explicit', force: false });
+      }
+      for (const path of locations) {
+        if (isImagePath(path)) candidates.push({ path, discovery: 'explicit', force });
+      }
+      const textOutput = blocks
+        .map((block) => (block.type === 'text' ? block.text : ''))
+        .filter((text) => text.length > 0);
+      const scans = [
+        scanValueForImagePaths(call.rawInput),
+        scanValueForImagePaths(call.rawOutput),
+        scanValueForImagePaths(textOutput),
+      ];
+      for (const scan of scans) {
+        for (const raw of scan.paths) {
+          const path = resolveImagePath(raw, this.projectDir);
+          if (path) candidates.push({ path, discovery: 'scanned', force: false });
+        }
+      }
+      const overflow = scans.reduce((sum, scan) => sum + scan.overflow, 0);
+      this.queueImagePaths(item, candidates, overflow);
+      if (isTerminalToolStatus(item.status ?? '') || kind === 'read') this.flushImagePaths(lane, item, 'tool');
+    }
+    this.syncImageStrip(lane, item);
+  }
+
+  /** Budget eviction released these images — repaint their rows' tiles. */
+  private repaintReleasedImages(lane: HarnessLane, released: HarnessImage[]): void {
+    for (const image of released) {
+      const owner = lane.transcript.find((entry) => entry.id === image.itemId);
+      if (owner) this.syncImageStrip(lane, owner);
+    }
+  }
+
+  /** Patch a row's strip in place. A streaming row never re-renders through
+   *  its signature (spec 114 fast path), so the strip is patched directly; the
+   *  body-only pass then rebuilds any sealed row whose image signature moved. */
+  private syncImageStrip(lane: HarnessLane, item: HarnessTranscriptItem): void {
+    if (lane.id !== this.activeLaneId) return;
+    const wrapper = this.activeTranscriptBody()?.querySelector<HTMLElement>(
+      `.acp-harness__msg[data-msg-id="${CSS.escape(item.id)}"]`,
+    );
+    if (wrapper) {
+      wrapper.querySelector(':scope > .acp-harness__images')?.remove();
+      const strip = renderImageStrip(item);
+      if (strip) wrapper.appendChild(strip);
+    }
+    this.scheduleStreamingBodyOnly(lane);
+  }
+
+  private openImageViewer(imageId: string): void {
+    const image = this.activeLane()?.transcript
+      .flatMap((item) => item.images ?? [])
+      .find((candidate) => candidate.imageId === imageId);
+    if (!image || !isOpenableImage(image)) {
+      this.flashChip('image unavailable');
+      return;
+    }
+    this.imageViewer.open(imageId);
+    this.renderComposer();
+  }
+
+  /** Viewer `ensureLive`: reload a budget-released path image. */
+  private async reloadReleasedImage(image: HarnessImage): Promise<boolean> {
+    const lane = this.activeLane();
+    const item = lane?.transcript.find((entry) => entry.id === image.itemId);
+    if (!lane || !item || image.origin !== 'path' || image.state !== 'released') return image.state === 'live';
+    image.state = 'loading';
+    this.syncImageStrip(lane, item);
+    await this.loadPathImage(lane, item, image, true);
+    // objectUrl is non-null only while live (state is narrowed to 'loading' here).
+    return image.objectUrl !== null;
+  }
+
+  // ─── spec 282: subagent cards ──────────────────────────────────────────
+
+  /** The Claude Task card row for a parent toolCallId, if still in the transcript. */
+  private claudeSubagentCard(lane: HarnessLane, parentToolCallId: string): HarnessTranscriptItem | null {
+    const itemId = lane.toolTranscriptIds.get(parentToolCallId);
+    const item = itemId ? lane.transcript.find((entry) => entry.id === itemId) : null;
+    return item?.tool?.subagents?.source === 'claude' ? item : null;
+  }
+
+  /** A Claude subagent's own tool call / update folds into its Task card
+   *  instead of becoming a top-level row. False → render as before. */
+  private absorbSubagentChild(lane: HarnessLane, call: ToolCall | ToolCallUpdate): boolean {
+    const parentId = lane.subagentChildren.get(call.toolCallId) ?? claudeParentToolUseId(call._meta);
+    if (!parentId || parentId === call.toolCallId) return false;
+    const card = this.claudeSubagentCard(lane, parentId);
+    if (!card?.tool?.subagents) return false;
+    const isNew = !lane.subagentChildren.has(call.toolCallId);
+    lane.subagentChildren.set(call.toolCallId, parentId);
+    const title = cleanToolTitle(call.title, call.kind ?? 'tool') || call.title?.trim() || '';
+    absorbChildToolCall(card.tool.subagents, title, isNew);
+    this.scheduleToolRender(lane);
+    return true;
+  }
+
+  /** Claude subagent text → the card's output tail; its thoughts only mark activity. */
+  private absorbSubagentOutput(lane: HarnessLane, parentId: string, text: string, thought: boolean): boolean {
+    const card = this.claudeSubagentCard(lane, parentId);
+    const payload = card?.tool?.subagents;
+    if (!payload) return false;
+    if (thought) {
+      if (payload.agents[0]) payload.agents[0].activity = 'thinking';
+    } else {
+      appendChildOutput(payload, text);
+    }
+    this.scheduleToolRender(lane);
+    return true;
+  }
+
+  private toggleSubagentDetail(lane: HarnessLane | null, entry: SubagentEntry): void {
+    const item = lane?.transcript.find((row) => row.tool?.subagents?.agents.includes(entry));
+    if (!lane || !item) return;
+    const expanded = item.subagentExpanded ?? [];
+    item.subagentExpanded = expanded.includes(entry.id)
+      ? expanded.filter((id) => id !== entry.id)
+      : [...expanded, entry.id];
+    this.scheduleStreamingBodyOnly(lane);
+  }
+
+  /** spec 283: flip an SVG card between preview and source. */
+  private toggleSvgFence(lane: HarnessLane | null, entry: SvgFenceEntry): void {
+    if (!lane?.transcript.some((row) => row.svgFences?.includes(entry))) return;
+    entry.showSource = !entry.showSource;
+    this.scheduleStreamingBodyOnly(lane);
+  }
+
+  /** spec 283: copy the fence as the agent wrote it (unthemed). */
+  private async copySvgFence(entry: SvgFenceEntry): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(entry.source);
+      this.flashChip('copied svg');
+    } catch (e) {
+      this.flashChip(`copy failed: ${errorText(e)}`);
+    }
+  }
+
+  /** Viewer `o`: hand the file to the OS default image app. */
+  private openImageFile(path: string): void {
+    if (!path.startsWith('/')) {
+      this.flashChip('file unavailable');
+      return;
+    }
+    void invoke('open_url', { url: pathToFileUri(path) })
+      .then(() => this.flashChip(`opening ${path.slice(path.lastIndexOf('/') + 1)}`))
+      .catch(() => this.flashChip('file unavailable'));
+  }
+
   /** Drop a thought row that never received any text. Providers that keep
    *  reasoning server-side (Claude Code on current Opus models) stream
    *  thought deltas with empty text; the row shows an animated veil while
@@ -13493,6 +14011,7 @@ export class AcpHarnessView implements ContentView {
           : null;
         try {
           this.sealAssistantStreamingMarkdown(lane, item);
+          this.collectTextImagePaths(lane, item, 'agent');
         } finally {
           if (suppressToken !== null) this.releaseProgrammaticScroll(suppressToken);
         }
@@ -13502,6 +14021,9 @@ export class AcpHarnessView implements ContentView {
     }
     this.sealStreamingTextRow(lane, thoughtId);
     this.sealStreamingTextRow(lane, userId);
+    // spec 281: a replayed user row's text may name image paths.
+    const userItem = userId ? lane.transcript.find((entry) => entry.id === userId) : null;
+    if (userItem?.kind === 'user') this.collectTextImagePaths(lane, userItem, 'user');
     // Spec 114: sealing is a transcript-row signature change, not a chrome
     // change. Permission/error still scheduleLaneRender; stop patches chrome
     // in place via patchLaneTurnChrome.
@@ -13515,7 +14037,6 @@ export class AcpHarnessView implements ContentView {
     if (!id || id.startsWith('thought-veil:')) return;
     const item = lane.transcript.find((entry) => entry.id === id);
     if (!item || (item.kind !== 'thought' && item.kind !== 'user')) return;
-    if (item.kind === 'user' && item.imageCount && item.imageCount > 0) return;
     if (lane.id !== this.activeLaneId) return;
     const root = this.activeTranscriptBody();
     if (!root) return;
@@ -13588,6 +14109,8 @@ export class AcpHarnessView implements ContentView {
         resolveLocalImageSrcs(body, this.projectDir);
       }
       item.markdownHtml = body.innerHTML;
+      // spec 283: decorate after the capture — the cache stays pure markdown.
+      decorateSvgFences(body, item);
       item.markdownSource = item.text;
       scanMessageResourceBody(body, item, this.projectDir);
       appendMessageResourceRail(body, item, this.projectDir);
@@ -13684,6 +14207,17 @@ export class AcpHarnessView implements ContentView {
       // without a lane round-trip.
       if (justEnded && artifactRecord?.state === 'registered_live') {
         void this.refreshArtifact(artifactRecord);
+      }
+    }
+    // spec 282: subagent spawns render as a live per-agent card.
+    if (!tool.artifactRedaction) {
+      const named = codexSubagentName(call._meta);
+      if (named) lane.codexAgentNames.set(named.threadId, named.name);
+      const subagents = parseSubagentPayload(merged, status, target.tool?.subagents, lane.codexAgentNames);
+      if (subagents) {
+        tool.subagents = subagents;
+        tool.kind = 'agents';
+        tool.subject = cleanToolTitle(merged.title, 'agents') || tool.subject;
       }
     }
     const text = tool.subject ? `${tool.glyph} ${tool.kind} ${tool.subject}` : `${tool.glyph} ${tool.kind}`;
@@ -14614,6 +15148,7 @@ export class AcpHarnessView implements ContentView {
   private activateLane(id: string): void {
     if (id !== this.activeLaneId) this.dictationCtl.abort(false);
     this.activeLaneId = id;
+    this.imageViewer?.close();
     this.focus = 'text';
     this.lanePeek.visible = true;
     this.lanePeek.dismissedAt = null;

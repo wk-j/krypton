@@ -265,6 +265,7 @@ pub fn run() {
             timeline::timeline_topic_suggest_cancel,
             typesafe::typesafe_metrics,
             commands::save_temp_image,
+            commands::read_image_file,
             commands::capture_screen,
             commands::get_env_var,
             commands::run_command,

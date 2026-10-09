@@ -8,6 +8,7 @@ import { type UnlistenFn } from '@tauri-apps/api/event';
 import { setupListener } from '../util/listener';
 import { skipInterviewDecision, type AskUserReply } from './ask-user-question';
 import { elicitationResponse, type QuestionTarget } from './elicitation';
+import { claudeParentToolUseId } from './harness-subagents';
 import type {
   AcpAvailableCommand,
   AcpBackendDescriptor,
@@ -288,15 +289,19 @@ export class AcpClient {
           [k: string]: unknown;
         };
         switch (raw.kind) {
-          case 'user_message_chunk':
-            event = { type: 'user_message_chunk', text: extractText(update.content) };
+          case 'user_message_chunk': {
+            const content = normalizeContentBlock(update.content);
+            event = { type: 'user_message_chunk', text: content.type === 'text' ? content.text : '', content };
             break;
+          }
           case 'agent_message_chunk':
-            event = assistantMessageEvent(update.content, update.messageId);
+            event = assistantMessageEvent(update.content, update.messageId, claudeParentToolUseId(update._meta));
             break;
-          case 'agent_thought_chunk':
-            event = { type: 'thought_chunk', text: extractText(update.content) };
+          case 'agent_thought_chunk': {
+            const parentToolUseId = claudeParentToolUseId(update._meta);
+            event = { type: 'thought_chunk', text: extractText(update.content), ...(parentToolUseId ? { parentToolUseId } : {}) };
             break;
+          }
           case 'tool_call':
             event = { type: 'tool_call', call: update as unknown as ToolCall };
             break;
@@ -457,13 +462,14 @@ function extractText(content: unknown): string {
 }
 
 /** Decode one assistant content block without discarding non-text ACP data. */
-export function assistantMessageEvent(content: unknown, messageId: unknown): AcpEvent {
+export function assistantMessageEvent(content: unknown, messageId: unknown, parentToolUseId?: string | null): AcpEvent {
   const block = normalizeContentBlock(content);
   return {
     type: 'message_chunk',
     text: block.type === 'text' ? block.text : '',
     content: block,
     messageId: typeof messageId === 'string' && messageId.length > 0 ? messageId : undefined,
+    ...(parentToolUseId ? { parentToolUseId } : {}),
   };
 }
 

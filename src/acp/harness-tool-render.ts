@@ -11,6 +11,7 @@ import { stripAnsi } from './provider-error';
 import { classifyBashCommand } from '../agent/tools';
 import type { ContentBlock, ToolCall, ToolCallUpdate } from './types';
 import type { ArtifactCardPayload, ReviewCardPayload, ToolPayload } from './harness-view-types';
+import { renderSubagentCard, subagentLiveSignature, subagentSummary } from './harness-subagents';
 import {
   TOOL_DIFF_DISPLAY_CHAR_LIMIT,
   TOOL_DIFF_DISPLAY_COUNT_LIMIT,
@@ -547,7 +548,7 @@ export function extractToolDiffs(content: ToolCall['content']): Array<{ path: st
   return out;
 }
 
-export function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
+export function renderToolBody(body: HTMLElement, tool: ToolPayload, subagentExpanded: readonly string[] = []): void {
   const head = document.createElement('div');
   head.className = 'acp-harness__tool-head';
   const glyph = document.createElement('span');
@@ -574,6 +575,12 @@ export function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
     result.textContent = tool.result;
     head.appendChild(result);
   }
+  if (tool.subagents) {
+    const summary = document.createElement('span');
+    summary.className = 'acp-harness__tool-result acp-harness__subagent-summary';
+    summary.textContent = subagentSummary(tool.subagents);
+    head.appendChild(summary);
+  }
   if (tool.startedAt !== undefined) {
     const timer = document.createElement('span');
     timer.className = `acp-harness__tool-timer acp-harness__tool-timer--${tool.status}`;
@@ -591,7 +598,11 @@ export function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
     body.appendChild(renderArtifactRedaction(tool.artifactRedaction));
     return;
   }
-  if (tool.sections.length > 0 || shouldRenderExecuteExit(tool)) {
+  if (tool.subagents) {
+    // spec 282: the card replaces the "Running agent X..." sections.
+    body.dataset.subagentLiveSig = subagentLiveSignature(tool.subagents);
+    body.appendChild(renderSubagentCard(tool.subagents, subagentExpanded));
+  } else if (tool.sections.length > 0 || shouldRenderExecuteExit(tool)) {
     body.appendChild(renderToolOutput(tool));
   }
   if (tool.diffs.length > 0) {
@@ -621,8 +632,17 @@ export function renderToolBody(body: HTMLElement, tool: ToolPayload): void {
  *  subject, timer) and diff previews keep their DOM nodes, so per-chunk
  *  updates stop remounting the whole row. Deduped on the section text so a
  *  visible-but-untouched row costs one string compare per pass. */
-export function patchStreamingToolBody(body: HTMLElement, tool: ToolPayload): void {
+export function patchStreamingToolBody(body: HTMLElement, tool: ToolPayload, subagentExpanded: readonly string[] = []): void {
   if (tool.artifactRedaction) return;
+  if (tool.subagents) {
+    // spec 282: live per-agent activity/stats; structure changes rebuild the row.
+    const live = subagentLiveSignature(tool.subagents);
+    if (body.dataset.subagentLiveSig === live) return;
+    body.dataset.subagentLiveSig = live;
+    body.querySelector(':scope > .acp-harness__subagents')
+      ?.replaceWith(renderSubagentCard(tool.subagents, subagentExpanded));
+    return;
+  }
   const mutable = tool.sections
     .map((section) => `${section.label}\u001f${section.text}`)
     .join('\u001e');

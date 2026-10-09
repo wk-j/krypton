@@ -126,7 +126,7 @@ export interface HarnessSteerHost extends HarnessViewHost {
     lane: HarnessLane,
     kind: HarnessTranscriptItem['kind'],
     text: string,
-    metadata?: Pick<HarnessTranscriptItem, 'imageCount' | 'steer' | 'voice'>,
+    metadata?: Pick<HarnessTranscriptItem, 'steer' | 'voice'> & { stagedImages?: StagedImage[] },
   ): HarnessTranscriptItem;
   removeTranscriptItem(lane: HarnessLane, itemId: string): void;
   /** The user's own blocks (images, then text) — no lane-context packet. */

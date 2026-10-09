@@ -80,6 +80,18 @@ export interface MessageResource {
   hintLabel: string | null;
 }
 
+/** spec 283: one rendered ```svg fence card inside an assistant row. */
+export interface SvgFenceEntry {
+  /** nth valid svg fence in the row body, document order. */
+  index: number;
+  /** Transient label assigned only while transcript open-hint mode is active. */
+  hintLabel: string | null;
+  /** Card shows the source pane instead of the preview. */
+  showSource: boolean;
+  /** Original (unthemed) fence source — what Copy puts on the clipboard. */
+  source: string;
+}
+
 export interface HarnessTranscriptItem {
   id: string;
   kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'question' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'provider_error' | 'artifact' | 'review';
@@ -100,7 +112,14 @@ export interface HarnessTranscriptItem {
   pretextFont?: string;
   pretextLineHeight?: number;
   pretextLines?: string[];
-  imageCount?: number;
+  /** spec 282: subagent entry ids whose inline detail is open. */
+  subagentExpanded?: string[];
+  /** spec 281: images rendered in this row's strip (bytes or local path). */
+  images?: HarnessImage[];
+  /** spec 281: path candidates beyond the per-row cap. */
+  imageOverflow?: number;
+  /** spec 281: tool path candidates held until the call reaches terminal status. */
+  pendingImagePaths?: PendingImagePath[];
   telegramProvenance?: TelegramControlCaller;
   /** spec 278: a user row sent into a running turn — 'pending' until the
    *  adapter takes it. A steer that misses is removed and re-queued. */
@@ -133,6 +152,8 @@ export interface HarnessTranscriptItem {
   resourceOverflow?: number;
   /** True after the sealed Markdown DOM has been scanned exactly once. */
   resourcesScanned?: boolean;
+  /** spec 283: rendered ```svg fence cards, rebuilt by decorateSvgFences. */
+  svgFences?: SvgFenceEntry[];
   /** spec 240: human notes pinned to spans in this assistant reply. */
   annotations?: TranscriptAnnotation[];
 }
@@ -237,12 +258,90 @@ export interface ToolPayload {
    * diff/content is redacted to path + bytes + hash so HTML never enters the
    * transcript model under the write tool. */
   artifactRedaction?: { tail: string; size: number | null; hash: string | null; pending: boolean };
+  /** spec 282: set when this tool spawned subagents; renders the subagent card. */
+  subagents?: SubagentPayload;
+}
+
+export type SubagentStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+/** spec 282 — one spawned agent inside a subagent card. */
+export interface SubagentEntry {
+  /** Stable key within the card and the display name. */
+  id: string;
+  /** Agent type / role (OMP `agent`, Claude `subagent_type`). */
+  agent: string;
+  status: SubagentStatus;
+  activity: string;
+  /** ≤ 3, newest last. */
+  recentTools: string[];
+  toolCount: number | null;
+  tokens: number | null;
+  durationMs: number | null;
+  task: string;
+  output: string;
+  /** Transient label assigned only while transcript open-hint mode is active. */
+  hintLabel: string | null;
+}
+
+export interface SubagentPayload {
+  source: 'omp' | 'claude' | 'codex';
+  /** OMP background spawn still running after the task tool returned. */
+  background: boolean;
+  agents: SubagentEntry[];
+  overflow: number;
 }
 
 export interface StagedImage {
   data: string;
   mimeType: string;
   path: string | null;
+}
+
+/** spec 281 — png/jpeg/gif/webp only; SVG and everything else is rejected. */
+export type HarnessImageMime = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+
+/** spec 281 — one image attached to a transcript row, backed by a Blob URL. */
+export interface HarnessImage {
+  imageId: string;
+  /** Owning transcript row. */
+  itemId: string;
+  origin: 'bytes' | 'path';
+  /** Absolute (or `~/`) local path; set for path images and paired byte images. */
+  path: string | null;
+  /** explicit = protocol field; scanned = found by `findImagePaths`. */
+  discovery: 'explicit' | 'scanned';
+  state: 'loading' | 'live' | 'released' | 'rejected' | 'missing';
+  /** Why a `rejected` image was refused (mime / size / decode). */
+  rejectReason?: string;
+  mimeType: HarnessImageMime | null;
+  bytes: number;
+  /** Non-null only while `live`. */
+  objectUrl: string | null;
+  label: string;
+  source: 'agent' | 'user' | 'tool';
+  /** Dedupe key within a row: `b:<mime>:<len>:<head>:<tail>` or `p:<path>`. */
+  key: string;
+  /** Transient label assigned only while transcript open-hint mode is active. */
+  hintLabel: string | null;
+}
+
+export interface PendingImagePath {
+  path: string;
+  discovery: 'explicit' | 'scanned';
+  /** A write/edit touched the file: reload even if this turn already showed it. */
+  force: boolean;
+}
+
+/** spec 281 — per-lane image bookkeeping. */
+export interface LaneImageState {
+  /** Decoded bytes held by live object URLs. */
+  bytes: number;
+  /** Live images, oldest first — the byte-budget eviction order. */
+  live: HarnessImage[];
+  /** Path → imageId of the row that showed it this turn (per-turn dedupe). */
+  turnPaths: Map<string, string>;
+  /** Serial path-load chain (one `read_image_file` at a time per lane). */
+  queue: Promise<void>;
 }
 
 export interface LanePeekState {
@@ -545,6 +644,12 @@ export interface HarnessLane {
   savedScrollAnchor: TranscriptScrollAnchor | null;
   pendingShellId: string | null;
   stagedImages: StagedImage[];
+  /** spec 281: inline image bookkeeping (byte budget, per-turn dedupe, loads). */
+  imageState: LaneImageState;
+  /** spec 282: Claude child toolCallId → parent Task toolCallId (child rows absorbed into the card). */
+  subagentChildren: Map<string, string>;
+  /** spec 282: Codex subagent threadId → display name (from `_meta.codex.subagent.path`). */
+  codexAgentNames: Map<string, string>;
   supportsImages: boolean;
   /** spec 278: the adapter advertised `_session/steering`; Enter on a busy lane
    *  steers instead of queueing. Cleared if a steer gets "method not found". */

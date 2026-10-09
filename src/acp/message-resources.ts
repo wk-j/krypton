@@ -186,7 +186,7 @@ function urlFallbackLabel(value: string): string {
   }
 }
 
-function fileUriToPath(value: string): string | null {
+export function fileUriToPath(value: string): string | null {
   try {
     const url = new URL(value);
     if (url.protocol !== 'file:' || (url.host && url.host !== 'localhost')) return null;
@@ -218,7 +218,7 @@ function stripFileLocation(value: string): { path: string; line?: number; column
   return { path: value };
 }
 
-function resolveFilePath(value: string, projectDir: string | null): string | null {
+export function resolveFilePath(value: string, projectDir: string | null): string | null {
   const slashPath = value.replace(/\\/g, '/');
   if (slashPath.startsWith('/') || isWindowsAbsolute(slashPath)) return normalizePath(slashPath);
   if (!projectDir) return null;

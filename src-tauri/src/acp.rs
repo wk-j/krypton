@@ -940,19 +940,28 @@ fn advertise_read_text_file(backend_id: &str) -> bool {
     !matches!(backend_id, "grok" | "omp")
 }
 
-/// Sniff for the error chip only — not a general mime detector.
-fn sniff_binary_kind(path: &str, head: &[u8]) -> &'static str {
+/// Magic-byte image sniff — png/jpeg/gif/webp only, never the extension.
+/// Shared with `read_image_file` (spec 281), which must not trust names.
+pub(crate) fn sniff_image_magic(head: &[u8]) -> Option<&'static str> {
     if head.starts_with(&[0x89, b'P', b'N', b'G']) {
-        return "image/png";
+        return Some("image/png");
     }
     if head.len() >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF {
-        return "image/jpeg";
+        return Some("image/jpeg");
     }
     if head.starts_with(b"GIF8") {
-        return "image/gif";
+        return Some("image/gif");
     }
     if head.len() >= 12 && head.starts_with(b"RIFF") && &head[8..12] == b"WEBP" {
-        return "image/webp";
+        return Some("image/webp");
+    }
+    None
+}
+
+/// Sniff for the error chip only — not a general mime detector.
+fn sniff_binary_kind(path: &str, head: &[u8]) -> &'static str {
+    if let Some(mime) = sniff_image_magic(head) {
+        return mime;
     }
     if head.starts_with(b"%PDF") {
         return "application/pdf";

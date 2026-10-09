@@ -96,6 +96,7 @@ import { ShaderEngine } from './shaders';
 import type { ShaderPreset } from './shaders';
 import type { KryptonConfig, TabsConfig, ShaderConfig, KeyboardOverlayConfig } from './config';
 import { applyComposerBloomSettings } from './acp/harness-composer-bloom';
+import { refreshSvgFencePreviews } from './acp/harness-svg-fence';
 import { DEFAULT_SHADER_CONFIG, loadConfig } from './config';
 import type { FrontendThemeEngine } from './theme';
 import { ExtensionManager } from './extensions';
@@ -1947,6 +1948,8 @@ export class Compositor {
     for (const [, win] of this.windows) win.headerScope?.refreshColor();
     this.qtHeaderScope?.refreshColor();
     this.wheelRail?.refreshColors();
+    // spec 283: re-theme rendered harness SVG cards in place.
+    refreshSvgFencePreviews(document);
   }
 
   /**

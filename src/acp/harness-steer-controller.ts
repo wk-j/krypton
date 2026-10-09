@@ -74,7 +74,7 @@ export class HarnessSteerController {
     // Seal the streaming agent row so the steer sits after what was already said.
     this.host.sealStreaming(lane);
     const item = this.host.appendTranscript(lane, 'user', text, {
-      imageCount: images.length,
+      stagedImages: images,
       steer: 'pending',
       ...(liveDelegationId ? { voice: true as const } : {}),
     });
