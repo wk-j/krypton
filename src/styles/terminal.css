@@ -90,3 +90,11 @@
   background-color: transparent !important;
 }
 
+/* xterm.js DOM renderer sets inline overflow:hidden on each row, sized to the
+   cell height. Stacked Thai marks (tone mark above an upper vowel, e.g. ที่,
+   ตั้ง) rise above the cell box and were clipped. Let glyphs paint past the row. */
+.krypton-window__body .xterm-rows > div,
+.krypton-pane__terminal .xterm-rows > div {
+  overflow: visible !important;
+}
+

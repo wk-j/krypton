@@ -10,6 +10,7 @@ import { FitAddon } from '@xterm/addon-fit';
 
 import { setCssVars } from './util/css-vars';
 import { paneContentHoldsFocus } from './content-focus';
+import { installClusterCellRendering } from './xterm-cluster-cells';
 
 import {
   WindowId,
@@ -895,6 +896,7 @@ export class Compositor {
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(terminalWrap);
+    installClusterCellRendering(terminal);
 
     // Edge glow overlays — sit above the xterm canvas
     const glowTop = document.createElement('div');
@@ -6621,6 +6623,7 @@ export class Compositor {
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(body);
+    installClusterCellRendering(terminal);
 
     // Edge glow overlays
     const qtGlowTop = document.createElement('div');
