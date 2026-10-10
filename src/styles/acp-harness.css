@@ -4894,6 +4894,14 @@
   animation: acp-harness-caret 1s step-end infinite;
 }
 
+/* spec 285: word-autocomplete suggestion after the caret (Tab / → accept). */
+.acp-harness__ghost {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+  text-shadow: none;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* spec 252: overlay letter afterimages survive composer innerHTML rebuilds. */
 .acp-harness__composer-blooms {
   position: absolute;

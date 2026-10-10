@@ -758,6 +758,9 @@ pub struct AcpHarnessConfig {
     pub composer_bloom_ms: u32,
     /// How many inserted graphemes receive an afterimage on one paste. Prototype range 1–12; default 5.
     pub composer_bloom_trail: u32,
+    /// spec 285: ghost-text word completion in the harness composer. Prompts are
+    /// logged to the shared prompt history regardless of this flag.
+    pub word_autocomplete: bool,
     /// Optional SSH targets for remote ACP Harnesses. Connection/auth details
     /// stay in the user's OpenSSH config; Krypton stores only the alias and
     /// absolute remote project directory.
@@ -855,6 +858,7 @@ impl Default for AcpHarnessConfig {
             composer_bloom: true,
             composer_bloom_ms: 320,
             composer_bloom_trail: 5,
+            word_autocomplete: true,
             remote_profiles: Vec::new(),
             lane_models: HashMap::new(),
         }
@@ -1142,5 +1146,14 @@ mod tests {
         assert!(cfg.acp_harness.composer_bloom);
         assert_eq!(cfg.acp_harness.composer_bloom_ms, 320);
         assert_eq!(cfg.acp_harness.composer_bloom_trail, 5);
+    }
+
+    #[test]
+    fn acp_harness_word_autocomplete_defaults_on_and_parses_off() {
+        let cfg: KryptonConfig = toml::from_str("[acp_harness]\n").unwrap();
+        assert!(cfg.acp_harness.word_autocomplete);
+        let cfg: KryptonConfig =
+            toml::from_str("[acp_harness]\nword_autocomplete = false\n").unwrap();
+        assert!(!cfg.acp_harness.word_autocomplete);
     }
 }

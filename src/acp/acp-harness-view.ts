@@ -241,6 +241,15 @@ import {
   ensureComposerBloomLayer,
   spawnComposerBlooms,
 } from './harness-composer-bloom';
+import {
+  acceptGhost,
+  ghostRequestable,
+  logHarnessPrompt,
+  predictWordSuffix,
+  typeThrough,
+  wordAutocompleteEnabled,
+  type GhostSuggestion,
+} from './word-predict';
 import { extractModifiedPath } from './acp-harness-memory';
 import { classifyProviderError, shouldAppendProviderError } from './provider-error';
 import {
@@ -1205,6 +1214,9 @@ export class AcpHarnessView implements ContentView {
   private pendingComposerBloom: PendingComposerBloom | null = null;
   private composerBloomLayer: HTMLElement | null = null;
   private composerBloomLaneId: string | null = null;
+  /** spec 285: word-autocomplete ghost; valid only while its draft/cursor still match. */
+  private ghost: GhostSuggestion | null = null;
+  private ghostSeq = 0;
   private chip: string | null = null;
   private chipTimer: number | null = null;
   private readonly dictationCtl = new HarnessDictationController(this.dictationHost());
@@ -4322,6 +4334,7 @@ export class AcpHarnessView implements ContentView {
       this.render();
       return true;
     }
+    if (this.handleGhostKey(e, lane)) return true;
     if (this.handleHistoryKey(e, lane)) return true;
     if (this.handleEditingKey(e, lane)) return true;
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -8192,6 +8205,8 @@ export class AcpHarnessView implements ContentView {
       lane.promptHistory.push(text);
       if (lane.promptHistory.length > 100) lane.promptHistory.shift();
     }
+    // spec 285: every lane feeds the one shared word history.
+    if (text) void logHarnessPrompt(text, lane.backendId, this.projectDir);
     lane.historyIndex = null;
     lane.historySavedDraft = null;
     const images = lane.stagedImages.slice();
@@ -12870,7 +12885,7 @@ export class AcpHarnessView implements ContentView {
     );
     const input = dictation
       ? this.dictationCtl.renderInput(dictation)
-      : `${esc(before)}<span class="acp-harness__caret">█</span>${esc(after)}`;
+      : `${esc(before)}<span class="acp-harness__caret">█</span>${this.renderGhost(lane)}${esc(after)}`;
     const dictationControl = this.dictationCtl.renderControl(lane, dictation);
     this.composerEl.innerHTML =
       `<div class="acp-harness__composer-chrome">` +
@@ -14938,8 +14953,11 @@ export class AcpHarnessView implements ContentView {
   }
 
   private setDraft(lane: HarnessLane, text: string, cursor: number): void {
+    const previousGhost = this.ghost?.laneId === lane.id ? this.ghost : null;
     lane.draft = text;
     lane.cursor = Math.max(0, Math.min(cursor, text.length));
+    this.ghost = previousGhost ? typeThrough(previousGhost, lane.draft, lane.cursor) : null;
+    this.requestGhost(lane);
     this.focus = 'text';
     // Reset the palette's transient state on every draft change. Index returns to
     // the top of the (re-)filtered list; an Esc-dismiss only suppresses the palette
@@ -14956,6 +14974,54 @@ export class AcpHarnessView implements ContentView {
     lane.historySavedDraft = null;
     this.renderComposer();
     this.pinStickyAfterComposerKey();
+  }
+
+  /** spec 285: ask the shared word model for the word ending at the cursor.
+   *  Latest-wins: a reply for an older draft/cursor is dropped. */
+  private requestGhost(lane: HarnessLane): void {
+    if (!wordAutocompleteEnabled() || !ghostRequestable(lane.draft, lane.cursor)) return;
+    const seq = ++this.ghostSeq;
+    const { draft, cursor } = lane;
+    void predictWordSuffix(draft.slice(0, cursor)).then((suffix) => {
+      if (seq !== this.ghostSeq || lane.draft !== draft || lane.cursor !== cursor) return;
+      this.ghost = suffix ? { laneId: lane.id, draft, cursor, suffix } : null;
+      if (this.activeLane() === lane) this.renderComposer();
+    });
+  }
+
+  /** The ghost suffix to show now, or null when any composer surface owns the keys. */
+  private visibleGhost(lane: HarnessLane): string | null {
+    const ghost = this.ghost;
+    if (!ghost || ghost.laneId !== lane.id || ghost.draft !== lane.draft || ghost.cursor !== lane.cursor) return null;
+    if (!wordAutocompleteEnabled() || this.focus !== 'text') return null;
+    if (this.dictationCtl.sessionFor(lane.id)) return null;
+    if (
+      slashPaletteVisible(lane)
+      || this.mentionPaletteVisibleFor(lane)
+      || hashPaletteVisible(lane.draft, lane.hashPaletteDismissed)
+      || this.verbPaletteVisibleFor(lane)
+    ) {
+      return null;
+    }
+    return ghost.suffix;
+  }
+
+  private renderGhost(lane: HarnessLane): string {
+    const suffix = this.visibleGhost(lane);
+    return suffix ? `<span class="acp-harness__ghost" aria-hidden="true">${esc(suffix)}</span>` : '';
+  }
+
+  /** spec 285 (OMP parity): Tab accepts + space, → accepts with no space. */
+  private handleGhostKey(e: KeyboardEvent, lane: HarnessLane): boolean {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
+    if (e.key !== 'Tab' && e.key !== 'ArrowRight') return false;
+    const suffix = this.visibleGhost(lane);
+    if (!suffix) return false;
+    e.preventDefault();
+    const next = acceptGhost(lane.draft, lane.cursor, suffix, e.key === 'Tab');
+    this.ghost = null;
+    this.setDraft(lane, next.draft, next.cursor);
+    return true;
   }
 
   private applyHistoryDraft(lane: HarnessLane, text: string): void {

@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (269)
+## Specs (272)
 
 | # | Spec |
 |---|------|
@@ -287,6 +287,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 282 | [ACP Harness Subagent Cards](./282-harness-subagent-cards.md) |
 | 283 | [ACP Harness SVG Fence Preview](./283-harness-svg-fence-preview.md) |
 | 284 | [Program Status Protocol (OSC 7501)](./284-program-status-osc7501.md) |
+| 285 | [ACP Harness Word Autocomplete (Ghost Text)](./285-harness-word-autocomplete.md) |
 
 ## ADRs (20)
 

@@ -13,6 +13,7 @@ pub mod music;
 pub mod native_host;
 pub mod pencil;
 mod process_metrics;
+mod prompt_history;
 mod pty;
 mod quick_search;
 pub mod remote_harness;
@@ -159,6 +160,7 @@ pub fn run() {
         .manage(Arc::new(usage_log::UsageOutbox::new()))
         .manage(Arc::new(typesafe::TypeSafeState::default()))
         .manage(workspace_state::WorkspaceState::default())
+        .manage(Arc::new(prompt_history::PromptHistoryStore::new()))
         // MusicEngine is initialized in .setup() because it needs app_handle
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
@@ -273,6 +275,8 @@ pub fn run() {
             commands::kill_shell,
             commands::get_default_shell,
             commands::query_sqlite,
+            prompt_history::harness_prompt_log,
+            prompt_history::harness_word_corpus,
             commands::set_ssh_remote_cwd,
             commands::detect_ssh_session,
             commands::clone_ssh_session,

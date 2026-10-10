@@ -97,6 +97,7 @@ import { ShaderEngine } from './shaders';
 import type { ShaderPreset } from './shaders';
 import type { KryptonConfig, TabsConfig, ShaderConfig, KeyboardOverlayConfig } from './config';
 import { applyComposerBloomSettings } from './acp/harness-composer-bloom';
+import { setWordAutocompleteEnabled } from './acp/word-predict';
 import { refreshSvgFencePreviews } from './acp/harness-svg-fence';
 import { DEFAULT_SHADER_CONFIG, loadConfig } from './config';
 import type { FrontendThemeEngine } from './theme';
@@ -708,6 +709,7 @@ export class Compositor {
       durationMs: config.acp_harness?.composer_bloom_ms,
       trail: config.acp_harness?.composer_bloom_trail,
     });
+    setWordAutocompleteEnabled(config.acp_harness?.word_autocomplete);
 
     // Extensions — enable/disable context extensions
     if (config.extensions) {

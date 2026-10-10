@@ -223,6 +223,13 @@ The compositor is a TypeScript module running in the webview that manages worksp
     `subscribe()`/`dispose()`; ones that own DOM expose `mount*()`. Orchestrator console, review, lane
     lifecycle and composer are still in the class. See `docs/275-harness-view-controllers.md`.
 
+    **Word autocomplete (spec 285).** `word-predict.ts` (main-thread client, ghost helpers),
+    `word-predict-model.ts` (pure unigram/bigram model over `Intl.Segmenter` words) and
+    `word-predict-worker.ts` (one shared Web Worker). The Rust `prompt_history.rs` owns Krypton's
+    first self-owned SQLite store, `~/.config/krypton/harness-prompt-history.db`, that every lane
+    writes on submit (`harness_prompt_log`). `harness_word_corpus` returns that store plus read-only
+    Claude/Codex/OMP prompt histories. See `docs/285-harness-word-autocomplete.md`.
+
     **Assistant response resources (spec 206).** ACP `resource_link` and embedded-resource
     chunks remain typed through `AcpClient` instead of being collapsed to empty text. At each
     assistant-message seal, the harness merges those blocks with explicit anchors from the final
@@ -705,6 +712,14 @@ Symptoms that point at this bug recurring:
 - Newly-opened terminal panes show pasted-in log lines on startup
 - Shell complains `Unknown command: '[…][app_lib::…][…]'` or `Unsupported use of '='`
 - Only the first one or two panes after launch are affected — once a master grabs fds 0/1/2, later `openpty()` calls land on fd ≥ 3
+
+### WebKit Shapes Each Text Node Alone (Platform Gotcha)
+
+WKWebView shapes every DOM `Text` node on its own. If a combining mark starts a new `Text` node, it loses its base letter: Thai tone marks and vowels (`่ ั ิ`) drift right and leave gaps (`ที่อนุมัติ` → `ที ่อนุมัต ิ`).
+
+`streaming-markdown` creates this split. Its default `add_text` appends one new `Text` node per call, and token-sized stream chunks often cut between a base letter and its marks.
+
+**Fix:** `harness-markdown.ts::makeSafeRenderer` extends the trailing `Text` node (`appendData`) instead of appending a sibling. Any incremental text writer must do the same, or `normalize()` the parent, so marks stay with their base. The xterm DOM renderer has a related letter-spacing issue, handled by `src/xterm-cluster-cells.ts`.
 
 ### Tauri Commands
 

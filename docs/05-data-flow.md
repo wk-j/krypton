@@ -356,6 +356,19 @@ d. The loop stops once the grip, the mouse and the button fades settle
       the marker so a later status tick cannot spawn again. Reduce Motion or
       `composer_bloom = false` skips the overlay. Deletes, cursor movement,
       programmatic draft rewrites, and dictation never arm it (spec 252).
+   d. Word autocomplete (spec 285): every `setDraft()` checks the current
+      ghost. If the user typed the ghost's next characters it shrinks;
+      otherwise it is dropped. When the cursor is at a line end right after a
+      word, the view posts `complete` to the shared word-predict worker. The
+      reply is applied only if the request sequence, draft, and cursor are
+      unchanged, and it renders as `.acp-harness__ghost` after the caret.
+      `Tab`/`→` accept it through `setDraft()` (no bloom). The worker is
+      spawned on first use and loaded from `harness_word_corpus` (Claude/Codex
+      JSONL, OMP `history.db`, and the Krypton store, read-only, newest 4 MB).
+   e. On submit, `harness_prompt_log` upserts the prompt into
+      `~/.config/krypton/harness-prompt-history.db` with the lane's
+      `backendId` and cwd. A new row is also posted to the worker as
+      `observe`, so a word typed in any lane is predictable at once in every lane.
 7. On Enter, the active lane's draft is sent through acp_prompt with a short
    lane-context stub: the lane's own label, the full lane roster, and a
    one-line nudge describing the krypton-harness-memory MCP tools. Memory
