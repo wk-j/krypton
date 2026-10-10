@@ -3118,6 +3118,35 @@
   margin-left: auto;
 }
 
+/* spec 283: while an assistant row streams, a ```svg fence collapses to a
+   one-line placeholder — half-written markup is unreadable and the card only
+   appears at seal. smd keeps writing into the hidden <code>; display:none keeps
+   that growth out of layout. Opacity-only pulse (compositor-friendly). */
+.acp-harness__msg-body--stream-live pre:has(> code.svg) {
+  margin: 0.5em 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.acp-harness__msg-body--stream-live pre:has(> code.svg) > code {
+  display: none;
+}
+
+.acp-harness__msg-body--stream-live pre:has(> code.svg)::before {
+  content: 'svg · drawing…';
+  display: block;
+  letter-spacing: 0.08em;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+  animation: acp-harness-streaming-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acp-harness__msg-body--stream-live pre:has(> code.svg)::before {
+    animation: none;
+  }
+}
+
 /* Deterministic references extracted from a sealed assistant message (spec 206). */
 .acp-harness__resources {
   display: flex;

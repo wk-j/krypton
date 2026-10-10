@@ -160,6 +160,11 @@ export function makeSafeRenderer(root: HTMLElement): smd.Default_Renderer {
   };
 }
 
+/** Marks the parser-owned body of a still-streaming assistant row. Unlike
+ *  `--stream-markdown` it is removed at seal; spec 283 collapses ```svg
+ *  fences to a placeholder only while it is present. */
+export const STREAMING_MARKDOWN_LIVE_CLASS = 'acp-harness__msg-body--stream-live';
+
 /** Spec 117 shared init: wipe body, set class, install fresh parser/renderer,
  *  reset lane fields. Called from renderTranscriptItem (first paint) and from
  *  updateStreamingAssistantMarkdownBody (body rebind / item swap / backtrack). */
@@ -175,6 +180,7 @@ export function initLaneStreamingMarkdown(
   // runtime class swap at seal time.
   body.classList.add('acp-harness__msg-body--markdown');
   body.classList.add('acp-harness__msg-body--stream-markdown');
+  body.classList.add(STREAMING_MARKDOWN_LIVE_CLASS);
   delete body.dataset.pretext;
   delete body.dataset.rawText;
   delete body.dataset.rowId;

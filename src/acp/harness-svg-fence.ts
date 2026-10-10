@@ -46,8 +46,8 @@ const PALETTE_SOURCES: Record<SvgPaletteKey, { prop: string; rgb?: true }> = {
   c6: { prop: '--krypton-ansi-1' }, // variable — red
 };
 
-// <img> cannot load web fonts; name installed monospace faces (Krypton's voice).
-const SVG_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+// Last resort when neither --agent-font nor --krypton-font-family is set.
+const SVG_FONT_FALLBACK = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 const SVG_DATA_URL_PREFIX = 'data:image/svg+xml;charset=utf-8,';
 const VAR_RE = /var\(\s*--([\w-]+)\s*(?:,\s*((?:[^()]|\([^()]*\))*))?\)/g;
 const ROOT_RE = /<(?:[\w.-]+:)?svg(?=[\s/>])[^>]*>/;
@@ -70,12 +70,29 @@ export function readSvgPalette(root: Element = document.documentElement): SvgPal
   return palette;
 }
 
+/** The harness view's font stack (`--agent-font` → `--krypton-font-family`,
+ *  i.e. `[font] family` from krypton.toml), resolved like acp-harness.css does.
+ *  Configured families are installed fonts, so an <img>-loaded SVG can use them. */
+export function readSvgFontFamily(root: Element = document.documentElement): string {
+  const style = getComputedStyle(root);
+  return style.getPropertyValue('--agent-font').trim()
+    || style.getPropertyValue('--krypton-font-family').trim()
+    || SVG_FONT_FALLBACK;
+}
+
+function escapeXmlText(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+}
+
 /** Resolve palette var() references and give the root the attributes an
  *  <img>-loaded SVG needs: `xmlns` (without it the image does not render),
- *  `xmlns:xlink` when used, and default `color` / `fill` / `font-family`.
+ *  `xmlns:xlink` when used, and default `color` / `fill`.
  *  `fill` departs from OMP: SVG's initial fill is black, so unstyled text and
- *  shapes would vanish on a dark theme; inheriting `fg` keeps them legible. */
-export function themeSvgSource(source: string, palette: SvgPalette): string {
+ *  shapes would vanish on a dark theme; inheriting `fg` keeps them legible.
+ *  Text always renders in `fontFamily`: an injected `!important` rule beats
+ *  author font-family attributes and plain inline styles, so figures match the
+ *  harness transcript font. */
+export function themeSvgSource(source: string, palette: SvgPalette, fontFamily: string): string {
   const fg = palette.fg ?? 'currentColor';
   const themed = source.replace(VAR_RE, (_match: string, name: string, fallback: string | undefined) => {
     const resolved = isPaletteKey(name) ? palette[name] : undefined;
@@ -88,8 +105,9 @@ export function themeSvgSource(source: string, palette: SvgPalette): string {
     if (usesXlink && !/\sxmlns:xlink\s*=/.test(tag)) extra += ' xmlns:xlink="http://www.w3.org/1999/xlink"';
     if (!/\scolor\s*=/.test(tag)) extra += ` color="${fg}"`;
     if (!/\sfill\s*=/.test(tag)) extra += ` fill="${fg}"`;
-    if (!/\sfont-family\s*=/.test(tag)) extra += ` font-family="${SVG_FONT_FAMILY}"`;
-    return extra ? tag.replace(/^<[^\s/>]+/, `$&${extra}`) : tag;
+    const open = extra ? tag.replace(/^<[^\s/>]+/, `$&${extra}`) : tag;
+    if (open.endsWith('/>')) return open;
+    return `${open}<style>*{font-family:${escapeXmlText(fontFamily)}!important}</style>`;
   });
 }
 
@@ -142,7 +160,7 @@ export function svgBaseSize(source: string): { width: number; height: number } {
 
 /** spec 283: what the image viewer needs to zoom a fence — the themed data URL and its base size. */
 export function svgViewerSource(source: string): { src: string; width: number; height: number } {
-  const themed = themeSvgSource(source, readSvgPalette());
+  const themed = themeSvgSource(source, readSvgPalette(), readSvgFontFamily());
   return { src: SVG_DATA_URL_PREFIX + encodeURIComponent(themed), ...svgBaseSize(themed) };
 }
 
@@ -226,6 +244,7 @@ export function decorateSvgFences(body: HTMLElement, item: HarnessTranscriptItem
   const previous = item.svgFences ?? [];
   const entries: SvgFenceEntry[] = [];
   let palette: SvgPalette | null = null;
+  let fontFamily: string | null = null;
   for (const code of Array.from(body.querySelectorAll<HTMLElement>('pre > code'))) {
     // smd puts the whole info string in `class` ("svg"); marked-highlight uses "hljs language-svg".
     if (!code.classList.contains('svg') && !code.classList.contains('language-svg')) continue;
@@ -237,7 +256,8 @@ export function decorateSvgFences(body: HTMLElement, item: HarnessTranscriptItem
     if (!card) {
       if (source.length > SVG_FENCE_MAX_CHARS) continue;
       palette ??= readSvgPalette();
-      const themed = themeSvgSource(source, palette);
+      fontFamily ??= readSvgFontFamily();
+      const themed = themeSvgSource(source, palette, fontFamily);
       if (!isRenderableSvg(themed)) continue;
       card = buildCard(pre, themed, index);
     }
@@ -256,9 +276,12 @@ export function refreshSvgFencePreviews(root: ParentNode): void {
   const cards = root.querySelectorAll<HTMLElement>(`.${CARD}`);
   if (cards.length === 0) return;
   const palette = readSvgPalette();
+  const fontFamily = readSvgFontFamily();
   for (const card of Array.from(cards)) {
     const code = card.querySelector<HTMLElement>(':scope > pre > code');
     const img = card.querySelector<HTMLImageElement>(`:scope > .${CARD}-preview > img`);
-    if (code && img) setPreview(img, themeSvgSource(fenceSourceText(code.textContent ?? ''), palette));
+    if (code && img) {
+      setPreview(img, themeSvgSource(fenceSourceText(code.textContent ?? ''), palette, fontFamily));
+    }
   }
 }

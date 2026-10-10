@@ -27,7 +27,7 @@ Before encoding, the source is **themed** the way OMP does it: every `var(--name
 
 A one-line **per-turn guidance** tells every lane that ` ```svg ` renders and names the palette variables. The palette names are the same as OMP's, so one SVG renders correctly in both the OMP TUI and Krypton.
 
-Each card is a new target type in the existing `f` open-hint mode: `<label>` zooms the preview in the image viewer (or returns a Source card to Preview), `Shift+<label>` copies the source. Fences render only at seal, not while streaming. This is frontend only.
+Each card is a new target type in the existing `f` open-hint mode: `<label>` zooms the preview in the image viewer (or returns a Source card to Preview), `Shift+<label>` copies the source. Fences render only at seal; while streaming, each one collapses to an `svg · drawing…` placeholder. This is frontend only.
 
 ## Research
 
@@ -123,17 +123,20 @@ The names match OMP. Values are read from computed `document.documentElement` st
 export const SVG_FENCE_MAX_BYTES = 256 * 1024;
 export const SVG_FENCE_GUIDANCE: string; // the per-turn preamble line
 export function readSvgPalette(): SvgPalette;
-export function themeSvgSource(source: string, palette: SvgPalette): string;
+export function readSvgFontFamily(): string; // --agent-font → --krypton-font-family
+export function themeSvgSource(source: string, palette: SvgPalette, fontFamily: string): string;
 export function decorateSvgFences(body: HTMLElement, item: HarnessTranscriptItem): void;
 export function refreshSvgFencePreviews(root: ParentNode): void;
 ```
 
-`themeSvgSource` replaces `var(--name[, fallback])` with `palette[name]`, then the fallback, then `palette.fg`. On the root `<svg …>` tag, each attribute below is added only when absent: `color="<fg>"`, `font-family="ui-monospace, SFMono-Regular, Menlo, monospace"` (Krypton's mono voice; system fonts only, since `<img>` cannot load web fonts), `xmlns`, and `xmlns:xlink` when the source uses `xlink:`.
+`themeSvgSource` replaces `var(--name[, fallback])` with `palette[name]`, then the fallback, then `palette.fg`. On the root `<svg …>` tag, each attribute below is added only when absent: `color="<fg>"`, `xmlns`, and `xmlns:xlink` when the source uses `xlink:`.
+
+Text always uses the harness transcript font. `readSvgFontFamily` resolves it the same way `acp-harness.css` does: `--agent-font`, then `--krypton-font-family` (the `[font] family` list from `krypton.toml`), then `ui-monospace, SFMono-Regular, Menlo, monospace`. `themeSvgSource` injects `<style>*{font-family:<font>!important}</style>` as the first child of the root (XML-escaped; skipped for a self-closing root). The `!important` author rule beats font-family attributes and plain inline styles, so an agent's own `font-family` never wins. The configured families are installed fonts, which an `<img>` SVG can use; only web fonts are blocked. Reload Config runs `applyConfig` (which sets `--krypton-font-family`) before `updateTerminalThemes` → `refreshSvgFencePreviews`, so visible cards pick up a font change in place.
 
 `decorateSvgFences` is idempotent: it skips any `pre` already inside a card. For each `pre > code` whose classList has `svg` or `language-svg`:
 
 1. `source = code.textContent` minus one trailing `\n`. If it is over `SVG_FENCE_MAX_BYTES`, the block stays code.
-2. `themed = themeSvgSource(source, readSvgPalette())`.
+2. `themed = themeSvgSource(source, readSvgPalette(), readSvgFontFamily())`.
 3. `DOMParser().parseFromString(themed, 'image/svg+xml')`. If the root is not `<svg>` or the result contains a `parsererror`, the block stays code. This is validation only and nothing parsed is inserted. Read the aspect ratio from `viewBox`, or from numeric `width`/`height`.
 4. Wrap the existing `<pre>` in the card. The `<pre>` is kept, so the source pane and its highlighting are exactly as rendered. Set `img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(themed)`.
 5. Rebuild `item.svgFences` with one entry per card, carrying `showSource`/`hintLabel` over from the previous entry with the same `index`. Apply `--source` and the hint badge.
@@ -148,19 +151,22 @@ export function refreshSvgFencePreviews(root: ParentNode): void;
 
 ### Streaming
 
-Fences render only at seal; while streaming they stay plain code. This is a deliberate decision:
+Fences render only at seal. While streaming, each fence collapses to a one-line `svg · drawing…` placeholder instead of growing plain code; half-written markup is unreadable and can run to hundreds of lines. Rendering only at seal is deliberate:
 
 - smd keeps live references to the `pre`/`code` nodes until `parser_end`, so it cannot wrap them mid-stream.
 - A 200ms re-encode and decode loop on the main thread works against the harness streaming budget (spec 114).
 - A sealed row is rebuilt from cache anyway.
 
+The placeholder is CSS only. `initLaneStreamingMarkdown` adds `acp-harness__msg-body--stream-live` to the parser-owned body, and `sealAssistantStreamingMarkdown` branch A removes it right after `parser_end`. While the class is present, `pre:has(> code.svg)` hides its `<code>` with `display: none`, so smd still writes into the hidden node but the text never reaches layout. The `pre` shows a pulsing `::before` label instead; the pulse is opacity-only and is disabled under `prefers-reduced-motion`. Once the class is gone, a valid fence becomes a card and an invalid one shows as plain code. The persistent `--stream-markdown` class cannot carry this state because it stays on the body after seal.
+
 ### Data Flow
 
 ```
 0. Each turn: renderPromptMemoryPacket includes SVG_FENCE_GUIDANCE
-1. Agent streams a ```svg fence → smd shows plain code (P1/P2, untouched)
-2. Seal branch A: cache markdownHtml (pure) → decorateSvgFences(live body)
-   → scan → rail                                    [decoration never cached]
+1. Agent streams a ```svg fence → body has --stream-live → fence collapses to
+   an "svg · drawing…" placeholder (CSS only; smd writes into hidden <code>)
+2. Seal branch A: parser_end → drop --stream-live → cache markdownHtml (pure)
+   → decorateSvgFences(live body) → scan → rail     [decoration never cached]
 3. Any later render (cold load, label change, toggle): innerHTML = markdownHtml
    → resolveLocalImageSrcs → decorateSvgFences → annotations → scan → rail
 4. Theme switch / Reload Config: ThemeEngine.apply → Compositor.updateTerminalThemes
@@ -217,7 +223,7 @@ Styling:
 - **Missing `xmlns`:** injected by `themeSvgSource`, so the `<img>` renders.
 - **Unknown `var(--x)`:** the fallback is used, otherwise `fg`. `currentColor` resolves to the injected root `color`.
 - **Prolog before `<svg>` (e.g. `<?xml …?>`, comments):** DOMParser accepts it, and the root regex targets the first `<svg` tag.
-- **External images, fonts, or CSS in the SVG:** blocked by the `<img>` mode, which renders without them. Text uses system fonts.
+- **External images, fonts, or CSS in the SVG:** blocked by the `<img>` mode, which renders without them. Text uses the configured harness font (installed fonts only).
 - **`<script>` / `on*` / `<foreignObject>`:** inert inside `<img>`. The source pane shows them as escaped code.
 - **Copy:** copies the original source, not the themed one, so it stays portable.
 - **Multiple fences in one row:** indexed in document order, one label each.

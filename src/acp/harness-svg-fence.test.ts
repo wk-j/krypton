@@ -5,6 +5,7 @@ import { transcriptRenderSignature } from './harness-transcript-render';
 import type { HarnessTranscriptItem, SvgFenceEntry } from './harness-view-types';
 
 const PALETTE: SvgPalette = { fg: '#d8e8d8', accent: '#0cf', c1: '#f0f', success: 'rgb(0, 200, 80)' };
+const FONT = "'Mononoki Nerd Font Mono', 'Fira Code', monospace";
 
 describe('themeSvgSource', () => {
   it('resolves palette names, then the var() fallback, then fg', () => {
@@ -12,6 +13,7 @@ describe('themeSvgSource', () => {
       '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="var(--accent)" stroke="var(--c1, red)"/>'
         + '<path fill="var(--warning, #fa0)"/><text fill="var(--nope)"/></svg>',
       PALETTE,
+      FONT,
     );
     expect(out).toContain('fill="#0cf"');
     expect(out).toContain('stroke="#f0f"'); // palette wins over the fallback
@@ -20,17 +22,17 @@ describe('themeSvgSource', () => {
   });
 
   it('keeps a fallback that itself contains parentheses', () => {
-    const out = themeSvgSource('<svg><rect fill="var(--muted, rgb(1, 2, 3))"/></svg>', PALETTE);
+    const out = themeSvgSource('<svg><rect fill="var(--muted, rgb(1, 2, 3))"/></svg>', PALETTE, FONT);
     expect(out).toContain('fill="rgb(1, 2, 3)"');
   });
 
   it('does not resolve inherited object keys as palette names', () => {
-    const out = themeSvgSource('<svg><rect fill="var(--constructor)"/></svg>', PALETTE);
+    const out = themeSvgSource('<svg><rect fill="var(--constructor)"/></svg>', PALETTE, FONT);
     expect(out).toContain('fill="#d8e8d8"');
   });
 
-  it('adds xmlns, color, fill and font-family to a bare root — <img> SVG without xmlns does not render', () => {
-    const out = themeSvgSource('<svg viewBox="0 0 10 10"><circle r="4"/></svg>', PALETTE);
+  it('adds xmlns, color and fill to a bare root — <img> SVG without xmlns does not render', () => {
+    const out = themeSvgSource('<svg viewBox="0 0 10 10"><circle r="4"/></svg>', PALETTE, FONT);
     const root = /<svg[^>]*>/.exec(out)?.[0] ?? '';
     expect(root).toContain('xmlns="http://www.w3.org/2000/svg"');
     expect(root).toContain('color="#d8e8d8"');
@@ -42,6 +44,7 @@ describe('themeSvgSource', () => {
     const out = themeSvgSource(
       '<svg xmlns="http://www.w3.org/2000/svg" color="red" fill="none" font-family="serif"><use xlink:href="#a"/></svg>',
       PALETTE,
+      FONT,
     );
     const root = /<svg[^>]*>/.exec(out)?.[0] ?? '';
     expect(root.match(/xmlns="/g)).toHaveLength(1);
@@ -51,8 +54,29 @@ describe('themeSvgSource', () => {
     expect(root).toContain('xmlns:xlink="http://www.w3.org/1999/xlink"');
   });
 
+  it('forces the harness font over author font-family attributes and inline styles', () => {
+    const out = themeSvgSource(
+      '<svg font-family="serif"><text style="font-family: Arial">a</text></svg>',
+      PALETTE,
+      FONT,
+    );
+    expect(out).toContain(`<style>*{font-family:${FONT}!important}</style>`);
+    // The rule must sit inside the root, or it never applies.
+    expect(out.indexOf('<style>')).toBeGreaterThan(out.indexOf('<svg'));
+  });
+
+  it('escapes XML-special characters in the font so the SVG still parses', () => {
+    const out = themeSvgSource('<svg><text>a</text></svg>', PALETTE, "'A&B <Mono>', monospace");
+    expect(out).toContain("font-family:'A&amp;B &lt;Mono>', monospace!important");
+  });
+
+  it('injects no style into a self-closing root', () => {
+    const out = themeSvgSource('<svg viewBox="0 0 1 1"/>', PALETTE, FONT);
+    expect(out).not.toContain('<style>');
+  });
+
   it('touches only the first <svg> tag, after a prolog', () => {
-    const out = themeSvgSource('<?xml version="1.0"?>\n<svg><svg x="1"/></svg>', {});
+    const out = themeSvgSource('<?xml version="1.0"?>\n<svg><svg x="1"/></svg>', {}, FONT);
     expect(out.match(/xmlns=/g)).toHaveLength(1);
     expect(out).toContain('color="currentColor"'); // empty palette: fg → currentColor
   });

@@ -328,6 +328,7 @@ import {
   rerenderAssistantMarkdownWithMarked,
   resolveLocalImageSrcs,
   sealStreamingTextBody,
+  STREAMING_MARKDOWN_LIVE_CLASS,
   updateStreamingAssistantMarkdownBody,
   updateStreamingTextBody,
 } from './harness-markdown';
@@ -14131,6 +14132,9 @@ export class AcpHarnessView implements ContentView {
       } catch (e) {
         console.warn('[spec117] parser_end during seal failed', e);
       }
+      // spec 283: the row is no longer live — un-collapse ```svg fences so
+      // decorateSvgFences can card them (an invalid one shows as plain code).
+      body.classList.remove(STREAMING_MARKDOWN_LIVE_CLASS);
       // Spec 117 table fix: if the message contains a GFM table, re-render the
       // sealed body with marked (smd's single-pass table parser is brittle);
       // otherwise keep smd's output. Either branch resolves agent-emitted local
