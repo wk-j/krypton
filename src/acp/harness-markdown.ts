@@ -137,7 +137,16 @@ export function makeSafeRenderer(root: HTMLElement): smd.Default_Renderer {
     data: base.data,
     add_token: base.add_token,
     end_token: base.end_token,
-    add_text: base.add_text,
+    // smd's default creates one Text node per call, and streamed chunks often
+    // split a base letter from its combining marks (Thai ่ ั ิ, Latin e+U+0301).
+    // WebKit shapes each Text node alone, so the marks lose their anchor and
+    // render displaced with a gap. Extend the trailing Text node instead.
+    add_text: (data, text) => {
+      const parent = data.nodes[data.index];
+      const last = parent.lastChild;
+      if (last?.nodeType === Node.TEXT_NODE) (last as Text).appendData(text);
+      else parent.appendChild(document.createTextNode(text));
+    },
     set_attr: (data, type, value) => {
       if (type === smd.HREF) {
         base.set_attr(data, type, sanitizeHref(value));
