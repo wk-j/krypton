@@ -3,6 +3,7 @@
 
 import type { PaneContentType, PaneId, ProgressState, TabId, WindowId } from './types';
 import type { TypeSafeMetricsSnapshot } from './typesafe-metrics';
+import type { ProgramStatusSummary } from './program-status';
 
 export interface ViewAddress {
   viewId: string;
@@ -40,6 +41,12 @@ export interface SignalValueMap {
   // workspace footer reflects a directory change immediately instead of waiting
   // for a focus change or poll tick. `cwd` is the absolute path.
   'view:cwd': { cwd: string };
+  // spec 284: OSC 7501 program status — the view's summary changed (null = no
+  // records left). Published with the view's address, or SYSTEM_SOURCE when the
+  // view was disposed and no longer resolves; `viewId` identifies it either
+  // way. Consumers re-read live state from the compositor (pull), so this is
+  // a change trigger as much as a value.
+  'view:program-status': { viewId: string; summary: ProgramStatusSummary | null };
   'system:focus-change': { windowId: WindowId | null };
   'system:relayout': Record<string, never>;
   // spec 128: open attention-triage item count, published globally by each ACP

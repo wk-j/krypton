@@ -55,6 +55,7 @@ const STAGE_WINDOW_KEYS: KeyEntry[] = groupEntries('Windows', [
   { key: 'h/k', label: 'Previous Stage' },
   { key: 'j/l', label: 'Next Stage' },
   { key: '1-9', label: 'Activate Stage' },
+  { key: '!', label: 'Next Needing You' },
   { key: 'f', label: 'Cycle Layout' },
   { key: 'r', label: 'Resize Stage', effect: 'important' },
   { key: 'm', label: 'Move Stage', effect: 'important' },
@@ -70,6 +71,7 @@ const WHEEL_WINDOW_KEYS: KeyEntry[] = groupEntries('Windows', [
   { key: 'h/k', label: 'Previous Window' },
   { key: 'j/l', label: 'Next Window' },
   { key: '1-9', label: 'Jump To Window' },
+  { key: '!', label: 'Next Needing You' },
   { key: 'f', label: 'Cycle Layout' },
   { key: 's', label: 'Reorder Wheel', effect: 'important' },
   { key: 'z', label: 'Maximize', effect: 'important' },
@@ -84,6 +86,7 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
     { key: 'k', label: 'Focus Up' },
     { key: 'l', label: 'Focus Right' },
     { key: '1-9', label: 'Focus By Index' },
+    { key: '!', label: 'Next Needing You' },
     { key: 'f', label: 'Cycle Layout' },
     { key: 'r', label: 'Resize Mode', effect: 'important' },  // Shift+R = Review Board (AI group)
     { key: 'm', label: 'Move Mode', effect: 'important' },

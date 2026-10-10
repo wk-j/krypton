@@ -934,6 +934,16 @@ export class CommandPalette {
       category: 'Window',
       execute: () => c.openTermctrlMonitor(),
     });
+    // spec 284: OSC 7501 program status
+    this.register({
+      id: 'program-status.next',
+      label: 'Focus Next Program Needing You',
+      category: 'Window',
+      keybinding: 'Leader !',
+      execute: () => {
+        if (!c.focusNextProgramAttention()) c.notifications?.info('no program needs you', { label: 'STATUS' });
+      },
+    });
 
     // ── Hurl Client ──
     this.register({

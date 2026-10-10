@@ -24,6 +24,7 @@
 | FR-VT-007 | The system shall support bracketed paste mode. | Should |
 | FR-VT-008 | The system shall support mouse reporting (X10, SGR, UTF-8 modes). | Should |
 | FR-VT-009 | The system shall support ConEmu `OSC 9;4` progress bar sequences (states: remove, normal, error, indeterminate, paused) and display a native GUI progress indicator integrated into the window chrome. | Should |
+| FR-VT-010 | The system shall support the Program Status Protocol (`OSC 7501`, rev 0.3) in terminal panes: answer the `OSC 7501;?` query, keep per-pane records under the spec's validation, limit and lifetime rules, show blocked/error/done/working on tab and window chrome, count panes needing the user in the workspace footer, and focus the next one with `Leader !`. See `docs/284-program-status-osc7501.md`. | Should |
 
 ## 3.3 Rendering & Display
 

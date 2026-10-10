@@ -814,6 +814,14 @@ export class InputRouter {
         this.toNormal();
         break;
 
+      // ! — spec 284: focus the next pane whose program needs you (OSC 7501)
+      case '!':
+        if (!this.compositor.focusNextProgramAttention()) {
+          this.compositor.notifications?.info('no program needs you', { label: 'STATUS' });
+        }
+        this.toNormal();
+        break;
+
       // New window
       case 'n':
         this.compositor.createWindow().then(() => this.toNormal());

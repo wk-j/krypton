@@ -8,6 +8,7 @@ import {
   formatTypeSafeTooltip,
   type TypeSafeMetricsSnapshot,
 } from './typesafe-metrics';
+import { programStatusSentence } from './program-status';
 import type { ViewBus } from './view-bus';
 import type {
   AttentionTier,
@@ -268,6 +269,9 @@ export class WorkspaceFooter {
    * publishing harness instance. Counts are summed and tiers max'd for display
    * so every lane's attention collects in this one place. */
   private attentionBySource = new Map<string, { count: number; tier: AttentionTier | null }>();
+  /** spec 284: OSC 7501 — live panes whose program is blocked / errored / done.
+   *  Read from the compositor on every render; never cached here. */
+  private programStatusEl: HTMLElement;
   private reviewsEl: HTMLElement;
   /** spec 146: recorded #review rounds per publishing harness instance, summed
    * for the neutral depth indicator (distinct from the attention gauge). */
@@ -344,6 +348,10 @@ export class WorkspaceFooter {
     this.attentionEl.className =
       'krypton-workspace-footer__segment krypton-workspace-footer__segment--attention';
     this.attentionEl.hidden = true;
+    this.programStatusEl = document.createElement('span');
+    this.programStatusEl.className =
+      'krypton-workspace-footer__segment krypton-workspace-footer__segment--program-status';
+    this.programStatusEl.hidden = true;
     // spec 146: neutral review-count depth indicator (review quality matrix),
     // published by the ACP harness via `review:quality`. Distinct from the
     // attention gauge: it means "N rounds recorded — press to inspect", never
@@ -391,6 +399,7 @@ export class WorkspaceFooter {
       this.priorityEl,
       this.reviewsEl,
       this.attentionEl,
+      this.programStatusEl,
       this.hintEl,
       this.musicEl,
     );
@@ -447,6 +456,13 @@ export class WorkspaceFooter {
       if (openCount > 0) this.attentionBySource.set(sourceId, { count: openCount, tier: maxReversibility });
       else this.attentionBySource.delete(sourceId);
       this.renderAttention();
+    });
+
+    // spec 284: global (not focus-gated) — a pane needing you matters wherever
+    // you are. The focused pane's message also feeds the center detail line.
+    this.bus.onSignal({ kind: 'view:program-status' }, (s) => {
+      this.renderProgramStatus();
+      if (s.value.viewId === this.compositor.getFocusedViewId()) this.refresh('bus');
     });
 
     // spec 146: global (not focus-gated) review-count depth indicator.
@@ -626,6 +642,7 @@ export class WorkspaceFooter {
       this.throughputSegment(),
       this.progressSegment(),
       this.stateSegment(),
+      this.programStatusSegment(summary.viewId),
     ].filter((el): el is HTMLElement => el !== null);
     this.centerEl.replaceChildren(...segments);
   }
@@ -639,6 +656,7 @@ export class WorkspaceFooter {
     this.renderPriority();
     this.renderReviews();
     this.renderAttention();
+    this.renderProgramStatus();
     this.renderMusic();
   }
 
@@ -983,6 +1001,44 @@ export class WorkspaceFooter {
     el.title = `state: ${this.busState.state}`;
     el.setAttribute('aria-label', el.title);
     return el;
+  }
+
+  /** spec 284: the focused pane's OSC 7501 summary as `app: message`. Detail
+   *  density only; null when the pane has no records or is idle. */
+  private programStatusSegment(viewId: string | null): HTMLElement | null {
+    const status = viewId ? this.compositor.programStatus.summary(viewId) : null;
+    if (!status || status.state === 'idle') return null;
+    const sentence = programStatusSentence(status);
+    const el = this.segment(status.app ? `${status.app}: ${sentence}` : sentence, 'p3 detail program');
+    el.dataset.state = status.state;
+    el.title = `program status: ${status.state} — ${sentence}`;
+    el.setAttribute('aria-label', el.title);
+    return el;
+  }
+
+  /** spec 284: `▲n ✕n ✓n` — panes blocked / errored / done, each part shown
+   *  only when non-zero, the whole segment hidden when all are zero. */
+  private renderProgramStatus(): void {
+    const { blocked, error, done } = this.compositor.programStatusCounts();
+    const parts: HTMLElement[] = [];
+    for (const [state, glyph, n] of [['blocked', '▲', blocked], ['error', '✕', error], ['done', '✓', done]] as const) {
+      if (n === 0) continue;
+      const part = document.createElement('span');
+      part.className = 'krypton-workspace-footer__program-count';
+      part.dataset.state = state;
+      part.textContent = `${glyph}${n}`;
+      parts.push(part);
+    }
+    if (parts.length === 0) {
+      this.programStatusEl.hidden = true;
+      this.programStatusEl.replaceChildren();
+      this.programStatusEl.removeAttribute('title');
+      return;
+    }
+    this.programStatusEl.hidden = false;
+    this.programStatusEl.replaceChildren(...parts);
+    this.programStatusEl.title =
+      `programs needing you — blocked ${blocked}, error ${error}, done ${done} · Leader ! to jump`;
   }
 
   private segment(text: string, modifiers: string): HTMLElement {

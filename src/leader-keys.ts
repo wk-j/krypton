@@ -4,7 +4,7 @@ import type { LeaderKeyId, LeaderKeySpec } from './types';
 
 const GLOBAL_LEADER_KEY_IDS = [
   'h', 'H', 'j', 'J', 'k', 'K', 'l', 'L',
-  '1', '2', '3', '4', '5', '6', '7', '8', '9',
+  '1', '2', '3', '4', '5', '6', '7', '8', '9', '!',
   'n', 'N', 'x', 'X', 'p', 'P', 'f', 'F', 'z', 'Z',
   'r', 'R', 's', 'S', 'm', 'M', 'v', 'V', 't', 'T', 'w', 'W',
   '[', ']', '\\', '-',

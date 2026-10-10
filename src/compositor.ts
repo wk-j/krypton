@@ -107,6 +107,16 @@ import type { NotificationController } from './notification';
 import { installPerspectiveMouseFix } from './perspective-fix';
 import { HeaderScope } from './header-scope';
 import { ProgressGauge } from './progress-gauge';
+import {
+  PROGRAM_STATUS_QUERY_REPLY,
+  ProgramStatusStore,
+  isAttentionState,
+  parseProgramStatus,
+  programStatePriority,
+  programStatusLabel,
+  programStatusSentence,
+  type ProgramStatusSummary,
+} from './program-status';
 import { probeRemoteCwd, type SshConnectionInfo } from './ssh-session';
 import { WebviewContentView } from './webview-view';
 import { usageStore, type ProviderUsageSummary, type UsageProvider } from './usage-store';
@@ -460,6 +470,14 @@ export class Compositor {
 
   // ─── Progress Tracking (OSC 9;4) ─────────────────────────────────
   private progressGauge!: ProgressGauge;
+
+  // ─── Program Status (OSC 7501, spec 284) ──────────────────────────
+  /** Per-pane OSC 7501 records. Every terminal pane reports into it; chrome,
+   *  footer and `Leader !` read it back. */
+  readonly programStatus = new ProgramStatusStore((viewId, prev, next) =>
+    this.handleProgramStatusChange(viewId, prev, next));
+  /** Last rail announcement per view, for the 5 s per-pane rate limit. */
+  private programStatusAnnouncedAt = new Map<string, number>();
 
   // ─── Quick Terminal State ─────────────────────────────────────────
   private qtConfig: QuickTerminalConfig = { ...DEFAULT_QUICK_TERMINAL_CONFIG };
@@ -896,6 +914,9 @@ export class Compositor {
       this.notifController.registerOscHandlers(terminal);
     }
 
+    const viewId = crypto.randomUUID();
+    this.wireProgramStatus(terminal, viewId);
+
     // Attach shader if enabled — use short delay to let WebGL addon render first frame
     let shaderInstance = null;
     if (this.shaderConfig.enabled && this.shaderConfig.preset !== 'none') {
@@ -912,7 +933,7 @@ export class Compositor {
 
     return {
       id: paneId,
-      viewId: crypto.randomUUID(),
+      viewId,
       sessionId: null,
       terminal,
       fitAddon,
@@ -921,6 +942,35 @@ export class Compositor {
       contentView: null,
       pendingInput: [],
     };
+  }
+
+  /**
+   * spec 284: OSC 7501 program status for one terminal pane. Parsing rides the
+   * xterm.js VT parser (split chunks, RIS visible); the feature-detection reply
+   * goes out through `onData` like xterm's own DA replies, so it stays ordered
+   * with a following `CSI c` and is buffered if the PTY is not spawned yet.
+   */
+  private wireProgramStatus(terminal: Terminal, viewId: string): void {
+    terminal.parser.registerOscHandler(7501, (data: string) => {
+      const report = parseProgramStatus(data);
+      if (report?.type === 'query') terminal.input(PROGRAM_STATUS_QUERY_REPLY, false);
+      else if (report) this.programStatus.apply(viewId, report);
+      return true;
+    });
+    // OSC 133;A — a new prompt began, so the previous command's working/blocked
+    // records are over. Observed only; never consumed.
+    terminal.parser.registerOscHandler(133, (data: string) => {
+      if (data === 'A' || data.startsWith('A;')) this.programStatus.dropTransient(viewId);
+      return false;
+    });
+    // RIS (ESC c) removes every record; return false so xterm still resets.
+    terminal.parser.registerEscHandler({ final: 'c' }, () => {
+      this.programStatus.reset(viewId);
+      return false;
+    });
+    // Typing into the pane means its done/error results have been seen. onKey
+    // only fires for keys xterm handles, so Leader chords never acknowledge.
+    terminal.onKey(() => this.programStatus.acknowledge(viewId));
   }
 
   /** Copy-on-select: copy terminal selection to clipboard when text is selected */
@@ -1211,19 +1261,9 @@ export class Compositor {
       });
     });
 
-    bus.onIntent({ kind: 'pane:focus' }, (intent) => {
-      const info = this.findPaneInfoByViewId(intent.payload.viewId);
-      if (!info) return { consumed: false };
-      this.focusWindow(info.win.id);
-      const idx = info.win.tabs.indexOf(info.tab);
-      if (idx >= 0) info.win.activeTabIndex = idx;
-      info.tab.focusedPaneId = info.pane.id;
-      this.updateTabBar(info.win);
-      this.showActiveTab(info.win);
-      this.updatePaneFocusIndicator(info.tab);
-      this.focusPaneSurface(info.pane);
-      return { consumed: true };
-    });
+    bus.onIntent({ kind: 'pane:focus' }, (intent) => ({
+      consumed: this.focusPaneByViewId(intent.payload.viewId),
+    }));
 
     bus.onIntent({ kind: 'pane:close' }, (intent) => {
       const info = this.findPaneInfoByViewId(intent.payload.viewId);
@@ -1231,6 +1271,120 @@ export class Compositor {
       this.closePaneInTab(info.tab, info.pane.id, info.win);
       return { consumed: true };
     });
+  }
+
+  /** Focus any pane by viewId: its window, its tab, then the pane itself. */
+  private focusPaneByViewId(viewId: string): boolean {
+    const info = this.findPaneInfoByViewId(viewId);
+    if (!info) return false;
+    this.focusWindow(info.win.id);
+    const idx = info.win.tabs.indexOf(info.tab);
+    if (idx >= 0) info.win.activeTabIndex = idx;
+    info.tab.focusedPaneId = info.pane.id;
+    this.updateTabBar(info.win);
+    this.showActiveTab(info.win);
+    this.updatePaneFocusIndicator(info.tab);
+    this.focusPaneSurface(info.pane);
+    return true;
+  }
+
+  // ─── Program Status (OSC 7501, spec 284) ──────────────────────────
+
+  /** `Leader !` — focus the next pane whose program needs the user (blocked,
+   *  then error, then done). Returns false when nothing needs attention. */
+  focusNextProgramAttention(): boolean {
+    const target = this.programStatus.nextAttention(this.getFocusedViewId());
+    return target !== null && this.focusPaneByViewId(target);
+  }
+
+  /** Live panes per attention state (views, not records). Disposed views are
+   *  already gone from the store, so this never counts a closed pane. */
+  programStatusCounts(): { blocked: number; error: number; done: number } {
+    const counts = { blocked: 0, error: 0, done: 0 };
+    for (const win of this.windows.values()) {
+      for (const tab of win.tabs) {
+        for (const pane of this.collectPanes(tab.paneTree)) {
+          const state = this.programStatus.summary(pane.viewId)?.state;
+          if (state === 'blocked' || state === 'error' || state === 'done') counts[state]++;
+        }
+      }
+    }
+    return counts;
+  }
+
+  private handleProgramStatusChange(
+    viewId: string,
+    prev: ProgramStatusSummary | null,
+    next: ProgramStatusSummary | null,
+  ): void {
+    const info = this.findPaneInfoByViewId(viewId);
+    this.bus?.publishSignal({
+      kind: 'view:program-status',
+      source: this.addressOf(viewId) ?? SYSTEM_SOURCE,
+      value: { viewId, summary: next },
+    });
+    if (info) {
+      this.paintProgramStatus(info.win);
+    } else {
+      for (const win of this.windows.values()) this.paintProgramStatus(win);
+    }
+    if (next === null) {
+      this.programStatusAnnouncedAt.delete(viewId);
+      return;
+    }
+    if (!info || !isAttentionState(next.state) || prev?.state === next.state) return;
+    if (viewId === this.getFocusedViewId() || !this.notifController) return;
+    const now = Date.now();
+    if (now - (this.programStatusAnnouncedAt.get(viewId) ?? 0) < 5000) return;
+    this.programStatusAnnouncedAt.set(viewId, now);
+    // Always name the source pane (spec § Security): a program must not be
+    // able to pose as one running in another terminal.
+    const where = `W${this.windowIds.indexOf(info.win.id) + 1}·${info.tab.title}`;
+    this.notifController.show({
+      message: `${where} — ${programStatusSentence(next)}`,
+      level: next.state === 'blocked' ? 'warning' : next.state === 'error' ? 'error' : 'success',
+      label: (next.app ?? 'status').toUpperCase(),
+    });
+  }
+
+  /** Paint the tab dots, window accent and titlebar chip of one window from
+   *  the store. Tabs and the window show their highest-priority pane. */
+  private paintProgramStatus(win: KryptonWindow): void {
+    let winTop: ProgramStatusSummary | null = null;
+    for (const tab of win.tabs) {
+      let tabTop: ProgramStatusSummary | null = null;
+      for (const pane of this.collectPanes(tab.paneTree)) {
+        const s = this.programStatus.summary(pane.viewId);
+        if (s && (tabTop === null || programStatePriority(s.state) > programStatePriority(tabTop.state))) {
+          tabTop = s;
+        }
+      }
+      if (tabTop && tabTop.state !== 'idle') tab.element.dataset.programStatus = tabTop.state;
+      else delete tab.element.dataset.programStatus;
+      if (tabTop && (winTop === null || programStatePriority(tabTop.state) > programStatePriority(winTop.state))) {
+        winTop = tabTop;
+      }
+    }
+
+    const label = winTop ? programStatusLabel(winTop) : null;
+    let chip = win.element.querySelector<HTMLElement>('.krypton-window__program-status');
+    if (!winTop || label === null) {
+      delete win.element.dataset.programStatus;
+      if (chip) chip.hidden = true;
+      return;
+    }
+    win.element.dataset.programStatus = winTop.state;
+    if (!chip) {
+      const ptyStatus = this.findPtyStatus(win.element);
+      if (!ptyStatus) return;
+      chip = document.createElement('span');
+      chip.className = 'krypton-window__program-status';
+      ptyStatus.before(chip);
+    }
+    chip.hidden = false;
+    chip.dataset.state = winTop.state;
+    chip.textContent = label;
+    chip.title = programStatusSentence(winTop);
   }
 
   /** Re-fit a single pane by ID (triggers addon-fit + resize_pty). */
@@ -1338,6 +1492,7 @@ export class Compositor {
     if (node.type === 'leaf') {
       // Clean up any active extensions on this pane
       this.extensions.onPaneDestroyed(node.pane.id);
+      this.programStatus.dispose(node.pane.viewId);
       if (node.pane.shaderInstance) {
         this.shaderEngine.detach(node.pane.shaderInstance);
         node.pane.shaderInstance = null;
@@ -1449,6 +1604,7 @@ export class Compositor {
       win.tabBarElement.appendChild(tabEl);
     }
     this.updateTabBar(win);
+    this.paintProgramStatus(win);
   }
 
   /** Switch the visible tab content for a window.
@@ -6077,6 +6233,7 @@ export class Compositor {
     // Find and dispose the pane
     const pane = this.findPaneInTree(tab.paneTree, paneId);
     if (pane) {
+      this.programStatus.dispose(pane.viewId);
       if (pane.contentView) pane.contentView.dispose();
       pane.terminal?.dispose();
       if (pane.sessionId !== null) {

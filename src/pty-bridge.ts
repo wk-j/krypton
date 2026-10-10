@@ -28,6 +28,9 @@ export interface PtyBridgeDeps {
   now?: () => number;
   /** Forward a complete OSC 7 report to backend-owned SSH CWD tracking. */
   onCwd?: (sessionId: SessionId, cwd: string, hostname: string) => void;
+  /** spec 284: the session's foreground went from a program back to the shell
+   *  (`process-changed` non-null → null) — the reporting program has exited. */
+  onShellForeground?: (viewId: string) => void;
 }
 
 const THROUGHPUT_INTERVAL_MS = 200; // 5 Hz
@@ -143,9 +146,13 @@ export async function startPtyBridge(
   });
 
   const offProcess = await listen<ProcessChangedEvent>('process-changed', (event) => {
-    const { session_id: sid, process } = event.payload;
+    const { session_id: sid, process, previous } = event.payload;
     const addr = resolver.addressFromSession(sid);
-    if (!addr || !process) return;
+    if (!addr) return;
+    if (!process) {
+      if (previous !== null) deps.onShellForeground?.(addr.viewId);
+      return;
+    }
     bus.publishSignal({
       kind: 'view:metrics',
       source: addr,

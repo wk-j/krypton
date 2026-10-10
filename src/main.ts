@@ -103,6 +103,7 @@ async function main(): Promise<void> {
         void invoke('set_ssh_remote_cwd', { sessionId, cwd, hostname })
           .catch(() => { /* ignore — ssh feature may be disabled */ });
       },
+      onShellForeground: (viewId) => compositor.programStatus.dropTransient(viewId),
     });
   } catch (e) {
     console.error('[Krypton] Failed to start PTY bridge:', e);

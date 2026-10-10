@@ -207,6 +207,30 @@
   color: rgba(var(--krypton-special-rgb, 199, 125, 255), 0.85);
 }
 
+/* spec 284: OSC 7501 — panes blocked / errored / done (`▲1 ✕1 ✓2`). Global and
+   never clipped, like the attention gauge; each count carries its own colour. */
+.krypton-workspace-footer__segment--program-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 0.6em;
+  overflow: visible;
+}
+.krypton-workspace-footer__segment--program-status[hidden] {
+  display: none;
+}
+.krypton-workspace-footer__program-count[data-state='blocked'],
+.krypton-workspace-footer__segment--program[data-state='blocked'] {
+  color: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.92);
+}
+.krypton-workspace-footer__program-count[data-state='error'],
+.krypton-workspace-footer__segment--program[data-state='error'] {
+  color: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.92);
+}
+.krypton-workspace-footer__program-count[data-state='done'],
+.krypton-workspace-footer__segment--program[data-state='done'] {
+  color: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.92);
+}
+
 /* spec 128/138: attention-triage gauge — a quiet chip that only shows when the
    ACP harness has items awaiting the human's judgement. As the single ambient
    pull, it must never be clipped: it keeps its intrinsic width and opts out of

@@ -38,6 +38,58 @@
     0 0 var(--krypton-focused-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.22);
 }
 
+/* ─── Program status (OSC 7501, spec 284) ───
+   The compositor sets data-program-status on the window (highest-priority pane
+   across its tabs) and on each tab. blocked / error / done recolor the border,
+   glow and status dot so an unfocused window reads at a glance; working only
+   pulses the dot. A dedicated var (not --krypton-window-accent-rgb) keeps the
+   other tabs' dots on the window's own accent. Placed before the
+   window_border = false block so that preference still wins. */
+.krypton-window[data-program-status='blocked'] { --krypton-program-status-rgb: var(--krypton-warning-rgb, 232, 197, 71); }
+.krypton-window[data-program-status='error']   { --krypton-program-status-rgb: var(--krypton-danger-rgb, 255, 58, 92); }
+.krypton-window[data-program-status='done']    { --krypton-program-status-rgb: var(--krypton-success-rgb, 57, 255, 127); }
+
+.krypton-window:is([data-program-status='blocked'], [data-program-status='error'], [data-program-status='done']) {
+  border-color: rgba(var(--krypton-program-status-rgb), 0.85);
+  box-shadow:
+    0 0 6px rgba(var(--krypton-program-status-rgb), 0.45),
+    0 0 var(--krypton-focused-shadow-blur, 20px) rgba(var(--krypton-program-status-rgb), 0.22);
+}
+
+.krypton-window:is([data-program-status='blocked'], [data-program-status='error'], [data-program-status='done']) .krypton-window__status-dot {
+  background: rgb(var(--krypton-program-status-rgb));
+}
+
+.krypton-window[data-program-status='working'] .krypton-window__status-dot {
+  animation: krypton-program-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes krypton-program-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.7); }
+}
+
+/* Titlebar chip — window's top summary: `CARGO · 62%`, `TERRAFORM · PERMISSION`. */
+.krypton-window__program-status {
+  flex: 0 0 auto;
+  margin-right: 8px;
+  padding: 0 6px;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: rgb(var(--krypton-program-status-rgb, var(--krypton-window-accent-rgb, 0, 200, 255)));
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  background: rgba(var(--krypton-program-status-rgb, var(--krypton-window-accent-rgb, 0, 200, 255)), 0.12);
+}
+
+.krypton-window__program-status[hidden] {
+  display: none;
+}
+
 /* [visual] window_border = false — hide the window outline. Transparent color
    (not width 0) keeps the border box, so window geometry and xterm fit are
    unchanged when toggled via config hot-reload. The accent glow shadows go with
@@ -699,6 +751,15 @@
 
 .krypton-tab--active .krypton-tab__dot {
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
+}
+
+/* spec 284: per-tab program status (highest-priority pane in the tab). */
+.krypton-tab[data-program-status='blocked'] .krypton-tab__dot { background: rgb(var(--krypton-warning-rgb, 232, 197, 71)); }
+.krypton-tab[data-program-status='error'] .krypton-tab__dot   { background: rgb(var(--krypton-danger-rgb, 255, 58, 92)); }
+.krypton-tab[data-program-status='done'] .krypton-tab__dot    { background: rgb(var(--krypton-success-rgb, 57, 255, 127)); }
+.krypton-tab[data-program-status='working'] .krypton-tab__dot {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
+  animation: krypton-program-pulse 1.5s ease-in-out infinite;
 }
 
 /* ─── Tab Title ─── */
