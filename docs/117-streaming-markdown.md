@@ -665,6 +665,34 @@ the per-token streaming hot path, so the 16 ms budget is unaffected. Live
 streaming still shows the (briefly broken) smd table until it self-corrects at
 seal. Covered by `hasMarkdownTable` unit tests in `acp-harness-view.test.ts`.
 
+### Revision: keep smd tables, swap only on a dropped table
+
+The blanket swap rebuilt the whole message body (`innerHTML`) at turn end for
+every message containing a table. Every node was recreated, code blocks gained
+hljs colouring, and the scroll container's height changed, so the row visibly
+repainted at turn complete. With the pinned `streaming-markdown@0.2.15`, the
+chunk-boundary desync no longer reproduces. A browser probe split
+table-bearing messages at every single boundary, at pairs of boundaries,
+char by char, and into 400 random chunkings. Each run rendered the same tables
+as a one-shot parse, including alignment colons, inline markup, an empty header
+cell, a table directly under a paragraph, and a table at EOF.
+
+Seal now calls `streamingMarkdownDroppedTable(body, text)` (`harness-markdown.ts`).
+It returns true only when `hasMarkdownTable(text)` matches and the smd body
+holds fewer `<table>` elements than `md.lexer(text)` yields. Table tokens are
+counted at the top level and inside list items and blockquotes. Only that case
+re-renders with marked. In practice that means a GFM table without outer pipes
+(`h1 | h2` / `--- | ---`), which smd does not recognise.
+
+The guard is used at three call sites:
+- Branch A rewrites the live body via `rerenderAssistantMarkdownWithMarked`.
+- Branch B now parses with smd first and applies the same guard, so background
+  and foreground seals produce the same HTML.
+- `sealLiveAssistMarkdown` (spec 208).
+
+Consequence: table-bearing messages now seal like every other message.
+Fenced code stays un-highlighted, which matches the V1 note above.
+
 ## Resources
 
 - [streaming-markdown (thetarnav, GitHub)](https://github.com/thetarnav/streaming-markdown) — selected library; readme confirms API + optimistic model.

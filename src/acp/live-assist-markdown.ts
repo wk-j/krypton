@@ -8,13 +8,13 @@ import * as smd from 'streaming-markdown';
 
 import {
   agentLinkOpenAction,
-  hasMarkdownTable,
   makeSafeRenderer,
   md,
   rerenderAssistantMarkdownWithMarked,
   resolveLocalImageSrcs,
   sanitizeHref,
   sanitizeSrc,
+  streamingMarkdownDroppedTable,
 } from './harness-markdown';
 
 export { agentLinkOpenAction };
@@ -75,7 +75,7 @@ export function sealLiveAssistMarkdown(
   } catch (error) {
     console.warn('[live-assist] parser_end failed', error);
   }
-  if (hasMarkdownTable(text)) {
+  if (streamingMarkdownDroppedTable(body, text)) {
     rerenderAssistantMarkdownWithMarked(body, text, cwd);
   } else {
     resolveImages(body, cwd);

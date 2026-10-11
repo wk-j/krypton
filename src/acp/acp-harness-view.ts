@@ -322,13 +322,13 @@ import {
 import { ensureHarnessSymbolDefs } from './harness-icons';
 import {
   agentLinkOpenAction,
-  hasMarkdownTable,
   makeSafeRenderer,
   md,
   rerenderAssistantMarkdownWithMarked,
   resolveLocalImageSrcs,
   sealStreamingTextBody,
   STREAMING_MARKDOWN_LIVE_CLASS,
+  streamingMarkdownDroppedTable,
   updateStreamingAssistantMarkdownBody,
   updateStreamingTextBody,
 } from './harness-markdown';
@@ -14137,13 +14137,12 @@ export class AcpHarnessView implements ContentView {
       // them (an invalid one shows as plain code).
       body.classList.remove(STREAMING_MARKDOWN_LIVE_CLASS);
       clearLiveSvgFences(body);
-      // Spec 117 table fix: if the message contains a GFM table, re-render the
-      // sealed body with marked (smd's single-pass table parser is brittle);
-      // otherwise keep smd's output. Either branch resolves agent-emitted local
-      // image paths on the LIVE body before caching — a sealed foreground row is
-      // not re-rendered (renderSignature is stabilised below), so this is the
-      // only chance to fix its <img> srcs.
-      if (hasMarkdownTable(item.text)) {
+      // Spec 117 table guard: keep smd's DOM unless it dropped a table marked
+      // would render, then re-render with marked. Either branch resolves
+      // agent-emitted local image paths on the LIVE body before caching — a
+      // sealed foreground row is not re-rendered (renderSignature is stabilised
+      // below), so this is the only chance to fix its <img> srcs.
+      if (streamingMarkdownDroppedTable(body, item.text)) {
         rerenderAssistantMarkdownWithMarked(
           body,
           item.text,
@@ -14171,14 +14170,13 @@ export class AcpHarnessView implements ContentView {
       // Branch B — cold-cache offscreen capture for background-only streams.
       const offscreen = document.createElement('div');
       try {
-        if (hasMarkdownTable(item.text)) {
-          // Spec 117 table fix: marked renders the table correctly; smd would
-          // break it. No provenance node exists on this fresh offscreen div.
+        const parser = smd.parser(makeSafeRenderer(offscreen));
+        smd.parser_write(parser, item.text);
+        smd.parser_end(parser);
+        // Spec 117 table guard: same output as branch A. No provenance node
+        // exists on this fresh offscreen div.
+        if (streamingMarkdownDroppedTable(offscreen, item.text)) {
           offscreen.innerHTML = md.parse(item.text, { async: false }) as string;
-        } else {
-          const parser = smd.parser(makeSafeRenderer(offscreen));
-          smd.parser_write(parser, item.text);
-          smd.parser_end(parser);
         }
         if (!this.remoteRuntimeId) resolveLocalImageSrcs(offscreen, this.projectDir);
         item.markdownHtml = offscreen.innerHTML;

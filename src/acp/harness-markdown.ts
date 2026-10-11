@@ -5,7 +5,7 @@
 // assistant rows, and the URL allowlist that keeps agent-authored markdown from
 // navigating the single app webview.
 
-import { Marked } from 'marked';
+import { Marked, type Token } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
@@ -228,12 +228,13 @@ export function updateStreamingAssistantMarkdownBody(
   }
 }
 
-// Spec 117 table fix: streaming-markdown is a single-pass parser whose table
-// state machine desyncs if a stream chunk boundary lands mid-table — the rest of
-// the table then renders as literal `| … |` text and that broken DOM is frozen at
-// seal. marked is a full two-pass GFM parser that renders tables correctly, so at
-// seal we re-render with marked — but ONLY when the message actually contains a
-// table, so ordinary messages keep the cheaper smd output and pay no extra cost.
+// Spec 117 table guard. The seal used to swap every table-bearing message to
+// marked because an older streaming-markdown desynced its table state when a
+// chunk boundary landed mid-table. smd 0.2.15 renders GFM tables identically at
+// every chunk boundary, so a blanket swap only rebuilt the whole message body at
+// turn end (a visible repaint). Seal now keeps smd's DOM and falls back to marked
+// only when smd dropped a table marked would render (e.g. a table without outer
+// pipes, which smd does not recognise).
 // The guard matches a GFM delimiter row (the |---|---| line under the header)
 // with at least two columns.
 const MARKDOWN_TABLE_DELIMITER =
@@ -241,6 +242,31 @@ const MARKDOWN_TABLE_DELIMITER =
 
 export function hasMarkdownTable(text: string): boolean {
   return MARKDOWN_TABLE_DELIMITER.test(text);
+}
+
+function countTableTokens(tokens: readonly Token[]): number {
+  let count = 0;
+  for (const token of tokens) {
+    if (token.type === 'table') count++;
+    else if (token.type === 'list') {
+      for (const listItem of token.items) count += countTableTokens(listItem.tokens);
+    } else if (token.type === 'blockquote' && token.tokens) count += countTableTokens(token.tokens);
+  }
+  return count;
+}
+
+/** True when the smd-rendered `body` holds fewer tables than marked finds in
+ *  `text` — the only case where the seal must re-render with marked. */
+export function streamingMarkdownDroppedTable(body: HTMLElement, text: string): boolean {
+  if (!hasMarkdownTable(text)) return false;
+  let expected: number;
+  try {
+    expected = countTableTokens(md.lexer(text));
+  } catch (e) {
+    console.warn('[spec117] table guard lex failed; keeping stream output', e);
+    return false;
+  }
+  return body.querySelectorAll('table').length < expected;
 }
 
 // Re-render assistant markdown into `body` with marked (robust GFM tables),
