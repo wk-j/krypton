@@ -281,7 +281,7 @@ Mouse is secondary. The toolbar `Source` and `Copy` buttons carry `data-svg-togg
 
 Styling:
 
-- Card: full 1px `--krypton-border-color` border, transparent background.
+- Card: full 1px `--krypton-border-color` border, transparent background, `max-width: 760px` so a `viewBox`-only figure does not stretch across a wide lane. The `--source` and `--broken` states lift the cap (`max-width: none`) so long source lines keep the full width. The streaming `svg · drawing…` placeholder uses the same 760px cap, so the card does not jump in width when it replaces the placeholder.
 - Toolbar: muted mono label style.
 - Preview pane: `max-height: 480px`; the image uses `max-width: 100%` and `object-fit: contain`.
 - Banned: corner brackets, a left accent rail, and `backdrop-filter`.
