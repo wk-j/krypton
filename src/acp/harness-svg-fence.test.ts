@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { fenceSourceText, svgBaseSize, svgFrame, themeSvgSource, type SvgPalette } from './harness-svg-fence';
+import { closeSvgPrefix, fenceSourceText, svgBaseSize, svgFrame, themeSvgSource, type SvgPalette } from './harness-svg-fence';
 import { transcriptRenderSignature } from './harness-transcript-render';
 import type { HarnessTranscriptItem, SvgFenceEntry } from './harness-view-types';
 
@@ -114,6 +114,41 @@ describe('fenceSourceText', () => {
     expect(fenceSourceText('<svg/>\n')).toBe('<svg/>');
     expect(fenceSourceText('<svg/>\n\n')).toBe('<svg/>\n');
     expect(fenceSourceText('<svg/>')).toBe('<svg/>');
+  });
+});
+
+describe('closeSvgPrefix', () => {
+  it('is null until the <svg> start tag is complete', () => {
+    expect(closeSvgPrefix('')).toBeNull();
+    expect(closeSvgPrefix('<?xml version="1.0"?>\n<!-- fig -->\n')).toBeNull();
+    expect(closeSvgPrefix('<svg viewBox="0 0 10')).toBeNull();
+    expect(closeSvgPrefix('<svg viewBox="0 0 10 10">')).toBe('<svg viewBox="0 0 10 10"></svg>');
+  });
+
+  it('cuts an unfinished tag and closes open elements innermost first', () => {
+    expect(closeSvgPrefix('<svg><g fill="red"><rect width="2"/><circle cx="5'))
+      .toBe('<svg><g fill="red"><rect width="2"/></g></svg>');
+    expect(closeSvgPrefix('<svg><g><text x="1">Hel')).toBe('<svg><g><text x="1">Hel</text></g></svg>');
+    expect(closeSvgPrefix('<svg><g></g><g></')).toBe('<svg><g></g><g></g></svg>');
+  });
+
+  it('drops a dangling entity but keeps a finished one', () => {
+    expect(closeSvgPrefix('<svg><text>a &am')).toBe('<svg><text>a </text></svg>');
+    expect(closeSvgPrefix('<svg><text>a &amp; b')).toBe('<svg><text>a &amp; b</text></svg>');
+  });
+
+  it('does not end a tag on a quoted > or inside comments and CDATA', () => {
+    expect(closeSvgPrefix('<svg><text data-x="a>b')).toBe('<svg></svg>');
+    expect(closeSvgPrefix('<svg><!-- <g> --><rect/>')).toBe('<svg><!-- <g> --><rect/></svg>');
+    expect(closeSvgPrefix('<svg><style><![CDATA[ a > b')).toBe('<svg><style></style></svg>');
+    expect(closeSvgPrefix('<svg><!-- open <g>')).toBe('<svg></svg>');
+  });
+
+  it('accepts a namespaced root and returns a complete document unchanged', () => {
+    expect(closeSvgPrefix('<s:svg xmlns:s="http://www.w3.org/2000/svg"><s:g>'))
+      .toBe('<s:svg xmlns:s="http://www.w3.org/2000/svg"><s:g></s:g></s:svg>');
+    const done = '<svg viewBox="0 0 4 4"><g><rect width="1"/></g><text>x &lt; y</text></svg>\n';
+    expect(closeSvgPrefix(done)).toBe(done);
   });
 });
 

@@ -14,6 +14,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 
 import type { HarnessLane, HarnessTranscriptItem } from './harness-view-types';
 import { collapseThoughtBlankLines } from './harness-format';
+import { updateLiveSvgFences } from './harness-svg-fence';
 
 export const md = new Marked(
   markedHighlight({
@@ -161,8 +162,8 @@ export function makeSafeRenderer(root: HTMLElement): smd.Default_Renderer {
 }
 
 /** Marks the parser-owned body of a still-streaming assistant row. Unlike
- *  `--stream-markdown` it is removed at seal; spec 283 collapses ```svg
- *  fences to a placeholder only while it is present. */
+ *  `--stream-markdown` it is removed at seal; spec 283 collapses a ```svg
+ *  fence to a placeholder only while it is present, until its live card draws. */
 export const STREAMING_MARKDOWN_LIVE_CLASS = 'acp-harness__msg-body--stream-live';
 
 /** Spec 117 shared init: wipe body, set class, install fresh parser/renderer,
@@ -222,6 +223,8 @@ export function updateStreamingAssistantMarkdownBody(
       console.warn('[spec117] parser_write failed', e);
     }
     item.streamingMarkdownWritten = item.text.length;
+    // spec 283 rev 2: draw ```svg fences in as they stream.
+    updateLiveSvgFences(body);
   }
 }
 

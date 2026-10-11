@@ -3119,9 +3119,10 @@
 }
 
 /* spec 283: while an assistant row streams, a ```svg fence collapses to a
-   one-line placeholder — half-written markup is unreadable and the card only
-   appears at seal. smd keeps writing into the hidden <code>; display:none keeps
-   that growth out of layout. Opacity-only pulse (compositor-friendly). */
+   one-line placeholder until its first live frame decodes (rev 2), then the
+   live card drawn before it takes over. smd keeps writing into the hidden
+   <code>; display:none keeps that growth out of layout. Opacity-only pulse
+   (compositor-friendly). */
 .acp-harness__msg-body--stream-live pre:has(> code.svg) {
   margin: 0.5em 0;
   padding: 6px 10px;
@@ -3141,8 +3142,20 @@
   animation: acp-harness-streaming-pulse 1.4s ease-in-out infinite;
 }
 
+/* Same box as a toolbar button, so seal's bar swap does not shift the figure. */
+.acp-harness__svg-card--live .acp-harness__svg-card-kind {
+  padding: 1px 0;
+  border: 1px solid transparent;
+  animation: acp-harness-streaming-pulse 1.4s ease-in-out infinite;
+}
+
+.acp-harness__msg-body--stream-live .acp-harness__svg-card--live + pre:has(> code.svg) {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .acp-harness__msg-body--stream-live pre:has(> code.svg)::before {
+  .acp-harness__msg-body--stream-live pre:has(> code.svg)::before,
+  .acp-harness__svg-card--live .acp-harness__svg-card-kind {
     animation: none;
   }
 }

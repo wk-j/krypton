@@ -16,6 +16,9 @@ import type { HarnessTranscriptItem, SvgFenceEntry } from './harness-view-types'
 /** Fence sources longer than this stay plain code. */
 export const SVG_FENCE_MAX_CHARS = 256 * 1024;
 
+/** Revision 2: minimum gap between live repaints of a streaming fence (OMP parity). */
+export const SVG_LIVE_INTERVAL_MS = 200;
+
 /** Per-turn preamble line: tells every lane that ```svg renders here. */
 export const SVG_FENCE_GUIDANCE =
   'SVG figures: when a diagram, chart, or UI mockup explains something better than prose, you may include it as a ```svg fenced block — Krypton renders it inline as an image (the user can toggle to source). Keep it self-contained: scripts, external images, and web fonts are blocked. Give the root a viewBox. Use theme colors via var(--fg), var(--muted), var(--border), var(--accent), var(--success), var(--warning), var(--error), var(--surface), var(--c1)…var(--c6), optionally with a fallback such as var(--accent, #0cf).';
@@ -53,6 +56,7 @@ const VAR_RE = /var\(\s*--([\w-]+)\s*(?:,\s*((?:[^()]|\([^()]*\))*))?\)/g;
 const ROOT_RE = /<(?:[\w.-]+:)?svg(?=[\s/>])[^>]*>/;
 
 const CARD = 'acp-harness__svg-card';
+const LIVE_CARD = `${CARD}--live`;
 
 function isPaletteKey(name: string): name is SvgPaletteKey {
   return (SVG_PALETTE_KEYS as readonly string[]).includes(name);
@@ -175,13 +179,13 @@ function isRenderableSvg(themed: string): boolean {
   return root.localName === 'svg' && doc.getElementsByTagName('parsererror').length === 0;
 }
 
-function setPreview(img: HTMLImageElement, themed: string): void {
+function setPreview(img: HTMLImageElement, themed: string, src = SVG_DATA_URL_PREFIX + encodeURIComponent(themed)): void {
   const frame = svgFrame(themed);
   img.style.aspectRatio = frame.ratio ?? '';
   if (frame.width) img.width = Math.round(frame.width);
   else img.removeAttribute('width');
   img.classList.toggle('acp-harness__svg-card-img--fill', frame.width === null);
-  img.src = SVG_DATA_URL_PREFIX + encodeURIComponent(themed);
+  img.src = src;
 }
 
 function button(kind: 'toggle' | 'copy', index: number, text: string): HTMLButtonElement {
@@ -284,4 +288,187 @@ export function refreshSvgFencePreviews(root: ParentNode): void {
       setPreview(img, themeSvgSource(fenceSourceText(code.textContent ?? ''), palette, fontFamily));
     }
   }
+}
+
+/** End (exclusive) of the markup token opening at `source[start] === '<'`, or -1 while unfinished. */
+function markupTokenEnd(source: string, start: number): number {
+  const after = (marker: string, from: number): number => {
+    const at = source.indexOf(marker, from);
+    return at < 0 ? -1 : at + marker.length;
+  };
+  if (source.startsWith('<!--', start)) return after('-->', start + 4);
+  if (source.startsWith('<![CDATA[', start)) return after(']]>', start + 9);
+  if (source.startsWith('<?', start)) return after('?>', start + 2);
+  let quote: string | null = null;
+  let inSubset = false; // <!DOCTYPE … [ … ]>
+  for (let i = start + 1; i < source.length; i++) {
+    const ch = source[i];
+    if (quote !== null) {
+      if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === '[' && source[start + 1] === '!') {
+      inSubset = true;
+    } else if (ch === ']') {
+      inSubset = false;
+    } else if (ch === '>' && !inSubset) {
+      return i + 1;
+    }
+  }
+  return -1;
+}
+
+/** Revision 2 (port of OMP's streaming SVG close): turn a half-streamed SVG into
+ *  a well-formed document. Cuts at the end of the last complete tag (dropping a
+ *  dangling `&entity`), then closes every still-open element innermost first.
+ *  Trailing text is kept, so `<text>` content draws in as it streams.
+ *  Null until an `<svg` start tag is complete. A complete document is returned unchanged. */
+export function closeSvgPrefix(source: string): string | null {
+  const open: string[] = [];
+  let sawRoot = false;
+  let cut = 0;
+  let pos = 0;
+  for (;;) {
+    const lt = source.indexOf('<', pos);
+    if (lt < 0) {
+      const amp = source.lastIndexOf('&');
+      cut = amp >= pos && !source.includes(';', amp) ? amp : source.length;
+      break;
+    }
+    cut = lt;
+    const end = markupTokenEnd(source, lt);
+    if (end < 0) break;
+    if (source.startsWith('</', lt)) {
+      const name = source.slice(lt + 2, end - 1).trim();
+      const at = open.lastIndexOf(name);
+      if (at >= 0) open.length = at;
+    } else if (source[lt + 1] !== '!' && source[lt + 1] !== '?') {
+      const name = /^<([^\s/>]+)/.exec(source.slice(lt, end))?.[1];
+      if (name !== undefined) {
+        if (source[end - 2] !== '/') open.push(name);
+        if (name === 'svg' || name.endsWith(':svg')) sawRoot = true;
+      }
+    }
+    pos = end;
+    cut = end;
+  }
+  if (!sawRoot) return null;
+  let closed = source.slice(0, cut);
+  for (let i = open.length - 1; i >= 0; i--) closed += `</${open[i]}>`;
+  return closed;
+}
+
+interface LiveSvg {
+  /** The live card, inserted before the fence's <pre> on the first decoded frame. */
+  card: HTMLElement | null;
+  /** Fence text at the last tick — unchanged text skips all work. */
+  source: string;
+  /** Themed document last sent to decode; a stale decode never paints. */
+  requested: string;
+  lastTickAt: number;
+  timer: number | null;
+}
+
+/** Keyed by smd's live <code>; a rebuilt body drops its nodes and so its entries. */
+const liveSvgs = new WeakMap<HTMLElement, LiveSvg>();
+
+function buildLiveCard(): HTMLElement {
+  const card = document.createElement('figure');
+  card.className = `${CARD} ${LIVE_CARD}`;
+  const bar = document.createElement('div');
+  bar.className = `${CARD}-bar`;
+  const kind = document.createElement('span');
+  kind.className = `${CARD}-kind`;
+  kind.textContent = 'svg · drawing…';
+  bar.appendChild(kind);
+  const preview = document.createElement('div');
+  preview.className = `${CARD}-preview`;
+  const img = document.createElement('img');
+  img.alt = 'SVG preview (drawing)';
+  img.decoding = 'async';
+  preview.appendChild(img);
+  card.append(bar, preview);
+  return card;
+}
+
+function paintLiveSvg(code: HTMLElement, state: LiveSvg): void {
+  state.lastTickAt = performance.now();
+  const source = code.textContent ?? '';
+  if (source === state.source) return;
+  state.source = source;
+  if (source.length > SVG_FENCE_MAX_CHARS) {
+    state.card?.remove();
+    state.card = null;
+    state.requested = '';
+    return;
+  }
+  const closed = closeSvgPrefix(source);
+  if (closed === null) return;
+  // Palette read per tick: a mid-stream theme switch heals on the next frame.
+  const themed = themeSvgSource(closed, readSvgPalette(), readSvgFontFamily());
+  if (themed === state.requested) return;
+  state.requested = themed;
+  const src = SVG_DATA_URL_PREFIX + encodeURIComponent(themed);
+  // Decode off-DOM first: the visible <img> swaps only to a ready frame (no
+  // blank flash), and a prefix the engine refuses keeps the last good frame.
+  const probe = new Image();
+  probe.src = src;
+  probe.decode().then(() => {
+    if (state.requested !== themed || liveSvgs.get(code) !== state) return;
+    const pre = code.parentElement;
+    if (!pre || !code.isConnected) {
+      // Lane switched away mid-decode: forget the frame so the next tick on a
+      // re-attached body paints it instead of skipping unchanged text.
+      state.source = '';
+      state.requested = '';
+      return;
+    }
+    const card = state.card ?? buildLiveCard();
+    if (card.nextElementSibling !== pre) pre.before(card);
+    state.card = card;
+    const img = card.querySelector<HTMLImageElement>('img');
+    if (img) setPreview(img, themed, src);
+  }, () => undefined);
+}
+
+function tickLiveSvg(code: HTMLElement, state: LiveSvg): void {
+  if (state.timer !== null) return;
+  const wait = state.lastTickAt + SVG_LIVE_INTERVAL_MS - performance.now();
+  if (wait <= 0) {
+    paintLiveSvg(code, state);
+    return;
+  }
+  // Trailing tick: a stream that pauses mid-figure still paints its latest prefix.
+  state.timer = window.setTimeout(() => {
+    state.timer = null;
+    if (liveSvgs.get(code) === state && code.isConnected) paintLiveSvg(code, state);
+  }, wait);
+}
+
+/** Revision 2: progressively preview every ```svg fence in a streaming smd
+ *  body. Called after each parser_write. The live card is a sibling inserted
+ *  before the fence's <pre>: smd only ever appends into the nodes it holds,
+ *  so the parser-owned <pre>/<code> are never wrapped or moved. */
+export function updateLiveSvgFences(body: HTMLElement): void {
+  // Live bodies are always smd: the whole info string is the class ("svg").
+  for (const code of Array.from(body.querySelectorAll<HTMLElement>('pre > code.svg'))) {
+    let state = liveSvgs.get(code);
+    if (!state) {
+      state = { card: null, source: '', requested: '', lastTickAt: Number.NEGATIVE_INFINITY, timer: null };
+      liveSvgs.set(code, state);
+    }
+    tickLiveSvg(code, state);
+  }
+}
+
+/** Revision 2: at seal, drop live cards and pending ticks before the body is
+ *  captured into `markdownHtml`; decorateSvgFences then builds the real card. */
+export function clearLiveSvgFences(body: HTMLElement): void {
+  for (const code of Array.from(body.querySelectorAll<HTMLElement>('pre > code.svg'))) {
+    const state = liveSvgs.get(code);
+    if (!state) continue;
+    clearTimeout(state.timer ?? undefined);
+    liveSvgs.delete(code);
+  }
+  for (const card of Array.from(body.querySelectorAll<HTMLElement>(`.${LIVE_CARD}`))) card.remove();
 }

@@ -4,6 +4,74 @@
 > Date: 2026-10-09
 > Milestone: ACP Harness
 
+## Revision 2 — Progressive Streaming Preview
+
+> Status: Implemented
+> Date: 2026-10-11
+
+### Problem
+
+A ```` ```svg ```` fence shows only `svg · drawing…` until the whole reply seals. OMP's TUI and Tern draw the figure as it streams, element by element. Krypton should do the same.
+
+### Research
+
+- **OMP 18.8.9** (`packages/tui/src/chat/svg-source.ts`, function `RVo`; `svg-figure.ts`, class `$ce`): the source streamed so far is cut at the end of the last complete tag, and a dangling `&entity` is dropped. Open elements are tracked on a stack (`<x>` pushes, `</x>` pops, `<x/>` and `<!…>`/`<?…?>` don't), then closed in reverse order. Quotes, comments and CDATA are skipped. The result is `null` until `<svg` has been seen. Re-rasterization is throttled to 200ms (`Uwl = 200`), and the closing fence renders immediately. Text after the last tag is kept, so `<text>` content appears letter by letter.
+- **Tern**: under the Tern Surface Protocol, omp sends the reply as one `md` node with `stream: true` plus `["text", id, "append", delta]` ops. Tern draws the fence natively with usvg/resvg. Its changelog says: "drawing in as the reply streams".
+- **The three reasons Krypton rejected this originally** (*Streaming* below), and how this revision answers each:
+  1. *smd holds live refs to `pre`/`code`.* smd's default renderer only `appendChild`s into `data.nodes[data.index]` (`smd.js:1544-1618`). A **sibling** inserted *before* the `pre` is never touched, and later blocks still append after it. The `pre` is not wrapped or moved.
+  2. *A 200ms re-encode/decode loop vs the spec 114 budget.* Work runs only for the foreground row's parser-owned body; background lanes have no parser. Per tick the cost is one linear pass each for the close, the theming and `encodeURIComponent`, all capped by `SVG_FENCE_MAX_CHARS`. The tick is skipped when the closed prefix hasn't changed, which is most deltas because they land inside an unfinished tag. Decode runs off-DOM through `HTMLImageElement.decode()`, which is async, so `DOMParser` is not used per tick.
+  3. *A sealed row is rebuilt from cache anyway.* The live preview is ephemeral and never cached. At seal it is removed before `markdownHtml` is captured, and the existing card takes its place.
+
+### Design
+
+```ts
+// harness-svg-fence.ts
+export const SVG_LIVE_INTERVAL_MS = 200;               // OMP parity
+export function closeSvgPrefix(source: string): string | null; // port of OMP RVo
+export function updateLiveSvgFences(body: HTMLElement): void;  // after each parser_write
+export function clearLiveSvgFences(body: HTMLElement): void;   // at seal, before capture
+```
+
+1. `updateStreamingAssistantMarkdownBody` calls `updateLiveSvgFences(body)` after `parser_write`. Only the smd form `pre > code.svg` is scanned, since live bodies are always smd.
+2. Each fence has state in a `WeakMap<HTMLElement /*code*/, LiveSvg>`: the preview node, the last themed string, the last paint time, and a trailing timer. Within `SVG_LIVE_INTERVAL_MS` of the last paint, a single trailing `setTimeout` is armed. If the stream pauses mid-figure, the latest prefix still paints. The callback bails if `code.isConnected` is false or the body has lost `--stream-live`.
+3. A tick computes `closeSvgPrefix(code.textContent)`. It skips when the result is `null`, over the cap, or the same as the last themed output. Otherwise it themes through the existing `themeSvgSource`, with the palette read per tick so a mid-stream theme switch heals. Then it does `probe = new Image(); probe.src = url; await probe.decode()`. If this is still the latest request, the visible `<img>` gets the URL and the `svgFrame` aspect ratio. A decode failure keeps the last good frame.
+4. DOM: inserted before the fence's `pre` on the first successful frame:
+   ```html
+   <figure class="acp-harness__svg-card acp-harness__svg-card--live">
+     <div class="acp-harness__svg-card-bar"><span class="acp-harness__svg-card-kind">svg · drawing…</span></div>
+     <div class="acp-harness__svg-card-preview"><img alt="SVG preview (drawing)"></div>
+   </figure>
+   ```
+   It reuses the card frame, so seal swaps the toolbar contents in place instead of jumping layout. `.acp-harness__svg-card--live + pre` is hidden, so the CSS placeholder only shows until the first frame. The live `<img>` carries no `data-svg-*`, so clicks, `f` hints and `refreshSvgFencePreviews` (which needs a `pre` child) ignore it. The kind label pulses opacity-only, with no animation under `prefers-reduced-motion`.
+5. Seal branch A: right after removing `--stream-live`, `clearLiveSvgFences(body)` removes every `--live` card. Then `markdownHtml` is captured and `decorateSvgFences` builds the real card. For a complete document, `closeSvgPrefix` returns the source unchanged, so the card's data URL usually equals the last live frame and WebKit reuses the decoded image.
+
+### Edge Cases
+
+- **Several fences in one reply:** each `code` has its own state. Closed ones stop changing and stop repainting.
+- **Body rebind / backtrack** (`initLaneStreamingMarkdown` → `replaceChildren`): the old previews and `code` nodes are dropped, the WeakMap entries are collected, pending timers bail on `isConnected`, and the fresh parse rebuilds the previews.
+- **Over `SVG_FENCE_MAX_CHARS` mid-stream:** the live card is removed and the placeholder returns. The seal behaviour is unchanged.
+- **Invalid final SVG:** the live card shows the last good frame until seal. Seal removes it, and `decorateSvgFences` leaves plain code as today.
+- **Security:** unchanged. The preview is still an `<img>` data URL in secure animated mode, and the partial markup is never inserted as DOM.
+- **Lane switched away mid-decode** (body detached): the frame is dropped and the fence's cached text is reset. The next tick on the re-attached body repaints it instead of skipping text that hasn't changed.
+- **No layout shift at seal:** the live `svg · drawing…` label gets the same padding and border as a toolbar button. The live and sealed `<img>` therefore sit at identical coordinates, which was checked in a browser smoke run.
+
+### Affected Files
+
+| File | Change |
+|------|--------|
+| `src/acp/harness-svg-fence.ts` | `closeSvgPrefix`, `updateLiveSvgFences`, `clearLiveSvgFences`, `SVG_LIVE_INTERVAL_MS` |
+| `src/acp/harness-markdown.ts` | `updateStreamingAssistantMarkdownBody` calls `updateLiveSvgFences` after `parser_write` |
+| `src/acp/acp-harness-view.ts` | Seal branch A calls `clearLiveSvgFences` before the `markdownHtml` capture |
+| `src/styles/acp-harness.css` | `--live` card label pulse; hide the placeholder `pre` after a live card |
+| `src/acp/harness-svg-fence.test.ts` | `closeSvgPrefix`: truncation at an open tag/attribute/entity, stack close order, self-closing, comments/CDATA/quoted `>`, `null` before `<svg`, identity on a complete document |
+| this spec, `docs/72-acp-harness-view.md` | The *Streaming* section and data-flow step 1 rewritten to match |
+
+### Out of Scope
+
+- A config switch to disable live preview.
+- Live preview for Mermaid, peek-thought, lane mail or Live Assist.
+- Rendering in a worker or with OffscreenCanvas.
+
 ## Implementation Deviations
 
 - **`SVG_FENCE_MAX_CHARS`, not `_BYTES`.** The 256 Ki cap is checked against the source's string length, which avoids encoding the source just to measure it.
@@ -27,7 +95,7 @@ Before encoding, the source is **themed** the way OMP does it: every `var(--name
 
 A one-line **per-turn guidance** tells every lane that ` ```svg ` renders and names the palette variables. The palette names are the same as OMP's, so one SVG renders correctly in both the OMP TUI and Krypton.
 
-Each card is a new target type in the existing `f` open-hint mode: `<label>` zooms the preview in the image viewer (or returns a Source card to Preview), `Shift+<label>` copies the source. Fences render only at seal; while streaming, each one collapses to an `svg · drawing…` placeholder. This is frontend only.
+Each card is a new target type in the existing `f` open-hint mode: `<label>` zooms the preview in the image viewer (or returns a Source card to Preview), `Shift+<label>` copies the source. While streaming, a fence draws in progressively as a non-interactive live card (Revision 2); the interactive card appears at seal. This is frontend only.
 
 ## Research
 
@@ -52,7 +120,7 @@ Each card is a new target type in the existing `f` open-hint mode: `<label>` zoo
   1. Inline SVG plus `sanitizeSvg`: theming no longer favours it, and its safety rests on an allowlist.
   2. Sandboxed `<iframe srcdoc>`: heavy per block, and sizing is awkward.
   3. `blob:` URLs: they do not survive the `markdownHtml` round-trip and need revoke bookkeeping.
-  4. Progressive render while streaming (OMP-style): see *Streaming* below.
+  4. Progressive render while streaming (OMP-style): rejected originally, adopted in Revision 2 (see *Streaming* below).
 
 ## Prior Art
 
@@ -64,7 +132,7 @@ Each card is a new target type in the existing `f` open-hint mode: `<label>` zoo
 | Review Board (Krypton) | Inline SVG through the `sanitizeSvg` allowlist | Lane-authored charts of known shape |
 | Image strip (Krypton, spec 281) | Rejects `image/svg+xml` bytes by sniffing | SVG stays out of the blob/viewer pipeline |
 
-**Krypton delta:** uses OMP's palette contract and theming so SVG is portable across both hosts. Uses Obsidian's UX (preview default, source toggle, copy), driven through `f` hints. Safety comes from the `<img>` processing mode rather than a sanitizer. Rendering happens at seal, not progressively.
+**Krypton delta:** uses OMP's palette contract and theming so SVG is portable across both hosts. Uses Obsidian's UX (preview default, source toggle, copy), driven through `f` hints. Safety comes from the `<img>` processing mode rather than a sanitizer. Like OMP, the figure draws in progressively while streaming (Revision 2), at the same 200ms cadence.
 
 ## Affected Files
 
@@ -151,22 +219,24 @@ Text always uses the harness transcript font. `readSvgFontFamily` resolves it th
 
 ### Streaming
 
-Fences render only at seal. While streaming, each fence collapses to a one-line `svg · drawing…` placeholder instead of growing plain code; half-written markup is unreadable and can run to hundreds of lines. Rendering only at seal is deliberate:
+Revision 2 replaced the seal-only rule: a fence now draws in while the reply streams. *Revision 2* at the top of this spec has the design. The original seal-only reasoning is kept below for history, with each point answered there.
 
-- smd keeps live references to the `pre`/`code` nodes until `parser_end`, so it cannot wrap them mid-stream.
-- A 200ms re-encode and decode loop on the main thread works against the harness streaming budget (spec 114).
-- A sealed row is rebuilt from cache anyway.
+- ~~smd keeps live references to the `pre`/`code` nodes until `parser_end`, so it cannot wrap them mid-stream.~~ The live card is a sibling inserted before the `pre`, which smd never touches.
+- ~~A 200ms re-encode and decode loop on the main thread works against the harness streaming budget (spec 114).~~ This only runs for the foreground row. A tick is skipped when the fence text or the closed prefix hasn't changed, and decoding is async through `img.decode()`.
+- A sealed row is rebuilt from cache anyway. That still holds: live cards are removed before the capture.
 
-The placeholder is CSS only. `initLaneStreamingMarkdown` adds `acp-harness__msg-body--stream-live` to the parser-owned body, and `sealAssistantStreamingMarkdown` branch A removes it right after `parser_end`. While the class is present, `pre:has(> code.svg)` hides its `<code>` with `display: none`, so smd still writes into the hidden node but the text never reaches layout. The `pre` shows a pulsing `::before` label instead; the pulse is opacity-only and is disabled under `prefers-reduced-motion`. Once the class is gone, a valid fence becomes a card and an invalid one shows as plain code. The persistent `--stream-markdown` class cannot carry this state because it stays on the body after seal.
+The placeholder is CSS only. `initLaneStreamingMarkdown` adds `acp-harness__msg-body--stream-live` to the parser-owned body, and `sealAssistantStreamingMarkdown` branch A removes it right after `parser_end`. While the class is present, `pre:has(> code.svg)` hides its `<code>` with `display: none`, so smd still writes into the hidden node but the text never reaches layout. The `pre` shows a pulsing `::before` label until the fence's first live frame decodes. From then on, `.acp-harness__svg-card--live + pre` is hidden and the live card stands in for it. Its `svg · drawing…` label pulses too, and its box matches a toolbar button so the swap at seal doesn't shift the figure. Both pulses are opacity-only and are disabled under `prefers-reduced-motion`. Once the class is gone, `clearLiveSvgFences` removes the live cards. A valid fence then becomes a card and an invalid one shows as plain code. The persistent `--stream-markdown` class cannot carry this state because it stays on the body after seal.
 
 ### Data Flow
 
 ```
 0. Each turn: renderPromptMemoryPacket includes SVG_FENCE_GUIDANCE
-1. Agent streams a ```svg fence → body has --stream-live → fence collapses to
-   an "svg · drawing…" placeholder (CSS only; smd writes into hidden <code>)
-2. Seal branch A: parser_end → drop --stream-live → cache markdownHtml (pure)
-   → decorateSvgFences(live body) → scan → rail     [decoration never cached]
+1. Agent streams a ```svg fence → body has --stream-live → updateStreamingAssistantMarkdownBody
+   → parser_write → updateLiveSvgFences: ≤ every 200ms (plus a trailing tick),
+   closeSvgPrefix → themeSvgSource → off-DOM decode → live card before the <pre>
+   (the "svg · drawing…" CSS placeholder shows only until the first frame)
+2. Seal branch A: parser_end → drop --stream-live → clearLiveSvgFences → cache
+   markdownHtml (pure) → decorateSvgFences(live body) → scan → rail [decoration never cached]
 3. Any later render (cold load, label change, toggle): innerHTML = markdownHtml
    → resolveLocalImageSrcs → decorateSvgFences → annotations → scan → rail
 4. Theme switch / Reload Config: ThemeEngine.apply → Compositor.updateTerminalThemes
