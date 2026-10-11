@@ -214,12 +214,16 @@ working-tree total against the base.
 5. A monotonically increasing request token discards responses older than the
    most recently started refresh. `dispose()` clears the timer and invalidates
    pending responses.
-6. The view clears old metadata for the requested targets, applies returned
-   changes by exact absolute target, and calls `render()` only if a resource's
-   visible metadata changed.
-7. `transcriptRenderSignature()` includes status, counts, and count kind. The
-   normal transcript renderer rebuilds the affected sealed row without touching
-   cached Markdown.
+6. The view clears old metadata for the requested targets and applies returned
+   changes by exact absolute target. `applyReferenceGitChanges()` returns the
+   transcript items whose visible metadata changed.
+7. `transcriptRenderSignature()` includes status, counts, and count kind. For
+   each changed item visible in the active lane, `patchReferenceRails()`
+   replaces only that row's REFERENCES rail and restamps its signature. It does
+   not call `render()`, rebuild lane chrome, or remount the reply body: a stale
+   signature made the next transcript pass rebuild the whole sealed reply
+   (tables, svg cards, images) just after each turn ended. Rows of inactive
+   lanes are not in the DOM; they render fresh on lane switch.
 8. Pressing `r` in transcript command mode runs an immediate refresh. Success
    flashes `reference status refreshed`; no file references flashes
    `no file references`; failure flashes `reference status unavailable`.

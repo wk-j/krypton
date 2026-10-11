@@ -468,8 +468,10 @@ d. The loop stops once the grip, the mouse and the button fades settle
        NUL-delimited porcelain status and `git diff -M --numstat -z HEAD`, counts
        bounded untracked text files locally, and returns no diff content. A
        generation token drops stale replies; the view applies exact-target
-       metadata and rerenders only when a visible status/count changed. Bare `r`
-       in transcript command mode performs the same refresh immediately.
+       metadata and, for changed rows in the active lane, replaces only the
+       REFERENCES rail and restamps the row signature (no lane-chrome rebuild,
+       no reply remount). Bare `r` in transcript command mode performs the same
+       refresh immediately.
 11. Permission requests pre-empt only the affected lane's composer. The user
     switches to that tab and resolves with a/A/r/R/Esc; responses call the
     existing acp_permission_response command.

@@ -634,14 +634,15 @@ function requiredNumber(params: Record<string, unknown>, key: string): number {
 // The prompt builders moved to harness-prompts.ts (spec 185).
 
 /** Apply one authoritative Rust snapshot to volatile reference metadata.
- * Missing entries are clean (or out of repo), so stale decorations are removed. */
+ * Missing entries are clean (or out of repo), so stale decorations are removed.
+ * Returns the rows whose rail now differs from what is painted. */
 export function applyReferenceGitChanges(
-  references: readonly { lane: HarnessLane; resource: MessageResource }[],
+  references: readonly { item: HarnessTranscriptItem; resource: MessageResource }[],
   changes: readonly ReferenceGitChange[],
-): Set<HarnessLane> {
+): Set<HarnessTranscriptItem> {
   const byTarget = new Map(changes.map((change) => [change.target, change]));
-  const changedLanes = new Set<HarnessLane>();
-  for (const { lane, resource } of references) {
+  const changedItems = new Set<HarnessTranscriptItem>();
+  for (const { item, resource } of references) {
     const change = byTarget.get(resource.target);
     const next = change
       ? {
@@ -660,9 +661,9 @@ export function applyReferenceGitChanges(
     ) continue;
     if (next) resource.git = next;
     else delete resource.git;
-    changedLanes.add(lane);
+    changedItems.add(item);
   }
-  return changedLanes;
+  return changedItems;
 }
 
 export function referenceGitResponseIsCurrent(
@@ -7497,13 +7498,13 @@ export class AcpHarnessView implements ContentView {
     return result.stdout;
   }
 
-  private referencedFileResources(): Array<{ lane: HarnessLane; resource: MessageResource }> {
-    const references: Array<{ lane: HarnessLane; resource: MessageResource }> = [];
+  private referencedFileResources(): Array<{ item: HarnessTranscriptItem; resource: MessageResource }> {
+    const references: Array<{ item: HarnessTranscriptItem; resource: MessageResource }> = [];
     for (const lane of this.lanes) {
       if (lane.status === 'stopped') continue;
       for (const item of lane.transcript) {
         for (const resource of item.resources ?? []) {
-          if (resource.kind === 'file') references.push({ lane, resource });
+          if (resource.kind === 'file') references.push({ item, resource });
         }
       }
     }
@@ -7562,15 +7563,34 @@ export class AcpHarnessView implements ContentView {
         this.referenceGitDisposed,
       )) return;
       console.warn('[acp-harness] reference Git state unavailable:', error);
-      const changedLanes = applyReferenceGitChanges(references, []);
-      for (const lane of changedLanes) this.patchLaneTurnChrome(lane);
+      this.patchReferenceRails(applyReferenceGitChanges(references, []));
       if (manual) this.flashChip('reference status unavailable');
       return;
     }
 
-    const changedLanes = applyReferenceGitChanges(references, changes);
-    for (const lane of changedLanes) this.patchLaneTurnChrome(lane);
+    this.patchReferenceRails(applyReferenceGitChanges(references, changes));
     if (manual) this.flashChip('reference status refreshed');
+  }
+
+  /** Repaint only the REFERENCES rail of rows whose Git metadata changed, and
+   *  restamp their signature. Git state lives on the rail alone; leaving the
+   *  signature stale made the next transcript pass remount the whole sealed
+   *  reply (tables, svg cards, images) shortly after every turn end. Rows of
+   *  inactive lanes are not in the DOM and render fresh on lane switch. */
+  private patchReferenceRails(items: ReadonlySet<HarnessTranscriptItem>): void {
+    const lane = this.activeLane();
+    const body = this.activeTranscriptBody();
+    if (!lane || !body || items.size === 0) return;
+    for (const item of items) {
+      if (item.id === lane.currentAssistantId) continue;
+      const wrapper = body.querySelector<HTMLElement>(
+        `.acp-harness__msg[data-msg-id="${CSS.escape(item.id)}"]`,
+      );
+      const msgBody = wrapper?.querySelector<HTMLElement>(':scope > .acp-harness__msg-body');
+      if (!wrapper || !msgBody) continue;
+      appendMessageResourceRail(msgBody, item, this.projectDir, lane);
+      wrapper.dataset.renderSignature = transcriptRenderSignature(item, false, lane);
+    }
   }
 
   private async refreshMcpStats(): Promise<void> {
@@ -11735,7 +11755,7 @@ export class AcpHarnessView implements ContentView {
     if (active && this.zenMode) this.refreshZenRail();
   }
 
-  /** Busy→idle (and git-reference) chrome without remounting peek/thought/HUD/plan. */
+  /** Busy→idle chrome without remounting peek/thought/HUD/plan. */
   private patchLaneTurnChrome(lane: HarnessLane): void {
     this.renderActiveLaneChrome(lane);
     if (lane.id === this.activeLaneId) this.renderComposer();

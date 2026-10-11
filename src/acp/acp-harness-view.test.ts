@@ -167,9 +167,9 @@ describe('assistant reference Git state', () => {
   });
 
   it('applies, deduplicates, and clears authoritative Git snapshots', () => {
-    const lane = { id: 'lane-1' } as HarnessLane;
     const file = resource();
-    const refs = [{ lane, resource: file }];
+    const item: HarnessTranscriptItem = { id: 'm1', kind: 'assistant', text: 'done', resources: [file] };
+    const refs = [{ item, resource: file }];
     const change = {
       target: file.target,
       status: 'M' as const,
@@ -178,10 +178,10 @@ describe('assistant reference Git state', () => {
       countKind: 'lines' as const,
     };
 
-    expect([...applyReferenceGitChanges(refs, [change])]).toEqual([lane]);
+    expect([...applyReferenceGitChanges(refs, [change])]).toEqual([item]);
     expect(file.git).toEqual({ status: 'M', added: 12, removed: 3, countKind: 'lines' });
     expect(applyReferenceGitChanges(refs, [change]).size).toBe(0);
-    expect([...applyReferenceGitChanges(refs, [])]).toEqual([lane]);
+    expect([...applyReferenceGitChanges(refs, [])]).toEqual([item]);
     expect(file.git).toBeUndefined();
   });
 
