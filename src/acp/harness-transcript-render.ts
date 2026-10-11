@@ -13,6 +13,7 @@ import type { InterLaneRowChannel } from './inter-lane';
 import type {
   FsActivityPayload,
   FsWriteReviewPayload,
+  HarnessImage,
   HarnessLane,
   HarnessTranscriptItem,
   InterLanePayload,
@@ -24,7 +25,7 @@ import { optionHotkey, questionActionsHint, type QuestionPayload } from './ask-u
 import { backendLogoId } from './harness-lane-identity';
 import { transcriptLabel } from './harness-lane-chrome';
 import { collapseThoughtBlankLines } from './harness-format';
-import { formatImageBytes } from './harness-images';
+import { formatImageBytes, isOpenableImage } from './harness-images';
 import { subagentLiveSignature, subagentStructureSignature } from './harness-subagents';
 import {
   isTerminalToolStatus,
@@ -44,6 +45,7 @@ import {
   mergeMessageResources,
   resourceDisplayTarget,
 } from './message-resources';
+import { railCoversImage, resolveResourceImage, resourceGlyph } from './message-resource-thumb';
 import { annotationSignature, applyTranscriptAnnotations } from './transcript-annotation';
 import { buildUsageVisualSummary, type UsageRollup } from './usage-log';
 
@@ -277,7 +279,7 @@ export function renderTranscriptItem(
     `${isNew ? ' acp-harness__msg--enter' : ''}` +
     `${streaming ? ' acp-harness__msg--streaming' : ''}`;
   el.dataset.msgId = item.id;
-  el.dataset.renderSignature = transcriptRenderSignature(item, streaming);
+  el.dataset.renderSignature = transcriptRenderSignature(item, streaming, lane);
   if (isNew) {
     const releaseEntryAnimation = (event: AnimationEvent): void => {
       if (event.target !== el || event.animationName !== 'acp-harness-msg-enter') return;
@@ -357,7 +359,7 @@ export function renderTranscriptItem(
       decorateSvgFences(body, item);
       applyTranscriptAnnotations(body, item);
       scanMessageResourceBody(body, item, projectDir);
-      appendMessageResourceRail(body, item, projectDir);
+      appendMessageResourceRail(body, item, projectDir, lane);
     }
   } else if (item.kind === 'tool' && item.tool) {
     body.classList.add('acp-harness__tool');
@@ -456,7 +458,7 @@ export function renderTranscriptItem(
   if (strip) el.appendChild(strip);
   // Rendering may populate provenance or sealed resource state, so capture the
   // post-render signature rather than the pre-render snapshot assigned above.
-  el.dataset.renderSignature = transcriptRenderSignature(item, streaming);
+  el.dataset.renderSignature = transcriptRenderSignature(item, streaming, lane);
   return el;
 }
 
@@ -468,7 +470,13 @@ function toolStatusSignature(status: string): string {
   return isTerminalToolStatus(status) ? status : 'active';
 }
 
-export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming: boolean): string {
+/** `lane` resolves rail thumbnails borrowed from other rows (spec 286); pass
+ *  the same lane at every call site or a sealed row rebuilds once needlessly. */
+export function transcriptRenderSignature(
+  item: HarnessTranscriptItem,
+  streaming: boolean,
+  lane: ThumbLane | null = null,
+): string {
   // Spec 114 rev 8: while a tool is in flight its section TEXT stays out of
   // the signature (labels/count stay in). Streaming output otherwise changed
   // the signature on every chunk, and the replaceChildren rebuild remounted
@@ -563,6 +571,7 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
       resource.git?.added ?? '',
       resource.git?.removed ?? '',
       resource.git?.countKind ?? '',
+      thumbSignature(resolveResourceImage(lane, item, resource)),
     ].join('\u001e'))
     .join('\u001f');
   // spec 283: only non-default card state — a freshly decorated row (no label,
@@ -595,11 +604,18 @@ export function transcriptRenderSignature(item: HarnessTranscriptItem, streaming
   ].join('\u001d');
 }
 
+type ThumbLane = Pick<HarnessLane, 'imageState' | 'transcript'>;
+
+function thumbSignature(image: HarnessImage | null): string {
+  return image ? `${image.imageId}:${image.state}` : '';
+}
+
 /** Render one flat, keyboard-hintable rail beneath sealed assistant Markdown. */
 export function appendMessageResourceRail(
   body: HTMLElement,
   item: HarnessTranscriptItem,
   projectDir: string | null,
+  lane: ThumbLane | null,
 ): void {
   const resources = item.resources ?? [];
   if (resources.length === 0) return;
@@ -619,7 +635,9 @@ export function appendMessageResourceRail(
   head.append(title, count);
   rail.appendChild(head);
 
-  for (const resource of resources) rail.appendChild(renderMessageResource(resource, projectDir));
+  for (const resource of resources) {
+    rail.appendChild(renderMessageResource(resource, projectDir, resolveResourceImage(lane, item, resource)));
+  }
   body.appendChild(rail);
 }
 
@@ -639,7 +657,11 @@ export function scanMessageResourceBody(
   item.resourcesScanned = true;
 }
 
-function renderMessageResource(resource: MessageResource, projectDir: string | null): HTMLButtonElement {
+function renderMessageResource(
+  resource: MessageResource,
+  projectDir: string | null,
+  image: HarnessImage | null,
+): HTMLButtonElement {
   const row = document.createElement('button');
   row.type = 'button';
   row.className = `acp-harness__resource acp-harness__resource--${resource.kind}`;
@@ -647,19 +669,21 @@ function renderMessageResource(resource: MessageResource, projectDir: string | n
   row.dataset.responseResource = resource.key;
   const displayTarget = resourceDisplayTarget(resource, projectDir);
   const gitSummary = resource.git ? referenceGitAccessibleSummary(resource.git) : null;
-  row.title = gitSummary ? `${displayTarget} · ${gitSummary}` : displayTarget;
-  row.setAttribute(
-    'aria-label',
-    `${resource.kind === 'file' ? 'Open file' : 'Open URL'} ${displayTarget}${gitSummary ? `. ${gitSummary}` : ''}`,
-  );
+  const imageProblem = image && (image.state === 'missing' || image.state === 'rejected')
+    ? `image ${image.rejectReason ?? image.state}`
+    : null;
+  const viewable = image !== null && isOpenableImage(image);
+  row.title = [displayTarget, gitSummary, imageProblem].filter((part) => part !== null).join(' · ');
+  const verb = resource.kind === 'url' ? 'Open URL' : viewable ? 'View image' : 'Open file';
+  row.setAttribute('aria-label', `${verb} ${displayTarget}${gitSummary ? `. ${gitSummary}` : ''}`);
 
-  const hint = document.createElement('span');
-  hint.className = 'acp-harness__resource-hint';
-  hint.textContent = resource.hintLabel ?? '';
-  hint.hidden = !resource.hintLabel;
-  const kind = document.createElement('span');
-  kind.className = 'acp-harness__resource-kind';
-  kind.textContent = resource.kind === 'file' ? 'FILE' : 'URL';
+  const thumb = renderResourceThumb(resource, image);
+  if (resource.hintLabel) {
+    const hint = document.createElement('span');
+    hint.className = 'acp-harness__resource-hint';
+    hint.textContent = resource.hintLabel;
+    thumb.appendChild(hint);
+  }
   const content = document.createElement('span');
   content.className = 'acp-harness__resource-content';
   const label = document.createElement('span');
@@ -695,9 +719,43 @@ function renderMessageResource(resource: MessageResource, projectDir: string | n
   }
   const action = document.createElement('span');
   action.className = 'acp-harness__resource-action';
-  action.textContent = resource.kind === 'file' ? 'OPEN TAB ↗' : 'OPEN ↗';
-  row.append(hint, kind, content, git, action);
+  action.textContent = resource.kind === 'url' ? 'OPEN ↗' : viewable ? 'VIEW ↗' : 'OPEN TAB ↗';
+  row.append(thumb, content, git, action);
   return row;
+}
+
+/** spec 286: 48×34 leading cell — the image's pixels when live, else a glyph. */
+function renderResourceThumb(resource: MessageResource, image: HarnessImage | null): HTMLSpanElement {
+  const thumb = document.createElement('span');
+  thumb.className = 'acp-harness__resource-thumb';
+  if (image?.state === 'live' && image.objectUrl) {
+    thumb.classList.add('acp-harness__resource-thumb--image');
+    const img = document.createElement('img');
+    img.src = image.objectUrl;
+    img.alt = '';
+    img.decoding = 'async';
+    img.loading = 'lazy';
+    thumb.appendChild(img);
+    return thumb;
+  }
+  const glyph = resourceGlyph(resource);
+  thumb.classList.add('acp-harness__resource-thumb--glyph');
+  thumb.dataset.glyph = glyph.kind;
+  if (image?.state === 'missing' || image?.state === 'rejected') thumb.dataset.state = image.state;
+  if (glyph.kind === 'url') {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', '#krypton-icon-globe');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.appendChild(use);
+    thumb.appendChild(svg);
+  } else {
+    const text = document.createElement('span');
+    text.className = 'acp-harness__resource-glyph';
+    text.textContent = glyph.text;
+    thumb.appendChild(text);
+  }
+  return thumb;
 }
 
 export function referenceGitAccessibleSummary(git: NonNullable<MessageResource['git']>): string {
@@ -1099,10 +1157,11 @@ export function permissionDecisionLabel(perm: PermissionPayload): string {
 
 /** spec 281: thumbnail strip beneath a row body. Scanned path images stay
  *  invisible until they load — a scanner hit that is not a real image file
- *  must leave no trace. Built with createElement/textContent only. */
+ *  must leave no trace. Images the row's REFERENCES rail already shows are
+ *  skipped (spec 286). Built with createElement/textContent only. */
 export function renderImageStrip(item: HarnessTranscriptItem): HTMLElement | null {
   const images = (item.images ?? []).filter(
-    (image) => !(image.discovery === 'scanned' && image.state === 'loading'),
+    (image) => !(image.discovery === 'scanned' && image.state === 'loading') && !railCoversImage(item, image),
   );
   const overflow = item.imageOverflow ?? 0;
   if (images.length === 0 && overflow === 0) return null;

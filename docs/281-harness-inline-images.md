@@ -11,6 +11,7 @@
 - **`key=value` tokens** such as `--output=/tmp/x.png` are scanned using the part after the first `=`.
 - **A whole string value with spaces counts as one path** only when it starts with `/`, `~/`, `./`, `../`, or `file://`. Its tokens are still scanned as well. This catches the case where a space-separated list of paths is mistaken for a single path; the wrong whole candidate then disappears silently.
 - **The image strip is a sibling of the row body**, not inside it. Streaming rows have their strip patched in place; sealed rows rebuild when their image signature changes.
+- **Spec 286:** a sealed assistant row's image whose path is one of that row's file references (source 3) is shown as the REFERENCES rail thumbnail, not in the strip, and its open-hint label lives on the rail row. A rail row whose image another row of the lane owns (per-turn dedupe) reuses that row's object URL.
 
 ## Problem
 

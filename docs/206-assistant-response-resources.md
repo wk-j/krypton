@@ -242,6 +242,9 @@ agent  Implemented the parser in `client.ts` and documented the ACP contract.
 - Long targets truncate visually but retain their full accessible label.
 - At narrow lane widths, the action label drops before the target truncates.
 - Mouse click is supported as a secondary path through event delegation.
+- Spec 286 replaces the `FILE`/`LINK` badge with a 48×34 leading thumbnail:
+  image pixels for an image file reference (reusing spec 281 object URLs), else
+  an extension glyph or a globe for URLs. The hint label overlays the thumbnail.
 
 ### Keyboard and Actions
 
@@ -259,7 +262,8 @@ viewer (spec 281), subagent card rows toggle their inline detail
 copying the SVG source (spec 283).
 
 - File resource: callback to `Compositor.openHelixTab(path, line, column)`;
-  failure reports through the harness status chip.
+  failure reports through the harness status chip. An image file reference
+  whose image is live or reloadable opens the image viewer instead (spec 286).
 - `http`/`https` resource: `openExternalUrl(..., { external: true })` in the OS
   browser.
 - `mailto` resource: the same external handler, allowing the OS default mail

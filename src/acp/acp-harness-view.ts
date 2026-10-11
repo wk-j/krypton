@@ -506,6 +506,7 @@ import {
   mergeMessageResources,
   resourceFromContentBlock,
 } from './message-resources';
+import { railCoversImage, resolveResourceImage } from './message-resource-thumb';
 import {
   bytesImageKey,
   createBytesImage,
@@ -9482,8 +9483,9 @@ export class AcpHarnessView implements ContentView {
       // record, so the card stays openable even after the lane dies.
       if (item.review) targets.push(item.review);
       targets.push(...(item.resources ?? []));
-      // spec 281: live (or reloadable) images open in the image viewer.
-      targets.push(...(item.images ?? []).filter(isOpenableImage));
+      // spec 281: live (or reloadable) images open in the image viewer. An image
+      // its row's REFERENCES rail shows is opened through that rail row (spec 286).
+      targets.push(...(item.images ?? []).filter((image) => isOpenableImage(image) && !railCoversImage(item, image)));
       // spec 282: each spawned agent toggles its inline detail.
       targets.push(...(item.tool?.subagents?.agents ?? []));
       // spec 283: each SVG card zooms (or returns to Preview from Source); Shift copies.
@@ -9568,6 +9570,14 @@ export class AcpHarnessView implements ContentView {
     if (resource.kind === 'url') {
       openExternalUrl(resource.target, { external: true });
       this.flashChip(`opening ${resource.label}`);
+      return;
+    }
+    // spec 286: an image reference with pixels opens the image viewer — Helix cannot show images.
+    const lane = this.activeLane();
+    const owner = lane?.transcript.find((entry) => entry.resources?.includes(resource));
+    const image = lane && owner ? resolveResourceImage(lane, owner, resource) : null;
+    if (image && isOpenableImage(image)) {
+      this.openImageViewer(image.imageId);
       return;
     }
     if (!this.openFileReferenceCb) {
@@ -11843,7 +11853,7 @@ export class AcpHarnessView implements ContentView {
         }
       }
 
-      const signature = transcriptRenderSignature(item, streaming);
+      const signature = transcriptRenderSignature(item, streaming, lane);
       const isIndicator = item.id === HIDDEN_INDICATOR_ID;
       if (current) {
         // Spec 103 rev 2: keep DOM order = itemsToRender order. The hidden-rows
@@ -14092,7 +14102,7 @@ export class AcpHarnessView implements ContentView {
       const label = wrapper.querySelector<HTMLElement>('.acp-harness__msg-label');
       if (label) syncThoughtEffortMeter(label, item.text.length);
     }
-    wrapper.dataset.renderSignature = transcriptRenderSignature(item, false);
+    wrapper.dataset.renderSignature = transcriptRenderSignature(item, false, lane);
   }
 
   /**
@@ -14157,14 +14167,14 @@ export class AcpHarnessView implements ContentView {
       decorateSvgFences(body, item);
       item.markdownSource = item.text;
       scanMessageResourceBody(body, item, this.projectDir);
-      appendMessageResourceRail(body, item, this.projectDir);
+      appendMessageResourceRail(body, item, this.projectDir, lane);
       // Stabilise signature so the next renderActiveTranscript() pass hits the
       // no-op branch instead of rebuilding via marked.parse. Only meaningful
       // when the wrapper is in the live transcript DOM (active lane); for
       // background lanes the cache populated above is the protection.
       const wrapper = body.parentElement;
       if (wrapper && wrapper.dataset.msgId === item.id) {
-        wrapper.dataset.renderSignature = transcriptRenderSignature(item, false);
+        wrapper.dataset.renderSignature = transcriptRenderSignature(item, false, lane);
       }
     } else {
       // Branch B — cold-cache offscreen capture for background-only streams.

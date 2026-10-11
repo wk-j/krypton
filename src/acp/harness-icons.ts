@@ -99,6 +99,8 @@ export const HARNESS_ICON_SVG_DEFS = [
   '<symbol id="krypton-icon-ul" viewBox="0 0 16 16"><path d="M8 13 V4 M4.6 7.5 L8 4 L11.4 7.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
   '<symbol id="krypton-icon-list" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="3.5" y1="5" x2="12.5" y2="5"/><line x1="3.5" y1="8" x2="12.5" y2="8"/><line x1="3.5" y1="11" x2="12.5" y2="11"/></g></symbol>',
   '<symbol id="krypton-icon-tool" viewBox="0 0 16 16"><path d="M11.2 2.4 a2.8 2.8 0 0 0 -3.5 3.5 L2.8 10.8 a1.25 1.25 0 0 0 1.8 1.8 L9.5 7.5 a2.8 2.8 0 0 0 3.5 -3.5 L11 6 L9.4 6 L9.4 4.4 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>',
+  // spec 286: URL reference thumbnail in the REFERENCES rail
+  '<symbol id="krypton-icon-globe" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="8" cy="8" r="6"/><ellipse cx="8" cy="8" rx="2.6" ry="6"/><line x1="2" y1="8" x2="14" y2="8"/></g></symbol>',
 ].join('');
 
 const SYMBOL_DEFS_ID = 'krypton-harness-symbol-defs';

@@ -49,6 +49,7 @@ function makeView(remoteRuntimeId: string | null = null): {
   const publishLinkFromPushReport = vi.fn();
   const view = Object.assign(Object.create(AcpHarnessView.prototype), {
     reviews: new Map(),
+    reviewThreadsByReviewId: new Map(),
     lanes: [{ displayName: 'Codex-2' }],
     projectDir: '/repo',
     remoteRuntimeId,
