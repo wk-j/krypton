@@ -38,3 +38,4 @@ Thumbs.db
 # Impeccable (generated critique snapshots, live-mode config — skill itself lives in .claude/skills/)
 .impeccable/
 .empryo
+docs/prototypes/harness-anatomy
