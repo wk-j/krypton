@@ -30,11 +30,16 @@ export function contentRootIsInFocusedWindow(root: { closest(selector: string): 
 }
 
 /** A summon overlay owns keyboard routing until it closes. The document-level
- *  overlay listener still receives the event after InputRouter returns. */
+ *  overlay listener still receives the event after InputRouter returns.
+ *  `.krypton-vault-picker-overlay` covers the vault/drawing pickers
+ *  (compositor `pickVault`, Pencil picker, vault-view `SWITCH VAULT`): their
+ *  j/k/digit keys must not also reach the focused content view. */
 export function summonOverlayOwnsKeyboard(
   root: { querySelector(selector: string): unknown },
 ): boolean {
-  return root.querySelector('.krypton-review-picker, .acp-review-thread-picker') != null;
+  return root.querySelector(
+    '.krypton-review-picker, .acp-review-thread-picker, .krypton-vault-picker-overlay',
+  ) != null;
 }
 
 export function shouldRetargetContentPaste(opts: {

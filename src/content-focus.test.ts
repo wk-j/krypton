@@ -43,9 +43,21 @@ describe('contentRootIsInFocusedWindow', () => {
 });
 
 describe('summonOverlayOwnsKeyboard', () => {
-  it('blocks content routing while the review picker exists', () => {
-    expect(summonOverlayOwnsKeyboard({ querySelector: () => ({}) })).toBe(true);
-    expect(summonOverlayOwnsKeyboard({ querySelector: () => null })).toBe(false);
+  // Minimal selector-list matcher: the root "contains" exactly `present`.
+  const rootWith = (present: string | null): { querySelector(selector: string): unknown } => ({
+    querySelector: (selector: string) =>
+      present != null && selector.split(',').map((s) => s.trim()).includes(present) ? {} : null,
+  });
+
+  it('blocks content routing while a summon overlay exists', () => {
+    expect(summonOverlayOwnsKeyboard(rootWith('.krypton-review-picker'))).toBe(true);
+    expect(summonOverlayOwnsKeyboard(rootWith('.acp-review-thread-picker'))).toBe(true);
+    expect(summonOverlayOwnsKeyboard(rootWith('.krypton-vault-picker-overlay'))).toBe(true);
+  });
+
+  it('lets keys route to content when no summon overlay exists', () => {
+    expect(summonOverlayOwnsKeyboard(rootWith(null))).toBe(false);
+    expect(summonOverlayOwnsKeyboard(rootWith('.krypton-window--focused'))).toBe(false);
   });
 });
 

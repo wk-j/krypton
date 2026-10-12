@@ -12499,6 +12499,11 @@ export class AcpHarnessView implements ContentView {
       `<span>j/k move · enter switch · esc cancel</span>` +
       `</header>` +
       `<ul class="acp-harness__model-list">${rows}</ul>`;
+    // innerHTML rebuilds the list at scrollTop 0 on every j/k; keep the cursor visible.
+    const activeRow = this.modelPickerEl.querySelector<HTMLElement>('.acp-harness__model-row--active');
+    if (typeof activeRow?.scrollIntoView === 'function') {
+      activeRow.scrollIntoView({ block: 'nearest' });
+    }
   }
 
   private renderSessionPicker(): void {
