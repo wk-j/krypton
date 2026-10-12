@@ -403,7 +403,10 @@ export function renderMcpChip(mcp: HarnessMcpLaneStats | null): string {
   return `<span class="acp-harness__lane-mcp acp-harness__lane-mcp--on" title="${esc(title)}">mcp ${harnessIcon('check', 'acp-harness__icon--dot')}${mcp.toolsCallCount > 0 ? ` ${mcp.toolsCallCount}` : ''}</span>`;
 }
 
-const SLASH_PALETTE_REGEX = /^\/\$?[a-zA-Z0-9_-]*$/;
+// `:` is part of namespaced command names (OMP advertises `skill:<name>`).
+// One `/` is allowed only after `skill:` (OMP namespaced skills,
+// `skill:<namespace>/<name>`), so typed paths like `/Users/…` stay prose.
+const SLASH_PALETTE_REGEX = /^\/(?:\$?[a-zA-Z0-9_:-]*|skill:[a-zA-Z0-9_-]*\/[a-zA-Z0-9_-]*)$/;
 
 export function slashPaletteVisible(lane: HarnessLane): boolean {
   if (lane.slashPaletteDismissed) return false;

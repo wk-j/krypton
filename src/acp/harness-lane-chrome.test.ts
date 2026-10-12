@@ -136,6 +136,39 @@ describe('slash palette — Codex skills', () => {
 
     expect(renderSlashPalette(lane)).toContain('/$grill-with-docs');
   });
+
+  it('keeps filtering namespaced OMP commands past the colon', () => {
+    const lane = makeLane({
+      draft: '/skill:gri',
+      availableCommands: [
+        { name: 'skillful', description: 'Toggle skill listing' },
+        { name: 'skill:grilling', description: 'Grill the user.' },
+        { name: 'skill:grill-me', description: 'Interview.' },
+        { name: 'skill:triage', description: 'Triage.' },
+      ],
+    });
+
+    expect(slashPaletteVisible(lane)).toBe(true);
+    expect(filteredSlashCommands(lane).map((command) => command.name)).toEqual([
+      'skill:grilling',
+      'skill:grill-me',
+    ]);
+  });
+
+  it('keeps filtering namespaced OMP skills past the slash, but not paths', () => {
+    const availableCommands = [
+      { name: 'skill:grilling', description: 'Grill the user.' },
+      { name: 'skill:figma/figma-use', description: 'Use Figma.' },
+    ];
+    const lane = makeLane({ draft: '/skill:figma/fig', availableCommands });
+
+    expect(slashPaletteVisible(lane)).toBe(true);
+    expect(filteredSlashCommands(lane).map((command) => command.name)).toEqual([
+      'skill:figma/figma-use',
+    ]);
+    expect(slashPaletteVisible(makeLane({ draft: '/Users/wk', availableCommands }))).toBe(false);
+    expect(slashPaletteVisible(makeLane({ draft: '/skill:a/b/c', availableCommands }))).toBe(false);
+  });
 });
 
 describe('isAgentSlashCommand — spec 279 bare command turns', () => {
