@@ -3023,10 +3023,12 @@
 }
 
 /* spec 283: ```svg fence card — preview <img> with a Source/Copy toolbar.
-   Preview is capped so a viewBox-only figure does not stretch across a wide
-   lane; Source/broken modes lift the cap so long source lines keep the room. */
+   The card shrinks to the figure's own size (capped at Full HD in JS) and
+   never exceeds the lane; Source/broken modes take the full lane width so
+   long source lines keep the room. */
 .acp-harness__svg-card {
-  max-width: 760px;
+  width: fit-content;
+  max-width: 100%;
   margin: 0.5em 0;
   border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
   border-radius: var(--krypton-border-radius, 8px);
@@ -3036,7 +3038,7 @@
 
 .acp-harness__svg-card--source,
 .acp-harness__svg-card--broken {
-  max-width: none;
+  width: auto;
 }
 
 .acp-harness__svg-card--hinted {
@@ -3095,17 +3097,13 @@
 
 .acp-harness__msg-body--markdown .acp-harness__svg-card-preview img {
   max-width: 100%;
-  max-height: 480px;
+  max-height: none;
   height: auto;
   margin: 0;
   object-fit: contain;
   border: none;
   border-radius: 0;
   cursor: zoom-in;
-}
-
-.acp-harness__msg-body--markdown .acp-harness__svg-card-preview img.acp-harness__svg-card-img--fill {
-  width: 100%;
 }
 
 .acp-harness__msg-body--markdown .acp-harness__svg-card > pre {
@@ -3135,7 +3133,7 @@
    <code>; display:none keeps that growth out of layout. Opacity-only pulse
    (compositor-friendly). */
 .acp-harness__msg-body--stream-live pre:has(> code.svg) {
-  max-width: 760px;
+  max-width: 100%;
   margin: 0.5em 0;
   padding: 6px 10px;
   border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);

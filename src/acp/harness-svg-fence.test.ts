@@ -83,9 +83,20 @@ describe('themeSvgSource', () => {
 });
 
 describe('svgFrame', () => {
-  it('reads the aspect ratio from viewBox and the intrinsic width when declared', () => {
+  it('sizes the preview from an explicit width, else from viewBox units as px', () => {
     expect(svgFrame('<svg viewBox="0 0 640 200" width="320px">')).toEqual({ ratio: '640 / 200', width: 320 });
-    expect(svgFrame('<svg viewBox="0,0,4,3">')).toEqual({ ratio: '4 / 3', width: null });
+    expect(svgFrame('<svg viewBox="0 0 640 240">')).toEqual({ ratio: '640 / 240', width: 640 });
+  });
+
+  it('fits larger figures inside Full HD, keeping their aspect ratio', () => {
+    expect(svgFrame('<svg viewBox="0 0 3840 2160">').width).toBe(1920);
+    expect(svgFrame('<svg viewBox="0 0 1000 2160">').width).toBe(500); // height-bound
+    expect(svgFrame('<svg viewBox="0 0 1920 1080">').width).toBe(1920);
+  });
+
+  it('measures the Full HD cap in device pixels', () => {
+    expect(svgFrame('<svg viewBox="0 0 1920 1080">', 2).width).toBe(960);
+    expect(svgFrame('<svg viewBox="0 0 640 240">', 2).width).toBe(640); // under the cap: own size
   });
 
   it('falls back to numeric width/height and ignores a degenerate viewBox', () => {

@@ -281,9 +281,9 @@ Mouse is secondary. The toolbar `Source` and `Copy` buttons carry `data-svg-togg
 
 Styling:
 
-- Card: full 1px `--krypton-border-color` border, transparent background, `max-width: 760px` so a `viewBox`-only figure does not stretch across a wide lane. The `--source` and `--broken` states lift the cap (`max-width: none`) so long source lines keep the full width. The streaming `svg · drawing…` placeholder uses the same 760px cap, so the card does not jump in width when it replaces the placeholder.
+- Card: full 1px `--krypton-border-color` border, transparent background, `width: fit-content; max-width: 100%`, so the card wraps the figure instead of spanning the lane. The `--source` and `--broken` states use `width: auto` so long source lines keep the full lane width. The streaming `svg · drawing…` placeholder spans the lane, so the card narrows to the figure when its first live frame replaces it.
 - Toolbar: muted mono label style.
-- Preview pane: `max-height: 480px`; the image uses `max-width: 100%` and `object-fit: contain`.
+- Preview pane: no fixed height cap; the image uses `max-width: 100%`, `height: auto`, and `object-fit: contain` to preserve its aspect ratio. `svgFrame(source, devicePixelRatio)` sets the `<img>` width to the figure's own size — explicit `width`, else `viewBox` units as CSS px (same base as the zoom viewer's 100%) — fitted inside Full HD measured in **device pixels** (1920×1080 physical, aspect kept): 960×540 CSS px on a 2× Retina screen, 1920×1080 CSS px at 1×. A figure under the cap shows at its own size; `max-width: 100%` scales any figure down in narrower lanes. A root with neither `width` nor `viewBox` gets no width attribute and renders at the browser default (300×150). The ratio is read when the preview is set (card build, live frame, theme refresh); moving the window to a display with a different scale keeps existing cards at their old width until the next re-theme.
 - Banned: corner brackets, a left accent rail, and `backdrop-filter`.
 - If the image fires an `error` event, the card switches to `--source` and the toggle is hidden.
 

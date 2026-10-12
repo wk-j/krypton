@@ -121,10 +121,16 @@ function numericAttr(tag: string, name: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/** Full HD in device pixels: the largest box a preview draws at. On a 2× Retina
+ *  screen that is 960×540 CSS px; narrower lanes scale it down further. */
+const SVG_PREVIEW_MAX_WIDTH = 1920;
+const SVG_PREVIEW_MAX_HEIGHT = 1080;
+
 export interface SvgFrame {
   /** CSS aspect-ratio value, reserving height before the image decodes. */
   ratio: string | null;
-  /** Intrinsic px width when the root declares one; otherwise the card fills the column. */
+  /** Preview CSS px width: the figure's own size (explicit width, else viewBox
+   *  units as px) fitted inside Full HD device pixels; null when the root declares neither. */
   width: number | null;
 }
 
@@ -135,15 +141,19 @@ function viewBoxSize(tag: string): { width: number; height: number } | null {
   return parts.length === 4 && parts[2] > 0 && parts[3] > 0 ? { width: parts[2], height: parts[3] } : null;
 }
 
-/** Size hints from the root tag's viewBox / width / height. */
-export function svgFrame(source: string): SvgFrame {
-  const tag = ROOT_RE.exec(source)?.[0];
-  if (!tag) return { ratio: null, width: null };
+/** Size hints from the root tag's viewBox / width / height. `pixelRatio` is
+ *  device px per CSS px (`window.devicePixelRatio`). */
+export function svgFrame(source: string, pixelRatio = 1): SvgFrame {
+  const tag = ROOT_RE.exec(source)?.[0] ?? '';
   const width = numericAttr(tag, 'width');
   const height = numericAttr(tag, 'height');
   const box = viewBoxSize(tag);
-  if (box) return { ratio: `${box.width} / ${box.height}`, width };
-  return { ratio: width && height ? `${width} / ${height}` : null, width };
+  const ratio = box ? `${box.width} / ${box.height}` : width && height ? `${width} / ${height}` : null;
+  if (!box && !width) return { ratio, width: null };
+  const base = svgBaseSize(source);
+  const dpr = pixelRatio > 0 ? pixelRatio : 1;
+  const scale = Math.min(1, SVG_PREVIEW_MAX_WIDTH / dpr / base.width, SVG_PREVIEW_MAX_HEIGHT / dpr / base.height);
+  return { ratio, width: base.width * scale };
 }
 
 /** The 100% size the viewer zooms from: explicit width/height win, the viewBox
@@ -180,11 +190,10 @@ function isRenderableSvg(themed: string): boolean {
 }
 
 function setPreview(img: HTMLImageElement, themed: string, src = SVG_DATA_URL_PREFIX + encodeURIComponent(themed)): void {
-  const frame = svgFrame(themed);
+  const frame = svgFrame(themed, window.devicePixelRatio);
   img.style.aspectRatio = frame.ratio ?? '';
   if (frame.width) img.width = Math.round(frame.width);
   else img.removeAttribute('width');
-  img.classList.toggle('acp-harness__svg-card-img--fill', frame.width === null);
   img.src = src;
 }
 
