@@ -199,7 +199,7 @@ export interface AcpHarnessConfig {
   remote_profiles: RemoteHarnessProfile[];
   /** Per-backend model selection. Keyed by backend id (`gemini`, `opencode`,
    * `droid`, `cursor`, `claude`, `codex`, `junie`, `omp`, `grok`, `copilot`,
-   * `mimo`, `cline`).
+   * `mimo`, `cline`, `antigravity`).
    * Empty `active` means use the adapter default. Junie/OMP/Grok/Copilot/Cline are
    * display-only in v1 (their model-selection paths under native ACP mode are
    * unverified; Copilot's and Cline's ACP servers document no model flag). */

@@ -19,6 +19,7 @@ export const BACKEND_LABELS: Record<string, string> = {
   copilot: 'Copilot',
   mimo: 'MiMo',
   cline: 'Cline',
+  antigravity: 'Antigravity',
 };
 
 /** Preferred add-lane picker order. Remaining installed backends follow by id. */
@@ -30,13 +31,19 @@ export const HARNESS_BACKEND_ORDER: readonly string[] = [
   'pi-acp',
 ];
 
-export function harnessBackends(backends: AcpBackendDescriptor[]): AcpBackendDescriptor[] {
+/** Add-lane picker entries: drops `gemini`, and drops local-only backends
+ * (`antigravity`, spec 287) when `options.remote` is set. */
+export function harnessBackends(
+  backends: AcpBackendDescriptor[],
+  options: { remote?: boolean } = {},
+): AcpBackendDescriptor[] {
   const rank = (id: string): number => {
     const index = HARNESS_BACKEND_ORDER.indexOf(id);
     return index === -1 ? HARNESS_BACKEND_ORDER.length : index;
   };
   return backends
     .filter((backend) => backend.id !== 'gemini')
+    .filter((backend) => !(options.remote && backend.id === 'antigravity'))
     .slice()
     .sort((a, b) => {
       const byPreferred = rank(a.id) - rank(b.id);
@@ -124,6 +131,8 @@ export function backendLogoId(backendId: string): string {
       return 'krypton-logo-mimo';
     case 'cline':
       return 'krypton-logo-cline';
+    case 'antigravity':
+      return 'krypton-logo-antigravity';
     default:
       return 'krypton-logo-omp';
   }
@@ -154,6 +163,7 @@ export function laneAccent(index: number): string {
     '#7fa8ff',
     '#ff8552',
     '#56d6c0',
+    '#ff7ad9',
   ];
   return accents[(index - 1) % accents.length];
 }
@@ -182,6 +192,7 @@ export const LANE_ACCENT_PALETTE: readonly LaneAccentColor[] = [
   { color: '#7fa8ff', rgb: '127, 168, 255' },
   { color: '#ff8552', rgb: '255, 133, 82' },
   { color: '#56d6c0', rgb: '86, 214, 192' },
+  { color: '#ff7ad9', rgb: '255, 122, 217' },
 ];
 
 /** Picks a random palette color no live lane is using. Falls back to the whole
@@ -208,6 +219,7 @@ export function laneAccentForLabel(label: string): string {
   if (/copilot/i.test(label)) return laneAccent(11);
   if (/mimo/i.test(label)) return laneAccent(12);
   if (/cline/i.test(label)) return laneAccent(13);
+  if (/antigravity/i.test(label)) return laneAccent(14);
   const match = label.match(/-(\d+)$/);
   return match ? laneAccent(Number(match[1])) : 'var(--krypton-window-accent, #0cf)';
 }

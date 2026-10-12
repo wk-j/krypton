@@ -1,5 +1,6 @@
 pub mod acp;
 pub mod acp_harness_config;
+mod acp_install;
 mod commands;
 mod config;
 pub mod control;

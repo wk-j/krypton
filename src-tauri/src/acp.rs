@@ -189,6 +189,19 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                 display_name: "Cline".to_string(),
             },
         ),
+        (
+            "antigravity",
+            AcpBackend {
+                // Placeholder: Antigravity's ACP server is not on PATH. It ships
+                // only as a registry zip, so acp_spawn replaces command + args
+                // with the managed install (acp_install::resolve). Local-only,
+                // auth retried via `authenticate` (see request_with_auth_retry).
+                // See docs/287-acp-antigravity-lane.md.
+                command: "agy_acp_server".to_string(),
+                args: vec![],
+                display_name: "Antigravity".to_string(),
+            },
+        ),
     ]
 }
 
@@ -368,6 +381,8 @@ struct AcpClient {
     next_id: AtomicU64,
     /// Set after `initialize` completes. Notification before this point is rare.
     agent_capabilities: RwLock<Option<Value>>,
+    /// `initialize` `authMethods`; gates the spec 287 `authenticate` retry.
+    auth_methods: RwLock<Vec<Value>>,
     /// Filled by `session/new` response.
     acp_session_id: RwLock<Option<String>>,
     /// Rolling stderr capture (max 64KB) — surfaced on startup failure.
@@ -413,6 +428,7 @@ impl AcpClient {
             fs_write_pending: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
             agent_capabilities: RwLock::new(None),
+            auth_methods: RwLock::new(Vec::new()),
             acp_session_id: RwLock::new(None),
             stderr_buf: Mutex::new(String::new()),
             disconnect_reason: RwLock::new(None),
@@ -1719,6 +1735,20 @@ pub async fn acp_spawn(
         }
     }
 
+    if backend_id == "antigravity" {
+        if remote_runtime_id
+            .as_deref()
+            .is_some_and(|id| !id.is_empty())
+        {
+            return Err("Antigravity lanes are local-only".to_string());
+        }
+        let (command, args) = crate::acp_install::resolve(&app, &crate::acp_install::ANTIGRAVITY)
+            .await
+            .map_err(|e| format!("Antigravity install failed: {e}. {ANTIGRAVITY_INSTALL_HINT}"))?;
+        backend.command = command.to_string_lossy().into_owned();
+        backend.args = args;
+    }
+
     let session = registry.allocate_session();
     let client = Arc::new(AcpClient::new(session, backend_id.clone(), display_name));
     if let Ok(mut g) = client.cwd.write() {
@@ -1891,6 +1921,9 @@ pub async fn acp_initialize(
     if let Ok(mut g) = client.agent_capabilities.write() {
         *g = Some(capabilities.clone());
     }
+    if let Ok(mut g) = client.auth_methods.write() {
+        g.clone_from(&auth_methods);
+    }
 
     Ok(AgentInitInfo {
         agent_protocol_version: proto,
@@ -1963,18 +1996,16 @@ pub async fn acp_session_new(
     let session_cwd = client_session_cwd(&client);
     let mcp_servers = client_mcp_servers(&client);
 
-    let new_session = tokio::time::timeout(
-        Duration::from_secs(30),
-        client.request(
-            "session/new",
-            json!({
-                "cwd": session_cwd,
-                "mcpServers": mcp_servers,
-            }),
-        ),
+    let new_session = request_with_auth_retry(
+        &client,
+        "session/new",
+        json!({
+            "cwd": session_cwd,
+            "mcpServers": mcp_servers,
+        }),
+        Some(Duration::from_secs(30)),
     )
-    .await
-    .map_err(|_| "session/new timed out".to_string())??;
+    .await?;
 
     let acp_session_id = new_session
         .get("sessionId")
@@ -2040,16 +2071,17 @@ async fn acp_session_restore(
     set_client_session_id(&client, &session_id);
     let session_cwd = client_session_cwd(&client);
     let mcp_servers = client_mcp_servers(&client);
-    let response = client
-        .request(
-            method,
-            json!({
-                "sessionId": &session_id,
-                "cwd": session_cwd,
-                "mcpServers": mcp_servers,
-            }),
-        )
-        .await?;
+    let response = request_with_auth_retry(
+        &client,
+        method,
+        json!({
+            "sessionId": &session_id,
+            "cwd": session_cwd,
+            "mcpServers": mcp_servers,
+        }),
+        None,
+    )
+    .await?;
     // Resumed/loaded sessions keep whatever model they were saved with — v1 does
     // not force them to the current config, so no apply is attempted here. But we
     // DO surface any advertised model list/current id so the picker works on
@@ -2850,6 +2882,93 @@ fn disconnect_detail(backend_id: &str, stderr: &str) -> String {
     }
 }
 
+const ANTIGRAVITY_INSTALL_HINT: &str = "Antigravity's ACP server downloads on first use (~110 MB download, ~400 MB on disk); check network and retry.";
+const ANTIGRAVITY_AUTH_HINT: &str =
+    "Run `agy` once to sign in, or set `auth.type` in ~/.gemini/antigravity-acp/settings.json.";
+/// spec 287: the only auth method Krypton selects on its own (personal Google
+/// sign-in shared with `agy`/IDE). The server persists it to settings.json.
+const ANTIGRAVITY_AUTH_METHOD: &str = "oauth-personal";
+/// `authenticate` may wait on a browser sign-in. Closing the lane aborts it
+/// (acp_dispose → finalize_disconnect clears `pending`).
+const AUTHENTICATE_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// ACP auth-required as `request_with_id` stringifies it: code -32000 plus the
+/// agent's message. Both must match; -32000 alone is a generic server error.
+fn is_auth_required(error: &str) -> bool {
+    error.contains("\"code\":-32000") && error.to_lowercase().contains("authentication required")
+}
+
+fn advertises_auth_method(methods: &[Value], id: &str) -> bool {
+    methods
+        .iter()
+        .any(|method| method.get("id").and_then(Value::as_str) == Some(id))
+}
+
+async fn timed_request(
+    client: &AcpClient,
+    method: &str,
+    params: Value,
+    timeout: Option<Duration>,
+) -> Result<Value, String> {
+    match timeout {
+        Some(limit) => tokio::time::timeout(limit, client.request(method, params))
+            .await
+            .map_err(|_| format!("{method} timed out"))?,
+        None => client.request(method, params).await,
+    }
+}
+
+/// spec 287: an Antigravity session call that fails auth-required gets one
+/// `authenticate { methodId: "oauth-personal" }` and one retry, when the
+/// agent advertised that method. Every other backend/error passes through.
+async fn request_with_auth_retry(
+    client: &AcpClient,
+    method: &str,
+    params: Value,
+    timeout: Option<Duration>,
+) -> Result<Value, String> {
+    let error = match timed_request(client, method, params.clone(), timeout).await {
+        Err(error) if client.backend_id == "antigravity" && is_auth_required(&error) => error,
+        other => return other,
+    };
+    let advertised = client
+        .auth_methods
+        .read()
+        .map(|methods| advertises_auth_method(&methods, ANTIGRAVITY_AUTH_METHOD))
+        .unwrap_or(false);
+    if !advertised {
+        return Err(format!("{error}. {ANTIGRAVITY_AUTH_HINT}"));
+    }
+    log::info!("antigravity {method}: auth required; authenticating via {ANTIGRAVITY_AUTH_METHOD}");
+    match tokio::time::timeout(
+        AUTHENTICATE_TIMEOUT,
+        client.request(
+            "authenticate",
+            json!({ "methodId": ANTIGRAVITY_AUTH_METHOD }),
+        ),
+    )
+    .await
+    {
+        Ok(Ok(_)) => {}
+        Ok(Err(auth_error)) => return Err(format!("{auth_error}. {ANTIGRAVITY_AUTH_HINT}")),
+        Err(_) => {
+            return Err(format!(
+                "authenticate timed out after {}s. {ANTIGRAVITY_AUTH_HINT}",
+                AUTHENTICATE_TIMEOUT.as_secs()
+            ))
+        }
+    }
+    timed_request(client, method, params, timeout)
+        .await
+        .map_err(|retry_error| {
+            if is_auth_required(&retry_error) {
+                format!("{retry_error}. {ANTIGRAVITY_AUTH_HINT}")
+            } else {
+                retry_error
+            }
+        })
+}
+
 fn startup_hint(backend_id: &str, stderr: &str) -> String {
     let s = stderr.to_lowercase();
     if backend_id == "cursor" {
@@ -3052,6 +3171,17 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
             return "Cline did not return an initialize response and no stderr was captured. First-run `cline auth` or install input is a likely cause; run `cline auth` in a terminal, then retry.".to_string();
         }
     }
+    if backend_id == "antigravity" {
+        if s.contains("authentication required") || s.contains("sign in") || s.contains("oauth") {
+            return ANTIGRAVITY_AUTH_HINT.to_string();
+        }
+        if s.contains("localharness") || s.contains("no such file") || s.contains("enoent") {
+            return "The Antigravity install looks incomplete. Quit Krypton, delete the `acp-agents/antigravity` folder in Krypton's app cache, and relaunch to reinstall.".to_string();
+        }
+        if stderr.is_empty() {
+            return "Antigravity's ACP server did not answer initialize and no stderr was captured; retry, or check the `acp-agents/antigravity` install in Krypton's app cache.".to_string();
+        }
+    }
     if s.contains("/login") || s.contains("not authenticated") {
         return "Run `claude /login` in a terminal, then retry.".to_string();
     }
@@ -3074,11 +3204,11 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        advertise_read_text_file, binary_read_error, disconnect_detail, effective_spawn_model,
-        elicitation_reply, fs_path_in_scope, grok_ask_user_ext_response, grok_ask_user_skip,
-        grok_session_dir_for_cwd, is_under_grok_session_dir, percent_encode_path, resolve_backend,
-        sniff_binary_kind, startup_hint, steering_supported, turn_marker_event, with_request_id,
-        FsAccess,
+        advertise_read_text_file, advertises_auth_method, binary_read_error, disconnect_detail,
+        effective_spawn_model, elicitation_reply, fs_path_in_scope, grok_ask_user_ext_response,
+        grok_ask_user_skip, grok_session_dir_for_cwd, is_auth_required, is_under_grok_session_dir,
+        percent_encode_path, resolve_backend, sniff_binary_kind, startup_hint, steering_supported,
+        turn_marker_event, with_request_id, FsAccess,
     };
     use serde_json::{json, Value};
     use std::path::{Path, PathBuf};
@@ -3799,5 +3929,39 @@ mod tests {
         })));
         assert!(!steering_supported(&json!({ "_meta": { "steering": {} } })));
         assert!(!steering_supported(&json!({})));
+    }
+
+    #[test]
+    fn auth_required_needs_code_and_message() {
+        // Shape request_with_id produced for a live Antigravity 1.3.0 server
+        // (`data.message` abridged).
+        assert!(is_auth_required(
+            r#"session/new failed: {"code":-32000,"data":{"message":"No authentication method selected. Either call the `authenticate` method"},"message":"Authentication required"}"#
+        ));
+        // Krypton itself answers fs errors with -32000; never treat those as auth.
+        assert!(!is_auth_required(
+            r#"session/new failed: {"code":-32000,"message":"write: permission denied"}"#
+        ));
+        assert!(!is_auth_required(
+            r#"session/new failed: {"code":-32603,"message":"Authentication required"}"#
+        ));
+        assert!(!is_auth_required("session/new timed out"));
+    }
+
+    #[test]
+    fn auth_retry_only_for_advertised_method_id() {
+        let methods = vec![
+            json!({ "id": "oauth-business", "name": "Business" }),
+            json!({ "id": "oauth-personal", "name": "Personal" }),
+        ];
+        assert!(advertises_auth_method(&methods, "oauth-personal"));
+        assert!(!advertises_auth_method(
+            &[
+                json!({ "id": "gemini-api-key" }),
+                json!({ "name": "oauth-personal" })
+            ],
+            "oauth-personal"
+        ));
+        assert!(!advertises_auth_method(&[], "oauth-personal"));
     }
 }

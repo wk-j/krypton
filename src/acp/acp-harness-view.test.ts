@@ -2516,26 +2516,33 @@ describe('laneAccentForLabel', () => {
     expect(laneAccentForLabel('Cline-1')).not.toBe(laneAccent(1));
   });
 
-  it('keeps a 13-color palette wider than the 13 named lanes', () => {
-    // Junie=8, OMP=9, Grok=10, Copilot=11, MiMo=12, Cline=13 all occupy distinct
-    // slots, so the palette must have at least 13 distinct entries — otherwise
-    // laneAccent(13) wraps modulo to Codex blue.
-    const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(laneAccent);
-    expect(new Set(slots).size).toBe(13);
+  it('routes Antigravity labels to the 14th palette slot, not the numeric fallback', () => {
+    // Spec 287: Antigravity is the 14th named lane. Without the explicit
+    // /antigravity/i arm, 'Antigravity-1' would hit the -(\d+)$ fallback → laneAccent(1).
+    expect(laneAccentForLabel('Antigravity-1')).toBe(laneAccent(14));
+    expect(laneAccentForLabel('Antigravity-1')).not.toBe(laneAccent(1));
+  });
+
+  it('keeps a 14-color palette wider than the 14 named lanes', () => {
+    // Junie=8 … Cline=13, Antigravity=14 all occupy distinct slots, so the
+    // palette must have at least 14 distinct entries — otherwise
+    // laneAccent(14) wraps modulo to Codex blue.
+    const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map(laneAccent);
+    expect(new Set(slots).size).toBe(14);
   });
 });
 
 describe('pickLaneAccent', () => {
   it('never hands out a color a live lane already holds', () => {
-    const taken = LANE_ACCENT_PALETTE.slice(0, 12).map((entry) => entry.color);
-    expect(pickLaneAccent(taken, () => 0)).toBe(LANE_ACCENT_PALETTE[12]);
-    expect(pickLaneAccent(taken, () => 0.999)).toBe(LANE_ACCENT_PALETTE[12]);
+    const taken = LANE_ACCENT_PALETTE.slice(0, 13).map((entry) => entry.color);
+    expect(pickLaneAccent(taken, () => 0)).toBe(LANE_ACCENT_PALETTE[13]);
+    expect(pickLaneAccent(taken, () => 0.999)).toBe(LANE_ACCENT_PALETTE[13]);
   });
 
   it('picks from the free colors by the random draw', () => {
     const taken = [LANE_ACCENT_PALETTE[0].color];
     expect(pickLaneAccent(taken, () => 0)).toBe(LANE_ACCENT_PALETTE[1]);
-    expect(pickLaneAccent(taken, () => 0.999)).toBe(LANE_ACCENT_PALETTE[12]);
+    expect(pickLaneAccent(taken, () => 0.999)).toBe(LANE_ACCENT_PALETTE[13]);
   });
 
   it('falls back to the whole palette once every color is taken', () => {
@@ -2552,6 +2559,15 @@ describe('pickLaneAccent', () => {
 });
 
 describe('harnessBackends', () => {
+  it('offers Antigravity locally but drops it in a remote harness', () => {
+    const backends = [
+      { id: 'claude', display_name: 'Claude', command: 'npx' },
+      { id: 'antigravity', display_name: 'Antigravity', command: 'agy_acp_server.par' },
+    ];
+    expect(harnessBackends(backends).map((b) => b.id)).toContain('antigravity');
+    expect(harnessBackends(backends, { remote: true }).map((b) => b.id)).toEqual(['claude']);
+  });
+
   it('excludes Gemini without changing the shared ACP backend registry', () => {
     const backends = [
       { id: 'claude', display_name: 'Claude', command: 'npx' },
@@ -2745,6 +2761,7 @@ describe('spec 125 lane rail disambiguation', () => {
       expect(backendLogoId('copilot')).toBe('krypton-logo-copilot');
       expect(backendLogoId('mimo')).toBe('krypton-logo-mimo');
       expect(backendLogoId('cline')).toBe('krypton-logo-cline');
+      expect(backendLogoId('antigravity')).toBe('krypton-logo-antigravity');
     });
 
     it('falls back to the neutral OMP mark for unknown backends', () => {

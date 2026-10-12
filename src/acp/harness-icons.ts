@@ -76,6 +76,12 @@ export const BACKEND_LOGO_SVG_DEFS = [
     '<path d="M5 6.2 L7.4 8 L5 9.8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
     '<line x1="8.6" y1="10.2" x2="11" y2="10.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
     '</symbol>',
+  // antigravity: upward chevrons rising off a ground line (anti-gravity)
+  '<symbol id="krypton-logo-antigravity" viewBox="0 0 16 16">' +
+    '<path d="M4 7.5 L8 3.5 L12 7.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<path d="M5.2 10.6 L8 7.8 L10.8 10.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<line x1="3.5" y1="13" x2="12.5" y2="13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+    '</symbol>',
 ].join('');
 
 // Lane-bar telemetry icons — same <symbol>/<use> + currentColor mechanism as the

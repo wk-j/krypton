@@ -50,6 +50,7 @@
   --krypton-backend-copilot:  #7fa8ff;
   --krypton-backend-mimo:     #ff8552;
   --krypton-backend-cline:    #56d6c0;
+  --krypton-backend-antigravity: #ff7ad9;
 
   /* Transcript message-body accents. Carried as a background tint (no
    * side-stripe) so the accent is themeable and the chrome stays flat. */
@@ -1070,6 +1071,7 @@
 .acp-harness__lane-mail-logo--copilot  { color: var(--krypton-backend-copilot); }
 .acp-harness__lane-mail-logo--mimo     { color: var(--krypton-backend-mimo); }
 .acp-harness__lane-mail-logo--cline    { color: var(--krypton-backend-cline); }
+.acp-harness__lane-mail-logo--antigravity { color: var(--krypton-backend-antigravity); }
 
 .acp-harness__lane-mail-text {
   display: block;
@@ -2406,6 +2408,7 @@
 
 .acp-harness__subagent-detail-text {
   margin: 0 0 4px;
+  font: inherit;
   max-height: 16em;
   overflow: auto;
   white-space: pre-wrap;
@@ -5385,6 +5388,7 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
 .acp-harness__rail-logo--copilot  { color: var(--krypton-backend-copilot); }
 .acp-harness__rail-logo--mimo     { color: var(--krypton-backend-mimo); }
 .acp-harness__rail-logo--cline    { color: var(--krypton-backend-cline); }
+.acp-harness__rail-logo--antigravity { color: var(--krypton-backend-antigravity); }
 
 .acp-harness__rail-tag {
   flex: 0 0 auto;

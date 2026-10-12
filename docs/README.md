@@ -289,6 +289,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 284 | [Program Status Protocol (OSC 7501)](./284-program-status-osc7501.md) |
 | 285 | [ACP Harness Word Autocomplete (Ghost Text)](./285-harness-word-autocomplete.md) |
 | 286 | [ACP Harness Reference Thumbnails](./286-harness-reference-thumbnails.md) |
+| 287 | [ACP Antigravity Lane](./287-acp-antigravity-lane.md) |
 
 ## ADRs (20)
 

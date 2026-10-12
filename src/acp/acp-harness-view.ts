@@ -6675,7 +6675,7 @@ export class AcpHarnessView implements ContentView {
     await this.refreshDirectives();
 
     try {
-      this.pickerEntries = harnessBackends(await AcpClient.listBackends());
+      this.pickerEntries = harnessBackends(await AcpClient.listBackends(), { remote: this.remoteRuntimeId !== null });
       this.systemRows = [
         ...(this.harnessMemoryWarning ? [`memory warning: ${this.harnessMemoryWarning}`] : []),
         ...(this.remoteRuntimeId
@@ -10025,7 +10025,7 @@ export class AcpHarnessView implements ContentView {
   private async openLanePicker(forDirectiveId?: string | null): Promise<void> {
     let entries: AcpBackendDescriptor[];
     try {
-      entries = harnessBackends(await AcpClient.listBackends());
+      entries = harnessBackends(await AcpClient.listBackends(), { remote: this.remoteRuntimeId !== null });
     } catch (e) {
       this.flashChip(`backend list failed: ${String(e)}`);
       return;
@@ -10088,7 +10088,7 @@ export class AcpHarnessView implements ContentView {
     this.memoryDrawerOpen = false;
     if (this.pickerEntries.length === 0) {
       try {
-        this.pickerEntries = harnessBackends(await AcpClient.listBackends());
+        this.pickerEntries = harnessBackends(await AcpClient.listBackends(), { remote: this.remoteRuntimeId !== null });
       } catch (e) {
         this.flashChip(`backend list failed: ${errorText(e)}`);
         return;
@@ -15019,7 +15019,11 @@ export class AcpHarnessView implements ContentView {
     void predictWordSuffix(draft.slice(0, cursor)).then((suffix) => {
       if (seq !== this.ghostSeq || lane.draft !== draft || lane.cursor !== cursor) return;
       this.ghost = suffix ? { laneId: lane.id, draft, cursor, suffix } : null;
-      if (this.activeLane() === lane) this.renderComposer();
+      if (this.activeLane() !== lane) return;
+      this.renderComposer();
+      // Spec 114 rev 22: the async reply repaints the composer outside the key
+      // turn, so it re-pins like setDraft does.
+      this.pinStickyAfterComposerKey();
     });
   }
 

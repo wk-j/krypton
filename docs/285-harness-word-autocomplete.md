@@ -194,6 +194,7 @@ export class WordModel {
    dictating; no pending permission/question; focus = text) → seq++ →
    worker.complete(lane.draft.slice(0, cursor))
 4. Reply: drop it if seq is stale or lane.draft/cursor changed → ghost → renderComposer()
+   → pinStickyAfterComposerKey() (spec 114 rev 22: an async composer rebuild drifts a stuck transcript)
 5. Tab → accept + space (no space if the word is Thai/Lao/Khmer/Myanmar/CJK);
    → → accept with no space. Both use setDraft() with no bloom (spec 252: completion ≠ insertion)
 6. submitActiveLane(): invoke('harness_prompt_log', { text, backendId, cwd }) → if new row, worker.observe(text)

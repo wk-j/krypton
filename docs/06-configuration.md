@@ -645,8 +645,9 @@ Gemini is available only in the standalone ACP agent view. The multi-lane ACP Ha
 | Copilot | `copilot --acp --stdio` |
 | MiMo | `mimo acp` |
 | Cline | `cline --acp` |
+| Antigravity | `./agy_acp_server.par` (managed install from the ACP Registry, launched from its cache directory; local-only) |
 
-Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup, `pi /login` or provider env vars, Factory `FACTORY_API_KEY` env var or `droid` device-code flow, `cursor-agent login` or `CURSOR_API_KEY`, `junie` first-run for JetBrains Account or `JUNIE_API_KEY` / `--auth <token>` / BYOK provider keys, `omp` first-run/auth-broker or provider keys, `grok` first-run browser login or `XAI_API_KEY`, `copilot` `/login` device flow or `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`, `mimo` first-run provider setup, `cline auth`).
+Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup, `pi /login` or provider env vars, Factory `FACTORY_API_KEY` env var or `droid` device-code flow, `cursor-agent login` or `CURSOR_API_KEY`, `junie` first-run for JetBrains Account or `JUNIE_API_KEY` / `--auth <token>` / BYOK provider keys, `omp` first-run/auth-broker or provider keys, `grok` first-run browser login or `XAI_API_KEY`, `copilot` `/login` device flow or `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`, `mimo` first-run provider setup, `cline auth`). Antigravity is the exception: Krypton installs it and signs it in automatically (see below).
 
 **Pi lane prerequisites.** The Pi-1 lane uses the third-party [`pi-acp`](https://github.com/svkozak/pi-acp) adapter to drive the [`pi`](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) coding agent. Install both globally:
 
@@ -745,6 +746,10 @@ Then authenticate outside Krypton by running `cline auth` once. Krypton does not
 
 Cline is a regular permission-gated lane, but it gets its MCP servers through a **native-config overlay**, not `session/new`. Verified against cline 3.0.24, the `initialize` response advertises no `mcpCapabilities`, so any http/sse server injected through `session/new.mcpServers` is silently dropped and never connects. Instead Krypton writes a per-lane `cline_mcp_settings.json` — carrying the per-lane `krypton-harness-memory` server (tagged `streamableHttp`) plus the project `.mcp.json` bridge (spec 83) — under `~/.config/krypton/runtime/cline/<harness>/<lane>/`, and points the `CLINE_MCP_SETTINGS_PATH` env var at it at spawn. This overrides only the MCP settings file, so the global `~/.cline` auth/providers from `cline auth` stay shared across lanes. The overlay is removed on lane close and garbage-collected on harness start. Optional `acp_harness.lane_models.cline.active` drives the lane model chip; Cline does expose `-m`/`--provider` CLI flags, but v1 leaves the model to `cline auth`/config, so the chip is display-only unless Cline advertises model state at `session/new` (then the generic `session/set_model` path applies).
 
+**Antigravity lane prerequisites.** Antigravity is not on `PATH`. Krypton installs Google's `antigravity-acp` server from the ACP Registry into the app cache (`app_cache_dir()`) on the first Antigravity lane spawn and launches it from its install directory. The download is ~110 MB and takes ~400 MB on disk per version. Krypton re-checks the registry at most once an hour and removes old versions before the process's first Antigravity spawn. Antigravity lanes are **local-only**: a remote harness does not offer the backend, and spawning one there fails with "Antigravity lanes are local-only".
+
+Auth is automatic. When `session/new` (or resume/load) reports "Authentication required", Krypton calls `authenticate` with `oauth-personal`, which uses your existing Google sign-in (or starts the server's browser sign-in), and the server persists the choice to `~/.gemini/antigravity-acp/settings.json`. Workspace (`oauth-business`), Gemini API-key, or Agent Platform users must set `auth.type` in that file before the first lane; switching later also means editing `auth.type`. If sign-in fails, run `agy` once to sign in. Model ids come from the lane's model picker (the server advertises them at `session/new`); there is no fixed list.
+
 See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-lane.md` for Pi-1, `docs/86-acp-droid-lane.md` for Droid-1, `docs/113-acp-cursor-lane.md` for Cursor, `docs/119-acp-junie-lane.md` for Junie, `docs/122-acp-omp-lane.md` for OMP, `docs/135-acp-grok-lane.md` for Grok, `docs/150-acp-copilot-lane.md` for Copilot, and `docs/159-acp-cline-lane.md` for Cline.
 
 ### ACP Harness Configuration
@@ -784,7 +789,7 @@ project_dir = "/srv/repos/krypton"
 connect_timeout_seconds = 15
 ```
 
-**Lane model selection.** `<backend>` keys match the ACP Harness backend ids: `opencode`, `droid`, `cursor`, `claude`, `codex`, `pi-acp`, `junie`, `omp`, `grok`, `copilot`, `mimo`, and `cline`. Krypton applies `active` only for backends that support model selection in v1:
+**Lane model selection.** `<backend>` keys match the ACP Harness backend ids: `opencode`, `droid`, `cursor`, `claude`, `codex`, `pi-acp`, `junie`, `omp`, `grok`, `copilot`, `mimo`, `cline`, and `antigravity`. Krypton applies `active` only for backends that support model selection in v1:
 
 - **OpenCode** — sends `session/set_config_option {model}` (with `session/set_model` fallback) right after `session/new`. If `active` is empty, Krypton falls back to the historical default `zai-coding-plan/glm-5.1`.
 - **Droid** — passes `-m <active>` to `droid exec` at spawn. Default if unset is Factory's `claude-opus-4-7`. Changing the model requires respawning the lane.
