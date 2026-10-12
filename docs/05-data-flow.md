@@ -327,8 +327,9 @@ d. The loop stops once the grip, the mouse and the button fades settle
 6. AcpHarnessView lists ACP backends and starts with an empty roster. The user
    opens `Cmd+P → +` to spawn installed harness backends such as Codex, Claude,
    OpenCode, Pi, Droid, Cursor, Junie, or OMP with the same cwd. After `session/new`,
-   OpenCode lanes receive `session/set_config_option` to select
-   `zai-coding-plan/glm-5.1`.
+   a configured `lane_models.<backend>.active` is applied via `session/set_model`
+   (`models` advertised) or `session/set_config_option` (`configOptions` model
+   select, e.g. OpenCode v2); failure is non-fatal.
    a. Lane add/restore/close recomputes the deduplicated set of supported usage
       providers (Claude, Codex, Copilot, Cursor) and notifies the compositor.
 7. Each lane owns one AcpClient, receives an HTTP MCP memory server descriptor

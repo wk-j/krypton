@@ -1,6 +1,6 @@
 # ACP Agent Window — Implementation Spec
 
-> Status: Draft
+> Status: Window removed (2026-10-12). The single-lane `AcpView` tab, its palette entries, `Leader Shift a/e/i`, and the Gemini backend were removed; ACP agents run only in the ACP Harness (`docs/72-acp-harness-view.md`). The Rust ACP client protocol described here is still the harness's transport.
 > Date: 2026-04-25
 > Milestone: M8 — Polish
 
@@ -33,7 +33,7 @@ Add a **separate, dedicated AI agent window** that speaks the [Agent Client Prot
 | Zed | First-class ACP host. `~/.config/zed/settings.json` `agent_servers` block (`command`, `args`, `env`). | Reference implementation; protocol authors. |
 | Neovim (`acp.nvim`, CodeCompanion) | Spawns `npx @agentclientprotocol/claude-agent-acp` or `gemini --experimental-acp`, renders chunks in a buffer. | Confirms stdio adapter pattern is the norm. |
 | IntelliJ "Gemini CLI Companion" | Launches `gemini --experimental-acp`, JSON-RPC over stdio, modal permission prompts. | Validates Gemini CLI ACP mode for IDE-style hosts. |
-| OpenCode ACP | Launches `opencode acp` as an ACP-compatible subprocess over stdio JSON-RPC, then selects `zai-coding-plan/glm-5.1` through ACP session configuration. | Validates OpenCode as a code-defined backend alongside Claude, Gemini, and Codex, with Krypton selecting its default lane model without writing OpenCode config files. |
+| OpenCode ACP | Launches `opencode acp` as an ACP-compatible subprocess over stdio JSON-RPC; the lane model comes from OpenCode's `configOptions` model select (configured `lane_models.opencode.active` applied via `session/set_config_option`). | Validates OpenCode as a code-defined backend alongside Claude, Gemini, and Codex, without writing OpenCode config files. |
 | Cursor Agent ACP | Launches `cursor-agent acp` as Cursor Agent's native ACP server over stdio JSON-RPC. | Validates Cursor as a regular built-in backend with no headless NDJSON adapter. |
 | JetBrains Junie ACP | Launches `junie --acp true` as Junie CLI's native ACP server over stdio JSON-RPC. | Validates Junie as a regular built-in backend; auth via JetBrains Account, `JUNIE_API_KEY`, `--auth <token>`, or BYOK provider keys. |
 | Oh My Pi ACP | Launches `omp acp` as OMP's native ACP server over stdio JSON-RPC. | Validates OMP as a regular built-in backend with native permission routing; Krypton skips only the project `.mcp.json` bridge because OMP native-loads root MCP config. |
@@ -41,7 +41,7 @@ Add a **separate, dedicated AI agent window** that speaks the [Agent Client Prot
 
 **Krypton delta** — Match Zed's TOML-style backend declaration (familiar to ACP users). Diverge by routing every UI surface through a keyboard-first window in our own compositor (no popups), single-key inline permission prompts, and cyberpunk chrome consistent with the rest of Krypton.
 
-Source note: OpenCode's ACP documentation confirms `opencode acp` as the stdio ACP subprocess command; Krypton selects `zai-coding-plan/glm-5.1` after `session/new` via `session/set_config_option` with `session/set_model` fallback, and OpenCode's CLI documentation confirms `opencode auth login` for provider credentials. Cursor Agent's local `cursor-agent acp --help` confirms its native ACP subprocess command; Cursor auth remains outside Krypton via `cursor-agent login` or `CURSOR_API_KEY`. JetBrains Junie's `junie-cli-acp` documentation confirms `junie --acp true` as the stdio ACP subprocess command; Junie auth remains outside Krypton via `junie` first-run (JetBrains Account), `JUNIE_API_KEY`, `-a/--auth <token>`, or BYOK provider keys forwarded through the cached login env. OMP's README documents `omp acp` and the install command `curl -fsSL https://omp.sh/install | sh`; OMP auth remains outside Krypton via `omp` first-run/auth-broker or provider keys forwarded through the cached login env.
+Source note: OpenCode's ACP documentation confirms `opencode acp` as the stdio ACP subprocess command; OpenCode v2 (verified 2.0.26) advertises models only through the `configOptions` model select and rejects `session/set_model` with `Method not found`, so Krypton applies a configured model via `session/set_config_option`. OpenCode's CLI documentation confirms `opencode auth login` for provider credentials. Cursor Agent's local `cursor-agent acp --help` confirms its native ACP subprocess command; Cursor auth remains outside Krypton via `cursor-agent login` or `CURSOR_API_KEY`. JetBrains Junie's `junie-cli-acp` documentation confirms `junie --acp true` as the stdio ACP subprocess command; Junie auth remains outside Krypton via `junie` first-run (JetBrains Account), `JUNIE_API_KEY`, `-a/--auth <token>`, or BYOK provider keys forwarded through the cached login env. OMP's README documents `omp acp` and the install command `curl -fsSL https://omp.sh/install | sh`; OMP auth remains outside Krypton via `omp` first-run/auth-broker or provider keys forwarded through the cached login env.
 
 ## Affected Files
 
@@ -72,7 +72,7 @@ ACP backends are code-defined, not configured in `krypton.toml`.
 | `claude` | `npx -y @agentclientprotocol/claude-agent-acp` (lane model applied via `session/set_model` after `session/new` when `lane_models.claude.active` is set — the adapter advertises model state and resolves aliases like `opus`/`sonnet`; non-fatal on failure. The agent-advertised `availableModels` also feed the in-harness live model picker, leader `,` — spec 127) |
 | `gemini` | `gemini --experimental-acp` |
 | `codex` | `codex-acp` |
-| `opencode` | `opencode acp` + `session/set_config_option model=zai-coding-plan/glm-5.1` |
+| `opencode` | `opencode acp` (+ `session/set_config_option model=<lane_models.opencode.active>` when configured) |
 | `pi-acp` | `pi-acp` |
 | `droid` | `droid exec --output-format acp` |
 | `cursor` | `cursor-agent acp` (harness MCP via native `.cursor/mcp.json` + `mcp enable`, not `session/new`) |
@@ -231,7 +231,6 @@ For v1, auth is the user's responsibility outside Krypton (`claude /login`, `gem
 
 | Key | Context | Action |
 |-----|---------|--------|
-| `Leader A` (Shift+a) | Compositor mode | Open ACP backend picker (palette filtered to ACP entries). |
 | `a` / `A` / `r` / `R` | Permission prompt focused | allow_once / allow_always / reject_once / reject_always (passes `optionId` to adapter). |
 | `Esc` | Permission prompt focused | No-op — never answers a permission (a stray Esc used to cancel a tool call the user meant to allow). Use the option keys. |
 | `o` or `Enter` | Tool block with diff focused | Open full diff in Diff Viewer window via `openDiffFromString`. |

@@ -197,7 +197,7 @@ export interface AcpHarnessConfig {
   /** spec 285: ghost-text word completion in the harness composer. */
   word_autocomplete: boolean;
   remote_profiles: RemoteHarnessProfile[];
-  /** Per-backend model selection. Keyed by backend id (`gemini`, `opencode`,
+  /** Per-backend model selection. Keyed by backend id (`opencode`,
    * `droid`, `cursor`, `claude`, `codex`, `junie`, `omp`, `grok`, `copilot`,
    * `mimo`, `cline`, `antigravity`).
    * Empty `active` means use the adapter default. Junie/OMP/Grok/Copilot/Cline are

@@ -626,14 +626,11 @@ low confidence, timeouts, cancellation, and service failures remain silent and d
 
 ### ACP Agent Backends
 
-ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `gemini`, `codex`, `opencode`, `pi-acp`, `droid`, `cursor`, `junie`, `omp`, `grok`, `copilot`, `mimo`, and `cline`.
-
-Gemini is available only in the standalone ACP agent view. The multi-lane ACP Harness excludes it from lane and session pickers and does not accept Gemini-scoped harness directives.
+ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `codex`, `opencode`, `pi-acp`, `droid`, `cursor`, `junie`, `omp`, `grok`, `copilot`, `mimo`, `cline`, and `antigravity`. They run as ACP Harness lanes.
 
 | Backend | Command |
 |---------|---------|
 | Claude | `npx -y @agentclientprotocol/claude-agent-acp` |
-| Gemini | `gemini --experimental-acp` |
 | Codex | `codex-acp` |
 | OpenCode | `opencode acp` |
 | Pi | `pi-acp` |
@@ -647,7 +644,7 @@ Gemini is available only in the standalone ACP agent view. The multi-lane ACP Ha
 | Cline | `cline --acp` |
 | Antigravity | `./agy_acp_server.par` (managed install from the ACP Registry, launched from its cache directory; local-only) |
 
-Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, `gemini auth login`, Codex login/adapter setup, `pi /login` or provider env vars, Factory `FACTORY_API_KEY` env var or `droid` device-code flow, `cursor-agent login` or `CURSOR_API_KEY`, `junie` first-run for JetBrains Account or `JUNIE_API_KEY` / `--auth <token>` / BYOK provider keys, `omp` first-run/auth-broker or provider keys, `grok` first-run browser login or `XAI_API_KEY`, `copilot` `/login` device flow or `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`, `mimo` first-run provider setup, `cline auth`). Antigravity is the exception: Krypton installs it and signs it in automatically (see below).
+Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, Codex login/adapter setup, `pi /login` or provider env vars, Factory `FACTORY_API_KEY` env var or `droid` device-code flow, `cursor-agent login` or `CURSOR_API_KEY`, `junie` first-run for JetBrains Account or `JUNIE_API_KEY` / `--auth <token>` / BYOK provider keys, `omp` first-run/auth-broker or provider keys, `grok` first-run browser login or `XAI_API_KEY`, `copilot` `/login` device flow or `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`, `mimo` first-run provider setup, `cline auth`). Antigravity is the exception: Krypton installs it and signs it in automatically (see below).
 
 **Pi lane prerequisites.** The Pi-1 lane uses the third-party [`pi-acp`](https://github.com/svkozak/pi-acp) adapter to drive the [`pi`](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) coding agent. Install both globally:
 
@@ -791,9 +788,9 @@ connect_timeout_seconds = 15
 
 **Lane model selection.** `<backend>` keys match the ACP Harness backend ids: `opencode`, `droid`, `cursor`, `claude`, `codex`, `pi-acp`, `junie`, `omp`, `grok`, `copilot`, `mimo`, `cline`, and `antigravity`. Krypton applies `active` only for backends that support model selection in v1:
 
-- **OpenCode** — sends `session/set_config_option {model}` (with `session/set_model` fallback) right after `session/new`. If `active` is empty, Krypton falls back to the historical default `zai-coding-plan/glm-5.1`.
+- **OpenCode** (v2+) — `session/new` advertises no `models` object; it carries a stable ACP `configOptions` select with `category: "model"`. Krypton applies `active` via `session/set_config_option {configId, value}` right after `session/new`, and the in-harness picker lists that select's options and switches through the same request. A failure (model not in OpenCode's list — e.g. its provider is not authenticated in `opencode auth list` — or a timeout) is **non-fatal**: the lane starts on OpenCode's own default and the model chip turns amber. Empty `active` = OpenCode's default.
 - **Droid** — passes `-m <active>` to `droid exec` at spawn. Default if unset is Factory's `claude-opus-4-7`. Changing the model requires respawning the lane.
-- **Claude** (and any ACP-native backend that advertises model state) — applied via `session/set_model {sessionId, modelId}` right *after* `session/new`, for adapters whose `session/new` response carries a valid `models` object (an `availableModels` array or a `currentModelId` string). `active` is sent **verbatim**, so aliases like `opus`/`sonnet`/`haiku` resolve adapter-side. A failure (unknown id, timeout, adapter doesn't implement the method) is **non-fatal**: the lane keeps running on the agent default and the model chip turns amber with a tooltip. The set of available models is the *agent's* (advertised in `session/new`) — you don't maintain a catalog; the optional `models` array only curates/orders a future picker.
+- **Claude** (and any ACP-native backend that advertises model state) — applied via `session/set_model {sessionId, modelId}` right *after* `session/new`, for adapters whose `session/new` response carries a valid `models` object (an `availableModels` array or a `currentModelId` string). When there is no `models` object but `configOptions` has a `category: "model"` select, the same apply uses `session/set_config_option` instead (the OpenCode path above); `models` wins when both are present. `active` is sent **verbatim**, so aliases like `opus`/`sonnet`/`haiku` resolve adapter-side. A failure (unknown id, timeout, adapter doesn't implement the method) is **non-fatal**: the lane keeps running on the agent default and the model chip turns amber with a tooltip. The set of available models is the *agent's* (advertised in `session/new`) — you don't maintain a catalog; the optional `models` array only curates/orders a future picker.
 - **Cursor / Codex / Pi / Junie / OMP / Grok / Copilot** — `active` is accepted in the schema but no CLI flag is passed at spawn (those adapters do not pass model via a spawn flag in v1). The value still drives the lane model chip if present, and each auto-enables the generic `session/set_model` path with no further code if/when its adapter advertises model state at `session/new`. (Grok's `-m` spawn flag under `agent stdio` is unverified and deferred — see `docs/135-acp-grok-lane.md`. Copilot's ACP server documents no model flag and advertised no model state at `initialize` in CLI 1.0.60 — see `docs/150-acp-copilot-lane.md`.)
 
 **Respawn-to-apply.** `active` is snapshotted into the lane at spawn. Editing `krypton.toml` updates the stored config and the chip inference, but does **not** re-apply to a live lane — the agent model changes only on the next spawn / `#new` / `#new!` / lane restart. Resumed and loaded sessions keep whatever model they were saved with and are not forced to the current config.

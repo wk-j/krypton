@@ -68,7 +68,6 @@ const CONTENT_TYPES: ReadonlySet<string> = new Set([
   'diff',
   'markdown',
   'agent',
-  'acp',
   'acp_harness',
   'context',
   'file_manager',

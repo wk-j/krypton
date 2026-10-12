@@ -31,8 +31,8 @@ export const HARNESS_BACKEND_ORDER: readonly string[] = [
   'pi-acp',
 ];
 
-/** Add-lane picker entries: drops `gemini`, and drops local-only backends
- * (`antigravity`, spec 287) when `options.remote` is set. */
+/** Add-lane picker entries: drops local-only backends (`antigravity`,
+ * spec 287) when `options.remote` is set. */
 export function harnessBackends(
   backends: AcpBackendDescriptor[],
   options: { remote?: boolean } = {},
@@ -42,7 +42,6 @@ export function harnessBackends(
     return index === -1 ? HARNESS_BACKEND_ORDER.length : index;
   };
   return backends
-    .filter((backend) => backend.id !== 'gemini')
     .filter((backend) => !(options.remote && backend.id === 'antigravity'))
     .slice()
     .sort((a, b) => {

@@ -87,9 +87,6 @@ export class CommandPalette {
   private onOpenCallbacks: Array<() => void> = [];
   private onCloseCallbacks: Array<() => void> = [];
 
-  /** Cached ACP backend list (refreshed when palette opens) */
-  private acpBackends: Array<{ id: string; display_name: string }> = [];
-
   /** Cached color themes (refreshed when palette opens) */
   private colorThemes: string[] = [];
   private activeColorTheme = '';
@@ -189,25 +186,6 @@ export class CommandPalette {
     // Filter with empty query shows all actions
     this.filter();
 
-    // Refresh the ACP backend list in the background; on completion,
-    // rebuild + re-filter so any newly-added backends appear.
-    invoke<Array<{ id: string; display_name: string }>>('acp_list_backends')
-      .then((list) => {
-        const same =
-          list.length === this.acpBackends.length &&
-          list.every((b, i) => b.id === this.acpBackends[i]?.id);
-        if (!same) {
-          this.acpBackends = list;
-          if (this.visible) {
-            this.rebuildActions();
-            this.filter();
-          }
-        }
-      })
-      .catch((e) => {
-        console.warn('[CommandPalette] acp_list_backends failed:', e);
-      });
-
     void this.refreshColorThemes();
 
     // Focus the input after a microtask to ensure DOM is rendered
@@ -289,7 +267,7 @@ export class CommandPalette {
 
       default:
         // Alt+1..9 quickselect — fire the Nth visible result directly.
-        // Useful for the ACP picker (Leader A) where each backend gets a digit.
+        // Useful for the ACP picker where each backend gets a digit.
         if (e.altKey && !e.metaKey && !e.ctrlKey && e.key >= '1' && e.key <= '9') {
           const idx = parseInt(e.key, 10) - 1;
           if (idx < this.filtered.length) {
@@ -1107,7 +1085,7 @@ export class CommandPalette {
       execute: () => c.toggleHookToasts(),
     });
 
-    // Dynamic: ACP agent backends. Claude, Gemini, Codex, and OpenCode are built in.
+    // ACP Harness entry points.
     this.actions.push({
       id: 'acp.harness.open',
       label: 'Open ACP Harness',
@@ -1122,23 +1100,6 @@ export class CommandPalette {
       keybinding: 'Leader Shift s',
       execute: () => c.openRemoteAcpHarnessView(),
     });
-    for (const b of this.acpBackends) {
-      const kb =
-        b.id === 'claude'
-          ? 'Leader Shift a'
-          : b.id === 'gemini'
-            ? 'Leader Shift e'
-            : b.id === 'codex'
-              ? 'Leader Shift i'
-              : undefined;
-      this.actions.push({
-        id: `acp.open.${b.id}`,
-        label: `Open ACP Agent → ${b.display_name}`,
-        category: 'Window',
-        keybinding: kb,
-        execute: () => c.openAcpView(b.id, b.display_name),
-      });
-    }
 
     // Dynamic: color theme switching
     for (const themeName of this.colorThemes) {

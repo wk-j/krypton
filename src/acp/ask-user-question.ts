@@ -373,7 +373,7 @@ export function payloadFromCard(
   };
 }
 
-/** Footer hint for a pending card (shared by the harness row and AcpView). */
+/** Footer hint for a pending question card. */
 export function questionActionsHint(question: AskUserQuestion | undefined, wire: QuestionWire, otherFocused: boolean): string {
   const skip = wire === 'elicitation' ? 'x decline' : 'x skip';
   if (otherFocused) {

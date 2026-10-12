@@ -188,7 +188,7 @@ No TOML configuration in v1.
 - **Returned sessions include other cwd values:** pass `cwd: projectDir` to `session/list`; also filter client-side when `cwd` is present and differs after normalization.
 - **Pagination:** v1 supports manual `PageDown` loading via `nextCursor`; no infinite scroll.
 - **MCP bridge/memory:** resume/load sends the same `.mcp.json` bridge and `krypton-harness-memory` server descriptors as fresh lanes. Pi-1 remains unable to use MCP and keeps its existing no-memory behavior.
-- **OpenCode default model:** apply default model only for fresh `session/new`. Do not force `session/set_config_option` on resumed/loaded historical sessions.
+- **Configured lane model:** apply it only for fresh `session/new`. Do not force `session/set_model` / `session/set_config_option` on resumed/loaded historical sessions.
 - **User cancels picker while backend is initializing/listing:** dispose the probe client and ignore late events using the existing disposed-event guard pattern.
 
 ## Open Questions

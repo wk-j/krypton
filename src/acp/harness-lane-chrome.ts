@@ -43,9 +43,6 @@ import {
   truncateInline,
 } from './harness-format';
 
-/** Backend default when the agent advertises no model of its own. */
-const OPENCODE_DEFAULT_MODEL = 'zai-coding-plan/glm-5.1';
-
 // Braille spinner frames driven by a single JS interval. A shared frame counter,
 // re-applied to every spinner element on each tick, keeps the glyph continuous
 // across DOM rebuilds — unlike a CSS animation, which restarts whenever its host
@@ -62,8 +59,7 @@ export function inferLaneModelName(
   if (configured && configured.length > 0) return configured;
   const reported = findModelName(info.agent_capabilities);
   if (reported) return reported;
-  if (backendId === 'opencode') return OPENCODE_DEFAULT_MODEL;
-  return null;
+  return (info as AgentInfo).current_model_id ?? null;
 }
 
 export function findModelName(value: unknown, depth = 0): string | null {
@@ -385,7 +381,7 @@ export function renderSandboxChip(lane: HarnessLane): string {
 export function renderModelChip(modelName: string | null, applyFailed = false): string {
   if (!modelName) return '';
   if (applyFailed) {
-    const title = `requested model ${modelName} not applied — agent is using its default or prior model (session/set_model failed)`;
+    const title = `requested model ${modelName} not applied — agent is using its default or prior model (model selection request failed)`;
     return `<span class="acp-harness__lane-model acp-harness__lane-model--warn" title="${esc(title)}">${harnessIcon('warn', 'acp-harness__icon--dot')} ${esc(modelName)}</span>`;
   }
   return `<span class="acp-harness__lane-model" title="model ${esc(modelName)}">${esc(modelName)}</span>`;

@@ -3923,8 +3923,8 @@
   text-shadow: none;
 }
 
-/* Prompt is a command line, not an 8px container card (agent / acp-view
-   input-rows are already 0px). The host window keeps the theme bevel —
+/* Prompt is a command line, not an 8px container card (agent input-rows
+   are already 0px). The host window keeps the theme bevel —
    squaring the frame, titlebar, and footer made the 8px chrome vanish
    from the main window while a harness tab was showing. */
 .acp-harness__composer {

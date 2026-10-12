@@ -306,7 +306,6 @@ export function wheelGlyph(contentType: PaneContentType): string {
     case 'diff': return '±';
     case 'markdown': return '¶';
     case 'agent':
-    case 'acp':
     case 'acp_harness': return '◈';
     default: return '▦';
   }

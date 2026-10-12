@@ -11,7 +11,7 @@
    A previous attempt scoped these to .krypton-window[data-content-type="agent"]
    — a selector that never matches for tab-mounted views — which zeroed out the
    entire palette and blanked the Agent view. --agent-font/--agent-text are also
-   inherited here by acp.css / acp-harness.css via fallback'd var(). */
+   inherited here by acp-harness.css via fallback'd var(). */
 :root {
   --agent-font: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   --agent-text: #e8cfa4;

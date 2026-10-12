@@ -2568,23 +2568,11 @@ describe('harnessBackends', () => {
     expect(harnessBackends(backends, { remote: true }).map((b) => b.id)).toEqual(['claude']);
   });
 
-  it('excludes Gemini without changing the shared ACP backend registry', () => {
-    const backends = [
-      { id: 'claude', display_name: 'Claude', command: 'npx' },
-      { id: 'gemini', display_name: 'Gemini', command: 'gemini' },
-      { id: 'codex', display_name: 'Codex', command: 'codex-acp' },
-    ];
-
-    expect(harnessBackends(backends).map((backend) => backend.id)).toEqual(['claude', 'codex']);
-    expect(backends.map((backend) => backend.id)).toEqual(['claude', 'gemini', 'codex']);
-  });
-
   it('pins Claude, Codex, Grok, OpenCode, Pi first, then remaining backends by id', () => {
     const backends = [
       { id: 'cline', display_name: 'Cline', command: 'cline' },
       { id: 'droid', display_name: 'Droid', command: 'droid' },
       { id: 'pi-acp', display_name: 'Pi', command: 'pi-acp' },
-      { id: 'gemini', display_name: 'Gemini', command: 'gemini' },
       { id: 'opencode', display_name: 'OpenCode', command: 'opencode' },
       { id: 'grok', display_name: 'Grok', command: 'grok' },
       { id: 'codex', display_name: 'Codex', command: 'codex-acp' },

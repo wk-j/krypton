@@ -1,6 +1,6 @@
 // Krypton — ACP client.
 // Thin frontend wrapper around the Rust `acp_*` Tauri commands and
-// `acp-event-<session>` notifications. One AcpClient per AcpView.
+// `acp-event-<session>` notifications. One AcpClient per harness lane.
 
 import { invoke } from '@tauri-apps/api/core';
 import { type UnlistenFn } from '@tauri-apps/api/event';

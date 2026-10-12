@@ -618,7 +618,7 @@ export function renderToolBody(body: HTMLElement, tool: ToolPayload, subagentExp
         block.appendChild(path);
       }
       const inner = document.createElement('div');
-      inner.innerHTML = renderDiffPreview(d.oldText, d.newText, { cssPrefix: 'acp-harness' });
+      inner.innerHTML = renderDiffPreview(d.oldText, d.newText);
       block.appendChild(inner);
       wrap.appendChild(block);
     }

@@ -994,35 +994,25 @@ export class InputRouter {
         this.compositor.openDiffView({ staged: e.shiftKey }).then(() => this.toNormal());
         break;
 
-      // a — open AI agent window (pi-agent, unchanged)
-      // A — open Claude ACP agent (built-in default)
+      // a — open AI agent window (pi-agent). Shift+a is unbound.
       case 'a':
         if (e.shiftKey) {
-          this.compositor.openAcpView('claude', 'Claude').then(() => this.toNormal());
+          this.toNormal();
         } else {
           this.compositor.openAgentView().then(() => this.toNormal());
         }
         break;
 
-      // E — Shift: open Gemini ACP agent; lowercase: open Pencil (Excalidraw)
+      // e — open Pencil (Excalidraw). Shift+e is unbound.
       case 'e':
         if (e.shiftKey) {
-          this.compositor.openAcpView('gemini', 'Gemini').then(() => this.toNormal());
+          this.toNormal();
         } else {
           // Exit Compositor before openPencil shows its file-picker overlay:
           // the picker's document-capture keydown listener is shadowed by the
           // router's own capture handler, which would steal j/k/Enter/Esc.
           this.toNormal();
           void this.compositor.openPencil();
-        }
-        break;
-
-      // I — open Codex ACP agent (built-in default)
-      case 'i':
-        if (e.shiftKey) {
-          this.compositor.openAcpView('codex', 'Codex').then(() => this.toNormal());
-        } else {
-          this.toNormal();
         }
         break;
 

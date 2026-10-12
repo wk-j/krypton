@@ -1,7 +1,7 @@
 // Krypton — ACP (Agent Client Protocol) backend.
 //
 // Spawns an external agent subprocess (e.g. `npx @agentclientprotocol/claude-agent-acp`,
-// `gemini --experimental-acp`) and speaks newline-delimited JSON-RPC 2.0 over its
+// `codex-acp`) and speaks newline-delimited JSON-RPC 2.0 over its
 // stdio. One AcpClient per Krypton-side session. The Rust side acts as the JSON-RPC
 // client *and* must handle inbound requests (fs/read_text_file, fs/write_text_file,
 // session/request_permission, Grok's `_x.ai/exit_plan_mode`, and
@@ -26,7 +26,6 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, Mutex};
 
-const OPENCODE_DEFAULT_MODEL: &str = "zai-coding-plan/glm-5.1";
 const MIMO_DEFAULT_MODEL: &str = "mimo/mimo-auto";
 
 // ─── Built-in backends ─────────────────────────────────────────────
@@ -49,14 +48,6 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                     "@agentclientprotocol/claude-agent-acp".to_string(),
                 ],
                 display_name: "Claude".to_string(),
-            },
-        ),
-        (
-            "gemini",
-            AcpBackend {
-                command: "gemini".to_string(),
-                args: vec!["--experimental-acp".to_string()],
-                display_name: "Gemini".to_string(),
             },
         ),
         (
@@ -242,8 +233,9 @@ pub struct AgentInitInfo {
 }
 
 /// One agent-advertised model entry, mapped from the ACP `session/new`
-/// `models.availableModels[]` (camelCase) into snake_case for the frontend
-/// (spec 127). The picker offers exactly these — never a hand-maintained list.
+/// `models.availableModels[]` or the `configOptions` model selector (camelCase)
+/// into snake_case for the frontend (spec 127). The picker offers exactly these
+/// — never a hand-maintained list.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelInfo {
     pub model_id: String,
@@ -282,8 +274,132 @@ struct ModelApplyResult {
     applied_model_id: Option<String>,
 }
 
-/// Parse the ACP `session/new` (or resume/load) `models` value into the
-/// frontend-facing `(available_models, current_model_id)` pair. Tolerates a
+/// How the session accepts a model selection — decided by what `session/new`
+/// (or resume/load) advertised.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ModelControl {
+    /// A valid `models` object: unstable `session/set_model {modelId}`.
+    SetModel,
+    /// No `models` object, but a `configOptions` select with `category: "model"`
+    /// (OpenCode v2): stable `session/set_config_option {configId, value}`.
+    ConfigOption(String),
+}
+
+impl ModelControl {
+    fn request(&self, acp_session_id: &str, model: &str) -> (&'static str, Value) {
+        match self {
+            Self::SetModel => (
+                "session/set_model",
+                json!({ "sessionId": acp_session_id, "modelId": model }),
+            ),
+            Self::ConfigOption(config_id) => (
+                "session/set_config_option",
+                json!({ "sessionId": acp_session_id, "configId": config_id, "value": model }),
+            ),
+        }
+    }
+}
+
+/// Frontend-facing model state plus the request shape that switches it.
+struct SessionModelState {
+    available: Vec<ModelInfo>,
+    current: Option<String>,
+    /// `None` when the session advertises no model state.
+    control: Option<ModelControl>,
+}
+
+/// Read model state from a `session/new` / resume / load response. A valid
+/// `models` object wins (the verified `session/set_model` path); otherwise the
+/// first `configOptions` select with `category: "model"` is used.
+fn parse_session_model_state(response: &Value) -> SessionModelState {
+    let models = response.get("models");
+    if advertises_models(models) {
+        let (available, current) = parse_session_models(models);
+        return SessionModelState {
+            available,
+            current,
+            control: Some(ModelControl::SetModel),
+        };
+    }
+    if let Some(state) = parse_config_model_option(response.get("configOptions")) {
+        return state;
+    }
+    SessionModelState {
+        available: Vec::new(),
+        current: None,
+        control: None,
+    }
+}
+
+/// Capability shape check: an `availableModels` array or a `currentModelId`
+/// string, not merely the key, so an empty/garbage `models` value does not
+/// trigger a doomed request. An empty `availableModels: []` still counts.
+fn advertises_models(models: Option<&Value>) -> bool {
+    models
+        .and_then(|v| v.as_object())
+        .map(|m| {
+            m.get("availableModels")
+                .map(|a| a.is_array())
+                .unwrap_or(false)
+                || m.get("currentModelId")
+                    .map(|c| c.is_string())
+                    .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
+/// Parse the ACP Session Config Options model selector. `options` is either a
+/// flat `[{value, name, description?}]` list or grouped
+/// `[{group, name, options: [...]}]`; both flatten into one model list.
+fn parse_config_model_option(config_options: Option<&Value>) -> Option<SessionModelState> {
+    let option = config_options?.as_array()?.iter().find(|o| {
+        o.get("category").and_then(|c| c.as_str()) == Some("model")
+            && o.get("type").and_then(|t| t.as_str()) == Some("select")
+    })?;
+    let config_id = option.get("id")?.as_str()?.to_string();
+    let mut available = Vec::new();
+    for entry in option
+        .get("options")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
+        match entry.get("options").and_then(|v| v.as_array()) {
+            Some(group) => available.extend(group.iter().filter_map(parse_config_select_value)),
+            None => available.extend(parse_config_select_value(entry)),
+        }
+    }
+    let current = option
+        .get("currentValue")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    Some(SessionModelState {
+        available,
+        current,
+        control: Some(ModelControl::ConfigOption(config_id)),
+    })
+}
+
+fn parse_config_select_value(entry: &Value) -> Option<ModelInfo> {
+    let model_id = entry.get("value")?.as_str()?.to_string();
+    let name = entry
+        .get("name")
+        .and_then(|n| n.as_str())
+        .unwrap_or(&model_id)
+        .to_string();
+    let description = entry
+        .get("description")
+        .and_then(|d| d.as_str())
+        .map(|s| s.to_string());
+    Some(ModelInfo {
+        model_id,
+        name,
+        description,
+    })
+}
+
+/// Parse the ACP `models` value into the frontend-facing
+/// `(available_models, current_model_id)` pair. Tolerates a
 /// missing/garbage `models` value and filters malformed entries (an entry missing
 /// `modelId`/`name` is dropped rather than failing the whole parse).
 fn parse_session_models(models: Option<&Value>) -> (Vec<ModelInfo>, Option<String>) {
@@ -400,11 +516,14 @@ struct AcpClient {
     cwd: RwLock<Option<String>>,
     /// MCP servers passed through to `session/new`.
     mcp_servers: RwLock<Vec<Value>>,
-    /// Model id chosen by the user via `acp_harness.lane_models` config — used
-    /// after `session/new` for backends that accept a model selection over ACP
-    /// (currently OpenCode). For backends that take a CLI flag (Gemini), the
-    /// override is applied to spawn args before the client is created.
+    /// Model id chosen by the user via `acp_harness.lane_models` config — applied
+    /// after `session/new` for backends that advertise model state over ACP. For
+    /// backends that take a CLI flag (Gemini, Droid), the override is applied to
+    /// spawn args before the client is created.
     model_override: RwLock<Option<String>>,
+    /// How this session switches models; set from the session/new, resume, or
+    /// load response. `None` until then or when no model state is advertised.
+    model_control: RwLock<Option<ModelControl>>,
     /// Present only for remote lanes. Filesystem callbacks use the same runtime
     /// as the agent so a remote path can never fall through to local `std::fs`.
     remote_workspace: RwLock<Option<Arc<RemoteRuntimeClient>>>,
@@ -436,6 +555,7 @@ impl AcpClient {
             cwd: RwLock::new(None),
             mcp_servers: RwLock::new(Vec::new()),
             model_override: RwLock::new(None),
+            model_control: RwLock::new(None),
             remote_workspace: RwLock::new(None),
             disposed: std::sync::atomic::AtomicBool::new(false),
         }
@@ -1719,10 +1839,7 @@ pub async fn acp_spawn(
 
     // Backends that take the model via CLI flag — apply before spawn.
     if let Some(ref model) = configured_model {
-        if backend_id == "gemini" {
-            backend.args.push("--model".to_string());
-            backend.args.push(model.clone());
-        } else if backend_id == "droid" {
+        if backend_id == "droid" {
             backend.args.push("-m".to_string());
             backend.args.push(model.clone());
         }
@@ -2014,33 +2131,32 @@ pub async fn acp_session_new(
         .to_string();
     set_client_session_id(&client, &acp_session_id);
 
-    // Surface the agent-advertised model list to the frontend (spec 127). The
-    // capability gate inside apply_session_model still reads the raw value; this
-    // is the frontend-facing projection.
-    let (available_models, advertised_current) = parse_session_models(new_session.get("models"));
+    // Surface the agent-advertised model list to the frontend (spec 127) and
+    // remember how this session switches models.
+    let model_state = parse_session_model_state(&new_session);
+    set_client_model_control(&client, model_state.control.clone());
 
     // Apply the configured model AFTER session/new (never as a session/new field),
     // awaited inline so the switch completes before the frontend can send the first
-    // prompt. OpenCode keeps its dedicated path; ACP-native backends that advertise
-    // model state get a non-fatal `session/set_model`.
-    let apply = apply_session_model(
-        &client,
-        &acp_session_id,
-        &available_models,
-        new_session.get("models"),
-    )
-    .await?;
+    // prompt. Non-fatal: a rejected or unavailable model leaves the agent default.
+    let apply = apply_session_model(&client, &acp_session_id, &model_state).await;
 
     // `currentModelId` from session/new is captured BEFORE the spawn-time apply, so
     // prefer the applied canonical id when we have one (spec 127, Codex-1 #1).
-    let current_model_id = apply.applied_model_id.or(advertised_current);
+    let current_model_id = apply.applied_model_id.or(model_state.current);
 
     Ok(AgentSessionInfo {
         session_id: acp_session_id,
         model_apply_failed: apply.failed,
-        available_models,
+        available_models: model_state.available,
         current_model_id,
     })
+}
+
+fn set_client_model_control(client: &AcpClient, control: Option<ModelControl>) {
+    if let Ok(mut g) = client.model_control.write() {
+        *g = control;
+    }
 }
 
 #[tauri::command]
@@ -2085,14 +2201,15 @@ async fn acp_session_restore(
     // Resumed/loaded sessions keep whatever model they were saved with — v1 does
     // not force them to the current config, so no apply is attempted here. But we
     // DO surface any advertised model list/current id so the picker works on
-    // restored lanes too (spec 127, Codex-1 #2). When the backend omits `models`,
-    // available_models is empty and the picker stays disabled for that lane.
-    let (available_models, current_model_id) = parse_session_models(response.get("models"));
+    // restored lanes too (spec 127, Codex-1 #2). When the backend advertises no
+    // model state, available_models is empty and the picker stays disabled.
+    let model_state = parse_session_model_state(&response);
+    set_client_model_control(&client, model_state.control);
     Ok(AgentSessionInfo {
         session_id,
         model_apply_failed: false,
-        available_models,
-        current_model_id,
+        available_models: model_state.available,
+        current_model_id: model_state.current,
     })
 }
 
@@ -2151,20 +2268,21 @@ pub async fn acp_set_lane_model(
         .ok()
         .and_then(|g| g.clone())
         .ok_or_else(|| "lane has no active session".to_string())?;
-    match tokio::time::timeout(
-        Duration::from_secs(10),
-        client.request(
-            "session/set_model",
-            json!({ "sessionId": acp_session_id, "modelId": &model_id }),
-        ),
-    )
-    .await
-    {
+    // A lane whose session advertised no control keeps the historical
+    // `session/set_model` request.
+    let control = client
+        .model_control
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .unwrap_or(ModelControl::SetModel);
+    let (method, params) = control.request(&acp_session_id, &model_id);
+    match tokio::time::timeout(Duration::from_secs(10), client.request(method, params)).await {
         Ok(Ok(_)) => Ok(SetModelOutcome::Ok),
-        Ok(Err(e)) => Err(format!("session/set_model failed: {e}")),
+        Ok(Err(e)) => Err(format!("{method} failed: {e}")),
         Err(_) => {
             log::warn!(
-                "acp_set_lane_model modelId={model_id} timed out for backend {}",
+                "acp_set_lane_model {method} modelId={model_id} timed out for backend {}",
                 client.backend_id
             );
             Ok(SetModelOutcome::TimedOutUncertain)
@@ -2172,145 +2290,65 @@ pub async fn acp_set_lane_model(
     }
 }
 
-/// Apply the lane's configured model after `session/new`. Returns
-/// `Ok(model_apply_failed)`: `true` only when a model was requested, the agent
-/// advertised model state, and the `session/set_model` request errored/timed out.
-///
-/// OpenCode keeps its dedicated `set_config_option`-first path (FATAL via `?`),
-/// evaluated BEFORE the capability gate so it is never skipped for lacking a
-/// `models` object. ACP-native backends that advertise a valid session model
-/// state get a generic, non-fatal `session/set_model` — a misspelled or
-/// unsupported model id must not stop the lane starting.
+/// Apply the lane's configured model after `session/new`. `failed` is `true`
+/// only when a model was requested, the agent advertised model state, and the
+/// switch request (`session/set_model` or `session/set_config_option`, per
+/// `ModelControl`) errored/timed out. Never fatal — a misspelled or unavailable
+/// model id must not stop the lane starting.
 async fn apply_session_model(
     client: &AcpClient,
     acp_session_id: &str,
-    available_models: &[ModelInfo],
-    models: Option<&Value>,
-) -> Result<ModelApplyResult, String> {
+    state: &SessionModelState,
+) -> ModelApplyResult {
     let no_op = ModelApplyResult {
         failed: false,
         applied_model_id: None,
     };
-    if client.backend_id == "opencode" {
-        set_opencode_default_model(client, acp_session_id).await?;
-        return Ok(no_op);
-    }
-    // Capability gate: a valid session model state must be present. Check the
-    // object shape (an `availableModels` array or a `currentModelId` string), not
-    // merely the key, so a backend echoing an empty/garbage `models` value does
-    // not trigger a doomed request. An empty `availableModels: []` array still
-    // counts as capability-present — the shape is the signal, not the contents.
-    let advertises_models = models
-        .and_then(|v| v.as_object())
-        .map(|m| {
-            m.get("availableModels")
-                .map(|a| a.is_array())
-                .unwrap_or(false)
-                || m.get("currentModelId")
-                    .map(|c| c.is_string())
-                    .unwrap_or(false)
-        })
-        .unwrap_or(false);
-    if !advertises_models {
-        return Ok(no_op);
-    }
+    let Some(control) = &state.control else {
+        return no_op; // no advertised model state — nothing to switch
+    };
     let Some(model) = client.model_override.read().ok().and_then(|g| g.clone()) else {
-        return Ok(no_op); // no spawn model requested — agent default is used
+        return no_op; // no spawn model requested — agent default is used
     };
     // Sent verbatim (so aliases like `opus`/`sonnet` resolve adapter-side); any
     // failure is logged with the backend id + requested model and is non-fatal.
-    let res = tokio::time::timeout(
-        Duration::from_secs(10),
-        client.request(
-            "session/set_model",
-            json!({ "sessionId": acp_session_id, "modelId": &model }),
-        ),
-    )
-    .await;
+    let (method, params) = control.request(acp_session_id, &model);
+    let res = tokio::time::timeout(Duration::from_secs(10), client.request(method, params)).await;
     match res {
         Ok(Ok(_)) => {
             // Spec 127: only report a confirmed current id when the configured
             // value is an EXACT advertised id (canonical). Aliases resolve
             // adapter-side to an id we can't know here, so leave it unverified
             // rather than asserting the pre-switch default or a guess.
-            let applied_model_id = available_models
+            let applied_model_id = state
+                .available
                 .iter()
                 .any(|m| m.model_id == model)
                 .then(|| model.clone());
-            Ok(ModelApplyResult {
+            ModelApplyResult {
                 failed: false,
                 applied_model_id,
-            })
+            }
         }
         Ok(Err(e)) => {
             log::warn!(
-                "session/set_model modelId={model} failed for backend {}: {e}",
+                "{method} modelId={model} failed for backend {}: {e}",
                 client.backend_id
             );
-            Ok(ModelApplyResult {
+            ModelApplyResult {
                 failed: true,
                 applied_model_id: None,
-            })
+            }
         }
         Err(_) => {
             log::warn!(
-                "session/set_model modelId={model} timed out for backend {}",
+                "{method} modelId={model} timed out for backend {}",
                 client.backend_id
             );
-            Ok(ModelApplyResult {
+            ModelApplyResult {
                 failed: true,
                 applied_model_id: None,
-            })
-        }
-    }
-}
-
-async fn set_opencode_default_model(
-    client: &AcpClient,
-    acp_session_id: &str,
-) -> Result<(), String> {
-    let model = client
-        .model_override
-        .read()
-        .ok()
-        .and_then(|g| g.clone())
-        .unwrap_or_else(|| OPENCODE_DEFAULT_MODEL.to_string());
-
-    let config_result = tokio::time::timeout(
-        Duration::from_secs(10),
-        client.request(
-            "session/set_config_option",
-            json!({
-                "sessionId": acp_session_id,
-                "configId": "model",
-                "value": &model,
-            }),
-        ),
-    )
-    .await
-    .map_err(|_| "session/set_config_option timed out".to_string())?;
-
-    match config_result {
-        Ok(_) => Ok(()),
-        Err(config_err) => {
-            let model_result = tokio::time::timeout(
-                Duration::from_secs(10),
-                client.request(
-                    "session/set_model",
-                    json!({
-                        "sessionId": acp_session_id,
-                        "modelId": &model,
-                    }),
-                ),
-            )
-            .await
-            .map_err(|_| "session/set_model timed out".to_string())?;
-
-            model_result.map(|_| ()).map_err(|model_err| {
-                format!(
-                    "failed to select OpenCode model {model}: {config_err}; fallback {model_err}"
-                )
-            })
+            }
         }
     }
 }
@@ -3185,9 +3223,6 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
     if s.contains("/login") || s.contains("not authenticated") {
         return "Run `claude /login` in a terminal, then retry.".to_string();
     }
-    if s.contains("gemini auth") || s.contains("please authenticate") {
-        return "Run `gemini auth login` in a terminal, then retry.".to_string();
-    }
     if backend_id == "opencode" && (s.contains("api key") || s.contains("auth")) {
         return "Run `opencode auth login` in a terminal or configure OpenCode credentials, then retry.".to_string();
     }
@@ -3207,8 +3242,9 @@ mod tests {
         advertise_read_text_file, advertises_auth_method, binary_read_error, disconnect_detail,
         effective_spawn_model, elicitation_reply, fs_path_in_scope, grok_ask_user_ext_response,
         grok_ask_user_skip, grok_session_dir_for_cwd, is_auth_required, is_under_grok_session_dir,
-        percent_encode_path, resolve_backend, sniff_binary_kind, startup_hint, steering_supported,
-        turn_marker_event, with_request_id, FsAccess,
+        parse_session_model_state, percent_encode_path, resolve_backend, sniff_binary_kind,
+        startup_hint, steering_supported, turn_marker_event, with_request_id, FsAccess,
+        ModelControl,
     };
     use serde_json::{json, Value};
     use std::path::{Path, PathBuf};
@@ -3442,7 +3478,7 @@ mod tests {
     fn advertise_read_text_file_is_off_for_grok_and_omp() {
         assert!(!advertise_read_text_file("grok"));
         assert!(!advertise_read_text_file("omp"));
-        for id in ["claude", "codex", "copilot", "droid", "gemini", "opencode"] {
+        for id in ["claude", "codex", "copilot", "droid", "opencode"] {
             assert!(advertise_read_text_file(id), "{id}");
         }
     }
@@ -3769,6 +3805,78 @@ mod tests {
         let hint = startup_hint("opencode", "provider auth failed");
 
         assert!(!hint.contains("MiMo"));
+    }
+
+    #[test]
+    fn config_option_model_selector_drives_model_state() {
+        // OpenCode v2 session/new: no `models`, a `configOptions` model select.
+        let response = json!({
+            "sessionId": "ses_1",
+            "configOptions": [
+                { "id": "mode", "category": "mode", "type": "select", "currentValue": "build",
+                  "options": [{ "value": "build", "name": "Build" }] },
+                { "id": "model", "category": "model", "type": "select",
+                  "currentValue": "opencode/exo-free",
+                  "options": [
+                      { "value": "openai/gpt-5.5", "name": "openai/GPT-5.5" },
+                      { "group": "free", "name": "Free", "options": [
+                          { "value": "opencode/exo-free", "name": "Exo", "description": "free" }
+                      ] }
+                  ] }
+            ]
+        });
+        let state = parse_session_model_state(&response);
+
+        assert_eq!(
+            state.control,
+            Some(ModelControl::ConfigOption("model".into()))
+        );
+        assert_eq!(state.current.as_deref(), Some("opencode/exo-free"));
+        let ids: Vec<&str> = state
+            .available
+            .iter()
+            .map(|m| m.model_id.as_str())
+            .collect();
+        assert_eq!(ids, ["openai/gpt-5.5", "opencode/exo-free"]);
+        assert_eq!(state.available[1].description.as_deref(), Some("free"));
+        let (method, params) = state.control.unwrap().request("ses_1", "openai/gpt-5.5");
+        assert_eq!(method, "session/set_config_option");
+        assert_eq!(
+            params,
+            json!({ "sessionId": "ses_1", "configId": "model", "value": "openai/gpt-5.5" })
+        );
+    }
+
+    #[test]
+    fn models_object_takes_precedence_over_config_options() {
+        let response = json!({
+            "models": { "currentModelId": "default", "availableModels": [
+                { "modelId": "default", "name": "Default" }
+            ] },
+            "configOptions": [
+                { "id": "model", "category": "model", "type": "select", "currentValue": "x",
+                  "options": [{ "value": "x", "name": "X" }] }
+            ]
+        });
+        let state = parse_session_model_state(&response);
+
+        assert_eq!(state.control, Some(ModelControl::SetModel));
+        assert_eq!(state.current.as_deref(), Some("default"));
+        assert_eq!(state.available.len(), 1);
+    }
+
+    #[test]
+    fn no_model_state_advertised_yields_no_control() {
+        let state = parse_session_model_state(&json!({
+            "sessionId": "s",
+            "models": {},
+            "configOptions": [{ "id": "mode", "category": "mode", "type": "select",
+                                "currentValue": "a", "options": [] }]
+        }));
+
+        assert_eq!(state.control, None);
+        assert!(state.available.is_empty());
+        assert_eq!(state.current, None);
     }
 
     #[test]

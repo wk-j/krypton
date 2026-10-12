@@ -1,14 +1,8 @@
 import { diffLines } from 'diff';
 
-export interface DiffRenderOptions {
-  context?: number;
-  lineCap?: number;
-  cssPrefix?: string;
-}
-
-const DEFAULT_CONTEXT = 2;
-const DEFAULT_LINE_CAP = 24;
-const DEFAULT_PREFIX = 'acp-view';
+const CONTEXT = 2;
+const LINE_CAP = 24;
+const PREFIX = 'acp-harness';
 
 type Row = { kind: 'add' | 'del' | 'ctx'; text: string; oldLine: number | null; newLine: number | null };
 
@@ -20,21 +14,7 @@ function stripTrailingNewline(s: string): string {
   return s.endsWith('\n') ? s.slice(0, -1) : s;
 }
 
-export function countDiff(oldText: string, newText: string): { added: number; removed: number } {
-  let added = 0;
-  let removed = 0;
-  for (const part of diffLines(oldText, newText)) {
-    if (part.added) added += part.count ?? 0;
-    else if (part.removed) removed += part.count ?? 0;
-  }
-  return { added, removed };
-}
-
-export function renderDiffPreview(oldText: string, newText: string, options: DiffRenderOptions = {}): string {
-  const CONTEXT = options.context ?? DEFAULT_CONTEXT;
-  const LINE_CAP = options.lineCap ?? DEFAULT_LINE_CAP;
-  const prefix = options.cssPrefix ?? DEFAULT_PREFIX;
-
+export function renderDiffPreview(oldText: string, newText: string): string {
   const parts = diffLines(oldText, newText);
   const rows: Row[] = [];
   let oldLine = 1;
@@ -74,28 +54,28 @@ export function renderDiffPreview(oldText: string, newText: string, options: Dif
       inGap = true;
       continue;
     }
-    if (inGap && !firstHunk) html.push(renderDiffGap(prefix));
+    if (inGap && !firstHunk) html.push(renderDiffGap(PREFIX));
     inGap = false;
     firstHunk = false;
     if (emitted >= LINE_CAP) {
       truncated = true;
       break;
     }
-    html.push(renderDiffRow(rows[i], prefix));
+    html.push(renderDiffRow(rows[i], PREFIX));
     emitted++;
   }
 
   if (html.length === 0) {
-    html.push(`<div class="${prefix}__tool-meta">no textual changes</div>`);
+    html.push(`<div class="${PREFIX}__tool-meta">no textual changes</div>`);
   }
 
   let keptCount = 0;
   for (let i = 0; i < keep.length; i++) if (keep[i]) keptCount++;
   const moreLines = keptCount - emitted;
   if (truncated && moreLines > 0) {
-    html.push(`<div class="${prefix}__tool-more">… ${moreLines} more line${moreLines === 1 ? '' : 's'}</div>`);
+    html.push(`<div class="${PREFIX}__tool-more">… ${moreLines} more line${moreLines === 1 ? '' : 's'}</div>`);
   }
-  return `<div class="${prefix}__tool-body ${prefix}__tool-body--diff">${html.join('')}</div>`;
+  return `<div class="${PREFIX}__tool-body ${PREFIX}__tool-body--diff">${html.join('')}</div>`;
 }
 
 function renderDiffGap(prefix: string): string {

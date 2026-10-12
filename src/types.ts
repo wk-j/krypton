@@ -167,7 +167,7 @@ export interface WindowBounds {
 }
 
 /** Content types that can live inside a pane */
-export type PaneContentType = 'terminal' | 'diff' | 'markdown' | 'agent' | 'acp' | 'acp_harness' | 'context' | 'file_manager' | 'vault' | 'hurl' | 'pencil' | 'webview' | 'usage' | 'telegram_settings' | 'review';
+export type PaneContentType = 'terminal' | 'diff' | 'markdown' | 'agent' | 'acp_harness' | 'context' | 'file_manager' | 'vault' | 'hurl' | 'pencil' | 'webview' | 'usage' | 'telegram_settings' | 'review';
 
 /** Runtime state mirrored from a backend child webview (see docs/102-webview-windows.md). */
 export type WebviewId = number;

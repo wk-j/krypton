@@ -4805,28 +4805,6 @@ export class Compositor {
   }
 
   /**
-   * Open a new ACP agent window. `backendId` selects one of the built-in
-   * ACP backends; `displayName` is the friendly label shown in the tab title
-   * and view header.
-   */
-  async openAcpView(backendId: string, displayName: string): Promise<void> {
-    if (this.blockLocalViewForRemote('Single-lane ACP')) return;
-    const { AcpView } = await import('./acp/acp-view');
-
-    // Resolve CWD from the focused pane — handles both PTY panes (via
-    // get_pty_cwd) and content views (via getWorkingDirectory()), so opening
-    // an ACP window while focused on another agent/vault/etc. inherits its dir
-    // instead of falling back to the host process root.
-    const projectDir = await this.getFocusedCwd();
-
-    const view = new AcpView(backendId, displayName, projectDir);
-    view.onOpenDiff((diff, title) => this.openDiffFromString(diff, title));
-    view.onClose(() => this.closeTab());
-
-    await this.createContentTab(`ACP  ${displayName}`, view);
-  }
-
-  /**
    * Open the ACP Harness view. The harness owns several independent ACP
    * subprocesses for the focused working directory and routes one prompt at a
    * time to the active lane.

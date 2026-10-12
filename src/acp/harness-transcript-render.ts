@@ -945,7 +945,7 @@ export function renderFsWriteReviewBody(body: HTMLElement, payload: FsWriteRevie
 
   const diff = document.createElement('div');
   diff.className = 'acp-harness__tool-diff';
-  diff.innerHTML = renderDiffPreview(payload.oldText, payload.newText, { cssPrefix: 'acp-harness' });
+  diff.innerHTML = renderDiffPreview(payload.oldText, payload.newText);
   body.appendChild(diff);
 
   if (payload.resolved) {

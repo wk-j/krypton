@@ -71,7 +71,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 66 | [Invisible Window: Root Cause & Recovery](./66-invisible-window-recovery.md) |
 | 67 | [Matrix Glyph Atlas — Permanent Fix for `fillText` CPU Burn](./67-matrix-glyph-atlas.md) |
 | 68 | [Quick File Search Dialog](./68-quick-file-search.md) |
-| 69 | [ACP Agent Window](./69-acp-agent-support.md) |
+| 69 | [ACP Agent Window](./69-acp-agent-support.md) (window removed; ACP transport only) |
 | 70 | [Variable Font & OpenType Feature Support](./70-variable-font-features.md) |
 | 71 | [Pencil Window (Excalidraw Editor)](./71-pencil-window.md) |
 | 72 | [ACP Harness View](./72-acp-harness-view.md) |

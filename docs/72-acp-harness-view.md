@@ -387,7 +387,7 @@ ACP HARNESS  ~/krypton   2 idle · 1 busy · 1 perm
   × error
   ```
 
-  Metadata chips (model, mode, MCP, safety, metrics) render as a compact flowing group and do not reserve space when absent. Pi lanes show `⚠ unsandboxed`; Junie lanes show `⚠ permissions unverified` until their ACP write-permission behavior is manually verified. OMP lanes use the normal permission rail and do not show a warning chip in v1. The optional model chip is rendered only when Krypton can determine the active lane model. Resolution order: (1) `acp_harness.lane_models.<backend>.active` from `krypton.toml` if set; (2) model fields advertised by the agent in `agent_capabilities`; (3) for OpenCode only, the historical default `zai-coding-plan/glm-5.1`. Unknown models are hidden, not shown as `unknown`. See `docs/06-configuration.md` for the per-backend `lane_models` schema. The `<activity-or-status>` slot is the latest tool/assistant activity by default (`editing src/acp/client.ts`, `reading src/layout.ts`, `running cargo test`, `thinking…`, or the most recent assistant text truncated to ~40 chars). When status is `needs_permission` or `error`, the slot is replaced by the blocking detail (`perm: write src/styles/acp.css`, `error: spawn failed`).
+  Metadata chips (model, mode, MCP, safety, metrics) render as a compact flowing group and do not reserve space when absent. Pi lanes show `⚠ unsandboxed`; Junie lanes show `⚠ permissions unverified` until their ACP write-permission behavior is manually verified. OMP lanes use the normal permission rail and do not show a warning chip in v1. The optional model chip is rendered only when Krypton can determine the active lane model. Resolution order: (1) `acp_harness.lane_models.<backend>.active` from `krypton.toml` if set; (2) model fields advertised by the agent in `agent_capabilities`; (3) the session's agent-reported current model id (`models.currentModelId` or the `configOptions` model select's `currentValue`). Unknown models are hidden, not shown as `unknown`. See `docs/06-configuration.md` for the per-backend `lane_models` schema. The `<activity-or-status>` slot is the latest tool/assistant activity by default (`editing src/acp/client.ts`, `reading src/layout.ts`, `running cargo test`, `thinking…`, or the most recent assistant text truncated to ~40 chars). When status is `needs_permission` or `error`, the slot is replaced by the blocking detail (`perm: write src/styles/acp.css`, `error: spawn failed`).
 
   Color rules:
 
@@ -611,7 +611,7 @@ Removed from earlier drafts:
 - `x` / cycle memory injection mode, `X` / force `agent_select` once (no injection modes in v1).
 - `i` / open Selection tab, `h` / `l` / Tab cycling drawer tabs (drawer is single list, no tabs).
 
-`Leader A`, `Leader E`, and `Leader I` continue to open single ACP agent tabs.
+The ACP Harness is the only ACP surface; the single-lane ACP agent tab (`Leader A`/`E`/`I`) was removed.
 
 ### Configuration
 
@@ -719,7 +719,7 @@ unavailable rather than accidentally operating on a same-looking local path.
 - [Agent Client Protocol schema](https://agentclientprotocol.com/protocol/schema) — confirmed initialize capabilities, cancellation semantics, session list/close capabilities, and `_meta` extensibility.
 - [Agent Client Protocol content](https://agentclientprotocol.com/protocol/content) — confirmed embedded resource content blocks as the preferred way to include contextual resources in prompts.
 - [Agent Client Protocol extensibility](https://agentclientprotocol.com/protocol/extensibility) — confirmed `_meta` and custom `_` methods exist, but adapter support is optional.
-- [OpenCode ACP support](https://opencode.ai/docs/acp/) — confirmed `opencode acp` as the stdio ACP subprocess command; Krypton's built-in OpenCode lane selects `zai-coding-plan/glm-5.1` through ACP session configuration after `session/new`.
+- [OpenCode ACP support](https://opencode.ai/docs/acp/) — confirmed `opencode acp` as the stdio ACP subprocess command; Krypton's built-in OpenCode lane applies a configured model through the `configOptions` model select after `session/new`.
 - [Zed external agents](https://zed.dev/docs/ai/external-agents) — prior art for UI-hosted ACP subprocesses, custom agent configuration, built-in Claude/Codex/Gemini/OpenCode support, and ACP debugging.
 - [Claude Code power-user tips](https://support.claude.com/en/articles/14554000-claude-code-power-user-tips) — prior art for running multiple coding sessions in parallel and the trade-off of worktree isolation.
 - [Claude Code subagents](https://code.claude.com/docs/en/sub-agents) — prior art for separate contexts, background subagents, and agent management UI.
