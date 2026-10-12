@@ -11,6 +11,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { setCssVars } from './util/css-vars';
 import { paneContentHoldsFocus } from './content-focus';
 import { installClusterCellRendering } from './xterm-cluster-cells';
+import { installDomCharMeasure } from './xterm-char-measure';
 
 import {
   WindowId,
@@ -898,6 +899,7 @@ export class Compositor {
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(terminalWrap);
+    installDomCharMeasure(terminal);
     installClusterCellRendering(terminal);
 
     // Edge glow overlays — sit above the xterm canvas
@@ -1543,7 +1545,7 @@ export class Compositor {
 
   /** Sync --krypton-terminal-cell-height from actual xterm rendering.
    *  fontSize * lineHeight underestimates real cell height because xterm measures
-   *  actual font bounding boxes via canvas — this reads the ground truth. */
+   *  the font's line box (see xterm-char-measure.ts) — this reads the ground truth. */
   private syncTerminalCellHeight(terminal: Terminal): void {
     const screenEl = terminal.element?.querySelector('.xterm-screen') as HTMLElement | null;
     if (!screenEl || terminal.rows === 0) return;
@@ -6625,6 +6627,7 @@ export class Compositor {
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(body);
+    installDomCharMeasure(terminal);
     installClusterCellRendering(terminal);
 
     // Edge glow overlays
