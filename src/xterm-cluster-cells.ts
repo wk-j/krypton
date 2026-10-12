@@ -15,6 +15,11 @@
 // and the text of affected spans moves into `position: relative` children,
 // which paint after all in-flow backgrounds (still below the z-index:1
 // selection layer). Spans without marks or overflow pay one regex test.
+// Children of a bold span carry `xterm-bold` too: xterm's own
+// `span:not(.xterm-bold) { font-weight: normal }` rule would otherwise paint
+// them regular while their spacing was measured bold, and a fallback glyph
+// with a different regular advance (btop's bold `■` meters, box lines,
+// arrows) pushes the rest of the row off the grid.
 
 import type { Terminal } from '@xterm/xterm';
 
@@ -65,6 +70,7 @@ function fixSpan(span: HTMLSpanElement, factory: RowFactoryLike, widthCache: Wid
   const flushRun = (): void => {
     if (!run) return;
     const lifted = doc.createElement('span');
+    if (bold) lifted.classList.add('xterm-bold');
     lifted.style.position = 'relative';
     lifted.textContent = run;
     frag.appendChild(lifted);
@@ -81,6 +87,7 @@ function fixSpan(span: HTMLSpanElement, factory: RowFactoryLike, widthCache: Wid
     // for each of their cells, so measure(unit) + spacing is the exact cell
     // advance (wide cells included).
     const cell = doc.createElement('span');
+    if (bold) cell.classList.add('xterm-bold');
     cell.style.display = 'inline-block';
     cell.style.position = 'relative';
     cell.style.letterSpacing = '0';
