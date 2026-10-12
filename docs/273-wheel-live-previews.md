@@ -87,7 +87,7 @@ export function wheelIsLiveSlot(index: number, active: number): boolean;      //
    = pose.opacity × edgeFade × (dock > 0 ? 1 : '').
 5. When the active window's dock reaches 0, the rail clears its inline transform
    and opacity; it is the plain main-frame window again and receives input.
-6. The loop stops when rotation, dock, and tufts are all settled (idle 0 CPU).
+6. The loop stops when rotation, dock, and activity dots are all settled (idle 0 CPU).
 ```
 
 Keystrokes are never buffered for the morph. The incoming window has DOM focus at step 2, and the morph is purely visual.

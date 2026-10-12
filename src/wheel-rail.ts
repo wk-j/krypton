@@ -1,13 +1,13 @@
 // Krypton — Wheel rail (spec 272)
-// The arc navigation rail of the Wheel layout: a canvas arc furred with
-// tufts (static texture plus live per-window throughput), a faint card orbit,
+// The arc navigation rail of the Wheel layout: a hairline canvas arc with an
+// accent dot per busy window (live throughput), a matching card orbit,
 // one card + label per window, a caret and big label on the active card at the
 // apex, the ghost eye on that card (spec 274, `WheelEye`), and a position
 // caption. Cards near the active one carry the
 // real window, scaled onto the card (spec 273); the rail owns those transforms
 // and the dock morph that flies windows between card and main frame. The rAF
-// loop runs only while the wheel is rotating, a window is docking, or a tuft
-// is still decaying, so an idle rail costs 0 CPU. Activity-only frames are capped at 30 fps (2 fps under
+// loop runs only while the wheel is rotating, a window is docking, or an
+// activity dot is still decaying, so an idle rail costs 0 CPU. Activity-only frames are capped at 30 fps (2 fps under
 // reduced motion).
 
 import type { WindowBounds, WindowId } from './types';
@@ -19,7 +19,6 @@ import {
   WHEEL_CARD_WIDTH,
   WHEEL_CARET_GAP,
   WHEEL_CARET_WIDTH,
-  WHEEL_FUR_PER_SLOT,
   WHEEL_LABEL_GAP,
   WHEEL_LERP,
   bumpActivity,
@@ -27,14 +26,12 @@ import {
   wheelArcPoint,
   wheelCardHeight,
   wheelEdgeFade,
-  wheelFurLevel,
   wheelGeometry,
   wheelIsLiveSlot,
   wheelItemAngle,
   wheelItemPose,
   wheelLabelHead,
   wheelPreviewTransform,
-  wheelRandom,
   type WheelGeometry,
   type WheelItem,
   type WheelPose,
@@ -45,8 +42,8 @@ const SCROLL_SENSITIVITY = 0.004;
 const SCROLL_SNAP_MS = 140;
 const ACTIVITY_FRAME_MS = 33;
 const REDUCED_ACTIVITY_FRAME_MS = 500;
-const FUR_ALPHA = 0.8;
-const ORBIT_ALPHA = 0.3;
+/** Arc and orbit: matching foreground hairlines, no accent colour. */
+const LINE_ALPHA = 0.3;
 const DEFAULT_ACCENT_RGB = '0, 204, 255';
 const DEFAULT_FG_RGB = '176, 196, 216';
 const DEFAULT_DANGER_RGB = '255, 85, 85';
@@ -72,7 +69,6 @@ interface WheelEntry {
   /** Last max-width written to the label, so frames only touch it on change. */
   labelRoom: number;
   activity: number;
-  seed: number;
   /** 1 = the window sits on its card, 0 = it fills the main frame. */
   dock: number;
   /** The window element while the rail writes its transform; null when released. */
@@ -107,6 +103,7 @@ export class WheelRail {
   private activeIndex = 0;
   private visible = false;
   private accentRgb = DEFAULT_ACCENT_RGB;
+  private fgRgb = DEFAULT_FG_RGB;
   private raf = 0;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private snapTimer: ReturnType<typeof setTimeout> | null = null;
@@ -261,7 +258,7 @@ export class WheelRail {
     this.kick();
   }
 
-  /** Feed a window's output throughput into its tuft. */
+  /** Feed a window's output throughput into its activity dot. */
   pump(id: WindowId, bytes: number): void {
     const entry = this.byId.get(id);
     if (!entry) return;
@@ -275,10 +272,11 @@ export class WheelRail {
     const css = getComputedStyle(this.root);
     const rgb = css.getPropertyValue('--krypton-accent-rgb').trim();
     this.accentRgb = rgb || DEFAULT_ACCENT_RGB;
+    this.fgRgb = css.getPropertyValue('--krypton-fg-rgb').trim() || DEFAULT_FG_RGB;
     this.eye.setStyle({
       fontFamily: css.fontFamily,
       accentRgb: this.accentRgb,
-      fgRgb: css.getPropertyValue('--krypton-fg-rgb').trim() || DEFAULT_FG_RGB,
+      fgRgb: this.fgRgb,
       dangerRgb: css.getPropertyValue('--krypton-danger-rgb').trim() || DEFAULT_DANGER_RGB,
     });
     if (this.visible) this.render();
@@ -325,7 +323,6 @@ export class WheelRail {
       label,
       labelRoom: -1,
       activity: 0,
-      seed: hashSeed(item.id),
       dock: 1,
       element: null,
       live: 0,
@@ -577,103 +574,37 @@ export class WheelRail {
     const geo = this.geo;
     const ext = geo.arcExtent;
     ctx.clearRect(0, 0, this.width, this.height);
-    ctx.lineCap = 'round';
 
-    // The arc, thicker toward its upper middle (prototype profile, spread over
-    // the part of the arc that is inside the rail).
-    ctx.strokeStyle = `rgba(${this.accentRgb}, 0.8)`;
-    for (let t = -ext - 0.04; t < ext + 0.04; t += 0.015) {
-      const [ax, ay] = wheelArcPoint(t, geo.radius, geo);
-      const [bx, by] = wheelArcPoint(t + 0.017, geo.radius, geo);
-      const u = t / ext;
-      ctx.lineWidth = 0.8 + 4 * Math.pow(Math.max(0, 1 - Math.abs(u + 0.23)), 1.6);
-      ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      ctx.lineTo(bx, by);
-      ctx.stroke();
-    }
-
-    // Faint concentric orbit that the card centres ride on.
+    // Two concentric hairlines: the arc, and the orbit the card centres ride
+    // on. wheelArcPoint(t) sits at canvas angle π − t on the same circle.
     const cx = geo.arcX + geo.radius;
     const cy = geo.railHeight / 2;
-    const orbitExt = Math.asin(Math.min(1, cy / geo.cardRadius)) + 0.05;
-    ctx.globalAlpha = ORBIT_ALPHA;
+    const arcEnd = ext + 0.05;
+    const orbitEnd = Math.asin(Math.min(1, cy / geo.cardRadius)) + 0.05;
+    ctx.strokeStyle = `rgba(${this.fgRgb}, ${LINE_ALPHA})`;
     ctx.lineWidth = 0.75;
     ctx.beginPath();
-    ctx.arc(cx, cy, geo.cardRadius, Math.PI - orbitExt, Math.PI + orbitExt);
+    ctx.arc(cx, cy, geo.radius, Math.PI - arcEnd, Math.PI + arcEnd);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, geo.cardRadius, Math.PI - orbitEnd, Math.PI + orbitEnd);
     ctx.stroke();
 
-    ctx.strokeStyle = `rgb(${this.accentRgb})`;
+    // Live throughput: an accent dot on the arc, level with each busy
+    // window's card, growing with its output. Idle windows draw nothing.
     ctx.fillStyle = `rgb(${this.accentRgb})`;
-    ctx.lineWidth = 0.7;
-
-    // Static fur along the whole visible arc; seeded per slot so it turns with the wheel.
-    const span = 1 + (ext + 0.05) / geo.idleStep;
-    const first = Math.ceil((this.pos - span) * WHEEL_FUR_PER_SLOT);
-    const last = Math.floor((this.pos + span) * WHEEL_FUR_PER_SLOT);
-    for (let k = first; k <= last; k++) {
-      const t = wheelItemAngle(k / WHEEL_FUR_PER_SLOT - this.pos, geo);
-      if (Math.abs(t) > ext + 0.05) continue;
-      const fade = Math.max(0, 1 - Math.abs(t) / (ext + 0.3));
-      this.drawTuft(ctx, t, wheelFurLevel(k), Math.imul(k, 977) + 13, FUR_ALPHA * fade);
-    }
-
-    // Live throughput: one bright tuft per window, level with its card.
     for (let i = 0; i < this.entries.length; i++) {
+      const v = this.entries[i].activity;
+      if (v < WHEEL_ACTIVITY_EPS) continue;
       const t = wheelItemAngle(i - this.pos, geo);
-      if (Math.abs(t) > ext + 0.05) continue;
-      const entry = this.entries[i];
-      const v = entry.activity;
-      const fade = Math.max(0, 1 - Math.abs(t) / (ext + 0.3));
-      if (v >= WHEEL_ACTIVITY_EPS) this.drawTuft(ctx, t, v, entry.seed, fade);
+      if (Math.abs(t) > arcEnd) continue;
       const [px, py] = wheelArcPoint(t, geo.radius, geo);
-      ctx.globalAlpha = fade;
+      ctx.globalAlpha = Math.max(0, 1 - Math.abs(t) / (ext + 0.3));
       ctx.beginPath();
       ctx.arc(px, py, 1.2 + v * 2.2, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
-  }
-
-  /** One tuft of outward strands at arc angle `t`; strand count/length follow `v`. */
-  private drawTuft(ctx: CanvasRenderingContext2D, t: number, v: number, seed: number, alpha: number): void {
-    if (alpha <= 0) return;
-    const [px, py] = wheelArcPoint(t, this.geo.radius, this.geo);
-    const rand = wheelRandom(seed);
-    const outward = Math.atan2(Math.sin(t), -Math.cos(t));
-    const strands = 3 + Math.round(v * 32);
-    ctx.globalAlpha = alpha;
-    ctx.beginPath();
-    for (let s = 0; s < strands; s++) {
-      // Four draws per strand keep each strand's shape stable as the count changes.
-      const spread = rand() - 0.5;
-      const wide = rand() < 0.15;
-      const reach = rand();
-      const bend = rand();
-      const angle = outward + spread * (wide ? 5 : 2.2);
-      const len = 3 + (4 + reach * 80) * v;
-      const ex = px + Math.cos(angle) * len;
-      const ey = py + Math.sin(angle) * len;
-      ctx.moveTo(px, py);
-      ctx.lineTo(ex, ey);
-      // Long strands shed a speck past their tip.
-      if (reach > 0.72 && v > 0.3) {
-        const sx = px + Math.cos(angle) * len * 1.25;
-        const sy = py + Math.sin(angle) * len * 1.25;
-        ctx.rect(sx - 0.6, sy - 0.6, 1.2, 1.2);
-      }
-      if (len > 14) {
-        const mx = px + Math.cos(angle) * len * 0.6;
-        const my = py + Math.sin(angle) * len * 0.6;
-        const branch = angle + (bend - 0.5) * 1.4;
-        ctx.moveTo(mx, my);
-        ctx.lineTo(mx + Math.cos(branch) * len * 0.35, my + Math.sin(branch) * len * 0.35);
-      }
-    }
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(px, py, 0.6 + v * 3, 0, Math.PI * 2);
-    ctx.fill();
   }
 
   // ─── Input ───────────────────────────────────────────────────────
@@ -776,15 +707,6 @@ function svgLine(x1: number, y1: number, x2: number, y2: number): SVGLineElement
 
 function sameBounds(a: WindowBounds, b: WindowBounds): boolean {
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
-}
-
-function hashSeed(text: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
 }
 
 function pad2(value: number): string {

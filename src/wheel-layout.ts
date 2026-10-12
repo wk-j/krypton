@@ -35,12 +35,10 @@ export const WHEEL_ACTIVE_LABEL_GAP = 6;
 export const WHEEL_ACTIVE_LABEL_ROOM = 66;
 /** Characters a rail label shows; the full label stays on the card's aria-label. */
 export const WHEEL_LABEL_CHARS = 2;
-/** Least room kept left of the arc for tuft strands. */
+/** Least room kept left of the arc. */
 export const WHEEL_MIN_ARC_X = 34;
 /** The arc meets the rail's top and bottom edges this far inside its right edge. */
 export const WHEEL_ARC_END_INSET = 16;
-/** Static fur tufts drawn per window slot along the arc. */
-export const WHEEL_FUR_PER_SLOT = 4;
 /** Most text bars a terminal pane's silhouette keeps. */
 export const WHEEL_SILHOUETTE_ROWS = 18;
 export const WHEEL_LERP = 0.14;
@@ -284,30 +282,6 @@ export function wheelPreviewTransform(
 /** Whether slot `index` shows its live window while `active` is focused. */
 export function wheelIsLiveSlot(index: number, active: number): boolean {
   return index !== active && Math.abs(index - active) <= WHEEL_LIVE_SLOTS;
-}
-
-/** Static fur height (0..1) of fur tuft `k`; WHEEL_FUR_PER_SLOT tufts sit
- *  between neighbouring window slots. Seeded by `k` so fur rotates with the
- *  wheel without flickering. */
-export function wheelFurLevel(k: number): number {
-  const rand = wheelRandom(Math.imul(k, 977) + 13);
-  const base = 0.05 + 0.35 * Math.pow(rand(), 2);
-  // Every sixth tuft (one per 1.5 slots) grows into a cluster.
-  const cluster = ((k % 6) + 6) % 6 === 2 ? 0.4 + 0.25 * rand() : 0;
-  return Math.min(1, base + cluster);
-}
-
-/** xorshift32, as in the prototype, so seeded shapes stay stable between frames. */
-export function wheelRandom(seed: number): () => number {
-  let s = seed >>> 0 || 1;
-  return () => {
-    s ^= s << 13;
-    s >>>= 0;
-    s ^= s >> 17;
-    s ^= s << 5;
-    s >>>= 0;
-    return s / 4294967296;
-  };
 }
 
 export function wrapWheelIndex(index: number, count: number): number {

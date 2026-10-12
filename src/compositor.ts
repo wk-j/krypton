@@ -3082,7 +3082,7 @@ export class Compositor {
 
     // Header accent bar below titlebar — live oscilloscope (fed by the content
     // view's streamed output) or the static striped div, per theme config.
-    // The same pump also feeds the Wheel rail's activity tuft (spec 272).
+    // The same pump also feeds the Wheel rail's activity dot (spec 272).
     const headerScope = this.buildHeaderAccent(chrome);
     contentView.onOutputPump = (chars: number): void => this.pumpWindowActivity(id, chars);
 
@@ -5906,7 +5906,7 @@ export class Compositor {
     // every tab/pane, so a content tab pumps the same scope the launching
     // terminal fed — matching the "all panes pump the single window band" rule.
     // The scope is null when the header-accent style is 'ticks'; the pump still
-    // feeds the Wheel rail's activity tuft (spec 272).
+    // feeds the Wheel rail's activity dot (spec 272).
     contentView.onOutputPump = (chars: number): void => this.pumpWindowActivity(win.id, chars);
 
     const pane: Pane = {
@@ -7727,7 +7727,7 @@ export class Compositor {
     }, Compositor.WHEEL_REFRESH_MS));
   }
 
-  /** Output throughput from a content view: header band + Wheel tuft. */
+  /** Output throughput from a content view: header band + Wheel activity dot. */
   private pumpWindowActivity(id: WindowId, bytes: number): void {
     this.windows.get(id)?.headerScope?.pump(bytes);
     this.wheelRail?.pump(id, bytes);
@@ -8119,7 +8119,7 @@ export class Compositor {
       if (loc) {
         const win = this.windows.get(loc.windowId);
         if (win) {
-          // Drive the window's oscilloscope band and Wheel tuft with output throughput.
+          // Drive the window's oscilloscope band and Wheel activity dot with output throughput.
           win.headerScope?.pump(data.length);
           this.wheelRail?.pump(win.id, data.length);
           this.scheduleWheelItemRefresh(win);

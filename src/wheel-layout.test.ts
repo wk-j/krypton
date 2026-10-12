@@ -28,7 +28,6 @@ import {
   wheelArcPoint,
   wheelCardHeight,
   wheelEdgeFade,
-  wheelFurLevel,
   wheelGeometry,
   wheelIsLiveSlot,
   wheelItemAngle,
@@ -97,7 +96,7 @@ describe('wheel frame', () => {
 describe('wheel geometry', () => {
   const activeHalfW = (WHEEL_CARD_WIDTH * WHEEL_ACTIVE_SCALE) / 2;
 
-  it('leaves the tuft margin left of the arc and fits the active and idle labels right of it', () => {
+  it('leaves a margin left of the arc and fits the active and idle labels right of it', () => {
     const geo = wheelGeometry(400, 1061);
     const centre = geo.arcX + activeHalfW + WHEEL_ARC_GAP;
     const activeLabelX = centre + activeHalfW + WHEEL_CARET_GAP + WHEEL_CARET_WIDTH + WHEEL_ACTIVE_LABEL_GAP;
@@ -226,18 +225,6 @@ describe('wheel live previews', () => {
     expect(wheelIsLiveSlot(5 + WHEEL_LIVE_SLOTS, 5)).toBe(true);
     expect(wheelIsLiveSlot(5 - WHEEL_LIVE_SLOTS, 5)).toBe(true);
     expect(wheelIsLiveSlot(5 + WHEEL_LIVE_SLOTS + 1, 5)).toBe(false);
-  });
-});
-
-describe('wheel fur', () => {
-  it('is deterministic, bounded, and clusters every sixth tuft', () => {
-    for (let k = -30; k < 30; k++) {
-      expect(wheelFurLevel(k)).toBe(wheelFurLevel(k));
-      expect(wheelFurLevel(k)).toBeGreaterThan(0);
-      expect(wheelFurLevel(k)).toBeLessThanOrEqual(1);
-    }
-    expect(wheelFurLevel(2)).toBeGreaterThanOrEqual(0.45);
-    expect(wheelFurLevel(-4)).toBeGreaterThanOrEqual(0.45);
   });
 });
 

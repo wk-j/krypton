@@ -35,7 +35,7 @@ Every window shares one base frame. Only the active window is visible; the other
 | iOS `UIPickerView` (wheel style) | Rotating drum; the selected row sits at the centre line; the rest fade and foreshorten with distance | Source of the "active at apex, others fade by angle" convention |
 | Krypton Stage (spec 245) | Active window plus scaled live-preview shelf, MRU order | Shared-frame / no-PTY-resize precedent |
 
-**Krypton delta.** Wheel is a **persistent layout**, not a transient switcher like Compiz or KWin. It uses **schematic cards** rather than live thumbnails, because terminal content is illegible at card size. It keeps a **stable order**, where Stage uses MRU. It is fully keyboard-driven through the existing leader keys and `Cmd+Shift+</>`. Mouse wheel and click are secondary. Its tufts carry **live throughput data** instead of decoration.
+**Krypton delta.** Wheel is a **persistent layout**, not a transient switcher like Compiz or KWin. It uses **schematic cards** rather than live thumbnails, because terminal content is illegible at card size. It keeps a **stable order**, where Stage uses MRU. It is fully keyboard-driven through the existing leader keys and `Cmd+Shift+</>`. Mouse wheel and click are secondary. Its arc carries **live throughput data** (an activity dot per busy window) instead of decoration.
 
 ## Affected Files
 
@@ -44,7 +44,7 @@ Every window shares one base frame. Only the active window is visible; the other
 | `src/types.ts` | Add `LayoutMode.Wheel = 'Wheel'` |
 | `src/wheel-layout.ts` | **New.** Pure geometry: rail width, main frame, arc point, item pose, wrap index, activity decay |
 | `src/wheel-layout.test.ts` | **New.** Geometry, pose, wrap, narrow-viewport, and decay tests |
-| `src/wheel-rail.ts` | **New.** `WheelRail` class: rail DOM, canvas arc and tufts, cards, labels, caret, self-stopping rAF |
+| `src/wheel-rail.ts` | **New.** `WheelRail` class: rail DOM, canvas arc and activity dots, cards, labels, caret, self-stopping rAF |
 | `src/styles/wheel.css` | **New.** `.krypton-wheel` BEM styles; imported from `src/styles/index.css` |
 | `src/compositor.ts` | Enter/leave/relayout, focus/create/close/swap, activity pump, webview suspension, theme refresh, card sync |
 | `src/animation.ts` | `motionEnabled` getter (the `wheelSwap()` transition was replaced by the rail's dock morph, spec 273) |
@@ -90,7 +90,6 @@ export function wheelGeometry(railWidth: number, railHeight: number): WheelGeome
 export function wheelItemAngle(offset: number, geo: WheelGeometry): number; // slot offset → arc angle
 export function wheelItemPose(index: number, pos: number, geo: WheelGeometry): WheelPose;
 export function wheelArcPoint(t: number, r: number, geo: WheelGeometry): [number, number];
-export function wheelFurLevel(k: number): number;                   // static fur height of fur tuft k
 export function wheelTextSilhouette(rows: readonly string[], cols: number): WheelLine[];
 export function wheelSchematic(node: WheelPaneNode, focusedId: string): WheelPaneRect[];
 export function wheelItemKey(label: string, schematic: WheelPaneRect[], tabCount: number): string;
@@ -106,27 +105,26 @@ export function bumpActivity(a: number, bytes: number): number;   // min(1, a + 
 - **Rail:** `x = 0`, `y = 0`, width `clamp(round(vw × 0.24), 280, 400)`, height `vh − 28` (the footer). The reference rail is about 0.43 × its height wide. At 1728px that is 400px (the 320px cap left no room for the fur or the labels).
 - **Main frame:** `x = railW + gap`, `y = gap`, `w = vw − railW − 2·gap`, `h = vh − 28 − 2·gap`. If `w < 480`, the rail is hidden and the frame spans the full width inside the gap.
 - **Cards:** idle 112 wide, with height from the main frame's aspect (`wheelCardHeight`, 56–100px, 92px on a 1728 × 1117 screen) so a live preview fills its card; active ×1.5. Cards lean by `0.5 × t` (`WHEEL_TILT`), not fully radial. Scale eases as `1 + 0.5 × max(0, 1 − |i − pos|)`, so the grow follows the rotation. Opacity is `1 − |t| / 1.25`. A card is hidden beyond 1.2 rad or once it has left the rail.
-- **Arc apex** (`wheelGeometry(railW, railH)`): `arcX = max(34, railW − 262)`, where 262 = orbit gap 94 + the wider of two spans: an idle card (half-width 56 + label gap 8 + label 90 = 154) or the active card (half-width 84 + caret gap 5 + caret 7 + label gap 6 + `WHEEL_ACTIVE_LABEL_ROOM` 66 = 168, room for the 40px two-character label chip plus 6px from the rail edge). The active span wins, so the apex label never truncates, and everything left of the arc is tuft room (138px at 400px).
+- **Arc apex** (`wheelGeometry(railW, railH)`): `arcX = max(34, railW − 262)`, where 262 = orbit gap 94 + the wider of two spans: an idle card (half-width 56 + label gap 8 + label 90 = 154) or the active card (half-width 84 + caret gap 5 + caret 7 + label gap 6 + `WHEEL_ACTIVE_LABEL_ROOM` 66 = 168, room for the 40px two-character label chip plus 6px from the rail edge). The active span wins, so the apex label never truncates, and everything left of the arc is an empty margin (138px at 400px; it was tuft room before the arc was reduced to a hairline).
 - **Arc radius:** the circle through the apex and both rail corners inset 16px from the right edge: `bow = railW − 16 − arcX`, `R = (bow² + (railH/2)²) / (2·bow)`. The arc therefore spans the full rail height, like the reference. `arcExtent = asin(railH/2 / R)`.
 - **Card orbit:** concentric, `cardRadius = R − 94`, where 94 = active half-width 84 + a 10px gap to the arc.
 - **Spacing** (`wheelItemAngle`): the first slot out uses `step`, sized so the active card and its neighbour keep 4px, the same above and below (labels sit inline, so no label room opens under the active card). Later slots use `idleStep`, sized for an 8px idle gap. Both steps add the corner dip of a leaning neighbour, `halfW × sin(0.5·step)`, settled with a few fixed-point passes. Further out a card's lean trails the orbit tangent by `k·t` (`k = 1 − 0.5`), so idle spacing widens as `dt/dn = idleStep / cos(k·t)`, solved in closed form: `t = asin(sin(k·t₁) + k·idleStep·(d − 1)) / k`. The function is piecewise and continuous, so cards glide while the wheel turns.
 - **Labels:** each label shows only the first two characters of the item label (`wheelLabelHead`: `krypton/` → `kr`), set big with line-height 1 so windows are told apart at a glance; the full label stays on the card's `aria-label`. Idle labels sit upright, pinned `halfW + 8` right of the card's centre on its leaning axis, 28px bold, and ellipsize at the rail edge (max-width is set from the remaining room, capped at 90px). The active label is 40px, inline too: the caret is `halfW + 5` right of the active card, vertically centred, and the label follows it at `halfW + 5 + 7 + 6`, vertically centred. While a mouse-wheel scroll turns another card into the apex, caret and big label move to that card before focus commits. Labels stack above cards. Mockup: `.krypton/artifacts/hm-2/Claude-3/art-97-34e3a858.html`.
 - **Base bounds:** every window gets `baseBounds = main`. The active window has role `active`; all others have role `hidden` (`visibility: hidden; pointer-events: none`).
 
-### Card, Label, Tufts
+### Card, Label, Arc
 
 - **Card:** borderless, on a translucent background, using the `--krypton-border-radius` token. The active card has no frame or glow either; the caret, the big label, and its scale mark it. No corner brackets and no blur.
 - **Card body:** cards within ±3 slots of the active one show the live window (spec 273). The active slot shows the ghost eye (spec 274), because its window is the main frame. Every other card, and any live card that has faded near a rail edge, shows an inline SVG (112 × card-height viewBox) of the window's active tab. The card has no frame: splits are 1px divider lines (`vector-effect: non-scaling-stroke`), and the focused pane of a split gets a faint accent fill. A terminal pane shows a **text silhouette**, one bar per bucket of its visible rows, from the first non-space column to the trimmed line end (`wheelTextSilhouette`, at most 18 bars). The compositor reads it from the xterm buffer (`translateToString(true)` per viewport row) when it builds the item, and again at most once a second per window after PTY output (`WHEEL_REFRESH_MS`, trailing). Bars are quantized into the card key, so the card only repaints when its silhouette changes. Panes with no text and content views show their glyph instead: `>_` terminal, `±` diff, `¶` markdown, `◈` harness/acp/agent, `▦` other. If the window has more than one tab, tab dots appear bottom-right.
 - **Label:** the first two characters of the item label, in the chrome mono font, case kept (never uppercased): bold foreground text, 28px for inactive items and 40px for the active one, on a 4px-radius chip of the card surface (theme background at 0.86) so it stays legible over any wallpaper (the rail is transparent). The item label comes from `projectBadge(focusedProjectDir)`. If there is no directory, the tab title is used. The card's `aria-label` keeps the full item label.
-- **Fur:** four static tufts per window slot along the whole visible arc (`wheelFurLevel(k)`, seeded by `k`, so fur turns with the wheel without flickering). Levels are mostly `0.05–0.4`, and every sixth tuft grows into a `0.45–1` cluster, like the reference's clumps. Fur is drawn at 0.8 alpha, fading toward the arc ends.
-- **Live tufts:** one bright tuft per window at that window's arc angle, so tufts rotate with the cards. They are drawn over the fur at full alpha, with a root dot of `1.2 + activity × 2.2` px at every window slot. Strands = `3 + round(v × 32)` and length = `3 + (4 + r·80) × v`, seeded so each tuft keeps a stable shape. Long strands shed a speck past their tip. Tufts point outward, toward the screen edge.
-- **Arc:** a variable-width stroke (0.8 → 4.8px, thickest toward the upper middle of the visible span) in the accent colour. A 0.75px orbit line at 0.3 alpha runs through the card centres, behind the cards.
+- **Arc:** a 0.75px hairline in the foreground colour (`--krypton-fg-rgb`) at 0.3 alpha. A matching 0.75px orbit line runs through the card centres, behind the cards. Neither uses the accent colour. There is no fur, band, or tuft (removed 2026-10-12 at the user's request, to minimise the rail).
+- **Activity dot:** an accent dot on the arc at each busy window's arc angle (activity ≥ 0.02), so dots rotate with the cards. Radius `1.2 + activity × 2.2` px, alpha fading toward the arc ends. Idle windows draw no dot.
 - **Hint caption:** bottom-left, showing `03 / 09` (active position / count).
 - **Colours:** read once from `--krypton-*` vars and refreshed on `theme-changed`. Colours are never read per frame.
 
 ### Render Loop
 
-`WheelRail` runs a rAF loop only while it has work: the wheel is rotating (`|target − pos| > 0.0005`), a window is docking, or some activity is above 0.02. The loop stops otherwise, so an idle wheel uses 0 CPU. Frames driven only by activity are capped at 30 fps. Each frame writes `transform` and `opacity` for cards and labels still on the rail and redraws the canvas. The fur is static, so it adds no frames of its own. Under `prefers-reduced-motion`, rotation jumps straight to the target and tufts redraw at most every 500 ms.
+`WheelRail` runs a rAF loop only while it has work: the wheel is rotating (`|target − pos| > 0.0005`), a window is docking, or some activity is above 0.02. The loop stops otherwise, so an idle wheel uses 0 CPU. Frames driven only by activity are capped at 30 fps. Each frame writes `transform` and `opacity` for cards and labels still on the rail and redraws the canvas. Under `prefers-reduced-motion`, rotation jumps straight to the target and activity dots redraw at most every 500 ms.
 
 ### Order, Focus, Navigation
 
@@ -160,7 +158,7 @@ Superseded by [spec 273](./273-wheel-live-previews.md). `WheelRail` flies the in
 4. nextFrame → fitAll() (all windows) → WheelRail.setActive(index) → rAF rotates to target, then stops
 5. Leader j / Cmd+Shift+< → compositor.wheelNext() → focusWindow(next)
 6. focusWindow → syncWheelFocus → set roles (active / preview ±3 / hidden) → suspend/resume webviews → wheel.setActive(i) → rail rotates and docks
-7. PTY output → headerScope.pump(n) + wheelRail.pump(id, n); content views → pumpWindowActivity(id, n) → same pair → tuft grows, loop runs until decayed
+7. PTY output → headerScope.pump(n) + wheelRail.pump(id, n); content views → pumpWindowActivity(id, n) → same pair → activity dot grows, loop runs until decayed
 8. Leaving Wheel: wheel.dispose(); clear the --wheel class, role, visibility, pointer, opacity, transform; resume webviews
 ```
 
@@ -212,7 +210,7 @@ v1 has no `[workspaces.wheel]` table. The rail side and card size are fixed. The
 
 - `WheelRail` API: `setBounds(bounds | null)`, `setItems(items)`, `updateItem(item)`, `setActive(index)`, `pump(id, bytes)`, `refreshColors()`, `dispose()`. Compositor adds `wheelStep(±1)`, `wheelNext()`, `wheelPrevious()`.
 - `focusWindowQuiet` focuses the pane while the window is still `visibility: hidden`, which cannot take DOM focus. After flipping roles the compositor refocuses the now-visible pane, unless the Quick Terminal is open.
-- Activity-only frames are scheduled with `setTimeout` at the capped rate (33 ms, or 500 ms under reduced motion), so the rail never spins rAF at 60 Hz just to decay tufts.
+- Activity-only frames are scheduled with `setTimeout` at the capped rate (33 ms, or 500 ms under reduced motion), so the rail never spins rAF at 60 Hz just to decay activity dots.
 - Tab dots are drawn as SVG circles inside the schematic, not as a separate span. A truncated project name (ending in `…`) gets no trailing `/`.
 - The focused window's card was briefly left out of the rail (2026-09-29), because a schematic beside the real window read as a second, empty window. It is back at the apex (2026-10-01, at the user's request), so the rail always shows which window is active. Its schematic was then replaced by the ghost eye (spec 274), so the active card is no longer a still glyph. A window flying back to its card keeps the card live (transparent) for the whole morph, so no schematic flashes in before it lands.
 - Verified in a browser against the real `WheelRail` and `wheel.css`: rotation, click and scroll activation, and zero rAF calls while idle. Compositor wiring is covered by type-check and unit tests. It has not yet been exercised in the installed app bundle.
@@ -231,7 +229,7 @@ v1 has no `[workspaces.wheel]` table. The rail side and card size are fixed. The
 | Maximize | Rail hidden while maximized; restore reapplies the Wheel frame |
 | Quick Terminal | Stays an overlay above rail and frame |
 | Workspace restore in Wheel | Works as-is: order is window order, active is the focused window, nothing extra to persist |
-| High-output hidden window | Session keeps running; not painted; its tuft grows so the activity is visible |
+| High-output hidden window | Session keeps running; not painted; its activity dot grows so the activity is visible |
 
 ## Open Questions
 
