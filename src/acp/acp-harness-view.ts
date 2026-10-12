@@ -7918,15 +7918,12 @@ export class AcpHarnessView implements ContentView {
     // gets servers via a native `cline_mcp_settings.json` (CLINE_MCP_SETTINGS_PATH).
     // Cursor ignores session/new mcpServers entirely (upstream regression); it
     // gets the harness memory server via native `.cursor/mcp.json` at spawn time.
-    // OMP native-loads root `.mcp.json` in ACP mode but still accepts injected
-    // harness memory servers, so skip only the project bridge.
     if (
       lane.backendId === 'claude' ||
       lane.backendId === 'pi-acp' ||
       lane.backendId === 'junie' ||
       lane.backendId === 'cline' ||
-      lane.backendId === 'cursor' ||
-      lane.backendId === 'omp'
+      lane.backendId === 'cursor'
     ) {
       return lane.backendId === 'junie' ||
         lane.backendId === 'cline' ||

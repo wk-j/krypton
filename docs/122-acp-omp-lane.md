@@ -22,8 +22,8 @@ Do **not** use the third-party [`omp-acp`](https://github.com/nealol/omp-acp) np
 - **Local CLI baseline.** `omp --version` reports `omp/15.4.1` (verified 2026-05-26). Config lives under `~/.omp/agent/` (sessions, MCP, auth). Known-good baseline for v1.
 - **Installation.** OMP ships an install script at [omp.sh](https://omp.sh). The executable is `omp` (Bun-based). Krypton does not install OMP — it only spawns the binary if present on `PATH`, same precedent as Cursor/Junie.
 - **Authentication.** OMP consumes standard provider env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) via Krypton's cached login-shell env injection. OMP also ships `omp auth-broker` / OAuth flows that may need a TTY on first run — users should complete auth once outside Krypton if a lane stalls on `initialize`.
-- **MCP support — native discovery.** OMP auto-discovers MCP servers from `.omp/mcp.json`, `~/.omp/agent/mcp.json`, root `mcp.json` / `.mcp.json`, and several third-party tool configs (`.cursor/`, `.claude/`, etc.). See [docs/mcp-config.md](https://github.com/can1357/oh-my-pi/blob/main/docs/mcp-config.md). This creates a stronger duplication risk than Junie: Krypton's regular-lane bridge also forwards root `.mcp.json`, so a normal Krypton project may register the same root MCP server twice if `omp acp` keeps native root discovery enabled.
-- **MCP support — ACP path.** Native `omp acp` honors `session/new mcpServers` per the ACP spec, but it also auto-loads root `.mcp.json` in ACP mode. Because Krypton cannot dedupe servers that OMP loads natively inside the child process, v1 skips the project `.mcp.json` bridge for OMP and injects only the per-lane `krypton-harness-memory` server.
+- **MCP support — native discovery.** OMP auto-discovers MCP servers in interactive/TUI mode from `.omp/mcp.json`, `~/.omp/agent/mcp.json`, root `mcp.json` / `.mcp.json`, and several third-party tool configs. See [docs/mcp-config.md](https://github.com/can1357/oh-my-pi/blob/main/docs/mcp-config.md).
+- **MCP support — ACP path.** Under headless `omp acp` mode, OMP relies on the ACP client to supply servers via `session/new mcpServers` rather than auto-loading root `.mcp.json`. Krypton forwards project `.mcp.json` servers to OMP via `loadProjectMcpServers()` merged with the per-lane `krypton-harness-memory` server.
 - **Permission model.** Whenever an ACP client is connected (independent of fs capabilities), OMP ACP mode routes `bash`, plus `edit` operations that delete or move a file, through `session/request_permission` (`PERMISSION_REQUIRED_TOOLS` in OMP's `agent-session.ts`; skipped only on explicit yolo/auto-approve). Plain `edit`, `write`, and `ast_edit` are **not** prompted. Their writes are gated by the `fs/write_text_file` review card (Spec 89). Krypton advertises `fs.writeTextFile: true`, `fs.readTextFile: false`, and `terminal: false` for OMP. OMP does **not** get `⚠ unsandboxed` or `⚠ permissions unverified` in v1.
 - **Reads stay native.** With `readTextFile: true`, OMP's `read` tool sent `fs/read_text_file` first and silently fell back to disk on error. Spec 89 rejected every path outside the lane cwd, so each sibling-repo read showed a red `FS × read · Path outside project root` chip next to a successful `READ`. Krypton does not advertise `readTextFile` for OMP (same switch as Grok, spec 228). OMP reads disk directly and shows only its own `read` tool chip. OMP writes still go through `fs/write_text_file` and the Spec 89 review card.
 - **Writes are not project-scoped.** OMP has no disk fallback for writes, so a Spec 89 scope rejection failed the `edit`/`write` tool outright (e.g. `EDIT × /tmp/i186/sim.py · Path outside project root`). `fs_path_in_scope` lets out-of-root OMP writes through, same as Grok (spec 135). Every such write, sibling repo or `/tmp` scratch, still waits on the review card. Other lanes keep Spec 89 scoping.
@@ -47,14 +47,14 @@ Do **not** use the third-party [`omp-acp`](https://github.com/nealol/omp-acp) np
 | Krypton Pi lane (Spec 84) | `pi-acp` third-party adapter | Lean lane — no MCP host, no permission gate. OMP is the opposite archetype. |
 | Krypton Junie lane (Spec 119) | `junie --acp true` + native MCP overlay workaround | OMP should consume `session/new mcpServers` directly — no overlay needed unless verification fails. |
 
-**Krypton delta** — match Krypton's existing built-in lane model (code-defined backend, lane picker entry, memory MCP + permission rail), with an OMP-specific project `.mcp.json` bridge skip to avoid duplicate native MCP registration. Display name `OMP` in the picker so lanes label as `OMP-1`, `OMP-2`, …; backend id `omp` matches the CLI binary.
+**Krypton delta** — match Krypton's existing built-in lane model (code-defined backend, lane picker entry, memory MCP + permission rail), with OMP receiving project `.mcp.json` servers via `session/new mcpServers`. Display name `OMP` in the picker so lanes label as `OMP-1`, `OMP-2`, …; backend id `omp` matches the CLI binary.
 
 ## Affected Files
 
 | File | Change |
 |------|--------|
 | `src-tauri/src/acp.rs` | Add `("omp", AcpBackend { command: "omp", args: ["acp"], display_name: "OMP" })` to `builtin_backends()`. Add `backend_id == "omp"` `startup_hint` block between the Junie block and the unconditional fallback hints, so OMP auth/API-key errors are not misreported as Claude/Gemini/OpenCode setup. Cover missing CLI, old CLI without `acp`, auth/API-key errors, and empty stderr. Add `omp_startup_hint_*` unit tests mirroring Junie/Cursor patterns, including a non-leakage test for other backends. |
-| `src/acp/acp-harness-view.ts` | Add `omp: 'OMP'` to `BACKEND_LABELS`. Expand `laneAccent` palette from 8 to 9 entries. Add `/^omp(-|$)/i` arm to `laneAccentForLabel` (slot 9) before the numeric `-(\d+)$` fallback. Keep lane labels `OMP-1`, `OMP-2`, … everywhere. In `mcpServersForLane()`, skip the project `.mcp.json` bridge for OMP and return memory servers only, matching the native-root-discovery policy below. Do not add an OMP sandbox/warning chip in v1. |
+| `src/acp/acp-harness-view.ts` | Add `omp: 'OMP'` to `BACKEND_LABELS`. Expand `laneAccent` palette from 8 to 9 entries. Add `/^omp(-|$)/i` arm to `laneAccentForLabel` (slot 9) before the numeric `-(\d+)$` fallback. Keep lane labels `OMP-1`, `OMP-2`, … everywhere. In `mcpServersForLane()`, forward project `.mcp.json` servers merged with `krypton-harness-memory`. Do not add an OMP sandbox/warning chip in v1. |
 | `src/config.ts` | Update `lane_models` comment to mention `omp`. No schema change. |
 | `docs/04-architecture.md` | Add Oh My Pi to the ACP lane list as a regular lane. |
 | `docs/05-data-flow.md` | Update ACP Harness Flow backend enumeration if still listing supported lanes explicitly. |
@@ -87,14 +87,12 @@ v1 does **not** push `--model` at spawn time and does **not** call `session/set_
 
 ### MCP And Memory
 
-OMP starts from the regular-lane design, with an OMP-specific MCP bridge exception:
+OMP uses the standard regular-lane MCP design:
 
-- **Do not** add it to the `pi-acp` no-MCP skip.
-- **Do** skip the project `.mcp.json` bridge for OMP, because OMP already native-loads root `.mcp.json` in ACP mode.
-- Do not call `loadProjectMcpServers()` for OMP in `mcpServersForLane()`.
-- Do not attempt cross-boundary dedupe. Krypton cannot see the server set OMP loads natively inside the child process unless OMP exposes a disable-native-discovery flag or reports native server names through a protocol surface Krypton can query.
+- Forward project `.mcp.json` servers to OMP via `loadProjectMcpServers()`.
+- Filter by agent-advertised `mcpCapabilities` (`filterByCapability`).
+- Deduplicate with `krypton-harness-memory` (`dedupeByName`).
 - Always include the per-lane `krypton-harness-memory` server when harness memory is available.
-
 ### Permissions
 
 No force/yolo/trust flags. OMP routes destructive `edit`, `write`, and `bash` behavior through `session/request_permission` under Krypton's actual capabilities (`fs` enabled, `terminal` disabled), so Krypton's existing permission rail handles the safety gate. Do not add an OMP sandbox or permissions-unverified chip in v1.

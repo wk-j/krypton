@@ -4283,3 +4283,22 @@ describe('turn end routes through the steer controller (spec 278)', () => {
     expect(finished).toBe(0);
   });
 });
+
+describe('mcpServersForLane bridge policy', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+
+  function methodSource(name: string): string {
+    let start = src.indexOf(`private async ${name}(`);
+    if (start < 0) start = src.indexOf(`private ${name}(`);
+    expect(start).toBeGreaterThanOrEqual(0);
+    const next = src.indexOf('\n  private ', start + 1);
+    return src.slice(start, next === -1 ? undefined : next);
+  }
+
+  it('routes omp through the project .mcp.json bridge instead of the skip list', () => {
+    const body = methodSource('mcpServersForLane');
+    expect(body).not.toContain("lane.backendId === 'omp'");
+    expect(body).toContain('loadProjectMcpServers(this.projectDir, this.remoteRuntimeId)');
+  });
+});
