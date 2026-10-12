@@ -14460,18 +14460,24 @@ export class AcpHarnessView implements ContentView {
   private armAnnotationFromSelection(): void {
     if (this.annotationOverlayOpen) return;
     const captured = this.captureAnnotationFromSelection();
+    if (captured === null) {
+      // A plain click leaves a collapsed selection. With nothing armed it
+      // changes no state, so skip the composer rebuild: that rebuild in an
+      // input turn is the spec 114 drift writer, and it flickered the
+      // transcript ~21px on every click.
+      if (this.annotationArmed) this.disarmAnnotation();
+      return;
+    }
     if (captured === 'outside') {
-      this.disarmAnnotation();
+      this.annotationArmed = null;
+      this.removeAnnotationPill();
       this.flashChip('select inside one reply');
-      return;
+    } else {
+      this.annotationArmed = captured;
+      this.syncAnnotationPill();
+      this.renderComposer();
     }
-    if (!captured) {
-      this.disarmAnnotation();
-      return;
-    }
-    this.annotationArmed = captured;
-    this.syncAnnotationPill();
-    this.renderComposer();
+    this.pinStickyAfterComposerKey();
   }
 
   private captureAnnotationFromSelection():
@@ -14561,6 +14567,7 @@ export class AcpHarnessView implements ContentView {
     this.annotationArmed = null;
     this.removeAnnotationPill();
     this.renderComposer();
+    this.pinStickyAfterComposerKey();
   }
 
   private openAnnotationOverlay(): void {
@@ -14971,8 +14978,9 @@ export class AcpHarnessView implements ContentView {
   /** Spec 114 rev 14: composer key edits pin a stuck transcript in this turn.
    *  Rev 13 only heals from a delivered scroll event, so keys inside the 2-RAF
    *  suppression window (or while a glide is already running) still paint the
-   *  14px jump. The 1s composer tick does not call this — it does not reproduce
-   *  the writer, and a hard pin would snap a live glide once a second. */
+   *  14px jump. Rev 23: the mouse-up annotation arm/disarm render pins too.
+   *  The 1s composer tick does not call this — it does not reproduce the
+   *  writer, and a hard pin would snap a live glide once a second. */
   private pinStickyAfterComposerKey(): void {
     const lane = this.activeLane();
     const body = this.activeTranscriptBody();
