@@ -150,6 +150,14 @@ import type { DayDigest } from './daily-note';
 import { openAcpWireProfiler } from './acp-wire';
 import { journalAppend, type JournalKind } from './journal';
 import {
+  hashPolicy,
+  isCompactionDrop,
+  planPolicyDelivery,
+  renderToolIndex,
+  renderToolNameLine,
+  type LaneToolGates,
+} from './lane-context';
+import {
   HANDOFF_WRITE_PROMPT,
   type GithubIssueVerbInput,
   analyzeGithubIssuePrompt,
@@ -161,6 +169,7 @@ import {
   handoffResumePrompt,
   issueFixPrompt,
   postGithubCommentPrompt,
+  renderActiveTicketPin,
   tagGithubIssuePrompt,
   tldrawDrawPrompt,
   wikiIngestPrompt,
@@ -859,6 +868,7 @@ const LANE_DEFAULTS = {
   modelSwitchEpoch: 0,
   pendingModelSwitch: null,
   supportsEmbeddedContext: false,
+  policyDelivery: null,
   error: null,
   acceptAllForTurn: false,
   rejectAllForTurn: false,
@@ -7716,6 +7726,8 @@ export class AcpHarnessView implements ContentView {
     const spawnEpoch = lane.spawnEpoch;
     this.setLaneStatus(lane, 'starting');
     lane.error = null;
+    // spec 289: a fresh or resumed agent session has not seen the lane policy.
+    lane.policyDelivery = null;
     this.render();
     let client: AcpClient | null = null;
     // spec 199: session/load replays the whole history as live updates; the
@@ -8095,7 +8107,15 @@ export class AcpHarnessView implements ContentView {
         this.sealStreaming(lane);
         this.addElicitation(lane, event.requestId, event.message, event.requestedSchema, event.toolCallId);
         break;
-      case 'usage':
+      case 'usage': {
+        // spec 289: a sharp fall in context occupancy means the adapter compacted
+        // the history — the lane policy may be gone, so resend it next turn.
+        if (
+          lane.policyDelivery &&
+          isCompactionDrop(lane.usage?.used ?? null, event.usage.used ?? null)
+        ) {
+          lane.policyDelivery.stale = true;
+        }
         lane.usage = mergeUsage(lane.usage, event.usage);
         // spec 214: only the prompt-response variant carries token counters;
         // a `usage_update` notification carries the context level and would
@@ -8112,6 +8132,7 @@ export class AcpHarnessView implements ContentView {
         this.renderLanePeek();
         needsRender = false;
         break;
+      }
       case 'available_commands':
         lane.availableCommands = event.commands;
         if (lane.slashPaletteIndex >= event.commands.length) lane.slashPaletteIndex = 0;
@@ -8399,6 +8420,10 @@ export class AcpHarnessView implements ContentView {
     // so a leading lane-context packet turns it into plain model text. The
     // one-shot directive override then waits for the next ordinary turn.
     const agentCommand = isAgentSlashCommand(text, lane.availableCommands);
+    // spec 289: an explicit `/compact` drops the lane policy from the agent's history.
+    if (agentCommand && lane.policyDelivery && /^\/compact\b/.test(text.trim())) {
+      lane.policyDelivery.stale = true;
+    }
     const blocks = agentCommand
       ? this.buildUserBlocks(text, images)
       : this.buildPromptBlocks(lane, text, images);
@@ -8420,6 +8445,8 @@ export class AcpHarnessView implements ContentView {
         return { handled: true, delivered: true };
       }
       this.steerCtl.onPromptFailed(lane); // spec 278
+      // spec 289: the agent may never have seen this turn's policy — resend it.
+      lane.policyDelivery = null;
       const message = String(e);
       this.sealStreaming(lane);
       // Reset this turn's pointers first, matching finishTurn — an errored (or
@@ -8528,7 +8555,6 @@ export class AcpHarnessView implements ContentView {
     // lane-context stub so adapters that only honor the first resource/text
     // block still see both. Never emit the directive as a second block.
     const leading = this.composeLeadingContext(lane);
-    if (!leading) return tail;
     if (lane.supportsEmbeddedContext) {
       return [
         {
@@ -8548,127 +8574,100 @@ export class AcpHarnessView implements ContentView {
     ];
   }
 
-  /** Join the lane-context stub and the active directive into one block. */
+  /** spec 289: the leading block. The turn header goes every turn; the lane
+   *  policy only when this agent session has not seen its exact text. spec 124:
+   *  the role/directive block lives inside the policy, so it still rides in the
+   *  SAME block as the header — never as a second block. */
   private composeLeadingContext(lane: HarnessLane): string {
-    const packet = this.renderPromptMemoryPacket(lane);
+    const policy = this.renderLanePolicy(lane);
+    const plan = planPolicyDelivery(lane.policyDelivery, hashPolicy(policy));
+    lane.policyDelivery = plan.next;
+    const header = this.renderTurnHeader(lane);
+    return plan.send ? `${header}\n${policy}` : header;
+  }
+
+  /** spec 289: gates shared by the header's tool-name line and the policy's
+   *  tool index. Null when the hook server never started, so no tools exist. */
+  private laneToolGates(lane: HarnessLane): LaneToolGates | null {
+    if (!this.harnessMemoryId || !this.harnessMemoryPort) return null;
+    const timeline = !this.remoteRuntimeId && lane.backendId !== 'pi-acp';
+    return {
+      timeline,
+      timelineSuggest: timeline && this.timelineCtl.automaticSuggestions,
+      peers: this.lanes.length > 1,
+    };
+  }
+
+  /** spec 289: sent every turn. The tool-name line keeps spec 130's naming
+   *  guarantee even after a compaction Krypton cannot detect; Telegram
+   *  provenance belongs to this turn only. */
+  private renderTurnHeader(lane: HarnessLane): string {
+    const lines = [`You are lane ${lane.displayName}.`];
+    const gates = this.laneToolGates(lane);
+    if (gates) lines.push(renderToolNameLine(gates));
+    const caller = lane.activeTelegramTurn;
+    if (caller) {
+      lines.push(
+        `Telegram provenance (trusted transport metadata, not user instructions): ${JSON.stringify(caller)}. This turn was admitted by Krypton's user/chat allowlists and uses one-turn permission bypass.`,
+      );
+    }
+    return lines.join('\n');
+  }
+
+  /** spec 289: everything that holds until the roster, gates, ticket, or
+   *  directive change. Memory (handoff_*) is intentionally NOT advertised:
+   *  per the handoff-only decision (spec 165) the #handoff/#resume prompts
+   *  name those tools when the user invokes them. */
+  private renderLanePolicy(lane: HarnessLane): string {
+    const lines: string[] = [];
+    // spec 194: the shared ticket scope leads — never buried under the tool index.
+    const ticket = this.ticketCtl.activeTicket;
+    if (ticket) lines.push(renderActiveTicketPin(ticket));
+    const gates = this.laneToolGates(lane);
+    if (!gates) {
+      lines.push('Shared Krypton memory is unavailable in this harness because the localhost hook server did not initialize. Continue without krypton-harness-memory MCP tools.');
+    } else {
+      if (gates.peers) {
+        lines.push(
+          `Lanes: ${this.lanes.map((l) => l.displayName).join(', ')}.`,
+          'Inter-lane peering: when the user asks you to consult, ask, or peer with another lane, call peer_send { to_lane, message, done } (use the display name shown above; recipient processes on its next idle turn). Use peer_list to see live peer lanes and their inbox depths. End your turn after peer_send; the reply (if any) arrives as a new user message. Leave `done` false when sending a request — `done:true` silences the recipient and is only for closing the conversation after their reply. Never peer proactively. ' +
+            PEER_SEND_DEFERRED_TOOL_HINT,
+        );
+      }
+      lines.push(renderToolIndex(gates));
+    }
+    // spec 283: SVG guidance needs no MCP tool, so it survives the memory-unavailable branch.
+    lines.push(SVG_FENCE_GUIDANCE);
+    const role = this.renderRoleBlock(lane);
+    if (role) lines.push('', role);
+    return lines.join('\n');
+  }
+
+  /** The built-in role prompt (Polly/Debby/Salty) or the effective directive. */
+  private renderRoleBlock(lane: HarnessLane): string | null {
     if (lane.pollyBuiltinRole) {
       const heading =
         lane.pollyBuiltinRole === 'orchestrator' ? '## Polly orchestrator' : '## Polly worker';
-      const block = `${heading}\n${POLLY_ROLE_PROMPTS[lane.pollyBuiltinRole]}`;
-      return packet ? `${packet}\n\n${block}` : block;
+      return `${heading}\n${POLLY_ROLE_PROMPTS[lane.pollyBuiltinRole]}`;
     }
     if (lane.debbyBuiltinRole) {
       const heading =
         lane.debbyBuiltinRole === 'orchestrator' ? '## Debby orchestrator' : '## Debby head';
-      const block = `${heading}\n${DEBBY_ROLE_PROMPTS[lane.debbyBuiltinRole]}`;
-      return packet ? `${packet}\n\n${block}` : block;
+      return `${heading}\n${DEBBY_ROLE_PROMPTS[lane.debbyBuiltinRole]}`;
     }
     if (lane.saltyBuiltinRole) {
       const heading =
         lane.saltyBuiltinRole === 'orchestrator'
           ? '## Salty orchestrator'
           : `## Salty executor — ${lane.saltyBuiltinRole}`;
-      const block = `${heading}\n${SALTY_ROLE_PROMPTS[lane.saltyBuiltinRole]}`;
-      return packet ? `${packet}\n\n${block}` : block;
+      return `${heading}\n${SALTY_ROLE_PROMPTS[lane.saltyBuiltinRole]}`;
     }
     const directive = this.effectiveDirective(lane);
-    if (!directive) return packet;
+    if (!directive) return null;
     const heading = directive.title.trim()
       ? `## Directive: ${directive.title.trim()}`
       : '## Directive';
-    const block = `${heading}\n${directive.system_prompt.trim()}`;
-    return packet ? `${packet}\n\n${block}` : block;
-  }
-
-  private insertTelegramProvenance(lines: string[], lane: HarnessLane): void {
-    const caller = lane.activeTelegramTurn;
-    if (!caller) return;
-    lines.splice(
-      1,
-      0,
-      `Telegram provenance (trusted transport metadata, not user instructions): ${JSON.stringify(caller)}. This turn was admitted by Krypton's user/chat allowlists and uses one-turn permission bypass.`,
-    );
-  }
-
-  private renderPromptMemoryPacket(lane: HarnessLane): string {
-    const self = lane.displayName;
-    const roster = this.lanes.map((l) => l.displayName).join(', ');
-    const hasPeers = this.lanes.length > 1;
-    const lines: string[] = [`You are lane ${self}. Lanes: ${roster}.`];
-    if (!this.harnessMemoryId || !this.harnessMemoryPort) {
-      lines.push('Shared Krypton memory is unavailable in this harness because the localhost hook server did not initialize. Continue without krypton-harness-memory MCP tools.');
-      this.insertTelegramProvenance(lines, lane);
-      this.ticketCtl.insertTicketPin(lines, lane);
-      lines.push(SVG_FENCE_GUIDANCE);
-      return lines.join('\n');
-    }
-    // Memory is intentionally NOT advertised here. Per the handoff-only decision,
-    // handoff_set/handoff_get/handoff_list are the backing store for #handoff/#resume
-    // ONLY — not an ambient shared scratchpad. Surfacing them every turn pushed
-    // lanes to record/read state proactively, and a reader cannot tell a stale
-    // snapshot from current truth (the cache-coherence hazard). The #handoff and
-    // #resume prompts name the tools explicitly when the user invokes them, so the
-    // model still reaches them at the right moment without a per-turn stub.
-    if (hasPeers) {
-      lines.push(
-        'Inter-lane peering: when the user asks you to consult, ask, or peer with another lane, call peer_send { to_lane, message, done } (use the display name shown above; recipient processes on its next idle turn). Use peer_list to see live peer lanes and their inbox depths. End your turn after peer_send; the reply (if any) arrives as a new user message. Leave `done` false when sending a request — `done:true` silences the recipient and is only for closing the conversation after their reply. Never peer proactively. ' +
-          PEER_SEND_DEFERRED_TOOL_HINT,
-      );
-    }
-    // spec 130: attention tools are default-on for every harness-memory-capable
-    // lane, but a lane only learns their exact names via ranked tool discovery —
-    // which can drop attention_flag under a capped query. Name both tools here so
-    // the model can target them directly instead of relying on search ranking.
-    // spec 134: reframed to lead with positive, recognizable fork triggers and a
-    // symmetric "don't let a genuine fork pass unflagged" calibration. The old
-    // prohibition-first wording ("never flag the routine … never proactively")
-    // had pushed flagging to near-zero; the single retained guard now trails the
-    // triggers rather than dominating them. Mirrors the tool description.
-    lines.push(
-      'Attention triage: at the end of a turn where you hit a real fork — you picked among two or more genuinely viable approaches the user could reasonably decide differently on, you resolved a consequential ambiguity in their intent (one that changes the user-visible outcome, architecture, or workflow) by guessing, or you did something costly or hard to undo — surface ONE such decision to the human review queue with attention_flag { question, chosen, rationale, traded_off, uncertainty, reversibility }, then keep working (non-blocking; proceed with `chosen`). Calibrate in both directions: both a silent genuine fork and a trivia flag degrade the queue, so flag the consequential forks but skip the routine, reversible, machine-verifiable 80%, at most one per turn, and never flag just to cover yourself. Use attention_resolve { item_id } if you later settle it yourself. Write the free-text fields (question, chosen, rationale, traded_off, uncertainty) in Thai, for a human who is NOT reading the code: `question` names the real stake in plain language (not just an API or data-structure name), and `rationale` explains the consequence — why it matters — not only the technical mechanism; if a technical term is unavoidable, follow it with one plain sentence on its concrete impact.',
-    );
-    // spec 160: mark_review_priority is default-on for every harness-memory lane
-    // (it triages a diff the lane wrote — relevant even for a solo lane), so name
-    // it unconditionally for discoverability under a capped tool search, like the
-    // attention tools. Purely advisory: the Window only folds/marks, never hides.
-    lines.push(
-      'Diff reading priority: at the end of a turn where you edited files, you MAY call mark_review_priority { ranges } to tell the human\'s Diff Window where to spend reading attention. Report only the non-default ranges — `high` for core logic / interface / risk to read first, `routine` for mechanical churn (generated code, renames, imports, formatting) — anchored on the NEW side (the post-change line numbers you wrote); each range may include an optional short `reason` explaining why it was marked. Everything you omit stays `normal` and renders in full. The Window only folds `routine` (always one keystroke from full) and marks/navigates `high`; it never hides or reorders, so a small honest report is right and silence yields the full diff. At most once per turn, only when you changed files.',
-    );
-    if (!this.remoteRuntimeId && lane.backendId !== 'pi-acp') {
-      lines.push(
-        'Project timeline direct record: when the current human message explicitly asks you to record, remember, persist, or add something to the project timeline, call timeline_record in that same turn. Their request is the confirmation; copy the exact authorizing words into `instruction_excerpt`, report every returned event ID, topic ID, and path, and do not ask for another confirmation or open a review UI. Use `made_by: "Current user"` when this prompt is the authority and no more specific identity is given. Before the first timeline_record about a subject, call timeline_list (read-only) and reuse the `topic_id` of the topic that already covers it — topic titles vary per session and per language, so a title that does not match does not mean the topic is new; omit `topic_id` only when no existing topic covers the subject. For a traced chronology, persist only sourced `recorded`/`observed` events, never `inferred` rows: reuse one `topic_id` for every event in the trace and keep event-specific wording in `summary`, not `topic_title`. If an ack comes back with `new_topic: true` and `existing_topics`, check whether one of them is the same subject, use its ID for the remaining events, and tell the user. Never call timeline_record merely because something seems important; unsolicited capture stays timeline_suggest. Never include secrets, environment values, or raw tool output. LANGUAGE: write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai, the way a Thai engineer writes; keep technical terms in English. Preserve `instruction_excerpt`, `made_by`, `source_ref`, identifiers, paths, URLs, commit hashes, and quoted source text verbatim.',
-      );
-      // spec 263: the human should be able to ask for topic repair in plain
-      // language instead of typing the `#timeline merge … into …` grammar.
-      lines.push(
-        'Project timeline topic repair: when the human explicitly asks to merge, combine, or join timeline topics — or to undo that — call timeline_merge in the same turn. Read timeline_list first, pass the two `topic_id` values you found plus their exact authorizing words in `instruction_excerpt`, and report the moved count, both topic titles, and the backup path. `undo: true` with no from/into reverses the most recent merge. Only the grouping changes; every event keeps its own title, summary, provenance, and ID. Never merge because two topics merely look similar to you: without an explicit instruction, name what you would merge and let the human decide.',
-        'Project timeline conflicts: after every successful timeline_record, compare ONLY the new event against the other live events of its topic (timeline_list { topic_id }). If they decide the same subject in opposite directions with nothing newer settling it, call timeline_conflict_record with `confirmed`; if the new event settles an open pair, record `resolved` with it as `resolution_event_id`. Then call timeline_conflict_checked { topic_id, event_ids: [new event ID] } even when nothing conflicted. Decide yourself — never ask the human to pick pairs or confirm verdicts, never re-compare events that are already checked, and never scan other topics unasked. Events linked by `supersedes` are change history, not conflicts. Write `rationale` in natural Thai; keep technical terms and IDs in English.',
-      );
-    }
-    if (this.timelineCtl.automaticSuggestions && !this.remoteRuntimeId && lane.backendId !== 'pi-acp') {
-      lines.push(
-        'Project timeline: at most once per turn, use timeline_suggest only when this turn establishes an explicit durable requirement, decision, consequential change, approval/rejection, or implementation outcome worth finding later. Skip routine edits/tests/status chatter, recommendations, unanswered questions, inferred authority, and anything already pending or recorded. `made_by` and `evidence_excerpt` must be supported by the user\'s actual words or trusted provenance. Never include secrets, environment values, or raw tool output. This creates a pending local suggestion only; the human confirms or dismisses it. LANGUAGE: write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai, the way a Thai engineer writes; keep technical terms in English. Preserve `evidence_excerpt`, `made_by`, `source_ref`, identifiers, paths, URLs, commit hashes, and quoted source text verbatim.',
-      );
-    }
-    // spec 146: review_outcome is default-on but only used during a #review
-    // round (which needs reviewer lanes), so name it for discoverability only
-    // when peers exist. The #review prompt already instructs the call; this just
-    // ensures the model can target the tool by name under a capped tool search.
-    if (hasPeers) {
-      lines.push(
-        'Review quality matrix: after you synthesize a #review round (you convened reviewers and aggregated their Blockers/Warnings), call review_outcome { blockers, warnings, reviewer_count, subject_label } once to record a summary row for your own work. It stores the raw counts only — no score, no grade — so the human can observe the trend across rounds. Only call it for a real review you convened; never fabricate one.',
-      );
-    }
-    // spec 133: discoverability only — the agent decides when an HTML artifact
-    // beats prose. Opt-in, user-driven; never default to it.
-    lines.push(
-      'HTML artifacts: when the user asks for a visual or interactive view (side-by-side, diagram, annotated diff, dashboard), call artifact_new { title }. It returns a path to a file that ALREADY EXISTS — a styled scaffold (Binance dark theme + light/auto toggle); EDIT it with your normal edit tool (do not recreate it with Write) to replace the placeholder inside <main data-artifact-content>, then artifact_register { id }; the user opens it in their browser. Opt-in only — keep ordinary prose, plans, and answers in your turn text. Style rule: never color-code blocks with left accent borders (border-left rails) — use a full border, background tint, or heading color; the scaffold strips left-only borders at runtime.',
-    );
-    // spec 283: SVG guidance needs no MCP tool — also pushed in the memory-unavailable branch.
-    lines.push(SVG_FENCE_GUIDANCE);
-    this.insertTelegramProvenance(lines, lane);
-    this.ticketCtl.insertTicketPin(lines, lane);
-    return lines.join('\n');
+    return `${heading}\n${directive.system_prompt.trim()}`;
   }
 
   private finishTurn(lane: HarnessLane, stopReason: StopReason, reason?: string): void {

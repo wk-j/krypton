@@ -62,6 +62,8 @@ Ok(json!({ "tools": bus_tool_descriptors() }))
 
 Advertising the tools from `tools/list` is necessary but not sufficient: some ACP backends expose harness MCP tools to the model through a capped, ranked tool-discovery step (e.g. a `tool_search` with a small `limit`). When the harness-memory server advertises more tools than that cap, ranking can surface `attention_resolve` while dropping `attention_flag`, leaving a default-on tool effectively invisible. Krypton cannot raise the consumer's discovery cap, so `renderPromptMemoryPacket()` in `acp-harness-view.ts` names `attention_flag` / `attention_resolve` explicitly in the lane-context packet. Naming them lets the model target them directly (e.g. a `select:attention_flag` discovery) instead of depending on search ranking. The packet line repeats the anti-flood guard so naming the tool does not encourage over-flagging.
 
+> Spec 289 update: the naming guarantee moved to the per-turn header. `renderToolNameLine()` in `src/acp/lane-context.ts` names `attention_flag` / `attention_resolve` (and every other gated Krypton tool) on every user turn. The full attention wording now lives in the `attention_flag` tool description, and the lane policy carries a one-line index entry that keeps the positive-trigger-first framing.
+
 ### Call-Time Authorization
 
 The harness memory endpoint is already lane-scoped by URL (`/mcp/harness/:harness_id/lane/:lane_label`) and the tool handlers receive both identifiers. The call-time rejection based only on `triage_equipped` should be removed for `attention_flag` and `attention_resolve`.

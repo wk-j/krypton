@@ -7,7 +7,6 @@
 import { esc, formatAge } from './harness-format';
 import { statusLabel } from './harness-lane-chrome';
 import { errorText } from './harness-permission-scan';
-import { renderActiveTicketPin } from './harness-prompts';
 import type {
   ActiveWorkTicket,
   ActiveTicketPointer,
@@ -389,13 +388,6 @@ export class HarnessTicketController {
       ticketId: env.ticketId,
     });
     this.renderTicketDock();
-  }
-
-  /** spec 194: insert the working-ticket pin right after the identity line —
-   *  shared scope must not be buried under the tool-discoverability blocks. */
-  insertTicketPin(lines: string[], _lane: HarnessLane): void {
-    if (!this.activeTicket) return;
-    lines.splice(1, 0, renderActiveTicketPin(this.activeTicket));
   }
 
   async openActiveTicketAnalysis(): Promise<void> {

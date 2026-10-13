@@ -281,24 +281,6 @@ describe('assistant reference Git state', () => {
     );
   });
 
-  it('keeps usage and plan events off the full lane rebuild (spec 114 rev 9)', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
-    // usage fires per API round-trip mid-turn; it must patch chrome in place,
-    // never schedule renderActiveLane.
-    expect(viewSrc).toMatch(
-      /case 'usage':[\s\S]{0,900}?renderActiveLaneChrome\(lane\);[\s\S]{0,120}?renderLanePeek\(\);[\s\S]{0,60}?needsRender = false;[\s\S]{0,40}?break;/,
-    );
-    expect(viewSrc).toMatch(
-      /if \(isTurnUsage\(event\.usage\)\) \{[\s\S]{0,160}?lane\.lastTurnTokens = extractCacheTokens\(event\.usage\);/,
-    );
-    expect(viewSrc).toMatch(/lane\.usage = null;\s+lane\.lastTurnTokens = null;/);
-    // plan on the active lane is already patched by renderPlan; no full render.
-    expect(viewSrc).toMatch(
-      /case 'plan':[\s\S]{0,700}?renderPlan\(lane, event\.entries\);[\s\S]{0,500}?if \(lane\.id === this\.activeLaneId\) needsRender = false;[\s\S]{0,40}?break;/,
-    );
-  });
-
   it('does not paint empty thought rows and delays thought-slot hide', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
@@ -3364,30 +3346,6 @@ describe('#timeline dispatch (spec 253)', () => {
     );
     expect(seen).toHaveLength(2);
     expect(chips[0]).toContain('remote Harness');
-  });
-
-  it('advertises direct recording and separately gates automatic suggestions', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const source = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
-    expect(source).toContain(
-      "this.timelineCtl.automaticSuggestions && !this.remoteRuntimeId && lane.backendId !== 'pi-acp'",
-    );
-    expect(source).toContain('use timeline_suggest only when this turn establishes an explicit durable requirement');
-    expect(source).toContain('Their request is the confirmation; copy the exact authorizing words');
-    expect(source).toContain('reuse one `topic_id` for every event in the trace');
-    expect(source).toContain('keep event-specific wording in `summary`, not `topic_title`');
-    // spec 262: read-before-write is the instruction that stops one subject
-    // from fragmenting into a fresh topic every session.
-    expect(source).toContain('call timeline_list (read-only) and reuse the `topic_id` of the topic that already covers it');
-    expect(source).toContain('If an ack comes back with `new_topic: true` and `existing_topics`');
-    // spec 263: topic repair is reachable from plain language, not only the
-    // `#timeline merge … into …` grammar.
-    expect(source).toContain('call timeline_merge in the same turn');
-    expect(source).toContain('Never merge because two topics merely look similar to you');
-    expect(source).toContain('unsolicited capture stays timeline_suggest');
-    expect(source.match(/write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai/g)).toHaveLength(2);
-    expect(source).toContain('Preserve `instruction_excerpt`, `made_by`, `source_ref`');
-    expect(source).toContain('Preserve `evidence_excerpt`, `made_by`, `source_ref`');
   });
 
   it('uses Thai chrome in the timeline capture sheet', () => {

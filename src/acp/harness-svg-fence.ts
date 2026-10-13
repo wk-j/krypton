@@ -19,9 +19,9 @@ export const SVG_FENCE_MAX_CHARS = 256 * 1024;
 /** Revision 2: minimum gap between live repaints of a streaming fence (OMP parity). */
 export const SVG_LIVE_INTERVAL_MS = 200;
 
-/** Per-turn preamble line: tells every lane that ```svg renders here. */
+/** Lane-policy line (spec 289): tells every lane that ```svg renders here. */
 export const SVG_FENCE_GUIDANCE =
-  'SVG figures: when a diagram, chart, or UI mockup explains something better than prose, you may include it as a ```svg fenced block — Krypton renders it inline as an image (the user can toggle to source). Keep it self-contained: scripts, external images, and web fonts are blocked. Give the root a viewBox. Use theme colors via var(--fg), var(--muted), var(--border), var(--accent), var(--success), var(--warning), var(--error), var(--surface), var(--c1)…var(--c6), optionally with a fallback such as var(--accent, #0cf).';
+  '```svg fenced blocks render inline as images: self-contained (no scripts, external images, or web fonts), root viewBox, colors via var(--fg|--muted|--border|--accent|--success|--warning|--error|--surface|--c1…--c6) with optional fallbacks such as var(--accent, #0cf).';
 
 export const SVG_PALETTE_KEYS = [
   'fg', 'muted', 'border', 'accent', 'success', 'warning', 'error', 'surface',

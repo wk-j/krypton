@@ -370,9 +370,16 @@ d. The loop stops once the grip, the mouse and the button fades settle
       `~/.config/krypton/harness-prompt-history.db` with the lane's
       `backendId` and cwd. A new row is also posted to the worker as
       `observe`, so a word typed in any lane is predictable at once in every lane.
-7. On Enter, the active lane's draft is sent through acp_prompt with a short
-   lane-context stub: the lane's own label, the full lane roster, and a
-   one-line nudge describing the krypton-harness-memory MCP tools. Memory
+7. On Enter, the active lane's draft is sent through acp_prompt behind one
+   leading lane-context block (spec 289). A turn header goes every turn: the
+   lane's label plus one line naming the Krypton tools that lane may call.
+   The lane policy goes only when the current agent session has not seen its
+   exact text. It holds the ticket pin, the roster and peering rule (when there
+   are peers), the tool index, the SVG line, and the role/directive block. The
+   policy goes on the first turn after `spawnLane`, when its hash changes, after
+   a `usage_update` drop of at least 40% or a `/compact`, after a failed prompt,
+   and every 20 turns. Each tool's full contract lives in its MCP description,
+   and the timeline conflict rule rides on the `timeline_record` ack. Memory
    bodies (summary + detail) are not injected — agents call handoff_list /
    handoff_get on demand (Spec 98). Exception (Spec 279): a draft whose first
    token is one of the lane's advertised `available_commands` (`/review`,

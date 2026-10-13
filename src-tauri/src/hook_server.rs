@@ -4093,6 +4093,17 @@ fn timeline_suggest(
     }))
 }
 
+/// spec 289: the conflict-check rule rides on every `timeline_record` ack instead
+/// of the per-turn lane context — the agent only needs it right after a record.
+const TIMELINE_CONFLICT_CHECK: &str =
+    "Compare this event ONLY against the other live events of its \
+     topic (timeline_list { topic_id }). Opposite decisions on the same subject with nothing newer \
+     settling them → timeline_conflict_record `confirmed`; if this event settles an open pair → \
+     `resolved` with it as `resolution_event_id`. Then call timeline_conflict_checked { topic_id, \
+     event_ids: [this event_id] } even when nothing conflicted. Decide yourself; never ask the \
+     human to pick pairs. Events linked by `supersedes` are history, not conflicts. Write \
+     `rationale` in natural Thai; keep technical terms and IDs in English.";
+
 /// Persist an authoritative project timeline event when the current human turn
 /// explicitly requested it (spec 255). The exact authorizing words are stored
 /// with the event; unsolicited capture must continue to use timeline_suggest.
@@ -4118,6 +4129,10 @@ fn timeline_record(
         "path": result.event.path,
         "disposition": result.disposition,
         "new_topic": result.new_topic,
+        // spec 289: just-in-time follow-up. Every successful record — a new topic
+        // included — must be marked checked, or its topic stays in
+        // timeline_conflict_list's `unchecked` set.
+        "conflict_check": TIMELINE_CONFLICT_CHECK,
     });
     // spec 262: advisory tail. Present only when it carries information, so the
     // common "appended to the topic I was given" ack stays small.
@@ -6066,16 +6081,16 @@ fn attention_tool_descriptors() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "question": { "type": "string", "description": "The specific decision that needs human judgement, as a question." },
-                    "chosen": { "type": "string", "description": "The best-guess option you already took and are proceeding with (non-blocking)." },
-                    "rationale": { "type": "string", "description": "Why you chose that option." },
+                    "question": { "type": "string", "description": "The specific decision that needs human judgement, as a question, in natural Thai for a human who is NOT reading the code: name the real stake in plain language, not just an API or data-structure name." },
+                    "chosen": { "type": "string", "description": "The best-guess option you already took and are proceeding with (non-blocking), in natural Thai." },
+                    "rationale": { "type": "string", "description": "Why you chose that option, in natural Thai: explain the consequence — why it matters — not only the technical mechanism. Follow any unavoidable technical term with one plain sentence on its concrete impact." },
                     "traded_off": {
                         "type": "array",
                         "items": { "type": "string" },
                         "minItems": 1,
-                        "description": "MANDATORY, non-empty. The options you rejected and why. Empty or hollow ('nothing significant') defeats the purpose."
+                        "description": "MANDATORY, non-empty. The options you rejected and why, in natural Thai. Empty or hollow ('nothing significant') defeats the purpose."
                     },
-                    "uncertainty": { "type": "string", "description": "MANDATORY, non-blank. What you are unsure of, and what evidence or instruction would change your mind." },
+                    "uncertainty": { "type": "string", "description": "MANDATORY, non-blank. What you are unsure of, and what evidence or instruction would change your mind, in natural Thai." },
                     "reversibility": { "enum": ["reversible", "costly", "irreversible"], "description": "How hard the chosen path is to undo. Drives queue ranking — irreversible first." }
                 },
                 "required": ["question", "chosen", "rationale", "traded_off", "uncertainty", "reversibility"]

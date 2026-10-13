@@ -247,6 +247,8 @@ Directive block construction:
 3. Append the directive block to the existing single packet produced by `renderPromptMemoryPacket()`, separated by a heading, so `buildPromptBlocks()` still emits exactly one leading resource/text block. This keeps adapters that only respect the first resource/text block seeing both the lane-context stub and the directive; do not emit the directive as a second block.
 ```
 
+> Spec 289 update: `renderPromptMemoryPacket()` became `renderTurnHeader()` + `renderLanePolicy()`. The directive block now lives in the lane policy, which is sent only when the agent session has not seen it — a directive change alters the policy hash and so goes out on the next turn. Header and policy still travel in the same single leading block.
+
 Assignment scope behavior:
 
 - User picker selection spawns a new lane initialized with the chosen directive. The new lane's `activeDirectiveId` is set at creation; because the lane starts fresh and idle, no `pendingDirectiveChange` deferral applies on its first prompt. The picker does not modify any existing lane's `activeDirectiveId` — to clear the focused lane's directive use `Backspace` in the picker, and to reassign a directive on an existing lane use MCP `directive_apply` with `action = "assign"`.

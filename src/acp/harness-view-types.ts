@@ -40,6 +40,7 @@ import type { DebbyBuiltinRole } from './debby';
 import type { SaltyRole } from './salty';
 import type { AcpLaneMetrics } from '../types';
 import type { CacheTokenTuple, UsageRollup } from './usage-log';
+import type { PolicyDelivery } from './lane-context';
 
 export type ComposerFocus = 'text' | 'transcript';
 export type PendingExtraction = never;
@@ -620,6 +621,9 @@ export interface HarnessLane {
    *  Gates re-entry and lets the mode_update handler attribute a downgrade. */
   pendingModelSwitch: PendingModelSwitch | null;
   supportsEmbeddedContext: boolean;
+  /** spec 289: what lane policy the current agent session has seen. Null means
+   *  not sent yet; `spawnLane` resets it for every fresh or resumed session. */
+  policyDelivery: PolicyDelivery | null;
   error: string | null;
   acceptAllForTurn: boolean;
   rejectAllForTurn: boolean;
