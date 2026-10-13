@@ -785,6 +785,29 @@ through `textContent`. Running screens poll every second; an exited screen is
 read once and cached because its contents are final. See
 `docs/198-termctrl-session-monitor.md`.
 
+### ACP Wire Profiler
+
+`src-tauri/src/acp_wire.rs` is an opt-in tap on the three ACP choke points in
+`acp.rs`: `AcpClient::write_line` (every outbound request, notification, and
+reply, recorded under the transport lock before the write), `dispatch_output_line`
+(every inbound stdout line, local and remote lanes, including non-JSON lines),
+and `emit_event` (every `acp-event-<session>` payload actually emitted). With
+`[acp_wire].capture = "off"` each call is one atomic load. Otherwise the event
+is classified outside the lock and pushed into a bounded ring under a short
+`std::sync::Mutex` hold; requests and responses are paired on
+`(session, direction, id)` to record latency. `full` mode also keeps message
+bodies (1 MiB per event, `full_payload_mb` total). Nothing is written to disk.
+
+One `Arc<AcpWire>` lives on `HookServer` and is also Tauri-managed for
+`acp_spawn`, `reload_config`, and the `acp_wire_set_mode` / `acp_wire_clear` /
+`get_acp_wire_url` commands. The hook server serves the fixed Binance-dark page
+at `/acp-wire/{token}` plus `summary`, `events?since=`, `event/{seq}`, and
+`export.jsonl` under the same process-lifetime capability token (constant-time
+compare, no-store). The page is read-only and polls only while visible; it is
+opened by `#profiler` or the palette (`ACP Wire: Open Profiler`, which turns on
+`meta` capture when it is off), and capture mode changes come from the palette
+(`ACP Wire: …`). See `docs/288-acp-wire-profiler.md`.
+
 ### Hurl Web Client
 
 `src-tauri/src/hurl.rs` already owns the short-lived `hurl` child process (not

@@ -912,6 +912,37 @@ export class CommandPalette {
       category: 'Window',
       execute: () => c.openTermctrlMonitor(),
     });
+    // spec 288: ACP wire profiler
+    this.register({
+      id: 'acp-wire.open',
+      label: 'ACP Wire: Open Profiler',
+      category: 'Window',
+      execute: () => c.openAcpWire(),
+    });
+    this.register({
+      id: 'acp-wire.capture-off',
+      label: 'ACP Wire: Capture Off',
+      category: 'Window',
+      execute: () => c.setAcpWireMode('off'),
+    });
+    this.register({
+      id: 'acp-wire.capture-meta',
+      label: 'ACP Wire: Capture Meta',
+      category: 'Window',
+      execute: () => c.setAcpWireMode('meta'),
+    });
+    this.register({
+      id: 'acp-wire.capture-full',
+      label: 'ACP Wire: Capture Full',
+      category: 'Window',
+      execute: () => c.setAcpWireMode('full'),
+    });
+    this.register({
+      id: 'acp-wire.clear',
+      label: 'ACP Wire: Clear',
+      category: 'Window',
+      execute: () => c.clearAcpWire(),
+    });
     // spec 284: OSC 7501 program status
     this.register({
       id: 'program-status.next',

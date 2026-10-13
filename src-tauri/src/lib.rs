@@ -1,6 +1,7 @@
 pub mod acp;
 pub mod acp_harness_config;
 mod acp_install;
+pub mod acp_wire;
 mod commands;
 mod config;
 pub mod control;
@@ -93,6 +94,9 @@ pub fn run() {
 
     // Initialize hook server state
     let hook_server = Arc::new(hook_server::HookServer::new());
+    if let Ok(cfg) = krypton_config.read() {
+        hook_server.acp_wire.apply_config(&cfg.acp_wire);
+    }
     let control_server = Arc::new(control::ControlServer::default());
     let telegram_service = telegram::TelegramService::new(control_server.clone());
 
@@ -149,6 +153,7 @@ pub fn run() {
         .manage(ssh_manager)
         .manage(remote_harness_registry)
         .manage(hook_server.clone())
+        .manage(hook_server.acp_wire.clone())
         .manage(control_server.clone())
         .manage(telegram_service.clone())
         .manage(hurl_state.clone())
@@ -176,6 +181,9 @@ pub fn run() {
             commands::set_theme,
             commands::reload_config,
             commands::open_url,
+            commands::acp_wire_set_mode,
+            commands::acp_wire_clear,
+            commands::get_acp_wire_url,
             commands::get_foreground_process,
             commands::get_pty_secure_input,
             commands::get_java_stats,

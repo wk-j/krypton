@@ -147,6 +147,7 @@ import {
   hashPaletteVisible,
 } from './hash-commands';
 import type { DayDigest } from './daily-note';
+import { openAcpWireProfiler } from './acp-wire';
 import { journalAppend, type JournalKind } from './journal';
 import {
   HANDOFF_WRITE_PROMPT,
@@ -11000,6 +11001,17 @@ export class AcpHarnessView implements ContentView {
         this.flashChip(url);
       } catch (e) {
         this.flashChip(`termctrl monitor open failed: ${errorText(e)}`);
+      }
+      return;
+    }
+    // spec 288: capability-gated ACP wire profiler (enables `meta` capture if off).
+    if (parts[0] === '#profiler') {
+      this.setDraft(lane, '', 0);
+      try {
+        const { url, enabledMeta } = await openAcpWireProfiler();
+        this.flashChip(enabledMeta ? `ACP wire capture: META · ${url}` : url);
+      } catch (e) {
+        this.flashChip(`profiler open failed: ${errorText(e)}`);
       }
       return;
     }

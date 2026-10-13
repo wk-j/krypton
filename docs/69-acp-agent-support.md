@@ -111,6 +111,8 @@ One reader task per process (`tokio::spawn`) does `BufReader::lines().next_line(
 
 Stderr is captured into a 64KB rolling per-client buffer **and** mirrored to `log::debug!`. Process death cancels all `pending` / `perm_pending` oneshots with errors.
 
+Every outbound line (`write_line`), inbound line (`dispatch_output_line`), and Rust→UI `acp-event-<session>` (`emit_event`) also passes through the opt-in ACP wire tap (`src-tauri/src/acp_wire.rs`, off by default); see `docs/288-acp-wire-profiler.md`.
+
 **Subprocess teardown.** `acp_dispose` sends `SIGTERM`, waits up to 2s for graceful exit, then `SIGKILL`. Closing the AcpView tab calls `acp_dispose` unconditionally — adapters like Claude Code flush their session state on `SIGTERM`. Cancelling a turn (`acp_cancel`) only sends `session/cancel` JSON-RPC — it does not kill the process.
 
 **Startup error handling.** `acp_spawn` returns a `krypton_session` immediately after `Command::spawn` succeeds. The frontend then invokes `acp_initialize`, which sends `initialize` + `session/new` and awaits both responses. AcpView shows a spinner ("Starting <display_name>…") during this phase. If the child exits **or** initialize does not complete within **30 seconds** (covers first-run `npx -y` package download), Rust emits an `error` event carrying the buffered stderr (truncated to 2KB) plus a heuristic hint:

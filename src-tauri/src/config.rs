@@ -50,6 +50,7 @@ pub struct KryptonConfig {
     pub hurl: HurlConfig,
     pub pencil: PencilConfig,
     pub acp_harness: AcpHarnessConfig,
+    pub acp_wire: AcpWireConfig,
     pub xenon: XenonConfig,
     pub usage_log: UsageLogConfig,
     pub daily_note: DailyNoteConfig,
@@ -865,6 +866,40 @@ impl Default for AcpHarnessConfig {
     }
 }
 
+// ─── ACP wire profiler (spec 288) ──────────────────────────────────
+
+/// What the ACP wire tap records. `Full` keeps message bodies — prompts, file
+/// contents, tool output — in memory; `Meta` keeps only size/method/id/timing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AcpWireCapture {
+    #[default]
+    Off,
+    Meta,
+    Full,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AcpWireConfig {
+    /// Capture mode applied at launch and on Reload Config.
+    pub capture: AcpWireCapture,
+    /// Ring buffer size in events. Clamped to 1000–200000.
+    pub ring_events: usize,
+    /// Memory cap for captured payloads in `full` mode, MiB. Clamped to 8–512.
+    pub full_payload_mb: usize,
+}
+
+impl Default for AcpWireConfig {
+    fn default() -> Self {
+        Self {
+            capture: AcpWireCapture::Off,
+            ring_events: 20_000,
+            full_payload_mb: 64,
+        }
+    }
+}
+
 // ─── Defaults ──────────────────────────────────────────────────────
 
 impl Default for ShellConfig {
@@ -1155,5 +1190,16 @@ mod tests {
         let cfg: KryptonConfig =
             toml::from_str("[acp_harness]\nword_autocomplete = false\n").unwrap();
         assert!(!cfg.acp_harness.word_autocomplete);
+    }
+
+    #[test]
+    fn acp_wire_defaults_off_and_parses_lowercase_mode() {
+        let cfg: KryptonConfig = toml::from_str("").unwrap();
+        assert_eq!(cfg.acp_wire.capture, AcpWireCapture::Off);
+        assert_eq!(cfg.acp_wire.ring_events, 20_000);
+        let cfg: KryptonConfig = toml::from_str("[acp_wire]\ncapture = \"full\"\n").unwrap();
+        assert_eq!(cfg.acp_wire.capture, AcpWireCapture::Full);
+        assert_eq!(cfg.acp_wire.full_payload_mb, 64);
+        assert!(toml::from_str::<KryptonConfig>("[acp_wire]\ncapture = \"Full\"\n").is_err());
     }
 }

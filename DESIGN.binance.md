@@ -9,8 +9,9 @@ appliesTo: >
   command reference (src/acp/artifact-commands.html), MCP tool reference
   (src/acp/artifact-tools.html), Terminal Control monitor
   (src/acp/artifact-termctrl.html), Hurl web client
-  (src/acp/artifact-hurl.html), and project decision timeline
-  (src/acp/artifact-timeline.html).
+  (src/acp/artifact-hurl.html), project decision timeline
+  (src/acp/artifact-timeline.html), and ACP wire profiler
+  (src/acp/artifact-acpwire.html).
 colors:
   primary: "#fcd535"     # the single yellow accent (== accent below)
   bg: "#17191d"          # soft near-black canvas (shared by all loopback surfaces)
@@ -85,6 +86,7 @@ The loopback surfaces:
 | MCP tool reference | `src/acp/artifact-tools.html` | Built-in MCP tool contract reference (`/tools`, fetches `/tools.json` once) | Fixed dark |
 | Terminal Control monitor | `src/acp/artifact-termctrl.html` | Read-only named-session roster and visible-screen preview (capability routes under `/termctrl`) | Fixed dark |
 | Hurl web client | `src/acp/artifact-hurl.html` | Token-gated `.hurl` runner (capability routes under `/hurl`) | Fixed dark |
+| ACP wire profiler | `src/acp/artifact-acpwire.html` | Read-only ACP traffic profiler: stat tiles, per-lane waterfall, message table + payload detail, per-method latency (capability routes under `/acp-wire`, polls while visible) | Fixed dark |
 | Project timeline | `src/acp/artifact-timeline.html` | Read-only local requirement/decision chronology (`/timeline`, refetches `/timeline.json` when the tab becomes active); superseded rows are hidden by default, and a row in an open conflict pair marks only its time cell with an accent chip | Auto (follows OS `prefers-color-scheme`) |
 
 Per-surface behaviour and endpoints are specified in `docs/134`, `docs/168`,

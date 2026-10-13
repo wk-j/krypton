@@ -34,6 +34,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tokio::sync::oneshot;
 
+use crate::acp_wire::{AcpWire, WireEventsPage, MAX_EVENTS_PAGE};
 use crate::hurl::{
     cancel_run, confine_under_cwd, list_hurl_files, load_cached_run, load_sidebar_state,
     save_sidebar_state, start_run, HurlEvent, HurlRunArgs, HurlSidebarState, HurlState,
@@ -223,6 +224,9 @@ pub struct HookServer {
     /// Spec 238: runtime-only local-ticket worker, keyed by harness id.
     /// The binding deliberately disappears when the harness or app closes.
     ticket_workers: std::sync::Mutex<HashMap<String, crate::ticket_bundle::TicketWorkerBinding>>,
+    /// Spec 288: ACP wire profiler tap (shared with `acp.rs` via Tauri state)
+    /// and its process-lifetime page token.
+    pub acp_wire: Arc<AcpWire>,
 }
 
 /// Spec 149: registry record for an artifact feedback token. Maps the
@@ -281,6 +285,7 @@ impl Default for HookServer {
             termctrl_monitor: TermctrlMonitor::new(),
             hurl_sessions: Arc::new(HurlWebSessions::default()),
             ticket_workers: std::sync::Mutex::new(HashMap::new()),
+            acp_wire: Arc::new(AcpWire::new()),
         }
     }
 }
@@ -306,6 +311,7 @@ impl HookServer {
             termctrl_monitor: TermctrlMonitor::new(),
             hurl_sessions: Arc::new(HurlWebSessions::default()),
             ticket_workers: std::sync::Mutex::new(HashMap::new()),
+            acp_wire: Arc::new(AcpWire::new()),
         }
     }
 
@@ -423,6 +429,10 @@ impl HookServer {
 
     pub fn termctrl_monitor_url(&self) -> Result<String, String> {
         self.termctrl_monitor.url(self.get_port())
+    }
+
+    pub fn acp_wire_url(&self) -> Result<String, String> {
+        self.acp_wire.url(self.get_port())
     }
 
     pub fn hurl_web_url(&self, cwd: &str) -> Result<String, String> {
@@ -2530,6 +2540,7 @@ const TOOLS_HTML: &str = include_str!("../../src/acp/artifact-tools.html");
 const TERMCTRL_HTML: &str = include_str!("../../src/acp/artifact-termctrl.html");
 const HURL_HTML: &str = include_str!("../../src/acp/artifact-hurl.html");
 const TIMELINE_HTML: &str = include_str!("../../src/acp/artifact-timeline.html");
+const ACP_WIRE_HTML: &str = include_str!("../../src/acp/artifact-acpwire.html");
 
 fn secured_json_response<T: Serialize>(status: StatusCode, payload: T) -> Response {
     let mut response = (status, Json(payload)).into_response();
@@ -2603,6 +2614,106 @@ async fn handle_termctrl_screen(
             json!({ "error": "session screen unavailable" }),
         ),
     }
+}
+
+fn acp_wire_token_matches(state: &HookServerState, token: &str) -> bool {
+    constant_time_token_eq(token, state.hook_server.acp_wire.token())
+}
+
+/// GET /acp-wire/{token}: read-only ACP wire profiler page (spec 288).
+async fn handle_acp_wire_page(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+) -> Response {
+    if !acp_wire_token_matches(&state, &token) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    html_response(ACP_WIRE_HTML)
+}
+
+/// GET /acp-wire/{token}/message/{seq}: the same page in full-page message mode.
+/// The seq is read client-side; the path parameter only rejects non-numeric seqs.
+async fn handle_acp_wire_message_page(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path((token, _seq)): Path<(String, u64)>,
+) -> Response {
+    if !acp_wire_token_matches(&state, &token) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    html_response(ACP_WIRE_HTML)
+}
+
+/// GET /acp-wire/{token}/summary: ring aggregates.
+async fn handle_acp_wire_summary(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+) -> Response {
+    if !acp_wire_token_matches(&state, &token) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    secured_json_response(StatusCode::OK, state.hook_server.acp_wire.summary())
+}
+
+#[derive(Deserialize)]
+struct AcpWireEventsQuery {
+    #[serde(default)]
+    since: u64,
+    limit: Option<usize>,
+}
+
+/// GET /acp-wire/{token}/events?since=&limit=: incremental event page.
+async fn handle_acp_wire_events(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+    Query(query): Query<AcpWireEventsQuery>,
+) -> Response {
+    if !acp_wire_token_matches(&state, &token) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let page: WireEventsPage = state
+        .hook_server
+        .acp_wire
+        .events_since(query.since, query.limit.unwrap_or(MAX_EVENTS_PAGE));
+    secured_json_response(StatusCode::OK, page)
+}
+
+/// GET /acp-wire/{token}/event/{seq}: one event with its payload.
+async fn handle_acp_wire_event(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path((token, seq)): Path<(String, u64)>,
+) -> Response {
+    if !acp_wire_token_matches(&state, &token) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    match state.hook_server.acp_wire.event_json(seq) {
+        Some(event) => secured_json_response(StatusCode::OK, event),
+        None => secured_json_response(StatusCode::NOT_FOUND, json!({ "error": "evicted" })),
+    }
+}
+
+/// GET /acp-wire/{token}/export.jsonl: whole ring as schema-v1 JSONL.
+async fn handle_acp_wire_export(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(token): Path<String>,
+) -> Response {
+    if !acp_wire_token_matches(&state, &token) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let body = state.hook_server.acp_wire.export_jsonl();
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/x-ndjson; charset=utf-8")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"acp-wire-{stamp}.jsonl\""),
+        )
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::from(body))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
 fn hurl_session(state: &HookServerState, token: &str) -> Option<HurlWebSession> {
@@ -9052,6 +9163,18 @@ pub fn start(
                     "/termctrl/api/{token}/screen/{name}",
                     get(handle_termctrl_screen),
                 )
+                .route("/acp-wire/{token}", get(handle_acp_wire_page))
+                .route("/acp-wire/{token}/summary", get(handle_acp_wire_summary))
+                .route("/acp-wire/{token}/events", get(handle_acp_wire_events))
+                .route("/acp-wire/{token}/event/{seq}", get(handle_acp_wire_event))
+                .route(
+                    "/acp-wire/{token}/message/{seq}",
+                    get(handle_acp_wire_message_page),
+                )
+                .route(
+                    "/acp-wire/{token}/export.jsonl",
+                    get(handle_acp_wire_export),
+                )
                 .route("/hurl/{token}", get(handle_hurl_page))
                 .route("/hurl/api/{token}/listing", get(handle_hurl_listing))
                 .route("/hurl/api/{token}/source", get(handle_hurl_source))
@@ -9795,6 +9918,12 @@ mod tests {
             .route("/termctrl/{token}", get(ok))
             .route("/termctrl/api/{token}/sessions", get(ok))
             .route("/termctrl/api/{token}/screen/{name}", get(ok))
+            .route("/acp-wire/{token}", get(ok))
+            .route("/acp-wire/{token}/summary", get(ok))
+            .route("/acp-wire/{token}/events", get(ok))
+            .route("/acp-wire/{token}/event/{seq}", get(ok))
+            .route("/acp-wire/{token}/message/{seq}", get(ok))
+            .route("/acp-wire/{token}/export.jsonl", get(ok))
             .route("/hurl/{token}", get(ok))
             .route("/hurl/api/{token}/listing", get(ok))
             .route("/hurl/api/{token}/source", get(ok))

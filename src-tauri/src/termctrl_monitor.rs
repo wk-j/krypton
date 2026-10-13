@@ -528,7 +528,7 @@ async fn read_bounded_stream<R: AsyncRead + Unpin>(
     Ok(collected)
 }
 
-fn capability_token() -> String {
+pub(crate) fn capability_token() -> String {
     let mut bytes = [0u8; 16];
     if getrandom::getrandom(&mut bytes).is_err() {
         static COUNTER: AtomicU64 = AtomicU64::new(0);

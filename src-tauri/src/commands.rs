@@ -105,12 +105,14 @@ pub fn reload_config(
     config: State<'_, Arc<RwLock<KryptonConfig>>>,
     theme_engine: State<'_, Arc<ThemeEngine>>,
     sound: State<'_, crate::sound::SoundEngineState>,
+    acp_wire: State<'_, Arc<crate::acp_wire::AcpWire>>,
 ) -> Result<(), String> {
     let new_config = crate::config::load_config_result()?;
 
     if let Ok(mut engine) = sound.lock() {
         engine.apply_config(new_config.sound.clone());
     }
+    acp_wire.apply_config(&new_config.acp_wire);
 
     let theme_result = theme_engine.resolve_for_config(&new_config);
     {
@@ -1390,6 +1392,44 @@ pub fn get_hook_server_port(hook_server: State<'_, Arc<HookServer>>) -> u16 {
 #[tauri::command]
 pub fn get_termctrl_monitor_url(hook_server: State<'_, Arc<HookServer>>) -> Result<String, String> {
     hook_server.termctrl_monitor_url()
+}
+
+/// Spec 288: set the ACP wire capture mode (`off` | `meta` | `full`).
+/// Runtime only; Reload Config re-applies `[acp_wire].capture`.
+#[tauri::command]
+pub fn acp_wire_set_mode(
+    acp_wire: State<'_, Arc<crate::acp_wire::AcpWire>>,
+    mode: String,
+) -> Result<String, String> {
+    let mode = crate::acp_wire::parse_mode(&mode)?;
+    acp_wire.set_mode(mode);
+    log::info!(
+        "ACP wire capture set to {}",
+        crate::acp_wire::mode_name(mode)
+    );
+    Ok(crate::acp_wire::mode_name(mode).to_string())
+}
+
+/// Spec 288: empty the ACP wire ring and correlation table.
+#[tauri::command]
+pub fn acp_wire_clear(acp_wire: State<'_, Arc<crate::acp_wire::AcpWire>>) {
+    acp_wire.clear();
+}
+
+/// Spec 288: capability URL for the ACP wire profiler page, plus the current
+/// capture mode so the caller can decide whether to enable capture first.
+#[tauri::command]
+pub fn get_acp_wire_url(hook_server: State<'_, Arc<HookServer>>) -> Result<AcpWireUrl, String> {
+    Ok(AcpWireUrl {
+        url: hook_server.acp_wire_url()?,
+        mode: crate::acp_wire::mode_name(hook_server.acp_wire.mode()).to_string(),
+    })
+}
+
+#[derive(serde::Serialize)]
+pub struct AcpWireUrl {
+    url: String,
+    mode: String,
 }
 
 /// Return the capability URL for the Hurl web client, bound to `cwd`.

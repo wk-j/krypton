@@ -433,6 +433,17 @@ composer_bloom_ms = 320        # afterimage duration in ms (180–700)
 composer_bloom_trail = 5       # visible graphemes that flash on one paste (1–12)
 word_autocomplete = true       # ghost-text word completion in the composer (spec 285)
 
+# --- ACP Wire Profiler (spec 288) ---
+# Records ACP traffic (Krypton ↔ agent stdio and Rust → UI events) into an
+# in-memory ring for the loopback profiler page (palette: ACP Wire: Open
+# Profiler). Palette commands change the mode at runtime; Reload Config
+# re-applies `capture`.
+
+[acp_wire]
+capture = "off"                # off | meta (size/method/id/timing) | full (also message bodies)
+ring_events = 20000            # ring size in events (1000–200000)
+full_payload_mb = 64           # memory cap for bodies in full mode, MiB (8–512)
+
 # --- Context Extensions ---
 # Built-in extensions that activate when specific processes are detected
 # running in terminal panes. Currently includes: Java Resource Monitor.
@@ -765,6 +776,9 @@ See `docs/69-acp-agent-support.md` for the original ACP design, `docs/84-acp-pi-
 | `[[acp_harness.remote_profiles]]` | `connect_timeout_seconds` | integer | `15` | Bounded hello-handshake timeout |
 | `[acp_harness.lane_models.<backend>]` | `active` | string | `""` | Model id/alias applied to the lane (CLI flag at spawn, or `session/set_model`/`set_config_option` after `session/new`). Empty = use the adapter default, except MiMo uses its anonymous free `mimo/mimo-auto` model |
 | `[acp_harness.lane_models.<backend>]` | `models` | array | `[]` | Informational allow-list (not enforced). The in-harness picker (spec 127) sources its options from the agent-advertised `availableModels`, not this array |
+| `[acp_wire]` | `capture` | string | `"off"` | ACP wire tap mode: `off`, `meta` (size, method, id, timing), or `full` (also message bodies — prompts, file contents, tool output). Applied at launch and on Reload Config; the palette `ACP Wire: Capture …` commands change it at runtime without writing back (spec 288) |
+| `[acp_wire]` | `ring_events` | int | `20000` | In-memory ring size in events, clamped to 1000–200000. Oldest evicted first |
+| `[acp_wire]` | `full_payload_mb` | int | `64` | Memory cap for captured bodies in `full` mode (MiB, clamped 8–512). Oldest bodies are dropped first; their events stay |
 
 The ACP Harness backend picker is code-defined in v1: installed built-in backends are listed, and the harness starts with no lanes until the user spawns one via `Cmd+P → +`. Shared memory is tab-local and is dropped when the harness tab closes. See `docs/72-acp-harness-view.md`.
 

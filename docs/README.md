@@ -12,7 +12,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | [06-configuration.md](./06-configuration.md) | TOML config reference |
 | [07-milestones.md](./07-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (273)
+## Specs (274)
 
 | # | Spec |
 |---|------|
@@ -290,6 +290,7 @@ Numbers are assigned in order; gaps were never used. `08-open-questions.md` and 
 | 285 | [ACP Harness Word Autocomplete (Ghost Text)](./285-harness-word-autocomplete.md) |
 | 286 | [ACP Harness Reference Thumbnails](./286-harness-reference-thumbnails.md) |
 | 287 | [ACP Antigravity Lane](./287-acp-antigravity-lane.md) |
+| 288 | [ACP Wire Profiler](./288-acp-wire-profiler.md) |
 
 ## ADRs (20)
 

@@ -18,6 +18,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tauri::{AppHandle, State};
 
+use crate::acp_wire::{AcpWire, WireLane};
 use crate::remote_harness::{
     RemoteAgentEvent, RemoteAgentTransport, RemoteHarnessRegistry, RemoteRuntimeClient,
 };
@@ -529,10 +530,20 @@ struct AcpClient {
     remote_workspace: RwLock<Option<Arc<RemoteRuntimeClient>>>,
     /// Latch: once true, no more events fire.
     disposed: std::sync::atomic::AtomicBool,
+    /// spec 288: wire profiler tap and this lane's identity on it.
+    wire: Arc<AcpWire>,
+    wire_lane: WireLane,
 }
 
 impl AcpClient {
-    fn new(krypton_session: u64, backend_id: String, display_name: String) -> Self {
+    fn new(
+        krypton_session: u64,
+        backend_id: String,
+        display_name: String,
+        wire: Arc<AcpWire>,
+        remote: bool,
+    ) -> Self {
+        let wire_lane = WireLane::new(krypton_session, &display_name, &backend_id, remote);
         Self {
             krypton_session,
             backend_id,
@@ -558,6 +569,8 @@ impl AcpClient {
             model_control: RwLock::new(None),
             remote_workspace: RwLock::new(None),
             disposed: std::sync::atomic::AtomicBool::new(false),
+            wire,
+            wire_lane,
         }
     }
 
@@ -636,11 +649,14 @@ impl AcpClient {
 
     async fn write_line(&self, value: &Value) -> Result<(), String> {
         let mut text = serde_json::to_string(value).map_err(|e| format!("serialize: {e}"))?;
-        text.push('\n');
         let mut guard = self.transport.lock().await;
         let transport = guard
             .as_mut()
             .ok_or_else(|| "ACP stdin closed".to_string())?;
+        // spec 288: recorded under the transport lock, before the write, so the
+        // request is in the tap before the reader can see its response.
+        self.wire.record_out(&self.wire_lane, value, &text);
+        text.push('\n');
         match transport {
             AcpTransport::Local { stdin, .. } => {
                 stdin
@@ -670,6 +686,7 @@ impl AcpClient {
         if self.disposed.load(Ordering::Relaxed) {
             return;
         }
+        self.wire.record_ui(&self.wire_lane, &payload);
         app.emit_or_log(&self.event_name(), payload);
     }
 
@@ -746,6 +763,7 @@ async fn dispatch_output_line(client: &Arc<AcpClient>, app: &AppHandle, line: &s
     let value: Value = match serde_json::from_str(trimmed) {
         Ok(value) => value,
         Err(error) => {
+            client.wire.record_in(&client.wire_lane, None, trimmed);
             log::debug!(
                 "[acp:{}] dropping non-JSON line ({error}): {trimmed}",
                 client.krypton_session
@@ -753,6 +771,9 @@ async fn dispatch_output_line(client: &Arc<AcpClient>, app: &AppHandle, line: &s
             return;
         }
     };
+    client
+        .wire
+        .record_in(&client.wire_lane, Some(&value), trimmed);
     dispatch_message(client, app, value).await;
 }
 
@@ -1816,6 +1837,7 @@ pub async fn acp_spawn(
     registry: State<'_, Arc<AcpRegistry>>,
     remote_registry: State<'_, Arc<RemoteHarnessRegistry>>,
     config: State<'_, Arc<RwLock<crate::config::KryptonConfig>>>,
+    wire: State<'_, Arc<AcpWire>>,
 ) -> Result<u64, String> {
     let mut backend =
         resolve_backend(&backend_id).ok_or_else(|| format!("Unknown ACP backend: {backend_id}"))?;
@@ -1867,7 +1889,16 @@ pub async fn acp_spawn(
     }
 
     let session = registry.allocate_session();
-    let client = Arc::new(AcpClient::new(session, backend_id.clone(), display_name));
+    let remote = remote_runtime_id
+        .as_deref()
+        .is_some_and(|id| !id.is_empty());
+    let client = Arc::new(AcpClient::new(
+        session,
+        backend_id.clone(),
+        display_name,
+        wire.inner().clone(),
+        remote,
+    ));
     if let Ok(mut g) = client.cwd.write() {
         *g = cwd.clone();
     }
@@ -2548,6 +2579,7 @@ pub async fn dispose_all(registry: &AcpRegistry) {
 async fn dispose_client(client: &AcpClient) {
     client.disposed.store(true, Ordering::Relaxed);
     client.child_pid.store(0, Ordering::Relaxed);
+    client.wire.forget_session(client.krypton_session);
     let transport = client.transport.lock().await.take();
     match transport {
         Some(AcpTransport::Remote(remote)) => {

@@ -100,6 +100,7 @@ import type { KryptonConfig, TabsConfig, ShaderConfig, KeyboardOverlayConfig } f
 import { applyComposerBloomSettings } from './acp/harness-composer-bloom';
 import { setWordAutocompleteEnabled } from './acp/word-predict';
 import { refreshSvgFencePreviews } from './acp/harness-svg-fence';
+import { openAcpWireProfiler, type AcpWireMode } from './acp/acp-wire';
 import { DEFAULT_SHADER_CONFIG, loadConfig } from './config';
 import type { FrontendThemeEngine } from './theme';
 import { ExtensionManager } from './extensions';
@@ -3991,6 +3992,46 @@ export class Compositor {
     } catch (e) {
       console.error('[Termctrl] failed to open monitor:', e);
       this.showNotification('termctrl monitor open failed');
+    }
+  }
+
+  /**
+   * Open the capability-gated ACP wire profiler (spec 288). Opening it is the
+   * request to profile, so capture is switched to `meta` when it is off.
+   */
+  async openAcpWire(): Promise<void> {
+    try {
+      const { enabledMeta } = await openAcpWireProfiler();
+      if (enabledMeta) this.showNotification('ACP wire capture: META');
+    } catch (e) {
+      console.error('[AcpWire] failed to open profiler:', e);
+      this.showNotification('acp wire profiler open failed');
+    }
+  }
+
+  /** Set the ACP wire capture mode (spec 288); `full` keeps message bodies. */
+  async setAcpWireMode(mode: AcpWireMode): Promise<void> {
+    try {
+      await invoke<string>('acp_wire_set_mode', { mode });
+      this.showNotification(
+        mode === 'full'
+          ? 'ACP wire capture: FULL — prompts and file contents kept in memory'
+          : `ACP wire capture: ${mode.toUpperCase()}`,
+      );
+    } catch (e) {
+      console.error('[AcpWire] failed to set mode:', e);
+      this.showNotification('acp wire capture change failed');
+    }
+  }
+
+  /** Empty the ACP wire ring (spec 288). */
+  async clearAcpWire(): Promise<void> {
+    try {
+      await invoke('acp_wire_clear');
+      this.showNotification('ACP wire buffer cleared');
+    } catch (e) {
+      console.error('[AcpWire] failed to clear:', e);
+      this.showNotification('acp wire clear failed');
     }
   }
 
