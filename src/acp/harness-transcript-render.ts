@@ -798,13 +798,15 @@ export function formatLaneMailProvenanceLine(provenance: LaneMailProvenance): st
   return `↩ replying to lane mail from ${peer}`;
 }
 
+/** Lane mail renders like an agent message: the markdown blocks are direct
+ *  children of the row body (same `--markdown` body class as assistant rows),
+ *  led by one meta line. No wrapper around the text, no tinted card. */
 export function renderLaneMailBody(
   body: HTMLElement,
   item: HarnessTranscriptItem,
   payload: InterLanePayload,
   message: string,
 ): void {
-  body.classList.add('acp-harness__msg-body--lane-mail');
   const meta = document.createElement('span');
   meta.className = 'acp-harness__lane-mail-meta';
   if (payload.peerBackendId) {
@@ -824,10 +826,6 @@ export function renderLaneMailBody(
     payload.done,
     payload.channel,
   )));
-  const text = document.createElement('div');
-  text.className = 'acp-harness__lane-mail-text';
-  // Render the mail body as markdown, mirroring normal agent messages (same
-  // `md` parser + `--markdown` styling), with the parse cached on the item.
   if (item.markdownSource !== message || item.markdownHtml === undefined) {
     try {
       item.markdownHtml = md.parse(message, { async: false }) as string;
@@ -838,13 +836,12 @@ export function renderLaneMailBody(
     }
   }
   if (item.markdownHtml !== undefined) {
-    text.classList.add('acp-harness__msg-body--markdown');
-    text.innerHTML = item.markdownHtml;
+    body.classList.add('acp-harness__msg-body--markdown');
+    body.innerHTML = item.markdownHtml;
   } else {
-    text.textContent = message;
+    body.textContent = message;
   }
-  body.appendChild(meta);
-  body.appendChild(text);
+  body.prepend(meta);
 }
 
 export function renderFsActivityBody(body: HTMLElement, payload: FsActivityPayload): void {

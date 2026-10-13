@@ -1006,7 +1006,7 @@
   white-space: nowrap;
 }
 
-/* Spec 120 — lane mail rows: flat body, no nested card, no left-border accent. */
+/* Spec 120 — lane mail rows use the assistant markdown body; color tokens on label + meta only. */
 .acp-harness__msg--mail-in .acp-harness__msg-label {
   color: rgba(184, 166, 255, 0.88);
 }
@@ -1015,18 +1015,8 @@
   color: rgba(120, 200, 255, 0.88);
 }
 
-.acp-harness__msg--mail-done .acp-harness__msg-body--lane-mail {
+.acp-harness__msg--mail-done .acp-harness__msg-body {
   opacity: 0.82;
-}
-
-.acp-harness__msg-body--lane-mail {
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.76);
-  padding: 2px 6px;
-  background: rgba(184, 166, 255, 0.035);
-}
-
-.acp-harness__msg--mail-out .acp-harness__msg-body--lane-mail {
-  background: rgba(120, 200, 255, 0.03);
 }
 
 .acp-harness__lane-mail-meta {
@@ -1072,12 +1062,6 @@
 .acp-harness__lane-mail-logo--mimo     { color: var(--krypton-backend-mimo); }
 .acp-harness__lane-mail-logo--cline    { color: var(--krypton-backend-cline); }
 .acp-harness__lane-mail-logo--antigravity { color: var(--krypton-backend-antigravity); }
-
-.acp-harness__lane-mail-text {
-  display: block;
-  white-space: pre-wrap;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88);
-}
 
 .acp-harness__msg--harness-event .acp-harness__msg-label {
   color: rgba(184, 166, 255, 0.75);

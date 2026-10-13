@@ -142,14 +142,14 @@ Rendered in `renderTranscriptItem()` for `kind === 'inter_lane'`:
 
 - Label column: `mail` (uppercase, purple/blue via row modifier).
 - Row modifiers: `.acp-harness__msg--inter_lane`, `.acp-harness__msg--mail-in` | `--mail-out` — color tokens only (label + meta); **no colored left border** on lane-mail rows (user feedback).
-- Body modifier: `.acp-harness__msg-body--lane-mail` — same body text size as assistant rows, muted foreground (quieter than assistant). Optional **flat** `background` tint on the body only (no border, no inset shadow). Meta/provenance lines may stay smaller.
+- Body: same format as assistant output — `.acp-harness__msg-body.acp-harness__msg-body--markdown`, same `md` parser and markdown styling, parse cached on the transcript item. No body modifier, no background tint, no muted foreground. If markdown parsing fails the body falls back to plain `textContent` (`pre-wrap`).
 - Body children (no wrapper div):
-  - `span.acp-harness__lane-mail-meta` — one dim line: `← from codex-1 · lane mail` or `→ to claude-1 · lane mail` (lowercase display names; arrow + text, not icon-only).
-  - `span.acp-harness__lane-mail-text` — `textContent` only, `white-space: pre-wrap` (no markdown).
-- If `done`: append `· closed` to the meta line (no extra chip/container).
+  - `span.acp-harness__lane-mail-meta` — the first child, one smaller line tinted by direction: `← from codex-1 · lane mail` or `→ to claude-1 · lane mail` (lowercase display names; arrow + text, not icon-only; optional peer backend logo).
+  - The markdown blocks (`p`, `ul`, `pre`, …) sit directly in the body, the same way they do in an assistant row.
+- If `done`: append `· closed` to the meta line and dim the body (`opacity: 0.82`); no extra chip/container.
 - **Alternatives considered:** (B) meta in label column + dashed border on body only; (C) single-line fs-activity-style chip — rejected for long messages.
 
-Visual priority: **lower** than `.acp-harness__msg--assistant` (no green lane accent, no inset box-shadow). `content-visibility: auto` on sealed rows per Spec 117.
+Visual identity: the body reads exactly like an assistant row; lane mail stays distinguishable only through the `mail` label and the purple/blue meta line (no green lane accent, no inset box-shadow, no tint). `content-visibility: auto` on sealed rows per Spec 117.
 
 ### UI — Harness event rows
 
