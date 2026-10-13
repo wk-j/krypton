@@ -81,10 +81,12 @@ export interface MessageResource {
   hintLabel: string | null;
 }
 
-/** spec 283: one rendered ```svg fence card inside an assistant row. */
+/** spec 283: one rendered figure fence card inside an assistant row —
+ *  ```svg, or ```mermaid drawn to SVG (spec 294). */
 export interface SvgFenceEntry {
-  /** nth valid svg fence in the row body, document order. */
+  /** nth figure fence in the row body, document order; one sequence across kinds. */
   index: number;
+  kind: 'svg' | 'mermaid';
   /** Transient label assigned only while transcript open-hint mode is active. */
   hintLabel: string | null;
   /** Card shows the source pane instead of the preview. */

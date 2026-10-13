@@ -1,4 +1,4 @@
-// Krypton — ACP Harness View: ```svg fence preview cards (spec 283).
+// Krypton — ACP Harness View: ```svg / ```mermaid fence preview cards (specs 283, 294).
 //
 // A sealed assistant row's ```svg fences become cards whose preview is an
 // <img src="data:image/svg+xml,…">. SVG used as an image runs in the SVG2
@@ -10,7 +10,12 @@
 // theme using OMP's palette names, so one SVG themes correctly in both the OMP
 // TUI and here. Decoration is never cached in item.markdownHtml: it runs on
 // every render of the row, like the resources rail.
+//
+// spec 294: a ```mermaid fence is the same card. harness-mermaid-fence.ts draws
+// it to an SVG string (async, cached); the card shows it through the same <img>.
 
+import { buildMermaidTheme, cachedMermaid, MERMAID_FENCE_MAX_CHARS, renderMermaid } from './harness-mermaid-fence';
+import type { MermaidResult, MermaidTheme } from './harness-mermaid-fence';
 import type { HarnessTranscriptItem, SvgFenceEntry } from './harness-view-types';
 
 /** Fence sources longer than this stay plain code. */
@@ -57,6 +62,8 @@ const ROOT_RE = /<(?:[\w.-]+:)?svg(?=[\s/>])[^>]*>/;
 
 const CARD = 'acp-harness__svg-card';
 const LIVE_CARD = `${CARD}--live`;
+const PENDING_CARD = `${CARD}--pending`;
+const BROKEN_CARD = `${CARD}--broken`;
 
 function isPaletteKey(name: string): name is SvgPaletteKey {
   return (SVG_PALETTE_KEYS as readonly string[]).includes(name);
@@ -82,6 +89,11 @@ export function readSvgFontFamily(root: Element = document.documentElement): str
   return style.getPropertyValue('--agent-font').trim()
     || style.getPropertyValue('--krypton-font-family').trim()
     || SVG_FONT_FALLBACK;
+}
+
+/** spec 294: the mermaid config for the active theme (palette, font, scheme). */
+export function readMermaidTheme(): MermaidTheme {
+  return buildMermaidTheme(readSvgPalette(), readSvgFontFamily(), document.documentElement.dataset.themeScheme !== 'light');
 }
 
 function escapeXmlText(text: string): string {
@@ -172,10 +184,18 @@ export function svgBaseSize(source: string): { width: number; height: number } {
   return { width: width ?? 300, height: height ?? 150 };
 }
 
-/** spec 283: what the image viewer needs to zoom a fence — the themed data URL and its base size. */
-export function svgViewerSource(source: string): { src: string; width: number; height: number } {
-  const themed = themeSvgSource(source, readSvgPalette(), readSvgFontFamily());
-  return { src: SVG_DATA_URL_PREFIX + encodeURIComponent(themed), ...svgBaseSize(themed) };
+/** spec 283/294: what the image viewer needs to zoom a fence — the data URL and
+ *  its base size. Null while a mermaid fence is still rendering or failed. */
+export function figureViewerSource(entry: SvgFenceEntry): { src: string; width: number; height: number } | null {
+  let svg: string;
+  if (entry.kind === 'mermaid') {
+    const result = cachedMermaid(entry.source, readMermaidTheme());
+    if (!result?.ok) return null;
+    svg = result.svg;
+  } else {
+    svg = themeSvgSource(entry.source, readSvgPalette(), readSvgFontFamily());
+  }
+  return { src: SVG_DATA_URL_PREFIX + encodeURIComponent(svg), ...svgBaseSize(svg) };
 }
 
 /** Fence text as written; marked-highlight appends one trailing newline. */
@@ -208,34 +228,72 @@ function button(kind: 'toggle' | 'copy', index: number, text: string): HTMLButto
   return el;
 }
 
-function buildCard(pre: HTMLElement, themed: string, index: number): HTMLElement {
+function buildCard(pre: HTMLElement, index: number, kind: SvgFenceEntry['kind']): HTMLElement {
   const card = document.createElement('figure');
-  card.className = CARD;
+  card.className = kind === 'mermaid' ? `${CARD} ${CARD}--mermaid` : CARD;
   card.dataset.svgIndex = String(index);
+  card.dataset.svgKind = kind;
   const bar = document.createElement('div');
   bar.className = `${CARD}-bar`;
-  const kind = document.createElement('span');
-  kind.className = `${CARD}-kind`;
-  kind.textContent = 'svg';
+  const label = document.createElement('span');
+  label.className = `${CARD}-kind`;
+  label.textContent = kind;
   const hint = document.createElement('span');
   hint.className = `${CARD}-hint`;
   hint.hidden = true;
-  bar.append(kind, hint, button('toggle', index, 'Source'), button('copy', index, 'Copy'));
+  bar.append(label, hint, button('toggle', index, 'Source'), button('copy', index, 'Copy'));
   const preview = document.createElement('div');
   preview.className = `${CARD}-preview`;
   const img = document.createElement('img');
-  img.alt = 'SVG preview';
+  img.alt = kind === 'mermaid' ? 'Mermaid diagram' : 'SVG preview';
   img.decoding = 'async';
   // Click zooms the card in the image viewer.
   img.dataset.svgZoom = '';
   img.dataset.svgIndex = String(index);
   // A source the engine still refuses: show the code, drop the toggle.
-  img.addEventListener('error', () => card.classList.add(`${CARD}--broken`), { once: true });
-  setPreview(img, themed);
+  img.addEventListener('error', () => card.classList.add(BROKEN_CARD), { once: true });
   preview.appendChild(img);
   pre.replaceWith(card);
   card.append(bar, preview, pre);
   return card;
+}
+
+/** spec 294: show a finished mermaid render on its card (sub-DOM only). */
+function paintMermaidCard(card: HTMLElement, result: MermaidResult): void {
+  card.classList.remove(PENDING_CARD);
+  const label = card.querySelector<HTMLElement>(`:scope > .${CARD}-bar > .${CARD}-kind`);
+  const img = card.querySelector<HTMLImageElement>(`:scope > .${CARD}-preview > img`);
+  if (result.ok) {
+    card.classList.remove(BROKEN_CARD);
+    card.removeAttribute('title');
+    if (label) label.textContent = `mermaid · ${result.diagramType}`;
+    if (img) setPreview(img, result.svg);
+  } else {
+    card.classList.add(BROKEN_CARD);
+    card.title = result.error;
+    if (label) label.textContent = 'mermaid · error';
+  }
+}
+
+/** spec 294: paint from cache, else queue a render and patch the card when it
+ *  settles. A settled render whose card left the DOM (row rebuilt) or whose
+ *  theme was superseded paints nothing; the cache keeps it for the next build.
+ *  The previous frame stays up meanwhile, so a theme switch never flashes. */
+function requestMermaidPaint(card: HTMLElement, source: string, theme: MermaidTheme): void {
+  card.dataset.mermaidTheme = theme.key;
+  const hit = cachedMermaid(source, theme);
+  if (hit) {
+    paintMermaidCard(card, hit);
+    return;
+  }
+  const label = card.querySelector<HTMLElement>(`:scope > .${CARD}-bar > .${CARD}-kind`);
+  if (label && !card.querySelector(`:scope > .${CARD}-preview > img[src]`)) {
+    card.classList.add(PENDING_CARD);
+    label.textContent = 'mermaid · rendering…';
+  }
+  void renderMermaid(source, theme, () => card.isConnected).then((result) => {
+    if (result && card.isConnected && card.dataset.mermaidTheme === theme.key) paintMermaidCard(card, result);
+  });
 }
 
 function applyCardState(card: HTMLElement, entry: SvgFenceEntry): void {
@@ -250,32 +308,49 @@ function applyCardState(card: HTMLElement, entry: SvgFenceEntry): void {
   if (toggle) toggle.textContent = entry.showSource ? 'Preview' : 'Source';
 }
 
-/** Turn every valid ```svg fence in a sealed assistant body into a card and
- *  sync `item.svgFences`. Idempotent: an existing card is re-used. Entries keep
- *  their object identity and state across re-renders, keyed by fence index. */
+/** smd puts the whole info string in `class` ("svg"); marked-highlight uses "hljs language-svg". */
+function fenceKind(code: HTMLElement): SvgFenceEntry['kind'] | null {
+  const classes = code.classList;
+  if (classes.contains('svg') || classes.contains('language-svg')) return 'svg';
+  if (classes.contains('mermaid') || classes.contains('language-mermaid')) return 'mermaid';
+  return null;
+}
+
+/** Turn every valid ```svg and every ```mermaid fence in a sealed assistant
+ *  body into a card and sync `item.svgFences`. Idempotent: an existing card is
+ *  re-used. Entries keep their object identity and state across re-renders,
+ *  keyed by fence index (one sequence across both kinds). */
 export function decorateSvgFences(body: HTMLElement, item: HarnessTranscriptItem): void {
   const previous = item.svgFences ?? [];
   const entries: SvgFenceEntry[] = [];
   let palette: SvgPalette | null = null;
   let fontFamily: string | null = null;
+  let mermaidTheme: MermaidTheme | null = null;
   for (const code of Array.from(body.querySelectorAll<HTMLElement>('pre > code'))) {
-    // smd puts the whole info string in `class` ("svg"); marked-highlight uses "hljs language-svg".
-    if (!code.classList.contains('svg') && !code.classList.contains('language-svg')) continue;
+    const kind = fenceKind(code);
+    if (!kind) continue;
     const pre = code.parentElement;
     if (!pre) continue;
     const source = fenceSourceText(code.textContent ?? '');
     const index = entries.length;
     let card = pre.parentElement?.classList.contains(CARD) ? pre.parentElement : null;
-    if (!card) {
+    if (!card && kind === 'svg') {
       if (source.length > SVG_FENCE_MAX_CHARS) continue;
       palette ??= readSvgPalette();
       fontFamily ??= readSvgFontFamily();
       const themed = themeSvgSource(source, palette, fontFamily);
       if (!isRenderableSvg(themed)) continue;
-      card = buildCard(pre, themed, index);
+      card = buildCard(pre, index, kind);
+      const img = card.querySelector<HTMLImageElement>('img');
+      if (img) setPreview(img, themed);
+    } else if (!card) {
+      if (source.length > MERMAID_FENCE_MAX_CHARS) continue;
+      card = buildCard(pre, index, kind);
+      mermaidTheme ??= readMermaidTheme();
+      requestMermaidPaint(card, source, mermaidTheme);
     }
-    const entry = previous.find((candidate) => candidate.index === index)
-      ?? { index, hintLabel: null, showSource: false, source };
+    const entry = previous.find((candidate) => candidate.index === index && candidate.kind === kind)
+      ?? { index, kind, hintLabel: null, showSource: false, source };
     entry.source = source;
     entries.push(entry);
     applyCardState(card, entry);
@@ -284,17 +359,25 @@ export function decorateSvgFences(body: HTMLElement, item: HarnessTranscriptItem
   else delete item.svgFences;
 }
 
-/** Theme switch: re-theme every rendered card's preview in place. */
+/** Theme switch: re-theme every rendered svg card's preview in place; mermaid
+ *  cards re-render under the new theme and keep their frame until it lands. */
 export function refreshSvgFencePreviews(root: ParentNode): void {
   const cards = root.querySelectorAll<HTMLElement>(`.${CARD}`);
   if (cards.length === 0) return;
   const palette = readSvgPalette();
   const fontFamily = readSvgFontFamily();
+  let mermaidTheme: MermaidTheme | null = null;
   for (const card of Array.from(cards)) {
+    // Live cards have no <pre> child, so they are skipped here.
     const code = card.querySelector<HTMLElement>(':scope > pre > code');
     const img = card.querySelector<HTMLImageElement>(`:scope > .${CARD}-preview > img`);
-    if (code && img) {
-      setPreview(img, themeSvgSource(fenceSourceText(code.textContent ?? ''), palette, fontFamily));
+    if (!code || !img) continue;
+    const source = fenceSourceText(code.textContent ?? '');
+    if (card.dataset.svgKind === 'mermaid') {
+      mermaidTheme ??= readMermaidTheme();
+      requestMermaidPaint(card, source, mermaidTheme);
+    } else {
+      setPreview(img, themeSvgSource(source, palette, fontFamily));
     }
   }
 }
@@ -381,19 +464,19 @@ interface LiveSvg {
 /** Keyed by smd's live <code>; a rebuilt body drops its nodes and so its entries. */
 const liveSvgs = new WeakMap<HTMLElement, LiveSvg>();
 
-function buildLiveCard(): HTMLElement {
+function buildLiveCard(label: string, alt: string): HTMLElement {
   const card = document.createElement('figure');
   card.className = `${CARD} ${LIVE_CARD}`;
   const bar = document.createElement('div');
   bar.className = `${CARD}-bar`;
   const kind = document.createElement('span');
   kind.className = `${CARD}-kind`;
-  kind.textContent = 'svg · drawing…';
+  kind.textContent = label;
   bar.appendChild(kind);
   const preview = document.createElement('div');
   preview.className = `${CARD}-preview`;
   const img = document.createElement('img');
-  img.alt = 'SVG preview (drawing)';
+  img.alt = alt;
   img.decoding = 'async';
   preview.appendChild(img);
   card.append(bar, preview);
@@ -432,7 +515,7 @@ function paintLiveSvg(code: HTMLElement, state: LiveSvg): void {
       state.requested = '';
       return;
     }
-    const card = state.card ?? buildLiveCard();
+    const card = state.card ?? buildLiveCard('svg · drawing…', 'SVG preview (drawing)');
     if (card.nextElementSibling !== pre) pre.before(card);
     state.card = card;
     const img = card.querySelector<HTMLImageElement>('img');
@@ -468,6 +551,42 @@ export function updateLiveSvgFences(body: HTMLElement): void {
     }
     tickLiveSvg(code, state);
   }
+  updateLiveMermaidFences(body);
+}
+
+/** spec 294: one token per streaming ```mermaid fence that has been sent to
+ *  render; seal deletes it so a render settling later never paints. */
+const liveMermaids = new WeakMap<HTMLElement, object>();
+
+/** True once smd has written anything after `pre` — it only appends, so the
+ *  fence is closed. The reply's last fence closes at seal instead. */
+export function isFenceClosed(pre: Node, body: Node): boolean {
+  for (let node: Node | null = pre; node && node !== body; node = node.parentNode) {
+    if (node.nextSibling) return true;
+  }
+  return false;
+}
+
+/** spec 294: draw each streaming ```mermaid fence once, when it closes (OMP
+ *  TUI behaviour) — per-delta renders would re-run layout and make the
+ *  diagram jump. The live card is a sibling before the parser-owned <pre>. */
+function updateLiveMermaidFences(body: HTMLElement): void {
+  for (const code of Array.from(body.querySelectorAll<HTMLElement>('pre > code.mermaid'))) {
+    const pre = code.parentElement;
+    if (!pre || liveMermaids.has(code) || !isFenceClosed(pre, body)) continue;
+    const token = {};
+    liveMermaids.set(code, token);
+    const source = fenceSourceText(code.textContent ?? '');
+    if (source.length > MERMAID_FENCE_MAX_CHARS) continue;
+    const live = (): boolean => liveMermaids.get(code) === token && code.isConnected;
+    void renderMermaid(source, readMermaidTheme(), live).then((result) => {
+      if (!result?.ok || !live()) return;
+      const card = buildLiveCard(`mermaid · ${result.diagramType}`, 'Mermaid diagram');
+      pre.before(card);
+      const img = card.querySelector<HTMLImageElement>('img');
+      if (img) setPreview(img, result.svg);
+    });
+  }
 }
 
 /** Revision 2: at seal, drop live cards and pending ticks before the body is
@@ -479,5 +598,6 @@ export function clearLiveSvgFences(body: HTMLElement): void {
     clearTimeout(state.timer ?? undefined);
     liveSvgs.delete(code);
   }
+  for (const code of Array.from(body.querySelectorAll<HTMLElement>('pre > code.mermaid'))) liveMermaids.delete(code);
   for (const card of Array.from(body.querySelectorAll<HTMLElement>(`.${LIVE_CARD}`))) card.remove();
 }

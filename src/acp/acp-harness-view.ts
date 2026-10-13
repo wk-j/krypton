@@ -343,7 +343,8 @@ import {
   updateStreamingTextBody,
 } from './harness-markdown';
 export { agentLinkOpenAction, hasMarkdownTable } from './harness-markdown';
-import { clearLiveSvgFences, decorateSvgFences, SVG_FENCE_GUIDANCE, svgViewerSource } from './harness-svg-fence';
+import { cachedMermaid, MERMAID_FENCE_GUIDANCE } from './harness-mermaid-fence';
+import { clearLiveSvgFences, decorateSvgFences, figureViewerSource, readMermaidTheme, SVG_FENCE_GUIDANCE } from './harness-svg-fence';
 import {
   basename,
   esc,
@@ -8652,8 +8653,8 @@ export class AcpHarnessView implements ContentView {
       }
       lines.push(renderToolIndex(gates));
     }
-    // spec 283: SVG guidance needs no MCP tool, so it survives the memory-unavailable branch.
-    lines.push(SVG_FENCE_GUIDANCE);
+    // spec 283/294: figure guidance needs no MCP tool, so it survives the memory-unavailable branch.
+    lines.push(SVG_FENCE_GUIDANCE, MERMAID_FENCE_GUIDANCE);
     const role = this.renderRoleBlock(lane);
     if (role) lines.push('', role);
     return lines.join('\n');
@@ -14234,9 +14235,18 @@ export class AcpHarnessView implements ContentView {
       ?.svgFences?.find((fence) => fence.index === index);
   }
 
-  /** spec 283: zoom an SVG card in the image viewer (click or open-hint label). */
+  /** spec 283/294: zoom a figure card in the image viewer (click or open-hint
+   *  label). A mermaid card still rendering flips to Source instead; a failed
+   *  one reports why. */
   private openSvgViewer(itemId: string, entry: SvgFenceEntry): void {
-    this.imageViewer.openSvg({ itemId, index: entry.index, label: `svg ${entry.index + 1}`, ...svgViewerSource(entry.source) });
+    const source = figureViewerSource(entry);
+    if (!source) {
+      const result = cachedMermaid(entry.source, readMermaidTheme());
+      if (result && !result.ok) this.flashChip(`mermaid: ${result.error.split('\n')[0]}`);
+      else this.toggleSvgFence(this.activeLane(), entry);
+      return;
+    }
+    this.imageViewer.openSvg({ itemId, index: entry.index, label: `${entry.kind} ${entry.index + 1}`, ...source });
     this.renderComposer();
   }
 
@@ -14244,7 +14254,7 @@ export class AcpHarnessView implements ContentView {
   private async copySvgFence(entry: SvgFenceEntry): Promise<void> {
     try {
       await navigator.clipboard.writeText(entry.source);
-      this.flashChip('copied svg');
+      this.flashChip(`copied ${entry.kind}`);
     } catch (e) {
       this.flashChip(`copy failed: ${errorText(e)}`);
     }

@@ -164,7 +164,7 @@ describe('closeSvgPrefix', () => {
 });
 
 describe('transcriptRenderSignature — SVG cards', () => {
-  const entry = (): SvgFenceEntry => ({ index: 0, hintLabel: null, showSource: false, source: '<svg/>' });
+  const entry = (): SvgFenceEntry => ({ index: 0, kind: 'svg', hintLabel: null, showSource: false, source: '<svg/>' });
 
   it('keeps the signature when decoration adds default-state cards', () => {
     const item: HarnessTranscriptItem = { id: 'a1', kind: 'assistant', text: '```svg\n<svg/>\n```' };
