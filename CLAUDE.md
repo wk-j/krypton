@@ -79,6 +79,11 @@ A third, standalone piece lives outside the app build: the **Raycast extension**
 7. **CSS layout:** `position: absolute` + `transform: translate()` for window positioning (avoids layout thrashing)
 8. **Performance:** Keypress-to-render < 16ms, animations at 60 FPS, idle CPU < 1%
 9. **No L-shaped corner brackets.** Two-side HUD ticks (`border-top`+`border-left` 10px arms, `┌┐└┘` chrome) are banned on every surface: windows, vault, agent, harness, toasts, overlays. Full 1px border or nothing. Window chrome already dropped them; do not reintroduce.
+10. **Harness transcript: no repaint after a turn ends.** A sealed transcript row must be visually static. Rules that keep it so (this regression recurred several times):
+    - `renderActiveTranscript` skips a row whose `data-render-signature` matches and never rewrites its wrapper. Any path that patches a row in place and restamps the signature (seal, rail/image/Git patches) must also sync every wrapper class `renderTranscriptItem` derives from the same state — notably drop `acp-harness__msg--streaming`, whose label pulse is `infinite`.
+    - Late async state (Git refs, images, usage, memory) patches only its own sub-DOM and restamps the signature. Never leave a stale signature that makes the next pass remount a sealed reply.
+    - Turn-end and per-event paths (`stop`, `usage`, `finishTurn`, `sealStreaming`) patch chrome/body; they must not call `render()` or `renderActiveLane()`.
+    - No `infinite` CSS animation on a row or chrome element that is not live.
 
 ## Platform Gotchas
 

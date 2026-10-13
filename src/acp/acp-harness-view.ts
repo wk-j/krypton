@@ -14196,9 +14196,13 @@ export class AcpHarnessView implements ContentView {
       // Stabilise signature so the next renderActiveTranscript() pass hits the
       // no-op branch instead of rebuilding via marked.parse. Only meaningful
       // when the wrapper is in the live transcript DOM (active lane); for
-      // background lanes the cache populated above is the protection.
+      // background lanes the cache populated above is the protection. The
+      // no-op branch never rewrites className, so drop the streaming class
+      // here too — left on, the label's infinite pulse kept repainting the
+      // sealed reply after the turn ended.
       const wrapper = body.parentElement;
       if (wrapper && wrapper.dataset.msgId === item.id) {
+        wrapper.classList.remove('acp-harness__msg--streaming');
         wrapper.dataset.renderSignature = transcriptRenderSignature(item, false, lane);
       }
     } else {
