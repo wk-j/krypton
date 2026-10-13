@@ -13,9 +13,13 @@
 //
 // spec 294: a ```mermaid fence is the same card. harness-mermaid-fence.ts draws
 // it to an SVG string (async, cached); the card shows it through the same <img>.
+//
+// The <img> page cannot reach user-installed fonts, so harness-svg-fonts.ts
+// embeds subsets of the transcript font stack; a preview paints once they load.
 
 import { buildMermaidTheme, cachedMermaid, MERMAID_FENCE_MAX_CHARS, renderMermaid } from './harness-mermaid-fence';
 import type { MermaidResult, MermaidTheme } from './harness-mermaid-fence';
+import { cachedSvgFontFaces, embedSvgFontFaces, loadSvgFontFaces, SVG_ROOT_RE } from './harness-svg-fonts';
 import type { HarnessTranscriptItem, SvgFenceEntry } from './harness-view-types';
 
 /** Fence sources longer than this stay plain code. */
@@ -58,7 +62,6 @@ const PALETTE_SOURCES: Record<SvgPaletteKey, { prop: string; rgb?: true }> = {
 const SVG_FONT_FALLBACK = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 const SVG_DATA_URL_PREFIX = 'data:image/svg+xml;charset=utf-8,';
 const VAR_RE = /var\(\s*--([\w-]+)\s*(?:,\s*((?:[^()]|\([^()]*\))*))?\)/g;
-const ROOT_RE = /<(?:[\w.-]+:)?svg(?=[\s/>])[^>]*>/;
 
 const CARD = 'acp-harness__svg-card';
 const LIVE_CARD = `${CARD}--live`;
@@ -83,7 +86,8 @@ export function readSvgPalette(root: Element = document.documentElement): SvgPal
 
 /** The harness view's font stack (`--agent-font` → `--krypton-font-family`,
  *  i.e. `[font] family` from krypton.toml), resolved like acp-harness.css does.
- *  Configured families are installed fonts, so an <img>-loaded SVG can use them. */
+ *  User-installed families reach an <img>-loaded SVG only as embedded faces
+ *  (harness-svg-fonts.ts). */
 export function readSvgFontFamily(root: Element = document.documentElement): string {
   const style = getComputedStyle(root);
   return style.getPropertyValue('--agent-font').trim()
@@ -115,7 +119,7 @@ export function themeSvgSource(source: string, palette: SvgPalette, fontFamily: 
     return resolved ?? (fallback?.trim() || fg);
   });
   const usesXlink = themed.includes('xlink:');
-  return themed.replace(ROOT_RE, (tag) => {
+  return themed.replace(SVG_ROOT_RE, (tag) => {
     let extra = '';
     if (!/\sxmlns\s*=/.test(tag)) extra += ' xmlns="http://www.w3.org/2000/svg"';
     if (usesXlink && !/\sxmlns:xlink\s*=/.test(tag)) extra += ' xmlns:xlink="http://www.w3.org/1999/xlink"';
@@ -156,7 +160,7 @@ function viewBoxSize(tag: string): { width: number; height: number } | null {
 /** Size hints from the root tag's viewBox / width / height. `pixelRatio` is
  *  device px per CSS px (`window.devicePixelRatio`). */
 export function svgFrame(source: string, pixelRatio = 1): SvgFrame {
-  const tag = ROOT_RE.exec(source)?.[0] ?? '';
+  const tag = SVG_ROOT_RE.exec(source)?.[0] ?? '';
   const width = numericAttr(tag, 'width');
   const height = numericAttr(tag, 'height');
   const box = viewBoxSize(tag);
@@ -171,7 +175,7 @@ export function svgFrame(source: string, pixelRatio = 1): SvgFrame {
 /** The 100% size the viewer zooms from: explicit width/height win, the viewBox
  *  supplies a missing side (or both), and HTML's 300×150 default is the last resort. */
 export function svgBaseSize(source: string): { width: number; height: number } {
-  const tag = ROOT_RE.exec(source)?.[0] ?? '';
+  const tag = SVG_ROOT_RE.exec(source)?.[0] ?? '';
   const width = numericAttr(tag, 'width');
   const height = numericAttr(tag, 'height');
   if (width && height) return { width, height };
@@ -193,7 +197,9 @@ export function figureViewerSource(entry: SvgFenceEntry): { src: string; width: 
     if (!result?.ok) return null;
     svg = result.svg;
   } else {
-    svg = themeSvgSource(entry.source, readSvgPalette(), readSvgFontFamily());
+    const fontFamily = readSvgFontFamily();
+    const faces = cachedSvgFontFaces(entry.source, fontFamily) ?? '';
+    svg = embedSvgFontFaces(themeSvgSource(entry.source, readSvgPalette(), fontFamily), faces);
   }
   return { src: SVG_DATA_URL_PREFIX + encodeURIComponent(svg), ...svgBaseSize(svg) };
 }
@@ -215,6 +221,32 @@ function setPreview(img: HTMLImageElement, themed: string, src = SVG_DATA_URL_PR
   if (frame.width) img.width = Math.round(frame.width);
   else img.removeAttribute('width');
   img.src = src;
+}
+
+/** Latest paint request per svg card; a superseded font load never paints. */
+const svgPaints = new WeakMap<HTMLElement, object>();
+
+/** Paint an svg card with the transcript font embedded: synchronously when the
+ *  faces are cached, else once they load. A card without a frame stays
+ *  `--pending` meanwhile (one paint, no fallback-font flash on a sealed row);
+ *  a card with one keeps it until the new frame is ready. */
+function requestSvgPaint(card: HTMLElement, img: HTMLImageElement, source: string, themed: string, fontFamily: string): void {
+  const faces = cachedSvgFontFaces(source, fontFamily);
+  if (faces !== undefined) {
+    svgPaints.delete(card);
+    card.classList.remove(PENDING_CARD);
+    setPreview(img, embedSvgFontFaces(themed, faces));
+    return;
+  }
+  const token = {};
+  svgPaints.set(card, token);
+  if (!img.getAttribute('src')) card.classList.add(PENDING_CARD);
+  void loadSvgFontFaces(source, fontFamily).then((loaded) => {
+    if (svgPaints.get(card) !== token) return;
+    svgPaints.delete(card);
+    card.classList.remove(PENDING_CARD);
+    setPreview(img, embedSvgFontFaces(themed, loaded));
+  });
 }
 
 function button(kind: 'toggle' | 'copy', index: number, text: string): HTMLButtonElement {
@@ -342,7 +374,7 @@ export function decorateSvgFences(body: HTMLElement, item: HarnessTranscriptItem
       if (!isRenderableSvg(themed)) continue;
       card = buildCard(pre, index, kind);
       const img = card.querySelector<HTMLImageElement>('img');
-      if (img) setPreview(img, themed);
+      if (img) requestSvgPaint(card, img, source, themed, fontFamily);
     } else if (!card) {
       if (source.length > MERMAID_FENCE_MAX_CHARS) continue;
       card = buildCard(pre, index, kind);
@@ -377,7 +409,7 @@ export function refreshSvgFencePreviews(root: ParentNode): void {
       mermaidTheme ??= readMermaidTheme();
       requestMermaidPaint(card, source, mermaidTheme);
     } else {
-      setPreview(img, themeSvgSource(source, palette, fontFamily));
+      requestSvgPaint(card, img, source, themeSvgSource(source, palette, fontFamily), fontFamily);
     }
   }
 }
@@ -496,31 +528,37 @@ function paintLiveSvg(code: HTMLElement, state: LiveSvg): void {
   }
   const closed = closeSvgPrefix(source);
   if (closed === null) return;
-  // Palette read per tick: a mid-stream theme switch heals on the next frame.
-  const themed = themeSvgSource(closed, readSvgPalette(), readSvgFontFamily());
-  if (themed === state.requested) return;
-  state.requested = themed;
-  const src = SVG_DATA_URL_PREFIX + encodeURIComponent(themed);
-  // Decode off-DOM first: the visible <img> swaps only to a ready frame (no
-  // blank flash), and a prefix the engine refuses keeps the last good frame.
-  const probe = new Image();
-  probe.src = src;
-  probe.decode().then(() => {
-    if (state.requested !== themed || liveSvgs.get(code) !== state) return;
-    const pre = code.parentElement;
-    if (!pre || !code.isConnected) {
-      // Lane switched away mid-decode: forget the frame so the next tick on a
-      // re-attached body paints it instead of skipping unchanged text.
-      state.source = '';
-      state.requested = '';
-      return;
-    }
-    const card = state.card ?? buildLiveCard('svg · drawing…', 'SVG preview (drawing)');
-    if (card.nextElementSibling !== pre) pre.before(card);
-    state.card = card;
-    const img = card.querySelector<HTMLImageElement>('img');
-    if (img) setPreview(img, themed, src);
-  }, () => undefined);
+  // Palette and font read per tick: a mid-stream theme switch heals on the next frame.
+  const fontFamily = readSvgFontFamily();
+  const plain = themeSvgSource(closed, readSvgPalette(), fontFamily);
+  if (plain === state.requested) return;
+  state.requested = plain;
+  const stale = (): boolean => state.requested !== plain || liveSvgs.get(code) !== state;
+  void loadSvgFontFaces(closed, fontFamily).then((faces) => {
+    if (stale()) return;
+    const themed = embedSvgFontFaces(plain, faces);
+    const src = SVG_DATA_URL_PREFIX + encodeURIComponent(themed);
+    // Decode off-DOM first: the visible <img> swaps only to a ready frame (no
+    // blank flash), and a prefix the engine refuses keeps the last good frame.
+    const probe = new Image();
+    probe.src = src;
+    return probe.decode().then(() => {
+      if (stale()) return;
+      const pre = code.parentElement;
+      if (!pre || !code.isConnected) {
+        // Lane switched away mid-decode: forget the frame so the next tick on a
+        // re-attached body paints it instead of skipping unchanged text.
+        state.source = '';
+        state.requested = '';
+        return;
+      }
+      const card = state.card ?? buildLiveCard('svg · drawing…', 'SVG preview (drawing)');
+      if (card.nextElementSibling !== pre) pre.before(card);
+      state.card = card;
+      const img = card.querySelector<HTMLImageElement>('img');
+      if (img) setPreview(img, themed, src);
+    });
+  }).catch(() => undefined);
 }
 
 function tickLiveSvg(code: HTMLElement, state: LiveSvg): void {

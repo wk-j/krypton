@@ -24,6 +24,7 @@ mod review_threads;
 mod session;
 pub mod sound;
 pub mod ssh;
+mod svg_fonts;
 pub mod telegram;
 pub mod termctrl_monitor;
 pub mod theme;
@@ -290,6 +291,7 @@ pub fn run() {
             commands::query_sqlite,
             prompt_history::harness_prompt_log,
             prompt_history::harness_word_corpus,
+            svg_fonts::svg_font_faces,
             commands::set_ssh_remote_cwd,
             commands::detect_ssh_session,
             commands::clone_ssh_session,

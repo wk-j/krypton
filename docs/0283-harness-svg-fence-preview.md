@@ -4,6 +4,58 @@
 > Date: 2026-10-09
 > Milestone: ACP Harness
 
+## Revision 3 — Configured Font Inside the `<img>`
+
+> Status: Implemented
+> Date: 2026-10-13
+
+### Problem
+
+Figures never drew in the `[font] family` from `krypton.toml`. The original design assumed an `<img>` SVG can use any installed font, but WebKit renders an SVG image in its own page with user-installed fonts disabled: `Source/WebCore/svg/graphics/SVGImage.cpp`, `SVGImage::dataChanged` → `m_page->settings().setShouldAllowUserInstalledFonts(false)` (fingerprinting protection). Fonts in `~/Library/Fonts` or `/Library/Fonts` fell back to the generic face. Fonts under `/System/` were not affected, including downloadable system assets such as Bai Jamjuree. Chromium (the spec 294 smoke) allows local fonts, which is why the original testing missed this. A ` ```mermaid ` figure also drew labels in a different font than mermaid had measured them with in the document.
+
+### Design
+
+Embed the font. A new Tauri command subsets each user-installed family of the stack to the characters a figure uses. The frontend injects the result as `@font-face` data URLs named after those families, so the injected `font-family` stack resolves to them. The `<img>` sandbox is unchanged.
+
+```rust
+// src-tauri/src/svg_fonts.rs
+#[tauri::command]
+async fn svg_font_faces(families: Vec<String>, text: String) -> Result<Vec<SvgFontFace>, String>; // { family, data: base64 }
+```
+
+- **Lookup (macOS):** Core Text `CTFontDescriptor` with `kCTFontFamilyNameAttribute` → `matching_font_descriptor`. The result counts only if the matched family equals the request, because Core Text substitutes the nearest family. The file comes from `kCTFontURLAttribute`. A `.ttc` face is chosen by PostScript name (`kCTFontNameAttribute`). On other platforms nothing is found.
+- **Fallback walk:** the requested set is printable ASCII plus every non-control character of `text`. Families are walked in CSS order. Each family claims the requested characters its cmap covers that no earlier family covered. A family under `/System/` still claims its characters, but is not embedded, because WebKit draws it itself.
+- **Subset:** `fontcull-klippa` (pure-Rust hb-subset port) with `DEFAULT_LAYOUT_FEATURES` and all scripts, so GSUB/GPOS survive (Thai mark placement). A typical subset is 15–26 KB (Share Tech Mono 43 KB, Mononoki Nerd Font Mono 2.3 MB) and takes about 7 ms on a blocking thread.
+
+```ts
+// src/acp/harness-svg-fonts.ts
+export const SVG_ROOT_RE: RegExp; // shared first-<svg>-tag regex
+export function fontStackFamilies(fontFamily: string): string[]; // named families; bare generics dropped
+export function cachedSvgFontFaces(source: string, fontFamily: string): string | undefined; // '' = nothing to embed
+export function loadSvgFontFaces(source: string, fontFamily: string): Promise<string>;
+export function embedSvgFontFaces(svg: string, faces: string): string; // <style> after the root tag, XML-escaped
+```
+
+- **Cache:** results are keyed by named families plus the sorted non-ASCII characters of the fence source, in an LRU of 64 with in-flight joining. Latin-only figures share one entry. A stack with only generic families, a backend error, or running outside Tauri all yield `''` (no embedding).
+- **Sealed svg card:** `requestSvgPaint` paints synchronously on a cache hit. On a miss, a card without a frame stays `--pending` (preview hidden) until the faces load, then paints once, so a sealed row never shows a fallback-font frame first. A theme refresh keeps the old frame until the new one is ready. A per-card token drops superseded loads.
+- **Live svg:** each tick waits for the faces before the existing off-DOM decode. The same staleness guard (`state.requested`) covers both steps.
+- **Mermaid (spec 294):** `renderNow` embeds the faces for `theme.config.fontFamily` before caching the result, so `cachedMermaid` and the zoom viewer already carry them.
+- **Zoom viewer:** `figureViewerSource` embeds cached faces (the card has painted, so they are cached).
+
+### Affected Files
+
+| File | Change |
+|------|--------|
+| `src-tauri/src/svg_fonts.rs` (new), `src-tauri/src/lib.rs`, `src-tauri/Cargo.toml` | `svg_font_faces` command; `fontcull-klippa`, `fontcull-skrifa`, macOS `objc2-core-text`/`objc2-core-foundation` |
+| `src/acp/harness-svg-fonts.ts` (new) | Stack parsing, faces cache, `@font-face` CSS, embedding |
+| `src/acp/harness-svg-fence.ts` | `requestSvgPaint`; live tick, refresh, and zoom viewer embed faces; `ROOT_RE` → `SVG_ROOT_RE` |
+| `src/acp/harness-mermaid-fence.ts` | `renderNow` embeds faces into the cached SVG |
+| `src/acp/harness-svg-fonts.test.ts` (new) | Stack parsing, escaping, cache keying, generic-only and failure paths |
+
+### Verification
+
+WKWebView probe (`swift`, offscreen `WKWebView.takeSnapshot`) with `<img src="data:image/svg+xml,…">`. The user-installed Share Tech Mono drew as Courier without embedding and as Share Tech Mono with the embedded subset, matching an HTML `<div>` in the same font. Thai in Bai Jamjuree (system asset) drew correctly both embedded and not embedded.
+
 ## Revision 2 — Progressive Streaming Preview
 
 > Status: Implemented
@@ -199,14 +251,14 @@ export function refreshSvgFencePreviews(root: ParentNode): void;
 
 `themeSvgSource` replaces `var(--name[, fallback])` with `palette[name]`, then the fallback, then `palette.fg`. On the root `<svg …>` tag, each attribute below is added only when absent: `color="<fg>"`, `xmlns`, and `xmlns:xlink` when the source uses `xlink:`.
 
-Text always uses the harness transcript font. `readSvgFontFamily` resolves it the same way `acp-harness.css` does: `--agent-font`, then `--krypton-font-family` (the `[font] family` list from `krypton.toml`), then `ui-monospace, SFMono-Regular, Menlo, monospace`. `themeSvgSource` injects `<style>*{font-family:<font>!important}</style>` as the first child of the root (XML-escaped; skipped for a self-closing root). The `!important` author rule beats font-family attributes and plain inline styles, so an agent's own `font-family` never wins. The configured families are installed fonts, which an `<img>` SVG can use; only web fonts are blocked. Reload Config runs `applyConfig` (which sets `--krypton-font-family`) before `updateTerminalThemes` → `refreshSvgFencePreviews`, so visible cards pick up a font change in place.
+Text always uses the harness transcript font. `readSvgFontFamily` resolves it the same way `acp-harness.css` does: `--agent-font`, then `--krypton-font-family` (the `[font] family` list from `krypton.toml`), then `ui-monospace, SFMono-Regular, Menlo, monospace`. `themeSvgSource` injects `<style>*{font-family:<font>!important}</style>` as the first child of the root (XML-escaped; skipped for a self-closing root). The `!important` author rule beats font-family attributes and plain inline styles, so an agent's own `font-family` never wins. WebKit blocks user-installed fonts inside an `<img>` SVG, so those families are embedded as subset `@font-face` data URLs (Revision 3). Reload Config runs `applyConfig` (which sets `--krypton-font-family`) before `updateTerminalThemes` → `refreshSvgFencePreviews`, so visible cards pick up a font change in place.
 
 `decorateSvgFences` is idempotent: it skips any `pre` already inside a card. For each `pre > code` whose classList has `svg` or `language-svg`:
 
 1. `source = code.textContent` minus one trailing `\n`. If it is over `SVG_FENCE_MAX_BYTES`, the block stays code.
 2. `themed = themeSvgSource(source, readSvgPalette(), readSvgFontFamily())`.
 3. `DOMParser().parseFromString(themed, 'image/svg+xml')`. If the root is not `<svg>` or the result contains a `parsererror`, the block stays code. This is validation only and nothing parsed is inserted. Read the aspect ratio from `viewBox`, or from numeric `width`/`height`.
-4. Wrap the existing `<pre>` in the card. The `<pre>` is kept, so the source pane and its highlighting are exactly as rendered. Set `img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(themed)`.
+4. Wrap the existing `<pre>` in the card. The `<pre>` is kept, so the source pane and its highlighting are exactly as rendered. Set `img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(embedSvgFontFaces(themed, faces))` once the font faces are known (Revision 3: synchronous on a cache hit, otherwise `--pending` until they load).
 5. Rebuild `item.svgFences` with one entry per card, carrying `showSource`/`hintLabel` over from the previous entry with the same `index`. Apply `--source` and the hint badge.
 
 `refreshSvgFencePreviews` re-themes every `.acp-harness__svg-card img` under `root` from its card's `<pre>` source. It is used on theme change and does not rebuild rows.
@@ -293,7 +345,7 @@ Styling:
 - **Missing `xmlns`:** injected by `themeSvgSource`, so the `<img>` renders.
 - **Unknown `var(--x)`:** the fallback is used, otherwise `fg`. `currentColor` resolves to the injected root `color`.
 - **Prolog before `<svg>` (e.g. `<?xml …?>`, comments):** DOMParser accepts it, and the root regex targets the first `<svg` tag.
-- **External images, fonts, or CSS in the SVG:** blocked by the `<img>` mode, which renders without them. Text uses the configured harness font (installed fonts only).
+- **External images, fonts, or CSS in the SVG:** blocked by the `<img>` mode, which renders without them. Text uses the configured harness font: system fonts directly, user-installed fonts through embedded subsets (Revision 3).
 - **`<script>` / `on*` / `<foreignObject>`:** inert inside `<img>`. The source pane shows them as escaped code.
 - **Copy:** copies the original source, not the themed one, so it stays portable.
 - **Multiple fences in one row:** indexed in document order, one label each.
@@ -317,6 +369,7 @@ None.
 ## Resources
 
 - [SVG 2 — Conformance: processing modes](https://svgwg.org/svg2-draft/conform.html): `<img>`/CSS-image SVG uses secure animated mode (no script, no external refs, no interaction).
+- [WebKit `SVGImage.cpp`](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/svg/graphics/SVGImage.cpp): `setShouldAllowUserInstalledFonts(false)` on the SVG image page (Revision 3).
 - [Obsidian SVG Viewer plugin](https://github.com/konstantinosGkilas/Obsidian-SVG-Viewer): fence → preview UX, source toggle, copy, sanitize list.
 - [GitHub Docs — Creating diagrams](https://docs.github.com/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams): precedent for rendering fenced diagram languages.
 - OMP `omp/18.8.6` bundle (`~/.bun/bin/omp`), `packages/tui/src/chat/svg-figure.ts` plus CHANGELOG 18.7.0/18.8.0: palette contract, theming and `xmlns` injection, ACP exclusion of the guidance.

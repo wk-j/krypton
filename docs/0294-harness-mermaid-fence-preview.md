@@ -12,6 +12,7 @@
 - **Theme inputs.** `darkMode` comes from `html[data-theme-scheme]`, not luminance. Palette colours are normalized through a canvas `fillStyle` so khroma always parses them. Node borders and lines use `muted` (Krypton's border colour is a faint translucent tint). `cScale0…5` = `c1…c6` with `cScaleLabel` = `surface`, otherwise mindmap/timeline branches take the background colour. `altFontFamily` is also locked.
 - **`--pending` hides the preview** instead of reserving a line.
 - **Smoke (Chromium via the Vite dev server, not WKWebView):** flowchart (Thai labels, `<br/>`), sequence, pie, and mindmap render with no `<foreignObject>`; a parse error gives `mermaid · error` with source; a closed streaming fence draws a live card and seal repaints it synchronously from cache; an `%%{init}%%` setting `theme`, `themeCSS`, and `securityLevel` is ignored, an `<img onerror>` label is sanitized, and no render nodes are left in `document.body`.
+- **Font (spec 283 Revision 3).** WebKit draws `<img>` SVG without user-installed fonts, which the Chromium smoke could not show. `renderNow` therefore embeds subset `@font-face` faces of `config.fontFamily` (`loadSvgFontFaces` → `embedSvgFontFaces`) before caching, so labels draw in the same font mermaid measured them with.
 
 ## Problem
 

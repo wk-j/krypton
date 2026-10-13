@@ -5,12 +5,15 @@
 // the drawn diagram stays inert like an ```svg fence. Renders are async and
 // run one at a time (mermaid's config is global state); results are cached by
 // theme + source so a row rebuilt from `markdownHtml` paints synchronously.
-// Card DOM lives in harness-svg-fence.ts; this module never touches it.
+// The cached SVG already embeds the transcript font (harness-svg-fonts.ts):
+// mermaid measures labels in the document with that font, so the <img> must
+// draw with it too. Card DOM lives in harness-svg-fence.ts; this module never touches it.
 
 import type mermaidApi from 'mermaid';
 import type { MermaidConfig } from 'mermaid';
 
 import type { SvgPalette } from './harness-svg-fence';
+import { embedSvgFontFaces, loadSvgFontFaces } from './harness-svg-fonts';
 
 /** Fence sources longer than this stay plain code (mermaid's own maxTextSize default). */
 export const MERMAID_FENCE_MAX_CHARS = 50_000;
@@ -186,7 +189,8 @@ async function renderNow(source: string, theme: MermaidTheme): Promise<MermaidRe
     }
     renderSeq += 1;
     const { svg, diagramType } = await mermaid.render(`krypton-mmd-${renderSeq}`, source);
-    return { ok: true, svg, diagramType: normalizeDiagramType(diagramType) };
+    const faces = await loadSvgFontFaces(source, theme.config.fontFamily ?? '');
+    return { ok: true, svg: embedSvgFontFaces(svg, faces), diagramType: normalizeDiagramType(diagramType) };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
