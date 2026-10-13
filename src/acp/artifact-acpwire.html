@@ -60,7 +60,9 @@
     .split { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 12px; margin-top: 12px; }
     .scroll { max-height: 430px; overflow: auto; }
     .tbl { width: 100%; font-size: 12px; border-collapse: collapse; }
-    .tbl th, .tbl td { border-bottom: 1px solid var(--border); padding: 4px 8px; white-space: nowrap; text-align: left; }
+    .tbl th, .tbl td { border-bottom: 1px solid var(--border); padding: 4px 6px; white-space: nowrap; text-align: left; }
+    /* Absorbs the leftover width and ellipsizes, so a long method never forces a horizontal scrollbar. */
+    .tbl .fill { width: 100%; max-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .tbl th { position: sticky; top: 0; background: var(--card); color: var(--muted); font-weight: 500; }
     .tbl tr.child td { background: rgba(112,122,138,.05); }
     .tbl tr.child td:first-child { padding-left: 22px; }
@@ -146,7 +148,7 @@
         <h3>Messages <span class="acc" id="msgCount"></span></h3>
         <div class="scroll" id="tblWrap">
           <table class="tbl" id="tbl">
-            <thead><tr><th>time</th><th>lane</th><th>dir</th><th>kind</th><th>method</th><th class="r">id</th><th class="r">bytes</th><th class="r">latency</th></tr></thead>
+            <thead><tr><th>time</th><th>lane</th><th>dir</th><th>kind</th><th class="fill">method</th><th class="r">id</th><th class="r">bytes</th><th class="r">latency</th></tr></thead>
             <tbody></tbody>
           </table>
           <div class="empty hidden" id="empty">no events captured yet</div>
@@ -461,14 +463,14 @@
             return '<tr data-key="' + key + '" class="' + cls + '">' +
               '<td class="mut">' + fmtTime(f.tsMs) + '</td><td>' + esc(f.lane) + '</td><td>' + (dirTxt[f.dir] || esc(f.dir)) + '</td>' +
               '<td><span class="mut">' + (state.open.has(g.seq) ? '▾ ' : '▸ ') + esc(f.kind) + '</span> <span class="acc">×' + g.members.length + '</span></td>' +
-              '<td>' + methodHtml(f.method) + '</td><td></td><td class="r">' + fmtB(g.bytes) + '</td>' +
+              '<td class="fill" title="' + esc(f.method) + '">' + methodHtml(f.method) + '</td><td></td><td class="r">' + fmtB(g.bytes) + '</td>' +
               '<td class="r mut" title="span first → last">' + fmtUs(g.last.monoUs - f.monoUs) + '</td></tr>';
           }
           var e = r.ev;
           var lat = e.latencyUs != null ? fmtUs(e.latencyUs) : (e.kind === 'request' ? '<span class="mut">…</span>' : '');
           return '<tr data-key="' + key + '"' + (cls ? ' class="' + cls.trim() + '"' : '') + '>' +
             '<td class="mut">' + fmtTime(e.tsMs) + '</td><td>' + esc(e.lane) + '</td><td>' + (dirTxt[e.dir] || esc(e.dir)) + '</td>' +
-            '<td class="' + (e.kind === 'invalid' ? 'red' : 'mut') + '">' + esc(e.kind) + '</td><td>' + methodHtml(e.method) + '</td>' +
+            '<td class="' + (e.kind === 'invalid' ? 'red' : 'mut') + '">' + esc(e.kind) + '</td><td class="fill" title="' + esc(e.method) + '">' + methodHtml(e.method) + '</td>' +
             '<td class="r mut">' + esc(e.id || '') + '</td><td class="r">' + fmtB(e.bytes) + (e.truncated ? ' <span class="mut">trunc</span>' : '') + '</td>' +
             '<td class="r' + (e.error ? ' red' : '') + '">' + lat + '</td></tr>';
         }).join('');
