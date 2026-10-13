@@ -1792,7 +1792,7 @@ mod tests {
                 made_by: "Current user".into(),
                 rationale: "Share durable project history".into(),
                 impact: "Readers can browse it remotely".into(),
-                source_ref: Some("docs/259-timeline-xenon-publishing.md".into()),
+                source_ref: Some("docs/0259-timeline-xenon-publishing.md".into()),
                 relation: None,
                 related_event: None,
                 recorder_lane: "Codex-1".into(),

@@ -27,7 +27,7 @@
 
 ### Secondary cause (Krypton design assumption)
 
-Spec 113 (`docs/113-acp-cursor-lane.md`) assumed Cursor consumes `krypton-harness-memory` via the same `mcpServersForLane()` → `session/new` path as Codex/Gemini. Krypton **did** send the descriptor; Cursor never loaded it.
+Spec 113 (`docs/0113-acp-cursor-lane.md`) assumed Cursor consumes `krypton-harness-memory` via the same `mcpServersForLane()` → `session/new` path as Codex/Gemini. Krypton **did** send the descriptor; Cursor never loaded it.
 
 Relevant delivery path before fix:
 
@@ -102,11 +102,11 @@ Mirrors **Junie overlay** (spec 119): deliver harness MCP through the backend’
 | **Correctness** | Addresses the only path Cursor actually uses in ACP mode (native config + per-project approval) |
 | **Pattern fit** | Consistent with Junie `--mcp-location` overlay; Cursor lacks `--mcp-location`, so project `.cursor/mcp.json` is the pragmatic choice |
 | **Regression-proof** | Survives `session/new` injection breakage; will remain valid if upstream re-adds injection (harmless duplicate skip) |
-| **Upstream recovery** | If `session/new` injection returns, native workaround can be dropped (documented in `docs/113`, `docs/06-configuration.md`) |
+| **Upstream recovery** | If `session/new` injection returns, native workaround can be dropped (documented in `docs/113`, `docs/0006-configuration.md`) |
 
 ### Known limitations (documented in code/comments)
 
-1. **Only `krypton-harness-memory`** — project `.mcp.json` bridge servers are **not** mirrored into `.cursor/mcp.json` for Cursor (`docs/06-configuration.md`).
+1. **Only `krypton-harness-memory`** — project `.mcp.json` bridge servers are **not** mirrored into `.cursor/mcp.json` for Cursor (`docs/0006-configuration.md`).
 2. **Repo mutation** — writes `<projectDir>/.cursor/mcp.json` (cleaned on lane close; merge preserves user servers).
 3. **Concurrent Cursor lanes** — share one file per project; each spawn rewrites with its lane-specific memory URL; already-running lanes keep their loaded server (race/stale-URL risk under concurrency).
 4. **`mcp enable` failures are non-fatal** — lane spawns anyway; tools may remain unavailable without surfacing a harness warning (unverified whether UI shows this clearly).
@@ -170,7 +170,7 @@ Shared server name `krypton-harness-memory` → later spawn overwrites URL in on
 1. Empty `memoryServerForLane` still writes `{"mcpServers":{}}`; `cursorMcpNames=[]` skips cleanup → possible file leak.
 2. `cleanup_cursor_mcp` may delete user’s pre-existing empty `{"mcpServers":{}}` (low risk).
 3. No crash-time GC for cursor (Junie has `gcJunieMcpOverlays`).
-4. Document `.cursor/` in `.gitignore` guidance (`docs/06-configuration.md`).
+4. Document `.cursor/` in `.gitignore` guidance (`docs/0006-configuration.md`).
 5. `mcp enable` failure warn-only — consider `harnessMemoryWarning`-style UI.
 6. Add Rust unit tests for merge/cleanup JSON (no `cursor-agent` required).
 

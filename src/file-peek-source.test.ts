@@ -40,7 +40,7 @@ describe('file peek — content classification', () => {
   });
 
   it('routes markdown and binary files away from the code renderer', () => {
-    expect(isMarkdownFile('docs/210-quick-overview-dialog.md')).toBe(true);
+    expect(isMarkdownFile('docs/0210-quick-overview-dialog.md')).toBe(true);
     expect(isMarkdownFile('README.markdown')).toBe(true);
     expect(isMarkdownFile('src/hints.ts')).toBe(false);
     expect(isBinaryExtension('src-tauri/sounds/deep-glyph/boot.wav')).toBe(true);

@@ -29,7 +29,7 @@ const FONT_MAX = 15;
 // every call hits uncached CoreText rasterization + GPU-process IPC. We
 // pre-rasterize every (char, fontSize) tile once into an OffscreenCanvas,
 // then the per-frame hot loop becomes pure drawImage blits with varying
-// globalAlpha. See docs/67-matrix-glyph-atlas.md.
+// globalAlpha. See docs/0067-matrix-glyph-atlas.md.
 
 /** Integer font sizes covered by the atlas, inclusive of both ends. */
 const ATLAS_SIZES: number[] = (() => {

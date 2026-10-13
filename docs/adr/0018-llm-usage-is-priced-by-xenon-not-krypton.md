@@ -2,7 +2,7 @@
 
 > Status: Accepted
 > Date: 2026-08-09
-> Spec: `docs/214-llm-usage-statistics.md`
+> Spec: `docs/0214-llm-usage-statistics.md`
 > Related: ADR-0016 (publishing is explicit), ADR-0019 (usage is telemetry)
 
 ## Context

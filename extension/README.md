@@ -1,7 +1,7 @@
 # Krypton Harness — Browser Extension
 
 Send the current page selection into a running Krypton harness lane as a chosen
-action (predefined prompt). See `docs/176-harness-browser-extension.md` for the
+action (predefined prompt). See `docs/0176-harness-browser-extension.md` for the
 full design.
 
 ## How it works
@@ -51,7 +51,7 @@ as Markdown client-side (via Defuddle, injected on demand) and sends that — so
 pages the lane can't fetch server-side (Reddit, YouTube, login-walled, SPAs) still
 work. A selection always takes precedence; use the `{page}` placeholder in a
 custom action to force full-page capture even with a selection. See
-`docs/177-harness-extension-content-extraction.md`.
+`docs/0177-harness-extension-content-extraction.md`.
 
 ## Notes
 

@@ -136,12 +136,12 @@ describe('renderDigestForBrief', () => {
     const note = renderDigestForBrief(
       digest({
         project: project({
-          commits: [commit({ specs: ['221-harness-status-line-density', '72-acp-harness-view'] })],
+          commits: [commit({ specs: ['0221-harness-status-line-density', '0072-acp-harness-view'] })],
         }),
       }),
     );
-    expect(note).toContain('`221-harness-status-line-density`');
-    expect(note).toContain('`72-acp-harness-view`');
+    expect(note).toContain('`0221-harness-status-line-density`');
+    expect(note).toContain('`0072-acp-harness-view`');
     expect(note).toContain('9 ไฟล์');
     expect(note).toContain('+500 / -56');
   });
@@ -274,7 +274,7 @@ describe('renderDigestForBrief', () => {
       digest({
         project: project({
           turns: 5,
-          commits: [commit({ specs: ['221-harness-status-line-density'] })],
+          commits: [commit({ specs: ['0221-harness-status-line-density'] })],
           reviews: [{ slug: '2026-08-15-daily-note', path: '.krypton/reviews/2026-08-15-daily-note', at: at(16) }],
           artifacts: [
             {

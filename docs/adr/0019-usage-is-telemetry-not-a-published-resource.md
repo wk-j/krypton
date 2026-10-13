@@ -2,7 +2,7 @@
 
 > Status: Accepted
 > Date: 2026-08-09
-> Spec: `docs/214-llm-usage-statistics.md`
+> Spec: `docs/0214-llm-usage-statistics.md`
 > Related: ADR-0016 (generated resources publish to Xenon, explicitly), ADR-0018 (pricing)
 
 ## Context

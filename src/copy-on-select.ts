@@ -6,7 +6,7 @@
 // are preserved. Terminal panes are unaffected because xterm.js renders into
 // a canvas — its selection is not part of the DOM Selection API — so the
 // existing terminal-side wireCopyOnSelect (src/compositor.ts) keeps handling
-// them. See docs/81-global-copy-on-select.md.
+// them. See docs/0081-global-copy-on-select.md.
 
 export interface CopyOnSelectOptions {
   /** Minimum selection length in characters required to copy. Default 1. */

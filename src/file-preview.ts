@@ -1,7 +1,7 @@
 // Krypton — Shared File Preview Helpers
 // Extension classification, size formatting, and the shared `marked` instance
 // used by every surface that renders file content: the file manager preview
-// pane and the Quick Overview dialog (docs/210-quick-overview-dialog.md).
+// pane and the Quick Overview dialog (docs/0210-quick-overview-dialog.md).
 
 import hljs from 'highlight.js';
 import { Marked } from 'marked';

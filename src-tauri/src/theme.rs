@@ -133,7 +133,7 @@ pub struct ChromeHeaderAccent {
     pub color: String,
     pub margin_horizontal: u32,
     /// Band rendering: "oscilloscope" (live canvas trace fed by PTY throughput)
-    /// or "ticks" (static striped gradient). See docs/188-oscilloscope-header-band.md.
+    /// or "ticks" (static striped gradient). See docs/0188-oscilloscope-header-band.md.
     pub style: String,
 }
 

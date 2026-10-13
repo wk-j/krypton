@@ -30,7 +30,7 @@ export interface CommitEntry {
   files: number;
   added: number;
   removed: number;
-  /** Stems of `docs/<NNN>-<slug>.md` touched, named in the note but not linked. */
+  /** Stems of `docs/<NNNN>-<slug>.md` touched, named in the note but not linked. */
   specs: string[];
 }
 

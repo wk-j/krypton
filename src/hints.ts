@@ -135,7 +135,7 @@ export class HintController {
 
   /**
    * Provide the opener used by the `filepath` action to peek a file instead of
-   * opening an editor tab. See docs/210-quick-overview-dialog.md.
+   * opening an editor tab. See docs/0210-quick-overview-dialog.md.
    */
   setOverviewOpener(open: (source: OverviewSource) => void): void {
     this.overviewOpener = open;

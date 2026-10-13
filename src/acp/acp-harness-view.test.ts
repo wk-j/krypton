@@ -2306,7 +2306,7 @@ describe('peek review pass (spec 277)', () => {
       phase: 'reviewing',
       round: 2,
       maxRounds: 3,
-      subjectLabel: 'docs/277-review-pass-dashboard.md',
+      subjectLabel: 'docs/0277-review-pass-dashboard.md',
       startedAt: now - 60_000,
       phaseSince: now - 10_000,
       reviewers: [

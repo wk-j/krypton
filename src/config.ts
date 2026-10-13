@@ -96,7 +96,7 @@ export interface HintRule {
   enabled: boolean;
 }
 
-/** What selecting a `filepath` hint does. See docs/210-quick-overview-dialog.md. */
+/** What selecting a `filepath` hint does. See docs/0210-quick-overview-dialog.md. */
 export type HintFileAction = 'peek' | 'editor';
 
 export interface HintsConfig {

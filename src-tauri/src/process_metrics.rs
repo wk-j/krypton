@@ -5,7 +5,7 @@
 // lane count grows. Holding the snapshot between calls also gives sysinfo
 // the prior baseline it needs to report a non-zero `cpu_usage()` (the
 // first call after sampler creation reports 0%, subsequent calls are
-// real). See docs/91-acp-lane-resource-metrics.md.
+// real). See docs/0091-acp-lane-resource-metrics.md.
 
 use serde::Serialize;
 use std::collections::HashMap;

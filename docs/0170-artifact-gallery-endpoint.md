@@ -1,0 +1,94 @@
+# Artifact Gallery (Loopback Web Endpoint) — Implementation Spec
+
+> Status: Implemented (rev 2; project grouping amended by spec 265)
+> Date: 2026-06-21
+> Milestone: ACP Harness — observability
+> Builds on: `docs/0168-harness-lane-monitor.md` (the loopback dashboard pattern), `docs/0133-harness-html-artifacts.md` (the artifact registry), `docs/0149-artifact-inline-feedback.md` (the per-artifact feedback token)
+
+## Architecture
+
+The artifact gallery is a **second fixed page served by the built-in loopback HTTP server**, opened in an external browser — a direct sibling of the lane-monitor dashboard (spec 168). It surfaces every live HTML artifact across every open project in one glanceable grid, **tabbed and grouped by project** (with an `all` tab), with one-click open. The creating lane stays visible as card provenance rather than primary navigation (spec 265).
+
+- `GET /gallery` — serves a standalone HTML page (`src/acp/artifact-gallery.html`, embedded via `include_str!`). No token, no auth, loopback-only. Same response headers as `/dashboard` (`text/html`, `nosniff`, `no-referrer`, `no-store`).
+- `GET /artifacts` — token-free JSON the page polls ~1 s:
+  ```json
+  { "projects": [ { "projectId": "project-7f0fd0b70a8f4c21", "projectName": "krypton", "artifacts": [
+    { "id": "art-3-...", "laneLabel": "Cursor-1", "title": "...",
+      "state": "live" | "pending", "size": 12345, "hash": "<sha256hex>",
+      "tail": ".krypton/artifacts/hm-1/cursor-1/art-3-....html",
+      "token": "<feedbackToken>" } ] } ] }
+  ```
+  Deterministic ordering: projects case-insensitively by name then opaque ID; artifacts within a project **latest-creation-first** (newest at the top), comparing the parsed `art-<seq>-<hex>` seq descending (ids aren't zero-padded, so the raw string would mis-order `art-10` vs `art-2`). Multiple live harness stores for the same canonical project are unioned by artifact ID before serialization; `live` wins over `pending`, then a non-empty hash wins, then the lowest harness ID breaks a tie. Raw project paths and harness IDs are not returned. Includes both `pending` and `live` artifacts. Backed by `HookServer::list_all_artifacts_for_gallery()`.
+- **Open commands** (mirror the dashboard wiring exactly): command palette `Open Artifact Gallery` (`gallery.open`) → `compositor.openGallery()`; the harness **`#gallery`** composer command. Both build the URL from `get_hook_server_port` + `open_url`. No dedicated keybinding (the dashboard's `Leader Shift+L` slot is taken; palette + `#gallery` are sufficient).
+- **The gallery page** (`src/acp/artifact-gallery.html`) reuses the dashboard's exact Binance-dark shell (`:root` vars, `.top` brand bar, `.dot.live` beacon, `.stats`, `.state` banner, mono fonts, `@media (max-width: 780px)`) and adds a sticky project tab strip above a `.cards` grid. The strip lists `all` plus one tab per project; `all` renders named project sections, while a selected tab renders that project directly. Same-basename projects gain an opaque ID suffix. The open tab is kept across the 1 s poll and falls back to `all` only when its project disappears. Keyboard: `[`/`]` cycle tabs, `1`-`9` jump, `0` returns to `all`. Every card shows title (2-line clamp), lane provenance, a `live`/`pending` state pill, human-readable size, the hash prefix + tail, and an **Open** link — same-origin relative `href="/artifact/<encodeURIComponent(token)>"` with `target="_blank" rel="noopener"`. Pending cards render a disabled chip (no open) + "writing..." size. A 1 s `setInterval` poll with a JSON-signature stale check avoids DOM thrash; bad fetches fall back to a `reconnecting...` banner and retain the last good render. The Open link derives the origin from `window.location`, so the page is build-time-port-free.
+
+## Gallery = active set (registry), NOT disk
+
+> **Reversed by spec 173 (rev 1 of this doc no longer holds).** The "no disk
+> rehydration on startup" decision below was reversed: `init_harness_artifacts`
+> now rebuilds the in-memory registry from the whole on-disk tree under the
+> project's `.krypton/artifacts/` and re-homes every artifact under the live
+> harness, so a prior session's artifacts re-list and stay feedback-capable
+> after a restart. See `docs/0173-gallery-disk-rehydration.md`. The text below is
+> kept for historical context; Caveat 2 no longer applies.
+
+The gallery reads **only the in-memory artifact registry** (`HookServer.artifacts: HashMap<String, HarnessArtifactStore>`). A disposed/closed harness is removed from that registry, so it delists automatically — the gallery shows only artifacts belonging to harnesses whose lanes are currently live. This is by design: **disk is append-only history; the registry is the active set.** There is intentionally no disk rehydration on startup, so a prior session's registered artifacts persist on disk yet do not reappear in the gallery after a restart (see "Caveats" below).
+
+## Append-only artifact files (Slice 4 — resolved fork)
+
+The human directed: **do not delete artifact files.** All four file-deletion paths in `hook_server.rs` were removed; only the in-memory cleanup is preserved:
+
+| Path | Before | After |
+|------|--------|-------|
+| `dispose_harness_artifacts` (harness close) | `remove_dir_all(artifacts/<harnessId>/)` + registry/token/telemetry drop | registry/token/telemetry drop **only** — files preserved |
+| `sweep_stale_artifacts` (init) | reclaimed any `hm-*` dir not in the live registry | **function + call + test deleted**; `init_harness_artifacts` lost its `live_harness_ids` param |
+| `artifact_cancel` (lane cancels a pending artifact) | `remove_file(<id>.html)` + entry/token drop | entry/token drop **only** — file preserved |
+| `cancel_pending_artifacts` (turn-end/teardown bulk cancel) | collected `paths` + `remove_file` loop | entry/token cleanup **only** — `paths` Vec removed |
+
+The model is now: **disk = append-only history; registry = active set.** Closing a harness delists it (gallery) and revokes its feedback tokens (`/artifact/<token>` → 410) but leaves the files on disk as a historical record.
+
+## Security posture (the token-enumeration trade-off — flagged, Option A shipped)
+
+Spec 149 made the feedback token the **sole, deliberately non-enumerable** capability for `/artifact/<token>` (read), `/artifact/state/<token>` (poll), and `/artifact/feedback/<token>` (comment submission). The `/artifacts` JSON returns every artifact's `token`, which makes artifacts **enumerable over loopback**.
+
+Shipped as-is (Option A) because:
+1. Loopback-only (`127.0.0.1`) — same trust boundary as `/telemetry`, which already exposes lane metadata token-free.
+2. The gallery structurally cannot open artifacts without handing tokens to the page — enumerate-then-open *is* the feature.
+3. The human's directive was "same way as dashboard."
+
+**Sharpest edge (conscious sign-off):** the token is not only a read-capability — `POST /artifact/feedback/<token>` is a **turn-injection capability** (it queues a comment batch into the owning lane's prompt queue). So `/artifacts` widens the loopback surface from "read an artifact you have the token for" to "harvest every token, then inject feedback into any lane." Consistent with the existing `/telemetry` posture, but a deliberate, recorded acceptance rather than an accident. No Host-header/rebinding guard (pre-existing for `/telemetry`, out of scope here). Tightening to Option B (drop the token, route opens through a one-time view-token redirect) remains a future option if the loopback threat model changes.
+
+## Caveats (from cross-review, documented by design)
+
+1. **Unbounded on-disk growth.** With `sweep_stale_artifacts` gone, `.krypton/artifacts/<harnessId>/<lane>/*.html` accumulates forever across restarts. There is no in-app GC, retention policy, or bound. Reclaiming disk is a manual `rm -rf .krypton/artifacts/`. The `.gitignore` is still auto-managed (so no git pollution). A future age/size-based GC is the natural follow-up if growth becomes a problem. *(Spec 173 makes this growth more visible — every accumulated artifact now rehydrates and re-lists on startup, by explicit user direction: no retention.)*
+2. ~~**Persisted files are not browsable after restart.**~~ **Reversed by spec 173.** `init_harness_artifacts` now rehydrates the registry from the whole on-disk tree on startup (re-homed under the live harness), so prior-session artifacts re-list and stay feedback-capable after a restart. See `docs/0173-gallery-disk-rehydration.md`.
+3. **Token enumerable over loopback** — see Security posture above.
+
+## Affected Files
+
+| File | Change |
+|------|--------|
+| `src-tauri/src/hook_server.rs` | `list_all_artifacts_for_gallery()` projects the registry by hashed canonical project, deduplicates same-project artifacts, and feeds `handle_artifacts()`; `handle_gallery()` + `GET /gallery` serve the embedded page. Slice 4 removed all four file-deletion paths; `sweep_stale_artifacts` was fully deleted; `init_harness_artifacts` lost its `live_harness_ids` param. |
+| `src/acp/artifact-gallery.html` | Standalone gallery page; polls `/artifacts` ~1 s, renders project tabs and project sections while retaining lane provenance, and reuses the dashboard's Binance-dark shell. |
+| `src/compositor.ts` | `openGallery()` — mirror of `openDashboard()` pointed at `/gallery`. |
+| `src/command-palette.ts` | `gallery.open` entry — "Open Artifact Gallery". |
+| `src/acp/acp-harness-view.ts` | `#gallery` composer command — mirror of `#dashboard`. |
+| `docs/PROGRESS.md`, `CLAUDE.md` | Document the gallery endpoint + the append-only file model. |
+
+## Tests
+
+`cargo test hook_server` — 31 tests, 0 failures. Gallery-specific:
+- `gallery_lists_pending_and_live_across_two_projects` — project JSON shape, states, tokens, tails, and opaque identities.
+- `gallery_omits_empty_projects` — a zero-artifact store does not create an empty project tab.
+- `gallery_deduplicates_same_project_across_live_harnesses` — same-project rehydration collapses to one row and the live copy wins.
+- `gallery_and_artifacts_routes_return_expected_shapes` — `GET /gallery` → 200 + `text/html`; `GET /artifacts` → 200 + `{ projects: [...] }` + `no-store`.
+- `gallery_orders_artifacts_latest_creation_first` — locks down within-project ordering (newest seq first).
+- `gallery_omits_cancelled_artifact` — cancelled id absent from the listing (security-model guarantee).
+- `cancel_preserves_pending_artifact_file` — cancel drops the entry but the file remains on disk.
+- `dispose_preserves_artifact_files_on_close` — dispose drops registry + token + telemetry, but the file remains on disk AND the harness delists from the gallery.
+
+Frontend: `npm run check` (tsc --noEmit) clean; `cargo clippy` zero warnings; `cargo fmt -- --check` clean.
+
+## Cross-review
+
+Built `#polly`-style: three implementation slices (Rust endpoints / gallery page / open-wiring) dispatched as parallel implementers with disjoint file scopes, then a follow-up deletion-stop slice. Each slice cross-reviewed by a different worker than its implementer (diff + contract only). Outcomes: Slice 1 (Rust) — 0 blockers, 3 warnings; Slices 2+3 (Frontend) — 0 blockers, 4 warnings; Slice 4 (deletion-stop) — 0 blockers, 2 warnings. All approved. See the review-quality matrix.

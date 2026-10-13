@@ -2451,7 +2451,7 @@ mod tests {
             made_by: "Product owner".to_string(),
             rationale: "The consumer needs metadata.".to_string(),
             impact: "Revise completion handling.".to_string(),
-            source_ref: Some("docs/253-project-decision-requirement-timeline.md".to_string()),
+            source_ref: Some("docs/0253-project-decision-requirement-timeline.md".to_string()),
             relation: None,
             related_event: None,
             recorder_lane: "Codex-1".to_string(),

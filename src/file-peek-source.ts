@@ -4,7 +4,7 @@
 // a DOM pane, read it, classify it, and expose the escalations that used to be
 // hint mode's only behaviour (Helix tab / markdown viewer / OS browser).
 //
-// See docs/210-quick-overview-dialog.md.
+// See docs/0210-quick-overview-dialog.md.
 
 import { invoke } from '@tauri-apps/api/core';
 

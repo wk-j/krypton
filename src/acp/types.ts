@@ -482,7 +482,7 @@ export type DiffReviewSendResult = {
 // how the human should spend reading attention on the working diff. The Diff
 // Window FOLDS `routine` hunks (always expandable) and MARKS + navigates to
 // `high` ones; it never hides or reorders. `normal` is the unreported default,
-// so silence yields today's full diff. See docs/160-diff-review-priority.md and
+// so silence yields today's full diff. See docs/0160-diff-review-priority.md and
 // docs/adr/0009. Reuses the spec-158 line-range anchor concept (NOT the
 // DiffReviewComment type — this carries no human note or idempotency id).
 
@@ -519,7 +519,7 @@ export interface ReviewPrioritySnapshot {
 // explanation (prose + `walkthrough`); findings and decisions are additions, so
 // a Board with zero of either is the normal comprehension case, not an error.
 // The result is a file on disk (`.krypton/reviews/<date>-<slug>/`), never
-// session state — see docs/211-review-board.md.
+// session state — see docs/0211-review-board.md.
 
 export type ReviewBlockKind =
   | 'markdown'
@@ -841,7 +841,7 @@ export interface AttentionResolvePayload {
 // Review Quality Matrix (spec 146) — a summary-only history of #review rounds.
 // The authoring lane self-reports the totals at synthesis time; the matrix keeps
 // no fine-grained detail (no stored diff size, no transcript anchor) — see
-// docs/146-review-quality-matrix.md and docs/adr/0004. Observation, not a score.
+// docs/0146-review-quality-matrix.md and docs/adr/0004. Observation, not a score.
 export interface ReviewFinding {
   /** Repo-relative path. */
   file: string;

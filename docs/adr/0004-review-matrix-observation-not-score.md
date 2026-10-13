@@ -3,7 +3,7 @@
 > Status: accepted
 > Date: 2026-06-06
 > Updated: 2026-06-29 — superseded in part by embedded findings detail; see
-> `docs/146-review-quality-matrix.md`.
+> `docs/0146-review-quality-matrix.md`.
 
 ## Context
 
@@ -55,7 +55,7 @@ This does **not** reverse the core ADR:
   for the human to inspect when the row needs context.
 
 The implementation details and tool contract live in
-`docs/146-review-quality-matrix.md`.
+`docs/0146-review-quality-matrix.md`.
 
 ## Considered Options
 
@@ -89,4 +89,4 @@ The implementation details and tool contract live in
 - **Scope is session-only and in-memory** (no persistence), keyed by lane,
   mirroring `LaneTriageStats`. Cross-session/longitudinal observation would
   require keying by agent/model (lane numbers reset on restart) and a disk
-  store — explicitly deferred. See `docs/146-review-quality-matrix.md`.
+  store — explicitly deferred. See `docs/0146-review-quality-matrix.md`.

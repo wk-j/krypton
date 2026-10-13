@@ -97,8 +97,8 @@ pub struct CommitEntry {
     pub files: u64,
     pub added: u64,
     pub removed: u64,
-    /// Stems of `docs/<NNN>-<slug>.md` files this commit touched, e.g.
-    /// `221-harness-status-line-density`. Collected from the diff rather than
+    /// Stems of `docs/<NNNN>-<slug>.md` files this commit touched, e.g.
+    /// `0221-harness-status-line-density`. Collected from the diff rather than
     /// guessed from the subject line, so a stem the note names is a file that
     /// was really edited. The note prints these as text, never as links.
     pub specs: Vec<String>,
@@ -778,7 +778,7 @@ fn collect_artifacts(cwd: &Path, start: i64, end: i64) -> Vec<ArtifactEntry> {
     out
 }
 
-/// `docs/221-harness-status-line-density.md` → `221-harness-status-line-density`.
+/// `docs/0221-harness-status-line-density.md` → `0221-harness-status-line-density`.
 ///
 /// Only numbered spec files qualify. `docs/README.md` and `docs/adr/…` are
 /// touched by nearly every commit and would link the note to noise.
@@ -1205,7 +1205,7 @@ mod tests {
             "feat(harness): trim the status line (spec 221)",
             &[
                 ("src/a.ts", "one\ntwo\nthree\n"),
-                ("docs/221-harness-status-line-density.md", "# spec\n"),
+                ("docs/0221-harness-status-line-density.md", "# spec\n"),
             ],
         );
 
@@ -1218,7 +1218,7 @@ mod tests {
         assert_eq!(c.files, 2);
         assert_eq!(c.added, 4, "3 lines + 1 line");
         assert_eq!(c.removed, 0);
-        assert_eq!(c.specs, vec!["221-harness-status-line-density"]);
+        assert_eq!(c.specs, vec!["0221-harness-status-line-density"]);
     }
 
     #[test]
@@ -1311,13 +1311,13 @@ mod tests {
     #[test]
     fn spec_stem_accepts_numbered_specs_only() {
         assert_eq!(
-            spec_stem("docs/221-harness-status-line-density.md").as_deref(),
-            Some("221-harness-status-line-density")
+            spec_stem("docs/0221-harness-status-line-density.md").as_deref(),
+            Some("0221-harness-status-line-density")
         );
         // A rename resolves to the path that still exists.
         assert_eq!(
-            spec_stem("docs/220-old.md => docs/220-window-diff-stat.md").as_deref(),
-            Some("220-window-diff-stat")
+            spec_stem("docs/220-old.md => docs/0220-window-diff-stat.md").as_deref(),
+            Some("0220-window-diff-stat")
         );
         assert_eq!(
             spec_stem("docs/README.md"),

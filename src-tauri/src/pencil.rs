@@ -1,6 +1,6 @@
 // Krypton — Pencil window backend.
 // Read/write `.excalidraw` JSON files atomically and scan a configured
-// directory for the picker. See docs/71-pencil-window.md.
+// directory for the picker. See docs/0071-pencil-window.md.
 
 use std::cmp::Reverse;
 use std::path::{Path, PathBuf};

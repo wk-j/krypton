@@ -1360,7 +1360,7 @@ export class InputRouter {
     // buffer; if it hosts a content view, scan that view's DOM subtree.
     // This makes Leader Shift+H work uniformly across markdown, hurl,
     // vault, diff, pencil, file-manager, ACP harness, agent, etc.
-    // See docs/82-global-hint-mode.md.
+    // See docs/0082-global-hint-mode.md.
     const pane = this.compositor.getFocusedPanePublic();
 
     let found = false;

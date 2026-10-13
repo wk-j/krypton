@@ -38,7 +38,7 @@ Before writing the spec, research the feature thoroughly. Research informs the d
 **Codebase research (always):**
 - Read all relevant existing code — don't just skim, understand how it works
 - Read `docs/README.md` for the spec index
-- Read `docs/04-architecture.md` and `docs/05-data-flow.md` for system design
+- Read `docs/0004-architecture.md` and `docs/0005-data-flow.md` for system design
 - Grep for related symbols, patterns, and TODOs that touch this area
 - Identify all files and modules that will be affected
 
@@ -59,7 +59,7 @@ Before writing the spec, research the feature thoroughly. Research informs the d
 
 ### 2. Write the Spec
 
-Create a markdown file at `docs/<NN>-<feature-name>.md` (following the existing numbering convention) using the template below.
+Create a markdown file at `docs/<NNNN>-<feature-name>.md` (four-digit zero-padded, next number after the highest existing spec) using the template below.
 
 The spec must be **concrete and specific** — not aspirational. It should contain enough detail that someone could implement it without further questions. All external resources discovered during research must be listed in the `## Resources` section.
 
@@ -211,7 +211,7 @@ Once approved:
 
 ## Spec File Conventions
 
-- Location: `docs/<NN>-<feature-name>.md` (e.g., `docs/11-selection-mode.md`)
-- Naming: numbered prefix following existing docs, kebab-case, descriptive
+- Location: `docs/<NNNN>-<feature-name>.md` (e.g., `docs/0011-selection-mode.md`)
+- Naming: four-digit zero-padded prefix, next after the highest existing spec, kebab-case, descriptive
 - Keep all specs even after implementation — they serve as design history
 - Update the status field as the spec progresses through its lifecycle

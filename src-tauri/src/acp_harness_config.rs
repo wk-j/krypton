@@ -5,7 +5,7 @@
 // (hand-edited, never written by Krypton), this file is Krypton-managed: it is
 // created on first load and rewritten atomically when an agent mutates a
 // directive through the harness MCP surface. See
-// `docs/124-acp-harness-directive-management.md`.
+// `docs/0124-acp-harness-directive-management.md`.
 
 use std::fs;
 use std::path::PathBuf;

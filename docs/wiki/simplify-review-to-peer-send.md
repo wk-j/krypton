@@ -6,8 +6,8 @@ tags: [decision]
 
 # Decision: simplify `#review` to ride `peer_send`
 
-**Date:** 2026-06-06 · **Spec:** `docs/145-harness-design-review-panel.md`
-(supersedes the delivery/findings/UI machinery of `docs/112-acp-review-lane-mode.md`).
+**Date:** 2026-06-06 · **Spec:** `docs/0145-harness-design-review-panel.md`
+(supersedes the delivery/findings/UI machinery of `docs/0112-acp-review-lane-mode.md`).
 
 ## Decision
 

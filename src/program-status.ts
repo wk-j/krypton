@@ -6,7 +6,7 @@
 // module is the pure half: `parseProgramStatus` validates one report body
 // against every grammar rule and limit, and `ProgramStatusStore` applies the
 // spec's record and lifetime rules per view. Presentation lives in the
-// compositor / footer. See docs/284-program-status-osc7501.md.
+// compositor / footer. See docs/0284-program-status-osc7501.md.
 
 export type ProgramState = 'idle' | 'working' | 'done' | 'blocked' | 'error';
 export type BlockedKind = 'permission' | 'question' | 'auth';

@@ -6,7 +6,7 @@
 // `.git/`, capped at $HOME).
 //
 // Frecency is global (a single LMDB DB under data_local_dir/krypton/frecency/)
-// so eviction never loses ranking history. See docs/68-quick-file-search.md.
+// so eviction never loses ranking history. See docs/0068-quick-file-search.md.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};

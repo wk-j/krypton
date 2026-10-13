@@ -1239,7 +1239,7 @@ export class Compositor {
 
   /** ViewBus integration — attach bridges + intent handlers to a bus.
    *  Call once at boot, before windows are created so the bus catches the
-   *  initial focus-change. See docs/105-view-protocol.md § Compositor ↔ Bus. */
+   *  initial focus-change. See docs/0105-view-protocol.md § Compositor ↔ Bus. */
   attachToBus(bus: ViewBus): void {
     this.bus = bus;
     this.onFocusChange((id) => {
@@ -2120,7 +2120,7 @@ export class Compositor {
    * When the theme's `chrome.header_accent.style` is 'oscilloscope' (default), a
    * live canvas oscilloscope (fed by PTY throughput, idle-stopping) is created and
    * its HeaderScope returned; when 'ticks', the static striped div is used and
-   * null is returned. See docs/188-oscilloscope-header-band.md.
+   * null is returned. See docs/0188-oscilloscope-header-band.md.
    */
   private buildHeaderAccent(chrome: HTMLElement): HeaderScope | null {
     const accent = this.themeEngine?.theme?.chrome.header_accent;

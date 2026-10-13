@@ -7,7 +7,7 @@
 // session/request_permission, Grok's `_x.ai/exit_plan_mode`, and
 // `_x.ai/ask_user_question`) initiated by the agent.
 //
-// See docs/69-acp-agent-support.md for the design.
+// See docs/0069-acp-agent-support.md for the design.
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -143,7 +143,7 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                 // GitHub Copilot CLI native ACP server over stdio (public preview).
                 // `--port N` would switch to TCP; the harness is stdio-only like
                 // every other lane. No model flag is documented — see acp.rs model
-                // block (none added) and docs/150-acp-copilot-lane.md.
+                // block (none added) and docs/0150-acp-copilot-lane.md.
                 args: vec!["--acp".to_string(), "--stdio".to_string()],
                 display_name: "Copilot".to_string(),
             },
@@ -176,7 +176,7 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                 // `CLINE_MCP_SETTINGS_PATH` at it at spawn (see
                 // write_cline_mcp_overlay + acp_spawn). The model is selectable
                 // via the CLI `-m`/`--provider` flags, but v1 leaves it to
-                // `cline auth`/config (chip-only). See docs/159-acp-cline-lane.md.
+                // `cline auth`/config (chip-only). See docs/0159-acp-cline-lane.md.
                 args: vec!["--acp".to_string()],
                 display_name: "Cline".to_string(),
             },
@@ -188,7 +188,7 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                 // only as a registry zip, so acp_spawn replaces command + args
                 // with the managed install (acp_install::resolve). Local-only,
                 // auth retried via `authenticate` (see request_with_auth_retry).
-                // See docs/287-acp-antigravity-lane.md.
+                // See docs/0287-acp-antigravity-lane.md.
                 command: "agy_acp_server".to_string(),
                 args: vec![],
                 display_name: "Antigravity".to_string(),
@@ -3383,7 +3383,7 @@ mod tests {
         let cwd = "/Users/wk/Source/xenon";
         let root = Path::new(cwd);
         let in_project = PathBuf::from("/Users/wk/Source/xenon/src/main.rs");
-        let sibling = PathBuf::from("/Users/wk/Source/krypton/docs/212-xenon-resource-server.md");
+        let sibling = PathBuf::from("/Users/wk/Source/krypton/docs/0212-xenon-resource-server.md");
         let skill = PathBuf::from("/Users/wk/.agents/skills/karpathy-guidelines/SKILL.md");
         let session = grok_session_dir_for_cwd(cwd)
             .expect("session")

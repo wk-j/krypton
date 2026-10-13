@@ -3,7 +3,7 @@
 // the active Claude Code tab via write_to_pty. Supports @path autocomplete
 // (passed through for Claude to expand) and @selection (expanded inline to
 // the xterm selection from the source tab before send).
-// See docs/61-smart-prompt-dialog.md for the full spec.
+// See docs/0061-smart-prompt-dialog.md for the full spec.
 
 import { invoke } from './profiler/ipc';
 import { listen } from '@tauri-apps/api/event';

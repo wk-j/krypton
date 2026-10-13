@@ -19,8 +19,8 @@ describe('DocArtifactRequestQueue', () => {
         kind: 'doc_artifact_request',
         batchId: 'da-1',
         harnessId: 'hm-1',
-        docPath: 'docs/171-docs-browser.md',
-        title: 'Docs artifact · 171-docs-browser.md',
+        docPath: 'docs/0171-docs-browser.md',
+        title: 'Docs artifact · 0171-docs-browser.md',
         sentAt: 1,
       }),
     ).toBe('accepted');
@@ -29,8 +29,8 @@ describe('DocArtifactRequestQueue', () => {
         kind: 'doc_artifact_request',
         batchId: 'da-2',
         harnessId: 'hm-1',
-        docPath: 'docs/174-docs-browser-artifact-export.md',
-        title: 'Docs artifact · 174-docs-browser-artifact-export.md',
+        docPath: 'docs/0174-docs-browser-artifact-export.md',
+        title: 'Docs artifact · 0174-docs-browser-artifact-export.md',
         sentAt: 2,
       }),
     ).toBe('accepted');
@@ -44,10 +44,10 @@ describe('DocArtifactRequestQueue', () => {
 
     expect(injected).toHaveLength(1);
     expect(injected[0]).toContain('Read each SOURCE markdown file');
-    expect(injected[0]).toContain('### Source: docs/171-docs-browser.md');
-    expect(injected[0]).toContain('Docs artifact · 171-docs-browser.md');
-    expect(injected[0]).toContain('### Source: docs/174-docs-browser-artifact-export.md');
-    expect(injected[0]).toContain('Docs artifact · 174-docs-browser-artifact-export.md');
+    expect(injected[0]).toContain('### Source: docs/0171-docs-browser.md');
+    expect(injected[0]).toContain('Docs artifact · 0171-docs-browser.md');
+    expect(injected[0]).toContain('### Source: docs/0174-docs-browser-artifact-export.md');
+    expect(injected[0]).toContain('Docs artifact · 0174-docs-browser-artifact-export.md');
     expect(injected[0]).toContain('call artifact_new');
     expect(injected[0]).toContain('call artifact_register');
 

@@ -341,7 +341,7 @@ pub fn acp_control_reply(
 
 /// Push a live harness event from the frontend (the state authority) to the
 /// control server's SSE subscribers. Best-effort; no-op when nobody is
-/// listening. See `docs/175-harness-web-control-api.md`.
+/// listening. See `docs/0175-harness-web-control-api.md`.
 #[tauri::command]
 pub fn acp_control_publish(
     app_handle: AppHandle,
@@ -402,7 +402,7 @@ pub async fn live_assist_ready(app_handle: AppHandle) -> Result<(), String> {
 
 /// Load the ACP Harness directive config (`~/.config/krypton/acp-harness.toml`),
 /// creating an empty default file when missing so the user has something to
-/// hand-edit. See `docs/124-acp-harness-directive-management.md`.
+/// hand-edit. See `docs/0124-acp-harness-directive-management.md`.
 #[tauri::command]
 pub fn get_acp_harness_config() -> Result<crate::acp_harness_config::AcpHarnessUserConfig, String> {
     crate::acp_harness_config::load_or_create()

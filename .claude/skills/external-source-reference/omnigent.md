@@ -61,7 +61,7 @@ for Krypton's `#polly`, fanout, investigate, and cross-review behavior.
 Krypton `#polly` currently adapts only the supervisor contract: it still runs over live
 ACP lanes in a shared project worktree and does not implement Omnigent's per-worker
 worktrees, PR registry, or `claude_code`/`codex`/`pi` roster. See
-`docs/164-polly-orchestration.md` before treating Omnigent mechanics as Krypton
+`docs/0164-polly-orchestration.md` before treating Omnigent mechanics as Krypton
 requirements.
 
 ### Native coding-agent harnesses

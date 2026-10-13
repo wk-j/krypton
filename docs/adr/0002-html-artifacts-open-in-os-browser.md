@@ -14,7 +14,7 @@
 
 ## Context
 
-The ACP harness gives lanes a way to register a rich, possibly interactive HTML artifact for the human to view (see `docs/133-harness-html-artifacts.md`; `CONTEXT.md`: *HTML artifact*). Something has to display that HTML. Krypton's architecture constraints #1 (keyboard-first) and #2 (single native window) plus the user's keyboard-only workflow all pull toward keeping the artifact *inside* the app — and an in-app surface already exists: webview panes (spec 102). Sending the user out to the OS browser is therefore surprising and wants a recorded rationale.
+The ACP harness gives lanes a way to register a rich, possibly interactive HTML artifact for the human to view (see `docs/0133-harness-html-artifacts.md`; `CONTEXT.md`: *HTML artifact*). Something has to display that HTML. Krypton's architecture constraints #1 (keyboard-first) and #2 (single native window) plus the user's keyboard-only workflow all pull toward keeping the artifact *inside* the app — and an in-app surface already exists: webview panes (spec 102). Sending the user out to the OS browser is therefore surprising and wants a recorded rationale.
 
 ## Decision
 

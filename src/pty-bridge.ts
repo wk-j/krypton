@@ -1,7 +1,7 @@
 // PTY → ViewBus bridge.
 // Translates existing Tauri events (pty-output, pty-exit, pty-progress, process-changed)
 // into bus signals. Applies a 5 Hz rate budget for throughput.
-// See docs/105-view-protocol.md § Rust → Bus.
+// See docs/0105-view-protocol.md § Rust → Bus.
 
 import { listen as tauriListen } from '@tauri-apps/api/event';
 

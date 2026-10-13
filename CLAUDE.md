@@ -51,7 +51,7 @@ The app has two halves that communicate over Tauri IPC:
 - **Animation** (`animation.ts`) — WAAPI-based transitions (morph, slide, crossfade) with keyboard input buffering during animations.
 - **ACP Harness Peering** (`src/acp/`, served by `src-tauri/src/hook_server.rs`) — user-directed inter-lane messaging (a lane status bus, per-lane inboxes drained on the next `idle` turn, and `peer_send`/`peer_list` MCP tools) plus a family of read-only loopback observability surfaces (lane-monitor dashboard, artifact gallery, docs browser) the OS browser can open. Memory is handoff-only, peering can cross harness views, and `#review` rides `peer_send`. Each capability — the peering model, cross-harness directory, review tooling, diff-priority hints, and every loopback surface — is specified per-feature under `docs/` with decisions in `docs/adr/` (see `docs/README.md` for the index). **Those specs/ADRs are authoritative; do not restate their implementation detail here** — keep this file to durable, cross-cutting guidance only.
 
-A third, standalone piece lives outside the app build: the **Raycast extension** (`raycast/`) — its own npm project driving the authenticated control API (`/control/v1`); React is required by Raycast, so the no-framework rule below applies only to the app frontend. Spec: `docs/205-raycast-extension.md`.
+A third, standalone piece lives outside the app build: the **Raycast extension** (`raycast/`) — its own npm project driving the authenticated control API (`/control/v1`); React is required by Raycast, so the no-framework rule below applies only to the app frontend. Spec: `docs/0205-raycast-extension.md`.
 
 ### IPC Pattern
 
@@ -82,12 +82,12 @@ A third, standalone piece lives outside the app build: the **Raycast extension**
 
 ## Platform Gotchas
 
-- **NO `backdrop-filter: blur()`** — causes window freeze on transparent WKWebView on macOS (see platform gotcha in `docs/04-architecture.md`)
+- **NO `backdrop-filter: blur()`** — causes window freeze on transparent WKWebView on macOS (see platform gotcha in `docs/0004-architecture.md`)
 - **macOS fullscreen:** Set position+size manually, NOT using fullscreen API (breaks transparency)
 - **macOS focus fix:** Window must be `always_on_top(true)` then immediately `always_on_top(false)` in setup
 - **Process detection:** Uses `tcgetpgrp()` on Unix; different API on Windows
 - **Environment variables in release:** macOS GUI apps don't inherit shell env vars. `get_env_var` falls back to spawning a login shell with `printenv` (not shell-specific variable syntax) to stay compatible with bash/zsh/fish
-- **macOS GUI bundle starts with fds 0/1/2 closed.** The first `openpty()` would otherwise return master fds 0/1/2, and subsequent `log::*` / `eprintln!` / panic output to stderr would land on a PTY master — appearing as fake keystrokes in the first spawned shell. `lib.rs::ensure_std_fds()` reserves 0/1/2 with `/dev/null` at startup. See `docs/04-architecture.md` "macOS GUI Bundle stdio Hijacks PTY Master"
+- **macOS GUI bundle starts with fds 0/1/2 closed.** The first `openpty()` would otherwise return master fds 0/1/2, and subsequent `log::*` / `eprintln!` / panic output to stderr would land on a PTY master — appearing as fake keystrokes in the first spawned shell. `lib.rs::ensure_std_fds()` reserves 0/1/2 with `/dev/null` at startup. See `docs/0004-architecture.md` "macOS GUI Bundle stdio Hijacks PTY Master"
 - Both `<html>` and `<body>` must have `background: transparent`
 
 ## Code Style
@@ -107,9 +107,9 @@ A third, standalone piece lives outside the app build: the **Raycast extension**
 
 Skills in `.claude/skills/` define repeatable workflows. Load the appropriate skill when its trigger conditions are met:
 
-- **`/design-first`** — Before writing code for a new feature or significant change (3+ files or 2+ subsystems), write an implementation spec at `docs/<NN>-<feature-name>.md`, present it, and wait for explicit user approval. Skip for bug fixes, one-line changes, doc-only changes, or when user says "just do it".
+- **`/design-first`** — Before writing code for a new feature or significant change (3+ files or 2+ subsystems), write an implementation spec at `docs/<NNNN>-<feature-name>.md` (four-digit zero-padded), present it, and wait for explicit user approval. Skip for bug fixes, one-line changes, doc-only changes, or when user says "just do it".
 - **`/feature-implementation`** — When implementing any feature, ensures all related docs in `docs/` are updated (architecture, data-flow, configuration, requirements). A feature is not complete until docs reflect the actual implementation. See the skill for the full doc map of which changes require which doc updates.
-- **`/ghost-signal-theme`** — Automates adding a new ghost-signal sound pack: copy 17 WAVs to `src-tauri/sounds/<pack-id>/`, register in `sound.rs` and `sound.ts`, update `docs/17-sound-themes.md`. Trigger on "add sound theme", "new sound pack", or referencing a WAV directory.
+- **`/ghost-signal-theme`** — Automates adding a new ghost-signal sound pack: copy 17 WAVs to `src-tauri/sounds/<pack-id>/`, register in `sound.rs` and `sound.ts`, update `docs/0017-sound-themes.md`. Trigger on "add sound theme", "new sound pack", or referencing a WAV directory.
 - **`/external-source-reference`** — Single reference router for the local external-source repos that are ground truth for Krypton: **pi-mono** (`@mariozechner/pi-agent-core`, `pi-ai`, `pi-coding-agent` at `/Users/wk/Source/pi-mono`), **pretext** (`@chenglou/pretext` text layout & measurement at `/Users/wk/Source/pretext`), **zed** (Zed editor ACP/MCP/agent-server/model prior art at `/Users/wk/Source/zed`), and **obsidian-clipper** (Obsidian Web Clipper browser clipping, Markdown extraction, template rendering, highlights, and Obsidian handoff at `/Users/wk/Source/obsidian-clipper`). Load when working on `src/agent/` / agent events / tools / model-provider changes (pi-mono), text layout/animation/measurement or canvas-SVG text rendering (pretext), ACP harness questions about how Zed implements the ACP client, MCP `context_servers` forwarding, external agent servers, or model selection (zed), or clipping/import flows, template engines, browser-extension surfaces, highlights, reader mode, and Obsidian URI/CLI handoff (obsidian-clipper). The skill routes to `pi-mono.md`, `pretext.md`, `zed.md`, or `obsidian-clipper.md`.
 - **`/perf-checklist`** — Performance audit for each window/view implementation. Run against a single view (`/perf-checklist agent-view`) or all views (`/perf-checklist all`). Checks DOM rendering, event lifecycle, animation, memory, layout, rendering budget, and streaming content.
 
@@ -120,7 +120,7 @@ Skills in `.claude/skills/` define repeatable workflows. Load the appropriate sk
 - `DESIGN.amber.md` — Alt aesthetic spec for the Agent view (`.krypton-agent`, `src/styles/agent.css`): warm amber phosphor cassette futurism. The Agent view has a persistent per-lane permission mode cycled with `Shift+Tab` (`normal` → `acceptEdits` → `bypass`) that survives turn boundaries.
 - `DESIGN.binance.md` — Shared visual identity for the read-only **loopback surfaces opened in the OS browser** (artifact scaffold, lane-monitor dashboard, artifact gallery, docs browser): Binance-dark exchange aesthetic. Load when styling or adding any browser-served harness page.
 - `docs/README.md` — Spec and ADR index
-- `docs/04-architecture.md` — System architecture, DOM structure, module responsibilities
-- `docs/05-data-flow.md` — How keystrokes, resize, and workspace switching flow through the system
-- `docs/06-configuration.md` — Full TOML config reference with examples
+- `docs/0004-architecture.md` — System architecture, DOM structure, module responsibilities
+- `docs/0005-data-flow.md` — How keystrokes, resize, and workspace switching flow through the system
+- `docs/0006-configuration.md` — Full TOML config reference with examples
 - Treat docs as the authoritative spec. If implementation diverges from spec, update the docs

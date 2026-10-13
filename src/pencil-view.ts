@@ -1,5 +1,5 @@
 // Krypton — Pencil window (Excalidraw editor).
-// See docs/71-pencil-window.md.
+// See docs/0071-pencil-window.md.
 //
 // Lazy-loads React + ReactDOM + @excalidraw/excalidraw the first time the
 // view mounts so they stay out of the main bundle.

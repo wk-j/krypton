@@ -1,7 +1,7 @@
 # Krypton Raycast Extension
 
 Raycast client for the Krypton ACP harness control API (`/control/v1`,
-`docs/154` / `docs/175`). Spec: `docs/205-raycast-extension.md`.
+`docs/154` / `docs/175`). Spec: `docs/0205-raycast-extension.md`.
 
 Standalone npm project — not part of the Krypton Vite/Tauri build. macOS only.
 

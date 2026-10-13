@@ -5,7 +5,7 @@
 // login-shell env, and translates Claude's object-shaped `env`/`headers`
 // fields into the array shape ACP's `session/new` expects.
 //
-// See docs/83-acp-shared-mcp-config.md.
+// See docs/0083-acp-shared-mcp-config.md.
 
 import { invoke } from '@tauri-apps/api/core';
 

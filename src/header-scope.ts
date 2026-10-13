@@ -8,7 +8,7 @@
 // animates. Implements BackgroundAnimation so it shares the canvas-in-chrome
 // lifecycle conventions used by claude-hooks (start/stop/resize/dispose).
 //
-// See docs/188-oscilloscope-header-band.md.
+// See docs/0188-oscilloscope-header-band.md.
 
 import { BackgroundAnimation } from './flame';
 

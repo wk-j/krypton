@@ -1,5 +1,5 @@
 // View Protocol — in-process pub/sub bus for cross-view communication.
-// See docs/105-view-protocol.md for design rationale.
+// See docs/0105-view-protocol.md for design rationale.
 
 import type {
   Intent,

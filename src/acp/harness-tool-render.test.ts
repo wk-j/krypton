@@ -792,8 +792,8 @@ describe('grokRawOutputSections — every rawOutput.type', () => {
   it('ListDir / WebFetch read Content.content', () => {
     expect(grokRawOutputSections({
       type: 'ListDir',
-      Content: { content: '- /docs/\n  - 15-command-palette.md' },
-    })).toEqual([{ label: 'content', text: '- /docs/\n  - 15-command-palette.md' }]);
+      Content: { content: '- /docs/\n  - 0015-command-palette.md' },
+    })).toEqual([{ label: 'content', text: '- /docs/\n  - 0015-command-palette.md' }]);
     expect(grokRawOutputSections({
       type: 'WebFetch',
       Content: { url: 'https://example.com', content: '# Title\nbody' },

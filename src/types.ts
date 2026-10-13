@@ -169,7 +169,7 @@ export interface WindowBounds {
 /** Content types that can live inside a pane */
 export type PaneContentType = 'terminal' | 'diff' | 'markdown' | 'agent' | 'acp_harness' | 'context' | 'file_manager' | 'vault' | 'hurl' | 'pencil' | 'webview' | 'usage' | 'telegram_settings' | 'review';
 
-/** Runtime state mirrored from a backend child webview (see docs/102-webview-windows.md). */
+/** Runtime state mirrored from a backend child webview (see docs/0102-webview-windows.md). */
 export type WebviewId = number;
 export interface WebviewState {
   id: WebviewId;
@@ -275,7 +275,7 @@ export interface Pane {
   id: PaneId;
   /** Stable runtime UUID for the ViewBus address. New value on each pane create,
    *  and again when the pane's contentType is swapped in place. Not persisted.
-   *  See docs/105-view-protocol.md. */
+   *  See docs/0105-view-protocol.md. */
   viewId: string;
   sessionId: SessionId | null;
   terminal: Terminal | null;

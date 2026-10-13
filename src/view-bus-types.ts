@@ -1,5 +1,5 @@
 // View Protocol — closed vocabulary of signal/intent kinds and their payloads.
-// See docs/105-view-protocol.md.
+// See docs/0105-view-protocol.md.
 
 import type { PaneContentType, PaneId, ProgressState, TabId, WindowId } from './types';
 import type { TypeSafeMetricsSnapshot } from './typesafe-metrics';

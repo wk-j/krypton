@@ -6,7 +6,7 @@
 // path. Clipboard picks are never auto-pasted, so behavior is identical
 // across terminal, agent, hurl, markdown, vault windows.
 //
-// See docs/68-quick-file-search.md.
+// See docs/0068-quick-file-search.md.
 
 import { invoke } from '@tauri-apps/api/core';
 import { Compositor } from './compositor';

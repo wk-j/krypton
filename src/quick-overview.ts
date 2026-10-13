@@ -6,7 +6,7 @@
 // Read-only by design: editing is an explicit escalation through a source
 // action (a file source maps Enter to "open in Helix").
 //
-// See docs/210-quick-overview-dialog.md.
+// See docs/0210-quick-overview-dialog.md.
 
 import hljs from 'highlight.js';
 // Every other hljs stylesheet import lives in a lazily-imported view, so a peek

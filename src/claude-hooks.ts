@@ -96,7 +96,7 @@ const FAST_TOOLS = new Set(['Bash', 'Edit', 'Write', 'NotebookEdit']);
 
 /** Safety net: auto-stop background animation if no hook event arrives for this
  *  long. Prevents orphaned animations when Stop/SessionEnd hooks are dropped
- *  (session crash, abrupt exit, HTTP failure). See docs/64-matrix-animation-cpu-burn.md. */
+ *  (session crash, abrupt exit, HTTP failure). See docs/0064-matrix-animation-cpu-burn.md. */
 const ANIMATION_IDLE_TIMEOUT_MS = 60_000;
 
 /** Map tool names to activity trace tick categories */

@@ -2,7 +2,7 @@
 // Consumes view:state and view:throughput signals and writes them onto the
 // existing DOM as CSS custom properties / data-attributes. No per-view code
 // here — every view that publishes the standard signals participates for free.
-// See docs/104-chrome-signal-upgrades.md and docs/105-view-protocol.md.
+// See docs/0104-chrome-signal-upgrades.md and docs/0105-view-protocol.md.
 
 import type { Compositor } from './compositor';
 import type { ViewBus } from './view-bus';

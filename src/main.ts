@@ -66,7 +66,7 @@ async function main(): Promise<void> {
 
   // Global copy-on-select: any text selection in a DOM view auto-copies to
   // the clipboard. Editable elements and xterm canvases are skipped — the
-  // terminal pane keeps its own xterm-side handler. See docs/81-global-copy-on-select.md.
+  // terminal pane keeps its own xterm-side handler. See docs/0081-global-copy-on-select.md.
   installGlobalCopyOnSelect();
 
   // Initialize compositor
@@ -81,7 +81,7 @@ async function main(): Promise<void> {
 
   // ViewBus — pub/sub channel for cross-view state and intents.
   // Attached *before* applyConfig so the bus catches the first focus/relayout
-  // signals emitted while the initial window is created. See docs/105-view-protocol.md.
+  // signals emitted while the initial window is created. See docs/0105-view-protocol.md.
   const bus = getViewBus();
   compositor.attachToBus(bus);
   startChromeSignals(bus, compositor);
@@ -162,7 +162,7 @@ async function main(): Promise<void> {
   inputRouter.setQuickFileSearch(quickFileSearch);
 
   // Initialize the quick overview dialog (read-only peek modal; first consumer
-  // is hint mode's filepath action — see docs/210-quick-overview-dialog.md)
+  // is hint mode's filepath action — see docs/0210-quick-overview-dialog.md)
   const quickOverview = new QuickOverview(compositor, () => inputRouter.exitQuickOverview());
   inputRouter.setQuickOverview(quickOverview);
 
