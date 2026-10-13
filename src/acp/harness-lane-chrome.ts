@@ -543,6 +543,7 @@ export function transcriptLabel(kind: HarnessTranscriptItem['kind']): string {
     case 'memory': return 'mem';
     case 'shell': return 'sh';
     case 'fs_activity': return 'fs';
+    case 'fs_write_review': return 'write';
     case 'inter_lane': return 'mail';
     case 'artifact': return 'html';
     default: return kind;
