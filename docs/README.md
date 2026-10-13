@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (277)
+## Specs (278)
 
 | # | Spec |
 |---|------|
@@ -295,8 +295,9 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 290 | [MP3 Player](./0290-mp3-player.md) |
 | 291 | [ACP Brainstorm Lane Mode](./0291-brainstorm-lane-mode.md) |
 | 292 | [ACP Harness Inline HTML Visuals](./0292-harness-inline-html-visuals.md) |
+| 293 | [Global Handoff Resume](./0293-global-handoff-resume.md) |
 
-## ADRs (21)
+## ADRs (23)
 
 | # | Decision |
 |---|----------|
@@ -321,6 +322,8 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 19 | [Per-turn usage is streamed telemetry, not a published resource](./adr/0019-usage-is-telemetry-not-a-published-resource.md) |
 | 20 | [The status-bar diff stat polls; the Diff Window still does not](./adr/0020-diff-stat-polls-diff-window-does-not.md) |
 | 21 | [Review-till-pass rounds are harness-sequenced; plain `#review` stays agent-orchestrated](./adr/0021-review-loop-rounds-are-harness-sequenced.md) |
+| 22 | [Handoffs are the one resource Krypton pulls from Xenon, and only on a human command](./adr/0022-handoffs-are-the-one-resource-pulled-from-xenon.md) |
+| 23 | [A handoff belongs to a work thread, not a lane](./adr/0023-a-handoff-belongs-to-a-work-thread-not-a-lane.md) |
 
 ## Also
 
