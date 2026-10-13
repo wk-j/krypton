@@ -409,14 +409,8 @@ describe('assistant reference Git state', () => {
     const textNode = { nodeType: 3, textContent: 'reasoning' };
     let textContent = 'reasoning';
     let textWrites = 0;
-    const dataset = {
-      pretext: 'true',
-      rawText: 'stale',
-      rowId: 'thought-1',
-    } as unknown as DOMStringMap;
     const body = {
       classList: { remove: vi.fn() },
-      dataset,
       childNodes: [textNode],
       firstChild: textNode,
       get textContent(): string {
@@ -438,9 +432,6 @@ describe('assistant reference Git state', () => {
 
     expect(textWrites).toBe(0);
     expect(body.firstChild).toBe(textNode);
-    expect(dataset.pretext).toBeUndefined();
-    expect(dataset.rawText).toBeUndefined();
-    expect(dataset.rowId).toBeUndefined();
     expect(item.streamPlainLength).toBeUndefined();
   });
 

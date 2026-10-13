@@ -1,7 +1,6 @@
 // Krypton — ACP Harness View.
 // Coordinates several independent ACP subprocesses for one project directory.
 
-import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 import * as smd from 'streaming-markdown';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -500,7 +499,6 @@ export type { DeriveRailPeerHintInput, RailPeerHint } from './lane-peek';
 import {
   applyCoordinatorProvenanceToItem,
   appendMessageResourceRail,
-  paintPretextLines,
   renderImageStrip,
   renderTranscriptItem,
   scanMessageResourceBody,
@@ -1321,7 +1319,6 @@ export class AcpHarnessView implements ContentView {
   private queueSlotEl!: HTMLElement;
   private composerEl!: HTMLElement;
   private remoteStatusEl: HTMLElement | null = null;
-  private pretextRaf = false;
   private scrollRaf = false;
   private renderRaf = false;
   private streamingBodyRaf = false;
@@ -4644,7 +4641,6 @@ export class AcpHarnessView implements ContentView {
   }
 
   onResize(_width: number, _height: number): void {
-    this.schedulePretextLayout();
     this.scheduleStickyScroll();
   }
 
@@ -8197,11 +8193,10 @@ export class AcpHarnessView implements ContentView {
         needsRender = false;
         break;
       case 'error':
-        // Seal any in-flight streaming row first so its --streaming class and
-        // pretext-deferred state get a clean signature transition. Without
-        // this, a thought/assistant/user row that was streaming when the
-        // error arrived keeps currentThoughtId/AssistantId/UserId set and
-        // stays in native-wrap (no pretext layout) until the next prompt.
+        // Seal any in-flight streaming row first so its --streaming class gets
+        // a clean signature transition. Without this, a thought/assistant/user
+        // row that was streaming when the error arrived keeps
+        // currentThoughtId/AssistantId/UserId set until the next prompt.
         this.sealStreaming(lane);
         // spec 214: an errored turn still spent whatever the adapter had
         // already billed. Recorded before activeTurnStartedAt is cleared.
@@ -11947,7 +11942,6 @@ export class AcpHarnessView implements ContentView {
       lane.savedScrollAnchor = this.captureTranscriptScrollAnchor(body) ?? anchor;
     }
     this.observeActiveTranscriptBody();
-    this.schedulePretextLayout();
     this.syncAnnotationPill();
   }
 
@@ -13500,8 +13494,6 @@ export class AcpHarnessView implements ContentView {
     item.markdownHtml = undefined;
     item.streamPlainLength = undefined;
     item.streamingMarkdownWritten = undefined;
-    item.pretextSource = undefined;
-    item.pretextLines = undefined;
     // Seal-time reclassification can run inside finishTurn's sealStreaming — defer
     // the status transition to finishTurn (which reads lane.error) to avoid the
     // re-entrant peer-mail-drain race. Non-seal callers set status directly.
@@ -14115,7 +14107,7 @@ export class AcpHarnessView implements ContentView {
 
   /** Stamp a sealed thought/user wrapper so the next body-only pass is a
    *  no-op. Without this the `'stream'` signature mismatches and
-   *  replaceChildren remounts the row (and pretext restamps every sibling). */
+   *  replaceChildren remounts the row. */
   private sealStreamingTextRow(lane: HarnessLane, id: string | null): void {
     if (!id || id.startsWith('thought-veil:')) return;
     const item = lane.transcript.find((entry) => entry.id === id);
@@ -15759,70 +15751,6 @@ export class AcpHarnessView implements ContentView {
         if (this.suppressScrollToken === token) this.suppressScrollListener = false;
       });
     });
-  }
-
-  private schedulePretextLayout(): void {
-    if (this.pretextRaf) return;
-    this.pretextRaf = true;
-    requestAnimationFrame(() => {
-      this.pretextRaf = false;
-      const lane = this.activeLane();
-      const body = this.activeTranscriptBody();
-      const anchor = lane && body && !lane.stickToBottom
-        ? this.captureTranscriptScrollAnchor(body)
-        : null;
-      this.layoutPretextRows();
-      if (body && anchor) {
-        this.restoreTranscriptScrollAnchor(body, anchor);
-        if (lane) lane.savedScrollAnchor = this.captureTranscriptScrollAnchor(body) ?? anchor;
-      }
-      this.applyStickyScroll();
-    });
-  }
-
-  private layoutPretextRows(): void {
-    const lane = this.activeLane();
-    const itemById = lane ? new Map(lane.transcript.map((entry) => [entry.id, entry])) : null;
-    const rows = this.dashboardEl.querySelectorAll<HTMLElement>('.acp-harness__msg-body[data-pretext="true"]');
-    for (const row of rows) {
-      const raw = row.dataset.rawText ?? '';
-      const width = row.clientWidth;
-      if (!raw || width <= 0) continue;
-      const cs = getComputedStyle(row);
-      const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-      let lineHeight = parseFloat(cs.lineHeight);
-      if (!Number.isFinite(lineHeight)) lineHeight = (parseFloat(cs.fontSize) || 13) * 1.35;
-      const rowId = row.dataset.rowId ?? '';
-      try {
-        const item = rowId ? itemById?.get(rowId) ?? null : null;
-        let lineTexts = item?.pretextLines;
-        if (
-          !item ||
-          item.pretextSource !== raw ||
-          item.pretextWidth !== width ||
-          item.pretextFont !== font ||
-          item.pretextLineHeight !== lineHeight ||
-          !lineTexts
-        ) {
-          const prepared = prepareWithSegments(raw, font, { whiteSpace: 'pre-wrap' });
-          const { lines } = layoutWithLines(prepared, width, lineHeight);
-          lineTexts = lines.map((line) => line.text || '\u00a0');
-          if (item) {
-            item.pretextSource = raw;
-            item.pretextWidth = width;
-            item.pretextFont = font;
-            item.pretextLineHeight = lineHeight;
-            item.pretextLines = lineTexts;
-          }
-        }
-        const paintLines = item?.kind === 'thought'
-          ? lineTexts.filter((t) => t.replace(/\u00a0/g, '').trim() !== '')
-          : lineTexts;
-        paintPretextLines(row, paintLines);
-      } catch {
-        row.textContent = raw;
-      }
-    }
   }
 
   private ticketHost(): HarnessTicketHost {

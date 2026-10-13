@@ -1,6 +1,7 @@
 # ACP Harness Text Animation (per-line stagger reveal) — Implementation Spec
 
-> Status: Implemented
+> Status: Superseded — the stagger was removed by spec 94, and the Pretext line
+> layout it built on was removed from the harness on 2026-10-13 (spec 94 amendment).
 > Date: 2026-05-08
 > Milestone: ACP Harness polish
 

@@ -137,9 +137,6 @@ export function paintThoughtTeletype(
   delete body.dataset.peekSrc;
   delete body.dataset.peekLen;
   delete body.dataset.peekRender;
-  delete body.dataset.pretext;
-  delete body.dataset.rawText;
-  delete body.dataset.rowId;
 
   let ghost = body.querySelector<HTMLElement>(':scope > .acp-harness__thought-ghost');
   let fresh = body.querySelector<HTMLElement>(':scope > .acp-harness__thought-fresh');

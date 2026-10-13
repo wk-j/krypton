@@ -12,9 +12,10 @@
 
 ACP harness transcript rendering supports these targets by batching
 event-driven full renders with `requestAnimationFrame` and caching per-row
-assistant markdown/pretext layout work for unchanged visible transcript rows.
-This keeps high-volume agent streams from repeating markdown parsing and line
-measurement work for old chat history on every chunk. See
+assistant markdown work for unchanged visible transcript rows. Plain-text rows
+are single text nodes wrapped natively by CSS, with no measurement pass. This
+keeps high-volume agent streams from repeating markdown parsing for old chat
+history on every chunk. See
 `docs/0094-acp-harness-render-performance.md`.
 
 ## 4.2 Reliability

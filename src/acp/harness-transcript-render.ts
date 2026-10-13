@@ -109,32 +109,16 @@ export function syncThoughtEffortMeter(label: HTMLElement, textLen: number): voi
   if (textLen > 0) label.appendChild(buildThoughtEffortMeter(textLen));
 }
 
-const PRETEXT_LINE_CLASS = 'acp-harness__pretext-line';
-
-/** True when the row already paints `lines` — skip the textContent wipe. */
-export function pretextRowMatchesLines(
-  row: { children: ArrayLike<{ className: string; textContent: string | null }> },
-  lines: string[],
-): boolean {
-  if (row.children.length !== lines.length) return false;
-  for (let i = 0; i < lines.length; i++) {
-    const child = row.children[i];
-    if (child.className !== PRETEXT_LINE_CLASS) return false;
-    if (child.textContent !== lines[i]) return false;
-  }
-  return true;
-}
-
-export function paintPretextLines(row: HTMLElement, lines: string[]): void {
-  if (pretextRowMatchesLines(row, lines)) return;
-  row.textContent = '';
-  for (const text of lines) {
-    const lineEl = document.createElement('div');
-    lineEl.className = PRETEXT_LINE_CLASS;
-    lineEl.textContent = text;
-    row.appendChild(lineEl);
-  }
-}
+/** Row kinds with a structured body; every other kind renders as plain text. */
+const STRUCTURED_BODY_KINDS: Partial<Record<HarnessTranscriptItem['kind'], true>> = {
+  assistant: true,
+  tool: true,
+  fs_activity: true,
+  fs_write_review: true,
+  provider_error: true,
+  question: true,
+  permission: true,
+};
 
 /** Paint one completed #usage rollup. The transcript item's plain `text`
  *  remains the fallback for renderers that do not consume this structured DOM. */
@@ -429,10 +413,10 @@ export function renderTranscriptItem(
       pre.appendChild(row);
     }
     body.appendChild(pre);
-  } else if (usesPretext(item.kind)) {
+  } else if (!STRUCTURED_BODY_KINDS[item.kind]) {
     // While streaming, use the same append-only plain TextNode path as
-    // assistant (fast path in renderActiveTranscript). Pretext layout runs
-    // once after seal when streaming is false.
+    // assistant (fast path in renderActiveTranscript). Sealed rows are one
+    // text node wrapped natively by the body's `white-space: pre-wrap`.
     if (streaming) {
       if (item.kind === 'thought' && item.text.length === 0) {
         installThoughtVeil(body);
@@ -443,11 +427,7 @@ export function renderTranscriptItem(
         item.streamPlainLength = item.text.length;
       }
     } else {
-      const text = item.kind === 'thought' ? collapseThoughtBlankLines(item.text) : item.text;
-      body.dataset.pretext = 'true';
-      body.dataset.rawText = text;
-      body.dataset.rowId = item.id;
-      body.textContent = text;
+      body.textContent = item.kind === 'thought' ? collapseThoughtBlankLines(item.text) : item.text;
     }
   } else {
     body.textContent = item.text;
@@ -1225,8 +1205,4 @@ function imageSignature(item: HarnessTranscriptItem): string {
     .map((image) => `${image.imageId}:${image.state}:${image.hintLabel ?? ''}`)
     .join(',');
   return `${images}|${item.imageOverflow ?? 0}`;
-}
-
-export function usesPretext(kind: HarnessTranscriptItem['kind']): boolean {
-  return kind !== 'assistant' && kind !== 'tool' && kind !== 'fs_activity' && kind !== 'fs_write_review' && kind !== 'provider_error' && kind !== 'question' && kind !== 'permission';
 }

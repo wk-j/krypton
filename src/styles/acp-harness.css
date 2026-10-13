@@ -2769,11 +2769,6 @@
   --acp-tool-section-color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
 }
 
-.acp-harness__pretext-line {
-  min-height: 1.45em;
-  white-space: pre;
-}
-
 .acp-harness__msg-body--markdown {
   white-space: normal;
   color: var(--agent-text, #eaf3ea);

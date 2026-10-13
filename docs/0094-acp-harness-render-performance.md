@@ -3,6 +3,10 @@
 > Status: Implemented
 > Date: 2026-05-08
 > Scope: Frontend-only ACP harness rendering performance
+> Amended (2026-10-13): the Pretext line-layout pass and its per-row cache are
+> removed. Plain-text rows (user, system, sealed thought) are one text node
+> wrapped natively by `.acp-harness__msg-body { white-space: pre-wrap }`; there
+> is no measurement pass after render or resize.
 
 ## Problem
 
@@ -10,7 +14,7 @@ The ACP harness transcript can receive many small events during one agent turn:
 assistant message chunks, thought chunks, tool call updates, usage updates, mode
 updates, and plan updates. Before this change, every event ended by calling
 `render()` synchronously. A full render clears the dashboard, rebuilds the active
-lane transcript, reparses assistant markdown, and schedules pretext line layout.
+lane transcript, and reparses assistant markdown.
 With a long visible transcript, streaming could therefore repeat expensive work
 many times per animation frame.
 
@@ -26,7 +30,7 @@ O(visible rows) per event.
 3. `scheduleRender()` coalesces multiple event updates into one
    `requestAnimationFrame` callback.
 4. `render()` clears the pending flag and performs the existing dashboard,
-   overlay, plan, picker, composer, pretext, and sticky-scroll pass.
+   overlay, plan, picker, composer, and sticky-scroll pass.
 
 Small event types that do not require transcript rebuilds patch only their
 affected surface:
@@ -43,14 +47,6 @@ Assistant transcript items cache their rendered markdown:
 - `HarnessTranscriptItem.markdownHtml` stores the parsed/highlighted HTML.
 - Old assistant rows reuse the cached HTML across full renders.
 - A streaming assistant row invalidates naturally when `item.text` changes.
-
-Pretext transcript rows cache line layout:
-
-- `HarnessTranscriptItem.pretextSource`, width, font, and line-height identify
-  the cache key.
-- `HarnessTranscriptItem.pretextLines` stores the computed visual lines.
-- Rows reuse cached lines across full renders until text or layout metrics
-  change.
 
 Streaming rows reuse their wrapper element across chunks:
 
@@ -102,5 +98,5 @@ virtualization" non-goal with a lighter approach: render only a tail window
 of `lane.transcript` (default 60 rows), and surface hidden rows through a
 muted indicator at the top of the transcript that the user can expand with
 `Ctrl+H`. The caching introduced here is reused unchanged — the slice
-operates on the same `HarnessTranscriptItem` array whose markdown and
-pretext caches survive across renders.
+operates on the same `HarnessTranscriptItem` array whose markdown cache
+survives across renders.

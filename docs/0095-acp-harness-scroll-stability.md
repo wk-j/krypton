@@ -3,6 +3,8 @@
 > Status: Implemented
 > Date: 2026-05-08
 > Scope: Frontend ACP harness scroll behavior during render and streaming
+> Amended (2026-10-13): the Pretext layout pass is removed (spec 94 amendment),
+> so steps 5 and 7 no longer have a late text-measurement pass to cover.
 
 ## Problem
 
@@ -13,9 +15,8 @@ Three scroll bugs surfaced repeatedly in the harness:
    has scrolled up to read earlier transcript.
 2. **Stream does not always scroll to the end**, even with `stickToBottom = true`
    — the body settles slightly above the latest line.
-3. **Viewport drifts while reading older transcript** when streaming markdown,
-   pretext line wrapping, or late layout changes alter rows above the user's
-   current viewport.
+3. **Viewport drifts while reading older transcript** when streaming markdown
+   or late layout changes alter rows above the user's current viewport.
 
 A prior attempt added `savedScrollTop` per lane and restored it after rebuild.
 That patch fixed the symptom in some paths but the root cause remained, so the
@@ -70,19 +71,16 @@ Implementation in `src/acp/acp-harness-view.ts`:
    which diffs its children against `lane.transcript` (incremental update path,
    already used by `renderActiveLane`).
 5. If `lane.stickToBottom` is true, pin to bottom once synchronously after
-   reattach. `schedulePretextLayout()` then runs `applyStickyScroll()` again
-   after pretext finishes, covering late layout growth.
+   reattach. Callers that reflow the transcript schedule `applyStickyScroll()`
+   again on the next frame.
 6. If `lane.stickToBottom` is false, capture the first visible
    `.acp-harness__msg[data-msg-id]` plus its offset from the scroll container
    before transcript mutations, then restore that row to the same viewport
    offset afterward.
-7. `schedulePretextLayout()` performs the same capture/restore around text
-   measurement, so row height changes from pretext wrapping do not move the
-   user's reading position.
-8. A `ResizeObserver` watches the active transcript body and its message rows.
-   If async content changes row height after render/pretext work (for example
-   markdown image load), bottom-stick lanes re-pin to bottom and non-bottom
-   lanes restore the last saved transcript-row anchor.
+7. A `ResizeObserver` watches the active transcript body and its message rows.
+   If async content changes row height after render (for example markdown
+   image load), bottom-stick lanes re-pin to bottom and non-bottom lanes
+   restore the last saved transcript-row anchor.
 
 `savedScrollTop` introduced earlier is kept as a defensive fallback inside
 `applyStickyScroll()` (sets `scrollTop` if it ever observes a 0 with non-zero
@@ -95,7 +93,7 @@ the visible-row anchor handles normal non-bottom layout drift.
   child mutations on the same element, but `scrollTop` is only a coordinate. It
   does not preserve "the row the user was reading" when earlier content changes
   height and browser anchoring is disabled.
-- Late layout passes (pretext, markdown image, code highlight) modify the same
+- Late layout passes (markdown image, code highlight) modify the same
   scrollable container. With identity preserved, every late layout operates on
   the same body; with transcript-row anchoring, the visible row is restored to
   the same offset after mutations.
@@ -105,8 +103,8 @@ the visible-row anchor handles normal non-bottom layout drift.
 ## Files Changed
 
 - `src/acp/acp-harness-view.ts` — `renderDashboard()` body preservation;
-  transcript-row anchor capture/restore for non-bottom transcript renders and
-  pretext layout; active-body/message-row `ResizeObserver` for async height changes;
+  transcript-row anchor capture/restore for non-bottom transcript renders;
+  active-body/message-row `ResizeObserver` for async height changes;
   `applyStickyScroll()` defensive fallback; `g`/`G` keys update
   `stickToBottom` consistently; `onTranscriptScroll()` tracks `savedScrollTop`.
 

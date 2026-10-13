@@ -145,7 +145,7 @@ In `renderActiveTranscript()` (line 1882), replace the full iteration with:
    window automatically — no new code path.
 ```
 
-The signature/markdown/pretext caches on `HarnessTranscriptItem` survive
+The signature/markdown caches on `HarnessTranscriptItem` survive
 because they live on the data objects, not the DOM. Toggling the window
 larger and back re-renders cached rows cheaply.
 

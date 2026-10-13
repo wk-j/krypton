@@ -182,9 +182,6 @@ export function initLaneStreamingMarkdown(
   body.classList.add('acp-harness__msg-body--markdown');
   body.classList.add('acp-harness__msg-body--stream-markdown');
   body.classList.add(STREAMING_MARKDOWN_LIVE_CLASS);
-  delete body.dataset.pretext;
-  delete body.dataset.rawText;
-  delete body.dataset.rowId;
   const renderer = makeSafeRenderer(body);
   lane.streamingMarkdownParser = smd.parser(renderer);
   lane.streamingMarkdownBody = body;
@@ -308,9 +305,6 @@ export function renderPeekThoughtMarkdown(
     'acp-harness__msg-body--stream-plain',
   );
   body.classList.add('acp-harness__msg-body--markdown');
-  delete body.dataset.pretext;
-  delete body.dataset.rawText;
-  delete body.dataset.rowId;
   if (body.dataset.peekSrc === text && body.childNodes.length > 0) return;
   try {
     body.innerHTML = peekThoughtMarkdownHtml(text);
@@ -362,9 +356,6 @@ export function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscri
   if (!body.classList.contains('acp-harness__msg-body--stream-plain')) {
     body.classList.remove('acp-harness__msg-body--markdown');
     body.classList.remove('acp-harness__msg-body--thought-veil');
-    delete body.dataset.pretext;
-    delete body.dataset.rawText;
-    delete body.dataset.rowId;
     body.classList.add('acp-harness__msg-body--stream-plain');
     const seed = document.createTextNode(display);
     body.replaceChildren(seed);
@@ -398,9 +389,9 @@ export function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscri
 }
 
 /** Settle a streaming thought/user body without replacing its wrapper.
- *  Thoughts keep their live plain-text node; users become Pretext-ready and
- *  split into measured lines on the next RAF. The caller stamps the sealed
- *  signature so the following transcript pass is a no-op. */
+ *  Thoughts keep their live plain-text node; other rows become one plain text
+ *  node. The caller stamps the sealed signature so the following transcript
+ *  pass is a no-op. */
 export function sealStreamingTextBody(body: HTMLElement, item: HarnessTranscriptItem): void {
   const text = item.kind === 'thought' ? collapseThoughtBlankLines(item.text) : item.text;
   body.classList.remove(
@@ -409,14 +400,10 @@ export function sealStreamingTextBody(body: HTMLElement, item: HarnessTranscript
     'acp-harness__msg-body--markdown',
   );
   if (item.kind === 'thought') {
-    // The live thought is already a collapsed plain-text node. Promoting it to
-    // Pretext at the thought→assistant/tool/stop boundary replaced that node
-    // and laid the row out again, which WebKit could paint as a brief flash.
-    // Keep the stable node and native wrapping after seal; only repair the DOM
-    // when it does not match the final text.
-    delete body.dataset.pretext;
-    delete body.dataset.rawText;
-    delete body.dataset.rowId;
+    // The live thought is already a collapsed plain-text node. Replacing it at
+    // the thought→assistant/tool/stop boundary laid the row out again, which
+    // WebKit could paint as a brief flash. Keep the stable node; only repair
+    // the DOM when it does not match the final text.
     const textNode = body.childNodes.length === 1 && body.firstChild?.nodeType === 3
       ? body.firstChild
       : null;
@@ -424,9 +411,6 @@ export function sealStreamingTextBody(body: HTMLElement, item: HarnessTranscript
     item.streamPlainLength = undefined;
     return;
   }
-  body.dataset.pretext = 'true';
-  body.dataset.rawText = text;
-  body.dataset.rowId = item.id;
   body.textContent = text;
   item.streamPlainLength = undefined;
 }

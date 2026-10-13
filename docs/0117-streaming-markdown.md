@@ -162,9 +162,6 @@ function initLaneStreamingMarkdown(
     'acp-harness__msg-body--markdown',
   );
   body.classList.add('acp-harness__msg-body--stream-markdown');
-  delete body.dataset.pretext;
-  delete body.dataset.rawText;
-  delete body.dataset.rowId;
 
   const renderer = makeSafeRenderer(body);             // see Sanitisation
   lane.streamingMarkdownParser = smd.parser(renderer);

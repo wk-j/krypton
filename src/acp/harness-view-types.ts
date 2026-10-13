@@ -108,11 +108,6 @@ export interface HarnessTranscriptItem {
   // Spec 117: chars of `item.text` already fed into the lane's streaming-markdown
   // parser. Transient; cleared by sealStreaming. Only used for assistant rows.
   streamingMarkdownWritten?: number;
-  pretextSource?: string;
-  pretextWidth?: number;
-  pretextFont?: string;
-  pretextLineHeight?: number;
-  pretextLines?: string[];
   /** spec 282: subagent entry ids whose inline detail is open. */
   subagentExpanded?: string[];
   /** spec 281: images rendered in this row's strip (bytes or local path). */
