@@ -309,7 +309,7 @@ None.
 ## Out of Scope
 
 - Lane-mail bodies, peek-thought cards, Live Assist, and the legacy ACP/agent views. Their fences stay code.
-- Mermaid or other diagram fences.
+- Mermaid or other diagram fences. (Mermaid later shipped on this card: spec 294.)
 - Saving SVG to disk, and stepping between SVG cards with `n`/`p` in the viewer.
 - A config switch for the guidance line.
 - The existing gap where marked passes raw inline HTML (`<img onerror>`, raw `<svg>`) into transcript DOM on cold-load paths. That is a separate security fix.

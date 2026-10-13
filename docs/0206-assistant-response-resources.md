@@ -258,8 +258,8 @@ Hint targets are assigned in transcript order, so resources stay associated
 with their message and existing artifact cards retain the same interaction.
 Later specs add more target types to the same mode: images open the image
 viewer (spec 281), subagent card rows toggle their inline detail
-(spec 282), and ```svg fence cards toggle Source/Preview, with `Shift+<label>`
-copying the SVG source (spec 283).
+(spec 282), and ```svg / ```mermaid fence cards toggle Source/Preview, with
+`Shift+<label>` copying the fence source (specs 283, 294).
 
 - File resource: callback to `Compositor.openHelixTab(path, line, column)`;
   failure reports through the harness status chip. An image file reference

@@ -158,6 +158,7 @@ Krypton tools — each tool's description is its full contract; read it before t
 - review_outcome: once, after synthesizing a #review round you convened.                                      [gate: hasPeers]
 - artifact_new: ONLY when the user asks for a visual or interactive view.
 - ```svg fenced blocks render inline: self-contained, root viewBox, colors via var(--fg|--muted|--border|--accent|--success|--warning|--error|--surface|--c1…--c6).
+- ```mermaid fenced blocks render inline as themed diagrams; don't set theme or themeCSS in %%{init}%%.
 - ```visual fences render as HTML cards after f-hint (self-contained, no network/storage/forms/alerts; not ```html). Same theme vars as svg. Full pages use artifact_new.
 Write these tools' free-text fields in natural Thai for a reader who does not read code; keep technical terms, IDs, paths, and quoted source verbatim.
 ```
