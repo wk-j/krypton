@@ -404,3 +404,28 @@ export function renderSubagentCard(payload: SubagentPayload, expanded: readonly 
   }
   return card;
 }
+
+/** Live update of a mounted card: sync `next` (a fresh `renderSubagentCard`)
+ *  into `live` node by node, replacing only a node whose tag or child count
+ *  changed. Swapping the whole card on every progress tick restarted the
+ *  running glyphs' pulse animation and reset an expanded detail's scroll, so
+ *  the card visibly flashed for as long as the agents ran. */
+export function morphSubagentCard(live: Element, next: Element): void {
+  if (live.tagName !== next.tagName || live.children.length !== next.children.length) {
+    live.replaceWith(next);
+    return;
+  }
+  for (const name of live.getAttributeNames()) {
+    if (!next.hasAttribute(name)) live.removeAttribute(name);
+  }
+  for (const name of next.getAttributeNames()) {
+    const value = next.getAttribute(name) ?? '';
+    if (live.getAttribute(name) !== value) live.setAttribute(name, value);
+  }
+  if (next.children.length === 0) {
+    if (live.textContent !== next.textContent) live.textContent = next.textContent;
+    return;
+  }
+  const liveChildren = Array.from(live.children);
+  Array.from(next.children).forEach((child, i) => morphSubagentCard(liveChildren[i], child));
+}

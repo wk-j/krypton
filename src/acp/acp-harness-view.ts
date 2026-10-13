@@ -14408,6 +14408,7 @@ export class AcpHarnessView implements ContentView {
     if (!ask) return false;
     if (e.ctrlKey || e.metaKey || e.altKey) return true;
     e.preventDefault();
+    const hintBefore = questionActionsHint(ask.questions[ask.card.questionIndex], ask.wire, ask.card.otherFocused);
     const result = applyAskUserKey(ask.questions, ask.card, e.key);
     ask.card = result.state;
     this.syncAskUserCard(ask);
@@ -14416,7 +14417,13 @@ export class AcpHarnessView implements ContentView {
     } else if (result.action.type === 'submit') {
       void this.resolveAskUser(lane, { kind: 'accept', decision: result.action.decision });
     } else {
-      this.scheduleLaneRender(lane);
+      // A cursor move or toggle changes only the card row. A full lane render
+      // rebuilt the chrome, composer, plan, and peek on every key, which made the
+      // whole harness flash while you navigated. The composer is rebuilt only
+      // when its hint changes (entering or leaving the "Other" input).
+      this.scheduleStreamingBodyOnly(lane);
+      const hintAfter = questionActionsHint(ask.questions[ask.card.questionIndex], ask.wire, ask.card.otherFocused);
+      if (hintAfter !== hintBefore) this.renderComposer();
       this.updateComposerTick();
     }
     return true;

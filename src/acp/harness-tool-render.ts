@@ -11,7 +11,7 @@ import { stripAnsi } from './provider-error';
 import { classifyBashCommand } from '../agent/tools';
 import type { ContentBlock, ToolCall, ToolCallUpdate } from './types';
 import type { ArtifactCardPayload, ReviewCardPayload, ToolPayload } from './harness-view-types';
-import { renderSubagentCard, subagentLiveSignature, subagentSummary } from './harness-subagents';
+import { morphSubagentCard, renderSubagentCard, subagentLiveSignature, subagentSummary } from './harness-subagents';
 import {
   TOOL_DIFF_DISPLAY_CHAR_LIMIT,
   TOOL_DIFF_DISPLAY_COUNT_LIMIT,
@@ -639,8 +639,8 @@ export function patchStreamingToolBody(body: HTMLElement, tool: ToolPayload, sub
     const live = subagentLiveSignature(tool.subagents);
     if (body.dataset.subagentLiveSig === live) return;
     body.dataset.subagentLiveSig = live;
-    body.querySelector(':scope > .acp-harness__subagents')
-      ?.replaceWith(renderSubagentCard(tool.subagents, subagentExpanded));
+    const card = body.querySelector(':scope > .acp-harness__subagents');
+    if (card) morphSubagentCard(card, renderSubagentCard(tool.subagents, subagentExpanded));
     return;
   }
   const mutable = tool.sections
