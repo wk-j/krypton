@@ -15,10 +15,33 @@
 // error once per cell, and across a 160-column btop row the right border
 // lands 2–3 px off the grid, by a different amount on every row. Glyph widths
 // are re-measured with the fractional `getBoundingClientRect()`.
+//
+// `getBoundingClientRect()` reports the *visual* box, after every ancestor
+// transform. Windows are routinely scaled (Wheel cards, Stage shelf, FLIP
+// morphs, entrance effects), and xterm re-measures the cell on every resize,
+// so a fit while scaled stored a shrunken cell — more columns than fit, and a
+// negative letter-spacing against glyph widths cached at another scale that
+// piles the text on top of itself. Every measurement element therefore lives
+// in one untransformed host on <body>, which resolves fonts the same way.
 
 import type { Terminal } from '@xterm/xterm';
 
 const REPEAT = 32;
+
+let measureHost: HTMLElement | null = null;
+
+/** Shared <body>-level parent no window transform can reach. */
+function untransformedHost(): HTMLElement {
+  if (measureHost?.isConnected) return measureHost;
+  const host = document.createElement('div');
+  host.className = 'krypton-xterm-measure-host';
+  host.setAttribute('aria-hidden', 'true');
+  host.style.cssText =
+    'position:absolute;top:0;left:0;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none;';
+  document.body.appendChild(host);
+  measureHost = host;
+  return host;
+}
 
 interface MeasureResult {
   width: number;
@@ -54,16 +77,25 @@ function domRendererOf(terminal: Terminal): object | null {
   return node !== null && typeof node === 'object' ? node : null;
 }
 
-/** Swap the WidthCache's integer `offsetWidth` measure for a fractional one. */
+/** Swap the WidthCache's integer `offsetWidth` measure for a fractional one,
+ *  and move its measure elements out of the window's transformed subtree. */
 function installPreciseWidthCache(terminal: Terminal): boolean {
   const renderer = domRendererOf(terminal);
   const cache: unknown = renderer ? Reflect.get(renderer, '_widthCache') : null;
   if (cache === null || typeof cache !== 'object') return false;
+  const container: unknown = Reflect.get(cache, '_container');
   const elements: unknown = Reflect.get(cache, '_measureElements');
   const clear: unknown = Reflect.get(cache, 'clear');
-  if (!Array.isArray(elements) || typeof Reflect.get(cache, '_measure') !== 'function' || typeof clear !== 'function') {
+  if (
+    !(container instanceof HTMLElement) ||
+    !Array.isArray(elements) ||
+    typeof Reflect.get(cache, '_measure') !== 'function' ||
+    typeof clear !== 'function'
+  ) {
     return false;
   }
+  // Font styles are inline on the container; WidthCache.dispose() removes it.
+  untransformedHost().appendChild(container);
   Reflect.set(cache, '_measure', (chars: string, variant: number): number => {
     const el: unknown = elements[variant];
     if (!(el instanceof HTMLElement)) return 0;
@@ -85,8 +117,7 @@ function installPreciseWidthCache(terminal: Terminal): boolean {
  */
 export function installDomCharMeasure(terminal: Terminal): void {
   const service = charSizeServiceOf(terminal);
-  const host = terminal.element?.querySelector('.xterm-helpers') ?? terminal.element;
-  if (!service || !host) {
+  if (!service) {
     console.warn('[krypton:xterm] char size service not found; DOM cell measurement skipped');
     return;
   }
@@ -101,17 +132,17 @@ export function installDomCharMeasure(terminal: Terminal): void {
   el.textContent = 'W'.repeat(REPEAT);
   el.style.whiteSpace = 'pre';
   el.style.fontKerning = 'none';
-  host.appendChild(el);
+  untransformedHost().appendChild(el);
+  terminal.loadAddon({ activate: () => {}, dispose: () => el.remove() });
 
-  // Seed with the stock (canvas) size so a pane opened while hidden keeps a
-  // valid cell size until it can be laid out.
+  // Seed with the stock (canvas) size until the first DOM measure succeeds.
   const result: MeasureResult = { width: service.width, height: service.height };
   service._measureStrategy = {
     measure(): Readonly<MeasureResult> {
       el.style.fontFamily = terminal.options.fontFamily ?? '';
       el.style.fontSize = `${terminal.options.fontSize ?? 0}px`;
       const rect = el.getBoundingClientRect();
-      // Zero while the pane is display:none — keep the last good size.
+      // Zero before the font size is known — keep the last good size.
       if (rect.width > 0 && rect.height > 0) {
         result.width = rect.width / REPEAT;
         result.height = rect.height;
