@@ -18,7 +18,7 @@ const MEMORY_PERMISSION_SCAN_DEPTH = 8;
 /** specs 133/206 — alphabet shared by artifact and response-reference hints. */
 export const ARTIFACT_HINT_ALPHABET = 'asdfghjklqweruiop';
 
-const HARNESS_MEMORY_TOOL_NAMES = new Set(['handoff_set', 'handoff_get', 'handoff_list']);
+const HARNESS_MEMORY_TOOL_NAMES = new Set(['handoff_set']);
 const HARNESS_PEER_TOOL_NAMES = new Set(['peer_send', 'peer_list']);
 // spec 130: attention triage is default-on built-in harness-bus tooling, so its
 // calls must auto-allow like memory/peer — a permission prompt here also
@@ -157,7 +157,7 @@ export function harnessToolNameFromString(value: string | undefined): string | n
   for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
     if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
   }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|handoff_get|handoff_list|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|timeline_suggest|timeline_record|timeline_list|timeline_conflict_list|timeline_conflict_record|timeline_conflict_checked|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link)(?:$|[^a-z0-9_])/);
+  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|timeline_suggest|timeline_record|timeline_list|timeline_conflict_list|timeline_conflict_record|timeline_conflict_checked|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link)(?:$|[^a-z0-9_])/);
   return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 

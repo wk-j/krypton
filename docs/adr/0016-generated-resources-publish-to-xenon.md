@@ -49,6 +49,13 @@ uses the same secret scan and never forces past a hit. Its result appears in the
 authoring lane's transcript. This is an opt-in completion trigger, not a watcher
 or general background sync.
 
+**Amended 2026-10-13 (spec 293, ADR-0022):** listing `handoff` in `auto_push`
+also publishes a handoff each time a lane writes it via `handoff_set`, with the
+same secret scan. Handoffs are also the one kind Krypton **pulls** from Xenon:
+`#resume` reads `handoff` resources — only on a human command, never by an agent
+or in the background — and injects the text as a prompt without writing it to
+the local store. Bidirectional sync remains rejected; see ADR-0022.
+
 ## Considered Options
 
 - **Bidirectional sync.** Rejected: it would make a remote server an input to
@@ -69,8 +76,8 @@ or general background sync.
 Xenon can be operated, restarted, backed up, and firewalled entirely
 independently of Krypton; losing it costs published history, never local work.
 
-The human authorizes transport through `#push` or by listing `review` or
-`attention` in `auto_push`. All other resource kinds remain no more current than
+The human authorizes transport through `#push` or by listing `review`,
+`attention`, or `handoff` in `auto_push`. All other resource kinds remain no more current than
 the last explicit push. `#push` reports what it skipped, blocked, and queued.
 
 The secret pre-scan is a guard rail, not a guarantee. It catches the credential

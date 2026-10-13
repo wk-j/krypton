@@ -259,13 +259,46 @@ pub fn create_harness_memory(
     })
 }
 
+/// Spec 293: delete the handoff bound to `(harnessId, lane)` and drop the
+/// binding; no-op when the lane is unbound.
 #[tauri::command]
 pub fn clear_harness_memory_lane(
+    app_handle: AppHandle,
     harness_id: String,
     lane: String,
     hook_server: State<'_, Arc<HookServer>>,
 ) -> Result<(), String> {
-    hook_server.clear_harness_memory_lane(&harness_id, &lane)
+    hook_server.clear_harness_memory_lane(&harness_id, &lane)?;
+    hook_server.emit_handoff_changed(&app_handle, &harness_id, None);
+    Ok(())
+}
+
+/// Spec 293: bind `(harnessId, lane)` to handoff `id` (a lane that resumed a
+/// handoff continues that thread). `id` need not exist locally.
+#[tauri::command]
+pub fn handoff_bind(
+    app_handle: AppHandle,
+    harness_id: String,
+    lane: String,
+    id: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<(), String> {
+    hook_server.handoff_bind(&harness_id, &lane, &id)?;
+    hook_server.emit_handoff_changed(&app_handle, &harness_id, None);
+    Ok(())
+}
+
+/// Spec 293: drop the `(harnessId, lane)` binding (`#new`, `#restart`, close).
+#[tauri::command]
+pub fn handoff_unbind(
+    app_handle: AppHandle,
+    harness_id: String,
+    lane: String,
+    hook_server: State<'_, Arc<HookServer>>,
+) -> Result<(), String> {
+    hook_server.handoff_unbind(&harness_id, &lane)?;
+    hook_server.emit_handoff_changed(&app_handle, &harness_id, None);
+    Ok(())
 }
 
 #[tauri::command]
@@ -275,11 +308,13 @@ pub fn get_app_cwd() -> Result<String, String> {
         .map_err(|e| format!("get_app_cwd: {e}"))
 }
 
+/// Spec 293: the handoffs of the project store this harness shares, newest
+/// first, each with the requesting harness's lanes bound to it.
 #[tauri::command]
 pub fn list_harness_memory(
     harness_id: String,
     hook_server: State<'_, Arc<HookServer>>,
-) -> Result<Vec<crate::hook_server::HarnessMemoryEntry>, String> {
+) -> Result<Vec<crate::hook_server::HandoffEntry>, String> {
     hook_server.list_harness_memory(&harness_id)
 }
 
@@ -1810,6 +1845,7 @@ pub async fn xenon_push(
     slug: Option<String>,
     force: Option<bool>,
     attention: Option<Vec<serde_json::Value>>,
+    mut handoffs: Option<Vec<serde_json::Value>>,
 ) -> Result<crate::xenon::PushReport, String> {
     // Automatic review/attention pushes and manual pushes share one queue file
     // per project. Keep publication and its queue update in one ordered turn.
@@ -1856,6 +1892,17 @@ pub async fn xenon_push(
                 &cwd_path,
                 attention.clone().unwrap_or_default(),
             )?);
+            continue;
+        }
+        if kind == "handoff" {
+            // Handoffs live in the harness's project store — the frontend hands
+            // them over; `slug` narrows to exactly one handoff id.
+            let mut found =
+                crate::xenon::handoff_resources(&cwd_path, handoffs.take().unwrap_or_default())?;
+            if let Some(want) = slug.as_deref() {
+                found.retain(|resource| resource.manifest.slug == want);
+            }
+            resources.extend(found);
             continue;
         }
         if kind == "timeline" {
@@ -1952,6 +1999,41 @@ pub async fn xenon_probe(
         cfg.xenon.clone()
     };
     Ok(crate::xenon::probe(&xenon_config, std::path::Path::new(&cwd)).await)
+}
+
+/// Spec 293: recent handoffs published for this project, for `#resume`. Never
+/// `Err` except on a poisoned config lock — an unreachable or disabled Xenon is
+/// `available: false` (with a reason unless Xenon is simply off).
+#[tauri::command]
+pub async fn xenon_handoff_list(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    cwd: String,
+    limit: Option<usize>,
+) -> Result<crate::xenon::XenonHandoffList, String> {
+    let xenon_config = {
+        let cfg = lock_read(&config, "Config")?;
+        cfg.xenon.clone()
+    };
+    Ok(crate::xenon::list_remote_handoffs(
+        &xenon_config,
+        std::path::Path::new(&cwd),
+        limit.unwrap_or(10),
+    )
+    .await)
+}
+
+/// Spec 293: one published handoff by full id or unique prefix, with its body.
+#[tauri::command]
+pub async fn xenon_handoff_fetch(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    cwd: String,
+    reference: String,
+) -> Result<crate::xenon::RemoteHandoff, String> {
+    let xenon_config = {
+        let cfg = lock_read(&config, "Config")?;
+        cfg.xenon.clone()
+    };
+    crate::xenon::fetch_remote_handoff(&xenon_config, std::path::Path::new(&cwd), &reference).await
 }
 
 // ─── LLM usage log (spec 214) ──────────────────────────────────────

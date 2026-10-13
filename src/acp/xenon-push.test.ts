@@ -2,13 +2,20 @@ import { describe, expect, it } from 'vitest';
 
 import {
   describePush,
+  formatHandoffList,
   linkEvidenceFromPush,
+  matchHandoffReference,
+  mergeHandoffs,
   parsePushCommand,
+  parseResumeCommand,
   summarizePush,
   xenonProjectUrl,
+  type MergedHandoff,
   type PushReport,
+  type RemoteHandoff,
   type XenonStatus,
 } from './xenon-push';
+import type { HandoffEntry } from './types';
 
 function report(overrides: Partial<PushReport> = {}): PushReport {
   return {
@@ -96,6 +103,13 @@ describe('parsePushCommand', () => {
 
   it('refuses input that is not #push at all', () => {
     expect(parsePushCommand('#pull review').ok).toBe(false);
+  });
+
+  it('accepts the handoff kind with an id as its slug', () => {
+    expect(parsePushCommand('#push handoff ho-mg3k2x1a-3f9c0e')).toEqual({
+      ok: true,
+      args: { kind: 'handoff', slug: 'ho-mg3k2x1a-3f9c0e', force: false },
+    });
   });
 });
 
@@ -291,5 +305,165 @@ describe('linkEvidenceFromPush', () => {
         }),
       ),
     ).toBeNull();
+  });
+});
+
+function localHandoff(overrides: Partial<HandoffEntry> = {}): HandoffEntry {
+  return {
+    id: 'ho-aaaa0001-000001',
+    author: 'Claude-1',
+    host: 'mbp',
+    summary: 'local summary',
+    detail: 'local detail',
+    createdAt: 1_000,
+    updatedAt: 1_000,
+    boundLanes: [],
+    ...overrides,
+  };
+}
+
+function remoteHandoff(overrides: Partial<RemoteHandoff> = {}): RemoteHandoff {
+  return {
+    id: 'ho-aaaa0001-000001',
+    author: 'Codex-2',
+    host: 'studio',
+    summary: 'remote summary',
+    detail: null,
+    createdAt: 1_000,
+    updatedAt: 1_000,
+    seq: 1,
+    url: 'https://xenon.example.com/r/1',
+    ...overrides,
+  };
+}
+
+describe('parseResumeCommand', () => {
+  it('reads a bare #resume as "newest"', () => {
+    expect(parseResumeCommand('#resume')).toEqual({ ok: true, request: { mode: 'newest' } });
+    expect(parseResumeCommand('  #resume  ')).toEqual({ ok: true, request: { mode: 'newest' } });
+  });
+
+  it('reads list and an id reference', () => {
+    expect(parseResumeCommand('#resume list')).toEqual({ ok: true, request: { mode: 'list' } });
+    expect(parseResumeCommand('#resume ho-mg3k')).toEqual({
+      ok: true,
+      request: { mode: 'id', reference: 'ho-mg3k' },
+    });
+  });
+
+  it('rejects more than one argument', () => {
+    expect(parseResumeCommand('#resume list extra').ok).toBe(false);
+    expect(parseResumeCommand('#resume a b').ok).toBe(false);
+  });
+
+  it('refuses input that is not #resume', () => {
+    expect(parseResumeCommand('#handoff').ok).toBe(false);
+  });
+});
+
+describe('mergeHandoffs', () => {
+  it('keeps one row per id and the newer copy wins', () => {
+    const merged = mergeHandoffs(
+      [localHandoff({ updatedAt: 2_000 })],
+      [remoteHandoff({ updatedAt: 3_000 })],
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0].source).toBe('xenon');
+    expect(merged[0].author).toBe('Codex-2');
+    expect(merged[0].detail).toBeNull();
+  });
+
+  it('prefers the local copy when it is newer or equally new', () => {
+    expect(mergeHandoffs([localHandoff({ updatedAt: 5_000 })], [remoteHandoff({ updatedAt: 4_000 })])[0])
+      .toMatchObject({ source: 'local', detail: 'local detail' });
+    expect(mergeHandoffs([localHandoff({ updatedAt: 4_000 })], [remoteHandoff({ updatedAt: 4_000 })])[0])
+      .toMatchObject({ source: 'local', detail: 'local detail' });
+  });
+
+  it('unions distinct ids newest first', () => {
+    const merged = mergeHandoffs(
+      [localHandoff({ id: 'ho-a', updatedAt: 1_000 }), localHandoff({ id: 'ho-c', updatedAt: 3_000 })],
+      [remoteHandoff({ id: 'ho-b', updatedAt: 2_000 })],
+    );
+    expect(merged.map((h) => [h.id, h.source])).toEqual([
+      ['ho-c', 'local'],
+      ['ho-b', 'xenon'],
+      ['ho-a', 'local'],
+    ]);
+  });
+
+  it('is empty when both sides are', () => {
+    expect(mergeHandoffs([], [])).toEqual([]);
+  });
+});
+
+describe('matchHandoffReference', () => {
+  const list = [
+    { id: 'ho-mg3k2x1a-3f9c0e' },
+    { id: 'ho-mg3k9zzz-111111' },
+    { id: 'ho-ab12cd34-222222' },
+  ];
+
+  it('matches an exact id', () => {
+    const result = matchHandoffReference(list, 'ho-ab12cd34-222222');
+    expect(result.ok && result.handoff.id).toBe('ho-ab12cd34-222222');
+  });
+
+  it('accepts a unique prefix with or without ho-', () => {
+    const bare = matchHandoffReference(list, 'ab12');
+    expect(bare.ok && bare.handoff.id).toBe('ho-ab12cd34-222222');
+    const prefixed = matchHandoffReference(list, 'ho-mg3k2');
+    expect(prefixed.ok && prefixed.handoff.id).toBe('ho-mg3k2x1a-3f9c0e');
+  });
+
+  it('rejects a prefix shorter than four characters after ho-', () => {
+    for (const reference of ['ab1', 'ho-ab1']) {
+      const result = matchHandoffReference(list, reference);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe('too_short');
+    }
+  });
+
+  it('reports an ambiguous prefix rather than picking one', () => {
+    const result = matchHandoffReference(list, 'mg3k');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('ambiguous');
+  });
+
+  it('reports no match separately so the caller can ask Xenon', () => {
+    const result = matchHandoffReference(list, 'zzzz');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('none');
+  });
+});
+
+describe('formatHandoffList', () => {
+  function merged(index: number): MergedHandoff {
+    return {
+      id: `ho-${index}`,
+      author: 'Claude-1',
+      host: 'mbp',
+      summary: `summary ${index}`,
+      detail: 'd',
+      createdAt: 0,
+      updatedAt: 0,
+      source: index % 2 === 0 ? 'local' : 'xenon',
+    };
+  }
+
+  it('shows at most ten rows, each naming id, host, author and source', () => {
+    const text = formatHandoffList(Array.from({ length: 12 }, (_, i) => merged(i)), 0);
+    expect(text).toContain('ho-0');
+    expect(text).toContain('ho-9');
+    expect(text).not.toContain('ho-10');
+    expect(text).not.toContain('ho-11');
+    const row = text.split('\n').find((line) => line.includes('ho-1 '));
+    expect(row).toContain('mbp');
+    expect(row).toContain('Claude-1');
+    expect(row).toContain('xenon');
+  });
+
+  it('says so when there is nothing to list', () => {
+    expect(formatHandoffList([], 0)).not.toContain('ho-');
   });
 });

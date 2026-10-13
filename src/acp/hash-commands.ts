@@ -82,7 +82,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
     name: 'push',
     args: '[--force] [<kind> [<slug>]]',
     description:
-      'publish resources (review, analysis, artifact, doc, attention, daily, timeline) to the Xenon server',
+      'publish resources (review, analysis, artifact, doc, attention, daily, timeline, handoff) to the Xenon server; `handoff [<id>]` publishes handoffs or one by id',
   },
   {
     name: 'usage',
@@ -108,8 +108,13 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'commands', args: '', description: 'open the built-in # command reference in a browser' },
   { name: 'tools', args: '', description: 'open the built-in MCP tool reference in a browser' },
   { name: 'telegram', args: '', description: 'open Telegram controller settings' },
-  { name: 'handoff', args: '', description: 'write a resume-ready handoff doc to memory' },
-  { name: 'resume', args: '', description: 'resume from the last handoff doc' },
+  { name: 'handoff', args: '', description: 'write or refresh the handoff for this work' },
+  {
+    name: 'resume',
+    args: '[list | <id>]',
+    description:
+      'resume the newest handoff in the project (local and Xenon); `list` shows the 10 newest; `<id>` (or a 4+ char prefix) picks one',
+  },
   { name: 'wiki', args: '[<hint>]', description: 'ingest this conversation into the repo wiki' },
   { name: 'recall', args: '<question>', description: 'answer a question from the repo wiki' },
   { name: 'directive', args: '<what to create/change>', description: 'author a reusable harness directive' },
@@ -275,16 +280,24 @@ export function commandMeta(): Record<string, CommandMeta> {
     handoff: {
       category: 'agent',
       badges: ['workflow'],
-      anatomy: 'write memory doc → (later) read doc back → continue where it left off',
+      anatomy: 'write the handoff for this work → (later, any lane or machine) #resume → continue where it left off',
       lanes: 'same lane',
       prompt: HANDOFF_WRITE_PROMPT,
     },
     resume: {
       category: 'agent',
       badges: ['workflow'],
-      anatomy: 'read handoff doc → continue where it left off',
+      anatomy: 'resolve newest/listed handoff (local ∪ Xenon) → bind lane to it → inject doc → continue',
       lanes: 'same lane',
-      prompt: handoffResumePrompt('<lane>'),
+      prompt: handoffResumePrompt({
+        id: '<id>',
+        author: '<lane>',
+        host: '<host>',
+        updatedAt: Number.NaN,
+        summary: '<summary>',
+        detail: '<detail>',
+        source: 'local',
+      }),
     },
     wiki: {
       category: 'agent',

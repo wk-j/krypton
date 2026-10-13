@@ -1239,12 +1239,12 @@ describe('ACP harness auto-allow permission detection', () => {
 
   it('accepts built-in memory endpoint markers with plain tool names', () => {
     expect(harnessAutoAllowToolName(permissionFor({
-      title: 'handoff_get',
+      title: 'handoff_set',
       rawInput: {
-        name: 'handoff_get',
+        name: 'handoff_set',
         serverUrl: 'http://127.0.0.1:34123/mcp/harness/H1/lane/Codex-1',
       },
-    }))).toBe('handoff_get');
+    }))).toBe('handoff_set');
   });
 
   it('accepts rendered ACP memory tool labels from permission content', () => {

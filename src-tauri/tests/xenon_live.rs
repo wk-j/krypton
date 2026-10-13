@@ -9,9 +9,10 @@
 //   cd ~/Source/xenon && cargo build
 //   XENON_PORT=8791 XENON_DATA_DIR=/tmp/x XENON_SESSION_SECRET=$(openssl rand -hex 32) \
 //     XENON_INSECURE_COOKIES=1 ./target/debug/xenon &
-//   # register at http://127.0.0.1:8791/register, mint a token, then:
+//   # register at http://127.0.0.1:8791/register, mint a resource:read+write
+//   # token (and optionally a write-only one for the spec 293 scope check), then:
 //   XENON_TEST_URL=http://127.0.0.1:8791 XENON_TEST_TOKEN=xen_... \
-//     cargo test --test xenon_live -- --ignored --nocapture
+//     [XENON_TEST_WRITE_ONLY_TOKEN=xen_...] cargo test --test xenon_live -- --ignored --nocapture
 
 use std::collections::BTreeMap;
 
@@ -182,4 +183,82 @@ async fn a_bad_token_fails_without_being_queued_for_retry() {
         }
         other => panic!("expected an auth failure, got {other:?}"),
     }
+}
+
+// Spec 293: a handoff pushed by one machine must come back through the read
+// path with its own identity and body, and a push-only token must be told what
+// scope it lacks instead of silently resuming nothing.
+#[tokio::test]
+#[ignore = "requires a running Xenon server (see the header comment)"]
+async fn handoff_round_trips_through_the_read_path() {
+    let Some(publisher) = publisher(false) else {
+        panic!("set XENON_TEST_URL and XENON_TEST_TOKEN");
+    };
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let id = format!("ho-live{stamp}-abc123");
+    let detail = "## Done\n- spec 293 wired\n## Next\n- smoke";
+    let resources = app_lib::xenon::handoff_resources(
+        std::path::Path::new("/tmp"),
+        vec![serde_json::json!({
+            "id": id,
+            "author": "Codex-3",
+            "host": "machine-a",
+            "summary": "Spec 293 wired end to end",
+            "detail": detail,
+            "createdAt": stamp - 1000,
+            "updatedAt": stamp,
+        })],
+    )
+    .unwrap();
+    for resource in resources {
+        let item = publisher.push_resource(resource).await;
+        assert!(
+            matches!(item.outcome, PushOutcome::Pushed { .. }),
+            "push failed: {:?}",
+            item.outcome
+        );
+    }
+
+    let listed = publisher.list_handoffs(10).await.unwrap();
+    let summary = listed
+        .iter()
+        .find(|h| h.id == id)
+        .expect("pushed handoff is listed");
+    assert_eq!(summary.author, "Codex-3");
+    assert_eq!(summary.host, "machine-a");
+    assert_eq!(
+        summary.updated_at, stamp,
+        "time comes from meta, not the server"
+    );
+    assert!(summary.detail.is_none(), "list does not carry the body");
+
+    // Prefix without `ho-` and without the random tail: unique per run.
+    let short = &id["ho-".len()..id.len() - "-abc123".len()];
+    let fetched = publisher.fetch_handoff(short).await.unwrap();
+    assert_eq!(fetched.id, id);
+    assert_eq!(fetched.detail.as_deref(), Some(detail));
+
+    let Ok(url) = std::env::var("XENON_TEST_URL") else {
+        return;
+    };
+    let token = std::env::var("XENON_TEST_TOKEN").unwrap();
+    let fresh =
+        Publisher::with_token(&url, &token, &format!("never-pushed-{stamp}"), false).unwrap();
+    assert!(
+        fresh.list_handoffs(10).await.unwrap().is_empty(),
+        "a project with nothing pushed has no remote handoffs, not an error"
+    );
+
+    let Ok(write_only) = std::env::var("XENON_TEST_WRITE_ONLY_TOKEN") else {
+        return;
+    };
+    let reader = Publisher::with_token(&url, &write_only, "krypton-live-test", false).unwrap();
+    let err = reader.list_handoffs(10).await.unwrap_err();
+    assert!(
+        err.contains("resource:read"),
+        "should name the missing scope: {err}"
+    );
 }

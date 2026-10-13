@@ -71,7 +71,9 @@ named as "deferred" in doc 154 — it is the planned next step, not a new axis.
   `acp-harness-view.ts:handleControlOperation()` (~line 1605). Current ops:
   `harness.list/create`, `lane.list/spawn/send/cancel/close/restart/new/model/
   directive/permission_mode/transcript`, `permission.list/resolve`,
-  `memory.list/get/clear`, `peer.list`, `diff.review-targets/priority/send`.
+  `memory.list/get/clear` (spec 293: `memory.list` returns the project's
+  handoffs; `memory.get` / `memory.clear <lane>` address the handoff **bound**
+  to that live lane), `peer.list`, `diff.review-targets/priority/send`.
 - **Existing event sink.** `acp-harness-view.ts` (~line 4746) already has a
   central switch over normalized harness events (`message_chunk`,
   `thought_chunk`, `tool_call`, `tool_call_update`, `plan`, `permission_request`,

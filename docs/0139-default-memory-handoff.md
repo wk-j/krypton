@@ -4,6 +4,7 @@
 > Date: 2026-06-02
 > Extends: `docs/0098-acp-harness-memory-on-demand.md` (spec 98), `docs/0076-acp-harness-memory-persistence.md` (spec 76)
 > Updated by [docs/0165-memory-handoff-only.md](0165-memory-handoff-only.md): the lane-context stub described as "unchanged / only states that memory exists" below was *subsequently* changed — spec 165 removed the ambient memory stub entirely, so `#handoff` / `#resume` are now the ONLY surfaces that name the memory tools. The mechanism in this spec is otherwise intact.
+> Updated by [docs/0293-global-handoff-resume.md](0293-global-handoff-resume.md): the lane-keyed `memory_get { lane: self }` resume below is superseded. A handoff is a project-level document with an id; `#resume` injects the newest handoff in the project (local ∪ Xenon), `#resume list` lists recent ones, `#resume <id>` picks one, and the resuming lane adopts it so its next `#handoff` continues the same thread. `handoff_get` / `handoff_list` were removed.
 
 ## Problem
 

@@ -3811,7 +3811,7 @@
 
 .acp-harness__memory-row {
   display: grid;
-  grid-template-columns: 12ch minmax(0, 1fr) 7ch;
+  grid-template-columns: 20ch minmax(0, 1fr) 5ch;
   gap: 8px;
   padding: 4px 0;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78);
@@ -3840,7 +3840,16 @@
 }
 
 .acp-harness__memory-source {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--acp-memory-accent, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.7));
+}
+
+/* spec 293: the handoff the active lane is bound to (its next #handoff writes it). */
+.acp-harness__memory-row--bound .acp-harness__memory-text {
+  color: var(--agent-gold, #ffd166);
 }
 
 .acp-harness__memory-text {
@@ -3851,7 +3860,7 @@
 
 .acp-harness__memory-detail {
   grid-column: 1 / -1;
-  padding: 4px 0 6px calc(12ch + 8px);
+  padding: 4px 0 6px calc(20ch + 8px);
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
   line-height: 1.35;
   white-space: pre-wrap;

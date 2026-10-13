@@ -322,7 +322,8 @@ d. The loop stops once the grip, the mouse and the button fades settle
    create_harness_memory(projectDir). The Rust backend:
    a. Resolves a persistence path: ~/.config/krypton/acp-harness-memory/<hash>.json.
    b. Hash is first 16 chars of SHA-256 over canonical project path.
-   c. If file exists, loads lane memory documents into RAM (continuity).
+   c. If file exists, loads the project's handoffs into RAM (continuity); a
+      second tab on the same project shares the already-loaded store.
    d. Returns harnessId and hook server port to frontend.
 6. AcpHarnessView lists ACP backends and starts with an empty roster. The user
    opens `Cmd+P → +` to spawn installed harness backends such as Codex, Claude,
@@ -380,8 +381,8 @@ d. The loop stops once the grip, the mouse and the button fades settle
    a `usage_update` drop of at least 40% or a `/compact`, after a failed prompt,
    and every 20 turns. Each tool's full contract lives in its MCP description,
    and the timeline conflict rule rides on the `timeline_record` ack. Memory
-   bodies (summary + detail) are not injected — agents call handoff_list /
-   handoff_get on demand (Spec 98). Exception (Spec 279): a draft whose first
+   bodies (summary + detail) are not injected — a handoff reaches a lane only
+   through `#resume` (Specs 98, 293). Exception (Spec 279): a draft whose first
    token is one of the lane's advertised `available_commands` (`/review`,
    `/$skill …`) is sent bare — no stub, no directive — because adapters such
    as OMP join all prompt blocks and only parse a command at the start of the
@@ -444,14 +445,20 @@ d. The loop stops once the grip, the mouse and the button fades settle
       6. Stop (Cmd+Shift+L, `#live stop`, lane closed/error/restart/new):
          send `session.close`, then live_voice_close(generation); release
          the mic, peer, and audio context.
-8. MCP-capable agents call handoff_set, handoff_get, and handoff_list against
-   /mcp/harness/<harnessId>/lane/<laneLabel>.
-   a. handoff_set overwrites the caller's own document in RAM.
-   b. On every set/clear, the hook server schedules a debounced (500ms) save.
-   c. Save is atomic: serialize -> write .tmp -> rename to final .json.
-   d. handoff_get reads any lane's document by label from RAM.
-   e. handoff_list lists all lanes' summaries from RAM.
-9. The hook server emits a memory-changed event so the harness refreshes the read-only board.
+8. MCP-capable agents call handoff_set against
+   /mcp/harness/<harnessId>/lane/<laneLabel> (Spec 293).
+   a. The project store (shared by every tab of the project, ref-counted by
+      harness id) holds handoffs with ids (`ho-…`), newest first, cap 50.
+   b. handoff_set overwrites the handoff bound to (harnessId, lane), or mints
+      a new one and binds the lane to it. Empty summary + detail deletes the
+      bound handoff and drops the binding. Bindings are memory-only.
+   c. On every change, the hook server schedules a debounced (500ms) save.
+   d. Save is atomic: serialize -> write .tmp -> rename to final .json (v2;
+      a v1 lane-slot file migrates to one handoff per slot on load).
+9. The hook server emits acp-harness-memory-changed once per harness sharing the
+   store so each tab refreshes the read-only board; the writer's event carries
+   `handoffId`, and with `[xenon].auto_push = ["handoff"]` the frontend pushes
+   that one handoff.
 10. session/update notifications append transcript rows and maintain
     file-touch warnings for permission context. Memory is not inferred from
     tool observations or assistant footers.
@@ -898,19 +905,31 @@ PUBLISH
     other events and resource kinds continue. #xenon timeline [topic] opens the
     server-rendered project chronology; no Xenon route writes back locally.
 ```
-    e. #mem clear clears the active lane memory document for future prompts only.
+    e. #mem clear deletes the handoff bound to the active lane (no-op if unbound).
     f. #cancel also clears the lane's prompt queue. #unqueue [N] removes the
        last (or 1-indexed) queued prompt; #queue clear empties the queue without
        cancelling the running turn; #queue edit N pops item N into the composer
        to edit and re-send (Spec 136).
-    g. #handoff / #resume (Spec 139) inject a one-shot instruction turn into the
-       active lane via enqueueSystemPrompt (no acp_* command): #handoff tells the
-       lane to write/refresh a resume-ready handoff_set document; #resume tells it
-       to handoff_get its own lane and continue. Both no-op with a flashChip when
-       memory is unavailable or the lane is mid-work (busy/needs_permission/
-       starting); they are allowed while awaiting_peer (soft-awaiting, spec 116).
-       Cross-session handoff is user-triggered only — no always-on stub, no
-       per-turn cost.
+    g. #handoff (Spec 139) injects a one-shot instruction turn via
+       enqueueSystemPrompt telling the lane to write/refresh the handoff for
+       this work with handoff_set.
+       #resume / #resume list / #resume <id> (Spec 293):
+       1. local = list_harness_memory; remote = xenon_handoff_list (only when
+          [xenon].enabled; 5 s budget; GET resources?kind=handoff, then
+          GET /v1/resources/{id} for the first 10, concurrency 4).
+       2. Merge by id, newer meta.updatedAt wins; pick newest / by id prefix
+          (`list` prints up to 10 and stops).
+       3. Remote pick → xenon_handoff_fetch reads handoff.md; never written
+          locally (ADR-0022).
+       4. handoff_bind(harnessId, lane, id) — the lane adopts the handoff.
+       5. enqueueSystemPrompt(lane, handoffResumePrompt(doc)) + system line
+          "resumed ho-… · author@host · age · source".
+       Xenon unreachable / missing_scope / invalid_kind → local only plus a
+       system line. #new / #new! / #restart / lane close → handoff_unbind.
+       Both commands no-op with a flashChip when memory is unavailable or the
+       lane is mid-work (busy/needs_permission/starting); they are allowed
+       while awaiting_peer (soft-awaiting, spec 116). Cross-session handoff is
+       user-triggered only — no always-on stub, no per-turn cost.
 13. Session resume picker:
     a. `Cmd+P → 0` opens the session picker. If an active lane exists, the
        picker auto-selects that lane's backend; otherwise it opens backend

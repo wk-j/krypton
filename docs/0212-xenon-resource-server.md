@@ -49,8 +49,8 @@ the central store for Krypton-generated resources, plus a **publisher** in Krypt
   the latest is the current view. Nothing is ever silently overwritten.
 - **Push is explicit by default.** `.krypton/` is gitignored working knowledge that can contain
   source, paths, and secrets; sending it to a server is publishing. Manual `#push` is the default.
-  Listing `review` or `attention` in `auto_push` opts those kinds into a defined event trigger
-  (spec 269 and ADR-0016); other kinds remain manual.
+  Listing `review`, `attention`, or `handoff` in `auto_push` opts those kinds into a defined event
+  trigger (spec 269, spec 293, ADR-0016); other kinds remain manual.
 - **Accounts own projects; tokens are the only machine credential.** A person registers, logs into
   the browse UI with a session cookie, and mints scoped API tokens from a settings page — one for
   their Krypton install, others for external services. Tokens are shown once and stored hashed.
@@ -71,6 +71,7 @@ surface, no browse UI, credentials on every client).
 | `doc` | repo markdown (`docs/**.md`) — **tracked in git, not under `.krypton/`** | source `.md`; the loopback `/doc` reader renders it with comrak |
 | `attention` | **nothing** — in-memory `AttentionTriageStore` only | `TelemetryAttentionItem` (`harness-telemetry.ts:52`): id, lane, createdAt, question, chosen, rationale, tradedOff[], uncertainty, reversibility |
 | `daily` | `<[daily_note].output_dir>/<date>.md` (+ `.brief.md`) — **may sit outside the project**, in a real Obsidian vault | one day per resource, files fixed at `note.md` (derived from records) and optional `brief.md` (a lane's narration). Added by spec 224; see `docs/0224-daily-note-publish.md` |
+| `handoff` | `~/.config/krypton/acp-harness-memory/<hash16>.json` — the project handoff store (spec 293) | slug = handoff id (`ho-…`), title = summary, `meta = { id, author, host, summary, createdAt, updatedAt }`, one inline `handoff.md` = detail. The **only** kind Krypton pulls back, on `#resume` (ADR-0022) |
 
 Consequences: (1) `attention` has no file, so the envelope must allow zero files and carry structured
 `meta`; (2) `review` and `artifact` are **mutable in place** (`response.md` autosaves every ~400 ms;
@@ -249,7 +250,8 @@ Krypton-side Tauri commands: `xenon_push(kind, slug?) -> PushReport`,
 3. A hit → that resource is `blocked` with the file+line; nothing leaves the machine. Otherwise:
 4. POST /v1/projects/{p}/resources (bearer = keychain token) → ManifestAck; `unchanged` → done.
 5. PUT /v1/blobs/<sha> for each digest in `missing` (concurrency 4).
-6. POST /v1/revisions/{rev}/commit → seals, bumps head_revision, returns the permalink.
+6. POST /v1/revisions/{rev}/commit → seals, bumps head_revision and `resource.updated_at` (which moves
+   only on seal, so no-op or failed pushes never reorder `?kind=` lists), returns the permalink.
 7. PushReport { pushed, unchanged, blocked, failed, permalinks } → a system transcript line with the
    permalink; transport failures land in the on-disk retry queue.
 ```
@@ -265,7 +267,7 @@ No new global leader key — `#push` is a composer hash-command, consistent with
 | Command | Action |
 |---|---|
 | `#push` | push every kind listed in `[xenon].auto_push`, or all kinds if unset |
-| `#push <kind>` | push one kind (`review`, `analysis`, `artifact`, `doc`, `attention`, `daily`, `timeline`; timeline contract in spec 259) |
+| `#push <kind>` | push one kind (`review`, `analysis`, `artifact`, `doc`, `attention`, `daily`, `timeline`, `handoff`; timeline contract in spec 259, handoff in spec 293) |
 | `#push <kind> <slug>` | push one resource |
 | `#push --force …` | override the secret pre-scan after the human has read the hit |
 | `#xenon` | open the configured Xenon project page in the OS browser |
@@ -292,13 +294,14 @@ enabled   = false              # bool — master switch; false disables #push en
 base_url  = ""                 # string — e.g. "https://xenon.example.com"; empty = unconfigured
 project   = ""                 # string — override; default derived from the git remote, else
                                #          "local/<basename>-<8 hex of abs path>"
-auto_push = []                 # array — bare #push kinds; review registration and attention creation also trigger publication when listed
+auto_push = []                 # array — bare #push kinds; review registration, attention creation, and handoff writes also trigger publication when listed
 ```
 
 The bearer token is **never** in TOML. It lives in the OS keychain under service `krypton-xenon`,
 account `<base_url>`, written by `xenon_set_token` — the ADR-0015 pattern. First-time setup is:
-register at `/register` → mint a `resource:write` token at `/settings/tokens` → paste it once into
-Krypton. The same page mints the separate tokens external services use.
+register at `/register` → mint a `resource:read` + `resource:write` token at `/settings/tokens` →
+paste it once into Krypton (`resource:read` lets `#resume` pull handoffs, spec 293). The same page
+mints the separate tokens external services use.
 
 ### Server deployment
 
@@ -383,12 +386,13 @@ Each has a recommendation; approving this spec accepts them as written.
 
 ## Out of Scope
 
-Real-time sync or SSE from Xenon · pulling resources back into a checkout · editing a review response
-on the server · teams, org accounts, per-project membership, or sharing a project with a second user ·
-OAuth/SSO/2FA and email password reset (an admin re-enables an account instead) · S3/object-storage
-backends (local filesystem only) · automatic retention/GC (explicit admin GC only) · CI integration ·
-pushing transcripts, lane telemetry, or memory documents · an in-app Krypton browser for Xenon (the
-OS browser is the surface, per ADR-0002).
+Real-time sync or SSE from Xenon · pulling resources back into a checkout (the one exception: `#resume`
+reads `handoff` resources on a human command and injects them, never writing a checkout — spec 293,
+ADR-0022) · editing a review response on the server · teams, org accounts, per-project membership, or
+sharing a project with a second user · OAuth/SSO/2FA and email password reset (an admin re-enables an
+account instead) · S3/object-storage backends (local filesystem only) · automatic retention/GC
+(explicit admin GC only) · CI integration · pushing transcripts or lane telemetry · an in-app Krypton
+browser for Xenon (the OS browser is the surface, per ADR-0002).
 
 ## Resources
 

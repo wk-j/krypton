@@ -290,12 +290,15 @@ base_url = ""
 # server addresses projects with one, so a "/" is replaced with "-".
 project = ""
 # Which kinds a bare `#push` covers. Empty = all of them.
-# One of: review, analysis, artifact, doc, attention, daily, timeline.
+# One of: review, analysis, artifact, doc, attention, daily, timeline, handoff.
 #
 # Listing "review" ALSO publishes a Review Board when it is first registered.
 # Listing "attention" ALSO publishes a flag when a lane raises it, because the
-# flag has no on-disk form. Other kinds remain manual; later review edits and
-# responses also require `#push review [<slug>]`.
+# flag has no on-disk form. Listing "handoff" ALSO publishes a handoff each
+# time a lane writes it (spec 293). Other kinds remain manual; later review
+# edits and responses also require `#push review [<slug>]`.
+# `#resume` reads handoffs back from Xenon whenever `enabled`; that pull needs
+# a token with `resource:read` (no extra key).
 auto_push = []
 # Review threads (spec 270) add no TOML key. Only their Guide's Review Board
 # bundle follows the opt-in review auto-push rule; the private diff snapshot,
@@ -930,7 +933,7 @@ Attention triage is **default-on** for lanes that receive the `krypton-harness-m
 | `[xenon]` | `enabled` | bool | `false` | Master switch for publishing to a Xenon resource server. While false, `#push` is inert. See doc 212 |
 | `[xenon]` | `base_url` | string | `""` | Xenon server root, e.g. `https://xenon.example.com`. Empty = unconfigured |
 | `[xenon]` | `project` | string | `""` | Project slug override. Empty derives `<owner>.<repo>` from the git remote, else a path-derived name. Single path segment only |
-| `[xenon]` | `auto_push` | string[] | `[]` | Kinds a bare `#push` covers (`review`, `analysis`, `artifact`, `doc`, `attention`, `daily`, `timeline`). Empty = all. Listing `review` also publishes a Board on first registration; listing `attention` publishes a flag when raised. Later review edits/responses and all other kinds remain manual. Listing `timeline` only includes confirmed events in an explicit bare `#push` |
+| `[xenon]` | `auto_push` | string[] | `[]` | Kinds a bare `#push` covers (`review`, `analysis`, `artifact`, `doc`, `attention`, `daily`, `timeline`, `handoff`). Empty = all. Listing `review` also publishes a Board on first registration; listing `attention` publishes a flag when raised; listing `handoff` publishes a handoff on each write (spec 293). Later review edits/responses and all other kinds remain manual. Listing `timeline` only includes confirmed events in an explicit bare `#push`. `#resume` pulls handoffs from Xenon when enabled (token needs `resource:read`) |
 | `[xenon]` | `probe_interval_secs` | integer | `60` | Cadence of the workspace footer's backend-link probe (spec 213). `0` disables the interval; the segment then updates only on `⌘P X` and after a `#push`. Hot-reloaded with the rest of `[xenon]` |
 
 | `[usage_log]` | `enabled` | bool | `true` | Record one row per completed prompt turn to `.krypton/usage/<date>.jsonl`. See doc 214 |

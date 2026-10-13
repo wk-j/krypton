@@ -28,7 +28,7 @@ use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::{Path as StdPath, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
@@ -181,7 +181,16 @@ pub struct HookServer {
     pub port: std::sync::Mutex<u16>,
     pub shutdown_tx: std::sync::Mutex<Option<oneshot::Sender<()>>>,
     last_error: std::sync::Mutex<Option<String>>,
+    /// Per harness tab: its project dir and the key of the project handoff store
+    /// it shares (spec 293).
     memories: std::sync::Mutex<HashMap<String, HarnessMemoryStore>>,
+    /// Spec 293: project-level handoff stores, keyed by canonical project dir
+    /// (or by the harness id for a tab with no project dir). Ref-counted by the
+    /// harness ids in `ProjectHandoffStore::harnesses`; dropped with the last.
+    handoff_stores: std::sync::Mutex<HashMap<String, ProjectHandoffStore>>,
+    /// Test hook: replaces `~/.config/krypton/acp-harness-memory` so unit tests
+    /// never touch the real config directory. `None` in the app.
+    memory_dir_override: Option<PathBuf>,
     mcp_stats: std::sync::Mutex<HashMap<String, HashMap<String, McpLaneStats>>>,
     next_harness_id: AtomicU64,
     /// In-flight bus requests awaiting a frontend reply (peer_send, peer_list).
@@ -271,6 +280,8 @@ impl Default for HookServer {
             shutdown_tx: std::sync::Mutex::new(None),
             last_error: std::sync::Mutex::new(None),
             memories: std::sync::Mutex::new(HashMap::new()),
+            handoff_stores: std::sync::Mutex::new(HashMap::new()),
+            memory_dir_override: None,
             mcp_stats: std::sync::Mutex::new(HashMap::new()),
             next_harness_id: AtomicU64::new(1),
             pending_bus_replies: std::sync::Mutex::new(HashMap::new()),
@@ -297,6 +308,8 @@ impl HookServer {
             shutdown_tx: std::sync::Mutex::new(None),
             last_error: std::sync::Mutex::new(None),
             memories: std::sync::Mutex::new(HashMap::new()),
+            handoff_stores: std::sync::Mutex::new(HashMap::new()),
+            memory_dir_override: None,
             mcp_stats: std::sync::Mutex::new(HashMap::new()),
             next_harness_id: AtomicU64::new(1),
             pending_bus_replies: std::sync::Mutex::new(HashMap::new()),
@@ -464,131 +477,185 @@ impl HookServer {
         }
     }
 
+    /// Unit tests only: a server whose persisted handoff/binding files live
+    /// under `dir` instead of `~/.config/krypton/acp-harness-memory`.
+    #[cfg(test)]
+    fn with_memory_dir(dir: PathBuf) -> Self {
+        Self {
+            memory_dir_override: Some(dir),
+            ..Self::new()
+        }
+    }
+
+    /// Directory holding the per-project handoff file and its siblings.
+    fn memory_dir(&self) -> Option<PathBuf> {
+        let dir = match &self.memory_dir_override {
+            Some(dir) => dir.clone(),
+            None => dirs::home_dir()?
+                .join(".config")
+                .join("krypton")
+                .join("acp-harness-memory"),
+        };
+        if !dir.exists() {
+            let _ = std::fs::create_dir_all(&dir);
+        }
+        Some(dir)
+    }
+
+    fn persistence_path(&self, project_dir: &str) -> Option<PathBuf> {
+        Some(get_persistence_path(&self.memory_dir()?, project_dir))
+    }
+
+    /// Sibling of the handoff file holding spec 178 issue↔lane bindings, in a
+    /// `*.issue-bindings.json` file kept separate from the handoff store.
+    fn issue_bindings_path(&self, project_dir: &str) -> Option<PathBuf> {
+        Some(
+            self.persistence_path(project_dir)?
+                .with_extension("issue-bindings.json"),
+        )
+    }
+
+    /// spec 194: sibling holding the harness's shared working ticket
+    /// (`ActiveWorkTicket`) in a `*.active-ticket.json` file.
+    fn active_ticket_path(&self, project_dir: &str) -> Option<PathBuf> {
+        Some(
+            self.persistence_path(project_dir)?
+                .with_extension("active-ticket.json"),
+        )
+    }
+
     pub fn create_harness_memory(&self, project_dir: Option<String>) -> String {
         let seq = self.next_harness_id.fetch_add(1, Ordering::Relaxed);
         let harness_id = format!("hm-{seq}");
 
-        let persistence_path = project_dir
-            .as_ref()
-            .and_then(|dir| get_persistence_path(dir));
-        let mut lanes = HashMap::new();
-
-        if let Some(ref path) = persistence_path {
-            if path.exists() {
-                match std::fs::read_to_string(path) {
-                    Ok(content) => match serde_json::from_str::<PersistedMemory>(&content) {
-                        Ok(persisted) => {
-                            if persisted.version == 1 {
-                                lanes = persisted.lanes;
-                                log::info!(
-                                    "Loaded persisted memory for project: {}",
-                                    persisted.project_dir
-                                );
-                            } else {
-                                log::warn!("Unsupported memory version: {}", persisted.version);
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!(
-                                "Failed to parse persisted memory at {}: {e}",
-                                path.display()
-                            );
-                            let broken_path =
-                                path.with_extension(format!("json.broken-{}", now_ms()));
-                            let _ = std::fs::rename(path, broken_path);
-                        }
-                    },
-                    Err(e) => {
-                        log::warn!("Failed to read persisted memory at {}: {e}", path.display());
-                    }
-                }
-            }
+        // Spec 293: every tab on one project shares a single handoff store,
+        // keyed by the canonical project dir. A tab without a project dir (a
+        // remote harness) gets a private, memory-only store keyed by its id.
+        let store_key = project_dir
+            .as_deref()
+            .map(canonical_project_key)
+            .unwrap_or_else(|| harness_id.clone());
+        {
+            let mut stores = self
+                .handoff_stores
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let store = stores.entry(store_key.clone()).or_insert_with(|| {
+                let persistence_path = project_dir
+                    .as_deref()
+                    .and_then(|dir| self.persistence_path(dir));
+                ProjectHandoffStore::load(persistence_path, project_dir.clone())
+            });
+            store.harnesses.insert(harness_id.clone());
         }
-
-        let artifact_project_dir = project_dir.clone();
-        let review_project_dir = project_dir.clone();
-        let store = HarnessMemoryStore {
-            lanes,
-            persistence_path,
-            project_dir,
-            save_pending: Arc::new(AtomicBool::new(false)),
-        };
-
         {
             let mut memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
-            memories.insert(harness_id.clone(), store);
+            memories.insert(
+                harness_id.clone(),
+                HarnessMemoryStore {
+                    project_dir: project_dir.clone(),
+                    store_key,
+                },
+            );
         }
 
         // Spec 133: register the in-memory artifact store. On-disk files persist
         // as append-only history across harness close and app restarts.
-        self.init_harness_artifacts(&harness_id, artifact_project_dir);
+        self.init_harness_artifacts(&harness_id, project_dir.clone());
         // Spec 211: register the review card store. Bundles on disk are durable
         // records rediscovered by a directory walk, so nothing is rehydrated here.
-        self.init_harness_reviews(&harness_id, review_project_dir);
+        self.init_harness_reviews(&harness_id, project_dir);
         harness_id
     }
 
-    fn schedule_save(self: &Arc<Self>, harness_id: &str) {
-        let memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
-        let store = match memories.get(harness_id) {
-            Some(s) => s,
-            None => return,
-        };
-
-        if store.persistence_path.is_none() {
-            return;
-        }
-
-        if store.save_pending.swap(true, Ordering::SeqCst) {
-            // Already a save pending
-            return;
-        }
-
-        let persistence_path = store.persistence_path.clone().unwrap();
-        let project_dir = store.project_dir.clone().unwrap_or_default();
-        let save_pending = store.save_pending.clone();
-        let harness_id = harness_id.to_string();
-        let self_clone = self.clone();
-
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            save_pending.store(false, Ordering::SeqCst);
-
-            // Snapshot lanes under lock AFTER the sleep to get the latest state
-            let lanes = {
-                let memories = self_clone
-                    .memories
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner());
-                match memories.get(&harness_id) {
-                    Some(store) => store.lanes.clone(),
-                    None => return,
-                }
+    /// Debounced write of a project handoff store. The pending flag is cleared
+    /// and the file written under the store lock, so a concurrent last-tab
+    /// dispose either sees the flag and flushes itself or finds the write done.
+    fn schedule_handoff_save(self: &Arc<Self>, store_key: &str) {
+        {
+            let mut stores = self
+                .handoff_stores
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let Some(store) = stores.get_mut(store_key) else {
+                return;
             };
-
-            let persisted = PersistedMemory {
-                version: 1,
-                project_dir,
-                saved_at: now_ms(),
-                lanes,
-            };
-
-            let tmp_path = persistence_path.with_extension("json.tmp");
-            match serde_json::to_string_pretty(&persisted) {
-                Ok(json) => {
-                    if let Err(e) = std::fs::write(&tmp_path, json) {
-                        log::warn!("Failed to write memory tmp file: {e}");
-                        return;
-                    }
-                    if let Err(e) = std::fs::rename(&tmp_path, &persistence_path) {
-                        log::warn!("Failed to rename memory file: {e}");
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Failed to serialize memory: {e}");
-                }
+            if store.persistence_path.is_none() || store.save_pending {
+                return;
+            }
+            store.save_pending = true;
+        }
+        let server = Arc::clone(self);
+        let store_key = store_key.to_string();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let mut stores = server
+                .handoff_stores
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            // Gone means the last tab closed and flushed it already.
+            if let Some(store) = stores.get_mut(&store_key) {
+                store.flush_if_pending();
             }
         });
+    }
+
+    fn handoff_store_key(&self, harness_id: &str) -> Result<String, String> {
+        self.memories
+            .lock()
+            .map_err(|e| format!("memory lock poisoned: {e}"))?
+            .get(harness_id)
+            .map(|entry| entry.store_key.clone())
+            .ok_or_else(|| format!("Unknown harness memory: {harness_id}"))
+    }
+
+    /// Run `op` against the project handoff store `harness_id` shares; returns
+    /// the store key alongside the result so the caller can schedule a save.
+    fn with_handoff_store<T>(
+        &self,
+        harness_id: &str,
+        op: impl FnOnce(&mut ProjectHandoffStore) -> T,
+    ) -> Result<(String, T), String> {
+        let store_key = self.handoff_store_key(harness_id)?;
+        let mut stores = self
+            .handoff_stores
+            .lock()
+            .map_err(|e| format!("handoff store lock poisoned: {e}"))?;
+        let store = stores
+            .get_mut(&store_key)
+            .ok_or_else(|| format!("Unknown harness memory: {harness_id}"))?;
+        let out = op(store);
+        Ok((store_key, out))
+    }
+
+    /// Every harness id sharing `harness_id`'s project store (itself included).
+    fn handoff_sharers(&self, harness_id: &str) -> Vec<String> {
+        let mut sharers = self
+            .with_handoff_store(harness_id, |store| {
+                store.harnesses.iter().cloned().collect::<Vec<_>>()
+            })
+            .map(|(_, sharers)| sharers)
+            .unwrap_or_else(|_| vec![harness_id.to_string()]);
+        sharers.sort();
+        sharers
+    }
+
+    /// Spec 293: after any change to a project store, tell every tab sharing it
+    /// to refresh. `handoff_id` rides only on the writer's own event (a
+    /// non-clear `handoff_set`), which is what drives `auto_push = ["handoff"]`.
+    pub fn emit_handoff_changed(
+        &self,
+        app: &AppHandle,
+        harness_id: &str,
+        handoff_id: Option<&str>,
+    ) {
+        for sharer in self.handoff_sharers(harness_id) {
+            let payload = match handoff_id.filter(|_| sharer == harness_id) {
+                Some(id) => json!({ "harnessId": sharer, "handoffId": id }),
+                None => json!({ "harnessId": sharer }),
+            };
+            app.emit_or_log("acp-harness-memory-changed", payload);
+        }
     }
 
     /// spec 178: persist a harness's issue↔lane bindings to disk, atomically
@@ -608,7 +675,7 @@ impl HookServer {
             Some(dir) => dir,
             None => return Ok(()),
         };
-        let path = match get_issue_bindings_path(&project_dir) {
+        let path = match self.issue_bindings_path(&project_dir) {
             Some(path) => path,
             None => return Ok(()),
         };
@@ -645,7 +712,7 @@ impl HookServer {
             Some(dir) => dir,
             None => return Ok(vec![]),
         };
-        let path = match get_issue_bindings_path(&project_dir) {
+        let path = match self.issue_bindings_path(&project_dir) {
             Some(path) => path,
             None => return Ok(vec![]),
         };
@@ -688,7 +755,7 @@ impl HookServer {
             Some(dir) => dir,
             None => return Ok(()),
         };
-        let path = match get_active_ticket_path(&project_dir) {
+        let path = match self.active_ticket_path(&project_dir) {
             Some(path) => path,
             None => return Ok(()),
         };
@@ -724,7 +791,7 @@ impl HookServer {
             Some(dir) => dir,
             None => return Ok(Value::Null),
         };
-        let path = match get_active_ticket_path(&project_dir) {
+        let path = match self.active_ticket_path(&project_dir) {
             Some(path) => path,
             None => return Ok(Value::Null),
         };
@@ -747,45 +814,47 @@ impl HookServer {
         }
     }
 
+    /// Delete the handoff bound to `(harness_id, lane)` and drop the binding.
+    /// No-op when the lane is unbound.
     pub fn clear_harness_memory_lane(
         self: &Arc<Self>,
         harness_id: &str,
         lane: &str,
     ) -> Result<(), String> {
-        let mut memories = self
-            .memories
-            .lock()
-            .map_err(|e| format!("memory lock poisoned: {e}"))?;
-        let store = memories
-            .get_mut(harness_id)
-            .ok_or_else(|| format!("Unknown harness memory: {harness_id}"))?;
-
-        store.lanes.remove(lane);
-        drop(memories);
-        self.schedule_save(harness_id);
+        let (store_key, removed) =
+            self.with_handoff_store(harness_id, |store| store.clear_lane(harness_id, lane))?;
+        if removed.is_some() {
+            self.schedule_handoff_save(&store_key);
+        }
         Ok(())
     }
 
-    pub fn list_harness_memory(&self, harness_id: &str) -> Result<Vec<HarnessMemoryEntry>, String> {
-        let memories = self
-            .memories
-            .lock()
-            .map_err(|e| format!("memory lock poisoned: {e}"))?;
-        let store = memories
-            .get(harness_id)
-            .ok_or_else(|| format!("Unknown harness memory: {harness_id}"))?;
-        let mut entries: Vec<HarnessMemoryEntry> = store
-            .lanes
-            .iter()
-            .map(|(lane, doc)| HarnessMemoryEntry {
-                lane: lane.clone(),
-                summary: doc.summary.clone(),
-                detail: doc.detail.clone(),
-                updated_at: doc.updated_at,
-            })
-            .collect();
-        entries.sort_by_key(|entry| std::cmp::Reverse(entry.updated_at));
-        Ok(entries)
+    /// The handoffs of the project store this harness shares, newest first,
+    /// each carrying the requesting harness's lanes bound to it.
+    pub fn list_harness_memory(&self, harness_id: &str) -> Result<Vec<HandoffEntry>, String> {
+        self.with_handoff_store(harness_id, |store| store.entries_for(harness_id))
+            .map(|(_, entries)| entries)
+    }
+
+    /// Bind `(harness_id, lane)` to handoff `id`, replacing any previous
+    /// binding. `id` need not exist locally (a handoff adopted from Xenon is
+    /// created here on the lane's next `handoff_set`). Bindings are memory-only.
+    pub fn handoff_bind(&self, harness_id: &str, lane: &str, id: &str) -> Result<(), String> {
+        let id = id.trim();
+        if id.is_empty() {
+            return Err("handoff id is required".to_string());
+        }
+        if lane.trim().is_empty() {
+            return Err("lane is required".to_string());
+        }
+        self.with_handoff_store(harness_id, |store| store.bind(harness_id, lane, id))
+            .map(|_| ())
+    }
+
+    /// Drop the `(harness_id, lane)` binding; no-op when there is none.
+    pub fn handoff_unbind(&self, harness_id: &str, lane: &str) -> Result<(), String> {
+        self.with_handoff_store(harness_id, |store| store.unbind(harness_id, lane))
+            .map(|_| ())
     }
 
     pub fn dispose_harness_memory(&self, harness_id: &str) {
@@ -798,8 +867,14 @@ impl HookServer {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .remove(harness_id);
-        let mut memories = self.memories.lock().unwrap_or_else(|e| e.into_inner());
-        memories.remove(harness_id);
+        let released = self
+            .memories
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(harness_id);
+        if let Some(entry) = released {
+            self.release_handoff_store(harness_id, &entry.store_key);
+        }
         let mut stats = self.mcp_stats.lock().unwrap_or_else(|e| e.into_inner());
         stats.remove(harness_id);
         // spec 128: drop the harness's triage-equip set too (no stale state in a
@@ -813,6 +888,24 @@ impl HookServer {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .remove(harness_id);
+    }
+
+    /// Spec 293: drop this harness's bindings and its reference on the project
+    /// store; the last reference flushes any pending save and drops the store.
+    fn release_handoff_store(&self, harness_id: &str, store_key: &str) {
+        let mut stores = self
+            .handoff_stores
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let Some(store) = stores.get_mut(store_key) else {
+            return;
+        };
+        store.harnesses.remove(harness_id);
+        store.bindings.retain(|(owner, _), _| owner != harness_id);
+        if store.harnesses.is_empty() {
+            store.flush_if_pending();
+            stores.remove(store_key);
+        }
     }
 
     // ─── Artifact store (spec 133) ──────────────────────────────────────────
@@ -2070,39 +2163,403 @@ pub struct McpLaneStatsEntry {
     pub last_seen_at: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Spec 293: one handoff — a project-level document with its own id, written
+/// by whichever lane is continuing that piece of work (ADR-0023). `author` and
+/// `host` record the last writer for display only; neither is ever a key.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HarnessMemoryEntry {
-    pub lane: String,
-    pub summary: String,
-    pub detail: String,
-    pub updated_at: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PersistedMemory {
-    version: u32,
-    project_dir: String,
-    saved_at: u64,
-    lanes: HashMap<String, LaneMemoryDoc>,
-}
-
-#[derive(Debug, Default)]
-struct HarnessMemoryStore {
-    /// Key: lane label. One document per lane that has set memory.
-    lanes: HashMap<String, LaneMemoryDoc>,
-    persistence_path: Option<PathBuf>,
-    project_dir: Option<String>,
-    save_pending: Arc<AtomicBool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LaneMemoryDoc {
+struct Handoff {
+    id: String,
+    author: String,
+    host: String,
     summary: String,
     detail: String,
+    created_at: u64,
     updated_at: u64,
+}
+
+/// `list_harness_memory` row: a handoff plus the requesting harness's lanes
+/// bound to it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HandoffEntry {
+    pub id: String,
+    pub author: String,
+    pub host: String,
+    pub summary: String,
+    pub detail: String,
+    pub created_at: u64,
+    pub updated_at: u64,
+    pub bound_lanes: Vec<String>,
+}
+
+/// On-disk shape (v2): `{ version: 2, projectDir, savedAt, handoffs }`.
+/// Written from borrowed data; read back through [`PersistedHandoffs`].
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedHandoffsRef<'a> {
+    version: u32,
+    project_dir: &'a str,
+    saved_at: u64,
+    handoffs: &'a [Handoff],
+}
+
+#[derive(Deserialize)]
+struct PersistedHandoffs {
+    handoffs: Vec<Handoff>,
+}
+
+/// Legacy v1 shape: one slot per lane label.
+#[derive(Deserialize)]
+struct PersistedLaneSlotsV1 {
+    #[serde(default)]
+    lanes: HashMap<String, LaneSlotV1>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LaneSlotV1 {
+    #[serde(default)]
+    summary: String,
+    #[serde(default)]
+    detail: String,
+    #[serde(default)]
+    updated_at: u64,
+}
+
+const HANDOFF_FILE_VERSION: u32 = 2;
+/// Store keeps the newest handoffs; eviction never removes a bound one.
+const HANDOFF_CAP: usize = 50;
+
+/// Outcome of parsing a handoff file that is valid JSON.
+#[derive(Debug, PartialEq)]
+enum LoadedHandoffs {
+    Current(Vec<Handoff>),
+    /// A v1 lane-slot file, converted; the caller rewrites it as v2 so the
+    /// freshly minted ids stay stable across restarts.
+    Migrated(Vec<Handoff>),
+    UnknownVersion(u64),
+}
+
+fn parse_persisted_handoffs(content: &str, host: &str) -> Result<LoadedHandoffs, String> {
+    let value: Value = serde_json::from_str(content).map_err(|e| e.to_string())?;
+    match value.get("version").and_then(Value::as_u64) {
+        Some(2) => serde_json::from_value::<PersistedHandoffs>(value)
+            .map(|persisted| LoadedHandoffs::Current(persisted.handoffs))
+            .map_err(|e| e.to_string()),
+        Some(1) => serde_json::from_value::<PersistedLaneSlotsV1>(value)
+            .map(|persisted| LoadedHandoffs::Migrated(migrate_lane_slots(persisted.lanes, host)))
+            .map_err(|e| e.to_string()),
+        Some(other) => Ok(LoadedHandoffs::UnknownVersion(other)),
+        None => Err("missing version".to_string()),
+    }
+}
+
+/// v1 → v2: one handoff per non-empty lane slot, fresh id, `author` = the old
+/// lane label, `host` = this machine, `createdAt` = the slot's `updatedAt`.
+fn migrate_lane_slots(lanes: HashMap<String, LaneSlotV1>, host: &str) -> Vec<Handoff> {
+    let now = now_ms();
+    let mut handoffs: Vec<Handoff> = Vec::with_capacity(lanes.len());
+    for (label, slot) in lanes {
+        if slot.summary.trim().is_empty() && slot.detail.trim().is_empty() {
+            continue;
+        }
+        let id = mint_handoff_id(now, |candidate| {
+            handoffs.iter().any(|handoff| handoff.id == candidate)
+        });
+        handoffs.push(Handoff {
+            id,
+            author: label,
+            host: host.to_string(),
+            summary: slot.summary,
+            detail: slot.detail,
+            created_at: slot.updated_at,
+            updated_at: slot.updated_at,
+        });
+    }
+    sort_newest_first(&mut handoffs);
+    handoffs
+}
+
+fn sort_newest_first(handoffs: &mut [Handoff]) {
+    handoffs.sort_by_key(|handoff| Reverse(handoff.updated_at));
+}
+
+/// `ho-<base36 epoch ms>-<6 lowercase hex>`; retried while `taken` says the
+/// candidate collides with an id already in the store.
+fn mint_handoff_id(now: u64, taken: impl Fn(&str) -> bool) -> String {
+    static FALLBACK_COUNTER: AtomicU64 = AtomicU64::new(0);
+    loop {
+        let mut bytes = [0u8; 3];
+        if getrandom::getrandom(&mut bytes).is_err() {
+            let mut hasher = Sha256::new();
+            hasher.update(now.to_le_bytes());
+            hasher.update(
+                FALLBACK_COUNTER
+                    .fetch_add(1, Ordering::Relaxed)
+                    .to_le_bytes(),
+            );
+            bytes.copy_from_slice(&hasher.finalize()[..3]);
+        }
+        let id = format!(
+            "ho-{}-{:02x}{:02x}{:02x}",
+            to_base36(now),
+            bytes[0],
+            bytes[1],
+            bytes[2]
+        );
+        if !taken(&id) {
+            return id;
+        }
+    }
+}
+
+fn to_base36(mut n: u64) -> String {
+    const DIGITS: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    if n == 0 {
+        return "0".to_string();
+    }
+    let mut out = Vec::with_capacity(13);
+    while n > 0 {
+        out.push(DIGITS[(n % 36) as usize]);
+        n /= 36;
+    }
+    out.reverse();
+    String::from_utf8(out).unwrap_or_default()
+}
+
+/// Hostname recorded as a handoff's `host` on write.
+fn local_host() -> String {
+    hostname::get()
+        .ok()
+        .and_then(|h| h.into_string().ok())
+        .filter(|h| !h.is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Store key for a project: its canonical path, so two tabs opened on the same
+/// directory through different spellings share one store.
+fn canonical_project_key(project_dir: &str) -> String {
+    StdPath::new(project_dir)
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(project_dir))
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// Per harness tab: what the tab was opened on and which handoff store it uses.
+#[derive(Debug)]
+struct HarnessMemoryStore {
+    project_dir: Option<String>,
+    store_key: String,
+}
+
+/// Spec 293: the handoffs of one project, shared by every tab open on it.
+#[derive(Debug, Default)]
+struct ProjectHandoffStore {
+    /// Newest first by `updated_at`, capped at [`HANDOFF_CAP`].
+    handoffs: Vec<Handoff>,
+    /// `(harness_id, lane label)` → handoff id. Memory only: lane labels reset
+    /// every app run, so a persisted binding would attach to unrelated work.
+    bindings: HashMap<(String, String), String>,
+    persistence_path: Option<PathBuf>,
+    project_dir: Option<String>,
+    save_pending: bool,
+    /// Harness ids referencing this store; the last one out drops it.
+    harnesses: HashSet<String>,
+}
+
+impl ProjectHandoffStore {
+    fn load(persistence_path: Option<PathBuf>, project_dir: Option<String>) -> Self {
+        let mut handoffs = Vec::new();
+        let mut migrated = false;
+        if let Some(path) = persistence_path.as_deref().filter(|path| path.exists()) {
+            match std::fs::read_to_string(path) {
+                Ok(content) => match parse_persisted_handoffs(&content, &local_host()) {
+                    Ok(LoadedHandoffs::Current(loaded)) => {
+                        log::info!("Loaded {} handoff(s) from {}", loaded.len(), path.display());
+                        handoffs = loaded;
+                    }
+                    Ok(LoadedHandoffs::Migrated(loaded)) => {
+                        log::info!(
+                            "Migrated {} v1 lane slot(s) to handoffs at {}",
+                            loaded.len(),
+                            path.display()
+                        );
+                        handoffs = loaded;
+                        migrated = true;
+                    }
+                    Ok(LoadedHandoffs::UnknownVersion(version)) => {
+                        log::warn!(
+                            "Unsupported handoff file version {version} at {}; starting empty",
+                            path.display()
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to parse persisted handoffs at {}: {e}",
+                            path.display()
+                        );
+                        let broken_path = path.with_extension(format!("json.broken-{}", now_ms()));
+                        let _ = std::fs::rename(path, broken_path);
+                    }
+                },
+                Err(e) => {
+                    log::warn!(
+                        "Failed to read persisted handoffs at {}: {e}",
+                        path.display()
+                    );
+                }
+            }
+        }
+        sort_newest_first(&mut handoffs);
+        let mut store = Self {
+            handoffs,
+            persistence_path,
+            project_dir,
+            ..Self::default()
+        };
+        store.enforce_cap();
+        if migrated {
+            if let Err(e) = store.write_to_disk() {
+                log::warn!("Failed to rewrite migrated handoffs: {e}");
+            }
+        }
+        store
+    }
+
+    fn write_to_disk(&self) -> Result<(), String> {
+        let Some(path) = self.persistence_path.as_deref() else {
+            return Ok(());
+        };
+        let persisted = PersistedHandoffsRef {
+            version: HANDOFF_FILE_VERSION,
+            project_dir: self.project_dir.as_deref().unwrap_or_default(),
+            saved_at: now_ms(),
+            handoffs: &self.handoffs,
+        };
+        let json = serde_json::to_string_pretty(&persisted)
+            .map_err(|e| format!("failed to serialize handoffs: {e}"))?;
+        let tmp_path = path.with_extension("json.tmp");
+        std::fs::write(&tmp_path, json)
+            .map_err(|e| format!("failed to write handoff tmp file: {e}"))?;
+        std::fs::rename(&tmp_path, path).map_err(|e| format!("failed to rename handoff file: {e}"))
+    }
+
+    fn flush_if_pending(&mut self) {
+        if !self.save_pending {
+            return;
+        }
+        self.save_pending = false;
+        if let Err(e) = self.write_to_disk() {
+            log::warn!("{e}");
+        }
+    }
+
+    /// `handoff_set` write from `(harness_id, lane)`: overwrite the bound
+    /// handoff (creating it under that id when it was adopted from Xenon and is
+    /// not local yet), or mint a new one and bind the lane to it.
+    fn write(
+        &mut self,
+        harness_id: &str,
+        lane: &str,
+        summary: String,
+        detail: String,
+        host: &str,
+        now: u64,
+    ) -> Handoff {
+        let key = (harness_id.to_string(), lane.to_string());
+        let id = match self.bindings.get(&key) {
+            Some(id) => id.clone(),
+            None => {
+                let id = mint_handoff_id(now, |candidate| self.contains(candidate));
+                self.bindings.insert(key, id.clone());
+                id
+            }
+        };
+        let created_at = match self.handoffs.iter().position(|h| h.id == id) {
+            Some(index) => self.handoffs.remove(index).created_at,
+            None => now,
+        };
+        let handoff = Handoff {
+            id,
+            author: lane.to_string(),
+            host: host.to_string(),
+            summary,
+            detail,
+            created_at,
+            updated_at: now,
+        };
+        self.handoffs.insert(0, handoff.clone());
+        sort_newest_first(&mut self.handoffs);
+        self.enforce_cap();
+        handoff
+    }
+
+    /// Delete the handoff bound to `(harness_id, lane)` and drop the binding.
+    /// Returns the id that was bound, if any.
+    fn clear_lane(&mut self, harness_id: &str, lane: &str) -> Option<String> {
+        let id = self
+            .bindings
+            .remove(&(harness_id.to_string(), lane.to_string()))?;
+        self.handoffs.retain(|handoff| handoff.id != id);
+        Some(id)
+    }
+
+    fn bind(&mut self, harness_id: &str, lane: &str, id: &str) {
+        self.bindings
+            .insert((harness_id.to_string(), lane.to_string()), id.to_string());
+    }
+
+    fn unbind(&mut self, harness_id: &str, lane: &str) {
+        self.bindings
+            .remove(&(harness_id.to_string(), lane.to_string()));
+    }
+
+    fn contains(&self, id: &str) -> bool {
+        self.handoffs.iter().any(|handoff| handoff.id == id)
+    }
+
+    /// Evict the oldest handoffs past [`HANDOFF_CAP`], skipping any that a
+    /// binding (from any harness) still references.
+    fn enforce_cap(&mut self) {
+        while self.handoffs.len() > HANDOFF_CAP {
+            let bound: HashSet<&str> = self.bindings.values().map(String::as_str).collect();
+            let Some(index) = self
+                .handoffs
+                .iter()
+                .rposition(|handoff| !bound.contains(handoff.id.as_str()))
+            else {
+                break;
+            };
+            self.handoffs.remove(index);
+        }
+    }
+
+    fn entries_for(&self, harness_id: &str) -> Vec<HandoffEntry> {
+        self.handoffs
+            .iter()
+            .map(|handoff| {
+                let mut bound_lanes: Vec<String> = self
+                    .bindings
+                    .iter()
+                    .filter(|((owner, _), id)| owner == harness_id && **id == handoff.id)
+                    .map(|((_, lane), _)| lane.clone())
+                    .collect();
+                bound_lanes.sort();
+                HandoffEntry {
+                    id: handoff.id.clone(),
+                    author: handoff.author.clone(),
+                    host: handoff.host.clone(),
+                    summary: handoff.summary.clone(),
+                    detail: handoff.detail.clone(),
+                    created_at: handoff.created_at,
+                    updated_at: handoff.updated_at,
+                    bound_lanes,
+                }
+            })
+            .collect()
+    }
 }
 
 const MEMORY_SUMMARY_MAX: usize = 300;
@@ -3091,7 +3548,7 @@ async fn handle_tools() -> Response {
 /// response, which strict clients (Junie's Kotlin SDK) parse by shape.
 fn tool_category(name: &str) -> &'static str {
     match name {
-        "handoff_set" | "handoff_get" | "handoff_list" => "memory",
+        "handoff_set" => "memory",
         "peer_send" | "peer_list" => "peering",
         "artifact_new" | "artifact_register" | "artifact_cancel" => "artifacts",
         "attention_flag" | "attention_resolve" => "attention",
@@ -3823,8 +4280,6 @@ async fn handle_bus_tool_call(
     }
     let outcome = match name {
         "handoff_set" => handoff_set(&state.hook_server, harness_id, lane_label, arguments),
-        "handoff_get" => handoff_get(&state.hook_server, harness_id, arguments),
-        "handoff_list" => handoff_list(&state.hook_server, harness_id),
         "peer_send" => peer_send(state, harness_id, lane_label, arguments).await,
         "peer_list" => peer_list(state, harness_id).await,
         // spec 161: the four directive_* tools were removed to reclaim ~1,224
@@ -3870,11 +4325,13 @@ async fn handle_bus_tool_call(
     };
 
     let is_error = outcome.is_err();
-    if !is_error && name == "handoff_set" {
-        state.app_handle.emit_or_log(
-            "acp-harness-memory-changed",
-            json!({ "harnessId": harness_id }),
-        );
+    if name == "handoff_set" {
+        if let Ok(value) = &outcome {
+            let written = value.pointer("/entry/id").and_then(Value::as_str);
+            state
+                .hook_server
+                .emit_handoff_changed(&state.app_handle, harness_id, written);
+        }
     }
     let text = match outcome {
         Ok(value) => serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string()),
@@ -5219,7 +5676,7 @@ fn safe_truncate(s: &str, max_bytes: usize) -> &str {
 /// Thai. `handoff_set` uses this to truncate an over-long `summary` instead of
 /// rejecting it: models cannot reliably self-count characters, so the old
 /// instructive rejection just produced retry loops. The body lives in `detail`;
-/// `summary` is only the scannable headline shown by `handoff_list`.
+/// `summary` is only the scannable headline shown in handoff lists.
 fn clamp_headline(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
@@ -5466,6 +5923,8 @@ fn feedback_token() -> String {
     out
 }
 
+/// Spec 293: `handoff_set` writes the handoff for the work this lane is doing —
+/// the one it is bound to, or a freshly minted one it becomes bound to.
 fn handoff_set(
     hook_server: &Arc<HookServer>,
     harness_id: &str,
@@ -5489,91 +5948,32 @@ fn handoff_set(
         return Err(format!("detail exceeds {MEMORY_DETAIL_MAX} characters"));
     }
 
-    let mut memories = hook_server
-        .memories
-        .lock()
-        .map_err(|e| format!("memory lock poisoned: {e}"))?;
-    let store = memories
-        .get_mut(harness_id)
-        .ok_or_else(|| format!("Unknown harness memory: {harness_id}"))?;
-
     if summary_empty {
-        store.lanes.remove(lane_label);
-        drop(memories);
-        hook_server.schedule_save(harness_id);
-        return Ok(json!({ "lane": lane_label, "cleared": true }));
+        let (store_key, removed) = hook_server
+            .with_handoff_store(harness_id, |store| store.clear_lane(harness_id, lane_label))?;
+        if removed.is_some() {
+            hook_server.schedule_handoff_save(&store_key);
+        }
+        return Ok(json!({ "id": removed, "cleared": true }));
     }
 
-    let doc = LaneMemoryDoc {
-        summary: clamp_headline(summary.trim(), MEMORY_SUMMARY_MAX),
-        detail: detail.trim().to_string(),
-        updated_at: now_ms(),
-    };
-    store.lanes.insert(lane_label.to_string(), doc.clone());
-    drop(memories);
-    hook_server.schedule_save(harness_id);
+    let summary = clamp_headline(summary.trim(), MEMORY_SUMMARY_MAX);
+    let detail = detail.trim().to_string();
+    let host = local_host();
+    let now = now_ms();
+    let (store_key, handoff) = hook_server.with_handoff_store(harness_id, |store| {
+        store.write(harness_id, lane_label, summary, detail, &host, now)
+    })?;
+    hook_server.schedule_handoff_save(&store_key);
     Ok(json!({
         "entry": {
-            "lane": lane_label,
-            "summary": doc.summary,
-            "detail": doc.detail,
-            "updatedAt": doc.updated_at,
+            "id": handoff.id,
+            "author": handoff.author,
+            "summary": handoff.summary,
+            "detail": handoff.detail,
+            "updatedAt": handoff.updated_at,
         }
     }))
-}
-
-fn handoff_get(
-    hook_server: &Arc<HookServer>,
-    harness_id: &str,
-    arguments: Value,
-) -> Result<Value, String> {
-    let lane = required_string(&arguments, "lane")?;
-    let memories = hook_server
-        .memories
-        .lock()
-        .map_err(|e| format!("memory lock poisoned: {e}"))?;
-    let store = memories
-        .get(harness_id)
-        .ok_or_else(|| format!("Unknown harness memory: {harness_id}"))?;
-    match store.lanes.get(&lane) {
-        Some(doc) => Ok(json!({
-            "entry": {
-                "lane": lane,
-                "summary": doc.summary,
-                "detail": doc.detail,
-                "updatedAt": doc.updated_at,
-            }
-        })),
-        None => Ok(json!({ "entry": null })),
-    }
-}
-
-fn handoff_list(hook_server: &Arc<HookServer>, harness_id: &str) -> Result<Value, String> {
-    let memories = hook_server
-        .memories
-        .lock()
-        .map_err(|e| format!("memory lock poisoned: {e}"))?;
-    let store = memories
-        .get(harness_id)
-        .ok_or_else(|| format!("Unknown harness memory: {harness_id}"))?;
-    let mut entries: Vec<Value> = store
-        .lanes
-        .iter()
-        .map(|(lane, doc)| {
-            json!({
-                "lane": lane,
-                "summary": doc.summary,
-                "updatedAt": doc.updated_at,
-            })
-        })
-        .collect();
-    entries.sort_by(|a, b| {
-        b.get("updatedAt")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0)
-            .cmp(&a.get("updatedAt").and_then(|v| v.as_u64()).unwrap_or(0))
-    });
-    Ok(json!({ "entries": entries }))
 }
 
 /// spec 133 — `artifact_new`: allocate + issue path, emit a `pending` event so
@@ -5753,7 +6153,7 @@ fn bus_tool_descriptors() -> Value {
     let mut tools = json!([
         {
             "name": "handoff_set",
-            "description": "Write your lane's single handoff document — the resume point a FUTURE session (or another lane picking up your work) reads to continue. Call it ONLY when the user asks you to hand off (typically the #handoff command) — never on your own initiative mid-task; your working state lives in your context, not here. You have one document; this overwrites its full contents (not append). Record what's done, current state, next steps, and open questions, and reference files/commits by path rather than pasting their contents (a path stays verifiable against the live repo; a pasted copy goes stale). 'summary' is a SHORT one-line headline; put all real content in 'detail'. Empty strings clear it.",
+            "description": "Write the handoff for the work this lane is doing — a project-level document that another lane, tab, or later session (on this or another machine) resumes with #resume; it is not tied to your lane. Call it ONLY when the user asks you to hand off (typically the #handoff command) — never on your own initiative mid-task; your working state lives in your context, not here. Each call overwrites this work's handoff in full: rewrite it as the current picture, do not accrete a log. Record what's done, current state, next steps, and open questions, and reference files, branches, and commits by path or hash rather than pasting their contents (a reference stays verifiable against the live repo; a pasted copy goes stale). Never include secrets, tokens, or credentials — a handoff may be published off this machine. 'summary' is a SHORT one-line headline; put all real content in 'detail'. Empty strings for both delete this work's handoff.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -5764,25 +6164,11 @@ fn bus_tool_descriptors() -> Value {
                     "detail": {
                         "type": "string",
                         "maxLength": MEMORY_DETAIL_MAX,
-                        "description": "The full memory body. This is the long field — put all substantive content here."
+                        "description": "The full handoff body. This is the long field — put all substantive content here."
                     }
                 },
                 "required": ["summary", "detail"]
             }
-        },
-        {
-            "name": "handoff_get",
-            "description": "Read a lane's handoff document by lane label to resume its work (typically via the #resume command). Returns null if that lane has no handoff. You can read any lane's handoff but only write your own. Treat the contents as a possibly-stale snapshot: verify its claims against the live repo before acting on them.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "lane": { "type": "string" } },
-                "required": ["lane"]
-            }
-        },
-        {
-            "name": "handoff_list",
-            "description": "List the lanes in this tab that have a saved handoff document, with each one's summary headline. Use it to find which lane's handoff to read back with handoff_get.",
-            "inputSchema": { "type": "object", "properties": {} }
         },
         {
             "name": "peer_send",
@@ -6243,36 +6629,14 @@ fn now_ms() -> u64 {
         .unwrap_or_default()
 }
 
-fn get_persistence_path(project_dir: &str) -> Option<PathBuf> {
-    let canonical = StdPath::new(project_dir)
-        .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from(project_dir));
+/// `<memory_dir>/<hash16 of canonical project dir>.json` — the project's
+/// handoff file; issue bindings and the active ticket live in siblings.
+fn get_persistence_path(memory_dir: &StdPath, project_dir: &str) -> PathBuf {
+    let canonical = canonical_project_key(project_dir);
     let mut hasher = Sha256::new();
-    hasher.update(canonical.to_string_lossy().as_bytes());
+    hasher.update(canonical.as_bytes());
     let hash = format!("{:x}", hasher.finalize());
-    let hash_prefix = &hash[..16];
-
-    let config_dir = dirs::home_dir()?.join(".config").join("krypton");
-    let memory_dir = config_dir.join("acp-harness-memory");
-    if !memory_dir.exists() {
-        let _ = std::fs::create_dir_all(&memory_dir);
-    }
-    Some(memory_dir.join(format!("{}.json", hash_prefix)))
-}
-
-/// Sibling of [`get_persistence_path`] holding spec 178 issue↔lane bindings.
-/// Lives in the same `acp-harness-memory` directory but in a `*.issue-bindings.json`
-/// file, kept separate from the handoff-only `PersistedMemory` store.
-fn get_issue_bindings_path(project_dir: &str) -> Option<PathBuf> {
-    let base = get_persistence_path(project_dir)?;
-    Some(base.with_extension("issue-bindings.json"))
-}
-
-/// spec 194: sibling of [`get_issue_bindings_path`] holding the harness's shared
-/// working ticket (`ActiveWorkTicket`) in a `*.active-ticket.json` file.
-fn get_active_ticket_path(project_dir: &str) -> Option<PathBuf> {
-    let base = get_persistence_path(project_dir)?;
-    Some(base.with_extension("active-ticket.json"))
+    memory_dir.join(format!("{}.json", &hash[..16]))
 }
 
 /// spec 178: persist a harness's issue↔lane bindings to disk. The frontend
@@ -11090,6 +11454,317 @@ mod tests {
         assert!(clamped.ends_with('\u{2026}'));
         // Byte length far exceeds the code-point cap — proof we clipped by chars.
         assert!(clamped.len() > MEMORY_SUMMARY_MAX);
+    }
+
+    // ─── Project handoff store (spec 293) ──────────────────────────────────
+
+    fn handoff_ids(store: &ProjectHandoffStore) -> Vec<String> {
+        store.handoffs.iter().map(|h| h.id.clone()).collect()
+    }
+
+    #[test]
+    fn v1_lane_slots_migrate_to_v2_handoffs() {
+        let v1 = json!({
+            "version": 1,
+            "projectDir": "/p",
+            "savedAt": 5,
+            "lanes": {
+                "Claude-1": { "summary": "s1", "detail": "d1", "updatedAt": 100 },
+                "Gemini-1": { "summary": "s2", "detail": "d2", "updatedAt": 200 },
+                "Codex-1": { "summary": "", "detail": "", "updatedAt": 300 }
+            }
+        })
+        .to_string();
+        let LoadedHandoffs::Migrated(handoffs) = parse_persisted_handoffs(&v1, "box").unwrap()
+        else {
+            panic!("a v1 file must migrate");
+        };
+        assert_eq!(handoffs.len(), 2, "an empty slot is not a handoff");
+        assert_eq!(handoffs[0].author, "Gemini-1", "newest first");
+        assert_eq!(handoffs[0].summary, "s2");
+        assert_eq!(handoffs[0].detail, "d2");
+        assert_eq!(handoffs[0].created_at, 200);
+        assert_eq!(handoffs[0].updated_at, 200);
+        assert_eq!(handoffs[1].author, "Claude-1");
+        assert!(handoffs.iter().all(|h| h.host == "box"));
+        assert!(handoffs.iter().all(|h| h.id.starts_with("ho-")));
+        assert_ne!(handoffs[0].id, handoffs[1].id);
+
+        // Through the loader the file is rewritten as v2 straight away, so the
+        // freshly minted ids survive the next restart.
+        let dir = std::env::temp_dir().join(format!("krypton-handoff-v1-{}", rand_suffix()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("store.json");
+        std::fs::write(&path, &v1).unwrap();
+        let store = ProjectHandoffStore::load(Some(path.clone()), Some("/p".to_string()));
+        assert_eq!(store.handoffs.len(), 2);
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved["version"], 2);
+        assert_eq!(saved["projectDir"], "/p");
+        assert_eq!(saved["handoffs"][0]["author"], "Gemini-1");
+        assert_eq!(saved["handoffs"][0]["createdAt"], 200);
+        let reloaded = ProjectHandoffStore::load(Some(path), Some("/p".to_string()));
+        assert_eq!(handoff_ids(&reloaded), handoff_ids(&store));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unknown_or_broken_handoff_files_load_empty() {
+        assert_eq!(
+            parse_persisted_handoffs(r#"{"version":9,"handoffs":[]}"#, "box").unwrap(),
+            LoadedHandoffs::UnknownVersion(9)
+        );
+        assert!(parse_persisted_handoffs("not json", "box").is_err());
+        assert!(parse_persisted_handoffs(r#"{"handoffs":[]}"#, "box").is_err());
+
+        let dir = std::env::temp_dir().join(format!("krypton-handoff-bad-{}", rand_suffix()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("store.json");
+        std::fs::write(&path, "{ broken").unwrap();
+        let store = ProjectHandoffStore::load(Some(path.clone()), None);
+        assert!(store.handoffs.is_empty());
+        assert!(!path.exists(), "an unparseable file is moved aside");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bound_lane_overwrites_its_handoff_in_place() {
+        let mut store = ProjectHandoffStore::default();
+        store.bind("hm-1", "Claude-2", "ho-adopted-abc123");
+        let first = store.write("hm-1", "Claude-2", "s1".into(), "d1".into(), "box", 1_000);
+        assert_eq!(
+            first.id, "ho-adopted-abc123",
+            "a handoff adopted from Xenon is created locally under its own id"
+        );
+        assert_eq!(first.created_at, 1_000);
+
+        let second = store.write("hm-1", "Claude-2", "s2".into(), "d2".into(), "other", 2_000);
+        assert_eq!(second.id, first.id);
+        assert_eq!(store.handoffs.len(), 1);
+        assert_eq!(second.created_at, 1_000, "createdAt survives an overwrite");
+        assert_eq!(second.updated_at, 2_000);
+        assert_eq!(second.summary, "s2");
+        assert_eq!(second.detail, "d2");
+        assert_eq!(second.host, "other");
+        assert_eq!(second.author, "Claude-2");
+    }
+
+    #[test]
+    fn unbound_lane_mints_a_new_handoff_and_binds_it() {
+        let mut store = ProjectHandoffStore::default();
+        let first = store.write("hm-1", "Claude-1", "s".into(), "d".into(), "box", 1_000);
+        assert!(first.id.starts_with(&format!("ho-{}-", to_base36(1_000))));
+        let suffix = first.id.rsplit('-').next().unwrap();
+        assert_eq!(suffix.len(), 6);
+        assert!(suffix
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert_eq!(
+            store
+                .bindings
+                .get(&("hm-1".to_string(), "Claude-1".to_string())),
+            Some(&first.id)
+        );
+
+        store.unbind("hm-1", "Claude-1");
+        let second = store.write("hm-1", "Claude-1", "s".into(), "d".into(), "box", 2_000);
+        assert_ne!(second.id, first.id, "an unbound lane starts a new thread");
+        assert_eq!(
+            handoff_ids(&store),
+            vec![second.id.clone(), first.id.clone()]
+        );
+    }
+
+    #[test]
+    fn base36_matches_the_id_contract() {
+        assert_eq!(to_base36(0), "0");
+        assert_eq!(to_base36(35), "z");
+        assert_eq!(to_base36(36), "10");
+    }
+
+    #[test]
+    fn cap_eviction_never_removes_a_bound_handoff() {
+        let mut store = ProjectHandoffStore::default();
+        let oldest = store.write("hm-1", "Keeper", "old".into(), "d".into(), "box", 1);
+        let mut unbound = Vec::new();
+        for i in 0..60u64 {
+            let lane = format!("L{i}");
+            let handoff = store.write("hm-1", &lane, "s".into(), "d".into(), "box", 100 + i);
+            store.unbind("hm-1", &lane);
+            unbound.push(handoff.id);
+        }
+        assert_eq!(store.handoffs.len(), HANDOFF_CAP);
+        assert!(store.contains(&oldest.id), "the bound oldest survives");
+        for evicted in &unbound[..11] {
+            assert!(!store.contains(evicted), "oldest unbound go first");
+        }
+        for kept in &unbound[11..] {
+            assert!(store.contains(kept));
+        }
+    }
+
+    #[test]
+    fn handoff_store_is_shared_by_tabs_on_one_project() {
+        let root = std::env::temp_dir().join(format!("krypton-handoff-share-{}", rand_suffix()));
+        let project = root.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let project = project.to_string_lossy().to_string();
+        let server = Arc::new(HookServer::with_memory_dir(root.join("memory")));
+        let a = server.create_harness_memory(Some(project.clone()));
+        let b = server.create_harness_memory(Some(project.clone()));
+        let mut both = vec![a.clone(), b.clone()];
+        both.sort();
+        assert_eq!(server.handoff_sharers(&a), both);
+
+        let written = handoff_set(
+            &server,
+            &a,
+            "Claude-1",
+            json!({ "summary": "A's work", "detail": "did X" }),
+        )
+        .unwrap();
+        let id_a = written
+            .pointer("/entry/id")
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_string();
+        assert_eq!(written.pointer("/entry/author"), Some(&json!("Claude-1")));
+        let seen_by_b = server.list_harness_memory(&b).unwrap();
+        assert_eq!(seen_by_b.len(), 1);
+        assert_eq!(seen_by_b[0].id, id_a);
+        assert!(seen_by_b[0].bound_lanes.is_empty(), "bindings are per tab");
+        assert_eq!(
+            server.list_harness_memory(&a).unwrap()[0].bound_lanes,
+            vec!["Claude-1"]
+        );
+
+        // The same label in tab B is a different lane: it starts its own thread.
+        handoff_set(
+            &server,
+            &b,
+            "Claude-1",
+            json!({ "summary": "B's work", "detail": "did Y" }),
+        )
+        .unwrap();
+        assert_eq!(server.list_harness_memory(&a).unwrap().len(), 2);
+
+        // Closing both tabs leaves one file holding both handoffs — neither
+        // tab's save clobbered the other's.
+        server.dispose_harness_memory(&a);
+        server.dispose_harness_memory(&b);
+        assert!(server
+            .handoff_stores
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty());
+        let path = server.persistence_path(&project).unwrap();
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved["version"], 2);
+        assert_eq!(saved["handoffs"].as_array().map(Vec::len), Some(2));
+
+        let c = server.create_harness_memory(Some(project));
+        assert_eq!(server.list_harness_memory(&c).unwrap().len(), 2);
+        server.dispose_harness_memory(&c);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn handoff_set_clear_bind_and_unbind_through_the_server() {
+        let server = Arc::new(HookServer::new());
+        let h = server.create_harness_memory(None);
+
+        let err = handoff_set(
+            &server,
+            &h,
+            "Claude-1",
+            json!({ "summary": "x", "detail": "" }),
+        )
+        .unwrap_err();
+        assert!(err.contains("mixed_empty"), "got: {err}");
+
+        // Adopt a remote id; the next write creates it locally under that id.
+        server
+            .handoff_bind(&h, "Claude-1", "ho-remote-0a0b0c")
+            .unwrap();
+        assert!(server.list_harness_memory(&h).unwrap().is_empty());
+        let written = handoff_set(
+            &server,
+            &h,
+            "Claude-1",
+            json!({ "summary": "s", "detail": "d" }),
+        )
+        .unwrap();
+        assert_eq!(
+            written.pointer("/entry/id"),
+            Some(&json!("ho-remote-0a0b0c"))
+        );
+        let listed = server.list_harness_memory(&h).unwrap();
+        assert_eq!(listed[0].bound_lanes, vec!["Claude-1"]);
+
+        let cleared = handoff_set(
+            &server,
+            &h,
+            "Claude-1",
+            json!({ "summary": "", "detail": "" }),
+        )
+        .unwrap();
+        assert_eq!(
+            cleared,
+            json!({ "id": "ho-remote-0a0b0c", "cleared": true })
+        );
+        assert!(server.list_harness_memory(&h).unwrap().is_empty());
+        let again = handoff_set(
+            &server,
+            &h,
+            "Claude-1",
+            json!({ "summary": "", "detail": "" }),
+        )
+        .unwrap();
+        assert_eq!(again, json!({ "id": null, "cleared": true }));
+
+        // clear_harness_memory_lane deletes the bound handoff; unbind keeps it.
+        handoff_set(
+            &server,
+            &h,
+            "Codex-1",
+            json!({ "summary": "s", "detail": "d" }),
+        )
+        .unwrap();
+        handoff_set(
+            &server,
+            &h,
+            "Pi-1",
+            json!({ "summary": "s", "detail": "d" }),
+        )
+        .unwrap();
+        server.clear_harness_memory_lane(&h, "Codex-1").unwrap();
+        server.handoff_unbind(&h, "Pi-1").unwrap();
+        let listed = server.list_harness_memory(&h).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].author, "Pi-1");
+        assert!(listed[0].bound_lanes.is_empty());
+        assert!(server.handoff_bind(&h, "Pi-1", "  ").is_err());
+
+        server.dispose_harness_memory(&h);
+        assert!(server
+            .handoff_stores
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty());
+        assert!(server.list_harness_memory(&h).is_err());
+    }
+
+    #[test]
+    fn handoff_set_is_the_only_memory_tool() {
+        let tools = bus_tool_descriptors();
+        let memory: Vec<&str> = tools
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .filter_map(|tool| tool.get("name").and_then(Value::as_str))
+            .filter(|name| tool_category(name) == "memory")
+            .collect();
+        assert_eq!(memory, vec!["handoff_set"]);
     }
 }
 

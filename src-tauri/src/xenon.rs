@@ -23,12 +23,17 @@ const REQUEST_TIMEOUT_SECS: u64 = 60;
 /// spec 213: the link probe runs on a timer behind a status segment, so it must
 /// fail fast. A push may legitimately take a minute; "is the link up?" may not.
 const PROBE_TIMEOUT_SECS: u64 = 5;
+/// spec 293: `#resume` waits on the handoff pull, so its reads share the
+/// probe's fail-fast budget rather than the push's minute.
+const READ_TIMEOUT_SECS: u64 = 5;
+/// Detail requests in flight at once while listing remote handoffs.
+const READ_CONCURRENCY: usize = 4;
 /// Matches the server's default; a larger file is reported as failed rather
 /// than attempted.
 const MAX_BLOB_BYTES: u64 = 64 * 1024 * 1024;
 const QUEUE_FILE: &str = "xenon-queue.json";
 
-pub const KINDS: [&str; 7] = [
+pub const KINDS: [&str; 8] = [
     "artifact",
     "review",
     "analysis",
@@ -36,6 +41,7 @@ pub const KINDS: [&str; 7] = [
     "attention",
     "daily",
     "timeline",
+    "handoff",
 ];
 
 // ------------------------------------------------------------------- types
@@ -93,6 +99,78 @@ struct ServerError {
     error: String,
     #[serde(default)]
     message: String,
+}
+
+/// spec 293: one row of `GET /v1/projects/{p}/resources` (server
+/// `ResourceSummary`); only the fields the handoff pull reads.
+#[derive(Debug, Deserialize)]
+struct RemoteResourceSummary {
+    id: String,
+    slug: String,
+}
+
+/// spec 293: `GET /v1/resources/{id}` (server `ResourceDetail`, summary
+/// flattened in) — only the fields the handoff pull reads.
+#[derive(Debug, Deserialize)]
+struct RemoteResourceDetail {
+    slug: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    project: String,
+    revision: Option<RemoteRevision>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteRevision {
+    id: String,
+    seq: i64,
+    #[serde(default)]
+    meta: serde_json::Value,
+}
+
+/// spec 293: a handoff as published on Xenon. Times come from the revision
+/// `meta` (when the handoff was written), never from server timestamps (when
+/// it was pushed). `detail` is `None` from a list and set by a fetch.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteHandoff {
+    pub id: String,
+    pub author: String,
+    pub host: String,
+    pub summary: String,
+    pub detail: Option<String>,
+    pub created_at: u64,
+    pub updated_at: u64,
+    pub seq: i64,
+    pub url: String,
+}
+
+/// spec 293: result of `xenon_handoff_list`. `available: false` with no reason
+/// means Xenon is off (stay silent); with a reason the frontend shows it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct XenonHandoffList {
+    pub available: bool,
+    pub reason: Option<String>,
+    pub handoffs: Vec<RemoteHandoff>,
+}
+
+/// Why a Xenon client could not be built.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClientError {
+    /// Disabled or no base URL — not a fault.
+    Off(String),
+    /// Configured but unusable (no token, vault error, client build failure).
+    Unusable(String),
+}
+
+impl ClientError {
+    pub fn into_message(self) -> String {
+        match self {
+            ClientError::Off(message) | ClientError::Unusable(message) => message,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -461,7 +539,8 @@ pub fn collect(
         "doc" => collect_docs(cwd)?,
         "daily" => collect_daily(cwd, daily_dir)?,
         "timeline" => collect_timeline(cwd, slug_filter)?.resources,
-        "attention" => Vec::new(), // supplied by the frontend, never read from disk
+        // Supplied by the frontend, never read from disk.
+        "attention" | "handoff" => Vec::new(),
         other => return Err(format!("unknown resource kind: {other}")),
     };
     if let Some(want) = slug_filter {
@@ -916,6 +995,168 @@ pub fn attention_resources(
     Ok(out)
 }
 
+/// spec 293: handoffs live in the harness's project store, so the frontend
+/// hands the entries over (like attention). One resource per handoff: slug =
+/// handoff id, meta = its identity, and the body as one inline `handoff.md`.
+pub fn handoff_resources(
+    cwd: &Path,
+    entries: Vec<serde_json::Value>,
+) -> Result<Vec<LocalResource>, String> {
+    let mut out = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let text = |key: &str| {
+            entry
+                .get(key)
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
+        let number = |key: &str| entry.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
+        let id = text("id");
+        if id.trim().is_empty() {
+            return Err("handoff entry is missing an id".to_string());
+        }
+        let summary = text("summary");
+        let title = if summary.trim().is_empty() {
+            id.clone()
+        } else {
+            summary.chars().take(300).collect()
+        };
+        let meta = serde_json::json!({
+            "id": id,
+            "author": text("author"),
+            "host": text("host"),
+            "summary": summary,
+            "createdAt": number("createdAt"),
+            "updatedAt": number("updatedAt"),
+        });
+        let mut inline = BTreeMap::new();
+        inline.insert("handoff.md".to_string(), text("detail").into_bytes());
+
+        out.push(LocalResource {
+            manifest: ResourceManifest {
+                kind: "handoff".to_string(),
+                slug: id,
+                title,
+                origin: origin_value(cwd),
+                meta,
+                files: Vec::new(),
+            },
+            sources: BTreeMap::new(),
+            inline,
+        });
+    }
+    Ok(out)
+}
+
+/// spec 293: resolve a `#resume <ref>` against remote handoff slugs. An exact
+/// id wins; otherwise `reference` — with or without its `ho-` prefix, and at
+/// least 4 characters after it — must prefix exactly one slug.
+pub fn match_handoff_reference<'a>(
+    slugs: impl IntoIterator<Item = &'a str>,
+    reference: &str,
+) -> Result<&'a str, String> {
+    let reference = reference.trim();
+    let bare = reference.strip_prefix("ho-").unwrap_or(reference);
+    if bare.chars().count() < 4 {
+        return Err(format!(
+            "handoff reference `{reference}` is too short — give at least 4 characters after `ho-`"
+        ));
+    }
+    let prefixed = format!("ho-{reference}");
+    let mut matches: Vec<&'a str> = Vec::new();
+    for slug in slugs {
+        if slug == reference {
+            return Ok(slug);
+        }
+        if (slug.starts_with(reference) || slug.starts_with(&prefixed)) && !matches.contains(&slug)
+        {
+            matches.push(slug);
+        }
+    }
+    match matches.as_slice() {
+        [one] => Ok(*one),
+        [] => Err(format!("no handoff matching `{reference}` on Xenon")),
+        many => Err(format!(
+            "`{reference}` matches {} handoffs on Xenon — give more characters",
+            many.len()
+        )),
+    }
+}
+
+/// Builds the frontend's view of a published handoff from its head revision.
+fn remote_handoff_from(
+    base_url: &str,
+    project: &str,
+    detail: &RemoteResourceDetail,
+    revision: &RemoteRevision,
+) -> RemoteHandoff {
+    let meta = &revision.meta;
+    let text = |key: &str| meta.get(key).and_then(|v| v.as_str()).map(str::to_string);
+    let number = |key: &str| meta.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
+    let project = if detail.project.is_empty() {
+        project
+    } else {
+        detail.project.as_str()
+    };
+    RemoteHandoff {
+        id: detail.slug.clone(),
+        author: text("author").unwrap_or_default(),
+        host: text("host").unwrap_or_default(),
+        summary: text("summary").unwrap_or_else(|| detail.title.clone()),
+        detail: None,
+        created_at: number("createdAt"),
+        updated_at: number("updatedAt"),
+        seq: revision.seq,
+        url: format!("{base_url}/r/{project}/handoff/{}", detail.slug),
+    }
+}
+
+/// spec 293: `xenon_handoff_list`. Never errors: Xenon off is
+/// `available: false` with no reason; anything else that stops the pull is
+/// `available: false` with a reason the frontend shows once.
+pub async fn list_remote_handoffs(
+    config: &XenonConfig,
+    cwd: &Path,
+    limit: usize,
+) -> XenonHandoffList {
+    let unavailable = |reason: Option<String>| XenonHandoffList {
+        available: false,
+        reason,
+        handoffs: Vec::new(),
+    };
+    let reader = match Publisher::reader(config, cwd) {
+        Ok(reader) => reader,
+        Err(ClientError::Off(_)) => return unavailable(None),
+        Err(ClientError::Unusable(reason)) => return unavailable(Some(reason)),
+    };
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(READ_TIMEOUT_SECS),
+        reader.list_handoffs(limit),
+    )
+    .await
+    {
+        Ok(Ok(handoffs)) => XenonHandoffList {
+            available: true,
+            reason: None,
+            handoffs,
+        },
+        Ok(Err(reason)) => unavailable(Some(reason)),
+        Err(_) => unavailable(Some(format!("no answer within {READ_TIMEOUT_SECS}s"))),
+    }
+}
+
+/// spec 293: `xenon_handoff_fetch` — one handoff by full id or unique prefix,
+/// with its `handoff.md` body.
+pub async fn fetch_remote_handoff(
+    config: &XenonConfig,
+    cwd: &Path,
+    reference: &str,
+) -> Result<RemoteHandoff, String> {
+    let reader = Publisher::reader(config, cwd).map_err(ClientError::into_message)?;
+    reader.fetch_handoff(reference).await
+}
+
 fn origin_value(cwd: &Path) -> serde_json::Value {
     serde_json::json!({
         "hostname": hostname::get().ok().and_then(|h| h.into_string().ok()),
@@ -1059,6 +1300,41 @@ pub async fn probe(config: &XenonConfig, cwd: &Path) -> LinkReport {
 
 // -------------------------------------------------------------------- push
 
+/// Base URL and token for an authenticated client. Disabled/unconfigured is
+/// [`ClientError::Off`]; a missing or unreadable token is `Unusable`.
+fn resolve_credentials(config: &XenonConfig) -> Result<(String, String), ClientError> {
+    if !config.enabled {
+        return Err(ClientError::Off(
+            "Xenon is disabled — set [xenon].enabled = true".to_string(),
+        ));
+    }
+    let base_url = normalize_base_url(&config.base_url);
+    if base_url.is_empty() {
+        return Err(ClientError::Off(
+            "Xenon is not configured — set [xenon].base_url".to_string(),
+        ));
+    }
+    let Some(token) = load_token(&base_url).map_err(ClientError::Unusable)? else {
+        return Err(ClientError::Unusable(format!(
+            "no Xenon token stored for {base_url} — mint one at {base_url}/settings/tokens"
+        )));
+    };
+    Ok((base_url, token))
+}
+
+/// spec 293: a failed handoff read, as the reason `#resume` shows. The two
+/// cases a human can act on get their own wording; the rest pass through.
+fn read_failure_reason(status: u16, code: &str, detail: &str, base_url: &str) -> String {
+    match (status, code) {
+        (403, "missing_scope") => {
+            format!("token needs resource:read — re-mint at {base_url}/settings/tokens")
+        }
+        (400, "invalid_kind") => "server has no handoff kind — update Xenon".to_string(),
+        (401, _) | (403, _) => format!("{detail} — check your token at {base_url}/settings/tokens"),
+        _ => detail.to_string(),
+    }
+}
+
 pub struct Publisher {
     client: reqwest::Client,
     base_url: String,
@@ -1069,24 +1345,28 @@ pub struct Publisher {
 
 impl Publisher {
     pub fn new(config: &XenonConfig, cwd: &Path, force: bool) -> Result<Self, String> {
-        if !config.enabled {
-            return Err("Xenon is disabled — set [xenon].enabled = true".to_string());
-        }
-        let base_url = normalize_base_url(&config.base_url);
-        if base_url.is_empty() {
-            return Err("Xenon is not configured — set [xenon].base_url".to_string());
-        }
-        let Some(token) = load_token(&base_url)? else {
-            return Err(format!(
-                "no Xenon token stored for {base_url} — mint one at {base_url}/settings/tokens"
-            ));
-        };
+        let (base_url, token) = resolve_credentials(config).map_err(ClientError::into_message)?;
         Self::with_token(
             &base_url,
             &token,
             &derive_project(cwd, &config.project),
             force,
         )
+    }
+
+    /// spec 293: read-only client for the handoff pull, on the fail-fast
+    /// [`READ_TIMEOUT_SECS`] budget. Keeps `Off` distinct so a disabled Xenon
+    /// stays silent.
+    pub fn reader(config: &XenonConfig, cwd: &Path) -> Result<Self, ClientError> {
+        let (base_url, token) = resolve_credentials(config)?;
+        Self::build(
+            &base_url,
+            &token,
+            &derive_project(cwd, &config.project),
+            false,
+            READ_TIMEOUT_SECS,
+        )
+        .map_err(ClientError::Unusable)
     }
 
     /// Construct without touching the OS credential vault. Used by the live
@@ -1097,8 +1377,18 @@ impl Publisher {
         project: &str,
         force: bool,
     ) -> Result<Self, String> {
+        Self::build(base_url, token, project, force, REQUEST_TIMEOUT_SECS)
+    }
+
+    fn build(
+        base_url: &str,
+        token: &str,
+        project: &str,
+        force: bool,
+        timeout_secs: u64,
+    ) -> Result<Self, String> {
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+            .timeout(std::time::Duration::from_secs(timeout_secs))
             .build()
             .map_err(|e| format!("build http client: {e}"))?;
 
@@ -1117,6 +1407,138 @@ impl Publisher {
 
     pub fn project(&self) -> &str {
         &self.project
+    }
+
+    // ---------------------------------------------------- handoff pull (293)
+
+    /// Newest-pushed first (server order), the first `limit` with their head
+    /// revision meta, then sorted by the handoff's own `updatedAt`.
+    pub async fn list_handoffs(&self, limit: usize) -> Result<Vec<RemoteHandoff>, String> {
+        use futures_util::{stream, StreamExt};
+
+        let summaries = self.list_handoff_summaries().await?;
+        let mut handoffs: Vec<RemoteHandoff> = stream::iter(summaries.into_iter().take(limit))
+            .map(|summary| async move {
+                match self.handoff_detail(&summary.id).await {
+                    Ok((handoff, _)) => Some(handoff),
+                    Err(e) => {
+                        log::warn!("xenon: skipping handoff {}: {e}", summary.slug);
+                        None
+                    }
+                }
+            })
+            .buffered(READ_CONCURRENCY)
+            .filter_map(|handoff| async move { handoff })
+            .collect()
+            .await;
+        handoffs.sort_by_key(|handoff| std::cmp::Reverse(handoff.updated_at));
+        Ok(handoffs)
+    }
+
+    /// One handoff by full id or unique prefix, with its `handoff.md` body.
+    pub async fn fetch_handoff(&self, reference: &str) -> Result<RemoteHandoff, String> {
+        let summaries = self.list_handoff_summaries().await?;
+        let slug = match_handoff_reference(summaries.iter().map(|s| s.slug.as_str()), reference)?;
+        let Some(summary) = summaries.iter().find(|s| s.slug == slug) else {
+            return Err(format!("no handoff matching `{reference}` on Xenon"));
+        };
+        let (mut handoff, revision_id) = self.handoff_detail(&summary.id).await?;
+        handoff.detail = Some(self.handoff_body(&revision_id).await?);
+        Ok(handoff)
+    }
+
+    /// A project Xenon has never seen (nothing pushed yet) answers `404`; for
+    /// `#resume` that is simply "no remote handoffs", not a fault to report on
+    /// every resume.
+    async fn list_handoff_summaries(&self) -> Result<Vec<RemoteResourceSummary>, String> {
+        let response = self
+            .send_read(&format!(
+                "/v1/projects/{}/resources?kind=handoff&limit=1000",
+                self.project
+            ))
+            .await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(Vec::new());
+        }
+        if !response.status().is_success() {
+            return Err(self.read_failure(response).await);
+        }
+        response
+            .json()
+            .await
+            .map_err(|e| format!("unreadable server response: {e}"))
+    }
+
+    /// Head revision of one handoff resource, plus the revision id its body is
+    /// read from.
+    async fn handoff_detail(&self, resource_id: &str) -> Result<(RemoteHandoff, String), String> {
+        let detail: RemoteResourceDetail = self
+            .get_json(&format!("/v1/resources/{resource_id}"))
+            .await?;
+        let Some(revision) = detail.revision.as_ref() else {
+            return Err(format!("handoff {} has no published revision", detail.slug));
+        };
+        let handoff = remote_handoff_from(&self.base_url, &self.project, &detail, revision);
+        Ok((handoff, revision.id.clone()))
+    }
+
+    async fn handoff_body(&self, revision_id: &str) -> Result<String, String> {
+        let response = self
+            .read(&format!("/v1/revisions/{revision_id}/files/handoff.md"))
+            .await?;
+        response
+            .text()
+            .await
+            .map_err(|e| format!("unreadable handoff body: {e}"))
+    }
+
+    async fn get_json<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, String> {
+        self.read(path)
+            .await?
+            .json::<T>()
+            .await
+            .map_err(|e| format!("unreadable server response: {e}"))
+    }
+
+    /// Authenticated GET mapped to the `#resume` reason strings.
+    async fn read(&self, path: &str) -> Result<reqwest::Response, String> {
+        let response = self.send_read(path).await?;
+        if response.status().is_success() {
+            return Ok(response);
+        }
+        Err(self.read_failure(response).await)
+    }
+
+    async fn send_read(&self, path: &str) -> Result<reqwest::Response, String> {
+        self.client
+            .get(format!("{}{path}", self.base_url))
+            .bearer_auth(&self.token)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    format!("no answer within {READ_TIMEOUT_SECS}s")
+                } else {
+                    format!("unreachable: {e}")
+                }
+            })
+    }
+
+    async fn read_failure(&self, response: reqwest::Response) -> String {
+        let status = response.status();
+        let parsed = response.json::<ServerError>().await.ok();
+        let code = parsed.as_ref().map(|e| e.error.clone()).unwrap_or_default();
+        let detail = parsed
+            .map(|e| {
+                if e.message.is_empty() {
+                    e.error
+                } else {
+                    e.message
+                }
+            })
+            .filter(|m| !m.is_empty())
+            .unwrap_or_else(|| status.to_string());
+        read_failure_reason(status.as_u16(), &code, &detail, &self.base_url)
     }
 
     pub async fn push_resource(&self, mut resource: LocalResource) -> PushItem {
@@ -1930,5 +2352,160 @@ mod tests {
             );
         }
         assert!(collect(&dir, "nonsense", None, &dir).is_err());
+    }
+
+    // ------------------------------------------------------ handoff (293)
+
+    #[test]
+    fn handoff_resources_publish_meta_and_one_markdown_file() {
+        let cwd = std::env::temp_dir();
+        let long_summary = "s".repeat(400);
+        let entries = vec![serde_json::json!({
+            "id": "ho-mg3k2x1a-3f9c0e",
+            "author": "Claude-1",
+            "host": "laptop",
+            "summary": long_summary,
+            "detail": "## Done\n- thing",
+            "createdAt": 100,
+            "updatedAt": 200,
+            "boundLanes": ["Claude-1"],
+        })];
+        let found = handoff_resources(&cwd, entries).unwrap();
+        assert_eq!(found.len(), 1);
+        let resource = &found[0];
+        assert_eq!(resource.manifest.kind, "handoff");
+        assert_eq!(resource.manifest.slug, "ho-mg3k2x1a-3f9c0e");
+        assert_eq!(resource.manifest.title.chars().count(), 300);
+        let meta = resource.manifest.meta.as_object().expect("meta object");
+        let mut keys: Vec<&str> = meta.keys().map(String::as_str).collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            vec!["author", "createdAt", "host", "id", "summary", "updatedAt"],
+            "lane bindings are local state and never published"
+        );
+        assert_eq!(meta["id"], "ho-mg3k2x1a-3f9c0e");
+        assert_eq!(meta["author"], "Claude-1");
+        assert_eq!(meta["host"], "laptop");
+        assert_eq!(meta["summary"].as_str().map(str::len), Some(400));
+        assert_eq!(meta["createdAt"], 100);
+        assert_eq!(meta["updatedAt"], 200);
+        assert!(resource.sources.is_empty());
+        assert_eq!(resource.inline.len(), 1);
+        assert_eq!(
+            resource.inline.get("handoff.md").map(Vec::as_slice),
+            Some("## Done\n- thing".as_bytes())
+        );
+        assert!(content_type_for("handoff.md").starts_with("text/markdown"));
+
+        assert!(handoff_resources(&cwd, vec![serde_json::json!({ "summary": "x" })]).is_err());
+    }
+
+    #[test]
+    fn handoff_reference_matches_exact_and_unique_prefixes() {
+        let slugs = [
+            "ho-mg3k2x1a-3f9c0e",
+            "ho-mg3k2x1a-77aa00",
+            "ho-mh0000aa-123456",
+        ];
+        let pick = |reference: &str| match_handoff_reference(slugs.iter().copied(), reference);
+
+        assert_eq!(pick("ho-mg3k2x1a-3f9c0e"), Ok("ho-mg3k2x1a-3f9c0e"));
+        assert_eq!(pick("ho-mh00"), Ok("ho-mh0000aa-123456"), "`ho-` prefix");
+        assert_eq!(pick("mh00"), Ok("ho-mh0000aa-123456"), "bare prefix");
+        assert_eq!(pick("mg3k2x1a-77"), Ok("ho-mg3k2x1a-77aa00"));
+        assert!(pick("mg3k").is_err(), "ambiguous prefix");
+        assert!(pick("mh0").is_err(), "bare prefix shorter than 4");
+        assert!(pick("ho-mh0").is_err(), "prefix after ho- shorter than 4");
+        assert!(pick("zzzz").is_err(), "no match");
+    }
+
+    #[test]
+    fn remote_handoff_reads_times_from_meta_not_the_server() {
+        let detail: RemoteResourceDetail = serde_json::from_value(serde_json::json!({
+            "id": "res-1",
+            "kind": "handoff",
+            "slug": "ho-mg3k2x1a-3f9c0e",
+            "title": "headline",
+            "created_at": 1,
+            "updated_at": 2,
+            "revisions": 3,
+            "project": "wk-j.krypton",
+            "last_author": null,
+            "revision": {
+                "id": "rev-9",
+                "seq": 3,
+                "created_at": 1,
+                "sealed_at": 2,
+                "meta": {
+                    "id": "ho-mg3k2x1a-3f9c0e",
+                    "author": "Codex-1",
+                    "host": "desk",
+                    "summary": "from meta",
+                    "createdAt": 1000,
+                    "updatedAt": 5000
+                },
+                "origin": {},
+                "author": null,
+                "files": []
+            }
+        }))
+        .unwrap();
+        let revision = detail.revision.as_ref().unwrap();
+        let handoff = remote_handoff_from("https://x.example", "fallback", &detail, revision);
+        assert_eq!(
+            handoff,
+            RemoteHandoff {
+                id: "ho-mg3k2x1a-3f9c0e".to_string(),
+                author: "Codex-1".to_string(),
+                host: "desk".to_string(),
+                summary: "from meta".to_string(),
+                detail: None,
+                created_at: 1000,
+                updated_at: 5000,
+                seq: 3,
+                url: "https://x.example/r/wk-j.krypton/handoff/ho-mg3k2x1a-3f9c0e".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn handoff_read_failures_name_the_fix() {
+        let base = "https://x.example";
+        assert_eq!(
+            read_failure_reason(403, "missing_scope", "token lacks", base),
+            "token needs resource:read — re-mint at https://x.example/settings/tokens"
+        );
+        assert_eq!(
+            read_failure_reason(400, "invalid_kind", "unknown resource kind", base),
+            "server has no handoff kind — update Xenon"
+        );
+        assert!(read_failure_reason(401, "unauthorized", "bad token", base)
+            .contains("/settings/tokens"));
+        assert_eq!(
+            read_failure_reason(404, "not_found", "no such project", base),
+            "no such project"
+        );
+    }
+
+    #[test]
+    fn disabled_or_unconfigured_xenon_is_off_not_a_fault() {
+        let disabled = XenonConfig {
+            enabled: false,
+            ..XenonConfig::default()
+        };
+        assert!(matches!(
+            resolve_credentials(&disabled),
+            Err(ClientError::Off(_))
+        ));
+        let unconfigured = XenonConfig {
+            enabled: true,
+            base_url: "  ".to_string(),
+            ..XenonConfig::default()
+        };
+        assert!(matches!(
+            resolve_credentials(&unconfigured),
+            Err(ClientError::Off(_))
+        ));
     }
 }

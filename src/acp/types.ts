@@ -191,11 +191,21 @@ export interface AcpMcpCapabilities {
   sse?: boolean;
 }
 
-export interface HarnessMemoryEntry {
-  lane: string;
+/** spec 293: one project-level handoff document (ADR-0023 — it belongs to a
+ *  work thread, not a lane). Returned newest-first by `list_harness_memory`. */
+export interface HandoffEntry {
+  /** `ho-<base36 epoch ms>-<6 hex>`; also the Xenon slug. */
+  id: string;
+  /** Lane label at last write — display only, never a key. */
+  author: string;
+  /** Hostname at last write. */
+  host: string;
   summary: string;
   detail: string;
+  createdAt: number;
   updatedAt: number;
+  /** Lane labels in the requesting harness currently bound to this handoff. */
+  boundLanes: string[];
 }
 
 export interface HarnessMemorySession {

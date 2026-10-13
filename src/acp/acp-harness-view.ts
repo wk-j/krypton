@@ -68,7 +68,7 @@ import type {
   DocArtifactRequestEnvelope,
   DocComment,
   DocFeedbackEnvelope,
-  HarnessMemoryEntry,
+  HandoffEntry,
   HarnessMemorySession,
   InterLaneEnvelope,
   LaneSummary,
@@ -159,6 +159,7 @@ import {
 import {
   HANDOFF_WRITE_PROMPT,
   type GithubIssueVerbInput,
+  type HandoffResumeDoc,
   analyzeGithubIssuePrompt,
   createGithubIssuePrompt,
   dailyBriefPrompt,
@@ -392,11 +393,19 @@ export {
 import { permissionCommandIsHighRisk } from './harness-tool-render';
 import {
   describePush,
+  formatHandoffAge,
+  formatHandoffList,
   linkEvidenceFromPush,
+  matchHandoffReference,
+  mergeHandoffs,
   parsePushCommand,
+  parseResumeCommand,
   summarizePush,
   xenonProjectUrl,
+  type MergedHandoff,
   type PushReport,
+  type RemoteHandoff,
+  type XenonHandoffList,
   type XenonStatus,
 } from './xenon-push';
 import {
@@ -1134,7 +1143,7 @@ export class AcpHarnessView implements ContentView {
   private orchestratorLaneBusUnsub: (() => void) | null = null;
   private interLaneUnlisten: UnlistenFn | null = null;
   private peerListUnlisten: UnlistenFn | null = null;
-  private memoryEntries: HarnessMemoryEntry[] = [];
+  private memoryEntries: HandoffEntry[] = [];
   private harnessMemoryId: string | null = null;
   /** spec 141: this view's entry in the process-wide HarnessDirectory, while
    * registered. Holds the `alive` flag the directory reads when routing. */
@@ -1923,6 +1932,9 @@ export class AcpHarnessView implements ContentView {
               reversibility: item.reversibility,
             }))
           : [],
+        // spec 293: handoffs live in the hook server's store, not under
+        // `.krypton/`, so they are handed over like attention items.
+        handoffs: !kind || kind === 'handoff' ? this.memoryEntries : [],
       });
     }
     if (operation === 'xenon.status') {
@@ -2106,7 +2118,8 @@ export class AcpHarnessView implements ContentView {
         return { resolved: true, requestId, action };
       }
       case 'memory.get':
-        return this.memoryEntries.find((entry) => entry.lane === lane.displayName) ?? null;
+        // spec 293: the handoff BOUND to this live lane (ADR-0023), not a lane slot.
+        return this.memoryEntries.find((entry) => entry.boundLanes.includes(lane.displayName)) ?? null;
       case 'memory.clear':
         await this.clearActiveLaneMemory(lane, false);
         return { cleared: true, lane: lane.displayName };
@@ -6351,11 +6364,11 @@ export class AcpHarnessView implements ContentView {
     this.memoryPanelEl.addEventListener('click', (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const row = target.closest<HTMLElement>('[data-memory-lane]');
+      const row = target.closest<HTMLElement>('[data-memory-id]');
       if (!row) return;
-      const lane = row.dataset.memoryLane;
-      if (!lane) return;
-      this.memoryCursorRowId = lane;
+      const id = row.dataset.memoryId;
+      if (!id) return;
+      this.memoryCursorRowId = id;
       this.renderMemory();
     });
     this.memoryOverlayEl.appendChild(this.memoryPanelEl);
@@ -6782,8 +6795,14 @@ export class AcpHarnessView implements ContentView {
     } catch (e) {
       console.warn('[acp-harness] gc cline mcp overlays failed:', e);
     }
-    this.memoryUnlisten = await listen<{ harnessId: string }>('acp-harness-memory-changed', (event) => {
-      if (event.payload.harnessId === this.harnessMemoryId) void this.refreshMemory();
+    this.memoryUnlisten = await listen<{ harnessId: string; handoffId?: string }>('acp-harness-memory-changed', (event) => {
+      if (event.payload.harnessId !== this.harnessMemoryId) return;
+      // spec 293: `handoffId` rides only on the writer harness's event, so the
+      // opt-in auto-push publishes each handoff_set write exactly once.
+      const handoffId = event.payload.handoffId;
+      void this.refreshMemory().then(() => {
+        if (handoffId) void this.autoPushHandoff(handoffId);
+      });
     });
     this.mcpUnlisten = await listen<{ harnessId: string; laneLabel: string }>('acp-harness-mcp-touched', (event) => {
       if (event.payload.harnessId === this.harnessMemoryId) void this.refreshMcpStats();
@@ -6889,9 +6908,9 @@ export class AcpHarnessView implements ContentView {
    * spec 212: `#push [--force] [<kind> [<slug>]]` — publish harness-generated
    * resources to the configured Xenon server.
    *
-   * Attention flags are the one kind with no on-disk form, so they are read out
-   * of the in-memory triage store here and handed to the backend rather than
-   * collected from `.krypton/`.
+   * Attention flags and handoffs (spec 293) have no `.krypton/` form, so they
+   * are read out of the in-memory triage store / handoff list here and handed
+   * to the backend rather than collected from disk.
    */
   private async runXenonPush(lane: HarnessLane, text: string): Promise<void> {
     const parsed = parsePushCommand(text);
@@ -6923,6 +6942,7 @@ export class AcpHarnessView implements ContentView {
           reversibility: item.reversibility,
         }))
       : [];
+    const handoffs = kind === null || kind === 'handoff' ? this.memoryEntries : [];
 
     this.flashChip(force ? 'pushing to xenon (forced)...' : 'pushing to xenon...');
     try {
@@ -6932,6 +6952,7 @@ export class AcpHarnessView implements ContentView {
         slug,
         force,
         attention,
+        handoffs,
       });
       this.flashChip(summarizePush(report));
       this.appendTranscript(lane, 'system', `[xenon] ${describePush(report)}`);
@@ -7617,7 +7638,7 @@ export class AcpHarnessView implements ContentView {
   private async refreshMemory(): Promise<void> {
     if (!this.harnessMemoryId) return;
     try {
-      this.memoryEntries = await invoke<HarnessMemoryEntry[]>('list_harness_memory', {
+      this.memoryEntries = await invoke<HandoffEntry[]>('list_harness_memory', {
         harnessId: this.harnessMemoryId,
       });
       this.renderMemory();
@@ -8610,9 +8631,9 @@ export class AcpHarnessView implements ContentView {
   }
 
   /** spec 289: everything that holds until the roster, gates, ticket, or
-   *  directive change. Memory (handoff_*) is intentionally NOT advertised:
-   *  per the handoff-only decision (spec 165) the #handoff/#resume prompts
-   *  name those tools when the user invokes them. */
+   *  directive change. Memory (handoff_set) is intentionally NOT advertised:
+   *  per the handoff-only decision (spec 165) the #handoff prompt names it
+   *  when the user invokes it; #resume embeds the document (spec 293). */
   private renderLanePolicy(lane: HarnessLane): string {
     const lines: string[] = [];
     // spec 194: the shared ticket scope leads — never buried under the tool index.
@@ -9274,6 +9295,40 @@ export class AcpHarnessView implements ContentView {
     }
     this.raiseReviewCard(record);
     if (payload.registered === true) void this.autoPushRegisteredReview(record);
+  }
+
+  /** spec 293: publish one freshly written handoff when `auto_push` lists `handoff`. */
+  private async autoPushHandoff(handoffId: string): Promise<void> {
+    if (this.remoteRuntimeId || !this.projectDir) return;
+    const cwd = this.projectDir;
+    const entry = this.memoryEntries.find((candidate) => candidate.id === handoffId);
+    if (!entry) return;
+    const reportToLane = (message: string): void => {
+      const lane = this.lanes.find((candidate) => candidate.displayName === entry.author);
+      if (!lane) return;
+      this.appendTranscript(lane, 'system', `[xenon] handoff auto-push: ${message}`);
+      this.scheduleLaneRender(lane);
+    };
+    try {
+      const status = await invoke<XenonStatus>('xenon_status', { cwd });
+      if (!status.enabled || !status.autoPush.includes('handoff')) return;
+      if (!status.configured) {
+        reportToLane('Xenon is not ready; run #xenon status');
+        return;
+      }
+      const report = await invoke<PushReport>('xenon_push', {
+        cwd,
+        kind: 'handoff',
+        slug: handoffId,
+        force: false,
+        attention: [],
+        handoffs: [entry],
+      });
+      reportToLane(describePush(report));
+      this.publishLinkFromPushReport(report);
+    } catch (error) {
+      reportToLane(`failed: ${errorText(error)}`);
+    }
   }
 
   /** Publish only the first completed Board when this project opted in. */
@@ -10406,6 +10461,7 @@ export class AcpHarnessView implements ContentView {
     // inherit them.
     this.dropAllArtifactsForLane(lane);
     this.dropAllReviewsForLane(lane);
+    this.unbindLaneHandoff(lane);
     if (lane.client) {
       try {
         await lane.client.dispose();
@@ -10640,6 +10696,8 @@ export class AcpHarnessView implements ContentView {
       this.flashChip(`lane ${lane.status} - #cancel first`);
       return;
     }
+    // spec 293: a restarted lane starts a new work thread on its next #handoff.
+    this.unbindLaneHandoff(lane);
     if (lane.client) {
       await lane.client.dispose();
       lane.client = null;
@@ -10705,6 +10763,8 @@ export class AcpHarnessView implements ContentView {
     // registered entries that a same-name lane would otherwise inherit.
     this.dropAllArtifactsForLane(lane);
     this.dropAllReviewsForLane(lane);
+    // spec 293: #new / #new! start a new work thread — the next #handoff mints.
+    this.unbindLaneHandoff(lane);
     await this.ticketCtl.clearTicketWorkerForLane(lane.id);
     if (lane.client) {
       await lane.client.dispose();
@@ -10773,6 +10833,162 @@ export class AcpHarnessView implements ContentView {
     await this.refreshMemory();
     await this.refreshMcpStats();
     if (showSuccess) this.flashChip(`memory cleared for ${lane.displayName}`);
+  }
+
+  /** spec 293 (ADR-0023): drop the lane → handoff binding so the lane's next
+   *  #handoff mints a new thread. Fire-and-forget; the store emits the
+   *  memory-changed event that refreshes the drawer. */
+  private unbindLaneHandoff(lane: HarnessLane): void {
+    if (!this.harnessMemoryId) return;
+    void invoke('handoff_unbind', {
+      harnessId: this.harnessMemoryId,
+      lane: lane.displayName,
+    }).catch((e) => {
+      console.warn('[acp-harness] handoff_unbind failed:', e);
+    });
+  }
+
+  /**
+   * spec 293: `#resume [list | <id>]`. Resolves a handoff from the project's
+   * local store ∪ Xenon (ADR-0022), binds this lane to it so its next #handoff
+   * continues the same thread (ADR-0023), and injects the document itself so
+   * any backend can resume without a tool call. Caller has checked memory and
+   * that the lane is idle / awaiting_peer.
+   */
+  private async resumeHandoff(lane: HarnessLane, text: string): Promise<void> {
+    const parsed = parseResumeCommand(text);
+    if (!parsed.ok) {
+      this.flashChip(parsed.error);
+      return;
+    }
+    const harnessId = this.harnessMemoryId;
+    if (!harnessId) return;
+    const request = parsed.request;
+    if (request.mode === 'list') {
+      this.flashChip('listing handoffs...');
+      const { merged } = await this.collectHandoffs(lane);
+      this.appendTranscript(lane, 'system', formatHandoffList(merged, Date.now()));
+      this.scheduleLaneRender(lane);
+      return;
+    }
+    if (!lane.client) {
+      this.flashChip('lane not ready');
+      return;
+    }
+    // Reserve before the Xenon reads (≈5 s budget) so peer mail or a typed
+    // prompt cannot claim the lane mid-resolve; every bail releases it.
+    const priorStatus: 'idle' | 'awaiting_peer' = lane.status === 'awaiting_peer' ? 'awaiting_peer' : 'idle';
+    this.reserveCommandTurn(lane, 'resuming');
+    const epoch = lane.spawnEpoch;
+    const laneUnchanged = (): boolean => this.lanes.includes(lane) && lane.spawnEpoch === epoch;
+    const bail = (message: string): void => {
+      if (laneUnchanged()) this.releaseReservedTurn(lane, priorStatus);
+      this.flashChip(message);
+    };
+
+    const { merged, xenonCwd } = await this.collectHandoffs(lane);
+    const resolved = await this.resolveHandoffDoc(request, merged, xenonCwd);
+    if ('error' in resolved) {
+      bail(resolved.error);
+      return;
+    }
+    if (!laneUnchanged()) return;
+    if (!lane.client) {
+      bail('lane not ready');
+      return;
+    }
+    try {
+      await invoke('handoff_bind', { harnessId, lane: lane.displayName, id: resolved.id });
+    } catch (e) {
+      bail(`handoff bind failed: ${errorText(e)}`);
+      return;
+    }
+    this.appendTranscript(
+      lane,
+      'system',
+      `resumed ${resolved.id} · ${resolved.author}@${resolved.host} · ${formatHandoffAge(Date.now() - resolved.updatedAt)} · ${resolved.source}`,
+    );
+    this.scheduleLaneRender(lane);
+    // Lane is already reserved (busy) — send directly, as #review does.
+    await this.dispatchTurn(lane, handoffResumePrompt(resolved));
+  }
+
+  /**
+   * spec 293: local handoffs (refreshed) merged with Xenon's newest when this
+   * is a local harness with a project. `xenonCwd` is set only when Xenon
+   * answered, so callers know a fetch can follow. A named failure costs one
+   * system line and falls back to local; Xenon switched off stays silent.
+   */
+  private async collectHandoffs(
+    lane: HarnessLane,
+  ): Promise<{ merged: MergedHandoff[]; xenonCwd: string | null }> {
+    await this.refreshMemory();
+    const local = this.memoryEntries;
+    // A remote harness keeps an ephemeral per-tab store and never reaches Xenon.
+    const cwd = this.remoteRuntimeId ? null : this.projectDir;
+    if (!cwd) return { merged: mergeHandoffs(local, []), xenonCwd: null };
+    let remote: RemoteHandoff[] = [];
+    let xenonCwd: string | null = null;
+    let reason: string | null = null;
+    try {
+      const listed = await invoke<XenonHandoffList>('xenon_handoff_list', { cwd });
+      if (listed.available) {
+        remote = listed.handoffs;
+        xenonCwd = cwd;
+      }
+      reason = listed.reason;
+    } catch (e) {
+      reason = errorText(e);
+    }
+    if (reason) {
+      this.appendTranscript(lane, 'system', `xenon: ${reason} - local handoffs only`);
+      this.scheduleLaneRender(lane);
+    }
+    return { merged: mergeHandoffs(local, remote), xenonCwd };
+  }
+
+  /** spec 293: pick the newest or the referenced handoff and make sure its
+   *  detail is in hand — a Xenon winner (or an id beyond Xenon's newest rows)
+   *  is fetched; the fetched copy is never written locally (ADR-0022). */
+  private async resolveHandoffDoc(
+    request: { mode: 'newest' } | { mode: 'id'; reference: string },
+    merged: MergedHandoff[],
+    xenonCwd: string | null,
+  ): Promise<HandoffResumeDoc | { error: string }> {
+    let reference: string;
+    if (request.mode === 'newest') {
+      const newest = merged[0];
+      if (!newest) return { error: 'no handoff to resume' };
+      if (newest.source === 'local' && newest.detail !== null) return { ...newest, detail: newest.detail };
+      reference = newest.id;
+    } else {
+      const match = matchHandoffReference(merged, request.reference);
+      if (match.ok) {
+        const hit = match.handoff;
+        if (hit.source === 'local' && hit.detail !== null) return { ...hit, detail: hit.detail };
+        reference = hit.id;
+      } else if (match.reason === 'none' && xenonCwd) {
+        // Not among the newest rows: Xenon resolves it against its full list.
+        reference = request.reference;
+      } else {
+        return { error: match.error };
+      }
+    }
+    if (!xenonCwd) return { error: 'no handoff to resume' };
+    try {
+      const fetched = await invoke<RemoteHandoff>('xenon_handoff_fetch', { cwd: xenonCwd, reference });
+      return {
+        id: fetched.id,
+        author: fetched.author,
+        host: fetched.host,
+        updatedAt: fetched.updatedAt,
+        summary: fetched.summary,
+        detail: fetched.detail ?? '',
+        source: 'xenon',
+      };
+    } catch (e) {
+      return { error: `handoff fetch failed: ${errorText(e)}` };
+    }
   }
 
   private async runHashCommand(lane: HarnessLane, text: string): Promise<void> {
@@ -11043,10 +11259,11 @@ export class AcpHarnessView implements ContentView {
       }
       return;
     }
-    // spec 139: user-triggered handoff. #handoff writes a resume-ready handoff_set
-    // doc; #resume reads it back and continues. One-shot injection only — no
-    // always-on stub, no per-turn cost. Guard like #new for user-facing feedback;
-    // enqueueSystemPrompt re-checks lane.client + idle status internally.
+    // spec 139: user-triggered handoff. #handoff asks the lane to write the
+    // handoff for its work via handoff_set; #resume (spec 293) resolves a
+    // handoff from the project store ∪ Xenon and injects the document itself.
+    // One-shot injection only — no always-on stub, no per-turn cost. Guard like
+    // #new for user-facing feedback.
     if (parts[0] === '#handoff' || parts[0] === '#resume') {
       this.setDraft(lane, '', 0);
       if (!this.harnessMemoryId) {
@@ -11057,8 +11274,11 @@ export class AcpHarnessView implements ContentView {
         this.flashChip('lane busy - #cancel first');
         return;
       }
-      const prompt = parts[0] === '#handoff' ? HANDOFF_WRITE_PROMPT : handoffResumePrompt(lane.displayName);
-      await this.enqueueSystemPrompt(lane, prompt, undefined, parts[0] === '#handoff' ? 'writing handoff' : 'resuming');
+      if (parts[0] === '#handoff') {
+        await this.enqueueSystemPrompt(lane, HANDOFF_WRITE_PROMPT, undefined, 'writing handoff');
+        return;
+      }
+      await this.resumeHandoff(lane, text);
       return;
     }
     // spec 144: #wiki ingests the current conversation into the repo's docs/wiki/;
@@ -12820,8 +13040,8 @@ export class AcpHarnessView implements ContentView {
     const head = this.memoryOverlayEl.querySelector('.acp-harness__memory-head');
     if (head) {
       head.textContent = this.harnessMemoryWarning
-        ? 'Memory · unavailable'
-        : `Memory · ${this.memoryEntries.length} entries`;
+        ? 'Handoffs · unavailable'
+        : `Handoffs · ${this.memoryEntries.length}`;
     }
     this.memoryPanelEl.innerHTML = '';
     if (this.harnessMemoryWarning) {
@@ -12835,23 +13055,29 @@ export class AcpHarnessView implements ContentView {
     if (rows.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'acp-harness__memory-empty';
-      empty.textContent = 'no memory yet';
+      empty.textContent = 'no handoffs yet';
       this.memoryPanelEl.appendChild(empty);
       return;
     }
-    if (!this.memoryCursorRowId || !rows.some((entry) => entry.lane === this.memoryCursorRowId)) {
-      this.memoryCursorRowId = rows[0]?.lane ?? null;
+    if (!this.memoryCursorRowId || !rows.some((entry) => entry.id === this.memoryCursorRowId)) {
+      this.memoryCursorRowId = rows[0]?.id ?? null;
     }
+    const activeLabel = this.activeLane()?.displayName ?? null;
+    const now = Date.now();
     for (const entry of rows) {
       const row = document.createElement('div');
-      const selected = entry.lane === this.memoryCursorRowId;
-      row.className = `acp-harness__memory-row${selected ? ' acp-harness__memory-row--cursor' : ''}`;
-      row.dataset.memoryLane = entry.lane;
+      const selected = entry.id === this.memoryCursorRowId;
+      // spec 293: the active lane's next #handoff writes this one.
+      const bound = activeLabel !== null && entry.boundLanes.includes(activeLabel);
+      row.className = `acp-harness__memory-row${selected ? ' acp-harness__memory-row--cursor' : ''}${bound ? ' acp-harness__memory-row--bound' : ''}`;
+      row.dataset.memoryId = entry.id;
+      const origin = `${entry.author}@${entry.host}`;
+      const bindings = entry.boundLanes.length > 0 ? ` · bound: ${entry.boundLanes.join(', ')}` : '';
       row.innerHTML =
-        `<span class="acp-harness__memory-source" style="--acp-memory-accent:${esc(laneAccentForLabel(entry.lane))}">${esc(entry.lane)}</span>` +
-        `<span class="acp-harness__memory-text">${esc(entry.summary)}</span>` +
-        `<span class="acp-harness__memory-kind">${esc(formatShortTime(entry.updatedAt))}</span>` +
-        (selected ? `<div class="acp-harness__memory-detail">${esc(entry.detail)}</div>` : '');
+        `<span class="acp-harness__memory-source" style="--acp-memory-accent:${esc(laneAccentForLabel(entry.author))}" title="${esc(origin)}">${esc(origin)}</span>` +
+        `<span class="acp-harness__memory-text">${bound ? '▸ ' : ''}${esc(entry.summary)}</span>` +
+        `<span class="acp-harness__memory-kind" title="${esc(formatShortTime(entry.updatedAt))}">${esc(formatHandoffAge(now - entry.updatedAt))}</span>` +
+        (selected ? `<div class="acp-harness__memory-detail">${esc(`${entry.id}${bindings}`)}\n\n${esc(entry.detail)}</div>` : '');
       this.memoryPanelEl.appendChild(row);
     }
   }
@@ -13062,7 +13288,10 @@ export class AcpHarnessView implements ContentView {
     }
     if (lane.status === 'awaiting_peer') return textSegments(`${lane.displayName} ${awaitingPeerText(pending)}`);
     if (this.harnessMemoryWarning) return textSegments(`memory off: ${truncate(this.harnessMemoryWarning, 64)}`);
-    return textSegments(`memory: ${Math.min(this.memoryEntries.length, 10)}/${this.memoryEntries.length}`);
+    // spec 293: name the handoff this lane's next #handoff will write, if any.
+    const bound = this.memoryEntries.find((entry) => entry.boundLanes.includes(lane.displayName));
+    const total = this.memoryEntries.length;
+    return textSegments(bound ? `handoff: ${bound.id} · ${total} in project` : `handoffs: ${total}`);
   }
 
   private updateComposerTick(): void {
@@ -13377,8 +13606,8 @@ export class AcpHarnessView implements ContentView {
           <h3>Commands</h3>
           <dl>
             <dt>#cancel</dt><dd>Cancel active lane, same as Ctrl+C</dd>
-            <dt>#new</dt><dd>Start fresh active lane, keep memory</dd>
-            <dt>#new!</dt><dd>Start fresh active lane and clear its memory</dd>
+            <dt>#new</dt><dd>Start fresh active lane, keep handoffs (the next #handoff starts a new thread)</dd>
+            <dt>#new!</dt><dd>Start fresh active lane and delete the handoff it is bound to</dd>
             <dt>#review [&lt;lane&gt; …] [-- &lt;docpath | note&gt;]</dt><dd>Fan a review of your diff or a design doc out to other lanes (all live lanes if none named)</dd>
             <dt>#review pass [N] [&lt;lane&gt; …] [-- &lt;docpath | note&gt;]</dt><dd>Review, fix the Blockers, re-review — until every reviewer passes or N rounds (default 3, max 8); one summary Board at the end</dd>
             <dt>#review stop</dt><dd>Stop a review pass after the current step and write its summary (#cancel stops it with no summary)</dd>
@@ -13387,9 +13616,12 @@ export class AcpHarnessView implements ContentView {
             <dt>#debby &lt;question&gt;</dt><dd>Debby brainstorming from this lane — auto-spawns Claude and Codex heads as plain responders</dd>
             <dt>#restart</dt><dd>Respawn active lane when error or stopped</dd>
             <dt>#mem</dt><dd>Show memory command hint</dd>
-            <dt>#mem clear</dt><dd>Clear active lane memory only</dd>
-            <dt>#handoff</dt><dd>Ask active lane to write a resume-ready handoff to its memory</dd>
-            <dt>#resume</dt><dd>Ask active lane to read its memory handoff and continue</dd>
+            <dt>#mem clear</dt><dd>Delete the handoff bound to the active lane</dd>
+            <dt>#handoff</dt><dd>Ask active lane to write or refresh the handoff for its current work</dd>
+            <dt>#resume</dt><dd>Resume the newest handoff in the project (local and Xenon), from any lane or machine</dd>
+            <dt>#resume list</dt><dd>List the 10 newest handoffs with id, age, host, author and source</dd>
+            <dt>#resume &lt;id&gt;</dt><dd>Resume one handoff by id or a unique prefix of 4+ characters after ho-</dd>
+            <dt>#push handoff [&lt;id&gt;]</dt><dd>Publish handoffs (or one by id) to the Xenon server</dd>
             <dt>#wiki [hint]</dt><dd>Compound this session into the project wiki (docs/wiki/)</dd>
             <dt>#recall &lt;question&gt;</dt><dd>Answer a question from the project wiki, with citations</dd>
             <dt>#directive &lt;intent&gt;</dt><dd>Have the active lane create/edit a reusable directive in acp-harness.toml</dd>
@@ -13405,7 +13637,7 @@ export class AcpHarnessView implements ContentView {
         </section>
         <section class="acp-harness__help-section acp-harness__help-section--wide">
           <h3>Model</h3>
-          <p>Each lane is a separate ACP subprocess in the same project directory. Prompts go only to the active lane. Memory is tab-local, read-only for humans, and managed by agents through MCP tools.</p>
+          <p>Each lane is a separate ACP subprocess in the same project directory. Prompts go only to the active lane. Handoffs are project-wide, read-only for humans, and written by agents through the handoff_set MCP tool.</p>
         </section>
       </div>
     `;
@@ -15355,21 +15587,21 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
-  private sortedMemoryRows(): HarnessMemoryEntry[] {
+  private sortedMemoryRows(): HandoffEntry[] {
     return this.memoryEntries.slice().sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
   private moveMemoryCursor(key: string): void {
     const rows = this.sortedMemoryRows();
     if (rows.length === 0) return;
-    const current = rows.findIndex((entry) => entry.lane === this.memoryCursorRowId);
+    const current = rows.findIndex((entry) => entry.id === this.memoryCursorRowId);
     let next = current < 0 ? 0 : current;
     const normalizedKey = key.toLowerCase();
     if (normalizedKey === 'n' || key === 'ArrowDown' || key === 'PageDown') next = Math.min(rows.length - 1, next + 1);
     else if (normalizedKey === 'p' || key === 'ArrowUp' || key === 'PageUp') next = Math.max(0, next - 1);
     else if (key === 'Home') next = 0;
     else if (key === 'End') next = rows.length - 1;
-    this.memoryCursorRowId = rows[next].lane;
+    this.memoryCursorRowId = rows[next].id;
     this.renderMemory();
   }
 
