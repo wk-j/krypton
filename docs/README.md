@@ -294,6 +294,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 289 | [Lane Context Delta](./0289-lane-context-delta.md) |
 | 290 | [MP3 Player](./0290-mp3-player.md) |
 | 291 | [ACP Brainstorm Lane Mode](./0291-brainstorm-lane-mode.md) |
+| 292 | [ACP Harness Inline HTML Visuals](./0292-harness-inline-html-visuals.md) |
 
 ## ADRs (21)
 

@@ -4,6 +4,10 @@
 > Date: 2026-05-30
 > Milestone: M8 — Polish
 >
+> **See also spec 292 (inline HTML visuals):** compact ` ```visual ` fences
+> render in the transcript after an `f` hint. This spec stays the full-page,
+> OS-browser path. Decision 2 below still holds for artifacts.
+>
 > **See also spec 211 (Review Board)**, which reuses this spec's path-handoff protocol
 > (`*_new` issues a path → the lane writes it with its normal edit tool → `*_register` raises a
 > hintable card) and its issued-path write auto-approval, widened from one file to a whole bundle
@@ -115,7 +119,7 @@ This feature auto-approves filesystem writes, so the threat model is stated hone
 | # | Decision | Chosen | Rejected alternatives |
 |---|----------|--------|-----------------------|
 | 1 | Scope | Built-in harness feature, project-agnostic | HTML convention for the Krypton repo's own docs |
-| 2 | Display surface | OS browser via `open_url` (see ADR 0002) | Inline iframe in transcript; in-app webview pane (spec 102) |
+| 2 | Display surface | OS browser via `open_url` (see ADR 0002). Spec 292's in-transcript ` ```visual ` cards are a different class, not this path. | Inline iframe in transcript (for artifacts); in-app webview pane (spec 102) |
 | 3 | Open trigger | Register, then open on keypress | Auto-open browser on tool call |
 | 4 | Who writes the file | **Lane writes it** (path-handoff) — enables iterative editing with the lane's normal edit tools; no HTML through MCP | Harness writes it from an HTML string arg (no targeted edits; re-sends whole file per edit; payload ceiling) |
 | 5 | Storage | `.krypton/artifacts/<harnessId>/<laneId>/<id>.html` in project, gitignored; live files, swept on close + startup | Dir outside repo (lane write-sandbox conflict); persistent/cross-session |

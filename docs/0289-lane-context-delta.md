@@ -158,13 +158,14 @@ Krypton tools — each tool's description is its full contract; read it before t
 - review_outcome: once, after synthesizing a #review round you convened.                                      [gate: hasPeers]
 - artifact_new: ONLY when the user asks for a visual or interactive view.
 - ```svg fenced blocks render inline: self-contained, root viewBox, colors via var(--fg|--muted|--border|--accent|--success|--warning|--error|--surface|--c1…--c6).
+- ```visual fences render as HTML cards after f-hint (self-contained, no network/storage/forms/alerts; not ```html). Same theme vars as svg. Full pages use artifact_new.
 Write these tools' free-text fields in natural Thai for a reader who does not read code; keep technical terms, IDs, paths, and quoted source verbatim.
 ```
 
 The attention line keeps spec 134's positive-trigger-first wording.
 Target: ≤ 1,700 chars for a solo lane with all gates on (was 7,397).
 
-**Memory-unavailable branch.** It keeps its current text plus the SVG line, delivered as policy.
+**Memory-unavailable branch.** It keeps its current text plus the SVG line and the spec 292 visual line, delivered as policy.
 
 ### Delivery gate (`buildPromptBlocks`)
 
