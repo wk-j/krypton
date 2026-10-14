@@ -128,7 +128,7 @@ The patch touches only the card's sub-DOM and never calls `render()` (constraint
 
 - CSS: under `--stream-live`, `pre:has(> code.mermaid)` hides its code and shows a pulsing `mermaid · drawing…` `::before` (same rule as svg, opacity-only, off under `prefers-reduced-motion`).
 - `updateLiveMermaidFences(body)` after each `parser_write`: a `pre > code.mermaid` is **closed** when any node follows the `pre` in document order inside the body (smd only appends, so content after the fence means it left it). On first closed sighting, `renderMermaid(source)` once; on success insert a non-interactive `--live` card before the `pre` (spec 283 rev 2 shape; no `data-svg-*`). A `WeakMap<code, state>` guarantees one render per fence. The last fence in the reply closes at seal.
-- Seal branch A: `clearLiveMermaidFences(body)` next to `clearLiveSvgFences`, before the `markdownHtml` capture; `decorateSvgFences` then hits the cache and builds the real card at the same coordinates.
+- Seal branch A: `clearLiveMermaidFences(body)` next to `clearLiveSvgFences`, before the `markdownHtml` capture; `decorateSvgFences` then hits the cache and builds the real card at the same coordinates, adopting the live card's painted `<img>` (spec 283 step 5), so an unchanged render does not repaint.
 
 ### Theme switch
 

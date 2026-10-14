@@ -37,7 +37,7 @@ export function embedSvgFontFaces(svg: string, faces: string): string; // <style
 ```
 
 - **Cache:** results are keyed by named families plus the sorted non-ASCII characters of the fence source, in an LRU of 64 with in-flight joining. Latin-only figures share one entry. A stack with only generic families, a backend error, or running outside Tauri all yield `''` (no embedding).
-- **Sealed svg card:** `requestSvgPaint` paints synchronously on a cache hit. On a miss, a card without a frame stays `--pending` (preview hidden) until the faces load, then paints once, so a sealed row never shows a fallback-font frame first. A theme refresh keeps the old frame until the new one is ready. A per-card token drops superseded loads.
+- **Sealed svg card:** `requestSvgPaint` paints synchronously on a cache hit. On a miss, a card without a frame stays `--pending` (preview hidden) until the faces load, then paints once, so a sealed row never shows a fallback-font frame first. A card that already shows a frame (adopted live frame at seal, theme refresh) keeps it: `paintPreview` skips an unchanged data URL and otherwise swaps only after an off-DOM `decode()`. A per-card token drops superseded loads, and a per-`<img>` token drops superseded decodes.
 - **Live svg:** each tick waits for the faces before the existing off-DOM decode. The same staleness guard (`state.requested`) covers both steps.
 - **Mermaid (spec 294):** `renderNow` embeds the faces for `theme.config.fontFamily` before caching the result, so `cachedMermaid` and the zoom viewer already carry them.
 - **Zoom viewer:** `figureViewerSource` embeds cached faces (the card has painted, so they are cached).
@@ -95,7 +95,7 @@ export function clearLiveSvgFences(body: HTMLElement): void;   // at seal, befor
    </figure>
    ```
    It reuses the card frame, so seal swaps the toolbar contents in place instead of jumping layout. `.acp-harness__svg-card--live + pre` is hidden, so the CSS placeholder only shows until the first frame. The live `<img>` carries no `data-svg-*`, so clicks, `f` hints and `refreshSvgFencePreviews` (which needs a `pre` child) ignore it. The kind label pulses opacity-only, with no animation under `prefers-reduced-motion`.
-5. Seal branch A: right after removing `--stream-live`, `clearLiveSvgFences(body)` removes every `--live` card. Then `markdownHtml` is captured and `decorateSvgFences` builds the real card. For a complete document, `closeSvgPrefix` returns the source unchanged, so the card's data URL usually equals the last live frame and WebKit reuses the decoded image.
+5. Seal branch A: right after removing `--stream-live`, `clearLiveSvgFences(body)` removes every `--live` card, keeping each painted `<img>` in a `WeakMap` keyed by the fence `<pre>` it stood in for. Then `markdownHtml` is captured (the cache never holds a live card) and `decorateSvgFences` builds the real card, moving that `<img>` into it instead of creating a fresh one. A fresh `<img>` with a data URL blanks until WebKit loads it, which flashed the figure once the turn ended; and on a font-cache miss the frameless card went `--pending`, collapsing the preview. With the adopted frame, an identical final data URL is a no-op and a different one swaps after an off-DOM decode.
 
 ### Edge Cases
 

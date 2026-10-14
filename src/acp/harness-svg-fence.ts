@@ -223,6 +223,30 @@ function setPreview(img: HTMLImageElement, themed: string, src = SVG_DATA_URL_PR
   img.src = src;
 }
 
+/** Latest data URL requested per preview <img>; a superseded decode never paints. */
+const previewRequests = new WeakMap<HTMLImageElement, string>();
+
+/** Show `themed` without a blank frame: an empty <img> takes it directly; one
+ *  already showing a frame (adopted live frame, theme refresh) keeps it until
+ *  the new one decodes off-DOM. An unchanged frame is left alone. */
+function paintPreview(img: HTMLImageElement, themed: string): void {
+  const src = SVG_DATA_URL_PREFIX + encodeURIComponent(themed);
+  previewRequests.set(img, src);
+  const current = img.getAttribute('src');
+  if (current === src) return;
+  if (!current) {
+    setPreview(img, themed, src);
+    return;
+  }
+  // A refused frame still lands, so the card's error listener marks it broken.
+  const swap = (): void => {
+    if (previewRequests.get(img) === src) setPreview(img, themed, src);
+  };
+  const probe = new Image();
+  probe.src = src;
+  probe.decode().then(swap, swap);
+}
+
 /** Latest paint request per svg card; a superseded font load never paints. */
 const svgPaints = new WeakMap<HTMLElement, object>();
 
@@ -235,7 +259,7 @@ function requestSvgPaint(card: HTMLElement, img: HTMLImageElement, source: strin
   if (faces !== undefined) {
     svgPaints.delete(card);
     card.classList.remove(PENDING_CARD);
-    setPreview(img, embedSvgFontFaces(themed, faces));
+    paintPreview(img, embedSvgFontFaces(themed, faces));
     return;
   }
   const token = {};
@@ -245,7 +269,7 @@ function requestSvgPaint(card: HTMLElement, img: HTMLImageElement, source: strin
     if (svgPaints.get(card) !== token) return;
     svgPaints.delete(card);
     card.classList.remove(PENDING_CARD);
-    setPreview(img, embedSvgFontFaces(themed, loaded));
+    paintPreview(img, embedSvgFontFaces(themed, loaded));
   });
 }
 
@@ -276,7 +300,9 @@ function buildCard(pre: HTMLElement, index: number, kind: SvgFenceEntry['kind'])
   bar.append(label, hint, button('toggle', index, 'Source'), button('copy', index, 'Copy'));
   const preview = document.createElement('div');
   preview.className = `${CARD}-preview`;
-  const img = document.createElement('img');
+  // Seal: keep the live card's decoded <img> so the figure never blanks.
+  const img = liveFrames.get(pre) ?? document.createElement('img');
+  liveFrames.delete(pre);
   img.alt = kind === 'mermaid' ? 'Mermaid diagram' : 'SVG preview';
   img.decoding = 'async';
   // Click zooms the card in the image viewer.
@@ -299,7 +325,7 @@ function paintMermaidCard(card: HTMLElement, result: MermaidResult): void {
     card.classList.remove(BROKEN_CARD);
     card.removeAttribute('title');
     if (label) label.textContent = `mermaid · ${result.diagramType}`;
-    if (img) setPreview(img, result.svg);
+    if (img) paintPreview(img, result.svg);
   } else {
     card.classList.add(BROKEN_CARD);
     card.title = result.error;
@@ -627,8 +653,13 @@ function updateLiveMermaidFences(body: HTMLElement): void {
   }
 }
 
+/** Seal hand-off: a live card's painted <img>, keyed by the fence <pre> it
+ *  stood in for, adopted by the card buildCard makes for that <pre>. */
+const liveFrames = new WeakMap<HTMLElement, HTMLImageElement>();
+
 /** Revision 2: at seal, drop live cards and pending ticks before the body is
- *  captured into `markdownHtml`; decorateSvgFences then builds the real card. */
+ *  captured into `markdownHtml`; decorateSvgFences then builds the real card,
+ *  re-using each live card's painted <img> so the figure does not blank. */
 export function clearLiveSvgFences(body: HTMLElement): void {
   for (const code of Array.from(body.querySelectorAll<HTMLElement>('pre > code.svg'))) {
     const state = liveSvgs.get(code);
@@ -637,5 +668,10 @@ export function clearLiveSvgFences(body: HTMLElement): void {
     liveSvgs.delete(code);
   }
   for (const code of Array.from(body.querySelectorAll<HTMLElement>('pre > code.mermaid'))) liveMermaids.delete(code);
-  for (const card of Array.from(body.querySelectorAll<HTMLElement>(`.${LIVE_CARD}`))) card.remove();
+  for (const card of Array.from(body.querySelectorAll<HTMLElement>(`.${LIVE_CARD}`))) {
+    const pre = card.nextElementSibling;
+    const img = card.querySelector<HTMLImageElement>(`:scope > .${CARD}-preview > img[src]`);
+    if (pre instanceof HTMLElement && pre.tagName === 'PRE' && img) liveFrames.set(pre, img);
+    card.remove();
+  }
 }
