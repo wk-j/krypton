@@ -56,7 +56,7 @@ The execution target belongs to the whole Harness, not an individual lane. Every
 | `src-tauri/remote-protocol/` | New Serde-only crate shared by the app and companion. |
 | `src-tauri/remote-runtime/` | New headless `krypton-remote` package with no Tauri/WebKit/audio dependency. |
 | `src-tauri/remote-binaries/`, `scripts/stage-remote-runtime.sh` | Stage the host helper as an app resource for development and packaging. |
-| `.github/workflows/remote-runtime-release.yml` | Publish four platform helpers and SHA-256 files on each Krypton release. |
+| `.github/workflows/release.yml` | Build four platform helpers and SHA-256 files with the macOS app, then publish them together on one Krypton release. |
 | `src-tauri/src/acp.rs` | Add local/remote agent transports while retaining ACP JSON-RPC, permissions, and event semantics locally. |
 | `src-tauri/src/ssh.rs` | Resolve a focused SSH terminal into a safe launch descriptor and verify any reusable ControlMaster socket. |
 | `src-tauri/src/config.rs` | Add remote Harness profile configuration and validation. |

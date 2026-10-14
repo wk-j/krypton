@@ -1040,7 +1040,8 @@ mod tests {
             ]
         );
 
-        let numstat = b"3\t2\ttab\tline\nname.txt\0-\t-\tblob.bin\00\t0\t\0old.txt\0renamed.txt\0";
+        let numstat =
+            b"3\t2\ttab\tline\nname.txt\0-\t-\tblob.bin\x000\t0\t\0old.txt\0renamed.txt\0";
         let parsed = parse_numstat_z(numstat);
         assert_eq!(parsed["tab\tline\nname.txt"], (Some(3), Some(2)));
         assert_eq!(parsed["blob.bin"], (None, None));

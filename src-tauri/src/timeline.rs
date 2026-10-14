@@ -3065,7 +3065,7 @@ mod tests {
                 lexical_score: 20,
             }],
         };
-        assert!(validate_semantic_candidates(&[event.clone()], &semantic).is_ok());
+        assert!(validate_semantic_candidates(std::slice::from_ref(&event), &semantic).is_ok());
         semantic.candidates[0].recent_summaries = vec!["untrusted transcript text".to_string()];
         assert!(validate_semantic_candidates(&[event], &semantic)
             .unwrap_err()

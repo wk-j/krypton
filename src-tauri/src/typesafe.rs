@@ -744,7 +744,6 @@ fn retry_delay(attempt: u8) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::TypeSafeTimelineTopicsConfig;
 
     fn request() -> TimelineTopicSemanticRequest {
         TimelineTopicSemanticRequest {
@@ -818,8 +817,7 @@ mod tests {
 
     #[test]
     fn gate_accepts_only_a_strong_known_candidate() {
-        let mut config = TypeSafeConfig::default();
-        config.timeline_topics = TypeSafeTimelineTopicsConfig::default();
+        let config = TypeSafeConfig::default();
         let result = gate_response(
             &config,
             &request(),

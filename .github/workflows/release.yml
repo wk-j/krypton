@@ -1,0 +1,229 @@
+name: Release Krypton
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Verify tag and source versions
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/verify-release.py version --tag "$RELEASE_TAG"
+          python3 -W error scripts/test-verify-release.py
+          git fetch --no-tags origin master
+          if [ "$(git cat-file -t "$GITHUB_REF")" != tag ]; then
+            echo "Release tag $RELEASE_TAG must be annotated" >&2
+            exit 1
+          fi
+          tag_commit="$(git rev-parse "$GITHUB_REF^{commit}")"
+          git merge-base --is-ancestor "$tag_commit" origin/master
+          if gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null | grep -qx false; then
+            echo "A published release already exists for $RELEASE_TAG" >&2
+            exit 1
+          fi
+      - name: Check frontend
+        run: |
+          npm ci
+          npm test
+          npm run check
+      - name: Check Rust workspace
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+          cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets -- -D warnings
+          cargo test --manifest-path src-tauri/Cargo.toml --workspace
+
+  build-macos:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              echo "Missing required GitHub secret: $name" >&2
+              exit 1
+            fi
+          done
+          keychain="$RUNNER_TEMP/krypton-signing.keychain-db"
+          certificate="$RUNNER_TEMP/krypton-certificate.p12"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security default-keychain -s "$keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -t 3600 -u "$keychain"
+          security import "$certificate" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$certificate"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain"
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Developer ID Application:/{print $2}')"
+          if [ "$(printf '%s\n' "$identity" | sed '/^$/d' | wc -l | tr -d ' ')" -ne 1 ]; then
+            echo 'Expected exactly one Developer ID Application identity' >&2
+            exit 1
+          fi
+          printf 'APPLE_SIGNING_IDENTITY=%s\n' "$identity" >> "$GITHUB_ENV"
+      - name: Build signed and notarized DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          if [ "$(rustc -vV | sed -n 's/^host: //p')" != "$TARGET" ]; then
+            echo "Runner architecture does not match $TARGET" >&2
+            exit 1
+          fi
+          npx tauri build --bundles dmg
+          app='src-tauri/target/release/bundle/macos/Krypton.app'
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          shopt -s nullglob
+          dmgs=(src-tauri/target/release/bundle/dmg/*.dmg)
+          if [ "${#dmgs[@]}" -ne 1 ]; then
+            echo 'Expected exactly one built DMG' >&2
+            exit 1
+          fi
+          xcrun notarytool submit "${dmgs[0]}" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "${dmgs[0]}"
+          xcrun stapler validate "${dmgs[0]}"
+          hdiutil verify "${dmgs[0]}"
+          version="${RELEASE_TAG#v}"
+          asset="Krypton_${version}_${TARGET}.dmg"
+          mkdir release-assets
+          cp "${dmgs[0]}" "release-assets/$asset"
+          (cd release-assets && shasum -a 256 "$asset" > "$asset.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-${{ matrix.target }}
+          path: release-assets/
+          if-no-files-found: error
+
+  build-remote:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build remote runtime
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          cargo build --release --locked --manifest-path src-tauri/Cargo.toml -p krypton-remote --target "$TARGET"
+          mkdir release-assets
+          asset="krypton-remote-$TARGET"
+          cp "src-tauri/target/$TARGET/release/krypton-remote" "release-assets/$asset"
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd release-assets && sha256sum "$asset" > "$asset.sha256")
+          else
+            (cd release-assets && shasum -a 256 "$asset" > "$asset.sha256")
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-remote-${{ matrix.target }}
+          path: release-assets/
+          if-no-files-found: error
+
+  publish:
+    needs: [verify, build-macos, build-remote]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: downloaded-artifacts
+      - name: Verify complete asset set
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/verify-release.py collect --version "${RELEASE_TAG#v}" --dir downloaded-artifacts --output release-assets
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [ "$draft" != true ]; then
+              echo "Refusing to change published release $RELEASE_TAG" >&2
+              exit 1
+            fi
+          else
+            gh release create "$RELEASE_TAG" --draft --verify-tag --generate-notes --title "Krypton $RELEASE_TAG"
+          fi
+          gh release upload "$RELEASE_TAG" release-assets/* --clobber
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort > "$RUNNER_TEMP/expected-assets.txt"
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | sort > "$RUNNER_TEMP/uploaded-assets.txt"
+          diff -u "$RUNNER_TEMP/expected-assets.txt" "$RUNNER_TEMP/uploaded-assets.txt"
+          gh release edit "$RELEASE_TAG" --draft=false
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = false

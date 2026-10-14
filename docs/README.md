@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (280)
+## Specs (281)
 
 | # | Spec |
 |---|------|
@@ -297,6 +297,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 292 | [ACP Harness Inline HTML Visuals](./0292-harness-inline-html-visuals.md) |
 | 293 | [Global Handoff Resume](./0293-global-handoff-resume.md) |
 | 294 | [ACP Harness Mermaid Fence Preview](./0294-harness-mermaid-fence-preview.md) |
+| 295 | [GitHub Release Automation](./0295-github-release-automation.md) |
 
 ## ADRs (23)
 
