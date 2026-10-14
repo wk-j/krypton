@@ -167,6 +167,13 @@ const QUOTE_CAP = 2000;
  *  signals from multiple lanes into one git round-trip. */
 const REFRESH_DEBOUNCE_MS = 300;
 
+/** Changed lines above which a file waits behind a placeholder until `Enter`:
+ *  a ~10k-line file costs seconds of blocking table layout. */
+const LARGE_DIFF_LINES = 3000;
+
+/** Changed lines above which syntax highlighting is skipped. */
+const HIGHLIGHT_MAX_LINES = 1500;
+
 /** Diff content view — renders git diff output as side-by-side panels */
 export class DiffContentView implements ContentView {
   readonly type: PaneContentType = 'diff';
@@ -260,6 +267,9 @@ export class DiffContentView implements ContentView {
   /** One coalesced vertical keyboard-scroll animation for the main diff canvas. */
   private verticalScrollRaf = 0;
   private verticalScrollTarget: number | null = null;
+  /** Large files the human chose to render anyway (by `fileKey`), kept for the
+   *  session so refreshes and re-renders don't re-collapse them. */
+  private forcedLargeFiles = new Set<string>();
 
   constructor(unifiedDiff: string, container: HTMLElement, options?: DiffViewOptions) {
     this.refreshProvider = options?.refreshProvider ?? null;
@@ -1076,6 +1086,13 @@ export class DiffContentView implements ContentView {
     const totalLines = file.addedLines + file.deletedLines;
     const matching = totalLines > 500 ? 'none' as const : 'lines' as const;
 
+    // Large files: the table layout alone blocks the webview for seconds, so
+    // hold the file behind a placeholder until the human asks for it.
+    if (totalLines > LARGE_DIFF_LINES && !this.forcedLargeFiles.has(this.fileKey(file))) {
+      this.renderLargePlaceholder(totalLines);
+      return;
+    }
+
     // Wrap in dark color scheme container
     const wrapper = document.createElement('div');
     wrapper.className = 'd2h-dark-color-scheme';
@@ -1091,7 +1108,8 @@ export class DiffContentView implements ContentView {
       maxLineSizeInBlockForComparison: 200,
       maxLineLengthHighlight: 10000,
       renderNothingWhenEmpty: false,
-      highlight: true,
+      // Per-line highlight.js + innerHTML re-parse is ~half the draw cost.
+      highlight: totalLines <= HIGHLIGHT_MAX_LINES,
       synchronisedScroll: this.diffStyle === 'side-by-side',
     });
     ui.draw();
@@ -1102,6 +1120,26 @@ export class DiffContentView implements ContentView {
     this.applyReviewPriority();
     // spec 158 ext: pre-measure hunks + mark the viewport-top focus hunk + readout.
     this.rebuildFocusCache();
+  }
+
+  /** Stand-in for a file over `LARGE_DIFF_LINES`; `Enter` renders it anyway. */
+  private renderLargePlaceholder(totalLines: number): void {
+    this.focusCache = [];
+    this.focusIndex = -1;
+    this.highHunkAnchors = [];
+    this.setFocusReadout(null);
+    const msg = document.createElement('div');
+    msg.className = 'krypton-diff__empty';
+    msg.textContent = `Large diff (${totalLines.toLocaleString()} changed lines) not rendered — press Enter to render it`;
+    this.fileContainer.appendChild(msg);
+  }
+
+  /** True while the current file is held behind the large-diff placeholder. */
+  private isLargePlaceholder(): boolean {
+    const file = this.files[this.currentFileIndex];
+    return !!file
+      && file.addedLines + file.deletedLines > LARGE_DIFF_LINES
+      && !this.forcedLargeFiles.has(this.fileKey(file));
   }
 
   // ─── Review priority (spec 160) ───
@@ -1659,6 +1697,12 @@ export class DiffContentView implements ContentView {
       }
     }
 
+    if (e.key === 'Enter' && this.isLargePlaceholder()) {
+      this.forcedLargeFiles.add(this.fileKey(this.files[this.currentFileIndex]));
+      this.renderCurrentFile();
+      return true;
+    }
+
     // Review priority (spec 160): `}`/`{` jump only between high hunks (n/N still
     // walk all hunks); Enter expands the routine fold nearest the viewport top.
     if (this.reviewPriority) {
@@ -1999,6 +2043,7 @@ export class DiffContentView implements ContentView {
         title: 'View',
         rows: [
           ['s', 'toggle split / unified'],
+          ['Enter', 'render a large diff held back'],
           ...(this.refreshProvider ? ([['r', 'refresh diff']] as [string, string][]) : []),
         ],
       },
