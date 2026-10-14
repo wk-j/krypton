@@ -5082,9 +5082,6 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
   letter-spacing: 0.06em;
   font-size: 0.78em;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
-  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
-  border-radius: var(--krypton-border-radius, 8px);
-  padding: 0 5px;
 }
 
 .acp-harness__question-subject {
