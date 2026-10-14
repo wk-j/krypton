@@ -221,7 +221,7 @@ export interface FsActivityPayload {
   error?: string;
 }
 
-export type HarnessToolFamily = 'memory' | 'peer' | 'attention' | 'review' | 'timeline';
+export type HarnessToolFamily = 'memory' | 'peer' | 'attention' | 'review' | 'timeline' | 'lessons';
 export type PermissionDecision = 'pending' | 'accepted' | 'rejected' | 'auto_allowed' | 'failed';
 
 export interface PermissionPayload {

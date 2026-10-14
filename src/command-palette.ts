@@ -885,6 +885,13 @@ export class CommandPalette {
       category: 'Window',
       execute: () => c.openDocs(),
     });
+    // spec 298: same as the harness `#lessons` command.
+    this.register({
+      id: 'lessons.open',
+      label: 'Open Lessons',
+      category: 'ACP',
+      execute: () => c.openLessons(),
+    });
     this.register({
       id: 'analyses.open',
       label: 'Open Issue Analysis Viewer',

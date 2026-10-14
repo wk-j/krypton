@@ -157,6 +157,14 @@ import {
   type LaneToolGates,
 } from './lane-context';
 import {
+  lessonEntries,
+  lessonsEnabled,
+  refreshLessons,
+  renderLessonsBlock,
+  watchLessons,
+  type LessonsChangedPayload,
+} from './lessons';
+import {
   HANDOFF_WRITE_PROMPT,
   type GithubIssueVerbInput,
   type HandoffResumeDoc,
@@ -168,6 +176,7 @@ import {
   handleGithubIssuePrompt,
   handoffResumePrompt,
   issueFixPrompt,
+  lessonDistillPrompt,
   postGithubCommentPrompt,
   renderActiveTicketPin,
   tagGithubIssuePrompt,
@@ -787,7 +796,7 @@ const GIT_BRANCH_REFRESH_MS = 150;
 const SPINNER_INTERVAL_MS = 80;
 
 const REMOTE_UNSUPPORTED_HASH_COMMANDS = new Set([
-  '#gallery', '#docs', '#analyses', '#reviews', '#push', '#usage', '#daily',
+  '#gallery', '#docs', '#analyses', '#reviews', '#push', '#usage', '#daily', '#lessons',
   '#xenon', '#termctrl', '#hurl', '#draw', '#ticket', '#review', '#review-thread', '#directive',
   '#analyze-github-issue', '#create-github-issue', '#dispatch-github-issue',
   '#fix-github-issue', '#handle-github-issue', '#post-github-comment', '#tag-github-issue',
@@ -1157,6 +1166,8 @@ export class AcpHarnessView implements ContentView {
   private gitBranchRefreshTimer: number | null = null;
   private gitBranchRefreshGeneration = 0;
   private memoryUnlisten: UnlistenFn | null = null;
+  /** spec 298: transcript line + flash when a lane in this harness writes a lesson. */
+  private lessonsUnlisten: UnlistenFn | null = null;
   private mcpStatsByLane = new Map<string, HarnessMcpLaneStats>();
   private mcpUnlisten: UnlistenFn | null = null;
   /** spec 133: HTML artifact registry mirror, keyed by artifact id. */
@@ -4790,6 +4801,10 @@ export class AcpHarnessView implements ContentView {
       this.memoryUnlisten();
       this.memoryUnlisten = null;
     }
+    if (this.lessonsUnlisten) {
+      this.lessonsUnlisten();
+      this.lessonsUnlisten = null;
+    }
     if (this.remoteConnectionUnlisten) {
       this.remoteConnectionUnlisten();
       this.remoteConnectionUnlisten = null;
@@ -5209,7 +5224,9 @@ export class AcpHarnessView implements ContentView {
       this.renderTriageOverlayEl();
       return;
     }
-    const result = this.coordinator.deliverRedirect(item.laneId, text);
+    const target = this.lanes.find((l) => l.id === item.laneId);
+    const lessonNudge = target ? this.laneToolGates(target)?.lessons === true : false;
+    const result = this.coordinator.deliverRedirect(item.laneId, text, lessonNudge);
     if (!result.delivered) {
       // Edge case: stopped/cancelled lane — item stays open, surface a notice.
       const lane = this.lanes.find((l) => l.id === item.laneId);
@@ -6694,6 +6711,10 @@ export class AcpHarnessView implements ContentView {
     }
 
     await this.refreshDirectives();
+    // spec 298: lessons are global; the cache is app-wide and the first policy
+    // of every lane should already carry them.
+    void watchLessons();
+    await refreshLessons();
 
     try {
       this.pickerEntries = harnessBackends(await AcpClient.listBackends(), { remote: this.remoteRuntimeId !== null });
@@ -6804,6 +6825,9 @@ export class AcpHarnessView implements ContentView {
       void this.refreshMemory().then(() => {
         if (handoffId) void this.autoPushHandoff(handoffId);
       });
+    });
+    this.lessonsUnlisten = await listen<LessonsChangedPayload>('acp-lessons-changed', (event) => {
+      if (event.payload.harnessId === this.harnessMemoryId) this.handleLessonsChanged(event.payload);
     });
     this.mcpUnlisten = await listen<{ harnessId: string; laneLabel: string }>('acp-harness-mcp-touched', (event) => {
       if (event.payload.harnessId === this.harnessMemoryId) void this.refreshMcpStats();
@@ -7633,6 +7657,37 @@ export class AcpHarnessView implements ContentView {
       this.refreshMetricsRender();
     } catch {
       // ignore — stats are diagnostic only
+    }
+  }
+
+  /** spec 298: a lane in this harness recorded or retired a global lesson. The
+   *  app-wide cache refreshes on its own listener; this only makes the write
+   *  visible where it happened. */
+  private handleLessonsChanged(payload: LessonsChangedPayload): void {
+    const lane = this.lanes.find((l) => l.displayName === payload.laneLabel);
+    if (lane) {
+      this.appendTranscript(lane, 'system', `[lesson] ${payload.action}: ${payload.slug} — ${payload.title}`);
+      this.scheduleLaneRender(lane);
+    }
+    this.flashChip(`lesson ${payload.action}: ${payload.slug}`);
+  }
+
+  /** spec 298: `#lessons` — open the generated index in the Markdown Viewer. */
+  private async openLessonsIndex(): Promise<void> {
+    const snapshot = await refreshLessons();
+    if (!snapshot) {
+      this.flashChip('lessons unavailable');
+      return;
+    }
+    if (!this.openMarkdownViewCb) {
+      this.flashChip(`lessons · ${snapshot.entries.length} — ${snapshot.indexPath}`);
+      return;
+    }
+    try {
+      await this.openMarkdownViewCb(snapshot.indexPath);
+      this.flashChip(`lessons · ${snapshot.entries.length}/${snapshot.cap}`);
+    } catch (e) {
+      this.flashChip(`could not open ${snapshot.indexPath}: ${errorText(e)}`);
     }
   }
 
@@ -8612,6 +8667,7 @@ export class AcpHarnessView implements ContentView {
       timeline,
       timelineSuggest: timeline && this.timelineCtl.automaticSuggestions,
       peers: this.lanes.length > 1,
+      lessons: lessonsEnabled() && lane.backendId !== 'pi-acp',
     };
   }
 
@@ -8653,6 +8709,10 @@ export class AcpHarnessView implements ContentView {
       }
       lines.push(renderToolIndex(gates));
     }
+    // spec 298: every lane reads the global lessons, including lanes that
+    // cannot write them (Pi, no hook server).
+    const lessons = lessonsEnabled() ? renderLessonsBlock(lessonEntries()) : null;
+    if (lessons) lines.push(lessons);
     // spec 283/294: figure guidance needs no MCP tool, so it survives the memory-unavailable branch.
     lines.push(SVG_FENCE_GUIDANCE, MERMAID_FENCE_GUIDANCE);
     const role = this.renderRoleBlock(lane);
@@ -11287,6 +11347,27 @@ export class AcpHarnessView implements ContentView {
     // guarded on projectDir (writes/reads repo files, not the memory store).
     // Draft is cleared before validation, so a rejected command still consumes the
     // typed text — intentional, matching #handoff.
+    // spec 298: global lessons. `#lesson` needs no project dir — the store is
+    // global and written through the lane's own lesson_* tools.
+    if (parts[0] === '#lesson') {
+      this.setDraft(lane, '', 0);
+      if (!lessonsEnabled()) {
+        this.flashChip('lessons disabled');
+        return;
+      }
+      if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
+        this.flashChip('lane busy - #cancel first');
+        return;
+      }
+      const hint = text.trim().slice('#lesson'.length).trim();
+      await this.enqueueSystemPrompt(lane, lessonDistillPrompt(hint), undefined, 'distilling lessons');
+      return;
+    }
+    if (parts[0] === '#lessons') {
+      this.setDraft(lane, '', 0);
+      await this.openLessonsIndex();
+      return;
+    }
     if (parts[0] === '#wiki') {
       this.setDraft(lane, '', 0);
       if (!this.projectDir) {

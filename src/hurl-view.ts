@@ -503,7 +503,7 @@ export class HurlContentView implements ContentView {
     const env = document.createElement('span');
     env.className = 'krypton-hurl__env-badge';
     const name = this.activeEnvFile
-      ? this.activeEnvFile.split('/').pop() ?? this.activeEnvFile
+      ? this.envFiles.find((f) => f.path === this.activeEnvFile)?.rel_path ?? this.activeEnvFile
       : 'none';
     env.textContent = `env: ${name} ▾`;
     this.statusBarEl.appendChild(env);

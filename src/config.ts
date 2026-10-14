@@ -196,6 +196,8 @@ export interface AcpHarnessConfig {
   composer_bloom_trail: number;
   /** spec 285: ghost-text word completion in the harness composer. */
   word_autocomplete: boolean;
+  /** spec 298: global lane lessons (policy block, lesson_* tools, nudges). */
+  lessons: boolean;
   remote_profiles: RemoteHarnessProfile[];
   /** Per-backend model selection. Keyed by backend id (`opencode`,
    * `droid`, `cursor`, `claude`, `codex`, `junie`, `omp`, `grok`, `copilot`,

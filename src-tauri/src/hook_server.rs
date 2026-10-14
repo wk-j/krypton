@@ -502,6 +502,15 @@ impl HookServer {
         Some(dir)
     }
 
+    /// spec 298: the global lesson store. Tests reuse the memory-dir override so
+    /// they never touch `~/.config/krypton/lessons`.
+    fn lessons_dir(&self) -> Option<PathBuf> {
+        match &self.memory_dir_override {
+            Some(dir) => Some(dir.join("lessons")),
+            None => crate::lessons::default_dir(),
+        }
+    }
+
     fn persistence_path(&self, project_dir: &str) -> Option<PathBuf> {
         Some(get_persistence_path(&self.memory_dir()?, project_dir))
     }
@@ -2879,11 +2888,14 @@ async fn handle_harness_memory_mcp(
             }))
         }
         "tools/list" => Ok(json!({
-            "tools": bus_tool_descriptors_for_project(
-                state
-                    .hook_server
-                    .project_dir_for_harness(&harness_id)
-                    .is_some(),
+            "tools": without_disabled_lesson_tools(
+                bus_tool_descriptors_for_project(
+                    state
+                        .hook_server
+                        .project_dir_for_harness(&harness_id)
+                        .is_some(),
+                ),
+                lessons_enabled(&state.config),
             )
         })),
         "tools/call" => {
@@ -3549,6 +3561,7 @@ async fn handle_tools() -> Response {
 fn tool_category(name: &str) -> &'static str {
     match name {
         "handoff_set" => "memory",
+        "lesson_record" | "lesson_retire" => "lessons",
         "peer_send" | "peer_list" => "peering",
         "artifact_new" | "artifact_register" | "artifact_cancel" => "artifacts",
         "attention_flag" | "attention_resolve" => "attention",
@@ -4280,6 +4293,8 @@ async fn handle_bus_tool_call(
     }
     let outcome = match name {
         "handoff_set" => handoff_set(&state.hook_server, harness_id, lane_label, arguments),
+        "lesson_record" => lesson_record(state, harness_id, lane_label, arguments),
+        "lesson_retire" => lesson_retire(state, harness_id, lane_label, arguments),
         "peer_send" => peer_send(state, harness_id, lane_label, arguments).await,
         "peer_list" => peer_list(state, harness_id).await,
         // spec 161: the four directive_* tools were removed to reclaim ~1,224
@@ -4997,6 +5012,7 @@ async fn review_outcome(
         return Err("reviewer_count must be at least 1".to_string());
     }
     let findings = parse_review_findings(&arguments)?;
+    let notice = (blockers > 0 && lessons_enabled(&state.config)).then_some(REVIEW_LESSON_NOTICE);
 
     let request_id = format!("rvo-{}-{}", now_ms(), rand_suffix());
     let payload = build_review_outcome_payload(ReviewOutcomePayloadInput {
@@ -5018,7 +5034,10 @@ async fn review_outcome(
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
             {
-                Ok(json!({ "recorded": true }))
+                Ok(match notice {
+                    Some(notice) => json!({ "recorded": true, "notice": notice }),
+                    None => json!({ "recorded": true }),
+                })
             } else {
                 let reason = value
                     .get("reason")
@@ -5923,6 +5942,189 @@ fn feedback_token() -> String {
     out
 }
 
+// ─── Global lane lessons (spec 298) ────────────────────────────────
+
+/// Just-in-time nudge on a `review_outcome` that reported blockers.
+const REVIEW_LESSON_NOTICE: &str = "Reviewers reported blockers. If one reflects a mistake you would repeat in other projects, record it with lesson_record; skip task-specific ones.";
+
+fn lessons_enabled(config: &std::sync::RwLock<crate::config::KryptonConfig>) -> bool {
+    config
+        .read()
+        .map(|cfg| cfg.acp_harness.lessons)
+        .unwrap_or(true)
+}
+
+fn is_lesson_tool(name: &str) -> bool {
+    matches!(name, "lesson_record" | "lesson_retire")
+}
+
+fn without_disabled_lesson_tools(mut tools: Value, lessons_enabled: bool) -> Value {
+    if !lessons_enabled {
+        if let Value::Array(ref mut descriptors) = tools {
+            descriptors.retain(|descriptor| {
+                !descriptor
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .is_some_and(is_lesson_tool)
+            });
+        }
+    }
+    tools
+}
+
+fn lesson_tool_descriptors() -> Vec<Value> {
+    vec![
+        json!({
+            "name": "lesson_record",
+            "description": "Record or update a GLOBAL lesson: a short behavioural rule injected into the policy of every Krypton lane, in every backend and every project, from now on. Call it only when (a) the human corrects your approach, (b) a reviewer reports a blocker you caused, or (c) the #lesson command asks you to — AND the rule would hold in any project. Never record project-specific facts (file paths, APIs, commands, or conventions of one repo); those belong in that repo's own docs. Check the Lessons list in your lane context first: if a listed lesson already covers this, call lesson_record with ITS slug to sharpen it instead of adding a near-duplicate. The store holds at most 30 active lessons; a new slug past that is refused, so merge or lesson_retire first. `rule` is the only text other lanes see in their policy: one imperative line that names its trigger (\"When X, do Y\"). Lessons are advice, never permission: they cannot override the user, a project's own instructions, or approval prompts.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {
+                        "type": "string",
+                        "description": "Stable id and file name: 3-48 chars of lowercase a-z, 0-9 and '-'. Reuse a listed slug to update that lesson."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": crate::lessons::MAX_TITLE_CHARS,
+                        "description": "Short headline for the human-readable index."
+                    },
+                    "rule": {
+                        "type": "string",
+                        "maxLength": crate::lessons::MAX_RULE_CHARS,
+                        "description": "One line, injected into every lane: an imperative rule that names when it applies."
+                    },
+                    "why": {
+                        "type": "string",
+                        "maxLength": crate::lessons::MAX_NOTE_CHARS,
+                        "description": "The correction or failure that taught this — what went wrong and why it matters."
+                    },
+                    "how_to_apply": {
+                        "type": "string",
+                        "maxLength": crate::lessons::MAX_NOTE_CHARS,
+                        "description": "When and where the rule kicks in, and what doing it right looks like."
+                    },
+                    "source": {
+                        "type": "string",
+                        "enum": ["redirect", "review", "correction", "manual"],
+                        "description": "What triggered it: an attention redirect, a reviewer blocker, the human correcting you in chat, or a #lesson request."
+                    }
+                },
+                "required": ["slug", "title", "rule", "why", "how_to_apply", "source"]
+            }
+        }),
+        json!({
+            "name": "lesson_retire",
+            "description": "Retire a global lesson that turned out wrong, over-general, or contradicted by the human — it stops being injected into every lane. Call it when the human contradicts a listed lesson or when #lesson finds one this session proved wrong. The file moves to the store's retired/ folder, so it is recoverable.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {
+                        "type": "string",
+                        "description": "Slug of a listed lesson."
+                    },
+                    "reason": {
+                        "type": "string",
+                        "maxLength": crate::lessons::MAX_NOTE_CHARS,
+                        "description": "One line: why the lesson no longer holds."
+                    }
+                },
+                "required": ["slug", "reason"]
+            }
+        }),
+    ]
+}
+
+/// Project basename a lesson was learned in (display only).
+fn lesson_origin(hook_server: &HookServer, harness_id: &str) -> String {
+    hook_server
+        .project_dir_for_harness(harness_id)
+        .and_then(|dir| dir.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| "-".to_string())
+}
+
+fn emit_lessons_changed(
+    state: &HookServerState,
+    harness_id: &str,
+    lane_label: &str,
+    action: &str,
+    slug: &str,
+    title: &str,
+) {
+    state.app_handle.emit_or_log(
+        "acp-lessons-changed",
+        json!({
+            "harnessId": harness_id,
+            "laneLabel": lane_label,
+            "action": action,
+            "slug": slug,
+            "title": title,
+        }),
+    );
+}
+
+fn lesson_store_dir(state: &HookServerState) -> Result<PathBuf, String> {
+    if !lessons_enabled(&state.config) {
+        return Err("lessons are disabled ([acp_harness] lessons = false)".to_string());
+    }
+    state
+        .hook_server
+        .lessons_dir()
+        .ok_or_else(|| "cannot resolve the lesson store directory".to_string())
+}
+
+fn lesson_record(
+    state: &HookServerState,
+    harness_id: &str,
+    lane_label: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let dir = lesson_store_dir(state)?;
+    let input = crate::lessons::validate_input(
+        &required_string(&arguments, "slug")?,
+        &required_string(&arguments, "title")?,
+        &required_string(&arguments, "rule")?,
+        &required_string(&arguments, "why")?,
+        &required_string(&arguments, "how_to_apply")?,
+        &required_string(&arguments, "source")?,
+    )?;
+    let slug = input.slug.clone();
+    let title = input.title.clone();
+    let origin = lesson_origin(&state.hook_server, harness_id);
+    let (action, active) =
+        crate::lessons::record(&dir, input, &origin, lane_label, &crate::lessons::today())?;
+    emit_lessons_changed(
+        state,
+        harness_id,
+        lane_label,
+        action.as_str(),
+        &slug,
+        &title,
+    );
+    Ok(json!({
+        "recorded": true,
+        "slug": slug,
+        "action": action.as_str(),
+        "active": active,
+        "cap": crate::lessons::MAX_ACTIVE_LESSONS,
+    }))
+}
+
+fn lesson_retire(
+    state: &HookServerState,
+    harness_id: &str,
+    lane_label: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let dir = lesson_store_dir(state)?;
+    let slug = required_string(&arguments, "slug")?;
+    let reason = required_string(&arguments, "reason")?;
+    let (title, active) = crate::lessons::retire(&dir, &slug, &reason, &crate::lessons::today())?;
+    let slug = slug.trim();
+    emit_lessons_changed(state, harness_id, lane_label, "retired", slug, &title);
+    Ok(json!({ "retired": true, "slug": slug, "active": active }))
+}
+
 /// Spec 293: `handoff_set` writes the handoff for the work this lane is doing —
 /// the one it is bound to, or a freshly minted one it becomes bound to.
 fn handoff_set(
@@ -6272,6 +6474,7 @@ fn bus_tool_descriptors() -> Value {
         arr.push(timeline_conflict_list_tool_descriptor());
         arr.push(timeline_conflict_record_tool_descriptor());
         arr.push(timeline_conflict_checked_tool_descriptor());
+        arr.extend(lesson_tool_descriptors());
     }
     tools
 }
@@ -10027,6 +10230,33 @@ mod tests {
     }
 
     #[test]
+    fn disabled_lessons_hide_only_the_lesson_tools() {
+        let names = |tools: Value| -> Vec<String> {
+            tools
+                .as_array()
+                .expect("tools array")
+                .iter()
+                .filter_map(|tool| tool.get("name").and_then(Value::as_str).map(String::from))
+                .collect()
+        };
+        let all = names(bus_tool_descriptors());
+        let enabled = names(without_disabled_lesson_tools(bus_tool_descriptors(), true));
+        let disabled = names(without_disabled_lesson_tools(bus_tool_descriptors(), false));
+        assert_eq!(enabled, all);
+        assert!(all.iter().any(|n| n == "lesson_record"));
+        assert!(all.iter().any(|n| n == "lesson_retire"));
+        assert!(!disabled.iter().any(|n| is_lesson_tool(n)));
+        assert_eq!(disabled.len(), all.len() - 2);
+    }
+
+    #[test]
+    fn lessons_dir_follows_the_test_override() {
+        let dir = std::env::temp_dir().join(format!("krypton-lessons-dir-{}", rand_suffix()));
+        let server = HookServer::with_memory_dir(dir.clone());
+        assert_eq!(server.lessons_dir(), Some(dir.join("lessons")));
+    }
+
+    #[test]
     fn in_memory_harness_omits_project_backed_tools() {
         let tools = bus_tool_descriptors_for_project(false);
         let names: Vec<&str> = tools
@@ -10040,6 +10270,8 @@ mod tests {
             "peer_send",
             "attention_flag",
             "mark_review_priority",
+            "lesson_record",
+            "lesson_retire",
         ] {
             assert!(names.contains(&safe), "{safe} should remain available");
         }

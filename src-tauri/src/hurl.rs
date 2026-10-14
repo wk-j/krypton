@@ -443,6 +443,12 @@ fn safe_char_boundary(s: &str, mut idx: usize) -> usize {
 
 // ─── Commands ───────────────────────────────────────────────────────
 
+/// Lists `*.hurl` and `*.env` files under `cwd` (no dotfiles, no hidden dirs).
+///
+/// `.hurl` files follow gitignore. `.env` files usually hold secrets and are
+/// gitignored on purpose, so they are collected from every directory the
+/// gitignore-aware walk visits, ignored or not. Env files inside an ignored
+/// directory (`node_modules/`, `target/`) stay out of the listing.
 #[tauri::command]
 pub fn list_hurl_files(cwd: String) -> Result<HurlListing, String> {
     use ignore::WalkBuilder;
@@ -463,7 +469,7 @@ pub fn list_hurl_files(cwd: String) -> Result<HurlListing, String> {
         .git_exclude(true)
         .build();
 
-    for entry in walker {
+    'walk: for entry in walker {
         let entry = match entry {
             Ok(e) => e,
             Err(_) => continue,
@@ -471,42 +477,28 @@ pub fn list_hurl_files(cwd: String) -> Result<HurlListing, String> {
         let Some(ft) = entry.file_type() else {
             continue;
         };
-        if ft.is_dir() {
-            continue;
-        }
-
         let path = entry.path();
-        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
-            continue;
-        };
 
-        let file_name = match path.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n.to_string(),
-            None => continue,
-        };
-        // Skip dotfiles like .env / .env.local
-        if file_name.starts_with('.') {
+        if ft.is_dir() {
+            let Ok(children) = std::fs::read_dir(path) else {
+                continue;
+            };
+            for child in children.flatten() {
+                if !child.file_type().is_ok_and(|t| t.is_file()) {
+                    continue;
+                }
+                if let Some(hf) = listed_file(root, &child.path(), "env") {
+                    envs.push(hf);
+                    if hurl.len() + envs.len() >= MAX {
+                        break 'walk;
+                    }
+                }
+            }
             continue;
         }
 
-        let rel = path
-            .strip_prefix(root)
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| file_name.clone());
-
-        let hf = HurlFile {
-            path: path.to_string_lossy().to_string(),
-            rel_path: rel,
-            name: file_name,
-        };
-
-        if ext.eq_ignore_ascii_case("hurl") {
+        if let Some(hf) = listed_file(root, path, "hurl") {
             hurl.push(hf);
-            if hurl.len() + envs.len() >= MAX {
-                break;
-            }
-        } else if ext.eq_ignore_ascii_case("env") {
-            envs.push(hf);
             if hurl.len() + envs.len() >= MAX {
                 break;
             }
@@ -519,6 +511,28 @@ pub fn list_hurl_files(cwd: String) -> Result<HurlListing, String> {
     Ok(HurlListing {
         hurl_files: hurl,
         env_files: envs,
+    })
+}
+
+/// `HurlFile` for `path` when it has extension `ext` and is not a dotfile
+/// (`.env` / `.env.local` are skipped).
+fn listed_file(root: &Path, path: &Path, ext: &str) -> Option<HurlFile> {
+    let actual = path.extension().and_then(|e| e.to_str())?;
+    if !actual.eq_ignore_ascii_case(ext) {
+        return None;
+    }
+    let file_name = path.file_name().and_then(|n| n.to_str())?;
+    if file_name.starts_with('.') {
+        return None;
+    }
+    let rel = path
+        .strip_prefix(root)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| file_name.to_string());
+    Some(HurlFile {
+        path: path.to_string_lossy().to_string(),
+        rel_path: rel,
+        name: file_name.to_string(),
     })
 }
 
@@ -942,6 +956,34 @@ mod tests {
         );
         assert!(confine_under_cwd(root.to_str().unwrap(), "dev.env", "hurl").is_err());
         let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn listing_includes_gitignored_env_files_but_not_ignored_dirs() {
+        let root = std::env::temp_dir().join(format!("krypton-hurl-ls-{}", now_ms()));
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::create_dir_all(root.join("api")).unwrap();
+        std::fs::create_dir_all(root.join("vendor")).unwrap();
+        std::fs::write(root.join(".gitignore"), "*.env\nskip.hurl\nvendor/\n").unwrap();
+        for f in [
+            "uat.env",
+            "api/dev.env",
+            ".env",
+            "api/a.hurl",
+            "skip.hurl",
+            "vendor/v.env",
+            "vendor/v.hurl",
+        ] {
+            std::fs::write(root.join(f), "X=1\n").unwrap();
+        }
+
+        let listing = list_hurl_files(root.to_string_lossy().to_string()).unwrap();
+        let rel = |files: &[HurlFile]| -> Vec<String> {
+            files.iter().map(|f| f.rel_path.clone()).collect()
+        };
+        assert_eq!(rel(&listing.env_files), ["api/dev.env", "uat.env"]);
+        assert_eq!(rel(&listing.hurl_files), ["api/a.hurl"]);
         let _ = std::fs::remove_dir_all(&root);
     }
 

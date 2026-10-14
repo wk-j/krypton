@@ -13,6 +13,7 @@ import type { HarnessLane } from './harness-view-types';
 import type { HarnessReviewLoopHost } from './harness-view-host';
 import type { HarnessConsumedReply } from './inter-lane';
 import type { TelemetryReviewLoop } from './harness-telemetry';
+import { lessonsEnabled } from './lessons';
 import {
   blockerCount,
   evaluateRound,
@@ -356,7 +357,12 @@ export class HarnessReviewLoopController {
     this.setPhase(loop, 'fixing');
     const ran = await this.runTurn(
       loop,
-      reviewLoopFixPrompt({ round: loop.round, maxRounds: loop.maxRounds, summary }),
+      reviewLoopFixPrompt({
+        round: loop.round,
+        maxRounds: loop.maxRounds,
+        summary,
+        lessonNudge: lessonsEnabled(),
+      }),
       `fixing ${loop.round}/${loop.maxRounds}`,
     );
     if (!ran) return;

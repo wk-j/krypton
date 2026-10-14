@@ -18,6 +18,7 @@ import type {
 import { LaneBus } from './lane-bus';
 import { LaneInbox } from './lane-inbox';
 import { harnessEntry, resolveDisplayName, type HarnessEntrySnapshot } from './harness-directory';
+import { REDIRECT_LESSON_NUDGE } from './lessons';
 
 export type DeliveryResult =
   | { delivered: true; envelopeId: string; queuedDepth: number; hint: string }
@@ -401,11 +402,13 @@ export class InterLaneCoordinator {
    * spec 128: deliver a human redirect for a flagged judgement item. The text
    * is injected as a synthetic harness user-turn on the lane's NEXT idle
    * (`canDrainInbound`) — late-arrival rework is accepted (ADR-0001). Rejects a
-   * stopped/cancelled lane so the caller can keep the item open.
+   * stopped/cancelled lane so the caller can keep the item open. spec 298:
+   * `lessonNudge` appends the lesson_record prompt — a redirect is a correction.
    */
   deliverRedirect(
     laneId: string,
     text: string,
+    lessonNudge = false,
   ): { delivered: boolean; reason?: 'unknown_lane' | 'lane_stopped' } {
     const lane = this.host.getLane(laneId);
     if (!lane) return { delivered: false, reason: 'unknown_lane' };
@@ -415,7 +418,8 @@ export class InterLaneCoordinator {
     const message =
       '[attention] The human reviewed a decision you flagged and is redirecting you:\n\n' +
       `${text}\n\n` +
-      'Adjust course accordingly on this turn. You do not need to re-flag unless a new judgement call arises.';
+      'Adjust course accordingly on this turn. You do not need to re-flag unless a new judgement call arises.' +
+      (lessonNudge ? `\n\n${REDIRECT_LESSON_NUDGE}` : '');
     this.injectHarnessEnvelope(laneId, message);
     return { delivered: true };
   }

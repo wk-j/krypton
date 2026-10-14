@@ -60,8 +60,13 @@ const HARNESS_ISSUE_TOOL_NAMES = new Set([
   'ticket_add_resource',
   'ticket_link',
 ]);
+// spec 298: lessons are written at correction moments and are visible in the
+// transcript; a prompt on every write would hand the work back to the human.
+// Backend validation caps size and count; the store is plain files a human can edit.
+const HARNESS_LESSON_TOOL_NAMES = new Set(['lesson_record', 'lesson_retire']);
 const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
   ...HARNESS_MEMORY_TOOL_NAMES,
+  ...HARNESS_LESSON_TOOL_NAMES,
   ...HARNESS_PEER_TOOL_NAMES,
   ...HARNESS_ATTENTION_TOOL_NAMES,
   ...HARNESS_REVIEW_TOOL_NAMES,
@@ -157,7 +162,7 @@ export function harnessToolNameFromString(value: string | undefined): string | n
   for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
     if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
   }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|timeline_suggest|timeline_record|timeline_list|timeline_conflict_list|timeline_conflict_record|timeline_conflict_checked|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link)(?:$|[^a-z0-9_])/);
+  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|timeline_suggest|timeline_record|timeline_list|timeline_conflict_list|timeline_conflict_record|timeline_conflict_checked|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link|lesson_record|lesson_retire)(?:$|[^a-z0-9_])/);
   return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 
@@ -167,6 +172,7 @@ export function harnessToolFamily(toolName: string): HarnessToolFamily | null {
   if (HARNESS_ATTENTION_TOOL_NAMES.has(toolName)) return 'attention';
   if (HARNESS_REVIEW_TOOL_NAMES.has(toolName)) return 'review';
   if (HARNESS_TIMELINE_TOOL_NAMES.has(toolName)) return 'timeline';
+  if (HARNESS_LESSON_TOOL_NAMES.has(toolName)) return 'lessons';
   return null;
 }
 

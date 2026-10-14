@@ -47,7 +47,7 @@
     .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .env {
       border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
-      background: var(--code-bg); font: 12px var(--mono);
+      background: var(--code-bg); font: 12px var(--mono); max-width: 48ch;
     }
     .env:focus, .chip:focus-visible, .run:focus-visible, .tab:focus-visible, .row:focus-visible, .filter:focus, .split:focus-visible {
       outline: 2px solid var(--accent); outline-offset: 1px;
@@ -1258,7 +1258,7 @@
       envFiles.forEach(function (f) {
         var o = document.createElement("option");
         o.value = f.path;
-        o.textContent = "env: " + f.name;
+        o.textContent = "env: " + (f.rel_path || f.name);
         envEl.appendChild(o);
       });
       if (keep) envEl.value = keep;

@@ -17,7 +17,7 @@ Auth copies termctrl (spec 198), not the tokenless gallery: running a `.hurl` fi
 
 ## Research
 
-- **Runner already exists.** `src-tauri/src/hurl.rs` lists `*.hurl` + `*.env` (gitignore, no dotfiles), spawns `hurl --color --pretty --include`, streams `hurl-output` / `hurl-finished` Tauri events, caches last run per canonical path. Variables are `--variables-file` only (spec 65 Q12/Q13). The web page must call these functions, not reimplement HTTP.
+- **Runner already exists.** `src-tauri/src/hurl.rs` lists `*.hurl` (gitignore-aware) + `*.env` (also gitignored ones, except inside ignored/hidden dirs; no dotfiles), spawns `hurl --color --pretty --include`, streams `hurl-output` / `hurl-finished` Tauri events, caches last run per canonical path. Variables are `--variables-file` only (spec 65 Q12/Q13). The web page must call these functions, not reimplement HTTP.
 - **Loopback split.** `hook_server.rs` serves OS-browser pages; `control.rs` is the authenticated harness controller (ADR-0005/0007). Hurl is not a harness operation. Follow termctrl: hook_server routes + a capability token, calling a Rust adapter. Do not add `hurl.*` control ops and do not route runs through the TypeScript frontend.
 - **Termctrl is the template — and the warning.** `/termctrl/{token}` is process-lifetime, 128-bit, `no-store`/`nosniff`/`no-referrer`, 404 on bad token. It is **read-only** on purpose (spec 198: browser must not become a second keyboard). `/hurl` is a **run** surface. Same token shape, plus cwd binding and path confinement, recorded as a deliberate step up in capability.
 - **In-app webview (spec 102) rejected.** Child WKWebViews paint above all DOM on macOS and must hide for every overlay. ADR-0002 already sent rich HTML to the OS browser. The user asked for a web UI, not another compositor pane.
@@ -184,7 +184,7 @@ Browser page (when not typing in the filter):
 Single Binance-dark page (`src/acp/artifact-hurl.html`), same tokens as `artifact-termctrl.html`. One bordered workspace, not nested cards. The page is an app shell (`html/body` at `100%` height, `body`/`main` column flex): `.workspace` fills the remaining viewport so the file tree, source, and response scroll *inside* their panes. Do not use `min-height` alone on `.workspace` — without a definite height, CSS grid `fr` rows grow with content and a repo with hundreds of `.hurl` files stretches the page tens of thousands of pixels.
 
 ```
-header.topbar     brand "Hurl" · cwd basename · env <select> · v/VV chips · curl · hurl · Run
+header.topbar     brand "Hurl" · cwd basename · env <select> (options show cwd-relative path, e.g. `env: api/uat.env`) · v/VV chips · curl · hurl · Run
 div.workspace     (one card; CSS vars --roster / --source)
   aside.roster    filter + folder tree (FILES) / last-20 runs (HISTORY) + reload chip
   .split.split-x  drag / [ ]  (8px hit, 1px hairline)

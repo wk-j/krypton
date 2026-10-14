@@ -9,6 +9,7 @@ pub mod git;
 pub mod hook_server;
 pub mod hurl;
 pub mod journal;
+pub mod lessons;
 pub mod live_assist;
 mod live_voice;
 pub mod music;
@@ -182,6 +183,7 @@ pub fn run() {
             commands::set_theme,
             commands::reload_config,
             commands::open_url,
+            commands::list_lessons,
             commands::acp_wire_set_mode,
             commands::acp_wire_clear,
             commands::get_acp_wire_url,

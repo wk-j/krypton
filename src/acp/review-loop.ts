@@ -17,6 +17,7 @@ import {
   type ReviewSubject,
 } from './review';
 import type { ReviewFinding } from './types';
+import { REVIEW_LESSON_NUDGE } from './lessons';
 
 export const DEFAULT_REVIEW_PASS_ROUNDS = 3;
 export const MAX_REVIEW_PASS_ROUNDS = 8;
@@ -361,6 +362,8 @@ export interface ReviewLoopFixInput {
   round: number;
   maxRounds: number;
   summary: ReviewRoundSummary;
+  /** spec 298: append the lesson_record prompt (blockers are a correction). */
+  lessonNudge?: boolean;
 }
 
 /** The authoring lane's fix turn after a failed round. */
@@ -395,6 +398,10 @@ export function reviewLoopFixPrompt(input: ReviewLoopFixInput): string {
       '5. This is the last fix round: if a Blocker survived an earlier fix, reconsider the approach ' +
         'instead of patching it again.',
     );
+  }
+  if (input.lessonNudge) {
+    lines.push('');
+    lines.push(REVIEW_LESSON_NUDGE);
   }
   return lines.join('\n');
 }

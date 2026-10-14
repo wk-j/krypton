@@ -63,7 +63,7 @@ describe('isCompactionDrop', () => {
 
 describe('tool advertising follows the tool gates', () => {
   it('names only the tools a solo local lane can call', () => {
-    const gates = { timeline: true, timelineSuggest: false, peers: false };
+    const gates = { timeline: true, timelineSuggest: false, peers: false, lessons: false };
     const names = renderToolNameLine(gates);
     expect(names).toContain('attention_flag');
     expect(names).toContain('timeline_record');
@@ -73,8 +73,17 @@ describe('tool advertising follows the tool gates', () => {
   });
 
   it('adds timeline_suggest and the peer tools when their gates open', () => {
-    const gates = { timeline: true, timelineSuggest: true, peers: true };
+    const gates = { timeline: true, timelineSuggest: true, peers: true, lessons: false };
     expect(renderToolNameLine(gates)).toContain('timeline_suggest, peer_send, peer_list, review_outcome');
     expect(renderToolIndex(gates)).toContain('review_outcome');
+  });
+
+  it('advertises the lesson tools only when the lessons gate is open', () => {
+    const closed = { timeline: false, timelineSuggest: false, peers: false, lessons: false };
+    expect(renderToolNameLine(closed)).not.toContain('lesson_record');
+    expect(renderToolIndex(closed)).not.toContain('lesson_record');
+    const open = { ...closed, lessons: true };
+    expect(renderToolNameLine(open)).toContain('lesson_record, lesson_retire');
+    expect(renderToolIndex(open)).toContain('- lesson_record / lesson_retire:');
   });
 });

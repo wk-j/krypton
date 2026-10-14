@@ -219,6 +219,14 @@ describe('#review pass prompts', () => {
     expect(reviewLoopFixPrompt({ round: 2, maxRounds: 3, summary })).toContain('last fix round');
   });
 
+  it('adds the lesson nudge to the fix turn only when asked (spec 298)', () => {
+    const summary = round(1, [result('A', 'fail', ['a.ts'])]);
+    expect(reviewLoopFixPrompt({ round: 1, maxRounds: 3, summary })).not.toContain('lesson_record');
+    expect(reviewLoopFixPrompt({ round: 1, maxRounds: 3, summary, lessonNudge: true })).toContain(
+      'record it with lesson_record',
+    );
+  });
+
   it('asks for one Board and no review_outcome in the summary', () => {
     const prompt = reviewLoopSummaryPrompt({
       reason: 'pass',

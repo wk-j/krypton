@@ -40,6 +40,8 @@ export interface LaneToolGates {
   timelineSuggest: boolean;
   /** More than one lane in the harness. */
   peers: boolean;
+  /** spec 298: `[acp_harness] lessons` on and a backend that can call tools. */
+  lessons: boolean;
 }
 
 /** 32-bit FNV-1a, hex. Identity check only — never a security boundary. */
@@ -74,6 +76,7 @@ export function renderToolNameLine(gates: LaneToolGates): string {
   if (gates.timeline) names.push('timeline_record', 'timeline_merge');
   if (gates.timelineSuggest) names.push('timeline_suggest');
   if (gates.peers) names.push('peer_send', 'peer_list', 'review_outcome');
+  if (gates.lessons) names.push('lesson_record', 'lesson_retire');
   return `Krypton tools (if not visible, search by exact name; rules are in each description): ${names.join(', ')}.`;
 }
 
@@ -98,6 +101,11 @@ export function renderToolIndex(gates: LaneToolGates): string {
   }
   if (gates.peers) {
     lines.push('- review_outcome: once, after synthesizing a #review round you convened.');
+  }
+  if (gates.lessons) {
+    lines.push(
+      '- lesson_record / lesson_retire: when the human corrects you or a reviewer reports a blocker you caused, and the rule would hold in any project — update a listed lesson before adding one; retire one the human contradicts.',
+    );
   }
   lines.push(
     '- artifact_new: ONLY when the user asks for a visual or interactive view.',

@@ -762,6 +762,9 @@ pub struct AcpHarnessConfig {
     /// spec 285: ghost-text word completion in the harness composer. Prompts are
     /// logged to the shared prompt history regardless of this flag.
     pub word_autocomplete: bool,
+    /// spec 298: global lane lessons — policy block, `lesson_*` tools, and
+    /// correction nudges. Off leaves the lesson files untouched.
+    pub lessons: bool,
     /// Optional SSH targets for remote ACP Harnesses. Connection/auth details
     /// stay in the user's OpenSSH config; Krypton stores only the alias and
     /// absolute remote project directory.
@@ -860,6 +863,7 @@ impl Default for AcpHarnessConfig {
             composer_bloom_ms: 320,
             composer_bloom_trail: 5,
             word_autocomplete: true,
+            lessons: true,
             remote_profiles: Vec::new(),
             lane_models: HashMap::new(),
         }

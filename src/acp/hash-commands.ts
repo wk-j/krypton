@@ -29,6 +29,7 @@ import {
   tldrawDrawPrompt,
   wikiIngestPrompt,
   wikiRecallPrompt,
+  lessonDistillPrompt,
 } from './harness-prompts';
 import { pollyRequestPrompt } from './polly';
 import { debbyRequestPrompt } from './debby';
@@ -117,6 +118,12 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   },
   { name: 'wiki', args: '[<hint>]', description: 'ingest this conversation into the repo wiki' },
   { name: 'recall', args: '<question>', description: 'answer a question from the repo wiki' },
+  {
+    name: 'lesson',
+    args: '[<hint>]',
+    description: "distill this session's corrections into global lessons every lane follows",
+  },
+  { name: 'lessons', args: '', description: 'open the global lessons index in the Markdown Viewer' },
   { name: 'directive', args: '<what to create/change>', description: 'author a reusable harness directive' },
   { name: 'draw', args: '<request>', description: 'draw in an open tldraw Offline canvas (focused or named)' },
   {
@@ -311,6 +318,14 @@ export function commandMeta(): Record<string, CommandMeta> {
       badges: ['agent'],
       prompt: wikiRecallPrompt('<question>'),
     },
+    lesson: {
+      category: 'agent',
+      badges: ['workflow'],
+      anatomy: 'scan session corrections → update or record global lessons → retire wrong ones → every lane reads them',
+      lanes: 'same lane',
+      prompt: lessonDistillPrompt('<hint>'),
+    },
+    lessons: { category: 'surface', badges: [] },
     directive: {
       category: 'agent',
       badges: ['agent'],

@@ -99,6 +99,7 @@ import type { ShaderPreset } from './shaders';
 import type { KryptonConfig, TabsConfig, ShaderConfig, KeyboardOverlayConfig } from './config';
 import { applyComposerBloomSettings } from './acp/harness-composer-bloom';
 import { setWordAutocompleteEnabled } from './acp/word-predict';
+import { refreshLessons, setLessonsEnabled } from './acp/lessons';
 import { refreshSvgFencePreviews } from './acp/harness-svg-fence';
 import { openAcpWireProfiler, type AcpWireMode } from './acp/acp-wire';
 import { DEFAULT_SHADER_CONFIG, loadConfig } from './config';
@@ -712,6 +713,7 @@ export class Compositor {
       trail: config.acp_harness?.composer_bloom_trail,
     });
     setWordAutocompleteEnabled(config.acp_harness?.word_autocomplete);
+    setLessonsEnabled(config.acp_harness?.lessons);
 
     // Extensions — enable/disable context extensions
     if (config.extensions) {
@@ -3713,6 +3715,16 @@ export class Compositor {
     diffView.onClose(() => {
       this.closeTab();
     });
+  }
+
+  /** spec 298: open the generated global lessons index in the Markdown Viewer. */
+  async openLessons(): Promise<void> {
+    const snapshot = await refreshLessons();
+    if (!snapshot) {
+      this.showNotification('Lessons unavailable');
+      return;
+    }
+    await this.openMarkdownView(snapshot.indexPath);
   }
 
   /**

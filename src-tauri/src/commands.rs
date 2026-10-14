@@ -168,6 +168,15 @@ pub fn open_url(url: String) -> Result<(), String> {
     open::that(&url).map_err(|e| format!("Failed to open '{url}': {e}"))
 }
 
+/// spec 298: list the active global lane lessons and regenerate `INDEX.md`.
+#[tauri::command]
+pub async fn list_lessons() -> Result<crate::lessons::LessonsSnapshot, String> {
+    let dir = crate::lessons::default_dir().ok_or("Cannot resolve the home directory")?;
+    tauri::async_runtime::spawn_blocking(move || crate::lessons::snapshot(&dir))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
+}
+
 /// Get the foreground process of a PTY session.
 #[tauri::command]
 pub fn get_foreground_process(

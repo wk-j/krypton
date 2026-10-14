@@ -159,6 +159,37 @@ describe('InterLaneCoordinator.deliverAcknowledge (spec 183)', () => {
   });
 });
 
+describe('InterLaneCoordinator.deliverRedirect lesson nudge (spec 298)', () => {
+  function makeHost(): LaneHost & { prompts: Array<{ laneId: string; text: string }> } {
+    const prompts: Array<{ laneId: string; text: string }> = [];
+    return {
+      prompts,
+      listLanes: () => [{
+        laneId: 'claude-1', status: 'idle', displayName: 'Claude-1',
+        backendId: 'claude', modelName: null, inboxDepth: 0, activeDirective: null,
+      }],
+      getLane: (laneId) => (laneId === 'claude-1' ? { status: 'idle', displayName: 'Claude-1' } : null),
+      setLaneStatus: () => {},
+      enqueueSystemPrompt: (laneId, text) => { prompts.push({ laneId, text }); },
+      appendInterLaneRow: () => {},
+      appendSystemNotice: () => {},
+    };
+  }
+
+  it('appends the lesson_record nudge only when asked', () => {
+    const host = makeHost();
+    const coordinator = new InterLaneCoordinator(new LaneBus(), host);
+
+    expect(coordinator.deliverRedirect('claude-1', 'use the other API')).toEqual({ delivered: true });
+    expect(coordinator.deliverRedirect('claude-1', 'and keep it small', true)).toEqual({ delivered: true });
+
+    const texts = host.prompts.map((p) => p.text).join('\n---\n');
+    expect(texts).toContain('use the other API');
+    expect(texts).toContain('and keep it small');
+    expect(texts.match(/lesson_record/g)).toHaveLength(1);
+  });
+});
+
 describe('harness-consumed review replies (spec 276)', () => {
   function makeHost(): LaneHost & {
     prompts: Array<{ laneId: string; text: string }>;

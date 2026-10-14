@@ -19,8 +19,8 @@
 | Q9 | Source pane uses a minimal hand-rolled highlighter (HTTP methods, status codes, JSON, `{{vars}}`) |
 | Q10 | Canonicalize paths with `fs::canonicalize()` before hashing for cache key; use canonical paths throughout |
 | Q11 | No virtualization; render every visible tree row as DOM; `scrollIntoView({block:'nearest'})` on j/k |
-| Q13a | Scan `*.env` files (NOT dotfiles like `.env` / `.env.local`) |
-| Q13b | Status-bar badge `env: dev.env ▾`; `E` opens modal picker listing discovered env files + "(none)" |
+| Q13a | Scan `*.env` files (NOT dotfiles like `.env` / `.env.local`). Gitignored `*.env` files are listed (env files are usually ignored on purpose); only env files inside a gitignored or hidden directory are skipped |
+| Q13b | Status-bar badge `env: dev.env ▾` (path relative to cwd, e.g. `env: api/uat.env ▾`); `E` opens modal picker listing discovered env files by relative path + "(none)" |
 | Q13c | Pass env file to hurl via `--variables-file` only — no `--variable` flags, no parsing |
 | Q12 / Q13d | Dropped. No `[hurl] variables`, no `[hurl] secrets`, no `{{env.*}}` expansion. `--variables-file` is the sole variable source |
 | Q13e | Active env file persists per cwd in sidebar-state |

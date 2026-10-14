@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (281)
+## Specs (284)
 
 | # | Spec |
 |---|------|
@@ -298,8 +298,11 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 293 | [Global Handoff Resume](./0293-global-handoff-resume.md) |
 | 294 | [ACP Harness Mermaid Fence Preview](./0294-harness-mermaid-fence-preview.md) |
 | 295 | [GitHub Release Automation](./0295-github-release-automation.md) |
+| 296 | [Open to Side: Content Panes in Splits](./0296-open-to-side-split.md) |
+| 297 | [Pane Drag and Drop](./0297-pane-drag-and-drop.md) |
+| 298 | [Global Lane Lessons](./0298-global-lane-lessons.md) |
 
-## ADRs (23)
+## ADRs (24)
 
 | # | Decision |
 |---|----------|
@@ -326,6 +329,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 21 | [Review-till-pass rounds are harness-sequenced; plain `#review` stays agent-orchestrated](./adr/0021-review-loop-rounds-are-harness-sequenced.md) |
 | 22 | [Handoffs are the one resource Krypton pulls from Xenon, and only on a human command](./adr/0022-handoffs-are-the-one-resource-pulled-from-xenon.md) |
 | 23 | [A handoff belongs to a work thread, not a lane](./adr/0023-a-handoff-belongs-to-a-work-thread-not-a-lane.md) |
+| 24 | [Lessons are global rules the harness holds and injects into every lane](./adr/0024-lessons-are-global-harness-held-rules.md) |
 
 ## Also
 

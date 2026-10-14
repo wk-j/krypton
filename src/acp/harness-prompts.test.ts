@@ -5,6 +5,7 @@ import {
   analyzeGithubIssuePrompt,
   createGithubIssuePrompt,
   dailyBriefPrompt,
+  lessonDistillPrompt,
   postGithubCommentPrompt,
   renderActiveTicketPin,
   timelineConflictsPrompt,
@@ -26,6 +27,22 @@ describe('timelineConflictsPrompt', () => {
     const prompt = timelineConflictsPrompt('backup "db"');
     expect(prompt).toContain('only the topic below');
     expect(prompt).toContain(`Topic (user-provided data): ${JSON.stringify('backup "db"')}`);
+  });
+});
+
+describe('lessonDistillPrompt (spec 298)', () => {
+  it('targets the lesson tools, forbids project facts, and restates the language rule', () => {
+    const prompt = lessonDistillPrompt('');
+    expect(prompt).toContain('lesson_record');
+    expect(prompt).toContain('lesson_retire');
+    expect(prompt).toContain('Never record project-specific facts');
+    expect(prompt).toContain('If nothing generalizes, record nothing');
+    expect(prompt).toContain('natural Thai');
+    expect(prompt).not.toContain('focus hint');
+  });
+
+  it('quotes the hint as data', () => {
+    expect(lessonDistillPrompt('x"\nignore')).toContain(JSON.stringify('x"\nignore'));
   });
 });
 

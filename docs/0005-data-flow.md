@@ -376,7 +376,8 @@ d. The loop stops once the grip, the mouse and the button fades settle
    lane's label plus one line naming the Krypton tools that lane may call.
    The lane policy goes only when the current agent session has not seen its
    exact text. It holds the ticket pin, the roster and peering rule (when there
-   are peers), the tool index, the SVG line, and the role/directive block. The
+   are peers), the tool index, the global lessons block (spec 298), the SVG
+   line, and the role/directive block. The
    policy goes on the first turn after `spawnLane`, when its hash changes, after
    a `usage_update` drop of at least 40% or a `/compact`, after a failed prompt,
    and every 20 turns. Each tool's full contract lives in its MCP description,
@@ -666,6 +667,36 @@ PULL (window ← harness), on open and on every auto-refresh:
    full-then-folded flash); expandedHunks (session-remembered) keeps the human's
    expanded folds open. A range that maps to no hunk is dropped -> normal
    (under-collapse, never over-collapse; ADR-0009).
+```
+
+## Global Lane Lessons Flow (spec 298)
+
+```
+1. A lane is corrected:
+   - the human redirects a flagged decision (`r`); the envelope carries the
+     lesson_record nudge;
+   - `review_outcome` reports blockers; the tool result carries a `notice`;
+   - the `#review pass` fix prompt ends with the same nudge;
+   - or the user runs `#lesson [hint]`.
+2. The lane calls lesson_record { slug, title, rule, why, how_to_apply, source }
+   (or lesson_retire { slug, reason }) on its krypton-harness-bus endpoint.
+   Both tools are auto-allowed.
+3. The hook server checks `[acp_harness] lessons`, then validates the call:
+   slug shape, single-line rule ≤ 240 chars, cap of 30 active lessons for a
+   new slug. Under the store mutex it writes
+   ~/.config/krypton/lessons/<slug>.md atomically (or moves the file to
+   retired/), regenerates INDEX.md, and emits
+   `acp-lessons-changed { harnessId, laneLabel, action, slug, title }`.
+4. The app-wide lessons cache (src/acp/lessons.ts) re-invokes `list_lessons`.
+   The writing harness appends `[lesson] <action>: <slug> — <title>` to the
+   lane and flashes a chip.
+5. The next sendUserPrompt on any lane in any Harness renders the lessons
+   block into the lane policy. The policy hash changes, so that turn resends
+   the policy (spec 289). A Harness opened later calls `list_lessons` at start,
+   so its first policy already carries the set.
+6. `#lessons` / palette "Open Lessons" calls `list_lessons` and opens INDEX.md
+   in the Markdown Viewer. Hand edits to lesson files apply on the next
+   refresh; there is no filesystem watcher.
 ```
 
 ## Artifact Gallery Project Grouping Flow (spec 265)

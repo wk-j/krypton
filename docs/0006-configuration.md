@@ -435,6 +435,7 @@ composer_bloom = true          # fading letter afterimage on the prompt (spec 25
 composer_bloom_ms = 320        # afterimage duration in ms (180–700)
 composer_bloom_trail = 5       # visible graphemes that flash on one paste (1–12)
 word_autocomplete = true       # ghost-text word completion in the composer (spec 285)
+lessons = true                 # global lane lessons: policy block, lesson_* tools, nudges (spec 298)
 
 # --- ACP Wire Profiler (spec 288) ---
 # Records ACP traffic (Krypton ↔ agent stdio and Rust → UI events) into an
@@ -773,6 +774,7 @@ See `docs/0069-acp-agent-support.md` for the original ACP design, `docs/0084-acp
 | `[acp_harness]` | `composer_bloom_ms` | int | `320` | Afterimage duration in milliseconds, clamped to 180–700 |
 | `[acp_harness]` | `composer_bloom_trail` | int | `5` | How many inserted visible graphemes receive an afterimage on one paste, clamped to 1–12 |
 | `[acp_harness]` | `word_autocomplete` | bool | `true` | Show predicted word completions as composer ghost text (`Tab` accepts + space, `→` accepts) (spec 285). Prompts from every lane are still logged to `~/.config/krypton/harness-prompt-history.db` when `false`. Applies on Reload Config. |
+| `[acp_harness]` | `lessons` | bool | `true` | Global lane lessons (spec 298). Lessons live in `~/.config/krypton/lessons/` (one `<slug>.md` each, plus a generated `INDEX.md` and `retired/`) and are injected into the policy of every lane in every project. `false` removes the policy block, hides `lesson_record` / `lesson_retire` from `tools/list`, drops the correction nudges, and disables `#lesson`. The files are left untouched. Applies on Reload Config. |
 | `[[acp_harness.remote_profiles]]` | `name` | string | — | Unique picker label for an SSH Harness target |
 | `[[acp_harness.remote_profiles]]` | `host` | string | — | OpenSSH host alias; user, port, identity and ProxyJump remain in `~/.ssh/config` |
 | `[[acp_harness.remote_profiles]]` | `project_dir` | absolute path | — | Remote project root sent through the runtime protocol, never a shell command |

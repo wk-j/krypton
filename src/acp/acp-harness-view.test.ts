@@ -1150,6 +1150,15 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
 });
 
 describe('ACP harness auto-allow permission detection', () => {
+  it('auto-allows the built-in lesson tools (spec 298)', () => {
+    for (const name of ['lesson_record', 'lesson_retire']) {
+      expect(harnessAutoAllowToolName(permissionFor({
+        title: `mcp__krypton_harness_bus__${name}`,
+        rawInput: { toolName: `mcp__krypton_harness_bus__${name}`, arguments: {} },
+      }))).toBe(name);
+    }
+  });
+
   it('auto-allows only the exact built-in timeline tools', () => {
     expect(harnessAutoAllowToolName(permissionFor({
       title: 'mcp__krypton_harness_bus__timeline_suggest',
