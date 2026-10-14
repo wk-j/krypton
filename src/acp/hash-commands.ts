@@ -128,8 +128,9 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'draw', args: '<request>', description: 'draw in an open tldraw Offline canvas (focused or named)' },
   {
     name: 'review',
-    args: '[pass [N] | stop] [<lane>…] [-- <doc | note>]',
-    description: 'run a multi-reviewer design/diff review; pass = fix and re-review until it passes',
+    args: '[pass [N] | stop] [board] [<lane>…] [-- <doc | note>]',
+    description:
+      'run a multi-reviewer design/diff review; pass = fix and re-review until it passes; board = write a Review Board instead of reporting in the lane',
   },
   { name: 'review-thread', args: '', description: 'review the current lane diff with a fixed snapshot and human verdict' },
   { name: 'orchestrator', args: '', description: 'designate this lane the orchestrator seat + open the console' },
@@ -343,8 +344,9 @@ export function commandMeta(): Record<string, CommandMeta> {
       category: 'agent',
       badges: ['workflow'],
       anatomy:
-        'pick reviewer lanes → peer_send review request → collect verdicts → summary · ' +
-        'pass: harness fan-out → VERDICT lines → fix turn → re-review → one summary Board',
+        'pick reviewer lanes → peer_send review request → collect verdicts → synthesis in the lane ' +
+        '(`board` writes a Review Board instead) · ' +
+        'pass: harness fan-out → VERDICT lines → fix turn → re-review → one summary',
       lanes: 'N lanes',
       prompt: reviewRequestPrompt({
         reviewers: ['<reviewer-1>', '<reviewer-2>'],

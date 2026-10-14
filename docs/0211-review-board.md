@@ -7,6 +7,11 @@
 > 145 (`#review`) · 146 + ADR-0004 (review outcomes) · 155 / 158 (Diff Window + review comments)
 > Replaces the withdrawn `211-review-console` draft (a diff-dock worklist — too narrow: code only).
 >
+> **Amended by spec 300 (Board is opt-in), 2026-10-14.** `#review` no longer ends in a Board by
+> default; it reports the synthesis as turn text and writes a Board only for `#review board …`
+> (and `#review pass board …` at the end of a loop). Everything below about the document, the
+> blocks, the bundle, the window, and `/reviews` is unchanged — only who asks for one.
+>
 > **Settled (2026-08-07):** answers autosave to `response.md` as they are made (debounced), with
 > sending to the lane as a separate explicit act. See Design → Storage layout.
 >
@@ -131,7 +136,7 @@ No new composer syntax beyond the one command below, and no automatic compositio
 
 | Trigger | Path |
 |---|---|
-| **`#review [lanes] [-- note]`** (primary) | `reviewRequestPrompt` already fans the subject out to reviewer lanes and tells the convening lane to synthesize the replies. That final step changes: instead of ending in turn text, it calls `review_new`, writes the synthesis as blocks, and calls `review_register`. |
+| **`#review board [lanes] [-- note]`** (primary) | `reviewRequestPrompt` fans the subject out to reviewer lanes and tells the convening lane to synthesize the replies. With the `board` token that synthesis calls `review_new`, writes the blocks, and calls `review_register`. **Spec 300:** without the token the synthesis stays in turn text, because a Board costs two round trips and a written document after the reviewers have already answered. |
 | **Natural language — explain** | "walk me through `src/acp/inter-lane.ts`", "explain how peering works", "review the auth refactor". The **comprehension** path: the subject is existing code or a design, not necessarily a diff, and the expected output is a walkthrough with prose, not a findings list. Discoverable through the `review_new` tool description, exactly as `artifact_new` is. Also the only path that works for a **solo lane** — `#review` needs reviewer lanes. |
 | **Directive-driven** (spec 124) | A lane bound to a review-shaped directive has raised propensity to answer with a Board rather than prose. Existing system-prompt layer, no new mechanism. |
 
@@ -141,13 +146,14 @@ fatigue for the human. The guard lives in the tool description, mirroring the "d
 unsolicited dashboards" clause on `artifact_new` and the "never flag proactively" clause on
 `attention_flag`.
 
-**A clean `#review` still produces a Board — and it is not an empty one.** When every reviewer says
-LGTM, the convening lane still composes a Board: a short summary of what changed and, for a
-multi-file subject, a focused `walkthrough`; no zero-value metrics or findings. That is the *normal*
-shape of a review under this design, not a
-degenerate case — the human learns what now exists even when nothing is wrong. It also keeps
-`/reviews` a **complete** archive: an archive with holes cannot answer "did anyone ever review X?",
-because a missing entry would mean both "never reviewed" and "reviewed and clean".
+**A `#review board` round always produces a Board — and it is not an empty one.** When every
+reviewer says LGTM, the convening lane still composes one: a short summary of what changed and, for
+a multi-file subject, a focused `walkthrough`; no zero-value metrics or findings. The human learns
+what now exists even when nothing is wrong, and `/reviews` stays a complete archive **of the reviews
+that asked for a Board** — an archive with holes inside that set cannot answer "did anyone ever
+review X?", because a missing entry would mean both "never reviewed" and "reviewed and clean".
+Spec 300 narrows the set to what the human asked to keep; it does not make a requested Board
+conditional on findings.
 
 **Language (2026-08-14).** Both prompts also fix the language of a Board, in three parts: everything
 the human reads (prose, `say:`, finding titles and their detail, decision questions and options,

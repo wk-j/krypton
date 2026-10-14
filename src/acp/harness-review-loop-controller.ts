@@ -4,8 +4,9 @@
 // the harness fans the request out itself over the spec-115 mention path with
 // harness-consumed replies, reads every reviewer's VERDICT line, and either
 // stops or hands the Blockers back to the lane as one fix turn. A loop that
-// completed at least one round ends with one summary turn that writes a single
-// Review Board. Parsing, evaluation, and prompts live in `review-loop.ts`.
+// completed at least one round ends with one summary turn — turn text by
+// default, or a Review Board when started as `#review pass board …` (spec 300).
+// Parsing, evaluation, and prompts live in `review-loop.ts`.
 // spec 277: `telemetry()` projects the loop onto the lane-monitor dashboard.
 
 import type { HarnessLaneStatus } from './types';
@@ -14,6 +15,7 @@ import type { HarnessReviewLoopHost } from './harness-view-host';
 import type { HarnessConsumedReply } from './inter-lane';
 import type { TelemetryReviewLoop } from './harness-telemetry';
 import { lessonsEnabled } from './lessons';
+import { takeBoardToken } from './review';
 import {
   blockerCount,
   evaluateRound,
@@ -42,6 +44,8 @@ interface ReviewLoop {
   maxRounds: number;
   /** Doc path or focus note, as typed after `--`. */
   tail: string;
+  /** spec 300: `#review pass board …` — end the loop with a Review Board. */
+  board: boolean;
   phase: ReviewLoopPhase;
   round: number;
   packetId: string | null;
@@ -114,9 +118,10 @@ export class HarnessReviewLoopController {
     return loop ? this.view(loop, null) : (this.ended.get(laneId) ?? null);
   }
 
-  /** `#review pass [N] [<lane> …] [-- <docpath | note>]` — `rest` is after `pass`. */
+  /** `#review pass [board] [N] [<lane> …] [-- <docpath | note>]` — `rest` is after `pass`. */
   async start(lane: HarnessLane, rest: string[]): Promise<void> {
-    const args = parseReviewPassArgs(rest);
+    const { board, rest: passArgs } = takeBoardToken(rest);
+    const args = parseReviewPassArgs(passArgs);
     if ('error' in args) {
       this.host.flashChip(args.error);
       return;
@@ -152,6 +157,7 @@ export class HarnessReviewLoopController {
       reviewers: reviewers.map((r) => ({ laneId: r.id, displayName: r.displayName })),
       maxRounds: args.maxRounds,
       tail: args.tail,
+      board,
       phase: 'collecting',
       round: 0,
       packetId: null,
@@ -407,6 +413,7 @@ export class HarnessReviewLoopController {
       maxRounds: loop.maxRounds,
       subjectLabel: loop.subjectLabel,
       history: loop.history,
+      board: loop.board,
     });
     await this.runTurn(loop, prompt, 'review pass summary');
     if (this.isCurrent(loop)) this.drop(loop);

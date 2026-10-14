@@ -411,9 +411,12 @@ export interface ReviewLoopSummaryInput {
   maxRounds: number;
   subjectLabel: string;
   history: ReviewRoundSummary[];
+  /** spec 300: `#review pass board …` — close the loop with a Review Board
+   *  instead of a turn-text summary. */
+  board?: boolean;
 }
 
-/** The authoring lane's one summary turn — a single Review Board for the loop. */
+/** The authoring lane's one summary turn — a Review Board only when asked for. */
 export function reviewLoopSummaryPrompt(input: ReviewLoopSummaryInput): string {
   const { reason, maxRounds, subjectLabel: label, history } = input;
   const last = history[history.length - 1];
@@ -446,20 +449,33 @@ export function reviewLoopSummaryPrompt(input: ReviewLoopSummaryInput): string {
   }
   lines.push('');
   lines.push('Do this:');
+  if (input.board) {
+    lines.push(
+      '1. Compose ONE Review Board for the whole loop: call `review_new { title, subject }`, write the ' +
+        'document at the returned path with your edit tool, then call `review_register { id }`. ' +
+        REVIEW_BOARD_SKIM_RULES,
+    );
+    lines.push(`2. ${REVIEW_BOARD_LANGUAGE_RULE}`);
+    lines.push(
+      '3. Open `## สรุป` with the outcome and the stop reason. Add one ```review:finding per still-open ' +
+        'Blocker (severity `blocking`) or Warning (`non-blocking`), a ```review:walkthrough of the final change ' +
+        'when it spans several files, and a ```review:decision for each contradiction between reviewers.',
+    );
+  } else {
+    lines.push(
+      '1. Report the loop outcome in your turn text, at most 8 lines, in NATURAL THAI prose with technical ' +
+        'terms, paths, and identifiers left in English. Lead with the outcome and the stop reason, then each ' +
+        'still-open Blocker and Warning as one line `path:line — concern`, then any contradiction between ' +
+        'reviewers.',
+    );
+    lines.push(
+      '2. Do NOT call `review_new` or `review_register`. Run `#review pass board …` when you want the loop ' +
+        'to end in a Review Board.',
+    );
+  }
   lines.push(
-    '1. Compose ONE Review Board for the whole loop: call `review_new { title, subject }`, write the ' +
-      'document at the returned path with your edit tool, then call `review_register { id }`. ' +
-      REVIEW_BOARD_SKIM_RULES,
-  );
-  lines.push(`2. ${REVIEW_BOARD_LANGUAGE_RULE}`);
-  lines.push(
-    '3. Open `## สรุป` with the outcome and the stop reason. Add one ```review:finding per still-open ' +
-      'Blocker (severity `blocking`) or Warning (`non-blocking`), a ```review:walkthrough of the final change ' +
-      'when it spans several files, and a ```review:decision for each contradiction between reviewers.',
-  );
-  lines.push(
-    '4. Do NOT call `review_outcome` — the harness recorded every round. Do not fix anything more, commit, ' +
-      'or `peer_send` the reviewers.',
+    `${input.board ? '4' : '3'}. Do NOT call \`review_outcome\` — the harness recorded every round. Do not fix ` +
+      'anything more, commit, or `peer_send` the reviewers.',
   );
   return lines.join('\n');
 }

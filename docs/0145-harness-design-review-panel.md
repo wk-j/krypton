@@ -21,6 +21,14 @@
 > narration and zero-value metrics, limits walkthroughs to key stops, and keeps each finding to its
 > evidence, impact, and suggested fix. `review_outcome` is still called with the same counts, and the
 > review-quality matrix (spec 146) is unchanged.
+>
+> **Amended by spec 300 (Board is opt-in), 2026-10-14.** The Board of the amendment above is now
+> requested, not automatic: `#review` reports the synthesis as turn text (≤ 8 lines, verdict first),
+> and only `#review board …` runs the `review_new` → write → `review_register` path. A Board after
+> the reviewers have answered costs two tool round trips plus a written document before the human
+> sees the verdict, which is the delay this amendment removes. Asking for a Board later still works —
+> the tools are unchanged — and a fork now goes to `attention_flag` when no Board exists to hold a
+> `review:decision`. `review_outcome` is called in both modes, so spec 146 is unaffected.
 
 ## Problem
 

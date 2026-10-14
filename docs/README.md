@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (284)
+## Specs (286)
 
 | # | Spec |
 |---|------|
@@ -301,6 +301,8 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 296 | [Open to Side: Content Panes in Splits](./0296-open-to-side-split.md) |
 | 297 | [Pane Drag and Drop](./0297-pane-drag-and-drop.md) |
 | 298 | [Global Lane Lessons](./0298-global-lane-lessons.md) |
+| 299 | [Lesson Store Pressure and Consolidation](./0299-lesson-store-pressure-and-consolidation.md) |
+| 300 | [Review Board Is Opt-In](./0300-review-board-opt-in.md) |
 
 ## ADRs (24)
 

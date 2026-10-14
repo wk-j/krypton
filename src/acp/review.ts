@@ -40,6 +40,10 @@ export interface ReviewRequestPromptInput {
   intent: string;
   /** Optional user-supplied focus note (free text after `--`). */
   note?: string;
+  /** spec 300: `#review board …` — synthesize into a Review Board instead of
+   *  turn text. Default off: the Board costs two tool round trips and a written
+   *  document after the reviewers have already answered. */
+  board?: boolean;
 }
 
 /**
@@ -53,6 +57,16 @@ export function parseReviewCommandArgs(rest: string[]): { nameTokens: string[]; 
     .filter((t) => t.length > 0);
   const tail = sepIdx === -1 ? '' : rest.slice(sepIdx + 1).join(' ').trim();
   return { nameTokens, tail };
+}
+
+/**
+ * spec 300: a leading `board` token asks for a Review Board instead of the
+ * default turn-text synthesis. Read from the same slot `pass` / `stop` occupy,
+ * so a lane may not be named `board` — the reservation those two already carry.
+ */
+export function takeBoardToken(rest: string[]): { board: boolean; rest: string[] } {
+  if (rest[0]?.trim().toLowerCase() === 'board') return { board: true, rest: rest.slice(1) };
+  return { board: false, rest };
 }
 
 export function diffstatHeadline(diffstat: ReviewDiffstatEntry[]): string {
@@ -190,22 +204,37 @@ export function reviewRequestPrompt(input: ReviewRequestPromptInput): string {
       'concerns raised by ≥2 reviewers (high signal), list any conflicts between reviewers, and note ' +
       'unique catches.',
   );
-  // spec 211: the synthesis lands in a Review Board rather than in turn text.
-  // Turn text scrolls away, carries no reading order, and gives the human no
-  // structured way to answer — which is the whole reason the Board exists.
+  if (input.board) {
+    // spec 211: the synthesis lands in a Review Board rather than in turn text.
+    // Turn text scrolls away, carries no reading order, and gives the human no
+    // structured way to answer — which is why the Board exists when asked for.
+    lines.push(
+      '4. Compose a **Review Board** for the synthesis instead of reporting it in your turn text: call ' +
+        '`review_new { title, subject }`, write the document at the returned path with your edit tool, then ' +
+        `call \`review_register { id }\`. ${REVIEW_BOARD_SKIM_RULES}`,
+    );
+    lines.push(`4b. ${REVIEW_BOARD_LANGUAGE_RULE}`);
+    lines.push(
+      '5. **A clean review still gets a Board, and it is not an empty one.** If every reviewer said LGTM, ' +
+        'write the same short summary and, for a multi-file subject, the compact walkthrough; add no findings ' +
+        'and no zero-value metrics. This keeps the archive complete without making the human read ceremony.',
+    );
+  } else {
+    // spec 300: the default. The verdict is what the user is waiting for; a
+    // Board is a separate artifact they ask for by name (`#review board …`).
+    lines.push(
+      '4. Report the synthesis in your turn text, at most 8 lines, in NATURAL THAI prose with technical ' +
+        'terms, paths, and identifiers left in English. Lead with the verdict, then blockers, then warnings ' +
+        'worth acting on, then conflicts between reviewers and catches only one reviewer made. Write each ' +
+        'finding as one line `path:line — concern`. If every reviewer said LGTM, say so in one line and stop.',
+    );
+    lines.push(
+      '5. Do NOT call `review_new` or `review_register`. The user asks for a Review Board by name when ' +
+        'they want one; composing an unasked document delays the verdict they are waiting for.',
+    );
+  }
   lines.push(
-    '4. Compose a **Review Board** for the synthesis instead of reporting it in your turn text: call ' +
-      '`review_new { title, subject }`, write the document at the returned path with your edit tool, then ' +
-      `call \`review_register { id }\`. ${REVIEW_BOARD_SKIM_RULES}`,
-  );
-  lines.push(`4b. ${REVIEW_BOARD_LANGUAGE_RULE}`);
-  lines.push(
-    '5. **A clean review still gets a Board, and it is not an empty one.** If every reviewer said LGTM, ' +
-      'write the same short summary and, for a multi-file subject, the compact walkthrough; add no findings ' +
-      'and no zero-value metrics. This keeps the archive complete without making the human read ceremony.',
-  );
-  lines.push(
-    '6. After registering the Board (not on #cancel), call `review_outcome` once with the totals — ' +
+    '6. After the synthesis (not on #cancel), call `review_outcome` once with the totals — ' +
       '`blockers` and `warnings` are the combined counts across all reviewers, `reviewer_count` is ' +
       `${reviewers.length}, and \`subject_label\` is a short tag for what was reviewed (the diff summary or ` +
       'doc path). Also pass a structured `findings` array extracted from reviewer replies when there are ' +
@@ -216,8 +245,11 @@ export function reviewRequestPrompt(input: ReviewRequestPromptInput): string {
   );
   lines.push(
     '7. Do NOT auto-commit or auto-apply fixes. If the reviews surface a genuine unresolved fork (a real ' +
-      'decision the user could reasonably make either way), put it in the Board as a `review:decision` — ' +
-      'that is what the block is for. Reserve `attention_flag` for a fork the Board itself does not cover.',
+      'decision the user could reasonably make either way), ' +
+      (input.board
+        ? 'put it in the Board as a `review:decision` — that is what the block is for. Reserve ' +
+          '`attention_flag` for a fork the Board itself does not cover.'
+        : 'raise it with `attention_flag`; there is no Board to carry a `review:decision`.'),
   );
   return lines.join('\n');
 }

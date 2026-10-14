@@ -4,6 +4,10 @@
 > Date: 2026-10-04
 > Milestone: M-ACP — Harness review
 > Builds on: specs 115, 145, 146, 211, 275 · ADR-0004 · inspired by Empryo `/review pass`
+>
+> **Amended by spec 300 (Board is opt-in), 2026-10-14.** The loop ends in a turn-text summary;
+> `#review pass board …` is what makes the final summary a Review Board. The round sequencing,
+> stop rules, and per-round `review_outcome` rows are unchanged.
 
 ## Problem
 
@@ -14,14 +18,15 @@ pass messages between lanes.
 
 ## Solution
 
-Add `#review pass [N] [<lane>…] [-- <docpath|note>]`: a **harness-sequenced** loop on the authoring
+Add `#review pass [board] [N] [<lane>…] [-- <docpath|note>]`: a **harness-sequenced** loop on the authoring
 lane — review → every reviewer PASS? stop : fix the Blockers → re-review — for at most N rounds
 (default 3, cap 8). The harness also stops early when another round cannot help: nothing changed,
 no progress, nothing actionable, or no machine-readable verdict two rounds running (Empryo's
 stop rules). Unlike plain `#review` (agent-orchestrated, spec 145 "B2"), the harness fans each
 round out itself over the spec-115 mention path and consumes reviewer replies instead of waking the
 authoring lane. The authoring lane does two kinds of work only: one fix turn per failed round and
-one summary Review Board at the end. The change is one pure module plus one controller (spec 275
+one closing summary — turn text, or a Review Board when started as `#review pass board …`
+(spec 300). The change is one pure module plus one controller (spec 275
 pattern) and a small `inter-lane.ts` hook. No Rust change.
 
 ## Research
@@ -105,12 +110,13 @@ equivalent.
 ### Command
 
 ```
-#review pass [N] [<lane> …] [-- <docpath | focus note>]
+#review pass [board] [N] [<lane> …] [-- <docpath | focus note>]
 #review stop
 ```
 
-- **`#review pass`:** `N` (first token after `pass`, integer 1–8, default 3) is the maximum number of
-  review rounds; the rest parses exactly as `#review` (spec 145) — no lanes named means every other
+- **`#review pass`:** an optional `board` token comes first (spec 300) and makes the closing summary
+  a Review Board instead of turn text. `N` (the next token, integer 1–8, default 3) is the maximum
+  number of review rounds; the rest parses exactly as `#review` (spec 145) — no lanes named means every other
   live local lane. Preconditions as `#review` (lane `idle`, ≥1 live reviewer, a git repo for a diff
   subject), plus: no loop already running on the lane (`#review: loop already running — #review
   stop`), and no pending peer from the lane to any reviewer (so `peer_in_flight` cannot block it).

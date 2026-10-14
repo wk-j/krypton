@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { REVIEW_LENSES, reviewRequestPrompt, type ReviewSubject } from './review';
+import { REVIEW_LENSES, reviewRequestPrompt, takeBoardToken, type ReviewSubject } from './review';
 
 const diffSubject: ReviewSubject = {
   kind: 'diff',
@@ -96,7 +96,7 @@ describe('reviewRequestPrompt', () => {
   });
 
   it('asks for natural Thai prose while keeping the parsed grammar English', () => {
-    const prompt = reviewRequestPrompt({ reviewers: ['A'], subject: diffSubject, intent: '' });
+    const prompt = reviewRequestPrompt({ reviewers: ['A'], subject: diffSubject, intent: '', board: true });
     expect(prompt).toContain('NATURAL THAI');
     expect(prompt).toContain('NOT a word-for-word rendering');
     expect(prompt).toContain('Do NOT translate technical terms');
@@ -109,7 +109,7 @@ describe('reviewRequestPrompt', () => {
   });
 
   it('requires a concise, action-oriented Review Board', () => {
-    const prompt = reviewRequestPrompt({ reviewers: ['A'], subject: diffSubject, intent: '' });
+    const prompt = reviewRequestPrompt({ reviewers: ['A'], subject: diffSubject, intent: '', board: true });
     expect(prompt).toContain('Make the Board a SKIM, not an essay');
     expect(prompt).toContain('3–5 short bullets');
     expect(prompt).toContain('3–5 most important');
@@ -119,6 +119,28 @@ describe('reviewRequestPrompt', () => {
     expect(prompt).toContain('zero-count commentary');
     expect(prompt).toContain('unless they reveal a relationship that concise prose cannot');
     expect(prompt).toContain('only when the user explicitly asks for an exhaustive review');
+  });
+
+  it('reports in turn text and writes no Board unless asked (spec 300)', () => {
+    const plain = reviewRequestPrompt({ reviewers: ['A'], subject: diffSubject, intent: '' });
+    expect(plain).toContain('Report the synthesis in your turn text');
+    expect(plain).toContain('Do NOT call `review_new`');
+    expect(plain).not.toContain('Compose a **Review Board**');
+    // Without a Board there is no `review:decision`, so a fork has to go somewhere.
+    expect(plain).toContain('raise it with `attention_flag`');
+
+    const board = reviewRequestPrompt({ reviewers: ['A'], subject: diffSubject, intent: '', board: true });
+    expect(board).toContain('Compose a **Review Board**');
+    expect(board).toContain('review_register { id }');
+    expect(board).not.toContain('Report the synthesis in your turn text');
+  });
+
+  it('reads a leading board token out of the args (spec 300)', () => {
+    expect(takeBoardToken(['board', 'Codex-1'])).toEqual({ board: true, rest: ['Codex-1'] });
+    expect(takeBoardToken(['BOARD'])).toEqual({ board: true, rest: [] });
+    // Only the first token counts, so a focus note may say the word freely.
+    expect(takeBoardToken(['Codex-1', 'board'])).toEqual({ board: false, rest: ['Codex-1', 'board'] });
+    expect(takeBoardToken([])).toEqual({ board: false, rest: [] });
   });
 
   it('instructs a review_outcome summary call after synthesis (spec 146)', () => {

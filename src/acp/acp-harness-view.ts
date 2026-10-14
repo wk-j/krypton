@@ -224,6 +224,7 @@ import {
 import {
   parseReviewCommandArgs,
   reviewRequestPrompt,
+  takeBoardToken,
   REVIEW_INTENT_CAP,
   type ReviewSubject,
 } from './review';
@@ -3319,9 +3320,11 @@ export class AcpHarnessView implements ContentView {
       return;
     }
 
-    // Split `<lane> ... -- <docpath | note>`: tokens before `--` name reviewers,
-    // the tail after `--` is a doc path or a free focus note.
-    const { nameTokens, tail } = parseReviewCommandArgs(rest);
+    // spec 300: a leading `board` asks for a Review Board; the default reports
+    // the synthesis as turn text. Then split `<lane> ... -- <docpath | note>`:
+    // tokens before `--` name reviewers, the tail is a doc path or focus note.
+    const { board, rest: reviewArgs } = takeBoardToken(rest);
+    const { nameTokens, tail } = parseReviewCommandArgs(reviewArgs);
     const { reviewers, skipped } = this.resolveReviewers(lane, nameTokens);
     if (reviewers.length === 0) {
       this.flashChip('#review: no reviewable lanes');
@@ -3365,12 +3368,13 @@ export class AcpHarnessView implements ContentView {
       subject,
       intent: this.collectReviewIntent(lane),
       note,
+      board,
     });
     // Lane is already reserved (busy) — send directly via dispatchTurn rather than
     // enqueueSystemPrompt (whose idle/awaiting_peer guard would now reject it).
     await this.dispatchTurn(lane, prompt);
     this.flashChip(
-      `#review → ${reviewerNames.join(', ')}${skipped.length ? ` · skipped: ${skipped.join(', ')}` : ''}`,
+      `#review${board ? ' board' : ''} → ${reviewerNames.join(', ')}${skipped.length ? ` · skipped: ${skipped.join(', ')}` : ''}`,
     );
   }
 

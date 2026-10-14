@@ -227,17 +227,31 @@ describe('#review pass prompts', () => {
     );
   });
 
-  it('asks for one Board and no review_outcome in the summary', () => {
+  it('asks for one Board and no review_outcome in the summary when board is set', () => {
     const prompt = reviewLoopSummaryPrompt({
       reason: 'pass',
       maxRounds: 3,
       subjectLabel: '1 file changed, +1 / -0',
       history: [round(1, [result('A', 'fail', ['a.ts'])]), round(2, [result('A', 'pass')])],
+      board: true,
     });
     expect(prompt).toContain('every reviewer passed in round 2 of 3');
     expect(prompt).toContain('- Round 1: A FAIL 1');
     expect(prompt).toContain('review_register { id }');
     expect(prompt).toContain('NATURAL THAI');
+    expect(prompt).toContain('Do NOT call `review_outcome`');
+  });
+
+  it('closes the loop in turn text by default (spec 300)', () => {
+    const prompt = reviewLoopSummaryPrompt({
+      reason: 'pass',
+      maxRounds: 3,
+      subjectLabel: '1 file changed, +1 / -0',
+      history: [round(1, [result('A', 'pass')])],
+    });
+    expect(prompt).toContain('Report the loop outcome in your turn text');
+    expect(prompt).toContain('#review pass board');
+    expect(prompt).not.toContain('review_register { id }');
     expect(prompt).toContain('Do NOT call `review_outcome`');
   });
 
