@@ -2,7 +2,7 @@
 //
 // The composer's chrome row: the status chip on the left
 // (`reviewing · 2:14 · 3 queued`), the lane's chips after it
-// (`auto-edit ⇧⇥`, `directive 0301-impl`), the git branch (`⎇ main`), and on
+// (`auto-edit ⇧⇥`, `directive 0301-impl`), the git branch (icon + `main`), and on
 // the right the `? help` hint plus whatever the composer mounts beside it (the
 // dictation control). Built today by `acp-harness-view.ts:13289-13304` out of
 // `harness-composer-meta.ts:48-68` (`renderStatusSegments`), `composerStatusChip`
@@ -38,6 +38,7 @@ import { Component } from '../../../ui/component';
 import { classes, el, setAttr } from '../../../ui/dom';
 import { disposeList, reconcile, syncOrder } from '../../../ui/list';
 import { Chip, type ChipProps } from '../chip';
+import { harnessSymbolEl } from '../../harness-icons';
 import type { MetaSegment } from '../../harness-composer-meta';
 import type { ComponentDef } from '../types';
 
@@ -59,8 +60,11 @@ export interface ComposerMetaChipProps extends ChipProps {
 }
 
 export interface ComposerMetaBranch {
-  /** Already prefixed by the caller: `⎇ main`. */
-  readonly text: string;
+  /** The ref alone: `main`. The branch mark is the `krypton-icon-branch`
+   *  symbol, not a prefix character — `⎇` (U+2387) is in none of the fonts
+   *  Krypton ships with, so it used to fall back to Apple Symbols and draw
+   *  1.85 text cells wide, nothing like the footer's branch icon. */
+  readonly ref: string;
   /** `<projectDir> on <branch>`; `''` keeps today's empty `title=""`. */
   readonly title: string;
 }
@@ -124,7 +128,12 @@ export class ComposerMeta extends Component<ComposerMetaProps> {
     super(el('div'));
     this.statusEl = el('span');
     this.branchEl = el('span', { class: 'acp-harness__project-branch' });
-    this.projectEl = el('span', { class: 'acp-harness__project-status' }, this.branchEl);
+    this.projectEl = el(
+      'span',
+      { class: 'acp-harness__project-status' },
+      harnessSymbolEl('krypton-icon-branch'),
+      this.branchEl,
+    );
     this.metaEl = el('div', { class: 'acp-harness__composer-meta' }, this.statusEl);
     this.helpEl = el('span', { class: 'acp-harness__help-hint' });
     this.toolsEl = el('div', { class: 'acp-harness__composer-tools' }, this.helpEl);
@@ -149,7 +158,7 @@ export class ComposerMeta extends Component<ComposerMetaProps> {
       next.segments.map((seg) => `${seg.id}\u0001${seg.text}`).join('\u0002'),
       next.running,
       next.chips.map(chipSignature).join('\u0002'),
-      next.branch?.text ?? null,
+      next.branch?.ref ?? null,
       next.branch?.title ?? null,
       next.helpHint,
     ];
@@ -191,7 +200,7 @@ export class ComposerMeta extends Component<ComposerMetaProps> {
 
     if (next.branch) {
       setAttr(this.projectEl, 'title', next.branch.title);
-      this.branchEl.textContent = next.branch.text;
+      this.branchEl.textContent = next.branch.ref;
       nodes.push(this.projectEl);
     }
     syncOrder(this.metaEl, nodes);

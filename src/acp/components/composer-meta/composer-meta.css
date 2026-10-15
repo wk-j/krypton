@@ -137,11 +137,22 @@
     color: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.92);
   }
 
+  /* The branch mark is the `krypton-icon-branch` symbol — the same body the
+     workspace footer draws (`chrome-icons.ts`) — tinted with the ref so the
+     pair reads as one segment. `center`, not the row's `baseline`: a replaced
+     element baselines on its bottom edge, which would float the box high. */
+  .acp-harness__project-status .acp-harness__icon {
+    margin-right: 4px;
+    align-self: center;
+    color: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.92);
+  }
+
   /* The last width-gated readout. On a third-width window the branch yields to the
      activity text: it is the only segment left with an off-screen fallback — the
-     workspace footer prints it as soon as this window is focused. */
+     workspace footer prints it as soon as this window is focused. The whole
+     segment goes, icon and `·` separator with it. */
   @container (max-width: 480px) {
-    .acp-harness__project-branch {
+    .acp-harness__project-status {
       display: none;
     }
   }

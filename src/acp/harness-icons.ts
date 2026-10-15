@@ -4,6 +4,7 @@
 // harness DOM by buildDOM(); every symbol uses currentColor so callers recolour
 // via CSS alone.
 
+import { BRANCH_ICON_BODY } from '../chrome-icons';
 import { CODEX_LOGO_MARK, GROK_LOGO_MARK, codeAgentLogoSymbol } from '../code-agent-logos';
 
 // Inline <symbol> defs for the thirteen built-in backends. Codex and Grok use
@@ -107,6 +108,12 @@ export const HARNESS_ICON_SVG_DEFS = [
   '<symbol id="krypton-icon-tool" viewBox="0 0 16 16"><path d="M11.2 2.4 a2.8 2.8 0 0 0 -3.5 3.5 L2.8 10.8 a1.25 1.25 0 0 0 1.8 1.8 L9.5 7.5 a2.8 2.8 0 0 0 3.5 -3.5 L11 6 L9.4 6 L9.4 4.4 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>',
   // spec 286: URL reference thumbnail in the REFERENCES rail
   '<symbol id="krypton-icon-globe" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="8" cy="8" r="6"/><ellipse cx="8" cy="8" rx="2.6" ry="6"/><line x1="2" y1="8" x2="14" y2="8"/></g></symbol>',
+  // spec 302 §6.2: the composer's git branch readout. Same body as the
+  // workspace footer's branch icon, so the two surfaces draw one mark.
+  '<symbol id="krypton-icon-branch" viewBox="0 0 16 16">' +
+    '<g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">' +
+    BRANCH_ICON_BODY +
+    '</g></symbol>',
 ].join('');
 
 const SYMBOL_DEFS_ID = 'krypton-harness-symbol-defs';

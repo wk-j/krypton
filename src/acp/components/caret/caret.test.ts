@@ -9,12 +9,19 @@ const paint = (props: CaretProps): Caret => {
 };
 
 describe('Caret', () => {
-  it('emits the composer caret markup by default', () => {
-    expect(paint({}).el.outerHTML).toBe('<span class="acp-harness__caret">█</span>');
+  it('emits an empty span the stylesheet paints, so no font glyph is involved', () => {
+    expect(paint({}).el.outerHTML).toBe('<span class="acp-harness__caret"></span>');
   });
 
-  it('renders the half block the triage redirect line asks for', () => {
-    expect(paint({ glyph: '▋' }).el.outerHTML).toBe('<span class="acp-harness__caret">▋</span>');
+  it('adds no text to the line it sits in', () => {
+    const line = document.createElement('span');
+    line.append('redirect ', paint({ half: true }).el);
+
+    expect(line.textContent).toBe('redirect ');
+  });
+
+  it('marks the narrow triage caret with a modifier', () => {
+    expect(paint({ half: true }).el.className).toBe('acp-harness__caret acp-harness__caret--half');
   });
 
   it('is found by the composer bloom query and ends the text walk', () => {
@@ -46,22 +53,15 @@ describe('Caret', () => {
     expect(caret.el.className).toBe('acp-harness__caret');
   });
 
-  it('swaps the glyph in place instead of rebuilding the node', () => {
+  it('toggles the width modifier in place instead of rebuilding the node', () => {
     const caret = paint({});
     const node = caret.el;
 
-    caret.update({ glyph: '▋' });
-
+    caret.update({ half: true });
     expect(caret.el).toBe(node);
-    expect(node.textContent).toBe('▋');
-  });
+    expect(node.className).toBe('acp-harness__caret acp-harness__caret--half');
 
-  it('skips the repaint while its dependency tuple holds', () => {
-    const caret = paint({ glyph: '█' });
-    const text = caret.el.firstChild;
-
-    caret.update({ glyph: '█', blink: true });
-
-    expect(caret.el.firstChild).toBe(text);
+    caret.update({});
+    expect(node.className).toBe('acp-harness__caret');
   });
 });

@@ -103,7 +103,7 @@ describe('DictationPreview', () => {
         '<span class="acp-harness__dictation-final" data-dictation-final="">the </span>' +
         '<span class="acp-harness__dictation-interim" data-dictation-interim="">user interface</span>' +
         '<span data-dictation-trailing=""></span>' +
-        '<span class="acp-harness__caret">█</span> UI</span>',
+        '<span class="acp-harness__caret"></span> UI</span>',
     );
   });
 

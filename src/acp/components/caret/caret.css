@@ -1,8 +1,14 @@
 /* Spec 302 §1.9 — `Caret`.
-   Carved verbatim from src/styles/acp-harness.css:4974-4976 (composer command
-   mode), :4990-4996 (the block) and :5163-5166 (the blink keyframes), plus
+   Carved from src/styles/acp-harness.css:4974-4976 (composer command mode),
+   :4990-4996 (the block) and :5163-5166 (the blink keyframes), plus
    src/styles/attention-triage.css:276-278, whose only real difference from the
-   block was the colour — the glyph difference is the `glyph` prop.
+   block was the colour — the width difference is the `half` prop.
+
+   The block is drawn here instead of being a `█` text node: a configured font
+   without block elements sends that one character to a fallback font, so the
+   caret came out 1.148 cells wide and taller than the line box (measured with
+   `Share Tech Mono` at 16px). A `1ch` box is one cell of whatever font renders
+   the draft, and the text after the cursor stays on the character grid.
 
    Both context rules live here because the caret block is their SUBJECT: they
    style the caret in a state its ancestor owns, not the ancestor itself. */
@@ -11,9 +17,24 @@
   .acp-harness__caret {
     position: relative;
     z-index: 6;
+    display: inline-block;
+    width: 1ch;
+    /* Baseline-relative so the bar spans ascenders to descenders without
+       growing the line box (leading is `[font] line_height`). */
+    height: 1em;
+    vertical-align: -0.2em;
     color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
-    text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 45%, transparent);
+    background: currentColor;
+    /* drop-shadow, not box-shadow: it follows the painted bar, so `--half`
+       glows around its five eighths rather than around the empty cell. */
+    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 45%, transparent));
     animation: acp-harness-caret 1s step-end infinite;
+  }
+
+  /* `half: true` — the five-eighths bar (the old `▋`), painted inside a full
+     cell so the triage redirect text keeps its position. */
+  .acp-harness__caret--half {
+    background: linear-gradient(currentColor 0 0) left / 0.625ch 100% no-repeat;
   }
 
   /* `blink: false` — a caret that marks a position without drawing the eye. */

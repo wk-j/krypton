@@ -239,7 +239,7 @@ idle `MIC` control starts English; its title lists both chords.
 Normal composer, idle:
 
 ```text
-memory: 3/3 · ⎇ main                         ? help  MIC  ⌘D  ⇧D
+memory: 3/3 · main                           ? help  MIC  ⌘D  ⇧D
 Codex-1 ⠋ explain the migration plan█
 ```
 

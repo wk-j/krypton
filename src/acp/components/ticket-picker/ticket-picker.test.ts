@@ -142,12 +142,12 @@ describe('TicketPicker', () => {
     expect(picker.el.querySelector('.acp-ticket__filter')?.outerHTML).toBe(
       '<div class="acp-ticket__filter">' +
         '<span class="acp-ticket__filter-hint">type to filter</span>' +
-        '<span class="acp-harness__caret">█</span></div>',
+        '<span class="acp-harness__caret"></span></div>',
     );
 
     picker.update(base({ filter: 'harn' }));
     expect(picker.el.querySelector('.acp-ticket__filter')?.outerHTML).toBe(
-      '<div class="acp-ticket__filter">harn<span class="acp-harness__caret">█</span></div>',
+      '<div class="acp-ticket__filter">harn<span class="acp-harness__caret"></span></div>',
     );
   });
 

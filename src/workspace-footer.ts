@@ -1,4 +1,5 @@
 import { invoke } from './profiler/ipc';
+import { BRANCH_ICON_BODY } from './chrome-icons';
 
 import { Mode, ProgressState, type PaneContentType } from './types';
 import type { Compositor } from './compositor';
@@ -94,11 +95,12 @@ const BACKEND_LINK_WEIGHT: Record<Exclude<BackendLinkState, 'off'>, number> = {
 // into a cached node (see `icon()`) and cloned per segment, so the render hot path
 // never re-parses markup. viewBox is 0 0 16 16; the base class is baked in.
 const FOOTER_ICON_SVG: Record<string, string> = {
-  // git branch: three nodes, the right one merging into the trunk
+  // git branch: three nodes, the right one merging into the trunk. Geometry is
+  // shared with the harness composer's branch readout (`chrome-icons.ts`).
   branch:
     '<svg class="krypton-workspace-footer__icon" viewBox="0 0 16 16" aria-hidden="true">' +
-    '<circle cx="4.5" cy="3.6" r="1.5"/><circle cx="4.5" cy="12.4" r="1.5"/><circle cx="11.5" cy="3.6" r="1.5"/>' +
-    '<path d="M4.5 5.1 V12.4"/><path d="M11.5 5.1 V6.6 c0 2.2 -1.8 4 -4 4 H4.5"/></svg>',
+    BRANCH_ICON_BODY +
+    '</svg>',
   // window/layout: a framed pane with a title bar and a vertical split
   layout:
     '<svg class="krypton-workspace-footer__icon" viewBox="0 0 16 16" aria-hidden="true">' +

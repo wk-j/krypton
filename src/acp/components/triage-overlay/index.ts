@@ -4,7 +4,7 @@
 // `attention-overlay.ts:59-198` — the panel wipe (`panel.replaceChildren()` on
 // every keystroke) becomes a props comparison, the four `innerHTML` sites
 // become nodes, and the forked `acp-triage__caret` rule collapses into the
-// shared `Caret` component with `glyph: '▋'`.
+// shared `Caret` component with `half: true`.
 //
 // Single-detail view: only the selected item is ever on screen, so the card is
 // always the active one and always renders its action row.
@@ -146,7 +146,7 @@ class JudgementCard extends Component<JudgementCardProps> {
   private actions(next: JudgementCardProps): HTMLElement {
     const actions = el('div', { class: 'acp-triage__actions' });
     if (next.redirect) {
-      this.caret.update({ glyph: '▋' });
+      this.caret.update({ half: true });
       const input = el('div', { class: 'acp-triage__redirect' }, ...[
         el('span', { class: 'acp-triage__redirect-label', text: 'redirect →' }),
         el('span', { class: 'acp-triage__redirect-input' }, next.redirect.draft, this.caret.el),

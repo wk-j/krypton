@@ -12362,7 +12362,7 @@ export class AcpHarnessView implements ContentView {
       chips: this.composerChips(lane),
       branch: branch
         ? {
-            text: `⎇ ${branch}`,
+            ref: branch,
             title: this.projectDir
               ? `${this.projectDir}${this.gitBranch ? ` on ${this.gitBranch}` : ''}`
               : '',

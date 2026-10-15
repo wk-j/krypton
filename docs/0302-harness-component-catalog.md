@@ -268,7 +268,7 @@ the same loop, different prefix) · `harness-ticket-controller.ts:700-707`.
 ## 1.9 `Caret` ⚠
 
 ```ts
-interface CaretProps { glyph?: '█' | '▋'; blink?: boolean }
+interface CaretProps { half?: boolean; blink?: boolean }
 ```
 
 **Example UI**
@@ -278,13 +278,18 @@ convert the UI into reusable comp█onents      composer draft / dictation previ
 redirect →  tell codex to re-check the deps▋   triage redirect
 ```
 
-**Emits** `<span class="acp-harness__caret">█</span>`.
+**Emits** `<span class="acp-harness__caret"></span>` — the bar is painted by `caret.css`
+(`width: 1ch`, `height: 1em`, `background: currentColor`), not typed. A `█` text node is only
+one cell wide in a font that *has* `U+2588`; `[font] family` starting at `Share Tech Mono` sends
+that one character to the next font in the stack, measuring 1.148 cells wide and 20.1px tall
+against a 19.2px line box, so the draft after the cursor fell off the character grid. `half: true`
+paints the five-eighths bar (the old `▋`) inside a full cell, so the text after it does not move.
 
 **Replaces** `acp-harness-view.ts:13257` · `harness-dictation-controller.ts:50` ·
 `harness-ticket-controller.ts:758`, queried by `harness-composer-bloom.ts:156,176`.
-⚠ The attention overlay needed a different glyph and **forked the rule** rather than parameterising it
+⚠ The attention overlay needed a narrower caret and **forked the rule** rather than parameterising it
 (`acp-triage__caret`, `attention-overlay.ts:120`, `attention-triage.css:274`) — that fork collapses into
-this component's `glyph` prop.
+this component's `half` prop.
 
 ---
 
@@ -724,7 +729,7 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 | # | Component | Example UI | Replaces |
 |---|---|---|---|
 | 6.1 | `Composer` | root; owns `--command` / `--memory` / `--dictating` modifiers and slot order | `acp-harness-view.ts:13190-13296`. **Deletes the 1 Hz full `innerHTML` rebuild** (`:13409`) — only `ComposerMeta` ticks |
-| 6.2 | `ComposerMeta` | `reviewing · 2:14 · 3 queued      auto-edit ⇧⇥   directive 0301-impl   ⎇ main        ? help` | `harness-composer-meta.ts:48-68` + `composerStatusChip` `:13410-13460` (`Chip` + `StatList`) |
+| 6.2 | `ComposerMeta` | `reviewing · 2:14 · 3 queued      auto-edit ⇧⇥   directive 0301-impl   ⟨branch icon⟩ main        ? help` (the branch mark is the `krypton-icon-branch` symbol, geometry shared with the workspace footer — `src/chrome-icons.ts`) | `harness-composer-meta.ts:48-68` + `composerStatusChip` `:13410-13460` (`Chip` + `StatList`) |
 | 6.3 | `DraftLine` | `claude-1  ⠋  convert the UI into reusable comp█onents` (`█` caret, ghost text inline) | `acp-harness-view.ts:13246-13293,15417-15420` |
 | 6.4 | `StagingStrip` | `[▣ screenshot.png  x] [▣ diagram.png  x]   2 images · Esc to clear` | `acp-harness-view.ts:13228-13245` |
 | 6.5 | `PeerStrip` | `⇆ awaiting codex · 5m+ · #cancel drops pending lane-mail wait` / `▼3 lane mails queued` | `lane-peek.ts:731-779` |
@@ -852,7 +857,7 @@ Three ⚠ collisions must be resolved during the split, or isolation is a lie:
 |---|---|---|
 | `Card` / `DocCardRow` | review card paints into `acp-harness__artifact-head` (`harness-tool-render.ts:729-770`) | review card gets `acp-harness__review-card` + its own sheet |
 | `InlinePalette` ×4 | one class, no discriminator; its rules sit in a byte-identical 99-line span declared twice (`acp-harness.css:5601-5699` ≡ `:5812-5910`) | one block + `data-palette`; duplicate deleted |
-| `Caret` ×3 | shared class with no owner; attention overlay forked it as `acp-triage__caret` | one `Caret` component with a `glyph` prop; fork deleted |
+| `Caret` ×3 | shared class with no owner; attention overlay forked it as `acp-triage__caret` | one `Caret` component with a `half` prop; fork deleted |
 
 The same duplicated span also re-declares `.acp-harness__fs-activity` (`:5659` / `:5870`); `diff` over
 `:5601-5699` vs `:5812-5910` reports no differences at all. Also deleted during the split:

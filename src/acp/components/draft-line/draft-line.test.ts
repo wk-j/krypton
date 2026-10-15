@@ -36,7 +36,7 @@ describe('DraftLine', () => {
         '<span class="acp-harness__lane-tag">claude-1</span>' +
         '<span class="acp-harness__prompt"><span class="acp-harness__spinner">⠋</span></span>' +
         '<span class="acp-harness__input">convert the UI into reusable comp' +
-        '<span class="acp-harness__caret">█</span>onents</span>' +
+        '<span class="acp-harness__caret"></span>onents</span>' +
         '</div>',
     );
   });
@@ -101,7 +101,7 @@ describe('DraftLine', () => {
     const input = line.el.querySelector<HTMLElement>('.acp-harness__input');
 
     expect(input?.innerHTML).toBe(
-      'convert the comp<span class="acp-harness__caret">█</span>' +
+      'convert the comp<span class="acp-harness__caret"></span>' +
         '<span class="acp-harness__ghost" aria-hidden="true">onent</span>',
     );
 

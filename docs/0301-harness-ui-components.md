@@ -383,7 +383,7 @@ file, and deleting the card leaves its override behind. Those 54 rules move into
 `@layer krypton.scheme` block in phase 6; non-harness rules stay where they are.
 
 **4. Collisions resolved, not inherited.** The review card gets its own block; `InlinePalette` keeps one block
-and gains `data-palette="slash|mention|hash|verb"`; `Caret` becomes a real shared primitive with a `glyph`
+and gains `data-palette="slash|mention|hash|verb"`; `Caret` becomes a real shared primitive with a `half`
 prop (three components share it, a fourth forked it); the two duplicated rule blocks are deleted.
 
 ### Theme support

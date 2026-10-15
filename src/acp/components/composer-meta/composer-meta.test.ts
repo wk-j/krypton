@@ -24,7 +24,7 @@ const BASE: ComposerMetaProps = {
       data: { 'open-directive-picker': '1' },
     },
   ],
-  branch: { text: '⎇ main', title: '/Users/wk/Source/krypton on main' },
+  branch: { ref: 'main', title: '/Users/wk/Source/krypton on main' },
   helpHint: '? help',
 };
 
@@ -60,7 +60,8 @@ describe('ComposerMeta', () => {
         '<span class="acp-harness__directive-chip acp-harness__directive-chip--set" ' +
         'title="Cmd+P then . to change" data-open-directive-picker="1">directive 0301-impl</span>' +
         '<span class="acp-harness__project-status" title="/Users/wk/Source/krypton on main">' +
-        '<span class="acp-harness__project-branch">⎇ main</span></span>' +
+        '<svg class="acp-harness__icon" aria-hidden="true"><use href="#krypton-icon-branch"></use></svg>' +
+        '<span class="acp-harness__project-branch">main</span></span>' +
         '</div>' +
         '<div class="acp-harness__composer-tools">' +
         '<span class="acp-harness__help-hint">? help</span>' +
