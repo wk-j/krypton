@@ -14,7 +14,8 @@ when an AI or multi-lane ACP Harness view is visible.
 ## Solution
 
 Render compact subscription-credit telemetry on the left side of each window's
-existing `.krypton-window__footer`, leaving transient notifications on the right.
+existing `.krypton-window__footer`, leaving the right side to the rail's pinned
+items.
 The visible content view declares which supported providers it contains; an ACP
 Harness declares the deduplicated union of all its live lane backends. A shared
 frontend usage store owns fetching and caching so the footer and `Leader $` view
@@ -34,9 +35,8 @@ never rendered.
   all usage payload types. Moving that responsibility into one shared store lets
   the detailed view and every window footer consume the same snapshots.
 - Every regular, content, and Quick Terminal window already has a structural
-  `.krypton-window__footer`. The notification controller moves one notification
-  element into the focused window footer and right-aligns itself with
-  `margin-left: auto`, leaving the footer's left side available.
+  `.krypton-window__footer`, and its right-aligned occupants claim their space
+  with `margin-left: auto`, leaving the footer's left side available.
 - ACP Harness lane objects already carry `backendId`; lane add, restore, and close
   paths are centralized enough to publish one deduplicated provider-set update.
 - Subscription quota is provider-account state, not per-lane token usage.
@@ -161,26 +161,23 @@ The existing footer becomes:
     </span>
     <span class="krypton-window__usage-provider">CURSOR month 19%</span>
   </div>
-  <div class="krypton-notif">...</div>
+  <div class="krypton-window__project">…</div>
 </div>
 ```
 
-- Status occupies the left side; notification retains `margin-left: auto` — and
-  since 2026-08-14 it decays back to empty (`display: none`) about nine seconds
-  after its last message, so most of the time the quotas share the rail with the
-  lane strip alone. See `docs/0040-notification-overlay.md`.
-- Since spec 219 the rail has a third occupant, the project badge
-  (`.krypton-window__project`, `order: 1`), and since spec 220 a fourth, the diff
+- Status occupies the left side and is the rail's compressible half.
+- Since spec 219 the rail has a right-aligned occupant, the project badge
+  (`.krypton-window__project`, `order: 1`), and since spec 220 a second, the diff
   stat (`.krypton-window__diff-stat`, `order: 2`) immediately right of it. Both
-  sit at the **right** end between the notification and the lane strip, so the
+  sit at the **right** end before the lane strip, so the
   quotas keep the rail's left edge and remain the compressible half — badge, stat
   and strip are all `flex: none`. The stat is magnified like its neighbours, so
   the existing `@container (max-width: 620px)` block that drops secondary quotas
   also un-zooms it: on a narrow rail the quotas and the counts are competing for
   the same pixels.
-- Since spec 218 the footer has a third occupant, the harness lane strip
-  (`.krypton-window__lane-strip`), pinned to the rail's far right past the
-  notification. All of them are driven from one
+- Since spec 218 the footer also carries the harness lane strip
+  (`.krypton-window__lane-strip`), pinned to the rail's far right. All of them
+  are driven from one
   `syncWindowFooter(win)` in the compositor over the same focused-pane
   `ContentView` contract. The quotas are the compressible half — the lane strip is
   `flex: none`, so a narrow window loses quota detail before lane identity.
@@ -191,7 +188,7 @@ The existing footer becomes:
 - When the footer cannot fit, CSS hides secondary quotas and leaves one
   `mostConstrained` quota per provider.
 - If provider segments still cannot fit, the whole usage status clips with an
-  ellipsis; notifications are never displaced.
+  ellipsis; the right-aligned rail items are never displaced.
 - `>= 80%` uses warning color; `>= 95%` uses danger color.
 - `loading` renders a dim provider name plus `--`; `stale` dims the segment and
   exposes the reason/freshness through `title` and `aria-label`; `off` is hidden.
@@ -220,8 +217,8 @@ declares at least one supported provider.
 - Provider not connected and with no cached data is omitted rather than consuming
   footer space with an error message.
 - Multiple windows requesting the same provider share one polling timer.
-- A notification appears on the right without replacing or moving the usage
-  status.
+- A project badge, diff stat, or lane strip appears on the right without
+  replacing or moving the usage status.
 - Unsupported ACP providers are silently omitted.
 
 ## Out of Scope
@@ -241,6 +238,6 @@ None.
 
 - [`docs/0151-subscription-usage-view.md`](0151-subscription-usage-view.md) — existing provider sources, payloads, caching, polling, and detailed-view behavior
 - [`docs/0152-cursor-real-usage.md`](0152-cursor-real-usage.md) — Cursor monthly included-usage semantics
-- [`docs/0040-notification-overlay.md`](0040-notification-overlay.md) — existing per-window footer and right-aligned notification ownership
+- [`docs/0040-notification-overlay.md`](0040-notification-overlay.md) — the rail's former transient occupant, removed 2026-10-15 (history)
 - [`docs/0072-acp-harness-view.md`](0072-acp-harness-view.md) — ACP Harness lane lifecycle and backend identities
 - Existing HTML mockup: `.krypton/artifacts/hm-2/Codex-1/art-1-34f0b818.html`

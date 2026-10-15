@@ -197,7 +197,7 @@ Font sizes: body 15px, labels 12px, tools/results 13px, errors 14px, hints 12px.
 - **Agent init failure**: Inline error "Failed to initialize agent: ..."
 - **API errors (429, CORS, etc.)**: Extracted from `agent_end` event's last message `errorMessage` field
 - **Unexpected throws**: Caught in try/catch around `controller.prompt()`, displayed inline
-- **Global errors**: `unhandledrejection` and `error` handlers route to `NotificationController`
+- **Global errors**: `unhandledrejection` and `error` handlers log to the console (`main.ts`)
 
 ## Edge Cases
 

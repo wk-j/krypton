@@ -130,7 +130,7 @@ export interface ContentView {
    c. contextual = try { focusedView?.getPaletteActions?.(ctx) ?? [] }
                    catch (e) { console.warn(...); return [] }
                    .map(a => ({ ...a, section: 'context' as const }))
-   d. dynamic = (existing dynamic entries: pinned, dashboards, ACP backends, sound themes, hook-toast)
+   d. dynamic = (existing dynamic entries: pinned, dashboards, ACP backends, sound themes)
    e. this.actions = [...contextual, ...dynamic, ...staticActions]
 3. filter('') → render with "Context" header above the contextual block
    — header hidden when contextual is empty (terminal pane or no provider)

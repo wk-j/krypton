@@ -48,8 +48,8 @@
       "name": "hookPort",
       "type": "textfield",
       "required": false,
-      "title": "Hook Server Port Override",
-      "description": "Leave blank to auto-detect from [hooks] port in krypton.toml (default 8765). Used only to build browser URLs for the dashboard/gallery/docs surfaces"
+      "title": "Loopback Server Port Override",
+      "description": "Leave blank to auto-detect from [loopback_server] port in krypton.toml (default 8765). Used only to build browser URLs for the dashboard/gallery/docs surfaces"
     }
   ],
   "scripts": {

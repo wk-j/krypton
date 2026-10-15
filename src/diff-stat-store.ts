@@ -142,7 +142,7 @@ export class DiffStatStore {
       next = await invoke<WorkingDiffStat>('working_diff_stat', { cwd: repoRoot });
     } catch {
       // A repo that vanished, a missing git, a call that raced a `rm -rf`: the
-      // rail drops the readout. Never a notification — a status line must not nag.
+      // rail drops the readout. Never an alert — a status line must not nag.
       next = null;
     }
     state.stat = next;

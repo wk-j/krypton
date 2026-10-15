@@ -1,7 +1,7 @@
 // Krypton — Claude Code Hook Integration (Futuristic HUD)
 // Listens for Claude Code hook events from the backend HTTP server and renders
-// futuristic UI: sigil badge, neural uplink bar, decode-animated tool HUD,
-// scan-line toasts, and activity trace seismograph.
+// futuristic UI: sigil badge, neural uplink bar, decode-animated tool HUD, and
+// activity trace seismograph. Event text is not surfaced — it goes to the console.
 
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from './profiler/ipc';
@@ -10,7 +10,6 @@ import { BackgroundAnimation, FlameAnimation } from './flame';
 import { BrainwaveAnimation } from './brainwave';
 import { MatrixAnimation } from './matrix';
 import { OffscreenAnimationProxy, supportsOffscreenCanvas } from './offscreen-animation';
-import type { NotificationController, NotificationLevel } from './notification';
 
 /** Claude Code hook event payload (emitted by Rust hook server) */
 export interface ClaudeHookEvent {
@@ -123,63 +122,14 @@ function toolTickCategory(toolName: string): string {
  */
 export class ClaudeHookManager {
   private sessions: Map<string, ClaudeSession> = new Map();
-  private toastContainer: HTMLElement | null = null;
-  private toastsEnabled: boolean = false;
-  private maxToasts: number = 20;
   private hookPort: number = 0;
   private decodeTimer: ReturnType<typeof setTimeout> | null = null;
   private toolClearTimer: ReturnType<typeof setTimeout> | null = null;
   private animations: Set<BackgroundAnimation> = new Set();
   private animationType: string = 'flame';
   private animationIdleTimer: ReturnType<typeof setTimeout> | null = null;
-  private notifController: NotificationController | null = null;
-
-  /** Connect the in-window notification overlay so hook messages are forwarded */
-  setNotificationController(ctrl: NotificationController): void {
-    this.notifController = ctrl;
-  }
-
-  /** Map toast type → notification level */
-  private static TOAST_LEVEL: Record<string, NotificationLevel> = {
-    session: 'system',
-    tool: 'info',
-    tool_done: 'success',
-    notification: 'info',
-    permission_prompt: 'warning',
-    error: 'error',
-    success: 'success',
-    stop: 'system',
-    instructions: 'info',
-    prompt: 'info',
-    subagent: 'system',
-    subagent_done: 'success',
-    teammate: 'system',
-    task: 'success',
-    config: 'info',
-    worktree: 'info',
-    compact: 'system',
-    elicitation: 'warning',
-  };
-
-  setToastsEnabled(enabled: boolean): void {
-    this.toastsEnabled = enabled;
-    if (this.toastContainer) {
-      this.toastContainer.style.display = enabled ? '' : 'none';
-    }
-  }
-
-  setMaxToasts(max: number): void {
-    this.maxToasts = Math.max(1, max);
-    this.trimToasts();
-  }
 
   async init(): Promise<void> {
-    // Create toast container first so toasts can be shown during init
-    this.toastContainer = document.createElement('div');
-    this.toastContainer.className = 'krypton-claude-toasts';
-    document.body.appendChild(this.toastContainer);
-    console.log('[Krypton] Toast container created:', this.toastContainer);
-
     // Listen for hook server ready event to get the port
     await listen<number>('claude-hook-server-ready', (event) => {
       this.hookPort = event.payload;
@@ -225,59 +175,20 @@ export class ClaudeHookManager {
       case 'PostToolUse':
         this.onPostToolUse(event);
         break;
-      case 'Notification':
-        this.onNotification(event);
-        break;
       case 'Stop':
         this.onStop(event);
         break;
-      case 'InstructionsLoaded':
-        this.onInstructionsLoaded(event);
-        break;
       case 'UserPromptSubmit':
         this.onUserPromptSubmit(event);
-        break;
-      case 'PermissionRequest':
-        this.onPermissionRequest(event);
         break;
       case 'PostToolUseFailure':
         this.onPostToolUseFailure(event);
         break;
       case 'SubagentStart':
-        this.onSubagentStart(event);
-        break;
-      case 'SubagentStop':
-        this.onSubagentStop(event);
+        this.onSubagentStart();
         break;
       case 'StopFailure':
-        this.onStopFailure(event);
-        break;
-      case 'TeammateIdle':
-        this.onTeammateIdle(event);
-        break;
-      case 'TaskCompleted':
-        this.onTaskCompleted(event);
-        break;
-      case 'ConfigChange':
-        this.onConfigChange(event);
-        break;
-      case 'WorktreeCreate':
-        this.onWorktreeCreate(event);
-        break;
-      case 'WorktreeRemove':
-        this.onWorktreeRemove(event);
-        break;
-      case 'PreCompact':
-        this.onPreCompact(event);
-        break;
-      case 'PostCompact':
-        this.onPostCompact(event);
-        break;
-      case 'Elicitation':
-        this.onElicitation(event);
-        break;
-      case 'ElicitationResult':
-        this.onElicitationResult(event);
+        this.onStopFailure();
         break;
       case 'SessionEnd':
         this.onSessionEnd(event);
@@ -298,10 +209,6 @@ export class ClaudeHookManager {
       lastEvent: 'SessionStart',
       originalTitle: null,
     });
-    const parts: string[] = ['Session started'];
-    if (event.source && event.source !== 'startup') parts.push(`(${event.source})`);
-    if (event.model) parts.push(`\u2014 ${event.model}`);
-    this.showToast(parts.join(' '), 'session');
     this.startFlame();
   }
 
@@ -322,10 +229,6 @@ export class ClaudeHookManager {
 
     this.updateToolActivity(event);
     this.addActivityTick(event.tool_name ?? 'unknown');
-
-    const toolName = event.tool_name ?? 'unknown';
-    const detail = this.formatToolDetail(event);
-    this.showToast(detail ? `${toolName} \u2190 ${detail}` : toolName, 'tool');
   }
 
   private onPostToolUse(event: ClaudeHookEvent): void {
@@ -341,11 +244,6 @@ export class ClaudeHookManager {
     if (hasError) {
       this.flashUplinkError();
       this.addActivityTick('error');
-      const toolName = event.tool_name ?? 'unknown';
-      this.showToast(`${toolName} failed`, 'error');
-    } else {
-      const toolName = event.tool_name ?? 'unknown';
-      this.showToast(`${toolName} done`, 'tool_done');
     }
 
     // Hold tool text for 1.5s, then glitch-out — unless a new PreToolUse arrives
@@ -361,12 +259,6 @@ export class ClaudeHookManager {
     }, 1500);
   }
 
-  private onNotification(event: ClaudeHookEvent): void {
-    if (event.message) {
-      this.showToast(event.message, event.notification_type);
-    }
-  }
-
   private onStop(event: ClaudeHookEvent): void {
     const session = this.sessions.get(event.session_id);
     if (session) {
@@ -374,34 +266,16 @@ export class ClaudeHookManager {
       session.currentTool = null;
       session.lastEvent = 'Stop';
     }
-    this.showToast('Response complete', 'tool_done');
     // Stop animation — Claude is idle, waiting for next prompt.
     // Animation restarts on next UserPromptSubmit.
     this.stopFlame();
-  }
-
-  private onInstructionsLoaded(event: ClaudeHookEvent): void {
-    const file = event.file_path ? this.abbreviatePath(event.file_path) : 'config';
-    const type = event.memory_type ? ` [${event.memory_type}]` : '';
-    const reason = event.load_reason ? ` (${event.load_reason})` : '';
-    this.showToast(`${file}${type}${reason}`, 'instructions');
   }
 
   private onUserPromptSubmit(event: ClaudeHookEvent): void {
     const session = this.getOrCreateSession(event.session_id);
     session.active = true;
     session.lastEvent = 'UserPromptSubmit';
-    const preview = event.prompt
-      ? (event.prompt.length > 40 ? event.prompt.slice(0, 40) + '\u2026' : event.prompt)
-      : 'Prompt submitted';
-    this.showToast(preview, 'prompt');
     this.startFlame();
-  }
-
-  private onPermissionRequest(event: ClaudeHookEvent): void {
-    const toolName = event.tool_name ?? 'unknown';
-    const detail = this.formatToolDetail(event);
-    this.showToast(detail ? `${toolName} \u2190 ${detail}` : toolName, 'permission_prompt');
   }
 
   private onPostToolUseFailure(event: ClaudeHookEvent): void {
@@ -410,85 +284,14 @@ export class ClaudeHookManager {
     session.lastEvent = 'PostToolUseFailure';
     this.flashUplinkError();
     this.addActivityTick('error');
-    const toolName = event.tool_name ?? 'unknown';
-    const detail = this.formatToolDetail(event);
-    const errMsg = event.error ? ` \u2014 ${event.error}` : '';
-    const target = detail ? ` \u2190 ${detail}` : '';
-    this.showToast(`${toolName}${target}${errMsg}`, 'error');
   }
 
-  private onSubagentStart(event: ClaudeHookEvent): void {
-    const agentType = event.agent_type ?? 'subagent';
-    const agentId = event.agent_id ? ` (${event.agent_id.slice(0, 8)})` : '';
-    this.showToast(`Spawned ${agentType}${agentId}`, 'subagent');
+  private onSubagentStart(): void {
     this.addActivityTick('edit');
   }
 
-  private onSubagentStop(event: ClaudeHookEvent): void {
-    const agentType = event.agent_type ?? 'subagent';
-    const agentId = event.agent_id ? ` (${event.agent_id.slice(0, 8)})` : '';
-    this.showToast(`${agentType}${agentId} finished`, 'subagent_done');
-  }
-
-  private onStopFailure(event: ClaudeHookEvent): void {
-    const errType = event.error ?? 'unknown';
-    const detail = event.error_details ? ` \u2014 ${event.error_details}` : '';
+  private onStopFailure(): void {
     this.flashUplinkError();
-    this.showToast(`${errType}${detail}`, 'error');
-  }
-
-  private onTeammateIdle(event: ClaudeHookEvent): void {
-    const name = event.teammate_name ?? 'Teammate';
-    const team = event.team_name ? ` [${event.team_name}]` : '';
-    this.showToast(`${name} idle${team}`, 'teammate');
-  }
-
-  private onTaskCompleted(event: ClaudeHookEvent): void {
-    const subject = event.task_subject ?? 'Task';
-    const owner = event.teammate_name ? ` (${event.teammate_name})` : '';
-    this.showToast(`\u2713 ${subject}${owner}`, 'task');
-  }
-
-  private onConfigChange(event: ClaudeHookEvent): void {
-    const source = event.config_source ?? event.source ?? 'config';
-    const file = event.file_path ? ` \u2190 ${this.abbreviatePath(event.file_path)}` : '';
-    this.showToast(`${source}${file}`, 'config');
-  }
-
-  private onWorktreeCreate(event: ClaudeHookEvent): void {
-    const label = event.name ?? (event.worktree_path ? this.abbreviatePath(event.worktree_path) : 'worktree');
-    this.showToast(`Created ${label}`, 'worktree');
-  }
-
-  private onWorktreeRemove(event: ClaudeHookEvent): void {
-    const path = event.worktree_path ? this.abbreviatePath(event.worktree_path) : 'worktree';
-    this.showToast(`Removed ${path}`, 'worktree');
-  }
-
-  private onPreCompact(event: ClaudeHookEvent): void {
-    const trigger = event.trigger ? ` (${event.trigger})` : '';
-    this.showToast(`Compacting context\u2026${trigger}`, 'compact');
-  }
-
-  private onPostCompact(event: ClaudeHookEvent): void {
-    const summary = event.compact_summary
-      ? (event.compact_summary.length > 50 ? event.compact_summary.slice(0, 50) + '\u2026' : event.compact_summary)
-      : 'Context compacted';
-    this.showToast(summary, 'compact');
-  }
-
-  private onElicitation(event: ClaudeHookEvent): void {
-    const server = event.mcp_server_name ?? 'MCP';
-    const msg = event.message
-      ? (event.message.length > 40 ? event.message.slice(0, 40) + '\u2026' : event.message)
-      : 'input requested';
-    this.showToast(`${server}: ${msg}`, 'elicitation');
-  }
-
-  private onElicitationResult(event: ClaudeHookEvent): void {
-    const server = event.mcp_server_name ?? 'MCP';
-    const action = event.action ?? 'responded';
-    this.showToast(`${server}: ${action}`, 'elicitation');
   }
 
   private onSessionEnd(event: ClaudeHookEvent): void {
@@ -499,8 +302,6 @@ export class ClaudeHookManager {
       session.lastEvent = 'SessionEnd';
     }
     this.flashSigilComplete();
-    const reason = event.reason ? ` (${event.reason})` : '';
-    this.showToast(`Session ended${reason}`, 'stop');
     this.stopFlame();
   }
 
@@ -687,189 +488,6 @@ export class ClaudeHookManager {
       setTimeout(garbleOut, DECODE_INTERVAL_MS);
     };
     garbleOut();
-  }
-
-  // ─── UI: Intercept Toasts (persistent stack, click to dismiss) ─
-
-  /** Label text per event type */
-  private static TOAST_LABELS: Record<string, string> = {
-    session: 'SESSION',
-    tool: 'TOOL',
-    tool_done: 'DONE',
-    notification: 'CLAUDE',
-    permission_prompt: '\u26A1 PERMIT',
-    error: 'ERROR',
-    success: 'OK',
-    stop: 'STOP',
-    instructions: 'LOAD',
-    prompt: 'PROMPT',
-    subagent: 'AGENT',
-    subagent_done: 'AGENT',
-    teammate: 'TEAM',
-    task: 'TASK',
-    config: 'CONFIG',
-    worktree: 'TREE',
-    compact: 'COMPACT',
-    elicitation: 'INPUT',
-  };
-
-  /** Animated SVG icon per event type (viewBox 0 0 32 32, uses currentColor) */
-  private static TOAST_ICON_SVG: Record<string, string> = {
-    // Diamond + rotating dashed ring
-    session: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width=".75" stroke-dasharray="3 4" opacity=".35" class="krypton-icon-spin"/><rect x="11.5" y="11.5" width="9" height="9" rx="1" transform="rotate(45 16 16)" fill="currentColor" opacity=".8"/></svg>',
-    // Right-triangle + fast spinning arc
-    tool: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1" stroke-dasharray="12 76" stroke-linecap="round" opacity=".45" class="krypton-icon-spin-fast"/><polygon points="12,9 12,23 24,16" fill="currentColor" opacity=".6"/></svg>',
-    // Checkmark (static, dim)
-    tool_done: '<svg viewBox="0 0 32 32" fill="none"><polyline points="10,17 14.5,21.5 22,12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity=".6"/></svg>',
-    // Filled diamond + pulsing ring
-    notification: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width=".75" opacity=".2" class="krypton-icon-pulse"/><rect x="11.5" y="11.5" width="9" height="9" rx=".5" transform="rotate(45 16 16)" fill="currentColor" opacity=".8"/></svg>',
-    // Warning triangle + pulsing ring
-    permission_prompt: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width=".75" opacity=".25" class="krypton-icon-pulse"/><path d="M16 7L26 25H6Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" opacity=".85"/><line x1="16" y1="14" x2="16" y2="19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity=".85"/><circle cx="16" cy="22" r="1" fill="currentColor" opacity=".85"/></svg>',
-    // Concentric target rings (radar pulse)
-    error: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width=".75" opacity=".25" class="krypton-icon-radar"/><circle cx="16" cy="16" r="9" stroke="currentColor" stroke-width=".75" opacity=".35" class="krypton-icon-radar-delay"/><circle cx="16" cy="16" r="4" fill="currentColor" opacity=".75"/></svg>',
-    // Checkmark
-    success: '<svg viewBox="0 0 32 32" fill="none"><polyline points="10,17 14.5,21.5 22,12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/></svg>',
-    // Square
-    stop: '<svg viewBox="0 0 32 32" fill="none"><rect x="9" y="9" width="14" height="14" rx="1.5" fill="currentColor" opacity=".75"/></svg>',
-    // Circle outline (static)
-    instructions: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="8" stroke="currentColor" stroke-width="1.2" opacity=".45"/></svg>',
-    // Triangle outline + spinning arc
-    prompt: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1" stroke-dasharray="8 80" stroke-linecap="round" opacity=".4" class="krypton-icon-spin"/><polygon points="12,8 12,24 26,16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" opacity=".7"/></svg>',
-    // Hexagon + orbiting dot
-    subagent: '<svg viewBox="0 0 32 32" fill="none"><g class="krypton-icon-orbit"><circle cx="16" cy="2" r="1.5" fill="currentColor" opacity=".7"/></g><polygon points="16,8 23,12 23,20 16,24 9,20 9,12" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".75"/></svg>',
-    // Hexagon (static, dim)
-    subagent_done: '<svg viewBox="0 0 32 32" fill="none"><polygon points="16,8 23,12 23,20 16,24 9,20 9,12" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".4"/></svg>',
-    // Hexagon + dashed rotating ring
-    teammate: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width=".75" stroke-dasharray="3 4" opacity=".3" class="krypton-icon-spin"/><polygon points="16,8 23,12 23,20 16,24 9,20 9,12" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".75"/></svg>',
-    // Checkmark
-    task: '<svg viewBox="0 0 32 32" fill="none"><polyline points="10,17 14.5,21.5 22,12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/></svg>',
-    // Gear (central circle + dashed ring teeth) + slow rotate
-    config: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="5" stroke="currentColor" stroke-width="1.2" opacity=".55"/><circle cx="16" cy="16" r="10" stroke="currentColor" stroke-width="2.5" stroke-dasharray="3.5 3.5" opacity=".35" class="krypton-icon-spin-slow"/></svg>',
-    // Diamond outline (static)
-    worktree: '<svg viewBox="0 0 32 32" fill="none"><rect x="11.5" y="11.5" width="9" height="9" rx=".5" transform="rotate(45 16 16)" stroke="currentColor" stroke-width="1.2" fill="none" opacity=".45"/></svg>',
-    // Fisheye — circle + center dot (static)
-    compact: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="9" stroke="currentColor" stroke-width="1" opacity=".35"/><circle cx="16" cy="16" r="3" fill="currentColor" opacity=".45"/></svg>',
-    // Diamond outline + pulsing ring
-    elicitation: '<svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width=".75" opacity=".2" class="krypton-icon-pulse"/><rect x="11.5" y="11.5" width="9" height="9" rx=".5" transform="rotate(45 16 16)" stroke="currentColor" stroke-width="1.3" fill="none" opacity=".8"/></svg>',
-  };
-
-  /** Fallback unicode icons for unknown types */
-  private static TOAST_ICONS_FALLBACK = '\u25C6';
-
-  /** Show a toast programmatically (for testing or startup messages) */
-  public toast(message: string, type?: string): void {
-    this.showToast(message, type);
-  }
-
-  private showToast(message: string, type?: string): void {
-    const toastType = type ?? 'notification';
-
-    // Forward to in-window notification overlay
-    if (this.notifController) {
-      const level = ClaudeHookManager.TOAST_LEVEL[toastType] ?? 'info';
-      const label = ClaudeHookManager.TOAST_LABELS[toastType] ?? 'CLAUDE';
-      this.notifController.show({ message, level, label });
-    }
-
-    if (!this.toastContainer || !this.toastsEnabled) return;
-
-    const toast = document.createElement('div');
-    toast.className = 'krypton-claude-toast';
-    toast.classList.add(`krypton-claude-toast--${toastType}`);
-
-    // Icon (animated SVG sigil)
-    const icon = document.createElement('div');
-    icon.className = 'krypton-claude-toast__icon';
-    const svgHtml = ClaudeHookManager.TOAST_ICON_SVG[toastType];
-    if (svgHtml) {
-      icon.innerHTML = svgHtml;
-    } else {
-      icon.textContent = ClaudeHookManager.TOAST_ICONS_FALLBACK;
-    }
-    toast.appendChild(icon);
-
-    // Content area
-    const content = document.createElement('div');
-    content.className = 'krypton-claude-toast__content';
-
-    // Header row: category label + timestamp
-    const header = document.createElement('div');
-    header.className = 'krypton-claude-toast__header';
-
-    const label = document.createElement('span');
-    label.className = 'krypton-claude-toast__label';
-    const labelText = ClaudeHookManager.TOAST_LABELS[toastType] ?? 'CLAUDE';
-    label.textContent = labelText;
-
-    const telemetry = document.createElement('span');
-    telemetry.className = 'krypton-claude-toast__telemetry';
-    const now = new Date();
-    const ts = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-    telemetry.textContent = ts;
-
-    header.appendChild(label);
-    header.appendChild(telemetry);
-    content.appendChild(header);
-
-    // Message text
-    const text = document.createElement('div');
-    text.className = 'krypton-claude-toast__text';
-    text.textContent = message;
-    content.appendChild(text);
-
-    toast.appendChild(content);
-
-    // Append so newest toast is at the bottom
-    this.toastContainer.appendChild(toast);
-
-    // Animate in
-    requestAnimationFrame(() => {
-      toast.classList.add('krypton-claude-toast--visible');
-    });
-
-    // Click anywhere to dismiss
-    toast.addEventListener('click', () => {
-      toast.classList.add('krypton-claude-toast--exiting');
-      toast.classList.remove('krypton-claude-toast--visible');
-      setTimeout(() => toast.remove(), 300);
-    });
-
-    // Enforce max visible toasts
-    this.trimToasts();
-  }
-
-  /** Remove oldest toasts that exceed maxToasts limit */
-  private trimToasts(): void {
-    if (!this.toastContainer) return;
-    // Only count toasts that aren't already exiting
-    const toasts = this.toastContainer.querySelectorAll(
-      '.krypton-claude-toast:not(.krypton-claude-toast--exiting)'
-    );
-    // Container is append-ordered (oldest first), so remove from the start
-    const excess = toasts.length - this.maxToasts;
-    for (let i = 0; i < excess; i++) {
-      const old = toasts[i] as HTMLElement;
-      old.classList.add('krypton-claude-toast--exiting');
-      old.classList.remove('krypton-claude-toast--visible');
-      setTimeout(() => old.remove(), 300);
-    }
-  }
-
-  /** Format tool detail string from event input */
-  private formatToolDetail(event: ClaudeHookEvent): string {
-    if (!event.tool_input || typeof event.tool_input !== 'object') return '';
-    const input = event.tool_input as Record<string, unknown>;
-    if (input.file_path && typeof input.file_path === 'string') {
-      return this.abbreviatePath(input.file_path);
-    }
-    if (input.command && typeof input.command === 'string') {
-      const cmd = input.command as string;
-      return cmd.length > 30 ? cmd.slice(0, 30) + '\u2026' : cmd;
-    }
-    if (input.pattern && typeof input.pattern === 'string') {
-      return input.pattern as string;
-    }
-    return '';
   }
 
   // ─── UI: Activity Trace (seismograph) ──────────────────────────

@@ -168,7 +168,7 @@ None. The badge is a readout.
 
 ```html
 <!-- DOM order; painted order is by CSS `order`:
-     usage-status → notif → project (1) → diff-stat (2, spec 220) → lane-strip (3) -->
+     usage-status → project (1) → diff-stat (2, spec 220) → lane-strip (3) -->
 <div class="krypton-window__footer">
   <span class="krypton-window__project" title="~/Source/krypton"
         aria-label="project krypton — ~/Source/krypton">
@@ -176,12 +176,11 @@ None. The badge is a readout.
     <span class="krypton-window__project-rest">ypton</span><!-- rail size -->
   </span>
   <div class="krypton-window__usage-status">…</div>
-  <div class="krypton-notif">…</div>
   <div class="krypton-window__lane-strip">…</div>
 </div>
 ```
 
-Painted left to right: `quotas … notification | krypton ⟨lane drop cap⟩` — and since spec 220,
+Painted left to right: `quotas … | krypton ⟨lane drop cap⟩` — and since spec 220,
 with the repo's `+added -removed` between the name and the lane, magnified to match.
 
 | Concern | Rule | Why |
@@ -192,7 +191,7 @@ with the repo's `+added -removed` between the name and the lane, magnified to ma
 | Painting the escape | `position: relative` | Escaping upward is not enough on its own: `.krypton-pane` is `position: relative`, so it paints in the positioned phase, *after* the footer's ordinary inline text, and its opaque view background sliced the drop cap flat at the rail's top edge (measured in a WKWebView repro). Positioning the badge moves it into the same paint phase, where tree order — footer after pane — puts it on top. Spec 218's lane drop cap is positioned the same way. |
 | Which floor | `margin-bottom: calc((var(--krypton-footer-height, 28px) - var(--krypton-lane-chip-height, 18px)) / 2)` | The floor is the **lane chip's**, not the rail's. A floor-pinned box is positioned by its bottom edge, and the drop cap's box carries its own descent below the baseline: pinned to the rail floor the word's baseline landed 6px up while the rail's other type sits at 11–14px, so the whole word — descenders included — hung below the chip beside it. The chip's inset lifts the shared baseline onto the strip's text line (measured: drop cap, tail and lane name all at 11px), so badge and strip read as one line of rail type. Derived from the two heights rather than tuned, so a themed rail keeps it. |
 | Placement | `order: 1` (lane strip moves to `order: 2`), `flex: none` | Trails the rail, immediately left of the lane strip, so project and active lane are one glance target instead of two at opposite corners. `flex: none` makes the quotas the compressible half, as spec 153 already intends. |
-| Right-pinning | `margin-left: auto` on the badge; the strip's own auto margin becomes `margin-left: 10px` via `.krypton-window__footer:has(.krypton-window__project)` | Exactly one rail item may claim the free space — two auto margins split it and would leave the badge floating mid-rail. The leftmost of `notif → badge → strip` pushes; the rest trail it. The `:has()` is because the badge is absent whenever the focused pane has no project, and the strip must then take its auto margin back. |
+| Right-pinning | `margin-left: auto` on the badge; the strip's own auto margin becomes `margin-left: 10px` via `.krypton-window__footer:has(.krypton-window__project)` | Exactly one rail item may claim the free space — two auto margins split it and would leave the badge floating mid-rail. The leftmost of `badge → strip` pushes; the rest trail it. The `:has()` is because the badge is absent whenever the focused pane has no project, and the strip must then take its auto margin back. |
 | Colour | Initials: neon accent, `text-transform: uppercase`. Tail: `rgba(accent, 0.45)`, 11px. | Same window accent, unique among open windows. The pair is a callsign; the tail is confirmation at rail size so a long name does not compete. |
 | Motion | none | The footer's standing no-motion rule. A project does not change under a window the way an active lane does, so there is nothing for a pop to announce. |
 | Overflow | `max-width: 45%`, `overflow: hidden`, `text-overflow: ellipsis` on the tail, `white-space: nowrap` | A narrow window clips the tail rather than pushing the quotas off the rail — and the drop cap, which is the actual glance target, is `flex: none` and survives the squeeze. |
@@ -250,4 +249,4 @@ number, two users.
   — colour-per-window as the established second cue alongside the name.
 - Internal: `docs/0218-window-lane-strip.md` (the zoom language and the rail's right end),
   `docs/0153-window-ai-credit-status.md` (the focused-pane footer contract),
-  `docs/0040-notification-overlay.md` (the rail's transient occupant).
+  `docs/0040-notification-overlay.md` (the rail's former transient occupant, removed 2026-10-15 — history).

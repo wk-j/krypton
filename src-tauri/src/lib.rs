@@ -507,18 +507,18 @@ pub fn run() {
                 app.manage::<music::MusicEngineState>(std::sync::Mutex::new(music_engine));
             }
 
-            // Start Claude Code hook server if enabled
+            // Start the loopback HTTP server (harness memory MCP, browser
+            // surfaces, hurl/termctrl/acp-wire viewers, Claude hook endpoint)
             {
-                let hooks_enabled = krypton_config
+                let (server_enabled, server_port) = krypton_config
                     .read()
-                    .map(|cfg| cfg.hooks.enabled)
-                    .unwrap_or(true);
-                let hooks_port = krypton_config.read().map(|cfg| cfg.hooks.port).unwrap_or(0);
-                if hooks_enabled {
+                    .map(|cfg| (cfg.loopback_server.enabled, cfg.loopback_server.port))
+                    .unwrap_or((true, 8765));
+                if server_enabled {
                     hook_server::start(
                         app.handle().clone(),
                         hook_server.clone(),
-                        hooks_port,
+                        server_port,
                         hurl_state.clone(),
                         krypton_config.clone(),
                     );

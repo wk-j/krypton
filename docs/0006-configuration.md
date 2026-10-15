@@ -247,13 +247,26 @@ mouse = true                   # Draw a mouse right of the keyboard. The right h
                                # grips it while the pointer moves and lights its
                                # buttons on click. false = compact keyboard only.
 
+# --- Loopback HTTP Server ---
+# The single localhost server behind harness memory (the krypton-harness-memory
+# MCP endpoint), every browser surface (#dashboard, #gallery, #docs, #journal,
+# #reviews, #analyses, #commands, #tools), the hurl / termctrl / acp-wire
+# viewers, artifact and doc feedback, and the Claude Code /hook endpoint.
+# Turning it off turns all of that off — lanes then run with memory unavailable.
+# Load-time only: restart Krypton after changing it.
+
+[loopback_server]
+enabled = true                 # Start the loopback HTTP server
+port = 8765                    # Port to listen on (0 = auto-assign;
+                               # a busy fixed port falls back to ephemeral)
+
 # --- Claude Code Hooks ---
-# HTTP server for receiving Claude Code hook events (toast notifications, status).
+# Ingestion of Claude Code hook events on POST /hook, served by the loopback
+# server above. This section does NOT control the server itself.
 
 [hooks]
-enabled = true                 # Enable the hook HTTP server
-port = 0                       # Port to listen on (0 = auto-assign)
-show_toasts = true             # Show toast notifications for hook events
+enabled = true                 # Accept hook events on /hook (hot-reloadable)
+animation = "brainwave"        # Background animation: flame | brainwave | matrix | none
 
 # --- ACP Harness Controller CLI ---
 # Starts the authenticated local endpoint used by kryptonctl. Load-time only.
@@ -922,13 +935,18 @@ it. See spec 200 and ADR-0013 through ADR-0015.
 
 Attention triage is **default-on** for lanes that receive the `krypton-harness-memory` MCP server. There is no `krypton.toml` switch and no required directive grant: `tools/list` advertises `attention_flag` / `attention_resolve` by default, while payload validation and the review queue remain the safety surface. The old `Cmd+P → '` manual equip action has been removed from the active UI. Summon the judgement queue with `Cmd+P → ;`. Existing `triage_equipped` directive fields are preserved only as legacy metadata/badges. See `docs/0128-attention-triage.md` and `docs/0130-default-attention-triage.md`.
 
-### Hooks Configuration
+### Loopback Server & Hooks Configuration
+
+`[loopback_server]` owns the HTTP host; `[hooks]` owns one endpoint on it. Before
+this split, `[hooks] enabled = false` silently disabled harness memory, every
+browser surface and the hurl/termctrl/acp-wire viewers.
 
 | Section | Key | Type | Default | Description |
 |---------|-----|------|---------|-------------|
-| `[hooks]` | `enabled` | bool | `true` | Master toggle — enables/disables the Claude Code hook HTTP server |
-| `[hooks]` | `port` | int | `0` | Port to listen on. 0 = OS auto-assigns an available port |
-| `[hooks]` | `show_toasts` | bool | `true` | Show toast notifications for hook events. Toggleable at runtime via command palette |
+| `[loopback_server]` | `enabled` | bool | `true` | Start the loopback HTTP server: harness memory MCP, `#dashboard`/`#gallery`/`#docs`/`#journal`/`#reviews`/`#analyses`/`#commands`/`#tools`, hurl, termctrl, acp-wire, artifact/doc feedback, and `/hook`. Off = lanes run without `krypton-harness-memory` and no surface opens. Load-time only; restart Krypton after changing it |
+| `[loopback_server]` | `port` | int | `8765` | Port to listen on. `0` = OS auto-assigns. A busy fixed port falls back to an ephemeral one |
+| `[hooks]` | `enabled` | bool | `true` | Accept Claude Code hook events on `POST /hook` (`503` when off). Read per request, so Reload Config applies it. Does **not** control the server |
+| `[hooks]` | `animation` | string | `"brainwave"` | Background animation driven by hook lifecycle events: `flame`, `brainwave`, `matrix`, `none`. See doc 0034 |
 | `[acp_controller]` | `enabled` | bool | `true` | Start the authenticated local `kryptonctl` control endpoint. Load-time only; restart Krypton after changing it |
 | `[acp_controller]` | `port` | int | `8766` | Fixed loopback port for the control API (stable URL for external clients). Ephemeral fallback on conflict; `0` = auto-assign. Load-time only. See doc 175 |
 | `[acp_controller]` | `cors_origins` | string[] | `[]` | Exact browser origins allowed to call the control API directly (CORS). Empty = proxy-only (secure default); never `"*"`. Load-time only. See doc 175 |

@@ -817,7 +817,7 @@ export class InputRouter {
       // ! — spec 284: focus the next pane whose program needs you (OSC 7501)
       case '!':
         if (!this.compositor.focusNextProgramAttention()) {
-          this.compositor.notifications?.info('no program needs you', { label: 'STATUS' });
+          console.info('[InputRouter] no program needs you');
         }
         this.toNormal();
         break;
@@ -1086,33 +1086,18 @@ export class InputRouter {
   }
 
   /**
-   * spec 213: re-probe the backend link on demand and report what it found.
+   * spec 213: re-probe the backend link on demand.
    *
-   * The footer segment updates itself from the published signal; the toast is
-   * here because a key that produces no visible change when the state has not
-   * changed reads as a key that did nothing.
+   * The footer segment updates itself from the published signal; the outcome
+   * is only logged (the status rail was removed with spec 40).
    */
   private async probeBackendLink(): Promise<void> {
-    const notify = this.compositor.notifications;
     if (!this.backendLinkProbe) {
-      notify?.warn('backend link probe unavailable', { label: 'XENON' });
+      console.warn('[InputRouter] backend link probe unavailable');
       return;
     }
     const state = await this.backendLinkProbe.probeNow();
-    switch (state) {
-      case 'linked':
-        notify?.success('xenon linked', { label: 'XENON' });
-        break;
-      case 'unauthorized':
-        notify?.warn('xenon rejected the token', { label: 'XENON' });
-        break;
-      case 'offline':
-        notify?.error('xenon unreachable', { label: 'XENON' });
-        break;
-      case 'off':
-        notify?.info('xenon is off', { label: 'XENON' });
-        break;
-    }
+    console.info(`[InputRouter] xenon backend link: ${state}`);
   }
 
   private getFocusedLeaderKeyBindings(): LeaderKeyBinding[] {
@@ -1137,8 +1122,7 @@ export class InputRouter {
     }
 
     if (!(binding.isEnabled?.() ?? true)) {
-      const reason = binding.disabledReason?.() ?? 'Action unavailable';
-      this.compositor.notifications?.warn(reason, { label: 'KEY' });
+      console.warn(`[InputRouter] ${binding.disabledReason?.() ?? 'Action unavailable'}`);
       this.toNormal();
       return true;
     }
@@ -1148,14 +1132,10 @@ export class InputRouter {
       if (result instanceof Promise) {
         result.catch((err: unknown) => {
           console.error(`[InputRouter] Leader action "${binding.key}" failed:`, err);
-          const message = err instanceof Error ? err.message : String(err);
-          this.compositor.notifications?.error(message, { label: 'KEY' });
         });
       }
     } catch (err) {
       console.error(`[InputRouter] Leader action "${binding.key}" failed:`, err);
-      const message = err instanceof Error ? err.message : String(err);
-      this.compositor.notifications?.error(message, { label: 'KEY' });
     }
     this.toNormal();
     return true;

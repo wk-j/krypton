@@ -345,8 +345,7 @@
 
 .krypton-window__project {
   /* Trails the rail, just inside the lane strip (`order: 2`). `order` rather
-     than DOM position, for the same reason the strip uses it: the shared
-     notification control re-appends itself into whichever footer has focus. */
+     than DOM position, because rail items are appended at their own times. */
   order: 1;
   /* Pins the badge-plus-lanes pair right. The strip gave up its own auto margin
      for this (see below) — two auto margins would split the free space and
@@ -464,7 +463,7 @@
    One two-letter drop cap per lane of the harness in this window's focused
    pane, so "what is running here, and which lane am I driving" is legible from
    the window's own rail — with the harness scrolled, zen-collapsed, or
-   unfocused. Pinned to the rail's right edge, past the notification control.
+   unfocused. Pinned to the rail's right edge.
    The active lane magnifies its first two letters the same way the project
    badge magnifies `KR` and adds a small lane number. Inactive lanes are the
    two letters at rail size. No tab surface or motion. */
@@ -478,10 +477,9 @@
      one oversized phrase. Tunable in one place because the right value depends
      on the rail height. */
   --krypton-lane-zoom: 2.9;
-  /* Ends the rail: `order` rather than DOM position, because the shared
-     notification control re-appends itself into whichever footer has focus and
-     would otherwise land after the strip. (Past the project badge at 1 and the
-     diff stat at 2.) */
+  /* Ends the rail: `order` rather than DOM position, because rail items are
+     appended at their own times. (Past the project badge at 1 and the diff
+     stat at 2.) */
   order: 3;
   /* Pins right on its own when nothing else in the rail claims the free space. */
   margin-left: auto;
@@ -507,16 +505,6 @@
    whenever the focused pane has no project, hence `:has()` rather than a
    blanket rule. */
 .krypton-window__footer:has(.krypton-window__project) .krypton-window__lane-strip {
-  margin-left: 10px;
-}
-
-/* `.krypton-notif` already carries `margin-left: auto` and is left of both, so
-   when it is present it does the pushing for the whole group. A decayed
-   notification (`--empty`, spec 40) is `display: none`, so it pushes nothing —
-   the items to its right have to take their own auto margin back, hence the
-   `:not()`. */
-.krypton-window__footer:has(.krypton-notif:not(.krypton-notif--empty))
-  :is(.krypton-window__project, .krypton-window__lane-strip) {
   margin-left: 10px;
 }
 

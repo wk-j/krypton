@@ -1,6 +1,8 @@
 # Claude Code Hook Support — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented (hook toast stack removed 2026-10-15; the notification
+> overlay that briefly carried the messages was removed the same day — hook
+> event text is no longer surfaced anywhere)
 > Date: 2026-03-21
 > Milestone: N/A — New feature
 
@@ -10,7 +12,7 @@ When Claude Code runs inside a Krypton terminal, its hook events (tool approvals
 
 ## Solution
 
-Krypton runs a lightweight HTTP server on localhost that receives Claude Code hook events. The user configures Claude Code's `settings.json` to use HTTP hooks pointing at Krypton's endpoint. When hook events arrive, Krypton emits Tauri events to the frontend, which renders contextual UI (status badges, notification toasts, tool approval widgets) in the terminal window chrome.
+Krypton runs a lightweight HTTP server on localhost that receives Claude Code hook events. The user configures Claude Code's `settings.json` to use HTTP hooks pointing at Krypton's endpoint. When hook events arrive, Krypton emits Tauri events to the frontend, which renders contextual UI (status badge, tool HUD, uplink bar, activity trace) in the terminal window chrome. The event message text itself is not displayed; events with no chrome effect are logged to the console.
 
 ## Affected Files
 
@@ -25,7 +27,7 @@ Krypton runs a lightweight HTTP server on localhost that receives Claude Code ho
 | `src/compositor.ts` | Integrate hook status badge into window chrome |
 | `src/types.ts` | Add hook-related types |
 | `src/main.ts` | Initialize claude-hooks module |
-| `src/styles.css` | Hook UI styles (toast, badge, approval widget) |
+| `src/styles/hooks.css` | Hook UI styles (badge, tool HUD, uplink, activity trace) |
 
 ## Design
 
@@ -167,7 +169,7 @@ All UI uses existing cyberpunk HUD aesthetic (`--krypton-*` CSS custom propertie
                                   └──────────────────────┘
 ```
 
-Five UI elements, all managed by `ClaudeHookManager` in `claude-hooks.ts`:
+Four UI elements, all managed by `ClaudeHookManager` in `claude-hooks.ts`:
 
 | # | Element | Location | CSS class |
 |---|---------|----------|-----------|
@@ -175,13 +177,12 @@ Five UI elements, all managed by `ClaudeHookManager` in `claude-hooks.ts`:
 | 2 | **Tool Execution HUD** | Titlebar, right side | `.krypton-claude-tool` |
 | 3 | **Neural Uplink Bar** | Bottom edge of `.krypton-window__content` | `.krypton-uplink` |
 | 4 | **Activity Trace** | Right edge of `.krypton-window__content` | `.krypton-activity-trace` |
-| 5 | **Intercept Toast** | Fixed, bottom-right of viewport | `.krypton-claude-toast` |
 
 Additionally, `ClaudeHookManager.formatTerminalTitle()` rewrites Claude Code's OSC 0/2 terminal titles into cyberpunk labels (e.g., `NEW CODING SESSION` → `◈ neural_link // online`). This is called from compositor's `onTitleChange` handler but the logic lives in `claude-hooks.ts`.
 
 ### Event → UI Mapping
 
-Each hook event triggers specific changes across the five UI elements. This is the authoritative reference for what happens visually when each event fires.
+Each hook event triggers specific changes across the four UI elements. This is the authoritative reference for what happens visually when each event fires. Events whose only effect was a message (no chrome change) now just hit a `console.log`.
 
 #### `SessionStart`
 
@@ -191,7 +192,6 @@ Each hook event triggers specific changes across the five UI elements. This is t
 | Neural Uplink Bar | Adds `--active` → fades in as solid accent strip at 40% opacity |
 | Tool HUD | No change |
 | Activity Trace | No change |
-| Toast | `SESSION` label (green) — "Session started" |
 | Terminal Title | Claude Code sets OSC 2 title → `formatTerminalTitle()` rewrites it (e.g., `◈ neural_link // online`) |
 
 #### `PreToolUse`
@@ -202,7 +202,6 @@ Each hook event triggers specific changes across the five UI elements. This is t
 | Neural Uplink Bar | Adds `--working` → dual-pulse gradient scrolls left-to-right. Adds `--fast` for Bash/Edit/Write/NotebookEdit (0.9s vs 1.8s animation) |
 | Tool HUD | Decode animation: 6 frames of glitch chars (`░▒▓█▀▄▌▐`) resolve over ~180ms into `▸ <tool> ← <target>`. Target shows abbreviated file path, truncated command, or pattern. Cancels any pending clear timer from a previous PostToolUse |
 | Activity Trace | New tick appended at bottom, colored by tool type: cyan (Edit/Write), amber (Bash), dim cyan (Read/Glob/Grep). Tick fades to invisible over 30s, then removed. Max 20 ticks |
-| Toast | `TOOL` label (cyan) — "`<tool> ← <detail>`" |
 
 #### `PostToolUse`
 
@@ -212,7 +211,6 @@ Each hook event triggers specific changes across the five UI elements. This is t
 | Neural Uplink Bar | Removes `--working`, returns to `--active` (solid strip). If tool response contains error: flashes `--error` (red, 2 blinks over 600ms), then returns to `--active` |
 | Tool HUD | Holds current text for **1.5 seconds**. Then glitch-out animation (2 frames of increasing garble) and hides. If a new PreToolUse arrives during the hold, the clear is cancelled and new tool text decodes in immediately |
 | Activity Trace | If tool had error: additional red tick added |
-| Toast | Success: `DONE` label (dim cyan) — "`<tool> done`". Error: `ERROR` label (red) — "`<tool> failed`" |
 
 #### `Notification`
 
@@ -222,7 +220,6 @@ Each hook event triggers specific changes across the five UI elements. This is t
 | Neural Uplink Bar | No change |
 | Tool HUD | No change |
 | Activity Trace | No change |
-| Toast | `CLAUDE` label (amber) for general, `PERMIT` (amber, brighter) for permission prompts, `ERROR` (red) for errors, `OK` (green) for success |
 
 #### `Stop`
 
@@ -232,27 +229,25 @@ Each hook event triggers specific changes across the five UI elements. This is t
 | Neural Uplink Bar | Removes all modifiers → fades to invisible (`opacity: 0`) |
 | Tool HUD | Cleared if visible |
 | Activity Trace | No change (existing ticks continue fading naturally) |
-| Toast | `STOP` label (magenta) — "Session ended" |
 | Terminal Title | Claude Code may set a final OSC 2 title → `formatTerminalTitle()` rewrites it (e.g., `◈ signal_end // done`) |
 
 #### `InstructionsLoaded`
 
 | Element | Change |
 |---------|--------|
-| Toast | `LOAD` label (dim green) — "Loaded `<abbreviated path>`" |
+| — | No visible change; the event is logged to the console |
 
 #### `UserPromptSubmit`
 
 | Element | Change |
 |---------|--------|
 | Sigil Badge | Session marked active |
-| Toast | `PROMPT` label (blue) — "Prompt submitted" |
 
 #### `PermissionRequest`
 
 | Element | Change |
 |---------|--------|
-| Toast | `PERMIT` label (amber, bright) — "Permission: `<tool_name>`" |
+| — | No visible change; the event is logged to the console |
 
 #### `PostToolUseFailure`
 
@@ -260,81 +255,78 @@ Each hook event triggers specific changes across the five UI elements. This is t
 |---------|--------|
 | Neural Uplink Bar | Flashes `--error` (red, 2 blinks over 600ms) |
 | Activity Trace | Red error tick added |
-| Toast | `ERROR` label (red) — "`<tool> failed — <error>`" |
 
 #### `SubagentStart`
 
 | Element | Change |
 |---------|--------|
 | Activity Trace | Edit tick added |
-| Toast | `AGENT` label (violet) — "Spawned `<subagent_type>`" |
 
 #### `SubagentStop`
 
 | Element | Change |
 |---------|--------|
-| Toast | `AGENT` label (dim violet) — "`<subagent_type>` finished" |
+| — | No visible change; the event is logged to the console |
 
 #### `StopFailure`
 
 | Element | Change |
 |---------|--------|
 | Neural Uplink Bar | Flashes `--error` |
-| Toast | `ERROR` label (red) — "`<error detail>`" |
 
 #### `TeammateIdle`
 
 | Element | Change |
 |---------|--------|
-| Toast | `TEAM` label (teal) — "Teammate idle" |
+| — | No visible change; the event is logged to the console |
 
 #### `TaskCompleted`
 
 | Element | Change |
 |---------|--------|
-| Toast | `TASK` label (green) — "✓ `<task_subject>`" |
+| — | No visible change; the event is logged to the console |
 
 #### `ConfigChange`
 
 | Element | Change |
 |---------|--------|
-| Toast | `CONFIG` label (dim amber) — "Config: `<config_key>`" |
+| — | No visible change; the event is logged to the console |
 
 #### `WorktreeCreate`
 
 | Element | Change |
 |---------|--------|
-| Toast | `TREE` label (dim cyan) — "Worktree: `<abbreviated path>`" |
+| — | No visible change; the event is logged to the console |
 
 #### `WorktreeRemove`
 
 | Element | Change |
 |---------|--------|
-| Toast | `TREE` label (dim cyan) — "Removed `<abbreviated path>`" |
+| — | No visible change; the event is logged to the console |
 
 #### `PreCompact`
 
 | Element | Change |
 |---------|--------|
-| Toast | `COMPACT` label (dim magenta) — "Compacting context…" |
+| — | No visible change; the event is logged to the console |
 
 #### `PostCompact`
 
 | Element | Change |
 |---------|--------|
-| Toast | `COMPACT` label (dim magenta) — "Context compacted" |
+| — | No visible change; the event is logged to the console |
 
 #### `Elicitation`
 
 | Element | Change |
 |---------|--------|
-| Toast | `INPUT` label (amber, bright) — "Input requested" |
+| — | No visible change; the event is logged to the console |
 
 #### `ElicitationResult`
 
 | Element | Change |
 |---------|--------|
-| Toast | `INPUT` label (amber, bright) — "Input received" |
+| — | No visible change; the event is logged to the console |
 
 #### `SessionEnd`
 
@@ -342,7 +334,6 @@ Each hook event triggers specific changes across the five UI elements. This is t
 |---------|--------|
 | Sigil Badge | Session marked inactive, bright flash then fade to dormant |
 | Neural Uplink Bar | Fades to invisible |
-| Toast | `STOP` label (magenta) — "Session terminated" |
 
 ### UI Element Details
 
@@ -382,60 +373,35 @@ Monospace readout in right side of titlebar. Format: `▸ Edit ← main.ts`
 - Layout: `flex-direction: column-reverse`, newest at bottom
 - Max 20 ticks; overflow removes oldest immediately
 
-#### 5. Intercept Toast — Stark HUD Panels (persistent stack)
-
-Fixed-position panel stack at right of viewport (vertically centered). **All events** produce toasts. Toasts are **persistent** — no auto-dismiss. User clicks toast to dismiss.
-
-- **Corner targeting brackets:** `┌ ┐ └ ┘` box-drawing glyphs at corners, stagger-animated on entrance (50ms per corner)
-- **Holographic dot-grid overlay:** `::before` radial-gradient texture tinted per type at 3-4% opacity
-- **Telemetry readout:** Right-aligned micro-text (8px) showing `0xNNNN · HH:MM:SS` — random hex + creation timestamp
-- **Entrance:** 3D perspective slide (`rotateY(-25deg)` → `-18deg`) + scan-line sweep (`::after`) + bracket draw-in
-- **Body:** `rgba(6,10,18,0.94)`, 1px border colored per type, dot-grid overlay
-- **Label:** Bracket-wrapped `[ TOOL ]` with letter-spacing 0.18em, thin underline rule beneath
-- **Hover:** Brackets brighten to 70%, telemetry brightens, border intensifies, 3D tilt shifts forward
-- **Stack:** `column-reverse`, 6px gap, 3D perspective depth stagger (nth-child recedes in Z)
-- Type styles:
-
-| Type | Label | Left stripe / border color |
-|------|-------|---------------------------|
-| `--session` | SESSION | green (`#50dc64`) |
-| `--tool` | TOOL | accent/cyan |
-| `--tool_done` | DONE | dim cyan (35% opacity) |
-| `--notification` | CLAUDE | amber (`#fac863`) |
-| `--permission_prompt` | PERMIT | amber (brighter) |
-| `--error` | ERROR | red (`#ff5050`) |
-| `--success` | OK | green |
-| `--stop` | STOP | magenta (`#c864ff`) |
-| `--instructions` | LOAD | dim green (35% opacity) |
-| `--prompt` | PROMPT | blue (`#64a0ff`) |
-| `--subagent` | AGENT | violet (`#a078ff`) |
-| `--subagent_done` | AGENT | dim violet (35% opacity) |
-| `--teammate` | TEAM | teal (`#50c8b4`) |
-| `--task` | TASK | green (`#50dc64`) |
-| `--config` | CONFIG | dim amber |
-| `--worktree` | TREE | dim cyan |
-| `--compact` | COMPACT | dim magenta (35% opacity) |
-| `--elicitation` | INPUT | amber (bright) |
-
 ### Configuration
 
+Since the `[loopback_server]` split (doc 0006), this section gates hook
+ingestion only. The server that hosts `/hook` — and every other loopback
+surface — is configured in `[loopback_server]`.
+
 ```toml
-[hooks]
-# Enable the HTTP hook server for Claude Code integration
+[loopback_server]
+# The HTTP host serving /hook plus harness memory and the browser surfaces
 enabled = true
 # Port to listen on (0 = auto-assign available port)
-port = 0
-# Show toast notifications for hook events (default: true)
-show_toasts = true
+port = 8765
+
+[hooks]
+# Accept Claude Code hook events on POST /hook (503 when false)
+enabled = true
+# Background animation style: "flame" | "brainwave" | "matrix" | "none"
+animation = "brainwave"
 ```
 
 ### Keybindings / Command Palette
 
-- **Hook Toasts: ON/OFF** — command palette action (`claude.toggle-toasts`) toggles toast notification visibility at runtime. State is also configurable via `[hooks] show_toasts` in TOML (hot-reloadable).
+None. The hook toast stack and its `claude.toggle-toasts` palette action were
+removed, and so was the notification overlay that briefly carried the messages;
+there is no hook-message surface left to switch on or off.
 
 ## Edge Cases
 
-1. **Port conflict** — port 0 (default) lets the OS assign an available port, avoiding conflicts. If a specific port is configured and busy, log error and disable hooks.
+1. **Port conflict** — a busy configured port falls back to an OS-assigned ephemeral port (`[loopback_server] port = 0` asks for that directly). Only a failed fallback bind disables the server; the reason is kept and surfaced by `unavailable_reason()`.
 2. **Multiple Claude Code sessions** — the `session_id` field in hook events distinguishes sessions. Frontend routes events to the correct window by matching the Claude Code cwd against PTY cwd.
 3. **Claude Code not running** — server idles with zero overhead. No polling.
 4. **Hook server crashes** — non-fatal. Terminal continues working. Log error, set HookServer state to disabled.

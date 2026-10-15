@@ -1,6 +1,10 @@
 # Stark HUD Toast Redesign — Implementation Spec
 
-> Status: Implemented
+> Status: Removed 2026-10-15 — the hook toast stack (`.krypton-claude-toast*`,
+> its CSS, `[hooks] show_toasts` / `max_toasts`, and the `claude.toggle-toasts`
+> palette action) is gone. The notification overlay (doc 0040) that briefly
+> carried the hook event messages was removed the same day, so nothing renders
+> hook text now. Kept as design history.
 > Date: 2026-03-26
 > Milestone: N/A — Visual enhancement
 

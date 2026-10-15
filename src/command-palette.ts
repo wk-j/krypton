@@ -957,7 +957,7 @@ export class CommandPalette {
       category: 'Window',
       keybinding: 'Leader !',
       execute: () => {
-        if (!c.focusNextProgramAttention()) c.notifications?.info('no program needs you', { label: 'STATUS' });
+        if (!c.focusNextProgramAttention()) console.info('[Palette] no program needs you');
       },
     });
 
@@ -1113,15 +1113,6 @@ export class CommandPalette {
         execute: () => c.dashboardManager.toggle(dashId),
       });
     }
-
-    // Dynamic: hook toast toggle (shows current state)
-    const toastsOn = c.hookToastsVisible;
-    this.actions.push({
-      id: 'claude.toggle-toasts',
-      label: `Hook Toasts: ${toastsOn ? 'ON' : 'OFF'}`,
-      category: 'Claude Code',
-      execute: () => c.toggleHookToasts(),
-    });
 
     // ACP Harness entry points.
     this.actions.push({

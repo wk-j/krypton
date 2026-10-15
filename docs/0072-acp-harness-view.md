@@ -42,7 +42,7 @@ One prompt has exactly one destination lane: the active tab. There is no broadca
 
 Memory details are specified in `docs/0073-acp-harness-mcp-memory.md`. Older heuristic memory extraction from tool observations and `MEMORY:` response footers is no longer part of the harness memory flow.
 
-If the localhost hook server cannot start, harness memory setup surfaces the recorded startup reason from the backend state. Fixed-port conflicts therefore show the failed bind address and OS error rather than the generic "Krypton hook server is not running" fallback. Hook server failure does not block the ACP Harness itself: the view continues to list and spawn ACP lanes, the composer and memory drawer show memory as unavailable, and lanes run without the `krypton-harness-memory` MCP server.
+If the localhost loopback server cannot start, harness memory setup surfaces the recorded startup reason from the backend state. Fixed-port conflicts therefore show the failed bind address and OS error rather than the generic "Krypton loopback server is not running; set `[loopback_server] enabled = true` in krypton.toml" fallback — which is also what `[loopback_server] enabled = false` produces. Server failure does not block the ACP Harness itself: the view continues to list and spawn ACP lanes, the composer and memory drawer show memory as unavailable, and lanes run without the `krypton-harness-memory` MCP server.
 
 ## Research
 

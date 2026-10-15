@@ -168,6 +168,11 @@ pub struct ClaudeHookEvent {
     pub extra: Option<serde_json::Value>,
 }
 
+/// Returned wherever a loopback URL cannot be built. Names the config section
+/// that controls the server, because `[hooks]` no longer does.
+pub const SERVER_UNAVAILABLE: &str =
+    "Krypton loopback server is not running; set [loopback_server] enabled = true in krypton.toml";
+
 /// Shared state for the axum handler.
 struct HookServerState {
     app_handle: AppHandle,
@@ -451,7 +456,7 @@ impl HookServer {
     pub fn hurl_web_url(&self, cwd: &str) -> Result<String, String> {
         let port = self.get_port();
         if port == 0 {
-            return Err("Krypton hook server is not running".to_string());
+            return Err(SERVER_UNAVAILABLE.to_string());
         }
         let session = self.hurl_sessions.issue(cwd)?;
         Ok(format!("http://127.0.0.1:{port}/hurl/{}", session.token))
@@ -462,7 +467,7 @@ impl HookServer {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
-            .unwrap_or_else(|| "Krypton hook server is not running".to_string())
+            .unwrap_or_else(|| SERVER_UNAVAILABLE.to_string())
     }
 
     fn set_error(&self, error: String) {
@@ -2791,11 +2796,21 @@ struct ReviewQuery {
     file: Option<String>,
 }
 
-/// POST /hook — receive a Claude Code hook event.
+/// POST /hook — receive a Claude Code hook event. `[hooks] enabled` gates this
+/// one endpoint; it is read per request, so Reload Config applies at once.
 async fn handle_hook(
     AxumState(state): AxumState<Arc<HookServerState>>,
     Json(event): Json<ClaudeHookEvent>,
 ) -> StatusCode {
+    let ingest = state
+        .config
+        .read()
+        .map(|cfg| cfg.hooks.enabled)
+        .unwrap_or(true);
+    if !ingest {
+        return StatusCode::SERVICE_UNAVAILABLE;
+    }
+
     log::info!(
         "Claude hook received: {} (tool={:?})",
         event.hook_event_name,

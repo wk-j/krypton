@@ -127,7 +127,7 @@ impl TermctrlMonitor {
 
     pub fn url(&self, port: u16) -> Result<String, String> {
         if port == 0 {
-            return Err("Krypton hook server is not running".to_string());
+            return Err(crate::hook_server::SERVER_UNAVAILABLE.to_string());
         }
         Ok(format!("http://127.0.0.1:{port}/termctrl/{}", self.token))
     }

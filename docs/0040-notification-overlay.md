@@ -1,6 +1,10 @@
 # Notification Overlay — Implementation Spec
 
-> Status: Implemented
+> Status: Removed 2026-10-15 — `src/notification.ts`, the `.krypton-notif`
+> control in the window footer, and the OSC 9 / 777 / 99 handlers it registered
+> are gone. Every caller (hook events, program status, keybinding errors, Xenon
+> probe, workspace recovery, global error handlers) now logs to the console
+> instead. Kept as design history.
 > Date: 2026-03-26
 > Updated: 2026-08-14 — messages decay back to empty (`duration`, `.krypton-notif--empty`)
 > Milestone: M8 — Polish
@@ -50,8 +54,8 @@ export function resolveDismissDelay(duration?: number): number;
 The control lives in `.krypton-window__footer` — 28px of *permanent* chrome shared with
 the spec-153 AI quotas and the spec-218 lane strip — so what sits there has to be current.
 Without a TTL the last message ever fired held the rail for the rest of the session and
-stopped meaning "this just happened"; the boot-time `claudeHooks.toast('Krypton
-initialized')` in particular sat there indefinitely (it has been removed from `main.ts`).
+stopped meaning "this just happened"; a boot-time hook toast in particular sat there
+indefinitely (that call, and the whole hook toast stack, are gone — see doc 0041).
 
 - `DEFAULT_TTL_MS = 9000`. Timed from the **end** of the decode reveal, so a long message
   does not spend its dwell time animating. A new message cancels the pending timer.
@@ -262,4 +266,4 @@ private handleKittyNotification(data: string): void {
 - Notification history/log panel.
 - Grouping/deduplication of identical messages.
 - Backend-originated notifications (this is frontend-only; backend can emit events that frontend handles).
-- Replacing the existing Claude Code toast system (they coexist).
+- Replacing the Claude Code toast system — it coexisted until 2026-10-15, when the toast stack was removed and hook messages became just another `show()` caller (doc 0041).

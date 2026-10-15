@@ -43,6 +43,7 @@ pub struct KryptonConfig {
     pub extensions: ExtensionsConfig,
     pub ssh: SshConfig,
     pub hooks: HooksConfig,
+    pub loopback_server: LoopbackServerConfig,
     pub acp_controller: AcpControllerConfig,
     pub music: MusicConfig,
     pub agent: AgentConfig,
@@ -434,15 +435,10 @@ impl Default for SshConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HooksConfig {
-    /// Enable the HTTP hook server for Claude Code integration
+    /// Ingest Claude Code hook events on `POST /hook`. This gates that one
+    /// endpoint only; the server hosting it is `[loopback_server]`. Read per
+    /// request, so Reload Config applies it without a restart.
     pub enabled: bool,
-    /// Port to listen on. Defaults to 8765; 0 requests an ephemeral port. If a
-    /// configured nonzero port is busy, startup falls back to an ephemeral port.
-    pub port: u16,
-    /// Show toast notifications for hook events
-    pub show_toasts: bool,
-    /// Maximum number of visible toasts (oldest dismissed when exceeded)
-    pub max_toasts: usize,
     /// Background animation style: "flame", "brainwave", "matrix", or "none"
     pub animation: String,
 }
@@ -451,10 +447,35 @@ impl Default for HooksConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            port: 8765,
-            show_toasts: false,
-            max_toasts: 20,
             animation: "brainwave".to_string(),
+        }
+    }
+}
+
+// ─── Loopback server ───────────────────────────────────────────────
+
+/// The one loopback HTTP host (`hook_server.rs`). It serves the harness
+/// memory MCP endpoint, every browser surface (dashboard, gallery, docs,
+/// journal, reviews, analyses, commands, tools), the hurl / termctrl /
+/// acp-wire viewers, artifact and doc feedback, and the Claude Code `/hook`
+/// endpoint. With it off, ACP lanes run without `krypton-harness-memory` and
+/// no `#`-command surface can open.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LoopbackServerConfig {
+    /// Start the loopback server at launch. Load-time only; restart Krypton
+    /// after changing it.
+    pub enabled: bool,
+    /// Port to listen on. Defaults to 8765; 0 requests an ephemeral port. If a
+    /// configured nonzero port is busy, startup falls back to an ephemeral port.
+    pub port: u16,
+}
+
+impl Default for LoopbackServerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            port: 8765,
         }
     }
 }
@@ -1205,5 +1226,23 @@ mod tests {
         assert_eq!(cfg.acp_wire.capture, AcpWireCapture::Full);
         assert_eq!(cfg.acp_wire.full_payload_mb, 64);
         assert!(toml::from_str::<KryptonConfig>("[acp_wire]\ncapture = \"Full\"\n").is_err());
+    }
+
+    #[test]
+    fn hooks_and_loopback_server_switches_are_independent() {
+        // The memory-off bug: a pre-split `[hooks]` (which carried the server's
+        // `enabled`/`port`) must no longer stop the loopback server or move it.
+        let legacy: KryptonConfig =
+            toml::from_str("[hooks]\nenabled = false\nport = 64732\n").unwrap();
+        assert!(!legacy.hooks.enabled);
+        assert!(legacy.loopback_server.enabled);
+        assert_eq!(legacy.loopback_server.port, 8765);
+
+        // And the server switch leaves Claude hook ingestion alone.
+        let split: KryptonConfig =
+            toml::from_str("[loopback_server]\nenabled = false\nport = 64999\n").unwrap();
+        assert!(!split.loopback_server.enabled);
+        assert_eq!(split.loopback_server.port, 64999);
+        assert!(split.hooks.enabled);
     }
 }

@@ -11,7 +11,7 @@ The dashboard is a **fixed page served by the built-in loopback HTTP server**, o
 
 - `GET /dashboard` — serves a standalone HTML page (`src/acp/artifact-dashboard.html`, embedded via `include_str!`). No token, no auth, loopback-only.
 - `GET /telemetry` — token-free JSON `{ harnesses: [ <snapshot>, ... ] }` (all cached harness snapshots via `all_telemetry_snapshots()`). The page polls this relative URL ~1 s.
-- **Stable URL:** `HooksConfig.port` defaults to **8765** (`config.rs`), so the dashboard lives at `http://127.0.0.1:8765/dashboard`. `start()` binds the configured port and falls back to an ephemeral port on conflict (never hard-fails the server); the actual bound port is emitted so the command always builds a working URL.
+- **Stable URL:** `LoopbackServerConfig.port` (`[loopback_server] port`) defaults to **8765** (`config.rs`), so the dashboard lives at `http://127.0.0.1:8765/dashboard`. `start()` binds the configured port and falls back to an ephemeral port on conflict (never hard-fails the server); the actual bound port is emitted so the command always builds a working URL.
 - **Open commands** — an **app-level command**: command palette `Open Lane Monitor Dashboard` + keybinding **`Leader Shift+L`** → `compositor.openDashboard()` (opens from anywhere, like the Usage view's `Leader $`); plus the harness **`#dashboard`** composer command. Both build the URL from `get_hook_server_port` + `open_url` (independent of the memory session).
 - **Kept** from the original design: the `HarnessTelemetryPublisher` (`src/acp/harness-telemetry.ts`) → `acp_publish_telemetry` → per-harness Rust cache pipeline. **Dropped:** the token-gated `/artifact/telemetry/:token` route, `viewerLane`, and the artifact-packaging/open-via-card flow.
 

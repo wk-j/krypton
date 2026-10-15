@@ -71,8 +71,8 @@ keybinding; lane switching stays where it is (`⌘P` lane picker, `⌃1..9`).
   lane marks adjacent to the AI quotas that describe the very same lanes.
 - **Alternative considered — encode lane status (busy/perm/error) in the strip.** Out of
   scope: the request is identity. Status already has colour language inside the harness (rail,
-  lane heads), and duplicating it on the window rail would compete with the notification
-  control that shares this footer. Deferred, not designed away.
+  lane heads), and duplicating it on the window rail would crowd the other readouts that
+  share this footer. Deferred, not designed away.
 
 ## Prior Art
 
@@ -192,7 +192,7 @@ None. The strip is a readout; lane switching keeps its existing bindings (`⌘P`
 
 ### UI Changes
 
-Pinned to the window footer's **right edge**, past the notification control and far right of
+Pinned to the window footer's **right edge**, far right of
 the spec-153 quotas. (Since spec 219 the strip's immediate left neighbour is the project badge,
 whose drop cap is magnified the same way — the two magnified marks sit together on purpose, so
 "which project" and "which lane" are read in one glance. They cannot collide: both scale
@@ -205,10 +205,8 @@ space: it cannot appear without the badge, so the pushing arrangement below is u
 ```html
 <div class="krypton-window__footer">
   <div class="krypton-window__usage-status">…</div>
-  <!-- appended last; `order: 3` also keeps it right of the notification
-       control (which re-appends itself into the focused window's footer), of
-       the spec-219 project badge at `order: 1` and the spec-220 diff stat at 2 -->
-  <div class="krypton-notif">…</div>
+  <!-- appended last; `order: 3` also keeps it right of the spec-219 project
+       badge at `order: 1` and the spec-220 diff stat at 2 -->
   <div class="krypton-window__lane-strip"
        aria-label="harness lanes: Claude-1 (active), Grok-1">
     <span class="krypton-window__lane krypton-window__lane--active"
@@ -224,20 +222,15 @@ space: it cannot appear without the badge, so the pushing arrangement below is u
 </div>
 ```
 
-Right-alignment is held by three rules rather than one, because exactly one item in the rail may
+Right-alignment is held by two rules rather than one, because exactly one item in the rail may
 claim the free space with `margin-left: auto` — two competing auto margins split it and strand the
-leftmost one mid-rail. Whichever of `notif → project badge → strip` is leftmost does the pushing
+leftmost one mid-rail. Whichever of `project badge → strip` is leftmost does the pushing
 and the rest trail it with a fixed gap, so the strip stays against the edge in every combination:
 
 | Rail contents | Who pushes | Strip's margin-left |
 |---------------|-----------|---------------------|
-| strip alone (unfocused window, decayed notification, terminal pane) | the strip | `auto` |
+| strip alone (unfocused window, terminal pane) | the strip | `auto` |
 | badge + strip | the badge | `10px` — `:has(.krypton-window__project)` |
-| notification + (badge) + strip | the notification | `10px` — `:has(.krypton-notif:not(.krypton-notif--empty))` |
-
-The `:not()` matters because a decayed notification is `display: none` (spec 40): it is still in
-the DOM, so a bare `:has(.krypton-notif)` would hand the strip a `10px` margin with nothing left
-in the rail to push it right.
 
 **Three cues mark the one active lane** — so identification never rests on colour alone (every
 lane already *has* a colour, and lane hues repeat past 13 lanes):
@@ -316,4 +309,4 @@ None.
 - [Zellij `status-bar` alias](https://zellij.dev/documentation/status-bar-alias.html) — the bottom status plugin's role and expected contents.
 - [zjstatus](https://github.com/dj95/zjstatus) — separate `tab_active` / `tab_normal` formatting, confirming the two-style approach.
 - [iTerm2 status bar](https://iterm2.com/documentation-status-bar.html) — per-pane status bar configuration, the precedent for scoping the rail to what it describes.
-- Internal: `docs/0153-window-ai-credit-status.md` (the window-footer contract this reuses), `docs/0040-notification-overlay.md` (the footer's other occupant), `docs/0125-lane-rail-disambiguation.md` (logo symbols), `docs/0208-harness-live-assist-mode.md` (lane strip precedent), `docs/0215-stacked-lane-hierarchy.md` (dim-but-keep-the-hue rule).
+- Internal: `docs/0153-window-ai-credit-status.md` (the window-footer contract this reuses), `docs/0040-notification-overlay.md` (the footer's former transient occupant, removed 2026-10-15 — history), `docs/0125-lane-rail-disambiguation.md` (logo symbols), `docs/0208-harness-live-assist-mode.md` (lane strip precedent), `docs/0215-stacked-lane-hierarchy.md` (dim-but-keep-the-hue rule).

@@ -10,9 +10,9 @@ Krypton has no way to know what a program in a terminal pane is doing. A build t
 
 ## Solution
 
-Implement OSC 7501 rev 0.3 as a terminal, frontend-only. Each terminal pane registers an xterm.js OSC handler that parses reports into a per-pane record set held by a new `ProgramStatusStore`. The store applies the spec's lifetime rules and publishes one summary per pane on the ViewBus (`view:program-status`). Chrome shows the summary on the tab dot, the window status dot and accent, and a titlebar chip. The workspace footer counts panes that need attention. `Leader !` jumps to the next one. A pane moving into `blocked`, `error` or `done` while unfocused puts one rate-limited message on the notification rail.
+Implement OSC 7501 rev 0.3 as a terminal, frontend-only. Each terminal pane registers an xterm.js OSC handler that parses reports into a per-pane record set held by a new `ProgramStatusStore`. The store applies the spec's lifetime rules and publishes one summary per pane on the ViewBus (`view:program-status`). Chrome shows the summary on the tab dot, the window status dot and accent, and a titlebar chip. The workspace footer counts panes that need attention. `Leader !` jumps to the next one. A pane moving into `blocked`, `error` or `done` while unfocused writes one rate-limited line to the console (the transient rail that used to carry it was removed 2026-10-15).
 
-Parsing goes through xterm.js's VT parser rather than a Rust byte scanner. It already handles sequences split across chunks, it is how OSC 9/777/99 are handled (`notification.ts`), the feature-detection reply needs the same `onData` path as xterm's own DA1 replies, and RIS is visible there. It also follows the "no VT parsing in Rust" rule.
+Parsing goes through xterm.js's VT parser rather than a Rust byte scanner. It already handles sequences split across chunks, it is where every other OSC Krypton consumes is parsed (OSC 9/777/99 were handled there too until those handlers were removed with the status rail on 2026-10-15), the feature-detection reply needs the same `onData` path as xterm's own DA1 replies, and RIS is visible there. It also follows the "no VT parsing in Rust" rule.
 
 ## Research
 
@@ -124,7 +124,7 @@ class ProgramStatusStore {
 5. Compositor paints tab dot + window border/status dot + titlebar chip (aggregate over panes);
    workspace-footer re-pulls counts and the focused pane's app/msg
 6. Pane not focused and next.state ∈ {blocked, error, done}, entered from a different
-   state → notification rail: "W2·<tab> — <msg or phrase>" labelled <APP> (1 per pane per 5 s)
+   state → console: "W2·<tab> — <msg or phrase>" labelled <APP> (1 per pane per 5 s)
 7. Lifetime: OSC 133;A or process-changed (non-null → null) → dropTransient
              onKey in pane → acknowledge;  ESC c → reset;  pane close/pty-exit → dispose
 ```

@@ -108,7 +108,7 @@ import { ExtensionManager } from './extensions';
 import type { ExtensionHost } from './extensions';
 import { DashboardManager } from './dashboard';
 import type { ClaudeHookManager } from './claude-hooks';
-import type { NotificationController } from './notification';
+import type { RemoteHarnessWorkspace } from './acp/remote-harness-picker';
 import { installPerspectiveMouseFix } from './perspective-fix';
 import { HeaderScope } from './header-scope';
 import { ProgressGauge } from './progress-gauge';
@@ -429,14 +429,9 @@ export class Compositor {
   /** Reference to the frontend theme engine (set via setThemeEngine) */
   private themeEngine: FrontendThemeEngine | null = null;
 
-  // ─── Notification Controller ────────────────────────────────────
-  private notifController: NotificationController | null = null;
-
   // ─── Claude Hook Manager ────────────────────────────────────────
   private claudeHookManager: ClaudeHookManager | null = null;
-  private hookToastsEnabled: boolean = false;
   private pendingHookAnimation: string | null = null;
-  private pendingMaxToasts: number | null = null;
 
   // ─── Config-backed settings ──────────────────────────────────────
   /** xterm.js theme — built-in default, overridable by config theme.colors */
@@ -479,10 +474,8 @@ export class Compositor {
   // ─── Program Status (OSC 7501, spec 284) ──────────────────────────
   /** Per-pane OSC 7501 records. Every terminal pane reports into it; chrome,
    *  footer and `Leader !` read it back. */
-  readonly programStatus = new ProgramStatusStore((viewId, prev, next) =>
-    this.handleProgramStatusChange(viewId, prev, next));
-  /** Last rail announcement per view, for the 5 s per-pane rate limit. */
-  private programStatusAnnouncedAt = new Map<string, number>();
+  readonly programStatus = new ProgramStatusStore((viewId, _prev, next) =>
+    this.handleProgramStatusChange(viewId, next));
 
   // ─── Quick Terminal State ─────────────────────────────────────────
   private qtConfig: QuickTerminalConfig = { ...DEFAULT_QUICK_TERMINAL_CONFIG };
@@ -720,20 +713,12 @@ export class Compositor {
       this.extensions.setEnabled(config.extensions.enabled);
     }
 
-    // Hooks — toggle toast display, max visible toasts, animation type
-    if (config.hooks) {
-      this.hookToastsEnabled = config.hooks.show_toasts;
-      if (config.hooks.animation) {
-        this.pendingHookAnimation = config.hooks.animation;
-      }
-      this.pendingMaxToasts = config.hooks.max_toasts;
+    // Hooks — background animation type
+    if (config.hooks?.animation) {
+      this.pendingHookAnimation = config.hooks.animation;
       if (this.claudeHookManager) {
-        this.claudeHookManager.setToastsEnabled(this.hookToastsEnabled);
-        this.claudeHookManager.setMaxToasts(config.hooks.max_toasts);
-        if (this.pendingHookAnimation) {
-          this.claudeHookManager.setAnimationType(this.pendingHookAnimation);
-          this.pendingHookAnimation = null;
-        }
+        this.claudeHookManager.setAnimationType(this.pendingHookAnimation);
+        this.pendingHookAnimation = null;
       }
     }
 
@@ -742,18 +727,16 @@ export class Compositor {
       const depth = config.visual.perspective_depth;
       const tiltX = config.visual.perspective_tilt_x ?? 0;
       const tiltY = config.visual.perspective_tilt_y ?? 0;
-      // Set perspective variables on both workspace (for windows) and root (for toasts).
-      // Workspace uses `perspective` property (accepts 'none'), toasts use `perspective()`
-      // function in transform (needs a length). Store the numeric value so both work.
+      // Workspace uses the `perspective` property (accepts 'none'); the tilt
+      // angles are mirrored on :root so perspective-fix can read them when no
+      // workspace element is in scope.
       const perspProp = depth > 0 ? `${depth}px` : 'none';
-      const perspFunc = depth > 0 ? `${depth}px` : '9999px';
       const tiltXVal = depth > 0 && tiltX !== 0 ? `${tiltX}deg` : '0deg';
       const tiltYVal = depth > 0 && tiltY !== 0 ? `${tiltY}deg` : '0deg';
       this.workspace.style.setProperty('--krypton-perspective', perspProp);
       this.workspace.style.setProperty('--krypton-perspective-tilt-x', tiltXVal);
       this.workspace.style.setProperty('--krypton-perspective-tilt-y', tiltYVal);
       const root = document.documentElement.style;
-      root.setProperty('--krypton-perspective', perspFunc);
       root.setProperty('--krypton-perspective-tilt-x', tiltXVal);
       root.setProperty('--krypton-perspective-tilt-y', tiltYVal);
 
@@ -916,11 +899,6 @@ export class Compositor {
 
     if (this.customKeyHandler) {
       terminal.attachCustomKeyEventHandler(this.customKeyHandler);
-    }
-
-    // Register OSC notification handlers (OSC 9/777/99)
-    if (this.notifController) {
-      this.notifController.registerOscHandlers(terminal);
     }
 
     const viewId = crypto.randomUUID();
@@ -1323,7 +1301,6 @@ export class Compositor {
 
   private handleProgramStatusChange(
     viewId: string,
-    prev: ProgramStatusSummary | null,
     next: ProgramStatusSummary | null,
   ): void {
     const info = this.findPaneInfoByViewId(viewId);
@@ -1337,23 +1314,6 @@ export class Compositor {
     } else {
       for (const win of this.windows.values()) this.paintProgramStatus(win);
     }
-    if (next === null) {
-      this.programStatusAnnouncedAt.delete(viewId);
-      return;
-    }
-    if (!info || !isAttentionState(next.state) || prev?.state === next.state) return;
-    if (viewId === this.getFocusedViewId() || !this.notifController) return;
-    const now = Date.now();
-    if (now - (this.programStatusAnnouncedAt.get(viewId) ?? 0) < 5000) return;
-    this.programStatusAnnouncedAt.set(viewId, now);
-    // Always name the source pane (spec § Security): a program must not be
-    // able to pose as one running in another terminal.
-    const where = `W${this.windowIds.indexOf(info.win.id) + 1}·${info.tab.title}`;
-    this.notifController.show({
-      message: `${where} — ${programStatusSentence(next)}`,
-      level: next.state === 'blocked' ? 'warning' : next.state === 'error' ? 'error' : 'success',
-      label: (next.app ?? 'status').toUpperCase(),
-    });
   }
 
   /** Paint the tab dots, window accent and titlebar chip of one window from
@@ -1810,9 +1770,8 @@ export class Compositor {
     if (!root) {
       root = document.createElement('div');
       root.className = 'krypton-window__lane-strip';
-      // Trails the rail, pinned to its right edge past the notification
-      // control. CSS `order` does the placing — the notification control
-      // re-appends itself on every focus change, so DOM position cannot.
+      // Trails the rail, pinned to its right edge. CSS `order` does the
+      // placing — other rail items are appended at their own times.
       footer.appendChild(root);
     }
     root.replaceChildren(...marks.map((mark) => this.buildWindowLaneMark(mark)));
@@ -2145,29 +2104,10 @@ export class Compositor {
    */
   setClaudeHookManager(manager: ClaudeHookManager): void {
     this.claudeHookManager = manager;
-    // Apply settings that were configured before the manager existed
-    manager.setToastsEnabled(this.hookToastsEnabled);
-    if (this.pendingMaxToasts !== null) {
-      manager.setMaxToasts(this.pendingMaxToasts);
-      this.pendingMaxToasts = null;
-    }
     if (this.pendingHookAnimation) {
       manager.setAnimationType(this.pendingHookAnimation);
       this.pendingHookAnimation = null;
     }
-  }
-
-  /** Toggle hook toast notifications on/off. Returns new state. */
-  toggleHookToasts(): boolean {
-    if (!this.claudeHookManager) return false;
-    this.hookToastsEnabled = !this.hookToastsEnabled;
-    this.claudeHookManager.setToastsEnabled(this.hookToastsEnabled);
-    return this.hookToastsEnabled;
-  }
-
-  /** Whether hook toasts are currently enabled */
-  get hookToastsVisible(): boolean {
-    return this.hookToastsEnabled;
   }
 
   /** Get the currently focused window ID */
@@ -2223,24 +2163,6 @@ export class Compositor {
   /** Get the dashboard manager instance */
   get dashboardManager(): DashboardManager {
     return this.dashboards;
-  }
-
-  /** Set the notification controller (called from main.ts).
-   *  Wires focus-change to move the control into the active window. */
-  setNotificationController(ctrl: NotificationController): void {
-    this.notifController = ctrl;
-    this.onFocusChange((id) => {
-      if (!id) return;
-      const win = this.windows.get(id);
-      if (win) {
-        ctrl.attachTo(win.element);
-      }
-    });
-  }
-
-  /** Get the notification controller */
-  get notifications(): NotificationController | null {
-    return this.notifController;
   }
 
   // ─── Shader Controls ─────────────────────────────────────────────
@@ -2523,7 +2445,7 @@ export class Compositor {
     perspectiveWrap.className = 'krypton-window__perspective';
     perspectiveWrap.appendChild(content);
 
-    // Footer bar (notification area)
+    // Footer bar (project badge, diff stat, lane strip)
     const footer = document.createElement('div');
     footer.className = 'krypton-window__footer';
 
@@ -4893,15 +4815,11 @@ export class Compositor {
     const launch = await showRemoteHarnessPicker(this.workspace, choices);
     if (!launch) return;
 
-    this.notifController?.show({ message: 'Connecting remote ACP Harness…', level: 'info' });
-    let remote: import('./acp/remote-harness-picker').RemoteHarnessWorkspace;
+    let remote: RemoteHarnessWorkspace;
     try {
       remote = await invoke('remote_harness_connect', { launch });
     } catch (error) {
-      this.notifController?.show({
-        message: `Remote Harness connection failed: ${String(error)}`,
-        level: 'error',
-      });
+      console.error('[Krypton] Remote Harness connection failed:', error);
       return;
     }
 
@@ -4971,7 +4889,7 @@ export class Compositor {
     const pane = this.getFocusedPane();
     if (!pane || pane.contentView) {
       // Not a terminal pane
-      this.notifController?.show({ message: 'Inline AI requires a terminal pane', level: 'warning' });
+      console.warn('[Krypton] Inline AI requires a terminal pane');
       return false;
     }
 
@@ -6673,11 +6591,6 @@ export class Compositor {
     // Attach custom key handler
     if (this.customKeyHandler) {
       terminal.attachCustomKeyEventHandler(this.customKeyHandler);
-    }
-
-    // Register OSC notification handlers (OSC 9/777/99)
-    if (this.notifController) {
-      this.notifController.registerOscHandlers(terminal);
     }
 
     // Listen for shell title changes (OSC 0/2 sequences)

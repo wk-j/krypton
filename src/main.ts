@@ -18,7 +18,6 @@ import { createGitDashboard } from './dashboards/git';
 import { createOpenCodeDashboard } from './dashboards/opencode';
 import { createCursorTrail } from './cursor-trail';
 import { ClaudeHookManager } from './claude-hooks';
-import { NotificationController } from './notification';
 import { MusicPlayer } from './music';
 import { WorkspaceFooter } from './workspace-footer';
 import { BackendLinkProbe } from './backend-link';
@@ -241,22 +240,16 @@ async function main(): Promise<void> {
     whichKey.setMode(mode, contentType, leaderKeys, layoutMode);
   });
 
-  // Initialize notification overlay (bottom-right, OSC-aware)
-  const notifications = new NotificationController();
-  compositor.setNotificationController(notifications);
-
-  // Surface unhandled promise rejections and uncaught errors as visible notifications
+  // Surface unhandled promise rejections and uncaught errors in the console
   window.addEventListener('unhandledrejection', (e) => {
-    const msg = e.reason instanceof Error ? e.reason.message : String(e.reason ?? 'Unknown error');
-    notifications.error(msg, { label: 'ERROR' });
+    console.error('[Krypton] Unhandled rejection:', e.reason);
   });
   window.addEventListener('error', (e) => {
-    notifications.error(e.message || 'Unknown error', { label: 'ERROR' });
+    console.error('[Krypton] Uncaught error:', e.message || e.error);
   });
 
   // Initialize Claude Code hook integration
   const claudeHooks = new ClaudeHookManager();
-  claudeHooks.setNotificationController(notifications);
   compositor.setClaudeHookManager(claudeHooks);
   claudeHooks.init().catch((e) => {
     console.warn('[Krypton] Claude hook integration unavailable:', e);
@@ -275,15 +268,9 @@ async function main(): Promise<void> {
       );
       if (compositor.windowCount === 0) await compositor.createWindow();
       if (restored.missingSessions > 0 || restored.lostContentViews > 0) {
-        notifications.warn(
-          `WebContent reloaded: ${restored.reattachedSessions} PTY(s) reattached; `
+        console.warn(
+          `[Krypton] WebContent reloaded: ${restored.reattachedSessions} PTY(s) reattached; `
           + `${restored.missingSessions + restored.lostContentViews} pane(s) could not be resumed.`,
-          { label: 'RECOVERY', duration: 0 },
-        );
-      } else {
-        notifications.success(
-          `WebContent reloaded: ${restored.reattachedSessions} PTY session(s) reattached.`,
-          { label: 'RECOVERY' },
         );
       }
     } else {
@@ -293,7 +280,7 @@ async function main(): Promise<void> {
   } catch (e) {
     console.error('[Krypton] Workspace bootstrap failed; creating a fresh terminal:', e);
     await compositor.createWindow();
-    notifications.warn('Workspace recovery failed; a fresh terminal was created.', { label: 'RECOVERY' });
+    console.warn('[Krypton] Workspace recovery failed; a fresh terminal was created.');
   }
   compositor.startWorkspacePersistence();
 

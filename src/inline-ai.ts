@@ -56,7 +56,7 @@ const INLINE_ASK_SYSTEM_PROMPT = `You are a concise terminal expert. Answer dire
 - No XML tags.
 - If the answer is a command, show it in a \`code span\` or fenced code block.`;
 
-// ── Glitch-decode animation (borrowed from NotificationController) ────
+// ── Glitch-decode animation (borrowed from the removed notification control, spec 40) ────
 
 const GLYPH_SET = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン０１２３４５６７８９';
 const DECODE_FPS = 40;

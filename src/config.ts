@@ -155,11 +155,11 @@ export interface ExtensionsConfig {
   poll_interval_ms: number;
 }
 
+/** `[hooks]` — Claude Code hook ingestion only. The loopback HTTP server that
+ *  hosts `/hook` (and every browser surface) is `[loopback_server]`, which the
+ *  frontend reaches through the `get_hook_server_port` command. */
 export interface HooksConfig {
   enabled: boolean;
-  port: number;
-  show_toasts: boolean;
-  max_toasts: number;
   animation: string;
 }
 

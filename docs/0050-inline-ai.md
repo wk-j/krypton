@@ -136,9 +136,9 @@ DOM structure appended inside the focused `.krypton-window__content`:
 </div>
 ```
 
-Positioning: absolute, bottom of the window content area (above the footer/notification bar). Full width of the window with padding. Semi-transparent background matching the terminal theme (`var(--krypton-background)` with opacity).
+Positioning: absolute, bottom of the window content area (above the window footer). Full width of the window with padding. Semi-transparent background matching the terminal theme (`var(--krypton-background)` with opacity).
 
-Visual style: Cyberpunk aesthetic consistent with the rest of Krypton — monospace font, accent color borders, subtle glow on the command result. The input prompt uses the theme accent color. Glitch-decode reveal on the result text (reuse pattern from `NotificationController.decodeReveal`).
+Visual style: Cyberpunk aesthetic consistent with the rest of Krypton — monospace font, accent color borders, subtle glow on the command result. The input prompt uses the theme accent color. Glitch-decode reveal on the result text (the reveal now lives only in `src/inline-ai.ts` — its own copy, since the notification control it was borrowed from is gone).
 
 ### Configuration
 
