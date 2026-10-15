@@ -16,6 +16,8 @@ export interface LessonEntry {
   source: string;
   origin: string;
   updated: string;
+  /** spec 299: rule past the Rust cap — held out of the policy, never truncated. */
+  oversized: boolean;
 }
 
 export interface LessonsSnapshot {
@@ -31,6 +33,9 @@ export interface LessonsChangedPayload {
   action: 'created' | 'updated' | 'retired';
   slug: string;
   title: string;
+  /** spec 299: active count after the write, and the store cap. */
+  active: number;
+  cap: number;
 }
 
 export const LESSONS_HEADING =
@@ -91,8 +96,12 @@ export async function watchLessons(): Promise<void> {
   }
 }
 
-/** The policy block every lane reads. Null when there is nothing to inject. */
+/** The policy block every lane reads. Null when there is nothing to inject.
+ *  spec 299: an oversized rule is skipped rather than truncated — a cut
+ *  sentence can drop the exception that made the rule safe. `INDEX.md` names
+ *  it and says how to fix it. */
 export function renderLessonsBlock(entries: readonly LessonEntry[]): string | null {
-  if (entries.length === 0) return null;
-  return [LESSONS_HEADING, ...entries.map((e) => `- [${e.slug}] ${e.rule}`)].join('\n');
+  const injectable = entries.filter((e) => !e.oversized);
+  if (injectable.length === 0) return null;
+  return [LESSONS_HEADING, ...injectable.map((e) => `- [${e.slug}] ${e.rule}`)].join('\n');
 }

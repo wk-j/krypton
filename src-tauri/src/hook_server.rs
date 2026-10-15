@@ -5962,6 +5962,17 @@ fn feedback_token() -> String {
 /// Just-in-time nudge on a `review_outcome` that reported blockers.
 const REVIEW_LESSON_NOTICE: &str = "Reviewers reported blockers. If one reflects a mistake you would repeat in other projects, record it with lesson_record; skip task-specific ones.";
 
+/// spec 299: asks the lane to consolidate on the turn it is already awake for,
+/// when a create raises the active count into `PRESSURE_WATERMARK`.
+const LESSON_PRESSURE_NOTICE: &str = "Before your next one, merge the near-duplicates you can see in your Lessons list — call lesson_record on the slug that already covers a rule rather than adding one beside it — and lesson_retire any the human has since contradicted. If none of them genuinely overlaps, add yours and leave the rest alone.";
+
+fn lesson_pressure_notice(active: usize) -> String {
+    format!(
+        "The lesson store is at {active}/{}. {LESSON_PRESSURE_NOTICE}",
+        crate::lessons::MAX_ACTIVE_LESSONS
+    )
+}
+
 fn lessons_enabled(config: &std::sync::RwLock<crate::config::KryptonConfig>) -> bool {
     config
         .read()
@@ -6065,6 +6076,7 @@ fn emit_lessons_changed(
     action: &str,
     slug: &str,
     title: &str,
+    active: usize,
 ) {
     state.app_handle.emit_or_log(
         "acp-lessons-changed",
@@ -6074,6 +6086,10 @@ fn emit_lessons_changed(
             "action": action,
             "slug": slug,
             "title": title,
+            // spec 299: the transcript line shows the pressure without the
+            // human opening INDEX.md.
+            "active": active,
+            "cap": crate::lessons::MAX_ACTIVE_LESSONS,
         }),
     );
 }
@@ -6106,7 +6122,7 @@ fn lesson_record(
     let slug = input.slug.clone();
     let title = input.title.clone();
     let origin = lesson_origin(&state.hook_server, harness_id);
-    let (action, active) =
+    let (action, pressure) =
         crate::lessons::record(&dir, input, &origin, lane_label, &crate::lessons::today())?;
     emit_lessons_changed(
         state,
@@ -6115,14 +6131,22 @@ fn lesson_record(
         action.as_str(),
         &slug,
         &title,
+        pressure.active,
     );
-    Ok(json!({
+    let mut result = json!({
         "recorded": true,
         "slug": slug,
         "action": action.as_str(),
-        "active": active,
+        "active": pressure.active,
         "cap": crate::lessons::MAX_ACTIVE_LESSONS,
-    }))
+    });
+    // spec 299: only a create that raised the count into the watermark nags, so
+    // the consolidation this asks for carries no second notice. `lessons_enabled`
+    // is already enforced above by `lesson_store_dir`.
+    if pressure.crowded {
+        result["notice"] = json!(lesson_pressure_notice(pressure.active));
+    }
+    Ok(result)
 }
 
 fn lesson_retire(
@@ -6136,7 +6160,9 @@ fn lesson_retire(
     let reason = required_string(&arguments, "reason")?;
     let (title, active) = crate::lessons::retire(&dir, &slug, &reason, &crate::lessons::today())?;
     let slug = slug.trim();
-    emit_lessons_changed(state, harness_id, lane_label, "retired", slug, &title);
+    emit_lessons_changed(
+        state, harness_id, lane_label, "retired", slug, &title, active,
+    );
     Ok(json!({ "retired": true, "slug": slug, "active": active }))
 }
 
@@ -10269,6 +10295,21 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("krypton-lessons-dir-{}", rand_suffix()));
         let server = HookServer::with_memory_dir(dir.clone());
         assert_eq!(server.lessons_dir(), Some(dir.join("lessons")));
+    }
+
+    #[test]
+    fn the_pressure_notice_reports_the_live_count_against_the_cap() {
+        let notice = lesson_pressure_notice(crate::lessons::PRESSURE_WATERMARK + 3);
+        assert!(
+            notice.contains(&format!(
+                "{}/{}",
+                crate::lessons::PRESSURE_WATERMARK + 3,
+                crate::lessons::MAX_ACTIVE_LESSONS
+            )),
+            "{notice}"
+        );
+        assert!(notice.contains("lesson_record"));
+        assert!(notice.contains("lesson_retire"));
     }
 
     #[test]

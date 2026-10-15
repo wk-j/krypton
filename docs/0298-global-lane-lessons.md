@@ -16,7 +16,7 @@ Add **lessons**: short behavioural rules that lanes write when they are correcte
 - **Write:** two new Rust-only MCP tools, `lesson_record` (upsert by slug) and `lesson_retire`. Rust does the writing because lane sandboxes cannot reliably write outside the project cwd. Codex `workspace-write` blocks it, and Claude Code prompts for it.
 - **Trigger:** lanes record only at correction moments. Krypton adds a one-line nudge to redirect envelopes, to the `review_outcome` result when it has blockers, and to the `#review pass` fix prompt. A new `#lesson [hint]` command asks the lane to distill the session's corrections on demand.
 - **Read:** lanes see all active lessons in the policy. Humans read a generated `INDEX.md` in the in-app Markdown Viewer (`#lessons` or the palette). The lesson files are plain markdown, so a human can edit or delete them directly.
-- **Bound:** at most 30 active lessons, with one ≤ 240-char rule each. When the store is full, `lesson_record` refuses a new slug, which forces the lane to merge or retire before adding.
+- **Bound:** at most 30 active lessons, with one ≤ 240-char rule each. From 24 active (spec 299) a `lesson_record` create returns a `notice` asking the lane to consolidate on that turn; at 30 a new slug is refused — with the whole store listed — which forces the lane to merge or retire before adding. A rule a human edited past 240 chars is held out of the injected policy until it is shortened.
 
 Decisions taken:
 - Scope is global only, per the user's request.
@@ -112,26 +112,29 @@ updated: 2026-10-14
 - **Writes** are atomic (temp file + rename, in `lessons.rs`) and serialized by one store mutex.
 - **Update** keeps `created` and `origin` from the first write; `author` and `updated` follow the latest write.
 - **Retire** moves the file to `lessons/retired/<slug>.md` and adds `retired:` / `retired_reason:` lines. Recording that slug again later creates a fresh active lesson.
-- **`INDEX.md`** is regenerated after every write and on every `list_lessons`. Its banner says it is generated. It lists each active lesson in full, plus any files that fail to parse under **Invalid**.
-- **`MAX_ACTIVE_LESSONS = 30`.**
+- **`INDEX.md`** is regenerated after every write and on every `list_lessons`. Its banner says it is generated. It lists each active lesson in full, plus any files that fail to parse under **Invalid**, plus any whose rule is over the length cap under **Oversized rules (not injected)** with its character count (spec 299).
+- **`MAX_ACTIVE_LESSONS = 30`**, with `PRESSURE_WATERMARK = 24` (spec 299): a `lesson_record` create that raises the active count to the watermark or above returns a `notice` asking the lane to consolidate now. An update never carries one, so the consolidation the notice asks for does not nag again.
+- **Create vs update** is decided by the *parsed* set, not by `path.exists()` (spec 299). A slug whose file fails to parse is not an active lesson, so writing onto it is a create and faces the cap — an invalid file can no longer smuggle a 31st lesson into every lane's policy.
+- **Oversized rules are held out, never truncated** (spec 299). A hand-edited `rule` over 240 chars still parses and still counts toward the cap, but `LessonEntry.oversized` is set and `renderLessonsBlock` skips it: half a rule can invert its own meaning. Sharpening it back under the cap clears the flag on the next write.
 
 ```rust
 pub struct Lesson { slug, title, rule, why, how_to_apply, source: LessonSource, origin, author, created, updated }
 pub struct LessonsSnapshot { entries: Vec<LessonEntry>, index_path: String, cap: usize }  // camelCase over IPC
+pub struct Pressure { active: usize, crowded: bool }  // spec 299, returned by record()
 ```
 
 ```ts
-interface LessonEntry { slug: string; title: string; rule: string; source: string; origin: string; updated: string }
+interface LessonEntry { slug: string; title: string; rule: string; source: string; origin: string; updated: string; oversized: boolean }
 ```
 
 ### API
 
 | Surface | Signature | Behaviour |
 |---|---|---|
-| MCP `lesson_record` | `{ slug, title, rule, why, how_to_apply, source }`, all required | Upserts and keeps `created`. A new slug at the cap gives the error *"lesson store is full (30 active) — update the listed lesson that covers this, or lesson_retire one first"*. Returns `{ recorded, slug, action: created\|updated, active, cap }`. |
+| MCP `lesson_record` | `{ slug, title, rule, why, how_to_apply, source }`, all required | Upserts and keeps `created`. A new slug at the cap gives the error *"lesson store is full (30 active) — update the listed lesson that covers this (lesson_record on its slug), or lesson_retire one first. Current store:"* followed by every active lesson, newest first, as `slug (updated) title` with the title clamped to 60 chars (~2.5 KB, paid only at the wall). Returns `{ recorded, slug, action: created\|updated, active, cap }`, plus `notice` when the create crossed the watermark (spec 299). |
 | MCP `lesson_retire` | `{ slug, reason }` | Moves the file to `retired/`. An unknown slug is an error. Returns `{ retired, slug, active }`. |
 | Tauri `list_lessons` | `() -> Result<LessonsSnapshot, String>` | Reads the directory and regenerates `INDEX.md`. |
-| Event `acp-lessons-changed` | `{ harnessId, laneLabel, action, slug, title }` | Emitted after every successful write. |
+| Event `acp-lessons-changed` | `{ harnessId, laneLabel, action, slug, title, active, cap }` | Emitted after every successful write. `active` / `cap` put the pressure in the transcript line (spec 299). |
 
 The `lesson_record` description is the full contract:
 - It records a **global** rule that is injected into every lane of every project.
@@ -187,7 +190,8 @@ At most this is about 30 × 260 ≈ 8k chars, sent only when the policy is (re)s
 3. The hook server validates, locks the store, writes <slug>.md atomically, regenerates INDEX.md,
    and emits acp-lessons-changed.
 4. Every open harness view (any tab, any project) runs refreshLessons() → list_lessons → cache.
-   The originating lane gets the transcript line "[lesson] created: <slug> — <title>" and a flash chip.
+   The originating lane gets the transcript line "[lesson] created: <slug> — <title> (N/30)" and a
+   flash chip; a create that raised the count to 24+ also returns a consolidation notice (spec 299).
 5. The next sendUserPrompt on any lane renders the new lessons block → hashPolicy differs → the
    policy is resent.
 6. A harness opened later in another project calls refreshLessons() at start, so its first policy
@@ -208,7 +212,8 @@ The setting is read at harness start and on Reload Config. Rust reads it from co
 - **Hand-edited or deleted file:** picked up on the next `refreshLessons()` (harness start, `#lessons`, or any change event). There is no filesystem watcher, consistent with the rest of the app.
 - **Malformed file:** skipped from injection with a `warn!`, and listed under **Invalid** in `INDEX.md` so the human sees it.
 - **Two lanes write the same slug at once:** the store mutex serializes them and the last write wins. Both lanes get `action: updated|created` accordingly.
-- **Store full:** the error tells the lane to merge or retire. Updating an existing slug always succeeds.
+- **Store full:** the error tells the lane to merge or retire, and lists every active lesson newest first so it chooses against the live store, not the policy it was handed at the start of the turn. Updating an existing *valid* slug always succeeds; a slug whose file no longer parses counts as a create and is refused until that file is fixed or retired (spec 299).
+- **Rule edited past 240 chars by hand:** the file stays, still counts toward the cap, and is named under **Oversized rules** in `INDEX.md` — but it is not injected, because a truncated rule can invert its own meaning (spec 299).
 - **Pi or other lane without the bus:** reads the lessons block but gets no tool names. `#lesson` still injects the prompt and the lane reports that it has no tools, the same as the `#handoff` precedent.
 - **Remote lane:** writes go to the local store through the forwarded hook-server port.
 - **Lane records a project-specific fact anyway:** the transcript line makes it visible. The human deletes the file or tells a lane to `lesson_retire` it.

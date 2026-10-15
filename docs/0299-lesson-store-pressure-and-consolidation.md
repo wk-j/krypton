@@ -1,6 +1,6 @@
 # Lesson Store Pressure and Consolidation — Implementation Spec
 
-> Status: Draft
+> Status: Implemented (2026-10-15)
 > Date: 2026-10-14
 > Milestone: M-ACP — Harness
 > Builds on: 298 (global lane lessons) · 289 (lane-context delta) · 146 (review_outcome notice) · ADR-0024

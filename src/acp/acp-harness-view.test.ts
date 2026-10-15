@@ -41,6 +41,7 @@ import {
   hashBucket,
   isDirectPeerPeekReasonKey,
   LANE_ACCENT_PALETTE,
+  lessonChangeLine,
   laneAccent,
   laneAccentForLabel,
   pickLaneAccent,
@@ -1260,6 +1261,36 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
     });
     expect(target.ticketWorker).toMatchObject({ laneId: 'Grok-9' });
     expect(workerSets).toHaveLength(1);
+  });
+});
+
+describe('lesson transcript line (spec 299)', () => {
+  it('appends the store pressure after the write', () => {
+    expect(
+      lessonChangeLine({
+        harnessId: 'h1',
+        laneLabel: 'Claude-1',
+        action: 'created',
+        slug: 'verify-first',
+        title: 'Verify before claiming done',
+        active: 27,
+        cap: 30,
+      }),
+    ).toBe('[lesson] created: verify-first — Verify before claiming done (27/30)');
+  });
+
+  it('keeps the bare line when the counts are unusable', () => {
+    expect(
+      lessonChangeLine({
+        harnessId: 'h1',
+        laneLabel: 'Claude-1',
+        action: 'retired',
+        slug: 'stale-rule',
+        title: 'Stale rule',
+        active: 0,
+        cap: 0,
+      }),
+    ).toBe('[lesson] retired: stale-rule — Stale rule');
   });
 });
 

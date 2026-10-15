@@ -817,6 +817,15 @@ export const ACP_HARNESS_LEADER_KEYS: readonly LeaderKeySpec[] = [
   { key: '.', label: 'Directives', group: 'Harness' },
 ];
 
+/** spec 299: the transcript line for a lesson write. The store pressure rides
+ *  along so the human sees a filling store without opening `INDEX.md`. */
+export function lessonChangeLine(payload: LessonsChangedPayload): string {
+  const line = `[lesson] ${payload.action}: ${payload.slug} — ${payload.title}`;
+  const { active, cap } = payload;
+  if (!Number.isFinite(active) || !Number.isFinite(cap) || cap <= 0) return line;
+  return `${line} (${active}/${cap})`;
+}
+
 
 // Tail-window rendering. Only the last N transcript rows render into the DOM
 // to keep the transcript cheap on long sessions. See Spec 103.
@@ -7341,7 +7350,7 @@ export class AcpHarnessView implements ContentView {
   private handleLessonsChanged(payload: LessonsChangedPayload): void {
     const lane = this.lanes.find((l) => l.displayName === payload.laneLabel);
     if (lane) {
-      this.appendTranscript(lane, 'system', `[lesson] ${payload.action}: ${payload.slug} — ${payload.title}`);
+      this.appendTranscript(lane, 'system', lessonChangeLine(payload));
       this.scheduleLaneRender(lane);
     }
     this.flashChip(`lesson ${payload.action}: ${payload.slug}`);
