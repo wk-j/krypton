@@ -1,0 +1,58 @@
+<svg width="980" height="1016" viewBox="0 0 980 1016" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="var(--fg)">
+<style>
+svg{--fg:#b0c4d8;--muted:#6b8299;--border:#2a4a6c;--surface:#10131a;--accent:#00ccff;--success:#46d39a;--warning:#e8c547;--error:#ff3a5c}
+@media (prefers-color-scheme: light){svg{--fg:#1b2430;--muted:#5a6b7d;--border:#b9c7d6;--surface:#f3f6fa;--accent:#0b72b8;--success:#157a52;--warning:#8a6a00;--error:#c0203c}}
+</style>
+<text x="12" y="16" font-size="12" fill="var(--muted)" letter-spacing="1">LAYER 2 — COMPOSITE PRIMITIVES</text>
+<text x="12" y="26" font-size="11" fill="var(--accent)" xml:space="preserve">2.1  Card ⚠  — 9 head+body+action builders → 1;  review card stops borrowing __artifact-head</text>
+<rect x="12" y="32" width="956" height="228" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="42" width="430" height="70" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="63" xml:space="preserve"><tspan fill="var(--muted)">f</tspan>   ◫  Render path comparison</text>
+<text x="36" y="81" xml:space="preserve"><tspan fill="var(--muted)">184.2 KB · a91f3c2</tspan></text>
+<text x="36" y="99" xml:space="preserve"><tspan fill="var(--accent)">press f to open in browser</tspan></text>
+<rect x="26" y="118" width="430" height="70" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="139" xml:space="preserve"><tspan fill="var(--muted)">g</tspan>   ▤  Review Board — spec 301</text>
+<text x="36" y="157" xml:space="preserve"><tspan fill="var(--muted)">3 rounds · 1 blocker</tspan></text>
+<text x="36" y="175" xml:space="preserve"><tspan fill="var(--accent)">press g to open in browser</tspan></text>
+<rect x="26" y="194" width="620" height="52" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="215" xml:space="preserve"><tspan fill="var(--muted)">svg</tspan>                                         <tspan fill="var(--muted)">[ Source ]   [ Copy ]</tspan></text>
+<text x="36" y="233" xml:space="preserve"><tspan fill="var(--muted)">&lt;preview&gt;</tspan></text>
+<text x="12" y="282" font-size="11" fill="var(--accent)" xml:space="preserve">2.2  OverlayShell   — 12 bespoke shells → 1;  owns hidden, body swap, mutual exclusion (7 sites)</text>
+<rect x="12" y="288" width="956" height="184" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="298" width="640" height="160" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="319" xml:space="preserve">Review quality matrix                       <tspan fill="var(--muted)">this session · in-memory · not persisted</tspan></text>
+<text x="36" y="337" xml:space="preserve"><tspan fill="var(--muted)">──────────────────────────────────────────────────────────────────────</tspan></text>
+<text x="36" y="355" xml:space="preserve"><tspan fill="var(--accent)">codex-1 · 4</tspan>    <tspan fill="var(--muted)">grok-1 · 2</tspan></text>
+<text x="36" y="373" xml:space="preserve"><tspan fill="var(--muted)">round    subject                        reviewers   block   warn</tspan></text>
+<text x="36" y="391" xml:space="preserve">12:04    <tspan fill="var(--accent)">▸</tspan> spec 301 diff                      3    <tspan fill="var(--error)">1</tspan>   <tspan fill="var(--warning)">4</tspan></text>
+<text x="36" y="409" xml:space="preserve"><tspan fill="var(--muted)">──────────────────────────────────────────────────────────────────────</tspan></text>
+<text x="36" y="427" xml:space="preserve"><tspan fill="var(--muted)">[h][l] switch lane   [j][k] select round   [esc] close</tspan></text>
+<text x="36" y="445" xml:space="preserve"><tspan fill="var(--muted)">read-only — observation, not a score</tspan></text>
+<text x="12" y="494" font-size="11" fill="var(--accent)" xml:space="preserve">2.3  ListPicker&lt;T&gt;   — 8 verbatim (x+1)%n cursor handlers → 1;  scrollIntoView for every picker</text>
+<rect x="12" y="500" width="956" height="112" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="510" width="620" height="88" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="531" xml:space="preserve"><tspan fill="var(--muted)">// add lane</tspan>                              <tspan fill="var(--muted)">j/k move · enter spawn · esc cancel</tspan></text>
+<text x="36" y="549" xml:space="preserve"><tspan fill="var(--accent)">▸ Claude Code</tspan>        <tspan fill="var(--muted)">claude-code</tspan>      <tspan fill="var(--success)">·2 running</tspan></text>
+<text x="36" y="567" xml:space="preserve">  Codex              <tspan fill="var(--muted)">codex</tspan></text>
+<text x="36" y="585" xml:space="preserve">  Oh My Pi           <tspan fill="var(--muted)">omp</tspan>              <tspan fill="var(--success)">·1 running</tspan></text>
+<text x="12" y="634" font-size="11" fill="var(--accent)" xml:space="preserve">2.4  InlinePalette ⚠  — 4 renderers + 4 key handlers → 1;  data-palette makes each restylable</text>
+<rect x="12" y="640" width="956" height="152" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="650" width="560" height="70" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="671" xml:space="preserve"><tspan fill="var(--muted)">↑↓ / ⌃n⌃p select · Enter/Tab insert · Esc dismiss</tspan></text>
+<text x="36" y="689" xml:space="preserve"><tspan fill="var(--accent)">▸ /resume</tspan>      <tspan fill="var(--muted)">&lt;session&gt;</tspan>     <tspan fill="var(--muted)">resume a previous session</tspan></text>
+<text x="36" y="707" xml:space="preserve">  /compact                   <tspan fill="var(--muted)">compact the context window</tspan></text>
+<rect x="26" y="726" width="560" height="52" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="747" xml:space="preserve"><tspan fill="var(--muted)">inject verb · ↑↓ / ⌃n⌃p select · Tab insert · Esc dismiss</tspan></text>
+<text x="36" y="765" xml:space="preserve"><tspan fill="var(--accent)">▸ {{#review}}</tspan>               <tspan fill="var(--muted)">fan the diff out to reviewer lanes</tspan></text>
+<text x="12" y="814" font-size="11" fill="var(--accent)" xml:space="preserve">2.5  DiffBlock   — paired · unified · raw;  resolves the −(U+2212) vs -(ASCII) mark split</text>
+<rect x="12" y="820" width="956" height="180" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="843" xml:space="preserve"><tspan fill="var(--muted)">paired</tspan>    <tspan fill="var(--muted)">12  12</tspan>     const next = renderTranscriptItem(item, …)</text>
+<text x="26" y="861" xml:space="preserve">          <tspan fill="var(--muted)">13</tspan>      <tspan fill="var(--error)">−</tspan>  <tspan fill="var(--error)">current.replaceWith(next);</tspan></text>
+<text x="26" y="879" xml:space="preserve">              <tspan fill="var(--muted)">13</tspan>  <tspan fill="var(--success)">+</tspan>  <tspan fill="var(--success)">current.replaceChildren(...next.childNodes);</tspan></text>
+<text x="26" y="897" xml:space="preserve">                 <tspan fill="var(--muted)">⋯   context omitted</tspan></text>
+<text x="26" y="915" xml:space="preserve">                     <tspan fill="var(--muted)">… 7 more lines</tspan></text>
+<text x="26" y="933" xml:space="preserve"><tspan fill="var(--muted)">unified</tspan>   src/acp/lane-peek.ts</text>
+<text x="26" y="951" xml:space="preserve">          <tspan fill="var(--accent)">@@</tspan>  <tspan fill="var(--accent)">@@ -412,6 +412,9 @@</tspan></text>
+<text x="26" y="969" xml:space="preserve">           <tspan fill="var(--success)">+  export function patchPeekActiveTool(…)</tspan></text>
+<text x="26" y="987" xml:space="preserve"><tspan fill="var(--muted)">raw</tspan>       <tspan fill="var(--success)">+ the raw unified line, sign included</tspan></text>
+</svg>

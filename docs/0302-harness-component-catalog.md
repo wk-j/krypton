@@ -19,6 +19,10 @@ Preview boxes use `╭╮╰╯` only as a page device to show a component's bou
 real surfaces keep a full 1px border or none (`CLAUDE.md` constraint 9), and nothing here adds a border
 that does not exist today.
 
+Every layer also has a **rendered sheet** in [`images/`](./images/), linked under its heading: one labelled
+panel per entry, drawn from the same strings as the `Example UI` blocks. The sheets carry their own palette
+and follow the reader's light/dark preference.
+
 `L` = live component (`LiveComponent`, refuses structural repaint while the agent is writing into it).
 
 **Packaging.** Each entry becomes one directory `src/acp/components/<name>/` holding its class, its own
@@ -40,6 +44,8 @@ the directory name, is what `styles-ownership.test.ts` checks.
 Not a visual component. `LayoutHost` is what makes every component below *placeable*: it owns the named
 containers, and one declarative table says which container each panel mounts into. Spec 301 §Layout has
 the rationale and the pinned-surface list.
+
+![Layer 0 — LayoutHost slot map](./images/0302-layer0-layout.svg)
 
 ## 0.1 `LayoutHost` / `Slot`
 
@@ -90,6 +96,8 @@ not panels — the line spec 251 already drew).
 # Layer 1 — Leaf primitives
 
 Pure, stateless, no listeners. These are the ones duplicated most.
+
+![Layer 1 — leaf primitives: Chip, Spinner, Meter, StatList, EmptyState, ActionButton, KeyHintBar, TabStrip, Caret](./images/0302-layer1-leaf.svg)
 
 ## 1.1 `Chip`
 
@@ -282,6 +290,8 @@ this component's `glyph` prop.
 
 # Layer 2 — Composite primitives
 
+![Layer 2 — composite primitives: Card, OverlayShell, ListPicker, InlinePalette, DiffBlock](./images/0302-layer2-composite.svg)
+
 ## 2.1 `Card` ⚠
 
 ```ts
@@ -437,6 +447,8 @@ paired diffs use `−` (U+2212), unified uses `-` (ASCII) for the same meaning t
 `TranscriptRow` is the base; one subclass per `item.kind`. Spec 301's `LiveComponent` applies to the four
 rows the agent writes into.
 
+![Layer 3 — transcript rows 1/2: base row, AssistantRow, ThoughtRow, UserRow, ToolRow, SubagentCard, PermissionRow, QuestionRow](./images/0302-layer3a-transcript.svg)
+
 ## 3.0 `TranscriptRow` (base)
 
 ```ts
@@ -580,6 +592,8 @@ ask    Which reconciler should phase 3 use?                        1/2
 **Replaces** `harness-transcript-render.ts:1020-1137` + the cursor handler at `ask-user-question.ts:259-268`
 (now `ListPicker`).
 
+![Layer 3 — transcript rows 2/2: fs rows, InterLaneRow, DocCardRow, UsageRow, SystemRow, ImageStrip, Transcript](./images/0302-layer3b-transcript.svg)
+
 ## 3.8 `FsActivityRow` · 3.9 `FsWriteReviewRow` · 3.10 `ProviderErrorRow`
 
 **Example UI**
@@ -673,6 +687,8 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 
 # Layer 4 — Lane chrome
 
+![Layer 4 — lane chrome: LaneShell, LaneHead, LaneSymbol, LaneStats, RailEntry, LaneRail](./images/0302-layer4-lane-chrome.svg)
+
 | # | Component | Props | Example UI | Replaces |
 |---|---|---|---|---|
 | 4.1 | `LaneShell` | `{ lane, active, zen }` | lane `<section>` holding head · stats · body · rail slots | `acp-harness-view.ts:12945-12994`. **Never rebuilt** → both halves of the `prevScrollTop` dance (capture `:12908-12915`, write-back `:13001-13006`) are deleted — in **phase 4**, the phase that lands this component, never earlier |
@@ -685,6 +701,8 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 ---
 
 # Layer 5 — Right rail
+
+![Layer 5 — right rail: PeekCard, ReviewLoopRows, HeatPanel, ThoughtCard, QueueCard, PlanPanel, TicketDock, AnnotationRail](./images/0302-layer5-right-rail.svg)
 
 | # | Component | Example UI | Replaces |
 |---|---|---|---|
@@ -700,6 +718,8 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 ---
 
 # Layer 6 — Composer
+
+![Layer 6 — composer: Composer, ComposerMeta, DraftLine, StagingStrip, PeerStrip, DictationControl, LiveVoiceStrip, DecisionComposer](./images/0302-layer6-composer.svg)
 
 | # | Component | Example UI | Replaces |
 |---|---|---|---|
@@ -718,6 +738,10 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 
 Each is `OverlayShell` + one body. The six pickers are additionally `ListPicker`; nothing below keeps its own
 cursor math, its own shell, or its own empty state.
+
+![Layer 7 — overlays 1/2: LanePicker, DirectivePicker, ModelPicker, SessionPicker, TicketPicker, RemotePicker, TriageOverlay, ReviewMatrixOverlay](./images/0302-layer7a-overlays.svg)
+
+![Layer 7 — overlays 2/2: ReviewPriorityOverlay, OrchestratorConsole, MemoryDrawer, HelpOverlay, MetricsOverlay, ImageViewer, TimelineCapture, ReviewThreadDialog](./images/0302-layer7b-overlays.svg)
 
 | # | Component | Composition | Example UI (head line) | Replaces |
 |---|---|---|---|---|

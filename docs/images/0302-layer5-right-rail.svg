@@ -1,0 +1,57 @@
+<svg width="980" height="904" viewBox="0 0 980 904" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="var(--fg)">
+<style>
+svg{--fg:#b0c4d8;--muted:#6b8299;--border:#2a4a6c;--surface:#10131a;--accent:#00ccff;--success:#46d39a;--warning:#e8c547;--error:#ff3a5c}
+@media (prefers-color-scheme: light){svg{--fg:#1b2430;--muted:#5a6b7d;--border:#b9c7d6;--surface:#f3f6fa;--accent:#0b72b8;--success:#157a52;--warning:#8a6a00;--error:#c0203c}}
+</style>
+<text x="12" y="16" font-size="12" fill="var(--muted)" letter-spacing="1">LAYER 5 — RIGHT RAIL</text>
+<text x="12" y="26" font-size="11" fill="var(--accent)" xml:space="preserve">5.1  PeekCard   — lane-peek.ts:349-606 + patchPeekActiveTool</text>
+<rect x="12" y="32" width="956" height="130" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="42" width="420" height="106" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="63" xml:space="preserve">codex-1   <tspan fill="var(--warning)">awaiting peer · locked</tspan>   <tspan fill="var(--warning)">5m+</tspan></text>
+<text x="36" y="81" xml:space="preserve"><tspan fill="var(--accent)">▸ approve Bash</tspan>  <tspan fill="var(--muted)">git push origin main</tspan></text>
+<text x="36" y="99" xml:space="preserve"><tspan fill="var(--muted)">tool</tspan>  Edit · lane-peek.ts</text>
+<text x="36" y="117" xml:space="preserve"><tspan fill="var(--muted)">plan</tspan>  <tspan fill="var(--accent)">4/9</tspan>  wire composer meta segments</text>
+<text x="36" y="135" xml:space="preserve"><tspan fill="var(--muted)">sonnet-4-6  128.4k/200.0k  92% 1.4G  mcp 14</tspan></text>
+<text x="12" y="184" font-size="11" fill="var(--accent)" xml:space="preserve">5.2  ReviewLoopRows   — lane-peek.ts:455-497 + patchPeekReviewLoop</text>
+<rect x="12" y="190" width="956" height="72" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="213" xml:space="preserve"><tspan fill="var(--muted)">review</tspan>   pass <tspan fill="var(--accent)">2/4</tspan> · <tspan fill="var(--muted)">reviewing</tspan></text>
+<text x="26" y="231" xml:space="preserve"><tspan fill="var(--muted)">replies</tspan>  codex <tspan fill="var(--success)">PASS</tspan> · salty <tspan fill="var(--muted)">pending</tspan></text>
+<text x="26" y="249" xml:space="preserve"><tspan fill="var(--muted)">rounds</tspan>   3 → 0</text>
+<text x="12" y="284" font-size="11" fill="var(--accent)" xml:space="preserve">5.3  HeatPanel   — fixes the clearest listener-leak site (controls re-attach on every mount today)</text>
+<rect x="12" y="290" width="956" height="76" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="313" xml:space="preserve"><tspan fill="var(--muted)">heat</tspan>  <tspan fill="var(--accent)">[tools]</tspan><tspan fill="var(--muted)">[5m]</tspan></text>
+<text x="26" y="332" xml:space="preserve">  active</text>
+<rect x="95.6" y="322" width="200" height="10" rx="1" fill="none" stroke="var(--border)"/>
+<rect x="96.6" y="323" width="158.4" height="10" rx="1" fill="var(--accent)"/>
+<text x="305.6" y="332" fill="var(--muted)" xml:space="preserve"></text>
+<text x="26" y="352" xml:space="preserve">  peek  </text>
+<rect x="95.6" y="342" width="200" height="10" rx="1" fill="none" stroke="var(--border)"/>
+<rect x="96.6" y="343" width="75.24" height="10" rx="1" fill="var(--muted)"/>
+<text x="305.6" y="352" fill="var(--muted)" xml:space="preserve">0.62</text>
+<text x="12" y="388" font-size="11" fill="var(--accent)" xml:space="preserve">5.4  ThoughtCard  L   — lane-peek.ts:608-642 + patchLaneThoughtCard</text>
+<rect x="12" y="394" width="956" height="54" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="417" xml:space="preserve">claude-1   <tspan fill="var(--muted)">thinking</tspan></text>
+<text x="26" y="435" xml:space="preserve"><tspan fill="var(--muted)">the tail window can slide past a live row…</tspan></text>
+<text x="12" y="470" font-size="11" fill="var(--accent)" xml:space="preserve">5.5  QueueCard   — acp-harness-view.ts:11982-12026</text>
+<rect x="12" y="476" width="956" height="90" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="499" xml:space="preserve"><tspan fill="var(--accent)">⏎ queue (3)</tspan> · <tspan fill="var(--muted)">held behind lane mail</tspan></text>
+<text x="26" y="517" xml:space="preserve"><tspan fill="var(--accent)">▸1</tspan>  rerun the type check            <tspan fill="var(--muted)">→codex-2 +1   img×2</tspan></text>
+<text x="26" y="535" xml:space="preserve"><tspan fill="var(--muted)">2</tspan>   open the model picker</text>
+<text x="26" y="553" xml:space="preserve"><tspan fill="var(--muted)">#unqueue · #queue clear</tspan></text>
+<text x="12" y="588" font-size="11" fill="var(--accent)" xml:space="preserve">5.6  PlanPanel   — acp-harness-view.ts:14668-14726</text>
+<rect x="12" y="594" width="956" height="54" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="617" xml:space="preserve"><tspan fill="var(--muted)">plan</tspan> <tspan fill="var(--accent)">4/9</tspan></text>
+<text x="26" y="635" xml:space="preserve"><tspan fill="var(--success)">✓</tspan> extract kernel     <tspan fill="var(--accent)">▸</tspan> wire composer meta segments     <tspan fill="var(--muted)">· delete signature</tspan></text>
+<text x="12" y="670" font-size="11" fill="var(--accent)" xml:space="preserve">5.7  TicketDock   — harness-ticket-controller.ts:603-676</text>
+<rect x="12" y="676" width="956" height="130" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="686" width="420" height="106" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="707" xml:space="preserve"><tspan fill="var(--muted)">active ticket</tspan></text>
+<text x="36" y="725" xml:space="preserve">Harness UI refactor                             <tspan fill="var(--muted)">›</tspan></text>
+<text x="36" y="743" xml:space="preserve"><tspan fill="var(--muted)">open</tspan>  KR-301</text>
+<text x="36" y="761" xml:space="preserve"><tspan fill="var(--muted)">GitHub</tspan>  wk/krypton  #301 · <tspan fill="var(--success)">open</tspan></text>
+<text x="36" y="779" xml:space="preserve"><tspan fill="var(--muted)">Worker</tspan>  codex-1</text>
+<text x="12" y="828" font-size="11" fill="var(--accent)" xml:space="preserve">5.8  AnnotationRail   — transcript-annotation.ts:329-370</text>
+<rect x="12" y="834" width="956" height="54" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="857" xml:space="preserve"><tspan fill="var(--accent)">ANNOTATED</tspan>  <tspan fill="var(--muted)">3 · 2 unsent</tspan>              <tspan fill="var(--muted)">[ send 2 ]</tspan></text>
+<text x="26" y="875" xml:space="preserve"><tspan fill="var(--muted)">deps tuple needs the lane arg</tspan>            <tspan fill="var(--muted)">[ del ]</tspan></text>
+</svg>

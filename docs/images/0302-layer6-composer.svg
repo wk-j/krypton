@@ -1,0 +1,47 @@
+<svg width="980" height="660" viewBox="0 0 980 660" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="var(--fg)">
+<style>
+svg{--fg:#b0c4d8;--muted:#6b8299;--border:#2a4a6c;--surface:#10131a;--accent:#00ccff;--success:#46d39a;--warning:#e8c547;--error:#ff3a5c}
+@media (prefers-color-scheme: light){svg{--fg:#1b2430;--muted:#5a6b7d;--border:#b9c7d6;--surface:#f3f6fa;--accent:#0b72b8;--success:#157a52;--warning:#8a6a00;--error:#c0203c}}
+</style>
+<text x="12" y="16" font-size="12" fill="var(--muted)" letter-spacing="1">LAYER 6 — COMPOSER</text>
+<text x="12" y="26" font-size="11" fill="var(--accent)" xml:space="preserve">6.1  Composer   — owns --command / --memory / --dictating + slot order;  deletes the 1 Hz innerHTML rebuild</text>
+<rect x="12" y="32" width="956" height="112" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="42" width="620" height="88" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="63" xml:space="preserve"><tspan fill="var(--muted)">composer.above  →  PeerStrip / StagingStrip</tspan></text>
+<text x="36" y="81" xml:space="preserve"><tspan fill="var(--muted)">ComposerMeta</tspan></text>
+<text x="36" y="99" xml:space="preserve">claude-1  <tspan fill="var(--accent)">⠋</tspan>  convert the UI into reusable comp<tspan fill="var(--accent)">█</tspan>onents</text>
+<text x="36" y="117" xml:space="preserve"><tspan fill="var(--muted)">composer.below  (empty)</tspan></text>
+<text x="12" y="166" font-size="11" fill="var(--accent)" xml:space="preserve">6.2  ComposerMeta   — Chip + StatList;  the only part that still ticks</text>
+<rect x="12" y="172" width="956" height="36" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="195" xml:space="preserve"><tspan fill="var(--accent)">reviewing</tspan> · <tspan fill="var(--muted)">2:14 · 3 queued</tspan>      <tspan fill="var(--muted)">auto-edit ⇧⇥</tspan>   <tspan fill="var(--muted)">directive</tspan> 0301-impl   <tspan fill="var(--muted)">⎇ main</tspan>        <tspan fill="var(--muted)">? help</tspan></text>
+<text x="12" y="230" font-size="11" fill="var(--accent)" xml:space="preserve">6.3  DraftLine   — ghost text inline, Caret owns the block</text>
+<rect x="12" y="236" width="956" height="36" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="259" xml:space="preserve">claude-1  <tspan fill="var(--accent)">⠋</tspan>  convert the UI into reusable comp<tspan fill="var(--accent)">█</tspan>onents</text>
+<text x="12" y="294" font-size="11" fill="var(--accent)" xml:space="preserve">6.4  StagingStrip</text>
+<rect x="12" y="300" width="956" height="62" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="312" width="150.8" height="20" rx="3" fill="none" stroke="var(--border)"/>
+<text x="33" y="326" fill="var(--fg)" xml:space="preserve">▣ screenshot.png  x</text>
+<rect x="186.8" y="312" width="129.2" height="20" rx="3" fill="none" stroke="var(--border)"/>
+<text x="193.8" y="326" fill="var(--fg)" xml:space="preserve">▣ diagram.png  x</text>
+<text x="26" y="349" xml:space="preserve"><tspan fill="var(--muted)">2 images · Esc to clear</tspan></text>
+<text x="12" y="384" font-size="11" fill="var(--accent)" xml:space="preserve">6.5  PeerStrip   — lane-peek.ts:731-779</text>
+<rect x="12" y="390" width="956" height="54" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="413" xml:space="preserve"><tspan fill="var(--warning)">⇆ awaiting codex · 5m+</tspan> · <tspan fill="var(--muted)">#cancel drops pending lane-mail wait</tspan></text>
+<text x="26" y="431" xml:space="preserve"><tspan fill="var(--accent)">▼3</tspan> <tspan fill="var(--muted)">lane mails queued</tspan></text>
+<text x="12" y="466" font-size="11" fill="var(--accent)" xml:space="preserve">6.6  DictationControl   — phases MIC · MIC en · REC th · FINALIZING…</text>
+<rect x="12" y="472" width="956" height="44" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="484" width="100.4" height="20" rx="3" fill="none" stroke="var(--error)"/>
+<text x="33" y="498" fill="var(--error)" xml:space="preserve">● REC th  ⌘D</text>
+<rect x="136.4" y="484" width="35.6" height="20" rx="3" fill="none" stroke="var(--border)"/>
+<text x="143.4" y="498" fill="var(--muted)" xml:space="preserve">MIC</text>
+<rect x="182" y="484" width="57.2" height="20" rx="3" fill="none" stroke="var(--border)"/>
+<text x="189" y="498" fill="var(--muted)" xml:space="preserve">MIC en</text>
+<rect x="249.2" y="484" width="93.2" height="20" rx="3" fill="none" stroke="var(--warning)"/>
+<text x="256.2" y="498" fill="var(--warning)" xml:space="preserve">FINALIZING…</text>
+<text x="12" y="538" font-size="11" fill="var(--accent)" xml:space="preserve">6.7  LiveVoiceStrip   — harness-live-voice-controller.ts:461-499</text>
+<rect x="12" y="544" width="956" height="36" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="567" xml:space="preserve"><tspan fill="var(--error)">LIVE</tspan>  <tspan fill="var(--muted)">listening</tspan>  <tspan fill="var(--accent)">alloy</tspan>  <tspan fill="var(--accent)">████</tspan><tspan fill="var(--muted)">░░░░</tspan> <tspan fill="var(--accent)">██</tspan><tspan fill="var(--muted)">░░░░░░</tspan>  <tspan fill="var(--muted)">you:</tspan> refactor the composer   <tspan fill="var(--muted)">⌘⇧L stop · ⌘⌥L mute</tspan></text>
+<text x="12" y="602" font-size="11" fill="var(--accent)" xml:space="preserve">6.8  DecisionComposer   — acp-harness-view.ts:13299-13313</text>
+<rect x="12" y="608" width="956" height="36" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="631" xml:space="preserve"><tspan fill="var(--muted)">perm</tspan>      <tspan fill="var(--accent)">a</tspan> accept · <tspan fill="var(--accent)">A</tspan> all · <tspan fill="var(--error)">r</tspan> reject · <tspan fill="var(--error)">R</tspan> all</text>
+</svg>

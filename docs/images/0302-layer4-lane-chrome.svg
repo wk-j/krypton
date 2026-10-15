@@ -1,0 +1,43 @@
+<svg width="980" height="582" viewBox="0 0 980 582" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="var(--fg)">
+<style>
+svg{--fg:#b0c4d8;--muted:#6b8299;--border:#2a4a6c;--surface:#10131a;--accent:#00ccff;--success:#46d39a;--warning:#e8c547;--error:#ff3a5c}
+@media (prefers-color-scheme: light){svg{--fg:#1b2430;--muted:#5a6b7d;--border:#b9c7d6;--surface:#f3f6fa;--accent:#0b72b8;--success:#157a52;--warning:#8a6a00;--error:#c0203c}}
+</style>
+<text x="12" y="16" font-size="12" fill="var(--muted)" letter-spacing="1">LAYER 4 — LANE CHROME</text>
+<text x="12" y="26" font-size="11" fill="var(--accent)" xml:space="preserve">4.1  LaneShell  { lane, active, zen }   — never rebuilt → both halves of the prevScrollTop dance die</text>
+<rect x="12" y="32" width="956" height="112" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="42" width="420" height="88" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="63" xml:space="preserve"><tspan fill="var(--muted)">LaneHead</tspan></text>
+<text x="36" y="81" xml:space="preserve"><tspan fill="var(--muted)">LaneStats</tspan></text>
+<text x="36" y="99" xml:space="preserve"><tspan fill="var(--muted)">Transcript  (body)</tspan></text>
+<text x="36" y="117" xml:space="preserve"><tspan fill="var(--muted)">rail slots</tspan></text>
+<text x="12" y="166" font-size="11" fill="var(--accent)" xml:space="preserve">4.2  LaneHead  { lane, active, mcp, metrics, inboxDepth, pendingPeers, isOrchestrator }</text>
+<rect x="12" y="172" width="956" height="62" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="195" xml:space="preserve"><tspan fill="var(--accent)">⠙</tspan> claude-1  <tspan fill="var(--muted)">busy</tspan></text>
+<rect x="26" y="202" width="57.2" height="20" rx="3" fill="none" stroke="var(--accent)"/>
+<text x="33" y="216" fill="var(--accent)" xml:space="preserve">◆ orch</text>
+<rect x="93.2" y="202" width="86" height="20" rx="3" fill="none" stroke="var(--border)"/>
+<text x="100.2" y="216" fill="var(--fg)" xml:space="preserve">sonnet-4-6</text>
+<rect x="189.2" y="202" width="71.6" height="20" rx="3" fill="none" stroke="var(--success)"/>
+<text x="196.2" y="216" fill="var(--success)" xml:space="preserve">mcp ✓ 14</text>
+<rect x="270.8" y="202" width="86" height="20" rx="3" fill="none" stroke="var(--border)"/>
+<text x="277.8" y="216" fill="var(--fg)" xml:space="preserve">12.4% 843M</text>
+<rect x="366.8" y="202" width="208.4" height="20" rx="3" fill="none" stroke="var(--border)"/>
+<text x="373.8" y="216" fill="var(--muted)" xml:space="preserve">⚒ Edit src/acp/lane-peek.ts</text>
+<text x="12" y="256" font-size="11" fill="var(--accent)" xml:space="preserve">4.3  LaneSymbol  { status }   — starting · idle · busy · action required · awaiting peer · error · stopped</text>
+<rect x="12" y="262" width="956" height="36" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="285" xml:space="preserve">busy <tspan fill="var(--accent)">⠋</tspan>      perm / peer / error / starting → <tspan fill="var(--muted)">icon</tspan>      idle → <tspan fill="var(--muted)">(empty)</tspan></text>
+<text x="12" y="320" font-size="11" fill="var(--accent)" xml:space="preserve">4.4  LaneStats  { lane, projectDir }   — StatList inline</text>
+<rect x="12" y="326" width="956" height="36" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="349" xml:space="preserve"><tspan fill="var(--muted)">sess</tspan> 4f2a9c · <tspan fill="var(--muted)">krypton</tspan> · ⌁128.4k/200.0k <tspan fill="var(--muted)">(64%)</tspan> · <tspan fill="var(--muted)">cache</tspan> 93% · <tspan fill="var(--accent)">$0.4412 USD</tspan> · <tspan fill="var(--muted)">⚒37</tspan> · <tspan fill="var(--muted)">≡412</tspan></text>
+<text x="12" y="384" font-size="11" fill="var(--accent)" xml:space="preserve">4.5  RailEntry  { lane, active, peerHint, directive, reviewCount }</text>
+<rect x="12" y="390" width="956" height="54" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="413" xml:space="preserve"><tspan fill="var(--success)">●</tspan> <tspan fill="var(--muted)">[logo]</tspan> claude-1 <tspan fill="var(--accent)">⇆ 37</tspan> <tspan fill="var(--muted)">128.4k</tspan></text>
+<text x="26" y="431" xml:space="preserve"><tspan fill="var(--muted)">impl</tspan>  harness UI refactor · <tspan fill="var(--accent)">next send</tspan></text>
+<text x="12" y="466" font-size="11" fill="var(--accent)" xml:space="preserve">4.6  LaneRail  { lanes, activeId }   — zen-mode left rail, reconcile over RailEntry</text>
+<rect x="12" y="472" width="956" height="94" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="482" width="300" height="70" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="503" xml:space="preserve"><tspan fill="var(--success)">●</tspan> claude-1  <tspan fill="var(--accent)">⇆ 37</tspan>  <tspan fill="var(--muted)">128.4k</tspan></text>
+<text x="36" y="521" xml:space="preserve"><tspan fill="var(--muted)">○</tspan> codex-1   <tspan fill="var(--warning)">5m+</tspan></text>
+<text x="36" y="539" xml:space="preserve"><tspan fill="var(--muted)">✓</tspan> grok-1    <tspan fill="var(--muted)">idle</tspan></text>
+</svg>

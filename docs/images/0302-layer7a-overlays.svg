@@ -1,0 +1,55 @@
+<svg width="980" height="996" viewBox="0 0 980 996" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="var(--fg)">
+<style>
+svg{--fg:#b0c4d8;--muted:#6b8299;--border:#2a4a6c;--surface:#10131a;--accent:#00ccff;--success:#46d39a;--warning:#e8c547;--error:#ff3a5c}
+@media (prefers-color-scheme: light){svg{--fg:#1b2430;--muted:#5a6b7d;--border:#b9c7d6;--surface:#f3f6fa;--accent:#0b72b8;--success:#157a52;--warning:#8a6a00;--error:#c0203c}}
+</style>
+<text x="12" y="16" font-size="12" fill="var(--muted)" letter-spacing="1">LAYER 7 — OVERLAYS  (1/2)   — each = OverlayShell + one body;  six also ListPicker</text>
+<text x="12" y="26" font-size="11" fill="var(--accent)" xml:space="preserve">7.1  LanePicker</text>
+<rect x="12" y="32" width="956" height="94" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="42" width="620" height="52" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="63" xml:space="preserve"><tspan fill="var(--muted)">// add lane · directive: 0301-impl</tspan></text>
+<text x="36" y="81" xml:space="preserve"><tspan fill="var(--accent)">▸ Claude Code</tspan>        <tspan fill="var(--muted)">claude-code</tspan>      <tspan fill="var(--success)">·2 running</tspan></text>
+<text x="26" y="113" xml:space="preserve"><tspan fill="var(--muted)">Shell + ListPicker   ← acp-harness-view.ts:12669-12712</tspan></text>
+<text x="12" y="148" font-size="11" fill="var(--accent)" xml:space="preserve">7.2  DirectivePicker</text>
+<rect x="12" y="154" width="956" height="94" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="164" width="620" height="52" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="185" xml:space="preserve"><tspan fill="var(--muted)">// directive · claude-1</tspan></text>
+<text x="36" y="203" xml:space="preserve"><tspan fill="var(--accent)">▸ 0301-impl</tspan>   <tspan fill="var(--muted)">harness UI refactor — phase 2</tspan></text>
+<text x="26" y="235" xml:space="preserve"><tspan fill="var(--muted)">Shell + ListPicker + preview pane   ← :12715-12777</tspan></text>
+<text x="12" y="270" font-size="11" fill="var(--accent)" xml:space="preserve">7.3  ModelPicker</text>
+<rect x="12" y="276" width="956" height="94" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="286" width="620" height="52" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="307" xml:space="preserve"><tspan fill="var(--muted)">// model · claude-1</tspan></text>
+<text x="36" y="325" xml:space="preserve"><tspan fill="var(--accent)">▸ claude-sonnet-4-5</tspan>   <tspan fill="var(--muted)">200k ctx</tspan></text>
+<text x="26" y="357" xml:space="preserve"><tspan fill="var(--muted)">Shell + ListPicker   ← :12779-12818</tspan></text>
+<text x="12" y="392" font-size="11" fill="var(--accent)" xml:space="preserve">7.4  SessionPicker</text>
+<rect x="12" y="398" width="956" height="94" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="408" width="620" height="52" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="429" xml:space="preserve"><tspan fill="var(--muted)">// claude-code sessions</tspan></text>
+<text x="36" y="447" xml:space="preserve"><tspan fill="var(--accent)">▸ 4f2a9c</tspan>  <tspan fill="var(--muted)">krypton · 2h ago · 14 turns</tspan></text>
+<text x="26" y="479" xml:space="preserve"><tspan fill="var(--muted)">Shell + ListPicker, 4 phases: backend · loading · error · list   ← :12820-12894</tspan></text>
+<text x="12" y="514" font-size="11" fill="var(--accent)" xml:space="preserve">7.5  TicketPicker</text>
+<rect x="12" y="520" width="956" height="94" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="530" width="620" height="52" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="551" xml:space="preserve">local tickets + GitHub            <tspan fill="var(--muted)">target: codex-1 · idle</tspan></text>
+<text x="36" y="569" xml:space="preserve"><tspan fill="var(--accent)">[ Open 7 ]</tspan> <tspan fill="var(--muted)">[ Closed 23 ]</tspan>      <tspan fill="var(--accent)">▸ KR-301</tspan>  Harness UI refactor</text>
+<text x="26" y="601" xml:space="preserve"><tspan fill="var(--muted)">Shell + TabStrip + filter + ListPicker + ActionButton row   ← harness-ticket-controller.ts:678-783</tspan></text>
+<text x="12" y="636" font-size="11" fill="var(--accent)" xml:space="preserve">7.6  RemotePicker</text>
+<rect x="12" y="642" width="956" height="94" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="652" width="620" height="52" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="673" xml:space="preserve"><tspan fill="var(--muted)">remote harness</tspan></text>
+<text x="36" y="691" xml:space="preserve"><tspan fill="var(--accent)">▸ studio.local</tspan>  <tspan fill="var(--muted)">3 lanes · 12ms</tspan></text>
+<text x="26" y="723" xml:space="preserve"><tspan fill="var(--muted)">Shell + ListPicker   ← remote-harness-picker.ts:69-170</tspan></text>
+<text x="12" y="758" font-size="11" fill="var(--accent)" xml:space="preserve">7.7  TriageOverlay</text>
+<rect x="12" y="764" width="956" height="94" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="774" width="620" height="52" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="795" xml:space="preserve">Judgement queue                   <tspan fill="var(--muted)">2 / 5</tspan></text>
+<text x="36" y="813" xml:space="preserve"><tspan fill="var(--warning)">▸</tspan> keep the keyed reconciler?   <tspan fill="var(--muted)">redirect →</tspan> tell codex to re-check<tspan fill="var(--accent)">▋</tspan></text>
+<text x="26" y="845" xml:space="preserve"><tspan fill="var(--muted)">Shell + Card(judgement) + StatList + KeyHintBar   ← attention-overlay.ts:59-198</tspan></text>
+<text x="12" y="880" font-size="11" fill="var(--accent)" xml:space="preserve">7.8  ReviewMatrixOverlay</text>
+<rect x="12" y="886" width="956" height="94" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="896" width="620" height="52" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="917" xml:space="preserve">Review quality matrix             <tspan fill="var(--muted)">this session · in-memory</tspan></text>
+<text x="36" y="935" xml:space="preserve"><tspan fill="var(--accent)">codex-1 · 4</tspan>  <tspan fill="var(--muted)">grok-1 · 2</tspan>      12:04  <tspan fill="var(--accent)">▸</tspan> spec 301 diff   3  <tspan fill="var(--error)">1</tspan>  <tspan fill="var(--warning)">4</tspan></text>
+<text x="26" y="967" xml:space="preserve"><tspan fill="var(--muted)">Shell + TabStrip + table + KeyHintBar   ← :5297-5480; deletes the inline-style findings block</tspan></text>
+</svg>

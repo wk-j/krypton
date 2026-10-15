@@ -1,0 +1,52 @@
+<svg width="980" height="842" viewBox="0 0 980 842" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="var(--fg)">
+<style>
+svg{--fg:#b0c4d8;--muted:#6b8299;--border:#2a4a6c;--surface:#10131a;--accent:#00ccff;--success:#46d39a;--warning:#e8c547;--error:#ff3a5c}
+@media (prefers-color-scheme: light){svg{--fg:#1b2430;--muted:#5a6b7d;--border:#b9c7d6;--surface:#f3f6fa;--accent:#0b72b8;--success:#157a52;--warning:#8a6a00;--error:#c0203c}}
+</style>
+<text x="12" y="16" font-size="12" fill="var(--muted)" letter-spacing="1">LAYER 3 — TRANSCRIPT ROWS  (2/2)</text>
+<text x="12" y="26" font-size="11" fill="var(--accent)" xml:space="preserve">3.8 · 3.9 · 3.10  FsActivityRow · FsWriteReviewRow · ProviderErrorRow</text>
+<rect x="12" y="32" width="956" height="90" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="55" xml:space="preserve"><tspan fill="var(--muted)">fs</tspan>     <tspan fill="var(--accent)">read</tspan>   src/acp/list.ts</text>
+<text x="26" y="73" xml:space="preserve"><tspan fill="var(--muted)">fs</tspan>     <tspan fill="var(--accent)">write</tspan>  src/ui/component.ts                                   <tspan fill="var(--error)">✗ EACCES</tspan></text>
+<text x="26" y="91" xml:space="preserve"><tspan fill="var(--muted)">write</tspan>  src/ui/list.ts    <tspan fill="var(--success)">+18</tspan> <tspan fill="var(--muted)">−0</tspan>     <tspan fill="var(--muted)">[ apply ]   [ reject ]</tspan></text>
+<text x="26" y="109" xml:space="preserve"><tspan fill="var(--muted)">agent</tspan>  <tspan fill="var(--warning)">⚠ rate_limited · 429 — retry in 32s</tspan></text>
+<text x="12" y="144" font-size="11" fill="var(--accent)" xml:space="preserve">3.11  InterLaneRow   — wrapper modifiers --mail-in | --mail-out | --mail-done</text>
+<rect x="12" y="150" width="956" height="54" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="173" xml:space="preserve"><tspan fill="var(--muted)">mail</tspan> <tspan fill="var(--accent)">←</tspan>  codex-1          please check the deps tuple in ToolRow</text>
+<text x="26" y="191" xml:space="preserve"><tspan fill="var(--muted)">mail</tspan> <tspan fill="var(--accent)">→</tspan>  grok-1  <tspan fill="var(--success)">done</tspan>     ack — looks right</text>
+<text x="12" y="226" font-size="11" fill="var(--accent)" xml:space="preserve">3.12  DocCardRow (artifact + review)   — one component, two kind values</text>
+<rect x="12" y="232" width="956" height="98" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="242" width="470" height="34" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="263" xml:space="preserve"><tspan fill="var(--muted)">f</tspan>   ◫  Render path comparison          <tspan fill="var(--muted)">184.2 KB · a91f3c2</tspan></text>
+<rect x="26" y="282" width="470" height="34" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="303" xml:space="preserve"><tspan fill="var(--muted)">g</tspan>   ▤  Review Board — spec 301         <tspan fill="var(--muted)">own block: acp-harness__review-card</tspan></text>
+<text x="12" y="352" font-size="11" fill="var(--accent)" xml:space="preserve">3.13  UsageRow   — contain: content, no animation (pinned by harness-transcript-render.test.ts)</text>
+<rect x="12" y="358" width="956" height="128" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="381" xml:space="preserve"><tspan fill="var(--muted)">usage</tspan>  2026-10-15                                                <tspan fill="var(--muted)">14 turns</tspan></text>
+<text x="26" y="400" xml:space="preserve">       Cache hit  </text>
+<rect x="167.6" y="390" width="132" height="10" fill="var(--success)"/>
+<rect x="299.6" y="390" width="40" height="10" fill="var(--accent)"/>
+<rect x="339.6" y="390" width="28" height="10" fill="var(--muted)"/>
+<text x="377.6" y="400" fill="var(--muted)" xml:space="preserve">93%</text>
+<text x="26" y="419" xml:space="preserve">       <tspan fill="var(--muted)">Model              Turns   Input    Output</tspan></text>
+<text x="26" y="437" xml:space="preserve">       claude-sonnet-4-5     <tspan fill="var(--muted)">11</tspan>   <tspan fill="var(--muted)">182.0k</tspan>    <tspan fill="var(--muted)">12.4k</tspan></text>
+<text x="26" y="455" xml:space="preserve">       gpt-5-codex            <tspan fill="var(--muted)">3</tspan>    <tspan fill="var(--muted)">24.1k</tspan>     <tspan fill="var(--muted)">3.0k</tspan></text>
+<text x="26" y="473" xml:space="preserve">       <tspan fill="var(--accent)">$0.4412 USD</tspan></text>
+<text x="12" y="508" font-size="11" fill="var(--accent)" xml:space="preserve">3.14  SystemRow + HiddenRowsIndicator</text>
+<rect x="12" y="514" width="956" height="72" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="537" xml:space="preserve"><tspan fill="var(--muted)">sys</tspan>    lane restarted — session 4f2a9c</text>
+<text x="26" y="555" xml:space="preserve"><tspan fill="var(--muted)">sys</tspan>    <tspan fill="var(--muted)">↑ 142 earlier rows hidden — Ctrl+H show 60 more</tspan></text>
+<text x="26" y="573" xml:space="preserve"><tspan fill="var(--muted)">event</tspan>  reviewer-1 finished round 2</text>
+<text x="12" y="608" font-size="11" fill="var(--accent)" xml:space="preserve">3.15 · 3.16  ImageStrip · ResourceRail   — late Git/thumbnail state patches only this component</text>
+<rect x="12" y="614" width="956" height="54" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="637" xml:space="preserve">        <tspan fill="var(--accent)">[▣][▣][▣]</tspan>   <tspan fill="var(--muted)">3 images</tspan></text>
+<text x="26" y="655" xml:space="preserve">        <tspan fill="var(--muted)">REFERENCES</tspan>   docs/0301-harness-ui-components.md · src/ui/list.ts</text>
+<text x="12" y="690" font-size="11" fill="var(--accent)" xml:space="preserve">3.17  Transcript (list container)   — reconcile over the tail window, scroll anchor, sticky bottom</text>
+<rect x="12" y="696" width="956" height="130" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="706" width="620" height="106" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="727" xml:space="preserve"><tspan fill="var(--muted)">↑ 142 earlier rows hidden</tspan></text>
+<text x="36" y="745" xml:space="preserve"><tspan fill="var(--muted)">user</tspan>   refactor harness view into reusable components</text>
+<text x="36" y="763" xml:space="preserve"><tspan fill="var(--muted)">agent</tspan>  the reconciler keeps node identity…</text>
+<text x="36" y="781" xml:space="preserve"><tspan fill="var(--muted)">tool</tspan>   <tspan fill="var(--accent)">⠙</tspan> execute  npm run check                            <tspan fill="var(--muted)">1.4s</tspan></text>
+<text x="36" y="799" xml:space="preserve"><tspan fill="var(--muted)">⌄ stick to bottom · ResizeObserver · smooth-follow glide</tspan></text>
+</svg>

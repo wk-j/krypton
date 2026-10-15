@@ -1,0 +1,55 @@
+<svg width="980" height="972" viewBox="0 0 980 972" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="var(--fg)">
+<style>
+svg{--fg:#b0c4d8;--muted:#6b8299;--border:#2a4a6c;--surface:#10131a;--accent:#00ccff;--success:#46d39a;--warning:#e8c547;--error:#ff3a5c}
+@media (prefers-color-scheme: light){svg{--fg:#1b2430;--muted:#5a6b7d;--border:#b9c7d6;--surface:#f3f6fa;--accent:#0b72b8;--success:#157a52;--warning:#8a6a00;--error:#c0203c}}
+</style>
+<text x="12" y="16" font-size="12" fill="var(--muted)" letter-spacing="1">LAYER 3 — TRANSCRIPT ROWS  (1/2)   — data-render-signature disappears; deps live on each subclass</text>
+<text x="12" y="26" font-size="11" fill="var(--accent)" xml:space="preserve">3.0  TranscriptRow (base)   — wrapper, label, body, image strip; owns --enter + animationend</text>
+<rect x="12" y="32" width="956" height="130" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="42" width="420" height="70" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="63" xml:space="preserve"><tspan fill="var(--muted)">agent</tspan>  &lt;body&gt;</text>
+<text x="36" y="81" xml:space="preserve"><tspan fill="var(--muted)">tool</tspan>   &lt;body&gt;</text>
+<text x="36" y="99" xml:space="preserve"><tspan fill="var(--muted)">perm</tspan>   &lt;body&gt;</text>
+<text x="26" y="131" xml:space="preserve"><tspan fill="var(--muted)">labels: sys · user · agent · thought · tool · perm · ask · mem · sh · fs</tspan></text>
+<text x="26" y="149" xml:space="preserve"><tspan fill="var(--muted)">       write · mail · html · review · restart   + usage · event</tspan></text>
+<text x="12" y="184" font-size="11" fill="var(--accent)" xml:space="preserve">3.1  AssistantRow  L   — deps [markdownHtml, replyingToLaneMail, resources, gitRefs, annotations]</text>
+<rect x="12" y="190" width="956" height="72" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="213" xml:space="preserve"><tspan fill="var(--muted)">agent</tspan>  <tspan fill="var(--accent)">▰▰▰</tspan><tspan fill="var(--muted)">▱▱</tspan></text>
+<text x="26" y="231" xml:space="preserve">       The reconciler keeps node identity, so a sealed row never repaints.</text>
+<text x="26" y="249" xml:space="preserve">       <tspan fill="var(--muted)">REFERENCES</tspan>   src/acp/list.ts  ·  <tspan fill="var(--accent)">main@a91f3c2</tspan></text>
+<text x="12" y="284" font-size="11" fill="var(--accent)" xml:space="preserve">3.2  ThoughtRow  L   — seal() must not touch body.firstChild identity (spec 114 rev 19)</text>
+<rect x="12" y="290" width="956" height="54" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="313" xml:space="preserve"><tspan fill="var(--muted)">thought</tspan> <tspan fill="var(--accent)">▰▰▰▰</tspan><tspan fill="var(--muted)">▱</tspan> extended</text>
+<text x="26" y="331" xml:space="preserve">        <tspan fill="var(--muted)">Considering whether the tail window can slide past a live row…</tspan></text>
+<text x="12" y="366" font-size="11" fill="var(--accent)" xml:space="preserve">3.3  UserRow  L   — label modifiers --steer · --steer-pending · --voice</text>
+<rect x="12" y="372" width="956" height="72" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="395" xml:space="preserve"><tspan fill="var(--muted)">user</tspan>       refactor harness view into reusable components</text>
+<text x="26" y="413" xml:space="preserve"><tspan fill="var(--warning)">steer…</tspan>     also check the scroll anchor</text>
+<text x="26" y="431" xml:space="preserve"><tspan fill="var(--muted)">user · </tspan><tspan fill="var(--accent)">voice</tspan>   open the model picker</text>
+<text x="12" y="466" font-size="11" fill="var(--accent)" xml:space="preserve">3.4  ToolRow  L   — 10 Object.is compares replace a joined signature string</text>
+<rect x="12" y="472" width="956" height="130" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="495" xml:space="preserve"><tspan fill="var(--muted)">tool</tspan>  <tspan fill="var(--accent)">⠙</tspan>  <tspan fill="var(--accent)">execute</tspan>  npm run check                                  <tspan fill="var(--muted)">1.4s</tspan></text>
+<text x="26" y="513" xml:space="preserve">         <tspan fill="var(--muted)">exit</tspan>  <tspan fill="var(--success)">0</tspan></text>
+<rect x="26" y="518" width="480" height="52" rx="2" fill="none" stroke="var(--border)"/>
+<text x="36" y="539" xml:space="preserve"><tspan fill="var(--muted)">stdout</tspan></text>
+<text x="36" y="557" xml:space="preserve">&gt; tsc --noEmit</text>
+<text x="26" y="589" xml:space="preserve"><tspan fill="var(--muted)">tool</tspan>  <tspan fill="var(--success)">✓</tspan>  <tspan fill="var(--accent)">edit</tspan>     src/acp/list.ts                     <tspan fill="var(--success)">+42</tspan> <tspan fill="var(--error)">−8</tspan>   <tspan fill="var(--muted)">0.3s</tspan></text>
+<text x="12" y="624" font-size="11" fill="var(--accent)" xml:space="preserve">3.5  SubagentCard  L   — morphSubagentCard becomes appendChunk()</text>
+<rect x="12" y="630" width="956" height="90" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="653" xml:space="preserve">        <tspan fill="var(--accent)">●</tspan> scout-1    <tspan fill="var(--muted)">explore</tspan>   reading src/acp/lane-peek.ts   <tspan fill="var(--muted)">14 tools · 8k tok · 42s</tspan></text>
+<text x="26" y="671" xml:space="preserve">          <tspan fill="var(--muted)">↳ Grep · Read · Read</tspan></text>
+<text x="26" y="689" xml:space="preserve">        <tspan fill="var(--success)">✓</tspan> scout-2    <tspan fill="var(--muted)">review</tspan>    done                          <tspan fill="var(--muted)">9 tools · 4k tok · 31s</tspan></text>
+<text x="26" y="707" xml:space="preserve">        <tspan fill="var(--muted)">+2 more</tspan>        <tspan fill="var(--muted)">status glyphs  ○ ● ✓ ✗ –</tspan></text>
+<text x="12" y="742" font-size="11" fill="var(--accent)" xml:space="preserve">3.6  PermissionRow   — one row carries the whole pending → accepted/rejected/auto/failed lifecycle</text>
+<rect x="12" y="748" width="956" height="72" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="771" xml:space="preserve"><tspan fill="var(--muted)">perm</tspan>   <tspan fill="var(--accent)">Bash</tspan>   git push origin main</text>
+<text x="26" y="789" xml:space="preserve">       <tspan fill="var(--muted)">a accept · A all · r reject · R all</tspan></text>
+<text x="26" y="807" xml:space="preserve"><tspan fill="var(--muted)">perm</tspan> <tspan fill="var(--success)">✓ accepted · auto (harness bus)</tspan></text>
+<text x="12" y="842" font-size="11" fill="var(--accent)" xml:space="preserve">3.7  QuestionRow   — cursor handler moves to ListPicker</text>
+<rect x="12" y="848" width="956" height="108" rx="3" fill="none" stroke="var(--border)"/>
+<text x="26" y="871" xml:space="preserve"><tspan fill="var(--muted)">ask</tspan>    Which reconciler should phase 3 use?                        <tspan fill="var(--muted)">1/2</tspan></text>
+<text x="26" y="889" xml:space="preserve">       <tspan fill="var(--accent)">1</tspan>  keyed reconcile      <tspan fill="var(--muted)">node identity preserved</tspan></text>
+<text x="26" y="907" xml:space="preserve">       <tspan fill="var(--muted)">2</tspan>  morph                <tspan fill="var(--muted)">diff against a fresh tree</tspan></text>
+<text x="26" y="925" xml:space="preserve">       <tspan fill="var(--muted)">z</tspan>  Other</text>
+<text x="26" y="943" xml:space="preserve">       <tspan fill="var(--muted)">1–9 pick · Enter · x skip · z other</tspan></text>
+</svg>

@@ -1,0 +1,41 @@
+<svg width="980" height="402" viewBox="0 0 980 402" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="var(--fg)">
+<style>
+svg{--fg:#b0c4d8;--muted:#6b8299;--border:#2a4a6c;--surface:#10131a;--accent:#00ccff;--success:#46d39a;--warning:#e8c547;--error:#ff3a5c}
+@media (prefers-color-scheme: light){svg{--fg:#1b2430;--muted:#5a6b7d;--border:#b9c7d6;--surface:#f3f6fa;--accent:#0b72b8;--success:#157a52;--warning:#8a6a00;--error:#c0203c}}
+</style>
+<text x="12" y="16" font-size="12" fill="var(--muted)" letter-spacing="1">LAYER 0 — LAYOUT</text>
+<text x="12" y="26" font-size="11" fill="var(--accent)" xml:space="preserve">0.1  LayoutHost / Slot   — 7 named slots; moving a panel is one table line, no CSS</text>
+<rect x="12" y="32" width="956" height="354" rx="3" fill="none" stroke="var(--border)"/>
+<rect x="26" y="42" width="700" height="48" rx="2" fill="none" stroke="var(--border)"/>
+<text x="34" y="55" font-size="10" fill="var(--muted)" xml:space="preserve">lane.head</text>
+<text x="36" y="72" xml:space="preserve"><tspan fill="var(--accent)">⠙</tspan> claude-1  <tspan fill="var(--muted)">busy</tspan>  sonnet-4-6  <tspan fill="var(--success)">mcp ✓ 14</tspan>  12.4% 843M</text>
+<text x="36" y="87" xml:space="preserve"><tspan fill="var(--muted)">sess 4f2a9c · krypton · ⌁128.4k/200.0k (64%) · $0.4412 USD</tspan></text>
+<rect x="26" y="96" width="700" height="22" rx="2" fill="none" stroke="var(--border)" stroke-dasharray="4 4"/>
+<text x="34" y="109" font-size="10" fill="var(--muted)" xml:space="preserve">lane.understats</text>
+<text x="672" y="109" font-size="10" fill="var(--muted)">(empty)</text>
+<rect x="26" y="124" width="440" height="150" rx="2" fill="none" stroke="var(--accent)"/>
+<text x="34" y="137" font-size="10" fill="var(--muted)" xml:space="preserve">transcript  — PINNED, never reparented</text>
+<text x="38" y="160" xml:space="preserve"><tspan fill="var(--muted)">agent</tspan>  the reconciler keeps node identity…</text>
+<text x="38" y="178" xml:space="preserve"><tspan fill="var(--muted)">tool</tspan>   <tspan fill="var(--accent)">⠙</tspan> execute  npm run check</text>
+<rect x="478" y="124" width="248" height="86" rx="2" fill="none" stroke="var(--border)"/>
+<text x="486" y="137" font-size="10" fill="var(--muted)" xml:space="preserve">rail.top</text>
+<text x="488" y="160" xml:space="preserve">plan        <tspan fill="var(--accent)">4/9</tspan></text>
+<text x="488" y="178" xml:space="preserve">peek        codex-1  <tspan fill="var(--warning)">5m+</tspan></text>
+<text x="488" y="196" xml:space="preserve">thought     <tspan fill="var(--muted)">thinking…</tspan></text>
+<rect x="478" y="218" width="248" height="56" rx="2" fill="none" stroke="var(--border)"/>
+<text x="486" y="231" font-size="10" fill="var(--muted)" xml:space="preserve">rail.bottom</text>
+<text x="488" y="254" xml:space="preserve"><tspan fill="var(--accent)">⏎</tspan> queue (3)</text>
+<rect x="26" y="282" width="700" height="24" rx="2" fill="none" stroke="var(--border)"/>
+<text x="34" y="295" font-size="10" fill="var(--muted)" xml:space="preserve">composer.above</text>
+<text x="176" y="299" xml:space="preserve"><tspan fill="var(--warning)">⇆ awaiting codex · 5m+ · #cancel drops pending lane-mail wait</tspan></text>
+<rect x="26" y="312" width="700" height="30" rx="2" fill="none" stroke="var(--accent)"/>
+<text x="34" y="325" font-size="10" fill="var(--muted)" xml:space="preserve">composer  — PINNED</text>
+<text x="176" y="332" xml:space="preserve">claude-1  <tspan fill="var(--accent)">⠋</tspan>  convert the UI into reusable comp<tspan fill="var(--accent)">█</tspan>onents</text>
+<rect x="26" y="348" width="700" height="22" rx="2" fill="none" stroke="var(--border)" stroke-dasharray="4 4"/>
+<text x="34" y="361" font-size="10" fill="var(--muted)" xml:space="preserve">composer.below</text>
+<text x="672" y="361" font-size="10" fill="var(--muted)">(empty)</text>
+<rect x="746" y="124" width="200" height="66" rx="2" fill="none" stroke="var(--border)"/>
+<text x="754" y="137" font-size="10" fill="var(--muted)" xml:space="preserve">dock.right</text>
+<text x="756" y="160" xml:space="preserve"><tspan fill="var(--muted)">active ticket</tspan></text>
+<text x="756" y="178" xml:space="preserve">KR-301  <tspan fill="var(--success)">open</tspan></text>
+</svg>
