@@ -1,0 +1,1473 @@
+/* ═══════════════════════════════════════════════════════════════
+   HARNESS SHELL — shared rules with no component owner
+   Spec 301 phase 6 §"Phase 6 is a sweep, but 'unowned' is not 'dead'".
+
+   What survives the carve-out, and why it lives here instead of in a
+   component directory:
+
+   1. The shell itself — root, body, dashboard, lane boxes, the lane-rail
+      slot containers, the ticket-dock column. These are PLACES the layout
+      owns, not components; `acp-harness-view.ts` builds them directly.
+   2. Runtime-composed modifiers — `acp-harness__lane--${lane.status}`
+      (`components/lane-shell/index.ts:97`) and `acp-harness__msg--${kind}` /
+      `--${status}` (`components/transcript-row/shared.ts:79-80`). A grep
+      cannot see these uses, so the sweep may not attribute them to a
+      directory, and deleting one is unprovable. Each group below names the
+      call site that composes it.
+   3. Markdown output — `.acp-harness__msg-body--markdown *` styles nodes
+      `md.parse`/`smd` emit (`harness-markdown.ts`), which no component
+      builds and therefore no component owns.
+
+   Layer: `krypton.base`, so a component sheet (`krypton.component`) always
+   outranks anything left here. Order is declared in src/styles/layers.css.
+   The harness scheme overrides that stayed shell-level are at the bottom of
+   this file, in `krypton.scheme`.
+   ═══════════════════════════════════════════════════════════════ */
+@layer krypton.base {
+/* ── Root · `acp-harness-view.ts:1482` sets `element.className`; the
+      `--concise` / `--zen` / `--panels-hidden` toggles at `:11593-11595`
+      and the `--ticket-*` toggles at `harness-ticket-controller.ts:594-601`
+      compose on top of it. ──────────────────────────────────── */
+
+.acp-harness {
+  container-type: inline-size;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--agent-text, var(--krypton-fg, #d8e8d8));
+  /* Transparent root — let the host window backdrop (--krypton-backdrop-color)
+   * and the workspace behind it show through, matching terminal windows. */
+  background: transparent;
+  /* Harness CSS was authored against krypton-dark phosphor. These aliases
+   * retarget that paint at the active color theme so light/custom themes
+   * don't leave dark-navy slabs on frost. */
+  --agent-accent: var(--agent-green, #8effb0);
+  --agent-user: var(--agent-cyan, #6dd0ff);
+  --agent-error: var(--agent-red, #ff6d8a);
+  font-family: var(--agent-font, var(--krypton-font-family, monospace));
+  font-size: var(--krypton-font-size, 13px);
+  outline: none;
+
+  /* spec 125 — lane-rail disambiguation palette. Scoped to the harness so
+   * other surfaces don't inherit these tokens; themes can override by
+   * redeclaring under a more specific selector. */
+  --krypton-role-analysis: #6fb8d9;
+  --krypton-role-review:   #d9c66f;
+  --krypton-role-impl:     #6fd994;
+  --krypton-role-plan:     #b86fd9;
+  --krypton-role-explore:  #d9886f;
+  --krypton-role-hash-1:   #d96fb3;
+  --krypton-role-hash-2:   #6f8fd9;
+  --krypton-role-hash-3:   #d9a86f;
+
+  --krypton-backend-claude:   #d97757;
+  --krypton-backend-codex:    #d7e7f0;
+  --krypton-backend-opencode: #c186d9;
+  --krypton-backend-pi:       #6fd9c0;
+  --krypton-backend-droid:    #d9a86f;
+  --krypton-backend-cursor:   #c0c0c0;
+  --krypton-backend-junie:    #d96fb3;
+  --krypton-backend-omp:      #d9c66f;
+  --krypton-backend-grok:     #5ce6a8;
+  --krypton-backend-copilot:  #7fa8ff;
+  --krypton-backend-mimo:     #ff8552;
+  --krypton-backend-cline:    #56d6c0;
+  --krypton-backend-antigravity: #ff7ad9;
+
+  /* Transcript message-body accents. Carried as a background tint (no
+   * side-stripe) so the accent is themeable and the chrome stays flat. */
+  --acp-accent-shell:      var(--agent-gold, #ffd166);
+  --acp-accent-shell-fail: var(--agent-error, #ff6b8b);
+  --acp-accent-quote:      #d6b8ff;
+  --acp-accent-danger:     #ff7878;
+}
+
+/* Remote (ssh) connection badge · `acp-harness-view.ts:6026`; the
+   `[data-state]` values come from the same writer. */
+.acp-harness__remote-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid rgba(109, 208, 255, 0.26);
+  background: rgba(21, 45, 57, 0.48);
+  color: var(--agent-user, #6dd0ff);
+  font-size: 0.82em;
+}
+
+.acp-harness__remote-status[data-state='disconnected'] {
+  border-color: rgba(255, 109, 138, 0.42);
+  background: rgba(69, 22, 35, 0.52);
+  color: var(--agent-error, #ff6d8a);
+}
+
+.acp-harness__remote-status[data-state='connecting'],
+.acp-harness__remote-status[data-state='closing'] {
+  opacity: 0.72;
+}
+
+/* Ticket dock column · `harness-ticket-controller.ts:94` builds the dock,
+   `:594-601` toggles the `.acp-harness--ticket-active|-collapsed|-expanded`
+   root classes that gate every rule in this group. */
+/* spec 238: the active ticket is a flush split pane of the harness window,
+   not a nested 8px card. Dashboard yields exactly the panel width; Lane Peek
+   keeps its own 12px rail inset. Compact state is a 46px expand handle. */
+.acp-harness--ticket-active .acp-harness__dashboard {
+  margin-right: 352px;
+}
+
+.acp-harness--ticket-collapsed .acp-harness__dashboard {
+  margin-right: 46px;
+}
+
+.acp-harness__ticket-dock {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  width: 352px;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  contain: layout paint;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88);
+  /* Same as the harness root: a solid slab hid the host window backdrop
+     that the dashboard and lane body already show through. */
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: 1em;
+  line-height: 1.5;
+}
+
+.acp-harness__ticket-dock[hidden] {
+  display: none;
+}
+
+.acp-harness--ticket-collapsed .acp-harness__ticket-dock {
+  width: 46px;
+  overflow: hidden;
+  line-height: 1;
+}
+
+.acp-harness__ticket-dock section {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 176, 0, 0.11);
+}
+
+.acp-harness__ticket-dock section h3 {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 5px;
+  color: #ffcb5b;
+  font: inherit;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.acp-harness__ticket-dock section h3 span {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+}
+
+.acp-harness__ticket-dock section p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.acp-harness__ticket-dock ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.acp-harness__ticket-dock li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0;
+}
+
+.acp-harness__ticket-dock li span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acp-harness__ticket-dock li em {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.40);
+  font-style: normal;
+}
+
+@container (max-width: 959px) {
+  .acp-harness--ticket-expanded .acp-harness__dashboard {
+    margin-right: 0;
+  }
+
+  .acp-harness--ticket-expanded .acp-harness__lane-rail {
+    visibility: hidden;
+  }
+
+  .acp-harness--ticket-expanded .acp-harness__ticket-dock {
+    width: min(352px, 100%);
+    box-shadow: -12px 0 28px rgba(0, 0, 0, 0.45);
+  }
+}
+
+/* Shell boxes · `acp-harness-view.ts:6043` (`__body`), `:6045`
+   (`__dashboard`), `:12228` (`__body-cell`, zen). */
+.acp-harness__body {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.acp-harness__dashboard {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  /* Top wash dropped — flat dashboard. Dot-grid texture follows the theme accent. */
+  background:
+    radial-gradient(circle at 12px 12px, rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.018) 1px, transparent 1px);
+  background-size: 10px 10px;
+}
+
+/* Lane box · `components/lane-shell/index.ts:96-97` writes
+   `acp-harness__lane` + `--active`/`--collapsed` + `acp-harness__lane--${next.lane.status}`.
+   The status modifier is composed at runtime, so no grep can enumerate its
+   values; the `--busy`/`--needs_permission` rules below are reachable only
+   through it. */
+.acp-harness__lane {
+  min-width: 0;
+  position: relative;
+}
+
+/* spec 215: a collapsed lane is an identity band, not a log line — the lane's
+   own accent carries a 6% full-width tint, so the roster of switchable lanes
+   stays legible without reading the names. No separator line: adjacent bands
+   part ways by their own tints. */
+.acp-harness__lane--collapsed {
+  flex: 0 0 28px;
+  background: color-mix(in srgb, var(--acp-lane-accent, #0cf) 6%, var(--agent-surface-mid, rgba(6, 10, 18, 0.55)));
+}
+
+/* spec 215: the active lane announces itself at its head band (below), not
+   with a body wash — the old 3.5% fading gradient sat under the perceptual
+   threshold on the transparent backdrop. */
+.acp-harness__lane--active {
+  flex: 1 1 0;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  background: var(--agent-surface-mid, rgba(6, 10, 18, 0.48));
+}
+
+/* Icon glyphs · `harness-icons.ts:135` `harnessIcon(id, cls)`; the only
+   modifier any caller passes is `acp-harness__icon--dot`
+   (`harness-lane-chrome.ts:109,361,369,385,399,510`). */
+/* Lane-bar telemetry icons (SVG icon pass) — sized to the text cell, recolour
+   via currentColor so they follow their container (lane accent / status). Same
+   <symbol>/<use> engine + currentColor as the backend logos and the workspace
+   footer; no glyph-font dependency. */
+.acp-harness__icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.13em;
+  flex: 0 0 auto;
+}
+
+.acp-harness__icon--dot {
+  width: 0.78em;
+  height: 0.78em;
+}
+
+/* Reachable only through `acp-harness__lane--${lane.status}`
+   (`components/lane-shell/index.ts:97`). The `--error` and `--awaiting_peer`
+   twins of the first rule moved with the head they tint
+   (`components/lane-head/lane-head.css:29,35`); `--busy` and
+   `--needs_permission` have no counterpart there, so they stay. */
+.acp-harness__lane--busy .acp-harness__lane-head {
+  color: var(--krypton-window-accent, #0cf);
+  text-decoration: none;
+  text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.24);
+}
+
+.acp-harness__lane--needs_permission .acp-harness__lane-head {
+  color: var(--agent-gold, #ffd166);
+  text-decoration: none;
+  text-shadow: 0 0 8px rgba(255, 209, 102, 0.34);
+}
+
+.acp-harness__lane--needs_permission.acp-harness__lane--collapsed {
+  background: rgba(255, 209, 102, 0.1);
+  box-shadow:
+    inset 0 0 10px rgba(255, 209, 102, 0.08),
+    0 0 8px rgba(255, 209, 102, 0.12);
+}
+
+/* Transcript rows · every `acp-harness__msg--*` below is composed by
+   `components/transcript-row/shared.ts:79-80`
+   (`acp-harness__msg--${item.kind}` and `--${item.status}`), so the kind and
+   status sets are open and cannot be grepped. `__msg-label--steer`,
+   `--steer-pending` and `--voice` come from `components/user-row/index.ts:63-66`. */
+/* Spec 120 — lane mail rows use the assistant markdown body; color tokens on label + meta only. */
+.acp-harness__msg--mail-in .acp-harness__msg-label {
+  color: rgba(184, 166, 255, 0.88);
+}
+
+.acp-harness__msg--mail-out .acp-harness__msg-label {
+  color: rgba(120, 200, 255, 0.88);
+}
+
+.acp-harness__msg--mail-done .acp-harness__msg-body {
+  opacity: 0.82;
+}
+
+/* Transcript scroll container · `components/lane-shell/index.ts`. Pinned by
+   spec 301 §Layout: the layout may resize this slot, never move the node. */
+.acp-harness__lane-body {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-anchor: none;
+  padding: 8px 12px 22px;
+  scroll-padding-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  scrollbar-width: thin;
+  /* Spec 114: isolate paint of the scrolling transcript from adjacent
+     lane chrome. The scroll container is already an overflow boundary
+     so `paint` containment is safe; combined with `layout` it lets the
+     browser skip ancestor reflow when a long message reflows internally. */
+  contain: layout paint;
+}
+
+/* Rail slot containers · `acp-harness-view.ts:6209` (`__lane-rail`), `:1097`
+   (`__lane-rail__slot`, with `data-slot` written by the same `RailSlot`),
+   `:1081` and `harness-ticket-controller.ts:91` (`__layout-slot`). A slot is
+   a PLACE, not a panel — see spec 301 §Layout. */
+.acp-harness__lane-rail {
+  position: absolute;
+  top: 36px;
+  right: 12px;
+  width: 320px;
+  max-width: calc(100% - 24px);
+  align-items: flex-end;
+  max-height: calc(100% - 36px - 56px);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Spec 301 §Layout — a `LayoutHost` slot container. A slot is a named PLACE in
+   the layout table, not a box: `display: contents` keeps the panels it holds as
+   direct flex children of the rail, so every per-panel sizing rule below still
+   applies to exactly the box it was written for. */
+.acp-harness__layout-slot {
+  display: contents;
+}
+
+.acp-harness__lane-rail__slot {
+  pointer-events: auto;
+  flex: 0 1 auto;
+  width: 320px;
+  min-height: 0;
+  max-height: 50%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.acp-harness__lane-rail__slot[hidden] {
+  display: none;
+}
+
+/* spec 216 — own slot, same 320px column as peek/pins. Extra height for the body. */
+.acp-harness__lane-rail__slot[data-slot="thought"] {
+  max-height: 70%;
+}
+
+/* spec 136: prompt-queue slot — bottom-anchored, never crushed. flex-shrink:0 +
+   capped height so the plan/peek slots above absorb the squeeze when all three
+   are present; margin-top:auto pins it to the rail bottom near the composer. */
+.acp-harness__lane-rail__slot[data-slot="queue"] {
+  flex-shrink: 0;
+  max-height: clamp(72px, 30%, 160px);
+  margin-top: auto;
+}
+
+/* Row skeleton · `components/transcript-row/shared.ts:79-80`. */
+.acp-harness__msg {
+  display: grid;
+  grid-template-columns: 7.5ch minmax(0, 1fr);
+  align-items: start;
+  gap: 6px;
+  padding: 1px 0 1px 4px;
+  border-left: 2px solid transparent;
+}
+
+.acp-harness__msg-label {
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36);
+  letter-spacing: 0.08em;
+  font-size: 0.64em;
+  line-height: 1.45;
+  text-transform: uppercase;
+  text-align: right;
+  text-decoration: none;
+  justify-self: end;
+}
+
+.acp-harness__msg-body {
+  min-width: 0;
+  white-space: pre-wrap;
+  line-height: 1.36;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8);
+  overflow-wrap: anywhere;
+}
+
+/* Image strip · `components/image-strip/index.ts:52,65,78` and `:102`, which
+   composes `acp-harness__image-tile--${image.state}` (`released`, `missing`,
+   `rejected`, …). `harness-image-viewer.ts:65` reuses `__image-tile`. */
+/* spec 281 — inline image strip beneath a row body (column 2 of the row grid). */
+.acp-harness__images {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.acp-harness__image-thumb {
+  position: relative;
+  margin: 0;
+  max-width: min(100%, 480px);
+  padding: 3px;
+  border: 1px solid rgba(109, 208, 255, 0.26);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: rgba(109, 208, 255, 0.045);
+  cursor: zoom-in;
+}
+
+.acp-harness__image-thumb img {
+  display: block;
+  max-width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+}
+
+.acp-harness__image-thumb figcaption {
+  margin-top: 2px;
+  overflow: hidden;
+  color: rgba(109, 208, 255, 0.72);
+  font-size: 0.76em;
+  letter-spacing: 0.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acp-harness__image-thumb--hinted {
+  border-color: var(--agent-user, #6dd0ff);
+  background: rgba(109, 208, 255, 0.16);
+}
+
+.acp-harness__image-hint {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  min-width: 1.5em;
+  padding: 1px 4px;
+  text-align: center;
+  font-weight: 800;
+  color: #071013;
+  background: var(--agent-user, #6dd0ff);
+  border-radius: var(--krypton-border-radius, 8px);
+}
+
+.acp-harness__image-tile {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 2px 6px;
+  border: 1px dashed rgba(109, 208, 255, 0.36);
+  border-radius: var(--krypton-border-radius, 8px);
+  color: rgba(109, 208, 255, 0.72);
+  font-size: 0.8em;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.acp-harness__image-tile .acp-harness__image-hint {
+  position: static;
+}
+
+.acp-harness__image-tile--missing,
+.acp-harness__image-tile--rejected {
+  color: var(--agent-error, #ff6d8a);
+  border-color: rgba(255, 109, 138, 0.5);
+}
+
+.acp-harness__image-tile--released[data-image-id] {
+  cursor: zoom-in;
+}
+
+.acp-harness__msg--tool .acp-harness__msg-body,
+.acp-harness__msg--plan .acp-harness__msg-body,
+.acp-harness__msg--system .acp-harness__msg-body,
+.acp-harness__msg--memory .acp-harness__msg-body,
+.acp-harness__msg--restart .acp-harness__msg-body,
+.acp-harness__msg--permission .acp-harness__msg-body,
+.acp-harness__msg--shell .acp-harness__msg-body {
+  font-size: 0.88em;
+}
+
+.acp-harness__msg--shell .acp-harness__msg-label {
+  color: var(--agent-gold, #ffd166);
+}
+
+.acp-harness__msg--shell .acp-harness__msg-body {
+  white-space: pre-wrap;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+  background: color-mix(in srgb, var(--acp-accent-shell) 7%, transparent);
+  padding: 4px 8px;
+  border-radius: var(--krypton-border-radius, 8px);
+}
+
+.acp-harness__msg--shell.acp-harness__msg--failed .acp-harness__msg-body {
+  background: color-mix(in srgb, var(--acp-accent-shell-fail) 9%, transparent);
+  color: rgba(255, 200, 210, 0.92);
+}
+
+.acp-harness__msg--shell.acp-harness__msg--pending .acp-harness__msg-body {
+  opacity: 0.75;
+}
+
+/* Markdown output · the nodes `md.parse`/`smd` emit into a body carrying
+   `acp-harness__msg-body--markdown` (`harness-markdown.ts:176`,
+   `lane-peek.ts:1136-1168`) and `--stream-live`/`--stream-plain`
+   (`harness-markdown.ts:165`). The parser names these elements, not us, so
+   no component owns them. */
+.acp-harness__msg-body--markdown {
+  white-space: normal;
+  color: var(--agent-text, #eaf3ea);
+  contain: layout style;
+}
+
+/* Spec 114 rev 4: append-only plain text while streaming; markdown once at seal. */
+.acp-harness__msg-body--stream-plain {
+  white-space: pre-wrap;
+  color: var(--agent-text, #eaf3ea);
+}
+
+.acp-harness__msg-body--markdown > :first-child {
+  margin-top: 0;
+}
+
+.acp-harness__msg-body--markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.acp-harness__msg-body--markdown p {
+  margin: 0 0 0.3em;
+}
+
+.acp-harness__msg-body--markdown h1,
+.acp-harness__msg-body--markdown h2,
+.acp-harness__msg-body--markdown h3,
+.acp-harness__msg-body--markdown h4,
+.acp-harness__msg-body--markdown h5,
+.acp-harness__msg-body--markdown h6 {
+  margin: 0.7em 0 0.35em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--agent-user, #6dd0ff);
+  line-height: 1.2;
+}
+
+.acp-harness__msg-body--markdown h1 {
+  font-size: 1.35em;
+  color: var(--agent-cyan, #b9f5ff);
+  border-bottom: 1px solid rgba(109, 208, 255, 0.35);
+  padding-bottom: 0.15em;
+}
+
+.acp-harness__msg-body--markdown h2 {
+  font-size: 1.18em;
+  color: var(--agent-user, #6dd0ff);
+}
+
+.acp-harness__msg-body--markdown h3 {
+  font-size: 1.06em;
+  color: var(--agent-accent, #8effb0);
+}
+
+.acp-harness__msg-body--markdown h4 {
+  font-size: 1em;
+  color: var(--agent-accent, #c4ffd6);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Custom markers via ::before instead of native list markers: the browser
+   right-aligns ordered-list numbers to the content edge, so `1.` and `•` land
+   in different columns and the lists look unaligned. A fixed-width marker
+   column (left-aligned at the list's left edge, content hanging-indented past
+   it) keeps every marker — numbers and bullets — in one tidy column. */
+.acp-harness__msg-body--markdown ul,
+.acp-harness__msg-body--markdown ol {
+  margin: 0.15em 0 0.35em;
+  padding-left: 0;
+  list-style: none;
+}
+
+.acp-harness__msg-body--markdown ol {
+  counter-reset: acp-ol;
+}
+
+.acp-harness__msg-body--markdown li {
+  position: relative;
+  margin: 0.12em 0;
+  padding-left: 2.6ch;
+}
+
+.acp-harness__msg-body--markdown ul > li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--agent-accent, #8effb0);
+}
+
+.acp-harness__msg-body--markdown ol > li {
+  counter-increment: acp-ol;
+}
+
+.acp-harness__msg-body--markdown ol > li::before {
+  content: counter(acp-ol) '.';
+  position: absolute;
+  left: 0;
+  color: var(--agent-user, #6dd0ff);
+  font-weight: 700;
+}
+
+.acp-harness__msg-body--markdown strong {
+  color: #fff7c2;
+  font-weight: 700;
+}
+
+.acp-harness__msg-body--markdown em {
+  color: #d6b8ff;
+  font-style: italic;
+}
+
+.acp-harness__msg-body--markdown code {
+  color: var(--agent-accent, #8effb0);
+  background: rgba(142, 255, 176, 0.1);
+  padding: 0.05em 0.4ch;
+  border-radius: var(--krypton-border-radius, 8px);
+  font-family: var(--agent-font, monospace);
+}
+
+.acp-harness__msg-body--markdown pre {
+  margin: 0.25em 0;
+  padding: 4px 8px;
+  line-height: 1.28;
+  overflow-x: auto;
+  background: rgba(0, 0, 0, 0.46);
+  border-radius: var(--krypton-border-radius, 8px);
+}
+
+.acp-harness__msg-body--markdown pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.acp-harness__msg-body--markdown a {
+  color: var(--agent-user, #6dd0ff);
+  text-decoration: underline;
+  text-decoration-color: rgba(109, 208, 255, 0.55);
+  text-underline-offset: 3px;
+}
+
+.acp-harness__msg-body--markdown a:hover {
+  color: var(--agent-cyan, #b9f5ff);
+  text-decoration-color: var(--agent-cyan, #b9f5ff);
+}
+
+.acp-harness__msg-body--markdown blockquote {
+  margin: 0.12em 0;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--acp-accent-quote) 9%, transparent);
+  border-radius: var(--krypton-border-radius, 8px);
+  color: #e6dcff;
+  font-style: italic;
+}
+
+.acp-harness__msg-body--markdown blockquote > :first-child {
+  margin-top: 0;
+}
+
+.acp-harness__msg-body--markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.acp-harness__msg-body--markdown hr {
+  border: 0;
+  border-top: 1px dashed rgba(109, 208, 255, 0.4);
+  margin: 0.8em 0;
+}
+
+.acp-harness__msg-body--markdown table {
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.25);
+  border-radius: var(--krypton-border-radius, 8px);
+  margin: 0.5em 0;
+  font-size: 0.95em;
+}
+
+.acp-harness__msg-body--markdown th,
+.acp-harness__msg-body--markdown td {
+  padding: 4px 8px;
+  border: 0;
+  border-right: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.25);
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.25);
+  text-align: left;
+}
+
+.acp-harness__msg-body--markdown th:last-child,
+.acp-harness__msg-body--markdown td:last-child {
+  border-right: none;
+}
+
+.acp-harness__msg-body--markdown table > :last-child > tr:last-child > * {
+  border-bottom: none;
+}
+
+.acp-harness__msg-body--markdown table > :first-child > tr:first-child > :first-child {
+  border-top-left-radius: var(--krypton-border-radius, 8px);
+}
+
+.acp-harness__msg-body--markdown table > :first-child > tr:first-child > :last-child {
+  border-top-right-radius: var(--krypton-border-radius, 8px);
+}
+
+.acp-harness__msg-body--markdown table > :last-child > tr:last-child > :first-child {
+  border-bottom-left-radius: var(--krypton-border-radius, 8px);
+}
+
+.acp-harness__msg-body--markdown table > :last-child > tr:last-child > :last-child {
+  border-bottom-right-radius: var(--krypton-border-radius, 8px);
+}
+
+.acp-harness__msg-body--markdown th {
+  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
+  color: var(--agent-user, #6dd0ff);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* Agent-emitted images (e.g. image_gen output). Resolved to asset URLs by
+   resolveLocalImageSrcs(); constrain so a 1024px source doesn't blow out the
+   transcript column. */
+.acp-harness__msg-body--markdown img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.5em 0;
+  border: 1px solid rgba(109, 208, 255, 0.25);
+  border-radius: var(--krypton-border-radius, 8px);
+}
+
+/* SVG / mermaid fence card · `harness-svg-fence.ts:66` holds the `CARD`
+   constant and composes `${CARD}--live|--pending|--broken|--mermaid`
+   (`:67-69,289`) and `${CARD}-bar|-kind|-hint|-preview` (`:293-302`). */
+/* spec 283: ```svg fence card — preview <img> with a Source/Copy toolbar.
+   The card shrinks to the figure's own size (capped at Full HD in JS) and
+   never exceeds the lane; Source/broken modes take the full lane width so
+   long source lines keep the room. */
+.acp-harness__svg-card {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0.5em 0;
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.acp-harness__svg-card--source,
+.acp-harness__svg-card--broken {
+  width: auto;
+}
+
+.acp-harness__svg-card--hinted {
+  border-color: rgba(109, 208, 255, 0.55);
+}
+
+.acp-harness__svg-card-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-family: var(--agent-font, monospace);
+  font-size: 0.78em;
+  border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+}
+
+.acp-harness__svg-card-kind {
+  letter-spacing: 0.08em;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+}
+
+.acp-harness__svg-card-hint {
+  min-width: 1.5em;
+  padding: 0 4px;
+  text-align: center;
+  font-weight: 800;
+  color: #071013;
+  background: var(--agent-user, #6dd0ff);
+  border-radius: var(--krypton-border-radius, 8px);
+}
+
+.acp-harness__svg-card-btn {
+  padding: 1px 6px;
+  font: inherit;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--krypton-border-radius, 8px);
+  cursor: pointer;
+}
+
+.acp-harness__svg-card-btn--toggle {
+  margin-left: auto;
+}
+
+.acp-harness__svg-card-btn:hover {
+  color: var(--krypton-fg, #d8e8d8);
+  border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.2);
+}
+
+.acp-harness__svg-card-preview {
+  display: flex;
+  justify-content: center;
+  padding: 10px;
+}
+
+.acp-harness__msg-body--markdown .acp-harness__svg-card-preview img {
+  max-width: 100%;
+  max-height: none;
+  height: auto;
+  margin: 0;
+  object-fit: contain;
+  border: none;
+  border-radius: 0;
+  cursor: zoom-in;
+}
+
+.acp-harness__msg-body--markdown .acp-harness__svg-card > pre {
+  display: none;
+  margin: 0;
+  border-radius: 0;
+}
+
+.acp-harness__svg-card--source > .acp-harness__svg-card-preview,
+.acp-harness__svg-card--broken > .acp-harness__svg-card-preview,
+.acp-harness__svg-card--pending > .acp-harness__svg-card-preview,
+.acp-harness__svg-card--broken .acp-harness__svg-card-btn--toggle {
+  display: none;
+}
+
+.acp-harness__msg-body--markdown .acp-harness__svg-card--source > pre,
+.acp-harness__msg-body--markdown .acp-harness__svg-card--broken > pre {
+  display: block;
+}
+
+.acp-harness__svg-card--broken .acp-harness__svg-card-btn--copy {
+  margin-left: auto;
+}
+
+/* spec 283: while an assistant row streams, a ```svg fence collapses to a
+   one-line placeholder until its first live frame decodes (rev 2), then the
+   live card drawn before it takes over. smd keeps writing into the hidden
+   <code>; display:none keeps that growth out of layout. Opacity-only pulse
+   (compositor-friendly). spec 294: a ```mermaid fence does the same; its live
+   card appears once the fence closes. */
+.acp-harness__msg-body--stream-live pre:has(> code.svg),
+.acp-harness__msg-body--stream-live pre:has(> code.mermaid) {
+  max-width: 100%;
+  margin: 0.5em 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.acp-harness__msg-body--stream-live pre:has(> code.svg) > code,
+.acp-harness__msg-body--stream-live pre:has(> code.mermaid) > code {
+  display: none;
+}
+
+.acp-harness__msg-body--stream-live pre:has(> code.svg)::before,
+.acp-harness__msg-body--stream-live pre:has(> code.mermaid)::before {
+  content: 'svg · drawing…';
+  display: block;
+  letter-spacing: 0.08em;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+  animation: acp-harness-streaming-pulse 1.4s ease-in-out infinite;
+}
+
+.acp-harness__msg-body--stream-live pre:has(> code.mermaid)::before {
+  content: 'mermaid · drawing…';
+}
+
+/* Same box as a toolbar button, so seal's bar swap does not shift the figure. */
+.acp-harness__svg-card--live .acp-harness__svg-card-kind {
+  padding: 1px 0;
+  border: 1px solid transparent;
+  animation: acp-harness-streaming-pulse 1.4s ease-in-out infinite;
+}
+
+.acp-harness__msg-body--stream-live .acp-harness__svg-card--live + pre:has(> code.svg),
+.acp-harness__msg-body--stream-live .acp-harness__svg-card--live + pre:has(> code.mermaid) {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acp-harness__msg-body--stream-live pre:has(> code.svg)::before,
+  .acp-harness__msg-body--stream-live pre:has(> code.mermaid)::before,
+  .acp-harness__svg-card--live .acp-harness__svg-card-kind {
+    animation: none;
+  }
+}
+
+/* Shown in place of an <img> whose asset URL failed to load. */
+.acp-harness__img-breach {
+  display: inline-block;
+  padding: 2px 6px;
+  font-family: var(--agent-font, var(--krypton-font-family, monospace));
+  font-size: 0.85em;
+  letter-spacing: 0.04em;
+  color: var(--agent-error, #ff6d8a);
+  border: 1px dashed rgba(255, 109, 138, 0.5);
+  border-radius: var(--krypton-border-radius, 8px);
+}
+
+.acp-harness__msg--user .acp-harness__msg-label,
+.acp-harness__msg--user .acp-harness__msg-body {
+  color: var(--agent-user, #6dd0ff);
+}
+
+/* spec 278 — a user message steered into the running turn. Text only: no
+   border, no rail. Dimmed until the adapter takes it. */
+.acp-harness__msg--user .acp-harness__msg-label--steer {
+  color: var(--agent-user, #6dd0ff);
+  letter-spacing: 0.12em;
+}
+
+.acp-harness__msg--user .acp-harness__msg-label--steer-pending {
+  opacity: 0.55;
+}
+
+.acp-harness__msg--assistant .acp-harness__msg-label {
+  color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+}
+
+.acp-harness__msg--user {
+  border-left-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.42);
+  background: transparent;
+}
+
+.acp-harness__msg--assistant {
+  border-left-color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 10%, transparent);
+}
+
+.acp-harness__msg--provider_error {
+  border-left-color: transparent;
+}
+
+.acp-harness__msg--provider_error .acp-harness__msg-label {
+  color: rgba(255, 209, 102, 0.78);
+}
+
+.acp-harness__msg--thought .acp-harness__msg-body {
+  /* Dimmer than normal body (0.8) to read as low-signal, but high enough to
+     stay legible — no italic, no mask fade (those compounded into an
+     unreadable wash). The transcript owns scrolling, so the thought itself
+     expands to show the complete message without a nested scroll region. */
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68);
+}
+
+/* Effort meter: a mono glyph gauge under the thought label, filled by
+   reasoning length. It stays as a quick depth cue even though the full thought
+   is visible.
+   The label column is a fixed 7.5ch gutter (sized for the word "thought"), so
+   the meter STACKS below the label — never inline — to avoid overflowing it. */
+.acp-harness__msg-label--thought {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.acp-harness__msg--tool .acp-harness__msg-body,
+.acp-harness__msg--plan .acp-harness__msg-body {
+  color: rgba(255, 209, 102, 0.86);
+}
+
+.acp-harness__msg--tool {
+  background: transparent;
+}
+
+.acp-harness__msg--completed .acp-harness__msg-body {
+  color: rgba(142, 255, 176, 0.82);
+}
+
+.acp-harness__msg--failed .acp-harness__msg-body {
+  color: var(--agent-error, #ff6b8b);
+}
+
+.acp-harness__msg--permission .acp-harness__msg-body {
+  color: var(--agent-gold, #ffd166);
+}
+
+.acp-harness__msg--memory .acp-harness__msg-body {
+  color: var(--agent-accent, #8effb0);
+}
+
+/* Empty transcript · `components/transcript/index.ts:138`. */
+.acp-harness__transcript-empty {
+  margin: auto;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+  letter-spacing: 0.04em;
+}
+
+/* Dashboard empty state · `acp-harness-view.ts:12181`. */
+.acp-harness__empty {
+  padding: 16px;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+}
+
+/* Command-centre strip · `acp-harness-view.ts:6248`. */
+.acp-harness__command-center {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 50%;
+  overflow: hidden;
+  background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
+}
+/* Drop target · `acp-harness-view.ts:6290-6297`. */
+.acp-harness--drag-over {
+  outline: 1px dashed var(--acp-lane-accent, rgba(142, 255, 176, 0.6));
+  outline-offset: -4px;
+}
+
+/* Timeline capture overlay chrome left over from the component carve-out ·
+   `timeline-capture.ts:92`. */
+.acp-timeline__panel h2 {
+  margin: 0;
+  color: var(--krypton-accent, #00ccff);
+  font-size: 1.15em;
+  font-weight: 600;
+}
+
+.acp-timeline__subtitle {
+  margin: 3px 0 14px;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+  font-size: 0.78em;
+}
+
+.acp-harness__msg--user .acp-harness__msg-label--voice {
+  color: var(--agent-user, #6dd0ff);
+}
+
+/* Composer bloom particles · `harness-composer-bloom.ts:14-15`
+   (`COMPOSER_BLOOM_LAYER_CLASS` / `COMPOSER_BLOOM_PARTICLE_CLASS`). */
+/* spec 252: overlay letter afterimages survive composer innerHTML rebuilds. */
+.acp-harness__composer-blooms {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.acp-harness__composer-bloom {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  pointer-events: none;
+  user-select: none;
+  white-space: pre;
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  color: rgba(110, 231, 231, 0.92);
+  text-shadow:
+    0 0 8px rgba(110, 231, 231, 0.4),
+    0 0 14px rgba(110, 231, 231, 0.15);
+  will-change: opacity, transform;
+  animation: acp-harness-composer-bloom var(--acp-composer-bloom-duration, 320ms) cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acp-harness__composer-bloom {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+@keyframes acp-harness-composer-bloom {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 1px, 0);
+  }
+  18% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  42% {
+    opacity: 0.72;
+    transform: translate3d(0, -0.5px, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, -3px, 0);
+  }
+}
+
+/* Row entrance · `components/transcript-row/shared.ts:30` `ENTER_CLASS`. */
+.acp-harness__msg--enter {
+  /* A forward-filled transform can keep each completed row on its own WebKit
+     compositing backing. The row removes this class when the effect settles;
+     no fill is the safety net if that event is missed. */
+  animation: acp-harness-msg-enter 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@keyframes acp-harness-msg-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acp-harness__msg--enter {
+    animation: none;
+  }
+}
+
+.acp-harness__msg--streaming .acp-harness__msg-label {
+  animation: acp-harness-streaming-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes acp-harness-streaming-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@keyframes acp-harness-busy-pulse {
+  0%, 100% {
+    opacity: 0.62;
+    text-shadow: 0 0 6px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
+  }
+  50% {
+    opacity: 1;
+    text-shadow: 0 0 12px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.55), 0 0 20px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
+  }
+}
+
+.acp-harness__lane--needs_permission .acp-harness__lane-symbol,
+.acp-harness__lane--needs_permission.acp-harness__lane--collapsed {
+  animation: acp-harness-permission-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes acp-harness-permission-pulse {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acp-harness__lane--needs_permission .acp-harness__lane-symbol,
+  .acp-harness__lane--needs_permission.acp-harness__lane--collapsed {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CONCISE MODE — tool cards collapse to their head line (spec 157)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* tool card: keep the head row, drop the detail */
+.acp-harness--concise .acp-harness__msg--tool .acp-harness__tool-output,
+.acp-harness--concise .acp-harness__msg--tool .acp-harness__tool-diffs,
+.acp-harness--concise .acp-harness__msg--tool .acp-harness__artifact-redaction {
+  display: none;
+}
+
+/* single-line guarantee: the head normally flex-wraps and the subject
+   word-breaks; in concise it must stay one line, ellipsized */
+.acp-harness--concise .acp-harness__tool-head {
+  flex-wrap: nowrap;
+}
+
+.acp-harness--concise .acp-harness__tool-subject {
+  white-space: nowrap;
+  word-break: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* side-channel kinds: hidden entirely */
+.acp-harness--concise .acp-harness__msg--thought,
+.acp-harness--concise .acp-harness__msg--fs_activity,
+.acp-harness--concise .acp-harness__msg--memory {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ZEN MODE — toggleable focused layout (spec 80)
+   ═══════════════════════════════════════════════════════════════ */
+
+.acp-harness--zen .acp-harness__dashboard {
+  display: grid;
+  grid-template-columns: clamp(180px, 14vw, 240px) 1fr;
+  gap: 0;
+}
+
+.acp-harness__rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-right: none;
+  background: var(--agent-ghost, rgba(2, 5, 10, 0.18));
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.acp-harness__body-cell {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PANEL VISIBILITY — #panels hide/show/toggle (spec 251)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Persistent supporting surfaces disappear as one reversible layer. The
+   transcript, composer, lane identity/status, and summon-on-demand overlays
+   remain available. */
+.acp-harness--panels-hidden .acp-harness__lane-rail,
+.acp-harness--panels-hidden .acp-harness__ticket-dock,
+.acp-harness--panels-hidden .acp-harness__rail {
+  display: none;
+}
+
+/* The ticket dock reserves width on the dashboard even when collapsed. Return
+   that space without mutating the dock's expanded/collapsed state. */
+.acp-harness--panels-hidden.acp-harness--ticket-active .acp-harness__dashboard,
+.acp-harness--panels-hidden.acp-harness--ticket-collapsed .acp-harness__dashboard {
+  margin-right: 0;
+}
+
+/* Zen normally allocates a left navigation column. With panels hidden the
+   active lane keeps the same body and fills the reclaimed column. */
+.acp-harness--panels-hidden.acp-harness--zen .acp-harness__dashboard {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Annotations · `transcript-annotation.ts:22` `MARK_CLASS` and `:285`
+   `${MARK_CLASS}--${status}`; the overlay and pill are built at
+   `acp-harness-view.ts:6252-6264` and `:14085`. */
+/* spec 240 — transcript annotations */
+.acp-harness__anno-mark {
+  background: color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 32%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 0.08em;
+}
+
+.acp-harness__anno-mark--sent {
+  background: color-mix(in srgb, var(--agent-gold, #ffd166) 22%, transparent);
+}
+
+.acp-harness__anno-mark--drained {
+  background: color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 14%, transparent);
+}
+
+.acp-harness__anno-pill {
+  position: absolute;
+  z-index: 4;
+  font: inherit;
+  font-size: 11px;
+  color: var(--agent-text, #eaf3ea);
+  background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
+  border: 1px solid var(--acp-accent-quote, #d6b8ff);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.acp-harness__anno-pill kbd {
+  font: inherit;
+  color: var(--acp-accent-quote, #d6b8ff);
+}
+
+.acp-harness__anno-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 45%, transparent);
+  background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
+}
+
+/* The annotation editor belongs to the active conversation, not the global
+   command-center chrome. Keep its horizontal bounds aligned with the
+   dashboard's conversation column in layouts that reserve side rails. */
+.acp-harness--zen .acp-harness__anno-overlay {
+  margin-left: clamp(180px, 14vw, 240px);
+}
+
+.acp-harness--ticket-active .acp-harness__anno-overlay {
+  margin-right: 352px;
+}
+
+.acp-harness--ticket-collapsed .acp-harness__anno-overlay {
+  margin-right: 46px;
+}
+
+@container (max-width: 959px) {
+  .acp-harness--ticket-expanded .acp-harness__anno-overlay {
+    margin-right: 0;
+  }
+}
+
+.acp-harness__anno-overlay[hidden] {
+  display: none;
+}
+
+.acp-harness__anno-overlay-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--acp-accent-quote, #d6b8ff);
+}
+
+.acp-harness__anno-overlay-quote {
+  font-size: 1em;
+  color: rgba(216, 232, 216, 0.62);
+  max-height: 3.2em;
+  overflow: hidden;
+}
+
+.acp-harness__anno-overlay-input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  min-height: 52px;
+  font: inherit;
+  font-size: 1em;
+  color: var(--agent-text, #eaf3ea);
+  background: rgba(216, 232, 216, 0.04);
+  border: 1px solid color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 35%, transparent);
+  border-radius: var(--krypton-border-radius, 8px);
+  padding: 6px 8px;
+  outline: none;
+}
+
+.acp-harness__anno-overlay-input:focus {
+  border-color: var(--acp-accent-quote, #d6b8ff);
+}
+
+.acp-harness__anno-overlay-hint {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: rgba(216, 232, 216, 0.42);
+}
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LIGHT SCHEME — the shell's half
+   Spec 301 phase 6: `theme-scheme.css`'s harness selectors moved into the
+   owning component's `krypton.scheme` block. These two have no component
+   owner — the harness root carries the backend/role palette every component
+   reads, and the dashboard is a layout box — so they stay here, in the same
+   layer the component sheets use.
+
+   Root tokens · `acp-harness-view.ts:1482`.  Dashboard · `:6045`.
+   ═══════════════════════════════════════════════════════════════ */
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness {
+    --krypton-backend-claude:   #b45a38;
+    --krypton-backend-codex:    #2c6280;
+    --krypton-backend-opencode: #8a4aa8;
+    --krypton-backend-pi:       #1a8a78;
+    --krypton-backend-droid:    #a07838;
+    --krypton-backend-cursor:   #5a5a5a;
+    --krypton-backend-junie:    #a04080;
+    --krypton-backend-omp:      #8a7820;
+    --krypton-backend-grok:     #1a8a5c;
+    --krypton-backend-copilot:  #3a62c4;
+    --krypton-backend-mimo:     #c45a28;
+    --krypton-backend-cline:    #1a8a80;
+    --krypton-backend-antigravity: #b0308a;
+
+    --krypton-role-analysis: #2a7aa0;
+    --krypton-role-review:   #8a7820;
+    --krypton-role-impl:     #2a8a58;
+    --krypton-role-plan:     #7a38b0;
+    --krypton-role-explore:  #b05a38;
+    --krypton-role-hash-1:   #a04080;
+    --krypton-role-hash-2:   #3a62b0;
+    --krypton-role-hash-3:   #a07838;
+
+    --agent-accent: var(--agent-green, #0b7d6a);
+    --agent-user: var(--agent-cyan, #007799);
+    --agent-error: var(--agent-red, #c42b4a);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__dashboard {
+    background:
+      radial-gradient(circle at 12px 12px, rgba(var(--krypton-accent-rgb, 0, 119, 153), 0.07) 1px, transparent 1px);
+    background-size: 10px 10px;
+  }
+}

@@ -135,3 +135,25 @@ export function ensureHarnessSymbolDefs(): void {
 export function harnessIcon(id: string, cls = ''): string {
   return `<svg class="acp-harness__icon${cls ? ` ${cls}` : ''}" aria-hidden="true"><use href="#krypton-icon-${id}"/></svg>`;
 }
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** `<svg class="acp-harness__icon …"><use href="#<symbolId>"/></svg>` as a node.
+ *  Node-building twin of the `harnessIcon()` string builder (spec 301), so a
+ *  component never has to reach for `innerHTML` just to place a symbol.
+ *  `symbolId` is the full def id — `krypton-icon-warn`, or whatever
+ *  `backendLogoId()` returned. */
+export function harnessSymbolEl(symbolId: string, cls = ''): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', `acp-harness__icon${cls ? ` ${cls}` : ''}`);
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS(SVG_NS, 'use');
+  use.setAttribute('href', `#${symbolId}`);
+  svg.appendChild(use);
+  return svg;
+}
+
+/** Node twin of `harnessIcon(id, cls)` — same `krypton-icon-` prefixing. */
+export function harnessIconEl(id: string, cls = ''): SVGSVGElement {
+  return harnessSymbolEl(`krypton-icon-${id}`, cls);
+}

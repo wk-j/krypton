@@ -458,6 +458,30 @@ shadow_blur = 30
 
 ---
 
+### `[tokens]` — Component Tokens
+
+Optional free-form table. Each entry becomes a `--<key>` CSS custom property on `document.documentElement`, which lets a theme restyle a single component (the `--acp-*` harness hooks, `--vault-*`, …) without shipping CSS or selectors.
+
+```toml
+[tokens]
+"acp-tool-head-fg"      = "#ffd27f"   # one component's head color
+"acp-tool-output-max-h" = "420px"
+"acp-peek-accent"       = "var(--agent-cyan)"
+```
+
+| Rule | Value |
+|------|-------|
+| Key charset | `^[a-z][a-z0-9-]{0,63}$`, rendered as `--<key>` |
+| Value length | 256 characters max |
+| Value functions | Allowlist, checked after CSS-unescaping and lowercasing the value: `var rgb rgba hsl hsla color-mix color oklch lab calc clamp min max env`. Everything else — `url()`, `image()`, `image-set()`, `-webkit-image-set()`, `cross-fade()`, `element()`, `expression()`, `attr()` — is rejected, so a theme can never trigger a fetch. |
+| Unknown key | Applied and inert. A theme written for a newer Krypton still loads on an older one. |
+| Namespace convention | `acp-*` harness components, `vault-*` vault, `krypton-*` global. Documented, not enforced. |
+| Precedence | Applied after all built-in properties — a token named after one (`"agent-text"`) overrides the derived value — and before per-element `style.setProperty`, which still wins. |
+
+Entries that fail validation are dropped one by one with a `theme token rejected: <key>` warning; the rest of the theme loads. Switching to a theme that omits a token the previous one set removes that property. A value naming a property that does not exist falls through to the component's `var()` fallback.
+
+---
+
 ## Built-in Themes
 
 Krypton ships with four built-in themes:
@@ -686,6 +710,8 @@ The theme engine validates theme files on load. Invalid themes are rejected with
 | **Text transform** | Must be `"none"`, `"uppercase"`, `"lowercase"`, or `"capitalize"`. |
 | **Chrome style** | Must be `"cyberpunk"`, `"minimal"`, or `"none"`. |
 | **Unknown keys** | Ignored with a warning (forward-compatible). |
+| **Token key** (`[tokens]`) | Must match `^[a-z][a-z0-9-]{0,63}$`; other keys are dropped with a warning. |
+| **Token value** (`[tokens]`) | 256 characters max, and every CSS function in the unescaped, lowercased value must be one of `var rgb rgba hsl hsla color-mix color oklch lab calc clamp min max env`. Fetching functions (`url()`, `image-set()`, …) are dropped with a warning. |
 
 ---
 

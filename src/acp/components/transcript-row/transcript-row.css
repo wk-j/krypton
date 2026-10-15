@@ -1,0 +1,37 @@
+/* Spec 302 — `TranscriptRow`.
+
+   Scheme half only. The row's base rules stay in
+   src/styles/harness-shared.css because every one of them is reached through
+   `acp-harness__msg--${item.kind}` / `--${item.status}`, composed at runtime
+   in ./shared.ts:79-80 — spec 301 §Phases row 6 keeps runtime-composed
+   modifiers in the named shared sheet rather than pretending a directory
+   declares them.
+
+   Moved verbatim from src/styles/theme-scheme.css:293-316. */
+
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__msg-label {
+    color: color-mix(in srgb, var(--krypton-ink) 58%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__msg-body {
+    color: var(--krypton-ink);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__msg--thought .acp-harness__msg-body {
+    color: color-mix(in srgb, var(--krypton-ink) 78%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__msg--assistant .acp-harness__msg-label {
+    color: color-mix(in srgb, var(--acp-lane-accent, #007799) 48%, var(--krypton-ink));
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__msg--user .acp-harness__msg-label,
+  html[data-theme-scheme='light'] .acp-harness__msg--user .acp-harness__msg-body {
+    color: var(--agent-user, #007799);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__msg--shell.acp-harness__msg--failed .acp-harness__msg-body {
+    color: var(--agent-error, #c42b4a);
+  }
+}

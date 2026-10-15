@@ -1,0 +1,57 @@
+/* Spec 302 §3.8 — `FsActivityRow`.
+
+   Carved verbatim from src/styles/acp-harness.css. The rules are declared
+   TWICE there, byte-identically, because the `Spec 87 — slash command palette`
+   span they sit inside was duplicated (spec 302 §Packaging: `:5601-5699` ≡
+   `:5812-5910` in the numbering the spec quotes, `:5606-5704` ≡ `:5817-5915`
+   today). Copied once; BOTH spans must be deleted:
+
+       src/styles/acp-harness.css:5663-5704   (comment + 7 rules + blank line)
+       src/styles/acp-harness.css:5874-5915   (the identical second copy)
+
+   theme-scheme.css declares nothing for this block, so there is no
+   `krypton.scheme` section. */
+
+@layer krypton.component {
+  /* Spec 88 — fs activity chip */
+  .acp-harness__fs-activity {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    font-size: 0.85em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+  }
+
+  .acp-harness__fs-activity--err {
+    color: #ff8b8b;
+  }
+
+  .acp-harness__fs-activity-icon {
+    flex: 0 0 auto;
+  }
+
+  .acp-harness__fs-activity-verb {
+    flex: 0 0 auto;
+    width: 6ch;
+    display: inline-block;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+  }
+
+  .acp-harness__fs-activity--err .acp-harness__fs-activity-verb {
+    color: #ff8b8b;
+  }
+
+  .acp-harness__fs-activity-path {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-harness__fs-activity-error {
+    flex: 0 0 auto;
+    color: #ff8b8b;
+    font-style: italic;
+  }
+}

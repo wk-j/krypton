@@ -51,7 +51,7 @@ describe('summonOverlayOwnsKeyboard', () => {
 
   it('blocks content routing while a summon overlay exists', () => {
     expect(summonOverlayOwnsKeyboard(rootWith('.krypton-review-picker'))).toBe(true);
-    expect(summonOverlayOwnsKeyboard(rootWith('.acp-review-thread-picker'))).toBe(true);
+    expect(summonOverlayOwnsKeyboard(rootWith('.acp-harness__review-thread-overlay'))).toBe(true);
     expect(summonOverlayOwnsKeyboard(rootWith('.krypton-vault-picker-overlay'))).toBe(true);
   });
 

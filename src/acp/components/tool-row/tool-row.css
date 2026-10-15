@@ -1,0 +1,617 @@
+/* Spec 302 §3.4 — `ToolRow`.
+   Carved VERBATIM from src/styles/acp-harness.css, in source order:
+
+     2165-2270  .acp-harness__tool … __tool-result--failed   (head family)
+     2408-2429  the flex/nowrap comment + __tool-timer family
+     2431-2775  __tool-output, __tool-exit*, __tool-section*, __tok-*,
+                __grep-row*, __tool-stat-*, __tool-rich*, __tool-diff-*,
+                __tool-status-*, the __tool-section--* tone map
+     5916-5992  the spec-89 diff preview block: __tool-diffs, __tool-diff,
+                __tool-diff-path, __tool-body--diff, __diff-line*, __diff-num,
+                __diff-mark, __diff-text, __tool-meta, __tool-more
+     6732-6754  the spec-133 __artifact-redaction family
+
+   Plus theme-scheme.css:355-357, the only scheme override that touches any of
+   them (`__artifact-redaction-meta`).
+
+   NOT carved, and deliberately left where they are:
+   - 5266-5283 `.acp-harness--concise …` — those rules belong to the concise
+     mode of the harness shell block, which owns `.acp-harness--concise`.
+   - 3560, 3571, 3587, 3606 — the permission row's `Mirrors .acp-harness__tool-*`
+     comments; they reference these classes but declare `__perm-*`.
+
+   Shared with other components, declared here because this directory owns the
+   `acp-harness__tool-*` / `acp-harness__diff-*` stems: `DiffBlock` paints
+   `__diff-line*` / `__diff-num` / `__diff-mark` / `__diff-text` /
+   `__tool-body--diff` / `__tool-meta` / `__tool-more` in `paired` mode and
+   `__tool-diff-line*` in `unified` mode, and `FsWriteReviewRow` mounts a
+   `paired` block too — it must NOT re-declare them. `renderGrepSection`
+   (`harness-tool-render.ts:1264-1303`, which the cutover keeps) paints
+   `__grep-row*` + `__tok-*` inside this row's output. */
+
+@layer krypton.component {
+  .acp-harness__tool {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    white-space: normal;
+  }
+
+  .acp-harness__tool-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    line-height: 1.4;
+    font-size: var(--krypton-font-size, 13px);
+  }
+
+  /* Fixed cell: in-flight braille spinner and terminal ✓/✗ must occupy the
+     same box. The old pending `·` was a different strut than ✓ and jumped the
+     EXECUTE chip + command on every status change. */
+  .acp-harness__tool-glyph {
+    display: inline-flex;
+    flex: 0 0 1.4ch;
+    align-items: center;
+    justify-content: center;
+    width: 1.4ch;
+    min-width: 1.4ch;
+    height: 1em;
+    min-height: 1em;
+    overflow: hidden;
+    line-height: 1;
+    text-align: center;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+  }
+
+  .acp-harness__tool-glyph--completed {
+    color: var(--agent-accent, #8effb0);
+  }
+
+  .acp-harness__tool-glyph--failed {
+    color: var(--agent-error, #ff6b8b);
+  }
+
+  .acp-harness__tool-glyph--pending,
+  .acp-harness__tool-glyph--in_progress {
+    color: var(--agent-gold, #ffd166);
+  }
+
+  .acp-harness__tool-kind {
+    flex: none;
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.78em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+    border-radius: var(--krypton-border-radius, 8px);
+    padding: 0 5px;
+  }
+
+  /* spec 235 — chip text+border only, HUD accents. Unknown kinds stay gray. */
+  .acp-harness__tool-kind[data-kind="edit"] {
+    color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+    border-color: color-mix(in srgb, rgb(var(--krypton-warning-rgb, 232, 197, 71)) 40%, transparent);
+  }
+  .acp-harness__tool-kind[data-kind="read"],
+  .acp-harness__tool-kind[data-kind="execute"] {
+    color: var(--krypton-accent, #00ccff);
+    border-color: color-mix(in srgb, var(--krypton-accent, #00ccff) 40%, transparent);
+  }
+  .acp-harness__tool-kind[data-kind="search"] {
+    color: rgb(var(--krypton-success-rgb, 57, 255, 127));
+    border-color: color-mix(in srgb, rgb(var(--krypton-success-rgb, 57, 255, 127)) 40%, transparent);
+  }
+  .acp-harness__tool-kind[data-kind="delete"] {
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+    border-color: color-mix(in srgb, rgb(var(--krypton-danger-rgb, 255, 58, 92)) 40%, transparent);
+  }
+  .acp-harness__tool-kind[data-kind="move"] {
+    color: rgb(var(--krypton-special-rgb, 199, 125, 255));
+    border-color: color-mix(in srgb, rgb(var(--krypton-special-rgb, 199, 125, 255)) 40%, transparent);
+  }
+  .acp-harness__tool-kind[data-kind="fetch"] {
+    color: rgb(var(--krypton-info-rgb, 74, 158, 255));
+    border-color: color-mix(in srgb, rgb(var(--krypton-info-rgb, 74, 158, 255)) 40%, transparent);
+  }
+
+  .acp-harness__tool-subject {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+    font-family: var(--agent-font, monospace);
+    word-break: break-all;
+  }
+
+  .acp-harness__tool-result {
+    letter-spacing: 0.04em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+  }
+
+  .acp-harness__tool-result--completed {
+    color: var(--agent-accent, #8effb0);
+  }
+
+  .acp-harness__tool-result--failed {
+    color: var(--agent-error, #ff6b8b);
+  }
+
+  /* `flex: none` + `nowrap` are load-bearing, not decoration: the head sits inside
+     `.acp-harness__msg-body`, whose `overflow-wrap: anywhere` is inherited, and
+     `anywhere` (unlike `break-word`) shrinks a flex item's min-content size to a
+     single character. Without them a narrow window shrinks the timer along with
+     the subject and breaks "100ms" into "100m" / "s". */
+  .acp-harness__tool-timer {
+    flex: none;
+    white-space: nowrap;
+    font-size: 0.78em;
+    letter-spacing: 0.04em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+    font-variant-numeric: tabular-nums;
+    margin-left: auto;
+  }
+
+  .acp-harness__tool-timer--in_progress {
+    color: var(--agent-gold, #ffd166);
+  }
+
+  .acp-harness__tool-timer--failed {
+    color: rgba(255, 107, 139, 0.7);
+  }
+
+  .acp-harness__tool-output {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-left: calc(1.4ch + 8px);
+    padding: 3px 0;
+    /* Bypass the 0.88em tool-card shrink so dump body matches conversation. */
+    font-size: var(--krypton-font-size, 13px);
+  }
+
+  /* spec 235 — Grok `exit: N` prefix becomes a quiet readout, not dump text.
+     Rides the first OUTPUT/TERMINAL label when one exists. */
+  .acp-harness__tool-exit {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .acp-harness__tool-exit-label {
+    font-size: 0.7em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+  }
+
+  .acp-harness__tool-exit-code {
+    flex: none;
+    font-size: 0.78em;
+    font-weight: 400;
+    line-height: 1.35;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+  }
+
+  .acp-harness__tool-exit[data-status="fail"] .acp-harness__tool-exit-label {
+    color: color-mix(in srgb, var(--agent-error, #ff6b8b) 62%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
+  }
+
+  .acp-harness__tool-exit[data-status="fail"] .acp-harness__tool-exit-code {
+    color: var(--agent-error, #ff6b8b);
+  }
+
+  .acp-harness__tool-section {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .acp-harness__tool-section-label {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 0.7em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--acp-tool-section-color, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48)) 72%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    text-shadow:
+      0 0 6px color-mix(in srgb, var(--acp-tool-section-color, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48)) 24%, transparent),
+      0 0 12px color-mix(in srgb, var(--acp-tool-section-color, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48)) 10%, transparent);
+  }
+
+  .acp-harness__tool-section-label .acp-harness__tool-exit {
+    flex: none;
+  }
+
+  .acp-harness__tool-section-label .acp-harness__tool-exit-label,
+  .acp-harness__tool-section-label .acp-harness__tool-exit-code {
+    font-size: 1em;
+    letter-spacing: inherit;
+    text-shadow: none;
+  }
+
+  .acp-harness__tool-section-text {
+    margin: 0;
+    font-family: var(--agent-font, monospace);
+    font-size: inherit;
+    line-height: 1.4;
+    color: color-mix(in srgb, var(--acp-tool-section-color, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86)) 82%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+    text-shadow: 0 0 6px color-mix(in srgb, var(--acp-tool-section-color, transparent) 14%, transparent);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .acp-harness__tool-rich {
+    display: grid;
+    gap: 3px;
+    max-width: 96ch;
+    font-family: var(--agent-font, monospace);
+    font-size: inherit;
+  }
+
+  /* spec 235 — grep/rg structure tokens. Path is warning gold, not cyan. */
+  .acp-harness__tok-path {
+    color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .acp-harness__tok-line {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    justify-self: end;
+  }
+  .acp-harness__tok-sep {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28);
+  }
+  .acp-harness__tok-text {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: pre;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+  }
+  .acp-harness__tok-hit {
+    color: rgb(var(--krypton-success-rgb, 57, 255, 127));
+  }
+  .acp-harness__tok-ctx,
+  .acp-harness__grep-row--ctx .acp-harness__tok-text {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+  }
+  .acp-harness__grep-row--ctx .acp-harness__tok-path {
+    opacity: 0.72;
+  }
+
+  .acp-harness__grep-row {
+    display: grid;
+    gap: 0 6px;
+    align-items: baseline;
+    min-width: 0;
+    min-height: 1.35em;
+    line-height: 1.4;
+  }
+  /* Line is a ≥4ch right-aligned gutter so 75 and 160 share a column. */
+  .acp-harness__grep-row--path {
+    grid-template-columns: minmax(8ch, 32ch) max-content minmax(4ch, max-content) max-content minmax(0, 1fr);
+  }
+  .acp-harness__grep-row--lineno {
+    grid-template-columns: minmax(4ch, max-content) max-content minmax(0, 1fr);
+  }
+
+  .acp-harness__tool-stat-row,
+  .acp-harness__tool-status-row {
+    display: grid;
+    align-items: center;
+    min-width: 0;
+    min-height: 1.45em;
+  }
+
+  .acp-harness__tool-stat-row {
+    grid-template-columns: minmax(12ch, 44ch) 5ch minmax(8ch, 1fr);
+    gap: 8px;
+  }
+
+  .acp-harness__tool-stat-path,
+  .acp-harness__tool-status-path {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+  }
+
+  .acp-harness__tool-stat-count {
+    justify-self: end;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.52);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .acp-harness__tool-stat-bar {
+    position: relative;
+    display: block;
+    height: 0.55em;
+    overflow: hidden;
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    border-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-harness__tool-stat-bar::before,
+  .acp-harness__tool-stat-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+  }
+
+  .acp-harness__tool-stat-bar::before {
+    left: 0;
+    width: var(--stat-plus-width, 0%);
+    background: rgba(142, 255, 176, 0.75);
+    box-shadow: 0 0 4px rgba(142, 255, 176, 0.45),
+                0 0 14px rgba(142, 255, 176, 0.15);
+  }
+
+  .acp-harness__tool-stat-bar::after {
+    left: var(--stat-plus-width, 0%);
+    width: var(--stat-minus-width, 0%);
+    background: rgba(255, 107, 139, 0.62);
+    box-shadow: 0 0 4px rgba(255, 107, 139, 0.4),
+                0 0 14px rgba(255, 107, 139, 0.12);
+  }
+
+  .acp-harness__tool-rich-more {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    font-size: 0.88em;
+  }
+
+  .acp-harness__tool-rich--unidiff {
+    gap: 1px;
+  }
+
+  .acp-harness__tool-diff-file {
+    margin-top: 4px;
+    color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+    font-size: 0.84em;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow:
+      0 0 6px rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.2),
+      0 0 12px rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.08);
+    white-space: nowrap;
+  }
+
+  .acp-harness__tool-diff-file:first-child {
+    margin-top: 0;
+  }
+
+  .acp-harness__tool-diff-line {
+    display: grid;
+    grid-template-columns: 3.2ch minmax(0, 1fr);
+    gap: 6px;
+    min-width: 0;
+    min-height: 1.35em;
+    align-items: baseline;
+  }
+
+  .acp-harness__tool-diff-mark {
+    justify-self: end;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.32);
+    font-size: 0.78em;
+    font-weight: 700;
+  }
+
+  .acp-harness__tool-diff-text {
+    min-width: 0;
+    overflow: hidden;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.7);
+    text-overflow: ellipsis;
+    text-shadow: 0 0 6px rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
+    white-space: pre;
+  }
+
+  .acp-harness__tool-diff-line--hunk .acp-harness__tool-diff-mark,
+  .acp-harness__tool-diff-line--hunk .acp-harness__tool-diff-text {
+    color: rgba(214, 184, 255, 0.82);
+    text-shadow:
+      0 0 6px rgba(214, 184, 255, 0.18),
+      0 0 12px rgba(214, 184, 255, 0.08);
+  }
+
+  .acp-harness__tool-diff-line--add .acp-harness__tool-diff-mark,
+  .acp-harness__tool-diff-line--add .acp-harness__tool-diff-text {
+    color: rgba(142, 255, 176, 0.78);
+    text-shadow: 0 0 6px rgba(142, 255, 176, 0.14);
+  }
+
+  .acp-harness__tool-diff-line--del .acp-harness__tool-diff-mark,
+  .acp-harness__tool-diff-line--del .acp-harness__tool-diff-text {
+    color: rgba(255, 107, 139, 0.76);
+    text-shadow: 0 0 6px rgba(255, 107, 139, 0.14);
+  }
+
+  .acp-harness__tool-diff-line--meta .acp-harness__tool-diff-text {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+  }
+
+  .acp-harness__tool-status-row {
+    grid-template-columns: 4ch minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .acp-harness__tool-status-badge {
+    justify-self: start;
+    min-width: 2.6ch;
+    padding: 0 4px;
+    border: 1px solid currentColor;
+    border-radius: var(--krypton-border-radius, 8px);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.58);
+    font-size: 0.78em;
+    line-height: 1.35;
+    text-align: center;
+    font-weight: 700;
+  }
+
+  .acp-harness__tool-status-badge--modified {
+    color: rgba(255, 209, 102, 0.78);
+  }
+
+  .acp-harness__tool-status-badge--added,
+  .acp-harness__tool-status-badge--new {
+    color: rgba(142, 255, 176, 0.78);
+  }
+
+  .acp-harness__tool-status-badge--deleted {
+    color: rgba(255, 107, 139, 0.78);
+  }
+
+  .acp-harness__tool-section--summary {
+    --acp-tool-section-color: var(--agent-accent, #8effb0);
+  }
+
+  .acp-harness__tool-section--output {
+    --acp-tool-section-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+  }
+
+  .acp-harness__tool-section--output .acp-harness__tool-section-text,
+  .acp-harness__tool-section--content .acp-harness__tool-section-text {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+    text-shadow: none;
+  }
+
+  .acp-harness__tool-section--error {
+    --acp-tool-section-color: var(--agent-error, #ff6b8b);
+  }
+
+  .acp-harness__tool-section--diff {
+    --acp-tool-section-color: var(--agent-gold, #ffd166);
+  }
+
+  .acp-harness__tool-section--terminal {
+    --acp-tool-section-color: #c77dff;
+  }
+
+  .acp-harness__tool-section--content {
+    --acp-tool-section-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+  }
+
+  .acp-harness__tool-section--default {
+    --acp-tool-section-color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+  }
+
+  /* Spec 89 — diff preview (tool_call.content[].diff and fs_write_review) */
+  .acp-harness__tool-diffs {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: var(--krypton-font-size, 13px);
+  }
+  .acp-harness__tool-diff {
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
+    border-radius: var(--krypton-border-radius, 8px);
+    padding: 4px 0;
+    background: rgba(0, 0, 0, 0.18);
+    overflow: hidden;
+    min-width: 0;
+  }
+  .acp-harness__tool-diff-path {
+    padding: 2px 8px 4px;
+    font-family: var(--agent-font, monospace);
+    font-size: 0.92em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
+    margin-bottom: 4px;
+  }
+  .acp-harness__tool-body--diff {
+    font-family: var(--agent-font, monospace);
+    font-size: inherit;
+    line-height: 1.4;
+  }
+  .acp-harness__diff-line {
+    display: grid;
+    grid-template-columns: 4ch 4ch 2ch minmax(0, 1fr);
+    column-gap: 6px;
+    align-items: baseline;
+    min-width: 0;
+    padding: 0 6px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .acp-harness__diff-line--add {
+    color: var(--agent-accent, #8effb0);
+    background: rgba(142, 255, 176, 0.05);
+  }
+  .acp-harness__diff-line--del {
+    color: #ff8b8b;
+    background: rgba(255, 109, 138, 0.06);
+  }
+  .acp-harness__diff-line--ctx { opacity: 0.55; }
+  .acp-harness__diff-line--hunk {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.03);
+  }
+  .acp-harness__diff-num {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28);
+    text-align: right;
+    user-select: none;
+  }
+  .acp-harness__diff-mark {
+    text-align: center;
+    user-select: none;
+  }
+  .acp-harness__diff-text {
+    min-width: 0;
+  }
+  .acp-harness__tool-meta {
+    padding: 4px 8px;
+    font-size: 0.92em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+    font-style: italic;
+  }
+  .acp-harness__tool-more {
+    display: block;
+    padding: 4px 8px;
+    font-size: 0.88em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
+    font-style: italic;
+  }
+
+  /* Redacted artifact-path write/edit card — path + bytes + hash only, never
+     the HTML (spec 133 transcript hygiene). */
+  .acp-harness__artifact-redaction {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px;
+    padding: 4px 6px;
+    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 6%, transparent);
+    border-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-harness__artifact-redaction-note {
+    font-size: 0.8em;
+    letter-spacing: 0.04em;
+    color: color-mix(in srgb, var(--krypton-window-accent, #0cf) 65%, rgba(216, 232, 240, 0.6));
+  }
+
+  .acp-harness__artifact-redaction-meta {
+    font-size: 0.8em;
+    color: rgba(216, 232, 240, 0.5);
+    word-break: break-all;
+  }
+}
+
+@layer krypton.scheme {
+  /* theme-scheme.css:355-357 */
+  html[data-theme-scheme='light'] .acp-harness__artifact-redaction-meta {
+    color: color-mix(in srgb, var(--krypton-ink) 58%, transparent);
+  }
+}

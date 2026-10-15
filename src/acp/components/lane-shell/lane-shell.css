@@ -1,0 +1,87 @@
+/* Spec 302 §4.1 — `LaneShell`'s own head actions.
+   Carved out of src/styles/harness-shared.css (the timeline badge and the
+   review-thread action), which is where they survived the monolith's retirement
+   even though `LaneShell` is the only thing that emits them. */
+
+@layer krypton.component {
+  /*
+   * The head's trailing actions share ONE grid cell.
+   *
+   * `.acp-harness__lane-head` is a six-column grid (symbol · name · status ·
+   * chips · activity · actions) and it is `height: 28px; overflow: hidden`.
+   * Before `LaneShell` the two buttons could never be present at once — each
+   * render path rewrote `head.innerHTML` and appended only its own — so a sixth
+   * child always fitted. The component keeps both, and a seventh grid item
+   * wraps to an implicit second row that the fixed height clips to a sliver of
+   * its own border: a thin coloured band under the lane head. One wrapper in
+   * column six keeps the head a single row however many actions it carries.
+   */
+  .acp-harness__lane-actions {
+    grid-column: 6;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  /*
+   * The two head actions are ONE control family.
+   *
+   * They never appeared together before this component, so they drifted apart:
+   * the badge sat at `calc(radius / 2)` = 4px with `padding: 1px 6px` and
+   * `0.72em` text, the review action at the full 8px with `padding: 2px 8px`
+   * and an absolute `11px`. Side by side that reads as two unrelated widgets,
+   * and the 4px radius breaks DESIGN.md §Radius ("8px is the default on every
+   * rectangular container: chips, buttons … do not mix 0/2/3/4/12px on the
+   * same surface").
+   *
+   * Geometry is shared here and matches the static chips beside them
+   * (`lane-head.css`: `padding: 1px 6px`, 8px radius, `0.72em`, `0.04em`).
+   * The 1px outline is what separates an interactive control from those chips
+   * (DESIGN.md §Borders: inputs, buttons and list rows take a 1px outline).
+   * Hue is the ONLY per-action difference, and it carries meaning: amber for a
+   * queue waiting on the human, lane accent for an action they can take.
+   */
+  .acp-harness__timeline-badge,
+  .acp-harness__review-thread-action {
+    min-height: 20px;
+    padding: 1px 6px;
+    border: 1px solid transparent;
+    border-radius: var(--krypton-border-radius, 8px);
+    font: inherit;
+    font-size: 0.72em;
+    letter-spacing: 0.04em;
+    text-shadow: none;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .acp-harness__timeline-badge:focus-visible,
+  .acp-harness__review-thread-action:focus-visible,
+  .acp-harness__timeline-badge:hover,
+  .acp-harness__review-thread-action:hover {
+    border-color: currentColor;
+    outline: none;
+  }
+
+  .acp-harness__timeline-badge:disabled,
+  .acp-harness__review-thread-action:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  /* Timeline capture badge · `components/lane-shell/index.ts` `syncBadge()`. */
+  .acp-harness__timeline-badge {
+    border-color: rgba(255, 176, 0, 0.48);
+    background: rgba(255, 176, 0, 0.08);
+    color: #ffd880;
+  }
+
+  /* Review-thread action · `components/lane-shell/index.ts` `syncReviewAction()`.
+     The picker overlay it opens is `components/review-thread-dialog/`. */
+  .acp-harness__review-thread-action {
+    border-color: color-mix(in srgb, var(--agent-accent) 48%, transparent);
+    background: color-mix(in srgb, var(--agent-accent) 8%, transparent);
+    color: var(--agent-accent);
+  }
+}

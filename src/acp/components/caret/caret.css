@@ -1,0 +1,39 @@
+/* Spec 302 §1.9 — `Caret`.
+   Carved verbatim from src/styles/acp-harness.css:4974-4976 (composer command
+   mode), :4990-4996 (the block) and :5163-5166 (the blink keyframes), plus
+   src/styles/attention-triage.css:276-278, whose only real difference from the
+   block was the colour — the glyph difference is the `glyph` prop.
+
+   Both context rules live here because the caret block is their SUBJECT: they
+   style the caret in a state its ancestor owns, not the ancestor itself. */
+
+@layer krypton.component {
+  .acp-harness__caret {
+    position: relative;
+    z-index: 6;
+    color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+    text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 45%, transparent);
+    animation: acp-harness-caret 1s step-end infinite;
+  }
+
+  /* `blink: false` — a caret that marks a position without drawing the eye. */
+  .acp-harness__caret--static {
+    animation: none;
+  }
+
+  /* Command mode replaces the draft line with the command readout; the caret
+     would sit on text the user is not editing. */
+  .acp-harness__composer--command .acp-harness__caret {
+    display: none;
+  }
+
+  /* The triage redirect line is window-accented, not lane-accented. */
+  .acp-triage__redirect-input .acp-harness__caret {
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  @keyframes acp-harness-caret {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+  }
+}

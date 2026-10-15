@@ -1,0 +1,439 @@
+/* Spec 302 §7.10 — `OrchestratorConsole`. Moved verbatim from
+   src/styles/orchestrator-console.css:11-440, except:
+     * `.acp-harness__orchestrator` → `.acp-harness__orchestrator-overlay`, the
+       class `OverlayShell` derives from the overlay's name;
+     * `.acp-orchestrator__summary` is renamed `.acp-orchestrator__sub`, the
+       class `OverlayShell` gives the head's subtitle. The seat keeps its own
+       `.acp-orchestrator__seat` pill through the shell's `headExtra` slot;
+     * `.acp-orchestrator__main` and `.acp-orchestrator__permq-rows` are the
+       component's one body node and the reconciler's row container: neither is
+       a layout box.
+   `.acp-harness__lane-orchestrator` (the seat badge on the lane head, outside
+   the console) is NOT this block and stays where it is. */
+@layer krypton.component {
+  .acp-harness__orchestrator-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 7;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: 5vh;
+    /* No scrim — the panel floats over the live lane without dimming it. */
+    background: transparent;
+  }
+
+  .acp-harness__orchestrator-overlay[hidden] {
+    display: none;
+  }
+
+  .acp-orchestrator__panel {
+    display: flex;
+    flex-direction: column;
+    width: clamp(640px, 86vw, 1180px);
+    max-height: 88vh;
+    /* Fully opaque so live-lane text never bleeds through the panel. */
+    background: rgb(7, 12, 16);
+    border: 1px solid rgba(0, 204, 255, 0.55);
+    border-radius: var(--krypton-border-radius, 8px);
+    /* Dark inset ring (0 0 0 1px) separates the cyan edge from a bright lane
+       behind it; deep drop shadow lifts the whole panel off the workspace —
+       this is what carries separation now that there is no scrim. */
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.55),
+      0 18px 44px rgba(0, 0, 0, 0.78);
+    overflow: hidden;
+  }
+
+  .acp-orchestrator__main,
+  .acp-orchestrator__permq-rows {
+    display: contents;
+  }
+
+  /* ── Head ─────────────────────────────────────────────────── */
+
+  .acp-orchestrator__head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(0, 204, 255, 0.22);
+    color: var(--krypton-window-accent, #0cf);
+    letter-spacing: 0.08em;
+    text-shadow: 0 0 8px rgba(0, 204, 255, 0.18);
+  }
+
+  .acp-orchestrator__title {
+    font-weight: 600;
+  }
+
+  .acp-orchestrator__sub {
+    margin-left: auto;
+    color: rgba(216, 232, 216, 0.5);
+    font-size: 0.8em;
+    text-shadow: none;
+    letter-spacing: 0.04em;
+  }
+
+  .acp-orchestrator__seat {
+    padding: 1px 7px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(0, 204, 255, 0.12);
+    color: var(--krypton-window-accent, #0cf);
+    font-size: 0.78em;
+    text-shadow: none;
+  }
+
+  /* ── Region shell (spec 111 slot pattern) ─────────────────── */
+
+  .acp-orchestrator__body {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 1px;
+    min-height: 0;
+    flex: 1;
+    background: rgba(0, 204, 255, 0.1);
+    overflow: hidden;
+  }
+
+  .acp-orchestrator__region {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 10px 14px;
+    background: rgba(8, 14, 18, 0.98);
+    overflow: auto;
+  }
+
+  .acp-orchestrator__region[data-region='lanes'] {
+    grid-row: 1 / span 2;
+  }
+
+  .acp-orchestrator__region--reserved {
+    align-items: center;
+    justify-content: center;
+  }
+
+  .acp-orchestrator__region-title {
+    margin: 0 0 8px;
+    font-size: 0.72em;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(216, 232, 216, 0.45);
+  }
+
+  .acp-orchestrator__reserved-note {
+    color: rgba(216, 232, 216, 0.32);
+    font-size: 0.78em;
+    letter-spacing: 0.04em;
+  }
+
+  .acp-orchestrator__empty {
+    padding: 16px 4px;
+    color: rgba(216, 232, 216, 0.45);
+    font-size: 0.82em;
+    letter-spacing: 0.03em;
+  }
+
+  /* ── Lane grid ────────────────────────────────────────────── */
+
+  .acp-orchestrator__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+    gap: 8px;
+    min-height: 0;
+  }
+
+  /* Cards are one flat tinted surface. Selection = full ring, never a left rail.
+     The seat is marked by its badge + a faint background tint, not a border bar. */
+  .acp-orchestrator__card {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 9px 11px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(216, 232, 216, 0.05);
+  }
+
+  .acp-orchestrator__card--seat {
+    background: rgba(0, 204, 255, 0.08);
+  }
+
+  .acp-orchestrator__card--selected {
+    outline: 1px solid rgba(0, 204, 255, 0.6);
+    outline-offset: -1px;
+  }
+
+  .acp-orchestrator__card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .acp-orchestrator__card-name {
+    color: rgba(216, 232, 216, 0.92);
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+
+  .acp-orchestrator__card-status {
+    font-size: 0.72em;
+    letter-spacing: 0.05em;
+    color: rgba(216, 232, 216, 0.5);
+  }
+
+  .acp-orchestrator__card-status--busy,
+  .acp-orchestrator__card-status--needs_permission {
+    color: #ffcf70;
+  }
+
+  .acp-orchestrator__card-status--awaiting_peer {
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-orchestrator__card-status--error {
+    color: #ff8b8b;
+  }
+
+  .acp-orchestrator__card-meta {
+    color: rgba(216, 232, 216, 0.5);
+    font-size: 0.74em;
+    letter-spacing: 0.03em;
+  }
+
+  .acp-orchestrator__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .acp-orchestrator__badge,
+  .acp-orchestrator__tag {
+    padding: 1px 6px;
+    border-radius: var(--krypton-border-radius, 8px);
+    font-size: 0.7em;
+    letter-spacing: 0.04em;
+    background: rgba(216, 232, 216, 0.07);
+    color: rgba(216, 232, 216, 0.66);
+  }
+
+  .acp-orchestrator__badge {
+    background: rgba(0, 204, 255, 0.14);
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-orchestrator__tag--attn {
+    background: rgba(255, 207, 112, 0.14);
+    color: #ffcf70;
+  }
+
+  .acp-orchestrator__tag--perm {
+    background: rgba(255, 207, 112, 0.16);
+    color: #ffcf70;
+  }
+
+  /* spec 184 — global pending-permission queue. A fleet-wide band above the body,
+     one row per awaiting lane, so the operator answers from a single place without
+     selecting each card. Flat tinted surface, no left rail. */
+  .acp-orchestrator__permq {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(0, 204, 255, 0.22);
+    max-height: 34vh;
+    overflow-y: auto;
+  }
+
+  /* spec 181/184 — a queue row. High-risk shifts the hint to the danger hue (+ a
+     full-bleed danger tint, no rail) and reveals the full command for in-console
+     review; the focused row (the a/r target) gets a ring. */
+  .acp-orchestrator__perm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    padding: 6px 8px;
+    border-radius: var(--krypton-border-radius, 8px);
+    border: 1px solid transparent;
+    background: rgba(255, 207, 112, 0.1);
+    font-size: 0.76em;
+    letter-spacing: 0.02em;
+  }
+
+  .acp-orchestrator__perm--highrisk {
+    background: rgba(255, 139, 139, 0.12);
+  }
+
+  .acp-orchestrator__perm--focus {
+    border-color: rgba(255, 207, 112, 0.55);
+  }
+
+  .acp-orchestrator__perm--focus.acp-orchestrator__perm--highrisk {
+    border-color: rgba(255, 139, 139, 0.6);
+  }
+
+  .acp-orchestrator__perm-lane {
+    color: var(--krypton-window-accent, #0cf);
+    font-weight: 600;
+  }
+
+  .acp-orchestrator__perm-label {
+    color: rgba(216, 232, 216, 0.92);
+  }
+
+  /* High-risk: the FULL untruncated command, monospace, wraps onto its own line so
+     a destructive tail is always visible before the human accepts. */
+  .acp-orchestrator__perm-command {
+    flex-basis: 100%;
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    color: #ffd5d5;
+    word-break: break-all;
+    white-space: pre-wrap;
+  }
+
+  .acp-orchestrator__perm-more {
+    color: rgba(216, 232, 216, 0.5);
+  }
+
+  .acp-orchestrator__perm-hint {
+    margin-left: auto;
+    color: #ffcf70;
+  }
+
+  .acp-orchestrator__perm-hint--highrisk {
+    color: #ff8b8b;
+  }
+
+  /* ── Feed ─────────────────────────────────────────────────── */
+
+  .acp-orchestrator__feed {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .acp-orchestrator__feed-row {
+    display: flex;
+    gap: 8px;
+    font-size: 0.78em;
+  }
+
+  .acp-orchestrator__feed-who {
+    flex: 0 0 auto;
+    color: var(--krypton-window-accent, #0cf);
+    letter-spacing: 0.03em;
+  }
+
+  .acp-orchestrator__feed-text {
+    min-width: 0;
+    color: rgba(216, 232, 216, 0.66);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── Dispatch ─────────────────────────────────────────────── */
+
+  .acp-orchestrator__dispatch {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 14px;
+    border-top: 1px solid rgba(0, 204, 255, 0.22);
+    background: rgba(8, 14, 18, 0.98);
+  }
+
+  .acp-orchestrator__dispatch--active {
+    background: rgba(0, 204, 255, 0.06);
+    /* The input wraps onto multiple lines once open, so pin the label/purposes to
+       the top instead of centering them against a growing multi-line draft. */
+    align-items: flex-start;
+  }
+
+  .acp-orchestrator__dispatch-label {
+    flex: 0 0 auto;
+    color: rgba(216, 232, 216, 0.82);
+    letter-spacing: 0.04em;
+  }
+
+  .acp-orchestrator__dispatch-hint,
+  .acp-orchestrator__dispatch-disabled {
+    color: rgba(216, 232, 216, 0.4);
+    font-size: 0.8em;
+    letter-spacing: 0.03em;
+  }
+
+  .acp-orchestrator__purposes {
+    display: inline-flex;
+    gap: 5px;
+  }
+
+  .acp-orchestrator__purpose {
+    padding: 1px 7px;
+    border-radius: var(--krypton-border-radius, 8px);
+    font-size: 0.74em;
+    letter-spacing: 0.04em;
+    background: rgba(216, 232, 216, 0.06);
+    color: rgba(216, 232, 216, 0.5);
+  }
+
+  .acp-orchestrator__purpose--active {
+    background: rgba(0, 204, 255, 0.16);
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-orchestrator__dispatch-input {
+    flex: 1;
+    min-width: 0;
+    color: rgba(216, 232, 216, 0.92);
+    /* A long prompt wraps onto multiple lines and stays fully visible instead of
+       scrolling its tail (and the caret) off the right edge. Cap the height so a
+       very long draft scrolls internally rather than blowing up the console. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow-y: auto;
+    max-height: 6em;
+  }
+
+  .acp-orchestrator__dispatch-placeholder {
+    color: rgba(216, 232, 216, 0.34);
+  }
+
+  /* The dispatch/seat-prompt box is a custom-rendered span, not a native input,
+     so it has no OS caret. Render a blinking block caret to show focus + keystroke
+     acceptance. Sits inline after the draft text (or before the placeholder). */
+  .acp-orchestrator__caret {
+    display: inline-block;
+    width: 0.5em;
+    height: 1.05em;
+    margin: 0 1px -0.18em 0;
+    background: var(--krypton-window-accent, #0cf);
+    animation: acp-orchestrator-caret-blink 1.06s steps(1) infinite;
+  }
+
+  @keyframes acp-orchestrator-caret-blink {
+    0%,
+    50% {
+      opacity: 1;
+    }
+    50.01%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /* ── Keybinding legend ────────────────────────────────────── */
+
+  .acp-orchestrator__keys {
+    padding: 7px 14px;
+    border-top: 1px solid rgba(0, 204, 255, 0.14);
+    color: rgba(216, 232, 216, 0.42);
+    font-size: 0.74em;
+    letter-spacing: 0.04em;
+  }
+}

@@ -1,12 +1,13 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   colorToRgb,
   contrastRatio,
+  FrontendThemeEngine,
   mixColors,
   relativeLuminance,
   rgbToHex,
@@ -253,22 +254,112 @@ describe('themeCssProperties', () => {
   });
 });
 
+/** Body spans of every `@layer <name> { … }` block, in source order. */
+function layerSpans(css: string): ReadonlyArray<{ name: string; start: number; end: number }> {
+  const spans: { name: string; start: number; end: number }[] = [];
+  for (const match of css.matchAll(/@layer\s+([\w.]+)\s*\{/g)) {
+    const start = (match.index ?? 0) + match[0].length;
+    let depth = 1;
+    let i = start;
+    while (i < css.length && depth > 0) {
+      if (css[i] === '{') depth += 1;
+      else if (css[i] === '}') depth -= 1;
+      i += 1;
+    }
+    spans.push({ name: match[1], start, end: i - 1 });
+  }
+  return spans;
+}
+
+/**
+ * Scheme selectors (`html[data-theme-scheme=…] …`) that sit outside a
+ * `@layer krypton.scheme` block — i.e. whose precedence still depends on
+ * import order rather than on layer membership.
+ */
+function unlayeredSchemeRules(css: string): string[] {
+  const scheme = layerSpans(css).filter((span) => span.name === 'krypton.scheme');
+  const stray: string[] = [];
+  for (const match of css.matchAll(/html\[data-theme-scheme=[^\]]*\][^{};]*\{/g)) {
+    const at = match.index ?? 0;
+    if (scheme.some((span) => at >= span.start && at < span.end)) continue;
+    stray.push(match[0].replace(/\s*\{$/, '').trim());
+  }
+  return stray;
+}
+
 describe('light scheme stylesheet', () => {
   const here = dirname(fileURLToPath(import.meta.url));
 
-  it('is imported last so ink mixes beat neon-on-void alphas', () => {
+  // Spec 301 phase 6 moved the harness half of theme-scheme.css into the
+  // owning components' `@layer krypton.scheme` blocks. Import order no longer
+  // decides whether an ink mix beats a neon-on-void alpha for the harness —
+  // layer membership does — so that is what is asserted here.
+  it('keeps every harness scheme override inside @layer krypton.scheme', () => {
+    const sheets = [
+      'acp/components/lane-rail/lane-rail.css',
+      'acp/components/rail-entry/rail-entry.css',
+      'acp/components/lane-head/lane-head.css',
+      'acp/components/lane-shell/lane-shell.css',
+      'acp/components/transcript-row/transcript-row.css',
+      'acp/components/image-strip/image-strip.css',
+      'acp/components/transcript/transcript.css',
+      'styles/harness-shared.css',
+    ];
+    const stray: string[] = [];
+    for (const sheet of sheets) {
+      stray.push(...unlayeredSchemeRules(readFileSync(join(here, sheet), 'utf8')).map((s) => `${sheet}: ${s}`));
+    }
+    expect(stray).toEqual([]);
+  });
+
+  it('leaves no component stylesheet rule outside a krypton.* layer', () => {
+    const dir = join(here, 'acp/components');
+    const stray: string[] = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      for (const file of readdirSync(join(dir, entry.name))) {
+        if (!file.endsWith('.css')) continue;
+        const css = readFileSync(join(dir, entry.name, file), 'utf8');
+        const outside = css
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/@layer\s+[\w.]+\s*\{[\s\S]*\}/g, '')
+          .trim();
+        if (outside !== '') stray.push(`${entry.name}/${file}`);
+        for (const layer of css.matchAll(/@layer\s+([\w.]+)\s*\{/g)) {
+          if (!layer[1].startsWith('krypton.')) stray.push(`${entry.name}/${file}: @layer ${layer[1]}`);
+        }
+      }
+    }
+    expect(stray).toEqual([]);
+  });
+
+  // The non-harness half still depends on outranking every other sheet, and it
+  // is unlayered, so it must stay last.
+  it('imports theme-scheme.css last for the rules that stayed unlayered', () => {
     const index = readFileSync(join(here, 'styles/index.css'), 'utf8');
     const lastImport = [...index.matchAll(/@import '\.\/([^']+)';/g)].pop();
     expect(lastImport?.[1]).toBe('theme-scheme.css');
   });
 
-  it('rewrites chrome and rail on html[data-theme-scheme=light]', () => {
+  it('rewrites window chrome on html[data-theme-scheme=light]', () => {
     const css = readFileSync(join(here, 'styles/theme-scheme.css'), 'utf8');
     expect(css).toContain("html[data-theme-scheme='light'] .krypton-tab__title");
+    // No harness selector is left: the whole half moved to its owners.
+    expect(css.replace(/\/\*[\s\S]*?\*\//g, '')).not.toContain('.acp-');
+    expect(css).not.toMatch(/border-left:\s*[2-9]px/);
+  });
+
+  it('rewrites the harness rail from the component that owns it', () => {
+    const css = readFileSync(join(here, 'acp/components/lane-rail/lane-rail.css'), 'utf8');
     expect(css).toContain("html[data-theme-scheme='light'] .acp-harness__rail");
     expect(css).toContain('--agent-surface-rail');
-    expect(css).toContain('--krypton-backend-codex');
     expect(css).not.toMatch(/border-left:\s*[2-9]px/);
+  });
+
+  it('keeps the harness backend palette with the shell that declares it', () => {
+    const css = readFileSync(join(here, 'styles/harness-shared.css'), 'utf8');
+    expect(css).toContain("html[data-theme-scheme='light'] .acp-harness");
+    expect(css).toContain('--krypton-backend-codex');
   });
 });
 
@@ -281,5 +372,82 @@ describe('relativeLuminance / mixColors', () => {
     const mixed = mixColors('#ffd166', '#1c2c3c', 0.28);
     expect(relativeLuminance(mixed)).toBeLessThan(relativeLuminance('#ffd166'));
     expect(relativeLuminance(mixed)).toBeGreaterThan(relativeLuminance('#1c2c3c'));
+  });
+});
+
+describe('component tokens (spec 303)', () => {
+  /** Minimal `document.documentElement` stand-in: the style map it receives. */
+  function stubRoot(): Record<string, string> {
+    const applied: Record<string, string> = {};
+    vi.stubGlobal('document', {
+      documentElement: {
+        dataset: {} as Record<string, string>,
+        style: {
+          setProperty(name: string, value: string): void {
+            applied[name] = value;
+          },
+          removeProperty(name: string): void {
+            delete applied[name];
+          },
+        },
+      },
+    });
+    return applied;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('merges a known key as --<key>', () => {
+    const t = theme({});
+    t.tokens = { 'acp-tool-head-fg': '#ffd27f' };
+    expect(themeCssProperties(t)['--acp-tool-head-fg']).toBe('#ffd27f');
+  });
+
+  it('merges an unknown key too — inert, not an error', () => {
+    const t = theme({});
+    t.tokens = { 'not-a-real-hook-yet': '420px' };
+    const props = themeCssProperties(t);
+    expect(props['--not-a-real-hook-yet']).toBe('420px');
+    expect(props['--agent-primary']).toBe('#0cf');
+  });
+
+  it('lets a user token beat the derived built-in of the same name', () => {
+    const t = theme({ accent: '#0cf' });
+    expect(themeCssProperties(t)['--agent-text']).toBe('#b0c4d8');
+    t.tokens = { 'agent-text': '#ffd27f' };
+    expect(themeCssProperties(t)['--agent-text']).toBe('#ffd27f');
+  });
+
+  it('writes known and unknown keys onto the document element', () => {
+    const applied = stubRoot();
+    const t = theme({});
+    t.tokens = { 'acp-tool-head-fg': '#ffd27f', 'not-a-real-hook-yet': '420px' };
+    new FrontendThemeEngine().apply(t);
+    expect(applied['--acp-tool-head-fg']).toBe('#ffd27f');
+    expect(applied['--not-a-real-hook-yet']).toBe('420px');
+    expect(applied['--agent-primary']).toBe('#0cf');
+  });
+
+  it('removes a stale token when the next theme does not set it', () => {
+    const applied = stubRoot();
+    const engine = new FrontendThemeEngine();
+
+    const withToken = theme({});
+    withToken.tokens = { 'acp-tool-head-fg': '#ffd27f', 'acp-peek-accent': '#0cf' };
+    engine.apply(withToken);
+    expect(applied['--acp-tool-head-fg']).toBe('#ffd27f');
+
+    const without = theme({});
+    without.tokens = { 'acp-peek-accent': '#00c840' };
+    engine.apply(without);
+    expect('--acp-tool-head-fg' in applied).toBe(false);
+    expect(applied['--acp-peek-accent']).toBe('#00c840');
+    expect(applied['--agent-primary']).toBe('#0cf');
+
+    const none = theme({});
+    engine.apply(none);
+    expect('--acp-peek-accent' in applied).toBe(false);
   });
 });

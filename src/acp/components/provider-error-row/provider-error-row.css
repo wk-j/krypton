@@ -1,0 +1,124 @@
+/* Spec 302 §3.10 — `ProviderErrorRow`.
+   Carved verbatim from src/styles/acp-harness.css:5705-5817 (the `Spec 123 —
+   provider/API failure card` comment and the twelve
+   `acp-harness__provider-error*` rules; delete :5705-5818 to take the trailing
+   blank line with them).
+
+   theme-scheme.css declares nothing for this block, so there is no
+   `krypton.scheme` section. */
+
+@layer krypton.component {
+  /* Spec 123 — provider/API failure card */
+  .acp-harness__provider-error {
+    display: grid;
+    gap: 4px;
+    padding: 8px 10px;
+    border: 1px solid rgba(255, 209, 102, 0.34);
+    border-radius: var(--krypton-border-radius, 8px);
+    background:
+      linear-gradient(90deg, rgba(255, 209, 102, 0.09), rgba(109, 208, 255, 0.035)),
+      rgba(10, 16, 24, 0.9);
+    box-shadow: 0 0 0 1px rgba(255, 209, 102, 0.06);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84);
+    font-size: 0.9em;
+    white-space: normal;
+  }
+
+  .acp-harness__provider-error--auth,
+  .acp-harness__provider-error--quota {
+    border-color: rgba(255, 107, 139, 0.48);
+    background:
+      linear-gradient(90deg, rgba(255, 107, 139, 0.1), rgba(109, 208, 255, 0.03)),
+      rgba(10, 16, 24, 0.9);
+    box-shadow: 0 0 0 1px rgba(255, 107, 139, 0.06);
+  }
+
+  .acp-harness__provider-error--context {
+    border-color: rgba(109, 208, 255, 0.42);
+    background:
+      linear-gradient(90deg, rgba(109, 208, 255, 0.1), rgba(142, 255, 176, 0.03)),
+      rgba(10, 16, 24, 0.9);
+    box-shadow: 0 0 0 1px rgba(109, 208, 255, 0.06);
+  }
+
+  .acp-harness__provider-error--network,
+  .acp-harness__provider-error--provider,
+  .acp-harness__provider-error--unknown {
+    border-color: rgba(255, 176, 0, 0.42);
+  }
+
+  .acp-harness__provider-error-kicker {
+    color: rgba(255, 209, 102, 0.82);
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    font-size: 0.76em;
+    letter-spacing: 0.11em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .acp-harness__provider-error-headline {
+    color: rgba(255, 247, 214, 0.96);
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  .acp-harness__provider-error-hint {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+    line-height: 1.36;
+  }
+
+  .acp-harness__provider-error-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 3px;
+  }
+
+  .acp-harness__provider-error-chip {
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+    border-radius: var(--krypton-border-radius, 8px);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.58);
+    padding: 1px 6px;
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    font-size: 0.72em;
+    letter-spacing: 0.07em;
+    line-height: 1.5;
+    text-transform: uppercase;
+  }
+
+  .acp-harness__provider-error-chip--retry {
+    border-color: rgba(142, 255, 176, 0.28);
+    color: rgba(142, 255, 176, 0.76);
+  }
+
+  .acp-harness__provider-error-details {
+    margin-top: 4px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.58);
+  }
+
+  .acp-harness__provider-error-details summary {
+    width: fit-content;
+    cursor: pointer;
+    color: rgba(109, 208, 255, 0.78);
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    font-size: 0.76em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    user-select: none;
+  }
+
+  .acp-harness__provider-error-details pre {
+    margin: 7px 0 0;
+    padding: 8px;
+    max-height: 180px;
+    overflow: auto;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(0, 0, 0, 0.24);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78);
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    font-size: 0.82em;
+    line-height: 1.42;
+    white-space: pre-wrap;
+  }
+}

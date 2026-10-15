@@ -1,0 +1,351 @@
+/* Spec 302 §4.5 — `RailEntry`.
+   Carved verbatim from src/styles/acp-harness.css (:5322-5572 except the
+   unrelated `.acp-harness__rail-name` rule's neighbours, plus :5600-5606 and
+   :6978-6985) and src/styles/theme-scheme.css:179-239.
+
+   `.acp-harness__rail-entry--needs_permission` is additionally one selector of
+   the shared pulse lists at :5240-5246 and :5252-5261; those two selectors are
+   taken here and the `acp-harness-permission-pulse` keyframes stays where it
+   is, since `.acp-harness__lane-symbol` and `.acp-harness__tab--*` still use
+   it. */
+
+@layer krypton.component {
+  .acp-harness__rail-entry {
+    /* spec 125 — three-column / two-row grid:
+     *   col 1 = status dot (8px), col 2 = backend logo (14px), col 3 = body
+     *   row 1 = head (name + peer hints + metrics, flex inside)
+     *   row 2 = meta (tag chip + trimmed directive title, or status label)
+     * The meta row always renders so row height stays consistent across lanes. */
+    display: grid;
+    grid-template-columns: 8px 14px minmax(0, 1fr);
+    column-gap: 8px;
+    row-gap: 2px;
+    padding: 6px 12px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    letter-spacing: 0.04em;
+  }
+
+  .acp-harness__rail-head {
+    grid-column: 3;
+    grid-row: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .acp-harness__rail-meta {
+    grid-column: 3;
+    grid-row: 2;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+    font-size: 0.76em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .acp-harness__rail-logo {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    justify-self: center;
+    width: 14px;
+    height: 14px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+    flex-shrink: 0;
+  }
+
+  .acp-harness__rail-logo svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .acp-harness__rail-logo--claude   { color: var(--krypton-backend-claude); }
+  .acp-harness__rail-logo--codex    { color: var(--krypton-backend-codex); }
+  .acp-harness__rail-logo--opencode { color: var(--krypton-backend-opencode); }
+  .acp-harness__rail-logo--pi       { color: var(--krypton-backend-pi); }
+  .acp-harness__rail-logo--droid    { color: var(--krypton-backend-droid); }
+  .acp-harness__rail-logo--cursor   { color: var(--krypton-backend-cursor); }
+  .acp-harness__rail-logo--junie    { color: var(--krypton-backend-junie); }
+  .acp-harness__rail-logo--omp      { color: var(--krypton-backend-omp); }
+  .acp-harness__rail-logo--grok     { color: var(--krypton-backend-grok); }
+  .acp-harness__rail-logo--copilot  { color: var(--krypton-backend-copilot); }
+  .acp-harness__rail-logo--mimo     { color: var(--krypton-backend-mimo); }
+  .acp-harness__rail-logo--cline    { color: var(--krypton-backend-cline); }
+  .acp-harness__rail-logo--antigravity { color: var(--krypton-backend-antigravity); }
+
+  .acp-harness__rail-tag {
+    flex: 0 0 auto;
+    display: inline-block;
+    max-width: 10ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 1px 5px;
+    border: 1px solid currentColor;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(0, 0, 0, 0.2);
+    font-size: 0.92em;
+    line-height: 1.1;
+    letter-spacing: 0.06em;
+    text-transform: lowercase;
+  }
+
+  .acp-harness__rail-tag--analysis { color: var(--krypton-role-analysis); }
+  .acp-harness__rail-tag--review   { color: var(--krypton-role-review); }
+  .acp-harness__rail-tag--impl     { color: var(--krypton-role-impl); }
+  .acp-harness__rail-tag--plan     { color: var(--krypton-role-plan); }
+  .acp-harness__rail-tag--explore  { color: var(--krypton-role-explore); }
+  .acp-harness__rail-tag--hash-1   { color: var(--krypton-role-hash-1); }
+  .acp-harness__rail-tag--hash-2   { color: var(--krypton-role-hash-2); }
+  .acp-harness__rail-tag--hash-3   { color: var(--krypton-role-hash-3); }
+
+  .acp-harness__rail-tag--clearing {
+    text-decoration: line-through;
+    text-decoration-color: rgba(255, 209, 102, 0.65);
+    border-style: dashed;
+    opacity: 0.55;
+  }
+
+  .acp-harness__rail-meta__title {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: rgba(226, 238, 226, 0.74);
+  }
+
+  .acp-harness__rail-meta__hint {
+    flex: 0 0 auto;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+  }
+
+  .acp-harness__rail-entry--directive {
+    background: color-mix(in srgb, #c7a2ff 6%, transparent);
+    color: rgba(226, 238, 226, 0.86);
+  }
+
+  .acp-harness__rail-entry--directive.acp-harness__rail-entry--active {
+    background: color-mix(in srgb, #c7a2ff 14%, transparent);
+  }
+
+  .acp-harness__rail-entry--pending {
+    background: color-mix(in srgb, var(--agent-gold, #ffd166) 5%, transparent);
+  }
+
+  .acp-harness__rail-entry--pending .acp-harness__rail-meta__title,
+  .acp-harness__rail-entry--pending .acp-harness__rail-meta__hint {
+    color: var(--agent-gold, #ffd166);
+  }
+
+  .acp-harness__rail-peers {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    max-width: 9ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .acp-harness__rail-metric {
+    flex: 0 0 auto;
+    font-size: 0.74em;
+    font-variant-numeric: tabular-nums;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    letter-spacing: 0.02em;
+  }
+
+  .acp-harness__rail-metric--tools {
+    min-width: 3ch;
+    text-align: right;
+  }
+
+  .acp-harness__rail-metric--ctx {
+    min-width: 4ch;
+    text-align: right;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+  }
+
+  /* No left accent rail — the active entry announces itself by a stronger
+     full-width tint + text color (flat single surface, matches the lane bands). */
+  .acp-harness__rail-entry--active {
+    color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 55%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
+    background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 11%, transparent);
+  }
+
+  .acp-harness__rail-dot {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+  }
+
+  .acp-harness__rail-entry--busy .acp-harness__rail-dot {
+    background: var(--krypton-window-accent, #0cf);
+    box-shadow: 0 0 6px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.6);
+  }
+
+  /* spec 118 — zen rail peer activity (rail is zen-only today; scope under
+   * --zen so a future rail outside zen mode keeps a neutral dot). */
+  .acp-harness--zen .acp-harness__rail-entry--awaiting_peer .acp-harness__rail-dot,
+  .acp-harness--zen .acp-harness__rail-entry--peer-awaiting .acp-harness__rail-dot {
+    background: #b8a6ff;
+    box-shadow: 0 0 5px rgba(184, 166, 255, 0.45);
+    animation: acp-harness-zen-attention 1.4s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .acp-harness--zen .acp-harness__rail-entry--awaiting_peer .acp-harness__rail-dot,
+    .acp-harness--zen .acp-harness__rail-entry--peer-awaiting .acp-harness__rail-dot {
+      animation: none;
+    }
+  }
+
+  .acp-harness__rail-peer {
+    flex: 0 0 auto;
+    font-size: 0.72em;
+    color: #b8a6ff;
+    max-width: 4ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .acp-harness__rail-peer--inbox {
+    padding: 0 3px;
+    border: 1px solid rgba(184, 166, 255, 0.45);
+    border-radius: var(--krypton-border-radius, 8px);
+    font-size: 0.68em;
+  }
+
+  .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot {
+    background: var(--agent-gold, #ffd166);
+    box-shadow: 0 0 8px rgba(255, 209, 102, 0.72);
+  }
+
+  .acp-harness__rail-entry--needs_permission {
+    background: rgba(255, 209, 102, 0.12);
+    color: #ffe3a0;
+    animation: acp-harness-permission-pulse 1.1s ease-in-out infinite;
+  }
+
+  .acp-harness__rail-entry--needs_permission .acp-harness__rail-meta__hint {
+    color: #ffe3a0;
+    font-weight: 700;
+  }
+
+  .acp-harness__rail-entry--error .acp-harness__rail-dot {
+    background: var(--agent-error, #ff6b8b);
+  }
+
+  .acp-harness--zen .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot,
+  .acp-harness--zen .acp-harness__rail-entry--error .acp-harness__rail-dot {
+    animation: acp-harness-zen-attention 1.2s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .acp-harness--zen .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot {
+      animation: none;
+    }
+
+    .acp-harness__rail-entry--needs_permission {
+      animation: none;
+      opacity: 1;
+    }
+  }
+
+  @keyframes acp-harness-zen-attention {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.4); opacity: 0.6; }
+  }
+
+  .acp-harness__rail-name {
+    flex: 1 1 0;
+    min-width: 0;
+    font-size: 0.85em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .acp-harness__rail-review-count {
+    margin-left: auto;
+    padding: 2px 5px;
+    color: var(--agent-accent);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__rail-entry {
+    color: color-mix(in srgb, var(--krypton-ink) 78%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__rail-meta {
+    color: color-mix(in srgb, var(--krypton-ink) 62%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__rail-meta__title {
+    color: color-mix(in srgb, var(--krypton-ink) 80%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__rail-meta__hint,
+  html[data-theme-scheme='light'] .acp-harness__rail-metric,
+  html[data-theme-scheme='light'] .acp-harness__rail-metric--ctx {
+    color: color-mix(in srgb, var(--krypton-ink) 58%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__rail-name {
+    color: color-mix(in srgb, var(--acp-lane-accent, var(--krypton-accent, #007799)) 42%, var(--krypton-ink));
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__rail-entry--active {
+    color: color-mix(in srgb, var(--acp-lane-accent, var(--krypton-accent, #007799)) 45%, var(--krypton-ink));
+    background: color-mix(in srgb, var(--acp-lane-accent, var(--krypton-accent, #007799)) 16%, var(--agent-surface-rail, transparent));
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__rail-entry--directive {
+    color: color-mix(in srgb, #7a38b0 35%, var(--krypton-ink));
+    background: color-mix(in srgb, #7a38b0 10%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__rail-entry--directive.acp-harness__rail-entry--active {
+    background: color-mix(in srgb, #7a38b0 16%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__rail-logo {
+    color: color-mix(in srgb, var(--krypton-ink) 70%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__rail-dot {
+    background: color-mix(in srgb, var(--krypton-ink) 55%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__rail-tag {
+    background: color-mix(in srgb, var(--krypton-ink) 6%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__rail-entry--needs_permission {
+    background: rgba(154, 107, 0, 0.12);
+    color: #8a5a00;
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__rail-entry--needs_permission .acp-harness__rail-meta__hint {
+    color: #8a5a00;
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__rail-entry--busy .acp-harness__rail-dot,
+  html[data-theme-scheme='light'] .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot {
+    box-shadow: none;
+  }
+}

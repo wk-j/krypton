@@ -20,7 +20,6 @@ export const ANNOTATION_NOTE_MAX = 4096;
 export const ANNOTATION_CAP = 20;
 
 const MARK_CLASS = 'acp-harness__anno-mark';
-const RAIL_CLASS = 'acp-harness__anno-rail';
 const SKIP_WRAP =
   '.acp-harness__anno-rail, .acp-harness__resources, .acp-harness__lane-mail-provenance, .acp-harness__svg-card-bar';
 
@@ -315,58 +314,19 @@ function collectWrappableText(root: Element): string {
   return wrappableTextNodes(root).map((n) => n.nodeValue ?? '').join('');
 }
 
+/**
+ * Wrap each annotation's quote in the body and record whether it still matched.
+ *
+ * The rail itself is no longer built here: it is `AnnotationRail`
+ * (`components/annotation-rail`), mounted by the component that owns the body
+ * — `AssistantRow.syncAnnoRail()` — right after this call, so a delete or a
+ * drain touches one `<li>` instead of replacing every node in the rail.
+ */
 export function applyTranscriptAnnotations(body: HTMLElement, item: HarnessTranscriptItem): void {
   unwrapMarks(body);
-  const annotations = item.annotations ?? [];
-  for (const a of annotations) {
+  for (const a of item.annotations ?? []) {
     a.drifted = !wrapRange(body, a.quote, a.quoteIndex, a.status);
   }
-  body.querySelector(`:scope > .${RAIL_CLASS}`)?.remove();
-  if (annotations.length === 0) return;
-  body.appendChild(renderAnnotationRail(annotations));
-}
-
-function renderAnnotationRail(annotations: TranscriptAnnotation[]): HTMLElement {
-  const unsent = annotations.filter((a) => a.status === 'unsent').length;
-  const rail = document.createElement('section');
-  rail.className = RAIL_CLASS;
-  rail.setAttribute('aria-label', 'Annotations');
-  const head = document.createElement('div');
-  head.className = 'acp-harness__anno-rail-head';
-  const title = document.createElement('span');
-  title.textContent = unsent
-    ? `ANNOTATED  ${annotations.length} · ${unsent} unsent`
-    : `ANNOTATED  ${annotations.length}`;
-  const send = document.createElement('button');
-  send.type = 'button';
-  send.className = 'acp-harness__anno-send';
-  send.dataset.annoSend = '1';
-  send.disabled = unsent === 0;
-  send.textContent = unsent ? `send ${unsent}` : 'sent';
-  head.append(title, send);
-  rail.appendChild(head);
-  const list = document.createElement('ol');
-  list.className = 'acp-harness__anno-list';
-  for (const a of annotations) {
-    const li = document.createElement('li');
-    li.className = `acp-harness__anno-item acp-harness__anno-item--${a.status}`;
-    if (a.drifted) li.classList.add('acp-harness__anno-item--drifted');
-    const note = document.createElement('span');
-    note.className = 'acp-harness__anno-note';
-    note.textContent = a.body;
-    li.appendChild(note);
-    if (a.status === 'unsent') {
-      const del = document.createElement('button');
-      del.type = 'button';
-      del.className = 'acp-harness__anno-del';
-      del.dataset.annoDel = a.id;
-      del.textContent = 'del';
-      li.appendChild(del);
-    }
-    list.appendChild(li);
-  }
-  rail.appendChild(list);
-  return rail;
 }
 
 export function annotationSignature(item: HarnessTranscriptItem): string {

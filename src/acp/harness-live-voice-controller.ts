@@ -10,7 +10,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
-import { esc } from './harness-format';
+import type { LiveVoiceStripProps } from './components/live-voice-strip';
 import { errorText } from './harness-permission-scan';
 import type { HarnessLiveVoiceHost } from './harness-view-host';
 import type { HarnessLane } from './harness-view-types';
@@ -179,7 +179,7 @@ export class HarnessLiveVoiceController {
     };
     this.session = s;
     this.endNote = null;
-    this.host.render();
+    this.host.invalidate('composer');
     try {
       await this.connect(s, lane, mediaDevices);
     } catch (e) {
@@ -400,11 +400,11 @@ export class HarnessLiveVoiceController {
     window.setTimeout(() => {
       if (this.endNote && Date.now() >= this.endNote.until) {
         this.endNote = null;
-        this.host.render();
+        this.host.invalidate('composer');
       }
     }, END_NOTE_MS);
     if (error) this.host.flashChip(`live: ${note}`);
-    this.host.render();
+    this.host.invalidate('composer');
   }
 
   dispose(): void {
@@ -457,31 +457,31 @@ export class HarnessLiveVoiceController {
     this.patchStrip(s);
   }
 
-  /** Strip markup for the composer of `lane`; empty when nothing to show. */
-  renderStrip(lane: HarnessLane): string {
+  /**
+   * The composer's `LiveVoiceStrip` props for `lane` — `hidden` when there is
+   * nothing to show. Spec 301: the strip is a component the composer places,
+   * so this hands over state instead of markup. `patchStrip()` below still
+   * writes the same `data-live-*` nodes in place, because a level sample ten
+   * times a second must not go through a composer pass.
+   */
+  stripProps(lane: HarnessLane): LiveVoiceStripProps {
     const s = this.session;
     if (s?.laneId === lane.id) {
-      return (
-        `<div class="acp-harness__live acp-harness__live--${s.phase}" data-live-strip>` +
-        `<span class="acp-harness__live-label">LIVE</span>` +
-        `<span class="acp-harness__live-phase"><span data-live-phase>${s.phase}</span></span>` +
-        `<span class="acp-harness__live-voice">${esc(s.voice)}</span>` +
-        `<span class="acp-harness__live-meter acp-harness__live-meter--in" data-live-in>${meter(s.inputLevel)}</span>` +
-        `<span class="acp-harness__live-meter acp-harness__live-meter--out" data-live-out>${meter(s.outputLevel)}</span>` +
-        `<span class="acp-harness__live-line" data-live-line>${esc(this.lineText(s))}</span>` +
-        `<span class="acp-harness__live-keys" data-live-keys>${LIVE_KEYS[s.muted ? 'unmute' : 'mute']}</span>` +
-        `</div>`
-      );
+      return {
+        kind: 'session',
+        phase: s.phase,
+        voice: s.voice,
+        inputLevel: s.inputLevel,
+        outputLevel: s.outputLevel,
+        line: this.lineText(s),
+        muted: s.muted,
+      };
     }
     const note = this.endNote;
     if (note?.laneId === lane.id && Date.now() < note.until) {
-      return (
-        `<div class="acp-harness__live acp-harness__live--${note.error ? 'error' : 'ended'}">` +
-        `<span class="acp-harness__live-label">LIVE</span>` +
-        `<span class="acp-harness__live-line">${esc(note.text)}</span></div>`
-      );
+      return { kind: 'note', text: note.text, error: note.error };
     }
-    return '';
+    return { kind: 'hidden' };
   }
 
   private lineText(s: LiveSession): string {

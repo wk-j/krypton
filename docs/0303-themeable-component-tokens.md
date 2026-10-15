@@ -1,6 +1,6 @@
 # 303. Themeable Component Tokens
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-10-15
 > Scope: one additive field on the theme schema (Rust) + its application in `theme.ts` + docs.
 > Depends on: [301 — Harness UI Components](./0301-harness-ui-components.md), which gives every component

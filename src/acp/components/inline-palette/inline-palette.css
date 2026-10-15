@@ -1,0 +1,101 @@
+/* Spec 302 §2.4 — InlinePalette. Carved from the monolith, verbatim.
+
+   Sources (to be deleted by the integrator in one pass):
+     src/styles/acp-harness.css:5608-5661  — the block (Spec 87 comment + 7 rules)
+     src/styles/acp-harness.css:5819-5872  — the byte-identical SECOND copy of
+                                             that span; the later one is the one
+                                             the cascade actually used
+     src/styles/acp-harness.css:3959-3969  — the composer-scoped overrides
+     src/styles/theme-scheme.css:347-349   — the light-scheme selected row
+
+   The composer-scoped rules live here, not in the composer's directory,
+   because their SUBJECT is `.acp-harness__slash-palette*` — the composer class
+   is only an ancestor context. A component sheet may declare rules for the
+   blocks it owns; the composer directory declaring `-palette` rules would be
+   the opposite of that. */
+
+@layer krypton.component {
+  /* Spec 87 — slash command palette */
+  .acp-harness__slash-palette {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-bottom: 6px;
+    padding: 4px 0;
+    background: var(--krypton-bg-elev, var(--agent-surface-solid, #0c1018));
+    border: 1px solid color-mix(in oklab, #c77dff 30%, transparent);
+    border-radius: var(--krypton-border-radius, 8px);
+    font-size: 0.78em;
+  }
+
+  /* The component's empty state. The builder returned `''` when the palette had
+     no matches, so no element existed at all; the component keeps one node and
+     sets `hidden` instead — and `display: flex` above would otherwise beat the
+     UA's `[hidden] { display: none }`, leaving four empty bordered bars stacked
+     above the composer input. */
+  .acp-harness__slash-palette[hidden] {
+    display: none;
+  }
+
+  .acp-harness__slash-palette-meta {
+    padding: 2px 8px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    font-size: 0.78em;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .acp-harness__slash-palette-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 2px 8px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78);
+  }
+
+  .acp-harness__slash-palette-row--selected {
+    background: color-mix(in oklab, #c77dff 22%, transparent);
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  .acp-harness__slash-palette-name {
+    flex: 0 0 auto;
+    color: color-mix(in oklab, #c77dff 80%, white 20%);
+    font-weight: 600;
+  }
+
+  .acp-harness__slash-palette-hint {
+    flex: 0 0 auto;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+    font-style: italic;
+  }
+
+  .acp-harness__slash-palette-desc {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    max-width: 60ch;
+  }
+
+  /* A long palette scrolls inside the composer instead of pushing the input
+     line out of the Harness; the meta line and the rows never shrink. */
+  .acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__slash-palette {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__slash-palette-meta,
+  .acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__slash-palette-row {
+    flex: 0 0 auto;
+  }
+}
+
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__slash-palette-row--selected {
+    color: var(--krypton-ink);
+  }
+}

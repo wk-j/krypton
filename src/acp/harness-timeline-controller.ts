@@ -44,7 +44,7 @@ export class HarnessTimelineController {
       if (event.payload.harnessId !== this.host.harnessMemoryId) return;
       this.pendingCount = Math.max(0, event.payload.pendingCount);
       this.host.flashChip(`timeline · รอตรวจทาน ${this.pendingCount} รายการ · #timeline review`);
-      this.host.render();
+      this.host.invalidate('rail');
       void this.refreshSuggestions();
     });
   }
@@ -73,7 +73,7 @@ export class HarnessTimelineController {
         harnessId: this.host.harnessMemoryId,
       });
       this.pendingCount = listing.suggestions.length;
-      this.host.render();
+      this.host.invalidate('rail');
       return listing;
     } catch (e) {
       console.warn('[acp-harness] timeline suggestion refresh failed:', e);
@@ -129,7 +129,7 @@ export class HarnessTimelineController {
       const suggestion = pending.suggestions[0];
       if (!suggestion) {
         this.host.flashChip('timeline · ไม่มีข้อเสนอที่รอตรวจทาน');
-        this.host.render();
+        this.host.invalidate('rail');
         return;
       }
       this.closeCapture();
@@ -219,7 +219,8 @@ export class HarnessTimelineController {
           this.closeCapture();
           this.host.appendTranscript(lane, 'system', `บันทึก timeline แล้ว · ${event.id} · ${event.path}`);
           this.host.flashChip(`บันทึก timeline แล้ว · ${event.path}`);
-          this.host.render();
+          this.host.invalidate('laneChrome');
+          this.host.invalidate('transcript');
         },
       });
       this.host.syncOrchestratorConsoleVisibility();

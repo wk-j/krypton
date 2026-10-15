@@ -1,0 +1,301 @@
+/* Spec 302 §7.5 — `TicketPicker`.
+   Carved verbatim from src/styles/acp-harness.css:4126-4141 (the overlay root) and
+   :4385-4659 (the `acp-ticket` dialog block, including its 720px media query).
+   The ticket DOCK is a different block — `acp-harness__ticket-dock` / `acp-ticket-dock__*`
+   (:179-414) — and stays with `TicketDock` (spec 302 §5.7).
+   No scheme override exists for either block in theme-scheme.css. */
+
+@layer krypton.component {
+  /* spec 194: `#ticket` picker — its own modal dialog (mirrors the triage/review
+     overlay shell, see review-priority.css). Amber-tinted chrome to match the
+     Ticket Panel; flat rows on one surface, no nested boxes, no left accent rails. */
+  .acp-harness__ticket-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--agent-surface-high, rgba(4, 8, 13, 0.78));
+  }
+
+  .acp-harness__ticket-overlay[hidden] {
+    display: none;
+  }
+
+  .acp-ticket__panel {
+    display: flex;
+    flex-direction: column;
+    width: clamp(640px, 78vw, 1120px);
+    max-width: calc(100% - 24px);
+    max-height: 72vh;
+    background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
+    border: 1px solid rgba(255, 176, 0, 0.32);
+    border-radius: var(--krypton-border-radius, 8px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
+    font-size: 0.82em;
+    /* Thai titles carry stacked vowel/tone marks; keep enough leading. */
+    line-height: 1.55;
+  }
+
+  .acp-ticket__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(255, 176, 0, 0.22);
+    color: #ffb000;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .acp-ticket__sub {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    font-size: 0.8em;
+    letter-spacing: 0.04em;
+    text-transform: none;
+  }
+
+  .acp-ticket__tabs {
+    display: flex;
+    gap: 6px;
+    padding: 6px 14px;
+    border-bottom: 1px solid rgba(255, 176, 0, 0.14);
+  }
+
+  .acp-ticket__tab {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    min-height: 26px;
+    padding: 3px 9px;
+    border: 1px solid transparent;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: transparent;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+    font: inherit;
+    font-size: 0.86em;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    text-transform: uppercase;
+    cursor: default;
+  }
+
+  .acp-ticket__tab:hover {
+    border-color: rgba(255, 176, 0, 0.22);
+    color: #ffd880;
+  }
+
+  .acp-ticket__tab--active {
+    border-color: rgba(255, 176, 0, 0.42);
+    background: rgba(255, 176, 0, 0.10);
+    color: #ffd880;
+  }
+
+  .acp-ticket__tab:focus-visible {
+    outline: 1px solid #ffd880;
+    outline-offset: 2px;
+  }
+
+  .acp-ticket__tab-count {
+    color: inherit;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+    opacity: 0.72;
+    text-transform: none;
+  }
+
+  .acp-ticket__filter {
+    padding: 6px 14px;
+    border-bottom: 1px solid rgba(255, 176, 0, 0.14);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88);
+  }
+
+  .acp-ticket__filter-hint {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    font-style: italic;
+  }
+
+  .acp-ticket__rows {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+
+  .acp-ticket__row {
+    display: grid;
+    grid-template-areas:
+      'title title title'
+      'identity labels age';
+    grid-template-columns: minmax(0, 1fr) max-content max-content;
+    align-items: baseline;
+    gap: 2px 12px;
+    width: 100%;
+    padding: 7px 14px;
+    border: 0;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: transparent;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78);
+    font: inherit;
+    line-height: inherit;
+    text-align: left;
+    cursor: default;
+  }
+
+  .acp-ticket__row:hover {
+    background: rgba(255, 176, 0, 0.08);
+  }
+
+  .acp-ticket__row--selected {
+    background: rgba(255, 176, 0, 0.16);
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  .acp-ticket__row:focus-visible {
+    outline: 1px solid #ffd880;
+    outline-offset: -1px;
+    box-shadow: 0 0 7px rgba(255, 176, 0, 0.42);
+  }
+
+  .acp-ticket__identity {
+    grid-area: identity;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .acp-ticket__num {
+    min-width: 0;
+    overflow: hidden;
+    color: #ffd880;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-ticket__badge {
+    flex: 0 0 auto;
+    color: #ffd880;
+    font-size: 0.72em;
+    letter-spacing: 0.08em;
+  }
+
+  .acp-ticket__row--unavailable {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+    font-style: italic;
+  }
+
+  .acp-ticket__title {
+    grid-area: title;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .acp-ticket__labels {
+    grid-area: labels;
+    max-width: 40ch;
+    overflow: hidden;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+    font-style: italic;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-ticket__age {
+    grid-area: age;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    white-space: nowrap;
+  }
+
+  .acp-ticket__empty {
+    padding: 20px 14px;
+    text-align: center;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+  }
+
+  .acp-ticket__actions {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 14px;
+    border-top: 1px solid rgba(255, 176, 0, 0.18);
+    background: rgba(5, 9, 13, 0.92);
+  }
+
+  .acp-ticket__action {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 28px;
+    padding: 5px 9px;
+    border: 1px solid rgba(255, 176, 0, 0.26);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: transparent;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
+    font: inherit;
+    line-height: 1;
+    cursor: default;
+  }
+
+  .acp-ticket__action:hover:not(:disabled) {
+    border-color: rgba(255, 216, 128, 0.66);
+    background: rgba(255, 176, 0, 0.10);
+    color: #ffd880;
+  }
+
+  .acp-ticket__action:active:not(:disabled) {
+    background: rgba(255, 176, 0, 0.18);
+  }
+
+  .acp-ticket__action:focus-visible {
+    outline: 1px solid #ffd880;
+    outline-offset: 2px;
+    box-shadow:
+      0 0 7px rgba(255, 176, 0, 0.42),
+      0 0 20px rgba(255, 176, 0, 0.12);
+  }
+
+  .acp-ticket__action:disabled {
+    border-color: rgba(255, 176, 0, 0.08);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.25);
+    cursor: not-allowed;
+  }
+
+  .acp-ticket__action-key {
+    color: #ffb000;
+    font-size: 0.82em;
+    letter-spacing: 0.02em;
+  }
+
+  .acp-ticket__action--fix {
+    margin-left: auto;
+    border-color: rgba(255, 176, 0, 0.46);
+    color: #ffd880;
+  }
+
+  .acp-ticket__foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 6px 14px;
+    border-top: 1px solid rgba(255, 176, 0, 0.14);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    font-size: 0.86em;
+    letter-spacing: 0.04em;
+  }
+
+  @media (max-width: 720px) {
+    .acp-ticket__actions {
+      flex-wrap: wrap;
+    }
+
+    .acp-ticket__action--fix {
+      margin-left: 0;
+    }
+  }
+}

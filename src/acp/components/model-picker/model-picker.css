@@ -1,0 +1,91 @@
+/* Spec 302 §7.3 — `ModelPicker`.
+   Carved verbatim from src/styles/acp-harness.css:6421-6505.
+   No scheme override exists for this block in theme-scheme.css. */
+
+@layer krypton.component {
+  /* ── Model picker (spec 127) ──────────────────────────────── */
+
+  .acp-harness__model-picker {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--agent-surface-high, rgba(4, 8, 13, 0.74));
+  }
+
+  .acp-harness__model-picker[hidden] {
+    display: none;
+  }
+
+  .acp-harness__model-head,
+  .acp-harness__model-list {
+    width: clamp(360px, 46vw, 580px);
+    background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
+    border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
+    border-bottom: none;
+  }
+
+  .acp-harness__model-head {
+    border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 12px;
+    color: var(--krypton-window-accent, #0cf);
+    letter-spacing: 0.08em;
+    text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
+  }
+
+  .acp-harness__model-head span:last-child {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    font-size: 0.84em;
+    text-shadow: none;
+    letter-spacing: 0.04em;
+  }
+
+  .acp-harness__model-list {
+    list-style: none;
+    margin: 0;
+    padding: 6px 0;
+    max-height: 52vh;
+    overflow-y: auto;
+    border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
+    border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  }
+
+  .acp-harness__model-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 14px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84);
+    cursor: default;
+  }
+
+  .acp-harness__model-row--active {
+    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
+    outline: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.5);
+    outline-offset: -1px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
+  }
+
+  .acp-harness__model-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .acp-harness__model-current {
+    color: var(--krypton-window-accent, #0cf);
+    text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.2);
+  }
+
+  .acp-harness__model-desc {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    font-size: 0.85em;
+  }
+}

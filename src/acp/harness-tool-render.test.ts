@@ -15,13 +15,12 @@ import {
   grepHitNeedles,
   grokRawOutputSections,
   isGrepLikeOutput,
+  normalizeToolDump,
   parseGrepDump,
   parseGrepLine,
-  patchStreamingToolBody,
   peelExitPrefix,
   renderGrepSection,
-  renderToolBody,
-  renderToolOutput,
+  shouldRenderExecuteExit,
   stripGrokReadLineAnchors,
   toolChipKind,
   toolSectionTone,
@@ -68,7 +67,7 @@ function makeFakeEl(tag: string): FakeEl {
       else this.children.splice(at, 0, child);
       return child;
     },
-    // Supports the two shapes patchStreamingToolBody uses: ':scope > .cls'
+    // Supports the two shapes the renderers use: ':scope > .cls'
     // (direct child) and '.cls' (descendant).
     querySelector(selector: string): FakeEl | null {
       const cls = selector.replace(':scope > ', '').replace(/^\./, '');
@@ -355,60 +354,16 @@ describe('mergeToolCall', () => {
   });
 });
 
-describe('renderToolBody / renderToolOutput (spec 235)', () => {
-  it('paints a reserved spinner cell for pending and in_progress, never an empty ·', () => {
-    for (const status of ['pending', 'in_progress']) {
-      const body = withDom(() => {
-        const el = makeFakeEl('div');
-        renderToolBody(el as unknown as HTMLElement, payload({
-          status,
-          glyph: '·',
-        }));
-        return el;
-      });
-      const glyph = findClass(body, 'acp-harness__tool-glyph');
-      const classes = glyph?.className.split(/\s+/) ?? [];
-      expect(classes).toContain('acp-harness__spinner');
-      expect(classes).toContain(`acp-harness__tool-glyph--${status}`);
-      expect(glyph?.textContent).toBe('⠋');
-    }
-  });
-
-  it('drops the spinner class on a completed glyph', () => {
-    const body = withDom(() => {
-      const el = makeFakeEl('div');
-      renderToolBody(el as unknown as HTMLElement, payload({ status: 'completed', glyph: '✓' }));
-      return el;
-    });
-    const glyph = findClass(body, 'acp-harness__tool-glyph');
-    expect(glyph?.className.split(/\s+/)).not.toContain('acp-harness__spinner');
-    expect(glyph?.textContent).toBe('✓');
-  });
-
-  it('stamps data-kind on the chip from the HUD map', () => {
-    const body = withDom(() => {
-      const el = makeFakeEl('div');
-      renderToolBody(el as unknown as HTMLElement, payload({ kind: 'search' }));
-      return el;
-    });
-    const chip = findClass(body, 'acp-harness__tool-kind');
-    expect(chip?.dataset.kind).toBe('search');
-    expect(chip?.textContent).toBe('search');
-  });
-
+describe('tool dump rendering (spec 235)', () => {
   it('renders grep structure tokens instead of a plain pre', () => {
-    const out = withDom(() => {
-      return renderToolOutput(payload({
-        kind: 'execute',
-        command: 'grep -n "class"',
-        subject: 'grep -n "class"',
-        sections: [{
-          label: 'output',
-          text: 'SearchService.java:60:public class SearchService {\nSearchService.java:87:  public SearchResultDTO searchStorage()',
-        }],
-      })) as unknown as FakeEl;
-    });
-    const classes = collectClasses(out).join(' ');
+    const section = withDom(() => renderGrepSection(
+      { command: 'grep -n "class"', subject: 'grep -n "class"' },
+      {
+        label: 'output',
+        text: 'SearchService.java:60:public class SearchService {\nSearchService.java:87:  public SearchResultDTO searchStorage()',
+      },
+    ) as unknown as FakeEl);
+    const classes = collectClasses(section).join(' ');
     expect(classes).toContain('acp-harness__tool-rich--grep');
     expect(classes).toContain('acp-harness__tok-path');
     expect(classes).toContain('acp-harness__tok-line');
@@ -416,77 +371,48 @@ describe('renderToolBody / renderToolOutput (spec 235)', () => {
     expect(classes).not.toContain('acp-harness__tool-section-text');
   });
 
+  it('declines a dump that is not grep-shaped, so the caller paints a plain pre', () => {
+    const section = withDom(() => renderGrepSection(
+      { command: 'grep -n "class"', subject: 'grep -n "class"' },
+      { label: 'output', text: 'not a match dump\nstill a banner' },
+    ));
+    expect(section).toBeNull();
+  });
+
   it('does not paint Grok workspace_result XML on a search miss', () => {
-    const out = withDom(() => {
-      return renderToolOutput(payload({
-        kind: 'search',
-        command: '',
-        subject: 'border-radius',
-        sections: [{
-          label: 'stdout',
-          text:
-            '<workspace_result workspace_path="/Users/wk/Source/krypton">\n' +
-            'No matches found\n' +
-            '</workspace_result>',
-        }],
-      })) as unknown as FakeEl;
-    });
-    const pre = findClass(out, 'acp-harness__tool-section-text');
-    expect(pre?.textContent).toBe('No matches found');
-    expect(pre?.textContent).not.toContain('workspace_result');
+    const dump = normalizeToolDump(
+      '<workspace_result workspace_path="/Users/wk/Source/krypton">\n' +
+      'No matches found\n' +
+      '</workspace_result>',
+      'search',
+    );
+    expect(dump).toBe('No matches found');
+    expect(dump).not.toContain('workspace_result');
   });
 
   it('does not paint a truncated Grok search envelope', () => {
-    const out = withDom(() => {
-      return renderToolOutput(payload({
-        kind: 'search',
-        command: '',
-        subject: 'ctrlKey',
-        sections: [{
-          label: 'stdout',
-          text:
-            '<workspace_result workspace_path="/Users/wk/Source/krypton">\n' +
-            'Found at least 67 matching lines\n' +
-            '/Users/wk/Source/krypton/src/perspective-fix.ts\n' +
-            '146:        ctrlKey: me.ctrlKey,\n' +
-            '/Users/wk/Source/krypton/src/quick-overview.ts\n' +
-            '158:    if (action && !e.metaKey && !e.ctrlKey) {',
-        }],
-      })) as unknown as FakeEl;
-    });
-    const classes = collectClasses(out).join(' ');
-    expect(classes).toContain('acp-harness__tool-rich--grep');
-    expect(classes).not.toContain('acp-harness__tool-section-text');
-    expect(JSON.stringify(out)).not.toContain('workspace_result');
+    const dump = normalizeToolDump(
+      '<workspace_result workspace_path="/Users/wk/Source/krypton">\n' +
+      'Found at least 67 matching lines\n' +
+      '/Users/wk/Source/krypton/src/perspective-fix.ts\n' +
+      '146:        ctrlKey: me.ctrlKey,\n' +
+      '/Users/wk/Source/krypton/src/quick-overview.ts\n' +
+      '158:    if (action && !e.metaKey && !e.ctrlKey) {',
+      'search',
+    );
+    expect(dump).not.toContain('workspace_result');
+    const section = withDom(() => renderGrepSection(
+      { command: '', subject: 'ctrlKey' },
+      { label: 'stdout', text: dump },
+    ) as unknown as FakeEl);
+    expect(collectClasses(section).join(' ')).toContain('acp-harness__tool-rich--grep');
+    expect(JSON.stringify(section)).not.toContain('workspace_result');
   });
 
   it('does not paint Grok read_file N→ line anchors', () => {
-    const out = withDom(() => {
-      return renderToolOutput(payload({
-        kind: 'read',
-        command: '',
-        subject: 'SKILL.md',
-        sections: [{
-          label: 'content',
-          text: '1→---\nname: karpathy-guidelines\n10→license: MIT',
-        }],
-      })) as unknown as FakeEl;
-    });
-    const pre = findClass(out, 'acp-harness__tool-section-text');
-    expect(pre?.textContent).toBe('---\nname: karpathy-guidelines\nlicense: MIT');
-    expect(pre?.textContent).not.toContain('→');
-  });
-
-  it('falls back to a plain pre when the dump is not grep-shaped', () => {
-    const out = withDom(() => {
-      return renderToolOutput(payload({
-        kind: 'execute',
-        command: 'grep -n "class"',
-        sections: [{ label: 'output', text: 'not a match dump\nstill a banner' }],
-      })) as unknown as FakeEl;
-    });
-    expect(collectClasses(out).join(' ')).toContain('acp-harness__tool-section-text');
-    expect(collectClasses(out).join(' ')).not.toContain('acp-harness__tool-rich--grep');
+    const dump = normalizeToolDump('1→---\nname: karpathy-guidelines\n10→license: MIT', 'read');
+    expect(dump).toBe('---\nname: karpathy-guidelines\nlicense: MIT');
+    expect(dump).not.toContain('→');
   });
 
   it('does not highlight hits on rg context lines', () => {
@@ -523,72 +449,11 @@ describe('peelExitPrefix / extractToolExitCode', () => {
 });
 
 describe('execute exit badge (spec 235)', () => {
-  it('paints a success chip and strips the dump prefix', () => {
-    const out = withDom(() => {
-      return renderToolOutput(payload({
-        kind: 'execute',
-        command: 'git commit -m x',
-        subject: 'git commit -m x',
-        sections: [{
-          label: 'output',
-          text:
-            'exit: 0\n[master 599d8d8] feat(palette): navigate results with Ctrl+N/P\n' +
-            ' 3 files changed, 20 insertions(+), 5 deletions(-)',
-        }],
-      })) as unknown as FakeEl;
-    });
-    const chip = findClass(out, 'acp-harness__tool-exit');
-    expect(chip?.dataset.status).toBe('ok');
-    expect(findClass(out, 'acp-harness__tool-exit-code')?.textContent).toBe('0');
-    expect(findClass(out, 'acp-harness__tool-exit-label')?.textContent).toBe('exit');
-    const label = findClass(out, 'acp-harness__tool-section-label');
-    expect(findClass(label!, 'acp-harness__tool-exit')).toBe(chip);
-    expect(out.children[0]?.className).not.toBe('acp-harness__tool-exit');
-    const pre = findClass(out, 'acp-harness__tool-section-text');
-    expect(pre?.textContent).toContain('[master 599d8d8]');
-    expect(pre?.textContent).not.toContain('exit: 0');
-  });
-
-  it('paints a fail chip for non-zero', () => {
-    const out = withDom(() => {
-      return renderToolOutput(payload({
-        kind: 'execute',
-        command: 'tsc --noEmit',
-        exitCode: 1,
-        sections: [{ label: 'output', text: 'error TS2322: Type string is not assignable' }],
-      })) as unknown as FakeEl;
-    });
-    const fail = findClass(out, 'acp-harness__tool-exit');
-    expect(fail?.dataset.status).toBe('fail');
-    expect(findClass(out, 'acp-harness__tool-exit-code')?.textContent).toBe('1');
-    expect(findClass(findClass(out, 'acp-harness__tool-section-label')!, 'acp-harness__tool-exit')).toBe(fail);
-    expect(findClass(out, 'acp-harness__tool-section-text')?.textContent).toContain('error TS2322');
-  });
-
-  it('does not chip a search dump that happens to carry exit_code', () => {
-    const out = withDom(() => {
-      return renderToolOutput(payload({
-        kind: 'search',
-        exitCode: 1,
-        sections: [{ label: 'stdout', text: 'No matches found' }],
-      })) as unknown as FakeEl;
-    });
-    expect(findClass(out, 'acp-harness__tool-exit')).toBeUndefined();
-  });
-
-  it('peels exit before git-status so porcelain still goes rich', () => {
-    const out = withDom(() => {
-      return renderToolOutput(payload({
-        kind: 'execute',
-        command: 'git status --short',
-        subject: 'git status --short',
-        sections: [{ label: 'output', text: 'exit: 0\nM  src/a.ts\n?? b.ts' }],
-      })) as unknown as FakeEl;
-    });
-    expect(collectClasses(out).join(' ')).toContain('acp-harness__tool-rich--gitstatus');
-    expect(findClass(out, 'acp-harness__tool-exit-code')?.textContent).toBe('0');
-    expect(out.children[0]?.className).toBe('acp-harness__tool-exit');
-    expect(JSON.stringify(out)).not.toContain('exit: 0');
+  it('leaves a non-execute dump unbadged even when it carries an exit code', () => {
+    expect(shouldRenderExecuteExit({ kind: 'search', exitCode: 1 })).toBe(false);
+    expect(shouldRenderExecuteExit({ kind: 'read', exitCode: 0 })).toBe(false);
+    expect(shouldRenderExecuteExit({ kind: 'execute', exitCode: 1 })).toBe(true);
+    expect(shouldRenderExecuteExit({ kind: 'execute', exitCode: null })).toBe(false);
   });
 
   it('buildToolPayload seeds a braille spinner for in-flight statuses, never · or ⟳', () => {
@@ -619,24 +484,9 @@ describe('execute exit badge (spec 235)', () => {
     expect(tool.sections[0]?.text).not.toContain('exit: 0');
   });
 
-  it('still paints a chip when the dump is only the exit line', () => {
-    const el = withDom(() => {
-      const body = makeFakeEl('div');
-      renderToolBody(body as unknown as HTMLElement, payload({
-        kind: 'execute',
-        command: 'false',
-        exitCode: 1,
-        sections: [],
-      }));
-      return body;
-    });
-    expect(findClass(el, 'acp-harness__tool-exit-code')?.textContent).toBe('1');
-    expect(findClass(el, 'acp-harness__tool-exit')?.dataset.status).toBe('fail');
-  });
-
   it('does not frame the number as a kind chip; fail keeps error color', () => {
     const css = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),
+      join(dirname(fileURLToPath(import.meta.url)), 'components/tool-row/tool-row.css'),
       'utf8',
     );
     const code = css.match(/\.acp-harness__tool-exit-code\s*\{[^}]*\}/)?.[0] ?? '';
@@ -656,7 +506,7 @@ describe('execute exit badge (spec 235)', () => {
 describe('tool dump font size', () => {
   it('matches conversation --krypton-font-size; nested dump bodies do not shrink again', () => {
     const css = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),
+      join(dirname(fileURLToPath(import.meta.url)), 'components/tool-row/tool-row.css'),
       'utf8',
     );
     const output = css.match(/\.acp-harness__tool-output\s*\{[^}]*\}/)?.[0] ?? '';
@@ -680,7 +530,7 @@ describe('tool dump font size', () => {
 describe('grep line gutter (spec 235)', () => {
   it('right-aligns line numbers in a shared ≥4ch column', () => {
     const css = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),
+      join(dirname(fileURLToPath(import.meta.url)), 'components/tool-row/tool-row.css'),
       'utf8',
     );
     const line = css.match(/\.acp-harness__tok-line\s*\{[^}]*\}/)?.[0] ?? '';
@@ -887,67 +737,5 @@ describe('formatGrokFileMatches', () => {
   it('returns empty for missing or empty arrays', () => {
     expect(formatGrokFileMatches(undefined)).toBe('');
     expect(formatGrokFileMatches([])).toBe('');
-  });
-});
-
-describe('patchStreamingToolBody (spec 114 rev 8)', () => {
-  const streamPayload = (text: string): ToolPayload => payload({
-    glyph: '⠋',
-    status: 'in_progress',
-    subject: 'npm test',
-    command: 'npm test',
-    sections: [{ label: 'stdout', text }],
-  });
-
-  it('swaps only the output block; head keeps its DOM nodes', () => {
-    withDom(() => {
-      const body = makeFakeEl('div');
-      renderToolBody(body as unknown as HTMLElement, streamPayload('line 1'));
-      const head = findClass(body, 'acp-harness__tool-head');
-      const firstOutput = findClass(body, 'acp-harness__tool-output');
-      expect(head).toBeDefined();
-      expect(firstOutput).toBeDefined();
-
-      patchStreamingToolBody(body as unknown as HTMLElement, streamPayload('line 1\nline 2'));
-      expect(findClass(body, 'acp-harness__tool-head')).toBe(head);
-      expect(findClass(body, 'acp-harness__tool-output')).not.toBe(firstOutput);
-      expect(findClass(body, 'acp-harness__tool-section-text')?.textContent).toContain('line 2');
-    });
-  });
-
-  it('dedupes on unchanged section text', () => {
-    withDom(() => {
-      const body = makeFakeEl('div');
-      renderToolBody(body as unknown as HTMLElement, streamPayload('same'));
-      patchStreamingToolBody(body as unknown as HTMLElement, streamPayload('same'));
-      const output = findClass(body, 'acp-harness__tool-output');
-      patchStreamingToolBody(body as unknown as HTMLElement, streamPayload('same'));
-      expect(findClass(body, 'acp-harness__tool-output')).toBe(output);
-    });
-  });
-
-  it('appends the output block when the first section arrives late', () => {
-    withDom(() => {
-      const body = makeFakeEl('div');
-      renderToolBody(body as unknown as HTMLElement, payload({ glyph: '⠋', status: 'in_progress', sections: [] }));
-      expect(findClass(body, 'acp-harness__tool-output')).toBeUndefined();
-      patchStreamingToolBody(body as unknown as HTMLElement, streamPayload('first chunk'));
-      expect(findClass(body, 'acp-harness__tool-section-text')?.textContent).toBe('first chunk');
-    });
-  });
-
-  it('never touches an artifact-redacted body', () => {
-    withDom(() => {
-      const body = makeFakeEl('div');
-      const redacted = payload({
-        glyph: '⠋',
-        status: 'in_progress',
-        artifactRedaction: { tail: 'a.html', size: 10, hash: 'x', pending: true },
-      });
-      renderToolBody(body as unknown as HTMLElement, redacted);
-      const snapshot = body.children.slice();
-      patchStreamingToolBody(body as unknown as HTMLElement, { ...redacted, sections: [{ label: 'stdout', text: 'html' }] });
-      expect(body.children).toEqual(snapshot);
-    });
   });
 });

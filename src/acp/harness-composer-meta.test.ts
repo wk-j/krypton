@@ -1,11 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
   buildBusySegments,
-  renderStatusSegments,
   textSegments,
   type BusyStatusInput,
 } from './harness-composer-meta';
@@ -74,45 +73,34 @@ describe('textSegments', () => {
   });
 });
 
-describe('renderStatusSegments', () => {
-  it('tags each segment so CSS can size it', () => {
-    expect(
-      renderStatusSegments(buildBusySegments(busy({ verb: 'reviewing' }))),
-    ).toBe(
-      '<span class="acp-harness__meta-seg" data-seg="verb">reviewing</span>' +
-        '<span class="acp-harness__meta-seg" data-seg="elapsed">5:12</span>',
-    );
-  });
+// Spec 301 phase 6 split `src/styles/acp-harness.css` into the component
+// directories. Each read below follows the rule it asserts to the sheet that
+// now declares it; `harnessSheets()` is for the negative assertions, which
+// only hold if NO harness sheet carries the rule.
+const here = dirname(fileURLToPath(import.meta.url));
 
-  it('emits no divider characters — dividers are CSS', () => {
-    expect(renderStatusSegments(buildBusySegments(busy({ queued: 3 })))).not.toContain('·');
-  });
-
-  it('escapes segment text', () => {
-    expect(renderStatusSegments(textSegments('<img src=x>'))).toContain('&lt;img src=x&gt;');
-  });
-
-  it('renders nothing for no segments', () => {
-    expect(renderStatusSegments([])).toBe('');
-  });
-});
+function harnessSheets(): string {
+  const dir = join(here, 'components');
+  const parts = [readFileSync(join(here, '../styles/harness-shared.css'), 'utf8')];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    for (const file of readdirSync(join(dir, entry.name))) {
+      if (file.endsWith('.css')) parts.push(readFileSync(join(dir, entry.name, file), 'utf8'));
+    }
+  }
+  return parts.join('\n');
+}
 
 describe('composer prompt geometry', () => {
   it('keeps the prompt command-line square, not an 8px card', () => {
-    const css = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),
-      'utf8',
-    );
+    const css = readFileSync(join(here, 'components/composer/composer.css'), 'utf8');
     const block = css.match(/\.acp-harness__composer\s*\{[^}]*\}/)?.[0] ?? '';
     expect(block).toMatch(/border-radius:\s*0/);
     expect(block).not.toMatch(/--krypton-border-radius/);
   });
 
   it('does not square the host window chrome while the harness tab is showing', () => {
-    const css = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),
-      'utf8',
-    );
+    const css = harnessSheets();
     expect(css).not.toMatch(
       /\.krypton-window\[data-content-type=['"]acp_harness['"]\]\s*\{[^}]*border-radius:\s*0/,
     );
@@ -123,10 +111,9 @@ describe('composer prompt geometry', () => {
 });
 
 describe('composer input bloom', () => {
-  const css = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),
-    'utf8',
-  );
+  // The bloom layer is shell chrome with no component owner — spec 301 keeps
+  // it in the named shared sheet.
+  const css = readFileSync(join(here, '../styles/harness-shared.css'), 'utf8');
 
   it('paints overlay letter copies, not a caret pseudo-element or ellipse boom', () => {
     expect(css).toContain('.acp-harness__composer-blooms');
@@ -163,10 +150,7 @@ describe('composer input bloom', () => {
 });
 
 describe('lane picker chrome', () => {
-  const css = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), '../styles/acp-harness.css'),
-    'utf8',
-  );
+  const css = readFileSync(join(here, 'components/lane-picker/lane-picker.css'), 'utf8');
 
   it('stacks the overlay as a column and paints one 8px panel', () => {
     const overlay = css.match(/\.acp-harness__picker\s*\{[^}]*\}/)?.[0] ?? '';

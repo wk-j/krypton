@@ -1,0 +1,224 @@
+/* Spec 302 §3.16 — `ResourceRail`.
+   Carved verbatim from src/styles/acp-harness.css:3168-3386. */
+
+@layer krypton.component {
+  /* Deterministic references extracted from a sealed assistant message (spec 206). */
+  .acp-harness__resources {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 10px;
+  }
+
+  .acp-harness__resources-head {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 7px 1px;
+    font-size: 0.7em;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: rgba(185, 245, 255, 0.68);
+  }
+
+  .acp-harness__resource-count {
+    color: rgba(216, 232, 240, 0.42);
+    letter-spacing: 0.05em;
+  }
+
+  .acp-harness__resource {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 46px;
+    padding: 5px 7px;
+    appearance: none;
+    font: inherit;
+    text-align: left;
+    color: inherit;
+    background: rgba(109, 208, 255, 0.035);
+    border: 0;
+    border-radius: var(--krypton-border-radius, 8px);
+    cursor: pointer;
+  }
+
+  .acp-harness__resource:hover,
+  .acp-harness__resource:focus-visible,
+  .acp-harness__resource--hinted {
+    background: rgba(109, 208, 255, 0.16);
+    outline: none;
+  }
+
+  /* spec 286: 48×34 leading thumbnail — image pixels, or an extension glyph. */
+  .acp-harness__resource-thumb {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 48px;
+    height: 34px;
+    overflow: hidden;
+    border: 1px solid rgba(109, 208, 255, 0.26);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(109, 208, 255, 0.045);
+    color: rgba(216, 232, 240, 0.56);
+  }
+
+  .acp-harness__resource-thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .acp-harness__resource-glyph {
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+  }
+
+  .acp-harness__resource-thumb svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .acp-harness__resource-thumb[data-glyph='code'] {
+    color: var(--agent-accent, #8effb0);
+  }
+
+  .acp-harness__resource-thumb[data-glyph='doc'] {
+    color: rgb(var(--krypton-special-rgb, 199, 125, 255));
+  }
+
+  .acp-harness__resource-thumb[data-glyph='data'] {
+    color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+  }
+
+  .acp-harness__resource-thumb[data-glyph='web'] {
+    color: rgb(var(--krypton-success-rgb, 57, 255, 127));
+  }
+
+  .acp-harness__resource-thumb[data-glyph='image'],
+  .acp-harness__resource-thumb[data-glyph='url'] {
+    color: var(--agent-user, #6dd0ff);
+  }
+
+  .acp-harness__resource-thumb[data-state='missing'],
+  .acp-harness__resource-thumb[data-state='rejected'] {
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+    border-color: currentColor;
+  }
+
+  .acp-harness__resource-hint {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    min-width: 1.5em;
+    padding: 0 3px;
+    text-align: center;
+    font-size: 0.8em;
+    font-weight: 800;
+    color: #071013;
+    background: var(--agent-user, #6dd0ff);
+    border-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-harness__resource-content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.25;
+  }
+
+  .acp-harness__resource-label,
+  .acp-harness__resource-target {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-harness__resource-label {
+    color: rgba(234, 243, 234, 0.94);
+  }
+
+  .acp-harness__resource-target {
+    font-size: 0.78em;
+    color: rgba(216, 232, 240, 0.48);
+  }
+
+  .acp-harness__resource-git {
+    width: 13ch;
+    min-width: 13ch;
+    display: inline-grid;
+    grid-template-columns: 2.5ch minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .acp-harness__resource-git-status {
+    width: 2.5ch;
+    box-sizing: border-box;
+    padding: 1px 3px;
+    text-align: center;
+    font-weight: 800;
+    color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+    border: 1px solid currentColor;
+    border-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-harness__resource-git-status[data-status='A'] {
+    color: rgb(var(--krypton-success-rgb, 57, 255, 127));
+  }
+
+  .acp-harness__resource-git-status[data-status='?'] {
+    color: var(--agent-user, #6dd0ff);
+  }
+
+  .acp-harness__resource-git-status[data-status='D'],
+  .acp-harness__resource-git-status[data-status='!'] {
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+  }
+
+  .acp-harness__resource-git-status[data-status='R'] {
+    color: rgb(var(--krypton-special-rgb, 199, 125, 255));
+  }
+
+  .acp-harness__resource-git-counts {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    text-align: right;
+    color: rgba(216, 232, 240, 0.56);
+  }
+
+  .acp-harness__resource-git-add {
+    color: rgb(var(--krypton-success-rgb, 57, 255, 127));
+  }
+
+  .acp-harness__resource-git-remove {
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+  }
+
+  .acp-harness__resource-action {
+    justify-self: end;
+    font-size: 0.7em;
+    letter-spacing: 0.06em;
+    color: rgba(109, 208, 255, 0.7);
+  }
+
+  @media (max-width: 680px) {
+    .acp-harness__resource {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    .acp-harness__resource-action {
+      display: none;
+    }
+  }
+}

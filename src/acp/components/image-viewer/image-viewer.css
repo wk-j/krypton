@@ -1,0 +1,78 @@
+/* Spec 302 §7.14 — `ImageViewer`. Moved from src/styles/acp-harness.css
+   (search `.acp-harness__image-viewer` … `.acp-harness__image-viewer-meta`),
+   except:
+     * the root is `.acp-harness__image-viewer-overlay`, the class
+       `OverlayShell` derives from the overlay's name (same declarations as the
+       old `.acp-harness__image-viewer`);
+     * the shell's panel and the component's one body node are not layout
+       boxes, and the shell's head carries nothing here — full bleed. */
+@layer krypton.component {
+  /* spec 281 — image viewer. Solid backdrop (no backdrop-filter: WKWebView
+     freeze); zoom/pan is one transform on the image. */
+  .acp-harness__image-viewer-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    background: rgba(2, 5, 9, 0.94);
+    cursor: zoom-out;
+  }
+
+  .acp-harness__image-viewer-overlay[hidden] {
+    display: none;
+  }
+
+  .acp-harness__image-viewer__panel,
+  .acp-harness__image-viewer-body {
+    display: contents;
+  }
+
+  .acp-harness__image-viewer__head {
+    display: none;
+  }
+
+  .acp-harness__image-viewer-stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .acp-harness__image-viewer-img {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    max-width: none;
+    transform-origin: center center;
+    image-rendering: auto;
+    cursor: default;
+  }
+
+  .acp-harness__image-viewer-img[hidden] {
+    display: none;
+  }
+
+  .acp-harness__image-viewer-tile {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .acp-harness__image-viewer-tile[hidden] {
+    display: none;
+  }
+
+  .acp-harness__image-viewer-meta {
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    border-top: 1px solid rgba(109, 208, 255, 0.2);
+    color: rgba(109, 208, 255, 0.78);
+    font-size: 0.8em;
+    letter-spacing: 0.03em;
+    white-space: pre;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

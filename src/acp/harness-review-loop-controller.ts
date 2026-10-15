@@ -216,7 +216,8 @@ export class HarnessReviewLoopController {
     this.withdrawRequests(loop, lane);
     this.drop(loop);
     if (lane) this.host.appendTranscript(lane, 'system', 'review pass · cancelled');
-    this.host.render();
+    this.host.invalidate('transcript');
+    this.host.invalidate('composer');
   }
 
   /** A reviewer's reply to this round's request (spec 276 harness-consumed). */
@@ -319,7 +320,8 @@ export class HarnessReviewLoopController {
       'system',
       `review pass · round ${loop.round}/${loop.maxRounds} → ${loop.reviewers.map((r) => r.displayName).join(', ')}`,
     );
-    this.host.render();
+    this.host.invalidate('transcript');
+    this.host.invalidate('composer');
   }
 
   private async completeRound(loop: ReviewLoop): Promise<void> {
@@ -350,7 +352,8 @@ export class HarnessReviewLoopController {
       findings: findings.length > 0 ? findings : undefined,
     });
     this.host.appendTranscript(lane, 'system', roundResultLine(summary, loop.maxRounds));
-    this.host.render();
+    this.host.invalidate('transcript');
+    this.host.invalidate('composer');
     const decision = evaluateRound(summary, previous, loop.maxRounds);
     if (decision.kind === 'stop') {
       await this.finish(loop, decision.reason);
@@ -398,7 +401,8 @@ export class HarnessReviewLoopController {
       this.drop(loop);
       if (lane) this.host.appendTranscript(lane, 'system', `review pass · ended: ${label}`);
       this.host.flashChip(`review pass: ${label}`);
-      this.host.render();
+      this.host.invalidate('transcript');
+      this.host.invalidate('composer');
       return;
     }
     this.setPhase(loop, 'summarizing');
@@ -407,7 +411,8 @@ export class HarnessReviewLoopController {
       'system',
       `review pass · stopped: ${label} (round ${rounds}/${loop.maxRounds}) — writing the summary`,
     );
-    this.host.render();
+    this.host.invalidate('transcript');
+    this.host.invalidate('composer');
     const prompt = reviewLoopSummaryPrompt({
       reason,
       maxRounds: loop.maxRounds,
@@ -417,7 +422,8 @@ export class HarnessReviewLoopController {
     });
     await this.runTurn(loop, prompt, 'review pass summary');
     if (this.isCurrent(loop)) this.drop(loop);
-    this.host.render();
+    this.host.invalidate('rightRail');
+    this.host.invalidate('composer');
   }
 
   /** Wait for the lane to go idle, then run one system turn to completion. */

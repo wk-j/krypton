@@ -55,7 +55,7 @@ function setup(over: Partial<FakeLane> = {}) {
     lanes: [lane as unknown as HarnessLane],
     activeLaneId: lane.id,
     flashChip: (text) => chips.push(text),
-    render: () => {},
+    invalidate: () => {},
     sealStreaming: () => {},
     appendTranscript: (l, kind, text, metadata = {}) => {
       const item = { id: `row-${nextId++}`, kind, text, ...metadata } as HarnessTranscriptItem;

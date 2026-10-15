@@ -8,14 +8,13 @@
 // rendered takes its divider with it and no `· ·` can appear.
 //
 // Pure and view-free: the caller formats the elapsed clock and the activity
-// label, this module only decides which segments exist and how they escape.
-
-import { esc } from './harness-format';
+// label, this module only decides which segments exist. `ComposerMeta`
+// (spec 302) paints one `Chip` per segment.
 
 /** `text` is the whole-chip form: every non-busy state (idle memory readout,
  *  command mode, peer waits, flash overrides) is a single message with no
  *  internal structure worth splitting. */
-export type MetaSegId = 'verb' | 'elapsed' | 'queued' | 'text';
+type MetaSegId = 'verb' | 'elapsed' | 'queued' | 'text';
 
 export interface MetaSegment {
   id: MetaSegId;
@@ -57,12 +56,4 @@ export function buildBusySegments(input: BusyStatusInput): MetaSegment[] {
 /** Wrap a whole-chip message as the single `text` segment. */
 export function textSegments(text: string): MetaSegment[] {
   return [{ id: 'text', text }];
-}
-
-/** Segments → chip HTML. Dividers are CSS (`.acp-harness__meta-seg + …::before`),
- *  never characters, so hiding a segment cannot leave an orphan `·`. */
-export function renderStatusSegments(segments: MetaSegment[]): string {
-  return segments
-    .map((seg) => `<span class="acp-harness__meta-seg" data-seg="${seg.id}">${esc(seg.text)}</span>`)
-    .join('');
 }

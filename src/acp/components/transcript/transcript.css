@@ -1,0 +1,12 @@
+/* Spec 302 — `Transcript`.
+
+   Scheme half only: the empty-state's base rule sits with the shell in
+   src/styles/harness-shared.css, next to the lane body it fills.
+
+   Moved verbatim from src/styles/theme-scheme.css:335-337. */
+
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__transcript-empty {
+    color: color-mix(in srgb, var(--krypton-ink) 52%, transparent);
+  }
+}

@@ -216,8 +216,8 @@ export class PencilContentView implements ContentView {
         import('react-dom/client'),
         import('@excalidraw/excalidraw'),
       ]);
-      // Ensure stylesheet is loaded.
-      // @ts-expect-error — side-effect import via @vite-ignore so Vite includes the CSS chunk.
+      // Ensure stylesheet is loaded. `vite/client` ambient types (src/vite-env.d.ts)
+      // declare `*.css` modules, so this no longer needs a @ts-expect-error.
       await import(/* @vite-ignore */ '@excalidraw/excalidraw/index.css').catch(() => {});
 
       const Excalidraw = (excalidrawMod as any).Excalidraw;

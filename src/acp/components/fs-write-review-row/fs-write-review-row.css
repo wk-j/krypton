@@ -1,0 +1,50 @@
+/* Spec 302 §3.9 — `FsWriteReviewRow`.
+   Carved verbatim from src/styles/acp-harness.css:5994-6030 (the `Spec 89 —
+   fs/write_text_file gated review card` comment and the eleven
+   `acp-harness__fs-review*` rules; delete :5994-6031 to take the trailing
+   blank line with them).
+
+   The diff preview inside the card is `DiffBlock`'s `acp-harness__tool-diff` /
+   `acp-harness__tool-body--diff` / `acp-harness__diff-line` markup, whose
+   rules belong to the tool-row sheet — they are NOT carved here.
+   theme-scheme.css declares nothing for this block, so there is no
+   `krypton.scheme` section. */
+
+@layer krypton.component {
+  .acp-harness__fs-review {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .acp-harness__fs-review-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    font-size: 0.85em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.85);
+  }
+  .acp-harness__fs-review-verb {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+  }
+  .acp-harness__fs-review-path {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.85);
+  }
+  .acp-harness__fs-review-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    font-size: 0.82em;
+  }
+  .acp-harness__fs-review-action--accept { color: var(--agent-accent, #8effb0); }
+  .acp-harness__fs-review-action--reject { color: #ff8b8b; }
+  .acp-harness__fs-review-action--accept-all { color: rgba(142, 255, 176, 0.55); }
+  .acp-harness__fs-review--resolved { opacity: 0.6; }
+  .acp-harness__fs-review-resolved {
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    font-size: 0.82em;
+  }
+  .acp-harness__fs-review-resolved--accepted { color: var(--agent-accent, #8effb0); }
+  .acp-harness__fs-review-resolved--rejected { color: #ff8b8b; }
+}

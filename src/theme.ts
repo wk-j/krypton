@@ -282,6 +282,12 @@ export interface FullTheme {
   focused: FocusedConfig;
   workspace: WorkspaceThemeConfig;
   ui: UiConfig;
+  /**
+   * Spec 303 — free-form component tokens from the theme file's `[tokens]`
+   * table. Each entry becomes a `--<key>` custom property on `:root`.
+   * Validated and filtered by the backend at load.
+   */
+  tokens?: Record<string, string>;
 }
 
 export type ThemeScheme = 'light' | 'dark';
@@ -508,6 +514,12 @@ export function themeCssProperties(theme: FullTheme): Record<string, string> {
     '--vault-red': c.red,
     '--vault-magenta': c.magenta,
   };
+
+  // Spec 303 — user component tokens are merged last, so a token named after a
+  // built-in property (`--agent-text`) beats the derived value.
+  for (const [key, value] of Object.entries(theme.tokens ?? {})) {
+    props[`--${key}`] = value;
+  }
   return props;
 }
 
@@ -521,6 +533,8 @@ export class FrontendThemeEngine {
   private currentTheme: FullTheme | null = null;
   private changeCallbacks: ThemeChangeCallback[] = [];
   private listening = false;
+  /** `--<key>` names written by the previous apply; cleared when they vanish. */
+  private appliedTokenKeys = new Set<string>();
 
   /** Load the initial theme from the backend */
   async init(): Promise<FullTheme> {
@@ -605,11 +619,21 @@ export class FrontendThemeEngine {
     }
   }
 
-  /** Set all --krypton-* / --agent-* / --vault-* CSS custom properties. */
+  /**
+   * Set all --krypton-* / --agent-* / --vault-* CSS custom properties, plus the
+   * theme's `[tokens]`. `setProperty` never removes, so a token the previous
+   * theme set and this one does not is cleared first — the ~151 built-in names
+   * are in every record and need no clearing.
+   */
   private setCssProperties(theme: FullTheme): void {
     const rootEl = document.documentElement;
     const root = rootEl.style;
     const props = themeCssProperties(theme);
+    const tokenKeys = new Set(Object.keys(theme.tokens ?? {}).map((key) => `--${key}`));
+    for (const name of this.appliedTokenKeys) {
+      if (!tokenKeys.has(name)) root.removeProperty(name);
+    }
+    this.appliedTokenKeys = tokenKeys;
     for (const [name, value] of Object.entries(props)) {
       root.setProperty(name, value);
     }

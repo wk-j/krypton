@@ -1,0 +1,144 @@
+/* Spec 302 §5.1 — `PeekCard`.
+   Carved VERBATIM from src/styles/acp-harness.css:1236-1327, :1336-1353 and
+   :1510-1527. Delete those three ranges when this directory is registered.
+
+   Two neighbouring spans are deliberately NOT here: :1329-1334 goes to
+   `review-loop-rows` and :1529-1707 goes to `heat-panel`. They share the
+   `acp-harness__lane-peek` prefix but are their own components, so the longer
+   prefix wins when ownership is resolved.
+
+   theme-scheme.css declares no light-mode rule for any `lane-peek` selector,
+   so there is no `krypton.scheme` layer in this file. */
+
+@layer krypton.component {
+  .acp-harness__lane-peek {
+    position: relative;
+    width: 100%;
+    display: grid;
+    gap: 3px;
+    padding: 8px 12px 7px;
+    background:
+      var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
+    border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.28);
+    border-radius: var(--krypton-border-radius, 8px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    font-size: 0.95em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+    pointer-events: auto;
+  }
+
+  .acp-harness__lane-peek[data-priority="high"] { --acp-peek-accent: #ff8b8b; }
+  .acp-harness__lane-peek[data-priority="warn"] { --acp-peek-accent: #ffd27a; }
+  .acp-harness__lane-peek[data-priority="info"] { --acp-peek-accent: var(--agent-accent, #8effb0); }
+
+  .acp-harness__lane-peek-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
+    margin-bottom: 3px;
+  }
+
+  .acp-harness__lane-peek-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--acp-lane-accent, #00ccff);
+    flex: 1 1 auto;
+  }
+
+  .acp-harness__lane-peek-status {
+    color: var(--acp-peek-accent, var(--agent-accent, #8effb0));
+    font-size: 0.78em;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .acp-harness__lane-peek-age {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+    font-size: 0.82em;
+    margin-left: auto;
+  }
+
+  .acp-harness__lane-peek-event {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 2px 0;
+    color: var(--acp-peek-accent, var(--agent-accent, #8effb0));
+    align-items: baseline;
+  }
+  .acp-harness__lane-peek-event-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .acp-harness__lane-peek-event-text b { font-weight: normal; color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92); }
+  .acp-harness__lane-peek-event-meta {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+    font-size: 0.85em;
+    white-space: nowrap;
+  }
+
+  .acp-harness__lane-peek-row {
+    display: grid;
+    grid-template-columns: 7ch minmax(0, 1fr);
+    gap: 8px;
+    align-items: baseline;
+    font-size: 0.95em;
+    min-width: 0;
+  }
+  .acp-harness__lane-peek-prefix {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+    font-size: 0.85em;
+  }
+  .acp-harness__lane-peek-value {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+  }
+  .acp-harness__lane-peek-value b { color: #ffd27a; font-weight: normal; }
+
+  .acp-harness__lane-peek-plan {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+  }
+  .acp-harness__lane-peek-plan-count {
+    color: var(--agent-accent, #8effb0);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85em;
+  }
+  .acp-harness__lane-peek-plan-text {
+    color: #ffd27a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-harness__lane-peek-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin-top: 5px;
+    padding-top: 5px;
+    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
+    font-size: 0.78em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+    letter-spacing: 0.03em;
+  }
+  .acp-harness__lane-peek-chip b {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    font-weight: normal;
+  }
+  .acp-harness__lane-peek-chip--hot b {
+    color: #ff8b8b;
+  }
+}

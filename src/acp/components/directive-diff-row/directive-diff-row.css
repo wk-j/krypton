@@ -1,0 +1,40 @@
+/* Spec 302 — the directive approval diff card's block.
+
+   Copied VERBATIM from src/styles/acp-harness.css: the
+   `── Directive approval diff card ──` section (`.acp-harness__directive-diff`
+   through `.acp-harness__directive-diff-ctx`), plus `.acp-harness__msg-text`,
+   which sits further down next to the `#usage` container queries and has
+   exactly one emitter — this row.
+
+   `white-space: pre-wrap` on the `<pre>` is why `DiffBlock` builds its `raw`
+   root as a `<pre>`: the monospace comes from the UA sheet, not from here.
+
+   No krypton.scheme layer: theme-scheme.css has no light-mode rule for either
+   selector family. */
+
+@layer krypton.component {
+  .acp-harness__directive-diff {
+    margin: 4px 0 0;
+    padding: 6px 8px;
+    background: var(--agent-surface-mid, rgba(4, 8, 13, 0.5));
+    font-size: 0.84em;
+    white-space: pre-wrap;
+    overflow-x: auto;
+  }
+
+  .acp-harness__directive-diff-add {
+    color: rgba(122, 255, 178, 0.9);
+  }
+
+  .acp-harness__directive-diff-del {
+    color: rgba(255, 138, 138, 0.9);
+  }
+
+  .acp-harness__directive-diff-ctx {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+  }
+
+  .acp-harness__msg-text {
+    min-width: 0;
+  }
+}

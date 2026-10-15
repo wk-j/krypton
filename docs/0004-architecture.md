@@ -223,6 +223,20 @@ The compositor is a TypeScript module running in the webview that manages worksp
     `subscribe()`/`dispose()`; ones that own DOM expose `mount*()`. Orchestrator console, review, lane
     lifecycle and composer are still in the class. See `docs/0275-harness-view-controllers.md`.
 
+    **UI components (specs 301/302).** The harness no longer paints with string builders and a
+    hand-maintained render signature. `src/ui/` is a generic, harness-free kernel —
+    `Component`/`LiveComponent`, `reconcile()`, `RenderScheduler`, `el()`, `LayoutHost` — and every
+    harness surface is a directory under `src/acp/components/<name>/` holding its class, its own
+    stylesheet (`@layer krypton.component` + `@layer krypton.scheme`) and its test, listed once in
+    `components/registry.ts`. Three things follow structurally rather than by convention: a component
+    repaints only when its declared dependency tuple moves (so `transcriptRenderSignature` is gone);
+    `LiveComponent.seal()` is the one live→static transition and re-derives every class from state (so
+    `acp-harness__msg--streaming` cannot be stranded); and a mutation names the region it dirtied
+    (`rail · laneChrome · transcript · rightRail · composer · overlay`) instead of calling `render()`.
+    `LaneShell` is constructed once, so the transcript body is never reparented and the scroll-restore
+    dance around the old `dashboardEl.innerHTML = ''` is deleted. Panel placement is one table,
+    `HARNESS_LAYOUT_DEFAULT` in `harness-layout.ts`, type-checked against the slot union.
+
     **Word autocomplete (spec 285).** `word-predict.ts` (main-thread client, ghost helpers),
     `word-predict-model.ts` (pure unigram/bigram model over `Intl.Segmenter` words) and
     `word-predict-worker.ts` (one shared Web Worker). The Rust `prompt_history.rs` owns Krypton's

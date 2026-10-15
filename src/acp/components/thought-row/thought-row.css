@@ -1,0 +1,71 @@
+/* Spec 302 §3.2 — `ThoughtRow`.
+   Carved verbatim from src/styles/acp-harness.css:3445-3449,3457-3515.
+   `.acp-harness__msg-label--thought` (:3450-3455) is a modifier of the row
+   base's `acp-harness__msg-label`, so it stays with that block's owner. */
+
+@layer krypton.component {
+  /* Effort meter: a mono glyph gauge under the thought label, filled by
+     reasoning length. It stays as a quick depth cue even though the full thought
+     is visible.
+     The label column is a fixed 7.5ch gutter (sized for the word "thought"), so
+     the meter STACKS below the label — never inline — to avoid overflowing it. */
+  .acp-harness__thought-effort {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+    line-height: 1.1;
+    /* opt out of the label's uppercase/tracking — the meter is not a word */
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .acp-harness__thought-effort-glyph {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8);
+    letter-spacing: 1px;
+  }
+
+  .acp-harness__thought-effort-tier {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+  }
+
+  /* Veiled thinking: some providers (Claude Code on current Opus models) stream
+     thought deltas with empty text — reasoning happens server-side and never
+     reaches the client. The body shows "thinking" with pulsing dots instead of
+     an empty block; the row is dropped at seal, so this only renders while
+     streaming. Opacity-only animation (compositor-friendly, no layout). */
+  .acp-harness__thought-veil {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 1px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+  }
+
+  .acp-harness__thought-veil-word {
+    letter-spacing: 2px;
+  }
+
+  .acp-harness__thought-veil-dot {
+    opacity: 0.25;
+    animation: acp-thought-veil-blink 1.2s ease-in-out infinite;
+  }
+
+  .acp-harness__thought-veil-dot:nth-child(3) {
+    animation-delay: 0.2s;
+  }
+
+  .acp-harness__thought-veil-dot:nth-child(4) {
+    animation-delay: 0.4s;
+  }
+
+  @keyframes acp-thought-veil-blink {
+    0%,
+    100% {
+      opacity: 0.25;
+    }
+
+    50% {
+      opacity: 1;
+    }
+  }
+}

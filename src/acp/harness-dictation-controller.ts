@@ -1,15 +1,14 @@
 // Krypton — ACP Harness View: composer dictation controller (spec 246).
 //
 // Extracted from acp-harness-view.ts (spec 275). Owns the live speech
-// recognition session and paints its preview into the composer the view renders.
+// recognition session; `DictationControl` / `DictationPreview` (spec 302 §6.6)
+// paint it. A speech result invalidates the composer region and the components
+// update from the session — the controller never reaches into the DOM.
 
 import {
-  DICTATION_LANG_ENGLISH,
   collectDictationResults,
   combineDictationText,
   dictationErrorMessage,
-  dictationLanguageLabel,
-  dictationPreviewParts,
   insertDictationText,
   speechRecognitionConstructor,
   type HarnessDictationSession,
@@ -17,7 +16,6 @@ import {
   type SpeechRecognitionEventLike,
   type SpeechRecognitionLike,
 } from './harness-dictation';
-import { esc } from './harness-format';
 import type { HarnessLane } from './harness-view-types';
 import type { HarnessDictationHost } from './harness-view-host';
 
@@ -32,84 +30,6 @@ export class HarnessDictationController {
   /** The session when it belongs to `laneId`, else null. */
   sessionFor(laneId: string): ActiveDictationSession | null {
     return this.session?.laneId === laneId ? this.session : null;
-  }
-
-  renderInput(session: ActiveDictationSession): string {
-    const parts = dictationPreviewParts(
-      session.baseDraft,
-      session.insertAt,
-      session.finalText,
-      session.interimText,
-    );
-    return (
-      `${esc(parts.before)}` +
-      `<span data-dictation-leading>${esc(parts.leading)}</span>` +
-      `<span class="acp-harness__dictation-final" data-dictation-final>${esc(parts.finalText)}</span>` +
-      `<span class="acp-harness__dictation-interim" data-dictation-interim>${esc(parts.interimText)}</span>` +
-      `<span data-dictation-trailing>${esc(parts.trailing)}</span>` +
-      `<span class="acp-harness__caret">█</span>${esc(parts.after)}`
-    );
-  }
-
-  renderControl(lane: HarnessLane, session: ActiveDictationSession | null): string {
-    if (!session && !speechRecognitionConstructor()) return '';
-    const active = session?.laneId === lane.id;
-    const phase = active ? session.phase : 'idle';
-    const language = dictationLanguageLabel(session?.lang ?? DICTATION_LANG_ENGLISH);
-    const label = phase === 'starting'
-      ? `MIC ${language}`
-      : phase === 'listening'
-        ? `REC ${language}`
-        : phase === 'stopping'
-          ? 'FINALIZING…'
-          : 'MIC';
-    const ariaLabel = active ? 'Stop dictation' : 'Start English dictation';
-    const title = active
-      ? 'Stop dictation (Cmd+D)'
-      : 'English: Cmd+D · Thai: Cmd+Shift+D';
-    const keys = active
-      ? '<span class="acp-harness__dictation-key">⌘D</span>'
-      : '<span class="acp-harness__dictation-key">⌘D</span>'
-        + '<span class="acp-harness__dictation-key">⇧D</span>';
-    return (
-      `<button class="acp-harness__dictation acp-harness__dictation--${phase}" type="button" ` +
-      `data-dictation-toggle aria-label="${ariaLabel}" aria-pressed="${active}" title="${title}">` +
-      `<span class="acp-harness__dictation-dot" aria-hidden="true">●</span>` +
-      `<span data-dictation-label aria-live="polite">${label}</span>` +
-      `${keys}</button>`
-    );
-  }
-
-  patchComposer(): void {
-    const session = this.session;
-    if (!session || session.laneId !== this.host.activeLaneId) return;
-    const parts = dictationPreviewParts(
-      session.baseDraft,
-      session.insertAt,
-      session.finalText,
-      session.interimText,
-    );
-    const updates: Array<[string, string]> = [
-      ['[data-dictation-leading]', parts.leading],
-      ['[data-dictation-final]', parts.finalText],
-      ['[data-dictation-interim]', parts.interimText],
-      ['[data-dictation-trailing]', parts.trailing],
-    ];
-    const composerEl = this.host.composerEl;
-    for (const [selector, text] of updates) {
-      const element = composerEl.querySelector<HTMLElement>(selector);
-      if (element) element.textContent = text;
-    }
-    const button = composerEl.querySelector<HTMLButtonElement>('[data-dictation-toggle]');
-    const label = button?.querySelector<HTMLElement>('[data-dictation-label]');
-    if (!button || !label) return;
-    button.className = `acp-harness__dictation acp-harness__dictation--${session.phase}`;
-    const language = dictationLanguageLabel(session.lang);
-    label.textContent = session.phase === 'starting'
-      ? `MIC ${language}`
-      : session.phase === 'listening'
-        ? `REC ${language}`
-        : 'FINALIZING…';
   }
 
   start(lane: HarnessLane, lang: string): void {
@@ -147,14 +67,14 @@ export class HarnessDictationController {
     recognition.onstart = (): void => {
       if (this.session?.token !== token || session.phase !== 'starting') return;
       session.phase = 'listening';
-      this.patchComposer();
+      this.host.invalidate('composer');
     };
     recognition.onresult = (event: SpeechRecognitionEventLike): void => {
       if (this.session?.token !== token) return;
       const result = collectDictationResults(event);
       session.finalText = result.finalText;
       session.interimText = result.interimText;
-      this.patchComposer();
+      this.host.invalidate('composer');
     };
     recognition.onerror = (event: SpeechRecognitionErrorEventLike): void => {
       if (this.session?.token !== token) return;
@@ -162,7 +82,7 @@ export class HarnessDictationController {
     };
     recognition.onend = (): void => this.finish(token);
     this.host.element.focus({ preventScroll: true });
-    this.host.renderComposer();
+    this.host.invalidate('composer');
     try {
       recognition.start();
     } catch {
@@ -174,7 +94,7 @@ export class HarnessDictationController {
     const session = this.session;
     if (!session || session.phase === 'stopping') return;
     session.phase = 'stopping';
-    this.patchComposer();
+    this.host.invalidate('composer');
     try {
       session.recognition.stop();
     } catch {
@@ -197,7 +117,7 @@ export class HarnessDictationController {
       const inserted = insertDictationText(session.baseDraft, session.insertAt, speech);
       this.host.setDraft(lane, inserted.text, inserted.cursor);
     } else {
-      this.host.renderComposer();
+      this.host.invalidate('composer');
     }
     if (lane?.id === this.host.activeLaneId) this.host.element.focus({ preventScroll: true });
     if (message) this.host.flashChip(message);
@@ -224,6 +144,6 @@ export class HarnessDictationController {
     } catch {
       // Best-effort teardown: state and callbacks are already invalidated.
     }
-    if (render) this.host.renderComposer();
+    if (render) this.host.invalidate('composer');
   }
 }

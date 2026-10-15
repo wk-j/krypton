@@ -13,6 +13,31 @@ import type { ReviewSubject } from './review';
 import type { ContentBlock, LaneBusEvent, ReviewFinding, StopReason } from './types';
 import type { LiveDelivery } from './live-voice';
 
+/**
+ * Spec 301 — the repaint regions a controller may dirty.
+ *
+ * Before this, five of the six host interfaces exposed a bare `render(): void`,
+ * so every controller's only vocabulary was "repaint everything". A region says
+ * which surface moved; the scheduler coalesces regions into one frame and
+ * commits them in a fixed order.
+ */
+export type HarnessRegion =
+  | 'rail'
+  | 'laneChrome'
+  | 'transcript'
+  | 'rightRail'
+  | 'composer'
+  | 'overlay';
+
+export const HARNESS_REGION_ORDER: readonly HarnessRegion[] = [
+  'rail',
+  'laneChrome',
+  'transcript',
+  'rightRail',
+  'composer',
+  'overlay',
+];
+
 /** Capabilities every harness controller may rely on. */
 export interface HarnessViewHost {
   readonly element: HTMLElement;
@@ -26,14 +51,14 @@ export interface HarnessDictationHost extends HarnessViewHost {
   readonly composerEl: HTMLElement;
   /** False while any overlay, picker or pending prompt owns the keyboard. */
   canStartDictation(lane: HarnessLane): boolean;
-  renderComposer(): void;
+  invalidate(region: HarnessRegion): void;
   setDraft(lane: HarnessLane, text: string, cursor: number): void;
 }
 
 /** Spec 280 live voice controller host. */
 export interface HarnessLiveVoiceHost extends HarnessViewHost {
   readonly composerEl: HTMLElement;
-  render(): void;
+  invalidate(region: HarnessRegion): void;
   /** An idle lane starts the turn; a busy lane is steered (spec 278), else the
    *  prompt queues (spec 136; full queue → 'rejected'). The prompt carries
    *  `delegationId` so the turn that consumes it reports back. */
@@ -44,7 +69,7 @@ export interface HarnessLiveVoiceHost extends HarnessViewHost {
 export interface HarnessTimelineHost extends HarnessViewHost {
   readonly harnessMemoryId: string | null;
   readonly remoteRuntimeId: string | null;
-  render(): void;
+  invalidate(region: HarnessRegion): void;
   appendTranscript(lane: HarnessLane, kind: HarnessTranscriptItem['kind'], text: string): void;
   enqueueSystemPrompt(
     lane: HarnessLane,
@@ -64,7 +89,7 @@ export type ReviewSubjectResult =
 export interface HarnessReviewLoopHost extends HarnessViewHost {
   readonly projectDir: string | null;
   subscribeLaneBus(handler: (event: LaneBusEvent) => void): () => void;
-  render(): void;
+  invalidate(region: HarnessRegion): void;
   appendTranscript(lane: HarnessLane, kind: HarnessTranscriptItem['kind'], text: string): void;
   reserveCommandTurn(lane: HarnessLane, label: string): void;
   releaseReservedTurn(lane: HarnessLane, next?: 'idle' | 'awaiting_peer'): void;
@@ -104,7 +129,7 @@ export interface HarnessTicketHost extends HarnessViewHost {
   readonly panelsHidden: boolean;
   readonly openMarkdownViewCb: ((path: string) => Promise<void>) | null;
   readonly openFileReferenceCb: ((path: string, line?: number, column?: number) => Promise<boolean>) | null;
-  render(): void;
+  invalidate(region: HarnessRegion): void;
   activeLane(): HarnessLane | null;
   controlLane(params: Record<string, unknown>): HarnessLane;
   parseIssueRef(input: string): GithubIssueRef | null;
@@ -120,7 +145,7 @@ export interface HarnessTicketHost extends HarnessViewHost {
 
 /** Spec 278 mid-turn steering controller host. */
 export interface HarnessSteerHost extends HarnessViewHost {
-  render(): void;
+  invalidate(region: HarnessRegion): void;
   sealStreaming(lane: HarnessLane): void;
   appendTranscript(
     lane: HarnessLane,

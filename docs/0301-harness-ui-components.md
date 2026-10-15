@@ -1,6 +1,6 @@
 # 301. Harness UI Components
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-10-15
 > Scope: frontend only — `src/acp/` render paths + a new generic `src/ui/` kernel. No Rust, no protocol, no visual change.
 > Companion: [302 — Harness Component Catalog](./0302-harness-component-catalog.md) lists every component with its props, example UI, emitted markup, and the call sites it deletes.
@@ -263,7 +263,6 @@ export const HARNESS_LAYOUT_DEFAULT = {
   queue:   { slot: 'rail.bottom',   order: 10 },
   ticket:  { slot: 'dock.right',    order: 10 },
   peerStrip:  { slot: 'composer.above', order: 10 },
-  annotation: { slot: 'rail.top',      order: 40 },
 } as const satisfies HarnessLayout;
 ```
 
@@ -278,7 +277,7 @@ component, never a DOM field).
 |---|---|
 | `.acp-harness__lane-body` (transcript) | Reparenting a scroll container discards `scrollTop` — measured 800 → 0 across detach/reattach in Chromium (spec 94). Spec 95 exists because of this. The layout may resize its slot; it may never move the node. |
 | Composer | Keyboard-first (`CLAUDE.md` constraint 1): the command escape hatch must always be present and reachable. The slot may move; the component may not be unmounted. |
-| Inline permission / question / write-review rows | Transcript content, not panels. Spec 251 already draws this line: hiding or moving a panel must never conceal an action that unblocks a lane. |
+| Inline permission / question / write-review rows, annotation rail | Transcript content, not panels. Spec 251 already draws this line: hiding or moving a panel must never conceal an action that unblocks a lane. The annotation rail (spec 302 §5.8) belongs to the reply it annotates — `AssistantRow` appends it to that message body, so a `rail.top` slot would MOVE it, not place it. |
 
 `#panels` (spec 251) stays exactly as it is — it hides the *whole* rail via a root class, which is a
 coarser control than, and independent of, slot placement.
@@ -493,12 +492,16 @@ re-pointed at the owning component sheets in this phase, not left to break.
 
 ## Testing
 
-**The repo has no DOM test environment today.** `package.json` devDependencies are `@tauri-apps/cli`,
-`@types/react`, `@types/react-dom`, `typescript`, `vite`, `vitest`; `vite.config.ts` declares no `test`
-block, so vitest runs in `node` and no test in `src/` constructs a DOM. That is why today's harness
-assertions are pure-helper tests plus source-text regex. Phase 0 therefore adds `happy-dom` and a
-`test.environmentMatchGlobs` entry for `src/acp/components/**` and `src/ui/**`; everything else keeps the
-`node` environment, so the existing 526 tests are unaffected.
+**The repo had no DOM test environment.** `package.json` devDependencies were `@tauri-apps/cli`,
+`@types/react`, `@types/react-dom`, `typescript`, `vite`, `vitest`; `vite.config.ts` declared no `test`
+block, so vitest ran in `node` and no test in `src/` constructed a DOM. That is why the harness
+assertions were pure-helper tests plus source-text regex. Phase 0 added `happy-dom` and split the run
+so `src/acp/components/**` and `src/ui/**` get a DOM while everything else keeps `node`.
+
+> **Implementation note.** This spec specified `test.environmentMatchGlobs`; that option was removed in
+> vitest 4, which is the version the repo is on (4.1.7). The split is expressed as two
+> `test.projects` instead — a `node` project that excludes the two globs, and a `dom` project that
+> includes them. Same outcome, and `npx vitest run --project dom|node` can run either half alone.
 
 **What happy-dom cannot do, and what we do instead.** It implements no layout: `scrollHeight`,
 `getBoundingClientRect` and `ResizeObserver` return zeros. So `Transcript`'s scroll anchoring, sticky

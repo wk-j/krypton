@@ -4,7 +4,9 @@
 // local ticket, its worker binding, the `#ticket` picker dialog and the ticket
 // dock. Reaches the view only through `HarnessTicketHost`.
 
-import { esc, formatAge } from './harness-format';
+import { nextCursor, prevCursor } from './components/list-picker';
+import { TicketDock } from './components/ticket-dock';
+import { TicketPicker } from './components/ticket-picker';
 import { statusLabel } from './harness-lane-chrome';
 import { errorText } from './harness-permission-scan';
 import type {
@@ -33,7 +35,6 @@ import {
   ticketWorkActionDisabledReason,
   ticketMarkdownPath,
   isSameTicketPicker,
-  formatTicketBytes,
 } from './harness-ticket-helpers';
 import type { HarnessTicketHost } from './harness-view-host';
 
@@ -57,12 +58,14 @@ export class HarnessTicketController {
   } | null = null;
   private ticketProgressUnlisten: UnlistenFn | null = null;
   private ticketWorkerUnlisten: UnlistenFn | null = null;
-  ticketOverlayEl!: HTMLElement;
-  ticketPanelEl!: HTMLElement;
+  /** Spec 302 §7.5 — the `#ticket` dialog. Its root IS the overlay aside. */
+  ticketPickerCmp!: TicketPicker;
   ticketDockEl!: HTMLElement;
-  private readonly ticketPanelClickHandler = (event: MouseEvent): void => {
-    this.handleTicketPickerClick(event);
-  };
+  /** The `dock.right` layout slot this controller appends; the host places the dock in it. */
+  dockSlotEl!: HTMLElement;
+  /** Spec 302 §5.7 — the dock's content. Its root IS `ticketDockEl`. */
+  ticketDock!: TicketDock;
+
   private readonly ticketDockClickHandler = (event: MouseEvent): void => {
     void this.handleTicketDockClick(event);
   };
@@ -70,35 +73,37 @@ export class HarnessTicketController {
     if (event.key !== 'Escape' || this.ticketPanelCollapsed) return;
     event.preventDefault();
     this.ticketPanelCollapsed = true;
-    this.host.render();
+    this.host.invalidate('rightRail');
     this.host.element.focus();
   };
 
   constructor(private readonly host: HarnessTicketHost) {}
 
+  /**
+   * Spec 301 §Layout: the dock is placed by the view's `LayoutHost`, so what is
+   * appended here is the `dock.right` SLOT — a `display: contents` box — and
+   * the dock itself is a component the host mounts into it. The element keeps
+   * its class, its aria label and its two delegated listeners: those are the
+   * dock's placement and keyboard contract, not its content.
+   */
   mountDock(body: HTMLElement): void {
+    this.dockSlotEl = document.createElement('div');
+    this.dockSlotEl.className = 'acp-harness__layout-slot';
+    this.dockSlotEl.dataset.layoutSlot = 'dock.right';
     this.ticketDockEl = document.createElement('aside');
     this.ticketDockEl.className = 'acp-harness__ticket-dock';
     this.ticketDockEl.hidden = true;
     this.ticketDockEl.setAttribute('aria-label', 'Active ticket');
     this.ticketDockEl.addEventListener('click', this.ticketDockClickHandler);
     this.ticketDockEl.addEventListener('keydown', this.ticketDockKeyHandler);
-    body.appendChild(this.ticketDockEl);
+    this.ticketDock = new TicketDock(this.ticketDockEl);
+    body.appendChild(this.dockSlotEl);
   }
 
   /** spec 194: `#ticket` picker — its own modal dialog, not a composer popup. */
   mountOverlay(body: HTMLElement): void {
-    this.ticketOverlayEl = document.createElement('aside');
-    this.ticketOverlayEl.className = 'acp-harness__ticket-overlay';
-    this.ticketOverlayEl.hidden = true;
-    this.ticketPanelEl = document.createElement('div');
-    this.ticketPanelEl.className = 'acp-ticket__panel';
-    this.ticketPanelEl.setAttribute('role', 'dialog');
-    this.ticketPanelEl.setAttribute('aria-modal', 'true');
-    this.ticketPanelEl.setAttribute('aria-label', 'Working ticket');
-    this.ticketPanelEl.addEventListener('click', this.ticketPanelClickHandler);
-    this.ticketOverlayEl.appendChild(this.ticketPanelEl);
-    body.appendChild(this.ticketOverlayEl);
+    this.ticketPickerCmp = new TicketPicker();
+    body.appendChild(this.ticketPickerCmp.el);
   }
 
   async subscribe(): Promise<void> {
@@ -139,9 +144,12 @@ export class HarnessTicketController {
     this.ticketProgressUnlisten = null;
     this.ticketWorkerUnlisten?.();
     this.ticketWorkerUnlisten = null;
-    this.ticketPanelEl?.removeEventListener('click', this.ticketPanelClickHandler);
     this.ticketDockEl?.removeEventListener('click', this.ticketDockClickHandler);
     this.ticketDockEl?.removeEventListener('keydown', this.ticketDockKeyHandler);
+    // The dock's root IS `ticketDockEl`; the view's `LayoutHost` only unmounts
+    // it from the slot, so the component is disposed here with the controller.
+    this.ticketDock?.dispose();
+    this.ticketPickerCmp?.dispose();
   }
 
   controlActiveTicket(params: Record<string, unknown>): ActiveTicketSnapshot {
@@ -190,7 +198,7 @@ export class HarnessTicketController {
         this.ticketPanelSeen = true;
       }
     }
-    this.host.render();
+    this.host.invalidate('rightRail');
   }
 
   async bindActiveTicket(lane: HarnessLane): Promise<boolean> {
@@ -233,7 +241,7 @@ export class HarnessTicketController {
     this.host.flashChip(persisted
       ? `ticket cleared (${id}); bundle kept on disk`
       : `ticket cleared for this session, but the saved pointer could not be updated`);
-    this.host.render();
+    this.host.invalidate('rightRail');
   }
 
   async clearTicketWorkerForLane(laneId: string): Promise<void> {
@@ -287,31 +295,11 @@ export class HarnessTicketController {
     if (button.dataset.ticketDockAction !== 'toggle') return;
     this.ticketPanelCollapsed = !this.ticketPanelCollapsed;
     this.ticketPanelSeen = true;
-    if (this.ticketPanelCollapsed) this.host.render();
+    if (this.ticketPanelCollapsed) this.host.invalidate('rightRail');
     else await this.reloadActiveTicket(false);
   }
 
-  handleTicketPickerClick(event: MouseEvent): void {
-    if (!this.ticketPicker || !(event.target instanceof Element)) return;
-    const tabButton = event.target.closest<HTMLButtonElement>('[data-ticket-tab]');
-    if (tabButton && this.ticketPanelEl.contains(tabButton)) {
-      const tab = tabButton.dataset.ticketTab;
-      if (tab === 'open' || tab === 'closed') this.setTicketPickerTab(tab);
-      return;
-    }
-    const actionButton = event.target.closest<HTMLButtonElement>('[data-ticket-action]');
-    if (actionButton && this.ticketPanelEl.contains(actionButton)) {
-      const action = actionButton.dataset.ticketAction as TicketPickerAction | undefined;
-      if (action && !actionButton.disabled) void this.runTicketPickerAction(action);
-      return;
-    }
-    const row = event.target.closest<HTMLElement>('[data-ticket-index]');
-    if (!row || !this.ticketPanelEl.contains(row)) return;
-    const index = Number(row.dataset.ticketIndex);
-    if (!Number.isInteger(index)) return;
-    this.ticketPicker.index = index;
-    this.renderTicketOverlayEl();
-  }
+
 
   /** Modal-dialog key handling while the ticket picker is open: Tab switches
    *  Open/Closed, printable keys build the filter, ↑↓/⌃n⌃p move, Enter selects,
@@ -334,13 +322,13 @@ export class HarnessTicketController {
     }
     if (e.key === 'ArrowDown' || (e.ctrlKey && (e.key === 'n' || e.key === 'N'))) {
       e.preventDefault();
-      if (matches.length > 0) picker.index = (picker.index + 1) % matches.length;
+      picker.index = nextCursor(picker.index, matches.length);
       this.renderTicketOverlayEl();
       return true;
     }
     if (e.key === 'ArrowUp' || (e.ctrlKey && (e.key === 'p' || e.key === 'P'))) {
       e.preventDefault();
-      if (matches.length > 0) picker.index = (picker.index - 1 + matches.length) % matches.length;
+      picker.index = prevCursor(picker.index, matches.length);
       this.renderTicketOverlayEl();
       return true;
     }
@@ -583,7 +571,7 @@ export class HarnessTicketController {
         this.ticketWorker = null;
         await this.setTicketWorker(null);
         await this.persistActiveTicketNow(null);
-        this.host.render();
+        this.host.invalidate('rightRail');
         this.host.flashChip(`ticket ${ticketId} was removed; active ticket cleared`);
         return null;
       }
@@ -612,63 +600,12 @@ export class HarnessTicketController {
       'acp-harness--ticket-expanded',
       ticket !== null && !this.ticketPanelCollapsed,
     );
-    if (!ticket) {
-      this.ticketDockEl.innerHTML = '';
-      return;
-    }
-    if (this.host.panelsHidden) return;
-    const expanded = !this.ticketPanelCollapsed;
-    this.ticketDockEl.setAttribute('aria-expanded', String(expanded));
-    if (!expanded) {
-      const statusLabel = ticket.status.replaceAll('_', ' ');
-      this.ticketDockEl.innerHTML =
-        `<button class="acp-ticket-dock__collapsed" type="button" data-ticket-dock-action="toggle" ` +
-        `aria-label="Expand ticket ${esc(ticket.title)} (${esc(statusLabel)})" aria-expanded="false">‹</button>`;
-      return;
-    }
-    const github = ticket.github
-      ? `<div class="acp-ticket-dock__meta"><span>GitHub</span>` +
-        `<strong title="${esc(ticket.github.issueKey)}">${esc(ticket.github.repo)}</strong>` +
-        `<em><a class="acp-ticket-dock__issue-link" href="${esc(ticket.github.issueUrl)}" ` +
-        `aria-label="Open ${esc(ticket.github.issueKey)} on GitHub">#${ticket.github.number}</a>` +
-        ` · ${esc(ticket.github.state ?? 'unknown')}</em></div>`
-      : `<div class="acp-ticket-dock__meta"><span>GitHub</span><em>not linked</em></div>`;
-    const worker = this.ticketWorker
-      ? `<strong>${esc(this.ticketWorker.laneDisplayName)}</strong>`
-      : `<em>not assigned</em>`;
-    const context = ticket.contextExcerpt
-      ? esc(ticket.contextExcerpt)
-      : 'No context note yet. Use #ticket note &lt;text&gt;.';
-    const resources = ticket.resources.length === 0
-      ? `<li class="acp-ticket-dock__empty">No managed resources</li>`
-      : ticket.resources.slice(0, 6).map((resource) =>
-          `<li><span>${esc(resource.name)}</span><em>${formatTicketBytes(resource.sizeBytes)}</em></li>`,
-        ).join('');
-    const moreResources = ticket.resources.length > 6
-      ? `<li class="acp-ticket-dock__empty">+${ticket.resources.length - 6} more</li>`
-      : '';
-    const analysis = ticket.analysis
-      ? `${ticket.analysis.markdownCount} Markdown · ${ticket.analysis.attachmentCount} attachments`
-      : 'No linked analysis bundle';
-    const progress = ticket.lastProgressSummary
-      ? `<p>${esc(ticket.lastProgressSummary)}</p>`
-      : `<p class="acp-ticket-dock__empty">No progress summary yet</p>`;
-    this.ticketDockEl.innerHTML =
-      `<header class="acp-ticket-dock__head">` +
-      `<div><span class="acp-ticket-dock__eyebrow">active ticket</span>` +
-      `<h2>${esc(ticket.title)}</h2></div>` +
-      `<button type="button" data-ticket-dock-action="toggle" aria-label="Collapse ticket panel" ` +
-      `aria-expanded="true">›</button></header>` +
-      `<div class="acp-ticket-dock__status-row">` +
-      `<span class="acp-ticket-dock__pill acp-ticket-dock__pill--${ticket.status}">${ticket.status}</span>` +
-      `<code>${esc(ticket.id)}</code></div>` +
-      github +
-      `<div class="acp-ticket-dock__meta"><span>Worker</span>${worker}</div>` +
-      `<section><h3>Context</h3><p>${context}</p></section>` +
-      `<section><h3>Resources <span>${ticket.resourceCount}</span></h3>` +
-      `<ul>${resources}${moreResources}</ul></section>` +
-      `<section><h3>Analysis</h3><p>${esc(analysis)}</p></section>` +
-      `<section><h3>Latest progress</h3>${progress}</section>`;
+    if (!ticket || this.host.panelsHidden) return;
+    this.ticketDock.update({
+      ticket,
+      workerName: this.ticketWorker?.laneDisplayName ?? null,
+      collapsed: this.ticketPanelCollapsed,
+    });
   }
 
   /** spec 194: `#ticket` picker — its own modal dialog (same overlay shell family
@@ -677,104 +614,33 @@ export class HarnessTicketController {
    *  opened the picker. */
   renderTicketOverlayEl(): void {
     const picker = this.ticketPicker;
-    this.ticketOverlayEl.hidden = !picker;
-    if (!picker) return;
-    const matches = this.ticketPickerMatches();
-    const counts = ticketPickerTabCounts(picker.rows);
-    const safeIndex = Math.max(0, Math.min(picker.index, matches.length - 1));
-    const selectedRow = matches[safeIndex];
     const lane = this.host.activeLane();
-    const workDisabledReason = ticketWorkActionDisabledReason(lane
-      ? { displayName: lane.displayName, status: lane.status, hasClient: lane.client !== null }
-      : null);
-    const workDisabled = !selectedRow || selectedRow.kind === 'unavailable' || !selectedRow.url || workDisabledReason !== null;
-    const workDisabledAttr = workDisabled ? ' disabled' : '';
-    const setDisabledAttr = !selectedRow || selectedRow.kind === 'unavailable' ? ' disabled' : '';
-    const workTitleAttr = workDisabledReason ? ` title="${esc(workDisabledReason)}"` : '';
-    const target = lane
-      ? `target: ${esc(lane.displayName)} · ${esc(lane.status)}`
-      : 'target: no active lane';
-    const filter = picker.filter
-      ? esc(picker.filter)
-      : `<span class="acp-ticket__filter-hint">type to filter</span>`;
-    const tabButton = (id: TicketPickerTab, label: string, count: number): string => {
-      const active = picker.tab === id ? ' acp-ticket__tab--active' : '';
-      return (
-        `<button class="acp-ticket__tab${active}" type="button" role="tab" ` +
-        `aria-selected="${picker.tab === id}" data-ticket-tab="${id}">` +
-        `${label} <span class="acp-ticket__tab-count">${count}</span></button>`
-      );
-    };
-    const empty = picker.filter.trim()
-      ? 'no matching tickets'
-      : picker.tab === 'closed'
-        ? 'no closed tickets'
-        : 'no open tickets';
-    const rows = matches.length === 0
-      ? `<div class="acp-ticket__empty">${empty}</div>`
-      : matches
-          .map((row, i) => {
-            const sel = i === safeIndex ? ' acp-ticket__row--selected' : '';
-            const labels = row.labels.length > 0
-              ? `<span class="acp-ticket__labels">${esc(row.labels.join(', '))}</span>`
-              : '';
-            const updated = Date.parse(row.updatedAt ?? '');
-            const age = Number.isNaN(updated) ? '' : formatAge(Date.now() - updated);
-            const state = row.kind === 'unavailable' ? '' : ` · ${row.state}`;
-            const key = row.kind === 'local'
-              ? row.ticketId ?? 'local'
-              : row.kind === 'unavailable'
-                ? 'gh'
-                : `#${row.number ?? '?'}`;
-            const badge = row.kind === 'local'
-              ? '<span class="acp-ticket__badge">LOCAL</span>'
-              : row.kind === 'github'
-                ? '<span class="acp-ticket__badge">IMPORT</span>'
-                : '';
-            const tag = row.kind === 'unavailable' ? 'div' : 'button';
-            const typeAttr = row.kind === 'unavailable' ? '' : ' type="button"';
-            return (
-              `<${tag} class="acp-ticket__row${sel}${row.kind === 'unavailable' ? ' acp-ticket__row--unavailable' : ''}"${typeAttr} role="option" ` +
-              `aria-selected="${i === safeIndex}" data-ticket-index="${i}"` +
-              `${row.kind === 'unavailable' ? ' aria-disabled="true"' : ''}>` +
-              `<span class="acp-ticket__title">${esc(row.title)}</span>` +
-              `<span class="acp-ticket__identity">` +
-              `<span class="acp-ticket__num">${esc(key)}</span>` +
-              badge +
-              `</span>` +
-              labels +
-              `<span class="acp-ticket__age">${esc(age)}${state}</span>` +
-              `</${tag}>`
-            );
-          })
-          .join('');
-    this.ticketPanelEl.innerHTML =
-      `<header class="acp-ticket__head">local tickets + GitHub` +
-      `<span class="acp-ticket__sub">${target}</span></header>` +
-      `<div class="acp-ticket__tabs" role="tablist" aria-label="Ticket status">` +
-      tabButton('open', 'Open', counts.open) +
-      tabButton('closed', 'Closed', counts.closed) +
-      `</div>` +
-      `<div class="acp-ticket__filter">${filter}<span class="acp-harness__caret">█</span></div>` +
-      `<div class="acp-ticket__rows" role="listbox" data-count="${matches.length}">${rows}</div>` +
-      `<div class="acp-ticket__actions" aria-label="Selected ticket actions">` +
-      `<button class="acp-ticket__action" type="button" data-ticket-action="set-ticket"${setDisabledAttr}>` +
-      `<span class="acp-ticket__action-key">Enter</span> Set ticket</button>` +
-      `<button class="acp-ticket__action" type="button" data-ticket-action="analyze-github-issue"` +
-      `${workDisabledAttr}${workTitleAttr}>` +
-      `<span class="acp-ticket__action-key">⌘1</span> Analyze</button>` +
-      `<button class="acp-ticket__action" type="button" data-ticket-action="post-github-comment"` +
-      `${workDisabledAttr}${workTitleAttr}>` +
-      `<span class="acp-ticket__action-key">⌘2</span> Post comment</button>` +
-      `<button class="acp-ticket__action acp-ticket__action--fix" type="button" ` +
-      `data-ticket-action="fix-github-issue"${workDisabledAttr}${workTitleAttr}>` +
-      `<span class="acp-ticket__action-key">⌘3</span> Fix here</button>` +
-      `</div>` +
-      `<footer class="acp-ticket__foot">` +
-      `<span>Tab open/closed · ↑↓ / ⌃n⌃p select · Esc dismiss</span>` +
-      `<span>shared with all ${this.host.lanes.length} lanes · work runs in ${esc(lane?.displayName ?? 'no lane')}</span>` +
-      `</footer>`;
-    this.ticketPanelEl.querySelector('.acp-ticket__row--selected')?.scrollIntoView({ block: 'nearest' });
+    this.ticketPickerCmp.update({
+      open: picker !== null,
+      rows: picker ? this.ticketPickerMatches() : [],
+      counts: picker ? ticketPickerTabCounts(picker.rows) : { open: 0, closed: 0 },
+      tab: picker?.tab ?? 'open',
+      filter: picker?.filter ?? '',
+      cursor: picker?.index ?? 0,
+      laneName: lane?.displayName ?? null,
+      laneStatus: lane?.status ?? null,
+      laneCount: this.host.lanes.length,
+      workDisabledReason: ticketWorkActionDisabledReason(
+        lane
+          ? { displayName: lane.displayName, status: lane.status, hasClient: lane.client !== null }
+          : null,
+      ),
+      now: Date.now(),
+      onSelectTab: (tab: TicketPickerTab): void => this.setTicketPickerTab(tab),
+      onChooseRow: (index: number): void => {
+        if (!this.ticketPicker) return;
+        this.ticketPicker.index = index;
+        this.renderTicketOverlayEl();
+      },
+      onAction: (action: TicketPickerAction): void => {
+        void this.runTicketPickerAction(action);
+      },
+    });
   }
 
   /** spec 238: local-first `#ticket` command family. */
@@ -838,7 +704,7 @@ export class HarnessTicketController {
           markdown,
         });
         this.host.flashChip('ticket note added');
-        this.host.render();
+        this.host.invalidate('rightRail');
       } catch (e) {
         this.host.flashChip(`ticket note failed: ${errorText(e)}`);
       }
@@ -857,7 +723,7 @@ export class HarnessTicketController {
           sourcePath,
         });
         this.host.flashChip('ticket resource copied');
-        this.host.render();
+        this.host.invalidate('rightRail');
       } catch (e) {
         this.host.flashChip(`ticket resource failed: ${errorText(e)}`);
       }
@@ -883,7 +749,7 @@ export class HarnessTicketController {
       }
       if (await this.bindActiveTicket(lane)) {
         this.host.flashChip(`ticket assigned → ${lane.displayName}`);
-        this.host.render();
+        this.host.invalidate('rightRail');
       }
       return;
     }
@@ -894,7 +760,7 @@ export class HarnessTicketController {
       }
       this.ticketPanelCollapsed = !this.ticketPanelCollapsed;
       this.ticketPanelSeen = true;
-      if (this.ticketPanelCollapsed) this.host.render();
+      if (this.ticketPanelCollapsed) this.host.invalidate('rightRail');
       else await this.reloadActiveTicket(false);
       return;
     }
@@ -927,7 +793,7 @@ export class HarnessTicketController {
           github: null,
         });
         this.host.flashChip('GitHub reference removed; local bundle kept');
-        this.host.render();
+        this.host.invalidate('rightRail');
       } catch (e) {
         this.host.flashChip(`ticket unlink failed: ${errorText(e)}`);
       }
@@ -947,7 +813,7 @@ export class HarnessTicketController {
         });
         void this.enrichActiveTicket(this.activeTicket.id, this.activeTicket.github!);
         this.host.flashChip(`ticket linked → ${ref.repo}#${ref.number}`);
-        this.host.render();
+        this.host.invalidate('rightRail');
       } catch (e) {
         this.host.flashChip(`ticket link failed: ${errorText(e)}`);
       }
@@ -1092,7 +958,7 @@ export class HarnessTicketController {
         summary,
       });
       this.activeTicket = detail;
-      this.host.render();
+      this.host.invalidate('rightRail');
       return detail;
     } catch (e) {
       this.host.flashChip(`ticket status failed: ${errorText(e)}`);

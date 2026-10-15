@@ -1095,37 +1095,45 @@ PUBLISH
        memory/help overlays). Header shows `// plan` + `done/total`; rows
        render `[ ]/[~]/[x]` plus content with status colors and a left-border
        priority accent.
-    d. render() calls renderPlanPanel(activeLane()) every pass so lane switch
-       repaints from the active lane's stored plan.
+    d. The panel is a PlanPanel component mounted through LayoutHost at the
+       slot HARNESS_LAYOUT_DEFAULT names for `plan` (today `rail.top`, order
+       10). The 'rightRail' region commits it, so a lane switch repaints from
+       the active lane's stored plan, and moving the panel is one line in that
+       table rather than a CSS + buildDOM + renderer edit.
     e. `p` in transcript focus toggles lane.planCollapsed. #restart, #new,
        and #new! null lane.plan and reset planCollapsed.
-21. Harness event render batching (Spec 94 / 114):
-    a. ACP event handlers mutate lane state synchronously, but expensive
-       transcript/dashboard refreshes call scheduleLaneRender() instead of render().
-    b. scheduleLaneRender() keeps one pending requestAnimationFrame callback so
-       multiple chrome-changing events in one frame coalesce into one active-lane
-       pass. message_chunk / thought_chunk / tool_call / tool_call_update do **not**
-       take this path.
-    c. available_commands does not rebuild the transcript; it updates the active
-       composer so slash-command palette state can change immediately.
-    d. mode_update does not rebuild the transcript; it refreshes lane heads via
-       the existing lightweight header refresh path.
-    e. Full lane renders still rebuild chrome (head, composer, peek, plan), but
-       the active transcript body is preserved and rows are patched by signature.
-    f. tool_call / tool_call_update (spec 114 rev 5) use scheduleStreamingBodyOnly
-       with a peek-tool flag: they patch the transcript tool row and the peek
-       tool row, and they do not innerHTML the composer or lane head. Pending
-       and in_progress share one transcript signature so a status-only tick
-       does not remount the row.
+21. Harness event render batching (Spec 94 / 114 / 301):
+    a. ACP event handlers mutate lane state synchronously, then name the REGION
+       they dirtied — invalidate('transcript'), invalidate('rightRail'), … —
+       instead of calling a repaint function. Regions are
+       rail · laneChrome · transcript · rightRail · composer · overlay.
+    b. RenderScheduler coalesces every invalidation in a frame into one
+       requestAnimationFrame and commits the dirty regions in that fixed order.
+       It replaces the two hand-rolled RAF flags (renderRaf, streamingBodyRaf).
+       A commit that dirties a region the sweep already passed books the next
+       frame, so no invalidation is lost.
+    c. flushSync(region) commits ONE region now and leaves the rest pending.
+       The keystroke path uses it — setDraft() → flushSync('composer') →
+       pinStickyAfterComposerKey() — so a pending 'transcript' commit (a full
+       tail-window reconcile) is never dragged into the keypress frame.
+    d. available_commands and mode_update dirty 'composer' and 'laneChrome'
+       respectively; neither touches the transcript.
+    e. The 'rail' region is the only one that rebuilds the lane roster. Lane
+       shells are components: the active lane's `.acp-harness__lane-body` is
+       created once and never reparented, so no scroll offset is discarded and
+       the old capture/restore dance around the rebuild is gone.
+    f. tool_call / tool_call_update dirty 'transcript' only. Row components
+       hold their own dependency tuples, so pending and in_progress collapse
+       into one status bucket and a status-only tick writes nothing; streaming
+       output swaps `.acp-harness__tool-output` alone and never the head.
        Sticky follow on that pass (rev 15) idles or pins when the transcript
        bottom did not grow, so a bounded execute-output tail does not replay a
        glide over already-visible rows.
-    g. stop (spec 114 rev 6) does not scheduleLaneRender. finishTurn patches
-       lane chrome + composer (`patchLaneTurnChrome`) and seals the transcript
-       body-only. refreshMcpStats updates heads via refreshMetricsRender and
-       never calls render() (full dashboard rebuild). Thought/user seal stamps
-       the wrapper signature like assistant so the body-only pass does not
-       replaceChildren those rows.
+    g. stop seals the open rows through LiveComponent.seal(), which invalidates
+       NO region (constraint 10). finishTurn patches lane chrome + composer via
+       patchLaneTurnChrome; refreshMcpStats updates lane heads by updating their
+       components, whose deps are the FORMATTED numbers — a poll whose displayed
+       values did not move writes nothing.
 ```
 ## Resize Mode Flow (e.g., Leader then r)
 

@@ -80,7 +80,7 @@ export class HarnessSteerController {
     });
     lane.pendingUserEcho = { itemId: item.id, text, received: '' };
     state.inFlight += 1;
-    this.host.render();
+    this.host.invalidate('transcript');
     let outcome: SteerOutcome;
     let requestId: number | null = null;
     let error: unknown = null;
@@ -115,7 +115,9 @@ export class HarnessSteerController {
       this.requeue(lane, item.id, text, images, seq, cancelled, error, liveDelegationId);
     }
     this.maybeFinish(lane, state);
-    this.host.render();
+    this.host.invalidate('transcript');
+    // `requeue()` can move the steer into the lane's prompt queue.
+    this.host.invalidate('rightRail');
   }
 
   /** The `session/prompt` stop. Ends the turn now, or holds it while a steer is

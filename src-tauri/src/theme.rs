@@ -28,6 +28,10 @@ pub struct FullTheme {
     pub focused: FocusedConfig,
     pub workspace: WorkspaceConfig,
     pub ui: UiConfig,
+    /// Spec 303 — free-form component tokens. Key becomes `--<key>` on `:root`.
+    /// Entries that fail [`sanitize_tokens`] are dropped at load.
+    #[serde(default)]
+    pub tokens: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -488,6 +492,136 @@ impl Default for UiHints {
     }
 }
 
+// ─── Component Tokens (spec 303) ──────────────────────────────────
+
+/// Longest accepted token key (`^[a-z][a-z0-9-]{0,63}$`).
+const TOKEN_KEY_MAX_LEN: usize = 64;
+
+/// Longest accepted token value.
+const TOKEN_VALUE_MAX_LEN: usize = 256;
+
+/// CSS functions a token value may call. Everything else — `url`, `image`,
+/// `image-set`, `-webkit-image-set`, `cross-fade`, `element`, `expression`,
+/// `attr`, … — is rejected, because the fetch surface is wider than `url()`.
+const TOKEN_FN_ALLOWLIST: [&str; 14] = [
+    "var",
+    "rgb",
+    "rgba",
+    "hsl",
+    "hsla",
+    "color-mix",
+    "color",
+    "oklch",
+    "lab",
+    "calc",
+    "clamp",
+    "min",
+    "max",
+    "env",
+];
+
+/// `^[a-z][a-z0-9-]{0,63}$` — the key is rendered as `--<key>`, so it stays in
+/// the lowercase kebab charset every built-in property already uses.
+fn token_key_is_valid(key: &str) -> bool {
+    if key.len() > TOKEN_KEY_MAX_LEN {
+        return false;
+    }
+    let mut chars = key.chars();
+    match chars.next() {
+        Some(first) if first.is_ascii_lowercase() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Resolve CSS escapes (`\75 ` → `u`, `\-` → `-`) so the function allowlist
+/// sees real identifiers. CSS identifiers accept escapes, so `\75 rl(…)` is a
+/// perfectly valid `url()` call that contains none of the obvious substrings.
+fn css_unescape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut chars = value.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        let mut hex = String::new();
+        while hex.len() < 6 {
+            match chars.peek() {
+                Some(h) if h.is_ascii_hexdigit() => {
+                    hex.push(*h);
+                    chars.next();
+                }
+                _ => break,
+            }
+        }
+        if hex.is_empty() {
+            // `\<char>` escapes the character itself; a trailing `\` is dropped.
+            if let Some(escaped) = chars.next() {
+                out.push(escaped);
+            }
+            continue;
+        }
+        // A single whitespace character terminates a hex escape.
+        if chars.peek().is_some_and(|w| w.is_whitespace()) {
+            chars.next();
+        }
+        let code = u32::from_str_radix(&hex, 16).unwrap_or(0);
+        out.push(char::from_u32(code).unwrap_or(char::REPLACEMENT_CHARACTER));
+    }
+    out
+}
+
+/// A character that can appear in a CSS identifier.
+fn is_ident_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '-' || c == '_' || !c.is_ascii()
+}
+
+/// Allowlist check, applied to the unescaped + lowercased value: every function
+/// token has to be one Krypton knows cannot fetch. `setProperty` parses one
+/// declaration value and cannot be broken out of, so `;` `}` `{` `@import` are
+/// deliberately not filtered — the fetch surface is the whole control here.
+fn token_value_is_valid(value: &str) -> bool {
+    if value.len() > TOKEN_VALUE_MAX_LEN {
+        return false;
+    }
+    let normalized = css_unescape(value).to_lowercase();
+    let mut ident = String::new();
+    for c in normalized.chars() {
+        if c == '(' {
+            if !ident.is_empty() && !TOKEN_FN_ALLOWLIST.contains(&ident.as_str()) {
+                return false;
+            }
+            ident.clear();
+        } else if is_ident_char(c) {
+            ident.push(c);
+        } else {
+            ident.clear();
+        }
+    }
+    true
+}
+
+/// Drop `[tokens]` entries that fail validation, individually. The rest of the
+/// theme still loads: a theme can never break startup, and never fetch.
+fn sanitize_tokens(theme: &mut FullTheme) {
+    theme.tokens.retain(|key, value| {
+        let keep = token_key_is_valid(key) && token_value_is_valid(value);
+        if !keep {
+            log::warn!("theme token rejected: {key}");
+        }
+        keep
+    });
+}
+
+/// Parse theme TOML and sanitize its `[tokens]` table. Every path that turns
+/// TOML into a [`FullTheme`] goes through here.
+fn parse_theme_toml(contents: &str) -> Result<FullTheme, toml::de::Error> {
+    let mut theme: FullTheme = toml::from_str(contents)?;
+    sanitize_tokens(&mut theme);
+    Ok(theme)
+}
+
 // ─── Theme Engine ─────────────────────────────────────────────────
 
 pub struct ThemeEngine {
@@ -507,21 +641,21 @@ impl ThemeEngine {
         let mut builtins = HashMap::new();
 
         // Parse and register built-in themes
-        match toml::from_str::<FullTheme>(BUILTIN_KRYPTON_DARK) {
+        match parse_theme_toml(BUILTIN_KRYPTON_DARK) {
             Ok(theme) => {
                 builtins.insert("krypton-dark".to_string(), theme);
             }
             Err(e) => log::error!("Failed to parse built-in krypton-dark theme: {e}"),
         }
 
-        match toml::from_str::<FullTheme>(BUILTIN_KRYPTON_LIGHT) {
+        match parse_theme_toml(BUILTIN_KRYPTON_LIGHT) {
             Ok(theme) => {
                 builtins.insert("krypton-light".to_string(), theme);
             }
             Err(e) => log::error!("Failed to parse built-in krypton-light theme: {e}"),
         }
 
-        match toml::from_str::<FullTheme>(BUILTIN_LEGACY_RADIANCE) {
+        match parse_theme_toml(BUILTIN_LEGACY_RADIANCE) {
             Ok(theme) => {
                 builtins.insert("legacy-radiance".to_string(), theme);
             }
@@ -642,7 +776,7 @@ impl ThemeEngine {
         }
 
         match fs::read_to_string(&path) {
-            Ok(contents) => match toml::from_str::<FullTheme>(&contents) {
+            Ok(contents) => match parse_theme_toml(&contents) {
                 Ok(theme) => {
                     log::info!("Loaded custom theme from {}", path.display());
                     Some(theme)
@@ -702,5 +836,125 @@ mod tests {
     fn unknown_theme_errors() {
         let engine = ThemeEngine::new();
         assert!(engine.resolve("does-not-exist").is_err());
+    }
+
+    /// Minimal theme TOML; every section defaults, so `[tokens]` is the subject.
+    fn theme_with(tokens: &str) -> FullTheme {
+        let toml = format!("[colors]\nforeground = \"#abcdef\"\n\n{tokens}");
+        parse_theme_toml(&toml).expect("theme fixture parses")
+    }
+
+    #[test]
+    fn missing_tokens_table_defaults_to_empty() {
+        let theme = theme_with("");
+        assert!(theme.tokens.is_empty());
+        assert_eq!(theme.colors.foreground, "#abcdef");
+    }
+
+    #[test]
+    fn valid_token_survives() {
+        let theme = theme_with(
+            "[tokens]\n\
+             \"acp-tool-head-fg\" = \"#ffd27f\"\n\
+             \"acp-peek-accent\" = \"var(--agent-cyan)\"\n\
+             \"acp-tool-output-max-h\" = \"calc(100vh - clamp(2px, 1vw, 8px))\"\n",
+        );
+        assert_eq!(theme.tokens.len(), 3);
+        assert_eq!(
+            theme.tokens.get("acp-tool-head-fg").map(String::as_str),
+            Some("#ffd27f")
+        );
+        assert_eq!(
+            theme.tokens.get("acp-peek-accent").map(String::as_str),
+            Some("var(--agent-cyan)")
+        );
+    }
+
+    #[test]
+    fn invalid_keys_are_dropped_and_siblings_survive() {
+        let theme = theme_with(
+            "[tokens]\n\
+             \"Acp-Upper\" = \"#fff\"\n\
+             \"9-leading-digit\" = \"#fff\"\n\
+             \"-leading-dash\" = \"#fff\"\n\
+             \"has_underscore\" = \"#fff\"\n\
+             \"has space\" = \"#fff\"\n\
+             \"\" = \"#fff\"\n\
+             \"acp-good\" = \"#fff\"\n",
+        );
+        assert_eq!(theme.tokens.len(), 1);
+        assert!(theme.tokens.contains_key("acp-good"));
+    }
+
+    #[test]
+    fn over_long_key_is_dropped() {
+        let long = "a".repeat(65);
+        let theme = theme_with(&format!("[tokens]\n\"{long}\" = \"#fff\"\n"));
+        assert!(theme.tokens.is_empty());
+
+        let at_limit = "a".repeat(64);
+        let theme = theme_with(&format!("[tokens]\n\"{at_limit}\" = \"#fff\"\n"));
+        assert_eq!(theme.tokens.len(), 1);
+    }
+
+    #[test]
+    fn fetching_values_are_dropped() {
+        let theme = theme_with(
+            "[tokens]\n\
+             \"acp-a\" = \"url(http://example.com/x.png)\"\n\
+             \"acp-b\" = \"URL(HTTP://EXAMPLE.COM/x.png)\"\n\
+             \"acp-c\" = \"\\\\75 rl(https://example.com/x.png)\"\n\
+             \"acp-d\" = \"image-set(url(a.png) 1x)\"\n\
+             \"acp-e\" = \"-webkit-image-set(url(a.png) 1x)\"\n\
+             \"acp-f\" = \"cross-fade(url(a.png), url(b.png))\"\n\
+             \"acp-g\" = \"element(#sheet)\"\n\
+             \"acp-h\" = \"expression(alert(1))\"\n\
+             \"acp-i\" = \"attr(href)\"\n\
+             \"acp-j\" = \"image(url(a.png))\"\n\
+             \"acp-ok\" = \"var(--agent-cyan)\"\n",
+        );
+        assert_eq!(
+            theme.tokens.keys().map(String::as_str).collect::<Vec<_>>(),
+            vec!["acp-ok"]
+        );
+    }
+
+    #[test]
+    fn escaped_url_is_unescaped_before_the_allowlist() {
+        // `\75 rl(` is a valid url() token containing none of the substrings.
+        assert_eq!(css_unescape("\\75 rl(https://x)"), "url(https://x)");
+        assert!(!token_value_is_valid("\\75 rl(https://x)"));
+        assert!(!token_value_is_valid("\\55 RL(https://x)"));
+        assert!(!token_value_is_valid("u\\72l(https://x)"));
+        assert!(token_value_is_valid("c\\61 lc(1px + 2px)"));
+    }
+
+    #[test]
+    fn over_long_value_is_dropped() {
+        let long = format!("#{}", "a".repeat(256));
+        assert_eq!(long.len(), 257);
+        let theme = theme_with(&format!(
+            "[tokens]\n\"acp-long\" = \"{long}\"\n\"acp-short\" = \"#fff\"\n"
+        ));
+        assert_eq!(
+            theme.tokens.keys().map(String::as_str).collect::<Vec<_>>(),
+            vec!["acp-short"]
+        );
+    }
+
+    #[test]
+    fn unknown_keys_are_accepted_for_forward_compatibility() {
+        let theme = theme_with("[tokens]\n\"not-a-real-hook-yet\" = \"7px\"\n");
+        assert_eq!(
+            theme.tokens.get("not-a-real-hook-yet").map(String::as_str),
+            Some("7px")
+        );
+    }
+
+    #[test]
+    fn builtin_themes_carry_no_tokens() {
+        let engine = ThemeEngine::new();
+        let theme = engine.resolve("krypton-dark").expect("builtin");
+        assert!(theme.tokens.is_empty());
     }
 }

@@ -45,6 +45,8 @@ name = "krypton-dark"        # built-in or custom theme name
 # e.g., ~/.config/krypton/themes/my-custom.toml -> name = "my-custom"
 # Switching: command palette → "Color Theme: …". File edits apply on Reload Config or the next launch.
 # See docs/0010-theme-specification.md for the full theme file format.
+# Theme files may also carry a [tokens] table for per-component CSS custom
+# properties — see "[tokens] (theme files)" at the end of this document.
 
 # Inline overrides (applied on top of the named theme):
 [theme.colors]
@@ -1154,3 +1156,26 @@ dir = "~/Documents/excalidraw"
 ```
 
 The picker recursively lists `*.excalidraw` files under `dir`, sorted by modification time (newest first), with a synthetic "+ New drawing" row at the top that prompts for a file name. Press `r` on an existing row to rename it without leaving the picker. When a Pencil view is focused, local leader `/` opens an existing drawing in the current Pencil tab and local leader `?` prompts for a new drawing in the current file's directory. Opening the same file twice through the global picker refocuses the existing tab. Saving is autosave-on-change (800 ms debounced) plus `Cmd+S` for an immediate flush — writes are atomic via `<path>.tmp` + rename. Theme follows Krypton's background luminance. See `docs/0071-pencil-window.md` for the full design.
+
+## [tokens] (theme files)
+
+Lives in a theme file under `~/.config/krypton/themes/*.toml`, not in `krypton.toml`. Each entry becomes a `--<key>` CSS custom property on `document.documentElement`, which is how a theme recolours one component (the `--acp-*` harness hooks, `--vault-*`, …) without shipping CSS.
+
+```toml
+# ~/.config/krypton/themes/amber-tools.toml
+[tokens]
+"acp-tool-head-fg"      = "#ffd27f"
+"acp-tool-output-max-h" = "420px"
+"acp-peek-accent"       = "var(--agent-cyan)"
+```
+
+| Rule | Value |
+|------|-------|
+| Key charset | `^[a-z][a-z0-9-]{0,63}$`, applied as `--<key>` |
+| Value length | 256 characters max |
+| Value functions | Allowlist checked after CSS-unescaping and lowercasing: `var rgb rgba hsl hsla color-mix color oklch lab calc clamp min max env`. Everything else — `url()`, `image()`, `image-set()`, `-webkit-image-set()`, `cross-fade()`, `element()`, `expression()`, `attr()` — is rejected, so a theme can never fetch. |
+| Unknown key | Applied and inert; a theme written for a newer Krypton still loads on an older one |
+| Namespace convention | `acp-*` harness, `vault-*` vault, `krypton-*` global. Documented, not enforced. |
+| Precedence | After every built-in property (so `"agent-text"` beats the derived one), before per-element `style.setProperty`, which still wins |
+
+Entries that fail these rules are dropped individually with a `theme token rejected: <key>` warning and the rest of the theme still loads. Tokens apply live through **Color Theme** and **Reload Config**. See `docs/0010-theme-specification.md` and `docs/0303-themeable-component-tokens.md`.

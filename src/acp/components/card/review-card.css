@@ -1,0 +1,54 @@
+/* Spec 302 §2.1 — the Review Board card's own block.
+
+   `renderReviewCardBody` (src/acp/harness-tool-render.ts:729-770) paints into
+   `acp-harness__artifact-head` / `-hint` / `-glyph` / `-title` / `-meta` /
+   `-action` today, so every tweak to the HTML artifact card silently restyles
+   the Review Board card as well. `Card` takes `block` as a prop, the review
+   card asks for `acp-harness__review-card`, and these rules are the artifact
+   head family copied VERBATIM from src/styles/acp-harness.css:6696-6730 under
+   the review card's own names.
+
+   Nothing is deleted from acp-harness.css for this file: the artifact card
+   still uses those rules. This is a duplication that resolves a collision, not
+   a carve-out. theme-scheme.css has no light-mode rule for the artifact head
+   family (its only `__artifact*` selector is `-redaction-meta`, which belongs
+   to the redaction block, not to this card), so there is no krypton.scheme
+   layer here. */
+
+@layer krypton.component {
+  .acp-harness__review-card-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5em;
+  }
+
+  .acp-harness__review-card-hint {
+    flex: 0 0 auto;
+    min-width: 1.4em;
+    padding: 0 0.35em;
+    text-align: center;
+    font-weight: bold;
+    color: #0a0e12;
+    background: var(--krypton-window-accent, #0cf);
+    border-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-harness__review-card-glyph {
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-harness__review-card-title {
+    font-weight: 600;
+    color: rgba(216, 232, 240, 0.95);
+  }
+
+  .acp-harness__review-card-meta,
+  .acp-harness__review-card-action {
+    font-size: 0.82em;
+    color: rgba(216, 232, 240, 0.55);
+  }
+
+  .acp-harness__review-card-action {
+    color: color-mix(in srgb, var(--krypton-window-accent, #0cf) 70%, rgba(216, 232, 240, 0.6));
+  }
+}

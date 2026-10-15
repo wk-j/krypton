@@ -71,24 +71,28 @@ describe('filteredHashCommands', () => {
 });
 
 describe('autocomplete palette layout', () => {
-  const css = readFileSync(join(__dirname, '../styles/acp-harness.css'), 'utf8');
-  const view = readFileSync(join(__dirname, 'acp-harness-view.ts'), 'utf8');
-
+  // Spec 301 phase 6: the three rules this asserts left the monolith for the
+  // directories that own them — the command centre is shell chrome, the
+  // palette is `InlinePalette`, the input line is `DraftLine`.
   it('keeps long palettes inside the Harness while preserving the input line', () => {
-    expect(css).toMatch(
+    expect(readFileSync(join(__dirname, '../styles/harness-shared.css'), 'utf8')).toMatch(
       /\.acp-harness__command-center\s*\{[^}]*max-height: 50%;[^}]*overflow: hidden;/s,
     );
-    expect(css).toMatch(
+    expect(
+      readFileSync(join(__dirname, 'components/inline-palette/inline-palette.css'), 'utf8'),
+    ).toMatch(
       /\.acp-harness__composer:not\(\.acp-harness__composer--permission\) \.acp-harness__slash-palette\s*\{[^}]*min-height: 0;[^}]*overflow-y: auto;/s,
     );
-    expect(css).toMatch(
+    expect(readFileSync(join(__dirname, 'components/draft-line/draft-line.css'), 'utf8')).toMatch(
       /\.acp-harness__composer:not\(\.acp-harness__composer--permission\) \.acp-harness__input-line\s*\{\s*flex: 0 0 auto;/,
     );
   });
 
-  it('keeps keyboard selection visible after the composer rerenders', () => {
-    expect(view).toContain("selectedPaletteRow.scrollIntoView({ block: 'nearest' })");
-  });
+  // "Keyboard selection stays visible after a rerender" used to be a grep of
+  // `acp-harness-view.ts`. The call moved into the component, so the invariant
+  // is now a DOM assertion:
+  // components/inline-palette/inline-palette.test.ts
+  // → 'keeps the newly selected row in view after a cursor move'.
 });
 
 // spec 185: the /commands reference page renders this manifest — coverage here

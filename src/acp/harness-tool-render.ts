@@ -1,17 +1,20 @@
-// Krypton — ACP Harness View: tool call inspection & rendering.
+// Krypton — ACP Harness View: tool call inspection & output rendering.
 //
-// Extracted verbatim from acp-harness-view.ts (spec 204). Two related concerns:
-// reading an ACP ToolCall / ToolCallUpdate (label, command line, exit code, raw
-// output sections) and painting the resulting ToolPayload into a transcript row,
-// including the rich `git diff` / `git status` renderings.
+// Extracted verbatim from acp-harness-view.ts (spec 204). Reads an ACP
+// ToolCall / ToolCallUpdate (label, command line, exit code, raw output
+// sections) into a ToolPayload, and owns the output-dump analysis the
+// `ToolRow` component paints: tool-dump normalisation, the grep renderer, and
+// the `git diff --stat` / `git status --short` parsers.
+//
+// Spec 301 phase 3 moved every builder that painted a whole row — the tool
+// body, its streaming patch, the artifact and Review Board cards, the unified
+// diff — into `src/acp/components/`.
 
-import { renderDiffPreview } from './diff-render';
 import { extractModifiedPath } from './acp-harness-memory';
 import { stripAnsi } from './provider-error';
 import { classifyBashCommand } from '../agent/tools';
 import type { ContentBlock, ToolCall, ToolCallUpdate } from './types';
-import type { ArtifactCardPayload, ReviewCardPayload, ToolPayload } from './harness-view-types';
-import { morphSubagentCard, renderSubagentCard, subagentLiveSignature, subagentSummary } from './harness-subagents';
+import type { ToolPayload } from './harness-view-types';
 import {
   TOOL_DIFF_DISPLAY_CHAR_LIMIT,
   TOOL_DIFF_DISPLAY_COUNT_LIMIT,
@@ -27,16 +30,6 @@ import {
 // reserved glyph box keeps the same metrics until ✓/✗ replace it. The JS
 // ticker overwrites the glyph on the next tick.
 const TOOL_SPINNER_SEED = '⠋';
-
-// The view's spinner ticker publishes its current frame here so a rebuilt
-// in-flight glyph seeds at the live frame instead of snapping back to frame 0
-// on every structural row rebuild (visible as a stuck/jittering spinner while
-// a tool streams output).
-let liveSpinnerGlyph = TOOL_SPINNER_SEED;
-
-export function setToolSpinnerGlyph(glyph: string): void {
-  liveSpinnerGlyph = glyph;
-}
 
 function statusGlyph(status: string): string {
   if (status === 'completed') return '✓';
@@ -240,7 +233,7 @@ export function rawOutputSections(rawOutput: unknown): Array<{ label: string; te
 export function contentOutputSections(content: ToolCall['content']): Array<{ label: string; text: string }> {
   const sections: Array<{ label: string; text: string }> = [];
   for (const item of content ?? []) {
-    // 'diff' items are rendered by extractToolDiffs/renderToolBody as HTML blocks.
+    // 'diff' items go through extractToolDiffs and are painted by DiffBlock.
     if (item.type === 'terminal' && item.terminalId) sections.push({ label: 'terminal', text: item.terminalId });
     if (item.type === 'content' && item.content) {
       const text = contentBlockText(item.content);
@@ -548,121 +541,6 @@ export function extractToolDiffs(content: ToolCall['content']): Array<{ path: st
   return out;
 }
 
-export function renderToolBody(body: HTMLElement, tool: ToolPayload, subagentExpanded: readonly string[] = []): void {
-  const head = document.createElement('div');
-  head.className = 'acp-harness__tool-head';
-  const glyph = document.createElement('span');
-  const spinning = !isTerminalToolStatus(tool.status);
-  glyph.className = spinning
-    ? `acp-harness__tool-glyph acp-harness__tool-glyph--${tool.status} acp-harness__spinner`
-    : `acp-harness__tool-glyph acp-harness__tool-glyph--${tool.status}`;
-  glyph.textContent = spinning ? liveSpinnerGlyph : tool.glyph;
-  head.appendChild(glyph);
-  const kind = document.createElement('span');
-  kind.className = 'acp-harness__tool-kind';
-  kind.dataset.kind = toolChipKind(tool.kind);
-  kind.textContent = tool.kind;
-  head.appendChild(kind);
-  if (tool.subject) {
-    const subject = document.createElement('span');
-    subject.className = 'acp-harness__tool-subject';
-    subject.textContent = tool.subject;
-    head.appendChild(subject);
-  }
-  if (tool.result) {
-    const result = document.createElement('span');
-    result.className = `acp-harness__tool-result acp-harness__tool-result--${tool.status}`;
-    result.textContent = tool.result;
-    head.appendChild(result);
-  }
-  if (tool.subagents) {
-    const summary = document.createElement('span');
-    summary.className = 'acp-harness__tool-result acp-harness__subagent-summary';
-    summary.textContent = subagentSummary(tool.subagents);
-    head.appendChild(summary);
-  }
-  if (tool.startedAt !== undefined) {
-    const timer = document.createElement('span');
-    timer.className = `acp-harness__tool-timer acp-harness__tool-timer--${tool.status}`;
-    timer.dataset.startedAt = String(tool.startedAt);
-    if (tool.endedAt !== undefined) {
-      timer.dataset.endedAt = String(tool.endedAt);
-      timer.textContent = formatToolElapsed(tool.endedAt - tool.startedAt);
-    } else {
-      timer.textContent = formatToolElapsed(performance.now() - tool.startedAt);
-    }
-    head.appendChild(timer);
-  }
-  body.appendChild(head);
-  if (tool.artifactRedaction) {
-    body.appendChild(renderArtifactRedaction(tool.artifactRedaction));
-    return;
-  }
-  if (tool.subagents) {
-    // spec 282: the card replaces the "Running agent X..." sections.
-    body.dataset.subagentLiveSig = subagentLiveSignature(tool.subagents);
-    body.appendChild(renderSubagentCard(tool.subagents, subagentExpanded));
-  } else if (tool.sections.length > 0 || shouldRenderExecuteExit(tool)) {
-    body.appendChild(renderToolOutput(tool));
-  }
-  if (tool.diffs.length > 0) {
-    const wrap = document.createElement('div');
-    wrap.className = 'acp-harness__tool-diffs';
-    for (const d of tool.diffs) {
-      const block = document.createElement('div');
-      block.className = 'acp-harness__tool-diff';
-      if (d.path) {
-        const path = document.createElement('div');
-        path.className = 'acp-harness__tool-diff-path';
-        path.textContent = d.path;
-        block.appendChild(path);
-      }
-      const inner = document.createElement('div');
-      inner.innerHTML = renderDiffPreview(d.oldText, d.newText);
-      block.appendChild(inner);
-      wrap.appendChild(block);
-    }
-    body.appendChild(wrap);
-  }
-}
-
-/** Spec 114 rev 8: in-place output refresh for a tool row whose structural
- *  render signature is unchanged — an in-flight tool streaming more section
- *  text. Only the output block is swapped; the head (spinner glyph, kind chip,
- *  subject, timer) and diff previews keep their DOM nodes, so per-chunk
- *  updates stop remounting the whole row. Deduped on the section text so a
- *  visible-but-untouched row costs one string compare per pass. */
-export function patchStreamingToolBody(body: HTMLElement, tool: ToolPayload, subagentExpanded: readonly string[] = []): void {
-  if (tool.artifactRedaction) return;
-  if (tool.subagents) {
-    // spec 282: live per-agent activity/stats; structure changes rebuild the row.
-    const live = subagentLiveSignature(tool.subagents);
-    if (body.dataset.subagentLiveSig === live) return;
-    body.dataset.subagentLiveSig = live;
-    const card = body.querySelector(':scope > .acp-harness__subagents');
-    if (card) morphSubagentCard(card, renderSubagentCard(tool.subagents, subagentExpanded));
-    return;
-  }
-  const mutable = tool.sections
-    .map((section) => `${section.label}\u001f${section.text}`)
-    .join('\u001e');
-  if (body.dataset.toolStreamSig === mutable) return;
-  body.dataset.toolStreamSig = mutable;
-  const existing = body.querySelector<HTMLElement>(':scope > .acp-harness__tool-output');
-  if (tool.sections.length === 0 && !shouldRenderExecuteExit(tool)) {
-    existing?.remove();
-    return;
-  }
-  const next = renderToolOutput(tool);
-  if (existing) {
-    existing.replaceWith(next);
-    return;
-  }
-  const diffs = body.querySelector<HTMLElement>(':scope > .acp-harness__tool-diffs');
-  if (diffs) body.insertBefore(next, diffs);
-  else body.appendChild(next);
-}
-
 export function formatArtifactBytes(size: number | null): string {
   if (size === null) return '— bytes';
   if (size < 1024) return `${size} B`;
@@ -687,93 +565,11 @@ export function renderArtifactRedaction(r: NonNullable<ToolPayload['artifactReda
   return wrap;
 }
 
-/** spec 133 — hintable artifact card body. */
-export function renderArtifactCardBody(body: HTMLElement, card: ArtifactCardPayload): void {
-  const head = document.createElement('div');
-  head.className = 'acp-harness__artifact-head';
-  if (card.hintLabel) {
-    const hint = document.createElement('span');
-    hint.className = 'acp-harness__artifact-hint';
-    hint.textContent = card.hintLabel;
-    head.appendChild(hint);
-  }
-  const glyph = document.createElement('span');
-  glyph.className = 'acp-harness__artifact-glyph';
-  glyph.textContent = '◫';
-  head.appendChild(glyph);
-  const title = document.createElement('span');
-  title.className = 'acp-harness__artifact-title';
-  title.textContent = card.title;
-  head.appendChild(title);
-  body.appendChild(head);
-
-  const meta = document.createElement('div');
-  meta.className = 'acp-harness__artifact-meta';
-  const hash7 = card.hash ? card.hash.slice(0, 7) : '—';
-  meta.textContent = card.available
-    ? `${formatArtifactBytes(card.size)} · ${hash7}`
-    : 'unavailable — file removed';
-  body.appendChild(meta);
-
-  const action = document.createElement('div');
-  action.className = 'acp-harness__artifact-action';
-  action.textContent = card.available
-    ? (card.hintLabel ? `press ${card.hintLabel} to open in browser` : 'f then label to open in browser')
-    : 'reopen unavailable';
-  body.appendChild(action);
-}
-
-/** spec 211 — hintable Review Board card body. Deliberately no `available`
- *  branch: the bundle is a durable record on disk, so the card stays openable
- *  even after the authoring lane dies. */
-export function renderReviewCardBody(body: HTMLElement, card: ReviewCardPayload): void {
-  const head = document.createElement('div');
-  head.className = 'acp-harness__artifact-head';
-  if (card.hintLabel) {
-    const hint = document.createElement('span');
-    hint.className = 'acp-harness__artifact-hint';
-    hint.textContent = card.hintLabel;
-    head.appendChild(hint);
-  }
-  const glyph = document.createElement('span');
-  glyph.className = 'acp-harness__artifact-glyph';
-  glyph.textContent = '\u25a4';
-  head.appendChild(glyph);
-  const title = document.createElement('span');
-  title.className = 'acp-harness__artifact-title';
-  title.textContent = card.title;
-  head.appendChild(title);
-  body.appendChild(head);
-
-  // Step count sits next to the block count: on a comprehension Board it is the
-  // better measure of "how much is here to read". A Board with no findings and no
-  // decisions reads as `reference` — an explanation, not a task.
-  const parts = [`${card.blocks} block${card.blocks === 1 ? '' : 's'}`];
-  if (card.steps > 0) parts.push(`${card.steps} step${card.steps === 1 ? '' : 's'}`);
-  if (card.findings > 0) parts.push(`${card.findings} finding${card.findings === 1 ? '' : 's'}`);
-  if (card.decisions > 0) {
-    parts.push(`${card.decisions} decision${card.decisions === 1 ? '' : 's'}`);
-  }
-  if (card.findings === 0 && card.decisions === 0) parts.push('reference');
-
-  const meta = document.createElement('div');
-  meta.className = 'acp-harness__artifact-meta';
-  meta.textContent = parts.join(' \u00b7 ');
-  body.appendChild(meta);
-
-  const action = document.createElement('div');
-  action.className = 'acp-harness__artifact-action';
-  action.textContent = card.hintLabel
-    ? `press ${card.hintLabel} to open the review`
-    : 'f then label to open \u00b7 Leader Shift+R to reopen later';
-  body.appendChild(action);
-}
-
 export function shouldRenderExecuteExit(tool: Pick<ToolPayload, 'kind' | 'exitCode'>): boolean {
   return tool.exitCode != null && toolChipKind(tool.kind) === 'execute';
 }
 
-export function renderToolExit(code: number): HTMLElement {
+function renderToolExit(code: number): HTMLElement {
   const row = document.createElement('div');
   row.className = 'acp-harness__tool-exit';
   row.dataset.status = code === 0 ? 'ok' : 'fail';
@@ -788,92 +584,9 @@ export function renderToolExit(code: number): HTMLElement {
   return row;
 }
 
-export function renderToolOutput(tool: ToolPayload): HTMLElement {
-  const output = document.createElement('div');
-  output.className = 'acp-harness__tool-output';
-  let exitCode = tool.exitCode ?? null;
-  const painted: Array<{ label: string; text: string }> = [];
-  for (const raw of tool.sections) {
-    let text = normalizeToolDump(raw.text, tool.kind);
-    if (/^(stdout|output)$/i.test(raw.label)) {
-      const peeled = peelExitPrefix(text);
-      if (peeled) {
-        if (exitCode === null) exitCode = peeled.code;
-        text = peeled.rest;
-      }
-    }
-    if (text.trim()) painted.push({ label: raw.label, text });
-  }
-  const showExit = exitCode !== null && toolChipKind(tool.kind) === 'execute';
-  let pendingExit: number | null = showExit ? exitCode : null;
-  const takeExit = (): number | null => {
-    const code = pendingExit;
-    pendingExit = null;
-    return code;
-  };
-  for (const section of painted) {
-    const git = tool.kind === 'execute' ? renderRichExecuteSection(tool, section) : null;
-    if (git) {
-      if (pendingExit !== null) {
-        output.appendChild(renderToolExit(pendingExit));
-        pendingExit = null;
-      }
-      output.appendChild(git);
-      continue;
-    }
-    const grep = isGrepLikeOutput(tool, section)
-      ? renderGrepSection(tool, section, pendingExit)
-      : null;
-    if (grep) {
-      pendingExit = null;
-      output.appendChild(grep);
-      continue;
-    }
-    output.appendChild(renderPlainToolSection(section, takeExit()));
-  }
-  if (pendingExit !== null) output.appendChild(renderToolExit(pendingExit));
-  return output;
-}
-
 function appendExecuteExit(label: HTMLElement, exitCode: number | null): void {
   if (exitCode === null) return;
   label.appendChild(renderToolExit(exitCode));
-}
-
-export function renderPlainToolSection(
-  section: { label: string; text: string },
-  exitCode: number | null = null,
-): HTMLElement {
-  const block = document.createElement('div');
-  const tone = toolSectionTone(section.label);
-  block.className = `acp-harness__tool-section acp-harness__tool-section--${tone}`;
-  const label = document.createElement('div');
-  label.className = 'acp-harness__tool-section-label';
-  label.textContent = section.label;
-  appendExecuteExit(label, exitCode);
-  const pre = document.createElement('pre');
-  pre.className = 'acp-harness__tool-section-text';
-  pre.textContent = section.text;
-  block.appendChild(label);
-  block.appendChild(pre);
-  return block;
-}
-
-export function renderRichExecuteSection(tool: ToolPayload, section: { label: string; text: string }): HTMLElement | null {
-  const label = section.label.toLowerCase();
-  if (label !== 'stdout' && label !== 'output') return null;
-  if (/\bgit\s+diff\s+--stat\b/.test(tool.command)) {
-    const rows = parseGitDiffStat(section.text);
-    if (rows.length > 0) return renderGitDiffStat(rows, section.text);
-  }
-  if (isGitDiffCommand(tool.command) && section.text.includes('diff --git')) {
-    return renderUnifiedGitDiff(section.text);
-  }
-  if (/\bgit\s+status\s+--short\b/.test(tool.command)) {
-    const rows = parseGitStatusShort(section.text);
-    if (rows.length > 0) return renderGitStatusShort(rows);
-  }
-  return null;
 }
 
 export function isGitDiffCommand(command: string): boolean {
@@ -898,93 +611,6 @@ export function parseGitDiffStat(text: string): Array<{ path: string; changes: n
   return rows.slice(0, 8);
 }
 
-export function renderGitDiffStat(rows: Array<{ path: string; changes: number; plus: number; minus: number }>, source: string): HTMLElement {
-  const block = document.createElement('div');
-  block.className = 'acp-harness__tool-rich acp-harness__tool-rich--diffstat';
-  const total = Math.max(1, ...rows.map((row) => row.changes));
-  for (const row of rows) {
-    const item = document.createElement('div');
-    item.className = 'acp-harness__tool-stat-row';
-    const path = document.createElement('span');
-    path.className = 'acp-harness__tool-stat-path acp-harness__tok-path';
-    path.textContent = row.path;
-    const count = document.createElement('span');
-    count.className = 'acp-harness__tool-stat-count';
-    count.textContent = String(row.changes);
-    const bar = document.createElement('span');
-    bar.className = 'acp-harness__tool-stat-bar';
-    bar.style.setProperty('--stat-plus-width', `${(row.plus / total) * 100}%`);
-    bar.style.setProperty('--stat-minus-width', `${(row.minus / total) * 100}%`);
-    item.append(path, count, bar);
-    block.appendChild(item);
-  }
-  const omitted = source.split('\n').filter((line) => line.trim() && !/\d+\s+files?\s+changed/.test(line)).length - rows.length;
-  if (omitted > 0) {
-    const more = document.createElement('div');
-    more.className = 'acp-harness__tool-rich-more';
-    more.textContent = `${omitted} more file${omitted === 1 ? '' : 's'}`;
-    block.appendChild(more);
-  }
-  return block;
-}
-
-export function renderUnifiedGitDiff(text: string): HTMLElement {
-  const block = document.createElement('div');
-  block.className = 'acp-harness__tool-rich acp-harness__tool-rich--unidiff';
-  const lines = text.split('\n').filter((line) => line.length > 0);
-  for (const line of lines) {
-    if (line.startsWith('diff --git ')) {
-      const file = document.createElement('div');
-      file.className = 'acp-harness__tool-diff-file acp-harness__tok-path';
-      file.textContent = gitDiffFileLabel(line);
-      block.appendChild(file);
-      continue;
-    }
-    const row = document.createElement('div');
-    row.className = `acp-harness__tool-diff-line acp-harness__tool-diff-line--${gitDiffLineTone(line)}`;
-    const mark = document.createElement('span');
-    mark.className = 'acp-harness__tool-diff-mark';
-    mark.textContent = gitDiffLineMark(line);
-    const body = document.createElement('span');
-    body.className = 'acp-harness__tool-diff-text';
-    body.textContent = gitDiffLineText(line);
-    row.append(mark, body);
-    block.appendChild(row);
-  }
-  return block;
-}
-
-export function gitDiffFileLabel(line: string): string {
-  const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
-  if (!match) return line.replace(/^diff --git\s+/, '');
-  const oldPath = match[1] ?? '';
-  const newPath = match[2] ?? '';
-  return oldPath === newPath ? newPath : `${oldPath} -> ${newPath}`;
-}
-
-export function gitDiffLineTone(line: string): string {
-  if (line.startsWith('@@')) return 'hunk';
-  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('index ')) return 'meta';
-  if (line.startsWith('+')) return 'add';
-  if (line.startsWith('-')) return 'del';
-  return 'context';
-}
-
-export function gitDiffLineMark(line: string): string {
-  if (line.startsWith('@@')) return '@@';
-  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('index ')) return '·';
-  if (line.startsWith('+')) return '+';
-  if (line.startsWith('-')) return '-';
-  return '';
-}
-
-export function gitDiffLineText(line: string): string {
-  if (line.startsWith('@@')) return line;
-  if (line.startsWith('+++') || line.startsWith('---')) return line.slice(4);
-  if (line.startsWith('+') || line.startsWith('-')) return line.slice(1);
-  return line.startsWith(' ') ? line.slice(1) : line;
-}
-
 export function parseGitStatusShort(text: string): Array<{ index: string; worktree: string; path: string }> {
   const rows: Array<{ index: string; worktree: string; path: string }> = [];
   for (const raw of text.split('\n')) {
@@ -998,24 +624,6 @@ export function parseGitStatusShort(text: string): Array<{ index: string; worktr
     });
   }
   return rows.slice(0, 10);
-}
-
-export function renderGitStatusShort(rows: Array<{ index: string; worktree: string; path: string }>): HTMLElement {
-  const block = document.createElement('div');
-  block.className = 'acp-harness__tool-rich acp-harness__tool-rich--gitstatus';
-  for (const row of rows) {
-    const item = document.createElement('div');
-    item.className = 'acp-harness__tool-status-row';
-    const badge = document.createElement('span');
-    badge.className = `acp-harness__tool-status-badge acp-harness__tool-status-badge--${gitStatusTone(row.index, row.worktree)}`;
-    badge.textContent = `${row.index}${row.worktree}`.trim() || 'M';
-    const path = document.createElement('span');
-    path.className = 'acp-harness__tool-status-path acp-harness__tok-path';
-    path.textContent = row.path;
-    item.append(badge, path);
-    block.appendChild(item);
-  }
-  return block;
 }
 
 export function gitStatusTone(index: string, worktree: string): string {

@@ -49,6 +49,7 @@ The app has two halves that communicate over Tauri IPC:
 - **Layout Engine** (`layout.ts`) — Grid (auto-tile balanced grid) and Focus (65/35 split with pinned windows on right) algorithms.
 - **Sound Engine** (`sound.ts`) — thin frontend wrapper that calls Rust backend (`sound.rs`), which uses `rodio` on a dedicated audio thread with WAV packs bundled as Tauri resources.
 - **Animation** (`animation.ts`) — WAAPI-based transitions (morph, slide, crossfade) with keyboard input buffering during animations.
+- **UI Component Kernel** (`src/ui/`) — a ~400-line, framework-free component layer used by the harness: `Component`/`LiveComponent` (own a node, update in place via a declared dependency tuple, dispose what you attached), `reconcile()` (one keyed, node-identity-preserving list diff), `RenderScheduler` (region invalidation coalesced into one frame), `el()` (typed element builder) and `LayoutHost` (named slots + a declarative placement table). Harness surfaces live one-per-directory under `src/acp/components/<name>/` — class, stylesheet, scheme overrides and test together — listed in `src/acp/components/registry.ts`. Specs [301](docs/0301-harness-ui-components.md) and [302](docs/0302-harness-component-catalog.md).
 - **ACP Harness Peering** (`src/acp/`, served by `src-tauri/src/hook_server.rs`) — user-directed inter-lane messaging (a lane status bus, per-lane inboxes drained on the next `idle` turn, and `peer_send`/`peer_list` MCP tools) plus a family of read-only loopback observability surfaces (lane-monitor dashboard, artifact gallery, docs browser) the OS browser can open. Memory is handoff-only, peering can cross harness views, and `#review` rides `peer_send`. Each capability — the peering model, cross-harness directory, review tooling, diff-priority hints, and every loopback surface — is specified per-feature under `docs/` with decisions in `docs/adr/` (see `docs/README.md` for the index). **Those specs/ADRs are authoritative; do not restate their implementation detail here** — keep this file to durable, cross-cutting guidance only.
 
 A third, standalone piece lives outside the app build: the **Raycast extension** (`raycast/`) — its own npm project driving the authenticated control API (`/control/v1`); React is required by Raycast, so the no-framework rule below applies only to the app frontend. Spec: `docs/0205-raycast-extension.md`.
@@ -66,7 +67,9 @@ A third, standalone piece lives outside the app build: the **Raycast extension**
 - Built-in themes: `krypton-dark`, `krypton-light`, `legacy-radiance`
 - Custom themes: `~/.config/krypton/themes/*.toml`
 - Theme colors applied as `--krypton-*` CSS custom properties on `document.documentElement`
+- A theme file may also carry a free-form `[tokens]` table; each entry becomes a `--<key>` property applied after the built-ins, so it can override one component without a schema change. Keys are validated and values pass a CSS-function allowlist at load — spec [303](docs/0303-themeable-component-tokens.md).
 - Palette **Color Theme** calls `set_theme` (no restart). File edits apply on **Reload Config** or the next launch — no filesystem watcher.
+- Cascade layer order is declared once in `src/styles/layers.css`: `krypton.base` (shell sheets) → `krypton.component` (a component's own block) → `krypton.scheme` (its light/dark overrides) → `krypton.theme`. **Unlayered rules outrank every layered rule**, so a component sheet must author inside a `krypton.*` layer; `src/acp/components/styles-ownership.test.ts` enforces that, and that a sheet only declares rules gated on a block its directory owns.
 
 ## Architecture Constraints
 
@@ -79,10 +82,11 @@ A third, standalone piece lives outside the app build: the **Raycast extension**
 7. **CSS layout:** `position: absolute` + `transform: translate()` for window positioning (avoids layout thrashing)
 8. **Performance:** Keypress-to-render < 16ms, animations at 60 FPS, idle CPU < 1%
 9. **No L-shaped corner brackets.** Two-side HUD ticks (`border-top`+`border-left` 10px arms, `┌┐└┘` chrome) are banned on every surface: windows, vault, agent, harness, toasts, overlays. Full 1px border or nothing. Window chrome already dropped them; do not reintroduce.
-10. **Harness transcript: no repaint after a turn ends.** A sealed transcript row must be visually static. Rules that keep it so (this regression recurred several times):
-    - `renderActiveTranscript` skips a row whose `data-render-signature` matches and never rewrites its wrapper. Any path that patches a row in place and restamps the signature (seal, rail/image/Git patches) must also sync every wrapper class `renderTranscriptItem` derives from the same state — notably drop `acp-harness__msg--streaming`, whose label pulse is `infinite`.
-    - Late async state (Git refs, images, usage, memory) patches only its own sub-DOM and restamps the signature. Never leave a stale signature that makes the next pass remount a sealed reply.
-    - Turn-end and per-event paths (`stop`, `usage`, `finishTurn`, `sealStreaming`) patch chrome/body; they must not call `render()` or `renderActiveLane()`.
+10. **Harness transcript: no repaint after a turn ends.** A sealed transcript row must be visually static. Since spec 301 the rules are enforced by the component kernel (`src/ui/`) rather than by hand, and the ones that remain are about not going around it:
+    - A row component's `readDeps()` is the whole diff. It is `abstract` on purpose: state the values `paint()` actually reads. A missing entry is a silently stale row; a value `paint()` itself writes makes every later update a forced repaint (dev builds assert deps are stable across `paint()`).
+    - `LiveComponent.seal()` is the ONLY live→static transition. It re-derives every wrapper class from state, so `acp-harness__msg--streaming` (whose label pulse is `infinite`) can never be left behind by name. Never remove that class by hand.
+    - Late async state (Git refs, images, usage, memory) calls `update()` on the owning sub-component. Never reach into a sealed row's DOM from outside it.
+    - Turn-end and per-event paths (`stop`, `usage`, `finishTurn`, `sealStreaming`) seal rows and patch chrome; a seal invalidates no scheduler region, and they must not call `render()`.
     - No `infinite` CSS animation on a row or chrome element that is not live.
 
 ## Platform Gotchas

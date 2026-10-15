@@ -1,0 +1,16 @@
+/* Spec 302 — `LaneRail`.
+
+   Scheme half only: the rail column's base rules are shell layout and stay
+   in src/styles/harness-shared.css next to `.acp-harness__body` and
+   `.acp-harness__dashboard`. The rail's light-mode surface is this
+   component's, which is what spec 301 §Testing re-points `theme.test.ts:268`
+   at.
+
+   Moved verbatim from src/styles/theme-scheme.css:174-177. */
+
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__rail {
+    background: var(--agent-surface-rail, rgba(212, 222, 229, 0.92));
+    border-right: 1px solid color-mix(in srgb, var(--krypton-ink) 14%, transparent);
+  }
+}

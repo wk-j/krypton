@@ -1,9 +1,10 @@
 // Krypton — ACP Harness View: markdown rendering & URL sanitisation.
 //
 // Extracted verbatim from acp-harness-view.ts (spec 204). Owns the shared
-// `marked` instance, the streaming-markdown (smd) parser plumbing for live
-// assistant rows, and the URL allowlist that keeps agent-authored markdown from
-// navigating the single app webview.
+// `marked` instance, the safe streaming-markdown (smd) renderer `AssistantRow`
+// installs, and the URL allowlist that keeps agent-authored markdown from
+// navigating the single app webview. Spec 301 phase 3 moved the per-row
+// streaming body writers into `AssistantRow`, `UserRow` and `ThoughtRow`.
 
 import { Marked, type Token } from 'marked';
 import { markedHighlight } from 'marked-highlight';
@@ -11,10 +12,6 @@ import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import * as smd from 'streaming-markdown';
 import { convertFileSrc } from '@tauri-apps/api/core';
-
-import type { HarnessLane, HarnessTranscriptItem } from './harness-view-types';
-import { collapseThoughtBlankLines } from './harness-format';
-import { updateLiveSvgFences } from './harness-svg-fence';
 
 export const md = new Marked(
   markedHighlight({
@@ -166,65 +163,6 @@ export function makeSafeRenderer(root: HTMLElement): smd.Default_Renderer {
  *  fence to a placeholder only while it is present, until its live card draws. */
 export const STREAMING_MARKDOWN_LIVE_CLASS = 'acp-harness__msg-body--stream-live';
 
-/** Spec 117 shared init: wipe body, set class, install fresh parser/renderer,
- *  reset lane fields. Called from renderTranscriptItem (first paint) and from
- *  updateStreamingAssistantMarkdownBody (body rebind / item swap / backtrack). */
-export function initLaneStreamingMarkdown(
-  lane: HarnessLane,
-  item: HarnessTranscriptItem,
-  body: HTMLElement,
-): void {
-  body.replaceChildren();
-  body.classList.remove('acp-harness__msg-body--stream-plain');
-  // Apply both --markdown (for typography rules in acp-harness.css) and
-  // --stream-markdown (state indicator for tests / future styling). Avoids a
-  // runtime class swap at seal time.
-  body.classList.add('acp-harness__msg-body--markdown');
-  body.classList.add('acp-harness__msg-body--stream-markdown');
-  body.classList.add(STREAMING_MARKDOWN_LIVE_CLASS);
-  const renderer = makeSafeRenderer(body);
-  lane.streamingMarkdownParser = smd.parser(renderer);
-  lane.streamingMarkdownBody = body;
-  lane.streamingMarkdownItemId = item.id;
-  item.streamingMarkdownWritten = 0;
-  item.streamPlainLength = undefined;
-}
-
-/** Spec 117 fast-path body update for the active assistant streaming row.
- *  Writes only the delta since the last parser_write; honours the
- *  RAF-only-write invariant (parser_write is called only from this helper
- *  and from sealAssistantStreamingMarkdown, never from appendStreaming). */
-export function updateStreamingAssistantMarkdownBody(
-  body: HTMLElement,
-  item: HarnessTranscriptItem,
-  lane: HarnessLane,
-): void {
-  const written = item.streamingMarkdownWritten ?? 0;
-  // Body rebind, item swap, or first bind via the fast path.
-  if (
-    lane.streamingMarkdownParser === null ||
-    lane.streamingMarkdownBody !== body ||
-    lane.streamingMarkdownItemId !== item.id
-  ) {
-    initLaneStreamingMarkdown(lane, item, body);
-  } else if (item.text.length < written) {
-    // Backtrack — rare; rebuild parser.
-    console.warn('[spec117] streaming text backtracked; rebuilding parser');
-    initLaneStreamingMarkdown(lane, item, body);
-  }
-  const startedAt = item.streamingMarkdownWritten ?? 0;
-  if (item.text.length > startedAt) {
-    try {
-      smd.parser_write(lane.streamingMarkdownParser!, item.text.slice(startedAt));
-    } catch (e) {
-      console.warn('[spec117] parser_write failed', e);
-    }
-    item.streamingMarkdownWritten = item.text.length;
-    // spec 283 rev 2: draw ```svg fences in as they stream.
-    updateLiveSvgFences(body);
-  }
-}
-
 // Spec 117 table guard. The seal used to swap every table-bearing message to
 // marked because an older streaming-markdown desynced its table state when a
 // chunk boundary landed mid-table. smd 0.2.15 renders GFM tables identically at
@@ -343,74 +281,3 @@ export function installThoughtVeil(body: HTMLElement): void {
   body.replaceChildren(veil);
 }
 
-// Spec 114 rev 4: append-only update for streaming assistant / thought /
-// user rows. One TextNode grows via appendData; markdown waits for seal.
-// Spec 117: assistant rows now use updateStreamingAssistantMarkdownBody; this
-// helper still serves thought / user streaming rows.
-export function updateStreamingTextBody(body: HTMLElement, item: HarnessTranscriptItem): void {
-  if (item.kind === 'thought' && item.text.length === 0) {
-    installThoughtVeil(body);
-    return;
-  }
-  const display = item.kind === 'thought' ? collapseThoughtBlankLines(item.text) : item.text;
-  if (!body.classList.contains('acp-harness__msg-body--stream-plain')) {
-    body.classList.remove('acp-harness__msg-body--markdown');
-    body.classList.remove('acp-harness__msg-body--thought-veil');
-    body.classList.add('acp-harness__msg-body--stream-plain');
-    const seed = document.createTextNode(display);
-    body.replaceChildren(seed);
-    item.streamPlainLength = item.text.length;
-    if (item.kind === 'thought') body.scrollTop = body.scrollHeight;
-    return;
-  }
-  let textNode = body.firstChild;
-  if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
-    body.replaceChildren(document.createTextNode(''));
-    textNode = body.firstChild;
-    item.streamPlainLength = 0;
-  }
-  const plain = textNode as Text;
-  if (item.kind === 'thought') {
-    // Collapsed display is not a prefix of item.text, so appendData would
-    // re-insert the dropped blanks. Rewrite the node from the collapsed form.
-    plain.data = display;
-    item.streamPlainLength = item.text.length;
-    body.scrollTop = body.scrollHeight;
-    return;
-  }
-  const len = item.streamPlainLength ?? 0;
-  if (item.text.length > len) {
-    plain.appendData(item.text.slice(len));
-    item.streamPlainLength = item.text.length;
-  } else if (item.text.length < len) {
-    plain.data = item.text;
-    item.streamPlainLength = item.text.length;
-  }
-}
-
-/** Settle a streaming thought/user body without replacing its wrapper.
- *  Thoughts keep their live plain-text node; other rows become one plain text
- *  node. The caller stamps the sealed signature so the following transcript
- *  pass is a no-op. */
-export function sealStreamingTextBody(body: HTMLElement, item: HarnessTranscriptItem): void {
-  const text = item.kind === 'thought' ? collapseThoughtBlankLines(item.text) : item.text;
-  body.classList.remove(
-    'acp-harness__msg-body--stream-plain',
-    'acp-harness__msg-body--thought-veil',
-    'acp-harness__msg-body--markdown',
-  );
-  if (item.kind === 'thought') {
-    // The live thought is already a collapsed plain-text node. Replacing it at
-    // the thought→assistant/tool/stop boundary laid the row out again, which
-    // WebKit could paint as a brief flash. Keep the stable node; only repair
-    // the DOM when it does not match the final text.
-    const textNode = body.childNodes.length === 1 && body.firstChild?.nodeType === 3
-      ? body.firstChild
-      : null;
-    if (!textNode || textNode.textContent !== text) body.textContent = text;
-    item.streamPlainLength = undefined;
-    return;
-  }
-  body.textContent = text;
-  item.streamPlainLength = undefined;
-}

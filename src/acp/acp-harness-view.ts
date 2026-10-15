@@ -7,8 +7,17 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { openExternalUrl } from '../external-url';
 import { nextPermissionMode, permissionModeDescription } from '../agent/permission-mode';
 import { AcpClient } from './client';
-import { DICTATION_LANG_ENGLISH, dictationLanguageFromShift } from './harness-dictation';
-import { HarnessDictationController } from './harness-dictation-controller';
+import {
+  DICTATION_LANG_ENGLISH,
+  dictationLanguageFromShift,
+  dictationLanguageLabel,
+  dictationPreviewParts,
+  speechRecognitionConstructor,
+} from './harness-dictation';
+import {
+  HarnessDictationController,
+  type ActiveDictationSession,
+} from './harness-dictation-controller';
 import { HarnessLiveVoiceController } from './harness-live-voice-controller';
 import { DEFAULT_LIVE_VOICE, type LiveDelivery } from './live-voice';
 import { HarnessTimelineController } from './harness-timeline-controller';
@@ -35,12 +44,60 @@ export {
 import type {
   HarnessDictationHost,
   HarnessLiveVoiceHost,
+  HarnessRegion,
   HarnessReviewLoopHost,
   HarnessSteerHost,
   HarnessTicketHost,
   HarnessTimelineHost,
   ReviewSubjectResult,
 } from './harness-view-host';
+import { HARNESS_REGION_ORDER } from './harness-view-host';
+import { RenderScheduler } from '../ui/scheduler';
+import { disposeList, listComponent, reconcile } from '../ui/list';
+import { el } from '../ui/dom';
+import { nextCursor, prevCursor } from './components/list-picker';
+import { LayoutHost, type Mountable } from '../ui/layout';
+import { HARNESS_LAYOUT_DEFAULT, type HarnessSlot } from './harness-layout';
+import { HelpOverlay } from './components/help-overlay';
+import { LanePicker } from './components/lane-picker';
+import { DirectivePicker } from './components/directive-picker';
+import { MemoryDrawer } from './components/memory-drawer';
+import { MetricsOverlay, type MetricsLane } from './components/metrics-overlay';
+import { ModelPicker } from './components/model-picker';
+import {
+  OrchestratorConsole,
+  type OrchestratorFeedRow,
+  type OrchestratorInputLine,
+  type OrchestratorPermRow,
+  type OrchestratorSeatCard,
+  type OrchestratorTag,
+} from './components/orchestrator-console';
+import { PeekCard } from './components/peek-card';
+import type { HeatPanelProps } from './components/heat-panel';
+import { PlanPanel } from './components/plan-panel';
+import { QueueCard } from './components/queue-card';
+import { ReviewMatrixOverlay, type ReviewMatrixLane } from './components/review-matrix-overlay';
+import { ReviewPriorityOverlay, type ReviewPriorityLane } from './components/review-priority-overlay';
+import { ReviewThreadDialog } from './components/review-thread-dialog';
+import { SessionPicker } from './components/session-picker';
+import { ThoughtCard } from './components/thought-card';
+import { TriageOverlay } from './components/triage-overlay';
+import { LaneShell, laneShellKey, type LaneShellProps } from './components/lane-shell';
+import { LaneRail } from './components/lane-rail';
+import { type RailEntryProps } from './components/rail-entry';
+import { Transcript } from './components/transcript';
+import { tickAllSpinners } from './components/spinner';
+import {
+  Composer,
+  type ComposerPaletteProps,
+} from './components/composer';
+import type { ComposerMetaChipProps, ComposerMetaProps } from './components/composer-meta';
+import type { DictationControlProps } from './components/dictation-control';
+import {
+  nextPaletteCursor,
+  prevPaletteCursor,
+  type InlinePaletteRow,
+} from './components/inline-palette';
 import {
   applyAskUserKey,
   createAskUserCardState,
@@ -87,16 +144,8 @@ import type {
 } from './types';
 import { LaneBus } from './lane-bus';
 import { AttentionTriageStore } from './attention-triage';
-import {
-  renderTriageOverlay,
-  type TriageOverlayViewModel,
-} from './attention-overlay';
 import { ReviewQualityStore } from './review-quality';
 import { ReviewPriorityStore } from './review-priority-store';
-import {
-  renderReviewPriorityOverlay,
-  type ReviewPriorityOverlayViewModel,
-} from './review-priority-overlay';
 import { ArtifactFeedbackQueue, DocArtifactRequestQueue, DocFeedbackQueue } from './artifact-feedback';
 import { DiffReviewQueue } from './diff-review';
 import {
@@ -310,7 +359,6 @@ import type {
   SubagentEntry,
   SvgFenceEntry,
   LaneActivitySample,
-  LaneHeatSide,
   LanePeekCandidate,
   LanePeekHeatLaneInput,
   LanePeekHeatMetric,
@@ -329,47 +377,29 @@ import type {
 } from './harness-view-types';
 
 import {
-  BACKEND_LABELS,
   backendLabel,
-  backendLogoId,
-  directiveRole,
-  directiveTagLabel,
   harnessBackends,
-  laneAccentForLabel,
   pickLaneAccent,
-  trimBackendPrefix,
 } from './harness-lane-identity';
 import { ensureHarnessSymbolDefs } from './harness-icons';
 import {
   agentLinkOpenAction,
   makeSafeRenderer,
   md,
-  rerenderAssistantMarkdownWithMarked,
   resolveLocalImageSrcs,
-  sealStreamingTextBody,
-  STREAMING_MARKDOWN_LIVE_CLASS,
   streamingMarkdownDroppedTable,
-  updateStreamingAssistantMarkdownBody,
-  updateStreamingTextBody,
 } from './harness-markdown';
 export { agentLinkOpenAction, hasMarkdownTable } from './harness-markdown';
 import { cachedMermaid, MERMAID_FENCE_GUIDANCE } from './harness-mermaid-fence';
-import { clearLiveSvgFences, decorateSvgFences, figureViewerSource, readMermaidTheme, SVG_FENCE_GUIDANCE } from './harness-svg-fence';
+import { figureViewerSource, readMermaidTheme, SVG_FENCE_GUIDANCE } from './harness-svg-fence';
 import {
-  basename,
   esc,
   filterSessionsForProject,
   formatAge,
-  formatCount,
-  formatCpu,
   formatElapsed,
-  formatReviewRoundTime,
-  formatRss,
-  formatSessionUpdatedAt,
   formatShortTime,
   loadHomeDir,
   makeId,
-  normalizePathForCompare,
   parseReviewFindings,
   pathToFileUri,
   sessionCapabilitiesFromAgent,
@@ -385,8 +415,6 @@ import {
   isMemoryTool,
   isTerminalToolStatus,
   mergeToolCall,
-  patchStreamingToolBody,
-  setToolSpinnerGlyph,
 } from './harness-tool-render';
 import {
   appendBoundedTranscriptItem,
@@ -430,24 +458,17 @@ import {
 import { publishLinkFromPush } from '../backend-link';
 import {
   buildBusySegments,
-  renderStatusSegments,
   textSegments,
   type MetaSegment,
 } from './harness-composer-meta';
 import {
-  SPINNER_FRAMES,
   awaitingPeerText,
   compactPermissionLabel,
-  compactPermissionMeta,
   filteredSlashCommands,
   isAgentSlashCommand,
   inferLaneModelName,
-  renderLaneHead,
-  renderLaneStats,
-  renderProcessTree,
-  renderPermissionModeChip,
-  renderSaltyBypassChip,
-  renderSlashPalette,
+  isPollyImplementerBypass,
+  isSaltyExecutorBypass,
   slashPaletteVisible,
   statusLabel,
 } from './harness-lane-chrome';
@@ -468,7 +489,6 @@ import {
   pickPermissionOption,
 } from './harness-permission-scan';
 import {
-  buildComposerPeerStrip,
   buildLanePeekCandidates,
   deriveActiveToolForPeek,
   deriveLanePairHeat,
@@ -477,19 +497,13 @@ import {
   deriveRecentFilesForPeek,
   deriveThoughtForPeek,
   shouldPaintThoughtTranscriptRow,
-  patchLaneThoughtCard,
-  renderLaneThought,
+  isLivePeekThought,
   resolveLaneThoughtSnapshot,
   schedulePeekThoughtPin,
-  formatHeatTokenSuffix,
   isDirectPeerPeekReasonKey,
   latestInterLaneForPeek,
   latestMeaningfulForPeek,
   latestPermissionForPeek,
-  patchPeekActiveTool,
-  patchPeekReviewLoop,
-  renderLanePeek,
-  renderRailPeerSpans,
   selectLanePeekCandidate,
   shouldPreemptPeekDismissal,
 } from './lane-peek';
@@ -500,7 +514,6 @@ import {
 } from './harness-thought-teletype';
 export {
   PEER_PREEMPT_MAX_PRIORITY,
-  buildComposerPeerStrip,
   buildLanePeekCandidates,
   deriveThoughtForPeek,
   shouldPaintThoughtTranscriptRow,
@@ -518,17 +531,10 @@ export {
 export type { DeriveRailPeerHintInput, RailPeerHint } from './lane-peek';
 import {
   applyCoordinatorProvenanceToItem,
-  appendMessageResourceRail,
-  renderImageStrip,
-  renderTranscriptItem,
   scanMessageResourceBody,
-  syncThoughtEffortMeter,
-  transcriptRenderSignature,
 } from './harness-transcript-render';
 export {
-  formatLaneMailMetaLine,
   formatLaneMailProvenanceLine,
-  renderPermissionBody,
 } from './harness-transcript-render';
 import {
   mergeMessageResources,
@@ -813,10 +819,9 @@ export const ACP_HARNESS_LEADER_KEYS: readonly LeaderKeySpec[] = [
 
 
 // Tail-window rendering. Only the last N transcript rows render into the DOM
-// to keep `renderActiveTranscript()` cheap on long sessions. See Spec 103.
+// to keep the transcript cheap on long sessions. See Spec 103.
 const TRANSCRIPT_WINDOW_STEP = 60;
 const TRANSCRIPT_WINDOW_DEFAULT = TRANSCRIPT_WINDOW_STEP;
-const HIDDEN_INDICATOR_ID = '__hidden_indicator__';
 
 // Spec 114: dev-only assertion gate. Mirrors the pattern in view-bus.ts
 // to read Vite's `import.meta.env.DEV` without requiring the vite/client
@@ -1061,6 +1066,54 @@ interface PendingComposerBloom {
   inserted: string;
 }
 
+/**
+ * A `LayoutHost` slot container.
+ *
+ * `display: contents` (`.acp-harness__layout-slot`): a slot is a named PLACE in
+ * the table, not a box. Its panels stay direct flex children of the rail, so
+ * every per-panel sizing rule keeps applying to the box it was written for.
+ */
+function layoutSlotContainer(slot: HarnessSlot): HTMLElement {
+  const node = document.createElement('div');
+  node.className = 'acp-harness__layout-slot';
+  node.dataset.layoutSlot = slot;
+  return node;
+}
+
+/**
+ * A rail panel inside the `.acp-harness__lane-rail__slot` box the rail's CSS
+ * sizes. The wrapper belongs to the LAYOUT, not the panel: `data-slot` drives
+ * sizing rules (`thought` 70%, `queue` clamp + `margin-top: auto`) that the
+ * panel components do not own and must not inherit.
+ */
+class RailPanel implements Mountable {
+  readonly el: HTMLElement;
+
+  constructor(private readonly panel: Mountable, slot: string) {
+    this.el = document.createElement('div');
+    this.el.className = 'acp-harness__lane-rail__slot';
+    this.el.dataset.slot = slot;
+    this.el.appendChild(panel.el);
+  }
+  /** An empty plan / queue leaves the rail by hiding its box, as the slot did. */
+  set hidden(value: boolean) {
+    this.el.hidden = value;
+  }
+
+  dispose(): void {
+    this.panel.dispose();
+  }
+}
+
+/**
+ * An inline palette that is not showing.
+ *
+ * The four builders returned `''` and emitted no node at all; the component
+ * keeps its node and hides it, which is the same thing on screen and is what
+ * lets a palette reappear without rebuilding its rows.
+ */
+const HIDDEN_PALETTE: ComposerPaletteProps = { rows: [], cursor: 0, hint: '' };
+
 export class AcpHarnessView implements ContentView {
   readonly type: PaneContentType = 'acp_harness';
   readonly element: HTMLElement;
@@ -1271,12 +1324,10 @@ export class AcpHarnessView implements ContentView {
   private metricsBySession = new Map<number, AcpLaneMetrics>();
   private metricsTimer: number | null = null;
   private spinnerTimer: number | null = null;
-  private spinnerFrame = 0;
   private metricsPanelOpen = false;
   private pickerOpen = false;
   private pickerCursor = 0;
   private pickerEntries: AcpBackendDescriptor[] = [];
-  private sessionPickerEl!: HTMLElement;
   private sessionPicker: SessionPickerState = {
     open: false,
     phase: 'loading',
@@ -1318,32 +1369,55 @@ export class AcpHarnessView implements ContentView {
   private readonly openMarkdownViewCb: ((path: string) => Promise<void>) | null;
 
   private dashboardEl!: HTMLElement;
-  private memoryOverlayEl!: HTMLElement;
-  private memoryPanelEl!: HTMLElement;
-  private helpOverlayEl!: HTMLElement;
-  private metricsOverlayEl!: HTMLElement;
-  private triageOverlayEl!: HTMLElement;
-  private triagePanelEl!: HTMLElement;
-  private reviewMatrixOverlayEl!: HTMLElement;
-  private reviewMatrixPanelEl!: HTMLElement;
-  private reviewPriorityOverlayEl!: HTMLElement;
-  private reviewPriorityPanelEl!: HTMLElement;
-  private orchestratorConsoleEl!: HTMLElement;
-  private orchestratorPanelEl!: HTMLElement;
-  private pickerEl!: HTMLElement;
-  private directivePickerEl!: HTMLElement;
-  private modelPickerEl!: HTMLElement;
-  private planEl!: HTMLElement;
+  // Spec 301 §7 — the summon-on-demand surfaces. Each root IS an `OverlayShell`,
+  // which owns the `hidden` toggle and the single-open registry; the view keeps
+  // the key table and the `…Open` flag that feeds the `open` prop.
+  private memoryDrawer!: MemoryDrawer;
+  private helpOverlay!: HelpOverlay;
+  private metricsOverlay!: MetricsOverlay;
+  private triageOverlay!: TriageOverlay;
+  private reviewMatrixOverlay!: ReviewMatrixOverlay;
+  private reviewPriorityOverlay!: ReviewPriorityOverlay;
+  private orchestratorConsole!: OrchestratorConsole;
+  private lanePicker!: LanePicker;
+  private directivePicker!: DirectivePicker;
+  private modelPicker!: ModelPicker;
+  private sessionPickerCmp!: SessionPicker;
   private laneRailEl!: HTMLElement;
-  private planSlotEl!: HTMLElement;
-  private peekSlotEl!: HTMLElement;
-  private thoughtSlotEl!: HTMLElement;
-  private queueSlotEl!: HTMLElement;
+  // Spec 301 §Layout — placement is a table, not four element fields.
+  private railLayout!: LayoutHost<HarnessSlot>;
+  private readonly planPanel = new PlanPanel();
+  private readonly queueCard = new QueueCard();
+  /** Always mounted; `hidden` is how an empty plan / queue leaves the rail. */
+  private readonly planSlot = new RailPanel(this.planPanel, 'plan');
+  private readonly queueSlot = new RailPanel(this.queueCard, 'queue');
+  /** Summoned: unmounted entirely when there is nothing to peek at. */
+  private peekCard: PeekCard | null = null;
+  private peekLaneId: string | null = null;
+  private thoughtCard: ThoughtCard | null = null;
+  private thoughtLaneId: string | null = null;
   private composerEl!: HTMLElement;
+  /** Spec 301 §6 — the composer root component; `composerEl` is its node. */
+  private composer!: Composer;
   private remoteStatusEl: HTMLElement | null = null;
+  // Spec 301 phase 4: the lane shells, the zen rail and the transcript list are
+  // components now. `zenBodyCellEl` is non-null exactly while zen mode wraps
+  // the shells beside the rail; `transcriptBodyEl` is the pinned lane body the
+  // active shell owns, and the only reason it is held here is so a lane switch
+  // can tell whether the Transcript must be rebound.
+  private laneRail: LaneRail | null = null;
+  private zenBodyCellEl: HTMLElement | null = null;
+  private transcript: Transcript | null = null;
+  private transcriptBodyEl: HTMLElement | null = null;
   private scrollRaf = false;
-  private renderRaf = false;
-  private streamingBodyRaf = false;
+  // Spec 301: one scheduler replaces the two hand-rolled RAF flags
+  // (`renderRaf` for a full repaint, `streamingBodyRaf` for the body-only
+  // path). A mutation names the region it dirtied; the scheduler coalesces a
+  // frame's worth and commits in HARNESS_REGION_ORDER.
+  private readonly scheduler = new RenderScheduler<HarnessRegion>(
+    HARNESS_REGION_ORDER,
+    (region) => this.commitRegion(region),
+  );
   /** Set before scheduleStreamingBodyOnly so a coalesced text-chunk RAF also
    *  patches the peek tool row after a tool delta. */
   private pendingToolHud = false;
@@ -3108,73 +3182,37 @@ export class AcpHarnessView implements ContentView {
   /** A keyboard-first, local preview. Enter freezes exactly the previewed diff. */
   private async pickReviewThreadBase(cwd: string): Promise<{ base: string; fingerprint: string } | null> {
     return new Promise((resolve) => {
-      const root = document.createElement('div');
-      root.className = 'acp-review-thread-picker';
-      root.tabIndex = -1;
-      const panel = document.createElement('form');
-      panel.className = 'acp-review-thread-picker__panel';
-      panel.setAttribute('role', 'dialog');
-      panel.setAttribute('aria-modal', 'true');
-      panel.setAttribute('aria-label', 'Start Review Thread');
-      panel.addEventListener('submit', (event) => event.preventDefault());
-      const title = document.createElement('h2');
-      title.textContent = 'Start Review Thread';
-      const baseGroup = document.createElement('fieldset');
-      baseGroup.className = 'acp-review-thread-picker__bases';
-      const legend = document.createElement('legend');
-      legend.textContent = 'Compare against';
-      baseGroup.appendChild(legend);
-      const baseInputs: HTMLInputElement[] = [];
-      for (const [value, label, description] of [
-        ['upstream', 'Upstream merge-base', 'Changes since the tracked branch, including local work'],
-        ['head', 'HEAD', 'Working tree changes only'],
-      ]) {
-        const choice = document.createElement('label');
-        choice.className = 'acp-review-thread-picker__choice';
-        const input = document.createElement('input');
-        input.type = 'radio';
-        input.name = 'review-thread-base';
-        input.value = value;
-        input.checked = value === 'upstream';
-        const copy = document.createElement('span');
-        const name = document.createElement('strong');
-        name.textContent = label;
-        const hint = document.createElement('small');
-        hint.textContent = description;
-        copy.append(name, hint);
-        choice.append(input, copy);
-        baseGroup.appendChild(choice);
-        baseInputs.push(input);
-      }
-      const selectedBase = (): string => baseInputs.find((input) => input.checked)?.value ?? 'upstream';
-      const details = document.createElement('pre');
-      details.className = 'acp-review-thread-picker__details';
-      details.setAttribute('aria-live', 'polite');
-      details.textContent = 'กำลังเก็บ preview…';
-      const confirm = document.createElement('button');
-      confirm.type = 'button';
-      confirm.textContent = 'Start Review · Enter';
-      confirm.disabled = true;
-      const cancel = document.createElement('button');
-      cancel.type = 'button';
-      cancel.textContent = 'Cancel · Esc';
-      const actions = document.createElement('div');
-      actions.className = 'acp-review-thread-picker__actions';
-      actions.append(confirm, cancel);
-      panel.append(title, baseGroup, details, actions);
-      root.appendChild(panel);
-      const previousFocus = this.element.contains(document.activeElement)
-        && document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      this.element.appendChild(root);
+      // Spec 302 §7.16: `ReviewThreadDialog` renders the bases, the preview and
+      // the two buttons. The promise, the key capture and the focus trap stay
+      // here — this is the only place that knows what Enter freezes.
+      const dialog = new ReviewThreadDialog();
+      let base = 'upstream';
+      let preview = 'กำลังเก็บ preview…';
+      let confirmDisabled = true;
       let fingerprint = '';
       let generation = 0;
       let settled = false;
+      const render = (): void => {
+        dialog.update({
+          open: true,
+          base,
+          preview,
+          confirmDisabled,
+          onSelectBase: (next: string): void => {
+            base = next;
+            void update();
+          },
+          onConfirm: () => finish({ base, fingerprint }),
+          onCancel: () => finish(null),
+          onAutoClose: () => finish(null),
+        });
+      };
       const update = async (): Promise<void> => {
         const current = ++generation;
-        const base = selectedBase();
         fingerprint = '';
-        confirm.disabled = true;
-        details.textContent = 'กำลังเก็บ preview…';
+        confirmDisabled = true;
+        preview = 'กำลังเก็บ preview…';
+        render();
         try {
           const value = await invoke<{
             fingerprint: string; baseRef: string; baseOid: string;
@@ -3182,14 +3220,16 @@ export class AcpHarnessView implements ContentView {
           }>('review_thread_preview', { cwd, base });
           if (current !== generation || settled) return;
           fingerprint = value.fingerprint;
-          details.textContent = `${value.files} files · base ${value.baseRef} @ ${value.baseOid.slice(0, 8)}` +
+          preview = `${value.files} files · base ${value.baseRef} @ ${value.baseOid.slice(0, 8)}` +
             (value.omitted.length
               ? `\nไม่อยู่ใน diff: ${value.omitted.map((o) => `${o.path} (${o.reason})`).join(', ')}`
               : '');
-          confirm.disabled = false;
+          confirmDisabled = false;
         } catch (error) {
-          if (current === generation && !settled) details.textContent = String(error);
+          if (current !== generation || settled) return;
+          preview = String(error);
         }
+        render();
       };
       const finish = (value: { base: string; fingerprint: string } | null): void => {
         if (settled) return;
@@ -3197,7 +3237,8 @@ export class AcpHarnessView implements ContentView {
         generation++;
         this.reviewThreadPickerCancel = null;
         document.removeEventListener('keydown', onKey, true);
-        root.remove();
+        dialog.el.remove();
+        dialog.dispose();
         if (this.element.isConnected) {
           (previousFocus?.isConnected ? previousFocus : this.element).focus({ preventScroll: true });
         }
@@ -3208,28 +3249,31 @@ export class AcpHarnessView implements ContentView {
           event.preventDefault();
           event.stopPropagation();
           finish(null);
-        } else if (event.key === 'Enter' && !confirm.disabled && document.activeElement !== cancel) {
+        } else if (event.key === 'Enter' && !confirmDisabled && document.activeElement !== dialog.cancelButton) {
           event.preventDefault();
           event.stopPropagation();
-          finish({ base: selectedBase(), fingerprint });
+          finish({ base, fingerprint });
         } else if (event.key === 'Tab') {
-          const first = baseInputs.find((input) => input.checked) ?? baseInputs[0];
-          const last = cancel;
-          if (event.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
+          const inputs = dialog.baseInputs;
+          const first = inputs.find((input) => input.checked) ?? inputs[0];
+          const last = dialog.cancelButton;
+          const inside = dialog.el.contains(document.activeElement);
+          if (event.shiftKey && (document.activeElement === first || !inside)) {
             event.preventDefault();
             last.focus();
-          } else if (!event.shiftKey && (document.activeElement === last || !panel.contains(document.activeElement))) {
+          } else if (!event.shiftKey && (document.activeElement === last || !inside)) {
             event.preventDefault();
             first.focus();
           }
         }
       };
-      baseGroup.addEventListener('change', () => { void update(); });
-      confirm.addEventListener('click', () => finish({ base: selectedBase(), fingerprint }));
-      cancel.addEventListener('click', () => finish(null));
+      const previousFocus = this.element.contains(document.activeElement)
+        && document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      this.element.appendChild(dialog.el);
+      render();
       document.addEventListener('keydown', onKey, true);
       this.reviewThreadPickerCancel = () => finish(null);
-      baseInputs[0].focus({ preventScroll: true });
+      dialog.baseInputs[0].focus({ preventScroll: true });
       void update();
     });
   }
@@ -4319,10 +4363,10 @@ export class AcpHarnessView implements ContentView {
       e.preventDefault();
       if (this.mentionPaletteVisibleFor(lane)) {
         lane.mentionPaletteDismissed = true;
-        this.renderComposer();
+        this.flushRegion('composer');
       } else if (this.verbPaletteVisibleFor(lane)) {
         lane.verbPaletteDismissed = true;
-        this.renderComposer();
+        this.flushRegion('composer');
       } else if (this.helpOpen) this.toggleHelp(false);
       else if (this.memoryDrawerOpen) this.toggleMemoryDrawer(false);
       else if (lane.stagedImages.length > 0) this.clearStagedImages(lane);
@@ -4430,96 +4474,70 @@ export class AcpHarnessView implements ContentView {
     return filteredMentionTargets(this.mentionRosterNames(), lane.displayName, ctx.prefix);
   }
 
+  /**
+   * The `@` palette's key table.
+   *
+   * Spec 301 §2.4: the cursor arithmetic (`(x + 1) % n`, `(x - 1 + n) % n`) and
+   * the clamp-then-pick that each of these four handlers carried its own copy
+   * of now come from `InlinePalette`. What stays here is what differs: which
+   * key commits, and what the commit inserts — the key table is the view's
+   * (CLAUDE.md constraint 1).
+   */
   private handleMentionPaletteKey(e: KeyboardEvent, lane: HarnessLane): boolean {
     if (!this.mentionPaletteVisibleFor(lane)) return false;
-    const matches = this.filteredMentionPaletteTargets(lane);
-    if (matches.length === 0) return false;
+    const total = this.filteredMentionPaletteTargets(lane).length;
+    if (total === 0) return false;
     if (e.key === 'ArrowDown' || (e.ctrlKey && (e.key === 'n' || e.key === 'N'))) {
       e.preventDefault();
-      lane.mentionPaletteIndex = (lane.mentionPaletteIndex + 1) % matches.length;
-      this.renderComposer();
+      lane.mentionPaletteIndex = nextPaletteCursor(lane.mentionPaletteIndex, total);
+      this.flushRegion('composer');
       return true;
     }
     if (e.key === 'ArrowUp' || (e.ctrlKey && (e.key === 'p' || e.key === 'P'))) {
       e.preventDefault();
-      lane.mentionPaletteIndex = (lane.mentionPaletteIndex - 1 + matches.length) % matches.length;
-      this.renderComposer();
+      lane.mentionPaletteIndex = prevPaletteCursor(lane.mentionPaletteIndex, total);
+      this.flushRegion('composer');
       return true;
     }
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
-      const pick = matches[Math.max(0, Math.min(lane.mentionPaletteIndex, matches.length - 1))];
-      if (pick) {
-        const next = applyMentionSelection(lane.draft, lane.cursor, pick);
-        lane.mentionPaletteDismissed = false;
-        this.setDraft(lane, next.draft, next.cursor);
-      }
+      this.composer.commitPalette('mention');
       return true;
     }
     if (e.key === 'Escape') {
       e.preventDefault();
       lane.mentionPaletteDismissed = true;
-      this.renderComposer();
+      this.flushRegion('composer');
       return true;
     }
     return false;
   }
 
-  private renderMentionPalette(lane: HarnessLane): string {
-    if (!this.mentionPaletteVisibleFor(lane)) return '';
-    const matches = this.filteredMentionPaletteTargets(lane);
-    if (matches.length === 0) {
-      return (
-        `<div class="acp-harness__slash-palette" data-count="0">` +
-        `<div class="acp-harness__slash-palette-meta">no matching lanes · Esc dismiss</div>` +
-        `</div>`
-      );
-    }
-    const safeIndex = Math.max(0, Math.min(lane.mentionPaletteIndex, matches.length - 1));
-    const rows = matches
-      .map((name, i) => {
-        const sel = i === safeIndex ? ' acp-harness__slash-palette-row--selected' : '';
-        return (
-          `<div class="acp-harness__slash-palette-row${sel}">` +
-          `<span class="acp-harness__slash-palette-name">@${esc(name)}</span>` +
-          `</div>`
-        );
-      })
-      .join('');
-    return (
-      `<div class="acp-harness__slash-palette" data-count="${matches.length}">` +
-      `<div class="acp-harness__slash-palette-meta">↑↓ / ⌃n⌃p select · Enter/Tab insert · Esc dismiss</div>` +
-      rows +
-      `</div>`
-    );
-  }
-
   private handleSlashPaletteKey(e: KeyboardEvent, lane: HarnessLane): boolean {
     if (!slashPaletteVisible(lane)) return false;
-    const matches = filteredSlashCommands(lane);
-    if (matches.length === 0) return false;
+    const total = filteredSlashCommands(lane).length;
+    if (total === 0) return false;
     if (e.key === 'ArrowDown' || (e.ctrlKey && (e.key === 'n' || e.key === 'N'))) {
       e.preventDefault();
-      lane.slashPaletteIndex = (lane.slashPaletteIndex + 1) % matches.length;
-      this.renderComposer();
+      lane.slashPaletteIndex = nextPaletteCursor(lane.slashPaletteIndex, total);
+      this.flushRegion('composer');
       return true;
     }
     if (e.key === 'ArrowUp' || (e.ctrlKey && (e.key === 'p' || e.key === 'P'))) {
       e.preventDefault();
-      lane.slashPaletteIndex = (lane.slashPaletteIndex - 1 + matches.length) % matches.length;
-      this.renderComposer();
+      lane.slashPaletteIndex = prevPaletteCursor(lane.slashPaletteIndex, total);
+      this.flushRegion('composer');
       return true;
     }
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
-      const cmd = matches[Math.max(0, Math.min(lane.slashPaletteIndex, matches.length - 1))];
-      if (cmd) this.setDraft(lane, `/${cmd.name} `, cmd.name.length + 2);
+      this.composer.commitPalette('slash');
       return true;
     }
     if (e.key === 'Escape') {
       e.preventDefault();
       lane.slashPaletteDismissed = true;
-      this.renderComposer();
+      this.flushRegion('composer');
       return true;
     }
     return false;
@@ -4531,60 +4549,32 @@ export class AcpHarnessView implements ContentView {
    *  still fires immediately and only Tab is needed to autocomplete a partial token. */
   private handleHashPaletteKey(e: KeyboardEvent, lane: HarnessLane): boolean {
     if (!hashPaletteVisible(lane.draft, lane.hashPaletteDismissed)) return false;
-    const matches = filteredHashCommands(lane.draft);
-    if (matches.length === 0) return false;
+    const total = filteredHashCommands(lane.draft).length;
+    if (total === 0) return false;
     if (e.key === 'ArrowDown' || (e.ctrlKey && (e.key === 'n' || e.key === 'N'))) {
       e.preventDefault();
-      lane.hashPaletteIndex = (lane.hashPaletteIndex + 1) % matches.length;
-      this.renderComposer();
+      lane.hashPaletteIndex = nextPaletteCursor(lane.hashPaletteIndex, total);
+      this.flushRegion('composer');
       return true;
     }
     if (e.key === 'ArrowUp' || (e.ctrlKey && (e.key === 'p' || e.key === 'P'))) {
       e.preventDefault();
-      lane.hashPaletteIndex = (lane.hashPaletteIndex - 1 + matches.length) % matches.length;
-      this.renderComposer();
+      lane.hashPaletteIndex = prevPaletteCursor(lane.hashPaletteIndex, total);
+      this.flushRegion('composer');
       return true;
     }
     if (e.key === 'Tab') {
       e.preventDefault();
-      const cmd = matches[Math.max(0, Math.min(lane.hashPaletteIndex, matches.length - 1))];
-      if (cmd) this.setDraft(lane, `#${cmd.name} `, cmd.name.length + 2);
+      this.composer.commitPalette('hash');
       return true;
     }
     if (e.key === 'Escape') {
       e.preventDefault();
       lane.hashPaletteDismissed = true;
-      this.renderComposer();
+      this.flushRegion('composer');
       return true;
     }
     return false;
-  }
-
-  private renderHashPalette(lane: HarnessLane): string {
-    if (!hashPaletteVisible(lane.draft, lane.hashPaletteDismissed)) return '';
-    const matches = filteredHashCommands(lane.draft);
-    if (matches.length === 0) return '';
-    const safeIndex = Math.max(0, Math.min(lane.hashPaletteIndex, matches.length - 1));
-    const rows = matches
-      .map((cmd: HashCommand, i: number) => {
-        const sel = i === safeIndex ? ' acp-harness__slash-palette-row--selected' : '';
-        const hint = cmd.args ? `<span class="acp-harness__slash-palette-hint">${esc(cmd.args)}</span>` : '';
-        const desc = `<span class="acp-harness__slash-palette-desc">${esc(cmd.description)}</span>`;
-        return (
-          `<div class="acp-harness__slash-palette-row${sel}">` +
-          `<span class="acp-harness__slash-palette-name">#${esc(cmd.name)}</span>` +
-          hint +
-          desc +
-          `</div>`
-        );
-      })
-      .join('');
-    return (
-      `<div class="acp-harness__slash-palette" data-count="${matches.length}">` +
-      `<div class="acp-harness__slash-palette-meta">↑↓ / ⌃n⌃p select · Tab complete · Esc dismiss</div>` +
-      rows +
-      `</div>`
-    );
   }
 
   /** spec 191: inline verb-injection palette. Cursor-aware — fires when the user types
@@ -4610,63 +4600,32 @@ export class AcpHarnessView implements ContentView {
 
   private handleInlineVerbPaletteKey(e: KeyboardEvent, lane: HarnessLane): boolean {
     if (!this.verbPaletteVisibleFor(lane)) return false;
-    const matches = this.verbPaletteEntriesFor(lane);
-    if (matches.length === 0) return false;
+    const total = this.verbPaletteEntriesFor(lane).length;
+    if (total === 0) return false;
     if (e.key === 'ArrowDown' || (e.ctrlKey && (e.key === 'n' || e.key === 'N'))) {
       e.preventDefault();
-      lane.verbPaletteIndex = (lane.verbPaletteIndex + 1) % matches.length;
-      this.renderComposer();
+      lane.verbPaletteIndex = nextPaletteCursor(lane.verbPaletteIndex, total);
+      this.flushRegion('composer');
       return true;
     }
     if (e.key === 'ArrowUp' || (e.ctrlKey && (e.key === 'p' || e.key === 'P'))) {
       e.preventDefault();
-      lane.verbPaletteIndex = (lane.verbPaletteIndex - 1 + matches.length) % matches.length;
-      this.renderComposer();
+      lane.verbPaletteIndex = prevPaletteCursor(lane.verbPaletteIndex, total);
+      this.flushRegion('composer');
       return true;
     }
     if (e.key === 'Tab') {
       e.preventDefault();
-      const pick = matches[Math.max(0, Math.min(lane.verbPaletteIndex, matches.length - 1))];
-      if (pick) {
-        const next = applyVerbSelection(lane.draft, lane.cursor, pick.name);
-        this.setDraft(lane, next.draft, next.cursor);
-      }
+      this.composer.commitPalette('verb');
       return true;
     }
     if (e.key === 'Escape') {
       e.preventDefault();
       lane.verbPaletteDismissed = true;
-      this.renderComposer();
+      this.flushRegion('composer');
       return true;
     }
     return false;
-  }
-
-  private renderInlineVerbPalette(lane: HarnessLane): string {
-    if (!this.verbPaletteVisibleFor(lane)) return '';
-    const matches = this.verbPaletteEntriesFor(lane);
-    if (matches.length === 0) return '';
-    const safeIndex = Math.max(0, Math.min(lane.verbPaletteIndex, matches.length - 1));
-    const rows = matches
-      .map((entry, i) => {
-        const sel = i === safeIndex ? ' acp-harness__slash-palette-row--selected' : '';
-        const desc = entry.description
-          ? `<span class="acp-harness__slash-palette-desc">${esc(entry.description)}</span>`
-          : '';
-        return (
-          `<div class="acp-harness__slash-palette-row${sel}">` +
-          `<span class="acp-harness__slash-palette-name">{{#${esc(entry.name)}}}</span>` +
-          desc +
-          `</div>`
-        );
-      })
-      .join('');
-    return (
-      `<div class="acp-harness__slash-palette" data-count="${matches.length}">` +
-      `<div class="acp-harness__slash-palette-meta">inject verb · ↑↓ / ⌃n⌃p select · Tab insert · Esc dismiss</div>` +
-      rows +
-      `</div>`
-    );
   }
 
   onResize(_width: number, _height: number): void {
@@ -4727,6 +4686,24 @@ export class AcpHarnessView implements ContentView {
     this.composerBloomLayer?.replaceChildren();
     this.composerBloomLayer = null;
     this.composerBloomLaneId = null;
+    // Spec 301: every component this view constructed, in one place. The layout
+    // host disposes what it placed; the overlays and the composer are its own.
+    this.railLayout?.dispose();
+    this.peekCard = null;
+    this.thoughtCard = null;
+    this.composer?.dispose();
+    this.memoryDrawer?.dispose();
+    this.helpOverlay?.dispose();
+    this.imageViewer?.dispose();
+    this.metricsOverlay?.dispose();
+    this.triageOverlay?.dispose();
+    this.reviewMatrixOverlay?.dispose();
+    this.reviewPriorityOverlay?.dispose();
+    this.orchestratorConsole?.dispose();
+    this.lanePicker?.dispose();
+    this.directivePicker?.dispose();
+    this.modelPicker?.dispose();
+    this.sessionPickerCmp?.dispose();
     // spec 141: leave the cross-harness directory FIRST — flip `alive` false (so
     // any delivery already past resolveDisplayName is rejected deterministically)
     // and unregister (which captures a close snapshot from the still-intact lanes
@@ -5080,8 +5057,6 @@ export class AcpHarnessView implements ContentView {
     this.triageRedirect = null;
     const open = this.triageStore.openItems();
     this.triageSelectedIndex = Math.min(this.triageSelectedIndex, Math.max(0, open.length - 1));
-    this.helpOpen = false;
-    this.memoryDrawerOpen = false;
     this.renderTriageOverlayEl();
     this.syncOrchestratorConsoleVisibility();
   }
@@ -5090,7 +5065,7 @@ export class AcpHarnessView implements ContentView {
     if (!this.triageOverlayOpen) return;
     this.triageOverlayOpen = false;
     this.triageRedirect = null;
-    this.triageOverlayEl.hidden = true;
+    this.renderTriageOverlayEl();
     this.syncOrchestratorConsoleVisibility();
   }
 
@@ -5121,21 +5096,23 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderTriageOverlayEl(): void {
-    this.triageOverlayEl.hidden = !this.triageOverlayOpen;
-    if (!this.triageOverlayOpen) return;
     const items = this.triageStore.openItems();
     if (this.triageSelectedIndex >= items.length) {
       this.triageSelectedIndex = Math.max(0, items.length - 1);
     }
-    const vm: TriageOverlayViewModel = {
+    this.triageOverlay.update({
+      open: this.triageOverlayOpen,
       items,
       selectedIndex: this.triageSelectedIndex,
-      laneName: (id) => this.lanes.find((l) => l.id === id)?.displayName ?? id,
-      laneStats: (id) => this.triageStore.statsFor(id),
+      laneName: (id: string): string => this.lanes.find((l) => l.id === id)?.displayName ?? id,
+      laneStats: (id: string) => this.triageStore.statsFor(id),
       redirect: this.triageRedirect ? { draft: this.triageRedirect.draft } : null,
       silentPileCount: this.triageStore.silentPile().length,
-    };
-    renderTriageOverlay(this.triagePanelEl, vm);
+      onAutoClose: (): void => {
+        this.triageOverlayOpen = false;
+        this.triageRedirect = null;
+      },
+    });
   }
 
   private selectedTriageItem(): JudgementItem | null {
@@ -5260,8 +5237,6 @@ export class AcpHarnessView implements ContentView {
     );
     this.reviewMatrixSelectedRowIndex = 0;
     this.reviewMatrixExpandedRowIndex = null;
-    this.helpOpen = false;
-    this.memoryDrawerOpen = false;
     this.renderReviewMatrixOverlayEl();
     this.syncOrchestratorConsoleVisibility();
   }
@@ -5270,7 +5245,7 @@ export class AcpHarnessView implements ContentView {
     if (!this.reviewMatrixOverlayOpen) return;
     this.reviewMatrixOverlayOpen = false;
     this.reviewMatrixExpandedRowIndex = null;
-    this.reviewMatrixOverlayEl.hidden = true;
+    this.renderReviewMatrixOverlayEl();
     this.syncOrchestratorConsoleVisibility();
   }
 
@@ -5295,55 +5270,25 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderReviewMatrixOverlayEl(): void {
-    this.reviewMatrixOverlayEl.hidden = !this.reviewMatrixOverlayOpen;
-    if (!this.reviewMatrixOverlayOpen) return;
-    const panel = this.reviewMatrixPanelEl;
-    panel.replaceChildren();
-
-    const lanes = this.reviewQualityStore.lanesWithHistory();
-    if (this.reviewMatrixSelectedLaneIndex >= lanes.length) {
-      this.reviewMatrixSelectedLaneIndex = Math.max(0, lanes.length - 1);
+    const laneIds = this.reviewQualityStore.lanesWithHistory();
+    if (this.reviewMatrixSelectedLaneIndex >= laneIds.length) {
+      this.reviewMatrixSelectedLaneIndex = Math.max(0, laneIds.length - 1);
     }
-
-    const header = document.createElement('header');
-    header.className = 'acp-review__head';
-    const title = document.createElement('span');
-    title.className = 'acp-review__title';
-    title.textContent = 'Review quality matrix';
-    const sub = document.createElement('span');
-    sub.className = 'acp-review__sub';
-    sub.textContent = 'this session · in-memory · not persisted';
-    header.append(title, sub);
-    panel.appendChild(header);
-
-    if (lanes.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'acp-review__empty';
-      empty.textContent = 'No reviews recorded.';
-      panel.appendChild(empty);
-      return;
-    }
-
-    // Lane switcher (only meaningful with >1 lane in history).
-    if (lanes.length > 1) {
-      const tabs = document.createElement('div');
-      tabs.className = 'acp-review__lanes';
-      lanes.forEach((laneId, i) => {
-        const tab = document.createElement('span');
-        tab.className = 'acp-review__lane' + (i === this.reviewMatrixSelectedLaneIndex ? ' is-active' : '');
-        // A closed lane is gone from this.lanes; fall back to the displayName
-        // snapshot stored on its newest recorded outcome so the row stays labelled.
-        const history = this.reviewQualityStore.historyFor(laneId);
-        const name =
-          this.lanes.find((l) => l.id === laneId)?.displayName ?? history[0]?.authoringLaneName ?? laneId;
-        tab.textContent = `${name} · ${history.length}`;
-        tabs.appendChild(tab);
-      });
-      panel.appendChild(tabs);
-    }
-
-    const selectedLaneId = lanes[this.reviewMatrixSelectedLaneIndex];
-    const rows = this.reviewQualityStore.historyFor(selectedLaneId);
+    // A closed lane is gone from `this.lanes`; fall back to the displayName
+    // snapshot stored on its newest recorded outcome so the row stays labelled.
+    const lanes = laneIds.map((laneId): ReviewMatrixLane => {
+      const history = this.reviewQualityStore.historyFor(laneId);
+      return {
+        id: laneId,
+        label:
+          this.lanes.find((l) => l.id === laneId)?.displayName
+          ?? history[0]?.authoringLaneName
+          ?? laneId,
+        roundCount: history.length,
+      };
+    });
+    const selected = lanes[this.reviewMatrixSelectedLaneIndex];
+    const rows = selected ? this.reviewQualityStore.historyFor(selected.id) : [];
     if (this.reviewMatrixSelectedRowIndex >= rows.length) {
       this.reviewMatrixSelectedRowIndex = Math.max(0, rows.length - 1);
     }
@@ -5353,129 +5298,18 @@ export class AcpHarnessView implements ContentView {
     ) {
       this.reviewMatrixExpandedRowIndex = null;
     }
-
-    const table = document.createElement('table');
-    table.className = 'acp-review__table';
-    table.innerHTML =
-      '<thead><tr>' +
-      '<th class="acp-review__col-when">round</th>' +
-      '<th class="acp-review__col-subj">subject</th>' +
-      '<th class="acp-review__col-num">reviewers</th>' +
-      '<th class="acp-review__col-num acp-review__col-block">block</th>' +
-      '<th class="acp-review__col-num acp-review__col-warn">warn</th>' +
-      '</tr></thead>';
-    const tbody = document.createElement('tbody');
-    rows.forEach((row, rowIndex) => {
-      const hasFindings = (row.findings?.length ?? 0) > 0;
-      const isSelected = rowIndex === this.reviewMatrixSelectedRowIndex;
-      const isExpanded = hasFindings && this.reviewMatrixExpandedRowIndex === rowIndex;
-
-      const tr = document.createElement('tr');
-      if (isSelected) {
-        tr.style.background = 'rgba(0, 204, 255, 0.08)';
-      }
-      const when = document.createElement('td');
-      when.className = 'acp-review__when';
-      when.textContent = formatReviewRoundTime(row.at);
-      const subj = document.createElement('td');
-      subj.className = 'acp-review__subj';
-      subj.textContent = hasFindings
-        ? `${isExpanded ? '▾' : '▸'} ${row.subjectLabel}`
-        : row.subjectLabel;
-      const rev = document.createElement('td');
-      rev.className = 'acp-review__num acp-review__rev';
-      rev.textContent = String(row.reviewerCount);
-      const block = document.createElement('td');
-      block.className = 'acp-review__num acp-review__block' + (row.blockers === 0 ? ' is-zero' : '');
-      block.textContent = String(row.blockers);
-      const warn = document.createElement('td');
-      warn.className = 'acp-review__num acp-review__warn' + (row.warnings === 0 ? ' is-zero' : '');
-      warn.textContent = String(row.warnings);
-      tr.append(when, subj, rev, block, warn);
-      tbody.appendChild(tr);
-
-      if (isExpanded && row.findings) {
-        const detailTr = document.createElement('tr');
-        const detailTd = document.createElement('td');
-        detailTd.colSpan = 5;
-        detailTd.style.padding = '0 14px 8px';
-        detailTd.style.background = 'rgba(0, 204, 255, 0.05)';
-        detailTd.style.borderBottom = '1px solid rgba(0, 204, 255, 0.08)';
-        detailTd.appendChild(this.renderReviewFindingsDetail(row.findings));
-        detailTr.appendChild(detailTd);
-        tbody.appendChild(detailTr);
-      }
+    this.reviewMatrixOverlay.update({
+      open: this.reviewMatrixOverlayOpen,
+      lanes,
+      selectedLaneIndex: this.reviewMatrixSelectedLaneIndex,
+      rows,
+      selectedRowIndex: this.reviewMatrixSelectedRowIndex,
+      expandedRowIndex: this.reviewMatrixExpandedRowIndex,
+      onAutoClose: (): void => {
+        this.reviewMatrixOverlayOpen = false;
+        this.reviewMatrixExpandedRowIndex = null;
+      },
     });
-    table.appendChild(tbody);
-    panel.appendChild(table);
-
-    const foot = document.createElement('div');
-    foot.className = 'acp-review__foot';
-    const hints: string[] = [];
-    const rowsHaveFindings = rows.some((row) => (row.findings?.length ?? 0) > 0);
-    if (rows.length > 0) {
-      hints.push('<span><kbd>j</kbd> <kbd>k</kbd> select round</span>');
-      if (rowsHaveFindings) {
-        hints.push('<span><kbd>enter</kbd> <kbd>space</kbd> expand findings</span>');
-      }
-    }
-    if (lanes.length > 1) {
-      hints.unshift('<span><kbd>h</kbd> <kbd>l</kbd> switch lane</span>');
-    }
-    hints.push('<span><kbd>esc</kbd> close</span>');
-    foot.innerHTML =
-      hints.join('') +
-      '<span class="acp-review__foot-note">read-only — observation, not a score</span>';
-    panel.appendChild(foot);
-  }
-
-  /** Flat detail block grouped by severity; content font, no nested panels. */
-  private renderReviewFindingsDetail(findings: ReviewFinding[]): HTMLElement {
-    const wrap = document.createElement('div');
-    wrap.style.padding = '6px 0 2px';
-    wrap.style.fontFamily = 'var(--agent-font, var(--krypton-font-family, monospace))';
-    // Findings are reading content (file paths + human-written notes), so anchor
-    // to the standard content font size rather than shrinking it — the parent
-    // table cell is already 0.9em, and a further em reduction here compounded the
-    // notes down to ~10px. An absolute var() resets that compounding to the
-    // user's configured body size; the group headings below stay a small label
-    // kicker (0.72em of this), matching the table's column headers.
-    wrap.style.fontSize = 'var(--krypton-font-size, 13px)';
-    wrap.style.letterSpacing = 'normal';
-    wrap.style.lineHeight = 'var(--krypton-content-line-height, 1.5)';
-
-    const groups: Array<{ severity: ReviewFinding['severity']; label: string; color: string }> = [
-      { severity: 'blocking', label: 'blocking', color: '#ff5d6c' },
-      { severity: 'non-blocking', label: 'non-blocking', color: '#ffb454' },
-      { severity: 'suggestion', label: 'suggestion', color: 'rgba(216, 232, 216, 0.72)' },
-    ];
-
-    let groupIndex = 0;
-    for (const group of groups) {
-      const items = findings.filter((f) => f.severity === group.severity);
-      if (items.length === 0) continue;
-
-      const heading = document.createElement('div');
-      heading.textContent = group.label;
-      heading.style.fontSize = '0.72em';
-      heading.style.letterSpacing = '0.08em';
-      heading.style.textTransform = 'uppercase';
-      heading.style.color = group.color;
-      heading.style.marginTop = groupIndex === 0 ? '0' : '8px';
-      heading.style.marginBottom = '4px';
-      wrap.appendChild(heading);
-
-      for (const finding of items) {
-        const line = document.createElement('div');
-        const loc = finding.line !== undefined ? `${finding.file}:${finding.line}` : finding.file;
-        line.textContent = `${loc} — ${finding.severity} — ${finding.note}`;
-        line.style.color = 'rgba(216, 232, 216, 0.86)';
-        line.style.padding = '2px 0';
-        wrap.appendChild(line);
-      }
-      groupIndex += 1;
-    }
-    return wrap;
   }
 
   /** Overlay key handling. Read-only: h/l switch lane, j/k select round, Enter/Space expand. */
@@ -5541,8 +5375,6 @@ export class AcpHarnessView implements ContentView {
       this.reviewPrioritySelectedLaneIndex,
       Math.max(0, lanes.length - 1),
     );
-    this.helpOpen = false;
-    this.memoryDrawerOpen = false;
     this.renderReviewPriorityOverlayEl();
     this.syncOrchestratorConsoleVisibility();
   }
@@ -5550,7 +5382,7 @@ export class AcpHarnessView implements ContentView {
   private closeReviewPriorityOverlay(): void {
     if (!this.reviewPriorityOverlayOpen) return;
     this.reviewPriorityOverlayOpen = false;
-    this.reviewPriorityOverlayEl.hidden = true;
+    this.renderReviewPriorityOverlayEl();
     this.syncOrchestratorConsoleVisibility();
   }
 
@@ -5568,21 +5400,25 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderReviewPriorityOverlayEl(): void {
-    this.reviewPriorityOverlayEl.hidden = !this.reviewPriorityOverlayOpen;
-    if (!this.reviewPriorityOverlayOpen) return;
-    const lanes = this.reviewPriorityStore.lanesWithReports();
-    if (this.reviewPrioritySelectedLaneIndex >= lanes.length) {
-      this.reviewPrioritySelectedLaneIndex = Math.max(0, lanes.length - 1);
+    const laneIds = this.reviewPriorityStore.lanesWithReports();
+    if (this.reviewPrioritySelectedLaneIndex >= laneIds.length) {
+      this.reviewPrioritySelectedLaneIndex = Math.max(0, laneIds.length - 1);
     }
-    const selectedLaneId = lanes[this.reviewPrioritySelectedLaneIndex];
-    const vm: ReviewPriorityOverlayViewModel = {
+    const lanes = laneIds.map((laneId): ReviewPriorityLane => ({
+      id: laneId,
+      label: this.lanes.find((l) => l.id === laneId)?.displayName ?? laneId,
+      highCount: this.reviewPriorityStore.highCountFor(laneId),
+    }));
+    const selected = lanes[this.reviewPrioritySelectedLaneIndex];
+    this.reviewPriorityOverlay.update({
+      open: this.reviewPriorityOverlayOpen,
       lanes,
       selectedIndex: this.reviewPrioritySelectedLaneIndex,
-      laneName: (laneId) => this.lanes.find((l) => l.id === laneId)?.displayName ?? laneId,
-      highCountFor: (laneId) => this.reviewPriorityStore.highCountFor(laneId),
-      report: selectedLaneId ? this.reviewPriorityStore.reportFor(selectedLaneId) ?? null : null,
-    };
-    renderReviewPriorityOverlay(this.reviewPriorityPanelEl, vm);
+      report: selected ? this.reviewPriorityStore.reportFor(selected.id) ?? null : null,
+      onAutoClose: (): void => {
+        this.reviewPriorityOverlayOpen = false;
+      },
+    });
   }
 
   /** Overlay key handling. Read-only: j/k switch lane, Esc/q close. */
@@ -5634,8 +5470,6 @@ export class AcpHarnessView implements ContentView {
     this.closeTriageOverlay(); // mutual-exclude: never stack full-screen overlays
     this.closeReviewMatrixOverlay();
     this.closeReviewPriorityOverlay();
-    this.helpOpen = false;
-    this.memoryDrawerOpen = false;
     this.orchestratorConsoleOpen = true;
     this.orchestratorDispatch = null;
     this.orchestratorSeatPrompt = null;
@@ -5661,7 +5495,7 @@ export class AcpHarnessView implements ContentView {
     this.orchestratorSeatPrompt = null;
     this.orchestratorLaneBusUnsub?.();
     this.orchestratorLaneBusUnsub = null;
-    this.orchestratorConsoleEl.hidden = true;
+    this.renderOrchestratorConsoleEl();
   }
 
   /** Modals that render as their own full-screen surface. While any is open, the
@@ -5689,14 +5523,10 @@ export class AcpHarnessView implements ContentView {
    *  `a/r` permission target all survive the round-trip. No-op unless open. */
   private syncOrchestratorConsoleVisibility(): void {
     if (!this.orchestratorConsoleOpen) return;
-    if (this.consoleObscuringModalOpen()) {
-      this.orchestratorConsoleEl.hidden = true;
-    } else if (this.orchestratorConsoleEl.hidden) {
-      // Restoring from a collapse — lanes/permissions may have moved while the
-      // modal was up, so repaint before showing (renderOrchestratorConsoleEl
-      // clears `hidden` itself once no modal obscures it).
-      this.renderOrchestratorConsoleEl();
-    }
+    // The component's `open` prop already folds in `consoleObscuringModalOpen()`,
+    // and a restore repaints from current state — lanes and permissions may have
+    // moved while the modal was up.
+    this.renderOrchestratorConsoleEl();
   }
 
   /** Console lane cards: every live lane (the orchestrator included, badged). */
@@ -5737,252 +5567,157 @@ export class AcpHarnessView implements ContentView {
   private refreshOrchestratorConsole(): void {
     if (this.orchestratorConsoleOpen) this.renderOrchestratorConsoleEl();
   }
-
   private renderOrchestratorConsoleEl(): void {
-    // Hidden when closed OR while a modal is collapsing the console over it — so
-    // a background laneBus re-render never un-hides a collapsed console.
-    this.orchestratorConsoleEl.hidden = !this.orchestratorConsoleOpen || this.consoleObscuringModalOpen();
-    if (!this.orchestratorConsoleOpen) return;
     const cards = this.orchestratorCards();
     if (!cards.some((l) => l.id === this.orchestratorSelectedLaneId)) {
       this.orchestratorSelectedLaneId = cards[0]?.id ?? null;
     }
     const seatId = this.orchestratorLaneId;
     const selected = this.orchestratorSelectedLane();
-
     const busy = cards.filter((l) => l.status === 'busy' || l.status === 'needs_permission').length;
     const awaiting = cards.filter((l) => l.status === 'awaiting_peer').length;
     const flags = this.triageStore.openCount();
     const permLanes = this.pendingPermissionLanes();
     const seatLane = this.orchestratorLane();
-    const summary =
-      `${cards.length} lane${cards.length === 1 ? '' : 's'} · ${busy} busy · ` +
-      `${awaiting} awaiting · ${flags} flag${flags === 1 ? '' : 's'}` +
-      (permLanes.length > 0 ? ` · ${permLanes.length} perm` : '');
+    this.orchestratorConsole.update({
+      // Hidden when closed OR while a modal is collapsing the console over it —
+      // so a background laneBus re-render never un-hides a collapsed console.
+      open: this.orchestratorConsoleOpen && !this.consoleObscuringModalOpen(),
+      seatName: seatLane?.displayName ?? null,
+      summary:
+        `${cards.length} lane${cards.length === 1 ? '' : 's'} · ${busy} busy · ` +
+        `${awaiting} awaiting · ${flags} flag${flags === 1 ? '' : 's'}` +
+        (permLanes.length > 0 ? ` · ${permLanes.length} perm` : ''),
+      cards: cards.map((l): OrchestratorSeatCard => this.orchestratorCardProps(l, seatId)),
+      permissions: this.orchestratorPermRows(permLanes),
+      permStepHint: permLanes.length > 1 ? ' · Tab next' : '',
+      feed: this.orchestratorFeedRows(seatLane),
+      feedEmpty: this.orchestratorFeedEmpty(seatLane),
+      dispatch: this.orchestratorDispatchLine(selected, seatId),
+      seatPrompt: this.orchestratorSeatPromptLine(seatLane),
+      keyLegend: this.orchestratorKeyLegend(),
+      onAutoClose: (): void => {
+        this.orchestratorConsoleOpen = false;
+      },
+    });
+  }
 
-    const cardHtml = cards
-      .map((l) => {
-        const isSeat = l.id === seatId;
-        const isSel = l.id === this.orchestratorSelectedLaneId;
-        const cls =
-          'acp-orchestrator__card' +
-          (isSel ? ' acp-orchestrator__card--selected' : '') +
-          (isSeat ? ' acp-orchestrator__card--seat' : '');
-        const triageOpen = this.triageStore.openItems().filter((i) => i.laneId === l.id).length;
-        const high = this.reviewPriorityStore.highCountFor(l.id);
-        const tags: string[] = [];
-        if (isSeat) tags.push(`<span class="acp-orchestrator__badge">◆ orchestrator</span>`);
-        const inbox = this.coordinator.inboxDepth(l.id);
-        if (inbox > 0) tags.push(`<span class="acp-orchestrator__tag">inbox ${inbox}</span>`);
-        if (triageOpen > 0) tags.push(`<span class="acp-orchestrator__tag acp-orchestrator__tag--attn">⚑ ${triageOpen}</span>`);
-        if (high > 0) tags.push(`<span class="acp-orchestrator__tag">diff ${high}</span>`);
-        if (l.pendingPermissions.length > 0) tags.push(`<span class="acp-orchestrator__tag acp-orchestrator__tag--perm">⚠ perm</span>`);
-        if (l.pendingQuestions.length > 0) tags.push(`<span class="acp-orchestrator__tag acp-orchestrator__tag--perm">? ask</span>`);
-        const model = l.modelName ? ` · ${esc(l.modelName)}` : '';
-        return (
-          `<div class="${cls}" data-orch-lane="${esc(l.id)}">` +
-          `<div class="acp-orchestrator__card-head">` +
-          `<span class="acp-orchestrator__card-name">${esc(l.displayName)}</span>` +
-          `<span class="acp-orchestrator__card-status acp-orchestrator__card-status--${esc(l.status)}">${esc(statusLabel(l.status))}</span>` +
-          `</div>` +
-          `<div class="acp-orchestrator__card-meta">${esc(backendLabel(l.backendId))}${model}</div>` +
-          (tags.length ? `<div class="acp-orchestrator__tags">${tags.join('')}</div>` : '') +
-          `</div>`
-        );
-      })
-      .join('');
+  private orchestratorCardProps(lane: HarnessLane, seatId: string | null): OrchestratorSeatCard {
+    const isSeat = lane.id === seatId;
+    const triageOpen = this.triageStore.openItems().filter((i) => i.laneId === lane.id).length;
+    const high = this.reviewPriorityStore.highCountFor(lane.id);
+    const inbox = this.coordinator.inboxDepth(lane.id);
+    const tags: OrchestratorTag[] = [];
+    if (isSeat) tags.push({ kind: 'badge', text: '◆ orchestrator' });
+    if (inbox > 0) tags.push({ kind: 'tag', text: `inbox ${inbox}` });
+    if (triageOpen > 0) tags.push({ kind: 'attn', text: `⚑ ${triageOpen}` });
+    if (high > 0) tags.push({ kind: 'tag', text: `diff ${high}` });
+    if (lane.pendingPermissions.length > 0) tags.push({ kind: 'perm', text: '⚠ perm' });
+    if (lane.pendingQuestions.length > 0) tags.push({ kind: 'perm', text: '? ask' });
+    return {
+      id: lane.id,
+      displayName: lane.displayName,
+      status: lane.status,
+      statusLabel: statusLabel(lane.status),
+      meta: `${backendLabel(lane.backendId)}${lane.modelName ? ` · ${lane.modelName}` : ''}`,
+      isSeat,
+      isSelected: lane.id === this.orchestratorSelectedLaneId,
+      tags,
+    };
+  }
 
-    // spec 184: the GLOBAL pending-permission region — a fleet-wide queue shown
-    // above the body whenever any lane is awaiting permission, so the operator
-    // confirms from a single place without selecting (and activating) each card.
-    const permQueueHtml = this.renderOrchestratorPermQueue(permLanes);
-
-    // Orchestration feed: recent inter-lane + flag rows from the seat's transcript.
-    const feedHtml = this.renderOrchestratorFeed(seatLane);
-
-    const dispatchHtml = this.renderOrchestratorDispatch(selected, seatId);
-    const seatPromptHtml = this.renderOrchestratorSeatPrompt(seatLane);
-
-    this.orchestratorPanelEl.innerHTML =
-      `<header class="acp-orchestrator__head">` +
-      `<span class="acp-orchestrator__title">Orchestrator console</span>` +
-      `<span class="acp-orchestrator__seat">${seatLane ? esc(seatLane.displayName) : 'no seat'}</span>` +
-      `<span class="acp-orchestrator__summary">${esc(summary)}</span>` +
-      `</header>` +
-      permQueueHtml +
-      `<div class="acp-orchestrator__body">` +
-      `<section class="acp-orchestrator__region" data-region="lanes">` +
-      `<h3 class="acp-orchestrator__region-title">Lanes</h3>` +
-      `<div class="acp-orchestrator__grid">${cardHtml || '<div class="acp-orchestrator__empty">no lanes</div>'}</div>` +
-      `</section>` +
-      `<section class="acp-orchestrator__region" data-region="feed">` +
-      `<h3 class="acp-orchestrator__region-title">Feed</h3>${feedHtml}` +
-      `</section>` +
-      `<section class="acp-orchestrator__region acp-orchestrator__region--reserved" data-region="reserved">` +
-      `<div class="acp-orchestrator__reserved-note">reserved — task list · delegation graph (future)</div>` +
-      `</section>` +
-      `</div>` +
-      dispatchHtml +
-      seatPromptHtml +
-      `<footer class="acp-orchestrator__keys">` +
-      esc(this.orchestratorKeyLegend(selected)) +
-      `</footer>`;
-
-    // The whole panel is re-rendered via innerHTML each keystroke, so an open
-    // dispatch/seat-prompt input resets its scroll to the top. Once a draft
-    // exceeds the input's max-height it scrolls internally — pin it to the
-    // bottom so the caret (appended after the draft) stays visible while typing.
-    if (this.orchestratorDispatch || this.orchestratorSeatPrompt) {
-      this.orchestratorPanelEl
-        .querySelectorAll<HTMLElement>(
-          '.acp-orchestrator__dispatch--active .acp-orchestrator__dispatch-input',
-        )
-        .forEach((input) => {
-          input.scrollTop = input.scrollHeight;
-        });
+  /** spec 184: the global pending-permission queue. One row per awaiting lane
+   *  (its head request), in grid order, so the operator answers from a single
+   *  fleet view without selecting (and activating) each lane. The FOCUSED row
+   *  (`a`/`r` target) is ringed; `Tab` steps the focus when more than one lane
+   *  is queued. A high-risk request (rm / force-push / network / script /
+   *  unparseable) carries its FULL, UNTRUNCATED command — never the 48-char
+   *  label, which could hide a destructive tail. */
+  private orchestratorPermRows(permLanes: HarnessLane[]): OrchestratorPermRow[] {
+    const focus = this.orchestratorPermFocusLane();
+    const rows: OrchestratorPermRow[] = [];
+    for (const lane of permLanes) {
+      const permission = lane.pendingPermissions[0];
+      if (!permission) continue;
+      const highRisk = this.isHighRiskPermission(permission);
+      rows.push({
+        laneId: lane.id,
+        laneName: lane.displayName,
+        label: compactPermissionLabel(permission),
+        more: lane.pendingPermissions.length - 1,
+        highRisk,
+        focus: focus !== null && lane.id === focus.id,
+        command: highRisk ? extractCommandLineRaw(permission.toolCall.rawInput) : '',
+      });
     }
+    return rows;
+  }
+
+  /** Orchestration feed: recent inter-lane + flag rows from the seat's transcript. */
+  private orchestratorFeedRows(seat: HarnessLane | null): OrchestratorFeedRow[] {
+    if (!seat) return [];
+    return seat.transcript
+      .filter((t) => t.kind === 'inter_lane' || t.kind === 'system')
+      .slice(-8)
+      .reverse()
+      .map((t): OrchestratorFeedRow => ({
+        who: t.interLane
+          ? `${t.interLane.direction === 'out' ? '→' : '←'} ${t.interLane.peerDisplayName}`
+          : 'system',
+        text: truncate(t.text.replace(/\s+/g, ' ').trim(), 96),
+      }));
+  }
+
+  private orchestratorFeedEmpty(seat: HarnessLane | null): string | null {
+    if (!seat) return 'designate a seat to see its feed';
+    return this.orchestratorFeedRows(seat).length === 0 ? 'no coordination activity yet' : null;
+  }
+
+  private orchestratorDispatchLine(
+    selected: HarnessLane | null,
+    seatId: string | null,
+  ): OrchestratorInputLine {
+    const target = selected ? selected.displayName : '—';
+    return {
+      label: `dispatch → ${target}`,
+      active: this.orchestratorDispatch !== null,
+      draft: this.orchestratorDispatch?.draft ?? '',
+      placeholder: 'type a task · Enter send · Esc cancel',
+      disabledReason: dispatchDisabledReason({
+        seatId,
+        targetId: selected?.id ?? null,
+        laneCount: this.orchestratorCards().length,
+      }),
+      hint: `press d to dispatch to ${target}`,
+      purposes: DISPATCH_PURPOSES,
+      activePurpose: this.orchestratorDispatch?.purpose,
+    };
   }
 
   /** spec 182: the seat-prompt line (a normal turn to the orchestrator seat),
    *  below dispatch. Mirrors the dispatch line: a hint when idle, an input while
    *  open. Disabled (with the reason) when there is no live seat. */
-  private renderOrchestratorSeatPrompt(seat: HarnessLane | null): string {
-    const reason = seatPromptDisabledReason(seat);
-    const target = seat ? esc(seat.displayName) : '—';
-    if (!this.orchestratorSeatPrompt) {
-      const hint = reason
-        ? `<span class="acp-orchestrator__dispatch-disabled">${esc(reason)}</span>`
-        : `<span class="acp-orchestrator__dispatch-hint">press i to prompt ${target}</span>`;
-      return (
-        `<section class="acp-orchestrator__dispatch" data-region="seat-prompt">` +
-        `<span class="acp-orchestrator__dispatch-label">prompt → ${target}</span>${hint}` +
-        `</section>`
-      );
-    }
-    return (
-      `<section class="acp-orchestrator__dispatch acp-orchestrator__dispatch--active" data-region="seat-prompt">` +
-      `<span class="acp-orchestrator__dispatch-label">prompt → ${target}</span>` +
-      `<span class="acp-orchestrator__dispatch-input">${orchestratorInputHtml(this.orchestratorSeatPrompt.draft, 'type a prompt · Enter send · Esc cancel')}</span>` +
-      `</section>`
-    );
+  private orchestratorSeatPromptLine(seat: HarnessLane | null): OrchestratorInputLine {
+    const target = seat ? seat.displayName : '—';
+    return {
+      label: `prompt → ${target}`,
+      active: this.orchestratorSeatPrompt !== null,
+      draft: this.orchestratorSeatPrompt?.draft ?? '',
+      placeholder: 'type a prompt · Enter send · Esc cancel',
+      disabledReason: seatPromptDisabledReason(seat),
+      hint: `press i to prompt ${target}`,
+    };
   }
 
-  /** Footer legend. While the selected card has a pending permission, a/r answer
-   *  it (r shadows restart, per spec 181); otherwise the standard action keys. */
-  private orchestratorKeyLegend(_selected: HarnessLane | null): string {
+  /** Footer legend. While any lane has a pending permission, a/r answer it
+   *  (r shadows restart, per spec 181); otherwise the standard action keys. */
+  private orchestratorKeyLegend(): string {
     if (this.pendingPermissionLanes().length > 0) {
       // spec 184: a/r answer the FOCUSED queue item (global, no lane switch); Tab
       // steps the focus; j/k still select cards beneath the queue.
       return 'a accept · r reject (A/R all) · Tab next perm · j/k select · c interrupt · x kill · Esc close';
     }
     return 'j/k select · Enter jump · d dispatch · i prompt seat · c interrupt · x kill · r restart · o set seat · Esc close';
-  }
-
-  private renderOrchestratorFeed(seat: HarnessLane | null): string {
-    if (!seat) return `<div class="acp-orchestrator__empty">designate a seat to see its feed</div>`;
-    const rows = seat.transcript
-      .filter((t) => t.kind === 'inter_lane' || t.kind === 'system')
-      .slice(-8)
-      .reverse()
-      .map((t) => {
-        const who = t.interLane
-          ? `${t.interLane.direction === 'out' ? '→' : '←'} ${esc(t.interLane.peerDisplayName)}`
-          : 'system';
-        return (
-          `<div class="acp-orchestrator__feed-row">` +
-          `<span class="acp-orchestrator__feed-who">${who}</span>` +
-          `<span class="acp-orchestrator__feed-text">${esc(truncate(t.text.replace(/\s+/g, ' ').trim(), 96))}</span>` +
-          `</div>`
-        );
-      })
-      .join('');
-    return rows
-      ? `<div class="acp-orchestrator__feed">${rows}</div>`
-      : `<div class="acp-orchestrator__empty">no coordination activity yet</div>`;
-  }
-
-  /** spec 184: the global pending-permission queue region. One row per awaiting
-   *  lane (its head request), in grid order, rendered above the body whenever any
-   *  lane is paused on a permission — so the operator answers from a single fleet
-   *  view without selecting (and activating) each lane. The FOCUSED row (`a`/`r`
-   *  target) is ringed; `Tab` steps the focus when more than one lane is queued.
-   *  A high-risk request (rm / force-push / network / script / unparseable) shows
-   *  its FULL, UNTRUNCATED command (`extractCommandLineRaw` — never the 48-char
-   *  label, which could hide a destructive tail) + a `⚠ high-risk` marker, so the
-   *  dangerous accept is reviewed in place. `(+N more)` flags a per-lane backlog. */
-  private renderOrchestratorPermQueue(permLanes: HarnessLane[]): string {
-    if (permLanes.length === 0) return '';
-    const focus = this.orchestratorPermFocusLane();
-    const rows = permLanes
-      .map((l) => {
-        const permission = l.pendingPermissions[0];
-        if (!permission) return '';
-        const isFocus = focus !== null && l.id === focus.id;
-        const more = l.pendingPermissions.length - 1;
-        const moreTag = more > 0 ? `<span class="acp-orchestrator__perm-more">(+${more} more)</span>` : '';
-        const highRisk = this.isHighRiskPermission(permission);
-        const fullCommand = highRisk ? extractCommandLineRaw(permission.toolCall.rawInput) : '';
-        const detail = fullCommand
-          ? `<span class="acp-orchestrator__perm-command">${esc(fullCommand)}</span>`
-          : '';
-        const hint = isFocus
-          ? highRisk
-            ? `<span class="acp-orchestrator__perm-hint acp-orchestrator__perm-hint--highrisk">⚠ high-risk · a accept · A all · r reject · R all</span>`
-            : `<span class="acp-orchestrator__perm-hint">a accept · A all · r reject · R all</span>`
-          : highRisk
-            ? `<span class="acp-orchestrator__perm-hint acp-orchestrator__perm-hint--highrisk">⚠ high-risk</span>`
-            : '';
-        const cls =
-          'acp-orchestrator__perm' +
-          (isFocus ? ' acp-orchestrator__perm--focus' : '') +
-          (highRisk ? ' acp-orchestrator__perm--highrisk' : '');
-        return (
-          `<div class="${cls}">` +
-          `<span class="acp-orchestrator__perm-lane">${esc(l.displayName)}</span>` +
-          `<span class="acp-orchestrator__perm-label">${esc(compactPermissionLabel(permission))}</span>${moreTag}` +
-          detail +
-          hint +
-          `</div>`
-        );
-      })
-      .join('');
-    const stepHint = permLanes.length > 1 ? ' · Tab next' : '';
-    return (
-      `<section class="acp-orchestrator__permq" data-region="permissions">` +
-      `<h3 class="acp-orchestrator__region-title">Pending permissions${esc(stepHint)}</h3>` +
-      rows +
-      `</section>`
-    );
-  }
-
-  private renderOrchestratorDispatch(selected: HarnessLane | null, seatId: string | null): string {
-    const disabledReason = dispatchDisabledReason({
-      seatId,
-      targetId: selected?.id ?? null,
-      laneCount: this.orchestratorCards().length,
-    });
-    const target = selected ? esc(selected.displayName) : '—';
-    if (!this.orchestratorDispatch) {
-      const hint = disabledReason
-        ? `<span class="acp-orchestrator__dispatch-disabled">${esc(disabledReason)}</span>`
-        : `<span class="acp-orchestrator__dispatch-hint">press d to dispatch to ${target}</span>`;
-      return (
-        `<section class="acp-orchestrator__dispatch" data-region="dispatch">` +
-        `<span class="acp-orchestrator__dispatch-label">dispatch → ${target}</span>${hint}` +
-        `</section>`
-      );
-    }
-    const purposes = DISPATCH_PURPOSES.map(
-      (p) =>
-        `<span class="acp-orchestrator__purpose${p === this.orchestratorDispatch?.purpose ? ' acp-orchestrator__purpose--active' : ''}">${esc(p)}</span>`,
-    ).join('');
-    return (
-      `<section class="acp-orchestrator__dispatch acp-orchestrator__dispatch--active" data-region="dispatch">` +
-      `<span class="acp-orchestrator__dispatch-label">dispatch → ${target}</span>` +
-      `<span class="acp-orchestrator__purposes" title="Tab cycles purpose">${purposes}</span>` +
-      `<span class="acp-orchestrator__dispatch-input">${orchestratorInputHtml(this.orchestratorDispatch.draft, 'type a task · Enter send · Esc cancel')}</span>` +
-      `</section>`
-    );
   }
 
   /** j/k card selection. The console overlay (`orchestratorConsoleEl`) is a
@@ -6374,16 +6109,12 @@ export class AcpHarnessView implements ContentView {
       }
     });
 
-    this.memoryOverlayEl = document.createElement('aside');
-    this.memoryOverlayEl.className = 'acp-harness__memory-overlay';
-    this.memoryOverlayEl.hidden = true;
-    const memoryHead = document.createElement('header');
-    memoryHead.className = 'acp-harness__memory-head';
-    memoryHead.textContent = 'Memory';
-    this.memoryOverlayEl.appendChild(memoryHead);
-    this.memoryPanelEl = document.createElement('section');
-    this.memoryPanelEl.className = 'acp-harness__memory-panel';
-    this.memoryPanelEl.addEventListener('click', (event: MouseEvent) => {
+    // Spec 301 §7: every summon-on-demand surface is a component whose root IS
+    // an `OverlayShell`. The shell owns the `hidden` toggle and the single-open
+    // registry, so the `helpOpen = false; memoryDrawerOpen = false;` pair that
+    // eight openers each remembered by hand is now one `onAutoClose` callback.
+    this.memoryDrawer = new MemoryDrawer();
+    this.memoryDrawer.el.addEventListener('click', (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
       const row = target.closest<HTMLElement>('[data-memory-id]');
@@ -6393,13 +6124,10 @@ export class AcpHarnessView implements ContentView {
       this.memoryCursorRowId = id;
       this.renderMemory();
     });
-    this.memoryOverlayEl.appendChild(this.memoryPanelEl);
-    body.appendChild(this.memoryOverlayEl);
+    body.appendChild(this.memoryDrawer.el);
 
-    this.helpOverlayEl = document.createElement('aside');
-    this.helpOverlayEl.className = 'acp-harness__help-overlay';
-    this.helpOverlayEl.hidden = true;
-    body.appendChild(this.helpOverlayEl);
+    this.helpOverlay = new HelpOverlay();
+    body.appendChild(this.helpOverlay.el);
 
     this.imageViewer = new HarnessImageViewer({
       laneImages: () => this.activeLane()?.transcript.flatMap((item) => item.images ?? []) ?? [],
@@ -6410,115 +6138,76 @@ export class AcpHarnessView implements ContentView {
         const entry = this.findSvgFence(itemId, index);
         if (entry && !entry.showSource) this.toggleSvgFence(this.activeLane(), entry);
       },
-      onClose: () => this.renderComposer(),
+      onClose: () => this.invalidate('composer'),
     });
     body.appendChild(this.imageViewer.el);
 
-    this.metricsOverlayEl = document.createElement('aside');
-    this.metricsOverlayEl.className = 'acp-harness__metrics-overlay';
-    this.metricsOverlayEl.hidden = true;
-    body.appendChild(this.metricsOverlayEl);
+    this.metricsOverlay = new MetricsOverlay();
+    body.appendChild(this.metricsOverlay.el);
 
     // spec 128: attention-triage overlay (summon-on-demand judgement queue).
-    this.triageOverlayEl = document.createElement('aside');
-    this.triageOverlayEl.className = 'acp-harness__triage-overlay';
-    this.triageOverlayEl.hidden = true;
-    this.triagePanelEl = document.createElement('div');
-    this.triagePanelEl.className = 'acp-triage__panel';
-    this.triageOverlayEl.appendChild(this.triagePanelEl);
-    body.appendChild(this.triageOverlayEl);
+    this.triageOverlay = new TriageOverlay();
+    body.appendChild(this.triageOverlay.el);
 
     // spec 146: review-quality-matrix overlay (summon-on-demand, read-only).
-    this.reviewMatrixOverlayEl = document.createElement('aside');
-    this.reviewMatrixOverlayEl.className = 'acp-harness__review-overlay';
-    this.reviewMatrixOverlayEl.hidden = true;
-    this.reviewMatrixPanelEl = document.createElement('div');
-    this.reviewMatrixPanelEl.className = 'acp-review__panel';
-    this.reviewMatrixOverlayEl.appendChild(this.reviewMatrixPanelEl);
-    body.appendChild(this.reviewMatrixOverlayEl);
+    this.reviewMatrixOverlay = new ReviewMatrixOverlay();
+    body.appendChild(this.reviewMatrixOverlay.el);
 
     // spec 162: review-priority roll-up overlay (summon-on-demand, read-only).
-    this.reviewPriorityOverlayEl = document.createElement('aside');
-    this.reviewPriorityOverlayEl.className = 'acp-harness__priority-overlay';
-    this.reviewPriorityOverlayEl.hidden = true;
-    this.reviewPriorityPanelEl = document.createElement('div');
-    this.reviewPriorityPanelEl.className = 'acp-priority__panel';
-    this.reviewPriorityOverlayEl.appendChild(this.reviewPriorityPanelEl);
-    body.appendChild(this.reviewPriorityOverlayEl);
+    this.reviewPriorityOverlay = new ReviewPriorityOverlay();
+    body.appendChild(this.reviewPriorityOverlay.el);
 
     // spec 194: `#ticket` picker — its own modal dialog, not a composer popup.
     this.ticketCtl.mountOverlay(body);
 
     // spec 180: orchestrator console (in-app, acting; opened with #orchestrator).
-    this.orchestratorConsoleEl = document.createElement('aside');
-    this.orchestratorConsoleEl.className = 'acp-harness__orchestrator';
-    this.orchestratorConsoleEl.hidden = true;
-    this.orchestratorPanelEl = document.createElement('div');
-    this.orchestratorPanelEl.className = 'acp-orchestrator__panel';
-    this.orchestratorConsoleEl.appendChild(this.orchestratorPanelEl);
-    body.appendChild(this.orchestratorConsoleEl);
+    this.orchestratorConsole = new OrchestratorConsole();
+    body.appendChild(this.orchestratorConsole.el);
 
-    this.planEl = document.createElement('aside');
-    this.planEl.className = 'acp-harness__plan';
-    this.planEl.hidden = true;
-
+    // Spec 301 §Layout — the right rail is a `LayoutHost` over named slot
+    // containers. The four `*SlotEl` fields each renderer used to address by
+    // name are gone: a panel's position is one line in `HARNESS_LAYOUT_DEFAULT`.
+    //
+    // The containers are `display: contents`, so the panels stay DIRECT flex
+    // children of `.acp-harness__lane-rail` and every per-slot sizing rule
+    // (`[data-slot="thought"]` 70%, `[data-slot="queue"]` clamp +
+    // `margin-top: auto`) keeps applying to exactly the box it was written for.
     this.laneRailEl = document.createElement('div');
     this.laneRailEl.className = 'acp-harness__lane-rail';
-    this.planSlotEl = document.createElement('div');
-    this.planSlotEl.className = 'acp-harness__lane-rail__slot';
-    this.planSlotEl.dataset.slot = 'plan';
-    this.planSlotEl.hidden = true;
-    this.planSlotEl.appendChild(this.planEl);
-    this.laneRailEl.appendChild(this.planSlotEl);
-    this.peekSlotEl = document.createElement('div');
-    this.peekSlotEl.className = 'acp-harness__lane-rail__slot';
-    this.peekSlotEl.dataset.slot = 'peek';
-    this.peekSlotEl.hidden = true;
-    this.laneRailEl.appendChild(this.peekSlotEl);
-    // spec 216: thought is its own rail slot so peek/pins stay 320px.
-    this.thoughtSlotEl = document.createElement('div');
-    this.thoughtSlotEl.className = 'acp-harness__lane-rail__slot';
-    this.thoughtSlotEl.dataset.slot = 'thought';
-    this.thoughtSlotEl.hidden = true;
-    this.laneRailEl.appendChild(this.thoughtSlotEl);
-    // spec 136: bottom-anchored slot for the ACTIVE lane's prompt queue. Shown
-    // independently of the peek; CSS `margin-top: auto` pins it to the rail bottom.
-    this.queueSlotEl = document.createElement('div');
-    this.queueSlotEl.className = 'acp-harness__lane-rail__slot';
-    this.queueSlotEl.dataset.slot = 'queue';
-    this.queueSlotEl.hidden = true;
-    this.laneRailEl.appendChild(this.queueSlotEl);
+    const railTop = layoutSlotContainer('rail.top');
+    const railBottom = layoutSlotContainer('rail.bottom');
+    this.laneRailEl.append(railTop, railBottom);
+    this.railLayout = new LayoutHost<HarnessSlot>(
+      {
+        // Owned by `LaneShell`, which builds its own head and stats; declared
+        // so the slot union is total and a panel may be moved there later.
+        'lane.head': layoutSlotContainer('lane.head'),
+        'lane.understats': layoutSlotContainer('lane.understats'),
+        'rail.top': railTop,
+        'rail.bottom': railBottom,
+        'dock.right': this.ticketCtl.dockSlotEl,
+        // The composer places its own strips in paint order (spec 302 §6.1).
+        'composer.above': layoutSlotContainer('composer.above'),
+        'composer.below': layoutSlotContainer('composer.below'),
+      },
+      HARNESS_LAYOUT_DEFAULT,
+    );
+    this.railLayout.mount('plan', this.planSlot);
+    this.railLayout.mount('queue', this.queueSlot);
+    this.railLayout.mount('ticket', this.ticketCtl.ticketDock);
 
-    this.pickerEl = document.createElement('aside');
-    this.pickerEl.className = 'acp-harness__picker';
-    this.pickerEl.hidden = true;
-    body.appendChild(this.pickerEl);
+    this.lanePicker = new LanePicker();
+    body.appendChild(this.lanePicker.el);
 
-    this.sessionPickerEl = document.createElement('aside');
-    this.sessionPickerEl.className = 'acp-harness__session-picker';
-    this.sessionPickerEl.hidden = true;
-    body.appendChild(this.sessionPickerEl);
+    this.sessionPickerCmp = new SessionPicker();
+    body.appendChild(this.sessionPickerCmp.el);
 
-    this.directivePickerEl = document.createElement('aside');
-    this.directivePickerEl.className = 'acp-harness__directive-picker';
-    this.directivePickerEl.hidden = true;
-    this.directivePickerEl.addEventListener('click', (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const row = target.closest<HTMLElement>('[data-directive-index]');
-      if (!row) return;
-      const idx = Number(row.dataset.directiveIndex);
-      if (!Number.isInteger(idx)) return;
-      this.directivePickerCursor = idx;
-      this.handleDirectivePickerKey(new KeyboardEvent('keydown', { key: 'Enter' }));
-    });
-    body.appendChild(this.directivePickerEl);
+    this.directivePicker = new DirectivePicker();
+    body.appendChild(this.directivePicker.el);
 
     // spec 127: model picker (keyboard-only — j/k/↵/esc, no mouse handlers).
-    this.modelPickerEl = document.createElement('aside');
-    this.modelPickerEl.className = 'acp-harness__model-picker';
-    this.modelPickerEl.hidden = true;
-    body.appendChild(this.modelPickerEl);
+    this.modelPicker = new ModelPicker();
+    body.appendChild(this.modelPicker.el);
 
     this.element.appendChild(body);
 
@@ -6544,33 +6233,12 @@ export class AcpHarnessView implements ContentView {
     this.annotationOverlayEl.append(annoLabel, this.annotationQuoteEl, this.annotationInputEl, annoHint);
     commandCenter.appendChild(this.annotationOverlayEl);
 
-    this.composerEl = document.createElement('div');
-    this.composerEl.className = 'acp-harness__composer';
-    this.composerEl.addEventListener('click', (e: MouseEvent) => {
-      const target = e.target;
-      if (!(target instanceof HTMLElement)) return;
-      if (target.closest('[data-dictation-toggle]')) {
-        e.preventDefault();
-        const lane = this.activeLane();
-        if (!lane) return;
-        if (this.dictationCtl.session) this.dictationCtl.stop();
-        else this.dictationCtl.start(lane, DICTATION_LANG_ENGLISH);
-        return;
-      }
-      if (target.closest('[data-open-directive-picker]')) {
-        e.preventDefault();
-        void this.openDirectivePicker();
-        return;
-      }
-      const button = target.closest<HTMLButtonElement>('[data-remove-staged-image]');
-      if (!button) return;
-      const lane = this.activeLane();
-      if (!lane) return;
-      const index = Number(button.dataset.removeStagedImage);
-      if (!Number.isInteger(index)) return;
-      e.preventDefault();
-      this.removeStagedImage(lane, index);
-    });
+    // Spec 301 §6: the composer root is a component. Its three click targets —
+    // the dictation toggle, the directive chip and a staged image's remove
+    // button — are each a prop on the part that emits them, so the delegated
+    // listener this node used to carry is gone with the markup it matched.
+    this.composer = new Composer();
+    this.composerEl = this.composer.el;
     commandCenter.appendChild(this.composerEl);
     this.element.appendChild(commandCenter);
 
@@ -7496,7 +7164,7 @@ export class AcpHarnessView implements ContentView {
       const changed = this.gitBranch !== null || this.gitBranchLoading;
       this.gitBranch = null;
       this.gitBranchLoading = false;
-      if (changed) this.renderComposer();
+      if (changed) this.flushRegion('composer');
       return;
     }
 
@@ -7504,7 +7172,7 @@ export class AcpHarnessView implements ContentView {
     // flash the composer empty / `...` while git runs.
     if (this.gitBranch === null) {
       this.gitBranchLoading = true;
-      this.renderComposer();
+      this.flushRegion('composer');
     }
 
     let branch: string | null = null;
@@ -7524,7 +7192,7 @@ export class AcpHarnessView implements ContentView {
     const changed = this.gitBranch !== branch || this.gitBranchLoading;
     this.gitBranch = branch;
     this.gitBranchLoading = false;
-    if (changed) this.renderComposer();
+    if (changed) this.flushRegion('composer');
   }
 
   private async runWorkspaceCommand(
@@ -7629,24 +7297,27 @@ export class AcpHarnessView implements ContentView {
     if (manual) this.flashChip('reference status refreshed');
   }
 
-  /** Repaint only the REFERENCES rail of rows whose Git metadata changed, and
-   *  restamp their signature. Git state lives on the rail alone; leaving the
-   *  signature stale made the next transcript pass remount the whole sealed
-   *  reply (tables, svg cards, images) shortly after every turn end. Rows of
-   *  inactive lanes are not in the DOM and render fresh on lane switch. */
+  /**
+   * Spec 301: late Git state patches only the rows whose metadata changed, and
+   * only their own sub-DOM — the owning row component updates, its REFERENCES
+   * rail repaints, and nothing else is touched. The old path appended a rail
+   * by hand and restamped `data-render-signature`; leaving that signature
+   * stale made the next transcript pass remount the whole sealed reply.
+   * Rows of inactive lanes are not mounted and render fresh on lane switch.
+   */
   private patchReferenceRails(items: ReadonlySet<HarnessTranscriptItem>): void {
     const lane = this.activeLane();
-    const body = this.activeTranscriptBody();
-    if (!lane || !body || items.size === 0) return;
+    if (!lane || !this.transcript || items.size === 0) return;
     for (const item of items) {
       if (item.id === lane.currentAssistantId) continue;
-      const wrapper = body.querySelector<HTMLElement>(
-        `.acp-harness__msg[data-msg-id="${CSS.escape(item.id)}"]`,
-      );
-      const msgBody = wrapper?.querySelector<HTMLElement>(':scope > .acp-harness__msg-body');
-      if (!wrapper || !msgBody) continue;
-      appendMessageResourceRail(msgBody, item, this.projectDir, lane);
-      wrapper.dataset.renderSignature = transcriptRenderSignature(item, false, lane);
+      this.transcript.rowFor(item.id)?.update({
+        item,
+        isNew: false,
+        streaming: false,
+        lane,
+        projectDir: this.projectDir,
+        resolveLocalImages: !this.remoteRuntimeId,
+      });
     }
   }
 
@@ -7702,7 +7373,7 @@ export class AcpHarnessView implements ContentView {
         harnessId: this.harnessMemoryId,
       });
       this.renderMemory();
-      this.renderComposer();
+      this.flushRegion('composer');
     } catch (e) {
       this.flashChip(`memory unavailable: ${String(e)}`);
     }
@@ -8213,7 +7884,7 @@ export class AcpHarnessView implements ContentView {
       case 'available_commands':
         lane.availableCommands = event.commands;
         if (lane.slashPaletteIndex >= event.commands.length) lane.slashPaletteIndex = 0;
-        this.renderComposer();
+        this.flushRegion('composer');
         needsRender = false;
         break;
       case 'mode_update': {
@@ -9900,8 +9571,6 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     this.pickerOpen = false;
-    this.helpOpen = false;
-    this.memoryDrawerOpen = false;
     this.directivePickerOpen = true;
     // Start the cursor on the lane's current directive when present.
     const ordered = this.pickerDirectives();
@@ -9939,7 +9608,7 @@ export class AcpHarnessView implements ContentView {
       'system',
       directiveId ? `directive set: ${directiveId}` : 'directive cleared',
     );
-    this.renderComposer();
+    this.flushRegion('composer');
   }
 
   private handleDirectivePickerKey(e: KeyboardEvent): void {
@@ -9961,12 +9630,12 @@ export class AcpHarnessView implements ContentView {
     }
     if (total === 0) return;
     if (e.key === 'ArrowDown' || e.key === 'j') {
-      this.directivePickerCursor = (this.directivePickerCursor + 1) % total;
+      this.directivePickerCursor = nextCursor(this.directivePickerCursor, total);
       this.renderDirectivePicker();
       return;
     }
     if (e.key === 'ArrowUp' || e.key === 'k') {
-      this.directivePickerCursor = (this.directivePickerCursor - 1 + total) % total;
+      this.directivePickerCursor = prevCursor(this.directivePickerCursor, total);
       this.renderDirectivePicker();
       return;
     }
@@ -10013,8 +9682,6 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     this.pickerOpen = false;
-    this.helpOpen = false;
-    this.memoryDrawerOpen = false;
     this.directivePickerOpen = false;
     this.modelPickerOpen = true;
     this.modelPickerLaneId = lane.id;
@@ -10050,12 +9717,12 @@ export class AcpHarnessView implements ContentView {
     }
     if (total === 0) return;
     if (e.key === 'ArrowDown' || e.key === 'j') {
-      this.modelPickerCursor = (this.modelPickerCursor + 1) % total;
+      this.modelPickerCursor = nextCursor(this.modelPickerCursor, total);
       this.renderModelPicker();
       return;
     }
     if (e.key === 'ArrowUp' || e.key === 'k') {
-      this.modelPickerCursor = (this.modelPickerCursor - 1 + total) % total;
+      this.modelPickerCursor = prevCursor(this.modelPickerCursor, total);
       this.renderModelPicker();
       return;
     }
@@ -10150,8 +9817,6 @@ export class AcpHarnessView implements ContentView {
     this.pickerOpen = true;
     this.pickerCursor = 0;
     this.pendingSpawnDirectiveId = forDirectiveId ?? null;
-    this.helpOpen = false;
-    this.memoryDrawerOpen = false;
     this.render();
   }
 
@@ -10172,12 +9837,12 @@ export class AcpHarnessView implements ContentView {
     }
     if (total === 0) return;
     if (e.key === 'ArrowDown' || e.key === 'j') {
-      this.pickerCursor = (this.pickerCursor + 1) % total;
+      this.pickerCursor = nextCursor(this.pickerCursor, total);
       this.renderPicker();
       return;
     }
     if (e.key === 'ArrowUp' || e.key === 'k') {
-      this.pickerCursor = (this.pickerCursor - 1 + total) % total;
+      this.pickerCursor = prevCursor(this.pickerCursor, total);
       this.renderPicker();
       return;
     }
@@ -10196,8 +9861,6 @@ export class AcpHarnessView implements ContentView {
 
   private async openSessionPicker(): Promise<void> {
     this.closeLanePicker();
-    this.helpOpen = false;
-    this.memoryDrawerOpen = false;
     if (this.pickerEntries.length === 0) {
       try {
         this.pickerEntries = harnessBackends(await AcpClient.listBackends(), { remote: this.remoteRuntimeId !== null });
@@ -10293,12 +9956,12 @@ export class AcpHarnessView implements ContentView {
     const total = state.sessions.length;
     if (total === 0) return;
     if (e.key === 'ArrowDown' || e.key === 'j') {
-      state.sessionCursor = (state.sessionCursor + 1) % total;
+      state.sessionCursor = nextCursor(state.sessionCursor, total);
       this.renderSessionPicker();
       return;
     }
     if (e.key === 'ArrowUp' || e.key === 'k') {
-      state.sessionCursor = (state.sessionCursor - 1 + total) % total;
+      state.sessionCursor = prevCursor(state.sessionCursor, total);
       this.renderSessionPicker();
       return;
     }
@@ -10311,12 +9974,12 @@ export class AcpHarnessView implements ContentView {
     const total = this.pickerEntries.length;
     if (total === 0) return;
     if (e.key === 'ArrowDown' || e.key === 'j') {
-      this.sessionPicker.backendCursor = (this.sessionPicker.backendCursor + 1) % total;
+      this.sessionPicker.backendCursor = nextCursor(this.sessionPicker.backendCursor, total);
       this.renderSessionPicker();
       return;
     }
     if (e.key === 'ArrowUp' || e.key === 'k') {
-      this.sessionPicker.backendCursor = (this.sessionPicker.backendCursor - 1 + total) % total;
+      this.sessionPicker.backendCursor = prevCursor(this.sessionPicker.backendCursor, total);
       this.renderSessionPicker();
       return;
     }
@@ -11819,47 +11482,98 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  /**
+   * Spec 301: mark a surface dirty. Coalesced into one frame and committed in
+   * `HARNESS_REGION_ORDER`. This is the only repaint vocabulary controllers
+   * and event handlers get — `render()` below is the "everything moved" case.
+   */
+  invalidate(region: HarnessRegion): void {
+    this.scheduler.invalidate(region);
+  }
+
+  /** Commit one region now, leaving the rest pending (keystroke path). */
+  private flushRegion(region: HarnessRegion): void {
+    this.scheduler.flushSync(region);
+  }
+
+  /** Everything moved: lane roster, chrome, transcript, rail, composer, overlays. */
   private render(): void {
-    this.renderRaf = false;
+    this.scheduler.invalidateAll();
+  }
+
+  private commitRegion(region: HarnessRegion): void {
+    switch (region) {
+      case 'rail':
+        this.syncRootClasses();
+        this.applyActiveLaneAccent();
+        this.renderDashboard();
+        // spec 218: the window's own status bar mirrors this harness's lane
+        // roster. Deduped on a serialized key, so this is a string compare.
+        this.notifyLaneMarksChanged();
+        this.scheduleStickyScroll();
+        return;
+      case 'laneChrome': {
+        const lane = this.activeLane();
+        if (!lane) return;
+        this.syncRootClasses();
+        this.renderActiveLaneChrome(lane);
+        return;
+      }
+      case 'transcript': {
+        const lane = this.activeLane();
+        if (!lane) return;
+        this.renderActiveTranscript(lane);
+        this.patchPeekThoughtIfLane(lane);
+        this.flushPendingToolHud(lane);
+        if (this.isLaneLive(lane)) this.applyStickyScroll();
+        else this.scheduleStickyScroll();
+        return;
+      }
+      case 'rightRail':
+        this.renderLanePeek();
+        this.renderLaneThought();
+        this.renderPlanPanel(this.activeLane());
+        this.renderActiveLaneQueue();
+        this.ticketCtl.renderTicketDock();
+        return;
+      case 'composer':
+        this.renderComposer();
+        return;
+      case 'overlay':
+        this.renderMemory();
+        this.renderHelp();
+        this.renderPicker();
+        this.renderDirectivePicker();
+        this.renderModelPicker();
+        this.renderSessionPicker();
+        this.renderTriageGaugeEl();
+        this.renderTriageOverlayEl();
+        // Collapse/restore the orchestrator console around whichever modal just
+        // opened or closed (lane/session/directive/model picker, help, memory).
+        this.syncOrchestratorConsoleVisibility();
+        return;
+    }
+  }
+
+  private syncRootClasses(): void {
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
     this.element.classList.toggle('acp-harness--zen', this.zenMode);
     this.element.classList.toggle('acp-harness--concise', this.conciseMode);
     this.element.classList.toggle('acp-harness--panels-hidden', this.panelsHidden);
     this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
-    this.applyActiveLaneAccent();
-    this.renderDashboard();
-    this.ticketCtl.renderTicketDock();
-    this.renderMemory();
-    this.renderHelp();
-    this.renderPlanPanel(this.activeLane());
-    this.renderPicker();
-    this.renderDirectivePicker();
-    this.renderModelPicker();
-    this.renderSessionPicker();
-    this.renderTriageGaugeEl();
-    this.renderTriageOverlayEl();
-    // spec 218: the window's own status bar mirrors this harness's lane roster.
-    // Deduped on a serialized key, so the per-frame call is a string compare.
-    this.notifyLaneMarksChanged();
-    this.renderActiveLaneQueue();
-    this.renderComposer();
-    // Collapse/restore the orchestrator console around whichever modal render()
-    // just opened or closed (lane/session/directive/model picker, help, memory).
-    this.syncOrchestratorConsoleVisibility();
-    this.scheduleStickyScroll();
   }
 
+  /** A lane's own state moved: chrome, transcript, rail and composer, but not
+   *  the lane roster or any overlay. A background lane only refreshes metrics. */
   private scheduleLaneRender(lane: HarnessLane): void {
     if (lane.id !== this.activeLaneId) {
       this.refreshMetricsRender();
       return;
     }
-    if (this.renderRaf) return;
-    this.renderRaf = true;
-    requestAnimationFrame(() => {
-      this.renderRaf = false;
-      this.renderActiveLane(lane);
-    });
+    this.invalidate('laneChrome');
+    this.invalidate('transcript');
+    this.invalidate('rightRail');
+    this.invalidate('composer');
   }
 
   private isLaneStreaming(lane: HarnessLane): boolean {
@@ -11881,6 +11595,10 @@ export class AcpHarnessView implements ContentView {
   // Spec 114 rev 4/5: text chunks and tool deltas update the transcript
   // body (+ one sticky scroll write). Lane chrome, composer, peek card,
   // and plan are not rebuilt. Tool events also patch the peek tool row.
+  //
+  // Spec 301: that is exactly the 'transcript' region — the sticky-scroll
+  // write and the peek tool-row patch moved into `commitRegion('transcript')`,
+  // so a background lane is the only case left here.
   private scheduleStreamingBodyOnly(lane: HarnessLane): void {
     if (lane.id !== this.activeLaneId) {
       this.refreshMetricsRender();
@@ -11888,28 +11606,7 @@ export class AcpHarnessView implements ContentView {
       this.flushPendingToolHud(lane);
       return;
     }
-    if (this.renderRaf) {
-      this.pendingToolHud = false;
-      return;
-    }
-    if (this.streamingBodyRaf) return;
-    this.streamingBodyRaf = true;
-    requestAnimationFrame(() => {
-      this.streamingBodyRaf = false;
-      if (lane.id !== this.activeLaneId) return;
-      if (this.renderRaf) {
-        this.pendingToolHud = false;
-        return;
-      }
-      this.renderActiveTranscript(lane);
-      this.patchPeekThoughtIfLane(lane);
-      this.flushPendingToolHud(lane);
-      if (this.isLaneLive(lane)) {
-        this.applyStickyScroll();
-      } else {
-        this.scheduleStickyScroll();
-      }
-    });
+    this.invalidate('transcript');
   }
 
   /** spec 114: tool rows live on the body-only RAF. Chrome (composer, lane
@@ -11929,49 +11626,17 @@ export class AcpHarnessView implements ContentView {
   /** Patch the already-visible peek tool row for this lane. Do not remount the
    *  peek card or heat ring — those rebuilds flash the rail on every tool. */
   private syncPeekToolRow(lane: HarnessLane): void {
-    if (this.panelsHidden || !this.peekSlotEl || this.peekSlotEl.hidden) return;
-    const card = this.peekSlotEl.querySelector<HTMLElement>('.acp-harness__lane-peek');
-    if (!card || card.dataset.laneId !== lane.id) return;
-    const snapshots = this.lanePeekSnapshots();
-    const snapshot = snapshots.find((row) => row.laneId === lane.id);
-    if (!snapshot) return;
-    const candidate = this.bestLanePeekCandidate({ snapshots });
-    patchPeekActiveTool(
-      card,
-      snapshot,
-      candidate?.laneId === lane.id ? candidate : null,
-    );
+    if (this.panelsHidden || this.peekLaneId !== lane.id) return;
+    this.renderLanePeek();
   }
 
   private patchPeekThoughtIfLane(lane: HarnessLane): void {
     if (this.panelsHidden) return;
-    const slot = this.thoughtSlotEl;
-    const card = slot?.querySelector<HTMLElement>('.acp-harness__lane-thought');
-    const showing = card?.dataset.laneId ?? null;
+    const showing = this.thoughtLaneId;
     const target = this.resolveThoughtTarget();
     if (showing === lane.id || target?.laneId === lane.id || (!target && showing)) {
       this.renderLaneThought();
     }
-  }
-
-  private renderActiveLane(lane: HarnessLane): void {
-    if (lane.id !== this.activeLaneId) {
-      this.render();
-      return;
-    }
-    this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
-    this.element.classList.toggle('acp-harness--zen', this.zenMode);
-    this.element.classList.toggle('acp-harness--concise', this.conciseMode);
-    this.element.classList.toggle('acp-harness--panels-hidden', this.panelsHidden);
-    this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
-    this.renderActiveLaneChrome(lane);
-    this.renderActiveTranscript(lane);
-    this.renderLanePeek();
-    this.renderLaneThought();
-    this.renderPlanPanel(lane);
-    this.renderActiveLaneQueue();
-    this.renderComposer();
-    this.scheduleStickyScroll();
   }
 
   /** spec 136: render the ACTIVE lane's prompt queue into the bottom rail slot.
@@ -11981,93 +11646,41 @@ export class AcpHarnessView implements ContentView {
    *  marker (dimmed when the queue is held/paused), per-item →lane / img×N tags. */
   private renderActiveLaneQueue(): void {
     if (this.panelsHidden) return;
-    const slot = this.queueSlotEl;
     const lane = this.activeLane();
     if (!lane || lane.queuedPrompts.length === 0) {
-      slot.replaceChildren();
-      slot.hidden = true;
+      this.queueSlot.hidden = true;
       return;
     }
-    const held = lane.status === 'awaiting_peer';
-    const paused = lane.status === 'error';
-    const stateSuffix = held ? ' · held behind lane mail' : paused ? ' · paused' : '';
-    const rows = lane.queuedPrompts
-      .map((q, i) => {
-        const isNext = i === 0 && !held && !paused;
-        const marker = isNext ? '▸1' : String(i + 1);
-        const tags: string[] = [];
-        if (q.mentionTargets.length > 0) {
-          const extra = q.mentionTargets.length - 1;
-          tags.push(
-            `<span class="acp-harness__lane-queue-tag">→${esc(q.mentionTargets[0])}${extra > 0 ? ` +${extra}` : ''}</span>`,
-          );
-        }
-        if (q.images.length > 0) {
-          tags.push(`<span class="acp-harness__lane-queue-tag">img×${q.images.length}</span>`);
-        }
-        return (
-          `<li class="acp-harness__lane-queue-row${isNext ? ' acp-harness__lane-queue-row--next' : ''}">` +
-          `<span class="acp-harness__lane-queue-n">${esc(marker)}</span>` +
-          `<span class="acp-harness__lane-queue-body">${esc(q.text)}</span>` +
-          tags.join('') +
-          `</li>`
-        );
-      })
-      .join('');
-    const el = document.createElement('div');
-    el.className = `acp-harness__lane-queue${held || paused ? ' acp-harness__lane-queue--held' : ''}`;
-    el.style.setProperty('--acp-lane-accent', lane.accent);
-    el.innerHTML =
-      `<div class="acp-harness__lane-queue-head">⏎ queue (${lane.queuedPrompts.length})${stateSuffix}</div>` +
-      `<ol class="acp-harness__lane-queue-list">${rows}</ol>` +
-      `<div class="acp-harness__lane-queue-hint">#unqueue · #queue clear</div>`;
-    slot.replaceChildren(el);
-    slot.hidden = false;
+    this.queueCard.update({
+      queue: lane.queuedPrompts,
+      status: lane.status,
+      accent: lane.accent,
+    });
+    this.queueSlot.hidden = false;
   }
 
+  /**
+   * Spec 301: chrome is a `LaneShell.update()` — the head and stats are child
+   * components with their own dependency tuples, so a 2 s metrics tick whose
+   * displayed numbers did not move writes nothing at all. The old path rewrote
+   * `head.innerHTML` on every call.
+   */
   private renderActiveLaneChrome(lane: HarnessLane): void {
-    const laneEl = this.dashboardEl.querySelector<HTMLElement>(`[data-lane-id="${CSS.escape(lane.id)}"]`);
-    if (!laneEl) {
-      this.render();
+    const host = this.zenBodyCellEl ?? this.dashboardEl;
+    const active = lane.id === this.activeLaneId;
+    const shell = listComponent(host, laneShellKey(lane.id, active)) as LaneShell | undefined;
+    if (!shell) {
+      this.invalidate('rail');
       return;
     }
-    const active = lane.id === this.activeLaneId;
-    laneEl.className = `acp-harness__lane ${active ? 'acp-harness__lane--active' : 'acp-harness__lane--collapsed'} acp-harness__lane--${lane.status}`;
-    laneEl.style.setProperty('--acp-lane-accent', lane.accent);
-    const head = laneEl.querySelector<HTMLElement>('.acp-harness__lane-head');
-    if (head) {
-      const laneSession = lane.client?.sessionId ?? null;
-      const laneMetrics = laneSession !== null ? this.metricsBySession.get(laneSession) ?? null : null;
-      head.innerHTML = renderLaneHead(
-        lane,
-        active,
-        this.mcpStatsByLane.get(lane.displayName) ?? null,
-        laneMetrics,
-        this.coordinator.inboxDepth(lane.id),
-        this.coordinator.pendingPeersFor(lane.id),
-        lane.id === this.orchestratorLaneId,
-      );
-      if (active && !this.remoteRuntimeId && this.projectDir && lane.sessionId) {
-        const reviewButton = document.createElement('button');
-        reviewButton.type = 'button';
-        reviewButton.className = 'acp-harness__review-thread-action';
-        const reviewCount = this.reviewThreadCounts.get(lane.sessionId) ?? 0;
-        reviewButton.textContent = reviewCount ? `Start Review · ${reviewCount}` : 'Start Review';
-        reviewButton.title = lane.status === 'idle' ? 'Start Review Thread' : 'รอให้ turn จบ';
-        reviewButton.disabled = lane.status !== 'idle';
-        reviewButton.addEventListener('click', () => { void this.startReviewThread(lane); });
-        head.appendChild(reviewButton);
-      }
-    }
-    const stats = laneEl.querySelector<HTMLElement>('.acp-harness__lane-stats');
-    if (stats) stats.innerHTML = renderLaneStats(lane, this.projectDir);
+    shell.update(this.laneShellProps(lane));
     if (active && this.zenMode) this.refreshZenRail();
   }
 
   /** Busy→idle chrome without remounting peek/thought/HUD/plan. */
   private patchLaneTurnChrome(lane: HarnessLane): void {
     this.renderActiveLaneChrome(lane);
-    if (lane.id === this.activeLaneId) this.renderComposer();
+    if (lane.id === this.activeLaneId) this.flushRegion('composer');
   }
 
   private expandTranscriptWindow(lane: HarnessLane): void {
@@ -12089,160 +11702,30 @@ export class AcpHarnessView implements ContentView {
     this.scheduleLaneRender(lane);
   }
 
+  /**
+   * Spec 301 phase 3. The 160-line hand-rolled diff — existing-node map,
+   * signature compare, streaming fast path, in-place `replaceChildren`, orphan
+   * cleanup — is one `Transcript.update()` over `reconcile()`. Row components
+   * hold their own dependency tuples, so `transcriptRenderSignature` and
+   * `data-render-signature` are gone, and a row that slides out of the tail
+   * window has its streaming parser torn down by its own `dispose()` — which
+   * is why the spec-117 orphan-parser `console.warn` guard is gone too.
+   *
+   * Scroll stays here: the view owns the anchor machinery, the component owns
+   * the list.
+   */
   private renderActiveTranscript(lane: HarnessLane): void {
     const body = this.activeTranscriptBody();
-    if (!body) {
-      this.render();
+    if (!body || !this.transcript) {
+      this.invalidate('rail');
       return;
     }
     const anchor = lane.stickToBottom ? null : this.captureTranscriptScrollAnchor(body);
-    const existing = new Map<string, HTMLElement>();
-    for (const el of body.querySelectorAll<HTMLElement>('.acp-harness__msg[data-msg-id]')) {
-      const id = el.dataset.msgId;
-      if (id) existing.set(id, el);
-    }
-    const expected = new Set<string>();
-    if (lane.transcript.length === 0) {
-      body.innerHTML = '';
-      const empty = document.createElement('div');
-      empty.className = 'acp-harness__transcript-empty';
-      empty.textContent = 'lane transcript will appear here';
-      body.appendChild(empty);
-      return;
-    }
-    const empty = body.querySelector('.acp-harness__transcript-empty');
-    if (empty) empty.remove();
-    const total = lane.transcript.length;
-    const windowSize = lane.transcriptWindow;
-    const start = Number.isFinite(windowSize) ? Math.max(0, total - windowSize) : 0;
-    const hidden = start;
-    const itemsToRender: HarnessTranscriptItem[] = [];
-    if (hidden > 0) {
-      itemsToRender.push({
-        id: HIDDEN_INDICATOR_ID,
-        kind: 'system',
-        text: `↑ ${hidden} earlier row${hidden === 1 ? '' : 's'} hidden — Ctrl+H show ${TRANSCRIPT_WINDOW_STEP} more`,
-      });
-      // Keep the indicator visually static (no row-entrance fade) even on
-      // its first appearance.
-      lane.seenTranscriptIds.add(HIDDEN_INDICATOR_ID);
-    }
-    for (let i = start; i < total; i++) itemsToRender.push(lane.transcript[i]);
-    // Spec 117: tail-window invariant. The streaming assistant row must be in
-    // itemsToRender while the parser is bound. If it ever falls out (e.g. a
-    // future spec inserts rows after a still-current assistant such that the
-    // window slides past it), tear down the parser to avoid mutating an
-    // orphaned subtree. Dev-build warning only.
-    if (
-      lane.streamingMarkdownParser !== null &&
-      lane.streamingMarkdownItemId !== null &&
-      !itemsToRender.some((entry) => entry.id === lane.streamingMarkdownItemId)
-    ) {
-      console.warn('[spec117] streaming row outside tail window; tearing down parser');
-      lane.streamingMarkdownParser = null;
-      lane.streamingMarkdownBody = null;
-      lane.streamingMarkdownItemId = null;
-    }
-    let previous: ChildNode | null = null;
-    for (const item of itemsToRender) {
-      expected.add(item.id);
-      const streaming =
-        item.id === lane.currentAssistantId ||
-        item.id === lane.currentThoughtId ||
-        item.id === lane.currentUserId;
-      const isNew = !lane.seenTranscriptIds.has(item.id);
-      const current = existing.get(item.id) ?? null;
-
-      // Spec 114 rev 4: append-only streaming fast path (assistant / thought /
-      // user). Must run BEFORE the signature compare — stable 'stream'
-      // signature would otherwise no-op and freeze visible text.
-      const streamingTextRow =
-        item.id === lane.currentAssistantId ||
-        item.id === lane.currentThoughtId ||
-        item.id === lane.currentUserId;
-      if (
-        current &&
-        streaming &&
-        streamingTextRow &&
-        (item.kind === 'assistant' || item.kind === 'thought' || item.kind === 'user')
-      ) {
-        const body = current.querySelector<HTMLElement>('.acp-harness__msg-body');
-        if (body) {
-          // Spec 117: assistant rows use the streaming-markdown parser; thought
-          // and user rows keep the Spec 114 plain-text appendData path.
-          if (item.kind === 'assistant') {
-            updateStreamingAssistantMarkdownBody(body, item, lane);
-          } else {
-            updateStreamingTextBody(body, item);
-          }
-          current.dataset.renderSignature = 'stream';
-          lane.seenTranscriptIds.add(item.id);
-          previous = current;
-          continue;
-        }
-      }
-
-      const signature = transcriptRenderSignature(item, streaming, lane);
-      const isIndicator = item.id === HIDDEN_INDICATOR_ID;
-      if (current) {
-        // Spec 103 rev 2: keep DOM order = itemsToRender order. The hidden-rows
-        // indicator used to be appended at the END when it first appeared
-        // (previous === null fell through to appendChild) and then stayed there
-        // for the life of the lane. Pointer compare only; a row already in
-        // place never moves.
-        const ref: ChildNode | null = previous ? previous.nextSibling : body.firstChild;
-        if (current !== ref) body.insertBefore(current, ref);
-        if (current.dataset.renderSignature === signature) {
-          // Spec 114 rev 8: an in-flight tool keeps a stable structural
-          // signature while its output streams (section text is excluded) —
-          // patch the output block in place instead of rebuilding the row.
-          if (
-            item.kind === 'tool' && item.tool &&
-            (!isTerminalToolStatus(item.tool.status) || item.tool.subagents?.background === true)
-          ) {
-            const toolBody = current.querySelector<HTMLElement>('.acp-harness__msg-body');
-            if (toolBody) patchStreamingToolBody(toolBody, item.tool, item.subagentExpanded);
-          }
-          previous = current;
-        } else {
-          const next = renderTranscriptItem(
-            item,
-            false,
-            streaming,
-            lane,
-            this.projectDir,
-            !this.remoteRuntimeId,
-          );
-          if (isIndicator) next.classList.add('acp-harness__msg--hidden-indicator');
-          // Keep the existing row node. replaceWith on every tool status /
-          // output tick remounted the TOOL label and jumped the list.
-          const entering = current.classList.contains('acp-harness__msg--enter');
-          current.className = next.className;
-          if (entering) current.classList.add('acp-harness__msg--enter');
-          current.dataset.renderSignature = signature;
-          current.replaceChildren(...Array.from(next.childNodes));
-          previous = current;
-        }
-      } else {
-        const next = renderTranscriptItem(
-          item,
-          isNew,
-          streaming,
-          lane,
-          this.projectDir,
-          !this.remoteRuntimeId,
-        );
-        if (isIndicator) next.classList.add('acp-harness__msg--hidden-indicator');
-        // First item (previous === null) goes BEFORE the current first row, not
-        // at the end (spec 103 rev 2). insertBefore(node, null) appends.
-        body.insertBefore(next, previous ? previous.nextSibling : body.firstChild);
-        previous = next;
-      }
-      lane.seenTranscriptIds.add(item.id);
-    }
-    for (const [id, el] of existing) {
-      if (!expected.has(id)) el.remove();
-    }
+    this.transcript.update({
+      lane,
+      projectDir: this.projectDir,
+      resolveLocalImages: !this.remoteRuntimeId,
+    });
     if (anchor) {
       this.restoreTranscriptScrollAnchor(body, anchor);
       lane.savedScrollAnchor = this.captureTranscriptScrollAnchor(body) ?? anchor;
@@ -12255,45 +11738,69 @@ export class AcpHarnessView implements ContentView {
     if (this.panelsHidden) return;
     const now = Date.now();
     this.maybeRecordLaneMetricSamples(now);
-    const slot = this.peekSlotEl;
     const snapshots = this.lanePeekSnapshots();
     const candidate = this.bestLanePeekCandidate({ snapshots });
     const snapshot = candidate
       ? snapshots.find((entry) => entry.laneId === candidate.laneId) ?? null
       : null;
     if (!candidate || !snapshot) {
-      slot.replaceChildren();
-      slot.hidden = true;
+      this.railLayout.unmount('peek');
+      this.peekCard = null;
+      this.peekLaneId = null;
       return;
     }
     this.applyLanePeekCandidate(candidate, false);
-    const existing = slot.querySelector<HTMLElement>('.acp-harness__lane-peek');
-    const sameCard =
-      existing
-      && existing.dataset.laneId === candidate.laneId
-      && existing.dataset.reason === candidate.reasonKey;
-    const card = sameCard
-      ? existing
-      : renderLanePeek(
-          candidate,
-          snapshot,
-          this.lanePeek.lockedLaneId === candidate.laneId,
-        );
-    const heatRoot = card.querySelector<HTMLElement>('.acp-harness__lane-peek-heat-root');
+    if (!this.peekCard) {
+      this.peekCard = new PeekCard();
+      this.railLayout.mount('peek', new RailPanel(this.peekCard, 'peek'));
+    }
+    this.peekLaneId = candidate.laneId;
     const activeLane = this.lanes.find((lane) => lane.id === this.activeLaneId) ?? null;
     const peekLane = this.lanes.find((lane) => lane.id === candidate.laneId) ?? null;
-    if (heatRoot && activeLane && peekLane) {
-      this.mountLanePeekHeat(heatRoot, candidate, activeLane, peekLane, now);
-    }
-    if (!sameCard) slot.replaceChildren(card);
-    patchPeekActiveTool(card, snapshot, candidate);
-    patchPeekReviewLoop(card, snapshot, now);
-    slot.hidden = false;
+    // `patchPeekActiveTool` / `patchPeekReviewLoop` are this one update: the
+    // card's children own their own dependency tuples.
+    this.peekCard.update({
+      candidate,
+      snapshot,
+      locked: this.lanePeek.lockedLaneId === candidate.laneId,
+      now,
+      heat: activeLane && peekLane
+        ? this.lanePeekHeatProps(candidate, activeLane, peekLane, now)
+        : null,
+    });
+  }
+
+  /** Heat needs both lanes' metric histories, which only the view holds. */
+  private lanePeekHeatProps(
+    candidate: LanePeekCandidate,
+    activeLane: HarnessLane,
+    peekLane: HarnessLane,
+    now: number,
+  ): HeatPanelProps {
+    const window = this.effectivePeekHeatWindow(candidate);
+    return {
+      summary: deriveLanePairHeat(
+        this.lanePeekHeatInput(activeLane),
+        this.lanePeekHeatInput(peekLane),
+        now,
+        window,
+        this.lanePeekHeatMetric,
+      ),
+      metric: this.lanePeekHeatMetric,
+      window,
+      activeName: activeLane.displayName,
+      peekName: peekLane.displayName,
+      activeAccent: activeLane.accent,
+      peekAccent: peekLane.accent,
+      expanded: this.lanePeekHeatExpanded,
+      onCycleMetric: (): void => this.cyclePeekHeatMetric(),
+      onCycleWindow: (): void => this.cyclePeekHeatWindow(),
+      onToggleDetail: (): void => this.togglePeekHeatDetail(),
+    };
   }
 
   private showingPeekLaneId(): string | null {
-    if (this.peekSlotEl.hidden) return null;
-    return this.peekSlotEl.querySelector<HTMLElement>('.acp-harness__lane-peek')?.dataset.laneId ?? null;
+    return this.peekLaneId;
   }
 
   private resolveThoughtTarget(): LanePeekSnapshot | null {
@@ -12305,35 +11812,38 @@ export class AcpHarnessView implements ContentView {
       this.stopThoughtTeletypeTick();
       return;
     }
-    const slot = this.thoughtSlotEl;
     const snapshot = this.resolveThoughtTarget();
     if (!snapshot) {
       this.scheduleThoughtSlotHide();
       return;
     }
     this.cancelThoughtSlotHide();
-    const existing = slot.querySelector<HTMLElement>('.acp-harness__lane-thought');
-    if (existing && existing.dataset.laneId === snapshot.laneId) {
-      patchLaneThoughtCard(existing, snapshot, this.projectDir);
-      slot.hidden = false;
-      this.syncThoughtTeletypeTick();
-      return;
+    if (this.thoughtCard && this.thoughtLaneId !== snapshot.laneId) {
+      this.railLayout.unmount('thought');
+      this.thoughtCard = null;
     }
-    const next = renderLaneThought(snapshot, this.projectDir);
-    slot.replaceChildren(next);
-    slot.hidden = false;
-    const body = next.querySelector<HTMLElement>('.acp-harness__lane-thought-body');
-    if (body) schedulePeekThoughtPin(body);
+    const mounted = this.thoughtCard !== null;
+    if (!this.thoughtCard) {
+      this.thoughtCard = new ThoughtCard(isLivePeekThought(snapshot.thought ?? null));
+      this.railLayout.mount('thought', new RailPanel(this.thoughtCard, 'thought'));
+    }
+    this.thoughtLaneId = snapshot.laneId;
+    // The in-place patch this replaced (`patchLaneThoughtCard`) IS this update:
+    // the card is a `LiveComponent`, so a delta appends and a sealed thought
+    // repaints, without the card ever being rebuilt.
+    this.thoughtCard.update({ snapshot, projectDir: this.projectDir });
+    if (!mounted) schedulePeekThoughtPin(this.thoughtCard.body);
     this.syncThoughtTeletypeTick();
   }
 
   private scheduleThoughtSlotHide(): void {
     if (this.thoughtHideTimer !== null) return;
-    if (this.thoughtSlotEl.hidden) return;
+    if (this.thoughtCard === null) return;
     this.thoughtHideTimer = window.setTimeout(() => {
       this.thoughtHideTimer = null;
-      this.thoughtSlotEl.replaceChildren();
-      this.thoughtSlotEl.hidden = true;
+      this.railLayout.unmount('thought');
+      this.thoughtCard = null;
+      this.thoughtLaneId = null;
       this.stopThoughtTeletypeTick();
     }, THOUGHT_SLOT_HIDE_MS);
   }
@@ -12345,9 +11855,8 @@ export class AcpHarnessView implements ContentView {
   }
 
   private syncThoughtTeletypeTick(): void {
-    const body = this.thoughtSlotEl.querySelector<HTMLElement>('.acp-harness__lane-thought-body');
-    const card = this.thoughtSlotEl.querySelector<HTMLElement>('.acp-harness__lane-thought');
-    if (card?.dataset.phase === 'delta' && body && thoughtTeletypeCatchUpPending(body)) {
+    const card = this.thoughtCard;
+    if (card && card.el.dataset.phase === 'delta' && thoughtTeletypeCatchUpPending(card.body)) {
       this.armThoughtTeletypeTick();
     } else {
       this.stopThoughtTeletypeTick();
@@ -12358,11 +11867,10 @@ export class AcpHarnessView implements ContentView {
     if (this.thoughtTeletypeRaf) return;
     this.thoughtTeletypeRaf = requestAnimationFrame(() => {
       this.thoughtTeletypeRaf = 0;
-      const body = this.thoughtSlotEl.querySelector<HTMLElement>('.acp-harness__lane-thought-body');
-      const card = this.thoughtSlotEl.querySelector<HTMLElement>('.acp-harness__lane-thought');
-      if (!body || card?.dataset.phase !== 'delta') return;
-      if (tickThoughtTeletype(body)) {
-        schedulePeekThoughtPin(body);
+      const card = this.thoughtCard;
+      if (!card || card.el.dataset.phase !== 'delta') return;
+      if (tickThoughtTeletype(card.body)) {
+        schedulePeekThoughtPin(card.body);
         this.armThoughtTeletypeTick();
       }
     });
@@ -12422,161 +11930,6 @@ export class AcpHarnessView implements ContentView {
       arr.shift();
     }
     this.laneMetricHistory.set(lane.id, arr);
-  }
-
-  private mountLanePeekHeat(
-    root: HTMLElement,
-    candidate: LanePeekCandidate,
-    activeLane: HarnessLane,
-    peekLane: HarnessLane,
-    now: number,
-  ): void {
-    root.replaceChildren();
-    const win = this.effectivePeekHeatWindow(candidate);
-    const summary = deriveLanePairHeat(
-      this.lanePeekHeatInput(activeLane),
-      this.lanePeekHeatInput(peekLane),
-      now,
-      win,
-      this.lanePeekHeatMetric,
-    );
-    root.style.setProperty('--acp-peek-heat-active', activeLane.accent);
-    root.style.setProperty('--acp-peek-heat-peek', peekLane.accent);
-
-    const wrap = document.createElement('section');
-    wrap.className = 'acp-harness__lane-peek-heat';
-    if (summary.unavailableReason) {
-      wrap.title = summary.unavailableReason;
-    }
-
-    const compact = document.createElement('div');
-    compact.className = 'acp-harness__lane-peek-heat-compact';
-
-    const prefix = document.createElement('span');
-    prefix.className = 'acp-harness__lane-peek-heat-prefix';
-    prefix.textContent = 'heat';
-
-    const metricBtn = document.createElement('button');
-    metricBtn.type = 'button';
-    metricBtn.className = 'acp-harness__lane-peek-heat-cmd';
-    metricBtn.textContent = this.lanePeekHeatMetric;
-    metricBtn.title = 'Cycle peek heat metric (click or command palette)';
-    metricBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.cyclePeekHeatMetric();
-    });
-
-    const sep = document.createElement('span');
-    sep.className = 'acp-harness__lane-peek-heat-sep';
-    sep.textContent = '·';
-
-    const winBtn = document.createElement('button');
-    winBtn.type = 'button';
-    winBtn.className = 'acp-harness__lane-peek-heat-cmd';
-    winBtn.textContent = win;
-    winBtn.title = 'Cycle peek heat time window (click or command palette)';
-    winBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.cyclePeekHeatWindow();
-    });
-
-    const bars = document.createElement('div');
-    bars.className = 'acp-harness__lane-peek-heat-bars';
-
-    const mkSide = (side: LaneHeatSide, which: 'active' | 'peek'): HTMLElement => {
-      const col = document.createElement('div');
-      col.className = 'acp-harness__lane-peek-heat-side';
-      const fullName = which === 'active' ? activeLane.displayName : peekLane.displayName;
-      col.title = `${which === 'active' ? 'Active' : 'Peeked'}: ${fullName}`;
-      const tag = document.createElement('span');
-      tag.className =
-        `acp-harness__lane-peek-heat-tag acp-harness__lane-peek-heat-tag--${which}`;
-      tag.textContent = which === 'active' ? 'active' : 'peek';
-      const row = document.createElement('div');
-      row.className = 'acp-harness__lane-peek-heat-bar-row';
-      const track = document.createElement('div');
-      track.className = 'acp-harness__lane-peek-heat-track';
-      const fill = document.createElement('div');
-      fill.className =
-        `acp-harness__lane-peek-heat-fill acp-harness__lane-peek-heat-fill--${which}`;
-      fill.style.width = `${Math.min(100, Math.max(0, side.score))}%`;
-      track.appendChild(fill);
-      const score = document.createElement('span');
-      score.className = 'acp-harness__lane-peek-heat-score';
-      score.textContent = String(side.score);
-      row.appendChild(track);
-      row.appendChild(score);
-      col.appendChild(tag);
-      col.appendChild(row);
-      return col;
-    };
-
-    bars.appendChild(mkSide(summary.active, 'active'));
-    bars.appendChild(mkSide(summary.peeked, 'peek'));
-
-    const delta = document.createElement('div');
-    delta.className = 'acp-harness__lane-peek-heat-delta';
-    delta.textContent = summary.deltaLine;
-
-    compact.appendChild(prefix);
-    compact.appendChild(metricBtn);
-    compact.appendChild(sep);
-    compact.appendChild(winBtn);
-    compact.appendChild(bars);
-    compact.appendChild(delta);
-
-    compact.addEventListener('click', () => {
-      this.togglePeekHeatDetail();
-    });
-
-    const expanded = document.createElement('div');
-    expanded.className = 'acp-harness__lane-peek-heat-expanded';
-    expanded.hidden = !this.lanePeekHeatExpanded;
-    const table = document.createElement('table');
-    table.className = 'acp-harness__lane-peek-heat-table';
-    const caption = document.createElement('caption');
-    caption.className = 'acp-harness__lane-peek-heat-caption';
-    caption.textContent = 'Heat detail';
-    table.appendChild(caption);
-    const head = document.createElement('tr');
-    for (const label of ['', 'active', 'peek']) {
-      const th = document.createElement('th');
-      th.scope = label === '' ? 'col' : 'col';
-      th.textContent = label;
-      head.appendChild(th);
-    }
-    table.appendChild(head);
-    const tokStr = (s: LaneHeatSide): string => {
-      if (s.tokenDelta === null) return '—';
-      return `+${formatHeatTokenSuffix(s.tokenDelta)}`;
-    };
-    const cpuStr = (s: LaneHeatSide): string => {
-      if (s.cpuPeak === null) return '—';
-      return `${Math.round(s.cpuPeak)}%`;
-    };
-    const addRow = (key: string, a: string, b: string): void => {
-      const tr = document.createElement('tr');
-      const k = document.createElement('th');
-      k.scope = 'row';
-      k.textContent = key;
-      const c1 = document.createElement('td');
-      c1.textContent = a;
-      const c2 = document.createElement('td');
-      c2.textContent = b;
-      tr.appendChild(k);
-      tr.appendChild(c1);
-      tr.appendChild(c2);
-      table.appendChild(tr);
-    };
-    addRow('tools', String(summary.active.toolDelta), String(summary.peeked.toolDelta));
-    addRow('tokens', tokStr(summary.active), tokStr(summary.peeked));
-    addRow('peer', String(summary.active.peerDelta), String(summary.peeked.peerDelta));
-    addRow('cpu', cpuStr(summary.active), cpuStr(summary.peeked));
-    expanded.appendChild(table);
-
-    wrap.appendChild(compact);
-    wrap.appendChild(expanded);
-    root.appendChild(wrap);
   }
 
   private bestLanePeekCandidate(options: { force?: boolean; snapshots?: LanePeekSnapshot[] } = {}): LanePeekCandidate | null {
@@ -12657,353 +12010,165 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  /** Spec 301: the zen rail is one reconcile over `RailEntry` components, so a
+   *  lane switch moves `--active` instead of rebuilding every entry. */
   private refreshZenRail(): void {
-    const railEl = this.dashboardEl.querySelector<HTMLElement>('.acp-harness__rail');
-    if (!railEl) return;
-    railEl.replaceChildren();
-    for (const lane of this.lanes) {
-      railEl.appendChild(this.renderRailEntry(lane, lane.id === this.activeLaneId));
-    }
+    if (!this.laneRail) return;
+    const now = Date.now();
+    this.laneRail.update({ entries: this.lanes.map((lane) => this.railEntryProps(lane, now)) });
+  }
+
+  private railEntryProps(lane: HarnessLane, now: number): RailEntryProps {
+    const peerHint = deriveRailPeerHint(
+      {
+        pendingPeers: this.coordinator.pendingPeersFor(lane.id),
+        inboxDepth: this.coordinator.inboxDepth(lane.id),
+        latestInterLane: latestInterLaneForPeek(lane),
+      },
+      (laneId) => this.lanes.find((l) => l.id === laneId)?.status ?? null,
+      now,
+    );
+    // spec 124: a pending change shows only when it differs from the current
+    // binding — a swap, or a clear while a directive is bound. For a pending
+    // clear the meta line keeps the bound directive's name so the user can see
+    // which directive is being removed.
+    const pendingChange = lane.pendingDirectiveChange;
+    const boundDirective = this.directiveById(lane.activeDirectiveId);
+    const swapTarget =
+      pendingChange && pendingChange.directiveId !== null && pendingChange.directiveId !== lane.activeDirectiveId
+        ? this.directiveById(pendingChange.directiveId)
+        : null;
+    const metaDirective = swapTarget ?? boundDirective;
+    const pendingClear = !!pendingChange && pendingChange.directiveId === null && !!boundDirective;
+    return {
+      lane,
+      active: lane.id === this.activeLaneId,
+      peerHint,
+      directive: metaDirective
+        ? { directive: metaDirective, pending: swapTarget ? 'swap' : pendingClear ? 'clear' : 'none' }
+        : null,
+      reviewCount: lane.sessionId ? this.reviewThreadCounts.get(lane.sessionId) ?? 0 : 0,
+    };
   }
 
   private renderPicker(): void {
-    this.pickerEl.hidden = !this.pickerOpen;
-    if (!this.pickerOpen) {
-      this.pickerEl.innerHTML = '';
-      return;
-    }
-    const total = this.pickerEntries.length;
-    const cursor = total === 0 ? 0 : Math.max(0, Math.min(this.pickerCursor, total - 1));
-    const counts = new Map<string, number>();
+    const running = new Map<string, number>();
     for (const lane of this.lanes) {
-      counts.set(lane.backendId, (counts.get(lane.backendId) ?? 0) + 1);
+      running.set(lane.backendId, (running.get(lane.backendId) ?? 0) + 1);
     }
-    const rows = this.pickerEntries
-      .map((entry, i) => {
-        const label = backendLabel(entry.id);
-        const running = counts.get(entry.id) ?? 0;
-        const runningSuffix = running > 0 ? ` <span class="acp-harness__picker-count">·${running} running</span>` : '';
-        const active = i === cursor ? ' acp-harness__picker-row--active' : '';
-        return `<li class="acp-harness__picker-row${active}" data-picker-index="${i}">` +
-          `<span class="acp-harness__picker-label">${esc(label)}</span>` +
-          `<span class="acp-harness__picker-id">${esc(entry.id)}</span>` +
-          runningSuffix +
-          `</li>`;
-      })
-      .join('');
-    const body = total === 0
-      ? '<div class="acp-harness__picker-empty">no ACP backends installed</div>'
-      : `<ul class="acp-harness__picker-list">${rows}</ul>`;
-    // spec 163: when the picker was opened by Shift+Enter from the directive
-    // picker, surface which directive the spawned lane will carry.
-    const pendingDirective = this.pendingSpawnDirectiveId
-      ? this.directiveById(this.pendingSpawnDirectiveId)
-      : null;
-    const headLabel = pendingDirective
-      ? `// add lane · directive: ${esc(pendingDirective.title || pendingDirective.id)}`
-      : '// add lane';
-    this.pickerEl.innerHTML =
-      `<div class="acp-harness__picker-panel">` +
-      `<header class="acp-harness__picker-head">` +
-      `<span>${headLabel}</span>` +
-      `<span>j/k move · enter spawn · esc cancel</span>` +
-      `</header>` +
-      `${body}` +
-      `</div>`;
+    this.lanePicker.update({
+      open: this.pickerOpen,
+      backends: this.pickerEntries,
+      running,
+      cursor: this.pickerCursor,
+      // spec 163: when the picker was opened by Shift+Enter from the directive
+      // picker, surface which directive the spawned lane will carry.
+      pendingDirective: this.pendingSpawnDirectiveId
+        ? this.directiveById(this.pendingSpawnDirectiveId)
+        : null,
+      onAutoClose: (): void => {
+        this.pickerOpen = false;
+      },
+    });
   }
 
   private renderDirectivePicker(): void {
-    this.directivePickerEl.hidden = !this.directivePickerOpen;
-    if (!this.directivePickerOpen) {
-      this.directivePickerEl.innerHTML = '';
-      return;
-    }
     const lane = this.activeLane();
-    if (!lane) {
-      this.directivePickerEl.innerHTML = '';
-      return;
-    }
-    const ordered = this.pickerDirectives();
-    const total = ordered.length;
-    const cursor = total === 0 ? 0 : Math.max(0, Math.min(this.directivePickerCursor, total - 1));
-    const currentId = lane.pendingDirectiveChange
-      ? lane.pendingDirectiveChange.directiveId
-      : lane.activeDirectiveId;
-    const rows = ordered
-      .map((d, i) => {
-        const active = i === cursor ? ' acp-harness__directive-row--active' : '';
-        const state = d.enabled ? '' : ' acp-harness__directive-row--disabled';
-        const assigned = d.id === currentId ? '<span class="acp-harness__directive-assigned">assigned</span>' : '';
-        const badgeEl = d.enabled ? '' : '<span class="acp-harness__directive-badge">disabled</span>';
-        // spec 130: keep legacy triage metadata visible, but it no longer gates
-        // attention_flag visibility. Concise picker: a glyph only (full label in
-        // the title tooltip), so it costs no row width when scanning many rows.
-        const triageEl = d.triage_equipped
-          ? '<span class="acp-harness__directive-badge acp-harness__directive-badge--triage" title="legacy triage metadata; attention tools are default-on">◆</span>'
-          : '';
-        // Single-line row: icon · title · badges · dimmed truncated description,
-        // so many directives stay scannable without scrolling. The id and task
-        // (dev-facing detail) move to the preview head, not each row.
-        const desc = d.description
-          ? `<span class="acp-harness__directive-desc">${esc(d.description)}</span>`
-          : '';
-        return (
-          `<li class="acp-harness__directive-row${active}${state}" data-directive-index="${i}">` +
-          `<span class="acp-harness__directive-icon">${esc(d.icon)}</span>` +
-          `<span class="acp-harness__directive-title">${esc(d.title || d.id)}</span>` +
-          `${assigned}${badgeEl}${triageEl}${desc}` +
-          `</li>`
-        );
-      })
-      .join('');
-    const selected = ordered[cursor];
-    const selectedMeta = selected ? [selected.id, selected.task].filter(Boolean).join(' · ') : '';
-    const preview = selected
-      ? `<div class="acp-harness__directive-preview">` +
-        `<div class="acp-harness__directive-preview-head">` +
-        `<span>// prompt</span>` +
-        `<span class="acp-harness__directive-preview-scope">${esc(selectedMeta)}</span>` +
-        `</div>` +
-        `<div class="acp-harness__directive-preview-body">${esc(selected.system_prompt || '(empty prompt)')}</div>` +
-        `</div>`
-      : '';
-    this.directivePickerEl.innerHTML =
-      `<header class="acp-harness__directive-head">` +
-      `<span>// directive · ${esc(lane.displayName)}</span>` +
-      `<span>j/k move · enter switch · shift+enter new lane · backspace clear · esc cancel</span>` +
-      `</header>` +
-      `<ul class="acp-harness__directive-list">${rows}</ul>` +
-      preview;
+    this.directivePicker.update({
+      open: this.directivePickerOpen,
+      laneName: lane?.displayName ?? null,
+      directives: this.pickerDirectives(),
+      currentDirectiveId: lane
+        ? lane.pendingDirectiveChange
+          ? lane.pendingDirectiveChange.directiveId
+          : lane.activeDirectiveId
+        : null,
+      cursor: this.directivePickerCursor,
+      onChoose: (index: number): void => {
+        this.directivePickerCursor = index;
+        this.handleDirectivePickerKey(new KeyboardEvent('keydown', { key: 'Enter' }));
+      },
+      onAutoClose: (): void => {
+        this.directivePickerOpen = false;
+      },
+    });
   }
 
   private renderModelPicker(): void {
-    this.modelPickerEl.hidden = !this.modelPickerOpen;
-    if (!this.modelPickerOpen) {
-      this.modelPickerEl.innerHTML = '';
-      return;
-    }
     const lane = this.modelPickerLane();
-    if (!lane) {
-      this.modelPickerEl.innerHTML = '';
-      return;
-    }
-    const models = lane.availableModels;
-    const total = models.length;
-    const cursor = total === 0 ? 0 : Math.max(0, Math.min(this.modelPickerCursor, total - 1));
-    const rows = models
-      .map((m, i) => {
-        const active = i === cursor ? ' acp-harness__model-row--active' : '';
-        const current = m.model_id === lane.currentModelId
-          ? '<span class="acp-harness__model-current">✓</span>'
-          : '';
-        return (
-          `<li class="acp-harness__model-row${active}" data-model-index="${i}">` +
-          `<span class="acp-harness__model-name">${esc(m.name)}${current}</span>` +
-          (m.description ? `<span class="acp-harness__model-desc">${esc(m.description)}</span>` : '') +
-          `</li>`
-        );
-      })
-      .join('');
-    this.modelPickerEl.innerHTML =
-      `<header class="acp-harness__model-head">` +
-      `<span>// model · ${esc(lane.displayName)}</span>` +
-      `<span>j/k move · enter switch · esc cancel</span>` +
-      `</header>` +
-      `<ul class="acp-harness__model-list">${rows}</ul>`;
-    // innerHTML rebuilds the list at scrollTop 0 on every j/k; keep the cursor visible.
-    const activeRow = this.modelPickerEl.querySelector<HTMLElement>('.acp-harness__model-row--active');
-    if (typeof activeRow?.scrollIntoView === 'function') {
-      activeRow.scrollIntoView({ block: 'nearest' });
-    }
+    this.modelPicker.update({
+      open: this.modelPickerOpen,
+      laneName: lane?.displayName ?? null,
+      models: lane?.availableModels ?? [],
+      currentModelId: lane?.currentModelId ?? null,
+      cursor: this.modelPickerCursor,
+      onAutoClose: (): void => {
+        this.modelPickerOpen = false;
+      },
+    });
   }
 
   private renderSessionPicker(): void {
     const state = this.sessionPicker;
-    this.sessionPickerEl.hidden = !state.open;
-    if (!state.open) {
-      this.sessionPickerEl.innerHTML = '';
-      return;
+    const running = new Map<string, number>();
+    for (const lane of this.lanes) {
+      running.set(lane.backendId, (running.get(lane.backendId) ?? 0) + 1);
     }
-    const backendName = state.backendId ? backendLabel(state.backendId) : 'backend';
-    if (state.phase === 'backend') {
-      const rows = this.pickerEntries.map((entry, i) => {
-        const active = i === state.backendCursor ? ' acp-harness__session-row--active' : '';
-        const running = this.lanes.filter((lane) => lane.backendId === entry.id).length;
-        return `<li class="acp-harness__session-row${active}" data-session-backend="${esc(entry.id)}">` +
-          `<span class="acp-harness__session-title">${esc(backendLabel(entry.id))}</span>` +
-          `<span class="acp-harness__session-meta">${esc(entry.id)}</span>` +
-          `<span class="acp-harness__session-action">${running > 0 ? `${running} running` : 'select'}</span>` +
-          `</li>`;
-      }).join('');
-      this.sessionPickerEl.innerHTML =
-        `<header class="acp-harness__session-head">` +
-        `<span>// resume session</span>` +
-        `<span>j/k move · enter list · esc cancel</span>` +
-        `</header>` +
-        `<ul class="acp-harness__session-list">${rows}</ul>`;
-      return;
-    }
-    if (state.phase === 'loading') {
-      this.sessionPickerEl.innerHTML =
-        `<header class="acp-harness__session-head">` +
-        `<span>// ${esc(backendName)} sessions</span>` +
-        `<span>initializing...</span>` +
-        `</header>` +
-        `<div class="acp-harness__session-empty">loading sessions</div>`;
-      return;
-    }
-    if (state.phase === 'error') {
-      this.sessionPickerEl.innerHTML =
-        `<header class="acp-harness__session-head">` +
-        `<span>// ${esc(backendName)} sessions</span>` +
-        `<span>b switch backend · n fresh · esc cancel</span>` +
-        `</header>` +
-        `<div class="acp-harness__session-empty">${esc(state.error ?? 'session list unavailable')}</div>`;
-      return;
-    }
-    const capabilities = state.capabilities;
-    const canOpen = !!capabilities && (capabilities.canResume || capabilities.canLoad);
-    const action = capabilities?.canResume ? 'resume' : capabilities?.canLoad ? 'load' : 'list only';
-    const rows = state.sessions.map((session, i) => {
-      const active = i === state.sessionCursor ? ' acp-harness__session-row--active' : '';
-      const disabled = canOpen ? '' : ' acp-harness__session-row--disabled';
-      const title = session.title?.trim() || 'untitled session';
-      const metaParts = [shortId(session.sessionId)];
-      const updated = formatSessionUpdatedAt(session.updatedAt);
-      if (updated) metaParts.push(updated);
-      if (session.cwd && this.projectDir && normalizePathForCompare(session.cwd) !== normalizePathForCompare(this.projectDir)) {
-        metaParts.push(session.cwd);
-      }
-      return `<li class="acp-harness__session-row${active}${disabled}">` +
-        `<span class="acp-harness__session-title">${esc(title)}</span>` +
-        `<span class="acp-harness__session-meta">${esc(metaParts.join(' · '))}</span>` +
-        `<span class="acp-harness__session-action">${esc(action)}</span>` +
-        `</li>`;
-    }).join('');
-    const empty = state.sessions.length === 0
-      ? '<div class="acp-harness__session-empty">no sessions for this project</div>'
-      : '';
-    const pageHint = state.nextCursor ? ' · PageDown more' : '';
-    const error = state.error ? `<div class="acp-harness__session-error">${esc(state.error)}</div>` : '';
-    this.sessionPickerEl.innerHTML =
-      `<header class="acp-harness__session-head">` +
-      `<span>// ${esc(backendName)} sessions</span>` +
-      `<span>enter ${esc(action)} · b backend · n fresh${pageHint} · esc cancel</span>` +
-      `</header>` +
-      `<ul class="acp-harness__session-list">${rows}</ul>${empty}${error}`;
+    this.sessionPickerCmp.update({
+      open: state.open,
+      phase: state.phase,
+      backends: this.pickerEntries,
+      running,
+      backendCursor: state.backendCursor,
+      backendId: state.backendId,
+      sessions: state.sessions,
+      sessionCursor: state.sessionCursor,
+      capabilities: state.capabilities,
+      nextCursor: state.nextCursor,
+      error: state.error,
+      projectDir: this.projectDir,
+      onAutoClose: (): void => {
+        state.open = false;
+      },
+    });
   }
 
+  /**
+   * Spec 301 phase 4. This used to begin with `dashboardEl.innerHTML = ''` and
+   * carry a two-part `prevScrollTop` dance around it: capture the active lane
+   * body's scroll offset before detaching it, write it back after reattachment.
+   * Both halves are gone. A `LaneShell` is constructed once and updated in
+   * place, so the body node is never detached and its scroll offset is never
+   * discarded — the rescue code has nothing left to rescue.
+   */
   private renderDashboard(): void {
-    // Preserve the active lane body's DOM identity across the rebuild so any
-    // in-flight streaming layout stays intact. Detach before clearing
-    // dashboardEl, reattach inside the new active lane shell.
-    // Detaching DISCARDS the element's scroll offset (WebKit/Blink reset a
-    // removed node's scrollTop to 0), so capture it here and write it back the
-    // moment the body is reattached — before `renderActiveTranscript` reads a
-    // scroll anchor off it. Without that, every rebuild handed a lane the user
-    // had scrolled a stale offset (anchor captured at the top, or the
-    // `savedScrollTop` fallback in `applyStickyScroll`), which reads as the
-    // transcript yanking itself back to the wrong place once a second while a
-    // `#review` keeps the lane busy.
-    const prevBody = this.activeTranscriptBody();
-    const prevBodyLaneId =
-      prevBody?.dataset.laneId ?? prevBody?.parentElement?.dataset.laneId ?? null;
-    const prevScrollTop = prevBody?.scrollTop ?? 0;
-    if (prevBody) {
-      prevBody.dataset.laneId = prevBodyLaneId ?? prevBody.dataset.laneId ?? '';
-      prevBody.parentElement?.removeChild(prevBody);
-    }
-
-    this.dashboardEl.innerHTML = '';
     if (this.lanes.length === 0) {
+      this.teardownLaneShells();
       const empty = document.createElement('div');
       empty.className = 'acp-harness__empty';
       empty.textContent = this.systemRows.join('\n') || 'no ACP lanes';
-      this.dashboardEl.appendChild(empty);
+      this.dashboardEl.replaceChildren(empty);
       return;
     }
 
-    let railEl: HTMLElement | null = null;
-    let bodyCell: HTMLElement | null = null;
-    if (this.zenMode) {
-      railEl = document.createElement('aside');
-      railEl.className = 'acp-harness__rail';
-      bodyCell = document.createElement('div');
-      bodyCell.className = 'acp-harness__body-cell';
-      this.dashboardEl.appendChild(railEl);
-      this.dashboardEl.appendChild(bodyCell);
-      for (const lane of this.lanes) {
-        const active = lane.id === this.activeLaneId;
-        railEl.appendChild(this.renderRailEntry(lane, active));
-      }
-    }
+    const host = this.ensureDashboardStructure();
+    const shellLanes = this.zenMode
+      ? this.lanes.filter((lane) => lane.id === this.activeLaneId)
+      : this.lanes;
+    reconcile(host, shellLanes, {
+      key: (lane) => laneShellKey(lane.id, lane.id === this.activeLaneId),
+      create: (lane) => {
+        const props = this.laneShellProps(lane);
+        const shell = new LaneShell(props, props.active ? this.laneRailEl : null);
+        shell.update(props);
+        return shell;
+      },
+      update: (shell, lane) => shell.update(this.laneShellProps(lane)),
+    });
 
-    for (const lane of this.lanes) {
-      const active = lane.id === this.activeLaneId;
-      if (this.zenMode && !active) continue;
-      const laneEl = document.createElement(active ? 'section' : 'div');
-      laneEl.className = `acp-harness__lane ${active ? 'acp-harness__lane--active' : 'acp-harness__lane--collapsed'} acp-harness__lane--${lane.status}`;
-      laneEl.dataset.laneId = lane.id;
-      // spec 215: collapsed lanes keep their accent — CSS dims it toward the
-      // base text color without dropping the hue, so lane identity survives
-      // de-focus (the iTerm2/WezTerm inactive-pane convention).
-      laneEl.style.setProperty('--acp-lane-accent', lane.accent);
-      const head = document.createElement('header');
-      head.className = 'acp-harness__lane-head';
-      const laneSession = lane.client?.sessionId ?? null;
-      const laneMetrics = laneSession !== null ? this.metricsBySession.get(laneSession) ?? null : null;
-      head.innerHTML = renderLaneHead(
-        lane,
-        active,
-        this.mcpStatsByLane.get(lane.displayName) ?? null,
-        laneMetrics,
-        this.coordinator.inboxDepth(lane.id),
-        this.coordinator.pendingPeersFor(lane.id),
-        lane.id === this.orchestratorLaneId,
-      );
-      if (active && this.timelineCtl.pendingCount > 0 && !this.remoteRuntimeId) {
-        const timelineBadge = document.createElement('button');
-        timelineBadge.type = 'button';
-        timelineBadge.className = 'acp-harness__timeline-badge';
-        timelineBadge.dataset.timelineReview = '';
-        timelineBadge.textContent = `timeline ${this.timelineCtl.pendingCount}`;
-        timelineBadge.setAttribute(
-          'aria-label',
-          `ตรวจทานข้อเสนอ timeline ที่รออยู่ ${this.timelineCtl.pendingCount} รายการ`,
-        );
-        head.appendChild(timelineBadge);
-      }
-      laneEl.appendChild(head);
-      if (active) {
-        const stats = document.createElement('div');
-        stats.className = 'acp-harness__lane-stats';
-        stats.innerHTML = renderLaneStats(lane, this.projectDir);
-        laneEl.appendChild(stats);
-        let body: HTMLElement;
-        if (prevBody && prevBodyLaneId === lane.id) {
-          body = prevBody;
-        } else {
-          body = document.createElement('div');
-          body.className = 'acp-harness__lane-body';
-          body.dataset.laneId = lane.id;
-        }
-        laneEl.appendChild(body);
-        this.laneRailEl.parentElement?.removeChild(this.laneRailEl);
-        laneEl.appendChild(this.laneRailEl);
-      }
-      (bodyCell ?? this.dashboardEl).appendChild(laneEl);
-    }
-    // The detach dropped the body's scroll offset. Write it back now that the
-    // body is in the document again (an off-document element has no layout, so
-    // this cannot be done at the appendChild above), and before
-    // `renderActiveTranscript` captures its scroll anchor. Suppressed, or the
-    // scroll handler reads the restore as the user leaving the bottom.
-    const restoredBody = this.activeTranscriptBody();
-    if (prevBody && restoredBody === prevBody && restoredBody.scrollTop !== prevScrollTop) {
-      const token = this.beginProgrammaticScroll();
-      restoredBody.scrollTop = prevScrollTop;
-      this.releaseProgrammaticScroll(token);
-    }
+    if (this.zenMode) this.refreshZenRail();
+    this.bindActiveTranscript();
+
     const activeLane = this.activeLane();
     if (activeLane) {
       this.renderActiveTranscript(activeLane);
@@ -13021,170 +12186,92 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
-  private renderRailEntry(lane: HarnessLane, active: boolean): HTMLElement {
-    const entry = document.createElement('div');
-    const now = Date.now();
-    const peerHint = deriveRailPeerHint(
-      {
-        pendingPeers: this.coordinator.pendingPeersFor(lane.id),
-        inboxDepth: this.coordinator.inboxDepth(lane.id),
-        latestInterLane: latestInterLaneForPeek(lane),
+  /** Zen mode wraps the shells in a body cell beside the lane rail. */
+  private ensureDashboardStructure(): HTMLElement {
+    if (this.zenMode && !this.zenBodyCellEl) {
+      this.teardownLaneShells();
+      this.laneRail = new LaneRail();
+      this.zenBodyCellEl = document.createElement('div');
+      this.zenBodyCellEl.className = 'acp-harness__body-cell';
+      this.dashboardEl.replaceChildren(this.laneRail.el, this.zenBodyCellEl);
+    } else if (!this.zenMode && this.zenBodyCellEl) {
+      this.teardownLaneShells();
+      this.laneRail?.dispose();
+      this.laneRail = null;
+      this.zenBodyCellEl = null;
+      this.dashboardEl.replaceChildren();
+    }
+    return this.zenBodyCellEl ?? this.dashboardEl;
+  }
+
+  private teardownLaneShells(): void {
+    disposeList(this.zenBodyCellEl ?? this.dashboardEl);
+    this.transcript?.dispose();
+    this.transcript = null;
+    this.transcriptBodyEl = null;
+    // The rail element is view-owned and outlives every shell; detach it so a
+    // disposed shell does not take it out of the document for good.
+    this.laneRailEl?.remove();
+  }
+
+  private laneShellProps(lane: HarnessLane): LaneShellProps {
+    const active = lane.id === this.activeLaneId;
+    const laneSession = lane.client?.sessionId ?? null;
+    const canReview = active && !this.remoteRuntimeId && !!this.projectDir && !!lane.sessionId;
+    return {
+      lane,
+      active,
+      mcp: this.mcpStatsByLane.get(lane.displayName) ?? null,
+      metrics: laneSession !== null ? this.metricsBySession.get(laneSession) ?? null : null,
+      inboxDepth: this.coordinator.inboxDepth(lane.id),
+      pendingPeers: this.coordinator.pendingPeersFor(lane.id),
+      isOrchestrator: lane.id === this.orchestratorLaneId,
+      projectDir: this.projectDir,
+      timelinePending: active && !this.remoteRuntimeId ? this.timelineCtl.pendingCount : 0,
+      reviewThread: canReview
+        ? {
+            count: lane.sessionId ? this.reviewThreadCounts.get(lane.sessionId) ?? 0 : 0,
+            enabled: lane.status === 'idle',
+          }
+        : null,
+      onStartReview: () => {
+        void this.startReviewThread(lane);
       },
-      (laneId) => this.lanes.find((l) => l.id === laneId)?.status ?? null,
-      now,
-    );
+    };
+  }
 
-    // spec 124: directive state for the meta line. A pending change is
-    // shown when it actually differs from the current binding — a swap
-    // (directiveId → different id) or a clear (directiveId → null while a
-    // directive is bound). For a pending clear the meta line keeps showing
-    // the currently bound directive's name (with a strike on the icon) so
-    // the user can see which directive is being removed.
-    const pendingChange = lane.pendingDirectiveChange;
-    const boundDirective = this.directiveById(lane.activeDirectiveId);
-    const swapTarget =
-      pendingChange && pendingChange.directiveId !== null && pendingChange.directiveId !== lane.activeDirectiveId
-        ? this.directiveById(pendingChange.directiveId)
-        : null;
-    const isPendingClear = !!pendingChange && pendingChange.directiveId === null && !!boundDirective;
-    const isPendingSwap = !!swapTarget;
-    const metaDirective = swapTarget ?? boundDirective;
-    const hasDirective = !!metaDirective;
-
-    entry.className =
-      `acp-harness__rail-entry acp-harness__rail-entry--${lane.status}` +
-      (active ? ' acp-harness__rail-entry--active' : '') +
-      (peerHint.kind !== 'none' ? ` acp-harness__rail-entry--peer-${peerHint.kind}` : '') +
-      (hasDirective ? ' acp-harness__rail-entry--directive' : '') +
-      (isPendingSwap || isPendingClear ? ' acp-harness__rail-entry--pending' : '');
-    entry.style.setProperty('--acp-lane-accent', lane.accent);
-
-    const toolCount = lane.toolCalls.size;
-    const ctxUsed = typeof lane.usage?.used === 'number' ? lane.usage!.used : null;
-    const toolHtml = toolCount > 0
-      ? `<span class="acp-harness__rail-metric acp-harness__rail-metric--tools" title="${esc(`${toolCount} tool call${toolCount === 1 ? '' : 's'}`)}">${esc(formatCount(toolCount))}</span>`
-      : '';
-    const ctxHtml = ctxUsed !== null
-      ? `<span class="acp-harness__rail-metric acp-harness__rail-metric--ctx" title="${esc(typeof lane.usage?.size === 'number' && lane.usage!.size! > 0 ? `context ${ctxUsed}/${lane.usage!.size} tokens` : `context ${ctxUsed} tokens`)}">${esc(formatCount(ctxUsed))}</span>`
-      : '';
-    const peerHtml = renderRailPeerSpans(peerHint);
-    const titleBase = peerHint.title ? `${peerHint.title} · ` : '';
-    const titleDirective = metaDirective
-      ? ` · directive ${metaDirective.id}${isPendingSwap ? ' (next send)' : isPendingClear ? ' (clear next send)' : ''}`
-      : '';
-    entry.title = `${titleBase}${statusLabel(lane.status)}${titleDirective}`;
-
-    const headHtml =
-      `<span class="acp-harness__rail-head">` +
-      `<span class="acp-harness__rail-name">${esc(lane.displayName)}</span>` +
-      peerHtml +
-      toolHtml +
-      ctxHtml +
-      `</span>`;
-
-    // spec 125 — meta line replaces the user-icon with a role tag chip and
-    // trimmed title. The tag carries the pending-clear strike (previously on
-    // the icon span) via `--clearing`.
-    let metaHtml: string;
-    if (metaDirective) {
-      const role = directiveRole(metaDirective.task);
-      const tagLabel = directiveTagLabel(metaDirective.task);
-      const tagCls = isPendingClear ? ' acp-harness__rail-tag--clearing' : '';
-      const trimmedRaw = trimBackendPrefix(metaDirective.title.trim(), lane.backendId);
-      const title = trimmedRaw || metaDirective.title.trim() || metaDirective.id;
-      const pendingHint = isPendingSwap
-        ? '<span class="acp-harness__rail-meta__hint">· next send</span>'
-        : isPendingClear
-          ? '<span class="acp-harness__rail-meta__hint">· clear next send</span>'
-          : '';
-      metaHtml =
-        `<span class="acp-harness__rail-meta">` +
-        `<span class="acp-harness__rail-tag acp-harness__rail-tag--${role}${tagCls}">${esc(tagLabel)}</span>` +
-        `<span class="acp-harness__rail-meta__title">${esc(title)}</span>` +
-        pendingHint +
-        `</span>`;
-    } else {
-      const permissionMeta = lane.status === 'needs_permission' && lane.pendingPermissions.length > 0
-        ? compactPermissionMeta(lane.pendingPermissions[0])
-        : lane.status === 'needs_permission' && lane.pendingQuestions.length > 0
-          ? `ask · 1–9/Enter · x ${lane.pendingQuestions[0]?.wire === 'elicitation' ? 'decline' : 'skip'}`
-          : statusLabel(lane.status);
-      metaHtml =
-        `<span class="acp-harness__rail-meta">` +
-        `<span class="acp-harness__rail-meta__hint">${esc(permissionMeta)}</span>` +
-        `</span>`;
-    }
-
-    const logoId = backendLogoId(lane.backendId);
-    const logoCls =
-      lane.backendId === 'pi-acp' ? 'pi' : (BACKEND_LABELS[lane.backendId] ? lane.backendId : 'omp');
-    const logoHtml =
-      `<span class="acp-harness__rail-logo acp-harness__rail-logo--${logoCls}" aria-hidden="true">` +
-      `<svg><use href="#${logoId}"/></svg>` +
-      `</span>`;
-
-    entry.innerHTML =
-      `<span class="acp-harness__rail-dot"></span>` +
-      logoHtml +
-      headHtml +
-      metaHtml;
-    const reviewCount = lane.sessionId
-      ? this.reviewThreadCounts.get(lane.sessionId) ?? 0
-      : 0;
-    if (reviewCount > 0) {
-      const badge = document.createElement('span');
-      badge.className = 'acp-harness__rail-review-count';
-      badge.textContent = `${reviewCount} reviews`;
-      entry.appendChild(badge);
-    }
-    return entry;
+  /** Bind the transcript list to whichever shell is active now. */
+  private bindActiveTranscript(): void {
+    const host = this.zenBodyCellEl ?? this.dashboardEl;
+    const activeLane = this.activeLane();
+    const shell = activeLane
+      ? (listComponent(host, laneShellKey(activeLane.id, true)) as LaneShell | undefined)
+      : undefined;
+    const body = shell?.body ?? null;
+    if (body === this.transcriptBodyEl) return;
+    this.transcript?.dispose();
+    this.transcriptBodyEl = body;
+    this.transcript = body ? new Transcript(body) : null;
   }
 
   private renderMemory(): void {
-    this.memoryOverlayEl.hidden = !this.memoryDrawerOpen;
-    const head = this.memoryOverlayEl.querySelector('.acp-harness__memory-head');
-    if (head) {
-      head.textContent = this.harnessMemoryWarning
-        ? 'Handoffs · unavailable'
-        : `Handoffs · ${this.memoryEntries.length}`;
+    const rows = this.harnessMemoryWarning ? [] : this.sortedMemoryRows();
+    if (rows.length > 0
+      && (!this.memoryCursorRowId || !rows.some((entry) => entry.id === this.memoryCursorRowId))) {
+      this.memoryCursorRowId = rows[0].id;
     }
-    this.memoryPanelEl.innerHTML = '';
-    if (this.harnessMemoryWarning) {
-      const empty = document.createElement('div');
-      empty.className = 'acp-harness__memory-empty';
-      empty.textContent = `memory unavailable: ${this.harnessMemoryWarning}`;
-      this.memoryPanelEl.appendChild(empty);
-      return;
-    }
-    const rows = this.sortedMemoryRows();
-    if (rows.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'acp-harness__memory-empty';
-      empty.textContent = 'no handoffs yet';
-      this.memoryPanelEl.appendChild(empty);
-      return;
-    }
-    if (!this.memoryCursorRowId || !rows.some((entry) => entry.id === this.memoryCursorRowId)) {
-      this.memoryCursorRowId = rows[0]?.id ?? null;
-    }
-    const activeLabel = this.activeLane()?.displayName ?? null;
-    const now = Date.now();
-    for (const entry of rows) {
-      const row = document.createElement('div');
-      const selected = entry.id === this.memoryCursorRowId;
-      // spec 293: the active lane's next #handoff writes this one.
-      const bound = activeLabel !== null && entry.boundLanes.includes(activeLabel);
-      row.className = `acp-harness__memory-row${selected ? ' acp-harness__memory-row--cursor' : ''}${bound ? ' acp-harness__memory-row--bound' : ''}`;
-      row.dataset.memoryId = entry.id;
-      const origin = `${entry.author}@${entry.host}`;
-      const bindings = entry.boundLanes.length > 0 ? ` · bound: ${entry.boundLanes.join(', ')}` : '';
-      row.innerHTML =
-        `<span class="acp-harness__memory-source" style="--acp-memory-accent:${esc(laneAccentForLabel(entry.author))}" title="${esc(origin)}">${esc(origin)}</span>` +
-        `<span class="acp-harness__memory-text">${bound ? '▸ ' : ''}${esc(entry.summary)}</span>` +
-        `<span class="acp-harness__memory-kind" title="${esc(formatShortTime(entry.updatedAt))}">${esc(formatHandoffAge(now - entry.updatedAt))}</span>` +
-        (selected ? `<div class="acp-harness__memory-detail">${esc(`${entry.id}${bindings}`)}\n\n${esc(entry.detail)}</div>` : '');
-      this.memoryPanelEl.appendChild(row);
-    }
+    this.memoryDrawer.update({
+      open: this.memoryDrawerOpen,
+      entries: rows,
+      cursorId: this.memoryCursorRowId,
+      warning: this.harnessMemoryWarning,
+      // spec 293: the active lane's next #handoff writes the row this marks.
+      activeLaneLabel: this.activeLane()?.displayName ?? null,
+      now: Date.now(),
+      onAutoClose: (): void => {
+        this.memoryDrawerOpen = false;
+      },
+    });
   }
 
   private renderComposer(): void {
@@ -13192,7 +12279,7 @@ export class AcpHarnessView implements ContentView {
     if (!lane) {
       this.dictationCtl.abort(false);
       this.composerBloomLayer?.replaceChildren();
-      this.composerEl.textContent = 'no lanes';
+      this.composer.update({ kind: 'empty' });
       return;
     }
     if (
@@ -13215,96 +12302,249 @@ export class AcpHarnessView implements ContentView {
       this.renderDecisionComposer(lane, 'ask', hint);
       return;
     }
-    this.composerEl.className =
-      `acp-harness__composer${this.focus === 'transcript' ? ' acp-harness__composer--command' : ''}` +
-      `${this.memoryDrawerOpen ? ' acp-harness__composer--memory' : ''}` +
-      `${this.dictationCtl.session?.laneId === lane.id ? ' acp-harness__composer--dictating' : ''}`;
-    const chip = this.chip !== null ? textSegments(this.chip) : this.composerStatusChip(lane);
-    const chipClass = `acp-harness__memory-chip${!this.chip && lane.status === 'busy' ? ' acp-harness__memory-chip--running' : ''}`;
-    const projectStatus = this.renderComposerProjectStatus();
     const dictation = this.dictationCtl.sessionFor(lane.id);
-    const before = lane.draft.slice(0, lane.cursor);
-    const after = lane.draft.slice(lane.cursor);
-    this.composerEl.style.setProperty('--acp-lane-accent', lane.accent);
-    let staging = '';
-    if (lane.stagedImages.length > 0) {
-      const chips = lane.stagedImages
-        .map((img, index) => {
-          const label = img.path ? basename(img.path) : img.mimeType;
-          return (
-            `<div class="acp-harness__staged-image">` +
-            `<img class="acp-harness__staged-thumb" src="data:${img.mimeType};base64,${img.data}" alt="" />` +
-            `<span class="acp-harness__staged-label">${esc(label)}</span>` +
-            `<button class="acp-harness__staged-remove" type="button" data-remove-staged-image="${index}" title="Remove image">x</button>` +
-            `</div>`
-          );
-        })
-        .join('');
-      const hint = `${lane.stagedImages.length} image${lane.stagedImages.length === 1 ? '' : 's'} · Esc to clear`;
-      staging = `<div class="acp-harness__staging">${chips}<span class="acp-harness__staging-hint">${esc(hint)}</span></div>`;
-    }
-    const mentionPalette = this.renderMentionPalette(lane);
-    const palette = renderSlashPalette(lane);
-    const hashPalette = this.renderHashPalette(lane);
-    const inlineVerbPalette = this.renderInlineVerbPalette(lane);
-    const peerStrip = buildComposerPeerStrip(
-      lane.status,
-      this.coordinator.pendingPeersFor(lane.id),
-      this.coordinator.inboxDepth(lane.id),
-    );
-    const input = dictation
-      ? this.dictationCtl.renderInput(dictation)
-      : `${esc(before)}<span class="acp-harness__caret">█</span>${this.renderGhost(lane)}${esc(after)}`;
-    const dictationControl = this.dictationCtl.renderControl(lane, dictation);
-    this.composerEl.innerHTML =
-      `<div class="acp-harness__composer-chrome">` +
-      `<div class="acp-harness__composer-meta">` +
-      `<span class="${chipClass}">${renderStatusSegments(chip)}</span>` +
-      // spec 221: no concise tag here either — the collapsed tool cards are the
-      // mode's own cue, and `? help` carries the binding.
-      // spec 221: no Polly chip here — `renderLaneStats` already prints
-      // `polly-bypass` for the active lane. Salty has no lane-stats cell, so
-      // dropping it too would lose the readout rather than deduplicate it.
-      renderSaltyBypassChip(lane) +
-      renderPermissionModeChip(lane) +
-      this.renderDirectiveChip(lane) +
-      projectStatus +
-      `</div>` +
-      `<div class="acp-harness__composer-tools">` +
-      `<span class="acp-harness__help-hint">? help</span>${dictationControl}</div></div>` +
-      peerStrip +
-      this.liveVoiceCtl.renderStrip(lane) +
-      staging +
-      mentionPalette +
-      palette +
-      hashPalette +
-      inlineVerbPalette +
-      `<div class="acp-harness__input-line">` +
-      `<span class="acp-harness__lane-tag">${esc(lane.displayName)}</span>` +
-      `<span class="acp-harness__prompt">${lane.status === 'busy'
-        ? `<span class="acp-harness__spinner">${SPINNER_FRAMES[0]}</span>`
-        : SPINNER_FRAMES[0]}</span>` +
-      `<span class="acp-harness__input">${input}</span></div>`;
-    const selectedPaletteRow = this.composerEl.querySelector<HTMLElement>(
-      '.acp-harness__slash-palette-row--selected',
-    );
-    if (typeof selectedPaletteRow?.scrollIntoView === 'function') {
-      selectedPaletteRow.scrollIntoView({ block: 'nearest' });
-    }
+    this.composer.update({
+      kind: 'draft',
+      accent: lane.accent,
+      command: this.focus === 'transcript',
+      memory: this.memoryDrawerOpen,
+      dictating: this.dictationCtl.session?.laneId === lane.id,
+      meta: this.composerMetaProps(lane),
+      dictation: this.dictationControlProps(lane, dictation),
+      peer: {
+        laneStatus: lane.status,
+        pendingPeers: this.coordinator.pendingPeersFor(lane.id),
+        inboxDepth: this.coordinator.inboxDepth(lane.id),
+      },
+      liveVoice: this.liveVoiceCtl.stripProps(lane),
+      staging: {
+        images: lane.stagedImages,
+        onRemove: (index: number): void => this.removeStagedImage(lane, index),
+      },
+      mention: this.mentionPaletteProps(lane),
+      slash: this.slashPaletteProps(lane),
+      hash: this.hashPaletteProps(lane),
+      verb: this.verbPaletteProps(lane),
+      draft: {
+        laneName: lane.displayName,
+        running: lane.status === 'busy',
+        draft: lane.draft,
+        cursor: lane.cursor,
+        ghost: this.visibleGhost(lane),
+        dictation: dictation
+          ? dictationPreviewParts(
+              dictation.baseDraft,
+              dictation.insertAt,
+              dictation.finalText,
+              dictation.interimText,
+            )
+          : null,
+      },
+    });
     this.syncComposerBloomLayer(lane, dictation ? null : this.pendingComposerBloom);
+  }
+
+  /** The chrome row: the status chip, the lane's chips, the branch, `? help`. */
+  private composerMetaProps(lane: HarnessLane): ComposerMetaProps {
+    const branch = gitBranchDisplay(this.gitBranch, this.gitBranchLoading);
+    return {
+      segments: this.chip !== null ? textSegments(this.chip) : this.composerStatusChip(lane),
+      running: !this.chip && lane.status === 'busy',
+      chips: this.composerChips(lane),
+      branch: branch
+        ? {
+            text: `⎇ ${branch}`,
+            title: this.projectDir
+              ? `${this.projectDir}${this.gitBranch ? ` on ${this.gitBranch}` : ''}`
+              : '',
+          }
+        : null,
+      helpHint: '? help',
+      onOpenDirective: (): void => {
+        void this.openDirectivePicker();
+      },
+    };
+  }
+
+  /**
+   * The chrome row's chips, in paint order.
+   *
+   * spec 221: no concise tag here — the collapsed tool cards are the mode's own
+   * cue, and `? help` carries the binding. No Polly chip either: `renderLaneStats`
+   * already prints `polly-bypass` for the active lane. Salty has no lane-stats
+   * cell, so dropping it too would lose the readout rather than deduplicate it.
+   */
+  private composerChips(lane: HarnessLane): ComposerMetaChipProps[] {
+    const chips: ComposerMetaChipProps[] = [];
+    const salty = isSaltyExecutorBypass(lane);
+    if (salty) {
+      chips.push({
+        key: 'salty-bypass',
+        block: 'acp-harness__lane-sandbox',
+        text: 'salty-bypass',
+        title:
+          'Salty executor — all tool permissions auto-accepted for this lane until the Salty role clears (#salty clear)',
+      });
+    }
+    if (lane.permissionMode !== 'normal' && !isPollyImplementerBypass(lane) && !salty) {
+      const bypass = lane.permissionMode === 'bypass';
+      chips.push({
+        key: 'permission-mode',
+        block: 'acp-harness__lane-sandbox',
+        text: bypass ? '' : 'auto-edit ⇧⇥',
+        icon: bypass ? { id: 'warn', cls: 'acp-harness__icon--dot' } : undefined,
+        trailing: bypass ? ' bypass ⇧⇥' : undefined,
+        title: bypass
+          ? 'Bypass — every tool permission is auto-accepted, including high-risk commands. Shift+Tab to change.'
+          : 'Auto-edit — file edits are auto-accepted; commands still ask. Shift+Tab to change.',
+      });
+    }
+    const directive = this.directiveChipProps(lane);
+    if (directive) chips.push(directive);
+    return chips;
+  }
+
+  /** Composer directive chip: clickable, opens the picker. Keyboard users use
+   * `Cmd+P → /`. Shows the pending (deferred) directive when the lane is busy. */
+  private directiveChipProps(lane: HarnessLane): ComposerMetaChipProps | null {
+    const pendingChange = lane.pendingDirectiveChange;
+    const pending = pendingChange !== null && pendingChange.directiveId !== lane.activeDirectiveId;
+    const id = pendingChange ? pendingChange.directiveId : lane.activeDirectiveId;
+    const directive = this.directiveById(id);
+    // spec 221: an unset directive said `directive none` — a chip whose only
+    // content is that it has no content. It returns the moment one is set; the
+    // picker itself lives on `Cmd+P` `.` and in the help overlay. A *pending*
+    // change still renders even when it resolves to none, because "clearing on
+    // the next send" is a state the user needs to see.
+    if (!directive && !pending) return null;
+    // spec 130: all harness-memory lanes may flag by default, so `◆ default`
+    // distinguishes nothing and is omitted (spec 221). Legacy directive metadata
+    // still shows, so older directive files stay legible.
+    const source = this.triageSource(lane);
+    const triage = lane.triageEquipped && source !== 'default';
+    return {
+      key: 'directive',
+      block: 'acp-harness__directive-chip',
+      text: `directive ${directive ? directive.id : 'none'}${pending ? ' (next send)' : ''}`,
+      title: 'Cmd+P then . to change',
+      data: { 'open-directive-picker': '1' },
+      modifiers: [
+        ...(directive ? ['acp-harness__directive-chip--set'] : []),
+        ...(pending ? ['acp-harness__directive-chip--pending'] : []),
+      ],
+      extra: triage
+        ? {
+            class: 'acp-harness__directive-chip__triage',
+            text: `◆ ${source}`,
+            title: `attention triage ${source}; tools are available when this lane has harness memory MCP`,
+          }
+        : null,
+    };
+  }
+
+  /** The `[● REC th ⌘D]` button, or null when this webview cannot dictate. */
+  private dictationControlProps(
+    lane: HarnessLane,
+    session: ActiveDictationSession | null,
+  ): DictationControlProps | null {
+    if (!session && !speechRecognitionConstructor()) return null;
+    const active = session !== null && session.laneId === lane.id;
+    return {
+      phase: active && session ? session.phase : 'idle',
+      active,
+      language: dictationLanguageLabel(session?.lang ?? DICTATION_LANG_ENGLISH),
+      onToggle: (): void => {
+        if (this.dictationCtl.session) this.dictationCtl.stop();
+        else this.dictationCtl.start(lane, DICTATION_LANG_ENGLISH);
+      },
+    };
+  }
+
+  private mentionPaletteProps(lane: HarnessLane): ComposerPaletteProps {
+    if (!this.mentionPaletteVisibleFor(lane)) return HIDDEN_PALETTE;
+    const matches = this.filteredMentionPaletteTargets(lane);
+    if (matches.length === 0) {
+      return { rows: [], cursor: 0, hint: '', zeroState: 'no matching lanes · Esc dismiss' };
+    }
+    return {
+      rows: matches.map((name): InlinePaletteRow => ({ name: `@${name}` })),
+      cursor: lane.mentionPaletteIndex,
+      hint: '↑↓ / ⌃n⌃p select · Enter/Tab insert · Esc dismiss',
+      commit: (index: number): void => {
+        const next = applyMentionSelection(lane.draft, lane.cursor, matches[index]);
+        lane.mentionPaletteDismissed = false;
+        this.setDraft(lane, next.draft, next.cursor);
+      },
+    };
+  }
+
+  private slashPaletteProps(lane: HarnessLane): ComposerPaletteProps {
+    if (!slashPaletteVisible(lane)) return HIDDEN_PALETTE;
+    const matches = filteredSlashCommands(lane);
+    if (matches.length === 0) return HIDDEN_PALETTE;
+    return {
+      rows: matches.map((cmd): InlinePaletteRow => ({
+        name: `/${cmd.name}`,
+        hint: cmd.inputHint || undefined,
+        desc: cmd.description || undefined,
+      })),
+      cursor: lane.slashPaletteIndex,
+      hint: '↑↓ / ⌃n⌃p select · Enter/Tab insert · Esc dismiss',
+      commit: (index: number): void => {
+        const cmd = matches[index];
+        this.setDraft(lane, `/${cmd.name} `, cmd.name.length + 2);
+      },
+    };
+  }
+
+  private hashPaletteProps(lane: HarnessLane): ComposerPaletteProps {
+    if (!hashPaletteVisible(lane.draft, lane.hashPaletteDismissed)) return HIDDEN_PALETTE;
+    const matches = filteredHashCommands(lane.draft);
+    if (matches.length === 0) return HIDDEN_PALETTE;
+    return {
+      // The `#` palette emits its description span unconditionally, even when
+      // the string is empty — `''` keeps that node, `undefined` would drop it.
+      rows: matches.map((cmd: HashCommand): InlinePaletteRow => ({
+        name: `#${cmd.name}`,
+        hint: cmd.args || undefined,
+        desc: cmd.description,
+      })),
+      cursor: lane.hashPaletteIndex,
+      hint: '↑↓ / ⌃n⌃p select · Tab complete · Esc dismiss',
+      commit: (index: number): void => {
+        const cmd = matches[index];
+        this.setDraft(lane, `#${cmd.name} `, cmd.name.length + 2);
+      },
+    };
+  }
+
+  private verbPaletteProps(lane: HarnessLane): ComposerPaletteProps {
+    if (!this.verbPaletteVisibleFor(lane)) return HIDDEN_PALETTE;
+    const matches = this.verbPaletteEntriesFor(lane);
+    if (matches.length === 0) return HIDDEN_PALETTE;
+    return {
+      rows: matches.map((entry): InlinePaletteRow => ({
+        name: `{{#${entry.name}}}`,
+        desc: entry.description || undefined,
+      })),
+      cursor: lane.verbPaletteIndex,
+      hint: 'inject verb · ↑↓ / ⌃n⌃p select · Tab insert · Esc dismiss',
+      commit: (index: number): void => {
+        const next = applyVerbSelection(lane.draft, lane.cursor, matches[index].name);
+        this.setDraft(lane, next.draft, next.cursor);
+      },
+    };
   }
 
   /** Permission / ask composer. A live voice session can answer the same
    *  request by voice, so its strip stays mounted above the decision row. */
   private renderDecisionComposer(lane: HarnessLane, label: string, hint: string): void {
-    this.composerEl.className = 'acp-harness__composer acp-harness__composer--permission';
-    this.composerEl.style.setProperty('--acp-lane-accent', lane.accent);
-    this.composerEl.innerHTML =
-      this.liveVoiceCtl.renderStrip(lane) +
-      `<div class="acp-harness__permission-row">` +
-      `<div class="acp-harness__composer-meta">${esc(label)}</div>` +
-      `<div class="acp-harness__permission-options">${esc(hint)}</div>` +
-      `</div>`;
+    this.composer.update({
+      kind: 'decision',
+      accent: lane.accent,
+      liveVoice: this.liveVoiceCtl.stripProps(lane),
+      decision: { label, hint },
+    });
     this.composerBloomLayer?.replaceChildren();
   }
 
@@ -13322,32 +12562,6 @@ export class AcpHarnessView implements ContentView {
     if (pending?.laneId === lane.id && pending.inserted) {
       spawnComposerBlooms(inputEl, this.composerBloomLayer, pending.inserted);
     }
-  }
-
-  /** Composer directive chip: clickable, opens the picker. Keyboard users use
-   * `Cmd+P → /`. Shows the pending (deferred) directive when the lane is busy. */
-  private renderDirectiveChip(lane: HarnessLane): string {
-    const pendingChange = lane.pendingDirectiveChange;
-    const pending = pendingChange !== null && pendingChange.directiveId !== lane.activeDirectiveId;
-    const id = pendingChange ? pendingChange.directiveId : lane.activeDirectiveId;
-    const directive = this.directiveById(id);
-    // spec 221: an unset directive said `directive none` — a chip whose only
-    // content is that it has no content. It returns the moment one is set; the
-    // picker itself lives on `Cmd+P` `.` and in the help overlay. A *pending*
-    // change still renders even when it resolves to none, because "clearing on
-    // the next send" is a state the user needs to see.
-    if (!directive && !pending) return '';
-    const label = directive ? directive.id : 'none';
-    const cls = `acp-harness__directive-chip${directive ? ' acp-harness__directive-chip--set' : ''}${pending ? ' acp-harness__directive-chip--pending' : ''}`;
-    const suffix = pending ? ' (next send)' : '';
-    // spec 130: all harness-memory lanes may flag by default, so `◆ default`
-    // distinguishes nothing and is omitted (spec 221). Legacy directive metadata
-    // still shows, so older directive files stay legible.
-    const source = this.triageSource(lane);
-    const triageTag = lane.triageEquipped && source !== 'default'
-      ? ` <span class="acp-harness__directive-chip__triage" title="attention triage ${source}; tools are available when this lane has harness memory MCP">◆ ${source}</span>`
-      : '';
-    return `<span class="${cls}" data-open-directive-picker="1" title="Cmd+P then . to change">directive ${esc(label)}${suffix}${triageTag}</span>`;
   }
 
   /** spec 221: the busy state is the only one with internal structure worth
@@ -13399,6 +12613,14 @@ export class AcpHarnessView implements ContentView {
     return textSegments(bound ? `handoff: ${bound.id} · ${total} in project` : `handoffs: ${total}`);
   }
 
+  /**
+   * Spec 301 §6.2: the 1 Hz clock advances `2:14` to `2:15` and the peer
+   * strip's `5m+` age bucket, and nothing else — so it hands those two rows
+   * their props directly. It used to re-render the WHOLE composer — chrome,
+   * palettes, staging tiles, input line — once a second for one digit. A tick
+   * whose formatted values did not move compares equal inside the components
+   * and writes nothing at all.
+   */
   private updateComposerTick(): void {
     const shouldTick = this.lanes.some((lane) => {
       if (lane.status === 'busy' && lane.activeTurnStartedAt !== null) return true;
@@ -13406,12 +12628,22 @@ export class AcpHarnessView implements ContentView {
       return lane.status === 'awaiting_peer';
     });
     if (shouldTick && this.composerTickTimer === null) {
-      this.composerTickTimer = window.setInterval(() => {
-        this.renderComposer();
-      }, 1000);
+      this.composerTickTimer = window.setInterval(() => this.tickComposerClock(), 1000);
     } else if (!shouldTick) {
       this.stopComposerTick();
     }
+  }
+
+  /** The composer's per-second rows. Silent while a decision row owns the
+   *  composer — that branch has neither a meta chip nor a peer strip. */
+  private tickComposerClock(): void {
+    const lane = this.activeLane();
+    if (!lane || lane.pendingPermissions.length > 0 || lane.pendingQuestions.length > 0) return;
+    this.composer.updateTick(this.composerMetaProps(lane), {
+      laneStatus: lane.status,
+      pendingPeers: this.coordinator.pendingPeersFor(lane.id),
+      inboxDepth: this.coordinator.inboxDepth(lane.id),
+    });
   }
 
   private stopComposerTick(): void {
@@ -13436,14 +12668,16 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  /**
+   * Spec 301: the `Spinner` component owns the frame counter and the set of
+   * mounted spinners, so the tick is one call. The old path incremented a view
+   * field, seeded a module global in `harness-tool-render.ts` so a structural
+   * tool-row rebuild would not snap the glyph back to frame 0, and then wrote
+   * the glyph into every `.acp-harness__spinner` it could find by selector.
+   * None of that is needed once the spinner is a component with an owner.
+   */
   private tickSpinner(): void {
-    this.spinnerFrame = (this.spinnerFrame + 1) % SPINNER_FRAMES.length;
-    const glyph = SPINNER_FRAMES[this.spinnerFrame];
-    // Keep the tool-row seed on the live frame so a structural rebuild
-    // mid-stream doesn't snap the glyph back to frame 0 (spec 114 rev 8).
-    setToolSpinnerGlyph(glyph);
-    const spinners = this.element.querySelectorAll<HTMLElement>('.acp-harness__spinner');
-    for (const el of spinners) el.textContent = glyph;
+    tickAllSpinners();
   }
 
   private stopSpinnerTicker(): void {
@@ -13538,25 +12772,16 @@ export class AcpHarnessView implements ContentView {
     };
   }
 
+  /**
+   * Spec 301: the 2 s metrics poll used to rewrite every lane head's
+   * `innerHTML`. `LaneHead` depends on the FORMATTED numbers, so a tick whose
+   * displayed values did not move now writes nothing at all.
+   */
   private refreshMetricsRender(): void {
+    const host = this.zenBodyCellEl ?? this.dashboardEl;
     for (const lane of this.lanes) {
-      const sessionId = lane.client?.sessionId ?? null;
-      const m = sessionId !== null ? this.metricsBySession.get(sessionId) ?? null : null;
-      const head = this.dashboardEl.querySelector<HTMLElement>(
-        `[data-lane-id="${CSS.escape(lane.id)}"] .acp-harness__lane-head`,
-      );
-      if (head) {
-        const active = lane.id === this.activeLaneId;
-        head.innerHTML = renderLaneHead(
-          lane,
-          active,
-          this.mcpStatsByLane.get(lane.displayName) ?? null,
-          m,
-          this.coordinator.inboxDepth(lane.id),
-          this.coordinator.pendingPeersFor(lane.id),
-          lane.id === this.orchestratorLaneId,
-        );
-      }
+      const shell = listComponent(host, laneShellKey(lane.id, lane.id === this.activeLaneId));
+      (shell as LaneShell | undefined)?.update(this.laneShellProps(lane));
     }
     if (this.metricsPanelOpen) this.renderMetricsPanel();
     this.renderLanePeek();
@@ -13571,181 +12796,30 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderMetricsPanel(): void {
-    this.metricsOverlayEl.hidden = !this.metricsPanelOpen;
-    if (!this.metricsPanelOpen) return;
-    const rows: string[] = [];
-    rows.push(
-      `<header class="acp-harness__metrics-head">` +
-        `<span class="acp-harness__metrics-title">Lane Resource Usage</span>` +
-        `<span class="acp-harness__metrics-hint">Esc to close · refreshes every ${(METRICS_POLL_MS / 1000).toFixed(0)}s</span>` +
-      `</header>`,
-    );
-    for (const lane of this.lanes) {
-      const sessionId = lane.client?.sessionId ?? null;
-      const m = sessionId !== null ? this.metricsBySession.get(sessionId) ?? null : null;
-      rows.push(this.renderMetricsLaneBlock(lane, m));
-    }
-    this.metricsOverlayEl.innerHTML = rows.join('');
-  }
-
-  private renderMetricsLaneBlock(lane: HarnessLane, m: AcpLaneMetrics | null): string {
-    const totals = m && m.root_alive
-      ? (
-        `<span class="acp-harness__metrics-total acp-harness__metrics-total--cpu">CPU ${esc(formatCpu(m.total_cpu_percent))}</span>` +
-        `<span class="acp-harness__metrics-total">MEM ${esc(formatRss(m.total_rss_mb))}</span>` +
-        `<span class="acp-harness__metrics-total">${m.proc_count} proc${m.proc_count === 1 ? '' : 's'}</span>`
-      )
-      : `<span class="acp-harness__metrics-total acp-harness__metrics-total--dim">no live process</span>`;
-    const head =
-      `<div class="acp-harness__metrics-lane-head">` +
-      `<span class="acp-harness__metrics-lane-name">${esc(lane.displayName)}</span>` +
-      `<span class="acp-harness__metrics-lane-totals">${totals}</span>` +
-      `</div>`;
-    if (!m || !m.root_alive || m.proc_count === 0) return `<section class="acp-harness__metrics-lane">${head}</section>`;
-    const tree = renderProcessTree(m);
-    return `<section class="acp-harness__metrics-lane">${head}${tree}</section>`;
-  }
-
-  /** spec 221: the branch only. The working directory used to lead this readout,
-   *  but it is printed three more times on the same screen — `renderLaneStats`
-   *  names the project, the window footer's project badge magnifies it, and the
-   *  workspace footer carries the full path for the focused pane. The branch is
-   *  the one part with no other home once this window loses focus. */
-  private renderComposerProjectStatus(): string {
-    const branch = gitBranchDisplay(this.gitBranch, this.gitBranchLoading);
-    if (!branch) return '';
-    const title = this.projectDir ? `${this.projectDir}${this.gitBranch ? ` on ${this.gitBranch}` : ''}` : '';
-    return (
-      `<span class="acp-harness__project-status" title="${esc(title)}">` +
-      `<span class="acp-harness__project-branch">⎇ ${esc(branch)}</span>` +
-      `</span>`
-    );
+    this.metricsOverlay.update({
+      open: this.metricsPanelOpen,
+      lanes: this.lanes.map((lane): MetricsLane => {
+        const sessionId = lane.client?.sessionId ?? null;
+        return {
+          id: lane.id,
+          displayName: lane.displayName,
+          metrics: sessionId !== null ? this.metricsBySession.get(sessionId) ?? null : null,
+        };
+      }),
+      pollMs: METRICS_POLL_MS,
+      onAutoClose: (): void => {
+        this.metricsPanelOpen = false;
+      },
+    });
   }
 
   private renderHelp(): void {
-    this.helpOverlayEl.hidden = !this.helpOpen;
-    if (!this.helpOpen) return;
-    this.helpOverlayEl.innerHTML = `
-      <header class="acp-harness__help-head">
-        <span>ACP Harness Help</span>
-        <span>Esc / ? / q closes</span>
-      </header>
-      <div class="acp-harness__help-grid">
-        <section class="acp-harness__help-section">
-          <h3>Lane Control</h3>
-          <dl>
-            <dt>Cmd+P then +</dt><dd>Add lane (open backend picker)</dd>
-            <dt>Cmd+P then _</dt><dd>Close active lane</dd>
-            <dt>Cmd+P then =</dt><dd>Toggle lane metrics overlay</dd>
-            <dt>Cmd+P then 0</dt><dd>Resume/load a project session for the active backend</dd>
-            <dt>Ctrl+N / Ctrl+P</dt><dd>Next / previous lane</dd>
-            <dt>Esc, then 1-9</dt><dd>Switch lane in transcript mode</dd>
-            <dt>Esc, then r</dt><dd>Refresh Git branch and file-reference line counts</dd>
-            <dt>Esc, then ?</dt><dd>Open help</dd>
-            <dt>Tab buttons</dt><dd>Click a lane directly</dd>
-            <dt>Enter</dt><dd>Send prompt to active lane only (busy lane: steer the running turn when the agent supports it, else queue)</dd>
-            <dt>Cmd+Enter</dt><dd>Busy lane: queue as a follow-up for the next turn</dd>
-            <dt>Shift+Tab</dt><dd>Cycle the lane's permission mode: normal → auto-edit (file edits auto-accepted) → bypass (everything auto-accepted, including high-risk)</dd>
-            <dt>Shift+Enter</dt><dd>Insert newline</dd>
-            <dt>Ctrl+C</dt><dd>Cancel active busy lane</dd>
-            <dt>Ctrl+Shift+J / Ctrl+Shift+K</dt><dd>Scroll transcript down / up (works in composer)</dd>
-            <dt>Cmd+W</dt><dd>Close harness tab</dd>
-            <dt>Cmd+.</dt><dd>Toggle Zen Mode</dd>
-            <dt>Cmd+Shift+.</dt><dd>Toggle Concise Mode (tool cards collapse to one line)</dd>
-          </dl>
-        </section>
-        <section class="acp-harness__help-section">
-          <h3>Composer (readline)</h3>
-          <dl>
-            <dt>Ctrl+A / Ctrl+E</dt><dd>Begin / end of line</dd>
-            <dt>Ctrl+B / Ctrl+F</dt><dd>Char back / forward</dd>
-            <dt>Ctrl+Left / Ctrl+Right</dt><dd>Word back / forward</dd>
-            <dt>Ctrl+H</dt><dd>Backspace</dd>
-            <dt>Ctrl+D</dt><dd>Delete char forward</dd>
-            <dt>Cmd+D</dt><dd>Start / stop English dictation (when available)</dd>
-            <dt>Cmd+Shift+D</dt><dd>Start / stop Thai dictation (when available)</dd>
-            <dt>Ctrl+W</dt><dd>Delete word backward (kill)</dd>
-            <dt>Ctrl+U</dt><dd>Kill to start of line</dd>
-            <dt>Ctrl+K</dt><dd>Kill to end of line</dd>
-            <dt>Ctrl+Y</dt><dd>Yank last killed text</dd>
-            <dt>Ctrl+T</dt><dd>Transpose chars around cursor</dd>
-            <dt># / @ / /</dt><dd>Type at line start to autocomplete built-in #commands / @lanes / agent /commands · ↑↓ select, Tab completes</dd>
-          </dl>
-        </section>
-        <section class="acp-harness__help-section">
-          <h3>Permissions</h3>
-          <dl>
-            <dt>a</dt><dd>Accept current request once</dd>
-            <dt>A</dt><dd>Accept all for current turn</dd>
-            <dt>r</dt><dd>Reject current request once</dd>
-            <dt>R</dt><dd>Reject all for current turn</dd>
-            <dt>Esc</dt><dd>Never answers a request — only <kbd>r</kbd> / <kbd>R</kbd> reject</dd>
-          </dl>
-        </section>
-        <section class="acp-harness__help-section">
-          <h3>Memory</h3>
-          <dl>
-            <dt>Ctrl+M</dt><dd>Toggle memory drawer</dd>
-            <dt>q / Esc</dt><dd>Close memory drawer</dd>
-            <dt>j / k</dt><dd>Move memory cursor</dd>
-            <dt>g / G</dt><dd>Top / bottom of memory list</dd>
-            <dt>Agents</dt><dd>Create, update, delete, search, and fetch detail through MCP tools</dd>
-          </dl>
-        </section>
-        <section class="acp-harness__help-section">
-          <h3>Transcript</h3>
-          <dl>
-            <dt>Esc</dt><dd>Focus active transcript scrolling</dd>
-            <dt>i / Esc</dt><dd>Return to input composer</dd>
-            <dt>1-9</dt><dd>Switch lane</dd>
-            <dt>j / k</dt><dd>Scroll line by line</dd>
-            <dt>Ctrl+d / Ctrl+u</dt><dd>Page down / up</dd>
-            <dt>g / G</dt><dd>Top / bottom</dd>
-            <dt>c</dt><dd>Annotate selection (or nearest block)</dd>
-            <dt>s</dt><dd>Send unsent annotations as one turn</dd>
-            <dt>d</dt><dd>Delete last unsent annotation</dd>
-            <dt>q</dt><dd>Close harness tab</dd>
-          </dl>
-        </section>
-        <section class="acp-harness__help-section acp-harness__help-section--wide">
-          <h3>Commands</h3>
-          <dl>
-            <dt>#cancel</dt><dd>Cancel active lane, same as Ctrl+C</dd>
-            <dt>#new</dt><dd>Start fresh active lane, keep handoffs (the next #handoff starts a new thread)</dd>
-            <dt>#new!</dt><dd>Start fresh active lane and delete the handoff it is bound to</dd>
-            <dt>#review [&lt;lane&gt; …] [-- &lt;docpath | note&gt;]</dt><dd>Fan a review of your diff or a design doc out to other lanes (all live lanes if none named)</dd>
-            <dt>#review pass [N] [&lt;lane&gt; …] [-- &lt;docpath | note&gt;]</dt><dd>Review, fix the Blockers, re-review — until every reviewer passes or N rounds (default 3, max 8); one summary Board at the end</dd>
-            <dt>#review stop</dt><dd>Stop a review pass after the current step and write its summary (#cancel stops it with no summary)</dd>
-            <dt>#review-thread</dt><dd>Start a Review Thread for the active lane's diff, with a fixed snapshot and human verdict</dd>
-            <dt>#polly &lt;task&gt;</dt><dd>Polly orchestration from this lane — auto-spawns two other Cursor/Claude/Codex workers (orchestrator covers its own backend when in pool)</dd>
-            <dt>#debby &lt;question&gt;</dt><dd>Debby brainstorming from this lane — auto-spawns Claude and Codex heads as plain responders</dd>
-            <dt>#restart</dt><dd>Respawn active lane when error or stopped</dd>
-            <dt>#mem</dt><dd>Show memory command hint</dd>
-            <dt>#mem clear</dt><dd>Delete the handoff bound to the active lane</dd>
-            <dt>#handoff</dt><dd>Ask active lane to write or refresh the handoff for its current work</dd>
-            <dt>#resume</dt><dd>Resume the newest handoff in the project (local and Xenon), from any lane or machine</dd>
-            <dt>#resume list</dt><dd>List the 10 newest handoffs with id, age, host, author and source</dd>
-            <dt>#resume &lt;id&gt;</dt><dd>Resume one handoff by id or a unique prefix of 4+ characters after ho-</dd>
-            <dt>#push handoff [&lt;id&gt;]</dt><dd>Publish handoffs (or one by id) to the Xenon server</dd>
-            <dt>#wiki [hint]</dt><dd>Compound this session into the project wiki (docs/wiki/)</dd>
-            <dt>#recall &lt;question&gt;</dt><dd>Answer a question from the project wiki, with citations</dd>
-            <dt>#directive &lt;intent&gt;</dt><dd>Have the active lane create/edit a reusable directive in acp-harness.toml</dd>
-            <dt>#draw &lt;request&gt;</dt><dd>Draw in an open tldraw Offline document (focused or named) — static shapes or durable document scripts</dd>
-            <dt>#telegram</dt><dd>Open Telegram controller settings</dd>
-            <dt>#mcp</dt><dd>Show MCP endpoint and lane status</dd>
-            <dt>#panels [hide | show | toggle]</dt><dd>Hide or restore persistent Harness panels</dd>
-            <dt>#timeline [open | add | review | auto | trace]</dt><dd>บันทึก ตรวจทานข้อเสนอ เปิดดู หรือไล่ประวัติ project ในเครื่อง</dd>
-            <dt>#queue [clear | edit N]</dt><dd>Manage prompts queued while the lane is busy</dd>
-            <dt>#unqueue [N]</dt><dd>Remove the last (or Nth) queued prompt</dd>
-            <dt>!cmd</dt><dd>Run shell command in project cwd, output goes to transcript</dd>
-          </dl>
-        </section>
-        <section class="acp-harness__help-section acp-harness__help-section--wide">
-          <h3>Model</h3>
-          <p>Each lane is a separate ACP subprocess in the same project directory. Prompts go only to the active lane. Handoffs are project-wide, read-only for humans, and written by agents through the handoff_set MCP tool.</p>
-        </section>
-      </div>
-    `;
+    this.helpOverlay.update({
+      open: this.helpOpen,
+      onAutoClose: (): void => {
+        this.helpOpen = false;
+      },
+    });
   }
 
   private appendTranscript(
@@ -13949,7 +13023,7 @@ export class AcpHarnessView implements ContentView {
       // The first assistant/user chunk is the only boundary ACP gives us for
       // a completed thought. Seal its live wrapper before clearing the pointer
       // so the body-only pass keeps the row DOM instead of remounting it.
-      this.sealStreamingTextRow(lane, thoughtId);
+      this.sealMountedRow(lane, thoughtId);
       lane.currentThoughtId = null;
     }
     const currentId = kind === 'user'
@@ -14238,19 +13312,25 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
-  /** Patch a row's strip in place. A streaming row never re-renders through
-   *  its signature (spec 114 fast path), so the strip is patched directly; the
-   *  body-only pass then rebuilds any sealed row whose image signature moved. */
+  /**
+   * Spec 301: the strip is a child component of the row that owns it, and its
+   * deps are the image signature — so this hands the row new props and the
+   * strip repaints itself. The old path removed and rebuilt the strip node by
+   * hand because a streaming row never re-rendered through its signature.
+   */
   private syncImageStrip(lane: HarnessLane, item: HarnessTranscriptItem): void {
     if (lane.id !== this.activeLaneId) return;
-    const wrapper = this.activeTranscriptBody()?.querySelector<HTMLElement>(
-      `.acp-harness__msg[data-msg-id="${CSS.escape(item.id)}"]`,
-    );
-    if (wrapper) {
-      wrapper.querySelector(':scope > .acp-harness__images')?.remove();
-      const strip = renderImageStrip(item);
-      if (strip) wrapper.appendChild(strip);
-    }
+    this.transcript?.rowFor(item.id)?.update({
+      item,
+      isNew: false,
+      streaming:
+        item.id === lane.currentAssistantId
+        || item.id === lane.currentThoughtId
+        || item.id === lane.currentUserId,
+      lane,
+      projectDir: this.projectDir,
+      resolveLocalImages: !this.remoteRuntimeId,
+    });
     this.scheduleStreamingBodyOnly(lane);
   }
 
@@ -14263,7 +13343,7 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     this.imageViewer.open(imageId);
-    this.renderComposer();
+    this.flushRegion('composer');
   }
 
   /** Viewer `ensureLive`: reload a budget-released path image. */
@@ -14351,7 +13431,7 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     this.imageViewer.openSvg({ itemId, index: entry.index, label: `${entry.kind} ${entry.index + 1}`, ...source });
-    this.renderComposer();
+    this.flushRegion('composer');
   }
 
   /** spec 283: copy the fence as the agent wrote it (unthemed). */
@@ -14411,16 +13491,11 @@ export class AcpHarnessView implements ContentView {
           lane.streamingMarkdownParser = null;
           lane.streamingMarkdownBody = null;
           lane.streamingMarkdownItemId = null;
-          this.sealStreamingTextRow(lane, thoughtId);
-          this.sealStreamingTextRow(lane, userId);
+          this.sealMountedRow(lane, thoughtId);
+          this.sealMountedRow(lane, userId);
           this.scheduleLaneRender(lane);
           return;
         }
-        // Spec 117: seal assistant rows through the streaming-markdown parser
-        // (branch A) or via an offscreen capture if this lane streamed entirely
-        // in the background and never created a parser (branch B). Either way,
-        // populate the markdownSource/markdownHtml cache so future renders skip
-        // marked.parse for this row.
         // Finalising a live assistant body can replace a streaming GFM table
         // and append the reference rail. Both mutate the scroll container's
         // height before the body-only pass gets a chance to follow it. Guard
@@ -14431,7 +13506,13 @@ export class AcpHarnessView implements ContentView {
           ? this.beginProgrammaticScroll()
           : null;
         try {
-          this.sealAssistantStreamingMarkdown(lane, item);
+          // Spec 301: a mounted row seals itself — the component owns its
+          // parser, its drain and its markdown cache. An unmounted row (the
+          // lane streamed entirely in the background) still needs the cold
+          // cache so it paints instantly when the lane is activated.
+          if (!this.sealMountedRow(lane, assistantId)) {
+            this.captureAssistantMarkdownOffscreen(lane, item);
+          }
           this.collectTextImagePaths(lane, item, 'agent');
         } finally {
           if (suppressToken !== null) this.releaseProgrammaticScroll(suppressToken);
@@ -14440,141 +13521,80 @@ export class AcpHarnessView implements ContentView {
         item.streamingMarkdownWritten = undefined;
       }
     }
-    this.sealStreamingTextRow(lane, thoughtId);
-    this.sealStreamingTextRow(lane, userId);
+    this.sealMountedRow(lane, thoughtId);
+    this.sealMountedRow(lane, userId);
     // spec 281: a replayed user row's text may name image paths.
     const userItem = userId ? lane.transcript.find((entry) => entry.id === userId) : null;
     if (userItem?.kind === 'user') this.collectTextImagePaths(lane, userItem, 'user');
-    // Spec 114: sealing is a transcript-row signature change, not a chrome
-    // change. Permission/error still scheduleLaneRender; stop patches chrome
-    // in place via patchLaneTurnChrome.
+    // Spec 114: sealing is a row-state change, not a chrome change.
+    // Permission/error still scheduleLaneRender; stop patches chrome in place
+    // via patchLaneTurnChrome.
     this.scheduleStreamingBodyOnly(lane);
   }
 
-  /** Stamp a sealed thought/user wrapper so the next body-only pass is a
-   *  no-op. Without this the `'stream'` signature mismatches and
-   *  replaceChildren remounts the row. */
-  private sealStreamingTextRow(lane: HarnessLane, id: string | null): void {
-    if (!id || id.startsWith('thought-veil:')) return;
+  /**
+   * Spec 301: seal the mounted row component for `id`, if there is one.
+   *
+   * `LiveComponent.seal()` is the single live→static transition: it drains the
+   * row's parser, re-derives every wrapper class from state (which is how
+   * `acp-harness__msg--streaming` goes away — never by name) and re-syncs deps
+   * so the next pass is a no-op. It invalidates no region, which is CLAUDE.md
+   * constraint 10's third sub-rule.
+   *
+   * Returns false when the row is not mounted — a background lane, or a row
+   * outside the tail window.
+   */
+  private sealMountedRow(lane: HarnessLane, id: string | null): boolean {
+    if (!id || id.startsWith('thought-veil:')) return false;
+    if (lane.id !== this.activeLaneId) return false;
+    const row = this.transcript?.rowFor(id);
+    if (!row) return false;
     const item = lane.transcript.find((entry) => entry.id === id);
-    if (!item || (item.kind !== 'thought' && item.kind !== 'user')) return;
-    if (lane.id !== this.activeLaneId) return;
-    const root = this.activeTranscriptBody();
-    if (!root) return;
-    const wrapper = root.querySelector<HTMLElement>(
-      `.acp-harness__msg[data-msg-id="${CSS.escape(id)}"]`,
-    );
-    if (!wrapper) return;
-    const body = wrapper.querySelector<HTMLElement>('.acp-harness__msg-body');
-    if (!body) return;
-    sealStreamingTextBody(body, item);
-    wrapper.classList.remove('acp-harness__msg--streaming');
-    if (item.kind === 'thought') {
-      const label = wrapper.querySelector<HTMLElement>('.acp-harness__msg-label');
-      if (label) syncThoughtEffortMeter(label, item.text.length);
-    }
-    wrapper.dataset.renderSignature = transcriptRenderSignature(item, false, lane);
+    if (!item) return false;
+    row.seal({
+      item,
+      isNew: false,
+      streaming: false,
+      lane,
+      projectDir: this.projectDir,
+      resolveLocalImages: !this.remoteRuntimeId,
+    });
+    return true;
   }
 
   /**
-   * Spec 117 seal path. Drains any residual delta into the streaming-markdown
-   * parser, flushes via parser_end, captures the rendered HTML into the row's
-   * cache, and stabilises the wrapper's renderSignature so the next pass
-   * through renderActiveTranscript() short-circuits to the no-op branch.
+   * Spec 117 cold-cache capture for an assistant row that is NOT mounted —
+   * a lane that streamed entirely in the background, so no `AssistantRow` ever
+   * existed to own a parser. Builds an offscreen parser, parses `item.text` in
+   * one shot and caches the HTML, so the row paints instantly when the lane is
+   * next activated.
    *
-   * Branch A: lane.streamingMarkdownParser exists (lane was foreground at some
-   * point during the turn). Uses the parser-owned body (may be detached).
-   *
-   * Branch B: no parser ever existed (purely background stream). Builds an
-   * offscreen parser, parses item.text in one shot, captures innerHTML.
+   * The mounted case is `AssistantRow.onSeal()`: the component owns the parser
+   * and the drain, which is why the old branch A is gone from here.
    */
-  private sealAssistantStreamingMarkdown(lane: HarnessLane, item: HarnessTranscriptItem): void {
-    if (
-      lane.streamingMarkdownParser !== null &&
-      lane.streamingMarkdownBody !== null &&
-      lane.streamingMarkdownItemId === item.id
-    ) {
-      const body = lane.streamingMarkdownBody;
-      const parser = lane.streamingMarkdownParser;
-      const written = item.streamingMarkdownWritten ?? 0;
-      // Seal-drain: write any residual delta that accumulated between the
-      // last RAF tick and now (e.g. final ACP chunk + stop event in the same
-      // task, or background lane whose RAF was skipped).
-      if (item.text.length > written) {
-        try {
-          smd.parser_write(parser, item.text.slice(written));
-        } catch (e) {
-          console.warn('[spec117] parser_write during seal failed', e);
-        }
-        item.streamingMarkdownWritten = item.text.length;
+  private captureAssistantMarkdownOffscreen(lane: HarnessLane, item: HarnessTranscriptItem): void {
+    const offscreen = document.createElement('div');
+    try {
+      const parser = smd.parser(makeSafeRenderer(offscreen));
+      smd.parser_write(parser, item.text);
+      smd.parser_end(parser);
+      // Spec 117 table guard: same output as the mounted path.
+      if (streamingMarkdownDroppedTable(offscreen, item.text)) {
+        offscreen.innerHTML = md.parse(item.text, { async: false }) as string;
       }
-      try {
-        smd.parser_end(parser);
-      } catch (e) {
-        console.warn('[spec117] parser_end during seal failed', e);
-      }
-      // spec 283: the row is no longer live — drop the rev 2 live cards (never
-      // cached) and un-collapse ```svg fences so decorateSvgFences can card
-      // them (an invalid one shows as plain code).
-      body.classList.remove(STREAMING_MARKDOWN_LIVE_CLASS);
-      clearLiveSvgFences(body);
-      // Spec 117 table guard: keep smd's DOM unless it dropped a table marked
-      // would render, then re-render with marked. Either branch resolves
-      // agent-emitted local image paths on the LIVE body before caching — a
-      // sealed foreground row is not re-rendered (renderSignature is stabilised
-      // below), so this is the only chance to fix its <img> srcs.
-      if (streamingMarkdownDroppedTable(body, item.text)) {
-        rerenderAssistantMarkdownWithMarked(
-          body,
-          item.text,
-          this.projectDir,
-          !this.remoteRuntimeId,
-        );
-      } else if (!this.remoteRuntimeId) {
-        resolveLocalImageSrcs(body, this.projectDir);
-      }
-      item.markdownHtml = body.innerHTML;
-      // spec 283: decorate after the capture — the cache stays pure markdown.
-      decorateSvgFences(body, item);
+      if (!this.remoteRuntimeId) resolveLocalImageSrcs(offscreen, this.projectDir);
+      item.markdownHtml = offscreen.innerHTML;
       item.markdownSource = item.text;
-      scanMessageResourceBody(body, item, this.projectDir);
-      appendMessageResourceRail(body, item, this.projectDir, lane);
-      // Stabilise signature so the next renderActiveTranscript() pass hits the
-      // no-op branch instead of rebuilding via marked.parse. Only meaningful
-      // when the wrapper is in the live transcript DOM (active lane); for
-      // background lanes the cache populated above is the protection. The
-      // no-op branch never rewrites className, so drop the streaming class
-      // here too — left on, the label's infinite pulse kept repainting the
-      // sealed reply after the turn ended.
-      const wrapper = body.parentElement;
-      if (wrapper && wrapper.dataset.msgId === item.id) {
-        wrapper.classList.remove('acp-harness__msg--streaming');
-        wrapper.dataset.renderSignature = transcriptRenderSignature(item, false, lane);
-      }
-    } else {
-      // Branch B — cold-cache offscreen capture for background-only streams.
-      const offscreen = document.createElement('div');
-      try {
-        const parser = smd.parser(makeSafeRenderer(offscreen));
-        smd.parser_write(parser, item.text);
-        smd.parser_end(parser);
-        // Spec 117 table guard: same output as branch A. No provenance node
-        // exists on this fresh offscreen div.
-        if (streamingMarkdownDroppedTable(offscreen, item.text)) {
-          offscreen.innerHTML = md.parse(item.text, { async: false }) as string;
-        }
-        if (!this.remoteRuntimeId) resolveLocalImageSrcs(offscreen, this.projectDir);
-        item.markdownHtml = offscreen.innerHTML;
-        item.markdownSource = item.text;
-        scanMessageResourceBody(offscreen, item, this.projectDir);
-      } catch (e) {
-        console.warn('[spec117] offscreen seal capture failed', e);
-        // Leave cache unset; cold-load path will use marked as a fallback.
-      }
+      scanMessageResourceBody(offscreen, item, this.projectDir);
+    } catch (e) {
+      console.warn('[spec117] offscreen seal capture failed', e);
+      // Leave the cache unset; the cold-load path falls back to marked.
     }
-    lane.streamingMarkdownParser = null;
-    lane.streamingMarkdownBody = null;
-    lane.streamingMarkdownItemId = null;
+    if (lane.streamingMarkdownItemId === item.id) {
+      lane.streamingMarkdownParser = null;
+      lane.streamingMarkdownBody = null;
+      lane.streamingMarkdownItemId = null;
+    }
     if (item.resources?.some((resource) => resource.kind === 'file')) {
       this.scheduleReferenceGitRefresh();
     }
@@ -14667,62 +13687,13 @@ export class AcpHarnessView implements ContentView {
 
   private renderPlanPanel(lane: HarnessLane | null): void {
     if (this.panelsHidden) return;
-    if (!lane || !lane.plan || lane.plan.length === 0) {
-      this.planEl.hidden = true;
-      this.planEl.innerHTML = '';
-      this.planSlotEl.hidden = true;
+    const entries = lane?.plan ?? [];
+    if (entries.length === 0) {
+      this.planSlot.hidden = true;
       return;
     }
-    const entries = lane.plan;
-    const done = entries.filter((e) => e.status === 'completed').length;
-    const total = entries.length;
-    const collapsed = lane.planCollapsed;
-    const progressPct = Math.round((done / total) * 100);
-    this.planEl.title = `p ${collapsed ? 'expand' : 'collapse'}`;
-
-    const header =
-      `<div class="acp-harness__plan-header">` +
-      `<span class="acp-harness__plan-title">plan</span>` +
-      `<span class="acp-harness__plan-count"><b>${done}</b> / ${total}</span>` +
-      `</div>`;
-
-    const progress =
-      `<div class="acp-harness__plan-progress">` +
-      `<span class="acp-harness__plan-progress-fill" style="width: ${progressPct}%"></span>` +
-      `</div>`;
-
-    const rows = entries
-      .map((entry) => {
-        const cls = `acp-harness__plan-entry acp-harness__plan-entry--${entry.status}`;
-        const marker = entry.status === 'completed' ? '✓' : entry.status === 'in_progress' ? '▸' : '·';
-        const priority = entry.priority === 'high'
-          ? `<span class="acp-harness__plan-priority">high</span>`
-          : '';
-        return (
-          `<div class="${cls}">` +
-          `<span class="acp-harness__plan-entry-mark">${marker}</span>` +
-          `<span class="acp-harness__plan-entry-text">${esc(entry.content)}${priority}</span>` +
-          `</div>`
-        );
-      })
-      .join('');
-    const entriesBlock = collapsed
-      ? ''
-      : `<div class="acp-harness__plan-entries">${rows}</div>`;
-
-    this.planEl.innerHTML = header + progress + entriesBlock;
-    if (!collapsed) {
-      const entriesEl = this.planEl.querySelector('.acp-harness__plan-entries');
-      if (entriesEl) {
-        const scrollTarget =
-          entriesEl.querySelector<HTMLElement>('.acp-harness__plan-entry--in_progress') ??
-          entriesEl.querySelector<HTMLElement>('.acp-harness__plan-entry:last-child');
-        scrollTarget?.scrollIntoView({ block: 'nearest' });
-      }
-    }
-    this.planEl.classList.toggle('acp-harness__plan--collapsed', collapsed);
-    this.planEl.hidden = false;
-    this.planSlotEl.hidden = false;
+    this.planPanel.update({ entries, collapsed: lane?.planCollapsed === true });
+    this.planSlot.hidden = false;
   }
 
   private handleFsReviewKey(e: KeyboardEvent, lane: HarnessLane, item: HarnessTranscriptItem): boolean {
@@ -14765,7 +13736,7 @@ export class AcpHarnessView implements ContentView {
       // when its hint changes (entering or leaving the "Other" input).
       this.scheduleStreamingBodyOnly(lane);
       const hintAfter = questionActionsHint(ask.questions[ask.card.questionIndex], ask.wire, ask.card.otherFocused);
-      if (hintAfter !== hintBefore) this.renderComposer();
+      if (hintAfter !== hintBefore) this.flushRegion('composer');
       this.updateComposerTick();
     }
     return true;
@@ -14840,7 +13811,7 @@ export class AcpHarnessView implements ContentView {
     } else {
       this.annotationArmed = captured;
       this.syncAnnotationPill();
-      this.renderComposer();
+      this.flushRegion('composer');
     }
     this.pinStickyAfterComposerKey();
   }
@@ -14931,7 +13902,7 @@ export class AcpHarnessView implements ContentView {
   private disarmAnnotation(): void {
     this.annotationArmed = null;
     this.removeAnnotationPill();
-    this.renderComposer();
+    this.flushRegion('composer');
     this.pinStickyAfterComposerKey();
   }
 
@@ -14995,7 +13966,7 @@ export class AcpHarnessView implements ContentView {
     window.getSelection()?.removeAllRanges();
     this.removeAnnotationPill();
     this.renderActiveTranscript(lane);
-    this.renderComposer();
+    this.flushRegion('composer');
     this.flashChip(`added · s to send ${collectUnsent(lane.transcript).length}`);
   }
 
@@ -15021,7 +13992,7 @@ export class AcpHarnessView implements ContentView {
       this.flashChip(`sent ${unsent.length} annotation${unsent.length === 1 ? '' : 's'}`);
     }
     this.renderActiveTranscript(lane);
-    this.renderComposer();
+    this.flushRegion('composer');
   }
 
   private deleteLastUnsentAnnotation(): void {
@@ -15036,7 +14007,7 @@ export class AcpHarnessView implements ContentView {
           list.splice(j, 1);
           if (list.length === 0) item.annotations = undefined;
           this.renderActiveTranscript(lane);
-          this.renderComposer();
+          this.flushRegion('composer');
           return;
         }
       }
@@ -15055,7 +14026,7 @@ export class AcpHarnessView implements ContentView {
       list.splice(idx, 1);
       if (list.length === 0) item.annotations = undefined;
       this.renderActiveTranscript(lane);
-      this.renderComposer();
+      this.flushRegion('composer');
       return;
     }
   }
@@ -15081,7 +14052,7 @@ export class AcpHarnessView implements ContentView {
     const pill = document.createElement('button');
     pill.type = 'button';
     pill.className = 'acp-harness__anno-pill';
-    pill.innerHTML = '<kbd>c</kbd> annotate · Esc dismiss';
+    pill.append(el('kbd', { text: 'c' }), ' annotate · Esc dismiss');
     const rect = this.annotationArmed.rect;
     const br = body.getBoundingClientRect();
     pill.style.top = `${rect.bottom - br.top + body.scrollTop + 6}px`;
@@ -15324,20 +14295,20 @@ export class AcpHarnessView implements ContentView {
   private stageImageData(lane: HarnessLane, data: string, mimeType: string, path: string | null): boolean {
     if (!this.canStageImage(lane, data)) return false;
     lane.stagedImages.push({ data, mimeType, path });
-    this.renderComposer();
+    this.flushRegion('composer');
     return true;
   }
 
   private clearStagedImages(lane: HarnessLane): void {
     if (lane.stagedImages.length === 0) return;
     lane.stagedImages = [];
-    this.renderComposer();
+    this.flushRegion('composer');
   }
 
   private removeStagedImage(lane: HarnessLane, index: number): void {
     if (index < 0 || index >= lane.stagedImages.length) return;
     lane.stagedImages.splice(index, 1);
-    this.renderComposer();
+    this.flushRegion('composer');
   }
 
   /** Spec 114 rev 14: composer key edits pin a stuck transcript in this turn.
@@ -15376,7 +14347,7 @@ export class AcpHarnessView implements ContentView {
     lane.verbPaletteDismissed = false;
     lane.historyIndex = null;
     lane.historySavedDraft = null;
-    this.renderComposer();
+    this.flushRegion('composer');
     this.pinStickyAfterComposerKey();
   }
 
@@ -15390,7 +14361,7 @@ export class AcpHarnessView implements ContentView {
       if (seq !== this.ghostSeq || lane.draft !== draft || lane.cursor !== cursor) return;
       this.ghost = suffix ? { laneId: lane.id, draft, cursor, suffix } : null;
       if (this.activeLane() !== lane) return;
-      this.renderComposer();
+      this.flushRegion('composer');
       // Spec 114 rev 22: the async reply repaints the composer outside the key
       // turn, so it re-pins like setDraft does.
       this.pinStickyAfterComposerKey();
@@ -15412,11 +14383,6 @@ export class AcpHarnessView implements ContentView {
       return null;
     }
     return ghost.suffix;
-  }
-
-  private renderGhost(lane: HarnessLane): string {
-    const suffix = this.visibleGhost(lane);
-    return suffix ? `<span class="acp-harness__ghost" aria-hidden="true">${esc(suffix)}</span>` : '';
   }
 
   /** spec 285 (OMP parity): Tab accepts + space, → accepts with no space. */
@@ -15442,7 +14408,7 @@ export class AcpHarnessView implements ContentView {
     lane.mentionPaletteDismissed = false;
     lane.hashPaletteIndex = 0;
     lane.hashPaletteDismissed = false;
-    this.renderComposer();
+    this.flushRegion('composer');
     this.pinStickyAfterComposerKey();
   }
 
@@ -15493,7 +14459,7 @@ export class AcpHarnessView implements ContentView {
 
   private setDraftCursor(lane: HarnessLane, cursor: number): void {
     lane.cursor = Math.max(0, Math.min(cursor, lane.draft.length));
-    this.renderComposer();
+    this.flushRegion('composer');
     this.pinStickyAfterComposerKey();
   }
 
@@ -15724,9 +14690,9 @@ export class AcpHarnessView implements ContentView {
     if (this.chipTimer !== null) window.clearTimeout(this.chipTimer);
     this.chipTimer = window.setTimeout(() => {
       this.chip = null;
-      this.renderComposer();
+      this.flushRegion('composer');
     }, 2000);
-    this.renderComposer();
+    this.flushRegion('composer');
   }
 
   private scrollActiveTranscriptToBottom(): void {
@@ -16116,7 +15082,7 @@ export class AcpHarnessView implements ContentView {
       get openMarkdownViewCb() { return view.openMarkdownViewCb; },
       get openFileReferenceCb() { return view.openFileReferenceCb; },
       flashChip: (text) => view.flashChip(text),
-      render: () => view.render(),
+      invalidate: (region) => view.invalidate(region),
       activeLane: () => view.activeLane(),
       controlLane: (params) => view.controlLane(params),
       parseIssueRef: (input) => view.parseIssueRef(input),
@@ -16138,7 +15104,7 @@ export class AcpHarnessView implements ContentView {
       get harnessMemoryId() { return view.harnessMemoryId; },
       get remoteRuntimeId() { return view.remoteRuntimeId; },
       flashChip: (text) => view.flashChip(text),
-      render: () => view.render(),
+      invalidate: (region) => view.invalidate(region),
       appendTranscript: (lane, kind, text) => view.appendTranscript(lane, kind, text),
       enqueueSystemPrompt: (lane, text, drain, label) => view.enqueueSystemPrompt(lane, text, drain, label),
       syncOrchestratorConsoleVisibility: () => view.syncOrchestratorConsoleVisibility(),
@@ -16155,7 +15121,7 @@ export class AcpHarnessView implements ContentView {
       get projectDir() { return view.projectDir; },
       flashChip: (text) => view.flashChip(text),
       subscribeLaneBus: (handler) => view.laneBus.subscribe(handler),
-      render: () => view.render(),
+      invalidate: (region) => view.invalidate(region),
       appendTranscript: (lane, kind, text) => {
         view.appendTranscript(lane, kind, text);
         view.scheduleLaneRender(lane);
@@ -16211,7 +15177,7 @@ export class AcpHarnessView implements ContentView {
       get lanes() { return view.lanes; },
       get activeLaneId() { return view.activeLaneId; },
       flashChip: (text) => view.flashChip(text),
-      render: () => view.render(),
+      invalidate: (region) => view.invalidate(region),
       sealStreaming: (lane) => view.sealStreaming(lane),
       appendTranscript: (lane, kind, text, metadata) => view.appendTranscript(lane, kind, text, metadata),
       removeTranscriptItem: (lane, itemId) => view.removeTranscriptItem(lane, itemId),
@@ -16231,7 +15197,7 @@ export class AcpHarnessView implements ContentView {
       get activeLaneId() { return view.activeLaneId; },
       canStartDictation: (lane) => view.canStartDictation(lane),
       flashChip: (text) => view.flashChip(text),
-      renderComposer: () => view.renderComposer(),
+      invalidate: (region) => view.invalidate(region),
       setDraft: (lane, text, cursor) => view.setDraft(lane, text, cursor),
     };
   }
@@ -16245,7 +15211,7 @@ export class AcpHarnessView implements ContentView {
       get lanes() { return view.lanes; },
       get activeLaneId() { return view.activeLaneId; },
       flashChip: (text) => view.flashChip(text),
-      render: () => view.renderComposer(),
+      invalidate: (region) => view.invalidate(region),
       deliverLivePrompt: (lane, text, delegationId) => view.deliverLivePrompt(lane, text, delegationId),
     };
   }

@@ -1,0 +1,63 @@
+/* Spec 302 §3.11 — `InterLaneRow`.
+   Carved from src/styles/acp-harness.css:1027-1069 — the `acp-harness__lane-mail-meta`
+   and `acp-harness__lane-mail-logo` blocks plus the one context rule whose
+   subject is the meta line (`.acp-harness__msg--mail-out .acp-harness__lane-mail-meta`,
+   :1035-1037). Delete :1027-1070 to take the trailing blank line with them.
+
+   LEFT BEHIND on purpose, all in the same span, none of them this row's blocks:
+     :1014-1025  `.acp-harness__msg--mail-in|--mail-out .acp-harness__msg-label`
+                 and `.acp-harness__msg--mail-done .acp-harness__msg-body` —
+                 subject is the `acp-harness__msg` block, which `TranscriptRow`
+                 owns. The `Spec 120 — lane mail rows …` comment at :1014 heads
+                 those three rules.
+     :1071-1079  `acp-harness__harness-event*` — `SystemRow` (§3.14).
+     :1081-1087  `acp-harness__lane-mail-provenance` — `AssistantRow` (§3.1).
+
+   theme-scheme.css declares nothing for these blocks, so there is no
+   `krypton.scheme` section. */
+
+@layer krypton.component {
+  .acp-harness__lane-mail-meta {
+    display: block;
+    font-size: 0.78em;
+    letter-spacing: 0.04em;
+    color: rgba(184, 166, 255, 0.8);
+    margin-bottom: 3px;
+  }
+
+  .acp-harness__msg--mail-out .acp-harness__lane-mail-meta {
+    color: rgba(120, 200, 255, 0.8);
+  }
+
+  .acp-harness__lane-mail-logo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+    margin-right: 4px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+    vertical-align: middle;
+    flex-shrink: 0;
+  }
+
+  .acp-harness__lane-mail-logo svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .acp-harness__lane-mail-logo--claude   { color: var(--krypton-backend-claude); }
+  .acp-harness__lane-mail-logo--codex    { color: var(--krypton-backend-codex); }
+  .acp-harness__lane-mail-logo--opencode { color: var(--krypton-backend-opencode); }
+  .acp-harness__lane-mail-logo--pi-acp   { color: var(--krypton-backend-pi); }
+  .acp-harness__lane-mail-logo--droid    { color: var(--krypton-backend-droid); }
+  .acp-harness__lane-mail-logo--cursor   { color: var(--krypton-backend-cursor); }
+  .acp-harness__lane-mail-logo--junie    { color: var(--krypton-backend-junie); }
+  .acp-harness__lane-mail-logo--omp      { color: var(--krypton-backend-omp); }
+  .acp-harness__lane-mail-logo--grok     { color: var(--krypton-backend-grok); }
+  .acp-harness__lane-mail-logo--copilot  { color: var(--krypton-backend-copilot); }
+  .acp-harness__lane-mail-logo--mimo     { color: var(--krypton-backend-mimo); }
+  .acp-harness__lane-mail-logo--cline    { color: var(--krypton-backend-cline); }
+  .acp-harness__lane-mail-logo--antigravity { color: var(--krypton-backend-antigravity); }
+}

@@ -1,0 +1,45 @@
+/* Spec 302 §4.4 — `LaneStats`.
+   Carved verbatim from src/styles/acp-harness.css (:477-479 minus its
+   `.acp-harness__lane-head` selector, :1709-1732) and
+   src/styles/theme-scheme.css:250-252 minus its `.acp-harness__lane-head`
+   selector. */
+
+@layer krypton.component {
+  /* spec 215: the band covers the head AND its stats row — one two-line header
+     block. No closing hairline: the band's own tint parts ways with the
+     transcript below, matching the borderless collapsed rows. */
+  .acp-harness__lane--active > .acp-harness__lane-stats {
+    background: color-mix(in srgb, var(--acp-lane-accent, #0cf) 13%, var(--agent-surface-high, rgba(6, 10, 18, 0.6)));
+  }
+
+  .acp-harness__lane-stats {
+    flex: 0 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 6px;
+    padding: 0 10px 6px calc(10px + 2ch + 6px);
+  }
+
+  .acp-harness__lane-stats span {
+    padding: 0;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    font-size: 0.78em;
+    letter-spacing: 0.02em;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .acp-harness__lane-stats span:not(:last-child)::after {
+    content: '·';
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.25);
+  }
+}
+
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__lane--active > .acp-harness__lane-stats {
+    background: color-mix(in srgb, var(--acp-lane-accent, #007799) 18%, var(--agent-surface-high, rgba(255, 255, 255, 0.92)));
+  }
+}

@@ -56,7 +56,7 @@ function setup(subjects: ReviewSubjectResult[] = [diffResult('+a'), diffResult('
     projectDir: '/r',
     flashChip: (text) => flashes.push(text),
     subscribeLaneBus: (handler) => bus.subscribe(handler),
-    render: () => {},
+    invalidate: () => {},
     appendTranscript: (_lane, _kind, text) => rows.push(text),
     reserveCommandTurn: (lane, label) => {
       (lane as unknown as FakeLane).activeSystemLabel = label;

@@ -1,3 +1,5 @@
+import { nextCursor, prevCursor } from './components/list-picker';
+import { RemotePicker } from './components/remote-picker';
 import type { RemoteHarnessProfile } from '../config';
 
 export interface FocusedSshCandidate {
@@ -61,64 +63,48 @@ export function remoteHarnessPickerRows(choices: RemoteHarnessChoices): PickerRo
   return rows;
 }
 
+/**
+ * The dialog. `RemotePicker` (spec 302 §7.6) owns the markup and the selection
+ * state it draws; the promise, the `document`-level key capture and what Enter
+ * means stay here (CLAUDE.md constraint 1).
+ */
 export function showRemoteHarnessPicker(
   host: HTMLElement,
   choices: RemoteHarnessChoices,
 ): Promise<RemoteHarnessLaunch | null> {
   const rows = remoteHarnessPickerRows(choices);
   return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.className = 'remote-harness-picker';
-    overlay.tabIndex = 0;
-    overlay.setAttribute('role', 'dialog');
-    overlay.setAttribute('aria-label', 'Open Remote ACP Harness');
-
+    const picker = new RemotePicker();
     let cursor = 0;
     let pathMode = false;
-    const panel = document.createElement('section');
-    panel.className = 'remote-harness-picker__panel';
-    const head = document.createElement('header');
-    head.className = 'remote-harness-picker__head';
-    head.textContent = 'REMOTE ACP HARNESS';
-    const list = document.createElement('div');
-    list.className = 'remote-harness-picker__list';
-    const pathInput = document.createElement('input');
-    pathInput.className = 'remote-harness-picker__path';
-    pathInput.placeholder = '/absolute/remote/project/path';
-    pathInput.hidden = true;
-    const hint = document.createElement('footer');
-    hint.className = 'remote-harness-picker__hint';
-    hint.textContent = rows.length > 0 ? 'j/k select · Enter connect · Esc cancel' : 'No SSH session or remote profiles · Esc close';
-    panel.append(head, list, pathInput, hint);
-    overlay.appendChild(panel);
-    host.appendChild(overlay);
+    let pathInvalid = false;
 
+    const render = (): void => {
+      picker.update({
+        rows,
+        cursor,
+        pathMode,
+        pathInvalid,
+        onChoose: (index: number): void => {
+          cursor = index;
+          choose();
+        },
+      });
+    };
     const finish = (value: RemoteHarnessLaunch | null): void => {
       document.removeEventListener('keydown', onKeyDown, true);
-      overlay.remove();
+      picker.el.remove();
+      picker.dispose();
       resolve(value);
     };
-    const render = (): void => {
-      list.replaceChildren(...rows.map((row, index) => {
-        const el = document.createElement('button');
-        el.type = 'button';
-        el.className = `remote-harness-picker__row${index === cursor ? ' remote-harness-picker__row--active' : ''}`;
-        el.innerHTML = `<strong>${escapeHtml(row.label)}</strong><span>${escapeHtml(row.detail)}</span>`;
-        el.addEventListener('click', () => {
-          cursor = index;
-          void choose();
-        });
-        return el;
-      }));
-    };
-    const choose = async (): Promise<void> => {
+    const choose = (): void => {
       const row = rows[cursor];
       if (!row) return;
       if (row.needsPath && row.launch.kind === 'focused_ssh') {
         pathMode = true;
-        pathInput.hidden = false;
-        hint.textContent = 'Enter connect · Esc back · absolute path required';
-        pathInput.focus();
+        pathInvalid = false;
+        render();
+        picker.pathInput.focus();
         return;
       }
       finish(row.launch);
@@ -128,16 +114,17 @@ export function showRemoteHarnessPicker(
         if (event.key === 'Escape') {
           event.preventDefault();
           pathMode = false;
-          pathInput.hidden = true;
-          pathInput.value = '';
-          hint.textContent = 'j/k select · Enter connect · Esc cancel';
-          overlay.focus();
+          pathInvalid = false;
+          picker.pathInput.value = '';
+          render();
+          picker.el.focus();
         } else if (event.key === 'Enter') {
           event.preventDefault();
-          const path = pathInput.value.trim();
+          const path = picker.pathInput.value.trim();
           const row = rows[cursor];
           if (!path.startsWith('/') || row?.launch.kind !== 'focused_ssh') {
-            hint.textContent = 'Enter an absolute path beginning with /';
+            pathInvalid = true;
+            render();
             return;
           }
           finish({ ...row.launch, projectDir: path });
@@ -149,29 +136,21 @@ export function showRemoteHarnessPicker(
         finish(null);
       } else if (event.key === 'j' || event.key === 'ArrowDown') {
         event.preventDefault();
-        if (rows.length > 0) cursor = (cursor + 1) % rows.length;
+        cursor = nextCursor(cursor, rows.length);
         render();
       } else if (event.key === 'k' || event.key === 'ArrowUp') {
         event.preventDefault();
-        if (rows.length > 0) cursor = (cursor - 1 + rows.length) % rows.length;
+        cursor = prevCursor(cursor, rows.length);
         render();
       } else if (event.key === 'Enter') {
         event.preventDefault();
-        void choose();
+        choose();
       }
     };
-    document.addEventListener('keydown', onKeyDown, true);
-    render();
-    overlay.focus();
-  });
-}
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  }[char] ?? char));
+    host.appendChild(picker.el);
+    render();
+    document.addEventListener('keydown', onKeyDown, true);
+    picker.el.focus();
+  });
 }

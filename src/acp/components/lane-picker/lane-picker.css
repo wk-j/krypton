@@ -1,0 +1,106 @@
+/* Spec 302 §7.1 — `LanePicker`.
+   Carved verbatim from src/styles/acp-harness.css:6140-6238. The `acp-harness__picker`
+   block is this directory's private styling surface: the overlay root, its panel, head,
+   list, rows and empty state. No scheme override exists for it in theme-scheme.css. */
+
+@layer krypton.component {
+  /* ── Lane picker overlay ───────────────────────────────────
+     One 8px panel (same chrome as the command palette). Header and list
+     are not independently bordered — that used to sit them side-by-side
+     as two capsules, with the 1px stroke reading as wire. */
+
+  .acp-harness__picker {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--agent-surface-high, rgba(4, 8, 13, 0.72));
+  }
+
+  .acp-harness__picker[hidden] {
+    display: none;
+  }
+
+  .acp-harness__picker-panel {
+    display: flex;
+    flex-direction: column;
+    width: clamp(320px, 38vw, 480px);
+    max-height: min(70vh, 100%);
+    background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
+    border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
+    border-radius: var(--krypton-border-radius, 8px);
+    box-shadow:
+      0 0 30px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.08),
+      0 8px 32px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+  }
+
+  .acp-harness__picker-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    flex: 0 0 auto;
+    padding: 7px 12px;
+    color: var(--krypton-window-accent, #0cf);
+    letter-spacing: 0.08em;
+    border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
+    text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
+  }
+
+  .acp-harness__picker-head span:last-child {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    font-size: 0.84em;
+    text-shadow: none;
+    letter-spacing: 0.04em;
+  }
+
+  .acp-harness__picker-list {
+    list-style: none;
+    margin: 0;
+    padding: 6px 0;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+
+  .acp-harness__picker-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 6px 14px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
+    cursor: default;
+  }
+
+  .acp-harness__picker-row--active {
+    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
+    outline: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.5);
+    outline-offset: -1px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
+  }
+
+  .acp-harness__picker-label {
+    flex: 0 0 auto;
+    letter-spacing: 0.04em;
+  }
+
+  .acp-harness__picker-id {
+    flex: 1 1 auto;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    font-size: 0.84em;
+  }
+
+  .acp-harness__picker-count {
+    flex: 0 0 auto;
+    color: rgba(255, 210, 122, 0.78);
+    font-size: 0.82em;
+    letter-spacing: 0.04em;
+  }
+
+  .acp-harness__picker-empty {
+    padding: 14px 16px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+  }
+}

@@ -1,0 +1,106 @@
+/* Spec 302 §7.11 — `MemoryDrawer`. Moved from src/styles/acp-harness.css
+   (search `.acp-harness__memory-overlay`, `.acp-harness__memory-head`,
+   `.acp-harness__memory-panel` … `.acp-harness__memory-empty`), except:
+     * `.acp-harness__memory__head` replaces `.acp-harness__memory-head` — the
+       class `OverlayShell` emits for a panel head (same declarations);
+     * `.acp-harness__memory__panel` is the shell's panel wrapper, which the
+       drawer had no equivalent of: it must not be a layout box;
+     * `.acp-harness__memory__empty` carries the `.acp-harness__memory-empty`
+       declarations, which `acp-harness.css` shares with `.acp-harness__empty`
+       (that selector stays where it is — it is not this component's). */
+@layer krypton.component {
+  .acp-harness__memory-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    background: var(--agent-surface-solid, rgba(4, 8, 13, 0.96));
+  }
+
+  .acp-harness__memory-overlay[hidden] {
+    display: none;
+  }
+
+  .acp-harness__memory__panel {
+    display: contents;
+  }
+
+  .acp-harness__memory__head {
+    flex: 0 0 auto;
+    padding: 7px 10px;
+    color: var(--agent-accent, #8effb0);
+    letter-spacing: 0.08em;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(142, 255, 176, 0.12);
+  }
+
+  .acp-harness__memory-panel {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px 10px;
+  }
+
+  .acp-harness__memory-row {
+    display: grid;
+    grid-template-columns: 20ch minmax(0, 1fr) 5ch;
+    gap: 8px;
+    padding: 4px 0;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78);
+    cursor: pointer;
+  }
+
+  .acp-harness__memory-row--cursor {
+    background: rgba(109, 208, 255, 0.08);
+  }
+
+  .acp-harness__memory-row--cursor .acp-harness__memory-id,
+  .acp-harness__memory-row--cursor .acp-harness__memory-text {
+    text-decoration: underline;
+    text-decoration-color: rgba(109, 208, 255, 0.65);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+  }
+
+  .acp-harness__memory-row--pinned .acp-harness__memory-id {
+    color: var(--agent-gold, #ffd166);
+  }
+
+  .acp-harness__memory-source,
+  .acp-harness__memory-kind {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+  }
+
+  .acp-harness__memory-source {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--acp-memory-accent, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.7));
+  }
+
+  /* spec 293: the handoff the active lane is bound to (its next #handoff writes it). */
+  .acp-harness__memory-row--bound .acp-harness__memory-text {
+    color: var(--agent-gold, #ffd166);
+  }
+
+  .acp-harness__memory-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .acp-harness__memory-detail {
+    grid-column: 1 / -1;
+    padding: 4px 0 6px calc(20ch + 8px);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    line-height: 1.35;
+    white-space: pre-wrap;
+  }
+
+  .acp-harness__memory__empty {
+    padding: 16px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+  }
+}

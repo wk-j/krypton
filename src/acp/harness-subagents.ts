@@ -1,6 +1,6 @@
-// Krypton — ACP Harness subagent cards (spec 282).
+// Krypton — ACP Harness subagent payloads (spec 282).
 // Detects subagent-spawning tool calls from adapter data (never titles) and
-// renders them as a live per-agent card:
+// parses them into the payload `SubagentCard` (spec 302) paints:
 //   OMP    — rawInput.tasks[] + rawOutput.details.{progress,results,async}
 //   Claude — _meta.claudeCode.toolName ∈ {Task, Agent}; children stamped with
 //            _meta.claudeCode.parentToolUseId are absorbed by the view
@@ -13,7 +13,6 @@ import { Value } from '@sinclair/typebox/value';
 
 import type { ToolCall, ToolCallUpdate } from './types';
 import type { SubagentEntry, SubagentPayload, SubagentStatus } from './harness-view-types';
-import { formatToolElapsed } from './harness-tool-render';
 
 const MAX_AGENTS = 16;
 const ACTIVITY_LIMIT = 160;
@@ -318,31 +317,14 @@ export function appendChildOutput(payload: SubagentPayload, chunk: string): void
   entry.output = tail(entry.output + chunk, OUTPUT_LIMIT);
 }
 
-// ─── Signatures ───────────────────────────────────────────────────────────
+// ─── Signature ────────────────────────────────────────────────────────────
 
-/** Structural: changes here rebuild the whole tool row. */
+/** Structural: changes here rebuild the subagent card. */
 export function subagentStructureSignature(payload: SubagentPayload | undefined, expanded: readonly string[]): string {
   if (!payload) return '';
   const agents = payload.agents.map((a) => `${a.id}:${a.status}:${a.hintLabel ?? ''}`).join(',');
   return `${payload.source}|${payload.background ? 1 : 0}|${payload.overflow}|${agents}|${expanded.join(',')}`;
 }
-
-/** Live fields patched in place while the tool is in flight. */
-export function subagentLiveSignature(payload: SubagentPayload): string {
-  return payload.agents
-    .map((a) => [a.activity, a.recentTools.join('·'), a.toolCount ?? '', a.tokens ?? '', a.durationMs ?? '', a.output.length].join('\u001f'))
-    .join('\u001e');
-}
-
-// ─── Rendering ────────────────────────────────────────────────────────────
-
-const STATUS_GLYPH: Record<SubagentStatus, string> = {
-  pending: '○',
-  running: '●',
-  completed: '✓',
-  failed: '✗',
-  cancelled: '–',
-};
 
 export function subagentSummary(payload: SubagentPayload): string {
   const total = payload.agents.length + payload.overflow;
@@ -350,82 +332,3 @@ export function subagentSummary(payload: SubagentPayload): string {
   return `${done}/${total} done${payload.background ? ' · background' : ''}`;
 }
 
-function span(className: string, value: string): HTMLSpanElement {
-  const el = document.createElement('span');
-  el.className = className;
-  el.textContent = value;
-  return el;
-}
-
-export function renderSubagentCard(payload: SubagentPayload, expanded: readonly string[]): HTMLElement {
-  const card = document.createElement('div');
-  card.className = 'acp-harness__subagents';
-  card.dataset.background = payload.background ? '1' : '0';
-  for (const agent of payload.agents) {
-    const row = document.createElement('div');
-    row.className = `acp-harness__subagent acp-harness__subagent--${agent.status}`;
-    if (agent.hintLabel) row.classList.add('acp-harness__subagent--hinted');
-    row.dataset.subagentId = agent.id;
-    const line = document.createElement('div');
-    line.className = 'acp-harness__subagent-line';
-    if (agent.hintLabel) line.appendChild(span('acp-harness__subagent-hint', agent.hintLabel));
-    line.appendChild(span('acp-harness__subagent-glyph', STATUS_GLYPH[agent.status]));
-    line.appendChild(span('acp-harness__subagent-name', agent.id));
-    if (agent.agent) line.appendChild(span('acp-harness__subagent-agent', agent.agent));
-    line.appendChild(span('acp-harness__subagent-activity', agent.activity));
-    const stats = [
-      agent.toolCount !== null ? `${agent.toolCount} tools` : '',
-      agent.tokens === null ? '' : agent.tokens >= 1000 ? `${Math.round(agent.tokens / 1000)}k tok` : `${agent.tokens} tok`,
-      agent.durationMs !== null && agent.durationMs > 0 ? formatToolElapsed(agent.durationMs) : '',
-    ].filter(Boolean).join(' · ');
-    line.appendChild(span('acp-harness__subagent-stats', stats));
-    row.appendChild(line);
-    if (agent.recentTools.length > 0 && (agent.status === 'running' || agent.status === 'pending')) {
-      row.appendChild(span('acp-harness__subagent-tools', `↳ ${agent.recentTools.join(' · ')}`));
-    }
-    if (expanded.includes(agent.id)) {
-      const detail = document.createElement('div');
-      detail.className = 'acp-harness__subagent-detail';
-      for (const [label, value] of [['TASK', agent.task], ['OUTPUT', agent.output]] as const) {
-        if (!value) continue;
-        detail.appendChild(span('acp-harness__subagent-detail-label', label));
-        const body = document.createElement('pre');
-        body.className = 'acp-harness__subagent-detail-text';
-        body.textContent = value;
-        detail.appendChild(body);
-      }
-      if (!agent.task && !agent.output) detail.appendChild(span('acp-harness__subagent-detail-label', 'no task or output yet'));
-      row.appendChild(detail);
-    }
-    card.appendChild(row);
-  }
-  if (payload.overflow > 0) {
-    card.appendChild(span('acp-harness__subagent-more', `+${payload.overflow} more`));
-  }
-  return card;
-}
-
-/** Live update of a mounted card: sync `next` (a fresh `renderSubagentCard`)
- *  into `live` node by node, replacing only a node whose tag or child count
- *  changed. Swapping the whole card on every progress tick restarted the
- *  running glyphs' pulse animation and reset an expanded detail's scroll, so
- *  the card visibly flashed for as long as the agents ran. */
-export function morphSubagentCard(live: Element, next: Element): void {
-  if (live.tagName !== next.tagName || live.children.length !== next.children.length) {
-    live.replaceWith(next);
-    return;
-  }
-  for (const name of live.getAttributeNames()) {
-    if (!next.hasAttribute(name)) live.removeAttribute(name);
-  }
-  for (const name of next.getAttributeNames()) {
-    const value = next.getAttribute(name) ?? '';
-    if (live.getAttribute(name) !== value) live.setAttribute(name, value);
-  }
-  if (next.children.length === 0) {
-    if (live.textContent !== next.textContent) live.textContent = next.textContent;
-    return;
-  }
-  const liveChildren = Array.from(live.children);
-  Array.from(next.children).forEach((child, i) => morphSubagentCard(liveChildren[i], child));
-}

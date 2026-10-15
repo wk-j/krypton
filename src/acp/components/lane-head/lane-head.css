@@ -1,0 +1,303 @@
+/* Spec 302 §4.2 — `LaneHead`.
+   Carved verbatim from src/styles/acp-harness.css
+   (:476+478-479, :481-492, :551-578, :580-598, :600-725, :964-973,
+    :975-979 and :982-987 minus their `.acp-harness__tab--*` selectors,
+    :993-1012), src/styles/orchestrator-console.css:434-445, and
+   src/styles/theme-scheme.css (:249+251-252, :254-256, :262-291). */
+
+@layer krypton.component {
+  /* spec 215: the band covers the head AND its stats row — one two-line header
+     block. No closing hairline: the band's own tint parts ways with the
+     transcript below, matching the borderless collapsed rows. */
+  .acp-harness__lane--active > .acp-harness__lane-head {
+    background: color-mix(in srgb, var(--acp-lane-accent, #0cf) 13%, var(--agent-surface-high, rgba(6, 10, 18, 0.6)));
+  }
+
+  .acp-harness__lane-head {
+    height: 28px;
+    display: grid;
+    grid-template-columns: 2ch max-content max-content max-content minmax(0, 1fr) max-content;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+    white-space: nowrap;
+    overflow: hidden;
+    letter-spacing: 0.02em;
+  }
+
+  .acp-harness__lane--error .acp-harness__lane-head {
+    color: var(--agent-error, #ff6b8b);
+    text-decoration: none;
+  }
+
+  /* Peering — inter-lane messaging (spec 106) */
+  .acp-harness__lane--awaiting_peer .acp-harness__lane-head {
+    color: #b8a6ff;
+    text-decoration: none;
+    text-shadow: 0 0 6px rgba(184, 166, 255, 0.22);
+  }
+
+  .acp-harness__lane-name {
+    grid-column: 2;
+    max-width: 20ch; /* spec 215: +2ch for the inline backend logo */
+    color: var(--acp-lane-accent, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+    font-weight: normal;
+    font-size: 0.92em;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: none;
+  }
+
+  /* spec 215: the backend logo inherits the name's color (currentColor), so it
+     dims in lockstep with the collapsed-name rule below. */
+  .acp-harness__lane-name .acp-harness__icon {
+    margin-right: 5px;
+  }
+
+  /* spec 215: hue-preserving dim — collapsed names keep the lane hue mixed
+     toward the base text color instead of being replaced by gray. */
+  .acp-harness__lane--collapsed .acp-harness__lane-name {
+    color: color-mix(in srgb, var(--acp-lane-accent, #0cf) 70%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
+  }
+
+  .acp-harness__lane--active .acp-harness__lane-name {
+    text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, #0cf) 24%, transparent);
+  }
+
+  /* spec 215: on a permission row the whole band goes gold, name included —
+     the alert outranks lane identity (matches the approved prototype). */
+  .acp-harness__lane--needs_permission.acp-harness__lane--collapsed .acp-harness__lane-name {
+    color: var(--agent-gold, #ffd166);
+  }
+
+  .acp-harness__lane-status {
+    grid-column: 3;
+    justify-self: start;
+    padding: 0;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    font-size: 0.74em;
+    letter-spacing: 0.06em;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+
+  .acp-harness__lane--needs_permission .acp-harness__lane-status {
+    padding: 1px 6px;
+    background: rgba(255, 209, 102, 0.14);
+    color: #ffe3a0;
+    font-weight: 700;
+  }
+
+  .acp-harness__lane-chips {
+    grid-column: 4;
+    min-width: 0;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    overflow: hidden;
+  }
+
+  /* Lane chips share one flat language: a faint tinted pill, no border. Hue +
+     text color carry the meaning (identity / status / warning) so the row reads
+     as one surface that's scannable by color, not a strip of outlined boxes. */
+  .acp-harness__lane-model {
+    justify-self: start;
+    min-width: 0;
+    max-width: 24ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 1px 6px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68);
+    font-size: 0.72em;
+    letter-spacing: 0.04em;
+    text-shadow: none;
+    white-space: nowrap;
+  }
+
+  /* spec 126: configured model failed to apply (session/set_model errored). Reuses
+     the sandbox-chip amber palette; chip text keeps the configured intent, flagged. */
+  .acp-harness__lane-model--warn {
+    background: rgba(255, 170, 102, 0.16);
+    color: rgba(255, 200, 150, 0.92);
+  }
+
+  .acp-harness__lane-mode {
+    justify-self: start;
+    padding: 1px 6px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: color-mix(in oklab, #c77dff 16%, transparent);
+    color: color-mix(in oklab, #c77dff 78%, white 22%);
+    font-size: 0.72em;
+    letter-spacing: 0.04em;
+    text-shadow: none;
+    white-space: nowrap;
+    max-width: 14ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .acp-harness__lane-sandbox {
+    flex: 0 0 auto;
+    justify-self: start;
+    padding: 1px 6px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(255, 170, 102, 0.16);
+    color: rgba(255, 200, 150, 0.92);
+    font-size: 0.72em;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    text-shadow: none;
+  }
+
+  .acp-harness__lane-activity {
+    grid-column: 5;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+    font-size: 0.82em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .acp-harness__lane-mcp {
+    flex: 0 0 auto;
+    justify-self: start;
+    padding: 1px 6px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
+    font-size: 0.72em;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  /* MCP connected: the ✓ reads "ok" in the lane's own accent, not flat gray. */
+  .acp-harness__lane-mcp--on {
+    color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 60%, var(--krypton-fg, #d8e8d8));
+  }
+
+  .acp-harness__lane-mcp--off {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36);
+  }
+
+  .acp-harness__lane-metrics {
+    flex: 0 0 auto;
+    justify-self: start;
+    display: inline-flex;
+    gap: 5px;
+    padding: 1px 6px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
+    font-size: 0.72em;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    text-shadow: none;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .acp-harness__lane-metrics-cpu,
+  .acp-harness__lane-metrics-rss {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+  }
+
+  .acp-harness__lane-metrics--idle .acp-harness__lane-metrics-cpu {
+    color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.62);
+  }
+
+  .acp-harness__lane-metrics--warm {
+    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
+  }
+  .acp-harness__lane-metrics--warm .acp-harness__lane-metrics-cpu {
+    color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.95);
+  }
+
+  .acp-harness__lane-metrics--hot {
+    background: rgba(250, 200, 99, 0.14);
+  }
+  .acp-harness__lane-metrics--hot .acp-harness__lane-metrics-cpu {
+    color: #fac863;
+  }
+
+  .acp-harness__lane-metrics--crit {
+    background: rgba(236, 95, 103, 0.16);
+  }
+  .acp-harness__lane-metrics--crit .acp-harness__lane-metrics-cpu {
+    color: #ec5f67;
+  }
+
+  /* Compact mail badge. Lives inside `.acp-harness__lane-chips`.
+     `width: max-content` + `justify-self: start` keep it from stretching if it
+     ever becomes a head-grid sibling again. */
+  .acp-harness__lane-inbox {
+    flex: 0 0 auto;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    width: max-content;
+    justify-self: start;
+    padding: 1px 6px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(184, 166, 255, 0.18);
+    color: #cabfff;
+    font-size: 0.7em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  /* Lane-head seat badge (spec 180; visible outside the orchestrator console). */
+  .acp-harness__lane-orchestrator {
+    padding: 1px 6px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(0, 204, 255, 0.14);
+    color: var(--krypton-window-accent, #0cf);
+    font-size: 0.72em;
+    letter-spacing: 0.04em;
+    text-shadow: none;
+    white-space: nowrap;
+  }
+}
+
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__lane--active > .acp-harness__lane-head {
+    background: color-mix(in srgb, var(--acp-lane-accent, #007799) 18%, var(--agent-surface-high, rgba(255, 255, 255, 0.92)));
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__lane-head {
+    color: color-mix(in srgb, var(--krypton-ink) 82%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__lane-name,
+  html[data-theme-scheme='light'] .acp-harness__lane--active .acp-harness__lane-name {
+    color: color-mix(in srgb, var(--acp-lane-accent, #007799) 48%, var(--krypton-ink));
+    text-shadow: none;
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__lane--collapsed .acp-harness__lane-name {
+    color: color-mix(in srgb, var(--acp-lane-accent, #007799) 38%, var(--krypton-ink));
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__lane-status,
+  html[data-theme-scheme='light'] .acp-harness__lane-activity,
+  html[data-theme-scheme='light'] .acp-harness__lane-metrics-cpu,
+  html[data-theme-scheme='light'] .acp-harness__lane-metrics-rss {
+    color: color-mix(in srgb, var(--krypton-ink) 68%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__lane-model {
+    background: color-mix(in srgb, var(--krypton-ink) 8%, transparent);
+    color: color-mix(in srgb, var(--krypton-ink) 78%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__lane-model--warn {
+    background: rgba(154, 107, 0, 0.14);
+    color: #8a5a00;
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__lane-mcp--off {
+    color: color-mix(in srgb, var(--krypton-ink) 48%, transparent);
+  }
+}

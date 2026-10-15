@@ -1,0 +1,119 @@
+/* Spec 302 §3.7 — `QuestionRow`.
+   Carved verbatim from src/styles/acp-harness.css:5055-5161 (the
+   `acp-harness__question` block and its `acp-harness__question-*` elements).
+
+   `.acp-harness__permission-options` (:5046-5053) and the
+   `@keyframes acp-harness-caret` block (:5163-5166, already carved into
+   caret.css) sit next to it and are NOT part of this block.
+   theme-scheme.css declares nothing here, so there is no `krypton.scheme`
+   section. */
+
+@layer krypton.component {
+  .acp-harness__msg-body.acp-harness__question {
+    display: grid;
+    gap: 4px;
+    padding: 4px 6px;
+    border: 1px solid rgba(255, 209, 102, 0.28);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(255, 209, 102, 0.06);
+  }
+
+  .acp-harness__question-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    line-height: 1.3;
+    font-size: var(--krypton-font-size, 13px);
+  }
+
+  .acp-harness__question-glyph {
+    display: inline-block;
+    width: 1.4ch;
+    text-align: center;
+  }
+
+  .acp-harness__question-glyph--accepted { color: var(--agent-accent, #8effb0); }
+  .acp-harness__question-glyph--skipped,
+  .acp-harness__question-glyph--failed { color: var(--agent-error, #ff6b8b); }
+
+  .acp-harness__question-decision {
+    flex: none;
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.78em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+  }
+
+  .acp-harness__question-subject {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+  }
+
+  .acp-harness__question-pos {
+    flex: none;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    font-size: 0.82em;
+  }
+
+  .acp-harness__question-detail {
+    max-height: 12.5em;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    font-size: 0.9em;
+  }
+
+  /* spec 279: long pickers (branches, commits) scroll inside the card;
+     position:relative makes option offsetTop list-relative for focus tracking. */
+  .acp-harness__question-options {
+    position: relative;
+    display: grid;
+    gap: 2px;
+    max-height: 16em;
+    overflow-y: auto;
+  }
+
+  .acp-harness__question-option {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: baseline;
+    padding: 1px 4px;
+    border: 1px solid transparent;
+    border-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-harness__question-option--focus {
+    border-color: rgba(255, 209, 102, 0.45);
+    background: rgba(255, 209, 102, 0.08);
+  }
+
+  .acp-harness__question-option--on .acp-harness__question-label {
+    color: var(--agent-gold, #ffd166);
+  }
+
+  .acp-harness__question-key {
+    flex: none;
+    width: 1.6ch;
+    color: var(--agent-gold, #ffd166);
+    font-weight: 700;
+  }
+
+  .acp-harness__question-label {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+  }
+
+  .acp-harness__question-desc {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+    font-size: 0.86em;
+  }
+
+  .acp-harness__question-actions {
+    color: rgba(255, 209, 102, 0.75);
+    font-size: 0.92em;
+  }
+}

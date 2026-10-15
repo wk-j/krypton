@@ -1,0 +1,112 @@
+/* Spec 302 §5.8 — `AnnotationRail`.
+   Carved VERBATIM from src/styles/acp-harness.css:6772-6868. Delete that range
+   when this directory is registered.
+
+   The rest of the `__anno-` family stays behind, because it is not this
+   component: `-mark` (:6757-6770) is the inline highlight `applyTranscriptAnnotations`
+   wraps around the quoted text, and `-pill` (:6870-6887) / `-overlay*`
+   (:6889-6960) are the capture affordance and its composer. Only the rail's own
+   block is carved out here.
+
+   theme-scheme.css declares no light-mode rule for any `anno-` selector, so
+   there is no `krypton.scheme` layer in this file. */
+
+@layer krypton.component {
+  .acp-harness__anno-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--acp-border, rgba(216, 232, 216, 0.14));
+    border-radius: var(--krypton-border-radius, 8px);
+    background: color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 6%, transparent);
+  }
+
+  .acp-harness__anno-rail-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 0.7em;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: rgba(185, 245, 255, 0.68);
+  }
+
+  .acp-harness__anno-send {
+    appearance: none;
+    font: inherit;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--acp-accent-quote, #d6b8ff);
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 45%, transparent);
+    border-radius: 5px;
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+
+  .acp-harness__anno-send:disabled {
+    opacity: 0.4;
+    cursor: default;
+    color: rgba(216, 232, 216, 0.42);
+    border-color: rgba(216, 232, 216, 0.14);
+  }
+
+  .acp-harness__anno-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .acp-harness__anno-item {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 0.92em;
+    line-height: 1.4;
+  }
+
+  .acp-harness__anno-note::before {
+    content: "· ";
+    color: var(--acp-accent-quote, #d6b8ff);
+  }
+
+  .acp-harness__anno-item--unsent .acp-harness__anno-note {
+    color: var(--acp-accent-quote, #d6b8ff);
+  }
+
+  .acp-harness__anno-item--sent .acp-harness__anno-note {
+    color: var(--agent-gold, #ffd166);
+  }
+
+  .acp-harness__anno-item--sent .acp-harness__anno-note::before {
+    color: var(--agent-gold, #ffd166);
+  }
+
+  .acp-harness__anno-item--drained .acp-harness__anno-note,
+  .acp-harness__anno-item--drained .acp-harness__anno-note::before {
+    color: rgba(216, 232, 216, 0.45);
+  }
+
+  .acp-harness__anno-item--drifted .acp-harness__anno-note::after {
+    content: " (drifted)";
+    color: var(--agent-error, #ff6d8a);
+  }
+
+  .acp-harness__anno-del {
+    appearance: none;
+    font: inherit;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(216, 232, 216, 0.45);
+    background: transparent;
+    border: 1px solid rgba(216, 232, 216, 0.14);
+    border-radius: 4px;
+    padding: 0 6px;
+    cursor: pointer;
+  }
+}

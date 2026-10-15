@@ -1,0 +1,81 @@
+/* Spec 302 §3.12 — the HTML artifact card's own block, plus the
+   `acp-harness__msg--artifact*` wrapper modifiers both document cards wear.
+
+   Copied VERBATIM from src/styles/acp-harness.css (the `HTML artifacts
+   (spec 133)` section: `.acp-harness__msg--artifact .acp-harness__msg-label`
+   through `.acp-harness__artifact-action`). The integrator deletes that span
+   from acp-harness.css when this directory is registered.
+
+   NOT moved, and deliberately so: `.acp-harness__artifact-redaction`,
+   `-redaction-note` and `-redaction-meta` immediately below it. They share the
+   `acp-harness__artifact` stem but paint the redacted artifact-path write/edit
+   card inside a TOOL row, not this one — they belong to `tool-row`, and
+   theme-scheme.css:355-357 carries the only light-mode rule in the family, for
+   `-redaction-meta`.
+
+   The review card's half of the ⚠ collision lives in
+   `../card/review-card.css`, because `Card` is what emits
+   `acp-harness__review-card*`.
+
+   No krypton.scheme layer: theme-scheme.css has no light-mode rule for any
+   selector in this file. */
+
+@layer krypton.component {
+  .acp-harness__msg--artifact .acp-harness__msg-label {
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-harness__msg--artifact .acp-harness__msg-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 8px;
+    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 8%, transparent);
+    border-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-harness__msg--artifact-unavailable .acp-harness__msg-body {
+    background: rgba(255, 118, 118, 0.07);
+    opacity: 0.72;
+  }
+
+  .acp-harness__msg--artifact-hinted .acp-harness__msg-body {
+    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 14%, transparent);
+  }
+
+  .acp-harness__artifact-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5em;
+  }
+
+  .acp-harness__artifact-hint {
+    flex: 0 0 auto;
+    min-width: 1.4em;
+    padding: 0 0.35em;
+    text-align: center;
+    font-weight: bold;
+    color: #0a0e12;
+    background: var(--krypton-window-accent, #0cf);
+    border-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-harness__artifact-glyph {
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-harness__artifact-title {
+    font-weight: 600;
+    color: rgba(216, 232, 240, 0.95);
+  }
+
+  .acp-harness__artifact-meta,
+  .acp-harness__artifact-action {
+    font-size: 0.82em;
+    color: rgba(216, 232, 240, 0.55);
+  }
+
+  .acp-harness__artifact-action {
+    color: color-mix(in srgb, var(--krypton-window-accent, #0cf) 70%, rgba(216, 232, 240, 0.6));
+  }
+}

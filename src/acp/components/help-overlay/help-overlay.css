@@ -1,0 +1,101 @@
+/* Spec 302 §7.12 — `HelpOverlay`. Moved from src/styles/acp-harness.css
+   (search `.acp-harness__help-overlay` and `.acp-harness__help-head` …
+   `.acp-harness__help-section p`), except:
+     * `.acp-harness__help__head` replaces `.acp-harness__help-head`, and
+       `.acp-harness__help__sub` replaces the `… span:last-child` descendant
+       selector — both are the classes `OverlayShell` emits (same declarations);
+     * `.acp-harness__help__panel` is the shell's panel wrapper, which the help
+       overlay had no equivalent of: it must not be a layout box. */
+@layer krypton.component {
+  .acp-harness__help-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    background:
+      repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 0, 0, 0.02) 2px, rgba(0, 0, 0, 0.02) 4px),
+      var(--agent-surface-solid, rgba(4, 8, 13, 0.98));
+    box-shadow: inset 0 1px 0 rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.08);
+  }
+
+  .acp-harness__help-overlay[hidden] {
+    display: none;
+  }
+
+  .acp-harness__help__panel {
+    display: contents;
+  }
+
+  .acp-harness__help__head {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 10px;
+    color: var(--krypton-window-accent, #0cf);
+    letter-spacing: 0.08em;
+    text-transform: none;
+    text-decoration: none;
+    text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
+    border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
+  }
+
+  .acp-harness__help__sub {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+    font-size: 0.86em;
+    text-shadow: none;
+  }
+
+  .acp-harness__help-grid {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(260px, 1fr));
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .acp-harness__help-section {
+    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.022);
+    border-left: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.14);
+    padding: 7px 9px;
+  }
+
+  .acp-harness__help-section--wide {
+    grid-column: 1 / -1;
+  }
+
+  .acp-harness__help-section h3 {
+    margin: 0 0 5px;
+    color: var(--agent-accent, #8effb0);
+    font-size: 0.9em;
+    letter-spacing: 0.08em;
+    text-transform: none;
+    text-decoration: none;
+  }
+
+  .acp-harness__help-section dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: minmax(9ch, 16ch) minmax(0, 1fr);
+    gap: 3px 10px;
+  }
+
+  .acp-harness__help-section dt {
+    color: var(--krypton-window-accent, #0cf);
+    white-space: nowrap;
+  }
+
+  .acp-harness__help-section dd {
+    margin: 0;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+  }
+
+  .acp-harness__help-section p {
+    margin: 0;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+    line-height: 1.35;
+  }
+}

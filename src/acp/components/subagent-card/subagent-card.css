@@ -1,0 +1,147 @@
+/* Spec 302 §3.5 — `SubagentCard`.
+   Carved VERBATIM from src/styles/acp-harness.css:2272-2406 (the spec-282
+   block, `.acp-harness__subagents` through `.acp-harness__subagent-detail-text`,
+   including the pulse keyframes and its reduced-motion guard).
+
+   theme-scheme.css has no `__subagent*` selector, so there is no krypton.scheme
+   layer here. `.acp-harness__subagent-summary` is NOT in this file: that span
+   is emitted by the tool row's head and has no rule of its own today — it
+   inherits `.acp-harness__tool-result`, which the tool row owns. */
+
+@layer krypton.component {
+  /* spec 282 — subagent card: one live row per spawned agent. */
+  .acp-harness__subagents {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px;
+    padding: 4px 8px;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
+    border-radius: var(--krypton-border-radius, 8px);
+    white-space: normal;
+  }
+
+  .acp-harness__subagent {
+    min-width: 0;
+    padding: 2px 0;
+    cursor: pointer;
+  }
+
+  .acp-harness__subagent + .acp-harness__subagent {
+    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.07);
+  }
+
+  .acp-harness__subagent--hinted {
+    background: rgba(109, 208, 255, 0.12);
+  }
+
+  .acp-harness__subagent-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .acp-harness__subagent-hint {
+    min-width: 1.5em;
+    padding: 0 4px;
+    text-align: center;
+    font-weight: 800;
+    color: #071013;
+    background: var(--agent-user, #6dd0ff);
+    border-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-harness__subagent-glyph {
+    flex: 0 0 auto;
+    width: 1ch;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+  }
+
+  .acp-harness__subagent--running .acp-harness__subagent-glyph {
+    color: var(--agent-warning, #ffb000);
+    animation: acp-harness-subagent-pulse 1.4s ease-in-out infinite;
+  }
+
+  .acp-harness__subagent--completed .acp-harness__subagent-glyph {
+    color: var(--agent-accent, #8effb0);
+  }
+
+  .acp-harness__subagent--failed .acp-harness__subagent-glyph {
+    color: var(--agent-error, #ff6b8b);
+  }
+
+  @keyframes acp-harness-subagent-pulse {
+    50% { opacity: 0.35; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .acp-harness__subagent--running .acp-harness__subagent-glyph {
+      animation: none;
+    }
+  }
+
+  .acp-harness__subagent-name {
+    flex: 0 1 auto;
+    overflow: hidden;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-harness__subagent-agent {
+    flex: 0 0 auto;
+    font-size: 0.82em;
+    letter-spacing: 0.04em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+  }
+
+  .acp-harness__subagent-activity {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.7);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-harness__subagent-stats,
+  .acp-harness__subagent-more {
+    flex: 0 0 auto;
+    font-size: 0.82em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+    white-space: nowrap;
+  }
+
+  .acp-harness__subagent-tools {
+    display: block;
+    padding-left: calc(1ch + 8px);
+    font-size: 0.82em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+  }
+
+  .acp-harness__subagent-detail {
+    margin: 4px 0 2px calc(1ch + 8px);
+    padding: 4px 8px;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    border-radius: var(--krypton-border-radius, 8px);
+    cursor: auto;
+  }
+
+  .acp-harness__subagent-detail-label {
+    display: block;
+    font-size: 0.72em;
+    letter-spacing: 0.08em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+  }
+
+  .acp-harness__subagent-detail-text {
+    margin: 0 0 4px;
+    font: inherit;
+    max-height: 16em;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78);
+  }
+}

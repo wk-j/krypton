@@ -1,3 +1,4 @@
+@import './layers.css';
 @import './base.css';
 @import './window.css';
 @import './terminal.css';
@@ -12,12 +13,8 @@
 @import './diff-view.css';
 @import './markdown-view.css';
 @import './agent.css';
-@import './acp-harness.css';
-@import './attention-triage.css';
-@import './review-quality.css';
-@import './review-priority.css';
+@import './harness-shared.css';
 @import './review-board.css';
-@import './orchestrator-console.css';
 @import './profiler.css';
 @import './inline-ai.css';
 @import './music.css';

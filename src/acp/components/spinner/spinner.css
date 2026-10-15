@@ -1,0 +1,15 @@
+/* Spec 302 §1.2 — `Spinner`.
+   Carved verbatim from src/styles/acp-harness.css:4764-4773. */
+
+@layer krypton.component {
+  /* Braille spinner glyph — frames are advanced by a single JS interval (see
+     SPINNER_FRAMES in acp-harness-view.ts), NOT a CSS animation. A CSS @keyframes
+     restarts whenever its host element is recreated, and both the lane head (2s
+     metrics poll) and the composer (1s tick) rebuild their innerHTML — which made
+     the old ::before spinner snap back to frame 0 and stutter. A JS ticker keeps a
+     continuous frame counter and re-applies it to whatever spinner elements exist,
+     so DOM rebuilds no longer reset the animation. */
+  .acp-harness__spinner {
+    color: inherit;
+  }
+}

@@ -1,0 +1,23 @@
+/* Spec 301 — cascade layer order, declared once.
+   Unlayered rules outrank every layered rule in the same origin (CSS Cascade 5),
+   so this single statement is what makes component sheets predictable:
+     krypton.reset     the global element reset (src/styles/base.css)
+     krypton.base      shell rules with no component owner (harness-shared.css)
+     krypton.component a component's own block, carved out of the monolith
+     krypton.scheme    that component's light/dark scheme overrides
+     krypton.theme     reserved for theme-level overrides
+
+   `krypton.reset` is first because the universal `* { margin: 0; padding: 0 }`
+   in base.css is specificity 0,0,0: unlayered it would beat every layered rule
+   and silently zero every component's padding and margin.
+
+   The statement is imported from two places on purpose — `src/styles/index.css`
+   (the HTML-linked sheet) and `src/ui/component.ts` (a dependency of every
+   component module). Whichever bundle the browser parses first, the order is
+   already declared. Repeating an identical layer statement is idempotent.
+
+   `src/styles/theme-scheme.css` stays UNLAYERED and stays the last `@import`
+   in index.css: its harness half moved out in phase 6, but the window-chrome
+   and workspace-footer rules that remain still need to outrank every other
+   sheet. Nothing harness-related depends on that position any more. */
+@layer krypton.reset, krypton.base, krypton.component, krypton.scheme, krypton.theme;

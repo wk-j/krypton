@@ -1,0 +1,24 @@
+/* Spec 302 §6.5 — `PeerStrip`.
+   Carved verbatim from src/styles/acp-harness.css:4002-4011.
+
+   The `[hidden]` rule is the component's empty state: the builder returned `''`
+   and emitted no node, so the kept node must take no space. It is declared
+   rather than left to the UA sheet because the block's own padding is what
+   would show through if a later rule ever gave it a `display`. */
+
+@layer krypton.component {
+  /* spec 118 — peer activity hint (informational; does not block input) */
+  .acp-harness__composer-peer {
+    padding: 2px 0 4px;
+    color: #b8a6ff;
+    font-size: 0.74em;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .acp-harness__composer-peer[hidden] {
+    display: none;
+  }
+}

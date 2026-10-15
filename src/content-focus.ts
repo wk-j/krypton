@@ -38,7 +38,7 @@ export function summonOverlayOwnsKeyboard(
   root: { querySelector(selector: string): unknown },
 ): boolean {
   return root.querySelector(
-    '.krypton-review-picker, .acp-review-thread-picker, .krypton-vault-picker-overlay',
+    '.krypton-review-picker, .acp-harness__review-thread-overlay, .krypton-vault-picker-overlay',
   ) != null;
 }
 

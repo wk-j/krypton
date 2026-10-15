@@ -1,0 +1,114 @@
+/* Spec 302 §3.6 — `PermissionRow`.
+   Carved verbatim from src/styles/acp-harness.css:3538-3639 (the `acp-harness__perm`
+   block and its `acp-harness__perm-*` elements). Nothing else in the repo may
+   declare these selectors.
+
+   `.acp-harness__msg--permission .acp-harness__msg-body` (:3534-3536) stays
+   behind: its subject is the `acp-harness__msg` block, which `TranscriptRow`
+   owns. theme-scheme.css declares nothing for this block, so there is no
+   `krypton.scheme` section. */
+
+@layer krypton.component {
+  /* Spec 120 pattern — flat perm body, no nested card container. No horizontal
+     padding so the perm row's content lines up flush with the tool rows in the
+     same body column; no background tint either, so the perm row reads like a
+     tool row (glyph + tag + subject carry the meaning, not a coloured band). */
+  .acp-harness__msg-body.acp-harness__perm {
+    display: grid;
+    gap: 2px;
+    padding: 2px 0;
+  }
+
+  /* The glyph (not the chip) carries the decision colour, mirroring the tool
+     row's status glyph. */
+  .acp-harness__msg-body.acp-harness__perm[data-decision='auto_allowed'] .acp-harness__perm-glyph,
+  .acp-harness__msg-body.acp-harness__perm[data-decision='accepted'] .acp-harness__perm-glyph {
+    color: var(--agent-accent, #8effb0);
+  }
+
+  .acp-harness__msg-body.acp-harness__perm[data-decision='rejected'] .acp-harness__perm-glyph,
+  .acp-harness__msg-body.acp-harness__perm[data-decision='failed'] .acp-harness__perm-glyph {
+    color: var(--agent-error, #ff6b8b);
+  }
+
+  /* Mirrors .acp-harness__tool-head so permission and tool rows share the same
+     glyph + tag + inline-subject layout in the body column. */
+  .acp-harness__perm-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    line-height: 1.3;
+    font-size: var(--krypton-font-size, 13px);
+  }
+
+  /* Mirrors .acp-harness__tool-glyph (1.4ch × 1em fixed cell). */
+  .acp-harness__perm-glyph {
+    display: inline-flex;
+    flex: 0 0 1.4ch;
+    align-items: center;
+    justify-content: center;
+    width: 1.4ch;
+    min-width: 1.4ch;
+    height: 1em;
+    min-height: 1em;
+    overflow: hidden;
+    line-height: 1;
+    text-align: center;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+  }
+
+  /* Mirrors .acp-harness__tool-kind — a compact neutral tag, not a coloured pill. */
+  .acp-harness__perm-decision {
+    flex: none;
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.78em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+    border-radius: var(--krypton-border-radius, 8px);
+    padding: 0 5px;
+  }
+
+  .acp-harness__perm-tool {
+    flex: none;
+    color: var(--agent-gold, #ffd166);
+    text-shadow: 0 0 8px rgba(255, 209, 102, 0.24);
+  }
+
+  /* Mirrors .acp-harness__tool-subject: flex so the command sits inline with a
+     hanging indent instead of wrapping the whole element to the body's left edge. */
+  .acp-harness__perm-subject {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+    font-family: var(--agent-font, monospace);
+  }
+
+  .acp-harness__perm-suffix {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+  }
+
+  .acp-harness__perm-reason,
+  .acp-harness__perm-preview {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    font-size: 0.86em;
+    line-height: 1.25;
+  }
+
+  .acp-harness__perm-actions {
+    color: rgba(255, 209, 102, 0.75);
+    font-size: 0.95em;
+    line-height: 1.3;
+  }
+
+  .acp-harness__perm-preview {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

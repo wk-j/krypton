@@ -1,19 +1,31 @@
 /* Krypton — Global Styles */
 /* Sci-fi HUD panel aesthetic — all colors driven by --krypton-* CSS custom properties */
 
-*, *::before, *::after {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+/* Spec 301: this sheet sits in the LOWEST cascade layer.
 
-html, body {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: transparent;
-  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', 'Fira Code', monospace);
-  font-size: var(--krypton-font-size, 14px);
-  line-height: var(--krypton-line-height, 1.2);
-}
+   The universal reset below is specificity 0,0,0, so before layers existed it
+   lost to every real rule and nobody had to think about it. Unlayered rules
+   outrank every layered rule in the same origin (CSS Cascade 5) — so the moment
+   component sheets moved into `@layer krypton.component`, an unlayered
+   `* { padding: 0 }` started beating `.acp-harness__picker-head { padding: 7px 12px }`
+   and every other padding/margin in every component. `krypton.reset` restores the
+   old relationship: the reset is the floor, and anything layered above it wins.
 
+   Layer order is declared in src/styles/layers.css. */
+@layer krypton.reset {
+  *, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', 'Fira Code', monospace);
+    font-size: var(--krypton-font-size, 14px);
+    line-height: var(--krypton-line-height, 1.2);
+  }
+}

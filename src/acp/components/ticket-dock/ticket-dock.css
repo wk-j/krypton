@@ -1,0 +1,181 @@
+/* Spec 302 §5.7 — `TicketDock`.
+   Carved VERBATIM from src/styles/acp-harness.css:210-348 and :402-413, plus
+   the `.acp-ticket-dock__empty` half of the selector pair at :396-400. Delete
+   :210-348 and :402-413 outright; at :396-400 delete only the
+   `.acp-ticket-dock__empty` selector line (:397), leaving
+   `.acp-harness__ticket-dock li em` and its body in place.
+
+   Three neighbouring families stay in acp-harness.css on purpose, because they
+   are the dock's PLACEMENT, not its content, and `LayoutHost` owns them:
+   `.acp-harness__ticket-dock` itself (:179-208), the
+   `.acp-harness--ticket-*` state rules (:171-177, :5582-5592) and the
+   `@container` block from :415. The dock's internal markup is also reached by
+   six descendant rules written through the slot class
+   (`.acp-harness__ticket-dock section|section h3|section h3 span|section p|ul|li|li span`,
+   :350-394): those are left alone so that this directory declares only the
+   `acp-ticket-dock` block it owns.
+
+   theme-scheme.css declares no light-mode rule for any ticket-dock selector,
+   so there is no `krypton.scheme` layer in this file. */
+
+@layer krypton.component {
+  .acp-ticket-dock__collapsed {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #ffd880;
+    font: inherit;
+    line-height: 1;
+    cursor: default;
+  }
+
+  .acp-ticket-dock__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px 14px 11px;
+    border-bottom: 1px solid rgba(255, 176, 0, 0.22);
+  }
+
+  .acp-ticket-dock__head > div {
+    min-width: 0;
+  }
+
+  .acp-ticket-dock__head h2 {
+    margin: 3px 0 0;
+    overflow-wrap: anywhere;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.96);
+    font: inherit;
+    font-size: 1em;
+    font-weight: 650;
+    line-height: 1.35;
+  }
+
+  .acp-ticket-dock__eyebrow {
+    color: #ffb000;
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+  }
+
+  .acp-ticket-dock__head button {
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
+    border: 1px solid rgba(255, 176, 0, 0.35);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(255, 176, 0, 0.05);
+    color: #ffd880;
+    font: inherit;
+    font-size: 1em;
+    line-height: 1;
+    cursor: default;
+  }
+
+  .acp-ticket-dock__status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    border-bottom: 1px solid rgba(255, 176, 0, 0.12);
+  }
+
+  .acp-ticket-dock__status-row code {
+    min-width: 0;
+    overflow: hidden;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+    font: inherit;
+    font-size: 0.84em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-ticket-dock__pill {
+    flex: 0 0 auto;
+    padding: 2px 7px;
+    border: 1px solid rgba(255, 176, 0, 0.32);
+    border-radius: 999px;
+    color: #ffd880;
+    letter-spacing: 0.04em;
+  }
+
+  .acp-ticket-dock__pill--blocked {
+    border-color: rgba(255, 109, 138, 0.48);
+    color: #ff9caf;
+    background: rgba(255, 109, 138, 0.08);
+  }
+
+  .acp-ticket-dock__pill--done {
+    border-color: rgba(142, 255, 176, 0.42);
+    color: #a8ffbf;
+    background: rgba(142, 255, 176, 0.07);
+  }
+
+  .acp-ticket-dock__meta {
+    display: grid;
+    grid-template-columns: 62px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: baseline;
+    padding: 6px 14px;
+    border-bottom: 1px solid rgba(255, 176, 0, 0.09);
+  }
+
+  .acp-ticket-dock__meta > span,
+  .acp-ticket-dock__meta em {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.44);
+    font-style: normal;
+    white-space: nowrap;
+  }
+
+  .acp-ticket-dock__meta strong {
+    min-width: 0;
+    overflow: hidden;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-ticket-dock__issue-link {
+    color: var(--agent-user, #6dd0ff);
+    text-decoration: underline;
+    text-decoration-color: rgba(109, 208, 255, 0.55);
+    text-underline-offset: 2px;
+  }
+
+  .acp-ticket-dock__issue-link:hover {
+    color: var(--agent-cyan, #b9f5ff);
+    text-decoration-color: currentColor;
+  }
+
+  .acp-ticket-dock__issue-link:focus-visible {
+    outline: 1px solid var(--agent-cyan, #b9f5ff);
+    outline-offset: 2px;
+  }
+
+  /* The `.acp-harness__ticket-dock li em` half of the pair at :396-400 stays
+     behind with the slot-class descendants. */
+  .acp-ticket-dock__empty {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.40);
+    font-style: normal;
+  }
+
+  .acp-ticket-dock__head button:hover,
+  .acp-ticket-dock__collapsed:hover {
+    border-color: rgba(255, 216, 128, 0.66);
+    background: rgba(255, 176, 0, 0.10);
+    color: #ffd880;
+  }
+
+  .acp-ticket-dock__head button:focus-visible,
+  .acp-ticket-dock__collapsed:focus-visible {
+    outline: 1px solid #ffd880;
+    outline-offset: -3px;
+  }
+}

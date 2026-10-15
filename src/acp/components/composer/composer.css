@@ -1,0 +1,50 @@
+/* Spec 302 §6.1 — `Composer`.
+   Carved verbatim from src/styles/acp-harness.css: :3928-3944, :3946-3953,
+   :3971-3978 and :4013-4015 — the composer ROOT rules only.
+
+   Everything else the composer paints already belongs to a part: the chrome
+   row and its `--permission` label to composer-meta, the input line and the
+   `--command` / `--memory` input rules to draft-line, the caret's `--command`
+   rule to caret, the palette's flex/scroll rules to inline-palette, the peer
+   strip to peer-strip. None of those are duplicated here. */
+
+@layer krypton.component {
+  /* Prompt is a command line, not an 8px container card (agent input-rows
+     are already 0px). The host window keeps the theme bevel —
+     squaring the frame, titlebar, and footer made the 8px chrome vanish
+     from the main window while a harness tab was showing. */
+  .acp-harness__composer {
+    border-radius: 0;
+    min-height: 42px;
+    padding: 6px 10px 8px;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 5%, var(--agent-surface-solid, rgba(2, 5, 10, 0.96))),
+      var(--agent-surface-solid, rgba(2, 5, 10, 0.96)) 46%
+    );
+  }
+
+  /* Autocomplete can contain the full command catalog. Keep the input line in
+     view and let only the palette consume/scroll through the remaining half of
+     the Harness instead of growing beneath the workspace footer. */
+  .acp-harness__composer:not(.acp-harness__composer--permission) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 42px;
+    overflow: hidden;
+  }
+
+  .acp-harness__composer--permission {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 32px;
+    padding-block: 5px;
+    background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-gold, #ffd166)) 8%, transparent);
+  }
+
+  .acp-harness__composer--command {
+    background: rgba(255, 209, 102, 0.026);
+  }
+}

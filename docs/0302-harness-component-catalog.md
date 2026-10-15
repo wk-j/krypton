@@ -1,6 +1,6 @@
 # 302. Harness Component Catalog
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-10-15
 > Kind: **Reference**, not a spec. Companion to [301 — Harness UI Components](./0301-harness-ui-components.md),
 > which owns the problem statement, the kernel design, and the migration phases. This document is the

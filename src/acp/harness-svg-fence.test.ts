@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { closeSvgPrefix, fenceSourceText, svgBaseSize, svgFrame, themeSvgSource, type SvgPalette } from './harness-svg-fence';
-import { transcriptRenderSignature } from './harness-transcript-render';
-import type { HarnessTranscriptItem, SvgFenceEntry } from './harness-view-types';
 
 const PALETTE: SvgPalette = { fg: '#d8e8d8', accent: '#0cf', c1: '#f0f', success: 'rgb(0, 200, 80)' };
 const FONT = "'Mononoki Nerd Font Mono', 'Fira Code', monospace";
@@ -160,29 +158,5 @@ describe('closeSvgPrefix', () => {
       .toBe('<s:svg xmlns:s="http://www.w3.org/2000/svg"><s:g></s:g></s:svg>');
     const done = '<svg viewBox="0 0 4 4"><g><rect width="1"/></g><text>x &lt; y</text></svg>\n';
     expect(closeSvgPrefix(done)).toBe(done);
-  });
-});
-
-describe('transcriptRenderSignature — SVG cards', () => {
-  const entry = (): SvgFenceEntry => ({ index: 0, kind: 'svg', hintLabel: null, showSource: false, source: '<svg/>' });
-
-  it('keeps the signature when decoration adds default-state cards', () => {
-    const item: HarnessTranscriptItem = { id: 'a1', kind: 'assistant', text: '```svg\n<svg/>\n```' };
-    const before = transcriptRenderSignature(item, false);
-    item.svgFences = [entry()];
-    expect(transcriptRenderSignature(item, false)).toBe(before);
-  });
-
-  it('rebuilds the row when a card is labelled or toggled to source', () => {
-    const fence = entry();
-    const item: HarnessTranscriptItem = { id: 'a1', kind: 'assistant', text: 'x', svgFences: [fence] };
-    const plain = transcriptRenderSignature(item, false);
-    fence.hintLabel = 'a';
-    const labelled = transcriptRenderSignature(item, false);
-    expect(labelled).not.toBe(plain);
-    fence.hintLabel = null;
-    fence.showSource = true;
-    expect(transcriptRenderSignature(item, false)).not.toBe(plain);
-    expect(transcriptRenderSignature(item, false)).not.toBe(labelled);
   });
 });

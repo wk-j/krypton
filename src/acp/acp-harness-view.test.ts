@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { invoke } from '@tauri-apps/api/core';
+import type * as TauriCore from '@tauri-apps/api/core';
+
+import { loadProjectMcpServers } from './mcp-bridge';
+import type * as McpBridge from './mcp-bridge';
 
 import {
   AcpHarnessView,
@@ -10,7 +15,6 @@ import {
   gitBranchLabel,
   referenceGitResponseIsCurrent,
   backendLogoId,
-  buildComposerPeerStrip,
   buildLanePeekCandidates,
   deriveThoughtForPeek,
   shouldPaintThoughtTranscriptRow,
@@ -42,12 +46,9 @@ import {
   pickLaneAccent,
   parseQueueIndex,
   permissionArgsPreview,
-  renderPermissionBody,
   rawOutputSections,
   boundedOutputLines,
   stringifyToolValue,
-  formatLaneMailMetaLine,
-  formatLaneMailProvenanceLine,
   selectLanePeekCandidate,
   shouldPreemptPeekDismissal,
   trimBackendPrefix,
@@ -78,18 +79,10 @@ import {
   type LanePeekHeatLaneInput,
   type LanePeekSnapshot,
 } from './acp-harness-view';
-import {
-  referenceGitAccessibleSummary,
-  transcriptRenderSignature,
-} from './harness-transcript-render';
-import { peekThoughtMarkdownHtml, sealStreamingTextBody } from './harness-markdown';
 import { collapseThoughtBlankLines } from './harness-format';
 import {
-  peekShowsActiveTool,
   peekEventRowDuplicatesTool,
   peekReviewLoop,
-  renderLanePeekReviewLoop,
-  renderLanePeekToolRow,
   syncPeekThoughtBody,
 } from './lane-peek';
 
@@ -107,10 +100,40 @@ import type { HarnessDictationHost } from './harness-view-host';
 import { HarnessTimelineController } from './harness-timeline-controller';
 import { HarnessTicketController } from './harness-ticket-controller';
 
+// Spec 301: the behaviour tests below cross exactly two module boundaries —
+// the tauri bridge and the project MCP loader. `importOriginal` keeps every
+// other export of those modules real.
+vi.mock('@tauri-apps/api/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof TauriCore>();
+  return { ...actual, invoke: vi.fn(async () => null) };
+});
+vi.mock('./mcp-bridge', async (importOriginal) => {
+  const actual = await importOriginal<typeof McpBridge>();
+  return { ...actual, loadProjectMcpServers: vi.fn(async () => []) };
+});
+
+/** The mocked bridges, typed loosely so a test can hand them any payload. */
+const invokeMock = invoke as unknown as Mock;
+const projectMcpMock = loadProjectMcpServers as unknown as Mock;
+
+/** Spec 301 phase 6 split `src/styles/acp-harness.css` into the component
+ *  directories plus `harness-shared.css`; the rule-location assertions left in
+ *  this file read the sheet that now owns the rule. */
+const STYLE_ROOT = dirname(fileURLToPath(import.meta.url));
+function styleSheet(relativePath: string): string {
+  return readFileSync(join(STYLE_ROOT, relativePath), 'utf8');
+}
+
 /** Ticket controller methods reach the view through `this.host`; a flat test
  *  double can serve as its own host. */
 function selfHost<T extends object>(target: T): T {
   return Object.assign(target, { host: target });
+}
+
+/** A view double that keeps the real prototype, so the method under test can
+ *  reach its own private helpers while every collaborator stays stubbed. */
+function viewDouble<T extends object>(stubs: T): T {
+  return Object.assign(Object.create(AcpHarnessView.prototype), stubs) as T;
 }
 
 /** Give a prototype-backed view double the ticket controller it delegates to. */
@@ -185,175 +208,99 @@ describe('assistant reference Git state', () => {
     expect(file.git).toBeUndefined();
   });
 
-  it('invalidates the transcript signature when visible Git metadata changes', () => {
-    const file = resource();
-    const item: HarnessTranscriptItem = { id: 'm1', kind: 'assistant', text: 'done', resources: [file] };
-    const clean = transcriptRenderSignature(item, false);
-    file.git = { status: '?', added: 8, removed: 0, countKind: 'lines' };
-    expect(transcriptRenderSignature(item, false)).not.toBe(clean);
+  // Spec 301 §Testing: the four `transcriptRenderSignature` cases that lived
+  // here are now component dependency-tuple tests — `resource-rail` (late Git
+  // state repaints the rows, keeps the head node), `doc-card-row` (an open-hint
+  // label rebuilds the Review Board card), `tool-row` (pending → in_progress
+  // writes nothing; a growing section replaces only the output block). The
+  // streaming-tool, tool-status and fs_activity source-text assertions became
+  // the region-scheduling suite below.
+  it('delays the thought-slot hide instead of dropping the card on the first empty pass', () => {
+    type ThoughtSlotHost = { renderLaneThought(): void };
+    const renderLaneThought =
+      (AcpHarnessView.prototype as unknown as ThoughtSlotHost).renderLaneThought;
+    const unmounted: string[] = [];
+    const target: {
+      panelsHidden: boolean;
+      thoughtCard: unknown;
+      thoughtLaneId: string | null;
+      thoughtHideTimer: number | null;
+      railLayout: { unmount(id: string): void };
+      resolveThoughtTarget(): unknown;
+      stopThoughtTeletypeTick(): void;
+    } = viewDouble({
+      panelsHidden: false,
+      thoughtCard: {} as unknown,
+      thoughtLaneId: 'lane-1' as string | null,
+      thoughtHideTimer: null as number | null,
+      railLayout: { unmount: (id: string): void => { unmounted.push(id); } },
+      resolveThoughtTarget: (): unknown => null,
+      stopThoughtTeletypeTick: (): void => {},
+    });
+    const host = globalThis as { window?: unknown };
+    const previousWindow = host.window;
+    host.window = globalThis;
+    vi.useFakeTimers();
+    try {
+      renderLaneThought.call(target);
+      expect(target.thoughtHideTimer).not.toBeNull();
+      expect(unmounted).toEqual([]);
+
+      vi.runAllTimers();
+      expect(unmounted).toEqual(['thought']);
+      expect(target.thoughtCard).toBeNull();
+      expect(target.thoughtLaneId).toBeNull();
+      expect(target.thoughtHideTimer).toBeNull();
+    } finally {
+      vi.useRealTimers();
+      if (previousWindow === undefined) delete host.window;
+      else host.window = previousWindow;
+    }
   });
 
-  it('rebuilds a Review Board card when open-hint mode labels it', () => {
-    const review = {
-      id: 'rev-1', slug: '2026-10-06-x', dir: '/r/x', title: 'x', laneLabel: 'OMP-2',
-      blocks: 7, steps: 5, findings: 2, decisions: 0, hintLabel: null as string | null,
-    };
-    const item: HarnessTranscriptItem = { id: 'r1', kind: 'review', text: 'x', review };
-    const unlabeled = transcriptRenderSignature(item, false);
-    review.hintLabel = 'a';
-    expect(transcriptRenderSignature(item, false)).not.toBe(unlabeled);
-  });
-
-  it('does not rebuild a tool row when status stays in-flight (pending → in_progress)', () => {
-    const tool = {
-      glyph: '⠋',
-      status: 'pending',
-      kind: 'execute',
-      subject: 'dotnet test',
-      command: 'dotnet test',
-      result: '',
-      sections: [] as Array<{ label: string; text: string }>,
-      diffs: [] as Array<{ path: string; oldText: string; newText: string }>,
-    };
-    const item: HarnessTranscriptItem = {
-      id: 't1',
-      kind: 'tool',
-      text: '⠋ execute dotnet test',
-      status: 'pending',
-      tool,
-    };
-    const pending = transcriptRenderSignature(item, false);
-    item.status = 'in_progress';
-    tool.status = 'in_progress';
-    expect(transcriptRenderSignature(item, false)).toBe(pending);
-    item.status = 'completed';
-    tool.status = 'completed';
-    tool.glyph = '✓';
-    item.text = '✓ execute dotnet test';
-    expect(transcriptRenderSignature(item, false)).not.toBe(pending);
-  });
-
-  it('keeps an in-flight tool signature stable while section text streams (spec 114 rev 8)', () => {
-    const tool = {
-      glyph: '⠋',
-      status: 'in_progress',
-      kind: 'execute',
-      subject: 'npm test',
-      command: 'npm test',
-      result: '',
-      sections: [{ label: 'stdout', text: 'line 1' }],
-      diffs: [] as Array<{ path: string; oldText: string; newText: string }>,
-    };
-    const item: HarnessTranscriptItem = {
-      id: 't2',
-      kind: 'tool',
-      text: '⠋ execute npm test',
-      status: 'in_progress',
-      tool,
-    };
-    const streamingSig = transcriptRenderSignature(item, false);
-    tool.sections = [{ label: 'stdout', text: 'line 1\nline 2\nline 3' }];
-    expect(transcriptRenderSignature(item, false)).toBe(streamingSig);
-    // Structure changes still rebuild: a new stderr section…
-    tool.sections = [
-      { label: 'stdout', text: 'line 1\nline 2\nline 3' },
-      { label: 'stderr', text: 'boom' },
-    ];
-    expect(transcriptRenderSignature(item, false)).not.toBe(streamingSig);
-    // …and the terminal transition re-includes the section text.
-    tool.sections = [{ label: 'stdout', text: 'line 1\nline 2\nline 3' }];
-    tool.status = 'completed';
-    expect(transcriptRenderSignature(item, false)).not.toBe(streamingSig);
-  });
-
-  it('patches streaming tool output in place and keeps fs_activity on the body-only pass (spec 114 rev 8)', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
-    // The signature-equal branch patches the in-flight tool output block.
-    expect(viewSrc).toMatch(
-      /renderSignature === signature[\s\S]{0,600}patchStreamingToolBody/,
-    );
-    // The spinner ticker publishes its live frame for rebuilt glyph seeds.
-    expect(viewSrc).toMatch(/setToolSpinnerGlyph\(glyph\)/);
-    // fs_activity must not take the full renderActiveLane path per file touch.
-    expect(viewSrc).toMatch(
-      /case 'fs_activity':[\s\S]{0,600}?scheduleStreamingBodyOnly\(lane\);[\s\S]{0,200}?needsRender = false;[\s\S]{0,40}?break;/,
-    );
-  });
-
-  it('does not paint empty thought rows and delays thought-slot hide', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
-    expect(viewSrc).toMatch(/shouldPaintThoughtTranscriptRow/);
-    expect(viewSrc).toMatch(/thought-veil:/);
-    expect(viewSrc).toMatch(/scheduleThoughtSlotHide/);
-    expect(viewSrc).toMatch(/THOUGHT_SLOT_HIDE_MS/);
-    expect(viewSrc).not.toMatch(/if \(!snapshot\) \{\s*slot\.replaceChildren\(\);\s*slot\.hidden = true;/);
-  });
-
-  it('paints tool status on the transcript body path, not a full lane render (spec 114)', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
-    const toolCall = viewSrc.match(/case 'tool_call':[\s\S]*?\n        break;/);
-    const toolUpdate = viewSrc.match(/case 'tool_call_update':[\s\S]*?\n        break;/);
-    expect(toolCall?.[0]).toMatch(/scheduleToolRender/);
-    expect(toolCall?.[0]).toMatch(/needsRender = false/);
-    expect(toolUpdate?.[0]).toMatch(/scheduleToolRender/);
-    expect(toolUpdate?.[0]).toMatch(/needsRender = false/);
-    expect(viewSrc).toMatch(/private scheduleToolRender\(/);
-    expect(viewSrc).toMatch(/this\.scheduleStreamingBodyOnly\(lane\)/);
-    expect(viewSrc).not.toMatch(/current\.replaceWith\(next\)/);
-    expect(viewSrc).toMatch(/current\.replaceChildren\(\.\.\.Array\.from\(next\.childNodes\)\)/);
-  });
-
+  // Each row component releases `--enter` on animationend and holds it until
+  // then (system-row, permission-row, doc-card-row, directive-diff-row tests).
+  // What belongs here is the CSS half: the animation must not keep its end
+  // state, or a row that re-renders would wear the transform forever.
   it('releases the transcript row entrance transform after animation settles', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const renderSrc = readFileSync(join(here, 'harness-transcript-render.ts'), 'utf8');
-    const css = readFileSync(join(here, '../styles/acp-harness.css'), 'utf8');
-    const entryRule = css.match(/\.acp-harness__msg--enter\s*\{([\s\S]*?)\}/)?.[1];
+    const shared = styleSheet('../styles/harness-shared.css');
+    const entryRule = shared.match(/\.acp-harness__msg--enter\s*\{([\s\S]*?)\}/)?.[1];
 
-    expect(renderSrc).toMatch(/classList\.remove\('acp-harness__msg--enter'\)/);
-    expect(renderSrc).toMatch(/addEventListener\('animationend', releaseEntryAnimation\)/);
-    expect(renderSrc).toMatch(/addEventListener\('animationcancel', releaseEntryAnimation\)/);
     expect(entryRule).toBeDefined();
     expect(entryRule).not.toMatch(/\bboth\b|animation-fill-mode/);
   });
 
-  it('does not full-render the dashboard on stop or MCP stats (turn-end flicker)', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
-    const stop = viewSrc.match(/case 'stop':[\s\S]*?\n        break;/);
-    expect(stop?.[0]).toMatch(/needsRender = false/);
-    expect(stop?.[0]).not.toMatch(/scheduleLaneRender/);
-    expect(viewSrc).toMatch(/private patchLaneTurnChrome\(/);
-    expect(viewSrc).toMatch(/this\.sealStreamingTextRow\(/);
-    expect(viewSrc).not.toMatch(/harness-action-hud/);
-    expect(viewSrc).not.toMatch(/actionSlotEl/);
-    const mcp = viewSrc.match(/private async refreshMcpStats\(\)[\s\S]*?\n  \}/);
-    expect(mcp?.[0]).toMatch(/this\.refreshMetricsRender\(\)/);
-    expect(mcp?.[0]).not.toMatch(/this\.render\(\)/);
-  });
+  it('reloads the active ticket into its own chrome, never a dashboard remount', async () => {
+    type ReloadHost = { reloadActiveTicket(refreshGithub?: boolean): Promise<unknown> };
+    const reloadActiveTicket =
+      (HarnessTicketController.prototype as unknown as ReloadHost).reloadActiveTicket;
+    const painted: string[] = [];
+    const invalidated: string[] = [];
+    const detail = { id: 'KR-301', github: null };
+    const target: {
+      activeTicket: unknown;
+      ticketPicker: unknown;
+      host: { harnessMemoryId: string; invalidate(region: string): void; flashChip(): void };
+      renderTicketDock(): void;
+      renderTicketOverlayEl(): void;
+    } = {
+      activeTicket: { id: 'KR-301' },
+      ticketPicker: {},
+      host: {
+        harnessMemoryId: 'h1',
+        invalidate: (region: string): void => { invalidated.push(region); },
+        flashChip: (): void => {},
+      },
+      renderTicketDock: (): void => { painted.push('dock'); },
+      renderTicketOverlayEl: (): void => { painted.push('overlay'); },
+    };
+    invokeMock.mockResolvedValueOnce(detail);
 
-  it('reloads the active ticket without remounting the dashboard', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
-    const ticketSrc = readFileSync(join(here, 'harness-ticket-controller.ts'), 'utf8');
-    const reloadStart = ticketSrc.indexOf('  async reloadActiveTicket(');
-    const reloadEnd = ticketSrc.indexOf('\n  async ', reloadStart + 1);
-    const reload = ticketSrc.slice(reloadStart, reloadEnd);
-    const success = reload.slice(reload.indexOf('this.activeTicket = detail;'));
-    expect(success).toMatch(/this\.renderTicketDock\(\)/);
-    expect(success).toMatch(/if \(this\.ticketPicker\) this\.renderTicketOverlayEl\(\)/);
-    expect(success).not.toMatch(/this\.render\(\);/);
-    expect(viewSrc).toMatch(
-      /if \(this\.ticketCtl\.ticketWorker\?\.laneId === lane\.id\) void this\.ticketCtl\.reloadActiveTicket\(false\)/,
-    );
-    const enrichStart = ticketSrc.indexOf('  async enrichActiveTicket(');
-    const enrichEnd = ticketSrc.indexOf('\n  async ', enrichStart + 1);
-    const enrich = ticketSrc.slice(enrichStart, enrichEnd);
-    const enrichSuccess = enrich.slice(enrich.indexOf('this.activeTicket = detail;'));
-    expect(enrichSuccess).toMatch(/this\.renderTicketDock\(\)/);
-    expect(enrichSuccess).not.toMatch(/this\.render\(\);/);
+    await reloadActiveTicket.call(target, false);
+
+    expect(target.activeTicket).toBe(detail);
+    expect(painted).toEqual(['dock', 'overlay']);
+    expect(invalidated).toEqual([]);
   });
 
   it('seals a live thought before the first assistant chunk replaces its stream kind', () => {
@@ -384,13 +331,13 @@ describe('assistant reference Git state', () => {
       currentThoughtId: thought.id,
       transcript: [thought],
     } as HarnessLane;
-    const sealStreamingTextRow = vi.fn((_lane: HarnessLane, id: string | null) => {
+    const sealMountedRow = vi.fn((_lane: HarnessLane, id: string | null) => {
       expect(id).toBe(thought.id);
       expect(lane.currentThoughtId).toBe(thought.id);
     });
     const target = {
       dropVeiledThoughtRow: vi.fn(),
-      sealStreamingTextRow,
+      sealMountedRow,
       appendTranscript: vi.fn(() => {
         lane.transcript.push(assistant);
         return assistant;
@@ -400,51 +347,9 @@ describe('assistant reference Git state', () => {
 
     appendStreaming.call(target, lane, 'assistant', 'answer');
 
-    expect(sealStreamingTextRow).toHaveBeenCalledOnce();
+    expect(sealMountedRow).toHaveBeenCalledOnce();
     expect(lane.currentThoughtId).toBeNull();
     expect(assistant.text).toBe('answer');
-  });
-
-  it('seals a live thought without replacing its stable text node', () => {
-    const textNode = { nodeType: 3, textContent: 'reasoning' };
-    let textContent = 'reasoning';
-    let textWrites = 0;
-    const body = {
-      classList: { remove: vi.fn() },
-      childNodes: [textNode],
-      firstChild: textNode,
-      get textContent(): string {
-        return textContent;
-      },
-      set textContent(value: string | null) {
-        textWrites += 1;
-        textContent = value ?? '';
-      },
-    } as unknown as HTMLElement;
-    const item = {
-      id: 'thought-1',
-      kind: 'thought',
-      text: 'reasoning',
-      streamPlainLength: 'reasoning'.length,
-    } as HarnessTranscriptItem;
-
-    sealStreamingTextBody(body, item);
-
-    expect(textWrites).toBe(0);
-    expect(body.firstChild).toBe(textNode);
-    expect(item.streamPlainLength).toBeUndefined();
-  });
-
-  it('formats accessible line, binary, and unavailable summaries', () => {
-    expect(referenceGitAccessibleSummary({
-      status: 'M', added: 1, removed: 2, countKind: 'lines',
-    })).toBe('Modified, 1 line added, 2 lines removed');
-    expect(referenceGitAccessibleSummary({
-      status: '?', added: null, removed: null, countKind: 'binary',
-    })).toBe('Untracked, binary file');
-    expect(referenceGitAccessibleSummary({
-      status: '!', added: null, removed: null, countKind: 'unavailable',
-    })).toBe('Conflicted, line counts unavailable');
   });
 
   it('routes r in transcript command mode to an immediate Git refresh', () => {
@@ -497,30 +402,232 @@ describe('assistant reference Git state', () => {
   });
 });
 
-describe('composer git branch refresh', () => {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+describe('lane event region scheduling (spec 301)', () => {
+  type LaneEventHost = { onLaneEvent(lane: HarnessLane, event: unknown): void };
+  const onLaneEvent = (AcpHarnessView.prototype as unknown as LaneEventHost).onLaneEvent;
 
-  function methodSource(name: string): string {
-    let start = src.indexOf(`private async ${name}(`);
-    if (start < 0) start = src.indexOf(`private ${name}(`);
-    expect(start).toBeGreaterThanOrEqual(0);
-    const next = src.indexOf('\n  private ', start + 1);
-    return src.slice(start, next === -1 ? undefined : next);
+  interface RegionSpy {
+    regions: string[];
+    target: Record<string, unknown>;
+    lane: HarnessLane;
   }
 
-  it('does not clear the last composer branch before a later probe returns', () => {
-    const body = methodSource('refreshGitBranch');
-    expect(body).not.toMatch(/this\.gitBranch = null;\s*this\.gitBranchProjectDir/);
-    expect(body).toContain('gitBranchLabel(');
-    expect(body).toContain('this.renderComposer()');
-    expect(body).not.toContain('this.render();');
+  function regionSpy(collaborators: Record<string, unknown>): RegionSpy {
+    const regions: string[] = [];
+    const lane = {
+      id: 'lane-1',
+      status: 'busy',
+      transcript: [],
+      toolCalls: new Map(),
+      toolTranscriptIds: new Map(),
+      codexAgentNames: new Map(),
+      activeToolCount: 0,
+    } as unknown as HarnessLane;
+    const target: Record<string, unknown> = viewDouble({
+      activeLaneId: 'lane-1',
+      pendingToolHud: false,
+      publishStream: (): void => {},
+      invalidate: (region: string): void => { regions.push(region); },
+      // A background-lane fallback would show up here; the active lane must
+      // never take it.
+      refreshMetricsRender: (): void => { regions.push('metrics'); },
+      ...collaborators,
+    });
+    return { regions, target, lane };
+  }
+
+  it('ends a turn without invalidating a single region', () => {
+    const stopped: string[] = [];
+    const { regions, target, lane } = regionSpy({
+      steerCtl: { onStop: (): void => { stopped.push('stop'); } },
+      refreshMemory: async (): Promise<void> => {},
+    });
+
+    onLaneEvent.call(target, lane, { type: 'stop', stopReason: 'end_turn', reason: null });
+
+    expect(stopped).toEqual(['stop']);
+    expect(regions).toEqual([]);
   });
 
-  it('re-probes after a tool ends, a lane goes idle, and projectDir resolves', () => {
-    expect(methodSource('renderTool')).toContain('this.scheduleGitBranchRefresh()');
-    expect(methodSource('setLaneStatus')).toContain('this.scheduleGitBranchRefresh()');
-    expect(methodSource('initializeHarnessMemory')).toContain('this.refreshGitBranch()');
+  it('puts a file touch on the transcript region, never the whole lane', () => {
+    const appended: string[] = [];
+    const { regions, target, lane } = regionSpy({
+      appendFsActivity: (): void => { appended.push('fs'); },
+    });
+
+    onLaneEvent.call(target, lane, {
+      type: 'fs_activity', method: 'read', path: '/repo/a.ts', ok: true, error: null,
+    });
+
+    expect(appended).toEqual(['fs']);
+    expect(regions).toEqual(['transcript']);
+  });
+
+  it('paints a tool call and its update on the transcript region plus the tool HUD', () => {
+    const { regions, target, lane } = regionSpy({
+      absorbSubagentChild: (): boolean => false,
+      sealStreaming: (): void => {},
+      liveVoiceCtl: { onToolCall: (): void => {} },
+      renderTool: (): void => {},
+      collectToolImages: (): void => {},
+      noteToolActivity: (): void => {},
+      observeFileTouch: (): void => {},
+    });
+
+    onLaneEvent.call(target, lane, {
+      type: 'tool_call', call: { toolCallId: 't1', status: 'pending' },
+    });
+    expect(regions).toEqual(['transcript']);
+    expect(target.pendingToolHud).toBe(true);
+
+    target.pendingToolHud = false;
+    onLaneEvent.call(target, lane, {
+      type: 'tool_call_update', update: { toolCallId: 't1', status: 'in_progress' },
+    });
+    expect(regions).toEqual(['transcript', 'transcript']);
+    expect(target.pendingToolHud).toBe(true);
+  });
+
+  it('refreshes metrics on an MCP stats poll without invalidating a region', async () => {
+    type McpStatsHost = { refreshMcpStats(): Promise<void> };
+    const refreshMcpStats = (AcpHarnessView.prototype as unknown as McpStatsHost).refreshMcpStats;
+    const { regions, target } = regionSpy({
+      harnessMemoryId: 'h1',
+      mcpStatsByLane: new Map<string, unknown>(),
+    });
+    invokeMock.mockResolvedValueOnce([{ laneLabel: 'Codex-1' }]);
+
+    await refreshMcpStats.call(target);
+
+    expect((target.mcpStatsByLane as Map<string, unknown>).has('Codex-1')).toBe(true);
+    expect(regions).toEqual(['metrics']);
+  });
+});
+
+describe('composer git branch refresh', () => {
+  type GitBranchHost = {
+    refreshGitBranch(): Promise<void>;
+    setLaneStatus(lane: HarnessLane, next: string): void;
+    initializeHarnessMemory(): Promise<void>;
+    renderTool(lane: HarnessLane, call: unknown, updateOnly: boolean): void;
+  };
+  const proto = AcpHarnessView.prototype as unknown as GitBranchHost;
+
+  interface BranchHost {
+    target: Record<string, unknown>;
+    regions: string[];
+  }
+
+  function branchHost(gitBranch: string | null): BranchHost {
+    const regions: string[] = [];
+    return {
+      regions,
+      target: {
+        projectDir: '/repo',
+        gitBranch,
+        gitBranchLoading: false,
+        gitBranchProjectDir: null,
+        gitBranchRefreshGeneration: 0,
+        flushRegion: (region: string): void => { regions.push(region); },
+        runWorkspaceCommand: async (): Promise<string> => 'feat/301\n',
+      },
+    };
+  }
+
+  it('does not clear the last composer branch before a later probe returns', async () => {
+    const { target, regions } = branchHost('main');
+
+    const inFlight = proto.refreshGitBranch.call(target);
+    expect(target.gitBranch).toBe('main');
+    expect(regions).toEqual([]);
+
+    await inFlight;
+    expect(target.gitBranch).toBe('feat/301');
+    expect(regions).toEqual(['composer']);
+  });
+
+  it('shows the probe placeholder only when there is no branch worth keeping', async () => {
+    const { target, regions } = branchHost(null);
+
+    const inFlight = proto.refreshGitBranch.call(target);
+    expect(target.gitBranchLoading).toBe(true);
+    expect(regions).toEqual(['composer']);
+
+    await inFlight;
+    expect(target.gitBranchLoading).toBe(false);
+    expect(target.gitBranch).toBe('feat/301');
+    expect(regions).toEqual(['composer', 'composer']);
+  });
+
+  it('re-probes when a tool reaches a terminal status', () => {
+    const scheduled: string[] = [];
+    const item = { id: 'tool-1', kind: 'tool', text: '' } as HarnessTranscriptItem;
+    const lane = {
+      id: 'lane-1',
+      transcript: [item],
+      toolCalls: new Map(),
+      toolTranscriptIds: new Map(),
+      codexAgentNames: new Map(),
+      activeToolCount: 0,
+    } as unknown as HarnessLane;
+    const target = {
+      appendTranscript: (): HarnessTranscriptItem => item,
+      matchArtifactWrite: (): null => null,
+      scheduleGitBranchRefresh: (): void => { scheduled.push('branch'); },
+      updateToolTick: (): void => {},
+    };
+
+    proto.renderTool.call(
+      target, lane, { toolCallId: 't1', status: 'in_progress', title: 'dotnet test' }, false,
+    );
+    expect(scheduled).toEqual([]);
+
+    proto.renderTool.call(
+      target, lane, { toolCallId: 't1', status: 'completed', title: 'dotnet test' }, true,
+    );
+    expect(scheduled).toEqual(['branch']);
+  });
+
+  it('re-probes when a lane goes idle', () => {
+    const scheduled: string[] = [];
+    const lane = { id: 'lane-1', status: 'busy' } as unknown as HarnessLane;
+    const target = {
+      projectDir: '/repo',
+      remoteRuntimeId: null,
+      viewBus: null,
+      laneBus: { emit: (): void => {} },
+      publishStream: (): void => {},
+      liveVoiceCtl: { onLaneStatus: (): void => {} },
+      clearCancelEscalation: (): void => {},
+      scheduleReferenceGitRefresh: (): void => {},
+      scheduleGitBranchRefresh: (): void => { scheduled.push('branch'); },
+      ticketCtl: { ticketWorker: null },
+      updateComposerTick: (): void => {},
+      updateSpinnerTicker: (): void => {},
+    };
+
+    proto.setLaneStatus.call(target, lane, 'idle');
+
+    expect(scheduled).toEqual(['branch']);
+  });
+
+  it('re-probes once the project dir resolves during memory init', async () => {
+    const probes: string[] = [];
+    const target: {
+      projectDir: string | null;
+      remoteRuntimeId: string | null;
+      refreshGitBranch(): void;
+    } = {
+      projectDir: null,
+      remoteRuntimeId: null,
+      refreshGitBranch: (): void => { probes.push('probe'); },
+    };
+    invokeMock.mockResolvedValueOnce('/resolved');
+
+    await proto.initializeHarnessMemory.call(target).catch(() => {});
+
+    expect(target.projectDir).toBe('/resolved');
+    expect(probes).toEqual(['probe']);
   });
 });
 
@@ -600,7 +707,7 @@ describe('ACP Harness dictation lifecycle', () => {
       activeLaneId: '',
       canStartDictation: () => true,
       flashChip: vi.fn(),
-      renderComposer: vi.fn(),
+      invalidate: vi.fn(),
       setDraft: vi.fn(),
       ...host,
     });
@@ -692,70 +799,65 @@ describe('ACP Harness dictation lifecycle', () => {
     expect(active.recognition.abort).toHaveBeenCalledOnce();
     expect(ctl.session).toBeNull();
   });
-
-  it('renders MIC on the status chrome, not the input line', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
-    const start = src.indexOf('private renderComposer(');
-    const end = src.indexOf('\n  private ', start + 1);
-    const body = src.slice(start, end === -1 ? undefined : end);
-    expect(body).toContain('acp-harness__composer-chrome');
-    expect(body).toContain('acp-harness__composer-tools');
-    expect(body).toContain('${dictationControl}');
-    const inputLine = body.slice(body.indexOf('acp-harness__input-line'));
-    expect(inputLine).not.toContain('dictationControl');
-    expect(inputLine).not.toContain('help-hint');
-  });
 });
 
 describe('composer insertion afterimage (spec 252)', () => {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+  type ComposerHost = {
+    insertDraft(lane: HarnessLane, text: string): void;
+    setDraft(lane: HarnessLane, text: string, cursor: number): void;
+    setDraftCursor(lane: HarnessLane, cursor: number): void;
+  };
+  const proto = AcpHarnessView.prototype as unknown as ComposerHost;
 
-  function methodSource(name: string): string {
-    const start = src.indexOf(`private ${name}(`);
-    expect(start).toBeGreaterThanOrEqual(0);
-    const next = src.indexOf('\n  private ', start + 1);
-    return src.slice(start, next === -1 ? undefined : next);
+  interface BloomHost {
+    target: { pendingComposerBloom: unknown };
+    armed: unknown[];
+    lane: HarnessLane;
   }
 
-  it('arms one lane only around the synchronous insertion render', () => {
-    const body = methodSource('insertDraft');
-    const armAt = body.indexOf('this.pendingComposerBloom = { laneId: lane.id, inserted: text };');
-    const renderAt = body.indexOf('this.setDraft(');
-    const clearAt = body.indexOf('this.pendingComposerBloom = null;');
+  /** The bloom is armed only while the composer repaint runs, so the spy
+   *  records what `pendingComposerBloom` held at each paint. */
+  function bloomHost(): BloomHost {
+    const armed: unknown[] = [];
+    const target: { pendingComposerBloom: unknown } = viewDouble({
+      pendingComposerBloom: null as unknown,
+      ghost: null as unknown,
+      focus: 'text',
+      requestGhost: (): void => {},
+      flushRegion: (): void => { armed.push(target.pendingComposerBloom); },
+      pinStickyAfterComposerKey: (): void => {},
+    });
+    const lane = { id: 'lane-1', draft: '', cursor: 0 } as unknown as HarnessLane;
+    return { target, armed, lane };
+  }
 
-    expect(body).toContain('if (!text) return;');
-    expect(armAt).toBeGreaterThanOrEqual(0);
-    expect(renderAt).toBeGreaterThan(armAt);
-    expect(clearAt).toBeGreaterThan(renderAt);
-    expect(body).toContain('finally');
-    expect(body).not.toContain('setTimeout');
-    expect(body).not.toContain('requestAnimationFrame');
+  it('arms one lane only, around the synchronous insertion render', () => {
+    const { target, armed, lane } = bloomHost();
+
+    proto.insertDraft.call(target, lane, 'hello');
+
+    expect(armed).toEqual([{ laneId: 'lane-1', inserted: 'hello' }]);
+    expect(target.pendingComposerBloom).toBeNull();
+    expect(lane.draft).toBe('hello');
+    expect(lane.cursor).toBe(5);
   });
 
-  it('reattaches the letter overlay after the existing caret render', () => {
-    const render = methodSource('renderComposer');
-    const ctlSrc = readFileSync(join(here, 'harness-dictation-controller.ts'), 'utf8');
-    const dictationStart = ctlSrc.indexOf('  renderInput(');
-    expect(dictationStart).toBeGreaterThanOrEqual(0);
-    const dictation = ctlSrc.slice(dictationStart, ctlSrc.indexOf('\n  renderControl(', dictationStart));
-    const sync = methodSource('syncComposerBloomLayer');
+  it('neither renders nor arms for an empty insertion', () => {
+    const { target, armed, lane } = bloomHost();
 
-    expect(render).toContain('<span class="acp-harness__caret">█</span>');
-    expect(render).toContain('this.syncComposerBloomLayer(lane, dictation ? null : this.pendingComposerBloom)');
-    expect(render).not.toContain('acp-harness__caret--bloom');
-    expect(dictation).not.toContain('spawnComposerBlooms');
-    expect(sync).toContain('ensureComposerBloomLayer');
-    expect(sync).toContain('spawnComposerBlooms');
-    expect(sync).toContain('pending?.laneId === lane.id');
-    expect(sync).toContain('replaceChildren');
+    proto.insertDraft.call(target, lane, '');
+
+    expect(armed).toEqual([]);
+    expect(target.pendingComposerBloom).toBeNull();
   });
 
-  it('does not arm motion for delete, cursor, or generic draft rewrites', () => {
-    expect(methodSource('handleEditingKey')).not.toContain('pendingComposerBloom');
-    expect(methodSource('setDraft')).not.toContain('pendingComposerBloom');
-    expect(methodSource('setDraftCursor')).not.toContain('pendingComposerBloom');
+  it('does not arm motion for a cursor move or a plain draft rewrite', () => {
+    const { target, armed, lane } = bloomHost();
+
+    proto.setDraft.call(target, lane, 'typed', 5);
+    proto.setDraftCursor.call(target, lane, 2);
+
+    expect(armed).toEqual([null, null]);
   });
 });
 
@@ -840,14 +942,14 @@ describe('ticket picker direct actions', () => {
   };
   const runTicketPickerAction = (HarnessTicketController.prototype as unknown as TicketActionRunner).runTicketPickerAction;
 
+  // The row markup — a wrapping title row above the identity line — is asserted
+  // by `components/ticket-picker/ticket-picker.test.ts` ("emits a local row as a
+  // button and an unavailable row as a div"). What belongs here is the CSS
+  // contract that lets the title wrap instead of truncating.
   it('gives the complete issue title a wrapping row above its metadata', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8')
-      + readFileSync(join(here, 'harness-ticket-controller.ts'), 'utf8');
-    const css = readFileSync(join(here, '../styles/acp-harness.css'), 'utf8');
-    const titleRule = css.match(/\.acp-ticket__title\s*\{([^}]*)\}/);
+    const picker = styleSheet('components/ticket-picker/ticket-picker.css');
+    const titleRule = picker.match(/\.acp-ticket__title\s*\{([^}]*)\}/);
 
-    expect(viewSrc).toMatch(/acp-ticket__title[\s\S]{0,160}acp-ticket__identity/);
     expect(titleRule?.[1]).toMatch(/grid-area:\s*title/);
     expect(titleRule?.[1]).toMatch(/white-space:\s*normal/);
     expect(titleRule?.[1]).not.toMatch(/text-overflow:\s*ellipsis/);
@@ -960,12 +1062,24 @@ describe('ticket picker direct actions', () => {
   // spec 275: the ticket host is built in a field initializer, before the
   // constructor assigns the opener callbacks — it must read them lazily.
   it('reads the file-opener callbacks through live getters on the ticket host', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
-    const start = viewSrc.indexOf('private ticketHost(): HarnessTicketHost {');
-    const body = viewSrc.slice(start, viewSrc.indexOf('\n  private ', start + 1));
-    expect(body).toContain('get openMarkdownViewCb() { return view.openMarkdownViewCb; }');
-    expect(body).toContain('get openFileReferenceCb() { return view.openFileReferenceCb; }');
+    type TicketHostFactory = {
+      ticketHost(): { openMarkdownViewCb: unknown; openFileReferenceCb: unknown };
+    };
+    const ticketHost = (AcpHarnessView.prototype as unknown as TicketHostFactory).ticketHost;
+    const view: { openMarkdownViewCb: unknown; openFileReferenceCb: unknown } = {
+      openMarkdownViewCb: null,
+      openFileReferenceCb: null,
+    };
+
+    const host = ticketHost.call(view);
+    expect(host.openMarkdownViewCb).toBeNull();
+
+    const open = async (): Promise<void> => {};
+    view.openMarkdownViewCb = open;
+    view.openFileReferenceCb = open;
+
+    expect(host.openMarkdownViewCb).toBe(open);
+    expect(host.openFileReferenceCb).toBe(open);
   });
 
   it('opens ticket.md through the markdown viewer callback, not Helix', async () => {
@@ -1925,16 +2039,6 @@ describe('ACP peer activity UI (spec 118)', () => {
     ], null)).toBeNull();
   });
 
-  it('peekThoughtMarkdownHtml renders GFM instead of raw markers', () => {
-    const html = peekThoughtMarkdownHtml('**bold** and `code`\n\n- item\n\n# Head');
-    expect(html).toContain('<strong>bold</strong>');
-    expect(html).toMatch(/<code[^>]*>code<\/code>/);
-    expect(html).toMatch(/<li>/);
-    expect(html).toMatch(/<h1[^>]*>Head<\/h1>/);
-    expect(html).not.toContain('**bold**');
-    expect(html).not.toContain('# Head');
-  });
-
   it('pinPeekThoughtToLatest follows scrollHeight', () => {
     const body = { scrollTop: 12, scrollHeight: 320 };
     pinPeekThoughtToLatest(body as unknown as HTMLElement);
@@ -2033,81 +2137,259 @@ describe('ACP peer activity UI (spec 118)', () => {
       expect(plan.done).toBe(false);
     });
 
-    it('nudgeSmoothFollow plans against the parked target and cancel clears it', () => {
-      const here = dirname(fileURLToPath(import.meta.url));
-      const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
-      function methodSource(name: string): string {
-        const start = src.indexOf(`private ${name}(`);
-        expect(start).toBeGreaterThanOrEqual(0);
-        const next = src.indexOf('\n  private ', start + 1);
-        return src.slice(start, next === -1 ? undefined : next);
+    it('nudges against the parked target, and cancel forgets it', () => {
+      type FollowHost = { nudgeSmoothFollow(): void; cancelSmoothFollow(): void };
+      const proto = AcpHarnessView.prototype as unknown as FollowHost;
+      const frames: FrameRequestCallback[] = [];
+      const host = globalThis as {
+        requestAnimationFrame?: typeof requestAnimationFrame;
+        cancelAnimationFrame?: typeof cancelAnimationFrame;
+      };
+      const prevRaf = host.requestAnimationFrame;
+      const prevCancel = host.cancelAnimationFrame;
+      host.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+        frames.push(cb);
+        return 1;
+      }) as typeof requestAnimationFrame;
+      host.cancelAnimationFrame = ((): void => {}) as typeof cancelAnimationFrame;
+      const body = { scrollTop: 4_400, scrollHeight: 5_000, clientHeight: 600 };
+      const target = viewDouble({
+        smoothFollowRaf: 0,
+        smoothFollowBusy: false,
+        lastSmoothFollowBody: null as unknown,
+        lastSmoothFollowTarget: null as number | null,
+        activeLane: (): unknown => ({ stickToBottom: true }),
+        activeTranscriptBody: (): unknown => body,
+        beginProgrammaticScroll: (): number => 1,
+        releaseProgrammaticScroll: (): void => {},
+      });
+      try {
+        // Already at the bottom: park the measured target, write nothing.
+        proto.nudgeSmoothFollow.call(target);
+        expect(body.scrollTop).toBe(4_400);
+        expect(target.lastSmoothFollowTarget).toBe(4_400);
+        expect(frames).toHaveLength(0);
+
+        // Clamped 14px short of a bottom that did not move: pin, never glide.
+        body.scrollTop = 4_386;
+        proto.nudgeSmoothFollow.call(target);
+        expect(body.scrollTop).toBe(4_400);
+        expect(frames).toHaveLength(0);
+
+        // Real growth re-opens the glide.
+        body.scrollHeight = 9_000;
+        proto.nudgeSmoothFollow.call(target);
+        expect(frames).toHaveLength(1);
+        expect(target.smoothFollowRaf).toBe(1);
+
+        proto.cancelSmoothFollow.call(target);
+        expect(target.smoothFollowRaf).toBe(0);
+        expect(target.lastSmoothFollowBody).toBeNull();
+        expect(target.lastSmoothFollowTarget).toBeNull();
+      } finally {
+        if (prevRaf) host.requestAnimationFrame = prevRaf;
+        else delete host.requestAnimationFrame;
+        if (prevCancel) host.cancelAnimationFrame = prevCancel;
+        else delete host.cancelAnimationFrame;
       }
-      const nudge = methodSource('nudgeSmoothFollow');
-      expect(nudge).toContain('planSmoothFollow');
-      expect(nudge).toContain('parkedSmoothFollowTarget');
-      expect(nudge).toContain("plan.action === 'idle'");
-      expect(nudge).toContain("plan.action === 'pin'");
-      const cancel = methodSource('cancelSmoothFollow');
-      expect(cancel).toContain('clearSmoothFollowPark');
-      const heal = methodSource('healStickyScroll');
-      expect(heal).toContain('clearSmoothFollowPark');
-      expect(heal).toContain('parkSmoothFollowTarget');
+    });
+
+    it('heals drift by pinning from a scroll event and by gliding from the 2s poll', () => {
+      type HealHost = { healStickyScroll(source: 'scroll' | 'metrics'): void };
+      const proto = AcpHarnessView.prototype as unknown as HealHost;
+      const body = { scrollTop: 4_386, scrollHeight: 5_000, clientHeight: 600 };
+      const scheduled: string[] = [];
+      const target = viewDouble({
+        smoothFollowRaf: 0,
+        lastUserWheelUpAt: -100_000,
+        lastSmoothFollowBody: null as unknown,
+        lastSmoothFollowTarget: null as number | null,
+        activeLane: (): unknown => ({ stickToBottom: true }),
+        activeTranscriptBody: (): unknown => body,
+        beginProgrammaticScroll: (): number => 1,
+        releaseProgrammaticScroll: (): void => {},
+        scheduleStickyScroll: (): void => { scheduled.push('glide'); },
+      });
+
+      // A scroll-sourced heal pins in the same frame, so the drift never paints.
+      proto.healStickyScroll.call(target, 'scroll');
+      expect(body.scrollTop).toBe(5_000);
+      expect(target.lastSmoothFollowTarget).toBe(4_400);
+      expect(scheduled).toEqual([]);
+
+      // The 2s poll eases instead, and forgets the park so the pin cannot snap.
+      body.scrollTop = 4_386;
+      proto.healStickyScroll.call(target, 'metrics');
+      expect(body.scrollTop).toBe(4_386);
+      expect(target.lastSmoothFollowBody).toBeNull();
+      expect(scheduled).toEqual(['glide']);
     });
   });
 
   describe('composer-key sticky pin (spec 114 rev 14)', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+    type PinHost = {
+      pinStickyAfterComposerKey(): void;
+      setDraft(lane: HarnessLane, text: string, cursor: number): void;
+      setDraftCursor(lane: HarnessLane, cursor: number): void;
+      applyHistoryDraft(lane: HarnessLane, text: string): void;
+      tickComposerClock(): void;
+    };
+    const proto = AcpHarnessView.prototype as unknown as PinHost;
 
-    function methodSource(name: string): string {
-      const start = src.indexOf(`private ${name}(`);
-      expect(start).toBeGreaterThanOrEqual(0);
-      const next = src.indexOf('\n  private ', start + 1);
-      return src.slice(start, next === -1 ? undefined : next);
+    interface PinSpy {
+      seq: string[];
+      target: Record<string, unknown>;
+      lane: HarnessLane;
     }
 
-    it('pins scrollTop in the same turn as a composer key edit', () => {
-      const pin = methodSource('pinStickyAfterComposerKey');
-      expect(pin).toContain('lane.stickToBottom');
-      expect(pin).toContain('body.scrollTop = body.scrollHeight');
-      expect(pin).toContain('beginProgrammaticScroll');
-      expect(pin).not.toContain('smoothFollowRaf');
+    /** A stubbed scroll surface: every scrollTop write lands in `seq`, so the
+     *  pin's place relative to the composer paint is observable. */
+    function pinSpy(stickToBottom = true): PinSpy {
+      const seq: string[] = [];
+      let scrollTop = 4_386;
+      const body = {
+        scrollHeight: 5_000,
+        clientHeight: 600,
+        get scrollTop(): number { return scrollTop; },
+        set scrollTop(value: number) { scrollTop = value; seq.push(`pin:${value}`); },
+      };
+      const lane = {
+        id: 'lane-1',
+        draft: '',
+        cursor: 0,
+        status: 'busy',
+        stickToBottom,
+        pendingPermissions: [],
+        pendingQuestions: [],
+      } as unknown as HarnessLane;
+      const target: Record<string, unknown> = viewDouble({
+        ghost: null,
+        focus: 'text',
+        lastSmoothFollowBody: null,
+        lastSmoothFollowTarget: null,
+        activeLane: (): HarnessLane => lane,
+        activeTranscriptBody: (): unknown => body,
+        beginProgrammaticScroll: (): number => { seq.push('suppress'); return 1; },
+        releaseProgrammaticScroll: (): void => { seq.push('release'); },
+        requestGhost: (): void => {},
+        flushRegion: (region: string): void => { seq.push(`paint:${region}`); },
+      });
+      return { seq, target, lane };
+    }
+
+    it('pins the transcript to the bottom in the same turn as a composer key edit', () => {
+      const { seq, target } = pinSpy();
+
+      proto.pinStickyAfterComposerKey.call(target);
+
+      expect(seq).toEqual(['suppress', 'pin:5000', 'release']);
+      expect(target.lastSmoothFollowTarget).toBe(4_400);
     });
 
-    it('runs after renderComposer on draft, cursor, and history edits', () => {
-      for (const name of ['setDraft', 'setDraftCursor', 'applyHistoryDraft']) {
-        const body = methodSource(name);
-        const renderAt = body.indexOf('this.renderComposer();');
-        const pinAt = body.indexOf('this.pinStickyAfterComposerKey();');
-        expect(renderAt, name).toBeGreaterThanOrEqual(0);
-        expect(pinAt, name).toBeGreaterThan(renderAt);
+    it('leaves an unstuck lane where the reader put it', () => {
+      const { seq, target } = pinSpy(false);
+
+      proto.pinStickyAfterComposerKey.call(target);
+
+      expect(seq).toEqual([]);
+      expect(target.lastSmoothFollowTarget).toBeNull();
+    });
+
+    it('runs after the composer paint on draft, cursor, and history edits', () => {
+      const edits: Array<[string, (spy: PinSpy) => void]> = [
+        ['setDraft', (spy): void => { proto.setDraft.call(spy.target, spy.lane, 'abc', 3); }],
+        ['setDraftCursor', (spy): void => { proto.setDraftCursor.call(spy.target, spy.lane, 1); }],
+        ['applyHistoryDraft', (spy): void => { proto.applyHistoryDraft.call(spy.target, spy.lane, 'prev'); }],
+      ];
+      for (const [name, run] of edits) {
+        const spy = pinSpy();
+        run(spy);
+        expect(spy.seq, name).toEqual(['paint:composer', 'suppress', 'pin:5000', 'release']);
       }
     });
 
     it('does not pin on the 1s composer tick', () => {
-      const tick = src.match(
-        /this\.composerTickTimer = window\.setInterval\(\(\) => \{([\s\S]*?)\}, 1000\)/,
-      );
-      expect(tick?.[1]).toContain('this.renderComposer();');
-      expect(tick?.[1]).not.toContain('pinStickyAfterComposerKey');
+      const { seq, target, lane } = pinSpy();
+      Object.assign(target, {
+        composer: { updateTick: (): void => { seq.push('tick'); } },
+        composerMetaProps: (): unknown => ({}),
+        coordinator: {
+          pendingPeersFor: (): unknown[] => [],
+          inboxDepth: (): number => 0,
+        },
+      });
+
+      proto.tickComposerClock.call(target);
+
+      expect(seq).toEqual(['tick']);
+      expect(lane.stickToBottom).toBe(true);
     });
   });
 
   describe('sealed assistant sticky guard (spec 114 rev 16)', () => {
-    it('suppresses table and reference-rail layout scroll before finalising the live body', () => {
-      const here = dirname(fileURLToPath(import.meta.url));
-      const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
-      const start = src.indexOf('private sealStreaming(');
-      const end = src.indexOf('\n  private sealStreamingTextRow(', start);
-      const seal = src.slice(start, end);
-      const beginAt = seal.indexOf('this.beginProgrammaticScroll()');
-      const finaliseAt = seal.indexOf('this.sealAssistantStreamingMarkdown(lane, item);');
-      const releaseAt = seal.indexOf('this.releaseProgrammaticScroll(suppressToken);');
+    type SealHost = { sealStreaming(lane: HarnessLane): void };
+    const sealStreaming = (AcpHarnessView.prototype as unknown as SealHost).sealStreaming;
 
-      expect(seal).toContain("lane.id === this.activeLaneId && lane.stickToBottom");
-      expect(beginAt).toBeGreaterThanOrEqual(0);
-      expect(finaliseAt).toBeGreaterThan(beginAt);
-      expect(releaseAt).toBeGreaterThan(finaliseAt);
+    it('suppresses the layout scroll around finalising the live body', () => {
+      const seq: string[] = [];
+      const item = { id: 'a1', kind: 'assistant', text: 'done' } as HarnessTranscriptItem;
+      const lane = {
+        id: 'lane-1',
+        stickToBottom: true,
+        transcript: [item],
+        currentUserId: null,
+        currentAssistantId: 'a1',
+        currentAssistantMessageId: 'm1',
+        currentThoughtId: null,
+      } as unknown as HarnessLane;
+      const target = {
+        activeLaneId: 'lane-1',
+        dropVeiledThoughtRow: (): void => {},
+        beginProgrammaticScroll: (): number => { seq.push('suppress'); return 7; },
+        releaseProgrammaticScroll: (token: number): void => { seq.push(`release:${token}`); },
+        sealMountedRow: (_lane: HarnessLane, id: string | null): boolean => {
+          if (id) seq.push(`seal:${id}`);
+          return true;
+        },
+        captureAssistantMarkdownOffscreen: (): void => { seq.push('cold-cache'); },
+        collectTextImagePaths: (): void => { seq.push('images'); },
+        scheduleStreamingBodyOnly: (): void => { seq.push('transcript'); },
+      };
+
+      sealStreaming.call(target, lane);
+
+      expect(seq).toEqual(['suppress', 'seal:a1', 'images', 'release:7', 'transcript']);
+      expect(lane.currentAssistantId).toBeNull();
+      expect(item.streamPlainLength).toBeUndefined();
+    });
+
+    it('opens no suppression window for a lane nobody is looking at', () => {
+      const seq: string[] = [];
+      const item = { id: 'a1', kind: 'assistant', text: 'done' } as HarnessTranscriptItem;
+      const lane = {
+        id: 'background',
+        stickToBottom: true,
+        transcript: [item],
+        currentUserId: null,
+        currentAssistantId: 'a1',
+        currentAssistantMessageId: 'm1',
+        currentThoughtId: null,
+      } as unknown as HarnessLane;
+      const target = {
+        activeLaneId: 'lane-1',
+        dropVeiledThoughtRow: (): void => {},
+        beginProgrammaticScroll: (): number => { seq.push('suppress'); return 7; },
+        releaseProgrammaticScroll: (): void => { seq.push('release'); },
+        // Not mounted: the cold markdown cache is what keeps the row instant.
+        sealMountedRow: (): boolean => false,
+        captureAssistantMarkdownOffscreen: (): void => { seq.push('cold-cache'); },
+        collectTextImagePaths: (): void => {},
+        scheduleStreamingBodyOnly: (): void => {},
+      };
+
+      sealStreaming.call(target, lane);
+
+      expect(seq).toEqual(['cold-cache']);
     });
   });
 
@@ -2154,79 +2436,51 @@ describe('ACP peer activity UI (spec 118)', () => {
     ], 'claude')?.laneId).toBe('claude');
   });
 
-  it('does not paint a pin-slot ticket bar next to the Ticket Panel (spec 238)', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8')
-      + readFileSync(join(here, 'harness-ticket-controller.ts'), 'utf8');
-    const css = readFileSync(join(here, '../styles/acp-harness.css'), 'utf8');
-    expect(viewSrc).not.toMatch(/acp-harness__ticket-bar/);
-    expect(viewSrc).not.toMatch(/renderTicketBar/);
-    expect(css).not.toMatch(/\.acp-harness__ticket-bar\s*\{/);
-    expect(viewSrc).toMatch(/acp-harness__ticket-dock/);
-    expect(css).toMatch(/\.acp-harness__ticket-dock\s*\{[^}]*background:\s*transparent/);
-    expect(viewSrc).not.toMatch(/Start work/);
-    expect(viewSrc).not.toMatch(/acp-ticket-dock__actions/);
-    expect(css).not.toMatch(/\.acp-ticket-dock__actions\s*\{/);
-    expect(viewSrc).not.toMatch(/acp-ticket-dock__spine/);
-    expect(viewSrc).not.toMatch(/acp-ticket-dock__vertical/);
-    expect(viewSrc).not.toMatch(/titleChars\.length > 28/);
-    expect(css).not.toMatch(/\.acp-ticket-dock__spine\s*\{/);
-    expect(css).not.toMatch(/writing-mode:\s*vertical-rl/);
-    expect(css).toMatch(
+  // The dock's own markup — eyebrow, head, status row, issue link, sections —
+  // is asserted by `components/ticket-dock/ticket-dock.test.ts`; the spine, the
+  // vertical title and the action buttons are gone from it by construction.
+  // What stays here is the CSS half of spec 238.
+  it('does not style a pin-slot ticket bar next to the Ticket Panel (spec 238)', () => {
+    const dock = styleSheet('components/ticket-dock/ticket-dock.css');
+    const shared = styleSheet('../styles/harness-shared.css');
+    const dockRule = shared.match(/\.acp-harness__ticket-dock\s*\{([^}]*)\}/)?.[1];
+
+    expect(dockRule).toBeDefined();
+    // The dock is chrome-less: the only background it declares is transparent.
+    expect(dockRule?.match(/background:[^;]*/g)).toEqual(['background: transparent']);
+    for (const sheet of [dock, shared]) {
+      expect(sheet).not.toMatch(/\.acp-harness__ticket-bar\s*\{/);
+      expect(sheet).not.toMatch(/\.acp-ticket-dock__actions\s*\{/);
+      expect(sheet).not.toMatch(/\.acp-ticket-dock__spine\s*\{/);
+      expect(sheet).not.toMatch(/writing-mode:\s*vertical-rl/);
+    }
+    expect(dock).toMatch(
       /\.acp-ticket-dock__eyebrow\s*\{[^}]*font-size:\s*var\(--krypton-chrome-font-size/,
     );
-    expect(css).toMatch(
+    expect(dock).toMatch(/\.acp-ticket-dock__issue-link:focus-visible\s*\{/);
+    expect(shared).toMatch(
       /\.acp-harness__ticket-dock section h3\s*\{[^}]*font-size:\s*var\(--krypton-chrome-font-size/,
     );
-    expect(viewSrc).toMatch(
-      /class="acp-ticket-dock__issue-link" href="\$\{esc\(ticket\.github\.issueUrl\)\}"/,
-    );
-    expect(viewSrc).toMatch(/>#\$\{ticket\.github\.number\}<\/a>/);
-    expect(css).toMatch(/\.acp-ticket-dock__issue-link:focus-visible\s*\{/);
   });
 
+  // `components/thought-card` owns the rail card and `components/peek-card`
+  // emits no thought at all; what is left here is the slot geometry.
   it('thought lives in its own rail slot, not inside peek', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const peekSrc = readFileSync(join(here, 'lane-peek.ts'), 'utf8');
-    const css = readFileSync(join(here, '../styles/acp-harness.css'), 'utf8');
-    expect(peekSrc).not.toMatch(/lane-peek-thought/);
-    expect(peekSrc).toMatch(/export function renderLaneThought/);
-    expect(css).toMatch(/\.acp-harness__lane-rail\s*\{[\s\S]{0,200}width:\s*320px/);
-    expect(css).not.toMatch(/\[data-slot="thought"\][\s\S]{0,120}width:\s*640px/);
-    expect(css).not.toMatch(/\[data-slot="peek"\][\s\S]{0,120}width:\s*640px/);
+    const shared = styleSheet('../styles/harness-shared.css');
+    expect(shared).toMatch(/\.acp-harness__lane-rail\s*\{[\s\S]{0,200}width:\s*320px/);
+    expect(shared).not.toMatch(/\[data-slot="thought"\][\s\S]{0,120}width:\s*640px/);
+    expect(shared).not.toMatch(/\[data-slot="peek"\][\s\S]{0,120}width:\s*640px/);
   });
 
   it('shows the full transcript thought without an inner scroll region', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const css = readFileSync(join(here, '../styles/acp-harness.css'), 'utf8');
-    const thoughtBodyRule = css.match(
+    const shared = styleSheet('../styles/harness-shared.css');
+    const thoughtBodyRule = shared.match(
       /\.acp-harness__msg--thought \.acp-harness__msg-body\s*\{([^}]*)\}/,
     );
     expect(thoughtBodyRule?.[1]).not.toMatch(/max-height|overflow/);
-    expect(css).not.toMatch(
+    expect(shared).not.toMatch(
       /\.acp-harness__msg--thought\.acp-harness__msg--streaming \.acp-harness__msg-body\s*\{/,
     );
-  });
-
-  it('buildComposerPeerStrip emits strip for pending peer with cancel hint', () => {
-    expect(buildComposerPeerStrip('awaiting_peer', [
-      { toLaneId: 'b', toDisplayName: 'Claude-1', envelopeId: 'e1', sentAt: now - 60_000 },
-    ], 0)).toContain('drops pending lane-mail wait');
-  });
-
-  it('buildComposerPeerStrip emits awaiting strip with no pending peer', () => {
-    expect(buildComposerPeerStrip('awaiting_peer', [], 0)).toContain('awaiting lane mail');
-  });
-
-  it('buildComposerPeerStrip emits inbox-only strip on an idle lane', () => {
-    const strip = buildComposerPeerStrip('idle', [], 2);
-    expect(strip).toContain('▼2');
-    expect(strip).not.toContain('awaiting');
-  });
-
-  it('buildComposerPeerStrip returns empty for idle + no inbox + no pending', () => {
-    expect(buildComposerPeerStrip('idle', [], 0)).toBe('');
-    expect(buildComposerPeerStrip('busy', [], 0)).toBe('');
   });
 });
 
@@ -2251,16 +2505,6 @@ describe('peek tool row vs activity event row', () => {
       summary: { status: 'busy', headline: 'busy', detail: null, payload },
     };
   }
-
-  it('shows a flat tool row on a busy peeked lane with an active tool', () => {
-    expect(peekShowsActiveTool(busyTool)).toBe(true);
-    expect(peekShowsActiveTool(laneSnapshot({ laneId: 'claude', status: 'idle' }))).toBe(false);
-    const html = renderLanePeekToolRow(busyTool.activeTool!);
-    expect(html).toContain('data-peek-row="tool"');
-    expect(html).toContain('execute');
-    expect(html).toContain('Terminal');
-    expect(html).not.toContain('acp-harness__action-hud');
-  });
 
   it('drops the activity event row that restates the tool row', () => {
     expect(peekEventRowDuplicatesTool(
@@ -2344,32 +2588,6 @@ describe('peek review pass (spec 277)', () => {
     expect(peekReviewLoop(snap(now - 60_000), now)).not.toBeNull();
     expect(peekReviewLoop(snap(now - 6 * 60_000), now)).toBeNull();
     expect(peekReviewLoop(laneSnapshot({ laneId: 'omp' }), now)).toBeNull();
-  });
-
-  it('renders round, phase, reviewer verdicts, and the Blocker trend', () => {
-    const html = renderLanePeekReviewLoop(loop({
-      rounds: [
-        { round: 1, verdict: 'fail', blockers: 2, warnings: 0 },
-        { round: 2, verdict: 'pass', blockers: 0, warnings: 1 },
-      ],
-    }));
-    expect(html).toContain('<b>2/3</b> · reviewing');
-    expect(html).toContain('Codex-1 <span class="acp-harness__lane-peek-verdict" data-verdict="fail">FAIL 1</span>');
-    expect(html).toContain('Grok-1 pending');
-    expect(html).toContain('data-verdict="fail">2</span> → <span class="acp-harness__lane-peek-verdict" data-verdict="pass">0</span>');
-  });
-
-  it('shows no reply instead of pending once the round stopped, and the stop label once ended', () => {
-    const html = renderLanePeekReviewLoop(loop({
-      running: false,
-      phase: null,
-      endedAt: now,
-      stopReason: 'reviewer_lost',
-      stopLabel: 'a reviewer is no longer available',
-    }));
-    expect(html).toContain('ended · a reviewer is no longer');
-    expect(html).toContain('Grok-1 no reply');
-    expect(html).not.toContain('pending');
   });
 });
 
@@ -2570,25 +2788,6 @@ describe('harnessBackends', () => {
       'cline',
       'droid',
     ]);
-  });
-});
-
-describe('spec 120 lane mail copy', () => {
-  it('formats flat meta lines without nested chrome', () => {
-    expect(formatLaneMailMetaLine('in', 'Codex-1', false)).toBe('← from codex-1 · lane mail');
-    expect(formatLaneMailMetaLine('out', 'Claude-1', true, 'mention')).toBe(
-      '→ to claude-1 · lane mail · mention · closed',
-    );
-  });
-
-  it('formats provenance for multi-envelope drains', () => {
-    expect(
-      formatLaneMailProvenanceLine({
-        envelopeId: 'e1',
-        peerDisplayName: 'Cursor-1',
-        envelopeCount: 2,
-      }),
-    ).toBe('↩ replying to lane mail (2 messages) from cursor-1');
   });
 });
 
@@ -3347,14 +3546,6 @@ describe('#timeline dispatch (spec 253)', () => {
     expect(seen).toHaveLength(2);
     expect(chips[0]).toContain('remote Harness');
   });
-
-  it('uses Thai chrome in the timeline capture sheet', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const source = readFileSync(join(here, 'timeline-capture.ts'), 'utf8');
-    expect(source).toContain("'บันทึกเหตุการณ์ใน Timeline'");
-    expect(source).toContain("'ผู้ขอหรือผู้อนุมัติ'");
-    expect(source).toContain("'ไม่รับข้อเสนอ · Cmd/Ctrl+D'");
-  });
 });
 
 describe('#telegram dispatch', () => {
@@ -3458,24 +3649,70 @@ describe('#panels dispatch (spec 251)', () => {
     ]);
   });
 
-  it('applies one root class, preserves modal access, and pauses hidden thought animation', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const viewSrc = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
-    const css = readFileSync(join(here, '../styles/acp-harness.css'), 'utf8');
+  it('hides every panel from one root class, leaving the modals reachable', () => {
+    type PanelsHost = {
+      syncRootClasses(): void;
+      renderActiveLaneQueue(): void;
+      renderPlanPanel(lane: HarnessLane | null): void;
+      syncPeekToolRow(lane: HarnessLane): void;
+      renderLaneThought(): void;
+    };
+    const proto = AcpHarnessView.prototype as unknown as PanelsHost;
+    const toggled: Array<[string, boolean]> = [];
+    const painted: string[] = [];
+    const lane = {
+      id: 'lane-1',
+      queuedPrompts: [{}],
+      plan: [{}],
+    } as unknown as HarnessLane;
+    const target = {
+      element: {
+        classList: {
+          toggle: (name: string, on: boolean): void => { toggled.push([name, on]); },
+        },
+      },
+      focus: 'text',
+      zenMode: false,
+      conciseMode: false,
+      panelsHidden: true,
+      memoryDrawerOpen: false,
+      queueSlot: { hidden: false },
+      planSlot: { hidden: false },
+      queueCard: { update: (): void => { painted.push('queue'); } },
+      planPanel: { update: (): void => { painted.push('plan'); } },
+      peekLaneId: 'lane-1',
+      renderLanePeek: (): void => { painted.push('peek'); },
+      resolveThoughtTarget: (): unknown => ({ laneId: 'lane-1' }),
+      stopThoughtTeletypeTick: (): void => { painted.push('thought-tick-stop'); },
+      activeLane: (): HarnessLane => lane,
+    };
 
-    expect(viewSrc.match(/classList\.toggle\('acp-harness--panels-hidden'/g)).toHaveLength(2);
-    expect(viewSrc).toMatch(
-      /private renderLaneThought\(\): void \{\s*if \(this\.panelsHidden\) \{\s*this\.stopThoughtTeletypeTick\(\);\s*return;/,
-    );
-    expect(viewSrc).toMatch(/private syncPeekToolRow[\s\S]{0,160}if \(this\.panelsHidden/);
-    expect(viewSrc).toMatch(/private renderActiveLaneQueue[\s\S]{0,120}if \(this\.panelsHidden\) return;/);
-    expect(viewSrc).toMatch(/private renderPlanPanel[\s\S]{0,120}if \(this\.panelsHidden\) return;/);
-    expect(css).toContain('.acp-harness--panels-hidden .acp-harness__lane-rail');
-    expect(css).toContain('.acp-harness--panels-hidden .acp-harness__ticket-dock');
-    expect(css).toContain('.acp-harness--panels-hidden .acp-harness__rail');
-    expect(css).toContain('.acp-harness--panels-hidden.acp-harness--zen .acp-harness__dashboard');
-    expect(css).not.toContain('.acp-harness--panels-hidden .acp-harness__memory-overlay');
-    expect(css).not.toContain('.acp-harness--panels-hidden .acp-harness__help-overlay');
+    proto.syncRootClasses.call(target);
+    proto.renderActiveLaneQueue.call(target);
+    proto.renderPlanPanel.call(target, lane);
+    proto.syncPeekToolRow.call(target, lane);
+    proto.renderLaneThought.call(target);
+
+    // One root class carries the whole state…
+    expect(toggled.filter(([name]) => name.includes('panels'))).toEqual([
+      ['acp-harness--panels-hidden', true],
+    ]);
+    // …and every panel renderer short-circuits instead of painting, with the
+    // thought teletype parked rather than left ticking against a hidden card.
+    expect(painted).toEqual(['thought-tick-stop']);
+    expect(target.queueSlot.hidden).toBe(false);
+    expect(target.planSlot.hidden).toBe(false);
+  });
+
+  it('hides the panels from CSS without reaching the modal overlays', () => {
+    const shared = styleSheet('../styles/harness-shared.css');
+
+    expect(shared).toContain('.acp-harness--panels-hidden .acp-harness__lane-rail');
+    expect(shared).toContain('.acp-harness--panels-hidden .acp-harness__ticket-dock');
+    expect(shared).toContain('.acp-harness--panels-hidden .acp-harness__rail');
+    expect(shared).toContain('.acp-harness--panels-hidden.acp-harness--zen .acp-harness__dashboard');
+    expect(shared).not.toContain('.acp-harness--panels-hidden .acp-harness__memory-overlay');
+    expect(shared).not.toContain('.acp-harness--panels-hidden .acp-harness__help-overlay');
   });
 });
 
@@ -3567,113 +3804,6 @@ describe('permissionArgsPreview density (spec 167)', () => {
     const input = { command: 'ls -la', description: 'list' };
     const preview = permissionArgsPreview(input, 'different command');
     expect(preview).toContain('command: ls -la');
-  });
-});
-
-// Minimal DOM stub — the test runner uses the node environment (no document), and
-// renderPermissionBody only touches createElement/className/dataset/textContent/
-// title/appendChild, so a tiny fake captures the rendered structure.
-interface FakeEl {
-  tagName: string;
-  className: string;
-  textContent: string;
-  title: string;
-  dataset: Record<string, string>;
-  children: FakeEl[];
-  appendChild(child: FakeEl): FakeEl;
-}
-function makeFakeEl(tag: string): FakeEl {
-  return {
-    tagName: tag,
-    className: '',
-    textContent: '',
-    title: '',
-    dataset: {},
-    children: [],
-    appendChild(child: FakeEl): FakeEl {
-      this.children.push(child);
-      return child;
-    },
-  };
-}
-function collectClasses(el: FakeEl): string[] {
-  return el.children.flatMap((child) => [child.className, ...collectClasses(child)]);
-}
-function renderPermFixture(perm: Record<string, unknown>): FakeEl {
-  const prevDoc = (globalThis as { document?: unknown }).document;
-  (globalThis as { document?: unknown }).document = { createElement: (tag: string) => makeFakeEl(tag) };
-  try {
-    const body = makeFakeEl('div');
-    renderPermissionBody(
-      body as unknown as HTMLElement,
-      perm as unknown as Parameters<typeof renderPermissionBody>[1],
-    );
-    return body;
-  } finally {
-    (globalThis as { document?: unknown }).document = prevDoc;
-  }
-}
-
-describe('renderPermissionBody density (spec 167)', () => {
-  const basePerm = {
-    id: 1,
-    toolName: 'Write',
-    toolFamily: 'file',
-    serverName: null,
-    kind: 'write',
-    subject: 'src/app.ts',
-    suffix: '· also Codex-2 3s ago',
-    argsPreview: 'path: src/app.ts',
-    autoReason: 'mode:acceptEdits',
-    options: [
-      { optionId: 'a', name: 'accept', action: 'accept' },
-      { optionId: 'r', name: 'reject', action: 'reject' },
-    ],
-  };
-
-  it('renders flat on the body (no nested perm-card container)', () => {
-    const body = renderPermFixture({ ...basePerm, decision: 'accepted', decisionLabel: 'accepted' });
-    expect(body.dataset.decision).toBe('accepted');
-    expect(collectClasses(body)).not.toContain('acp-harness__perm-card');
-    expect(body.children.some((child) => child.className === 'acp-harness__perm-row')).toBe(true);
-  });
-
-  it('collapses a resolved row to a single line (no suffix/reason/preview/actions)', () => {
-    const body = renderPermFixture({ ...basePerm, decision: 'accepted', decisionLabel: 'accepted' });
-    const classes = collectClasses(body);
-    expect(classes).toContain('acp-harness__perm-decision');
-    expect(classes).toContain('acp-harness__perm-tool');
-    expect(classes).toContain('acp-harness__perm-subject');
-    expect(classes).not.toContain('acp-harness__perm-suffix');
-    expect(classes).not.toContain('acp-harness__perm-reason');
-    expect(classes).not.toContain('acp-harness__perm-preview');
-    expect(classes).not.toContain('acp-harness__perm-actions');
-  });
-
-  it('leads a resolved row with a glyph cell so it aligns with tool rows', () => {
-    const body = renderPermFixture({ ...basePerm, decision: 'auto_allowed', decisionLabel: '✓ Allow (auto-turn)' });
-    const classes = collectClasses(body);
-    // The glyph element also carries a --<decision> modifier class.
-    expect(classes.some((c) => c.split(' ').includes('acp-harness__perm-glyph'))).toBe(true);
-    // The glyph carries the ✓, so the decision chip strips it.
-    const row = body.children.find((child) => child.className === 'acp-harness__perm-row');
-    const decision = row?.children.find((child) => child.className === 'acp-harness__perm-decision');
-    expect(decision?.textContent).toBe('Allow (auto-turn)');
-  });
-
-  it('drops the tool tag when it duplicates the subject (execute commands)', () => {
-    const cmd = 'dotnet test src/SocWebApi.Test';
-    const body = renderPermFixture({ ...basePerm, decision: 'auto_allowed', decisionLabel: 'accepted', toolName: cmd, subject: cmd });
-    expect(collectClasses(body)).not.toContain('acp-harness__perm-tool');
-  });
-
-  it('keeps actions + preview + suffix on a pending row, but no decision label', () => {
-    const body = renderPermFixture({ ...basePerm, decision: 'pending' });
-    const classes = collectClasses(body);
-    expect(classes).toContain('acp-harness__perm-actions');
-    expect(classes).toContain('acp-harness__perm-preview');
-    expect(classes).toContain('acp-harness__perm-suffix');
-    expect(classes).not.toContain('acp-harness__perm-decision');
   });
 });
 
@@ -4231,20 +4361,41 @@ describe('turn end routes through the steer controller (spec 278)', () => {
 });
 
 describe('mcpServersForLane bridge policy', () => {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const src = readFileSync(join(here, 'acp-harness-view.ts'), 'utf8');
+  type McpHost = {
+    mcpServersForLane(
+      lane: HarnessLane,
+      caps: unknown,
+    ): Promise<Array<{ name: string }> | undefined>;
+  };
+  const mcpServersForLane = (AcpHarnessView.prototype as unknown as McpHost).mcpServersForLane;
+  const target = {
+    projectDir: '/repo',
+    remoteRuntimeId: null,
+    memoryServerForLane: (): Array<{ name: string }> => [],
+  };
 
-  function methodSource(name: string): string {
-    let start = src.indexOf(`private async ${name}(`);
-    if (start < 0) start = src.indexOf(`private ${name}(`);
-    expect(start).toBeGreaterThanOrEqual(0);
-    const next = src.indexOf('\n  private ', start + 1);
-    return src.slice(start, next === -1 ? undefined : next);
-  }
+  it('routes omp through the project .mcp.json bridge instead of the skip list', async () => {
+    projectMcpMock.mockClear();
+    projectMcpMock.mockResolvedValueOnce([{ name: 'omp', command: 'omp', args: [] }]);
 
-  it('routes omp through the project .mcp.json bridge instead of the skip list', () => {
-    const body = methodSource('mcpServersForLane');
-    expect(body).not.toContain("lane.backendId === 'omp'");
-    expect(body).toContain('loadProjectMcpServers(this.projectDir, this.remoteRuntimeId)');
+    const servers = await mcpServersForLane.call(
+      target, { id: 'lane-1', backendId: 'omp' } as unknown as HarnessLane, null,
+    );
+
+    expect(projectMcpMock).toHaveBeenCalledWith('/repo', null);
+    expect(servers?.map((server) => server.name)).toEqual(['omp']);
+  });
+
+  it('keeps the backends with their own MCP host off the bridge', async () => {
+    projectMcpMock.mockClear();
+
+    expect(await mcpServersForLane.call(
+      target, { id: 'lane-1', backendId: 'claude' } as unknown as HarnessLane, null,
+    )).toEqual([]);
+    expect(await mcpServersForLane.call(
+      target, { id: 'lane-1', backendId: 'cursor' } as unknown as HarnessLane, null,
+    )).toEqual([]);
+
+    expect(projectMcpMock).not.toHaveBeenCalled();
   });
 });

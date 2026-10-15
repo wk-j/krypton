@@ -1,0 +1,70 @@
+/* Spec 302 §6.3 — `DraftLine`.
+   Carved verbatim from src/styles/acp-harness.css: :3955-3957 (the input-line
+   half of the shared flex rule — the `.acp-harness__composer-chrome` half moved
+   to composer-meta.css), :4738-4762, :4775-4781, :4966-4972, :4978-4980 and
+   :4998-5004.
+
+   The composer-modifier rules come along because their subject is this row:
+   command mode dims the draft and golds the prompt, memory mode hides the row
+   outright. `.acp-harness__composer--command .acp-harness__caret` (:4974-4976)
+   is the caret's and already lives in caret.css. */
+
+@layer krypton.component {
+  .acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__input-line {
+    flex: 0 0 auto;
+  }
+
+  .acp-harness__input-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 2px;
+    line-height: 1.55;
+  }
+
+  .acp-harness__lane-tag {
+    flex: 0 0 auto;
+    color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 32%, transparent);
+  }
+
+  .acp-harness__prompt {
+    flex: 0 0 auto;
+    position: relative;
+    width: 1ch;
+    text-align: center;
+    color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+    text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 40%, transparent);
+  }
+
+  .acp-harness__input {
+    position: relative;
+    min-width: 0;
+    flex: 1 1 auto;
+    white-space: pre-wrap;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.95);
+  }
+
+  .acp-harness__composer--command .acp-harness__input {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+  }
+
+  .acp-harness__composer--command .acp-harness__prompt {
+    color: var(--agent-gold, #ffd166);
+  }
+
+  .acp-harness__composer--memory .acp-harness__input-line {
+    display: none;
+  }
+
+  /* spec 285: word-autocomplete suggestion after the caret (Tab / → accept). */
+  .acp-harness__ghost {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+    text-shadow: none;
+    pointer-events: none;
+    user-select: none;
+  }
+}

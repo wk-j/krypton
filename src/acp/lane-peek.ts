@@ -1,13 +1,15 @@
-// Krypton — ACP Harness View: lane peek rail.
+// Krypton — ACP Harness View: lane peek derivation.
 //
-// Extracted verbatim from acp-harness-view.ts (spec 204). Three layers of the
-// spec 109/118 peek rail: deriving lane-pair activity heat, ranking which lane is
-// worth peeking at (buildLanePeekCandidates / selectLanePeekCandidate), and
-// painting the peek card plus the composer peer strip.
+// Extracted verbatim from acp-harness-view.ts (spec 204). Two layers of the
+// spec 109/118 peek rail: deriving lane-pair activity heat, and ranking which
+// lane is worth peeking at (buildLanePeekCandidates / selectLanePeekCandidate).
+// Spec 301 phase 5 moved the painting into the `peek-card`, `thought-card`,
+// `heat-panel`, `review-loop-rows`, `rail-entry` and `peer-strip` components;
+// what stays is the state they read and the thought-body teletype sync.
 
 import type { HarnessLaneStatus } from './types';
 import type { PendingPeerSummary } from './inter-lane';
-import type { TelemetryReviewLoop, TelemetryReviewLoopReviewer } from './harness-telemetry';
+import type { TelemetryReviewLoop } from './harness-telemetry';
 import { FILE_TOUCH_WINDOW_MS } from './harness-view-types';
 import type {
   FileTouchRecord,
@@ -26,13 +28,9 @@ import type {
 import {
   basename,
   collapseThoughtBlankLines,
-  esc,
   formatCoarseAge,
-  formatCount,
-  formatElapsed,
-  truncateInline,
 } from './harness-format';
-import { awaitingPeerText, formatAwaitingPeerAge, statusLabel } from './harness-lane-chrome';
+import { formatAwaitingPeerAge, statusLabel } from './harness-lane-chrome';
 import { installThoughtVeil, renderPeekThoughtMarkdown } from './harness-markdown';
 import { cleanToolTitle, extractCommandLineRaw, inferToolLabel } from './harness-tool-render';
 import {
@@ -53,12 +51,6 @@ const LANE_PEEK_DWELL_MS = 8_000;
 const LANE_PEEK_LOOP_ENDED_MS = LANE_PEEK_RECENT_MS;
 /** spec 277 — between `lane-shell` (65) and `lane-inbox` (70). */
 const LANE_PEEK_REVIEW_LOOP_PRIORITY = 68;
-const PEEK_LOOP_PHASE: Record<NonNullable<TelemetryReviewLoop['phase']>, string> = {
-  collecting: 'collecting',
-  reviewing: 'reviewing',
-  fixing: 'fixing',
-  summarizing: 'writing summary',
-};
 
 export function isDirectPeerPeekReasonKey(reasonKey: string): boolean {
   return reasonKey === 'awaiting-peer' || reasonKey === 'inbound-peer' || reasonKey === 'peer-counterpart';
@@ -346,85 +338,6 @@ export function peekEventRowDuplicatesTool(
   return candidate.reasonKey === 'recent-activity' || candidate.reasonKey === 'lane-shell';
 }
 
-export function renderLanePeekToolRow(tool: NonNullable<LanePeekSnapshot['activeTool']>): string {
-  const subject = tool.subject
-    ? ` · ${esc(truncateInline(tool.subject, 36))}`
-    : '';
-  return (
-    `<div class="acp-harness__lane-peek-row" data-peek-row="tool">` +
-      `<span class="acp-harness__lane-peek-prefix">tool</span>` +
-      `<span class="acp-harness__lane-peek-value"><b>${esc(tool.name)}</b>${subject}</span>` +
-    `</div>`
-  );
-}
-
-/** Patch the peek card's tool row in place so a tool delta does not remount
- *  the card or the heat ring. */
-export function patchPeekActiveTool(
-  card: HTMLElement,
-  snapshot: LanePeekSnapshot,
-  candidate?: LanePeekCandidate | null,
-): void {
-  if (candidate && peekEventRowDuplicatesTool(candidate, snapshot)) {
-    card.querySelector('.acp-harness__lane-peek-event')?.remove();
-  }
-  const existing = card.querySelector<HTMLElement>('[data-peek-row="tool"]');
-  const tool = snapshot.status === 'busy' ? snapshot.activeTool : null;
-  if (!tool) {
-    existing?.remove();
-    return;
-  }
-  const wrap = document.createElement('div');
-  wrap.innerHTML = renderLanePeekToolRow(tool);
-  const next = wrap.firstElementChild;
-  if (!(next instanceof HTMLElement)) return;
-  if (existing) {
-    existing.replaceWith(next);
-    return;
-  }
-  const event = card.querySelector('.acp-harness__lane-peek-event');
-  const head = card.querySelector('.acp-harness__lane-peek-head');
-  if (event) event.after(next);
-  else if (head) head.after(next);
-  else card.insertBefore(next, card.firstChild);
-}
-
-export function renderLanePeekEventRow(candidate: LanePeekCandidate): string {
-  const payload = candidate.summary.payload;
-  let text = candidate.reasonLabel;
-  let meta = '';
-  if (payload?.kind === 'permission') {
-    text = `▸ approve <b>${esc(payload.toolName)}</b>`;
-    meta = esc(truncateInline(payload.subject, 36));
-  } else if (payload?.kind === 'peer') {
-    const verb = payload.direction === 'in' ? 'message from' : payload.direction === 'out' ? 'sent to' : 'awaiting';
-    text = `▸ ${esc(verb)} <b>${esc(payload.peerDisplayName)}</b>`;
-    meta = esc(payload.ageLabel);
-  } else if (payload?.kind === 'error') {
-    text = `▸ <b>${esc(truncateInline(payload.message, 32))}</b>`;
-  } else if (payload?.kind === 'activity') {
-    text = `▸ ${esc(truncateInline(payload.label, 36))}`;
-    meta = esc(payload.ageLabel);
-  } else {
-    text = `▸ ${esc(candidate.reasonLabel)}`;
-  }
-  return (
-    `<div class="acp-harness__lane-peek-event">` +
-      `<span class="acp-harness__lane-peek-event-text">${text}</span>` +
-      (meta ? `<span class="acp-harness__lane-peek-event-meta">${meta}</span>` : '') +
-    `</div>`
-  );
-}
-
-export function renderLanePeekRow(prefix: string, value: string): string {
-  return (
-    `<div class="acp-harness__lane-peek-row">` +
-      `<span class="acp-harness__lane-peek-prefix">${esc(prefix)}</span>` +
-      `<span class="acp-harness__lane-peek-value">${value}</span>` +
-    `</div>`
-  );
-}
-
 /** spec 277: the peeked lane's `#review pass` loop — running, or ended within
  *  the last few minutes — else null. Only the authoring lane carries a loop. */
 export function peekReviewLoop(
@@ -435,216 +348,6 @@ export function peekReviewLoop(
   if (!loop) return null;
   if (loop.running) return loop;
   return loop.endedAt !== null && now - loop.endedAt <= LANE_PEEK_LOOP_ENDED_MS ? loop : null;
-}
-
-function peekReviewerState(loop: TelemetryReviewLoop, rv: TelemetryReviewLoopReviewer): string {
-  if (rv.state === 'replied') {
-    const word = rv.verdict === 'fail'
-      ? `FAIL${rv.blockers ? ` ${rv.blockers}` : ''}`
-      : rv.verdict === 'missing' ? 'no verdict' : String(rv.verdict ?? '').toUpperCase();
-    const verdict = rv.verdict === 'pass' || rv.verdict === 'fail' ? rv.verdict : 'partial';
-    return `<span class="acp-harness__lane-peek-verdict" data-verdict="${verdict}">${esc(word)}</span>`;
-  }
-  if (rv.state === 'not_sent') return 'not sent';
-  // Withdrawn or never answered: nothing is pending once the round stopped.
-  return loop.phase === 'reviewing' ? 'pending' : 'no reply';
-}
-
-/** spec 277: compact projection of the dashboard's loop section — round +
- *  phase, one verdict per reviewer, and the per-round Blocker trend. */
-export function renderLanePeekReviewLoop(loop: TelemetryReviewLoop): string {
-  const state = loop.running
-    ? esc(loop.phase ? PEEK_LOOP_PHASE[loop.phase] : '')
-    : `ended · ${esc(truncateInline(loop.stopLabel ?? 'ended', 28))}`;
-  let html = renderLanePeekRow('review', `pass <b>${loop.round}/${loop.maxRounds}</b> · ${state}`);
-  if (loop.reviewers.length > 0) {
-    html += renderLanePeekRow(
-      'replies',
-      loop.reviewers.map((rv) => `${esc(rv.name)} ${peekReviewerState(loop, rv)}`).join(' · '),
-    );
-  }
-  if (loop.rounds.length > 0) {
-    html += renderLanePeekRow(
-      'rounds',
-      loop.rounds
-        .map((r) => `<span class="acp-harness__lane-peek-verdict" data-verdict="${r.verdict}">${r.blockers}</span>`)
-        .join(' → '),
-    );
-  }
-  return `<div class="acp-harness__lane-peek-loop" data-peek-row="review-loop">${html}</div>`;
-}
-
-/** Patch the loop rows in place: a reviewer reply changes no lane status and
- *  must not remount the card or its heat ring. */
-export function patchPeekReviewLoop(card: HTMLElement, snapshot: LanePeekSnapshot, now: number): void {
-  const existing = card.querySelector<HTMLElement>('[data-peek-row="review-loop"]');
-  const loop = peekReviewLoop(snapshot, now);
-  if (!loop) {
-    existing?.remove();
-    return;
-  }
-  const wrap = document.createElement('div');
-  wrap.innerHTML = renderLanePeekReviewLoop(loop);
-  const next = wrap.firstElementChild;
-  if (!(next instanceof HTMLElement)) return;
-  if (existing) {
-    if (existing.innerHTML !== next.innerHTML) existing.replaceWith(next);
-    return;
-  }
-  const heat = card.querySelector('.acp-harness__lane-peek-heat-root');
-  if (heat) heat.before(next);
-  else card.appendChild(next);
-}
-
-export function renderLanePeekPlanRow(plan: NonNullable<LanePeekSnapshot['plan']>): string {
-  const text = plan.activeText ? truncateInline(plan.activeText, 32) : 'all done';
-  return (
-    `<div class="acp-harness__lane-peek-row">` +
-      `<span class="acp-harness__lane-peek-prefix">plan</span>` +
-      `<span class="acp-harness__lane-peek-plan">` +
-        `<span class="acp-harness__lane-peek-plan-count">${plan.done}/${plan.total}</span>` +
-        `<span class="acp-harness__lane-peek-plan-text">${esc(text)}</span>` +
-      `</span>` +
-    `</div>`
-  );
-}
-
-export function renderLanePeekStatChips(snapshot: LanePeekSnapshot): string {
-  const chips: string[] = [];
-  if (snapshot.modelName) chips.push(`<span class="acp-harness__lane-peek-chip">${esc(snapshot.modelName)}</span>`);
-  const usage = snapshot.usage;
-  if (usage && typeof usage.used === 'number') {
-    const used = formatCount(usage.used);
-    if (typeof usage.size === 'number' && usage.size > 0) {
-      chips.push(`<span class="acp-harness__lane-peek-chip"><b>${esc(used)}</b>/${esc(formatCount(usage.size))}</span>`);
-    } else {
-      chips.push(`<span class="acp-harness__lane-peek-chip"><b>${esc(used)}</b> ctx</span>`);
-    }
-  }
-  const m = snapshot.metrics;
-  if (m && m.proc_count > 0) {
-    const hot = m.total_cpu_percent >= 80 || m.total_rss_mb >= 1500;
-    const cls = hot ? 'acp-harness__lane-peek-chip acp-harness__lane-peek-chip--hot' : 'acp-harness__lane-peek-chip';
-    const cpu = Math.round(m.total_cpu_percent);
-    const mem = m.total_rss_mb >= 1024 ? `${(m.total_rss_mb / 1024).toFixed(1)}G` : `${Math.round(m.total_rss_mb)}M`;
-    chips.push(`<span class="${cls}"><b>${cpu}%</b> ${esc(mem)}</span>`);
-  }
-  const mcp = snapshot.mcp;
-  if (mcp && mcp.toolsCallCount > 0) {
-    chips.push(`<span class="acp-harness__lane-peek-chip">mcp <b>${mcp.toolsCallCount}</b></span>`);
-  }
-  if (chips.length === 0) return '';
-  return `<footer class="acp-harness__lane-peek-foot">${chips.join('')}</footer>`;
-}
-
-export function lanePeekAgeLabel(snapshot: LanePeekSnapshot, candidate: LanePeekCandidate, now: number): string {
-  if (snapshot.status === 'busy' && snapshot.activeTurnStartedAt) {
-    return formatElapsed(now - snapshot.activeTurnStartedAt);
-  }
-  const at = candidate.at;
-  if (!at) return '';
-  return formatCoarseAge(now - at);
-}
-
-export function renderLanePeek(
-  candidate: LanePeekCandidate,
-  snapshot: LanePeekSnapshot | null,
-  locked: boolean,
-): HTMLElement {
-  const el = document.createElement('aside');
-  el.className = 'acp-harness__lane-peek';
-  el.dataset.reason = candidate.reasonKey;
-  el.dataset.laneId = candidate.laneId;
-  el.dataset.priority = lanePeekPriorityClass(candidate);
-  const now = Date.now();
-  const age = snapshot ? lanePeekAgeLabel(snapshot, candidate, now) : '';
-  const statusText = `${statusLabel(candidate.summary.status)}${locked ? ' · locked' : ''}`;
-  let html =
-    `<header class="acp-harness__lane-peek-head">` +
-      `<span class="acp-harness__lane-peek-name">${esc(candidate.displayName)}</span>` +
-      `<span class="acp-harness__lane-peek-status">${esc(statusText)}</span>` +
-      (age ? `<span class="acp-harness__lane-peek-age">${esc(age)}</span>` : '') +
-    `</header>`;
-  const loop = peekReviewLoop(snapshot, now);
-  // A `lane-review-pass` peek's reason is the loop itself; its rows say more.
-  if (!peekEventRowDuplicatesTool(candidate, snapshot) && !(loop && candidate.reasonKey === 'lane-review-pass')) {
-    html += renderLanePeekEventRow(candidate);
-  }
-
-  if (snapshot?.plan) html += renderLanePeekPlanRow(snapshot.plan);
-
-  if (snapshot?.pendingShell && candidate.reasonKey !== 'lane-shell') {
-    html += renderLanePeekRow('shell', '<b>running</b>');
-  }
-
-  if (snapshot?.activeTool && snapshot.status === 'busy') {
-    html += renderLanePeekToolRow(snapshot.activeTool);
-  } else if (snapshot?.latestMeaningful && candidate.summary.payload?.kind !== 'activity') {
-    const label = truncateInline(snapshot.latestMeaningful.label, 40);
-    html += renderLanePeekRow('last', esc(label));
-  }
-
-  if (snapshot?.recentFiles && snapshot.recentFiles.length > 0) {
-    const files = snapshot.recentFiles.map((p) => basename(p)).join(', ');
-    html += renderLanePeekRow('files', esc(truncateInline(files, 40)));
-  }
-
-  if (snapshot && snapshot.inboxDepth > 0) {
-    html += renderLanePeekRow('inbox', `<b>${snapshot.inboxDepth}</b> pending`);
-  }
-
-  if (loop) html += renderLanePeekReviewLoop(loop);
-
-  if (snapshot) {
-    html += '<div class="acp-harness__lane-peek-heat-root"></div>';
-    html += renderLanePeekStatChips(snapshot);
-  }
-
-  el.innerHTML = html;
-  return el;
-}
-
-/** spec 216 — own rail card; never mounted inside the 109 peek. */
-export function renderLaneThought(
-  snapshot: LanePeekSnapshot,
-  projectDir: string | null = null,
-): HTMLElement {
-  const el = document.createElement('aside');
-  el.className = 'acp-harness__lane-thought';
-  el.dataset.laneId = snapshot.laneId;
-  const thought = snapshot.thought ?? null;
-  el.dataset.phase = thought?.phase ?? 'empty';
-  const live = isLivePeekThought(thought);
-  el.innerHTML =
-    `<header class="acp-harness__lane-thought-head">` +
-      `<span class="acp-harness__lane-thought-name">${esc(snapshot.displayName)}</span>` +
-      `<span class="acp-harness__lane-thought-label">${live ? 'thinking' : 'thought'}</span>` +
-    `</header>` +
-    `<div class="acp-harness__lane-thought-body"></div>`;
-  const body = el.querySelector<HTMLElement>('.acp-harness__lane-thought-body');
-  if (body) syncPeekThoughtBody(body, thought, projectDir);
-  return el;
-}
-
-export function patchLaneThoughtCard(
-  root: HTMLElement,
-  snapshot: LanePeekSnapshot,
-  projectDir: string | null = null,
-): void {
-  root.dataset.laneId = snapshot.laneId;
-  const thought = snapshot.thought ?? null;
-  root.dataset.phase = thought?.phase ?? 'empty';
-  const name = root.querySelector('.acp-harness__lane-thought-name');
-  if (name) name.textContent = snapshot.displayName;
-  const label = root.querySelector('.acp-harness__lane-thought-label');
-  if (label) label.textContent = isLivePeekThought(thought) ? 'thinking' : 'thought';
-  let body = root.querySelector<HTMLElement>('.acp-harness__lane-thought-body');
-  if (!body) {
-    body = document.createElement('div');
-    body.className = 'acp-harness__lane-thought-body';
-    root.appendChild(body);
-  }
-  syncPeekThoughtBody(body, thought, projectDir);
 }
 
 export interface RailPeerHint {
@@ -704,58 +407,6 @@ export function deriveRailPeerHint(
     }
   }
   return { awaitingSuffix, inboxSuffix, trafficSuffix, title: titleParts.join(' · '), kind };
-}
-
-/**
- * spec 118 — emit a single wrapper span around peer glyphs so the rail entry
- * grid (dot | name | peers | tools | ctx) has stable column placement even
- * when only some glyphs are present. Returns '' when there are no glyphs;
- * the wrapper column is `auto` so an absent wrapper collapses to zero width.
- */
-export function renderRailPeerSpans(hint: RailPeerHint): string {
-  let glyphs = '';
-  if (hint.awaitingSuffix) {
-    glyphs += `<span class="acp-harness__rail-peer acp-harness__rail-peer--awaiting">${esc(hint.awaitingSuffix)}</span>`;
-  }
-  if (hint.inboxSuffix) {
-    glyphs += `<span class="acp-harness__rail-peer acp-harness__rail-peer--inbox">${esc(hint.inboxSuffix)}</span>`;
-  }
-  if (hint.trafficSuffix) {
-    glyphs += `<span class="acp-harness__rail-peer acp-harness__rail-peer--traffic">${esc(hint.trafficSuffix)}</span>`;
-  }
-  if (!glyphs) return '';
-  return `<span class="acp-harness__rail-peers">${glyphs}</span>`;
-}
-
-/** spec 118 — composer status strip above input (informational; spec 116 soft awaiting). */
-export function buildComposerPeerStrip(
-  laneStatus: HarnessLaneStatus,
-  pendingPeers: PendingPeerSummary[],
-  inboxDepth: number,
-): string {
-  if (pendingPeers.length > 0) {
-    const body = awaitingPeerText(pendingPeers).replace(/ · #cancel$/, '');
-    return (
-      `<div class="acp-harness__composer-peer" role="status">` +
-      `⇆ ${esc(body)} · #cancel drops pending lane-mail wait` +
-      `</div>`
-    );
-  }
-  if (inboxDepth > 0) {
-    return (
-      `<div class="acp-harness__composer-peer" role="status">` +
-      `${esc(`▼${inboxDepth} lane mail${inboxDepth === 1 ? '' : 's'} queued`)}` +
-      `</div>`
-    );
-  }
-  if (laneStatus === 'awaiting_peer') {
-    return (
-      `<div class="acp-harness__composer-peer" role="status">` +
-      `${esc('awaiting lane mail · #cancel drops pending wait')}` +
-      `</div>`
-    );
-  }
-  return '';
 }
 
 /**
