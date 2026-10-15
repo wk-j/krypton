@@ -8,8 +8,9 @@
 
 ## How to read an entry
 
-Every entry has four parts:
+Every entry has five parts:
 
+- **SVG render** — a static visual example of the component in the default dark scheme.
 - **Props** — the typed input. This *is* the change contract (spec 301: props equality replaces `transcriptRenderSignature`).
 - **Example UI** — what it renders, using the literal strings and glyphs the current code emits.
 - **Emits** — the BEM markup, unchanged from today. No visual redesign is in scope.
@@ -19,14 +20,22 @@ Preview boxes use `╭╮╰╯` only as a page device to show a component's bou
 real surfaces keep a full 1px border or none (`CLAUDE.md` constraint 9), and nothing here adds a border
 that does not exist today.
 
+The SVGs are design renders, not runtime screenshots. Regenerate them with
+`python3 docs/images/harness-components/render.py`; each image has an accessible title.
+
 `L` = live component (`LiveComponent`, refuses structural repaint while the agent is writing into it).
 
 **Packaging.** Each entry becomes one directory `src/acp/components/<name>/` holding its class, its own
 stylesheet, its scheme overrides and its test — add by creating it, remove by deleting it. Each entry's
-`Emits` block names exactly one BEM block, and that block is the component's private styling surface: no
+`Emits` block names the BEM block(s) it owns, and those are its private styling surface: no
 other sheet may declare selectors for it, and everything tunable is a custom property on the block root.
 See §Packaging, style ownership, and theming at the end of this document, and spec 301
 §UI changes and style ownership. Entries that **share** a block today are flagged ⚠ and get their own.
+
+Eight primitives (`Chip`, `Card`, `OverlayShell`, `ListPicker`, `TabStrip`, `KeyHintBar`, `StatList`,
+`EmptyState`) take `block` as a **prop** and so own no block of their own — they paint into whichever
+block their caller owns. Each directory therefore exports `blocks: readonly string[]`, and that list, not
+the directory name, is what `styles-ownership.test.ts` checks.
 
 ---
 
@@ -37,6 +46,10 @@ containers, and one declarative table says which container each panel mounts int
 the rationale and the pinned-surface list.
 
 ## 0.1 `LayoutHost` / `Slot`
+
+![Visual design render of LayoutHost](./images/harness-components/0.1-layouthost.svg)
+
+![Visual design render of Slot](./images/harness-components/0.1-slot.svg)
 
 ```ts
 type HarnessSlot = 'lane.head' | 'lane.understats' | 'rail.top' | 'rail.bottom' | 'dock.right' | 'composer.above' | 'composer.below';
@@ -88,6 +101,8 @@ Pure, stateless, no listeners. These are the ones duplicated most.
 
 ## 1.1 `Chip`
 
+![Visual design render of Chip](./images/harness-components/1.1-chip.svg)
+
 ```ts
 interface ChipProps { text: string; tone?: 'neutral' | 'warn' | 'on' | 'off' | 'hot'; icon?: IconId; title?: string; block?: string }
 ```
@@ -109,6 +124,8 @@ class so CSS is untouched: `acp-harness__lane-mode`, `acp-harness__lane-sandbox`
 
 ## 1.2 `Spinner` L
 
+![Visual design render of Spinner](./images/harness-components/1.2-spinner.svg)
+
 ```ts
 interface SpinnerProps { running: boolean; terminalGlyph?: string }   // frames owned by the component
 ```
@@ -128,6 +145,8 @@ interface SpinnerProps { running: boolean; terminalGlyph?: string }   // frames 
 the spinner has no owner and a parent rebuild snapped it to frame 0.
 
 ## 1.3 `Meter`
+
+![Visual design render of Meter](./images/harness-components/1.3-meter.svg)
 
 ```ts
 interface MeterProps { value: number; max: number; label?: string; valueText?: string; tone?: 'cpu'|'rss'|'plus-minus'; mode: 'track' | 'glyph' | 'segments' }
@@ -152,6 +171,10 @@ diffstat → `.acp-harness__tool-stat-bar[--stat-plus-width/--stat-minus-width]`
 
 ## 1.4 `StatRow` / `StatList`
 
+![Visual design render of StatRow](./images/harness-components/1.4-statrow.svg)
+
+![Visual design render of StatList](./images/harness-components/1.4-statlist.svg)
+
 ```ts
 interface StatRowProps { label: string; value: string | Node; title?: string; icon?: IconId; tone?: string }
 interface StatListProps { rows: readonly StatRowProps[]; block: string; layout: 'inline' | 'dl' | 'grid' }
@@ -175,6 +198,8 @@ peek     tool   Edit · lane-peek.ts
 
 ## 1.5 `EmptyState`
 
+![Visual design render of EmptyState](./images/harness-components/1.5-emptystate.svg)
+
 ```ts
 interface EmptyStateProps { text: string; block: string; tag?: 'div' | 'li' | 'p' }
 ```
@@ -193,6 +218,8 @@ no handoffs yet         No reading priority reported.       no matching tickets
 `attention-overlay.ts:176-183` · `review-priority-overlay.ts:90-92` · `harness-ticket-controller.ts:641,643,648,652,655,714`.
 
 ## 1.6 `ActionButton`
+
+![Visual design render of ActionButton](./images/harness-components/1.6-actionbutton.svg)
 
 ```ts
 interface ActionButtonProps { label: string; keyHint?: string; disabled?: boolean; disabledReason?: string; data?: Record<string,string>; block: string; modifier?: string }
@@ -213,6 +240,8 @@ interface ActionButtonProps { label: string; keyHint?: string; disabled?: boolea
 `.disabled` property, `data-selected`) → 1.**
 
 ## 1.7 `KeyHintBar`
+
+![Visual design render of KeyHintBar](./images/harness-components/1.7-keyhintbar.svg)
 
 ```ts
 interface KeyHintBarProps { hints: readonly { keys: readonly string[]; label: string }[]; note?: string; style: 'kbd' | 'plain'; block: string }
@@ -235,6 +264,8 @@ plain   ↑↓ / ⌃n⌃p select · Enter/Tab insert · Esc dismiss
 
 ## 1.8 `TabStrip`
 
+![Visual design render of TabStrip](./images/harness-components/1.8-tabstrip.svg)
+
 ```ts
 interface TabStripProps { tabs: readonly { id: string; label: string; count?: number; disabled?: boolean }[]; activeId: string; block: string; activeClass: 'is-active' | `${string}--active` }
 ```
@@ -253,6 +284,8 @@ the same loop, different prefix) · `harness-ticket-controller.ts:700-707`.
 
 
 ## 1.9 `Caret` ⚠
+
+![Visual design render of Caret](./images/harness-components/1.9-caret.svg)
 
 ```ts
 interface CaretProps { glyph?: '█' | '▋'; blink?: boolean }
@@ -279,6 +312,8 @@ this component's `glyph` prop.
 
 ## 2.1 `Card` ⚠
 
+![Visual design render of Card](./images/harness-components/2.1-card.svg)
+
 ```ts
 interface CardProps { head: { glyph?: string; hint?: string; title: string; meta?: string; toolbar?: ActionButtonProps[] }; body?: Node; action?: string; block: string; modifiers?: readonly string[] }
 ```
@@ -302,17 +337,19 @@ interface CardProps { head: { glyph?: string; hint?: string; title: string; meta
 
 **Emits** `.acp-harness__artifact-head > -hint + -glyph + -title`, `.acp-harness__artifact-meta`,
 `.acp-harness__artifact-action`; fence variant `.acp-harness__svg-card > -bar > -kind + -hint + buttons, -preview`.
-⚠ The review card borrows `acp-harness__artifact-head` today (`harness-tool-render.ts:729-775`), so restyling
+⚠ The review card borrows `acp-harness__artifact-head` today (`harness-tool-render.ts:729-770`), so restyling
 the artifact card silently restyles the Review Board card. `Card` takes `block` as a prop; the review card
 gets `acp-harness__review-card` and its own sheet.
 
-**Replaces** `harness-tool-render.ts:675-689,691-727,729-775` · `harness-transcript-render.ts:125-249` ·
+**Replaces** `harness-tool-render.ts:675-689,691-727,729-770` · `harness-transcript-render.ts:125-249` ·
 `harness-svg-fence.ts:287-310,525-545` · `attention-overlay.ts:59-138` · `lane-peek.ts:553-568` ·
 `harness-subagents.ts:360-431`. **9 head+body+action builders → 1.** Note `renderReviewCardBody` already
 reuses `acp-harness__artifact-head` with different strings — the duplication is admitted in the CSS too
-(`acp-harness.css:3555,3566,3582,3601` "Mirrors `.acp-harness__tool-head`" ×4).
+(four mirror comments on the tool-head family: `acp-harness.css:3555` → `.acp-harness__tool-head`, `:3566` → `tool-glyph`, `:3582` → `tool-kind`, `:3601` → `tool-subject`).
 
 ## 2.2 `OverlayShell`
+
+![Visual design render of OverlayShell](./images/harness-components/2.2-overlayshell.svg)
 
 ```ts
 interface OverlayShellProps { open: boolean; title: string; sub?: string; body: Node; hints?: KeyHintBarProps; empty?: string; block: string }
@@ -345,6 +382,8 @@ Owns the `hidden` toggle, the `replaceChildren` body swap, and the mutual-exclus
 
 ## 2.3 `ListPicker<T>`
 
+![Visual design render of ListPicker](./images/harness-components/2.3-listpicker.svg)
+
 ```ts
 interface ListPickerProps<T> { items: readonly T[]; cursor: number; renderRow(item: T, index: number): Node; block: string; filter?: string; followCursor?: boolean }
 // owns: cursor math, `--active` modifier, scrollIntoView({block:'nearest'}), data-index attrs
@@ -370,6 +409,8 @@ fields, plain state objects) and gives every picker the `scrollIntoView` only th
 
 ## 2.4 `InlinePalette` ⚠
 
+![Visual design render of InlinePalette](./images/harness-components/2.4-inlinepalette.svg)
+
 ```ts
 interface InlinePaletteProps<T> { variant: 'slash' | 'mention' | 'hash' | 'verb'; matches: readonly T[]; cursor: number; hint: string; row(item: T): { name: string; hint?: string; desc?: string }; zeroState?: string }
 ```
@@ -393,11 +434,13 @@ block that owns the sheet. The block's rules are also **declared twice** today
 (`acp-harness.css:5604-5700` ≡ `:5815-5911`) — editing the first copy does nothing.
 
 **Replaces 4 identical renderers and 4 identical 30-line key handlers**:
-render `harness-lane-chrome.ts:437-462` (`/`), `acp-harness-view.ts:4468-4495` (`@`), `:4563-4609` (`#`), `:4674-4700` (`{{#`);
+render `harness-lane-chrome.ts:457` (`/`), `acp-harness-view.ts:4473-4490` (`@`), `:4583` (`#`), `:4665` (`{{#`);
 keys `:4436-4466`, `:4497-4529`, `:4536-4561`, `:4645-4672`. Only the commit key (`Enter|Tab` vs `Tab`-only)
 and the insert callback differ — both become props.
 
 ## 2.5 `DiffBlock`
+
+![Visual design render of DiffBlock](./images/harness-components/2.5-diffblock.svg)
 
 ```ts
 interface DiffBlockProps { mode: 'paired' | 'unified' | 'raw'; rows: readonly DiffRow[]; path?: string; context?: number; lineCap?: number; prefix: string }
@@ -434,6 +477,8 @@ rows the agent writes into.
 
 ## 3.0 `TranscriptRow` (base)
 
+![Visual design render of TranscriptRow](./images/harness-components/3.0-transcriptrow.svg)
+
 ```ts
 interface RowProps { item: HarnessTranscriptItem; isNew: boolean; projectDir: string | null; resolveLocalImages: boolean }
 ```
@@ -449,7 +494,7 @@ perm     <body>
 **Emits** `<div class="acp-harness__msg acp-harness__msg--${kind}[--${status}][--enter][--streaming]" data-msg-id>` >
 `.acp-harness__msg-label` + `.acp-harness__msg-body` + optional image strip.
 
-Owns: the `--enter` class and its `animationend` release (replacing the rescue at `acp-harness-view.ts:12215-12218`),
+Owns: the `--enter` class and its `animationend` release (replacing the rescue at `acp-harness-view.ts:12219-12221`),
 and **`data-render-signature` disappears entirely** — deps live on each subclass.
 
 Label vocabulary (`harness-lane-chrome.ts:536-551`), unchanged:
@@ -457,6 +502,8 @@ Label vocabulary (`harness-lane-chrome.ts:536-551`), unchanged:
 plus the in-renderer overrides `usage` and `event`.
 
 ## 3.1 `AssistantRow` L
+
+![Visual design render of AssistantRow](./images/harness-components/3.1-assistantrow.svg)
 
 **Props** `{ item, lane, streaming, projectDir, resolveLocalImages }` · **Deps** `[item.markdownHtml, item.replyingToLaneMail, item.resources, item.gitRefs, item.annotations]`
 
@@ -479,6 +526,8 @@ agent  ▰▰▰▱▱
 
 ## 3.2 `ThoughtRow` L
 
+![Visual design render of ThoughtRow](./images/harness-components/3.2-thoughtrow.svg)
+
 **Example UI**
 
 ```
@@ -491,6 +540,8 @@ thought ▰▰▰▰▱ extended
 **Replaces** `harness-transcript-render.ts:287-296` · `acp-harness-view.ts:14456-14477`.
 
 ## 3.3 `UserRow` L
+
+![Visual design render of UserRow](./images/harness-components/3.3-userrow.svg)
 
 **Example UI**
 
@@ -505,9 +556,11 @@ user · voice   open the model picker
 
 ## 3.4 `ToolRow` L
 
+![Visual design render of ToolRow](./images/harness-components/3.4-toolrow.svg)
+
 **Props** `{ item, expanded }` · **Deps** `[statusBucket, kind, subject, command, result, exitCode, sections, diffs, subagents, expandedKey]`
-— ten `Object.is` compares replacing a ~0.5–1.5 KB string built by eight `.map().join()` calls
-(`harness-transcript-render.ts:472-487`).
+— ten `Object.is` compares replacing a joined string rebuilt per pass from 3 `.map()` + 4 `.join()` calls
+(`harness-transcript-render.ts:472-488`; 7 `.map()` across the whole 131-line function).
 
 **Example UI**
 
@@ -531,6 +584,8 @@ then `.acp-harness__tool-output > -section > -label + <pre> -text`, `.acp-harnes
 
 ## 3.5 `SubagentCard` L
 
+![Visual design render of SubagentCard](./images/harness-components/3.5-subagentcard.svg)
+
 **Example UI**
 
 ```
@@ -546,6 +601,8 @@ Status glyphs `○ ● ✓ ✗ –`.
 
 ## 3.6 `PermissionRow`
 
+![Visual design render of PermissionRow](./images/harness-components/3.6-permissionrow.svg)
+
 **Example UI**
 
 ```
@@ -559,6 +616,8 @@ lifecycle (spec 107), never a second row.
 **Replaces** `harness-transcript-render.ts:952-1018`.
 
 ## 3.7 `QuestionRow`
+
+![Visual design render of QuestionRow](./images/harness-components/3.7-questionrow.svg)
 
 **Example UI**
 
@@ -577,6 +636,12 @@ ask    Which reconciler should phase 3 use?                        1/2
 
 ## 3.8 `FsActivityRow` · 3.9 `FsWriteReviewRow` · 3.10 `ProviderErrorRow`
 
+![Visual design render of FsActivityRow](./images/harness-components/3.8-fsactivityrow.svg)
+
+![Visual design render of FsWriteReviewRow](./images/harness-components/3.9-fswritereviewrow.svg)
+
+![Visual design render of ProviderErrorRow](./images/harness-components/3.10-providererrorrow.svg)
+
 **Example UI**
 
 ```
@@ -592,6 +657,8 @@ agent  ⚠ rate_limited · 429 — retry in 32s
 
 ## 3.11 `InterLaneRow`
 
+![Visual design render of InterLaneRow](./images/harness-components/3.11-interlanerow.svg)
+
 **Example UI**
 
 ```
@@ -604,11 +671,15 @@ mail →  grok-1  done     ack — looks right
 
 ## 3.12 `DocCardRow` (artifact + review)
 
+![Visual design render of DocCardRow](./images/harness-components/3.12-doccardrow.svg)
+
 **Example UI** — see `Card` (2.1). One component, two `kind` values; today they are two near-identical
 builders sharing the same CSS class.
-**Replaces** `harness-tool-render.ts:691-727,729-775` + wrapper logic `harness-transcript-render.ts:388-398`.
+**Replaces** `harness-tool-render.ts:691-727,729-770` + wrapper logic `harness-transcript-render.ts:388-398`.
 
 ## 3.13 `UsageRow`
+
+![Visual design render of UsageRow](./images/harness-components/3.13-usagerow.svg)
 
 **Example UI**
 
@@ -627,6 +698,10 @@ usage  2026-10-15                                                 14 turns
 
 ## 3.14 `SystemRow` + `HiddenRowsIndicator`
 
+![Visual design render of SystemRow](./images/harness-components/3.14-systemrow.svg)
+
+![Visual design render of HiddenRowsIndicator](./images/harness-components/3.14-hiddenrowsindicator.svg)
+
 **Example UI**
 
 ```
@@ -640,6 +715,10 @@ event variant adds `--harness-event` + `.acp-harness__harness-event-body`.
 **Replaces** `harness-transcript-render.ts:383-387` · `acp-harness-view.ts:12120-12129`.
 
 ## 3.15 `ImageStrip` · 3.16 `ResourceRail`
+
+![Visual design render of ImageStrip](./images/harness-components/3.15-imagestrip.svg)
+
+![Visual design render of ResourceRail](./images/harness-components/3.16-resourcerail.svg)
 
 **Example UI**
 
@@ -655,6 +734,8 @@ Late Git/thumbnail state patches **only this component** — spec 301's structur
 
 ## 3.17 `Transcript` (list container)
 
+![Visual design render of Transcript](./images/harness-components/3.17-transcript.svg)
+
 ```ts
 interface TranscriptProps { lane: HarnessLane; window: number; projectDir: string | null; stickToBottom: boolean }
 ```
@@ -668,44 +749,44 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 
 # Layer 4 — Lane chrome
 
-| # | Component | Props | Example UI | Replaces |
-|---|---|---|---|---|
-| 4.1 | `LaneShell` | `{ lane, active, zen }` | lane `<section>` holding head · stats · body · rail slots | `acp-harness-view.ts:12945-12994`. **Never rebuilt** → the `prevScrollTop` detach/reattach dance at `:12896-12916` is deleted |
-| 4.2 | `LaneHead` | `{ lane, active, mcp, metrics, inboxDepth, pendingPeers, isOrchestrator }` | `⠙ claude-1 busy  ◆ orch  sonnet-4-6  mcp ✓ 14  12.4% 843M  ⚒ Edit src/acp/lane-peek.ts` | `harness-lane-chrome.ts:86-130` + the per-head `innerHTML` on the 2 s metrics tick (`acp-harness-view.ts:13550`) |
-| 4.3 | `LaneSymbol` | `{ status }` | busy `⠋` · perm/peer/error/starting → icon · idle → empty | `harness-lane-chrome.ts:612-652`. Status vocabulary unchanged: `starting · idle · busy · action required · awaiting peer · error · stopped` |
-| 4.4 | `LaneStats` | `{ lane, projectDir }` | `sess 4f2a9c · krypton · ⌁128.4k/200.0k (64%) · cache 93% · $0.4412 USD · ⚒37 · ≡412` | `harness-lane-chrome.ts:464-537` (`StatList` inline) |
-| 4.5 | `RailEntry` | `{ lane, active, peerHint, directive, reviewCount }` | `● [logo] claude-1 ⇆ 37 128.4k` / `impl  harness UI refactor · next send` | `acp-harness-view.ts:13024-13141` |
-| 4.6 | `LaneRail` | `{ lanes, activeId }` | zen-mode left rail, `reconcile` over `RailEntry` | `acp-harness-view.ts:12930-12943,12660-12667` |
+| # | Component | Props | Example UI | Replaces | SVG render |
+|---|---|---|---|---|---|
+| 4.1 | `LaneShell` | `{ lane, active, zen }` | lane `<section>` holding head · stats · body · rail slots | `acp-harness-view.ts:12945-12994`. **Never rebuilt** → both halves of the `prevScrollTop` dance (capture `:12908-12915`, write-back `:13001-13006`) are deleted — in **phase 4**, the phase that lands this component, never earlier | <img src="./images/harness-components/4.1-laneshell.svg" width="320" alt="Visual design render of LaneShell"> |
+| 4.2 | `LaneHead` | `{ lane, active, mcp, metrics, inboxDepth, pendingPeers, isOrchestrator }` | `⠙ claude-1 busy  ◆ orch  sonnet-4-6  mcp ✓ 14  12.4% 843M  ⚒ Edit src/acp/lane-peek.ts` | `harness-lane-chrome.ts:86-130` + the per-head `innerHTML` on the 2 s metrics tick (`acp-harness-view.ts:13550`) | <img src="./images/harness-components/4.2-lanehead.svg" width="320" alt="Visual design render of LaneHead"> |
+| 4.3 | `LaneSymbol` | `{ status }` | busy `⠋` · perm/peer/error/starting → icon · idle → empty | `harness-lane-chrome.ts:612-652`. Status vocabulary unchanged: `starting · idle · busy · action required · awaiting peer · error · stopped` | <img src="./images/harness-components/4.3-lanesymbol.svg" width="320" alt="Visual design render of LaneSymbol"> |
+| 4.4 | `LaneStats` | `{ lane, projectDir }` | `sess 4f2a9c · krypton · ⌁128.4k/200.0k (64%) · cache 93% · $0.4412 USD · ⚒37 · ≡412` | `harness-lane-chrome.ts:464-537` (`StatList` inline) | <img src="./images/harness-components/4.4-lanestats.svg" width="320" alt="Visual design render of LaneStats"> |
+| 4.5 | `RailEntry` | `{ lane, active, peerHint, directive, reviewCount }` | `● [logo] claude-1 ⇆ 37 128.4k` / `impl  harness UI refactor · next send` | `acp-harness-view.ts:13024-13141` | <img src="./images/harness-components/4.5-railentry.svg" width="320" alt="Visual design render of RailEntry"> |
+| 4.6 | `LaneRail` | `{ lanes, activeId }` | zen-mode left rail, `reconcile` over `RailEntry` | `acp-harness-view.ts:12930-12943,12660-12667` | <img src="./images/harness-components/4.6-lanerail.svg" width="320" alt="Visual design render of LaneRail"> |
 
 ---
 
 # Layer 5 — Right rail
 
-| # | Component | Example UI | Replaces |
-|---|---|---|---|
-| 5.1 | `PeekCard` | `codex-1   awaiting peer · locked   5m+` <br> `▸ approve Bash` · `git push origin main` <br> `tool  Edit · lane-peek.ts` <br> `plan  4/9  wire composer meta segments` <br> `sonnet-4-6  128.4k/200.0k  92% 1.4G  mcp 14` | `lane-peek.ts:349-606` + `patchPeekActiveTool` `:363-390` |
-| 5.2 | `ReviewLoopRows` | `review  pass 2/4 · reviewing` <br> `replies codex PASS · salty pending` <br> `rounds  3 → 0` | `lane-peek.ts:455-497` + `patchPeekReviewLoop` |
-| 5.3 | `HeatPanel` | `heat  [tools][5m] ·  active ████████  peek ███░░░░░  0.62` | `acp-harness-view.ts:12427-12545`. **Fixes the clearest listener-leak site** — today heat controls re-attach on every mount even when the card is reused |
-| 5.4 | `ThoughtCard` L | `claude-1   thinking` <br> `the tail window can slide past a live row…` | `lane-peek.ts:608-642` + `patchLaneThoughtCard` |
-| 5.5 | `QueueCard` | `⏎ queue (3) · held behind lane mail` <br> `▸1  rerun the type check            →codex-2 +1   img×2` <br> `2   open the model picker` <br> `#unqueue · #queue clear` | `acp-harness-view.ts:11982-12026` |
-| 5.6 | `PlanPanel` | `plan 4/9` <br> `✓ extract kernel` · `▸ wire composer meta segments` · `· delete signature` | `acp-harness-view.ts:14668-14726` |
-| 5.7 | `TicketDock` | `active ticket` <br> `Harness UI refactor                 ›` <br> `open  KR-301` <br> `GitHub  wk/krypton  #301 · open` <br> `Worker  codex-1` | `harness-ticket-controller.ts:603-676` |
-| 5.8 | `AnnotationRail` | `ANNOTATED  3 · 2 unsent              [ send 2 ]` <br> `deps tuple needs the lane arg            [ del ]` | `transcript-annotation.ts:329-370` |
+| # | Component | Example UI | Replaces | SVG render |
+|---|---|---|---|---|
+| 5.1 | `PeekCard` | `codex-1   awaiting peer · locked   5m+` <br> `▸ approve Bash` · `git push origin main` <br> `tool  Edit · lane-peek.ts` <br> `plan  4/9  wire composer meta segments` <br> `sonnet-4-6  128.4k/200.0k  92% 1.4G  mcp 14` | `lane-peek.ts:349-606` + `patchPeekActiveTool` `:363-390` | <img src="./images/harness-components/5.1-peekcard.svg" width="320" alt="Visual design render of PeekCard"> |
+| 5.2 | `ReviewLoopRows` | `review  pass 2/4 · reviewing` <br> `replies codex PASS · salty pending` <br> `rounds  3 → 0` | `lane-peek.ts:455-497` + `patchPeekReviewLoop` | <img src="./images/harness-components/5.2-reviewlooprows.svg" width="320" alt="Visual design render of ReviewLoopRows"> |
+| 5.3 | `HeatPanel` | `heat  [tools][5m] ·  active ████████  peek ███░░░░░  0.62` | `acp-harness-view.ts:12427-12545`. **Fixes the clearest listener-leak site** — today heat controls re-attach on every mount even when the card is reused | <img src="./images/harness-components/5.3-heatpanel.svg" width="320" alt="Visual design render of HeatPanel"> |
+| 5.4 | `ThoughtCard` L | `claude-1   thinking` <br> `the tail window can slide past a live row…` | `lane-peek.ts:608-642` + `patchLaneThoughtCard` | <img src="./images/harness-components/5.4-thoughtcard.svg" width="320" alt="Visual design render of ThoughtCard"> |
+| 5.5 | `QueueCard` | `⏎ queue (3) · held behind lane mail` <br> `▸1  rerun the type check            →codex-2 +1   img×2` <br> `2   open the model picker` <br> `#unqueue · #queue clear` | `acp-harness-view.ts:11982-12026` | <img src="./images/harness-components/5.5-queuecard.svg" width="320" alt="Visual design render of QueueCard"> |
+| 5.6 | `PlanPanel` | `plan 4/9` <br> `✓ extract kernel` · `▸ wire composer meta segments` · `· delete signature` | `acp-harness-view.ts:14668-14726` | <img src="./images/harness-components/5.6-planpanel.svg" width="320" alt="Visual design render of PlanPanel"> |
+| 5.7 | `TicketDock` | `active ticket` <br> `Harness UI refactor                 ›` <br> `open  KR-301` <br> `GitHub  wk/krypton  #301 · open` <br> `Worker  codex-1` | `harness-ticket-controller.ts:603-676` | <img src="./images/harness-components/5.7-ticketdock.svg" width="320" alt="Visual design render of TicketDock"> |
+| 5.8 | `AnnotationRail` | `ANNOTATED  3 · 2 unsent              [ send 2 ]` <br> `deps tuple needs the lane arg            [ del ]` | `transcript-annotation.ts:329-370` | <img src="./images/harness-components/5.8-annotationrail.svg" width="320" alt="Visual design render of AnnotationRail"> |
 
 ---
 
 # Layer 6 — Composer
 
-| # | Component | Example UI | Replaces |
-|---|---|---|---|
-| 6.1 | `Composer` | root; owns `--command` / `--memory` / `--dictating` modifiers and slot order | `acp-harness-view.ts:13190-13296`. **Deletes the 1 Hz full `innerHTML` rebuild** (`:13409`) — only `ComposerMeta` ticks |
-| 6.2 | `ComposerMeta` | `reviewing · 2:14 · 3 queued      auto-edit ⇧⇥   directive 0301-impl   ⎇ main        ? help` | `harness-composer-meta.ts:48-68` + `composerStatusChip` `:13410-13460` (`Chip` + `StatList`) |
-| 6.3 | `DraftLine` | `claude-1  ⠋  convert the UI into reusable comp█onents` (`█` caret, ghost text inline) | `acp-harness-view.ts:13246-13293,15417-15420` |
-| 6.4 | `StagingStrip` | `[▣ screenshot.png  x] [▣ diagram.png  x]   2 images · Esc to clear` | `acp-harness-view.ts:13228-13245` |
-| 6.5 | `PeerStrip` | `⇆ awaiting codex · 5m+ · #cancel drops pending lane-mail wait` / `▼3 lane mails queued` | `lane-peek.ts:731-779` |
-| 6.6 | `DictationControl` | `[● REC th  ⌘D]` (phases `MIC · MIC en · REC th · FINALIZING…`) | `harness-dictation-controller.ts:37-82` |
-| 6.7 | `LiveVoiceStrip` | `LIVE  listening  alloy  ████░░░░ ██░░░░░░  you: refactor the composer   ⌘⇧L stop · ⌘⌥L mute` | `harness-live-voice-controller.ts:461-499` |
-| 6.8 | `DecisionComposer` | `perm      a accept · A all · r reject · R all` | `acp-harness-view.ts:13299-13313` |
+| # | Component | Example UI | Replaces | SVG render |
+|---|---|---|---|---|
+| 6.1 | `Composer` | root; owns `--command` / `--memory` / `--dictating` modifiers and slot order | `acp-harness-view.ts:13190-13296`. **Deletes the 1 Hz full `innerHTML` rebuild** (`:13409`) — only `ComposerMeta` ticks | <img src="./images/harness-components/6.1-composer.svg" width="320" alt="Visual design render of Composer"> |
+| 6.2 | `ComposerMeta` | `reviewing · 2:14 · 3 queued      auto-edit ⇧⇥   directive 0301-impl   ⎇ main        ? help` | `harness-composer-meta.ts:48-68` + `composerStatusChip` `:13410-13460` (`Chip` + `StatList`) | <img src="./images/harness-components/6.2-composermeta.svg" width="320" alt="Visual design render of ComposerMeta"> |
+| 6.3 | `DraftLine` | `claude-1  ⠋  convert the UI into reusable comp█onents` (`█` caret, ghost text inline) | `acp-harness-view.ts:13246-13293,15417-15420` | <img src="./images/harness-components/6.3-draftline.svg" width="320" alt="Visual design render of DraftLine"> |
+| 6.4 | `StagingStrip` | `[▣ screenshot.png  x] [▣ diagram.png  x]   2 images · Esc to clear` | `acp-harness-view.ts:13228-13245` | <img src="./images/harness-components/6.4-stagingstrip.svg" width="320" alt="Visual design render of StagingStrip"> |
+| 6.5 | `PeerStrip` | `⇆ awaiting codex · 5m+ · #cancel drops pending lane-mail wait` / `▼3 lane mails queued` | `lane-peek.ts:731-779` | <img src="./images/harness-components/6.5-peerstrip.svg" width="320" alt="Visual design render of PeerStrip"> |
+| 6.6 | `DictationControl` | `[● REC th  ⌘D]` (phases `MIC · MIC en · REC th · FINALIZING…`) | `harness-dictation-controller.ts:37-82` | <img src="./images/harness-components/6.6-dictationcontrol.svg" width="320" alt="Visual design render of DictationControl"> |
+| 6.7 | `LiveVoiceStrip` | `LIVE  listening  alloy  ████░░░░ ██░░░░░░  you: refactor the composer   ⌘⇧L stop · ⌘⌥L mute` | `harness-live-voice-controller.ts:461-499` | <img src="./images/harness-components/6.7-livevoicestrip.svg" width="320" alt="Visual design render of LiveVoiceStrip"> |
+| 6.8 | `DecisionComposer` | `perm      a accept · A all · r reject · R all` | `acp-harness-view.ts:13299-13313` | <img src="./images/harness-components/6.8-decisioncomposer.svg" width="320" alt="Visual design render of DecisionComposer"> |
 
 ---
 
@@ -714,24 +795,24 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 Each is `OverlayShell` + one body. The six pickers are additionally `ListPicker`; nothing below keeps its own
 cursor math, its own shell, or its own empty state.
 
-| # | Component | Composition | Example UI (head line) | Replaces |
-|---|---|---|---|---|
-| 7.1 | `LanePicker` | Shell + ListPicker | `// add lane · directive: 0301-impl` | `acp-harness-view.ts:12669-12712` |
-| 7.2 | `DirectivePicker` | Shell + ListPicker + preview pane | `// directive · claude-1` | `:12715-12777` |
-| 7.3 | `ModelPicker` | Shell + ListPicker | `// model · claude-1` | `:12779-12818` |
-| 7.4 | `SessionPicker` | Shell + ListPicker, 4 phases (`backend · loading · error · list`) | `// claude-code sessions` | `:12820-12894` |
-| 7.5 | `TicketPicker` | Shell + TabStrip + filter + ListPicker + ActionButton row | `local tickets + GitHub   target: codex-1 · idle` | `harness-ticket-controller.ts:678-783` |
-| 7.6 | `RemotePicker` | Shell + ListPicker | `remote harness` | `remote-harness-picker.ts:69-170` |
-| 7.7 | `TriageOverlay` | Shell + Card(judgement) + StatList + KeyHintBar | `Judgement queue    2 / 5` | `attention-overlay.ts:59-198` |
-| 7.8 | `ReviewMatrixOverlay` | Shell + TabStrip + table + KeyHintBar | `Review quality matrix` | `acp-harness-view.ts:5297-5480`. **Deletes the inline-style findings block** (`:5434-5480`, no classes today) |
-| 7.9 | `ReviewPriorityOverlay` | Shell + TabStrip + grouped rows + KeyHintBar | `Review priority` | `review-priority-overlay.ts:35-128` |
-| 7.10 | `OrchestratorConsole` | Shell + seat card grid + feed + dispatch form | `orchestrator · seat codex-1` | `acp-harness-view.ts:5741-5999`. **Deletes the per-keystroke full `innerHTML`** (`:5806` rebuilt at `:6128-6134,6159-6165`) |
-| 7.11 | `MemoryDrawer` | Shell + ListPicker | `Memory` | `acp-harness-view.ts:13143-13188` |
-| 7.12 | `HelpOverlay` | Shell + KeyHintBar grid | `// help` | `acp-harness-view.ts:13625+` |
-| 7.13 | `MetricsOverlay` | Shell + per-lane `Meter` rows (process tree) | `Process  PID  CPU  Mem` | `acp-harness-view.ts:13573-13612` + `harness-lane-chrome.ts:146-303` |
-| 7.14 | `ImageViewer` | Shell (full-bleed) | `image viewer · n/p next · =/- zoom · 0 fit · 1 100% · o open · Esc close` | `harness-image-viewer.ts:53-71+` |
-| 7.15 | `TimelineCapture` | Shell + form + ActionButton row | `หัวข้อที่น่าจะตรง · … · confidence 87%` | `timeline-capture.ts:90-430` |
-| 7.16 | `ReviewThreadDialog` | Shell + preview `<pre>` + ActionButton row | `Start Review · Enter` / `Cancel · Esc` | `acp-harness-view.ts:3110-3170` |
+| # | Component | Composition | Example UI (head line) | Replaces | SVG render |
+|---|---|---|---|---|---|
+| 7.1 | `LanePicker` | Shell + ListPicker | `// add lane · directive: 0301-impl` | `acp-harness-view.ts:12669-12712` | <img src="./images/harness-components/7.1-lanepicker.svg" width="320" alt="Visual design render of LanePicker"> |
+| 7.2 | `DirectivePicker` | Shell + ListPicker + preview pane | `// directive · claude-1` | `:12715-12777` | <img src="./images/harness-components/7.2-directivepicker.svg" width="320" alt="Visual design render of DirectivePicker"> |
+| 7.3 | `ModelPicker` | Shell + ListPicker | `// model · claude-1` | `:12779-12818` | <img src="./images/harness-components/7.3-modelpicker.svg" width="320" alt="Visual design render of ModelPicker"> |
+| 7.4 | `SessionPicker` | Shell + ListPicker, 4 phases (`backend · loading · error · list`) | `// claude-code sessions` | `:12820-12894` | <img src="./images/harness-components/7.4-sessionpicker.svg" width="320" alt="Visual design render of SessionPicker"> |
+| 7.5 | `TicketPicker` | Shell + TabStrip + filter + ListPicker + ActionButton row | `local tickets + GitHub   target: codex-1 · idle` | `harness-ticket-controller.ts:678-783` | <img src="./images/harness-components/7.5-ticketpicker.svg" width="320" alt="Visual design render of TicketPicker"> |
+| 7.6 | `RemotePicker` | Shell + ListPicker | `remote harness` | `remote-harness-picker.ts:69-170` | <img src="./images/harness-components/7.6-remotepicker.svg" width="320" alt="Visual design render of RemotePicker"> |
+| 7.7 | `TriageOverlay` | Shell + Card(judgement) + StatList + KeyHintBar | `Judgement queue    2 / 5` | `attention-overlay.ts:59-198` | <img src="./images/harness-components/7.7-triageoverlay.svg" width="320" alt="Visual design render of TriageOverlay"> |
+| 7.8 | `ReviewMatrixOverlay` | Shell + TabStrip + table + KeyHintBar | `Review quality matrix` | `acp-harness-view.ts:5297-5480`. **Deletes the inline-style findings block** (`:5434-5480`, no classes today) | <img src="./images/harness-components/7.8-reviewmatrixoverlay.svg" width="320" alt="Visual design render of ReviewMatrixOverlay"> |
+| 7.9 | `ReviewPriorityOverlay` | Shell + TabStrip + grouped rows + KeyHintBar | `Review priority` | `review-priority-overlay.ts:35-128` | <img src="./images/harness-components/7.9-reviewpriorityoverlay.svg" width="320" alt="Visual design render of ReviewPriorityOverlay"> |
+| 7.10 | `OrchestratorConsole` | Shell + seat card grid + feed + dispatch form | `orchestrator · seat codex-1` | `acp-harness-view.ts:5741-5999`. **Deletes the per-keystroke full `innerHTML`** (`:5806` rebuilt at `:6128-6134,6159-6165`) | <img src="./images/harness-components/7.10-orchestratorconsole.svg" width="320" alt="Visual design render of OrchestratorConsole"> |
+| 7.11 | `MemoryDrawer` | Shell + ListPicker | `Memory` | `acp-harness-view.ts:13143-13188` | <img src="./images/harness-components/7.11-memorydrawer.svg" width="320" alt="Visual design render of MemoryDrawer"> |
+| 7.12 | `HelpOverlay` | Shell + KeyHintBar grid | `// help` | `acp-harness-view.ts:13625+` | <img src="./images/harness-components/7.12-helpoverlay.svg" width="320" alt="Visual design render of HelpOverlay"> |
+| 7.13 | `MetricsOverlay` | Shell + per-lane `Meter` rows (process tree) | `Process  PID  CPU  Mem` | `acp-harness-view.ts:13573-13612` + `harness-lane-chrome.ts:146-303` | <img src="./images/harness-components/7.13-metricsoverlay.svg" width="320" alt="Visual design render of MetricsOverlay"> |
+| 7.14 | `ImageViewer` | Shell (full-bleed) | `image viewer · n/p next · =/- zoom · 0 fit · 1 100% · o open · Esc close` | `harness-image-viewer.ts:53-71+` | <img src="./images/harness-components/7.14-imageviewer.svg" width="320" alt="Visual design render of ImageViewer"> |
+| 7.15 | `TimelineCapture` | Shell + form + ActionButton row | `หัวข้อที่น่าจะตรง · … · confidence 87%` | `timeline-capture.ts:90-430` | <img src="./images/harness-components/7.15-timelinecapture.svg" width="320" alt="Visual design render of TimelineCapture"> |
+| 7.16 | `ReviewThreadDialog` | Shell + preview `<pre>` + ActionButton row | `Start Review · Enter` / `Cancel · Esc` | `acp-harness-view.ts:3110-3170` | <img src="./images/harness-components/7.16-reviewthreaddialog.svg" width="320" alt="Visual design render of ReviewThreadDialog"> |
 
 ---
 
@@ -772,7 +853,7 @@ HarnessView
 | 5 — right rail | 8 | 8 builders + 3 `patch*` functions |
 | 6 — composer | 8 | `renderComposer` (40 call sites), `renderDecisionComposer`, the 1 Hz rebuild |
 | 7 — overlays | 16 | 16 shells, 14 `innerHTML` sites |
-| **Total** | **71** | **58 `innerHTML` sites → 0 outside `Card`/markdown bodies** |
+| **Total** | **71** | **35 `innerHTML` sites in `acp-harness-view.ts`, 58 across `src/acp/*.ts` → 0 outside `Card`/markdown bodies** |
 
 # Packaging, style ownership, and theming
 
@@ -809,8 +890,8 @@ as a custom property with a fallback chain:
 }
 ```
 
-Level 2 is already live — `theme.ts:455-491` derives 36 `--agent-*` tokens from the active theme and
-`setCssProperties` (`:608-617`) writes them onto `document.documentElement`, so `set_theme` and
+Level 2 is already live — `theme.ts:456-490` derives 32 `--agent-*` tokens from the active theme and
+`setCssProperties` (`:609-619`) writes all 151 properties onto `document.documentElement`, so `set_theme` and
 **Reload Config** already repaint components with no restart. Level 3 is the hook; who may set it is
 [spec 303](./0303-themeable-component-tokens.md).
 
@@ -821,14 +902,14 @@ Three ⚠ collisions must be resolved during the split, or isolation is a lie:
 
 | ⚠ | Today | After |
 |---|---|---|
-| `Card` / `DocCardRow` | review card paints into `acp-harness__artifact-head` (`harness-tool-render.ts:729-775`) | review card gets `acp-harness__review-card` + its own sheet |
-| `InlinePalette` ×4 | one class, no discriminator; its rules are declared twice (`acp-harness.css:5604-5699` ≡ `:5815-5910`, byte-identical) | one block + `data-palette`; duplicate deleted |
+| `Card` / `DocCardRow` | review card paints into `acp-harness__artifact-head` (`harness-tool-render.ts:729-770`) | review card gets `acp-harness__review-card` + its own sheet |
+| `InlinePalette` ×4 | one class, no discriminator; its rules sit in a byte-identical 99-line span declared twice (`acp-harness.css:5601-5699` ≡ `:5812-5910`) | one block + `data-palette`; duplicate deleted |
 | `Caret` ×3 | shared class with no owner; attention overlay forked it as `acp-triage__caret` | one `Caret` component with a `glyph` prop; fork deleted |
 
-The same duplicated span also re-declares `.acp-harness__fs-activity` — one `diff` over `:5604-5699` vs
-`:5815-5910` reports a single changed line, a comment. Also deleted during the split:
+The same duplicated span also re-declares `.acp-harness__fs-activity` (`:5659` / `:5870`); `diff` over
+`:5601-5699` vs `:5812-5910` reports no differences at all. Also deleted during the split:
 the three CSS files whose own first comment says they mirror another shell (`review-quality.css:1-5`,
-`review-priority.css:1-6`, `orchestrator-console.css:1-5`) once `OverlayShell` owns that markup.
+`review-priority.css:1-6`, `orchestrator-console.css:3-4`) once `OverlayShell` owns that markup.
 
 # Explicitly not components
 

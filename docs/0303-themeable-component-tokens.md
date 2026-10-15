@@ -9,7 +9,7 @@
 ## Problem
 
 A theme can recolour the whole app but cannot touch one component. `FullTheme`
-(`src-tauri/src/theme.rs:21-30`) is a closed struct — `colors`, `chrome`, `focused`, `workspace`, `ui` — so
+(`src-tauri/src/theme.rs:21-32`) is a closed struct — `name`, `meta`, `colors`, `chrome`, `focused`, `workspace`, `ui` — so
 a custom theme in `~/.config/krypton/themes/*.toml` has no way to say "make the tool card's head amber".
 Every component-level appearance decision therefore has to be hard-coded in a stylesheet shipped with the
 app, which is why `src/styles/theme-scheme.css` grew **54 selectors reaching into harness internals**
@@ -26,21 +26,28 @@ Add one optional free-form table to the theme TOML:
 "acp-peek-accent"       = "var(--agent-cyan)"
 ```
 
-Each entry becomes a `--<key>` custom property on `document.documentElement`, applied **after** the ~120
+Each entry becomes a `--<key>` custom property on `document.documentElement`, applied **after** the 151
 built-in properties so it wins, and resolved by the component that declares the matching
-`var(--acp-…, var(--agent-…, <literal>))` chain from spec 301. Overriding one reaches that component's
-subtree and nothing else, because custom properties inherit downward only.
+`var(--acp-…, var(--agent-…, <literal>))` chain from spec 301.
+
+**Where the isolation actually comes from.** Tokens are set at the document root, so they are *visible*
+everywhere; what scopes them is that exactly one component's rules reference the name. Isolation is a
+naming contract, not an inheritance property — and it is only as strong as the convention. Two components
+referencing the same `--acp-*` name share it, which is a real possibility for the `block`-parameterised
+primitives in spec 302 (`Chip`, `Card`, `EmptyState`). The per-element precedent
+(`style.setProperty('--acp-lane-accent', …)`) is element-scoped and genuinely isolated; this is not the
+same mechanism, and the spec does not claim it is.
 
 No new command, no new keybinding: themes already apply live through the existing palette **Color Theme**
 (`set_theme`) and **Reload Config** paths.
 
 ## Research
 
-- **The token layer already exists and is already themed.** `theme.ts:329-493` builds the property record,
-  including **36 `--agent-*` tokens** derived from the active theme ("DESIGN.amber structure, color from the
-  active theme", `:455`), and `setCssProperties` (`:608-617`) writes every entry onto
-  `document.documentElement` with `root.setProperty(name, value)`. Appending a user map to that record is a
-  three-line change on the frontend.
+- **The token layer already exists and is already themed.** `theme.ts:329-509` builds the property record
+  (**151** entries), including **32 `--agent-*` tokens** derived from the active theme ("DESIGN.amber
+  structure, color from the active theme", `:455`) and 17 `--vault-*` tokens (`:493-509`); `setCssProperties`
+  (`:609-619`) writes every entry onto `document.documentElement` with `root.setProperty(name, value)`.
+  Appending a user map to that record is a three-line change on the frontend.
 - **The schema is the blocker, not the pipeline.** `FullTheme` has no `HashMap`; serde rejects nothing but
   also surfaces nothing. `#[serde(default)]` on a new field keeps all existing themes valid — the three
   built-ins (`krypton-dark`, `krypton-light`, `legacy-radiance`) and any user file simply omit it.
@@ -75,9 +82,9 @@ inert: a theme written for a newer Krypton must not fail to load on an older one
 | File | Change |
 |------|--------|
 | `src-tauri/src/theme.rs` | `pub tokens: HashMap<String, String>` on `FullTheme`, `#[serde(default)]`; validate and drop bad entries at load with a `warn!`. |
-| `src/theme.ts` | After `themeCssProperties()` builds the record, merge `theme.tokens` with the `--` prefix; `setCssProperties` is unchanged. |
+| `src/theme.ts` | After `themeCssProperties()` builds the record, merge `theme.tokens` with the `--` prefix. **`setCssProperties` changes**: it tracks the user-token key set it last applied and `removeProperty`s the difference before writing the new set (see Edge Cases). |
 | `src/types.ts` (frontend `FullTheme`) | Mirror the optional `tokens` field. |
-| `docs/0006-configuration.md` | Document `[tokens]`, the naming rule, and the rejection list. |
+| `docs/0006-configuration.md` | Document `[tokens]`, the key charset rule, and the value allowlist. |
 | `docs/0010-theme-specification.md` | Add `[tokens]` to the theme file reference. |
 | `src/theme.test.ts` | Known key applied; unknown key applied and inert; rejected value dropped without affecting siblings. |
 | `src-tauri/src/theme.rs` tests | Missing table defaults to empty; invalid key/value dropped, rest of the theme loads. |
@@ -105,8 +112,20 @@ pub struct FullTheme {
 ### Validation (Rust, at load)
 
 A key is kept only if it matches `^[a-z][a-z0-9-]{0,63}$`.
-A value is kept only if it is ≤ 256 chars and contains none of `;` `}` `{` `<` `@import` `url(`
-`expression(` `image-set(` `--import`.
+
+Values are filtered by **allowlist, after normalisation** — a substring denylist is the wrong shape here:
+
+1. Reject if length > 256.
+2. CSS-unescape the value, then lowercase it. Both steps are required: CSS function names are ASCII
+   case-insensitive (`URL(…)` passes a `contains("url(")` test), and CSS identifiers accept escapes
+   (`\75 rl(https://…)` is a valid `url()` token containing none of the obvious substrings).
+3. Accept only if every function token in the normalised value is in the allowlist:
+   `var rgb rgba hsl hsla color-mix color oklch lab calc clamp min max env`.
+   Everything else — `url`, `image`, `image-set`, `-webkit-image-set`, `cross-fade`, `element`,
+   `expression`, `attr` — is rejected. An allowlist closes the fetch surface, which is wider than `url()`.
+4. `;` `}` `{` `@import` are **not** the control. `CSSStyleDeclaration.setProperty` parses one declaration
+   value in isolation and cannot be broken out of; filtering them buys nothing and is dropped.
+
 Rejected entries are dropped individually with `warn!("theme token rejected: {key}")`; the theme still
 loads. A theme can therefore never break startup, and never cause a network fetch.
 
@@ -120,7 +139,8 @@ for (const [key, value] of Object.entries(theme.tokens ?? {})) {
 ```
 
 Order matters and is deliberate: user tokens are merged **last**, so `--agent-text` set in `[tokens]` beats
-the derived one. `setCssProperties` (`:608-617`) then writes the merged record unchanged.
+the derived one. `setCssProperties` (`:609-619`) then writes the merged record, after removing the user
+token names it applied for the previous theme (see Edge Cases — this is the one change to that method).
 
 ### Data Flow
 
@@ -161,12 +181,13 @@ only the subtrees that reference the changed property — which is exactly the i
   fallback, which spec 301 requires every chain to have.
 - **Circular reference** (`a: var(--b)`, `b: var(--a)`) — CSS resolves both to the guaranteed-invalid value
   and the fallback applies. No loop, no crash.
-- **Value tries to fetch** (`url(http://…)`) — rejected at load by the value filter, with a `warn!`.
-- **Theme file from a newer Krypton** — unknown keys are inert; the theme loads.
-- **Theme switched at runtime** — `setCssProperties` rewrites the whole record, so a token present in the
-  old theme and absent in the new one is not left behind only if the record is *replaced*, not merged.
-  `setCssProperties` must therefore clear previously-applied user token names before writing the new set;
-  the built-in names are always present so they need no clearing.
+- **Value tries to fetch** (`url(http://…)`, `URL(…)`, `\75 rl(…)`, `image-set(…)`) — rejected at load by
+  the normalised function allowlist, with a `warn!`.
+- **Theme switched at runtime — stale tokens.** `setProperty` never removes, so a token present in the old
+  theme and absent in the new one would survive until restart and render the new theme wrong. The engine
+  therefore keeps `appliedTokenKeys: Set<string>` from the previous apply and calls `removeProperty` on
+  every key not in the new set, before writing. The ~151 built-in names are always present in every
+  record, so they need no clearing — only user tokens do. This is the single change to `setCssProperties`.
 - **Remote (ssh) harness** — themes are local presentation state; unchanged.
 
 ## Open Questions

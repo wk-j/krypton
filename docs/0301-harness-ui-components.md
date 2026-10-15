@@ -16,10 +16,11 @@ The evidence that this is structural, not incidental:
 
 - `docs/0114-acp-harness-streaming-perf.md` carries **24 numbered revisions**, every one a repaint or
   scroll regression.
-- **14 of the last 131 commits (≈11%)** are harness repaint fixes (`.git/logs/HEAD`, 2026-09-09→10-15):
-  `drop streaming class when sealing assistant reply`, `preserve thought DOM when streaming ends`,
-  `avoid dashboard remount on ticket reload`, `patch only the REFERENCES rail on Git refresh`,
-  `skip composer rebuild on a plain transcript click`, `rebuild Review Board cards when hint labels change`, …
+- **10 of the 126 commits in `.git/logs/HEAD` (2026-09-09→10-15)** are harness repaint fixes — 13 on the
+  most generous reading. Subjects: `drop streaming class when sealing assistant reply`,
+  `preserve thought DOM when streaming ends`, `avoid dashboard remount on ticket reload`,
+  `patch only the REFERENCES rail on Git refresh`, `skip composer rebuild on a plain transcript click`,
+  `rebuild Review Board cards when hint labels change`, …
 - `CLAUDE.md:82-86` dedicates architecture constraint 10 to it, stating verbatim "*this regression
   recurred several times*".
 - `acp-harness-view.ts:825-859` ships `installLaneBodyScrollTracer()`, a **dev-build monkey-patch of
@@ -27,28 +28,31 @@ The evidence that this is structural, not incidental:
   a prototype trap shipped to hunt the view's own repaint bug (issue #17, writer never identified).
 
 Underneath: `render()` (`acp-harness-view.ts:11822`) is **synchronous with 97 call sites** and begins with
-`dashboardEl.innerHTML = ''` (`:12917`), which is why 13 event cases carry a hand-set `needsRender = false`
-(`:8077-8275`) and why `renderDashboard` must detach/reattach the lane body and write `prevScrollTop` back
-by hand (`:12896-12916`). There is no component boundary anywhere: 58 `innerHTML =` sites, ~25 render
-surfaces, three rendering idioms (HTML strings, `createElement`, ViewModel + `createElement`), and three
-selection-state conventions coexist.
+`dashboardEl.innerHTML = ''` (`:12917`), which is why **17 `needsRender = false` assignments across 12 event
+cases** sit in the event switch (`:8091-8274`) and why `renderDashboard` must capture the lane body's
+`scrollTop` before detaching it (`:12908-12915`) and write it back after reattachment (`:13001-13006`).
+There is no component boundary anywhere: **35 `innerHTML =` sites in this file (58 across `src/acp/*.ts`)**,
+~25 render surfaces, three rendering idioms (HTML strings, `createElement`, ViewModel + `createElement`),
+and three selection-state conventions coexist.
 
 ## Solution
 
 Add a ~260-line generic component kernel at `src/ui/` — `Component` (own a node, update in place, dispose),
 `reconcile()` (one keyed list diff), `RenderScheduler` (region invalidation), `el()` (typed element
-builder) — then convert the harness surfaces to components in five phases.
+builder), `LayoutHost` (declarative placement) — then convert the harness surfaces to components over
+seven phases (0–6).
 
 Two mechanisms replace the hand-maintained scar tissue:
 
-1. **Props equality replaces the signature string.** A component's default change test is a shallow
-   compare of its own props object; components reading a mutable payload override a local `deps()` tuple
-   sitting next to the `paint()` it guards. `transcriptRenderSignature()` (130 lines, 1,000 lines away
-   from the renderer it mirrors) is deleted.
-2. **`LiveComponent` makes the seal a single method.** While `live`, a row refuses structural repaint and
-   accepts only `appendChunk()`. `seal()` is the one place that flips live→static, drops
-   `acp-harness__msg--streaming`, and re-syncs deps. Constraint 10 becomes unforgettable instead of
-   documented.
+1. **Props equality replaces the signature string.** Every component declares `readDeps()` — a small tuple
+   of the values its `paint()` reads — next to the `paint()` it guards. The method is **abstract**: the
+   compiler forces each component to state its dependency set, rather than inheriting a default that is
+   wrong for every payload the harness mutates in place. `transcriptRenderSignature()`
+   (`harness-transcript-render.ts:455-585`, 131 lines, 1,000 lines from the renderer it mirrors) is deleted.
+2. **`LiveComponent` makes the seal a single method.** A live row still takes structural updates, but
+   `seal()` is the one place that flips live→static: it re-derives every wrapper class from state (so
+   `acp-harness__msg--streaming` cannot be left behind) and re-syncs deps in the same call. Constraint 10
+   becomes unforgettable instead of documented.
 
 ## Research
 
@@ -56,20 +60,25 @@ Two mechanisms replace the hand-maintained scar tissue:
 (`harness-tool-retention.ts:140-159`) returns a **fresh object** per update but **preserves array identity**
 for `sections`/`diffs` when the update carried no output (`:155-156`). So a 10-element identity tuple
 `[statusBucket, kind, subject, command, result, exitCode, sections, diffs, subagents, expandedKey]` is both
-*cheaper* (10 `Object.is`) and *more accurate* than today's string, which builds ~0.5–1.5 KB per tool row
-per pass via eight `.map().join()` calls (`harness-transcript-render.ts:472-487`).
+*cheaper* (10 `Object.is`) and *more accurate* than today's string, which rebuilds a joined string per tool
+row per pass from 3 `.map()` + 4 `.join()` calls in the tool block alone
+(`harness-transcript-render.ts:472-488`; 7 `.map()` across the whole function). No byte-size measurement
+exists in the repo — the claim here is operation count, not bytes.
 
 **Scroll damage is caused by container wipes, not by bad save/restore.** `docs/0095` states it directly:
 "*A render path that calls `innerHTML = ''` on a container holding scrollable state is hostile to scroll
-preservation, no matter how careful the save/restore code is.*" A `LaneShell` component is constructed once
-and updated in place, so the body node is never detached — the `prevScrollTop` dance at `:12896-12916` and
-the 2 s "transcript yanks itself back" symptom disappear by construction rather than by rescue code.
+preservation, no matter how careful the save/restore code is around it.*" A `LaneShell` component is
+constructed once and updated in place, so the body node is never detached — the two-part `prevScrollTop`
+dance (capture `:12908-12915`, write-back `:13001-13006`) and the 1 Hz "transcript yanks itself back"
+symptom disappear by construction rather than by rescue code.
 
 **The duplication is already admitted in comments.** `review-quality.css:1-5` "Mirrors the attention-triage
 overlay shell"; `review-priority.css:1-6` "Mirrors the review-quality overlay shell";
-`orchestrator-console.css:1-5` "Mirrors the harness overlay shell"; `acp-harness.css:3555,3566,3582,3601`
-"Mirrors `.acp-harness__tool-head`" ×4. `acp-harness.css` contains literally duplicated rule blocks
-(`.acp-harness__slash-palette` at `:5604` **and** `:5815`; `.acp-harness__fs-activity` at `:5660` **and** `:5871`).
+`orchestrator-console.css:3-4` "Mirrors the harness overlay shell"; and four mirror comments on the tool
+head family — `acp-harness.css:3555` mirrors `.acp-harness__tool-head`, `:3566` `tool-glyph`, `:3582`
+`tool-kind`, `:3601` `tool-subject`. `acp-harness.css` also contains a **byte-identical 99-line span
+declared twice**: `:5601-5699` ≡ `:5812-5910`, covering `.acp-harness__slash-palette` (`:5604`/`:5815`)
+and `.acp-harness__fs-activity` (`:5659`/`:5870`).
 
 **Alternatives ruled out:**
 
@@ -81,8 +90,10 @@ overlay shell"; `review-priority.css:1-6` "Mirrors the review-quality overlay sh
   its DOM between parts and owns its own update timing; we need the node handle.
 - **Bigger extraction instead of components** — already tried twice. Spec 204 moved ten helper modules out
   (16,020 → 12,032 lines) and spec 275 extracted three controllers (16,665 → 15,045). The file is back at
-  **16,377** lines because neither touched the render contract: `HarnessViewHost` still exposes a bare
-  `render(): void` (`harness-view-host.ts`), so every controller's only vocabulary is "repaint everything".
+  **16,377** lines because neither touched the render contract: five of the six host interfaces in
+  `harness-view-host.ts` expose a bare `render(): void` (`:36, :47, :67, :107, :123` — the base
+  `HarnessViewHost` at `:17-22` has only `element`, `lanes`, `activeLaneId`, `flashChip`), so every
+  controller's only vocabulary is "repaint everything".
 
 ## Prior Art
 
@@ -108,20 +119,21 @@ breaking.
 |------|--------|
 | `src/ui/component.ts` *(new, ~90)* | `Component<P>`, `LiveComponent<P>`, shallow/deps equality, `DisposableBag`. |
 | `src/ui/list.ts` *(new, ~70)* | `reconcile(container, items, spec)` — keyed, order-preserving, live-aware. |
-| `src/ui/scheduler.ts` *(new, ~60)* | `RenderScheduler<R>`: `invalidate(region)`, `invalidateAll()`, `flushSync()`. |
+| `src/ui/scheduler.ts` *(new, ~60)* | `RenderScheduler<R>`: `invalidate(region)`, `invalidateAll()`, `flushSync(region)`. |
 | `src/ui/dom.ts` *(new, ~40)* | `el()`, `frag()`, `classes()`. No template-literal engine. |
 | `src/ui/layout.ts` *(new, ~70)* | `LayoutHost` + `Slot`: named placement containers and the declarative `HarnessLayout` table that says which slot each panel mounts into, and in what order. |
 | `src/acp/components/<name>/` *(new, ~70 directories)* | One self-contained component each: `index.ts` (class + `ComponentDef`, imports its own CSS), `<name>.css` (its block + its `krypton.scheme` overrides), `<name>.test.ts`. Covers the 12 primitives, the 18 transcript rows, lane chrome, right rail, composer parts and overlays. |
 | `src/acp/components/registry.ts` *(new)* | `HARNESS_COMPONENTS` — one import + one array entry per component. |
 | `src/acp/harness-transcript-render.ts` | `renderTranscriptItem` → per-kind components; **`transcriptRenderSignature` deleted**. |
 | `src/acp/acp-harness-view.ts` | `render()`/`renderDashboard()`/`renderActiveTranscript()`/`renderComposer()`/5 pickers/4 palettes replaced by component ownership + `invalidate()`. The 8 copied cursor handlers and 4 copied palette handlers are deleted. |
-| `src/acp/harness-view-host.ts` | `render(): void` → `invalidate(region: HarnessRegion): void`. |
+| `src/acp/harness-view-host.ts` | The bare `render(): void` on all **five** derived host interfaces (`:36, :47, :67, :107, :123`) → `invalidate(region: HarnessRegion): void`; the base `HarnessViewHost` (`:17-22`) is unchanged. |
 | `src/acp/harness-tool-render.ts`, `lane-peek.ts`, `harness-lane-chrome.ts`, `attention-overlay.ts`, `review-priority-overlay.ts`, `harness-ticket-controller.ts`, `remote-harness-picker.ts` | String builders → components; `patch*` functions become component methods. |
-| `src/styles/acp-harness.css` + 4 harness CSS files | 7,101 lines / 988 `.acp-harness` selectors redistributed into the component directories; the two duplicated rule blocks (`:5604-5699` ≡ `:5815-5910`) and the three "Mirrors …" shells deleted. |
+| `src/styles/acp-harness.css` + 4 harness CSS files | 7,101 lines / 988 top-level `.acp-harness` selectors redistributed into the component directories; the byte-identical duplicate span (`:5601-5699` ≡ `:5812-5910`) and the three "Mirrors …" shells deleted. |
 | `src/styles/index.css` | Gains the `@layer krypton.base, krypton.component, krypton.scheme, krypton.theme;` declaration; **loses** harness `@import` lines (component sheets now load from their own module). `theme-scheme.css` stays last. |
 | `src/styles/theme-scheme.css` | Its 54 harness selectors move into the owning components' `krypton.scheme` layer; non-harness rules unchanged. |
-| `src/acp/components/styles-ownership.test.ts` *(new)* | A component sheet may only declare selectors for its own block, and only inside a `krypton.*` layer. |
+| `src/acp/components/styles-ownership.test.ts` *(new)* | A component sheet may only declare selectors for the blocks its directory exports, and only inside a `krypton.*` layer. |
 | `src/acp/acp-harness-view.test.ts` and 5 sibling tests | Source-text regex assertions re-expressed as DOM behaviour tests (see Testing). |
+| `package.json`, `vite.config.ts` | Phase 0: add `happy-dom` and `test.environmentMatchGlobs` for `src/acp/components/**` and `src/ui/**`. Everything else keeps the `node` environment. |
 
 ## Design
 
@@ -140,28 +152,49 @@ export abstract class Component<P> {
     this.deps = d;
     this.paint(next);
   }
-  /** Default: shallow values of `next`. Override only for mutable payloads. */
-  protected readDeps(next: P): readonly unknown[] { return Object.values(next as object); }
+  /** ABSTRACT on purpose: every component must state the values its paint() reads.
+   *  A convenience default (`Object.values(next)`) would be reference equality over
+   *  props, which is wrong for every payload the harness mutates in place — and its
+   *  failure mode (a silently stale row) is exactly what forgetting a field in
+   *  `transcriptRenderSignature` does today. The compiler forces the decision. */
+  protected abstract readDeps(next: P): readonly unknown[];
   protected abstract paint(next: P): void;
+  /** Re-derive every class this component's state implies. Called by paint() and,
+   *  critically, by LiveComponent.seal() — so no transition can leave a stale class. */
+  protected abstract syncClasses(next: P): void;
   dispose(): void { this.bag.dispose(); }
 }
 
 /** A row the agent is still writing into. */
 export abstract class LiveComponent<P> extends Component<P> {
   private live = true;
-  update(next: P): void { if (this.live) this.appendChunk(next); else super.update(next); }
+  /** Live rows still take structural updates — only the TEXT the agent is appending
+   *  is owned by appendChunk(). A tool row's status, exit code and expand state must
+   *  keep painting while it runs (today: the signature-mismatch branch at
+   *  `acp-harness-view.ts:12213-12223`). */
+  update(next: P): void {
+    super.update(next);                       // deps compare → paint() if structure changed
+    if (this.live) this.appendChunk(next);    // then the append-only text/output tail
+  }
   protected abstract appendChunk(next: P): void;
   protected abstract onSeal(): void;
-  /** The ONLY live→static transition. Drops the streaming class and re-syncs deps. */
+  /** The ONLY live→static transition. Re-derives classes from state (which is how
+   *  `acp-harness__msg--streaming` goes away — never by name), then re-syncs deps so
+   *  the next pass is a no-op. */
   seal(next: P): void {
     if (!this.live) return;
     this.live = false;
-    this.el.classList.remove('acp-harness__msg--streaming');
-    this.onSeal();
+    this.onSeal();                  // drain parser / cache markdown / keep body node identity
+    this.syncClasses(next);         // state-derived, so no class can be left behind
     this.resync(next);              // store deps WITHOUT painting
   }
 }
 ```
+
+`seal()` is called from the paths that end a turn — `sealStreaming`, `sealStreamingTextRow` and
+`sealAssistantStreamingMarkdown` (`acp-harness-view.ts:14393,14457,14491`) — and, for tool and subagent
+rows, from the terminal-status transition in `ToolRow.update()`. Those are the only callers; no scheduler
+region is invalidated by a seal, which is constraint 10's third sub-rule.
 
 ```ts
 // src/ui/list.ts — the generalised transcript diff loop
@@ -183,9 +216,14 @@ export function reconcile<T, C extends Component<unknown>>(
 // src/ui/scheduler.ts
 export class RenderScheduler<R extends string> {
   constructor(order: readonly R[], commit: (region: R) => void);
-  invalidate(region: R): void;   // coalesced into one rAF, committed in `order`
+  invalidate(region: R): void;      // coalesced into one rAF, committed in `order`
   invalidateAll(): void;
-  flushSync(): void;             // same-frame commit for keystroke paths
+  /** Commit ONE region now and leave the rest pending. Scoped on purpose: a
+   *  keystroke must not synchronously drag a pending 'transcript' commit — a full
+   *  tail-window reconcile — into the same frame, which is the common case while a
+   *  lane is busy and exactly when `pinStickyAfterComposerKey` matters (constraint 8,
+   *  keypress-to-render < 16ms). Today a keystroke calls `renderComposer()` only. */
+  flushSync(region: R): void;
 }
 ```
 
@@ -257,8 +295,10 @@ coarser control than, and independent of, slot placement.
 7. Transcript restores the anchor and applies sticky scroll
 ```
 
-Keystrokes keep today's timing exactly: `setDraft()` → `invalidate('composer')` → `flushSync()` →
-`pinStickyAfterComposerKey()`, preserving the ordering asserted at `acp-harness-view.test.ts:2058-2094`.
+Keystrokes keep today's timing exactly: `setDraft()` → `invalidate('composer')` → `flushSync('composer')`
+→ `pinStickyAfterComposerKey()`, preserving the ordering asserted at `acp-harness-view.test.ts:2058-2094`.
+A pending `'transcript'` commit stays pending until its rAF, so a keypress during streaming costs one
+composer paint, as it does today.
 
 Turn end: `stop` → `AssistantRow.seal(props)` → no `render()`, no `renderActiveLane()` (constraint 10c),
 because the scheduler is never invalidated by the seal.
@@ -277,9 +317,9 @@ compliance and constraint 9 (no corner brackets) are untouched.
 | Leak | Evidence |
 |---|---|
 | One block covers the whole view | `src/styles/acp-harness.css` is 7,101 lines declaring **988 top-level `.acp-harness` selectors**. `acp-harness` is a namespace, not a component, so there is no boundary to scope a change to. |
-| Two components share one class | `renderReviewCardBody` paints into `acp-harness__artifact-head` (`harness-tool-render.ts:729-775`) — restyling the artifact card silently restyles the Review Board card. |
-| Four components share one class | all four inline palettes emit `acp-harness__slash-palette` (`harness-lane-chrome.ts:443`, `acp-harness-view.ts:4468,4563,4674`) — the mention palette cannot be changed without changing `/`, `#` and `{{#`. |
-| A rule block is declared twice | `.acp-harness__slash-palette…` at `:5604-5700` **and** `:5815-5911`, byte-identical except one comment; same for `.acp-harness__fs-activity`. Editing the first copy has no effect — the second wins. |
+| Two components share one class | `renderReviewCardBody` paints into `acp-harness__artifact-head` (`harness-tool-render.ts:729-770`) — restyling the artifact card silently restyles the Review Board card. |
+| Four components share one class | all four inline palettes emit `acp-harness__slash-palette` (`harness-lane-chrome.ts:457`, `acp-harness-view.ts:4473,4583,4665`) — the mention palette cannot be changed without changing `/`, `#` and `{{#`. |
+| A rule block is declared twice | a **byte-identical 99-line span** sits at `:5601-5699` **and** `:5812-5910`, covering `.acp-harness__slash-palette` and `.acp-harness__fs-activity`. Editing the first copy has no effect — the second wins. |
 | Shared leaf with no owner | `acp-harness__caret` is emitted by three unrelated components — the composer draft line, the dictation preview and the ticket picker's filter (`acp-harness-view.ts:13257`, `harness-dictation-controller.ts:50`, `harness-ticket-controller.ts:758`) — and queried by a fourth (`harness-composer-bloom.ts:156,176`). The attention overlay needed a different caret and forked it instead of parameterising: `acp-triage__caret` (`attention-overlay.ts:120`, `attention-triage.css:274`). |
 | Theming reaches into component internals | `src/styles/theme-scheme.css` carries **54 selectors** naming harness blocks (`:139` onward). A component's light-mode appearance is defined 357 lines away in a global file, and deleting the component leaves the override behind. |
 
@@ -298,8 +338,18 @@ The CSS is imported **from the component's own module**, not from a central mani
 three views in this repo load their sheets (`src/live-assist-main.ts:12`, `src/diff-view.ts:7-8`,
 `src/markdown-view.ts:7`). Deleting the directory removes its rules from the bundle automatically — there is
 no `src/styles/index.css` line to remember, which is the whole point of "easy to remove".
-A `styles-ownership.test.ts` asserts a component sheet only declares selectors for its own block, following
-the CSS-reading test convention already used at `acp-harness-view.test.ts:312,847,2161,2191`.
+A `styles-ownership.test.ts` asserts a component sheet only declares selectors for the blocks that
+component owns, following the CSS-reading test convention already used at
+`acp-harness-view.test.ts:312,847,2161,2191`.
+
+**Ownership is declared, not derived from the directory name.** Eight primitives take `block` as a prop and
+therefore own no block of their own — `Chip` emits ten classes across three namespaces, `EmptyState` nine,
+and `Card`, `OverlayShell`, `ListPicker`, `TabStrip`, `KeyHintBar`, `StatList` are all parameterised. Each
+component directory therefore exports `blocks: readonly string[]` alongside its `ComponentDef`, and the
+ownership test reads that list. Two categories stay deliberately unowned and live in a named shared sheet:
+markdown output from `md.parse`/`smd` (whose classes come from the parser, not from us) and
+runtime-composed modifiers (`acp-harness__lane--${lane.status}`, `acp-harness__msg--${kind}`) — the test
+allowlists both by prefix rather than pretending a component declares them.
 
 **2. `@layer` fixes the order that TS imports make unpredictable.** `src/styles/index.css` declares the order
 once; component sheets author inside it:
@@ -314,14 +364,24 @@ once; component sheets author inside it:
 @layer krypton.scheme    { html[data-theme-scheme='light'] .acp-harness__tool { … } }
 ```
 
-Cascade order then follows the declared layer order regardless of which module imported what first.
+**Unlayered rules outrank every layered rule in the same origin** (CSS Cascade 5). The repo uses `@layer`
+nowhere today — `src/styles/index.css` is 35 bare `@import` lines — so a component sheet moved into
+`@layer krypton.component` is immediately **outranked by everything still unlayered**, including the
+`acp-harness.css` rules it was just carved out of. Two consequences the phase plan has to honour:
+
+- A component's carve-out commit must **delete the rules it took** from `acp-harness.css` in the same
+  commit. Carving without deleting is not a no-op; it is a silent revert to the old rule.
+- The remaining harness sheets (`acp-harness.css`, `attention-triage.css`, `orchestrator-console.css`,
+  `review-quality.css`, `review-priority.css`) are wrapped in `@layer krypton.base` **in phase 1**, before
+  the first carve-out, so layered-vs-layered ordering governs from the start. `theme-scheme.css` stays
+  unlayered until phase 6 moves its harness half out; it therefore keeps winning, which is the behaviour
+  `theme.test.ts:259-263` exists to protect.
 
 **3. A component owns its own scheme overrides.** `src/styles/theme-scheme.css` currently reaches into harness
 internals with **54 selectors** — e.g. `html[data-theme-scheme='light'] .acp-harness__rail-entry--directive.acp-harness__rail-entry--active`
-(`theme-scheme.css:139-...`). A light-mode fix for one card therefore lives 357 lines away in a global file,
-and deleting the card leaves its override behind. Those 54 rules move into the owning component's
-`@layer krypton.scheme` block; non-harness rules stay where they are, so `theme.test.ts:259-263`
-("imported last") still holds.
+(`theme-scheme.css:139` onward). A light-mode fix for one card therefore lives 357 lines away in a global
+file, and deleting the card leaves its override behind. Those 54 rules move into the owning component's
+`@layer krypton.scheme` block in phase 6; non-harness rules stay where they are.
 
 **4. Collisions resolved, not inherited.** The review card gets its own block; `InlinePalette` keeps one block
 and gains `data-palette="slash|mention|hash|verb"`; `Caret` becomes a real shared primitive with a `glyph`
@@ -341,15 +401,15 @@ Each component's tunables are custom properties declared at its own block root, 
 }
 ```
 
-- **Level 2 already exists.** `theme.ts:455-491` derives **36 `--agent-*` tokens** from the active theme
-  ("DESIGN.amber structure, color from the active theme") and `setCssProperties` (`:608-617`) writes all
-  ~120 `--krypton-*` / `--agent-*` / `--vault-*` properties onto `document.documentElement`. A component that
+- **Level 2 already exists.** `theme.ts:456-490` derives **32 `--agent-*` tokens** from the active theme
+  ("DESIGN.amber structure, color from the active theme") and `setCssProperties` (`:609-619`) writes all
+  **151** `--krypton-*` / `--agent-*` / `--vault-*` properties onto `document.documentElement`. A component that
   consumes `--agent-*` is already themed, and `set_theme` / `reload_config` already repaint it with no restart.
 - **Level 3 is the new hook.** Overriding one `--acp-*` property reaches that component's subtree and nothing
   else, because custom properties inherit downward only. This generalises the per-lane pattern the view
-  already uses (`style.setProperty('--acp-lane-accent', …)` at `:12019,12036,13034`).
+  already uses — six `style.setProperty('--acp-lane-accent', …)` call sites (`:12019,12036,12950,13060,13228,13301`).
 - **Who may set level 3 is out of scope here.** The theme TOML is a closed Rust struct today
-  (`src-tauri/src/theme.rs:21-30` — `colors`, `chrome`, `focused`, `workspace`, `ui`, no free-form map), so a
+  (`src-tauri/src/theme.rs:21-32` — `name`, `meta`, `colors`, `chrome`, `focused`, `workspace`, `ui`, no free-form map), so a
   user theme cannot name a component token. Opening that is a backend change and a user-facing feature:
   **spec 303**. This spec only lands the hooks.
 
@@ -403,50 +463,85 @@ of in one terminal move.
 
 | # | Phase | Deletes |
 |---|---|---|
-| 1 | `src/ui/` kernel + the `@layer` declaration in `index.css`; 12 primitive directories; pilot on the 4 inline palettes and 6 list pickers | 8 copied cursor handlers, 4 copied palette handlers, 14 `innerHTML` sites, the `scrollIntoView` band-aids (`:12813`, `:13290`), the `acp-triage__caret` fork |
-| 2 | `RenderScheduler`; `HarnessViewHost.render` → `invalidate`; narrow the 97 `render()` sites | `dashboardEl.innerHTML = ''` (`:12917`) and the `prevScrollTop` detach/reattach dance (`:12896-12916`) |
-| 3 | 18 transcript-row directories + `LiveComponent` | `transcriptRenderSignature` (130 lines), the pre-signature streaming fast path (`:12156-12183`), `patchStreamingToolBody`'s dedupe dataset keys, the spec-117 orphan-parser `console.warn` (`:12136-12145`) |
-| 4 | Lane chrome + composer directories | `refreshMetricsRender`'s per-head `innerHTML` (`:13550`), the 1 Hz full composer rebuild (`:13409`) |
+| 0 | Test environment: add a DOM runner (`vitest` `environment: 'happy-dom'` for `src/acp/components/**`), wrap the five existing harness sheets in `@layer krypton.base` | — |
+| 1 | `src/ui/` kernel + the `@layer` declaration in `index.css`; 12 primitive directories; pilot on the 4 inline palettes and 6 list pickers | 8 copied cursor handlers, 4 copied palette handlers, 14 `innerHTML` sites, the `scrollIntoView` band-aids (`:12815-12816`, `:13291-13292`, `:14720`), the `acp-triage__caret` fork |
+| 2 | `RenderScheduler`; the five host interfaces' `render(): void` → `invalidate(region)`; narrow the 97 `render()` sites | — (no scroll code is touched; see below) |
+| 3 | 18 transcript-row directories + `LiveComponent` | `transcriptRenderSignature` (131 lines), the pre-signature streaming fast path (`:12156-12183`), `patchStreamingToolBody`'s dedupe dataset keys, the spec-117 orphan-parser `console.warn` (`:12136-12145`) |
+| 4 | `LaneShell` + lane chrome + composer directories | `dashboardEl.innerHTML = ''` (`:12917`) **and** both halves of the `prevScrollTop` dance (capture `:12908-12915`, write-back `:13001-13006`); `refreshMetricsRender`'s per-head `innerHTML` (`:13550`); the 1 Hz full composer rebuild (`:13409`) |
 | 5 | `LayoutHost` + `HARNESS_LAYOUT_DEFAULT`; right rail + remaining overlay directories | the four hardcoded slot fields (`acp-harness-view.ts:6467-6490`), 3 "Mirrors …" CSS shells, 18 ad-hoc empty states |
-| 6 | Residue sweep: `theme-scheme.css`'s 54 harness selectors move to their owners; `styles-ownership.test.ts` lands; whatever is still in `acp-harness.css` is by definition unowned | `acp-harness.css` itself, the 2 duplicated rule blocks (`:5604-5699` ≡ `:5815-5910`), its `@import` line |
+| 6 | Residue sweep: `theme-scheme.css`'s 54 harness selectors move to their owners; `styles-ownership.test.ts` lands; the four CSS-reading assertions are re-pointed | the byte-identical duplicate span (`:5601-5699` ≡ `:5812-5910`), then `acp-harness.css` and its `@import` line |
 
-Phase 2 ends with `installLaneBodyScrollTracer()` (`:825-859`) removed and issue #17 re-checked: if the
-14 px drift survives a view with no container wipe, it is not a render bug and gets its own spec.
+**The scroll restore moves with `LaneShell`, not before it.** The working tree currently captures the lane
+body's `scrollTop` before detaching it and writes it back after reattachment. That code exists *because*
+`renderDashboard` wipes its container; it may only be deleted in the phase that stops the wipe — phase 4,
+where `LaneShell` is constructed once and the body is never detached. Deleting it in phase 2, while the
+dashboard still rebuilds, would ship a release that re-creates the exact bug the restore fixes.
+
+Phase 4 also ends `installLaneBodyScrollTracer()` (`:825-859`) and re-checks issue #17: if the 14 px drift
+survives a view with no container wipe, it is not a render bug and gets its own spec.
 
 The layout table lands **with** the right-rail components, not after them: the slots replace the four
 `*SlotEl` fields rather than being layered on top. Doing it later would mean touching every rail
 component a second time.
 
-Phase 6 is a sweep, not a split: after five phases of carve-out, what remains in `acp-harness.css` has no
-component claiming it, which is the cheapest possible audit for dead CSS.
+**Phase 6 is a sweep, but "unowned" is not "dead".** Class names are composed at runtime
+(`acp-harness__lane--${lane.status}` at `:12966`, `acp-harness__msg--${kind}`), so a grep cannot see every
+use. The sweep therefore moves leftovers into a named `harness-shared.css` with a comment naming the
+composing call site, and only deletes a rule when no runtime composition can produce its selector. Four
+assertions read `acp-harness.css` directly (`acp-harness-view.test.ts:312,847,2161,2191`); they are
+re-pointed at the owning component sheets in this phase, not left to break.
 
 ## Testing
 
+**The repo has no DOM test environment today.** `package.json` devDependencies are `@tauri-apps/cli`,
+`@types/react`, `@types/react-dom`, `typescript`, `vite`, `vitest`; `vite.config.ts` declares no `test`
+block, so vitest runs in `node` and no test in `src/` constructs a DOM. That is why today's harness
+assertions are pure-helper tests plus source-text regex. Phase 0 therefore adds `happy-dom` and a
+`test.environmentMatchGlobs` entry for `src/acp/components/**` and `src/ui/**`; everything else keeps the
+`node` environment, so the existing 526 tests are unaffected.
+
+**What happy-dom cannot do, and what we do instead.** It implements no layout: `scrollHeight`,
+`getBoundingClientRect` and `ResizeObserver` return zeros. So `Transcript`'s scroll anchoring, sticky
+bottom and smooth-follow keep their current shape — **pure helpers tested in `node`**
+(`smoothFollowStep`, `planSmoothFollow`, `acp-harness-view.test.ts:1944-2056`), with the DOM-touching
+wrapper exercised only by the manual `npx tauri dev` smoke each phase already requires. The spec does not
+claim layout-dependent behaviour is covered by unit tests.
+
 `acp-harness-view.test.ts` contains ~15 **source-text regex assertions** (`readFileSync(...)` +
-`expect(src).toMatch(/replaceChildren/)` at `:302`, `:271`, `:286`, `:296`, `:324`, `:340`, `:2038`,
+`expect(src).toMatch(/replaceChildren/)` at `:271`, `:286`, `:296`, `:302`, `:324`, `:340`, `:2038`,
 `:2060`, `:2099`). They pin the implementation text, not the behaviour, and a component refactor breaks
 them mechanically. Each is **replaced by the DOM test it was approximating**, run against the component:
 
-| Invariant | New test |
+| Invariant (current location) | New test |
 |---|---|
-| Seal drops `--streaming` and re-syncs deps (`harness-seal-static.test.ts:36-65`) | `AssistantRow.seal()` → assert class gone, then `update(samePropsObject)` performs **zero** DOM writes (MutationObserver count 0) |
-| `pending → in_progress` must not rebuild (`:207-233`) | `ToolRow.update()` across both statuses → body node identity unchanged |
-| In-flight section text excluded (`:236-267`) | `ToolRow` with appended section text → only `.acp-harness__tool-output` replaced, head nodes identical |
-| Row never `replaceWith` (`:294-307`) | `reconcile()` unit test: node identity stable across 100 updates |
-| `stop` does not full-render (`:322-335`) | scheduler spy: `stop` invalidates no region |
-| Scroll/smooth-follow block (`:1944-2112`) | unchanged — that logic moves into `Transcript` but keeps its pure helpers |
+| Seal drops `--streaming` and re-stamps the signature (`harness-seal-static.test.ts:36-65`) | `AssistantRow.seal()` → assert class gone, then `update(samePropsObject)` performs **zero** DOM writes (MutationObserver count 0) |
+| `pending → in_progress` must not rebuild (`acp-harness-view.test.ts:207-233`) | `ToolRow.update()` across both statuses → body node identity unchanged |
+| In-flight section text excluded (`acp-harness-view.test.ts:236-267`) | `ToolRow` with appended section text → only `.acp-harness__tool-output` replaced, head nodes identical |
+| Row never `replaceWith` (`acp-harness-view.test.ts:294-307`) | `reconcile()` unit test: node identity stable across 100 updates |
+| `stop` does not full-render (`acp-harness-view.test.ts:322-335`) | scheduler spy: `stop` invalidates no region |
+| Smooth-follow arithmetic (`acp-harness-view.test.ts:1944-2056`) | **unchanged** — pure helpers, no DOM |
+| `nudgeSmoothFollow` / `pinStickyAfterComposerKey` / `sealStreaming` ordering (`:2038`, `:2060`, `:2099`) | **not** unchanged: these resolve methods by reading `acp-harness-view.ts` source, and the methods move into `Transcript`. Re-expressed as call-order assertions against `Transcript` with a stubbed scroll surface. |
 
-New kernel tests: `src/ui/component.test.ts` (deps skip, deps override, dispose runs the bag),
-`src/ui/list.test.ts` (key reorder preserves nodes, removal disposes, live rows never repainted),
-`src/ui/scheduler.test.ts` (coalescing, region order, `flushSync`).
+New kernel tests: `src/ui/component.test.ts` (deps skip, dispose runs the bag, `syncClasses` runs on seal),
+`src/ui/list.test.ts` (key reorder preserves nodes, removal disposes, live rows take structural updates but
+never a full repaint), `src/ui/scheduler.test.ts` (coalescing, region order, `flushSync(region)` commits
+only that region).
 
-One test outside the harness is affected: `theme.test.ts:268` asserts `theme-scheme.css` contains
-`html[data-theme-scheme='light'] .acp-harness__rail`. That pins a rule's **file location**, not its
-behaviour, and phase 6 moves the rule to its owner. It is re-pointed at `rail-entry/rail-entry.css`; the
-sibling assertion that `theme-scheme.css` is imported last (`:259-263`) still holds and is unchanged.
+Two tests outside the harness are affected, both pinning a rule's **file location** rather than its
+behaviour:
 
-New ownership test: a component sheet declares selectors only for its own block, and only inside a
-`krypton.*` layer — a single regex pass over `src/acp/components/*/*.css`.
+- `theme.test.ts:268` asserts `theme-scheme.css` contains
+  `html[data-theme-scheme='light'] .acp-harness__rail`. Phase 6 moves that rule to its owner; the
+  assertion is re-pointed at `rail-entry/rail-entry.css`.
+- `theme.test.ts:259-262` asserts `theme-scheme.css` is the last `@import` in `index.css`. The assertion
+  text keeps passing, but after phase 6 it no longer protects its stated invariant ("*ink mixes beat
+  neon-on-void alphas*") for the harness, because precedence there becomes layer membership, not import
+  order. It is **replaced** by an assertion that harness scheme rules live in `@layer krypton.scheme` and
+  that no harness component sheet declares rules outside a `krypton.*` layer.
+
+New ownership test: a component sheet declares selectors only for the blocks its directory exports in
+`blocks`, and only inside a `krypton.*` layer — a regex pass over `src/acp/components/*/*.css`, with the
+markdown-output and runtime-composed prefixes allowlisted.
 
 ## Edge Cases
 
@@ -454,7 +549,7 @@ New ownership test: a component sheet declares selectors only for its own block,
   down `lane.streamingMarkdownParser`. Replaces the spec-117 `console.warn` guard with a structural one.
 - **Entrance animation vs. repaint** — `--enter` is added at construction and removed on `animationend`
   inside the row component; `paint()` never writes `className` wholesale, so the `const entering = …`
-  rescue at `:12215-12218` is unnecessary.
+  rescue at `:12219-12221` is unnecessary.
 - **Spinner frame continuity** — the spinner is its own component updated by `tickSpinner`; a parent
   `paint()` cannot reach it, so the `liveSpinnerGlyph` module global (`harness-tool-render.ts:32-35`) is
   no longer load-bearing and is deleted with phase 3.
@@ -488,7 +583,7 @@ this decision later costs phase 1 only; phases 2–6 are unaffected by which eng
   spec — this one only removes the reason they are currently expensive to build.
 - User-resizable panes and drag-and-drop panel moves. Slot sizing stays in CSS.
 - **Letting a theme file name a component token.** Every component gets its `--acp-*` hook here, but the
-  theme TOML is a closed Rust struct (`src-tauri/src/theme.rs:21-30`), so nothing user-authored can set one
+  theme TOML is a closed Rust struct (`src-tauri/src/theme.rs:21-32`), so nothing user-authored can set one
   yet. Opening it is [spec 303 — Themeable Component Tokens](./0303-themeable-component-tokens.md), which
   owns the backend change, the sanitisation, and the config docs.
 - A theme editor UI or runtime restyling of a live component.
