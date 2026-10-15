@@ -318,7 +318,7 @@ const DEFAULT_TERMINAL_THEME: Record<string, string> = {
 };
 
 /** Cyberpunk accent color palette for per-window coloring */
-interface AccentColor {
+export interface AccentColor {
   name: string;
   hex: string;
   rgb: string; // "r, g, b" for rgba() usage
@@ -424,6 +424,10 @@ export class Compositor {
   private windowColorIndex: Map<WindowId, number> = new Map();
   /** Set of palette indices currently in use */
   private usedColorIndices: Set<number> = new Set();
+  /** Windows whose accent the user picked explicitly (spec 304). Value is an
+   *  `ACCENT_PALETTE` entry name; the auto-allocated index stays reserved
+   *  underneath so "Auto" is a one-line revert. */
+  private accentPicks: Map<WindowId, string> = new Map();
 
   // ─── Theme Engine ─────────────────────────────────────────────────
   /** Reference to the frontend theme engine (set via setThemeEngine) */
@@ -2059,10 +2063,15 @@ export class Compositor {
     }
 
     // Index-0 windows and Quick Terminal wear the theme accent; other
-    // windows keep their distinguishing palette colors.
+    // windows keep their distinguishing palette colors. A window whose accent
+    // the user picked (spec 304) is re-resolved instead, so the
+    // theme-following entry tracks the new theme and the pick is never lost.
     const primary = this.paletteColor(0);
     for (const [id, win] of this.windows) {
-      if ((this.windowColorIndex.get(id) ?? 0) === 0) {
+      const pick = this.accentPicks.get(id);
+      if (pick !== undefined) {
+        this.applyAccentPick(win.element, pick);
+      } else if ((this.windowColorIndex.get(id) ?? 0) === 0) {
         this.applyAccentColor(win.element, primary);
       }
     }
@@ -2305,6 +2314,7 @@ export class Compositor {
 
   /** Free a window's accent color so it can be reused */
   private freeAccentColor(windowId: WindowId): void {
+    this.accentPicks.delete(windowId);
     const idx = this.windowColorIndex.get(windowId);
     if (idx !== undefined) {
       this.windowColorIndex.delete(windowId);
@@ -2323,6 +2333,61 @@ export class Compositor {
   private applyAccentColor(el: HTMLElement, color: AccentColor): void {
     el.style.setProperty('--krypton-window-accent', color.hex);
     el.style.setProperty('--krypton-window-accent-rgb', color.rgb);
+  }
+
+  /** Palette the user picks from (spec 304). Entry 0's hex follows the active
+   *  color theme; the names stay stable so a persisted pick survives a theme
+   *  change. */
+  accentOptions(): ReadonlyArray<AccentColor> {
+    return ACCENT_PALETTE.map((entry, index) => {
+      const resolved = this.paletteColor(index);
+      return { name: entry.name, hex: resolved.hex, rgb: resolved.rgb };
+    });
+  }
+
+  /** Palette entry name the user picked for a window, or null when automatic. */
+  pickedAccentName(windowId: WindowId): string | null {
+    return this.accentPicks.get(windowId) ?? null;
+  }
+
+  /** Paint a window with an explicitly picked palette color; `null` reverts it
+   *  to the compositor-allocated color (or, on a harness host, to the active
+   *  lane's). The auto-allocated index is never released, so the revert needs
+   *  no snapshot. Spec 304. */
+  setWindowAccentPick(windowId: WindowId, name: string | null): void {
+    const win = this.windows.get(windowId);
+    if (!win) return;
+    if (name === null) {
+      if (!this.accentPicks.delete(windowId)) return;
+      this.clearAccentPick(win.element);
+    } else {
+      const entry = ACCENT_PALETTE.find((color) => color.name === name);
+      if (!entry) return;
+      if (this.accentPicks.get(windowId) === entry.name) return;
+      this.accentPicks.set(windowId, entry.name);
+      this.applyAccentPick(win.element, entry.name);
+    }
+    win.headerScope?.refreshColor();
+    this.scheduleWorkspaceStateSave();
+  }
+
+  /** Write the pick vars + marker attribute. The stylesheet rule
+   *  (`window.css` .krypton-window[data-accent-pick]) maps them onto the window
+   *  accent vars with `!important`, so this beats both the compositor's own
+   *  inline base and the harness lane rule without removing either. */
+  private applyAccentPick(el: HTMLElement, name: string): void {
+    const index = ACCENT_PALETTE.findIndex((color) => color.name === name);
+    if (index < 0) return;
+    const color = this.paletteColor(index);
+    el.style.setProperty('--krypton-accent-pick', color.hex);
+    el.style.setProperty('--krypton-accent-pick-rgb', color.rgb);
+    el.dataset.accentPick = name;
+  }
+
+  private clearAccentPick(el: HTMLElement): void {
+    el.style.removeProperty('--krypton-accent-pick');
+    el.style.removeProperty('--krypton-accent-pick-rgb');
+    delete el.dataset.accentPick;
   }
 
   /** Get the cwd of the focused pane's shell, if available */
@@ -2641,6 +2706,7 @@ export class Compositor {
       windows: windows.map((win) => ({
         activeTabIndex: win.activeTabIndex,
         pinned: win.pinned,
+        ...(this.accentPicks.has(win.id) ? { accent: this.accentPicks.get(win.id) } : {}),
         tabs: win.tabs.map((tab) => ({
           title: tab.title,
           focusedPaneIndex: Math.max(
@@ -2812,6 +2878,12 @@ export class Compositor {
     win.activeTabIndex = Math.min(snapshot.activeTabIndex, win.tabs.length - 1);
     win.pinned = snapshot.pinned;
     win.element.classList.toggle('krypton-window--pinned', win.pinned);
+    // Spec 304: replay an explicitly picked accent. An unknown name (palette
+    // renamed between releases) is dropped and the window stays automatic.
+    if (snapshot.accent !== undefined && ACCENT_PALETTE.some((color) => color.name === snapshot.accent)) {
+      this.accentPicks.set(id, snapshot.accent);
+      this.applyAccentPick(win.element, snapshot.accent);
+    }
     this.rebuildTabBar(win);
     this.showActiveTab(win);
     this.updatePaneFocusIndicator(win.tabs[win.activeTabIndex]);

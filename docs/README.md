@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (289)
+## Specs (290)
 
 | # | Spec |
 |---|------|
@@ -306,6 +306,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 301 | [Harness UI Components](./0301-harness-ui-components.md) |
 | 302 | [Harness Component Catalog](./0302-harness-component-catalog.md) |
 | 303 | [Themeable Component Tokens](./0303-themeable-component-tokens.md) |
+| 304 | [Manual Window Accent Color](./0304-manual-window-accent.md) |
 
 ## ADRs (24)
 

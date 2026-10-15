@@ -26,6 +26,10 @@ export interface WorkspaceWindowSnapshot {
   tabs: WorkspaceTabSnapshot[];
   activeTabIndex: number;
   pinned: boolean;
+  /** Palette colour name the user picked for this window (spec 304). Absent
+   *  means the compositor allocates it. An unknown name is dropped by the
+   *  compositor — a cosmetic field must not cost the user their layout. */
+  accent?: string;
 }
 
 export interface WorkspaceSnapshot {
@@ -137,6 +141,7 @@ export function parseWorkspaceSnapshot(value: unknown): WorkspaceSnapshot | null
   for (const rawWindow of value.windows) {
     if (!isRecord(rawWindow) || !Array.isArray(rawWindow.tabs)) return null;
     if (!isIndex(rawWindow.activeTabIndex) || typeof rawWindow.pinned !== 'boolean') return null;
+    if (rawWindow.accent !== undefined && typeof rawWindow.accent !== 'string') return null;
     const tabs: WorkspaceTabSnapshot[] = [];
     for (const rawTab of rawWindow.tabs) {
       if (!isRecord(rawTab) || typeof rawTab.title !== 'string' || !isIndex(rawTab.focusedPaneIndex)) {
@@ -155,6 +160,7 @@ export function parseWorkspaceSnapshot(value: unknown): WorkspaceSnapshot | null
       tabs,
       activeTabIndex: rawWindow.activeTabIndex,
       pinned: rawWindow.pinned,
+      ...(rawWindow.accent === undefined ? {} : { accent: rawWindow.accent }),
     });
   }
 

@@ -14,6 +14,8 @@ export interface PaletteAction {
   category: string;
   keybinding?: string;
   execute: () => unknown;
+  /** CSS colour painted as a small square before the label (spec 304). */
+  swatch?: string;
   section?: PaletteSection;
 }
 

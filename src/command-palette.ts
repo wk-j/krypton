@@ -388,6 +388,12 @@ export class CommandPalette {
       key.textContent = action.keybinding ?? '';
 
       item.appendChild(category);
+      if (action.swatch !== undefined) {
+        const swatch = document.createElement('span');
+        swatch.className = 'krypton-palette__item-swatch';
+        swatch.style.background = action.swatch;
+        item.appendChild(swatch);
+      }
       item.appendChild(label);
       item.appendChild(key);
 
@@ -1144,6 +1150,42 @@ export class CommandPalette {
         },
       });
     }
+
+    // Dynamic: per-window accent color (spec 304). Applies to the focused
+    // window; entry 0 follows the active color theme.
+    const accentWindowId = c.focusedId;
+    const currentAccent = accentWindowId === null ? null : c.pickedAccentName(accentWindowId);
+    c.accentOptions().forEach((color, index) => {
+      const isCurrent = color.name === currentAccent;
+      const suffix = index === 0 ? ' (theme)' : '';
+      this.actions.push({
+        id: `window.accent.${color.name}`,
+        label: `Window Color: ${themeLabel(color.name)}${suffix}${isCurrent ? ' (current)' : ''}`,
+        category: 'Window Color',
+        swatch: color.hex,
+        execute: () => {
+          const id = c.focusedId;
+          if (id === null) {
+            console.warn('[CommandPalette] window accent: no focused window');
+            return;
+          }
+          c.setWindowAccentPick(id, color.name);
+        },
+      });
+    });
+    this.actions.push({
+      id: 'window.accent.auto',
+      label: `Window Color: Auto${currentAccent === null ? ' (current)' : ''}`,
+      category: 'Window Color',
+      execute: () => {
+        const id = c.focusedId;
+        if (id === null) {
+          console.warn('[CommandPalette] window accent: no focused window');
+          return;
+        }
+        c.setWindowAccentPick(id, null);
+      },
+    });
 
     // Dynamic: sound theme switching
     const soundEngine = c.soundEngine;

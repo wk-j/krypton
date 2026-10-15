@@ -98,11 +98,11 @@ The compositor sets `--krypton-window-accent` / `-rgb` as **normal inline style*
 
 - **O2 — identity vs signal precedence.** *Resolved (rev. 3): identity only, status NOT coupled to the window border.* The active lane is the window's steady accent. The `data-signal` border recolor is dormant today (dominated by the compositor's inline accent), and we deliberately keep it that way rather than globally activating it. **Flagged for human review** (`attention_flag`): if you *want* a lane error to flash the host window's border red, that is a one-line follow-up (promote the `data-signal` `-rgb` rules to `!important`) — but it turns the signal-border recolor on for *every* window, not just the harness. Left off by default to stay in scope and avoid surprising non-harness windows.
 - **O3 — multi-pane windows.** *Resolved: whole window.* The harness owns its host window in normal use; the accent paints the entire window. If a harness ever shares a window with non-harness panes, the tint still reflects the harness's active lane (acceptable; revisit if split-pane harness becomes common).
-- **O4 — relationship to the manual color-picker design (art-2).** *Resolved: auto-by-lane first.* This spec supersedes the manual picker as the harness's default behavior. A manual per-window override can layer on later (auto as default, explicit pick wins) without conflicting — out of scope here.
+- **O4 — relationship to the manual color-picker design (art-2).** *Resolved: auto-by-lane first.* This spec supersedes the manual picker as the harness's default behavior. A manual per-window override can layer on later (auto as default, explicit pick wins) without conflicting — out of scope here. **Implemented in [304 — Manual Window Accent Color](./0304-manual-window-accent.md):** the `Window Color` palette group sets `data-accent-pick`, whose rule is declared after the `data-lane-accent` rule at equal specificity, so an explicit pick beats the lane color until the user picks `Auto`.
 
 ## Out of Scope
 
-- Manual color override (the earlier picker concept) — separate follow-up.
+- Manual color override (the earlier picker concept) — shipped separately in [spec 304](./0304-manual-window-accent.md).
 - Persisting accent across app restart — no window-state serialization exists; the lane→accent mapping is recomputed live each session.
 - Changing the lane palette itself or the compositor's allocation algorithm.
 

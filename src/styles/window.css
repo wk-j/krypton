@@ -125,6 +125,18 @@
   --krypton-window-accent-rgb: var(--acp-host-lane-accent-rgb, 0, 204, 255) !important;
 }
 
+/* ─── Manual window accent (spec 304) ─── */
+/* The command palette's `Window Color` group sets data-accent-pick plus the
+   picked color in --krypton-accent-pick / -rgb. Declared AFTER the lane rule
+   at equal specificity, so an explicit pick also wins over the active-lane
+   color (spec 142 O4: auto by default, an explicit pick wins). Removing the
+   attribute is the whole revert path — the compositor's inline base and the
+   lane vars underneath are never touched. */
+.krypton-window[data-accent-pick] {
+  --krypton-window-accent: var(--krypton-accent-pick, #00ccff) !important;
+  --krypton-window-accent-rgb: var(--krypton-accent-pick-rgb, 0, 204, 255) !important;
+}
+
 .krypton-window[data-signal='ok']      { --krypton-window-accent-rgb: var(--krypton-success-rgb); }
 .krypton-window[data-signal='warn']    { --krypton-window-accent-rgb: var(--krypton-warning-rgb); }
 .krypton-window[data-signal='err']     { --krypton-window-accent-rgb: var(--krypton-danger-rgb); }

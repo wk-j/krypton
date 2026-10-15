@@ -59,4 +59,21 @@ describe('workspace recovery', () => {
     tabs[0].paneTree = { type: 'leaf', sessionId: '7', contentType: 'terminal' };
     expect(parseWorkspaceSnapshot(invalid)).toBeNull();
   });
+
+  it('carries a picked window accent through the snapshot', () => {
+    const withAccent = { ...snapshot() };
+    withAccent.windows = [{ ...withAccent.windows[0], accent: 'amber' }];
+    expect(parseWorkspaceSnapshot(withAccent)?.windows[0].accent).toBe('amber');
+  });
+
+  it('keeps the layout when a window has no accent', () => {
+    expect(parseWorkspaceSnapshot(snapshot())?.windows[0].accent).toBeUndefined();
+  });
+
+  it('rejects a non-string accent rather than guessing a color', () => {
+    const invalid = snapshot() as unknown as Record<string, unknown>;
+    const windows = invalid.windows as Array<Record<string, unknown>>;
+    windows[0].accent = 3;
+    expect(parseWorkspaceSnapshot(invalid)).toBeNull();
+  });
 });
