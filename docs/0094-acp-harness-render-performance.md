@@ -79,6 +79,20 @@ the stagger-reveal removal: optimizations whose measurements lag the
 streaming DOM lifecycle break user-visible behavior — delete rather than
 fight.
 
+`renderDashboard()` keeps the active lane's `.acp-harness__lane-body` node
+across a rebuild (detach → wipe `dashboardEl` → reattach) so streaming layout
+survives. Detaching a node **discards its scroll offset** — a removed element
+has no layout, and the engine resets `scrollTop` to 0 (verified in Chromium:
+`scrollTop` 800 → 0 across detach/reattach, 800 when written back). Only the
+`stickToBottom` path re-pinned afterwards, so a lane the user had scrolled was
+handed whatever the later fallbacks produced — `captureTranscriptScrollAnchor`
+reading a body already at 0, or the stale `lane.savedScrollTop` restore in
+`applyStickyScroll`. With a `#review` in flight the dashboard rebuilds about
+once a second, which read as the transcript yanking itself back to the wrong
+place right after the user scrolled. The offset is now captured before the
+detach and written back under `beginProgrammaticScroll()` once the lane is in
+the document again, before the transcript diff reads its anchor.
+
 No backend or protocol changes were required.
 
 ## Non-Goals

@@ -12894,13 +12894,21 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderDashboard(): void {
-    // Preserve the active lane body's DOM identity across the rebuild so the
-    // browser's real scroll position and any in-flight streaming layout stay
-    // intact. Detach before clearing dashboardEl, reattach inside the new
-    // active lane shell. renderActiveTranscript then diffs its children.
+    // Preserve the active lane body's DOM identity across the rebuild so any
+    // in-flight streaming layout stays intact. Detach before clearing
+    // dashboardEl, reattach inside the new active lane shell.
+    // Detaching DISCARDS the element's scroll offset (WebKit/Blink reset a
+    // removed node's scrollTop to 0), so capture it here and write it back the
+    // moment the body is reattached — before `renderActiveTranscript` reads a
+    // scroll anchor off it. Without that, every rebuild handed a lane the user
+    // had scrolled a stale offset (anchor captured at the top, or the
+    // `savedScrollTop` fallback in `applyStickyScroll`), which reads as the
+    // transcript yanking itself back to the wrong place once a second while a
+    // `#review` keeps the lane busy.
     const prevBody = this.activeTranscriptBody();
     const prevBodyLaneId =
       prevBody?.dataset.laneId ?? prevBody?.parentElement?.dataset.laneId ?? null;
+    const prevScrollTop = prevBody?.scrollTop ?? 0;
     if (prevBody) {
       prevBody.dataset.laneId = prevBodyLaneId ?? prevBody.dataset.laneId ?? '';
       prevBody.parentElement?.removeChild(prevBody);
@@ -12984,6 +12992,17 @@ export class AcpHarnessView implements ContentView {
         laneEl.appendChild(this.laneRailEl);
       }
       (bodyCell ?? this.dashboardEl).appendChild(laneEl);
+    }
+    // The detach dropped the body's scroll offset. Write it back now that the
+    // body is in the document again (an off-document element has no layout, so
+    // this cannot be done at the appendChild above), and before
+    // `renderActiveTranscript` captures its scroll anchor. Suppressed, or the
+    // scroll handler reads the restore as the user leaving the bottom.
+    const restoredBody = this.activeTranscriptBody();
+    if (prevBody && restoredBody === prevBody && restoredBody.scrollTop !== prevScrollTop) {
+      const token = this.beginProgrammaticScroll();
+      restoredBody.scrollTop = prevScrollTop;
+      this.releaseProgrammaticScroll(token);
     }
     const activeLane = this.activeLane();
     if (activeLane) {
