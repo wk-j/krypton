@@ -2,13 +2,23 @@
    Carved from src/styles/acp-harness.css:4974-4976 (composer command mode),
    :4990-4996 (the block) and :5163-5166 (the blink keyframes), plus
    src/styles/attention-triage.css:276-278, whose only real difference from the
-   block was the colour — the width difference is the `half` prop.
+   block was the colour.
 
-   The block is drawn here instead of being a `█` text node: a configured font
-   without block elements sends that one character to a fallback font, so the
-   caret came out 1.148 cells wide and taller than the line box (measured with
-   `Share Tech Mono` at 16px). A `1ch` box is one cell of whatever font renders
-   the draft, and the text after the cursor stays on the character grid.
+   The caret is an UNDERLINE, and it is drawn here rather than typed. Two
+   reasons, both visible in the composer:
+
+   * A `█` text node is one cell wide only in a font that has U+2588; with
+     `[font] family` starting at `Share Tech Mono` that one character fell back
+     and measured 1.148 cells wide, 20.1px tall against a 19.2px line box.
+   * A caret that OCCUPIES a cell splits the word it sits in. With the spec-285
+     ghost the draft `pend` + caret + ghost `ing` read as two fragments with a
+     block between them instead of one `pending`.
+
+   So the host span is zero-width and the bar is an `::after` that overlays the
+   cell to its right — the character under the cursor stays readable, and the
+   text around it keeps the character grid it would have without a caret. At
+   the end of a line there is no cell to overlay and the bar paints on the
+   empty one, which is where a terminal draws it too.
 
    Both context rules live here because the caret block is their SUBJECT: they
    style the caret in a state its ancestor owns, not the ancestor itself. */
@@ -18,23 +28,28 @@
     position: relative;
     z-index: 6;
     display: inline-block;
-    width: 1ch;
-    /* Baseline-relative so the bar spans ascenders to descenders without
-       growing the line box (leading is `[font] line_height`). */
+    /* Zero-width: the cursor marks a position between two characters; it does
+       not consume one. */
+    width: 0;
+    /* Baseline-relative so the box never grows the line box (leading is
+       `[font] line_height`). */
     height: 1em;
     vertical-align: -0.2em;
     color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
-    background: currentColor;
-    /* drop-shadow, not box-shadow: it follows the painted bar, so `--half`
-       glows around its five eighths rather than around the empty cell. */
-    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 45%, transparent));
     animation: acp-harness-caret 1s step-end infinite;
   }
 
-  /* `half: true` — the five-eighths bar (the old `▋`), painted inside a full
-     cell so the triage redirect text keeps its position. */
-  .acp-harness__caret--half {
-    background: linear-gradient(currentColor 0 0) left / 0.625ch 100% no-repeat;
+  .acp-harness__caret::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    /* One cell of whatever font renders the text around it. */
+    width: 1ch;
+    height: max(2px, 0.1em);
+    background: currentColor;
+    /* The glow sits on the bar, not on the (empty) host box. */
+    box-shadow: 0 0 5px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 45%, transparent);
   }
 
   /* `blink: false` — a caret that marks a position without drawing the eye. */

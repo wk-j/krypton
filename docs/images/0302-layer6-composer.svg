@@ -9,14 +9,14 @@ svg{--fg:#b0c4d8;--muted:#6b8299;--border:#2a4a6c;--surface:#10131a;--accent:#00
 <rect x="26" y="42" width="620" height="88" rx="2" fill="none" stroke="var(--border)"/>
 <text x="36" y="63" xml:space="preserve"><tspan fill="var(--muted)">composer.above  →  PeerStrip / StagingStrip</tspan></text>
 <text x="36" y="81" xml:space="preserve"><tspan fill="var(--muted)">ComposerMeta</tspan></text>
-<text x="36" y="99" xml:space="preserve">claude-1  <tspan fill="var(--accent)">⠋</tspan>  convert the UI into reusable comp<tspan fill="var(--accent)">█</tspan>onents</text>
+<text x="36" y="99" xml:space="preserve">claude-1  <tspan fill="var(--accent)">⠋</tspan>  convert the UI into reusable comp<tspan fill="var(--accent)" text-decoration="underline">o</tspan>nents</text>
 <text x="36" y="117" xml:space="preserve"><tspan fill="var(--muted)">composer.below  (empty)</tspan></text>
 <text x="12" y="166" font-size="11" fill="var(--accent)" xml:space="preserve">6.2  ComposerMeta   — Chip + StatList;  the only part that still ticks</text>
 <rect x="12" y="172" width="956" height="36" rx="3" fill="none" stroke="var(--border)"/>
 <text x="26" y="195" xml:space="preserve"><tspan fill="var(--accent)">reviewing</tspan> · <tspan fill="var(--muted)">2:14 · 3 queued</tspan>      <tspan fill="var(--muted)">auto-edit ⇧⇥</tspan>   <tspan fill="var(--muted)">directive</tspan> 0301-impl   <tspan fill="var(--muted)">branch main</tspan>        <tspan fill="var(--muted)">? help</tspan></text>
-<text x="12" y="230" font-size="11" fill="var(--accent)" xml:space="preserve">6.3  DraftLine   — ghost text inline, Caret owns the block</text>
+<text x="12" y="230" font-size="11" fill="var(--accent)" xml:space="preserve">6.3  DraftLine   — ghost text inline, Caret owns the underline</text>
 <rect x="12" y="236" width="956" height="36" rx="3" fill="none" stroke="var(--border)"/>
-<text x="26" y="259" xml:space="preserve">claude-1  <tspan fill="var(--accent)">⠋</tspan>  convert the UI into reusable comp<tspan fill="var(--accent)">█</tspan>onents</text>
+<text x="26" y="259" xml:space="preserve">claude-1  <tspan fill="var(--accent)">⠋</tspan>  convert the UI into reusable comp<tspan fill="var(--accent)" text-decoration="underline">o</tspan>nents</text>
 <text x="12" y="294" font-size="11" fill="var(--accent)" xml:space="preserve">6.4  StagingStrip</text>
 <rect x="12" y="300" width="956" height="62" rx="3" fill="none" stroke="var(--border)"/>
 <rect x="26" y="312" width="150.8" height="20" rx="3" fill="none" stroke="var(--border)"/>

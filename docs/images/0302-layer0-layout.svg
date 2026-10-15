@@ -30,7 +30,7 @@ svg{--fg:#b0c4d8;--muted:#6b8299;--border:#2a4a6c;--surface:#10131a;--accent:#00
 <text x="176" y="299" xml:space="preserve"><tspan fill="var(--warning)">⇆ awaiting codex · 5m+ · #cancel drops pending lane-mail wait</tspan></text>
 <rect x="26" y="312" width="700" height="30" rx="2" fill="none" stroke="var(--accent)"/>
 <text x="34" y="325" font-size="10" fill="var(--muted)" xml:space="preserve">composer  — PINNED</text>
-<text x="176" y="332" xml:space="preserve">claude-1  <tspan fill="var(--accent)">⠋</tspan>  convert the UI into reusable comp<tspan fill="var(--accent)">█</tspan>onents</text>
+<text x="176" y="332" xml:space="preserve">claude-1  <tspan fill="var(--accent)">⠋</tspan>  convert the UI into reusable comp<tspan fill="var(--accent)" text-decoration="underline">o</tspan>nents</text>
 <rect x="26" y="348" width="700" height="22" rx="2" fill="none" stroke="var(--border)" stroke-dasharray="4 4"/>
 <text x="34" y="361" font-size="10" fill="var(--muted)" xml:space="preserve">composer.below</text>
 <text x="672" y="361" font-size="10" fill="var(--muted)">(empty)</text>

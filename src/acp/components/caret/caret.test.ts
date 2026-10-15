@@ -15,13 +15,9 @@ describe('Caret', () => {
 
   it('adds no text to the line it sits in', () => {
     const line = document.createElement('span');
-    line.append('redirect ', paint({ half: true }).el);
+    line.append('redirect ', paint({}).el);
 
     expect(line.textContent).toBe('redirect ');
-  });
-
-  it('marks the narrow triage caret with a modifier', () => {
-    expect(paint({ half: true }).el.className).toBe('acp-harness__caret acp-harness__caret--half');
   });
 
   it('is found by the composer bloom query and ends the text walk', () => {
@@ -39,29 +35,19 @@ describe('Caret', () => {
     expect(before.map((node) => node.textContent).join('')).toBe('hello ');
   });
 
-  it('drops the blink animation through a modifier, and restores it', () => {
+  it('drops the blink animation through a modifier in place, and restores it', () => {
     const caret = paint({ blink: false });
-    expect(caret.el.className).toBe('acp-harness__caret acp-harness__caret--static');
+    const node = caret.el;
+    expect(node.className).toBe('acp-harness__caret acp-harness__caret--static');
 
     caret.update({ blink: true });
-    expect(caret.el.className).toBe('acp-harness__caret');
+    expect(caret.el).toBe(node);
+    expect(node.className).toBe('acp-harness__caret');
   });
 
   it('treats an omitted blink as blinking, so the existing call sites are unchanged', () => {
     const caret = paint({ blink: false });
     caret.update({});
     expect(caret.el.className).toBe('acp-harness__caret');
-  });
-
-  it('toggles the width modifier in place instead of rebuilding the node', () => {
-    const caret = paint({});
-    const node = caret.el;
-
-    caret.update({ half: true });
-    expect(caret.el).toBe(node);
-    expect(node.className).toBe('acp-harness__caret acp-harness__caret--half');
-
-    caret.update({});
-    expect(node.className).toBe('acp-harness__caret');
   });
 });

@@ -57,7 +57,11 @@ Ship a Krypton-owned predictor:
   Codex 19 KB file. The model fits in a few MB.
 - Harness composer (`acp-harness-view.ts`):
   - The draft and cursor are `lane.draft` + `lane.cursor`. `setDraft()` calls
-    `renderComposer()`, which rebuilds `before<span class="acp-harness__caret">█</span>after`.
+    `renderComposer()`, which rebuilds `before<span class="acp-harness__caret"></span>after`.
+    The caret span is zero-width and CSS-painted (spec 302 §1.9): it draws an
+    underline over the cell to its right, so the ghost starts in the cell the
+    typed word ends on. While it was a `█` the ghost began one cell further
+    right and `pend` + ghost `ing` read as two fragments, not `pending`.
   - Every lane submits through `submitActiveLane()`. Its in-memory
     `lane.promptHistory` holds 100 entries per lane and is not persisted.
   - Palettes own `Tab` while visible. Plain `Tab` is otherwise unbound.
@@ -211,7 +215,7 @@ export class WordModel {
 ### UI
 
 ```html
-…la<span class="acp-harness__caret">█</span><span class="acp-harness__ghost" aria-hidden="true">nguage</span>
+…la<span class="acp-harness__caret"></span><span class="acp-harness__ghost" aria-hidden="true">nguage</span>
 ```
 
 `.acp-harness__ghost` uses the inherited font and

@@ -240,14 +240,14 @@ Normal composer, idle:
 
 ```text
 memory: 3/3 · main                           ? help  MIC  ⌘D  ⇧D
-Codex-1 ⠋ explain the migration plan█
+Codex-1 ⠋ explain the migration plan_
 ```
 
 Listening:
 
 ```text
 memory: 3/3 · 0:12                           ? help  ● REC EN  ⌘D
-Codex-1 ⠋ explain the [migration plan for the old rows…]█
+Codex-1 ⠋ explain the [migration plan for the old rows…]_
 ```
 
 - Add a real `<button type="button">` in `.acp-harness__composer-tools` on the

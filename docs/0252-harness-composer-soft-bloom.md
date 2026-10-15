@@ -15,7 +15,7 @@ around the caret rather than as the letter itself.
 
 ## Solution
 
-Keep the draft text and existing inline block caret completely immediate. On a
+Keep the draft text and existing inline caret completely immediate. On a
 direct text insertion only, spawn overlay **copies of the inserted graphemes** —
 a cyan phosphor letter afterimage that ignites, drifts upward 3px, and dissolves. The overlay survives composer
 `innerHTML` rebuilds, so fast typing leaves a fading trail of letters instead of
@@ -35,10 +35,11 @@ Catch-up delayed text is not shipped.
   the composer's full `innerHTML`. A class on the caret therefore dies on the next
   key and cannot stack the prototype trail. The bloom overlay is a detached DOM
   node re-appended after each rebuild so in-flight glyphs keep animating.
-- The current cursor is already correct: `renderComposer()` inserts an inline
-  `.acp-harness__caret` containing `█`. Production must not change its glyph,
-  line-height, position, blink, or lane-accent styling. The prototype's custom
-  caret is rejected.
+- The cursor is owned elsewhere: `renderComposer()` inserts the inline
+  `.acp-harness__caret` (a `█` text node when this spec was written, a
+  CSS-painted underline since spec 302 §1.9). This feature must not change its
+  shape, line-height, position, blink, or lane-accent styling. The prototype's
+  custom caret is rejected.
 - Glyph positions come from a `Range` that covers the inserted grapheme in the
   real input text before the caret, without a second caret. Each overlay node’s
   `textContent` is that grapheme so the flash sits on the letter, not a 26×22
@@ -142,11 +143,15 @@ reattaches the overlay and spawns letter afterimages for that insertion only.
 
 ### Rendered Markup
 
-The caret stays exactly:
+The caret stays the shared `Caret` component — the bloom never styles, moves or
+replaces it:
 
 ```html
-<span class="acp-harness__caret">█</span>
+<span class="acp-harness__caret"></span>
 ```
+
+(Since spec 302 §1.9 that span is zero-width and CSS-painted as an underline;
+it was a `█` text node when this spec was written.)
 
 Glyph copies are siblings in `.acp-harness__composer-blooms` (`aria-hidden`,
 `pointer-events: none`). Each node’s `textContent` is one inserted grapheme.

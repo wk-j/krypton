@@ -84,8 +84,7 @@ describe('TriageOverlay', () => {
     const overlay = mount({ redirect: { draft: 're-check the deps tuple' } });
     const input = overlay.el.querySelector<HTMLElement>('.acp-triage__redirect-input');
     expect(input?.textContent).toBe('re-check the deps tuple');
-    expect(input?.querySelector('.acp-harness__caret')?.className)
-      .toBe('acp-harness__caret acp-harness__caret--half');
+    expect(input?.querySelector('.acp-harness__caret')?.className).toBe('acp-harness__caret');
     expect(overlay.el.querySelector('.acp-triage__caret')).toBeNull();
     expect(overlay.el.querySelector('.acp-triage__action-hint')?.textContent)
       .toBe('Enter send · Esc cancel — delivered on the lane’s next idle');

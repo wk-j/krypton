@@ -405,15 +405,28 @@
   }
 
   /* The dispatch/seat-prompt box is a custom-rendered span, not a native input,
-     so it has no OS caret. Render a blinking block caret to show focus + keystroke
-     acceptance. Sits inline after the draft text (or before the placeholder). */
+     so it has no OS caret. Render a blinking underline to show focus + keystroke
+     acceptance — the same cursor shape the harness composer draws
+     (`components/caret/caret.css`), in the window accent this console uses.
+     Zero-width host + an overlaying bar, so the cursor marks a position
+     without consuming a cell of the draft it sits in. */
   .acp-orchestrator__caret {
+    position: relative;
     display: inline-block;
-    width: 0.5em;
-    height: 1.05em;
-    margin: 0 1px -0.18em 0;
-    background: var(--krypton-window-accent, #0cf);
+    width: 0;
+    height: 1em;
+    vertical-align: -0.2em;
     animation: acp-orchestrator-caret-blink 1.06s steps(1) infinite;
+  }
+
+  .acp-orchestrator__caret::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 1ch;
+    height: max(2px, 0.1em);
+    background: var(--krypton-window-accent, #0cf);
   }
 
   @keyframes acp-orchestrator-caret-blink {
