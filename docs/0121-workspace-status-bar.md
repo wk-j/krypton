@@ -47,6 +47,7 @@ Alternatives ruled out:
 | File | Change |
 |------|--------|
 | `src/workspace-footer.ts` *(new)* | Shared workspace footer controller, slot rendering, subscriptions, git branch cache, render/update logic. |
+| `src/workspace-footer-*.ts` | **Module layout:** `workspace-footer.ts` is the facade (public API, subscriptions, RAF/generation guard, bus state, root DOM). Siblings: `-format` (pure text helpers, `hintFor`, `parseHint`/`fillHint`), `-dom` (icons + segment builder), `-segments` (left/center segments), `-git` (`FooterGit` cache + debounce), and one right-zone component each: `-attention`, `-review-gauges`, `-typesafe`, `-link`, `-program-status`, `-music`. |
 | `src/music.ts` | Stop owning the whole fixed footer; expose music playback as a footer segment or register with `WorkspaceFooter`. |
 | `src/main.ts` | Construct the footer after `ViewBus`, `Compositor`, and `InputRouter` exist; pass it to `MusicPlayer` or register music after init. |
 | `src/input-router.ts` | Add `Leader ?` in compositor mode to toggle compact/detail status; notify mode callbacks when mode changes as already done. |

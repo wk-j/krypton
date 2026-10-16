@@ -1,256 +1,32 @@
-import { invoke } from './profiler/ipc';
-import { BRANCH_ICON_BODY } from './chrome-icons';
-
-import { Mode, ProgressState, type PaneContentType } from './types';
+// Workspace status bar (spec 121) — facade. Owns the root DOM, subscriptions,
+// the RAF/generation render guard, the focused-view bus state and the detail
+// timer; per-zone rendering lives in the sibling `workspace-footer-*` modules.
+import { Mode } from './types';
 import type { Compositor } from './compositor';
 import type { InputRouter } from './input-router';
-import {
-  formatTypeSafeFooterLabel,
-  formatTypeSafeTooltip,
-  type TypeSafeMetricsSnapshot,
-} from './typesafe-metrics';
-import { programStatusSentence } from './program-status';
 import type { ViewBus } from './view-bus';
-import type {
-  AttentionTier,
-  BackendLinkState,
-  SignalSource,
-  SignalState,
-  ViewAddress,
-} from './view-bus-types';
+import type { SignalSource, ViewAddress } from './view-bus-types';
+import {
+  fillHint,
+  hintFor,
+  isViewSource,
+  type FocusedBusState,
+} from './workspace-footer-format';
+import { centerSegments, leftSegments } from './workspace-footer-segments';
+import { FooterGit } from './workspace-footer-git';
+import { FooterAttention } from './workspace-footer-attention';
+import { FooterPriority, FooterReviews } from './workspace-footer-review-gauges';
+import { FooterTypeSafe } from './workspace-footer-typesafe';
+import { FooterLink } from './workspace-footer-link';
+import { FooterProgramStatus } from './workspace-footer-program-status';
+import { FooterMusic, type MusicFooterSegment } from './workspace-footer-music';
+
+export { parseHint, fillHint, type HintChip } from './workspace-footer-format';
+export type { MusicFooterSegment } from './workspace-footer-music';
 
 export type WorkspaceFooterDensity = 'compact' | 'detail';
 
-export interface MusicFooterSegment {
-  statusIcon: string;
-  track: string;
-  info: string;
-  flags: string;
-  time: string;
-  progressPct: number;
-  playing: boolean;
-  visualizer?: HTMLCanvasElement;
-}
-
-interface FocusSummary {
-  viewId: string | null;
-  role: PaneContentType | 'quick_terminal' | null;
-  title: string;
-  cwd: string | null;
-  windows: number;
-  tabs: number;
-  panes: number;
-}
-
-interface GitSummary {
-  text: string | null;
-  expiresAt: number;
-}
-
-/** spec 213: last known state of one off-machine backend. `off` never reaches
- *  here — the footer deletes the entry instead, so a switched-off backend leaves
- *  no trace in the footer at all. */
-interface BackendLinkEntry {
-  label: string;
-  baseUrl: string;
-  project: string;
-  state: Exclude<BackendLinkState, 'off'>;
-  detail: string | null;
-  latencyMs: number | null;
-  checkedAt: number;
-}
-
-interface FocusedBusState {
-  state: SignalState;
-  throughput: number;
-  process: { name: string; pid: number | null } | null;
-  progress: { state: ProgressState; pct: number | null } | null;
-}
-
 type FooterRefreshReason = 'mode' | 'focus' | 'bus' | 'timer' | 'config' | 'music';
-
-const GIT_CACHE_TTL_MS = 10_000;
-const GIT_DEBOUNCE_MS = 100;
-
-// spec 138: attention gauge — tier ordering for picking the heaviest open item
-// across harness sources, and the count cap shown as a pip strip (`6+` beyond).
-const ATTENTION_TIER_WEIGHT: Record<AttentionTier, number> = {
-  reversible: 0,
-  costly: 1,
-  irreversible: 2,
-};
-const ATTENTION_PIP_MAX = 6;
-
-/** spec 213: severity order for picking which backend's state the single link
- *  segment shows when more than one backend is publishing. */
-const BACKEND_LINK_WEIGHT: Record<Exclude<BackendLinkState, 'off'>, number> = {
-  linked: 0,
-  unauthorized: 1,
-  offline: 2,
-};
-
-// Footer telemetry icons — monoline SVGs sized to the
-// text cell in CSS (currentColor + em → theme-aware, scales with the chrome font,
-// no glyph-font dependency so they never fall back to tofu). Each is parsed once
-// into a cached node (see `icon()`) and cloned per segment, so the render hot path
-// never re-parses markup. viewBox is 0 0 16 16; the base class is baked in.
-const FOOTER_ICON_SVG: Record<string, string> = {
-  // git branch: three nodes, the right one merging into the trunk. Geometry is
-  // shared with the harness composer's branch readout (`chrome-icons.ts`).
-  branch:
-    '<svg class="krypton-workspace-footer__icon" viewBox="0 0 16 16" aria-hidden="true">' +
-    BRANCH_ICON_BODY +
-    '</svg>',
-  // window/layout: a framed pane with a title bar and a vertical split
-  layout:
-    '<svg class="krypton-workspace-footer__icon" viewBox="0 0 16 16" aria-hidden="true">' +
-    '<rect x="2.5" y="3.5" width="11" height="9" rx="1"/><path d="M2.5 6.3 H13.5"/><path d="M8 6.3 V12.5"/></svg>',
-  // process: a terminal prompt chevron + caret line
-  prompt:
-    '<svg class="krypton-workspace-footer__icon" viewBox="0 0 16 16" aria-hidden="true">' +
-    '<path d="M4 5 L7.5 8 L4 11"/><path d="M9 11 H12.5"/></svg>',
-  // throughput: paired up/down transfer arrows
-  io:
-    '<svg class="krypton-workspace-footer__icon" viewBox="0 0 16 16" aria-hidden="true">' +
-    '<path d="M5 11.5 V4.5 M3 6.5 L5 4.5 L7 6.5"/><path d="M11 4.5 V11.5 M9 9.5 L11 11.5 L13 9.5"/></svg>',
-  // filled status dot — used for the focused-view state and the git dirty marker
-  dot:
-    '<svg class="krypton-workspace-footer__icon" viewBox="0 0 16 16" aria-hidden="true">' +
-    '<circle cx="8" cy="8" r="3.4"/></svg>',
-};
-
-function isViewSource(source: SignalSource): source is ViewAddress {
-  return 'viewId' in source;
-}
-
-function abbreviatePath(path: string | null): string | null {
-  if (!path) return null;
-  const home = getHomePath();
-  if (home && path === home) return '~';
-  if (home && path.startsWith(`${home}/`)) return `~/${path.slice(home.length + 1)}`;
-  const userHomeMatch = path.match(/^\/Users\/[^/]+(\/.*)?$/);
-  if (userHomeMatch) return `~${userHomeMatch[1] ?? ''}`;
-  return path;
-}
-
-/** True when a title token is the shell's rendering of `cwd` — exact, or an
- *  abbreviated form like `~/S/krypton` for `~/Source/krypton` (each leading
- *  path segment a prefix of the real one, last segment equal). Matching against
- *  the actual cwd means we drop only the duplicated working directory, never an
- *  unrelated path argument such as the `/tmp/a` in a "vim /tmp/a" title. */
-function tokenIsCwd(token: string, cwd: string | null): boolean {
-  if (!cwd) return false;
-  const segs = (p: string): string[] => p.replace(/\/+$/, '').split('/');
-  const tok = segs(token);
-  if (tok.length === 0) return false;
-  for (const cand of [cwd, abbreviatePath(cwd) ?? cwd]) {
-    const ref = segs(cand);
-    if (ref.length !== tok.length) continue;
-    const matches = tok.every((t, i) => {
-      const a = t.toLowerCase();
-      const b = ref[i].toLowerCase();
-      return i === tok.length - 1 ? a === b : b.startsWith(a);
-    });
-    if (matches) return true;
-  }
-  return false;
-}
-
-/** Drop the shell-embedded cwd from a terminal title so it isn't duplicated with
- *  the center CWD segment, keeping everything else (command names, real path
- *  arguments, decorative separators like the `//` in "MD // foo"). */
-function stripCwdToken(title: string, cwd: string | null): string {
-  return title
-    .split(/\s+/)
-    .filter((token) => token.length > 0 && !tokenIsCwd(token, cwd))
-    .join(' ')
-    .trim();
-}
-
-function getHomePath(): string | null {
-  const envHome = (globalThis as unknown as { process?: { env?: { HOME?: string } } }).process?.env?.HOME;
-  return envHome ?? null;
-}
-
-function formatBytesPerSec(value: number): string {
-  if (value < 1000) return `${value}B/s`;
-  if (value < 1_000_000) return `${(value / 1000).toFixed(1)}K/s`;
-  return `${(value / 1_000_000).toFixed(1)}M/s`;
-}
-
-function modeLabel(mode: Mode): string {
-  return mode.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
-}
-
-function roleLabel(role: FocusSummary['role']): string {
-  if (!role) return 'no focus';
-  if (role === 'quick_terminal') return 'quick terminal';
-  return role;
-}
-
-/** Compose the left "role + title" label, dropping the role prefix when the
- *  title already names the same kind of view — otherwise content views whose
- *  title IS the view name double up (e.g. role `acp_harness` + title
- *  "ACP Harness" → "acp_harness ACP Harness"). The shell-embedded cwd is
- *  stripped from the title first so it isn't duplicated with the CWD segment. */
-function composeRoleTitle(role: FocusSummary['role'], rawTitle: string, cwd: string | null): string {
-  const roleText = roleLabel(role);
-  const title = stripCwdToken(rawTitle, cwd);
-  if (!title) return roleText;
-  const norm = (s: string): string => s.toLowerCase().replace(/[_\s]+/g, ' ').trim();
-  const nRole = norm(roleText);
-  const nTitle = norm(title);
-  // Title equals or extends the role name → it already conveys the kind.
-  if (nTitle === nRole || nTitle.startsWith(`${nRole} `)) return title;
-  return `${roleText} ${title}`.trim();
-}
-
-function progressText(progress: FocusedBusState['progress']): string | null {
-  if (!progress || progress.state === ProgressState.Hidden) return null;
-  if (progress.pct !== null) return `${Math.round(progress.pct)}%`;
-  if (progress.state === ProgressState.Indeterminate) return '…';
-  return null;
-}
-
-function plural(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? '' : 's'}`;
-}
-
-/** Spec 236: leading token of a ` · `-separated hint part that is a key. */
-const HINT_KEY_RE =
-  /^(?:Leader|Esc|arrows|h\/j\/k\/l|#\w+|\?|Cmd(?:\+[A-Za-z]+)+|[a-z])$/;
-
-export interface HintChip {
-  key: string | null;
-  rest: string;
-}
-
-/** Split a footer hint into key chips + trailing labels. Parts with no
- *  leading key stay `{ key: null, rest: part }`. */
-export function parseHint(text: string): HintChip[] {
-  return text.split(' · ').map((part) => {
-    const trimmed = part.trim();
-    const space = trimmed.indexOf(' ');
-    const first = space === -1 ? trimmed : trimmed.slice(0, space);
-    if (!HINT_KEY_RE.test(first)) return { key: null, rest: part };
-    return { key: first, rest: space === -1 ? '' : trimmed.slice(space + 1) };
-  });
-}
-
-export function fillHint(el: HTMLElement, text: string): void {
-  el.replaceChildren();
-  parseHint(text).forEach((chip, i) => {
-    if (i > 0) el.append(document.createTextNode(' · '));
-    if (!chip.key) {
-      el.append(document.createTextNode(chip.rest));
-      return;
-    }
-    const kbd = document.createElement('kbd');
-    kbd.textContent = chip.key;
-    el.append(kbd);
-    if (chip.rest) el.append(document.createTextNode(` ${chip.rest}`));
-  });
-}
 
 export class WorkspaceFooter {
   private readonly workspace: HTMLElement;
@@ -266,37 +42,14 @@ export class WorkspaceFooter {
   private centerEl: HTMLElement;
   private rightEl: HTMLElement;
   private hintEl: HTMLElement;
-  private attentionEl: HTMLElement;
-  /** spec 128/138: open attention count + heaviest reversibility tier per
-   * publishing harness instance. Counts are summed and tiers max'd for display
-   * so every lane's attention collects in this one place. */
-  private attentionBySource = new Map<string, { count: number; tier: AttentionTier | null }>();
-  /** spec 284: OSC 7501 — live panes whose program is blocked / errored / done.
-   *  Read from the compositor on every render; never cached here. */
-  private programStatusEl: HTMLElement;
-  private reviewsEl: HTMLElement;
-  /** spec 146: recorded #review rounds per publishing harness instance, summed
-   * for the neutral depth indicator (distinct from the attention gauge). */
-  private reviewsBySource = new Map<string, number>();
-  private priorityEl: HTMLElement;
-  /** spec 162: count of `high` review-priority ranges per publishing harness,
-   * summed for the neutral "read these first" depth indicator. */
-  private priorityBySource = new Map<string, number>();
-  private typesafeEl: HTMLElement;
-  private typesafeEnabled = false;
-  private typesafeMetrics: TypeSafeMetricsSnapshot | null = null;
-  private linkEl: HTMLElement;
-  /** spec 213: latest link report per off-machine backend, keyed by backendId.
-   * `xenon` is the only publisher today; the map is what lets a second backend
-   * arrive without touching the footer. An `off` state deletes its entry. */
-  private linkByBackend = new Map<string, BackendLinkEntry>();
-  private musicEl: HTMLElement;
-  private musicProgressFillEl: HTMLElement;
-  private musicIconEl: HTMLElement | null = null;
-  private musicTimeEl: HTMLElement | null = null;
-  private renderedMusicKey: string | null = null;
-  private musicSegment: MusicFooterSegment | null = null;
-  private musicVisualizer: HTMLCanvasElement | null = null;
+  private readonly attention = new FooterAttention();
+  private readonly programStatus = new FooterProgramStatus();
+  private readonly reviews = new FooterReviews();
+  private readonly priority = new FooterPriority();
+  private readonly typesafe = new FooterTypeSafe();
+  private readonly link = new FooterLink();
+  private readonly music = new FooterMusic();
+  private readonly git: FooterGit;
 
   private busState: FocusedBusState = {
     state: 'normal',
@@ -304,21 +57,14 @@ export class WorkspaceFooter {
     process: null,
     progress: null,
   };
-  private gitByCwd = new Map<string, GitSummary>();
   /** Latest OSC 7 cwd per view (keyed by viewId), pushed via `view:cwd`. Used as
    *  the footer's working directory so a `cd` shows immediately without polling;
    *  views without OSC 7 fall back to the live `get_pty_cwd` query in render(). */
   private cwdByView = new Map<string, string>();
-  private gitText: string | null = null;
-  private gitCwd: string | null = null;
-  private pendingGitCwd: string | null = null;
-  private pendingGitTimer: ReturnType<typeof setTimeout> | null = null;
   private renderScheduled = false;
   private renderGeneration = 0;
   private focusedViewKey: string | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
-  /** Parsed-once SVG icon nodes, cloned per segment so renders never re-parse. */
-  private iconTemplates = new Map<string, SVGElement>();
 
   constructor(deps: {
     workspace: HTMLElement;
@@ -329,6 +75,10 @@ export class WorkspaceFooter {
     this.workspace = deps.workspace;
     this.compositor = deps.compositor;
     this.bus = deps.bus;
+    this.git = new FooterGit({
+      getFocusedCwd: () => this.compositor.getFocusedWorkingDirectory(),
+      onChange: () => this.refresh('bus'),
+    });
     this.root = document.createElement('footer');
     this.root.className = 'krypton-workspace-footer';
     this.root.dataset.density = this.density;
@@ -344,66 +94,19 @@ export class WorkspaceFooter {
     this.rightEl.className = 'krypton-workspace-footer__right';
     this.hintEl = document.createElement('span');
     this.hintEl.className = 'krypton-workspace-footer__segment krypton-workspace-footer__hint';
-    // spec 128: global attention-triage badge — open count published by the ACP
-    // harness via `system:attention`, shown regardless of focused view.
-    this.attentionEl = document.createElement('span');
-    this.attentionEl.className =
-      'krypton-workspace-footer__segment krypton-workspace-footer__segment--attention';
-    this.attentionEl.hidden = true;
-    this.programStatusEl = document.createElement('span');
-    this.programStatusEl.className =
-      'krypton-workspace-footer__segment krypton-workspace-footer__segment--program-status';
-    this.programStatusEl.hidden = true;
-    // spec 146: neutral review-count depth indicator (review quality matrix),
-    // published by the ACP harness via `review:quality`. Distinct from the
-    // attention gauge: it means "N rounds recorded — press to inspect", never
-    // "act on me", and is never coloured by badness (ADR-0004).
-    this.reviewsEl = document.createElement('span');
-    this.reviewsEl.className =
-      'krypton-workspace-footer__segment krypton-workspace-footer__segment--reviews';
-    this.reviewsEl.hidden = true;
-    // spec 162: neutral review-priority depth indicator (mark_review_priority
-    // roll-up), published via `review:priority`. Like the review-count gauge it
-    // means "N spots marked to read first — press to inspect", never "act on
-    // me"; an advisory reading hint, never coloured (ADR-0009).
-    this.priorityEl = document.createElement('span');
-    this.priorityEl.className =
-      'krypton-workspace-footer__segment krypton-workspace-footer__segment--priority';
-    this.priorityEl.hidden = true;
-    // spec 258: process-lifetime TypeSafe API request count. It leads the
-    // global cluster and stays hidden until TypeSafe is enabled and a real
-    // network attempt has started.
-    this.typesafeEl = document.createElement('span');
-    this.typesafeEl.className =
-      'krypton-workspace-footer__segment krypton-workspace-footer__segment--typesafe';
-    this.typesafeEl.hidden = true;
-    // spec 213: backend link indicator — whether the off-machine Xenon server
-    // is actually reachable with our credential. Unlike the two depth gauges
-    // above it IS coloured when faulted (ADR-0017): a broken link silently
-    // fails every publish, which is demand on the human, not advisory depth.
-    this.linkEl = document.createElement('span');
-    this.linkEl.className =
-      'krypton-workspace-footer__segment krypton-workspace-footer__segment--link';
-    this.linkEl.hidden = true;
-    this.musicEl = document.createElement('div');
-    this.musicEl.className = 'krypton-workspace-footer__music';
-    this.musicEl.setAttribute('aria-label', 'music mini player');
-    this.musicEl.setAttribute('aria-hidden', 'true');
-    this.musicProgressFillEl = document.createElement('div');
-    this.musicProgressFillEl.className = 'krypton-workspace-footer__music-progress-fill';
 
     // TypeSafe activity and the backend link lead the global cluster, at its
     // outer edge and far enough from the focus-scoped segments that both read
     // as properties of the app/machine, not the pane.
     this.rightEl.append(
-      this.typesafeEl,
-      this.linkEl,
-      this.priorityEl,
-      this.reviewsEl,
-      this.attentionEl,
-      this.programStatusEl,
+      this.typesafe.el,
+      this.link.el,
+      this.priority.el,
+      this.reviews.el,
+      this.attention.el,
+      this.programStatus.el,
       this.hintEl,
-      this.musicEl,
+      this.music.el,
     );
     this.root.append(this.leftEl, this.centerEl, this.rightEl);
 
@@ -455,9 +158,8 @@ export class WorkspaceFooter {
     // matters wherever the user is, so it survives focus changes.
     this.bus.onSignal({ kind: 'system:attention' }, (s) => {
       const { sourceId, openCount, maxReversibility } = s.value;
-      if (openCount > 0) this.attentionBySource.set(sourceId, { count: openCount, tier: maxReversibility });
-      else this.attentionBySource.delete(sourceId);
-      this.renderAttention();
+      this.attention.set(sourceId, openCount, maxReversibility);
+      this.attention.render();
     });
 
     // spec 284: global (not focus-gated) — a pane needing you matters wherever
@@ -470,30 +172,27 @@ export class WorkspaceFooter {
     // spec 146: global (not focus-gated) review-count depth indicator.
     this.bus.onSignal({ kind: 'review:quality' }, (s) => {
       const { sourceId, totalReviews } = s.value;
-      if (totalReviews > 0) this.reviewsBySource.set(sourceId, totalReviews);
-      else this.reviewsBySource.delete(sourceId);
-      this.renderReviews();
+      this.reviews.set(sourceId, totalReviews);
+      this.reviews.render();
     });
 
     // spec 162: global (not focus-gated) review-priority depth indicator.
     this.bus.onSignal({ kind: 'review:priority' }, (s) => {
       const { sourceId, highCount } = s.value;
-      if (highCount > 0) this.priorityBySource.set(sourceId, highCount);
-      else this.priorityBySource.delete(sourceId);
-      this.renderPriority();
+      this.priority.set(sourceId, highCount);
+      this.priority.render();
     });
 
     // spec 213: global (not focus-gated) backend link state.
     this.bus.onSignal({ kind: 'system:backend-link' }, (s) => {
       const { backendId, state, ...rest } = s.value;
-      if (state === 'off') this.linkByBackend.delete(backendId);
-      else this.linkByBackend.set(backendId, { ...rest, state });
-      this.renderLink();
+      this.link.set(backendId, state, rest);
+      this.link.render(this.density === 'detail');
     });
 
     this.bus.onSignal({ kind: 'system:typesafe-metrics' }, (s) => {
-      this.typesafeMetrics = s.value;
-      this.renderTypeSafe();
+      this.typesafe.metrics = s.value;
+      this.typesafe.render(this.density === 'detail');
     });
 
     this.timer = setInterval(() => {
@@ -507,10 +206,7 @@ export class WorkspaceFooter {
       clearInterval(this.timer);
       this.timer = null;
     }
-    if (this.pendingGitTimer !== null) {
-      clearTimeout(this.pendingGitTimer);
-      this.pendingGitTimer = null;
-    }
+    this.git.dispose();
     this.root.remove();
   }
 
@@ -540,30 +236,18 @@ export class WorkspaceFooter {
   }
 
   setTypeSafeEnabled(enabled: boolean): void {
-    this.typesafeEnabled = enabled;
-    this.renderTypeSafe();
+    this.typesafe.enabled = enabled;
+    this.typesafe.render(this.density === 'detail');
   }
 
   setMusicSegment(segment: MusicFooterSegment | null): void {
-    this.musicSegment = segment;
     this.root.dataset.music = segment ? 'on' : 'off';
-    this.musicEl.setAttribute('aria-hidden', segment ? 'false' : 'true');
-    if (!segment) {
-      this.renderedMusicKey = null;
-      this.musicIconEl = null;
-      this.musicTimeEl = null;
-      this.musicProgressFillEl.style.width = '0%';
-    }
+    this.music.set(segment);
     this.refresh('music');
   }
 
   updateMusicPosition(time: string, progressPct: number, playing: boolean): void {
-    if (!this.musicSegment) return;
-    this.musicSegment.time = time;
-    this.musicSegment.progressPct = progressPct;
-    this.musicSegment.playing = playing;
-    if (this.musicTimeEl) this.musicTimeEl.textContent = time;
-    this.musicProgressFillEl.style.width = `${Math.max(0, Math.min(100, progressPct))}%`;
+    this.music.updatePosition(time, progressPct, playing);
   }
 
   refresh(_reason: FooterRefreshReason): void {
@@ -618,502 +302,26 @@ export class WorkspaceFooter {
     const proc = this.compositor.getFocusedProcess();
     this.busState.process = proc ? { name: proc.name, pid: proc.pid } : null;
     if (generation !== this.renderGeneration) return;
-    this.updateGit(summary.cwd);
+    this.git.update(summary.cwd);
 
-    this.renderLeft(summary);
-    this.renderCenter(summary);
-    this.renderRight(summary);
-  }
+    this.leftEl.replaceChildren(...leftSegments(this.mode, summary));
+    const status = summary.viewId ? this.compositor.programStatus.summary(summary.viewId) : null;
+    this.centerEl.replaceChildren(...centerSegments(summary, this.git.text, this.busState, status));
 
-  private renderLeft(summary: FocusSummary): void {
-    this.leftEl.replaceChildren(
-      this.segment(modeLabel(this.mode), this.mode === Mode.Normal ? 'mode mode-normal' : 'mode'),
-      this.segment(composeRoleTitle(summary.role, summary.title, summary.cwd), 'p0 role'),
-    );
-  }
-
-  private renderCenter(summary: FocusSummary): void {
-    // Compose the center zone from independent per-datum segment builders. Each
-    // returns null when its datum is absent, so the order here IS the layout and
-    // nothing is entangled in a chain of ifs.
-    const segments = [
-      this.workingDirSegment(summary.cwd),
-      this.gitSegment(this.gitText),
-      this.countsSegment(summary),
-      this.processSegment(),
-      this.throughputSegment(),
-      this.progressSegment(),
-      this.stateSegment(),
-      this.programStatusSegment(summary.viewId),
-    ].filter((el): el is HTMLElement => el !== null);
-    this.centerEl.replaceChildren(...segments);
-  }
-
-  private renderRight(summary: FocusSummary): void {
-    const hint = this.hintFor(summary);
+    const hint = hintFor(this.mode, summary.role, this.music.active);
     this.hintEl.setAttribute('aria-label', hint);
     fillHint(this.hintEl, hint);
-    this.renderTypeSafe();
-    this.renderLink();
-    this.renderPriority();
-    this.renderReviews();
-    this.renderAttention();
+    const detail = this.density === 'detail';
+    this.typesafe.render(detail);
+    this.link.render(detail);
+    this.priority.render();
+    this.reviews.render();
+    this.attention.render();
     this.renderProgramStatus();
-    this.renderMusic();
+    this.music.render();
   }
 
-  /** spec 258: exact outbound TypeSafe request attempts in this app run.
-   * Hidden while disabled or at zero; static and event-driven once visible. */
-  private renderTypeSafe(): void {
-    const metrics = this.typesafeMetrics;
-    if (!this.typesafeEnabled || !metrics || metrics.apiRequests <= 0) {
-      this.typesafeEl.hidden = true;
-      this.typesafeEl.replaceChildren();
-      this.typesafeEl.removeAttribute('title');
-      this.typesafeEl.removeAttribute('aria-label');
-      return;
-    }
-
-    this.typesafeEl.hidden = false;
-    const glyph = document.createElement('span');
-    glyph.className = 'krypton-workspace-footer__typesafe-glyph';
-    glyph.textContent = '⚡';
-    const label = document.createElement('span');
-    label.textContent = formatTypeSafeFooterLabel(metrics, this.density === 'detail');
-    this.typesafeEl.replaceChildren(glyph, label);
-    this.typesafeEl.title = formatTypeSafeTooltip(metrics);
-    this.typesafeEl.setAttribute('aria-label', `TypeSafe API requests ${metrics.apiRequests}`);
-  }
-
-  /**
-   * spec 213: render the backend link segment — is the off-machine server
-   * actually reachable with our credential?
-   *
-   * Hidden entirely when no backend is configured, rather than shown greyed:
-   * the footer's established idiom is to stay quiet about subsystems that are
-   * switched off, not to advertise them. Coloured only when faulted (ADR-0017)
-   * — a healthy link is ambient and must not compete with the attention gauge.
-   * Static, like every other footer chip: no pulse, no animation.
-   */
-  private renderLink(): void {
-    // One backend exists today; if a second ever publishes, the worst state
-    // wins the segment, because that is the one the human has to act on.
-    let worst: BackendLinkEntry | null = null;
-    for (const entry of this.linkByBackend.values()) {
-      if (!worst || BACKEND_LINK_WEIGHT[entry.state] > BACKEND_LINK_WEIGHT[worst.state]) {
-        worst = entry;
-      }
-    }
-    if (!worst) {
-      this.linkEl.hidden = true;
-      this.linkEl.replaceChildren();
-      this.linkEl.removeAttribute('title');
-      return;
-    }
-
-    this.linkEl.hidden = false;
-    this.linkEl.className =
-      'krypton-workspace-footer__segment krypton-workspace-footer__segment--link ' +
-      `krypton-workspace-footer__segment--link-${worst.state}`;
-
-    const glyph = document.createElement('span');
-    glyph.className = 'krypton-workspace-footer__link-glyph';
-    glyph.textContent = '⇄';
-    const label = document.createElement('span');
-    label.textContent = this.linkLabel(worst);
-    this.linkEl.replaceChildren(glyph, label);
-    this.linkEl.title = this.linkTooltip(worst);
-  }
-
-  /** Latency is detail-density only — in compact the segment is a state word. */
-  private linkLabel(entry: BackendLinkEntry): string {
-    if (entry.state === 'unauthorized') return `${entry.label} auth`;
-    if (entry.state === 'offline') return `${entry.label} offline`;
-    if (this.density === 'detail' && entry.latencyMs !== null) {
-      return `${entry.label} ${entry.latencyMs}ms`;
-    }
-    return entry.label;
-  }
-
-  /** The tooltip is where the fix lives: a segment can only carry a state, but
-   *  a human who sees a fault needs to know which server and what to do. */
-  private linkTooltip(entry: BackendLinkEntry): string {
-    const where = `${entry.baseUrl || '(no base_url)'} · project ${entry.project || '(none)'}`;
-    const checked = entry.checkedAt
-      ? `checked ${new Date(entry.checkedAt * 1000).toLocaleTimeString()}`
-      : 'not yet checked';
-    const lines = [`${entry.label}: ${entry.state}`, where, checked];
-    if (entry.detail) lines.push(entry.detail);
-    if (entry.state === 'offline') {
-      lines.push(`server unreachable at ${entry.baseUrl} — press ⌘P X to re-probe`);
-    } else if (entry.state === 'unauthorized') {
-      lines.push('token rejected — store a new one with #xenon token <token>');
-    }
-    return lines.join('\n');
-  }
-
-  /** spec 146: render the neutral review-count depth indicator — total recorded
-   * #review rounds summed across sources. Deliberately NOT a gauge: a single
-   * glyph + count, never coloured by badness, never pulses (ADR-0004). Hidden at
-   * zero. Distinct from the attention gauge — depth ("inspect"), not demand. */
-  private renderReviews(): void {
-    let n = 0;
-    for (const total of this.reviewsBySource.values()) n += total;
-    if (n <= 0) {
-      this.reviewsEl.hidden = true;
-      this.reviewsEl.replaceChildren();
-      this.reviewsEl.removeAttribute('title');
-      return;
-    }
-    this.reviewsEl.hidden = false;
-    const glyph = document.createElement('span');
-    glyph.className = 'krypton-workspace-footer__reviews-glyph';
-    glyph.textContent = '◷';
-    const label = document.createElement('span');
-    label.textContent = `${n} review${n === 1 ? '' : 's'}`;
-    this.reviewsEl.replaceChildren(glyph, label);
-    this.reviewsEl.title = `${n} recorded review round${n === 1 ? '' : 's'} — press ⌘P ' to inspect the review quality matrix`;
-  }
-
-  /** spec 162: neutral count of `high` review-priority spots summed across
-   * sources. Hidden at zero so the footer stays quiet when no lane has marked a
-   * reading priority. Depth ("inspect"), never demand — never coloured. */
-  private renderPriority(): void {
-    let n = 0;
-    for (const total of this.priorityBySource.values()) n += total;
-    if (n <= 0) {
-      this.priorityEl.hidden = true;
-      this.priorityEl.replaceChildren();
-      this.priorityEl.removeAttribute('title');
-      return;
-    }
-    this.priorityEl.hidden = false;
-    const glyph = document.createElement('span');
-    glyph.className = 'krypton-workspace-footer__priority-glyph';
-    glyph.textContent = '▤';
-    const label = document.createElement('span');
-    label.textContent = `${n} priority`;
-    this.priorityEl.replaceChildren(glyph, label);
-    this.priorityEl.title = `${n} spot${n === 1 ? '' : 's'} marked to read first — press ⌘P / to inspect the review priority roll-up`;
-  }
-
-  /** spec 128/138: render the open attention-triage gauge — count summed across
-   * sources, coloured by the heaviest open reversibility tier, with the count
-   * encoded as a pip strip (`6+` past the cap). Static (no motion). Hidden at
-   * zero so the footer stays quiet when nothing needs the human. */
-  private renderAttention(): void {
-    let n = 0;
-    let tierWeight = -1;
-    let tier: AttentionTier = 'costly'; // fallback colour if a source reports a null tier
-    for (const { count, tier: t } of this.attentionBySource.values()) {
-      n += count;
-      if (t && ATTENTION_TIER_WEIGHT[t] > tierWeight) {
-        tierWeight = ATTENTION_TIER_WEIGHT[t];
-        tier = t;
-      }
-    }
-    if (n <= 0) {
-      this.attentionEl.hidden = true;
-      this.attentionEl.replaceChildren();
-      this.attentionEl.removeAttribute('title');
-      return;
-    }
-    this.attentionEl.hidden = false;
-    this.attentionEl.className =
-      'krypton-workspace-footer__segment krypton-workspace-footer__segment--attention ' +
-      `krypton-workspace-footer__segment--rev-${tier}`;
-
-    const label = document.createElement('span');
-    label.textContent = `${n > ATTENTION_PIP_MAX ? `${ATTENTION_PIP_MAX}+` : n} attention`;
-    const pips = document.createElement('span');
-    pips.className = 'krypton-workspace-footer__attention-pips';
-    const lit = Math.min(n, ATTENTION_PIP_MAX);
-    for (let i = 0; i < ATTENTION_PIP_MAX; i++) {
-      const pip = document.createElement('i');
-      if (i >= lit) pip.className = 'is-off';
-      pips.appendChild(pip);
-    }
-    this.attentionEl.replaceChildren(label, pips);
-    this.attentionEl.title =
-      `${n} open attention item${n === 1 ? '' : 's'} awaiting your judgement — heaviest: ${tier}`;
-  }
-
-  private renderMusic(): void {
-    const segment = this.musicSegment;
-    if (!segment) {
-      this.musicEl.replaceChildren();
-      this.musicVisualizer = null;
-      this.renderedMusicKey = null;
-      return;
-    }
-
-    const key = [
-      segment.statusIcon,
-      segment.track,
-      segment.info,
-      segment.flags,
-      segment.visualizer ? 'viz' : 'no-viz',
-    ].join('\u001f');
-
-    if (key === this.renderedMusicKey) {
-      this.updateMusicPosition(segment.time, segment.progressPct, segment.playing);
-      return;
-    }
-
-    this.renderedMusicKey = key;
-    this.musicEl.replaceChildren();
-    this.musicVisualizer = null;
-
-    const icon = this.segment(segment.statusIcon, 'music-icon');
-    this.musicIconEl = icon;
-    const track = this.segment(segment.track, 'music-track');
-    const info = this.segment(segment.info, 'music-info');
-    const flags = this.segment(segment.flags, 'music-flags');
-    const time = this.segment(segment.time, 'music-time');
-    this.musicTimeEl = time;
-    const progress = document.createElement('div');
-    progress.className = 'krypton-workspace-footer__music-progress';
-    this.musicProgressFillEl.style.width = `${Math.max(0, Math.min(100, segment.progressPct))}%`;
-    progress.appendChild(this.musicProgressFillEl);
-
-    this.musicEl.appendChild(icon);
-    if (segment.visualizer) {
-      this.musicVisualizer = segment.visualizer;
-      this.musicEl.appendChild(segment.visualizer);
-    }
-    this.musicEl.append(track, info, flags, time, progress);
-  }
-
-  private hintFor(summary: FocusSummary): string {
-    if (this.mode === Mode.Compositor) return 'n new · h/j/k/l focus · ? details';
-    if (this.mode === Mode.Resize || this.mode === Mode.Move || this.mode === Mode.Swap) return 'arrows adjust · Esc cancel';
-    if (this.mode === Mode.CommandPalette || this.mode === Mode.Dashboard || this.mode === Mode.PromptDialog || this.mode === Mode.QuickFileSearch) return 'Esc close';
-    if (summary.role === 'acp_harness') return 'Cmd+P lanes · #cancel running';
-    if (this.musicSegment) return 'Cmd+Shift+M music';
-    return 'Leader v select · Cmd+O files · Cmd+Shift+G git';
-  }
-
-  /** Clone a cached telemetry icon. `variants` are short tokens mapped to
-   * `__icon--<token>` BEM modifiers (e.g. 'fill dot'). Parses each SVG once. */
-  private icon(name: string, variants = ''): SVGElement {
-    let tpl = this.iconTemplates.get(name);
-    if (!tpl) {
-      const holder = document.createElement('div');
-      holder.innerHTML = FOOTER_ICON_SVG[name];
-      tpl = holder.firstElementChild as SVGElement;
-      this.iconTemplates.set(name, tpl);
-    }
-    const node = tpl.cloneNode(true) as SVGElement;
-    for (const v of variants.split(/\s+/).filter(Boolean)) {
-      node.classList.add(`krypton-workspace-footer__icon--${v}`);
-    }
-    return node;
-  }
-
-  /** Build the single canonical working-directory segment for the workspace
-   *  footer. This is the ONE place the workspace renders the focused pane's cwd
-   *  (the left title strips path tokens so it never duplicates this). Returns
-   *  null when there is no cwd to show. */
-  private workingDirSegment(cwd: string | null): HTMLElement | null {
-    const abbreviated = abbreviatePath(cwd);
-    if (!abbreviated) return null;
-    const el = this.segment(abbreviated, 'p1 project');
-    const label = `working directory ${cwd}`;
-    el.title = label;
-    el.setAttribute('aria-label', label);
-    return el;
-  }
-
-  /** Git ref + dirty marker for the focused pane's cwd. Null when not a repo. */
-  private gitSegment(text: string | null): HTMLElement | null {
-    if (!text) return null;
-    const dirty = text.endsWith(' *');
-    const ref = dirty ? text.slice(0, -2) : text;
-    const el = this.segment(ref, 'p1 git');
-    el.prepend(this.icon('branch'));
-    if (dirty) {
-      const dot = this.icon('dot', 'fill dot');
-      dot.classList.add('krypton-workspace-footer__git-dirty');
-      el.append(dot);
-    }
-    const label = dirty ? `branch ${ref} — uncommitted changes` : `branch ${ref}`;
-    el.title = label;
-    el.setAttribute('aria-label', label);
-    return el;
-  }
-
-  /** Compact window/tab/pane triplet with a layout icon. Null unless something
-   *  is split (any count > 1) — a lone pane needs no counter. */
-  private countsSegment(summary: FocusSummary): HTMLElement | null {
-    if (summary.windows <= 1 && summary.tabs <= 1 && summary.panes <= 1) return null;
-    const el = this.segment(`${summary.windows}/${summary.tabs}/${summary.panes}`, 'p2 counts');
-    el.prepend(this.icon('layout'));
-    const label = `${plural(summary.windows, 'window')} · ${plural(summary.tabs, 'tab')} · ${plural(summary.panes, 'pane')}`;
-    el.title = label;
-    el.setAttribute('aria-label', label);
-    return el;
-  }
-
-  /** Foreground process name (+ pid) of the focused session. Null when unknown. */
-  private processSegment(): HTMLElement | null {
-    if (!this.busState.process) return null;
-    const { name, pid } = this.busState.process;
-    const el = this.segment(name, 'p2 process');
-    el.prepend(this.icon('prompt'));
-    if (pid !== null) {
-      const pidEl = document.createElement('span');
-      pidEl.className = 'krypton-workspace-footer__pid';
-      pidEl.textContent = ` ${pid}`;
-      el.append(pidEl);
-    }
-    const label = pid !== null ? `process ${name} · pid ${pid}` : `process ${name}`;
-    el.title = label;
-    el.setAttribute('aria-label', label);
-    return el;
-  }
-
-  /** PTY throughput rate. Null when idle (0 B/s). */
-  private throughputSegment(): HTMLElement | null {
-    if (this.busState.throughput <= 0) return null;
-    const rate = formatBytesPerSec(this.busState.throughput);
-    const el = this.segment(rate, 'p3 throughput');
-    el.prepend(this.icon('io'));
-    el.title = `throughput ${rate}`;
-    el.setAttribute('aria-label', el.title);
-    return el;
-  }
-
-  /** OSC progress percentage / indeterminate marker. Null when no progress. */
-  private progressSegment(): HTMLElement | null {
-    const progress = progressText(this.busState.progress);
-    if (!progress) return null;
-    const el = this.segment(progress, 'p3 detail');
-    el.title = `progress ${progress}`;
-    el.setAttribute('aria-label', el.title);
-    return el;
-  }
-
-  /** Signal state (busy/warn/err/…) as a coloured dot + word. Null when normal.
-   *  Tagged via data-state so CSS colours it by meaning, not the flat p3 tier. */
-  private stateSegment(): HTMLElement | null {
-    if (this.busState.state === 'normal') return null;
-    const el = this.segment(this.busState.state, 'p3 detail state');
-    el.dataset.state = this.busState.state;
-    el.prepend(this.icon('dot', 'fill dot'));
-    el.title = `state: ${this.busState.state}`;
-    el.setAttribute('aria-label', el.title);
-    return el;
-  }
-
-  /** spec 284: the focused pane's OSC 7501 summary as `app: message`. Detail
-   *  density only; null when the pane has no records or is idle. */
-  private programStatusSegment(viewId: string | null): HTMLElement | null {
-    const status = viewId ? this.compositor.programStatus.summary(viewId) : null;
-    if (!status || status.state === 'idle') return null;
-    const sentence = programStatusSentence(status);
-    const el = this.segment(status.app ? `${status.app}: ${sentence}` : sentence, 'p3 detail program');
-    el.dataset.state = status.state;
-    el.title = `program status: ${status.state} — ${sentence}`;
-    el.setAttribute('aria-label', el.title);
-    return el;
-  }
-
-  /** spec 284: `▲n ✕n ✓n` — panes blocked / errored / done, each part shown
-   *  only when non-zero, the whole segment hidden when all are zero. */
   private renderProgramStatus(): void {
-    const { blocked, error, done } = this.compositor.programStatusCounts();
-    const parts: HTMLElement[] = [];
-    for (const [state, glyph, n] of [['blocked', '▲', blocked], ['error', '✕', error], ['done', '✓', done]] as const) {
-      if (n === 0) continue;
-      const part = document.createElement('span');
-      part.className = 'krypton-workspace-footer__program-count';
-      part.dataset.state = state;
-      part.textContent = `${glyph}${n}`;
-      parts.push(part);
-    }
-    if (parts.length === 0) {
-      this.programStatusEl.hidden = true;
-      this.programStatusEl.replaceChildren();
-      this.programStatusEl.removeAttribute('title');
-      return;
-    }
-    this.programStatusEl.hidden = false;
-    this.programStatusEl.replaceChildren(...parts);
-    this.programStatusEl.title =
-      `programs needing you — blocked ${blocked}, error ${error}, done ${done} · Leader ! to jump`;
+    this.programStatus.render(this.compositor.programStatusCounts());
   }
-
-  private segment(text: string, modifiers: string): HTMLElement {
-    const el = document.createElement('span');
-    el.className = `krypton-workspace-footer__segment ${modifiers
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((m) => `krypton-workspace-footer__segment--${m}`)
-      .join(' ')}`;
-    el.textContent = text;
-    return el;
-  }
-
-  private updateGit(cwd: string | null): void {
-    if (cwd !== this.gitCwd) {
-      this.gitCwd = cwd;
-      this.gitText = null;
-      if (this.pendingGitTimer !== null) {
-        clearTimeout(this.pendingGitTimer);
-        this.pendingGitTimer = null;
-      }
-      this.pendingGitCwd = null;
-    }
-    if (!cwd) {
-      this.gitText = null;
-      return;
-    }
-    const cached = this.gitByCwd.get(cwd);
-    const now = Date.now();
-    if (cached && cached.expiresAt > now) {
-      this.gitText = cached.text;
-      return;
-    }
-    if (this.pendingGitTimer !== null && this.pendingGitCwd === cwd) return;
-    if (this.pendingGitTimer !== null) {
-      clearTimeout(this.pendingGitTimer);
-      this.pendingGitTimer = null;
-    }
-    this.pendingGitCwd = cwd;
-    this.pendingGitTimer = setTimeout(() => {
-      this.pendingGitTimer = null;
-      this.pendingGitCwd = null;
-      void this.refreshGit(cwd);
-    }, GIT_DEBOUNCE_MS);
-  }
-
-  private async refreshGit(cwd: string): Promise<void> {
-    let text: string | null = null;
-    try {
-      const branch = (await invoke<string>('run_command', {
-        program: 'git',
-        args: ['branch', '--show-current'],
-        cwd,
-      })).trim();
-      const ref = branch || (await invoke<string>('run_command', {
-        program: 'git',
-        args: ['rev-parse', '--short', 'HEAD'],
-        cwd,
-      })).trim();
-      const porcelain = (await invoke<string>('run_command', {
-        program: 'git',
-        args: ['status', '--porcelain=v1'],
-        cwd,
-      })).trim();
-      text = ref ? `${branch ? ref : `HEAD ${ref}`}${porcelain ? ' *' : ''}` : null;
-    } catch {
-      text = null;
-    }
-    this.gitByCwd.set(cwd, { text, expiresAt: Date.now() + GIT_CACHE_TTL_MS });
-    if ((await this.compositor.getFocusedWorkingDirectory()) === cwd) {
-      this.gitText = text;
-      this.refresh('bus');
-    }
-  }
-
 }
