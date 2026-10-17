@@ -4,6 +4,8 @@
 > Date: 2026-10-17
 > Milestone: ACP Harness
 > Supersedes the wire format of [spec 308](./0308-harness-generative-ui.md); keeps its host model (sealed card → panel), whose host surface [spec 310](./0310-harness-genui-inline-panel.md) then moved from an overlay to the card itself. The catalog and renderer are host-agnostic and unchanged by 310.
+>
+> **Revision (2026-10-17): a fence is collapsed while it streams.** See §Streaming.
 
 ## Problem
 
@@ -134,10 +136,35 @@ Source 20,000 chars · parse nesting 100 · eval depth 1,000 · 200,000 steps ·
 
 Block-level **fail-closed**: any error-severity diagnostic ⇒ no panel, the fence stays visible as code, and the card is replaced by a one-line error carrying the first diagnostic. Node-level **fail-soft**: a runtime error inside one component renders that node as an error chip; its siblings still render. A limit stops evaluation of the remaining roots. Validation runs only after `seal()` — nothing is mounted while streaming.
 
+### Streaming
+
+A spec is a program, and streaming one paints tens of lines of source into the
+reply for the seconds before seal replaces it with a one-line card — pushing
+the prose it belongs to off screen to show the user something they have no use
+for. So the source is never painted: after each `parser_write`,
+`updateLiveUiFences()` stands one **strip** in front of each of the first two
+` ```krypton-ui ` fences (`interactive UI · receiving spec · N lines`, the
+count being the liveness signal — no `infinite` animation to leak into a
+sealed row), and the component sheet hides that fence's own `pre` while the
+body carries `--stream-live`.
+
+This changes what is *painted*, not what is *run*: nothing is compiled, no
+control is mounted, and no partial prefix is evaluated — the strip is text.
+The strip is a **sibling inserted before** the parser-owned `pre`, never a
+wrapper, because `streaming-markdown` only ever appends into the nodes it
+holds; the `pre` stays in the tree and keeps receiving output behind it. This
+is the spec 283 live-svg-card mechanism applied to a fence that has no
+preview. At seal, `clearLiveUiFences()` removes every strip **before**
+`markdownHtml` is captured, so the cache stays pure markdown and decoration
+sees a bare `pre`. The strip carries the card's border, radius and margin, so
+the swap does not move the rows under it (measured: both 35px).
+
 ## Edge Cases
 
 - **A v1 JSON fence in scrollback** renders as code with the version error. Accepted: fences are chat-scoped and the feature is days old.
-- **A third fence in one item** stays code (unchanged cap).
+- **A third fence in one item** stays code (unchanged cap) — and is not collapsed either: the same cap governs the strip, so what the user sees streaming is what seal leaves behind.
+- **A fence that does not compile** is collapsed like any other while it streams; seal drops the strip, and the `pre` comes back carrying the one-line diagnostic. Source appears exactly when it is worth reading.
+- **A reply that never streams in the foreground** (cold load, lane switched away) paints sealed and never has a strip to clear.
 - **File written after the panel opened** — Refresh re-resolves; successes only are cached, so a later write is picked up.
 - **Loaded CSV with 50,000 rows** — refused by the loaded-list cap with a diagnostic naming the file.
 - **Lane closed while the panel is open** — existing `dropGenUiLane` path closes it and drops state.
@@ -155,7 +182,7 @@ None. The language, the 57-component set, `#ui` as the sole injection point, the
 - Network of any kind from a spec: no image search, no geocoding, no map tiles, no `https` images. `Map`, `ImageSearch`, `Gallery`, `Hotspots`, `Image`, `Entity` are **not** in the catalog.
 - Widgets (Timer, Quiz, Flashcards, Walkthrough), Media, and the Evidence group (Acceptance, Compare, Transcript, Provenance).
 - Sending a message, running a tool, or writing a file from a control. Drafts only.
-- Rendering while the reply streams; partial-prefix compilation.
+- Rendering while the reply streams; partial-prefix compilation. The §Streaming strip is a text place-holder, not a render: nothing is compiled or mounted before `seal()`.
 - Polling anything on a timer, in a row or in a panel.
 - Persisting panel state across Harness close or app restart.
 - Any standing instruction, policy line, or permanently registered tool teaching the fence. `#ui` is the only path.

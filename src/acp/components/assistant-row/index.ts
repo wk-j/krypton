@@ -36,7 +36,7 @@ import {
   streamingMarkdownDroppedTable,
 } from '../../harness-markdown';
 import { clearLiveSvgFences, decorateSvgFences, updateLiveSvgFences } from '../../harness-svg-fence';
-import { decorateUiFences, patchUiHints, syncUiPanel } from '../genui-card';
+import { clearLiveUiFences, decorateUiFences, patchUiHints, syncUiPanel, updateLiveUiFences } from '../genui-card';
 import { applyTranscriptAnnotations } from '../../transcript-annotation';
 import type { HarnessLane, HarnessTranscriptItem } from '../../harness-view-types';
 import { AnnotationRail } from '../annotation-rail';
@@ -171,6 +171,8 @@ export class AssistantRow extends TranscriptRow {
     item.streamingMarkdownWritten = item.text.length;
     // spec 283 rev 2: draw ```svg fences in as they stream.
     updateLiveSvgFences(this.body);
+    // spec 309 rev: collapse ```krypton-ui fences instead of painting source.
+    updateLiveUiFences(this.body);
   }
 
   protected onSeal(): void {
@@ -201,6 +203,8 @@ export class AssistantRow extends TranscriptRow {
     this.releaseLane(next.lane, item);
     // spec 283: drop the live cards so decorateSvgFences can build the real ones.
     clearLiveSvgFences(this.body);
+    // spec 309 rev: same hand-off for the collapsed ```krypton-ui strips.
+    clearLiveUiFences(this.body);
     if (streamingMarkdownDroppedTable(this.body, item.text)) {
       rerenderAssistantMarkdownWithMarked(this.body, item.text, next.projectDir, next.resolveLocalImages);
     } else if (next.resolveLocalImages) {

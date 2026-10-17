@@ -4,6 +4,9 @@
 // its `pre` and gains a one-line error carrying the first diagnostic, so the
 // source stays readable. A fence that compiles is replaced by a static card;
 // everything interactive happens in the panel the card opens.
+//
+// While the reply streams, the fence is collapsed instead of painted: see
+// `updateLiveUiFences` at the bottom of this file.
 
 import './genui-card.css';
 
@@ -127,6 +130,57 @@ export function patchUiHints(body: HTMLElement, item: HarnessTranscriptItem): vo
     const button = body.querySelector<HTMLElement>(`[data-genui-index="${entry.index}"] .acp-genui-card__hint`);
     if (button) button.textContent = entry.hintLabel ?? '';
   }
+}
+
+/** The streaming stand-in, removed at seal. Same block as the real card, so
+ *  the swap does not move the rows under it. */
+const LIVE_CARD = 'acp-genui-card--live';
+
+/**
+ * Spec 309 revision — collapse a `krypton-ui` fence while it streams.
+ *
+ * A spec is a program the user has no use for as text: streaming it paints
+ * tens of lines of source that seal then replaces with a one-line card. This
+ * puts that card's place-holder in early — a strip naming the fence and its
+ * growing line count — and the sheet hides the fence's own `pre` while the
+ * body is `--stream-live`.
+ *
+ * Nothing is compiled and no control is mounted (spec 309 Out of Scope: no
+ * partial-prefix compilation, no UI while streaming) — the strip is text.
+ * Like the spec 283 live svg card it is a SIBLING inserted before the
+ * parser-owned `pre`: smd only ever appends into the nodes it holds, so the
+ * `pre`/`code` are never wrapped or moved. Called after each `parser_write`.
+ */
+export function updateLiveUiFences(body: HTMLElement): void {
+  let candidates = 0;
+  // Live bodies are always smd: the whole info string is the class.
+  for (const code of body.querySelectorAll<HTMLElement>('pre > code.krypton-ui')) {
+    if (++candidates > UI_MAX_PER_ITEM) break;
+    const pre = code.parentElement;
+    if (!pre) continue;
+    let strip = pre.previousElementSibling;
+    if (!(strip instanceof HTMLElement) || !strip.classList.contains(LIVE_CARD)) {
+      strip = el(
+        'div',
+        { class: `acp-genui-card ${LIVE_CARD}` },
+        el('span', { class: 'acp-genui-card__title', text: 'interactive UI' }),
+        el('span', { class: 'acp-genui-card__summary' }),
+      );
+      pre.before(strip);
+    }
+    const summary = strip.querySelector<HTMLElement>('.acp-genui-card__summary');
+    // The growing count is the liveness signal; an `infinite` animation here
+    // would be one more thing seal has to be trusted to remove.
+    const lines = (code.textContent ?? '').replace(/\n$/, '').split('\n').length;
+    if (summary) summary.textContent = `receiving spec · ${lines} line${lines === 1 ? '' : 's'}`;
+  }
+}
+
+/** Seal hand-off: drop the strips before the body is captured into
+ *  `markdownHtml`, so the cache stays pure markdown and `decorateUiFences`
+ *  builds the real card against a `pre` with nothing in front of it. */
+export function clearLiveUiFences(body: HTMLElement): void {
+  for (const strip of Array.from(body.querySelectorAll(`.${LIVE_CARD}`))) strip.remove();
 }
 
 /**

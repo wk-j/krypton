@@ -263,3 +263,33 @@ describe('AssistantRow svg fence cards', () => {
     row.dispose();
   });
 });
+
+// Spec 309 revision — a streaming `krypton-ui` fence is collapsed to a strip
+// instead of painting its source, and the strip must not survive into the
+// sealed row or the cached markdown.
+describe('AssistantRow krypton-ui fence streaming', () => {
+  const SPEC = '$seats = 10\nCard("Estimate", [Slider($seats, 1, 50)])';
+
+  it('collapses the fence while it streams and swaps in the card at seal', () => {
+    const lane = makeLane();
+    const item = assistant({ text: 'Here:\n\n```krypton-ui\n' });
+    const { row, next } = mount(item, true, lane);
+    const body = row.el.querySelector<HTMLElement>('.acp-harness__msg-body')!;
+
+    item.text += `${SPEC}\n`;
+    row.update(next);
+    const strip = body.querySelector('.acp-genui-card--live');
+    expect(strip).not.toBeNull();
+    expect(strip?.nextElementSibling?.tagName).toBe('PRE');
+    expect(body.querySelector('pre > code.krypton-ui')).not.toBeNull();
+
+    item.text += '```\n';
+    row.seal(next);
+
+    expect(body.querySelector('.acp-genui-card--live')).toBeNull();
+    expect(body.querySelector('.acp-genui-card__title')?.textContent).toBe('Estimate');
+    expect(body.querySelector('pre')).toBeNull();
+    expect(item.markdownHtml).not.toContain('acp-genui-card');
+    row.dispose();
+  });
+});

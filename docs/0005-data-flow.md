@@ -672,8 +672,12 @@ PULL (window ← harness), on open and on every auto-refresh:
 ### Generative UI reply (specs 308/309/310)
 
 `#ui <request>` sends a one-turn schema guide through the existing lane prompt
-path. When a reply seals, `AssistantRow` compiles up to two `krypton-ui` fences
-and places static cards after caching pure markdown. A card click or transcript
+path. While the reply streams, each of the first two ` ```krypton-ui ` fences is
+collapsed to a one-line strip (`interactive UI · receiving spec · N lines`) and
+its `pre` is hidden — the spec is a program, so painting it is noise that pushes
+the reply off screen; nothing is compiled before seal. When a reply seals,
+`AssistantRow` drops the strips before caching pure markdown, then compiles up
+to two `krypton-ui` fences and places static cards. A card click or transcript
 `f` hint seats the view's single `GenUiPanel` node in that card's slot, so the
 panel expands in the sealed row; clicking or hinting the open card again
 collapses it. Inputs update local panel state and dependent text, tables, and

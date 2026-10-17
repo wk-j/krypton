@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { HarnessTranscriptItem } from '../../harness-view-types';
-import { decorateUiFences, patchUiHints, syncUiPanel } from './index';
+import { clearLiveUiFences, decorateUiFences, patchUiHints, syncUiPanel, updateLiveUiFences } from './index';
 
 const spec = [
   '$seats = 10',
@@ -127,5 +127,57 @@ describe('GenUiCard panel seat', () => {
     expect(second.querySelector('[data-genui-slot="0"]')?.children).toHaveLength(0);
     expect(syncUiPanel(second, { index: 0, panel })).toBe(true);
     expect(panel.parentElement).toBe(second.querySelector('[data-genui-slot="0"]'));
+  });
+});
+
+// Spec 309 revision — the fence is a program, not prose: while it streams the
+// source is collapsed to one strip, so a 40-line spec does not scroll the
+// reply it belongs to off screen before the card exists.
+describe('GenUiCard streaming collapse', () => {
+  /** smd names the code element after the whole info string, not `language-*`. */
+  function liveBody(sources: readonly string[]): HTMLElement {
+    const node = body(sources);
+    for (const code of node.querySelectorAll('code')) code.className = 'krypton-ui';
+    return node;
+  }
+
+  it('stands one strip in front of each streaming fence and counts its lines', () => {
+    const node = liveBody([spec]);
+    const pre = node.querySelector('pre')!;
+    const code = pre.firstElementChild!;
+
+    updateLiveUiFences(node);
+    const strip = node.querySelector('.acp-genui-card--live');
+    expect(strip?.previousElementSibling).toBeNull();
+    expect(strip?.nextElementSibling).toBe(pre);
+    expect(strip?.querySelector('.acp-genui-card__title')?.textContent).toBe('interactive UI');
+    expect(strip?.querySelector('.acp-genui-card__summary')?.textContent).toBe('receiving spec · 7 lines');
+
+    // The parser keeps appending into the <pre> it owns; the strip is reused.
+    code.textContent += '\nText("more")\n';
+    updateLiveUiFences(node);
+    expect(node.querySelectorAll('.acp-genui-card--live')).toHaveLength(1);
+    expect(node.querySelector('.acp-genui-card--live')).toBe(strip);
+    expect(strip?.querySelector('.acp-genui-card__summary')?.textContent).toBe('receiving spec · 8 lines');
+    expect(pre.parentElement).toBe(node);
+  });
+
+  it('collapses only the fences decoration will claim', () => {
+    const node = liveBody([spec, spec, spec]);
+    updateLiveUiFences(node);
+    expect(node.querySelectorAll('.acp-genui-card--live')).toHaveLength(2);
+  });
+
+  it('hands the seal a body with no strip left in it', () => {
+    const transcriptItem = item();
+    const node = liveBody([spec]);
+    updateLiveUiFences(node);
+
+    clearLiveUiFences(node);
+    expect(node.querySelector('.acp-genui-card--live')).toBeNull();
+
+    decorateUiFences(node, transcriptItem);
+    expect(node.querySelectorAll('.acp-genui-card')).toHaveLength(1);
+    expect(node.querySelector('pre')).toBeNull();
   });
 });

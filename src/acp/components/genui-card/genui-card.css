@@ -24,6 +24,25 @@
      card, and an empty block would still draw the slot's own box. */
   .acp-genui-card__panel:empty { display: none; }
 
+  /* Spec 309 revision — the streaming stand-in. It keeps the card's border,
+     radius and margin so the seal swap does not move the rows under it, but
+     drops the tint and every affordance: it is not openable. */
+  .acp-genui-card--live {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 7px 10px;
+    background: transparent;
+  }
+
+  /* The fence's own `pre` keeps receiving parser output behind the strip —
+     smd appends into the nodes it holds, so it must stay in the tree. Only
+     while the body is live: at seal the strip is removed and the `pre`
+     becomes the card (or, when the spec does not compile, source again). */
+  .acp-harness__msg-body--stream-live .acp-genui-card--live + pre:has(> code.krypton-ui) {
+    display: none;
+  }
+
   .acp-genui-card__open {
     display: flex;
     align-items: baseline;
