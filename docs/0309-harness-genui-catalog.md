@@ -3,7 +3,7 @@
 > Status: Approved (2026-10-17, phase 1 in progress)
 > Date: 2026-10-17
 > Milestone: ACP Harness
-> Supersedes the wire format of [spec 308](./0308-harness-generative-ui.md); keeps its host model (sealed card → overlay panel).
+> Supersedes the wire format of [spec 308](./0308-harness-generative-ui.md); keeps its host model (sealed card → panel), whose host surface [spec 310](./0310-harness-genui-inline-panel.md) then moved from an overlay to the card itself. The catalog and renderer are host-agnostic and unchanged by 310.
 
 ## Problem
 

@@ -1,5 +1,0 @@
-@layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-harness__genui-panel-overlay {
-    background: rgba(238, 242, 246, 0.86);
-  }
-}

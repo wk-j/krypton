@@ -88,6 +88,7 @@ A third, standalone piece lives outside the app build: the **Raycast extension**
     - Late async state (Git refs, images, usage, memory) calls `update()` on the owning sub-component. Never reach into a sealed row's DOM from outside it.
     - Turn-end and per-event paths (`stop`, `usage`, `finishTurn`, `sealStreaming`) seal rows and patch chrome; a seal invalidates no scheduler region, and they must not call `render()`.
     - No `infinite` CSS animation on a row or chrome element that is not live.
+    - The one user-driven exception (spec 310): the generative-UI panel the view seats in a card's slot inside a sealed row. The row is static until the user expands it, the panel node is owned by `AcpHarnessView` (never by the row), nothing it does enters `AssistantRow.bodyDeps()`, and the view re-seats the same node after every transcript commit. Do not give a row ownership of live controls.
 
 ## Platform Gotchas
 

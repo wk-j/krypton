@@ -44,6 +44,11 @@ function call<T>(v: AcpHarnessView, name: string, ...args: unknown[]): T {
   return fn.call(v, ...args);
 }
 
+/** Spec 310: the one inline panel the view owns and moves between cards. */
+function genUiPanel(v: AcpHarnessView): { el: HTMLElement; isOpen: boolean } {
+  return (v as unknown as { genUiPanel: { el: HTMLElement; isOpen: boolean } }).genUiPanel;
+}
+
 beforeEach(() => {
   document.body.replaceChildren();
   view = new AcpHarnessView('/tmp/proj');
@@ -148,5 +153,104 @@ describe('harness view integration (spec 301)', () => {
     expect(items.length).toBe(1);
     expect(items[0]).toBe(kept);
     expect(row.querySelector('.acp-harness__anno-send')?.textContent).toBe('send 1');
+  });
+
+  // Spec 310: the generative-UI panel is seated in the card inside the sealed
+  // row, so the two hazards an overlay did not have are a repaint of that row
+  // and the row leaving the tail window.
+  it('seats the generative-UI panel in the card, re-seats it across a repaint, and collapses when the row goes', () => {
+    const lane = call<HarnessLane>(view, 'createLane', 'claude', 'claude-1');
+    lanes(view).push(lane);
+    activate(view, lane.id);
+
+    const item: HarnessTranscriptItem = {
+      id: 'a1',
+      kind: 'assistant',
+      text: [
+        'here it is',
+        '',
+        '```krypton-ui',
+        '$seats = 10',
+        'Card("Estimate", [',
+        '  Slider($seats, 1, 50, label: "Seats"),',
+        '  Metric("Total", "$" + ($seats * 29))',
+        '])',
+        '```',
+      ].join('\n'),
+    };
+    lane.transcript.push(item);
+    call(view, 'renderDashboard');
+
+    const row = view.element.querySelector('.acp-harness__msg[data-msg-id="a1"]') as HTMLElement;
+    const card = row.querySelector('.acp-genui-card') as HTMLElement;
+    expect(card, 'the fence decorated into a card').not.toBeNull();
+    expect(card.querySelector('[data-genui-slot="0"]')?.children).toHaveLength(0);
+
+    const panel = genUiPanel(view);
+    call(view, 'openGenUi', 'a1', 0);
+    expect(panel.isOpen).toBe(true);
+    expect(panel.el.parentElement).toBe(row.querySelector('[data-genui-slot="0"]'));
+    expect(row.querySelector('.acp-genui-card')?.className).toContain('acp-genui-card--open');
+    expect(row.querySelector('[data-genui-index="0"]')?.getAttribute('aria-expanded')).toBe('true');
+
+    // The input recomputes in place, inside the sealed row.
+    const range = panel.el.querySelector<HTMLInputElement>('input[type="range"]')!;
+    range.value = '20';
+    range.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(panel.el.textContent).toContain('$580');
+
+    // A dep change repaints the row: `paintSealed` rebuilds the card from pure
+    // markdown, and the same panel node must come back with its state.
+    item.annotations = [{
+      id: 'n1', itemId: 'a1', quote: 'here', quoteIndex: 0, body: 'note', status: 'unsent', createdAt: 0,
+    }];
+    call(view, 'renderDashboard');
+    const repainted = view.element.querySelector('.acp-harness__msg[data-msg-id="a1"] [data-genui-slot="0"]');
+    expect(panel.isOpen).toBe(true);
+    expect(panel.el.parentElement).toBe(repainted);
+    expect(panel.el.querySelector('input[type="range"]')).toBe(range);
+    expect(panel.el.textContent).toContain('$580');
+
+    // The row leaves the tail window: nothing can host the panel, so it
+    // collapses on its own and the inputs stay in the view's LRU.
+    lane.transcriptWindow = 0;
+    call(view, 'renderDashboard');
+    expect(panel.isOpen).toBe(false);
+    expect(panel.el.isConnected).toBe(false);
+
+    lane.transcriptWindow = Number.POSITIVE_INFINITY;
+    call(view, 'renderDashboard');
+    call(view, 'openGenUi', 'a1', 0);
+    expect(panel.el.textContent).toContain('$580');
+
+    // Toggling the same card collapses it.
+    call(view, 'openGenUi', 'a1', 0);
+    expect(panel.isOpen).toBe(false);
+    expect(view.element.querySelector('.acp-genui-card--open')).toBeNull();
+  });
+
+  // Spec 310: the panel is inline, so an overlay drawn over it must own the
+  // keyboard — the `OverlayShell` registry no longer closes the panel.
+  it('gives an open overlay the keyboard ahead of the inline panel', () => {
+    const lane = call<HarnessLane>(view, 'createLane', 'claude', 'claude-1');
+    lanes(view).push(lane);
+    activate(view, lane.id);
+    lane.transcript.push({
+      id: 'a1',
+      kind: 'assistant',
+      text: ['```krypton-ui', '$n = 1', 'Card("Pick", [Slider($n, 1, 9)])', '```'].join('\n'),
+    });
+    call(view, 'renderDashboard');
+    const panel = genUiPanel(view);
+    call(view, 'openGenUi', 'a1', 0);
+    expect(panel.isOpen).toBe(true);
+
+    call(view, 'toggleHelp', true);
+    view.onKeyDown(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    expect((view as unknown as { helpOpen: boolean }).helpOpen).toBe(false);
+    expect(panel.isOpen, 'the help overlay consumed the key, not the panel').toBe(true);
+
+    view.onKeyDown(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    expect(panel.isOpen).toBe(false);
   });
 });

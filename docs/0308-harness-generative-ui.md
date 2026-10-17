@@ -1,18 +1,22 @@
 # ACP Harness Generative UI — Implementation Spec
 
-> Status: Superseded in part by [spec 309](./0309-harness-genui-catalog.md)
+> Status: Superseded in part by [spec 309](./0309-harness-genui-catalog.md) and [spec 310](./0310-harness-genui-inline-panel.md)
 > Date: 2026-10-17
 > Milestone: ACP Harness
 > Scope: declarative, keyboard-driven UI in ACP assistant replies
 >
 > **Still current:** the host model — a validated fence becomes a static card in
-> a sealed row, `f` + label opens one `GenUiPanel` over the dashboard, panel
-> state is keyed `(lane, item, index, sourceHash)` in a 32-entry LRU, and an
-> action can only load a visible composer draft.
+> a sealed row, `f` + label opens one `GenUiPanel`, panel state is keyed
+> `(lane, item, index, sourceHash)` in a 32-entry LRU, and an action can only
+> load a visible composer draft.
 >
 > **Replaced by 309:** the `version 1` JSON wire format, the 9-node schema, the
 > `add`/`multiply`/`formatNumber` expression set and the `draftButton` node.
 > A v1 JSON fence is no longer accepted.
+>
+> **Replaced by 310:** the overlay host. The panel is no longer an
+> `OverlayShell` over the dashboard; it is seated inline in the card inside the
+> sealed row, so the reply it belongs to stays readable.
 
 ## Problem
 
@@ -36,7 +40,7 @@ Accept a versioned, data-only `krypton-ui` JSON fence in a sealed assistant repl
 
 | Approach | Decision |
 |---|---|
-| Inline live controls inside `AssistantRow`, like BB | Reject: conflicts with sealed-row stability and tail-window disposal. |
+| Inline live controls inside `AssistantRow`, like BB | Reject: conflicts with sealed-row stability and tail-window disposal. **Reversed by [spec 310](./0310-harness-genui-inline-panel.md)** — the panel node stays owned by the view and is re-seated after each transcript commit, so neither hazard needs the row to own it. |
 | Implement draft spec 292 first | Separate feature: arbitrary HTML needs iframe isolation, activation, and a performance budget; it does not provide trusted Krypton components or a controlled action path. |
 | Port all 86 BB components and its expression language | Reject for v1: BB-specific project APIs, React renderers, and a much larger parser/evaluation surface. |
 | Adopt full A2UI transport | Reject for v1: no ACP-side structured UI protocol is needed for a fenced reply. Revisit for cross-app interoperability. |
@@ -109,7 +113,7 @@ Example:
 1. `#ui <request>` injects a one-turn schema example into the selected lane using the existing hash-command path. A normal agent reply may also contain a valid `krypton-ui` fence; rendering does not depend on how it was requested. The standing lane policy stays unchanged.
 2. `AssistantRow` streams the fence as code. At `LiveComponent.seal()`, it caches pure markdown, scans `pre > code` in document order, validates at most two `krypton-ui` fences, and inserts static `GenUiCard` nodes. Cold rows repeat decoration from the cached source. No iframe or control is mounted in the transcript.
 3. The card becomes an `f` open target only while its row is in the visible transcript window. `f` then label, or a card click, resolves `(lane.id, item.id, fence index, sourceHash)` and compares the current source with the entry before opening the panel; a stale target does nothing.
-4. `AcpHarnessView` owns one `GenUiPanel` outside the transcript and a bounded state map keyed by that tuple. The panel uses `OverlayShell`, renders the validated tree, and recalculates dependent nodes on local input. State survives closing/reopening the panel and row remounts, but not lane reset/close or Harness close.
+4. `AcpHarnessView` owns one `GenUiPanel` outside the transcript and a bounded state map keyed by that tuple. The panel uses `OverlayShell`, renders the validated tree, and recalculates dependent nodes on local input. State survives closing/reopening the panel and row remounts, but not lane reset/close or Harness close. *(Spec 310: the view still owns the one panel and the LRU, but the node is seated in the card's slot rather than in an `OverlayShell`.)*
 5. A `draftButton` expands its template using current input state. If the owning lane is no longer active or its composer already has a nonempty draft, the panel displays a reason and leaves both unchanged. Otherwise it sets the lane draft, closes, and focuses the composer. **Only the user's later Enter submits**, through normal permission, queue, and command routing.
 
 ### Configuration and protocol
@@ -126,7 +130,7 @@ There is no new TOML key, Tauri IPC command, ACP message type, or persisted file
 | Arrows, `Space`, `Enter` | Focused slider/choice/button | Operate the control using native keyboard behavior. |
 | `Escape` | Panel | Close and restore focus to the composer. |
 
-The card shows title, `interactive UI`, and a compact summary (e.g. `chart · 2 inputs`), with a full 1px border and no animation. The panel is inside the existing native workspace window, covers only the Harness dashboard, leaves the composer visible, and owns focus while open. A labeled Source control in the panel reveals the exact JSON fence without executing it. Its components use `@layer krypton.component` and `@layer krypton.scheme`, existing theme tokens, and the style-ownership test. Chart bars are DOM/CSS with text labels and values; no new chart library, canvas loop, or network assets. Accessibility uses labeled native inputs, button elements, visible focus, and a dialog label; values remain readable without color.
+The card shows title, `interactive UI`, and a compact summary (e.g. `chart · 2 inputs`), with a full 1px border and no animation. The panel is inside the existing native workspace window, covers only the Harness dashboard, leaves the composer visible, and owns focus while open *(spec 310: it covers nothing — it expands inside the card, and still owns focus while open)*. A labeled Source control in the panel reveals the exact JSON fence without executing it. Its components use `@layer krypton.component` and `@layer krypton.scheme`, existing theme tokens, and the style-ownership test. Chart bars are DOM/CSS with text labels and values; no new chart library, canvas loop, or network assets. Accessibility uses labeled native inputs, button elements, visible focus, and a dialog label; values remain readable without color.
 
 Accent discipline, after the first pass gave every border `--krypton-accent` at full strength and a dense spec rendered as nested neon rectangles: structure (panel edge, head rule, card edge, table rules, chart track, source block) is a hairline or low-alpha tint derived from `--krypton-fg-rgb` / `--krypton-accent-rgb`, the scale `metrics-overlay` and `help-overlay` already use; saturated `--krypton-window-accent` is spent only on the title, metric values, chart fills, the primary draft action and the focus ring. The transcript card follows the `acp-harness__msg--artifact` document cards it sits among: accent tint, radius, and a filled hint badge that is hidden while unlabeled. Controls inherit the harness font (a native `select` otherwise falls back to the system UI font), a table's first column takes its content width so a key column cannot be squeezed to one character per line, and the draft button sizes to its label instead of stretching to the card width.
 

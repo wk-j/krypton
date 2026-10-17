@@ -237,14 +237,17 @@ The compositor is a TypeScript module running in the webview that manages worksp
     dance around the old `dashboardEl.innerHTML = ''` is deleted. Panel placement is one table,
     `HARNESS_LAYOUT_DEFAULT` in `harness-layout.ts`, type-checked against the slot union.
 
-    **Generative UI (spec 308).** A sealed assistant reply can contain a
-    `krypton-ui` JSON fence. `src/acp/genui/` validates a bounded, versioned
-    component tree and evaluates local expressions. `AssistantRow` caches pure
-    markdown before replacing valid fences with static `GenUiCard` pointers.
-    `AcpHarnessView` owns the interactive `GenUiPanel` outside the transcript,
-    using the existing `OverlayShell` registry. Generated actions can only load
-    a visible composer draft. There is no new Rust IPC, ACP protocol message,
-    file reader, or executable agent HTML.
+    **Generative UI (specs 308/309/310).** A sealed assistant reply can contain
+    a `krypton-ui` fence. `src/acp/genui/` compiles a bounded expression
+    language and evaluates it locally. `AssistantRow` caches pure markdown
+    before replacing valid fences with static `GenUiCard` pointers, each
+    carrying an empty slot. `AcpHarnessView` owns one `GenUiPanel` node and
+    seats it in the slot of the card being used, so the panel expands inline in
+    the sealed row (spec 310 replaced the `OverlayShell` host); it re-seats the
+    same node after every transcript commit and collapses when no mounted row
+    claims it. Generated actions can only load a visible composer draft. There
+    is no new Rust IPC, ACP protocol message, file reader, or executable agent
+    HTML.
 
     **Word autocomplete (spec 285).** `word-predict.ts` (main-thread client, ghost helpers),
     `word-predict-model.ts` (pure unigram/bigram model over `Intl.Segmenter` words) and

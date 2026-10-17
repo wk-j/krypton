@@ -169,7 +169,7 @@ describe('GenUiPanel', () => {
     outside.remove();
   });
 
-  it('closes when its tab hides without taking focus back', async () => {
+  it('collapses when its tab hides, telling the host not to take focus back', async () => {
     const tab = document.createElement('div');
     tab.className = 'krypton-tab-wrapper';
     document.body.appendChild(tab);
@@ -189,7 +189,38 @@ describe('GenUiPanel', () => {
     tab.classList.add('krypton-tab-wrapper--hidden');
     await Promise.resolve();
     expect(panel.isOpen).toBe(false);
-    expect(onClose).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledWith(false);
     tab.remove();
+  });
+
+  it('is an inline block that hides itself when collapsed', () => {
+    const panel = open();
+    expect(panel.el.classList.contains('acp-genui-panel')).toBe(true);
+    expect(panel.el.closest('.acp-harness__genui-panel-overlay')).toBeNull();
+    expect(panel.el.getAttribute('role')).toBe('group');
+    expect(panel.el.getAttribute('aria-modal')).toBeNull();
+    expect(panel.el.hidden).toBe(false);
+    expect(panel.el.getAttribute('aria-label')).toBe('Estimate');
+    expect(panel.el.querySelector('.acp-genui-panel__legend')?.textContent).toContain('Esc closes');
+
+    panel.close();
+    expect(panel.el.hidden).toBe(true);
+    expect(panel.el.querySelector('.acp-genui-panel__body')?.children).toHaveLength(0);
+  });
+
+  it('keeps its mounted DOM when the host moves the node to another seat', () => {
+    const panel = open();
+    const range = panel.el.querySelector<HTMLInputElement>('input[type="range"]')!;
+    range.value = '20';
+    range.dispatchEvent(new Event('input', { bubbles: true }));
+    const seat = document.createElement('div');
+    document.body.appendChild(seat);
+
+    seat.appendChild(panel.el);
+
+    expect(panel.isOpen).toBe(true);
+    expect(panel.el.querySelector('input[type="range"]')).toBe(range);
+    expect(slot(panel, 'Total').textContent).toContain('$580');
+    seat.remove();
   });
 });

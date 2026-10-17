@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { HarnessTranscriptItem } from '../../harness-view-types';
-import { decorateUiFences, patchUiHints } from './index';
+import { decorateUiFences, patchUiHints, syncUiPanel } from './index';
 
 const spec = [
   '$seats = 10',
@@ -84,5 +84,48 @@ describe('GenUiCard decoration', () => {
     decorateUiFences(node, transcriptItem);
     expect(node.querySelector('.acp-genui-card')).toBeNull();
     expect(node.querySelector('.acp-genui-card__error')?.textContent).toContain('line 1:');
+  });
+});
+
+describe('GenUiCard panel seat', () => {
+  it('seats the panel in the card it belongs to and clears the others', () => {
+    const transcriptItem = item();
+    const node = body([spec, spec]);
+    decorateUiFences(node, transcriptItem);
+    const panel = document.createElement('div');
+
+    expect(syncUiPanel(node, { index: 1, panel })).toBe(true);
+    const cards = [...node.querySelectorAll('.acp-genui-card')];
+    expect(panel.parentElement).toBe(node.querySelector('[data-genui-slot="1"]'));
+    expect(cards[1].classList.contains('acp-genui-card--open')).toBe(true);
+    expect(cards[0].classList.contains('acp-genui-card--open')).toBe(false);
+    expect(node.querySelector('[data-genui-index="1"]')?.getAttribute('aria-expanded')).toBe('true');
+    expect(node.querySelector('[data-genui-index="0"]')?.getAttribute('aria-expanded')).toBe('false');
+
+    expect(syncUiPanel(node, null)).toBe(false);
+    expect(cards[1].classList.contains('acp-genui-card--open')).toBe(false);
+    expect(node.querySelector('[data-genui-index="1"]')?.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('reports a missing seat so the view can collapse', () => {
+    const transcriptItem = item();
+    const node = body([spec]);
+    decorateUiFences(node, transcriptItem);
+    expect(syncUiPanel(node, { index: 3, panel: document.createElement('div') })).toBe(false);
+  });
+
+  it('re-seats the same node after the row re-decorates', () => {
+    const transcriptItem = item();
+    const first = body([spec]);
+    decorateUiFences(first, transcriptItem);
+    const panel = document.createElement('div');
+    syncUiPanel(first, { index: 0, panel });
+
+    // What `paintSealed` does: pure markdown back in, cards rebuilt empty.
+    const second = body([spec]);
+    decorateUiFences(second, transcriptItem);
+    expect(second.querySelector('[data-genui-slot="0"]')?.children).toHaveLength(0);
+    expect(syncUiPanel(second, { index: 0, panel })).toBe(true);
+    expect(panel.parentElement).toBe(second.querySelector('[data-genui-slot="0"]'));
   });
 });

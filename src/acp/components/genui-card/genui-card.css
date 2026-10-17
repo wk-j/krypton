@@ -1,11 +1,11 @@
-/* Spec 308 §UX — the static transcript card.
+/* Spec 308 §UX — the transcript card; spec 310 §UI — its expanded state.
  *
  * It sits among `acp-harness__msg--artifact` document cards, so it borrows
  * their shape: accent tint + radius, a filled hint badge, and one 1px border
  * at low alpha (spec 308 asks for a full border; CLAUDE.md constraint 9 bans
  * only corner brackets). A full-strength accent border made it the loudest
- * thing in a sealed transcript, which it is not. No animation: the row is
- * sealed. */
+ * thing in a sealed transcript, which it is not. No animation, on the card or
+ * on the expand: the row is sealed. */
 @layer krypton.component {
   .acp-genui-card {
     margin: 8px 0;
@@ -13,6 +13,16 @@
     border-radius: var(--krypton-border-radius, 8px);
     background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 7%, transparent);
   }
+
+  /* Expanded, the card is the panel's frame: the tint would then wash the
+     whole panel body, so only the edge stays. */
+  .acp-genui-card--open {
+    background: transparent;
+  }
+
+  /* The seat the view moves the single live panel into. Empty on every other
+     card, and an empty block would still draw the slot's own box. */
+  .acp-genui-card__panel:empty { display: none; }
 
   .acp-genui-card__open {
     display: flex;

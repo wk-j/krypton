@@ -101,14 +101,21 @@ export function decorateUiFences(body: HTMLElement, item: HarnessTranscriptItem)
     const card = el('div', { class: 'acp-genui-card' });
     const button = el('button', {
       class: 'acp-genui-card__open',
-      attrs: { type: 'button', 'data-genui-index': String(index), 'aria-label': `Open interactive UI: ${entry.title}` },
+      attrs: {
+        type: 'button',
+        'data-genui-index': String(index),
+        'aria-expanded': 'false',
+        'aria-label': `Open interactive UI: ${entry.title}`,
+      },
     });
     button.append(
       el('span', { class: 'acp-genui-card__title', text: entry.title }),
       el('span', { class: 'acp-genui-card__summary', text: entry.summary }),
       el('span', { class: 'acp-genui-card__hint', text: entry.hintLabel ?? '' }),
     );
-    card.appendChild(button);
+    // spec 310: the seat for the view's single live panel. Rebuilt empty on
+    // every re-decoration; the view re-appends the panel node right after.
+    card.append(button, el('div', { class: 'acp-genui-card__panel', attrs: { 'data-genui-slot': String(index) } }));
     pre.replaceWith(card);
   }
   if (entries.length) item.uiFences = entries;
@@ -120,6 +127,32 @@ export function patchUiHints(body: HTMLElement, item: HarnessTranscriptItem): vo
     const button = body.querySelector<HTMLElement>(`[data-genui-index="${entry.index}"] .acp-genui-card__hint`);
     if (button) button.textContent = entry.hintLabel ?? '';
   }
+}
+
+/**
+ * Spec 310 — seat the one live panel node in this body, or clear it.
+ *
+ * Returns whether `target` found its slot: a `false` from every mounted row
+ * is how the view learns the open fence is gone (row disposed, lane switched,
+ * source re-streamed) and collapses. Called outside `paint()`, like
+ * `patchUiHints` — the card's open state is not in `AssistantRow.bodyDeps`.
+ */
+export function syncUiPanel(
+  body: HTMLElement,
+  target: { readonly index: number; readonly panel: HTMLElement } | null,
+): boolean {
+  let mounted = false;
+  for (const card of body.querySelectorAll<HTMLElement>('.acp-genui-card')) {
+    const slot = card.querySelector<HTMLElement>('[data-genui-slot]');
+    const open = target !== null && slot?.dataset.genuiSlot === String(target.index);
+    if (open && slot) {
+      if (target.panel.parentElement !== slot) slot.appendChild(target.panel);
+      mounted = true;
+    }
+    card.classList.toggle('acp-genui-card--open', open);
+    card.querySelector<HTMLElement>('[data-genui-index]')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  return mounted;
 }
 
 export const def: ComponentDef = { id: 'genui-card', blocks: ['acp-genui-card'] };

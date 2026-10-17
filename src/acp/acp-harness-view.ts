@@ -1298,8 +1298,11 @@ export class AcpHarnessView implements ContentView {
   private openHintBuffer = '';
   /** spec 281: keyboard image viewer overlay. */
   private imageViewer!: HarnessImageViewer;
+  /** spec 309/310: the single inline generative-UI panel and its state LRU. */
   private genUiPanel!: GenUiPanel;
   private genUiStates = new Map<string, GenUiPanelState>();
+  /** Which card the panel is currently seated in; null when collapsed. */
+  private genUiOpen: { itemId: string; index: number } | null = null;
   private fileTouchMap = new Map<string, FileTouchRecord>();
   private lanePeek: LanePeekState = {
     visible: true,
@@ -4208,7 +4211,6 @@ export class AcpHarnessView implements ContentView {
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
-    if (this.genUiPanel?.isOpen) return this.genUiPanel.handleKey(e);
     const dictationChord = (e.code === 'KeyD' || e.key.toLowerCase() === 'd')
       && e.metaKey
       && !e.ctrlKey
@@ -4340,6 +4342,14 @@ export class AcpHarnessView implements ContentView {
       }
       if (e.key.length === 1 && noMod) this.disarmAnnotation();
     }
+    // spec 310: the generative-UI panel is inline, not an overlay — so it
+    // ranks BELOW every summon-on-demand surface (an overlay drawn over it
+    // must own the keyboard; the `OverlayShell` registry used to close the
+    // panel for us) and ABOVE the lane chords, transcript navigation and the
+    // composer catch-all, which would otherwise eat the keys of a focused
+    // control. `handleKey` returns false for its own subtree, so a native
+    // input still gets its keystroke.
+    if (this.genUiPanel?.isOpen) return this.genUiPanel.handleKey(e);
     // spec 306: Cmd chords — Alt does not reach the app, and Ctrl+1..4 is the
     // macOS desktop switch. The ticket picker's Cmd+1..3 already ran above.
     if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
@@ -6230,8 +6240,8 @@ export class AcpHarnessView implements ContentView {
       onClose: () => this.invalidate('composer'),
     });
     body.appendChild(this.imageViewer.el);
+    // spec 310: no parent until a card seats it — the panel lives in the row.
     this.genUiPanel = new GenUiPanel();
-    body.appendChild(this.genUiPanel.el);
 
     this.metricsOverlay = new MetricsOverlay();
     body.appendChild(this.metricsOverlay.el);
@@ -9488,7 +9498,15 @@ export class AcpHarnessView implements ContentView {
     for (const key of this.genUiStates.keys()) if (key.startsWith(`${laneId}\u0000`)) this.genUiStates.delete(key);
   }
 
+  /**
+   * spec 310 — expand a card's panel in place, or collapse the one already
+   * open on that card. The panel node itself is reused; only its seat moves.
+   */
   private openGenUi(itemId: string, index: number): void {
+    if (this.genUiOpen?.itemId === itemId && this.genUiOpen.index === index) {
+      this.genUiPanel.close();
+      return;
+    }
     const lane = this.activeLane();
     const item = lane?.transcript.find((candidate) => candidate.id === itemId);
     const entry = item?.uiFences?.find((candidate) => candidate.index === index);
@@ -9499,6 +9517,15 @@ export class AcpHarnessView implements ContentView {
     this.genUiStates.delete(key);
     this.genUiStates.set(key, retained);
     while (this.genUiStates.size > UI_MAX_PANEL_STATES) this.genUiStates.delete(this.genUiStates.keys().next().value!);
+    const body = this.activeTranscriptBody();
+    const anchor = body && !lane.stickToBottom ? this.captureTranscriptScrollAnchor(body) : null;
+    // Seat the node first: `paint()` focuses the first control, and focus()
+    // on a detached element is a no-op.
+    this.genUiOpen = { itemId, index };
+    if (!this.mountGenUiPanel()) {
+      this.genUiOpen = null;
+      return;
+    }
     this.genUiPanel.update({
       open: true,
       entry,
@@ -9515,12 +9542,63 @@ export class AcpHarnessView implements ContentView {
           .then(() => this.flashChip(url))
           .catch((e: unknown) => this.flashChip(`open failed: ${errorText(e)}`));
       },
-      onClose: () => {
+      onClose: (restoreFocus) => {
+        this.rowFor(itemId)?.mountUiPanel(null);
+        this.genUiPanel.el.remove();
+        this.genUiOpen = null;
+        if (!restoreFocus) return;
         this.focus = 'text';
         this.element.focus({ preventScroll: true });
         this.invalidate('composer');
       },
     });
+    if (body && anchor) this.restoreTranscriptScrollAnchor(body, anchor);
+    if (body) this.revealGenUiPanel(body);
+  }
+
+  /**
+   * Seat the panel node in the card that owns it, after every transcript
+   * commit: a sealed row repaints from pure markdown, so the card — and the
+   * empty slot — are rebuilt under it. The owning row no longer offering a
+   * slot means it is gone (disposed, lane switched, source re-streamed), and
+   * the panel collapses without taking focus back.
+   *
+   * Runs on every commit, including every streaming frame, so the collapsed
+   * case must cost one null check.
+   */
+  private syncGenUiMount(): void {
+    if (this.genUiOpen !== null && !this.mountGenUiPanel()) this.genUiPanel.close(false);
+  }
+
+  /** Seat the panel node in its card; did that card still offer a slot? */
+  private mountGenUiPanel(): boolean {
+    const open = this.genUiOpen;
+    if (open === null) return false;
+    return this.rowFor(open.itemId)?.mountUiPanel({ index: open.index, panel: this.genUiPanel.el }) === true;
+  }
+
+  /** The mounted assistant row for an id — the only rows that host a UI card. */
+  private rowFor(itemId: string): AssistantRow | null {
+    const row = this.transcript?.rowFor(itemId);
+    return row instanceof AssistantRow ? row : null;
+  }
+
+  /**
+   * Scroll just enough to show a panel that expanded below the fold, never so
+   * far that the card head it belongs to leaves the viewport.
+   */
+  private revealGenUiPanel(body: HTMLElement): void {
+    const card = this.genUiPanel.el.closest<HTMLElement>('.acp-genui-card');
+    if (!card) return;
+    const bodyRect = body.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    const overflow = cardRect.bottom - bodyRect.bottom;
+    if (overflow <= 0) return;
+    const delta = Math.min(overflow, Math.max(0, cardRect.top - bodyRect.top));
+    if (delta < 0.5) return;
+    const token = this.beginProgrammaticScroll();
+    body.scrollTop += delta;
+    this.releaseProgrammaticScroll(token);
   }
 
   private async openMessageResource(resource: MessageResource): Promise<void> {
@@ -12048,6 +12126,9 @@ export class AcpHarnessView implements ContentView {
       projectDir: this.projectDir,
       resolveLocalImages: !this.remoteRuntimeId,
     });
+    // spec 310: a repaint rebuilt the cards under the open panel, and a row
+    // may have left the window entirely — re-seat it, or collapse it.
+    this.syncGenUiMount();
     if (anchor) {
       this.restoreTranscriptScrollAnchor(body, anchor);
       lane.savedScrollAnchor = this.captureTranscriptScrollAnchor(body) ?? anchor;

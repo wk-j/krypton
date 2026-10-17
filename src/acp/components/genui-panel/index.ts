@@ -1,4 +1,4 @@
-// Spec 309 — the generative UI panel.
+// Spec 309 — the generative UI panel; spec 310 — hosted inline.
 //
 // A kernel `Component`: the whole spec is re-evaluated on every input, but the
 // repaint is not re-rendered — `renderChildren()` reconciles by node key and
@@ -9,9 +9,14 @@
 // Interactive state is owned by the caller (the harness view's LRU), not here:
 // `state` holds the declared inputs, `views` the per-node view state. Both are
 // mutated in place so a reopen of the same fence resumes where it left off.
+//
+// Spec 310 replaced the `OverlayShell` host with this plain inline block: the
+// view moves this one node into the slot of the card that owns it, so the
+// panel expands in the sealed row instead of covering the dashboard. The node
+// is moved, never rebuilt — a transcript repaint detaches it and the view
+// re-appends the same element, which is what keeps focus and scroll position.
 
 import './genui-panel.css';
-import './genui-panel.scheme.css';
 
 import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
@@ -22,7 +27,6 @@ import { toStateValue } from '../../genui/types';
 import { renderChildren } from '../genui-catalog';
 import type { GenUiContext } from '../genui-catalog';
 import { FOCUSABLE_ATTR } from '../genui-catalog/renderer';
-import { OverlayShell } from '../overlay-shell';
 import type { ComponentDef } from '../types';
 
 /** Per-node view state, retained beside the inputs for as long as the panel entry lives. */
@@ -47,14 +51,23 @@ export interface GenUiPanelProps {
   onDraft(text: string): string | null;
   /** Opens an `http(s)` url through the host's `open_url`. */
   onOpenUrl(url: string): void;
-  /** Focus goes back to the composer. */
-  onClose(): void;
+  /**
+   * The panel collapsed: the view detaches this node and drops its open
+   * target. `restoreFocus` is false when the collapse was not the user asking
+   * for it (row disposed, lane switched, tab hidden) — then the composer must
+   * not be yanked back.
+   */
+  onClose(restoreFocus: boolean): void;
 }
 
 const NO_STATE: UiState = {};
 
 export class GenUiPanel extends Component<GenUiPanelProps> {
-  private readonly shell: OverlayShell;
+  /** The card above already names the spec; this line is the key legend. */
+  private readonly legend = el('span', {
+    class: 'acp-genui-panel__legend',
+    text: 'Tab moves between controls · Esc closes',
+  });
   /** Carries `acp-genui` too: catalog sheets scope their shared rules to that block. */
   private readonly content = el('div', { class: 'acp-genui-panel__body acp-genui' });
   private readonly feedback = el('div', { class: 'acp-genui-panel__feedback', attrs: { role: 'status' } });
@@ -74,11 +87,11 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
   private props: GenUiPanelProps | null = null;
   private visibilityObserver: MutationObserver | null = null;
   private focusIndex = 0;
+  private openState = false;
 
   constructor() {
-    const shell = new OverlayShell();
-    super(shell.el);
-    this.shell = shell;
+    super(el('div', { class: 'acp-genui-panel', attrs: { role: 'group' } }));
+    this.el.hidden = true;
     this.source.hidden = true;
     this.main.append(
       this.content,
@@ -86,6 +99,7 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
       this.source,
       el('div', { class: 'acp-genui-panel__actions' }, this.sourceButton, this.closeButton),
     );
+    this.el.append(el('div', { class: 'acp-genui-panel__head' }, this.legend), this.main);
     this.bag.listen(this.sourceButton, 'click', () => {
       this.source.hidden = !this.source.hidden;
       this.sourceButton.textContent = this.source.hidden ? 'Source' : 'Hide source';
@@ -102,7 +116,7 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
   }
 
   get isOpen(): boolean {
-    return this.shell.isOpen;
+    return this.openState;
   }
 
   update(next: GenUiPanelProps): void {
@@ -114,7 +128,7 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
     const props = this.props;
     if (!this.isOpen || props === null) return;
     this.update({ ...props, open: false });
-    if (restoreFocus) props.onClose();
+    props.onClose(restoreFocus);
   }
 
   /**
@@ -145,33 +159,25 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
   }
 
   protected syncClasses(): void {
-    // The shell owns every class on the root; the panel's own nodes are static.
+    // Static chrome: the only root state is `hidden`, which `paint` writes.
   }
 
   protected paint(next: GenUiPanelProps): void {
     const entry = next.entry;
     if (!next.open || entry === null) {
+      this.openState = false;
       this.release();
-      this.shell.update({ open: false, name: 'genui-panel', block: 'acp-genui-panel', title: '', body: this.main });
+      this.el.hidden = true;
       return;
     }
+    this.openState = true;
+    this.el.setAttribute('aria-label', entry.title);
     this.feedback.textContent = '';
     this.source.textContent = entry.source;
     this.source.hidden = true;
     this.sourceButton.textContent = 'Source';
+    this.el.hidden = false;
     this.render();
-    this.shell.update({
-      open: true,
-      name: 'genui-panel',
-      block: 'acp-genui-panel',
-      title: entry.title,
-      sub: `${entry.summary} · Tab moves between controls · Esc closes`,
-      body: this.main,
-      panelAttrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': entry.title },
-      // Another shell took the single open slot: the mounted tree is gone, so
-      // the next identical `update()` must paint instead of comparing equal.
-      onAutoClose: () => { this.release(); this.invalidateDeps(); },
-    });
     this.watchVisibility();
     this.focusIndex = 0;
     const focusables = this.focusables();
@@ -181,7 +187,6 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
 
   protected onDispose(): void {
     this.release();
-    this.shell.dispose();
   }
 
   /** Evaluate the spec against the current inputs and patch the mounted tree. */
@@ -297,4 +302,4 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
   }
 }
 
-export const def: ComponentDef = { id: 'genui-panel', blocks: ['acp-genui-panel', 'acp-harness__genui-panel-overlay'] };
+export const def: ComponentDef = { id: 'genui-panel', blocks: ['acp-genui-panel'] };

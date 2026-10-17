@@ -1,82 +1,51 @@
-/* Spec 309 §Panel — `GenUiPanel` chrome only.
+/* Spec 309 §Panel, spec 310 §UI — `GenUiPanel` chrome only.
  *
  * Everything inside the body is a catalog renderer under the `acp-genui`
- * block, with its own group sheet; this file owns the overlay, the frame, the
- * head, the source block and the two chrome buttons, and nothing else.
+ * block, with its own group sheet; this file owns the frame, the head, the
+ * source block and the two chrome buttons, and nothing else.
+ *
+ * Spec 310 seats the panel inside the card that opens it, so there is no
+ * overlay, no backdrop and no shadow: the card already draws the accent edge,
+ * and the panel only adds the rule under the head. Width and placement come
+ * from the slot — the panel is a plain block.
  *
  * Token discipline, after the first pass painted EVERY border with
- * `--krypton-accent` at full strength: structure (panel edge, head rule) is
- * hairline `--krypton-fg-rgb` or a low-alpha accent tint, the same scale
- * `metrics-overlay` and `help-overlay` use; saturated accent is spent only on
- * the title, the feedback line and the focus ring.
- *
- * Every rgba() goes through `--krypton-accent-rgb` / `--krypton-fg-rgb` so the
- * light scheme (which retargets those) needs no override beyond the backdrop. */
+ * `--krypton-accent` at full strength: structure (head rule, source edge) is
+ * hairline `--krypton-fg-rgb`, the same scale `metrics-overlay` and
+ * `help-overlay` use; saturated accent is spent only on the title, the
+ * feedback line and the focus ring. */
 @layer krypton.component {
-  .acp-harness__genui-panel-overlay {
-    position: absolute;
-    inset: 0;
-    z-index: 4;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    /* No backdrop-filter: blur() — it freezes the transparent WKWebView. */
-    background: rgba(2, 5, 9, 0.86);
-  }
-
-  .acp-harness__genui-panel-overlay[hidden] { display: none; }
-
-  .acp-genui-panel__panel {
-    width: min(680px, 100%);
-    max-height: 100%;
+  .acp-genui-panel {
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.26);
-    border-radius: var(--krypton-border-radius, 8px);
-    background: var(--krypton-bg-elev, var(--krypton-bg, #0c1015));
+    min-width: 0;
+    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
     color: var(--krypton-fg, #e6dfd0);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5),
-                0 18px 48px rgba(0, 0, 0, 0.45),
-                inset 0 1px 0 rgba(255, 255, 255, 0.03);
   }
+
+  .acp-genui-panel[hidden] { display: none; }
 
   .acp-genui-panel__head {
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: 11px 16px 10px;
-    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    padding: 9px 12px 8px;
   }
 
-  .acp-genui-panel__title {
-    display: block;
-    color: var(--krypton-window-accent, #0cf);
-    font-weight: 600;
-    letter-spacing: 0.06em;
-  }
-
-  .acp-genui-panel__sub {
+  .acp-genui-panel__legend {
     color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
     font-size: 0.82em;
     letter-spacing: 0.02em;
   }
 
   .acp-genui-panel__main {
-    min-height: 0;
-    overflow: auto;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 14px 16px 16px;
+    padding: 0 12px 12px;
   }
-
-  /* The body scrolls; its children keep their natural height. Without this a
-     tall spec squeezes the source block to a single clipped line instead of
-     pushing the overflow into `__main`'s scroller. */
-  .acp-genui-panel__main > * { flex: 0 0 auto; }
 
   .acp-genui-panel__body {
     display: flex;

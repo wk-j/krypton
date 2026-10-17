@@ -36,7 +36,7 @@ import {
   streamingMarkdownDroppedTable,
 } from '../../harness-markdown';
 import { clearLiveSvgFences, decorateSvgFences, updateLiveSvgFences } from '../../harness-svg-fence';
-import { decorateUiFences, patchUiHints } from '../genui-card';
+import { decorateUiFences, patchUiHints, syncUiPanel } from '../genui-card';
 import { applyTranscriptAnnotations } from '../../transcript-annotation';
 import type { HarnessLane, HarnessTranscriptItem } from '../../harness-view-types';
 import { AnnotationRail } from '../annotation-rail';
@@ -84,6 +84,15 @@ export class AssistantRow extends TranscriptRow {
 
   patchUiHints(): void {
     if (!this.isLive) patchUiHints(this.body, this.current.item);
+  }
+
+  /**
+   * Spec 310 — seat the view's single live panel in one of this row's cards.
+   * Returns whether it found a slot here; the view collapses when no mounted
+   * row claims the open fence.
+   */
+  mountUiPanel(target: { readonly index: number; readonly panel: HTMLElement } | null): boolean {
+    return this.isLive ? false : syncUiPanel(this.body, target);
   }
 
   protected bodyDeps(next: RowProps): readonly unknown[] {
