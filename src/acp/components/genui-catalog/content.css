@@ -1,0 +1,238 @@
+/* Spec 309 — Content group.
+
+   The catalog's five tones (`TONE_CLASS` in renderer.ts) resolve to one custom
+   property, `--acp-genui-tone`, so a toned Text, Callout, Metric, Badge or List
+   value is one rule set plus five colour declarations instead of five families
+   of five. Every tone is a `--krypton-*` token the light scheme retargets, so
+   there is no `krypton.scheme` layer in this file.
+
+   `Sources` rows are buttons, never anchors: the host runs `OpenUrl`, so the
+   panel contains no navigable href at all. They are styled to read as links,
+   because that is what they are to the eye. */
+
+@layer krypton.component {
+  .acp-genui__prose,
+  .acp-genui__callout,
+  .acp-genui__metric,
+  .acp-genui__badge,
+  .acp-genui__list-value {
+    --acp-genui-tone: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86);
+  }
+
+  .acp-genui__prose--good,
+  .acp-genui__callout--good,
+  .acp-genui__metric--good,
+  .acp-genui__badge--good,
+  .acp-genui__list-value--good {
+    --acp-genui-tone: rgb(var(--agent-green-rgb, 139, 195, 74));
+  }
+
+  .acp-genui__prose--warn,
+  .acp-genui__callout--warn,
+  .acp-genui__metric--warn,
+  .acp-genui__badge--warn,
+  .acp-genui__list-value--warn {
+    --acp-genui-tone: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+  }
+
+  .acp-genui__prose--bad,
+  .acp-genui__callout--bad,
+  .acp-genui__metric--bad,
+  .acp-genui__badge--bad,
+  .acp-genui__list-value--bad {
+    --acp-genui-tone: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+  }
+
+  .acp-genui__prose--info,
+  .acp-genui__callout--info,
+  .acp-genui__metric--info,
+  .acp-genui__badge--info,
+  .acp-genui__list-value--info {
+    --acp-genui-tone: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-genui__prose {
+    margin: 0;
+    color: var(--acp-genui-tone);
+    line-height: 1.45;
+  }
+
+  .acp-genui__md-code {
+    padding: 0.05em 0.4ch;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    font-size: 0.92em;
+  }
+
+  .acp-genui__md-strong {
+    font-weight: 700;
+  }
+
+  .acp-genui__md-em {
+    font-style: italic;
+  }
+
+  .acp-genui__callout {
+    padding: 8px 10px;
+    border: 1px solid color-mix(in srgb, var(--acp-genui-tone) 40%, transparent);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: color-mix(in srgb, var(--acp-genui-tone) 8%, transparent);
+  }
+
+  .acp-genui__callout-title {
+    margin-bottom: 3px;
+    color: var(--acp-genui-tone);
+    font-weight: 600;
+  }
+
+  .acp-genui__callout-text {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86);
+    line-height: 1.45;
+  }
+
+  .acp-genui__metric {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .acp-genui__metric-value {
+    color: var(--acp-genui-tone);
+    font-size: 1.5em;
+    font-weight: 600;
+    line-height: 1.15;
+  }
+
+  .acp-genui__metric-note {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    font-size: 0.85em;
+  }
+
+  .acp-genui__badge {
+    display: inline-block;
+    padding: 1px 7px;
+    border: 1px solid color-mix(in srgb, var(--acp-genui-tone) 45%, transparent);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: color-mix(in srgb, var(--acp-genui-tone) 10%, transparent);
+    color: var(--acp-genui-tone);
+    font-size: 0.85em;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  .acp-genui__kv {
+    display: grid;
+    grid-template-columns: minmax(8ch, max-content) 1fr;
+    gap: 2px 12px;
+    margin: 0;
+    min-width: 0;
+  }
+
+  .acp-genui__kv-key {
+    align-self: baseline;
+  }
+
+  .acp-genui__kv-value {
+    margin: 0;
+    min-width: 0;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9);
+    overflow-wrap: anywhere;
+  }
+
+  .acp-genui__list {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    border-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-genui__list-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    padding: 5px 9px;
+    border: 0;
+    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+  }
+
+  .acp-genui__list-row:first-child {
+    border-top: 0;
+  }
+
+  .acp-genui__list-row--action {
+    cursor: pointer;
+  }
+
+  .acp-genui__list-row--action:hover {
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.05);
+  }
+
+  .acp-genui__list-title {
+    flex: 0 1 auto;
+    min-width: 0;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+  }
+
+  .acp-genui__list-detail {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.52);
+    font-size: 0.88em;
+  }
+
+  .acp-genui__list-value {
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: var(--acp-genui-tone);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .acp-genui__sources {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .acp-genui__source {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 6px;
+    border: 0;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: transparent;
+    color: var(--krypton-window-accent, #0cf);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .acp-genui__source:hover .acp-genui__source-title {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .acp-genui__source-title {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-genui__source-note {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    font-size: 0.88em;
+  }
+}

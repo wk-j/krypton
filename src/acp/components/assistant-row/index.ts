@@ -36,6 +36,7 @@ import {
   streamingMarkdownDroppedTable,
 } from '../../harness-markdown';
 import { clearLiveSvgFences, decorateSvgFences, updateLiveSvgFences } from '../../harness-svg-fence';
+import { decorateUiFences, patchUiHints } from '../genui-card';
 import { applyTranscriptAnnotations } from '../../transcript-annotation';
 import type { HarnessLane, HarnessTranscriptItem } from '../../harness-view-types';
 import { AnnotationRail } from '../annotation-rail';
@@ -79,6 +80,10 @@ export class AssistantRow extends TranscriptRow {
   patchResources(): void {
     if (this.isLive) return;
     this.syncRail(this.current);
+  }
+
+  patchUiHints(): void {
+    if (!this.isLive) patchUiHints(this.body, this.current.item);
   }
 
   protected bodyDeps(next: RowProps): readonly unknown[] {
@@ -198,6 +203,7 @@ export class AssistantRow extends TranscriptRow {
     item.streamPlainLength = undefined;
     // After the capture — the cache stays pure markdown.
     decorateSvgFences(this.body, item);
+    decorateUiFences(this.body, item);
     scanMessageResourceBody(this.body, item, next.projectDir);
     this.syncRail(next);
   }
@@ -235,6 +241,7 @@ export class AssistantRow extends TranscriptRow {
     this.syncProvenance(next);
     // spec 283: before annotations so SKIP_WRAP keeps toolbar text out of offsets.
     decorateSvgFences(body, item);
+    decorateUiFences(body, item);
     applyTranscriptAnnotations(body, item);
     this.syncAnnoRail(body, item);
     scanMessageResourceBody(body, item, next.projectDir);

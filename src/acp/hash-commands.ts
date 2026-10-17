@@ -27,6 +27,7 @@ import {
   tagGithubIssuePrompt,
   timelineTracePrompt,
   tldrawDrawPrompt,
+  genUiPrompt,
   wikiIngestPrompt,
   wikiRecallPrompt,
   lessonDistillPrompt,
@@ -131,6 +132,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'lessons', args: '', description: 'open the global lessons index in the Markdown Viewer' },
   { name: 'directive', args: '<what to create/change>', description: 'author a reusable harness directive' },
   { name: 'draw', args: '<request>', description: 'draw in an open tldraw Offline canvas (focused or named)' },
+  { name: 'ui', args: '<request>', description: 'ask for an interactive UI card in this conversation' },
   {
     name: 'review',
     args: '[pass [N] | stop] [board] [<lane>…] [-- <doc | note>]',
@@ -345,6 +347,13 @@ export function commandMeta(): Record<string, CommandMeta> {
         'discover canvas → inspect shapes → static: batch /exec · durable: script-workspace + recipes → verify applied + screenshot',
       lanes: 'same lane',
       prompt: tldrawDrawPrompt('<drawing request>'),
+    },
+    ui: {
+      category: 'agent',
+      badges: ['workflow'],
+      anatomy: 'request UI → sealed transcript card → keyboard panel → visible composer draft',
+      lanes: 'same lane',
+      prompt: genUiPrompt('<UI request>'),
     },
     review: {
       category: 'agent',

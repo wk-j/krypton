@@ -12,8 +12,8 @@
 > endpoint, so the `Origin: null` / CORS problem disappears. The token in the path
 > is the sole capability. See "Amended trust posture (spec 149)" under Consequences.
 >
-> **Amended by spec 292 (2026-10-13):** a **narrow exception** for compact
-> ` ```visual ` cards in the ACP harness transcript. Full-page HTML artifacts
+> **Draft amendment in spec 292 (2026-10-13):** a proposed **narrow exception** for compact
+> ` ```visual ` cards in the ACP harness transcript; the `visual` renderer is not implemented. Full-page HTML artifacts
 > are unchanged — OS browser, keypress only, never auto-opened. See
 > "Narrow exception — inline HTML visuals (spec 292)" under Consequences.
 
@@ -30,7 +30,7 @@ The path-handoff contract (`artifact_new { title }` → lane writes the file →
 ## Considered Options
 
 - **In-app webview pane (spec 102)** — rejected for v1: native child webviews render above the transparent DOM workspace on macOS (z-order constraint) and must be hidden when off-screen; the surface also forces a JS-sandbox/CSP decision and adds a rendering surface to maintain. Kept explicitly as the natural future target if a keyboard-native surface becomes a priority.
-- **Inline iframe in the transcript** — rejected **for artifacts**: fights the tail-window transcript (spec 103) and the single-window constraint, and still needs sandboxing. Spec 292 later reopens this surface for a different class (` ```visual ` cards); the three reasons still apply and are answered there, not waived.
+- **Inline iframe in the transcript** — rejected **for artifacts**: fights the tail-window transcript (spec 103) and the single-window constraint, and still needs sandboxing. Draft spec 292 proposes reopening this surface for a different class (` ```visual ` cards); the three reasons still apply and are addressed there, not waived.
 - **OS browser via `open_url`** — chosen: reuses an existing command, removes the need for *Krypton* to implement a sandbox or fight the z-order machinery, and follows the precedent of commit 6acdc12, which deliberately moved HTML hint targets out of the in-app webview and into the OS browser. Note this does *not* remove browser-profile trust (see Consequences) — it relocates rendering to a surface Krypton does not have to maintain.
 
 ## Consequences
@@ -48,14 +48,14 @@ Serving over `http://127.0.0.1` rather than `file://` changes the trust posture,
 - **The page shares the MCP/bus server's origin.** Because the artifact is served on the *same port* as `/mcp/harness/{harness_id}/lane/{lane_label}` (which authenticates lane identity from the URL path with no HTTP auth), the artifact's own (lane-authored) JS can same-origin `fetch` those JSON-RPC endpoints and impersonate any lane's tools (`memory_set/get`, `peer_send`, `directive_*`, `artifact_*`). **This is an accepted risk (user decision `jdg-…363a5ad0`):** the reviewer-recommended fix (a second loopback origin) was explicitly declined to keep a single port. It is acceptable under the same trust envelope as the artifact feature itself (the lane already writes the file + has shell), and the token is *not* a defense against the artifact's own script. Revisit before any non-local/shared deployment; the cheap partial mitigation, if reconsidered, is a per-page nonce the MCP handler requires and the artifact origin never receives.
 - **Everything else is unchanged.** Full HTML+JS in the real browser profile, no sandbox, opt-in, user-opened, lane-attributed, capped — exactly as the original decision recorded.
 
-### Narrow exception — inline HTML visuals (spec 292)
+### Proposed narrow exception — inline HTML visuals (draft spec 292)
 
-Spec 292 adds compact ` ```visual ` cards to the harness transcript. This is
+Draft spec 292 proposes compact ` ```visual ` cards in the harness transcript. This is
 not a new display path for **artifacts**. Artifact cards still open in the OS
 browser on a hint keypress.
 
-The original rejection of an inline iframe named three reasons. Spec 292
-answers each for this class only:
+The original rejection of an inline iframe named three reasons. The draft
+design addresses each for this class only; none of the following is current behavior:
 
 1. **Tail-window (spec 103).** The iframe is not stored in `markdownHtml`. Card
    hint/Source/activation patch the existing row DOM and are omitted from
@@ -74,6 +74,6 @@ answers each for this class only:
    web-content process / main thread with every xterm.
 
 **Disclosed residual:** CSP and sandbox do not block iframe self-navigation;
-the main window has no `on_navigation`. Spec 292 retires the card on the
+the main window has no `on_navigation`. Spec 292 would retire the card on the
 iframe's second `load`. A GET may already have left. This is narrower than
 an artifact in the real browser profile, and it is not "no network."

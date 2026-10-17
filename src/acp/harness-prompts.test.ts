@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import { ACTIONS, COMPONENTS, actionSignature, componentSignature } from './genui/catalog';
+import { compile } from './genui/compile';
+import { evaluate, initialState } from './genui/evaluate';
 import {
   TICKET_PIN_MAX_CHARS,
   analyzeGithubIssuePrompt,
   createGithubIssuePrompt,
   dailyBriefPrompt,
+  genUiPrompt,
   lessonDistillPrompt,
   postGithubCommentPrompt,
   renderActiveTicketPin,
@@ -207,5 +211,35 @@ describe('human-facing GitHub issue prompts', () => {
     expect(prompt).toContain('parenthetical heading annotations');
     expect(prompt).toContain('inline prefixes');
     expect(prompt).toContain('Write the plain explanation directly.');
+  });
+});
+
+describe('genUiPrompt (spec 309)', () => {
+  const prompt = genUiPrompt('estimate seats');
+
+  it('carries a generated signature line for every catalog entry and every action', () => {
+    for (const component of COMPONENTS) expect(prompt).toContain(componentSignature(component));
+    for (const action of ACTIONS) expect(prompt).toContain(actionSignature(action));
+  });
+
+  it('teaches only examples that compile and evaluate clean', () => {
+    const fences = [...prompt.matchAll(/```krypton-ui\n([^]*?)\n```/g)].map((match) => match[1]);
+    expect(fences.length).toBeGreaterThan(0);
+    for (const fence of fences) {
+      const compiled = compile(fence);
+      expect(compiled.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')).toEqual([]);
+      expect(compiled.program).not.toBeNull();
+      const run = evaluate(compiled.program!, initialState(compiled.program!));
+      expect(run.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')).toEqual([]);
+      expect(run.roots.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('states the draft-only boundary, the criterion and the opt-out inside the one-shot budget', () => {
+    expect(prompt).toContain('estimate seats');
+    expect(prompt).toContain('cannot run tools, send messages, or read files');
+    expect(prompt).toContain('emit no fence');
+    expect(prompt).toContain('fails to compile is shown to the user');
+    expect(prompt.length).toBeLessThan(8_000);
   });
 });

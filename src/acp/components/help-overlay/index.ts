@@ -187,6 +187,7 @@ function buildSections(): readonly HelpSection[] {
         term: '#draw <request>',
         desc: 'Draw in an open tldraw Offline document (focused or named) — static shapes or durable document scripts',
       },
+      { term: '#ui <request>', desc: 'Ask for an interactive UI card; actions load a visible draft' },
       { term: '#telegram', desc: 'Open Telegram controller settings' },
       { term: '#mcp', desc: 'Show MCP endpoint and lane status' },
       { term: '#bg', desc: 'List this lane’s background shell tasks' },

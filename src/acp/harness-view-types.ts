@@ -15,6 +15,7 @@ import type {
 } from './ask-user-question';
 import type { AcpClient } from './client';
 import type { QuestionTarget } from './elicitation';
+import type { UiFenceEntry } from './genui/types';
 import type { TelemetryReviewLoop } from './harness-telemetry';
 import type {
   AcpAgentMode,
@@ -95,6 +96,8 @@ export interface SvgFenceEntry {
   source: string;
 }
 
+export type { UiFenceEntry } from './genui/types';
+
 export interface HarnessTranscriptItem {
   id: string;
   kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'question' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'provider_error' | 'artifact' | 'review';
@@ -152,6 +155,8 @@ export interface HarnessTranscriptItem {
   resourcesScanned?: boolean;
   /** spec 283: rendered ```svg fence cards, rebuilt by decorateSvgFences. */
   svgFences?: SvgFenceEntry[];
+  /** spec 309: compiled, static ```krypton-ui cards. */
+  uiFences?: UiFenceEntry[];
   /** spec 240: human notes pinned to spans in this assistant reply. */
   annotations?: TranscriptAnnotation[];
 }

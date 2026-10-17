@@ -1,0 +1,373 @@
+/* Spec 309 §Catalog — the Inputs group.
+ *
+ * One grid for every control: a label line, then the control itself. The
+ * saturated accent is spent only on what the eye must land on — the live
+ * readout, the selected segment, a filled star, the primary button and the
+ * focus ring. Structure is hairline `--krypton-fg-rgb`, the same scale the
+ * panel's own sheet uses, so a card full of controls does not read as a stack
+ * of neon rectangles. Every colour goes through a `--krypton-*` token, so the
+ * light scheme needs no override beyond the two below.
+ *
+ * `__label` and `__value` are catalog.css's; a readout carries both `__value`
+ * and `__readout` so the accent and tabular figures stay defined in one place.
+ * `__field` restates `display` because it lands on the same element as
+ * catalog.css's `.acp-genui__slot { display: contents }`, which would
+ * otherwise erase the control's own column. */
+@layer krypton.component {
+  .acp-genui__field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .acp-genui__field--toggle,
+  .acp-genui__field--button { align-items: flex-start; }
+
+  .acp-genui__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .acp-genui__option-detail {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    font-size: 0.82em;
+  }
+
+  /* ── Slider ──────────────────────────────────────────────── */
+
+  .acp-genui__range {
+    width: 100%;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--krypton-window-accent, #0cf);
+    background: transparent;
+  }
+
+  /* ── Stepper ─────────────────────────────────────────────── */
+
+  .acp-genui__stepper {
+    display: inline-flex;
+    align-items: stretch;
+    align-self: flex-start;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+    border-radius: var(--krypton-border-radius, 8px);
+    overflow: hidden;
+  }
+
+  .acp-genui__stepper-button {
+    padding: 4px 11px;
+    border: 0;
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.05);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8);
+    cursor: pointer;
+    font: inherit;
+    line-height: 1.4;
+  }
+
+  .acp-genui__stepper-button:hover:not([disabled]) {
+    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.14);
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-genui__stepper-button[disabled] {
+    cursor: default;
+    opacity: 0.4;
+  }
+
+  .acp-genui__stepper .acp-genui__readout {
+    min-width: 3.5ch;
+    padding: 4px 10px;
+    border-inline: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+    text-align: center;
+  }
+
+  /* ── Toggle ──────────────────────────────────────────────── */
+
+  .acp-genui__switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 3px 3px 3px 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+  }
+
+  .acp-genui__switch-track {
+    position: relative;
+    flex: 0 0 auto;
+    width: 30px;
+    height: 16px;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.24);
+    border-radius: 999px;
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
+    transition: background 120ms ease, border-color 120ms ease;
+  }
+
+  .acp-genui__switch-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    transition: transform 120ms ease, background 120ms ease;
+  }
+
+  .acp-genui__switch--on .acp-genui__switch-track {
+    border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.55);
+    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.22);
+  }
+
+  .acp-genui__switch--on .acp-genui__switch-knob {
+    transform: translateX(14px);
+    background: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-genui__switch--on .acp-genui__label {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9);
+  }
+
+  /* ── Choice ──────────────────────────────────────────────── */
+
+  .acp-genui__segments {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-self: flex-start;
+    gap: 1px;
+    padding: 1px;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
+  }
+
+  .acp-genui__segment {
+    padding: 4px 12px;
+    border: 0;
+    border-radius: calc(var(--krypton-border-radius, 8px) - 2px);
+    background: none;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    cursor: pointer;
+    font: inherit;
+    letter-spacing: 0.03em;
+  }
+
+  .acp-genui__segment:hover { color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92); }
+
+  .acp-genui__segment--on {
+    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.16);
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  /* ── Radio / Checklist ───────────────────────────────────── */
+
+  .acp-genui__radios,
+  .acp-genui__checks {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .acp-genui__radio,
+  .acp-genui__check {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
+    cursor: pointer;
+  }
+
+  .acp-genui__radio-input,
+  .acp-genui__check-input {
+    flex: 0 0 auto;
+    margin: 0;
+    accent-color: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-genui__radio-label,
+  .acp-genui__check-label { overflow-wrap: anywhere; }
+
+  /* ── Select ──────────────────────────────────────────────── */
+
+  .acp-genui__select {
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.04);
+    color: inherit;
+    font: inherit;
+  }
+
+  /* ── Input / TextArea ────────────────────────────────────── */
+
+  .acp-genui__text,
+  .acp-genui__textarea {
+    width: 100%;
+    padding: 6px 9px;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.05);
+    color: var(--krypton-fg, #e6dfd0);
+    font: inherit;
+  }
+
+  .acp-genui__textarea {
+    min-height: 64px;
+    line-height: 1.5;
+    resize: vertical;
+  }
+
+  .acp-genui__text::placeholder,
+  .acp-genui__textarea::placeholder { color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34); }
+
+  /* ── Rating ──────────────────────────────────────────────── */
+
+  .acp-genui__stars {
+    display: inline-flex;
+    align-self: flex-start;
+    gap: 3px;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  .acp-genui__star {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.22);
+    font-size: 1.15em;
+  }
+
+  .acp-genui__star--on { color: var(--krypton-window-accent, #0cf); }
+
+  /* ── EditableTable ───────────────────────────────────────── */
+
+  .acp-genui__grid {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+  }
+
+  .acp-genui__grid th {
+    padding: 0 10px 5px 0;
+    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+    font-weight: 500;
+    font-size: 0.8em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .acp-genui__grid td {
+    padding: 4px 10px 4px 0;
+    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.07);
+    vertical-align: middle;
+  }
+
+  .acp-genui__grid-row:last-child td { border-bottom: 0; }
+
+  .acp-genui__grid td:last-child {
+    width: 1%;
+    padding-right: 0;
+  }
+
+  .acp-genui__cell {
+    width: 100%;
+    padding: 4px 7px;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
+    color: var(--krypton-fg, #e6dfd0);
+    font: inherit;
+  }
+
+  .acp-genui__cell[type='checkbox'] {
+    width: auto;
+    accent-color: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-genui__grid-remove {
+    padding: 2px 7px;
+    border: 0;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: none;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+    cursor: pointer;
+    font: inherit;
+  }
+
+  .acp-genui__grid-remove:hover { color: var(--krypton-danger, #ff6b6b); }
+
+  .acp-genui__grid-add {
+    align-self: flex-start;
+    padding: 4px 11px;
+    border: 1px dashed rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.22);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: none;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    cursor: pointer;
+    font: inherit;
+  }
+
+  .acp-genui__grid-add:hover {
+    border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.45);
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  /* ── Button ──────────────────────────────────────────────── */
+
+  .acp-genui__button {
+    align-self: flex-start;
+    padding: 6px 14px;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8);
+    cursor: pointer;
+    font: inherit;
+    letter-spacing: 0.04em;
+  }
+
+  .acp-genui__button:hover {
+    border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.4);
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-genui__button--primary {
+    border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.45);
+    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.1);
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-genui__button--secondary { background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.07); }
+
+  .acp-genui__button--destructive {
+    border-color: rgba(var(--krypton-danger-rgb, 255, 107, 107), 0.45);
+    color: var(--krypton-danger, #ff6b6b);
+  }
+
+  .acp-genui__button--destructive:hover {
+    border-color: var(--krypton-danger, #ff6b6b);
+    color: var(--krypton-danger, #ff6b6b);
+  }
+}
+
+/* The knob is the one surface that reads as "lit": on a light background the
+ * same translucent foreground would vanish into the track. */
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-genui__switch-knob {
+    background: rgba(var(--krypton-fg-rgb, 32, 40, 48), 0.5);
+  }
+
+  html[data-theme-scheme='light'] .acp-genui__segment--on {
+    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.22);
+  }
+}

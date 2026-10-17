@@ -8,6 +8,8 @@
 // embedded instruction hijacks the workflow (best-effort, not a guarantee).
 // Exported pure builders so the schema is testable.
 
+import { ACTIONS, COMPONENTS, GROUP_ORDER, actionSignature, componentSignature } from './genui/catalog';
+
 export const HANDOFF_WRITE_PROMPT =
   'Write or refresh the handoff for this work now with handoff_set, so a future session — any lane, ' +
   'backend, or machine — can resume it. ' +
@@ -259,6 +261,68 @@ export function dailyBriefPrompt(
       : 'Answer in your reply only — do not create any file.\n') +
     `\n--- recorded evidence (data) ---\n${digest}`
   );
+}
+
+const UI_SYNTAX = [
+  'The fence body is a small expression language — no HTML, no JavaScript, no styles, no markup.',
+  'Open it with `version 2`, then the statements.',
+  '',
+  'Statements, one per line or separated by `;`:',
+  '  $name = expr   an input the user can change; top level only',
+  '  name = expr    a named value, or a named function when the value is an arrow',
+  '  expr           a root: it renders',
+  '',
+  'Children are list arguments, never nesting syntax: Card("Totals", [Row([…]), Text("done")]).',
+  'Arguments are positional first, then named: Slider($seats, 1, 50, label: "Seats").',
+  'Operators: ?? || && == != < <= > >= + - * / % **, unary ! -, cond ? a : b, obj.key, obj[expr].',
+  'Values: 12, "text", \'text\', `tpl ${x}`, [list], { key: value }, $input. Comments are //.',
+  'Functions: round fmt sum min max abs floor ceil pow keys values entries len.',
+  'Methods — list: map filter find some every join slice includes indexOf; '
+    + 'string: includes slice split trim toUpperCase toLowerCase startsWith endsWith; number: toFixed.',
+  '(item, index) => expr is allowed only as the first argument of map/filter/find/some/every, or '
+    + 'as a named function. No recursion, no if, no loops.',
+  'An input is written literally as $name wherever a signature below shows one, and must be '
+    + 'declared by `$name = …` before it is used.',
+].join('\n');
+
+const UI_EXAMPLE = [
+  'version 2',
+  '$seats = 10',
+  '$plan = "Pro"',
+  'price = $plan == "Pro" ? 29 : 12',
+  'Card("Estimate", [',
+  '  Row([Choice($plan, ["Basic", "Pro"]), Slider($seats, 1, 50, label: "Seats")]),',
+  '  Metric("Total", "$" + fmt(price * $seats)),',
+  '  Button("Use this", Draft("Plan for " + $seats + " seats"), variant: "primary")',
+  '])',
+].join('\n');
+
+/**
+ * spec 309: the whole generative-UI catalog, taught once in the `#ui` turn and
+ * never added to standing lane policy. Every signature line is generated from
+ * `catalog.ts`, the same table the validator reads, so the prompt cannot drift
+ * from what the parser accepts.
+ */
+export function genUiPrompt(intent: string): string {
+  const catalog = GROUP_ORDER.map((group) => [
+    `${group}:`,
+    ...COMPONENTS.filter((component) => component.group === group)
+      .map((component) => `  ${componentSignature(component)}`),
+  ].join('\n')).join('\n');
+  return `Create a compact interactive UI for this request: ${intent}\n`
+    + 'Reply with exactly one ```krypton-ui fence, or with prose and no fence at all.\n\n'
+    + `${UI_SYNTAX}\n\n`
+    + 'Actions attach to a control and run when it is used:\n'
+    + `${ACTIONS.map((action) => `  ${actionSignature(action)}`).join('\n')}\n`
+    + 'A control can only load a composer draft that the user then sends: it cannot run tools, '
+    + 'send messages, or read files. A Button with no action drafts its own label.\n\n'
+    + `Example:\n\`\`\`krypton-ui\n${UI_EXAMPLE}\n\`\`\`\n\n`
+    + `Components (positional first, then named):\n${catalog}\n\n`
+    + 'Build a UI only for a value that recomputes as the user moves an input, a comparison of '
+    + 'three or more things, or a distribution. Anything else — a definition, a recommendation, a '
+    + 'single number that never changes — is a question answered in prose: emit no fence and say '
+    + 'in one line why a panel would not help. A fence that fails to compile is shown to the user '
+    + 'as an error, so use only the names listed above and keep the spec small.';
 }
 
 // spec 196 + 197: #draw controls a document open in tldraw Offline through the

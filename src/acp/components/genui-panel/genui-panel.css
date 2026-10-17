@@ -1,0 +1,139 @@
+/* Spec 309 §Panel — `GenUiPanel` chrome only.
+ *
+ * Everything inside the body is a catalog renderer under the `acp-genui`
+ * block, with its own group sheet; this file owns the overlay, the frame, the
+ * head, the source block and the two chrome buttons, and nothing else.
+ *
+ * Token discipline, after the first pass painted EVERY border with
+ * `--krypton-accent` at full strength: structure (panel edge, head rule) is
+ * hairline `--krypton-fg-rgb` or a low-alpha accent tint, the same scale
+ * `metrics-overlay` and `help-overlay` use; saturated accent is spent only on
+ * the title, the feedback line and the focus ring.
+ *
+ * Every rgba() goes through `--krypton-accent-rgb` / `--krypton-fg-rgb` so the
+ * light scheme (which retargets those) needs no override beyond the backdrop. */
+@layer krypton.component {
+  .acp-harness__genui-panel-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    /* No backdrop-filter: blur() — it freezes the transparent WKWebView. */
+    background: rgba(2, 5, 9, 0.86);
+  }
+
+  .acp-harness__genui-panel-overlay[hidden] { display: none; }
+
+  .acp-genui-panel__panel {
+    width: min(680px, 100%);
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.26);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--krypton-bg-elev, var(--krypton-bg, #0c1015));
+    color: var(--krypton-fg, #e6dfd0);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5),
+                0 18px 48px rgba(0, 0, 0, 0.45),
+                inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+
+  .acp-genui-panel__head {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 11px 16px 10px;
+    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+  }
+
+  .acp-genui-panel__title {
+    display: block;
+    color: var(--krypton-window-accent, #0cf);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+  }
+
+  .acp-genui-panel__sub {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    font-size: 0.82em;
+    letter-spacing: 0.02em;
+  }
+
+  .acp-genui-panel__main {
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 16px 16px;
+  }
+
+  /* The body scrolls; its children keep their natural height. Without this a
+     tall spec squeezes the source block to a single clipped line instead of
+     pushing the overflow into `__main`'s scroller. */
+  .acp-genui-panel__main > * { flex: 0 0 auto; }
+
+  .acp-genui-panel__body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .acp-genui-panel__button {
+    padding: 6px 14px;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8);
+    cursor: pointer;
+    font: inherit;
+    letter-spacing: 0.04em;
+  }
+
+  .acp-genui-panel__button:hover {
+    border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.4);
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-genui-panel__button:focus-visible {
+    outline: 1px solid var(--krypton-window-accent, #0cf);
+    outline-offset: 2px;
+  }
+
+  .acp-genui-panel__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .acp-genui-panel__feedback {
+    color: var(--krypton-window-accent, #0cf);
+    font-size: 0.88em;
+  }
+
+  .acp-genui-panel__feedback:empty { display: none; }
+
+  .acp-genui-panel__source {
+    margin: 0;
+    max-height: 200px;
+    overflow: auto;
+    padding: 10px 12px;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.05);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    font: inherit;
+    font-size: 0.86em;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .acp-genui-panel__source[hidden] { display: none; }
+}

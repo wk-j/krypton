@@ -1,0 +1,132 @@
+/* Spec 309 — Layout group.
+
+   `.acp-genui__slot` is `display: contents` (catalog.css), so the element a
+   renderer builds inside its slot is the flex/grid item its parent lays out.
+   That is why every child selector here goes through the slot:
+   `.acp-genui__row > .acp-genui__slot > *` is the row's actual item.
+
+   Structure is hairline `--krypton-fg-rgb`, the scale `genui-panel.css` and
+   `inputs.css` already use; saturated accent is spent on the selected tab and
+   on the focus ring (catalog.css) and nowhere else. Every colour goes through
+   a `--krypton-*` token that the light scheme retargets, so there is no
+   `krypton.scheme` layer in this file. No animation beyond the 120ms tab
+   underline, no backdrop-filter, and a full 1px border or none at all. */
+
+@layer krypton.component {
+  .acp-genui__card {
+    display: block;
+    padding: 10px 12px;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.03);
+  }
+
+  .acp-genui__card-title {
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.95);
+    font-weight: 600;
+  }
+
+  .acp-genui__card-body,
+  .acp-genui__stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .acp-genui__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .acp-genui__row > .acp-genui__slot > * {
+    flex: 1 1 0;
+    min-width: 12ch;
+  }
+
+  /* `__grid` is EditableTable's (inputs.css); the Layout tile grid is `__tiles`. */
+  .acp-genui__tiles {
+    display: grid;
+    grid-template-columns: repeat(var(--acp-genui-columns, 2), minmax(0, 1fr));
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .acp-genui__tiles > .acp-genui__slot > * {
+    min-width: 0;
+  }
+
+  .acp-genui__tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .acp-genui__tabs-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.12);
+  }
+
+  .acp-genui__tab {
+    padding: 4px 10px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    font: inherit;
+    cursor: pointer;
+    transition: color 120ms ease, border-color 120ms ease;
+  }
+
+  .acp-genui__tab:hover {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9);
+  }
+
+  .acp-genui__tab--on {
+    border-bottom-color: var(--krypton-window-accent, #0cf);
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-genui__tabs-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .acp-genui__details {
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.12);
+    border-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-genui__details-summary {
+    padding: 6px 10px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88);
+    font-weight: 600;
+    cursor: pointer;
+    list-style-position: inside;
+  }
+
+  .acp-genui__details-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 10px 10px;
+    min-width: 0;
+  }
+
+  .acp-genui__divider {
+    margin: 4px 0;
+    border: 0;
+    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
+  }
+}

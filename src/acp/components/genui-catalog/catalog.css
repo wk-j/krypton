@@ -1,0 +1,43 @@
+/* Spec 309 — shared chrome for every catalog renderer.
+   Group sheets own their own elements; this file owns only what the host and
+   the error path need. Structure is a hairline derived from --krypton-fg-rgb,
+   saturated accent is spent on values and focus only. */
+
+@layer krypton.component {
+  .acp-genui__slot {
+    display: contents;
+  }
+
+  .acp-genui__error {
+    display: inline-block;
+    padding: 2px 6px;
+    border: 1px solid rgb(var(--krypton-error-rgb, 255 90 90) / 0.5);
+    border-radius: 2px;
+    color: var(--krypton-error, #ff5a5a);
+    font-family: var(--krypton-font-mono, monospace);
+    font-size: 11px;
+  }
+
+  .acp-genui__label {
+    color: rgb(var(--krypton-fg-rgb) / 0.62);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .acp-genui__value {
+    color: var(--krypton-window-accent, var(--krypton-accent));
+    font-variant-numeric: tabular-nums;
+  }
+
+  .acp-genui [data-genui-focusable]:focus-visible {
+    outline: 1px solid var(--krypton-window-accent, var(--krypton-accent));
+    outline-offset: 1px;
+  }
+}
+
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-genui__error {
+    border-color: rgb(var(--krypton-error-rgb, 190 40 40) / 0.4);
+  }
+}

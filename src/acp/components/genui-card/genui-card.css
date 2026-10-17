@@ -1,0 +1,82 @@
+/* Spec 308 §UX — the static transcript card.
+ *
+ * It sits among `acp-harness__msg--artifact` document cards, so it borrows
+ * their shape: accent tint + radius, a filled hint badge, and one 1px border
+ * at low alpha (spec 308 asks for a full border; CLAUDE.md constraint 9 bans
+ * only corner brackets). A full-strength accent border made it the loudest
+ * thing in a sealed transcript, which it is not. No animation: the row is
+ * sealed. */
+@layer krypton.component {
+  .acp-genui-card {
+    margin: 8px 0;
+    border: 1px solid color-mix(in srgb, var(--krypton-window-accent, #0cf) 28%, transparent);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 7%, transparent);
+  }
+
+  .acp-genui-card__open {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .acp-genui-card__open:hover {
+    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 6%, transparent);
+  }
+
+  .acp-genui-card__open:focus-visible {
+    outline: 1px solid var(--krypton-window-accent, #0cf);
+    outline-offset: -1px;
+  }
+
+  .acp-genui-card__title {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 240), 0.95);
+  }
+
+  .acp-genui-card__summary {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.82em;
+    letter-spacing: 0.02em;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 240), 0.55);
+  }
+
+  /* Same badge as the artifact card's `f` hint. Empty until the hint layer
+     assigns a label, and an empty filled badge is a stray swatch. */
+  .acp-genui-card__hint {
+    flex: 0 0 auto;
+    min-width: 1.4em;
+    padding: 0 0.35em;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--krypton-window-accent, #0cf);
+    color: #0a0e12;
+    font-weight: bold;
+    text-align: center;
+  }
+
+  .acp-genui-card__hint:empty { display: none; }
+
+  .acp-genui-card__error {
+    margin: 6px 0 0;
+    font-size: 0.82em;
+    color: var(--agent-error, #ff6d8a);
+  }
+}

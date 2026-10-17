@@ -45,6 +45,25 @@ function resource(): MessageResource {
 }
 
 describe('AssistantRow', () => {
+  it('decorates only sealed krypton-ui fences and keeps pure markdown for remounts', () => {
+    const spec = 'Card("Answer", [Text("<img src=x onerror=alert(1)>")])';
+    const item = assistant({ text: `Before\n\n\`\`\`krypton-ui\n${spec}\n\`\`\`` });
+    const { row } = mount(item, false);
+    const card = row.el.querySelector('.acp-genui-card');
+    expect(card?.textContent).toContain('Answer');
+    expect(row.el.querySelector('img')).toBeNull();
+    expect(item.markdownHtml).toContain('language-krypton-ui');
+    expect(item.markdownHtml).not.toContain('acp-genui-card');
+    const body = row.el.querySelector<HTMLElement>('.acp-harness__msg-body')!;
+    item.uiFences![0].hintLabel = 'a';
+    row.patchUiHints();
+    expect(body.querySelector('.acp-genui-card__hint')?.textContent).toBe('a');
+    expect(row.el.querySelector('.acp-harness__msg-body')).toBe(body);
+    row.dispose();
+    const remounted = mount(item, false).row;
+    expect(remounted.el.querySelector('.acp-genui-card')?.textContent).toContain('Answer');
+    remounted.dispose();
+  });
   it('renders a sealed reply as annotatable markdown and caches the parse', () => {
     const item = assistant({ text: 'first **bold**' });
     const { row } = mount(item, false);

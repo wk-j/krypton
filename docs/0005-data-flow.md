@@ -669,6 +669,18 @@ PULL (window ← harness), on open and on every auto-refresh:
    (under-collapse, never over-collapse; ADR-0009).
 ```
 
+### Generative UI reply (spec 308)
+
+`#ui <request>` sends a one-turn schema guide through the existing lane prompt
+path. When a reply seals, `AssistantRow` validates up to two `krypton-ui` JSON
+fences and places static cards after caching pure markdown. A card click or
+transcript `f` hint opens `GenUiPanel` over the dashboard. Inputs update local
+panel state and dependent text, tables, and bars in place; the transcript row
+does not repaint. A draft action checks that its lane and fence are current and
+that the composer is empty, then loads a visible draft. Only a later user Enter
+submits it through normal lane routing. Panel state is retained for up to 32
+fences per Harness view and discarded on lane reset/close or Harness disposal.
+
 ## Global Lane Lessons Flow (spec 298)
 
 ```

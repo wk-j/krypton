@@ -1,0 +1,89 @@
+/* Spec 309 — Form group.
+
+   The submit control carries its own block rather than borrowing
+   `.acp-genui__button` from inputs.css: it has a terminal disabled state that
+   no Button has, and a group sheet must not depend on a sibling group's
+   selectors. Its resting look matches `--primary` on purpose.
+
+   The read-only state after a draft is a native `<fieldset disabled>`, so the
+   controls inside it stop taking input without any renderer knowing a form is
+   above it. Every colour goes through a `--krypton-*` token the light scheme
+   retargets, so there is no `krypton.scheme` layer in this file. */
+
+@layer krypton.component {
+  .acp-genui__form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .acp-genui__form-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .acp-genui__form-fields[disabled] {
+    opacity: 0.62;
+  }
+
+  .acp-genui__form-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+  }
+
+  .acp-genui__form-submit {
+    padding: 6px 14px;
+    border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.45);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.1);
+    color: var(--krypton-window-accent, #0cf);
+    font: inherit;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+  }
+
+  .acp-genui__form-submit:hover:not([disabled]) {
+    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
+  }
+
+  .acp-genui__form-submit[disabled] {
+    border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+    background: transparent;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+    cursor: default;
+  }
+
+  .acp-genui__followups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .acp-genui__followup {
+    max-width: 100%;
+    padding: 4px 11px;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: transparent;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8);
+    font: inherit;
+    text-align: left;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+
+  .acp-genui__followup:hover {
+    border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.4);
+    color: var(--krypton-window-accent, #0cf);
+  }
+}

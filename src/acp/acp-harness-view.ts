@@ -89,6 +89,12 @@ import { LaneShell, laneShellKey, type LaneShellProps } from './components/lane-
 import { LaneRail } from './components/lane-rail';
 import { type RailEntryProps } from './components/rail-entry';
 import { Transcript } from './components/transcript';
+import { AssistantRow } from './components/assistant-row';
+import { GenUiPanel } from './components/genui-panel';
+import type { GenUiPanelState } from './components/genui-panel';
+import { initialState as initialUiState } from './genui/evaluate';
+import { UI_MAX_PANEL_STATES } from './genui/limits';
+import type { UiFenceEntry } from './genui/types';
 import { tickAllSpinners } from './components/spinner';
 import {
   Composer,
@@ -233,6 +239,7 @@ import {
   renderActiveTicketPin,
   tagGithubIssuePrompt,
   tldrawDrawPrompt,
+  genUiPrompt,
   wikiIngestPrompt,
   wikiRecallPrompt,
 } from './harness-prompts';
@@ -630,7 +637,8 @@ type HarnessOpenTarget =
   | MessageResource
   | HarnessImage
   | SubagentEntry
-  | SvgFenceEntry;
+  | SvgFenceEntry
+  | UiFenceEntry;
 
 const LANE_PEEK_HEAT_RING_MAX = 240;
 const LANE_PEEK_HEAT_RING_MS = 10 * 60_000;
@@ -1290,6 +1298,8 @@ export class AcpHarnessView implements ContentView {
   private openHintBuffer = '';
   /** spec 281: keyboard image viewer overlay. */
   private imageViewer!: HarnessImageViewer;
+  private genUiPanel!: GenUiPanel;
+  private genUiStates = new Map<string, GenUiPanelState>();
   private fileTouchMap = new Map<string, FileTouchRecord>();
   private lanePeek: LanePeekState = {
     visible: true,
@@ -4198,6 +4208,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
+    if (this.genUiPanel?.isOpen) return this.genUiPanel.handleKey(e);
     const dictationChord = (e.code === 'KeyD' || e.key.toLowerCase() === 'd')
       && e.metaKey
       && !e.ctrlKey
@@ -4762,6 +4773,8 @@ export class AcpHarnessView implements ContentView {
     this.memoryDrawer?.dispose();
     this.helpOverlay?.dispose();
     this.imageViewer?.dispose();
+    this.genUiPanel?.dispose();
+    this.genUiStates.clear();
     this.metricsOverlay?.dispose();
     this.triageOverlay?.dispose();
     this.reviewMatrixOverlay?.dispose();
@@ -6170,6 +6183,13 @@ export class AcpHarnessView implements ContentView {
         return;
       }
       const anchor = target.closest<HTMLAnchorElement>('a[href]');
+      const uiButton = target.closest<HTMLElement>('[data-genui-index]');
+      const uiMsg = uiButton?.closest<HTMLElement>('.acp-harness__msg[data-msg-id]');
+      if (uiButton && uiMsg?.dataset.msgId) {
+        e.preventDefault();
+        this.openGenUi(uiMsg.dataset.msgId, Number(uiButton.dataset.genuiIndex));
+        return;
+      }
       if (!anchor) return;
       e.preventDefault();
       const href = anchor.getAttribute('href') ?? '';
@@ -6210,6 +6230,8 @@ export class AcpHarnessView implements ContentView {
       onClose: () => this.invalidate('composer'),
     });
     body.appendChild(this.imageViewer.el);
+    this.genUiPanel = new GenUiPanel();
+    body.appendChild(this.genUiPanel.el);
 
     this.metricsOverlay = new MetricsOverlay();
     body.appendChild(this.metricsOverlay.el);
@@ -9371,6 +9393,7 @@ export class AcpHarnessView implements ContentView {
       targets.push(...(item.tool?.subagents?.agents ?? []));
       // spec 283: each SVG card zooms (or returns to Preview from Source); Shift copies.
       targets.push(...(item.svgFences ?? []));
+      if (this.transcript?.rowFor(item.id)) targets.push(...(item.uiFences ?? []));
     }
     return targets;
   }
@@ -9385,6 +9408,7 @@ export class AcpHarnessView implements ContentView {
     this.openHintMode = true;
     this.openHintBuffer = '';
     this.render();
+    this.patchGenUiHints();
     return true;
   }
 
@@ -9399,8 +9423,10 @@ export class AcpHarnessView implements ContentView {
       for (const image of item.images ?? []) image.hintLabel = null;
       for (const agent of item.tool?.subagents?.agents ?? []) agent.hintLabel = null;
       for (const fence of item.svgFences ?? []) fence.hintLabel = null;
+      for (const fence of item.uiFences ?? []) fence.hintLabel = null;
     }
     this.render();
+    this.patchGenUiHints();
   }
 
   private handleOpenHintKey(e: KeyboardEvent): boolean {
@@ -9424,7 +9450,10 @@ export class AcpHarnessView implements ContentView {
     const targets = this.activeLaneOpenTargets();
     const exact = targets.find((target) => target.hintLabel === candidate);
     if (exact) {
-      if ('showSource' in exact) {
+      if ('sourceHash' in exact) {
+        const owner = this.activeLane()?.transcript.find((row) => row.uiFences?.includes(exact));
+        if (owner) this.openGenUi(owner.id, exact.index);
+      } else if ('showSource' in exact) {
         const lane = this.activeLane();
         const owner = lane?.transcript.find((row) => row.svgFences?.includes(exact));
         if (e.shiftKey) void this.copySvgFence(exact);
@@ -9445,6 +9474,53 @@ export class AcpHarnessView implements ContentView {
     }
     this.exitOpenHintMode();
     return true;
+  }
+
+  private patchGenUiHints(): void {
+    for (const item of this.activeLane()?.transcript ?? []) {
+      const row = this.transcript?.rowFor(item.id);
+      if (row instanceof AssistantRow) row.patchUiHints();
+    }
+  }
+
+  private dropGenUiLane(laneId: string): void {
+    this.genUiPanel?.close();
+    for (const key of this.genUiStates.keys()) if (key.startsWith(`${laneId}\u0000`)) this.genUiStates.delete(key);
+  }
+
+  private openGenUi(itemId: string, index: number): void {
+    const lane = this.activeLane();
+    const item = lane?.transcript.find((candidate) => candidate.id === itemId);
+    const entry = item?.uiFences?.find((candidate) => candidate.index === index);
+    if (!lane || !item || !entry || item.markdownSource !== item.text || !this.transcript?.rowFor(itemId)) return;
+    const key = `${lane.id}\u0000${itemId}\u0000${index}\u0000${entry.sourceHash}`;
+    const retained = this.genUiStates.get(key)
+      ?? { state: initialUiState(entry.program), views: new Map<string, Record<string, unknown>>() };
+    this.genUiStates.delete(key);
+    this.genUiStates.set(key, retained);
+    while (this.genUiStates.size > UI_MAX_PANEL_STATES) this.genUiStates.delete(this.genUiStates.keys().next().value!);
+    this.genUiPanel.update({
+      open: true,
+      entry,
+      state: retained.state,
+      views: retained.views,
+      onDraft: (draft) => {
+        if (this.activeLaneId !== lane.id || !lane.transcript.includes(item) || !item.uiFences?.some((current) => current.index === index && current.sourceHash === entry.sourceHash && current.source === entry.source)) return 'UI source changed';
+        if (lane.draft.trim()) return 'Composer already has a draft';
+        this.setDraft(lane, draft, draft.length);
+        return null;
+      },
+      onOpenUrl: (url) => {
+        void invoke('open_url', { url })
+          .then(() => this.flashChip(url))
+          .catch((e: unknown) => this.flashChip(`open failed: ${errorText(e)}`));
+      },
+      onClose: () => {
+        this.focus = 'text';
+        this.element.focus({ preventScroll: true });
+        this.invalidate('composer');
+      },
+    });
   }
 
   private async openMessageResource(resource: MessageResource): Promise<void> {
@@ -10256,6 +10332,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private async closeLane(lane: HarnessLane): Promise<void> {
+    this.dropGenUiLane(lane.id);
     if (this.dictationCtl.session?.laneId === lane.id) this.dictationCtl.abort(false);
     this.liveVoiceCtl.onLaneGone(lane); // spec 280
     this.assistCtl.onLaneGone(lane); // spec 306
@@ -10565,6 +10642,7 @@ export class AcpHarnessView implements ContentView {
       }
     }
     if (lane.pendingShellId) await this.cancelShell(lane);
+    this.dropGenUiLane(lane.id);
     lane.spawnEpoch += 1;
     // spec 133: a fresh session wipes the transcript (and its artifact cards),
     // so drop ALL of this lane's artifact records — pending grants AND now-stale
@@ -11327,6 +11405,20 @@ export class AcpHarnessView implements ContentView {
         return;
       }
       await this.enqueueSystemPrompt(lane, tldrawDrawPrompt(intent), undefined, 'drawing in tldraw');
+      return;
+    }
+    if (parts[0] === '#ui') {
+      this.setDraft(lane, '', 0);
+      const intent = text.trim().slice('#ui'.length).trim();
+      if (!intent) {
+        this.flashChip('usage: #ui <request>');
+        return;
+      }
+      if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
+        this.flashChip('lane busy - #cancel first');
+        return;
+      }
+      await this.enqueueSystemPrompt(lane, genUiPrompt(intent), undefined, 'creating interactive UI');
       return;
     }
     // spec 280: realtime voice bound to this lane.
@@ -14918,6 +15010,7 @@ export class AcpHarnessView implements ContentView {
 
   private activateLane(id: string): void {
     if (id !== this.activeLaneId) {
+      this.genUiPanel?.close();
       this.dictationCtl.abort(false);
       this.assistCtl.cancel(); // spec 306: an in-flight answer is about the old lane
     }

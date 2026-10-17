@@ -32,6 +32,9 @@ import { def as draftLine } from './draft-line';
 import { def as emptyState } from './empty-state';
 import { def as fsActivityRow } from './fs-activity-row';
 import { def as fsWriteReviewRow } from './fs-write-review-row';
+import { def as genuiCard } from './genui-card';
+import { def as genuiCatalog } from './genui-catalog';
+import { def as genuiPanel } from './genui-panel';
 import { def as handoffPicker } from './handoff-picker';
 import { def as heatPanel } from './heat-panel';
 import { def as helpOverlay } from './help-overlay';
@@ -109,6 +112,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   transcriptRow,
   transcript,
   assistantRow,
+  genuiCard,
   thoughtRow,
   userRow,
   toolRow,
@@ -168,6 +172,8 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   metricsOverlay,
   backgroundTasks,
   imageViewer,
+  genuiPanel,
+  genuiCatalog,
   timelineCapture,
   reviewThreadDialog,
 ];
