@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (290)
+## Specs (293)
 
 | # | Spec |
 |---|------|
@@ -307,6 +307,9 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 302 | [Harness Component Catalog](./0302-harness-component-catalog.md) |
 | 303 | [Themeable Component Tokens](./0303-themeable-component-tokens.md) |
 | 304 | [Manual Window Accent Color](./0304-manual-window-accent.md) |
+| 305 | [Background Task Monitor](./0305-background-task-monitor.md) |
+| 306 | [Harness Assist — cheap-model turn sidecar](./0306-harness-assist-sidecar.md) |
+| 307 | [Interactive Handoff Picker](./0307-handoff-picker.md) |
 
 ## ADRs (24)
 

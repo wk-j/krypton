@@ -1,6 +1,7 @@
 # ACP Harness MCP Memory — Implementation Spec
 
 > Status: Superseded by [docs/0075-acp-harness-lane-memory.md](0075-acp-harness-lane-memory.md)
+> Renamed by [docs/0293-global-handoff-resume.md](0293-global-handoff-resume.md): the MCP tools named below (`memory_set` / `memory_get` / `memory_list`) **no longer exist**. The handoff store exposes exactly one write tool, `handoff_set`; reading happens only through `#resume`.
 > Related: [docs/0083-acp-shared-mcp-config.md](0083-acp-shared-mcp-config.md) — shared `.mcp.json` bridge for non-Claude lanes (memory server is appended after the bridged list).
 > Date: 2026-05-02
 > Milestone: M8 — Polish

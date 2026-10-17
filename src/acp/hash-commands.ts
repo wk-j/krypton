@@ -65,6 +65,11 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
     description: 'hide or restore persistent harness panels',
   },
   {
+    name: 'assist',
+    args: '[task] [off | manual | auto | now]',
+    description: 'cheap-model sidecar that suggests the next prompt · Cmd+1-3 to use',
+  },
+  {
     name: 'live',
     args: '[<voice> | stop | mute]',
     description: 'talk with this lane by voice (Codex realtime); it does the work you ask for · Cmd+Shift+L',
@@ -114,7 +119,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
     name: 'resume',
     args: '[list | <id>]',
     description:
-      'resume the newest handoff in the project (local and Xenon); `list` shows the 10 newest; `<id>` (or a 4+ char prefix) picks one',
+      'resume the newest handoff in the project (local and Xenon); `list` opens the handoff picker; `<id>` (or a 4+ char prefix) picks one',
   },
   { name: 'wiki', args: '[<hint>]', description: 'ingest this conversation into the repo wiki' },
   { name: 'recall', args: '<question>', description: 'answer a question from the repo wiki' },
@@ -253,6 +258,7 @@ export function commandMeta(): Record<string, CommandMeta> {
     mem: { category: 'session', badges: [] },
     mcp: { category: 'session', badges: [] },
     panels: { category: 'surface', badges: [] },
+    assist: { category: 'agent', badges: [] },
     queue: { category: 'session', badges: [] },
     unqueue: { category: 'session', badges: [] },
     live: { category: 'session', badges: [] },
@@ -295,7 +301,7 @@ export function commandMeta(): Record<string, CommandMeta> {
     resume: {
       category: 'agent',
       badges: ['workflow'],
-      anatomy: 'resolve newest/listed handoff (local ∪ Xenon) → bind lane to it → inject doc → continue',
+      anatomy: 'resolve newest/picked handoff (local ∪ Xenon) → bind lane to it → inject doc → continue',
       lanes: 'same lane',
       prompt: handoffResumePrompt({
         id: '<id>',

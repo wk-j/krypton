@@ -944,12 +944,17 @@ PUBLISH
     g. #handoff (Spec 139) injects a one-shot instruction turn via
        enqueueSystemPrompt telling the lane to write/refresh the handoff for
        this work with handoff_set.
-       #resume / #resume list / #resume <id> (Spec 293):
+       #resume / #resume list / #resume <id> (Specs 293, 307):
        1. local = list_harness_memory; remote = xenon_handoff_list (only when
           [xenon].enabled; 5 s budget; GET resources?kind=handoff, then
           GET /v1/resources/{id} for the first 10, concurrency 4).
-       2. Merge by id, newer meta.updatedAt wins; pick newest / by id prefix
-          (`list` prints up to 10 and stops).
+       2. Merge by id, newer meta.updatedAt wins; pick newest / by id prefix.
+          `list` opens the HandoffPicker overlay over the merged rows instead
+          of printing them (no rows → flashChip, nothing opens); the picker
+          re-merges on acp-harness-memory-changed and keeps the cursor on its
+          id. Enter re-checks the lane (gone / busy → flashChip) and then runs
+          the same tail with { mode: 'id' } and the collected snapshot;
+          Esc / q closes without touching the lane.
        3. Remote pick → xenon_handoff_fetch reads handoff.md; never written
           locally (ADR-0022).
        4. handoff_bind(harnessId, lane, id) — the lane adopts the handoff.
@@ -1289,6 +1294,76 @@ phase change, reply, completed round, end) calls `loopChanged()` → the telemet
 publisher's 300 ms debounce → `TelemetryLane.reviewLoop` in the next snapshot. The page
 polls `/telemetry`, renders the lane card's `review pass` section, and ticks elapsed
 times itself between polls.
+
+## Background Task Flow (spec 305)
+
+A Claude lane's `run_in_background` shell work outlives the turn that launched it:
+the launch tool call completes immediately, `finishTurn` sets the lane `idle`, and
+the CLI later resumes itself with a `<task-notification>` that never crosses ACP.
+Krypton therefore watches the output file the adapter named, not the process it
+cannot see (`clientCapabilities.terminal` is `false` — `src-tauri/src/acp.rs`).
+
+```
+1. tool_call / tool_call_update → captureBackgroundLaunch(lane, call)
+   → parseBackgroundLaunch: `Command running in background with ID: <id>. Output is
+     being written to: <abs path>` → registerBackgroundTask (dedupes by id, cap 20)
+2. Existing 2 s metrics tick: pollMetrics → refreshBackgroundTasks
+   → invoke('acp_background_task_status', { queries: [{id, path}, …] })  — one round trip
+3. Rust stats the file and reads at most 4 KiB from its END
+   → `[exited with code N]` as the LAST non-empty line → exit_code; otherwise none
+4. applyTaskStatus folds the answer in:
+   exit marker       → state 'exited', endedAt = file mtime
+   no marker + pid in the lane process tree (argv match) → 'running' + subtree CPU/RSS
+   no marker + no pid, twice in a row                   → 'orphaned'
+   file missing      → 'unknown' (last known bytes/line kept)
+5. refreshMetricsRender → LaneHead `bg N` chip + the BackgroundTasks section inside
+   the `=` Lane Metrics overlay; `#bg` prints the same table as a transcript row
+```
+
+The spinner ticker (`updateSpinnerTicker`) counts a running task as live, but only
+while the metrics overlay is open — that is the one surface where a task spinner is
+mounted, and the lane itself is `idle` the whole time.
+
+## Assist Sidecar Flow (spec 306)
+
+A cheap second model reads the turn that just ended and proposes the next prompt.
+It reaches that model through an ACP backend subprocess — the same path the lanes
+use, so there is no API key anywhere — and nothing is sent on the user's behalf:
+a suggestion only ever lands in the draft.
+
+```
+1. finishTurn(lane, stopReason) → assistCtl.onTurnEnd — placed beside the live-voice
+   hook, before this turn's pointers are cleared, so the transcript tail is intact.
+2. For each registered task with onTurnEnd and a resolved mode of 'auto':
+   gates = active lane · stopReason 'end_turn' · ≥40 chars of assistant text ·
+           no pending permission/question · activeSystemLabel null ·
+           this lane.turnSeq not already run for this task · no cooldown ·
+           task.eligible(ctx) (next-prompt: nothing queued)
+3. AssistContext is built from lane state (turn items from the last user row,
+   plan, stop reason, model name, project dir) — never from the DOM.
+4. state = 'pending' → host.invalidate('composer') → AssistStrip shows one dim row.
+5. AssistEngine.run: task.payload (bounded by max_input_chars) → AcpAssistSession:
+   reuse the warm session, else acp_spawn(backend, cwd, mcp=[], remoteRuntimeId) →
+   initialize → session/new → session/set_model(model). Then ONE session/prompt
+   carrying `system + payload`, under an AbortController a timeout_ms timer trips;
+   the abort reaches the wire as session/cancel. Setup and the prompt each get a
+   full timeout_ms window (the transport calls `ready()` between them), so a cold
+   spawn never eats the model's budget. Single-flight harness-wide.
+   Fence: permission → declined, fs write → refused, question → cancelled. An
+   unanswered request would park session/prompt forever (acp.rs:1585-1621).
+6. Assistant text accumulates from agent_message_chunk events; the session/prompt
+   response IS the turn end. A stop reason other than end_turn ⇒ 'unavailable'.
+7. task.parse(raw) → actions, or null ⇒ 'invalid'. Failures feed the per-task
+   breaker: 3 soft in a row ⇒ 5 min cooldown; backend missing / model rejected ⇒ 10 min.
+8. Stale answers are dropped on the controller epoch, lane.spawnEpoch and activeLaneId
+   before state = 'ready'; host.invalidate('composer') paints the numbered strip.
+9. Cmd+1..3 → accept → setDraft(lane, prompt, prompt.length) (refused when the draft
+   is non-empty); Cmd+0 dismisses; Cmd+/ re-asks; #assist [task] off|manual|auto|now.
+```
+
+A lane switch, close or respawn cancels the in-flight turn — its answer was about
+another lane — while the warm subprocess survives; only `dispose()` kills it, and
+`mode = "off"` (the default) short-circuits step 2 entirely.
 
 ## Workspace Lifecycle Flow
 

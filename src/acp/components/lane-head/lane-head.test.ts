@@ -21,6 +21,7 @@ function makeLane(over: Partial<HarnessLane> = {}): HarnessLane {
     pendingPermissions: [],
     pendingQuestions: [],
     transcript: [],
+    backgroundTasks: [],
     error: null,
     ...over,
   } as unknown as HarnessLane;

@@ -806,6 +806,70 @@ pub struct AcpHarnessConfig {
     /// spawn: editing it takes effect only on the next spawn/`#new`/`#new!`/lane
     /// restart, never on a live lane (respawn-to-apply).
     pub lane_models: HashMap<String, LaneModelConfig>,
+    /// spec 306: cheap-model turn sidecar. Defaults every assist task inherits,
+    /// plus per-task overrides keyed by the task id (`next-prompt`). Krypton
+    /// holds no task knowledge: unknown scalar keys inside a task table flow to
+    /// the frontend untouched as that task's `options`.
+    #[serde(default)]
+    pub assist: AcpHarnessAssistConfig,
+}
+
+/// `[acp_harness.assist]` — the generic knobs the engine enforces. `mode` is
+/// validated in the frontend (`off` | `manual` | `auto`), never here, so an
+/// unknown value degrades to `off` rather than failing the whole config load.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AcpHarnessAssistConfig {
+    /// `off` | `manual` | `auto`. Default `off`: the sidecar spends the same
+    /// subscription quota the lane agents spend, once per turn.
+    pub mode: String,
+    /// ACP backend id the sidecar spawns, from the same id space as
+    /// `[acp_harness.lane_models.<backend>]` and `acp_list_backends`
+    /// (`claude`, `codex`, `omp`, …). No API key: the backend CLI's own login
+    /// authenticates the call.
+    pub backend: String,
+    /// ACP model id or alias handed to `session/set_model`. Empty keeps
+    /// whatever default the backend picks for the session.
+    pub model: String,
+    /// Per-call deadline. Clamped to 1_000..20_000 in the frontend.
+    pub timeout_ms: u64,
+    /// Hard cap on the payload handed to the model. Clamped to 500..20_000.
+    pub max_input_chars: u32,
+    /// Per-task overrides keyed by registered assist task id.
+    pub tasks: HashMap<String, AssistTaskOverride>,
+}
+
+impl Default for AcpHarnessAssistConfig {
+    fn default() -> Self {
+        Self {
+            mode: "off".to_string(),
+            backend: "claude".to_string(),
+            model: "haiku".to_string(),
+            timeout_ms: 8_000,
+            max_input_chars: 6_000,
+            tasks: HashMap::new(),
+        }
+    }
+}
+
+/// `[acp_harness.assist.tasks.<id>]` — every generic key optional, falling back
+/// to `[acp_harness.assist]`. Any other scalar key (`count = 3`) is captured
+/// verbatim in `options` and handed to the task that knows its meaning.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AssistTaskOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_input_chars: Option<u32>,
+    /// Task-specific knobs. Krypton never interprets these.
+    #[serde(flatten)]
+    pub options: toml::value::Table,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -887,6 +951,7 @@ impl Default for AcpHarnessConfig {
             lessons: true,
             remote_profiles: Vec::new(),
             lane_models: HashMap::new(),
+            assist: AcpHarnessAssistConfig::default(),
         }
     }
 }
@@ -1215,6 +1280,58 @@ mod tests {
         let cfg: KryptonConfig =
             toml::from_str("[acp_harness]\nword_autocomplete = false\n").unwrap();
         assert!(!cfg.acp_harness.word_autocomplete);
+    }
+
+    #[test]
+    fn acp_harness_assist_defaults_when_section_omitted() {
+        let cfg: KryptonConfig = toml::from_str("[acp_harness]\n").unwrap();
+        let assist = &cfg.acp_harness.assist;
+        assert_eq!(assist.mode, "off");
+        assert_eq!(assist.backend, "claude");
+        assert_eq!(assist.model, "haiku");
+        assert_eq!(assist.timeout_ms, 8_000);
+        assert_eq!(assist.max_input_chars, 6_000);
+        assert!(assist.tasks.is_empty());
+    }
+
+    #[test]
+    fn acp_harness_assist_task_override_keeps_unknown_keys_in_options() {
+        let cfg: KryptonConfig = toml::from_str(
+            "[acp_harness.assist]\nmode = \"manual\"\n\n\
+             [acp_harness.assist.tasks.next-prompt]\n\
+             mode = \"auto\"\nbackend = \"codex\"\nmodel = \"gpt-5\"\ncount = 3\n",
+        )
+        .unwrap();
+        let assist = &cfg.acp_harness.assist;
+        // Global: the explicit key wins, the rest stay at their defaults.
+        assert_eq!(assist.mode, "manual");
+        assert_eq!(assist.backend, "claude");
+        assert_eq!(assist.model, "haiku");
+        assert_eq!(assist.timeout_ms, 8_000);
+
+        let task = assist
+            .tasks
+            .get("next-prompt")
+            .expect("next-prompt override parsed");
+        assert_eq!(task.mode.as_deref(), Some("auto"));
+        assert_eq!(task.backend.as_deref(), Some("codex"));
+        assert_eq!(task.model.as_deref(), Some("gpt-5"));
+        assert_eq!(task.timeout_ms, None);
+        assert_eq!(task.max_input_chars, None);
+        // `count` is task-specific: Rust carries it, never interprets it, and it
+        // must not leak into the typed fields.
+        assert_eq!(
+            task.options.get("count").and_then(|v| v.as_integer()),
+            Some(3)
+        );
+        assert_eq!(task.options.len(), 1);
+
+        // And it survives the trip to the frontend as a plain JSON scalar.
+        let json = serde_json::to_value(task).unwrap();
+        assert_eq!(json["count"], serde_json::json!(3));
+        assert_eq!(json["mode"], serde_json::json!("auto"));
+        assert_eq!(json["backend"], serde_json::json!("codex"));
+        assert!(json.get("timeout_ms").is_none());
     }
 
     #[test]

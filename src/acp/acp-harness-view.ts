@@ -24,6 +24,7 @@ import { HarnessTimelineController } from './harness-timeline-controller';
 import { HarnessTicketController } from './harness-ticket-controller';
 import { HarnessReviewLoopController } from './harness-review-loop-controller';
 import { HarnessSteerController } from './harness-steer-controller';
+import { HarnessAssistController } from './harness-assist-controller';
 import {
   controlError,
   githubIssueRefRequiredMessage,
@@ -42,6 +43,7 @@ export {
   isSameTicketPicker,
 } from './harness-ticket-helpers';
 import type {
+  HarnessAssistHost,
   HarnessDictationHost,
   HarnessLiveVoiceHost,
   HarnessRegion,
@@ -55,12 +57,13 @@ import { HARNESS_REGION_ORDER } from './harness-view-host';
 import { RenderScheduler } from '../ui/scheduler';
 import { disposeList, listComponent, reconcile } from '../ui/list';
 import { el } from '../ui/dom';
-import { nextCursor, prevCursor } from './components/list-picker';
+import { clampCursor, nextCursor, prevCursor } from './components/list-picker';
 import { LayoutHost, type Mountable } from '../ui/layout';
 import { HARNESS_LAYOUT_DEFAULT, type HarnessSlot } from './harness-layout';
 import { HelpOverlay } from './components/help-overlay';
 import { LanePicker } from './components/lane-picker';
 import { DirectivePicker } from './components/directive-picker';
+import { HandoffPicker } from './components/handoff-picker';
 import { MemoryDrawer } from './components/memory-drawer';
 import { MetricsOverlay, type MetricsLane } from './components/metrics-overlay';
 import { ModelPicker } from './components/model-picker';
@@ -283,6 +286,7 @@ import type {
   ReviewGitState,
 } from './types';
 import type {
+  AcpBackgroundTaskStatus,
   AcpLaneMetrics,
   CapturedImage,
   ContentView,
@@ -341,6 +345,7 @@ import type { ReviewThread, ReviewThreadVerdict } from './review-thread';
 import type {
   ArtifactCardPayload,
   ArtifactEventPayload,
+  BackgroundTask,
   ComposerFocus,
   FileTouchRecord,
   HarnessArtifactRecord,
@@ -407,6 +412,11 @@ import {
   truncate,
 } from './harness-format';
 import {
+  applyTaskStatus,
+  formatBackgroundTaskLines,
+  registerBackgroundTask,
+} from './harness-background-tasks';
+import {
   buildToolPayload,
   cleanToolTitle,
   extractCommandLineRaw,
@@ -433,7 +443,6 @@ import { permissionCommandIsHighRisk } from './harness-tool-render';
 import {
   describePush,
   formatHandoffAge,
-  formatHandoffList,
   linkEvidenceFromPush,
   matchHandoffReference,
   mergeHandoffs,
@@ -937,6 +946,7 @@ const LANE_DEFAULTS = {
   historyIndex: null,
   historySavedDraft: null,
   activeToolCount: 0,
+  backgroundTasks: [],
   streamingMarkdownParser: null,
   streamingMarkdownBody: null,
   streamingMarkdownItemId: null,
@@ -1319,6 +1329,8 @@ export class AcpHarnessView implements ContentView {
   /** spec 280: realtime voice session bound to one lane. */
   private readonly liveVoiceCtl = new HarnessLiveVoiceController(this.liveVoiceHost());
   private readonly steerCtl = new HarnessSteerController(this.steerHost());
+  /** spec 306: cheap-model sidecar that post-processes a finished turn. */
+  private readonly assistCtl = new HarnessAssistController(this.assistHost());
   private readonly dictationFocusOutHandler = (event: FocusEvent): void => {
     const next = event.relatedTarget;
     if (next instanceof Node && this.element.contains(next)) return;
@@ -1366,6 +1378,20 @@ export class AcpHarnessView implements ContentView {
   private modelPickerCursor = 0;
   /** spec 127: lane the model picker is acting on (captured at open). */
   private modelPickerLaneId: string | null = null;
+  /**
+   * spec 307: `#resume list` picker. `rows` is the merged local ∪ Xenon
+   * snapshot taken at open, so Enter resumes without a second Xenon read;
+   * `remote` is kept so a local-store change can be re-merged into it without
+   * going back to the network. Null = closed.
+   */
+  private handoffPicker: {
+    laneId: string;
+    rows: MergedHandoff[];
+    remote: RemoteHandoff[];
+    xenonCwd: string | null;
+    cursor: number;
+    note: string | null;
+  } | null = null;
   private closeCb: (() => void) | null = null;
   private readonly openTelegramSettingsCb: (() => Promise<void>) | null;
   private readonly openFileReferenceCb: ((path: string, line?: number, column?: number) => Promise<boolean>) | null;
@@ -1391,6 +1417,7 @@ export class AcpHarnessView implements ContentView {
   private lanePicker!: LanePicker;
   private directivePicker!: DirectivePicker;
   private modelPicker!: ModelPicker;
+  private handoffPickerCmp!: HandoffPicker;
   private sessionPickerCmp!: SessionPicker;
   private laneRailEl!: HTMLElement;
   // Spec 301 §Layout — placement is a table, not four element fields.
@@ -4237,6 +4264,13 @@ export class AcpHarnessView implements ContentView {
       void this.handleModelPickerKey(e);
       return true;
     }
+    // spec 307: the `#resume list` picker sits with the other pickers, i.e.
+    // above the Ctrl+N/Ctrl+P lane switch, which it rebinds to cursor moves.
+    if (this.handoffPicker) {
+      e.preventDefault();
+      this.handleHandoffPickerKey(e);
+      return true;
+    }
     if (this.timelineCtl.capture) return this.timelineCtl.capture.handleKeyDown(e);
     // spec 194: `#ticket` picker modal — owns typing/arrows/Enter/Esc while
     // open, regardless of composer/transcript focus. Unclaimed combos (e.g.
@@ -4294,6 +4328,29 @@ export class AcpHarnessView implements ContentView {
         return true;
       }
       if (e.key.length === 1 && noMod) this.disarmAnnotation();
+    }
+    // spec 306: Cmd chords — Alt does not reach the app, and Ctrl+1..4 is the
+    // macOS desktop switch. The ticket picker's Cmd+1..3 already ran above.
+    if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      const assistLane = this.activeLane();
+      if (assistLane) {
+        if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
+          const index = Number(e.code.slice(-1)) - 1;
+          if (this.assistCtl.accept(assistLane, index)) {
+            e.preventDefault();
+            return true;
+          }
+        }
+        if (e.code === 'Digit0' && this.assistCtl.dismiss(assistLane)) {
+          e.preventDefault();
+          return true;
+        }
+        if (e.code === 'Slash') {
+          e.preventDefault();
+          this.assistCtl.request(assistLane);
+          return true;
+        }
+      }
     }
     if ((e.key === 'n' || e.key === 'N' || e.key === 'p' || e.key === 'P') && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       const composerLane = this.focus === 'text' ? this.activeLane() : null;
@@ -4692,6 +4749,7 @@ export class AcpHarnessView implements ContentView {
     this.element.removeEventListener('focusout', this.dictationFocusOutHandler);
     this.dictationCtl.abort(false);
     this.liveVoiceCtl.dispose();
+    this.assistCtl.dispose(); // spec 306
     this.composerBloomLayer?.replaceChildren();
     this.composerBloomLayer = null;
     this.composerBloomLaneId = null;
@@ -4712,6 +4770,7 @@ export class AcpHarnessView implements ContentView {
     this.lanePicker?.dispose();
     this.directivePicker?.dispose();
     this.modelPicker?.dispose();
+    this.handoffPickerCmp?.dispose();
     this.sessionPickerCmp?.dispose();
     // spec 141: leave the cross-harness directory FIRST — flip `alive` false (so
     // any delivery already past resolveDisplayName is rejected deterministically)
@@ -5517,6 +5576,7 @@ export class AcpHarnessView implements ContentView {
       || this.pickerOpen
       || this.directivePickerOpen
       || this.modelPickerOpen
+      || this.handoffPicker !== null
       || this.sessionPicker.open
       || this.timelineCtl.capture !== null
       || this.triageOverlayOpen
@@ -6217,6 +6277,10 @@ export class AcpHarnessView implements ContentView {
     // spec 127: model picker (keyboard-only — j/k/↵/esc, no mouse handlers).
     this.modelPicker = new ModelPicker();
     body.appendChild(this.modelPicker.el);
+
+    // spec 307: `#resume list` picker (keyboard-only, same contract).
+    this.handoffPickerCmp = new HandoffPicker();
+    body.appendChild(this.handoffPickerCmp.el);
 
     this.element.appendChild(body);
 
@@ -7382,6 +7446,7 @@ export class AcpHarnessView implements ContentView {
         harnessId: this.harnessMemoryId,
       });
       this.renderMemory();
+      this.syncHandoffPickerRows();
       this.flushRegion('composer');
     } catch (e) {
       this.flashChip(`memory unavailable: ${String(e)}`);
@@ -7825,6 +7890,7 @@ export class AcpHarnessView implements ContentView {
         this.liveVoiceCtl.onToolCall(lane); // spec 280: progress so far → commentary
         this.renderTool(lane, event.call, false);
         this.collectToolImages(lane, event.call);
+        this.captureBackgroundLaunch(lane, event.call);
         this.noteToolActivity(lane, event.call.toolCallId);
         this.scheduleToolRender(lane);
         needsRender = false;
@@ -7837,6 +7903,7 @@ export class AcpHarnessView implements ContentView {
         }
         this.renderTool(lane, event.update, true);
         this.collectToolImages(lane, event.update);
+        this.captureBackgroundLaunch(lane, event.update);
         this.noteToolActivity(lane, event.update.toolCallId);
         this.observeFileTouch(lane, event.update);
         if (isMemoryTool(event.update)) void this.refreshMemory();
@@ -8440,6 +8507,8 @@ export class AcpHarnessView implements ContentView {
     this.recordTurnUsage(lane, stopReason);
     // spec 280: before the status change below can start the next turn.
     this.liveVoiceCtl.onTurnEnd(lane, stopReason);
+    // spec 306: the sidecar reads the turn before its pointers are cleared below.
+    this.assistCtl.onTurnEnd(lane, stopReason);
     if (stopReason === 'cancelled') {
       // `reason` is set only for harness-synthesized stops (e.g. the subprocess
       // exited mid-turn) — distinguish that from a user-initiated cancel so a
@@ -10189,6 +10258,7 @@ export class AcpHarnessView implements ContentView {
   private async closeLane(lane: HarnessLane): Promise<void> {
     if (this.dictationCtl.session?.laneId === lane.id) this.dictationCtl.abort(false);
     this.liveVoiceCtl.onLaneGone(lane); // spec 280
+    this.assistCtl.onLaneGone(lane); // spec 306
     lane.spawnEpoch += 1;
     this.publishStream(lane, 'lane_closed', {
       sessionId: lane.sessionId,
@@ -10453,6 +10523,7 @@ export class AcpHarnessView implements ContentView {
     lane.queuedPrompts = []; // spec 136: fresh session — queued prompts were for the old context
     this.steerCtl.resetLane(lane.id); // spec 278
     this.liveVoiceCtl.onLaneGone(lane); // spec 280: the voice session spoke to the old session
+    this.assistCtl.resetLane(lane.id); // spec 306: suggestions were for the old session
     this.clearPollyBuiltinRole(lane);
     this.clearDebbyBuiltinRole(lane);
     this.clearSaltyBuiltinRole(lane);
@@ -10517,6 +10588,7 @@ export class AcpHarnessView implements ContentView {
     lane.queuedPrompts = []; // spec 136: fresh session — drop queued prompts
     this.steerCtl.resetLane(lane.id); // spec 278
     this.liveVoiceCtl.onLaneGone(lane); // spec 280: the voice session spoke to the old session
+    this.assistCtl.resetLane(lane.id); // spec 306: suggestions were for the old session
     disposeAllImages(lane.imageState);
     lane.subagentChildren.clear();
     lane.codexAgentNames.clear();
@@ -10589,7 +10661,8 @@ export class AcpHarnessView implements ContentView {
    * spec 293: `#resume [list | <id>]`. Resolves a handoff from the project's
    * local store ∪ Xenon (ADR-0022), binds this lane to it so its next #handoff
    * continues the same thread (ADR-0023), and injects the document itself so
-   * any backend can resume without a tool call. Caller has checked memory and
+   * any backend can resume without a tool call. `list` opens the picker
+   * (spec 307) instead of resolving anything. Caller has checked memory and
    * that the lane is idle / awaiting_peer.
    */
   private async resumeHandoff(lane: HarnessLane, text: string): Promise<void> {
@@ -10598,22 +10671,123 @@ export class AcpHarnessView implements ContentView {
       this.flashChip(parsed.error);
       return;
     }
-    const harnessId = this.harnessMemoryId;
-    if (!harnessId) return;
     const request = parsed.request;
     if (request.mode === 'list') {
-      this.flashChip('listing handoffs...');
-      const { merged } = await this.collectHandoffs(lane);
-      this.appendTranscript(lane, 'system', formatHandoffList(merged, Date.now()));
-      this.scheduleLaneRender(lane);
+      await this.openHandoffPicker(lane);
       return;
     }
+    await this.applyResume(lane, request, null);
+  }
+
+  /**
+   * spec 307: `#resume list` collects once, then opens the picker. The lane is
+   * deliberately NOT reserved — the user reads at their own pace — so the
+   * snapshot is re-merged whenever the local store changes under it.
+   */
+  private async openHandoffPicker(lane: HarnessLane): Promise<void> {
+    this.flashChip('listing handoffs...');
+    const { merged, remote, xenonCwd, reason } = await this.collectHandoffs(lane);
+    if (!this.lanes.includes(lane)) return;
+    if (merged.length === 0) {
+      this.flashChip('no handoffs in this project');
+      return;
+    }
+    this.handoffPicker = {
+      laneId: lane.id,
+      rows: merged,
+      remote,
+      xenonCwd,
+      cursor: 0,
+      note: reason,
+    };
+    this.render();
+  }
+
+  private closeHandoffPicker(): void {
+    if (!this.handoffPicker) return;
+    this.handoffPicker = null;
+    this.render();
+  }
+
+  /** spec 307: j/k/arrows/Ctrl+N/Ctrl+P move, Home/End jump, Enter resumes,
+   *  Esc/q closes. Enter re-checks the lane because an open picker holds no
+   *  reservation — peer mail may have taken the lane while the user read. */
+  private handleHandoffPickerKey(e: KeyboardEvent): void {
+    const state = this.handoffPicker;
+    if (!state) return;
+    if (e.key === 'Escape' || e.key === 'q') {
+      this.closeHandoffPicker();
+      return;
+    }
+    const total = state.rows.length;
+    if (total === 0) return;
+    const ctrlOnly = e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
+    if (e.key === 'ArrowDown' || e.key === 'j' || (ctrlOnly && (e.key === 'n' || e.key === 'N'))) {
+      state.cursor = nextCursor(state.cursor, total);
+      this.renderHandoffPicker();
+      return;
+    }
+    if (e.key === 'ArrowUp' || e.key === 'k' || (ctrlOnly && (e.key === 'p' || e.key === 'P'))) {
+      state.cursor = prevCursor(state.cursor, total);
+      this.renderHandoffPicker();
+      return;
+    }
+    if (e.key === 'Home' || e.key === 'End') {
+      state.cursor = e.key === 'Home' ? 0 : total - 1;
+      this.renderHandoffPicker();
+      return;
+    }
+    if (e.key !== 'Enter') return;
+    const picked = state.rows[state.cursor];
+    if (!picked) return;
+    const lane = this.lanes.find((l) => l.id === state.laneId) ?? null;
+    const snapshot = { merged: state.rows, xenonCwd: state.xenonCwd };
+    this.closeHandoffPicker();
+    if (!lane) {
+      this.flashChip('lane is gone');
+      return;
+    }
+    if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
+      this.flashChip('lane busy - #cancel first');
+      return;
+    }
+    void this.applyResume(lane, { mode: 'id', reference: picked.id }, snapshot);
+  }
+
+  /** spec 307: the local store moved under an open picker. Re-merge it with the
+   *  Xenon snapshot and keep the cursor on the SAME handoff id; a row that was
+   *  deleted snaps to the nearest index, and an emptied list closes the picker. */
+  private syncHandoffPickerRows(): void {
+    const state = this.handoffPicker;
+    if (!state) return;
+    const cursorId = state.rows[state.cursor]?.id ?? null;
+    state.rows = mergeHandoffs(this.memoryEntries, state.remote);
+    if (state.rows.length === 0) {
+      this.closeHandoffPicker();
+      return;
+    }
+    const next = cursorId === null ? -1 : state.rows.findIndex((row) => row.id === cursorId);
+    state.cursor = next >= 0 ? next : clampCursor(state.cursor, state.rows.length);
+    this.renderHandoffPicker();
+  }
+
+  /**
+   * spec 293/307: reserve the lane, resolve the document, bind this lane to the
+   * thread (ADR-0023) and inject it. `precollected` is the picker's snapshot;
+   * without one the reservation deliberately precedes the ≈5 s Xenon read, so
+   * peer mail or a typed prompt cannot claim the lane mid-resolve.
+   */
+  private async applyResume(
+    lane: HarnessLane,
+    request: { mode: 'newest' } | { mode: 'id'; reference: string },
+    precollected: { merged: MergedHandoff[]; xenonCwd: string | null } | null,
+  ): Promise<void> {
+    const harnessId = this.harnessMemoryId;
+    if (!harnessId) return;
     if (!lane.client) {
       this.flashChip('lane not ready');
       return;
     }
-    // Reserve before the Xenon reads (≈5 s budget) so peer mail or a typed
-    // prompt cannot claim the lane mid-resolve; every bail releases it.
     const priorStatus: 'idle' | 'awaiting_peer' = lane.status === 'awaiting_peer' ? 'awaiting_peer' : 'idle';
     this.reserveCommandTurn(lane, 'resuming');
     const epoch = lane.spawnEpoch;
@@ -10623,7 +10797,7 @@ export class AcpHarnessView implements ContentView {
       this.flashChip(message);
     };
 
-    const { merged, xenonCwd } = await this.collectHandoffs(lane);
+    const { merged, xenonCwd } = precollected ?? (await this.collectHandoffs(lane));
     const resolved = await this.resolveHandoffDoc(request, merged, xenonCwd);
     if ('error' in resolved) {
       bail(resolved.error);
@@ -10655,15 +10829,21 @@ export class AcpHarnessView implements ContentView {
    * is a local harness with a project. `xenonCwd` is set only when Xenon
    * answered, so callers know a fetch can follow. A named failure costs one
    * system line and falls back to local; Xenon switched off stays silent.
+   * spec 307: `remote` and `reason` ride along so the picker can re-merge a
+   * changed local store without a second network read, and can show why the
+   * list is local-only.
    */
-  private async collectHandoffs(
-    lane: HarnessLane,
-  ): Promise<{ merged: MergedHandoff[]; xenonCwd: string | null }> {
+  private async collectHandoffs(lane: HarnessLane): Promise<{
+    merged: MergedHandoff[];
+    remote: RemoteHandoff[];
+    xenonCwd: string | null;
+    reason: string | null;
+  }> {
     await this.refreshMemory();
     const local = this.memoryEntries;
     // A remote harness keeps an ephemeral per-tab store and never reaches Xenon.
     const cwd = this.remoteRuntimeId ? null : this.projectDir;
-    if (!cwd) return { merged: mergeHandoffs(local, []), xenonCwd: null };
+    if (!cwd) return { merged: mergeHandoffs(local, []), remote: [], xenonCwd: null, reason: null };
     let remote: RemoteHandoff[] = [];
     let xenonCwd: string | null = null;
     let reason: string | null = null;
@@ -10681,7 +10861,7 @@ export class AcpHarnessView implements ContentView {
       this.appendTranscript(lane, 'system', `xenon: ${reason} - local handoffs only`);
       this.scheduleLaneRender(lane);
     }
-    return { merged: mergeHandoffs(local, remote), xenonCwd };
+    return { merged: mergeHandoffs(local, remote), remote, xenonCwd, reason };
   }
 
   /** spec 293: pick the newest or the referenced handoff and make sure its
@@ -10782,6 +10962,39 @@ export class AcpHarnessView implements ContentView {
     if (parts[0] === '#mcp') {
       this.setDraft(lane, '', 0);
       await this.printMcpStatus(lane);
+      this.render();
+      return;
+    }
+    if (parts[0] === '#bg') {
+      this.setDraft(lane, '', 0);
+      await this.refreshBackgroundTasks();
+      this.printBackgroundTasks(lane);
+      this.render();
+      return;
+    }
+    if (parts[0] === '#assist') {
+      this.setDraft(lane, '', 0);
+      const ids = this.assistCtl.taskIds();
+      const [, first, second] = parts;
+      const task = first && ids.includes(first) ? first : null;
+      const action = (task ? second : first)?.toLowerCase() ?? '';
+      const extra = task ? parts.length > 3 : parts.length > 2;
+      if (action === '') {
+        for (const line of this.assistCtl.describe()) this.appendTranscript(lane, 'system', line);
+        this.render();
+        return;
+      }
+      if (extra || !['off', 'manual', 'auto', 'now'].includes(action)) {
+        this.flashChip('usage: #assist [task] [off | manual | auto | now]');
+        return;
+      }
+      if (action === 'now') {
+        this.assistCtl.request(lane, task ?? undefined);
+        return;
+      }
+      await this.assistCtl.reloadConfig();
+      this.assistCtl.setMode(task, action as 'off' | 'manual' | 'auto');
+      this.flashChip(`assist ${task ?? 'all'}: ${action}`);
       this.render();
       return;
     }
@@ -11445,6 +11658,13 @@ export class AcpHarnessView implements ContentView {
     this.appendTranscript(lane, 'system', lines.join('\n'));
   }
 
+  /** spec 305: `#bg` — the task table as transcript text, so the information is
+   *  reachable without opening the metrics overlay. */
+  private printBackgroundTasks(lane: HarnessLane): void {
+    const lines = formatBackgroundTaskLines(lane.backgroundTasks, Date.now());
+    this.appendTranscript(lane, 'system', lines.join('\n'));
+  }
+
   private async runShellCommand(lane: HarnessLane, command: string): Promise<void> {
     if (this.remoteRuntimeId) {
       this.flashChip('!shell is unavailable in a remote Harness');
@@ -11554,6 +11774,7 @@ export class AcpHarnessView implements ContentView {
         this.renderPicker();
         this.renderDirectivePicker();
         this.renderModelPicker();
+        this.renderHandoffPicker();
         this.renderSessionPicker();
         this.renderTriageGaugeEl();
         this.renderTriageOverlayEl();
@@ -12117,6 +12338,29 @@ export class AcpHarnessView implements ContentView {
     });
   }
 
+  /** spec 307: the `#resume list` picker. Rows come from the snapshot taken at
+   *  open (re-merged by `syncHandoffPickerRows`), so the cursor always
+   *  addresses the same handoff the Enter path resolves. */
+  private renderHandoffPicker(): void {
+    const state = this.handoffPicker;
+    const lane = state ? (this.lanes.find((l) => l.id === state.laneId) ?? null) : null;
+    const boundId = lane
+      ? (this.memoryEntries.find((entry) => entry.boundLanes.includes(lane.displayName))?.id ?? null)
+      : null;
+    this.handoffPickerCmp.update({
+      open: state !== null,
+      laneName: lane?.displayName ?? null,
+      rows: state?.rows ?? [],
+      cursor: state?.cursor ?? 0,
+      boundId,
+      now: Date.now(),
+      note: state?.note ?? null,
+      onAutoClose: (): void => {
+        this.handoffPicker = null;
+      },
+    });
+  }
+
   private renderSessionPicker(): void {
     const state = this.sessionPicker;
     const running = new Map<string, number>();
@@ -12325,6 +12569,7 @@ export class AcpHarnessView implements ContentView {
         pendingPeers: this.coordinator.pendingPeersFor(lane.id),
         inboxDepth: this.coordinator.inboxDepth(lane.id),
       },
+      assist: this.assistCtl.stripProps(lane),
       liveVoice: this.liveVoiceCtl.stripProps(lane),
       staging: {
         images: lane.stagedImages,
@@ -12669,10 +12914,18 @@ export class AcpHarnessView implements ContentView {
    *  without resetting the animation — the glyph just continues from the live
    *  frame on the next tick. */
   private updateSpinnerTicker(): void {
-    const anyBusy = this.lanes.some((lane) => lane.status === 'busy');
-    if (anyBusy && this.spinnerTimer === null) {
+    // spec 305: a lane with a detached background job is idle — its turn ended —
+    // but the task rows in the metrics overlay are live, so the shared frame
+    // counter has to keep advancing or their glyphs freeze on frame 0. Gated on
+    // the overlay being open: closed, no task spinner is mounted and the
+    // interval would tick an empty set.
+    const anyLive =
+      this.lanes.some((lane) => lane.status === 'busy') ||
+      (this.metricsPanelOpen &&
+        this.lanes.some((lane) => lane.backgroundTasks.some((task) => task.state === 'running')));
+    if (anyLive && this.spinnerTimer === null) {
       this.spinnerTimer = window.setInterval(() => this.tickSpinner(), SPINNER_INTERVAL_MS);
-    } else if (!anyBusy) {
+    } else if (!anyLive) {
       this.stopSpinnerTicker();
     }
   }
@@ -12741,6 +12994,8 @@ export class AcpHarnessView implements ContentView {
     const next = new Map<number, AcpLaneMetrics>();
     for (const m of entries) next.set(m.session, m);
     this.metricsBySession = next;
+    // spec 305: the same tick folds in every live background task's file status.
+    await this.refreshBackgroundTasks();
     // Lightweight refresh — only redraw chips and the breakdown panel,
     // not the whole transcript (which would thrash on every tick).
     this.refreshMetricsRender();
@@ -12752,6 +13007,44 @@ export class AcpHarnessView implements ContentView {
     // lane is active, so an idle harness still makes zero periodic publishes and
     // keeps idle CPU < 1% (the one deliberate deviation from spec 168's no-tick rule).
     if (this.anyLaneActive()) this.telemetryPublisher?.schedule();
+  }
+
+  /** spec 305: remember a `run_in_background` launch so the harness can keep
+   *  reporting the job after the turn that started it has ended. */
+  private captureBackgroundLaunch(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
+    const task = registerBackgroundTask(lane.backgroundTasks, call, Date.now());
+    if (!task) return;
+    this.updateSpinnerTicker();
+    this.refreshMetricsRender();
+  }
+
+  /** spec 305: one IPC round trip for every still-live task across all lanes,
+   *  folded back with the lane's process tree as the liveness cross-check. */
+  private async refreshBackgroundTasks(): Promise<void> {
+    const live: { lane: HarnessLane; task: BackgroundTask }[] = [];
+    for (const lane of this.lanes) {
+      for (const task of lane.backgroundTasks) {
+        if (task.state === 'running' || task.state === 'unknown') live.push({ lane, task });
+      }
+    }
+    if (live.length === 0) return;
+    let statuses: AcpBackgroundTaskStatus[];
+    try {
+      statuses = await invoke<AcpBackgroundTaskStatus[]>('acp_background_task_status', {
+        queries: live.map(({ task }) => ({ id: task.id, path: task.outputPath })),
+      });
+    } catch {
+      return; // a failed stat is not news; the next tick retries.
+    }
+    const now = Date.now();
+    for (const status of statuses) {
+      const entry = live.find(({ task }) => task.id === status.id);
+      if (!entry) continue;
+      const sessionId = entry.lane.client?.sessionId ?? null;
+      const metrics = sessionId !== null ? this.metricsBySession.get(sessionId) ?? null : null;
+      applyTaskStatus(entry.task, status, metrics, now);
+    }
+    this.updateSpinnerTicker();
   }
 
   /** spec 169: any lane doing work whose resource draw is worth streaming. */
@@ -12801,10 +13094,13 @@ export class AcpHarnessView implements ContentView {
     if (next === this.metricsPanelOpen) return;
     this.metricsPanelOpen = next;
     this.renderMetricsPanel();
+    // spec 305: task-row spinners only exist while this overlay is open.
+    this.updateSpinnerTicker();
     this.syncOrchestratorConsoleVisibility();
   }
 
   private renderMetricsPanel(): void {
+    const now = Date.now();
     this.metricsOverlay.update({
       open: this.metricsPanelOpen,
       lanes: this.lanes.map((lane): MetricsLane => {
@@ -12813,6 +13109,8 @@ export class AcpHarnessView implements ContentView {
           id: lane.id,
           displayName: lane.displayName,
           metrics: sessionId !== null ? this.metricsBySession.get(sessionId) ?? null : null,
+          tasks: lane.backgroundTasks,
+          now,
         };
       }),
       pollMs: METRICS_POLL_MS,
@@ -14619,7 +14917,10 @@ export class AcpHarnessView implements ContentView {
   }
 
   private activateLane(id: string): void {
-    if (id !== this.activeLaneId) this.dictationCtl.abort(false);
+    if (id !== this.activeLaneId) {
+      this.dictationCtl.abort(false);
+      this.assistCtl.cancel(); // spec 306: an in-flight answer is about the old lane
+    }
     this.activeLaneId = id;
     this.imageViewer?.close();
     this.focus = 'text';
@@ -15225,6 +15526,21 @@ export class AcpHarnessView implements ContentView {
     };
   }
 
+  private assistHost(): HarnessAssistHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const view = this;
+    return {
+      get element() { return view.element; },
+      get lanes() { return view.lanes; },
+      get activeLaneId() { return view.activeLaneId; },
+      get projectDir() { return view.projectDir; },
+      get remoteRuntimeId() { return view.remoteRuntimeId; },
+      flashChip: (text) => view.flashChip(text),
+      invalidate: (region) => view.invalidate(region),
+      setDraft: (lane, text, cursor) => view.setDraft(lane, text, cursor),
+    };
+  }
+
   /** Spec 246: dictation only starts on a plain text composer with nothing modal open. */
   private canStartDictation(lane: HarnessLane): boolean {
     return !(
@@ -15239,6 +15555,7 @@ export class AcpHarnessView implements ContentView {
       || this.pickerOpen
       || this.directivePickerOpen
       || this.modelPickerOpen
+      || this.handoffPicker !== null
       || this.ticketCtl.ticketPicker !== null
       || this.triageOverlayOpen
       || this.reviewMatrixOverlayOpen

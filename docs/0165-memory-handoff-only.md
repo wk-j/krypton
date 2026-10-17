@@ -4,7 +4,7 @@
 > Date: 2026-06-18
 > Milestone: M-ACP — Harness
 > Refines: `docs/0098-acp-harness-memory-on-demand.md` (spec 98), `docs/0075-acp-harness-lane-memory.md` (spec 75), `docs/0139-default-memory-handoff.md` (spec 139)
-> Updated by [docs/0293-global-handoff-resume.md](0293-global-handoff-resume.md): handoffs are now project-level documents with ids, not one document per lane. `handoff_get` / `handoff_list` were removed — cross-lane read below is gone; `#resume` (newest, local ∪ Xenon), `#resume list`, and `#resume <id>` inject the document, and the resuming lane adopts it (ADR-0023).
+> Updated by [docs/0293-global-handoff-resume.md](0293-global-handoff-resume.md): handoffs are now project-level documents with ids, not one document per lane. **The tools were also renamed — `memory_set` below is `handoff_set`, and `memory_get` / `memory_list` no longer exist**; cross-lane read is gone, and `#resume` (newest, local ∪ Xenon), `#resume list`, and `#resume <id>` inject the document, with the resuming lane adopting it (ADR-0023).
 
 ## Problem
 

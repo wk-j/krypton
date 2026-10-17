@@ -27,6 +27,7 @@ function lane(): HarnessLane {
     status: 'idle',
     accent: '#4dd0ff',
     transcript: [],
+    backgroundTasks: [],
     toolCalls: new Map(),
     queuedPrompts: [],
     pendingPermissions: [],

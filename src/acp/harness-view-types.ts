@@ -569,6 +569,36 @@ export interface PendingUserEcho {
   received: string;
 }
 
+/**
+ * spec 305: one shell command the agent detached with `run_in_background`.
+ * Captured from the launch tool call (the adapter reports the task id and the
+ * absolute output path in its result) and refreshed on the metrics poll —
+ * Krypton never owns the process, it only watches the file and the tree.
+ */
+export interface BackgroundTask {
+  /** Adapter-assigned task id, e.g. `bxs80otkx`. */
+  id: string;
+  /** Launch tool call, for cross-reference with the transcript row. */
+  toolCallId: string;
+  /** Command line as launched. */
+  command: string;
+  /** Absolute output file the CLI appends to. */
+  outputPath: string;
+  startedAt: number;
+  /** `exited` once the file's last line is the exit marker; `orphaned` once the
+   *  marker is still absent but no matching process remains in the lane tree. */
+  state: 'running' | 'exited' | 'orphaned' | 'unknown';
+  exitCode: number | null;
+  endedAt: number | null;
+  bytes: number;
+  lastLine: string;
+  pid: number | null;
+  cpuPercent: number | null;
+  rssMb: number | null;
+  /** Consecutive polls with neither an exit marker nor a live process. */
+  missStreak: number;
+}
+
 export interface HarnessLane {
   id: string;
   index: number;
@@ -689,6 +719,9 @@ export interface HarnessLane {
    * an active tool row out of the transcript.
    */
   activeToolCount: number;
+  /** spec 305: detached shell commands this lane launched, newest last. Bounded
+   *  by `BACKGROUND_TASK_MAX`; a running task is never dropped. */
+  backgroundTasks: BackgroundTask[];
   // Spec 117: streaming-markdown parser bound to the active assistant row's
   // body. Null between turns. Only one streaming assistant row per lane at a
   // time (matches currentAssistantId).

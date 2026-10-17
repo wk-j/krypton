@@ -291,9 +291,14 @@ export function parseSubagentPayload(
   // A finished foreground spawn settles every agent still marked live.
   const terminal = status === 'completed' || status === 'failed' || status === 'canceled';
   if (terminal && !payload.background) {
+    // Rejected before any agent started (e.g. invalid input): nothing was
+    // spawned, so the row stays a plain failed tool and shows its error.
+    if (status === 'failed' && payload.agents.every((entry) => entry.status === 'pending')) return undefined;
     const settled = toolStatusToSubagent(status);
     for (const entry of payload.agents) {
-      if (entry.status === 'pending' || entry.status === 'running') entry.status = settled;
+      if (entry.status === 'running') entry.status = settled;
+      // An agent that never started did not fail — it did not run.
+      else if (entry.status === 'pending') entry.status = status === 'completed' ? 'completed' : 'cancelled';
     }
   }
   return payload;

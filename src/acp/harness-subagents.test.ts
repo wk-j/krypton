@@ -81,6 +81,22 @@ describe('parseSubagentPayload — OMP task', () => {
     expect(bg?.agents[0].status).toBe('running');
   });
 
+  it('drops the card when the spawn is rejected before any agent starts', () => {
+    const pending = parseSubagentPayload(start, 'pending', undefined, NO_NAMES);
+    expect(parseSubagentPayload(start, 'failed', pending, NO_NAMES)).toBeUndefined();
+  });
+
+  it('settles agents that never started as cancelled, not failed', () => {
+    const running = parseSubagentPayload(
+      { ...start, rawOutput: { details: { progress: [ompProgress('running')] } } },
+      'in_progress',
+      undefined,
+      NO_NAMES,
+    );
+    const failed = parseSubagentPayload({ toolCallId: 't1', rawInput: start.rawInput }, 'failed', running, NO_NAMES);
+    expect(failed?.agents.map((a) => [a.id, a.status])).toEqual([['ReviewSortCode', 'failed'], ['ReviewRepo', 'cancelled']]);
+  });
+
   it('ignores ordinary tools', () => {
     expect(parseSubagentPayload({ toolCallId: 'x', rawInput: { command: 'ls' } }, 'completed', undefined, NO_NAMES)).toBeUndefined();
   });

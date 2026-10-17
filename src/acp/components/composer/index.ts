@@ -29,6 +29,7 @@ import './composer.css';
 import { Component } from '../../../ui/component';
 import { classes, el, setChildren } from '../../../ui/dom';
 import { syncOrder } from '../../../ui/list';
+import { AssistStrip, type AssistStripProps } from '../assist-strip';
 import { ComposerMeta, type ComposerMetaProps } from '../composer-meta';
 import { DecisionComposer, type DecisionComposerProps } from '../decision-composer';
 import { DictationControl, type DictationControlProps } from '../dictation-control';
@@ -94,6 +95,8 @@ export interface ComposerDraftProps {
    */
   readonly dictation: DictationControlProps | null;
   readonly peer: PeerStripProps;
+  /** Spec 306 — the sidecar's next-prompt strip; an `idle` state hides it. */
+  readonly assist: AssistStripProps;
   readonly liveVoice: LiveVoiceStripProps;
   readonly staging: StagingStripProps;
   readonly mention: ComposerPaletteProps;
@@ -109,6 +112,7 @@ export class Composer extends Component<ComposerProps> {
   private readonly meta = new ComposerMeta();
   private readonly dictation = new DictationControl();
   private readonly peer = new PeerStrip();
+  private readonly assist = new AssistStrip();
   private readonly liveVoice = new LiveVoiceStrip();
   private readonly staging = new StagingStrip();
   private readonly palettes: Record<InlinePaletteVariant, InlinePalette<InlinePaletteRow>> = {
@@ -193,6 +197,7 @@ export class Composer extends Component<ComposerProps> {
     syncOrder(this.el, [
       this.meta.el,
       this.peer.el,
+      this.assist.el,
       this.liveVoice.el,
       this.staging.el,
       this.palettes.mention.el,
@@ -218,6 +223,7 @@ export class Composer extends Component<ComposerProps> {
     this.meta.update(next.meta);
     if (next.dictation !== null) this.dictation.update(next.dictation);
     this.peer.update(next.peer);
+    this.assist.update(next.assist);
     this.liveVoice.update(next.liveVoice);
     this.staging.update(next.staging);
     this.updatePalette('mention', next.mention);
@@ -244,6 +250,7 @@ export class Composer extends Component<ComposerProps> {
     this.meta.dispose();
     this.dictation.dispose();
     this.peer.dispose();
+    this.assist.dispose();
     this.liveVoice.dispose();
     this.staging.dispose();
     for (const palette of Object.values(this.palettes)) palette.dispose();

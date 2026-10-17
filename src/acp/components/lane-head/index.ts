@@ -120,6 +120,24 @@ function headChips(next: LaneHeadProps): HeadChip[] {
     });
   }
 
+  // spec 305: detached shell work outlives the turn that launched it, so the
+  // lane reads `idle` while a build runs. This chip is the only lane-level
+  // signal that something is still going.
+  const running = lane.backgroundTasks.filter((task) => task.state === 'running');
+  if (running.length > 0) {
+    out.push({
+      key: 'bg',
+      props: {
+        block: 'acp-harness__lane-bg',
+        tone: 'on',
+        text: `bg ${running.length}`,
+        title: `${running.length} background task${running.length === 1 ? '' : 's'}: ${running
+          .map((task) => task.command)
+          .join(' · ')} — ⌘P = for detail`,
+      },
+    });
+  }
+
   // spec 180: behavior-neutral orchestrator-seat badge (≤1 per harness).
   if (next.isOrchestrator) {
     out.push({
@@ -372,6 +390,7 @@ export class LaneHead extends Component<LaneHeadProps> {
 export const def: ComponentDef = {
   id: 'lane-head',
   blocks: [
+    'acp-harness__lane-bg',
     'acp-harness__lane-head',
     'acp-harness__lane-name',
     'acp-harness__lane-status',

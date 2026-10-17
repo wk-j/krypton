@@ -206,6 +206,33 @@ export interface AcpHarnessConfig {
    * display-only in v1 (their model-selection paths under native ACP mode are
    * unverified; Copilot's and Cline's ACP servers document no model flag). */
   lane_models: Record<string, LaneModelConfig>;
+  /** spec 306: cheap-model turn sidecar. Absent when the TOML omits it. */
+  assist?: AcpHarnessAssistConfig;
+}
+
+/** `[acp_harness.assist.tasks.<id>]`. Every generic key is optional and falls
+ *  back to `[acp_harness.assist]`; any other scalar key is a task-specific knob
+ *  that `resolveAssistConfig` hands to the task as `options`. */
+export interface AcpHarnessAssistTaskOverride {
+  mode?: string;
+  backend?: string;
+  model?: string;
+  timeout_ms?: number;
+  max_input_chars?: number;
+  /** Passthrough task options — Krypton never interprets these. */
+  [key: string]: string | number | boolean | undefined;
+}
+
+/** `[acp_harness.assist]`. Clamps (timeout_ms 1000–20000, max_input_chars
+ *  500–20000) are applied in the frontend. `backend` is an ACP backend id and
+ *  `model` the id/alias sent with `session/set_model` ('' = backend default). */
+export interface AcpHarnessAssistConfig {
+  mode?: string;
+  backend?: string;
+  model?: string;
+  timeout_ms?: number;
+  max_input_chars?: number;
+  tasks?: Record<string, AcpHarnessAssistTaskOverride>;
 }
 
 /** spec 212/213: Xenon resource server. The bearer token is deliberately absent

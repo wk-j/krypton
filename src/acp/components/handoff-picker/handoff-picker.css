@@ -1,0 +1,231 @@
+/* Spec 307 §UI Changes — `HandoffPicker`.
+   Carved from directive-picker.css: the same three stacked panels (head, list,
+   preview) at the same width, because a handoff row carries six fields.
+   The `acp-harness__handoff-*` prefix is this directory's alone; nothing in
+   src/styles/ declares it. No scheme override exists for this block in
+   theme-scheme.css. */
+
+@layer krypton.component {
+  /* ── Handoff picker overlay (spec 307) ─────────────────────────
+     Picker-family treatment: no left-border rails — state via full outline,
+     tint and tags. */
+
+  .acp-harness__handoff-picker {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--agent-surface-high, rgba(4, 8, 13, 0.74));
+  }
+
+  .acp-harness__handoff-picker[hidden] {
+    display: none;
+  }
+
+  .acp-harness__handoff-head,
+  .acp-harness__handoff-list,
+  .acp-harness__handoff-empty,
+  .acp-harness__handoff-preview {
+    width: clamp(480px, 62vw, 860px);
+    background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
+    border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
+    border-bottom: none;
+  }
+
+  .acp-harness__handoff-head {
+    border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 12px;
+    color: var(--krypton-window-accent, #0cf);
+    letter-spacing: 0.08em;
+    text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
+  }
+
+  /* Row count · xenon note · key hints, all demoted to one quiet line. */
+  .acp-harness__handoff-head span:last-child {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    font-size: 0.84em;
+    text-shadow: none;
+    letter-spacing: 0.04em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-harness__handoff-list {
+    list-style: none;
+    margin: 0;
+    padding: 6px 0;
+    max-height: 52vh;
+    overflow-y: auto;
+  }
+
+  /* The shell swaps the list AND the preview for this when there are no rows. */
+  .acp-harness__handoff-empty {
+    padding: 14px;
+    border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
+    border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    text-align: center;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  }
+
+  .acp-harness__handoff-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 14px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84);
+    cursor: default;
+  }
+
+  .acp-harness__handoff-row--active {
+    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
+    outline: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.5);
+    outline-offset: -1px;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
+  }
+
+  /* The handoff this lane is already bound to — success tint, still selectable. */
+  .acp-harness__handoff-row--bound .acp-harness__handoff-id {
+    color: rgba(122, 255, 178, 0.9);
+  }
+
+  /* Monospace-stable id column: the ids differ only in their last six
+     characters, so they must line up to be scannable. */
+  .acp-harness__handoff-id {
+    flex: 0 0 auto;
+    letter-spacing: 0.03em;
+    font-weight: 600;
+    color: var(--krypton-window-accent, #0cf);
+  }
+
+  .acp-harness__handoff-age {
+    flex: 0 0 auto;
+    min-width: 2.6em;
+    text-align: right;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    font-size: 0.85em;
+  }
+
+  .acp-harness__handoff-host,
+  .acp-harness__handoff-author {
+    flex: 0 0 auto;
+    max-width: 18%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    font-size: 0.85em;
+  }
+
+  /* Fills the rest of the single-line row and truncates — the picker never
+     slices the text, so the detail pane and the DOM keep the whole summary. */
+  .acp-harness__handoff-summary {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84);
+  }
+
+  .acp-harness__handoff-row--active .acp-harness__handoff-summary {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
+  }
+
+  .acp-harness__handoff-bound {
+    flex: 0 0 auto;
+    color: rgba(122, 255, 178, 0.9);
+    font-size: 0.74em;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+
+  .acp-harness__handoff-tag {
+    flex: 0 0 auto;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    font-size: 0.74em;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+
+  .acp-harness__handoff-tag--xenon {
+    color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.42);
+  }
+
+  /* Fixed height (not max-height) so moving the cursor never resizes or
+     re-centres the panel: handoff details differ wildly in length. Short ones
+     leave trailing space; long ones scroll. */
+  .acp-harness__handoff-preview {
+    position: relative;
+    padding: 0;
+    border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
+    border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
+    height: 22vh;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+    font-size: 0.86em;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  }
+
+  .acp-harness__handoff-preview-head {
+    position: sticky;
+    top: 0;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 14px 5px;
+    border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.14);
+    background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
+    color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.7);
+    font-size: 0.92em;
+    letter-spacing: 0.05em;
+  }
+
+  .acp-harness__handoff-preview-scope {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
+  }
+
+  .acp-harness__handoff-preview-source {
+    flex: 0 0 auto;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
+    letter-spacing: 0.06em;
+  }
+
+  .acp-harness__handoff-preview-summary {
+    padding: 8px 14px 0;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9);
+  }
+
+  .acp-harness__handoff-preview-detail {
+    padding: 6px 14px 16px;
+  }
+
+  /* The winning copy lives on Xenon; the body arrives with the resume. */
+  .acp-harness__handoff-preview-detail--deferred {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    font-style: italic;
+  }
+
+  /* Bottom fade hinting the detail scrolls past the fixed-height edge. */
+  .acp-harness__handoff-preview::after {
+    content: '';
+    position: sticky;
+    bottom: 0;
+    display: block;
+    height: 26px;
+    margin-top: -26px;
+    pointer-events: none;
+    background: linear-gradient(to top, var(--agent-surface-solid, rgba(8, 14, 18, 0.98)), transparent);
+  }
+}

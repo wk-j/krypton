@@ -33,6 +33,7 @@ function idleProps(): ComposerDraftProps {
     },
     dictation: null,
     peer: { laneStatus: 'idle', pendingPeers: [], inboxDepth: 0 },
+    assist: { state: { kind: 'idle' } },
     liveVoice: { kind: 'hidden' },
     staging: { images: [] },
     mention: EMPTY_PALETTE,
@@ -66,9 +67,10 @@ describe('Composer', () => {
     const composer = new Composer();
     composer.update(idleProps());
 
-    // Four palettes, peer strip, live-voice strip, staging strip: present but hidden.
+    // Four palettes, peer strip, assist strip, live-voice strip, staging strip:
+    // present but hidden.
     const hidden = [...composer.el.children].filter((child) => (child as HTMLElement).hidden);
-    expect(hidden).toHaveLength(7);
+    expect(hidden).toHaveLength(8);
   });
 
   it('gives every optional child a stylesheet rule that honours `hidden`', () => {
@@ -79,6 +81,7 @@ describe('Composer', () => {
         ['inline-palette', 'inline-palette.css', 'acp-harness__slash-palette'],
         ['peer-strip', 'peer-strip.css', 'acp-harness__composer-peer'],
         ['staging-strip', 'staging-strip.css', 'acp-harness__staging'],
+        ['assist-strip', 'assist-strip.css', 'acp-harness__assist'],
         ['live-voice-strip', 'live-voice-strip.css', 'acp-harness__live'],
       ] as const
     ).filter(([dir, file, block]) => !hidesWhenHidden(dir, file, block));

@@ -1,6 +1,7 @@
 # ACP Built-In Memory Auto-Approval — Implementation Spec
 
 > Status: Implemented
+> Renamed by [docs/0293-global-handoff-resume.md](0293-global-handoff-resume.md): the taxonomy below lists `memory_set` / `memory_get` / `memory_list`, which **no longer exist**. The live auto-allow set is `handoff_set` plus the peer/attention/review/timeline/ticket/lesson tools (`src/acp/harness-permission-scan.ts`).
 > Date: 2026-05-08
 > Milestone: M8 — Polish
 > Note: Spec 107 extends this detector into a harness-wide memory/peer taxonomy while preserving the built-in-server-marker safety rule described here for third-party tools.

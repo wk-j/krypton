@@ -14,7 +14,9 @@
 
 import { def as actionButton } from './action-button';
 import { def as annotationRail } from './annotation-rail';
+import { def as assistStrip } from './assist-strip';
 import { def as assistantRow } from './assistant-row';
+import { def as backgroundTasks } from './background-tasks';
 import { def as card } from './card';
 import { def as caret } from './caret';
 import { def as chip } from './chip';
@@ -30,6 +32,7 @@ import { def as draftLine } from './draft-line';
 import { def as emptyState } from './empty-state';
 import { def as fsActivityRow } from './fs-activity-row';
 import { def as fsWriteReviewRow } from './fs-write-review-row';
+import { def as handoffPicker } from './handoff-picker';
 import { def as heatPanel } from './heat-panel';
 import { def as helpOverlay } from './help-overlay';
 import { def as imageStrip } from './image-strip';
@@ -144,6 +147,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   draftLine,
   stagingStrip,
   peerStrip,
+  assistStrip,
   dictationControl,
   liveVoiceStrip,
   decisionComposer,
@@ -159,8 +163,10 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   reviewPriorityOverlay,
   orchestratorConsole,
   memoryDrawer,
+  handoffPicker,
   helpOverlay,
   metricsOverlay,
+  backgroundTasks,
   imageViewer,
   timelineCapture,
   reviewThreadDialog,

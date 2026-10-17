@@ -28,9 +28,10 @@ labels do not identify work: the counter resets on every app start and increment
 
 A handoff becomes a **project-level document with its own id**, not a lane slot. `#resume` with no
 argument resumes the **newest handoff in the project**, from the local store and — when Xenon is
-configured — from Xenon, whichever lane, backend, or machine wrote it. `#resume list` shows recent
-ones and `#resume <id>` picks one. Krypton resolves the document and injects its text as a one-shot
-prompt, so every backend can resume (no tool or MCP needed). A lane that resumes handoff `H` adopts
+configured — from Xenon, whichever lane, backend, or machine wrote it. `#resume list` opens the
+handoff picker overlay over those rows and `#resume <id>` picks one directly. Krypton resolves the
+document and injects its text as a one-shot prompt, so every backend can resume (no tool or MCP
+needed). A lane that resumes handoff `H` adopts
 `H`, so its next `#handoff` continues the same thread instead of creating a new one.
 
 ## Research
@@ -118,7 +119,7 @@ handoff and drops the binding. Each write emits `acp-harness-memory-changed`; wi
 | Command | Action |
 |---|---|
 | `#resume` | newest handoff in the project, local ∪ Xenon |
-| `#resume list` | system block of up to 10: `id · age · host · author · summary` and source `local`/`xenon` |
+| `#resume list` | opens the handoff picker overlay (`j`/`k` move, `Enter` resumes, `Esc` closes) over the merged rows: `id · age · host · author · summary` and source `local`/`xenon` — see [307](0307-handoff-picker.md) |
 | `#resume <id>` | that handoff; unique prefix of ≥ 4 chars after `ho-` accepted |
 
 ```
@@ -174,8 +175,10 @@ None new. `auto_push = ["handoff"]` is the opt-in for publish-on-write.
 ## Out of Scope
 
 Agent-initiated pull · pulling any other kind · deleting a published handoff (admin
-`DELETE /v1/admin/resources/{id}` exists) · cross-project resume · a picker overlay · control-API
-ops for resume.
+`DELETE /v1/admin/resources/{id}` exists) · cross-project resume · control-API ops for resume.
+
+A picker overlay was out of scope here; [307](0307-handoff-picker.md) revisits it and makes
+`#resume list` open one.
 
 ## Resources
 

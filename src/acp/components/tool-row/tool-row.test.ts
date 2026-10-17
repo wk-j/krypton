@@ -435,6 +435,23 @@ describe('ToolRow subagents', () => {
     expect(row.el.querySelector('.acp-harness__subagent-detail')).toBeNull();
   });
 
+  it('drops the card for a rejected spawn and shows the error output', () => {
+    const subagents = { source: 'omp' as const, background: false, agents: [agent({ status: 'pending' })], overflow: 0 };
+    const pending = payload({ kind: 'agents', subagents });
+    const row = new ToolRow(props(pending));
+    row.update(props(pending));
+    expect(row.el.querySelector('.acp-harness__subagents')).not.toBeNull();
+
+    const failed = payload({
+      status: 'failed',
+      kind: 'agents',
+      sections: [{ label: 'output', text: '`model` is only accepted for the `seance` agent.' }],
+    });
+    row.update(props(failed));
+    expect(row.el.querySelector('.acp-harness__subagents')).toBeNull();
+    expect(row.el.querySelector('.acp-harness__tool-output')?.textContent).toContain('only accepted for the `seance` agent');
+  });
+
   it('shows the redaction card instead of output, sections and diffs', () => {
     const tool = payload({
       kind: 'write',

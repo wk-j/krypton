@@ -15,6 +15,8 @@ import { disposeList, reconcile } from '../../../ui/list';
 import { formatCpu, formatRss } from '../../harness-format';
 import { describeProc, metricPercent } from '../../harness-lane-chrome';
 import type { AcpLaneMetrics, AcpLaneProcMetric } from '../../../types';
+import type { BackgroundTask } from '../../harness-view-types';
+import { BackgroundTasks } from '../background-tasks';
 import { Meter } from '../meter';
 import { OverlayShell } from '../overlay-shell';
 import type { ComponentDef } from '../types';
@@ -25,6 +27,10 @@ export interface MetricsLane {
   readonly id: string;
   readonly displayName: string;
   readonly metrics: AcpLaneMetrics | null;
+  /** spec 305: the lane's detached shell jobs, rendered under its tree. */
+  readonly tasks: readonly BackgroundTask[];
+  /** spec 305: poll timestamp, so a task row's elapsed is a dependency. */
+  readonly now: number;
 }
 
 export interface MetricsOverlayProps {
@@ -179,6 +185,9 @@ function walkProcesses(metrics: AcpLaneMetrics): WalkedProc[] {
 class MetricsLaneBlock extends Component<MetricsLane> {
   private readonly name: HTMLElement;
   private readonly totals: HTMLElement;
+  /** spec 305: always mounted, hidden by its own sheet while the lane has no
+   *  tasks — a lane can have a live job and a dead adapter at the same time. */
+  private readonly tasks = new BackgroundTasks();
   private treeBlock: HTMLElement | null = null;
   private rows: HTMLElement | null = null;
 
@@ -187,6 +196,7 @@ class MetricsLaneBlock extends Component<MetricsLane> {
     this.name = el('span', { class: 'acp-harness__metrics-lane-name' });
     this.totals = el('span', { class: 'acp-harness__metrics-lane-totals' });
     this.el.appendChild(el('div', { class: 'acp-harness__metrics-lane-head' }, this.name, this.totals));
+    this.el.appendChild(this.tasks.el);
   }
 
   protected readDeps(next: MetricsLane): readonly unknown[] {
@@ -199,6 +209,12 @@ class MetricsLaneBlock extends Component<MetricsLane> {
       metrics ? formatRss(metrics.total_rss_mb) : null,
       metrics?.processes,
       metrics?.processes.map((proc) => `${proc.pid}:${proc.cpu_percent}:${proc.rss_mb}`).join('|') ?? '',
+      // Tasks move on their own cadence; `now` only counts while rows exist, so
+      // a harness with no background job still repaints nothing per poll.
+      next.tasks.length,
+      next.tasks.length === 0
+        ? ''
+        : `${next.now}|${next.tasks.map((task) => `${task.id}:${task.state}:${task.bytes}`).join('|')}`,
     ];
   }
 
@@ -208,6 +224,7 @@ class MetricsLaneBlock extends Component<MetricsLane> {
 
   protected paint(next: MetricsLane): void {
     this.syncClasses(next);
+    this.tasks.update({ tasks: next.tasks, now: next.now });
     this.name.textContent = next.displayName;
     const metrics = next.metrics;
     if (metrics && metrics.root_alive) {
@@ -254,7 +271,9 @@ class MetricsLaneBlock extends Component<MetricsLane> {
         ),
         this.rows,
       );
-      this.el.appendChild(this.treeBlock);
+      // spec 305: the tree goes above the task section, which is mounted for
+      // the block's whole life.
+      this.el.insertBefore(this.treeBlock, this.tasks.el);
     }
     reconcile<WalkedProc, ProcRow>(this.rows, walkProcesses(metrics), {
       key: (walked) => String(walked.proc.pid),
@@ -275,6 +294,7 @@ class MetricsLaneBlock extends Component<MetricsLane> {
   }
 
   protected onDispose(): void {
+    this.tasks.dispose();
     this.dropTree();
   }
 }

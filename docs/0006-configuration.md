@@ -452,6 +452,22 @@ composer_bloom_trail = 5       # visible graphemes that flash on one paste (1–
 word_autocomplete = true       # ghost-text word completion in the composer (spec 285)
 lessons = true                 # global lane lessons: policy block, lesson_* tools, nudges (spec 298)
 
+# Cheap-model turn sidecar (spec 306). Off by default: it runs through an ACP
+# backend subprocess (no API key, the CLI's own login) and spends the same
+# subscription quota the lanes spend, once per turn.
+[acp_harness.assist]
+mode = "off"                   # off | manual | auto
+backend = "claude"             # ACP backend id (same ids as the backend picker)
+model = "haiku"                # id/alias for session/set_model ("" = backend default)
+timeout_ms = 8000              # model-call deadline in ms (1000–20000); a cold start gets its own
+max_input_chars = 6000         # hard cap on the payload sent to the model (500–20000)
+
+# Per-task override. The table name must be a registered assist task id.
+# [acp_harness.assist.tasks.next-prompt]
+# mode = "auto"
+# model = "haiku"
+# count = 3                    # task-specific knob; Krypton never interprets it
+
 # --- ACP Wire Profiler (spec 288) ---
 # Records ACP traffic (Krypton ↔ agent stdio and Rust → UI events) into an
 # in-memory ring for the loopback profiler page (palette: ACP Wire: Open
@@ -837,6 +853,42 @@ Example:
 [acp_harness.lane_models.opencode]
 active = "anthropic/claude-sonnet-4-5"
 models = ["zai-coding-plan/glm-5.1", "anthropic/claude-sonnet-4-5", "openai/gpt-5"]
+```
+
+### ACP Harness Assist (spec 306)
+
+`[acp_harness.assist]` configures the cheap-model turn sidecar: after a lane turn ends, a small model post-processes the turn and proposes what to send next. It reaches that model **through an ACP backend subprocess** — the same path the harness lanes use — so it needs **no API key**: it reuses whatever login the backend CLI already has (`claude`, `codex`, `omp`, …). The default is `mode = "off"` because those calls spend the **same subscription quota** the lane agents spend, once per turn, without being asked.
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[acp_harness.assist]` | `mode` | string | `"off"` | `off` (never runs), `manual` (only `Cmd+/` and `#assist … now`), or `auto` (also runs when an eligible turn ends). Any other value is treated as `off`. Session-scoped `#assist` changes do not rewrite this file |
+| `[acp_harness.assist]` | `backend` | string | `"claude"` | ACP backend id to spawn for the sidecar, from the same id space as `[acp_harness.lane_models.<backend>]` and the backend picker. An unknown id fails the run |
+| `[acp_harness.assist]` | `model` | string | `"haiku"` | Model id or alias sent with `session/set_model` after the session is created. `"haiku"` works for the `claude` backend; a backend that advertises no model state rejects a model id, so leave `model = ""` for those — empty means "keep the backend's own default" |
+| `[acp_harness.assist]` | `timeout_ms` | int | `8000` | Model-call deadline in milliseconds, clamped to 1000–20000 in the frontend. The request is aborted on expiry. Backend setup on a cold start (spawn → `initialize` → `session/new` → `session/set_model`) gets its own window of the same length, so it is not counted against the call |
+| `[acp_harness.assist]` | `max_input_chars` | int | `6000` | Hard cap on the payload handed to the model, clamped to 500–20000. The turn transcript is truncated to fit; tool entries are names and counts only |
+| `[acp_harness.assist.tasks.<id>]` | `mode` | string | inherits | Override for this task only |
+| `[acp_harness.assist.tasks.<id>]` | `backend` | string | inherits | Override for this task only |
+| `[acp_harness.assist.tasks.<id>]` | `model` | string | inherits | Override for this task only |
+| `[acp_harness.assist.tasks.<id>]` | `timeout_ms` | int | inherits | Override for this task only |
+| `[acp_harness.assist.tasks.<id>]` | `max_input_chars` | int | inherits | Override for this task only |
+| `[acp_harness.assist.tasks.<id>]` | *(any other scalar key)* | string/int/bool | — | Task-specific knob passed through verbatim as that task's `options`. Krypton holds no knowledge of these keys, so a new task needs no config schema change |
+
+`<id>` must be a **registered assist task id** — `next-prompt` is the only one today. A table naming an unregistered task parses but is never read.
+
+Resolution order per run is `task defaults` ← `[acp_harness.assist]` ← `[acp_harness.assist.tasks.<id>]`, with the numeric keys clamped afterwards; the clamps live in the frontend, so an out-of-range value in TOML is corrected, not rejected.
+
+`next-prompt` reads one option: `count` (default `3`), the maximum number of suggestions it returns. The strip shows at most three, accepted with `Cmd+1`…`Cmd+3`, which load the prompt into the composer and never send it.
+
+Example — an auto-running `next-prompt` on the `claude` backend's small model:
+
+```toml
+[acp_harness.assist]
+mode = "auto"
+backend = "claude"
+model = "haiku"
+
+[acp_harness.assist.tasks.next-prompt]
+count = 3
 ```
 
 ### ACP Harness Directives (`acp-harness.toml`)

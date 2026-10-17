@@ -530,9 +530,12 @@
   cursor: zoom-in;
 }
 
+/* Card-ish rows shrink to 0.88em. A plain `sys` row does NOT — it is prose the
+   user reads, so it keeps the transcript's body size. Variants that carry
+   `--system` as their base class and want to be smaller set their own size:
+   `--usage` 0.88em, `--harness-event` 0.86em, `--hidden-indicator` 0.78em. */
 .acp-harness__msg--tool .acp-harness__msg-body,
 .acp-harness__msg--plan .acp-harness__msg-body,
-.acp-harness__msg--system .acp-harness__msg-body,
 .acp-harness__msg--memory .acp-harness__msg-body,
 .acp-harness__msg--restart .acp-harness__msg-body,
 .acp-harness__msg--permission .acp-harness__msg-body,

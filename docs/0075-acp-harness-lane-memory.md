@@ -9,6 +9,7 @@ extended_by: docs/0076-acp-harness-memory-persistence.md
 # ACP Harness Lane-Owned Memory — Implementation Spec
 
 > Scope refined by [docs/0165-memory-handoff-only.md](0165-memory-handoff-only.md): memory is the backing store for `#handoff` / `#resume` only — not an ambient shared scratchpad. The per-turn packet no longer advertises it; cross-lane *read* is retained.
+> Renamed by [docs/0293-global-handoff-resume.md](0293-global-handoff-resume.md): the three tools specified below (`memory_set` / `memory_get` / `memory_list`) **no longer exist**. A handoff is a project-level document; the only MCP tool is `handoff_set`, and reads happen through `#resume`.
 
 ## Problem
 

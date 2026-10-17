@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { AcpLaneMetrics, AcpLaneProcMetric } from '../../../types';
-import { MetricsOverlay, type MetricsOverlayProps } from './index';
+import { MetricsOverlay, type MetricsLane, type MetricsOverlayProps } from './index';
 
 const overlays: MetricsOverlay[] = [];
 
@@ -29,9 +29,19 @@ const metrics = (over: Partial<AcpLaneMetrics> = {}): AcpLaneMetrics => ({
   ...over,
 });
 
+/** spec 305: a lane slot with no background tasks — the default for these tests. */
+const lane = (over: Partial<MetricsLane> = {}): MetricsLane => ({
+  id: 'lane-1',
+  displayName: 'claude-1',
+  metrics: metrics(),
+  tasks: [],
+  now: 1_000,
+  ...over,
+});
+
 const props = (over: Partial<MetricsOverlayProps> = {}): MetricsOverlayProps => ({
   open: true,
-  lanes: [{ id: 'lane-1', displayName: 'claude-1', metrics: metrics() }],
+  lanes: [lane()],
   pollMs: 2000,
   ...over,
 });
@@ -81,11 +91,7 @@ describe('MetricsOverlay', () => {
 
   it('shows the dim total and no tree when the root process is gone', () => {
     const overlay = mount({
-      lanes: [{
-        id: 'lane-1',
-        displayName: 'claude-1',
-        metrics: metrics({ root_alive: false, proc_count: 0, processes: [] }),
-      }],
+      lanes: [lane({ metrics: metrics({ root_alive: false, proc_count: 0, processes: [] }) })],
     });
     expect(overlay.el.querySelector('.acp-harness__metrics-total--dim')?.textContent)
       .toBe('no live process');
@@ -96,17 +102,17 @@ describe('MetricsOverlay', () => {
     const overlay = mount();
     const rows = [...overlay.el.querySelectorAll('.acp-harness__metrics-rows > .acp-harness__metrics-row')];
     overlay.update(props({
-      lanes: [{
-        id: 'lane-1',
-        displayName: 'claude-1',
-        metrics: metrics({
-          total_cpu_percent: 44,
-          processes: [
-            proc({ pid: 100, cpu_percent: 38 }),
-            proc({ pid: 101, parent_pid: 100, name: 'rg', cmd: ['rg', 'needle'], cpu_percent: 6, rss_mb: 32 }),
-          ],
+      lanes: [
+        lane({
+          metrics: metrics({
+            total_cpu_percent: 44,
+            processes: [
+              proc({ pid: 100, cpu_percent: 38 }),
+              proc({ pid: 101, parent_pid: 100, name: 'rg', cmd: ['rg', 'needle'], cpu_percent: 6, rss_mb: 32 }),
+            ],
+          }),
         }),
-      }],
+      ],
     }));
     const after = [...overlay.el.querySelectorAll('.acp-harness__metrics-rows > .acp-harness__metrics-row')];
     expect(after).toEqual(rows);
@@ -117,12 +123,12 @@ describe('MetricsOverlay', () => {
   it('drops a lane section when its lane closes', () => {
     const overlay = mount({
       lanes: [
-        { id: 'lane-1', displayName: 'claude-1', metrics: metrics() },
-        { id: 'lane-2', displayName: 'codex-1', metrics: metrics() },
+        lane(),
+        lane({ id: 'lane-2', displayName: 'codex-1' }),
       ],
     });
     expect(overlay.el.querySelectorAll('.acp-harness__metrics-lane')).toHaveLength(2);
-    overlay.update(props({ lanes: [{ id: 'lane-2', displayName: 'codex-1', metrics: metrics() }] }));
+    overlay.update(props({ lanes: [lane({ id: 'lane-2', displayName: 'codex-1' })] }));
     const remaining = [...overlay.el.querySelectorAll('.acp-harness__metrics-lane-name')];
     expect(remaining.map((n) => n.textContent)).toEqual(['codex-1']);
   });
@@ -133,7 +139,7 @@ describe('MetricsOverlay', () => {
   });
 
   it('writes nothing when the samples have not moved', () => {
-    const lanes = [{ id: 'lane-1', displayName: 'claude-1', metrics: metrics() }];
+    const lanes = [lane()];
     const overlay = mount({ lanes });
     const observer = new MutationObserver(() => undefined);
     observer.observe(overlay.el, { childList: true, subtree: true, attributes: true, characterData: true });

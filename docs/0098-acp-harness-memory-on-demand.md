@@ -1,6 +1,7 @@
 # ACP Harness On-Demand Memory — Implementation Spec
 
 > Status: Implemented
+> Renamed by [docs/0293-global-handoff-resume.md](0293-global-handoff-resume.md): `memory_set` / `memory_get` / `memory_list` **no longer exist** — the one write tool is `handoff_set`, and reads happen through `#resume`, not a tool.
 > Date: 2026-05-08
 > Milestone: M-ACP — Harness
 > Scope refined by [docs/0165-memory-handoff-only.md](0165-memory-handoff-only.md): the on-demand stub no longer advertises memory at all — memory is scoped to the `#handoff` / `#resume` handoff store. The peering stub is unaffected.

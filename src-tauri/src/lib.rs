@@ -376,6 +376,7 @@ pub fn run() {
             acp::acp_fs_write_response,
             acp::acp_dispose,
             acp::acp_get_lane_metrics,
+            acp::acp_background_task_status,
             acp::read_mcp_config_file,
             acp::acp_login_env,
             acp::write_junie_mcp_overlay,

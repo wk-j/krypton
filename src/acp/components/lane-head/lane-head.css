@@ -162,6 +162,23 @@
     text-overflow: ellipsis;
   }
 
+  /* spec 305: `bg 2` — detached shell work still running while the lane itself
+     is idle. Same pill as the MCP chip so the head keeps one chip rhythm. */
+  .acp-harness__lane-bg {
+    flex: 0 0 auto;
+    justify-self: start;
+    padding: 1px 6px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
+    font-size: 0.72em;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  .acp-harness__lane-bg--on {
+    color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #0cf)) 70%, var(--krypton-fg, #d8e8d8));
+  }
+
   .acp-harness__lane-mcp {
     flex: 0 0 auto;
     justify-self: start;

@@ -333,32 +333,3 @@ export function formatHandoffAge(ms: number): string {
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
 }
-
-/** Rows shown by `#resume list`. */
-export const HANDOFF_LIST_LIMIT = 10;
-const HANDOFF_LIST_SUMMARY_CHARS = 80;
-
-function oneLine(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
-}
-
-/** The `#resume list` system block: `id · age · host · author · summary · source`. */
-export function formatHandoffList(merged: readonly MergedHandoff[], now: number): string {
-  if (merged.length === 0) return 'no handoffs in this project';
-  const shown = merged.slice(0, HANDOFF_LIST_LIMIT);
-  const head = merged.length > shown.length
-    ? `handoffs (${shown.length} of ${merged.length}, newest first) - #resume <id> to pick one`
-    : `handoffs (${shown.length}, newest first) - #resume <id> to pick one`;
-  const rows = shown.map((entry) =>
-    [
-      entry.id,
-      formatHandoffAge(now - entry.updatedAt),
-      entry.host,
-      entry.author,
-      oneLine(entry.summary, HANDOFF_LIST_SUMMARY_CHARS) || '(no summary)',
-      entry.source,
-    ].join(' · '),
-  );
-  return [head, ...rows.map((row) => `  ${row}`)].join('\n');
-}

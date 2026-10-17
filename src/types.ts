@@ -567,6 +567,17 @@ export interface AcpLaneMetrics {
   processes: AcpLaneProcMetric[];
 }
 
+/** One background task's file status, from `acp_background_task_status` (spec 305). */
+export interface AcpBackgroundTaskStatus {
+  id: string;
+  exists: boolean;
+  bytes: number;
+  modified_ms: number | null;
+  /** Present only when `[exited with code N]` is the output file's last line. */
+  exit_code: number | null;
+  last_line: string;
+}
+
 /** Java process resource statistics (from backend get_java_stats command) */
 export interface JavaStats {
   heap_used_mb: number;

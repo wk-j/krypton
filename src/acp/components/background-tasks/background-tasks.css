@@ -1,0 +1,113 @@
+/* Spec 305 §UI changes — `BackgroundTasks`.
+   The lane's detached shell jobs, under its process tree in the Lane Metrics
+   overlay. Column rhythm follows `.acp-harness__metrics-row` so the two blocks
+   read as one table; amber/red tinting is reserved for a failed or orphaned
+   job, since those are the only rows that need the user to do something. */
+
+@layer krypton.component {
+  .acp-harness__bg-tasks {
+    display: block;
+    margin-top: 8px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    font-size: 0.94em;
+    line-height: 1.35;
+  }
+
+  /* The section is hidden by attribute when the lane has no tasks, and an
+     author `display:` outranks the UA's `[hidden]` rule. */
+  .acp-harness__bg-tasks[hidden] {
+    display: none;
+  }
+
+  .acp-harness__bg-tasks-head {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36);
+    font-size: 0.82em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .acp-harness__bg-tasks-rows {
+    display: block;
+  }
+
+  .acp-harness__bg-task {
+    display: grid;
+    grid-template-columns: 2ch 10ch minmax(0, 1fr) 6ch 8ch 12ch minmax(0, 0.8fr);
+    gap: 8px;
+    align-items: center;
+    min-height: 24px;
+    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.045);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .acp-harness__bg-task-glyph {
+    color: var(--krypton-window-accent, #0cf);
+    text-align: center;
+  }
+
+  .acp-harness__bg-task-id {
+    overflow: hidden;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-harness__bg-task-cmd {
+    overflow: hidden;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-harness__bg-task-elapsed,
+  .acp-harness__bg-task-bytes {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .acp-harness__bg-task-status {
+    overflow: hidden;
+    color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.8);
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-harness__bg-task-tail {
+    overflow: hidden;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-harness__bg-task--exited .acp-harness__bg-task-glyph,
+  .acp-harness__bg-task--exited .acp-harness__bg-task-status {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+  }
+
+  .acp-harness__bg-task--failed .acp-harness__bg-task-glyph,
+  .acp-harness__bg-task--failed .acp-harness__bg-task-status {
+    color: #ec5f67;
+  }
+
+  .acp-harness__bg-task--orphaned .acp-harness__bg-task-glyph,
+  .acp-harness__bg-task--orphaned .acp-harness__bg-task-status,
+  .acp-harness__bg-task--unknown .acp-harness__bg-task-glyph,
+  .acp-harness__bg-task--unknown .acp-harness__bg-task-status {
+    color: var(--agent-gold, #ffd166);
+  }
+}
+
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__bg-task-cmd {
+    color: color-mix(in srgb, var(--krypton-ink) 80%, transparent);
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__bg-task-id,
+  html[data-theme-scheme='light'] .acp-harness__bg-task-tail {
+    color: color-mix(in srgb, var(--krypton-ink) 48%, transparent);
+  }
+}

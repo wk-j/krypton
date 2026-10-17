@@ -7,6 +7,8 @@ extends: docs/0075-acp-harness-lane-memory.md
 
 # ACP Harness Memory Persistence — Implementation Spec
 
+> Renamed by [docs/0293-global-handoff-resume.md](0293-global-handoff-resume.md): the `memory_set` write path described below is now `handoff_set`, and a handoff is a project-level document rather than one per lane. The persistence mechanism (debounced atomic write, restore on startup) is intact.
+
 ## Problem
 
 Lane memory (spec 75) is in-memory only. Closing Krypton or disposing the

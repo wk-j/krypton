@@ -9,7 +9,7 @@
 //
 // See docs/0069-acp-agent-support.md for the design.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::process::Stdio;
@@ -2654,6 +2654,145 @@ pub fn acp_get_lane_metrics(
         .collect())
 }
 
+// ─── Background task status (spec 305) ─────────────────────────────
+
+/// How much of a background task's output file is read per poll. A `mvn`
+/// reactor log is megabytes; only the tail can say whether the job finished.
+const BG_TAIL_BYTES: u64 = 4096;
+/// Display clamp for the one output line the harness shows per task row.
+const BG_LAST_LINE_MAX: usize = 200;
+
+/// One task to stat, as captured from the launch tool call. The path comes
+/// from the adapter's own tool result, not from a guessed layout.
+#[derive(Debug, Deserialize)]
+pub struct BgTaskQuery {
+    pub id: String,
+    pub path: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BgTaskStatus {
+    pub id: String,
+    pub exists: bool,
+    pub bytes: u64,
+    pub modified_ms: Option<u64>,
+    /// `Some` only when the exit marker IS the file's last non-empty line.
+    pub exit_code: Option<i32>,
+    pub last_line: String,
+}
+
+/// Split the tail of a background-task output file into its exit code and the
+/// last line of real output. Claude Code appends `[exited with code N]` as the
+/// final line when the process ends; while it runs the marker is absent. Only
+/// the last non-empty line is tested, so build output that happens to contain
+/// the same text mid-log never reads as an exit.
+fn parse_task_tail(tail: &str) -> (Option<i32>, String) {
+    let mut lines = tail
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| !line.trim().is_empty())
+        .rev();
+    let last = match lines.next() {
+        Some(line) => line,
+        None => return (None, String::new()),
+    };
+    match exit_marker_code(last) {
+        Some(code) => (Some(code), clamp_line(lines.next().unwrap_or(""))),
+        None => (None, clamp_line(last)),
+    }
+}
+
+fn exit_marker_code(line: &str) -> Option<i32> {
+    line.trim()
+        .strip_prefix("[exited with code ")?
+        .strip_suffix(']')?
+        .trim()
+        .parse::<i32>()
+        .ok()
+}
+
+fn clamp_line(line: &str) -> String {
+    line.trim().chars().take(BG_LAST_LINE_MAX).collect()
+}
+
+/// Poll every live background task in one IPC round trip. A missing file is a
+/// status (`exists: false`), not an error — the CLI removes task files and the
+/// harness must keep rendering the row it already has.
+#[tauri::command]
+pub async fn acp_background_task_status(
+    queries: Vec<BgTaskQuery>,
+) -> Result<Vec<BgTaskStatus>, String> {
+    let mut out = Vec::with_capacity(queries.len());
+    for query in queries {
+        out.push(background_task_status(query).await?);
+    }
+    Ok(out)
+}
+
+async fn background_task_status(query: BgTaskQuery) -> Result<BgTaskStatus, String> {
+    let path = std::path::Path::new(&query.path);
+    if !path.is_absolute() {
+        return Err(format!(
+            "background task path must be absolute: {}",
+            query.path
+        ));
+    }
+    let missing = BgTaskStatus {
+        id: query.id.clone(),
+        exists: false,
+        bytes: 0,
+        modified_ms: None,
+        exit_code: None,
+        last_line: String::new(),
+    };
+    let meta = match tokio::fs::metadata(path).await {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(missing),
+        Err(e) => return Err(format!("stat {}: {e}", query.path)),
+    };
+    if !meta.is_file() {
+        return Ok(missing);
+    }
+    let bytes = meta.len();
+    let modified_ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64);
+    let tail = read_tail(path, bytes).await?;
+    let (exit_code, last_line) = parse_task_tail(&tail);
+    Ok(BgTaskStatus {
+        id: query.id,
+        exists: true,
+        bytes,
+        modified_ms,
+        exit_code,
+        last_line,
+    })
+}
+
+/// Read at most `BG_TAIL_BYTES` from the end of the file. A multibyte sequence
+/// cut by the seek lands at the start of the buffer, which `from_utf8_lossy`
+/// absorbs — the lines the caller reads are whole.
+async fn read_tail(path: &std::path::Path, bytes: u64) -> Result<String, String> {
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+    let mut file = match tokio::fs::File::open(path).await {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(String::new()),
+        Err(e) => return Err(format!("open {}: {e}", path.display())),
+    };
+    if bytes > BG_TAIL_BYTES {
+        file.seek(std::io::SeekFrom::End(-(BG_TAIL_BYTES as i64)))
+            .await
+            .map_err(|e| format!("seek {}: {e}", path.display()))?;
+    }
+    let mut buf = Vec::with_capacity(BG_TAIL_BYTES as usize);
+    file.read_to_end(&mut buf)
+        .await
+        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    Ok(String::from_utf8_lossy(&buf).into_owned())
+}
+
 // ─── Cross-lane MCP config bridge ──────────────────────────────────
 
 /// Read a UTF-8 file. Returns Ok(None) if the file is missing (NOT an error,
@@ -3274,12 +3413,46 @@ mod tests {
         advertise_read_text_file, advertises_auth_method, binary_read_error, disconnect_detail,
         effective_spawn_model, elicitation_reply, fs_path_in_scope, grok_ask_user_ext_response,
         grok_ask_user_skip, grok_session_dir_for_cwd, is_auth_required, is_under_grok_session_dir,
-        parse_session_model_state, percent_encode_path, resolve_backend, sniff_binary_kind,
-        startup_hint, steering_supported, turn_marker_event, with_request_id, FsAccess,
-        ModelControl,
+        parse_session_model_state, parse_task_tail, percent_encode_path, resolve_backend,
+        sniff_binary_kind, startup_hint, steering_supported, turn_marker_event, with_request_id,
+        FsAccess, ModelControl,
     };
     use serde_json::{json, Value};
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn task_tail_reads_the_exit_marker_only_as_the_last_line() {
+        // Running: no marker yet — the last output line is what the row shows.
+        assert_eq!(
+            parse_task_tail("[INFO] Building TLI Entity 1.0.0\n[INFO] Tests run: 523\n"),
+            (None, "[INFO] Tests run: 523".to_string())
+        );
+        // Finished: marker consumed, the line above it is the output shown.
+        assert_eq!(
+            parse_task_tail("MVN_EXIT=0\n\n[exited with code 0]\n"),
+            (Some(0), "MVN_EXIT=0".to_string())
+        );
+        assert_eq!(
+            parse_task_tail("boom\n[exited with code 137]"),
+            (Some(137), "boom".to_string())
+        );
+        // A build that prints the same text mid-log is still running.
+        assert_eq!(
+            parse_task_tail("[exited with code 0]\nstill compiling\n"),
+            (None, "still compiling".to_string())
+        );
+        // Marker alone (no output before it) leaves an empty line, not a panic.
+        assert_eq!(
+            parse_task_tail("[exited with code 2]\n"),
+            (Some(2), String::new())
+        );
+        assert_eq!(parse_task_tail("   \n\n"), (None, String::new()));
+        // Not the marker: a signal notice or any other bracket line stays output.
+        assert_eq!(
+            parse_task_tail("[killed by SIGTERM]\n"),
+            (None, "[killed by SIGTERM]".to_string())
+        );
+    }
 
     #[test]
     fn elicitation_reply_keeps_valid_actions_and_cancels_malformed() {

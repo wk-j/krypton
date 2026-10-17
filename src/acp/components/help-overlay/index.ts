@@ -123,6 +123,7 @@ function buildSections(): readonly HelpSection[] {
       { term: 'j / k', desc: 'Move memory cursor' },
       { term: 'g / G', desc: 'Top / bottom of memory list' },
       { term: 'Agents', desc: 'Create, update, delete, search, and fetch detail through MCP tools' },
+      { term: '#resume list', desc: 'Open the handoff picker (merged local + Xenon; the only surface that resumes)' },
     ],
   },
   {
@@ -176,7 +177,7 @@ function buildSections(): readonly HelpSection[] {
       { term: '#mem clear', desc: 'Delete the handoff bound to the active lane' },
       { term: '#handoff', desc: 'Ask active lane to write or refresh the handoff for its current work' },
       { term: '#resume', desc: 'Resume the newest handoff in the project (local and Xenon), from any lane or machine' },
-      { term: '#resume list', desc: 'List the 10 newest handoffs with id, age, host, author and source' },
+      { term: '#resume list', desc: 'Open the handoff picker: j/k move, enter resumes, esc closes' },
       { term: '#resume <id>', desc: 'Resume one handoff by id or a unique prefix of 4+ characters after ho-' },
       { term: '#push handoff [<id>]', desc: 'Publish handoffs (or one by id) to the Xenon server' },
       { term: '#wiki [hint]', desc: 'Compound this session into the project wiki (docs/wiki/)' },
@@ -188,6 +189,7 @@ function buildSections(): readonly HelpSection[] {
       },
       { term: '#telegram', desc: 'Open Telegram controller settings' },
       { term: '#mcp', desc: 'Show MCP endpoint and lane status' },
+      { term: '#bg', desc: 'List this lane’s background shell tasks' },
       { term: '#panels [hide | show | toggle]', desc: 'Hide or restore persistent Harness panels' },
       {
         term: '#timeline [open | add | review | auto | trace]',

@@ -770,6 +770,7 @@ cursor math, its own shell, or its own empty state.
 | 7.14 | `ImageViewer` | Shell (full-bleed) | `image viewer · n/p next · =/- zoom · 0 fit · 1 100% · o open · Esc close` | `harness-image-viewer.ts:53-71+` |
 | 7.15 | `TimelineCapture` | Shell + form + ActionButton row | `หัวข้อที่น่าจะตรง · … · confidence 87%` | `timeline-capture.ts:90-430` |
 | 7.16 | `ReviewThreadDialog` | Shell + preview `<pre>` + ActionButton row | `Start Review · Enter` / `Cancel · Esc` | `acp-harness-view.ts:3110-3170` |
+| 7.17 | `HandoffPicker` | Shell + ListPicker + preview | `// handoff · <lane>` | `acp-harness-view.ts` `#resume list` branch (replaces `formatHandoffList`, `xenon-push.ts:347-363`) |
 
 ---
 
@@ -809,8 +810,8 @@ HarnessView
 | 4 — lane chrome | 6 | `renderDashboard`, `renderActiveLaneChrome`, `refreshMetricsRender`, `renderRailEntry`, `refreshZenRail` |
 | 5 — right rail | 8 | 8 builders + 3 `patch*` functions |
 | 6 — composer | 8 | `renderComposer` (40 call sites), `renderDecisionComposer`, the 1 Hz rebuild |
-| 7 — overlays | 16 | 16 shells, 14 `innerHTML` sites |
-| **Total** | **71** | **35 `innerHTML` sites in `acp-harness-view.ts`, 58 across `src/acp/*.ts` → 0 outside `Card`/markdown bodies** |
+| 7 — overlays | 17 | 16 shells, 14 `innerHTML` sites |
+| **Total** | **72** | **35 `innerHTML` sites in `acp-harness-view.ts`, 58 across `src/acp/*.ts` → 0 outside `Card`/markdown bodies** |
 
 # Packaging, style ownership, and theming
 

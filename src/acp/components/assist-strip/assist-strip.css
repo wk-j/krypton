@@ -1,0 +1,56 @@
+/* Spec 306 §UI — `AssistStrip`.
+
+   The visual language is `peer-strip.css`: the same 0.74em informational line
+   above the input, the same `[hidden]` empty state (the component keeps its
+   node for its lifetime, so the block's own padding must take no space when
+   there is nothing to suggest). Krypton Dark, so no corner brackets, no
+   backdrop-filter and no radius — the strip is text in the composer's flow.
+
+   The index marker is the only coloured token: it is the key the human is
+   about to press, so it carries the lane accent the rest of the composer
+   already uses. Everything advisory — the pending line and the key legend —
+   drops to the 0.45 muted alpha the harness uses for "present, not yours".
+
+   theme-scheme.css declares no light-mode rule for any `acp-harness__assist`
+   selector, and both colours here are already variable-driven, so there is no
+   `krypton.scheme` layer in this file. */
+
+@layer krypton.component {
+  .acp-harness__assist {
+    padding: 2px 0 4px;
+    font-size: 0.74em;
+    letter-spacing: 0.04em;
+  }
+
+  .acp-harness__assist[hidden] {
+    display: none;
+  }
+
+  .acp-harness__assist-row {
+    line-height: 1.5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .acp-harness__assist-index {
+    margin-right: 6px;
+    color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+  }
+
+  .acp-harness__assist-label {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9);
+  }
+
+  .acp-harness__assist-row--pending {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+  }
+
+  .acp-harness__assist-hint {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

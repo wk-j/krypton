@@ -7,7 +7,8 @@
 ## Implementation Deviations
 
 - **Where the payload is attached.** `subagents` is set in `AcpHarnessView.renderTool`, right after `mergeToolPayloadForUpdate`, by calling `parseSubagentPayload(merged, status, previous, codexAgentNames)`. That call also carries the previous card forward. `mergeToolPayloadForUpdate` is unchanged. The view sets the kind chip to `agents` and the subject to the intent title.
-- **Terminal settlement.** When a foreground (non-background) spawn ends, any agent still marked `pending` or `running` takes the parent's terminal status (`completed` / `failed` / `cancelled`), not `cancelled` every time.
+- **Terminal settlement.** When a foreground (non-background) spawn ends, any agent still marked `running` takes the parent's terminal status (`completed` / `failed` / `cancelled`), not `cancelled` every time. An agent still `pending` never started, so a `failed` or cancelled parent settles it as `cancelled` (`–`), never `failed` (`✗`).
+- **Rejected spawns.** If the parent fails while every agent is still `pending` (the adapter rejected the call before anything started, e.g. invalid input), `parseSubagentPayload` returns `undefined`. The row falls back to a plain failed tool row that shows the adapter's error text. A card would hide that text and show every agent as failed.
 - **OMP status-only or results-only updates** build on the previous card instead of re-reading `rawInput.tasks`. Compaction can drop `rawInput`, and re-reading would reset every agent to pending.
 - **OMP background spawns** count as in flight, for both the signature and the in-place patch, until `details.async.state` leaves `running`.
 - **Adapter payloads are checked with loose TypeBox schemas** (`@sinclair/typebox/value`) at the boundary in `harness-subagents.ts`.

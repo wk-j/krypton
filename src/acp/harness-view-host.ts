@@ -160,3 +160,13 @@ export interface HarnessSteerHost extends HarnessViewHost {
   finishTurn(lane: HarnessLane, stopReason: StopReason, reason?: string): void;
   drainPromptQueue(lane: HarnessLane): void;
 }
+
+/** Spec 306 assist sidecar host. The controller reads lane state and publishes
+ *  a result by dirtying the composer; it never touches the DOM. */
+export interface HarnessAssistHost extends HarnessViewHost {
+  readonly projectDir: string | null;
+  /** Non-null on a remote harness (spec 247): the sidecar's backend spawns there too. */
+  readonly remoteRuntimeId: string | null;
+  invalidate(region: HarnessRegion): void;
+  setDraft(lane: HarnessLane, text: string, cursor: number): void;
+}

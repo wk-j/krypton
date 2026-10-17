@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   describePush,
-  formatHandoffList,
   linkEvidenceFromPush,
   matchHandoffReference,
   mergeHandoffs,
@@ -10,7 +9,6 @@ import {
   parseResumeCommand,
   summarizePush,
   xenonProjectUrl,
-  type MergedHandoff,
   type PushReport,
   type RemoteHandoff,
   type XenonStatus,
@@ -434,36 +432,5 @@ describe('matchHandoffReference', () => {
     const result = matchHandoffReference(list, 'zzzz');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('none');
-  });
-});
-
-describe('formatHandoffList', () => {
-  function merged(index: number): MergedHandoff {
-    return {
-      id: `ho-${index}`,
-      author: 'Claude-1',
-      host: 'mbp',
-      summary: `summary ${index}`,
-      detail: 'd',
-      createdAt: 0,
-      updatedAt: 0,
-      source: index % 2 === 0 ? 'local' : 'xenon',
-    };
-  }
-
-  it('shows at most ten rows, each naming id, host, author and source', () => {
-    const text = formatHandoffList(Array.from({ length: 12 }, (_, i) => merged(i)), 0);
-    expect(text).toContain('ho-0');
-    expect(text).toContain('ho-9');
-    expect(text).not.toContain('ho-10');
-    expect(text).not.toContain('ho-11');
-    const row = text.split('\n').find((line) => line.includes('ho-1 '));
-    expect(row).toContain('mbp');
-    expect(row).toContain('Claude-1');
-    expect(row).toContain('xenon');
-  });
-
-  it('says so when there is nothing to list', () => {
-    expect(formatHandoffList([], 0)).not.toContain('ho-');
   });
 });
