@@ -22,11 +22,11 @@ import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
 import { disposeList } from '../../../ui/list';
 import { evaluate } from '../../genui/evaluate';
-import type { UiAction, UiFenceEntry, UiState, UiStateValue } from '../../genui/types';
+import type { UiAction, UiFenceEntry, UiNode, UiState, UiStateValue } from '../../genui/types';
 import { toStateValue } from '../../genui/types';
 import { renderChildren } from '../genui-catalog';
 import type { GenUiContext } from '../genui-catalog';
-import { FOCUSABLE_ATTR } from '../genui-catalog/renderer';
+import { FOCUSABLE_ATTR, asNodes } from '../genui-catalog/renderer';
 import type { ComponentDef } from '../types';
 
 /** Per-node view state, retained beside the inputs for as long as the panel entry lives. */
@@ -72,14 +72,12 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
   private readonly content = el('div', { class: 'acp-genui-panel__body acp-genui' });
   private readonly feedback = el('div', { class: 'acp-genui-panel__feedback', attrs: { role: 'status' } });
   private readonly source = el('pre', { class: 'acp-genui-panel__source' });
+  /** The ```svg fence card's toggle, same control in the same place: a quiet
+   *  bar button at the right of the head. There is no Close button — the card
+   *  head above collapses the panel, as does `Escape`. */
   private readonly sourceButton = el('button', {
     class: 'acp-genui-panel__button',
     text: 'Source',
-    attrs: { type: 'button', [FOCUSABLE_ATTR]: '' },
-  });
-  private readonly closeButton = el('button', {
-    class: 'acp-genui-panel__button',
-    text: 'Close',
     attrs: { type: 'button', [FOCUSABLE_ATTR]: '' },
   });
   private readonly main = el('div', { class: 'acp-genui-panel__main' });
@@ -93,18 +91,15 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
     super(el('div', { class: 'acp-genui-panel', attrs: { role: 'group' } }));
     this.el.hidden = true;
     this.source.hidden = true;
-    this.main.append(
-      this.content,
-      this.feedback,
-      this.source,
-      el('div', { class: 'acp-genui-panel__actions' }, this.sourceButton, this.closeButton),
+    this.main.append(this.content, this.feedback, this.source);
+    this.el.append(
+      el('div', { class: 'acp-genui-panel__head' }, this.legend, this.sourceButton),
+      this.main,
     );
-    this.el.append(el('div', { class: 'acp-genui-panel__head' }, this.legend), this.main);
     this.bag.listen(this.sourceButton, 'click', () => {
       this.source.hidden = !this.source.hidden;
       this.sourceButton.textContent = this.source.hidden ? 'Source' : 'Hide source';
     });
-    this.bag.listen(this.closeButton, 'click', () => this.close());
     const readState = (): UiState => this.props?.state ?? NO_STATE;
     this.ctx = {
       run: (actions: readonly UiAction[]): void => this.run(actions),
@@ -195,10 +190,30 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
     const state = this.props?.state;
     if (entry == null || state === undefined) return;
     const { roots, diagnostics } = evaluate(entry.program, state);
-    renderChildren(this.content, roots, this.ctx);
+    renderChildren(this.content, this.unframe(roots, entry.title), this.ctx);
     const failure = diagnostics.find((diagnostic) => diagnostic.severity === 'error');
     this.feedback.textContent = failure === undefined ? '' : `line ${failure.line}: ${failure.message}`;
     this.syncFocusRing(this.focusables());
+  }
+
+  /**
+   * Spec 310 §UI: the card head above already prints the outermost `Card`'s
+   * title, so painting that root's own box nests a second frame under a
+   * repeated heading — "two headings for one thing", plus a border inside a
+   * border. Its children take its place; later roots are untouched.
+   *
+   * Only when the head is showing THIS title: a computed title, or a fence
+   * whose first root is not a `Card`, keeps its box, because dropping it would
+   * drop a heading nothing else prints. Child keys are node paths, so the
+   * unwrapped children reconcile across re-evaluation like any other subtree.
+   */
+  private unframe(roots: readonly UiNode[], title: string): readonly UiNode[] {
+    const first = roots[0];
+    if (first === undefined || first.component !== 'Card') return roots;
+    if (first.props.title !== title) return roots;
+    const children = asNodes(first.props.children);
+    if (children.length === 0) return roots;
+    return roots.length === 1 ? children : [...children, ...roots.slice(1)];
   }
 
   private run(actions: readonly UiAction[]): void {
@@ -258,8 +273,11 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
     return created;
   }
 
+  /** Content first, the head's Source toggle last: the ring order is what
+   *  `paint()` focuses on open, and that must be the spec's first control,
+   *  not the chrome that happens to sit above it in the DOM. */
   private focusables(): readonly HTMLElement[] {
-    return [...this.el.querySelectorAll<HTMLElement>(`[${FOCUSABLE_ATTR}]`)];
+    return [...this.content.querySelectorAll<HTMLElement>(`[${FOCUSABLE_ATTR}]`), this.sourceButton];
   }
 
   /** Roving tabindex: one stop in the browser's ring, the rest reachable by Tab here. */

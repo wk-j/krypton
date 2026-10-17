@@ -124,12 +124,23 @@ describe('GenUiPanel', () => {
     expect(panel.isOpen).toBe(false);
   });
 
-  it('shows the exact source as text and closes on Escape', () => {
+  it('toggles the source from the head and offers no Close button', () => {
     const onClose = vi.fn();
     const panel = open({ onClose });
-    button(panel, 'Source').click();
+    const toggle = button(panel, 'Source');
+    expect(toggle.closest('.acp-genui-panel__head')).not.toBeNull();
+    expect([...panel.el.querySelectorAll('button')].map((node) => node.textContent)).not.toContain('Close');
+
+    toggle.click();
     expect(panel.el.querySelector('pre')?.textContent).toBe(source);
     expect(panel.el.querySelector('pre')?.querySelector('script')).toBeNull();
+    expect(toggle.textContent).toBe('Hide source');
+    expect(panel.el.querySelector('pre')?.hidden).toBe(false);
+
+    toggle.click();
+    expect(toggle.textContent).toBe('Source');
+    expect(panel.el.querySelector('pre')?.hidden).toBe(true);
+
     const event = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
     expect(panel.handleKey(event)).toBe(true);
     expect(event.defaultPrevented).toBe(true);
@@ -139,10 +150,16 @@ describe('GenUiPanel', () => {
 
   it('rides a roving tabindex over every catalog focusable and leaves native keys alone', () => {
     const panel = open();
-    const focusables = [...panel.el.querySelectorAll<HTMLElement>('[data-genui-focusable]')];
+    // Ring order, not DOM order: the catalog controls first, then the head's
+    // Source toggle, so opening focuses the spec's first control.
+    const focusables = [
+      ...panel.el.querySelectorAll<HTMLElement>('.acp-genui-panel__body [data-genui-focusable]'),
+      button(panel, 'Source'),
+    ];
     expect(focusables.length).toBeGreaterThan(2);
     expect(focusables.filter((node) => node.tabIndex === 0)).toHaveLength(1);
     expect(document.activeElement).toBe(focusables[0]);
+    expect(document.activeElement).toBe(panel.el.querySelector('input[type="range"]'));
 
     const tab = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true });
     Object.defineProperty(tab, 'target', { value: focusables[0] });
@@ -151,6 +168,11 @@ describe('GenUiPanel', () => {
     expect(document.activeElement).toBe(focusables[1]);
     expect(focusables[1].tabIndex).toBe(0);
     expect(focusables[0].tabIndex).toBe(-1);
+
+    const back = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, cancelable: true });
+    Object.defineProperty(back, 'target', { value: focusables[1] });
+    expect(panel.handleKey(back)).toBe(true);
+    expect(document.activeElement).toBe(focusables[0]);
 
     const arrow = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true });
     Object.defineProperty(arrow, 'target', { value: focusables[1] });
@@ -206,6 +228,22 @@ describe('GenUiPanel', () => {
     panel.close();
     expect(panel.el.hidden).toBe(true);
     expect(panel.el.querySelector('.acp-genui-panel__body')?.children).toHaveLength(0);
+  });
+
+  it('drops the outermost Card frame the card head already titles, and keeps one it does not', () => {
+    const panel = open();
+    const body = panel.el.querySelector('.acp-genui-panel__body')!;
+    expect(body.querySelector('.acp-genui__card')).toBeNull();
+    // Only the hidden source block still carries that text.
+    expect(body.textContent).not.toContain('Estimate');
+    // The children took the frame's place, in order.
+    expect(body.children).toHaveLength(4);
+    expect(panel.el.querySelector('input[type="range"]')).not.toBeNull();
+
+    // Computed title ⇒ the head shows the component name, so the frame is the
+    // only place that title is printed and it stays.
+    const other = open({ entry: { ...entry, title: 'Card' } });
+    expect(other.el.querySelector('.acp-genui__card-title')?.textContent).toBe('Estimate');
   });
 
   it('keeps its mounted DOM when the host moves the node to another seat', () => {
