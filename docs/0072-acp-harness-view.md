@@ -719,6 +719,32 @@ branch, and explicit diff opens. Local editor/file views, images, project-backed
 tickets/docs/artifacts, daily notes, usage persistence, Hurl and Xenon are visibly
 unavailable rather than accidentally operating on a same-looking local path.
 
+## Connected Computers from local lanes (spec 311)
+
+Every local Harness lane can list app-connected SSH targets and request one
+command against an explicit target without moving its project or agent process.
+Backends with in-process MCP descriptors receive `computer_list` and
+`computer_exec` on their per-lane built-in Harness server. Pi, Cursor, Junie
+and Cline receive the staged `kryptonctl` path and use `computer list --json`
+or `computer exec <id> -- <command>` through a shell tool. Their native MCP
+config files do not contain the lane capability.
+The lane capability is private, bound to its ACP process session and revoked
+when that session ends. Remote Harness lanes do not receive it.
+
+The built-in tool route may pass the adapter's permission check, but
+`computer_exec` waits for a Krypton decision carrying the exact SSH target,
+remote directory and command. It renders as a permission row in the requesting
+lane's own transcript — same chrome, same `a`/`r` keys as a tool permission, no
+modal dialog — and the lane shows `⚠ remote` until it is answered. The queue
+behind that row is separate from `pendingPermissions` on purpose: permission
+mode, `A`/`R` for the turn, a Telegram turn and the Polly/Salty roles all drain
+tool permissions automatically, and none of them may open an SSH session. One
+keystroke answers one command; an unanswered request expires in 120 seconds and
+never runs. A command finishing with a nonzero exit reports that exit code. A
+timeout, disconnect or lane cancellation reports an unknown remote outcome and
+is never retried automatically. The detailed contract is in
+`docs/0311-connected-computer-commands.md`.
+
 ## Out of Scope
 
 - **Broadcast or multi-target prompts.** Each prompt has exactly one destination: the active tab's lane. No `selected/all_idle/marked` modes, no marked lanes, no `synchronize-panes`-style fan-out.

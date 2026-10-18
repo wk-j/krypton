@@ -245,8 +245,11 @@ The compositor is a TypeScript module running in the webview that manages worksp
     fences with static `GenUiCard` pointers, each carrying an empty slot.
     `AcpHarnessView` owns one `GenUiPanel` node and
     seats it in the slot of the card being used, so the panel expands inline in
-    the sealed row (spec 310 replaced the `OverlayShell` host); it re-seats the
-    same node after every transcript commit and collapses when no mounted row
+    the sealed row (spec 310 replaced the `OverlayShell` host). The seal expands
+    the row's last fence itself — without focus or a reveal scroll, so it never
+    takes the keys of someone typing — and the card head, `f` + label or a click
+    opens any other; it re-seats the same node after every transcript commit and
+    collapses when no mounted row
     claims it. Generated actions can only load a visible composer draft. There
     is no new Rust IPC, ACP protocol message, file reader, or executable agent
     HTML.
@@ -1099,6 +1102,26 @@ it cannot borrow a master, Krypton owns a dedicated socket and closes only that
 socket during teardown. Project-backed local surfaces are disabled for SSH
 workspaces until the hook server gains target-aware storage; they never receive
 the remote path as a local filesystem path.
+
+## Connected Computers (spec 311)
+
+`ConnectedComputerManager` in Rust owns named SSH targets and app-owned
+ControlMaster sockets independently of Remote Harness runtimes. A separate
+`connected-computers.toml` sidecar stores profiles; the `connected_computers`
+compositor content tab edits them and shows verified connection status. The
+manager remains alive after that tab closes.
+
+Each local Harness lane receives a revocable capability bound to its harness,
+lane and ACP process session. The built-in Harness MCP server exposes
+`computer_list` and `computer_exec` only for a valid local lane with an
+in-process MCP descriptor. Pi, Cursor, Junie and Cline use bundled
+`kryptonctl` over the authenticated loopback control API so their on-disk MCP
+configs never contain the capability. Both routes enter one app-owned
+per-command approval queue — surfaced as a permission row in the requesting
+lane's transcript, resolved only by an explicit `a`/`r`, never by a permission
+mode or a turn-wide accept — before
+Rust runs a no-PTY SSH channel. The command target is explicit; it does not
+change the lane's `WorkspaceRef` or send bytes to an interactive terminal.
 
 ## Review Threads (spec 270)
 

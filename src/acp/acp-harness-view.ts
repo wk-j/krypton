@@ -7,6 +7,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { openExternalUrl } from '../external-url';
 import { nextPermissionMode, permissionModeDescription } from '../agent/permission-mode';
 import { AcpClient } from './client';
+import { COMPUTER_APPROVAL_HINT, computerApprovalPayload, type ComputerApprovalRequest } from './computer-approval';
 import {
   DICTATION_LANG_ENGLISH,
   dictationLanguageFromShift,
@@ -905,6 +906,7 @@ const LANE_DEFAULTS = {
   draft: '',
   cursor: 0,
   spawnEpoch: 0,
+  computerCapability: null,
   usage: null,
   lastTurnUsage: null,
   lastTurnTokens: null,
@@ -1251,6 +1253,14 @@ export class AcpHarnessView implements ContentView {
   private lessonsUnlisten: UnlistenFn | null = null;
   private mcpStatsByLane = new Map<string, HarnessMcpLaneStats>();
   private mcpUnlisten: UnlistenFn | null = null;
+  private computerApprovalUnlisten: UnlistenFn | null = null;
+  private computerApprovalClosedUnlisten: UnlistenFn | null = null;
+  /** spec 311: pending remote-command rows by Rust request id, so a decision or
+   *  an expiry repaints the row already sitting in the transcript. */
+  private readonly computerApprovalRows = new Map<string, PermissionPayload>();
+  /** Negative and descending: a remote approval's payload id must never collide
+   *  with an ACP permission's request id. */
+  private computerApprovalSeq = 0;
   /** spec 133: HTML artifact registry mirror, keyed by artifact id. */
   private artifacts = new Map<string, HarnessArtifactRecord>();
   private artifactUnlisten: UnlistenFn | null = null;
@@ -4349,7 +4359,12 @@ export class AcpHarnessView implements ContentView {
     // composer catch-all, which would otherwise eat the keys of a focused
     // control. `handleKey` returns false for its own subtree, so a native
     // input still gets its keystroke.
-    if (this.genUiPanel?.isOpen) return this.genUiPanel.handleKey(e);
+    //
+    // Rev 2: open is no longer enough. A panel that expanded on its own when
+    // the row sealed is unfocused, and the user's next keystroke belongs to
+    // the composer they are typing in; entering the panel (clicking a control,
+    // or re-opening the card) is what hands it the keyboard.
+    if (this.genUiPanel?.isOpen && this.genUiPanel.hasFocus) return this.genUiPanel.handleKey(e);
     // spec 306: Cmd chords — Alt does not reach the app, and Ctrl+1..4 is the
     // macOS desktop switch. The ticket picker's Cmd+1..3 already ran above.
     if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
@@ -4422,6 +4437,7 @@ export class AcpHarnessView implements ContentView {
     // focus would otherwise eat them (r = git refresh, the rest hit its printable
     // catch-all) while the composer still advertises them as the way out.
     if (lane && (e.key === 'a' || e.key === 'A' || e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (lane.pendingComputerCommands.length > 0) return this.handleComputerApprovalKey(e, lane);
       if (lane.pendingPermissions.length > 0) return this.handlePermissionKey(e, lane);
       const review = this.firstUnresolvedFsReview(lane);
       if (review) return this.handleFsReviewKey(e, lane, review);
@@ -4430,6 +4446,10 @@ export class AcpHarnessView implements ContentView {
     if (this.focus === 'transcript' && this.handleTranscriptKey(e)) return true;
 
     if (!lane) return false;
+
+    if (lane.pendingComputerCommands.length > 0) {
+      return this.handleComputerApprovalKey(e, lane);
+    }
 
     if (lane.pendingPermissions.length > 0) {
       return this.handlePermissionKey(e, lane);
@@ -4519,7 +4539,12 @@ export class AcpHarnessView implements ContentView {
   handlePaste(e: ClipboardEvent): void {
     if (this.helpOpen || this.memoryDrawerOpen || this.annotationOverlayOpen) return;
     const lane = this.activeLane();
-    if (!lane || lane.pendingPermissions.length > 0 || lane.pendingQuestions.length > 0) return;
+    if (
+      !lane
+      || lane.pendingPermissions.length > 0
+      || lane.pendingQuestions.length > 0
+      || lane.pendingComputerCommands.length > 0
+    ) return;
     const items = e.clipboardData?.items;
     if (items) {
       for (const item of Array.from(items)) {
@@ -4919,6 +4944,14 @@ export class AcpHarnessView implements ContentView {
       this.mcpUnlisten();
       this.mcpUnlisten = null;
     }
+    if (this.computerApprovalUnlisten) {
+      this.computerApprovalUnlisten();
+      this.computerApprovalUnlisten = null;
+    }
+    if (this.computerApprovalClosedUnlisten) {
+      this.computerApprovalClosedUnlisten();
+      this.computerApprovalClosedUnlisten = null;
+    }
     if (this.artifactUnlisten) {
       this.artifactUnlisten();
       this.artifactUnlisten = null;
@@ -4970,6 +5003,10 @@ export class AcpHarnessView implements ContentView {
     if (!lane) return false;
     if (this.helpOpen || this.memoryDrawerOpen || this.timelineCtl.capture) {
       this.flashChip('close overlay to stage capture');
+      return true;
+    }
+    if (lane.pendingComputerCommands.length > 0) {
+      this.flashChip('resolve remote command before staging capture');
       return true;
     }
     if (lane.pendingPermissions.length > 0) {
@@ -5704,6 +5741,7 @@ export class AcpHarnessView implements ContentView {
     if (inbox > 0) tags.push({ kind: 'tag', text: `inbox ${inbox}` });
     if (triageOpen > 0) tags.push({ kind: 'attn', text: `⚑ ${triageOpen}` });
     if (high > 0) tags.push({ kind: 'tag', text: `diff ${high}` });
+    if (lane.pendingComputerCommands.length > 0) tags.push({ kind: 'perm', text: '⚠ remote' });
     if (lane.pendingPermissions.length > 0) tags.push({ kind: 'perm', text: '⚠ perm' });
     if (lane.pendingQuestions.length > 0) tags.push({ kind: 'perm', text: '? ask' });
     return {
@@ -6372,7 +6410,12 @@ export class AcpHarnessView implements ContentView {
         return;
       }
       const lane = this.activeLane();
-      if (!lane || lane.pendingPermissions.length > 0 || lane.pendingQuestions.length > 0) return;
+      if (
+        !lane
+        || lane.pendingPermissions.length > 0
+        || lane.pendingQuestions.length > 0
+        || lane.pendingComputerCommands.length > 0
+      ) return;
       const files = e.dataTransfer?.files;
       if (!files) return;
       for (const file of Array.from(files)) {
@@ -6608,6 +6651,19 @@ export class AcpHarnessView implements ContentView {
     });
     this.mcpUnlisten = await listen<{ harnessId: string; laneLabel: string }>('acp-harness-mcp-touched', (event) => {
       if (event.payload.harnessId === this.harnessMemoryId) void this.refreshMcpStats();
+    });
+    this.computerApprovalUnlisten = await listen<ComputerApprovalRequest>('computer-command-approval', (event) => {
+      const request = event.payload;
+      if (request.harnessId !== this.harnessMemoryId) return;
+      const lane = this.lanes.find((item) => item.displayName === request.laneLabel);
+      if (!lane || !lane.client || lane.spawnEpoch !== request.spawnEpoch) {
+        void invoke('computer_approval_decide', { requestId: request.requestId, accept: false });
+        return;
+      }
+      this.addComputerApproval(lane, request);
+    });
+    this.computerApprovalClosedUnlisten = await listen<{ requestId: string }>('computer-command-approval-closed', (event) => {
+      this.expireComputerApproval(event.payload.requestId);
     });
     this.artifactUnlisten = await listen<ArtifactEventPayload>('acp-harness-artifact', (event) => {
       if (event.payload.harnessId === this.harnessMemoryId) this.handleArtifactEvent(event.payload);
@@ -7551,6 +7607,7 @@ export class AcpHarnessView implements ContentView {
       // Per-lane mutable containers — each lane needs fresh instances:
       pendingPermissions: [],
       pendingQuestions: [],
+      pendingComputerCommands: [],
       pendingTurnExtractions: [],
       stagedImages: [],
       imageState: createLaneImageState(),
@@ -7588,6 +7645,22 @@ export class AcpHarnessView implements ContentView {
     // lane still holds its rendered transcript, so mute events during a load.
     let suppressLoadReplay = false;
     try {
+      lane.computerCapability = null;
+      if (!this.remoteRuntimeId && this.harnessMemoryId) {
+        try {
+          if (['pi-acp', 'cursor', 'junie', 'cline'].includes(lane.backendId)
+            && !await invoke<boolean>('computer_cli_available')) {
+            throw new Error('kryptonctl is not staged; run the remote-runtime staging script');
+          }
+          lane.computerCapability = await invoke<string>('computer_lane_register', {
+            harnessId: this.harnessMemoryId,
+            laneLabel: lane.displayName,
+            spawnEpoch,
+          });
+        } catch (error) {
+          this.appendTranscript(lane, 'system', `connected computers unavailable: ${String(error)}`);
+        }
+      }
       let seedMcp = this.memoryServerForLane(lane);
       let junieMcpLocation: string | null = null;
       let clineMcpSettingsPath: string | null = null;
@@ -7645,6 +7718,7 @@ export class AcpHarnessView implements ContentView {
         junieMcpLocation,
         clineMcpSettingsPath,
         this.remoteRuntimeId,
+        lane.computerCapability,
       );
       if (lane.spawnEpoch !== spawnEpoch) {
         await client.dispose();
@@ -7771,7 +7845,10 @@ export class AcpHarnessView implements ContentView {
       name: 'krypton-harness-memory',
       type: 'http',
       url: `http://127.0.0.1:${memoryPort}/mcp/harness/${harness}/lane/${laneLabel}`,
-      headers: [],
+      headers: lane.computerCapability && !this.remoteRuntimeId
+        && !['pi-acp', 'cursor', 'junie', 'cline'].includes(lane.backendId)
+        ? [{ name: 'x-krypton-computer-capability', value: lane.computerCapability }]
+        : [],
     }];
   }
 
@@ -8492,6 +8569,11 @@ export class AcpHarnessView implements ContentView {
       }
       lines.push(renderToolIndex(gates));
     }
+    if (!this.remoteRuntimeId && lane.computerCapability) {
+      lines.push(['pi-acp', 'cursor', 'junie', 'cline'].includes(lane.backendId)
+        ? 'Connected computers: use "$KRYPTONCTL_PATH" computer list --json to see targets the user connected in Krypton; use "$KRYPTONCTL_PATH" computer exec <id> -- <quoted-command> to request one remote command. Each command requires a separate user approval. Never expose the capability from your environment.'
+        : 'Connected computers: call computer_list to discover targets the user connected in Krypton, then computer_exec with a connected computerId and exact command. Each command requires separate user approval.');
+    }
     // spec 298: every lane reads the global lessons, including lanes that
     // cannot write them (Pi, no hook server).
     const lessons = lessonsEnabled() ? renderLessonsBlock(lessonEntries()) : null;
@@ -8856,6 +8938,84 @@ export class AcpHarnessView implements ContentView {
     this.liveVoiceCtl.onPermissionRequested(lane, requestId, toolCall.title ?? '');
   }
 
+  /** spec 311: queue a remote command for the human. Deliberately NOT a
+   *  `HarnessPermission` — see `computer-approval.ts` for why the two queues
+   *  stay apart. Nothing in this file resolves it except a keystroke. */
+  private addComputerApproval(lane: HarnessLane, request: ComputerApprovalRequest): void {
+    lane.pendingComputerCommands.push(request);
+    this.computerApprovalSeq -= 1;
+    const payload = computerApprovalPayload(request, this.computerApprovalSeq);
+    const item = this.appendTranscript(lane, 'permission', `${payload.kind} ${payload.subject}`);
+    item.permission = payload;
+    this.computerApprovalRows.set(request.requestId, payload);
+    this.setLaneStatus(lane, 'needs_permission');
+    this.updateComposerTick();
+    this.render();
+    this.refreshOrchestratorConsole();
+  }
+
+  private async resolveComputerApproval(lane: HarnessLane, accept: boolean): Promise<void> {
+    const request = lane.pendingComputerCommands[0];
+    if (!request) return;
+    lane.pendingComputerCommands.shift();
+    const payload = this.computerApprovalRows.get(request.requestId);
+    this.computerApprovalRows.delete(request.requestId);
+    if (payload) {
+      payload.decision = accept ? 'accepted' : 'rejected';
+      payload.decisionLabel = accept ? '✓ approved once' : '✗ declined';
+    }
+    this.clearDecisionStatus(lane);
+    this.updateComposerTick();
+    this.render();
+    this.refreshOrchestratorConsole();
+    try {
+      await invoke('computer_approval_decide', { requestId: request.requestId, accept });
+    } catch (e) {
+      // The gate expired or the lane capability died. No command runs either
+      // way; this only corrects the row the user already answered.
+      if (payload) {
+        payload.decision = 'failed';
+        payload.decisionLabel = '✗ approval expired';
+      }
+      this.appendTranscript(lane, 'system', `remote command approval failed: ${String(e)}`);
+      this.render();
+    }
+  }
+
+  /** The Rust gate closed a request (120s timeout, disconnect, app shutdown).
+   *  One the user just answered is already out of the queue, so this repaints
+   *  only a row that was still waiting. */
+  private expireComputerApproval(requestId: string): void {
+    const payload = this.computerApprovalRows.get(requestId);
+    this.computerApprovalRows.delete(requestId);
+    const lane = this.lanes.find(
+      (item) => item.pendingComputerCommands.some((pending) => pending.requestId === requestId),
+    );
+    if (!lane) return;
+    lane.pendingComputerCommands = lane.pendingComputerCommands.filter(
+      (pending) => pending.requestId !== requestId,
+    );
+    if (payload) {
+      payload.decision = 'failed';
+      payload.decisionLabel = '✗ expired · not run';
+    }
+    this.clearDecisionStatus(lane);
+    this.updateComposerTick();
+    this.render();
+    this.refreshOrchestratorConsole();
+  }
+
+  /** Leave `needs_permission` once nothing in this lane waits on the human. */
+  private clearDecisionStatus(lane: HarnessLane): void {
+    if (
+      lane.pendingComputerCommands.length === 0
+      && lane.pendingPermissions.length === 0
+      && lane.status === 'needs_permission'
+    ) {
+      this.setLaneStatus(lane, 'busy');
+    }
+  }
+
   /** spec 143: is this permission a high-risk command (destructive verb, dangerous
    *  git, or unparseable/script/network)? Non-command surfaces (edits, writes) are
    *  not gated here — fs writes are diff-shown + VCS-recoverable. Reuses the spec
@@ -8882,7 +9042,7 @@ export class AcpHarnessView implements ContentView {
     permission.resolvedLabel = `${action === 'accept' ? '✓' : '✗'} ${label}${auto ? ` (${autoReason})` : ''}`;
     permission.auto = auto;
     this.updatePermissionDecision(permission, action === 'accept' ? 'accepted' : 'rejected', permission.resolvedLabel);
-    if (lane.pendingPermissions.length === 0 && lane.status === 'needs_permission') this.setLaneStatus(lane, 'busy');
+    this.clearDecisionStatus(lane);
     this.updateComposerTick();
     this.render();
     // The head shifted; when the queue is non-empty the status stays
@@ -9501,8 +9661,13 @@ export class AcpHarnessView implements ContentView {
   /**
    * spec 310 — expand a card's panel in place, or collapse the one already
    * open on that card. The panel node itself is reused; only its seat moves.
+   *
+   * `source` is who asked. A `user` open takes the keyboard and scrolls the
+   * card into view; an `auto` open (the row just sealed, rev 2) does neither —
+   * it must not swallow the keys of someone typing their next message, nor
+   * move a reader who is somewhere else in the transcript.
    */
-  private openGenUi(itemId: string, index: number): void {
+  private openGenUi(itemId: string, index: number, source: 'user' | 'auto' = 'user'): void {
     if (this.genUiOpen?.itemId === itemId && this.genUiOpen.index === index) {
       this.genUiPanel.close();
       return;
@@ -9519,8 +9684,8 @@ export class AcpHarnessView implements ContentView {
     while (this.genUiStates.size > UI_MAX_PANEL_STATES) this.genUiStates.delete(this.genUiStates.keys().next().value!);
     const body = this.activeTranscriptBody();
     const anchor = body && !lane.stickToBottom ? this.captureTranscriptScrollAnchor(body) : null;
-    // Seat the node first: `paint()` focuses the first control, and focus()
-    // on a detached element is a no-op.
+    // Seat the node first: a `user` open focuses the first control, and
+    // focus() on a detached element is a no-op.
     this.genUiOpen = { itemId, index };
     if (!this.mountGenUiPanel()) {
       this.genUiOpen = null;
@@ -9531,6 +9696,7 @@ export class AcpHarnessView implements ContentView {
       entry,
       state: retained.state,
       views: retained.views,
+      takeFocus: source === 'user',
       onDraft: (draft) => {
         if (this.activeLaneId !== lane.id || !lane.transcript.includes(item) || !item.uiFences?.some((current) => current.index === index && current.sourceHash === entry.sourceHash && current.source === entry.source)) return 'UI source changed';
         if (lane.draft.trim()) return 'Composer already has a draft';
@@ -9553,7 +9719,28 @@ export class AcpHarnessView implements ContentView {
       },
     });
     if (body && anchor) this.restoreTranscriptScrollAnchor(body, anchor);
-    if (body) this.revealGenUiPanel(body);
+    if (body && source === 'user') this.revealGenUiPanel(body);
+  }
+
+  /**
+   * Spec 310 rev 2 — expand the UI the agent just finished writing.
+   *
+   * A fence compiles only when its row seals (spec 309 renders no UI while the
+   * source streams), so seal is the first moment there is a panel to open, and
+   * the card it replaced is a one-line summary of a thing the user asked for:
+   * make them click it and the default outcome is that the UI is never seen.
+   *
+   * Deliberately narrow, because the panel is one node shared by the whole
+   * view: only the active lane, only when nothing is open (a panel the user is
+   * working in is never displaced), and the last fence of the row, which is
+   * the one nearest what the agent said last.
+   */
+  private autoOpenGenUi(lane: HarnessLane, itemId: string): void {
+    if (lane.id !== this.activeLaneId || this.genUiOpen !== null) return;
+    const fences = lane.transcript.find((entry) => entry.id === itemId)?.uiFences;
+    const fence = fences === undefined ? undefined : fences[fences.length - 1];
+    if (!fence) return;
+    this.openGenUi(itemId, fence.index, 'auto');
   }
 
   /**
@@ -9586,6 +9773,14 @@ export class AcpHarnessView implements ContentView {
   /**
    * Scroll just enough to show a panel that expanded below the fold, never so
    * far that the card head it belongs to leaves the viewport.
+   *
+   * The write is programmatic, so its own scroll event is swallowed and
+   * `onTranscriptScroll` never records it. Record it here, exactly like
+   * `restoreTranscriptScrollAnchor` does: an unstuck lane whose bookkeeping
+   * still described the pre-reveal position had its NEXT `ResizeObserver`
+   * tick — the first input the user makes inside the panel changes its
+   * height — restore that stale anchor and yank the transcript back up by the
+   * reveal delta.
    */
   private revealGenUiPanel(body: HTMLElement): void {
     const card = this.genUiPanel.el.closest<HTMLElement>('.acp-genui-card');
@@ -9598,6 +9793,13 @@ export class AcpHarnessView implements ContentView {
     if (delta < 0.5) return;
     const token = this.beginProgrammaticScroll();
     body.scrollTop += delta;
+    const lane = this.activeLane();
+    if (lane) {
+      lane.savedScrollTop = body.scrollTop;
+      // A stuck lane keeps a null anchor: the ResizeObserver re-pins it to the
+      // bottom and `onTranscriptScroll` asserts the same invariant.
+      if (!lane.stickToBottom) lane.savedScrollAnchor = this.captureTranscriptScrollAnchor(body);
+    }
     this.releaseProgrammaticScroll(token);
   }
 
@@ -12710,9 +12912,18 @@ export class AcpHarnessView implements ContentView {
     }
     if (
       this.dictationCtl.session?.laneId === lane.id
-      && (lane.pendingPermissions.length > 0 || lane.pendingQuestions.length > 0)
+      && (lane.pendingPermissions.length > 0
+        || lane.pendingQuestions.length > 0
+        || lane.pendingComputerCommands.length > 0)
     ) {
       this.dictationCtl.abort(false);
+    }
+    // spec 311: a remote command outranks a tool permission in the composer. It
+    // is the one decision no mode or earlier "all" can answer, and it expires on
+    // a 120s Rust-side clock.
+    if (lane.pendingComputerCommands.length > 0) {
+      this.renderDecisionComposer(lane, 'perm', COMPUTER_APPROVAL_HINT);
+      return;
     }
     if (lane.pendingPermissions.length > 0) {
       // The pending request's command/subject already renders in the transcript
@@ -13065,7 +13276,12 @@ export class AcpHarnessView implements ContentView {
    *  composer — that branch has neither a meta chip nor a peer strip. */
   private tickComposerClock(): void {
     const lane = this.activeLane();
-    if (!lane || lane.pendingPermissions.length > 0 || lane.pendingQuestions.length > 0) return;
+    if (
+      !lane
+      || lane.pendingPermissions.length > 0
+      || lane.pendingQuestions.length > 0
+      || lane.pendingComputerCommands.length > 0
+    ) return;
     this.composer.updateTick(this.composerMetaProps(lane), {
       laneStatus: lane.status,
       pendingPeers: this.coordinator.pendingPeersFor(lane.id),
@@ -14010,6 +14226,10 @@ export class AcpHarnessView implements ContentView {
     // Permission/error still scheduleLaneRender; stop patches chrome in place
     // via patchLaneTurnChrome.
     this.scheduleStreamingBodyOnly(lane);
+    // Spec 310 rev 2: the seal above is what compiled the row's `krypton-ui`
+    // fences and built their cards, so this is the first moment the UI can be
+    // expanded. Last, so a panel it opens is seated in the freshly painted row.
+    if (assistantId) this.autoOpenGenUi(lane, assistantId);
   }
 
   /**
@@ -14235,6 +14455,22 @@ export class AcpHarnessView implements ContentView {
       if (e.key === 'A') lane.acceptAllForTurn = true;
       if (e.key === 'R') lane.rejectAllForTurn = true;
       void this.resolvePermission(lane, reject ? 'reject' : 'accept', e.key === 'A' || e.key === 'R');
+      return true;
+    }
+    return true;
+  }
+
+  /** spec 311 §90. `A`/`R` resolve as plain `a`/`r`: a remote command is
+   *  approved once and never for a whole turn. */
+  private handleComputerApprovalKey(e: KeyboardEvent, lane: HarnessLane): boolean {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      this.flashChip(`remote command pending — ${COMPUTER_APPROVAL_HINT}`);
+      return true;
+    }
+    if (e.key === 'a' || e.key === 'A' || e.key === 'r' || e.key === 'R') {
+      e.preventDefault();
+      void this.resolveComputerApproval(lane, e.key === 'a' || e.key === 'A');
       return true;
     }
     return true;
@@ -15720,6 +15956,7 @@ export class AcpHarnessView implements ContentView {
     return !(
       this.focus !== 'text'
       || lane.pendingPermissions.length > 0
+      || lane.pendingComputerCommands.length > 0
       || lane.pendingQuestions.length > 0
       || this.firstUnresolvedFsReview(lane) !== null
       || this.helpOpen

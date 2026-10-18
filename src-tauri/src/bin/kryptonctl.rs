@@ -16,6 +16,10 @@ async fn run() -> Result<(Value, bool), String> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let as_json = remove_flag(&mut args, "--json");
     let yes = remove_flag(&mut args, "--yes");
+    if args.first().map(String::as_str) == Some("computer") {
+        args.remove(0);
+        return Ok((computer_command(&args).await?, as_json));
+    }
     if args.first().map(String::as_str) != Some("acp") {
         return Err(usage());
     }
@@ -32,6 +36,75 @@ async fn run() -> Result<(Value, bool), String> {
         wait_for_lane(&client, &descriptor, &lane).await?;
     }
     Ok((result, as_json))
+}
+
+async fn computer_command(args: &[String]) -> Result<Value, String> {
+    let capability = std::env::var("KRYPTON_COMPUTER_CAPABILITY").map_err(|_| {
+        "computer commands are available only inside a live local Harness lane".to_string()
+    })?;
+    let descriptor = read_descriptor()?;
+    let client = reqwest::Client::new();
+    let url = format!("{}/computer", descriptor.url);
+    let reply = match args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        ["list"] => client
+            .get(format!("{url}/list"))
+            .bearer_auth(&descriptor.token)
+            .header("x-krypton-computer-capability", &capability)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?,
+        ["exec", id, rest @ ..] => {
+            let mut cwd: Option<String> = None;
+            let mut timeout_seconds: Option<u64> = None;
+            let mut index = 0;
+            while index < rest.len() && rest[index] != "--" {
+                match rest[index] {
+                    "--cwd" if index + 1 < rest.len() => {
+                        cwd = Some(rest[index + 1].to_string());
+                        index += 2;
+                    }
+                    "--timeout" if index + 1 < rest.len() => {
+                        timeout_seconds = Some(
+                            rest[index + 1]
+                                .parse()
+                                .map_err(|_| "invalid timeout".to_string())?,
+                        );
+                        index += 2;
+                    }
+                    _ => return Err(computer_usage()),
+                }
+            }
+            if index >= rest.len() || index + 1 >= rest.len() {
+                return Err(computer_usage());
+            }
+            let command = rest[index + 1..].join(" ");
+            client
+                .post(format!("{url}/exec"))
+                .bearer_auth(&descriptor.token)
+                .header("x-krypton-computer-capability", &capability)
+                .json(&json!({
+                    "computerId": id,
+                    "command": command,
+                    "cwd": cwd,
+                    "timeoutSeconds": timeout_seconds,
+                }))
+                .send()
+                .await
+                .map_err(|e| e.to_string())?
+        }
+        _ => return Err(computer_usage()),
+    };
+    let result: ControlReply = reply.json().await.map_err(|e| e.to_string())?;
+    unpack(result)
+}
+
+fn computer_usage() -> String {
+    "usage: kryptonctl computer list [--json] | computer exec <id> [--cwd <absolute-path>] [--timeout <seconds>] -- <command>".to_string()
 }
 
 fn confirm_destructive(args: &[String], yes: bool) -> Result<(), String> {
@@ -177,7 +250,7 @@ fn remove_flag(args: &mut Vec<String>, flag: &str) -> bool {
 }
 
 fn usage() -> String {
-    "usage: kryptonctl [--json] [--yes] acp <capabilities|harness|harnesses|lanes|spawn|send|cancel|close|restart|new|model|directive|permission-mode|transcript|permissions|permission|memory|peers>".to_string()
+    "usage: kryptonctl [--json] [--yes] acp <capabilities|harness|harnesses|lanes|spawn|send|cancel|close|restart|new|model|directive|permission-mode|transcript|permissions|permission|memory|peers> | computer <list|exec>".to_string()
 }
 
 fn read_descriptor() -> Result<RuntimeDescriptor, String> {

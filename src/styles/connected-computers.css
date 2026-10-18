@@ -1,0 +1,204 @@
+@layer krypton.component {
+  .krypton-computers {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    gap: 14px;
+    width: 100%;
+    height: 100%;
+    container-type: inline-size;
+    padding: 22px;
+    overflow: hidden;
+    color: var(--krypton-fg, #b0c4d8);
+    background: rgba(6, 10, 18, 0.65);
+    font-family: var(--krypton-font-family, monospace);
+    outline: none;
+  }
+
+  .krypton-computers__header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .krypton-computers__eyebrow,
+  .krypton-computers__panel h2 {
+    color: var(--krypton-primary, #0cf);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+  }
+
+  .krypton-computers__header h1 {
+    margin: 5px 0;
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+  }
+
+  .krypton-computers__header p,
+  .krypton-computers__detail p,
+  .krypton-computers__list p {
+    margin: 0;
+    color: var(--krypton-muted, #7390a7);
+  }
+
+  .krypton-computers__columns {
+    display: grid;
+    grid-template-columns: minmax(240px, 32%) minmax(0, 1fr);
+    gap: 14px;
+    min-height: 0;
+  }
+
+  .krypton-computers__panel {
+    min-width: 0;
+    overflow: auto;
+    padding: 14px;
+    border: 1px solid var(--krypton-border, rgba(0, 204, 255, 0.2));
+    border-radius: 8px;
+    background: rgba(8, 17, 29, 0.65);
+  }
+
+  .krypton-computers__panel h2 {
+    margin: 0 0 13px;
+    font-weight: 600;
+  }
+
+  .krypton-computers input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--krypton-border, rgba(0, 204, 255, 0.25));
+    border-radius: 8px;
+    color: var(--krypton-fg, #b0c4d8);
+    background: rgba(6, 10, 18, 0.6);
+    font: inherit;
+  }
+
+  .krypton-computers button {
+    padding: 7px 11px;
+    border: 1px solid var(--krypton-border, rgba(0, 204, 255, 0.3));
+    border-radius: 8px;
+    color: var(--krypton-fg, #b0c4d8);
+    background: transparent;
+    font: inherit;
+  }
+
+  .krypton-computers button:hover:not(:disabled) {
+    border-color: var(--krypton-primary, #0cf);
+    color: var(--krypton-primary, #0cf);
+  }
+
+  .krypton-computers button:focus-visible,
+  .krypton-computers input:focus-visible {
+    outline: 1px solid var(--krypton-primary, #0cf);
+    box-shadow: 0 0 8px rgba(0, 204, 255, 0.35);
+  }
+
+  .krypton-computers button:disabled { opacity: 0.45; }
+
+  .krypton-computers__list {
+    display: grid;
+    gap: 6px;
+    align-content: start;
+    margin-top: 12px;
+  }
+
+  .krypton-computers .krypton-computers__row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 3px 8px;
+    width: 100%;
+    text-align: left;
+  }
+
+  .krypton-computers__row[aria-selected="true"] {
+    border-color: var(--krypton-primary, #0cf);
+    background: rgba(0, 204, 255, 0.09);
+  }
+
+  .krypton-computers__row small {
+    grid-column: 1 / -1;
+    overflow-wrap: anywhere;
+    color: var(--krypton-muted, #7390a7);
+  }
+
+  .krypton-computers__state {
+    color: var(--krypton-muted, #7390a7);
+    font-size: 11px;
+    text-transform: uppercase;
+  }
+
+  .krypton-computers__state--connected { color: var(--krypton-success, #39ff7f); }
+  .krypton-computers__state--connecting { color: var(--krypton-primary, #0cf); }
+  .krypton-computers__state--disconnected { color: var(--krypton-error, #ff3a5c); }
+
+  .krypton-computers__detail h3 {
+    margin: 5px 0 12px;
+    overflow-wrap: anywhere;
+    color: var(--krypton-primary, #0cf);
+    font-size: 17px;
+    font-weight: 500;
+  }
+
+  .krypton-computers__detail dl {
+    display: grid;
+    grid-template-columns: minmax(110px, 150px) minmax(0, 1fr);
+    gap: 12px;
+    margin: 18px 0;
+    padding: 16px 0;
+    border-top: 1px solid var(--krypton-border, rgba(0, 204, 255, 0.2));
+    border-bottom: 1px solid var(--krypton-border, rgba(0, 204, 255, 0.2));
+  }
+
+  .krypton-computers__detail dt { color: var(--krypton-muted, #7390a7); }
+  .krypton-computers__detail dd { margin: 0; overflow-wrap: anywhere; }
+
+  .krypton-computers__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 18px;
+  }
+
+  .krypton-computers__form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 13px;
+  }
+
+  .krypton-computers__form label {
+    display: grid;
+    gap: 5px;
+    color: var(--krypton-muted, #7390a7);
+  }
+
+  .krypton-computers__form label:has(input[name="defaultCwd"]),
+  .krypton-computers__form p,
+  .krypton-computers__form .krypton-computers__actions {
+    grid-column: 1 / -1;
+  }
+
+  .krypton-computers__error {
+    padding: 10px;
+    border: 1px solid var(--krypton-error, #ff3a5c);
+    border-radius: 8px;
+    overflow-wrap: anywhere;
+    color: var(--krypton-error, #ff3a5c) !important;
+    background: rgba(255, 58, 92, 0.08);
+  }
+
+  .krypton-computers__notice,
+  .krypton-computers__hint {
+    min-height: 20px;
+    color: var(--krypton-muted, #7390a7);
+    font-size: 11px;
+  }
+
+  @container (max-width: 650px) {
+    .krypton-computers__columns { grid-template-columns: 1fr; overflow: auto; }
+    .krypton-computers__panel { overflow: visible; }
+    .krypton-computers__form { grid-template-columns: 1fr; }
+    .krypton-computers__form label:has(input[name="defaultCwd"]),
+    .krypton-computers__form p,
+    .krypton-computers__form .krypton-computers__actions { grid-column: auto; }
+  }
+}

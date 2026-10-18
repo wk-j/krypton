@@ -5,7 +5,7 @@
 use axum::{
     body::Body,
     extract::{Path, Query, State as AxumState},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse, Response,
@@ -31,7 +31,7 @@ use std::path::{Path as StdPath, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::sync::oneshot;
 
 use crate::acp_wire::{AcpWire, WireEventsPage, MAX_EVENTS_PAGE};
@@ -2847,6 +2847,7 @@ async fn handle_harness_memory_mcp_sse(
 async fn handle_harness_memory_mcp(
     AxumState(state): AxumState<Arc<HookServerState>>,
     Path((harness_id, lane_label)): Path<(String, String)>,
+    headers: HeaderMap,
     Json(request): Json<Value>,
 ) -> impl IntoResponse {
     let id = request.get("id").cloned();
@@ -2902,8 +2903,8 @@ async fn handle_harness_memory_mcp(
                 },
             }))
         }
-        "tools/list" => Ok(json!({
-            "tools": without_disabled_lesson_tools(
+        "tools/list" => {
+            let mut tools = without_disabled_lesson_tools(
                 bus_tool_descriptors_for_project(
                     state
                         .hook_server
@@ -2911,11 +2912,33 @@ async fn handle_harness_memory_mcp(
                         .is_some(),
                 ),
                 lessons_enabled(&state.config),
-            )
-        })),
+            );
+            let capability = headers
+                .get("x-krypton-computer-capability")
+                .and_then(|value| value.to_str().ok());
+            let manager = state
+                .app_handle
+                .state::<Arc<crate::connected_computers::ConnectedComputerManager>>();
+            if state
+                .hook_server
+                .project_dir_for_harness(&harness_id)
+                .is_some()
+                && capability.is_some_and(|token| {
+                    manager.valid_capability(token, Some(&harness_id), Some(&lane_label))
+                })
+            {
+                if let Value::Array(ref mut descriptors) = tools {
+                    descriptors.extend(computer_tool_descriptors());
+                }
+            }
+            Ok(json!({ "tools": tools }))
+        }
         "tools/call" => {
             let params = request.get("params").cloned().unwrap_or(Value::Null);
-            handle_bus_tool_call(&state, &harness_id, &lane_label, params).await
+            let capability = headers
+                .get("x-krypton-computer-capability")
+                .and_then(|value| value.to_str().ok());
+            handle_bus_tool_call(&state, &harness_id, &lane_label, capability, params).await
         }
         "" => Err(json!({ "code": -32600, "message": "Missing method" })),
         other => Err(json!({ "code": -32601, "message": format!("Method not found: {other}") })),
@@ -4282,6 +4305,7 @@ async fn handle_bus_tool_call(
     state: &HookServerState,
     harness_id: &str,
     lane_label: &str,
+    capability: Option<&str>,
     params: Value,
 ) -> Result<Value, Value> {
     let name = params
@@ -4292,6 +4316,40 @@ async fn handle_bus_tool_call(
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| json!({}));
+    if matches!(name, "computer_list" | "computer_exec") {
+        let manager = state
+            .app_handle
+            .state::<Arc<crate::connected_computers::ConnectedComputerManager>>();
+        let token = capability.unwrap_or("");
+        let outcome = if state
+            .hook_server
+            .project_dir_for_harness(harness_id)
+            .is_none()
+            || !manager.valid_capability(token, Some(harness_id), Some(lane_label))
+        {
+            Err("Computer tools require a live local Harness lane".to_string())
+        } else if name == "computer_list" {
+            manager
+                .list()
+                .and_then(|list| serde_json::to_value(list).map_err(|e| e.to_string()))
+        } else {
+            match serde_json::from_value::<crate::connected_computers::ComputerExecRequest>(
+                arguments,
+            ) {
+                Ok(request) => manager
+                    .exec(token, request)
+                    .await
+                    .and_then(|result| serde_json::to_value(result).map_err(|e| e.to_string())),
+                Err(error) => Err(format!("Invalid computer_exec arguments: {error}")),
+            }
+        };
+        let is_error = outcome.is_err();
+        let text = match outcome {
+            Ok(value) => serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string()),
+            Err(error) => error,
+        };
+        return Ok(json!({ "content": [{ "type": "text", "text": text }], "isError": is_error }));
+    }
     if project_backed_bus_tool(name)
         && state
             .hook_server
@@ -4371,6 +4429,30 @@ async fn handle_bus_tool_call(
         "content": [{ "type": "text", "text": text }],
         "isError": is_error,
     }))
+}
+
+fn computer_tool_descriptors() -> Vec<Value> {
+    vec![
+        json!({
+            "name": "computer_list",
+            "description": "List computers the user has explicitly connected in Krypton. Call before computer_exec; only connected IDs can run commands. This reads live local app state.",
+            "inputSchema": { "type": "object", "properties": {} }
+        }),
+        json!({
+            "name": "computer_exec",
+            "description": "Run one noninteractive shell command on a user-connected computer. The user must approve the exact command in Krypton before it starts. No retry is automatic. Exit code and bounded output are returned.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "computerId": { "type": "string" },
+                    "command": { "type": "string" },
+                    "cwd": { "type": "string", "description": "Optional absolute remote working directory" },
+                    "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 600 }
+                },
+                "required": ["computerId", "command"]
+            }
+        }),
+    ]
 }
 
 /// Timeout for the frontend round-trip on bus tools (peer_send, peer_list).

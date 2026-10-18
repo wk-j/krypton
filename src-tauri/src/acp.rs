@@ -12,11 +12,12 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::acp_wire::{AcpWire, WireLane};
 use crate::remote_harness::{
@@ -28,6 +29,41 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, Mutex};
 
 const MIMO_DEFAULT_MODEL: &str = "mimo/mimo-auto";
+
+pub(crate) fn resolve_kryptonctl_path(app: &AppHandle) -> Option<PathBuf> {
+    if let Ok(resources) = app.path().resource_dir() {
+        if let Ok(targets) = std::fs::read_dir(resources.join("remote-binaries")) {
+            for target in targets.flatten() {
+                if !target
+                    .file_name()
+                    .to_string_lossy()
+                    .contains(std::env::consts::ARCH)
+                {
+                    continue;
+                }
+                let path = target.path().join("kryptonctl");
+                if path.is_file() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for profile in ["debug", "release"] {
+        let path = manifest.join("target").join(profile).join("kryptonctl");
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    dirs::home_dir()
+        .map(|home| home.join(".local/bin/kryptonctl"))
+        .filter(|path| path.is_file())
+}
+
+#[tauri::command]
+pub fn computer_cli_available(app: AppHandle) -> bool {
+    resolve_kryptonctl_path(&app).is_some()
+}
 
 // ─── Built-in backends ─────────────────────────────────────────────
 
@@ -1673,6 +1709,8 @@ fn handle_notification(client: &Arc<AcpClient>, app: &AppHandle, method: &str, p
 }
 
 async fn finalize_disconnect(client: &Arc<AcpClient>, app: &AppHandle) {
+    app.state::<Arc<crate::connected_computers::ConnectedComputerManager>>()
+        .revoke_session(client.krypton_session);
     // Capture *why* the subprocess went away before waking the in-flight
     // requests, so each reports the real cause instead of a bare "closed
     // before reply". The write must land BEFORE `pending.clear()`: dropping a
@@ -1833,11 +1871,13 @@ pub async fn acp_spawn(
     junie_mcp_location: Option<String>,
     cline_mcp_settings_path: Option<String>,
     remote_runtime_id: Option<String>,
+    computer_capability: Option<String>,
     app: AppHandle,
     registry: State<'_, Arc<AcpRegistry>>,
     remote_registry: State<'_, Arc<RemoteHarnessRegistry>>,
     config: State<'_, Arc<RwLock<crate::config::KryptonConfig>>>,
     wire: State<'_, Arc<AcpWire>>,
+    connected_computers: State<'_, Arc<crate::connected_computers::ConnectedComputerManager>>,
 ) -> Result<u64, String> {
     let mut backend =
         resolve_backend(&backend_id).ok_or_else(|| format!("Unknown ACP backend: {backend_id}"))?;
@@ -1953,6 +1993,12 @@ pub async fn acp_spawn(
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        if let Some(ref capability) = computer_capability {
+            cmd.env("KRYPTON_COMPUTER_CAPABILITY", capability);
+            if let Some(path) = resolve_kryptonctl_path(&app) {
+                cmd.env("KRYPTONCTL_PATH", path);
+            }
+        }
         #[cfg(unix)]
         cmd.process_group(0);
         if let Some(d) = cwd.as_ref() {
@@ -1988,6 +2034,9 @@ pub async fn acp_spawn(
             client.child_pid.store(pid, Ordering::Relaxed);
         }
         *client.transport.lock().await = Some(AcpTransport::Local { stdin, child });
+        if let Some(ref capability) = computer_capability {
+            connected_computers.bind_session(capability, session)?;
+        }
         registry.insert(session, client.clone());
         let reader_client = client.clone();
         let reader_app = app.clone();
@@ -2555,7 +2604,9 @@ pub async fn acp_fs_write_response(
 pub async fn acp_dispose(
     session: u64,
     registry: State<'_, Arc<AcpRegistry>>,
+    connected_computers: State<'_, Arc<crate::connected_computers::ConnectedComputerManager>>,
 ) -> Result<(), String> {
+    connected_computers.revoke_session(session);
     let Some(client) = registry.remove(session) else {
         return Ok(());
     };

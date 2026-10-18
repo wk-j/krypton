@@ -873,6 +873,12 @@ export class CommandPalette {
       execute: () => c.openTelegramSettings(),
     });
     this.register({
+      id: 'computers.open',
+      label: 'Connected Computers…',
+      category: 'Window',
+      execute: () => c.openConnectedComputers(),
+    });
+    this.register({
       id: 'dashboard.open',
       label: 'Open Lane Monitor Dashboard',
       category: 'Window',

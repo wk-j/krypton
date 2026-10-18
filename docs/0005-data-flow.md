@@ -677,10 +677,14 @@ collapsed to a one-line strip (`interactive UI · receiving spec · N lines`) an
 its `pre` is hidden — the spec is a program, so painting it is noise that pushes
 the reply off screen; nothing is compiled before seal. When a reply seals,
 `AssistantRow` drops the strips before caching pure markdown, then compiles up
-to two `krypton-ui` fences and places static cards. A card click or transcript
-`f` hint seats the view's single `GenUiPanel` node in that card's slot, so the
-panel expands in the sealed row; clicking or hinting the open card again
-collapses it. Inputs update local panel state and dependent text, tables, and
+to two `krypton-ui` fences and places static cards, and the seal itself expands
+the last of them: the view seats its single `GenUiPanel` node in that card's
+slot without taking focus or scrolling, so the UI is on screen while the keys
+of a user already typing still reach the composer. A card click or transcript
+`f` hint seats the node in any other card; clicking or hinting the open card
+again collapses it. Entering the panel — a `user` open, or a pointer press on a
+control — is what hands it the keyboard (`Escape` closes, `Tab` rides the
+ring). Inputs update local panel state and dependent text, tables, and
 bars in place; the transcript row itself does not repaint. After every
 transcript commit the view re-seats the node (a repaint rebuilds the card) and
 collapses the panel when no mounted row claims the open fence — a row that left
@@ -1730,3 +1734,25 @@ the local Telegram Settings view accepts it.
    Reconnect starts a fresh companion under the same runtime identity and tries
    ACP resume/load for each saved session before falling back to a warned fresh
    session.
+
+## Connected Computer command flow (spec 311)
+
+1. The user opens **Connected Computers…** from the command palette, saves a
+   named SSH profile, and selects **Connect**. Rust resolves OpenSSH config,
+   starts its own ControlMaster and reports `connected` only after `ssh -O check`.
+2. A local Harness lane calls `computer_list` through its per-lane MCP server,
+   or Pi/Cursor/Junie/Cline run `"$KRYPTONCTL_PATH" computer list --json`
+   through a shell tool. The capability must
+   still be bound to a live local ACP session; saved but disconnected profiles
+   cannot execute commands.
+3. `computer_exec` or `kryptonctl computer exec` names one connected ID. Rust
+   validates the request, emits the exact target, directory and command to the
+   requesting Harness, and waits for a one-time user decision. The Harness seats
+   that request as a permission row in the requesting lane's transcript (`a`
+   approves once, `r` declines) and keeps it in `pendingComputerCommands`, a
+   queue no auto-accept path touches; unanswered, it expires after 120 seconds.
+   The adapter's permission auto-allow covers only this built-in routing call.
+4. After approval Rust rechecks the lane and SSH master, then sends the command
+   to remote `sh -s` over a fresh no-PTY channel. It returns bounded stdout,
+   stderr and exit code. Timeout, lane close or disconnect cancels the local SSH
+   child and reports the remote outcome as unknown; Krypton never retries it.

@@ -30,9 +30,14 @@ fi
 
 # shellcheck disable=SC2086 # An empty flag is intentional for debug builds.
 cargo build $cargo_flags --manifest-path src-tauri/Cargo.toml -p krypton-remote
+# The local Harness CLI is staged beside the remote runtime so installed and
+# development builds can pass an absolute path to Pi lanes.
+# shellcheck disable=SC2086 # An empty flag is intentional for debug builds.
+cargo build $cargo_flags --manifest-path src-tauri/Cargo.toml -p app --bin kryptonctl
 
 source_path="src-tauri/target/$profile/krypton-remote"
 destination_dir="src-tauri/remote-binaries/$host_target"
 mkdir -p "$destination_dir"
 install -m 755 "$source_path" "$destination_dir/krypton-remote"
+install -m 755 "src-tauri/target/$profile/kryptonctl" "$destination_dir/kryptonctl"
 echo "Staged krypton-remote for $host_target"

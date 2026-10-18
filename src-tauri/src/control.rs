@@ -18,7 +18,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::sync::{broadcast, oneshot};
 use tower_http::cors::CorsLayer;
 
@@ -499,6 +499,71 @@ async fn operation(
     (status, Json(reply))
 }
 
+async fn computer_list_for_lane(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let manager = state
+        .app
+        .state::<Arc<crate::connected_computers::ConnectedComputerManager>>();
+    let capability = headers
+        .get("x-krypton-computer-capability")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if !state.server.authenticated(&headers) || !manager.valid_capability(capability, None, None) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ControlReply::error(
+                "authentication_failed",
+                "live local lane capability required",
+                false,
+            )),
+        )
+            .into_response();
+    }
+    match manager.list() {
+        Ok(list) => (StatusCode::OK, Json(ControlReply::ok(json!(list)))).into_response(),
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(ControlReply::error("computer_list_failed", error, false)),
+        )
+            .into_response(),
+    }
+}
+
+async fn computer_exec_for_lane(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    Json(request): Json<crate::connected_computers::ComputerExecRequest>,
+) -> impl IntoResponse {
+    let manager = state
+        .app
+        .state::<Arc<crate::connected_computers::ConnectedComputerManager>>();
+    let capability = headers
+        .get("x-krypton-computer-capability")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if !state.server.authenticated(&headers) || !manager.valid_capability(capability, None, None) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ControlReply::error(
+                "authentication_failed",
+                "live local lane capability required",
+                false,
+            )),
+        )
+            .into_response();
+    }
+    match manager.exec(capability, request).await {
+        Ok(result) => (StatusCode::OK, Json(ControlReply::ok(json!(result)))).into_response(),
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(ControlReply::error("computer_exec_failed", error, false)),
+        )
+            .into_response(),
+    }
+}
+
 pub fn descriptor_path() -> Result<PathBuf, String> {
     crate::config::config_dir()
         .map(|p| p.join("runtime").join("controller.json"))
@@ -534,6 +599,8 @@ pub fn start(
                 .route("/control/v1/capabilities", get(capabilities))
                 .route("/control/v1/operations", post(operation))
                 .route("/control/v1/events", get(events))
+                .route("/control/v1/computer/list", get(computer_list_for_lane))
+                .route("/control/v1/computer/exec", post(computer_exec_for_lane))
                 .with_state(state);
             // Opt-in, exact-origin CORS so a browser app can call the API
             // directly (doc 175). Empty = proxy-only (the secure default).

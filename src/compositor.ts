@@ -1049,6 +1049,8 @@ export class Compositor {
     windowId: WindowId,
     tabId: TabId,
     cwd: string | null,
+    shell?: string,
+    shellArgs?: string[],
   ): Promise<void> {
     if (!pane.terminal) return;
     try {
@@ -1056,6 +1058,8 @@ export class Compositor {
         cols: pane.terminal.cols,
         rows: pane.terminal.rows,
         cwd,
+        shell,
+        shellArgs,
       });
       pane.sessionId = sessionId;
       this.sessionMap.set(sessionId, { windowId, tabId, paneId: pane.id });
@@ -3884,6 +3888,35 @@ export class Compositor {
     });
   }
 
+  /** Open or focus the app-owned SSH connection manager. */
+  async openConnectedComputers(): Promise<void> {
+    for (const [windowId, win] of this.windows) {
+      for (let tabIndex = 0; tabIndex < win.tabs.length; tabIndex++) {
+        if (!this.collectPanes(win.tabs[tabIndex].paneTree).some(
+          (pane) => pane.contentView?.type === 'connected_computers',
+        )) continue;
+        await this.focusWindow(windowId);
+        win.activeTabIndex = tabIndex;
+        this.showActiveTab(win);
+        this.updateTabBar(win);
+        return;
+      }
+    }
+    const { ConnectedComputersContentView } = await import('./connected-computers-view');
+    const container = document.createElement('div');
+    container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
+    const view = new ConnectedComputersContentView(container);
+    await this.createContentTab('CONNECTIONS // computers', view);
+    view.onClose(() => { void this.closeTab(); });
+    view.onOpenSshTerminal(async (profile) => {
+      const shellArgs = ['-tt'];
+      if (profile.user) shellArgs.push('-l', profile.user);
+      if (profile.port) shellArgs.push('-p', String(profile.port));
+      shellArgs.push('--', profile.host);
+      await this.createTab({ title: `SSH // ${profile.id}`, shell: 'ssh', shellArgs, cwd: null });
+    });
+  }
+
   /**
    * Open the live harness lane monitor dashboard in the system browser.
    */
@@ -5833,12 +5866,12 @@ export class Compositor {
   // ─── Tab / Pane Public API ─────────────────────────────────────
 
   /** Create a new tab in the focused window */
-  async createTab(): Promise<number | null> {
+  async createTab(options?: { title?: string; shell?: string; shellArgs?: string[]; cwd?: string | null }): Promise<number | null> {
     if (!this.focusedWindowId) return null;
     const win = this.windows.get(this.focusedWindowId);
     if (!win) return null;
 
-    const cwd = await this.getFocusedCwd();
+    const cwd = options?.cwd === undefined ? await this.getFocusedCwd() : options.cwd;
     const tabId = nextTabId();
 
     // Create a new wrapper for this tab's pane tree
@@ -5846,11 +5879,12 @@ export class Compositor {
     const pane = this.createPane(wrapper);
 
     const tabNum = win.tabs.length + 1;
-    const tabEl = this.buildTabElement(tabId, tabNum - 1, `Shell ${tabNum}`);
+    const title = options?.title ?? `Shell ${tabNum}`;
+    const tabEl = this.buildTabElement(tabId, tabNum - 1, title);
 
     const tab: Tab = {
       id: tabId,
-      title: `Shell ${tabNum}`,
+      title,
       paneTree: { type: 'leaf', pane },
       focusedPaneId: pane.id,
       element: tabEl,
@@ -5867,7 +5901,7 @@ export class Compositor {
 
     // Wire input BEFORE spawn so xterm.js replies during startup are buffered.
     this.wirePaneInput(pane);
-    await this.spawnPaneSession(pane, win.id, tabId, cwd);
+    await this.spawnPaneSession(pane, win.id, tabId, cwd, options?.shell, options?.shellArgs);
 
     // Title change listener
     if (pane.terminal) {

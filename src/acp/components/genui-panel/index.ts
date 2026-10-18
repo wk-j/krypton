@@ -47,6 +47,13 @@ export interface GenUiPanelProps {
   /** The declared inputs. Mutated in place; the caller retains it. */
   readonly state: UiState;
   readonly views: GenUiViews;
+  /**
+   * Whether opening moves focus into the panel. True for a panel the user
+   * asked for; false for one that expanded on its own when the row sealed
+   * (spec 310 rev 2) — the composer keeps the keyboard until the user enters
+   * the panel.
+   */
+  readonly takeFocus: boolean;
   /** Loads the composer draft. Returns a refusal reason, or `null` on success. */
   onDraft(text: string): string | null;
   /** Opens an `http(s)` url through the host's `open_url`. */
@@ -100,6 +107,25 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
       this.source.hidden = !this.source.hidden;
       this.sourceButton.textContent = this.source.hidden ? 'Source' : 'Hide source';
     });
+    // Entering the panel with the mouse. WebKit does not focus a <button> on
+    // click (the macOS convention), so DOM focus alone cannot tell whether the
+    // user is in the panel — and since rev 2 a panel can be open without ever
+    // having been focused. Claim the control that was pressed: the keyboard
+    // follows the pointer, and the roving ring continues from there instead of
+    // from wherever Tab last left it.
+    this.bag.listen(this.el, 'pointerdown', (event: Event) => {
+      const pressed = event.target instanceof Element
+        ? event.target.closest<HTMLElement>(`[${FOCUSABLE_ATTR}]`)
+        : null;
+      if (!pressed) return;
+      const focusables = this.focusables();
+      const index = focusables.indexOf(pressed);
+      if (index >= 0) {
+        this.focusIndex = index;
+        this.syncFocusRing(focusables);
+      }
+      pressed.focus({ preventScroll: true });
+    });
     const readState = (): UiState => this.props?.state ?? NO_STATE;
     this.ctx = {
       run: (actions: readonly UiAction[]): void => this.run(actions),
@@ -112,6 +138,15 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
 
   get isOpen(): boolean {
     return this.openState;
+  }
+
+  /**
+   * Whether the panel owns the keyboard. An auto-expanded panel is open but
+   * unfocused: the composer keeps every key until the user enters the panel,
+   * which clicking a control or re-opening the card does.
+   */
+  get hasFocus(): boolean {
+    return this.el.contains(document.activeElement);
   }
 
   update(next: GenUiPanelProps): void {
@@ -177,7 +212,12 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
     this.focusIndex = 0;
     const focusables = this.focusables();
     this.syncFocusRing(focusables);
-    (focusables[0] ?? this.sourceButton).focus();
+    // `preventScroll`: the host owns transcript scrolling and does its own
+    // bounded reveal right after this (spec 310 — the card head never leaves
+    // the viewport). The browser's focus-scroll is unbounded, and it lands
+    // inside the host's programmatic-scroll suppression window, so it would
+    // move the lane body without the host ever recording where.
+    if (next.takeFocus) (focusables[0] ?? this.sourceButton).focus({ preventScroll: true });
   }
 
   protected onDispose(): void {

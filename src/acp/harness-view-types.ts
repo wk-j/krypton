@@ -14,6 +14,7 @@ import type {
   QuestionPayload,
 } from './ask-user-question';
 import type { AcpClient } from './client';
+import type { ComputerApprovalRequest } from './computer-approval';
 import type { QuestionTarget } from './elicitation';
 import type { UiFenceEntry } from './genui/types';
 import type { TelemetryReviewLoop } from './harness-telemetry';
@@ -620,8 +621,13 @@ export interface HarnessLane {
   cursor: number;
   pendingPermissions: HarnessPermission[];
   pendingQuestions: HarnessAskUser[];
+  /** spec 311: remote commands awaiting the human, kept OUT of
+   *  `pendingPermissions` so no auto-accept path can open SSH. */
+  pendingComputerCommands: ComputerApprovalRequest[];
   transcript: HarnessTranscriptItem[];
   spawnEpoch: number;
+  /** Opaque local-only connected-computer capability for this process epoch. */
+  computerCapability: string | null;
   usage: UsageInfo | null;
   /** spec 214: the raw token-bearing usage for the turn in flight, kept apart
    *  from `usage` because that one is a last-wins DISPLAY aggregate — merging

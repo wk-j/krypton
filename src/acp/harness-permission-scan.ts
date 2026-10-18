@@ -64,6 +64,9 @@ const HARNESS_ISSUE_TOOL_NAMES = new Set([
 // transcript; a prompt on every write would hand the work back to the human.
 // Backend validation caps size and count; the store is plain files a human can edit.
 const HARNESS_LESSON_TOOL_NAMES = new Set(['lesson_record', 'lesson_retire']);
+// spec 311: auto-allow only the authenticated built-in routing call. Rust
+// still waits for the separate, exact-command approval before opening SSH.
+const HARNESS_COMPUTER_TOOL_NAMES = new Set(['computer_list', 'computer_exec']);
 const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
   ...HARNESS_MEMORY_TOOL_NAMES,
   ...HARNESS_LESSON_TOOL_NAMES,
@@ -72,6 +75,7 @@ const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
   ...HARNESS_REVIEW_TOOL_NAMES,
   ...HARNESS_TIMELINE_TOOL_NAMES,
   ...HARNESS_ISSUE_TOOL_NAMES,
+  ...HARNESS_COMPUTER_TOOL_NAMES,
 ]);
 const HARNESS_SERVER_MARKERS = ['krypton-harness-bus', 'krypton_harness_bus', 'krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
 
@@ -162,7 +166,7 @@ export function harnessToolNameFromString(value: string | undefined): string | n
   for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
     if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
   }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|timeline_suggest|timeline_record|timeline_list|timeline_conflict_list|timeline_conflict_record|timeline_conflict_checked|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link|lesson_record|lesson_retire)(?:$|[^a-z0-9_])/);
+  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|timeline_suggest|timeline_record|timeline_list|timeline_conflict_list|timeline_conflict_record|timeline_conflict_checked|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link|lesson_record|lesson_retire|computer_list|computer_exec)(?:$|[^a-z0-9_])/);
   return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 

@@ -4,6 +4,7 @@ mod acp_install;
 pub mod acp_wire;
 mod commands;
 mod config;
+pub mod connected_computers;
 pub mod control;
 pub mod git;
 pub mod hook_server;
@@ -114,6 +115,7 @@ pub fn run() {
     // Clean up stale sockets from previous runs
     ssh_manager.cleanup_sockets();
     let remote_harness_registry = Arc::new(remote_harness::RemoteHarnessRegistry::new());
+    let connected_computers = Arc::new(connected_computers::ConnectedComputerManager::new());
 
     tauri::Builder::default()
         .plugin(
@@ -154,6 +156,7 @@ pub fn run() {
         .manage(sound_engine)
         .manage(ssh_manager)
         .manage(remote_harness_registry)
+        .manage(connected_computers.clone())
         .manage(hook_server.clone())
         .manage(hook_server.acp_wire.clone())
         .manage(control_server.clone())
@@ -172,6 +175,14 @@ pub fn run() {
         // MusicEngine is initialized in .setup() because it needs app_handle
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
+            connected_computers::computer_list,
+            connected_computers::computer_profile_save,
+            connected_computers::computer_profile_delete,
+            connected_computers::computer_reload,
+            connected_computers::computer_connect,
+            connected_computers::computer_disconnect,
+            connected_computers::computer_lane_register,
+            connected_computers::computer_approval_decide,
             commands::get_pty_cwd,
             commands::write_to_pty,
             commands::resize_pty,
@@ -360,6 +371,7 @@ pub fn run() {
             quick_search::quick_search_record_pick,
             acp::acp_list_backends,
             acp::acp_spawn,
+            acp::computer_cli_available,
             acp::acp_initialize,
             acp::acp_set_mcp_servers,
             acp::acp_session_new,
@@ -414,6 +426,7 @@ pub fn run() {
             webview::forward_title,
         ])
         .setup(move |app| {
+            connected_computers.bind_app(app.handle().clone());
             // File logging is enabled in release too, so invisible-window and
             // similar post-mortem bugs are diagnosable from ~/Library/Logs/Krypton/.
             app.handle().plugin(
@@ -611,6 +624,8 @@ pub fn run() {
                     .clone();
                 let control = app.state::<Arc<control::ControlServer>>().inner().clone();
                 app.state::<telegram::TelegramService>().shutdown();
+                app.state::<Arc<connected_computers::ConnectedComputerManager>>()
+                    .shutdown();
                 control.remove_descriptor();
                 tauri::async_runtime::block_on(async move {
                     acp::dispose_all(&registry).await;

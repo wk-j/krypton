@@ -331,7 +331,9 @@ pub fn list_harness_memory(
 pub fn dispose_harness_memory(
     harness_id: String,
     hook_server: State<'_, Arc<HookServer>>,
+    connected_computers: State<'_, Arc<crate::connected_computers::ConnectedComputerManager>>,
 ) -> Result<(), String> {
+    connected_computers.revoke_harness(&harness_id);
     hook_server.dispose_harness_memory(&harness_id);
     Ok(())
 }

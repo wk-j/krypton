@@ -946,6 +946,34 @@ You are the review lane. Do not edit files. Prioritize bugs, regressions, risky 
 """
 ```
 
+### Connected Computers (app-managed, spec 311)
+
+Open **Connected Computers…** from the command palette to manage targets for
+local Harness lane commands. Krypton writes a separate versioned file, not
+`krypton.toml`:
+
+```text
+~/.config/krypton/connected-computers.toml
+```
+
+```toml
+schema_version = 1
+
+[[computers]]
+id = "buildbox"
+host = "buildbox"
+user = "alice"          # optional; OpenSSH config/default when omitted
+port = 22               # optional; OpenSSH config/default when omitted
+default_cwd = "/srv/builds" # optional remote absolute path
+```
+
+The file stores no password or private key. OpenSSH config supplies keys, jump
+hosts and host-key policy. Profiles start as `configured` after app launch;
+the user must choose **Connect** before a lane can run a command. Saving checks
+the file revision to prevent overwriting an external edit. Every remote command
+requires its own approval in the requesting Harness. Remote Harness workspaces
+and `acp_harness.remote_profiles` remain independent.
+
 ### Telegram Harness Controller (app-managed)
 
 Telegram settings do not belong to the user-authored `krypton.toml`. Open

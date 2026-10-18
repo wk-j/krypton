@@ -81,6 +81,9 @@ import {
   type LanePeekSnapshot,
 } from './acp-harness-view';
 import { collapseThoughtBlankLines } from './harness-format';
+import { AssistantRow } from './components/assistant-row';
+import { compile } from './genui/compile';
+import type { UiFenceEntry } from './genui/types';
 import {
   peekEventRowDuplicatesTool,
   peekReviewLoop,
@@ -88,11 +91,13 @@ import {
 } from './lane-peek';
 
 import type { PermissionOption, ToolCall } from './types';
+import type { ComputerApprovalRequest } from './computer-approval';
 import type {
   HarnessLane,
   HarnessTranscriptItem,
   LanePeekCandidate,
   MessageResource,
+  PermissionPayload,
 } from './harness-view-types';
 import type { TelemetryReviewLoop } from './harness-telemetry';
 import type { SpeechRecognitionLike } from './harness-dictation';
@@ -1295,6 +1300,18 @@ describe('lesson transcript line (spec 299)', () => {
 });
 
 describe('ACP harness auto-allow permission detection', () => {
+  it('auto-allows authenticated computer routing but not lookalike tools', () => {
+    for (const name of ['computer_list', 'computer_exec']) {
+      expect(harnessAutoAllowToolName(permissionFor({
+        title: `mcp__krypton_harness_bus__${name}`,
+        rawInput: { toolName: `mcp__krypton_harness_bus__${name}`, arguments: {} },
+      }))).toBe(name);
+      expect(harnessAutoAllowToolName(permissionFor({
+        title: name,
+        rawInput: { name, server: 'third-party-tools' },
+      }))).toBeNull();
+    }
+  });
   it('auto-allows the built-in lesson tools (spec 298)', () => {
     for (const name of ['lesson_record', 'lesson_retire']) {
       expect(harnessAutoAllowToolName(permissionFor({
@@ -2292,6 +2309,7 @@ describe('ACP peer activity UI (spec 118)', () => {
         stickToBottom,
         pendingPermissions: [],
         pendingQuestions: [],
+        pendingComputerCommands: [],
       } as unknown as HarnessLane;
       const target: Record<string, unknown> = viewDouble({
         ghost: null,
@@ -2385,11 +2403,12 @@ describe('ACP peer activity UI (spec 118)', () => {
         captureAssistantMarkdownOffscreen: (): void => { seq.push('cold-cache'); },
         collectTextImagePaths: (): void => { seq.push('images'); },
         scheduleStreamingBodyOnly: (): void => { seq.push('transcript'); },
+        autoOpenGenUi: (): void => { seq.push('genui'); },
       };
 
       sealStreaming.call(target, lane);
 
-      expect(seq).toEqual(['suppress', 'seal:a1', 'images', 'release:7', 'transcript']);
+      expect(seq).toEqual(['suppress', 'seal:a1', 'images', 'release:7', 'transcript', 'genui']);
       expect(lane.currentAssistantId).toBeNull();
       expect(item.streamPlainLength).toBeUndefined();
     });
@@ -2416,11 +2435,184 @@ describe('ACP peer activity UI (spec 118)', () => {
         captureAssistantMarkdownOffscreen: (): void => { seq.push('cold-cache'); },
         collectTextImagePaths: (): void => {},
         scheduleStreamingBodyOnly: (): void => {},
+        autoOpenGenUi: (): void => { seq.push('genui'); },
       };
 
       sealStreaming.call(target, lane);
 
-      expect(seq).toEqual(['cold-cache']);
+      expect(seq).toEqual(['cold-cache', 'genui']);
+    });
+  });
+
+  describe('genui panel reveal scroll (spec 310)', () => {
+    type RevealHost = {
+      revealGenUiPanel(body: HTMLElement): void;
+      restoreTranscriptScrollAnchor(body: HTMLElement, anchor: { msgId: string; offsetTop: number }): void;
+    };
+    const proto = AcpHarnessView.prototype as unknown as RevealHost;
+
+    // `restoreTranscriptScrollAnchor` escapes the row id for a selector; this
+    // suite's `node` environment has no `CSS`.
+    const cssHost = globalThis as { CSS?: { escape(value: string): string } };
+    const nativeCss = cssHost.CSS;
+    beforeEach(() => { cssHost.CSS = { escape: (value: string): string => value }; });
+    afterEach(() => {
+      if (nativeCss) cssHost.CSS = nativeCss;
+      else delete cssHost.CSS;
+    });
+
+    function rect(top: number, height: number): DOMRect {
+      return {
+        top, bottom: top + height, height, left: 0, right: 0, width: 0, x: 0, y: top,
+        toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    /** One row, one card, the panel seated in it. This suite runs in `node`,
+     *  so the surface is stubbed the way the pin tests above stub a body:
+     *  every rect is derived from the element's content-box top minus the live
+     *  `scrollTop`, against a fixed 600px viewport at y=0. */
+    function transcript(stickToBottom: boolean) {
+      let scrollTop = 0;
+      // The card sits 300px into a 1200px row and runs 500px past the fold.
+      const row = {
+        dataset: { msgId: 'a1' },
+        getBoundingClientRect: (): DOMRect => rect(0 - scrollTop, 1200),
+      };
+      const card = { getBoundingClientRect: (): DOMRect => rect(300 - scrollTop, 800) };
+      const body = {
+        get scrollTop(): number { return scrollTop; },
+        set scrollTop(value: number) { scrollTop = value; },
+        getBoundingClientRect: (): DOMRect => rect(0, 600),
+        querySelectorAll: (): unknown[] => [row],
+        querySelector: (selector: string): unknown => (selector.includes('a1') ? row : null),
+      } as unknown as HTMLElement;
+      const lane = {
+        id: 'lane-1',
+        stickToBottom,
+        savedScrollTop: 0,
+        // What `openGenUi` leaves behind: the pre-mount capture, which the
+        // reveal below is about to invalidate.
+        savedScrollAnchor: stickToBottom ? null : { msgId: 'a1', offsetTop: 0 },
+      } as unknown as HarnessLane;
+      const target = viewDouble({
+        genUiPanel: { el: { closest: (): unknown => card } },
+        activeLane: (): HarnessLane => lane,
+        beginProgrammaticScroll: (): number => 1,
+        releaseProgrammaticScroll: (): void => {},
+      });
+      return { body, lane, target };
+    }
+
+    it('records where it scrolled, so the next resize does not undo the reveal', () => {
+      const { body, lane, target } = transcript(false);
+
+      proto.revealGenUiPanel.call(target, body);
+
+      // Bounded by the card head: 500px of overflow, 300px of head offset.
+      expect(body.scrollTop).toBe(300);
+      expect(lane.savedScrollTop).toBe(300);
+      expect(lane.savedScrollAnchor).toEqual({ msgId: 'a1', offsetTop: -300 });
+
+      // The first input inside the panel changes its height; the transcript
+      // ResizeObserver answers an unstuck lane by re-asserting the anchor.
+      proto.restoreTranscriptScrollAnchor.call(target, body, lane.savedScrollAnchor!);
+
+      expect(body.scrollTop).toBe(300);
+    });
+
+    it('leaves a stuck lane without an anchor — the observer re-pins it instead', () => {
+      const { body, lane, target } = transcript(true);
+
+      proto.revealGenUiPanel.call(target, body);
+
+      expect(body.scrollTop).toBe(300);
+      expect(lane.savedScrollTop).toBe(300);
+      expect(lane.savedScrollAnchor).toBeNull();
+    });
+  });
+
+  describe('genui panel auto-expand on seal (spec 310 rev 2)', () => {
+    type OpenHost = {
+      autoOpenGenUi(lane: HarnessLane, itemId: string): void;
+      openGenUi(itemId: string, index: number, source?: 'user' | 'auto'): void;
+    };
+    const proto = AcpHarnessView.prototype as unknown as OpenHost;
+    const uiSource = 'Card("Estimate", [Text("hi")])';
+    const program = compile(uiSource).program!;
+
+    function fence(index: number): UiFenceEntry {
+      return {
+        index, source: uiSource, sourceHash: `h${index}`, title: `Fence ${index}`,
+        summary: '', hintLabel: null, program, diagnostics: [],
+      };
+    }
+
+    function host(options: { laneId?: string; open?: { itemId: string; index: number } | null } = {}) {
+      const seq: string[] = [];
+      const painted: Record<string, unknown>[] = [];
+      const item = {
+        id: 'a1', kind: 'assistant', text: 'x', markdownSource: 'x',
+        uiFences: [fence(0), fence(1)],
+      } as unknown as HarnessTranscriptItem;
+      const lane = {
+        id: options.laneId ?? 'lane-1', stickToBottom: true, draft: '', transcript: [item],
+      } as unknown as HarnessLane;
+      const row = Object.assign(Object.create(AssistantRow.prototype), { mountUiPanel: (): boolean => true });
+      const target = viewDouble({
+        activeLaneId: 'lane-1',
+        genUiOpen: options.open ?? null,
+        genUiStates: new Map<string, unknown>(),
+        genUiPanel: {
+          el: {},
+          update: (props: Record<string, unknown>): void => { painted.push(props); },
+          close: (): void => { seq.push('close'); },
+        },
+        transcript: { rowFor: (): unknown => row },
+        activeLane: (): HarnessLane => lane,
+        activeTranscriptBody: (): unknown => ({}),
+        captureTranscriptScrollAnchor: (): null => null,
+        restoreTranscriptScrollAnchor: (): void => {},
+        revealGenUiPanel: (): void => { seq.push('reveal'); },
+      });
+      return { target, lane, painted, seq };
+    }
+
+    it('expands the row\'s last fence without taking the keyboard or moving the reader', () => {
+      const { target, lane, painted, seq } = host();
+
+      proto.autoOpenGenUi.call(target, lane, 'a1');
+
+      expect(painted).toHaveLength(1);
+      expect((painted[0].entry as UiFenceEntry).index).toBe(1);
+      expect(painted[0].takeFocus).toBe(false);
+      expect(seq).toEqual([]);
+    });
+
+    it('keeps the keyboard and the reveal scroll for an open the user asked for', () => {
+      const { target, painted, seq } = host();
+
+      proto.openGenUi.call(target, 'a1', 0);
+
+      expect((painted[0].entry as UiFenceEntry).index).toBe(0);
+      expect(painted[0].takeFocus).toBe(true);
+      expect(seq).toEqual(['reveal']);
+    });
+
+    it('never displaces a panel the user is already working in', () => {
+      const { target, lane, painted } = host({ open: { itemId: 'older', index: 0 } });
+
+      proto.autoOpenGenUi.call(target, lane, 'a1');
+
+      expect(painted).toEqual([]);
+    });
+
+    it('leaves a background lane alone — the panel node belongs to the active one', () => {
+      const { target, lane, painted } = host({ laneId: 'background' });
+
+      proto.autoOpenGenUi.call(target, lane, 'a1');
+
+      expect(painted).toEqual([]);
     });
   });
 
@@ -4428,5 +4620,141 @@ describe('mcpServersForLane bridge policy', () => {
     )).toEqual([]);
 
     expect(projectMcpMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('connected computer approval (spec 311)', () => {
+  type ApprovalHost = {
+    addComputerApproval(lane: HarnessLane, request: ComputerApprovalRequest): void;
+    resolveComputerApproval(lane: HarnessLane, accept: boolean): Promise<void>;
+    expireComputerApproval(requestId: string): void;
+  };
+  const proto = AcpHarnessView.prototype as unknown as ApprovalHost;
+
+  function request(over: Partial<ComputerApprovalRequest> = {}): ComputerApprovalRequest {
+    return {
+      requestId: 'req-1',
+      harnessId: 'h1',
+      laneLabel: 'OMP-1',
+      spawnEpoch: 2,
+      computerId: 'tli-dev-server',
+      target: 'root@tli-dev-service:22',
+      cwd: null,
+      command: 'docker ps',
+      ...over,
+    };
+  }
+
+  /** A lane whose every auto-accept switch is armed: bypass mode, an `A`-for-turn
+   *  flag and a Telegram turn. None of them may answer a remote command. */
+  function armedLane(): HarnessLane {
+    return {
+      id: 'lane-1',
+      displayName: 'OMP-1',
+      status: 'busy',
+      spawnEpoch: 2,
+      permissionMode: 'bypass',
+      acceptAllForTurn: true,
+      rejectAllForTurn: false,
+      peerAutoAcceptForTurn: true,
+      activeTelegramTurn: { userId: 42 },
+      transcript: [],
+      pendingPermissions: [],
+      pendingQuestions: [],
+      pendingComputerCommands: [],
+    } as unknown as HarnessLane;
+  }
+
+  function host(lane: HarnessLane): Record<string, unknown> {
+    const statuses: string[] = [];
+    return viewDouble({
+      lanes: [lane],
+      computerApprovalRows: new Map<string, PermissionPayload>(),
+      computerApprovalSeq: 0,
+      statuses,
+      appendTranscript: (target: HarnessLane, kind: string, text: string): HarnessTranscriptItem => {
+        const item = { id: `t${target.transcript.length}`, kind, text } as HarnessTranscriptItem;
+        target.transcript.push(item);
+        return item;
+      },
+      setLaneStatus: (target: HarnessLane, status: string): void => {
+        target.status = status as HarnessLane['status'];
+        statuses.push(status);
+      },
+      updateComposerTick: (): void => {},
+      render: (): void => {},
+      refreshOrchestratorConsole: (): void => {},
+    });
+  }
+
+  beforeEach(() => { invokeMock.mockClear(); });
+
+  it('parks a remote command for the human even when every auto-accept is armed', () => {
+    const lane = armedLane();
+    const target = host(lane);
+
+    proto.addComputerApproval.call(target, lane, request());
+
+    expect(lane.pendingComputerCommands).toHaveLength(1);
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(lane.status).toBe('needs_permission');
+    const row = lane.transcript[0];
+    expect(row.kind).toBe('permission');
+    expect(row.permission?.argsPreview).toBe('docker ps');
+    expect(row.permission?.decision).toBe('pending');
+    // Negative, so it can never be mistaken for an ACP permission request id.
+    expect(row.permission?.id).toBeLessThan(0);
+  });
+
+  it('approves once: the gate is told, the row seals, and the lane resumes', async () => {
+    const lane = armedLane();
+    const target = host(lane);
+    proto.addComputerApproval.call(target, lane, request());
+
+    await proto.resolveComputerApproval.call(target, lane, true);
+
+    expect(invokeMock).toHaveBeenCalledWith('computer_approval_decide', { requestId: 'req-1', accept: true });
+    expect(lane.pendingComputerCommands).toHaveLength(0);
+    expect(lane.transcript[0].permission?.decision).toBe('accepted');
+    expect(lane.status).toBe('busy');
+  });
+
+  it('keeps the lane waiting while a second queued command is still unanswered', async () => {
+    const lane = armedLane();
+    const target = host(lane);
+    proto.addComputerApproval.call(target, lane, request());
+    proto.addComputerApproval.call(target, lane, request({ requestId: 'req-2', command: 'rm -rf /srv' }));
+
+    await proto.resolveComputerApproval.call(target, lane, false);
+
+    expect(invokeMock).toHaveBeenCalledWith('computer_approval_decide', { requestId: 'req-1', accept: false });
+    expect(lane.transcript[0].permission?.decision).toBe('rejected');
+    expect(lane.pendingComputerCommands.map((pending) => pending.requestId)).toEqual(['req-2']);
+    expect(lane.status).toBe('needs_permission');
+  });
+
+  it('marks an unanswered command expired when the Rust gate closes it', () => {
+    const lane = armedLane();
+    const target = host(lane);
+    proto.addComputerApproval.call(target, lane, request());
+
+    proto.expireComputerApproval.call(target, 'req-1');
+
+    expect(lane.pendingComputerCommands).toHaveLength(0);
+    expect(lane.transcript[0].permission?.decision).toBe('failed');
+    expect(lane.transcript[0].permission?.decisionLabel).toContain('expired');
+    expect(lane.status).toBe('busy');
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it('ignores the close event for a command the user already answered', async () => {
+    const lane = armedLane();
+    const target = host(lane);
+    proto.addComputerApproval.call(target, lane, request());
+    await proto.resolveComputerApproval.call(target, lane, true);
+
+    proto.expireComputerApproval.call(target, 'req-1');
+
+    expect(lane.transcript[0].permission?.decision).toBe('accepted');
   });
 });
