@@ -5,6 +5,10 @@
 // the aria summary for charts, DiffBlock's own row markup for `Diff`, and the
 // placeholder → result swap (plus the stale-resolution guard) for `Diagram`.
 
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { el } from '../../../ui/dom';
@@ -168,6 +172,21 @@ describe('Table', () => {
     const more = host.querySelector('.acp-genui__table-more');
     expect(more?.textContent).toBe('… 50 more rows');
     expect(more?.getAttribute('colspan')).toBe('1');
+  });
+
+  // jsdom applies no sheet, so the frame is asserted on the sheet itself.
+  // `border-collapse: collapse` silently voids every `border-radius` a cell
+  // declares, and this sheet's `krypton.component` layer outranks the
+  // `separate` that `harness-shared.css` sets for tables inside a message
+  // body — which is how this one table rendered square beside rounded blocks.
+  it('frames the table with the shared radius, never a collapsed border box', () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'data.css'), 'utf8');
+    const declarations = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = declarations.match(/\.acp-genui__table\s*\{[^}]*\}/)?.[0] ?? '';
+
+    expect(rule).toMatch(/border-collapse:\s*separate/);
+    expect(rule).toMatch(/border-radius:\s*var\(--krypton-border-radius,\s*8px\)/);
+    expect(declarations).not.toMatch(/border-collapse:\s*collapse/);
   });
 });
 

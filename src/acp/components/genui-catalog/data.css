@@ -53,9 +53,25 @@
 
   /* ── Table ─────────────────────────────────────────────────────────────── */
 
+  /* The frame is the component's own, in this sheet's hairline `fg` scale, so
+     the table reads like the Callout, Code and Button blocks beside it.
+
+     `border-collapse: collapse` is what used to leave it square: a collapsed
+     table discards every `border-radius` its cells declare, and since this
+     sheet sits in `krypton.component` it outranked the `separate` that
+     `harness-shared.css` sets on tables inside a message body — so the radii
+     that sheet puts on the corner cells computed as 8px and rendered as right
+     angles. `separate` + zero spacing keeps the hairline grid AND the corners.
+
+     Column separators and the accent header wash are not re-declared: they
+     were the markdown sheet showing through, which made the table the one
+     block in the panel whose look depended on where it was seated. */
   .acp-genui__table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
+    border-radius: var(--krypton-border-radius, 8px);
     font-variant-numeric: tabular-nums;
   }
 
@@ -64,11 +80,34 @@
     padding: 4px 8px;
     text-align: left;
     vertical-align: top;
+    border: 0;
     border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+  }
+
+  .acp-genui__table > tbody > tr:last-child > .acp-genui__table-cell,
+  .acp-genui__table > tbody > tr:last-child > .acp-genui__table-more {
+    border-bottom: 0;
+  }
+
+  .acp-genui__table > thead > tr > .acp-genui__table-head:first-child {
+    border-top-left-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-genui__table > thead > tr > .acp-genui__table-head:last-child {
+    border-top-right-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-genui__table > tbody > tr:last-child > :first-child {
+    border-bottom-left-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-genui__table > tbody > tr:last-child > :last-child {
+    border-bottom-right-radius: var(--krypton-border-radius, 8px);
   }
 
   .acp-genui__table-head {
     color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.05);
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: lowercase;
@@ -81,6 +120,7 @@
 
   .acp-genui__table-more {
     padding: 4px 8px;
+    border: 0;
     color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
     font-style: italic;
   }
