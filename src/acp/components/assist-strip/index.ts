@@ -3,9 +3,9 @@
 // The assist sidecar's one surface: up to three numbered next-prompt rows
 // above the draft line, plus the key legend that says how to take one.
 //
-//   1 ▸ run the failing test
-//   2 ▸ check the fs_write_review path
-//   cmd+1-3 use · cmd+0 dismiss · cmd+/ again
+//   cmd+1  run the failing test
+//   cmd+2  check the fs_write_review path
+//   cmd+0 dismiss · cmd+/ again
 //
 // `idle` and `failed` both paint nothing and hide the node: a failure speaks
 // once through `flashChip`, never as a permanent row, and the controller maps
@@ -29,10 +29,10 @@ const BLOCK = 'acp-harness__assist';
 /** Three accept keys exist, so a fourth suggestion could not be taken. */
 const MAX_ROWS = 3;
 
-/** Fixed: the keys are the component's contract with `onKeyDown`, not state. */
+/** Fixed: the keys are the component's contract with `onKeyDown`, not state.
+    `cmd+1-3 use` is gone — each row spells its own key. */
 const HINTS: KeyHintBarProps = {
   hints: [
-    { keys: ['cmd+1-3'], label: 'use' },
     { keys: ['cmd+0'], label: 'dismiss' },
     { keys: ['cmd+/'], label: 'again' },
   ],
@@ -90,7 +90,7 @@ export class AssistStrip extends Component<AssistStripProps> {
         el(
           'div',
           { class: `${BLOCK}-row` },
-          el('span', { class: `${BLOCK}-index`, text: `${index + 1} ▸` }),
+          el('span', { class: `${BLOCK}-index`, text: `cmd+${index + 1}` }),
           el('span', { class: `${BLOCK}-label`, text: action.label }),
         ),
       ),

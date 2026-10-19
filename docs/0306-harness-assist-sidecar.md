@@ -282,18 +282,20 @@ The branch sits in `onKeyDown` **after** the pre-emptive modal owners (`:4186-43
 New component `src/acp/components/assist-strip/`, block `acp-harness__assist`, mounted as a `Composer` child between `peer` and `liveVoice` in the `syncOrder` list (`composer/index.ts:193-203`) — the same ownership model as `PeerStrip`, whose `composer.above` layout row is declarative only.
 
 ```
-1 ▸ run the failing test
-2 ▸ check the fs_write_review path
-3 ▸ ask why the breaker fires twice
+cmd+1  run the failing test
+cmd+2  check the fs_write_review path
+cmd+3  ask why the breaker fires twice
+cmd+0 dismiss · cmd+/ again
 ```
 
-- `kind: 'ready'` → one row per suggestion: index in `--acp-lane-accent`, `▸`, then `label`, single line, `text-overflow: ellipsis`.
+- `kind: 'ready'` → one row per suggestion, a two-column grid: the whole chord (`cmd+N`) in `--acp-lane-accent`, then `label`, which wraps under its own column. No `text-overflow: ellipsis` — a prompt is a sentence, and the clipped end was the part that said what it does.
 - `kind: 'pending'` → one dim row `assist · thinking…`.
 - `kind: 'idle' | 'failed'` → `this.el.hidden = true`; failures speak once through `flashChip`, never as a permanent row. `stripProps()` maps a dismissed lane to `{ kind: 'idle' }`, so dismissal is not a second hidden-state input.
+- The legend is `cmd+0 dismiss · cmd+/ again`. `cmd+1-3 use` is not in it: each row spells its own key, so the mapping is local to the row the human is reading.
 
 `readDeps()` returns `[state.kind, labels.join('\u0000')]`, derived in `update()` before `super.update()` — the `PeerStrip` pattern, so nothing clock-derived or identity-unstable reaches the dependency tuple. Plain `Component`, not `LiveComponent`: no streaming, no seal.
 
-Styling follows `DESIGN.md` (the harness is Krypton Dark; `DESIGN.amber.md` is the agent view, `DESIGN.binance.md` is browser surfaces): 0px interior pane, no corner brackets, `font-size: 0.74em` and the muted-foreground treatment of `peer-strip.css`. The sheet is one `@layer krypton.component` block plus `.acp-harness__assist[hidden] { display: none; }`, and declares only `acp-harness__assist*` selectors, as `styles-ownership.test.ts` requires.
+Styling follows `DESIGN.md` (the harness is Krypton Dark; `DESIGN.amber.md` is the agent view, `DESIGN.binance.md` is browser surfaces): 0px interior pane, no corner brackets, and the muted-foreground treatment of `peer-strip.css`. It does **not** take that sheet's `0.74em`: the strip is read and acted on, so it is sized `var(--krypton-font-size, 13px)` — the user's `[font] size` — like `tool-row.css` and `permission-row.css`, and hierarchy is carried by colour alpha alone. `assist-strip.test.ts` holds that contract (no `N.NNem` font-size survives in the sheet) because jsdom applies no stylesheet. The sheet is one `@layer krypton.component` block plus `.acp-harness__assist[hidden] { display: none; }`, and declares only `acp-harness__assist*` selectors, as `styles-ownership.test.ts` requires.
 
 ### Data flow
 

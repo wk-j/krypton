@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import type { AssistAction, AssistState } from '../../assist/types';
@@ -13,17 +17,16 @@ const READY: AssistState = { kind: 'ready', taskId: 'next-prompt', actions: ACTI
 
 const ROWS =
   '<div class="acp-harness__assist-row">' +
-  '<span class="acp-harness__assist-index">1 ▸</span>' +
+  '<span class="acp-harness__assist-index">cmd+1</span>' +
   '<span class="acp-harness__assist-label">run the failing test</span></div>' +
   '<div class="acp-harness__assist-row">' +
-  '<span class="acp-harness__assist-index">2 ▸</span>' +
+  '<span class="acp-harness__assist-index">cmd+2</span>' +
   '<span class="acp-harness__assist-label">check the fs_write_review path</span></div>' +
   '<div class="acp-harness__assist-row">' +
-  '<span class="acp-harness__assist-index">3 ▸</span>' +
+  '<span class="acp-harness__assist-index">cmd+3</span>' +
   '<span class="acp-harness__assist-label">ask why the breaker fires twice</span></div>';
 
-const HINT =
-  '<div class="acp-harness__assist-hint">cmd+1-3 use · cmd+0 dismiss · cmd+/ again</div>';
+const HINT = '<div class="acp-harness__assist-hint">cmd+0 dismiss · cmd+/ again</div>';
 
 /** DOM writes a run produced — 0 proves the dependency tuple held. */
 function writes(node: HTMLElement, run: () => void): number {
@@ -106,5 +109,17 @@ describe('AssistStrip', () => {
     expect(count).toBe(0);
     expect([...strip.el.querySelectorAll('*')]).toEqual(before);
     expect([...strip.el.querySelectorAll('*')].every((node, i) => node === before[i])).toBe(true);
+  });
+
+  // The suggestions are read and acted on, so they are sized like the
+  // conversation, not like chrome: an em shrink here renders ~11.8px against
+  // a 16px `[font] size` config. Same contract `harness-tool-render.test.ts`
+  // holds for tool output, enforced here because jsdom applies no sheet.
+  it('sizes the strip from the configured font size, never a shrunk em', () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'assist-strip.css'), 'utf8');
+    const block = css.match(/\.acp-harness__assist\s*\{[^}]*\}/)?.[0] ?? '';
+
+    expect(block).toMatch(/font-size:\s*var\(--krypton-font-size,\s*13px\)/);
+    expect(css).not.toMatch(/font-size:\s*0?\.\d+em/);
   });
 });
