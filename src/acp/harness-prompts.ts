@@ -311,6 +311,9 @@ export function genUiPrompt(intent: string): string {
   ].join('\n')).join('\n');
   return `Create a compact interactive UI for this request: ${intent}\n`
     + 'Reply with exactly one ```krypton-ui fence, or with prose and no fence at all.\n\n'
+    + 'Use sources relevant to the requested facts and the syntax below to build the UI. '
+    + 'Do not inspect the host app source or run its compiler or tests; they may be unavailable. '
+    + 'The host validates the fence and requests corrections.\n\n'
     + `${UI_SYNTAX}\n\n`
     + 'Actions attach to a control and run when it is used:\n'
     + `${ACTIONS.map((action) => `  ${actionSignature(action)}`).join('\n')}\n`
