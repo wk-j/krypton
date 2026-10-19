@@ -118,6 +118,10 @@ export function cachedSvgFontFaces(source: string, fontFamily: string): string |
 export function loadSvgFontFaces(source: string, fontFamily: string): Promise<string> {
   const families = fontStackFamilies(fontFamily);
   if (families.length === 0) return Promise.resolve('');
+  // Only WebKit inside Tauri blocks user-installed fonts in an <img> SVG. A
+  // plain browser page (the spec 313 gallery) resolves the stack itself and has
+  // no backend to subset with, so asking would only log a failed invoke.
+  if (typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)) return Promise.resolve('');
   const text = extraChars(source);
   const key = cacheKey(families, text);
   const hit = cache.get(key);

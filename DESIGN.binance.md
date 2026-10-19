@@ -5,7 +5,8 @@ appliesTo: >
   Loopback HTTP surfaces served by src-tauri/src/hook_server.rs and opened in the
   OS browser — the artifact scaffold (src-tauri/resources/artifact-scaffold.html),
   lane-monitor dashboard (src/acp/artifact-dashboard.html), artifact gallery
-  (src/acp/artifact-gallery.html), docs browser (src/acp/artifact-docs.html),
+  (src/acp/artifact-gallery.html), GenUI component gallery
+  (genui-gallery/index.html), docs browser (src/acp/artifact-docs.html),
   command reference (src/acp/artifact-commands.html), MCP tool reference
   (src/acp/artifact-tools.html), Terminal Control monitor
   (src/acp/artifact-termctrl.html), Hurl web client
@@ -81,6 +82,7 @@ The loopback surfaces:
 | Artifact scaffold | `src-tauri/resources/artifact-scaffold.html` | Template a lane edits into a one-off view | 3-mode toggle: `binance` / `light` / `auto` |
 | Lane-monitor dashboard | `src/acp/artifact-dashboard.html` | Live status of all lanes (polls `/telemetry`) | Fixed dark |
 | Artifact gallery | `src/acp/artifact-gallery.html` | Index of every lane's artifacts (polls `/artifacts`) | Fixed dark |
+| GenUI component gallery | `genui-gallery/index.html` | Searchable index rail plus one component per view: live production renderer, parameters, example source | Fixed dark **shell**; the preview stage alone follows the app (see below) |
 | Docs browser | `src/acp/artifact-docs.html` | Read-only repo markdown reader (`/docs`, `/doc`) | Auto (follows OS `prefers-color-scheme`) |
 | Command reference | `src/acp/artifact-commands.html` | Built-in `#` command + system-prompt reference (`/commands`, fetches `/commands.json` once) | Fixed dark |
 | MCP tool reference | `src/acp/artifact-tools.html` | Built-in MCP tool contract reference (`/tools`, fetches `/tools.json` once) | Fixed dark |
@@ -90,8 +92,18 @@ The loopback surfaces:
 | Project timeline | `src/acp/artifact-timeline.html` | Read-only local requirement/decision chronology (`/timeline`, refetches `/timeline.json` when the tab becomes active); superseded rows are hidden by default, and a row in an open conflict pair marks only its time cell with an accent chip | Auto (follows OS `prefers-color-scheme`) |
 
 Per-surface behaviour and endpoints are specified in `docs/134`, `docs/168`,
-`docs/170`, `docs/171`, `docs/185`, `docs/186` and `docs/adr/0002`/`0010`. **This file is the
+`docs/170`, `docs/171`, `docs/185`, `docs/186`, `docs/313`, and
+`docs/adr/0002`/`0010`. **This file is the
 visual contract only** — it does not restate those specs.
+
+**One exception, by design (spec 313 rev 3).** Inside the GenUI component
+gallery, `.gallery__stage` is not a loopback surface: it reproduces the Krypton
+window a component actually lives in, painted from the app's own resolved theme
+and `[font]` fetched over loopback. Its border, radius, backdrop and glow are
+`.krypton-window`'s, not this file's, and the catalog inside it answers to
+`--krypton-*` / `--agent-*`. Everything around it — rail, search, headings,
+parameter table, pager — stays fixed dark as above. Do not restyle the stage to
+this palette, and do not extend the exception to another surface.
 
 ## Colors
 
@@ -171,6 +183,13 @@ edges, matching the exchange-UI source:
 
 `1px` borders throughout. No shadows for elevation — elevation is the
 lightness step (`bg → card → code-bg`), not a drop shadow.
+
+Every page caps its shell and centres it (`margin: 0 auto`) instead of running
+edge to edge: `1140px` for the single-column surfaces (`.main` on the
+dashboard, artifact gallery and tool reference), `1180px` for the two-pane ones
+(`.layout` in the docs browser, `.gallery` in the component gallery), `1400px`
+for the split command reference. Past the cap the extra width only separates a
+fixed rail from fixed content.
 
 ## Components
 

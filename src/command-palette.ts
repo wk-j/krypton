@@ -892,6 +892,12 @@ export class CommandPalette {
       execute: () => c.openGallery(),
     });
     this.register({
+      id: 'genui-gallery.open',
+      label: 'Open GenUI Component Gallery',
+      category: 'Window',
+      execute: () => c.openGenUiGallery(),
+    });
+    this.register({
       id: 'docs.open',
       label: 'Open Docs Browser',
       category: 'Window',

@@ -193,7 +193,11 @@ None. The language, the 57-component set, `#ui` as the sole injection point, the
 |---|---|---|
 | 1 | Language core, catalog, panel rework, Layout/Content/Data/Inputs/Form — **40 components** (Data minus the file-backed `Snippet`), the generated `#ui` prompt | A lane writes a spec with a slider, a conditional and a chart; the panel recomputes one node per input; `npm run check`, Vitest, `cargo clippy` clean |
 | 2 | `read_ui_data`, `Load`, parsers, report readers, `Snippet` + Dev + Project — **12 components** | A lane runs vitest to a JSON file and the panel shows the failures from that file, with the file unreadable from outside the roots |
-| 3 | Manage (5), `specToMarkdown`, gallery examples, docs | Every catalog entry has an example that compiles and evaluates in CI; Live Assist shows the markdown rendering |
+| 3 | Manage (5), `specToMarkdown`, examples for added components, docs | Every new catalog entry has an example that compiles and evaluates in CI; Live Assist shows the markdown rendering |
+
+The 40 shipped Phase 1 components have a browser gallery with compiling examples
+under [spec 313](./0313-genui-component-gallery.md). Future catalog additions
+must extend its example coverage.
 
 ## Resources
 

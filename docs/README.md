@@ -315,6 +315,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 310 | [ACP Harness Generative UI — Inline Panel](./0310-harness-genui-inline-panel.md) |
 | 311 | [Connected Computer Commands from ACP Harness](./0311-connected-computer-commands.md) |
 | 312 | [ACP Harness `#ui` Preflight and Repair](./0312-harness-genui-preflight-repair.md) |
+| 313 | [GenUI Component Gallery (Loopback Page)](./0313-genui-component-gallery.md) |
 
 ## ADRs (24)
 

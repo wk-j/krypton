@@ -3547,6 +3547,98 @@ async fn handle_gallery() -> Response {
     html_response(GALLERY_HTML)
 }
 
+/// Spec 313: the browser gallery uses the same bundled GenUI renderer as the app.
+/// Vite serves its source in dev; release assets come from Tauri's frontendDist.
+async fn handle_genui_gallery(AxumState(state): AxumState<Arc<HookServerState>>) -> Response {
+    if cfg!(debug_assertions) {
+        return Response::builder()
+            .status(StatusCode::TEMPORARY_REDIRECT)
+            .header(header::LOCATION, "http://127.0.0.1:1420/genui-gallery/")
+            .header(header::CACHE_CONTROL, "no-store")
+            .body(Body::empty())
+            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    }
+    genui_gallery_asset(&state.app_handle, "genui-gallery/index.html")
+}
+
+async fn handle_genui_gallery_asset(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(name): Path<String>,
+) -> Response {
+    if !valid_genui_gallery_asset_name(&name) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    genui_gallery_asset(&state.app_handle, &format!("genui-gallery/assets/{name}"))
+}
+
+/// GET /genui-gallery/theme.json — the app's resolved theme plus the configured
+/// font, so the browser gallery paints the catalog with exactly the tokens the
+/// Krypton window uses (spec 313 rev 3). Read-only; no lane or project data.
+async fn handle_genui_gallery_theme(AxumState(state): AxumState<Arc<HookServerState>>) -> Response {
+    let app = &state.app_handle;
+    let config = app.state::<Arc<std::sync::RwLock<crate::config::KryptonConfig>>>();
+    let engine = app.state::<Arc<crate::theme::ThemeEngine>>();
+    let (resolved, font) = match config.read() {
+        Ok(cfg) => (engine.resolve_for_config(&cfg), cfg.font.clone()),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let Ok(theme) = resolved else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let mut resp = Json(json!({ "theme": theme, "font": font })).into_response();
+    let headers = resp.headers_mut();
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        header::HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        header::REFERRER_POLICY,
+        header::HeaderValue::from_static("no-referrer"),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-store"),
+    );
+    resp
+}
+
+fn valid_genui_gallery_asset_name(name: &str) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+fn genui_gallery_asset(app: &AppHandle, path: &str) -> Response {
+    let resolver = app.asset_resolver();
+    // In release, get() falls back to the app's index.html for a missing key.
+    // Check the exact embedded path before letting that fallback turn a 404 into 200.
+    if !cfg!(debug_assertions)
+        && !resolver
+            .iter()
+            .any(|(key, _)| key.as_ref().strip_prefix('/') == Some(path))
+    {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let Some(asset) = resolver.get(path.to_string()) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, asset.mime_type())
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::REFERRER_POLICY, "no-referrer")
+        .header(header::CACHE_CONTROL, "no-store")
+        .header(
+            header::CONTENT_SECURITY_POLICY,
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'",
+        )
+        .body(Body::from(asset.bytes))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
 /// GET /timeline — read-only project decision/requirement history (spec 253).
 async fn handle_timeline() -> Response {
     html_response(TIMELINE_HTML)
@@ -9852,6 +9944,15 @@ pub fn start(
                 .route("/dashboard", get(handle_dashboard))
                 .route("/telemetry", get(handle_telemetry))
                 .route("/gallery", get(handle_gallery))
+                .route("/genui-gallery", get(handle_genui_gallery))
+                .route(
+                    "/genui-gallery/assets/{name}",
+                    get(handle_genui_gallery_asset),
+                )
+                .route(
+                    "/genui-gallery/theme.json",
+                    get(handle_genui_gallery_theme),
+                )
                 .route("/artifacts", get(handle_artifacts))
                 .route("/timeline", get(handle_timeline))
                 .route("/timeline.json", get(handle_timeline_json))
@@ -10657,6 +10758,9 @@ mod tests {
             .route("/dashboard", get(ok))
             .route("/telemetry", get(ok))
             .route("/gallery", get(ok))
+            .route("/genui-gallery", get(ok))
+            .route("/genui-gallery/assets/{name}", get(ok))
+            .route("/genui-gallery/theme.json", get(ok))
             .route("/artifacts", get(ok))
             .route("/timeline", get(ok))
             .route("/timeline.json", get(ok))
@@ -10698,6 +10802,22 @@ mod tests {
             .route("/artifact/{token}", get(ok))
             .route("/artifact/state/{token}", get(ok))
             .route("/artifact/feedback/{token}", post(ok));
+    }
+
+    #[test]
+    fn genui_gallery_asset_names_stay_in_one_directory() {
+        assert!(valid_genui_gallery_asset_name("gallery-C4d2.js"));
+        assert!(valid_genui_gallery_asset_name("gallery.8b3a.css"));
+        for name in [
+            "",
+            ".",
+            "..",
+            "../index.html",
+            "nested/file.js",
+            "file%2Fpath.js",
+        ] {
+            assert!(!valid_genui_gallery_asset_name(name), "accepted {name:?}");
+        }
     }
 
     #[test]

@@ -702,6 +702,30 @@ visible draft. Only a later user Enter submits it through normal lane routing.
 Panel state is retained for up to 32 fences per Harness view and discarded on
 lane reset/close or Harness disposal.
 
+### GenUI component gallery (spec 313)
+
+The command palette's `genui-gallery.open` entry or the Harness's `#ui-gallery`
+reads `get_hook_server_port`, then uses `open_url` to open
+`http://127.0.0.1:<port>/genui-gallery` in the OS browser. The loopback server
+serves the separate Vite-built page and its assets from Tauri's `frontendDist`
+in release builds; debug builds redirect to the local Vite page. The gallery
+enumerates the shipped catalog into an index rail and opens **one component at a
+time**: the fragment (`#<ComponentName>`) is the route, so only the open
+component is compiled through `compile()` and rendered with the same GenUI
+components as the inline panel, and leaving it disposes its renderers while its
+input state is kept for a return visit. Inputs change only each example's
+in-page state. Draft and OpenUrl actions display demo feedback and never contact
+a lane; no project data is requested.
+
+Before the first component mounts, the page fetches `/genui-gallery/theme.json`
+— the app's `ThemeEngine::resolve_for_config` result plus `[font]` — and writes
+`themeCssProperties()` and the `--krypton-font-*` properties onto its own
+`:root`, the same values the Krypton window carries, so a preview is the
+component as the user's theme draws it. It re-fetches on window `focus`, so a
+palette switch or Reload Config lands on the next look. A debug build's Vite
+page is a different origin, cannot reach the route, and falls back to the
+built-in krypton-dark values in `gallery.css`.
+
 ## Global Lane Lessons Flow (spec 298)
 
 ```

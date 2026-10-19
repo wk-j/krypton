@@ -1,0 +1,190 @@
+/* The app's cascade order, so a catalog sheet lands in the gallery exactly
+ * where it lands in Krypton. Declared first; `src/ui/component.ts` repeats the
+ * identical statement, which is idempotent. */
+@import '../../styles/layers.css';
+
+:root {
+  color-scheme: dark;
+  --gallery-bg: #17191d;
+  --gallery-card: #21242a;
+  --gallery-code: #1d1f24;
+  --gallery-fg: #eaecef;
+  --gallery-muted: #707a8a;
+  --gallery-border: #2f353d;
+  --gallery-accent: #fcd535;
+  --gallery-tint: rgb(252 213 53 / .08);
+  --gallery-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Fallback only. `main.ts` fetches `/genui-gallery/theme.json` and writes the
+   * app's real `themeCssProperties()` onto :root, which wins over these. They
+   * are the built-in krypton-dark values (src-tauri/themes/krypton-dark.toml)
+   * so a Vite dev page — which cannot reach the loopback route — still paints
+   * the catalog in Krypton's default palette rather than an invented one.
+   * Only names the app itself sets belong here: `--krypton-error`,
+   * `--krypton-danger` and `--krypton-font-mono` are NOT app tokens, so the
+   * catalog's own literal fallbacks must stand, exactly as they do in-app. */
+  --krypton-fg: #b0c4d8;
+  --krypton-fg-rgb: 176, 196, 216;
+  --krypton-bg: rgba(10, 10, 15, 0.5);
+  --krypton-accent: #0cf;
+  --krypton-accent-rgb: 0, 204, 255;
+  --krypton-window-accent: #0cf;
+  --krypton-window-accent-rgb: 0, 204, 255;
+  --krypton-success-rgb: 51, 221, 255;
+  --krypton-warning-rgb: 232, 197, 71;
+  --krypton-danger-rgb: 255, 58, 92;
+  --krypton-info-rgb: 74, 158, 255;
+  --krypton-special-rgb: 199, 125, 255;
+  --krypton-border-width: 1px;
+  --krypton-border-radius: 8px;
+  --krypton-backdrop-color: rgba(6, 10, 18, 0.5);
+  --krypton-shadow-blur: 15px;
+  --krypton-font-family: 'Mononoki Nerd Font Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --krypton-font-size: 14px;
+  --krypton-line-height: 1.2;
+  --krypton-content-line-height: 1.2;
+  --agent-text: #b0c4d8;
+  --agent-green: #0cf;
+  --agent-green-rgb: 0, 204, 255;
+  --agent-cyan: #0cf;
+  --agent-red: #ff3a5c;
+  /* agent.css declares exactly this at :root; the harness font resolves through it. */
+  --agent-font: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+}
+
+/* The catalog is authored against the app's global reset (src/styles/base.css):
+ * border-box, no UA margins or padding. This page links component sheets only,
+ * so without the reset the same markup measures differently here than in the
+ * window — `.acp-genui__list-row` (full-width row + `padding: 5px 9px`) spilled
+ * 18px past its own block. Scoped to the preview, so the Binance shell around
+ * it keeps the content-box metrics it was built with, and in `krypton.reset`
+ * so it stays the floor underneath every component rule. */
+@layer krypton.reset {
+  .gallery__preview, .gallery__preview *, .gallery__preview *::before,
+  .gallery__preview *::after { margin: 0; padding: 0; box-sizing: border-box; }
+}
+
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--gallery-bg);
+  color: var(--gallery-fg);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'IBM Plex Sans', sans-serif;
+}
+
+/* Rail + view are capped and centred as one shell, like the docs browser's
+ * `.layout` (artifact-docs.html): past ~1180px the extra width only pushes the
+ * rail and the 820px view apart. */
+.gallery { display: flex; height: 100%; width: 100%; max-width: 1180px; margin-inline: auto; }
+
+/* ── index rail ───────────────────────────────────────────────────────── */
+.gallery__side { display: flex; flex-direction: column; flex: 0 0 240px; min-height: 0;
+  border-right: 1px solid var(--gallery-border); }
+.gallery__brand { padding: 16px 16px 12px; }
+.gallery__eyebrow, .gallery__count, .gallery__side-foot, .gallery__crumb, .gallery__label,
+.gallery__status, .gallery__foot, .gallery__nav-heading, .gallery__nav-item, .gallery__param-name,
+.gallery__param-kind, .gallery__pager-dir { font-family: var(--gallery-mono); }
+.gallery__eyebrow { color: var(--gallery-accent); font-size: 10px; letter-spacing: .08em; }
+.gallery__title { margin: 3px 0 0; font-size: 17px; line-height: 1.25; }
+.gallery__count { margin-top: 3px; color: var(--gallery-muted); font-size: 11px; }
+.gallery__theme { margin-top: 2px; color: var(--gallery-accent); font-family: var(--gallery-mono);
+  font-size: 10px; overflow-wrap: anywhere; }
+.gallery__search-box { display: flex; flex-direction: column; gap: 5px; padding: 0 16px 12px; }
+.gallery__search-label { color: var(--gallery-muted); font-family: var(--gallery-mono); font-size: 10px;
+  letter-spacing: .08em; text-transform: uppercase; }
+.gallery__search { padding: 7px 10px; border: 1px solid var(--gallery-border); border-radius: 6px;
+  background: var(--gallery-code); color: var(--gallery-fg); font: 12px/1.4 var(--gallery-mono); }
+.gallery__search::placeholder { color: var(--gallery-muted); }
+.gallery__nav { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 10px 14px; }
+.gallery__nav-group + .gallery__nav-group { margin-top: 14px; }
+.gallery__nav-group[hidden] { display: none; }
+.gallery__nav-heading { position: sticky; top: 0; z-index: 1; margin: 0 0 4px; padding: 4px 6px 5px;
+  border-bottom: 1px solid var(--gallery-border); background: var(--gallery-bg);
+  color: var(--gallery-muted); font-size: 10px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; }
+.gallery__nav-item { display: block; padding: 4px 8px; border-radius: 5px; color: var(--gallery-fg);
+  font-size: 12px; text-decoration: none; scroll-margin: 30px 0 14px; }
+.gallery__nav-item[hidden] { display: none; }
+.gallery__nav-item:hover { background: var(--gallery-tint); color: var(--gallery-accent); }
+.gallery__nav-item--current { background: var(--gallery-tint); color: var(--gallery-accent);
+  font-weight: 700; }
+.gallery__empty { margin: 0; padding: 0 16px 10px; color: var(--gallery-muted); font-size: 12px; }
+.gallery__empty[hidden] { display: none; }
+.gallery__side-foot { padding: 9px 16px; border-top: 1px solid var(--gallery-border);
+  color: var(--gallery-muted); font-size: 10px; }
+
+/* ── one component ────────────────────────────────────────────────────── */
+.gallery__main { flex: 1 1 auto; min-width: 0; overflow: auto; }
+.gallery__detail, .gallery__pager, .gallery__foot { max-width: 820px; margin: 0 auto;
+  padding-inline: 30px; }
+.gallery__view { padding: 26px 0 4px; }
+.gallery__crumb { color: var(--gallery-accent); font-size: 10px; letter-spacing: .08em;
+  text-transform: uppercase; }
+.gallery__view-title { display: flex; align-items: baseline; gap: 14px; margin-top: 5px; }
+.gallery__view-name { margin: 0; font: 700 20px/1.3 var(--gallery-mono); }
+.gallery__view-actions { display: flex; gap: 6px; margin-left: auto; }
+.gallery__view-actions button { padding: 3px 9px; border: 1px solid var(--gallery-border);
+  border-radius: 6px; background: transparent; color: var(--gallery-muted);
+  font: 11px/1.5 var(--gallery-mono); cursor: pointer; }
+.gallery__view-actions button:hover { border-color: var(--gallery-accent); color: var(--gallery-accent); }
+.gallery__view-summary { margin: 6px 0 0; color: var(--gallery-muted); font-size: 13px; }
+.gallery__label { margin: 22px 0 10px; padding-bottom: 5px;
+  border-bottom: 1px solid var(--gallery-border); color: var(--gallery-muted); font-size: 10px;
+  letter-spacing: .08em; }
+/* The one surface on this page that is NOT a loopback surface: it reproduces
+ * the Krypton window the component actually lives in. Border, radius, shadow
+ * and backdrop are `.krypton-window` (window.css) by value; the inner block
+ * copies the typography and alias declarations `.acp-harness`
+ * (harness-shared.css) puts around a seated panel. The opaque base under the
+ * translucent backdrop stands in for the user's desktop, which no browser page
+ * can see. */
+.gallery__stage { padding: 14px 16px;
+  border: var(--krypton-border-width, 1px) solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: linear-gradient(var(--krypton-backdrop-color, rgba(6, 10, 18, .5)),
+    var(--krypton-backdrop-color, rgba(6, 10, 18, .5))), #0b0d12;
+  box-shadow: 0 0 var(--krypton-shadow-blur, 15px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12); }
+.gallery__preview { min-height: 26px;
+  color: var(--agent-text, var(--krypton-fg, #d8e8d8));
+  font-family: var(--agent-font, var(--krypton-font-family, monospace));
+  font-size: var(--krypton-font-size, 13px);
+  --agent-accent: var(--agent-green, #8effb0);
+  --agent-user: var(--agent-cyan, #6dd0ff);
+  --agent-error: var(--agent-red, #ff6d8a); }
+.gallery__status { margin-top: 10px; color: var(--gallery-accent); font-size: 11px;
+  overflow-wrap: anywhere; }
+.gallery__status:empty { display: none; }
+.gallery__source { max-height: 300px; overflow: auto; margin: 12px 0 0; padding: 10px 12px;
+  border: 1px solid var(--gallery-border); border-radius: 8px; background: var(--gallery-code);
+  color: var(--gallery-fg); font: 11px/1.6 var(--gallery-mono); white-space: pre-wrap;
+  overflow-wrap: anywhere; }
+.gallery__source[hidden] { display: none; }
+.gallery__param-list { display: grid; grid-template-columns: max-content 1fr; gap: 5px 18px;
+  margin: 0; font-size: 11px; }
+.gallery__param-name { display: flex; align-items: baseline; gap: 7px; margin: 0; color: var(--gallery-fg); }
+.gallery__param-required { color: var(--gallery-accent); font-size: 10px; }
+.gallery__param-kind { margin: 0; color: var(--gallery-muted); overflow-wrap: anywhere; }
+.gallery__pager { display: flex; gap: 10px; margin-top: 26px; padding-top: 12px;
+  border-top: 1px solid var(--gallery-border); }
+.gallery__pager:empty { display: none; }
+.gallery__pager-link { display: flex; flex-direction: column; gap: 2px; flex: 0 1 auto;
+  padding: 7px 11px; border: 1px solid var(--gallery-border); border-radius: 6px;
+  color: var(--gallery-fg); text-decoration: none; }
+.gallery__pager-link--next { margin-left: auto; text-align: right; }
+.gallery__pager-link:hover { border-color: var(--gallery-accent); color: var(--gallery-accent); }
+.gallery__pager-dir { color: var(--gallery-muted); font-size: 10px; }
+.gallery__pager-name { font: 700 12px/1.3 var(--gallery-mono); }
+.gallery__foot { padding-block: 16px 26px; color: var(--gallery-muted); font-size: 10px; }
+
+.gallery__search:focus-visible, .gallery__nav-item:focus-visible,
+.gallery__view-actions button:focus-visible, .gallery__pager-link:focus-visible {
+  outline: 2px solid var(--gallery-accent); outline-offset: 2px; }
+
+@media (max-width: 760px) {
+  .gallery { flex-direction: column; height: auto; }
+  .gallery__side { flex: 0 0 auto; border-right: 0; border-bottom: 1px solid var(--gallery-border); }
+  .gallery__nav { max-height: 220px; }
+  .gallery__side-foot { display: none; }
+  .gallery__detail, .gallery__pager, .gallery__foot { padding-inline: 16px; }
+  .gallery__view-title { flex-wrap: wrap; }
+  .gallery__view-actions { margin-left: 0; }
+}

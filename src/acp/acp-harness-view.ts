@@ -828,7 +828,7 @@ const GIT_BRANCH_REFRESH_MS = 150;
 const SPINNER_INTERVAL_MS = 80;
 
 const REMOTE_UNSUPPORTED_HASH_COMMANDS = new Set([
-  '#gallery', '#docs', '#analyses', '#reviews', '#push', '#usage', '#daily', '#lessons',
+  '#gallery', '#ui-gallery', '#docs', '#analyses', '#reviews', '#push', '#usage', '#daily', '#lessons',
   '#xenon', '#termctrl', '#hurl', '#draw', '#ticket', '#review', '#review-thread', '#directive',
   '#analyze-github-issue', '#create-github-issue', '#dispatch-github-issue',
   '#fix-github-issue', '#handle-github-issue', '#post-github-comment', '#tag-github-issue',
@@ -11528,6 +11528,22 @@ export class AcpHarnessView implements ContentView {
         this.flashChip(url);
       } catch (e) {
         this.flashChip(`gallery open failed: ${errorText(e)}`);
+      }
+      return;
+    }
+    if (parts[0] === '#ui-gallery') {
+      this.setDraft(lane, '', 0);
+      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
+      if (!port) {
+        this.flashChip('GenUI gallery unavailable - hook server not ready');
+        return;
+      }
+      const url = `http://127.0.0.1:${port}/genui-gallery`;
+      try {
+        await invoke('open_url', { url });
+        this.flashChip(url);
+      } catch (e) {
+        this.flashChip(`GenUI gallery open failed: ${errorText(e)}`);
       }
       return;
     }

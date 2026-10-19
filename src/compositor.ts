@@ -3965,6 +3965,28 @@ export class Compositor {
     }
   }
 
+  /** Open the live GenUI component catalog in the system browser. */
+  async openGenUiGallery(): Promise<void> {
+    let port = 0;
+    try {
+      port = await invoke<number>('get_hook_server_port');
+    } catch (e) {
+      console.error('[GenUI Gallery] failed to read hook server port:', e);
+    }
+    if (!port) {
+      this.showNotification('GenUI gallery unavailable — hook server not ready');
+      return;
+    }
+    const url = `http://127.0.0.1:${port}/genui-gallery`;
+    try {
+      await invoke('open_url', { url });
+      this.showNotification(url);
+    } catch (e) {
+      console.error('[GenUI Gallery] failed to open gallery:', e);
+      this.showNotification('GenUI gallery open failed');
+    }
+  }
+
   /**
    * Open the docs browser in the system browser.
    */
