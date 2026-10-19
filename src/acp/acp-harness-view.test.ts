@@ -1964,7 +1964,6 @@ describe('ACP peer activity UI (spec 118)', () => {
     ]);
     const ghost = { textContent: 'partial' };
     const fresh = { textContent: ' text' };
-    const caret = { remove: vi.fn() };
     const body = {
       classList: {
         add: (...names: string[]) => names.forEach((name) => classes.add(name)),
@@ -1975,7 +1974,6 @@ describe('ACP peer activity UI (spec 118)', () => {
       querySelector: (selector: string) => {
         if (selector.includes('thought-ghost')) return ghost;
         if (selector.includes('thought-fresh')) return fresh;
-        if (selector.includes('thought-caret')) return caret;
         return null;
       },
       scrollHeight: 180,
@@ -1986,7 +1984,6 @@ describe('ACP peer activity UI (spec 118)', () => {
       expect(syncPeekThoughtBody(body, { phase: 'seal', text: '**streaming**\n\ncomplete' })).toBe(false);
       expect(ghost.textContent).toBe('**streaming**\ncomplete');
       expect(fresh.textContent).toBe('');
-      expect(caret.remove).toHaveBeenCalledOnce();
       expect(classes.has('acp-harness__msg-body--thought-teletype')).toBe(false);
       expect(classes.has('acp-harness__msg-body--markdown')).toBe(false);
       expect(body.dataset.peekRender).toBe('sealed-plain');
@@ -1995,7 +1992,7 @@ describe('ACP peer activity UI (spec 118)', () => {
       // Later idle/chrome refreshes keep the same child objects instead of
       // falling through to renderPeekThoughtMarkdown and replacing the body.
       expect(syncPeekThoughtBody(body, { phase: 'seal', text: '**streaming**\n\ncomplete' })).toBe(false);
-      expect(caret.remove).toHaveBeenCalledOnce();
+      expect(ghost.textContent).toBe('**streaming**\ncomplete');
       expect(frames).toHaveLength(2);
     } finally {
       if (previous) host.requestAnimationFrame = previous;

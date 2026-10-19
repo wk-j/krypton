@@ -16,8 +16,8 @@
 // to `syncPeekThoughtBody`, which advances the teletype print head into the
 // ghost/fresh span pair it already owns — the body's child nodes keep their
 // identity, the text grows. `seal()` settles that pair through
-// `sealThoughtTeletype`: the full text lands in the ghost span, the caret goes,
-// and `acp-harness__msg-body--thought-teletype` is dropped. The next `update()`
+// `sealThoughtTeletype`: the full text lands in the ghost span and
+// `acp-harness__msg-body--thought-teletype` is dropped. The next `update()`
 // writes nothing.
 //
 // The head is re-derived in `paint()` AND in `onSeal()`, because sealing is the
@@ -116,5 +116,5 @@ export class ThoughtCard extends LiveComponent<ThoughtCardProps> {
 
 export const def: ComponentDef = {
   id: 'thought-card',
-  blocks: ['acp-harness__lane-thought', 'acp-harness__thought-fresh', 'acp-harness__thought-caret'],
+  blocks: ['acp-harness__lane-thought', 'acp-harness__thought-fresh'],
 };

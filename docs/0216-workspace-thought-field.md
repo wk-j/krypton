@@ -88,11 +88,11 @@ Peek hide / `Esc` / no 109 candidate never empty this slot by themselves. Rankin
 
 - `.acp-harness__lane-thought` with a name header and `.acp-harness__lane-thought-body`.
 - Body max-height ≈ 10 line-heights, `overflow: auto`, pin to latest line after layout.
-- Live (`delta`): catch-up teletype, plain `pre-wrap` text, block caret, last ~10 glyphs brighter (spec 232). At the live `delta` → `seal` boundary, keep those span nodes, reveal the complete collapsed text, remove the caret/highlight, and retain plain wrapping so WebKit has no body replacement or Markdown reflow to repaint. A sealed thought mounted later from history still renders as GFM via `marked` (same parser as sealed assistant rows). Veil: `installThoughtVeil`. Empty seal: hide the slot (no content), delayed by `THOUGHT_SLOT_HIDE_MS` so thinking → tool interleave does not collapse the slot on the same frame.
+- Live (`delta`): catch-up teletype, plain `pre-wrap` text, last ~10 glyphs brighter (spec 232), no print-head caret. At the live `delta` → `seal` boundary, keep those span nodes, reveal the complete collapsed text, drop the fresh highlight, and retain plain wrapping so WebKit has no body replacement or Markdown reflow to repaint. A sealed thought mounted later from history still renders as GFM via `marked` (same parser as sealed assistant rows). Veil: `installThoughtVeil`. Empty seal: hide the slot (no content), delayed by `THOUGHT_SLOT_HIDE_MS` so thinking → tool interleave does not collapse the slot on the same frame.
 - Empty live thought (providers that stream blank `thought_chunk`s) is **rail veil only**. Do not insert a transcript thought row for empty text — `dropVeiledThoughtRow` used to paint that row and delete it on the next `tool_call`, which jumped the transcript up and down.
 - Same-lane refresh patches the body — do not `replaceChildren` the card on every chunk.
-- Ghost type. Lane accent only on the name. Caret only while `delta`. No scan wipe, no corner brackets, no grid, no wallpaper motion.
-- `prefers-reduced-motion`: veil is the static word `thinking`; live text snaps with no caret.
+- Ghost type. Lane accent only on the name. No caret in any phase. No scan wipe, no corner brackets, no grid, no wallpaper motion.
+- `prefers-reduced-motion`: veil is the static word `thinking`; live text snaps to the full source instead of catching up a glyph at a time.
 
 ### Keybindings
 

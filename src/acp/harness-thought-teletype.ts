@@ -86,7 +86,6 @@ export function sealThoughtTeletype(body: HTMLElement, source: string): boolean 
   states.delete(body);
   ghost.textContent = source;
   fresh.textContent = '';
-  body.querySelector<HTMLElement>(':scope > .acp-harness__thought-caret')?.remove();
   body.classList.remove('acp-harness__msg-body--thought-teletype');
   return true;
 }
@@ -104,7 +103,7 @@ export function applyThoughtTeletype(
     ? { source, shown: source.length }
     : stepThoughtTeletype({ source, shown: prev.shown }, { reducedMotion: false, phase: 'delta' });
   states.set(body, next);
-  paintThoughtTeletype(body, next, { caret: !reducedMotion });
+  paintThoughtTeletype(body, next);
   return next.shown < next.source.length;
 }
 
@@ -117,14 +116,13 @@ export function tickThoughtTeletype(
   const reducedMotion = opts.reducedMotion ?? prefersReducedMotion();
   const next = stepThoughtTeletype(state, { reducedMotion, phase: 'delta' });
   states.set(body, next);
-  paintThoughtTeletype(body, next, { caret: !reducedMotion });
+  paintThoughtTeletype(body, next);
   return next.shown < next.source.length;
 }
 
 export function paintThoughtTeletype(
   body: HTMLElement,
   state: ThoughtTeletypeState,
-  opts: { caret: boolean },
 ): void {
   body.classList.remove(
     'acp-harness__msg-body--thought-veil',
@@ -140,7 +138,6 @@ export function paintThoughtTeletype(
 
   let ghost = body.querySelector<HTMLElement>(':scope > .acp-harness__thought-ghost');
   let fresh = body.querySelector<HTMLElement>(':scope > .acp-harness__thought-fresh');
-  let caret = body.querySelector<HTMLElement>(':scope > .acp-harness__thought-caret');
   if (!ghost || !fresh) {
     body.replaceChildren();
     ghost = document.createElement('span');
@@ -148,19 +145,8 @@ export function paintThoughtTeletype(
     fresh = document.createElement('span');
     fresh.className = 'acp-harness__thought-fresh';
     body.append(ghost, fresh);
-    caret = null;
   }
   const parts = splitTeletypePaint(state.source, state.shown);
   ghost.textContent = parts.ghost;
   fresh.textContent = parts.fresh;
-  if (opts.caret) {
-    if (!caret) {
-      caret = document.createElement('span');
-      caret.className = 'acp-harness__thought-caret';
-      caret.setAttribute('aria-hidden', 'true');
-      body.appendChild(caret);
-    }
-  } else if (caret) {
-    caret.remove();
-  }
 }

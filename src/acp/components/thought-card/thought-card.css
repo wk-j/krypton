@@ -2,10 +2,10 @@
    Carved VERBATIM from src/styles/acp-harness.css:1355-1508. Delete that range
    when this directory is registered.
 
-   `acp-harness__thought-fresh` and `acp-harness__thought-caret` are painted by
-   `harness-thought-teletype.ts` into this card's body and nowhere else, so
-   they come with it — as does the `prefers-reduced-motion` block at the end of
-   the range, whose two rules have the card's body and its caret as subjects.
+   `acp-harness__thought-fresh` is painted by `harness-thought-teletype.ts`
+   into this card's body and nowhere else, so it comes with it — as does the
+   `prefers-reduced-motion` block at the end of the range, whose rule has the
+   card's body as its subject.
    `.acp-harness__lane-rail__slot[data-slot="thought"]` (:1142-1144) stays
    behind: that is the rail slot's geometry, which `LayoutHost` owns.
 
@@ -84,20 +84,9 @@
     color: color-mix(in srgb, var(--krypton-accent, #00ccff) 85%, transparent);
   }
 
-  .acp-harness__thought-caret {
-    display: inline-block;
-    width: 7px;
-    height: 1.05em;
-    margin-left: 1px;
-    background: var(--krypton-accent, #00ccff);
-    box-shadow: 0 0 8px color-mix(in srgb, var(--krypton-accent, #00ccff) 55%, transparent);
-    vertical-align: -2px;
-    animation: acp-thought-caret 1.05s steps(2) infinite;
-  }
-
-  @keyframes acp-thought-caret {
-    50% { opacity: 0; }
-  }
+  /* No print-head caret: the fresh-window colour already says where the text
+     is arriving, and a blinking bar after it read as a second cursor beside
+     the composer's. */
 
   /* spec 216 — same GFM as sealed assistant, kept ghost so thought stays secondary. */
   .acp-harness__lane-thought-body.acp-harness__msg-body--markdown {
@@ -160,11 +149,6 @@
     .acp-harness__lane-thought-body .acp-harness__thought-veil-dot {
       animation: none;
       opacity: 0.55;
-    }
-
-    .acp-harness__thought-caret {
-      display: none;
-      animation: none;
     }
   }
 }

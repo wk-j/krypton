@@ -11,7 +11,7 @@ The right-rail thought card (spec 216) is a ghost markdown dump. Live reasoning 
 
 ## Solution
 
-Keep the 216 slot, source, and occupancy rules. During `delta`, paint the body as a **catch-up teletype**: a display cursor chases `thought.text`, newest glyphs sit brighter then settle to ghost, a block caret marks the print head. On `seal`, snap the remainder and restore GFM. Veil is unchanged.
+Keep the 216 slot, source, and occupancy rules. During `delta`, paint the body as a **catch-up teletype**: a display cursor chases `thought.text`, newest glyphs sit brighter then settle to ghost. On `seal`, snap the remainder and restore GFM. Veil is unchanged. (The print head was originally marked by a blinking block caret; that caret is gone — see §UI.)
 
 No scan wipe, no corner brackets, no grid, no wallpaper, no decrypt scramble.
 
@@ -38,7 +38,7 @@ No scan wipe, no corner brackets, no grid, no wallpaper, no decrypt scramble.
 
 | Surface | Behavior | Notes |
 |---------|----------|-------|
-| Alien MU/TH/UR, WarGames, 2001 | Teleprinter + block caret | Anchors for this pick |
+| Alien MU/TH/UR, WarGames, 2001 | Teleprinter catch-up print | Anchors for this pick |
 | Claude.app / Codex | Token stream in the thread | No dedicated thought instrument |
 | Spec 93 transcript | New pretext lines fade+rise | Different surface; leave it |
 | Spec 216 thought today | Ghost GFM, veil dots | Baseline this spec replaces while live |
@@ -53,8 +53,8 @@ No scan wipe, no corner brackets, no grid, no wallpaper, no decrypt scramble.
 | `src/acp/harness-thought-teletype.test.ts` | **New.** Catch-up cap, shrink, seal snap, code-point advance. |
 | `src/acp/lane-peek.ts` | `delta` body goes through the teletype painter; veil/seal unchanged. |
 | `src/acp/acp-harness-view.ts` | rAF armed only while the showing thought card is `delta`. |
-| `src/styles/acp-harness.css` | Fresh glyphs, block caret; reduced-motion. |
-| `docs/0216-workspace-thought-field.md` | Amend "no caret"; live body is plain teletype, GFM on seal. |
+| `src/styles/acp-harness.css` | Fresh glyphs; reduced-motion. |
+| `docs/0216-workspace-thought-field.md` | Live body is plain teletype, GFM on seal. |
 | `docs/0072-acp-harness-view.md` | One line under the thought slot. |
 | `docs/README.md` | Index. |
 | `docs/prototypes/232-thought-teletype-hud.html` | Static/replay mock matching the artifact. |
@@ -98,24 +98,23 @@ Body is plain `pre-wrap` text, not GFM:
 ```
 [0, shown - FRESH)     ghost (inherit body color)
 [shown - FRESH, shown) .acp-harness__thought-fresh   (cyan, then settles by aging out of the window)
-caret                  .acp-harness__thought-caret   after `shown`
 ```
 
 Pin to the latest line (`schedulePeekThoughtPin`). Same-lane patch must not `replaceChildren` the card.
 
 ### Phases
 
-| Phase | Body | Label | Caret | rAF |
-|-------|------|-------|-------|-----|
-| `veil` | `installThoughtVeil` (unchanged) | `thinking` | no | off |
-| `delta` | teletype plain text | `thinking` | yes | on until caught up, then on each new chunk |
-| `seal` | snap, then `renderPeekThoughtMarkdown` | `thought` | no | off |
-| empty seal | hide slot (216) | — | — | off |
+| Phase | Body | Label | rAF |
+|-------|------|-------|-----|
+| `veil` | `installThoughtVeil` (unchanged) | `thinking` | off |
+| `delta` | teletype plain text | `thinking` | on until caught up, then on each new chunk |
+| `seal` | snap, then `renderPeekThoughtMarkdown` | `thought` | off |
+| empty seal | hide slot (216) | — | off |
 
 ### UI
 
 - Full 1px border, existing 216 panel fill. No L-corner ticks, no scan wipe, no CRT grid, no extra glow layer.
-- Caret: 7×1.05em block, `--krypton-color-primary`, steps blink 1.05s. Hidden when sealed / veiled / reduced-motion.
+- No print-head caret. The original design had a 7×1.05em blinking block after `shown`; it was removed because the fresh-glyph window already marks where text is arriving, and a second blinking bar competed with the composer's own cursor. The teletype keeps the catch-up motion; nothing blinks.
 - Fresh glyphs: primary at ~0.85. They become ghost by leaving the last-`FRESH` window, not by a color animation on every character.
 - Labels stay `thinking` / `thought`. Lane name still carries the accent.
 
@@ -126,7 +125,7 @@ Pin to the latest line (`schedulePeekThoughtPin`). Same-lane patch must not `rep
 2. renderLaneThought() / patchLaneThoughtCard() as today
 3. If phase === 'delta': write source into ThoughtTeletypeState; step catch-up; paint
 4. View arms a rAF while this card is delta and shown < source
-5. On seal: shown = source.length, drop caret, renderPeekThoughtMarkdown, cancel rAF
+5. On seal: shown = source.length, renderPeekThoughtMarkdown, cancel rAF
 6. prefers-reduced-motion: skip 3–4, paint full source (plain) then GFM on seal
 ```
 

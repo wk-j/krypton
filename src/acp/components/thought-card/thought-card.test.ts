@@ -73,7 +73,6 @@ describe('ThoughtCard', () => {
 
     expect(card.isLive).toBe(false);
     expect(card.body.classList.contains('acp-harness__msg-body--thought-teletype')).toBe(false);
-    expect(card.body.querySelector('.acp-harness__thought-caret')).toBeNull();
     expect(card.body.textContent).toBe('ported the thought card');
     expect(card.el.dataset.phase).toBe('seal');
     expect(card.el.querySelector('.acp-harness__lane-thought-label')?.textContent).toBe('thought');
