@@ -94,6 +94,12 @@ import { AssistantRow } from './components/assistant-row';
 import { GenUiPanel } from './components/genui-panel';
 import type { GenUiPanelState } from './components/genui-panel';
 import { initialState as initialUiState } from './genui/evaluate';
+import {
+  formatUiFailure,
+  preflightUiReply,
+  UI_REPLY_MAX_CHARS,
+  UI_REPLY_MAX_SEGMENTS,
+} from './genui/preflight';
 import { UI_MAX_PANEL_STATES } from './genui/limits';
 import type { UiFenceEntry } from './genui/types';
 import { tickAllSpinners } from './components/spinner';
@@ -241,6 +247,7 @@ import {
   tagGithubIssuePrompt,
   tldrawDrawPrompt,
   genUiPrompt,
+  genUiRepairPrompt,
   wikiIngestPrompt,
   wikiRecallPrompt,
 } from './harness-prompts';
@@ -1143,6 +1150,17 @@ class RailPanel implements Mountable {
  */
 const HIDDEN_PALETTE: ComposerPaletteProps = { rows: [], cursor: 0, hint: '' };
 
+interface UiGeneration {
+  readonly spawnEpoch: number;
+  readonly intent: string;
+  attempt: number;
+  segments: string[];
+  sourceChars: number;
+  formatError: string | null;
+  segmentOpen: boolean;
+  messageId: string | null;
+}
+
 export class AcpHarnessView implements ContentView {
   readonly type: PaneContentType = 'acp_harness';
   readonly element: HTMLElement;
@@ -1311,6 +1329,8 @@ export class AcpHarnessView implements ContentView {
   /** spec 309/310: the single inline generative-UI panel and its state LRU. */
   private genUiPanel!: GenUiPanel;
   private genUiStates = new Map<string, GenUiPanelState>();
+  /** Spec 312: private, per-lane #ui output until host validation succeeds. */
+  private readonly uiGenerations = new Map<string, UiGeneration>();
   /** Which card the panel is currently seated in; null when collapsed. */
   private genUiOpen: { itemId: string; index: number } | null = null;
   private fileTouchMap = new Map<string, FileTouchRecord>();
@@ -1658,6 +1678,9 @@ export class AcpHarnessView implements ContentView {
     const prev = lane.status;
     if (prev === next) return;
     lane.status = next;
+    if (next === 'error' || next === 'stopped' || next === 'starting') {
+      this.uiGenerations.delete(lane.id);
+    }
     // The operation label describes an in-flight custom-command turn. Keep it
     // across `busy` AND `needs_permission` — a permission pause is still the same
     // turn, and it resumes to `busy` after the human decides (Codex-1 B2). Clear it
@@ -2437,6 +2460,7 @@ export class AcpHarnessView implements ContentView {
       await promptClient.prompt([{ type: 'text', text }]);
     } catch (e) {
       if (lane.spawnEpoch !== promptEpoch || lane.client !== promptClient) return;
+      this.uiGenerations.delete(lane.id);
       this.steerCtl.onPromptFailed(lane); // spec 278
       this.setLaneStatus(lane, 'error');
       lane.error = String(e);
@@ -4810,6 +4834,7 @@ export class AcpHarnessView implements ContentView {
     this.imageViewer?.dispose();
     this.genUiPanel?.dispose();
     this.genUiStates.clear();
+    this.uiGenerations.clear();
     this.metricsOverlay?.dispose();
     this.triageOverlay?.dispose();
     this.reviewMatrixOverlay?.dispose();
@@ -6470,6 +6495,7 @@ export class AcpHarnessView implements ContentView {
     this.renderRemoteStatus();
     const sessions = new Map(this.lanes.map((lane) => [lane.id, lane.sessionId]));
     for (const lane of this.lanes) {
+      this.uiGenerations.delete(lane.id);
       lane.spawnEpoch += 1;
       const client = lane.client;
       lane.client = null;
@@ -7924,10 +7950,41 @@ export class AcpHarnessView implements ContentView {
     });
   }
 
+  private uiGenerationFor(lane: HarnessLane): UiGeneration | null {
+    const generation = this.uiGenerations.get(lane.id);
+    if (!generation) return null;
+    if (generation.spawnEpoch === lane.spawnEpoch) return generation;
+    this.uiGenerations.delete(lane.id);
+    return null;
+  }
+
+  private stageUiChunk(generation: UiGeneration, text: string, messageId?: string): void {
+    if (generation.formatError) return;
+    if (generation.sourceChars + text.length > UI_REPLY_MAX_CHARS) {
+      generation.formatError = `reply exceeds ${UI_REPLY_MAX_CHARS} characters`;
+      return;
+    }
+    if (!generation.segmentOpen || (messageId && messageId !== generation.messageId)) {
+      if (generation.segments.length >= UI_REPLY_MAX_SEGMENTS) {
+        generation.formatError = `reply exceeds ${UI_REPLY_MAX_SEGMENTS} assistant segments`;
+        return;
+      }
+      generation.segments.push('');
+      generation.segmentOpen = true;
+      generation.messageId = messageId ?? null;
+    }
+    generation.segments[generation.segments.length - 1] += text;
+    generation.sourceChars += text.length;
+    this.onOutputPump?.(text.length);
+  }
+
   private onLaneEvent(lane: HarnessLane, event: AcpEvent): void {
-    // Mirror every agent event to the control SSE stream (doc 175) before local
-    // handling. The frontend stays the authority; this only forwards.
-    this.publishStream(lane, event.type as ControlEventKind, event);
+    // Mirror agent events to control SSE (doc 175), except staged #ui assistant
+    // text and intermediate stops. The final stop follows transcript commit.
+    const uiGeneration = this.uiGenerationFor(lane);
+    if (!(uiGeneration && (event.type === 'message_chunk' || event.type === 'stop'))) {
+      this.publishStream(lane, event.type as ControlEventKind, event);
+    }
     let needsRender = true;
     switch (event.type) {
       case 'user_message_chunk':
@@ -7947,6 +8004,13 @@ export class AcpHarnessView implements ContentView {
       case 'message_chunk':
         // spec 282: Claude subagent text streams into its Task card.
         if (event.parentToolUseId && this.absorbSubagentOutput(lane, event.parentToolUseId, event.text, false)) {
+          needsRender = false;
+          break;
+        }
+        if (uiGeneration) {
+          lane.activity = { kind: 'writing', label: '' };
+          if (event.content.type === 'text') this.stageUiChunk(uiGeneration, event.text, event.messageId);
+          else uiGeneration.formatError = 'non-text assistant content is not supported by #ui';
           needsRender = false;
           break;
         }
@@ -7995,6 +8059,7 @@ export class AcpHarnessView implements ContentView {
           needsRender = false;
           break;
         }
+        if (uiGeneration) uiGeneration.segmentOpen = false;
         this.sealStreaming(lane);
         this.liveVoiceCtl.onToolCall(lane); // spec 280: progress so far → commentary
         this.renderTool(lane, event.call, false);
@@ -8130,6 +8195,7 @@ export class AcpHarnessView implements ContentView {
         needsRender = false;
         break;
       case 'error':
+        this.uiGenerations.delete(lane.id);
         // Seal any in-flight streaming row first so its --streaming class gets
         // a clean signature transition. Without this, a thought/assistant/user
         // row that was streaming when the error arrived keeps
@@ -8614,6 +8680,36 @@ export class AcpHarnessView implements ContentView {
 
   private finishTurn(lane: HarnessLane, stopReason: StopReason, reason?: string): void {
     this.sealStreaming(lane);
+    const uiGeneration = this.uiGenerationFor(lane);
+    let repairPrompt: string | null = null;
+    let releasedUiItemId: string | null = null;
+    if (uiGeneration) {
+      this.uiGenerations.delete(lane.id);
+      if (stopReason === 'end_turn' && reason === undefined && !lane.error) {
+        const reply = uiGeneration.segments.join('\n\n');
+        const result = uiGeneration.formatError
+          ? { kind: 'invalid' as const, diagnostics: [uiGeneration.formatError] }
+          : preflightUiReply(reply);
+        if (result.kind !== 'invalid') {
+          releasedUiItemId = this.appendTranscript(lane, 'assistant', reply).id;
+        } else if (uiGeneration.attempt < 2 && lane.client) {
+          uiGeneration.attempt += 1;
+          uiGeneration.segments = [];
+          uiGeneration.sourceChars = 0;
+          uiGeneration.formatError = null;
+          uiGeneration.segmentOpen = false;
+          uiGeneration.messageId = null;
+          this.uiGenerations.set(lane.id, uiGeneration);
+          repairPrompt = genUiRepairPrompt(uiGeneration.intent, result.diagnostics);
+        } else {
+          releasedUiItemId = this.appendTranscript(
+            lane,
+            'assistant',
+            formatUiFailure(reply, result.diagnostics[0] ?? 'invalid UI'),
+          ).id;
+        }
+      }
+    }
     // spec 214: emit the usage row BEFORE the per-turn pointers below are
     // cleared — activeTurnStartedAt is the only source of the duration, and a
     // synchronous peer-mail drain in setLaneStatus can stamp the next turn's
@@ -8652,8 +8748,23 @@ export class AcpHarnessView implements ContentView {
     lane.currentThoughtId = null;
     lane.pendingCoordinatorDrain = null;
     lane.coordinatorDrainProvenanceUsed = false;
+    // Commit before idle can synchronously hand this lane to peer mail.
+    if (releasedUiItemId) {
+      this.scheduleLaneRender(lane);
+      if (lane.id === this.activeLaneId) {
+        this.flushRegion('transcript');
+        this.autoOpenGenUi(lane, releasedUiItemId);
+      }
+    }
+    if (uiGeneration && repairPrompt === null) {
+      this.publishStream(lane, 'stop', { type: 'stop', stopReason, reason });
+    }
     if (lane.error) {
       this.setLaneStatus(lane, 'error');
+    } else if (repairPrompt !== null && uiGeneration) {
+      lane.activeSystemLabel = `repairing interactive UI (${uiGeneration.attempt}/2)`;
+      lane.activeTurnStartedAt = Date.now();
+      this.setLaneStatus(lane, 'busy');
     } else {
       const suggested = this.coordinator.onLaneStop(lane.id);
       this.setLaneStatus(lane, suggested ?? 'idle');
@@ -8678,14 +8789,15 @@ export class AcpHarnessView implements ContentView {
       this.appendTranscript(lane, 'system', `turn ended: ${stopReason}`);
     }
     this.patchLaneTurnChrome(lane);
-    if (lane.draft.trim() && lane.queuedPrompts.length === 0) {
+    if (repairPrompt === null && lane.draft.trim() && lane.queuedPrompts.length === 0) {
       this.flashChip('lane idle - Enter to send');
     }
     // spec 136: drain one queued prompt on idle — deferred to a microtask so it
     // reads the settled status (a synchronous peer-mail drain above wins if any).
-    if (lane.queuedPrompts.length > 0) {
+    if (repairPrompt === null && lane.queuedPrompts.length > 0) {
       queueMicrotask(() => this.maybeDrainPromptQueue(lane));
     }
+    if (repairPrompt !== null) void this.dispatchTurn(lane, repairPrompt);
   }
 
   /**
@@ -9654,6 +9766,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private dropGenUiLane(laneId: string): void {
+    this.uiGenerations.delete(laneId);
     this.genUiPanel?.close();
     for (const key of this.genUiStates.keys()) if (key.startsWith(`${laneId}\u0000`)) this.genUiStates.delete(key);
   }
@@ -9725,9 +9838,9 @@ export class AcpHarnessView implements ContentView {
   /**
    * Spec 310 rev 2 — expand the UI the agent just finished writing.
    *
-   * A fence compiles only when its row seals (spec 309 renders no UI while the
-   * source streams), so seal is the first moment there is a panel to open, and
-   * the card it replaced is a one-line summary of a thing the user asked for:
+   * An ordinary fence compiles when its row seals; a staged #ui reply compiles
+   * on its first completed paint (spec 312). Either path must create the card
+   * before opening it. The card is a one-line summary of a thing the user asked for:
    * make them click it and the default outcome is that the UI is never seen.
    *
    * Deliberately narrow, because the panel is one node shared by the whole
@@ -10818,6 +10931,7 @@ export class AcpHarnessView implements ContentView {
     if (!lane.client || lane.status === 'starting') return; // restart already in flight
     this.clearCancelEscalation(lane);
     const resumeSessionId = lane.sessionId;
+    this.uiGenerations.delete(lane.id);
     lane.spawnEpoch += 1;
     this.appendTranscript(lane, 'system', 'force restart: cancel unacknowledged');
     // The hung turn dies with the process — seal its streaming rows and drop
@@ -11698,7 +11812,18 @@ export class AcpHarnessView implements ContentView {
         this.flashChip('lane busy - #cancel first');
         return;
       }
-      await this.enqueueSystemPrompt(lane, genUiPrompt(intent), undefined, 'creating interactive UI');
+      this.uiGenerations.set(lane.id, {
+        spawnEpoch: lane.spawnEpoch,
+        intent,
+        attempt: 0,
+        segments: [],
+        sourceChars: 0,
+        formatError: null,
+        segmentOpen: false,
+        messageId: null,
+      });
+      const started = await this.enqueueSystemPrompt(lane, genUiPrompt(intent), undefined, 'creating interactive UI');
+      if (!started) this.uiGenerations.delete(lane.id);
       return;
     }
     // spec 280: realtime voice bound to this lane.

@@ -134,11 +134,11 @@ Source 20,000 chars · parse nesting 100 · eval depth 1,000 · 200,000 steps ·
 
 ### Failure behaviour
 
-Block-level **fail-closed**: any error-severity diagnostic ⇒ no panel, the fence stays visible as code, and the card is replaced by a one-line error carrying the first diagnostic. Node-level **fail-soft**: a runtime error inside one component renders that node as an error chip; its siblings still render. A limit stops evaluation of the remaining roots. Validation runs only after `seal()` — nothing is mounted while streaming.
+Block-level **fail-closed**: any error-severity diagnostic ⇒ no panel, the fence stays visible as code, and the card is replaced by a one-line error carrying the first diagnostic. Node-level **fail-soft**: a runtime error inside one component renders that node as an error chip; its siblings still render. A limit stops evaluation of the remaining roots. Ordinary replies validate after `seal()`. For a `#ui` turn, [spec 312](./0312-harness-genui-preflight-repair.md) stages the complete reply, checks it with the same compiler, and tries at most two repairs before publication.
 
 ### Streaming
 
-A spec is a program, and streaming one paints tens of lines of source into the
+A spec in an ordinary reply is a program, and streaming one paints tens of lines of source into the
 reply for the seconds before seal replaces it with a one-line card — pushing
 the prose it belongs to off screen to show the user something they have no use
 for. So the source is never painted: after each `parser_write`,
@@ -163,7 +163,7 @@ the swap does not move the rows under it (measured: both 35px).
 
 - **A v1 JSON fence in scrollback** renders as code with the version error. Accepted: fences are chat-scoped and the feature is days old.
 - **A third fence in one item** stays code (unchanged cap) — and is not collapsed either: the same cap governs the strip, so what the user sees streaming is what seal leaves behind.
-- **A fence that does not compile** is collapsed like any other while it streams; seal drops the strip, and the `pre` comes back carrying the one-line diagnostic. Source appears exactly when it is worth reading.
+- **A fence outside `#ui` that does not compile** is collapsed like any other while it streams; seal drops the strip, and the `pre` comes back carrying the one-line diagnostic. A `#ui` reply stays staged until it passes preflight or the repair budget ends (spec 312).
 - **A reply that never streams in the foreground** (cold load, lane switched away) paints sealed and never has a strip to clear.
 - **File written after the panel opened** — Refresh re-resolves; successes only are cached, so a later write is picked up.
 - **Loaded CSV with 50,000 rows** — refused by the loaded-list cap with a diagnostic naming the file.

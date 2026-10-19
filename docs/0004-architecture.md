@@ -237,9 +237,11 @@ The compositor is a TypeScript module running in the webview that manages worksp
     dance around the old `dashboardEl.innerHTML = ''` is deleted. Panel placement is one table,
     `HARNESS_LAYOUT_DEFAULT` in `harness-layout.ts`, type-checked against the slot union.
 
-    **Generative UI (specs 308/309/310).** A sealed assistant reply can contain
+    **Generative UI (specs 308/309/310/312).** A sealed assistant reply can contain
     a `krypton-ui` fence. `src/acp/genui/` compiles a bounded expression
-    language and evaluates it locally. While the reply streams the fence is
+    language and evaluates it locally. An explicit `#ui` turn stages assistant
+    text, validates it with that compiler, and allows two repair turns before
+    publishing a final result. For ordinary replies, while the reply streams the fence is
     collapsed to a one-line strip instead of painting its source; at seal
     `AssistantRow` drops the strips, caches pure markdown, then replaces valid
     fences with static `GenUiCard` pointers, each carrying an empty slot.

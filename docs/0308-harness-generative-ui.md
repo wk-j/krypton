@@ -1,6 +1,6 @@
 # ACP Harness Generative UI — Implementation Spec
 
-> Status: Superseded in part by [spec 309](./0309-harness-genui-catalog.md) and [spec 310](./0310-harness-genui-inline-panel.md)
+> Status: Superseded in part by [spec 309](./0309-harness-genui-catalog.md), [spec 310](./0310-harness-genui-inline-panel.md), and [spec 312](./0312-harness-genui-preflight-repair.md)
 > Date: 2026-10-17
 > Milestone: ACP Harness
 > Scope: declarative, keyboard-driven UI in ACP assistant replies
@@ -17,6 +17,10 @@
 > **Replaced by 310:** the overlay host. The panel is no longer an
 > `OverlayShell` over the dashboard; it is seated inline in the card inside the
 > sealed row, so the reply it belongs to stays readable.
+>
+> **Replaced by 312 for explicit `#ui` turns:** reply text is staged and
+> compiled before publication, with at most two repair attempts. The seal-time
+> diagnostic fallback below still applies to fences in ordinary replies.
 
 ## Problem
 

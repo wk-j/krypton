@@ -669,16 +669,24 @@ PULL (window ← harness), on open and on every auto-refresh:
    (under-collapse, never over-collapse; ADR-0009).
 ```
 
-### Generative UI reply (specs 308/309/310)
+### Generative UI reply (specs 308/309/310/312)
 
-`#ui <request>` sends a one-turn schema guide through the existing lane prompt
-path. While the reply streams, each of the first two ` ```krypton-ui ` fences is
-collapsed to a one-line strip (`interactive UI · receiving spec · N lines`) and
-its `pre` is hidden — the spec is a program, so painting it is noise that pushes
-the reply off screen; nothing is compiled before seal. When a reply seals,
-`AssistantRow` drops the strips before caching pure markdown, then compiles up
-to two `krypton-ui` fences and places static cards, and the seal itself expands
-the last of them: the view seats its single `GenUiPanel` node in that card's
+`#ui <request>` sends one-turn catalog guidance, then stages the lane's
+assistant text outside the transcript and SSE stream. At final stop the Harness
+checks the complete reply with `compile()`; invalid syntax or fence format
+produces a diagnostic for up to two same-lane repair turns. The lane stays busy
+between attempts, so queued prompts and peer mail cannot take its place.
+Passing UI or a prose opt-out becomes one completed assistant row. A second
+failed repair shows one diagnostic with the bounded source; cancel discards the
+staged text. Live Assist refreshes only after a final result.
+
+Outside `#ui`, a reply streams as before: each of the first two
+` ```krypton-ui ` fences is collapsed to a one-line strip
+(`interactive UI · receiving spec · N lines`) with its `pre` hidden. At seal,
+`AssistantRow` drops the strips, caches pure markdown, compiles up to two
+fences and places static cards. A passing `#ui` row instead compiles during
+its first completed paint. Either route expands the last card automatically:
+the view seats its single `GenUiPanel` node in that card's
 slot without taking focus or scrolling, so the UI is on screen while the keys
 of a user already typing still reach the composer. A card click or transcript
 `f` hint seats the node in any other card; clicking or hinting the open card

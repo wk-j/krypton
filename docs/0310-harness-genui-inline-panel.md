@@ -13,7 +13,7 @@ A `krypton-ui` fence compiles to a card in the transcript, but interacting with 
 
 Keep the card, drop the overlay. `GenUiPanel` renders itself as a plain inline block mounted in a slot inside the card it belongs to, so the panel expands in place in the sealed row and the transcript scrolls around it. The view keeps exactly what made the overlay safe: one panel open at a time, keyboard ownership while open (`Escape` closes, `Tab` rides the roving tabindex), the `(lane, item, index, sourceHash)` state LRU, and actions limited to Draft / Set / Copy / OpenUrl. Nothing in `src/acp/genui/` or the catalog renderer changes — this is a host swap.
 
-**Rev 2 — the panel expands itself.** A fence compiles when its row seals, and the card it leaves behind is a one-line summary of something the user asked the agent to build: requiring a click made "never seen" the default outcome. `sealStreaming` therefore opens the row's last fence itself. An auto open is not a user gesture, so it takes neither of the two things a user open takes: no focus (the composer keeps every key until the user enters the panel) and no reveal scroll (a reader somewhere else in the transcript is not moved). Keyboard ownership follows focus rather than `isOpen`, and a pointer press on a control is what hands it over — WebKit does not focus a `<button>` on click, so the panel claims it explicitly.
+**Rev 2 — the panel expands itself.** A fence compiles when its row seals, and the card it leaves behind is a one-line summary of something the user asked the agent to build: requiring a click made "never seen" the default outcome. `sealStreaming` therefore opens the row's last fence itself. For a `#ui` turn, [spec 312](./0312-harness-genui-preflight-repair.md) first stages and validates the whole reply; the completed row is painted cold and its last card opens after that transcript commit. An auto open is not a user gesture, so it takes neither of the two things a user open takes: no focus (the composer keeps every key until the user enters the panel) and no reveal scroll (a reader somewhere else in the transcript is not moved). Keyboard ownership follows focus rather than `isOpen`, and a pointer press on a control is what hands it over — WebKit does not focus a `<button>` on click, so the panel claims it explicitly.
 
 ## Research
 
@@ -86,8 +86,9 @@ div.acp-genui-card[.acp-genui-card--open]
 ### Data flow
 
 ```
-0. `sealStreaming` sealed the assistant row ⇒ its fences compiled and their cards
-   exist ⇒ autoOpenGenUi(lane, itemId) → openGenUi(itemId, last fence, 'auto').
+0. An ordinary assistant row seals, or a `#ui` reply passes preflight and its
+   completed row paints ⇒ its fences compile and their cards exist ⇒
+   autoOpenGenUi(lane, itemId) → openGenUi(itemId, last fence, 'auto').
    Active lane only, and only when nothing is open — a panel in use is never displaced
 1. `f` + label (or a click on the card) → openGenUi(itemId, index, 'user')
 2. Same target already open → collapse (toggle). Otherwise close the previous one.
@@ -141,7 +142,7 @@ The panel is seated in the card: no shadow, no backdrop, a single hairline rule 
 - **Expanded panel taller than the lane body** — the reveal scroll is bounded so the card head never leaves the viewport; the rest is reached by normal transcript scrolling after `Escape`, or with the mouse wheel while open.
 - **Sticky lane** — `lane.stickToBottom` wins: the `ResizeObserver` re-pins to the bottom, matching every other in-place height change.
 - **Several fences in one reply (rev 2)** — the auto open takes the last, the one nearest what the agent said last; the others stay cards and open with `f` or a click, which collapses the auto-expanded one as any other open does.
-- **Row seals mid-turn (rev 2)** — a tool call seals the text row, so a fence written before a tool is expanded while the turn continues. It scrolls away under the new rows like any other content; nothing re-opens or re-focuses it.
+- **Ordinary row seals mid-turn (rev 2)** — a tool call seals the text row, so a fence written before a tool is expanded while the turn continues. A `#ui` reply remains staged across tool calls and opens only after preflight at final stop (spec 312).
 - **Background lane finishes (rev 2)** — the panel is one node owned by the view, so `autoOpenGenUi` is a no-op for a lane the user is not looking at. Switching to that lane does not retro-expand: the card is there to open.
 - **Turn ends while the user is typing (rev 2)** — the panel expands but takes no focus and no scroll, so the keystroke after the seal still lands in the composer.
 

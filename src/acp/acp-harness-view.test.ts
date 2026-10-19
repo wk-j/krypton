@@ -90,7 +90,7 @@ import {
   syncPeekThoughtBody,
 } from './lane-peek';
 
-import type { PermissionOption, ToolCall } from './types';
+import type { AcpEvent, PermissionOption, StopReason, ToolCall } from './types';
 import type { ComputerApprovalRequest } from './computer-approval';
 import type {
   HarnessLane,
@@ -112,6 +112,203 @@ import { HarnessTicketController } from './harness-ticket-controller';
 vi.mock('@tauri-apps/api/core', async (importOriginal) => {
   const actual = await importOriginal<typeof TauriCore>();
   return { ...actual, invoke: vi.fn(async () => null) };
+});
+
+describe('#ui preflight turns (spec 312)', () => {
+  const proto = AcpHarnessView.prototype as unknown as {
+    onLaneEvent(lane: HarnessLane, event: AcpEvent): void;
+    finishTurn(lane: HarnessLane, reason: StopReason): void;
+  };
+  const fence = '\x60\x60\x60';
+  const valid = `${fence}krypton-ui\nCard("Ready", [Text("ok")])\n${fence}`;
+
+  function setup() {
+    const rows: HarnessTranscriptItem[] = [];
+    const published: string[] = [];
+    const prompts: string[] = [];
+    const sequence: string[] = [];
+    const lane = {
+      id: 'lane-1', displayName: 'Codex-1', spawnEpoch: 1, status: 'busy',
+      client: {}, transcript: rows, error: null, activeTurnStartedAt: Date.now(),
+      pendingTurnExtractions: [], pendingPermissions: [], queuedPrompts: [],
+      pendingCoordinatorDrain: null, currentAssistantId: null,
+      currentAssistantMessageId: null, currentThoughtId: null, currentUserId: null,
+      draft: '', triageEquipped: false, flaggedThisTurn: false,
+    } as unknown as HarnessLane;
+    const generation = {
+      spawnEpoch: 1, intent: 'show a comparison', attempt: 0,
+      segments: [], sourceChars: 0, formatError: null,
+      segmentOpen: false, messageId: null,
+    };
+    const target = viewDouble({
+      activeLaneId: lane.id,
+      uiGenerations: new Map([[lane.id, generation]]),
+      publishStream: (_lane: HarnessLane, kind: string): void => { published.push(kind); },
+      sealStreaming: (): void => {},
+      recordTurnUsage: (): void => { sequence.push('usage'); },
+      liveVoiceCtl: { onTurnEnd: (): void => {}, onMessageText: (): void => {}, onToolCall: (): void => {} },
+      assistCtl: { onTurnEnd: (): void => {} },
+      appendTranscript: (subject: HarnessLane, kind: HarnessTranscriptItem['kind'], text: string): HarnessTranscriptItem => {
+        const item = { id: String(subject.transcript.length + 1), kind, text };
+        subject.transcript.push(item);
+        return item;
+      },
+      abandonPendingQuestions: (): void => {},
+      dropVeiledThoughtRow: (): void => {},
+      coordinator: { onLaneStop: (): undefined => undefined },
+      setLaneStatus: (subject: HarnessLane, status: HarnessLane['status']): void => {
+        subject.status = status;
+        sequence.push(`status:${status}`);
+      },
+      cancelPendingArtifactsForLane: (): void => {},
+      cancelPendingReviewsForLane: (): void => {},
+      updateComposerTick: (): void => {},
+      patchLaneTurnChrome: (): void => {},
+      scheduleLaneRender: (): void => {},
+      flushRegion: (): void => { sequence.push('paint'); },
+      autoOpenGenUi: (): void => { sequence.push('open'); },
+      flashChip: (): void => {},
+      dispatchTurn: (_lane: HarnessLane, prompt: string): Promise<void> => {
+        prompts.push(prompt);
+        return Promise.resolve();
+      },
+      refreshMemory: (): Promise<void> => Promise.resolve(),
+      appendStreaming: (): void => { sequence.push('ordinary'); },
+      scheduleStreamingBodyOnly: (): void => {},
+      absorbSubagentChild: (): boolean => false,
+      renderTool: (): void => {},
+      collectToolImages: (): void => {},
+      captureBackgroundLaunch: (): void => {},
+      noteToolActivity: (): void => {},
+      scheduleToolRender: (): void => {},
+    });
+    Object.assign(target, {
+      steerCtl: {
+        onStop: (subject: HarnessLane, reason: StopReason): void => {
+          proto.finishTurn.call(target, subject, reason);
+        },
+      },
+    });
+    const send = (text: string, messageId = 'answer'): void => {
+      proto.onLaneEvent.call(target, lane, {
+        type: 'message_chunk', text, content: { type: 'text', text }, messageId,
+      });
+    };
+    const stop = (reason: StopReason = 'end_turn'): void => {
+      proto.onLaneEvent.call(target, lane, { type: 'stop', stopReason: reason });
+    };
+    return { target, lane, rows, published, prompts, sequence, generation, send, stop };
+  }
+
+  it('holds invalid text from transcript and SSE, repairs, then releases one valid answer', () => {
+    const h = setup();
+    h.send(`${fence}krypton-ui\nCard(\n${fence}`);
+    expect(h.rows).toHaveLength(0);
+    expect(h.published).not.toContain('message_chunk');
+    h.stop();
+    expect(h.lane.status).toBe('busy');
+    expect(h.rows).toHaveLength(0);
+    expect(h.prompts).toHaveLength(1);
+    expect(h.prompts[0]).toContain('line');
+    expect(h.published).not.toContain('stop');
+
+    h.send(valid, 'correction');
+    h.stop();
+    expect(h.rows.filter((row) => row.kind === 'assistant').map((row) => row.text)).toEqual([valid]);
+    expect(h.lane.status).toBe('idle');
+    expect(h.prompts).toHaveLength(1);
+    expect(h.published).toEqual(['stop']);
+    expect(h.sequence.filter((step) => step === 'usage')).toHaveLength(2);
+    expect(h.sequence.indexOf('paint')).toBeLessThan(h.sequence.indexOf('open'));
+  });
+
+  it('stops after two repairs and exposes a bounded plain-text failure', () => {
+    const h = setup();
+    for (let i = 0; i < 3; i += 1) {
+      h.send(`${fence}krypton-ui\nCard(\n${fence}`, String(i));
+      h.stop();
+    }
+    expect(h.prompts).toHaveLength(2);
+    expect(h.lane.status).toBe('idle');
+    expect(h.rows).toHaveLength(1);
+    expect(h.rows[0].text).toContain('UI unavailable after validation');
+    expect(h.rows[0].text).toContain(`${fence}${fence[0]}text`);
+  });
+
+  it('discards a staged answer on cancel', () => {
+    const h = setup();
+    h.send(valid);
+    h.stop('cancelled');
+    expect(h.rows.filter((row) => row.kind === 'assistant')).toHaveLength(0);
+    expect(h.rows.some((row) => row.text === 'turn cancelled')).toBe(true);
+    expect(h.prompts).toHaveLength(0);
+  });
+
+  it('keeps one lane private while another lane follows the ordinary stream path', () => {
+    const h = setup();
+    const other = { ...h.lane, id: 'lane-2' } as HarnessLane;
+    proto.onLaneEvent.call(h.target, other, {
+      type: 'message_chunk', text: 'ordinary', content: { type: 'text', text: 'ordinary' },
+    });
+    expect(h.published).toContain('message_chunk');
+    expect(h.sequence).toContain('ordinary');
+    expect(h.generation.segments).toEqual([]);
+  });
+
+  it('holds two #ui lanes independently until each reply passes', () => {
+    const h = setup();
+    const otherRows: HarnessTranscriptItem[] = [];
+    const other = { ...h.lane, id: 'lane-2', transcript: otherRows } as HarnessLane;
+    const otherGeneration = { ...h.generation, segments: [] };
+    (h.target.uiGenerations as Map<string, typeof h.generation>).set(other.id, otherGeneration);
+    h.send(`${fence}krypton-ui\nCard(\n${fence}`);
+    proto.onLaneEvent.call(h.target, other, {
+      type: 'message_chunk', text: valid, content: { type: 'text', text: valid }, messageId: 'other',
+    });
+    proto.onLaneEvent.call(h.target, other, { type: 'stop', stopReason: 'end_turn' });
+    expect(otherRows.map((row) => row.text)).toEqual([valid]);
+    expect(h.rows).toEqual([]);
+    expect(h.lane.status).toBe('busy');
+    h.stop();
+    expect(h.prompts).toHaveLength(1);
+    expect(h.rows).toEqual([]);
+  });
+
+  it('accepts a prose explanation without creating a UI card', () => {
+    const h = setup();
+    h.send('A one-line answer is clearer here.');
+    h.stop();
+    expect(h.rows.map((row) => row.text)).toEqual(['A one-line answer is clearer here.']);
+    expect(h.prompts).toHaveLength(0);
+  });
+
+  it('keeps the staged reply across a tool call and checks it at final stop', () => {
+    const h = setup();
+    h.send('Here is the result.');
+    proto.onLaneEvent.call(h.target, h.lane, {
+      type: 'tool_call', call: { toolCallId: 'tool-1', title: 'Read', kind: 'read' } as ToolCall,
+    });
+    h.send(valid, 'final');
+    h.stop();
+    expect(h.rows.filter((row) => row.kind === 'assistant').map((row) => row.text))
+      .toEqual([`Here is the result.\n\n${valid}`]);
+  });
+
+  it('keeps oversized output private and asks for a smaller correction', () => {
+    const h = setup();
+    h.send('x'.repeat(64_001));
+    h.stop();
+    expect(h.rows).toHaveLength(0);
+    expect(h.prompts[0]).toContain('reply exceeds 64000 characters');
+  });
+
+  it('bounds the number of staged assistant messages', () => {
+    const h = setup();
+    for (let i = 0; i < 129; i += 1) h.send('x', String(i));
+    h.stop();
+    expect(h.rows).toHaveLength(0);
+    expect(h.prompts[0]).toContain('reply exceeds 128 assistant segments');
+  });
 });
 vi.mock('./mcp-bridge', async (importOriginal) => {
   const actual = await importOriginal<typeof McpBridge>();
@@ -139,7 +336,7 @@ function selfHost<T extends object>(target: T): T {
 /** A view double that keeps the real prototype, so the method under test can
  *  reach its own private helpers while every collaborator stays stubbed. */
 function viewDouble<T extends object>(stubs: T): T {
-  return Object.assign(Object.create(AcpHarnessView.prototype), stubs) as T;
+  return Object.assign(Object.create(AcpHarnessView.prototype), { uiGenerations: new Map() }, stubs) as T;
 }
 
 /** Give a prototype-backed view double the ticket controller it delegates to. */
@@ -3636,6 +3833,7 @@ describe('#draw dispatch', () => {
       flashes,
       enqueued,
       target: {
+        uiGenerations: new Map(),
         setDraft: (_lane: TestLane, value: string) => drafts.push(value),
         flashChip: (value: string) => flashes.push(value),
         enqueueSystemPrompt: async (
@@ -3645,6 +3843,7 @@ describe('#draw dispatch', () => {
           label: string | undefined,
         ) => {
           enqueued.push({ prompt, label });
+          return true;
         },
       },
     };
@@ -3672,6 +3871,16 @@ describe('#draw dispatch', () => {
     await runHashCommand.call(h.target, { status: 'busy' }, '#draw a box');
     expect(h.enqueued).toEqual([]);
     expect(h.flashes).toEqual(['lane busy - #cancel first']);
+  });
+
+  it('arms #ui only for a started command turn', async () => {
+    const h = harnessDouble();
+    const lane = { id: 'lane-1', spawnEpoch: 7, status: 'idle' };
+    await runHashCommand.call(h.target, lane, '#ui compare three choices');
+    expect(h.enqueued).toHaveLength(1);
+    expect(h.enqueued[0].label).toBe('creating interactive UI');
+    expect((h.target.uiGenerations as Map<string, { intent: string }>).get(lane.id)?.intent)
+      .toBe('compare three choices');
   });
 });
 
@@ -4376,6 +4585,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
     const rows: string[] = [];
     const host = {
       lanes: [lane],
+      uiGenerations: new Map(),
       appendTranscript: (_l: EscLane, _kind: string, text: string) => rows.push(text),
       sealStreaming: () => {},
       dropVeiledThoughtRow: () => {},
@@ -4556,6 +4766,7 @@ describe('turn end routes through the steer controller (spec 278)', () => {
     const calls: unknown[][] = [];
     let finished = 0;
     const host = {
+      uiGenerationFor: () => null,
       publishStream: () => {},
       refreshMemory: async () => {},
       scheduleLaneRender: () => {},
