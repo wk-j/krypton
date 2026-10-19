@@ -68,7 +68,7 @@ interface Slot { readonly el: HTMLElement; mount(id: string, c: Component<unknow
 │                                          │ annotation ANNOTATED 3  │ │   ╭─ dock.right ─╮
 │                                          ╰─────────────────────────╯ │   │ active ticket│
 │                                          ╭─ rail.bottom ────────────╮ │   │ KR-301  open │
-│                                          │ ⏎ queue (3)              │ │   ╰──────────────╯
+│                                          │ omp-1     ⏎ QUEUE 3      │ │
 │                                          ╰──────────────────────────╯ │
 ├─ composer.above ─────────────────────────────────────────────────────┤
 │ ⇆ awaiting codex · 5m+ · #cancel drops pending lane-mail wait        │
@@ -719,7 +719,7 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 | 5.2 | `ReviewLoopRows` | `review  pass 2/4 · reviewing` <br> `replies codex PASS · salty pending` <br> `rounds  3 → 0` | `lane-peek.ts:455-497` + `patchPeekReviewLoop` |
 | 5.3 | `HeatPanel` | `heat  [tools][5m] ·  active ████████  peek ███░░░░░  0.62` | `acp-harness-view.ts:12427-12545`. **Fixes the clearest listener-leak site** — today heat controls re-attach on every mount even when the card is reused |
 | 5.4 | `ThoughtCard` L | `claude-1   thinking` <br> `the tail window can slide past a live row…` | `lane-peek.ts:608-642` + `patchLaneThoughtCard` |
-| 5.5 | `QueueCard` | `⏎ queue (3) · held behind lane mail` <br> `▸1  rerun the type check            →codex-2 +1   img×2` <br> `2   open the model picker` <br> `#unqueue · #queue clear` | `acp-harness-view.ts:11982-12026` |
+| 5.5 | `QueueCard` | `omp-1                        ⏎ QUEUE 3 · HELD` <br> `▸1  rerun the type check against the whole` <br> `    workspace and report what it covers` <br> `    →codex-2 +1   img×2` <br> `2   open the model picker` <br> `#unqueue · #queue clear` | `acp-harness-view.ts:11982-12026` |
 | 5.6 | `PlanPanel` | `plan 4/9` <br> `✓ extract kernel` · `▸ wire composer meta segments` · `· delete signature` | `acp-harness-view.ts:14668-14726` |
 | 5.7 | `TicketDock` | `active ticket` <br> `Harness UI refactor                 ›` <br> `open  KR-301` <br> `GitHub  wk/krypton  #301 · open` <br> `Worker  codex-1` | `harness-ticket-controller.ts:603-676` |
 | 5.8 | `AnnotationRail` | `ANNOTATED  3 · 2 unsent              [ send 2 ]` <br> `deps tuple needs the lane arg            [ del ]` | `transcript-annotation.ts:329-370` |

@@ -12398,6 +12398,7 @@ export class AcpHarnessView implements ContentView {
       queue: lane.queuedPrompts,
       status: lane.status,
       accent: lane.accent,
+      laneName: lane.displayName,
     });
     this.queueSlot.hidden = false;
   }

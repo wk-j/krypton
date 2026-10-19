@@ -405,10 +405,13 @@
 
 /* spec 136: prompt-queue slot — bottom-anchored, never crushed. flex-shrink:0 +
    capped height so the plan/peek slots above absorb the squeeze when all three
-   are present; margin-top:auto pins it to the rail bottom near the composer. */
+   are present; margin-top:auto pins it to the rail bottom near the composer.
+   The cap carries the card's own chrome (header rule, footer rule) on top of
+   its rows since the card joined the rail-panel family, so it is a third of the
+   rail rather than 30% of it. Plan and peek stay shrinkable and give way first. */
 .acp-harness__lane-rail__slot[data-slot="queue"] {
   flex-shrink: 0;
-  max-height: clamp(72px, 30%, 160px);
+  max-height: clamp(96px, 34%, 200px);
   margin-top: auto;
 }
 
