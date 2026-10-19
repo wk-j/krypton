@@ -56,6 +56,42 @@ beforeEach(() => {
 });
 
 describe('harness view integration (spec 301)', () => {
+  it('opens a tool image while the lane turn is still busy', () => {
+    const lane = call<HarnessLane>(view, 'createLane', 'claude', 'claude-1');
+    lanes(view).push(lane);
+    activate(view, lane.id);
+    lane.status = 'busy';
+    const imageId = 'image-in-progress';
+    lane.transcript.push({
+      id: 'tool-image',
+      kind: 'tool',
+      text: '',
+      tool: {
+        glyph: '⠙', status: 'in_progress', kind: 'read', subject: 'image.png', command: '',
+        result: '', sections: [], diffs: [],
+      },
+      images: [{
+        imageId, itemId: 'tool-image', origin: 'bytes', path: null, discovery: 'explicit',
+        state: 'live', mimeType: 'image/png', bytes: 1024, objectUrl: 'blob:live-image',
+        label: 'image 1', source: 'tool', key: 'live-image', hintLabel: null,
+      }],
+    });
+
+    call(view, 'renderDashboard');
+    const thumb = view.element.querySelector<HTMLElement>(`[data-image-id="${imageId}"]`);
+    expect(thumb, 'tool image thumbnail during a busy turn').not.toBeNull();
+    thumb?.click();
+    const viewer = view.element.querySelector<HTMLElement>('.acp-harness__image-viewer-overlay');
+    expect(viewer?.hidden).toBe(false);
+    expect(viewer?.querySelector('img')?.getAttribute('src')).toBe('blob:live-image');
+
+    // Streaming updates continue underneath an open viewer.
+    call(view, 'renderActiveTranscript', lane);
+    expect(viewer?.hidden).toBe(false);
+    view.onKeyDown(new KeyboardEvent('keydown', { key: '=', cancelable: true }));
+    expect(viewer?.querySelector<HTMLImageElement>('img')?.style.transform).toContain('scale(1.25)');
+  });
+
   it('paints lane shell, transcript rows and composer from real view state', () => {
     const lane = call<HarnessLane>(view, 'createLane', 'claude', 'claude-1');
     lanes(view).push(lane);

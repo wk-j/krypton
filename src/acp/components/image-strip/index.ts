@@ -87,7 +87,7 @@ export class ImageStrip extends Component<ImageStripProps> {
 function liveThumb(image: HarnessImage): HTMLElement {
   const figure = el('figure', {
     class: ['acp-harness__image-thumb', image.hintLabel ? 'acp-harness__image-thumb--hinted' : null],
-    data: { imageId: image.imageId },
+    data: { 'image-id': image.imageId },
     title: image.path ?? image.label,
   });
   const img = el('img', { attrs: { src: image.objectUrl ?? '', alt: image.label, decoding: 'async', loading: 'lazy' } });
