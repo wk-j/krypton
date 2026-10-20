@@ -531,9 +531,9 @@ user · voice   open the model picker
 
 ## 3.4 `ToolRow` L
 
-**Props** `{ item, expanded }` · **Deps** `[statusBucket, kind, subject, command, result, exitCode, sections, diffs, subagents, expandedKey]`
-— ten `Object.is` compares replacing a joined string rebuilt per pass from 3 `.map()` + 4 `.join()` calls
-(`harness-transcript-render.ts:472-488`; 7 `.map()` across the whole 131-line function).
+**Props** `{ item, expanded }` · Generic **Deps** `[statusBucket, kind, subject, command, result, exitCode, sections, diffs, subagents, expandedKey]`.
+Spec-315 execution rows instead compare `[statusBucket, title, language, cellStatus, durationMs, detached, diffs]`;
+both include the image-strip signature and streaming flag. Output and Inspector presentation state are not structural row deps.
 
 **Example UI**
 
@@ -551,9 +551,52 @@ tool  ✓  edit     src/acp/list.ts                     +42 −8    0.3s
 then `.acp-harness__tool-output > -section > -label + <pre> -text`, `.acp-harness__tool-exit[data-status]`,
 `.acp-harness__tool-diffs` (`DiffBlock`), `.acp-harness__tool-rich--diffstat|--unidiff|--gitstatus`.
 
-**Live contract** — `appendChunk()` swaps only `.acp-harness__tool-output`; head nodes are never touched.
+**Live contract** — generic `appendChunk()` updates only `.acp-harness__tool-output`; recognized executions update their owning `ExecutionCard`. Render precedence is artifact redaction → subagent card → execution → generic. Diffs and the base row's image strip remain available.
 **Replaces** `harness-tool-render.ts:551-673,776-860,862-1060` and `patchStreamingToolBody` `:635-664`
 (including its `body.dataset.toolStreamSig` / `subagentLiveSig` dedupe keys — the component's deps do that job).
+
+## 3.4a `ExecutionCard` (spec 315)
+
+**Props** `{ payload: ExecutionPayload, status, startedAt?, endedAt?, hintLabel }`.
+Owns the compact summary and stable panel slot, not the panel's lifetime.
+
+**Example UI**
+
+```text
+tool  ✓  Python  Inspect records                  Done  200ms runtime  Inspector
+          fixture started
+```
+
+**Emits** `.acp-execution-card`, `__head`, `__language`, `__title`, `__state`,
+`__timer`, `__timing-source`, `__button[data-execution-inspector]`, `__activity`, `__slot`.
+Uses the existing `Spinner` and shared tool ticker. A terminal-only replay has no observed timer;
+detached running state is static `Background · last reported`, not job tracking.
+`mountPanel()` / `setHint()` are the owning component's mutation boundary after row seal.
+
+**Replaces** the generic header/source echo only for validated current OMP code cells.
+
+## 3.4b `ExecutionPanel` (spec 315)
+
+**Props** `{ open, payload: ExecutionPayload | null, status, takeFocus, onClose }`.
+One node owned by `AcpHarnessView`, moved into the selected card slot and re-seated after commits.
+The row never disposes it or includes its open/output-view state in row deps.
+
+**Example UI** — Code/Copy with line numbers, Raw/Formatted Output, then reported Activity.
+Code/Output use two columns at panel width ≥900px, one below that; each pane scrolls independently.
+Only validated backend table/JSON metadata can replace an unambiguous output span.
+Source syntax classes are `acp-execution-panel__syntax-*`, never global `.hljs-*`.
+
+**Emits** `.acp-execution-panel[role=group]`, `__head`, `__panes`, `__source`,
+`__code`, `__numbers`, `__output[role=region]`, `__table`, `__activity`, `__button`.
+Native controls support Tab/Shift+Tab, Enter/Space and Escape; pointer-pressed buttons retain focus
+on macOS WebKit. Output appends preserve selection and follow only from the bottom.
+Hidden tab, lane/reset, eviction and disposal close without taking focus.
+
+**Theme hooks** for both components: `--acp-execution-fg` → `--krypton-fg`,
+`--acp-execution-accent` → `--krypton-window-accent`. Font, radius, semantic state and syntax colors
+use existing `--agent-*` / `--krypton-*` properties. No private palette or unlayered CSS.
+
+**Replaces** no execution/runtime API; this is a new read-only presentation of retained tool data.
 
 ## 3.5 `SubagentCard` L
 
@@ -792,7 +835,7 @@ HarnessView
 │  │                     ├─ AssistantRow L ── ResourceRail, ImageStrip, Card(fence)
 │  │                     ├─ ThoughtRow L ──── Meter(glyph)
 │  │                     ├─ UserRow L
-│  │                     ├─ ToolRow L ─────── Spinner, DiffBlock, Meter(diffstat), SubagentCard L
+│  │                     ├─ ToolRow L ─────── Spinner, DiffBlock, Meter(diffstat), SubagentCard L, ExecutionCard
 │  │                     ├─ PermissionRow · QuestionRow(ListPicker) · FsActivityRow
 │  │                     ├─ FsWriteReviewRow(DiffBlock) · ProviderErrorRow · InterLaneRow
 │  │                     ├─ DocCardRow(Card) · UsageRow(Meter, StatList)
@@ -800,6 +843,7 @@ HarnessView
 │  └─ RightRail ──────── LayoutHost slots `rail.top` / `rail.bottom` / `dock.right`
 │                        PlanPanel · PeekCard(ReviewLoopRows, HeatPanel) · ThoughtCard L
 │                        QueueCard · TicketDock · AnnotationRail
+├─ ExecutionPanel ────── view-owned; seated in one ExecutionCard slot, never row-owned
 ├─ Composer ──────────── ComposerMeta(Chip, StatList) · DraftLine · StagingStrip
 │                        PeerStrip · InlinePalette ×4 · DictationControl · LiveVoiceStrip
 └─ Overlays ──────────── OverlayShell × 16, six of them + ListPicker
@@ -812,12 +856,12 @@ HarnessView
 | 0 — layout | 1 | 4 hardcoded `*SlotEl` fields + their CSS pinning |
 | 1 — leaf | 9 | ~75 |
 | 2 — composite | 5 | ~45 (incl. 8 cursor handlers, 4 palette handlers, 12 overlay shells) |
-| 3 — transcript | 18 | `renderTranscriptItem`'s 18-branch dispatcher + 6 `patch*` functions + `transcriptRenderSignature` |
+| 3 — transcript | 20 | Original 18-branch cutover plus ExecutionCard / view-owned ExecutionPanel (spec 315); no extra runtime call sites removed |
 | 4 — lane chrome | 6 | `renderDashboard`, `renderActiveLaneChrome`, `refreshMetricsRender`, `renderRailEntry`, `refreshZenRail` |
 | 5 — right rail | 8 | 8 builders + 3 `patch*` functions |
 | 6 — composer | 8 | `renderComposer` (40 call sites), `renderDecisionComposer`, the 1 Hz rebuild |
 | 7 — overlays | 17 | 16 shells, 14 `innerHTML` sites |
-| **Total** | **72** | **35 `innerHTML` sites in `acp-harness-view.ts`, 58 across `src/acp/*.ts` → 0 outside `Card`/markdown bodies** |
+| **Total** | **74** | **Original cutover: 35 `innerHTML` sites in `acp-harness-view.ts`, 58 across `src/acp/*.ts` → 0 outside `Card`/markdown bodies; spec 315 adds two read-only components** |
 
 # Packaging, style ownership, and theming
 

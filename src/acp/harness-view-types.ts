@@ -116,6 +116,8 @@ export interface HarnessTranscriptItem {
   streamingMarkdownWritten?: number;
   /** spec 282: subagent entry ids whose inline detail is open. */
   subagentExpanded?: string[];
+  /** spec 315: stable keyboard target for the execution inspector. */
+  executionTarget?: ExecutionOpenTarget;
   /** spec 281: images rendered in this row's strip (bytes or local path). */
   images?: HarnessImage[];
   /** spec 281: path candidates beyond the per-row cap. */
@@ -264,6 +266,47 @@ export interface ToolPayload {
   artifactRedaction?: { tail: string; size: number | null; hash: string | null; pending: boolean };
   /** spec 282: set when this tool spawned subagents; renders the subagent card. */
   subagents?: SubagentPayload;
+  /** spec 315: bounded OMP code-cell snapshot, decoded before wire compaction. */
+  execution?: ExecutionPayload;
+}
+
+export interface ExecutionActivity {
+  readonly op: string;
+  readonly text: string;
+  readonly detail: string;
+}
+
+export type ExecutionView =
+  | { readonly kind: 'json'; readonly text: string; readonly json: string }
+  | {
+    readonly kind: 'table';
+    readonly text: string;
+    readonly columns: readonly { head: string; numeric?: boolean }[];
+    readonly rows: readonly (readonly string[])[];
+  };
+
+export interface ExecutionPayload {
+  readonly source: 'omp';
+  readonly language: 'py' | 'js';
+  readonly title: string;
+  readonly code: string;
+  readonly output: string | null;
+  readonly observedLive: boolean;
+  readonly cellStatus: 'pending' | 'running' | 'complete' | 'error' | null;
+  readonly durationMs: number | null;
+  readonly exitCode: number | null;
+  readonly isError: boolean;
+  readonly activity: readonly ExecutionActivity[];
+  readonly views: readonly ExecutionView[];
+  readonly detached: { readonly jobId: string; readonly state: string } | null;
+  readonly truncated: readonly ('code' | 'output' | 'activity' | 'views')[];
+}
+
+export type ExecutionState = 'pending' | 'running' | 'complete' | 'error' | 'cancelled' | 'background';
+
+export interface ExecutionOpenTarget {
+  executionItemId: string;
+  hintLabel: string | null;
 }
 
 export type SubagentStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

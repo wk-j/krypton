@@ -265,6 +265,46 @@ describe('harness view integration (spec 301)', () => {
     expect(view.element.querySelector('.acp-genui-card--open')).toBeNull();
   });
 
+  it('auto-expands the last GenUI fence without stealing focus and focuses a user-opened fence', () => {
+    const lane = call<HarnessLane>(view, 'createLane', 1, 'omp', 'OMP-1');
+    lanes(view).push(lane);
+    activate(view, lane.id);
+    const item: HarnessTranscriptItem = {
+      id: 'focus-ui', kind: 'assistant',
+      text: [
+        '```krypton-ui', 'Card("First card", [Text("First result")])', '```',
+        '```krypton-ui', 'Card("Last card", [Text("Last result")])', '```',
+      ].join('\n'),
+    };
+    const other: HarnessTranscriptItem = {
+      id: 'another-item', kind: 'assistant',
+      text: '```krypton-ui\nCard("Other card", [Text("Other result")])\n```',
+    };
+    lane.transcript.push(item, other);
+    call(view, 'renderDashboard');
+    view.element.focus();
+    const panel = genUiPanel(view);
+    call(view, 'autoOpenGenUi', lane, item.id);
+    expect(panel.isOpen).toBe(true);
+    expect(panel.el.textContent).toContain('Last result');
+    expect(document.activeElement).toBe(view.element);
+
+    call(view, 'autoOpenGenUi', lane, 'another-item');
+    expect(panel.el.textContent).toContain('Last result');
+    expect(document.activeElement).toBe(view.element);
+    call(view, 'openGenUi', item.id, 1);
+    call(view, 'openGenUi', item.id, 0);
+    expect(panel.el.textContent).toContain('First result');
+    expect(panel.el.contains(document.activeElement)).toBe(true);
+
+    call(view, 'openGenUi', item.id, 0);
+    const background = call<HarnessLane>(view, 'createLane', 2, 'omp', 'OMP-2');
+    background.transcript.push(item);
+    lanes(view).push(background);
+    call(view, 'autoOpenGenUi', background, item.id);
+    expect(panel.isOpen).toBe(false);
+  });
+
   // Spec 310: the panel is inline, so an overlay drawn over it must own the
   // keyboard — the `OverlayShell` registry no longer closes the panel.
   it('gives an open overlay the keyboard ahead of the inline panel', () => {

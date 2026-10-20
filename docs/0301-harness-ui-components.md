@@ -196,6 +196,14 @@ export abstract class LiveComponent<P> extends Component<P> {
 rows, from the terminal-status transition in `ToolRow.update()`. Those are the only callers; no scheduler
 region is invalidated by a seal, which is constraint 10's third sub-rule.
 
+The named view-owned inline-panel exceptions are GenUI (spec 310) and Execution Inspector
+(spec 315). Rows own their card/slot, never the movable panel or its controls. Opening a panel or
+changing its output presentation is not a row dependency and never calls a sealed row's `paint()`.
+After transcript commits the view re-seats the same panel node; losing its lane/slot closes it without
+restoring focus. Execution snapshots update the owning `ExecutionCard` / `ExecutionPanel`; this is
+not permission for unrelated code to patch sealed-row DOM. The seal and scheduler invariants above
+remain unchanged.
+
 ```ts
 // src/ui/list.ts — the generalised transcript diff loop
 export interface ListSpec<T, C extends Component<unknown>> {
@@ -520,11 +528,12 @@ them mechanically. Each is **replaced by the DOM test it was approximating**, ru
 |---|---|
 | Seal drops `--streaming` and re-stamps the signature (`harness-seal-static.test.ts:36-65`) | `AssistantRow.seal()` → assert class gone, then `update(samePropsObject)` performs **zero** DOM writes (MutationObserver count 0) |
 | `pending → in_progress` must not rebuild (`acp-harness-view.test.ts:207-233`) | `ToolRow.update()` across both statuses → body node identity unchanged |
-| In-flight section text excluded (`acp-harness-view.test.ts:236-267`) | `ToolRow` with appended section text → only `.acp-harness__tool-output` replaced, head nodes identical |
+| In-flight section text excluded (`acp-harness-view.test.ts:236-267`) | Generic `ToolRow` updates only `.acp-harness__tool-output`; spec-315 executions update the owning card/panel while retaining source/control/output node identity |
 | Row never `replaceWith` (`acp-harness-view.test.ts:294-307`) | `reconcile()` unit test: node identity stable across 100 updates |
 | `stop` does not full-render (`acp-harness-view.test.ts:322-335`) | scheduler spy: `stop` invalidates no region |
 | Smooth-follow arithmetic (`acp-harness-view.test.ts:1944-2056`) | **unchanged** — pure helpers, no DOM |
 | `nudgeSmoothFollow` / `pinStickyAfterComposerKey` / `sealStreaming` ordering (`:2038`, `:2060`, `:2099`) | **not** unchanged: these resolve methods by reading `acp-harness-view.ts` source, and the methods move into `Transcript`. Re-expressed as call-order assertions against `Transcript` with a stubbed scroll surface. |
+| Execution Inspector ownership (spec 315) | Real Harness event → row → inline panel tests cover one item per call, snapshot replacement, hints/Escape, moving one panel node and focus-safe eviction; component tests cover selection, scrolling, safe rich output and source changes |
 
 New kernel tests: `src/ui/component.test.ts` (deps skip, dispose runs the bag, `syncClasses` runs on seal),
 `src/ui/list.test.ts` (key reorder preserves nodes, removal disposes, live rows take structural updates but

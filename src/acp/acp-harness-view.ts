@@ -93,6 +93,9 @@ import { Transcript } from './components/transcript';
 import { AssistantRow } from './components/assistant-row';
 import { GenUiPanel } from './components/genui-panel';
 import type { GenUiPanelState } from './components/genui-panel';
+import { ToolRow } from './components/tool-row';
+import { ExecutionPanel } from './components/execution-panel';
+import { parseExecutionPayload } from './harness-execution';
 import { initialState as initialUiState } from './genui/evaluate';
 import {
   formatUiFailure,
@@ -362,6 +365,7 @@ import type {
   ArtifactEventPayload,
   BackgroundTask,
   ComposerFocus,
+  ExecutionOpenTarget,
   FileTouchRecord,
   HarnessArtifactRecord,
   HarnessReviewRecord,
@@ -646,7 +650,8 @@ type HarnessOpenTarget =
   | HarnessImage
   | SubagentEntry
   | SvgFenceEntry
-  | UiFenceEntry;
+  | UiFenceEntry
+  | ExecutionOpenTarget;
 
 const LANE_PEEK_HEAT_RING_MAX = 240;
 const LANE_PEEK_HEAT_RING_MS = 10 * 60_000;
@@ -1333,6 +1338,23 @@ export class AcpHarnessView implements ContentView {
   private readonly uiGenerations = new Map<string, UiGeneration>();
   /** Which card the panel is currently seated in; null when collapsed. */
   private genUiOpen: { itemId: string; index: number } | null = null;
+  /** Spec 315: the view owns the one inspector; a ToolRow only seats it. */
+  private executionPanel!: ExecutionPanel;
+  private executionOpen: { laneId: string; itemId: string } | null = null;
+  private readonly executionPanelClosed = (restoreFocus: boolean): void => {
+    const open = this.executionOpen;
+    if (open) {
+      const row = this.transcript?.rowFor(open.itemId);
+      if (row instanceof ToolRow) row.mountExecutionPanel(null);
+    }
+    this.executionPanel.el.remove();
+    this.executionOpen = null;
+    if (restoreFocus) {
+      this.focus = 'text';
+      this.element.focus({ preventScroll: true });
+      this.invalidate('composer');
+    }
+  };
   private fileTouchMap = new Map<string, FileTouchRecord>();
   private lanePeek: LanePeekState = {
     visible: true,
@@ -4387,6 +4409,7 @@ export class AcpHarnessView implements ContentView {
     // the composer they are typing in; entering the panel (clicking a control,
     // or re-opening the card) is what hands it the keyboard.
     if (this.genUiPanel?.isOpen && this.genUiPanel.hasFocus) return this.genUiPanel.handleKey(e);
+    if (this.executionPanel?.isOpen && this.executionPanel.hasFocus) return this.executionPanel.handleKey(e);
     // spec 306: Cmd chords — Alt does not reach the app, and Ctrl+1..4 is the
     // macOS desktop switch. The ticket picker's Cmd+1..3 already ran above.
     if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
@@ -4831,6 +4854,9 @@ export class AcpHarnessView implements ContentView {
     this.helpOverlay?.dispose();
     this.imageViewer?.dispose();
     this.genUiPanel?.dispose();
+    this.executionPanel?.close(false);
+    this.executionPanel?.dispose();
+    this.executionOpen = null;
     this.genUiStates.clear();
     this.uiGenerations.clear();
     this.metricsOverlay?.dispose();
@@ -6213,6 +6239,13 @@ export class AcpHarnessView implements ContentView {
         this.deleteAnnotationById(del.dataset.annoDel);
         return;
       }
+      const executionButton = target.closest<HTMLElement>('[data-execution-inspector]');
+      const executionMsg = executionButton?.closest<HTMLElement>('.acp-harness__msg[data-msg-id]');
+      if (executionMsg?.dataset.msgId) {
+        e.preventDefault();
+        this.openExecution(executionMsg.dataset.msgId);
+        return;
+      }
       const subagentRow = target.closest<HTMLElement>('[data-subagent-id]');
       const subagentMsg = subagentRow?.closest<HTMLElement>('.acp-harness__msg[data-msg-id]');
       if (subagentRow?.dataset.subagentId && subagentMsg?.dataset.msgId) {
@@ -6303,6 +6336,7 @@ export class AcpHarnessView implements ContentView {
     body.appendChild(this.imageViewer.el);
     // spec 310: no parent until a card seats it — the panel lives in the row.
     this.genUiPanel = new GenUiPanel();
+    this.executionPanel = new ExecutionPanel();
 
     this.metricsOverlay = new MetricsOverlay();
     body.appendChild(this.metricsOverlay.el);
@@ -9674,6 +9708,7 @@ export class AcpHarnessView implements ContentView {
       // spec 283: each SVG card zooms (or returns to Preview from Source); Shift copies.
       targets.push(...(item.svgFences ?? []));
       if (this.transcript?.rowFor(item.id)) targets.push(...(item.uiFences ?? []));
+      if (item.executionTarget && this.transcript?.rowFor(item.id)) targets.push(item.executionTarget);
     }
     return targets;
   }
@@ -9704,6 +9739,7 @@ export class AcpHarnessView implements ContentView {
       for (const agent of item.tool?.subagents?.agents ?? []) agent.hintLabel = null;
       for (const fence of item.svgFences ?? []) fence.hintLabel = null;
       for (const fence of item.uiFences ?? []) fence.hintLabel = null;
+      if (item.executionTarget) item.executionTarget.hintLabel = null;
     }
     this.render();
     this.patchGenUiHints();
@@ -9730,7 +9766,9 @@ export class AcpHarnessView implements ContentView {
     const targets = this.activeLaneOpenTargets();
     const exact = targets.find((target) => target.hintLabel === candidate);
     if (exact) {
-      if ('sourceHash' in exact) {
+      if ('executionItemId' in exact) {
+        this.openExecution(exact.executionItemId);
+      } else if ('sourceHash' in exact) {
         const owner = this.activeLane()?.transcript.find((row) => row.uiFences?.includes(exact));
         if (owner) this.openGenUi(owner.id, exact.index);
       } else if ('showSource' in exact) {
@@ -9760,10 +9798,61 @@ export class AcpHarnessView implements ContentView {
     for (const item of this.activeLane()?.transcript ?? []) {
       const row = this.transcript?.rowFor(item.id);
       if (row instanceof AssistantRow) row.patchUiHints();
+      if (row instanceof ToolRow) row.patchExecutionHint(item.executionTarget?.hintLabel ?? null);
     }
   }
 
+  private openExecution(itemId: string): void {
+    const lane = this.activeLane();
+    const item = lane?.transcript.find((entry) => entry.id === itemId);
+    const row = this.transcript?.rowFor(itemId);
+    if (!lane || !item?.tool?.execution || !(row instanceof ToolRow)) return;
+    if (this.executionOpen?.laneId === lane.id && this.executionOpen.itemId === itemId) {
+      this.executionPanel.close();
+      return;
+    }
+    this.executionPanel.close(false);
+    const body = this.activeTranscriptBody();
+    const anchor = body && !lane.stickToBottom ? this.captureTranscriptScrollAnchor(body) : null;
+    this.executionOpen = { laneId: lane.id, itemId };
+    if (!row.mountExecutionPanel(this.executionPanel.el)) {
+      this.executionOpen = null;
+      return;
+    }
+    this.executionPanel.update({
+      open: true,
+      payload: item.tool.execution,
+      status: item.tool.status,
+      takeFocus: true,
+      onClose: this.executionPanelClosed,
+    });
+    if (body && anchor) this.restoreTranscriptScrollAnchor(body, anchor);
+    const card = this.executionPanel.el.closest<HTMLElement>('.acp-execution-card');
+    if (body && card) this.revealInlinePanel(body, card);
+  }
+
+  private syncExecutionMount(): void {
+    const open = this.executionOpen;
+    if (!open) return;
+    const lane = this.activeLane();
+    const item = lane?.transcript.find((entry) => entry.id === open.itemId);
+    const row = this.transcript?.rowFor(open.itemId);
+    if (lane?.id !== open.laneId || !item?.tool?.execution || !(row instanceof ToolRow)
+      || !row.mountExecutionPanel(this.executionPanel.el)) {
+      this.executionPanel.close(false);
+      return;
+    }
+    this.executionPanel.update({
+      open: true,
+      payload: item.tool.execution,
+      status: item.tool.status,
+      takeFocus: false,
+      onClose: this.executionPanelClosed,
+    });
+  }
+
   private dropGenUiLane(laneId: string): void {
+    if (this.executionOpen?.laneId === laneId) this.executionPanel.close(false);
     this.uiGenerations.delete(laneId);
     this.genUiPanel?.close();
     for (const key of this.genUiStates.keys()) if (key.startsWith(`${laneId}\u0000`)) this.genUiStates.delete(key);
@@ -9830,7 +9919,8 @@ export class AcpHarnessView implements ContentView {
       },
     });
     if (body && anchor) this.restoreTranscriptScrollAnchor(body, anchor);
-    if (body && source === 'user') this.revealGenUiPanel(body);
+    const card = this.genUiPanel.el.closest<HTMLElement>('.acp-genui-card');
+    if (body && card && source === 'user') this.revealInlinePanel(body, card);
   }
 
   /**
@@ -9893,9 +9983,7 @@ export class AcpHarnessView implements ContentView {
    * height — restore that stale anchor and yank the transcript back up by the
    * reveal delta.
    */
-  private revealGenUiPanel(body: HTMLElement): void {
-    const card = this.genUiPanel.el.closest<HTMLElement>('.acp-genui-card');
-    if (!card) return;
+  private revealInlinePanel(body: HTMLElement, card: HTMLElement): void {
     const bodyRect = body.getBoundingClientRect();
     const cardRect = card.getBoundingClientRect();
     const overflow = cardRect.bottom - bodyRect.bottom;
@@ -10927,6 +11015,7 @@ export class AcpHarnessView implements ContentView {
    *  the spawnEpoch bump orphans the still-pending prompt promise. */
   private async forceRestartLane(lane: HarnessLane): Promise<void> {
     if (!lane.client || lane.status === 'starting') return; // restart already in flight
+    if (this.executionOpen?.laneId === lane.id) this.executionPanel.close(false);
     this.clearCancelEscalation(lane);
     const resumeSessionId = lane.sessionId;
     this.uiGenerations.delete(lane.id);
@@ -10972,6 +11061,7 @@ export class AcpHarnessView implements ContentView {
       this.flashChip(`lane ${lane.status} - #cancel first`);
       return;
     }
+    if (this.executionOpen?.laneId === lane.id) this.executionPanel.close(false);
     // spec 293: a restarted lane starts a new work thread on its next #handoff.
     this.unbindLaneHandoff(lane);
     if (lane.client) {
@@ -12471,6 +12561,7 @@ export class AcpHarnessView implements ContentView {
     // spec 310: a repaint rebuilt the cards under the open panel, and a row
     // may have left the window entirely — re-seat it, or collapse it.
     this.syncGenUiMount();
+    this.syncExecutionMount();
     if (anchor) {
       this.restoreTranscriptScrollAnchor(body, anchor);
       lane.savedScrollAnchor = this.captureTranscriptScrollAnchor(body) ?? anchor;
@@ -14508,6 +14599,14 @@ export class AcpHarnessView implements ContentView {
         tool.subject = cleanToolTitle(merged.title, 'agents') || tool.subject;
       }
     }
+    if (!tool.artifactRedaction && !tool.subagents) {
+      tool.execution = parseExecutionPayload(lane.backendId, call, target.tool?.execution);
+    }
+    if (tool.execution) {
+      target.executionTarget ??= { executionItemId: target.id, hintLabel: null };
+    } else {
+      delete target.executionTarget;
+    }
     const text = tool.subject ? `${tool.glyph} ${tool.kind} ${tool.subject}` : `${tool.glyph} ${tool.kind}`;
     target.text = text;
     target.status = status;
@@ -15468,6 +15567,7 @@ export class AcpHarnessView implements ContentView {
   private activateLane(id: string): void {
     if (id !== this.activeLaneId) {
       this.genUiPanel?.close();
+      this.executionPanel?.close(false);
       this.dictationCtl.abort(false);
       this.assistCtl.cancel(); // spec 306: an in-flight answer is about the old lane
     }

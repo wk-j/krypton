@@ -19,20 +19,20 @@ Keep chrome cyan. Stop using cyan as the dump body color.
 3. **Recognized dumps** get the same cheap structure git already has: path, line number, separator, text. Grep/rg (and execute wrapping them) split `path:line:text` and `line:text`. Execute dumps that start with `exit: N` (Grok Bash `output_for_prompt`) peel that line and paint a quiet **exit readout** on the first OUTPUT/TERMINAL label — muted tabular number for 0, danger color for non-zero, no kind-chip frame — instead of leaving `exit: 0` as dump text. Unknown output stays a plain `<pre>`.
 4. **Drop the 2px left rail.** Indent stays (`margin-left: calc(1.4ch + 8px)`). No inner card, no background glow.
 
-No highlight.js. No language grammar. Line-oriented regex only, same budget as `parseGitDiffStat`.
+Generic dump rendering uses no highlight.js or language grammar: line-oriented regex only, with the same budget as `parseGitDiffStat`. [Spec 315](./0315-harness-execution-inspector.md) adds a separate, read-only source pane for validated OMP code cells; only that explicit source pane uses language highlighting. Its output remains foreground text or validated backend table/JSON data.
 
 ## Research
 
 - `renderPlainToolSection` tints the entire `<pre>` through `--acp-tool-section-color`. `toolSectionTone("output"|"stdout"|"text")` → `output` → `--agent-user`. `--content` is `#b8e0ff`. The body `text-shadow` fallback is hardcoded `rgba(109, 208, 255, 0.78)` even when the section is not output.
 - Git already escaped the cyan wall: add/del/hunk tones in `renderUnifiedGitDiff` / `renderGitDiffStat` / `renderGitStatusShort`. File headers and stat paths are still cyan (`rgba(109, 208, 255, …)`).
-- Spec 72: "plain monospace text, not syntax-highlighted code" and "label-specific text colors and text-shadow glow only; the group container does not add a background glow." The glow-only rule stays. The "not syntax-highlighted" rule is updated to allow *structure* tokens (path/line), not language highlighting.
+- Spec 72's generic dump rule allows *structure* tokens (path/line), not language highlighting. The no-background-glow rule stays. Spec 315's explicit retained-source Inspector is a separate renderer, not highlighting applied to these dumps.
 - Spec 231 already assigned kind accents: edit gold, search green, execute/read cyan, fetch info, move magenta, delete red. Transcript chips must match so a search in the rail and a search in the thread are the same color.
 - DESIGN.md / PRODUCT.md: no side-stripe (`border-left` > 1px), no nested cards, colors through tokens, cyan is chrome not content.
 
 **Alternatives ruled out**
 
 - *Repaint execute HUD away from cyan* — out of scope; the dump body is the problem, not the 7-letter chip.
-- *highlight.js on every dump* — file-manager already owns that; 6–12 line previews would look like an editor nested in the thread, and Spec 72 forbade it.
+- *highlight.js on every dump* — rejected. Spec 315 highlights only an explicitly opened, validated source pane; it does not change generic output previews.
 - *Tint the whole section by kind* — a green grep wall is the same bug in another hue.
 - *Box the output* — nested container ban; Spec 72 already forbids a section background glow.
 
@@ -170,7 +170,7 @@ Dump body (plain `<pre>`, grep rows, git-rich) inherits that size. Kind chips, `
 ## Out of Scope
 
 - Recoloring a rail action HUD (spec 231 is removed).
-- Language syntax highlighting (JS/Java/TOML) inside dumps.
+- Language syntax highlighting (JS/Java/TOML) inside generic dumps; the separate OMP source pane belongs to spec 315.
 - Changing assistant markdown heading cyan.
 - Boxing or background-glowing the output group.
 
@@ -178,6 +178,6 @@ Dump body (plain `<pre>`, grep rows, git-rich) inherits that size. Kind chips, `
 
 - `src/acp/harness-tool-render.ts` — current dump + git rich path
 - `src/styles/acp-harness.css` — `--acp-tool-section-color`
-- `docs/0072-acp-harness-view.md` — existing "plain monospace / no syntax highlight" rule
+- `docs/0072-acp-harness-view.md` — generic plain-monospace output contract and spec-315 source-pane exception
 - DESIGN.md 1.2.1 — side-stripe ban
 - Claude Code CLI execute stream — the cyan wall this rejects

@@ -1196,8 +1196,10 @@ PUBLISH
        the old capture/restore dance around the rebuild is gone.
     f. tool_call / tool_call_update dirty 'transcript' only. Row components
        hold their own dependency tuples, so pending and in_progress collapse
-       into one status bucket and a status-only tick writes nothing; streaming
-       output swaps `.acp-harness__tool-output` alone and never the head.
+       into one status bucket and a status-only tick writes nothing. Generic
+       streaming output swaps `.acp-harness__tool-output` alone and never the head;
+       recognized OMP execution snapshots update their owning ExecutionCard and
+       view-owned ExecutionPanel instead (spec 315).
        Sticky follow on that pass (rev 15) idles or pins when the transcript
        bottom did not grow, so a bounded execute-output tail does not replay a
        glide over already-visible rows.
@@ -1206,6 +1208,17 @@ PUBLISH
        patchLaneTurnChrome; refreshMcpStats updates lane heads by updating their
        components, whose deps are the FORMATTED numbers — a poll whose displayed
        values did not move writes nothing.
+    h. For current OMP code cells, renderTool decodes the incoming rawInput /
+       rawOutput.details.cells snapshot before compactToolCallForRetention,
+       keeping bounded typed data on the same transcript item. Omitted fields
+       retain previous values; output snapshots replace, not append. Artifact
+       redaction and subagent cards have precedence over this renderer.
+    i. Transcript f-hints or an Inspector click mount the view's one
+       ExecutionPanel in that item's card slot. Transcript commits re-seat the
+       same node; lane/reset/hidden-tab/eviction teardown closes without taking
+       focus. Source highlighting runs only when source changes; table/JSON
+       output replaces only unambiguous backend-provided spans. No job polling
+       or spilled-output fetch is introduced.
 ```
 ## Resize Mode Flow (e.g., Leader then r)
 

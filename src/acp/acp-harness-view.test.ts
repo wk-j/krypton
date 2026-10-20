@@ -81,9 +81,6 @@ import {
   type LanePeekSnapshot,
 } from './acp-harness-view';
 import { collapseThoughtBlankLines } from './harness-format';
-import { AssistantRow } from './components/assistant-row';
-import { compile } from './genui/compile';
-import type { UiFenceEntry } from './genui/types';
 import {
   peekEventRowDuplicatesTool,
   peekReviewLoop,
@@ -2640,7 +2637,7 @@ describe('ACP peer activity UI (spec 118)', () => {
 
   describe('genui panel reveal scroll (spec 310)', () => {
     type RevealHost = {
-      revealGenUiPanel(body: HTMLElement): void;
+      revealInlinePanel(body: HTMLElement, card: Pick<HTMLElement, 'getBoundingClientRect'>): void;
       restoreTranscriptScrollAnchor(body: HTMLElement, anchor: { msgId: string; offsetTop: number }): void;
     };
     const proto = AcpHarnessView.prototype as unknown as RevealHost;
@@ -2690,18 +2687,17 @@ describe('ACP peer activity UI (spec 118)', () => {
         savedScrollAnchor: stickToBottom ? null : { msgId: 'a1', offsetTop: 0 },
       } as unknown as HarnessLane;
       const target = viewDouble({
-        genUiPanel: { el: { closest: (): unknown => card } },
         activeLane: (): HarnessLane => lane,
         beginProgrammaticScroll: (): number => 1,
         releaseProgrammaticScroll: (): void => {},
       });
-      return { body, lane, target };
+      return { body, card, lane, target };
     }
 
     it('records where it scrolled, so the next resize does not undo the reveal', () => {
-      const { body, lane, target } = transcript(false);
+      const { body, card, lane, target } = transcript(false);
 
-      proto.revealGenUiPanel.call(target, body);
+      proto.revealInlinePanel.call(target, body, card);
 
       // Bounded by the card head: 500px of overflow, 300px of head offset.
       expect(body.scrollTop).toBe(300);
@@ -2716,9 +2712,9 @@ describe('ACP peer activity UI (spec 118)', () => {
     });
 
     it('leaves a stuck lane without an anchor — the observer re-pins it instead', () => {
-      const { body, lane, target } = transcript(true);
+      const { body, card, lane, target } = transcript(true);
 
-      proto.revealGenUiPanel.call(target, body);
+      proto.revealInlinePanel.call(target, body, card);
 
       expect(body.scrollTop).toBe(300);
       expect(lane.savedScrollTop).toBe(300);
@@ -2726,89 +2722,6 @@ describe('ACP peer activity UI (spec 118)', () => {
     });
   });
 
-  describe('genui panel auto-expand on seal (spec 310 rev 2)', () => {
-    type OpenHost = {
-      autoOpenGenUi(lane: HarnessLane, itemId: string): void;
-      openGenUi(itemId: string, index: number, source?: 'user' | 'auto'): void;
-    };
-    const proto = AcpHarnessView.prototype as unknown as OpenHost;
-    const uiSource = 'Card("Estimate", [Text("hi")])';
-    const program = compile(uiSource).program!;
-
-    function fence(index: number): UiFenceEntry {
-      return {
-        index, source: uiSource, sourceHash: `h${index}`, title: `Fence ${index}`,
-        summary: '', hintLabel: null, program, diagnostics: [],
-      };
-    }
-
-    function host(options: { laneId?: string; open?: { itemId: string; index: number } | null } = {}) {
-      const seq: string[] = [];
-      const painted: Record<string, unknown>[] = [];
-      const item = {
-        id: 'a1', kind: 'assistant', text: 'x', markdownSource: 'x',
-        uiFences: [fence(0), fence(1)],
-      } as unknown as HarnessTranscriptItem;
-      const lane = {
-        id: options.laneId ?? 'lane-1', stickToBottom: true, draft: '', transcript: [item],
-      } as unknown as HarnessLane;
-      const row = Object.assign(Object.create(AssistantRow.prototype), { mountUiPanel: (): boolean => true });
-      const target = viewDouble({
-        activeLaneId: 'lane-1',
-        genUiOpen: options.open ?? null,
-        genUiStates: new Map<string, unknown>(),
-        genUiPanel: {
-          el: {},
-          update: (props: Record<string, unknown>): void => { painted.push(props); },
-          close: (): void => { seq.push('close'); },
-        },
-        transcript: { rowFor: (): unknown => row },
-        activeLane: (): HarnessLane => lane,
-        activeTranscriptBody: (): unknown => ({}),
-        captureTranscriptScrollAnchor: (): null => null,
-        restoreTranscriptScrollAnchor: (): void => {},
-        revealGenUiPanel: (): void => { seq.push('reveal'); },
-      });
-      return { target, lane, painted, seq };
-    }
-
-    it('expands the row\'s last fence without taking the keyboard or moving the reader', () => {
-      const { target, lane, painted, seq } = host();
-
-      proto.autoOpenGenUi.call(target, lane, 'a1');
-
-      expect(painted).toHaveLength(1);
-      expect((painted[0].entry as UiFenceEntry).index).toBe(1);
-      expect(painted[0].takeFocus).toBe(false);
-      expect(seq).toEqual([]);
-    });
-
-    it('keeps the keyboard and the reveal scroll for an open the user asked for', () => {
-      const { target, painted, seq } = host();
-
-      proto.openGenUi.call(target, 'a1', 0);
-
-      expect((painted[0].entry as UiFenceEntry).index).toBe(0);
-      expect(painted[0].takeFocus).toBe(true);
-      expect(seq).toEqual(['reveal']);
-    });
-
-    it('never displaces a panel the user is already working in', () => {
-      const { target, lane, painted } = host({ open: { itemId: 'older', index: 0 } });
-
-      proto.autoOpenGenUi.call(target, lane, 'a1');
-
-      expect(painted).toEqual([]);
-    });
-
-    it('leaves a background lane alone — the panel node belongs to the active one', () => {
-      const { target, lane, painted } = host({ laneId: 'background' });
-
-      proto.autoOpenGenUi.call(target, lane, 'a1');
-
-      expect(painted).toEqual([]);
-    });
-  });
 
   it('schedulePeekThoughtPin pins now and again after layout', () => {
     const frames: FrameRequestCallback[] = [];

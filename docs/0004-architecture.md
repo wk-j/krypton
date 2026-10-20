@@ -237,6 +237,13 @@ The compositor is a TypeScript module running in the webview that manages worksp
     dance around the old `dashboardEl.innerHTML = ''` is deleted. Panel placement is one table,
     `HARNESS_LAYOUT_DEFAULT` in `harness-layout.ts`, type-checked against the slot union.
 
+    **Execution Inspector (spec 315).** `harness-execution.ts` validates and bounds current OMP
+    code-cell snapshots before wire retention compacts them. `ToolRow` owns an `ExecutionCard` that
+    replaces the generic source/output dump; `AcpHarnessView` owns one movable `ExecutionPanel`
+    seated in that card's slot. Panel state is excluded from sealed-row deps. Existing transcript
+    hints open retained code/output/activity without new execution, protocol, storage or native-window
+    paths. Generic tools, artifact redaction, subagent cards, diffs and image strips keep their owners.
+
     **Generative UI (specs 308/309/310/312).** A sealed assistant reply can contain
     a `krypton-ui` fence. `src/acp/genui/` compiles a bounded expression
     language and evaluates it locally. An explicit `#ui` turn stages assistant

@@ -1,0 +1,96 @@
+@layer krypton.component {
+  .acp-execution-panel {
+    container-type: inline-size;
+    min-width: 0;
+    border-top: 1px solid rgba(var(--krypton-fg-rgb), 0.1);
+    color: var(--acp-execution-fg, var(--krypton-fg));
+    font-family: var(--agent-font, monospace);
+    font-size: var(--krypton-font-size, 13px);
+    line-height: 1.4;
+  }
+  .acp-execution-panel[hidden],
+  .acp-execution-panel [hidden] { display: none; }
+  .acp-execution-panel__head,
+  .acp-execution-panel__bar,
+  .acp-execution-panel__controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+  .acp-execution-panel__head { padding: 9px 12px 8px; justify-content: space-between; }
+  .acp-execution-panel__legend,
+  .acp-execution-panel__label { font-size: 0.82em; color: rgba(var(--krypton-fg-rgb), 0.55); overflow-wrap: anywhere; min-width: 0; }
+  .acp-execution-panel__panes { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 0 12px 12px; }
+  .acp-execution-panel__pane { min-width: 0; }
+  .acp-execution-panel__bar { min-height: 26px; justify-content: space-between; }
+  .acp-execution-panel__button {
+    padding: 1px 6px;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    border: 1px solid transparent;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: transparent;
+    color: rgba(var(--krypton-fg-rgb), 0.6);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.82em;
+  }
+  .acp-execution-panel__button:hover { border-color: rgba(var(--krypton-fg-rgb), 0.2); color: var(--krypton-fg); }
+  .acp-execution-panel__button[aria-pressed='true'] { color: var(--acp-execution-accent, var(--krypton-window-accent)); }
+  .acp-execution-panel__button:focus-visible,
+  .acp-execution-panel__output:focus-visible { outline: 1px solid var(--acp-execution-accent, var(--krypton-window-accent)); outline-offset: 2px; }
+  .acp-execution-panel__source { display: flex; min-width: 0; max-height: 320px; overflow: auto; }
+  .acp-execution-panel__pre,
+  .acp-execution-panel__numbers,
+  .acp-execution-panel__text {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    white-space: pre;
+    overflow-wrap: normal;
+    tab-size: 4;
+  }
+  .acp-execution-panel__pre { flex: 1 0 auto; }
+  .acp-execution-panel__code { font: inherit; background: transparent; color: inherit; }
+  .acp-execution-panel__numbers {
+    flex: none;
+    padding-right: 12px;
+    color: rgba(var(--krypton-fg-rgb), 0.35);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+  }
+  .acp-execution-panel__output { min-width: 0; max-height: 320px; overflow: auto; }
+  .acp-execution-panel[data-state='error'] .acp-execution-panel__output { color: var(--agent-error); }
+  .acp-execution-panel__table { border-collapse: collapse; font: inherit; }
+  .acp-execution-panel__cell { padding: 2px 8px; border-bottom: 1px solid rgba(var(--krypton-fg-rgb), 0.1); text-align: left; white-space: pre; }
+  .acp-execution-panel__cell[data-numeric='true'] { text-align: right; font-variant-numeric: tabular-nums; }
+  .acp-execution-panel__activity { margin: 0 12px 12px; padding-top: 8px; border-top: 1px solid rgba(var(--krypton-fg-rgb), 0.1); min-width: 0; }
+  .acp-execution-panel__events { margin: 4px 0 0; padding: 0; list-style: none; }
+  .acp-execution-panel__event { margin-top: 4px; overflow-wrap: anywhere; }
+  .acp-execution-panel__event .acp-execution-panel__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .acp-execution-panel__event-op { margin-right: 8px; color: rgba(var(--krypton-fg-rgb), 0.45); font-size: 0.82em; }
+  .acp-execution-panel__notice { color: rgba(var(--krypton-fg-rgb), 0.55); font-size: 0.82em; margin-bottom: 4px; }
+  .acp-execution-panel__feedback { margin: 0 12px 12px; color: var(--acp-execution-accent, var(--krypton-window-accent)); font-size: 0.88em; }
+  .acp-execution-panel__notice:empty,
+  .acp-execution-panel__feedback:empty { display: none; }
+  .acp-execution-panel__syntax-comment,
+  .acp-execution-panel__syntax-quote { color: var(--krypton-ansi-8); font-style: italic; }
+  .acp-execution-panel__syntax-keyword,
+  .acp-execution-panel__syntax-selector-tag { color: var(--krypton-ansi-4); }
+  .acp-execution-panel__syntax-string,
+  .acp-execution-panel__syntax-addition { color: var(--krypton-ansi-10); }
+  .acp-execution-panel__syntax-number,
+  .acp-execution-panel__syntax-literal { color: var(--krypton-ansi-3); }
+  .acp-execution-panel__syntax-title,
+  .acp-execution-panel__syntax-built_in { color: var(--krypton-ansi-6); }
+  .acp-execution-panel__syntax-type,
+  .acp-execution-panel__syntax-attr,
+  .acp-execution-panel__syntax-property { color: var(--krypton-ansi-5); }
+  .acp-execution-panel__syntax-meta,
+  .acp-execution-panel__syntax-regexp { color: var(--krypton-ansi-11); }
+  .acp-execution-panel__syntax-deletion { color: var(--krypton-ansi-1); }
+  @container (min-width: 900px) {
+    .acp-execution-panel__panes { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  }
+}

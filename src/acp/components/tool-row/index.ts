@@ -51,6 +51,7 @@ import { imageStripSignature } from '../image-strip';
 import { Meter } from '../meter';
 import { Spinner } from '../spinner';
 import { SubagentCard } from '../subagent-card';
+import { ExecutionCard } from '../execution-card';
 import { TranscriptRow, type RowProps } from '../transcript-row';
 import { subagentSummary } from '../../harness-subagents';
 import {
@@ -157,6 +158,7 @@ export class ToolRow extends TranscriptRow {
    *  every head repaint rebuild the chip's children for nothing. */
   private kindData: Readonly<Record<string, string>> = { kind: '' };
   private card: SubagentCard | null = null;
+  private executionCard: ExecutionCard | null = null;
   private unidiff: DiffBlock | null = null;
   private readonly statBars: Meter[] = [];
   private statCursor = 0;
@@ -173,9 +175,23 @@ export class ToolRow extends TranscriptRow {
   }
 
   update(next: ToolRowProps): void {
+    const wasLive = this.isLive;
     this.props = next;
     super.update(next);
+    // A cold replay can supply its result after an already-terminal start.
+    // Only the owning summary changes; the sealed row/inspector stays put.
+    if (!wasLive) this.paintExecution(next);
     if (next.item.tool && isTerminalToolStatus(next.item.tool.status)) this.seal(next);
+  }
+
+  mountExecutionPanel(panel: HTMLElement | null): boolean {
+    if (!this.executionCard) return false;
+    this.executionCard.mountPanel(panel);
+    return true;
+  }
+
+  patchExecutionHint(label: string | null): void {
+    this.executionCard?.setHint(label);
   }
 
   /**
@@ -192,6 +208,17 @@ export class ToolRow extends TranscriptRow {
   /** The ten of spec 302 §3.4. */
   protected bodyDeps(next: ToolRowProps): readonly unknown[] {
     const tool = next.item.tool;
+    if (tool?.execution && !tool.artifactRedaction && !tool.subagents) {
+      return [
+        isTerminalToolStatus(tool.status) ? tool.status : 'active',
+        tool.execution.title,
+        tool.execution.language,
+        tool.execution.cellStatus,
+        tool.execution.durationMs,
+        tool.execution.detached,
+        tool.diffs,
+      ];
+    }
     return [
       // `toolStatusSignature` — pending and in_progress share one bucket.
       tool ? (isTerminalToolStatus(tool.status) ? tool.status : 'active') : '',
@@ -226,6 +253,20 @@ export class ToolRow extends TranscriptRow {
       syncOrder(body, []);
       return;
     }
+    if (tool.execution && !tool.artifactRedaction && !tool.subagents) {
+      this.dropCard();
+      this.glyph.update({ running: false, terminalGlyph: tool.glyph });
+      this.executionCard ??= new ExecutionCard();
+      this.paintExecution(next);
+      const children: HTMLElement[] = [this.executionCard.el];
+      if (tool.diffs.length > 0) {
+        this.paintDiffs(tool.diffs);
+        children.push(this.diffs);
+      }
+      syncOrder(body, children);
+      return;
+    }
+    this.dropExecutionCard();
     this.paintHead(tool);
     const children: HTMLElement[] = [this.head];
 
@@ -263,6 +304,10 @@ export class ToolRow extends TranscriptRow {
   protected appendChunk(next: ToolRowProps): void {
     const tool = next.item.tool;
     if (!tool || tool.artifactRedaction) return;
+    if (tool.execution && !tool.subagents) {
+      this.paintExecution(next);
+      return;
+    }
     if (tool.subagents) {
       this.card?.update({ payload: tool.subagents, expanded: next.expanded });
       return;
@@ -454,6 +499,25 @@ export class ToolRow extends TranscriptRow {
     });
   }
 
+  private paintExecution(next: ToolRowProps): void {
+    const tool = next.item.tool;
+    if (!tool?.execution || !this.executionCard) return;
+    this.executionCard.update({
+      payload: tool.execution,
+      status: tool.status,
+      startedAt: tool.startedAt,
+      endedAt: tool.endedAt,
+      hintLabel: next.item.executionTarget?.hintLabel ?? null,
+    });
+  }
+
+  private dropExecutionCard(): void {
+    if (!this.executionCard) return;
+    this.executionCard.el.remove();
+    this.executionCard.dispose();
+    this.executionCard = null;
+  }
+
   private dropCard(): void {
     if (!this.card) return;
     this.card.el.remove();
@@ -464,6 +528,7 @@ export class ToolRow extends TranscriptRow {
   protected onDispose(): void {
     super.onDispose();
     this.dropCard();
+    this.dropExecutionCard();
     this.glyph.dispose();
     this.kind.dispose();
     this.unidiff?.dispose();

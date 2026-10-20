@@ -30,6 +30,8 @@ import { def as directivePicker } from './directive-picker';
 import { def as docCardRow } from './doc-card-row';
 import { def as draftLine } from './draft-line';
 import { def as emptyState } from './empty-state';
+import { def as executionCard } from './execution-card';
+import { def as executionPanel } from './execution-panel';
 import { def as fsActivityRow } from './fs-activity-row';
 import { def as fsWriteReviewRow } from './fs-write-review-row';
 import { def as genuiCard } from './genui-card';
@@ -116,6 +118,8 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   thoughtRow,
   userRow,
   toolRow,
+  executionCard,
+  executionPanel,
   subagentCard,
   permissionRow,
   questionRow,
