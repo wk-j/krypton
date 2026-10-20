@@ -738,8 +738,14 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 | 6.4 | `StagingStrip` | `[▣ screenshot.png  x] [▣ diagram.png  x]   2 images · Esc to clear` | `acp-harness-view.ts:13228-13245` |
 | 6.5 | `PeerStrip` | `⇆ awaiting codex · 5m+ · #cancel drops pending lane-mail wait` / `▼3 lane mails queued` | `lane-peek.ts:731-779` |
 | 6.6 | `DictationControl` | `[● REC th  ⌘D]` (phases `MIC · MIC en · REC th · FINALIZING…`) | `harness-dictation-controller.ts:37-82` |
-| 6.7 | `LiveVoiceStrip` | `LIVE  listening  alloy  ████░░░░ ██░░░░░░  you: refactor the composer   ⌘⇧L stop · ⌘⌥L mute` | `harness-live-voice-controller.ts:461-499` |
+| 6.7 | `LiveVoiceStrip` | `LIVE  muted  alloy  ░░░░░░░░ ██░░░░░░  you: refactor the composer   ⌘⇧L stop · hold left ⌥ to talk` | `harness-live-voice-controller.ts:461-499` |
 | 6.8 | `DecisionComposer` | `perm      a accept · A all · r reject · R all` | `acp-harness-view.ts:13299-13313` |
+
+`LiveVoiceStrip` keeps `LiveVoiceSessionProps.muted: boolean`. The microphone starts muted;
+the muted hint is `⌘⇧L stop · hold left ⌥ to talk`, changing to
+`⌘⇧L stop · release left ⌥ to mute` while bare Left Option is held. Release or focus
+loss closes the microphone without stopping playback/session; see
+[spec 314](./0314-harness-live-push-to-talk.md) for cancellation and safety behavior.
 
 ---
 

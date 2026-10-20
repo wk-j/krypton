@@ -4,6 +4,7 @@
 > Date: 2026-10-08
 > Milestone: M-ACP — Harness convergence
 > Builds on: specs 72, 136, 151, 175, 246, 275, 278 · inspired by OMP `/live`
+> Extended by: [314 — Hold Left Option to Talk](./0314-harness-live-push-to-talk.md), the authoritative microphone interaction contract.
 
 ## Problem
 
@@ -107,7 +108,7 @@ chord starts and stops it.
 | `src/acp/live-voice.ts` (new) | Pure: event parsing, 500-byte chunking, transcript merge, prompt, delegation bookkeeping |
 | `src/acp/harness-live-voice-controller.ts` (new) | Peer, mic, playback, levels, phases, lane binding, delegation relay |
 | `src/acp/harness-view-host.ts` | `HarnessLiveVoiceHost` |
-| `src/acp/acp-harness-view.ts` | `#live` command, `Cmd+Shift+L` / `Cmd+Alt+L`, event/turn-end/status/close hooks, live strip render |
+| `src/acp/acp-harness-view.ts` | `#live` command, `Cmd+Shift+L`, Left Option hold routing (spec 314), event/turn-end/status/close hooks, live strip render |
 | `src/acp/harness-view-types.ts` | `QueuedPrompt.liveDelegationId?`, transcript item `voice?: true` |
 | `src/styles/acp-harness.css` | `.acp-harness__live` strip (BEM, lane accent, reduced motion) |
 | `docs/0072-acp-harness-view.md`, `0004-architecture.md`, `0005-data-flow.md`, `0002-functional-requirements.md`, `README.md`, `PROGRESS.md` | Document the feature |
@@ -179,11 +180,13 @@ when a queued prompt tagged with a delegation starts its turn.
 
 ```
 1. User types `#live [voice]` in a lane's composer, or presses Cmd+Shift+L.
-2. Controller: getUserMedia({audio:{echoCancellation,noiseSuppression,autoGainControl}}),
-   new RTCPeerConnection, add mic track, createDataChannel('oai-events'), createOffer.
+2. Controller starts muted, then getUserMedia({audio:{echoCancellation,noiseSuppression,autoGainControl}}).
+   Set capture tracks disabled before attaching them to the new RTCPeerConnection
+   (or use the current hold state if it changed while capture was pending; spec 314).
+   Add mic tracks, createDataChannel('oai-events'), createOffer.
 3. invoke live_voice_signal(offer, instructions, voice) → setRemoteDescription(answer).
-4. Data channel open → invoke live_voice_open_sideband(generation). Phase: connecting → listening
-   on `session.started`. Remote track → hidden <audio autoplay>.
+4. Data channel open → invoke live_voice_open_sideband(generation). Phase: connecting → muted
+   on `session.started` unless a valid Left Option hold is active. Remote track → hidden <audio autoplay>.
 5. Speech: input/output transcript events update the live strip only. They are not persisted.
 6. `delegation.created {id, text}` → phase working → host.deliverLivePrompt(lane, text, id):
      started/steered → currentDelegationId = id
@@ -198,7 +201,7 @@ when a queued prompt tagged with a delegation starts its turn.
    `commentary` chunks, then clear it.
 8. finishTurn → append `"Agent Final Message":\n\n<progressBuffer or "(no text reply)">` to
    currentDelegationId; cancelled turns send `"Agent Turn Cancelled"`. Clear it; phase returns to
-   listening/speaking from output level.
+   muted, or listening/speaking from output level while the microphone gate is open.
 9. A permission that waits for the human (`addPermission` after every auto-accept rule: permission
    mode, turn-wide accept/reject, peer-auto, Telegram) → append (speakable)
    `"Agent Permission Request": <tool title>`. The user approves with the existing Harness keys (or
@@ -231,18 +234,20 @@ every delegation reaches the lane.
 | Key | Context | Action |
 |-----|---------|--------|
 | `Cmd+Shift+L` | Harness focused | Start live on the active lane / stop the running session |
-| `Cmd+Alt+L` | Live session running | Toggle mic mute |
-| `#live [voice]`, `#live stop`, `#live mute` | Harness composer | Same, by command |
+| Hold bare `Left Option` | Live session in focused Harness | Talk while held; Right Option is untouched |
+| Release `Left Option` | Live session | Mute without stopping playback or the session |
+| `#live [voice]`, `#live stop` | Harness composer | Start or stop the session |
 
-Neither chord is used by the input router or Harness today (`Cmd+Shift+M` and `Cmd+L` are).
+See [spec 314](./0314-harness-live-push-to-talk.md) for hold cancellation, focus safety, and capture lifecycle details.
 
 ### UI
 
 An `.acp-harness__live` strip sits above the composer of the bound lane only:
 `LIVE · <phase> · <voice>`, two 8-segment level meters (`__live-meter--in/--out`), and one
 ellipsized line with the latest user or assistant transcript, then the key hint
-`⌘⇧L stop · ⌘⌥L mute`. While muted the hint reads `unmute` in the gold token, so mute state is visible
-at the end of the strip. The phase label reserves the width of its longest value (`connecting`), so a
+`⌘⇧L stop · hold left ⌥ to talk` while muted, and
+`⌘⇧L stop · release left ⌥ to mute` while talking, with the muted hint in the gold token.
+The phase label reserves the width of its longest value (`connecting`), so a
 listening ↔ speaking flip never shifts the rest of the strip. The phase colors the label through the
 lane accent. Error uses the existing error token. There is no left-border rail and no corner
 bracket. The meters are text (`█░`), so there is no motion to reduce. The strip stays above the
@@ -265,8 +270,9 @@ request by voice, so hiding the strip there removed the only live readout at the
   tells the model an approval is done, and the instructions forbid delegating remarks.
 - **Turn starts from someone else (peer mail, user typing):** it is not tagged, so its final message
   is not spoken. `currentDelegationId` stays tied to tagged prompts.
-- **Krypton not frontmost:** capture and playback continue. Phase 0 verifies that WebKit does not
-  suspend them.
+- **Krypton not frontmost / document hidden / focus leaves Harness:** microphone turns off;
+  session, playback, and delegation continue. Returning focus never opens the microphone
+  automatically; a fresh bare Left Option press is required (spec 314).
 - **App quit / webview reload:** the sideband task dies with the process; a reloaded page's next
   `signal` supersedes the orphaned call, and stale generations are rejected.
 - **Open sideband twice:** `sideband-already-open` (added during implementation).
@@ -282,10 +288,11 @@ request by voice, so hiding the strip there removed the only live readout at the
 
 ## Implementation Phases
 
-0. **Gate spike** (throwaway, not committed): in the bundled app, confirm that `navigator.mediaDevices`
-   exists, the mic prompt appears, `RTCPeerConnection` connects, signaling without attestation
-   returns 2xx, and audio continues while another app is frontmost. Any failure → stop and amend this
-   spec before writing feature code.
+0. **Original gate spike plan (2026-10-08; results below):** in the bundled app, confirm that
+   `navigator.mediaDevices` exists, the mic prompt appears, `RTCPeerConnection` connects,
+   signaling without attestation returns 2xx, and playback continues while another app is
+   frontmost. Under spec 314 the microphone must be off in the background. The original spike
+   predates that gate; its results do not verify the hold-to-talk behavior.
 1. Rust module + tests (headers, call-id parse, sideband URL, generation guard, JWT expiry).
 2. Pure frontend module + tests (chunking, transcript merge, event parse, delegation bookkeeping).
 3. Controller, view hooks, UI, keys. Smoke test in the running app: a spoken request becomes a lane
@@ -303,8 +310,9 @@ request by voice, so hiding the strip there removed the only live readout at the
 - The Rust `post_offer` / `connect_sideband` code ran against the live endpoint with a native WebRTC
   peer: signal ok, sideband open, a client append was acknowledged (`session.context.appended`).
 - Not verified: the in-app path (WebKit mic permission prompt, playback, Cmd+Shift+L routing), and
-  whether audio continues while Krypton is not frontmost. A second dev instance next to the
-  installed app raised a keychain prompt, so the GUI smoke run was stopped.
+  whether playback continues while Krypton is not frontmost. A second dev instance next to the
+  installed app raised a keychain prompt, so the GUI smoke run was stopped. These historical
+  observations do not verify spec 314's microphone gate.
 
 ## Out of Scope
 

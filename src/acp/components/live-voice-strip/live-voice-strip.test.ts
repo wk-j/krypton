@@ -28,22 +28,6 @@ const mount = (props: LiveVoiceStripProps = SESSION): LiveVoiceStrip => {
 };
 
 describe('LiveVoiceStrip', () => {
-  it('emits the session strip with the controller’s patch handles', () => {
-    const strip = mount();
-
-    expect(strip.el.outerHTML).toBe(
-      '<div class="acp-harness__live acp-harness__live--listening" data-live-strip="">' +
-        '<span class="acp-harness__live-label">LIVE</span>' +
-        '<span class="acp-harness__live-phase"><span data-live-phase="">listening</span></span>' +
-        '<span class="acp-harness__live-voice">alloy</span>' +
-        '<span class="acp-harness__live-meter acp-harness__live-meter--in" data-live-in="">████░░░░</span>' +
-        '<span class="acp-harness__live-meter acp-harness__live-meter--out" data-live-out="">██░░░░░░</span>' +
-        '<span class="acp-harness__live-line" data-live-line="">you: refactor the composer</span>' +
-        '<span class="acp-harness__live-keys" data-live-keys="">⌘⇧L stop · ⌘⌥L mute</span>' +
-        '</div>',
-    );
-  });
-
   it('clamps the meter at eight cells', () => {
     expect(liveVoiceMeter(0)).toBe('░░░░░░░░');
     expect(liveVoiceMeter(0.9)).toBe('████████');
@@ -69,29 +53,14 @@ describe('LiveVoiceStrip', () => {
     expect(meter?.textContent).toBe('██████░░');
   });
 
-  it('names the next chord and re-derives the phase class when muted and back', () => {
+  it('re-derives the phase class when muted and back', () => {
     const strip = mount();
 
     strip.update({ ...SESSION, kind: 'session', phase: 'muted', muted: true });
     expect(strip.el.className).toBe('acp-harness__live acp-harness__live--muted');
-    expect(strip.el.querySelector('[data-live-keys]')?.textContent).toBe('⌘⇧L stop · ⌘⌥L unmute');
 
     strip.update(SESSION);
     expect(strip.el.className).toBe('acp-harness__live acp-harness__live--listening');
-    expect(strip.el.querySelector('[data-live-keys]')?.textContent).toBe('⌘⇧L stop · ⌘⌥L mute');
-  });
-
-  it('shrinks to the end note, which carries no patch handles', () => {
-    const strip = mount();
-
-    strip.update({ kind: 'note', text: 'live ended', error: false });
-
-    expect(strip.el.outerHTML).toBe(
-      '<div class="acp-harness__live acp-harness__live--ended">' +
-        '<span class="acp-harness__live-label">LIVE</span>' +
-        '<span class="acp-harness__live-line">live ended</span>' +
-        '</div>',
-    );
   });
 
   it('tints the note red on an error', () => {

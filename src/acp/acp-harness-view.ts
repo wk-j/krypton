@@ -4255,18 +4255,16 @@ export class AcpHarnessView implements ContentView {
       else if (dictationChord || (e.key === 'Enter' && !e.shiftKey)) this.dictationCtl.stop();
       return true;
     }
+    if (this.liveVoiceCtl.handleKeyDown(e)) return true;
     // spec 206: unified open-hint mode swallows keys while active (read-only
     // transcript exception, active only in hint mode).
     // spec 281: the image viewer owns every key while open.
     if (this.imageViewer?.isOpen) return this.imageViewer.handleKey(e);
     if (this.openHintMode) return this.handleOpenHintKey(e);
-    // spec 280: live voice — Cmd+Shift+L starts on the active lane or stops;
-    // Cmd+Alt+L toggles the mic. `code`, since Option rewrites `key` on macOS.
-    if (e.code === 'KeyL' && e.metaKey && !e.ctrlKey && e.shiftKey !== e.altKey) {
+    // Spec 280/314: Cmd+Shift+L starts or stops; Left Option is hold-to-talk.
+    if (e.code === 'KeyL' && e.metaKey && !e.ctrlKey && e.shiftKey && !e.altKey) {
       e.preventDefault();
-      if (e.altKey) {
-        this.liveVoiceCtl.toggleMute();
-      } else if (this.liveVoiceCtl.laneId) {
+      if (this.liveVoiceCtl.laneId) {
         this.liveVoiceCtl.stop('stopped');
       } else {
         const lane = this.activeLane();

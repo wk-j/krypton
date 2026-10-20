@@ -263,16 +263,14 @@ export class LiveDelegationLedger {
 export type LiveCommand =
   | { kind: 'start'; voice: string }
   | { kind: 'stop' }
-  | { kind: 'mute' }
   | { error: string };
 
-/** `#live [voice] | stop | mute` — the tokens after `#live`. */
+/** `#live [<voice> | stop]` — the tokens after `#live`. */
 export function parseLiveCommand(args: string[]): LiveCommand {
   const first = args[0]?.toLowerCase();
   if (args.length > 1) return { error: '#live takes at most one argument' };
   if (first === undefined) return { kind: 'start', voice: DEFAULT_LIVE_VOICE };
   if (first === 'stop') return { kind: 'stop' };
-  if (first === 'mute') return { kind: 'mute' };
   if (LIVE_VOICES.includes(first)) return { kind: 'start', voice: first };
   return { error: `unknown voice "${first}" (${LIVE_VOICES.join(', ')})` };
 }

@@ -107,7 +107,7 @@
     color: var(--agent-error, #ff6b8b);
   }
 
-  /* Muted: the hint now reads "unmute" — make the state visible at a glance. */
+  /* Muted: highlight the hold-to-talk hint so the closed microphone is clear. */
   .acp-harness__live--muted .acp-harness__live-keys {
     color: var(--agent-gold, #ffd166);
   }

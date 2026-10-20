@@ -420,9 +420,12 @@ d. The loop stops once the grip, the mouse and the button fades settle
       runs, the stop is held and finishTurn runs whole only after both end,
       so turn-end cleanup never hits the newer turn and no peer-mail or queue
       drain can send a colliding session/prompt.
-   c. Live voice (Spec 280): `#live [voice]` or Cmd+Shift+L on a lane.
-      1. HarnessLiveVoiceController: getUserMedia (echo cancellation) →
-         RTCPeerConnection + mic track + `oai-events` data channel → offer.
+   c. Live voice (Specs 280, 314): `#live [voice]` or Cmd+Shift+L on a lane.
+      1. HarnessLiveVoiceController starts muted and installs release/safety
+         listeners before awaiting getUserMedia (echo cancellation). Set
+         track.enabled = !session.muted before attaching capture tracks to
+         RTCPeerConnection; startup tracks are disabled unless a valid hold
+         began while capture was pending. Create `oai-events` channel → offer.
       2. invoke live_voice_signal(offerSdp, instructions, voice): Rust reads
          ~/.codex/auth.json, POSTs the offer with Codex Desktop headers, keeps
          the token, returns {generation, answerSdp, callId}.
@@ -443,9 +446,16 @@ d. The loop stops once the grip, the mouse and the button fades settle
          `"Agent Permission Resolved"`; finishTurn sends
          `"Agent Final Message"` (or `"Agent Turn Cancelled"`) — all via
          live_voice_send, serialized per session — and the model speaks it.
+         Bare Left Option (AltLeft) held in the focused Harness opens the
+         microphone; release closes it immediately. Any other key cancels
+         the hold until Left Option is released. Right Option is untouched.
+         Blur, document hidden, or focus leaving Harness mutes without
+         ending playback, delegation, or the session; refocus requires a
+         fresh press. Gate changes patch the strip only and zero the muted
+         input meter. A hold released before capture resolves stays muted.
       6. Stop (Cmd+Shift+L, `#live stop`, lane closed/error/restart/new):
          send `session.close`, then live_voice_close(generation); release
-         the mic, peer, and audio context.
+         the mic, peer, and audio context, and remove release/safety listeners.
 8. MCP-capable agents call handoff_set against
    /mcp/harness/<harnessId>/lane/<laneLabel> (Spec 293).
    a. The project store (shared by every tab of the project, ref-counted by

@@ -86,16 +86,17 @@ function meter(level: number): string {
   return '█'.repeat(on) + '░'.repeat(METER_SEGMENTS - on);
 }
 
-/** The strip's key hint names the action the mute chord takes next. */
+/** Hints name the hold/release action, never a latched microphone toggle. */
 const LIVE_KEYS = {
-  mute: '⌘⇧L stop · ⌘⌥L mute',
-  unmute: '⌘⇧L stop · ⌘⌥L unmute',
+  mute: '⌘⇧L stop · release left ⌥ to mute',
+  unmute: '⌘⇧L stop · hold left ⌥ to talk',
 } as const;
 
 export class HarnessLiveVoiceController {
   private session: LiveSession | null = null;
   private endNote: { laneId: string; text: string; error: boolean; until: number } | null = null;
   private readonly levelBuffer = new Float32Array(1024);
+  private talkHeld = false;
 
   constructor(private readonly host: HarnessLiveVoiceHost) {}
 
@@ -104,7 +105,7 @@ export class HarnessLiveVoiceController {
     return this.session?.laneId ?? null;
   }
 
-  /** `#live [voice] | stop | mute`. */
+  /** `#live [voice] | stop`. */
   async runCommand(lane: HarnessLane, args: string[]): Promise<void> {
     const command = parseLiveCommand(args);
     if ('error' in command) {
@@ -116,24 +117,60 @@ export class HarnessLiveVoiceController {
       else this.host.flashChip('live: no session');
       return;
     }
-    if (command.kind === 'mute') {
-      this.toggleMute();
-      return;
-    }
     await this.start(lane, command.voice);
   }
 
-  toggleMute(): void {
-    const s = this.session;
-    if (!s) {
-      this.host.flashChip('live: no session');
-      return;
+  /** Only the focused Harness routes presses here; release is captured globally. */
+  handleKeyDown(event: KeyboardEvent): boolean {
+    if (!this.session || event.code !== 'AltLeft') return false;
+    if (!event.repeat && !this.talkHeld) {
+      this.talkHeld = true;
+      if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !document.hidden) {
+        this.setMuted(false);
+      }
     }
-    s.muted = !s.muted;
-    for (const track of s.mic?.getAudioTracks() ?? []) track.enabled = !s.muted;
-    if (s.muted) s.inputLevel = 0;
+    return true;
+  }
+
+  private setMuted(muted: boolean): void {
+    const s = this.session;
+    if (!s || s.muted === muted) return;
+    s.muted = muted;
+    for (const track of s.mic?.getAudioTracks() ?? []) track.enabled = !muted;
+    if (muted) s.inputLevel = 0;
     this.refreshPhase(s);
-    this.host.flashChip(s.muted ? 'live: muted' : 'live: unmuted');
+  }
+
+  private bindTalkRelease(s: LiveSession): void {
+    const release = (): void => {
+      if (this.session !== s) return;
+      this.talkHeld = false;
+      this.setMuted(true);
+    };
+    const keydown = (event: KeyboardEvent): void => {
+      if (this.session === s && event.code !== 'AltLeft') this.setMuted(true);
+    };
+    const keyup = (event: KeyboardEvent): void => {
+      if (event.code === 'AltLeft' || !event.altKey) release();
+    };
+    const visibility = (): void => {
+      if (document.hidden) release();
+    };
+    const focusout = (event: FocusEvent): void => {
+      if (!(event.relatedTarget instanceof Node) || !this.host.element.contains(event.relatedTarget)) release();
+    };
+    window.addEventListener('keydown', keydown, true);
+    window.addEventListener('keyup', keyup, true);
+    window.addEventListener('blur', release);
+    document.addEventListener('visibilitychange', visibility);
+    this.host.element.addEventListener('focusout', focusout);
+    s.unlisten.push(() => {
+      window.removeEventListener('keydown', keydown, true);
+      window.removeEventListener('keyup', keyup, true);
+      window.removeEventListener('blur', release);
+      document.removeEventListener('visibilitychange', visibility);
+      this.host.element.removeEventListener('focusout', focusout);
+    });
   }
 
   async start(lane: HarnessLane, voice: string): Promise<void> {
@@ -159,7 +196,7 @@ export class HarnessLiveVoiceController {
       generation: null,
       phase: 'connecting',
       started: false,
-      muted: false,
+      muted: true,
       delivering: 0,
       ledger: new LiveDelegationLedger(),
       askedPermissions: new Map(),
@@ -178,6 +215,8 @@ export class HarnessLiveVoiceController {
       sendChain: Promise.resolve(),
     };
     this.session = s;
+    this.talkHeld = false;
+    this.bindTalkRelease(s);
     this.endNote = null;
     this.host.invalidate('composer');
     try {
@@ -192,6 +231,7 @@ export class HarnessLiveVoiceController {
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
     if (this.session !== s) return this.releaseMedia(s);
+    for (const track of s.mic.getAudioTracks()) track.enabled = !s.muted;
     if (s.ctx) {
       // Active capture lets WebKit run audio even if the gesture has expired.
       void s.ctx.resume().catch(() => {});
@@ -385,6 +425,8 @@ export class HarnessLiveVoiceController {
   stop(note: string, error = false): void {
     const s = this.session;
     if (!s) return;
+    this.setMuted(true);
+    this.talkHeld = false;
     this.session = null;
     if (s.levelTimer !== null) window.clearInterval(s.levelTimer);
     for (const unlisten of s.unlisten) unlisten();

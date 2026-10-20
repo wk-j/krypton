@@ -1,12 +1,5 @@
 // Spec 302 §6.7 — `LiveVoiceStrip`.
 //
-// `LIVE  listening  alloy  ████░░░░ ██░░░░░░  you: refactor the composer
-// ⌘⇧L stop · ⌘⌥L mute` — the spec 280 realtime-voice strip, and its four-second
-// end note (`live ended`, or an error). Built today by
-// `harness-live-voice-controller.ts:461-485`, patched in place by
-// `patchStrip()` (:494-507) because an input-level tick ten times a second must
-// not re-render the composer.
-//
 // `patchStrip()` is what this component deletes: it re-finds the strip through
 // `composerEl.querySelector('[data-live-strip]')` on every sample and writes
 // five `textContent`s. Here the levels arrive as props, and the METER TEXT —
@@ -26,10 +19,10 @@ import type { ComponentDef } from '../types';
 /** OMP parity: eight cells, full scale at RMS 0.2. */
 const METER_SEGMENTS = 8;
 
-/** The strip's key hint names the action the mute chord takes next. */
-const LIVE_KEYS: Record<'mute' | 'unmute', string> = {
-  mute: '⌘⇧L stop · ⌘⌥L mute',
-  unmute: '⌘⇧L stop · ⌘⌥L unmute',
+/** The strip's key hint follows the microphone's push-to-talk state. */
+const LIVE_KEYS: Record<'muted' | 'unmuted', string> = {
+  muted: '⌘⇧L stop · hold left ⌥ to talk',
+  unmuted: '⌘⇧L stop · release left ⌥ to mute',
 };
 
 export interface LiveVoiceSessionProps {
@@ -138,7 +131,7 @@ export class LiveVoiceStrip extends Component<LiveVoiceStripProps> {
     this.inMeterEl.textContent = liveVoiceMeter(next.inputLevel);
     this.outMeterEl.textContent = liveVoiceMeter(next.outputLevel);
     this.lineEl.textContent = next.line;
-    this.keysEl.textContent = LIVE_KEYS[next.muted ? 'unmute' : 'mute'];
+    this.keysEl.textContent = LIVE_KEYS[next.muted ? 'muted' : 'unmuted'];
     syncOrder(this.el, [
       this.labelEl,
       this.phaseEl,

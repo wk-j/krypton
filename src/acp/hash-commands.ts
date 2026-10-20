@@ -72,8 +72,8 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   },
   {
     name: 'live',
-    args: '[<voice> | stop | mute]',
-    description: 'talk with this lane by voice (Codex realtime); it does the work you ask for · Cmd+Shift+L',
+    args: '[<voice> | stop]',
+    description: 'talk with this lane by voice (Codex realtime); it does the work you ask for · Cmd+Shift+L · hold left Option to talk',
   },
   { name: 'dashboard', args: '', description: 'open the live harness dashboard in a browser' },
   { name: 'gallery', args: '', description: 'open the artifact gallery (pending + live artifacts) in a browser' },

@@ -106,11 +106,11 @@ describe('LiveDelegationLedger', () => {
 });
 
 describe('parseLiveCommand', () => {
-  it('parses voices, stop, mute and rejects junk', () => {
+  it('parses voices and stop, and rejects removed commands and junk', () => {
     expect(parseLiveCommand([])).toEqual({ kind: 'start', voice: 'sol' });
     expect(parseLiveCommand(['Maple'])).toEqual({ kind: 'start', voice: 'maple' });
     expect(parseLiveCommand(['stop'])).toEqual({ kind: 'stop' });
-    expect(parseLiveCommand(['mute'])).toEqual({ kind: 'mute' });
+    expect(parseLiveCommand(['mute'])).toHaveProperty('error');
     expect(parseLiveCommand(['robot'])).toHaveProperty('error');
     expect(parseLiveCommand(['sol', 'x'])).toHaveProperty('error');
   });

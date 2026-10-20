@@ -592,8 +592,8 @@ The default focus is the composer. Almost every key acts on the composer or on o
 | `Cmd+Shift+D` | Composer text mode, speech recognition available | Start Thai dictation; repeat to stop and keep editable text. |
 | `Enter` | Dictation active | Stop and keep recognized text; do not submit on the same keypress. |
 | `Esc` | Dictation active | Abort capture and restore the saved draft/cursor. |
-| `Cmd+Shift+L` / `#live [voice]` | Harness focused | Start a live voice session on the active lane; repeat (or `#live stop`) to end it (spec 280). |
-| `Cmd+Alt+L` / `#live mute` | Live voice running | Toggle the microphone. |
+| `Cmd+Shift+L` / `#live [voice]` | Harness focused | Start a live voice session on the active lane, initially muted; repeat shortcut (or `#live stop`) to end it (specs 280, 314). |
+| Hold bare `Left Option` | Live voice running in focused Harness | Talk while held; release, blur, document hidden, or focus leaving Harness mutes without ending playback/session. Another key cancels the hold until Left Option is released; Right Option remains unchanged (spec 314). |
 | `#` | Composer text mode | Open hash-command autocomplete. |
 | `Tab` / `Enter` | Hash autocomplete | Accept selected command. |
 | `Esc` | Hash autocomplete | Dismiss popup (text preserved). |

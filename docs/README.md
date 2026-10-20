@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (298)
+## Specs (299)
 
 | # | Spec |
 |---|------|
@@ -316,6 +316,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 311 | [Connected Computer Commands from ACP Harness](./0311-connected-computer-commands.md) |
 | 312 | [ACP Harness `#ui` Preflight and Repair](./0312-harness-genui-preflight-repair.md) |
 | 313 | [GenUI Component Gallery (Loopback Page)](./0313-genui-component-gallery.md) |
+| 314 | [Harness Live Voice: Hold Left Option to Talk](./0314-harness-live-push-to-talk.md) |
 
 ## ADRs (24)
 

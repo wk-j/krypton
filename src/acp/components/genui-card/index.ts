@@ -102,6 +102,9 @@ export function decorateUiFences(body: HTMLElement, item: HarnessTranscriptItem)
     }
     entries.push(entry);
     const card = el('div', { class: 'acp-genui-card' });
+    // Match the SVG preview's Full HD width cap in device pixels.
+    const pixelRatio = window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
+    card.style.maxWidth = `${Math.round(1920 / pixelRatio)}px`;
     const button = el('button', {
       class: 'acp-genui-card__open',
       attrs: {
