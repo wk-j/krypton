@@ -215,7 +215,7 @@ The compositor is a TypeScript module running in the webview that manages worksp
 
     **Feature controllers (spec 275).** Three features' state and behavior moved out of the class into
     per-feature controllers: `harness-dictation-controller.ts` (spec 246 speech session),
-    `harness-timeline-controller.ts` (`#timeline`, capture/review sheet, pending-suggestion count) and
+    `harness-timeline-controller.ts` (`#timeline`, settings and nonvisual legacy-pending count) and
     `harness-ticket-controller.ts` (active ticket, worker binding, `#ticket` picker, ticket dock), with
     pure ticket helpers in `harness-ticket-helpers.ts`. A controller owns its state and reaches the view
     only through a narrow host contract from `harness-view-host.ts`, which the view builds from
@@ -308,7 +308,7 @@ The compositor is a TypeScript module running in the webview that manages worksp
 
 34. **Review Board (spec 211)** — The surface where a lane *explains code* to the human and the human works through it. A `PaneContentType = 'review'` content window (`src/review-board/view.ts`) over a **lane-authored Markdown document plus typed fenced blocks** (`walkthrough`, `diff`, `finding`, `decision`, `chart`, `metrics`, `svg`), parsed by `src/review-board/parse.ts` (one `ReviewBlock` per top-level `marked` lexer token; a malformed or unknown `review:*` fence degrades to a diagnostic-carrying `markdown` block and is **never dropped**) and built into DOM by `src/review-board/render.ts` (markdown via the Markdown Viewer's `marked`+`highlight.js` stack, `diff` via `diff2html`, single-series accent-hued inline SVG for charts, allowlist-sanitized `svg`). Blocks are addressed by **stable content-addressed id** (`b<ordinal>-<fnv1a(raw)>`, `data-block-id`), never by CSS selector into rendered content — that is what lets a comment re-attach after the lane rewrites the document (`reattachBlockId` falls back from an exact id to a *unique* hash match). **Comprehension is the job, not defect-hunting**: prose plus a `walkthrough` is the required spine, findings/decisions are optional additions, and a Board with neither reads as `reference` rather than "0 unanswered" — never a score (ADR-0004). Keyboard: `n`/`N` block cursor, `}`/`{` next unanswered, `Tab`/`Shift+Tab` the guided walkthrough read (each step jumping the Diff Window via `DiffContentView.revealLocation`, falling back to a reader when the path is not in the diff), `a`/`x` triage, `1`…`9` decisions, `c` comment, `o` Review Map, `O` Overview, `[`/`]` chapter, `/` search, `s` send, `r` reload. **Spec 244 made it a chaptered reader**: chapters are derived from the document's own `H1`/`H2` headings (`ReviewDocument.sections`, derived state that is never serialized), the body renders one chapter at a time, and a 272px **Review Map** — `Overview`, the chapters with block/unanswered counts, `Open items`, `Full document` — is a permanent column at ≥1180px pane width and an on-demand overlay below it (driven by the view's own `ResizeObserver`, because `ContentView.onResize` is declared but never called). `Overview` renders no authored block and reports raw counts only, never a score. Render paths are split so a cursor move inside a chapter re-classes one element instead of rebuilding the document. **The result is a file, not session state**: `review_new`/`review_register`/`review_cancel` (`hook_server.rs`) clone spec 133's path-handoff into a durable gitignored bundle at `.krypton/reviews/<date>-<slug>/` (`review.md` + `response.md` + `assets/`), with issued-path write auto-approval widened from one file to the whole directory (`reviewWritePathMatches`, trailing-slash bounded so a sibling `-2` bundle cannot match). Answers **autosave** (debounced 400 ms → `write_review_response`; frontmatter is the source of truth, the body a generated rendering), so closing loses nothing and `s` is a separate act that routes `review.response` → `ReviewResponseQueue` (a third drain-on-idle queue beside specs 149/158) → a system turn. Bundles are **never swept** and are rediscovered by a directory walk (`list_review_bundles`), so `Leader Shift+R` → picker reopens a review from a previous app run intact; `#reviews` opens the read-only `/reviews` archive (spec 192's template, typed blocks re-rendered by a fence-aware post-pass over comrak). `#review`'s synthesis step now composes a Board instead of ending in turn text. See `docs/0211-review-board.md`.
 
-35. **Xenon publisher (specs 212/259)** — The one path by which harness-generated work leaves this machine. `src-tauri/src/xenon.rs` collects seven resource families: fixed-depth `review` and `analysis` bundles from the gitignored `.krypton/` tree; `artifact` HTML; repo `doc` markdown; rendered `daily` notes; in-memory `attention` flags; and confirmed `timeline` events. Timeline collection reuses `timeline::scan_project()`, publishes one event as `event.md` plus bounded chronology metadata, ignores pending/dismissed suggestions, and reports malformed event files as non-retryable per-item failures without aborting other kinds. All families use the same three-step content-addressed protocol against a **Xenon** server (its own repo at `~/Source/xenon`): `POST …/resources` returns only missing digests, `PUT /v1/blobs/<sha256>` uploads those bytes, and `POST …/commit` seals the revision. An identical re-push short-circuits on `unchanged`. Driven by `#push [--force] [<kind> [<slug>]]`; `#xenon timeline [<topic>]` opens Xenon's hosted chronology while local `#timeline` remains the authoritative browser. Publishing uses explicit `#push` by default; configured `review` and `attention` events are the only automatic triggers (ADR-0016, spec 269): a secret pre-scan blocks a resource, artifacts lose their loopback feedback capability before upload, retryable transport failures land in `.krypton/xenon-queue.json`, and the bearer token lives in the OS credential vault rather than TOML. Xenon is a sink only and never creates or confirms a Krypton timeline event. See `docs/0212-xenon-resource-server.md`, `docs/0259-timeline-xenon-publishing.md`, and ADR-0016.
+35. **Xenon publisher (specs 212/259)** — The one path by which harness-generated resources leave this machine. `src-tauri/src/xenon.rs` collects review/analysis bundles, artifact HTML, repo docs, daily notes, attention flags and recorded Timeline events. Timeline uses `timeline::scan_project()`, exporting each `event.md` with bounded chronology/provenance metadata, excluding pending/dismissed candidates and resolution receipts; malformed events are non-retryable per-item failures. All families use the same content-addressed resource/blob/commit protocol against Xenon (`~/Source/xenon`), with unchanged re-push short-circuiting. `#push [--force] [<kind> [<slug>]]` drives publication; `#xenon timeline [<topic>]` opens hosted chronology while local `#timeline` remains authoritative. Publishing is explicit by default, with existing configured automatic triggers unchanged (ADR-0016/spec 269). Secret scanning, artifact feedback-capability removal, `.krypton/xenon-queue.json` retries and OS-vault bearer-token storage remain unchanged. Xenon is a sink and never creates a Krypton Timeline event. See `docs/0212-xenon-resource-server.md`, `docs/0259-timeline-xenon-publishing.md`, and ADR-0016.
 
 36. **Backend link indicator (spec 213)** — The workspace footer's answer to "is the off-machine backend actually alive?". `xenon_status` reports *configuration* (it reads the TOML and asks the credential vault whether a token exists) and never touches the network, so a server that is down, a revoked token, and a healthy link were indistinguishable until a `#push` failed. `src/backend-link.ts` schedules a periodic `xenon_probe` — one authenticated `GET /v1/projects`, which distinguishes *unreachable* (transport error), *unauthorized* (401/403), and *linked* (2xx) in a single request; the server's `/healthz` cannot see the bearer token, so probing it would report green while a revoked credential blocked every push. The result is published as `system:backend-link` on the ViewBus and rendered by `WorkspaceFooter.renderLink()` as a fourth `sourceId`-keyed segment at the outer edge of the right cluster. Ticks are skipped while the document is hidden and fire once on re-show; `⌘P X` re-probes on demand; a completed manual or automatic push publishes the same signal (stronger evidence, no extra request). The probe path caches the token and the derived project slug for the process lifetime — the uncached `load_token` stays on the push path so a publish never acts on a stale credential. Coloured only when faulted, and hidden entirely when `[xenon].enabled = false` (ADR-0017). See `docs/0213-backend-link-indicator.md`.
 37. **LLM usage log (spec 214)** — The project's answer to "what did this cost, on which model, in which lane?". At every turn end `finishTurn` builds one **numeric** row — tokens in/out/cached, model (with a flag for agent-confirmed vs configured intent), lane, backend, stop reason, duration, context level, and the adapter's own cost when it reports one — and hands it to Rust without awaiting. The unit is a *turn* because that is the unit ACP reports: the `session/prompt` response carries `usage` for that turn (`client.ts:196`), and the `usage_update` notification carries only the context *level*, so presence of a token field is the sole discriminator between the two (`isTurnUsage`). `usage_log.rs` appends the row to `.krypton/usage/<YYYY-MM-DD>.jsonl` **before** any network call and only then wakes a long-lived sender task, which POSTs it to `POST /v1/projects/{p}/usage/turns` — normally within a second. An ack cursor (`.krypton/usage/.cursor.json`) advances only on a 2xx, so a crash, a dead link, or a closed laptop costs nothing, and the row's client-generated `id` makes a retry after an ambiguous timeout a server-side duplicate rather than a second charge. Xenon stores rows in a dedicated `usage_turn` table and prices them **at read time** from `prices.json`, so correcting a rate corrects history; reported and estimated cost stay in separate columns and an unmatched model renders blank and is named, never zeroed (ADR-0018). Unlike every other thing that leaves this machine, usage is **not** a spec-212 resource and needs no `#push`: a row carries no prompt or response text, which is exactly what earns it an exemption from ADR-0016's explicit-publish rule (ADR-0019). `#usage` reads the local log (so it answers offline), `#usage open` opens the server ledger, `#usage flush` skips the retry backoff. A turn whose adapter reports no counters still produces a row with `tokens: null` — an unmeasured lane must not look like an idle one. Spec 249 derives prompt-cache hit rate as `cachedRead / (input + cachedRead + cachedWrite)`: the live stats cell uses a separate coherent last-turn tuple, while `#usage` and `#daily` use recorded day totals; missing counters never become a guessed percentage. Spec 250 carries a non-empty `#usage` rollup on its system transcript item and renders it as a bounded telemetry card; the existing summary text stays on the same item as the Live Assist and generic-renderer fallback. See `docs/0214-llm-usage-statistics.md`.
@@ -1002,55 +1002,73 @@ re-emits `acp-ticket-progress` so the Ticket Panel refreshes without a
 filesystem watcher. GitHub-facing `issue_progress` remains independent,
 so the browser extension contract is unchanged.
 
-The project timeline (spec 253) is another project-local surface, but it is an
-append-only provenance ledger rather than mutable work state. `timeline.rs`
-resolves the project from the registered Harness id, confines one Markdown file
-per event to `.krypton/timeline/events/`, validates bounded schema-1 records,
-and derives topic groups and superseded state at read time—there is no index
-file to drift. `#timeline add` opens a keyboard-first in-app capture sheet;
-`#timeline` opens the read-only `/timeline` browser page backed by one
-`/timeline.json` fetch. Its chronology stays compact while selection moves;
-context and full audit provenance are separate explicit disclosures. `#timeline
-trace <topic>` injects a read-only lane prompt for older Git/docs/issue evidence.
-Timeline records are gitignored and
-not encrypted, synced, committed, or published automatically.
+The project timeline ([spec 316](0316-llm-managed-timeline.md), replacing the
+human capture gates of specs 253–255 and 263) is an append-only provenance ledger.
+`timeline.rs` confines bounded schema-1 Markdown records to the registered local
+project's gitignored `.krypton/timeline/events/`; topic groups and superseded
+state are derived at read time, without an index. The working lane selects
+evidence-backed durable requirements, decisions and observed outcomes itself.
+`timeline_record` requires `topic_title`, `summary`, `made_by`, `evidence_kind`
+(`user_statement`, `observed_outcome`, `agent_decision`) and `evidence_excerpt`.
+Optional fields are `topic_id`, `occurred_at`, `rationale`, `impact`, `source_ref`,
+`relation` and `related_event`. Unknown fields, including the retired
+`instruction_excerpt`, are rejected. New records attribute the recorder to
+`Agent` and the transport lane; `agent_decision` also uses that lane as
+`made_by`. Old Evidence/Authorizing instruction and human provenance remain
+readable; event schema stays 1 and `evidenceKind` is additive.
 
-Spec 254 adds a non-authoritative intake queue beside that ledger. The built-in
-project-backed `timeline_suggest` MCP tool lets the lane already doing the work
-write one bounded candidate to `.krypton/timeline/pending/`; no sidecar model or
-post-turn request runs. `timeline.rs` owns pending/dismissed files plus the
-atomic `.krypton/timeline/settings.json` switch. HookServer emits
-`acp-timeline-suggestion` after a successful write, while `AcpHarnessView` owns
-the passive count badge and the human review sheet. Confirmation alone creates
-`events/<reserved-id>.md` and preserves suggestion evidence/provenance;
-dismissal moves the candidate to `.krypton/timeline/dismissed/`. Pending files
-never appear in `timeline_list` or `/timeline.json`.
+Before recording, the lane discovers topics and relevant history through
+`timeline_list`: default topic digests and `topic_id` event lists support
+`query`/`limit` (default 20, maximum 50); exclusive `event_id` mode returns a full
+event. It reuses stable topic IDs across titles/languages and deduplicates
+retries. Recording returns event ID/topic ID/path/disposition and conflict
+continuation; it never implicitly promotes a pending candidate.
+`timeline_merge` takes `from`/`into` or `undo:true`, always with `rationale`.
+Unique selectors, same-topic refusal, backups under `backups/<merge-id>/`,
+and undo manifests protect the rewrite of only `topic_id`; manifests retain
+acting lane/reason for merge and undo. No current-human instruction is required.
 
-Spec 255 adds a second, explicit-intent path without changing that unsolicited
-capture boundary. The project-backed `timeline_record` MCP tool is available to
-local MCP-capable lanes only when the current human turn directly asks to persist
-timeline history. HookServer supplies the lane identity; `timeline.rs` validates
-the agent-structured fields, stores the exact authorizing instruction, derives a
-topic ID for the first event or validates an explicit existing ID for continuation,
-and writes directly to `events/` without a frontend modal. The MCP result returns
-that stable topic ID so every later event in one traced chronology can reuse it. A
-matching pending suggestion is promoted under its reserved ID; an identical retry
-returns the existing event. Spec 262 completes that contract with the read-only
-`timeline_list` tool: without it a fresh session cannot learn a topic ID it did
-not create, so exact-title reuse never fires across sessions or languages and one
-subject fragments into several topics. It returns bounded topic digests, or one
-topic's events, and writes nothing. A `timeline_record` that opens a new topic
-says so in its ack and names the topics that already existed — advice only,
-nothing is merged or re-parented on the persistence path. Repairing topics that were already split is
-spec 263's `#timeline merge <from> into <into>` / `#timeline merge undo`, which rewrites just the
-`topic_id` line of the moved files after copying them into `.krypton/timeline/backups/<merge-id>/`
-and writing the undo manifest. The same repair is reachable in prose through the `timeline_merge`
-MCP tool, which additionally requires the human's exact authorizing words, records them and the
-acting lane in that manifest, and is the one timeline tool excluded from built-in auto-approval. `timeline_record` is narrowly auto-approved because
-the user's current instruction is the confirmation, while self-selected events
-must still use `timeline_suggest`.
+Legacy `pending/` files are an internal migration backlog, not a human queue.
+`timeline_list({pending:true})` returns candidates, `remaining_pending`,
+`diagnostics` and `truncated` (default 5, maximum 20); it cannot mix with
+event/topic/query modes. `timeline_pending_resolve` requires `pending_id`,
+`outcome` and `rationale`, plus nested `record` only for `record`, or `event_id`
+only for `duplicate`; `discard` has neither. A recorded candidate uses its
+reserved ID and original suggestion provenance. Terminal schema-1
+`resolutions/<pending_id>.json` receipts retain `original_candidate` verbatim,
+`resolved_by_lane`, `resolved_at`, rationale, outcome and event reference.
+Under the mutation lock, validation precedes writes; event persistence precedes
+atomic receipt replacement and pending removal happens last. Retries return
+the terminal result, including recovery of saved-event/stale-pending state.
+Malformed candidates remain present, diagnosed and counted. No API creates
+new pending files; older dismissed files remain historical local data.
 
-Spec 266 adds a decision trace and human conflict review on top of the same
+`harness-timeline-controller.ts` uses only `timeline_settings`,
+`timeline_set_enabled` and `timeline_pending_count` native IPCs. The default-on
+`TimelineSettings { automaticRecording }` is persisted in settings schema 2;
+schema 1 `automaticSuggestions` migrates atomically, preserving false.
+Off rejects new recording but not legacy resolution. Initialization/count
+changes inform ordinary-turn lane policy through nonvisual state and
+`acp-timeline-changed` (`harnessId`, `pendingCount`); no badge, form, permission
+handoff or extra model turn is created. Local non-Pi MCP-capable lanes process
+the backlog without a one-item or five-topic migration cap. Remote/Pi lanes
+without project tools do not mutate local storage; explicit read-only work,
+including trace, defers all Timeline mutations to a later writable turn.
+Built-in Timeline tools are auto-handled only with exact tool/server identity;
+third-party tools retain normal permissions. Missing accept options cancel
+with a diagnostic, never enqueue a human Timeline decision.
+
+`#timeline [open [topic] | trace topic | conflicts [topic] | auto [on|off] | topic]`
+is the final grammar: no add/review/merge aliases. `/timeline` remains a
+read-only keyboard-operated history page backed by `/timeline.json`, with
+compact chronology and explicit context/audit disclosures, including old and
+new provenance. `Start Review` and unrelated permission flows are unchanged.
+Rollout requires the rebuilt app and normally reconnected lane to expose the
+new MCP schemas before an ordinary working turn processes legacy intake;
+implementation or fixture migration does not imply the real queue was drained.
+Timeline data is not encrypted, committed, synced or published automatically.
+
+Specs 266/267 add decision trace and agent-owned conflict review on the same
 events without editing them. `timeline_conflicts.rs` projects verified
 `supersedes` links into chains (branches kept, cycles reported as diagnostics)
 and reads three bounded, append-only sidecar folders under
@@ -1065,36 +1083,19 @@ Spec 267 hands the whole review to the lane agent: the MCP tools
 `timeline_conflict_list` (read-only; open pairs plus unchecked topics),
 `timeline_conflict_record` (pair + verdict in one call, `reviewed_by` = calling
 lane) and `timeline_conflict_checked` (checkpoint) replace the in-app sheet and
-the TypeSafe scan. There is no human verdict UI.
+the retired semantic scan. There is no human verdict UI.
 
 Spec 259 adds explicit off-machine publication without changing Timeline authority.
-`#push timeline [<event-id>]` turns only confirmed events into Xenon resources;
-pending and dismissed suggestions stay local. Each resource keeps the original
-`event.md` and enough structured metadata for Xenon to sort by occurrence time,
-group topics, derive supersession, and link relations. `#xenon timeline [<topic>]`
-opens that hosted read model. Neither recording nor confirmation triggers a push.
+`#push timeline [<event-id>]` turns recorded events into Xenon resources;
+pending, dismissed and resolution audit data stay local. Each resource keeps
+the original `event.md` and structured chronology/provenance metadata.
+`#xenon timeline [<topic>]` opens that hosted read model. Recording does not
+trigger publication.
 
-Spec 257 adds an optional semantic aid at the existing Timeline capture boundary.
-The frontend keeps exact-title reuse authoritative, builds a deterministic
-shortlist of at most 12 local topics, and owns debounce, stale-result rejection,
-and the explicit use-existing/create-new decision. The Rust-only `typesafe.rs`
-client resolves the API key from the configured environment variable, sends only
-the bounded draft and candidate semantic state to TypeSafe System One, validates
-the complete closed-set `Choice` distribution, applies confidence/probability/
-margin gates, and contains retries, cancellation, deadlines, and circuit state.
-It never receives persistence authority: all saves still pass through the
-existing Timeline record or suggestion-confirm paths, and every optional-service
-failure falls back to the unchanged offline UI.
+The Timeline capture/topic-choice UI and all TypeSafe semantic consumers were
+retired by spec 316. The unused transport, configuration, footer and Profiler
+metrics plumbing are removed rather than retained as a hidden dependency.
 
-Spec 258 makes the shared TypeSafe transport observable without recording
-request content. `TypeSafeState` counts each started `POST /v1/systemone`
-attempt (including retries), logical operations, settled outcomes, and total
-latency in process memory. Counter changes emit an aggregate
-`typesafe-metrics-changed` snapshot; `main.ts` republishes it on the typed
-ViewBus for the static Workspace Footer counter, while the Profiler reads one
-current snapshot through `typesafe_metrics` when opened and follows the same
-events. The counters reset on backend restart and expose no credentials,
-request/response bodies, topic text, or per-lane attribution.
 
 ## Remote ACP Harness runtime
 

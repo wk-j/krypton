@@ -5,6 +5,14 @@
 > Milestone: ACP Harness — project provenance
 > Supersedes: การหาคู่ / การตรวจ / TypeSafe scan ของ [spec 266](./0266-timeline-decision-trace-and-conflicts.md)
 > (read model, สถานะคู่, ไฟล์ sidecar และหน้า `/timeline` ของ 266 ยังใช้ต่อ)
+>
+> ต่อด้วย [0316 — LLM-Managed Timeline](./0316-llm-managed-timeline.md):
+> agent ยังตรวจ conflict และเขียน checkpoint เองตาม spec นี้ แต่ record/merge ไม่ต้องรอคำสั่งหรือคำอนุมัติจากคนแล้ว
+> ใช้หลักฐานและ rationale แทนการอ้างสิทธิ์จาก current-human instruction ไม่มีฟอร์ม badge หรือคิวอนุมัติ Timeline
+> `confirmed` หมายถึงพบข้อขัดกัน ไม่ใช่เลือกว่าคำตัดสินใดถูก ถ้าหลักฐานไม่พอ ให้บันทึก `insufficient_evidence` เอง
+> เมื่อหลักฐานแสดงว่านโยบายเปลี่ยน ให้เพิ่ม event ที่มี `supersedes` โดยไม่แก้ประวัติเดิม
+> ห้ามเขียน event, merge, resolve pending หรือเขียน conflict/checkpoint ระหว่างงานที่ระบุให้อ่านอย่างเดียว
+> TypeSafe runtime/config/metrics ที่เคยเหลือจาก spec 257–258 ถอดออกแล้ว แต่ยังอ่าน origin เก่าได้
 
 ## Problem
 
@@ -22,8 +30,8 @@ completed by LLM" งานหาคู่ ตัดสิน และปิด
 (1) **อัตโนมัติ** — หลัง `timeline_record` ทุกครั้ง agent เทียบแค่บันทึกใหม่กับบันทึกเดิมใน topic
 เดียวกัน แล้วบันทึกผลและ checkpoint เอง (2) **สั่งตรวจเฉพาะ topic** — `#timeline conflicts <topic>`
 ส่ง prompt ให้ lane ตรวจ topic นั้นเท่านั้น ทางเดียวกับ `#timeline trace <topic>` ถ้าไม่ระบุ topic
-จะตรวจเฉพาะ topic ที่มีบันทึกใหม่กว่า checkpoint (เช่นบันทึกที่คนเพิ่มผ่าน `#timeline add`
-หรือบันทึกก่อนมี spec นี้) และเทียบเฉพาะบันทึกที่ยังไม่ได้ตรวจกับบันทึกเดิม
+จะตรวจเฉพาะ topic ที่มีบันทึกใหม่กว่า checkpoint (เช่นบันทึกก่อนมี spec นี้
+หรือบันทึกที่เพิ่งย้ายเข้ามา) และเทียบเฉพาะบันทึกที่ยังไม่ได้ตรวจกับบันทึกเดิม
 ค่าใช้จ่าย token จึงขึ้นกับจำนวนบันทึกใหม่ ไม่ใช่ขนาดของ timeline ทั้งหมด
 ตัดแผ่นตรวจแบบ manual และ TypeSafe scan ออก คนมีหน้าที่อ่านผลบนหน้า `/timeline` อย่างเดียว
 
@@ -121,7 +129,7 @@ Checkpoint เก็บที่ `.krypton/timeline/conflicts/checked/<topic_id>
 1. agent เรียก timeline_record → ได้ event ID ใหม่
 2. ตาม lane-context: timeline_list { topic_id } อ่านบันทึกเดิมใน topic
 3. ถ้ามีข้อขัดกัน/ปิดข้อขัดกันเดิม → timeline_conflict_record (ไม่มีก็ไม่ต้องเรียก)
-4. timeline_conflict_checked { topic_id, through_event_id: ID ใหม่ }
+4. timeline_conflict_checked { topic_id, event_ids: [ID ใหม่] }
 
 สั่งตรวจ:
 1. ผู้ใช้พิมพ์ #timeline conflicts <topic> หรือ #timeline conflicts (lane ต้องว่าง เหมือน trace)
@@ -150,11 +158,12 @@ Checkpoint เก็บที่ `.krypton/timeline/conflicts/checked/<topic_id>
 ## Edge Cases
 
 - **Lane ไม่ว่าง** ตอนพิมพ์ `#timeline conflicts` → chip "lane busy - #cancel first" เหมือน trace
-- **Remote Harness** → ใช้ได้ถ้า MCP tool ไปถึง project local ไม่อย่างนั้นแจ้งแบบเดียวกับ `#timeline review`
+- **Remote Harness / Pi** → ถ้าไม่มี project-backed MCP tools ให้แจ้งว่าใช้ไม่ได้ ไม่โยง path ไปยัง local project และไม่มี manual-review fallback
 - **Sidecar เดิม** ที่มี `origin: manual`/`typesafe` → ยังอ่านและแสดงได้ (enum เก่ายังรองรับตอนอ่าน)
 - **ครั้งแรกหลังอัปเกรด** ทุก topic ยังไม่มี checkpoint จึงขึ้นเป็น `unchecked` ทั้งหมด → bare
   `#timeline conflicts` ตรวจได้ไม่เกิน 5 topic ต่อรอบ (ใหม่สุดก่อน) แล้วบอกว่ายังเหลือกี่ topic
-  ผู้ใช้เลือกได้ว่าจะรันต่อ หรือสั่งเฉพาะ topic ที่สนใจ ไม่มีการกวาดทั้ง project ในครั้งเดียว
+  ขอบเขตนี้ใช้กับคำสั่งตรวจ conflict เท่านั้น ไม่ใช่ข้อจำกัดของ legacy intake ใน [0316](./0316-llm-managed-timeline.md)
+  ซึ่ง agent ต้อง resolve ต่อใน working turn ปกติโดยไม่รอให้คนเลือกหรืออนุมัติ
 - **Topic ใหญ่** (บันทึกเกิน 50 รายการ) → อ่านเฉพาะ 50 รายการล่าสุดที่ยังไม่ถูกแทนที่ เพราะบันทึกที่
   ถูกแทนที่แล้วไม่ขัดกับอะไร
 - **ID ไม่ถูกต้อง / event ถูกลบ** → tool คืน error, agent ข้ามคู่นั้น
@@ -165,7 +174,7 @@ Checkpoint เก็บที่ `.krypton/timeline/conflicts/checked/<topic_id>
 
 ## Out of Scope
 
-- การแก้หรือลบ event ต้นฉบับ และการสร้างลิงก์ `supersedes` อัตโนมัติ
+- การแก้หรือลบ event ต้นฉบับ ส่วนข้อห้ามเดิมเรื่อง agent สร้าง `supersedes` ถูกแทนที่ด้วย [0316](./0316-llm-managed-timeline.md): เพิ่ม event ใหม่ได้เมื่อมีหลักฐานรองรับ
 - UI แก้ผลตัดสินของ agent (ถ้าไม่เห็นด้วย ให้บอก agent ในแชตให้บันทึกผลใหม่)
 
 ## Resources

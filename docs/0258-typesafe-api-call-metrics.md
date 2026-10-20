@@ -1,8 +1,24 @@
 # TypeSafe API Call Metrics — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented historically; retired by [0316](./0316-llm-managed-timeline.md)
 > Date: 2026-09-20
 > Milestone: M8 — Observability
+
+## Retirement — spec 0316
+
+Removing Timeline's semantic form left no semantic TypeSafe consumer. The unused shared
+transport/configuration and metrics-only plumbing were therefore removed together:
+`typesafe_metrics`, the metrics event/ViewBus bridge, the `⚡ TS N` footer segment, and the
+Profiler TypeSafe matrix are no longer current features. See
+[0316](./0316-llm-managed-timeline.md) and the retirement note in
+[0257](./0257-typesafe-timeline-topic-suggestions.md).
+Historical Timeline conflict records with TypeSafe origin remain readable without this runtime.
+
+# Historical implementation — retired
+
+All sections below retain the original attempt-counting design, APIs, source paths,
+validation plan, and scope. They describe the implementation that existed before retirement,
+not active telemetry, supported configuration, or a report of current verification.
 
 ## Problem
 

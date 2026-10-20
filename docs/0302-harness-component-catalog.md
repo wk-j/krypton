@@ -4,7 +4,15 @@
 > Date: 2026-10-15
 > Kind: **Reference**, not a spec. Companion to [301 — Harness UI Components](./0301-harness-ui-components.md),
 > which owns the problem statement, the kernel design, and the migration phases. This document is the
-> inventory: every component we will create, what it looks like, what DOM it emits, and what it deletes.
+> inventory: component contracts, example DOM, and historical cutover sites, with current registry counts below.
+>
+> [0316](./0316-llm-managed-timeline.md) removes TimelineCapture from runtime and catalog,
+> its registration, form stylesheet, pending badge, and Timeline-only focus/key gates.
+> Historical slot **7.15** stays reserved below; later entries are not renumbered.
+> Timeline writes belong to the working lane's MCP tools. History stays in the read-only browser;
+> `ReviewThreadDialog` / **Start Review** is a separate feature and remains.
+> Rendered sheets preserve the original migration illustrations, not the current registry;
+> the Layer 7 sheet's TimelineCapture illustration is retired.
 
 ## How to read an entry
 
@@ -220,10 +228,10 @@ interface ActionButtonProps { label: string; keyHint?: string; disabled?: boolea
 
 **Emits** `<button type="button" class="${block}${modifier}" ${data} ${disabled} title="${disabledReason}"><span class="${block}-key">${keyHint}</span> ${label}</button>`.
 
-**Replaces** `harness-svg-fence.ts:276-300` · `harness-ticket-controller.ts:770-779` ·
-`transcript-annotation.ts:340-363` · `acp-harness-view.ts:3154-3167` · `timeline-capture.ts:208-230,379-396` ·
-`remote-harness-picker.ts:102-106`. **7 sites, 3 different disabled conventions (`disabled` attr string,
-`.disabled` property, `data-selected`) → 1.**
+**Historical cutover sites** — `harness-svg-fence.ts:276-300` · `harness-ticket-controller.ts:770-779` ·
+`transcript-annotation.ts:340-363` · `acp-harness-view.ts:3154-3167` · `remote-harness-picker.ts:102-106`.
+The original seven-site count included two builders in the now-removed Timeline capture form;
+those are no longer call sites or style owners.
 
 ## 1.7 `KeyHintBar`
 
@@ -799,7 +807,7 @@ cursor math, its own shell, or its own empty state.
 
 ![Layer 7 — overlays 1/2: LanePicker, DirectivePicker, ModelPicker, SessionPicker, TicketPicker, RemotePicker, TriageOverlay, ReviewMatrixOverlay](./images/0302-layer7a-overlays.svg)
 
-![Layer 7 — overlays 2/2: ReviewPriorityOverlay, OrchestratorConsole, MemoryDrawer, HelpOverlay, MetricsOverlay, ImageViewer, TimelineCapture, ReviewThreadDialog](./images/0302-layer7b-overlays.svg)
+![Historical Layer 7 overlay sheet 2/2 — TimelineCapture illustration retired by spec 0316; remaining examples include ReviewPriorityOverlay, OrchestratorConsole, MemoryDrawer, HelpOverlay, MetricsOverlay, ImageViewer, ReviewThreadDialog](./images/0302-layer7b-overlays.svg)
 
 | # | Component | Composition | Example UI (head line) | Replaces |
 |---|---|---|---|---|
@@ -817,7 +825,7 @@ cursor math, its own shell, or its own empty state.
 | 7.12 | `HelpOverlay` | Shell + KeyHintBar grid | `// help` | `acp-harness-view.ts:13625+` |
 | 7.13 | `MetricsOverlay` | Shell + per-lane `Meter` rows (process tree) | `Process  PID  CPU  Mem` | `acp-harness-view.ts:13573-13612` + `harness-lane-chrome.ts:146-303` |
 | 7.14 | `ImageViewer` | Shell (full-bleed) | `image viewer · n/p next · =/- zoom · 0 fit · 1 100% · o open · Esc close` | `harness-image-viewer.ts:53-71+` |
-| 7.15 | `TimelineCapture` | Shell + form + ActionButton row | `หัวข้อที่น่าจะตรง · … · confidence 87%` | `timeline-capture.ts:90-430` |
+| 7.15 | **Retired — TimelineCapture** | Removed by [0316](./0316-llm-managed-timeline.md) | No runtime/catalog form, registration, or form styles | Historical number reserved; no replacement overlay |
 | 7.16 | `ReviewThreadDialog` | Shell + preview `<pre>` + ActionButton row | `Start Review · Enter` / `Cancel · Esc` | `acp-harness-view.ts:3110-3170` |
 | 7.17 | `HandoffPicker` | Shell + ListPicker + preview | `// handoff · <lane>` | `acp-harness-view.ts` `#resume list` branch (replaces `formatHandoffList`, `xenon-push.ts:347-363`) |
 
@@ -846,22 +854,29 @@ HarnessView
 ├─ ExecutionPanel ────── view-owned; seated in one ExecutionCard slot, never row-owned
 ├─ Composer ──────────── ComposerMeta(Chip, StatList) · DraftLine · StagingStrip
 │                        PeerStrip · InlinePalette ×4 · DictationControl · LiveVoiceStrip
-└─ Overlays ──────────── OverlayShell × 16, six of them + ListPicker
+└─ Overlays ──────────── current registry: 19 components; no TimelineCapture
 ```
 
 # Totals
+
+Current registry counts come from `HARNESS_COMPONENTS` in `src/acp/components/registry.ts`.
+The registry has **78 component definitions**; `LayoutHost` is a separate layout entry, so
+the inventory total is **79**. The historical numbered catalog predates later additions:
+the transcript registry also includes `GenuiCard` and `DirectiveDiffRow`; composer includes
+`AssistStrip`; overlays include `BackgroundTasks`, `GenuiPanel`, and `GenuiCatalog`.
+`TimelineCapture` is absent. Historical cutover-site counts below are not a new removal tally.
 
 | Layer | Components | Call sites deleted |
 |---|---|---|
 | 0 — layout | 1 | 4 hardcoded `*SlotEl` fields + their CSS pinning |
 | 1 — leaf | 9 | ~75 |
 | 2 — composite | 5 | ~45 (incl. 8 cursor handlers, 4 palette handlers, 12 overlay shells) |
-| 3 — transcript | 20 | Original 18-branch cutover plus ExecutionCard / view-owned ExecutionPanel (spec 315); no extra runtime call sites removed |
+| 3 — transcript | 22 | Original cutover plus ExecutionCard / view-owned ExecutionPanel (spec 315), GenuiCard, and DirectiveDiffRow |
 | 4 — lane chrome | 6 | `renderDashboard`, `renderActiveLaneChrome`, `refreshMetricsRender`, `renderRailEntry`, `refreshZenRail` |
 | 5 — right rail | 8 | 8 builders + 3 `patch*` functions |
-| 6 — composer | 8 | `renderComposer` (40 call sites), `renderDecisionComposer`, the 1 Hz rebuild |
-| 7 — overlays | 17 | 16 shells, 14 `innerHTML` sites |
-| **Total** | **74** | **Original cutover: 35 `innerHTML` sites in `acp-harness-view.ts`, 58 across `src/acp/*.ts` → 0 outside `Card`/markdown bodies; spec 315 adds two read-only components** |
+| 6 — composer | 9 | Original composer cutover plus AssistStrip |
+| 7 — overlays | 19 | Current registry; historical 7.15 retired, later additions retained |
+| **Total** | **79 (78 registered + LayoutHost)** | **Historical cutover counts remain historical; no Timeline capture implementation or style owner remains** |
 
 # Packaging, style ownership, and theming
 

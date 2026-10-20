@@ -2,20 +2,11 @@
 //
 // The labelled button with an optional key hint: the ticket picker's four
 // actions, the SVG card's Source/Copy toolbar, the annotation rail's send/del,
-// the review-thread picker's confirm/cancel, the timeline capture footer and
-// the remote picker rows. It owns no block — `block` is a prop.
+// the review-thread picker's confirm/cancel and the remote picker rows.
+// It owns no block — `block` is a prop.
 //
-// The seven call sites it replaces carry three different conventions for
-// "cannot be pressed": a ` disabled` string spliced into an HTML template
-// (`harness-ticket-controller.ts:691-692`), the `.disabled` DOM property
-// (`transcript-annotation.ts:344`, `acp-harness-view.ts:3157`) and
-// `data-selected="false"` (`timeline-capture.ts:384,395`). Only the first two
-// mean disabled; `data-selected` is a selection marker on a button that stays
-// clickable, so it maps to `data`, not to `disabled`. The `disabled` prop
-// writes the real attribute, which is what the delegated click handlers read:
-// `harness-ticket-controller.ts:305` guards on `actionButton.disabled`, and
-// `acp-harness-view.ts:6317` has no guard at all and relies on a disabled
-// button never dispatching a click.
+// The disabled prop writes the real attribute, which is what delegated click
+// handlers read. Selection markers belong in data, not in disabled state.
 //
 // `title` carries `disabledReason` only while the button is disabled, so
 // re-enabling cannot leave a stale "why is this greyed out" tooltip behind.

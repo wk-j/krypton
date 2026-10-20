@@ -31,19 +31,13 @@ const HARNESS_ATTENTION_TOOL_NAMES = new Set(['attention_flag', 'attention_resol
 // reports diff reading-order hints at end-of-turn; a permission prompt there
 // would interrupt the turn boundary for a purely-advisory signal.
 const HARNESS_REVIEW_TOOL_NAMES = new Set(['review_outcome', 'mark_review_priority']);
-// specs 254/255: timeline_suggest only creates pending state; timeline_record
-// is authoritative but is restricted to an explicit current-turn user request
-// whose exact words are stored with the event. Both are bounded project-local
-// writes and must not interrupt the authorizing turn with another confirmation.
-// spec 262: timeline_list is the read-only half of the same contract — a lane
-// must be able to look up existing topics before recording, and a permission
-// prompt on a read would push lanes back to guessing a fresh topic.
-// spec 267: conflict review is the lane agent's job end to end; a prompt on
-// every verdict or checkpoint would push the work back onto the human.
+// Timeline decisions belong to the lane agent, including grouping and legacy
+// intake. Only these exact built-in tool names bypass human permissions.
 const HARNESS_TIMELINE_TOOL_NAMES = new Set([
-  'timeline_suggest',
   'timeline_record',
   'timeline_list',
+  'timeline_merge',
+  'timeline_pending_resolve',
   'timeline_conflict_list',
   'timeline_conflict_record',
   'timeline_conflict_checked',
@@ -78,6 +72,65 @@ const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
   ...HARNESS_COMPUTER_TOOL_NAMES,
 ]);
 const HARNESS_SERVER_MARKERS = ['krypton-harness-bus', 'krypton_harness_bus', 'krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
+const TIMELINE_SERVER_NAMES: Record<string, true> = {
+  'krypton-harness-bus': true,
+  krypton_harness_bus: true,
+  'krypton-harness-memory': true,
+  krypton_harness_memory: true,
+};
+const TIMELINE_SERVER_KEYS = ['server', 'serverName', 'server_name', 'serverUrl', 'server_url'] as const;
+
+function isTimelineServer(value: string): boolean {
+  if (TIMELINE_SERVER_NAMES[value.trim().toLowerCase()] === true) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' && !url.username && !url.password && !url.search && !url.hash
+      && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
+      && /^\/mcp\/harness\/[^/]+\/lane\/[^/]+\/?$/.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function qualifiedTimelineTool(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const match = /^(?:tool:\s*)?(?:mcp__)?(krypton-harness-(?:bus|memory)|krypton_harness_(?:bus|memory))(?:__|\/|:)(timeline_[a-z_]+)$/i.exec(value.trim());
+  const name = match?.[2].toLowerCase();
+  return name && HARNESS_TIMELINE_TOOL_NAMES.has(name) ? name : null;
+}
+
+/** Timeline privileges come from a paired adapter identity, never argument text. */
+function timelinePermissionToolName(call: ToolCall, optionNames: string[]): string | null {
+  // rawInput is the tool's argument payload, not adapter identity metadata.
+  const metadata = call as unknown as Record<string, unknown>;
+  for (const key of TIMELINE_SERVER_KEYS) {
+    const server = metadata[key];
+    if (typeof server === 'string' && !isTimelineServer(server)) return null;
+  }
+  const title = call.title?.trim().toLowerCase();
+  const qualified = qualifiedTimelineTool(title);
+  if (qualified) return qualified;
+  // A foreign qualified title cannot be overridden by arguments, content or
+  // option labels claiming to belong to the built-in server.
+  if (title && (/^mcp__/.test(title) || /^(?:tool:\s*)?[^\s/:]+[/:][^\s]+$/.test(title))) return null;
+  const hasServer = TIMELINE_SERVER_KEYS.some((key) => {
+    const server = metadata[key];
+    return typeof server === 'string' && isTimelineServer(server);
+  });
+  if (hasServer && title && HARNESS_TIMELINE_TOOL_NAMES.has(title)) return title;
+  for (const block of call.content ?? []) {
+    const content = block.content;
+    if (block.type !== 'content' || content?.type !== 'text') continue;
+    const name = qualifiedTimelineTool(content.text);
+    if (name) return name;
+  }
+  for (const label of optionNames) {
+    const match = /^Always allow\s*\(\s*["']([^"']+)["']\s*\)$/i.exec(label.trim());
+    const name = qualifiedTimelineTool(match?.[1]);
+    if (name) return name;
+  }
+  return null;
+}
 
 export function pickPermissionOption(options: PermissionOption[], action: 'accept' | 'reject'): PermissionOption | null {
   if (action === 'accept') {
@@ -91,15 +144,17 @@ export function harnessAutoAllowToolName(permission: Pick<HarnessPermission, 'to
   const optionNames = (permission.options ?? [])
     .map((option) => option.name)
     .filter((name): name is string => typeof name === 'string');
+  const timeline = timelinePermissionToolName(call, optionNames);
+  if (timeline) return timeline;
   const hasServerMarker = containsHarnessServerMarker(call)
     || optionNames.some((name) => HARNESS_SERVER_MARKERS.some((marker) => name.includes(marker)));
   if (!hasServerMarker) return null;
-  return structuredHarnessToolNameFromUnknown(call.rawInput)
+  const name = structuredHarnessToolNameFromUnknown(call.rawInput)
     ?? harnessToolNameFromUnknown(call.rawInput)
     ?? harnessToolNameFromString(call.title)
     ?? harnessToolNameFromUnknown(call.content)
-    ?? harnessToolNameFromOptionLabels(optionNames)
-    ?? null;
+    ?? harnessToolNameFromOptionLabels(optionNames);
+  return name && !HARNESS_TIMELINE_TOOL_NAMES.has(name) ? name : null;
 }
 
 export function harnessToolNameFromOptionLabels(names: string[]): string | null {
@@ -162,11 +217,14 @@ export function harnessToolNameFromUnknown(value: unknown, depth = 0): string | 
 
 export function harnessToolNameFromString(value: string | undefined): string | null {
   if (!value) return null;
-  const normalized = value.toLowerCase();
+  const normalized = value.trim().toLowerCase();
+  const timeline = /^(?:tool:\s*)?(?:(?:mcp__)?krypton[_-]harness[_-](?:bus|memory)(?:__|\/))?(timeline_record|timeline_list|timeline_merge|timeline_pending_resolve|timeline_conflict_list|timeline_conflict_record|timeline_conflict_checked)$/.exec(normalized);
+  if (timeline) return timeline[1];
   for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
+    if (HARNESS_TIMELINE_TOOL_NAMES.has(toolName)) continue;
     if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
   }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|timeline_suggest|timeline_record|timeline_list|timeline_conflict_list|timeline_conflict_record|timeline_conflict_checked|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link|lesson_record|lesson_retire|computer_list|computer_exec)(?:$|[^a-z0-9_])/);
+  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link|lesson_record|lesson_retire|computer_list|computer_exec)(?:$|[^a-z0-9_])/);
   return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
 }
 

@@ -1,8 +1,27 @@
 # TypeSafe Timeline Topic Suggestions — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented historically; retired by [0316](./0316-llm-managed-timeline.md)
 > Date: 2026-09-19
 > Milestone: ACP Harness — project provenance
+
+## Current contract — spec 0316
+
+The Timeline capture/review form and its TypeSafe semantic topic-choice path are removed,
+including topic-suggest/cancel native commands, semantic DTOs/helpers, and Timeline-only config.
+The working lane now reads `timeline_list`, reuses topic IDs, and groups topics through
+`timeline_merge` with evidence-backed rationale; no person must choose a semantic suggestion.
+Grouping still preserves event content and provenance, with backups before topic-ID rewrites.
+
+There were no remaining semantic consumers after this cutover, so the TypeSafe transport,
+configuration, metrics IPC/events, footer segment, and Profiler matrix described in
+[0258](./0258-typesafe-api-call-metrics.md) are also retired rather than kept as unused plumbing.
+Historical conflict provenance with `origin: typesafe` remains readable; it is not a live dependency.
+
+# Historical implementation — retired, not configuration guidance
+
+All remaining sections, including configuration snippets, source tables, release gates,
+validation records, and trailing scope notes, preserve the earlier implementation.
+They are not instructions to enable a currently supported TypeSafe feature.
 
 ## Problem
 

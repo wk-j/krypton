@@ -1090,21 +1090,6 @@
   outline-offset: -4px;
 }
 
-/* Timeline capture overlay chrome left over from the component carve-out ·
-   `timeline-capture.ts:92`. */
-.acp-timeline__panel h2 {
-  margin: 0;
-  color: var(--krypton-accent, #00ccff);
-  font-size: 1.15em;
-  font-weight: 600;
-}
-
-.acp-timeline__subtitle {
-  margin: 3px 0 14px;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
-  font-size: 0.78em;
-}
-
 .acp-harness__msg--user .acp-harness__msg-label--voice {
   color: var(--agent-user, #6dd0ff);
 }

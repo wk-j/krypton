@@ -4,6 +4,22 @@
 > Date: 2026-09-19
 > Milestone: ACP Harness — project provenance
 
+## Current applicability — spec 0316
+
+[0316](./0316-llm-managed-timeline.md) preserves this spec's language principle: agent-composed
+prose is natural Thai, technical terms remain English, and evidence, identities, sources, and
+machine values stay verbatim. Existing records are not translated or rewritten.
+The current record API uses required `evidence_kind` and `evidence_excerpt`; an authorizing
+instruction is historical provenance, not a write requirement. Capture/review chrome,
+`timeline_suggest`, manual input workflows, and their source paths below describe retired UI.
+The read-only Thai browser and trace prose remain applicable.
+
+# Historical implementation detail
+
+The sections below preserve the original language rollout, including its former form surfaces
+and old API examples. They do not reinstate those workflows or the former authorization model;
+the retained language/source-fidelity principles above apply to the current agent-owned flow.
+
 ## Problem
 
 Timeline content and chrome currently mix English with user-authored text. Agent-created records,

@@ -69,8 +69,8 @@ interface MemoryPermissionMatch {
 
 Auto-approve only when both conditions are true:
 
-1. The permission request contains one of the allowed built-in tool names (memory: `memory_set`, `memory_get`, `memory_list`; peer: `peer_send`, `peer_list`; attention: `attention_flag`, `attention_resolve`; review: `review_outcome`, `mark_review_priority`; timeline: `timeline_suggest`, `timeline_record`) somewhere in `toolCall.{rawInput,title,content}` or in any `permission.options[].name`. `timeline_suggest` is included narrowly because it can create only a local pending candidate. Spec 255 adds `timeline_record` narrowly for a current-turn explicit user request: that instruction is already the confirmation, its exact excerpt is stored with the event, and an additional permission modal would recreate the ceremony the direct path removes. Unsolicited capture remains pending-only. (The spec-112 `review_request`/`review_reply` tools were removed in spec 145; `#review` now rides `peer_send`. The narrower `review_outcome` self-report tool was added in [spec 146](0146-review-quality-matrix.md) — default-on, so a permission prompt mid-synthesis is a bug.) (Attention triage is default-on built-in harness tooling per [spec 130](0130-default-attention-triage.md); a permission prompt for it is a bug *and* breaks the non-blocking contract — the lane has already proceeded with `chosen`.)
-2. The permission request also contains a built-in server marker (`krypton-harness-memory`, `krypton_harness_memory`, `krypton-harness-bus`, `krypton_harness_bus`, or `/mcp/harness/`) somewhere in `toolCall` or in any option label.
+1. The request identifies an allowed built-in tool. Historical `memory_set` / `memory_get` / `memory_list` were replaced by spec 293; `src/acp/harness-permission-scan.ts` defines the live handoff/peer/attention/review/ticket/lesson taxonomy. Timeline's exact final names are `timeline_record`, `timeline_list`, `timeline_merge`, `timeline_pending_resolve`, `timeline_conflict_list`, `timeline_conflict_record` and `timeline_conflict_checked` ([spec 316](0316-llm-managed-timeline.md)); `timeline_suggest` is removed. Evidence-first recording/grouping/legacy resolution is agent-owned, without a human persistence request or quote. Review request/reply remain retired (spec 145); review_outcome and default-on attention triage retain their existing contracts (specs 146/130).
+2. The tool identity must belong to the built-in Harness server (`krypton-harness-memory`, `krypton_harness_memory`, `krypton-harness-bus`, `krypton_harness_bus`, or `/mcp/harness/`). Timeline matching pairs exact tool identity with that server identity, including supported adapter option labels; an unrelated marker elsewhere must not authorize third-party or same-name lookalike tools. Other tool families retain their existing detector rules.
 
 All other requests, including a third-party MCP server that also exposes `memory_set` or `peer_send`, must enter the existing permission flow.
 
@@ -82,11 +82,18 @@ All other requests, including a third-party MCP server that also exposes `memory
 1. ACP adapter sends session/request_permission.
 2. AcpClient emits permission_request to AcpHarnessView.
 3. addPermission() calls the harness auto-allow detector.
-4. Detector scans toolCall.rawInput, toolCall.title, toolCall.content text, and permission.options[].name labels.
-5. If allowed harness tool + built-in marker are both present:
-   5a. resolveHarnessPermission() sends allow_once/allow_always option.
+4. Timeline uses qualified adapter titles, top-level server identity paired with the title,
+   standalone qualified `Tool:` content labels, or the supported Junie option-label wrapper.
+   It never derives identity from `rawInput`/arguments; an explicitly foreign qualified title
+   cannot be overridden by argument text, content or option labels. Other tool families keep
+   their existing raw-input/title/content/option-label detector paths.
+5. If allowed harness tool + built-in identity match:
+   5a. resolveHarnessPermission() sends the available accept option.
    5b. Transcript logs a structured permission card with the harness auto-allow reason.
-6. Otherwise the permission is queued and rendered in the composer.
+   5c. Built-in Timeline without an accept option is cancelled with
+       respondPermission(requestId, null) and a diagnostic, never pendingPermissions
+       or needs_permission.
+6. Otherwise the existing permission flow applies; unrelated tool families are unchanged.
 ```
 
 ### Tests

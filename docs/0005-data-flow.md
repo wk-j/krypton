@@ -565,57 +565,62 @@ d. The loop stops once the grip, the mouse and the button fades settle
        display snapshot. The popup refetches on open, lane change, focus, and
        every three seconds while open. This read does not change ticket state;
        the injected GitHub issue card continues to show `issue_progress`.
-    i. #timeline is local-first (spec 253). Bare/open resolves the current
-       Harness id to its registered project and launches `/timeline`; `add`
-       loads bounded records, opens a native-form capture sheet, and sends the
-       confirmed event to `timeline_record`. Rust validates the fields and any
-       related event, then creates one new Markdown file with `create_new` under
-       `.krypton/timeline/events/`. The browser fetches `/timeline.json` once,
-       groups records by stable `topic_id`, and derives superseded state without
-       a persisted index or Git process. `trace <topic>` is the only lane turn:
-       it remains read-only, labels recorded/observed/inferred evidence, and is
-       also the only timeline path available in a Remote Harness.
-    j. Automatic timeline intake is proposal-first (spec 254). A local
-       MCP-capable lane receives the short `timeline_suggest` rule in turn
-       context and may call it once for an explicit durable project event.
-       HookServer resolves the registered project, checks the default-on
-       `.krypton/timeline/settings.json` switch, validates/deduplicates the
-       payload, creates `pending/<reserved-event-id>.md`, and emits
-       `acp-timeline-suggestion`. The Harness updates a project-wide count but
-       does not open an overlay or start another turn. `#timeline review` (or
-       the badge) loads the oldest pending item into the capture sheet. Confirm
-       creates `events/<same-id>.md` with evidence and suggesting-lane
-       provenance before removing pending; dismiss atomically moves it to
-       `dismissed/`. `#timeline auto off` suppresses future prompt instructions
-       and makes the backend reject late calls without deleting stored state.
-    k. Explicit natural-language timeline recording (spec 255) is direct. When
-       the current human prompt asks to record/remember/persist an event, the
-       lane calls `timeline_record` with structured fields plus the exact
-       authorizing excerpt. HookServer resolves the project and authenticated
-       lane label; `timeline.rs` validates, reuses or derives `topic_id`, returns
-       an identical confirmed event on retry, promotes a matching pending
-       suggestion when present, or appends a new event. The first traced event may
-       derive its topic from the title; the result returns `topic_id`, and later
-       calls pass that explicit existing ID even if their display wording changes.
-       The tool result returns event ID/topic ID/path/disposition in the same turn.
-       Before that first record the lane reads `timeline_list` (topic digests, or
-       one topic's events) to find the topic already covering the subject; when a
-       record opens a new topic the ack reports `new_topic` plus the existing
-       topics so the rest of the chronology can be corrected in the same turn.
-       No capture, review, or permission
-       overlay opens; unsolicited capture remains `timeline_suggest`.
-    l. Optional semantic topic reuse (spec 257) stays inside local capture and
-       pending-suggestion review. After exact-title reuse fails, the frontend
-       groups the bounded Timeline listing into candidate topics and debounces a
-       `timeline_topic_suggest` request. Rust first resolves the Harness project,
-       then checks opt-in config, resolves the TypeSafe key without serializing
-       it, sends only draft/candidate semantic fields, and validates/gates the
-       closed-set result. Cancellation plus a frontend generation token reject
-       stale completions. A visible result remains unresolved until the human
-       chooses use-existing or create-new; only the former supplies a stable
-       `topic_id` to the existing save flow. Off, shadow, missing-key, timeout,
-       low-confidence, invalid-response, and network-failure outcomes leave the
-       deterministic offline flow unchanged.
+    i. #timeline is local-first (specs 253/316). Bare/open and topic shorthand
+       launch the read-only `/timeline` browser for the registered project.
+       `/timeline.json` groups schema-1 events by stable `topic_id`, derives
+       supersession and exposes evidence/provenance without a persisted index.
+       Keyboard context/audit disclosures and focus refresh remain read-only.
+       `trace <topic>` asks the lane to inspect older Git/docs/issue evidence
+       without mutation or treating code authorship as decision authority.
+       Final grammar is open/trace/conflicts/auto/topic; add, review and native
+       merge commands and their forms/badge have no aliases. Remote/Pi lanes
+       without project-backed MCP tools cannot mutate local Timeline.
+    j. Autonomous evidence-first intake runs inside the working local
+       MCP-capable lane, with no sidecar or extra turn (spec 316). Before
+       `timeline_record`, it reads `timeline_list` to reuse topic IDs and
+       inspect relevant events; `event_id` returns full evidence and provenance.
+       Required record fields are `topic_title`, `summary`, `made_by`,
+       `evidence_kind` (user_statement/observed_outcome/agent_decision) and
+       `evidence_excerpt`; optional fields are `topic_id`, `occurred_at`,
+       `rationale`, `impact`, `source_ref`, `relation` and `related_event`.
+       `instruction_excerpt` is removed, not aliased. HookServer supplies
+       project and lane; Rust validates, deduplicates and writes an append-only
+       event under `.krypton/timeline/events/`. Recorder is Agent; agent_decision
+       also uses the lane as made_by. Old human/authorizing provenance remains
+       readable. The result returns event ID/topic ID/path/disposition plus
+       conflict_check. There is no human persistence request, permission queue,
+       form, pending creation or one-item-per-turn cap. Agent prose uses Thai;
+       supporting quotes/actors/source references remain exact, without secrets.
+    k. Initialization reads `timeline_settings` and `timeline_pending_count`.
+       The default-on automaticRecording setting is stored as schema 2 in
+       `.krypton/timeline/settings.json`; schema 1 automaticSuggestions migrates
+       atomically, preserving false. `#timeline auto [on|off]` uses
+       `timeline_set_enabled`; off rejects new record calls but not legacy
+       resolution. Nonvisual pending count affects the ordinary-turn policy
+       hash. In a writable working turn the agent reads
+       `timeline_list({pending:true})` (default 5/max 20) and evaluates each
+       candidate through `timeline_pending_resolve` with pending_id, outcome
+       (record/duplicate/discard) and rationale, plus record or event_id only
+       for the matching outcome. Normal record never implicitly promotes one.
+       Under the storage lock, validation precedes mutation; record writes the
+       reserved event first, then an atomic `resolutions/<pending_id>.json`
+       receipt preserves original_candidate verbatim, outcome, event reference,
+       rationale, resolved_by_lane and resolved_at. Pending removal is last.
+       Retries recover the terminal result instead of duplicating events.
+       `remaining_pending` includes malformed files with diagnostics; the lane
+       keeps reading until exhausted without a per-turn/five-topic migration cap.
+       `acp-timeline-changed` carries harnessId/pendingCount to nonvisual policy
+       state, never a startup/event/finishTurn-triggered model request.
+       Read-only turns defer all mutations. Rollout needs a rebuilt host and
+       normally reconnected MCP session before an ordinary turn can process
+       existing backlog; fixture success does not mean the real queue migrated.
+    l. The agent repairs shared-topic grouping through `timeline_merge` with
+       from/into or undo:true and a required rationale. The transport supplies
+       lane audit provenance. Unique selectors and same-topic refusal precede
+       backup/manifest persistence; only topic_id changes. No human quote or
+       permission gate is involved. The retired semantic topic-choice service,
+       TypeSafe transport/configuration and footer/Profiler metrics have no
+       remaining runtime path. History publication remains explicit #push.
     m2. Timeline conflict review (spec 266, agent-run since spec 267).
        `/timeline.json` calls `timeline_conflicts::trace_project`, which runs
        `scan_project`, builds `supersedes` chains, and joins the proposal and
@@ -632,17 +637,6 @@ d. The loop stops once the grip, the mouse and the button fades settle
        one topic or at most five unchecked topics, and compares only unchecked
        events, so reruns never rescan the project. A refresh of the browser
        page then shows the new state.
-    m. TypeSafe call metrics (spec 258) update at the shared Rust transport
-       boundary. Immediately before each `call_once`, `TypeSafeState` counts one
-       outbound request; attempt zero also counts one logical operation, while
-       later attempts count retries. Settlement adds one suggestion or fallback
-       plus end-to-end latency. Each mutation emits the aggregate
-       `typesafe-metrics-changed` snapshot, which `main.ts` publishes as
-       `system:typesafe-metrics`. The Workspace Footer updates `⚡ TS N` directly
-       from that signal. Opening the Profiler performs one read-only
-       `typesafe_metrics` snapshot to cover missed startup events, then follows
-       the same event stream. No timer polls TypeSafe and no request content is
-       carried into the frontend.
 
 ```
 PUSH (lane → harness), at end of an editing turn:
@@ -995,7 +989,7 @@ PUBLISH
 14. #push daily collects one resource per day holding ONE file, keyed daily.md
     (spec 225). The pair of note.md + brief.md is gone, so a reader lands on
     prose instead of a file switcher.
-15. #push timeline [event-id] asks timeline::scan_project for confirmed events,
+15. #push timeline [event-id] asks timeline::scan_project for recorded events,
     converts each valid event to one Xenon resource (`event.md` plus bounded
     list metadata), and sends it through the existing secret scan and
     content-addressed publisher. Pending/dismissed suggestions are outside the

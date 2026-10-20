@@ -36,8 +36,10 @@ export interface PolicyPlan {
 export interface LaneToolGates {
   /** Local workspace and a backend that supports the timeline tools. */
   timeline: boolean;
-  /** `timeline` plus the automatic-suggestions setting. */
-  timelineSuggest: boolean;
+  /** New automatic intake; legacy resolution remains available when disabled. */
+  timelineAutomaticRecording: boolean;
+  /** Internal migration count, included in policy text so delivery hashes change. */
+  timelinePendingCount: number;
   /** More than one lane in the harness. */
   peers: boolean;
   /** spec 298: `[acp_harness] lessons` on and a backend that can call tools. */
@@ -73,8 +75,10 @@ export function isCompactionDrop(prevUsed: number | null, nextUsed: number | nul
  *  deferred tool search can still target them by exact name (spec 130). */
 export function renderToolNameLine(gates: LaneToolGates): string {
   const names = ['attention_flag', 'attention_resolve', 'mark_review_priority', 'artifact_new'];
-  if (gates.timeline) names.push('timeline_record', 'timeline_merge');
-  if (gates.timelineSuggest) names.push('timeline_suggest');
+  if (gates.timeline) names.push(
+    'timeline_record', 'timeline_list', 'timeline_merge', 'timeline_pending_resolve',
+    'timeline_conflict_list', 'timeline_conflict_record', 'timeline_conflict_checked',
+  );
   if (gates.peers) names.push('peer_send', 'peer_list', 'review_outcome');
   if (gates.lessons) names.push('lesson_record', 'lesson_retire');
   return `Krypton tools (if not visible, search by exact name; rules are in each description): ${names.join(', ')}.`;
@@ -91,12 +95,15 @@ export function renderToolIndex(gates: LaneToolGates): string {
   ];
   if (gates.timeline) {
     lines.push(
-      '- timeline_record / timeline_merge: ONLY when the current human message explicitly asks to record or merge timeline items — that request is the confirmation. Call timeline_list first.',
-    );
-  }
-  if (gates.timelineSuggest) {
-    lines.push(
-      '- timeline_suggest: at most once per turn, only for an explicit durable decision, requirement, or outcome.',
+      '- Timeline ownership supersedes older human-approval guidance: manage durable project history yourself with timeline_record, timeline_list, timeline_merge, timeline_pending_resolve, timeline_conflict_list, timeline_conflict_record and timeline_conflict_checked. Never send Timeline decisions to attention_flag, ask-user, a form, or a human approval queue.',
+      '- Respect explicit read-only scope (including trace): do not record, merge, resolve legacy intake, or write conflict verdicts/checkpoints as a side effect. Defer maintenance to an ordinary working turn that permits writes; never start another model turn.',
+      gates.timelineAutomaticRecording
+        ? '- Automatic recording is on: select evidence-backed durable requirements, decisions and observed outcomes during this working turn. Read timeline_list before the first record for a subject, reuse topic IDs, inspect event details for duplicates, and group related topics with timeline_merge when justified. Preserve exact evidence quotes and actors; skip routine status/tests and secrets. There is no once-per-turn recording cap.'
+        : '- Automatic recording is off: do not record new intake. Legacy candidates still belong to you and may be recorded through timeline_pending_resolve.',
+      `- Legacy pending count: ${gates.timelinePendingCount}. ` + (gates.timelinePendingCount > 0
+        ? 'During this ordinary working turn, read timeline_list { pending: true }, inspect each candidate and supporting evidence, then resolve each ID with timeline_pending_resolve as record, duplicate (after reading the canonical event detail), or discard with a reason. Continue reading batches while actionable candidates remain until remaining_pending is zero; the conflict topic budget and policy refresh cadence do not cap migration. If only unreadable diagnostics remain, stop retrying, report the technical diagnostic and defer repair without claiming completion or asking the human to judge/approve items. Then continue the user task.'
+        : 'No legacy intake currently reported; do not rescan the whole project each turn.'),
+      '- After a record, follow its conflict_check continuation, compare only unchecked events, and record verdicts/checkpoints. A superseding policy needs an evidence-backed event; unresolved evidence gets insufficient_evidence, not a question to the human.',
     );
   }
   if (gates.peers) {

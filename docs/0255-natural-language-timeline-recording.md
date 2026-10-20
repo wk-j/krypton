@@ -1,8 +1,30 @@
 # Natural-Language Timeline Recording — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented historically; authorization contract superseded by [0316](./0316-llm-managed-timeline.md)
 > Date: 2026-09-18
 > Milestone: ACP Harness — project provenance
+
+## Current contract — spec 0316
+
+Natural-language requests still work, but are no longer a prerequisite for recording.
+`timeline_record` requires `evidence_kind` (`user_statement`, `observed_outcome`, or
+`agent_decision`) and `evidence_excerpt`; `instruction_excerpt` is removed from write input,
+not retained as an alias. The recorder is `Agent`, and `agent_decision` uses the calling lane
+as `made_by`. Never infer human approval or default the authority to `Current user`.
+Historical authorizing instructions and recorder labels remain readable.
+
+The lane reads history, reuses topic IDs, deduplicates, and follows conflict/checkpoint
+continuations itself. New intake respects `automaticRecording`; off blocks direct recording.
+Normal record no longer implicitly promotes matching pending items: legacy resolution uses
+`timeline_pending_resolve` by ID with a terminal record/duplicate/discard receipt, even when
+new intake is off. There is no suggestion tool, manual capture/review fallback, or human gate.
+Explicit read-only work remains read-only; the browser and append-only provenance remain.
+
+# Historical implementation — not the current contract
+
+The remaining design, request structs, tool examples, policy bullets, edge cases, and scope
+notes preserve the implemented pre-0316 behavior. In particular, current-human authorization,
+`instruction_excerpt`, implicit promotion, and manual commands below are historical only.
 
 ## Problem
 

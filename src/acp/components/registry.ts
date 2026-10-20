@@ -84,7 +84,6 @@ import { def as thoughtCard } from './thought-card';
 import { def as thoughtRow } from './thought-row';
 import { def as ticketDock } from './ticket-dock';
 import { def as ticketPicker } from './ticket-picker';
-import { def as timelineCapture } from './timeline-capture';
 import { def as toolRow } from './tool-row';
 import { def as transcript } from './transcript';
 import { def as transcriptRow } from './transcript-row';
@@ -178,6 +177,5 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   imageViewer,
   genuiPanel,
   genuiCatalog,
-  timelineCapture,
   reviewThreadDialog,
 ];

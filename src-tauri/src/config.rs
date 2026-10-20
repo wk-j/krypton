@@ -55,7 +55,6 @@ pub struct KryptonConfig {
     pub xenon: XenonConfig,
     pub usage_log: UsageLogConfig,
     pub daily_note: DailyNoteConfig,
-    pub typesafe: TypeSafeConfig,
     pub keyboard_overlay: KeyboardOverlayConfig,
 }
 
@@ -625,66 +624,6 @@ impl Default for DailyNoteConfig {
     }
 }
 
-// ─── TypeSafe semantic suggestions (spec 257) ────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct TypeSafeConfig {
-    pub enabled: bool,
-    pub api_key_env: String,
-    pub base_url: String,
-    pub model: String,
-    pub connect_timeout_ms: u64,
-    pub attempt_timeout_ms: u64,
-    pub overall_deadline_ms: u64,
-    pub max_retries: u8,
-    pub failure_threshold: u32,
-    pub cooldown_secs: u64,
-    pub timeline_topics: TypeSafeTimelineTopicsConfig,
-}
-
-impl Default for TypeSafeConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            api_key_env: "TYPESAFE_API_KEY".to_string(),
-            base_url: "https://api.typesafe.ai".to_string(),
-            model: "jev-1.13.0".to_string(),
-            connect_timeout_ms: 300,
-            attempt_timeout_ms: 650,
-            overall_deadline_ms: 1_600,
-            max_retries: 1,
-            failure_threshold: 3,
-            cooldown_secs: 30,
-            timeline_topics: TypeSafeTimelineTopicsConfig::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct TypeSafeTimelineTopicsConfig {
-    pub mode: String,
-    pub debounce_ms: u64,
-    pub min_confidence: f64,
-    pub min_probability: f64,
-    pub min_margin: f64,
-    pub max_candidates: usize,
-}
-
-impl Default for TypeSafeTimelineTopicsConfig {
-    fn default() -> Self {
-        Self {
-            mode: "off".to_string(),
-            debounce_ms: 350,
-            min_confidence: 0.65,
-            min_probability: 0.55,
-            min_margin: 0.15,
-            max_candidates: 12,
-        }
-    }
-}
-
 // ─── Music ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1230,6 +1169,33 @@ fn name_assignment_range(section: &str) -> Option<(usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retired_typesafe_configuration_is_ignored_without_losing_active_settings() {
+        let cfg: KryptonConfig = toml::from_str(
+            r#"
+[theme]
+name = "nord"
+[xenon]
+enabled = true
+[typesafe]
+enabled = true
+api_key_env = "LEGACY_TYPESAFE_KEY"
+base_url = "https://example.invalid"
+[typesafe.timeline_topics]
+mode = "suggest"
+debounce_ms = 350
+min_confidence = 0.65
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(cfg.theme.name, "nord");
+        assert!(cfg.xenon.enabled);
+        let serialized = toml::to_string(&cfg).unwrap();
+        assert!(!serialized.contains("[typesafe"));
+        assert!(!serialized.contains("LEGACY_TYPESAFE_KEY"));
+    }
 
     #[test]
     fn patch_replaces_existing_theme_name() {

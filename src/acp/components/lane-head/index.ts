@@ -13,9 +13,8 @@
 // whose displayed numbers did not move performs zero DOM writes — and the
 // busy spinner, which is a child component with its own node, keeps its frame.
 //
-// The head element is NOT wiped on paint: the timeline badge is appended after
-// the component's own children by the view, so this component owns a fixed set
-// of five child nodes and only reorders chips inside the strip.
+// The head element is NOT wiped on paint: LaneShell appends Start Review after
+// the component's own fixed children; only chips inside the strip are reordered.
 
 import './lane-head.css';
 

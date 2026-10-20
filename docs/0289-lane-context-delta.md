@@ -4,6 +4,23 @@
 > Date: 2026-10-13
 > Milestone: ACP Harness: prompt efficiency
 
+## Timeline amendment — spec 0316
+
+[0316](./0316-llm-managed-timeline.md) supersedes this spec's original human-only Timeline
+policy snippets, suggestion gate, and old tool roster. Header/policy delivery and hash-based
+invalidation remain. `src/acp/lane-context.ts` now advertises record, list, merge,
+pending-resolve, and the three conflict tools for capable local lanes; no `timeline_suggest`.
+The lane owns evidence-backed intake, grouping, legacy record/duplicate/discard resolution,
+and conflict verdicts/checkpoints without a human queue or extra model turn.
+Explicit read-only scope forbids Timeline mutations. Automatic recording off stops new
+intake, not legacy resolution. The internal pending count is part of the policy text, so a
+count change invalidates its delivery hash for the next ordinary turn; neither refresh cadence
+nor the conflict-topic budget limits legacy resolution.
+
+The research sizes and implementation measurements below are historical, not current packet
+budgets or new verification results. The original Timeline policy is explicitly identified
+where preserved below; it must not be reused as active guidance.
+
 ## Problem
 
 Every user turn re-sends the full lane-context packet (`krypton://acp-harness/lane-context.md`)
@@ -33,7 +50,7 @@ same just-in-time pattern spec 262's `notice` already uses.
 
 The approach works for every backend. No adapter needs to support a system-prompt channel.
 
-## Research
+## Historical research — pre-0316 measurements and source locations
 
 - **Packet assembly.** `buildPromptBlocks` (`acp-harness-view.ts:8525`) →
   `composeLeadingContext` (`:8552`) → `renderPromptMemoryPacket` (`:8593`). It is rebuilt on every
@@ -130,8 +147,8 @@ policyDelivery: {
 
 1. `You are lane ${self}.`
 2. The tool-name line. Each name follows the same gate as its index line in the policy. The whole
-   line is omitted when harness memory is unavailable, because then no tools exist. It is 244
-   chars with every gate on:
+   line is omitted when harness memory is unavailable, because then no tools exist.
+   Historical pre-0316 example (the `timeline_suggest` roster is superseded):
 
    ```
    Krypton tools (if not visible, search by exact name; rules are in each description): attention_flag, attention_resolve, mark_review_priority, artifact_new, timeline_record, timeline_merge, timeline_suggest, peer_send, peer_list, review_outcome.
@@ -147,7 +164,7 @@ policyDelivery: {
 4. The ticket pin.
 5. The role block or directive (from `composeLeadingContext`, unchanged text).
 
-Tool index (gated lines keep their current gates):
+Historical tool index (pre-0316; Timeline lines superseded by the amendment above):
 
 ```
 Krypton tools — each tool's description is its full contract; read it before the first call.
@@ -163,8 +180,17 @@ Krypton tools — each tool's description is its full contract; read it before t
 Write these tools' free-text fields in natural Thai for a reader who does not read code; keep technical terms, IDs, paths, and quoted source verbatim.
 ```
 
+Current Timeline guidance replaces the two historical Timeline lines above: use
+`timeline_record`, `timeline_list`, `timeline_merge`, `timeline_pending_resolve`,
+`timeline_conflict_list`, `timeline_conflict_record`, and `timeline_conflict_checked` to own
+the workflow. Record requires supporting evidence, not a human persistence quote; merge
+requires rationale. Never send Timeline choices to `attention_flag`, ask-user, or approval UI.
+Read history before recording, reuse topic IDs, inspect duplicates, and follow conflict
+continuations. Resolve legacy batches in ordinary write-capable work until no actionable
+candidates remain; report unreadable diagnostics without claiming completion.
+
 The attention line keeps spec 134's positive-trigger-first wording.
-Target: ≤ 1,700 chars for a solo lane with all gates on (was 7,397).
+Historical target: ≤ 1,700 chars for a solo lane with all gates on (was 7,397); not a cap on the current Timeline ownership policy.
 
 **Memory-unavailable branch.** It keeps its current text plus the SVG line and the spec 292 visual line, delivered as policy.
 
@@ -189,7 +215,7 @@ block. The directive still travels in the same leading block (spec 124 rule).
 | Trigger | Where | Effect |
 |---|---|---|
 | Any respawn (fresh, resume/load, force-restart, reconnect, `#new`, `#restart`) | `spawnLane` start sets `policyDelivery = null`; picker lanes start `null` | resend |
-| Roster, directive, role, ticket, gate change | hash differs | resend |
+| Roster, directive, role, ticket, gate, or Timeline pending-count change | hash differs | resend |
 | `usage_update.used` falls ≥ 40% below the previous value, and the previous value was ≥ 20,000 | `case 'usage'` (`:8099`) | `stale = true` |
 | User sends agent slash `/compact` | `sendUserPrompt` agent-command branch | `stale = true` |
 | `promptClient.prompt` rejects (provider error or transport) | `sendUserPrompt` catch | `policyDelivery = null` |

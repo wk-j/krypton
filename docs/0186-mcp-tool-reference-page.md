@@ -89,7 +89,9 @@ fn tool_category(name: &str) -> &'static str {
         "peer_send" | "peer_list" => "peering",
         "artifact_new" | "artifact_register" | "artifact_cancel" => "artifacts",
         "attention_flag" | "attention_resolve" => "attention",
-        "timeline_suggest" | "timeline_record" => "timeline",
+        "timeline_record" | "timeline_list" | "timeline_merge" | "timeline_pending_resolve"
+            | "timeline_conflict_list" | "timeline_conflict_record"
+            | "timeline_conflict_checked" => "timeline",
         "review_outcome" | "mark_review_priority" => "review",
         "issue_progress" => "issues",
         _ => "other", // forward-compat: unmapped tools still render
@@ -104,11 +106,20 @@ async fn handle_tools_json() -> Response {
 
 Payload shape: `{ "tools": [ { name, description, inputSchema, category } ] }`.
 
-The page therefore picks up additive tool-contract changes without a separate manifest edit. For
-example, `timeline_record` now exposes an optional existing `topic_id` so a traced chronology can
-reuse stable identity; its result returns that resolved ID beside event ID/path/disposition (spec
-261). The reference renders the input field directly from the Rust descriptor. The read-only
-`timeline_list` tool (spec 262) appears the same way, under the existing `timeline` category.
+The page picks up contracts directly from Rust descriptors. Timeline's final category contains
+`timeline_record`, `timeline_list`, `timeline_merge`, `timeline_pending_resolve` and the three
+conflict tools; `timeline_suggest` is removed ([spec 316](0316-llm-managed-timeline.md)).
+Record requires `topic_title`, `summary`, `made_by`, `evidence_kind`
+(`user_statement`, `observed_outcome`, `agent_decision`) and `evidence_excerpt`, with optional
+`topic_id`, `occurred_at`, `rationale`, `impact`, `source_ref`, `relation`, `related_event`;
+`instruction_excerpt` has no alias. List supports topic discovery/events (default 20/max 50),
+exclusive `event_id` detail, or exclusive `pending:true` intake (default 5/max 20, remaining
+count and diagnostics). Resolver takes `pending_id`, `outcome`, `rationale` and outcome-specific
+`record` or `event_id` for record/duplicate/discard. Merge takes `from`/`into` or `undo:true`
+with required `rationale`. Descriptors carry autonomous ownership, read-only restrictions and
+ordinary-turn legacy processing even when programmatic turns bypass lane policy. The page
+is reference only, not mutation/approval UI. Rollout requires normally reconnected sessions
+to obtain new schemas; displaying this reference does not migrate production backlog.
 
 ### Data Flow
 

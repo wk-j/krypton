@@ -39,8 +39,6 @@ export interface LaneShellProps {
   readonly pendingPeers: PendingPeerSummary[];
   readonly isOrchestrator: boolean;
   readonly projectDir: string | null;
-  /** spec 253: pending timeline suggestions, shown as a badge in the head. */
-  readonly timelinePending: number;
   /** Review-thread action in the head; null when the lane cannot start one. */
   readonly reviewThread: { readonly count: number; readonly enabled: boolean } | null;
   readonly onStartReview: () => void;
@@ -59,20 +57,8 @@ export class LaneShell extends Component<LaneShellProps> {
    * the layout may resize its slot, it may never move this node.
    */
   readonly body: HTMLElement | null;
-  /**
-   * The head's trailing actions, in the ONE grid cell the head reserves for
-   * them (`grid-template-columns`' sixth track).
-   *
-   * Before this component the two buttons could never coexist: `renderDashboard`
-   * rewrote `head.innerHTML` and appended the timeline badge, `renderActiveLaneChrome`
-   * rewrote it again and appended the review action — each wiping the other's
-   * button. `LaneShell` keeps both, which made them seven children in a
-   * six-column grid: the seventh wrapped to an implicit second row and
-   * `height: 28px; overflow: hidden` clipped it to a sliver of its own border.
-   * One wrapper holds both, so the head stays one row however many actions it has.
-   */
+  /** The head's trailing Start Review action occupies its reserved grid cell. */
   private actions: HTMLElement | null = null;
-  private badge: HTMLButtonElement | null = null;
   private reviewButton: HTMLButtonElement | null = null;
   private onStartReview: (() => void) | null = null;
   private readonly active: boolean;
@@ -98,7 +84,6 @@ export class LaneShell extends Component<LaneShellProps> {
       next.lane.status,
       next.lane.accent,
       next.active,
-      next.timelinePending,
       next.reviewThread?.count,
       next.reviewThread?.enabled,
       // The head and stats hold their own deps; they are updated unconditionally
@@ -117,7 +102,6 @@ export class LaneShell extends Component<LaneShellProps> {
     // spec 215: collapsed lanes keep their accent — CSS dims it toward the base
     // text colour without dropping the hue, so lane identity survives de-focus.
     this.el.style.setProperty('--acp-lane-accent', next.lane.accent);
-    this.syncBadge(next);
     this.syncReviewAction(next);
     this.dropActionSlotIfEmpty();
   }
@@ -156,27 +140,6 @@ export class LaneShell extends Component<LaneShellProps> {
     this.actions = null;
   }
 
-  private syncBadge(next: LaneShellProps): void {
-    const wanted = this.active && next.timelinePending > 0;
-    if (!wanted) {
-      this.badge?.remove();
-      this.badge = null;
-      return;
-    }
-    if (!this.badge) {
-      this.badge = el('button', {
-        class: 'acp-harness__timeline-badge',
-        attrs: { type: 'button' },
-        data: { timelineReview: '' },
-      });
-      this.actionSlot().appendChild(this.badge);
-    }
-    this.badge.textContent = `timeline ${next.timelinePending}`;
-    this.badge.setAttribute(
-      'aria-label',
-      `ตรวจทานข้อเสนอ timeline ที่รออยู่ ${next.timelinePending} รายการ`,
-    );
-  }
 
   /** spec 211: the Start Review action lives in the active lane's head. */
   private syncReviewAction(next: LaneShellProps): void {
@@ -212,7 +175,6 @@ export const def: ComponentDef = {
     'acp-harness__lane',
     'acp-harness__lane-body',
     'acp-harness__lane-actions',
-    'acp-harness__timeline-badge',
     'acp-harness__review-thread-action',
   ],
 };

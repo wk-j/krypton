@@ -3695,10 +3695,10 @@ fn tool_category(name: &str) -> &'static str {
         "peer_send" | "peer_list" => "peering",
         "artifact_new" | "artifact_register" | "artifact_cancel" => "artifacts",
         "attention_flag" | "attention_resolve" => "attention",
-        "timeline_suggest"
-        | "timeline_record"
+        "timeline_record"
         | "timeline_list"
         | "timeline_merge"
+        | "timeline_pending_resolve"
         | "timeline_conflict_list"
         | "timeline_conflict_record"
         | "timeline_conflict_checked" => "timeline",
@@ -4475,16 +4475,28 @@ async fn handle_bus_tool_call(
         ),
         "attention_flag" => attention_flag(state, harness_id, lane_label, arguments).await,
         "attention_resolve" => attention_resolve(state, harness_id, lane_label, arguments).await,
-        "timeline_suggest" => timeline_suggest(state, harness_id, lane_label, arguments),
-        "timeline_record" => timeline_record(state, harness_id, lane_label, arguments),
-        "timeline_list" => timeline_list(state, harness_id, arguments),
-        "timeline_merge" => timeline_merge(state, harness_id, lane_label, arguments),
-        "timeline_conflict_list" => timeline_conflict_list(state, harness_id, arguments),
+        "timeline_record" => timeline_record(&state.hook_server, harness_id, lane_label, arguments),
+        "timeline_list" => timeline_list(&state.hook_server, harness_id, arguments),
+        "timeline_merge" => timeline_merge(&state.hook_server, harness_id, lane_label, arguments),
+        "timeline_pending_resolve" => timeline_pending_resolve(
+            &state.hook_server,
+            harness_id,
+            lane_label,
+            arguments,
+            |payload| {
+                state
+                    .app_handle
+                    .emit_or_log("acp-timeline-changed", payload)
+            },
+        ),
+        "timeline_conflict_list" => {
+            timeline_conflict_list(&state.hook_server, harness_id, arguments)
+        }
         "timeline_conflict_record" => {
-            timeline_conflict_record(state, harness_id, lane_label, arguments)
+            timeline_conflict_record(&state.hook_server, harness_id, lane_label, arguments)
         }
         "timeline_conflict_checked" => {
-            timeline_conflict_checked(state, harness_id, lane_label, arguments)
+            timeline_conflict_checked(&state.hook_server, harness_id, lane_label, arguments)
         }
         "review_outcome" => review_outcome(state, harness_id, lane_label, arguments).await,
         "mark_review_priority" => {
@@ -4702,58 +4714,6 @@ async fn peer_list(state: &HookServerState, harness_id: &str) -> Result<Value, S
     }
 }
 
-/// Create a non-authoritative, project-local timeline suggestion (spec 254).
-/// The working lane supplies the candidate and exact evidence; only the human
-/// can promote it through the frontend confirmation command.
-fn timeline_suggest(
-    state: &HookServerState,
-    harness_id: &str,
-    lane_label: &str,
-    arguments: Value,
-) -> Result<Value, String> {
-    let request = crate::timeline::TimelineSuggestionRequest {
-        topic_title: required_string(&arguments, "topic_title")?,
-        summary: required_string(&arguments, "summary")?,
-        made_by: required_string(&arguments, "made_by")?,
-        evidence_excerpt: required_string(&arguments, "evidence_excerpt")?,
-        rationale: arguments
-            .get("rationale")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        impact: arguments
-            .get("impact")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        source_ref: arguments
-            .get("source_ref")
-            .and_then(Value::as_str)
-            .map(ToString::to_string),
-    };
-    let project_dir = state
-        .hook_server
-        .project_dir_for_harness(harness_id)
-        .ok_or_else(|| {
-            "timeline_suggest is unavailable without a local project workspace".to_string()
-        })?;
-    let (suggestion, pending_count) =
-        crate::timeline::suggest_project(&project_dir, lane_label, request)?;
-    state.app_handle.emit_or_log(
-        "acp-timeline-suggestion",
-        json!({
-            "harnessId": harness_id,
-            "laneLabel": lane_label,
-            "suggestionId": suggestion.id,
-            "pendingCount": pending_count,
-        }),
-    );
-    Ok(json!({
-        "suggestion_id": suggestion.id,
-        "pending_count": pending_count,
-    }))
-}
-
 /// spec 289: the conflict-check rule rides on every `timeline_record` ack instead
 /// of the per-turn lane context — the agent only needs it right after a record.
 const TIMELINE_CONFLICT_CHECK: &str =
@@ -4765,11 +4725,9 @@ const TIMELINE_CONFLICT_CHECK: &str =
      human to pick pairs. Events linked by `supersedes` are history, not conflicts. Write \
      `rationale` in natural Thai; keep technical terms and IDs in English.";
 
-/// Persist an authoritative project timeline event when the current human turn
-/// explicitly requested it (spec 255). The exact authorizing words are stored
-/// with the event; unsolicited capture must continue to use timeline_suggest.
+/// Persist evidence-backed history selected by the working lane.
 fn timeline_record(
-    state: &HookServerState,
+    hook_server: &HookServer,
     harness_id: &str,
     lane_label: &str,
     arguments: Value,
@@ -4777,12 +4735,7 @@ fn timeline_record(
     let request: crate::timeline::TimelineDirectRecordRequest =
         serde_json::from_value(arguments)
             .map_err(|error| format!("invalid timeline_record arguments: {error}"))?;
-    let project_dir = state
-        .hook_server
-        .project_dir_for_harness(harness_id)
-        .ok_or_else(|| {
-            "timeline_record is unavailable without a local project workspace".to_string()
-        })?;
+    let project_dir = timeline_project_dir(hook_server, harness_id, "timeline_record")?;
     let result = crate::timeline::record_direct_project(&project_dir, lane_label, request)?;
     let mut ack = json!({
         "event_id": result.event.id,
@@ -4807,9 +4760,9 @@ fn timeline_record(
             object.insert(
                 "notice".to_string(),
                 json!(
-                    "This created a NEW topic. If existing_topics already contains this subject, \
-                     pass that topic_id for the remaining events of this chronology and tell the \
-                     user which topic ended up split."
+                    "This created a NEW topic. Read existing_topics and the relevant events; \
+                     if they cover the same subject, use timeline_merge with a rationale to \
+                     repair grouping and reuse the canonical topic_id."
                 ),
             );
         }
@@ -4820,42 +4773,53 @@ fn timeline_record(
     Ok(ack)
 }
 
-/// spec 263: move every event of one topic into another, or undo the last such
-/// merge. Reverses this spec's original human-only stance so the human can ask
-/// in plain language; the explicit `instruction_excerpt` is what separates an
-/// authorized repair from an agent deciding two topics look alike.
+/// Repair topic grouping without changing event contents; retain lane provenance.
 fn timeline_merge(
-    state: &HookServerState,
+    hook_server: &HookServer,
     harness_id: &str,
     lane_label: &str,
     arguments: Value,
 ) -> Result<Value, String> {
-    let instruction_excerpt = required_string(&arguments, "instruction_excerpt")?;
-    let undo = arguments
-        .get("undo")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let from = arguments
-        .get("from")
-        .and_then(Value::as_str)
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Request {
+        from: Option<String>,
+        into: Option<String>,
+        #[serde(default)]
+        undo: bool,
+        rationale: String,
+    }
+    if arguments.get("undo") == Some(&Value::Bool(true))
+        && (arguments.get("from").is_some() || arguments.get("into").is_some())
+    {
+        return Err("undo reverses the most recent merge: omit from and into".to_string());
+    }
+    let request: Request = serde_json::from_value(arguments)
+        .map_err(|error| format!("invalid timeline_merge arguments: {error}"))?;
+    let rationale = request.rationale.trim().to_string();
+    if rationale.is_empty() || rationale.chars().count() > 1000 {
+        return Err("rationale must contain 1–1000 characters".to_string());
+    }
+    let authorization = Some(crate::timeline::TimelineMergeAuthorization {
+        lane_label: lane_label.to_string(),
+        rationale,
+    });
+    let from = request
+        .from
+        .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let into = arguments
-        .get("into")
-        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty());
+    let into = request
+        .into
+        .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let project_dir = state
-        .hook_server
-        .project_dir_for_harness(harness_id)
-        .ok_or_else(|| {
-            "timeline_merge is unavailable without a local project workspace".to_string()
-        })?;
-    if undo {
+        .filter(|s| !s.is_empty());
+    let project_dir = timeline_project_dir(hook_server, harness_id, "timeline_merge")?;
+    if request.undo {
         if from.is_some() || into.is_some() {
             return Err("undo reverses the most recent merge: omit from and into".to_string());
         }
-        let undone = crate::timeline::undo_last_merge_project(&project_dir)?;
+        let undone = crate::timeline::undo_last_merge_project(&project_dir, authorization)?;
         return Ok(json!({
             "merge_id": undone.merge_id,
             "restored_events": undone.restored_events,
@@ -4866,15 +4830,7 @@ fn timeline_merge(
     let (Some(from), Some(into)) = (from, into) else {
         return Err("from and into are required unless undo is true".to_string());
     };
-    let merged = crate::timeline::merge_topics_project(
-        &project_dir,
-        from,
-        into,
-        Some(crate::timeline::TimelineMergeAuthorization {
-            lane_label: lane_label.to_string(),
-            instruction_excerpt,
-        }),
-    )?;
+    let merged = crate::timeline::merge_topics_project(&project_dir, from, into, authorization)?;
     Ok(json!({
         "merge_id": merged.merge_id,
         "moved_events": merged.moved_events,
@@ -4891,49 +4847,141 @@ fn timeline_merge(
 /// existing topics invents a new one every session, so one subject fragments
 /// across several `topic_id` values (wk-j/krypton#27). Writes nothing.
 fn timeline_list(
-    state: &HookServerState,
+    hook_server: &HookServer,
     harness_id: &str,
     arguments: Value,
 ) -> Result<Value, String> {
-    let topic_id = arguments
-        .get("topic_id")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let query = arguments.get("query").and_then(Value::as_str);
-    let limit = arguments
-        .get("limit")
-        .and_then(Value::as_u64)
-        .unwrap_or_default() as usize;
-    let project_dir = state
-        .hook_server
-        .project_dir_for_harness(harness_id)
-        .ok_or_else(|| {
-            "timeline_list is unavailable without a local project workspace".to_string()
-        })?;
-    let value = match topic_id {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Request {
+        topic_id: Option<String>,
+        query: Option<String>,
+        event_id: Option<String>,
+        #[serde(default)]
+        pending: bool,
+        limit: Option<u64>,
+    }
+    if ["topic_id", "query", "event_id", "limit"]
+        .iter()
+        .any(|field| arguments.get(field).is_some_and(Value::is_null))
+    {
+        return Err(
+            "timeline_list optional fields must have their declared type, not null".to_string(),
+        );
+    }
+    let request: Request = serde_json::from_value(arguments)
+        .map_err(|error| format!("invalid timeline_list arguments: {error}"))?;
+    if request.event_id.is_some() && request.pending
+        || (request.event_id.is_some() || request.pending)
+            && (request.topic_id.is_some() || request.query.is_some())
+    {
+        return Err(
+            "event_id and pending are exclusive modes; omit topic_id and query".to_string(),
+        );
+    }
+    let max_limit = if request.pending { 20 } else { 50 };
+    if request
+        .limit
+        .is_some_and(|limit| limit == 0 || limit > max_limit)
+    {
+        return Err(format!(
+            "limit must be an integer between 1 and {max_limit}"
+        ));
+    }
+    for (field, value, max) in [
+        ("topic_id", request.topic_id.as_deref(), 80),
+        ("event_id", request.event_id.as_deref(), 64),
+    ] {
+        if value.is_some_and(|value| value.trim().is_empty() || value.chars().count() > max) {
+            return Err(format!("{field} must contain 1–{max} characters"));
+        }
+    }
+    if request
+        .query
+        .as_ref()
+        .is_some_and(|query| query.chars().count() > 120)
+    {
+        return Err("query must be at most 120 characters".to_string());
+    }
+    let limit = request.limit.unwrap_or_default() as usize;
+    let project_dir = timeline_project_dir(hook_server, harness_id, "timeline_list")?;
+    if let Some(event_id) = request.event_id {
+        return Ok(
+            json!({ "event": crate::timeline::event_detail_project(&project_dir, &event_id)? }),
+        );
+    }
+    if request.pending {
+        let listing = crate::timeline::list_pending_project(&project_dir, limit)?;
+        let mut value = serde_json::to_value(&listing)
+            .map_err(|error| format!("failed to encode timeline pending listing: {error}"))?;
+        if listing.remaining_pending > 0 {
+            value["continuation"] = json!(TIMELINE_PENDING_CONTINUATION);
+        }
+        return Ok(value);
+    }
+    let value = match request.topic_id {
         Some(topic_id) => serde_json::to_value(crate::timeline::list_topic_events_project(
             &project_dir,
-            topic_id,
-            query,
+            &topic_id,
+            request.query.as_deref(),
             limit,
         )?),
         None => serde_json::to_value(crate::timeline::list_topics_project(
             &project_dir,
-            query,
+            request.query.as_deref(),
             limit,
         )?),
     };
     value.map_err(|error| format!("failed to encode timeline listing: {error}"))
 }
 
+const TIMELINE_PENDING_CONTINUATION: &str =
+    "During this ordinary write-capable working turn, assess each legacy candidate using its \
+     evidence and timeline_list event detail. Resolve supported durable facts with record, \
+     known facts with duplicate plus a canonical event_id, and unsupported/non-durable claims \
+     with discard. Supply a rationale; never ask for human approval or use attention_flag. \
+     Read timeline_list {pending:true} again until no actionable candidates remain. If only \
+     diagnostics remain, report the technical problem without claiming the queue is empty \
+     or repeating the same unreadable listing forever. No extra model turn, item/turn cap, \
+     or five-topic migration cap. Explicit read-only scope defers work to a write-capable turn.";
+
+fn timeline_pending_resolve(
+    hook_server: &HookServer,
+    harness_id: &str,
+    lane_label: &str,
+    arguments: Value,
+    emit_changed: impl FnOnce(Value),
+) -> Result<Value, String> {
+    let request: crate::timeline::TimelinePendingResolveRequest = serde_json::from_value(arguments)
+        .map_err(|error| format!("invalid timeline_pending_resolve arguments: {error}"))?;
+    let project_dir = timeline_project_dir(hook_server, harness_id, "timeline_pending_resolve")?;
+    let result = crate::timeline::resolve_pending_project(&project_dir, lane_label, request)?;
+    let mut ack = json!({
+        "pending_id": result.pending_id,
+        "outcome": result.outcome,
+        "event_id": result.event_id,
+        "resolution_path": result.resolution_path,
+        "remaining_pending": result.remaining_pending,
+    });
+    if let Some(event) = &result.event {
+        ack["event_id"] = json!(event.id);
+        ack["topic_id"] = json!(event.topic_id);
+        ack["path"] = json!(event.path);
+        ack["conflict_check"] = json!(TIMELINE_CONFLICT_CHECK);
+    }
+    if result.remaining_pending > 0 {
+        ack["continuation"] = json!(TIMELINE_PENDING_CONTINUATION);
+    }
+    emit_changed(json!({ "harnessId": harness_id, "pendingCount": result.remaining_pending }));
+    Ok(ack)
+}
+
 fn timeline_project_dir(
-    state: &HookServerState,
+    hook_server: &HookServer,
     harness_id: &str,
     tool: &str,
 ) -> Result<std::path::PathBuf, String> {
-    state
-        .hook_server
+    hook_server
         .project_dir_for_harness(harness_id)
         .ok_or_else(|| format!("{tool} is unavailable without a local project workspace"))
 }
@@ -4941,13 +4989,13 @@ fn timeline_project_dir(
 /// spec 267: read half of agent-run conflict review — open pairs plus the
 /// topics whose live events no agent has compared yet. Writes nothing.
 fn timeline_conflict_list(
-    state: &HookServerState,
+    hook_server: &HookServer,
     harness_id: &str,
     arguments: Value,
 ) -> Result<Value, String> {
     let topic_id = arguments.get("topic_id").and_then(Value::as_str);
     let include_closed = arguments.get("state").and_then(Value::as_str) == Some("all");
-    let project_dir = timeline_project_dir(state, harness_id, "timeline_conflict_list")?;
+    let project_dir = timeline_project_dir(hook_server, harness_id, "timeline_conflict_list")?;
     serde_json::to_value(crate::timeline_conflicts::agent_list_project(
         &project_dir,
         topic_id,
@@ -4959,7 +5007,7 @@ fn timeline_conflict_list(
 /// spec 267: the lane agent records a pair and its verdict in one call; the
 /// reviewer is the calling lane, never a payload field.
 fn timeline_conflict_record(
-    state: &HookServerState,
+    hook_server: &HookServer,
     harness_id: &str,
     lane_label: &str,
     arguments: Value,
@@ -4984,7 +5032,7 @@ fn timeline_conflict_record(
         source_ref: optional("source_ref"),
         resolution_event_id: optional("resolution_event_id"),
     };
-    let project_dir = timeline_project_dir(state, harness_id, "timeline_conflict_record")?;
+    let project_dir = timeline_project_dir(hook_server, harness_id, "timeline_conflict_record")?;
     serde_json::to_value(crate::timeline_conflicts::record_conflict_project(
         &project_dir,
         request,
@@ -4996,7 +5044,7 @@ fn timeline_conflict_record(
 /// spec 267: mark the events an agent compared so the next check reads only
 /// newer ones.
 fn timeline_conflict_checked(
-    state: &HookServerState,
+    hook_server: &HookServer,
     harness_id: &str,
     lane_label: &str,
     arguments: Value,
@@ -5012,7 +5060,7 @@ fn timeline_conflict_checked(
                 .collect()
         })
         .unwrap_or_default();
-    let project_dir = timeline_project_dir(state, harness_id, "timeline_conflict_checked")?;
+    let project_dir = timeline_project_dir(hook_server, harness_id, "timeline_conflict_checked")?;
     serde_json::to_value(crate::timeline_conflicts::mark_checked_project(
         &project_dir,
         &topic_id,
@@ -6682,7 +6730,7 @@ fn bus_tool_descriptors() -> Value {
         for descriptor in attention_tool_descriptors() {
             arr.push(descriptor);
         }
-        arr.push(timeline_suggest_tool_descriptor());
+        arr.push(timeline_pending_resolve_tool_descriptor());
         arr.push(timeline_record_tool_descriptor());
         arr.push(timeline_list_tool_descriptor());
         arr.push(timeline_merge_tool_descriptor());
@@ -6724,7 +6772,7 @@ fn project_backed_bus_tool(name: &str) -> bool {
             | "ticket_note"
             | "ticket_add_resource"
             | "ticket_link"
-            | "timeline_suggest"
+            | "timeline_pending_resolve"
             | "timeline_record"
             | "timeline_list"
             | "timeline_merge"
@@ -6734,27 +6782,55 @@ fn project_backed_bus_tool(name: &str) -> bool {
     )
 }
 
+const TIMELINE_AUTONOMOUS_CONTRACT: &str =
+    "The working lane owns durable Timeline selection, recording, topic grouping and conflicts \
+     automatically; this supersedes old human-approval guidance. No human persistence request \
+     or quote is required and there is no one-item/turn restriction. Never open approval UI, \
+     ask the human to choose Timeline outcomes, or use attention_flag for them. Respect explicit \
+     read-only scope (including timeline trace): do not record, merge, resolve pending or write \
+     conflict state then; defer maintenance to an ordinary write-capable working turn, never \
+     start an extra turn. Select only evidence-backed durable requirements, decisions and \
+     consequential observed outcomes; skip routine edits/tests/status, guesses, recommendations \
+     and unsupported implementation claims. Before recording a subject, read timeline_list, \
+     inspect relevant topic/events and event_id detail, reuse its topic_id across display titles \
+     and languages, and deduplicate facts already recorded. Merge only genuinely shared subjects, \
+     never to hide a conflict or rewrite history. Use supersedes for sourced policy changes. \
+     Follow every returned conflict_check and checkpoint; confirmed means a conflict exists, \
+     not which business decision is true. If evidence cannot decide, record insufficient_evidence \
+     with a rationale yourself, not a question to the human. Resolve legacy pending candidates \
+     with evidence-backed record/duplicate/discard and continue listing until none remain \
+     (diagnostics still count), without five-topic or per-turn migration caps. Automatic recording \
+     off blocks new intake, not legacy resolution. Write agent-composed prose in natural Thai; \
+     preserve exact supporting quotes, actors, source refs, IDs and technical terms. Never store \
+     secrets, tokens, environment values or raw tool-output dumps.";
+
+fn timeline_record_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "topic_id": { "type": "string", "maxLength": 80, "pattern": "^topic-[a-z0-9-]+$", "description": "Reuse the existing subject's topic_id; omit only when no topic covers it." },
+            "topic_title": { "type": "string", "minLength": 1, "maxLength": 120, "description": "Stable subject in natural Thai; technical terms may remain English." },
+            "summary": { "type": "string", "minLength": 1, "maxLength": 500, "description": "Durable event or decision in one natural-Thai line." },
+            "made_by": { "type": "string", "minLength": 1, "maxLength": 120, "description": "Actor supported by evidence, never inferred human approval. For agent_decision the backend uses the calling lane." },
+            "evidence_kind": { "type": "string", "enum": ["user_statement", "observed_outcome", "agent_decision"], "description": "Actual user's statement, observed result, or the agent's own decision." },
+            "evidence_excerpt": { "type": "string", "minLength": 1, "maxLength": 1000, "description": "Bounded supporting evidence, preserving exact quotes. Not an authorizing instruction; no secrets or raw dumps." },
+            "occurred_at": { "type": "string", "description": "Optional RFC 3339 occurrence time; defaults to now for new records." },
+            "rationale": { "type": "string", "maxLength": 4096 },
+            "impact": { "type": "string", "maxLength": 4096 },
+            "source_ref": { "type": "string", "maxLength": 2048, "description": "Supporting URL, commit, or project-relative source." },
+            "relation": { "type": "string", "enum": ["supersedes", "refines", "implements", "supports", "caused_by"] },
+            "related_event": { "type": "string", "maxLength": 64 }
+        },
+        "required": ["topic_title", "summary", "made_by", "evidence_kind", "evidence_excerpt"]
+    })
+}
+
 fn timeline_record_tool_descriptor() -> Value {
     json!({
         "name": "timeline_record",
-        "description": "Persist ONE authoritative project timeline event without confirmation UI, but ONLY when the current human message explicitly asks to record, remember, persist, or add it to the timeline. The user's request is the confirmation. Copy the exact authorizing words into `instruction_excerpt`; do not paraphrase them there. If the current user is the authority and no more specific identity is given, use `Current user` for `made_by`. Do not call this because an event merely seems important: use timeline_suggest for unsolicited capture. For a traced chronology, record only sourced recorded/observed events, never inferred rows. Call timeline_list FIRST and reuse the `topic_id` of the topic that already covers this subject — titles differ across sessions and languages, so a matching title is not what identifies a topic. Omit `topic_id` only when no existing topic covers it, then reuse the returned ID for every remaining event; keep event-specific wording in `summary`, not `topic_title`. Never copy secrets, tokens, environment values, or raw tool output. Report every returned event ID, topic ID, and path to the user. LANGUAGE: write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai, the way a Thai engineer writes; keep technical terms in English. Preserve `instruction_excerpt`, `made_by`, `source_ref`, identifiers, paths, URLs, commit hashes, and quoted source text verbatim.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "topic_id": { "type": "string", "maxLength": 80, "pattern": "^topic-[a-z0-9-]+$", "description": "Existing topic ID from timeline_list or an earlier timeline_record. Reuse it for every later event in one traced chronology, and for a subject the timeline already covers; omit it only when timeline_list shows no topic for this subject." },
-                "topic_title": { "type": "string", "maxLength": 120, "description": "Stable human-readable topic in natural Thai; keep technical terms in English." },
-                "summary": { "type": "string", "maxLength": 500, "description": "The durable event or decision in one natural-Thai line; keep technical terms in English." },
-                "made_by": { "type": "string", "maxLength": 120, "description": "Who explicitly made or approved it; use Current user when this prompt is the authority." },
-                "instruction_excerpt": { "type": "string", "maxLength": 1000, "description": "Exact words from the current human message that authorize timeline persistence." },
-                "occurred_at": { "type": "string", "description": "Optional RFC 3339 occurrence time; defaults to now or the matching pending suggestion time." },
-                "rationale": { "type": "string", "maxLength": 4096, "description": "Optional natural-Thai rationale; keep technical terms in English." },
-                "impact": { "type": "string", "maxLength": 4096, "description": "Optional natural-Thai impact; keep technical terms in English." },
-                "source_ref": { "type": "string", "maxLength": 2048, "description": "Optional URL, commit, or project-relative source." },
-                "relation": { "type": "string", "enum": ["supersedes", "refines", "implements", "supports", "caused_by"] },
-                "related_event": { "type": "string", "maxLength": 64 }
-            },
-            "required": ["topic_title", "summary", "made_by", "instruction_excerpt"]
-        }
+        "description": format!("Persist an evidence-backed project event selected by the agent. Returns event_id/topic_id/path and conflict_check, including on duplicate retry; report the stored provenance accurately. Normal recording never implicitly promotes pending candidates: use timeline_pending_resolve by ID. {}", TIMELINE_AUTONOMOUS_CONTRACT),
+        "inputSchema": timeline_record_input_schema()
     })
 }
 
@@ -6764,37 +6840,43 @@ fn timeline_record_tool_descriptor() -> Value {
 fn timeline_list_tool_descriptor() -> Value {
     json!({
         "name": "timeline_list",
-        "description": "Read the project timeline. Call this BEFORE the first timeline_record about a subject, and whenever you need the existing history: it is read-only, writes nothing, and opens no UI. With no arguments it returns the stored topics, most recent activity first, each with the `topic_id` you must pass back to timeline_record to keep one subject in one chronology. Titles are not identity — the same subject is often titled differently per session and per language, so scan the summaries and reuse the matching topic's ID instead of creating a new topic. Pass `topic_id` to read that topic's events newest-first before adding to it, so you do not record a fact it already contains.",
+        "description": format!("Read-only project Timeline discovery; writes nothing and opens no UI. Default returns topic digests newest-first; topic_id returns its events, optionally filtered by query. event_id instead returns a full event including evidence, rationale, impact, relations and recorder provenance. pending:true instead lists legacy candidates with reserved IDs, original fields, remaining_pending and diagnostics (default 5/max 20). event_id and pending:true cannot be combined or mixed with topic_id/query. Default/topic limits are 20/max 50. Read relevant history before recording or deciding a canonical duplicate. {}", TIMELINE_AUTONOMOUS_CONTRACT),
         "inputSchema": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "topic_id": { "type": "string", "maxLength": 80, "pattern": "^topic-[a-z0-9-]+$", "description": "Optional: read this topic's events instead of the topic list." },
                 "query": { "type": "string", "maxLength": 120, "description": "Optional case-insensitive substring filter over topic titles and event summaries. It cannot match across languages, so prefer the unfiltered list when looking for an existing topic." },
-                "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Optional maximum rows to return; defaults to 20. The response reports the full count and whether it was truncated." }
-            }
+                "event_id": { "type": "string", "minLength": 1, "maxLength": 64, "description": "Read one complete event instead of listing topics, events or pending." },
+                "pending": { "type": "boolean", "description": "When true, list legacy intake for agent assessment instead of topics/events." },
+                "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum rows; pending mode accepts at most 20." }
+            },
+            "allOf": [
+                { "if": { "required": ["event_id"] }, "then": { "not": { "anyOf": [{ "required": ["topic_id"] }, { "required": ["query"] }, { "required": ["pending"], "properties": { "pending": { "const": true } } }] } } },
+                { "if": { "required": ["pending"], "properties": { "pending": { "const": true } } }, "then": { "not": { "anyOf": [{ "required": ["topic_id"] }, { "required": ["query"] }, { "required": ["event_id"] }] }, "properties": { "limit": { "maximum": 20 } } } }
+            ]
         }
     })
 }
 
-/// spec 263: agent-invoked topic repair. Originally human-only; opened to lanes
-/// so the human can ask in plain language instead of typing the
-/// `#timeline merge <from> into <into>` grammar. The guards are the explicit
-/// authorizing instruction, a deterministic selector that refuses ambiguity, the
-/// automatic backup, and a permission prompt — this is the one timeline tool
-/// deliberately left out of the built-in auto-allow set.
 fn timeline_merge_tool_descriptor() -> Value {
     json!({
         "name": "timeline_merge",
-        "description": "Repair project timeline grouping by moving every event of one topic into another, ONLY when the current human message explicitly asks to merge, combine, or join timeline topics (or to undo that). Their request is the confirmation; copy their exact authorizing words into `instruction_excerpt`. Call timeline_list first and pass the two `topic_id` values you found — a selector matching several topics is refused rather than guessed. Only the grouping changes: every event keeps its own title, summary, provenance, and ID. Pass `undo: true` (with no from/into) to reverse the most recent merge. Every touched file is backed up before the rewrite; report the moved count, both topics, and the backup path to the user. Never merge because topics merely look similar to you: without an explicit human instruction, say what you would merge and let them decide.",
+        "description": format!("Repair Timeline grouping autonomously after reading topic IDs and event detail. Supply rationale for merge or undo; the transport supplies the acting lane. Selectors must be unique, same-topic and ambiguous merges are refused, and every touched file is backed up before changing only topic_id. Event IDs, text and provenance remain unchanged. undo:true with no from/into reverses the latest merge and records acting lane/rationale. Report moved/restored count and backup provenance. {}", TIMELINE_AUTONOMOUS_CONTRACT),
         "inputSchema": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "from": { "type": "string", "maxLength": 120, "description": "Source topic to empty: a topic_id from timeline_list, or a unique substring of its title." },
                 "into": { "type": "string", "maxLength": 120, "description": "Target topic that keeps the events: a topic_id from timeline_list, or a unique substring of its title." },
                 "undo": { "type": "boolean", "description": "Reverse the most recent merge instead of merging. Omit from and into when true." },
-                "instruction_excerpt": { "type": "string", "maxLength": 1000, "description": "Exact words from the current human message that authorize this merge or undo." }
+                "rationale": { "type": "string", "minLength": 1, "maxLength": 1000, "description": "Evidence-backed reason these are one subject, or reason to undo; not a human authorization quote." }
             },
-            "required": ["instruction_excerpt"]
+            "required": ["rationale"],
+            "oneOf": [
+                { "required": ["undo"], "properties": { "undo": { "const": true } }, "not": { "anyOf": [{ "required": ["from"] }, { "required": ["into"] }] } },
+                { "required": ["from", "into"], "properties": { "undo": { "const": false } } }
+            ]
         }
     })
 }
@@ -6818,7 +6900,7 @@ fn timeline_conflict_list_tool_descriptor() -> Value {
 fn timeline_conflict_record_tool_descriptor() -> Value {
     json!({
         "name": "timeline_conflict_record",
-        "description": "Record your verdict on two timeline events in one call: creates the pair if it is new, otherwise appends a newer verdict (the latest wins). You decide; no human confirmation is needed. Verdicts: `confirmed` = same subject, opposite decisions, and no newer event settles it; `resolved` = they conflicted but a newer event settled it (pass its ID as `resolution_event_id`, or a `source_ref`); `insufficient_evidence` = only when the records genuinely cannot tell; `dismissed` = different subjects, duplicates, or an understanding that evolved — record `dismissed` only to close a pair that was open, not for every unrelated pair. Events linked by `supersedes` are change history and are refused. Never guess who had authority and never edit the events themselves. LANGUAGE: write `rationale` in natural Thai, the way a Thai engineer writes; keep technical terms and IDs in English.",
+        "description": format!("Record your verdict on two Timeline events: create a pair or append a newer verdict (latest wins). confirmed means opposite decisions on one subject with nothing newer settling them, NOT which decision is true. resolved needs resolution_event_id or source_ref. insufficient_evidence means the records genuinely cannot decide. Use dismissed only to close an open pair that is unrelated, duplicate or evolved understanding, not for every unrelated pair. Events linked by supersedes are change history and are refused. Never invent authority or edit event contents. {}", TIMELINE_AUTONOMOUS_CONTRACT),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -6837,7 +6919,7 @@ fn timeline_conflict_record_tool_descriptor() -> Value {
 fn timeline_conflict_checked_tool_descriptor() -> Value {
     json!({
         "name": "timeline_conflict_checked",
-        "description": "After comparing a topic's new events, mark them checked so later checks skip them. Call it even when you found no conflict. Pass exactly the event IDs you compared (usually `new_event_ids` from timeline_conflict_list, or the event you just recorded); anything recorded meanwhile stays unchecked. Returns how many live events in the topic are still unchecked.",
+        "description": format!("After comparing a topic's new events, mark exactly those event_ids checked, even when nothing conflicted. Concurrent new events stay unchecked. Returns remaining_unchecked. {}", TIMELINE_AUTONOMOUS_CONTRACT),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -6849,22 +6931,26 @@ fn timeline_conflict_checked_tool_descriptor() -> Value {
     })
 }
 
-fn timeline_suggest_tool_descriptor() -> Value {
+fn timeline_pending_resolve_tool_descriptor() -> Value {
     json!({
-        "name": "timeline_suggest",
-        "description": "Propose ONE durable project timeline item for human review; this never creates authoritative history. Call at most once per turn, only for an explicit durable requirement, decision, consequential change, approval/rejection, or implementation outcome worth finding later. Skip routine edits/tests/status chatter, recommendations, unanswered questions, inferred authority, and facts already pending or confirmed. `made_by` and `evidence_excerpt` must be supported by the user's actual words or trusted transport provenance. Never copy secrets, tokens, environment values, or raw tool output. The human may edit, confirm, or dismiss the local pending suggestion. LANGUAGE: write agent-composed `topic_title`, `summary`, `rationale`, and `impact` in natural Thai, the way a Thai engineer writes; keep technical terms in English. Preserve `evidence_excerpt`, `made_by`, `source_ref`, identifiers, paths, URLs, commit hashes, and quoted source text verbatim.",
+        "name": "timeline_pending_resolve",
+        "description": format!("Terminally assess one legacy Timeline candidate read with timeline_list {{pending:true}}. record requires a complete evidence-backed final record and preserves its reserved event ID, original evidence/time and suggesting lane; duplicate requires a real canonical event_id you inspected; discard requires a reason it is unsupported or not durable. Each outcome saves an audit receipt with the verbatim original candidate and acting lane/time/rationale. Retries return the existing terminal winner, never a second event or altered outcome. Returns remaining_pending and canonical event/conflict_check when applicable; follow continuation until the queue is empty. Malformed candidates remain pending with diagnostics, never silently discarded. {}", TIMELINE_AUTONOMOUS_CONTRACT),
         "inputSchema": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
-                "topic_title": { "type": "string", "maxLength": 120, "description": "Stable human-readable topic in natural Thai; keep technical terms in English." },
-                "summary": { "type": "string", "maxLength": 500, "description": "The durable event or decision in one natural-Thai line; keep technical terms in English." },
-                "made_by": { "type": "string", "maxLength": 120, "description": "Who explicitly made or approved it, supported by the evidence." },
-                "evidence_excerpt": { "type": "string", "maxLength": 1000, "description": "Exact supporting words or trusted provenance; exclude secrets and raw tool output." },
-                "rationale": { "type": "string", "maxLength": 4096, "description": "Optional natural-Thai rationale; keep technical terms in English." },
-                "impact": { "type": "string", "maxLength": 4096, "description": "Optional natural-Thai impact; keep technical terms in English." },
-                "source_ref": { "type": "string", "maxLength": 2048, "description": "Optional URL, commit, or project-relative source." }
+                "pending_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+                "outcome": { "type": "string", "enum": ["record", "duplicate", "discard"] },
+                "rationale": { "type": "string", "minLength": 1, "maxLength": 4096 },
+                "record": timeline_record_input_schema(),
+                "event_id": { "type": "string", "minLength": 1, "maxLength": 64 }
             },
-            "required": ["topic_title", "summary", "made_by", "evidence_excerpt"]
+            "required": ["pending_id", "outcome", "rationale"],
+            "oneOf": [
+                { "properties": { "outcome": { "const": "record" } }, "required": ["record"], "not": { "required": ["event_id"] } },
+                { "properties": { "outcome": { "const": "duplicate" } }, "required": ["event_id"], "not": { "required": ["record"] } },
+                { "properties": { "outcome": { "const": "discard" } }, "not": { "anyOf": [{ "required": ["record"] }, { "required": ["event_id"] }] } }
+            ]
         }
     })
 }
@@ -10346,111 +10432,447 @@ mod tests {
             names.contains(&"attention_resolve"),
             "attention_resolve should be advertised without per-lane opt-in"
         );
-        assert!(
-            names.contains(&"timeline_suggest"),
-            "timeline_suggest should be advertised for project-backed harnesses"
-        );
-        assert!(
-            names.contains(&"timeline_record"),
-            "timeline_record should be advertised for explicit user requests"
-        );
-        assert!(
-            names.contains(&"timeline_list"),
-            "timeline_list should be advertised so a lane can find an existing topic"
-        );
-        assert!(
-            names.contains(&"timeline_merge"),
-            "timeline_merge should be advertised so the human can ask for topic repair in prose"
-        );
-        for tool in [
+        let timeline_tools = [
+            "timeline_record",
+            "timeline_list",
+            "timeline_merge",
+            "timeline_pending_resolve",
             "timeline_conflict_list",
             "timeline_conflict_record",
             "timeline_conflict_checked",
+        ];
+        for name in timeline_tools {
+            assert!(names.contains(&name));
+            assert!(project_backed_bus_tool(name));
+            assert_eq!(tool_category(name), "timeline");
+        }
+        assert!(!names.contains(&"timeline_suggest"));
+        for third_party in [
+            "thirdparty_timeline_record",
+            "timeline_record_extra",
+            "timeline_suggest",
+        ] {
+            assert!(!project_backed_bus_tool(third_party));
+            assert_ne!(tool_category(third_party), "timeline");
+        }
+        let record_schema = timeline_record_tool_descriptor()["inputSchema"].clone();
+        assert_eq!(record_schema["additionalProperties"], false);
+        assert_eq!(
+            record_schema["required"],
+            json!([
+                "topic_title",
+                "summary",
+                "made_by",
+                "evidence_kind",
+                "evidence_excerpt"
+            ])
+        );
+        assert_eq!(
+            record_schema["properties"]["evidence_kind"]["enum"],
+            json!(["user_statement", "observed_outcome", "agent_decision"])
+        );
+        assert!(record_schema["properties"]
+            .get("instruction_excerpt")
+            .is_none());
+        let resolver = timeline_pending_resolve_tool_descriptor();
+        assert_eq!(
+            resolver["inputSchema"]["properties"]["record"],
+            record_schema
+        );
+        assert_eq!(
+            resolver["inputSchema"]["oneOf"].as_array().unwrap().len(),
+            3
+        );
+        assert_eq!(resolver["inputSchema"]["additionalProperties"], false);
+        assert_eq!(
+            timeline_merge_tool_descriptor()["inputSchema"]["required"],
+            json!(["rationale"])
+        );
+        assert!(timeline_list_tool_descriptor()["inputSchema"]
+            .get("required")
+            .is_none());
+    }
+
+    struct TimelineMcpProject {
+        root: PathBuf,
+        project: PathBuf,
+        server: HookServer,
+        harness: String,
+    }
+
+    impl TimelineMcpProject {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!("krypton-timeline-mcp-{}", rand_suffix()));
+            let project = root.join("project");
+            std::fs::create_dir_all(&project).unwrap();
+            let server = HookServer::with_memory_dir(root.join("memory"));
+            let harness =
+                server.create_harness_memory(Some(project.to_string_lossy().into_owned()));
+            Self {
+                root,
+                project,
+                server,
+                harness,
+            }
+        }
+
+        fn record(&self, args: Value) -> Value {
+            timeline_record(&self.server, &self.harness, "Codex-test", args).unwrap()
+        }
+
+        fn list(&self, args: Value) -> Value {
+            timeline_list(&self.server, &self.harness, args).unwrap()
+        }
+
+        fn seed_pending(&self, id: &str, summary: &str) -> String {
+            let markdown = format!(
+                "---\nschema: 1\nid: \"{id}\"\nstatus: \"pending\"\n\
+                 topic_title: \"นโยบาย Upload\"\noccurred_at: \"2026-01-01T00:00:00Z\"\n\
+                 made_by: \"Product owner\"\nsuggested_at: \"2026-01-02T00:00:00Z\"\n\
+                 suggested_by_lane: \"Legacy-lane\"\nsource_ref: \"docs/old-policy.md\"\n---\n\
+                 # {summary}\n\n## Evidence\nUploads require metadata.\n\n\
+                 ## Rationale\nข้อกำหนดเดิม\n\n## Impact\nต้องตรวจ metadata\n"
+            );
+            let pending = self.project.join(".krypton/timeline/pending");
+            std::fs::create_dir_all(&pending).unwrap();
+            std::fs::write(pending.join(format!("{id}.md")), &markdown).unwrap();
+            markdown
+        }
+
+        fn resolve(&self, args: Value) -> (Value, Value) {
+            let mut notification = Value::Null;
+            let ack = timeline_pending_resolve(
+                &self.server,
+                &self.harness,
+                "Codex-test",
+                args,
+                |payload| notification = payload,
+            )
+            .unwrap();
+            (ack, notification)
+        }
+    }
+
+    impl Drop for TimelineMcpProject {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn timeline_mcp_record_args(summary: &str) -> Value {
+        json!({
+            "topic_title": "นโยบาย Upload",
+            "summary": summary,
+            "made_by": "Product owner",
+            "evidence_kind": "user_statement",
+            "evidence_excerpt": "Uploads require metadata.",
+            "rationale": "ข้อกำหนดที่ต้องใช้ต่อ",
+            "impact": "ตรวจ metadata ก่อนส่ง",
+            "source_ref": "docs/policy.md"
+        })
+    }
+
+    #[test]
+    fn timeline_mcp_list_validates_modes_limits_and_types_before_reading() {
+        let fixture = TimelineMcpProject::new();
+        for args in [
+            json!({"event_id": "tl-example", "pending": true}),
+            json!({"event_id": "tl-example", "topic_id": "topic-example"}),
+            json!({"event_id": "tl-example", "query": "Upload"}),
+            json!({"pending": true, "topic_id": "topic-example"}),
+            json!({"pending": true, "query": ""}),
+            json!({"limit": 0}),
+            json!({"limit": -1}),
+            json!({"limit": 1.5}),
+            json!({"limit": 51}),
+            json!({"limit": "5"}),
+            json!({"limit": null}),
+            json!({"pending": true, "limit": 21}),
+            json!({"pending": "true"}),
+            json!({"event_id": ""}),
+            json!({"topic_id": 42}),
+            json!({"topic_id": null}),
+            json!({"query": null}),
+            json!({"extra": true}),
         ] {
             assert!(
-                names.contains(&tool),
-                "{tool} should be advertised so the lane agent runs conflict review (spec 267)"
+                timeline_list(&fixture.server, &fixture.harness, args.clone()).is_err(),
+                "{args}"
             );
         }
-        let direct = tools
-            .as_array()
-            .expect("tools array")
-            .iter()
-            .find(|tool| tool.get("name").and_then(Value::as_str) == Some("timeline_record"))
-            .expect("timeline_record descriptor");
-        assert!(direct
-            .get("description")
-            .and_then(Value::as_str)
-            .is_some_and(|description| description.contains("current human message")));
-        assert!(direct
-            .get("description")
-            .and_then(Value::as_str)
-            .is_some_and(|description| description.contains("natural Thai")
-                && description.contains("Preserve `instruction_excerpt`")
-                && description.contains("Call timeline_list FIRST")
-                && description.contains("reuse the returned ID for every remaining event")));
+        assert_eq!(fixture.list(json!({}))["total_topics"], 0);
         assert_eq!(
-            direct.pointer("/inputSchema/properties/topic_id/type"),
-            Some(&Value::String("string".to_string()))
+            fixture.list(json!({"pending": true, "limit": 20}))["remaining_pending"],
+            0
         );
-        let suggestion = tools
-            .as_array()
-            .expect("tools array")
-            .iter()
-            .find(|tool| tool.get("name").and_then(Value::as_str) == Some("timeline_suggest"))
-            .expect("timeline_suggest descriptor");
-        assert!(suggestion
-            .get("description")
-            .and_then(Value::as_str)
-            .is_some_and(|description| description.contains("natural Thai")
-                && description.contains("Preserve `evidence_excerpt`")));
         assert_eq!(
-            direct
-                .pointer("/inputSchema/required")
-                .and_then(Value::as_array)
-                .map(Vec::len),
-            Some(4)
+            fixture.list(json!({"pending": false, "limit": 50}))["total_topics"],
+            0
         );
-        // spec 262: the read tool must be callable with no arguments at all —
-        // an orientation call the lane makes before it knows anything.
-        let lister = tools
-            .as_array()
-            .expect("tools array")
-            .iter()
-            .find(|tool| tool.get("name").and_then(Value::as_str) == Some("timeline_list"))
-            .expect("timeline_list descriptor");
-        assert!(lister.pointer("/inputSchema/required").is_none());
-        assert!(lister
-            .get("description")
-            .and_then(Value::as_str)
-            .is_some_and(|description| description.contains("read-only")
-                && description.contains("BEFORE the first timeline_record")
-                && description.contains("Titles are not identity")));
+        assert!(!fixture.project.join(".krypton/timeline").exists());
+    }
+
+    #[test]
+    fn timeline_mcp_handlers_require_a_local_project() {
+        let server = HookServer::new();
+        let harness = server.create_harness_memory(None);
+        let mut notified = false;
+        for result in [
+            timeline_record(
+                &server,
+                &harness,
+                "Remote",
+                timeline_mcp_record_args("ข้อกำหนด"),
+            ),
+            timeline_list(&server, &harness, json!({})),
+            timeline_merge(
+                &server,
+                &harness,
+                "Remote",
+                json!({"undo": true, "rationale": "จัดกลุ่มผิด"}),
+            ),
+            timeline_pending_resolve(
+                &server,
+                &harness,
+                "Remote",
+                json!({"pending_id": "tl-legacy", "outcome": "discard", "rationale": "ไม่มีหลักฐาน"}),
+                |_| notified = true,
+            ),
+            timeline_conflict_list(&server, &harness, json!({})),
+            timeline_conflict_record(
+                &server,
+                &harness,
+                "Remote",
+                json!({"event_a": "tl-a", "event_b": "tl-b", "verdict": "confirmed", "rationale": "ขัดกัน"}),
+            ),
+            timeline_conflict_checked(
+                &server,
+                &harness,
+                "Remote",
+                json!({"topic_id": "topic-a", "event_ids": ["tl-a"]}),
+            ),
+        ] {
+            assert!(result
+                .unwrap_err()
+                .contains("without a local project workspace"));
+        }
+        assert!(!notified);
+    }
+
+    #[test]
+    fn timeline_mcp_record_round_trips_evidence_and_deduplicates_without_human_instruction() {
+        let fixture = TimelineMcpProject::new();
+        let args = timeline_mcp_record_args("ต้องส่ง metadata");
+        let first = fixture.record(args.clone());
+        let retry = fixture.record(args.clone());
+        assert_eq!(first["event_id"], retry["event_id"]);
+        assert_eq!(retry["disposition"], "existing");
+        assert!(first["conflict_check"].is_string());
+        let detail = fixture.list(json!({"event_id": first["event_id"]}));
+        assert_eq!(detail["event"]["evidenceKind"], "user_statement");
+        assert_eq!(detail["event"]["evidenceExcerpt"], args["evidence_excerpt"]);
+        assert_eq!(detail["event"]["recordedBy"], "Agent");
+        assert_eq!(detail["event"]["recorderLane"], "Codex-test");
+        assert_eq!(detail["event"]["madeBy"], "Product owner");
+        assert_eq!(detail["event"]["rationale"], args["rationale"]);
+        assert!(detail["event"].get("instructionExcerpt").is_none());
+        let mut decision = timeline_mcp_record_args("เลือกตรวจข้อมูลก่อนส่ง");
+        decision["topic_id"] = first["topic_id"].clone();
+        decision["topic_title"] = json!("Upload validation");
+        decision["evidence_kind"] = json!("agent_decision");
+        decision["made_by"] = json!("Untrusted payload actor");
+        let saved = fixture.record(decision);
+        assert_eq!(saved["topic_id"], first["topic_id"]);
         assert_eq!(
-            lister.pointer("/inputSchema/properties/limit/maximum"),
-            Some(&json!(50))
+            fixture.list(json!({"event_id": saved["event_id"]}))["event"]["madeBy"],
+            "Codex-test"
         );
-        // spec 263: the only timeline tool that rewrites confirmed records. The
-        // authorizing instruction is the required field, not the topics.
-        let merger = tools
-            .as_array()
-            .expect("tools array")
-            .iter()
-            .find(|tool| tool.get("name").and_then(Value::as_str) == Some("timeline_merge"))
-            .expect("timeline_merge descriptor");
+        let mut old = args.clone();
+        old["instruction_excerpt"] = json!("Please remember");
+        assert!(timeline_record(&fixture.server, &fixture.harness, "Codex-test", old).is_err());
+        let mut missing = args;
+        missing.as_object_mut().unwrap().remove("evidence_kind");
+        assert!(timeline_record(&fixture.server, &fixture.harness, "Codex-test", missing).is_err());
+        assert_eq!(fixture.list(json!({}))["total_topics"], 1);
+    }
+
+    #[test]
+    fn timeline_mcp_pending_outcomes_return_canonical_events_and_remaining_counts() {
+        let fixture = TimelineMcpProject::new();
+        let original = fixture.seed_pending("tl-legacy-record", "ต้องส่ง metadata");
+        fixture.seed_pending("tl-legacy-duplicate", "ข้อมูลเดิม");
+        fixture.seed_pending("tl-legacy-discard", "อ้างว่าทำเสร็จโดยไม่มีหลักฐาน");
+        let pending = fixture.list(json!({"pending": true, "limit": 1}));
+        assert_eq!(pending["candidates"].as_array().unwrap().len(), 1);
+        assert_eq!(pending["remaining_pending"], 3);
+        assert_eq!(pending["truncated"], true);
+        assert!(pending["continuation"].is_string());
+        assert_eq!(pending["candidates"][0]["suggestedByLane"], "Legacy-lane");
+        let request = json!({
+            "pending_id": "tl-legacy-record", "outcome": "record",
+            "rationale": "หลักฐานรองรับข้อกำหนด", "record": timeline_mcp_record_args("ต้องส่ง metadata")
+        });
+        let (saved, notification) = fixture.resolve(request.clone());
+        assert_eq!(saved["event_id"], "tl-legacy-record");
         assert_eq!(
-            merger
-                .pointer("/inputSchema/required")
-                .and_then(Value::as_array)
-                .map(Vec::as_slice),
-            Some([json!("instruction_excerpt")].as_slice())
+            fixture.list(json!({"event_id": saved["event_id"]}))["event"]["suggestedByLane"],
+            "Legacy-lane"
         );
-        assert!(merger
-            .get("description")
-            .and_then(Value::as_str)
-            .is_some_and(|description| description
-                .contains("ONLY when the current human message")
-                && description.contains("Never merge because topics merely look similar")));
+        assert_eq!(saved["remaining_pending"], 2);
+        assert!(saved["conflict_check"].is_string());
+        assert!(saved["path"].is_string());
+        assert!(saved["topic_id"].is_string());
+        assert_eq!(
+            notification,
+            json!({"harnessId": fixture.harness, "pendingCount": 2})
+        );
+        assert_eq!(fixture.resolve(request).0["event_id"], saved["event_id"]);
+        let receipt = std::fs::read_to_string(
+            fixture
+                .project
+                .join(saved["resolution_path"].as_str().unwrap()),
+        )
+        .unwrap();
+        let receipt: Value = serde_json::from_str(&receipt).unwrap();
+        assert_eq!(receipt["original_candidate"], original);
+        let (duplicate, _) = fixture.resolve(json!({
+            "pending_id": "tl-legacy-duplicate", "outcome": "duplicate",
+            "rationale": "ตรงกับ event ที่อ่านแล้ว", "event_id": saved["event_id"]
+        }));
+        assert_eq!(duplicate["event_id"], saved["event_id"]);
+        assert_eq!(duplicate["remaining_pending"], 1);
+        let (discard, notification) = fixture.resolve(json!({
+            "pending_id": "tl-legacy-discard", "outcome": "discard", "rationale": "ไม่มีผลตรวจพบรองรับ"
+        }));
+        assert_eq!(discard["remaining_pending"], 0);
+        assert!(discard.get("conflict_check").is_none());
+        assert!(discard.get("continuation").is_none());
+        assert_eq!(notification["pendingCount"], 0);
+        assert_eq!(
+            fixture.list(json!({"pending": true}))["remaining_pending"],
+            0
+        );
+        assert_eq!(
+            fixture.list(json!({"topic_id": saved["topic_id"]}))["events"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn timeline_mcp_invalid_resolution_preserves_pending_and_emits_nothing() {
+        let fixture = TimelineMcpProject::new();
+        fixture.seed_pending("tl-invalid-resolution", "ข้อกำหนดเดิม");
+        let mut notified = false;
+        for args in [
+            json!({"outcome": "discard", "rationale": "เหตุผล", "extra": true}),
+            json!({"outcome": "record", "rationale": "เหตุผล"}),
+            json!({"outcome": "duplicate", "rationale": "เหตุผล", "event_id": "tl-missing"}),
+            json!({"outcome": "discard", "rationale": "เหตุผล", "event_id": "tl-missing"}),
+            json!({"outcome": "discard", "rationale": ""}),
+            json!({"outcome": "confirm", "rationale": "เหตุผล"}),
+        ] {
+            let mut args = args;
+            args["pending_id"] = json!("tl-invalid-resolution");
+            assert!(timeline_pending_resolve(
+                &fixture.server,
+                &fixture.harness,
+                "Codex-test",
+                args,
+                |_| notified = true,
+            )
+            .is_err());
+        }
+        assert!(!notified);
+        assert_eq!(
+            fixture.list(json!({"pending": true}))["remaining_pending"],
+            1
+        );
+    }
+
+    #[test]
+    fn timeline_mcp_merge_and_undo_keep_event_bytes_and_lane_rationale() {
+        let fixture = TimelineMcpProject::new();
+        let target = fixture.record(timeline_mcp_record_args("ต้องส่ง metadata"));
+        let mut other = timeline_mcp_record_args("ตรวจ metadata ก่อนส่ง");
+        other["topic_title"] = json!("Upload validation");
+        let source = fixture.record(other);
+        assert_ne!(source["topic_id"], target["topic_id"]);
+        let event_path = fixture.project.join(source["path"].as_str().unwrap());
+        let original = std::fs::read(&event_path).unwrap();
+        for args in [
+            json!({"from": source["topic_id"], "into": target["topic_id"]}),
+            json!({"undo": true, "rationale": "เหตุผล", "from": ""}),
+            json!({"undo": true, "rationale": "เหตุผล", "from": null}),
+            json!({"undo": true, "rationale": "เหตุผล", "instruction_excerpt": "human quote"}),
+        ] {
+            assert!(timeline_merge(&fixture.server, &fixture.harness, "Codex-test", args).is_err());
+        }
+        let merged = timeline_merge(&fixture.server, &fixture.harness, "Grouping-lane", json!({
+            "from": source["topic_id"], "into": target["topic_id"], "rationale": "หัวข้อเดียวกันจากหลักฐาน"
+        })).unwrap();
+        assert_eq!(merged["moved_events"], 1);
+        let manifest_path = fixture
+            .project
+            .join(merged["backup_path"].as_str().unwrap())
+            .join("manifest.json");
+        let read_manifest = || -> Value {
+            serde_json::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap()
+        };
+        assert_eq!(read_manifest()["merged_by_lane"], "Grouping-lane");
+        assert_eq!(read_manifest()["rationale"], "หัวข้อเดียวกันจากหลักฐาน");
+        assert!(read_manifest().get("instruction_excerpt").is_none());
+        assert_eq!(
+            fixture.list(json!({"event_id": source["event_id"]}))["event"]["topicId"],
+            target["topic_id"]
+        );
+        let undone = timeline_merge(
+            &fixture.server,
+            &fixture.harness,
+            "Undo-lane",
+            json!({
+                "undo": true, "rationale": "คืนกลุ่มเดิมเพื่อตรวจประวัติ"
+            }),
+        )
+        .unwrap();
+        assert_eq!(undone["restored_events"], 1);
+        assert_eq!(std::fs::read(&event_path).unwrap(), original);
+        assert_eq!(read_manifest()["undone_by_lane"], "Undo-lane");
+        assert_eq!(read_manifest()["undo_rationale"], "คืนกลุ่มเดิมเพื่อตรวจประวัติ");
+    }
+
+    #[test]
+    fn timeline_mcp_disabled_intake_still_resolves_legacy_and_counts_malformed_pending() {
+        let fixture = TimelineMcpProject::new();
+        fixture.seed_pending("tl-legacy-disabled", "ข้อกำหนดเดิม");
+        std::fs::write(
+            fixture
+                .project
+                .join(".krypton/timeline/pending/tl-malformed.md"),
+            "not frontmatter",
+        )
+        .unwrap();
+        crate::timeline::set_enabled_project(&fixture.project, false).unwrap();
+        assert!(timeline_record(
+            &fixture.server,
+            &fixture.harness,
+            "Codex-test",
+            timeline_mcp_record_args("ข้อกำหนดใหม่")
+        )
+        .is_err());
+        let (saved, notification) = fixture.resolve(json!({
+            "pending_id": "tl-legacy-disabled", "outcome": "record", "rationale": "หลักฐานเดิมครบ",
+            "record": timeline_mcp_record_args("ข้อกำหนดเดิม")
+        }));
+        assert_eq!(saved["remaining_pending"], 1);
+        assert_eq!(notification["pendingCount"], 1);
+        let listing = fixture.list(json!({"pending": true}));
+        assert_eq!(listing["remaining_pending"], 1);
+        assert!(listing["candidates"].as_array().unwrap().is_empty());
+        assert!(!listing["diagnostics"].as_array().unwrap().is_empty());
+        assert!(listing["continuation"].is_string());
     }
 
     #[test]
@@ -10519,7 +10941,7 @@ mod tests {
             "review_new",
             "issue_progress",
             "ticket_note",
-            "timeline_suggest",
+            "timeline_pending_resolve",
             "timeline_record",
             "timeline_list",
             "timeline_merge",

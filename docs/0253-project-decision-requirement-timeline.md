@@ -1,8 +1,30 @@
 # Project Decision & Requirement Timeline — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented historically; capture workflow superseded by [0316](./0316-llm-managed-timeline.md)
 > Date: 2026-09-18
 > Milestone: ACP Harness — project provenance
+
+## Current contract — spec 0316
+
+The working lane now selects and records evidence-backed events itself. `timeline_record`
+requires `evidence_kind` (`user_statement`, `observed_outcome`, or `agent_decision`) and
+`evidence_excerpt`, not a current-human persistence instruction. New records identify the recorder
+as `Agent`; agent decisions identify the calling lane as decision maker. Legacy human recorder
+and authorizing-instruction provenance remain readable without rewriting old events.
+
+The capture sheet, pending badge, `#timeline add` / `review`, native merge commands, and their
+Tauri write/read-form APIs have been removed. Current commands are open/topic shorthand, trace,
+conflicts, and auto; the only native Timeline IPCs are `timeline_settings`, `timeline_set_enabled`,
+and `timeline_pending_count`. Recording, grouping, and legacy intake resolution use MCP tools.
+The read-only browser, evidence/authority distinction, private append-only history, additive
+supersession, and Thai-prose/verbatim-evidence principles remain. Publishing is still explicit.
+
+# Historical implementation — not the current contract
+
+Everything below preserves this spec's original design and subsequent pre-0316 amendments,
+including command tables, API examples, constraints, and trailing scope notes. References to
+manual capture, human confirmation, suggestion review, and removed source files describe the
+historical implementation only; use [0316](./0316-llm-managed-timeline.md) for live behavior.
 
 ## Problem
 

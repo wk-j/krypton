@@ -1216,8 +1216,7 @@ export class AcpHarnessView implements ContentView {
    *  (acp_save/load_issue_bindings) and rehydrated on register. */
   private readonly issueBindings = new Map<string, IssueBinding>();
   private readonly ticketCtl = new HarnessTicketController(this.ticketHost());
-  /** spec 253/266: keyboard-first timeline sheet (capture/review or conflicts). */
-  /** spec 254: project-wide pending suggestion count and default-on setting. */
+  /** Project-local autonomous Timeline settings and legacy migration state. */
   private readonly timelineCtl = new HarnessTimelineController(this.timelineHost());
   /** spec 276: `#review pass` — harness-sequenced review → fix → re-review rounds. */
   private readonly reviewLoopCtl = new HarnessReviewLoopController(this.reviewLoopHost());
@@ -4338,7 +4337,6 @@ export class AcpHarnessView implements ContentView {
       this.handleHandoffPickerKey(e);
       return true;
     }
-    if (this.timelineCtl.capture) return this.timelineCtl.capture.handleKeyDown(e);
     // spec 194: `#ticket` picker modal — owns typing/arrows/Enter/Esc while
     // open, regardless of composer/transcript focus. Unclaimed combos (e.g.
     // Cmd+W) fall through so app-level shortcuts keep working.
@@ -5050,7 +5048,7 @@ export class AcpHarnessView implements ContentView {
     }
     const lane = this.activeLane();
     if (!lane) return false;
-    if (this.helpOpen || this.memoryDrawerOpen || this.timelineCtl.capture) {
+    if (this.helpOpen || this.memoryDrawerOpen) {
       this.flashChip('close overlay to stage capture');
       return true;
     }
@@ -5687,7 +5685,6 @@ export class AcpHarnessView implements ContentView {
       || this.modelPickerOpen
       || this.handoffPicker !== null
       || this.sessionPicker.open
-      || this.timelineCtl.capture !== null
       || this.triageOverlayOpen
       || this.reviewMatrixOverlayOpen
       || this.reviewPriorityOverlayOpen
@@ -6222,12 +6219,6 @@ export class AcpHarnessView implements ContentView {
     this.element.addEventListener('click', (e: MouseEvent) => {
       const target = e.target;
       if (!(target instanceof Element)) return;
-      if (target.closest('[data-timeline-review]')) {
-        e.preventDefault();
-        const lane = this.activeLane();
-        if (lane) void this.timelineCtl.openSuggestionReview(lane);
-        return;
-      }
       if (target.closest('[data-anno-send]')) {
         e.preventDefault();
         this.sendAnnotationBatch();
@@ -6735,8 +6726,8 @@ export class AcpHarnessView implements ContentView {
     await this.refreshArtifacts();
     await this.refreshIssueBindings();
     await this.ticketCtl.refreshActiveTicket();
-    await this.timelineCtl.refreshSuggestions();
-    await this.timelineCtl.refreshSuggestionSettings();
+    await this.timelineCtl.refreshPendingCount();
+    await this.timelineCtl.refreshSettings();
   }
 
   // ─── spec 178: GitHub issue fixing ────────────────────────────────────────
@@ -8623,7 +8614,8 @@ export class AcpHarnessView implements ContentView {
     const timeline = !this.remoteRuntimeId && lane.backendId !== 'pi-acp';
     return {
       timeline,
-      timelineSuggest: timeline && this.timelineCtl.automaticSuggestions,
+      timelineAutomaticRecording: timeline && this.timelineCtl.automaticRecording,
+      timelinePendingCount: timeline ? this.timelineCtl.pendingCount : 0,
       peers: this.lanes.length > 1,
       lessons: lessonsEnabled() && lane.backendId !== 'pi-acp',
     };
@@ -9029,7 +9021,7 @@ export class AcpHarnessView implements ContentView {
     const item = this.appendPermissionTranscript(lane, permission, payload);
     permission.transcriptItem = item;
     const harnessToolName = harnessAutoAllowToolName(permission);
-    if (harnessToolName && pickPermissionOption(permission.options, 'accept')) {
+    if (harnessToolName && (pickPermissionOption(permission.options, 'accept') || harnessToolFamily(harnessToolName) === 'timeline')) {
       void this.resolveHarnessPermission(lane, permission, harnessToolName);
       return;
     }
@@ -9217,7 +9209,18 @@ export class AcpHarnessView implements ContentView {
   private async resolveHarnessPermission(lane: HarnessLane, permission: HarnessPermission, toolName: string): Promise<void> {
     if (!lane.client) return;
     const option = pickPermissionOption(permission.options, 'accept');
-    if (!option) return;
+    if (!option) {
+      const diagnostic = `Timeline tool ${toolName} cannot run: adapter supplied no accept permission option`;
+      this.updatePermissionDecision(permission, 'failed', 'Timeline unavailable', diagnostic);
+      this.appendTranscript(lane, 'system', diagnostic);
+      try {
+        await lane.client.respondPermission(permission.requestId, null);
+      } catch (e) {
+        this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
+      }
+      this.render();
+      return;
+    }
     const family = harnessToolFamily(toolName);
     try {
       await lane.client.respondPermission(permission.requestId, option.optionId);
@@ -13086,7 +13089,6 @@ export class AcpHarnessView implements ContentView {
       pendingPeers: this.coordinator.pendingPeersFor(lane.id),
       isOrchestrator: lane.id === this.orchestratorLaneId,
       projectDir: this.projectDir,
-      timelinePending: active && !this.remoteRuntimeId ? this.timelineCtl.pendingCount : 0,
       reviewThread: canReview
         ? {
             count: lane.sessionId ? this.reviewThreadCounts.get(lane.sessionId) ?? 0 : 0,
@@ -16064,10 +16066,7 @@ export class AcpHarnessView implements ContentView {
       get harnessMemoryId() { return view.harnessMemoryId; },
       get remoteRuntimeId() { return view.remoteRuntimeId; },
       flashChip: (text) => view.flashChip(text),
-      invalidate: (region) => view.invalidate(region),
-      appendTranscript: (lane, kind, text) => view.appendTranscript(lane, kind, text),
       enqueueSystemPrompt: (lane, text, drain, label) => view.enqueueSystemPrompt(lane, text, drain, label),
-      syncOrchestratorConsoleVisibility: () => view.syncOrchestratorConsoleVisibility(),
     };
   }
 

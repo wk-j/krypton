@@ -194,8 +194,8 @@ function buildSections(): readonly HelpSection[] {
       { term: '#bg', desc: 'List this lane’s background shell tasks' },
       { term: '#panels [hide | show | toggle]', desc: 'Hide or restore persistent Harness panels' },
       {
-        term: '#timeline [open | add | review | auto | trace]',
-        desc: 'บันทึก ตรวจทานข้อเสนอ เปิดดู หรือไล่ประวัติ project ในเครื่อง',
+        term: '#timeline [open | trace | conflicts | auto]',
+        desc: 'เปิดดูหรือไล่ประวัติ ตรวจข้อขัดกัน และตั้งค่าบันทึกอัตโนมัติของ project ในเครื่อง',
       },
       { term: '#queue [clear | edit N]', desc: 'Manage prompts queued while the lane is busy' },
       { term: '#unqueue [N]', desc: 'Remove the last (or Nth) queued prompt' },

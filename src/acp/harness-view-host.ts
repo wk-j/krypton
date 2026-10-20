@@ -69,15 +69,12 @@ export interface HarnessLiveVoiceHost extends HarnessViewHost {
 export interface HarnessTimelineHost extends HarnessViewHost {
   readonly harnessMemoryId: string | null;
   readonly remoteRuntimeId: string | null;
-  invalidate(region: HarnessRegion): void;
-  appendTranscript(lane: HarnessLane, kind: HarnessTranscriptItem['kind'], text: string): void;
   enqueueSystemPrompt(
     lane: HarnessLane,
     text: string,
     drain?: CoordinatorDrainContext,
     label?: string,
   ): Promise<boolean>;
-  syncOrchestratorConsoleVisibility(): void;
 }
 
 /** A `#review` subject collected from the lane's worktree, or why it could not be. */

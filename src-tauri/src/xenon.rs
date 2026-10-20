@@ -556,9 +556,9 @@ pub fn collect(
     Ok(found)
 }
 
-/// Confirmed timeline events publish one-for-one as immutable source documents.
-/// Pending and dismissed suggestions live outside the confirmed event directory,
-/// so the timeline scanner intentionally never returns them.
+/// Recorded timeline events publish one-for-one as immutable source documents.
+/// Legacy pending candidates and their resolution receipts are outside the
+/// event directory, so the timeline scanner never publishes them.
 pub fn collect_timeline(
     cwd: &Path,
     slug_filter: Option<&str>,
@@ -605,6 +605,9 @@ pub fn collect_timeline(
                     "relatedEvent": event.related_event,
                     "suggestedByLane": event.suggested_by_lane,
                     "suggestionId": event.suggestion_id,
+                    "evidenceKind": event.evidence_kind,
+                    "evidenceExcerpt": event.evidence_excerpt,
+                    "instructionExcerpt": event.instruction_excerpt,
                     "lane": event.recorder_lane,
                 }),
                 files: Vec::new(),
@@ -636,7 +639,7 @@ pub fn collect_timeline(
 
     if let Some(want) = slug_filter {
         if collected.resources.is_empty() && collected.failures.is_empty() {
-            return Err(format!("no confirmed timeline event for {want}"));
+            return Err(format!("no recorded timeline event for {want}"));
         }
     }
     Ok(collected)
@@ -2194,7 +2197,7 @@ mod tests {
     }
 
     #[test]
-    fn timeline_collection_publishes_confirmed_events_and_surfaces_bad_files() {
+    fn timeline_collection_publishes_recorded_events_and_surfaces_bad_files() {
         let dir = std::env::temp_dir().join(format!(
             "krypton-xenon-timeline-{}-{}",
             std::process::id(),
@@ -2204,23 +2207,26 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        let event = crate::timeline::record_project(
+        let event = crate::timeline::record_direct_project(
             &dir,
-            crate::timeline::TimelineRecordRequest {
-                topic_id: "topic-xenon".into(),
+            "Codex-1",
+            crate::timeline::TimelineDirectRecordRequest {
+                topic_id: None,
                 topic_title: "Xenon timeline".into(),
-                summary: "Publish confirmed timeline events".into(),
-                occurred_at: "2026-09-20T10:00:00+07:00".into(),
+                summary: "Publish recorded timeline events".into(),
                 made_by: "Current user".into(),
+                evidence_kind: crate::timeline::TimelineEvidenceKind::AgentDecision,
+                evidence_excerpt: "เก็บประวัติพร้อมหลักฐานเพื่อให้อ่านย้อนหลังได้".into(),
+                occurred_at: Some("2026-09-20T10:00:00+07:00".into()),
                 rationale: "Share durable project history".into(),
                 impact: "Readers can browse it remotely".into(),
                 source_ref: Some("docs/0259-timeline-xenon-publishing.md".into()),
                 relation: None,
                 related_event: None,
-                recorder_lane: "Codex-1".into(),
             },
         )
-        .unwrap();
+        .unwrap()
+        .event;
         let pending = dir.join(".krypton/timeline/pending");
         std::fs::create_dir_all(&pending).unwrap();
         std::fs::write(pending.join("pending.md"), "not confirmed").unwrap();
@@ -2236,8 +2242,13 @@ mod tests {
         let resource = &found.resources[0];
         assert_eq!(resource.manifest.slug, event.id);
         assert_eq!(resource.manifest.kind, "timeline");
-        assert_eq!(resource.manifest.meta["topicId"], "topic-xenon");
-        assert_eq!(resource.manifest.meta["madeBy"], "Current user");
+        assert_eq!(resource.manifest.meta["madeBy"], "Codex-1");
+        assert_eq!(resource.manifest.meta["recordedBy"], "Agent");
+        assert_eq!(resource.manifest.meta["evidenceKind"], "agent_decision");
+        assert_eq!(
+            resource.manifest.meta["evidenceExcerpt"],
+            "เก็บประวัติพร้อมหลักฐานเพื่อให้อ่านย้อนหลังได้"
+        );
         assert_eq!(
             resource.manifest.meta["occurredAtMs"],
             1_789_873_200_000_i64

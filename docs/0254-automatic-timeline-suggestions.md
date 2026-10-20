@@ -1,8 +1,33 @@
 # Automatic Timeline Suggestions — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented historically; suggestion workflow superseded by [0316](./0316-llm-managed-timeline.md)
 > Date: 2026-09-18
 > Milestone: ACP Harness — project provenance
+
+## Current contract — spec 0316
+
+`timeline_suggest`, new pending creation, human confirm/dismiss APIs, the capture/review sheet,
+and the pending badge are retired. The working lane records evidence-backed durable events with
+`timeline_record`; there is no once-per-turn cap, current-human authorization requirement, or
+Timeline approval queue. The browser remains read-only and events remain append-only.
+
+Legacy candidates are an internal backlog, not a human task. The lane reads
+`timeline_list { pending: true }` (default 5, maximum 20), inspects evidence and event details,
+and uses `timeline_pending_resolve` for `record`, `duplicate`, or `discard`, with a rationale.
+Terminal receipts preserve the original candidate and acting lane/time; retries are idempotent.
+Unreadable candidates remain counted with diagnostics. This happens in ordinary write-capable
+working turns, never a sidecar or extra model turn; explicit read-only scope defers maintenance.
+This describes the migration mechanism, not a claim that any live queue has been drained.
+
+Settings schema 2 uses `automaticRecording`; schema 1 `automaticSuggestions` migrates while
+preserving `false`. Default is on. Off blocks new recording, not legacy resolution. Native IPCs
+are now only `timeline_settings`, `timeline_set_enabled`, and `timeline_pending_count`.
+
+# Historical implementation — not the current contract
+
+All sections below, including tables, examples, validation records, and final scope notes,
+document the pre-0316 suggestion/approval implementation. Their human-only rules and old
+settings/tool/command names are superseded, not current requirements.
 
 ## Problem
 
@@ -70,11 +95,12 @@ user request may promote a matching pending item without opening the review shee
 | `src-tauri/src/lib.rs` | Register suggestion/settings Tauri commands |
 | `src/acp/timeline.ts` | Suggestion/settings types and expanded `#timeline` grammar |
 | `src/acp/timeline.test.ts` | Grammar, validation, and suggestion-state tests |
-| `src/acp/timeline-capture.ts` | Prefilled review mode with evidence, confirm, and dismiss actions |
+| `src/acp/timeline-capture.ts` | Prefilled review mode with evidence, confirm, and dismiss actions; imports the component-owned form stylesheet on the runtime path |
 | `src/acp/acp-harness-view.ts` | Tool instruction, event subscription, pending count, review/auto command dispatch |
 | `src/acp/acp-harness-view.test.ts` | Lane-context, notification, command, and review-flow tests |
 | `src/acp/harness-permission-scan.ts` and tests | Auto-approve only the built-in `timeline_suggest` tool |
-| `src/styles/acp-harness.css` | Pending badge and suggestion evidence treatment |
+| `src/acp/components/timeline-capture/timeline-capture.css` | Capture/review overlay, form layout, controls, and suggestion evidence treatment; loaded by both the runtime form and the catalog component |
+| `src/acp/components/lane-shell/lane-shell.css` | Pending-suggestion badge |
 | `docs/0253-project-decision-requirement-timeline.md` | Cross-reference the automatic proposal extension |
 | `docs/0002-functional-requirements.md` | Add automatic suggestion plus confirmation requirement |
 | `docs/0004-architecture.md`, `docs/0005-data-flow.md` | Record MCP, persistence, notification, and promotion flows |

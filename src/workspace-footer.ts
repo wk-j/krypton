@@ -16,7 +16,6 @@ import { centerSegments, leftSegments } from './workspace-footer-segments';
 import { FooterGit } from './workspace-footer-git';
 import { FooterAttention } from './workspace-footer-attention';
 import { FooterPriority, FooterReviews } from './workspace-footer-review-gauges';
-import { FooterTypeSafe } from './workspace-footer-typesafe';
 import { FooterLink } from './workspace-footer-link';
 import { FooterProgramStatus } from './workspace-footer-program-status';
 import { FooterMusic, type MusicFooterSegment } from './workspace-footer-music';
@@ -46,7 +45,6 @@ export class WorkspaceFooter {
   private readonly programStatus = new FooterProgramStatus();
   private readonly reviews = new FooterReviews();
   private readonly priority = new FooterPriority();
-  private readonly typesafe = new FooterTypeSafe();
   private readonly link = new FooterLink();
   private readonly music = new FooterMusic();
   private readonly git: FooterGit;
@@ -95,11 +93,9 @@ export class WorkspaceFooter {
     this.hintEl = document.createElement('span');
     this.hintEl.className = 'krypton-workspace-footer__segment krypton-workspace-footer__hint';
 
-    // TypeSafe activity and the backend link lead the global cluster, at its
-    // outer edge and far enough from the focus-scoped segments that both read
-    // as properties of the app/machine, not the pane.
+    // The backend link leads the global cluster, separate from focus-scoped
+    // segments so it reads as a property of the app rather than the pane.
     this.rightEl.append(
-      this.typesafe.el,
       this.link.el,
       this.priority.el,
       this.reviews.el,
@@ -190,11 +186,6 @@ export class WorkspaceFooter {
       this.link.render(this.density === 'detail');
     });
 
-    this.bus.onSignal({ kind: 'system:typesafe-metrics' }, (s) => {
-      this.typesafe.metrics = s.value;
-      this.typesafe.render(this.density === 'detail');
-    });
-
     this.timer = setInterval(() => {
       if (this.density === 'detail') this.refresh('timer');
     }, 1000);
@@ -233,11 +224,6 @@ export class WorkspaceFooter {
     this.density = this.density === 'compact' ? 'detail' : 'compact';
     this.root.dataset.density = this.density;
     this.refresh('config');
-  }
-
-  setTypeSafeEnabled(enabled: boolean): void {
-    this.typesafe.enabled = enabled;
-    this.typesafe.render(this.density === 'detail');
   }
 
   setMusicSegment(segment: MusicFooterSegment | null): void {
@@ -312,7 +298,6 @@ export class WorkspaceFooter {
     this.hintEl.setAttribute('aria-label', hint);
     fillHint(this.hintEl, hint);
     const detail = this.density === 'detail';
-    this.typesafe.render(detail);
     this.link.render(detail);
     this.priority.render();
     this.reviews.render();

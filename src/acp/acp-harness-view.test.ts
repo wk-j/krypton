@@ -102,6 +102,8 @@ import { HarnessDictationController, type ActiveDictationSession } from './harne
 import type { HarnessDictationHost } from './harness-view-host';
 import { HarnessTimelineController } from './harness-timeline-controller';
 import { HarnessTicketController } from './harness-ticket-controller';
+import { renderToolIndex } from './lane-context';
+import type { LaneToolGates } from './lane-context';
 
 // Spec 301: the behaviour tests below cross exactly two module boundaries —
 // the tauri bridge and the project MCP loader. `importOriginal` keeps every
@@ -1515,55 +1517,55 @@ describe('ACP harness auto-allow permission detection', () => {
     }
   });
 
-  it('auto-allows only the exact built-in timeline tools', () => {
-    expect(harnessAutoAllowToolName(permissionFor({
-      title: 'mcp__krypton_harness_bus__timeline_suggest',
-      rawInput: {
-        toolName: 'mcp__krypton_harness_bus__timeline_suggest',
-        arguments: { topic_title: 'Auth', summary: 'Use passkeys' },
-      },
-    }))).toBe('timeline_suggest');
-    expect(harnessAutoAllowToolName(permissionFor({
-      title: 'mcp__krypton_harness_bus__timeline_record',
-      rawInput: {
-        toolName: 'mcp__krypton_harness_bus__timeline_record',
-        arguments: { topic_title: 'Auth', summary: 'Use passkeys' },
-      },
-    }))).toBe('timeline_record');
-    // spec 262: the read-only lister must not cost a prompt, or lanes go back
-    // to guessing a fresh topic every session.
-    expect(harnessAutoAllowToolName(permissionFor({
-      title: 'mcp__krypton_harness_memory__timeline_list',
-      rawInput: {
-        toolName: 'mcp__krypton_harness_memory__timeline_list',
-        arguments: { limit: 20 },
-      },
-    }))).toBe('timeline_list');
-    // spec 267: conflict review is agent-run end to end, so none of its tools
-    // may stop for a human confirmation.
-    for (const name of ['timeline_conflict_list', 'timeline_conflict_record', 'timeline_conflict_checked']) {
+  it('auto-allows every exact built-in Timeline tool, including merge and legacy resolution', () => {
+    for (const name of [
+      'timeline_record', 'timeline_list', 'timeline_merge', 'timeline_pending_resolve',
+      'timeline_conflict_list', 'timeline_conflict_record', 'timeline_conflict_checked',
+    ]) {
       expect(harnessAutoAllowToolName(permissionFor({
-        title: `mcp__krypton_harness_memory__${name}`,
-        rawInput: { toolName: `mcp__krypton_harness_memory__${name}`, arguments: {} },
+        title: `mcp__krypton_harness_bus__${name}`,
+        rawInput: { toolName: `mcp__krypton_harness_bus__${name}`, arguments: {} },
       }))).toBe(name);
+      expect(harnessAutoAllowToolName(permissionFor({
+        title: name, rawInput: { name, server: 'third-party-tools' },
+      }))).toBeNull();
     }
-    // spec 263: timeline_merge rewrites confirmed records, so it stays OUT of
-    // the built-in allow set and asks the human once.
+    for (const name of ['timeline_suggest', 'timeline_confirm', 'timeline_record_all', 'timeline_merge-extra', 'evil__timeline_record']) {
+      expect(harnessAutoAllowToolName(permissionFor({
+        title: name, rawInput: { name, server: 'krypton-harness-bus' },
+      }))).toBeNull();
+    }
+  });
+
+  it('uses adapter Timeline identities without trusting raw arguments or server lookalikes', () => {
+    for (const rawInput of [
+      { name: 'timeline_merge', server: 'not-krypton-harness-bus' },
+      { name: 'timeline_merge', server: 'krypton-harness-bus-foreign' },
+      { name: 'timeline_pending_resolve', server: 'third-party-tools', arguments: { note: 'krypton-harness-memory' } },
+      { name: 'timeline_merge', arguments: { server: 'krypton-harness-memory' } },
+      { name: 'timeline_merge', serverUrl: 'https://third-party.example/mcp/harness/h1/lane/l1' },
+      { name: 'timeline_merge', server: 'krypton-harness-bus' },
+    ]) {
+      expect(harnessAutoAllowToolName(permissionFor({ title: rawInput.name, rawInput }))).toBeNull();
+    }
     expect(harnessAutoAllowToolName(permissionFor({
-      title: 'mcp__krypton_harness_memory__timeline_merge',
-      rawInput: {
-        toolName: 'mcp__krypton_harness_memory__timeline_merge',
-        arguments: { from: 'topic-a', into: 'topic-b' },
-      },
+      title: 'mcp__third_party__timeline_merge',
+      rawInput: { name: 'mcp__krypton_harness_bus__timeline_merge' },
     }))).toBeNull();
     expect(harnessAutoAllowToolName(permissionFor({
-      title: 'timeline_confirm',
-      rawInput: { name: 'timeline_confirm', server: 'krypton-harness-bus' },
+      title: 'Run external tool',
+      rawInput: { name: 'mcp__krypton_harness_bus__timeline_merge', server: 'krypton-harness-bus' },
     }))).toBeNull();
     expect(harnessAutoAllowToolName(permissionFor({
-      title: 'timeline_record_all',
-      rawInput: { name: 'timeline_record_all', server: 'krypton-harness-bus' },
-    }))).toBeNull();
+      title: 'mcp__krypton_harness_bus__timeline_merge',
+      rawInput: { name: 'timeline_merge', server: 'third-party-tools' },
+    }))).toBe('timeline_merge');
+    const serverIdentity = { title: 'timeline_merge', server: 'krypton-harness-bus' };
+    expect(harnessAutoAllowToolName(permissionFor(serverIdentity))).toBe('timeline_merge');
+    const endpointIdentity = {
+      title: 'timeline_list', serverUrl: 'http://127.0.0.1:43123/mcp/harness/h1/lane/l1',
+    };
+    expect(harnessAutoAllowToolName(permissionFor(endpointIdentity))).toBe('timeline_list');
   });
 
   it('auto-allows the built-in local ticket progress tool', () => {
@@ -1793,6 +1795,155 @@ describe('ACP harness auto-allow permission detection', () => {
       ],
     ))).toBeNull();
   });
+});
+
+describe('Timeline permission execution without human gates', () => {
+  type PermissionView = {
+    addPermission(lane: HarnessLane, requestId: number, toolCall: ToolCall, options: PermissionOption[]): void;
+  };
+  // Exercise the private production path with explicit collaborator doubles.
+  const prototype = AcpHarnessView.prototype as unknown as PermissionView;
+  const addPermission = prototype.addPermission;
+
+  function setup() {
+    const respondPermission = vi.fn(async () => {});
+    const lane = { client: { respondPermission }, pendingPermissions: [], status: 'busy' } as unknown as HarnessLane;
+    const target = viewDouble({
+      describePermission: vi.fn(() => ({})),
+      appendPermissionTranscript: vi.fn(() => ({})),
+      updatePermissionDecision: vi.fn(),
+      appendTranscript: vi.fn(),
+      setLaneStatus: vi.fn(),
+      render: vi.fn(),
+      refreshOrchestratorConsole: vi.fn(),
+      matchArtifactWriteForGrant: vi.fn(() => null),
+      matchReviewWriteForGrant: vi.fn(() => null),
+      liveVoiceCtl: { onPermissionRequested: vi.fn() },
+    });
+    return { lane, target, respondPermission };
+  }
+
+  it.each(['timeline_record', 'timeline_merge', 'timeline_pending_resolve'])(
+    'accepts built-in %s without pausing the lane',
+    async (name) => {
+      const { lane, target, respondPermission } = setup();
+      const permission = permissionFor({ title: `mcp__krypton_harness_bus__${name}` }, [
+        { optionId: 'once', kind: 'allow_once', name: 'Allow' },
+      ]);
+      addPermission.call(target, lane, 7, permission.toolCall, permission.options);
+      await Promise.resolve();
+      expect(respondPermission).toHaveBeenCalledWith(7, 'once');
+      expect(lane.pendingPermissions).toEqual([]);
+      expect(target.setLaneStatus).not.toHaveBeenCalled();
+      expect(target.liveVoiceCtl.onPermissionRequested).not.toHaveBeenCalled();
+      expect(target.updatePermissionDecision).toHaveBeenCalledWith(expect.anything(), 'auto_allowed', expect.any(String), expect.any(String));
+      expect(target.render).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(['timeline_record', 'timeline_merge', 'timeline_pending_resolve'])(
+    'runs Junie-style built-in %s without handing the decision to the human',
+    async (name) => {
+      const { lane, target, respondPermission } = setup();
+      const permission = permissionFor({ title: 'Allow running MCP?', kind: 'other' }, [
+        { optionId: 'once', kind: 'allow_once', name: 'Yes' },
+        { optionId: 'always', kind: 'allow_always', name: `Always allow ("krypton-harness-memory:${name}")` },
+      ]);
+      addPermission.call(target, lane, 10, permission.toolCall, permission.options);
+      await Promise.resolve();
+      expect(respondPermission).toHaveBeenCalledWith(10, 'once');
+      expect(lane.pendingPermissions).toEqual([]);
+      expect(target.setLaneStatus).not.toHaveBeenCalled();
+      expect(target.liveVoiceCtl.onPermissionRequested).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['timeline_record', 'timeline_merge', 'timeline_pending_resolve'])(
+    'cancels built-in %s with a diagnostic if the adapter has no accept option',
+    async (name) => {
+      const { lane, target, respondPermission } = setup();
+      const permission = permissionFor({ title: `mcp__krypton_harness_bus__${name}` }, [
+        { optionId: 'reject', kind: 'reject_once', name: 'Reject' },
+      ]);
+      addPermission.call(target, lane, 8, permission.toolCall, permission.options);
+      await Promise.resolve();
+      expect(respondPermission).toHaveBeenCalledWith(8, null);
+      expect(lane.pendingPermissions).toEqual([]);
+      expect(target.setLaneStatus).not.toHaveBeenCalled();
+      expect(target.liveVoiceCtl.onPermissionRequested).not.toHaveBeenCalled();
+      expect(target.updatePermissionDecision).toHaveBeenCalledWith(expect.anything(), 'failed', expect.any(String), expect.any(String));
+      expect(target.appendTranscript).toHaveBeenCalledWith(lane, 'system', expect.stringContaining(name));
+      expect(target.render).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(['third-party-tools', 'not-krypton-harness-bus', 'krypton-harness-memory-other'])(
+    'preserves the general permission queue for the third-party identity %s',
+    (server) => {
+      const { lane, target, respondPermission } = setup();
+      const permission = permissionFor({
+        title: 'timeline_merge', content: [{ type: 'content' }],
+        rawInput: { name: 'timeline_merge', server, arguments: { note: 'krypton-harness-memory' } },
+      }, [{ optionId: 'once', kind: 'allow_once', name: 'Allow' }]);
+      addPermission.call(target, lane, 9, permission.toolCall, permission.options);
+      expect(respondPermission).not.toHaveBeenCalled();
+      expect(lane.pendingPermissions).toHaveLength(1);
+      expect(target.setLaneStatus).toHaveBeenCalledWith(lane, 'needs_permission');
+      expect(target.liveVoiceCtl.onPermissionRequested).toHaveBeenCalledOnce();
+    },
+  );
+});
+
+describe('Timeline ordinary lane policy delivery', () => {
+  type PolicyView = {
+    laneToolGates(lane: HarnessLane): LaneToolGates | null;
+    composeLeadingContext(lane: HarnessLane): string;
+  };
+  // Exercise policy delivery through the production view methods.
+  const prototype = AcpHarnessView.prototype as unknown as PolicyView;
+
+  function setup(remoteRuntimeId: string | null = null, backendId = 'claude') {
+    const lane = { displayName: 'Claude-1', backendId, policyDelivery: null } as HarnessLane;
+    const timelineCtl = { automaticRecording: false, pendingCount: 24 };
+    const target = viewDouble({
+      harnessMemoryId: 'h1', harnessMemoryPort: 34123, remoteRuntimeId,
+      lanes: [lane], timelineCtl,
+      renderLanePolicy: (): string => '',
+    });
+    target.renderLanePolicy = () => {
+      const gates = prototype.laneToolGates.call(target, lane);
+      return gates ? renderToolIndex(gates) : '';
+    };
+    return { lane, timelineCtl, target };
+  }
+
+  it('uses local settings/count and refreshes policy only on the next ordinary turn', () => {
+    const { lane, timelineCtl, target } = setup();
+    expect(prototype.laneToolGates.call(target, lane)).toMatchObject({
+      timeline: true, timelineAutomaticRecording: false, timelinePendingCount: 24,
+    });
+    prototype.composeLeadingContext.call(target, lane);
+    const firstDelivery = lane.policyDelivery;
+    expect(firstDelivery?.turnsSince).toBe(0);
+    prototype.composeLeadingContext.call(target, lane);
+    expect(lane.policyDelivery?.turnsSince).toBe(1);
+    timelineCtl.pendingCount = 23;
+    expect(lane.policyDelivery?.turnsSince).toBe(1);
+    prototype.composeLeadingContext.call(target, lane);
+    expect(lane.policyDelivery?.turnsSince).toBe(0);
+    expect(lane.policyDelivery?.hash).not.toBe(firstDelivery?.hash);
+  });
+
+  it.each([['remote-1', 'claude'], [null, 'pi-acp']])(
+    'keeps Timeline tools and local migration out of remote/Pi lanes',
+    (remoteRuntimeId, backendId) => {
+      const { lane, target } = setup(remoteRuntimeId, backendId!);
+      expect(prototype.laneToolGates.call(target, lane)).toMatchObject({
+        timeline: false, timelineAutomaticRecording: false, timelinePendingCount: 0,
+      });
+      expect(prototype.composeLeadingContext.call(target, lane)).not.toContain('timeline_');
+    },
+  );
 });
 
 describe('ACP contextual lane peek ranking', () => {
@@ -3800,15 +3951,12 @@ describe('#draw dispatch', () => {
 describe('#timeline dispatch (spec 253)', () => {
   type TestLane = { status: string };
   const runCommand = HarnessTimelineController.prototype.runCommand;
-  // The controller reaches the view only through `host`; stub that, plus the
-  // controller's own review/merge entry points the dispatcher delegates to.
+  // The controller reaches the view only through its narrow host.
   const runTimelineCommand = {
     call: (ctx: Record<string, unknown>, lane: TestLane, text: string): Promise<void> =>
       runCommand.call(
         {
           host: ctx,
-          openSuggestionReview: ctx.openTimelineSuggestionReview,
-          runMerge: ctx.runTimelineMerge,
         } as unknown as HarnessTimelineController,
         lane as HarnessLane,
         text,
@@ -3837,57 +3985,17 @@ describe('#timeline dispatch (spec 253)', () => {
     expect(enqueued[0]?.prompt).toContain('"prompt animation"');
   });
 
-  it('keeps local record/browser operations unavailable in a remote Harness', async () => {
+  it('keeps local browser operations unavailable in a remote Harness', async () => {
     const flashes: string[] = [];
     await runTimelineCommand.call(
       { remoteRuntimeId: 'remote-1', flashChip: (value: string) => flashes.push(value) },
       { status: 'idle' },
-      '#timeline add auth',
+      '#timeline open auth',
     );
-    expect(flashes).toEqual([
-      '#timeline แบบ local storage/review/browser ใช้ไม่ได้ใน remote Harness แต่ยังใช้ trace ได้',
-    ]);
+    expect(flashes).toHaveLength(1);
+    expect(flashes[0]).toContain('remote Harness');
   });
 
-  it('opens the oldest pending suggestion through the local review command', async () => {
-    let opened = 0;
-    await runTimelineCommand.call(
-      {
-        remoteRuntimeId: null,
-        openTimelineSuggestionReview: async () => { opened++; },
-        flashChip: () => {},
-      },
-      { status: 'idle' },
-      '#timeline review',
-    );
-    expect(opened).toBe(1);
-  });
-
-  // spec 263: repairing already-split topics is a human, local-only action.
-  it('routes topic merge and undo to the local repair path', async () => {
-    const seen: unknown[] = [];
-    const chips: string[] = [];
-    const context = {
-      remoteRuntimeId: null,
-      flashChip: (text: string) => { chips.push(text); },
-      runTimelineMerge: async (_lane: TestLane, command: unknown) => { seen.push(command); },
-    };
-    await runTimelineCommand.call(context, { status: 'idle' }, '#timeline merge topic-a into topic-b');
-    await runTimelineCommand.call(context, { status: 'idle' }, '#timeline merge undo');
-    expect(seen).toEqual([
-      { kind: 'merge', from: 'topic-a', into: 'topic-b' },
-      { kind: 'mergeUndo' },
-    ]);
-    expect(chips).toEqual([]);
-
-    await runTimelineCommand.call(
-      { ...context, remoteRuntimeId: 'remote-1' },
-      { status: 'idle' },
-      '#timeline merge topic-a into topic-b',
-    );
-    expect(seen).toHaveLength(2);
-    expect(chips[0]).toContain('remote Harness');
-  });
 });
 
 describe('#telegram dispatch', () => {

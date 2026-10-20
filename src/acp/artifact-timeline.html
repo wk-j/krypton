@@ -180,9 +180,17 @@
     events.forEach(function (event) { var topic = map.get(event.topicId); if (topic) topic.count += 1; });
     return Array.from(map.values()).sort(function (a, b) { return b.occurredAt.localeCompare(a.occurredAt); });
   }
+  function evidenceKindLabel(kind) {
+    switch (kind) {
+      case 'user_statement': return 'คำกล่าวของผู้ใช้';
+      case 'observed_outcome': return 'ผลที่ตรวจพบ';
+      case 'agent_decision': return 'การตัดสินใจของ LLM';
+      default: return kind || '';
+    }
+  }
   function eventMatches(event, query) {
     if (!query) return true;
-    return lower([event.topicTitle, event.summary, event.madeBy, event.recordedBy, event.evidenceExcerpt || '', event.instructionExcerpt || '', event.rationale || '', event.impact || '', event.sourceRef || ''].join(' ')).includes(query);
+    return lower([event.topicTitle, event.summary, event.madeBy, event.recordedBy, event.evidenceKind || '', evidenceKindLabel(event.evidenceKind), event.evidenceExcerpt || '', event.instructionExcerpt || '', event.rationale || '', event.impact || '', event.sourceRef || ''].join(' ')).includes(query);
   }
   function sourceHref(source) {
     if (!source) return '';
@@ -324,6 +332,7 @@
       ].forEach(function (row) {
         addText(details, 'dt', '', row[0]); addText(details, 'dd', '', row[1]);
       });
+      if (event.evidenceKind) { addText(details, 'dt', '', 'ประเภทหลักฐาน'); addText(details, 'dd', '', evidenceKindLabel(event.evidenceKind)); }
       if (event.suggestedByLane) { addText(details, 'dt', '', 'เสนอโดย'); addText(details, 'dd', '', event.suggestedByLane); }
       if (event.relatedEvent) { addText(details, 'dt', '', 'เหตุการณ์ที่เกี่ยวข้อง'); addText(details, 'dd', '', event.relatedEvent); }
       if (event.evidenceExcerpt) addCopy(detail, 'หลักฐาน', event.evidenceExcerpt);

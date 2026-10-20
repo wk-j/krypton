@@ -33,7 +33,6 @@ pub mod theme;
 pub mod ticket_bundle;
 pub mod timeline;
 pub mod timeline_conflicts;
-pub mod typesafe;
 pub mod usage;
 pub mod usage_log;
 pub mod util;
@@ -169,7 +168,6 @@ pub fn run() {
         .manage(Arc::new(webview::WebviewRegistry::new()))
         .manage(Arc::new(process_metrics::MetricsSampler::new()))
         .manage(Arc::new(usage_log::UsageOutbox::new()))
-        .manage(Arc::new(typesafe::TypeSafeState::default()))
         .manage(workspace_state::WorkspaceState::default())
         .manage(Arc::new(prompt_history::PromptHistoryStore::new()))
         // MusicEngine is initialized in .setup() because it needs app_handle
@@ -281,18 +279,9 @@ pub fn run() {
             ticket_bundle::acp_update_ticket_status,
             ticket_bundle::acp_update_ticket_github,
             ticket_bundle::acp_set_ticket_worker,
-            timeline::timeline_list,
-            timeline::timeline_record,
-            timeline::timeline_merge_topics,
-            timeline::timeline_merge_undo,
-            timeline::timeline_suggestion_list,
-            timeline::timeline_suggestion_confirm,
-            timeline::timeline_suggestion_dismiss,
-            timeline::timeline_suggestion_settings,
-            timeline::timeline_suggestion_set_enabled,
-            timeline::timeline_topic_suggest,
-            timeline::timeline_topic_suggest_cancel,
-            typesafe::typesafe_metrics,
+            timeline::timeline_settings,
+            timeline::timeline_set_enabled,
+            timeline::timeline_pending_count,
             commands::save_temp_image,
             commands::read_image_file,
             commands::capture_screen,
@@ -438,9 +427,6 @@ pub fn run() {
                     .level(log::LevelFilter::Info)
                     .build(),
             )?;
-
-            app.state::<Arc<typesafe::TypeSafeState>>()
-                .bind_app_handle(app.handle().clone());
 
             // Size the window to cover the entire screen including menu bar and dock
             // (macOS fullscreen mode breaks transparency, so we manually set position/size)

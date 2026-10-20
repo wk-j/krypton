@@ -1,8 +1,29 @@
 # Timeline Topic Merge and Undo — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented; human authorization/native command paths superseded by [0316](./0316-llm-managed-timeline.md)
 > Date: 2026-09-22
 > Milestone: ACP Harness — project provenance
+
+## Current contract — spec 0316
+
+The working lane owns topic grouping and undo through `timeline_merge`, after inspecting
+history. Required `rationale` replaces `instruction_excerpt` for both merge and undo, and the
+transport supplies the acting lane. Manifests preserve lane/rationale for each action while
+old manifests remain readable. There is no current-human quote requirement or per-item
+permission exception: exact built-in Timeline tools, including merge, are auto-handled;
+third-party tools do not gain that permission.
+
+`#timeline merge ...`, `#timeline merge undo`, and their native Tauri commands are removed
+without aliases. Unique selectors, ambiguity/same-topic refusal, backup-before-rewrite,
+topic-ID-only mutation, and the read-only browser remain. Grouping must not hide conflicts;
+use evidence-backed superseding events and agent conflict verdicts/checkpoints instead.
+
+# Historical implementation — replaced entry points and authorization
+
+The remaining command tables, payloads, permission rules, manifest examples, validation
+records, and scope notes preserve pre-0316 behavior. The human-only/permission exception
+clauses and native command paths below are not active rules; retained storage safeguards
+are summarized above and specified by [0316](./0316-llm-managed-timeline.md).
 
 ## Problem
 

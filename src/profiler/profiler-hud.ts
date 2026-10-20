@@ -1,17 +1,10 @@
 // Krypton — Profiler HUD
 // Non-modal, non-focusable floating overlay docked to the top-right corner.
-// Displays live performance metrics: FPS, heap, DOM, IPC, TypeSafe, PTY, agent, layout.
+// Displays live performance metrics: FPS, heap, DOM, IPC, PTY, agent, layout.
 // Toggle with Cmd+P → Shift+P.  pointer-events: none — clicks pass through.
-
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 
 import { collector } from './metrics';
 import type { ProfilerSnapshot, IpcAggregated } from './metrics';
-import {
-  typeSafeMetricRows,
-  type TypeSafeMetricsSnapshot,
-} from '../typesafe-metrics';
 
 export class ProfilerHud {
   private element: HTMLElement;
@@ -21,12 +14,9 @@ export class ProfilerHud {
   // DOM sections
   private summaryRow: HTMLElement;
   private ipcSection: HTMLElement;
-  private typeSafeSection: HTMLElement;
   private ptySection: HTMLElement;
   private agentSection: HTMLElement;
   private layoutSection: HTMLElement;
-  private typeSafeMetrics: TypeSafeMetricsSnapshot | null = null;
-  private typeSafeUnavailable = false;
 
   constructor() {
     this.element = document.createElement('div');
@@ -45,8 +35,6 @@ export class ProfilerHud {
 
     // IPC section
     this.ipcSection = this.createSection('IPC');
-    // TypeSafe API section (spec 258)
-    this.typeSafeSection = this.createSection('TYPESAFE · THIS APP RUN');
     // PTY section
     this.ptySection = this.createSection('PTY');
     // Agent section
@@ -55,14 +43,6 @@ export class ProfilerHud {
     this.layoutSection = this.createSection('LAYOUT');
 
     document.body.appendChild(this.element);
-
-    void listen<TypeSafeMetricsSnapshot>('typesafe-metrics-changed', (event) => {
-      this.typeSafeMetrics = event.payload;
-      this.typeSafeUnavailable = false;
-      if (this.visible) this.renderTypeSafe();
-    }).catch(() => {
-      this.typeSafeUnavailable = true;
-    });
   }
 
   private createSection(label: string): HTMLElement {
@@ -91,7 +71,6 @@ export class ProfilerHud {
     this.element.classList.add('krypton-profiler-hud--visible');
     collector.startFps();
     this.renderInterval = window.setInterval(() => this.render(), 1000);
-    void this.refreshTypeSafeMetrics();
     // Render immediately
     this.render();
   }
@@ -115,7 +94,6 @@ export class ProfilerHud {
     const snap = collector.getSnapshot();
     this.renderSummary(snap);
     this.renderIpc(snap);
-    this.renderTypeSafe();
     this.renderPty(snap);
     this.renderAgent(snap);
     this.renderLayout(snap);
@@ -154,39 +132,6 @@ export class ProfilerHud {
     const avg = `avg ${stats.avgMs.toFixed(1)}`.padStart(9);
     const max = `max ${stats.maxMs.toFixed(1)}`.padStart(9);
     return `${name}${count} ${avg} ${max}`;
-  }
-
-  private async refreshTypeSafeMetrics(): Promise<void> {
-    try {
-      this.typeSafeMetrics = await tauriInvoke<TypeSafeMetricsSnapshot>('typesafe_metrics');
-      this.typeSafeUnavailable = false;
-    } catch {
-      this.typeSafeUnavailable = true;
-    }
-    if (this.visible) this.renderTypeSafe();
-  }
-
-  private renderTypeSafe(): void {
-    if (!this.typeSafeMetrics) {
-      this.typeSafeSection.textContent = this.typeSafeUnavailable ? '(unavailable)' : '(loading)';
-      return;
-    }
-
-    const matrix = document.createElement('dl');
-    matrix.className = 'krypton-profiler-hud__metric-matrix';
-    for (const row of typeSafeMetricRows(this.typeSafeMetrics)) {
-      for (const [label, value] of [
-        [row.leftLabel, row.leftValue],
-        [row.rightLabel, row.rightValue],
-      ] as const) {
-        const term = document.createElement('dt');
-        term.textContent = label;
-        const data = document.createElement('dd');
-        data.textContent = value;
-        matrix.append(term, data);
-      }
-    }
-    this.typeSafeSection.replaceChildren(matrix);
   }
 
   private renderPty(snap: ProfilerSnapshot): void {

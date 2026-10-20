@@ -291,7 +291,7 @@ native_host_browsers = ["chrome"]
 
 # --- Xenon resource server (spec 212) ---
 # Where `#push` publishes harness-generated resources (reviews, analyses,
-# artifacts, docs, attention flags, daily notes, confirmed timeline events). Publishing is explicit
+# artifacts, docs, attention flags, daily notes, recorded timeline events). Publishing is explicit
 # except for the opt-in review and attention triggers documented below. The
 # bearer token is NOT configured here: it lives in the operating-system
 # credential vault, written by pasting it into Krypton once.
@@ -367,29 +367,9 @@ output_dir = ".krypton/journal"
 # disk.
 extra_projects = []
 
-# --- TypeSafe semantic suggestions (spec 257) ---
-# Disabled by default. The API key value is read by Rust from the named
-# environment variable and is never stored in this file or returned to the UI.
-
-[typesafe]
-enabled = false
-api_key_env = "TYPESAFE_API_KEY"
-base_url = "https://api.typesafe.ai"
-model = "jev-1.13.0"
-connect_timeout_ms = 300
-attempt_timeout_ms = 650
-overall_deadline_ms = 1600
-max_retries = 1
-failure_threshold = 3
-cooldown_secs = 30
-
-[typesafe.timeline_topics]
-mode = "off"                 # off | shadow | suggest
-debounce_ms = 350
-min_confidence = 0.65
-min_probability = 0.55
-min_margin = 0.15
-max_candidates = 12
+# Timeline automatic recording is a per-project runtime setting, not TOML.
+# Use #timeline auto [on|off]; see "Timeline Automatic Recording" below.
+# Retired [typesafe] / [typesafe.timeline_topics] keys are ignored.
 
 # Telegram Harness Controller is intentionally NOT configured here. Krypton's
 # Settings view owns ~/.config/krypton/telegram.toml, while the Bot API token
@@ -637,38 +617,38 @@ name = "custom-fixed"
 
 To switch models, change `active` to the name of another preset. Changes take effect on next agent session (reset the agent or open a new agent window).
 
-### TypeSafe Semantic Suggestions
+### Timeline Automatic Recording
 
-| Section | Key | Type | Default | Description |
-|---------|-----|------|---------|-------------|
-| `[typesafe]` | `enabled` | bool | `false` | Master opt-in; when false, Krypton makes no TypeSafe request |
-| `[typesafe]` | `api_key_env` | string | `"TYPESAFE_API_KEY"` | Environment-variable name resolved only by Rust; this is not the secret value |
-| `[typesafe]` | `base_url` | string | `"https://api.typesafe.ai"` | System One API root |
-| `[typesafe]` | `model` | string | `"jev-1.13.0"` | Pinned model used for calibrated gates |
-| `[typesafe]` | `connect_timeout_ms` | int | `300` | HTTP connect timeout; runtime clamps to 100–5000 ms |
-| `[typesafe]` | `attempt_timeout_ms` | int | `650` | Timeout for one attempt; runtime clamps to 100–5000 ms |
-| `[typesafe]` | `overall_deadline_ms` | int | `1600` | Hard deadline across attempts; runtime clamps to 100–5000 ms |
-| `[typesafe]` | `max_retries` | int | `1` | Retries for transient failures; runtime caps at 2 |
-| `[typesafe]` | `failure_threshold` | int | `3` | Consecutive transient failures before opening the in-memory circuit; minimum 1 |
-| `[typesafe]` | `cooldown_secs` | int | `30` | Circuit cooldown before a fresh request |
-| `[typesafe.timeline_topics]` | `mode` | string | `"off"` | `off`, hidden-observation `shadow`, or visible `suggest`; any other value acts as off |
-| `[typesafe.timeline_topics]` | `debounce_ms` | int | `350` | Delay after topic/summary edits; frontend clamps to 150–1500 ms |
-| `[typesafe.timeline_topics]` | `min_confidence` | float | `0.65` | Minimum response confidence; runtime clamps to 0–1 |
-| `[typesafe.timeline_topics]` | `min_probability` | float | `0.55` | Minimum chosen-option probability; runtime clamps to 0–1 |
-| `[typesafe.timeline_topics]` | `min_margin` | float | `0.15` | Minimum probability lead over the runner-up; runtime clamps to 0–1 |
-| `[typesafe.timeline_topics]` | `max_candidates` | int | `12` | Maximum bounded shortlist size; frontend and backend clamp to 2–20 |
+Timeline is managed by the working local MCP-capable lane, not a separate
+semantic service ([spec 316](0316-llm-managed-timeline.md)). It needs no
+additional API key or model configuration. `#timeline auto` reports the
+per-project setting; `#timeline auto on` / `off` changes it. It defaults on.
 
-The conflict scan (spec 266) sends at most 40 shortlisted pairs per run, packed into System One
-requests of at most 8 KiB, each carrying only event IDs, topic titles, and summaries truncated to
-240 characters. Because it is an explicit batch action, each request uses at least a 4 s attempt
-timeout and a 10–15 s deadline instead of the interactive topic-suggestion budget. A scan only
-creates proposals for a human to review; it never records a verdict.
+This is persisted outside TOML in the gitignored
+`.krypton/timeline/settings.json`:
 
-TypeSafe topic matching applies only to local `#timeline add` and `#timeline review` sheets. Exact
-normalized-title reuse remains deterministic and bypasses the network. `shadow` runs the same
-bounded request without showing a choice; `suggest` shows one result but never selects it. Reloading
-configuration affects sheets opened after the reload and their later requests. Missing credentials,
-low confidence, timeouts, cancellation, and service failures remain silent and do not block saving.
+```json
+{ "schema": 2, "automaticRecording": true }
+```
+
+The native DTO is `TimelineSettings { automaticRecording: boolean }`, accessed
+through `timeline_settings` / `timeline_set_enabled`; `timeline_pending_count`
+supplies nonvisual legacy migration state. Reading schema 1 settings migrates
+`automaticSuggestions` to schema 2 `automaticRecording` atomically while
+preserving the old value, including false. Event records remain schema 1.
+Off blocks new `timeline_record` intake; it does not delete history or stop
+`timeline_pending_resolve` from evaluating legacy candidates during an ordinary
+writable working turn. There is no fallback capture form, human queue or
+extra model turn. Explicit read-only work cannot mutate Timeline, and
+Remote/Pi lanes without project-backed tools do not access local storage.
+
+The former `[typesafe]` and `[typesafe.timeline_topics]` configuration,
+topic-choice UI, transport, footer counter and Profiler metrics are retired.
+Old TOML sections are accepted as unknown configuration and ignored; they do
+not enable a service or require credentials. No live semantic dependency
+remains. Rebuilt hosts and normally reconnected lanes must expose the new
+MCP contract before existing backlog can be processed; the setting itself
+does not start a migration turn or prove any production candidates migrated.
 
 ### ACP Agent Backends
 
@@ -1035,7 +1015,7 @@ browser surface and the hurl/termctrl/acp-wire viewers.
 | `[xenon]` | `enabled` | bool | `false` | Master switch for publishing to a Xenon resource server. While false, `#push` is inert. See doc 212 |
 | `[xenon]` | `base_url` | string | `""` | Xenon server root, e.g. `https://xenon.example.com`. Empty = unconfigured |
 | `[xenon]` | `project` | string | `""` | Project slug override. Empty derives `<owner>.<repo>` from the git remote, else a path-derived name. Single path segment only |
-| `[xenon]` | `auto_push` | string[] | `[]` | Kinds a bare `#push` covers (`review`, `analysis`, `artifact`, `doc`, `attention`, `daily`, `timeline`, `handoff`). Empty = all. Listing `review` also publishes a Board on first registration; listing `attention` publishes a flag when raised; listing `handoff` publishes a handoff on each write (spec 293). Later review edits/responses and all other kinds remain manual. Listing `timeline` only includes confirmed events in an explicit bare `#push`. `#resume` pulls handoffs from Xenon when enabled (token needs `resource:read`) |
+| `[xenon]` | `auto_push` | string[] | `[]` | Kinds a bare `#push` covers (`review`, `analysis`, `artifact`, `doc`, `attention`, `daily`, `timeline`, `handoff`). Empty = all. Listing `review` also publishes a Board on first registration; listing `attention` publishes a flag when raised; listing `handoff` publishes a handoff on each write (spec 293). Later review edits/responses and all other kinds remain manual. Listing `timeline` only includes recorded events in an explicit bare `#push`; legacy intake and resolution receipts remain local. `#resume` pulls handoffs from Xenon when enabled (token needs `resource:read`) |
 | `[xenon]` | `probe_interval_secs` | integer | `60` | Cadence of the workspace footer's backend-link probe (spec 213). `0` disables the interval; the segment then updates only on `⌘P X` and after a `#push`. Hot-reloaded with the rest of `[xenon]` |
 
 | `[usage_log]` | `enabled` | bool | `true` | Record one row per completed prompt turn to `.krypton/usage/<date>.jsonl`. See doc 214 |
