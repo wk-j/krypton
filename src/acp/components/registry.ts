@@ -31,7 +31,7 @@ import { def as docCardRow } from './doc-card-row';
 import { def as draftLine } from './draft-line';
 import { def as emptyState } from './empty-state';
 import { def as executionCard } from './execution-card';
-import { def as executionPanel } from './execution-panel';
+import { def as executionDialog } from './execution-dialog';
 import { def as fsActivityRow } from './fs-activity-row';
 import { def as fsWriteReviewRow } from './fs-write-review-row';
 import { def as genuiCard } from './genui-card';
@@ -119,7 +119,6 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   userRow,
   toolRow,
   executionCard,
-  executionPanel,
   subagentCard,
   permissionRow,
   questionRow,
@@ -177,6 +176,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   metricsOverlay,
   backgroundTasks,
   imageViewer,
+  executionDialog,
   genuiPanel,
   genuiCatalog,
   reviewThreadDialog,

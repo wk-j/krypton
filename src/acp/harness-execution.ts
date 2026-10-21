@@ -316,6 +316,42 @@ export function executionState(payload: ExecutionPayload, status: string): Execu
   return payload.cellStatus === 'complete' ? 'complete' : 'running';
 }
 
+export const EXECUTION_STATE_LABEL: Readonly<Record<ExecutionState, string>> = {
+  pending: 'Pending', running: 'Running', complete: 'Done', error: 'Error',
+  cancelled: 'Cancelled', background: 'Background · last reported',
+};
+
+/** The call is in flight AND this client watched it start (not a replay). */
+export function isExecutionLive(payload: ExecutionPayload, state: ExecutionState): boolean {
+  return payload.observedLive && (state === 'pending' || state === 'running');
+}
+
+export interface ExecutionTiming {
+  readonly visible: boolean;
+  /** Advanced by the shared tool ticker from `startedAt`; frozen otherwise. */
+  readonly live: boolean;
+  readonly durationMs: number;
+  readonly source: 'runtime' | 'observed';
+}
+
+const HIDDEN_TIMING: ExecutionTiming = { visible: false, live: false, durationMs: 0, source: 'observed' };
+
+/**
+ * Reported runtime wins once the call settles; otherwise the client's own
+ * observation, and only for a call it saw live. A replay or a background
+ * snapshot shows nothing rather than an invented zero.
+ */
+export function executionTiming(payload: ExecutionPayload, status: string, startedAt?: number, endedAt?: number): ExecutionTiming {
+  const state = executionState(payload, status);
+  const live = isExecutionLive(payload, state);
+  const reported = !live && payload.durationMs !== null;
+  if (state === 'background') return HIDDEN_TIMING;
+  if (reported) return { visible: true, live: false, durationMs: payload.durationMs!, source: 'runtime' };
+  if (!payload.observedLive || startedAt === undefined) return HIDDEN_TIMING;
+  if (live) return { visible: true, live: true, durationMs: performance.now() - startedAt, source: 'observed' };
+  return endedAt === undefined ? HIDDEN_TIMING : { visible: true, live: false, durationMs: endedAt - startedAt, source: 'observed' };
+}
+
 export type ExecutionOutputPart =
   | { readonly kind: 'text'; readonly text: string }
   | { readonly kind: 'view'; readonly view: ExecutionView };

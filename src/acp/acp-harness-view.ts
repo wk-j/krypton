@@ -95,7 +95,7 @@ import { AssistantRow } from './components/assistant-row';
 import { GenUiPanel } from './components/genui-panel';
 import type { GenUiPanelState } from './components/genui-panel';
 import { ToolRow } from './components/tool-row';
-import { ExecutionPanel } from './components/execution-panel';
+import { ExecutionDialog } from './components/execution-dialog';
 import { parseExecutionPayload } from './harness-execution';
 import { initialState as initialUiState } from './genui/evaluate';
 import {
@@ -1338,16 +1338,10 @@ export class AcpHarnessView implements ContentView {
   private readonly uiGenerations = new Map<string, UiGeneration>();
   /** Which card the panel is currently seated in; null when collapsed. */
   private genUiOpen: { itemId: string; index: number } | null = null;
-  /** Spec 315: the view owns the one inspector; a ToolRow only seats it. */
-  private executionPanel!: ExecutionPanel;
+  /** Spec 319: the view owns the one Inspector dialog; rows never see it. */
+  private executionDialog!: ExecutionDialog;
   private executionOpen: { laneId: string; itemId: string } | null = null;
-  private readonly executionPanelClosed = (restoreFocus: boolean): void => {
-    const open = this.executionOpen;
-    if (open) {
-      const row = this.transcript?.rowFor(open.itemId);
-      if (row instanceof ToolRow) row.mountExecutionPanel(null);
-    }
-    this.executionPanel.el.remove();
+  private readonly executionDialogClosed = (restoreFocus: boolean): void => {
     this.executionOpen = null;
     if (restoreFocus) {
       this.focus = 'text';
@@ -4282,8 +4276,10 @@ export class AcpHarnessView implements ContentView {
     if (this.liveVoiceCtl.handleKeyDown(e)) return true;
     // spec 206: unified open-hint mode swallows keys while active (read-only
     // transcript exception, active only in hint mode).
-    // spec 281: the image viewer owns every key while open.
+    // spec 281 / 319: the image viewer and the Execution Inspector dialog own
+    // every key while open (the dialog lets Cmd/Ctrl chords through).
     if (this.imageViewer?.isOpen) return this.imageViewer.handleKey(e);
+    if (this.executionDialog?.isOpen) return this.executionDialog.handleKey(e);
     if (this.openHintMode) return this.handleOpenHintKey(e);
     // Spec 280/314: Cmd+Shift+L starts or stops; Left Option is hold-to-talk.
     if (e.code === 'KeyL' && e.metaKey && !e.ctrlKey && e.shiftKey && !e.altKey) {
@@ -4410,7 +4406,6 @@ export class AcpHarnessView implements ContentView {
     // the composer they are typing in; entering the panel (clicking a control,
     // or re-opening the card) is what hands it the keyboard.
     if (this.genUiPanel?.isOpen && this.genUiPanel.hasFocus) return this.genUiPanel.handleKey(e);
-    if (this.executionPanel?.isOpen && this.executionPanel.hasFocus) return this.executionPanel.handleKey(e);
     // spec 306: Cmd chords — Alt does not reach the app, and Ctrl+1..4 is the
     // macOS desktop switch. The ticket picker's Cmd+1..3 already ran above.
     if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
@@ -4860,8 +4855,8 @@ export class AcpHarnessView implements ContentView {
     this.helpOverlay?.dispose();
     this.imageViewer?.dispose();
     this.genUiPanel?.dispose();
-    this.executionPanel?.close(false);
-    this.executionPanel?.dispose();
+    this.executionDialog?.close(false);
+    this.executionDialog?.dispose();
     this.executionOpen = null;
     this.genUiStates.clear();
     this.uiGenerations.clear();
@@ -6333,9 +6328,11 @@ export class AcpHarnessView implements ContentView {
       onClose: () => this.invalidate('composer'),
     });
     body.appendChild(this.imageViewer.el);
+    // spec 319: one Execution Inspector dialog, mounted once like the viewer.
+    this.executionDialog = new ExecutionDialog();
+    body.appendChild(this.executionDialog.el);
     // spec 310: no parent until a card seats it — the panel lives in the row.
     this.genUiPanel = new GenUiPanel();
-    this.executionPanel = new ExecutionPanel();
 
     this.metricsOverlay = new MetricsOverlay();
     body.appendChild(this.metricsOverlay.el);
@@ -9817,54 +9814,48 @@ export class AcpHarnessView implements ContentView {
   private openExecution(itemId: string): void {
     const lane = this.activeLane();
     const item = lane?.transcript.find((entry) => entry.id === itemId);
-    const row = this.transcript?.rowFor(itemId);
-    if (!lane || !item?.tool?.execution || !(row instanceof ToolRow)) return;
-    if (this.executionOpen?.laneId === lane.id && this.executionOpen.itemId === itemId) {
-      this.executionPanel.close();
-      return;
-    }
-    this.executionPanel.close(false);
-    const body = this.activeTranscriptBody();
-    const anchor = body && !lane.stickToBottom ? this.captureTranscriptScrollAnchor(body) : null;
+    if (!lane || !item?.tool?.execution) return;
     this.executionOpen = { laneId: lane.id, itemId };
-    if (!row.mountExecutionPanel(this.executionPanel.el)) {
-      this.executionOpen = null;
-      return;
-    }
-    this.executionPanel.update({
+    this.executionDialog.update({
       open: true,
+      targetId: itemId,
       payload: item.tool.execution,
       status: item.tool.status,
+      startedAt: item.tool.startedAt,
+      endedAt: item.tool.endedAt,
       takeFocus: true,
-      onClose: this.executionPanelClosed,
+      onClose: this.executionDialogClosed,
     });
-    if (body && anchor) this.restoreTranscriptScrollAnchor(body, anchor);
-    const card = this.executionPanel.el.closest<HTMLElement>('.acp-execution-card');
-    if (body && card) this.revealInlinePanel(body, card);
   }
 
-  private syncExecutionMount(): void {
+  /**
+   * After a transcript commit: refresh the open dialog from its item. It needs
+   * the item, not a mounted row, so a tail-window shift keeps it open; a lane
+   * change or the item leaving the lane transcript closes it without focus.
+   */
+  private syncExecutionDialog(): void {
     const open = this.executionOpen;
     if (!open) return;
     const lane = this.activeLane();
-    const item = lane?.transcript.find((entry) => entry.id === open.itemId);
-    const row = this.transcript?.rowFor(open.itemId);
-    if (lane?.id !== open.laneId || !item?.tool?.execution || !(row instanceof ToolRow)
-      || !row.mountExecutionPanel(this.executionPanel.el)) {
-      this.executionPanel.close(false);
+    const item = lane?.id === open.laneId ? lane.transcript.find((entry) => entry.id === open.itemId) : undefined;
+    if (!item?.tool?.execution) {
+      this.executionDialog.close(false);
       return;
     }
-    this.executionPanel.update({
+    this.executionDialog.update({
       open: true,
+      targetId: open.itemId,
       payload: item.tool.execution,
       status: item.tool.status,
+      startedAt: item.tool.startedAt,
+      endedAt: item.tool.endedAt,
       takeFocus: false,
-      onClose: this.executionPanelClosed,
+      onClose: this.executionDialogClosed,
     });
   }
 
   private dropGenUiLane(laneId: string): void {
-    if (this.executionOpen?.laneId === laneId) this.executionPanel.close(false);
+    if (this.executionOpen?.laneId === laneId) this.executionDialog.close(false);
     this.uiGenerations.delete(laneId);
     this.genUiPanel?.close();
     for (const key of this.genUiStates.keys()) if (key.startsWith(`${laneId}\u0000`)) this.genUiStates.delete(key);
@@ -11027,7 +11018,7 @@ export class AcpHarnessView implements ContentView {
    *  the spawnEpoch bump orphans the still-pending prompt promise. */
   private async forceRestartLane(lane: HarnessLane): Promise<void> {
     if (!lane.client || lane.status === 'starting') return; // restart already in flight
-    if (this.executionOpen?.laneId === lane.id) this.executionPanel.close(false);
+    if (this.executionOpen?.laneId === lane.id) this.executionDialog.close(false);
     this.clearCancelEscalation(lane);
     const resumeSessionId = lane.sessionId;
     this.uiGenerations.delete(lane.id);
@@ -11073,7 +11064,7 @@ export class AcpHarnessView implements ContentView {
       this.flashChip(`lane ${lane.status} - #cancel first`);
       return;
     }
-    if (this.executionOpen?.laneId === lane.id) this.executionPanel.close(false);
+    if (this.executionOpen?.laneId === lane.id) this.executionDialog.close(false);
     // spec 293: a restarted lane starts a new work thread on its next #handoff.
     this.unbindLaneHandoff(lane);
     if (lane.client) {
@@ -12574,7 +12565,7 @@ export class AcpHarnessView implements ContentView {
     // spec 310: a repaint rebuilt the cards under the open panel, and a row
     // may have left the window entirely — re-seat it, or collapse it.
     this.syncGenUiMount();
-    this.syncExecutionMount();
+    this.syncExecutionDialog();
     if (anchor) {
       this.restoreTranscriptScrollAnchor(body, anchor);
       lane.savedScrollAnchor = this.captureTranscriptScrollAnchor(body) ?? anchor;
@@ -13613,7 +13604,9 @@ export class AcpHarnessView implements ContentView {
 
   private tickToolTimers(): void {
     const now = performance.now();
-    const nodes = this.dashboardEl.querySelectorAll<HTMLElement>('.acp-harness__tool-timer');
+    // The Harness root, not only the dashboard: the spec 319 Inspector dialog
+    // is an overlay beside it and carries the same timer contract.
+    const nodes = this.element.querySelectorAll<HTMLElement>('.acp-harness__tool-timer');
     for (const node of nodes) {
       if (node.dataset.endedAt !== undefined) continue;
       const startedAt = Number(node.dataset.startedAt);
@@ -15597,7 +15590,7 @@ export class AcpHarnessView implements ContentView {
   private activateLane(id: string): void {
     if (id !== this.activeLaneId) {
       this.genUiPanel?.close();
-      this.executionPanel?.close(false);
+      this.executionDialog?.close(false);
       this.dictationCtl.abort(false);
       this.assistCtl.cancel(); // spec 306: an in-flight answer is about the old lane
     }

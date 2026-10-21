@@ -1,0 +1,215 @@
+/* Spec 319 — `ExecutionDialog`. The scrim and panel follow `ReviewThreadDialog`
+   (solid scrim, no backdrop-filter: WKWebView freeze); typography, colour and
+   quiet controls keep the spec 315 Inspector contract. */
+@layer krypton.component {
+  .acp-harness__execution-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 80;
+    display: grid;
+    place-items: center;
+    padding: clamp(8px, 2.5%, 24px);
+    background: rgba(0, 0, 0, 0.72);
+  }
+  .acp-harness__execution-overlay[hidden] { display: none; }
+  .acp-execution-dialog__panel {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    width: min(1120px, 100%);
+    height: min(820px, 100%);
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--acp-execution-accent, var(--krypton-window-accent));
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-bg-rgb), 0.94);
+    color: var(--acp-execution-fg, var(--krypton-fg));
+    font-family: var(--agent-font, monospace);
+    font-size: var(--krypton-font-size, 13px);
+    line-height: 1.4;
+  }
+  .acp-execution-dialog__panel [hidden] { display: none; }
+  .acp-execution-dialog__shell-head { display: none; }
+  .acp-execution-dialog__body { display: contents; }
+
+  .acp-execution-dialog__head,
+  .acp-execution-dialog__summary,
+  .acp-execution-dialog__tabs {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    align-items: center;
+    min-width: 0;
+    padding: 8px 16px;
+    border-bottom: 1px solid rgba(var(--krypton-fg-rgb), 0.1);
+  }
+  .acp-execution-dialog__head { gap: 8px; padding-top: 12px; }
+  .acp-execution-dialog__glyph {
+    display: inline-flex;
+    flex: 0 0 1.4ch;
+    justify-content: center;
+    width: 1.4ch;
+    line-height: 1;
+  }
+  .acp-execution-dialog__language { flex: none; color: rgba(var(--krypton-fg-rgb), 0.6); font-size: 0.78em; }
+  .acp-execution-dialog__title {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    font: inherit;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  .acp-execution-dialog__summary { gap: 4px 24px; margin: 0; }
+  .acp-execution-dialog__fact { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .acp-execution-dialog__fact-label { color: rgba(var(--krypton-fg-rgb), 0.55); font-size: 0.82em; }
+  .acp-execution-dialog__fact-value {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+  }
+  .acp-execution-dialog__timing-source { color: rgba(var(--krypton-fg-rgb), 0.45); font-size: 0.78em; }
+  .acp-harness__execution-overlay[data-state='pending'] .acp-execution-dialog__status,
+  .acp-harness__execution-overlay[data-state='pending'] .acp-execution-dialog__glyph,
+  .acp-harness__execution-overlay[data-state='running'] .acp-execution-dialog__status,
+  .acp-harness__execution-overlay[data-state='running'] .acp-execution-dialog__glyph { color: var(--agent-gold); }
+  .acp-harness__execution-overlay[data-state='complete'] .acp-execution-dialog__status,
+  .acp-harness__execution-overlay[data-state='complete'] .acp-execution-dialog__glyph { color: var(--agent-accent); }
+  .acp-harness__execution-overlay[data-state='error'] .acp-execution-dialog__status,
+  .acp-harness__execution-overlay[data-state='error'] .acp-execution-dialog__glyph,
+  .acp-harness__execution-overlay[data-state='error'] .acp-execution-dialog__output { color: var(--agent-error); }
+
+  .acp-execution-dialog__tabs { gap: 8px; }
+  .acp-execution-dialog__tab,
+  .acp-execution-dialog__button {
+    padding: 1px 6px;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    border: 1px solid transparent;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: transparent;
+    color: rgba(var(--krypton-fg-rgb), 0.6);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.82em;
+  }
+  .acp-execution-dialog__tab { padding: 2px 8px; font-size: 0.88em; }
+  .acp-execution-dialog__tab:hover,
+  .acp-execution-dialog__button:hover { border-color: rgba(var(--krypton-fg-rgb), 0.2); color: var(--krypton-fg); }
+  .acp-execution-dialog__tab[aria-selected='true'] {
+    border-color: color-mix(in srgb, var(--acp-execution-accent, var(--krypton-window-accent)) 45%, transparent);
+    color: var(--acp-execution-accent, var(--krypton-window-accent));
+  }
+  .acp-execution-dialog__button[aria-pressed='true'] { color: var(--acp-execution-accent, var(--krypton-window-accent)); }
+  .acp-execution-dialog__tab-key,
+  .acp-execution-dialog__tab-count { color: rgba(var(--krypton-fg-rgb), 0.45); }
+  .acp-execution-dialog__tab:focus-visible,
+  .acp-execution-dialog__button:focus-visible,
+  .acp-execution-dialog__scroll:focus-visible {
+    outline: 1px solid var(--acp-execution-accent, var(--krypton-window-accent));
+    outline-offset: 2px;
+  }
+
+  .acp-execution-dialog__section {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+    min-width: 0;
+    padding: 10px 16px 12px;
+  }
+  .acp-execution-dialog__bar {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    min-width: 0;
+    min-height: 24px;
+  }
+  .acp-execution-dialog__scroll { flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; }
+  .acp-execution-dialog__source { display: flex; }
+  .acp-execution-dialog__pre,
+  .acp-execution-dialog__numbers,
+  .acp-execution-dialog__text {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    white-space: pre;
+    overflow-wrap: normal;
+    tab-size: 4;
+  }
+  .acp-execution-dialog__pre { flex: 1 0 auto; }
+  .acp-execution-dialog__code { font: inherit; background: transparent; color: inherit; }
+  .acp-execution-dialog__numbers {
+    flex: none;
+    padding-right: 12px;
+    color: rgba(var(--krypton-fg-rgb), 0.35);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+  }
+  .acp-execution-dialog__table { border-collapse: collapse; font: inherit; }
+  .acp-execution-dialog__cell { padding: 2px 8px; border-bottom: 1px solid rgba(var(--krypton-fg-rgb), 0.1); text-align: left; white-space: pre; }
+  /* `el()` writes `data: { numeric: true }` as a bare `data-numeric` attribute. */
+  .acp-execution-dialog__cell[data-numeric] { text-align: right; font-variant-numeric: tabular-nums; }
+  .acp-execution-dialog__events { margin: 0; padding: 0; list-style: none; }
+  .acp-execution-dialog__event { margin-bottom: 4px; overflow-wrap: anywhere; }
+  .acp-execution-dialog__event .acp-execution-dialog__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .acp-execution-dialog__event-op {
+    display: inline-block;
+    min-width: 6ch;
+    margin-right: 8px;
+    color: rgba(var(--krypton-fg-rgb), 0.45);
+    font-size: 0.82em;
+  }
+  .acp-execution-dialog__event--current { color: var(--acp-execution-accent, var(--krypton-window-accent)); }
+  .acp-execution-dialog__notice { flex: none; color: rgba(var(--krypton-fg-rgb), 0.55); font-size: 0.82em; }
+  .acp-execution-dialog__feedback {
+    flex: none;
+    padding: 0 16px 8px;
+    color: var(--acp-execution-accent, var(--krypton-window-accent));
+    font-size: 0.88em;
+  }
+  .acp-execution-dialog__notice:empty,
+  .acp-execution-dialog__feedback:empty { display: none; }
+  .acp-execution-dialog__foot {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    padding: 8px 16px;
+    border-top: 1px solid rgba(var(--krypton-fg-rgb), 0.1);
+    color: rgba(var(--krypton-fg-rgb), 0.55);
+    font-size: 0.82em;
+  }
+  .acp-execution-dialog__foot kbd { font: inherit; color: var(--acp-execution-accent, var(--krypton-window-accent)); }
+
+  .acp-execution-dialog__syntax-comment,
+  .acp-execution-dialog__syntax-quote { color: var(--krypton-ansi-8); font-style: italic; }
+  .acp-execution-dialog__syntax-keyword,
+  .acp-execution-dialog__syntax-selector-tag { color: var(--krypton-ansi-4); }
+  .acp-execution-dialog__syntax-string,
+  .acp-execution-dialog__syntax-addition { color: var(--krypton-ansi-10); }
+  .acp-execution-dialog__syntax-number,
+  .acp-execution-dialog__syntax-literal { color: var(--krypton-ansi-3); }
+  .acp-execution-dialog__syntax-title,
+  .acp-execution-dialog__syntax-built_in { color: var(--krypton-ansi-6); }
+  .acp-execution-dialog__syntax-type,
+  .acp-execution-dialog__syntax-attr,
+  .acp-execution-dialog__syntax-property { color: var(--krypton-ansi-5); }
+  .acp-execution-dialog__syntax-meta,
+  .acp-execution-dialog__syntax-regexp { color: var(--krypton-ansi-11); }
+  .acp-execution-dialog__syntax-deletion { color: var(--krypton-ansi-1); }
+}

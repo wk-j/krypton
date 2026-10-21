@@ -576,29 +576,44 @@ tool  ✓  Python  Inspect records                  Done  200ms runtime  Inspect
 ```
 
 **Emits** `.acp-execution-card`, `__head`, `__language`, `__title`, `__state`,
-`__timer`, `__timing-source`, `__button[data-execution-inspector]`, `__activity`, `__slot`.
+`__timer`, `__timing-source`, `__button[data-execution-inspector][aria-haspopup=dialog]`, `__activity`.
 Uses the existing `Spinner` and shared tool ticker. A terminal-only replay has no observed timer;
 detached running state is static `Background · last reported`, not job tracking.
-`mountPanel()` / `setHint()` are the owning component's mutation boundary after row seal.
+`setHint()` is the owning component's mutation boundary after row seal. `paintExecutionTiming()`
+is exported so the card and `ExecutionDialog` write the same time and provenance.
 
 **Replaces** the generic header/source echo only for validated current OMP code cells.
 
-## 3.4b `ExecutionPanel` (spec 315)
+## 3.4b `ExecutionDialog` (spec 319, replaces the spec 315 inline `ExecutionPanel`)
 
-**Props** `{ open, payload: ExecutionPayload | null, status, takeFocus, onClose }`.
-One node owned by `AcpHarnessView`, moved into the selected card slot and re-seated after commits.
-The row never disposes it or includes its open/output-view state in row deps.
+**Props** `{ open, targetId, payload: ExecutionPayload | null, status, startedAt?, endedAt?, takeFocus, onClose }`.
+One `OverlayShell` modal owned by `AcpHarnessView`, mounted once in `.acp-harness__body`. A new
+`targetId` resets per-target state (output nodes, Raw mode, scroll); the selected section survives.
+It never touches a row, so no row deps, slot or re-seat are involved.
 
-**Example UI** — Code/Copy with line numbers, Raw/Formatted Output, then reported Activity.
-Code/Output use two columns at panel width ≥900px, one below that; each pane scrolls independently.
+**Example UI**
+
+```text
+✓ JavaScript  Recent commits table                              Close · Esc
+Status Done   Time 200ms runtime   Exit code 0
+1 Code · 7 lines   [2 Output · 8 lines]   3 Activity · 0
+                                                          Formatted  Raw
+(index)  sha      spec  area
+      0  7357cfb   318  computers
+1–3 section  j/k scroll  g/G top/bottom  c copy code  r raw/formatted  Esc close
+```
+
 Only validated backend table/JSON metadata can replace an unambiguous output span.
-Source syntax classes are `acp-execution-panel__syntax-*`, never global `.hljs-*`.
+Source syntax classes are `acp-execution-dialog__syntax-*`, never global `.hljs-*`.
 
-**Emits** `.acp-execution-panel[role=group]`, `__head`, `__panes`, `__source`,
-`__code`, `__numbers`, `__output[role=region]`, `__table`, `__activity`, `__button`.
-Native controls support Tab/Shift+Tab, Enter/Space and Escape; pointer-pressed buttons retain focus
-on macOS WebKit. Output appends preserve selection and follow only from the bottom.
-Hidden tab, lane/reset, eviction and disposal close without taking focus.
+**Emits** `.acp-harness__execution-overlay[data-state]` > `.acp-execution-dialog__panel[role=dialog][aria-modal=true]`
+with `__head`, `__title`, `__summary` (`__fact`), `__tabs[role=tablist]` > `__tab[role=tab]`,
+`__section[role=tabpanel]`, `__source` / `__output` / activity `__scroll[role=region]`, `__table`,
+`__events`, `__event--current`, `__feedback[role=status]`, `__foot`.
+`handleKey()` owns every key while open; Cmd/Ctrl chords and native control/scroll keys return `false`.
+Tab/Shift+Tab wrap inside the panel; pointer-pressed buttons retain focus on macOS WebKit.
+Output appends preserve selection and follow only from the bottom.
+Another overlay opening, hidden tab, lane/reset and disposal close without taking focus.
 
 **Theme hooks** for both components: `--acp-execution-fg` → `--krypton-fg`,
 `--acp-execution-accent` → `--krypton-window-accent`. Font, radius, semantic state and syntax colors
@@ -851,10 +866,10 @@ HarnessView
 │  └─ RightRail ──────── LayoutHost slots `rail.top` / `rail.bottom` / `dock.right`
 │                        PlanPanel · PeekCard(ReviewLoopRows, HeatPanel) · ThoughtCard L
 │                        QueueCard · TicketDock · AnnotationRail
-├─ ExecutionPanel ────── view-owned; seated in one ExecutionCard slot, never row-owned
+├─ ExecutionDialog ───── view-owned OverlayShell modal (spec 319); never row-owned
 ├─ Composer ──────────── ComposerMeta(Chip, StatList) · DraftLine · StagingStrip
 │                        PeerStrip · InlinePalette ×4 · DictationControl · LiveVoiceStrip
-└─ Overlays ──────────── current registry: 19 components; no TimelineCapture
+└─ Overlays ──────────── current registry: 20 components; no TimelineCapture
 ```
 
 # Totals
@@ -863,7 +878,7 @@ Current registry counts come from `HARNESS_COMPONENTS` in `src/acp/components/re
 The registry has **78 component definitions**; `LayoutHost` is a separate layout entry, so
 the inventory total is **79**. The historical numbered catalog predates later additions:
 the transcript registry also includes `GenuiCard` and `DirectiveDiffRow`; composer includes
-`AssistStrip`; overlays include `BackgroundTasks`, `GenuiPanel`, and `GenuiCatalog`.
+`AssistStrip`; overlays include `BackgroundTasks`, `ExecutionDialog`, `GenuiPanel`, and `GenuiCatalog`.
 `TimelineCapture` is absent. Historical cutover-site counts below are not a new removal tally.
 
 | Layer | Components | Call sites deleted |
@@ -871,11 +886,11 @@ the transcript registry also includes `GenuiCard` and `DirectiveDiffRow`; compos
 | 0 — layout | 1 | 4 hardcoded `*SlotEl` fields + their CSS pinning |
 | 1 — leaf | 9 | ~75 |
 | 2 — composite | 5 | ~45 (incl. 8 cursor handlers, 4 palette handlers, 12 overlay shells) |
-| 3 — transcript | 22 | Original cutover plus ExecutionCard / view-owned ExecutionPanel (spec 315), GenuiCard, and DirectiveDiffRow |
+| 3 — transcript | 21 | Original cutover plus ExecutionCard (spec 315), GenuiCard, and DirectiveDiffRow |
 | 4 — lane chrome | 6 | `renderDashboard`, `renderActiveLaneChrome`, `refreshMetricsRender`, `renderRailEntry`, `refreshZenRail` |
 | 5 — right rail | 8 | 8 builders + 3 `patch*` functions |
 | 6 — composer | 9 | Original composer cutover plus AssistStrip |
-| 7 — overlays | 19 | Current registry; historical 7.15 retired, later additions retained |
+| 7 — overlays | 20 | Current registry; historical 7.15 retired, later additions (incl. `ExecutionDialog`, spec 319) retained |
 | **Total** | **79 (78 registered + LayoutHost)** | **Historical cutover counts remain historical; no Timeline capture implementation or style owner remains** |
 
 # Packaging, style ownership, and theming

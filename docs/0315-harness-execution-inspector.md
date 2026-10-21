@@ -1,6 +1,7 @@
 # Harness Execution Inspector — Implementation Spec
 
 > Status: Implemented — 2026-10-20; ตรวจ component/Harness behavior, live theme matrix และ native WKWebView focus/copy แล้ว
+> Amended by: [319](./0319-harness-execution-inspector-dialog.md) — the inline `ExecutionPanel` in the card slot is replaced by a modal `ExecutionDialog`; §Solution, §UI, keyboard and rendering, and §Ownership and data flow below describe the superseded inline panel. Recognition, normalization, status, bounds and retention still apply.
 > Date: 2026-10-20
 > Milestone: ACP Harness — execution observability
 > Scope: frontend สำหรับ OMP code cells เท่านั้น; ไม่เปลี่ยน OMP, Rust, ACP wire หรือวิธี execute

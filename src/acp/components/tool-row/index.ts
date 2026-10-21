@@ -179,15 +179,9 @@ export class ToolRow extends TranscriptRow {
     this.props = next;
     super.update(next);
     // A cold replay can supply its result after an already-terminal start.
-    // Only the owning summary changes; the sealed row/inspector stays put.
+    // Only the owning summary changes; the sealed row stays put.
     if (!wasLive) this.paintExecution(next);
     if (next.item.tool && isTerminalToolStatus(next.item.tool.status)) this.seal(next);
-  }
-
-  mountExecutionPanel(panel: HTMLElement | null): boolean {
-    if (!this.executionCard) return false;
-    this.executionCard.mountPanel(panel);
-    return true;
   }
 
   patchExecutionHint(label: string | null): void {

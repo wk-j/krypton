@@ -88,7 +88,8 @@ A third, standalone piece lives outside the app build: the **Raycast extension**
     - Late async state (Git refs, images, usage, memory) calls `update()` on the owning sub-component. Never reach into a sealed row's DOM from outside it.
     - Turn-end and per-event paths (`stop`, `usage`, `finishTurn`, `sealStreaming`) seal rows and patch chrome; a seal invalidates no scheduler region, and they must not call `render()`.
     - No `infinite` CSS animation on a row or chrome element that is not live.
-    - The named inline-panel exceptions are GenUI (spec 310) and Execution Inspector (spec 315). `AcpHarnessView` owns each movable panel node; rows own only their cards/slots. Opening or using a panel never enters `AssistantRow.bodyDeps()` / `ToolRow.bodyDeps()` or repaints the sealed row. Re-seat the same node after every transcript commit; close without taking focus when its lane/row disappears. Execution summary updates go through the owning `ExecutionCard`, not arbitrary DOM writes. Do not give a row ownership of live controls or generalize these exceptions.
+    - The named inline-panel exception is GenUI (spec 310). `AcpHarnessView` owns the movable panel node; rows own only their cards/slots. Opening or using the panel never enters `AssistantRow.bodyDeps()` or repaints the sealed row. Re-seat the same node after every transcript commit; close without taking focus when its lane/row disappears. Do not give a row ownership of live controls or generalize this exception.
+    - The Execution Inspector (spec 319) is a view-owned modal overlay, not a row slot: opening, updating or closing it never writes row DOM. Execution summary updates go through the owning `ExecutionCard`, not arbitrary DOM writes.
 
 ## Platform Gotchas
 

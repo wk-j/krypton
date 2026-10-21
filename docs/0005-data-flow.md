@@ -1192,8 +1192,8 @@ PUBLISH
        hold their own dependency tuples, so pending and in_progress collapse
        into one status bucket and a status-only tick writes nothing. Generic
        streaming output swaps `.acp-harness__tool-output` alone and never the head;
-       recognized OMP execution snapshots update their owning ExecutionCard and
-       view-owned ExecutionPanel instead (spec 315).
+       recognized OMP execution snapshots update their owning ExecutionCard and,
+       when open, the view-owned ExecutionDialog instead (specs 315/319).
        Sticky follow on that pass (rev 15) idles or pins when the transcript
        bottom did not grow, so a bounded execute-output tail does not replay a
        glide over already-visible rows.
@@ -1207,12 +1207,17 @@ PUBLISH
        keeping bounded typed data on the same transcript item. Omitted fields
        retain previous values; output snapshots replace, not append. Artifact
        redaction and subagent cards have precedence over this renderer.
-    i. Transcript f-hints or an Inspector click mount the view's one
-       ExecutionPanel in that item's card slot. Transcript commits re-seat the
-       same node; lane/reset/hidden-tab/eviction teardown closes without taking
-       focus. Source highlighting runs only when source changes; table/JSON
-       output replaces only unambiguous backend-provided spans. No job polling
-       or spilled-output fetch is introduced.
+    i. Transcript f-hints or an Inspector click open the view's one
+       ExecutionDialog (spec 319) for that item: an OverlayShell modal in the
+       Harness body that owns the keyboard while open (Cmd/Ctrl chords pass
+       through) and never writes row DOM. Each transcript commit refreshes it
+       from the item; a lane switch, reset, restart, hidden tab or the item
+       leaving lane.transcript closes it without taking focus, while a
+       tail-window shift does not. The shared tool ticker scans the Harness
+       root so the dialog's live time advances. Source highlighting runs only
+       when source changes; table/JSON output replaces only unambiguous
+       backend-provided spans. No job polling or spilled-output fetch is
+       introduced.
 ```
 ## Resize Mode Flow (e.g., Leader then r)
 

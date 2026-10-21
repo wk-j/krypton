@@ -24,23 +24,16 @@ afterEach(() => {
 });
 
 describe('ExecutionCard', () => {
-  it('keeps summary controls and mounted inspector through stream and terminal updates', () => {
+  it('keeps one summary node and its dialog trigger through stream and terminal updates', () => {
     const item = card();
     const button = item.el.querySelector('button')!;
-    const panel = document.createElement('section');
-    panel.textContent = 'retained inspector';
-    item.mountPanel(panel);
     item.setHint('a');
-    expect(button.getAttribute('aria-expanded')).toBe('true');
-    expect(panel.isConnected).toBe(true);
+    expect(button.getAttribute('aria-haspopup')).toBe('dialog');
     item.update({ payload: { ...payload, output: 'one', activity: [{ op: 'log', text: 'Real log', detail: '' }] }, status: 'in_progress', startedAt: 10, hintLabel: 'a' });
     item.update({ payload: { ...payload, output: 'one\ntwo', cellStatus: 'complete', durationMs: 42 }, status: 'completed', startedAt: 10, endedAt: 99, hintLabel: 'a' });
     expect(item.el.querySelector('button')).toBe(button);
-    expect(panel.parentElement?.parentElement).toBe(item.el);
-    expect(button.getAttribute('aria-expanded')).toBe('true');
-    item.mountPanel(null);
-    expect(button.getAttribute('aria-expanded')).toBe('false');
-    expect(panel.parentNode).toBeNull();
+    expect(button.textContent).toContain('a');
+    expect(item.el.textContent).not.toContain('one\ntwo');
   });
 
   it('uses only real activity and keeps code out of the compact summary', () => {
@@ -86,17 +79,9 @@ describe('ExecutionCard', () => {
     expect(timer.dataset.endedAt).toBeDefined();
   });
 
-  it('distinguishes observed terminal elapsed from runtime timing and leaves panel lifetime to its owner', () => {
+  it('distinguishes observed terminal elapsed from runtime timing', () => {
     const item = card();
     item.update({ payload: { ...payload, cellStatus: 'complete' }, status: 'completed', startedAt: 10, endedAt: 120, hintLabel: null });
     expect(item.el.querySelector<HTMLElement>('.acp-harness__tool-timer')?.title).toMatch(/observed/i);
-    const panel = document.createElement('div');
-    const input = document.createElement('input');
-    input.value = 'owned by view';
-    panel.append(input);
-    item.mountPanel(panel);
-    item.dispose();
-    expect(panel.contains(input)).toBe(true);
-    expect(input.value).toBe('owned by view');
   });
 });
