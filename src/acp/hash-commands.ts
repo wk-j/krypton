@@ -62,8 +62,8 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'mcp', args: '', description: 'print harness MCP server status' },
   {
     name: 'panels',
-    args: '[hide | show | toggle]',
-    description: 'hide or restore persistent harness panels',
+    args: '[hide | show | toggle] [plan | peek | thought | grammar | queue | ticket]',
+    description: 'hide or restore harness panels — all, or one by name',
   },
   {
     name: 'assist',

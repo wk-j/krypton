@@ -590,17 +590,20 @@ export class HarnessTicketController {
 
   renderTicketDock(): void {
     const ticket = this.activeTicket;
-    this.ticketDockEl.hidden = !ticket || this.host.panelsHidden;
-    this.host.element.classList.toggle('acp-harness--ticket-active', ticket !== null);
+    // spec 320: a hidden dock drops its root classes too, so the dashboard
+    // gives back the 352px/46px it reserves; the collapse state is untouched.
+    const shown = ticket !== null && !this.host.isPanelHidden('ticket');
+    this.ticketDockEl.hidden = !shown;
+    this.host.element.classList.toggle('acp-harness--ticket-active', shown);
     this.host.element.classList.toggle(
       'acp-harness--ticket-collapsed',
-      ticket !== null && this.ticketPanelCollapsed,
+      shown && this.ticketPanelCollapsed,
     );
     this.host.element.classList.toggle(
       'acp-harness--ticket-expanded',
-      ticket !== null && !this.ticketPanelCollapsed,
+      shown && !this.ticketPanelCollapsed,
     );
-    if (!ticket || this.host.panelsHidden) return;
+    if (!ticket || !shown) return;
     this.ticketDock.update({
       ticket,
       workerName: this.ticketWorker?.laneDisplayName ?? null,

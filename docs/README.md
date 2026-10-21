@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (305)
+## Specs (306)
 
 | # | Spec |
 |---|------|
@@ -322,6 +322,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 317 | [File Manager Components](./0317-file-manager-components.md) |
 | 318 | [Connected Computer Read-Only Auto-Approval](./0318-connected-computer-read-only-auto-approval.md) |
 | 319 | [Harness Execution Inspector Dialog](./0319-harness-execution-inspector-dialog.md) |
+| 320 | [Harness Titlebar Panel Toggles](./0320-harness-titlebar-panel-toggles.md) |
 
 ## ADRs (24)
 

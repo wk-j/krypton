@@ -61,6 +61,19 @@ import { el } from '../ui/dom';
 import { clampCursor, nextCursor, prevCursor } from './components/list-picker';
 import { LayoutHost, type Mountable } from '../ui/layout';
 import { HARNESS_LAYOUT_DEFAULT, type HarnessSlot } from './harness-layout';
+import {
+  ALL_PANELS_TOGGLE_ID,
+  harnessTitlebarToggles,
+  isHarnessPanelId,
+  nextHidden,
+  panelFlash,
+  PANELS_USAGE,
+  parsePanelsCommand,
+  readHiddenPanels,
+  writeHiddenPanels,
+  type HarnessPanelId,
+  type PanelsCommand,
+} from './harness-panel-visibility';
 import { HelpOverlay } from './components/help-overlay';
 import { LanePicker } from './components/lane-picker';
 import { DirectivePicker } from './components/directive-picker';
@@ -312,6 +325,7 @@ import type {
   LeaderKeyBinding,
   LeaderKeySpec,
   PaneContentType,
+  TitlebarToggle,
   WorkspaceRef,
 } from '../types';
 import { workspaceKey } from '../types';
@@ -1373,6 +1387,9 @@ export class AcpHarnessView implements ContentView {
   private conciseMode = false;
   /** spec 251: hide persistent auxiliary panels without discarding their state. */
   private panelsHidden = false;
+  /** spec 320: per-panel hidden flags, beneath `panelsHidden` as the master switch. */
+  private hiddenPanels: ReadonlySet<HarnessPanelId> = new Set();
+  private titlebarToggleListeners = new Set<() => void>();
   private memoryCursorRowId: string | null = null;
   private focus: ComposerFocus = 'text';
   /** spec 252: direct-insertion letter afterimage consumed by the synchronous composer render. */
@@ -1571,6 +1588,7 @@ export class AcpHarnessView implements ContentView {
     this.zenMode = readZenModePreference(projectDir);
     this.conciseMode = readConciseModePreference(projectDir);
     this.panelsHidden = readPanelsHiddenPreference(projectDir);
+    this.hiddenPanels = readHiddenPanels(projectDir);
     this.element = document.createElement('div');
     this.element.className = 'acp-harness';
     this.element.tabIndex = 0;
@@ -4418,11 +4436,17 @@ export class AcpHarnessView implements ContentView {
             return true;
           }
         }
-        if (e.code === 'Digit0' && (this.assistCtl.dismiss(assistLane) || this.assistCtl.dismissPanel(assistLane))) {
+        // spec 320: a hidden grammar panel is not actionable — neither key may
+        // dismiss or apply a result the user cannot see.
+        if (
+          e.code === 'Digit0'
+          && (this.assistCtl.dismiss(assistLane)
+            || (!this.isPanelHidden('grammar') && this.assistCtl.dismissPanel(assistLane)))
+        ) {
           e.preventDefault();
           return true;
         }
-        if (e.code === 'KeyG' && this.assistCtl.acceptCorrection(assistLane)) {
+        if (e.code === 'KeyG' && !this.isPanelHidden('grammar') && this.assistCtl.acceptCorrection(assistLane)) {
           e.preventDefault();
           return true;
         }
@@ -4821,6 +4845,22 @@ export class AcpHarnessView implements ContentView {
   onLaneMarksChange(cb: () => void): () => void {
     this.laneMarksListeners.add(cb);
     return () => this.laneMarksListeners.delete(cb);
+  }
+
+  /** spec 320: the panel toggles this view contributes to its window titlebar. */
+  getTitlebarToggles(): readonly TitlebarToggle[] {
+    return harnessTitlebarToggles(this.hiddenPanels, this.panelsHidden);
+  }
+
+  onTitlebarTogglesChange(cb: () => void): () => void {
+    this.titlebarToggleListeners.add(cb);
+    return () => this.titlebarToggleListeners.delete(cb);
+  }
+
+  /** A titlebar click is the bare-toggle form of the matching `#panels` command. */
+  activateTitlebarToggle(id: string): void {
+    if (id === ALL_PANELS_TOGGLE_ID) this.applyPanelsCommand({ kind: 'all', action: 'toggle' });
+    else if (isHarnessPanelId(id)) this.applyPanelsCommand({ kind: 'panel', panel: id, action: 'toggle' });
   }
 
   /** Called from every render(); deduped on a serialized key so the strip is
@@ -11563,18 +11603,12 @@ export class AcpHarnessView implements ContentView {
     }
     if (parts[0] === '#panels') {
       this.setDraft(lane, '', 0);
-      const action = parts[1]?.toLowerCase() ?? 'toggle';
-      if (parts.length > 2 || !['hide', 'show', 'toggle'].includes(action)) {
-        this.flashChip('usage: #panels [hide | show | toggle]');
+      const command = parsePanelsCommand(parts.slice(1));
+      if (command.kind === 'usage') {
+        this.flashChip(PANELS_USAGE);
         return;
       }
-      const hidden = action === 'hide'
-        ? true
-        : action === 'show'
-          ? false
-          : !this.panelsHidden;
-      this.setPanelsHidden(hidden);
-      this.flashChip(hidden ? 'panels hidden · #panels show' : 'panels shown');
+      this.applyPanelsCommand(command);
       return;
     }
     if (parts.length === 1 && parts[0] === '#telegram') {
@@ -12461,12 +12495,12 @@ export class AcpHarnessView implements ContentView {
   /** Patch the already-visible peek tool row for this lane. Do not remount the
    *  peek card or heat ring — those rebuilds flash the rail on every tool. */
   private syncPeekToolRow(lane: HarnessLane): void {
-    if (this.panelsHidden || this.peekLaneId !== lane.id) return;
+    if (this.isPanelHidden('peek') || this.peekLaneId !== lane.id) return;
     this.renderLanePeek();
   }
 
   private patchPeekThoughtIfLane(lane: HarnessLane): void {
-    if (this.panelsHidden) return;
+    if (this.isPanelHidden('thought')) return;
     const showing = this.thoughtLaneId;
     const target = this.resolveThoughtTarget();
     if (showing === lane.id || target?.laneId === lane.id || (!target && showing)) {
@@ -12480,7 +12514,12 @@ export class AcpHarnessView implements ContentView {
    *  follows the active lane there as well. Numbered drain-order rows, ▸ head
    *  marker (dimmed when the queue is held/paused), per-item →lane / img×N tags. */
   private renderActiveLaneQueue(): void {
-    if (this.panelsHidden) return;
+    // spec 320: the rail stays up when only this panel is off, so the slot
+    // itself must leave; the next render after show repaints it from state.
+    if (this.isPanelHidden('queue')) {
+      this.queueSlot.hidden = true;
+      return;
+    }
     const lane = this.activeLane();
     if (!lane || lane.queuedPrompts.length === 0) {
       this.queueSlot.hidden = true;
@@ -12575,7 +12614,14 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderLanePeek(): void {
-    if (this.panelsHidden) return;
+    if (this.isPanelHidden('peek')) {
+      if (this.peekCard) {
+        this.railLayout.unmount('peek');
+        this.peekCard = null;
+      }
+      this.peekLaneId = null;
+      return;
+    }
     const now = Date.now();
     this.maybeRecordLaneMetricSamples(now);
     const snapshots = this.lanePeekSnapshots();
@@ -12648,8 +12694,14 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderLaneThought(): void {
-    if (this.panelsHidden) {
+    if (this.isPanelHidden('thought')) {
       this.stopThoughtTeletypeTick();
+      this.cancelThoughtSlotHide();
+      if (this.thoughtCard) {
+        this.railLayout.unmount('thought');
+        this.thoughtCard = null;
+      }
+      this.thoughtLaneId = null;
       return;
     }
     const snapshot = this.resolveThoughtTarget();
@@ -12679,7 +12731,7 @@ export class AcpHarnessView implements ContentView {
   /** Spec 306 addendum: the active lane's grammar review, in its own rail slot. */
   private renderGrammarPanel(): void {
     const lane = this.activeLane();
-    const state = lane && !this.panelsHidden ? this.assistCtl.panelState(lane.id) : null;
+    const state = lane && !this.isPanelHidden('grammar') ? this.assistCtl.panelState(lane.id) : null;
     if (!lane || !state || state.kind === 'idle') {
       if (this.grammarPanel) {
         this.railLayout.unmount('grammar');
@@ -14648,7 +14700,10 @@ export class AcpHarnessView implements ContentView {
   }
 
   private renderPlanPanel(lane: HarnessLane | null): void {
-    if (this.panelsHidden) return;
+    if (this.isPanelHidden('plan')) {
+      this.planSlot.hidden = true;
+      return;
+    }
     const entries = lane?.plan ?? [];
     if (entries.length === 0) {
       this.planSlot.hidden = true;
@@ -15647,7 +15702,42 @@ export class AcpHarnessView implements ContentView {
     this.panelsHidden = hidden;
     writePanelsHiddenPreference(this.projectDir, hidden);
     if (hidden) this.stopThoughtTeletypeTick();
+    this.notifyTitlebarTogglesChanged();
     this.render();
+  }
+
+  /** spec 320: one panel's own flag. Independent of `panelsHidden`: neither setter writes the other's flag. */
+  private setPanelHidden(panel: HarnessPanelId, hidden: boolean): void {
+    if (this.hiddenPanels.has(panel) === hidden) return;
+    const next = new Set(this.hiddenPanels);
+    if (hidden) next.add(panel);
+    else next.delete(panel);
+    this.hiddenPanels = next;
+    writeHiddenPanels(this.projectDir, next);
+    this.notifyTitlebarTogglesChanged();
+    this.render();
+  }
+
+  /** spec 320: the master switch wins; otherwise the panel's own flag. */
+  private isPanelHidden(panel: HarnessPanelId): boolean {
+    return this.panelsHidden || this.hiddenPanels.has(panel);
+  }
+
+  /** Shared by `#panels` and the titlebar toggles, so both flash the same chip. */
+  private applyPanelsCommand(command: Exclude<PanelsCommand, { kind: 'usage' }>): void {
+    if (command.kind === 'all') {
+      const hidden = nextHidden(command.action, this.panelsHidden);
+      this.setPanelsHidden(hidden);
+      this.flashChip(hidden ? 'panels hidden · #panels show' : 'panels shown');
+      return;
+    }
+    const hidden = nextHidden(command.action, this.hiddenPanels.has(command.panel));
+    this.setPanelHidden(command.panel, hidden);
+    this.flashChip(panelFlash(command.panel, hidden, this.panelsHidden));
+  }
+
+  private notifyTitlebarTogglesChanged(): void {
+    for (const listener of [...this.titlebarToggleListeners]) listener();
   }
 
   private sortedMemoryRows(): HandoffEntry[] {
@@ -16061,7 +16151,7 @@ export class AcpHarnessView implements ContentView {
       get activeLaneId() { return view.activeLaneId; },
       get harnessMemoryId() { return view.harnessMemoryId; },
       get projectDir() { return view.projectDir; },
-      get panelsHidden() { return view.panelsHidden; },
+      isPanelHidden: (panel) => view.isPanelHidden(panel),
       get openMarkdownViewCb() { return view.openMarkdownViewCb; },
       get openFileReferenceCb() { return view.openFileReferenceCb; },
       flashChip: (text) => view.flashChip(text),

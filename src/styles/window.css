@@ -199,6 +199,9 @@
   /* Clip the ack/progress sweep. The session mark stays in this rail
      (spec 226) — it does not hang into the oscilloscope. */
   overflow: hidden;
+  /* spec 320: narrow-tile rule — the view-toggle cluster collapses to `all`
+     below 480px so the label keeps room. */
+  container-type: inline-size;
   /* Same default as `--krypton-lane-zoom` on the footer strip (spec 218).
      Capped to titlebar height on the focused rule so the digits cannot
      leave the top of the window. */
@@ -315,6 +318,71 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--krypton-titlebar-text, rgba(0, 200, 255, 0.4));
+}
+
+/* ─── Titlebar view toggles (spec 320) ───
+   Icon buttons a content view contributes to its host window's titlebar.
+   First child of `-end`; tabindex -1 so a click never steals the composer. */
+.krypton-window__view-toggles {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  height: 100%;
+}
+
+.krypton-window__view-toggles[hidden] {
+  display: none;
+}
+
+.krypton-window__view-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--krypton-titlebar-text, rgba(0, 200, 255, 0.4));
+  cursor: pointer;
+}
+
+.krypton-window__view-toggle-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.krypton-window__view-toggle[aria-pressed='true'] {
+  color: var(--krypton-window-accent, #0cf);
+}
+
+.krypton-window__view-toggle:not(:disabled):hover {
+  color: var(--krypton-window-accent, #0cf);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+}
+
+.krypton-window__view-toggle:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.krypton-window__view-toggle-sep {
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+  flex: none;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25);
+}
+
+@container (max-width: 480px) {
+  .krypton-window__view-toggle:not([data-toggle-id='all']),
+  .krypton-window__view-toggle-sep {
+    display: none;
+  }
 }
 
 /* ─── Window footer AI subscription usage (spec 153) ─── */

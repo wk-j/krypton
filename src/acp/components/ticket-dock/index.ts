@@ -18,7 +18,7 @@
 // surfaces (`ticket`, `workerName`, `collapsed`) arrive as data, and the
 // buttons carry `data-ticket-dock-action="toggle"` for the delegated click
 // handler the controller already installed on the dock element. That handler,
-// the `hidden` flag (which also answers to `panelsHidden`) and the three
+// the `hidden` flag (which also answers to `#panels` and spec 320's `ticket` flag) and the three
 // `acp-harness--ticket-*` classes on the harness root stay with the view: they
 // are the dock's placement, not its content.
 //

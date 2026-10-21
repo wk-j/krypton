@@ -104,6 +104,7 @@ import { HarnessTimelineController } from './harness-timeline-controller';
 import { HarnessTicketController } from './harness-ticket-controller';
 import { renderToolIndex } from './lane-context';
 import type { LaneToolGates } from './lane-context';
+import type { HarnessPanelId } from './harness-panel-visibility';
 
 // Spec 301: the behaviour tests below cross exactly two module boundaries —
 // the tauri bridge and the project MCP loader. `importOriginal` keeps every
@@ -424,6 +425,7 @@ describe('assistant reference Git state', () => {
     const unmounted: string[] = [];
     const target: {
       panelsHidden: boolean;
+      hiddenPanels: ReadonlySet<HarnessPanelId>;
       thoughtCard: unknown;
       thoughtLaneId: string | null;
       thoughtHideTimer: number | null;
@@ -432,6 +434,7 @@ describe('assistant reference Git state', () => {
       stopThoughtTeletypeTick(): void;
     } = viewDouble({
       panelsHidden: false,
+      hiddenPanels: new Set<HarnessPanelId>(),
       thoughtCard: {} as unknown,
       thoughtLaneId: 'lane-1' as string | null,
       thoughtHideTimer: null as number | null,
@@ -4041,128 +4044,201 @@ describe('#telegram dispatch', () => {
   });
 });
 
-describe('#panels dispatch (spec 251)', () => {
+describe('#panels and titlebar toggles (specs 251, 320)', () => {
   type TestLane = { status: string };
-  type PanelsRunner = { runHashCommand(lane: TestLane, text: string): Promise<void> };
-  const runHashCommand = (AcpHarnessView.prototype as unknown as PanelsRunner).runHashCommand;
+  type PanelsView = {
+    runHashCommand(lane: TestLane, text: string): Promise<void>;
+    activateTitlebarToggle(id: string): void;
+  };
+  const proto = AcpHarnessView.prototype as unknown as PanelsView;
 
-  function harnessDouble(hidden = false): {
-    target: Record<string, unknown>;
+  function harnessDouble(options: { allHidden?: boolean; hidden?: HarnessPanelId[] } = {}): {
+    target: { panelsHidden: boolean; hiddenPanels: Set<HarnessPanelId> };
     drafts: string[];
     flashes: string[];
-    states: boolean[];
+    changes: string[];
   } {
     const drafts: string[] = [];
     const flashes: string[] = [];
-    const states: boolean[] = [];
-    const target: Record<string, unknown> = {
-      panelsHidden: hidden,
-      setDraft: (_lane: TestLane, value: string) => drafts.push(value),
-      flashChip: (value: string) => flashes.push(value),
-      setPanelsHidden: (value: boolean) => {
+    const changes: string[] = [];
+    // Real `applyPanelsCommand` (from the prototype) over stubbed setters.
+    const target: { panelsHidden: boolean; hiddenPanels: Set<HarnessPanelId> } = viewDouble({
+      panelsHidden: options.allHidden ?? false,
+      hiddenPanels: new Set<HarnessPanelId>(options.hidden ?? []),
+      setDraft: (_lane: TestLane, value: string): void => { drafts.push(value); },
+      flashChip: (value: string): void => { flashes.push(value); },
+      setPanelsHidden: (value: boolean): void => {
         target.panelsHidden = value;
-        states.push(value);
+        changes.push(`all:${value}`);
       },
-    };
-    return { target, drafts, flashes, states };
+      setPanelHidden: (panel: HarnessPanelId, value: boolean): void => {
+        if (value) target.hiddenPanels.add(panel);
+        else target.hiddenPanels.delete(panel);
+        changes.push(`${panel}:${value}`);
+      },
+    });
+    return { target, drafts, flashes, changes };
   }
 
-  it('toggles with the bare command and accepts explicit hide/show', async () => {
+  it('keeps the all-panels forms of spec 251', async () => {
     const h = harnessDouble();
 
-    await runHashCommand.call(h.target, { status: 'busy' }, '#panels');
-    await runHashCommand.call(h.target, { status: 'busy' }, '#panels show');
-    await runHashCommand.call(h.target, { status: 'busy' }, '#panels hide');
-    await runHashCommand.call(h.target, { status: 'busy' }, '#panels toggle');
+    for (const text of ['#panels', '#panels show', '#panels hide', '#panels toggle']) {
+      await proto.runHashCommand.call(h.target, { status: 'busy' }, text);
+    }
 
     expect(h.drafts).toEqual(['', '', '', '']);
-    expect(h.states).toEqual([true, false, true, false]);
-    expect(h.flashes).toEqual([
-      'panels hidden · #panels show',
-      'panels shown',
-      'panels hidden · #panels show',
-      'panels shown',
-    ]);
+    expect(h.changes).toEqual(['all:true', 'all:false', 'all:true', 'all:false']);
+    expect(h.target.hiddenPanels.size).toBe(0);
   });
 
-  it('rejects unknown or extra arguments without changing visibility', async () => {
-    const h = harnessDouble(true);
+  it('toggles or sets one panel without touching the master switch', async () => {
+    const h = harnessDouble();
 
-    await runHashCommand.call(h.target, { status: 'idle' }, '#panels maybe');
-    await runHashCommand.call(h.target, { status: 'idle' }, '#panels hide now');
+    for (const text of ['#panels grammar', '#panels grammar', '#panels hide ticket', '#panels hide ticket', '#panels show ticket']) {
+      await proto.runHashCommand.call(h.target, { status: 'idle' }, text);
+    }
 
-    expect(h.states).toEqual([]);
+    expect(h.changes).toEqual(['grammar:true', 'grammar:false', 'ticket:true', 'ticket:true', 'ticket:false']);
+    expect(h.target.panelsHidden).toBe(false);
+  });
+
+  it('still records a per-panel choice while every panel is hidden, and says so', async () => {
+    const h = harnessDouble({ allHidden: true, hidden: ['plan'] });
+
+    await proto.runHashCommand.call(h.target, { status: 'idle' }, '#panels show plan');
+
+    expect(h.changes).toEqual(['plan:false']);
     expect(h.target.panelsHidden).toBe(true);
-    expect(h.flashes).toEqual([
-      'usage: #panels [hide | show | toggle]',
-      'usage: #panels [hide | show | toggle]',
-    ]);
+    expect(h.flashes[0]).toContain('all panels hidden');
   });
 
-  it('hides every panel from one root class, leaving the modals reachable', () => {
-    type PanelsHost = {
-      syncRootClasses(): void;
-      renderActiveLaneQueue(): void;
-      renderPlanPanel(lane: HarnessLane | null): void;
-      syncPeekToolRow(lane: HarnessLane): void;
-      renderLaneThought(): void;
+  it('rejects unknown, reversed or extra arguments without changing visibility', async () => {
+    const h = harnessDouble({ allHidden: true });
+
+    for (const text of ['#panels maybe', '#panels grammar hide', '#panels hide plan now']) {
+      await proto.runHashCommand.call(h.target, { status: 'idle' }, text);
+    }
+
+    expect(h.changes).toEqual([]);
+    expect(h.drafts).toEqual(['', '', '']);
+    expect(h.flashes).toHaveLength(3);
+  });
+
+  it('maps a titlebar click to the bare toggle of the matching command', () => {
+    const h = harnessDouble({ hidden: ['queue'] });
+
+    proto.activateTitlebarToggle.call(h.target, 'thought');
+    proto.activateTitlebarToggle.call(h.target, 'queue');
+    proto.activateTitlebarToggle.call(h.target, 'all');
+    proto.activateTitlebarToggle.call(h.target, 'zen');
+
+    expect(h.changes).toEqual(['thought:true', 'queue:false', 'all:true']);
+  });
+
+  type RailRenderers = {
+    renderActiveLaneQueue(): void;
+    renderPlanPanel(lane: HarnessLane | null): void;
+    renderLanePeek(): void;
+    renderLaneThought(): void;
+    renderGrammarPanel(): void;
+  };
+  const rail = AcpHarnessView.prototype as unknown as RailRenderers;
+
+  function railDouble(panelsHidden: boolean, hidden: HarnessPanelId[]): {
+    target: {
+      queueSlot: { hidden: boolean };
+      planSlot: { hidden: boolean };
+      peekCard: unknown;
+      thoughtCard: unknown;
+      grammarPanel: unknown;
     };
-    const proto = AcpHarnessView.prototype as unknown as PanelsHost;
-    const toggled: Array<[string, boolean]> = [];
+    painted: string[];
+    unmounted: string[];
+  } {
     const painted: string[] = [];
-    const lane = {
-      id: 'lane-1',
-      queuedPrompts: [{}],
-      plan: [{}],
-    } as unknown as HarnessLane;
-    const target = {
-      element: {
-        classList: {
-          toggle: (name: string, on: boolean): void => { toggled.push([name, on]); },
-        },
-      },
-      focus: 'text',
-      zenMode: false,
-      conciseMode: false,
-      panelsHidden: true,
-      memoryDrawerOpen: false,
+    const unmounted: string[] = [];
+    const lane = { id: 'lane-1', queuedPrompts: [{}], plan: [{}] } as unknown as HarnessLane;
+    const target = viewDouble({
+      panelsHidden,
+      hiddenPanels: new Set<HarnessPanelId>(hidden),
       queueSlot: { hidden: false },
       planSlot: { hidden: false },
       queueCard: { update: (): void => { painted.push('queue'); } },
       planPanel: { update: (): void => { painted.push('plan'); } },
-      peekLaneId: 'lane-1',
-      renderLanePeek: (): void => { painted.push('peek'); },
-      resolveThoughtTarget: (): unknown => ({ laneId: 'lane-1' }),
+      grammarPanel: { update: (): void => { painted.push('grammar'); } } as unknown,
+      peekCard: {} as unknown,
+      peekLaneId: 'lane-2' as string | null,
+      thoughtCard: {} as unknown,
+      thoughtLaneId: 'lane-1' as string | null,
+      thoughtHideTimer: null as number | null,
+      railLayout: { unmount: (id: string): void => { unmounted.push(id); } },
+      assistCtl: { panelState: (): unknown => ({ kind: 'ready' }) },
       stopThoughtTeletypeTick: (): void => { painted.push('thought-tick-stop'); },
       activeLane: (): HarnessLane => lane,
-    };
+    });
+    rail.renderActiveLaneQueue.call(target);
+    rail.renderPlanPanel.call(target, lane);
+    rail.renderLanePeek.call(target);
+    rail.renderLaneThought.call(target);
+    rail.renderGrammarPanel.call(target);
+    return { target, painted, unmounted };
+  }
 
-    proto.syncRootClasses.call(target);
-    proto.renderActiveLaneQueue.call(target);
-    proto.renderPlanPanel.call(target, lane);
-    proto.syncPeekToolRow.call(target, lane);
-    proto.renderLaneThought.call(target);
+  it('takes every panel out of the rail under the master switch', () => {
+    const { target, painted, unmounted } = railDouble(true, []);
 
-    // One root class carries the whole state…
-    expect(toggled.filter(([name]) => name.includes('panels'))).toEqual([
-      ['acp-harness--panels-hidden', true],
-    ]);
-    // …and every panel renderer short-circuits instead of painting, with the
-    // thought teletype parked rather than left ticking against a hidden card.
+    // Nothing paints; the live thought's teletype is parked, not left ticking.
     expect(painted).toEqual(['thought-tick-stop']);
-    expect(target.queueSlot.hidden).toBe(false);
-    expect(target.planSlot.hidden).toBe(false);
+    expect(unmounted).toEqual(['peek', 'thought', 'grammar']);
+    expect(target.queueSlot.hidden).toBe(true);
+    expect(target.planSlot.hidden).toBe(true);
+    expect([target.peekCard, target.thoughtCard, target.grammarPanel]).toEqual([null, null, null]);
   });
 
-  it('hides the panels from CSS without reaching the modal overlays', () => {
-    const shared = styleSheet('../styles/harness-shared.css');
+  it('removes only the hidden panels while the rail stays up', () => {
+    const { target, painted, unmounted } = railDouble(false, ['plan', 'peek', 'thought']);
 
-    expect(shared).toContain('.acp-harness--panels-hidden .acp-harness__lane-rail');
-    expect(shared).toContain('.acp-harness--panels-hidden .acp-harness__ticket-dock');
-    expect(shared).toContain('.acp-harness--panels-hidden .acp-harness__rail');
-    expect(shared).toContain('.acp-harness--panels-hidden.acp-harness--zen .acp-harness__dashboard');
-    expect(shared).not.toContain('.acp-harness--panels-hidden .acp-harness__memory-overlay');
-    expect(shared).not.toContain('.acp-harness--panels-hidden .acp-harness__help-overlay');
+    expect(painted).toEqual(['queue', 'thought-tick-stop', 'grammar']);
+    expect(unmounted).toEqual(['peek', 'thought']);
+    expect(target.planSlot.hidden).toBe(true);
+    expect(target.queueSlot.hidden).toBe(false);
+  });
+
+  it('gives back the ticket dock width only while the dock is hidden', () => {
+    type DockHost = { renderTicketDock(): void };
+    const renderTicketDock = (HarnessTicketController.prototype as unknown as DockHost).renderTicketDock;
+    let ticketHidden = true;
+    const classes = new Map<string, boolean>();
+    const updates: unknown[] = [];
+    const ctl = {
+      activeTicket: { id: 'KR-320' },
+      ticketWorker: null,
+      ticketPanelCollapsed: true,
+      ticketDockEl: { hidden: false },
+      ticketDock: { update: (props: unknown): void => { updates.push(props); } },
+      host: {
+        isPanelHidden: (panel: HarnessPanelId): boolean => panel === 'ticket' && ticketHidden,
+        element: { classList: { toggle: (name: string, on: boolean): void => { classes.set(name, on); } } },
+      },
+    };
+
+    renderTicketDock.call(ctl);
+    expect(ctl.ticketDockEl.hidden).toBe(true);
+    expect([...classes.values()]).toEqual([false, false, false]);
+    expect(updates).toEqual([]);
+
+    ticketHidden = false;
+    renderTicketDock.call(ctl);
+    expect(ctl.ticketDockEl.hidden).toBe(false);
+    expect(Object.fromEntries(classes)).toEqual({
+      'acp-harness--ticket-active': true,
+      'acp-harness--ticket-collapsed': true,
+      'acp-harness--ticket-expanded': false,
+    });
+    // The collapse state survived the hide.
+    expect(ctl.ticketPanelCollapsed).toBe(true);
+    expect(updates).toHaveLength(1);
   });
 });
 

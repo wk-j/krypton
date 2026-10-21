@@ -855,17 +855,43 @@ built-in krypton-dark values in `gallery.css`.
    mark adds a small trailing number when its name ends in `-N`; it has no tab
    background or name tail. No footer logo.
 6. Tab visibility changes, window creation, and pane focus changes all call
-   syncWindowFooter(win), which re-runs the AI credit sync (spec 153) and
+   syncWindowChrome(win), which re-runs the AI credit sync (spec 153) and
    syncWindowLaneStrip() together — the strip resubscribes to the newly focused
    view, and a focused terminal reports no lanes, so the strip is removed.
 7. closeWindow() fires the lane unsubscribe and drops the cached strip key.
+```
+
+## Window Titlebar Panel Toggles Flow (spec 320)
+
+```
+1. syncWindowChrome(win) — the same four entry points — calls
+   syncWindowTitlebarToggles(win): drop the window's previous subscription,
+   resolve the active tab's focused pane's ContentView, and render
+   getTitlebarToggles?.() into the window's own .krypton-window__titlebar-end
+   (a focused terminal has none, so the cluster is removed).
+2. syncTitlebarToggles() (src/titlebar-toggles.ts) keeps the cluster as the
+   first child of -end and rebuilds its buttons only when an id/icon/label/
+   pressed/disabled/separator key changes.
+3. A click: the cluster's mousedown preventDefault keeps DOM focus in the
+   composer (the window's own mousedown still focuses the window); the click
+   handler resolves the focused view AT CLICK TIME and calls
+   activateTitlebarToggle(id).
+4. AcpHarnessView maps the id to the bare-toggle #panels command:
+   applyPanelsCommand → setPanelHidden(panel) or setPanelsHidden() → persist to
+   localStorage, notify titlebar listeners, render(), flash the chip.
+5. render() → rightRail region: each renderer asks isPanelHidden(id)
+   (= panelsHidden || hiddenPanels.has(id)) and empties or unmounts its slot;
+   the ticket controller drops the --ticket-* root classes so the dashboard
+   gives back the dock's width.
+6. The listener re-runs syncTitlebarToggles() → aria-pressed / disabled update.
+7. closeWindow() fires the titlebar unsubscribe.
 ```
 
 ## Window Project Badge Flow (spec 219)
 
 ```
 1. A tab becomes visible / a window is created / pane focus moves — the same four
-   entry points as above, all funnelling into syncWindowFooter(win).
+   entry points as above, all funnelling into syncWindowChrome(win).
 2. syncWindowProjectBadge() resolves the active tab's focused pane's ContentView
    and reads getWorkingDirectory?.(). No subscription: a view's project directory
    is fixed for its lifetime, so these four moments are the only ones that matter.
@@ -886,7 +912,7 @@ built-in krypton-dark values in `gallery.css`.
 ## Window Diff Stat Flow (spec 220)
 
 ```
-1. Same four entry points as above: syncWindowFooter(win) calls
+1. Same four entry points as above: syncWindowChrome(win) calls
    syncWindowDiffStat(win) just before the project badge, so the badge's prepend
    lands ahead of it and reading order is "project, then its counts".
 2. It reads the focused pane's getWorkingDirectory?.() and resolves it through

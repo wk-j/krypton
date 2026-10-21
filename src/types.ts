@@ -224,6 +224,21 @@ export function workspaceKey(workspace: WorkspaceRef): string {
   return `ssh:${workspace.user}@${workspace.host}:${workspace.port}:${workspace.path}`;
 }
 
+/** spec 320: one icon toggle a content view contributes to its window's
+ *  titlebar. The compositor renders it; the view owns the state behind it. */
+export interface TitlebarToggle {
+  readonly id: string;
+  /** Full `<symbol>` id resolvable at document level, e.g. `krypton-icon-panel-plan`. */
+  readonly icon: string;
+  /** Tooltip and accessible name. */
+  readonly label: string;
+  readonly pressed: boolean;
+  /** Present → the button is disabled and this replaces the tooltip. */
+  readonly disabledReason?: string;
+  /** Draw a 1px divider before this button. */
+  readonly separatorBefore?: boolean;
+}
+
 /** Interface for non-terminal content views */
 export interface ContentView {
   type: PaneContentType;
@@ -260,6 +275,12 @@ export interface ContentView {
   /** Subscribe to lane-roster changes (lane added/removed/renamed, active lane
    *  moved). Returns an unsubscribe function. */
   onLaneMarksChange?(cb: () => void): () => void;
+  /** spec 320: icon toggles for this view's window titlebar, in display order. */
+  getTitlebarToggles?(): readonly TitlebarToggle[];
+  /** Subscribe to toggle-list or pressed/disabled changes. Returns an unsubscribe function. */
+  onTitlebarTogglesChange?(cb: () => void): () => void;
+  /** A titlebar toggle was clicked. */
+  activateTitlebarToggle?(id: string): void;
   /** Optional staging hook for global screen-capture images. */
   stageCapturedImage?(image: CapturedImage): boolean;
   /** Optional focused-view leader key bindings. Keys must not conflict with global leader keys. */

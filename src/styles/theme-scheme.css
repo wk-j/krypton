@@ -60,6 +60,12 @@ html[data-theme-scheme='light'] .krypton-window--focused .krypton-window__label-
   opacity: 1;
 }
 
+/* spec 320: Krypton Light's slate titlebar text sits too close to its teal
+   accent for on/off to read, so the off state is muted. */
+html[data-theme-scheme='light'] .krypton-window__view-toggle[aria-pressed='false'] {
+  color: color-mix(in srgb, var(--krypton-titlebar-text, #3a5568) 40%, transparent);
+}
+
 html[data-theme-scheme='light'] .krypton-window__pty-status {
   color: color-mix(in srgb, var(--krypton-window-accent, #007799) 28%, var(--krypton-ink));
 }

@@ -10,6 +10,7 @@ import type { JournalKind } from './journal';
 import type { GithubTicketReference } from './harness-view-types';
 import type { HarnessLane, HarnessTranscriptItem, StagedImage } from './harness-view-types';
 import type { ReviewSubject } from './review';
+import type { HarnessPanelId } from './harness-panel-visibility';
 import type { ContentBlock, LaneBusEvent, ReviewFinding, StopReason } from './types';
 import type { LiveDelivery } from './live-voice';
 
@@ -123,7 +124,8 @@ export type GithubIssueRef = { repo: string; number: number; url: string };
 export interface HarnessTicketHost extends HarnessViewHost {
   readonly harnessMemoryId: string | null;
   readonly projectDir: string | null;
-  readonly panelsHidden: boolean;
+  /** spec 320: `#panels` master switch or the panel's own flag. */
+  isPanelHidden(panel: HarnessPanelId): boolean;
   readonly openMarkdownViewCb: ((path: string) => Promise<void>) | null;
   readonly openFileReferenceCb: ((path: string, line?: number, column?: number) => Promise<boolean>) | null;
   invalidate(region: HarnessRegion): void;

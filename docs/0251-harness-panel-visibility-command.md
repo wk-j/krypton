@@ -1,6 +1,6 @@
 # Harness Panel Visibility Command — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented — extended by [spec 320](./0320-harness-titlebar-panel-toggles.md)
 > Date: 2026-09-16
 > Milestone: M6 — ACP Harness
 
@@ -209,7 +209,11 @@ content and explicitly summoned tools remain available.
 ## Out of Scope
 
 - Changing Zen or Concise Mode semantics or shortcuts.
-- Per-panel visibility settings.
+- Per-panel visibility settings. (Added later by spec 320: `#panels [action] <panel>`
+  and window-titlebar toggles, beneath this command as the master switch. Under
+  `#panels hide` the peek and thought cards now unmount rather than keep DOM, the
+  ticket dock drops its `--ticket-*` root classes instead of relying on a
+  margin-reset rule, and a hidden grammar panel ignores `Cmd+G` / `Cmd+0`.)
 - Hiding transcript message kinds beyond existing Concise behavior.
 - Hiding the composer, lane identity/status, permissions, or workspace footer.
 - New Tauri IPC, config TOML, or backend state.

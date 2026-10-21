@@ -114,6 +114,15 @@ export const HARNESS_ICON_SVG_DEFS = [
     '<g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">' +
     BRANCH_ICON_BODY +
     '</g></symbol>',
+  // spec 320: window-titlebar panel toggles (drawn by the compositor, outside
+  // the view — hence document-level defs).
+  '<symbol id="krypton-icon-panel-plan" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M2.4 4.7 L3.7 6 L5.9 3.5"/><path d="M8.4 4.8 H13.6"/><path d="M2.4 10.7 L3.7 12 L5.9 9.5"/><path d="M8.4 10.8 H13.6"/></g></symbol>',
+  '<symbol id="krypton-icon-panel-peek" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"><path d="M1.6 8 C3.4 4.7 5.6 3.4 8 3.4 C10.4 3.4 12.6 4.7 14.4 8 C12.6 11.3 10.4 12.6 8 12.6 C5.6 12.6 3.4 11.3 1.6 8 Z"/><circle cx="8" cy="8" r="2.1"/></g></symbol>',
+  '<symbol id="krypton-icon-panel-thought" viewBox="0 0 16 16"><path d="M3 3 H13 A1.2 1.2 0 0 1 14.2 4.2 V9.8 A1.2 1.2 0 0 1 13 11 H7.2 L4.4 13.3 V11 H3 A1.2 1.2 0 0 1 1.8 9.8 V4.2 A1.2 1.2 0 0 1 3 3 Z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><g fill="currentColor"><circle cx="5.3" cy="7" r="0.85"/><circle cx="8" cy="7" r="0.85"/><circle cx="10.7" cy="7" r="0.85"/></g></symbol>',
+  '<symbol id="krypton-icon-panel-grammar" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 12.4 L4.9 3.6 L8 12.4"/><path d="M2.9 9.4 H6.9"/><path d="M9 10.2 L10.9 12.1 L14.3 7.9"/></g></symbol>',
+  '<symbol id="krypton-icon-panel-queue" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"><rect x="2.4" y="2.6" width="11.2" height="2.8" rx="0.7"/><rect x="2.4" y="6.6" width="11.2" height="2.8" rx="0.7"/><rect x="2.4" y="10.6" width="11.2" height="2.8" rx="0.7"/></g></symbol>',
+  '<symbol id="krypton-icon-panel-ticket" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M1.9 4.3 H14.1 V6.5 A1.5 1.5 0 0 0 14.1 9.5 V11.7 H1.9 V9.5 A1.5 1.5 0 0 0 1.9 6.5 Z"/><path d="M10.4 5.4 V6.2 M10.4 7.6 V8.4 M10.4 9.8 V10.6"/></g></symbol>',
+  '<symbol id="krypton-icon-panel-all" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"><rect x="1.9" y="2.9" width="12.2" height="10.2" rx="1.4"/><path d="M9.9 2.9 V13.1"/></g><rect x="10.6" y="3.6" width="2.8" height="8.8" fill="currentColor" opacity="0.35"/></symbol>',
 ].join('');
 
 const SYMBOL_DEFS_ID = 'krypton-harness-symbol-defs';

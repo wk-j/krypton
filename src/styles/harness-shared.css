@@ -1289,18 +1289,12 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
 
 /* Persistent supporting surfaces disappear as one reversible layer. The
    transcript, composer, lane identity/status, and summon-on-demand overlays
-   remain available. */
+   remain available. The ticket dock needs no rule here: under `#panels hide`
+   (and spec 320's per-panel `ticket` flag) the controller sets its `hidden`
+   attribute and drops the `--ticket-*` root classes that reserve its width. */
 .acp-harness--panels-hidden .acp-harness__lane-rail,
-.acp-harness--panels-hidden .acp-harness__ticket-dock,
 .acp-harness--panels-hidden .acp-harness__rail {
   display: none;
-}
-
-/* The ticket dock reserves width on the dashboard even when collapsed. Return
-   that space without mutating the dock's expanded/collapsed state. */
-.acp-harness--panels-hidden.acp-harness--ticket-active .acp-harness__dashboard,
-.acp-harness--panels-hidden.acp-harness--ticket-collapsed .acp-harness__dashboard {
-  margin-right: 0;
 }
 
 /* Zen normally allocates a left navigation column. With panels hidden the

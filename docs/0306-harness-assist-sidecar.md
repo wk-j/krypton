@@ -363,7 +363,7 @@ A second registered task, `grammar` (`src/acp/assist/tasks/grammar.ts`), reviews
   - `pending` — header `GRAMMAR · CHECKING` and the checked prompt, dimmed.
   - fixes — header `GRAMMAR · N FIXES`, the `wrong → right` list, the corrected prompt, and the legend `cmd+g use · cmd+0 dismiss`.
   - clean — `GRAMMAR · OK` and `✓ no grammar issues`. It unmounts after `ASSIST_PANEL_OK_HIDE_MS` (4 s).
-- `Cmd+G` loads the corrected text into the empty composer and closes the panel; it never re-sends. `Cmd+0` dismisses the strip first; when the strip is empty, it closes the panel. `#panels hide` hides the panel with the rest of the rail.
+- `Cmd+G` loads the corrected text into the empty composer and closes the panel; it never re-sends. `Cmd+0` dismisses the strip first; when the strip is empty, it closes the panel. `#panels hide` hides the panel with the rest of the rail, and `#panels hide grammar` (or the window-titlebar grammar toggle, spec 320) hides it alone; while it is hidden neither `Cmd+G` nor the panel half of `Cmd+0` acts on it.
 - Default `mode = "off"`. Enable it with `#assist grammar auto`, or persist it in config:
 
 ```toml
