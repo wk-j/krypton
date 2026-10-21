@@ -3,6 +3,25 @@
 // A right-rail card in the thought card's family (same chrome, same column),
 // mounted by the view only while the active lane has a review:
 //
+
+/** `wrong → right` split into coloured halves; anything else stays one span. */
+function fixRow(fix: string): HTMLElement {
+  const at = fix.indexOf('→');
+  if (at === -1) return el('li', { class: `${BLOCK}-fix`, text: fix });
+  return el(
+    'li',
+    { class: `${BLOCK}-fix` },
+    el('span', { class: `${BLOCK}-wrong`, text: fix.slice(0, at).trim() }),
+    el('span', { class: `${BLOCK}-arrow`, text: ' → ' }),
+    el('span', { class: `${BLOCK}-right`, text: fix.slice(at + 1).trim() }),
+  );
+}
+
+function hintRow(): HTMLElement {
+  const key = (k: string): HTMLElement => el('kbd', { class: `${BLOCK}-key`, text: k });
+  return el('div', { class: `${BLOCK}-hint` }, key('cmd+g'), ' use · ', key('cmd+0'), ' dismiss');
+}
+
 //   claude-1                                          GRAMMAR · 2 FIXES
 //   curent → current
 //   What → What are
@@ -76,9 +95,9 @@ export class GrammarPanel extends Component<GrammarPanelProps> {
       return;
     }
     setChildren(this.bodyEl, [
-      el('ul', { class: `${BLOCK}-fixes` }, ...s.check.fixes.map((fix) => el('li', { class: `${BLOCK}-fix`, text: fix }))),
+      el('ul', { class: `${BLOCK}-fixes` }, ...s.check.fixes.map(fixRow)),
       el('div', { class: `${BLOCK}-corrected`, text: s.check.corrected }),
-      el('div', { class: `${BLOCK}-hint`, text: 'cmd+g use · cmd+0 dismiss' }),
+      hintRow(),
     ]);
   }
 }

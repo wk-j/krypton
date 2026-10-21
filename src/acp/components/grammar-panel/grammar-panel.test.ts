@@ -52,3 +52,13 @@ describe('GrammarPanel', () => {
     expect(panel.el.querySelector('.acp-harness__grammar-corrected')).toBe(body);
   });
 });
+
+describe('GrammarPanel — colour hooks', () => {
+  it('splits each fix into wrong / right spans and the keys into kbd chips', () => {
+    const panel = new GrammarPanel();
+    panel.update(FIXES);
+    expect(text(panel, 'wrong')).toEqual(['curent', 'What']);
+    expect(text(panel, 'right')).toEqual(['current', 'What are']);
+    expect(text(panel, 'key')).toEqual(['cmd+g', 'cmd+0']);
+  });
+});
