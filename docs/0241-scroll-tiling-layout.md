@@ -158,7 +158,9 @@ Existing `h/j/k/l` already mean "focus in that direction". In Scroll they mean c
 | Swap `h/l/j/k` | Swap + Scroll | Swap with neighbor column or window in column |
 | Wheel | Scroll, over workspace | Secondary: pan camera (keyboard still primary) |
 
-Which-key in Scroll replaces the generic "Focus Left" labels with "Column Left/Right", "Window Up/Down", and shows `,` `.` `=`.
+Which-key in Scroll replaces the generic "Pane/Window Left" labels with "Pane/Column Left/Right", "Pane/Window Up/Down", and shows `,` `.` `=`.
+
+In a window with split panes, `h/j/k/l` first move to the adjacent pane in that direction; the column/window action above runs only when no pane lies that way ([0013](0013-tabs-and-panes.md#navigate-panes-leader--hjkl)).
 
 ### UI Changes
 

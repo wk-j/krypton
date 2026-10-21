@@ -92,6 +92,7 @@ import {
 } from './wheel-layout';
 import { wheelEyeText } from './wheel-eye';
 import { WheelRail } from './wheel-rail';
+import { mountPaneTree } from './pane-tree-dom';
 import { AnimationEngine, BoundsSnapshot, type StageTransitionLayer } from './animation';
 import { SoundEngine } from './sound';
 import { ShaderEngine } from './shaders';
@@ -1532,15 +1533,6 @@ export class Compositor {
     }
   }
 
-  /** Build the pane tree DOM inside a container */
-  private buildPaneTreeDom(node: PaneNode, container: HTMLElement): void {
-    if (node.type === 'leaf') {
-      container.appendChild(node.pane.element);
-    } else {
-      container.appendChild(node.element);
-    }
-  }
-
   /** Update the tab bar visibility and active state for a window */
   private updateTabBar(win: KryptonWindow): void {
     const shouldShow = this.tabsConfig.always_show_tabbar || win.tabs.length > 1;
@@ -1601,12 +1593,12 @@ export class Compositor {
       // Ensure wrapper exists and is mounted
       if (!tab.contentWrapperEl) {
         tab.contentWrapperEl = this.createTabWrapper(win.contentElement);
-        this.buildPaneTreeDom(tab.paneTree, tab.contentWrapperEl);
+        mountPaneTree(tab.paneTree, tab.contentWrapperEl);
       } else if (!tab.contentWrapperEl.parentElement) {
         win.contentElement.appendChild(tab.contentWrapperEl);
         // Re-mount pane tree if wrapper was detached (e.g. after tab close cleanup)
         if (tab.contentWrapperEl.children.length === 0) {
-          this.buildPaneTreeDom(tab.paneTree, tab.contentWrapperEl);
+          mountPaneTree(tab.paneTree, tab.contentWrapperEl);
         }
       }
 
@@ -6263,7 +6255,9 @@ export class Compositor {
     const splitDir = direction ?? (this.tabsConfig.default_split as SplitDirection);
     const cwd = await this.getFocusedCwd();
 
-    // Find the focused pane's parent in the tree and replace it with a split
+    // Find the focused pane's parent in the tree and replace it with a split.
+    // `as` keeps TS from narrowing to `null`: the closure below assigns it.
+    let created = null as Pane | null;
     const replaceInTree = (node: PaneNode): PaneNode => {
       if (node.type === 'leaf' && node.pane.id === tab.focusedPaneId) {
         // Create split container element
@@ -6279,14 +6273,14 @@ export class Compositor {
         splitEl.appendChild(divider);
 
         // Create new pane inside the split
-        const newPane = this.createPane(splitEl);
+        created = this.createPane(splitEl);
 
         return {
           type: 'split',
           direction: splitDir,
           ratio: 0.5,
           first: node,
-          second: { type: 'leaf', pane: newPane },
+          second: { type: 'leaf', pane: created },
           element: splitEl,
         };
       }
@@ -6305,11 +6299,9 @@ export class Compositor {
     // Rebuild the pane tree inside the tab's wrapper
     const splitContainer = tab.contentWrapperEl ?? win.contentElement;
     this.clearPaneTree(splitContainer);
-    this.buildPaneTreeDom(tab.paneTree, splitContainer);
-
-    // Find the new pane (it's the one that was just created — last in the tree)
-    const allPanes = this.collectPanes(tab.paneTree);
-    const newPane = allPanes[allPanes.length - 1];
+    mountPaneTree(tab.paneTree, splitContainer);
+    if (!created) return;
+    const newPane = created;
 
     // Wire input BEFORE spawn so xterm.js replies during startup are buffered.
     this.wirePaneInput(newPane);
@@ -6396,7 +6388,7 @@ export class Compositor {
     // Rebuild DOM inside the tab's wrapper
     const closeContainer = tab.contentWrapperEl ?? win.contentElement;
     this.clearPaneTree(closeContainer);
-    this.buildPaneTreeDom(tab.paneTree, closeContainer);
+    mountPaneTree(tab.paneTree, closeContainer);
 
     // Focus the first remaining pane
     const remainingPanes = this.collectPanes(tab.paneTree);
@@ -6409,18 +6401,19 @@ export class Compositor {
     this.fitPaneTree(tab.paneTree);
   }
 
-  /** Navigate between panes in a direction */
-  focusPaneDirection(direction: 'left' | 'down' | 'up' | 'right'): void {
-    if (!this.focusedWindowId) return;
+  /** Move focus to the nearest pane in `direction` within the focused window's
+   *  active tab. Returns false when no pane lies that way (or the tab has one). */
+  focusPaneDirection(direction: 'left' | 'down' | 'up' | 'right'): boolean {
+    if (!this.focusedWindowId) return false;
     const win = this.windows.get(this.focusedWindowId);
-    if (!win || win.tabs.length === 0) return;
+    if (!win || win.tabs.length === 0) return false;
 
     const tab = win.tabs[win.activeTabIndex];
     const panes = this.collectPanes(tab.paneTree);
-    if (panes.length <= 1) return;
+    if (panes.length <= 1) return false;
 
     const currentPane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
-    if (!currentPane) return;
+    if (!currentPane) return false;
 
     const curRect = currentPane.element.getBoundingClientRect();
     const curCx = curRect.left + curRect.width / 2;
@@ -6451,12 +6444,12 @@ export class Compositor {
       }
     }
 
-    if (bestPane) {
-      tab.focusedPaneId = bestPane.id;
-      this.focusPaneSurface(bestPane);
-      this.updatePaneFocusIndicator(tab);
-      this.sound.play('pane.focus');
-    }
+    if (!bestPane) return false;
+    tab.focusedPaneId = bestPane.id;
+    this.focusPaneSurface(bestPane);
+    this.updatePaneFocusIndicator(tab);
+    this.sound.play('pane.focus');
+    return true;
   }
 
   /** Cycle pane focus forward (+1) or backward (-1) within the active tab */

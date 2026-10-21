@@ -753,11 +753,15 @@ export class InputRouter {
     const key = e.key.toLowerCase();
 
     switch (key) {
-      // Focus directional / Hint mode
+      // Focus directional / Hint mode. Inside a split window h/j/k/l move to the
+      // adjacent pane first; only with no pane that way do they run the layout's
+      // window action (focus, stage, wheel, depth).
       case 'h':
         if (e.shiftKey) {
           // Shift+H: enter hint mode
           this.enterHintMode();
+        } else if (this.compositor.focusPaneDirection('left')) {
+          this.toNormal();
         } else if (this.compositor.currentLayoutMode === LayoutMode.Stage) {
           this.compositor.stagePrevious().then(() => this.toNormal());
         } else if (this.compositor.currentLayoutMode === LayoutMode.Wheel) {
@@ -768,7 +772,9 @@ export class InputRouter {
         }
         break;
       case 'j':
-        if (this.compositor.currentLayoutMode === LayoutMode.Depth) {
+        if (this.compositor.focusPaneDirection('down')) {
+          this.toNormal();
+        } else if (this.compositor.currentLayoutMode === LayoutMode.Depth) {
           this.compositor.depthPullForward().then(() => this.toNormal());
         } else if (this.compositor.currentLayoutMode === LayoutMode.Stage) {
           this.compositor.stageNext().then(() => this.toNormal());
@@ -783,6 +789,8 @@ export class InputRouter {
         if (e.shiftKey) {
           // Shift+K: toggle the keyboard overlay (spec 271)
           this.compositor.toggleKeyboardOverlay().then(() => this.toNormal());
+        } else if (this.compositor.focusPaneDirection('up')) {
+          this.toNormal();
         } else if (this.compositor.currentLayoutMode === LayoutMode.Depth) {
           this.compositor.depthPushBack().then(() => this.toNormal());
         } else if (this.compositor.currentLayoutMode === LayoutMode.Stage) {
@@ -797,6 +805,8 @@ export class InputRouter {
       case 'l':
         if (e.shiftKey) {
           this.compositor.openDashboard().then(() => this.toNormal());
+        } else if (this.compositor.focusPaneDirection('right')) {
+          this.toNormal();
         } else if (this.compositor.currentLayoutMode === LayoutMode.Stage) {
           this.compositor.stageNext().then(() => this.toNormal());
         } else if (this.compositor.currentLayoutMode === LayoutMode.Wheel) {
@@ -1055,7 +1065,9 @@ export class InputRouter {
         break;
 
       default:
-        // Alt+h/j/k/l — navigate panes
+        // Alt+h/j/k/l — pane only: never falls through to a window action.
+        // Reached when Option composes another character (macOS); where Alt
+        // leaves e.key a plain letter, the h/j/k/l cases above take the key.
         if (e.altKey && !e.shiftKey) {
           switch (e.code) {
             case 'KeyH':

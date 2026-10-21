@@ -177,7 +177,7 @@ Grid → Focus → Depth → Scroll → Stage → Wheel → Grid   (Wheel added 
 | `=` | Compositor + Stage | Reset the shared frame and stage order |
 | `z` | Compositor + Stage | Maximize active window and hide shelf; restore returns to Stage |
 
-Both directional pairs are intentional aliases: `h/l` match left/right switching, while `k/j` match the vertical shelf. Stage remains a single-action compositor mode; it does not add a second selection cursor.
+Both directional pairs are intentional aliases: `h/l` match left/right switching, while `k/j` match the vertical shelf. Stage remains a single-action compositor mode; it does not add a second selection cursor. When the active window has split panes, each key first moves to the adjacent pane in its direction and switches stage only when no pane lies that way ([0013](0013-tabs-and-panes.md#navigate-panes-leader--hjkl)).
 
 ### Pointer Behavior
 

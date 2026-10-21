@@ -188,7 +188,7 @@ Grid → Focus → Depth → Scroll → Stage → Grid
 | `k` | Compositor + Depth layout | Pull forward (bring next card to front) |
 | `1-9` | Compositor + Depth layout | Jump to window N (reorder deck so that window is at front) |
 
-`j`/`k` already mean "focus down/up" in Grid and Focus modes. In Depth mode they take on the deck navigation meaning. The input router checks `this.compositor.currentLayoutMode === LayoutMode.Depth` to branch.
+`j`/`k` already mean "focus down/up" in Grid and Focus modes. In Depth mode they take on the deck navigation meaning. The input router checks `this.compositor.currentLayoutMode === LayoutMode.Depth` to branch. In a front card with split panes, `j`/`k` first move to the pane below/above and reach the deck action only when no pane lies that way ([0013](0013-tabs-and-panes.md#navigate-panes-leader--hjkl)).
 
 ### CSS Changes
 

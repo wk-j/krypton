@@ -26,7 +26,7 @@ Both front ends call the same `Compositor.movePane(sourceViewId, targetViewId, z
 
 - **No drag code exists.** There is no window, tab, or pane drag anywhere. Window chrome listens only to `mousedown` → `focusWindow` (`compositor.ts:2634`). Tabs have no listeners (`:1583-1615`). There are no `dragstart`/`drop` handlers in `src/` and no Tauri `onDragDropEvent`. Tauri v2's default native file-drop interception only swallows HTML5 file drops, so a pointer-event drag does not conflict with it.
 - **Tree mutation is duplicated.** `splitPane` (`:6166`) and `closePaneInTab` (`:6271`) each carry their own recursive tree rewrite. Spec 0296 adds a third (`insertBesidePane`). Moving a pane is one detach plus one dock, so the three should share pure helpers.
-- **Split DOM is built by hand.** `splitPane` assembles `[first, divider, second]` itself (`:6170-6178`), restore does it again (`:2947-2960`), and `buildPaneTreeDom` (`:1560`) only appends the root. Detach and dock change the structure, so split elements need one re-assembly routine.
+- **Split DOM is built by hand, then re-mounted from the tree.** `splitPane` assembles `[first, divider, second]` itself (`:6170-6178`) and restore does it again (`:2947-2960`). After a split or close, `mountPaneTree` (`src/pane-tree-dom.ts`) recursively sets every split element's children to `[first, divider, second]`, reusing the existing divider. Detach and dock reuse that routine.
 - **Reparenting xterm is already routine.** Every split and close moves `pane.element` (`:6176`, `:2036`, `:6297`). The terminal uses the DOM renderer, because WebGL was dropped for transparency (`docs/0004-architecture.md:152`), so there is no canvas context to lose. The shader instance is attached to `pane.element` (`:931`) and moves with it.
 - **State tied to the window or tab must be rebound when a pane changes window.**
   - `sessionMap` entries (`SessionLocation {windowId, tabId, paneId}`, `:229`).
@@ -64,7 +64,7 @@ Both front ends call the same `Compositor.movePane(sourceViewId, targetViewId, z
 | `src/pane-tree-ops.ts` (new) | Pure `detachLeaf`, `dockLeaf`, `swapLeaves`, `dropZoneAt`, `dropPreviewRect`, `DropZone` |
 | `src/pane-tree-ops.test.ts` (new) | Tree-shape, ratio, and zone-boundary tests |
 | `src/types.ts` | `Mode.PaneMove`; `Pane.titleSync: IDisposable \| null` |
-| `src/compositor.ts` | `movePane`, `assembleSplit`, `rebindPane`, `visibleDropTargets`, `removeEmptiedTab`, grip and pointer drag, Pane Move overlay; `splitPane`, `closePaneInTab`, and 0296 `insertBesidePane` reuse the ops; `wireTitleSync` returns `IDisposable` |
+| `src/compositor.ts` | `movePane`, `rebindPane`, `visibleDropTargets`, `removeEmptiedTab`, grip and pointer drag, Pane Move overlay; `splitPane`, `closePaneInTab`, and 0296 `insertBesidePane` reuse the ops; `wireTitleSync` returns `IDisposable` |
 | `src/pane-move-overlay.ts` (new) | DOM for the target labels, edge-zone preview, and source dimming (one fixed-position layer) |
 | `src/input-router.ts` | `Leader Alt+m`; `handlePaneMoveKey`; `enterPaneMove('pointer')` |
 | `src/leader-keys.ts` | `Alt+m` in `GLOBAL_LEADER_KEY_IDS` and `normalizeLeaderKeyEvent` (`KeyM`) |
@@ -118,9 +118,6 @@ visibleDropTargets(): Array<{ viewId: string; winId: WindowId; rect: DOMRect }>;
 onPaneDragStart(cb: () => void): void;
 
 // private
-assembleSplit(node: PaneNode): void;      // recursively set each split element's children to
-                                          // [first, divider, second]; reuse the existing divider
-                                          // (and its 0296 drag handler); applySplitFlex
 rebindPane(pane: Pane, win: KryptonWindow, tab: Tab): void;
 removeEmptiedTab(win: KryptonWindow, tab: Tab): Promise<void>; // drop tab chrome and wrapper without
                                           // disposing panes; await closeWindow when no tab is left
@@ -133,7 +130,7 @@ removeEmptiedTab(win: KryptonWindow, tab: Tab): Promise<void>; // drop tab chrom
    - **`center`**: `swapLeaves`, on the source tree only (same tab) or on both trees.
    - **Edge**: `detachLeaf` the source from its tree, then `dockLeaf` it at the target. If the source and target share a tab, the target is searched in the post-detach tree.
 3. Short-circuit: if the result would recreate the current layout (for example, docking A on the `left` of its own right-hand sibling B in a two-pane split), return `false`. Nothing is rebuilt.
-4. Write the new `paneTree` on every affected tab. For each, run `clearPaneTree` + `assembleSplit` + `buildPaneTreeDom`.
+4. Write the new `paneTree` on every affected tab. For each, run `clearPaneTree` + `mountPaneTree`, then 0296 `applySplitFlex`.
 5. Any pane whose window or tab changed gets `rebindPane`:
    - `sessionMap.set(sessionId, {windowId, tabId, paneId})`.
    - `contentView.onOutputPump = (n) => pumpWindowActivity(win.id, n)`.
@@ -210,7 +207,7 @@ None. `DROP_EDGE_FRACTION` is a constant.
 - **A PTY exits during a drag.** `handlePtyExit` removes the pane. On release, `movePane` re-resolves both viewIds and returns `false` if either is gone, and the overlay closes.
 - **Recovery-notice panes** move like any content pane.
 - **Spec 0296 side column.** A moved pane leaves its source tab's `sidePaneIds`. The target tab's side column is unchanged.
-- **Spec 0296 divider drag.** Dividers are reused by `assembleSplit`, so their handlers survive rebuilds. A new split from `dockLeaf` gets a divider created and wired there.
+- **Spec 0296 divider drag.** Dividers are reused by `mountPaneTree`, so their handlers survive rebuilds. A new split from `dockLeaf` gets a divider created and wired there.
 - **Persistence.** The snapshot already stores the tree shape and ratios, so a moved layout survives a WebContent reload. Terminal leaves reattach, and content leaves become notices as they do today.
 
 ## Open Questions

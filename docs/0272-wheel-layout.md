@@ -180,6 +180,8 @@ The cycle becomes Grid → Focus → Depth → Scroll → Stage → **Wheel** �
 
 The Wheel which-key omits `r`, `m`, `=`, `,`, `.`, and `p`. In Wheel these are no-ops: resize/move arrows do nothing, and pin has no effect, matching Grid, Depth, Scroll, and Stage.
 
+When the active window has split panes, `h/j/k/l` first move to the adjacent pane in their direction and rotate the wheel only when no pane lies that way ([0013](0013-tabs-and-panes.md#navigate-panes-leader--hjkl)).
+
 ### UI (DOM)
 
 ```html

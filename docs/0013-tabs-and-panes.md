@@ -172,7 +172,9 @@ This factory is used by: window creation (first tab, first pane), new tab creati
    c. Creates a new Pane (DOM, Terminal, FitAddon)
    d. Replaces the leaf node with a split node:
       { type: 'split', direction, ratio: 0.5, first: oldLeaf, second: newLeaf, element }
-   e. Creates split container DOM with divider between the two pane elements
+   e. Creates split container DOM with divider between the two pane elements, then
+      re-mounts the tab's pane tree DOM from the tree at every depth (mountPaneTree,
+      src/pane-tree-dom.ts), so splitting a pane inside an existing split lands in place
    f. Spawns PTY for new pane, registers in sessionMap
    g. Wires input, fits both panes
    h. Sets focusedPaneId to the new pane
@@ -180,20 +182,28 @@ This factory is used by: window creation (first tab, first pane), new tab creati
 4. Returns to Normal mode
 ```
 
-#### Navigate Panes (Leader + Alt+h/j/k/l)
+#### Navigate Panes (Leader + h/j/k/l)
 
 ```
-1. User presses Leader, then Alt+h/j/k/l
-2. InputRouter calls compositor.focusPane(direction)
+1. User presses Leader, then h/j/k/l
+2. InputRouter calls compositor.focusPaneDirection(direction)
 3. Compositor:
    a. Gets the focused pane's bounding rect
    b. Finds the nearest pane in the given direction (within the same tab)
-   c. Updates tab.focusedPaneId
-   d. Focuses the new pane's terminal
+   c. If none: returns false, and InputRouter runs the layout's window action
+      for the key instead (focus direction; Scroll column/window; Stage and
+      Wheel previous/next; Depth pull forward/push back)
+   d. Otherwise updates tab.focusedPaneId and focuses the new pane's surface
    e. Updates visual focus indicator on panes
    f. Plays 'pane.focus' sound
 4. Returns to Normal mode
 ```
+
+So in a split window the same keys walk the panes, and pressing again at the
+window's edge leaves the window. `Leader Alt+h/j/k/l` is the pane-only form: it
+never falls through to a window action. On macOS, Option composes another
+character (`Option+k` is `˚`), so the router matches the Alt form on `e.code`;
+where Alt leaves `e.key` a plain letter, the plain `h/j/k/l` path handles it.
 
 #### Close Pane (Leader + Alt+x)
 
@@ -204,7 +214,7 @@ This factory is used by: window creation (first tab, first pane), new tab creati
    a. If only one pane in tab: close the tab instead
    b. Disposes the focused pane (terminal, sessionMap entry)
    c. Replaces the parent split node with the sibling node
-   d. Updates DOM, fits remaining panes
+   d. Re-mounts the pane tree DOM from the tree (mountPaneTree), fits remaining panes
    e. Sets focusedPaneId to the sibling pane
    f. Plays 'pane.close' sound
 4. Returns to Normal mode
@@ -238,7 +248,9 @@ This factory is used by: window creation (first tab, first pane), new tab creati
 | `T` (Shift+t) | Compositor mode | Enter tab-move (wait for window index) |
 | `\` | Compositor mode | Split focused pane vertically (left/right) |
 | `-` | Compositor mode | Split focused pane horizontally (top/bottom) |
-| `Alt+h/j/k/l` | Compositor mode | Navigate between panes in direction |
+| `h/j/k/l` | Compositor mode | Focus the adjacent pane in that direction; with no pane that way, run the layout's window action |
+| `Alt+h/j/k/l` | Compositor mode | Focus the adjacent pane only (never leaves the window) |
+| `Cmd+[` / `Cmd+]` | Global (any mode) | Cycle pane focus backward / forward in the active tab, no Leader |
 | `Alt+x` | Compositor mode | Close focused pane |
 
 ### Tab Bar UI
