@@ -10,6 +10,7 @@ export interface ComputerProfile {
   user?: string;
   port?: number;
   defaultCwd?: string;
+  autoApproveReadOnly?: boolean;
 }
 
 type ConnectionState = 'configured' | 'connecting' | 'connected' | 'disconnected';
@@ -269,6 +270,7 @@ export class ConnectedComputersContentView implements ContentView {
       ['User', item.profile.user ?? 'OpenSSH config/default'],
       ['Port', item.profile.port?.toString() ?? 'OpenSSH config/default'],
       ['Default directory', item.profile.defaultCwd ?? 'Remote login home'],
+      ['Read-only commands', item.profile.autoApproveReadOnly !== false ? 'Run without asking' : 'Always ask'],
     ]) {
       const dt = document.createElement('dt');
       dt.textContent = label;
@@ -330,6 +332,14 @@ export class ConnectedComputersContentView implements ContentView {
       field.appendChild(input);
       form.appendChild(field);
     }
+    const autoApprove = document.createElement('label');
+    autoApprove.className = 'krypton-computers__check';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.name = 'autoApproveReadOnly';
+    checkbox.checked = profile?.autoApproveReadOnly !== false;
+    autoApprove.append(checkbox, ' Run read-only commands without asking');
+    form.appendChild(autoApprove);
     const hint = document.createElement('p');
     hint.textContent = 'Keys and jump hosts stay in OpenSSH config. No credentials are stored here.';
     const actions = document.createElement('div');
@@ -355,7 +365,8 @@ export class ConnectedComputersContentView implements ContentView {
     if (!/^[a-z][a-z0-9_-]*$/.test(id)) { this.notice('ID must match [a-z][a-z0-9_-]*.'); return; }
     if (!host || host.startsWith('-') || /\s/.test(host)) { this.notice('Enter a valid host or SSH alias.'); return; }
     if (defaultCwd && !defaultCwd.startsWith('/')) { this.notice('Default directory must be absolute.'); return; }
-    const profile: ComputerProfile = { id, host };
+    const autoApproveReadOnly = target.querySelector<HTMLInputElement>('input[name="autoApproveReadOnly"]')?.checked ?? true;
+    const profile: ComputerProfile = { id, host, autoApproveReadOnly };
     if (user) profile.user = user;
     if (portText) profile.port = Number(portText);
     if (defaultCwd) profile.defaultCwd = defaultCwd;

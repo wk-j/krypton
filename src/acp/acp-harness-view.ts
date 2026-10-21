@@ -8670,8 +8670,8 @@ export class AcpHarnessView implements ContentView {
     }
     if (!this.remoteRuntimeId && lane.computerCapability) {
       lines.push(['pi-acp', 'cursor', 'junie', 'cline'].includes(lane.backendId)
-        ? 'Connected computers: use "$KRYPTONCTL_PATH" computer list --json to see targets the user connected in Krypton; use "$KRYPTONCTL_PATH" computer exec <id> -- <quoted-command> to request one remote command. Each command requires a separate user approval. Never expose the capability from your environment.'
-        : 'Connected computers: call computer_list to discover targets the user connected in Krypton, then computer_exec with a connected computerId and exact command. Each command requires separate user approval.');
+        ? 'Connected computers: use "$KRYPTONCTL_PATH" computer list --json to see targets the user connected in Krypton; use "$KRYPTONCTL_PATH" computer exec <id> -- <quoted-command> to request one remote command. Read-only commands from Krypton\'s built-in list may run immediately when the computer allows it; any other command waits for the user\'s approval of the exact command. Pass --cwd instead of cd, and avoid redirection, $, globs and ~ so a read-only command qualifies. Never expose the capability from your environment.'
+        : 'Connected computers: call computer_list to discover targets the user connected in Krypton, then computer_exec with a connected computerId and exact command. Read-only commands from Krypton\'s built-in list may run immediately when the computer allows it; any other command waits for the user\'s approval of the exact command. Pass cwd instead of cd, and avoid redirection, $, globs and ~ so a read-only command qualifies.');
     }
     // spec 298: every lane reads the global lessons, including lanes that
     // cannot write them (Pi, no hook server).

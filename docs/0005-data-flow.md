@@ -1795,13 +1795,18 @@ the local Telegram Settings view accepts it.
    still be bound to a live local ACP session; saved but disconnected profiles
    cannot execute commands.
 3. `computer_exec` or `kryptonctl computer exec` names one connected ID. Rust
-   validates the request, emits the exact target, directory and command to the
-   requesting Harness, and waits for a one-time user decision. The Harness seats
+   validates the request. If the profile's `auto_approve_read_only` is on
+   (default) and the command passes `read_only_script` (spec 318), Rust skips
+   the approval event and the wait and uses the re-quoted argv it classified.
+   Otherwise Rust emits the exact target, directory and command to the
+   requesting Harness and waits for a one-time user decision. The Harness seats
    that request as a permission row in the requesting lane's transcript (`a`
    approves once, `r` declines) and keeps it in `pendingComputerCommands`, a
    queue no auto-accept path touches; unanswered, it expires after 120 seconds.
    The adapter's permission auto-allow covers only this built-in routing call.
-4. After approval Rust rechecks the lane and SSH master, then sends the command
-   to remote `sh -s` over a fresh no-PTY channel. It returns bounded stdout,
+4. After approval, or immediately for an auto-approved read-only command, Rust
+   rechecks the lane and SSH master, then sends the script (the re-quoted argv
+   or the approved original command) to remote `sh -s` over a fresh no-PTY
+   channel. It returns bounded stdout,
    stderr and exit code. Timeout, lane close or disconnect cancels the local SSH
    child and reports the remote outcome as unknown; Krypton never retries it.

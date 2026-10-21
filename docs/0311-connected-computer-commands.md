@@ -3,6 +3,7 @@
 > Status: Implemented (manual SSH/Tauri smoke pending)
 > Date: 2026-10-18
 > Milestone: ACP Harness — cross-computer commands
+> Amended by: [spec 318](./0318-connected-computer-read-only-auto-approval.md) — commands that pass the read-only classifier run without the approval row when the profile allows it (`auto_approve_read_only`, default `true`).
 
 ## Problem
 
@@ -10,7 +11,7 @@ A lane in a local ACP Harness is tied to its local project, while a Remote Harne
 
 ## Solution
 
-Add an app-owned **Connected Computers** SSH service, separate from Remote Harness workspaces, and a dedicated `ContentView` to manage it. The view creates and edits named SSH profiles in its own app-managed settings file, connects/disconnects them, and shows live status and actionable errors. Connected hosts appear to lanes through a read-only list; a lane sends a command to one host through Krypton and receives bounded output and the exit status. Lanes receiving in-process MCP descriptors use two built-in Harness tools; Pi, Cursor, Junie and Cline use the same service through `kryptonctl` from their shell tools because their native MCP config is written to disk. Every command crosses one Krypton-owned approval gate before SSH execution.
+Add an app-owned **Connected Computers** SSH service, separate from Remote Harness workspaces, and a dedicated `ContentView` to manage it. The view creates and edits named SSH profiles in its own app-managed settings file, connects/disconnects them, and shows live status and actionable errors. Connected hosts appear to lanes through a read-only list; a lane sends a command to one host through Krypton and receives bounded output and the exit status. Lanes receiving in-process MCP descriptors use two built-in Harness tools; Pi, Cursor, Junie and Cline use the same service through `kryptonctl` from their shell tools because their native MCP config is written to disk. Every command crosses one Krypton-owned gate before SSH execution: a command that passes spec 318's read-only classifier on a profile with `auto_approve_read_only` runs without asking; every other command needs the user's approval.
 
 ## Research
 
@@ -62,9 +63,10 @@ host = "buildbox"                 # OpenSSH alias or hostname
 user = "alice"                   # optional; otherwise OpenSSH config/default
 port = 22                        # optional; otherwise OpenSSH config/default
 default_cwd = "/srv/builds"      # optional; omitted means remote login home
+auto_approve_read_only = false   # optional; default true — read-only commands run without asking (spec 318)
 ```
 
-`id` is unique and matches `[a-z][a-z0-9_-]*`; `host` is a non-option-like OpenSSH alias or hostname. `user` and `port` are optional explicit overrides; when absent, OpenSSH resolves them from `~/.ssh/config`. Identity file, jump hosts and host-key policy remain in OpenSSH config. `default_cwd`, when present, is absolute. No password, private key or token enters the sidecar. Existing `acp_harness.remote_profiles` remain independent because they name a *project workspace*, whereas these entries name a *command target*.
+`id` is unique and matches `[a-z][a-z0-9_-]*`; `host` is a non-option-like OpenSSH alias or hostname. `user` and `port` are optional explicit overrides; when absent, OpenSSH resolves them from `~/.ssh/config`. Identity file, jump hosts and host-key policy remain in OpenSSH config. `default_cwd`, when present, is absolute. `auto_approve_read_only` (spec 318) is optional, defaults to `true`, and is written only when `false`; `schema_version` stays `1`. No password, private key or token enters the sidecar. Existing `acp_harness.remote_profiles` remain independent because they name a *project workspace*, whereas these entries name a *command target*.
 
 The app stores `Configured`, `Connecting`, `Connected`, or `Disconnected` per ID. At app startup, saved profiles load as `Configured`; Krypton does not auto-connect them. Only a user action in the view connects a configured host. Connect resolves the effective user, hostname and port with `ssh -G` plus the profile's explicit overrides and displays that identity beside the alias. `Connected` means the app-owned SSH master has passed `ssh -O check`; a saved profile alone is not called connected. A lightweight child-exit monitor emits status changes, while list and command calls recheck the SSH master before claiming a host is connected. Editing or removing a connected profile requires disconnecting it first, and a canceled in-flight command must finish before that ID can be edited or reconnected. No LAN scanning or agent-initiated connect.
 
@@ -87,8 +89,8 @@ Pi, Cursor, Junie and Cline use `kryptonctl computer list --json` and `kryptonct
 ### Command gate and process contract
 
 1. Validate the live lane binding, connected target ID, command length (1–16 KiB), absolute `cwd` and timeout (1–600 seconds; default 120) before presenting approval. A stale lane, removed profile or disconnected host fails closed.
-2. Present the request as a permission row in the requesting lane's transcript — the harness permission chrome, carrying the resolved SSH identity, `cwd`, exact command and a one-line `approval applies once` note — and show `⚠ remote` on the lane until it is answered. `a` approves once, `r` declines; `A`/`R` resolve as plain `a`/`r` because a remote command never inherits a turn-wide answer. No modal dialog opens, and no command starts before this decision. The pending queue is NOT `lane.pendingPermissions`: that one is drained automatically by permission mode, the per-turn accept/reject-all flags, a Telegram turn and the Polly/Salty roles, every one of which would otherwise run a command under the user's SSH identity unasked. The existing backend permission prompt auto-allows only the *built-in routing tool* after its server identity is verified; the app-owned command gate still waits for the human. Pi reaches the identical gate without depending on a provider permission popup.
-3. After approval, recheck lane epoch and SSH master, then run a fresh no-PTY channel over that master. Send `cd '<escaped cwd>'` (when set) and the command on stdin to a fixed remote `sh -s`; close stdin after writing. The command is never interpolated into a local shell or appended to SSH options. v1 requires a Unix-like remote host with `sh`.
+2. If the profile has `auto_approve_read_only` (default `true`) and the command passes spec 318's read-only classifier (`computer_read_only.rs::read_only_script`), skip this step: no row, no `⚠ remote`, and the re-quoted argv Krypton parsed is what runs. Otherwise present the request as a permission row in the requesting lane's transcript — the harness permission chrome, carrying the resolved SSH identity, `cwd`, exact command and a one-line `approval applies once` note — and show `⚠ remote` on the lane until it is answered. `a` approves once, `r` declines; `A`/`R` resolve as plain `a`/`r` because a remote command never inherits a turn-wide answer. No modal dialog opens, and no such command starts before this decision. The pending queue is NOT `lane.pendingPermissions`: that one is drained automatically by permission mode, the per-turn accept/reject-all flags, a Telegram turn and the Polly/Salty roles, every one of which would otherwise run a command under the user's SSH identity unasked. The existing backend permission prompt auto-allows only the *built-in routing tool* after its server identity is verified; the app-owned command gate still waits for the human on every command that is not auto-approved as read-only. Pi reaches the identical gate without depending on a provider permission popup.
+3. After approval (or read-only auto-approval), recheck lane epoch and SSH master, then run a fresh no-PTY channel over that master. Send `cd '<escaped cwd>'` (when set) and the command — the re-quoted argv for an auto-approved read-only command — on stdin to a fixed remote `sh -s`; close stdin after writing. The command is never interpolated into a local shell or appended to SSH options. v1 requires a Unix-like remote host with `sh`.
 4. Stream/drain stdout and stderr concurrently, retain at most 256 KiB of each, set `truncated` if more arrives, and return the exit code. Limit to two concurrent commands per host and four per app; reject excess with `busy`. Do not store full command output outside the normal tool transcript.
 5. On timeout, lane cancellation, host disconnect or app shutdown, terminate the local SSH child and return `outcome: 'unknown'` where remote completion cannot be proven. Never auto-retry an approved command. A remote process that detaches itself may survive SSH termination; the result says so plainly.
 
@@ -102,7 +104,7 @@ From the list, `j`/`k` or arrows move selection, `n` creates a profile, `e` edit
 
 1. User opens **Connected Computers…**, creates a profile using a host name or existing OpenSSH alias, and saves it. OpenSSH config can supply user, port, key and jump-host settings. The view can open a terminal to set up SSH access. Connect then verifies that noninteractive authentication and host-key trust work.
 2. Any active local Harness lane calls `computer_list` or uses CLI list for a file-configured backend, chooses a `connected` ID, and requests `computer_exec` or CLI exec. The lane's local project, `WorkspaceRef`, Git context and other tools remain local.
-3. The user approves the exact command; the lane receives bounded output and exit status in its normal tool result. Several lanes can use the same connected host, within the concurrency cap.
+3. A read-only command (spec 318) on a profile that allows it runs immediately; any other command waits until the user approves the exact command. The lane receives bounded output and exit status in its normal tool result. Several lanes can use the same connected host, within the concurrency cap.
 
 ### Verification
 
@@ -115,7 +117,7 @@ Rust unit tests cover profile round trips, stale revisions, validation, per-lane
 - The management tab closes or its workspace changes: the app-owned manager keeps verified connections available to every local Harness lane; reopening shows the current state.
 - A user disconnects while commands run: require confirmation, reject new calls, terminate the app-owned SSH children and report uncertain remote completion.
 - Two profiles resolve to one physical host: they remain separate IDs and approval targets; no command switches target when configuration changes.
-- A caller submits shell syntax or a destructive command: the exact text is shown for per-command human approval; Krypton does not pretend a shell command is safely classifiable from its first word.
+- A caller submits shell syntax or a destructive command: anything outside spec 318's fail-closed read-only subset (or any command on a profile with `auto_approve_read_only = false`) is shown as exact text for per-command human approval; only commands that parse completely and pass the built-in table and path guard skip the row.
 - A command expects a TTY or stdin: it fails normally in v1's noninteractive channel; the result identifies the target and exit status.
 - A command prints secrets or huge output: output is bounded and visible only in the ordinary lane/tool transcript; no background log copies it.
 - The hook/MCP or control endpoint receives an unbound request: it rejects before requesting approval or opening SSH.

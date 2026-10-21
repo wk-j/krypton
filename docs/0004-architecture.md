@@ -1131,10 +1131,15 @@ lane and ACP process session. The built-in Harness MCP server exposes
 `computer_list` and `computer_exec` only for a valid local lane with an
 in-process MCP descriptor. Pi, Cursor, Junie and Cline use bundled
 `kryptonctl` over the authenticated loopback control API so their on-disk MCP
-configs never contain the capability. Both routes enter one app-owned
-per-command approval queue — surfaced as a permission row in the requesting
-lane's transcript, resolved only by an explicit `a`/`r`, never by a permission
-mode or a turn-wide accept — before
+configs never contain the capability. Both routes enter one app-owned gate.
+When the profile's `auto_approve_read_only` is on (default), the Rust
+classifier `computer_read_only.rs::read_only_script` (spec 318) lets a command
+that parses completely in its shell subset, uses only built-in read-only
+commands and options, and passes its path guard run as its re-quoted argv
+without a prompt. Every other command enters the per-command approval queue —
+surfaced as a permission row in the requesting lane's transcript, resolved
+only by an explicit `a`/`r`, never by a permission mode or a turn-wide
+accept — before
 Rust runs a no-PTY SSH channel. The command target is explicit; it does not
 change the lane's `WorkspaceRef` or send bytes to an interactive terminal.
 

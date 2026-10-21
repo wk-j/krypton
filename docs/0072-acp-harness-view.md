@@ -733,9 +733,12 @@ config files do not contain the lane capability.
 The lane capability is private, bound to its ACP process session and revoked
 when that session ends. Remote Harness lanes do not receive it.
 
-The built-in tool route may pass the adapter's permission check, but
-`computer_exec` waits for a Krypton decision carrying the exact SSH target,
-remote directory and command. It renders as a permission row in the requesting
+The built-in tool route may pass the adapter's permission check. A command that
+passes Krypton's read-only classifier (spec 318) on a computer whose
+`auto_approve_read_only` setting is on (default) runs immediately: it appears
+only as the lane's own `computer_exec` / shell tool row, with no `⚠ remote`.
+Any other `computer_exec` waits for a Krypton decision carrying the exact SSH
+target, remote directory and command. It renders as a permission row in the requesting
 lane's own transcript — same chrome, same `a`/`r` keys as a tool permission, no
 modal dialog — and the lane shows `⚠ remote` until it is answered. The queue
 behind that row is separate from `pendingPermissions` on purpose: permission

@@ -39,12 +39,17 @@ describe('ConnectedComputersContentView', () => {
     view.onKeyDown(new KeyboardEvent('keydown', { key: 'e' }));
     const host = view.element.querySelector<HTMLInputElement>('input[name="host"]')!;
     host.value = 'unsaved.example';
+    const autoApprove = view.element.querySelector<HTMLInputElement>('input[name="autoApproveReadOnly"]')!;
+    expect(autoApprove.checked).toBe(true);
+    autoApprove.checked = false;
     host.focus();
     expect(callbacks).toHaveLength(1);
     callbacks[0]();
     await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(2));
     expect(view.element.querySelector<HTMLInputElement>('input[name="host"]')).toBe(host);
     expect(host.value).toBe('unsaved.example');
+    expect(view.element.querySelector<HTMLInputElement>('input[name="autoApproveReadOnly"]')).toBe(autoApprove);
+    expect(autoApprove.checked).toBe(false);
     expect(document.activeElement).toBe(host);
     container.remove();
   });
@@ -62,5 +67,34 @@ describe('ConnectedComputersContentView', () => {
     await vi.waitFor(() => expect(view!.element.textContent).toContain('Profile file changed'));
     expect(view.element.querySelector<HTMLInputElement>('input[name="host"]')?.value).toBe('unsaved.example');
     expect(view.element.querySelector('[data-action="reload"]')).not.toBeNull();
+  });
+
+  it('sends autoApproveReadOnly false when the read-only checkbox is cleared', async () => {
+    mocks.listen.mockResolvedValue(() => undefined);
+    mocks.invoke.mockResolvedValueOnce(list('configured')).mockResolvedValueOnce(list('configured'));
+    view = new ConnectedComputersContentView(document.createElement('div'));
+    await vi.waitFor(() => expect(view!.element.textContent).toContain('buildbox'));
+    expect(view.element.textContent).toContain('Run without asking');
+    view.onKeyDown(new KeyboardEvent('keydown', { key: 'e' }));
+    view.element.querySelector<HTMLInputElement>('input[name="autoApproveReadOnly"]')!.checked = false;
+    view.element.querySelector<HTMLFormElement>('form')!.requestSubmit();
+    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('computer_profile_save', {
+      profile: { ...profile, autoApproveReadOnly: false }, expectedRevision: 'rev1',
+    }));
+  });
+
+  it('sends autoApproveReadOnly true for a new profile by default', async () => {
+    mocks.listen.mockResolvedValue(() => undefined);
+    mocks.invoke.mockResolvedValueOnce({ revision: 'rev0', computers: [] }).mockResolvedValueOnce(list('configured'));
+    view = new ConnectedComputersContentView(document.createElement('div'));
+    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(view!.element.textContent).toContain('No saved computers'));
+    view.onKeyDown(new KeyboardEvent('keydown', { key: 'n' }));
+    view.element.querySelector<HTMLInputElement>('input[name="id"]')!.value = 'devbox';
+    view.element.querySelector<HTMLInputElement>('input[name="host"]')!.value = 'dev.example';
+    view.element.querySelector<HTMLFormElement>('form')!.requestSubmit();
+    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('computer_profile_save', {
+      profile: { id: 'devbox', host: 'dev.example', autoApproveReadOnly: true }, expectedRevision: 'rev0',
+    }));
   });
 });

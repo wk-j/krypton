@@ -30,6 +30,17 @@ pub struct ComputerProfile {
     pub port: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_cwd: Option<String>,
+    /// Spec 318: read-only commands skip the approval row. Omitted means `true`.
+    #[serde(default = "default_true")]
+    pub auto_approve_read_only: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 #[derive(Deserialize, Serialize)]
@@ -48,6 +59,8 @@ struct StoredProfile {
     port: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     default_cwd: Option<String>,
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    auto_approve_read_only: bool,
 }
 
 impl From<StoredProfile> for ComputerProfile {
@@ -58,6 +71,7 @@ impl From<StoredProfile> for ComputerProfile {
             user: value.user,
             port: value.port,
             default_cwd: value.default_cwd,
+            auto_approve_read_only: value.auto_approve_read_only,
         }
     }
 }
@@ -70,6 +84,7 @@ impl From<&ComputerProfile> for StoredProfile {
             user: value.user.clone(),
             port: value.port,
             default_cwd: value.default_cwd.clone(),
+            auto_approve_read_only: value.auto_approve_read_only,
         }
     }
 }
@@ -778,6 +793,93 @@ impl ConnectedComputerManager {
         {
             return Err("cwd must be an absolute remote path".to_string());
         }
+        let command = match auto_approved_script(&profile, &request.command, cwd.as_deref()) {
+            Some(script) => script,
+            None => {
+                self.await_approval(token, &binding, &request, &target, cwd.as_deref())
+                    .await?;
+                request.command.clone()
+            }
+        };
+        self.binding(token)?;
+        let (socket, mut disconnect_rx) = {
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            let total = inner
+                .entries
+                .values()
+                .map(|entry| entry.status.active_commands)
+                .sum::<usize>();
+            let entry = inner
+                .entries
+                .get_mut(&request.computer_id)
+                .ok_or_else(|| "Unknown computer".to_string())?;
+            if entry.status.state != ConnectionState::Connected {
+                return Err("Computer disconnected before the command started".to_string());
+            }
+            if total >= 4 || entry.status.active_commands >= 2 {
+                return Err("Remote command capacity is busy".to_string());
+            }
+            let socket = entry
+                .socket
+                .clone()
+                .ok_or_else(|| "SSH socket is unavailable".to_string())?;
+            if !check_master(&profile, &socket) {
+                entry.status.state = ConnectionState::Disconnected;
+                entry.status.last_error = Some("SSH connection closed".to_string());
+                if let Some(cancel) = entry.cancel.take() {
+                    let _ = cancel.send(true);
+                }
+                if let Some(mut child) = entry.child.take() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+                entry.socket.take();
+                let _ = fs::remove_file(&socket);
+                drop(inner);
+                self.emit_status();
+                return Err("SSH connection closed before the command started".to_string());
+            }
+            let receiver = entry
+                .cancel
+                .as_ref()
+                .ok_or_else(|| "Connection cancellation is unavailable".to_string())?
+                .subscribe();
+            entry.status.active_commands += 1;
+            (socket, receiver)
+        };
+        self.emit_status();
+        let result = self
+            .run_command(
+                &profile,
+                &socket,
+                &request,
+                &command,
+                cwd.as_deref(),
+                timeout,
+                &mut disconnect_rx,
+                &mut lane_cancel_rx,
+            )
+            .await;
+        {
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(entry) = inner.entries.get_mut(&request.computer_id) {
+                entry.status.active_commands = entry.status.active_commands.saturating_sub(1);
+            }
+        }
+        self.emit_status();
+        result
+    }
+
+    /// Spec 311 human gate: park a one-time decision in the requesting lane's
+    /// transcript and wait up to 120 s for an explicit answer.
+    async fn await_approval(
+        &self,
+        token: &str,
+        binding: &LaneBinding,
+        request: &ComputerExecRequest,
+        target: &str,
+        cwd: Option<&str>,
+    ) -> Result<(), String> {
         let request_id = random_hex()?;
         let (tx, rx) = oneshot::channel();
         self.approvals
@@ -814,75 +916,11 @@ impl ConnectedComputerManager {
             .unwrap_or_else(|e| e.into_inner())
             .remove(&request_id);
         self.emit_approval_closed(&request_id);
-        if !approved {
-            return Err("Remote command declined or approval expired".to_string());
+        if approved {
+            Ok(())
+        } else {
+            Err("Remote command declined or approval expired".to_string())
         }
-        self.binding(token)?;
-        let (socket, mut disconnect_rx) = {
-            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-            let total = inner
-                .entries
-                .values()
-                .map(|entry| entry.status.active_commands)
-                .sum::<usize>();
-            let entry = inner
-                .entries
-                .get_mut(&request.computer_id)
-                .ok_or_else(|| "Unknown computer".to_string())?;
-            if entry.status.state != ConnectionState::Connected {
-                return Err("Computer disconnected while awaiting approval".to_string());
-            }
-            if total >= 4 || entry.status.active_commands >= 2 {
-                return Err("Remote command capacity is busy".to_string());
-            }
-            let socket = entry
-                .socket
-                .clone()
-                .ok_or_else(|| "SSH socket is unavailable".to_string())?;
-            if !check_master(&profile, &socket) {
-                entry.status.state = ConnectionState::Disconnected;
-                entry.status.last_error = Some("SSH connection closed".to_string());
-                if let Some(cancel) = entry.cancel.take() {
-                    let _ = cancel.send(true);
-                }
-                if let Some(mut child) = entry.child.take() {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                }
-                entry.socket.take();
-                let _ = fs::remove_file(&socket);
-                drop(inner);
-                self.emit_status();
-                return Err("SSH connection closed while awaiting approval".to_string());
-            }
-            let receiver = entry
-                .cancel
-                .as_ref()
-                .ok_or_else(|| "Connection cancellation is unavailable".to_string())?
-                .subscribe();
-            entry.status.active_commands += 1;
-            (socket, receiver)
-        };
-        self.emit_status();
-        let result = self
-            .run_command(
-                &profile,
-                &socket,
-                &request,
-                cwd.as_deref(),
-                timeout,
-                &mut disconnect_rx,
-                &mut lane_cancel_rx,
-            )
-            .await;
-        {
-            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(entry) = inner.entries.get_mut(&request.computer_id) {
-                entry.status.active_commands = entry.status.active_commands.saturating_sub(1);
-            }
-        }
-        self.emit_status();
-        result
     }
 
     #[allow(clippy::too_many_arguments)] // Transport inputs and two independent cancellation signals.
@@ -891,6 +929,7 @@ impl ConnectedComputerManager {
         profile: &ComputerProfile,
         socket: &Path,
         request: &ComputerExecRequest,
+        command: &str,
         cwd: Option<&str>,
         timeout: u64,
         disconnect_rx: &mut watch::Receiver<bool>,
@@ -917,7 +956,7 @@ impl ConnectedComputerManager {
             script.push_str(&cwd.replace('\'', "'\\''"));
             script.push_str("' || exit 1\n");
         }
-        script.push_str(&request.command);
+        script.push_str(command);
         script.push('\n');
         let stdout = child
             .stdout
@@ -1086,6 +1125,19 @@ fn check_master(profile: &ComputerProfile, socket: &Path) -> bool {
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|status| status.success())
+}
+
+/// Spec 318: the re-quoted script to run without asking, or `None` for the
+/// spec 311 approval row. The profile setting is checked before the command.
+fn auto_approved_script(
+    profile: &ComputerProfile,
+    command: &str,
+    cwd: Option<&str>,
+) -> Option<String> {
+    if !profile.auto_approve_read_only {
+        return None;
+    }
+    crate::computer_read_only::read_only_script(command, cwd)
 }
 
 fn validate_profile(profile: &ComputerProfile) -> Result<(), String> {
@@ -1316,6 +1368,7 @@ mod tests {
                     user: None,
                     port: None,
                     default_cwd: Some("/srv/builds".into()),
+                    auto_approve_read_only: true,
                 },
                 &first.revision,
             )
@@ -1324,6 +1377,8 @@ mod tests {
         let body = fs::read_to_string(base.join("profiles.toml")).unwrap();
         assert!(body.contains("default_cwd = \"/srv/builds\""));
         assert!(!body.contains("defaultCwd"));
+        // The default `true` is omitted from the file.
+        assert!(!body.contains("auto_approve_read_only"));
         assert!(manager
             .save(
                 ComputerProfile {
@@ -1332,6 +1387,7 @@ mod tests {
                     user: None,
                     port: None,
                     default_cwd: None,
+                    auto_approve_read_only: true,
                 },
                 &first.revision
             )
@@ -1348,6 +1404,66 @@ mod tests {
     }
 
     #[test]
+    fn read_only_setting_round_trips_and_gates_auto_approval() {
+        let base = std::env::temp_dir().join(format!(
+            "connected-computers-test-{}",
+            random_hex().unwrap()
+        ));
+        fs::create_dir_all(&base).unwrap();
+        let path = base.join("profiles.toml");
+        fs::write(
+            &path,
+            "schema_version = 1\n\n[[computers]]\nid = \"legacy\"\nhost = \"legacy\"\n",
+        )
+        .unwrap();
+        let manager = ConnectedComputerManager::new_at(path.clone(), base.join("sockets"));
+        let first = manager.list().unwrap();
+        let legacy = first.computers[0].profile.clone();
+        assert!(
+            legacy.auto_approve_read_only,
+            "omitted key defaults to true"
+        );
+        manager
+            .save(
+                ComputerProfile {
+                    id: "prod".into(),
+                    host: "prod".into(),
+                    user: None,
+                    port: None,
+                    default_cwd: None,
+                    auto_approve_read_only: false,
+                },
+                &first.revision,
+            )
+            .unwrap();
+        assert!(fs::read_to_string(&path)
+            .unwrap()
+            .contains("auto_approve_read_only = false"));
+        let reloaded = ConnectedComputerManager::new_at(path, base.join("sockets"))
+            .list()
+            .unwrap();
+        let prod = reloaded
+            .computers
+            .iter()
+            .find(|status| status.profile.id == "prod")
+            .unwrap()
+            .profile
+            .clone();
+        assert!(!prod.auto_approve_read_only);
+
+        assert_eq!(
+            auto_approved_script(&legacy, "ls -la", Some("/srv")).as_deref(),
+            Some("'ls' '-la'")
+        );
+        assert_eq!(
+            auto_approved_script(&legacy, "rm -rf build", Some("/srv")),
+            None
+        );
+        assert_eq!(auto_approved_script(&prod, "ls -la", Some("/srv")), None);
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
     fn invalid_host_and_directory_are_rejected() {
         let mut profile = ComputerProfile {
             id: "box".into(),
@@ -1355,6 +1471,7 @@ mod tests {
             user: None,
             port: None,
             default_cwd: None,
+            auto_approve_read_only: true,
         };
         assert!(validate_profile(&profile).is_err());
         profile.host = "buildbox".into();

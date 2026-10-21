@@ -4544,7 +4544,7 @@ fn computer_tool_descriptors() -> Vec<Value> {
         }),
         json!({
             "name": "computer_exec",
-            "description": "Run one noninteractive shell command on a user-connected computer. The user must approve the exact command in Krypton before it starts. No retry is automatic. Exit code and bounded output are returned.",
+            "description": "Run one noninteractive shell command on a user-connected computer. Read-only commands from Krypton's built-in list may run immediately when the computer allows it; any other command waits for the user's approval of the exact command. Pass cwd instead of cd, and avoid redirection, $, globs and ~ so a read-only command qualifies. No retry is automatic. Exit code and bounded output are returned.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

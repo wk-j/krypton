@@ -3,6 +3,7 @@ pub mod acp_harness_config;
 mod acp_install;
 pub mod acp_wire;
 mod commands;
+mod computer_read_only;
 mod config;
 pub mod connected_computers;
 pub mod control;

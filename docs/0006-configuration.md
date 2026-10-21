@@ -945,14 +945,20 @@ host = "buildbox"
 user = "alice"          # optional; OpenSSH config/default when omitted
 port = 22               # optional; OpenSSH config/default when omitted
 default_cwd = "/srv/builds" # optional remote absolute path
+auto_approve_read_only = false   # optional; default true — read-only commands run without asking (spec 318)
 ```
 
 The file stores no password or private key. OpenSSH config supplies keys, jump
 hosts and host-key policy. Profiles start as `configured` after app launch;
 the user must choose **Connect** before a lane can run a command. Saving checks
-the file revision to prevent overwriting an external edit. Every remote command
-requires its own approval in the requesting Harness. Remote Harness workspaces
-and `acp_harness.remote_profiles` remain independent.
+the file revision to prevent overwriting an external edit. A command that
+passes Krypton's built-in read-only check (spec 318) runs without asking when
+`auto_approve_read_only` is on (the default); every other remote command
+requires its own approval in the requesting Harness. Because auto-approved
+reads can return any non-hidden file the SSH account can read to the lane's
+model provider, set `auto_approve_read_only = false` on hosts where that is
+unacceptable. Remote Harness workspaces and `acp_harness.remote_profiles`
+remain independent.
 
 ### Telegram Harness Controller (app-managed)
 
