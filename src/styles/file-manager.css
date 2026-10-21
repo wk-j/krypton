@@ -71,6 +71,11 @@
   contain: layout;
 }
 
+/* Overscanned row window; JS translates it for smooth scrolling (smooth-scroll.ts). */
+.krypton-file-manager__rows {
+  will-change: transform;
+}
+
 .krypton-file-manager__preview {
   flex: 1 1 0;
   overflow: hidden;

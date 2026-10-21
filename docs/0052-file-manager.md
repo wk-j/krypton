@@ -1,6 +1,7 @@
 # File Manager Window — Implementation Spec
 
 > Status: Implemented
+> Superseded in structure by [317](./0317-file-manager-components.md) — the view now lives in `src/file-manager/` (components, keymap, preview registry). Behaviour below is unchanged.
 > Date: 2026-04-04
 > Milestone: M8 — Polish
 
@@ -16,7 +17,8 @@ Implement a `FileManagerView` as a new `ContentView` type that renders inside ex
 
 | File | Change |
 |------|--------|
-| `src/file-manager.ts` | **New** — `FileManagerView` class implementing `ContentView` |
+| `src/file-manager.ts` | **New** — `FileManagerView` class implementing `ContentView` (spec 317: replaced by the `src/file-manager/` package) |
+| `src/file-manager/` | Spec 317 — `index.ts` re-export, `view.ts` orchestrator, `state.ts`, pure modules, `keymap.ts`, `modes.ts`, `ops.ts`, `preview/`, `components/` |
 | `src/types.ts` | Add `'file_manager'` to `PaneContentType` union |
 | `src/compositor.ts` | Add `openFileManager()` method |
 | `src/input-router.ts` | Add `b` key in Compositor mode to open file manager |
@@ -119,36 +121,45 @@ No new IPC events needed — directory listing is request/response. File preview
 
 **File manager internal (Normal mode, when file manager pane is focused):**
 
+Generated from `NORMAL_KEYMAP` (`src/file-manager/keymap.ts`, spec 317), in table order. Moving the cursor does **not** load a preview; `o`, `l`/`Enter` on a file and a search select do.
+
 | Key | Action |
 |-----|--------|
 | `j` / `↓` | Move cursor down |
 | `k` / `↑` | Move cursor up |
-| `l` / `Enter` | Enter directory / open file in `$EDITOR` via terminal |
+| `l` / `Enter` | Enter directory / preview file |
 | `h` / `Backspace` | Go to parent directory |
-| `gg` | Jump to first entry |
-| `G` | Jump to last entry |
-| `Ctrl+d` | Page down (half screen) |
-| `Ctrl+u` | Page up (half screen) |
-| `/` | Enter filter mode (fuzzy search) |
-| `Escape` | Exit filter mode / clear marks |
-| `q` | Close file manager tab |
+| `gg` | Jump to top (second `g` within 500 ms) |
+| `J` | Scroll preview down |
+| `K` | Scroll preview up |
+| `H` | Narrow the list column |
+| `L` | Widen the list column |
+| `G` | Jump to bottom |
+| `Ctrl+d` | Half page down |
+| `Ctrl+u` | Half page up |
+| `/` | Filter by name (in-order subsequence; `Enter` keeps, `Escape` clears) |
+| `q` | Close the file manager |
+| `Escape` | Clear marks |
 | `.` | Toggle hidden files |
-| `s` | Cycle sort: name → size → modified |
-| `S` | Reverse sort order |
-| `Space` | Toggle mark on current entry, move down |
-| `v` | Toggle mark on all entries |
-| `y` | Yank (copy) marked files — prompts for destination |
-| `m` | Move marked files — prompts for destination |
-| `D` | Delete marked files (with confirmation) |
-| `r` | Rename current file (inline edit in status bar) |
-| `A` | Create new file (prompts name in status bar) |
-| `M` | Create new directory (mkdir, prompts name) |
-| `p` | Open preview panel toggle (show/hide right pane) |
-| `H` | Narrow the file list pane |
-| `L` | Widen the file list pane |
-| `~` | Jump to home directory |
-| `-` | Jump back in directory history |
-| `o` | Open file in a new terminal tab (runs `$EDITOR <file>`) |
+| `s` / `Shift+s` | `s`: cycle sort field (name → size → modified); `Shift+s` (`e.key === 's'` with shift held): reverse order. `S` as delivered by most layouts is unbound. |
+| `Space` | Toggle mark and move down |
+| `v` | Mark / unmark all |
+| `y` | Yank (copy) marked or current |
+| `x` | Cut marked or current |
+| `D` | Delete marked or current (confirm `y`/N; any other key cancels) |
+| `r` | Rename current (inline prompt in status bar) |
+| `A` | Create file (prompt) |
+| `M` | Create directory (prompt) |
+| `~` | Go to home directory (only if it is under the start directory) |
+| `-` | Go back in history |
+| `p` | Paste clipboard into the current directory (same-dir copy gets `name 2.ext`) |
+| `o` | Open preview for the current file |
+| `w` | Show / hide the preview pane |
+| `Y` | Copy the absolute path to the clipboard |
+| `i` | Open the AI assistant (spec 055) |
+| `t` | Track marked or current file as a diff baseline |
+| `T` | Open the diff against tracked baselines |
+| `f` | Fuzzy-search files under the start directory (`Ctrl+j`/`Ctrl+k`/arrows move, `Ctrl+u` clears, `Enter` selects, `Escape` exits) |
 
 ### UI Structure
 
@@ -212,6 +223,20 @@ The file manager surface allows native text selection across the breadcrumb, fil
 - **Symlinks:** Show with `→ target` suffix, follow on enter. Broken symlinks shown in error color
 - **Long filenames:** Truncate with `…` in list, show full name in status bar when cursor is on it
 - **File deleted externally:** Re-list on focus returns to the directory. If current file disappears, cursor moves to nearest valid entry
+
+## Smooth scrolling
+
+Since spec 317 the preview and the list glide instead of jumping. The code is in
+`src/file-manager/smooth-scroll.ts`, and docs/0317-file-manager-components.md § Smooth scrolling has the details.
+
+- **Preview `J` / `K`** animates `scrollTop` with the diff view's easing (`SCROLL_LERP = 0.24`,
+  `SCROLL_SNAP_PX = 0.5`). Holding a key moves the target further instead of restarting the animation.
+- **List** (directory and fuzzy search): the window is still virtual, but it now renders
+  `LIST_OVERSCAN = 3` extra rows on each side and is moved with a `translateY` toward
+  `scrollOffset × cellHeight`. Cursor moves that cross the edge, and ctrl+d / ctrl+u, glide. Jumps
+  larger than one viewport (G, gg) snap, as do directory changes, filter or sort changes, and switching
+  between file and search mode. The cursor highlight is always instant.
+- `prefers-reduced-motion: reduce` turns off both animations: every scroll lands immediately.
 
 ## Out of Scope
 
