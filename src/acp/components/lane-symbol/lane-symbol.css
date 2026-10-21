@@ -6,7 +6,7 @@
 @layer krypton.component {
   .acp-harness__lane-symbol {
     grid-column: 1;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
   }
 
   /* Status-glyph tints. busy renders the JS spinner glyph (tinted to the lane
@@ -33,6 +33,6 @@
 
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness__lane-symbol {
-    color: color-mix(in srgb, var(--krypton-ink) 58%, transparent);
+    color: var(--krypton-ink-3);
   }
 }

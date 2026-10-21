@@ -47,7 +47,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
     font-size: 0.78em;
   }
 
@@ -59,7 +59,7 @@
     border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
     border-radius: var(--krypton-border-radius, 8px);
     background: var(--agent-surface-mid, rgba(2, 5, 10, 0.42));
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68));
     font: inherit;
     line-height: 16px;
     cursor: pointer;
@@ -75,7 +75,7 @@
   .acp-harness__staging-hint {
     font-size: 0.72em;
     letter-spacing: 0.06em;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45));
     text-transform: uppercase;
   }
 }

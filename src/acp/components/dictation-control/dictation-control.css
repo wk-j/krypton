@@ -14,7 +14,7 @@
 
 @layer krypton.component {
   .acp-harness__dictation-interim {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
     text-decoration: underline;
     text-decoration-color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 46%, transparent);
     text-underline-offset: 3px;
@@ -31,7 +31,7 @@
     border: 1px solid color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 32%, transparent);
     border-radius: var(--krypton-border-radius, 8px);
     background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 6%, transparent);
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
     font: inherit;
     font-size: 0.65em;
     letter-spacing: 0.08em;
@@ -43,7 +43,7 @@
   .acp-harness__dictation:hover,
   .acp-harness__dictation:focus-visible {
     border-color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 68%, transparent);
-    color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
     outline: none;
   }
 
@@ -52,7 +52,7 @@
   .acp-harness__dictation--stopping {
     border-color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 72%, transparent);
     background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 12%, transparent);
-    color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
   }
 
   .acp-harness__dictation-dot {
@@ -65,7 +65,7 @@
   }
 
   .acp-harness__dictation-key {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   }
 
   @keyframes acp-harness-dictation-pulse {

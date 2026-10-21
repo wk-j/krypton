@@ -55,7 +55,7 @@
     overflow: hidden;
     line-height: 1;
     text-align: center;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   }
 
   /* Mirrors .acp-harness__tool-kind — a compact neutral tag, not a coloured pill. */
@@ -65,7 +65,7 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     font-size: 0.78em;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
     border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
     border-radius: var(--krypton-border-radius, 8px);
     padding: 0 5px;
@@ -90,12 +90,12 @@
   }
 
   .acp-harness__perm-suffix {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
   }
 
   .acp-harness__perm-reason,
   .acp-harness__perm-preview {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.86em;
     line-height: 1.25;
   }

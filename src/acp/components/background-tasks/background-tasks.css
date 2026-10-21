@@ -22,7 +22,7 @@
   }
 
   .acp-harness__bg-tasks-head {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36));
     font-size: 0.82em;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -49,7 +49,7 @@
 
   .acp-harness__bg-task-id {
     overflow: hidden;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -63,7 +63,7 @@
 
   .acp-harness__bg-task-elapsed,
   .acp-harness__bg-task-bytes {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     text-align: right;
     white-space: nowrap;
   }
@@ -78,14 +78,14 @@
 
   .acp-harness__bg-task-tail {
     overflow: hidden;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .acp-harness__bg-task--exited .acp-harness__bg-task-glyph,
   .acp-harness__bg-task--exited .acp-harness__bg-task-status {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   }
 
   .acp-harness__bg-task--failed .acp-harness__bg-task-glyph,
@@ -103,11 +103,11 @@
 
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness__bg-task-cmd {
-    color: color-mix(in srgb, var(--krypton-ink) 80%, transparent);
+    color: var(--krypton-ink-2);
   }
 
   html[data-theme-scheme='light'] .acp-harness__bg-task-id,
   html[data-theme-scheme='light'] .acp-harness__bg-task-tail {
-    color: color-mix(in srgb, var(--krypton-ink) 48%, transparent);
+    color: var(--krypton-ink-3);
   }
 }

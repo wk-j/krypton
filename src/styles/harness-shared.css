@@ -175,7 +175,7 @@
 }
 
 .acp-harness__ticket-dock section h3 span {
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
 }
 
 .acp-harness__ticket-dock section p {
@@ -204,7 +204,7 @@
 }
 
 .acp-harness__ticket-dock li em {
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.40);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.40));
   font-style: normal;
 }
 
@@ -431,7 +431,7 @@
 }
 
 .acp-harness__msg-label {
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36));
   letter-spacing: 0.08em;
   font-size: 0.64em;
   line-height: 1.45;
@@ -445,7 +445,7 @@
   min-width: 0;
   white-space: pre-wrap;
   line-height: 1.36;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
   overflow-wrap: anywhere;
 }
 
@@ -847,7 +847,7 @@
 
 .acp-harness__svg-card-kind {
   letter-spacing: 0.08em;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
 }
 
 .acp-harness__svg-card-hint {
@@ -863,7 +863,7 @@
 .acp-harness__svg-card-btn {
   padding: 1px 6px;
   font: inherit;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--krypton-border-radius, 8px);
@@ -943,7 +943,7 @@
   content: 'svg · drawing…';
   display: block;
   letter-spacing: 0.08em;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
   animation: acp-harness-streaming-pulse 1.4s ease-in-out infinite;
 }
 
@@ -1025,7 +1025,7 @@
      stay legible — no italic, no mask fade (those compounded into an
      unreadable wash). The transcript owns scrolling, so the thought itself
      expands to show the complete message without a nested scroll region. */
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68));
 }
 
 /* Effort meter: a mono glyph gauge under the thought label, filled by
@@ -1068,14 +1068,14 @@
 /* Empty transcript · `components/transcript/index.ts:138`. */
 .acp-harness__transcript-empty {
   margin: auto;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
   letter-spacing: 0.04em;
 }
 
 /* Dashboard empty state · `acp-harness-view.ts:12181`. */
 .acp-harness__empty {
   padding: 16px;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
 }
 
 /* Command-centre strip · `acp-harness-view.ts:6248`. */

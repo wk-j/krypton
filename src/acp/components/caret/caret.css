@@ -35,7 +35,7 @@
        `[font] line_height`). */
     height: 1em;
     vertical-align: -0.2em;
-    color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
     animation: acp-harness-caret 1s step-end infinite;
   }
 

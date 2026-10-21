@@ -52,7 +52,7 @@
   }
 
   .acp-harness__session-head span:last-child {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     font-size: 0.84em;
     text-shadow: none;
     letter-spacing: 0.04em;
@@ -75,7 +75,7 @@
     gap: 10px;
     align-items: baseline;
     padding: 6px 14px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     cursor: default;
     border-left: 2px solid transparent;
   }
@@ -87,7 +87,7 @@
   }
 
   .acp-harness__session-row--disabled {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   }
 
   .acp-harness__session-title,
@@ -103,7 +103,7 @@
   }
 
   .acp-harness__session-meta {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font-size: 0.84em;
   }
 
@@ -117,7 +117,7 @@
   .acp-harness__session-empty,
   .acp-harness__session-error {
     padding: 14px 16px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     border-top: none;
     border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
   }

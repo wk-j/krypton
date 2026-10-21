@@ -85,7 +85,7 @@
     white-space: nowrap;
     font-size: 0.82em;
     letter-spacing: 0.02em;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 240), 0.55);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 240), 0.55));
   }
 
   /* Same badge as the artifact card's `f` hint. Empty until the hint layer

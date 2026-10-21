@@ -103,7 +103,7 @@ import { refreshLessons, setLessonsEnabled } from './acp/lessons';
 import { refreshSvgFencePreviews } from './acp/harness-svg-fence';
 import { openAcpWireProfiler, type AcpWireMode } from './acp/acp-wire';
 import { DEFAULT_SHADER_CONFIG, loadConfig } from './config';
-import type { FrontendThemeEngine } from './theme';
+import { effectiveBackdropAlpha, type FrontendThemeEngine } from './theme';
 import { ExtensionManager } from './extensions';
 import type { ExtensionHost } from './extensions';
 import { DashboardManager } from './dashboard';
@@ -748,26 +748,29 @@ export class Compositor {
       root.setProperty('--krypton-perspective-tilt-y', tiltYVal);
 
       // Transparency — window backdrop opacity from [visual] config.
-      // Overrides the theme's backdrop alpha when set.
+      // Overrides the theme's backdrop alpha when set. A light-scheme theme
+      // floors it (spec 321): without blur, a translucent light surface takes
+      // the wallpaper's hue and the secondary ink tiers lose their contrast.
       const opacity = Math.max(0, Math.min(1, config.visual.opacity ?? 0.5));
       this.configOpacity = opacity;
+      const surfaceAlpha = effectiveBackdropAlpha(this.themeEngine?.theme ?? null, opacity);
 
       // Override the theme's backdrop color alpha with config opacity.
       // Read the current theme backdrop color and replace its alpha channel.
       const themeBackdrop = this.themeEngine?.theme?.chrome?.backdrop?.color
         ?? 'rgba(6, 10, 18, 0.5)';
-      root.setProperty('--krypton-backdrop-color', replaceAlpha(themeBackdrop, opacity));
+      root.setProperty('--krypton-backdrop-color', replaceAlpha(themeBackdrop, surfaceAlpha));
 
       // Also override quick terminal background alpha with config opacity.
       const themeQtBg = this.themeEngine?.theme?.ui?.quick_terminal?.background
         ?? 'rgba(6, 10, 18, 0.6)';
-      root.setProperty('--krypton-qt-bg', replaceAlpha(themeQtBg, opacity));
+      root.setProperty('--krypton-qt-bg', replaceAlpha(themeQtBg, surfaceAlpha));
 
       // Also override dashboard backdrop and panel alpha with config opacity.
       root.setProperty('--krypton-dashboard-backdrop', `rgba(0, 0, 0, ${opacity * 0.6})`);
       const themeBg = this.themeEngine?.theme?.colors?.background
         ?? 'rgba(10, 10, 15, 0.95)';
-      root.setProperty('--krypton-dashboard-panel-bg', replaceAlpha(themeBg, opacity));
+      root.setProperty('--krypton-dashboard-panel-bg', replaceAlpha(themeBg, surfaceAlpha));
 
       // Update existing terminals so their background alpha matches
       this.updateTerminalThemes();

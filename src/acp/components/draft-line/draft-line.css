@@ -24,7 +24,7 @@
 
   .acp-harness__lane-tag {
     flex: 0 0 auto;
-    color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: none;
@@ -36,7 +36,7 @@
     position: relative;
     width: 1ch;
     text-align: center;
-    color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
     text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 40%, transparent);
   }
 
@@ -49,7 +49,7 @@
   }
 
   .acp-harness__composer--command .acp-harness__input {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   }
 
   .acp-harness__composer--command .acp-harness__prompt {
@@ -62,7 +62,7 @@
 
   /* spec 285: word-autocomplete suggestion after the caret (Tab / → accept). */
   .acp-harness__ghost {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
     text-shadow: none;
     pointer-events: none;
     user-select: none;

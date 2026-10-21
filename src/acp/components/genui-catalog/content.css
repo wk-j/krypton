@@ -106,7 +106,7 @@
   }
 
   .acp-genui__metric-note {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     font-size: 0.85em;
   }
 
@@ -184,7 +184,7 @@
   .acp-genui__list-detail {
     flex: 1 1 auto;
     min-width: 0;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.52);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.52));
     font-size: 0.88em;
   }
 
@@ -232,7 +232,7 @@
   .acp-genui__source-note {
     flex: 1 1 auto;
     min-width: 0;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     font-size: 0.88em;
   }
 }

@@ -31,7 +31,7 @@
   }
 
   .acp-harness__directive-diff-ctx {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   }
 
   .acp-harness__msg-text {

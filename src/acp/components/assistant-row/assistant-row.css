@@ -5,7 +5,7 @@
   .acp-harness__lane-mail-provenance {
     font-size: 0.78em;
     font-style: italic;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45));
     margin-bottom: 4px;
     letter-spacing: 0.02em;
   }

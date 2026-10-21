@@ -46,7 +46,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--acp-lane-accent, #00ccff);
+    color: var(--acp-lane-ink, var(--acp-lane-accent, #00ccff));
     flex: 1 1 auto;
   }
 
@@ -58,7 +58,7 @@
   }
 
   .acp-harness__lane-peek-age {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
     font-size: 0.82em;
     margin-left: auto;
   }
@@ -78,7 +78,7 @@
   }
   .acp-harness__lane-peek-event-text b { font-weight: normal; color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92); }
   .acp-harness__lane-peek-event-meta {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
     font-size: 0.85em;
     white-space: nowrap;
   }
@@ -92,7 +92,7 @@
     min-width: 0;
   }
   .acp-harness__lane-peek-prefix {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
     font-size: 0.85em;
   }
   .acp-harness__lane-peek-value {
@@ -131,11 +131,11 @@
     padding-top: 5px;
     border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
     font-size: 0.78em;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
     letter-spacing: 0.03em;
   }
   .acp-harness__lane-peek-chip b {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
     font-weight: normal;
   }
   .acp-harness__lane-peek-chip--hot b {

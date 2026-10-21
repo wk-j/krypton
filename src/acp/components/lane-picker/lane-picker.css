@@ -51,7 +51,7 @@
   }
 
   .acp-harness__picker-head span:last-child {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     font-size: 0.84em;
     text-shadow: none;
     letter-spacing: 0.04em;
@@ -70,7 +70,7 @@
     align-items: baseline;
     gap: 10px;
     padding: 6px 14px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     cursor: default;
   }
 
@@ -88,7 +88,7 @@
 
   .acp-harness__picker-id {
     flex: 1 1 auto;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
     font-size: 0.84em;
   }
 
@@ -101,6 +101,6 @@
 
   .acp-harness__picker-empty {
     padding: 14px 16px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
   }
 }

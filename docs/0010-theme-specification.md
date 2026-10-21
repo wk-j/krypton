@@ -723,12 +723,14 @@ The command palette lists every built-in and custom theme under **Color Theme**.
 
 At apply time the frontend also derives `--agent-*` and `--vault-*` from the color theme (accent, foreground, ANSI, chrome). Agent, ACP Harness, and Vault keep their own layout language (amber phosphor / NASA / etc.) but their colors follow the active theme, so switching `krypton-dark` → `legacy-radiance` is visible on those surfaces too.
 
-Harness interiors consume those tokens (`--agent-text`, `--agent-surface-*`, `--krypton-fg-rgb`, `--krypton-accent-rgb`) rather than hardcoded krypton-dark navy/phosphor, so `krypton-light` keeps dark slate ink on frost instead of painting black slabs and `#eaf3ea` body text over a pale titlebar. `--agent-surface-solid` is paper at high alpha on light themes (never ANSI `colors.black` — light themes use a dark black for terminal output).
+Harness interiors consume those tokens (`--agent-text`, `--agent-surface-*`, `--krypton-fg-rgb`, `--krypton-accent-rgb`) rather than hardcoded krypton-dark navy/phosphor, so `krypton-light` keeps dark slate ink on frost instead of painting black slabs and `#eaf3ea` body text over a pale titlebar. `--agent-surface-solid` is opaque paper on light themes (never ANSI `colors.black` — light themes use a dark black for terminal output), because rail cards float over the transcript ([spec 321](./0321-light-scheme-legibility.md)).
 
 Light vs dark is not inverted paint. The frontend computes relative luminance of `chrome.backdrop` and sets `html[data-theme-scheme="light"|"dark"]` plus `--krypton-scheme`. Light scheme:
 
 - **Surfaces separate by luminance.** `--agent-surface-rail` is a cooler, ink-tinted panel; `--agent-surface-canvas` is paper-white. The zen lane rail and the transcript no longer share one frost.
-- **Chrome text is ink, not neon-at-0.25.** Tabs, titlebar, usage, and footer labels mix the window/lane accent toward `--krypton-fg` (`src/styles/theme-scheme.css`). Raw `#ffd166` / `#8effb0` on frost fails WCAG; the mix keeps the hue and the contrast.
+- **Secondary text is an opaque ink tier, not ink at an alpha** ([spec 321](./0321-light-scheme-legibility.md)). The engine solves `--krypton-ink-2` / `-3` / `-4` per light theme to 7 / 4.5 / 3:1 against the rail. A stylesheet writes `var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.42))`: the tiers exist only under a light scheme, so a dark theme keeps its alpha ladder through the fallback.
+- **An accent used as text is OKLCH-capped, never raw neon.** `oklch(from <accent> min(l, var(--krypton-accent-l-max)) c h)` with the cap at 0.44 keeps hue and chroma and clears 4.5:1 for every palette accent. It is declared once on the element that carries the accent — `--krypton-window-ink` on `.krypton-window`, `--acp-lane-ink` on each lane, rail entry, composer and queue-card root — because a `var()` inside a custom property resolves where it is declared. WebKit clips out-of-gamut channels, so warm hues land on rust and brown rather than amber.
+- **Surfaces stay near-opaque.** Blur is banned, so a translucent light surface takes the wallpaper's hue. Under a light scheme the window backdrop alpha is `max([visual] opacity, 0.94)`.
 - **Identity chips darken.** Backend and role palettes (spec 125) swap to ink-weight variants of the same hues so Codex `#d7e7f0` does not vanish on white.
 - **No glow type.** `text-shadow` blooms that read as phosphor on navy become mud on frost and are dropped.
 
@@ -744,6 +746,8 @@ Internally, the theme engine maps theme values to CSS custom properties prefixed
 --krypton-fg, --krypton-bg, --krypton-cursor, --krypton-selection
 --krypton-scheme                  # "light" or "dark" (from chrome-backdrop luminance)
 --krypton-fg-dim
+--krypton-ink-2, --krypton-ink-3, --krypton-ink-4   # light scheme only (spec 321)
+--krypton-ink, --krypton-accent-l-max               # light scheme only, theme-scheme.css
 --agent-surface-rail, --agent-surface-canvas
 --krypton-ansi-0 through --krypton-ansi-15
 --krypton-border-color, --krypton-border-width, --krypton-border-radius

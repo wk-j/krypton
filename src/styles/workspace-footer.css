@@ -60,7 +60,7 @@
 .krypton-workspace-footer__center > .krypton-workspace-footer__segment:not(:first-child)::before {
   content: '·';
   margin: 0 8px;
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.28);
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.28));
 }
 
 .krypton-workspace-footer__right {
@@ -79,7 +79,7 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.72);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.72));
 }
 
 /* `hidden` must win over segments that set their own `display` (--attention,
@@ -123,15 +123,15 @@
    phosphor opacity (spec 236): cwd P1, p2 secondary, p3 ambient. Hue is kind,
    not priority — cyan is not the default type color. */
 .krypton-workspace-footer__segment--project {
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.72);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.72));
 }
 
 .krypton-workspace-footer__segment--p2 {
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.52);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.52));
 }
 
 .krypton-workspace-footer__segment--p3 {
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4));
 }
 
 .krypton-workspace-footer__segment--throughput {
@@ -381,14 +381,14 @@
 }
 
 .krypton-workspace-footer__hint {
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.48);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.48));
 }
 
 .krypton-workspace-footer__hint kbd {
   border: 1px solid rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.22);
   border-radius: var(--krypton-border-radius, 8px);
   padding: 0 4px;
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.78);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.78));
   font-family: inherit;
   font-size: inherit;
 }
@@ -406,7 +406,7 @@
 }
 
 .krypton-workspace-footer__segment--music-icon {
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.52);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.52));
   flex: 0 0 auto;
 }
 
@@ -416,12 +416,12 @@
 }
 
 .krypton-workspace-footer__segment--music-info {
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.52);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.52));
 }
 
 .krypton-workspace-footer__segment--music-time {
   flex: 0 0 auto;
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.52);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.52));
   font-variant-numeric: tabular-nums;
 }
 

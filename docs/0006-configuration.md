@@ -217,7 +217,10 @@ perspective_tilt_y = 0.0       # Y-axis tilt in degrees (left/right lean).
 opacity = 0.5                  # Window backdrop opacity (0.0 = fully transparent,
                                # 1.0 = fully opaque). Controls the alpha channel of
                                # window backgrounds. Diff View (dark scheme) lets
-                               # this show through the code surface. Default: 0.5
+                               # this show through the code surface. A light-scheme
+                               # theme raises it to at least 0.94: without blur a
+                               # translucent light surface takes the wallpaper's
+                               # hue (spec 321). Default: 0.5
 glow_intensity = 0.8           # Top-line glow brightness boost (0.0 = off, 3.0 = max).
                                # Controls the brightness of the glow overlay on the
                                # first few terminal rows. Default: 0.8
@@ -1098,7 +1101,7 @@ Shader presets can be cycled at runtime via `Leader g` (per-pane) or toggled glo
 |---------|-----|------|---------|-------------|
 | `[visual]` | `perspective_depth` | int | `800` | 3D perspective depth in pixels. Higher = subtler effect. 0 = disabled. Recommended: 400–1200 |
 | `[visual]` | `perspective_tilt` | float | `2.0` | Tilt angle in degrees for 3D layer separation. 0 = no tilt. Recommended: 1–6 |
-| `[visual]` | `opacity` | float | `0.5` | Window backdrop opacity (0.0 = fully transparent, 1.0 = fully opaque). Overrides the theme's backdrop alpha. Diff View (dark scheme) lets this show through the code surface. |
+| `[visual]` | `opacity` | float | `0.5` | Window backdrop opacity (0.0 = fully transparent, 1.0 = fully opaque). Overrides the theme's backdrop alpha. Under a light-scheme theme the effective value is at least 0.94 ([spec 321](./0321-light-scheme-legibility.md)). Diff View (dark scheme) lets this show through the code surface. |
 | `[visual]` | `glow_intensity` | float | `0.8` | Top-line glow brightness boost. 0.0 disables the glow, higher = stronger. Clamped to 0.0–3.0. |
 | `[visual]` | `window_border` | bool | `true` | Show the accent-colored outline around terminal windows. `false` hides the border and the accent glow shadow (border stays transparent, so window geometry is unchanged). The Quick Terminal overlay keeps its own chrome. |
 

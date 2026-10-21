@@ -7,8 +7,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   colorToRgb,
   contrastRatio,
+  effectiveBackdropAlpha,
   FrontendThemeEngine,
+  LIGHT_BACKDROP_ALPHA_FLOOR,
   mixColors,
+  mixToContrast,
   relativeLuminance,
   rgbToHex,
   themeCssProperties,
@@ -244,13 +247,57 @@ describe('themeCssProperties', () => {
     const props = themeCssProperties(t);
     expect(props['--krypton-scheme']).toBe('light');
     expect(props['--agent-surface-rail']).not.toBe(props['--agent-surface-canvas']);
-    expect(props['--agent-surface-solid']).toBe('rgba(255, 255, 255, 0.94)');
+    // Rail cards float over the transcript; any alpha lets its glyphs through.
+    expect(props['--agent-surface-solid']).toMatch(/^rgba\(255, 255, 255, 1\)$/);
     expect(props['--agent-surface-canvas']).toBe('rgba(255, 255, 255, 0.78)');
     expect(props['--agent-text']).toBe('#1c2c3c');
     expect(props['--agent-ghost']).toBe(props['--agent-surface-rail']);
     expect(contrastRatio(props['--agent-text'], '#ffffff')).toBeGreaterThanOrEqual(7);
-    expect(contrastRatio(mixColors('#ffd166', '#1c2c3c', 0.28), '#f4f8fc')).toBeGreaterThanOrEqual(4.5);
-    expect(contrastRatio(mixColors('#8effb0', '#1c2c3c', 0.28), '#f4f8fc')).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('light scheme legibility (spec 321)', () => {
+  function lightTheme(foreground: string, backdrop: string): FullTheme {
+    const t = theme({ foreground, accent: '#007799' });
+    t.chrome.backdrop.color = backdrop;
+    return t;
+  }
+
+  const cases: Array<[string, string, string]> = [
+    ['krypton-light', '#1c2c3c', 'rgba(230, 239, 246, 0.96)'],
+    ['warm paper', '#3b2f2f', 'rgba(250, 244, 232, 0.90)'],
+  ];
+
+  for (const [name, fg, backdrop] of cases) {
+    it(`solves ${name} ink tiers to 7 / 4.5 / 3:1 on the rail, in order`, () => {
+      const props = themeCssProperties(lightTheme(fg, backdrop));
+      const rail = mixColors(fg, withAlpha(backdrop, 1), 0.09);
+      const [ink2, ink3, ink4] = ['--krypton-ink-2', '--krypton-ink-3', '--krypton-ink-4'].map((k) => props[k]);
+      expect(contrastRatio(ink2, rail)).toBeGreaterThanOrEqual(7);
+      expect(contrastRatio(ink3, rail)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(ink4, rail)).toBeGreaterThanOrEqual(3);
+      // Each tier is the lightest that passes, so the ladder still reads as one.
+      expect(relativeLuminance(fg)).toBeLessThan(relativeLuminance(ink2));
+      expect(relativeLuminance(ink2)).toBeLessThan(relativeLuminance(ink3));
+      expect(relativeLuminance(ink3)).toBeLessThan(relativeLuminance(ink4));
+    });
+  }
+
+  it('emits no ink tier for a dark theme, so every var() fallback stays live', () => {
+    const props = themeCssProperties(theme({}));
+    expect(Object.keys(props).filter((k) => k.startsWith('--krypton-ink'))).toEqual([]);
+  });
+
+  it('returns the dark end unchanged when no mix reaches the target', () => {
+    expect(mixToContrast('#888888', '#ffffff', '#999999', 4.5)).toBe('#888888');
+  });
+
+  it('floors the backdrop alpha only under a light scheme', () => {
+    const light = lightTheme('#1c2c3c', 'rgba(230, 239, 246, 0.96)');
+    expect(effectiveBackdropAlpha(light, 0.7)).toBe(LIGHT_BACKDROP_ALPHA_FLOOR);
+    expect(effectiveBackdropAlpha(light, 0.98)).toBe(0.98);
+    expect(effectiveBackdropAlpha(theme({}), 0.7)).toBe(0.7);
+    expect(effectiveBackdropAlpha(null, 0.7)).toBe(0.7);
   });
 });
 
@@ -449,5 +496,18 @@ describe('component tokens (spec 303)', () => {
     const none = theme({});
     engine.apply(none);
     expect('--acp-peek-accent' in applied).toBe(false);
+  });
+
+  it('removes light-only ink tiers when a dark theme follows', () => {
+    const applied = stubRoot();
+    const engine = new FrontendThemeEngine();
+    const light = theme({ foreground: '#1c2c3c' });
+    light.chrome.backdrop.color = 'rgba(230, 239, 246, 0.96)';
+    engine.apply(light);
+    expect(applied['--krypton-ink-3']).toBeDefined();
+
+    engine.apply(theme({}));
+    expect('--krypton-ink-3' in applied).toBe(false);
+    expect(applied['--agent-primary']).toBe('#0cf');
   });
 });

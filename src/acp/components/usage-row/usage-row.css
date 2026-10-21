@@ -23,7 +23,7 @@
   }
 
   .acp-harness__msg--usage .acp-harness__msg-label {
-    color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
     text-shadow:
       0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 34%, transparent),
       0 0 18px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 12%, transparent);
@@ -79,7 +79,7 @@
   }
 
   .acp-harness__usage-turns {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     font-variant-numeric: tabular-nums;
   }
 
@@ -92,12 +92,12 @@
   }
 
   .acp-harness__usage-cache-label {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
   }
 
   .acp-harness__usage-cache-value {
     min-width: 4ch;
-    color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
     font-size: 1.48em;
     font-variant-numeric: tabular-nums;
     line-height: 1;
@@ -160,7 +160,7 @@
 
   .acp-harness__usage-metric dt {
     overflow: hidden;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -177,7 +177,7 @@
   }
 
   .acp-harness__usage-metric--cache-read dd {
-    color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
   }
 
   .acp-harness__usage-metric--cache-write dd {
@@ -199,7 +199,7 @@
   .acp-harness__usage-model-head {
     padding: 5px 8px;
     border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34));
   }
 
   .acp-harness__usage-model-head span:not(:first-child),
@@ -210,7 +210,7 @@
   .acp-harness__usage-model {
     padding: 6px 8px;
     border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
     font-variant-numeric: tabular-nums;
   }
 
@@ -224,7 +224,7 @@
 
   .acp-harness__usage-model-stat-label {
     display: none;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34));
   }
 
   .acp-harness__usage-foot {
@@ -233,7 +233,7 @@
     gap: 3px 12px;
     padding: 7px 10px;
     border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
     font-size: 0.82em;
   }
 

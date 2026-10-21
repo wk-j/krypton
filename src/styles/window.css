@@ -627,7 +627,7 @@
 }
 
 .krypton-window__lane-more {
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
 }
 
 .krypton-window__usage-status {
@@ -672,7 +672,7 @@
 }
 
 .krypton-window__usage-quota {
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
 .krypton-window__usage-quota + .krypton-window__usage-quota::before {
@@ -800,12 +800,12 @@
   font-size: var(--krypton-font-size, 14px);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28));
   flex-shrink: 0;
 }
 
 .krypton-tab--active .krypton-tab__index {
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
 }
 
 /* ─── Tab Dot (status indicator) ─── */
@@ -835,14 +835,14 @@
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size, 14px);
   font-weight: 500;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .krypton-tab:not(.krypton-tab--active):hover .krypton-tab__title {
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
 }
 
 .krypton-tab--active .krypton-tab__title {

@@ -95,6 +95,29 @@ export function mixColors(a: string, b: string, amountA: number): string {
   return `rgb(${m(0)}, ${m(1)}, ${m(2)})`;
 }
 
+/**
+ * Spec 321 — the opaque mix of `light` into `dark` with the largest `light`
+ * share whose serialized color still reaches `target` contrast on `surface`.
+ * Returns `dark` unchanged when even `dark` misses the target.
+ */
+export function mixToContrast(dark: string, light: string, surface: string, target: number): string {
+  if (contrastRatio(dark, surface) < target) return dark;
+  let best = mixColors(light, dark, 0);
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 24; i++) {
+    const t = (lo + hi) / 2;
+    const candidate = mixColors(light, dark, t);
+    if (contrastRatio(candidate, surface) >= target) {
+      best = candidate;
+      lo = t;
+    } else {
+      hi = t;
+    }
+  }
+  return best;
+}
+
 // ─── Theme Data Types (mirrors Rust FullTheme) ───────────────────
 
 export interface ThemeMeta {
@@ -301,6 +324,34 @@ export function themeScheme(theme: FullTheme): ThemeScheme {
   return relativeLuminance(theme.chrome.backdrop.color) >= 0.45 ? 'light' : 'dark';
 }
 
+/**
+ * Spec 321 — minimum window backdrop alpha under a light scheme. Without blur
+ * (banned on WKWebView) a translucent light surface takes the wallpaper's hue;
+ * at 0.94 the ink-3 tier still clears 4.5:1 over a black wallpaper.
+ */
+export const LIGHT_BACKDROP_ALPHA_FLOOR = 0.94;
+
+/** `[visual] opacity` after the light-scheme floor; dark keeps it as given. */
+export function effectiveBackdropAlpha(theme: FullTheme | null, opacity: number): number {
+  if (theme && themeScheme(theme) === 'light') return Math.max(opacity, LIGHT_BACKDROP_ALPHA_FLOOR);
+  return opacity;
+}
+
+/**
+ * Spec 321 — opaque light-scheme text tiers, solved against the rail (the
+ * darkest neutral surface) toward the backdrop paper. Light only: dark keeps
+ * its alpha ladder through each declaration's `var()` fallback.
+ */
+function lightInkTiers(foreground: string, backdrop: string): Record<string, string> {
+  const paper = withAlpha(backdrop, 1);
+  const rail = mixColors(foreground, paper, 0.09);
+  return {
+    '--krypton-ink-2': mixToContrast(foreground, paper, rail, 7),
+    '--krypton-ink-3': mixToContrast(foreground, paper, rail, 4.5),
+    '--krypton-ink-4': mixToContrast(foreground, paper, rail, 3),
+  };
+}
+
 export interface ThemeAccent {
   hex: string;
   rgb: string;
@@ -326,8 +377,9 @@ export function themeCssProperties(theme: FullTheme): Record<string, string> {
   const surfaceHigh = light
     ? withAlpha(mixColors(accent, '#ffffff', 0.06), 0.92)
     : withAlpha(backdrop, 0.85);
+  // Light: opaque — rail cards float over the transcript (spec 321).
   const surfaceSolid = light
-    ? withAlpha('#ffffff', 0.94)
+    ? withAlpha('#ffffff', 1)
     : withAlpha(backdrop, 0.96);
   const textDim = light
     ? mixColors(c.foreground, backdrop, 0.68)
@@ -339,6 +391,7 @@ export function themeCssProperties(theme: FullTheme): Record<string, string> {
     '--krypton-selection': c.selection,
     '--krypton-scheme': scheme,
     '--krypton-fg-dim': textDim,
+    ...(light ? lightInkTiers(c.foreground, backdrop) : {}),
 
     '--krypton-accent': accent,
     '--krypton-accent-rgb': accentRgb,
@@ -533,8 +586,8 @@ export class FrontendThemeEngine {
   private currentTheme: FullTheme | null = null;
   private changeCallbacks: ThemeChangeCallback[] = [];
   private listening = false;
-  /** `--<key>` names written by the previous apply; cleared when they vanish. */
-  private appliedTokenKeys = new Set<string>();
+  /** Property names written by the previous apply; cleared when they vanish. */
+  private appliedKeys = new Set<string>();
 
   /** Load the initial theme from the backend */
   async init(): Promise<FullTheme> {
@@ -621,19 +674,20 @@ export class FrontendThemeEngine {
 
   /**
    * Set all --krypton-* / --agent-* / --vault-* CSS custom properties, plus the
-   * theme's `[tokens]`. `setProperty` never removes, so a token the previous
-   * theme set and this one does not is cleared first — the ~151 built-in names
-   * are in every record and need no clearing.
+   * theme's `[tokens]`. `setProperty` never removes, so any name the previous
+   * apply wrote and this record lacks is cleared first — a `[tokens]` entry the
+   * new theme drops, or a light-only property (spec 321 `--krypton-ink-*`)
+   * after a switch to a dark theme.
    */
   private setCssProperties(theme: FullTheme): void {
     const rootEl = document.documentElement;
     const root = rootEl.style;
     const props = themeCssProperties(theme);
-    const tokenKeys = new Set(Object.keys(theme.tokens ?? {}).map((key) => `--${key}`));
-    for (const name of this.appliedTokenKeys) {
-      if (!tokenKeys.has(name)) root.removeProperty(name);
+    const keys = new Set(Object.keys(props));
+    for (const name of this.appliedKeys) {
+      if (!keys.has(name)) root.removeProperty(name);
     }
-    this.appliedTokenKeys = tokenKeys;
+    this.appliedKeys = keys;
     for (const [name, value] of Object.entries(props)) {
       root.setProperty(name, value);
     }

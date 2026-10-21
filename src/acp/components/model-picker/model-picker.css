@@ -40,7 +40,7 @@
   }
 
   .acp-harness__model-head span:last-child {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     font-size: 0.84em;
     text-shadow: none;
     letter-spacing: 0.04em;
@@ -62,7 +62,7 @@
     flex-direction: column;
     gap: 2px;
     padding: 7px 14px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84));
     cursor: default;
   }
 
@@ -85,7 +85,7 @@
   }
 
   .acp-harness__model-desc {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.85em;
   }
 }

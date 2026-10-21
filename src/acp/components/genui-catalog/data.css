@@ -106,7 +106,7 @@
   }
 
   .acp-genui__table-head {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
     background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.05);
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -121,7 +121,7 @@
   .acp-genui__table-more {
     padding: 4px 8px;
     border: 0;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
     font-style: italic;
   }
 
@@ -161,7 +161,7 @@
   }
 
   .acp-genui__chart-text {
-    fill: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    fill: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
     font-family: var(--krypton-font-mono, var(--krypton-font-family, monospace));
     font-size: 11px;
   }
@@ -172,7 +172,7 @@
     flex-wrap: wrap;
     gap: 4px 12px;
     font-size: 0.82em;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
   }
 
   .acp-genui__chart-ticks {
@@ -193,7 +193,7 @@
   }
 
   .acp-genui__chart-unit {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
     font-size: 0.8em;
   }
 
@@ -239,7 +239,7 @@
 
   .acp-genui__progress-label {
     flex: 0 0 auto;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
   }
 
   .acp-genui__progress-track,
@@ -315,7 +315,7 @@
   }
 
   .acp-genui__gauge-label {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
     font-size: 0.84em;
   }
 
@@ -352,11 +352,11 @@
   .acp-genui__segbar-swatch--info { --genui-tone: var(--krypton-info-rgb, 120, 176, 224); }
 
   .acp-genui__segbar-name {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
   }
 
   .acp-genui__segbar-amount {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font-variant-numeric: tabular-nums;
   }
 
@@ -388,7 +388,7 @@
     justify-content: center;
     border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.2);
     border-radius: 50%;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
     font-size: 0.74em;
   }
 
@@ -416,7 +416,7 @@
 
   .acp-genui__step-detail,
   .acp-genui__event-detail {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font-size: 0.86em;
   }
 
@@ -437,7 +437,7 @@
   .acp-genui__event-time {
     flex: 0 0 auto;
     min-width: 64px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font-variant-numeric: tabular-nums;
   }
 
@@ -461,7 +461,7 @@
     padding: 0;
     border: 0;
     background: none;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
     font: inherit;
     line-height: 1;
     cursor: pointer;
@@ -477,7 +477,7 @@
   }
 
   .acp-genui__tree-note {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
     font-size: 0.86em;
   }
 
@@ -500,7 +500,7 @@
   }
 
   .acp-genui__code-lang {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font-size: 0.78em;
     letter-spacing: 0.06em;
   }
@@ -510,7 +510,7 @@
     border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
     border-radius: 3px;
     background: none;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
     font: inherit;
     font-size: 0.78em;
     cursor: pointer;
@@ -534,7 +534,7 @@
 
   .acp-genui__diff-path {
     padding-bottom: 3px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
     font-size: 0.84em;
   }
 
@@ -553,7 +553,7 @@
   .acp-genui__tool-diff-mark {
     flex: 0 0 auto;
     width: 14px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36));
   }
 
   .acp-genui__tool-diff-text {
@@ -564,7 +564,7 @@
   .acp-genui__tool-diff-line--del { color: rgb(var(--krypton-danger-rgb, 220, 120, 120)); }
   .acp-genui__tool-diff-line--hunk { color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.72); }
   .acp-genui__tool-diff-line--meta,
-  .acp-genui__tool-diff-file { color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42); }
+  .acp-genui__tool-diff-file { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42)); }
   .acp-genui__tok-path { font-family: var(--krypton-font-mono, monospace); }
 
   /* ── Diagram ───────────────────────────────────────────────────────────── */
@@ -581,7 +581,7 @@
   }
 
   .acp-genui__diagram-pending {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
     font-size: 0.86em;
   }
 

@@ -92,7 +92,7 @@
   padding: 24px 16px;
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.04em;
-  color: rgba(var(--krypton-fg-rgb, 192, 197, 206), 0.55);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 192, 197, 206), 0.55));
 }
 
 /* ─── Code body ─── */
@@ -114,7 +114,7 @@
   text-align: right;
   font: inherit;
   line-height: inherit;
-  color: rgba(var(--krypton-fg-rgb, 192, 197, 206), 0.25);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 192, 197, 206), 0.25));
   background: var(--krypton-palette-bg, rgba(6, 10, 18, 0.96));
   user-select: none;
   white-space: pre;
@@ -203,7 +203,7 @@
   border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.2);
   border-radius: var(--krypton-border-radius, 8px);
   background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.05);
-  color: rgba(var(--krypton-fg-rgb, 192, 197, 206), 0.75);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 192, 197, 206), 0.75));
 }
 
 .krypton-overview__markdown table {

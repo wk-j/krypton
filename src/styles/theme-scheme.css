@@ -4,8 +4,13 @@
    panels) fail on a light field. Classify via html[data-theme-scheme],
    set by the theme engine from chrome-backdrop luminance.
 
-   Contract:
-   - Text rides ink mixed with the lane/window accent, never raw neon.
+   Contract (spec 321):
+   - Secondary text uses the opaque tiers --krypton-ink-2/3/4 (7 / 4.5 /
+     3:1 on the rail, solved by theme.ts), never ink at an alpha. Base rules
+     write `var(--krypton-ink-N, <dark value>)` so dark keeps its ladder.
+   - An accent used as text is OKLCH-capped (--krypton-accent-l-max), never
+     raw neon: --krypton-window-ink / --acp-lane-ink on the accent's root.
+   - No text dimmed with opacity < 1.
    - Rail / canvas / overlays are distinct luminance steps.
    - Identity chips (backend / role) use darkened inks of the same hue.
    - No L-shaped corner ticks. Full 1px border or nothing.
@@ -13,16 +18,23 @@
 
 html[data-theme-scheme='light'] {
   --krypton-ink: var(--krypton-fg, #1c2c3c);
+  /* Spec 321 — OKLCH lightness cap for an accent used as text. Keeps hue and
+     chroma; L ≤ 0.44 clears 4.5:1 on the rail for every palette accent. */
+  --krypton-accent-l-max: 0.44;
 }
 
 /* Mixes must live on the window (or a descendant), not on html — otherwise
    `var(--krypton-window-accent)` resolves to the theme fallback and every
    tab/title ignores the active-lane slot from spec 142. */
 
+html[data-theme-scheme='light'] .krypton-window {
+  --krypton-window-ink: oklch(from var(--krypton-window-accent, #007799) min(l, var(--krypton-accent-l-max)) c h);
+}
+
 /* ── Window chrome: tabs, title, usage ── */
 
 html[data-theme-scheme='light'] .krypton-tab__title {
-  color: color-mix(in srgb, var(--krypton-ink) 55%, transparent);
+  color: var(--krypton-ink-3);
 }
 
 html[data-theme-scheme='light'] .krypton-tab--active .krypton-tab__title {
@@ -31,16 +43,16 @@ html[data-theme-scheme='light'] .krypton-tab--active .krypton-tab__title {
 }
 
 html[data-theme-scheme='light'] .krypton-tab__index {
-  color: color-mix(in srgb, var(--krypton-ink) 35%, transparent);
+  color: var(--krypton-ink-3);
 }
 
 html[data-theme-scheme='light'] .krypton-tab--active .krypton-tab__index {
-  color: color-mix(in srgb, var(--krypton-ink) 65%, transparent);
+  color: var(--krypton-ink-2);
 }
 
 html[data-theme-scheme='light'] .krypton-tab:not(.krypton-tab--active):hover .krypton-tab__title,
 html[data-theme-scheme='light'] .krypton-tab:not(.krypton-tab--active):hover .krypton-tab__index {
-  color: color-mix(in srgb, var(--krypton-ink) 80%, transparent);
+  color: var(--krypton-ink-2);
 }
 
 html[data-theme-scheme='light'] .krypton-tab__dot {
@@ -49,15 +61,8 @@ html[data-theme-scheme='light'] .krypton-tab__dot {
 
 html[data-theme-scheme='light'] .krypton-window__label,
 html[data-theme-scheme='light'] .krypton-window__label-tail {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 48%, var(--krypton-ink));
-  opacity: 0.78;
+  color: var(--krypton-window-ink);
   text-shadow: none;
-}
-
-html[data-theme-scheme='light'] .krypton-window--focused .krypton-window__label,
-html[data-theme-scheme='light'] .krypton-window--focused .krypton-window__label-tail {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 62%, var(--krypton-ink));
-  opacity: 1;
 }
 
 /* spec 320: Krypton Light's slate titlebar text sits too close to its teal
@@ -76,27 +81,27 @@ html[data-theme-scheme='light'] .krypton-window__usage-provider {
 
 html[data-theme-scheme='light'] .krypton-window__usage-provider + .krypton-window__usage-provider::before,
 html[data-theme-scheme='light'] .krypton-window__usage-quota + .krypton-window__usage-quota::before {
-  color: color-mix(in srgb, var(--krypton-ink) 35%, transparent);
+  color: var(--krypton-ink-4);
 }
 
 html[data-theme-scheme='light'] .krypton-window__usage-name {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 48%, var(--krypton-ink));
+  color: var(--krypton-window-ink);
 }
 
 html[data-theme-scheme='light'] .krypton-window__usage-quota {
-  color: color-mix(in srgb, var(--krypton-ink) 78%, transparent);
+  color: var(--krypton-ink-2);
 }
 
 html[data-theme-scheme='light'] .krypton-window__lane-more {
-  color: color-mix(in srgb, var(--krypton-ink) 58%, transparent);
+  color: var(--krypton-ink-3);
 }
 
 html[data-theme-scheme='light'] .krypton-window__project {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 48%, var(--krypton-ink));
+  color: var(--krypton-window-ink);
 }
 
 html[data-theme-scheme='light'] .krypton-window__project-initials {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 88%, var(--krypton-ink));
+  color: var(--krypton-window-ink);
 }
 
 html[data-theme-scheme='light'] .krypton-window__footer {
@@ -108,13 +113,14 @@ html[data-theme-scheme='light'] .krypton-window--pinned .krypton-window__label-g
   text-shadow: none;
 }
 
+/* The mark carries its lane's color inline, so the cap is applied on it. */
 html[data-theme-scheme='light'] .krypton-window__lane {
-  color: color-mix(in srgb, var(--krypton-lane-accent, var(--krypton-window-accent, #007799)) 40%, var(--krypton-ink));
+  color: oklch(from var(--krypton-lane-accent, var(--krypton-window-accent, #007799)) min(l, var(--krypton-accent-l-max)) c h);
   opacity: 1;
 }
 
 html[data-theme-scheme='light'] .krypton-window__lane--active .krypton-window__lane-initials {
-  color: color-mix(in srgb, var(--krypton-lane-accent, var(--krypton-window-accent, #007799)) 88%, var(--krypton-ink));
+  color: oklch(from var(--krypton-lane-accent, var(--krypton-window-accent, #007799)) min(l, var(--krypton-accent-l-max)) c h);
 }
 
 /* ── Workspace footer: was a hardcoded navy slab ── */
@@ -127,17 +133,17 @@ html[data-theme-scheme='light'] .krypton-workspace-footer {
 html[data-theme-scheme='light'] .krypton-workspace-footer__segment--reviews,
 html[data-theme-scheme='light'] .krypton-workspace-footer__segment--priority,
 html[data-theme-scheme='light'] .krypton-workspace-footer__segment--link {
-  color: color-mix(in srgb, var(--krypton-ink) 62%, transparent);
+  color: var(--krypton-ink-2);
 }
 
 html[data-theme-scheme='light'] .krypton-workspace-footer__reviews-glyph,
 html[data-theme-scheme='light'] .krypton-workspace-footer__priority-glyph,
 html[data-theme-scheme='light'] .krypton-workspace-footer__link-glyph {
-  color: color-mix(in srgb, var(--krypton-ink) 55%, transparent);
+  color: var(--krypton-ink-3);
 }
 
 html[data-theme-scheme='light'] .krypton-workspace-footer__center > .krypton-workspace-footer__segment:not(:first-child)::before {
-  color: color-mix(in srgb, var(--krypton-ink) 32%, transparent);
+  color: var(--krypton-ink-4);
 }
 
 /* ── ACP harness ──────────────────────────────────────────────

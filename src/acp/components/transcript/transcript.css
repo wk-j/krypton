@@ -7,6 +7,6 @@
 
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness__transcript-empty {
-    color: color-mix(in srgb, var(--krypton-ink) 52%, transparent);
+    color: var(--krypton-ink-3);
   }
 }

@@ -43,7 +43,7 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     font-size: 0.78em;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
   }
 
   .acp-harness__question-subject {
@@ -54,7 +54,7 @@
 
   .acp-harness__question-pos {
     flex: none;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     font-size: 0.82em;
   }
 
@@ -63,7 +63,7 @@
     overflow-y: auto;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.9em;
   }
 
@@ -108,7 +108,7 @@
   }
 
   .acp-harness__question-desc {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
     font-size: 0.86em;
   }
 

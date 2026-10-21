@@ -43,3 +43,12 @@
     color: var(--agent-accent);
   }
 }
+
+/* Spec 321 — the lane color as text on a light field: OKLCH lightness capped,
+   hue and chroma kept. Declared on the root that carries the inline accent,
+   because a var() inside a custom property resolves where it is declared. */
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__lane {
+    --acp-lane-ink: oklch(from var(--acp-lane-accent, var(--krypton-accent, #007799)) min(l, var(--krypton-accent-l-max)) c h);
+  }
+}

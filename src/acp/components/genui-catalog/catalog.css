@@ -19,7 +19,7 @@
   }
 
   .acp-genui__label {
-    color: rgb(var(--krypton-fg-rgb) / 0.62);
+    color: var(--krypton-ink-2, rgb(var(--krypton-fg-rgb) / 0.62));
     font-size: 11px;
     letter-spacing: 0.04em;
     text-transform: uppercase;

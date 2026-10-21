@@ -47,7 +47,7 @@
     grid-template-columns: 20ch minmax(0, 1fr) 5ch;
     gap: 8px;
     padding: 4px 0;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
     cursor: pointer;
   }
 
@@ -69,7 +69,7 @@
 
   .acp-harness__memory-source,
   .acp-harness__memory-kind {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
   }
 
   .acp-harness__memory-source {
@@ -94,13 +94,20 @@
   .acp-harness__memory-detail {
     grid-column: 1 / -1;
     padding: 4px 0 6px calc(20ch + 8px);
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     line-height: 1.35;
     white-space: pre-wrap;
   }
 
   .acp-harness__memory__empty {
     padding: 16px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+  }
+}
+
+/* Spec 321 — the author color is set inline on the source span itself. */
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__memory-source {
+    color: oklch(from var(--acp-memory-accent, var(--krypton-ink-2)) min(l, var(--krypton-accent-l-max)) c h);
   }
 }

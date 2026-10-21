@@ -49,12 +49,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--acp-queue-accent);
+    color: var(--acp-lane-ink, var(--acp-queue-accent));
     flex: 1 1 auto;
   }
 
   .acp-harness__lane-queue-label {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
     font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -106,13 +106,13 @@
 
   .acp-harness__lane-queue-n {
     text-align: right;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
     font-size: 0.82em;
   }
 
   .acp-harness__lane-queue-row--next .acp-harness__lane-queue-n,
   .acp-harness__lane-queue-row--next .acp-harness__lane-queue-body {
-    color: var(--acp-queue-accent);
+    color: var(--acp-lane-ink, var(--acp-queue-accent));
   }
 
   /* The whole prompt, wrapped — a queued item is what the lane will be asked
@@ -141,7 +141,7 @@
   .acp-harness__lane-queue-tag {
     font-size: 0.72em;
     line-height: 1.5;
-    color: color-mix(in srgb, var(--acp-queue-accent) 75%, transparent);
+    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-queue-accent)) 75%, transparent);
     border: 1px solid color-mix(in srgb, var(--acp-queue-accent) 30%, transparent);
     border-radius: var(--krypton-border-radius, 8px);
     padding: 0 5px;
@@ -154,16 +154,23 @@
     margin-top: 4px;
     padding-top: 4px;
     border-top: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
     font-size: 0.74em;
   }
 
   /* held behind lane mail / paused on error — dim, nothing draining right now */
   .acp-harness__lane-queue--held .acp-harness__lane-queue-body,
   .acp-harness__lane-queue--held .acp-harness__lane-queue-n {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34));
   }
   .acp-harness__lane-queue--held .acp-harness__lane-queue-name {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+  }
+}
+
+/* Spec 321 — see lane-shell.css: the card carries its own inline accent. */
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__lane-queue {
+    --acp-lane-ink: oklch(from var(--acp-queue-accent) min(l, var(--krypton-accent-l-max)) c h);
   }
 }

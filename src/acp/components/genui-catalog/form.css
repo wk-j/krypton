@@ -58,7 +58,7 @@
   .acp-genui__form-submit[disabled] {
     border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
     background: transparent;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45));
     cursor: default;
   }
 
@@ -75,7 +75,7 @@
     border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
     border-radius: var(--krypton-border-radius, 8px);
     background: transparent;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
     font: inherit;
     text-align: left;
     overflow-wrap: anywhere;

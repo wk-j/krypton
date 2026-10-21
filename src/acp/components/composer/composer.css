@@ -48,3 +48,10 @@
     background: rgba(255, 209, 102, 0.026);
   }
 }
+
+/* Spec 321 — see lane-shell.css: the composer carries its own inline accent. */
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__composer {
+    --acp-lane-ink: oklch(from var(--acp-lane-accent, var(--krypton-accent, #007799)) min(l, var(--krypton-accent-l-max)) c h);
+  }
+}

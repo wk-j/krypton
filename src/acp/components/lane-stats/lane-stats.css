@@ -23,7 +23,7 @@
 
   .acp-harness__lane-stats span {
     padding: 0;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
     font-size: 0.78em;
     letter-spacing: 0.02em;
     text-decoration: none;
@@ -34,12 +34,12 @@
 
   .acp-harness__lane-stats span:not(:last-child)::after {
     content: '·';
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.25);
+    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.25));
   }
 }
 
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness__lane--active > .acp-harness__lane-stats {
-    background: color-mix(in srgb, var(--acp-lane-accent, #007799) 18%, var(--agent-surface-high, rgba(255, 255, 255, 0.92)));
+    background: color-mix(in srgb, var(--acp-lane-accent, #007799) 8%, var(--agent-surface-high, rgba(255, 255, 255, 0.92)));
   }
 }

@@ -20,7 +20,7 @@
     align-items: center;
     gap: 6px;
     padding: 0 10px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
     white-space: nowrap;
     overflow: hidden;
     letter-spacing: 0.02em;
@@ -41,7 +41,7 @@
   .acp-harness__lane-name {
     grid-column: 2;
     max-width: 20ch; /* spec 215: +2ch for the inline backend logo */
-    color: var(--acp-lane-accent, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+    color: var(--acp-lane-ink, var(--acp-lane-accent, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86)));
     font-weight: normal;
     font-size: 0.92em;
     letter-spacing: 0.02em;
@@ -60,7 +60,7 @@
   /* spec 215: hue-preserving dim — collapsed names keep the lane hue mixed
      toward the base text color instead of being replaced by gray. */
   .acp-harness__lane--collapsed .acp-harness__lane-name {
-    color: color-mix(in srgb, var(--acp-lane-accent, #0cf) 70%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
+    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, #0cf)) 70%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
   }
 
   .acp-harness__lane--active .acp-harness__lane-name {
@@ -77,7 +77,7 @@
     grid-column: 3;
     justify-self: start;
     padding: 0;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.74em;
     letter-spacing: 0.06em;
     text-decoration: none;
@@ -112,7 +112,7 @@
     padding: 1px 6px;
     border-radius: var(--krypton-border-radius, 8px);
     background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68));
     font-size: 0.72em;
     letter-spacing: 0.04em;
     text-shadow: none;
@@ -156,7 +156,7 @@
 
   .acp-harness__lane-activity {
     grid-column: 5;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
     font-size: 0.82em;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -176,7 +176,7 @@
   }
 
   .acp-harness__lane-bg--on {
-    color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #0cf)) 70%, var(--krypton-fg, #d8e8d8));
+    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #0cf))) 70%, var(--krypton-fg, #d8e8d8));
   }
 
   .acp-harness__lane-mcp {
@@ -192,11 +192,11 @@
 
   /* MCP connected: the ✓ reads "ok" in the lane's own accent, not flat gray. */
   .acp-harness__lane-mcp--on {
-    color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 60%, var(--krypton-fg, #d8e8d8));
+    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0))) 60%, var(--krypton-fg, #d8e8d8));
   }
 
   .acp-harness__lane-mcp--off {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36));
   }
 
   .acp-harness__lane-metrics {
@@ -216,7 +216,7 @@
 
   .acp-harness__lane-metrics-cpu,
   .acp-harness__lane-metrics-rss {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
   .acp-harness__lane-metrics--idle .acp-harness__lane-metrics-cpu {
@@ -280,33 +280,33 @@
 
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness__lane--active > .acp-harness__lane-head {
-    background: color-mix(in srgb, var(--acp-lane-accent, #007799) 18%, var(--agent-surface-high, rgba(255, 255, 255, 0.92)));
+    background: color-mix(in srgb, var(--acp-lane-accent, #007799) 8%, var(--agent-surface-high, rgba(255, 255, 255, 0.92)));
   }
 
   html[data-theme-scheme='light'] .acp-harness__lane-head {
-    color: color-mix(in srgb, var(--krypton-ink) 82%, transparent);
+    color: var(--krypton-ink-2);
   }
 
   html[data-theme-scheme='light'] .acp-harness__lane-name,
   html[data-theme-scheme='light'] .acp-harness__lane--active .acp-harness__lane-name {
-    color: color-mix(in srgb, var(--acp-lane-accent, #007799) 48%, var(--krypton-ink));
+    color: var(--acp-lane-ink);
     text-shadow: none;
   }
 
   html[data-theme-scheme='light'] .acp-harness__lane--collapsed .acp-harness__lane-name {
-    color: color-mix(in srgb, var(--acp-lane-accent, #007799) 38%, var(--krypton-ink));
+    color: color-mix(in srgb, var(--acp-lane-ink) 70%, var(--krypton-ink-3));
   }
 
   html[data-theme-scheme='light'] .acp-harness__lane-status,
   html[data-theme-scheme='light'] .acp-harness__lane-activity,
   html[data-theme-scheme='light'] .acp-harness__lane-metrics-cpu,
   html[data-theme-scheme='light'] .acp-harness__lane-metrics-rss {
-    color: color-mix(in srgb, var(--krypton-ink) 68%, transparent);
+    color: var(--krypton-ink-2);
   }
 
   html[data-theme-scheme='light'] .acp-harness__lane-model {
     background: color-mix(in srgb, var(--krypton-ink) 8%, transparent);
-    color: color-mix(in srgb, var(--krypton-ink) 78%, transparent);
+    color: var(--krypton-ink-2);
   }
 
   html[data-theme-scheme='light'] .acp-harness__lane-model--warn {
@@ -315,6 +315,6 @@
   }
 
   html[data-theme-scheme='light'] .acp-harness__lane-mcp--off {
-    color: color-mix(in srgb, var(--krypton-ink) 48%, transparent);
+    color: var(--krypton-ink-3);
   }
 }

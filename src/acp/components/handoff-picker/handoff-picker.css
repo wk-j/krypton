@@ -48,7 +48,7 @@
 
   /* Row count · xenon note · key hints, all demoted to one quiet line. */
   .acp-harness__handoff-head span:last-child {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     font-size: 0.84em;
     text-shadow: none;
     letter-spacing: 0.04em;
@@ -70,7 +70,7 @@
     padding: 14px;
     border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
     border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     text-align: center;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
   }
@@ -80,7 +80,7 @@
     align-items: baseline;
     gap: 8px;
     padding: 4px 14px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84));
     cursor: default;
   }
 
@@ -109,7 +109,7 @@
     flex: 0 0 auto;
     min-width: 2.6em;
     text-align: right;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     font-size: 0.85em;
   }
 
@@ -120,7 +120,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.85em;
   }
 
@@ -132,7 +132,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84));
   }
 
   .acp-harness__handoff-row--active .acp-harness__handoff-summary {
@@ -149,7 +149,7 @@
 
   .acp-harness__handoff-tag {
     flex: 0 0 auto;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     font-size: 0.74em;
     letter-spacing: 0.06em;
     white-space: nowrap;
@@ -170,7 +170,7 @@
     height: 22vh;
     overflow-y: auto;
     white-space: pre-wrap;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
     font-size: 0.86em;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
   }
@@ -193,12 +193,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
   }
 
   .acp-harness__handoff-preview-source {
     flex: 0 0 auto;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
     letter-spacing: 0.06em;
   }
 
@@ -213,7 +213,7 @@
 
   /* The winning copy lives on Xenon; the body arrives with the resume. */
   .acp-harness__handoff-preview-detail--deferred {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
     font-style: italic;
   }
 

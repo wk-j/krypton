@@ -81,7 +81,7 @@
     border: 0;
     border-bottom: 2px solid transparent;
     background: transparent;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
     font: inherit;
     cursor: pointer;
     transition: color 120ms ease, border-color 120ms ease;

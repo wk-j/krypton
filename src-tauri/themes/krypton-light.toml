@@ -8,7 +8,7 @@
 [meta]
 display_name = "Krypton Light"
 author = "Krypton"
-version = "1.1.0"
+version = "1.2.0"
 description = "Light variant: slate ink on cool frost, cyan chrome, layered surfaces"
 license = "MIT"
 
@@ -54,7 +54,7 @@ offset_x = 0
 offset_y = 0
 
 [chrome.backdrop]
-color = "rgba(230, 239, 246, 0.90)"
+color = "rgba(230, 239, 246, 0.96)"
 blur = 12
 
 [chrome.titlebar]

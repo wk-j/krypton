@@ -46,7 +46,7 @@
   }
 
   .acp-harness__assist-index {
-    color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
@@ -58,12 +58,12 @@
 
   .acp-harness__assist-row--pending {
     display: block;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45));
   }
 
   .acp-harness__assist-hint {
     margin-top: 2px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45));
     letter-spacing: 0.04em;
     line-height: 1.5;
     white-space: nowrap;

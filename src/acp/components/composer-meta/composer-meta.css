@@ -63,7 +63,7 @@
     min-width: 0;
     min-height: 16px;
     overflow: hidden;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font-size: 0.72em;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -75,7 +75,7 @@
   .acp-harness__project-status::before {
     content: '·';
     margin: 0 8px;
-    color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 38%, transparent);
+    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0))) 38%, transparent);
     text-shadow: none;
   }
 
@@ -89,12 +89,12 @@
     display: inline-flex;
     align-items: center;
     overflow: hidden;
-    color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 42%, var(--krypton-fg, #d8e8d8));
+    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0))) 42%, var(--krypton-fg, #d8e8d8));
     text-shadow: 0 0 6px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 26%, transparent);
   }
 
   .acp-harness__memory-chip--running {
-    color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 78%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0))) 78%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   }
 
   /* spec 221 — status-line segments. */
@@ -118,7 +118,7 @@
   .acp-harness__meta-seg + .acp-harness__meta-seg::before {
     content: '·';
     margin: 0 8px;
-    color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 38%, transparent);
+    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0))) 38%, transparent);
     text-shadow: none;
   }
 
@@ -159,7 +159,7 @@
 
   .acp-harness__help-hint {
     flex: 0 0 auto;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
     font-size: 0.65em;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -168,7 +168,7 @@
   /* ── Composer directive chip ──────────────────────────────── */
 
   .acp-harness__directive-chip {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     letter-spacing: 0.04em;
     cursor: pointer;
   }
@@ -182,7 +182,7 @@
   }
 
   .acp-harness__directive-chip__triage {
-    color: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 58%, var(--krypton-fg, #d8e8d8));
+    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0))) 58%, var(--krypton-fg, #d8e8d8));
     text-shadow: 0 0 6px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 24%, transparent);
   }
 
@@ -198,7 +198,7 @@
 
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness__composer-meta {
-    color: color-mix(in srgb, var(--krypton-ink) 62%, transparent);
+    color: var(--krypton-ink-2);
   }
 
   html[data-theme-scheme='light'] .acp-harness__composer--permission .acp-harness__composer-meta {

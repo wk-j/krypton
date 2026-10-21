@@ -40,7 +40,7 @@
   }
 
   .acp-harness__msg--hidden-indicator .acp-harness__msg-body {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
     border-left: 1px dashed rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.25);
     padding-left: 8px;
   }

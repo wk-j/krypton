@@ -34,7 +34,7 @@
   }
 
   .acp-genui-panel__legend {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
     font-size: 0.82em;
     letter-spacing: 0.02em;
   }
@@ -70,7 +70,7 @@
     border: 1px solid transparent;
     border-radius: var(--krypton-border-radius, 8px);
     background: transparent;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
     cursor: pointer;
     font: inherit;
     font-size: 0.82em;
@@ -102,7 +102,7 @@
     border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
     border-radius: var(--krypton-border-radius, 8px);
     background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.05);
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
     font: inherit;
     font-size: 0.86em;
     line-height: 1.45;

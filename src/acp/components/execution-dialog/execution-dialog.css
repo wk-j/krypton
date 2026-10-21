@@ -51,7 +51,7 @@
     width: 1.4ch;
     line-height: 1;
   }
-  .acp-execution-dialog__language { flex: none; color: rgba(var(--krypton-fg-rgb), 0.6); font-size: 0.78em; }
+  .acp-execution-dialog__language { flex: none; color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.6)); font-size: 0.78em; }
   .acp-execution-dialog__title {
     flex: 1 1 auto;
     min-width: 0;
@@ -63,7 +63,7 @@
 
   .acp-execution-dialog__summary { gap: 4px 24px; margin: 0; }
   .acp-execution-dialog__fact { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-  .acp-execution-dialog__fact-label { color: rgba(var(--krypton-fg-rgb), 0.55); font-size: 0.82em; }
+  .acp-execution-dialog__fact-label { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.55)); font-size: 0.82em; }
   .acp-execution-dialog__fact-value {
     display: flex;
     align-items: baseline;
@@ -73,7 +73,7 @@
     overflow-wrap: anywhere;
     font-variant-numeric: tabular-nums;
   }
-  .acp-execution-dialog__timing-source { color: rgba(var(--krypton-fg-rgb), 0.45); font-size: 0.78em; }
+  .acp-execution-dialog__timing-source { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.45)); font-size: 0.78em; }
   .acp-harness__execution-overlay[data-state='pending'] .acp-execution-dialog__status,
   .acp-harness__execution-overlay[data-state='pending'] .acp-execution-dialog__glyph,
   .acp-harness__execution-overlay[data-state='running'] .acp-execution-dialog__status,
@@ -93,7 +93,7 @@
     border: 1px solid transparent;
     border-radius: var(--krypton-border-radius, 8px);
     background: transparent;
-    color: rgba(var(--krypton-fg-rgb), 0.6);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.6));
     cursor: pointer;
     font: inherit;
     font-size: 0.82em;
@@ -107,7 +107,7 @@
   }
   .acp-execution-dialog__button[aria-pressed='true'] { color: var(--acp-execution-accent, var(--krypton-window-accent)); }
   .acp-execution-dialog__tab-key,
-  .acp-execution-dialog__tab-count { color: rgba(var(--krypton-fg-rgb), 0.45); }
+  .acp-execution-dialog__tab-count { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.45)); }
   .acp-execution-dialog__tab:focus-visible,
   .acp-execution-dialog__button:focus-visible,
   .acp-execution-dialog__scroll:focus-visible {
@@ -155,7 +155,7 @@
   .acp-execution-dialog__numbers {
     flex: none;
     padding-right: 12px;
-    color: rgba(var(--krypton-fg-rgb), 0.35);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.35));
     text-align: right;
     font-variant-numeric: tabular-nums;
     user-select: none;
@@ -171,11 +171,11 @@
     display: inline-block;
     min-width: 6ch;
     margin-right: 8px;
-    color: rgba(var(--krypton-fg-rgb), 0.45);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.45));
     font-size: 0.82em;
   }
   .acp-execution-dialog__event--current { color: var(--acp-execution-accent, var(--krypton-window-accent)); }
-  .acp-execution-dialog__notice { flex: none; color: rgba(var(--krypton-fg-rgb), 0.55); font-size: 0.82em; }
+  .acp-execution-dialog__notice { flex: none; color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.55)); font-size: 0.82em; }
   .acp-execution-dialog__feedback {
     flex: none;
     padding: 0 16px 8px;
@@ -191,7 +191,7 @@
     gap: 4px 16px;
     padding: 8px 16px;
     border-top: 1px solid rgba(var(--krypton-fg-rgb), 0.1);
-    color: rgba(var(--krypton-fg-rgb), 0.55);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.55));
     font-size: 0.82em;
   }
   .acp-execution-dialog__foot kbd { font: inherit; color: var(--acp-execution-accent, var(--krypton-window-accent)); }

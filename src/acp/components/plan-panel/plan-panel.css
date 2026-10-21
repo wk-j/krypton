@@ -34,13 +34,13 @@
   }
 
   .acp-harness__plan-title {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.7);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.7));
     letter-spacing: 0.08em;
   }
 
   .acp-harness__plan-count {
     margin-left: auto;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45));
     font-variant-numeric: tabular-nums;
   }
   .acp-harness__plan-count b {
@@ -94,10 +94,10 @@
   }
 
   .acp-harness__plan-entry--pending .acp-harness__plan-entry-mark {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28));
   }
   .acp-harness__plan-entry--pending .acp-harness__plan-entry-text {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   }
 
   .acp-harness__plan-entry--in_progress .acp-harness__plan-entry-mark {
@@ -111,6 +111,6 @@
     color: rgba(142, 255, 176, 0.55);
   }
   .acp-harness__plan-entry--completed .acp-harness__plan-entry-text {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
   }
 }

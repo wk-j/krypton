@@ -20,7 +20,7 @@
     gap: 8px;
     font-family: var(--agent-font, var(--krypton-font-family, monospace));
     font-size: 0.85em;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
   .acp-harness__fs-activity--err {
@@ -35,7 +35,7 @@
     flex: 0 0 auto;
     width: 6ch;
     display: inline-block;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   }
 
   .acp-harness__fs-activity--err .acp-harness__fs-activity-verb {

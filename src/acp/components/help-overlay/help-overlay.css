@@ -42,7 +42,7 @@
   }
 
   .acp-harness__help__sub {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
     font-size: 0.86em;
     text-shadow: none;
   }
@@ -90,12 +90,12 @@
 
   .acp-harness__help-section dd {
     margin: 0;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
   }
 
   .acp-harness__help-section p {
     margin: 0;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
     line-height: 1.35;
   }
 }

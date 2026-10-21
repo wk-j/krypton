@@ -11,7 +11,7 @@
 
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness__msg-label {
-    color: color-mix(in srgb, var(--krypton-ink) 58%, transparent);
+    color: var(--krypton-ink-3);
   }
 
   html[data-theme-scheme='light'] .acp-harness__msg-body {
@@ -19,11 +19,11 @@
   }
 
   html[data-theme-scheme='light'] .acp-harness__msg--thought .acp-harness__msg-body {
-    color: color-mix(in srgb, var(--krypton-ink) 78%, transparent);
+    color: var(--krypton-ink-2);
   }
 
   html[data-theme-scheme='light'] .acp-harness__msg--assistant .acp-harness__msg-label {
-    color: color-mix(in srgb, var(--acp-lane-accent, #007799) 48%, var(--krypton-ink));
+    color: var(--acp-lane-ink);
   }
 
   html[data-theme-scheme='light'] .acp-harness__msg--user .acp-harness__msg-label,

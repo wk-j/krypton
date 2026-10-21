@@ -25,7 +25,7 @@
     color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.85);
   }
   .acp-harness__fs-review-verb {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   }
   .acp-harness__fs-review-path {
     color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.85);

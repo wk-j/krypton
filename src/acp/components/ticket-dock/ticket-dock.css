@@ -89,7 +89,7 @@
   .acp-ticket-dock__status-row code {
     min-width: 0;
     overflow: hidden;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font: inherit;
     font-size: 0.84em;
     text-overflow: ellipsis;
@@ -128,7 +128,7 @@
 
   .acp-ticket-dock__meta > span,
   .acp-ticket-dock__meta em {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.44);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.44));
     font-style: normal;
     white-space: nowrap;
   }
@@ -136,7 +136,7 @@
   .acp-ticket-dock__meta strong {
     min-width: 0;
     overflow: hidden;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -162,7 +162,7 @@
   /* The `.acp-harness__ticket-dock li em` half of the pair at :396-400 stays
      behind with the slot-class descendants. */
   .acp-ticket-dock__empty {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.40);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.40));
     font-style: normal;
   }
 

@@ -64,7 +64,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--acp-lane-accent, #00ccff);
+    color: var(--acp-lane-ink, var(--acp-lane-accent, #00ccff));
   }
 
   /* Status as a tinted pill in the phase colour. */
@@ -90,7 +90,7 @@
   }
 
   .acp-harness__grammar-original {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
     font-style: italic;
   }
 
@@ -105,7 +105,7 @@
   }
 
   .acp-harness__grammar-fix {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
   }
 
   .acp-harness__grammar-fix::before {
@@ -124,7 +124,7 @@
   }
 
   .acp-harness__grammar-arrow {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
   }
 
   .acp-harness__grammar-right {
@@ -141,7 +141,7 @@
   }
 
   .acp-harness__grammar-hint {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
     font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.04em;
     white-space: nowrap;
@@ -153,7 +153,7 @@
     padding: 0 4px;
     border: 1px solid color-mix(in srgb, var(--acp-lane-accent, #00ccff) 45%, transparent);
     border-radius: 3px;
-    color: var(--acp-lane-accent, #00ccff);
+    color: var(--acp-lane-ink, var(--acp-lane-accent, #00ccff));
     font-family: inherit;
     font-size: inherit;
   }

@@ -36,7 +36,7 @@
     width: 12px;
     height: 12px;
     margin-right: 4px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
     vertical-align: middle;
     flex-shrink: 0;
   }
