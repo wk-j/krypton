@@ -84,6 +84,7 @@ import { ReviewMatrixOverlay, type ReviewMatrixLane } from './components/review-
 import { ReviewPriorityOverlay, type ReviewPriorityLane } from './components/review-priority-overlay';
 import { ReviewThreadDialog } from './components/review-thread-dialog';
 import { SessionPicker } from './components/session-picker';
+import { GrammarPanel } from './components/grammar-panel';
 import { ThoughtCard } from './components/thought-card';
 import { TriageOverlay } from './components/triage-overlay';
 import { LaneShell, laneShellKey, type LaneShellProps } from './components/lane-shell';
@@ -1495,6 +1496,8 @@ export class AcpHarnessView implements ContentView {
   private peekCard: PeekCard | null = null;
   private peekLaneId: string | null = null;
   private thoughtCard: ThoughtCard | null = null;
+  /** Spec 306 addendum: the grammar review card, mounted only while one exists. */
+  private grammarPanel: GrammarPanel | null = null;
   private thoughtLaneId: string | null = null;
   private composerEl!: HTMLElement;
   /** Spec 301 §6 — the composer root component; `composerEl` is its node. */
@@ -4420,7 +4423,11 @@ export class AcpHarnessView implements ContentView {
             return true;
           }
         }
-        if (e.code === 'Digit0' && this.assistCtl.dismiss(assistLane)) {
+        if (e.code === 'Digit0' && (this.assistCtl.dismiss(assistLane) || this.assistCtl.dismissPanel(assistLane))) {
+          e.preventDefault();
+          return true;
+        }
+        if (e.code === 'KeyG' && this.assistCtl.acceptCorrection(assistLane)) {
           e.preventDefault();
           return true;
         }
@@ -4847,6 +4854,7 @@ export class AcpHarnessView implements ContentView {
     this.railLayout?.dispose();
     this.peekCard = null;
     this.thoughtCard = null;
+    this.grammarPanel = null;
     this.composer?.dispose();
     this.memoryDrawer?.dispose();
     this.helpOverlay?.dispose();
@@ -8421,6 +8429,7 @@ export class AcpHarnessView implements ContentView {
     });
     lane.pendingUserEcho = { itemId: userItem.id, text, received: '' };
     this.setLaneStatus(lane, 'busy');
+    this.assistCtl.onUserPrompt(lane); // spec 306: grammar review panel for the prompt just sent
     if (opts?.liveDelegationId) this.liveVoiceCtl.onPromptStarted(lane, opts.liveDelegationId); // spec 280
     lane.activeTurnStartedAt = Date.now();
     lane.pendingTurnExtractions = [];
@@ -12365,6 +12374,7 @@ export class AcpHarnessView implements ContentView {
       case 'rightRail':
         this.renderLanePeek();
         this.renderLaneThought();
+        this.renderGrammarPanel();
         this.renderPlanPanel(this.activeLane());
         this.renderActiveLaneQueue();
         this.ticketCtl.renderTicketDock();
@@ -12673,6 +12683,24 @@ export class AcpHarnessView implements ContentView {
     this.thoughtCard.update({ snapshot, projectDir: this.projectDir });
     if (!mounted) schedulePeekThoughtPin(this.thoughtCard.body);
     this.syncThoughtTeletypeTick();
+  }
+
+  /** Spec 306 addendum: the active lane's grammar review, in its own rail slot. */
+  private renderGrammarPanel(): void {
+    const lane = this.activeLane();
+    const state = lane && !this.panelsHidden ? this.assistCtl.panelState(lane.id) : null;
+    if (!lane || !state || state.kind === 'idle') {
+      if (this.grammarPanel) {
+        this.railLayout.unmount('grammar');
+        this.grammarPanel = null;
+      }
+      return;
+    }
+    if (!this.grammarPanel) {
+      this.grammarPanel = new GrammarPanel();
+      this.railLayout.mount('grammar', new RailPanel(this.grammarPanel, 'grammar'));
+    }
+    this.grammarPanel.update({ laneName: lane.displayName, state });
   }
 
   private scheduleThoughtSlotHide(): void {

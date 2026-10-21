@@ -20,16 +20,26 @@ import type {
   AssistContext,
   AssistFailure,
   AssistMode,
+  AssistPanelState,
   AssistState,
   AssistTaskConfig,
+  PanelAssistTask,
   RegisteredAssistTask,
+  StripAssistTask,
 } from './assist/types';
+import { userText } from './assist/tasks/grammar';
 import type { HarnessAssistHost } from './harness-view-host';
 import type { HarnessLane, HarnessTranscriptItem } from './harness-view-types';
 import type { StopReason } from './types';
 
 /** The shortest assistant reply worth post-processing. */
 const MIN_ASSISTANT_CHARS = 40;
+
+/** A clean review stays on screen this long, then the panel leaves the rail. */
+export const ASSIST_PANEL_OK_HIDE_MS = 4_000;
+
+/** What started a run: the gates and the empty-result feedback differ. */
+type AssistTrigger = 'turn-end' | 'user-prompt' | 'manual';
 
 interface LaneAssist {
   state: AssistState;
@@ -56,6 +66,9 @@ function turnItems(lane: HarnessLane): readonly HarnessTranscriptItem[] {
 
 export class HarnessAssistController {
   private readonly states = new Map<string, LaneAssist>();
+  /** Per lane: the `panel` task's review, painted in the right rail. */
+  private readonly panels = new Map<string, AssistPanelState>();
+  private readonly panelHideTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly modeOverrides = new Map<string, AssistMode>();
   /** Raw `get_config` blob; the tasks' config is resolved out of it per run. */
   private rawConfig: unknown = null;
@@ -106,7 +119,18 @@ export class HarnessAssistController {
       if (cfg.mode !== 'auto') continue;
       if (stopReason !== 'end_turn') continue;
       if (this.ranThisTurn(lane, task.id)) continue;
-      this.enqueue(lane, task, cfg);
+      this.enqueue(lane, task, cfg, 'turn-end');
+    }
+  }
+
+  /** The human just sent a prompt on `lane`: run every `onUserPrompt` task in `auto`. */
+  onUserPrompt(lane: HarnessLane): void {
+    if (this.disposed) return;
+    for (const task of this.tasks) {
+      if (!task.onUserPrompt) continue;
+      const cfg = this.configFor(task);
+      if (cfg.mode !== 'auto') continue;
+      this.enqueue(lane, task, cfg, 'user-prompt');
     }
   }
 
@@ -123,7 +147,7 @@ export class HarnessAssistController {
       this.host.flashChip(`assist: ${task.id} is off — #assist ${task.id} manual`);
       return;
     }
-    this.enqueue(lane, task, cfg);
+    this.enqueue(lane, task, cfg, 'manual');
   }
 
   /** `Cmd+1..3`. Returns true when the key was consumed. */
@@ -153,6 +177,34 @@ export class HarnessAssistController {
 
   stripProps(lane: HarnessLane): { state: AssistState } {
     return { state: this.stateFor(lane.id) };
+  }
+
+  /** The right-rail review for `lane`; `idle` means the panel is not mounted. */
+  panelState(laneId: string): AssistPanelState {
+    return this.panels.get(laneId) ?? { kind: 'idle' };
+  }
+
+  /** `Cmd+G`: load the corrected prompt into an empty draft. True when consumed. */
+  acceptCorrection(lane: HarnessLane): boolean {
+    const state = this.panelState(lane.id);
+    if (state.kind !== 'ready' || state.check.corrected === null) return false;
+    if (lane.draft.trim() !== '') {
+      this.host.flashChip('assist: clear the draft first');
+      return true;
+    }
+    const text = state.check.corrected;
+    this.setPanel(lane.id, { kind: 'idle' });
+    this.host.setDraft(lane, text, text.length);
+    return true;
+  }
+
+  /** `Cmd+0` when the strip has nothing: close the review panel. */
+  dismissPanel(lane: HarnessLane): boolean {
+    const state = this.panelState(lane.id);
+    if (state.kind === 'idle') return false;
+    if (state.kind === 'pending') this.cancel();
+    this.setPanel(lane.id, { kind: 'idle' });
+    return true;
   }
 
   /** Resolves once every enqueued run has settled. Test seam. */
@@ -193,6 +245,8 @@ export class HarnessAssistController {
 
   resetLane(laneId: string): void {
     this.states.delete(laneId);
+    this.clearPanelTimer(laneId);
+    this.panels.delete(laneId);
     this.cancel();
   }
 
@@ -204,6 +258,8 @@ export class HarnessAssistController {
     this.disposed = true;
     this.cancel();
     this.states.clear();
+    for (const laneId of [...this.panelHideTimers.keys()]) this.clearPanelTimer(laneId);
+    this.panels.clear();
     // The warm backend outlives individual turns, never the view.
     void this.session?.dispose();
   }
@@ -214,6 +270,20 @@ export class HarnessAssistController {
     const cfg = resolveAssistConfig(this.rawConfig, task);
     const override = this.modeOverrides.get(task.id);
     return override ? { ...cfg, mode: override } : cfg;
+  }
+
+  private setPanel(laneId: string, state: AssistPanelState): void {
+    this.clearPanelTimer(laneId);
+    if (state.kind === 'idle') this.panels.delete(laneId);
+    else this.panels.set(laneId, state);
+    this.host.invalidate('rightRail');
+  }
+
+  private clearPanelTimer(laneId: string): void {
+    const timer = this.panelHideTimers.get(laneId);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.panelHideTimers.delete(laneId);
   }
 
   private stateFor(laneId: string): AssistState {
@@ -242,17 +312,26 @@ export class HarnessAssistController {
   }
 
   /** Gates that do not depend on the trigger, evaluated as late as possible. */
-  private eligible(lane: HarnessLane, task: RegisteredAssistTask, cfg: AssistTaskConfig): AssistContext | null {
+  private eligible(
+    lane: HarnessLane,
+    task: RegisteredAssistTask,
+    cfg: AssistTaskConfig,
+    trigger: AssistTrigger,
+  ): AssistContext | null {
     if (this.disposed) return null;
     if (lane.id !== this.host.activeLaneId) return null;
     if (lane.pendingPermissions.length > 0 || lane.pendingQuestions.length > 0) return null;
-    if (lane.activeSystemLabel !== null) return null;
+    if (trigger !== 'user-prompt' && lane.activeSystemLabel !== null) return null;
     if (this.engine.cooldownUntil(task.id) > Date.now()) return null;
     const turn = turnItems(lane);
-    const assistantChars = turn
-      .filter((item) => item.kind === 'assistant')
-      .reduce((sum, item) => sum + item.text.length, 0);
-    if (assistantChars < MIN_ASSISTANT_CHARS) return null;
+    // A prompt-reading task runs before (or without) any reply.
+    const readsPrompt = trigger === 'user-prompt' || (trigger === 'manual' && task.onUserPrompt === true);
+    if (!readsPrompt) {
+      const assistantChars = turn
+        .filter((item) => item.kind === 'assistant')
+        .reduce((sum, item) => sum + item.text.length, 0);
+      if (assistantChars < MIN_ASSISTANT_CHARS) return null;
+    }
     const ctx: AssistContext = {
       laneId: lane.id,
       laneName: lane.displayName,
@@ -273,9 +352,14 @@ export class HarnessAssistController {
    * Tasks run one at a time, in registry order: the engine is single-flight by
    * construction, so a parallel fan-out would only cancel itself.
    */
-  private enqueue(lane: HarnessLane, task: RegisteredAssistTask, cfg: AssistTaskConfig): void {
+  private enqueue(
+    lane: HarnessLane,
+    task: RegisteredAssistTask,
+    cfg: AssistTaskConfig,
+    trigger: AssistTrigger,
+  ): void {
     const epoch = this.epoch;
-    this.queue = this.queue.then(() => this.run(lane, task, cfg, epoch)).catch(() => undefined);
+    this.queue = this.queue.then(() => this.run(lane, task, cfg, epoch, trigger)).catch(() => undefined);
   }
 
   private async run(
@@ -283,18 +367,39 @@ export class HarnessAssistController {
     task: RegisteredAssistTask,
     cfg: AssistTaskConfig,
     epoch: number,
+    trigger: AssistTrigger,
   ): Promise<void> {
     if (epoch !== this.epoch) return;
-    const ctx = this.eligible(lane, task, cfg);
+    const ctx = this.eligible(lane, task, cfg, trigger);
+    if (!ctx && trigger === 'manual' && task.onUserPrompt) {
+      this.host.flashChip(`assist: nothing for ${task.id} to check`);
+    }
     if (!ctx) return;
-    const spawnEpoch = lane.spawnEpoch;
     this.markRan(lane, task.id);
+    if (task.surface === 'panel') await this.runPanel(lane, task, ctx, cfg, epoch);
+    else await this.runStrip(lane, task, ctx, cfg, epoch);
+  }
+
+  private isStale(lane: HarnessLane, epoch: number, spawnEpoch: number): boolean {
+    return this.disposed
+      || epoch !== this.epoch
+      || lane.spawnEpoch !== spawnEpoch
+      || lane.id !== this.host.activeLaneId;
+  }
+
+  private async runStrip(
+    lane: HarnessLane,
+    task: StripAssistTask,
+    ctx: AssistContext,
+    cfg: AssistTaskConfig,
+    epoch: number,
+  ): Promise<void> {
+    const spawnEpoch = lane.spawnEpoch;
     this.setState(lane.id, { kind: 'pending', taskId: task.id });
     this.host.invalidate('composer');
 
     const run = await this.engine.run(task, ctx, cfg);
-    if (this.disposed || epoch !== this.epoch || lane.spawnEpoch !== spawnEpoch) return;
-    if (lane.id !== this.host.activeLaneId) return;
+    if (this.isStale(lane, epoch, spawnEpoch)) return;
 
     if (run.ok) {
       this.setState(lane.id, { kind: 'ready', taskId: task.id, actions: run.value });
@@ -303,5 +408,38 @@ export class HarnessAssistController {
       this.host.flashChip(FAILURE_TEXT[run.reason]);
     }
     this.host.invalidate('composer');
+  }
+
+  private async runPanel(
+    lane: HarnessLane,
+    task: PanelAssistTask,
+    ctx: AssistContext,
+    cfg: AssistTaskConfig,
+    epoch: number,
+  ): Promise<void> {
+    const spawnEpoch = lane.spawnEpoch;
+    const original = userText(ctx);
+    const pending: AssistPanelState = { kind: 'pending', taskId: task.id, original };
+    this.setPanel(lane.id, pending);
+
+    const run = await this.engine.run(task, ctx, cfg);
+    if (this.isStale(lane, epoch, spawnEpoch)) {
+      // A dropped answer must not leave the panel spinning forever.
+      if (!this.disposed && this.panels.get(lane.id) === pending) this.setPanel(lane.id, { kind: 'idle' });
+      return;
+    }
+    if (!run.ok) {
+      this.setPanel(lane.id, { kind: 'idle' });
+      this.host.flashChip(FAILURE_TEXT[run.reason]);
+      return;
+    }
+    this.setPanel(lane.id, { kind: 'ready', taskId: task.id, original, check: run.value });
+    if (run.value.corrected === null) {
+      // Nothing to fix: confirm briefly, then give the rail back.
+      this.panelHideTimers.set(lane.id, setTimeout(() => {
+        this.panelHideTimers.delete(lane.id);
+        this.setPanel(lane.id, { kind: 'idle' });
+      }, ASSIST_PANEL_OK_HIDE_MS));
+    }
   }
 }

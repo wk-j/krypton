@@ -52,6 +52,20 @@ export interface AssistAction {
   readonly prompt: string;
 }
 
+/** A `panel` task's result: a review of the prompt the human sent.
+ *  `corrected === null` means the text had nothing to fix. */
+export interface AssistCheck {
+  readonly corrected: string | null;
+  /** Each change as a short `wrong → right` pair, most important first. */
+  readonly fixes: readonly string[];
+}
+
+/** What the rail panel paints for one lane. `original` is the checked text. */
+export type AssistPanelState =
+  | { readonly kind: 'idle' }
+  | { readonly kind: 'pending'; readonly taskId: string; readonly original: string }
+  | { readonly kind: 'ready'; readonly taskId: string; readonly original: string; readonly check: AssistCheck };
+
 /** `no-backend` / `no-model` are hard: the subprocess would not start, or the
  *  agent rejected the model id, and retrying cannot help. The rest are soft
  *  and feed the breaker. */
@@ -68,10 +82,12 @@ export interface AssistTask<T> {
   readonly id: string;
   /** One line, listed by bare `#assist`. */
   readonly summary: string;
-  /** Which component paints `T`. */
-  readonly surface: 'strip';
+  /** Which component paints `T`: the composer strip or the right-rail panel. */
+  readonly surface: 'strip' | 'panel';
   /** Eligible for the automatic turn-end trigger. */
   readonly onTurnEnd: boolean;
+  /** Eligible for the automatic trigger when the human sends a prompt. */
+  readonly onUserPrompt?: boolean;
   /** Mode / backend / budget this task wants before TOML speaks. */
   readonly defaults: AssistTaskDefaults;
   /** The task's own gate, on top of the engine's. Default: always eligible. */
@@ -82,6 +98,9 @@ export interface AssistTask<T> {
   parse(raw: string, cfg: AssistTaskConfig): T | null;
 }
 
-/** v1 has one surface, so the registry's element type is exact. A second
- *  surface widens this union and brings its own component — nothing else. */
-export type RegisteredAssistTask = AssistTask<readonly AssistAction[]> & { surface: 'strip' };
+/** Next-prompt suggestions above the draft line (`AssistStrip`). */
+export type StripAssistTask = AssistTask<readonly AssistAction[]> & { readonly surface: 'strip' };
+/** A review of the sent prompt in the right rail (`GrammarPanel`). */
+export type PanelAssistTask = AssistTask<AssistCheck> & { readonly surface: 'panel' };
+
+export type RegisteredAssistTask = StripAssistTask | PanelAssistTask;

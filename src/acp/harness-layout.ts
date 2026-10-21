@@ -38,6 +38,7 @@ export const HARNESS_LAYOUT_DEFAULT = {
   plan: { slot: 'rail.top', order: 10 },
   peek: { slot: 'rail.top', order: 20 },
   thought: { slot: 'rail.top', order: 30 },
+  grammar: { slot: 'rail.top', order: 40 },
   queue: { slot: 'rail.bottom', order: 10 },
   ticket: { slot: 'dock.right', order: 10 },
   peerStrip: { slot: 'composer.above', order: 10 },

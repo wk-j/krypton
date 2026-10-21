@@ -403,6 +403,11 @@
   max-height: 70%;
 }
 
+/* spec 306 addendum — grammar review card under the thought card. */
+.acp-harness__lane-rail__slot[data-slot="grammar"] {
+  max-height: 40%;
+}
+
 /* spec 136: prompt-queue slot — bottom-anchored, never crushed. flex-shrink:0 +
    capped height so the plan/peek slots above absorb the squeeze when all three
    are present; margin-top:auto pins it to the rail bottom near the composer.

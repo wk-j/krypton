@@ -80,6 +80,7 @@ import { def as statList } from './stat-list';
 import { def as subagentCard } from './subagent-card';
 import { def as systemRow } from './system-row';
 import { def as tabStrip } from './tab-strip';
+import { def as grammarPanel } from './grammar-panel';
 import { def as thoughtCard } from './thought-card';
 import { def as thoughtRow } from './thought-row';
 import { def as ticketDock } from './ticket-dock';
@@ -155,6 +156,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   stagingStrip,
   peerStrip,
   assistStrip,
+  grammarPanel,
   dictationControl,
   liveVoiceStrip,
   decisionComposer,

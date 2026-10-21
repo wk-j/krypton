@@ -9,7 +9,7 @@ import type {
   AssistBudget,
   AssistContext,
   AssistTaskConfig,
-  RegisteredAssistTask,
+  StripAssistTask,
 } from '../types';
 import type { HarnessTranscriptItem } from '../../harness-view-types';
 
@@ -85,7 +85,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-export const nextPrompt: RegisteredAssistTask = {
+export const nextPrompt: StripAssistTask = {
   id: 'next-prompt',
   summary: 'suggest the next prompt',
   surface: 'strip',

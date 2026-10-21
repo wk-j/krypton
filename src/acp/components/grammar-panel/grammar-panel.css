@@ -1,0 +1,103 @@
+/* Spec 306 addendum — `GrammarPanel`.
+
+   The thought card's family: same surface, border, radius and head rule, so
+   the two read as siblings in the 320px rail column. Slot geometry
+   (`[data-slot="grammar"]`) lives in harness-shared.css with the other rail
+   slots. Colours are variable-driven; no `krypton.scheme` layer needed. */
+
+@layer krypton.component {
+  .acp-harness__grammar {
+    position: relative;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 8px 12px 7px;
+    background: var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
+    border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.22);
+    border-radius: var(--krypton-border-radius, 8px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+    pointer-events: auto;
+  }
+
+  .acp-harness__grammar-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding-bottom: 4px;
+    margin-bottom: 3px;
+    border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
+    flex: 0 0 auto;
+  }
+
+  .acp-harness__grammar-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--acp-lane-accent, #00ccff);
+  }
+
+  .acp-harness__grammar-label {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .acp-harness__grammar[data-phase="fixes"] .acp-harness__grammar-label {
+    color: var(--krypton-warning, #ffcc66);
+  }
+
+  .acp-harness__grammar[data-phase="ok"] .acp-harness__grammar-label,
+  .acp-harness__grammar-ok {
+    color: var(--krypton-success, #8effb0);
+  }
+
+  .acp-harness__grammar-body {
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .acp-harness__grammar-original {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+  }
+
+  .acp-harness__grammar-fixes {
+    margin: 0 0 4px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .acp-harness__grammar-fix {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
+  }
+
+  .acp-harness__grammar-fix::before {
+    content: '· ';
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38);
+  }
+
+  .acp-harness__grammar-corrected {
+    padding: 4px 0;
+    border-top: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+  }
+
+  .acp-harness__grammar-hint {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

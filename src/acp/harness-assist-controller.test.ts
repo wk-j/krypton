@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { AssistEngine } from './assist/engine';
 import type { AssistAction, AssistContext, AssistTaskConfig, RegisteredAssistTask } from './assist/types';
-import { HarnessAssistController } from './harness-assist-controller';
+import { ASSIST_PANEL_OK_HIDE_MS, HarnessAssistController } from './harness-assist-controller';
 import type { HarnessAssistHost } from './harness-view-host';
 import type { HarnessLane, HarnessTranscriptItem } from './harness-view-types';
 
@@ -237,5 +237,103 @@ describe('HarnessAssistController — accept, dismiss, manual', () => {
     h.ctl.cancel();
     await h.flush();
     expect(h.ctl.stripProps(h.lane).state).toEqual({ kind: 'idle' });
+  });
+});
+
+describe('HarnessAssistController — user-prompt trigger (grammar)', () => {
+  async function grammarRun(reply: string, prompt: string, lane = makeLane({ transcript: [item('user', prompt)] })) {
+    const { grammar } = await import('./assist/tasks/grammar');
+    const chips: string[] = [];
+    const calls: string[] = [];
+    const drafts: string[] = [];
+    const regions: string[] = [];
+    const host: HarnessAssistHost = {
+      element: {} as HTMLElement,
+      lanes: [lane],
+      activeLaneId: lane.id,
+      projectDir: '/repo',
+      remoteRuntimeId: null,
+      flashChip: (text) => chips.push(text),
+      invalidate: (region) => regions.push(region),
+      setDraft: (_lane, text) => drafts.push(text),
+    };
+    const engine = new AssistEngine(async (call) => {
+      calls.push(call.user);
+      return reply;
+    });
+    const ctl = new HarnessAssistController(host, [grammar], engine);
+    return { ctl, lane, chips, calls, drafts, regions };
+  }
+
+  it('checks the sent prompt with no assistant reply yet, and only in auto', async () => {
+    const h = await grammarRun(
+      '{"ok":false,"corrected":"What are the current changes?","fixes":["curent → current"]}',
+      'What curent changes in git?',
+    );
+    h.ctl.onUserPrompt(h.lane);
+    await h.ctl.whenIdle();
+    expect(h.calls).toHaveLength(0);
+
+    h.ctl.setMode('grammar', 'auto');
+    h.ctl.onUserPrompt(h.lane);
+    await h.ctl.whenIdle();
+    expect(h.calls).toEqual(['What curent changes in git?']);
+    expect(h.ctl.stripProps(h.lane).state.kind).toBe('idle');
+    const state = h.ctl.panelState(h.lane.id);
+    expect(state.kind).toBe('ready');
+    if (state.kind === 'ready') {
+      expect(state.original).toBe('What curent changes in git?');
+      expect(state.check).toEqual({ corrected: 'What are the current changes?', fixes: ['curent → current'] });
+    }
+    expect(h.regions).toContain('rightRail');
+  });
+
+  it('Cmd+G loads the correction into an empty draft and closes the panel', async () => {
+    const h = await grammarRun(
+      '{"ok":false,"corrected":"What are the current changes?","fixes":["curent → current"]}',
+      'What curent changes in git?',
+    );
+    h.ctl.setMode('grammar', 'auto');
+    h.ctl.onUserPrompt(h.lane);
+    await h.ctl.whenIdle();
+    expect(h.ctl.acceptCorrection(h.lane)).toBe(true);
+    expect(h.drafts).toEqual(['What are the current changes?']);
+    expect(h.ctl.panelState(h.lane.id).kind).toBe('idle');
+    expect(h.ctl.acceptCorrection(h.lane)).toBe(false);
+  });
+
+  it('confirms a clean prompt in the panel, then hides it', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = await grammarRun('{"ok":true}', 'Please run the full test suite.');
+      h.ctl.setMode('grammar', 'auto');
+      h.ctl.onUserPrompt(h.lane);
+      await h.ctl.whenIdle();
+      const state = h.ctl.panelState(h.lane.id);
+      expect(state.kind === 'ready' && state.check.corrected).toBeNull();
+      expect(h.chips).toEqual([]);
+      vi.advanceTimersByTime(ASSIST_PANEL_OK_HIDE_MS);
+      expect(h.ctl.panelState(h.lane.id).kind).toBe('idle');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('Cmd+0 closes the panel', async () => {
+    const h = await grammarRun('{"ok":false,"corrected":"Fix it now.","fixes":["fix → Fix"]}', 'fix it now please');
+    h.ctl.setMode('grammar', 'auto');
+    h.ctl.onUserPrompt(h.lane);
+    await h.ctl.whenIdle();
+    expect(h.ctl.dismissPanel(h.lane)).toBe(true);
+    expect(h.ctl.panelState(h.lane.id).kind).toBe('idle');
+    expect(h.ctl.dismissPanel(h.lane)).toBe(false);
+  });
+
+  it('skips non-English prompts without a model call', async () => {
+    const h = await grammarRun('{"ok":true}', 'ช่วยดูการเปลี่ยนแปลงใน git หน่อย');
+    h.ctl.setMode('grammar', 'auto');
+    h.ctl.onUserPrompt(h.lane);
+    await h.ctl.whenIdle();
+    expect(h.calls).toHaveLength(0);
   });
 });

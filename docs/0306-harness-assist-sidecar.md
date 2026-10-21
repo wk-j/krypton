@@ -352,3 +352,21 @@ Turn recaps or summaries (no second task ships here — the registry is the plac
 - [Disable or Customize the "Follow Up" Suggestions](https://community.openai.com/t/disable-or-customize-the-follow-up-suggestions/1254246) — ChatGPT's follow-up chips and the demand for an off switch; evidence for `mode = "off"` by default.
 - `src/acp/client.ts:86-278` and `src-tauri/src/acp.rs:1585-1621, 2287-2322` — the headless spawn/prompt/dispose surface, the `session/set_model` request, and the permission bridge that parks forever when nobody answers.
 - `src-tauri/src/usage.rs:243-264, 430-434` — how Krypton already reads Claude Code's OAuth token for the usage meter; the evidence behind rejecting key extraction as this feature's transport.
+
+## Addendum — `grammar` task
+
+A second registered task, `grammar` (`src/acp/assist/tasks/grammar.ts`), reviews the English of every prompt the human sends. It is the first task with `onUserPrompt: true` and the first with `surface: 'panel'`. `sendUserPrompt` calls `HarnessAssistController.onUserPrompt(lane)` right after the user row is appended, so the check runs while the lane works and needs no assistant reply. The user-prompt trigger skips the `MIN_ASSISTANT_CHARS` and `activeSystemLabel` gates.
+
+- Eligible only for English prose of ≥3 words; `/` and `#` commands are skipped. Thai and other non-Latin prompts are skipped too, as are prompts that are mostly code, paths or URLs.
+- The model replies `{"ok":true}` or `{"ok":false,"corrected":"…","fixes":["wrong → right"]}`, parsed into `AssistCheck { corrected: string | null; fixes }`.
+- The result has its own surface: `GrammarPanel` (`src/acp/components/grammar-panel/`). It is a right-rail card in the thought card's family, mounted in the `grammar` layout entry (`rail.top`, order 40, under the thought card) only while the active lane has a review. Its state is per lane (`AssistPanelState`), separate from the composer strip, so `next-prompt` suggestions never replace it.
+  - `pending` — header `GRAMMAR · CHECKING` and the checked prompt, dimmed.
+  - fixes — header `GRAMMAR · N FIXES`, the `wrong → right` list, the corrected prompt, and the legend `cmd+g use · cmd+0 dismiss`.
+  - clean — `GRAMMAR · OK` and `✓ no grammar issues`. It unmounts after `ASSIST_PANEL_OK_HIDE_MS` (4 s).
+- `Cmd+G` loads the corrected text into the empty composer and closes the panel; it never re-sends. `Cmd+0` dismisses the strip first; when the strip is empty, it closes the panel. `#panels hide` hides the panel with the rest of the rail.
+- Default `mode = "off"`. Enable it with `#assist grammar auto`, or persist it in config:
+
+```toml
+[acp_harness.assist.tasks.grammar]
+mode = "auto"
+```

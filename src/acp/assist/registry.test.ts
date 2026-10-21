@@ -14,9 +14,9 @@ describe('ASSIST_TASKS', () => {
     }
   });
 
-  it('every task carries a summary and the strip surface', () => {
+  it('every task carries a summary and a known surface', () => {
     for (const task of ASSIST_TASKS) {
-      expect(task.surface).toBe('strip');
+      expect(['strip', 'panel']).toContain(task.surface);
       expect(task.summary.trim()).not.toBe('');
       expect(task.summary).not.toContain('\n');
     }
