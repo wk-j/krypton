@@ -3,6 +3,7 @@
 > Status: Draft (awaiting approval)
 > Date: 2026-05-03
 > Milestone: M8 — Polish
+> Amended by: [0325](./0325-harness-zen-rail-merged-tab.md) — the active rail entry is no longer a highlighted row. It is a tab painted in the active lane body's colour, rounded on the rail side and joined to the body by two concave fillets. Inactive entries are 8px-rounded inset rows, and in Zen the active lane's head and stats bands carry no tint.
 
 ## Problem
 
@@ -102,13 +103,13 @@ The class `acp-harness--zen` is toggled on `this.element`. All structural elemen
 |---|---|---|
 | `.acp-harness__topbar` | full topbar (title + cwd + counts) | title hidden via CSS; cwd + counts unchanged |
 | `.acp-harness__dashboard` | flex column of all lanes | CSS grid: `grid-template-columns: clamp(180px, 14vw, 240px) 1fr` (rail \| body) |
-| `.acp-harness__lane--active` | full lane head + stats + transcript body | unchanged in body cell; **also** reflected as a `.acp-harness__rail-entry--active` highlight in the rail cell |
+| `.acp-harness__lane--active` | full lane head + stats + transcript body | unchanged in body cell, except that the head and stats bands lose their tint (spec 325); **also** reflected in the rail cell as the `.acp-harness__rail-entry--active` tab, which merges into the body |
 | `.acp-harness__lane--collapsed` (inactive lanes) | full transcript collapsed | rendered as `.acp-harness__rail-entry` (status dot + lane name only) instead of full lane element; placed in rail column |
 | `.acp-harness__memory-overlay` | unchanged | unchanged (still right-hand peek) |
 | `.acp-harness__help-overlay` | unchanged | unchanged; copy gains `Cmd+.` line |
 | `.acp-harness__composer` | unchanged | unchanged |
 
-Rail rendering replaces the full lane element for inactive lanes. The active lane keeps its full element rendered into the body column. The rail also includes a highlighted entry mirroring the active lane so the rail's order and length stay stable across lane switches.
+Rail rendering replaces the full lane element for inactive lanes. The active lane keeps its full element rendered into the body column. The rail also includes an entry for the active lane, so the rail's order and length stay stable across lane switches. Since spec 325 that entry is a tab merged into the body rather than a highlighted row.
 
 Each rail entry has exactly two visual parts: a status dot and the lane name. No permission badge, no MCP/token stats, no busy spinner. When `lane.status` is `needs_permission` or `error`, a single CSS keyframe animation pulses the dot:
 
@@ -123,7 +124,7 @@ Each rail entry has exactly two visual parts: a status dot and the lane name. No
 }
 ```
 
-The CLAUDE.md memory rule against layered pseudo-element effects is respected: rail entry styling is a single flat row with `color`, `border-left`, and `background`. The pulse animates `transform` + `opacity` on the dot itself — no stacked `::before`/`::after` glow layers.
+The rule against stacked pseudo-element glow layers is kept by its purpose: the dot pulse animates `transform` + `opacity` on the dot itself, with no `::before`/`::after` glow. Spec 325 later gave the active entry two static pseudo-elements: the tab surface and its fillets. They are surfaces, not glows, and they do not animate.
 
 Rail entries have no `click` handler. Lane switching is keyboard-only (`Tab` / `Shift+Tab`), consistent with Krypton's keyboard-first design.
 

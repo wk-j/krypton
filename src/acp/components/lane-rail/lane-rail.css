@@ -6,11 +6,15 @@
    component's, which is what spec 301 §Testing re-points `theme.test.ts:268`
    at.
 
-   Moved verbatim from src/styles/theme-scheme.css:174-177. */
+   Moved verbatim from src/styles/theme-scheme.css:174-177.
+
+   Spec 325: the surface is a token, not a `background` — the active entry's
+   tab layer paints it around itself. The old 1px `border-right` is gone: it
+   sits on the rail's border box and would cut across the tab's flush edge;
+   the rail and the body still part by luminance (spec 0010). */
 
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness__rail {
-    background: var(--agent-surface-rail, rgba(212, 222, 229, 0.92));
-    border-right: 1px solid color-mix(in srgb, var(--krypton-ink) 14%, transparent);
+    --acp-rail-surface: var(--agent-surface-rail, rgba(212, 222, 229, 0.92));
   }
 }

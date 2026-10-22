@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-08-10
 > Milestone: M8 — Polish
+> Amended by: [0325](./0325-harness-zen-rail-merged-tab.md) — in Zen Mode the active head band (head + stats rows) carries no tint. The body shows one lane there, and the rail's merged tab identifies it, so the band would only break the tab's join with the body. The stacked dashboard keeps the band as specified here.
 
 ## Problem
 

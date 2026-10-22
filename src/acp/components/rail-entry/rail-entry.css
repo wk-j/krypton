@@ -20,7 +20,12 @@
     grid-template-columns: 8px 14px minmax(0, 1fr);
     column-gap: 8px;
     row-gap: 2px;
-    padding: 6px 12px;
+    /* spec 325 — an inset rounded row: G (8px) clear of the rail's left edge,
+     * R clear of its right edge so a tint never reaches the active tab's
+     * fillet column. The padding gives 4px of each inset back to the text. */
+    margin: 0 var(--acp-rail-tab-r, 8px) 0 8px;
+    padding: 6px 8px;
+    border-radius: var(--acp-rail-tab-r, 8px);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
     letter-spacing: 0.04em;
   }
@@ -126,16 +131,14 @@
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   }
 
-  .acp-harness__rail-entry--directive {
+  /* Tints mark lanes you are NOT on. The active entry is the merged tab: any
+   * fill of its own would part it from the body (spec 325). */
+  .acp-harness__rail-entry--directive:not(.acp-harness__rail-entry--active) {
     background: color-mix(in srgb, #c7a2ff 6%, transparent);
     color: rgba(226, 238, 226, 0.86);
   }
 
-  .acp-harness__rail-entry--directive.acp-harness__rail-entry--active {
-    background: color-mix(in srgb, #c7a2ff 14%, transparent);
-  }
-
-  .acp-harness__rail-entry--pending {
+  .acp-harness__rail-entry--pending:not(.acp-harness__rail-entry--active) {
     background: color-mix(in srgb, var(--agent-gold, #ffd166) 5%, transparent);
   }
 
@@ -173,11 +176,50 @@
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   }
 
-  /* No left accent rail — the active entry announces itself by a stronger
-     full-width tint + text color (flat single surface, matches the lane bands). */
+  /* spec 325 — the active entry is a tab cut from the lane body's surface:
+   * rounded on the rail side, flush with the body, joined to it by two
+   * concave fillets. The rail paints nothing itself while it has an active
+   * entry: `::before` is the tab (body colour C, left corners rounded) and
+   * its spread shadow paints the rail colour S everywhere else, following
+   * the rounded corners. So the tab is C over the same backdrop as the body —
+   * the same colour, no seam — and S never abuts S at a box edge (a 1px
+   * hairline wherever a row sits at a fractional pixel). `::after` adds the
+   * two fillet slivers above and below the tab's flush end.
+   *
+   * Invariant: the entry must stay a non-stacking box (no opacity, transform,
+   * filter, or an animation of them). Otherwise its `z-index: -1` layers move
+   * inside it and the rail colour paints over the tab. */
   .acp-harness__rail-entry--active {
+    position: relative;
     color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0))) 55%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
-    background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 11%, transparent);
+  }
+
+  .acp-harness__rail-entry--active::before,
+  .acp-harness__rail-entry--active::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  /* The tab: the row's box, carried on to the rail's right edge. */
+  .acp-harness__rail-entry--active::before {
+    inset: 0 calc(-1 * var(--acp-rail-tab-r, 8px)) 0 0;
+    border-radius: var(--acp-rail-tab-r, 8px) 0 0 var(--acp-rail-tab-r, 8px);
+    background: var(--acp-lane-canvas);
+    box-shadow: 0 0 0 9999px var(--acp-rail-surface);
+  }
+
+  /* The fillets: an R-wide column at the rail's right edge, R above and below
+   * the tab. Inside each quarter circle the shadow's S shows through; the
+   * corner outside it is C. */
+  .acp-harness__rail-entry--active::after {
+    inset: calc(-1 * var(--acp-rail-tab-r, 8px)) calc(-1 * var(--acp-rail-tab-r, 8px)) calc(-1 * var(--acp-rail-tab-r, 8px)) auto;
+    width: var(--acp-rail-tab-r, 8px);
+    background:
+      radial-gradient(circle at 0 0, transparent calc(var(--acp-rail-tab-r, 8px) - 0.5px), var(--acp-lane-canvas) var(--acp-rail-tab-r, 8px)) top / 100% var(--acp-rail-tab-r, 8px),
+      radial-gradient(circle at 0 100%, transparent calc(var(--acp-rail-tab-r, 8px) - 0.5px), var(--acp-lane-canvas) var(--acp-rail-tab-r, 8px)) bottom / 100% var(--acp-rail-tab-r, 8px);
+    background-repeat: no-repeat;
   }
 
   .acp-harness__rail-dot {
@@ -232,7 +274,7 @@
     box-shadow: 0 0 8px rgba(255, 209, 102, 0.72);
   }
 
-  .acp-harness__rail-entry--needs_permission {
+  .acp-harness__rail-entry--needs_permission:not(.acp-harness__rail-entry--active) {
     background: rgba(255, 209, 102, 0.12);
     color: #ffe3a0;
     animation: acp-harness-permission-pulse 1.1s ease-in-out infinite;
@@ -313,16 +355,11 @@
 
   html[data-theme-scheme='light'] .acp-harness__rail-entry--active {
     color: var(--acp-lane-ink);
-    background: color-mix(in srgb, var(--acp-lane-accent, var(--krypton-accent, #007799)) 16%, var(--agent-surface-rail, transparent));
   }
 
-  html[data-theme-scheme='light'] .acp-harness__rail-entry--directive {
+  html[data-theme-scheme='light'] .acp-harness__rail-entry--directive:not(.acp-harness__rail-entry--active) {
     color: color-mix(in srgb, #7a38b0 35%, var(--krypton-ink));
     background: color-mix(in srgb, #7a38b0 10%, transparent);
-  }
-
-  html[data-theme-scheme='light'] .acp-harness__rail-entry--directive.acp-harness__rail-entry--active {
-    background: color-mix(in srgb, #7a38b0 16%, transparent);
   }
 
   html[data-theme-scheme='light'] .acp-harness__rail-logo {
@@ -337,7 +374,7 @@
     background: color-mix(in srgb, var(--krypton-ink) 6%, transparent);
   }
 
-  html[data-theme-scheme='light'] .acp-harness__rail-entry--needs_permission {
+  html[data-theme-scheme='light'] .acp-harness__rail-entry--needs_permission:not(.acp-harness__rail-entry--active) {
     background: rgba(154, 107, 0, 0.12);
     color: #8a5a00;
   }

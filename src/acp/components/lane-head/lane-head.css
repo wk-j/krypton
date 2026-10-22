@@ -13,6 +13,13 @@
     background: color-mix(in srgb, var(--acp-lane-accent, #0cf) 13%, var(--agent-surface-high, rgba(6, 10, 18, 0.6)));
   }
 
+  /* spec 325: Zen shows one lane, and the rail's merged tab already names it.
+     The body is one surface there, so the tab joins it with no seam even when
+     it sits beside the header (the single-lane case). */
+  .acp-harness--zen .acp-harness__lane--active > .acp-harness__lane-head {
+    background: none;
+  }
+
   .acp-harness__lane-head {
     height: 28px;
     display: grid;
@@ -281,6 +288,10 @@
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness__lane--active > .acp-harness__lane-head {
     background: color-mix(in srgb, var(--acp-lane-accent, #007799) 8%, var(--agent-surface-high, rgba(255, 255, 255, 0.92)));
+  }
+
+  html[data-theme-scheme='light'] .acp-harness--zen .acp-harness__lane--active > .acp-harness__lane-head {
+    background: none;
   }
 
   html[data-theme-scheme='light'] .acp-harness__lane-head {

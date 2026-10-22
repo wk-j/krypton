@@ -84,6 +84,10 @@
   --acp-accent-shell-fail: var(--agent-error, #ff6b8b);
   --acp-accent-quote:      #d6b8ff;
   --acp-accent-danger:     #ff7878;
+
+  /* Spec 325: the active lane body's surface, read by both the body and the
+   * zen rail's merged tab so the two paint one identical colour. */
+  --acp-lane-canvas: var(--agent-surface-mid, rgba(6, 10, 18, 0.48));
 }
 
 /* Remote (ssh) connection badge · `acp-harness-view.ts:6026`; the
@@ -270,7 +274,7 @@
   min-height: 120px;
   display: flex;
   flex-direction: column;
-  background: var(--agent-surface-mid, rgba(6, 10, 18, 0.48));
+  background: var(--acp-lane-canvas);
 }
 
 /* Icon glyphs · `harness-icons.ts:135` `harnessIcon(id, cls)`; the only
@@ -1264,15 +1268,28 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
   gap: 0;
 }
 
+/* Spec 325: the rail does not paint its own surface while it has an active
+   entry. That entry's tab layer paints the rail colour everywhere around
+   itself (a cut-out box-shadow), so the tab and the body beside it are the
+   same single translucent layer with no rail tint underneath. `isolation`
+   makes the rail the stacking context that layer's `z-index: -1` sits in,
+   below every entry's tint and text. */
 .acp-harness__rail {
+  --acp-rail-surface: var(--agent-ghost, rgba(2, 5, 10, 0.18));
+  --acp-rail-tab-r: min(var(--krypton-border-radius, 8px), 12px);
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 8px 0;
   border-right: none;
-  background: var(--agent-ghost, rgba(2, 5, 10, 0.18));
+  isolation: isolate;
   overflow-y: auto;
   min-height: 0;
+}
+
+/* No active entry (no lanes yet): nothing paints the tab layer's shadow. */
+.acp-harness__rail:not(:has(> .acp-harness__rail-entry--active)) {
+  background: var(--acp-rail-surface);
 }
 
 .acp-harness__body-cell {
