@@ -1,6 +1,6 @@
 # Harness Follow-up Actions — Implementation Spec
 
-> Status: Implemented (rev 3 — each button puts its command under its label)
+> Status: Implemented (rev 4 — SVG icons for run and open)
 > Date: 2026-10-22
 > Milestone: ACP Harness — transcript
 > Builds on: 0306 (assist sidecar) · 0322 (terminal-tab callback) · 0206/0283/0309 (`f` open-hint targets) · 0281/0286 (late sub-components on sealed rows) · 0301/0302 (component kernel)
@@ -12,6 +12,8 @@ A lane's reply often ends with something for the human to do: run `make install`
 **Rev 2 requirement (user, 2026-10-22):** the buttons render in the transcript area, so that the human can scroll back to any earlier reply and still use its buttons.
 
 **Rev 3 requirement (user, 2026-10-22):** "I think follow up UI is not well oranized it hard to read". With the label and command on one line, each multi-line command hung at a different indent and the buttons had ragged widths. Each button now puts its command under its label.
+
+**Rev 4 requirement (user, 2026-10-22):** "I dont like follow up command icons, i you design new icon?". The `▶` and `↗` text glyphs came from whatever font had them, so they did not match each other or the harness icon set. Each kind now has an SVG icon.
 
 ## Solution
 
@@ -86,6 +88,7 @@ Nothing runs without the human. They click a button, or use the existing transcr
 | `src/acp/harness-assist-controller.ts` + test | `runTranscript` path, remote gate, write to the owning reply item |
 | `src/acp/harness-view-host.ts` | `HarnessAssistHost.patchFollowUps(lane, itemId)` |
 | `src/acp/components/follow-up-rail/` | **New.** `index.ts`, `follow-up-rail.css`, `follow-up-rail.test.ts` |
+| `src/acp/harness-icons.ts` | Rev 4: `krypton-icon-follow-up-run` and `krypton-icon-follow-up-open` symbols in `HARNESS_ICON_SVG_DEFS` |
 | `src/acp/components/assistant-row/index.ts` | Owns a `FollowUpRail` as the row's last child; `syncFollowUps()`; `paint()` override keeps the rail last |
 | `src/acp/components/registry.ts` | Entry beside `resource-rail` |
 | `src/acp/follow-up-run.ts` + `.test.ts` | **New.** `followUpShellArgs(command)` and the wrapper script |
@@ -233,19 +236,23 @@ Under the reply, after its REFERENCES rail:
 ```
 FOLLOW-UP
 ╭──────────────────────────────╮
-│ ▶ install the app            │
-│   make install               │
+│ >_ install the app           │
+│    make install              │
 ╰──────────────────────────────╯
 ╭──────────────────────────────╮
-│ ↗ open the docs page         │
-│   http://localhost:5173/docs │
+│ ↗  open the docs page        │
+│    http://localhost:5173/docs│
 ╰──────────────────────────────╯
 ```
+
+`>_` and `↗` stand in for the two SVG icons.
 
 - **Structure.** Block `acp-harness__followups`: a small header `follow-up`, then a column of buttons. The list is `width: fit-content; max-width: 100%`, so every button is as wide as the widest one. The commands share one left edge and the right edges line up.
 - **Buttons.** Each is a `<button type="button" tabindex="-1" data-follow-up-index="N">` containing:
   - `span.__hint` — the open-hint label; empty, and not displayed (`:empty`), when null; same treatment as `.acp-genui-card__hint`;
-  - `span.__glyph` — `▶` for run, `↗` for open;
+  - `span.__glyph` — an `<svg class="acp-harness__icon">` from `harnessIconEl('follow-up-<kind>')`, sized `1.15em`. The two icons share the frame, stroke (`1.35`) and round caps of the panel icons:
+    - `run` (`krypton-icon-follow-up-run`): a terminal window with a `>_` prompt, because the action opens a terminal tab. It is drawn in the window accent.
+    - `open` (`krypton-icon-follow-up-open`): a box with an arrow leaving its top-right corner, because the URL leaves Krypton for the OS browser. It is drawn in `--krypton-special-rgb`.
   - `span.__label`;
   - `code.__target` — shown in full with `white-space: pre-wrap` and no ellipsis, because the human must see exactly what will run.
 - **Layout.** A button is a grid with columns `auto auto minmax(0, 1fr)`. Row 1 holds the hint, the glyph and the label. Row 2 holds the target in the label's column, so a multi-line command reads as one block aligned with its label. Each part is placed explicitly because the hint is `display: none` outside hint mode. Spacing comes from margins rather than `column-gap`, so the empty hint track leaves no gap.
@@ -294,12 +301,14 @@ Where the shipped code differs from the draft, and why:
 - **One row method.** `AssistantRow.syncFollowUps()` covers both the late result and hint labels, so there is no separate `patchFollowUpHints()`.
 - **Grid column.** The rail needs `grid-column: 2` because rows are a two-column grid; without it, the first browser check showed the rail squeezed into the label column.
 - **Label over command (rev 3).** The first layout put label and command on one line in a wrapping row. In a user screenshot of three multi-line commands, each command hung at an indent set by its own label's width, and each button had a different width. The button became a two-row grid, and the list became a single column of equal-width buttons. The change is CSS-only: the DOM, the deps and the click/hint contract are unchanged.
+- **SVG icons (rev 4).** The text glyphs `▶` and `↗` were drawn by whichever font had them, so their size and weight did not match the harness icons. They are now `<symbol>` defs in `harness-icons.ts`, placed with `harnessIconEl()` like every other harness icon. The DOM, the deps and the click/hint contract are unchanged; only the glyph span's content differs.
 
 **Verified:**
 
 - Unit tests cover candidate extraction, parse, the controller (owner after the next prompt, remote gate, no-candidate skip, re-ask clearing, a reply leaving the transcript), the rail, and the row (no body mutation, mount from data, no rail on a live row). `follow-up-run.test.ts` runs the wrapper under `/bin/sh`.
 - A PTY run of `sleep 30`: `Ctrl+C` printed `[krypton] exit 130` and left a working login shell.
 - A Chromium render of two rows checked the rail's column, the hint badges and the hover state. Rev 3 rendered the screenshot's three multi-line commands with the real `FollowUpRail`. In every button, the label and the target start at the same x, and all three buttons have the same width. At a 560px stage, long lines wrap inside the target column without overflowing the rail.
+- Rev 4 rendered the real `FollowUpRail` in Chromium, with the old and new icons side by side, two `run` actions (one with a hint badge) and one `open` action. The icons computed to `16.09px` at a 14px font and stayed centred on the label line.
 - Two real haiku calls each picked `make install`, `cargo clippy` and the docs URL. They skipped the file paths, the command the reply said already ran, and the `git push --force` it warned against.
 - **Not exercised:** the full in-app path (a Tauri lane turn → rail → terminal tab). It needs a rebuilt app.
 

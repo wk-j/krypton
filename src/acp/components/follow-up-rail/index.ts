@@ -18,6 +18,7 @@ import './follow-up-rail.css';
 import { Component } from '../../../ui/component';
 import { el, setChildren } from '../../../ui/dom';
 import type { FollowUpAction } from '../../assist/types';
+import { harnessIconEl } from '../../harness-icons';
 import type { ComponentDef } from '../types';
 
 const BLOCK = 'acp-harness__followups';
@@ -71,7 +72,7 @@ function renderAction(action: FollowUpAction, index: number): HTMLButtonElement 
       data: { 'follow-up-index': index },
     },
     el('span', { class: `${BLOCK}-hint`, text: action.hintLabel ?? '' }),
-    el('span', { class: `${BLOCK}-glyph`, text: run ? '▶' : '↗', attrs: { 'aria-hidden': 'true' } }),
+    el('span', { class: `${BLOCK}-glyph`, attrs: { 'aria-hidden': 'true' } }, harnessIconEl(`follow-up-${action.followUpKind}`)),
     el('span', { class: `${BLOCK}-label`, text: action.label }),
     // In full, never ellipsized: the human must see exactly what will run.
     el('code', { class: `${BLOCK}-target`, text: action.target }),

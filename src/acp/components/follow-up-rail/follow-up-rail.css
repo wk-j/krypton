@@ -100,6 +100,15 @@
     color: rgb(var(--krypton-special-rgb, 199, 125, 255));
   }
 
+  /* Spec 323 rev 4: the SVG mark, a touch over the base 1em icon so the
+     terminal prompt and the arrow read at label size; the offset keeps it
+     centred on the label's x-height. */
+  .acp-harness__followups-glyph .acp-harness__icon {
+    width: 1.15em;
+    height: 1.15em;
+    vertical-align: -0.2em;
+  }
+
   .acp-harness__followups-label {
     grid-column: 3;
     grid-row: 1;
