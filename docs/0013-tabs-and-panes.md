@@ -309,7 +309,7 @@ Each tab's pane tree maps to nested flex containers:
 
 ### Pane Focus Indicator
 
-The focused pane within a window gets a subtle inner border glow (thinner than the window focus indicator), using `--krypton-pane-focus-color` (defaults to a dimmed version of the window focus color).
+When a tab is split, the focused pane gets a subtle 1px inset ring (`box-shadow: inset 0 0 0 1px`) in the window accent at 0.2 alpha, so sibling panes can be told apart. A lone (unsplit) pane draws no ring: it fills the window, so the ring would only repeat the window edge as a second border.
 
 ### CSS Classes
 
@@ -320,7 +320,7 @@ The focused pane within a window gets a subtle inner border glow (thinner than t
 | `.krypton-tab--active` | Active tab styling |
 | `.krypton-tab__title` | Tab title text |
 | `.krypton-pane` | Leaf pane (flex: 1, hosts xterm.js) |
-| `.krypton-pane--focused` | Focused pane indicator |
+| `.krypton-pane--focused` | Focused pane; draws the focus ring only inside `.krypton-split` |
 | `.krypton-split` | Split container (flex row or column) |
 | `.krypton-split--vertical` | Vertical split (flex-direction: row) |
 | `.krypton-split--horizontal` | Horizontal split (flex-direction: column) |

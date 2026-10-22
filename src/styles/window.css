@@ -965,7 +965,10 @@
   background: none;
 }
 
-.krypton-pane--focused {
+/* Focused-pane ring only inside a split, where it tells sibling panes apart.
+   A lone pane is the whole window: a ring there is just a second border inside
+   the window edge (and survives window_border = false). */
+.krypton-split .krypton-pane--focused {
   box-shadow: inset 0 0 0 1px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
 }
 
