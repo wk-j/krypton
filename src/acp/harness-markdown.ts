@@ -13,7 +13,7 @@ import 'highlight.js/styles/github-dark.css';
 import * as smd from 'streaming-markdown';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
-import { CellGridWriter } from './cell-grid';
+import { CellGridWriter, gridifyCodeBlocks } from './cell-grid';
 
 export const md = new Marked(
   markedHighlight({
@@ -263,6 +263,7 @@ export function renderPeekThoughtMarkdown(
   if (body.dataset.peekSrc === text && body.childNodes.length > 0) return;
   try {
     body.innerHTML = peekThoughtMarkdownHtml(text);
+    gridifyCodeBlocks(body); // spec 326
   } catch (e) {
     console.warn('[spec216] peek thought markdown parse failed', e);
     body.textContent = text;

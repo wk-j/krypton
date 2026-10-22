@@ -2,7 +2,16 @@
 import * as smd from 'streaming-markdown';
 import { describe, expect, it } from 'vitest';
 
-import { CELL_GRID_CLASS, cellGridStylesheet, gridifyCodeBlocks } from './cell-grid';
+import {
+  CELL_GRID_CLASS,
+  CELL_GRID_LINES_CLASS,
+  CellGridText,
+  cellGridStylesheet,
+  gridifyCodeBlocks,
+  gridifyLines,
+  gridifyText,
+  sliceCells,
+} from './cell-grid';
 import { makeSafeRenderer, md } from './harness-markdown';
 import type { HarnessTranscriptItem } from './harness-view-types';
 import { applyTranscriptAnnotations } from './transcript-annotation';
@@ -180,5 +189,102 @@ describe('cell grid', () => {
     expect(marks.map((mark) => mark.textContent).join('')).toBe('▶ run');
     expect(marks.every((mark) => mark.parentElement?.classList.contains(CELL))).toBe(true);
     expect([...code.querySelectorAll<HTMLElement>(`.${CELL}`)].map((cell) => [cell.textContent, cols(cell)])).toEqual(before);
+  });
+});
+
+describe('cell grid on output surfaces (spec 326)', () => {
+  it('slices by cells and never inside a grapheme', () => {
+    // `กำ` is one grapheme of two cells; `ลั` one of one; tabs run to a stop of 8.
+    expect(sliceCells('กำลัง', 1)).toBe('');
+    expect(sliceCells('กำลัง', 2)).toBe('กำ');
+    expect(sliceCells('กำลัง', 3)).toBe('กำลั');
+    expect(sliceCells('日本', 3)).toBe('日');
+    expect(sliceCells('a\tb', 7)).toBe('a');
+    expect(sliceCells('a\tb', 8)).toBe('a\t');
+    expect(sliceCells('abc', 10)).toBe('abc');
+  });
+
+  it('leaves plain raw text as its single text node', () => {
+    const pre = document.createElement('pre');
+    pre.textContent = 'npm test\nok  ตั้งค่า เสร็จ';
+    expect(gridifyText(pre)).toBe(false);
+    expect(pre.childNodes.length).toBe(1);
+    expect(pre.firstChild?.nodeType).toBe(Node.TEXT_NODE);
+  });
+
+  it('moves a raw-text frame onto the grid once, keeping its text', () => {
+    const pre = document.createElement('pre');
+    pre.textContent = FRAME;
+    expect(gridifyText(pre)).toBe(true);
+    const code = pre.querySelector<HTMLElement>(':scope > code')!;
+    expect(code.className).toBe(`${CELL_GRID_CLASS}--text ${CELL_GRID_CLASS}`);
+    expect(pre.textContent).toBe(FRAME);
+    expect(lines(code).map((row) => row.width)).toEqual([16, 16, 16, 16]);
+    const html = pre.innerHTML;
+    expect(gridifyText(pre)).toBe(true);
+    expect(pre.innerHTML).toBe(html);
+  });
+
+  it('keeps colour spans when it grids a raw block', () => {
+    const pre = document.createElement('pre');
+    pre.innerHTML = '<span class="ansi-green">╭──╮</span>\n│ok│';
+    expect(gridifyText(pre)).toBe(true);
+    const span = pre.querySelector<HTMLElement>('span.ansi-green')!;
+    expect(span.textContent).toBe('╭──╮');
+    expect(span.querySelector(`.${CELL}--box`)).not.toBeNull();
+    expect(pre.textContent).toBe('╭──╮\n│ok│');
+  });
+
+  it('grids every line of a per-line block once one line needs it', () => {
+    const container = document.createElement('div');
+    const rows = FRAME.split('\n').map((text) => {
+      const line = document.createElement('span');
+      line.textContent = text;
+      container.append(line);
+      return line;
+    });
+    expect(gridifyLines(container, rows)).toBe(true);
+    expect(container.classList.contains(CELL_GRID_LINES_CLASS)).toBe(true);
+    // The two all-ASCII borders are gridded too, so they advance by the same cell.
+    expect(rows.every((row) => row.classList.contains(CELL_GRID_CLASS))).toBe(true);
+    expect(rows.map((row) => lines(row)[0].width)).toEqual([16, 16, 16, 16]);
+    expect(rows.map((row) => row.textContent).join('\n')).toBe(FRAME);
+
+    const plain = document.createElement('span');
+    plain.textContent = 'const a = 1;';
+    const other = document.createElement('div');
+    other.className = CELL_GRID_LINES_CLASS;
+    expect(gridifyLines(other, [plain])).toBe(false);
+    expect(other.classList.contains(CELL_GRID_LINES_CLASS)).toBe(false);
+    expect(plain.childNodes.length).toBe(1);
+  });
+
+  it('leaves a fence longer than maxLines plain until a full pass', () => {
+    const body = document.createElement('div');
+    body.innerHTML = md.parse(FENCE, { async: false }) as string;
+    expect(gridifyCodeBlocks(body, { maxLines: 3 })).toBe(0);
+    expect(codeOf(body).classList.contains(CELL_GRID_CLASS)).toBe(false);
+    expect(gridifyCodeBlocks(body, { maxLines: 60 })).toBe(1);
+    expect(gridifyCodeBlocks(body)).toBe(0);
+  });
+
+  it('appends in place, grids once the text is laid out by columns, then keeps the cells', () => {
+    const pre = document.createElement('pre');
+    const text = new CellGridText(pre, 'build\n');
+    const node = pre.firstChild;
+    text.set('build\nok\n');
+    expect(pre.firstChild).toBe(node);
+    expect(pre.childNodes.length).toBe(1);
+
+    text.set(`build\nok\n${FRAME}`);
+    const code = pre.querySelector<HTMLElement>(':scope > code')!;
+    expect(code.classList.contains(CELL_GRID_CLASS)).toBe(true);
+    text.set(`build\nok\n${FRAME}\n| ต่อ |`);
+    expect(pre.querySelector(':scope > code')).toBe(code);
+    expect(pre.textContent).toBe(`build\nok\n${FRAME}\n| ต่อ |`);
+
+    text.set('reset');
+    expect(pre.textContent).toBe('reset');
+    expect(pre.querySelector('code')).toBeNull();
   });
 });

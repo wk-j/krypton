@@ -22,6 +22,7 @@
 import './system-row.css';
 
 import { TranscriptRow, type RowProps } from '../transcript-row';
+import { gridifyText } from '../../cell-grid';
 import type { HarnessTranscriptItem } from '../../harness-view-types';
 import type { ComponentDef } from '../types';
 
@@ -84,6 +85,9 @@ export class SystemRow extends TranscriptRow {
   protected paintBody(body: HTMLElement, next: RowProps): void {
     const text = next.item.text;
     body.textContent = systemRowVariant(next.item) === 'event' ? text.replace(EVENT_PREFIX_RE, '') : text;
+    // Spec 326: `!shell` output laid out by columns sits on the cell grid. Other
+    // system text is prose and keeps wrapping.
+    if (next.item.kind === 'shell') gridifyText(body);
   }
 }
 

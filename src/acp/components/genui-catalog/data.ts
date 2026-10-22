@@ -17,6 +17,7 @@
 import { chartGeometry, DEFAULT_CHART_LAYOUT } from '../../../review-board/render';
 import { el, setChildren } from '../../../ui/dom';
 import { disposeList } from '../../../ui/list';
+import { gridifyCodeBlocks } from '../../cell-grid';
 import type { MermaidResult } from '../../harness-mermaid-fence';
 import { cachedMermaid, renderMermaid } from '../../harness-mermaid-fence';
 import { readMermaidTheme } from '../../harness-svg-fence';
@@ -734,11 +735,13 @@ class CodeComponent extends GenUiComponent {
     }
 
     const code = el('code', { class: `${BLOCK}__code-text`, text: this.code });
-    setChildren(this.el, [el('div', { class: `${BLOCK}__code` },
+    const block = el('div', { class: `${BLOCK}__code` },
       el('div', { class: `${BLOCK}__code-head` },
         el('span', { class: `${BLOCK}__code-lang`, text: language === '' ? 'text' : language }),
         this.copy),
-      el('pre', { class: `${BLOCK}__code-body` }, code))]);
+      el('pre', { class: `${BLOCK}__code-body` }, code));
+    gridifyCodeBlocks(block); // spec 326: a diagram or padded Thai sits on the cell grid
+    setChildren(this.el, [block]);
   }
 }
 

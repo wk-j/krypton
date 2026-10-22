@@ -55,15 +55,43 @@
   }
 
   @media (min-resolution: 2dppx) {
-    .acp-cellgrid {
+    .acp-cellgrid,
+    .acp-cellgrid-lines {
       --acp-cg-step: 0.5px;
     }
   }
 
   @media (min-resolution: 3dppx) {
-    .acp-cellgrid {
+    .acp-cellgrid,
+    .acp-cellgrid-lines {
       --acp-cg-step: calc(1px / 3);
     }
+  }
+
+  /* Spec 326: a raw-text output block (tool section, shell output, Hurl
+     response) moved into a `code`. It takes the block's font rather than the UA
+     `code` monospace, and never wraps: wrapping a column layout breaks it, so a
+     wide block scrolls sideways as a markdown code block does. */
+  .acp-cellgrid--text {
+    font: inherit;
+    /* The `font` shorthand resets line-height too; restore the grid's rounding. */
+    line-height: round(nearest, 1lh, var(--acp-cg-step));
+    white-space: pre;
+    overflow-wrap: normal;
+    overflow-x: auto;
+  }
+
+  /* Spec 326: a block drawn as one element per line (diff rows, grep rows).
+     Each line is its own grid; the sheet that owns the rows rounds their pitch
+     with `--acp-cg-step` under this class, since a base rule cannot override
+     the rows' component-layer `line-height` and `gap`. */
+  .acp-cellgrid-lines {
+    --acp-cg-step: 1px;
+  }
+
+  .acp-cellgrid-lines .acp-cellgrid {
+    white-space: pre;
+    overflow-wrap: normal;
   }
 
   .acp-cellgrid__cell {

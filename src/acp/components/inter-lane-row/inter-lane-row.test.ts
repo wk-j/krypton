@@ -125,3 +125,14 @@ describe('InterLaneRow', () => {
     row.dispose();
   });
 });
+
+describe('InterLaneRow cell grid (spec 326)', () => {
+  it('lays a fenced diagram in lane mail on the cell grid', () => {
+    const text = 'see:\n\n```\n╭──╮\n│ok│\n╰──╯\n```\n';
+    const { row, body } = mount(mail(), text);
+    const code = body.querySelector<HTMLElement>('pre > code')!;
+    expect(code.classList.contains('acp-cellgrid')).toBe(true);
+    expect(code.textContent?.replace(/\n$/, '')).toBe('╭──╮\n│ok│\n╰──╯');
+    row.dispose();
+  });
+});

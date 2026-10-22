@@ -473,6 +473,13 @@
   .hljs-symbol { color: #e091c0; }
 }
 
+/* Spec 326: a fence on the cell grid keeps this pitch, rounded to the device
+   pixel as every grid's is. This sheet is unlayered, so its line-height above
+   would otherwise override the grid's own `krypton.base` rounding. */
+.agent-view__msg-body--markdown pre code.acp-cellgrid {
+  line-height: round(nearest, calc(var(--krypton-content-line-height, 1.5) * 1em), var(--acp-cg-step));
+}
+
 .agent-view__msg-body--markdown ul,
 .agent-view__msg-body--markdown ol {
   margin: 0.35em 0;

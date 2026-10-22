@@ -560,6 +560,15 @@
     white-space: pre-wrap;
   }
 
+  /* Spec 326: a diff holding a diagram or padded Thai sits on the cell grid.
+     Rows take the cells' rounded pitch and do not wrap; the block scrolls. */
+  .acp-genui__tool-rich--unidiff.acp-cellgrid-lines {
+    line-height: round(nearest, 1.4em, var(--acp-cg-step));
+  }
+  .acp-genui__tool-rich--unidiff.acp-cellgrid-lines .acp-genui__tool-diff-text {
+    white-space: pre;
+  }
+
   .acp-genui__tool-diff-line--add { color: rgb(var(--krypton-success-rgb, 120, 200, 140)); }
   .acp-genui__tool-diff-line--del { color: rgb(var(--krypton-danger-rgb, 220, 120, 120)); }
   .acp-genui__tool-diff-line--hunk { color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.72); }

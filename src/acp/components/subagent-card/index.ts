@@ -28,6 +28,7 @@ import { Component, LiveComponent } from '../../../ui/component';
 import { classes, el, setAttr, setChildren } from '../../../ui/dom';
 import { reconcile, syncOrder, type ListNode } from '../../../ui/list';
 import { subagentStructureSignature } from '../../harness-subagents';
+import { gridifyText } from '../../cell-grid';
 import { formatToolElapsed } from '../../harness-tool-render';
 import type { SubagentEntry, SubagentPayload, SubagentStatus } from '../../harness-view-types';
 import type { ComponentDef } from '../types';
@@ -164,7 +165,9 @@ class SubagentRow extends Component<SubagentRowProps> implements CardChild {
     ] as const) {
       if (!value) continue;
       nodes.push(el('span', { class: 'acp-harness__subagent-detail-label', text: label }));
-      nodes.push(el('pre', { class: 'acp-harness__subagent-detail-text', text: value }));
+      const text = el('pre', { class: 'acp-harness__subagent-detail-text', text: value });
+      gridifyText(text); // spec 326
+      nodes.push(text);
     }
     if (!entry.task && !entry.output) {
       nodes.push(

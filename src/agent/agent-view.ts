@@ -18,6 +18,7 @@ import {
 import type { ContentView, PaneContentType } from '../types';
 import { contentRootIsInFocusedWindow } from '../content-focus';
 import { invoke } from '../profiler/ipc';
+import { STREAMING_GRID_MAX_LINES, gridifyCodeBlocks, gridifyText } from '../acp/cell-grid';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -464,6 +465,7 @@ export class AgentView implements ContentView {
         el.querySelector('.agent-view__stream-cursor')?.remove();
         try {
           el.innerHTML = md.parse(text) as string;
+          gridifyCodeBlocks(el); // spec 326
           el.classList.add('agent-view__msg-body--markdown');
         } catch {
           el.textContent = text;
@@ -562,6 +564,7 @@ export class AgentView implements ContentView {
     if (this.currentAssistantBuffer) {
       try {
         this.currentAssistantTextEl.innerHTML = md.parse(this.currentAssistantBuffer) as string;
+        gridifyCodeBlocks(this.currentAssistantTextEl); // spec 326
       } catch {
         // leave as-is
       }
@@ -644,14 +647,15 @@ export class AgentView implements ContentView {
         result.className = 'agent-view__tool-result';
         const lines = resultText.split('\n');
         const MAX_LINES = 10;
+        result.textContent = lines.length > MAX_LINES ? lines.slice(0, MAX_LINES).join('\n') : resultText;
+        // Spec 326: output laid out by columns sits on the cell grid; the
+        // "more lines" note stays outside it.
+        gridifyText(result);
         if (lines.length > MAX_LINES) {
-          result.textContent = lines.slice(0, MAX_LINES).join('\n');
           const more = document.createElement('span');
           more.className = 'agent-view__tool-more';
           more.textContent = ` … ${lines.length - MAX_LINES} more lines`;
           result.appendChild(more);
-        } else {
-          result.textContent = resultText;
         }
         row.appendChild(result);
       }
@@ -1071,14 +1075,15 @@ export class AgentView implements ContentView {
     
     const lines = output.split('\n');
     const MAX_LINES = 20;
+    result.textContent = lines.length > MAX_LINES ? lines.slice(0, MAX_LINES).join('\n') : output || '(no output)';
+    // Spec 326: output laid out by columns sits on the cell grid; the
+    // "more lines" note stays outside it.
+    gridifyText(result);
     if (lines.length > MAX_LINES) {
-      result.textContent = lines.slice(0, MAX_LINES).join('\n');
       const more = document.createElement('span');
       more.className = 'agent-view__shell-more';
       more.textContent = `\n… ${lines.length - MAX_LINES} more lines`;
       result.appendChild(more);
-    } else {
-      result.textContent = output || '(no output)';
     }
     
     this.messagesEl.appendChild(result);
@@ -1347,6 +1352,10 @@ export class AgentView implements ContentView {
               try {
                 const html = md.parse(this.currentAssistantBuffer) as string;
                 this.currentAssistantTextEl.innerHTML = html;
+                // Spec 326: grid before the cursor goes in. Its `▋` is a block
+                // element, so gridding after would grid every fence it ends.
+                // Long fences wait for finalizeAssistantMessage's full pass.
+                gridifyCodeBlocks(this.currentAssistantTextEl, { maxLines: STREAMING_GRID_MAX_LINES });
                 // Place cursor inline at the end of the last text node
                 this.appendInlineCursor(this.currentAssistantTextEl);
               } catch {

@@ -12,6 +12,7 @@
 
 import { extractModifiedPath } from './acp-harness-memory';
 import { stripAnsi } from './provider-error';
+import { gridifyLines, sliceCells } from './cell-grid';
 import { classifyBashCommand } from '../agent/tools';
 import type { ContentBlock, ToolCall, ToolCallUpdate } from './types';
 import type { ToolPayload } from './harness-view-types';
@@ -431,6 +432,19 @@ export function stringifyToolValue(value: unknown): string {
   return '';
 }
 
+/** Widest output line a tool card shows, in terminal cells. */
+const OUTPUT_LINE_CELLS = 140;
+
+/**
+ * Cut a line wider than the card at 139 cells plus `…`. Counted in cells, not
+ * code units (spec 326): a Thai row of a frame and its ASCII border, padded to
+ * the same width, are cut on the same column, and no grapheme is split.
+ */
+function capLineCells(line: string): string {
+  const fit = sliceCells(line, OUTPUT_LINE_CELLS);
+  return fit.length === line.length ? line : `${sliceCells(fit, OUTPUT_LINE_CELLS - 1).trimEnd()}…`;
+}
+
 export function boundedOutputLines(value: string, maxLines: number): string {
   // Backends that captured their tool output under a PTY / forced color (e.g. `gh`
   // colorizing JSON) hand us raw ANSI SGR codes. This panel renders via
@@ -454,7 +468,7 @@ export function boundedOutputLines(value: string, maxLines: number): string {
   if (!Number.isFinite(minIndent)) minIndent = 0;
   return kept
     .map((line) => line.slice(minIndent))
-    .map((line) => (line.length > 140 ? `${line.slice(0, 139).trimEnd()}…` : line))
+    .map(capLineCells)
     .join('\n');
 }
 
@@ -886,6 +900,7 @@ export function renderGrepSection(
   block.appendChild(label);
   const rich = document.createElement('div');
   rich.className = 'acp-harness__tool-rich acp-harness__tool-rich--grep';
+  const texts: HTMLElement[] = [];
   for (const row of rows) {
     const line = document.createElement('div');
     const shape = row.path ? 'path' : 'lineno';
@@ -904,8 +919,11 @@ export function renderGrepSection(
       appendHighlighted(text, row.text, needles);
     }
     line.appendChild(text);
+    texts.push(text);
     rich.appendChild(line);
   }
+  // Spec 326: matched lines that hold a diagram or padded Thai sit on the cell grid.
+  gridifyLines(rich, texts);
   block.appendChild(rich);
   return block;
 }

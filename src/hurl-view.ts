@@ -6,6 +6,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import type { ContentView, PaneContentType } from './types';
 import { ansiToHtml } from './hurl-ansi';
+import { gridifyText } from './acp/cell-grid';
 import { highlightHurl } from './hurl-highlight';
 import { collapsedCover, revealDir, revealFile } from './hurl-tree';
 
@@ -653,6 +654,14 @@ export class HurlContentView implements ContentView {
     }
   }
 
+  /** Show a run's output. Output laid out by columns (a table, a frame around
+   *  Thai) sits on the cell grid, ANSI colour spans kept (spec 326). */
+  private renderResponse(combined: string): void {
+    this.viewportEl.innerHTML = `<pre class="krypton-hurl__response">${ansiToHtml(combined)}</pre>`;
+    const pre = this.viewportEl.firstElementChild;
+    if (pre instanceof HTMLElement) gridifyText(pre);
+  }
+
   private async loadAndRenderCached(absPath: string): Promise<void> {
     try {
       const cached = await invoke<HurlCachedRun | null>('hurl_load_cached', {
@@ -660,7 +669,7 @@ export class HurlContentView implements ContentView {
       });
       if (cached) {
         const combined = cached.stderr + cached.stdout;
-        this.viewportEl.innerHTML = `<pre class="krypton-hurl__response">${ansiToHtml(combined)}</pre>`;
+        this.renderResponse(combined);
         const ts = new Date(cached.finished_at).toLocaleTimeString();
         const currentMtime = cached.file_mtime_ms;
         this.cachedBadge = `cached · ${ts}${currentMtime ? '' : ' · stale'}`;
@@ -699,7 +708,7 @@ export class HurlContentView implements ContentView {
         return;
       }
       const combined = run.stderr + run.stdout;
-      this.viewportEl.innerHTML = `<pre class="krypton-hurl__response">${ansiToHtml(combined)}</pre>`;
+      this.renderResponse(combined);
     });
   }
 

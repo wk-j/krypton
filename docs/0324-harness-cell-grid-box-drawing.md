@@ -4,6 +4,7 @@
 > Date: 2026-10-22
 > Milestone: ACP Harness — transcript
 > Builds on: 0117 (streaming-markdown seal) · 0301/0302 (component kernel, AGENTS.md constraint 10) · 0004 "WebKit Shapes Each Text Node Alone"
+> Amended by: [0326](./0326-cell-grid-for-all-output.md) — every other output surface (tool sections, diffs, grep rows, subagent detail, `!shell` output, peer mail, Live Assist, Agent view, Review Board, AI panels, Hurl) uses this grid too, and the tool card cuts lines by cells.
 
 ## Problem
 
@@ -174,7 +175,7 @@ All strokes use `currentColor`, so highlight colours and themes apply unchanged.
 ## Out of Scope
 
 - Live Assist, thought, user, inter-lane and peek rows.
-- Tool output in transcript rows, Agent view and Markdown viewer. The Execution Inspector's Output section is in scope (rev 4).
+- Tool output in transcript rows, Agent view and Markdown viewer. The Execution Inspector's Output section is in scope (rev 4). Spec 326 later brought tool output and the Agent view in; the Markdown viewer stays out.
 - Symbols for Legacy Computing, Braille and Powerline glyphs.
 - Any config option.
 

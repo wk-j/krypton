@@ -11,6 +11,7 @@ import hljs from 'highlight.js';
 import { AgentController } from './agent/agent';
 import type { AgentEventCallback } from './agent/agent';
 import { invoke } from './profiler/ipc';
+import { STREAMING_GRID_MAX_LINES, gridifyCodeBlocks } from './acp/cell-grid';
 import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 
 // Markdown renderer for ask-mode answers (shared instance)
@@ -411,6 +412,8 @@ export class InlineAIOverlay {
           if (this.askMode) {
             this.answer = this.stripArtifacts(latestResponse.trim());
             this.commandEl.innerHTML = md.parse(this.answer, { gfm: true, breaks: true }) as string;
+            // Spec 326: long fences wait for onComplete's full pass.
+            gridifyCodeBlocks(this.commandEl, { maxLines: STREAMING_GRID_MAX_LINES });
           } else {
             this.parseResponse(latestResponse);
             this.commandEl.textContent = this.command;
@@ -543,6 +546,7 @@ export class InlineAIOverlay {
       this.commandEl.classList.add('krypton-inline-ai__command--answer');
       if (this.answer) {
         this.commandEl.innerHTML = md.parse(this.answer, { gfm: true, breaks: true }) as string;
+        gridifyCodeBlocks(this.commandEl); // spec 326
       }
       this.hintEl.textContent = '\u2318C copy \u00b7 \u21b5 ask another \u00b7 \u238b dismiss';
     } else {

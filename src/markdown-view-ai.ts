@@ -9,6 +9,7 @@ import hljs from 'highlight.js';
 
 import { AgentController } from './agent/agent';
 import type { AgentEventCallback } from './agent/agent';
+import { STREAMING_GRID_MAX_LINES, gridifyCodeBlocks } from './acp/cell-grid';
 
 const md = new Marked(
   markedHighlight({
@@ -332,6 +333,7 @@ export class MarkdownViewAI {
             this.resultEl.hidden = false;
           }
           this.responseEl.innerHTML = md.parse(latestResponse.trim()) as string;
+          gridifyCodeBlocks(this.responseEl, { maxLines: STREAMING_GRID_MAX_LINES }); // spec 326
           break;
 
         case 'tool_start':
@@ -348,6 +350,7 @@ export class MarkdownViewAI {
 
         case 'agent_end':
           this.spinnerEl.hidden = true;
+          gridifyCodeBlocks(this.responseEl); // spec 326: the long fences left plain while streaming
           this.onComplete();
           break;
 

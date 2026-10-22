@@ -18,6 +18,7 @@ import type {
   ReviewFindingBlock,
 } from '../acp/types';
 
+import { gridifyCodeBlocks, gridifyText } from '../acp/cell-grid';
 import { parseWalkthroughAnchor } from './parse';
 
 /** The Markdown Viewer's stack (spec 39/137), configured identically so a review
@@ -386,6 +387,7 @@ function renderMarkdown(source: string, ctx: RenderContext): HTMLElement {
   // sync overload keeps the whole render pass off the microtask queue so a
   // refresh cannot interleave with the cursor restore.
   host.innerHTML = md.parse(source, { gfm: true, breaks: false, async: false });
+  gridifyCodeBlocks(host); // spec 326: fences laid out by columns sit on the cell grid
   for (const img of Array.from(host.querySelectorAll('img[src]'))) {
     const src = img.getAttribute('src') ?? '';
     if (src) img.setAttribute('src', ctx.resolveImageSrc(src));
@@ -430,7 +432,9 @@ function renderDiff(block: Extract<ReviewBlock, { kind: 'diff' }>, expanded: boo
   } catch {
     // A fragment the lane wrote by hand may not carry a file header. Falling
     // back to the raw text keeps the change readable instead of blanking it.
-    host.appendChild(el('pre', 'krypton-review__diff-raw', block.data.unified));
+    const raw = el('pre', 'krypton-review__diff-raw', block.data.unified);
+    gridifyText(raw); // spec 326
+    host.appendChild(raw);
   }
   return host;
 }

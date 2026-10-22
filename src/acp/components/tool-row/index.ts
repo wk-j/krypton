@@ -54,6 +54,7 @@ import { SubagentCard } from '../subagent-card';
 import { ExecutionCard } from '../execution-card';
 import { TranscriptRow, type RowProps } from '../transcript-row';
 import { subagentSummary } from '../../harness-subagents';
+import { gridifyText } from '../../cell-grid';
 import {
   formatToolElapsed,
   isGitDiffCommand,
@@ -101,15 +102,19 @@ function toolExit(code: number): HTMLElement {
   );
 }
 
-/** `harness-tool-render.ts:843-860`. The exit badge rides the section label. */
+/** `harness-tool-render.ts:843-860`. The exit badge rides the section label.
+ *  Output laid out by columns (a frame, a table around Thai) sits on the cell
+ *  grid (spec 326); it is built inside the deps-gated rebuild, so it adds no deps. */
 function plainSection(section: ToolSection, exitCode: number | null): HTMLElement {
   const label = el('div', { class: `${PREFIX}__tool-section-label`, text: section.label });
   if (exitCode !== null) label.appendChild(toolExit(exitCode));
+  const text = el('pre', { class: `${PREFIX}__tool-section-text`, text: section.text });
+  gridifyText(text);
   return el(
     'div',
     { class: classes(`${PREFIX}__tool-section`, `${PREFIX}__tool-section--${toolSectionTone(section.label)}`) },
     label,
-    el('pre', { class: `${PREFIX}__tool-section-text`, text: section.text }),
+    text,
   );
 }
 

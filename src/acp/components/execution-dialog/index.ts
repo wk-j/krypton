@@ -17,7 +17,7 @@ import hljs from 'highlight.js';
 import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
 import { syncOrder } from '../../../ui/list';
-import { CellGridWriter, needsCellGrid } from '../../cell-grid';
+import { CellGridText, gridifyText } from '../../cell-grid';
 import {
   EXECUTION_STATE_LABEL,
   executionOutputParts,
@@ -51,8 +51,8 @@ export interface ExecutionDialogProps {
 interface OutputNode {
   readonly el: HTMLElement;
   readonly part: ExecutionOutputPart;
-  /** Spec 324: the writer of a text part laid out by character columns. */
-  readonly grid: CellGridWriter | null;
+  /** Specs 324/326: a text part's block, which grids itself once it is laid out by columns. */
+  readonly text: CellGridText | null;
 }
 
 type TextPart = Extract<ExecutionOutputPart, { kind: 'text' }>;
@@ -106,39 +106,16 @@ function sameView(left: ExecutionView, right: ExecutionView): boolean {
     && left.rows.every((row, index) => row.length === right.rows[index].length && row.every((cell, col) => cell === right.rows[index][col]));
 }
 
-/** Move a text `<pre>`'s content onto the cell grid (spec 324), in a `<code>` that takes the `pre`'s font and line height. */
-function gridPre(pre: HTMLElement): CellGridWriter {
-  const code = el('code');
-  code.append(...pre.childNodes);
-  pre.append(code);
-  const grid = new CellGridWriter(code);
-  grid.convert();
-  return grid;
-}
-
 function textOutput(part: TextPart): OutputNode {
-  const pre = el('pre', { class: 'acp-execution-dialog__text', text: part.text });
-  return { el: pre, part, grid: needsCellGrid(part.text) ? gridPre(pre) : null };
+  const pre = el('pre', { class: 'acp-execution-dialog__text' });
+  return { el: pre, part, text: new CellGridText(pre, part.text) };
 }
 
-/**
- * Append-preserving (spec 315): only the new tail is written, so a selection
- * or scroll position in earlier output survives. Plain output that turns out
- * to be laid out by columns (an ASCII frame around Thai) is gridded once.
- */
-function updateTextOutput(previous: OutputNode & { readonly part: TextPart }, part: TextPart): OutputNode {
-  const before = previous.part.text;
-  if (part.text === before) return { ...previous, part };
-  const appended = part.text.startsWith(before);
-  if (previous.grid) {
-    if (!appended) return textOutput(part);
-    previous.grid.write(part.text.slice(before.length));
-    return { ...previous, part };
-  }
-  const text = previous.el.firstChild;
-  if (appended && text instanceof Text) text.appendData(part.text.slice(before.length));
-  else previous.el.textContent = part.text;
-  return { el: previous.el, part, grid: needsCellGrid(part.text) ? gridPre(previous.el) : null };
+/** A `pre` holding one JSON view or activity detail, on the cell grid when laid out by columns (spec 326). */
+function textBlock(text: string): HTMLElement {
+  const pre = el('pre', { class: 'acp-execution-dialog__text', text });
+  gridifyText(pre);
+  return pre;
 }
 
 function fact(label: string, ...value: HTMLElement[]): HTMLElement {
@@ -463,11 +440,13 @@ export class ExecutionDialog extends Component<ExecutionDialogProps> {
     for (let index = 0; index < visibleParts.length; index++) {
       const part = visibleParts[index];
       const previous = this.outputNodes[index];
-      if (part.kind === 'text' && previous?.part.kind === 'text') {
-        nodes.push(updateTextOutput({ ...previous, part: previous.part }, part));
+      if (part.kind === 'text' && previous?.part.kind === 'text' && previous.text) {
+        // Append-preserving (spec 315): only a new tail is written.
+        previous.text.set(part.text);
+        nodes.push({ ...previous, part });
       } else if (part.kind === 'view' && previous?.part.kind === 'view' && sameView(previous.part.view, part.view)) {
-        nodes.push({ el: previous.el, part, grid: null });
-      } else nodes.push(part.kind === 'text' ? textOutput(part) : { el: this.viewNode(part.view), part, grid: null });
+        nodes.push({ el: previous.el, part, text: null });
+      } else nodes.push(part.kind === 'text' ? textOutput(part) : { el: this.viewNode(part.view), part, text: null });
     }
     syncOrder(this.output, nodes.map((node) => node.el));
     this.outputNodes = nodes;
@@ -477,7 +456,7 @@ export class ExecutionDialog extends Component<ExecutionDialogProps> {
   }
 
   private viewNode(view: ExecutionView): HTMLElement {
-    if (view.kind === 'json') return el('pre', { class: 'acp-execution-dialog__text', text: view.json });
+    if (view.kind === 'json') return textBlock(view.json);
     const table = el('table', { class: 'acp-execution-dialog__table' });
     table.append(el('thead', {}, el('tr', {}, ...view.columns.map((column) => el('th', {
       class: 'acp-execution-dialog__cell', text: column.head, attrs: { scope: 'col' }, data: { numeric: column.numeric === true },
@@ -506,7 +485,7 @@ export class ExecutionDialog extends Component<ExecutionDialogProps> {
       if (existing instanceof HTMLElement && previous?.op === entry.op && previous.text === entry.text && previous.detail === entry.detail) nodes.push(existing);
       else nodes.push(el('li', { class: 'acp-execution-dialog__event' },
         el('span', { class: 'acp-execution-dialog__event-op', text: entry.op }),
-        el('span', { text: entry.text }), entry.detail ? el('pre', { class: 'acp-execution-dialog__text', text: entry.detail }) : null));
+        el('span', { text: entry.text }), entry.detail ? textBlock(entry.detail) : null));
     }
     // Only a backend-reported phase is emphasized; no checkmarks or progress.
     nodes.forEach((node, index) => node.classList.toggle('acp-execution-dialog__event--current', index === current));

@@ -9,6 +9,7 @@
 // branch at `:366-369`. Markup is unchanged.
 
 import { el } from '../../../ui/dom';
+import { gridifyText } from '../../cell-grid';
 import type { ProviderErrorPayload } from '../../types';
 import { TranscriptRow, type RowProps } from '../transcript-row';
 import type { ComponentDef } from '../types';
@@ -67,6 +68,8 @@ export class ProviderErrorRow extends TranscriptRow {
         text: payload.retryable ? 'retryable' : 'not retryable',
       }),
     );
+    const raw = el('pre', { text: payload.raw });
+    gridifyText(raw); // spec 326
     body.replaceChildren(
       el('div', { class: 'acp-harness__provider-error-kicker', text: KICKER[payload.category] }),
       el('div', { class: 'acp-harness__provider-error-headline', text: payload.headline }),
@@ -78,7 +81,7 @@ export class ProviderErrorRow extends TranscriptRow {
         'details',
         { class: 'acp-harness__provider-error-details' },
         el('summary', { text: 'details' }),
-        el('pre', { text: payload.raw }),
+        raw,
       ),
     );
   }

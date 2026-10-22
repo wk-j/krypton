@@ -158,6 +158,35 @@ describe('ToolRow output', () => {
     expect(section?.lastElementChild?.textContent).toBe('> tsc --noEmit');
   });
 
+  it('lays a column-laid-out section on the cell grid and leaves plain output as text (spec 326)', () => {
+    const frame = ['╭────╮', '│ กำ │', '╰────╯'].join('\n');
+    const tool = payload({ sections: [{ label: 'stdout', text: frame }, { label: 'stderr', text: 'warn: x' }] });
+    const row = new ToolRow(props(tool));
+    row.update(props(tool));
+
+    const [gridded, plain] = Array.from(row.el.querySelectorAll<HTMLElement>('.acp-harness__tool-section-text'));
+    expect(gridded.querySelector(':scope > code.acp-cellgrid.acp-cellgrid--text')).not.toBeNull();
+    expect(gridded.textContent).toBe(frame);
+    expect(plain.childNodes.length).toBe(1);
+    expect(plain.firstChild?.nodeType).toBe(Node.TEXT_NODE);
+  });
+
+  it('seals a gridded section without touching it again (spec 326)', () => {
+    const sections = [{ label: 'stdout', text: '│ ชื่อ  │ ค่า │' }];
+    const running = props(payload({ status: 'in_progress', sections }), { streaming: true });
+    const row = new ToolRow(running);
+    const host = mount(row);
+    row.update(running);
+    const code = row.el.querySelector('.acp-harness__tool-section-text > code');
+    expect(code).not.toBeNull();
+
+    const done = props(payload({ status: 'completed', glyph: '\u2713', sections }), { streaming: true });
+    row.update(done);
+    expect(row.isLive).toBe(false);
+    expect(row.el.querySelector('.acp-harness__tool-section-text > code')).toBe(code);
+    expect(records(host, () => row.update(done)).length).toBe(0);
+  });
+
   it('emits a lone exit row for an execute call with no printable output', () => {
     const tool = payload({ exitCode: 2, sections: [] });
     const row = new ToolRow(props(tool));

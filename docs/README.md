@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (311)
+## Specs (312)
 
 | # | Spec |
 |---|------|
@@ -328,6 +328,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 323 | [Harness Follow-up Actions](./0323-harness-follow-up-actions.md) |
 | 324 | [Harness Cell-Grid Box Drawing](./0324-harness-cell-grid-box-drawing.md) |
 | 325 | [Harness Zen Rail Merged Tab](./0325-harness-zen-rail-merged-tab.md) |
+| 326 | [Cell Grid for All Output](./0326-cell-grid-for-all-output.md) |
 
 ## ADRs (24)
 

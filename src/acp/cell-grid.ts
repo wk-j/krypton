@@ -530,11 +530,22 @@ export class CellGridWriter {
 }
 
 /**
- * Grid every fenced block under `root` that is laid out by columns (`needsCellGrid`)
- * and is not gridded yet. Returns how many blocks it converted. Safe to call on
- * a detached tree; idempotent.
+ * Spec 326: surfaces that re-parse a whole streaming reply every frame (Agent
+ * view, AI panels) grid only fences up to this many lines while it streams; a
+ * full pass when the reply ends grids the rest. Re-gridding a fence costs about
+ * 10ms at 60 lines in WebKit and grows past the frame budget beyond that.
  */
-export function gridifyCodeBlocks(root: HTMLElement | DocumentFragment): number {
+export const STREAMING_GRID_MAX_LINES = 60;
+
+/**
+ * Grid every fenced block under `root` that is laid out by columns (`needsCellGrid`)
+ * and is not gridded yet. `maxLines` leaves longer blocks plain for a later call.
+ * Returns how many blocks it converted. Safe to call on a detached tree; idempotent.
+ */
+export function gridifyCodeBlocks(
+  root: HTMLElement | DocumentFragment,
+  options: { readonly maxLines?: number } = {},
+): number {
   let converted = 0;
   let gridded = false;
   for (const code of root.querySelectorAll<HTMLElement>('pre > code')) {
@@ -542,11 +553,125 @@ export function gridifyCodeBlocks(root: HTMLElement | DocumentFragment): number 
       gridded = true;
       continue;
     }
-    if (!needsCellGrid(code.textContent ?? '')) continue;
+    const text = code.textContent ?? '';
+    if (!needsCellGrid(text)) continue;
+    if (options.maxLines !== undefined && text.split('\n').length > options.maxLines) continue;
     new CellGridWriter(code).convert();
     converted += 1;
   }
   // Cached HTML arrives already gridded: its rules still have to be in this document.
   if (gridded) ensureStyles(root.ownerDocument ?? document);
   return converted;
+}
+
+// ─── Output surfaces (spec 326) ───────────────────────────────────────
+//
+// Tool, peer and program output is not fenced markdown: it is a raw-text block
+// (`pre`, or a `div` holding text) or a block drawn as one element per line
+// (diff rows, grep rows). Both reuse the writer above, so every surface lays a
+// column-laid-out block out the way assistant code blocks do.
+
+const TEXT_CLASS = `${CELL_GRID_CLASS}--text`;
+/** A container whose line elements are each gridded; owning sheets round the rows' pitch under it. */
+export const CELL_GRID_LINES_CLASS = `${CELL_GRID_CLASS}-lines`;
+
+/**
+ * The longest prefix of whole graphemes that fits in `maxCols` cells, counted as
+ * the grid lays them: a tab runs to the next stop of 8, control characters take
+ * none. A Thai row and an ASCII row of the same width are cut on the same column.
+ */
+export function sliceCells(text: string, maxCols: number): string {
+  // A grapheme is rarely over 16 code units, so this bounds the segmentation of
+  // a very long line (minified output) without cutting inside the kept prefix.
+  const head = text.length > (maxCols + 1) * 16 ? text.slice(0, (maxCols + 1) * 16) : text;
+  let col = 0;
+  let end = 0;
+  for (const segment of graphemeUnits(head)) {
+    const cp = segment.codePointAt(0)!;
+    const cols = segment === '\t' ? TAB_STOP - (col % TAB_STOP)
+      : cp < 0x20 || cp === 0x7f ? 0
+        : cellCols(segment);
+    if (col + cols > maxCols) break;
+    col += cols;
+    end += segment.length;
+  }
+  return text.slice(0, end);
+}
+
+/** Move a raw-text block's content into a `code` that takes the block's font, and lay it out as cells. */
+function gridTextHost(host: HTMLElement): CellGridWriter {
+  const code = (host.ownerDocument ?? document).createElement('code');
+  code.className = TEXT_CLASS;
+  code.append(...host.childNodes);
+  host.append(code);
+  const writer = new CellGridWriter(code);
+  writer.convert();
+  return writer;
+}
+
+/**
+ * Grid a raw-text block in place when its text is laid out by columns. The text
+ * (and any spans in it, such as ANSI colours) moves into
+ * `code.acp-cellgrid.acp-cellgrid--text`; plain text is left untouched as it was.
+ * Returns whether the block is gridded. Idempotent.
+ */
+export function gridifyText(host: HTMLElement): boolean {
+  const code = host.firstElementChild;
+  if (code?.classList.contains(TEXT_CLASS) && code.classList.contains(CELL_GRID_CLASS)) {
+    ensureStyles(host.ownerDocument ?? document);
+    return true;
+  }
+  if (!needsCellGrid(host.textContent ?? '')) return false;
+  gridTextHost(host);
+  return true;
+}
+
+/**
+ * Grid one block drawn as one element per line (diff rows, grep rows). The
+ * decision is made on the block's joined text, and then every line is gridded,
+ * so an all-ASCII row advances by the same rounded cell as a row of Thai.
+ * `container` gets `acp-cellgrid-lines` only while that holds. Returns whether
+ * the block is gridded.
+ */
+export function gridifyLines(container: HTMLElement, lines: readonly HTMLElement[]): boolean {
+  const gridded = lines.length > 0 && needsCellGrid(lines.map((line) => line.textContent ?? '').join('\n'));
+  if (gridded) {
+    for (const line of lines) if (!line.classList.contains(CELL_GRID_CLASS)) new CellGridWriter(line).convert();
+  }
+  container.classList.toggle(CELL_GRID_LINES_CLASS, gridded);
+  return gridded;
+}
+
+/**
+ * A raw-text block whose text is replaced over time, such as the Inspector's
+ * output while a cell runs (spec 315). Text that extends the previous text is
+ * appended in place, so a selection or scroll position in earlier output
+ * survives. Plain text that turns out to be laid out by columns is gridded once
+ * and keeps streaming into the same cells.
+ */
+export class CellGridText {
+  private writer: CellGridWriter | null = null;
+
+  constructor(private readonly host: HTMLElement, private text: string) {
+    host.textContent = text;
+    if (needsCellGrid(text)) this.writer = gridTextHost(host);
+  }
+
+  set(text: string): void {
+    const before = this.text;
+    if (text === before) return;
+    this.text = text;
+    const appended = text.startsWith(before);
+    if (this.writer && appended) {
+      this.writer.write(text.slice(before.length));
+      return;
+    }
+    const node = this.host.firstChild;
+    if (!this.writer && appended && node?.nodeType === Node.TEXT_NODE && node === this.host.lastChild) {
+      (node as Text).appendData(text.slice(before.length));
+    } else {
+      this.host.textContent = text;
+    }
+    this.writer = needsCellGrid(text) ? gridTextHost(this.host) : null;
+  }
 }

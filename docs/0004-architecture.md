@@ -207,7 +207,9 @@ The compositor is a TypeScript module running in the webview that manages worksp
     `harness-icons.ts` (inline `<symbol>` defs), `harness-lane-identity.ts` (backend label/logo,
     directive role, lane accent), `harness-markdown.ts` (shared `marked` instance + streaming-markdown
     plumbing + URL allowlist), `cell-grid.ts` (spec 324: code blocks laid out by columns — box drawing,
-    ASCII frames around Thai — on a character-cell grid, used by `harness-markdown.ts` and `AssistantRow`), `message-resources.ts` (deterministic typed/Markdown reference
+    ASCII frames around Thai — on a character-cell grid, used by `harness-markdown.ts` and `AssistantRow`; spec 326:
+    `gridifyText` / `gridifyLines` / `CellGridText` put every tool, diff, grep, peer and program output block on the
+    same grid, and `sliceCells` cuts tool-card lines by cells), `message-resources.ts` (deterministic typed/Markdown reference
     classification, normalization, merge, and cap), `harness-permission-scan.ts` (harness-bus auto-allow, args preview,
     artifact path matching), `harness-tool-render.ts` (ToolCall inspection + tool row rendering),
     `harness-lane-chrome.ts` (lane head/chips/metrics/stats/status vocabulary),
@@ -785,7 +787,10 @@ A configured font without box-drawing glyphs (U+2500–U+257F) — `Share Tech M
 - Cell width, row height and stroke centres round to a device pixel (`round()` against a resolution-dependent step). Cells start at fractional pixels otherwise, are snapped one by one, and leave 1-device-pixel seams.
 - Strokes overdraw 0.5px past the cell edge.
 
-Any new surface that shows agent-drawn diagrams in the DOM needs the same treatment; font fallback cannot be fixed per character.
+Any new surface that shows agent-drawn diagrams in the DOM needs the same treatment; font fallback cannot be fixed per character. Since spec 326 every output surface does: markdown through `gridifyCodeBlocks`, a raw-text block (`pre`, a text `div`) through `gridifyText`, and a block drawn one element per line (diff rows, grep rows) through `gridifyLines`. Two more details matter there:
+
+- A sheet that is not in a `@layer` (the Agent view's `agent.css`, for example) outranks the grid's `krypton.base` rules. If it sets `line-height` on `pre code`, it needs a matching `code.acp-cellgrid` rule that rounds that value again.
+- Rows of a per-line block take their `line-height` and `gap` from component-layer rules, which a base rule cannot override. The sheet that owns the rows rounds their pitch under `.acp-cellgrid-lines`, or vertical lines break between rows.
 
 ### Tauri Commands
 

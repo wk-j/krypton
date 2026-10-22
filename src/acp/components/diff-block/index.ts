@@ -25,6 +25,7 @@ import { diffLines } from 'diff';
 
 import { Component } from '../../../ui/component';
 import { classes, el, setChildren } from '../../../ui/dom';
+import { gridifyLines } from '../../cell-grid';
 import type { ComponentDef } from '../types';
 
 export type DiffMode = 'paired' | 'unified' | 'raw';
@@ -187,6 +188,7 @@ export class DiffBlock extends Component<DiffBlockProps> {
 
     const body = this.ensureBody(classes(`${prefix}__tool-body`, `${prefix}__tool-body--diff`));
     setChildren(body, nodes);
+    gridifyLines(body, lineTexts(body, `.${prefix}__diff-line > .${prefix}__diff-text`));
     this.el.replaceChildren(...this.framePaired(next.path, prefix, body));
   }
 
@@ -227,6 +229,7 @@ export class DiffBlock extends Component<DiffBlockProps> {
           ),
     );
     setChildren(this.el, nodes);
+    gridifyLines(this.el, lineTexts(this.el, `.${prefix}__tool-diff-line > .${prefix}__tool-diff-text`));
   }
 
   /** `harness-transcript-render.ts:401-415`. */
@@ -236,7 +239,17 @@ export class DiffBlock extends Component<DiffBlockProps> {
       el('div', { class: `${prefix}__directive-diff-${RAW_TONE[row.kind]}`, text: row.text }),
     );
     setChildren(this.el, nodes);
+    gridifyLines(this.el, nodes);
   }
+}
+
+/**
+ * Spec 326: the text element of every line row, which `gridifyLines` puts on
+ * the cell grid together when the diff holds a diagram or padded Thai. Each
+ * mode calls it after its own paint, so the decision follows the rows shown.
+ */
+function lineTexts(root: HTMLElement, selector: string): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(selector));
 }
 
 function pairedRow(row: DiffRow, prefix: string): HTMLElement {

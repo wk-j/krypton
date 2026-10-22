@@ -237,3 +237,38 @@ describe('DiffBlock prefix', () => {
     expect(block.el.querySelector('[class*="acp-harness"]')).toBeNull();
   });
 });
+
+describe('DiffBlock on the cell grid (spec 326)', () => {
+  const diagram: DiffRow[] = [
+    { kind: 'ctx', text: '╭──────╮', oldLine: 1, newLine: 1 },
+    { kind: 'del', text: '│ เก่า  │', oldLine: 2, newLine: null },
+    { kind: 'add', text: '│ ใหม่  │', oldLine: null, newLine: 2 },
+    { kind: 'ctx', text: '╰──────╯', oldLine: 3, newLine: 3 },
+  ];
+
+  it('grids every paired text cell once the diff holds a diagram, and clears when it does not', () => {
+    const block = new DiffBlock('paired');
+    block.update({ mode: 'paired', rows: diagram, prefix: PREFIX });
+    const body = block.el.querySelector<HTMLElement>('.acp-harness__tool-body--diff')!;
+    expect(body.classList.contains('acp-cellgrid-lines')).toBe(true);
+    const texts = Array.from(body.querySelectorAll<HTMLElement>('.acp-harness__diff-text'));
+    expect(texts.every((text) => text.classList.contains('acp-cellgrid'))).toBe(true);
+    expect(texts.map((text) => text.textContent)).toEqual(diagram.map((row) => row.text));
+
+    block.update({ mode: 'paired', rows: [{ kind: 'add', text: 'const a = 1;', oldLine: null, newLine: 1 }], prefix: PREFIX });
+    expect(body.classList.contains('acp-cellgrid-lines')).toBe(false);
+    expect(body.querySelector('.acp-cellgrid')).toBeNull();
+  });
+
+  it('grids unified and raw diff lines the same way', () => {
+    const unified = paint({ mode: 'unified', rows: unifiedDiffRows('@@ -1 +1 @@\n-│ เก่า  │\n+│ ใหม่  │'), prefix: PREFIX });
+    expect(unified.el.classList.contains('acp-cellgrid-lines')).toBe(true);
+    const unifiedTexts = Array.from(unified.el.querySelectorAll<HTMLElement>('.acp-harness__tool-diff-text'));
+    expect(unifiedTexts.length).toBeGreaterThan(0);
+    expect(unifiedTexts.every((text) => text.classList.contains('acp-cellgrid'))).toBe(true);
+
+    const raw = paint({ mode: 'raw', rows: rawDiffRows('-│ เก่า  │\n+│ ใหม่  │'), prefix: PREFIX });
+    expect(raw.el.classList.contains('acp-cellgrid-lines')).toBe(true);
+    expect(Array.from(raw.el.children).every((line) => line.classList.contains('acp-cellgrid'))).toBe(true);
+  });
+});

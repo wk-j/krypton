@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { ToolPayload } from './harness-view-types';
 import {
   GROK_RAW_OUTPUT_TYPES,
+  boundedOutputLines,
   mergeToolCall,
   buildToolPayload,
   extractGrepQuery,
@@ -93,6 +94,19 @@ function makeFakeEl(tag: string): FakeEl {
   };
   // Back-reference must not show up in JSON.stringify (existing dump asserts).
   Object.defineProperty(el, 'parent', { value: null, writable: true, enumerable: false });
+  // `gridifyLines` (spec 326) toggles a container class; kept off the dumps too.
+  Object.defineProperty(el, 'classList', {
+    enumerable: false,
+    value: {
+      contains: (cls: string): boolean => el.className.split(/\s+/).includes(cls),
+      toggle(cls: string, force: boolean): boolean {
+        const list = el.className.split(/\s+/).filter((c) => c && c !== cls);
+        if (force) list.push(cls);
+        el.className = list.join(' ');
+        return force;
+      },
+    },
+  });
   return el;
 }
 
@@ -737,5 +751,25 @@ describe('formatGrokFileMatches', () => {
   it('returns empty for missing or empty arrays', () => {
     expect(formatGrokFileMatches(undefined)).toBe('');
     expect(formatGrokFileMatches([])).toBe('');
+  });
+});
+
+describe('boundedOutputLines line cut (spec 326)', () => {
+  it('cuts a Thai row and an ASCII row of the same width on the same cell', () => {
+    const ascii = `+${'-'.repeat(148)}+`; // 150 cells
+    const thai = `| ${'กั'.repeat(146)} |`; // 150 cells, 296 code units
+    const [a, t] = boundedOutputLines(`${ascii}\n${thai}`, 6).split('\n');
+    expect(a).toBe(`+${'-'.repeat(138)}…`);
+    expect(t).toBe(`| ${'กั'.repeat(137)}…`);
+  });
+
+  it('keeps a line that fits in 140 cells whatever its code-unit length', () => {
+    const thai = 'กั'.repeat(140);
+    expect(boundedOutputLines(thai, 6)).toBe(thai);
+  });
+
+  it('never cuts inside a grapheme or past a wide character', () => {
+    const wide = '日'.repeat(80); // 160 cells
+    expect(boundedOutputLines(wide, 6)).toBe(`${'日'.repeat(69)}…`);
   });
 });

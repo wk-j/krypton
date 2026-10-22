@@ -1,11 +1,13 @@
 // Live Assist conversation markdown.
 //
 // Assistant rows share the Harness marked / streaming-markdown pipeline
-// (spec 117) so the popup shows the same formatting as the full Harness.
+// (spec 117) so the popup shows the same formatting as the full Harness,
+// including the cell grid for fences laid out by columns (spec 326).
 // User, thought, and activity rows stay plain text.
 
 import * as smd from 'streaming-markdown';
 
+import { gridifyCodeBlocks } from './cell-grid';
 import {
   agentLinkOpenAction,
   makeSafeRenderer,
@@ -39,7 +41,8 @@ export function parkLiveAssistCaret(body: HTMLElement): HTMLElement | null {
 export function beginLiveAssistMarkdown(body: HTMLElement, text: string): smd.Parser {
   body.replaceChildren();
   body.classList.add(MARKDOWN_CLASS, STREAM_CLASS);
-  const parser = smd.parser(makeSafeRenderer(body));
+  // Spec 326: fences laid out by columns stream onto the cell grid, as in the Harness.
+  const parser = smd.parser(makeSafeRenderer(body, { cellGrid: true }));
   if (text) writeParser(parser, text);
   body.dataset.mdSource = text;
   return parser;
@@ -77,6 +80,7 @@ export function sealLiveAssistMarkdown(
   }
   if (streamingMarkdownDroppedTable(body, text)) {
     rerenderAssistantMarkdownWithMarked(body, text, cwd);
+    gridifyCodeBlocks(body);
   } else {
     resolveImages(body, cwd);
   }
@@ -101,6 +105,7 @@ export function renderLiveAssistMarkdown(
   body.classList.remove(STREAM_CLASS);
   try {
     body.innerHTML = liveAssistMarkdownHtml(text);
+    gridifyCodeBlocks(body);
   } catch (error) {
     console.warn('[live-assist] marked parse failed', error);
     body.textContent = text;

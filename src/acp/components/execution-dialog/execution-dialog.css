@@ -152,8 +152,6 @@
   }
   .acp-execution-dialog__pre { flex: 1 0 auto; }
   .acp-execution-dialog__code { font: inherit; background: transparent; color: inherit; }
-  /* Spec 324: output laid out by columns sits on a cell grid in a `<code>`, which must keep the `pre`'s font. */
-  .acp-execution-dialog__text > code { font: inherit; }
   .acp-execution-dialog__numbers {
     flex: none;
     padding-right: 12px;

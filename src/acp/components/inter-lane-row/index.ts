@@ -14,6 +14,7 @@
 // unchanged.
 
 import { el } from '../../../ui/dom';
+import { gridifyCodeBlocks } from '../../cell-grid';
 import { backendLogoId } from '../../harness-lane-identity';
 import { md } from '../../harness-markdown';
 import type { HarnessTranscriptItem, InterLanePayload } from '../../harness-view-types';
@@ -117,9 +118,13 @@ export class InterLaneRow extends TranscriptRow {
 
     const html = next.item.markdownHtml;
     if (html === undefined) body.textContent = next.item.text;
-    // The one sanctioned `innerHTML`: already-parsed markdown (spec 302
-    // §Explicitly not components).
-    else body.innerHTML = html;
+    else {
+      // The one sanctioned `innerHTML`: already-parsed markdown (spec 302
+      // §Explicitly not components). Fences laid out by columns sit on the
+      // cell grid (spec 326); paint runs only when the deps change.
+      body.innerHTML = html;
+      gridifyCodeBlocks(body);
+    }
     body.prepend(this.meta);
   }
 }

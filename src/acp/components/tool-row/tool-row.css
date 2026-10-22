@@ -607,6 +607,35 @@
     color: rgba(216, 232, 240, 0.5);
     word-break: break-all;
   }
+
+  /* Spec 326: a grep, unified-diff or paired-diff block whose line texts sit on
+     the cell grid (`gridifyLines`). Every row takes the cells' pitch, a line
+     height rounded to the device pixel, with no row gap and no taller minimum,
+     so vertical lines join across rows. Rows align to the top: baseline
+     alignment would push the smaller gutter marks a pixel down and grow the row. */
+  .acp-harness__tool-rich.acp-cellgrid-lines {
+    row-gap: 0;
+    line-height: round(nearest, 1lh, var(--acp-cg-step));
+  }
+  .acp-harness__tool-rich.acp-cellgrid-lines > .acp-harness__grep-row {
+    line-height: round(nearest, 1.4em, var(--acp-cg-step));
+    min-height: 0;
+    align-items: start;
+  }
+  .acp-harness__tool-rich.acp-cellgrid-lines > .acp-harness__tool-diff-line,
+  .acp-harness__tool-body--diff.acp-cellgrid-lines > .acp-harness__diff-line {
+    min-height: 0;
+    align-items: start;
+  }
+
+  /* A paired diff on the grid does not wrap: it scrolls sideways as one block,
+     and every row takes the widest row's width so its add/del tint reaches the end. */
+  .acp-harness__tool-body--diff.acp-cellgrid-lines {
+    display: grid;
+    grid-template-columns: minmax(100%, max-content);
+    overflow-x: auto;
+    line-height: round(nearest, 1.4em, var(--acp-cg-step));
+  }
 }
 
 @layer krypton.scheme {
