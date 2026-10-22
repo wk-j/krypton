@@ -422,6 +422,13 @@ import {
 } from './harness-lane-identity';
 import { ensureHarnessSymbolDefs } from './harness-icons';
 import {
+  backendUpdates,
+  describeBackendUpdates,
+  onBackendUpdatesChange,
+  runBackendUpdates,
+  type OpenTerminalTab,
+} from './backend-updates';
+import {
   agentLinkOpenAction,
   makeSafeRenderer,
   md,
@@ -674,6 +681,9 @@ const LANE_PEEK_HEAT_SAMPLE_MIN_MS = 900;
 
 const MAX_STAGED_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/** spec 322: titlebar action that runs pending Grok/OMP updates. */
+const BACKEND_UPDATE_TOGGLE_ID = 'backend-update';
 
 // spec 139: the #handoff / #resume one-shot prompts now live in
 // harness-prompts.ts (spec 185) alongside the other built-in command prompts.
@@ -1478,6 +1488,10 @@ export class AcpHarnessView implements ContentView {
     | null;
   /** spec 238: open `ticket.md` in the Markdown Viewer, not Helix. */
   private readonly openMarkdownViewCb: ((path: string) => Promise<void>) | null;
+  /** spec 322: open a terminal tab for backend updates. Null on remote
+   *  Harness views, where local CLI versions do not apply. */
+  private readonly openTerminalTabCb: OpenTerminalTab | null;
+  private readonly backendUpdatesUnsubscribe: () => void;
 
   private dashboardEl!: HTMLElement;
   // Spec 301 §7 — the summon-on-demand surfaces. Each root IS an `OverlayShell`,
@@ -1576,6 +1590,7 @@ export class AcpHarnessView implements ContentView {
       | null = null,
     openMarkdownView: ((path: string) => Promise<void>) | null = null,
     workspace: WorkspaceRef = { kind: 'local', path: projectDir },
+    openTerminalTab: OpenTerminalTab | null = null,
   ) {
     this.projectDir = projectDir;
     this.workspace = Object.freeze({ ...workspace }) as WorkspaceRef;
@@ -1585,6 +1600,8 @@ export class AcpHarnessView implements ContentView {
     this.openFileReferenceCb = openFileReference;
     this.openReviewBoardCb = openReviewBoard;
     this.openMarkdownViewCb = openMarkdownView;
+    this.openTerminalTabCb = openTerminalTab;
+    this.backendUpdatesUnsubscribe = onBackendUpdatesChange(() => this.notifyTitlebarTogglesChanged());
     this.zenMode = readZenModePreference(projectDir);
     this.conciseMode = readConciseModePreference(projectDir);
     this.panelsHidden = readPanelsHiddenPreference(projectDir);
@@ -4847,9 +4864,22 @@ export class AcpHarnessView implements ContentView {
     return () => this.laneMarksListeners.delete(cb);
   }
 
-  /** spec 320: the panel toggles this view contributes to its window titlebar. */
+  /** spec 320: the panel toggles this view contributes to its window titlebar.
+   *  spec 322: plus a one-shot backend-update action while Grok/OMP are behind. */
   getTitlebarToggles(): readonly TitlebarToggle[] {
-    return harnessTitlebarToggles(this.hiddenPanels, this.panelsHidden);
+    const toggles = harnessTitlebarToggles(this.hiddenPanels, this.panelsHidden);
+    const updates = backendUpdates();
+    if (this.openTerminalTabCb === null || updates.length === 0) return toggles;
+    return [
+      ...toggles,
+      {
+        id: BACKEND_UPDATE_TOGGLE_ID,
+        icon: 'krypton-icon-backend-update',
+        label: `Backend updates: ${describeBackendUpdates(updates)}`,
+        attention: true,
+        separatorBefore: true,
+      },
+    ];
   }
 
   onTitlebarTogglesChange(cb: () => void): () => void {
@@ -4859,8 +4889,14 @@ export class AcpHarnessView implements ContentView {
 
   /** A titlebar click is the bare-toggle form of the matching `#panels` command. */
   activateTitlebarToggle(id: string): void {
-    if (id === ALL_PANELS_TOGGLE_ID) this.applyPanelsCommand({ kind: 'all', action: 'toggle' });
+    if (id === BACKEND_UPDATE_TOGGLE_ID) this.runBackendUpdate();
+    else if (id === ALL_PANELS_TOGGLE_ID) this.applyPanelsCommand({ kind: 'all', action: 'toggle' });
     else if (isHarnessPanelId(id)) this.applyPanelsCommand({ kind: 'panel', panel: id, action: 'toggle' });
+  }
+
+  /** spec 322: open a terminal tab running each pending backend update. */
+  private runBackendUpdate(): void {
+    if (this.openTerminalTabCb !== null) void runBackendUpdates(this.openTerminalTabCb);
   }
 
   /** Called from every render(); deduped on a serialized key so the strip is
@@ -5069,6 +5105,7 @@ export class AcpHarnessView implements ContentView {
     this.reviewResponseQueue.dispose();
     this.annotationQueue.dispose();
     this.usageProviderListeners.clear();
+    this.backendUpdatesUnsubscribe();
     if (this.transcriptResizeObserver) {
       this.transcriptResizeObserver.disconnect();
       this.transcriptResizeObserver = null;
@@ -15564,6 +15601,15 @@ export class AcpHarnessView implements ContentView {
         label: 'Reconnect Remote Harness',
         category: 'ACP Harness',
         execute: () => this.reconnectRemoteHarness(),
+      });
+    }
+    const backendUpdateList = backendUpdates();
+    if (this.openTerminalTabCb !== null && backendUpdateList.length > 0) {
+      out.push({
+        id: 'acp.backends.update',
+        label: `Update ACP Backends (${describeBackendUpdates(backendUpdateList)})`,
+        category: 'ACP Harness',
+        execute: () => this.runBackendUpdate(),
       });
     }
     if (!lane) return out;

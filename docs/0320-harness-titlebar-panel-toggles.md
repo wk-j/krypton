@@ -102,7 +102,10 @@ export interface TitlebarToggle {
   readonly icon: string;
   /** Tooltip and accessible name. */
   readonly label: string;
-  readonly pressed: boolean;
+  /** Absent → one-shot action button, no aria-pressed (spec 322). */
+  readonly pressed?: boolean;
+  /** Warning colour (spec 322 backend-update button). */
+  readonly attention?: boolean;
   /** Present → button is disabled; the reason replaces the tooltip. */
   readonly disabledReason?: string;
   /** Draw a 1px divider before this button. */
@@ -239,7 +242,8 @@ Flashes: `<panel> hidden · #panels show <panel>` / `<panel> shown`; while
   off state: `html[data-theme-scheme='light'] .krypton-window__view-toggle[aria-pressed='false']
   { color: color-mix(in srgb, var(--krypton-titlebar-text) 40%, transparent); }`.
 - Narrow tile: `.krypton-window__titlebar` gets `container-type: inline-size`;
-  `@container (max-width: 480px)` hides every toggle except `all`, plus the
+  `@container (max-width: 480px)` hides every toggle except `all` (and, since
+  spec 322, the `backend-update` action), plus the
   separator. Measured in the mockup: with all seven buttons a 380px titlebar
   squeezes the label to 0px; at 480px it keeps ~86px. No existing
   `@container` rule targets titlebar descendants, so the new container changes
@@ -263,7 +267,8 @@ Flashes: `<panel> hidden · #panels show <panel>` / `<panel> shown`; while
   while peek is hidden; the card appears when peek is shown again.
 - **Ticket becomes active while hidden**: state updates, dock stays hidden, no
   margin reserved.
-- **Narrow tile**: below 480px only the `all` button remains; per-panel control
+- **Narrow tile**: below 480px only the `all` button (and the spec 322
+  `backend-update` action, when present) remains; per-panel control
   stays available through `#panels <panel>`.
 - **Tab strip visible**: `-end` is `display: contents`, so the cluster flows
   after the tabs and the tab pills shrink by the cluster's ~177px.

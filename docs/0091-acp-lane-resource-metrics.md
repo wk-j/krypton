@@ -273,8 +273,8 @@ this?" plus the full command on hover (`title`). Derivation
   when under `node_modules/` (`@scope/name`, `.bin/<name>` shims handled),
   else the file basename.
 - **npx / npm-exec launchers** → the package being run, scanned further along
-  argv and version-stripped (`@scope/pkg@1.2.3` → `@scope/pkg`). The Claude
-  lane's `npx -y @agentclientprotocol/claude-agent-acp` resolves here.
+  argv and version-stripped (`@scope/pkg@1.2.3` → `@scope/pkg`, `@latest` the
+  same way). The Claude and Codex lanes' `npx -y <adapter>@latest` resolve here.
 - **Other binaries** (`claude`, `rg`, `git`…) → a path operand's basename, or a
   short bareword subcommand.
 - **No argv** (restricted process) → exe basename when it adds something the

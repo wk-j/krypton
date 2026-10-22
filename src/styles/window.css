@@ -370,6 +370,16 @@
   cursor: default;
 }
 
+/* spec 322: an action that needs the user (e.g. backend updates available). */
+.krypton-window__view-toggle--attention {
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+}
+
+.krypton-window__view-toggle--attention:not(:disabled):hover {
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+  background: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.1);
+}
+
 .krypton-window__view-toggle-sep {
   width: 1px;
   height: 14px;
@@ -379,7 +389,7 @@
 }
 
 @container (max-width: 480px) {
-  .krypton-window__view-toggle:not([data-toggle-id='all']),
+  .krypton-window__view-toggle:not([data-toggle-id='all']):not([data-toggle-id='backend-update']),
   .krypton-window__view-toggle-sep {
     display: none;
   }

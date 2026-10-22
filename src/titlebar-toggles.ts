@@ -42,8 +42,10 @@ function buildButton(toggle: TitlebarToggle): HTMLButtonElement {
   button.type = 'button';
   button.tabIndex = -1;
   button.className = 'krypton-window__view-toggle';
+  if (toggle.attention) button.classList.add('krypton-window__view-toggle--attention');
   button.dataset.toggleId = toggle.id;
-  button.setAttribute('aria-pressed', toggle.pressed ? 'true' : 'false');
+  // spec 322: no `pressed` → a one-shot action button, not a toggle.
+  if (toggle.pressed !== undefined) button.setAttribute('aria-pressed', toggle.pressed ? 'true' : 'false');
   button.setAttribute('aria-label', toggle.label);
   button.title = toggle.disabledReason ?? toggle.label;
   if (toggle.disabledReason !== undefined) button.disabled = true;
@@ -93,7 +95,15 @@ export function syncTitlebarToggles(
   activateByCluster.set(cluster, onActivate);
 
   const key = JSON.stringify(
-    toggles.map((t) => [t.id, t.icon, t.label, t.pressed, t.disabledReason ?? null, t.separatorBefore === true]),
+    toggles.map((t) => [
+      t.id,
+      t.icon,
+      t.label,
+      t.pressed ?? null,
+      t.attention === true,
+      t.disabledReason ?? null,
+      t.separatorBefore === true,
+    ]),
   );
   if (keyByCluster.get(cluster) === key) return;
   keyByCluster.set(cluster, key);

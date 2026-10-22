@@ -887,6 +887,29 @@ built-in krypton-dark values in `gallery.css`.
 7. closeWindow() fires the titlebar unsubscribe.
 ```
 
+## ACP Backend Update Check Flow (spec 322)
+
+```
+1. main.ts, after startWorkspacePersistence(): void checkBackendUpdates()
+   (src/acp/backend-updates.ts, single-flight).
+2. invoke('acp_backend_updates') → acp_updates.rs runs `grok update --check
+   --json` and `omp --version` + GET registry.npmjs.org/@oh-my-pi/pi-coding-agent/latest
+   concurrently (login-shell env, 20 s / 15 s timeouts) and returns only the
+   backends that are behind. Claude and Codex are never probed: they spawn as
+   `npx -y <adapter>@latest`.
+3. The store replaces its snapshot and notifies; each AcpHarnessView listener
+   calls notifyTitlebarTogglesChanged() → the compositor re-renders the cluster
+   with a trailing `backend-update` action button (no aria-pressed, warning
+   colour). Remote Harness views have no terminal callback and show nothing.
+4. Click or palette `acp.backends.update` → runBackendUpdates(openTerminalTab):
+   listen('pty-exit'), then Compositor.createTab({ title: 'ACP // update',
+   shell: '/bin/sh', shellArgs: ['-c', script] }). The script prints and runs
+   each `<backend> update`, then waits for Enter.
+5. The PTY exits → handlePtyExit closes the tab → the matching pty-exit
+   unlistens and re-runs checkBackendUpdates(); an empty result removes the
+   button.
+```
+
 ## Window Project Badge Flow (spec 219)
 
 ```

@@ -1,7 +1,7 @@
 // Krypton — ACP (Agent Client Protocol) backend.
 //
-// Spawns an external agent subprocess (e.g. `npx @agentclientprotocol/claude-agent-acp`,
-// `codex-acp`) and speaks newline-delimited JSON-RPC 2.0 over its
+// Spawns an external agent subprocess (e.g. `npx -y @agentclientprotocol/claude-agent-acp@latest`,
+// `npx -y @agentclientprotocol/codex-acp@latest`) and speaks newline-delimited JSON-RPC 2.0 over its
 // stdio. One AcpClient per Krypton-side session. The Rust side acts as the JSON-RPC
 // client *and* must handle inbound requests (fs/read_text_file, fs/write_text_file,
 // session/request_permission, Grok's `_x.ai/exit_plan_mode`, and
@@ -80,9 +80,10 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
             "claude",
             AcpBackend {
                 command: "npx".to_string(),
+                // `@latest` makes npx resolve the newest release on every spawn (spec 0322).
                 args: vec![
                     "-y".to_string(),
-                    "@agentclientprotocol/claude-agent-acp".to_string(),
+                    "@agentclientprotocol/claude-agent-acp@latest".to_string(),
                 ],
                 display_name: "Claude".to_string(),
             },
@@ -90,8 +91,14 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
         (
             "codex",
             AcpBackend {
-                command: "codex-acp".to_string(),
-                args: vec![],
+                // The adapter bundles its own `@openai/codex`; `@latest` makes npx
+                // resolve the newest release on every spawn and skip stale
+                // global/project copies (spec 0322).
+                command: "npx".to_string(),
+                args: vec![
+                    "-y".to_string(),
+                    "@agentclientprotocol/codex-acp@latest".to_string(),
+                ],
                 display_name: "Codex".to_string(),
             },
         ),
@@ -2053,6 +2060,18 @@ pub async fn acp_spawn(
     Ok(session)
 }
 
+/// spec 322: Claude and Codex spawn through `npx -y <adapter>@latest`. The first
+/// spawn after an adapter release installs it into the npx cache before the
+/// adapter can answer `initialize` (Codex is ~336 MB with its bundled CLI; ~3
+/// minutes was observed), so those lanes get a longer budget than an adapter
+/// that is already on disk.
+fn initialize_timeout(backend_id: &str) -> Duration {
+    match backend_id {
+        "claude" | "codex" => Duration::from_secs(300),
+        _ => Duration::from_secs(30),
+    }
+}
+
 #[tauri::command]
 pub async fn acp_initialize(
     session: u64,
@@ -2076,28 +2095,26 @@ pub async fn acp_initialize(
         "clientInfo": { "name": "krypton", "version": env!("CARGO_PKG_VERSION") },
     });
 
-    let init = match tokio::time::timeout(
-        Duration::from_secs(30),
-        client.request("initialize", init_params),
-    )
-    .await
-    {
-        Ok(Ok(init)) => init,
-        Ok(Err(e)) => {
-            let stderr = client.stderr_snapshot().await;
-            return Err(format!(
-                "{e}. {}",
-                startup_hint(&client.backend_id, &stderr)
-            ));
-        }
-        Err(_) => {
-            let stderr = client.stderr_snapshot().await;
-            return Err(format!(
-                "ACP initialize timed out after 30s. {}",
-                startup_hint(&client.backend_id, &stderr)
-            ));
-        }
-    };
+    let init_timeout = initialize_timeout(&client.backend_id);
+    let init =
+        match tokio::time::timeout(init_timeout, client.request("initialize", init_params)).await {
+            Ok(Ok(init)) => init,
+            Ok(Err(e)) => {
+                let stderr = client.stderr_snapshot().await;
+                return Err(format!(
+                    "{e}. {}",
+                    startup_hint(&client.backend_id, &stderr)
+                ));
+            }
+            Err(_) => {
+                let stderr = client.stderr_snapshot().await;
+                return Err(format!(
+                    "ACP initialize timed out after {}s. {}",
+                    init_timeout.as_secs(),
+                    startup_hint(&client.backend_id, &stderr)
+                ));
+            }
+        };
 
     let proto = init
         .get("protocolVersion")

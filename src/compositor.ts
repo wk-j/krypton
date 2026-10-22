@@ -4958,6 +4958,8 @@ export class Compositor {
       (options) => void this.openReviewBoard(options),
       (path) => this.openMarkdownView(path),
       workspace,
+      // spec 322: backend updates run in a terminal tab of the focused window.
+      (options) => this.createTab({ ...options, cwd: null }),
     );
 
     await this.mountAcpHarnessView(view);
@@ -5002,6 +5004,7 @@ export class Compositor {
       null,
       null,
       workspace,
+      null,
     );
     await this.mountAcpHarnessView(view);
   }

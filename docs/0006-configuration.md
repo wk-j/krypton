@@ -659,8 +659,8 @@ ACP agent backends are built into Krypton rather than configured in `krypton.tom
 
 | Backend | Command |
 |---------|---------|
-| Claude | `npx -y @agentclientprotocol/claude-agent-acp` |
-| Codex | `codex-acp` |
+| Claude | `npx -y @agentclientprotocol/claude-agent-acp@latest` |
+| Codex | `npx -y @agentclientprotocol/codex-acp@latest` |
 | OpenCode | `opencode acp` |
 | Pi | `pi-acp` |
 | Droid | `droid exec --output-format acp` |
@@ -672,6 +672,8 @@ ACP agent backends are built into Krypton rather than configured in `krypton.tom
 | MiMo | `mimo acp` |
 | Cline | `cline --acp` |
 | Antigravity | `./agy_acp_server.par` (managed install from the ACP Registry, launched from its cache directory; local-only) |
+
+Claude and Codex run through `npx` with the `@latest` tag, so every new lane resolves the newest adapter release (and the Claude/Codex CLI each adapter bundles), skipping any older global or project-local copy. Grok and OMP use the CLI installed on the machine; once per launch Krypton checks them and, when either is behind, shows an update button in the ACP Harness window titlebar that runs `grok update` / `omp update` in a terminal tab. See `docs/0322-acp-backend-update-check.md`.
 
 Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, Codex login/adapter setup, `pi /login` or provider env vars, Factory `FACTORY_API_KEY` env var or `droid` device-code flow, `cursor-agent login` or `CURSOR_API_KEY`, `junie` first-run for JetBrains Account or `JUNIE_API_KEY` / `--auth <token>` / BYOK provider keys, `omp` first-run/auth-broker or provider keys, `grok` first-run browser login or `XAI_API_KEY`, `copilot` `/login` device flow or `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`, `mimo` first-run provider setup, `cline auth`). Antigravity is the exception: Krypton installs it and signs it in automatically (see below).
 

@@ -69,9 +69,9 @@ ACP backends are code-defined, not configured in `krypton.toml`.
 
 | Backend ID | Command |
 |------------|---------|
-| `claude` | `npx -y @agentclientprotocol/claude-agent-acp` (lane model applied via `session/set_model` after `session/new` when `lane_models.claude.active` is set — the adapter advertises model state and resolves aliases like `opus`/`sonnet`; non-fatal on failure. The agent-advertised `availableModels` also feed the in-harness live model picker, leader `,` — spec 127) |
+| `claude` | `npx -y @agentclientprotocol/claude-agent-acp@latest` (`@latest` resolves the newest adapter on every spawn — spec 322. Lane model applied via `session/set_model` after `session/new` when `lane_models.claude.active` is set — the adapter advertises model state and resolves aliases like `opus`/`sonnet`; non-fatal on failure. The agent-advertised `availableModels` also feed the in-harness live model picker, leader `,` — spec 127) |
 | `gemini` | `gemini --experimental-acp` |
-| `codex` | `codex-acp` |
+| `codex` | `npx -y @agentclientprotocol/codex-acp@latest` (the adapter bundles its own `@openai/codex`; `@latest` resolves the newest release on every spawn and skips a stale global `codex-acp` — spec 322) |
 | `opencode` | `opencode acp` (+ `session/set_config_option model=<lane_models.opencode.active>` when configured) |
 | `pi-acp` | `pi-acp` |
 | `droid` | `droid exec --output-format acp` |
@@ -115,7 +115,7 @@ Every outbound line (`write_line`), inbound line (`dispatch_output_line`), and R
 
 **Subprocess teardown.** `acp_dispose` sends `SIGTERM`, waits up to 2s for graceful exit, then `SIGKILL`. Closing the AcpView tab calls `acp_dispose` unconditionally — adapters like Claude Code flush their session state on `SIGTERM`. Cancelling a turn (`acp_cancel`) only sends `session/cancel` JSON-RPC — it does not kill the process.
 
-**Startup error handling.** `acp_spawn` returns a `krypton_session` immediately after `Command::spawn` succeeds. The frontend then invokes `acp_initialize`, which sends `initialize` + `session/new` and awaits both responses. AcpView shows a spinner ("Starting <display_name>…") during this phase. If the child exits **or** initialize does not complete within **30 seconds** (covers first-run `npx -y` package download), Rust emits an `error` event carrying the buffered stderr (truncated to 2KB) plus a heuristic hint:
+**Startup error handling.** `acp_spawn` returns a `krypton_session` immediately after `Command::spawn` succeeds. The frontend then invokes `acp_initialize`, which sends `initialize` + `session/new` and awaits both responses. AcpView shows a spinner ("Starting <display_name>…") during this phase. If the child exits **or** initialize does not complete within **30 seconds** (**300 seconds** for the npx-launched `claude` and `codex` lanes, whose first spawn after an adapter release downloads it — Codex is ~336 MB; spec 322), Rust emits an `error` event carrying the buffered stderr (truncated to 2KB) plus a heuristic hint:
 
 | stderr substring | suggested action |
 |------------------|------------------|
@@ -256,7 +256,7 @@ For v1, auth is the user's responsibility outside Krypton (`claude /login`, `gem
 - **User opens both pi-agent and ACP windows concurrently**: independent — each window has its own controller, its own session, its own keybindings.
 - **User closes AcpView while a turn is streaming**: `acp_dispose` is called → `SIGTERM`, 2s grace, then `SIGKILL`. Pending oneshots resolve to errors but the AcpView is already gone, so no UI follow-up is needed.
 - **User blurs AcpView (`Esc`) mid-stream then reopens later**: agent keeps streaming into the still-mounted DOM; reopening the tab simply restores focus. (Closing the tab is the only way to terminate the subprocess.)
-- **First-run `npx -y` download exceeds 30s**: initialize timeout fires, surface stderr + npm hint. User can retry; second attempt uses the npx cache and is fast.
+- **First-run `npx -y` download exceeds the initialize budget** (300 s for `claude`/`codex`): the timeout fires and surfaces stderr + npm hint. The npx process is killed, so a retry downloads again from whatever npm already cached.
 
 ## Open Questions
 

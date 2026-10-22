@@ -1,6 +1,7 @@
 pub mod acp;
 pub mod acp_harness_config;
 mod acp_install;
+mod acp_updates;
 pub mod acp_wire;
 mod commands;
 mod computer_read_only;
@@ -389,6 +390,7 @@ pub fn run() {
             acp::gc_cline_mcp_overlays,
             acp::prepare_cursor_mcp,
             acp::cleanup_cursor_mcp,
+            acp_updates::acp_backend_updates,
             usage::usage_fetch_claude,
             usage::usage_fetch_codex,
             usage::usage_fetch_copilot,

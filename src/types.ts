@@ -232,7 +232,10 @@ export interface TitlebarToggle {
   readonly icon: string;
   /** Tooltip and accessible name. */
   readonly label: string;
-  readonly pressed: boolean;
+  /** spec 322: absent → one-shot action button, rendered without `aria-pressed`. */
+  readonly pressed?: boolean;
+  /** spec 322: draw the button in the warning colour. */
+  readonly attention?: boolean;
   /** Present → the button is disabled and this replaces the tooltip. */
   readonly disabledReason?: string;
   /** Draw a 1px divider before this button. */

@@ -26,6 +26,7 @@ import { getViewBus } from './view-bus';
 import { startPtyBridge } from './pty-bridge';
 import { startChromeSignals } from './chrome-signals';
 import { startAcpControlBridge } from './acp/control-bridge';
+import { checkBackendUpdates } from './acp/backend-updates';
 
 interface CaptureResult {
   path: string;
@@ -263,6 +264,8 @@ async function main(): Promise<void> {
     console.warn('[Krypton] Workspace recovery failed; a fresh terminal was created.');
   }
   compositor.startWorkspacePersistence();
+  // spec 322: once per launch, ask whether Grok/OMP are behind.
+  void checkBackendUpdates();
 
   // Initialize cursor trail (rainbow flame effect on mouse + text cursor).
   // Disabled via [terminal] cursor_trail = false; hot-reload toggles it live.

@@ -131,6 +131,38 @@ describe('syncTitlebarToggles', () => {
     expect(end.querySelectorAll('.krypton-window__view-toggles')).toHaveLength(1);
   });
 
+  it('renders a toggle without pressed as an action button with no aria-pressed', () => {
+    syncTitlebarToggles(
+      end,
+      [{ id: 'backend-update', icon: 'krypton-icon-backend-update', label: 'Backend updates' }],
+      () => {},
+    );
+    expect(button(end, 'backend-update').hasAttribute('aria-pressed')).toBe(false);
+  });
+
+  it('adds the attention class only to toggles that ask for it', () => {
+    syncTitlebarToggles(
+      end,
+      [...PANELS, { id: 'backend-update', icon: 'krypton-icon-backend-update', label: 'Backend updates', attention: true }],
+      () => {},
+    );
+    expect(button(end, 'backend-update').classList.contains('krypton-window__view-toggle--attention')).toBe(true);
+    expect(button(end, 'plan').classList.contains('krypton-window__view-toggle--attention')).toBe(false);
+  });
+
+  it('rebuilds when only attention changes', () => {
+    syncTitlebarToggles(end, PANELS, () => {});
+    const before = button(end, 'grammar');
+    syncTitlebarToggles(
+      end,
+      PANELS.map((t) => (t.id === 'grammar' ? { ...t, attention: true } : t)),
+      () => {},
+    );
+    const after = button(end, 'grammar');
+    expect(after).not.toBe(before);
+    expect(after.classList.contains('krypton-window__view-toggle--attention')).toBe(true);
+  });
+
   it('removes the cluster when the view has no toggles', () => {
     syncTitlebarToggles(end, PANELS, () => {});
     syncTitlebarToggles(end, [], () => {});
