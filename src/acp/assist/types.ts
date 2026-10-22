@@ -60,6 +60,23 @@ export interface AssistCheck {
   readonly fixes: readonly string[];
 }
 
+/**
+ * Spec 323: one follow-up action under a reply. `target` is copied from a
+ * candidate Krypton extracted out of the reply's markdown — the assist model
+ * only picks the candidate and writes `label`, so it never authors the bytes
+ * that run. `hintLabel` is the `f` open-hint label (spec 206 target contract),
+ * `null` outside hint mode.
+ */
+export interface FollowUpAction {
+  /** A field no other open-hint target carries: the dispatch keys on it. */
+  readonly followUpKind: 'run' | 'open';
+  /** 1..40 characters, written by the model. */
+  readonly label: string;
+  /** The command (`run`) or http(s) URL (`open`). */
+  readonly target: string;
+  hintLabel: string | null;
+}
+
 /** What the rail panel paints for one lane. `original` is the checked text. */
 export type AssistPanelState =
   | { readonly kind: 'idle' }
@@ -82,8 +99,9 @@ export interface AssistTask<T> {
   readonly id: string;
   /** One line, listed by bare `#assist`. */
   readonly summary: string;
-  /** Which component paints `T`: the composer strip or the right-rail panel. */
-  readonly surface: 'strip' | 'panel';
+  /** Which component paints `T`: the composer strip, the right-rail panel, or
+   *  the reply row in the transcript (spec 323). */
+  readonly surface: 'strip' | 'panel' | 'transcript';
   /** Eligible for the automatic turn-end trigger. */
   readonly onTurnEnd: boolean;
   /** Eligible for the automatic trigger when the human sends a prompt. */
@@ -94,13 +112,17 @@ export interface AssistTask<T> {
   eligible?(ctx: AssistContext, cfg: AssistTaskConfig): boolean;
   system(cfg: AssistTaskConfig): string;
   payload(ctx: AssistContext, budget: AssistBudget): string;
-  /** Strict parse. `null` means the model did not answer ⇒ `'invalid'`. */
-  parse(raw: string, cfg: AssistTaskConfig): T | null;
+  /** Strict parse. `null` means the model did not answer ⇒ `'invalid'`.
+   *  `ctx` is the context `payload` was built from (spec 323 resolves the
+   *  candidate numbers it sent). */
+  parse(raw: string, cfg: AssistTaskConfig, ctx: AssistContext): T | null;
 }
 
 /** Next-prompt suggestions above the draft line (`AssistStrip`). */
 export type StripAssistTask = AssistTask<readonly AssistAction[]> & { readonly surface: 'strip' };
 /** A review of the sent prompt in the right rail (`GrammarPanel`). */
 export type PanelAssistTask = AssistTask<AssistCheck> & { readonly surface: 'panel' };
+/** Follow-up actions under the reply that named them (`FollowUpRail`, spec 323). */
+export type TranscriptAssistTask = AssistTask<FollowUpAction[]> & { readonly surface: 'transcript' };
 
-export type RegisteredAssistTask = StripAssistTask | PanelAssistTask;
+export type RegisteredAssistTask = StripAssistTask | PanelAssistTask | TranscriptAssistTask;

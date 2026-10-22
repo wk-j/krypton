@@ -428,6 +428,8 @@ import {
   runBackendUpdates,
   type OpenTerminalTab,
 } from './backend-updates';
+import type { FollowUpAction } from './assist/types';
+import { followUpShellArgs } from './follow-up-run';
 import {
   agentLinkOpenAction,
   makeSafeRenderer,
@@ -673,7 +675,8 @@ type HarnessOpenTarget =
   | SubagentEntry
   | SvgFenceEntry
   | UiFenceEntry
-  | ExecutionOpenTarget;
+  | ExecutionOpenTarget
+  | FollowUpAction;
 
 const LANE_PEEK_HEAT_RING_MAX = 240;
 const LANE_PEEK_HEAT_RING_MS = 10 * 60_000;
@@ -6357,6 +6360,16 @@ export class AcpHarnessView implements ContentView {
         }
         return;
       }
+      // spec 323: a follow-up button under a reply runs or opens its action.
+      const followUpButton = target.closest<HTMLElement>('[data-follow-up-index]');
+      const followUpMsg = followUpButton?.closest<HTMLElement>('.acp-harness__msg[data-msg-id]');
+      if (followUpButton && followUpMsg?.dataset.msgId) {
+        e.preventDefault();
+        const item = this.activeLane()?.transcript.find((row) => row.id === followUpMsg.dataset.msgId);
+        const action = item?.followUps?.[Number(followUpButton.dataset.followUpIndex)];
+        if (action) this.runFollowUp(action);
+        return;
+      }
       const anchor = target.closest<HTMLAnchorElement>('a[href]');
       const uiButton = target.closest<HTMLElement>('[data-genui-index]');
       const uiMsg = uiButton?.closest<HTMLElement>('.acp-harness__msg[data-msg-id]');
@@ -9775,7 +9788,7 @@ export class AcpHarnessView implements ContentView {
 
   // ─── Transcript open-hint mode ──────────────────────────────────────────
 
-  /** Live artifacts, Review Boards, message references, images, subagents, and SVG cards in transcript order. */
+  /** Live artifacts, Review Boards, message references, images, subagents, SVG cards and follow-up buttons in transcript order. */
   private activeLaneOpenTargets(): HarnessOpenTarget[] {
     const lane = this.activeLane();
     if (!lane) return [];
@@ -9795,6 +9808,8 @@ export class AcpHarnessView implements ContentView {
       targets.push(...(item.svgFences ?? []));
       if (this.transcript?.rowFor(item.id)) targets.push(...(item.uiFences ?? []));
       if (item.executionTarget && this.transcript?.rowFor(item.id)) targets.push(item.executionTarget);
+      // spec 323: follow-up buttons, last in their row — only where a label can be seen.
+      if (item.followUps && this.transcript?.rowFor(item.id)) targets.push(...item.followUps);
     }
     return targets;
   }
@@ -9826,6 +9841,7 @@ export class AcpHarnessView implements ContentView {
       for (const fence of item.svgFences ?? []) fence.hintLabel = null;
       for (const fence of item.uiFences ?? []) fence.hintLabel = null;
       if (item.executionTarget) item.executionTarget.hintLabel = null;
+      for (const action of item.followUps ?? []) action.hintLabel = null;
     }
     this.render();
     this.patchGenUiHints();
@@ -9852,7 +9868,9 @@ export class AcpHarnessView implements ContentView {
     const targets = this.activeLaneOpenTargets();
     const exact = targets.find((target) => target.hintLabel === candidate);
     if (exact) {
-      if ('executionItemId' in exact) {
+      if ('followUpKind' in exact) {
+        this.runFollowUp(exact);
+      } else if ('executionItemId' in exact) {
         this.openExecution(exact.executionItemId);
       } else if ('sourceHash' in exact) {
         const owner = this.activeLane()?.transcript.find((row) => row.uiFences?.includes(exact));
@@ -9883,9 +9901,48 @@ export class AcpHarnessView implements ContentView {
   private patchGenUiHints(): void {
     for (const item of this.activeLane()?.transcript ?? []) {
       const row = this.transcript?.rowFor(item.id);
-      if (row instanceof AssistantRow) row.patchUiHints();
+      if (row instanceof AssistantRow) {
+        row.patchUiHints();
+        row.syncFollowUps();
+      }
       if (row instanceof ToolRow) row.patchExecutionHint(item.executionTarget?.hintLabel ?? null);
     }
+  }
+
+  /** Spec 323: a reply's follow-ups changed — sync that row's rail alone. An
+   *  unmounted row (another lane, outside the window) paints it on mount. */
+  private patchFollowUps(lane: HarnessLane, itemId: string): void {
+    if (lane.id !== this.activeLaneId) return;
+    this.rowFor(itemId)?.syncFollowUps();
+  }
+
+  /**
+   * Spec 323: run or open one follow-up action. The click or hint label is the
+   * human's confirmation; the button showed the full target.
+   */
+  private runFollowUp(action: FollowUpAction): void {
+    if (action.followUpKind === 'open') {
+      if (/^https?:\/\//i.test(action.target)) openExternalUrl(action.target, { external: true });
+      return;
+    }
+    const openTab = this.openTerminalTabCb;
+    if (openTab === null) {
+      this.flashChip('follow-up: no terminal here');
+      return;
+    }
+    openTab({
+      title: `ACP // ${action.label}`,
+      shell: '/bin/sh',
+      shellArgs: followUpShellArgs(action.target),
+      cwd: this.projectDir,
+    })
+      .then((sessionId) => {
+        if (sessionId === null) this.flashChip('follow-up: no window to run in');
+      })
+      .catch((err: unknown) => {
+        console.warn('[follow-up] terminal tab failed:', err);
+        this.flashChip('follow-up: could not open a terminal');
+      });
   }
 
   private openExecution(itemId: string): void {
@@ -16344,6 +16401,7 @@ export class AcpHarnessView implements ContentView {
       flashChip: (text) => view.flashChip(text),
       invalidate: (region) => view.invalidate(region),
       setDraft: (lane, text, cursor) => view.setDraft(lane, text, cursor),
+      patchFollowUps: (lane, itemId) => view.patchFollowUps(lane, itemId),
     };
   }
 

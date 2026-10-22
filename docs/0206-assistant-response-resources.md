@@ -250,8 +250,8 @@ agent  Implemented the parser in `client.ts` and documented the ACP contract.
 
 | Key | Context | Action |
 |-----|---------|--------|
-| `f` | Transcript command mode | Enter unified follow/open hint mode for visible resources and available artifacts |
-| hint label | Hint mode | Open the matching resource/artifact, then exit hint mode |
+| `f` | Transcript command mode | Enter unified follow/open hint mode for visible resources, available artifacts, and follow-up buttons (spec 323) |
+| hint label | Hint mode | Open the matching resource/artifact (or run the follow-up action), then exit hint mode |
 | `Esc` | Hint mode | Exit without opening |
 
 Hint targets are assigned in transcript order, so resources stay associated
@@ -259,7 +259,9 @@ with their message and existing artifact cards retain the same interaction.
 Later specs add more target types to the same mode: images open the image
 viewer (spec 281), subagent card rows toggle their inline detail
 (spec 282), and ```svg / ```mermaid fence cards toggle Source/Preview, with
-`Shift+<label>` copying the fence source (specs 283, 294).
+`Shift+<label>` copying the fence source (specs 283, 294), and follow-up
+buttons under a reply run their command or open their URL, labelled after the
+row's other targets (spec 323, `docs/0323-harness-follow-up-actions.md`).
 
 - File resource: callback to `Compositor.openHelixTab(path, line, column)`;
   failure reports through the harness status chip. An image file reference

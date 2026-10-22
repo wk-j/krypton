@@ -3,11 +3,12 @@
 // Adding a task is one file plus one line here. The engine, the guards, the
 // breaker, the keys, the hash command and the config merge all derive from it.
 
+import { followUp } from './tasks/follow-up';
 import { grammar } from './tasks/grammar';
 import { nextPrompt } from './tasks/next-prompt';
 import type { RegisteredAssistTask } from './types';
 
-export const ASSIST_TASKS: readonly RegisteredAssistTask[] = [nextPrompt, grammar];
+export const ASSIST_TASKS: readonly RegisteredAssistTask[] = [nextPrompt, followUp, grammar];
 
 export function assistTask(id: string): RegisteredAssistTask | undefined {
   return ASSIST_TASKS.find((task) => task.id === id);

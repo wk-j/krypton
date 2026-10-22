@@ -13,6 +13,7 @@ import type {
   AskUserQuestion,
   QuestionPayload,
 } from './ask-user-question';
+import type { FollowUpAction } from './assist/types';
 import type { AcpClient } from './client';
 import type { ComputerApprovalRequest } from './computer-approval';
 import type { QuestionTarget } from './elicitation';
@@ -162,6 +163,8 @@ export interface HarnessTranscriptItem {
   uiFences?: UiFenceEntry[];
   /** spec 240: human notes pinned to spans in this assistant reply. */
   annotations?: TranscriptAnnotation[];
+  /** spec 323: follow-up actions the assist sidecar picked from this reply. */
+  followUps?: FollowUpAction[];
 }
 
 /** spec 133 — transcript card for a registered HTML artifact. */

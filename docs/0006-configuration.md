@@ -451,6 +451,10 @@ max_input_chars = 6000         # hard cap on the payload sent to the model (500�
 # model = "haiku"
 # count = 3                    # task-specific knob; Krypton never interprets it
 
+# [acp_harness.assist.tasks.follow-up]   # spec 323: follow-up buttons under replies
+# mode = "auto"                # default "off"
+# count = 3                    # 1..3 buttons per reply
+
 # --- ACP Wire Profiler (spec 288) ---
 # Records ACP traffic (Krypton ↔ agent stdio and Rust → UI events) into an
 # in-memory ring for the loopback profiler page (palette: ACP Wire: Open
@@ -858,11 +862,19 @@ models = ["zai-coding-plan/glm-5.1", "anthropic/claude-sonnet-4-5", "openai/gpt-
 | `[acp_harness.assist.tasks.<id>]` | `max_input_chars` | int | inherits | Override for this task only |
 | `[acp_harness.assist.tasks.<id>]` | *(any other scalar key)* | string/int/bool | — | Task-specific knob passed through verbatim as that task's `options`. Krypton holds no knowledge of these keys, so a new task needs no config schema change |
 
-`<id>` must be a **registered assist task id** — `next-prompt` is the only one today. A table naming an unregistered task parses but is never read.
+`<id>` must be a **registered assist task id** — `next-prompt`, `follow-up` (spec 323), or `grammar`. A table naming an unregistered task parses but is never read.
 
 Resolution order per run is `task defaults` ← `[acp_harness.assist]` ← `[acp_harness.assist.tasks.<id>]`, with the numeric keys clamped afterwards; the clamps live in the frontend, so an out-of-range value in TOML is corrected, not rejected.
 
 `next-prompt` reads one option: `count` (default `3`), the maximum number of suggestions it returns. The strip shows at most three, accepted with `Cmd+1`…`Cmd+3`, which load the prompt into the composer and never send it.
+
+`[acp_harness.assist.tasks.follow-up]` (spec 323, `docs/0323-harness-follow-up-actions.md`) turns on follow-up buttons under finished replies. Its `mode` defaults to `"off"`; its one option `count` (1..3, default `3`) caps the buttons per reply. No Rust config change backs it — the keys pass through the generic per-task table.
+
+```toml
+[acp_harness.assist.tasks.follow-up]
+mode = "auto"
+count = 3
+```
 
 Example — an auto-running `next-prompt` on the `claude` backend's small model:
 

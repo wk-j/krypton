@@ -7,8 +7,9 @@
 // `AssistEngine` (`assist/engine.ts`); what to ask lives in the task.
 //
 // Spec 275 shape: a plain class over a narrow host interface, no base class and
-// no registry of its own. It never touches the DOM — results are published by
-// dirtying the `composer` region.
+// no registry of its own. It never touches the DOM — strip and panel results
+// are published by dirtying a region; a spec 323 follow-up result is written
+// onto the reply it belongs to and the view patches that one row.
 
 import { loadConfig } from '../config';
 
@@ -26,7 +27,9 @@ import type {
   PanelAssistTask,
   RegisteredAssistTask,
   StripAssistTask,
+  TranscriptAssistTask,
 } from './assist/types';
+import { followUpReply } from './assist/tasks/follow-up';
 import { userText } from './assist/tasks/grammar';
 import type { HarnessAssistHost } from './harness-view-host';
 import type { HarnessLane, HarnessTranscriptItem } from './harness-view-types';
@@ -311,19 +314,23 @@ export class HarnessAssistController {
     }
   }
 
-  /** Gates that do not depend on the trigger, evaluated as late as possible. */
+  /** Gates that do not depend on the trigger, evaluated as late as possible.
+   *  `snapshot` is the turn captured at enqueue (spec 323), else read now. */
   private eligible(
     lane: HarnessLane,
     task: RegisteredAssistTask,
     cfg: AssistTaskConfig,
     trigger: AssistTrigger,
+    snapshot: readonly HarnessTranscriptItem[] | null,
   ): AssistContext | null {
     if (this.disposed) return null;
     if (lane.id !== this.host.activeLaneId) return null;
+    // spec 323: a remote harness's commands and `localhost` are the remote's.
+    if (task.surface === 'transcript' && this.host.remoteRuntimeId !== null) return null;
     if (lane.pendingPermissions.length > 0 || lane.pendingQuestions.length > 0) return null;
     if (trigger !== 'user-prompt' && lane.activeSystemLabel !== null) return null;
     if (this.engine.cooldownUntil(task.id) > Date.now()) return null;
-    const turn = turnItems(lane);
+    const turn = snapshot ?? turnItems(lane);
     // A prompt-reading task runs before (or without) any reply.
     const readsPrompt = trigger === 'user-prompt' || (trigger === 'manual' && task.onUserPrompt === true);
     if (!readsPrompt) {
@@ -359,7 +366,12 @@ export class HarnessAssistController {
     trigger: AssistTrigger,
   ): void {
     const epoch = this.epoch;
-    this.queue = this.queue.then(() => this.run(lane, task, cfg, epoch, trigger)).catch(() => undefined);
+    // spec 323: follow-ups belong to the reply that just ended. Read later, the
+    // turn would be the next prompt's if the human sent one while queued.
+    const snapshot = task.surface === 'transcript' ? turnItems(lane) : null;
+    this.queue = this.queue
+      .then(() => this.run(lane, task, cfg, epoch, trigger, snapshot))
+      .catch(() => undefined);
   }
 
   private async run(
@@ -368,15 +380,17 @@ export class HarnessAssistController {
     cfg: AssistTaskConfig,
     epoch: number,
     trigger: AssistTrigger,
+    snapshot: readonly HarnessTranscriptItem[] | null,
   ): Promise<void> {
     if (epoch !== this.epoch) return;
-    const ctx = this.eligible(lane, task, cfg, trigger);
+    const ctx = this.eligible(lane, task, cfg, trigger, snapshot);
     if (!ctx && trigger === 'manual' && task.onUserPrompt) {
       this.host.flashChip(`assist: nothing for ${task.id} to check`);
     }
     if (!ctx) return;
     this.markRan(lane, task.id);
     if (task.surface === 'panel') await this.runPanel(lane, task, ctx, cfg, epoch);
+    else if (task.surface === 'transcript') await this.runTranscript(lane, task, ctx, cfg, epoch);
     else await this.runStrip(lane, task, ctx, cfg, epoch);
   }
 
@@ -441,5 +455,31 @@ export class HarnessAssistController {
         this.setPanel(lane.id, { kind: 'idle' });
       }, ASSIST_PANEL_OK_HIDE_MS));
     }
+  }
+
+  /**
+   * Spec 323: the result belongs to the reply the candidates came from, so it
+   * lands under that row even if the human has sent the next prompt since.
+   * Nothing is painted while pending — a sealed row shows no live placeholder.
+   */
+  private async runTranscript(
+    lane: HarnessLane,
+    task: TranscriptAssistTask,
+    ctx: AssistContext,
+    cfg: AssistTaskConfig,
+    epoch: number,
+  ): Promise<void> {
+    const owner = followUpReply(ctx);
+    if (!owner) return;
+    const spawnEpoch = lane.spawnEpoch;
+
+    const run = await this.engine.run(task, ctx, cfg);
+    if (this.isStale(lane, epoch, spawnEpoch) || !lane.transcript.includes(owner)) return;
+    if (!run.ok) {
+      this.host.flashChip(FAILURE_TEXT[run.reason]);
+      return;
+    }
+    owner.followUps = run.value.length > 0 ? run.value : undefined;
+    this.host.patchFollowUps(lane, owner.id);
   }
 }

@@ -2,7 +2,8 @@
 //
 // The agent's reply: streaming-markdown while the turn runs, cached GFM once
 // it is sealed, plus the lane-mail provenance line, the ```svg / ```mermaid
-// fence cards, the annotation marks and the REFERENCES rail.
+// fence cards, the annotation marks, the REFERENCES rail and the spec 323
+// FOLLOW-UP rail.
 //
 // Ports `harness-transcript-render.ts:299-347` (the build), the pre-signature
 // fast path at `acp-harness-view.ts:12193-12213` and
@@ -40,6 +41,7 @@ import { clearLiveUiFences, decorateUiFences, patchUiHints, syncUiPanel, updateL
 import { applyTranscriptAnnotations } from '../../transcript-annotation';
 import type { HarnessLane, HarnessTranscriptItem } from '../../harness-view-types';
 import { AnnotationRail } from '../annotation-rail';
+import { FollowUpRail } from '../follow-up-rail';
 import { ResourceRail } from '../resource-rail';
 import { TranscriptRow, type RowProps } from '../transcript-row';
 import type { ComponentDef } from '../types';
@@ -55,6 +57,7 @@ export class AssistantRow extends TranscriptRow {
   private provenance: HTMLElement | null = null;
   private rail: ResourceRail | null = null;
   private annoRail: AnnotationRail | null = null;
+  private followUpRail: FollowUpRail | null = null;
 
   constructor(props: RowProps) {
     super(props, props.streaming);
@@ -84,6 +87,15 @@ export class AssistantRow extends TranscriptRow {
 
   patchUiHints(): void {
     if (!this.isLive) patchUiHints(this.body, this.current.item);
+  }
+
+  /**
+   * Spec 323 — the reply's follow-up actions arrived after seal, changed on a
+   * re-ask, or took / dropped `f` hint labels. Only the rail moves: the body,
+   * its cards and its annotations are not repainted.
+   */
+  syncFollowUps(): void {
+    this.syncFollowUpRail(this.current.item);
   }
 
   /**
@@ -140,6 +152,12 @@ export class AssistantRow extends TranscriptRow {
 
   protected syncClasses(next: RowProps): void {
     super.syncClasses(!this.isLive && next.streaming ? { ...next, streaming: false } : next);
+  }
+
+  /** The rail goes last, after the base has synced the image strip. */
+  protected paint(next: RowProps): void {
+    super.paint(next);
+    this.syncFollowUpRail(next.item);
   }
 
   protected paintBody(body: HTMLElement, next: RowProps): void {
@@ -229,6 +247,8 @@ export class AssistantRow extends TranscriptRow {
     this.rail = null;
     this.annoRail?.dispose();
     this.annoRail = null;
+    this.followUpRail?.dispose();
+    this.followUpRail = null;
   }
 
   private paintSealed(body: HTMLElement, next: RowProps): void {
@@ -343,6 +363,25 @@ export class AssistantRow extends TranscriptRow {
     this.annoRail ??= new AnnotationRail();
     this.annoRail.update({ annotations });
     if (body.lastChild !== this.annoRail.el) body.appendChild(this.annoRail.el);
+  }
+
+  /**
+   * A sibling of the body, kept as the row's last child: the body's `innerHTML`
+   * repaint and the annotation wrapper never reach it, and a strip the base
+   * appends later does not land under it.
+   */
+  private syncFollowUpRail(item: HarnessTranscriptItem): void {
+    const actions = this.isLive ? [] : item.followUps ?? [];
+    if (actions.length === 0) {
+      if (!this.followUpRail) return;
+      this.followUpRail.el.remove();
+      this.followUpRail.dispose();
+      this.followUpRail = null;
+      return;
+    }
+    this.followUpRail ??= new FollowUpRail();
+    this.followUpRail.update({ actions });
+    if (this.el.lastChild !== this.followUpRail.el) this.el.appendChild(this.followUpRail.el);
   }
 }
 

@@ -161,11 +161,14 @@ export interface HarnessSteerHost extends HarnessViewHost {
 }
 
 /** Spec 306 assist sidecar host. The controller reads lane state and publishes
- *  a result by dirtying the composer; it never touches the DOM. */
+ *  a result by dirtying a region or, for spec 323 follow-ups, asking the view
+ *  to patch one reply's rail; it never touches the DOM. */
 export interface HarnessAssistHost extends HarnessViewHost {
   readonly projectDir: string | null;
   /** Non-null on a remote harness (spec 247): the sidecar's backend spawns there too. */
   readonly remoteRuntimeId: string | null;
   invalidate(region: HarnessRegion): void;
   setDraft(lane: HarnessLane, text: string, cursor: number): void;
+  /** Spec 323: `itemId`'s `followUps` changed — repaint only that reply's rail. */
+  patchFollowUps(lane: HarnessLane, itemId: string): void;
 }

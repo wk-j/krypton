@@ -293,3 +293,45 @@ describe('AssistantRow krypton-ui fence streaming', () => {
     row.dispose();
   });
 });
+
+// Spec 323 — follow-up actions arrive seconds after the reply sealed. They
+// must land under it without repainting its body (AGENTS.md constraint 10).
+describe('AssistantRow follow-up rail', () => {
+  const ACTION = { followUpKind: 'run', label: 'install the app', target: 'make install', hintLabel: null } as const;
+
+  it('adds the rail as the last child of a sealed row without touching the body', () => {
+    const item = assistant({ text: 'Run `make install` to try it.' });
+    const { row } = mount(item, false);
+    const body = row.el.querySelector<HTMLElement>('.acp-harness__msg-body')!;
+    const observer = new MutationObserver(() => undefined);
+    observer.observe(body, { childList: true, subtree: true, attributes: true, characterData: true });
+
+    item.followUps = [{ ...ACTION }];
+    row.syncFollowUps();
+
+    expect(observer.takeRecords()).toHaveLength(0);
+    observer.disconnect();
+    expect(row.el.lastElementChild?.className).toBe('acp-harness__followups');
+    expect(row.el.querySelector('.acp-harness__followups-target')?.textContent).toBe('make install');
+    row.dispose();
+  });
+
+  it('paints the rail from data when the row mounts later, and drops it when cleared', () => {
+    const item = assistant({ text: 'Run `make install`.', followUps: [{ ...ACTION }] });
+    const { row } = mount(item, false);
+    expect(row.el.querySelectorAll('.acp-harness__followups-btn')).toHaveLength(1);
+
+    item.followUps = undefined;
+    row.syncFollowUps();
+    expect(row.el.querySelector('.acp-harness__followups')).toBeNull();
+    row.dispose();
+  });
+
+  it('never shows a rail on a live row', () => {
+    const item = assistant({ text: 'Run `make', followUps: [{ ...ACTION }] });
+    const { row } = mount(item, true, makeLane());
+    row.syncFollowUps();
+    expect(row.el.querySelector('.acp-harness__followups')).toBeNull();
+    row.dispose();
+  });
+});

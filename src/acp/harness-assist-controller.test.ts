@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { AssistEngine } from './assist/engine';
+import { followUp } from './assist/tasks/follow-up';
 import type { AssistAction, AssistContext, AssistTaskConfig, RegisteredAssistTask } from './assist/types';
 import { ASSIST_PANEL_OK_HIDE_MS, HarnessAssistController } from './harness-assist-controller';
 import type { HarnessAssistHost } from './harness-view-host';
@@ -67,6 +68,7 @@ function setup(options: {
     flashChip: (text) => chips.push(text),
     invalidate: (region) => regions.push(region),
     setDraft: (_lane, text, cursor) => drafts.push({ text, cursor }),
+    patchFollowUps: () => undefined,
   };
 
   const task: RegisteredAssistTask = {
@@ -256,6 +258,7 @@ describe('HarnessAssistController — user-prompt trigger (grammar)', () => {
       flashChip: (text) => chips.push(text),
       invalidate: (region) => regions.push(region),
       setDraft: (_lane, text) => drafts.push(text),
+      patchFollowUps: () => undefined,
     };
     const engine = new AssistEngine(async (call) => {
       calls.push(call.user);
@@ -335,5 +338,88 @@ describe('HarnessAssistController — user-prompt trigger (grammar)', () => {
     h.ctl.onUserPrompt(h.lane);
     await h.ctl.whenIdle();
     expect(h.calls).toHaveLength(0);
+  });
+});
+
+describe('HarnessAssistController — transcript surface (follow-up)', () => {
+  const REPLY = 'Done. Run `make install`, then open http://localhost:5173/docs to check the page.';
+
+  async function followUpRun(reply: string, options: { remote?: boolean; owner?: HarnessTranscriptItem } = {}) {
+    const owner = options.owner ?? { id: 'a-1', kind: 'assistant', text: REPLY } as HarnessTranscriptItem;
+    const lane = makeLane({ transcript: [item('user', 'wire the rail'), owner] });
+    const chips: string[] = [];
+    const calls: string[] = [];
+    const patched: string[] = [];
+    const host: HarnessAssistHost = {
+      element: {} as HTMLElement,
+      lanes: [lane],
+      activeLaneId: lane.id,
+      projectDir: '/repo',
+      remoteRuntimeId: options.remote ? 'remote-1' : null,
+      flashChip: (text) => chips.push(text),
+      invalidate: () => undefined,
+      setDraft: () => undefined,
+      patchFollowUps: (_lane, itemId) => patched.push(itemId),
+    };
+    const engine = new AssistEngine(async (call) => {
+      calls.push(call.user);
+      return reply;
+    });
+    const ctl = new HarnessAssistController(host, [followUp], engine);
+    ctl.setMode('follow-up', 'auto');
+    return { ctl, lane, owner, chips, calls, patched };
+  }
+
+  it('writes the picked actions onto the reply that named them, even after the next prompt', async () => {
+    const h = await followUpRun('{"actions":[{"id":1,"label":"install the app"},{"id":2,"label":"open the docs"}]}');
+    h.ctl.onTurnEnd(h.lane, 'end_turn');
+    // The human sends the next prompt before the sidecar answers.
+    const next = item('user', 'now update the docs');
+    h.lane.transcript.push(next);
+    await h.ctl.whenIdle();
+
+    expect(h.owner.followUps?.map((a) => [a.followUpKind, a.target])).toEqual([
+      ['run', 'make install'],
+      ['open', 'http://localhost:5173/docs'],
+    ]);
+    expect(next.followUps).toBeUndefined();
+    expect(h.patched).toEqual(['a-1']);
+    expect(h.ctl.stripProps(h.lane).state.kind).toBe('idle');
+  });
+
+  it('makes no call on a remote harness', async () => {
+    const h = await followUpRun('{"actions":[{"id":1,"label":"install the app"}]}', { remote: true });
+    h.ctl.onTurnEnd(h.lane, 'end_turn');
+    await h.ctl.whenIdle();
+    expect(h.calls).toHaveLength(0);
+    expect(h.owner.followUps).toBeUndefined();
+  });
+
+  it('makes no call when the reply names nothing to run or open', async () => {
+    const owner = { id: 'a-2', kind: 'assistant', text: 'All done — the controller and its tests are finished.' } as HarnessTranscriptItem;
+    const h = await followUpRun('{"actions":[]}', { owner });
+    h.ctl.onTurnEnd(h.lane, 'end_turn');
+    await h.ctl.whenIdle();
+    expect(h.calls).toHaveLength(0);
+    expect(h.patched).toEqual([]);
+  });
+
+  it('an empty answer to a re-ask clears that reply’s follow-ups', async () => {
+    const h = await followUpRun('{"actions":[]}');
+    h.owner.followUps = [{ followUpKind: 'run', label: 'install', target: 'make install', hintLabel: null }];
+    h.ctl.request(h.lane, 'follow-up');
+    await h.ctl.whenIdle();
+    expect(h.owner.followUps).toBeUndefined();
+    expect(h.patched).toEqual(['a-1']);
+    expect(h.chips).toEqual([]);
+  });
+
+  it('drops the answer when the reply left the transcript', async () => {
+    const h = await followUpRun('{"actions":[{"id":1,"label":"install the app"}]}');
+    h.ctl.onTurnEnd(h.lane, 'end_turn');
+    h.lane.transcript.length = 0;
+    await h.ctl.whenIdle();
+    expect(h.owner.followUps).toBeUndefined();
+    expect(h.patched).toEqual([]);
   });
 });

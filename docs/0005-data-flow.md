@@ -1493,6 +1493,29 @@ A lane switch, close or respawn cancels the in-flight turn — its answer was ab
 another lane — while the warm subprocess survives; only `dispose()` kills it, and
 `mode = "off"` (the default) short-circuits step 2 entirely.
 
+## Follow-up Actions Flow (spec 323)
+
+```
+1. finishTurn → assistCtl.onTurnEnd; the `follow-up` task (mode 'auto', local harness
+   only) is enqueued with a snapshot of this turn — later turns cannot retarget it.
+2. Candidates are extracted from the last assistant reply's markdown: shell fences,
+   inline code spans, http(s) URLs. None ⇒ no model call. Nothing is painted while pending.
+3. Payload = reply text + numbered candidates (substrings of it; no tool arguments).
+4. AssistEngine.run → the model returns candidate numbers + labels; task.parse(raw, cfg, ctx)
+   takes each target from the candidate, never from the model, capped at `count`.
+5. Controller writes owner.followUps (owner = last non-empty assistant item of that
+   turn; [] clears) → host.patchFollowUps(lane, itemId).
+6. AssistantRow.syncFollowUps() → FollowUpRail paints the FOLLOW-UP buttons; the body
+   does not repaint, and older replies keep their follow-ups.
+7. Click (view-level delegation) or `f` hint label → runFollowUp:
+   open → openExternalUrl(url, { external: true }) (http/https only)
+   run  → openTerminalTabCb({ title: 'ACP // <label>', shell: '/bin/sh',
+          shellArgs: followUpShellArgs(cmd), cwd: projectDir }) — a terminal tab
+          runs `"$SHELL" -lc "$1"` (Ctrl+C stops only the command), then a login shell.
+```
+
+See `docs/0323-harness-follow-up-actions.md`.
+
 ## Workspace Lifecycle Flow
 
 ### Startup

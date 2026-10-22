@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (308)
+## Specs (309)
 
 | # | Spec |
 |---|------|
@@ -325,6 +325,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 320 | [Harness Titlebar Panel Toggles](./0320-harness-titlebar-panel-toggles.md) |
 | 321 | [Light Scheme Legibility](./0321-light-scheme-legibility.md) |
 | 322 | [ACP Backend Update Check](./0322-acp-backend-update-check.md) |
+| 323 | [Harness Follow-up Actions](./0323-harness-follow-up-actions.md) |
 
 ## ADRs (24)
 

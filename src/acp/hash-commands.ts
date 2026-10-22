@@ -68,7 +68,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   {
     name: 'assist',
     args: '[task] [off | manual | auto | now]',
-    description: 'cheap-model sidecar that suggests the next prompt · Cmd+1-3 to use',
+    description: 'cheap-model sidecar: next-prompt suggestions (Cmd+1-3), follow-up buttons under replies, grammar check',
   },
   {
     name: 'live',

@@ -19,8 +19,14 @@ export interface BackendUpdate {
 }
 
 /** Opens a terminal tab in the focused window; resolves to its PTY session id,
- *  or `null` when no tab could be opened. */
-export type OpenTerminalTab = (options: { title: string; shell: string; shellArgs: string[] }) => Promise<number | null>;
+ *  or `null` when no tab could be opened. `cwd` absent or `null` leaves the
+ *  directory to the PTY layer's default (spec 323 passes the project dir). */
+export type OpenTerminalTab = (options: {
+  title: string;
+  shell: string;
+  shellArgs: string[];
+  cwd?: string | null;
+}) => Promise<number | null>;
 
 let snapshot: readonly BackendUpdate[] = [];
 let inFlight: Promise<void> | null = null;

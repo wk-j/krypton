@@ -169,27 +169,27 @@ describe('next-prompt parse', () => {
   const one = { label: 'run the failing test', prompt: 'Run the failing vitest file and paste the output.' };
 
   it('reads a bare JSON object', () => {
-    expect(nextPrompt.parse(JSON.stringify({ suggestions: [one] }), cfg())).toEqual([one]);
+    expect(nextPrompt.parse(JSON.stringify({ suggestions: [one] }), cfg(), ctx())).toEqual([one]);
   });
 
   it('strips a ```json fence', () => {
     const raw = '```json\n' + JSON.stringify({ suggestions: [one] }) + '\n```';
-    expect(nextPrompt.parse(raw, cfg())).toEqual([one]);
+    expect(nextPrompt.parse(raw, cfg(), ctx())).toEqual([one]);
   });
 
   it('takes the outermost object out of trailing prose', () => {
     const raw = `Sure! Here you go:\n${JSON.stringify({ suggestions: [one] })}\nHope that helps.`;
-    expect(nextPrompt.parse(raw, cfg())).toEqual([one]);
+    expect(nextPrompt.parse(raw, cfg(), ctx())).toEqual([one]);
   });
 
   it('collapses whitespace in the label and keeps newlines in the prompt', () => {
     const raw = JSON.stringify({ suggestions: [{ label: '  run   the\ntest  ', prompt: 'line one\nline two' }] });
-    expect(nextPrompt.parse(raw, cfg())).toEqual([{ label: 'run the test', prompt: 'line one\nline two' }]);
+    expect(nextPrompt.parse(raw, cfg(), ctx())).toEqual([{ label: 'run the test', prompt: 'line one\nline two' }]);
   });
 
   it('drops entries with wrong types', () => {
     const raw = JSON.stringify({ suggestions: [{ label: 7, prompt: 'a valid prompt here' }, 'nope', null, one] });
-    expect(nextPrompt.parse(raw, cfg())).toEqual([one]);
+    expect(nextPrompt.parse(raw, cfg(), ctx())).toEqual([one]);
   });
 
   it('drops an over-long label and an empty one', () => {
@@ -200,7 +200,7 @@ describe('next-prompt parse', () => {
         one,
       ],
     });
-    expect(nextPrompt.parse(raw, cfg())).toEqual([one]);
+    expect(nextPrompt.parse(raw, cfg(), ctx())).toEqual([one]);
   });
 
   it('truncates an over-long prompt but drops a too-short one', () => {
@@ -210,22 +210,22 @@ describe('next-prompt parse', () => {
         { label: 'long', prompt: 'p'.repeat(400) },
       ],
     });
-    expect(nextPrompt.parse(raw, cfg())).toEqual([{ label: 'long', prompt: 'p'.repeat(240) }]);
+    expect(nextPrompt.parse(raw, cfg(), ctx())).toEqual([{ label: 'long', prompt: 'p'.repeat(240) }]);
   });
 
   it('caps the list at the configured count', () => {
     const suggestions = [1, 2, 3, 4].map((i) => ({ label: `label ${i}`, prompt: `prompt number ${i}` }));
-    const parsed = nextPrompt.parse(JSON.stringify({ suggestions }), cfg({ options: { count: 3 } }));
+    const parsed = nextPrompt.parse(JSON.stringify({ suggestions }), cfg({ options: { count: 3 } }), ctx());
 
     expect(parsed?.map((a) => a.label)).toEqual(['label 1', 'label 2', 'label 3']);
   });
 
   it('returns null when nothing survives, or there is no object at all', () => {
-    expect(nextPrompt.parse(JSON.stringify({ suggestions: [{ label: 'ok', prompt: 'tiny' }] }), cfg())).toBeNull();
-    expect(nextPrompt.parse(JSON.stringify({ suggestions: [] }), cfg())).toBeNull();
-    expect(nextPrompt.parse(JSON.stringify({ other: 1 }), cfg())).toBeNull();
-    expect(nextPrompt.parse('no json here', cfg())).toBeNull();
-    expect(nextPrompt.parse('{ not: valid json }', cfg())).toBeNull();
-    expect(nextPrompt.parse('', cfg())).toBeNull();
+    expect(nextPrompt.parse(JSON.stringify({ suggestions: [{ label: 'ok', prompt: 'tiny' }] }), cfg(), ctx())).toBeNull();
+    expect(nextPrompt.parse(JSON.stringify({ suggestions: [] }), cfg(), ctx())).toBeNull();
+    expect(nextPrompt.parse(JSON.stringify({ other: 1 }), cfg(), ctx())).toBeNull();
+    expect(nextPrompt.parse('no json here', cfg(), ctx())).toBeNull();
+    expect(nextPrompt.parse('{ not: valid json }', cfg(), ctx())).toBeNull();
+    expect(nextPrompt.parse('', cfg(), ctx())).toBeNull();
   });
 });

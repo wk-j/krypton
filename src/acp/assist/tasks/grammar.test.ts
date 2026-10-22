@@ -59,21 +59,21 @@ describe('grammar assist task', () => {
   });
 
   it('maps a correct prompt to a clean check', () => {
-    expect(grammar.parse('{"ok":true}', cfg)).toEqual({ corrected: null, fixes: [] });
+    expect(grammar.parse('{"ok":true}', cfg, ctx(''))).toEqual({ corrected: null, fixes: [] });
   });
 
   it('maps a correction to the corrected prompt and its fixes', () => {
     const raw = '```json\n{"ok":false,"corrected":"What are the current changes in git?",'
       + '"fixes":["curent → current","What → What are"]}\n```';
-    expect(grammar.parse(raw, cfg)).toEqual({
+    expect(grammar.parse(raw, cfg, ctx(''))).toEqual({
       corrected: 'What are the current changes in git?',
       fixes: ['curent → current', 'What → What are'],
     });
   });
 
   it('rejects replies that are not the contract', () => {
-    expect(grammar.parse('looks fine to me', cfg)).toBeNull();
-    expect(grammar.parse('{"ok":false}', cfg)).toBeNull();
-    expect(grammar.parse('{"corrected":"x"}', cfg)).toBeNull();
+    expect(grammar.parse('looks fine to me', cfg, ctx(''))).toBeNull();
+    expect(grammar.parse('{"ok":false}', cfg, ctx(''))).toBeNull();
+    expect(grammar.parse('{"corrected":"x"}', cfg, ctx(''))).toBeNull();
   });
 });

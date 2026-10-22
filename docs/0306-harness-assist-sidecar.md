@@ -15,6 +15,8 @@ A per-harness **sidecar**: a cheap model post-processes the turn that just ended
 
 The engine is task-agnostic. It bounds the payload, makes one deadline-limited call, parses strictly, and owns every cost guard. *What* to ask the model is an **`AssistTask`**: one file declaring a system prompt, a payload builder, a strict parser, and its own extra gate. v1 registers exactly one task — `next-prompt`, which returns at most three suggested next prompts as a numbered strip above the draft line. `Cmd+1..3` loads one **into the composer** (never sends it), `Cmd+0` dismisses, `Cmd+/` asks again. Default `mode = "off"` because the call spends the same subscription quota the lane agents spend.
 
+> Later additions: the `grammar` task (`'panel'` surface, addendum below) and the `follow-up` task (`'transcript'` surface, spec 323 — [0323](0323-harness-follow-up-actions.md)).
+
 No new Rust and no new Tauri command: `AcpClient` already does spawn → `initialize` → `session/new` → `session/set_model` → `session/prompt` → `dispose`. The request guards (deadline, single-flight, stale-drop, circuit breaker) come from the TypeSafe suggestion path (0257), implemented client-side.
 
 ## Research
@@ -60,7 +62,7 @@ No new Rust and no new Tauri command: `AcpClient` already does spawn → `initia
 | `src/acp/assist/types.ts` | **New.** The contract only: `AssistTask`, `AssistContext`, `AssistBudget`, `AssistAction`, `AssistFailure`. No task logic, no transport |
 | `src/acp/assist/acp-completion.ts` | **New.** `AcpAssistSession` — one warm, fenced ACP session: no MCP servers, permissions declined, writes refused, questions cancelled |
 | `src/acp/assist/engine.ts` | **New.** `AssistEngine.run(task, ctx, cfg)` — abort + deadline, byte caps, failure mapping, breaker. The transport is injected, so the engine knows nothing about ACP |
-| `src/acp/assist/registry.ts` | **New.** `ASSIST_TASKS` — the one line a new task adds |
+| `src/acp/assist/registry.ts` | **New.** `ASSIST_TASKS` — the one line a new task adds (now `[nextPrompt, followUp, grammar]`; `follow-up` added by spec 323) |
 | `src/acp/assist/config.ts` | **New.** `resolveAssistConfig(config, taskId)` — global defaults ← per-task override, clamps, opaque `options` passthrough |
 | `src/acp/assist/tasks/next-prompt.ts` | **New.** The only task v1 ships |
 | `src/acp/harness-assist-controller.ts` | **New.** `HarnessAssistController` — per lane × task state, trigger gates, sequencing, cooldown, `stripProps` |
@@ -114,7 +116,7 @@ export type AssistFailure = 'no-backend' | 'no-model'       // hard: retrying ca
 export interface AssistTask<T> {
   readonly id: string;             // `#assist <id>` and the TOML key
   readonly summary: string;        // one line, listed by bare `#assist`
-  readonly surface: 'strip';       // which component paints `T`
+  readonly surface: 'strip' | 'panel' | 'transcript';  // which component paints `T` ('panel' — grammar addendum; 'transcript' — spec 323)
   readonly onTurnEnd: boolean;     // eligible for the automatic trigger
   readonly defaults: AssistTaskDefaults;        // mode/backend/budget this task wants
   /** The task's own gate, on top of the engine's. Default: always eligible. */
@@ -122,12 +124,12 @@ export interface AssistTask<T> {
   system(cfg: AssistTaskConfig): string;
   payload(ctx: AssistContext, budget: AssistBudget): string;
   /** Strict parse. `null` means the model did not answer ⇒ `'invalid'`. */
-  parse(raw: string, cfg: AssistTaskConfig): T | null;
+  parse(raw: string, cfg: AssistTaskConfig, ctx: AssistContext): T | null;  // `ctx` added by spec 323; tasks may ignore it
 }
 
-/** v1 has one surface, so the registry's element type is exact. A second
- *  surface widens this union and brings its own component — nothing else. */
-export type RegisteredAssistTask = AssistTask<readonly AssistAction[]> & { surface: 'strip' };
+/** v1 had one surface; the grammar addendum added 'panel' and spec 323 added
+ *  'transcript' (FollowUpRail). Each surface brings its own component. */
+export type RegisteredAssistTask = StripAssistTask | PanelAssistTask | TranscriptAssistTask;
 ```
 
 ```ts
@@ -226,7 +228,7 @@ Tool entries are **kinds and counts only** — `ToolPayload` carries no tool nam
 
 `eligible(ctx)` — `ctx.queuedPrompts === 0`: if the human already queued what comes next, a proposal is noise. This gate is the task's, not the engine's; a future summary task would not want it.
 
-`parse(raw, cfg)` strips a leading ```` ```json ```` fence, takes the outermost `{…}`, `JSON.parse`s it, then per entry: trim, collapse whitespace in `label`, drop entries failing the length bounds, cap at `cfg.options.count`. Zero valid entries ⇒ `null` ⇒ `'invalid'`. **No retry** — the next turn is the next chance.
+`parse(raw, cfg, ctx)` (next-prompt ignores `ctx`) strips a leading ```` ```json ```` fence, takes the outermost `{…}`, `JSON.parse`s it, then per entry: trim, collapse whitespace in `label`, drop entries failing the length bounds, cap at `cfg.options.count`. Zero valid entries ⇒ `null` ⇒ `'invalid'`. **No retry** — the next turn is the next chance.
 
 The transport, identical for every task (`AcpAssistSession.complete`): reuse the warm session when `backendId`/`modelId` match, else `spawn(backendId, projectDir, [], null, null, remoteRuntimeId)` → `initializeOnly()` → `sessionNew()` → `setLaneModel(modelId)`, then `ready()`: the engine's first `timeout_ms` window bounds that setup and `ready()` opens a fresh one for the call, so a cold start (≈2.5 s for `claude-agent-acp`) never eats the model's budget; an abort that already fired during setup skips the prompt. Then one `prompt([{ type: 'text', text: system + '\n\n' + payload }])` — ACP has no system-prompt channel, so the two are concatenated — raced against the engine's `AbortSignal`, which calls `session/cancel` and rejects. A stop reason other than `end_turn` is `'unavailable'`. **The fence:** `permission_request` → `respondPermission(id, null)`, `fs_write_pending` → `respondFsWrite(id, false)`, `ask_user_question` / `elicitation_request` → `cancel()`. A `stop` event carrying a `reason` means the subprocess died, so the client is dropped and the next turn respawns.
 
@@ -260,6 +262,8 @@ Adding a task is one file plus one line:
 Nothing else moves: the engine, the guards, the breaker, the keys, the hash command and the config merge are all derived from the registry. No Rust change, no new Tauri command, no new component.
 
 Two limits are deliberate. A task **cannot bring its own transport** — every task goes through the one fenced ACP session, which is what makes the cost guards and the permission fence unavoidable rather than per-task discipline. A task **cannot invent a surface**: a result the strip cannot paint needs a new `surface` variant plus its own component, reviewed like any other UI (specs 301/302).
+
+> Spec 323 ([0323](0323-harness-follow-up-actions.md)) used exactly this path: it added the `transcript` surface variant with its own component, `FollowUpRail`.
 
 **Sequencing.** When a turn ends the controller runs eligible tasks **sequentially in registry order**, one call in flight harness-wide; a lane switch or a new turn aborts the chain. Registering five tasks therefore costs five serial calls per turn, never five parallel ones.
 
@@ -307,7 +311,7 @@ Styling follows `DESIGN.md` (the harness is Krypton Dark; `DESIGN.amber.md` is t
 5. AcpAssistSession: warm session reused, else acp_spawn(mcp=[]) → initialize →
    session/new → session/set_model (own timeout_ms window) → ready() restarts the
    deadline → one session/prompt raced against it
-6. task.parse(raw, cfg) → AssistRun<T>        — null ⇒ 'invalid', feeds the breaker
+6. task.parse(raw, cfg, ctx) → AssistRun<T>   — null ⇒ 'invalid', feeds the breaker
 7. ok ⇒ state 'ready' → host.invalidate('composer')
 8. commitRegion('composer') → renderComposer :12339 → Composer.update({ assist })
 9. Cmd+2 → assistCtl.accept(lane, 1) → host.setDraft(lane, prompt, prompt.length)
@@ -370,3 +374,10 @@ A second registered task, `grammar` (`src/acp/assist/tasks/grammar.ts`), reviews
 [acp_harness.assist.tasks.grammar]
 mode = "auto"
 ```
+
+## Addendum — `follow-up` task (spec 323)
+
+A third registered task, `follow-up` (`src/acp/assist/tasks/follow-up.ts`), is the first with `surface: 'transcript'`; see [0323](0323-harness-follow-up-actions.md) for the full design. On turn end Krypton extracts candidates from the last assistant reply's markdown (shell fences, inline code spans, http(s) URLs); the model only picks candidate numbers and writes labels, and the target text always comes from the candidate. No candidate ⇒ no model call. The result is stored on the reply (`HarnessTranscriptItem.followUps`) and painted by `FollowUpRail` under it; clicking a button or typing its `f`-hint label runs it (`run` → a terminal tab, `open` → the OS browser). Skipped on a remote harness.
+
+- **Privacy.** The payload is only the last assistant reply text plus candidates that are substrings of it — no tool arguments — so it stays within this spec's payload rule.
+- Default `mode = "off"`; option `count` 1..3 (default 3), set via `#assist follow-up auto|manual|off|now` or `[acp_harness.assist.tasks.follow-up]`.

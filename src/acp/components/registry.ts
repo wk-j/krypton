@@ -32,6 +32,7 @@ import { def as draftLine } from './draft-line';
 import { def as emptyState } from './empty-state';
 import { def as executionCard } from './execution-card';
 import { def as executionDialog } from './execution-dialog';
+import { def as followUpRail } from './follow-up-rail';
 import { def as fsActivityRow } from './fs-activity-row';
 import { def as fsWriteReviewRow } from './fs-write-review-row';
 import { def as genuiCard } from './genui-card';
@@ -132,6 +133,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   directiveDiffRow,
   imageStrip,
   resourceRail,
+  followUpRail,
   // layer 4 — lane chrome
   laneShell,
   laneHead,

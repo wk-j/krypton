@@ -81,7 +81,7 @@ export class AssistEngine {
           timer = arm();
         },
       });
-      const value = task.parse(raw, cfg);
+      const value = task.parse(raw, cfg, ctx);
       if (value === null) return this.record(task.id, 'invalid');
       this.softFailures.set(task.id, 0);
       this.cooldowns.set(task.id, 0);
