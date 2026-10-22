@@ -430,6 +430,7 @@ import {
 } from './backend-updates';
 import type { FollowUpAction } from './assist/types';
 import { followUpShellArgs } from './follow-up-run';
+import { gridifyCodeBlocks } from './cell-grid';
 import {
   agentLinkOpenAction,
   makeSafeRenderer,
@@ -14675,12 +14676,13 @@ export class AcpHarnessView implements ContentView {
   private captureAssistantMarkdownOffscreen(lane: HarnessLane, item: HarnessTranscriptItem): void {
     const offscreen = document.createElement('div');
     try {
-      const parser = smd.parser(makeSafeRenderer(offscreen));
+      const parser = smd.parser(makeSafeRenderer(offscreen, { cellGrid: true }));
       smd.parser_write(parser, item.text);
       smd.parser_end(parser);
       // Spec 117 table guard: same output as the mounted path.
       if (streamingMarkdownDroppedTable(offscreen, item.text)) {
         offscreen.innerHTML = md.parse(item.text, { async: false }) as string;
+        gridifyCodeBlocks(offscreen);
       }
       if (!this.remoteRuntimeId) resolveLocalImageSrcs(offscreen, this.projectDir);
       item.markdownHtml = offscreen.innerHTML;

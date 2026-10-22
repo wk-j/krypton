@@ -276,6 +276,27 @@ describe('ExecutionDialog', () => {
     expect(output.textContent).toBe('replacement snapshot');
   });
 
+  it('moves output onto the cell grid once it is laid out by columns, then keeps appending into the same cells', () => {
+    const border = '+--------------+\n';
+    const rows = '| ชื่อ   : สมชาย |\n| สถานะ : รอ   |\n';
+    const dialog = open({ ...payload, output: border });
+    const output = region(dialog, 'Execution output');
+    const pre = output.querySelector('pre')!;
+    // An ASCII border alone lines nothing up after non-ASCII text: plain text, one node.
+    expect(pre.firstChild).toBeInstanceOf(Text);
+
+    dialog.update(props({ ...payload, output: border + rows }));
+    const code = pre.querySelector<HTMLElement>('code.acp-cellgrid');
+    expect(code).not.toBeNull();
+    expect(output.querySelector('pre')).toBe(pre);
+    const cells = [...code!.children];
+
+    dialog.update(props({ ...payload, output: border + rows + border }));
+    expect(pre.querySelector('code')).toBe(code);
+    expect(cells.every((cell) => code!.contains(cell))).toBe(true);
+    expect(output.textContent).toBe(border + rows + border);
+  });
+
   it('scrolls the selected section with j/k and g/G', () => {
     const dialog = open();
     const output = region(dialog, 'Execution output');

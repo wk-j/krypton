@@ -17,6 +17,7 @@ import hljs from 'highlight.js';
 import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
 import { syncOrder } from '../../../ui/list';
+import { CellGridWriter, needsCellGrid } from '../../cell-grid';
 import {
   EXECUTION_STATE_LABEL,
   executionOutputParts,
@@ -50,7 +51,11 @@ export interface ExecutionDialogProps {
 interface OutputNode {
   readonly el: HTMLElement;
   readonly part: ExecutionOutputPart;
+  /** Spec 324: the writer of a text part laid out by character columns. */
+  readonly grid: CellGridWriter | null;
 }
+
+type TextPart = Extract<ExecutionOutputPart, { kind: 'text' }>;
 
 interface SectionNodes {
   readonly tab: HTMLButtonElement;
@@ -99,6 +104,41 @@ function sameView(left: ExecutionView, right: ExecutionView): boolean {
   return left.columns.length === right.columns.length && left.rows.length === right.rows.length
     && left.columns.every((column, index) => column.head === right.columns[index].head && column.numeric === right.columns[index].numeric)
     && left.rows.every((row, index) => row.length === right.rows[index].length && row.every((cell, col) => cell === right.rows[index][col]));
+}
+
+/** Move a text `<pre>`'s content onto the cell grid (spec 324), in a `<code>` that takes the `pre`'s font and line height. */
+function gridPre(pre: HTMLElement): CellGridWriter {
+  const code = el('code');
+  code.append(...pre.childNodes);
+  pre.append(code);
+  const grid = new CellGridWriter(code);
+  grid.convert();
+  return grid;
+}
+
+function textOutput(part: TextPart): OutputNode {
+  const pre = el('pre', { class: 'acp-execution-dialog__text', text: part.text });
+  return { el: pre, part, grid: needsCellGrid(part.text) ? gridPre(pre) : null };
+}
+
+/**
+ * Append-preserving (spec 315): only the new tail is written, so a selection
+ * or scroll position in earlier output survives. Plain output that turns out
+ * to be laid out by columns (an ASCII frame around Thai) is gridded once.
+ */
+function updateTextOutput(previous: OutputNode & { readonly part: TextPart }, part: TextPart): OutputNode {
+  const before = previous.part.text;
+  if (part.text === before) return { ...previous, part };
+  const appended = part.text.startsWith(before);
+  if (previous.grid) {
+    if (!appended) return textOutput(part);
+    previous.grid.write(part.text.slice(before.length));
+    return { ...previous, part };
+  }
+  const text = previous.el.firstChild;
+  if (appended && text instanceof Text) text.appendData(part.text.slice(before.length));
+  else previous.el.textContent = part.text;
+  return { el: previous.el, part, grid: needsCellGrid(part.text) ? gridPre(previous.el) : null };
 }
 
 function fact(label: string, ...value: HTMLElement[]): HTMLElement {
@@ -424,15 +464,10 @@ export class ExecutionDialog extends Component<ExecutionDialogProps> {
       const part = visibleParts[index];
       const previous = this.outputNodes[index];
       if (part.kind === 'text' && previous?.part.kind === 'text') {
-        const text = previous.el.firstChild;
-        if (text instanceof Text && part.text.startsWith(previous.part.text)) {
-          if (part.text.length !== previous.part.text.length) text.appendData(part.text.slice(previous.part.text.length));
-        } else if (part.text !== previous.part.text) previous.el.textContent = part.text;
-        nodes.push({ el: previous.el, part });
+        nodes.push(updateTextOutput({ ...previous, part: previous.part }, part));
       } else if (part.kind === 'view' && previous?.part.kind === 'view' && sameView(previous.part.view, part.view)) {
-        nodes.push({ el: previous.el, part });
-      } else nodes.push({ el: part.kind === 'text'
-        ? el('pre', { class: 'acp-execution-dialog__text', text: part.text }) : this.viewNode(part.view), part });
+        nodes.push({ el: previous.el, part, grid: null });
+      } else nodes.push(part.kind === 'text' ? textOutput(part) : { el: this.viewNode(part.view), part, grid: null });
     }
     syncOrder(this.output, nodes.map((node) => node.el));
     this.outputNodes = nodes;

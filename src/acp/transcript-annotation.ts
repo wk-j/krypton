@@ -5,6 +5,7 @@
 // same drain-on-idle primitive (human→lane review, not lane↔lane mail).
 // Deliberately NOT the peer LaneInbox.
 
+import { CELL_GRID_CLASS } from './cell-grid';
 import type {
   AnnotationStatus,
   HarnessLaneStatus,
@@ -258,30 +259,41 @@ function wrapRange(root: Element, quote: string, index: number, status: Annotati
   if (!span) return false;
   const nodes = wrappableTextNodes(root);
   let seen = 0;
-  let startNode: Text | null = null;
+  let startIndex = -1;
   let startOff = 0;
-  let endNode: Text | null = null;
+  let endIndex = -1;
   let endOff = 0;
-  for (const node of nodes) {
-    const val = node.nodeValue ?? '';
-    const next = seen + val.length;
-    if (!startNode && span.start >= seen && span.start < next) {
-      startNode = node;
+  for (let i = 0; i < nodes.length; i++) {
+    const next = seen + (nodes[i].nodeValue ?? '').length;
+    if (startIndex < 0 && span.start >= seen && span.start < next) {
+      startIndex = i;
       startOff = span.start - seen;
     }
     if (span.end <= next) {
-      endNode = node;
+      endIndex = i;
       endOff = span.end - seen;
       break;
     }
     seen = next;
   }
-  if (!startNode || !endNode) return false;
+  if (startIndex < 0 || endIndex < 0) return false;
+  const className = MARK_CLASS + (status === 'unsent' ? '' : ` ${MARK_CLASS}--${status}`);
+  const touched = nodes.slice(startIndex, endIndex + 1);
+  if (touched.length > 1 && touched.some((node) => node.parentElement?.closest(`.${CELL_GRID_CLASS}`))) {
+    // Spec 324: grid cells are fixed-width boxes. Extracting across them would
+    // clone half-cells that each keep the full width, so mark each text node alone.
+    touched.forEach((node, i) => {
+      const from = i === 0 ? startOff : 0;
+      const to = i === touched.length - 1 ? endOff : node.length;
+      if (from < to) wrapTextSpan(node, from, to, className);
+    });
+    return true;
+  }
   const range = document.createRange();
-  range.setStart(startNode, startOff);
-  range.setEnd(endNode, endOff);
+  range.setStart(nodes[startIndex], startOff);
+  range.setEnd(nodes[endIndex], endOff);
   const mark = document.createElement('mark');
-  mark.className = MARK_CLASS + (status === 'unsent' ? '' : ` ${MARK_CLASS}--${status}`);
+  mark.className = className;
   try {
     range.surroundContents(mark);
   } catch {
@@ -290,6 +302,15 @@ function wrapRange(root: Element, quote: string, index: number, status: Annotati
     range.insertNode(mark);
   }
   return true;
+}
+
+function wrapTextSpan(node: Text, from: number, to: number, className: string): void {
+  const range = document.createRange();
+  range.setStart(node, from);
+  range.setEnd(node, to);
+  const mark = document.createElement('mark');
+  mark.className = className;
+  range.surroundContents(mark);
 }
 
 function skipWrap(node: Node): boolean {

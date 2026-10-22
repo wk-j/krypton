@@ -1,0 +1,104 @@
+/* Spec 324 — box drawing on a character-cell grid (`cell-grid.ts`).
+ *
+ * A code block that holds box-drawing or block-element characters becomes a
+ * grid: every cell is one rounded `ch` wide and one rounded `lh` tall, and the
+ * box characters are painted by the per-glyph rules `cell-grid.ts` generates
+ * (`.acp-cellgrid__cell--u<hex>`) instead of by a fallback font.
+ *
+ * Geometry is CSS only, so a font, size or display-scale change reflows the
+ * grid with no measuring code. `--acp-cg-step` is one device pixel: cell
+ * widths, the row height and the stroke centres round to it, so every cell
+ * starts on the same sub-pixel phase and no seam opens between neighbours.
+ *
+ * The geometry properties are registered lengths, so they compute once on the
+ * block from its own `ch`/`lh` and cells inherit plain pixels instead of each
+ * re-running the `round()` expressions (WebKit, 200-row diagram: layout 137ms
+ * → 105ms). */
+@property --acp-cg-w {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --acp-cg-cx {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --acp-cg-cy {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --acp-cg-g {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+@layer krypton.base {
+  .acp-cellgrid {
+    --acp-cg-step: 1px;
+    --acp-cg-w: round(nearest, 1ch, var(--acp-cg-step));
+    /* A 1px stroke centred here starts on a device pixel. */
+    --acp-cg-cx: calc(round(down, calc(var(--acp-cg-w) / 2 - 0.5px), var(--acp-cg-step)) + 0.5px);
+    --acp-cg-cy: calc(round(down, calc(1lh / 2 - 0.5px), var(--acp-cg-step)) + 0.5px);
+    --acp-cg-g: max(1.5px, round(nearest, calc(var(--acp-cg-w) * 0.2), var(--acp-cg-step)));
+    /* Strokes reach this far past the cell edge, so neighbours overlap instead of leaving a seam. */
+    --acp-cg-over: 0.5px;
+    /* A block owns its line strut: inside the inline `code` the `pre`'s UA
+       monospace and the user font stacked into a row taller than line-height. */
+    display: block;
+    line-height: round(nearest, 1lh, var(--acp-cg-step));
+  }
+
+  @media (min-resolution: 2dppx) {
+    .acp-cellgrid {
+      --acp-cg-step: 0.5px;
+    }
+  }
+
+  @media (min-resolution: 3dppx) {
+    .acp-cellgrid {
+      --acp-cg-step: calc(1px / 3);
+    }
+  }
+
+  .acp-cellgrid__cell {
+    display: inline-block;
+    vertical-align: top;
+    position: relative;
+    width: calc(var(--acp-cg-w) * var(--acp-cg-n, 1));
+    height: 1lh;
+  }
+
+  /* ASCII runs: each character advances exactly one rounded cell. */
+  .acp-cellgrid__cell--run {
+    letter-spacing: calc(var(--acp-cg-w) - 1ch);
+  }
+
+  .acp-cellgrid__cell--glyph {
+    text-align: center;
+  }
+
+  /* The character stays in the DOM for selection and copy; only its glyph is hidden. */
+  .acp-cellgrid__cell--box {
+    -webkit-text-fill-color: transparent;
+  }
+
+  .acp-cellgrid__cell--box::before {
+    content: '';
+    position: absolute;
+    inset: calc(0px - var(--acp-cg-over));
+    pointer-events: none;
+  }
+
+  .acp-cellgrid__cell--arc::after {
+    content: '';
+    position: absolute;
+    border: 0 solid currentColor;
+    pointer-events: none;
+  }
+}

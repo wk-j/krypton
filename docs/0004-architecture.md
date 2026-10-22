@@ -206,7 +206,8 @@ The compositor is a TypeScript module running in the webview that manages worksp
     `harness-view-types.ts` (state shapes), `harness-format.ts` (formatting/parsing leaves),
     `harness-icons.ts` (inline `<symbol>` defs), `harness-lane-identity.ts` (backend label/logo,
     directive role, lane accent), `harness-markdown.ts` (shared `marked` instance + streaming-markdown
-    plumbing + URL allowlist), `message-resources.ts` (deterministic typed/Markdown reference
+    plumbing + URL allowlist), `cell-grid.ts` (spec 324: code blocks laid out by columns — box drawing,
+    ASCII frames around Thai — on a character-cell grid, used by `harness-markdown.ts` and `AssistantRow`), `message-resources.ts` (deterministic typed/Markdown reference
     classification, normalization, merge, and cap), `harness-permission-scan.ts` (harness-bus auto-allow, args preview,
     artifact path matching), `harness-tool-render.ts` (ToolCall inspection + tool row rendering),
     `harness-lane-chrome.ts` (lane head/chips/metrics/stats/status vocabulary),
@@ -772,6 +773,19 @@ WKWebView shapes every DOM `Text` node on its own. If a combining mark starts a 
 `streaming-markdown` creates this split. Its default `add_text` appends one new `Text` node per call, and token-sized stream chunks often cut between a base letter and its marks.
 
 **Fix:** `harness-markdown.ts::makeSafeRenderer` extends the trailing `Text` node (`appendData`) instead of appending a sibling. Any incremental text writer must do the same, or `normalize()` the parent, so marks stay with their base. The xterm DOM renderer has a related letter-spacing issue, handled by `src/xterm-cluster-cells.ts`.
+
+### Box-Drawing Characters Fall Back to a Wider Font (Platform Gotcha)
+
+> Implemented: 2026-10-22 (spec 324)
+
+A configured font without box-drawing glyphs (U+2500–U+257F) — `Share Tech Mono`, for example — makes the browser draw each `─ │ ╭` with a fallback font, one character at a time. On macOS the fallback is Menlo, 0.602em wide, against 0.54em for `Share Tech Mono`'s ASCII. A 49-column box's border row therefore ends about 46px right of its content rows. `pre` keeps the UA `monospace` font for its line strut while `code` uses the user font, so rows also grow past `line-height`, and the fallback `│` is shorter than the line box, which leaves gaps.
+
+**Fix:** `cell-grid.ts` lays out on character cells any assistant code block that is laid out by columns: one that holds box or block characters, or that pads non-ASCII text with two or more spaces to line up what follows. All-ASCII `+--+`/`|` frames around Thai drift the same way, because Thai also comes from a proportional fallback. Every grapheme takes its terminal width in cells. Box characters are painted by CSS gradients in their cell, the way xterm.js `customGlyphs` draws them in terminals. Two details are load-bearing:
+
+- Cell width, row height and stroke centres round to a device pixel (`round()` against a resolution-dependent step). Cells start at fractional pixels otherwise, are snapped one by one, and leave 1-device-pixel seams.
+- Strokes overdraw 0.5px past the cell edge.
+
+Any new surface that shows agent-drawn diagrams in the DOM needs the same treatment; font fallback cannot be fixed per character.
 
 ### Tauri Commands
 

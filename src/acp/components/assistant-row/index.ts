@@ -23,6 +23,7 @@ import './assistant-row.css';
 import * as smd from 'streaming-markdown';
 
 import { el } from '../../../ui/dom';
+import { gridifyCodeBlocks } from '../../cell-grid';
 import {
   applyCoordinatorProvenanceToItem,
   formatLaneMailProvenanceLine,
@@ -225,6 +226,8 @@ export class AssistantRow extends TranscriptRow {
     clearLiveUiFences(this.body);
     if (streamingMarkdownDroppedTable(this.body, item.text)) {
       rerenderAssistantMarkdownWithMarked(this.body, item.text, next.projectDir, next.resolveLocalImages);
+      // Spec 324: the marked re-render replaced the streamed grid.
+      gridifyCodeBlocks(this.body);
     } else if (next.resolveLocalImages) {
       resolveLocalImageSrcs(this.body, next.projectDir);
     }
@@ -265,6 +268,8 @@ export class AssistantRow extends TranscriptRow {
     if (item.markdownHtml !== undefined) {
       // The one allowed innerHTML: markdown already parsed and sanitised.
       body.innerHTML = item.markdownHtml;
+      // Spec 324: a fresh marked parse (or an older cache) has no grid yet; cache it once laid out.
+      if (gridifyCodeBlocks(body) > 0) item.markdownHtml = body.innerHTML;
       // Agent-emitted local image paths (cold-load output, or a cached seal)
       // resolve to loadable asset URLs.
       if (next.resolveLocalImages) resolveLocalImageSrcs(body, next.projectDir);
@@ -302,7 +307,7 @@ export class AssistantRow extends TranscriptRow {
 
   private openParser(next: RowProps): void {
     this.body.replaceChildren();
-    this.parser = smd.parser(makeSafeRenderer(this.body));
+    this.parser = smd.parser(makeSafeRenderer(this.body, { cellGrid: true }));
     this.streamed = true;
     next.item.streamingMarkdownWritten = 0;
     next.item.streamPlainLength = undefined;

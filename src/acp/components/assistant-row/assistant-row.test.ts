@@ -130,6 +130,33 @@ describe('AssistantRow', () => {
     expect(body?.textContent).toBe('the reconciler keeps node identity');
   });
 
+  it('streams a box diagram onto the cell grid and seals it without replacing a node', () => {
+    const lane = makeLane();
+    const diagram = '╭──╮\n│ok│\n╰──╯';
+    const full = 'Plan:\n\n```\n' + diagram + '\n```\nend';
+    const item = assistant({ text: 'Plan:\n\n```\n╭─' });
+    const { row, next } = mount(item, true, lane);
+    item.text = full;
+    row.update(next);
+    const code = row.el.querySelector<HTMLElement>('pre > code')!;
+    expect(code.classList.contains('acp-cellgrid')).toBe(true);
+    const nodes = [...code.querySelectorAll('*')];
+
+    row.seal(next);
+
+    expect(row.el.querySelector('pre > code')).toBe(code);
+    expect(nodes.every((node) => code.contains(node))).toBe(true);
+    expect(code.textContent?.replace(/\n$/, '')).toBe(diagram);
+    expect(item.markdownHtml).toContain('acp-cellgrid__cell--u256d');
+  });
+
+  it('lays out and caches the grid for a reply that never streamed', () => {
+    const item = assistant({ text: '```\n┌─┐\n└─┘\n```' });
+    const { row } = mount(item, false);
+    expect(row.el.querySelector('pre > code.acp-cellgrid')).not.toBeNull();
+    expect(item.markdownHtml).toContain('acp-cellgrid__cell--u250c');
+  });
+
   it('seals by draining the parser, caching the html and releasing the lane', () => {
     const lane = makeLane();
     const item = assistant({ text: 'drained' });

@@ -13,6 +13,8 @@ import 'highlight.js/styles/github-dark.css';
 import * as smd from 'streaming-markdown';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
+import { CellGridWriter } from './cell-grid';
+
 export const md = new Marked(
   markedHighlight({
     langPrefix: 'hljs language-',
@@ -129,8 +131,14 @@ export function resolveLocalImageSrcs(root: HTMLElement, cwd: string | null): vo
   }
 }
 
-export function makeSafeRenderer(root: HTMLElement): smd.Default_Renderer {
+export interface SafeRendererOptions {
+  /** Spec 324: lay fenced code that is laid out by character columns (`needsCellGrid`) out on a cell grid. */
+  readonly cellGrid?: boolean;
+}
+
+export function makeSafeRenderer(root: HTMLElement, options: SafeRendererOptions = {}): smd.Default_Renderer {
   const base = smd.default_renderer(root);
+  const gridWriters = options.cellGrid ? new WeakMap<HTMLElement, CellGridWriter>() : null;
   return {
     data: base.data,
     add_token: base.add_token,
@@ -141,6 +149,15 @@ export function makeSafeRenderer(root: HTMLElement): smd.Default_Renderer {
     // render displaced with a gap. Extend the trailing Text node instead.
     add_text: (data, text) => {
       const parent = data.nodes[data.index];
+      if (gridWriters && parent.nodeName === 'CODE' && parent.parentNode?.nodeName === 'PRE') {
+        let writer = gridWriters.get(parent);
+        if (!writer) {
+          writer = new CellGridWriter(parent);
+          gridWriters.set(parent, writer);
+        }
+        writer.write(text);
+        return;
+      }
       const last = parent.lastChild;
       if (last?.nodeType === Node.TEXT_NODE) (last as Text).appendData(text);
       else parent.appendChild(document.createTextNode(text));
