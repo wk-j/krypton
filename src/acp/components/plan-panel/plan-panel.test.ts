@@ -124,6 +124,27 @@ describe('PlanPanel', () => {
       .toBe('<b>bold</b>');
   });
 
+  it('marks the phase that drives the card tone', () => {
+    const panel = new PlanPanel();
+    panel.update({ entries: PLAN, collapsed: false });
+    expect(panel.el.dataset.phase).toBe('active');
+
+    panel.update({
+      entries: [entry('extract kernel', 'completed'), entry('delete signature', 'pending')],
+      collapsed: false,
+    });
+    expect(panel.el.dataset.phase).toBe('idle');
+
+    panel.update({
+      entries: [entry('extract kernel', 'completed'), entry('delete signature', 'completed')],
+      collapsed: true,
+    });
+    expect(panel.el.dataset.phase).toBe('done');
+
+    panel.update({ entries: [], collapsed: false });
+    expect(panel.el.hasAttribute('data-phase')).toBe(false);
+  });
+
   it('tears its entries down on dispose', () => {
     const panel = new PlanPanel();
     panel.update({ entries: PLAN, collapsed: false });

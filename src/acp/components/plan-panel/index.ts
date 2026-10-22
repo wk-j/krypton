@@ -18,11 +18,15 @@
 // `-value + -track > -fill`, and the plan bar is a bare
 // `-progress > -progress-fill` with no value cell. Two nodes, one width — a
 // third component in the tree would be more markup than it removes.
+//
+// The root carries `data-phase` (`active` while a step runs, `done` once
+// every step completed, else `idle`); the CSS maps it to `--plan-tone`, which
+// tints the card chrome the way GrammarPanel / ThoughtCard do.
 
 import './plan-panel.css';
 
 import { Component } from '../../../ui/component';
-import { el } from '../../../ui/dom';
+import { el, setAttr } from '../../../ui/dom';
 import { disposeList, reconcile } from '../../../ui/list';
 import type { PlanEntry } from '../../types';
 import type { ComponentDef } from '../types';
@@ -104,10 +108,15 @@ export class PlanPanel extends Component<PlanPanelProps> {
       this.el.replaceChildren();
       this.el.hidden = true;
       this.el.removeAttribute('title');
+      this.el.removeAttribute('data-phase');
       return;
     }
     const total = next.entries.length;
     const done = next.entries.filter((entry) => entry.status === 'completed').length;
+    const phase = done === total
+      ? 'done'
+      : next.entries.some((entry) => entry.status === 'in_progress') ? 'active' : 'idle';
+    setAttr(this.el, 'data-phase', phase);
     this.el.title = `p ${next.collapsed ? 'expand' : 'collapse'}`;
     this.doneEl.textContent = String(done);
     // ` / ${total}` is a sibling text node of the <b>, exactly as the template
