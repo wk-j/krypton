@@ -445,14 +445,11 @@ model = "haiku"                # id/alias for session/set_model ("" = backend de
 timeout_ms = 8000              # model-call deadline in ms (1000–20000); a cold start gets its own
 max_input_chars = 6000         # hard cap on the payload sent to the model (500–20000)
 
-# Per-task override. The table name must be a registered assist task id.
-# [acp_harness.assist.tasks.next-prompt]
-# mode = "auto"
-# model = "haiku"
-# count = 3                    # task-specific knob; Krypton never interprets it
-
+# Per-task override. The table name must be a registered assist task id
+# (`follow-up` or `grammar`).
 # [acp_harness.assist.tasks.follow-up]   # specs 323, 327: follow-up buttons under replies
 # mode = "auto"                # default "off"; one cheap-model call per finished reply
+# model = "haiku"
 # count = 3                    # 1..3 buttons per reply (run, open and prompt together)
 
 # --- ACP Wire Profiler (spec 288) ---
@@ -846,7 +843,7 @@ models = ["zai-coding-plan/glm-5.1", "anthropic/claude-sonnet-4-5", "openai/gpt-
 
 ### ACP Harness Assist (spec 306)
 
-`[acp_harness.assist]` configures the cheap-model turn sidecar: after a lane turn ends, a small model post-processes the turn and proposes what to send next. It reaches that model **through an ACP backend subprocess** — the same path the harness lanes use — so it needs **no API key**: it reuses whatever login the backend CLI already has (`claude`, `codex`, `omp`, …). The default is `mode = "off"` because those calls spend the **same subscription quota** the lane agents spend, once per turn, without being asked.
+`[acp_harness.assist]` configures the cheap-model sidecar: after a lane turn ends, a small model reads the reply and offers follow-up buttons under it (`follow-up`), and after the human sends a prompt it can review that prompt (`grammar`). It reaches that model **through an ACP backend subprocess** — the same path the harness lanes use — so it needs **no API key**: it reuses whatever login the backend CLI already has (`claude`, `codex`, `omp`, …). The default is `mode = "off"` because those calls spend the **same subscription quota** the lane agents spend, without being asked.
 
 | Section | Key | Type | Default | Description |
 |---------|-----|------|---------|-------------|
@@ -862,21 +859,13 @@ models = ["zai-coding-plan/glm-5.1", "anthropic/claude-sonnet-4-5", "openai/gpt-
 | `[acp_harness.assist.tasks.<id>]` | `max_input_chars` | int | inherits | Override for this task only |
 | `[acp_harness.assist.tasks.<id>]` | *(any other scalar key)* | string/int/bool | — | Task-specific knob passed through verbatim as that task's `options`. Krypton holds no knowledge of these keys, so a new task needs no config schema change |
 
-`<id>` must be a **registered assist task id** — `next-prompt`, `follow-up` (spec 323), or `grammar`. A table naming an unregistered task parses but is never read.
+`<id>` must be a **registered assist task id** — `follow-up` (specs 323, 327) or `grammar`. A table naming an unregistered task parses but is never read; that includes a `[acp_harness.assist.tasks.next-prompt]` table from before the `next-prompt` strip was removed (2026-10-23).
 
 Resolution order per run is `task defaults` ← `[acp_harness.assist]` ← `[acp_harness.assist.tasks.<id>]`, with the numeric keys clamped afterwards; the clamps live in the frontend, so an out-of-range value in TOML is corrected, not rejected.
 
-`next-prompt` reads one option: `count` (default `3`), the maximum number of suggestions it returns. The strip shows at most three, accepted with `Cmd+1`…`Cmd+3`, which load the prompt into the composer and never send it.
-
 `[acp_harness.assist.tasks.follow-up]` (specs 323 and 327, `docs/0323-harness-follow-up-actions.md`, `docs/0327-harness-follow-up-prompts.md`) turns on follow-up buttons under finished replies: commands to run, URLs to open, and prompts for the lane (send, or paste into the composer). Its `mode` defaults to `"off"`; with `"auto"` every finished reply of 40 or more characters costs one cheap-model call, since a prompt needs no command or URL in the reply. Its one option `count` (1..3, default `3`) caps the buttons per reply across all three kinds. No Rust config change backs it — the keys pass through the generic per-task table.
 
-```toml
-[acp_harness.assist.tasks.follow-up]
-mode = "auto"
-count = 3
-```
-
-Example — an auto-running `next-prompt` on the `claude` backend's small model:
+Example — auto-running follow-ups on the `claude` backend's small model:
 
 ```toml
 [acp_harness.assist]
@@ -884,7 +873,7 @@ mode = "auto"
 backend = "claude"
 model = "haiku"
 
-[acp_harness.assist.tasks.next-prompt]
+[acp_harness.assist.tasks.follow-up]
 count = 3
 ```
 

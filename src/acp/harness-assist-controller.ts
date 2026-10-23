@@ -2,14 +2,14 @@
 //
 // The controller owns nothing about prompts: it decides WHEN a registered
 // `AssistTask` may run against a lane, builds the task-agnostic `AssistContext`
-// out of lane state, keeps the per lane × task result, and hands the view a
-// strip prop. The model call, its deadline and the breaker all live in
-// `AssistEngine` (`assist/engine.ts`); what to ask lives in the task.
+// out of lane state, and publishes the result. The model call, its deadline
+// and the breaker all live in `AssistEngine` (`assist/engine.ts`); what to ask
+// lives in the task.
 //
 // Spec 275 shape: a plain class over a narrow host interface, no base class and
-// no registry of its own. It never touches the DOM — strip and panel results
-// are published by dirtying a region; a spec 323 follow-up result is written
-// onto the reply it belongs to and the view patches that one row.
+// no registry of its own. It never touches the DOM — a panel result is
+// published by dirtying a region; a spec 323 follow-up result is written onto
+// the reply it belongs to and the view patches that one row.
 
 import { loadConfig } from '../config';
 
@@ -22,11 +22,9 @@ import type {
   AssistFailure,
   AssistMode,
   AssistPanelState,
-  AssistState,
   AssistTaskConfig,
   PanelAssistTask,
   RegisteredAssistTask,
-  StripAssistTask,
   TranscriptAssistTask,
 } from './assist/types';
 import { followUpReply } from './assist/tasks/follow-up';
@@ -43,12 +41,6 @@ export const ASSIST_PANEL_OK_HIDE_MS = 4_000;
 
 /** What started a run: the gates and the empty-result feedback differ. */
 type AssistTrigger = 'turn-end' | 'user-prompt' | 'manual';
-
-interface LaneAssist {
-  state: AssistState;
-  /** The lane turn each task last ran for, so one turn yields one call. */
-  readonly turnSeqByTask: Map<string, number>;
-}
 
 const FAILURE_TEXT: Record<AssistFailure, string> = {
   'no-backend': 'assist: backend did not start',
@@ -68,7 +60,8 @@ function turnItems(lane: HarnessLane): readonly HarnessTranscriptItem[] {
 }
 
 export class HarnessAssistController {
-  private readonly states = new Map<string, LaneAssist>();
+  /** Per lane: the lane turn each task last ran for, so one turn yields one call. */
+  private readonly turnSeqs = new Map<string, Map<string, number>>();
   /** Per lane: the `panel` task's review, painted in the right rail. */
   private readonly panels = new Map<string, AssistPanelState>();
   private readonly panelHideTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -153,35 +146,6 @@ export class HarnessAssistController {
     this.enqueue(lane, task, cfg, 'manual');
   }
 
-  /** `Cmd+1..3`. Returns true when the key was consumed. */
-  accept(lane: HarnessLane, index: number): boolean {
-    const state = this.stateFor(lane.id);
-    if (state.kind !== 'ready') return false;
-    const action = state.actions[index];
-    if (!action) return false;
-    if (lane.draft.trim() !== '') {
-      this.host.flashChip('assist: clear the draft first');
-      return true;
-    }
-    this.setState(lane.id, { kind: 'idle' });
-    this.host.setDraft(lane, action.prompt, action.prompt.length);
-    return true;
-  }
-
-  /** `Cmd+0`. Returns true when there was something to dismiss. */
-  dismiss(lane: HarnessLane): boolean {
-    const state = this.stateFor(lane.id);
-    if (state.kind === 'idle') return false;
-    if (state.kind === 'pending') this.cancel();
-    this.setState(lane.id, { kind: 'idle' });
-    this.host.invalidate('composer');
-    return true;
-  }
-
-  stripProps(lane: HarnessLane): { state: AssistState } {
-    return { state: this.stateFor(lane.id) };
-  }
-
   /** The right-rail review for `lane`; `idle` means the panel is not mounted. */
   panelState(laneId: string): AssistPanelState {
     return this.panels.get(laneId) ?? { kind: 'idle' };
@@ -201,7 +165,7 @@ export class HarnessAssistController {
     return true;
   }
 
-  /** `Cmd+0` when the strip has nothing: close the review panel. */
+  /** `Cmd+0`: close the review panel. */
   dismissPanel(lane: HarnessLane): boolean {
     const state = this.panelState(lane.id);
     if (state.kind === 'idle') return false;
@@ -247,7 +211,7 @@ export class HarnessAssistController {
   }
 
   resetLane(laneId: string): void {
-    this.states.delete(laneId);
+    this.turnSeqs.delete(laneId);
     this.clearPanelTimer(laneId);
     this.panels.delete(laneId);
     this.cancel();
@@ -260,7 +224,7 @@ export class HarnessAssistController {
   dispose(): void {
     this.disposed = true;
     this.cancel();
-    this.states.clear();
+    this.turnSeqs.clear();
     for (const laneId of [...this.panelHideTimers.keys()]) this.clearPanelTimer(laneId);
     this.panels.clear();
     // The warm backend outlives individual turns, never the view.
@@ -289,29 +253,14 @@ export class HarnessAssistController {
     this.panelHideTimers.delete(laneId);
   }
 
-  private stateFor(laneId: string): AssistState {
-    return this.states.get(laneId)?.state ?? { kind: 'idle' };
-  }
-
-  private setState(laneId: string, state: AssistState): void {
-    const entry = this.states.get(laneId);
-    if (entry) entry.state = state;
-    else this.states.set(laneId, { state, turnSeqByTask: new Map() });
-  }
-
   private ranThisTurn(lane: HarnessLane, taskId: string): boolean {
-    return this.states.get(lane.id)?.turnSeqByTask.get(taskId) === lane.turnSeq;
+    return this.turnSeqs.get(lane.id)?.get(taskId) === lane.turnSeq;
   }
 
   private markRan(lane: HarnessLane, taskId: string): void {
-    const entry = this.states.get(lane.id);
-    if (entry) entry.turnSeqByTask.set(taskId, lane.turnSeq);
-    else {
-      this.states.set(lane.id, {
-        state: { kind: 'idle' },
-        turnSeqByTask: new Map([[taskId, lane.turnSeq]]),
-      });
-    }
+    const seqs = this.turnSeqs.get(lane.id);
+    if (seqs) seqs.set(taskId, lane.turnSeq);
+    else this.turnSeqs.set(lane.id, new Map([[taskId, lane.turnSeq]]));
   }
 
   /** Gates that do not depend on the trigger, evaluated as late as possible.
@@ -345,11 +294,7 @@ export class HarnessAssistController {
       backendId: lane.backendId,
       modelName: lane.currentModelId ?? lane.modelName,
       projectDir: this.host.projectDir,
-      stopReason: 'end_turn',
       turn,
-      plan: lane.plan,
-      queuedPrompts: lane.queuedPrompts.length,
-      draft: lane.draft,
     };
     if (task.eligible?.(ctx, cfg) === false) return null;
     return ctx;
@@ -390,8 +335,7 @@ export class HarnessAssistController {
     if (!ctx) return;
     this.markRan(lane, task.id);
     if (task.surface === 'panel') await this.runPanel(lane, task, ctx, cfg, epoch);
-    else if (task.surface === 'transcript') await this.runTranscript(lane, task, ctx, cfg, epoch);
-    else await this.runStrip(lane, task, ctx, cfg, epoch);
+    else await this.runTranscript(lane, task, ctx, cfg, epoch);
   }
 
   private isStale(lane: HarnessLane, epoch: number, spawnEpoch: number): boolean {
@@ -399,29 +343,6 @@ export class HarnessAssistController {
       || epoch !== this.epoch
       || lane.spawnEpoch !== spawnEpoch
       || lane.id !== this.host.activeLaneId;
-  }
-
-  private async runStrip(
-    lane: HarnessLane,
-    task: StripAssistTask,
-    ctx: AssistContext,
-    cfg: AssistTaskConfig,
-    epoch: number,
-  ): Promise<void> {
-    const spawnEpoch = lane.spawnEpoch;
-    this.setState(lane.id, { kind: 'pending', taskId: task.id });
-    this.host.invalidate('composer');
-
-    const run = await this.engine.run(task, ctx, cfg);
-    if (this.isStale(lane, epoch, spawnEpoch)) return;
-
-    if (run.ok) {
-      this.setState(lane.id, { kind: 'ready', taskId: task.id, actions: run.value });
-    } else {
-      this.setState(lane.id, { kind: 'failed', taskId: task.id, reason: run.reason });
-      this.host.flashChip(FAILURE_TEXT[run.reason]);
-    }
-    this.host.invalidate('composer');
   }
 
   private async runPanel(

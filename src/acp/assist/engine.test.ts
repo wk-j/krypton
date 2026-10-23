@@ -10,7 +10,7 @@ const TEN_MIN = 10 * 60_000;
 const fakeTask: AssistTask<string> = {
   id: 'test',
   summary: 'fake task',
-  surface: 'strip',
+  surface: 'panel',
   onTurnEnd: true,
   defaults: {},
   system: () => 'system prompt',
@@ -25,11 +25,7 @@ function ctx(over: Partial<AssistContext> = {}): AssistContext {
     backendId: 'omp',
     modelName: 'claude-opus-5',
     projectDir: '/Users/wk/Source/krypton',
-    stopReason: 'end_turn',
     turn: [],
-    plan: null,
-    queuedPrompts: 0,
-    draft: '',
     ...over,
   };
 }

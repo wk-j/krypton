@@ -746,7 +746,7 @@ pub struct AcpHarnessConfig {
     /// restart, never on a live lane (respawn-to-apply).
     pub lane_models: HashMap<String, LaneModelConfig>,
     /// spec 306: cheap-model turn sidecar. Defaults every assist task inherits,
-    /// plus per-task overrides keyed by the task id (`next-prompt`). Krypton
+    /// plus per-task overrides keyed by the task id (`follow-up`). Krypton
     /// holds no task knowledge: unknown scalar keys inside a task table flow to
     /// the frontend untouched as that task's `options`.
     #[serde(default)]
@@ -1264,7 +1264,7 @@ min_confidence = 0.65
     fn acp_harness_assist_task_override_keeps_unknown_keys_in_options() {
         let cfg: KryptonConfig = toml::from_str(
             "[acp_harness.assist]\nmode = \"manual\"\n\n\
-             [acp_harness.assist.tasks.next-prompt]\n\
+             [acp_harness.assist.tasks.follow-up]\n\
              mode = \"auto\"\nbackend = \"codex\"\nmodel = \"gpt-5\"\ncount = 3\n",
         )
         .unwrap();
@@ -1277,8 +1277,8 @@ min_confidence = 0.65
 
         let task = assist
             .tasks
-            .get("next-prompt")
-            .expect("next-prompt override parsed");
+            .get("follow-up")
+            .expect("follow-up override parsed");
         assert_eq!(task.mode.as_deref(), Some("auto"));
         assert_eq!(task.backend.as_deref(), Some("codex"));
         assert_eq!(task.model.as_deref(), Some("gpt-5"));

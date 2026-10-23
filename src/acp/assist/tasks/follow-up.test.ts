@@ -27,11 +27,7 @@ function ctx(reply: string): AssistContext {
     backendId: 'omp',
     modelName: 'claude-opus-5',
     projectDir: '/Users/wk/Source/krypton',
-    stopReason: 'end_turn',
     turn: [textItem('u1', 'user', 'wire it up'), textItem('a1', 'assistant', reply)],
-    plan: null,
-    queuedPrompts: 0,
-    draft: '',
   };
 }
 

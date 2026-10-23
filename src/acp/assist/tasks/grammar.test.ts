@@ -20,11 +20,7 @@ function ctx(text: string): AssistContext {
     backendId: 'claude',
     modelName: null,
     projectDir: null,
-    stopReason: 'end_turn',
     turn: [{ id: 'u1', kind: 'user', text } as HarnessTranscriptItem],
-    plan: null,
-    queuedPrompts: 0,
-    draft: '',
   };
 }
 

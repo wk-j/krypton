@@ -5,7 +5,6 @@
 // else (the ACP session, the deadline, the byte caps, the circuit breaker).
 
 import type { HarnessTranscriptItem } from '../harness-view-types';
-import type { PlanEntry, StopReason } from '../types';
 
 export type AssistMode = 'off' | 'manual' | 'auto';
 
@@ -37,19 +36,8 @@ export interface AssistContext {
   readonly backendId: string;
   readonly modelName: string | null;
   readonly projectDir: string | null;
-  readonly stopReason: StopReason;
   /** This turn's items, oldest first. */
   readonly turn: readonly HarnessTranscriptItem[];
-  readonly plan: readonly PlanEntry[] | null;
-  readonly queuedPrompts: number;
-  readonly draft: string;
-}
-
-/** One suggestion row — the only shape the `strip` surface paints.
- *  `label` is 1..48 characters, `prompt` 8..240. */
-export interface AssistAction {
-  readonly label: string;
-  readonly prompt: string;
 }
 
 /** A `panel` task's result: a review of the prompt the human sent.
@@ -90,20 +78,14 @@ export type AssistPanelState =
  *  and feed the breaker. */
 export type AssistFailure = 'no-backend' | 'no-model' | 'timeout' | 'unavailable' | 'invalid';
 
-export type AssistState =
-  | { readonly kind: 'idle' }
-  | { readonly kind: 'pending'; readonly taskId: string }
-  | { readonly kind: 'ready'; readonly taskId: string; readonly actions: readonly AssistAction[] }
-  | { readonly kind: 'failed'; readonly taskId: string; readonly reason: AssistFailure };
-
 export interface AssistTask<T> {
   /** `#assist <id>` and the `[acp_harness.assist.tasks.<id>]` key. */
   readonly id: string;
   /** One line, listed by bare `#assist`. */
   readonly summary: string;
-  /** Which component paints `T`: the composer strip, the right-rail panel, or
-   *  the reply row in the transcript (spec 323). */
-  readonly surface: 'strip' | 'panel' | 'transcript';
+  /** Which component paints `T`: the right-rail panel, or the reply row in
+   *  the transcript (spec 323). */
+  readonly surface: 'panel' | 'transcript';
   /** Eligible for the automatic turn-end trigger. */
   readonly onTurnEnd: boolean;
   /** Eligible for the automatic trigger when the human sends a prompt. */
@@ -120,11 +102,9 @@ export interface AssistTask<T> {
   parse(raw: string, cfg: AssistTaskConfig, ctx: AssistContext): T | null;
 }
 
-/** Next-prompt suggestions above the draft line (`AssistStrip`). */
-export type StripAssistTask = AssistTask<readonly AssistAction[]> & { readonly surface: 'strip' };
 /** A review of the sent prompt in the right rail (`GrammarPanel`). */
 export type PanelAssistTask = AssistTask<AssistCheck> & { readonly surface: 'panel' };
 /** Follow-up actions under the reply that named them (`FollowUpRail`, spec 323). */
 export type TranscriptAssistTask = AssistTask<FollowUpAction[]> & { readonly surface: 'transcript' };
 
-export type RegisteredAssistTask = StripAssistTask | PanelAssistTask | TranscriptAssistTask;
+export type RegisteredAssistTask = PanelAssistTask | TranscriptAssistTask;

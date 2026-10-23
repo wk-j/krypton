@@ -5,10 +5,9 @@
 
 import { followUp } from './tasks/follow-up';
 import { grammar } from './tasks/grammar';
-import { nextPrompt } from './tasks/next-prompt';
 import type { RegisteredAssistTask } from './types';
 
-export const ASSIST_TASKS: readonly RegisteredAssistTask[] = [nextPrompt, followUp, grammar];
+export const ASSIST_TASKS: readonly RegisteredAssistTask[] = [followUp, grammar];
 
 export function assistTask(id: string): RegisteredAssistTask | undefined {
   return ASSIST_TASKS.find((task) => task.id === id);

@@ -14,7 +14,6 @@
 
 import { def as actionButton } from './action-button';
 import { def as annotationRail } from './annotation-rail';
-import { def as assistStrip } from './assist-strip';
 import { def as assistantRow } from './assistant-row';
 import { def as backgroundTasks } from './background-tasks';
 import { def as card } from './card';
@@ -156,7 +155,6 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   draftLine,
   stagingStrip,
   peerStrip,
-  assistStrip,
   grammarPanel,
   dictationControl,
   liveVoiceStrip,

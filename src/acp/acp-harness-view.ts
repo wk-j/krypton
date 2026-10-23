@@ -4446,24 +4446,13 @@ export class AcpHarnessView implements ContentView {
     // or re-opening the card) is what hands it the keyboard.
     if (this.genUiPanel?.isOpen && this.genUiPanel.hasFocus) return this.genUiPanel.handleKey(e);
     // spec 306: Cmd chords — Alt does not reach the app, and Ctrl+1..4 is the
-    // macOS desktop switch. The ticket picker's Cmd+1..3 already ran above.
+    // macOS desktop switch.
     if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
       const assistLane = this.activeLane();
       if (assistLane) {
-        if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
-          const index = Number(e.code.slice(-1)) - 1;
-          if (this.assistCtl.accept(assistLane, index)) {
-            e.preventDefault();
-            return true;
-          }
-        }
         // spec 320: a hidden grammar panel is not actionable — neither key may
         // dismiss or apply a result the user cannot see.
-        if (
-          e.code === 'Digit0'
-          && (this.assistCtl.dismiss(assistLane)
-            || (!this.isPanelHidden('grammar') && this.assistCtl.dismissPanel(assistLane)))
-        ) {
+        if (e.code === 'Digit0' && !this.isPanelHidden('grammar') && this.assistCtl.dismissPanel(assistLane)) {
           e.preventDefault();
           return true;
         }
@@ -13382,7 +13371,6 @@ export class AcpHarnessView implements ContentView {
         pendingPeers: this.coordinator.pendingPeersFor(lane.id),
         inboxDepth: this.coordinator.inboxDepth(lane.id),
       },
-      assist: this.assistCtl.stripProps(lane),
       liveVoice: this.liveVoiceCtl.stripProps(lane),
       staging: {
         images: lane.stagedImages,

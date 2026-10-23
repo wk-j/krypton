@@ -53,7 +53,7 @@ Add a third follow-up kind, **`prompt`**: a message for the lane that owns the r
 |-----|---------------|-------|
 | VS Code chat API | `ChatFollowup { prompt, label?, participant?, command? }`: "The user can click the followup to send it to the chat." By default it goes to the same participant | Closest match: a click sends the prompt to the same conversation |
 | Warp | *Prompt Suggestions* appear as chips (cited in 0323) | Latest block only; nothing persists |
-| Krypton `next-prompt` (0306) | Strip above the composer; `Cmd+1..3` loads into the draft | Latest turn only; ideas, not offered steps |
+| Krypton `next-prompt` (0306) | Strip above the composer; `Cmd+1..3` loads into the draft. Removed on 2026-10-23, after this spec shipped | Latest turn only; ideas, not offered steps |
 
 **Krypton delta.** As in VS Code, a click sends to the same conversation (the owning lane). Unlike VS Code, the button shows the full message rather than only a label, because a click starts agent work. The message sits beside `run`/`open` buttons under the reply that offered it and stays reachable by scrolling.
 
@@ -250,7 +250,7 @@ None.
 - Sending to any lane other than the reply's owner.
 - Prompt follow-ups on a remote harness.
 - A "sent" mark on the button.
-- Removing `next-prompt`.
+- Removing `next-prompt`. The user ordered that separately on 2026-10-23; the 0306 addendum records it.
 
 ## Resources
 

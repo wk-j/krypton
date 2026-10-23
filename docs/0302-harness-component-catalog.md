@@ -875,10 +875,11 @@ HarnessView
 # Totals
 
 Current registry counts come from `HARNESS_COMPONENTS` in `src/acp/components/registry.ts`.
-The registry has **78 component definitions**; `LayoutHost` is a separate layout entry, so
-the inventory total is **79**. The historical numbered catalog predates later additions:
-the transcript registry also includes `GenuiCard` and `DirectiveDiffRow`; composer includes
-`AssistStrip`; overlays include `BackgroundTasks`, `ExecutionDialog`, `GenuiPanel`, and `GenuiCatalog`.
+The registry has **79 component definitions**; `LayoutHost` is a separate layout entry, so
+the inventory total is **80**. The historical numbered catalog predates later additions:
+the transcript registry also includes `GenuiCard`, `DirectiveDiffRow` and `FollowUpRail` (spec 323);
+overlays include `BackgroundTasks`, `ExecutionDialog`, `GenuiPanel`, and `GenuiCatalog`. The composer's
+`AssistStrip` (spec 306) was removed on 2026-10-23 with the `next-prompt` task.
 `TimelineCapture` is absent. Historical cutover-site counts below are not a new removal tally.
 
 | Layer | Components | Call sites deleted |
@@ -886,12 +887,12 @@ the transcript registry also includes `GenuiCard` and `DirectiveDiffRow`; compos
 | 0 — layout | 1 | 4 hardcoded `*SlotEl` fields + their CSS pinning |
 | 1 — leaf | 9 | ~75 |
 | 2 — composite | 5 | ~45 (incl. 8 cursor handlers, 4 palette handlers, 12 overlay shells) |
-| 3 — transcript | 21 | Original cutover plus ExecutionCard (spec 315), GenuiCard, and DirectiveDiffRow |
+| 3 — transcript | 22 | Original cutover plus ExecutionCard (spec 315), GenuiCard, DirectiveDiffRow, and FollowUpRail |
 | 4 — lane chrome | 6 | `renderDashboard`, `renderActiveLaneChrome`, `refreshMetricsRender`, `renderRailEntry`, `refreshZenRail` |
 | 5 — right rail | 8 | 8 builders + 3 `patch*` functions |
-| 6 — composer | 9 | Original composer cutover plus AssistStrip |
+| 6 — composer | 9 | Original composer cutover; AssistStrip came and went (spec 306) |
 | 7 — overlays | 20 | Current registry; historical 7.15 retired, later additions (incl. `ExecutionDialog`, spec 319) retained |
-| **Total** | **79 (78 registered + LayoutHost)** | **Historical cutover counts remain historical; no Timeline capture implementation or style owner remains** |
+| **Total** | **80 (79 registered + LayoutHost)** | **Historical cutover counts remain historical; no Timeline capture implementation or style owner remains** |
 
 # Packaging, style ownership, and theming
 

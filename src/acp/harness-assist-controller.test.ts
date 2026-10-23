@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { AssistEngine } from './assist/engine';
 import { followUp } from './assist/tasks/follow-up';
-import type { AssistAction, AssistContext, AssistTaskConfig, RegisteredAssistTask } from './assist/types';
+import type { AssistContext, AssistTaskConfig, FollowUpAction, TranscriptAssistTask } from './assist/types';
 import { ASSIST_PANEL_OK_HIDE_MS, HarnessAssistController } from './harness-assist-controller';
 import type { HarnessAssistHost } from './harness-view-host';
 import type { HarnessLane, HarnessTranscriptItem } from './harness-view-types';
@@ -27,8 +27,6 @@ function makeLane(over: Partial<HarnessLane> = {}): HarnessLane {
     cursor: 0,
     turnSeq: 7,
     spawnEpoch: 1,
-    plan: null,
-    queuedPrompts: [],
     pendingPermissions: [],
     pendingQuestions: [],
     activeSystemLabel: null,
@@ -40,12 +38,20 @@ function makeLane(over: Partial<HarnessLane> = {}): HarnessLane {
 interface Harness {
   readonly ctl: HarnessAssistController;
   readonly chips: string[];
-  readonly drafts: { text: string; cursor: number }[];
-  readonly regions: string[];
+  readonly patched: string[];
   readonly calls: { system: string; user: string }[];
   readonly lane: HarnessLane;
+  /** The reply the fake task writes its actions onto. */
+  readonly owner: HarnessTranscriptItem;
   flush(): Promise<void>;
 }
+
+const PROMPT_ACTION: FollowUpAction = {
+  followUpKind: 'prompt',
+  label: 'run tests',
+  target: 'Run the full suite and fix what fails.',
+  hintLabel: null,
+};
 
 function setup(options: {
   lane?: HarnessLane;
@@ -55,8 +61,7 @@ function setup(options: {
 } = {}): Harness {
   const lane = options.lane ?? makeLane();
   const chips: string[] = [];
-  const drafts: { text: string; cursor: number }[] = [];
-  const regions: string[] = [];
+  const patched: string[] = [];
   const calls: { system: string; user: string }[] = [];
 
   const host: HarnessAssistHost = {
@@ -66,60 +71,48 @@ function setup(options: {
     projectDir: '/repo',
     remoteRuntimeId: null,
     flashChip: (text) => chips.push(text),
-    invalidate: (region) => regions.push(region),
-    setDraft: (_lane, text, cursor) => drafts.push({ text, cursor }),
-    patchFollowUps: () => undefined,
+    invalidate: () => undefined,
+    setDraft: () => undefined,
+    patchFollowUps: (_lane, itemId) => patched.push(itemId),
   };
 
-  const task: RegisteredAssistTask = {
+  const task: TranscriptAssistTask = {
     id: 'fake',
     summary: 'fake task',
-    surface: 'strip',
+    surface: 'transcript',
     onTurnEnd: true,
     defaults: { mode: 'auto', options: {} },
     eligible: options.eligible,
     system: () => 'SYSTEM',
     payload: (ctx) => ctx.turn.map((row) => `${row.kind}:${row.text}`).join('\n'),
-    parse: (raw): readonly AssistAction[] | null => {
-      const parsed = JSON.parse(raw) as { suggestions?: AssistAction[] };
-      return parsed.suggestions?.length ? parsed.suggestions : null;
+    parse: (raw): FollowUpAction[] | null => {
+      const parsed = JSON.parse(raw) as { actions?: FollowUpAction[] };
+      return parsed.actions?.length ? parsed.actions : null;
     },
   };
 
   const engine = new AssistEngine(async (call) => {
     calls.push({ system: call.system, user: call.user });
     if (options.fail) throw options.fail;
-    return options.reply ?? '{"suggestions":[{"label":"run tests","prompt":"Run the full suite and fix what fails."}]}';
+    return options.reply ?? JSON.stringify({ actions: [PROMPT_ACTION] });
   });
 
   const ctl = new HarnessAssistController(host, [task], engine);
   ctl.setMode(null, 'auto');
-  return {
-    ctl,
-    chips,
-    drafts,
-    regions,
-    calls,
-    lane,
-    flush: () => ctl.whenIdle(),
-  };
+  const owner = [...lane.transcript].reverse().find((row) => row.kind === 'assistant') as HarnessTranscriptItem;
+  return { ctl, chips, patched, calls, lane, owner, flush: () => ctl.whenIdle() };
 }
 
 describe('HarnessAssistController — trigger gates', () => {
-  it('runs on a clean end_turn and publishes the suggestions', async () => {
+  it('runs on a clean end_turn and writes the result onto the reply', async () => {
     const h = setup();
     h.ctl.onTurnEnd(h.lane, 'end_turn');
     await h.flush();
 
     expect(h.calls).toHaveLength(1);
     expect(h.calls[0].user).toContain(ASSISTANT_TEXT);
-    expect(h.ctl.stripProps(h.lane).state).toEqual({
-      kind: 'ready',
-      taskId: 'fake',
-      actions: [{ label: 'run tests', prompt: 'Run the full suite and fix what fails.' }],
-    });
-    expect(h.regions).toContain('composer');
-    expect(h.drafts).toHaveLength(0);
+    expect(h.owner.followUps).toEqual([PROMPT_ACTION]);
+    expect(h.patched).toEqual([h.owner.id]);
   });
 
   it.each(['cancelled', 'refusal', 'max_tokens'] as const)('skips stopReason %s', async (stopReason) => {
@@ -167,61 +160,27 @@ describe('HarnessAssistController — trigger gates', () => {
   });
 
   it("honours the task's own gate", async () => {
-    const h = setup({ eligible: (ctx) => ctx.queuedPrompts === 0, lane: makeLane({
-      queuedPrompts: [{}] as unknown as HarnessLane['queuedPrompts'],
-    }) });
+    const h = setup({ eligible: (ctx) => ctx.laneName !== 'OMP-1' });
     h.ctl.onTurnEnd(h.lane, 'end_turn');
     await h.flush();
     expect(h.calls).toHaveLength(0);
   });
 
-  it('reports a failure once and keeps the strip empty', async () => {
+  it('reports a failure once and leaves the reply without follow-ups', async () => {
     const h = setup({ fail: new Error('boom') });
     h.ctl.onTurnEnd(h.lane, 'end_turn');
     await h.flush();
-    expect(h.ctl.stripProps(h.lane).state).toEqual({ kind: 'failed', taskId: 'fake', reason: 'unavailable' });
+    expect(h.owner.followUps).toBeUndefined();
+    expect(h.patched).toEqual([]);
     expect(h.chips).toEqual(['assist: model unavailable']);
   });
 });
 
-describe('HarnessAssistController — accept, dismiss, manual', () => {
-  async function ready(over: Partial<HarnessLane> = {}): Promise<Harness> {
-    const h = setup({ lane: makeLane(over) });
+describe('HarnessAssistController — manual', () => {
+  it('manual request re-asks on the same turn, and refuses when the task is off', async () => {
+    const h = setup();
     h.ctl.onTurnEnd(h.lane, 'end_turn');
     await h.flush();
-    return h;
-  }
-
-  it('loads the chosen suggestion into the draft and clears the strip', async () => {
-    const h = await ready();
-    expect(h.ctl.accept(h.lane, 0)).toBe(true);
-    const prompt = 'Run the full suite and fix what fails.';
-    expect(h.drafts).toEqual([{ text: prompt, cursor: prompt.length }]);
-    expect(h.ctl.stripProps(h.lane).state).toEqual({ kind: 'idle' });
-  });
-
-  it('refuses to clobber a draft the human already typed', async () => {
-    const h = await ready({ draft: 'half a thought' });
-    expect(h.ctl.accept(h.lane, 0)).toBe(true);
-    expect(h.drafts).toHaveLength(0);
-    expect(h.chips).toEqual(['assist: clear the draft first']);
-    expect(h.ctl.stripProps(h.lane).state).toMatchObject({ kind: 'ready' });
-  });
-
-  it('does not consume the key when there is no suggestion at that index', async () => {
-    const h = await ready();
-    expect(h.ctl.accept(h.lane, 2)).toBe(false);
-  });
-
-  it('dismiss hides the strip, and only when something is showing', async () => {
-    const h = await ready();
-    expect(h.ctl.dismiss(h.lane)).toBe(true);
-    expect(h.ctl.stripProps(h.lane).state).toEqual({ kind: 'idle' });
-    expect(h.ctl.dismiss(h.lane)).toBe(false);
-  });
-
-  it('manual request re-asks on the same turn, and refuses when the task is off', async () => {
-    const h = await ready();
     h.ctl.request(h.lane);
     await h.flush();
     expect(h.calls).toHaveLength(2);
@@ -238,7 +197,8 @@ describe('HarnessAssistController — accept, dismiss, manual', () => {
     h.ctl.onTurnEnd(h.lane, 'end_turn');
     h.ctl.cancel();
     await h.flush();
-    expect(h.ctl.stripProps(h.lane).state).toEqual({ kind: 'idle' });
+    expect(h.owner.followUps).toBeUndefined();
+    expect(h.patched).toEqual([]);
   });
 });
 
@@ -281,7 +241,6 @@ describe('HarnessAssistController — user-prompt trigger (grammar)', () => {
     h.ctl.onUserPrompt(h.lane);
     await h.ctl.whenIdle();
     expect(h.calls).toEqual(['What curent changes in git?']);
-    expect(h.ctl.stripProps(h.lane).state.kind).toBe('idle');
     const state = h.ctl.panelState(h.lane.id);
     expect(state.kind).toBe('ready');
     if (state.kind === 'ready') {
@@ -384,7 +343,6 @@ describe('HarnessAssistController — transcript surface (follow-up)', () => {
     ]);
     expect(next.followUps).toBeUndefined();
     expect(h.patched).toEqual(['a-1']);
-    expect(h.ctl.stripProps(h.lane).state.kind).toBe('idle');
   });
 
   it('makes no call on a remote harness', async () => {

@@ -1,6 +1,6 @@
 # Harness Assist — cheap-model turn sidecar
 
-> Status: Implemented
+> Status: Implemented; the `next-prompt` task and its `AssistStrip` were removed on 2026-10-23 (see the last addendum)
 > Date: 2026-10-17
 > Milestone: ACP Harness — composer
 > Builds on: 0072 (harness view) · 0069 (ACP client) · 0275 (feature controllers) · 0301/0302 (component kernel) · 0285 (ghost text, the other composer suggestion) · 0136 (prompt queue) · 0126/0127 (`session/set_model`) · 0257 (TypeSafe suggestion discipline)
@@ -15,7 +15,7 @@ A per-harness **sidecar**: a cheap model post-processes the turn that just ended
 
 The engine is task-agnostic. It bounds the payload, makes one deadline-limited call, parses strictly, and owns every cost guard. *What* to ask the model is an **`AssistTask`**: one file declaring a system prompt, a payload builder, a strict parser, and its own extra gate. v1 registers exactly one task — `next-prompt`, which returns at most three suggested next prompts as a numbered strip above the draft line. `Cmd+1..3` loads one **into the composer** (never sends it), `Cmd+0` dismisses, `Cmd+/` asks again. Default `mode = "off"` because the call spends the same subscription quota the lane agents spend.
 
-> Later additions: the `grammar` task (`'panel'` surface, addendum below) and the `follow-up` task (`'transcript'` surface, spec 323 — [0323](0323-harness-follow-up-actions.md)).
+> Later additions: the `grammar` task (`'panel'` surface, addendum below) and the `follow-up` task (`'transcript'` surface, spec 323 — [0323](0323-harness-follow-up-actions.md)). The `next-prompt` task described below was removed on 2026-10-23; the last addendum says what remains.
 
 No new Rust and no new Tauri command: `AcpClient` already does spawn → `initialize` → `session/new` → `session/set_model` → `session/prompt` → `dispose`. The request guards (deadline, single-flight, stale-drop, circuit breaker) come from the TypeSafe suggestion path (0257), implemented client-side.
 
@@ -363,11 +363,11 @@ A second registered task, `grammar` (`src/acp/assist/tasks/grammar.ts`), reviews
 
 - Eligible only for English prose of ≥3 words; `/` and `#` commands are skipped. Thai and other non-Latin prompts are skipped too, as are prompts that are mostly code, paths or URLs.
 - The model replies `{"ok":true}` or `{"ok":false,"corrected":"…","fixes":["wrong → right"]}`, parsed into `AssistCheck { corrected: string | null; fixes }`.
-- The result has its own surface: `GrammarPanel` (`src/acp/components/grammar-panel/`). It is a right-rail card in the thought card's family, mounted in the `grammar` layout entry (`rail.top`, order 40, under the thought card) only while the active lane has a review. Its state is per lane (`AssistPanelState`), separate from the composer strip, so `next-prompt` suggestions never replace it.
+- The result has its own surface: `GrammarPanel` (`src/acp/components/grammar-panel/`). It is a right-rail card in the thought card's family, mounted in the `grammar` layout entry (`rail.top`, order 40, under the thought card) only while the active lane has a review. Its state is per lane (`AssistPanelState`).
   - `pending` — header `GRAMMAR · CHECKING` and the checked prompt, dimmed.
   - fixes — header `GRAMMAR · N FIXES`, the `wrong → right` list, the corrected prompt, and the legend `cmd+g use · cmd+0 dismiss`.
   - clean — `GRAMMAR · OK` and `✓ no grammar issues`. It unmounts after `ASSIST_PANEL_OK_HIDE_MS` (4 s).
-- `Cmd+G` loads the corrected text into the empty composer and closes the panel; it never re-sends. `Cmd+0` dismisses the strip first; when the strip is empty, it closes the panel. `#panels hide` hides the panel with the rest of the rail, and `#panels hide grammar` (or the window-titlebar grammar toggle, spec 320) hides it alone; while it is hidden neither `Cmd+G` nor the panel half of `Cmd+0` acts on it.
+- `Cmd+G` loads the corrected text into the empty composer and closes the panel; it never re-sends. `Cmd+0` closes the panel. `#panels hide` hides the panel with the rest of the rail, and `#panels hide grammar` (or the window-titlebar grammar toggle, spec 320) hides it alone; while it is hidden neither `Cmd+G` nor `Cmd+0` acts on it.
 - Default `mode = "off"`. Enable it with `#assist grammar auto`, or persist it in config:
 
 ```toml
@@ -381,3 +381,18 @@ A third registered task, `follow-up` (`src/acp/assist/tasks/follow-up.ts`), is t
 
 - **Privacy.** The payload is only the last assistant reply text plus candidates that are substrings of it — no tool arguments — so it stays within this spec's payload rule.
 - Default `mode = "off"`; option `count` 1..3 (default 3), set via `#assist follow-up auto|manual|off|now` or `[acp_harness.assist.tasks.follow-up]`.
+
+## Addendum — `next-prompt` removed (2026-10-23)
+
+User, 2026-10-23: "I want to remove assist next prompt feature from app, because we already include in follow up feature". Follow-up prompts ([0327](0327-harness-follow-up-prompts.md)) put the next message for the lane under the reply that offered it, with send and paste options, so the composer strip duplicated them.
+
+Removed:
+
+- `src/acp/assist/tasks/next-prompt.ts` and its test. `ASSIST_TASKS` is now `[followUp, grammar]`.
+- The `'strip'` surface: `StripAssistTask`, `AssistAction` and `AssistState` in `assist/types.ts`. `RegisteredAssistTask` is `PanelAssistTask | TranscriptAssistTask`.
+- `AssistContext.stopReason`, `plan`, `queuedPrompts` and `draft`, which only `next-prompt` read.
+- `src/acp/components/assist-strip/` and its `Composer` child, prop and registry entry.
+- From `HarnessAssistController`: `accept`, `dismiss`, `stripProps` and `runStrip`, plus the per-lane strip state. The per-lane turn-seq dedupe stays, in `turnSeqs`.
+- From the view: the `Cmd+1..3` accept keys and the strip half of `Cmd+0`.
+
+Kept: `Cmd+0` closes the grammar panel, and `Cmd+/` re-asks the first registered task, which is now `follow-up`. `#assist [task] off|manual|auto|now` is unchanged. A `[acp_harness.assist.tasks.next-prompt]` table in an existing config still parses and is never read (0006).

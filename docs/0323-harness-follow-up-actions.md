@@ -5,6 +5,8 @@
 > Milestone: ACP Harness — transcript
 > Builds on: 0306 (assist sidecar) · 0322 (terminal-tab callback) · 0206/0283/0309 (`f` open-hint targets) · 0281/0286 (late sub-components on sealed rows) · 0301/0302 (component kernel)
 
+> Later: the `next-prompt` task this spec refers to as a neighbour was removed on 2026-10-23 (0306, last addendum). `ASSIST_TASKS` is now `[followUp, grammar]`.
+
 ## Problem
 
 A lane's reply often ends with something for the human to do: run `make install`, run `npm test`, open `http://localhost:5173`. Today the human copies that text into a terminal or a browser by hand. The assist sidecar (0306) reads every finished turn, but it can only propose prompts for the agent. It cannot offer to run what the agent told the human to run.

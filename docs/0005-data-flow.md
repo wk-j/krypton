@@ -1454,10 +1454,13 @@ mounted, and the lane itself is `idle` the whole time.
 
 ## Assist Sidecar Flow (spec 306)
 
-A cheap second model reads the turn that just ended and proposes the next prompt.
-It reaches that model through an ACP backend subprocess — the same path the lanes
-use, so there is no API key anywhere — and nothing is sent on the user's behalf:
-a suggestion only ever lands in the draft.
+A cheap second model reads the turn that just ended (or the prompt just sent) and
+publishes a result for the human to act on. It reaches that model through an ACP
+backend subprocess — the same path the lanes use, so there is no API key anywhere —
+and nothing is sent on the user's behalf without a click or key. The registered tasks
+are `follow-up` (turn end, `'transcript'` surface — next section) and `grammar`
+(prompt sent, `'panel'` surface). The v1 `next-prompt` strip was removed on
+2026-10-23 (spec 327 covers its job).
 
 ```
 1. finishTurn(lane, stopReason) → assistCtl.onTurnEnd — placed beside the live-voice
@@ -1466,11 +1469,10 @@ a suggestion only ever lands in the draft.
    gates = active lane · stopReason 'end_turn' · ≥40 chars of assistant text ·
            no pending permission/question · activeSystemLabel null ·
            this lane.turnSeq not already run for this task · no cooldown ·
-           task.eligible(ctx) (next-prompt: nothing queued)
+           task.eligible(ctx)
 3. AssistContext is built from lane state (turn items from the last user row,
-   plan, stop reason, model name, project dir) — never from the DOM.
-4. state = 'pending' → host.invalidate('composer') → AssistStrip shows one dim row.
-5. AssistEngine.run: task.payload (bounded by max_input_chars) → AcpAssistSession:
+   lane and model name, backend, project dir) — never from the DOM.
+4. AssistEngine.run: task.payload (bounded by max_input_chars) → AcpAssistSession:
    reuse the warm session, else acp_spawn(backend, cwd, mcp=[], remoteRuntimeId) →
    initialize → session/new → session/set_model(model). Then ONE session/prompt
    carrying `system + payload`, under an AbortController a timeout_ms timer trips;
@@ -1479,14 +1481,15 @@ a suggestion only ever lands in the draft.
    spawn never eats the model's budget. Single-flight harness-wide.
    Fence: permission → declined, fs write → refused, question → cancelled. An
    unanswered request would park session/prompt forever (acp.rs:1585-1621).
-6. Assistant text accumulates from agent_message_chunk events; the session/prompt
+5. Assistant text accumulates from agent_message_chunk events; the session/prompt
    response IS the turn end. A stop reason other than end_turn ⇒ 'unavailable'.
-7. task.parse(raw) → actions, or null ⇒ 'invalid'. Failures feed the per-task
+6. task.parse(raw, cfg, ctx) → result, or null ⇒ 'invalid'. Failures feed the per-task
    breaker: 3 soft in a row ⇒ 5 min cooldown; backend missing / model rejected ⇒ 10 min.
-8. Stale answers are dropped on the controller epoch, lane.spawnEpoch and activeLaneId
-   before state = 'ready'; host.invalidate('composer') paints the numbered strip.
-9. Cmd+1..3 → accept → setDraft(lane, prompt, prompt.length) (refused when the draft
-   is non-empty); Cmd+0 dismisses; Cmd+/ re-asks; #assist [task] off|manual|auto|now.
+7. Stale answers are dropped on the controller epoch, lane.spawnEpoch and activeLaneId;
+   a fresh one goes to its surface (follow-ups onto the reply, the review into the
+   right-rail panel). A failure flashes a chip.
+8. Cmd+/ re-asks the first registered task (follow-up); Cmd+0 closes the grammar
+   panel; #assist [task] off|manual|auto|now.
 ```
 
 A lane switch, close or respawn cancels the in-flight turn — its answer was about
