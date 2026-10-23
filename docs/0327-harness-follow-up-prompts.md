@@ -1,6 +1,6 @@
 # Harness Follow-up Prompts — Implementation Spec
 
-> Status: Implemented (rev 2 — send or paste)
+> Status: Implemented (rev 3 — no prompt that reworks the finished turn)
 > Date: 2026-10-23
 > Milestone: ACP Harness — transcript
 > Builds on: 0323 (follow-up actions) · 0306 (assist sidecar) · 0136 (prompt queue) · 0278 (steer)
@@ -11,9 +11,11 @@ User, 2026-10-23: "For follow up job, I should be able to interfact current harn
 
 **Rev 2 requirement (user, 2026-10-23):** "The UI should have option to direct send to lane and just paste into prompt input". Every prompt button offers both: send it to the lane now, or paste it into the composer to edit and send by hand.
 
+**Rev 3 requirement (user, 2026-10-23):** "Make sense what? it try to inject after all commit there is nothing left to commit". A reply reported two finished commits and ended with a hedge: if the human would rather have spec 0323 rev 5 in its own commit, the agent could split `023845b`. The model turned that hedge into a prompt button ("split out spec 0323 rev 5 commit") in 3 of 3 real haiku calls. The human had just received the result they ordered, so the button offered to redo it. A prompt must now continue from the delivered result: an offer to redo, split, squash, revert or restructure the finished work never becomes a button, even when the reply makes it.
+
 ## Solution
 
-Add a third follow-up kind, **`prompt`**: a message for the lane that owns the reply. The assist model writes it, at most 240 characters, for a step the reply itself offered ("Want me to post this to #1329?"). The button shows the full message and offers two options:
+Add a third follow-up kind, **`prompt`**: a message for the lane that owns the reply. The assist model writes it, at most 240 characters, for a step the reply itself offered ("Want me to post this to #1329?") that continues from the result the turn delivered, never one that redoes that result another way. The button shows the full message and offers two options:
 
 - **Send.** A click on the button or its `f` hint sends it through the composer's queue path. An idle lane starts a turn, and a busy lane queues the message.
 - **Paste.** A click on its `paste` button, or `Shift` + its hint, inserts it into the composer at the cursor, as `Cmd+V` does. Nothing is sent.
@@ -46,6 +48,7 @@ Add a third follow-up kind, **`prompt`**: a message for the lane that owns the r
 - **Send the picked span itself.** `post-github-comment` alone carries no target. `#1329` lives in the prose around it.
 - **Classify one-word spans deterministically.** The same span could be a skill, a CLI, a branch or a symbol. Only the prose says which, and reading prose is the model's job.
 - **Let the model also write `run` commands.** The reason in 0323 still holds: a shell command nobody wrote must never sit behind a button. A prompt goes to the agent, which reads it with its own context and permission mode.
+- **Filter rework prompts by keyword (`split`, `revert`, `squash`).** The same words name forward steps a reply offers ("revert the bad deploy"). Only the reply says whether the step reworks what the turn just finished.
 
 ## Prior Art
 
@@ -89,7 +92,7 @@ export interface FollowUpAction {
 - **`payload`** is unchanged, except that an empty candidate list prints `(none)` under `--- candidates ---`.
 - **`system(cfg)`:**
 
-  > You read the final reply of a coding agent and a numbered list of candidates copied from it. Offer the human at most N next actions, most useful first. Reply with JSON only: `{"actions":[{"id":N,"label":"…"},{"prompt":"…","label":"…"}]}`. An `id` entry picks a candidate to run or open. Pick a candidate only if the reply tells the human to run or open it, or if it installs, builds, tests, starts or shows what the turn just made. A run candidate is typed into a shell exactly as written, so never pick one that is not a complete command. Never pick a file path, a symbol, an example, a command the reply says already ran, or a command the reply warns against. A `prompt` entry is a message sent to the agent itself, for a step the agent should take rather than a shell command, such as posting a comment, opening a pull request, committing or using a skill. Write one only when the reply offers that step or asks whether to take it, never an idea of your own. The prompt is one or two sentences in the reply's language, at most 240 characters. It names every target the reply gave (issue number, branch, skill), and it never starts with `#`, `!`, `/` or `@`. `label` is at most 40 characters, lower case, no trailing period, and says what the action does (for a candidate, what its exact text does), never an action it does not perform. If nothing qualifies, reply `{"actions":[]}`. No prose outside the JSON.
+  > You read the final reply of a coding agent and a numbered list of candidates copied from it. Offer the human at most N next actions, most useful first. Reply with JSON only: `{"actions":[{"id":N,"label":"…"},{"prompt":"…","label":"…"}]}`. An `id` entry picks a candidate to run or open. Pick a candidate only if the reply tells the human to run or open it, or if it installs, builds, tests, starts or shows what the turn just made. A run candidate is typed into a shell exactly as written, so never pick one that is not a complete command. Never pick a file path, a symbol, an example, a command the reply says already ran, or a command the reply warns against. A `prompt` entry is a message sent to the agent itself, for a step the agent should take rather than a shell command, such as posting a comment, opening a pull request, committing or using a skill. Write one only when the reply offers that step or asks whether to take it, never an idea of your own. The step must continue from the result the turn delivered: never offer to redo, split, squash, revert or restructure what the turn just finished, even when the reply offers that. The prompt is one or two sentences in the reply's language, at most 240 characters. It names every target the reply gave (issue number, branch, skill), and it never starts with `#`, `!`, `/` or `@`. `label` is at most 40 characters, lower case, no trailing period, and says what the action does (for a candidate, what its exact text does), never an action it does not perform. If nothing qualifies, reply `{"actions":[]}`. No prose outside the JSON.
 
 - **`parse(raw, cfg, ctx)`**, per entry and in order, sharing one `count` cap:
   - An entry with a non-null `id` takes the candidate path, which is unchanged; a `prompt` field on it is ignored. `"id": null` counts as no `id`.
@@ -174,6 +177,7 @@ No new key. `count` caps all three kinds together. The cost note in 0006 changes
 
 - **The reply offers nothing:** the call returns `[]`, and no rail appears.
 - **The model writes a prompt the reply never offered:** the full message is on the button, and nothing is sent without a click.
+- **The reply offers to redo the finished work another way** ("if you'd rather have these as separate commits, I can split it"): no prompt. The human already has the result they asked for, and a different shape is theirs to ask for.
 - **A prompt from an old reply:** it is sent now, into the lane's current session. The text says what it asks.
 - **The lane is in `bypass` mode:** the agent acts as if the human had typed the prompt.
 - **`@name` or `#1329` inside the text:** sent to this lane as text. Only a leading `@` or `#` is routed, and parse rejects those.
@@ -236,6 +240,11 @@ No new key. `count` caps all three kinds together. The cost note in 0006 changes
   - a `starting` lane flashed `lane starting`;
   - paste inserted at cursor 5 of `hello world`, then synced the root classes and focused the view;
   - `Shift+A` pasted, and `a` sent.
+- Rev 3, real `claude -p --model haiku` with the real `system` and `payload`:
+  - the two-commit report that ends with the split offer: the rev 2 prompt gave a split prompt 3 of 3 times; the rev 3 prompt gave `[]` 2 of 2;
+  - a reply that squashed three fixes and offers to split them back: rev 2 gave a split prompt 2 of 2; rev 3 gave `[]` 2 of 2;
+  - forward offers still give a prompt with rev 3: the #1329 reply 2 of 2, "Want me to push the branch and open a PR against `main`?" 2 of 2, and a Thai reply offering a PR 6 of 6 (5 in Thai, 1 in English);
+  - the "All done" and `b6c2b6d3` replies gave `[]` 2 of 2 each.
 - **Not exercised:** a click inside the running Tauri app. It needs a rebuilt app with `#assist follow-up auto` and a lane turn.
 
 ## Open Questions

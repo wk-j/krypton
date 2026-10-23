@@ -243,6 +243,8 @@ export const followUp: TranscriptAssistTask = {
       + 'A prompt entry is a message sent to the agent itself, for a step the agent should take rather than a shell command, '
       + 'such as posting a comment, opening a pull request, committing or using a skill. '
       + 'Write one only when the reply offers that step or asks whether to take it, never an idea of your own. '
+      + 'The step must continue from the result the turn delivered: never offer to redo, split, squash, revert '
+      + 'or restructure what the turn just finished, even when the reply offers that. '
       + `The prompt is one or two sentences in the reply's language, at most ${PROMPT_MAX} characters. `
       + 'It names every target the reply gave (issue number, branch, skill), and it never starts with #, !, / or @. '
       + `label is at most ${LABEL_MAX} characters, lower case, no trailing period, `
