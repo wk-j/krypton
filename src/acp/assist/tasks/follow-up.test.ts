@@ -42,12 +42,19 @@ const REPLY = [
 ].join('\n');
 
 describe('followUpCandidates', () => {
-  it('takes inline spans and bare URLs in reply order, as run or open', () => {
+  it('takes multi-word inline spans and bare URLs in reply order, as run or open', () => {
     expect(followUpCandidates(REPLY)).toEqual([
       { kind: 'run', target: 'make install' },
       { kind: 'open', target: 'http://localhost:5173/docs' },
-      { kind: 'run', target: 'src/acp/components/follow-up-rail/index.ts' },
       { kind: 'run', target: 'npm test' },
+    ]);
+  });
+
+  it('never offers a one-word span — a commit hash, path, symbol or flag — as a command', () => {
+    const text = 'Committed as `b6c2b6d3` on `main` — see `src/a.ts`, `followUpShellArgs` and `--force`.';
+    expect(followUpCandidates(text)).toEqual([]);
+    expect(followUpCandidates(`${text} Inspect it with \`git show b6c2b6d3\`.`)).toEqual([
+      { kind: 'run', target: 'git show b6c2b6d3' },
     ]);
   });
 
@@ -84,22 +91,24 @@ describe('followUpCandidates', () => {
   });
 
   it('keeps one copy per target at its last position and caps at the newest 20', () => {
-    expect(followUpCandidates('`npm test` then `make` then `npm test`')).toEqual([
-      { kind: 'run', target: 'make' },
+    expect(followUpCandidates('`npm test` then `make install` then `npm test`')).toEqual([
+      { kind: 'run', target: 'make install' },
       { kind: 'run', target: 'npm test' },
     ]);
-    const many = Array.from({ length: 25 }, (_, i) => `\`cmd${i}\``).join(' ');
+    const many = Array.from({ length: 25 }, (_, i) => `\`echo ${i}\``).join(' ');
     const out = followUpCandidates(many);
     expect(out).toHaveLength(20);
-    expect(out[0].target).toBe('cmd5');
-    expect(out[19].target).toBe('cmd24');
+    expect(out[0].target).toBe('echo 5');
+    expect(out[19].target).toBe('echo 24');
   });
 });
 
 describe('follow-up task', () => {
-  it('is not eligible when the reply has nothing to run or open', () => {
-    expect(followUp.eligible?.(ctx('All done, nothing else to do.'), cfg())).toBe(false);
-    expect(followUp.eligible?.(ctx(REPLY), cfg())).toBe(true);
+  it('asks about any reply, candidates or not: a prompt needs none', () => {
+    expect(followUp.eligible?.(ctx('All done, nothing else to do.'), cfg())).toBe(true);
+    expect(followUp.eligible?.(ctx('   '), cfg())).toBe(false);
+    expect(followUp.payload(ctx('All done.'), { maxInputChars: 6_000, timeoutMs: 8_000 }))
+      .toContain('--- candidates ---\n(none)\n--- agent replied ---');
   });
 
   it('numbers the candidates ahead of the reply text', () => {
@@ -109,7 +118,7 @@ describe('follow-up task', () => {
     expect(candidates).toBeGreaterThan(-1);
     expect(reply).toBeGreaterThan(candidates);
     expect(payload).toContain('1. run: make install\n2. open: http://localhost:5173/docs');
-    expect(payload).toContain('4. run: npm test');
+    expect(payload).toContain('3. run: npm test');
   });
 
   it('copies the target from the picked candidate, never from the model', () => {
@@ -129,8 +138,8 @@ describe('follow-up task', () => {
   it('drops unknown and repeated ids and honours count', () => {
     const raw = JSON.stringify({
       actions: [
-        { id: 4, label: 'run the tests' },
-        { id: 4, label: 'run them again' },
+        { id: 3, label: 'run the tests' },
+        { id: 3, label: 'run them again' },
         { id: 0, label: 'nothing' },
         { id: 1, label: 'install' },
         { id: 2, label: 'open docs' },
@@ -149,6 +158,53 @@ describe('follow-up task', () => {
     expect(action?.target).toBe('make install');
     expect(action?.label).toBe('build and install the app to try the…');
     expect(action?.label.length).toBeLessThanOrEqual(40);
+  });
+
+  it('takes a prompt from the model, whitespace collapsed, and caps it with the candidates', () => {
+    const raw = JSON.stringify({
+      actions: [
+        { prompt: '  Post the load-test review summary\n to #1329 with the post-github-comment skill. ', label: 'post summary to #1329' },
+        { id: 1, label: 'install the app' },
+        { id: null, prompt: 'Open a PR that sets the pool size back to 20.', label: 'open the pool pr' },
+        { prompt: 'Rerun the load test.', label: 'rerun' },
+      ],
+    });
+    expect(followUp.parse(raw, cfg(), ctx(REPLY))).toEqual([
+      {
+        followUpKind: 'prompt',
+        label: 'post summary to #1329',
+        target: 'Post the load-test review summary to #1329 with the post-github-comment skill.',
+        hintLabel: null,
+      },
+      { followUpKind: 'run', label: 'install the app', target: 'make install', hintLabel: null },
+      { followUpKind: 'prompt', label: 'open the pool pr', target: 'Open a PR that sets the pool size back to 20.', hintLabel: null },
+    ]);
+  });
+
+  it('drops a prompt the composer would route elsewhere, expand, cut or repeat', () => {
+    const dropped = [
+      '#review the summary please',
+      '!gh issue comment 1329',
+      '/compact the conversation now',
+      '@OMP-2 post the summary for me',
+      'Post the summary with {{#review}} to #1329.',
+      'short',
+      `Post ${'x'.repeat(240)}`,
+    ];
+    const raw = JSON.stringify({ actions: dropped.map((prompt) => ({ prompt, label: 'nope' })) });
+    expect(followUp.parse(raw, cfg(), ctx(REPLY))).toBeNull();
+
+    const repeated = JSON.stringify({
+      actions: [
+        { prompt: 'Post the summary to #1329.', label: 'post it' },
+        { prompt: 'Post the  summary to #1329.', label: 'post it again' },
+        { id: 1, prompt: 'Ignored when an id is given.', label: 'install' },
+      ],
+    });
+    expect(followUp.parse(repeated, cfg(), ctx(REPLY))?.map((a) => [a.followUpKind, a.target])).toEqual([
+      ['prompt', 'Post the summary to #1329.'],
+      ['run', 'make install'],
+    ]);
   });
 
   it('reads the last non-empty reply of the turn', () => {

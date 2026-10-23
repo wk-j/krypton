@@ -395,13 +395,23 @@ describe('HarnessAssistController — transcript surface (follow-up)', () => {
     expect(h.owner.followUps).toBeUndefined();
   });
 
-  it('makes no call when the reply names nothing to run or open', async () => {
-    const owner = { id: 'a-2', kind: 'assistant', text: 'All done — the controller and its tests are finished.' } as HarnessTranscriptItem;
-    const h = await followUpRun('{"actions":[]}', { owner });
+  it('asks about a reply with no candidate and writes the prompt it offers onto that reply', async () => {
+    const owner = {
+      id: 'a-2',
+      kind: 'assistant',
+      text: 'The load-test review is ready. Want me to post the summary to #1329?',
+    } as HarnessTranscriptItem;
+    const h = await followUpRun(
+      '{"actions":[{"prompt":"Post the load-test review summary to #1329.","label":"post summary to #1329"}]}',
+      { owner },
+    );
     h.ctl.onTurnEnd(h.lane, 'end_turn');
     await h.ctl.whenIdle();
-    expect(h.calls).toHaveLength(0);
-    expect(h.patched).toEqual([]);
+    expect(h.calls).toHaveLength(1);
+    expect(h.owner.followUps?.map((a) => [a.followUpKind, a.target])).toEqual([
+      ['prompt', 'Post the load-test review summary to #1329.'],
+    ]);
+    expect(h.patched).toEqual(['a-2']);
   });
 
   it('an empty answer to a re-ask clears that reply’s follow-ups', async () => {

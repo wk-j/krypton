@@ -1,7 +1,7 @@
 # Harness Follow-up Actions — Implementation Spec
 
-> Status: Implemented (rev 4 — SVG icons for run and open)
-> Date: 2026-10-22
+> Status: Implemented (rev 5 — a one-word code span is never a command)
+> Date: 2026-10-23
 > Milestone: ACP Harness — transcript
 > Builds on: 0306 (assist sidecar) · 0322 (terminal-tab callback) · 0206/0283/0309 (`f` open-hint targets) · 0281/0286 (late sub-components on sealed rows) · 0301/0302 (component kernel)
 
@@ -15,6 +15,8 @@ A lane's reply often ends with something for the human to do: run `make install`
 
 **Rev 4 requirement (user, 2026-10-22):** "I dont like follow up command icons, i you design new icon?". The `▶` and `↗` text glyphs came from whatever font had them, so they did not match each other or the harness icon set. Each kind now has an SVG icon.
 
+**Rev 5 requirement (user, 2026-10-23):** "Follow up command is not work currently, such as this what the point create command with only commit hash?" A reply that named its commit as `` `b6c2b6d3` `` got a button labelled "show commit b6c2b6d3 details" whose command was the bare hash. Clicking it ran `b6c2b6d3` and printed `command not found` with exit 127. A one-word span is no longer a candidate, and the prompt forbids labels that describe an action the text does not perform.
+
 ## Solution
 
 Add a second assist task, `follow-up`. When a turn ends it picks up to three actions from the reply. They appear as a **FOLLOW-UP** rail of buttons under that reply's row and stay there for as long as the row exists. Every earlier reply keeps its own buttons. An action is one of two kinds:
@@ -22,9 +24,11 @@ Add a second assist task, `follow-up`. When a turn ends it picks up to three act
 - **`run`** opens a terminal tab in the harness window at the project directory. The tab runs the command in the user's login shell and then stays open as an interactive shell.
 - **`open`** opens an http(s) URL in the OS browser.
 
+Spec 0327 adds a third kind, **`prompt`**: a message the model writes for the lane itself, which a click sends and a `paste` button puts into the composer. See [0327](0327-harness-follow-up-prompts.md).
+
 Nothing runs without the human. They click a button, or use the existing transcript keys: `Esc` to focus the transcript, `f` to enter open-hint mode, then the button's hint label.
 
-**The assist model never writes the command.** Krypton pulls candidates out of the reply's markdown deterministically: shell fences, inline code spans and http(s) URLs. The model only picks candidate numbers and writes a short label for each. A reply with no candidates costs no model call.
+**The assist model never writes the command.** Krypton pulls candidates out of the reply's markdown deterministically: shell fences, inline code spans that are a URL or have more than one word, and http(s) URLs. The model only picks candidate numbers and writes a short label for each. A reply with no candidates costs no model call.
 
 ## Research
 
@@ -58,7 +62,7 @@ Nothing runs without the human. They click a button, or use the existing transcr
 - **A separate `follow_up` transcript row kind.** The result arrives seconds after the turn ends. If the human has already sent the next prompt, an appended row lands after it, under the wrong turn. A new kind also touches every switch over `HarnessTranscriptItem.kind`.
 - **A slot inside the markdown body.** The body's `innerHTML` repaint (`paintSealed`, `assistant-row/index.ts:247`) detaches it, and annotation wrapping walks the body's text. A sibling of the body avoids both.
 - **The model writes the command.** One hallucinated or prompt-injected reply would put a button on screen that runs something the agent never said. Picking by number rules this out.
-- **Regex only, no model.** Every inline code span — paths, symbols, flags — would become a button.
+- **Regex only, no model.** Every multi-word code span — type expressions, call signatures, a commit's subject line, a command the reply warns against — would become a button.
 - **A "ran" marker on a clicked button.** It would be a visual change to a sealed row. The terminal tab is the record that a command ran.
 
 ## Prior Art
@@ -130,7 +134,7 @@ The input is the last assistant item of the turn, the same text next-prompt read
    - If any line starts with `$ ` or `% `, keep only those lines and strip the prompt; otherwise keep every line. Trim the result.
    - The whole block is **one** `run` candidate. It is dropped if it is empty, over 6 lines or over 400 characters.
    - A non-shell fence produces nothing, and its contents are not scanned.
-2. **Inline code spans** outside fences (`` `…` ``, one line) become a candidate when 2–200 characters after trimming. A span that is exactly an `http(s)://` URL is `open`; any other span is `run`.
+2. **Inline code spans** outside fences (`` `…` ``, one line) become a candidate when at most 200 characters after trimming. A span that is exactly an `http(s)://` URL is `open`. Any other span is `run` only when it contains whitespace. A one-word span is a name — a commit hash, a branch, a path, a symbol, a flag — and as a button it would run that name as a program, so it produces nothing.
 3. **Bare URLs** outside fences and spans match `https?://[^\s<>()\`"']+`, with trailing `.,;:!?]` stripped. They are `open`. No other scheme is ever a candidate.
 4. Deduplicate on `kind + target`, keeping the **last** occurrence, and keep the last 20.
 
@@ -138,12 +142,12 @@ The function is pure. `eligible`, `payload` and `parse` each call it on the same
 
 ### The task — `src/acp/assist/tasks/follow-up.ts`
 
-`{ id: 'follow-up', summary: 'offer to run or open what the reply tells you to', surface: 'transcript', onTurnEnd: true, defaults: { mode: 'off', options: { count: 3 } } }`
+`{ id: 'follow-up', summary: 'offer to run, open or send what the reply suggests next', surface: 'transcript', onTurnEnd: true, defaults: { mode: 'off', options: { count: 3 } } }` (the summary names `send` since 0327)
 
-- **`eligible(ctx)`** is true only when there is at least one candidate. A reply with no command and no URL makes no call.
-- **`system(cfg)`:**
+- **`eligible(ctx)`** was true only when there was at least one candidate, so a reply with no command and no URL made no call. Since 0327, any non-empty reply is eligible, because a `prompt` needs no candidate.
+- **`system(cfg)`** (the rev 5 text; 0327 replaces it with one that also asks for `prompt` entries):
 
-  > You read the final reply of a coding agent and a numbered list of candidates copied from it. Pick the candidates the human should run or open next. Reply with JSON only: `{"actions":[{"id":N,"label":"…"}]}`. At most N entries, most useful first. Pick a candidate only if the reply tells the human to run or open it, or if it installs, builds, tests, starts or shows what the turn just made. Never pick a file path, a symbol, an example, a command the reply says already ran, or a command the reply warns against. `label` is at most 40 characters, lower case, no trailing period, and says what the action does. If nothing qualifies, reply `{"actions":[]}`.
+  > You read the final reply of a coding agent and a numbered list of candidates copied from it. Pick the candidates the human should run or open next. Reply with JSON only: `{"actions":[{"id":N,"label":"…"}]}`. At most N entries, most useful first. Pick a candidate only if the reply tells the human to run or open it, or if it installs, builds, tests, starts or shows what the turn just made. A run candidate is typed into a shell exactly as written, so never pick one that is not a complete command. Never pick a file path, a symbol, an example, a command the reply says already ran, or a command the reply warns against. `label` is at most 40 characters, lower case, no trailing period, and says what the candidate's exact text does, never an action it does not perform. If nothing qualifies, reply `{"actions":[]}`.
 
 - **`payload(ctx, budget)`** puts the candidates **before** the reply, so the engine's head-slice backstop (`engine.ts:53`) can only cut reply text:
 
@@ -274,7 +278,8 @@ No `config.rs` change: 0306 passes task options through opaquely.
 
 ## Edge Cases
 
-- **No backticked command or URL in the reply:** no candidate, so no call and no rail.
+- **No backticked command or URL in the reply:** no candidate. Since 0327 the call still happens, because the model may offer a `prompt`; `{"actions":[]}` paints no rail.
+- **A one-word span (`` `b6c2b6d3` ``, `` `main` ``, `` `src/a.ts` ``, `` `make` ``):** never a candidate. A one-word command is offered only from a shell fence.
 - **`{"actions":[]}`:** no rail; not a failure.
 - **The human sends the next prompt before the result arrives:** the rail still lands under the reply that named the actions, because the turn was snapshotted at enqueue.
 - **Running an action from an old reply:** it runs the command as written then, in today's `projectDir`. The full command is on the button, and the human decides.
@@ -302,6 +307,7 @@ Where the shipped code differs from the draft, and why:
 - **Grid column.** The rail needs `grid-column: 2` because rows are a two-column grid; without it, the first browser check showed the rail squeezed into the label column.
 - **Label over command (rev 3).** The first layout put label and command on one line in a wrapping row. In a user screenshot of three multi-line commands, each command hung at an indent set by its own label's width, and each button had a different width. The button became a two-row grid, and the list became a single column of equal-width buttons. The change is CSS-only: the DOM, the deps and the click/hint contract are unchanged.
 - **SVG icons (rev 4).** The text glyphs `▶` and `↗` were drawn by whichever font had them, so their size and weight did not match the harness icons. They are now `<symbol>` defs in `harness-icons.ts`, placed with `harnessIconEl()` like every other harness icon. The DOM, the deps and the click/hint contract are unchanged; only the glyph span's content differs.
+- **One-word spans dropped (rev 5).** Rev 1 made every span a `run` candidate and relied on the prompt to skip names. In a user screenshot, the model picked a bare commit hash and labelled it "show commit b6c2b6d3 details", although the button ran only the hash. Extraction now requires whitespace in a `run` span, so a hash, path or symbol never reaches the model. `SPAN_MIN` went away with it: a span with whitespace is never shorter than 3 characters. The prompt gained two clauses: a `run` candidate is typed into a shell as written, and the label must describe what that exact text does.
 
 **Verified:**
 
@@ -310,6 +316,8 @@ Where the shipped code differs from the draft, and why:
 - A Chromium render of two rows checked the rail's column, the hint badges and the hover state. Rev 3 rendered the screenshot's three multi-line commands with the real `FollowUpRail`. In every button, the label and the target start at the same x, and all three buttons have the same width. At a 560px stage, long lines wrap inside the target column without overflowing the rail.
 - Rev 4 rendered the real `FollowUpRail` in Chromium, with the old and new icons side by side, two `run` actions (one with a hint badge) and one `open` action. The icons computed to `16.09px` at a 14px font and stayed centred on the label line.
 - Two real haiku calls each picked `make install`, `cargo clippy` and the docs URL. They skipped the file paths, the command the reply said already ran, and the `git push --force` it warned against.
+- Rev 5: a script through the real `followUpCandidates` → `parse` → `followUpShellArgs` path reproduced the screenshot. The candidates were `b6c2b6d3`, a path and a symbol; the picked hash ran under `/bin/sh` with `SHELL=/bin/zsh` and printed `zsh:1: command not found: b6c2b6d3` and `[krypton] exit 127`. After the change, the same reply has no candidate and makes no call.
+- Rev 5 prompt, real `claude -p --model haiku` calls with `b6c2b6d3` still offered as a candidate for "Pushed to `origin/main` as `b6c2b6d3`. You can review the change in that commit.": the old prompt picked the hash 4 of 4 times ("show the pushed commit b6c2b6d3", "show commit b6c2b6d3"), and the new prompt returned `{"actions":[]}` 4 of 4 times. On the `make install` / docs URL / `npm test` reply, the new prompt still picked `make install` and the URL in 3 of 3 calls, and `npm test` in 1 of them.
 - **Not exercised:** the full in-app path (a Tauri lane turn → rail → terminal tab). It needs a rebuilt app.
 
 ## Open Questions
@@ -325,7 +333,7 @@ None.
 - Actions taken from tool calls (`tool.command`).
 - Backfilling replies from before the task was enabled, or re-asking any reply but the latest.
 - Persisting follow-ups across restarts.
-- Any kind beyond `run` / `open`.
+- Any kind beyond `run` / `open` (0327 later added `prompt`).
 - Running anything automatically, and execution on a remote harness.
 
 ## Resources

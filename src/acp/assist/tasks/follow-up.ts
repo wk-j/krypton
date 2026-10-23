@@ -1,14 +1,18 @@
-// Krypton — harness assist sidecar (spec 323): follow-up actions.
+// Krypton — harness assist sidecar (specs 323, 327): follow-up actions.
 //
-// Reads the reply that ended the turn and offers up to three things the human
-// can run or open next — `make install`, `npm test`, `http://localhost:5173`.
-// They paint as buttons under that reply (`FollowUpRail`) and nothing runs
-// until the human clicks one or types its `f` hint label.
+// Reads the reply that ended the turn and offers up to three next actions —
+// a command to run (`make install`), a URL to open (`http://localhost:5173`),
+// or a prompt for the lane ("post the summary to #1329"). They paint as
+// buttons under that reply (`FollowUpRail`) and nothing happens until the
+// human clicks one or types its `f` hint label.
 //
 // The model never writes a command. `followUpCandidates` pulls every shell
-// fence, inline code span and http(s) URL out of the reply's markdown; the
+// fence, every inline code span that is a URL or has more than one word, and
+// every http(s) URL out of the reply's markdown; for `run` and `open` the
 // model only picks candidate numbers and labels them, and `parse` copies the
-// target from the candidate. A reply with no candidate makes no call.
+// target from the candidate. A `prompt` is the one target the model writes:
+// it is sent to the agent, never to a shell, and `parse` drops any that the
+// composer would route elsewhere.
 
 import type { HarnessTranscriptItem } from '../../harness-view-types';
 import type {
@@ -24,13 +28,18 @@ const MAX_CANDIDATES = 20;
 const LABEL_MAX = 40;
 const FENCE_MAX_LINES = 6;
 const FENCE_MAX_CHARS = 400;
-const SPAN_MIN = 2;
 const SPAN_MAX = 200;
 /** The candidate list's share of `max_input_chars`; the oldest drop first. */
 const CANDIDATE_SHARE = 0.35;
 /** Tail-kept: the next steps live at the end of a reply. */
 const REPLY_SHARE = 0.55;
 const TRUNCATION_MARK = '…[truncated] ';
+const PROMPT_MIN = 8;
+const PROMPT_MAX = 240;
+/** What `submitLanePrompt` routes elsewhere: a hash command, the shell, an agent slash command, another lane. */
+const ROUTED_PREFIX = /^[#!/@]/;
+/** A `{{#verb}}` token expands at send time into text the button never showed. */
+const VERB_TOKEN = '{{#';
 
 /** Info strings whose fence is a command to run. Empty = an unlabelled fence. */
 const SHELL_INFO = new Set(['', 'sh', 'bash', 'zsh', 'fish', 'shell', 'console', 'terminal', 'shellsession']);
@@ -82,8 +91,11 @@ function scanProse(text: string, found: FollowUpCandidate[]): void {
       continue;
     }
     const target = span.trim();
-    if (target.length < SPAN_MIN || target.length > SPAN_MAX) continue;
-    found.push({ kind: URL_ONLY.test(target) ? 'open' : 'run', target });
+    if (target.length > SPAN_MAX) continue;
+    if (URL_ONLY.test(target)) found.push({ kind: 'open', target });
+    // One word is a name — a commit hash, a path, a symbol, a flag. As a button
+    // it would run `b6c2b6d3`; a command worth a button takes an argument.
+    else if (/\s/.test(target)) found.push({ kind: 'run', target });
   }
 }
 
@@ -196,29 +208,45 @@ function shortLabel(raw: string): string {
   return `${(space >= LABEL_MAX / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
+/** A model-written prompt, whitespace collapsed; `null` when it may not be offered. */
+function promptText(raw: string): string | null {
+  const text = raw.trim().replace(/\s+/g, ' ');
+  // Never cut: a shortened request is a different request.
+  if (text.length < PROMPT_MIN || text.length > PROMPT_MAX) return null;
+  if (ROUTED_PREFIX.test(text) || text.includes(VERB_TOKEN)) return null;
+  return text;
+}
+
 export const followUp: TranscriptAssistTask = {
   id: 'follow-up',
-  summary: 'offer to run or open what the reply tells you to',
+  summary: 'offer to run, open or send what the reply suggests next',
   surface: 'transcript',
   onTurnEnd: true,
   defaults: { mode: 'off', options: { count: MAX_ACTIONS } },
 
-  /** No command and no URL in the reply ⇒ nothing to pick, so no call. */
-  eligible(ctx: AssistContext, cfg: AssistTaskConfig): boolean {
-    return offeredCandidates(ctx, cfg.maxInputChars).length > 0;
+  /** Spec 327: a prompt needs no candidate, so every reply is worth one call. */
+  eligible(ctx: AssistContext): boolean {
+    return followUpReply(ctx) !== null;
   },
 
   system(cfg: AssistTaskConfig): string {
     const n = actionCount(cfg);
     return 'You read the final reply of a coding agent and a numbered list of candidates copied from it. '
-      + 'Pick the candidates the human should run or open next. '
-      + 'Reply with JSON only: {"actions":[{"id":N,"label":"…"}]}. '
-      + `At most ${n} entries, most useful first. `
+      + `Offer the human at most ${n} next actions, most useful first. `
+      + 'Reply with JSON only: {"actions":[{"id":N,"label":"…"},{"prompt":"…","label":"…"}]}. '
+      + 'An id entry picks a candidate to run or open. '
       + 'Pick a candidate only if the reply tells the human to run or open it, '
       + 'or if it installs, builds, tests, starts or shows what the turn just made. '
+      + 'A run candidate is typed into a shell exactly as written, so never pick one that is not a complete command. '
       + 'Never pick a file path, a symbol, an example, a command the reply says already ran, '
       + 'or a command the reply warns against. '
-      + `label is at most ${LABEL_MAX} characters, lower case, no trailing period, and says what the action does. `
+      + 'A prompt entry is a message sent to the agent itself, for a step the agent should take rather than a shell command, '
+      + 'such as posting a comment, opening a pull request, committing or using a skill. '
+      + 'Write one only when the reply offers that step or asks whether to take it, never an idea of your own. '
+      + `The prompt is one or two sentences in the reply's language, at most ${PROMPT_MAX} characters. `
+      + 'It names every target the reply gave (issue number, branch, skill), and it never starts with #, !, / or @. '
+      + `label is at most ${LABEL_MAX} characters, lower case, no trailing period, `
+      + 'and says what the action does (for a candidate, what its exact text does), never an action it does not perform. '
       + 'If nothing qualifies, reply {"actions":[]}. No prose outside the JSON.';
   },
 
@@ -229,7 +257,9 @@ export const followUp: TranscriptAssistTask = {
     const model = ctx.modelName ? ` · ${ctx.modelName}` : '';
     lines.push(`lane: ${ctx.laneName} (${ctx.backendId}${model})`);
     lines.push('--- candidates ---');
-    offeredCandidates(ctx, budget.maxInputChars).forEach((candidate, i) => {
+    const candidates = offeredCandidates(ctx, budget.maxInputChars);
+    if (candidates.length === 0) lines.push('(none)');
+    candidates.forEach((candidate, i) => {
       lines.push(candidateLine(i + 1, candidate));
     });
     lines.push('--- agent replied ---');
@@ -256,18 +286,26 @@ export const followUp: TranscriptAssistTask = {
     const candidates = offeredCandidates(ctx, cfg.maxInputChars);
     const limit = actionCount(cfg);
     const picked = new Set<number>();
+    const prompts = new Set<string>();
     const actions: FollowUpAction[] = [];
     for (const entry of entries) {
       if (actions.length >= limit) break;
       const row = asRecord(entry);
       if (!row || typeof row.label !== 'string') continue;
-      const id = candidateId(row.id);
-      if (id === null || id < 1 || id > candidates.length || picked.has(id)) continue;
       const label = shortLabel(row.label);
       if (label === '') continue;
-      picked.add(id);
-      const candidate = candidates[id - 1];
-      actions.push({ followUpKind: candidate.kind, label, target: candidate.target, hintLabel: null });
+      if (row.id !== undefined && row.id !== null) {
+        const id = candidateId(row.id);
+        if (id === null || id < 1 || id > candidates.length || picked.has(id)) continue;
+        picked.add(id);
+        const candidate = candidates[id - 1];
+        actions.push({ followUpKind: candidate.kind, label, target: candidate.target, hintLabel: null });
+        continue;
+      }
+      const prompt = typeof row.prompt === 'string' ? promptText(row.prompt) : null;
+      if (prompt === null || prompts.has(prompt)) continue;
+      prompts.add(prompt);
+      actions.push({ followUpKind: 'prompt', label, target: prompt, hintLabel: null });
     }
     return actions.length > 0 ? actions : null;
   },

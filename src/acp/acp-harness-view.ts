@@ -6361,14 +6361,19 @@ export class AcpHarnessView implements ContentView {
         }
         return;
       }
-      // spec 323: a follow-up button under a reply runs or opens its action.
+      // spec 323: a follow-up button under a reply runs or opens its action;
+      // spec 327: a prompt sends, and its `paste` button fills the composer.
       const followUpButton = target.closest<HTMLElement>('[data-follow-up-index]');
       const followUpMsg = followUpButton?.closest<HTMLElement>('.acp-harness__msg[data-msg-id]');
       if (followUpButton && followUpMsg?.dataset.msgId) {
         e.preventDefault();
         const item = this.activeLane()?.transcript.find((row) => row.id === followUpMsg.dataset.msgId);
         const action = item?.followUps?.[Number(followUpButton.dataset.followUpIndex)];
-        if (action) this.runFollowUp(action);
+        if (action?.followUpKind === 'prompt' && followUpButton.dataset.followUpPaste !== undefined) {
+          this.pasteFollowUp(action);
+        } else if (action) {
+          this.runFollowUp(action);
+        }
         return;
       }
       const anchor = target.closest<HTMLAnchorElement>('a[href]');
@@ -9870,7 +9875,9 @@ export class AcpHarnessView implements ContentView {
     const exact = targets.find((target) => target.hintLabel === candidate);
     if (exact) {
       if ('followUpKind' in exact) {
-        this.runFollowUp(exact);
+        // spec 327: Shift pastes a prompt into the composer instead of sending it.
+        if (exact.followUpKind === 'prompt' && e.shiftKey) this.pasteFollowUp(exact);
+        else this.runFollowUp(exact);
       } else if ('executionItemId' in exact) {
         this.openExecution(exact.executionItemId);
       } else if ('sourceHash' in exact) {
@@ -9918,12 +9925,23 @@ export class AcpHarnessView implements ContentView {
   }
 
   /**
-   * Spec 323: run or open one follow-up action. The click or hint label is the
-   * human's confirmation; the button showed the full target.
+   * Specs 323, 327: run, open or send one follow-up action. The click or hint
+   * label is the human's confirmation; the button showed the full target.
    */
   private runFollowUp(action: FollowUpAction): void {
     if (action.followUpKind === 'open') {
       if (/^https?:\/\//i.test(action.target)) openExternalUrl(action.target, { external: true });
+      return;
+    }
+    if (action.followUpKind === 'prompt') {
+      // The rail is only on the active lane's rows, so that lane owns the reply.
+      // 'queue', never 'steer': a follow-up must not redirect a running turn.
+      // No `clearComposer`: the draft the human may be typing stays.
+      const lane = this.activeLane();
+      if (lane) {
+        void this.submitLanePrompt(lane, action.target, [], undefined, 'queue')
+          .catch((error: unknown) => this.handleSubmitError(error));
+      }
       return;
     }
     const openTab = this.openTerminalTabCb;
@@ -9944,6 +9962,18 @@ export class AcpHarnessView implements ContentView {
         console.warn('[follow-up] terminal tab failed:', err);
         this.flashChip('follow-up: could not open a terminal');
       });
+  }
+
+  /** Spec 327: put a prompt follow-up into the composer at the cursor, as
+   *  `Cmd+V` would, and leave it there to edit. Nothing is sent. */
+  private pasteFollowUp(action: FollowUpAction): void {
+    const lane = this.activeLane();
+    if (!lane) return;
+    this.insertDraft(lane, action.target);
+    // `setDraft` moved focus to the composer; drop the transcript-focus look and
+    // take DOM focus off the clicked button so Enter reaches the composer.
+    this.syncRootClasses();
+    this.element.focus({ preventScroll: true });
   }
 
   private openExecution(itemId: string): void {

@@ -48,6 +48,30 @@ describe('FollowUpRail', () => {
     rail.dispose();
   });
 
+  it('gives a prompt a send button and a paste button on the same index, sharing its hint', () => {
+    const prompt = action({ followUpKind: 'prompt', label: 'post summary to #1329', target: 'Post the summary to #1329.' });
+    const actions = [action(), prompt];
+    const rail = new FollowUpRail();
+    rail.update({ actions });
+
+    const item = rail.el.querySelector<HTMLElement>('.acp-harness__followups-item');
+    const [send, paste] = [...(item?.querySelectorAll<HTMLButtonElement>('button') ?? [])];
+    expect(send.dataset.followUpIndex).toBe('1');
+    expect(send.dataset.followUpPaste).toBeUndefined();
+    expect(send.getAttribute('aria-label')).toBe('Send Post the summary to #1329.');
+    expect(paste.dataset.followUpIndex).toBe('1');
+    expect(paste.dataset.followUpPaste).toBe('');
+    expect(paste.getAttribute('aria-label')).toBe('Paste into prompt: Post the summary to #1329.');
+    // A run action stays one button, outside any item.
+    expect(rail.el.querySelectorAll('.acp-harness__followups-item')).toHaveLength(1);
+
+    prompt.hintLabel = 'f';
+    rail.update({ actions });
+    const badges = [...(rail.el.querySelector('.acp-harness__followups-item')?.querySelectorAll('.acp-harness__followups-hint') ?? [])];
+    expect(badges.map((n) => n.textContent)).toEqual(['f', '⇧f']);
+    rail.dispose();
+  });
+
   it('keeps its nodes when nothing it paints has changed', () => {
     const rail = new FollowUpRail();
     rail.update({ actions: [action()] });

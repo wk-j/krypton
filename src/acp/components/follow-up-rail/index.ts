@@ -1,8 +1,8 @@
-// Spec 323 — `FollowUpRail`.
+// Specs 323, 327 — `FollowUpRail`.
 //
-// The FOLLOW-UP buttons under a sealed assistant reply: the commands and URLs
-// the assist sidecar picked out of that reply. Every reply keeps its own rail,
-// so scrolling back reaches the buttons of any earlier turn.
+// The FOLLOW-UP buttons under a sealed assistant reply: the commands, URLs and
+// lane prompts the assist sidecar picked out of that reply. Every reply keeps
+// its own rail, so scrolling back reaches the buttons of any earlier turn.
 //
 // It is a CHILD component of `AssistantRow`, mounted as the row's last child —
 // a sibling of the body, so neither the body's `innerHTML` repaint nor the
@@ -11,7 +11,8 @@
 //
 // Static by contract (AGENTS.md constraint 10): a button has no state, a click
 // changes nothing here, and there is no "ran" mark. Clicks stay delegated on
-// `[data-follow-up-index]` at the view level, so the rail attaches no listener.
+// `[data-follow-up-index]` (and `[data-follow-up-paste]` for a prompt's paste
+// button) at the view level, so the rail attaches no listener.
 
 import './follow-up-rail.css';
 
@@ -61,21 +62,42 @@ export class FollowUpRail extends Component<FollowUpRailProps> {
   }
 }
 
-function renderAction(action: FollowUpAction, index: number): HTMLButtonElement {
-  const run = action.followUpKind === 'run';
-  return el(
+const VERB: Readonly<Record<FollowUpAction['followUpKind'], string>> = { run: 'Run', open: 'Open', prompt: 'Send' };
+
+function renderAction(action: FollowUpAction, index: number): HTMLElement {
+  const kind = action.followUpKind;
+  const button = el(
     'button',
     {
-      class: `${BLOCK}-btn ${BLOCK}-btn--${action.followUpKind}`,
+      class: `${BLOCK}-btn ${BLOCK}-btn--${kind}`,
       // Keyboard reach is the `f` open-hint layer; Tab stays in the composer.
-      attrs: { type: 'button', tabindex: -1, 'aria-label': `${run ? 'Run' : 'Open'} ${action.target}` },
+      attrs: { type: 'button', tabindex: -1, 'aria-label': `${VERB[kind]} ${action.target}` },
       data: { 'follow-up-index': index },
     },
     el('span', { class: `${BLOCK}-hint`, text: action.hintLabel ?? '' }),
-    el('span', { class: `${BLOCK}-glyph`, attrs: { 'aria-hidden': 'true' } }, harnessIconEl(`follow-up-${action.followUpKind}`)),
+    el('span', { class: `${BLOCK}-glyph`, attrs: { 'aria-hidden': 'true' } }, harnessIconEl(`follow-up-${kind}`)),
     el('span', { class: `${BLOCK}-label`, text: action.label }),
-    // In full, never ellipsized: the human must see exactly what will run.
+    // In full, never ellipsized: the human must see exactly what will run or be sent.
     el('code', { class: `${BLOCK}-target`, text: action.target }),
+  );
+  if (kind !== 'prompt') return button;
+  // Spec 327: a prompt can also go to the composer instead. A button cannot
+  // hold a button, so the two sit side by side in one item; Shift + the same
+  // hint label is the keyboard path to the second.
+  return el(
+    'div',
+    { class: `${BLOCK}-item` },
+    button,
+    el(
+      'button',
+      {
+        class: `${BLOCK}-paste`,
+        attrs: { type: 'button', tabindex: -1, 'aria-label': `Paste into prompt: ${action.target}` },
+        data: { 'follow-up-index': index, 'follow-up-paste': true },
+      },
+      el('span', { class: `${BLOCK}-hint`, text: action.hintLabel ? `⇧${action.hintLabel}` : '' }),
+      el('span', { class: `${BLOCK}-paste-label`, text: 'paste' }),
+    ),
   );
 }
 

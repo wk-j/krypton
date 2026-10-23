@@ -451,9 +451,9 @@ max_input_chars = 6000         # hard cap on the payload sent to the model (500�
 # model = "haiku"
 # count = 3                    # task-specific knob; Krypton never interprets it
 
-# [acp_harness.assist.tasks.follow-up]   # spec 323: follow-up buttons under replies
-# mode = "auto"                # default "off"
-# count = 3                    # 1..3 buttons per reply
+# [acp_harness.assist.tasks.follow-up]   # specs 323, 327: follow-up buttons under replies
+# mode = "auto"                # default "off"; one cheap-model call per finished reply
+# count = 3                    # 1..3 buttons per reply (run, open and prompt together)
 
 # --- ACP Wire Profiler (spec 288) ---
 # Records ACP traffic (Krypton ↔ agent stdio and Rust → UI events) into an
@@ -868,7 +868,7 @@ Resolution order per run is `task defaults` ← `[acp_harness.assist]` ← `[acp
 
 `next-prompt` reads one option: `count` (default `3`), the maximum number of suggestions it returns. The strip shows at most three, accepted with `Cmd+1`…`Cmd+3`, which load the prompt into the composer and never send it.
 
-`[acp_harness.assist.tasks.follow-up]` (spec 323, `docs/0323-harness-follow-up-actions.md`) turns on follow-up buttons under finished replies. Its `mode` defaults to `"off"`; its one option `count` (1..3, default `3`) caps the buttons per reply. No Rust config change backs it — the keys pass through the generic per-task table.
+`[acp_harness.assist.tasks.follow-up]` (specs 323 and 327, `docs/0323-harness-follow-up-actions.md`, `docs/0327-harness-follow-up-prompts.md`) turns on follow-up buttons under finished replies: commands to run, URLs to open, and prompts for the lane (send, or paste into the composer). Its `mode` defaults to `"off"`; with `"auto"` every finished reply of 40 or more characters costs one cheap-model call, since a prompt needs no command or URL in the reply. Its one option `count` (1..3, default `3`) caps the buttons per reply across all three kinds. No Rust config change backs it — the keys pass through the generic per-task table.
 
 ```toml
 [acp_harness.assist.tasks.follow-up]

@@ -61,18 +61,20 @@ export interface AssistCheck {
 }
 
 /**
- * Spec 323: one follow-up action under a reply. `target` is copied from a
- * candidate Krypton extracted out of the reply's markdown — the assist model
- * only picks the candidate and writes `label`, so it never authors the bytes
- * that run. `hintLabel` is the `f` open-hint label (spec 206 target contract),
- * `null` outside hint mode.
+ * Spec 323: one follow-up action under a reply. A `run` or `open` target is
+ * copied from a candidate Krypton extracted out of the reply's markdown — the
+ * assist model only picks the candidate and writes `label`, so it never
+ * authors the bytes that run. A `prompt` target (spec 327) is a message the
+ * model wrote for the lane itself; it goes to the agent, never to a shell.
+ * `hintLabel` is the `f` open-hint label (spec 206 target contract), `null`
+ * outside hint mode.
  */
 export interface FollowUpAction {
   /** A field no other open-hint target carries: the dispatch keys on it. */
-  readonly followUpKind: 'run' | 'open';
+  readonly followUpKind: 'run' | 'open' | 'prompt';
   /** 1..40 characters, written by the model. */
   readonly label: string;
-  /** The command (`run`) or http(s) URL (`open`). */
+  /** The command (`run`), http(s) URL (`open`) or message for the lane (`prompt`). */
   readonly target: string;
   hintLabel: string | null;
 }

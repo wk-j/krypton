@@ -1,4 +1,4 @@
-/* Spec 323 — `FollowUpRail`.
+/* Specs 323, 327 — `FollowUpRail`.
  *
  * The FOLLOW-UP buttons under a sealed reply. Its head matches the REFERENCES
  * rail above it; the buttons are ghost buttons with one full 1px border at low
@@ -98,6 +98,49 @@
 
   .acp-harness__followups-btn--open .acp-harness__followups-glyph {
     color: rgb(var(--krypton-special-rgb, 199, 125, 255));
+  }
+
+  .acp-harness__followups-btn--prompt .acp-harness__followups-glyph {
+    color: rgb(var(--krypton-info-rgb, 90, 160, 255));
+  }
+
+  /* Spec 327: a prompt's send button and its `paste` button side by side,
+     together as wide as every other action, so the right edges still line up. */
+  .acp-harness__followups-item {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+  }
+
+  .acp-harness__followups-item > .acp-harness__followups-btn {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+
+  .acp-harness__followups-paste {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    padding: 4px 9px;
+    appearance: none;
+    font: inherit;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 240), 0.75));
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--krypton-window-accent, #0cf) 28%, transparent);
+    border-radius: var(--krypton-border-radius, 8px);
+    cursor: pointer;
+  }
+
+  .acp-harness__followups-paste:hover {
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 240), 0.95);
+    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 8%, transparent);
+    border-color: color-mix(in srgb, var(--krypton-window-accent, #0cf) 55%, transparent);
+  }
+
+  .acp-harness__followups-paste:focus-visible {
+    outline: 1px solid var(--krypton-window-accent, #0cf);
+    outline-offset: -1px;
   }
 
   /* Spec 323 rev 4: the SVG mark, a touch over the base 1em icon so the
