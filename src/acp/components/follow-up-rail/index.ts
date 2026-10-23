@@ -12,7 +12,7 @@
 // Static by contract (AGENTS.md constraint 10): a button has no state, a click
 // changes nothing here, and there is no "ran" mark. Clicks stay delegated on
 // `[data-follow-up-index]` (and `[data-follow-up-paste]` for a prompt's paste
-// button) at the view level, so the rail attaches no listener.
+// icon) at the view level, so the rail attaches no listener.
 
 import './follow-up-rail.css';
 
@@ -82,8 +82,9 @@ function renderAction(action: FollowUpAction, index: number): HTMLElement {
   );
   if (kind !== 'prompt') return button;
   // Spec 327: a prompt can also go to the composer instead. A button cannot
-  // hold a button, so the two sit side by side in one item; Shift + the same
-  // hint label is the keyboard path to the second.
+  // hold a button, so the item is the card: the send button fills it and the
+  // paste icon sits inside its right edge. Shift + the same hint label is the
+  // keyboard path to the icon.
   return el(
     'div',
     { class: `${BLOCK}-item` },
@@ -92,11 +93,16 @@ function renderAction(action: FollowUpAction, index: number): HTMLElement {
       'button',
       {
         class: `${BLOCK}-paste`,
-        attrs: { type: 'button', tabindex: -1, 'aria-label': `Paste into prompt: ${action.target}` },
+        attrs: {
+          type: 'button',
+          tabindex: -1,
+          title: 'Paste into prompt',
+          'aria-label': `Paste into prompt: ${action.target}`,
+        },
         data: { 'follow-up-index': index, 'follow-up-paste': true },
       },
       el('span', { class: `${BLOCK}-hint`, text: action.hintLabel ? `⇧${action.hintLabel}` : '' }),
-      el('span', { class: `${BLOCK}-paste-label`, text: 'paste' }),
+      el('span', { class: `${BLOCK}-paste-glyph`, attrs: { 'aria-hidden': 'true' } }, harnessIconEl('follow-up-paste')),
     ),
   );
 }

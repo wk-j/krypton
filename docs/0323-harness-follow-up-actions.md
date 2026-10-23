@@ -26,7 +26,7 @@ Add a second assist task, `follow-up`. When a turn ends it picks up to three act
 - **`run`** opens a terminal tab in the harness window at the project directory. The tab runs the command in the user's login shell and then stays open as an interactive shell.
 - **`open`** opens an http(s) URL in the OS browser.
 
-Spec 0327 adds a third kind, **`prompt`**: a message the model writes for the lane itself, which a click sends and a `paste` button puts into the composer. See [0327](0327-harness-follow-up-prompts.md).
+Spec 0327 adds a third kind, **`prompt`**: a message the model writes for the lane itself, which a click sends and the card's paste icon puts into the composer. See [0327](0327-harness-follow-up-prompts.md).
 
 Nothing runs without the human. They click a button, or use the existing transcript keys: `Esc` to focus the transcript, `f` to enter open-hint mode, then the button's hint label.
 

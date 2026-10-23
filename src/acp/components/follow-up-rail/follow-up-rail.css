@@ -104,43 +104,70 @@
     color: rgb(var(--krypton-info-rgb, 90, 160, 255));
   }
 
-  /* Spec 327: a prompt's send button and its `paste` button side by side,
-     together as wide as every other action, so the right edges still line up. */
+  /* Spec 327 rev 4: a prompt is one card. The item carries the border and the
+     hover tint, the send button fills it, and the paste icon sits inside the
+     right edge on the label's row. As wide as every other action, so the
+     right edges still line up. */
   .acp-harness__followups-item {
     display: flex;
-    gap: 4px;
+    align-items: flex-start;
     width: 100%;
+    border: 1px solid color-mix(in srgb, var(--krypton-window-accent, #0cf) 28%, transparent);
+    border-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-harness__followups-item:hover {
+    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 8%, transparent);
+    border-color: color-mix(in srgb, var(--krypton-window-accent, #0cf) 55%, transparent);
   }
 
   .acp-harness__followups-item > .acp-harness__followups-btn {
     flex: 1 1 auto;
     width: auto;
     min-width: 0;
+    border: 0;
+  }
+
+  .acp-harness__followups-item > .acp-harness__followups-btn:hover {
+    background: transparent;
   }
 
   .acp-harness__followups-paste {
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    padding: 4px 9px;
+    margin: 3px 4px 0 0;
+    padding: 1px 4px;
     appearance: none;
     font: inherit;
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 240), 0.75));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 240), 0.55));
     background: transparent;
-    border: 1px solid color-mix(in srgb, var(--krypton-window-accent, #0cf) 28%, transparent);
-    border-radius: var(--krypton-border-radius, 8px);
+    border: 0;
+    border-radius: calc(var(--krypton-border-radius, 8px) / 2);
     cursor: pointer;
   }
 
   .acp-harness__followups-paste:hover {
     color: rgba(var(--krypton-fg-rgb, 216, 232, 240), 0.95);
-    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 8%, transparent);
-    border-color: color-mix(in srgb, var(--krypton-window-accent, #0cf) 55%, transparent);
+    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 18%, transparent);
   }
 
   .acp-harness__followups-paste:focus-visible {
     outline: 1px solid var(--krypton-window-accent, #0cf);
     outline-offset: -1px;
+  }
+
+  .acp-harness__followups-paste .acp-harness__followups-hint {
+    margin-right: 4px;
+  }
+
+  .acp-harness__followups-paste-glyph {
+    display: flex;
+  }
+
+  .acp-harness__followups-paste-glyph .acp-harness__icon {
+    width: 1.15em;
+    height: 1.15em;
   }
 
   /* Spec 323 rev 4: the SVG mark, a touch over the base 1em icon so the

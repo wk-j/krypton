@@ -133,6 +133,9 @@ export const HARNESS_ICON_SVG_DEFS = [
   // spec 327: `prompt` is a speech bubble holding two text lines — the action
   // is a message to the lane's agent, not a shell command.
   '<symbol id="krypton-icon-follow-up-prompt" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M3.8 3 H12.2 A1.4 1.4 0 0 1 13.6 4.4 V9.2 A1.4 1.4 0 0 1 12.2 10.6 H7.2 L4.6 13 V10.6 H3.8 A1.4 1.4 0 0 1 2.4 9.2 V4.4 A1.4 1.4 0 0 1 3.8 3 Z"/><path d="M5.2 5.9 H10.8"/><path d="M5.2 7.9 H9"/></g></symbol>',
+  // spec 327 rev 4: the prompt card's paste control — a clipboard holding two
+  // text lines; the message goes into the composer instead of being sent.
+  '<symbol id="krypton-icon-follow-up-paste" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M5.6 3.3 H4.3 A1.2 1.2 0 0 0 3.1 4.5 V12.7 A1.2 1.2 0 0 0 4.3 13.9 H11.7 A1.2 1.2 0 0 0 12.9 12.7 V4.5 A1.2 1.2 0 0 0 11.7 3.3 H10.4"/><rect x="5.6" y="2.1" width="4.8" height="2.4" rx="0.7"/><path d="M5.7 7.6 H10.3"/><path d="M5.7 10 H8.9"/></g></symbol>',
 ].join('');
 
 const SYMBOL_DEFS_ID = 'krypton-harness-symbol-defs';

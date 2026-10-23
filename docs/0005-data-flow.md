@@ -1521,7 +1521,7 @@ another lane — while the warm subprocess survives; only `dispose()` kills it, 
             runs `"$SHELL" -lc "$1"` (Ctrl+C stops only the command), then a login shell.
    prompt → submitLanePrompt(activeLane, text, [], undefined, 'queue'): idle lane starts
             a turn, busy lane queues it (never steers); the draft is untouched.
-8. A prompt's `paste` button ([data-follow-up-paste]) or Shift + its hint label →
+8. A prompt card's paste icon ([data-follow-up-paste]) or Shift + its hint label →
    pasteFollowUp → insertDraft at the composer cursor (as Cmd+V), syncRootClasses,
    focus the view. Nothing is sent.
 ```

@@ -1,6 +1,6 @@
 # Harness Follow-up Prompts — Implementation Spec
 
-> Status: Implemented (rev 3 — no prompt that reworks the finished turn)
+> Status: Implemented (rev 4 — paste is an icon inside the prompt card)
 > Date: 2026-10-23
 > Milestone: ACP Harness — transcript
 > Builds on: 0323 (follow-up actions) · 0306 (assist sidecar) · 0136 (prompt queue) · 0278 (steer)
@@ -13,12 +13,14 @@ User, 2026-10-23: "For follow up job, I should be able to interfact current harn
 
 **Rev 3 requirement (user, 2026-10-23):** "Make sense what? it try to inject after all commit there is nothing left to commit". A reply reported two finished commits and ended with a hedge: if the human would rather have spec 0323 rev 5 in its own commit, the agent could split `023845b`. The model turned that hedge into a prompt button ("split out spec 0323 rev 5 commit") in 3 of 3 real haiku calls. The human had just received the result they ordered, so the button offered to redo it. A prompt must now continue from the delivered result: an offer to redo, split, squash, revert or restructure the finished work never becomes a button, even when the reply makes it.
 
+**Rev 4 requirement (user, 2026-10-23):** "REmove this ugly paste button move to the card with icon instead". Rev 2 drew paste as a second bordered button labelled `paste` beside the card. It is now a clipboard icon inside the prompt card's right edge.
+
 ## Solution
 
 Add a third follow-up kind, **`prompt`**: a message for the lane that owns the reply. The assist model writes it, at most 240 characters, for a step the reply itself offered ("Want me to post this to #1329?") that continues from the result the turn delivered, never one that redoes that result another way. The button shows the full message and offers two options:
 
 - **Send.** A click on the button or its `f` hint sends it through the composer's queue path. An idle lane starts a turn, and a busy lane queues the message.
-- **Paste.** A click on its `paste` button, or `Shift` + its hint, inserts it into the composer at the cursor, as `Cmd+V` does. Nothing is sent.
+- **Paste.** A click on its paste icon (a clipboard inside the card's right edge), or `Shift` + its hint, inserts it into the composer at the cursor, as `Cmd+V` does. Nothing is sent.
 
 `run` and `open` do not change: their targets still come only from candidates.
 
@@ -44,7 +46,7 @@ Add a third follow-up kind, **`prompt`**: a message for the lane that owns the r
 
 - **One option only.** The user asked for both. Send alone gives no way to edit the message, and paste alone costs a second keystroke for every use.
 - **`next-prompt`'s draft path (`Cmd+1..3`).** It refuses while a draft exists ("assist: clear the draft first"). A paste inserts at the cursor instead, as `Cmd+V` does.
-- **Paste only through a modifier (`Shift`+click).** A mouse user could not see that the option exists. The `paste` button shows it, and `Shift`+hint is the keyboard path.
+- **Paste only through a modifier (`Shift`+click).** A mouse user could not see that the option exists. The paste icon shows it, and `Shift`+hint is the keyboard path.
 - **Send the picked span itself.** `post-github-comment` alone carries no target. `#1329` lives in the prose around it.
 - **Classify one-word spans deterministically.** The same span could be a skill, a CLI, a branch or a symbol. Only the prose says which, and reading prose is the model's job.
 - **Let the model also write `run` commands.** The reason in 0323 still holds: a shell command nobody wrote must never sit behind a button. A prompt goes to the agent, which reads it with its own context and permission mode.
@@ -68,8 +70,8 @@ Add a third follow-up kind, **`prompt`**: a message for the lane that owns the r
 | `src/acp/assist/tasks/follow-up.ts` + test | `eligible`, `system`, `payload` (`(none)`), `parse` prompt entries |
 | `src/acp/harness-assist-controller.test.ts` | The no-candidate case now makes a call; an empty answer paints no rail |
 | `src/acp/acp-harness-view.ts` | `runFollowUp` `prompt` branch; `pasteFollowUp`; click branch for `[data-follow-up-paste]`; `Shift` on a prompt hint |
-| `src/acp/components/follow-up-rail/index.ts`, `.css`, test | Prompt item: send button plus `paste` button; `Send …` / `Paste into prompt: …` aria-labels; `--prompt` glyph colour |
-| `src/acp/harness-icons.ts` | `krypton-icon-follow-up-prompt` symbol |
+| `src/acp/components/follow-up-rail/index.ts`, `.css`, test | Prompt card: send button plus paste icon; `Send …` / `Paste into prompt: …` aria-labels; `--prompt` glyph colour |
+| `src/acp/harness-icons.ts` | `krypton-icon-follow-up-prompt` and `krypton-icon-follow-up-paste` symbols |
 | Docs | 0323 (eligibility, edge cases, Out of Scope "any kind beyond `run`/`open`"), 0306 addendum, 0004, 0005, 0006, 0072, 0206, `README.md` index |
 
 ## Design
@@ -117,7 +119,7 @@ Send: a click on the button, or its hint label → runFollowUp(action), kind 'pr
 3. The draft, staged images, prompt history and the 0285 word log are untouched
    (the human did not type it).
 
-Paste: a click on `paste`, or Shift + the hint label → pasteFollowUp(action)
+Paste: a click on the paste icon, or Shift + the hint label → pasteFollowUp(action)
 1. insertDraft(lane, action.target): inserted at the cursor, existing draft kept
 2. syncRootClasses(); element.focus({ preventScroll: true }), so typing and
    Enter go to the composer
@@ -130,21 +132,20 @@ Neither option changes the row or its rail.
 
 ```
 FOLLOW-UP
-╭───────────────────────────────────────────╮╭───────╮
-│ (≡) post load-test review summary to #1329 ││ paste │
-│     Post the load-test review summary to   ││       │
-│     #1329 with the post-github-comment     ││       │
-│     skill.                                 ││       │
-╰───────────────────────────────────────────╯╰───────╯
+╭────────────────────────────────────────────────────╮
+│ (≡) post load-test review summary to #1329     [P] │
+│     Post the load-test review summary to #1329     │
+│     with the post-github-comment skill.            │
+╰────────────────────────────────────────────────────╯
 ```
 
-`(≡)` stands in for the new icon.
+`(≡)` stands in for the speech-bubble icon and `[P]` for the clipboard icon.
 
-- **DOM.** A `run` or `open` action stays one `button` in the list. A button cannot contain a button, so a `prompt` action is a `div.acp-harness__followups-item` holding two buttons:
+- **DOM.** A `run` or `open` action stays one `button` in the list. A button cannot contain a button, so a `prompt` action is a `div.acp-harness__followups-item`, the card, holding two buttons:
   - the send button: the same `button.__btn.__btn--prompt[data-follow-up-index=N]` as the other kinds;
-  - `button.__paste[data-follow-up-index=N][data-follow-up-paste]`, containing a `span.__hint` and the text `paste`.
-- **Hint.** In hint mode the paste button's hint reads `⇧<label>`, the send button's label with Shift. Outside hint mode it is empty and hidden. Each prompt action takes one hint label.
-- **Layout.** The item is a flex row as wide as the list. The send button grows (`flex: 1`), and the paste button is a ghost button of the same border and height. The right edges of every action still line up.
+  - `button.__paste[data-follow-up-index=N][data-follow-up-paste][title="Paste into prompt"]`, containing a `span.__hint` and a `span.__paste-glyph` with the clipboard icon. It has no text.
+- **Hint.** In hint mode the paste icon's hint reads `⇧<label>`, the send button's label with Shift. Outside hint mode it is empty and hidden. Each prompt action takes one hint label.
+- **Layout.** The card is a flex row as wide as the list. It carries the 1px border and the hover tint, so send and paste read as one action. The send button has no border and grows (`flex: 1`). The paste icon sits inside the right edge on the label's row, muted (`--krypton-ink-3`) until hovered, when it brightens over an 18% accent tint. The right edges of every action still line up.
 
 - **Icon.** `krypton-icon-follow-up-prompt`: a speech bubble with a tail at the bottom left and two text lines inside. It uses the same 16×16 frame, `1.35` stroke and round caps as the run and open icons:
 
@@ -154,8 +155,17 @@ FOLLOW-UP
   M5.2 7.9 H9
   ```
 
+  `krypton-icon-follow-up-paste`, in the same frame and stroke: a clipboard with its clip at the top and two text lines inside.
+
+  ```
+  M5.6 3.3 H4.3 A1.2 1.2 0 0 0 3.1 4.5 V12.7 A1.2 1.2 0 0 0 4.3 13.9 H11.7 A1.2 1.2 0 0 0 12.9 12.7 V4.5 A1.2 1.2 0 0 0 11.7 3.3 H10.4
+  rect x=5.6 y=2.1 width=4.8 height=2.4 rx=0.7
+  M5.7 7.6 H10.3
+  M5.7 10 H8.9
+  ```
+
 - **Colour.** `.acp-harness__followups-btn--prompt .acp-harness__followups-glyph` uses `rgb(var(--krypton-info-rgb, …))`. That is distinct from the run icon (window accent) and the open icon (`--krypton-special-rgb`).
-- **Text.** The send button's aria-label is `Send <target>`, and the paste button's is `Paste into prompt: <target>`. The deps and the click/hint contract are the same as for the other kinds. The message is shown in full in `code.__target`.
+- **Text.** The send button's aria-label is `Send <target>`. The paste icon's aria-label is `Paste into prompt: <target>`, and its tooltip is `Paste into prompt`. The deps and the click/hint contract are the same as for the other kinds. The message is shown in full in `code.__target`.
 
 ### Keybindings
 
@@ -165,7 +175,7 @@ No new chord.
 |-----|---------|--------|
 | `<label>` | open-hint mode, prompt follow-up | Send it to the lane |
 | `Shift+<label>` | open-hint mode, prompt follow-up | Paste it into the composer |
-| click | prompt button / `paste` button | Send / paste |
+| click | prompt card / its paste icon | Send / paste |
 
 `run` and `open` ignore `Shift`, as before.
 
@@ -199,7 +209,7 @@ No new key. `count` caps all three kinds together. The cost note in 0006 changes
   - the shared `count` cap with mixed kinds;
   - `eligible` without candidates.
 
-  Also the rail: a prompt item has the send and `paste` buttons with their aria-labels and the `⇧` hint. And the updated controller case.
+  Also the rail: a prompt card has the send button and the paste icon with their aria-labels and the `⇧` hint. And the updated controller case.
 - Real `claude -p --model haiku` calls with the new prompt:
   - a reply ending "Want me to post the load-test review summary to #1329 with `post-github-comment`?" gives one `prompt` action naming #1329;
   - the `make install` / docs URL reply gives `run`/`open` actions and no invented prompt;
@@ -208,13 +218,13 @@ No new key. `count` caps all three kinds together. The cost note in 0006 changes
 - In-app, run `npx tauri dev`:
   - Click a prompt follow-up on an idle lane: a user row appears and a turn starts.
   - Click one on a busy lane: the `queued (n)` chip appears, and the prompt is sent when the turn ends.
-  - Click `paste`, or press `Shift`+hint: the text lands at the composer cursor, the composer has focus, and nothing is sent.
+  - Click the paste icon, or press `Shift`+hint: the text lands at the composer cursor, the composer has focus, and nothing is sent.
 
 ## Implementation Notes
 
 - **Label clause.** The label sentence keeps the 0323 rev 5 wording for candidates ("what its exact text does"), so the hash fix does not depend on new phrasing. The draft's shorter clause would have dropped it.
 - **`"id": null`.** The model may write `"id": null` on a prompt entry. That entry takes the prompt path, not the candidate path.
-- **Paste button alignment.** The `paste` label is centred vertically in its button, while the send button's label sits on its first row. The paste button has a single line, so centring reads better beside a multi-line message.
+- **Paste icon (rev 4).** Rev 2 drew paste as a second bordered ghost button labelled `paste`, centred beside the card. The user found it ugly. The border moved from the send button to the item, so send and paste are one card, and the paste control became a muted clipboard icon on the label's row.
 
 **Verified:**
 
@@ -228,12 +238,13 @@ No new key. `count` caps all three kinds together. The cost note in 0006 changes
   - the `make install` reply gave `run`/`open` only;
   - the "All done" and `b6c2b6d3` replies gave `[]`;
   - a Thai reply offering a PR gave a Thai prompt each time.
-- A throwaway Chromium render of the real `FollowUpRail` with the real stylesheet and icon defs:
-  - the prompt item spans 104–744px, the same as the `run` and `open` buttons;
-  - the send button spans 104–645px and the `paste` button 649–744px;
-  - the glyph computed to `rgb(90, 160, 255)`;
-  - hint mode painted `a` / `⇧a`;
-  - `closest('[data-follow-up-index]')` resolved the paste label and hint to the paste button, and the message and glyph to the send button.
+- A throwaway Chromium render of the real `FollowUpRail` with the real stylesheet and icon defs (rev 4):
+  - the prompt card spans 64–894px, the same as the `run` and `open` buttons;
+  - the send button spans 65–866px and the paste icon 866–889px; the icon's box (147–162px) matches the label's row;
+  - the card has the 1px border and the send button has none;
+  - the paste icon computed to `rgba(216, 232, 240, 0.55)`, and on hover to `0.95` over an 18% accent tint while the card took the 8% tint and the 55% border;
+  - hint mode painted `d` / `⇧d`;
+  - `closest('[data-follow-up-index]')` resolved the icon's `svg` and `use` to the paste button, and the message and glyph to the send button.
 - A throwaway vitest called the real `runFollowUp`, `pasteFollowUp`, `submitLanePrompt`, `insertDraft` and `handleOpenHintKey` against a stub host:
   - an idle lane sent the text and left the draft alone;
   - a busy lane queued it with `queued (1)` and did not steer;

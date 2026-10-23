@@ -6351,7 +6351,7 @@ export class AcpHarnessView implements ContentView {
         return;
       }
       // spec 323: a follow-up button under a reply runs or opens its action;
-      // spec 327: a prompt sends, and its `paste` button fills the composer.
+      // spec 327: a prompt sends, and its card's paste icon fills the composer.
       const followUpButton = target.closest<HTMLElement>('[data-follow-up-index]');
       const followUpMsg = followUpButton?.closest<HTMLElement>('.acp-harness__msg[data-msg-id]');
       if (followUpButton && followUpMsg?.dataset.msgId) {
