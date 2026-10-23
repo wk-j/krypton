@@ -98,3 +98,12 @@
   overflow: visible !important;
 }
 
+/* xterm-images.ts sizes @xterm/addon-image's layer canvas in device pixels so
+   images keep their full resolution on HiDPI screens; show it at the screen's
+   CSS size (.xterm-screen carries the CSS canvas size inline). */
+.krypton-window__body .xterm-screen canvas.xterm-image-layer,
+.krypton-pane__terminal .xterm-screen canvas.xterm-image-layer {
+  width: 100%;
+  height: 100%;
+}
+

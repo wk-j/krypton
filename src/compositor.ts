@@ -12,6 +12,7 @@ import { setCssVars } from './util/css-vars';
 import { paneContentHoldsFocus } from './content-focus';
 import { installClusterCellRendering } from './xterm-cluster-cells';
 import { installDomCharMeasure } from './xterm-char-measure';
+import { installInlineImages } from './xterm-images';
 
 import {
   WindowId,
@@ -895,6 +896,7 @@ export class Compositor {
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
+    installInlineImages(terminal);
     terminal.open(terminalWrap);
     installDomCharMeasure(terminal);
     installClusterCellRendering(terminal);
@@ -6743,6 +6745,7 @@ export class Compositor {
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
+    installInlineImages(terminal);
     terminal.open(body);
     installDomCharMeasure(terminal);
     installClusterCellRendering(terminal);
