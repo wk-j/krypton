@@ -8,6 +8,8 @@ mod computer_read_only;
 mod config;
 pub mod connected_computers;
 pub mod control;
+mod e2e;
+mod e2e_web;
 pub mod git;
 pub mod hook_server;
 pub mod hurl;
@@ -172,9 +174,16 @@ pub fn run() {
         .manage(Arc::new(usage_log::UsageOutbox::new()))
         .manage(workspace_state::WorkspaceState::default())
         .manage(Arc::new(prompt_history::PromptHistoryStore::new()))
+        .manage(Arc::new(e2e::E2eState::default()))
         // MusicEngine is initialized in .setup() because it needs app_handle
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
+            e2e::e2e_write_guides,
+            e2e::e2e_status,
+            e2e::e2e_run,
+            e2e::e2e_rerun,
+            e2e::e2e_cancel,
+            e2e::e2e_find_run,
             connected_computers::computer_list,
             connected_computers::computer_profile_save,
             connected_computers::computer_profile_delete,
@@ -327,6 +336,7 @@ pub fn run() {
             commands::get_hook_server_port,
             commands::get_termctrl_monitor_url,
             commands::get_hurl_web_url,
+            commands::get_e2e_web_url,
             commands::get_hook_server_config_snippet,
             telegram::telegram_get_status,
             telegram::telegram_set_enabled,
@@ -613,6 +623,7 @@ pub fn run() {
                     .clone();
                 let control = app.state::<Arc<control::ControlServer>>().inner().clone();
                 app.state::<telegram::TelegramService>().shutdown();
+                e2e::shutdown(app.state::<Arc<e2e::E2eState>>().inner());
                 app.state::<Arc<connected_computers::ConnectedComputerManager>>()
                     .shutdown();
                 control.remove_descriptor();

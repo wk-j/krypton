@@ -345,6 +345,8 @@ The compositor is a TypeScript module running in the webview that manages worksp
 
 44. **File Manager (`src/file-manager/`, specs 052, 317)** — `FileManagerView` (the `file_manager` `ContentView`, lazy-imported by the compositor as `./file-manager`, which resolves to the directory's `index.ts`) is a thin orchestrator on the `src/ui/` kernel. Module map: `types.ts` (shared types), `state.ts` (one mutable `FileManagerState` + pure helpers and selectors that produce component props), pure `sort.ts` / `filter.ts` (the `/` subsequence filter) / `fuzzy.ts` (the `f` scored search + match runs) / `skill.ts` (frontmatter + skill cards) / `file-type.ts` / `decorations.ts`, `keymap.ts` (normal-mode `NORMAL_KEYMAP` + `dispatchNormalKey`, `gg` chord), `modes.ts` (confirm / prompt / filter / search handlers), `ops.ts` (every Tauri `invoke`), `preview/` (`registry.ts` ordered renderers, `controller.ts` 80 ms debounce + generation guard, `renderers/<id>.ts`), and `components/` (`Breadcrumb`, `FileList` + `FileRow`, `SearchList` + `SearchRow`, `PreviewPane`, `StatusBar`; the lists `reconcile()` keyed rows over the virtual window on the one shared `__list` node). Styles stay in the unlayered `src/styles/file-manager.css`. Extension recipes: **preview type** — add `preview/renderers/<id>.ts` and insert it into `PREVIEW_RENDERERS` (order is priority; a renderer may decline with `null`); **key** — append a `KeyBinding` to `NORMAL_KEYMAP` (add a `KeyCtx` method if the action is new); **row decoration** — append a `RowClassDecorator` to `ROW_CLASS_DECORATORS` and add its CSS rule. `src/file-manager/view.parity.test.ts` pins DOM, `invoke` traffic, keys and timers against snapshots recorded from the pre-317 class.
 
+45. **E2E commands (spec 328)** — `#e2e` in the ACP Harness runs and tracks the project's end-to-end tests with no in-app view. `HarnessE2eController` (`src/acp/harness-e2e-controller.ts`, spec 275 controller pattern) dispatches the subcommands; the pure half `src/acp/e2e-command.ts` parses the grammar, derives the marks (`uncommitted`, `edited`, `unreported`, `no case`) and lays results out as `shell`-row text on the cell grid. `status`, `run`, `run all`, `rerun` and `cancel` call Rust `e2e.rs` and answer in one `shell` row filled once when the work ends (the `!shell` life cycle); `init`, `case` and `report` are prompt verbs for the current lane (`e2eInitPrompt`, and the manifest's `create_prompt` / `report_prompt` via `renderE2ePrompt`). `open [<case>]` (spec 329) opens the read-only browser explorer through `get_e2e_web_url` + `open_url`. Unavailable in a remote Harness.
+
 ### Window DOM Structure
 
 Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with session label and PTY status, a **tab bar** inside the titlebar row (auto-shown when multiple tabs exist; while visible the label text hides and the tabs take its width), and a **content area** containing the active tab's pane tree. Pane trees are binary splits — each leaf is a `.krypton-pane` hosting an xterm.js instance, and splits are `.krypton-split` containers with a `.krypton-split__divider` between two children.
@@ -1173,6 +1175,46 @@ only by an explicit `a`/`r`, never by a permission mode or a turn-wide
 accept — before
 Rust runs a no-PTY SSH channel. The command target is explicit; it does not
 change the lane's `WorkspaceRef` or send bytes to an interactive terminal.
+
+## E2E Commands (spec 328)
+
+`src-tauri/src/e2e.rs` is the backend of `#e2e`. Krypton never reads a
+project's native test output: each project provides `.krypton/e2e/project.toml`
+and an adapter with `list`, `run <case> [--param k=v]…` and optional `history`,
+and every run is one normalized Result JSON (Adapter Contract v1, written into
+the project as `CONTRACT.md` with `BOOTSTRAP.md` by `e2e_write_guides`). The
+Rust validator is the only judge of a manifest, case list or Result; lanes
+reach it through the MCP tool `e2e_adapter_check` (project-backed, not
+auto-allowed).
+
+Commands: `e2e_write_guides`, `e2e_status`, `e2e_run`, `e2e_rerun`,
+`e2e_cancel`, `e2e_find_run`. Adapter processes run from the repo root with the
+login env (`pty::login_env_pairs`, shared with `PtyManager::spawn`), stdin
+null and their own process group; `list` and `history` time out after 60 s.
+A launch is refused while the root has an active one (`E2eState.active`, keyed
+by canonical root, holding ids and the pgid but never the `Child`, so cancel
+returns at once: SIGTERM to the group, SIGKILL after 5 s; the app-exit drain
+signals every active group). Each launch appends `start` and `finish` lines to
+`.krypton/e2e/launches.jsonl` (argv, git sha/branch/dirty, case hash, exit
+code, cancelled) and writes `runs/<launchId>/{result.json,log}` (log capped at
+5 MB, logs kept for the newest 100 launches). `e2e_status` merges Krypton
+launches with the adapter's `history` by `(caseId, runId)`, hashes and
+git-checks each case's `files`, and — when the manifest names an
+`issue_label` — scans one `gh issue list --json …,comments` for known runIds.
+
+**Browser explorer (spec 329).** `src-tauri/src/e2e_web.rs` serves a read-only
+page, `src/acp/artifact-e2e.html`, at `/e2e/{token}` on the loopback server. It
+has its own router and state (`E2eWebSessions` + the shared `E2eState`), which
+`hook_server::start` merges into the loopback router. The token is per canonical
+project root (128-bit, reused until exit, like Hurl's per-cwd capability), and an
+unknown token is a bare `404`. The API routes are `status` (the same `gather`),
+`active` (in-memory, no spawn), `run` (full Result), `log` (ledger-listed launch
+only) and `artifact` (Result artifact index → `resolve_artifact`: repo-relative,
+no `..`, canonical-root confinement against symlinks, regular file ≤ 25 MiB).
+Raw content goes out with `nosniff`, `no-store` and `CSP: sandbox`; HTML and SVG
+evidence goes out as `text/plain`. `gather` keeps the last `history` Results per
+root in `E2eState.history`, so the page reads ext runs without re-spawning
+`history` or writing `runs/ext-*`. Nothing on the page runs, cancels or writes.
 
 ## Review Threads (spec 270)
 

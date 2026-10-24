@@ -11,8 +11,9 @@ appliesTo: >
   (src/acp/artifact-tools.html), Terminal Control monitor
   (src/acp/artifact-termctrl.html), Hurl web client
   (src/acp/artifact-hurl.html), project decision timeline
-  (src/acp/artifact-timeline.html), and ACP wire profiler
-  (src/acp/artifact-acpwire.html).
+  (src/acp/artifact-timeline.html), ACP wire profiler
+  (src/acp/artifact-acpwire.html), and e2e explorer
+  (src/acp/artifact-e2e.html).
 colors:
   primary: "#fcd535"     # the single yellow accent (== accent below)
   bg: "#17191d"          # soft near-black canvas (shared by all loopback surfaces)
@@ -90,9 +91,10 @@ The loopback surfaces:
 | Hurl web client | `src/acp/artifact-hurl.html` | Token-gated `.hurl` runner (capability routes under `/hurl`) | Fixed dark |
 | ACP wire profiler | `src/acp/artifact-acpwire.html` | Read-only ACP traffic profiler: stat tiles, per-lane waterfall, message table + payload detail, per-method latency (capability routes under `/acp-wire`, polls while visible) | Fixed dark |
 | Project timeline | `src/acp/artifact-timeline.html` | Read-only local requirement/decision chronology (`/timeline`, refetches `/timeline.json` when the tab becomes active); superseded rows are hidden by default, and a row in an open conflict pair marks only its time cell with an accent chip | Auto (follows OS `prefers-color-scheme`) |
+| E2E explorer | `src/acp/artifact-e2e.html` | Read-only e2e cases, runs, checks, logs and evidence for one project (capability routes under `/e2e`; reloads on focus, polls only `/active` during a run) | Fixed dark |
 
 Per-surface behaviour and endpoints are specified in `docs/134`, `docs/168`,
-`docs/170`, `docs/171`, `docs/185`, `docs/186`, `docs/313`, and
+`docs/170`, `docs/171`, `docs/185`, `docs/186`, `docs/313`, `docs/329`, and
 `docs/adr/0002`/`0010`. **This file is the
 visual contract only** — it does not restate those specs.
 

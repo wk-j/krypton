@@ -22,6 +22,7 @@ import {
 import { HarnessLiveVoiceController } from './harness-live-voice-controller';
 import { DEFAULT_LIVE_VOICE, type LiveDelivery } from './live-voice';
 import { HarnessTimelineController } from './harness-timeline-controller';
+import { HarnessE2eController } from './harness-e2e-controller';
 import { HarnessTicketController } from './harness-ticket-controller';
 import { HarnessReviewLoopController } from './harness-review-loop-controller';
 import { HarnessSteerController } from './harness-steer-controller';
@@ -46,6 +47,7 @@ export {
 import type {
   HarnessAssistHost,
   HarnessDictationHost,
+  HarnessE2eHost,
   HarnessLiveVoiceHost,
   HarnessRegion,
   HarnessReviewLoopHost,
@@ -863,7 +865,7 @@ const SPINNER_INTERVAL_MS = 80;
 
 const REMOTE_UNSUPPORTED_HASH_COMMANDS = new Set([
   '#gallery', '#ui-gallery', '#docs', '#analyses', '#reviews', '#push', '#usage', '#daily', '#lessons',
-  '#xenon', '#termctrl', '#hurl', '#draw', '#ticket', '#review', '#review-thread', '#directive',
+  '#xenon', '#termctrl', '#hurl', '#draw', '#ticket', '#review', '#review-thread', '#directive', '#e2e',
   '#analyze-github-issue', '#create-github-issue', '#dispatch-github-issue',
   '#fix-github-issue', '#handle-github-issue', '#post-github-comment', '#tag-github-issue',
 ]);
@@ -1247,6 +1249,8 @@ export class AcpHarnessView implements ContentView {
   private readonly ticketCtl = new HarnessTicketController(this.ticketHost());
   /** Project-local autonomous Timeline settings and legacy migration state. */
   private readonly timelineCtl = new HarnessTimelineController(this.timelineHost());
+  /** spec 328: `#e2e` — run and track the project's e2e cases from the transcript. */
+  private readonly e2eCtl = new HarnessE2eController(this.e2eHost());
   /** spec 276: `#review pass` — harness-sequenced review → fix → re-review rounds. */
   private readonly reviewLoopCtl = new HarnessReviewLoopController(this.reviewLoopHost());
   private issueReportUnlisten: UnlistenFn | null = null;
@@ -11652,6 +11656,11 @@ export class AcpHarnessView implements ContentView {
       await this.timelineCtl.runCommand(lane, text);
       return;
     }
+    if (parts[0] === '#e2e') {
+      this.setDraft(lane, '', 0);
+      await this.e2eCtl.runCommand(lane, text);
+      return;
+    }
     if (parts[0] === '#cancel') {
       await this.cancelLane(lane);
       this.setDraft(lane, '', 0);
@@ -16301,6 +16310,31 @@ export class AcpHarnessView implements ContentView {
       get remoteRuntimeId() { return view.remoteRuntimeId; },
       flashChip: (text) => view.flashChip(text),
       enqueueSystemPrompt: (lane, text, drain, label) => view.enqueueSystemPrompt(lane, text, drain, label),
+    };
+  }
+
+  private e2eHost(): HarnessE2eHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const view = this;
+    return {
+      get element() { return view.element; },
+      get lanes() { return view.lanes; },
+      get activeLaneId() { return view.activeLaneId; },
+      get projectDir() { return view.projectDir; },
+      flashChip: (text) => view.flashChip(text),
+      enqueueSystemPrompt: (lane, text, drain, label) => view.enqueueSystemPrompt(lane, text, drain, label),
+      // Same row life cycle as `runShellCommand`: pending, then filled once.
+      appendShellRow: (lane, text) => {
+        const item = view.appendTranscript(lane, 'shell', text);
+        item.status = 'pending';
+        view.render();
+        return item;
+      },
+      finishShellRow: (item, text, status) => {
+        item.text = text;
+        item.status = status;
+        view.render();
+      },
     };
   }
 

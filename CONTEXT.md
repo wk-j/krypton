@@ -170,3 +170,25 @@ _Avoid_: command / order (implies the worker is compelled or interrupted — it 
 **Orchestrator console** (spec 180):
 The dedicated, full-surface, keyboard-driven panel the human opens from the [[Orchestrator]] lane to see every lane at once and act on them. The **in-app, interactive** counterpart to the read-only lane monitor dashboard (which lives in the OS browser and only observes): the console renders the same live lane signals but lets the human dispatch work and control lanes from inside the harness.
 _Avoid_: command center (collides with the existing footer region of the harness view), dashboard (the lane monitor is the read-only browser dashboard; the console is in-app and acts), seat (the *seat* is the orchestrator lane the console is bound to; the console is the panel itself)
+
+### Testing
+
+**E2E case** (spec 328):
+One end-to-end scenario a project can run on demand, usually one test-case issue, identified by the id its [[E2E adapter]] lists.
+_Avoid_: test (too broad: unit tests are not cases), spec (collides with the design specs in `docs/`)
+
+**E2E adapter** (spec 328):
+The project-owned executable that sits between Krypton and however that project runs end-to-end tests: it lists [[E2E case]]s, runs one, and reports every run as one normalized result. It is the only boundary — Krypton never reads a project's native test output.
+_Avoid_: plugin (nothing is loaded into Krypton), runner (the project's own test runner, which an adapter may wrap), reporter
+
+**Initialize** (spec 328):
+The one-time step, started by `#e2e init`, in which a lane teaches Krypton how a project tests end to end; it is done only when Krypton's validator accepts the [[E2E adapter]]. **Adopt**: the project already has an end-to-end runner, and the adapter wraps it without changing project code. **Bootstrap**: nothing exists, so the lane first writes a plan the human approves, then builds the setup inside the project.
+_Avoid_: setup (generic), scaffold (only Bootstrap scaffolds), install (nothing machine-wide is installed)
+
+**Launch** (spec 328):
+One execution of an [[E2E case]] that Krypton itself started, recorded with what only Krypton can observe: the exact command, the commit, the exit code and the log. A launch that produced a valid result is also an **E2E run**; a run started outside Krypton (a terminal, a lane's own shell) is a run without a launch, known only from the adapter's history.
+_Avoid_: job, attempt, session
+
+**Verdict** (spec 328):
+The outcome of one E2E run. PASS and FAIL judge the app; ERROR means the test harness itself broke; BLOCKED means a precondition failed and the app was never exercised, so it is never counted as a failure. A launch with no usable result has a Krypton-side verdict instead: CANCELLED, NO RESULT, INVALID RESULT or INTERRUPTED.
+_Avoid_: status (a check inside a run has a status; the run has a verdict), result (the whole normalized document, not its outcome)

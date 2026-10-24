@@ -1530,6 +1530,68 @@ another lane — while the warm subprocess survives; only `dispose()` kills it, 
 
 See `docs/0323-harness-follow-up-actions.md` and `docs/0327-harness-follow-up-prompts.md`.
 
+## E2E Commands Flow (spec 328)
+
+```
+#e2e init [hint]                                  (prompt verb, current lane must be idle)
+1. HarnessE2eController → invoke('e2e_write_guides', { root: projectDir }) writes
+   .krypton/e2e/CONTRACT.md + BOOTSTRAP.md and returns the current project.toml (or null).
+2. enqueueSystemPrompt(lane, e2eInitPrompt(hint, manifest)) — the lane surveys the repo:
+   Adopt     → writes project.toml + an adapter that wraps the existing runner
+   Bootstrap → writes PLAN.md, ends its turn; the human approves in the lane; the lane
+               builds the e2e code in the repo (uncommitted) + project.toml
+3. The lane smoke-runs one case with KRYPTON_E2E_RESULT=.krypton/e2e/smoke-result.json and
+   calls the MCP tool e2e_adapter_check {result_path} (hook_server.rs → e2e.rs validator,
+   not auto-allowed) until it returns ok.
+
+#e2e run <case> [k=v…] [--fresh]                  (Krypton-run, any lane state)
+1. appendShellRow(lane, "running <case> · started HH:MM · #e2e cancel to stop").
+2. invoke('e2e_run', { root, caseId, params, fresh }) — e2e.rs validates the manifest,
+   runs `list`, merges case.fresh under explicit params, refuses with "busy" while the
+   root has an active launch, appends the ledger `start` line (argv, git sha/branch/dirty,
+   case hash), spawns `<adapter…> run <case> --param k=v…` in its own process group with
+   the login env + KRYPTON_E2E_RESULT=runs/<launchId>/result.json, stdin null, output
+   into runs/<launchId>/log (5 MB cap).
+3. Child exits → ledger `finish` line → result.json validated → E2eRunInfo (verdict,
+   counts, failed checks, versions, git) resolves the invoke.
+4. finishShellRow(item, formatE2eRunSummary(…)) fills the row once; it stays static.
+   `run all` repeats 1–4 per listed case and stops on a failed invoke, a CANCELLED
+   verdict or #e2e cancel. `rerun` replays the newest ledger argv.
+
+#e2e cancel → invoke('e2e_cancel') → SIGTERM to the launch's process group, SIGKILL
+after 5 s; the pending run resolves as CANCELLED.
+
+#e2e status [<case>]                              (Krypton-run)
+1. invoke('e2e_status', { root, includeIssues: true }): adapter `list` + `history`
+   (60 s each), Krypton launches (ledger ⨝ runs/*/result.json) deduped with history by
+   (caseId, runId), case hashes + `git status --porcelain -- <files>`, and one
+   `gh issue list --label <issue_label> --json …,comments` scanned for known runIds.
+2. formatE2eStatus / formatE2eCaseDetail derive the marks (uncommitted, edited,
+   unreported, no case) and fill one shell row.
+
+#e2e case <issue> / #e2e report <case|runId>     (prompt verbs)
+e2e_status (manifest prompts + issue URL) [+ e2e_find_run for report] →
+renderE2ePrompt(create_prompt | report_prompt, {issue, issue_url, run_id, result_path})
+→ enqueueSystemPrompt in the current lane.
+
+#e2e open [<case>]                                 (spec 329, read-only browser page)
+1. invoke('get_e2e_web_url', { root }) → HookServer.e2e_web_url → E2eWebSessions.issue
+   (one 128-bit token per canonical root) → http://127.0.0.1:<port>/e2e/<token>
+   [+ #case=<id>] → invoke('open_url'); a down server flashes the error, opens nothing.
+2. GET /e2e/<token> → artifact-e2e.html → GET /e2e/api/<token>/status (the same gather
+   as #e2e status, issues included; refills E2eState.history) → cases, verdict strips,
+   marks; the URL hash (case, run) keeps the selection.
+3. Selecting a run → GET …/run?case=&run= → ledger ⨝ runs/<launchId>/result.json, or
+   the history cache for an ext run → every check + artifact list. `l` → GET …/log
+   (ledger-listed launch only); Enter on an artifact → GET …/artifact?…&index=
+   (confined to the root, ≤ 25 MiB, CSP sandbox, HTML/SVG as text).
+4. Refresh: full status on load, `r`, and focus/visibility after ≥ 10 s; while a launch
+   is active and the tab visible, GET …/active every 2 s (no spawn) and one full reload
+   when it ends. Unknown token → 404 on every route ("run #e2e open again").
+```
+
+See `docs/0328-harness-e2e-commands.md` and `docs/0329-harness-e2e-browser-explorer.md`.
+
 ## Workspace Lifecycle Flow
 
 ### Startup

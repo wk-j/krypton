@@ -34,7 +34,9 @@ node e2e/krypton-e2e.ts run loopback-api-authorization --param loopbackPort=8765
 node e2e/krypton-e2e.ts history                     # every kept run as JSON
 ```
 
-From a Krypton harness: `#e2e run <case>`, `#e2e run all`, `#e2e status`.
+From a Krypton harness: `#e2e run <case>`, `#e2e run all`, `#e2e status`. To
+browse every case, run, check, log and evidence file in the browser, use
+`#e2e open [<case>]` (read-only, spec 0329).
 
 - Each run gets a `runId` (a UTC timestamp) and an evidence folder in
   `e2e/runs/<caseId>/<runId>/`. The folder is git-ignored and holds:

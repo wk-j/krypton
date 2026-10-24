@@ -1487,6 +1487,15 @@ pub fn get_hurl_web_url(
     hook_server.hurl_web_url(&cwd)
 }
 
+/// Spec 329: the read-only e2e explorer URL for a project root.
+#[tauri::command]
+pub fn get_e2e_web_url(
+    hook_server: State<'_, Arc<HookServer>>,
+    root: String,
+) -> Result<String, String> {
+    hook_server.e2e_web_url(&root)
+}
+
 /// Update the active agent model preset for the running session.
 /// In-memory only — the user's `krypton.toml` is never rewritten. To make
 /// the change permanent, edit `[agent] active` in the config file.

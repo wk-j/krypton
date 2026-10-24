@@ -12,7 +12,7 @@ static CACHED_LOGIN_ENV: OnceLock<HashMap<String, String>> = OnceLock::new();
 
 /// Resolve PATH from the user's login shell. macOS GUI launches often receive a
 /// sparse PATH, which breaks direct PTY spawns such as `hx`.
-fn cached_login_path() -> String {
+pub(crate) fn cached_login_path() -> String {
     CACHED_LOGIN_PATH
         .get_or_init(|| {
             cached_login_env()
@@ -56,6 +56,24 @@ pub(crate) fn cached_login_env() -> &'static HashMap<String, String> {
         }
         map
     })
+}
+
+/// Login-shell env pairs for spawned children: everything from
+/// `cached_login_env()` except vars that must be re-derived per process
+/// (TERM/COLORTERM/PWD/OLDPWD/SHLVL/_), followed by `PATH = cached_login_path()`.
+pub(crate) fn login_env_pairs() -> Vec<(String, String)> {
+    let mut pairs: Vec<(String, String)> = cached_login_env()
+        .iter()
+        .filter(|(k, _)| {
+            !matches!(
+                k.as_str(),
+                "TERM" | "COLORTERM" | "PWD" | "OLDPWD" | "SHLVL" | "_"
+            )
+        })
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    pairs.push(("PATH".to_string(), cached_login_path()));
+    pairs
 }
 
 // ─── Process Detection Types ──────────────────────────────────────
@@ -370,16 +388,12 @@ impl PtyManager {
         // paths, etc.). Skip vars we override below + ones that should be
         // re-derived per process (PWD/OLDPWD/SHLVL).
         let login_env = cached_login_env();
-        for (k, v) in login_env {
-            match k.as_str() {
-                "TERM" | "COLORTERM" | "PWD" | "OLDPWD" | "SHLVL" | "_" => continue,
-                _ => cmd.env(k, v),
-            }
+        for (k, v) in login_env_pairs() {
+            cmd.env(k, v);
         }
 
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
-        cmd.env("PATH", cached_login_path());
 
         // Ensure UTF-8 locale is set — fall back if login env didn't provide it.
         if !login_env.contains_key("LANG") && std::env::var("LANG").unwrap_or_default().is_empty() {

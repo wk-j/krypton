@@ -18,6 +18,7 @@ import {
   createGithubIssuePrompt,
   dailyBriefPrompt,
   directivePrompt,
+  e2eInitPrompt,
   fixGithubIssuePrompt,
   handleGithubIssuePrompt,
   handoffResumePrompt,
@@ -148,6 +149,12 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
     name: 'salty',
     args: '[+fellow] <task> | clear',
     description: 'Salty model-tiered orchestration — Sonnet/Opus/Codex executors with a plan-pushback gate',
+  },
+  {
+    name: 'e2e',
+    args: '[status [<case>] | run <case|all> [k=v…] [--fresh] | rerun | cancel | open [<case>] | init [<hint>] | case <issue> | report <case|runId>]',
+    description:
+      "run and track this project's e2e cases locally; `init` adopts its test runner or builds one from zero after a plan you approve",
   },
   {
     name: 'ticket',
@@ -292,6 +299,14 @@ export function commandMeta(): Record<string, CommandMeta> {
     termctrl: { category: 'surface', badges: [] },
     profiler: { category: 'surface', badges: [] },
     hurl: { category: 'surface', badges: [] },
+    e2e: {
+      category: 'agent',
+      badges: ['workflow'],
+      anatomy:
+        'init: survey repo → adopt runner or PLAN.md → approve → build → e2e_adapter_check · run/status/rerun/cancel: Krypton runs the adapter, no model turn · open: read-only browser explorer',
+      lanes: 'same lane',
+      prompt: e2eInitPrompt('<hint>', null),
+    },
     commands: { category: 'surface', badges: [] },
     tools: { category: 'surface', badges: [] },
     telegram: { category: 'surface', badges: [] },

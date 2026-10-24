@@ -235,6 +235,8 @@ pub struct HookServer {
     termctrl_monitor: TermctrlMonitor,
     /// Spec 227: capability tokens bound to a cwd for the Hurl web client.
     hurl_sessions: Arc<HurlWebSessions>,
+    /// Spec 329: capability tokens bound to a project root for the e2e explorer.
+    e2e_web: Arc<crate::e2e_web::E2eWebSessions>,
     /// Spec 238: runtime-only local-ticket worker, keyed by harness id.
     /// The binding deliberately disappears when the harness or app closes.
     ticket_workers: std::sync::Mutex<HashMap<String, crate::ticket_bundle::TicketWorkerBinding>>,
@@ -300,6 +302,7 @@ impl Default for HookServer {
             command_manifest: std::sync::Mutex::new(None),
             termctrl_monitor: TermctrlMonitor::new(),
             hurl_sessions: Arc::new(HurlWebSessions::default()),
+            e2e_web: Arc::new(crate::e2e_web::E2eWebSessions::default()),
             ticket_workers: std::sync::Mutex::new(HashMap::new()),
             acp_wire: Arc::new(AcpWire::new()),
         }
@@ -328,6 +331,7 @@ impl HookServer {
             command_manifest: std::sync::Mutex::new(None),
             termctrl_monitor: TermctrlMonitor::new(),
             hurl_sessions: Arc::new(HurlWebSessions::default()),
+            e2e_web: Arc::new(crate::e2e_web::E2eWebSessions::default()),
             ticket_workers: std::sync::Mutex::new(HashMap::new()),
             acp_wire: Arc::new(AcpWire::new()),
         }
@@ -460,6 +464,16 @@ impl HookServer {
         }
         let session = self.hurl_sessions.issue(cwd)?;
         Ok(format!("http://127.0.0.1:{port}/hurl/{}", session.token))
+    }
+
+    /// Spec 329: the e2e explorer URL for `root`, one token per project root.
+    pub fn e2e_web_url(&self, root: &str) -> Result<String, String> {
+        let port = self.get_port();
+        if port == 0 {
+            return Err(SERVER_UNAVAILABLE.to_string());
+        }
+        let token = self.e2e_web.issue(root)?;
+        Ok(format!("http://127.0.0.1:{port}/e2e/{token}"))
     }
 
     pub fn unavailable_reason(&self) -> String {
@@ -3049,7 +3063,7 @@ const HURL_HTML: &str = include_str!("../../src/acp/artifact-hurl.html");
 const TIMELINE_HTML: &str = include_str!("../../src/acp/artifact-timeline.html");
 const ACP_WIRE_HTML: &str = include_str!("../../src/acp/artifact-acpwire.html");
 
-fn secured_json_response<T: Serialize>(status: StatusCode, payload: T) -> Response {
+pub(crate) fn secured_json_response<T: Serialize>(status: StatusCode, payload: T) -> Response {
     let mut response = (status, Json(payload)).into_response();
     response.headers_mut().insert(
         header::CACHE_CONTROL,
@@ -3712,6 +3726,7 @@ fn tool_category(name: &str) -> &'static str {
         | "ticket_note"
         | "ticket_add_resource"
         | "ticket_link" => "issues",
+        "e2e_adapter_check" => "e2e",
         _ => "other", // forward-compat: an unmapped tool still renders
     }
 }
@@ -4513,6 +4528,7 @@ async fn handle_bus_tool_call(
         "ticket_note" => ticket_note(state, harness_id, lane_label, arguments),
         "ticket_add_resource" => ticket_add_resource(state, harness_id, lane_label, arguments),
         "ticket_link" => ticket_link(state, harness_id, lane_label, arguments),
+        "e2e_adapter_check" => e2e_adapter_check(state, harness_id, arguments).await,
         other => Err(format!("Unknown bus tool: {other}")),
     };
 
@@ -6523,6 +6539,25 @@ fn artifact_tool_cancel(
     Ok(value)
 }
 
+/// spec 0328 — `e2e_adapter_check`: validate the project's e2e manifest,
+/// adapter, `list`/`history` output and an optional smoke Result file.
+async fn e2e_adapter_check(
+    state: &HookServerState,
+    harness_id: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let root = state
+        .hook_server
+        .project_dir_for_harness(harness_id)
+        .ok_or_else(|| "e2e_adapter_check requires a local project workspace".to_string())?;
+    let result_path = arguments
+        .get("result_path")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let report = crate::e2e::adapter_check(&root, result_path.as_deref()).await;
+    serde_json::to_value(report).map_err(|e| e.to_string())
+}
+
 /// spec 211 — `review_new`: allocate the durable bundle, emit a `pending` event
 /// so the frontend opens issued-path write auto-approval over the whole bundle.
 fn review_tool_new(
@@ -6720,6 +6755,16 @@ fn bus_tool_descriptors() -> Value {
                 },
                 "required": ["id"]
             }
+        },
+        {
+            "name": "e2e_adapter_check",
+            "description": "Validate this project's Krypton e2e wiring. Call it after writing `.krypton/e2e/project.toml` and the adapter during `#e2e init`, passing `result_path` of the smoke run (e.g. `.krypton/e2e/smoke-result.json`, produced by `KRYPTON_E2E_RESULT=.krypton/e2e/smoke-result.json <adapter…> run <first case>`). Checks: the manifest parses against v1, adapter[0] resolves, `list` exits 0 within 60 s with valid cases, the result file is a valid Result for a listed case, and `history` is valid when declared. Returns `{ ok, name, cases, errors, warnings }`. Repeat (fixing the reported errors) until ok is true; any verdict, including BLOCKED, is acceptable for the smoke run. Read `.krypton/e2e/CONTRACT.md` for the exact format.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "result_path": { "type": "string", "description": "Root-relative or absolute path of the smoke-run Result JSON; must be under <root>/.krypton/e2e/." }
+                }
+            }
         }
     ]);
 
@@ -6779,6 +6824,7 @@ fn project_backed_bus_tool(name: &str) -> bool {
             | "timeline_conflict_list"
             | "timeline_conflict_record"
             | "timeline_conflict_checked"
+            | "e2e_adapter_check"
     )
 }
 
@@ -9524,7 +9570,7 @@ fn render_docs_page(title: &str, content: &str) -> Response {
     html_response(html)
 }
 
-fn html_response(html: impl Into<Body>) -> Response {
+pub(crate) fn html_response(html: impl Into<Body>) -> Response {
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
@@ -10106,7 +10152,16 @@ pub fn start(
                 .route("/artifact/{token}", get(handle_artifact_get))
                 .route("/artifact/state/{token}", get(handle_artifact_state))
                 .route("/artifact/feedback/{token}", post(handle_artifact_feedback))
-                .with_state(shared);
+                .with_state(shared)
+                // Spec 329: the e2e explorer has its own state (sessions + e2e
+                // runs), so it needs no AppHandle and is tested on its own.
+                .merge(crate::e2e_web::router(
+                    hook_server.e2e_web.clone(),
+                    app_handle
+                        .state::<Arc<crate::e2e::E2eState>>()
+                        .inner()
+                        .clone(),
+                ));
 
             let addr = SocketAddr::from(([127, 0, 0, 1], configured_port));
             let listener = match tokio::net::TcpListener::bind(addr).await {
@@ -11223,7 +11278,13 @@ mod tests {
             .route("/doc-artifact", post(ok))
             .route("/artifact/{token}", get(ok))
             .route("/artifact/state/{token}", get(ok))
-            .route("/artifact/feedback/{token}", post(ok));
+            .route("/artifact/feedback/{token}", post(ok))
+            // Spec 329: the e2e explorer router is merged in `start()`; a
+            // conflict would panic here too.
+            .merge(crate::e2e_web::router(
+                Arc::new(crate::e2e_web::E2eWebSessions::default()),
+                Arc::new(crate::e2e::E2eState::default()),
+            ));
     }
 
     #[test]

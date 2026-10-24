@@ -78,6 +78,20 @@ export interface HarnessTimelineHost extends HarnessViewHost {
   ): Promise<boolean>;
 }
 
+/** Spec 328 `#e2e` controller host. Krypton-run subcommands answer in one
+ *  `shell` row that is filled once when the work ends, like `!shell`. */
+export interface HarnessE2eHost extends HarnessViewHost {
+  readonly projectDir: string | null;
+  enqueueSystemPrompt(
+    lane: HarnessLane,
+    text: string,
+    drain?: CoordinatorDrainContext,
+    label?: string,
+  ): Promise<boolean>;
+  appendShellRow(lane: HarnessLane, text: string): HarnessTranscriptItem;
+  finishShellRow(item: HarnessTranscriptItem, text: string, status: 'completed' | 'failed'): void;
+}
+
 /** A `#review` subject collected from the lane's worktree, or why it could not be. */
 export type ReviewSubjectResult =
   | { subject: ReviewSubject; note?: string; docMtime?: number }
