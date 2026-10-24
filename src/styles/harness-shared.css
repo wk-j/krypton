@@ -1262,7 +1262,12 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
    ZEN MODE — toggleable focused layout (spec 80)
    ═══════════════════════════════════════════════════════════════ */
 
+/* `R` is the zen corner radius: the rail tab's corners and fillets
+   (`rail-entry.css`) and the body corners below share it. `position` makes
+   the grid the containing block of the bottom fillet (spec 325 rev 2). */
 .acp-harness--zen .acp-harness__dashboard {
+  --acp-rail-tab-r: min(var(--krypton-border-radius, 8px), 12px);
+  position: relative;
   display: grid;
   grid-template-columns: clamp(180px, 14vw, 240px) 1fr;
   gap: 0;
@@ -1273,15 +1278,21 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
    itself (a cut-out box-shadow), so the tab and the body beside it are the
    same single translucent layer with no rail tint underneath. `isolation`
    makes the rail the stacking context that layer's `z-index: -1` sits in,
-   below every entry's tint and text. */
+   below every entry's tint and text.
+
+   Rev 2: no top padding, so a first-row tab meets the titlebar flush instead
+   of hanging below an 8px rail strip with a notch where it joins the body.
+   The bottom 8px still holds a last-row tab's lower fillet. The rounded
+   bottom-right corner also clips the tab layer's shadow, so the rail colour
+   ends in an R curve where the body meets the composer. */
 .acp-harness__rail {
   --acp-rail-surface: var(--agent-ghost, rgba(2, 5, 10, 0.18));
-  --acp-rail-tab-r: min(var(--krypton-border-radius, 8px), 12px);
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 8px 0;
+  padding: 0 0 8px;
   border-right: none;
+  border-bottom-right-radius: var(--acp-rail-tab-r, 8px);
   isolation: isolate;
   overflow-y: auto;
   min-height: 0;
@@ -1290,6 +1301,33 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
 /* No active entry (no lanes yet): nothing paints the tab layer's shadow. */
 .acp-harness__rail:not(:has(> .acp-harness__rail-entry--active)) {
   background: var(--acp-rail-surface);
+}
+
+/* Spec 325 rev 2: the body, the tab and the composer read as one sheet, so
+   every sheet corner that faces the rail is round. Where the rail's rounded
+   corner meets the body and the composer, this paints the body colour in the
+   sliver outside the curve, the same shape as the tab's fillets. It sits in
+   the rail's grid cell (all four lines: an absolutely positioned grid item
+   reads an `auto` line as the grid's padding edge) and paints above the rail;
+   the rail is clipped there, so a tab scrolled into that corner still shows
+   one body layer. */
+.acp-harness--zen:not(.acp-harness--panels-hidden) .acp-harness__dashboard:has(> .acp-harness__rail > .acp-harness__rail-entry--active)::after {
+  content: '';
+  position: absolute;
+  grid-area: 1 / 1 / 2 / 2;
+  right: 0;
+  bottom: 0;
+  width: var(--acp-rail-tab-r, 8px);
+  height: var(--acp-rail-tab-r, 8px);
+  pointer-events: none;
+  background: radial-gradient(circle at 0 0, transparent calc(var(--acp-rail-tab-r, 8px) - 0.5px), var(--acp-lane-canvas) var(--acp-rail-tab-r, 8px));
+}
+
+/* When the tab is not the first row, the body's own top-left corner faces the
+   titlebar and the rail: round it like the tab's rail-side corners. A
+   first-row tab joins the body at that corner, so it stays square there. */
+.acp-harness--zen:not(.acp-harness--panels-hidden) .acp-harness__dashboard:not(:has(> .acp-harness__rail > .acp-harness__rail-entry--active:first-child)) > .acp-harness__body-cell > .acp-harness__lane--active {
+  border-top-left-radius: var(--acp-rail-tab-r, 8px);
 }
 
 .acp-harness__body-cell {

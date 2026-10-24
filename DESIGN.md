@@ -1,6 +1,6 @@
 ---
 name: Krypton Dark
-version: 1.2.6
+version: 1.2.7
 description: Cyberpunk sci-fi terminal aesthetic — cyan neon on transparent blue-black, 8px bevel geometry, monospace typography, multi-layer glows
 colors:
   primary: "#0cf"
@@ -247,7 +247,7 @@ Monospace everywhere. The terminal nature of the product is the brand — propor
 
 **Tabs are rounded pills in the titlebar row.** With 2+ tabs (or `always_show_tabbar`), the tab strip sits between the status dot and the end cluster, and the window label text hides (it would repeat the active tab). Inactive tabs are bare muted fg text; the active tab gets a soft neutral fill (`fg` @ 9%) with 6px radius. No underline, no chamfer, no glow. The tab's status dot keeps the window accent.
 
-**The harness Zen rail's active lane is a merged tab.** It takes the active lane body's surface and runs flush into the body, rounded (8px token) on the rail side and joined to the body by two concave 8px fillets. There is no seam, no tint and no glow. Inactive rail rows are 8px-rounded and inset from both rail edges. Do not stack a fill on the tab: it is the body's colour or it is not part of the body.
+**The harness Zen rail's active lane is a merged tab.** It takes the active lane body's surface and runs flush into the body, rounded (8px token) on the rail side and joined to the body by two concave 8px fillets. There is no seam, no tint and no glow. Inactive rail rows are 8px-rounded and inset from both rail edges. Do not stack a fill on the tab: it is the body's colour or it is not part of the body. The body, the tab and the composer read as one sheet: every corner of that sheet that faces the rail is rounded with the same token, and a first-row tab meets the titlebar flush, with no rail strip above it.
 
 No surface carries L-shaped corner ornament — not windows, not vault, not agent, not harness, not toasts. Two-side HUD ticks (`border-top` + `border-left` 10px arms, `┌┐└┘` glyphs) are banned. The chrome is the 1px accent-tinted border plus the multi-layer outer glow — the whole frame reads as a single luminous edge rather than discrete brackets.
 
@@ -463,6 +463,7 @@ What must *not* happen is partial drift inside Krypton Dark surfaces: a 12px car
 
 ## Changelog
 
+- **1.2.7** — ACP harness Zen rail: the body, tab and composer read as one sheet. The rail colour ends in an 8px curve where the body meets the composer. The body's corner under the titlebar is rounded when the tab is not the first row. A first-row tab meets the titlebar flush (spec 325 rev 2).
 - **1.2.6** — ACP harness Zen rail: the active lane is a tab merged into the lane body (spec 325). Inactive rows are 8px-rounded and inset.
 - **1.2.5** — ACP harness docked ticket panel is a flush 0px interior pane (same exception as the composer). Host window stays 8px.
 - **1.2.4** — ACP harness host window uses the 8px token again. Only the composer stays 0px.
