@@ -4,6 +4,7 @@
 > Date: 2026-10-22
 > Milestone: ACP Harness — transcript
 > Builds on: 0324 (cell-grid box drawing) · 0319/0315 (Execution Inspector, append-preserving output) · 0235 (grep tokens) · 0301/0302 (component kernel, AGENTS.md constraint 10)
+> Extended by: [0330](./0330-termctrl-monitor-full-log.md) — the Terminal Control monitor's Screen view, an OS-browser loopback page, uses this grid through a bundled `gridifyText` (`src/acp/loopback-cell-grid.ts`).
 
 ## Problem
 

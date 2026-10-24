@@ -1,7 +1,8 @@
-//! Read-only adapter for the external `termctrl` CLI (spec 198).
+//! Read-only adapter for the external `termctrl` CLI (specs 198 and 330).
 //!
-//! The loopback WebUI uses this module for session inventory and visible-screen
-//! snapshots. It intentionally exposes no input or lifecycle operations.
+//! The loopback WebUI uses this module for session inventory, visible-screen
+//! snapshots, and the retained raw output behind the Log view. It intentionally
+//! exposes no input or lifecycle operations.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -17,7 +18,32 @@ use tokio::process::Command;
 const SCHEMA_VERSION: u8 = 1;
 const OUTPUT_LIMIT: usize = 1024 * 1024;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
+/// Spec 330: the raw ring is 16 MiB by default; leave room for a larger
+/// `--max-bytes` without letting one read hold unbounded memory.
+const LOG_OUTPUT_LIMIT: usize = 32 * 1024 * 1024;
+/// A full 16 MiB ring measured 289–294 ms on termctrl 1.2.1.
+const LOG_TIMEOUT: Duration = Duration::from_secs(5);
+/// Longest anchor the page may send: the last bytes it holds.
+pub const LOG_ANCHOR_MAX: usize = 64;
+/// The one log error the page shows verbatim, because the user can act on it.
+pub const LOG_TOO_LARGE: &str = "session log exceeds 32 MiB";
 const START_ERROR: &str = "failed to start termctrl";
+
+/// Output cap and deadline for one CLI invocation.
+#[derive(Debug, Clone, Copy)]
+struct Budget {
+    limit: usize,
+    timeout: Duration,
+}
+
+const CLI_BUDGET: Budget = Budget {
+    limit: OUTPUT_LIMIT,
+    timeout: COMMAND_TIMEOUT,
+};
+const LOG_BUDGET: Budget = Budget {
+    limit: LOG_OUTPUT_LIMIT,
+    timeout: LOG_TIMEOUT,
+};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -39,6 +65,7 @@ pub struct TermctrlSessionSummary {
     pub cols: Option<u16>,
     pub rows: Option<u16>,
     pub recording: bool,
+    pub logs_truncated: bool,
     pub idle_for_ms: Option<u64>,
     pub has_visible_content: bool,
     pub error: Option<String>,
@@ -64,6 +91,41 @@ pub struct TermctrlScreen {
     pub fetched_at: u64,
 }
 
+/// Spec 330: where the page's copy of the log ends — the ring length it last
+/// saw and the bytes just before that point.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TermctrlLogCursor {
+    pub length: usize,
+    pub anchor: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TermctrlLogMode {
+    /// `bytes` continue the page's copy.
+    Append,
+    /// `bytes` are the whole ring; the page starts over.
+    Reset,
+}
+
+impl TermctrlLogMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Append => "append",
+            Self::Reset => "reset",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TermctrlLogChunk {
+    pub mode: TermctrlLogMode,
+    /// Ring length at this read: the page's next cursor length.
+    pub length: usize,
+    /// termctrl dropped the ring's oldest bytes at least once.
+    pub truncated: bool,
+    pub bytes: Vec<u8>,
+}
+
 #[derive(Debug, Clone)]
 struct ResolvedBinary {
     path: PathBuf,
@@ -87,7 +149,17 @@ struct RawStatus {
     idle_for_ms: Option<u64>,
     has_visible_content: bool,
     recording: bool,
+    #[serde(default)]
+    logs_truncated: bool,
     launch: RawLaunch,
+}
+
+/// `status NAME --json`, reduced to the one field the Log view needs. Older
+/// termctrl without it reads as "never truncated".
+#[derive(Debug, Deserialize)]
+struct RawLogStatus {
+    #[serde(default)]
+    logs_truncated: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -149,12 +221,9 @@ impl TermctrlMonitor {
         };
 
         let args = vec!["list".to_string(), "--json".to_string()];
-        let output = match run_bounded(&resolved, &args).await {
+        let output = match self.run_cli(&resolved, &args, CLI_BUDGET).await {
             Ok(value) => value,
             Err(error) => {
-                if error == START_ERROR {
-                    self.invalidate_resolution();
-                }
                 return TermctrlSessionList {
                     schema_version: SCHEMA_VERSION,
                     available: true,
@@ -191,22 +260,69 @@ impl TermctrlMonitor {
             return Err("invalid session name".to_string());
         }
         let resolved = self.resolved_binary().await?;
-        let args = screen_args(name);
-        let output = match run_bounded(&resolved, &args).await {
-            Ok(output) => output,
-            Err(error) => {
-                if error == START_ERROR {
-                    self.invalidate_resolution();
-                }
-                return Err(error);
-            }
-        };
+        let output = self
+            .run_cli(&resolved, &screen_args(name), CLI_BUDGET)
+            .await?;
         Ok(TermctrlScreen {
             schema_version: SCHEMA_VERSION,
             name: name.to_string(),
             text: decode_screen(output.stdout),
             fetched_at: now_ms(),
         })
+    }
+
+    /// Spec 330: the session's retained raw PTY output, or only the part after
+    /// `cursor`. Krypton keeps nothing between calls; the page owns the cursor.
+    pub async fn log(
+        &self,
+        name: &str,
+        cursor: Option<&TermctrlLogCursor>,
+    ) -> Result<TermctrlLogChunk, String> {
+        if !valid_session_name(name) {
+            return Err("invalid session name".to_string());
+        }
+        let resolved = self.resolved_binary().await?;
+        let output = self
+            .run_cli(&resolved, &log_args(name), LOG_BUDGET)
+            .await
+            .map_err(|error| {
+                if error == overflow_error(LOG_OUTPUT_LIMIT) {
+                    LOG_TOO_LARGE.to_string()
+                } else {
+                    error
+                }
+            })?;
+        // Read after the bytes: `logs_truncated` only ever turns on, so
+        // "not truncated" here also held when the ring was copied above.
+        let status = self
+            .run_cli(&resolved, &status_args(name), CLI_BUDGET)
+            .await?;
+        let truncated = parse_logs_truncated(&status.stdout)?;
+        let mut bytes = output.stdout;
+        let length = bytes.len();
+        let (mode, start) = log_delta(&bytes, truncated, cursor);
+        bytes.drain(..start);
+        Ok(TermctrlLogChunk {
+            mode,
+            length,
+            truncated,
+            bytes,
+        })
+    }
+
+    /// Runs one CLI command with the cached binary. A spawn failure forgets the
+    /// cache so a moved or reinstalled binary is found again on the next poll.
+    async fn run_cli(
+        &self,
+        resolved: &ResolvedBinary,
+        args: &[String],
+        budget: Budget,
+    ) -> Result<BoundedOutput, String> {
+        let result = run_bounded(resolved, args, budget).await;
+        if matches!(&result, Err(error) if error == START_ERROR) {
+            self.invalidate_resolution();
+        }
+        result
     }
 
     async fn resolved_binary(&self) -> Result<ResolvedBinary, String> {
@@ -236,7 +352,7 @@ impl TermctrlMonitor {
             runtime_dir,
         };
         let version_args = vec!["--version".to_string()];
-        let output = run_bounded(&unresolved, &version_args).await?;
+        let output = run_bounded(&unresolved, &version_args, CLI_BUDGET).await?;
         let version_output = String::from_utf8(output.stdout)
             .map_err(|_| "termctrl returned a non-UTF-8 version".to_string())?
             .to_string();
@@ -273,6 +389,82 @@ fn screen_args(name: &str) -> Vec<String> {
     vec!["show".to_string(), name.to_string()]
 }
 
+fn log_args(name: &str) -> Vec<String> {
+    vec!["logs".to_string(), name.to_string(), "--ansi".to_string()]
+}
+
+fn status_args(name: &str) -> Vec<String> {
+    vec!["status".to_string(), name.to_string(), "--json".to_string()]
+}
+
+fn parse_logs_truncated(bytes: &[u8]) -> Result<bool, String> {
+    serde_json::from_slice::<RawLogStatus>(bytes)
+        .map(|status| status.logs_truncated)
+        .map_err(|_| "termctrl returned incompatible status JSON".to_string())
+}
+
+/// Parses the page's `length` and hex `anchor` query values. Anything
+/// malformed is `None`, which makes the read a Reset.
+pub fn parse_log_cursor(length: Option<&str>, anchor: Option<&str>) -> Option<TermctrlLogCursor> {
+    let length = length?.parse::<usize>().ok()?;
+    let anchor = anchor?;
+    if anchor.is_empty()
+        || anchor.len() % 2 != 0
+        || anchor.len() > LOG_ANCHOR_MAX * 2
+        || !anchor.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    let anchor = (0..anchor.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(&anchor[at..at + 2], 16).ok())
+        .collect::<Option<Vec<u8>>>()?;
+    Some(TermctrlLogCursor { length, anchor })
+}
+
+/// Where the page's copy ends inside `buffer`: Append from that offset, or
+/// Reset from 0 when it cannot be placed exactly.
+///
+/// While termctrl has never dropped bytes the ring only grows, so the copy
+/// ends at `cursor.length` or the session was replaced. After a drop the
+/// offsets have shifted by an unknown amount, so the anchor must occur
+/// exactly once; a repeated anchor could place the copy on the wrong line.
+fn log_delta(
+    buffer: &[u8],
+    truncated: bool,
+    cursor: Option<&TermctrlLogCursor>,
+) -> (TermctrlLogMode, usize) {
+    let reset = (TermctrlLogMode::Reset, 0);
+    let Some(cursor) = cursor.filter(|cursor| !cursor.anchor.is_empty()) else {
+        return reset;
+    };
+    let anchor = cursor.anchor.as_slice();
+    if !truncated {
+        let end = cursor.length;
+        let placed = end >= anchor.len()
+            && end <= buffer.len()
+            && &buffer[end - anchor.len()..end] == anchor;
+        return if placed {
+            (TermctrlLogMode::Append, end)
+        } else {
+            reset
+        };
+    }
+    let mut found = buffer
+        .windows(anchor.len())
+        .enumerate()
+        .filter(|(_, window)| *window == anchor)
+        .map(|(at, _)| at);
+    match (found.next(), found.next()) {
+        (Some(at), None) => (TermctrlLogMode::Append, at + anchor.len()),
+        _ => reset,
+    }
+}
+
+fn overflow_error(limit: usize) -> String {
+    format!("termctrl output exceeded {} MiB", limit / (1024 * 1024))
+}
+
 fn parse_version_label(output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {
@@ -295,7 +487,7 @@ fn parse_session_list(bytes: &[u8]) -> Result<Vec<TermctrlSessionSummary>, Strin
     // Defense in depth for direct parser callers; the subprocess reader also
     // enforces this cap before returning bytes.
     if bytes.len() > OUTPUT_LIMIT {
-        return Err("termctrl output exceeded 1 MiB".to_string());
+        return Err(overflow_error(OUTPUT_LIMIT));
     }
     let raw: Vec<RawSessionEntry> = serde_json::from_slice(bytes)
         .map_err(|_| "termctrl returned incompatible session JSON".to_string())?;
@@ -317,6 +509,7 @@ fn normalize_session(raw: RawSessionEntry) -> TermctrlSessionSummary {
             cols: Some(status.cols),
             rows: Some(status.rows),
             recording: status.recording,
+            logs_truncated: status.logs_truncated,
             idle_for_ms: status.idle_for_ms,
             has_visible_content: status.has_visible_content,
             error: raw.error.map(|error| sanitize_message(&error)),
@@ -336,6 +529,7 @@ fn normalize_session(raw: RawSessionEntry) -> TermctrlSessionSummary {
         cols: None,
         rows: None,
         recording: false,
+        logs_truncated: false,
         idle_for_ms: None,
         has_visible_content: false,
         error: raw.error.map(|error| sanitize_message(&error)),
@@ -427,14 +621,10 @@ fn is_executable(path: &Path) -> bool {
     }
 }
 
-async fn run_bounded(binary: &ResolvedBinary, args: &[String]) -> Result<BoundedOutput, String> {
-    run_bounded_with_timeout(binary, args, COMMAND_TIMEOUT).await
-}
-
-async fn run_bounded_with_timeout(
+async fn run_bounded(
     binary: &ResolvedBinary,
     args: &[String],
-    timeout: Duration,
+    budget: Budget,
 ) -> Result<BoundedOutput, String> {
     let mut command = Command::new(&binary.path);
     command
@@ -461,14 +651,16 @@ async fn run_bounded_with_timeout(
         stdout,
         Arc::clone(&total),
         Arc::clone(&overflowed),
+        budget.limit,
     ));
     let stderr_task = tokio::spawn(read_bounded_stream(
         stderr,
         Arc::clone(&total),
         Arc::clone(&overflowed),
+        budget.limit,
     ));
 
-    let status = match tokio::time::timeout(timeout, child.wait()).await {
+    let status = match tokio::time::timeout(budget.timeout, child.wait()).await {
         Ok(Ok(status)) => status,
         Ok(Err(_)) => return Err("failed while waiting for termctrl".to_string()),
         Err(_) => {
@@ -488,7 +680,7 @@ async fn run_bounded_with_timeout(
         .map_err(|_| "failed to collect termctrl diagnostics".to_string())?
         .map_err(|_| "failed to read termctrl diagnostics".to_string())?;
     if overflowed.load(Ordering::Relaxed) {
-        return Err("termctrl output exceeded 1 MiB".to_string());
+        return Err(overflow_error(budget.limit));
     }
     if !status.success() {
         return Err(format!(
@@ -506,6 +698,7 @@ async fn read_bounded_stream<R: AsyncRead + Unpin>(
     mut reader: R,
     total: Arc<AtomicUsize>,
     overflowed: Arc<AtomicBool>,
+    limit: usize,
 ) -> std::io::Result<Vec<u8>> {
     let mut collected = Vec::new();
     let mut chunk = [0u8; 8192];
@@ -515,11 +708,11 @@ async fn read_bounded_stream<R: AsyncRead + Unpin>(
             break;
         }
         let before = total.fetch_add(read, Ordering::Relaxed);
-        if before >= OUTPUT_LIMIT {
+        if before >= limit {
             overflowed.store(true, Ordering::Relaxed);
             continue;
         }
-        let keep = read.min(OUTPUT_LIMIT - before);
+        let keep = read.min(limit - before);
         collected.extend_from_slice(&chunk[..keep]);
         if keep < read {
             overflowed.store(true, Ordering::Relaxed);
@@ -692,9 +885,14 @@ mod tests {
         });
         let total = Arc::new(AtomicUsize::new(0));
         let overflowed = Arc::new(AtomicBool::new(false));
-        let collected = read_bounded_stream(reader, Arc::clone(&total), Arc::clone(&overflowed))
-            .await
-            .expect("read fixture");
+        let collected = read_bounded_stream(
+            reader,
+            Arc::clone(&total),
+            Arc::clone(&overflowed),
+            OUTPUT_LIMIT,
+        )
+        .await
+        .expect("read fixture");
         write.await.expect("writer joins");
         assert_eq!(collected.len(), OUTPUT_LIMIT);
         assert!(overflowed.load(Ordering::Relaxed));
@@ -712,7 +910,7 @@ mod tests {
             "-c".to_string(),
             "printf sensitive-value >&2; exit 7".to_string(),
         ];
-        let error = run_bounded(&binary, &args)
+        let error = run_bounded(&binary, &args, CLI_BUDGET)
             .await
             .expect_err("command fails");
         assert!(error.contains("status 7"));
@@ -728,7 +926,11 @@ mod tests {
             runtime_dir: None,
         };
         let args = vec!["-c".to_string(), "sleep 1".to_string()];
-        let error = run_bounded_with_timeout(&binary, &args, Duration::from_millis(25))
+        let budget = Budget {
+            limit: OUTPUT_LIMIT,
+            timeout: Duration::from_millis(25),
+        };
+        let error = run_bounded(&binary, &args, budget)
             .await
             .expect_err("command times out");
         assert_eq!(error, "termctrl command timed out");
@@ -746,5 +948,107 @@ mod tests {
         };
         assert!(monitor.screen("remote").await.is_err());
         assert!(monitor.resolved.lock().unwrap().is_none());
+    }
+
+    fn cursor(length: usize, anchor: &[u8]) -> TermctrlLogCursor {
+        TermctrlLogCursor {
+            length,
+            anchor: anchor.to_vec(),
+        }
+    }
+
+    #[test]
+    fn log_delta_resets_without_a_cursor() {
+        assert_eq!(log_delta(b"abc", false, None), (TermctrlLogMode::Reset, 0));
+        assert_eq!(
+            log_delta(b"abc", true, Some(&cursor(3, b""))),
+            (TermctrlLogMode::Reset, 0)
+        );
+    }
+
+    #[test]
+    fn log_delta_appends_after_the_copy_while_the_ring_only_grew() {
+        let buffer = b"line 1\nline 2\nline 1\nline 2\n";
+        // The anchor repeats, but an unwrapped ring places the copy by length.
+        assert_eq!(
+            log_delta(buffer, false, Some(&cursor(14, b"line 2\n"))),
+            (TermctrlLogMode::Append, 14)
+        );
+        assert_eq!(
+            log_delta(buffer, false, Some(&cursor(buffer.len(), b"line 2\n"))),
+            (TermctrlLogMode::Append, buffer.len())
+        );
+    }
+
+    #[test]
+    fn log_delta_resets_when_an_unwrapped_ring_no_longer_holds_the_copy() {
+        // A restarted session: same length, different bytes.
+        assert_eq!(
+            log_delta(b"fresh!", false, Some(&cursor(6, b"old!"))),
+            (TermctrlLogMode::Reset, 0)
+        );
+        // The page claims more than termctrl holds.
+        assert_eq!(
+            log_delta(b"abc", false, Some(&cursor(9, b"c"))),
+            (TermctrlLogMode::Reset, 0)
+        );
+    }
+
+    #[test]
+    fn log_delta_finds_a_unique_anchor_after_the_ring_dropped_bytes() {
+        // The page held "...[a]cdef"; termctrl dropped the first bytes and appended "gh".
+        assert_eq!(
+            log_delta(b"cdefgh", true, Some(&cursor(6, b"ef"))),
+            (TermctrlLogMode::Append, 4)
+        );
+    }
+
+    #[test]
+    fn log_delta_resets_on_a_missing_or_repeated_anchor_after_a_drop() {
+        assert_eq!(
+            log_delta(b"efxxef", true, Some(&cursor(6, b"ef"))),
+            (TermctrlLogMode::Reset, 0)
+        );
+        assert_eq!(
+            log_delta(b"ghij", true, Some(&cursor(6, b"ef"))),
+            (TermctrlLogMode::Reset, 0)
+        );
+    }
+
+    #[test]
+    fn log_cursor_parser_accepts_only_bounded_hex() {
+        assert_eq!(
+            parse_log_cursor(Some("42"), Some("0a7F")),
+            Some(cursor(42, &[0x0a, 0x7f]))
+        );
+        let longest = "ab".repeat(LOG_ANCHOR_MAX);
+        assert!(parse_log_cursor(Some("1"), Some(&longest)).is_some());
+        let too_long = "ab".repeat(LOG_ANCHOR_MAX + 1);
+        for (length, anchor) in [
+            (None, Some("0a")),
+            (Some("-1"), Some("0a")),
+            (Some("x"), Some("0a")),
+            (Some("1"), None),
+            (Some("1"), Some("")),
+            (Some("1"), Some("abc")),
+            (Some("1"), Some("+f")),
+            (Some("1"), Some("zz")),
+            (Some("1"), Some("ไท")),
+            (Some("1"), Some(too_long.as_str())),
+        ] {
+            assert_eq!(
+                parse_log_cursor(length, anchor),
+                None,
+                "{length:?} {anchor:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn log_status_parser_treats_a_missing_flag_as_never_truncated() {
+        assert!(parse_logs_truncated(br#"{"state":"running","logs_truncated":true}"#).unwrap());
+        assert!(!parse_logs_truncated(br#"{"state":"running"}"#).unwrap());
+        assert!(parse_logs_truncated(br#"{"logs_truncated":"yes"}"#).is_err());
+        assert!(parse_logs_truncated(b"not json").is_err());
     }
 }

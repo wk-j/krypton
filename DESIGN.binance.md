@@ -87,7 +87,7 @@ The loopback surfaces:
 | Docs browser | `src/acp/artifact-docs.html` | Read-only repo markdown reader (`/docs`, `/doc`) | Auto (follows OS `prefers-color-scheme`) |
 | Command reference | `src/acp/artifact-commands.html` | Built-in `#` command + system-prompt reference (`/commands`, fetches `/commands.json` once) | Fixed dark |
 | MCP tool reference | `src/acp/artifact-tools.html` | Built-in MCP tool contract reference (`/tools`, fetches `/tools.json` once) | Fixed dark |
-| Terminal Control monitor | `src/acp/artifact-termctrl.html` | Read-only named-session roster and visible-screen preview (capability routes under `/termctrl`) | Fixed dark |
+| Terminal Control monitor | `src/acp/artifact-termctrl.html` | Read-only named-session roster; Screen view (visible screen on the harness cell grid) and Log view (full retained output, follows the tail) behind a `Screen`/`Log` toggle (capability routes under `/termctrl`) | Fixed dark |
 | Hurl web client | `src/acp/artifact-hurl.html` | Token-gated `.hurl` runner (capability routes under `/hurl`) | Fixed dark |
 | ACP wire profiler | `src/acp/artifact-acpwire.html` | Read-only ACP traffic profiler: stat tiles, per-lane waterfall, message table + payload detail, per-method latency (capability routes under `/acp-wire`, polls while visible) | Fixed dark |
 | Project timeline | `src/acp/artifact-timeline.html` | Read-only local requirement/decision chronology (`/timeline`, refetches `/timeline.json` when the tab becomes active); superseded rows are hidden by default, and a row in an open conflict pair marks only its time cell with an accent chip | Auto (follows OS `prefers-color-scheme`) |

@@ -4,6 +4,7 @@
 > Date: 2026-07-19
 > Implemented: 2026-07-20
 > Milestone: ACP Harness: observability
+> Amended by: [0330](./0330-termctrl-monitor-full-log.md) — a Log view of the retained raw output (`/termctrl/api/{token}/log/{name}`) and the Screen view on the harness cell grid. The "no `logs` route" and "scrollback" exclusions below are superseded.
 
 ## Problem
 
@@ -232,6 +233,8 @@ The page follows `DESIGN.binance.md` as a fixed-dark status surface:
 - The preview is a single `<pre>` on `--code-bg` with preserved whitespace,
   horizontal scrolling, and the shared mono font. It is visible text only: no
   ANSI, SVG injection, scrollback, cursor simulation, or secret persistence.
+  (Spec 330 adds the scrollback as a separate Log view and lays this screen on
+  the cell grid.)
 - Responsive layout becomes one column below 760 px. The roster remains first,
   and selection scrolls the preview heading into view.
 - Empty states are actionable: `termctrl not found` includes the installation
@@ -263,7 +266,8 @@ No TOML keys. Optional environment overrides:
 ## Security and privacy
 
 - The WebUI is read-only. There are no HTTP routes for `send`, `stop`,
-  `restart`, `resize`, `logs`, recording download, or artifact capture.
+  `restart`, `resize`, recording download, or artifact capture. (The `logs`
+  exclusion is superseded by spec 330's read-only log route.)
 - The page and JSON endpoints require the unguessable token. The token is never
   exposed by a tokenless discovery route and expires when Krypton exits.
 - Screen text is fetched only for the selected session and remains in browser
@@ -358,7 +362,7 @@ approval ambiguity in this spec.
 - Converting an existing background session into a human-attached foreground
   session.
 - Full ANSI color, structured cell rendering, SVG injection, cursor animation,
-  scrollback, recordings, and video export.
+  recordings, and video export. (Scrollback: superseded by spec 330.)
 - Remote access to the monitor outside the local machine.
 - Replacing Terminal Control's MCP server for agent tools.
 - Managing native Krypton PTY sessions through this page.

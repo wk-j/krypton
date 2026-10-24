@@ -1866,18 +1866,37 @@ the local Telegram Settings view accepts it.
    seconds. `TermctrlMonitor` resolves the external binary if needed and runs
    the absolute path with `list --json` under a two-second timeout and one-MiB
    output cap.
-4. The page retains selection by session name. It requests only the selected
-   session's `show NAME` visible text and assigns the response with
-   `textContent` to its `<pre>`. Running screens refresh every second; an exited
-   screen is fetched once and cached because it can no longer change.
+4. The page retains selection by session name. In the Screen view it requests
+   only the selected session's `show NAME` visible text, assigns it with
+   `textContent` to its `<pre>`, and — once `/termctrl/assets/cell-grid.js` has
+   loaded — lays it on the harness cell grid (specs 324/326). Unchanged text is
+   not repainted. Running screens refresh every second; an exited screen is
+   fetched once and cached because it can no longer change.
 5. Stale and incompatible entries render their list diagnostics without a
    screen request. If a session disappears, selection moves to the first
-   remaining row; zero sessions render startup guidance.
-6. `visibilitychange` stops both timers when the tab is hidden. Returning to the
-   tab triggers one immediate refresh before the timers resume. One list and one
-   screen request may be in flight; slow cycles are skipped, never queued.
-7. No route accepts terminal input or session lifecycle operations. The browser
-   is an observer only. See `docs/0198-termctrl-session-monitor.md`.
+   remaining row; zero sessions render startup guidance. A failed `list` keeps
+   the last roster and selection.
+6. `visibilitychange` stops every timer when the tab is hidden. Returning to the
+   tab triggers one immediate refresh before the timers resume. One list, one
+   screen and one log request may be in flight; slow cycles are skipped, never
+   queued.
+7. `v` switches to the Log view (spec 330). The first read has no cursor, so
+   `GET /termctrl/api/{token}/log/{name}` runs `logs NAME --ansi`, then
+   `status NAME --json`, and returns the whole raw ring (`reset`). The page
+   decodes it to plain text lines and keeps the ring length plus its last 64
+   bytes as the cursor.
+8. Later reads send `?length=&anchor=`. Krypton places the cursor in the new
+   ring — by length while termctrl has never dropped bytes, by a unique anchor
+   after it has — and returns only the bytes after it (`append`), or the whole
+   ring (`reset`) when it cannot. It keeps nothing between requests.
+9. A read happens only while the Log view is visible, after the session printed
+   since the last read (`idleForMs` from the list), and at least
+   max(2 s, 10 × the last read's duration) apart; a ring with no line output is
+   re-read every 30 s. While following, the view scrolls to the end; scrolling
+   up pauses and counts new lines, and `G` resumes.
+10. No route accepts terminal input or session lifecycle operations. The
+   browser is an observer only. See `docs/0198-termctrl-session-monitor.md` and
+   `docs/0330-termctrl-monitor-full-log.md`.
 
 ## Hurl Web Client Flow
 

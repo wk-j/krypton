@@ -171,6 +171,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
   const capabilityRoutes: Array<[string, string, string]> = [
     ['termctrl-page', `/termctrl/${token}`, 'GET /termctrl/<forged> → 404, empty body'],
     ['termctrl-sessions', `/termctrl/api/${token}/sessions`, 'GET /termctrl/api/<forged>/sessions → 404, empty body'],
+    ['termctrl-log', `/termctrl/api/${token}/log/web`, 'GET /termctrl/api/<forged>/log/web → 404, empty body'],
     ['acp-wire-page', `/acp-wire/${token}`, 'GET /acp-wire/<forged> → 404, empty body'],
     ['acp-wire-export', `/acp-wire/${token}/export.jsonl`, 'GET /acp-wire/<forged>/export.jsonl → 404, empty body'],
     ['hurl-page', `/hurl/${token}`, 'GET /hurl/<forged> → 404, empty body'],

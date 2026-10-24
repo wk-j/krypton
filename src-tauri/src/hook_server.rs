@@ -41,7 +41,9 @@ use crate::hurl::{
     HurlWebSession, HurlWebSessions,
 };
 use crate::review_excerpt::{rv_anchor, validate_doc_path, RvExcerpt, RvSkip, RvSrcCtx};
-use crate::termctrl_monitor::{TermctrlMonitor, TermctrlSessionList};
+use crate::termctrl_monitor::{
+    parse_log_cursor, TermctrlLogChunk, TermctrlMonitor, TermctrlSessionList, LOG_TOO_LARGE,
+};
 use crate::util::emit::EmitExt;
 
 /// Hook event received from Claude Code via HTTP POST.
@@ -3137,6 +3139,84 @@ async fn handle_termctrl_screen(
     }
 }
 
+/// Spec 330: where the page's copy of the log ends. Both stay strings so a
+/// malformed value turns into a Reset instead of a rejected request.
+#[derive(Deserialize)]
+struct TermctrlLogQuery {
+    length: Option<String>,
+    anchor: Option<String>,
+}
+
+/// GET /termctrl/api/{token}/log/{name}: retained raw output, or the part after
+/// the page's cursor (spec 330).
+async fn handle_termctrl_log(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path((token, name)): Path<(String, String)>,
+    Query(query): Query<TermctrlLogQuery>,
+) -> Response {
+    if !termctrl_token_matches(&state, &token)
+        || !crate::termctrl_monitor::valid_session_name(&name)
+    {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let cursor = parse_log_cursor(query.length.as_deref(), query.anchor.as_deref());
+    match state
+        .hook_server
+        .termctrl_monitor
+        .log(&name, cursor.as_ref())
+        .await
+    {
+        Ok(chunk) => termctrl_log_response(chunk),
+        Err(error) => secured_json_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({ "error": if error == LOG_TOO_LARGE { LOG_TOO_LARGE } else { "session log unavailable" } }),
+        ),
+    }
+}
+
+fn termctrl_log_response(chunk: TermctrlLogChunk) -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(header::CACHE_CONTROL, "no-store")
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::REFERRER_POLICY, "no-referrer")
+        .header("x-termctrl-log-mode", chunk.mode.as_str())
+        .header("x-termctrl-log-length", chunk.length.to_string())
+        .header(
+            "x-termctrl-log-truncated",
+            if chunk.truncated { "true" } else { "false" },
+        )
+        .body(Body::from(chunk.bytes))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// GET /termctrl/assets/{name}: the harness cell grid (specs 324/326) bundled
+/// for the monitor page by `vite.loopback.config.ts` (spec 330). Static code
+/// with no session data, so it needs no capability token. Debug builds embed no
+/// `dist`, so Vite serves the sources, as for the GenUI gallery.
+async fn handle_termctrl_asset(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Path(name): Path<String>,
+) -> Response {
+    let (built, source) = match name.as_str() {
+        "cell-grid.js" => ("loopback/cell-grid.js", "src/acp/loopback-cell-grid.ts"),
+        "cell-grid.css" => ("loopback/cell-grid.css", "src/acp/cell-grid.css"),
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
+    if cfg!(debug_assertions) {
+        // `localhost`, not 127.0.0.1: Vite binds `localhost`, which can be
+        // IPv6-only (`[::1]:1420`); the browser tries both addresses.
+        return Response::builder()
+            .status(StatusCode::TEMPORARY_REDIRECT)
+            .header(header::LOCATION, format!("http://localhost:1420/{source}"))
+            .header(header::CACHE_CONTROL, "no-store")
+            .body(Body::empty())
+            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    }
+    frontend_dist_asset(&state.app_handle, built)
+}
+
 fn acp_wire_token_matches(state: &HookServerState, token: &str) -> bool {
     constant_time_token_eq(token, state.hook_server.acp_wire.token())
 }
@@ -3572,7 +3652,7 @@ async fn handle_genui_gallery(AxumState(state): AxumState<Arc<HookServerState>>)
             .body(Body::empty())
             .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
     }
-    genui_gallery_asset(&state.app_handle, "genui-gallery/index.html")
+    frontend_dist_asset(&state.app_handle, "genui-gallery/index.html")
 }
 
 async fn handle_genui_gallery_asset(
@@ -3582,7 +3662,7 @@ async fn handle_genui_gallery_asset(
     if !valid_genui_gallery_asset_name(&name) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    genui_gallery_asset(&state.app_handle, &format!("genui-gallery/assets/{name}"))
+    frontend_dist_asset(&state.app_handle, &format!("genui-gallery/assets/{name}"))
 }
 
 /// GET /genui-gallery/theme.json — the app's resolved theme plus the configured
@@ -3625,7 +3705,7 @@ fn valid_genui_gallery_asset_name(name: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
 
-fn genui_gallery_asset(app: &AppHandle, path: &str) -> Response {
+fn frontend_dist_asset(app: &AppHandle, path: &str) -> Response {
     let resolver = app.asset_resolver();
     // In release, get() falls back to the app's index.html for a missing key.
     // Check the exact embedded path before letting that fallback turn a 404 into 200.
@@ -10101,6 +10181,8 @@ pub fn start(
                     "/termctrl/api/{token}/screen/{name}",
                     get(handle_termctrl_screen),
                 )
+                .route("/termctrl/api/{token}/log/{name}", get(handle_termctrl_log))
+                .route("/termctrl/assets/{name}", get(handle_termctrl_asset))
                 .route("/acp-wire/{token}", get(handle_acp_wire_page))
                 .route("/acp-wire/{token}/summary", get(handle_acp_wire_summary))
                 .route("/acp-wire/{token}/events", get(handle_acp_wire_events))
@@ -11248,6 +11330,8 @@ mod tests {
             .route("/termctrl/{token}", get(ok))
             .route("/termctrl/api/{token}/sessions", get(ok))
             .route("/termctrl/api/{token}/screen/{name}", get(ok))
+            .route("/termctrl/api/{token}/log/{name}", get(ok))
+            .route("/termctrl/assets/{name}", get(ok))
             .route("/acp-wire/{token}", get(ok))
             .route("/acp-wire/{token}/summary", get(ok))
             .route("/acp-wire/{token}/events", get(ok))

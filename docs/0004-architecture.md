@@ -866,21 +866,38 @@ see doc 0006.
 `src-tauri/src/termctrl_monitor.rs` is a read-only adapter around the installed
 `termctrl` CLI. It resolves an absolute executable from `TERMCTRL_BINARY`, the
 process and login-shell `PATH`, and standard Cargo/Homebrew locations, then
-invokes `list --json`, `show NAME`, and `--version` directly without a shell.
-Each invocation has a two-second timeout and a one-MiB combined-output cap.
+invokes `list --json`, `show NAME`, `logs NAME --ansi`, `status NAME --json`,
+and `--version` directly without a shell. Each invocation has a two-second
+timeout and a one-MiB combined-output cap, except `logs`, which gets five
+seconds and 32 MiB because the raw ring defaults to 16 MiB (spec 330).
 Successful discovery is cached; failed discovery retries on the next browser
 poll, and a cached path is invalidated if the executable later disappears.
 
 The existing hook server owns the process-lifetime 128-bit capability and serves
 the fixed Binance-dark page at `/termctrl/{token}`, normalized session JSON at
-`/termctrl/api/{token}/sessions`, and selected visible text at
-`/termctrl/api/{token}/screen/{name}`. All three routes require the token and use
+`/termctrl/api/{token}/sessions`, selected visible text at
+`/termctrl/api/{token}/screen/{name}`, and the retained raw output at
+`/termctrl/api/{token}/log/{name}`. All four routes require the token and use
 no-store, no-referrer, and nosniff headers. The page has no input, lifecycle,
-resize, logs, or recording endpoints. `#termctrl` and the command palette obtain
-the URL through `get_termctrl_monitor_url`; terminal text reaches a `<pre>` only
-through `textContent`. Running screens poll every second; an exited screen is
-read once and cached because its contents are final. See
-`docs/0198-termctrl-session-monitor.md`.
+resize, or recording endpoints. `#termctrl` and the command palette obtain the
+URL through `get_termctrl_monitor_url`; terminal text reaches the page only
+through `textContent` and text nodes. Running screens poll every second; an
+exited screen is read once and cached because its contents are final.
+
+The Log view (spec 330) keeps its cursor in the page: the ring length it last
+saw and its last 64 bytes. The log route answers `append` with only the bytes
+after them or `reset` with the whole ring; Krypton keeps nothing between
+requests. The page turns the raw bytes into plain text with a small stateful
+decoder (the backend still does no VT parsing) and reads only while the Log
+view is visible and the session has printed since the last read.
+
+The Screen view lays the visible text on the harness cell grid (specs 324/326).
+The page is inline HTML, so `vite.loopback.config.ts` bundles
+`src/acp/loopback-cell-grid.ts` into `dist/loopback/`, and the tokenless
+`/termctrl/assets/{cell-grid.js,cell-grid.css}` route serves it from the embedded
+`dist` in release builds and redirects to the Vite dev server in debug builds.
+See `docs/0198-termctrl-session-monitor.md` and
+`docs/0330-termctrl-monitor-full-log.md`.
 
 ### ACP Wire Profiler
 
