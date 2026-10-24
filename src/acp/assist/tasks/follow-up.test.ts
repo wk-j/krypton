@@ -54,6 +54,28 @@ describe('followUpCandidates', () => {
     ]);
   });
 
+  it('never offers a command whose every line is a # comment, such as a harness hash command', () => {
+    const commentsOnly = [
+      'From the harness: `#e2e run all`, `#e2e status`.',
+      '```sh',
+      '# make install',
+      '',
+      '   # npm test',
+      '```',
+    ].join('\n');
+    expect(followUpCandidates(commentsOnly)).toEqual([]);
+    const withCommands = ['```sh', '# build the bundle', 'make install', '```', 'or `npm test # quick`'].join('\n');
+    expect(followUpCandidates(withCommands)).toEqual([
+      { kind: 'run', target: '# build the bundle\nmake install' },
+      { kind: 'run', target: 'npm test # quick' },
+    ]);
+    // A dropped hash command must not take one of the 20 slots from a real command.
+    const twenty = Array.from({ length: 20 }, (_, i) => `\`echo ${i}\``).join(' ');
+    const kept = followUpCandidates(`${twenty} \`#e2e status\``);
+    expect(kept).toHaveLength(20);
+    expect(kept[0]).toEqual({ kind: 'run', target: 'echo 0' });
+  });
+
   it('turns a shell fence into one command and keeps only its prompt lines', () => {
     const text = [
       '```console',

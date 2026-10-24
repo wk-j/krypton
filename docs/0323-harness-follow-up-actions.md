@@ -1,7 +1,7 @@
 # Harness Follow-up Actions — Implementation Spec
 
-> Status: Implemented (rev 5 — a one-word code span is never a command)
-> Date: 2026-10-23
+> Status: Implemented (rev 6 — a command made only of `#` comments is never a candidate)
+> Date: 2026-10-24
 > Milestone: ACP Harness — transcript
 > Builds on: 0306 (assist sidecar) · 0322 (terminal-tab callback) · 0206/0283/0309 (`f` open-hint targets) · 0281/0286 (late sub-components on sealed rows) · 0301/0302 (component kernel)
 
@@ -19,6 +19,8 @@ A lane's reply often ends with something for the human to do: run `make install`
 
 **Rev 5 requirement (user, 2026-10-23):** "Follow up command is not work currently, such as this what the point create command with only commit hash?" A reply that named its commit as `` `b6c2b6d3` `` got a button labelled "show commit b6c2b6d3 details" whose command was the bare hash. Clicking it ran `b6c2b6d3` and printed `command not found` with exit 127. A one-word span is no longer a candidate, and the prompt forbids labels that describe an action the text does not perform.
 
+**Rev 6 requirement (user, 2026-10-24):** "Why follo up try to execute build-in command interminal?" A reply that listed harness commands as `` `#e2e run all` `` and `` `#e2e status` `` got `run` buttons labelled "run all e2e cases" and "show e2e status and run history". A shell reads a line that starts with `#` as a comment, so the tab printed `$ #e2e run all` and `[krypton] exit 0` and nothing ran. A `run` candidate whose every line is a `#` comment is no longer a candidate. Sending `#` commands to the harness remains out of scope (0327).
+
 ## Solution
 
 Add a second assist task, `follow-up`. When a turn ends it picks up to three actions from the reply. They appear as a **FOLLOW-UP** rail of buttons under that reply's row and stay there for as long as the row exists. Every earlier reply keeps its own buttons. An action is one of two kinds:
@@ -30,7 +32,7 @@ Spec 0327 adds a third kind, **`prompt`**: a message the model writes for the la
 
 Nothing runs without the human. They click a button, or use the existing transcript keys: `Esc` to focus the transcript, `f` to enter open-hint mode, then the button's hint label.
 
-**The assist model never writes the command.** Krypton pulls candidates out of the reply's markdown deterministically: shell fences, inline code spans that are a URL or have more than one word, and http(s) URLs. The model only picks candidate numbers and writes a short label for each. A reply with no candidates costs no model call.
+**The assist model never writes the command.** Krypton pulls candidates out of the reply's markdown deterministically: shell fences, inline code spans that are a URL or have more than one word, and http(s) URLs. A command whose every line is a `#` comment is dropped. The model only picks candidate numbers and writes a short label for each. A reply with no candidates costs no model call.
 
 ## Research
 
@@ -138,7 +140,8 @@ The input is the last assistant item of the turn, the same text next-prompt read
    - A non-shell fence produces nothing, and its contents are not scanned.
 2. **Inline code spans** outside fences (`` `…` ``, one line) become a candidate when at most 200 characters after trimming. A span that is exactly an `http(s)://` URL is `open`. Any other span is `run` only when it contains whitespace. A one-word span is a name — a commit hash, a branch, a path, a symbol, a flag — and as a button it would run that name as a program, so it produces nothing.
 3. **Bare URLs** outside fences and spans match `https?://[^\s<>()\`"']+`, with trailing `.,;:!?]` stripped. They are `open`. No other scheme is ever a candidate.
-4. Deduplicate on `kind + target`, keeping the **last** occurrence, and keep the last 20.
+4. Drop a `run` candidate whose every line is blank or a `#` comment (`/^\s*(#.*)?$/`). That covers a harness hash command such as `#e2e run all` and a fence that holds only commented-out lines. A shell runs nothing for it. A dropped candidate does not use up one of the 20 slots.
+5. Deduplicate on `kind + target`, keeping the **last** occurrence, and keep the last 20.
 
 The function is pure. `eligible`, `payload` and `parse` each call it on the same `ctx`, so the numbers the model sees are the numbers `parse` resolves.
 
@@ -282,6 +285,7 @@ No `config.rs` change: 0306 passes task options through opaquely.
 
 - **No backticked command or URL in the reply:** no candidate. Since 0327 the call still happens, because the model may offer a `prompt`; `{"actions":[]}` paints no rail.
 - **A one-word span (`` `b6c2b6d3` ``, `` `main` ``, `` `src/a.ts` ``, `` `make` ``):** never a candidate. A one-word command is offered only from a shell fence.
+- **A harness hash command (`` `#e2e run all` ``) or a shell fence of only comments:** never a candidate, because every line is a `#` comment and the shell would run nothing. A fence that mixes a comment with a command (`# build`, `make install`) stays one candidate, comment included.
 - **`{"actions":[]}`:** no rail; not a failure.
 - **The human sends the next prompt before the result arrives:** the rail still lands under the reply that named the actions, because the turn was snapshotted at enqueue.
 - **Running an action from an old reply:** it runs the command as written then, in today's `projectDir`. The full command is on the button, and the human decides.
@@ -310,6 +314,7 @@ Where the shipped code differs from the draft, and why:
 - **Label over command (rev 3).** The first layout put label and command on one line in a wrapping row. In a user screenshot of three multi-line commands, each command hung at an indent set by its own label's width, and each button had a different width. The button became a two-row grid, and the list became a single column of equal-width buttons. The change is CSS-only: the DOM, the deps and the click/hint contract are unchanged.
 - **SVG icons (rev 4).** The text glyphs `▶` and `↗` were drawn by whichever font had them, so their size and weight did not match the harness icons. They are now `<symbol>` defs in `harness-icons.ts`, placed with `harnessIconEl()` like every other harness icon. The DOM, the deps and the click/hint contract are unchanged; only the glyph span's content differs.
 - **One-word spans dropped (rev 5).** Rev 1 made every span a `run` candidate and relied on the prompt to skip names. In a user screenshot, the model picked a bare commit hash and labelled it "show commit b6c2b6d3 details", although the button ran only the hash. Extraction now requires whitespace in a `run` span, so a hash, path or symbol never reaches the model. `SPAN_MIN` went away with it: a span with whitespace is never shorter than 3 characters. The prompt gained two clauses: a `run` candidate is typed into a shell as written, and the label must describe what that exact text does.
+- **Comment-only commands dropped (rev 6).** Rev 5 still made any span with whitespace a `run` candidate. In a user screenshot, `` `#e2e run all` `` and `` `#e2e status` `` became `run` buttons. The span text was a harness command, but the button handed it to `$SHELL -lc`, which treats it as a comment and exits 0. The filter is on the candidate (`kind: 'run'`, every line `/^\s*(#.*)?$/`), not on the prompt: telling the model that a run candidate must be a complete command did not stop it from picking these. 0327's `ROUTED_PREFIX` check still applies only to model-written prompts. A `/` or `@` span is still a candidate, because `/usr/bin/env node x` is a real command.
 
 **Verified:**
 
@@ -320,6 +325,7 @@ Where the shipped code differs from the draft, and why:
 - Two real haiku calls each picked `make install`, `cargo clippy` and the docs URL. They skipped the file paths, the command the reply said already ran, and the `git push --force` it warned against.
 - Rev 5: a script through the real `followUpCandidates` → `parse` → `followUpShellArgs` path reproduced the screenshot. The candidates were `b6c2b6d3`, a path and a symbol; the picked hash ran under `/bin/sh` with `SHELL=/bin/zsh` and printed `zsh:1: command not found: b6c2b6d3` and `[krypton] exit 127`. After the change, the same reply has no candidate and makes no call.
 - Rev 5 prompt, real `claude -p --model haiku` calls with `b6c2b6d3` still offered as a candidate for "Pushed to `origin/main` as `b6c2b6d3`. You can review the change in that commit.": the old prompt picked the hash 4 of 4 times ("show the pushed commit b6c2b6d3", "show commit b6c2b6d3"), and the new prompt returned `{"actions":[]}` 4 of 4 times. On the `make install` / docs URL / `npm test` reply, the new prompt still picked `make install` and the URL in 3 of 3 calls, and `npm test` in 1 of them.
+- Rev 6: `followUpCandidates` on the screenshot's reply text plus a comment-only `sh` fence returned four `run` candidates before the change (`#e2e run loopback-api-authorization`, `#e2e run all`, `#e2e status`, `# make install`) and `[]` after. Before the change, `followUpShellArgs('#e2e run all')` under `/bin/sh` with `SHELL=/bin/zsh` printed `$ #e2e run all` and `[krypton] exit 0`. A new unit test covers comment-only spans and fences. It also checks three things: a fence that mixes a comment with a command is still a candidate, a span ending in `# note` is still a candidate, and a dropped command does not take one of the 20 slots.
 - **Not exercised:** the full in-app path (a Tauri lane turn → rail → terminal tab). It needs a rebuilt app.
 
 ## Open Questions

@@ -1503,8 +1503,10 @@ another lane — while the warm subprocess survives; only `dispose()` kills it, 
    only) is enqueued with a snapshot of this turn — later turns cannot retarget it.
 2. Candidates are extracted from the last assistant reply's markdown: shell fences,
    inline code spans that are a URL or have more than one word (a one-word span — hash,
-   path, symbol — is never a command), http(s) URLs. The call happens even with none
-   (spec 327: a prompt needs no candidate). Nothing is painted while pending.
+   path, symbol — is never a command), http(s) URLs. A `run` candidate whose every line
+   is a `#` comment (a harness `#e2e run all`) is dropped: a shell would run nothing.
+   The call happens even with none (spec 327: a prompt needs no candidate). Nothing is
+   painted while pending.
 3. Payload = numbered candidates (`(none)` when empty) + reply text (no tool arguments).
 4. AssistEngine.run → the model returns `{id,label}` picks and `{prompt,label}` entries;
    task.parse(raw, cfg, ctx) copies run/open targets from the candidate, never from the

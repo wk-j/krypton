@@ -8,11 +8,12 @@
 //
 // The model never writes a command. `followUpCandidates` pulls every shell
 // fence, every inline code span that is a URL or has more than one word, and
-// every http(s) URL out of the reply's markdown; for `run` and `open` the
-// model only picks candidate numbers and labels them, and `parse` copies the
-// target from the candidate. A `prompt` is the one target the model writes:
-// it is sent to the agent, never to a shell, and `parse` drops any that the
-// composer would route elsewhere.
+// every http(s) URL out of the reply's markdown, minus any command whose every
+// line is a `#` comment (a harness `#e2e run all` runs nothing in a shell);
+// for `run` and `open` the model only picks candidate numbers and labels them,
+// and `parse` copies the target from the candidate. A `prompt` is the one
+// target the model writes: it is sent to the agent, never to a shell, and
+// `parse` drops any that the composer would route elsewhere.
 
 import type { HarnessTranscriptItem } from '../../harness-view-types';
 import type {
@@ -49,6 +50,8 @@ const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})\s*$/;
 const PROSE_TOKEN = /`([^`\n]+)`|https?:\/\/[^\s<>()`"']+/gi;
 const URL_ONLY = /^https?:\/\/\S+$/i;
 const PROMPT_LINE = /^\s*[$%] /;
+/** A line a shell skips: blank, or a `#` comment. */
+const SKIPPED_LINE = /^\s*(#.*)?$/;
 
 export interface FollowUpCandidate {
   readonly kind: 'run' | 'open';
@@ -135,6 +138,9 @@ export function followUpCandidates(text: string): FollowUpCandidate[] {
   const seen = new Set<string>();
   const newestFirst: FollowUpCandidate[] = [];
   for (let i = found.length - 1; i >= 0 && newestFirst.length < MAX_CANDIDATES; i -= 1) {
+    // Every line a `#` comment — a harness hash command such as `#e2e run all`,
+    // or a commented-out example — runs nothing in a shell.
+    if (found[i].kind === 'run' && found[i].target.split('\n').every((line) => SKIPPED_LINE.test(line))) continue;
     const key = `${found[i].kind}\u0000${found[i].target}`;
     if (seen.has(key)) continue;
     seen.add(key);
