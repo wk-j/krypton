@@ -4,7 +4,7 @@
 > Date: 2026-10-24
 > Milestone: ACP Harness — e2e
 > Builds on: 0328 (`#e2e` commands, `src-tauri/src/e2e.rs`) · 0227 (per-cwd capability page, Hurl) · 0198/0288 (capability-token tier) · 0316 timeline page (refresh-on-focus) · `DESIGN.binance.md`
-> Prerequisite: the 0328 implementation is in the working tree but **not committed**. This spec edits those files.
+> Prerequisite: the 0328 implementation. This spec edits those files; 0328 and 0329 were committed together in `0e00bea`.
 
 ## Problem
 
