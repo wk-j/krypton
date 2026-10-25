@@ -181,7 +181,7 @@ Hook server เพิ่ม MCP tool `ticket_progress { ticket_id, status, summa
 | `#ticket add <path>` | copy regular file หนึ่งไฟล์เข้า `resources/` |
 | `#ticket status <status>` | ผู้ใช้ตั้ง `todo`, `in_progress`, `blocked` หรือ `done` |
 | `#ticket work` | bind active ticket กับ visible active lane และตั้ง `in_progress` |
-| `#ticket panel` | toggle Ticket Panel โดยไม่ clear active ticket |
+| `#ticket panel` | ซ่อนหรือแสดง Ticket Panel ผ่านค่าเดียวกับ `#panels ticket` (spec 331) โดยไม่ clear active ticket; ต้องมี active ticket |
 | `#ticket open` | เปิด `ticket.md` ใน Markdown Viewer แบบ read-only |
 | `#ticket path` | copy project-relative bundle path ไป clipboard และ flash path |
 | `#ticket link <GitHub ref>` | เพิ่มหรือเปลี่ยน GitHub reference ของ active ticket |
@@ -261,11 +261,10 @@ Ticket Panel เป็น split pane ชิดขอบขวาของ harnes
 ไม่ใช่ nested card ที่ลอยใน pane แถบ `acp-harness__ticket-bar` ใน pin slot ของ spec 194
 เลิกใช้แล้ว Ticket Panel คือ chrome เดียวบนจอ (picker ยังเป็น modal ตามเดิม):
 
-- แสดงเมื่อมี active ticket; ขยายอัตโนมัติในครั้งแรก แต่ไม่ฝืนเปิดอีกหลังผู้ใช้ collapse
-- กว้าง 352px เมื่อขยายและ 46px เมื่อ collapse; `border-radius: 0`; dashboard หลีกเท่ากับความกว้าง
-  ของ panel (ไม่มี gutter 12px ซ้อน) collapsed rail เป็นปุ่ม handle กว้าง 46px ไม่แสดง status
-  หรือ title (ตัวหนังสือแนวตั้งอ่านไม่ได้และไม่มีประโยชน์) เหลือแค่ chevron `‹` เป็น
-  expand affordance; ชื่อตั๋วอยู่ใน `aria-label` เท่านั้น; ไม่แสดง body/footer
+- แสดงเมื่อมี active ticket และผู้ใช้ไม่ได้ซ่อน panel ไว้ด้วยค่า `ticket` ของ spec 320 (จำแยกตาม project);
+  ไม่มีสถานะ collapse ([spec 331](./0331-ticket-panel-titlebar-hide.md)) เมื่อซ่อนจะไม่เหลือแถบใดบนจอ
+- กว้าง 352px; `border-radius: 0`; dashboard หลีกเท่ากับความกว้างของ panel (ไม่มี gutter 12px ซ้อน)
+  และได้พื้นที่คืนทั้งหมดเมื่อซ่อน panel
 - header แสดง title, local status, GitHub repo/issue number/state และ worker แยกกัน โดย issue number
   เป็น link ที่เปิด issue ใน OS browser; body แสดง context excerpt,
   managed resources, derived analysis และ progress summary
@@ -273,14 +272,17 @@ Ticket Panel เป็น split pane ชิดขอบขวาของ harnes
   ให้สมดุลกับ window chrome ไม่ใช้ body `1em`
 - Ticket Panel เป็น read surface ไม่มี action button footer — Start work / open / analysis /
   refresh ใช้ `#ticket work`, `#ticket open`, `#analyses` และ `#ticket refresh` เท่านั้น
-  Collapse คือปุ่ม `›` ใน header กับ `#ticket panel` และ Escape; `aria-expanded` และ
-  ข้อความสถานะไม่พึ่งสีอย่างเดียว
+  ปุ่ม `›` ใน header (`aria-label="Hide ticket panel"`), Escape ใน panel และ `#ticket panel` ซ่อน panel
+  ผ่านค่าเดียวกับไอคอน `Ticket dock` บน title bar ของ spec 320 ซึ่งเป็นปุ่มเปิดกลับ; ข้อความสถานะ
+  ไม่พึ่งสีอย่างเดียว
 - Lane Peek ยังอยู่ใน `.acp-harness__lane-rail` ของพื้นที่ lane ที่เหลือ; inset 12px เป็นของตัว rail
-  เอง และขยับตามตอน panel collapse
-- เมื่อ harness แคบกว่า 960px panel เริ่มแบบ collapsed; ถ้าผู้ใช้ขยายให้ overlay ด้านขวาและซ่อน Lane Peek
-  ชั่วคราว เมื่อ collapse ให้คืนสถานะ Peek เดิม
+  เอง และขยับตามตอน panel แสดงหรือซ่อน
+- เมื่อ harness แคบกว่า 960px panel ที่แสดงอยู่เป็น overlay ด้านขวาและซ่อน Lane Peek ชั่วคราว
+  เมื่อซ่อน panel ให้คืนสถานะ Peek เดิม overlay นี้ใช้พื้นหลังทึบ `--agent-surface-solid` เพราะทับ
+  transcript อยู่ ไม่อย่างนั้นข้อความ transcript จะซ้อนกับ panel (spec 331)
 - คง flat surface ชิดขอบหน้าต่างโดยไม่มี outer box border, amber tokens และไม่ใช้ nested card, side-stripe, L-shaped bracket หรือ `backdrop-filter`
-- พื้นหลังโปร่งใสเหมือน harness root / dashboard — ไม่ทาสี `--agent-surface-solid` ทับ window backdrop
+- ตอนวางข้าง dashboard (harness กว้างตั้งแต่ 960px) พื้นหลังโปร่งใสเหมือน harness root / dashboard —
+  ไม่ทาสี `--agent-surface-solid` ทับ window backdrop
 
 ## Resource Safety
 

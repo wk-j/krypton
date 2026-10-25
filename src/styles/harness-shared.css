@@ -26,7 +26,7 @@
 @layer krypton.base {
 /* ── Root · `acp-harness-view.ts:1482` sets `element.className`; the
       `--concise` / `--zen` / `--panels-hidden` toggles at `:11593-11595`
-      and the `--ticket-*` toggles at `harness-ticket-controller.ts:594-601`
+      and the `--ticket-active` toggle at `harness-ticket-controller.ts:593`
       compose on top of it. ──────────────────────────────────── */
 
 .acp-harness {
@@ -116,18 +116,15 @@
   opacity: 0.72;
 }
 
-/* Ticket dock column · `harness-ticket-controller.ts:94` builds the dock,
-   `:594-601` toggles the `.acp-harness--ticket-active|-collapsed|-expanded`
-   root classes that gate every rule in this group. */
+/* Ticket dock column · `harness-ticket-controller.ts:92` builds the dock,
+   `:593` toggles the `.acp-harness--ticket-active` root class that gates
+   every rule in this group. */
 /* spec 238: the active ticket is a flush split pane of the harness window,
    not a nested 8px card. Dashboard yields exactly the panel width; Lane Peek
-   keeps its own 12px rail inset. Compact state is a 46px expand handle. */
+   keeps its own 12px rail inset. spec 331: no collapsed state — a hidden dock
+   (spec 320 `ticket` flag) drops the root class and reserves nothing. */
 .acp-harness--ticket-active .acp-harness__dashboard {
   margin-right: 352px;
-}
-
-.acp-harness--ticket-collapsed .acp-harness__dashboard {
-  margin-right: 46px;
 }
 
 .acp-harness__ticket-dock {
@@ -153,12 +150,6 @@
 
 .acp-harness__ticket-dock[hidden] {
   display: none;
-}
-
-.acp-harness--ticket-collapsed .acp-harness__ticket-dock {
-  width: 46px;
-  overflow: hidden;
-  line-height: 1;
 }
 
 .acp-harness__ticket-dock section {
@@ -213,16 +204,20 @@
 }
 
 @container (max-width: 959px) {
-  .acp-harness--ticket-expanded .acp-harness__dashboard {
+  .acp-harness--ticket-active .acp-harness__dashboard {
     margin-right: 0;
   }
 
-  .acp-harness--ticket-expanded .acp-harness__lane-rail {
+  .acp-harness--ticket-active .acp-harness__lane-rail {
     visibility: hidden;
   }
 
-  .acp-harness--ticket-expanded .acp-harness__ticket-dock {
+  /* spec 331: here the dock overlays the transcript instead of sitting beside
+     it, so it needs the solid surface the annotation overlay uses. The docked
+     pane above 960px stays transparent (spec 238). */
+  .acp-harness--ticket-active .acp-harness__ticket-dock {
     width: min(352px, 100%);
+    background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
     box-shadow: -12px 0 28px rgba(0, 0, 0, 0.45);
   }
 }
@@ -1416,12 +1411,8 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
   margin-right: 352px;
 }
 
-.acp-harness--ticket-collapsed .acp-harness__anno-overlay {
-  margin-right: 46px;
-}
-
 @container (max-width: 959px) {
-  .acp-harness--ticket-expanded .acp-harness__anno-overlay {
+  .acp-harness--ticket-active .acp-harness__anno-overlay {
     margin-right: 0;
   }
 }

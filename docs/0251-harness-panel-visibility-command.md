@@ -31,10 +31,10 @@ meaning, and users can combine them deliberately.
   `.acp-harness__lane-rail`: plan, contextual lane peek, live thought, and
   prompt queue. A root class can hide them as one unit without four new state
   flags.
-- The Active Ticket dock is a separate split pane. Its expanded/collapsed state
-  must not be mutated; hidden mode only suppresses its DOM and removes the
-  dashboard's `352px`/`46px` right margin so showing panels restores the exact
-  prior dock state.
+- The Active Ticket dock is a separate split pane. Its own visibility must not
+  be mutated; hidden mode only suppresses its DOM and removes the dashboard's
+  `352px` right margin, so showing panels restores the prior dock state. (Spec
+  331 removed the dock's former 46px collapsed state.)
 - Zen Mode owns a separate left navigation rail. It remains keyboard-navigable
   through `Tab` / `Shift+Tab`, so hidden mode can suppress the rail and let the
   active body occupy the full width without stranding lane switching.
@@ -125,7 +125,7 @@ provide the durable discovery path.
 | Surface | Hidden | State treatment |
 |---------|--------|-----------------|
 | Active-lane rail: plan, lane peek, live thought, queue | Yes | DOM/data retained; thought animation paused. |
-| Active Ticket dock | Yes | Current expanded/collapsed state retained; dashboard margin reset. |
+| Active Ticket dock | Yes | Its own spec 320 `ticket` flag retained; dashboard margin reset. |
 | Zen lane navigation rail | Yes | State retained; `Tab` / `Shift+Tab` still switch lanes. |
 | Lane header and stats | No | Keeps active identity, status, model, permission mode, and usage context visible. |
 | Transcript + composer | No | Core conversation and command escape hatch remain available. |
@@ -146,7 +146,8 @@ The modifier:
 
 1. sets `.acp-harness__lane-rail`, `.acp-harness__ticket-dock`, and the Zen
    `.acp-harness__rail` to `display: none`;
-2. resets ticket-active/collapsed dashboard right margins to `0`;
+2. drops the dock's dashboard margin (since spec 320 the controller removes the
+   `--ticket-active` root class while hidden; spec 331 removed the collapsed width);
 3. changes the Zen dashboard grid to one `minmax(0, 1fr)` column so the active
    body fills the reclaimed width.
 
@@ -177,7 +178,7 @@ hidden. The ordinary show render repopulates the slot from the latest snapshot.
 3. The state persists per project and defaults to visible when storage is empty
    or unavailable.
 4. Both full render paths apply the root modifier consistently.
-5. Hiding does not mutate Zen, Concise, ticket expansion, plan collapse, lane
+5. Hiding does not mutate Zen, Concise, the ticket panel's own flag, plan collapse, lane
    peek selection/lock, or queued prompt state.
 6. CSS hides all three persistent panel containers, resets ticket width
    reservation, and collapses the Zen grid to one column.

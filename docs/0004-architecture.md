@@ -1043,7 +1043,7 @@ writes atomic `ticket.json`, keeps long context in `ticket.md`, and copies only
 bounded regular files into `resources/` with executable bits removed. GitHub is
 an optional reference; analysis stays in the existing `.krypton/analyses/`
 bundle and is derived at read time. `AcpHarnessView` owns the active version-2
-pointer and renders a 352px/46px docked Ticket Panel beside Lane Peek. HookServer
+pointer and renders a 352px docked Ticket Panel beside Lane Peek, hidden through its spec 320 titlebar toggle (spec 331). HookServer
 owns only the runtime ticket-worker binding. Lanes manage the active ticket
 directly over MCP (doc 239): append-only `ticket_note` / `ticket_add_resource`
 are open to every lane, while single-valued `ticket_progress` / `ticket_link`

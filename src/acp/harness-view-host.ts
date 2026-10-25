@@ -10,7 +10,7 @@ import type { JournalKind } from './journal';
 import type { GithubTicketReference } from './harness-view-types';
 import type { HarnessLane, HarnessTranscriptItem, StagedImage } from './harness-view-types';
 import type { ReviewSubject } from './review';
-import type { HarnessPanelId } from './harness-panel-visibility';
+import type { HarnessPanelId, PanelsCommand } from './harness-panel-visibility';
 import type { ContentBlock, LaneBusEvent, ReviewFinding, StopReason } from './types';
 import type { LiveDelivery } from './live-voice';
 
@@ -140,6 +140,8 @@ export interface HarnessTicketHost extends HarnessViewHost {
   readonly projectDir: string | null;
   /** spec 320: `#panels` master switch or the panel's own flag. */
   isPanelHidden(panel: HarnessPanelId): boolean;
+  /** spec 331: the dock's hide button, Escape and `#ticket panel` go through the same path as `#panels ticket`. */
+  applyPanelsCommand(command: Exclude<PanelsCommand, { kind: 'usage' }>): void;
   readonly openMarkdownViewCb: ((path: string) => Promise<void>) | null;
   readonly openFileReferenceCb: ((path: string, line?: number, column?: number) => Promise<boolean>) | null;
   invalidate(region: HarnessRegion): void;

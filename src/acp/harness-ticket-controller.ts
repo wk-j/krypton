@@ -45,8 +45,6 @@ export class HarnessTicketController {
   legacyActiveTicket: ActiveWorkTicket | null = null;
   ticketWorker: TicketWorkerBinding | null = null;
   readonly activeTicketPersist = new PointerPersistGate();
-  ticketPanelCollapsed = false;
-  ticketPanelSeen = false;
   /** spec 194: open `#ticket` picker — its own modal dialog (not a composer
    *  popup); the filter is typed live into the dialog (the draft was consumed
    *  by #ticket). */
@@ -67,13 +65,13 @@ export class HarnessTicketController {
   ticketDock!: TicketDock;
 
   private readonly ticketDockClickHandler = (event: MouseEvent): void => {
-    void this.handleTicketDockClick(event);
+    this.handleTicketDockClick(event);
   };
+  /** spec 331: Escape inside the dock hides it, like its `›` button. */
   private readonly ticketDockKeyHandler = (event: KeyboardEvent): void => {
-    if (event.key !== 'Escape' || this.ticketPanelCollapsed) return;
+    if (event.key !== 'Escape') return;
     event.preventDefault();
-    this.ticketPanelCollapsed = true;
-    this.host.invalidate('rightRail');
+    this.hideTicketDock();
     this.host.element.focus();
   };
 
@@ -193,10 +191,6 @@ export class HarnessTicketController {
     if (changed) {
       this.ticketWorker = null;
       await this.setTicketWorker(null);
-      if (!this.ticketPanelSeen) {
-        this.ticketPanelCollapsed = this.host.element.getBoundingClientRect().width < 960;
-        this.ticketPanelSeen = true;
-      }
     }
     this.host.invalidate('rightRail');
   }
@@ -288,15 +282,17 @@ export class HarnessTicketController {
     }
   }
 
-  async handleTicketDockClick(event: MouseEvent): Promise<void> {
+  handleTicketDockClick(event: MouseEvent): void {
     if (!(event.target instanceof Element)) return;
     const button = event.target.closest<HTMLButtonElement>('[data-ticket-dock-action]');
     if (!button || !this.ticketDockEl.contains(button) || button.disabled) return;
-    if (button.dataset.ticketDockAction !== 'toggle') return;
-    this.ticketPanelCollapsed = !this.ticketPanelCollapsed;
-    this.ticketPanelSeen = true;
-    if (this.ticketPanelCollapsed) this.host.invalidate('rightRail');
-    else await this.reloadActiveTicket(false);
+    if (button.dataset.ticketDockAction !== 'hide') return;
+    this.hideTicketDock();
+  }
+
+  /** spec 331: the dock has no collapsed state — hiding is spec 320's `ticket` flag. */
+  private hideTicketDock(): void {
+    this.host.applyPanelsCommand({ kind: 'panel', panel: 'ticket', action: 'hide' });
   }
 
 
@@ -590,24 +586,15 @@ export class HarnessTicketController {
 
   renderTicketDock(): void {
     const ticket = this.activeTicket;
-    // spec 320: a hidden dock drops its root classes too, so the dashboard
-    // gives back the 352px/46px it reserves; the collapse state is untouched.
+    // spec 320: a hidden dock drops its root class too, so the dashboard
+    // gives back the 352px it reserves.
     const shown = ticket !== null && !this.host.isPanelHidden('ticket');
     this.ticketDockEl.hidden = !shown;
     this.host.element.classList.toggle('acp-harness--ticket-active', shown);
-    this.host.element.classList.toggle(
-      'acp-harness--ticket-collapsed',
-      shown && this.ticketPanelCollapsed,
-    );
-    this.host.element.classList.toggle(
-      'acp-harness--ticket-expanded',
-      shown && !this.ticketPanelCollapsed,
-    );
     if (!ticket || !shown) return;
     this.ticketDock.update({
       ticket,
       workerName: this.ticketWorker?.laneDisplayName ?? null,
-      collapsed: this.ticketPanelCollapsed,
     });
   }
 
@@ -761,10 +748,7 @@ export class HarnessTicketController {
         this.host.flashChip('no working ticket set');
         return;
       }
-      this.ticketPanelCollapsed = !this.ticketPanelCollapsed;
-      this.ticketPanelSeen = true;
-      if (this.ticketPanelCollapsed) this.host.invalidate('rightRail');
-      else await this.reloadActiveTicket(false);
+      this.host.applyPanelsCommand({ kind: 'panel', panel: 'ticket', action: 'toggle' });
       return;
     }
     if (sub === 'open') {

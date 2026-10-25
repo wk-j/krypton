@@ -46,8 +46,8 @@ optional `ContentView` hook, modelled on the spec 218 lane strip.
 - **The right rail is an absolutely positioned 320px overlay**
   (`harness-shared.css` `.acp-harness__lane-rail`), so hiding single panels
   inside it reflows nothing. The ticket dock is the exception: the
-  `acp-harness--ticket-active|collapsed|expanded` root classes reserve
-  352px/46px of dashboard margin.
+  `acp-harness--ticket-active` root class reserves 352px of dashboard margin
+  (spec 331 removed the former 46px collapsed state and its classes).
 - **Icons:** `src/acp/harness-icons.ts` holds 16×16 `currentColor` `<symbol>`s,
   injected once at document level by `ensureHarnessSymbolDefs()` precisely so
   window chrome outside the view can `<use>` them (spec 218 footer strip).
@@ -154,10 +154,10 @@ rail itself rather than rely on the root-class CSS:
 | peek | unmount, `peekCard = null`, `peekLaneId = null` (same as no candidate); `syncPeekToolRow` returns |
 | thought | stop teletype RAF, cancel hide timer, unmount; `patchPeekThoughtIfLane` returns |
 | grammar | unmount (existing path) |
-| ticket | `ticketDockEl.hidden = true`; `--ticket-active/collapsed/expanded` toggled on `ticket !== null && !hidden`, so the dashboard margin returns with no extra CSS |
+| ticket | `ticketDockEl.hidden = true`; `--ticket-active` toggled on `ticket !== null && !hidden`, so the dashboard margin returns with no extra CSS. Since spec 331 the dock's `›` button, Escape and `#ticket panel` set this same flag; the dock has no collapsed state |
 
 Panel *state* (plan entries/collapse, peek selection and lock, grammar result,
-queued prompts, ticket expansion) is never touched. Showing re-renders from
+queued prompts) is never touched. Showing re-renders from
 live state. The same gates run under `#panels hide`, so peek and thought now
 unmount there too instead of keeping stale DOM behind `display: none`; spec
 251's guarantee — state retained, restored exactly on show — is unchanged.
@@ -269,7 +269,8 @@ Flashes: `<panel> hidden · #panels show <panel>` / `<panel> shown`; while
   margin reserved.
 - **Narrow tile**: below 480px only the `all` button (and the spec 322
   `backend-update` action, when present) remains; per-panel control
-  stays available through `#panels <panel>`.
+  stays available through `#panels <panel>`. Since spec 331 that (or
+  `#ticket panel`) is the only way to show a hidden ticket dock at that width.
 - **Tab strip visible**: `-end` is `display: contents`, so the cluster flows
   after the tabs and the tab pills shrink by the cluster's ~177px.
 - **Stage layout shelf window**: the workspace capture-phase mousedown handles

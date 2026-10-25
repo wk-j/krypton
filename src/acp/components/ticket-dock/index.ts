@@ -14,21 +14,24 @@
 // that only changed the worker binding or the GitHub state — so the resource
 // list and the progress note were rebuilt to repaint a single `<strong>`.
 //
-// **Props only.** The component never imports the controller: the dock's three
-// surfaces (`ticket`, `workerName`, `collapsed`) arrive as data, and the
-// buttons carry `data-ticket-dock-action="toggle"` for the delegated click
-// handler the controller already installed on the dock element. That handler,
-// the `hidden` flag (which also answers to `#panels` and spec 320's `ticket` flag) and the three
-// `acp-harness--ticket-*` classes on the harness root stay with the view: they
-// are the dock's placement, not its content.
+// **Props only.** The component never imports the controller: the dock's two
+// surfaces (`ticket`, `workerName`) arrive as data, and the head button
+// carries `data-ticket-dock-action="hide"` for the delegated click handler the
+// controller installed on the dock element. That handler, the `hidden` flag
+// (spec 320's per-panel `ticket` flag, which `#panels` also answers to) and the
+// `acp-harness--ticket-active` class on the harness root stay with the view:
+// they are the dock's placement, not its content.
 //
-// The two toggle buttons are hand-built rather than `ActionButton`s: both need
-// `aria-label` and `aria-expanded`, and `ActionButton` carries no ARIA props.
+// Spec 331: the dock has no collapsed state. `›` hides it through the same
+// flag, and the titlebar `Ticket dock` toggle shows it again.
+//
+// The hide button is hand-built rather than an `ActionButton`: it needs an
+// `aria-label`, and `ActionButton` carries no ARIA props.
 
 import './ticket-dock.css';
 
 import { Component } from '../../../ui/component';
-import { el, setAttr } from '../../../ui/dom';
+import { el } from '../../../ui/dom';
 import { disposeList, reconcile } from '../../../ui/list';
 import { formatTicketBytes } from '../../harness-ticket-helpers';
 import type { LocalTicketDetail } from '../../harness-view-types';
@@ -42,7 +45,6 @@ export interface TicketDockProps {
   readonly ticket: LocalTicketDetail | null;
   /** The lane bound to this ticket, or null when nobody is working it. */
   readonly workerName: string | null;
-  readonly collapsed: boolean;
 }
 
 type ResourceItem =
@@ -98,13 +100,6 @@ export class TicketDock extends Component<TicketDockProps> {
   /** '' when the dock owns its root; the view's dock element otherwise. */
   private readonly hostClass: string | null;
 
-  private readonly collapsedBtn = el('button', {
-    class: 'acp-ticket-dock__collapsed',
-    attrs: { type: 'button', 'aria-expanded': 'false' },
-    data: { 'ticket-dock-action': 'toggle' },
-    text: '‹',
-  });
-
   private readonly titleEl = el('h2');
   private readonly headEl: HTMLElement;
   private readonly pillEl = el('span');
@@ -127,7 +122,7 @@ export class TicketDock extends Component<TicketDockProps> {
   private readonly progressEmpty = new EmptyState('p');
   private readonly progressHead = el('h3', { text: 'Latest progress' });
   private readonly progressSection: HTMLElement;
-  private readonly expandedParts: readonly HTMLElement[];
+  private readonly parts: readonly HTMLElement[];
 
   constructor(host?: HTMLElement) {
     super(host ?? el('aside'));
@@ -143,8 +138,8 @@ export class TicketDock extends Component<TicketDockProps> {
         this.titleEl,
       ),
       el('button', {
-        attrs: { type: 'button', 'aria-label': 'Collapse ticket panel', 'aria-expanded': 'true' },
-        data: { 'ticket-dock-action': 'toggle' },
+        attrs: { type: 'button', 'aria-label': 'Hide ticket panel' },
+        data: { 'ticket-dock-action': 'hide' },
         text: '›',
       }),
     );
@@ -152,7 +147,7 @@ export class TicketDock extends Component<TicketDockProps> {
     this.githubEl.appendChild(el('span', { text: 'GitHub' }));
     this.workerEl.appendChild(el('span', { text: 'Worker' }));
     this.progressSection = el('section', {}, this.progressHead);
-    this.expandedParts = [
+    this.parts = [
       this.headEl,
       this.statusRowEl,
       this.githubEl,
@@ -174,7 +169,6 @@ export class TicketDock extends Component<TicketDockProps> {
     const github = ticket?.github ?? null;
     return [
       ticket === null,
-      next.collapsed,
       next.workerName,
       ticket?.id,
       ticket?.title,
@@ -203,14 +197,6 @@ export class TicketDock extends Component<TicketDockProps> {
     if (!ticket) {
       disposeList(this.resourcesEl);
       this.el.replaceChildren();
-      this.el.removeAttribute('aria-expanded');
-      return;
-    }
-    setAttr(this.el, 'aria-expanded', String(!next.collapsed));
-    if (next.collapsed) {
-      const status = ticket.status.replaceAll('_', ' ');
-      setAttr(this.collapsedBtn, 'aria-label', `Expand ticket ${ticket.title} (${status})`);
-      this.el.replaceChildren(this.collapsedBtn);
       return;
     }
     this.titleEl.textContent = ticket.title;
@@ -220,7 +206,7 @@ export class TicketDock extends Component<TicketDockProps> {
     this.paintGithub(ticket);
     this.paintWorker(next.workerName);
     this.paintBody(ticket);
-    this.el.replaceChildren(...this.expandedParts);
+    this.el.replaceChildren(...this.parts);
   }
 
   /** `GitHub  wk/krypton  #301 · open`, or `GitHub  not linked`. */

@@ -16284,6 +16284,7 @@ export class AcpHarnessView implements ContentView {
       get harnessMemoryId() { return view.harnessMemoryId; },
       get projectDir() { return view.projectDir; },
       isPanelHidden: (panel) => view.isPanelHidden(panel),
+      applyPanelsCommand: (command) => view.applyPanelsCommand(command),
       get openMarkdownViewCb() { return view.openMarkdownViewCb; },
       get openFileReferenceCb() { return view.openFileReferenceCb; },
       flashChip: (text) => view.flashChip(text),

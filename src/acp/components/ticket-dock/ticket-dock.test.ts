@@ -25,7 +25,7 @@ function ticket(over: Partial<LocalTicketDetail> = {}): LocalTicketDetail {
 }
 
 function props(over: Partial<TicketDockProps> = {}): TicketDockProps {
-  return { ticket: ticket(), workerName: null, collapsed: false, ...over };
+  return { ticket: ticket(), workerName: null, ...over };
 }
 
 const sectionTexts = (dock: TicketDock): string[] =>
@@ -55,14 +55,13 @@ describe('TicketDock', () => {
       }),
     }));
 
-    expect(dock.el.getAttribute('aria-expanded')).toBe('true');
     expect(dock.el.querySelector('.acp-ticket-dock__eyebrow')?.textContent).toBe('active ticket');
     expect(dock.el.querySelector('.acp-ticket-dock__head h2')?.textContent)
       .toBe('Harness UI refactor');
     expect(dock.el.querySelector('.acp-ticket-dock__head button')?.getAttribute('aria-label'))
-      .toBe('Collapse ticket panel');
+      .toBe('Hide ticket panel');
     expect(dock.el.querySelector<HTMLElement>('.acp-ticket-dock__head button')?.dataset.ticketDockAction)
-      .toBe('toggle');
+      .toBe('hide');
     expect(dock.el.querySelector('.acp-ticket-dock__pill')?.className)
       .toBe('acp-ticket-dock__pill acp-ticket-dock__pill--todo');
     expect(dock.el.querySelector('.acp-ticket-dock__status-row code')?.textContent).toBe('KR-301');
@@ -100,24 +99,6 @@ describe('TicketDock', () => {
     expect(rows[6].className).toBe('acp-ticket-dock__empty');
     expect(rows[6].textContent).toBe('+3 more');
     expect(dock.el.querySelector('h3 span')?.textContent).toBe('9');
-  });
-
-  it('collapses to a single labelled button and expands again', () => {
-    const dock = new TicketDock();
-    dock.update(props({ collapsed: true, ticket: ticket({ status: 'in_progress' }) }));
-
-    expect(dock.el.getAttribute('aria-expanded')).toBe('false');
-    expect(dock.el.children.length).toBe(1);
-    const button = dock.el.querySelector<HTMLElement>('.acp-ticket-dock__collapsed');
-    expect(button?.textContent).toBe('‹');
-    expect(button?.getAttribute('aria-label'))
-      .toBe('Expand ticket Harness UI refactor (in progress)');
-    expect(button?.dataset.ticketDockAction).toBe('toggle');
-
-    dock.update(props({ collapsed: false, ticket: ticket({ status: 'in_progress' }) }));
-    expect(dock.el.getAttribute('aria-expanded')).toBe('true');
-    expect(dock.el.querySelector('.acp-ticket-dock__collapsed')).toBeNull();
-    expect(dock.el.querySelector('.acp-ticket-dock__head')).not.toBeNull();
   });
 
   it('keeps the resource rows when only the worker binding changes', () => {

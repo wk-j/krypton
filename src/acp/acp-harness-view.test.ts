@@ -4214,7 +4214,6 @@ describe('#panels and titlebar toggles (specs 251, 320)', () => {
     const ctl = {
       activeTicket: { id: 'KR-320' },
       ticketWorker: null,
-      ticketPanelCollapsed: true,
       ticketDockEl: { hidden: false },
       ticketDock: { update: (props: unknown): void => { updates.push(props); } },
       host: {
@@ -4225,19 +4224,14 @@ describe('#panels and titlebar toggles (specs 251, 320)', () => {
 
     renderTicketDock.call(ctl);
     expect(ctl.ticketDockEl.hidden).toBe(true);
-    expect([...classes.values()]).toEqual([false, false, false]);
+    expect(Object.fromEntries(classes)).toEqual({ 'acp-harness--ticket-active': false });
     expect(updates).toEqual([]);
 
     ticketHidden = false;
     renderTicketDock.call(ctl);
     expect(ctl.ticketDockEl.hidden).toBe(false);
-    expect(Object.fromEntries(classes)).toEqual({
-      'acp-harness--ticket-active': true,
-      'acp-harness--ticket-collapsed': true,
-      'acp-harness--ticket-expanded': false,
-    });
-    // The collapse state survived the hide.
-    expect(ctl.ticketPanelCollapsed).toBe(true);
+    // spec 331: one root class — there is no collapsed width left to reserve.
+    expect(Object.fromEntries(classes)).toEqual({ 'acp-harness--ticket-active': true });
     expect(updates).toHaveLength(1);
   });
 });

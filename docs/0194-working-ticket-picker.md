@@ -172,7 +172,7 @@ surrounding prompt's subject.
 
 - Ticket chrome: the spec-194 pin-slot ticket bar (`acp-harness__ticket-bar`) is
   retired. [Spec 238](./0238-local-ticket-bundles.md) shows the active ticket only
-  in the docked Ticket Panel (right split pane / collapsed 46px handle). The lane
+  in the docked Ticket Panel (right split pane, hidden through the spec 320 titlebar toggle — spec 331). The lane
   rail pin slot still holds the spec-148 goal bar when a goal is set.
 - Picker: standalone modal dialog (`.acp-harness__ticket-overlay` backdrop +
   `.acp-ticket__panel`) centered over the harness, amber-tinted to match the ticket
