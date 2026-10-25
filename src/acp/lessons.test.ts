@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   LESSONS_HEADING,
+  LESSONS_UPDATE_HEADING,
   lessonsEnabled,
   renderLessonsBlock,
+  renderLessonsUpdate,
   setLessonsEnabled,
   type LessonEntry,
 } from './lessons';
@@ -40,6 +42,17 @@ describe('renderLessonsBlock (spec 298)', () => {
 
   it('renders nothing when every rule is oversized (spec 299)', () => {
     expect(renderLessonsBlock([entry('too-long', 'x'.repeat(260), true)])).toBeNull();
+  });
+});
+
+describe('renderLessonsUpdate (spec 332)', () => {
+  it('renders nothing when no lesson moved', () => {
+    expect(renderLessonsUpdate({ changed: [], retired: [] })).toBeNull();
+  });
+
+  it('lists changed rules in full and retired lessons by slug', () => {
+    const update = renderLessonsUpdate({ changed: [{ slug: 'ask-less', rule: 'Act.' }], retired: ['old-rule'] });
+    expect(update).toBe(`${LESSONS_UPDATE_HEADING}\n- [ask-less] Act.\n- [old-rule] retired`);
   });
 });
 

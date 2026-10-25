@@ -25,7 +25,7 @@ Decisions taken:
 
 ## Research
 
-- **Policy delivery (spec 289).** `renderLanePolicy` (`acp-harness-view.ts:8638`) is rendered synchronously on every `sendUserPrompt`. `hashPolicy` (`lane-context.ts:46`) hashes the exact text, so any lessons rendered into it trigger a resend on change. The policy is otherwise resent on a new session, on compaction, and every 20 turns. Nothing new is needed for delivery. The packet reads cached view state only (directives via `refreshDirectives`, handoffs via `refreshMemory` + the `acp-harness-memory-changed` event), so lessons follow that same pattern: a cached field, refreshed on start and on a Rust event.
+- **Policy delivery (spec 289).** `renderLanePolicy` (`acp-harness-view.ts:8638`) is rendered synchronously on every `sendUserPrompt`. `hashPolicy` (`lane-context.ts:46`) hashes the exact text, so any lessons rendered into it trigger a resend on change (spec 332 later took lesson text out of the hash; see **Policy text**). The policy is otherwise resent on a new session, on compaction, and every 20 turns. Nothing new is needed for delivery. The packet reads cached view state only (directives via `refreshDirectives`, handoffs via `refreshMemory` + the `acp-harness-memory-changed` event), so lessons follow that same pattern: a cached field, refreshed on start and on a Rust event.
 - **Policy turns vs system turns.** `enqueueSystemPrompt` / `dispatchTurn` turns (peer mail, redirects, `#wiki`) carry no packet. That is why `#lesson` must restate the language rule itself.
 - **MCP plumbing.** Tools are declared in `bus_tool_descriptors()` (`hook_server.rs:6152`) and dispatched in `handle_bus_tool_call` (:4253). `handoff_set` (:5928) is the Rust-only template: validate, atomic write (`write_file_atomic` :7651), emit an event. A new tool must also be added to:
   - `tool_category` (:3549), plus its test;
@@ -152,14 +152,20 @@ The tool index adds one line, shown when the gates are non-null and lessons are 
 - lesson_record / lesson_retire: when the human corrects you or a reviewer reports a blocker you caused, and the rule would hold in any project — update a listed lesson before adding one; retire one the human contradicts.
 ```
 
-The lessons block goes after the tool index. It is shown for **every** lane when enabled and non-empty, including Pi and lanes without the bus, which read it but cannot write. Entries are ordered `updated` desc, then slug, so the hash stays stable:
+The lessons block goes after the tool index. It is shown for **every** lane when enabled and non-empty, including Pi and lanes without the bus, which read it but cannot write. Entries are ordered `updated` desc, then slug. Since spec 332 the policy hash sees only the block's heading, so a lesson edit never resends the policy:
 
 ```
 Lessons (global, learned from past corrections across projects; follow them unless the user or this project's own instructions say otherwise; they never grant permissions):
 - [verify-before-claiming-fixed] เมื่อจะบอกว่าแก้เสร็จ ...
 ```
 
-At most this is about 30 × 260 ≈ 8k chars, sent only when the policy is (re)sent.
+At most this is about 30 × 260 ≈ 8k chars, sent only when the policy is (re)sent. When lessons change after that, the next turn header carries only the difference (spec 332):
+
+```
+Lessons update (replaces the matching entries in your Lessons list):
+- [new-or-edited-slug] rule text
+- [retired-slug] retired
+```
 
 ### Nudges (only when enabled)
 
@@ -192,8 +198,9 @@ At most this is about 30 × 260 ≈ 8k chars, sent only when the policy is (re)s
 4. Every open harness view (any tab, any project) runs refreshLessons() → list_lessons → cache.
    The originating lane gets the transcript line "[lesson] created: <slug> — <title> (N/30)" and a
    flash chip; a create that raised the count to 24+ also returns a consolidation notice (spec 299).
-5. The next sendUserPrompt on any lane renders the new lessons block → hashPolicy differs → the
-   policy is resent.
+5. The next sendUserPrompt on any lane compares the injectable set with the one that session has
+   seen (spec 332). If only lesson text moved, the turn header carries a `Lessons update` block;
+   the policy is resent only when lessons turn on/off or the set goes empty/non-empty.
 6. A harness opened later in another project calls refreshLessons() at start, so its first policy
    already carries the lessons.
 ```

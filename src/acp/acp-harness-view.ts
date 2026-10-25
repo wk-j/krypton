@@ -233,19 +233,25 @@ import type { DayDigest } from './daily-note';
 import { openAcpWireProfiler } from './acp-wire';
 import { journalAppend, type JournalKind } from './journal';
 import {
+  backendListsMcpTools,
   hashPolicy,
   isCompactionDrop,
   planPolicyDelivery,
+  renderTimelinePendingLine,
   renderToolIndex,
   renderToolNameLine,
   type LaneToolGates,
 } from './lane-context';
 import {
+  LESSONS_HEADING,
+  injectableLessons,
   lessonEntries,
   lessonsEnabled,
   refreshLessons,
   renderLessonsBlock,
+  renderLessonsUpdate,
   watchLessons,
+  type LessonEntry,
   type LessonsChangedPayload,
 } from './lessons';
 import {
@@ -263,6 +269,7 @@ import {
   lessonDistillPrompt,
   postGithubCommentPrompt,
   renderActiveTicketPin,
+  renderTicketStateLine,
   tagGithubIssuePrompt,
   tldrawDrawPrompt,
   genUiPrompt,
@@ -8691,15 +8698,17 @@ export class AcpHarnessView implements ContentView {
   }
 
   /** spec 289: the leading block. The turn header goes every turn; the lane
-   *  policy only when this agent session has not seen its exact text. spec 124:
-   *  the role/directive block lives inside the policy, so it still rides in the
-   *  SAME block as the header — never as a second block. */
+   *  policy only when this agent session has not seen it. spec 332: lessons are
+   *  compared by content, so a lesson change after the policy went out rides
+   *  this turn's header as a delta. spec 124: the role/directive block lives
+   *  inside the policy, so it still rides in the SAME block as the header —
+   *  never as a second block. */
   private composeLeadingContext(lane: HarnessLane): string {
     const policy = this.renderLanePolicy(lane);
-    const plan = planPolicyDelivery(lane.policyDelivery, hashPolicy(policy));
+    const plan = planPolicyDelivery(lane.policyDelivery, hashPolicy(policy.hashInput), policy.lessons);
     lane.policyDelivery = plan.next;
-    const header = this.renderTurnHeader(lane);
-    return plan.send ? `${header}\n${policy}` : header;
+    const header = this.renderTurnHeader(lane, plan.lessons ? renderLessonsUpdate(plan.lessons) : null);
+    return plan.send ? `${header}\n${policy.text}` : header;
   }
 
   /** spec 289: gates shared by the header's tool-name line and the policy's
@@ -8717,12 +8726,19 @@ export class AcpHarnessView implements ContentView {
   }
 
   /** spec 289: sent every turn. The tool-name line keeps spec 130's naming
-   *  guarantee even after a compaction Krypton cannot detect; Telegram
-   *  provenance belongs to this turn only. */
-  private renderTurnHeader(lane: HarnessLane): string {
+   *  guarantee even after a compaction Krypton cannot detect, except on backends
+   *  that list every MCP tool themselves (spec 332). The ticket state, Timeline
+   *  backlog and lesson delta change between policy sends, so they live here;
+   *  Telegram provenance belongs to this turn only. */
+  private renderTurnHeader(lane: HarnessLane, lessonsUpdate: string | null): string {
     const lines = [`You are lane ${lane.displayName}.`];
     const gates = this.laneToolGates(lane);
-    if (gates) lines.push(renderToolNameLine(gates));
+    if (gates && !backendListsMcpTools(lane.backendId)) lines.push(renderToolNameLine(gates));
+    const ticket = this.ticketCtl.activeTicket;
+    if (ticket) lines.push(renderTicketStateLine(ticket));
+    const pending = gates ? renderTimelinePendingLine(gates) : null;
+    if (pending) lines.push(pending);
+    if (lessonsUpdate) lines.push(lessonsUpdate);
     const caller = lane.activeTelegramTurn;
     if (caller) {
       lines.push(
@@ -8735,39 +8751,45 @@ export class AcpHarnessView implements ContentView {
   /** spec 289: everything that holds until the roster, gates, ticket, or
    *  directive change. Memory (handoff_set) is intentionally NOT advertised:
    *  per the handoff-only decision (spec 165) the #handoff prompt names it
-   *  when the user invokes it; #resume embeds the document (spec 293). */
-  private renderLanePolicy(lane: HarnessLane): string {
-    const lines: string[] = [];
+   *  when the user invokes it; #resume embeds the document (spec 293).
+   *  spec 332: `hashInput` reduces the lessons block to its heading, so a lesson
+   *  edit never moves the hash; lessons on/off and empty/non-empty still do. */
+  private renderLanePolicy(lane: HarnessLane): { text: string; hashInput: string; lessons: LessonEntry[] } {
+    const head: string[] = [];
     // spec 194: the shared ticket scope leads — never buried under the tool index.
     const ticket = this.ticketCtl.activeTicket;
-    if (ticket) lines.push(renderActiveTicketPin(ticket));
+    if (ticket) head.push(renderActiveTicketPin(ticket));
     const gates = this.laneToolGates(lane);
     if (!gates) {
-      lines.push('Shared Krypton memory is unavailable in this harness because the localhost hook server did not initialize. Continue without krypton-harness-memory MCP tools.');
+      head.push('Shared Krypton memory is unavailable in this harness because the localhost hook server did not initialize. Continue without krypton-harness-memory MCP tools.');
     } else {
       if (gates.peers) {
-        lines.push(
+        head.push(
           `Lanes: ${this.lanes.map((l) => l.displayName).join(', ')}.`,
           'Inter-lane peering: when the user asks you to consult, ask, or peer with another lane, call peer_send { to_lane, message, done } (use the display name shown above; recipient processes on its next idle turn). Use peer_list to see live peer lanes and their inbox depths. End your turn after peer_send; the reply (if any) arrives as a new user message. Leave `done` false when sending a request — `done:true` silences the recipient and is only for closing the conversation after their reply. Never peer proactively. ' +
             PEER_SEND_DEFERRED_TOOL_HINT,
         );
       }
-      lines.push(renderToolIndex(gates));
+      head.push(renderToolIndex(gates));
     }
     if (!this.remoteRuntimeId && lane.computerCapability) {
-      lines.push(['pi-acp', 'cursor', 'junie', 'cline'].includes(lane.backendId)
+      head.push(['pi-acp', 'cursor', 'junie', 'cline'].includes(lane.backendId)
         ? 'Connected computers: use "$KRYPTONCTL_PATH" computer list --json to see targets the user connected in Krypton; use "$KRYPTONCTL_PATH" computer exec <id> -- <quoted-command> to request one remote command. Read-only commands from Krypton\'s built-in list may run immediately when the computer allows it; any other command waits for the user\'s approval of the exact command. Pass --cwd instead of cd, and avoid redirection, $, globs and ~ so a read-only command qualifies. Never expose the capability from your environment.'
         : 'Connected computers: call computer_list to discover targets the user connected in Krypton, then computer_exec with a connected computerId and exact command. Read-only commands from Krypton\'s built-in list may run immediately when the computer allows it; any other command waits for the user\'s approval of the exact command. Pass cwd instead of cd, and avoid redirection, $, globs and ~ so a read-only command qualifies.');
     }
     // spec 298: every lane reads the global lessons, including lanes that
     // cannot write them (Pi, no hook server).
-    const lessons = lessonsEnabled() ? renderLessonsBlock(lessonEntries()) : null;
-    if (lessons) lines.push(lessons);
+    const lessons = lessonsEnabled() ? injectableLessons(lessonEntries()) : [];
+    const lessonsBlock = renderLessonsBlock(lessons);
     // spec 283/294: figure guidance needs no MCP tool, so it survives the memory-unavailable branch.
-    lines.push(SVG_FENCE_GUIDANCE, MERMAID_FENCE_GUIDANCE);
+    const tail = [SVG_FENCE_GUIDANCE, MERMAID_FENCE_GUIDANCE];
     const role = this.renderRoleBlock(lane);
-    if (role) lines.push('', role);
-    return lines.join('\n');
+    if (role) tail.push('', role);
+    return {
+      text: [...head, ...(lessonsBlock ? [lessonsBlock] : []), ...tail].join('\n'),
+      hashInput: [...head, ...(lessonsBlock ? [LESSONS_HEADING] : []), ...tail].join('\n'),
+      lessons,
+    };
   }
 
   /** The built-in role prompt (Polly/Debby/Salty) or the effective directive. */

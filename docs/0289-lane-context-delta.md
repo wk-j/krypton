@@ -21,6 +21,25 @@ The research sizes and implementation measurements below are historical, not cur
 budgets or new verification results. The original Timeline policy is explicitly identified
 where preserved below; it must not be reused as active guidance.
 
+## Trim amendment — spec 0332
+
+[0332](./0332-lane-context-trim.md) keeps this header/policy split and moves volatile text out
+of the hashed policy:
+
+- **Tool-name line.** Omitted for backends that list every MCP tool in their own system prompt
+  (`backendListsMcpTools`, today only `omp`). Every other backend keeps it.
+- **Lessons.** The policy hash sees the lessons block as its heading only.
+  `PolicyDelivery.lessons` records the slug → rule set the session has seen. A header-only turn
+  whose lessons moved carries a `Lessons update` block (changed rules in full, retired slugs),
+  not a resend.
+- **Ticket.** The pin keeps id, title and rules. Status, context revision and resource count ride a
+  `Ticket state:` header line on every turn while a ticket is active.
+- **Timeline.** The policy carries one trigger line. The legacy backlog count rides a
+  `Timeline legacy pending:` header line while it is above 0.
+
+The roster, directive/role, ticket id/title, gates, automatic-recording setting and lessons
+on/off still change the hash.
+
 ## Problem
 
 Every user turn re-sends the full lane-context packet (`krypton://acp-harness/lane-context.md`)
@@ -135,11 +154,11 @@ compaction may have dropped the policy.
 ```ts
 // harness-view-types.ts — on HarnessLane
 policyDelivery: {
-  hash: string;            // FNV-1a of the exact policy text sent
+  hash: string;            // FNV-1a of the policy text sent (lessons reduced to their heading, spec 332)
   turnsSince: number;      // sendUserPrompt turns since that send
   stale: boolean;          // set by compaction / prompt failure
+  lessons: ReadonlyMap<string, string>; // spec 332: slug → rule the session has seen
 } | null;                  // null = not sent to the current agent session; reset in spawnLane
-```
 
 ### Packet content
 
@@ -154,7 +173,9 @@ policyDelivery: {
    Krypton tools (if not visible, search by exact name; rules are in each description): attention_flag, attention_resolve, mark_review_priority, artifact_new, timeline_record, timeline_merge, timeline_suggest, peer_send, peer_list, review_outcome.
    ```
 
-3. The Telegram provenance lines, when `activeTelegramTurn` is set.
+3. Since spec 332, when they apply: `Ticket state: …`, `Timeline legacy pending: N …`, and a
+   `Lessons update` block. The tool-name line (2) is skipped for `backendListsMcpTools` backends.
+4. The Telegram provenance lines, when `activeTelegramTurn` is set.
 
 **Lane policy**, in order:
 
@@ -215,7 +236,7 @@ block. The directive still travels in the same leading block (spec 124 rule).
 | Trigger | Where | Effect |
 |---|---|---|
 | Any respawn (fresh, resume/load, force-restart, reconnect, `#new`, `#restart`) | `spawnLane` start sets `policyDelivery = null`; picker lanes start `null` | resend |
-| Roster, directive, role, ticket, gate, or Timeline pending-count change | hash differs | resend |
+| Roster, directive, role, ticket id/title, gate, automatic-recording or lessons on/off change | hash differs | resend (lesson text, ticket state and Timeline backlog changes ride the header instead — spec 332) |
 | `usage_update.used` falls ≥ 40% below the previous value, and the previous value was ≥ 20,000 | `case 'usage'` (`:8099`) | `stale = true` |
 | User sends agent slash `/compact` | `sendUserPrompt` agent-command branch | `stale = true` |
 | `promptClient.prompt` rejects (provider error or transport) | `sendUserPrompt` catch | `policyDelivery = null` |
@@ -259,9 +280,10 @@ stays under Claude Code's 2,048-char description cap.
 - **`#polly` / `#debby` / `#salty` kickoff via `dispatchTurn`.** Unchanged. The role block
   arrives on the first `sendUserPrompt` turn, as today.
 - **Adapter compacts silently with no `usage_update`.** The policy *rules* are missing for at
-  most 19 turns. The tool *names* never go missing, because the header resends them every turn.
-  The agent can still target `attention_flag` by exact name through capped tool search and read
-  its contract from the tool description.
+  most 19 turns. The tool *names* never go missing: the header resends them every turn, or, for
+  OMP, the backend's own system prompt lists them on every request (spec 332). The agent can
+  still target `attention_flag` by exact name through capped tool search and read its contract
+  from the tool description.
 
 ## Open Questions
 

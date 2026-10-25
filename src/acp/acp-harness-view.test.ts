@@ -102,8 +102,9 @@ import { HarnessDictationController, type ActiveDictationSession } from './harne
 import type { HarnessDictationHost } from './harness-view-host';
 import { HarnessTimelineController } from './harness-timeline-controller';
 import { HarnessTicketController } from './harness-ticket-controller';
-import { renderToolIndex } from './lane-context';
 import type { LaneToolGates } from './lane-context';
+import { refreshLessons } from './lessons';
+import type { ActiveTicketPinInput } from './harness-prompts';
 import type { HarnessPanelId } from './harness-panel-visibility';
 
 // Spec 301: the behaviour tests below cross exactly two module boundaries —
@@ -1897,56 +1898,110 @@ describe('Timeline permission execution without human gates', () => {
   );
 });
 
-describe('Timeline ordinary lane policy delivery', () => {
+describe('Lane context delivery through the production view methods', () => {
   type PolicyView = {
     laneToolGates(lane: HarnessLane): LaneToolGates | null;
     composeLeadingContext(lane: HarnessLane): string;
   };
-  // Exercise policy delivery through the production view methods.
   const prototype = AcpHarnessView.prototype as unknown as PolicyView;
+  /** Present only when the full lane policy rode this turn. */
+  const POLICY_MARK = '```svg fenced blocks';
+  const ticket: ActiveTicketPinInput = {
+    id: 'T-1',
+    title: 'Login timeout',
+    status: 'in_progress',
+    relativePath: '.krypton/tickets/T-1/',
+    contextRevision: 1,
+    resourceCount: 0,
+  };
 
-  function setup(remoteRuntimeId: string | null = null, backendId = 'claude') {
-    const lane = { displayName: 'Claude-1', backendId, policyDelivery: null } as HarnessLane;
+  function setup(backendId = 'claude', remoteRuntimeId: string | null = null) {
+    const lane = { displayName: 'Lane-1', backendId, policyDelivery: null } as HarnessLane;
     const timelineCtl = { automaticRecording: false, pendingCount: 24 };
+    const ticketCtl: { activeTicket: ActiveTicketPinInput | null } = { activeTicket: null };
     const target = viewDouble({
       harnessMemoryId: 'h1', harnessMemoryPort: 34123, remoteRuntimeId,
-      lanes: [lane], timelineCtl,
-      renderLanePolicy: (): string => '',
+      lanes: [lane], timelineCtl, ticketCtl,
+      directiveById: (): null => null,
     });
-    target.renderLanePolicy = () => {
-      const gates = prototype.laneToolGates.call(target, lane);
-      return gates ? renderToolIndex(gates) : '';
-    };
-    return { lane, timelineCtl, target };
+    const compose = (): string => prototype.composeLeadingContext.call(target, lane);
+    return { lane, timelineCtl, ticketCtl, target, compose };
   }
 
-  it('uses local settings/count and refreshes policy only on the next ordinary turn', () => {
-    const { lane, timelineCtl, target } = setup();
+  async function setLessons(rules: Array<[slug: string, rule: string]>): Promise<void> {
+    vi.mocked(invoke).mockImplementationOnce(async () => ({
+      entries: rules.map(([slug, rule]) => ({
+        slug, title: slug, rule, source: 'redirect', origin: 'krypton', updated: '2026-10-25', oversized: false,
+      })),
+      indexPath: '/lessons/INDEX.md',
+      cap: 30,
+    }));
+    await refreshLessons();
+  }
+
+  afterEach(async () => {
+    await setLessons([]);
+  });
+
+  it('uses local Timeline settings; a backlog count change rides the header, not the policy (spec 332)', () => {
+    const { lane, timelineCtl, target, compose } = setup();
     expect(prototype.laneToolGates.call(target, lane)).toMatchObject({
       timeline: true, timelineAutomaticRecording: false, timelinePendingCount: 24,
     });
-    prototype.composeLeadingContext.call(target, lane);
-    const firstDelivery = lane.policyDelivery;
-    expect(firstDelivery?.turnsSince).toBe(0);
-    prototype.composeLeadingContext.call(target, lane);
-    expect(lane.policyDelivery?.turnsSince).toBe(1);
+    const first = compose();
+    expect(first).toContain(POLICY_MARK);
+    expect(first).toContain('Timeline legacy pending: 24.');
     timelineCtl.pendingCount = 23;
-    expect(lane.policyDelivery?.turnsSince).toBe(1);
-    prototype.composeLeadingContext.call(target, lane);
-    expect(lane.policyDelivery?.turnsSince).toBe(0);
-    expect(lane.policyDelivery?.hash).not.toBe(firstDelivery?.hash);
+    const second = compose();
+    expect(second).not.toContain(POLICY_MARK);
+    expect(second).toContain('Timeline legacy pending: 23.');
+    timelineCtl.pendingCount = 0;
+    expect(compose()).not.toContain('Timeline legacy pending');
+    expect(lane.policyDelivery?.turnsSince).toBe(2);
   });
 
-  it.each([['remote-1', 'claude'], [null, 'pi-acp']])(
+  it.each([['claude', 'remote-1'], ['pi-acp', null]])(
     'keeps Timeline tools and local migration out of remote/Pi lanes',
-    (remoteRuntimeId, backendId) => {
-      const { lane, target } = setup(remoteRuntimeId, backendId!);
+    (backendId, remoteRuntimeId) => {
+      const { lane, target, compose } = setup(backendId!, remoteRuntimeId);
       expect(prototype.laneToolGates.call(target, lane)).toMatchObject({
         timeline: false, timelineAutomaticRecording: false, timelinePendingCount: 0,
       });
-      expect(prototype.composeLeadingContext.call(target, lane)).not.toContain('timeline_');
+      expect(compose()).not.toContain('timeline_');
     },
   );
+
+  it('drops the tool-name line only for OMP lanes (spec 332)', () => {
+    expect(setup('omp').compose()).not.toContain('Krypton tools (if not visible');
+    expect(setup('claude').compose()).toContain('Krypton tools (if not visible');
+  });
+
+  it('sends a lesson change after the policy as a header delta (spec 332)', async () => {
+    const { compose } = setup('omp');
+    await setLessons([['a', 'rule a']]);
+    expect(compose()).toContain('- [a] rule a');
+    await setLessons([['a', 'rule a'], ['b', 'rule b']]);
+    const added = compose();
+    expect(added).not.toContain(POLICY_MARK);
+    expect(added).toContain('Lessons update');
+    expect(added).toContain('- [b] rule b');
+    expect(added).not.toContain('- [a] rule a');
+    expect(compose()).not.toContain('Lessons update');
+    await setLessons([['b', 'rule b']]);
+    expect(compose()).toContain('- [a] retired');
+  });
+
+  it('resends the policy for a ticket switch but not for a status or revision change (spec 332)', () => {
+    const { ticketCtl, compose } = setup('omp');
+    ticketCtl.activeTicket = ticket;
+    expect(compose()).toContain('Active local ticket: T-1');
+    ticketCtl.activeTicket = { ...ticket, status: 'done', contextRevision: 2, resourceCount: 1 };
+    const bumped = compose();
+    expect(bumped).not.toContain(POLICY_MARK);
+    expect(bumped).toContain('context r2');
+    ticketCtl.activeTicket = { ...ticket, id: 'T-2' };
+    expect(compose()).toContain('Active local ticket: T-2');
+  });
 });
 
 describe('ACP contextual lane peek ranking', () => {

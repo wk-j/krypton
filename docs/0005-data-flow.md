@@ -373,12 +373,16 @@ d. The loop stops once the grip, the mouse and the button fades settle
       `observe`, so a word typed in any lane is predictable at once in every lane.
 7. On Enter, the active lane's draft is sent through acp_prompt behind one
    leading lane-context block (spec 289). A turn header goes every turn: the
-   lane's label plus one line naming the Krypton tools that lane may call.
-   The lane policy goes only when the current agent session has not seen its
-   exact text. It holds the ticket pin, the roster and peering rule (when there
+   lane's label, one line naming the Krypton tools that lane may call (skipped
+   for OMP, whose system prompt lists every MCP tool), and — when they apply —
+   the active ticket's state, the legacy Timeline backlog, and a `Lessons
+   update` block for lessons that changed since the session last saw them
+   (spec 332). The lane policy goes only when the current agent session has
+   not seen it. It holds the ticket pin, the roster and peering rule (when there
    are peers), the tool index, the global lessons block (spec 298), the SVG
    line, and the role/directive block. The
-   policy goes on the first turn after `spawnLane`, when its hash changes, after
+   policy goes on the first turn after `spawnLane`, when its hash changes
+   (lesson text is outside the hash), after
    a `usage_update` drop of at least 40% or a `/compact`, after a failed prompt,
    and every 20 turns. Each tool's full contract lives in its MCP description,
    and the timeline conflict rule rides on the `timeline_record` ack. Memory
@@ -751,10 +755,12 @@ built-in krypton-dark values in `gallery.css`.
 4. The app-wide lessons cache (src/acp/lessons.ts) re-invokes `list_lessons`.
    The writing harness appends `[lesson] <action>: <slug> — <title>` to the
    lane and flashes a chip.
-5. The next sendUserPrompt on any lane in any Harness renders the lessons
-   block into the lane policy. The policy hash changes, so that turn resends
-   the policy (spec 289). A Harness opened later calls `list_lessons` at start,
-   so its first policy already carries the set.
+5. The next sendUserPrompt on any lane in any Harness compares the lessons
+   with the set that agent session has already seen (spec 332). A session
+   that already holds the policy gets a `Lessons update` block in that turn's
+   header (changed rules in full, retired slugs); the policy itself is not
+   resent. A Harness opened later calls `list_lessons` at start, so its first
+   policy already carries the set.
 6. `#lessons` / palette "Open Lessons" calls `list_lessons` and opens INDEX.md
    in the Markdown Viewer. Hand edits to lesson files apply on the next
    refresh; there is no filesystem watcher.

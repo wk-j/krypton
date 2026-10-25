@@ -1100,8 +1100,9 @@ new pending files; older dismissed files remain historical local data.
 `TimelineSettings { automaticRecording }` is persisted in settings schema 2;
 schema 1 `automaticSuggestions` migrates atomically, preserving false.
 Off rejects new recording but not legacy resolution. Initialization/count
-changes inform ordinary-turn lane policy through nonvisual state and
-`acp-timeline-changed` (`harnessId`, `pendingCount`); no badge, form, permission
+changes reach the lane through nonvisual state and `acp-timeline-changed`
+(`harnessId`, `pendingCount`): the count rides the ordinary turn header while it
+is above 0 and never the hashed lane policy (spec 332); no badge, form, permission
 handoff or extra model turn is created. Local non-Pi MCP-capable lanes process
 the backlog without a one-item or five-topic migration cap. Remote/Pi lanes
 without project tools do not mutate local storage; explicit read-only work,

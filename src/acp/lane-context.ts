@@ -1,10 +1,12 @@
-// Krypton — ACP Harness lane-context delivery (spec 289).
+// Krypton — ACP Harness lane-context delivery (spec 289, trimmed by spec 332).
 //
 // The leading block of every `sendUserPrompt` turn is split in two:
-//   - a small turn header (identity + tool-name line + per-turn provenance),
-//     sent every turn, and
-//   - the lane policy (tool index, peering, ticket pin, directive/role block),
-//     sent only when the current agent session has not seen this exact text.
+//   - a small turn header (identity, tool-name line, volatile state, lesson
+//     deltas, per-turn provenance), sent every turn, and
+//   - the lane policy (tool index, peering, ticket pin, lessons, directive/role
+//     block), sent only when the current agent session has not seen this exact
+//     text. Lessons are tracked by content, not by the policy hash: a lesson
+//     change after the policy went out rides the header as a delta.
 // Tool descriptions carry each tool's full contract; the policy is an index.
 
 /** Header-only turns between policy sends are capped so a silent compaction
@@ -18,18 +20,37 @@ export const COMPACTION_DROP_RATIO = 0.4;
 /** Below this many used tokens a drop is ordinary noise, not a compaction. */
 export const COMPACTION_MIN_USED = 20_000;
 
+/** One lesson as the policy renders it: `- [slug] rule`. */
+export interface LessonLine {
+  slug: string;
+  rule: string;
+}
+
 export interface PolicyDelivery {
-  /** FNV-1a of the exact policy text last sent to this agent session. */
+  /** FNV-1a of the hashed policy text (lessons reduced to a marker) last sent. */
   hash: string;
   /** Header-only turns sent since that policy send. */
   turnsSince: number;
   /** Set when compaction may have dropped the policy from the agent's history. */
   stale: boolean;
+  /** spec 332: slug → rule of every lesson this agent session has seen, through
+   *  the policy block or a later header `Lessons update`. */
+  lessons: ReadonlyMap<string, string>;
+}
+
+/** Lessons that differ from what the agent session has seen. */
+export interface LessonsDelta {
+  /** New slugs and slugs whose rule text changed. */
+  changed: LessonLine[];
+  /** Seen slugs that are no longer injected. */
+  retired: string[];
 }
 
 export interface PolicyPlan {
   send: boolean;
   next: PolicyDelivery;
+  /** Header-only turn whose lessons moved since the last delivery; null otherwise. */
+  lessons: LessonsDelta | null;
 }
 
 /** Gates shared by the tool index (policy) and the tool-name line (header). */
@@ -38,7 +59,8 @@ export interface LaneToolGates {
   timeline: boolean;
   /** New automatic intake; legacy resolution remains available when disabled. */
   timelineAutomaticRecording: boolean;
-  /** Internal migration count, included in policy text so delivery hashes change. */
+  /** Legacy Timeline backlog. Rendered in the turn header while above 0 and
+   *  never in the hashed policy, so a changing count does not resend it (spec 332). */
   timelinePendingCount: number;
   /** More than one lane in the harness. */
   peers: boolean;
@@ -56,12 +78,41 @@ export function hashPolicy(text: string): string {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-/** Decide whether this turn carries the policy, and the delivery state after it. */
-export function planPolicyDelivery(prev: PolicyDelivery | null, hash: string): PolicyPlan {
+/** Decide whether this turn carries the policy, and the delivery state after it.
+ *  `lessons` is the injectable set this turn would render. */
+export function planPolicyDelivery(
+  prev: PolicyDelivery | null,
+  hash: string,
+  lessons: readonly LessonLine[],
+): PolicyPlan {
+  const seen = new Map(lessons.map((lesson) => [lesson.slug, lesson.rule]));
   if (!prev || prev.hash !== hash || prev.stale || prev.turnsSince >= POLICY_REFRESH_TURNS - 1) {
-    return { send: true, next: { hash, turnsSince: 0, stale: false } };
+    return { send: true, next: { hash, turnsSince: 0, stale: false, lessons: seen }, lessons: null };
   }
-  return { send: false, next: { ...prev, turnsSince: prev.turnsSince + 1 } };
+  const delta = diffLessons(prev.lessons, lessons);
+  const moved = delta.changed.length > 0 || delta.retired.length > 0;
+  return {
+    send: false,
+    next: { ...prev, turnsSince: prev.turnsSince + 1, lessons: seen },
+    lessons: moved ? delta : null,
+  };
+}
+
+export function diffLessons(seen: ReadonlyMap<string, string>, current: readonly LessonLine[]): LessonsDelta {
+  const live = new Set(current.map((lesson) => lesson.slug));
+  return {
+    changed: current.filter((lesson) => seen.get(lesson.slug) !== lesson.rule),
+    retired: [...seen.keys()].filter((slug) => !live.has(slug)),
+  };
+}
+
+/** spec 332: backends whose system prompt names every mounted MCP tool on every
+ *  request (OMP's `MCP Tool Routes`), so the header's tool-name line only repeats
+ *  it. Spec 130's naming guarantee holds there without the line. */
+const BACKENDS_LISTING_MCP_TOOLS: Record<string, true> = { omp: true };
+
+export function backendListsMcpTools(backendId: string): boolean {
+  return BACKENDS_LISTING_MCP_TOOLS[backendId] === true;
 }
 
 /** True when a context-usage reading fell sharply enough to mean compaction. */
@@ -84,6 +135,13 @@ export function renderToolNameLine(gates: LaneToolGates): string {
   return `Krypton tools (if not visible, search by exact name; rules are in each description): ${names.join(', ')}.`;
 }
 
+/** spec 332: the legacy Timeline backlog rides the header while it is above 0.
+ *  The count changes as the lane resolves it, so it stays out of the hashed policy. */
+export function renderTimelinePendingLine(gates: LaneToolGates): string | null {
+  if (!gates.timeline || gates.timelinePendingCount <= 0) return null;
+  return `Timeline legacy pending: ${gates.timelinePendingCount}. In this working turn read timeline_list { pending: true } and resolve each ID with timeline_pending_resolve (record / duplicate / discard), then continue the user's task; if only unreadable diagnostics remain, report them and stop retrying.`;
+}
+
 /** Policy-side index: when to reach for each tool. The full contract stays in
  *  the MCP tool descriptions. The attention line keeps spec 134's
  *  positive-trigger-first wording. */
@@ -94,17 +152,11 @@ export function renderToolIndex(gates: LaneToolGates): string {
     '- mark_review_priority: optional, at most once, at the end of a turn where you edited files.',
   ];
   if (gates.timeline) {
-    lines.push(
-      '- Timeline ownership supersedes older human-approval guidance: manage durable project history yourself with timeline_record, timeline_list, timeline_merge, timeline_pending_resolve, timeline_conflict_list, timeline_conflict_record and timeline_conflict_checked. Never send Timeline decisions to attention_flag, ask-user, a form, or a human approval queue.',
-      '- Respect explicit read-only scope (including trace): do not record, merge, resolve legacy intake, or write conflict verdicts/checkpoints as a side effect. Defer maintenance to an ordinary working turn that permits writes; never start another model turn.',
-      gates.timelineAutomaticRecording
-        ? '- Automatic recording is on: select evidence-backed durable requirements, decisions and observed outcomes during this working turn. Read timeline_list before the first record for a subject, reuse topic IDs, inspect event details for duplicates, and group related topics with timeline_merge when justified. Preserve exact evidence quotes and actors; skip routine status/tests and secrets. There is no once-per-turn recording cap.'
-        : '- Automatic recording is off: do not record new intake. Legacy candidates still belong to you and may be recorded through timeline_pending_resolve.',
-      `- Legacy pending count: ${gates.timelinePendingCount}. ` + (gates.timelinePendingCount > 0
-        ? 'During this ordinary working turn, read timeline_list { pending: true }, inspect each candidate and supporting evidence, then resolve each ID with timeline_pending_resolve as record, duplicate (after reading the canonical event detail), or discard with a reason. Continue reading batches while actionable candidates remain until remaining_pending is zero; the conflict topic budget and policy refresh cadence do not cap migration. If only unreadable diagnostics remain, stop retrying, report the technical diagnostic and defer repair without claiming completion or asking the human to judge/approve items. Then continue the user task.'
-        : 'No legacy intake currently reported; do not rescan the whole project each turn.'),
-      '- After a record, follow its conflict_check continuation, compare only unchecked events, and record verdicts/checkpoints. A superseding policy needs an evidence-backed event; unresolved evidence gets insufficient_evidence, not a question to the human.',
-    );
+    // spec 332: a trigger, not the contract. The descriptors carry the full rules
+    // (spec 316:33) and the timeline_record result carries the conflict check.
+    lines.push(gates.timelineAutomaticRecording
+      ? '- timeline_*: you own durable project history — in ordinary working turns record evidence-backed requirements, decisions and observed outcomes yourself; this replaces older human-approval guidance (no approval queue, never attention_flag). Never write Timeline state in a read-only turn.'
+      : '- timeline_*: automatic recording is off — record no new intake; legacy resolution and conflict verdicts stay yours, never a human approval queue. Never write Timeline state in a read-only turn.');
   }
   if (gates.peers) {
     lines.push('- review_outcome: once, after synthesizing a #review round you convened.');

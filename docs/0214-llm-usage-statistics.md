@@ -308,6 +308,17 @@ columns *turns · input · output · cached read · cached write · reported · 
 push to browsers (spec 212 keeps SSE out of scope), so "realtime" here means Krypton→Xenon, and the
 page is current as of its last reload.
 
+`scripts/session-matrix.py` is the local read-out by session rather than by day. It reads
+`.krypton/usage/*.jsonl` under `--project` (default: cwd) and prints one row per session with
+turns, lane wall-clock, input/output tokens, cache hit (same formula as above), peak context and
+cancelled turns, plus per-backend totals; `--since` (`YYYY-MM-DD`, `Nd`, `all`; default `7d`),
+`--lane` (comma list, globs) and `--backend` narrow it and `--html PATH` also writes a page. For
+OMP lanes it joins the session's OMP transcript (`~/.omp/agent/sessions/*/<time>_<sessionId>.jsonl`)
+to measure the spec 289 prompt prefix: Krypton's share of prompt text, full-policy sends and resends,
+and which policy sections changed to force each resend. That transcript format belongs to OMP, so
+these columns can break on an OMP release; other backends show `-`. A session appears only if it
+completed a turn in the window. Tests: `python3 -W error scripts/test-session-matrix.py`.
+
 A usage turn writes **no** activity-feed `event` row. 130 rows a day would bury every human-meaningful
 event in the feed.
 

@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (317)
+## Specs (318)
 
 | # | Spec |
 |---|------|
@@ -334,6 +334,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 329 | [Harness E2E Browser Explorer](./0329-harness-e2e-browser-explorer.md) |
 | 330 | [Terminal Control Monitor Full Log View](./0330-termctrl-monitor-full-log.md) |
 | 331 | [Ticket Panel Hides via the Titlebar Toggle](./0331-ticket-panel-titlebar-hide.md) |
+| 332 | [Lane Context Trim](./0332-lane-context-trim.md) |
 
 ## ADRs (24)
 

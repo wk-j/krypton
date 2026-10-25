@@ -158,7 +158,7 @@ Manifest เก็บ acting lane/rationale; undo เก็บ undone lane/ratio
 - ไม่ใช้ `rawInput`/arguments ยืนยันตัวตน; explicit foreign qualified title ไม่ถูกแทนที่ด้วยข้อความใน arguments, content หรือ option labels
 - มี accept option: ใช้ `respondPermission(requestId, optionId)` ตามเดิม
 - เป็น built-in Timeline call แต่ adapter ไม่มี accept option: ตอบ `respondPermission(requestId, null)` และแสดง diagnostic ว่าดำเนินการไม่ได้; ห้ามเข้า `pendingPermissions` หรือ `needs_permission` เพื่อให้คนตัดสิน
-- ตอน register local Harness อ่าน legacy count; ส่ง migration obligation ใน ordinary lane policy เมื่อ count > 0
+- ตอน register local Harness อ่าน legacy count; ส่ง migration obligation ในบรรทัด `Timeline legacy pending: N …` ของ turn header ทุก ordinary turn ที่ count > 0 (spec 332 ย้ายออกจาก lane policy เพื่อไม่ให้ count ที่ลดลงระหว่างแก้คิวทำให้ส่ง policy ซ้ำทั้งก้อน)
 - Agent จัดการ legacy intake ภายใน working turn ปกติของ local MCP-capable lane แล้วทำงานผู้ใช้ต่อ ไม่เปิด turn ใหม่จาก startup/event/finishTurn
 - Tool results ส่ง remaining count/continuation จน 0; count ที่ stale จากอีก Harness ไม่ทำให้เขียนซ้ำ เพราะ resolver idempotent
 - ไม่มีการบังคับให้ผู้ใช้พิมพ์ `#timeline review`; remote/Pi ที่ไม่มี project-backed tools ไม่แตะ local storage

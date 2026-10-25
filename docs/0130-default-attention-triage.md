@@ -64,6 +64,8 @@ Advertising the tools from `tools/list` is necessary but not sufficient: some AC
 
 > Spec 289 update: the naming guarantee moved to the per-turn header. `renderToolNameLine()` in `src/acp/lane-context.ts` names `attention_flag` / `attention_resolve` (and every other gated Krypton tool) on every user turn. The full attention wording now lives in the `attention_flag` tool description, and the lane policy carries a one-line index entry that keeps the positive-trigger-first framing.
 
+> Spec 332 update: the header line is skipped for backends whose own system prompt lists every MCP tool by exact name on every request (`backendListsMcpTools`, today only OMP). The naming guarantee holds there through the backend; every other backend keeps the line.
+
 ### Call-Time Authorization
 
 The harness memory endpoint is already lane-scoped by URL (`/mcp/harness/:harness_id/lane/:lane_label`) and the tool handlers receive both identifiers. The call-time rejection based only on `triage_equipped` should be removed for `attention_flag` and `attention_resolve`.

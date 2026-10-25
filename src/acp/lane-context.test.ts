@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   COMPACTION_MIN_USED,
   POLICY_REFRESH_TURNS,
+  backendListsMcpTools,
   hashPolicy,
   isCompactionDrop,
   planPolicyDelivery,
+  renderTimelinePendingLine,
   renderToolIndex,
   renderToolNameLine,
   type PolicyDelivery,
@@ -16,7 +18,7 @@ function sendTurns(turns: number, hash = hashPolicy('policy')): number[] {
   let state: PolicyDelivery | null = null;
   const sent: number[] = [];
   for (let turn = 1; turn <= turns; turn++) {
-    const plan = planPolicyDelivery(state, hash);
+    const plan = planPolicyDelivery(state, hash, []);
     if (plan.send) sent.push(turn);
     state = plan.next;
   }
@@ -32,18 +34,51 @@ describe('planPolicyDelivery', () => {
   it('resends immediately when the policy text changes, and restarts the refresh count', () => {
     const a = hashPolicy('roster: A');
     const b = hashPolicy('roster: A, B');
-    let state = planPolicyDelivery(null, a).next;
-    state = planPolicyDelivery(state, a).next;
-    const changed = planPolicyDelivery(state, b);
+    let state = planPolicyDelivery(null, a, []).next;
+    state = planPolicyDelivery(state, a, []).next;
+    const changed = planPolicyDelivery(state, b, []);
     expect(changed.send).toBe(true);
-    expect(changed.next).toEqual({ hash: b, turnsSince: 0, stale: false });
+    expect(changed.next).toEqual({ hash: b, turnsSince: 0, stale: false, lessons: new Map() });
   });
 
   it('resends a stale policy even when its text is unchanged', () => {
     const h = hashPolicy('policy');
-    const sent = planPolicyDelivery(null, h).next;
-    expect(planPolicyDelivery(sent, h).send).toBe(false);
-    expect(planPolicyDelivery({ ...sent, stale: true }, h).send).toBe(true);
+    const sent = planPolicyDelivery(null, h, []).next;
+    expect(planPolicyDelivery(sent, h, []).send).toBe(false);
+    expect(planPolicyDelivery({ ...sent, stale: true }, h, []).send).toBe(true);
+  });
+
+  it('turns a lesson change after the policy went out into a header delta (spec 332)', () => {
+    const h = hashPolicy('policy');
+    const a = { slug: 'a', rule: 'rule a' };
+    const b = { slug: 'b', rule: 'rule b' };
+    const added = planPolicyDelivery(planPolicyDelivery(null, h, [a]).next, h, [a, b]);
+    expect(added.send).toBe(false);
+    expect(added.lessons).toEqual({ changed: [b], retired: [] });
+    expect(planPolicyDelivery(added.next, h, [a, b]).lessons).toBeNull();
+    const edited = planPolicyDelivery(added.next, h, [{ slug: 'a', rule: 'rule a2' }]);
+    expect(edited.send).toBe(false);
+    expect(edited.lessons).toEqual({ changed: [{ slug: 'a', rule: 'rule a2' }], retired: ['b'] });
+    expect(edited.next.turnsSince).toBe(2);
+  });
+
+  it('carries the current lessons on a full send, so no delta follows it', () => {
+    const h = hashPolicy('policy');
+    const a = { slug: 'a', rule: 'rule a' };
+    const stale = { ...planPolicyDelivery(null, h, []).next, stale: true };
+    const resent = planPolicyDelivery(stale, h, [a]);
+    expect(resent.send).toBe(true);
+    expect(resent.lessons).toBeNull();
+    expect(planPolicyDelivery(resent.next, h, [a]).lessons).toBeNull();
+  });
+});
+
+describe('backendListsMcpTools (spec 332)', () => {
+  it('holds only for backends whose system prompt lists every MCP tool', () => {
+    expect(backendListsMcpTools('omp')).toBe(true);
+    for (const backend of ['claude', 'codex', 'pi-acp', 'cursor']) {
+      expect(backendListsMcpTools(backend)).toBe(false);
+    }
   });
 });
 
@@ -91,20 +126,21 @@ describe('tool advertising follows the tool gates', () => {
     expect(renderToolIndex(open)).toContain('- lesson_record / lesson_retire:');
   });
 
-  it('delivers changed legacy counts on the next ordinary policy delivery', () => {
+  it('keeps the legacy count out of the hashed policy and in a header line while above 0 (spec 332)', () => {
     const gates = { timeline: true, timelineAutomaticRecording: false, timelinePendingCount: 24, peers: false, lessons: false };
     const initial = hashPolicy(renderToolIndex(gates));
-    const sent = planPolicyDelivery(null, initial).next;
-    expect(planPolicyDelivery(sent, initial).send).toBe(false);
-    const remaining = hashPolicy(renderToolIndex({ ...gates, timelinePendingCount: 23 }));
-    expect(planPolicyDelivery(sent, remaining).send).toBe(true);
-    expect(planPolicyDelivery(sent, hashPolicy(renderToolIndex({ ...gates, timelineAutomaticRecording: true }))).send).toBe(true);
+    const sent = planPolicyDelivery(null, initial, []).next;
+    expect(planPolicyDelivery(sent, hashPolicy(renderToolIndex({ ...gates, timelinePendingCount: 23 })), []).send).toBe(false);
+    expect(renderTimelinePendingLine(gates)).toContain('Timeline legacy pending: 24.');
+    expect(renderTimelinePendingLine({ ...gates, timelinePendingCount: 23 })).toContain('Timeline legacy pending: 23.');
+    expect(renderTimelinePendingLine({ ...gates, timelinePendingCount: 0 })).toBeNull();
+    expect(planPolicyDelivery(sent, hashPolicy(renderToolIndex({ ...gates, timelineAutomaticRecording: true })), []).send).toBe(true);
   });
 
   it('does not deliver local Timeline maintenance to incapable lanes', () => {
     const gates = { timeline: false, timelineAutomaticRecording: false, timelinePendingCount: 24, peers: false, lessons: false };
     expect(renderToolNameLine(gates)).not.toContain('timeline_');
     expect(renderToolIndex(gates)).not.toContain('timeline_');
-    expect(hashPolicy(renderToolIndex(gates))).toBe(hashPolicy(renderToolIndex({ ...gates, timelinePendingCount: 0 })));
+    expect(renderTimelinePendingLine(gates)).toBeNull();
   });
 });

@@ -3,11 +3,13 @@
 // Lessons are short behavioural rules lanes record (`lesson_record`) when they
 // are corrected. Rust owns the store (`~/.config/krypton/lessons/`); this module
 // keeps one app-wide cache of the active set so every harness view can render
-// it into its lanes' policy synchronously (spec 289 delivery: a change alters
-// the policy hash, so each lane receives the new set on its next turn).
+// it into its lanes' policy synchronously. The full block rides the policy
+// (spec 289); a change after that rides the next turn header as a delta (spec 332).
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+
+import type { LessonsDelta } from './lane-context';
 
 export interface LessonEntry {
   slug: string;
@@ -96,12 +98,29 @@ export async function watchLessons(): Promise<void> {
   }
 }
 
-/** The policy block every lane reads. Null when there is nothing to inject.
- *  spec 299: an oversized rule is skipped rather than truncated — a cut
+/** spec 299: an oversized rule is held out rather than truncated — a cut
  *  sentence can drop the exception that made the rule safe. `INDEX.md` names
  *  it and says how to fix it. */
+export function injectableLessons(entries: readonly LessonEntry[]): LessonEntry[] {
+  return entries.filter((e) => !e.oversized);
+}
+
+/** The policy block every lane reads. Null when there is nothing to inject. */
 export function renderLessonsBlock(entries: readonly LessonEntry[]): string | null {
-  const injectable = entries.filter((e) => !e.oversized);
+  const injectable = injectableLessons(entries);
   if (injectable.length === 0) return null;
   return [LESSONS_HEADING, ...injectable.map((e) => `- [${e.slug}] ${e.rule}`)].join('\n');
+}
+
+export const LESSONS_UPDATE_HEADING = 'Lessons update (replaces the matching entries in your Lessons list):';
+
+/** spec 332: the header delta for a session that already holds the lessons
+ *  block. Null when nothing changed. */
+export function renderLessonsUpdate(delta: LessonsDelta): string | null {
+  if (delta.changed.length === 0 && delta.retired.length === 0) return null;
+  return [
+    LESSONS_UPDATE_HEADING,
+    ...delta.changed.map((lesson) => `- [${lesson.slug}] ${lesson.rule}`),
+    ...delta.retired.map((slug) => `- [${slug}] retired`),
+  ].join('\n');
 }
