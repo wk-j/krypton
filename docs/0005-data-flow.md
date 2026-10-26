@@ -1536,6 +1536,32 @@ another lane — while the warm subprocess survives; only `dispose()` kills it, 
 
 See `docs/0323-harness-follow-up-actions.md` and `docs/0327-harness-follow-up-prompts.md`.
 
+## Inline AI Failure Follow-up Flow (spec 335)
+
+```
+1. Cmd+K → overlay → ↵ (insert) or ⇧↵ (insert + '\n'), cmd mode. The overlay writes the
+   command, then hooks.onAccept → Compositor.acceptInlineAI: with follow_up on, the Quick
+   Terminal hidden and OSC 133 seen on the focused terminal, overlay.detach() (the
+   conversation stays open) and new InlineFollowUp(pane, overlay, command, run).
+   Otherwise overlay.close() as before.
+2. ⇧↵ marks the cursor row at once; ↵ waits for the user's Enter (onData '\r').
+3. wireProgramStatus OSC 133 handler → ShellCommandLog.apply → followUp.osc133(event):
+   C with another cmdline, D;0, D;130 or A without D → end (conversation closed).
+   C…D;N (N ≠ 0, 130) → failed: commandOutput(newest record), read now.
+   Enter, then A with no C → rejected: rejectedOutput(rows from the Enter mark to the
+   A mark); a line the user typed must still hold the command.
+4. buildCommandResult (shell, command, exit | rejected, output when context = true;
+   redacted, ≤ 8 000 chars) → chip 'fixing' on .krypton-pane → overlay.runFix() runs one
+   turn on the same ACP session, detached.
+5. Answer → chip 'ready' (command) | 'none' (NO_FIX / same command, with its # reason) |
+   'error'. A C in that pane meanwhile ends it (session/cancel if still running).
+6. Cmd+K in that pane (or a chip click: focusPaneByViewId + the router's openInlineAI)
+   → followUp.resume() → overlay.attach(); ↵ / ⇧↵ write Ctrl+E Ctrl+U + fix → step 1.
+   Cmd+K in another pane → followUp.dispose() → a fresh session.
+```
+
+See `docs/0335-inline-ai-failure-follow-up.md`.
+
 ## E2E Commands Flow (spec 328)
 
 ```

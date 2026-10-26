@@ -99,7 +99,7 @@ class FakeClient {
   }
 }
 
-const CFG: InlineAiConfig = { backend: 'claude', model: 'haiku', mode: 'default', context: true };
+const CFG: InlineAiConfig = { backend: 'claude', model: 'haiku', mode: 'default', context: true, follow_up: true };
 
 function chunk(text: string): AcpEvent {
   return { type: 'message_chunk', text, content: { type: 'text', text } };

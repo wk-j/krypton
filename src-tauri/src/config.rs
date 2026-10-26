@@ -702,6 +702,9 @@ pub struct InlineAiConfig {
     /// spec 334: attach the pane snapshot (selection, last command + output,
     /// screen tail; secrets redacted) to the first prompt of each `Cmd+K`.
     pub context: bool,
+    /// spec 335: watch a command accepted from `Cmd+K` and, when it fails,
+    /// ask the same conversation for a corrected command.
+    pub follow_up: bool,
 }
 
 impl Default for InlineAiConfig {
@@ -711,6 +714,7 @@ impl Default for InlineAiConfig {
             model: "haiku".to_string(),
             mode: "default".to_string(),
             context: true,
+            follow_up: true,
         }
     }
 }
@@ -1297,6 +1301,7 @@ min_confidence = 0.65
         assert_eq!(cfg.inline_ai.model, "haiku");
         assert_eq!(cfg.inline_ai.mode, "default");
         assert!(cfg.inline_ai.context);
+        assert!(cfg.inline_ai.follow_up);
     }
 
     #[test]

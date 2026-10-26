@@ -432,6 +432,7 @@ backend = "claude"             # ACP backend id (same ids as the backend picker)
 model = "haiku"                # applied after session/new ("" = backend default)
 mode = "default"               # session/set_mode after session/new ("" = backend's own mode)
 context = true                 # attach a pane snapshot to the first prompt of each Cmd+K (spec 334)
+follow_up = true               # when an accepted Cmd+K command fails, propose a fix on a pane chip (spec 335)
 
 # --- ACP Harness ---
 # Multi-lane ACP orchestration view opened with Leader Y.
@@ -640,9 +641,10 @@ To switch models, change `active` to the name of another preset. Changes take ef
 | `[inline_ai]` | `backend` | string | `"claude"` | ACP backend id, from the same id space as the Harness backend picker. A change respawns the process on the next `Cmd+K` |
 | `[inline_ai]` | `model` | string | `"haiku"` | Model id or alias applied after each `session/new`. Backends that advertise no model state (e.g. `omp`, `cursor`) reject any id — set `""` for those to keep the backend default |
 | `[inline_ai]` | `mode` | string | `"default"` | Agent-side session mode (`session/set_mode`) applied after each `session/new`. `"default"` makes Claude ask before any state-changing command, which the fence then declines, even when `~/.claude/settings.json` says `defaultMode = "auto"`. Backends with other mode ids (e.g. `codex`) reject it — set their asking mode or `""` (keep the backend's own, and with it whatever it approves without asking) |
-| `[inline_ai]` | `context` | bool | `true` | Spec 334. Attaches a `<terminal_context>` snapshot of the pane to the first prompt of each `Cmd+K`: cwd, shell, foreground process, SSH target, the selection, the last commands with their exit codes (OSC 133, sent by fish 4 on its own), and the newest command's output or else the screen tail. It is capped at 8 000 chars, and credential-shaped text is replaced with `[REDACTED]`. The overlay label shows what was attached. `false` sends only the working directory |
+| `[inline_ai]` | `context` | bool | `true` | Spec 334. Attaches a `<terminal_context>` snapshot of the pane to the first prompt of each `Cmd+K`: cwd, shell, foreground process, SSH target, the selection, the last commands with their exit codes (OSC 133, sent by fish 4 on its own), and the newest command's output or else the screen tail. It is capped at 8 000 chars, and credential-shaped text is replaced with `[REDACTED]`. The overlay label shows what was attached. `false` sends only the working directory. It also decides whether a `follow_up` report carries the failed command's output |
+| `[inline_ai]` | `follow_up` | bool | `true` | Spec 335. After `↵` / `⇧↵` accepts a command, the overlay's conversation stays open and Krypton watches that command through OSC 133. If it exits with a status other than 0 or 130, or the shell rejects the line before running it (a fish syntax error), Krypton sends the command, its result and (with `context = true`) its output to the same conversation, and an `AI FIX` chip in the pane's corner shows the corrected command. `Cmd+K` in that pane opens it; `↵` / `⇧↵` replace the shell line with it. Each failure costs one model call. Panes whose shell sends no OSC 133 (zsh/bash without integration, tmux) and the Quick Terminal are never watched |
 
-Edits apply on **Reload Config** at the next `Cmd+K`; an overlay that is already open keeps its session.
+Edits apply on **Reload Config** at the next `Cmd+K`; an overlay that is already open keeps its session. `follow_up` is read when a command is accepted.
 
 ### Timeline Automatic Recording
 

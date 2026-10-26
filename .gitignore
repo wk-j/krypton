@@ -40,3 +40,4 @@ Thumbs.db
 .impeccable/
 .empryo
 docs/prototypes/harness-anatomy
+__pycache__

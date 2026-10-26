@@ -100,7 +100,9 @@ import { ShaderEngine } from './shaders';
 import type { ShaderPreset } from './shaders';
 import type { KryptonConfig, TabsConfig, ShaderConfig, KeyboardOverlayConfig, InlineAiConfig } from './config';
 import type { InlineAcpSession } from './inline-ai-session';
-import { ShellCommandLog, buildTerminalContext, parseOsc133, type TerminalContextSnapshot } from './terminal-context';
+import type { InlineAIOverlay } from './inline-ai';
+import { InlineFollowUp } from './inline-ai-follow-up';
+import { ShellCommandLog, buildTerminalContext, parseOsc133, type BufferReader, type TerminalContextSnapshot } from './terminal-context';
 import { applyComposerBloomSettings } from './acp/harness-composer-bloom';
 import { setWordAutocompleteEnabled } from './acp/word-predict';
 import { refreshLessons, setLessonsEnabled } from './acp/lessons';
@@ -520,7 +522,12 @@ export class Compositor {
   private keyboardOverlayFooterVisible = true;
 
   /** Active inline AI overlay (at most one) */
-  private inlineAI: import('./inline-ai').InlineAIOverlay | null = null;
+  private inlineAI: InlineAIOverlay | null = null;
+  /** spec 335: the follow-up watching the last accepted Cmd+K command. At most
+   *  one: the backend keeps a single ACP session, so any Cmd+K ends it. */
+  private inlineFollowUp: InlineFollowUp<InlineAIOverlay> | null = null;
+  /** spec 335: the router's Cmd+K path, for a click on a follow-up chip. */
+  private inlineAIOpener: (() => void) | null = null;
   /** spec 333: the warm ACP backend behind Inline AI, created on first Cmd+K
    *  and kept for the app's lifetime (Rust kills it on exit). */
   private inlineAcp: InlineAcpSession | null = null;
@@ -531,6 +538,8 @@ export class Compositor {
   private shellName: string | null = null;
   /** spec 334: OSC 133 command records per terminal; dies with the terminal. */
   private readonly shellLogs = new WeakMap<Terminal, ShellCommandLog>();
+  /** spec 335: terminals whose shell has sent OSC 133; only these are watched. */
+  private readonly osc133Terminals = new WeakSet<Terminal>();
 
   /** Latest foreground process per session, populated from process-changed events.
    *  Used by findSessionsByProcess() for the Smart Prompt Dialog. */
@@ -983,13 +992,19 @@ export class Compositor {
     terminal.parser.registerOscHandler(133, (data: string) => {
       if (data === 'A' || data.startsWith('A;')) this.programStatus.dropTransient(viewId);
       const event = parseOsc133(data);
-      if (event) commands.apply(event);
+      if (event) {
+        this.osc133Terminals.add(terminal);
+        commands.apply(event);
+        // spec 335: after the log, so a failed command's record still holds its markers.
+        if (this.inlineFollowUp?.viewId === viewId) this.inlineFollowUp.osc133(event);
+      }
       return false;
     });
     // RIS (ESC c) removes every record; return false so xterm still resets.
     terminal.parser.registerEscHandler({ final: 'c' }, () => {
       this.programStatus.reset(viewId);
       commands.reset();
+      this.endInlineFollowUp(viewId);
       return false;
     });
     // Typing into the pane means its done/error results have been seen. onKey
@@ -1019,6 +1034,8 @@ export class Compositor {
     const bufferBeforeSession = options.bufferBeforeSession ?? true;
     const encoder = new TextEncoder();
     pane.terminal.onData((data: string) => {
+      // spec 335: Enter submits a line a follow-up is waiting for.
+      if (this.inlineFollowUp?.viewId === pane.viewId) this.inlineFollowUp.input(data);
       const bytes = encoder.encode(data);
       if (pane.sessionId !== null) {
         invoke('write_to_pty', {
@@ -1503,6 +1520,7 @@ export class Compositor {
       // Clean up any active extensions on this pane
       this.extensions.onPaneDestroyed(node.pane.id);
       this.programStatus.dispose(node.pane.viewId);
+      this.endInlineFollowUp(node.pane.viewId);
       if (node.pane.shaderInstance) {
         this.shaderEngine.detach(node.pane.shaderInstance);
         node.pane.shaderInstance = null;
@@ -5086,6 +5104,22 @@ export class Compositor {
     const win = this.focusedWindowId ? this.windows.get(this.focusedWindowId) : null;
     if (!win) return false;
 
+    // spec 335: Cmd+K in the pane of a follow-up that has a fix re-opens it.
+    // Anywhere else, or while the command still runs, it is a new query, and
+    // the new session would end that follow-up's conversation anyway.
+    const followUp = this.inlineFollowUp;
+    if (followUp) {
+      this.inlineFollowUp = null;
+      const resumed = followUp.viewId === pane.viewId ? followUp.resume() : null;
+      if (resumed) {
+        this.inlineAI = resumed;
+        resumed.attach(win.contentElement);
+        this.sound.play('mode.enter');
+        return true;
+      }
+      followUp.dispose();
+    }
+
     let cwd: string | null = null;
     if (pane.sessionId !== null) {
       try {
@@ -5107,18 +5141,79 @@ export class Compositor {
     // Opening now starts the backend (≈2.5 s cold) while the user types.
     const conversation = this.inlineAcp.open(this.inlineAiConfig, cwd);
 
-    const overlay = new InlineAIOverlay(
+    const overlay: InlineAIOverlay = new InlineAIOverlay(
       conversation,
-      (data: string) => this.writeToFocusedPty(data),
-      () => this.closeInlineAI(),
+      {
+        writePty: (data: string) => this.writeToFocusedPty(data),
+        onClose: () => this.closeInlineAI(),
+        onAccept: (command: string, run: boolean) => this.acceptInlineAI(overlay, command, run),
+      },
       cwd,
       context,
     );
 
     this.inlineAI = overlay;
-    overlay.open(win.contentElement);
+    overlay.attach(win.contentElement);
     this.sound.play('mode.enter');
     return true;
+  }
+
+  /**
+   * spec 335: ↵ / ⇧↵ wrote `command` into the focused pane. Keep the overlay's
+   * conversation and watch the command there, or close the overlay as before
+   * when the pane cannot be watched.
+   */
+  private acceptInlineAI(overlay: InlineAIOverlay, command: string, run: boolean): void {
+    if (this.inlineAI !== overlay) return;
+    this.inlineAI = null;
+    const pane = this.getFocusedPane();
+    const terminal = pane?.terminal ?? null;
+    // The write went to the Quick Terminal if it is visible, and that has no OSC 133.
+    const watchable = pane !== null && terminal !== null && pane.contentView === null && !this.qtVisible
+      && this.inlineAiConfig.follow_up && this.osc133Terminals.has(terminal);
+    if (!watchable) {
+      overlay.close();
+      this.refocusTerminal();
+      return;
+    }
+    overlay.detach();
+    const viewId = pane.viewId;
+    const followUp: InlineFollowUp<InlineAIOverlay> = new InlineFollowUp(
+      {
+        viewId,
+        element: pane.element,
+        mark: () => terminal.registerMarker(0),
+        buffer: () => this.bufferReader(terminal),
+        records: () => this.shellLogs.get(terminal)?.records() ?? [],
+      },
+      overlay,
+      command,
+      run,
+      {
+        shell: this.shellName,
+        includeOutput: this.inlineAiConfig.context,
+        onResume: () => {
+          if (this.focusPaneByViewId(viewId)) this.inlineAIOpener?.();
+        },
+        onEnd: () => {
+          if (this.inlineFollowUp === followUp) this.inlineFollowUp = null;
+        },
+      },
+    );
+    this.inlineFollowUp = followUp;
+    this.refocusTerminal();
+  }
+
+  /** spec 335: the follow-up's pane closed or its terminal was reset. */
+  private endInlineFollowUp(viewId: string): void {
+    if (this.inlineFollowUp?.viewId !== viewId) return;
+    this.inlineFollowUp.dispose();
+    this.inlineFollowUp = null;
+  }
+
+  /** spec 335: the router's Cmd+K path, which a follow-up chip click takes. */
+  setInlineAIOpener(open: () => void): void {
+    this.inlineAIOpener = open;
   }
 
   /** spec 334: the `<terminal_context>` block for one terminal pane. */
@@ -5135,25 +5230,30 @@ export class Compositor {
         if (info) ssh = { user: info.user, host: info.host };
       } catch { /* the header simply omits the SSH line */ }
     }
-    const active = terminal.buffer.active;
     return buildTerminalContext({
       cwd,
       shell: this.shellName,
       foreground,
       ssh,
       selection: terminal.getSelection(),
-      buffer: {
-        type: active.type,
-        length: active.length,
-        viewportY: active.viewportY,
-        rows: terminal.rows,
-        line: (row) => {
-          const line = active.getLine(row);
-          return line ? { text: line.translateToString(false), wrapped: line.isWrapped } : null;
-        },
-      },
+      buffer: this.bufferReader(terminal),
       log: this.shellLogs.get(terminal)?.records() ?? [],
     });
+  }
+
+  /** The terminal's active buffer as the context builders read it (specs 334, 335). */
+  private bufferReader(terminal: Terminal): BufferReader {
+    const active = terminal.buffer.active;
+    return {
+      type: active.type,
+      length: active.length,
+      viewportY: active.viewportY,
+      rows: terminal.rows,
+      line: (row) => {
+        const line = active.getLine(row);
+        return line ? { text: line.translateToString(false), wrapped: line.isWrapped } : null;
+      },
+    };
   }
 
   /** Close the inline AI overlay and return focus to the terminal. */
@@ -6426,6 +6526,7 @@ export class Compositor {
     const pane = this.findPaneInTree(tab.paneTree, paneId);
     if (pane) {
       this.programStatus.dispose(pane.viewId);
+      this.endInlineFollowUp(pane.viewId);
       if (pane.contentView) pane.contentView.dispose();
       pane.terminal?.dispose();
       if (pane.sessionId !== null) {

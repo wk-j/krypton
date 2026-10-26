@@ -5,6 +5,7 @@
 > Milestone: M8 — Polish
 > Amended by: [0333](./0333-inline-ai-acp-backend.md) — the model now comes from an ACP backend (`[inline_ai]`, the backend CLI's login). `AgentController`, `[agent]` and `ZAI_API_KEY` are no longer used by this overlay.
 > Amended by: [0334](./0334-inline-ai-terminal-context.md) — `Cmd+K` attaches a `<terminal_context>` snapshot of the pane (selection, last commands from OSC 133 with exit codes, newest output or screen tail; secrets redacted) to the first prompt. `[inline_ai] context = false` turns it off.
+> Amended by: [0335](./0335-inline-ai-failure-follow-up.md) — accepting a command no longer ends the conversation: Krypton watches the command, and when it fails it asks the same session for a fix, shown on an `AI FIX` chip in the pane; `Cmd+K` in that pane reopens the overlay on it. `Enter` / `Shift+Enter` with nothing to insert (an error or a `NO_FIX` answer) do nothing. `[inline_ai] follow_up = false` turns it off.
 
 ## Problem
 
@@ -57,19 +58,23 @@ class InlineAIOverlay {
   private state: InlineAIState;
   private conversation: InlineAcpConversation; // spec 333: fenced ACP session
 
-  constructor(conversation: InlineAcpConversation, writePty, onClose, cwd: string | null);
+  // spec 335: hooks = { writePty, onClose, onAccept }; spec 334 adds `context`.
+  constructor(conversation: InlineAcpConversation, hooks: InlineAIOverlayHooks, cwd: string | null, context: TerminalContextSnapshot | null);
 
   /** Attach overlay to focused window and focus input */
-  open(windowEl: HTMLElement): void;
+  attach(windowEl: HTMLElement): void;
 
-  /** Remove overlay from DOM, return focus to terminal */
+  /** spec 335: leave the screen, keep the conversation for a follow-up */
+  detach(): void;
+
+  /** Remove overlay from DOM, end the conversation */
   close(): void;
 
   /** Submit the current query to the agent */
   private submit(): Promise<void>;
 
-  /** Accept the suggestion — write command to PTY */
-  accept(): string;  // returns the command text
+  /** Accept the suggestion — write command to PTY, then hooks.onAccept */
+  private accept(run: boolean): void;
 
   /** Handle keyboard events while overlay is open */
   onKeyDown(e: KeyboardEvent): boolean;
@@ -98,7 +103,8 @@ class InlineAIOverlay {
 11. User presses Enter → accept():
     - compositor.writeToFocusedPty(command + '\n') if auto-execute
     - compositor.writeToFocusedPty(command) if preview-only (no newline)
-12. InlineAIOverlay.close(), InputRouter.toNormal()
+12. hooks.onAccept → the compositor detaches the overlay and watches the command
+    (spec 335), or closes it when the pane cannot be watched; InputRouter.toNormal()
 ```
 
 ### Keybindings
@@ -107,8 +113,8 @@ class InlineAIOverlay {
 |-----|---------|--------|
 | `Cmd+K` | Normal mode | Open inline AI overlay |
 | `Enter` | InlineAI — input phase | Submit query |
-| `Enter` | InlineAI — result phase | Accept command (insert into terminal, no execute) |
-| `Shift+Enter` | InlineAI — result phase | Accept and execute (insert + newline) |
+| `Enter` | InlineAI — result phase | Accept command (insert into terminal, no execute). On a fix result (0335) the shell line is cleared first |
+| `Shift+Enter` | InlineAI — result phase | Accept and execute (insert + newline). On a fix result (0335) the shell line is cleared first |
 | `Escape` | InlineAI — any phase | Close overlay, cancel any in-flight request |
 | `Cmd+C` | InlineAI — result phase | Copy command to clipboard |
 | `Tab` | InlineAI — result phase | Edit the suggested command in the input field |

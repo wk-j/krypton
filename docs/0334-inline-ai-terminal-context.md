@@ -4,6 +4,7 @@
 > Date: 2026-10-26
 > Milestone: M8 — Polish
 > Builds on: [0050](./0050-inline-ai.md) (overlay) · [0333](./0333-inline-ai-acp-backend.md) (ACP transport) · [0284](./0284-program-status-osc7501.md) (OSC 133 hook)
+> Extended by: [0335](./0335-inline-ai-failure-follow-up.md) — the OSC 133 handler also feeds the failure follow-up; `commandOutput` is exported, and `rejectedOutput` / `buildCommandResult` build its `<command_result>` with the same caps and redaction. Note that fish sends no `C`/`D` for a line it rejects as a syntax error, so this snapshot never lists such a line.
 
 ## Problem
 

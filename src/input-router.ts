@@ -55,6 +55,8 @@ export class InputRouter {
     this.hints.setOverviewOpener((source) => {
       this.quickOverview?.open(source);
     });
+    // spec 335: a click on a follow-up chip takes the Cmd+K path.
+    compositor.setInlineAIOpener(() => this.openInlineAI());
     this.setupKeyHandler();
     this.setupPasteHandler();
   }
@@ -551,12 +553,8 @@ export class InputRouter {
         if (this.compositor.isInlineAIOpen) {
           this.compositor.closeInlineAI();
           this.toNormal();
-        } else if (this.mode === Mode.Normal) {
-          this.compositor.openInlineAI().then((opened) => {
-            if (opened) {
-              this.setMode(Mode.InlineAI);
-            }
-          });
+        } else {
+          this.openInlineAI();
         }
         return;
       }
@@ -1343,6 +1341,14 @@ export class InputRouter {
       }
     }
     // If not consumed (typing), let it flow to the <input> element naturally
+  }
+
+  /** Cmd+K from Normal mode: the chord, or a click on a follow-up chip (spec 335). */
+  private openInlineAI(): void {
+    if (this.mode !== Mode.Normal) return;
+    this.compositor.openInlineAI().then((opened) => {
+      if (opened) this.setMode(Mode.InlineAI);
+    });
   }
 
   // ─── Hint Mode ─────────────────────────────────────────────────

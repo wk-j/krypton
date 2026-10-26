@@ -4,12 +4,14 @@
 // from an ACP backend (spec 333) — the backend CLI's own login, no API key.
 // The backend may run read-only commands (git diff, ls, …) to gather context;
 // anything that changes state is declined by the session's permission fence.
+// Spec 335: an accept detaches the overlay with its conversation still open;
+// `inline-ai-follow-up.ts` watches the command and calls `runFix()` if it fails.
 
 import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import type { InlineAcpConversation, InlineTurnEvent } from './inline-ai-session';
-import type { TerminalContextSnapshot } from './terminal-context';
+import { collapseSpace, type TerminalContextSnapshot } from './terminal-context';
 import { STREAMING_GRID_MAX_LINES, gridifyCodeBlocks } from './acp/cell-grid';
 import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 
@@ -26,10 +28,22 @@ const md = new Marked(
   }),
 );
 
-/** Callback to write a string into the focused PTY */
-type WriteCallback = (data: string) => void;
-/** Callback to close the overlay and return to Normal mode */
-type CloseCallback = () => void;
+/** What the compositor gives the overlay. */
+export interface InlineAIOverlayHooks {
+  /** Write a string into the focused PTY. */
+  writePty(data: string): void;
+  /** Escape: close the overlay; its conversation ends. */
+  onClose(): void;
+  /** ↵ / ⇧↵ accepted `command`, already written. The compositor closes the
+   *  overlay, or detaches it to watch the command (spec 335). */
+  onAccept(command: string, run: boolean): void;
+}
+
+/** Spec 335: how a fix turn ended. */
+export type FixOutcome =
+  | { kind: 'command'; command: string }
+  | { kind: 'none'; reason: string }
+  | { kind: 'error'; message: string };
 
 // ── Inline AI system prompts ─────────────────────────────────────────
 
@@ -57,6 +71,17 @@ const INLINE_ASK_INSTRUCTIONS = `You are a concise terminal expert. Answer direc
 - Be brief — a few sentences or a short list. Use markdown formatting (headings, lists, code blocks, bold) for readability.
 - No XML tags.
 - If the answer is a command, show it in a \`code span\` or fenced code block.`;
+
+// ── Failure follow-up (spec 335) ──────────────────────────────────────
+
+/** The answer for "the command was right; what it ran or checked failed". */
+const NO_FIX = 'NO_FIX';
+
+const FIX_REQUEST = `The command failed. Output a corrected command for the same request, in the syntax of the shell named above. If the command itself is right and the failure comes from what it ran or checked (failing tests, a compile error in the code, no match found), output ${NO_FIX} on line 1 and a # comment on line 2 that says what failed.`;
+
+/** Ctrl+E Ctrl+U: end of line, then kill to its start. fish keeps a line it
+ *  rejected in the editor, so a fix must replace that line, not extend it. */
+const CLEAR_LINE = '\x05\x15';
 
 // ── Glitch-decode animation (borrowed from the removed notification control, spec 40) ────
 
@@ -129,8 +154,7 @@ export class InlineAIOverlay {
   private answer = '';      // full text answer in ask mode
   private explanation = '';
   private conversation: InlineAcpConversation;
-  private writePty: WriteCallback;
-  private onClose: CloseCallback;
+  private readonly hooks: InlineAIOverlayHooks;
   private decodeTimer: number | null = null;
   private cwd: string | null;
   /** spec 334: the pane snapshot taken at Cmd+K; null when off or unavailable. */
@@ -138,19 +162,23 @@ export class InlineAIOverlay {
   /** True once a turn carrying `context` completed; follow-ups skip it. */
   private contextSent = false;
   private closed = false;
+  /** Spec 335: set by `runFix`; an accept then replaces the shell line. */
+  private replaceLine = false;
+  /** Spec 335: the command a running fix turn answers for. */
+  private fixFor: string | null = null;
   private promptEl: HTMLElement = null!;
   private modeEl: HTMLElement = null!;
+  private readonly inputRow: HTMLElement;
+  private contextEl: HTMLElement | null = null;
 
   constructor(
     conversation: InlineAcpConversation,
-    writePty: WriteCallback,
-    onClose: CloseCallback,
+    hooks: InlineAIOverlayHooks,
     cwd: string | null,
     context: TerminalContextSnapshot | null,
   ) {
     this.conversation = conversation;
-    this.writePty = writePty;
-    this.onClose = onClose;
+    this.hooks = hooks;
     this.cwd = cwd;
     this.context = context;
 
@@ -161,6 +189,7 @@ export class InlineAIOverlay {
     // Input row
     const inputRow = document.createElement('div');
     inputRow.className = 'krypton-inline-ai__input-row';
+    this.inputRow = inputRow;
 
     this.promptEl = document.createElement('span');
     this.promptEl.className = 'krypton-inline-ai__prompt';
@@ -181,13 +210,7 @@ export class InlineAIOverlay {
     inputRow.appendChild(this.promptEl);
     inputRow.appendChild(this.inputEl);
     inputRow.appendChild(this.modeEl);
-    if (context) {
-      const contextEl = document.createElement('span');
-      contextEl.className = 'krypton-inline-ai__context';
-      contextEl.textContent = context.label;
-      contextEl.title = context.label;
-      inputRow.appendChild(contextEl);
-    }
+    if (context) this.setLabel(context.label);
     this.el.appendChild(inputRow);
 
     // Result area (hidden initially)
@@ -226,13 +249,24 @@ export class InlineAIOverlay {
   }
 
   /** Attach overlay to a window's content element and focus input */
-  open(contentEl: HTMLElement): void {
+  attach(contentEl: HTMLElement): void {
     contentEl.appendChild(this.el);
     // Trigger entrance animation
     requestAnimationFrame(() => {
       this.el.classList.add('krypton-inline-ai--visible');
       this.inputEl.focus();
     });
+  }
+
+  /** Spec 335: leave the screen but keep the conversation for a follow-up. */
+  detach(): void {
+    if (this.decodeTimer !== null) {
+      clearInterval(this.decodeTimer);
+      this.decodeTimer = null;
+      this.commandEl.textContent = this.command;
+    }
+    this.el.classList.remove('krypton-inline-ai--visible');
+    this.el.remove();
   }
 
   /** Remove overlay from DOM */
@@ -251,7 +285,7 @@ export class InlineAIOverlay {
   onKeyDown(e: KeyboardEvent): boolean {
     // Escape always closes
     if (e.key === 'Escape') {
-      this.onClose();
+      this.hooks.onClose();
       return true;
     }
 
@@ -299,19 +333,10 @@ export class InlineAIOverlay {
         return true;
       }
 
-      // Command mode
-      if (e.key === 'Enter' && !e.shiftKey) {
-        // Accept — insert command into terminal (no execute)
+      // Command mode: ↵ inserts, ⇧↵ inserts and runs
+      if (e.key === 'Enter') {
         e.preventDefault();
-        this.writePty(this.command);
-        this.onClose();
-        return true;
-      }
-      if (e.key === 'Enter' && e.shiftKey) {
-        // Accept and execute
-        e.preventDefault();
-        this.writePty(this.command + '\n');
-        this.onClose();
+        this.accept(e.shiftKey);
         return true;
       }
       if (e.key === 'Tab') {
@@ -328,6 +353,41 @@ export class InlineAIOverlay {
     }
 
     return false;
+  }
+
+  /**
+   * Spec 335: one fix turn on this conversation after `failedCommand` failed.
+   * It runs while the overlay is detached; Cmd+K re-attaches it in whatever
+   * phase the turn has reached. `report` is the `<command_result>` block.
+   */
+  async runFix(report: string, failedCommand: string, label: string): Promise<FixOutcome> {
+    this.replaceLine = true;
+    this.setLabel(label);
+    this.fixFor = failedCommand;
+    const error = await this.stream(`${INLINE_CMD_INSTRUCTIONS}\n\n${report}\n\nRequest: ${FIX_REQUEST}`, null);
+    this.fixFor = null;
+    if (error !== null) return { kind: 'error', message: error };
+    if (this.command === '') return { kind: 'none', reason: this.explanation };
+    return { kind: 'command', command: this.command };
+  }
+
+  /** ↵ / ⇧↵ in cmd mode. An error or a NO_FIX answer has nothing to insert. */
+  private accept(run: boolean): void {
+    if (!this.command) return;
+    const prefix = this.replaceLine ? CLEAR_LINE : '';
+    this.hooks.writePty(prefix + this.command + (run ? '\n' : ''));
+    this.hooks.onAccept(this.command, run);
+  }
+
+  /** The short tag after the input: the context source, or the failure a fix answers. */
+  private setLabel(label: string): void {
+    if (!this.contextEl) {
+      this.contextEl = document.createElement('span');
+      this.contextEl.className = 'krypton-inline-ai__context';
+      this.inputRow.appendChild(this.contextEl);
+    }
+    this.contextEl.textContent = label;
+    this.contextEl.title = label;
   }
 
   // ── Private ─────────────────────────────────────────────────────────
@@ -371,14 +431,6 @@ export class InlineAIOverlay {
   }
 
   private async submit(query: string): Promise<void> {
-    this.phase = 'loading';
-    this.inputEl.readOnly = true;
-    this.spinnerEl.hidden = false;
-    this.resultEl.hidden = true;
-    this.hintEl.textContent = '\u238b cancel';
-
-    const dots = this.spinnerEl.querySelector('.krypton-inline-ai__dots') as HTMLElement;
-
     // ACP has no system-prompt field: every prompt carries the mode's rules.
     // The pane snapshot (spec 334) rides only the first completed turn; the
     // session keeps it for follow-ups, and it already names the cwd.
@@ -386,7 +438,23 @@ export class InlineAIOverlay {
     const pendingContext = this.contextSent ? null : this.context;
     const terminal = pendingContext ? `${pendingContext.text}\n\n` : '';
     const where = this.context === null && this.cwd ? `Working directory: ${this.cwd}\n\n` : '';
-    const text = `${instructions}\n\n${terminal}${where}Request: ${query}`;
+    await this.stream(`${instructions}\n\n${terminal}${where}Request: ${query}`, pendingContext);
+  }
+
+  /** One turn: streams into the result area, then paints it. Resolves to the error message, or null. */
+  private async stream(text: string, pendingContext: TerminalContextSnapshot | null): Promise<string | null> {
+    this.phase = 'loading';
+    this.inputEl.readOnly = true;
+    this.spinnerEl.hidden = false;
+    this.resultEl.hidden = true;
+    this.hintEl.textContent = '\u238b cancel';
+    // A fix turn starts from an earlier result; clear what it painted.
+    this.commandEl.textContent = '';
+    this.commandEl.classList.remove('krypton-inline-ai__command--ready');
+    this.explainEl.textContent = '';
+    this.explainEl.classList.remove('krypton-inline-ai__explain--error');
+
+    const dots = this.spinnerEl.querySelector('.krypton-inline-ai__dots') as HTMLElement;
 
     this.command = '';
     this.answer = '';
@@ -441,10 +509,30 @@ export class InlineAIOverlay {
     try {
       await this.conversation.prompt(text, onEvent);
       if (pendingContext) this.contextSent = true;
+      if (this.fixFor !== null) this.screenFix(this.fixFor);
       if (!this.closed) this.onComplete();
+      return null;
     } catch (err) {
-      if (!this.closed) this.onError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      if (!this.closed) this.onError(message);
+      return message;
     }
+  }
+
+  /** Spec 335: NO_FIX, an empty answer or the failed command again leave nothing to run. */
+  private screenFix(failedCommand: string): void {
+    const noFix = this.command.startsWith(NO_FIX);
+    const same = !noFix && collapseSpace(this.command) === collapseSpace(failedCommand);
+    if (!noFix && !same && this.command !== '') return;
+    if (!this.explanation && noFix) {
+      // `NO_FIX # reason` on one line instead of two.
+      this.explanation = this.command.slice(NO_FIX.length).replace(/^[\s#]+/, '');
+    }
+    if (same) this.explanation = 'no different command';
+    if (!this.explanation) this.explanation = 'no fix';
+    this.command = '';
+    this.commandEl.textContent = '';
+    this.explainEl.textContent = this.explanation;
   }
 
   /** Strip XML/tool-call artifacts a model may leak into text responses. */
@@ -556,7 +644,10 @@ export class InlineAIOverlay {
       if (this.explanation) {
         this.explainEl.textContent = this.explanation;
       }
-      this.hintEl.textContent = '\u21b5 accept \u00b7 \u21e7\u21b5 run \u00b7 \u21e5 edit \u00b7 \u2318C copy \u00b7 \u238b dismiss';
+      // Spec 335: a NO_FIX answer has nothing to accept or copy.
+      this.hintEl.textContent = this.command
+        ? '\u21b5 accept \u00b7 \u21e7\u21b5 run \u00b7 \u21e5 edit \u00b7 \u2318C copy \u00b7 \u238b dismiss'
+        : '\u21e5 edit \u00b7 \u238b dismiss';
     }
   }
 

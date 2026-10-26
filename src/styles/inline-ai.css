@@ -257,3 +257,65 @@
   color: rgba(192, 197, 206, 0.30);
   text-align: right;
 }
+
+/* ─── Failure follow-up chip (spec 335) ───
+   Bottom-right of the `.krypton-pane` whose Cmd+K command failed. It takes no
+   focus; Cmd+K in that pane opens the overlay on the fix. Only `--fixing`
+   animates, and only while its turn runs. */
+.krypton-inline-followup {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 70%;
+  padding: 3px 8px;
+  background: var(--krypton-inline-ai-bg, rgba(6, 10, 18, 0.92));
+  border: 1px solid var(--krypton-inline-ai-border, rgba(0, 200, 255, 0.4));
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  cursor: pointer;
+}
+
+.krypton-inline-followup[hidden] {
+  display: none;
+}
+
+.krypton-inline-followup__tag {
+  flex-shrink: 0;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--krypton-inline-ai-accent, #0cf);
+}
+
+.krypton-inline-followup__text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(192, 197, 206, 0.85);
+}
+
+.krypton-inline-followup__key {
+  flex-shrink: 0;
+  color: rgba(192, 197, 206, 0.30);
+}
+
+.krypton-inline-followup--fixing .krypton-inline-followup__tag {
+  animation: krypton-inline-ai-pulse 1.2s ease-in-out infinite;
+}
+
+.krypton-inline-followup--none .krypton-inline-followup__text {
+  color: rgba(192, 197, 206, 0.5);
+  font-style: italic;
+}
+
+.krypton-inline-followup--error {
+  border-color: rgba(255, 51, 85, 0.5);
+}
+
+.krypton-inline-followup--error .krypton-inline-followup__text {
+  color: rgba(255, 51, 85, 0.8);
+}
