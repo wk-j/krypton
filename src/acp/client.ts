@@ -190,6 +190,12 @@ export class AcpClient {
     });
   }
 
+  /** spec 333: switch the agent-side session mode (`session/set_mode`).
+   *  Rejects when the agent refuses the id or does not answer in time. */
+  async setSessionMode(modeId: string): Promise<void> {
+    await invoke('acp_set_session_mode', { session: this.session, modeId });
+  }
+
   onEvent(cb: (e: AcpEvent) => void): () => void {
     this.listeners.push(cb);
     return () => {

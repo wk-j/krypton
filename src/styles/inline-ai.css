@@ -54,6 +54,21 @@
   cursor: default;
 }
 
+/* spec 334: what the pane snapshot attached, e.g. "ctx · $ cargo build → 101". */
+.krypton-inline-ai__context {
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: var(--krypton-inline-ai-accent, #0cf);
+  opacity: 0.55;
+  min-width: 0;
+  max-width: 40%;
+  flex-shrink: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
 .krypton-inline-ai__input {
   flex: 1;
   background: transparent;

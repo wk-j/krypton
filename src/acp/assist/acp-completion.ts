@@ -6,12 +6,12 @@
 //
 // One warm session per harness, reused across turns because the costs that
 // hurt are the ones paid at setup: process spawn, `initialize`, `session/new`.
-// It is deliberately fenced: no MCP servers, every permission auto-declined,
-// every file write refused, every question cancelled. A one-shot that needs a
-// tool has already gone wrong, and a request nobody answers would otherwise
-// hang `session/prompt` forever (`acp.rs:1585-1621` parks it with no timeout).
+// It is deliberately fenced (`answerFencedRequest`): no MCP servers, every
+// permission auto-declined, every file write refused, every question
+// cancelled. A one-shot that needs a tool has already gone wrong.
 
 import { AcpClient } from '../client';
+import { answerFencedRequest } from '../headless-fence';
 import type { AcpEvent, ContentBlock } from '../types';
 
 import { AssistError } from './engine';
@@ -64,15 +64,8 @@ export class AcpAssistSession {
         if (event.content.type === 'text') text += event.text;
         return;
       }
-      // The fence. Declining is not politeness: an unanswered request parks
-      // the agent and `prompt()` would never resolve.
-      if (event.type === 'permission_request') {
-        void client.respondPermission(event.requestId, null);
-      } else if (event.type === 'fs_write_pending') {
-        void client.respondFsWrite(event.requestId, false);
-      } else if (event.type === 'ask_user_question' || event.type === 'elicitation_request') {
-        void client.cancel();
-      } else if (event.type === 'stop' && event.reason !== undefined) {
+      if (answerFencedRequest(client, event)) return;
+      if (event.type === 'stop' && event.reason !== undefined) {
         // Rust only sets `reason` when the subprocess died; our own turn-end
         // event carries none. Drop the client so the next call respawns.
         this.forget(client);

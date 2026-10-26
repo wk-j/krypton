@@ -247,6 +247,16 @@ export interface XenonConfig {
   probe_interval_secs: number;
 }
 
+/** spec 333: `[inline_ai]` — the ACP backend behind the terminal `Cmd+K`
+ *  overlay. `model` and `mode` are applied after `session/new`; '' keeps the
+ *  backend's own. `context` (spec 334) attaches the pane snapshot. */
+export interface InlineAiConfig {
+  backend: string;
+  model: string;
+  mode: string;
+  context: boolean;
+}
+
 export interface KryptonConfig {
   shell: ShellConfig;
   font: FontConfig;
@@ -264,6 +274,7 @@ export interface KryptonConfig {
   acp_controller: AcpControllerConfig;
   music: MusicConfig;
   acp_harness: AcpHarnessConfig;
+  inline_ai: InlineAiConfig;
   xenon: XenonConfig;
   keyboard_overlay?: KeyboardOverlayConfig;
 }

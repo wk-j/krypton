@@ -98,7 +98,9 @@ import { AnimationEngine, BoundsSnapshot, type StageTransitionLayer } from './an
 import { SoundEngine } from './sound';
 import { ShaderEngine } from './shaders';
 import type { ShaderPreset } from './shaders';
-import type { KryptonConfig, TabsConfig, ShaderConfig, KeyboardOverlayConfig } from './config';
+import type { KryptonConfig, TabsConfig, ShaderConfig, KeyboardOverlayConfig, InlineAiConfig } from './config';
+import type { InlineAcpSession } from './inline-ai-session';
+import { ShellCommandLog, buildTerminalContext, parseOsc133, type TerminalContextSnapshot } from './terminal-context';
 import { applyComposerBloomSettings } from './acp/harness-composer-bloom';
 import { setWordAutocompleteEnabled } from './acp/word-predict';
 import { refreshLessons, setLessonsEnabled } from './acp/lessons';
@@ -519,6 +521,16 @@ export class Compositor {
 
   /** Active inline AI overlay (at most one) */
   private inlineAI: import('./inline-ai').InlineAIOverlay | null = null;
+  /** spec 333: the warm ACP backend behind Inline AI, created on first Cmd+K
+   *  and kept for the app's lifetime (Rust kills it on exit). */
+  private inlineAcp: InlineAcpSession | null = null;
+  /** `[inline_ai]` from the last applied config; read at every Cmd+K. Set by
+   *  `applyConfig`, which runs before any terminal pane exists. */
+  private inlineAiConfig!: InlineAiConfig;
+  /** Basename of `[shell] program`, for the Inline AI context header (spec 334). */
+  private shellName: string | null = null;
+  /** spec 334: OSC 133 command records per terminal; dies with the terminal. */
+  private readonly shellLogs = new WeakMap<Terminal, ShellCommandLog>();
 
   /** Latest foreground process per session, populated from process-changed events.
    *  Used by findSessionsByProcess() for the Smart Prompt Dialog. */
@@ -790,6 +802,8 @@ export class Compositor {
     }
 
     void this.applyKeyboardOverlayConfig(config.keyboard_overlay);
+    this.inlineAiConfig = config.inline_ai;
+    this.shellName = config.shell.program.split('/').pop() || null;
 
     this.configApplied = true;
   }
@@ -957,15 +971,25 @@ export class Compositor {
       else if (report) this.programStatus.apply(viewId, report);
       return true;
     });
+    // spec 334: command boundaries for Inline AI context. Markers are taken
+    // inside the handler, so they sit at the cursor row the sequence arrived on.
+    const commands = new ShellCommandLog({
+      mark: () => terminal.registerMarker(0),
+      cursorX: () => terminal.buffer.active.cursorX,
+    });
+    this.shellLogs.set(terminal, commands);
     // OSC 133;A — a new prompt began, so the previous command's working/blocked
     // records are over. Observed only; never consumed.
     terminal.parser.registerOscHandler(133, (data: string) => {
       if (data === 'A' || data.startsWith('A;')) this.programStatus.dropTransient(viewId);
+      const event = parseOsc133(data);
+      if (event) commands.apply(event);
       return false;
     });
     // RIS (ESC c) removes every record; return false so xterm still resets.
     terminal.parser.registerEscHandler({ final: 'c' }, () => {
       this.programStatus.reset(viewId);
+      commands.reset();
       return false;
     });
     // Typing into the pane means its done/error results have been seen. onKey
@@ -5062,30 +5086,74 @@ export class Compositor {
     const win = this.focusedWindowId ? this.windows.get(this.focusedWindowId) : null;
     if (!win) return false;
 
-    const { InlineAIOverlay } = await import('./inline-ai');
-    const { AgentController } = await import('./agent/agent');
-
-    // Use a lightweight, disposable controller — not the agent-pane one
-    const controller = new AgentController();
-    let projectDir: string | null = null;
+    let cwd: string | null = null;
     if (pane.sessionId !== null) {
       try {
-        projectDir = await invoke<string>('get_pty_cwd', { sessionId: pane.sessionId });
-      } catch { /* ignore */ }
+        cwd = await invoke<string>('get_pty_cwd', { sessionId: pane.sessionId });
+      } catch { /* the backend falls back to Krypton's own cwd */ }
     }
-    controller.setProjectDir(projectDir);
+    // spec 334: snapshot the pane before the lazy imports below, so it shows
+    // what the user was looking at when they pressed Cmd+K.
+    const context = pane.terminal && this.inlineAiConfig.context
+      ? await this.snapshotTerminalContext(pane.terminal, pane.sessionId, cwd)
+      : null;
+
+    const { InlineAIOverlay } = await import('./inline-ai');
+    if (!this.inlineAcp) {
+      // Lazy like the overlay itself: keeps the ACP client out of the startup chunk.
+      const { InlineAcpSession } = await import('./inline-ai-session');
+      this.inlineAcp = new InlineAcpSession();
+    }
+    // Opening now starts the backend (≈2.5 s cold) while the user types.
+    const conversation = this.inlineAcp.open(this.inlineAiConfig, cwd);
 
     const overlay = new InlineAIOverlay(
-      controller,
+      conversation,
       (data: string) => this.writeToFocusedPty(data),
       () => this.closeInlineAI(),
-      pane.sessionId,
+      cwd,
+      context,
     );
 
     this.inlineAI = overlay;
     overlay.open(win.contentElement);
     this.sound.play('mode.enter');
     return true;
+  }
+
+  /** spec 334: the `<terminal_context>` block for one terminal pane. */
+  private async snapshotTerminalContext(
+    terminal: Terminal,
+    sessionId: SessionId | null,
+    cwd: string | null,
+  ): Promise<TerminalContextSnapshot> {
+    const foreground = sessionId !== null ? this.processBySession.get(sessionId) ?? null : null;
+    let ssh: { user: string; host: string } | null = null;
+    if (foreground?.name === 'ssh' && sessionId !== null) {
+      try {
+        const info = await invoke<SshConnectionInfo | null>('detect_ssh_session', { sessionId });
+        if (info) ssh = { user: info.user, host: info.host };
+      } catch { /* the header simply omits the SSH line */ }
+    }
+    const active = terminal.buffer.active;
+    return buildTerminalContext({
+      cwd,
+      shell: this.shellName,
+      foreground,
+      ssh,
+      selection: terminal.getSelection(),
+      buffer: {
+        type: active.type,
+        length: active.length,
+        viewportY: active.viewportY,
+        rows: terminal.rows,
+        line: (row) => {
+          const line = active.getLine(row);
+          return line ? { text: line.translateToString(false), wrapped: line.isWrapped } : null;
+        },
+      },
+      log: this.shellLogs.get(terminal)?.records() ?? [],
+    });
   }
 
   /** Close the inline AI overlay and return focus to the terminal. */

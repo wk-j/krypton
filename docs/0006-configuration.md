@@ -388,7 +388,8 @@ control_persist = 600                                   # Seconds to keep master
 clone_target = "tab"                                    # Default target: "tab" or "window"
 
 # --- AI Agent ---
-# Model presets for the embedded AI coding agent.
+# Model presets for the embedded AI coding agent (Agent window, File Manager
+# AI, Markdown AI). Inline AI (Cmd+K) does not use these; see [inline_ai].
 # Define multiple presets and switch between them by changing `active`.
 
 [agent]
@@ -422,6 +423,15 @@ max_tokens = 8192
 # api_key_env = "OPENAI_API_KEY"
 # context_window = 128000
 # max_tokens = 16384
+
+# --- Inline AI (Cmd+K in a terminal pane, spec 333) ---
+# Runs through an ACP backend subprocess: no API key, the CLI's own login.
+
+[inline_ai]
+backend = "claude"             # ACP backend id (same ids as the backend picker)
+model = "haiku"                # applied after session/new ("" = backend default)
+mode = "default"               # session/set_mode after session/new ("" = backend's own mode)
+context = true                 # attach a pane snapshot to the first prompt of each Cmd+K (spec 334)
 
 # --- ACP Harness ---
 # Multi-lane ACP orchestration view opened with Leader Y.
@@ -620,6 +630,19 @@ name = "custom-fixed"
 | `[[agent.models]]` | `max_tokens` | int | `8192` | Maximum output tokens per response |
 
 To switch models, change `active` to the name of another preset. Changes take effect on next agent session (reset the agent or open a new agent window).
+
+### Inline AI Configuration (spec 333)
+
+`[inline_ai]` picks the ACP backend behind the terminal's `Cmd+K` overlay. Like the Harness lanes, it runs the backend CLI as a subprocess, so it needs **no API key**: the CLI's own login authenticates it, and every query spends that subscription's quota. One process is kept warm per backend and pane directory; every `Cmd+K` opens a fresh session on it. The session is fenced: no MCP servers, and every permission request, file write and question from the agent is declined.
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[inline_ai]` | `backend` | string | `"claude"` | ACP backend id, from the same id space as the Harness backend picker. A change respawns the process on the next `Cmd+K` |
+| `[inline_ai]` | `model` | string | `"haiku"` | Model id or alias applied after each `session/new`. Backends that advertise no model state (e.g. `omp`, `cursor`) reject any id — set `""` for those to keep the backend default |
+| `[inline_ai]` | `mode` | string | `"default"` | Agent-side session mode (`session/set_mode`) applied after each `session/new`. `"default"` makes Claude ask before any state-changing command, which the fence then declines, even when `~/.claude/settings.json` says `defaultMode = "auto"`. Backends with other mode ids (e.g. `codex`) reject it — set their asking mode or `""` (keep the backend's own, and with it whatever it approves without asking) |
+| `[inline_ai]` | `context` | bool | `true` | Spec 334. Attaches a `<terminal_context>` snapshot of the pane to the first prompt of each `Cmd+K`: cwd, shell, foreground process, SSH target, the selection, the last commands with their exit codes (OSC 133, sent by fish 4 on its own), and the newest command's output or else the screen tail. It is capped at 8 000 chars, and credential-shaped text is replaced with `[REDACTED]`. The overlay label shows what was attached. `false` sends only the working directory |
+
+Edits apply on **Reload Config** at the next `Cmd+K`; an overlay that is already open keeps its session.
 
 ### Timeline Automatic Recording
 

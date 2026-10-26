@@ -60,7 +60,7 @@ No new Tauri commands. Uses existing `AgentController` with existing tools (`rea
    - CWD path
    - Cursor file name + type + size
    - Marked file list (names + types)
-3. Creates disposable AgentController (same pattern as InlineAIOverlay)
+3. Creates disposable AgentController (the pattern Inline AI used before spec 333 moved it to an ACP backend)
 4. Sends context + user prompt to agent
 5. Agent streams response, overlay renders markdown
 6. On agent_end, overlay shows result with action hints

@@ -380,6 +380,7 @@ pub fn run() {
             acp::acp_session_resume,
             acp::acp_session_load,
             acp::acp_set_lane_model,
+            acp::acp_set_session_mode,
             acp::acp_prompt,
             acp::acp_steer,
             acp::acp_cancel,

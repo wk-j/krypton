@@ -2387,6 +2387,39 @@ pub async fn acp_set_lane_model(
     }
 }
 
+/// Switch the agent-side mode of the live session (`session/set_mode`, spec
+/// 333). Inline AI forces the backend's asking mode so a user default that
+/// approves on its own (Claude `auto`) cannot run state-changing commands past
+/// its permission fence. Rejection and timeout are both `Err`: a mode that did
+/// not verifiably apply must not let the turn run.
+#[tauri::command]
+pub async fn acp_set_session_mode(
+    session: u64,
+    mode_id: String,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<(), String> {
+    let client = registry
+        .get(session)
+        .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+    let acp_session_id = client
+        .acp_session_id
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .ok_or_else(|| "no active session".to_string())?;
+    let params = json!({ "sessionId": acp_session_id, "modeId": mode_id });
+    match tokio::time::timeout(
+        Duration::from_secs(10),
+        client.request("session/set_mode", params),
+    )
+    .await
+    {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(e)) => Err(format!("session/set_mode failed: {e}")),
+        Err(_) => Err("session/set_mode timed out".to_string()),
+    }
+}
+
 /// Apply the lane's configured model after `session/new`. `failed` is `true`
 /// only when a model was requested, the agent advertised model state, and the
 /// switch request (`session/set_model` or `session/set_config_option`, per

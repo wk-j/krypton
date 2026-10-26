@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (318)
+## Specs (320)
 
 | # | Spec |
 |---|------|
@@ -335,6 +335,8 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 330 | [Terminal Control Monitor Full Log View](./0330-termctrl-monitor-full-log.md) |
 | 331 | [Ticket Panel Hides via the Titlebar Toggle](./0331-ticket-panel-titlebar-hide.md) |
 | 332 | [Lane Context Trim](./0332-lane-context-trim.md) |
+| 333 | [Inline AI on an ACP Backend](./0333-inline-ai-acp-backend.md) |
+| 334 | [Inline AI Terminal Context](./0334-inline-ai-terminal-context.md) |
 
 ## ADRs (24)
 

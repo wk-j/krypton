@@ -47,6 +47,7 @@ pub struct KryptonConfig {
     pub acp_controller: AcpControllerConfig,
     pub music: MusicConfig,
     pub agent: AgentConfig,
+    pub inline_ai: InlineAiConfig,
     pub vault: VaultConfig,
     pub hurl: HurlConfig,
     pub pencil: PencilConfig,
@@ -685,6 +686,35 @@ pub struct AgentModelConfig {
     pub vision: bool,
 }
 
+/// `[inline_ai]` — the ACP backend behind the terminal's `Cmd+K` overlay
+/// (spec 333). No API key: the backend CLI's own login authenticates it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct InlineAiConfig {
+    /// ACP backend id, from the same id space as `acp_list_backends`.
+    pub backend: String,
+    /// Model id/alias applied after `session/new`; empty keeps the default.
+    pub model: String,
+    /// Agent-side session mode applied after `session/new`; empty keeps the
+    /// backend's own. `default` makes Claude ask before any state-changing
+    /// command, which the inline permission fence then declines.
+    pub mode: String,
+    /// spec 334: attach the pane snapshot (selection, last command + output,
+    /// screen tail; secrets redacted) to the first prompt of each `Cmd+K`.
+    pub context: bool,
+}
+
+impl Default for InlineAiConfig {
+    fn default() -> Self {
+        Self {
+            backend: "claude".to_string(),
+            model: "haiku".to_string(),
+            mode: "default".to_string(),
+            context: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VaultConfig {
@@ -1258,6 +1288,15 @@ min_confidence = 0.65
         assert_eq!(assist.timeout_ms, 8_000);
         assert_eq!(assist.max_input_chars, 6_000);
         assert!(assist.tasks.is_empty());
+    }
+
+    #[test]
+    fn inline_ai_partial_table_keeps_the_fenced_defaults() {
+        let cfg: KryptonConfig = toml::from_str("[inline_ai]\nbackend = \"codex\"\n").unwrap();
+        assert_eq!(cfg.inline_ai.backend, "codex");
+        assert_eq!(cfg.inline_ai.model, "haiku");
+        assert_eq!(cfg.inline_ai.mode, "default");
+        assert!(cfg.inline_ai.context);
     }
 
     #[test]

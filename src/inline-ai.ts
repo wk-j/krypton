@@ -1,16 +1,15 @@
 // Krypton — Inline AI Overlay
 // Warp-style command suggestion overlay triggered by Cmd+K.
-// Floats inside the focused terminal window, sends natural language
-// queries to the AgentController, and streams command suggestions.
-// The AI uses tools (bash, read_file) to gather context autonomously —
-// e.g. reading git diff before crafting a commit message.
+// Floats inside the focused terminal window and streams command suggestions
+// from an ACP backend (spec 333) — the backend CLI's own login, no API key.
+// The backend may run read-only commands (git diff, ls, …) to gather context;
+// anything that changes state is declined by the session's permission fence.
 
 import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
-import { AgentController } from './agent/agent';
-import type { AgentEventCallback } from './agent/agent';
-import { invoke } from './profiler/ipc';
+import type { InlineAcpConversation, InlineTurnEvent } from './inline-ai-session';
+import type { TerminalContextSnapshot } from './terminal-context';
 import { STREAMING_GRID_MAX_LINES, gridifyCodeBlocks } from './acp/cell-grid';
 import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 
@@ -34,25 +33,27 @@ type CloseCallback = () => void;
 
 // ── Inline AI system prompts ─────────────────────────────────────────
 
-const INLINE_CMD_SYSTEM_PROMPT = `You are a terminal command generator. Your ONLY job is to output a shell command the user can run. NEVER output results, lists, explanations, or prose.
+const READ_ONLY_RULE = `You may run read-only commands (git status, git diff, git log, ls, cat, grep, find) to gather context first. NEVER run anything that changes state — files, processes, git history, packages. Such calls are refused, and the user runs the command themselves.`;
+
+const INLINE_CMD_INSTRUCTIONS = `You are a terminal command generator. Your ONLY job is to output a shell command the user can run. NEVER output results, lists, explanations, or prose.
 
 RULES:
 - NEVER ask questions. NEVER ask for clarification. Just output the command.
 - NEVER show tool results or data you gathered. The user wants a COMMAND to run, not the answer.
 - "list md files" → output \`find . -name '*.md'\` — do NOT list the files yourself.
 - "show disk usage" → output \`du -sh *\` — do NOT show the sizes yourself.
-- "commit changes" → use bash to run \`git diff --stat\` to understand what changed, then output a \`git commit\` command with a good message.
-- "kill the server" → use bash to find the PID, then output the \`kill\` command.
-- Use the bash tool to gather context silently. Then output ONLY the command.
+- "commit changes" → run \`git diff --stat\` to understand what changed, then output a \`git commit\` command with a good message.
+- "kill the server" → find the PID with a read-only command, then output the \`kill\` command. Do NOT kill it yourself.
+- ${READ_ONLY_RULE}
 
 OUTPUT FORMAT:
 - Line 1: the shell command. Nothing else.
 - Line 2 (optional): a comment starting with # to briefly explain.
 - No markdown. No code fences. No backticks. No XML tags. No prose. No lists.`;
 
-const INLINE_ASK_SYSTEM_PROMPT = `You are a concise terminal expert. Answer directly. NEVER ask follow-up questions.
+const INLINE_ASK_INSTRUCTIONS = `You are a concise terminal expert. Answer directly. NEVER ask follow-up questions.
 
-- Use the bash tool to gather context if needed before answering.
+- ${READ_ONLY_RULE}
 - Be brief — a few sentences or a short list. Use markdown formatting (headings, lists, code blocks, bold) for readability.
 - No XML tags.
 - If the answer is a command, show it in a \`code span\` or fenced code block.`;
@@ -127,24 +128,31 @@ export class InlineAIOverlay {
   private command = '';
   private answer = '';      // full text answer in ask mode
   private explanation = '';
-  private controller: AgentController;
+  private conversation: InlineAcpConversation;
   private writePty: WriteCallback;
   private onClose: CloseCallback;
   private decodeTimer: number | null = null;
-  private sessionId: number | null;
+  private cwd: string | null;
+  /** spec 334: the pane snapshot taken at Cmd+K; null when off or unavailable. */
+  private context: TerminalContextSnapshot | null;
+  /** True once a turn carrying `context` completed; follow-ups skip it. */
+  private contextSent = false;
+  private closed = false;
   private promptEl: HTMLElement = null!;
   private modeEl: HTMLElement = null!;
 
   constructor(
-    controller: AgentController,
+    conversation: InlineAcpConversation,
     writePty: WriteCallback,
     onClose: CloseCallback,
-    sessionId: number | null,
+    cwd: string | null,
+    context: TerminalContextSnapshot | null,
   ) {
-    this.controller = controller;
+    this.conversation = conversation;
     this.writePty = writePty;
     this.onClose = onClose;
-    this.sessionId = sessionId;
+    this.cwd = cwd;
+    this.context = context;
 
     // ── Build DOM ──────────────────────────────────────────────
     this.el = document.createElement('div');
@@ -173,6 +181,13 @@ export class InlineAIOverlay {
     inputRow.appendChild(this.promptEl);
     inputRow.appendChild(this.inputEl);
     inputRow.appendChild(this.modeEl);
+    if (context) {
+      const contextEl = document.createElement('span');
+      contextEl.className = 'krypton-inline-ai__context';
+      contextEl.textContent = context.label;
+      contextEl.title = context.label;
+      inputRow.appendChild(contextEl);
+    }
     this.el.appendChild(inputRow);
 
     // Result area (hidden initially)
@@ -222,13 +237,12 @@ export class InlineAIOverlay {
 
   /** Remove overlay from DOM */
   close(): void {
+    this.closed = true;
     if (this.decodeTimer !== null) {
       clearInterval(this.decodeTimer);
       this.decodeTimer = null;
     }
-    if (this.controller.isRunning) {
-      this.controller.abort();
-    }
+    this.conversation.close();
     this.el.classList.remove('krypton-inline-ai--visible');
     this.el.remove();
   }
@@ -363,27 +377,16 @@ export class InlineAIOverlay {
     this.resultEl.hidden = true;
     this.hintEl.textContent = '\u238b cancel';
 
-    // Show initializing text while agent lazy-loads
     const dots = this.spinnerEl.querySelector('.krypton-inline-ai__dots') as HTMLElement;
-    if (dots) dots.textContent = 'Initializing...';
 
-    // Gather context
-    let cwd = '';
-    if (this.sessionId !== null) {
-      try {
-        cwd = await invoke<string>('get_pty_cwd', { sessionId: this.sessionId });
-      } catch { /* ignore */ }
-    }
-
-    // Override the agent's system prompt for inline mode
-    this.controller.setInlineSystemPrompt(
-      this.askMode ? INLINE_ASK_SYSTEM_PROMPT : INLINE_CMD_SYSTEM_PROMPT
-    );
-
-    // Build contextual prompt
-    const contextualPrompt = cwd
-      ? `Working directory: ${cwd}\n\n${query}`
-      : query;
+    // ACP has no system-prompt field: every prompt carries the mode's rules.
+    // The pane snapshot (spec 334) rides only the first completed turn; the
+    // session keeps it for follow-ups, and it already names the cwd.
+    const instructions = this.askMode ? INLINE_ASK_INSTRUCTIONS : INLINE_CMD_INSTRUCTIONS;
+    const pendingContext = this.contextSent ? null : this.context;
+    const terminal = pendingContext ? `${pendingContext.text}\n\n` : '';
+    const where = this.context === null && this.cwd ? `Working directory: ${this.cwd}\n\n` : '';
+    const text = `${instructions}\n\n${terminal}${where}Request: ${query}`;
 
     this.command = '';
     this.answer = '';
@@ -392,18 +395,18 @@ export class InlineAIOverlay {
     let latestResponse = '';
     let usedTools = false;
 
-    const onEvent: AgentEventCallback = (e) => {
+    const onEvent = (e: InlineTurnEvent): void => {
       switch (e.type) {
-        case 'agent_start':
-          if (dots) dots.textContent = 'Thinking...';
+        case 'status':
+          if (dots) dots.textContent = e.text;
           break;
-        case 'message_update':
+        case 'chunk':
           if (usedTools) {
-            // New LLM round after tool calls — reset to show only the final answer
+            // New model round after tool calls — reset to show only the final answer
             latestResponse = '';
             usedTools = false;
           }
-          latestResponse += e.delta;
+          latestResponse += e.text;
           // Show result area on first token
           this.spinnerEl.hidden = true;
           if (this.resultEl.hidden && latestResponse.length > 0) {
@@ -422,44 +425,35 @@ export class InlineAIOverlay {
             }
           }
           break;
-        case 'tool_start':
+        case 'tool':
           // Hide any intermediate text and show spinner — avoids flicker
-          // when result area clears on the next LLM round
+          // when result area clears on the next model round
           this.resultEl.hidden = true;
           this.commandEl.textContent = '';
           this.explainEl.textContent = '';
-          if (dots) dots.textContent = `Running ${e.name}...`;
+          if (dots) dots.textContent = `Running ${e.title}...`;
           this.spinnerEl.hidden = false;
           usedTools = true;
-          break;
-        case 'tool_end':
-          // Keep spinner visible until next message_update arrives
-          if (dots) dots.textContent = 'Thinking...';
-          break;
-        case 'agent_end':
-          this.spinnerEl.hidden = true;
-          this.onComplete();
-          break;
-        case 'error':
-          this.onError(e.message);
           break;
       }
     };
 
     try {
-      await this.controller.prompt(contextualPrompt, onEvent);
+      await this.conversation.prompt(text, onEvent);
+      if (pendingContext) this.contextSent = true;
+      if (!this.closed) this.onComplete();
     } catch (err) {
-      this.onError(String(err));
+      if (!this.closed) this.onError(err instanceof Error ? err.message : String(err));
     }
   }
 
-  /** Strip XML/tool-call artifacts that the GLM model may leak into text responses. */
+  /** Strip XML/tool-call artifacts a model may leak into text responses. */
   private stripArtifacts(text: string): string {
     return text.replace(/<\/?[a-zA-Z_][a-zA-Z0-9_.-]*>/g, '').trim();
   }
 
   private parseResponse(text: string): void {
-    // Strip XML/tool artifacts that GLM may leak, then markdown code fences
+    // Strip XML/tool artifacts a model may leak, then markdown code fences
     let cleaned = this.stripArtifacts(text);
     if (cleaned.startsWith('```')) {
       const lines = cleaned.split('\n');
