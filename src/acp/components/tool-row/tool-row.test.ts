@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { ToolRow, type ToolRowProps } from './index';
+import { ToolRow } from './index';
 import { mergeToolPayloadForUpdate } from '../../harness-tool-retention';
 import { tickAllSpinners } from '../spinner';
+import type { RowProps } from '../transcript-row';
 import type { HarnessTranscriptItem, SubagentEntry, ToolPayload } from '../../harness-view-types';
 import type { ToolCallUpdate } from '../../types';
 
@@ -21,13 +22,18 @@ function payload(over: Partial<ToolPayload> = {}): ToolPayload {
   };
 }
 
-function props(tool: ToolPayload, over: Partial<ToolRowProps> = {}): ToolRowProps {
+function props(
+  tool: ToolPayload,
+  over: Partial<RowProps> = {},
+  subagentExpanded?: readonly string[],
+): RowProps {
   const item: HarnessTranscriptItem = {
     id: 'tool-1',
     kind: 'tool',
     text: '',
     status: tool.status,
     tool,
+    ...(subagentExpanded ? { subagentExpanded: [...subagentExpanded] } : {}),
   };
   return {
     item,
@@ -36,7 +42,6 @@ function props(tool: ToolPayload, over: Partial<ToolRowProps> = {}): ToolRowProp
     lane: null,
     projectDir: null,
     resolveLocalImages: false,
-    expanded: [],
     ...over,
   };
 }
@@ -455,12 +460,12 @@ describe('ToolRow subagents', () => {
     const cells = Array.from(head(row).children);
     const card = row.el.querySelector('.acp-harness__subagents');
 
-    row.update(props(tool, { expanded: ['scout-1'] }));
+    row.update(props(tool, {}, ['scout-1']));
     expect(row.el.querySelector('.acp-harness__subagent-detail')?.textContent).toContain('map the kernel');
     expect(Array.from(head(row).children)).toEqual(cells);
     expect(row.el.querySelector('.acp-harness__subagents')).toBe(card);
 
-    row.update(props(tool, { expanded: [] }));
+    row.update(props(tool, {}, []));
     expect(row.el.querySelector('.acp-harness__subagent-detail')).toBeNull();
   });
 

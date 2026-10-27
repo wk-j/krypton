@@ -539,7 +539,7 @@ user · voice   open the model picker
 
 ## 3.4 `ToolRow` L
 
-**Props** `{ item, expanded }` · Generic **Deps** `[statusBucket, kind, subject, command, result, exitCode, sections, diffs, subagents, expandedKey]`.
+**Props** the shared `RowProps` (`{ item, … }`, no tool-only field — every caller that holds a `TranscriptRow` may pass the same props, including late image/Git patches and seals) · Generic **Deps** `[statusBucket, kind, subject, command, result, exitCode, sections, diffs, subagents, expandedKey]`, where `expandedKey` is read from `item.subagentExpanded`.
 Spec-315 execution rows instead compare `[statusBucket, title, language, cellStatus, durationMs, detached, diffs]`;
 both include the image-strip signature and streaming flag. Output and Inspector presentation state are not structural row deps.
 

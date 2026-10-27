@@ -20,9 +20,15 @@ vi.mock('@tauri-apps/api/event', () => ({
 }));
 vi.mock('../../profiler/ipc', () => ({ invoke: vi.fn(async () => []) }));
 
+import { invoke } from '@tauri-apps/api/core';
+
 import { AcpHarnessView } from '../acp-harness-view';
 import type { HarnessLane, HarnessTranscriptItem } from '../harness-view-types';
 import type { TranscriptAnnotation } from '../types';
+
+/** A 1×1 PNG: 70 bytes once decoded. */
+const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+const PNG = Uint8Array.from(atob(PNG_BASE64), (ch) => ch.charCodeAt(0));
 
 let view: AcpHarnessView;
 
@@ -328,5 +334,93 @@ describe('harness view integration (spec 301)', () => {
 
     view.onKeyDown(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
     expect(panel.isOpen).toBe(false);
+  });
+
+  // A path image that loads after its tool row mounted patches that row through
+  // `syncImageStrip`. That patch once threw on a `ToolRow`, left the tile at
+  // LOADING and rejected the lane's load queue, so every later path image in
+  // the lane stayed LOADING for good.
+  it('lands late path images on mounted tool rows and keeps loading later ones', async () => {
+    const path = '/tmp/fixture/crsv.png';
+    let exists = false;
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd !== 'read_image_file') return [];
+      if (!exists) throw 'not found';
+      return PNG.slice().buffer;
+    });
+    const lane = call<HarnessLane>(view, 'createLane', 'omp', 'omp-1');
+    lanes(view).push(lane);
+    activate(view, lane.id);
+    call(view, 'renderDashboard');
+    // Mount the row synchronously so the queued load resolves onto a mounted row.
+    const read = async (toolCallId: string): Promise<HTMLElement | null> => {
+      call(view, 'onLaneEvent', lane, {
+        type: 'tool_call',
+        call: { toolCallId, title: 'Read crsv.png', kind: 'read', status: 'pending', locations: [{ path }] },
+      });
+      call(view, 'renderActiveTranscript', lane);
+      await lane.imageState.queue;
+      return view.element.querySelector<HTMLElement>(`[data-msg-id="${lane.toolTranscriptIds.get(toolCallId)}"]`);
+    };
+
+    try {
+      const missing = await read('r1');
+      expect(missing?.querySelector('.acp-harness__image-tile--missing')?.textContent)
+        .toBe(`IMG MISSING // ${path}`);
+
+      exists = true;
+      const loaded = await read('r2');
+      expect(loaded?.querySelector('.acp-harness__image-tile--loading')).toBeNull();
+      expect(loaded?.querySelector('.acp-harness__image-thumb figcaption')?.textContent).toBe('crsv.png · 70 B');
+    } finally {
+      vi.mocked(invoke).mockImplementation(async () => []);
+    }
+  });
+
+  // omp sends `locations` only on the `tool_call` start and the read's bytes on
+  // the completed update. The bytes must pair with that start path, whichever
+  // of the disk load and the bytes lands first, so the file shows once.
+  it('shows an omp read image once whether its path load or its bytes land first', async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => (cmd === 'read_image_file' ? PNG.slice().buffer : []));
+    const lane = call<HarnessLane>(view, 'createLane', 'omp', 'omp-1');
+    lanes(view).push(lane);
+    activate(view, lane.id);
+    call(view, 'renderDashboard');
+    const start = (toolCallId: string, path: string): void => {
+      call(view, 'onLaneEvent', lane, {
+        type: 'tool_call',
+        call: { toolCallId, title: 'Read', kind: 'read', status: 'pending', locations: [{ path }] },
+      });
+      call(view, 'renderActiveTranscript', lane);
+    };
+    const complete = (toolCallId: string): void => {
+      call(view, 'onLaneEvent', lane, {
+        type: 'tool_call_update',
+        update: {
+          toolCallId,
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'image', data: PNG_BASE64, mimeType: 'image/webp' } }],
+        },
+      });
+      call(view, 'renderActiveTranscript', lane);
+    };
+    const captions = (toolCallId: string): string[] => {
+      const row = view.element.querySelector(`[data-msg-id="${lane.toolTranscriptIds.get(toolCallId)}"]`);
+      return [...(row?.querySelectorAll('.acp-harness__images > *') ?? [])].map((node) => node.textContent ?? '');
+    };
+
+    try {
+      start('disk-first', '/tmp/fixture/a.png');
+      await lane.imageState.queue;
+      complete('disk-first');
+      expect(captions('disk-first')).toEqual(['a.png · 70 B']);
+
+      start('bytes-first', '/tmp/fixture/b.png');
+      complete('bytes-first');
+      await lane.imageState.queue;
+      expect(captions('bytes-first')).toEqual(['b.png · 70 B']);
+    } finally {
+      vi.mocked(invoke).mockImplementation(async () => []);
+    }
   });
 });

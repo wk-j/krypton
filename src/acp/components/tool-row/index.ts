@@ -82,11 +82,6 @@ interface ToolSection {
   readonly text: string;
 }
 
-export interface ToolRowProps extends RowProps {
-  /** Subagent entry ids whose inline detail is open (`item.subagentExpanded`). */
-  readonly expanded: readonly string[];
-}
-
 /** Guarded so a pass that changed nothing writes nothing. */
 function setText(node: Node, value: string): void {
   if (node.textContent !== value) node.textContent = value;
@@ -171,15 +166,15 @@ export class ToolRow extends TranscriptRow {
   private redactionFor: ToolPayload['artifactRedaction'] = undefined;
   /** The slice of this row's deps that `.acp-harness__tool-output` reads. */
   private outputDeps: readonly unknown[] | null = null;
-  private props: ToolRowProps | null = null;
+  private props: RowProps | null = null;
 
-  constructor(props: ToolRowProps) {
+  constructor(props: RowProps) {
     super(props, props.item.tool ? !isTerminalToolStatus(props.item.tool.status) : false);
     this.head.appendChild(this.glyph.el);
     this.head.appendChild(this.kind.el);
   }
 
-  update(next: ToolRowProps): void {
+  update(next: RowProps): void {
     const wasLive = this.isLive;
     this.props = next;
     super.update(next);
@@ -200,12 +195,12 @@ export class ToolRow extends TranscriptRow {
    * signature stays — a tool row DOES carry images (`collectToolImages`,
    * `acp-harness-view.ts:14198`).
    */
-  protected readDeps(next: ToolRowProps): readonly unknown[] {
+  protected readDeps(next: RowProps): readonly unknown[] {
     return [imageStripSignature(next.item), next.streaming, ...this.bodyDeps(next)];
   }
 
   /** The ten of spec 302 §3.4. */
-  protected bodyDeps(next: ToolRowProps): readonly unknown[] {
+  protected bodyDeps(next: RowProps): readonly unknown[] {
     const tool = next.item.tool;
     if (tool?.execution && !tool.artifactRedaction && !tool.subagents) {
       return [
@@ -229,7 +224,7 @@ export class ToolRow extends TranscriptRow {
       tool?.sections,
       tool?.diffs,
       tool?.subagents,
-      next.expanded.join('\u001f'),
+      (next.item.subagentExpanded ?? []).join('\u001f'),
     ];
   }
 
@@ -242,11 +237,11 @@ export class ToolRow extends TranscriptRow {
    * half is what `seal()` needs: a tool that finished inside a turn that is
    * still streaming must not keep the pulsing label.
    */
-  protected syncClasses(next: ToolRowProps): void {
+  protected syncClasses(next: RowProps): void {
     super.syncClasses({ ...next, streaming: next.streaming && this.isLive });
   }
 
-  protected paintBody(body: HTMLElement, next: ToolRowProps): void {
+  protected paintBody(body: HTMLElement, next: RowProps): void {
     const tool = next.item.tool;
     if (!tool) {
       syncOrder(body, []);
@@ -284,7 +279,7 @@ export class ToolRow extends TranscriptRow {
     if (tool.subagents) {
       // spec 282: the card replaces the "Running agent X…" sections.
       this.card ??= new SubagentCard();
-      this.card.update({ payload: tool.subagents, expanded: next.expanded });
+      this.card.update({ payload: tool.subagents, expanded: next.item.subagentExpanded ?? [] });
       children.push(this.card.el);
     } else {
       this.dropCard();
@@ -300,7 +295,7 @@ export class ToolRow extends TranscriptRow {
   }
 
   /** The live pass. Head nodes are never reached from here. */
-  protected appendChunk(next: ToolRowProps): void {
+  protected appendChunk(next: RowProps): void {
     const tool = next.item.tool;
     if (!tool || tool.artifactRedaction) return;
     if (tool.execution && !tool.subagents) {
@@ -308,7 +303,7 @@ export class ToolRow extends TranscriptRow {
       return;
     }
     if (tool.subagents) {
-      this.card?.update({ payload: tool.subagents, expanded: next.expanded });
+      this.card?.update({ payload: tool.subagents, expanded: next.item.subagentExpanded ?? [] });
       return;
     }
     this.paintOutput(tool);
@@ -318,7 +313,7 @@ export class ToolRow extends TranscriptRow {
   protected onSeal(): void {
     const tool = this.props?.item.tool;
     if (this.card && tool?.subagents && this.props) {
-      this.card.seal({ payload: tool.subagents, expanded: this.props.expanded });
+      this.card.seal({ payload: tool.subagents, expanded: this.props.item.subagentExpanded ?? [] });
     }
   }
 
@@ -498,7 +493,7 @@ export class ToolRow extends TranscriptRow {
     });
   }
 
-  private paintExecution(next: ToolRowProps): void {
+  private paintExecution(next: RowProps): void {
     const tool = next.item.tool;
     if (!tool?.execution || !this.executionCard) return;
     this.executionCard.update({

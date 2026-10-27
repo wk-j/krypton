@@ -16,7 +16,7 @@ import { ProviderErrorRow } from '../provider-error-row';
 import { QuestionRow } from '../question-row';
 import { SystemRow, systemRowVariant } from '../system-row';
 import { ThoughtRow } from '../thought-row';
-import { ToolRow, type ToolRowProps } from '../tool-row';
+import { ToolRow } from '../tool-row';
 import { UsageRow } from '../usage-row';
 import { UserRow } from '../user-row';
 import type { TranscriptRow, RowProps } from '../transcript-row';
@@ -59,16 +59,12 @@ export function rowKindFor(item: HarnessTranscriptItem): RowKind {
   return 'text';
 }
 
-function toolProps(props: RowProps): ToolRowProps {
-  return { ...props, expanded: props.item.subagentExpanded ?? [] };
-}
-
 export function createTranscriptRow(props: RowProps): TranscriptRow {
   switch (rowKindFor(props.item)) {
     case 'assistant':
       return new AssistantRow(props);
     case 'tool':
-      return new ToolRow(toolProps(props));
+      return new ToolRow(props);
     case 'permission':
       return new PermissionRow(props);
     case 'question':
@@ -95,12 +91,4 @@ export function createTranscriptRow(props: RowProps): TranscriptRow {
     case 'text':
       return new SystemRow(props);
   }
-}
-
-export function updateTranscriptRow(row: TranscriptRow, props: RowProps): void {
-  if (row instanceof ToolRow) {
-    row.update(toolProps(props));
-    return;
-  }
-  row.update(props);
 }

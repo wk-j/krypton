@@ -175,7 +175,7 @@ export function releaseAllImages(lane: HarnessLane): void;
 - `file://` is stripped.
 - `~` is expanded **in Rust**, because the frontend does not know HOME for sure.
 - A relative path is joined to the lane's `projectDir`, as `resourceFromContentBlock` already does.
-- Within a row, images are deduped by absolute path. Explicit wins over scanned, and bytes win over path: if a Claude `Read` sends both the bytes and `locations`, it shows once.
+- Within a row, images are deduped by absolute path. Explicit wins over scanned. A tool's single byte image takes the call's first `locations` path — from the same update (Claude `Read`), or, when that update carries none, from the `tool_call` start (omp `read`) — so bytes and the path load of the same file show once: whichever goes live first stays and the other is dropped.
 - **Within a turn** (one prompt to the next `idle`), the same path shows a thumbnail only in the first row that touched it. Example: `curl -o` shows it; the following `Read` and the reply that mentions the same path do not repeat it.
   - Exception: if a later row in the same turn writes the file again (an explicit `edit`/`write` location), the path loads again so the current content is shown.
 

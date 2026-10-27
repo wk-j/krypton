@@ -14409,9 +14409,14 @@ export class AcpHarnessView implements ContentView {
         disposeImages(lane.imageState, stale);
         item.images = (item.images ?? []).filter((image) => !stale.includes(image));
       }
-      // Claude `Read` sends the bytes plus `locations` — pair them so the file
-      // is shown once and the per-turn dedupe knows its path.
-      const pairPath = byteSources.length === 1 ? (locations[0] ?? null) : null;
+      // One byte image pairs with the call's first location so the file is
+      // shown once and the per-turn dedupe knows its path. Claude `Read` sends
+      // both in one update; omp sends `locations` only on the `tool_call` start,
+      // so fall back to the merged call `renderTool` just retained.
+      const retainedPath = lane.toolCalls.get(call.toolCallId)?.locations?.[0]?.path;
+      const pairPath = byteSources.length === 1
+        ? (locations[0] ?? (retainedPath ? resolveImagePath(retainedPath, this.projectDir) : null))
+        : null;
       for (const src of byteSources) {
         const path = src.uri ? resolveImagePath(src.uri, this.projectDir) : pairPath;
         this.attachBytesImage(lane, item, src, 'tool', path);

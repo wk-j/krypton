@@ -16,7 +16,7 @@ import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
 import { disposeList, listComponent, reconcile } from '../../../ui/list';
 import { HIDDEN_INDICATOR_ID, hiddenRowsIndicatorItem } from '../system-row';
-import { createTranscriptRow, updateTranscriptRow } from './rows';
+import { createTranscriptRow } from './rows';
 import type { RowProps, TranscriptRow } from '../transcript-row';
 import type { HarnessLane, HarnessTranscriptItem } from '../../harness-view-types';
 import type { ComponentDef } from '../types';
@@ -90,12 +90,12 @@ export class Transcript extends Component<TranscriptProps> {
       create: (item) => {
         const props = this.rowProps(item, next);
         const row = createTranscriptRow(props);
-        updateTranscriptRow(row, props);
+        row.update(props);
         lane.seenTranscriptIds.add(item.id);
         return row;
       },
       update: (row, item) => {
-        updateTranscriptRow(row, this.rowProps(item, next));
+        row.update(this.rowProps(item, next));
         lane.seenTranscriptIds.add(item.id);
       },
     });
