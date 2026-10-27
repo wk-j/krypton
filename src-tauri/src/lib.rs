@@ -13,6 +13,7 @@ mod e2e_web;
 pub mod git;
 pub mod hook_server;
 pub mod hurl;
+mod inline_remote;
 pub mod journal;
 pub mod lessons;
 pub mod live_assist;
@@ -30,6 +31,7 @@ mod review_threads;
 mod session;
 pub mod sound;
 pub mod ssh;
+mod ssh_channel;
 mod svg_fonts;
 pub mod telegram;
 pub mod termctrl_monitor;
@@ -159,6 +161,7 @@ pub fn run() {
         .manage(sound_engine)
         .manage(ssh_manager)
         .manage(remote_harness_registry)
+        .manage(Arc::new(inline_remote::InlineRemoteManager::new()))
         .manage(connected_computers.clone())
         .manage(hook_server.clone())
         .manage(hook_server.acp_wire.clone())
@@ -314,6 +317,8 @@ pub fn run() {
             remote_harness::remote_harness_reconnect,
             remote_harness::remote_harness_request,
             remote_harness::remote_harness_disconnect,
+            inline_remote::inline_remote_open,
+            inline_remote::inline_remote_close,
             sound::sound_play,
             sound::sound_play_keypress,
             sound::sound_apply_config,

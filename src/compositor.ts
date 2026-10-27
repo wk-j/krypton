@@ -99,10 +99,11 @@ import { SoundEngine } from './sound';
 import { ShaderEngine } from './shaders';
 import type { ShaderPreset } from './shaders';
 import type { KryptonConfig, TabsConfig, ShaderConfig, KeyboardOverlayConfig, InlineAiConfig } from './config';
-import type { InlineAcpSession } from './inline-ai-session';
+import type { InlineAcpConversation, InlineAcpSession } from './inline-ai-session';
 import type { InlineAIOverlay } from './inline-ai';
 import { InlineFollowUp } from './inline-ai-follow-up';
-import { ShellCommandLog, buildTerminalContext, parseOsc133, type BufferReader, type TerminalContextSnapshot } from './terminal-context';
+import { closeInlineRemote, inlineRemoteMcpServers, openInlineRemote, type InlineRemote, type Osc7Report } from './inline-ai-remote';
+import { ShellCommandLog, buildTerminalContext, parseOsc133, type BufferReader, type Osc133, type TerminalContextSnapshot } from './terminal-context';
 import { applyComposerBloomSettings } from './acp/harness-composer-bloom';
 import { setWordAutocompleteEnabled } from './acp/word-predict';
 import { refreshLessons, setLessonsEnabled } from './acp/lessons';
@@ -538,8 +539,16 @@ export class Compositor {
   private shellName: string | null = null;
   /** spec 334: OSC 133 command records per terminal; dies with the terminal. */
   private readonly shellLogs = new WeakMap<Terminal, ShellCommandLog>();
-  /** spec 335: terminals whose shell has sent OSC 133; only these are watched. */
-  private readonly osc133Terminals = new WeakSet<Terminal>();
+  /** spec 335/336: the kind of each terminal's latest OSC 133 event. A watch is
+   *  armed only after a prompt (`A`): then the shell in front sends OSC 133,
+   *  which is not so while a local fish runs `ssh` into a host that sends none. */
+  private readonly osc133Last = new WeakMap<Terminal, Osc133['kind']>();
+  /** spec 336: the latest OSC 7 report per PTY session (local reports too). */
+  private readonly osc7BySession = new Map<SessionId, Osc7Report>();
+  /** spec 336: the current conversation's SSH host channel; null for a local pane. */
+  private inlineRemote: Promise<InlineRemote> | null = null;
+  /** The current conversation's pane shell: local, the host's `$SHELL`, or unknown. */
+  private inlineShell: string | null = null;
 
   /** Latest foreground process per session, populated from process-changed events.
    *  Used by findSessionsByProcess() for the Smart Prompt Dialog. */
@@ -993,7 +1002,7 @@ export class Compositor {
       if (data === 'A' || data.startsWith('A;')) this.programStatus.dropTransient(viewId);
       const event = parseOsc133(data);
       if (event) {
-        this.osc133Terminals.add(terminal);
+        this.osc133Last.set(terminal, event.kind);
         commands.apply(event);
         // spec 335: after the log, so a failed command's record still holds its markers.
         if (this.inlineFollowUp?.viewId === viewId) this.inlineFollowUp.osc133(event);
@@ -1533,6 +1542,7 @@ export class Compositor {
       }
       if (node.pane.sessionId !== null) {
         this.sessionMap.delete(node.pane.sessionId);
+        this.osc7BySession.delete(node.pane.sessionId);
       }
       node.pane.element.remove();
     } else {
@@ -5120,16 +5130,30 @@ export class Compositor {
       followUp.dispose();
     }
 
+    const sessionId = pane.sessionId;
     let cwd: string | null = null;
-    if (pane.sessionId !== null) {
+    if (sessionId !== null) {
       try {
-        cwd = await invoke<string>('get_pty_cwd', { sessionId: pane.sessionId });
+        cwd = await invoke<string>('get_pty_cwd', { sessionId });
       } catch { /* the backend falls back to Krypton's own cwd */ }
     }
+    const foreground = sessionId !== null ? this.processBySession.get(sessionId) ?? null : null;
+    const ssh = foreground?.name === 'ssh' && sessionId !== null ? await this.detectSsh(sessionId) : null;
+    // spec 336: in an SSH pane the agent's checks run on that host through a
+    // separate channel; connecting starts now and overlaps typing. The
+    // `<pane_host>` block then replaces the header's SSH line and local shell.
+    const remote = ssh !== null && sessionId !== null && this.inlineAiConfig.remote_checks
+      ? openInlineRemote(sessionId, `${ssh.user}@${ssh.host}`, this.osc7BySession.get(sessionId) ?? null)
+      : null;
+    this.inlineShell = ssh === null ? this.shellName : null;
+    remote?.then((state) => {
+      if (this.inlineRemote === remote) this.inlineShell = state.kind === 'on' ? state.info.shell : null;
+    });
+    this.inlineRemote = remote;
     // spec 334: snapshot the pane before the lazy imports below, so it shows
     // what the user was looking at when they pressed Cmd+K.
     const context = pane.terminal && this.inlineAiConfig.context
-      ? await this.snapshotTerminalContext(pane.terminal, pane.sessionId, cwd)
+      ? this.snapshotTerminalContext(pane.terminal, foreground, cwd, remote ? null : ssh, remote ? null : this.shellName)
       : null;
 
     const { InlineAIOverlay } = await import('./inline-ai');
@@ -5139,7 +5163,19 @@ export class Compositor {
       this.inlineAcp = new InlineAcpSession();
     }
     // Opening now starts the backend (≈2.5 s cold) while the user types.
-    const conversation = this.inlineAcp.open(this.inlineAiConfig, cwd);
+    const session = this.inlineAcp.open(this.inlineAiConfig, cwd, remote?.then(inlineRemoteMcpServers));
+    // spec 336: the channel's capability lives exactly as long as the conversation.
+    const conversation: InlineAcpConversation = remote
+      ? {
+          prompt: (text, onEvent) => session.prompt(text, onEvent),
+          close: () => {
+            session.close();
+            void remote.then((state) => {
+              if (state.kind === 'on') closeInlineRemote(state.info.token);
+            });
+          },
+        }
+      : session;
 
     const overlay: InlineAIOverlay = new InlineAIOverlay(
       conversation,
@@ -5150,12 +5186,28 @@ export class Compositor {
       },
       cwd,
       context,
+      remote,
     );
 
     this.inlineAI = overlay;
     overlay.attach(win.contentElement);
     this.sound.play('mode.enter');
     return true;
+  }
+
+  /** The `user@host` of the pane's foreground ssh, or null. */
+  private async detectSsh(sessionId: SessionId): Promise<{ user: string; host: string } | null> {
+    try {
+      const info = await invoke<SshConnectionInfo | null>('detect_ssh_session', { sessionId });
+      return info ? { user: info.user, host: info.host } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** spec 336: the latest OSC 7 report per PTY session, from the PTY bridge. */
+  noteOsc7(sessionId: SessionId, cwd: string, hostname: string): void {
+    this.osc7BySession.set(sessionId, { host: hostname, cwd });
   }
 
   /**
@@ -5170,7 +5222,7 @@ export class Compositor {
     const terminal = pane?.terminal ?? null;
     // The write went to the Quick Terminal if it is visible, and that has no OSC 133.
     const watchable = pane !== null && terminal !== null && pane.contentView === null && !this.qtVisible
-      && this.inlineAiConfig.follow_up && this.osc133Terminals.has(terminal);
+      && this.inlineAiConfig.follow_up && this.osc133Last.get(terminal) === 'prompt';
     if (!watchable) {
       overlay.close();
       this.refocusTerminal();
@@ -5190,7 +5242,7 @@ export class Compositor {
       command,
       run,
       {
-        shell: this.shellName,
+        shell: this.inlineShell,
         includeOutput: this.inlineAiConfig.context,
         onResume: () => {
           if (this.focusPaneByViewId(viewId)) this.inlineAIOpener?.();
@@ -5217,22 +5269,16 @@ export class Compositor {
   }
 
   /** spec 334: the `<terminal_context>` block for one terminal pane. */
-  private async snapshotTerminalContext(
+  private snapshotTerminalContext(
     terminal: Terminal,
-    sessionId: SessionId | null,
+    foreground: ProcessInfo | null,
     cwd: string | null,
-  ): Promise<TerminalContextSnapshot> {
-    const foreground = sessionId !== null ? this.processBySession.get(sessionId) ?? null : null;
-    let ssh: { user: string; host: string } | null = null;
-    if (foreground?.name === 'ssh' && sessionId !== null) {
-      try {
-        const info = await invoke<SshConnectionInfo | null>('detect_ssh_session', { sessionId });
-        if (info) ssh = { user: info.user, host: info.host };
-      } catch { /* the header simply omits the SSH line */ }
-    }
+    ssh: { user: string; host: string } | null,
+    shell: string | null,
+  ): TerminalContextSnapshot {
     return buildTerminalContext({
       cwd,
-      shell: this.shellName,
+      shell,
       foreground,
       ssh,
       selection: terminal.getSelection(),
@@ -6531,6 +6577,7 @@ export class Compositor {
       pane.terminal?.dispose();
       if (pane.sessionId !== null) {
         this.sessionMap.delete(pane.sessionId);
+        this.osc7BySession.delete(pane.sessionId);
       }
       pane.element.remove();
     }
@@ -8467,6 +8514,7 @@ export class Compositor {
     }
     this.handledExitedSessions.add(sid);
     this.sessionMap.delete(sid);
+    this.osc7BySession.delete(sid);
 
     const win = this.windows.get(loc.windowId);
     if (!win) return;

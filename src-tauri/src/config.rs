@@ -705,6 +705,9 @@ pub struct InlineAiConfig {
     /// spec 335: watch a command accepted from `Cmd+K` and, when it fails,
     /// ask the same conversation for a corrected command.
     pub follow_up: bool,
+    /// spec 336: in an SSH pane, give `Cmd+K` the `host_exec` tool so it can
+    /// run read-only checks on that host over a separate SSH channel.
+    pub remote_checks: bool,
 }
 
 impl Default for InlineAiConfig {
@@ -715,6 +718,7 @@ impl Default for InlineAiConfig {
             mode: "default".to_string(),
             context: true,
             follow_up: true,
+            remote_checks: true,
         }
     }
 }
@@ -1302,6 +1306,7 @@ min_confidence = 0.65
         assert_eq!(cfg.inline_ai.mode, "default");
         assert!(cfg.inline_ai.context);
         assert!(cfg.inline_ai.follow_up);
+        assert!(cfg.inline_ai.remote_checks);
     }
 
     #[test]

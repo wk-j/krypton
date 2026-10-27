@@ -1268,7 +1268,7 @@ fn persist(path: &Path, inner: &mut Inner) -> Result<(), String> {
     Ok(())
 }
 
-fn random_hex() -> Result<String, String> {
+pub(crate) fn random_hex() -> Result<String, String> {
     let mut bytes = [0u8; 32];
     getrandom::getrandom(&mut bytes).map_err(|e| format!("Generate computer capability: {e}"))?;
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())

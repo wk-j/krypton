@@ -14,12 +14,14 @@
 
 import { AcpClient } from './acp/client';
 import { answerFencedRequest } from './acp/headless-fence';
-import type { AcpEvent, StopReason } from './acp/types';
+import type { AcpEvent, AcpMcpServerDescriptor, StopReason } from './acp/types';
 import type { InlineAiConfig } from './config';
+import { INLINE_HOST_EXEC, hostExecCommand } from './inline-ai-remote';
 
 export type InlineTurnEvent =
   | { type: 'status'; text: string }
-  | { type: 'tool'; title: string }
+  /** `command` is set for a `host_exec` call (spec 336). */
+  | { type: 'tool'; title: string; command: string | null }
   | { type: 'chunk'; text: string };
 
 /** A failure whose message is shown verbatim in the overlay. */
@@ -64,10 +66,11 @@ export class InlineAcpSession {
   }
 
   /** Called on Cmd+K. Supersedes the previous conversation and prepares a
-   *  fresh session in the background; returns at once. */
-  open(cfg: InlineAiConfig, cwd: string | null): InlineAcpConversation {
+   *  fresh session in the background; returns at once. `mcp` resolves to the
+   *  session's MCP servers (spec 336: `host_exec` in an SSH pane); none by default. */
+  open(cfg: InlineAiConfig, cwd: string | null, mcp?: Promise<AcpMcpServerDescriptor[]>): InlineAcpConversation {
     this.current?.close();
-    const conversation = new Conversation(this, { ...cfg }, cwd, this.graceMs);
+    const conversation = new Conversation(this, { ...cfg }, cwd, mcp ?? Promise.resolve([]), this.graceMs);
     this.current = conversation;
     conversation.ready = this.enqueue(() => this.setup(conversation));
     // Errors surface through `prompt()`; an overlay closed before submitting
@@ -100,7 +103,14 @@ export class InlineAcpSession {
       if (event.type === 'message_chunk') {
         if (event.content.type === 'text' && event.text) onEvent({ type: 'chunk', text: event.text });
       } else if (event.type === 'tool_call') {
-        onEvent({ type: 'tool', title: event.call.title ?? 'tool' });
+        const { title, rawInput } = event.call;
+        onEvent({ type: 'tool', title: title ?? 'tool', command: hostExecCommand(title, rawInput) });
+      } else if (event.type === 'permission_request') {
+        // claude-agent-acp sends host_exec's input with its permission request;
+        // its `tool_call` arrives with an empty one (spec 336 smoke).
+        const { title, rawInput } = event.toolCall;
+        const command = hostExecCommand(title, rawInput);
+        if (command !== null) onEvent({ type: 'tool', title: title ?? 'tool', command });
       }
     });
     onEvent({ type: 'status', text: 'Thinking...' });
@@ -132,7 +142,12 @@ export class InlineAcpSession {
     if (conversation.closed) throw new InlineAiError('inline AI: closed');
     const { backend, model, mode } = conversation.cfg;
     const client = await this.ensure(backend, conversation.cwd);
+    // The process outlives conversations: every session sets its own list, so
+    // a local pane after an SSH pane gets none again.
+    const servers = await conversation.mcp;
+    if (conversation.closed) throw new InlineAiError('inline AI: closed');
     try {
+      await client.setMcpServers(servers);
       await client.sessionNew();
     } catch (e) {
       this.forget(client);
@@ -182,7 +197,7 @@ export class InlineAcpSession {
     // after the turn that raised it settled, and a death between turns must
     // drop the client so the next Cmd+K respawns.
     client.onEvent((event: AcpEvent) => {
-      if (answerFencedRequest(client, event)) return;
+      if (answerFencedRequest(client, event, INLINE_HOST_EXEC)) return;
       // Rust sets `reason` only when the subprocess died.
       if (event.type === 'stop' && event.reason !== undefined) this.forget(client);
     });
@@ -216,6 +231,7 @@ class Conversation implements InlineAcpConversation {
     private readonly owner: InlineAcpSession,
     readonly cfg: InlineAiConfig,
     readonly cwd: string | null,
+    readonly mcp: Promise<AcpMcpServerDescriptor[]>,
     private readonly graceMs: number,
   ) {
     this.abandoned = new Promise((resolve) => {

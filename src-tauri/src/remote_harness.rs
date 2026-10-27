@@ -1,6 +1,7 @@
 use crate::config::{KryptonConfig, RemoteHarnessProfile};
 use crate::pty::PtyManager;
-use crate::ssh::{SshConnectionInfo, SshManager};
+use crate::ssh::SshManager;
+use crate::ssh_channel::{self, SshTarget};
 use crate::util::emit::EmitExt;
 use futures_util::StreamExt;
 use krypton_remote_protocol::{
@@ -21,7 +22,6 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
-const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 15;
 const REMOTE_RUNTIME_DOWNLOAD_TIMEOUT_SECS: u64 = 120;
 const MAX_REMOTE_RUNTIME_BYTES: usize = 64 * 1024 * 1024;
 const REMOTE_RUNTIME_RELEASE_REPOSITORY: &str = "wk-j/krypton";
@@ -75,14 +75,8 @@ pub struct RemoteHarnessWorkspace {
 struct ResolvedTarget {
     source: String,
     profile: Option<String>,
-    destination: String,
-    user: String,
-    host: String,
-    port: u16,
     project_dir: String,
-    connect_timeout_seconds: u64,
-    extra_args: Vec<String>,
-    requested_socket: Option<PathBuf>,
+    ssh: SshTarget,
 }
 
 #[derive(Debug)]
@@ -353,8 +347,8 @@ impl RemoteRuntimeClient {
             .arg(&self.control_socket)
             .arg("-O")
             .arg(operation);
-        append_target_args(&mut command, &self.target);
-        command.args(tail).arg(&self.target.destination);
+        ssh_channel::append_target_args(&mut command, &self.target.ssh);
+        command.args(tail).arg(&self.target.ssh.destination);
         let output = command
             .output()
             .await
@@ -492,39 +486,6 @@ pub async fn remote_harness_connect(
     .await
 }
 
-fn configured_ssh_command(
-    target: &ResolvedTarget,
-    control_socket: &Path,
-    borrowed_master: bool,
-    control_persist: u64,
-) -> Command {
-    let mut command = Command::new("ssh");
-    command
-        .arg("-T")
-        .arg("-o")
-        .arg("BatchMode=yes")
-        .arg("-o")
-        .arg(format!("ConnectTimeout={}", target.connect_timeout_seconds))
-        .arg("-o")
-        .arg("ServerAliveInterval=15")
-        .arg("-o")
-        .arg("ServerAliveCountMax=2")
-        .arg("-o")
-        .arg("ExitOnForwardFailure=yes")
-        .arg("-o")
-        .arg(if borrowed_master {
-            "ControlMaster=no".to_string()
-        } else {
-            "ControlMaster=auto".to_string()
-        })
-        .arg("-o")
-        .arg(format!("ControlPath={}", control_socket.display()))
-        .arg("-o")
-        .arg(format!("ControlPersist={control_persist}"));
-    append_target_args(&mut command, target);
-    command
-}
-
 fn normalize_remote_platform(os: &str, arch: &str) -> Result<&'static str, String> {
     match (os.trim(), arch.trim()) {
         ("Darwin", "arm64" | "aarch64") => Ok("aarch64-apple-darwin"),
@@ -588,14 +549,18 @@ async fn run_remote_command(
     control_persist: u64,
     remote_command: &str,
 ) -> Result<std::process::Output, String> {
-    let mut command =
-        configured_ssh_command(target, control_socket, borrowed_master, control_persist);
+    let mut command = ssh_channel::configured_ssh_command(
+        &target.ssh,
+        control_socket,
+        borrowed_master,
+        control_persist,
+    );
     command
-        .arg(&target.destination)
+        .arg(&target.ssh.destination)
         .arg(remote_command)
         .kill_on_drop(true);
     tokio::time::timeout(
-        Duration::from_secs(target.connect_timeout_seconds.saturating_add(15)),
+        Duration::from_secs(target.ssh.connect_timeout_seconds.saturating_add(15)),
         command.output(),
     )
     .await
@@ -690,7 +655,9 @@ fn verify_remote_runtime(bytes: &[u8], expected: &str) -> Result<(), String> {
 
 async fn download_bounded(url: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
     let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS))
+        .connect_timeout(Duration::from_secs(
+            ssh_channel::DEFAULT_CONNECT_TIMEOUT_SECS,
+        ))
         .timeout(Duration::from_secs(REMOTE_RUNTIME_DOWNLOAD_TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("create remote runtime download client: {e}"))?;
@@ -854,10 +821,14 @@ async fn upload_remote_runtime(
     bytes: &[u8],
 ) -> Result<(), String> {
     let remote_command = remote_runtime_install_command();
-    let mut command =
-        configured_ssh_command(target, control_socket, borrowed_master, control_persist);
+    let mut command = ssh_channel::configured_ssh_command(
+        &target.ssh,
+        control_socket,
+        borrowed_master,
+        control_persist,
+    );
     command
-        .arg(&target.destination)
+        .arg(&target.ssh.destination)
         .arg(remote_command)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -930,9 +901,9 @@ async fn ensure_remote_runtime(
 async fn close_owned_master(target: &ResolvedTarget, control_socket: &Path) {
     let mut command = Command::new("ssh");
     command.arg("-S").arg(control_socket).arg("-O").arg("exit");
-    append_target_args(&mut command, target);
+    ssh_channel::append_target_args(&mut command, &target.ssh);
     let _ = command
-        .arg(&target.destination)
+        .arg(&target.ssh.destination)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
@@ -946,7 +917,9 @@ async fn start_remote_runtime(
     control_persist: u64,
     registry: &RemoteHarnessRegistry,
 ) -> Result<RemoteHarnessWorkspace, String> {
-    let (control_socket, borrowed_master) = select_control_socket(&target, &runtime_id).await?;
+    let (control_socket, borrowed_master) =
+        ssh_channel::select_control_socket(&target.ssh, &owned_socket_name(&target, &runtime_id))
+            .await?;
     let remote_runtime = match ensure_remote_runtime(
         &app,
         &target,
@@ -964,10 +937,14 @@ async fn start_remote_runtime(
             return Err(error);
         }
     };
-    let mut command =
-        configured_ssh_command(&target, &control_socket, borrowed_master, control_persist);
+    let mut command = ssh_channel::configured_ssh_command(
+        &target.ssh,
+        &control_socket,
+        borrowed_master,
+        control_persist,
+    );
     command
-        .arg(&target.destination)
+        .arg(&target.ssh.destination)
         .arg(format!("exec \"$HOME/{remote_runtime}\" serve --stdio"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1031,7 +1008,7 @@ async fn start_remote_runtime(
         return Err(error);
     }
     let hello_result = tokio::time::timeout(
-        Duration::from_secs(target.connect_timeout_seconds),
+        Duration::from_secs(target.ssh.connect_timeout_seconds),
         hello_rx,
     )
     .await;
@@ -1062,9 +1039,9 @@ async fn start_remote_runtime(
         runtime_id,
         source: target.source,
         profile: target.profile,
-        user: target.user,
-        host: target.host,
-        port: target.port,
+        user: target.ssh.user,
+        host: target.ssh.host,
+        port: target.ssh.port,
         path: hello.path,
         borrowed_master,
     })
@@ -1162,14 +1139,16 @@ async fn resolve_target(
             ResolvedTarget {
                 source: "profile".to_string(),
                 profile: Some(profile_config.name),
-                destination: profile_config.host.clone(),
-                user: String::new(),
-                host: profile_config.host,
-                port: 22,
                 project_dir: profile_config.project_dir,
-                connect_timeout_seconds: profile_config.connect_timeout_seconds.max(1),
-                extra_args: Vec::new(),
-                requested_socket: None,
+                ssh: SshTarget {
+                    destination: profile_config.host.clone(),
+                    user: String::new(),
+                    host: profile_config.host,
+                    port: 22,
+                    connect_timeout_seconds: profile_config.connect_timeout_seconds.max(1),
+                    extra_args: Vec::new(),
+                    requested_socket: None,
+                },
             }
         }
         RemoteHarnessLaunch::FocusedSsh {
@@ -1179,52 +1158,25 @@ async fn resolve_target(
             let info = ssh_manager
                 .detect(terminal_session_id, pty_manager)
                 .ok_or_else(|| "focused terminal is not an active SSH session".to_string())?;
-            validate_ssh_identity(&info.user, &info.host)?;
+            let ssh = ssh_channel::focused_target(&info)?;
             let project_dir = project_dir
                 .filter(|path| !path.trim().is_empty())
                 .or_else(|| ssh_manager.get_remote_cwd(terminal_session_id))
                 .ok_or_else(|| {
                     "remote project path is required (OSC 7 did not report a CWD)".to_string()
                 })?;
-            let extra_args = safe_extra_args(&info);
             ResolvedTarget {
                 source: "focused_ssh".to_string(),
                 profile: None,
-                destination: format!("{}@{}", info.user, info.host),
-                user: info.user,
-                host: info.host,
-                port: info.port,
                 project_dir,
-                connect_timeout_seconds: DEFAULT_CONNECT_TIMEOUT_SECS,
-                extra_args,
-                requested_socket: info.active_control_socket.map(expand_home),
+                ssh,
             }
         }
     };
     if !Path::new(&target.project_dir).is_absolute() {
         return Err("remote project_dir must be absolute".to_string());
     }
-    let ssh_config = resolve_ssh_config(&target).await?;
-    target.user = ssh_config
-        .get("user")
-        .cloned()
-        .filter(|value| !value.is_empty())
-        .unwrap_or(target.user);
-    target.host = ssh_config
-        .get("hostname")
-        .cloned()
-        .filter(|value| !value.is_empty())
-        .unwrap_or(target.host);
-    target.port = ssh_config
-        .get("port")
-        .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(target.port);
-    if target.requested_socket.is_none() {
-        target.requested_socket = ssh_config
-            .get("controlpath")
-            .filter(|value| value.as_str() != "none" && !value.contains('%'))
-            .map(|value| expand_home(value.clone()));
-    }
+    let ssh_config = ssh_channel::apply_ssh_config(&mut target.ssh).await?;
     if ssh_config
         .get("forwardagent")
         .map(|value| value == "yes")
@@ -1232,32 +1184,10 @@ async fn resolve_target(
     {
         log::warn!(
             "Remote Harness target {} has ForwardAgent enabled in SSH config",
-            target.destination
+            target.ssh.destination
         );
     }
     Ok(target)
-}
-
-async fn resolve_ssh_config(target: &ResolvedTarget) -> Result<HashMap<String, String>, String> {
-    let mut command = Command::new("ssh");
-    command.arg("-G");
-    append_target_args(&mut command, target);
-    let output = command
-        .arg(&target.destination)
-        .output()
-        .await
-        .map_err(|e| format!("ssh -G failed to run: {e}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "ssh -G failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| line.split_once(' '))
-        .map(|(key, value)| (key.to_string(), value.trim().to_string()))
-        .collect())
 }
 
 fn validate_profile(profile: &RemoteHarnessProfile) -> Result<(), String> {
@@ -1283,96 +1213,13 @@ fn validate_profile(profile: &RemoteHarnessProfile) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_ssh_identity(user: &str, host: &str) -> Result<(), String> {
-    let user_valid = !user.is_empty()
-        && !user.starts_with('-')
-        && user
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'));
-    let host_valid = !host.is_empty()
-        && !host.starts_with('-')
-        && host.chars().all(|ch| {
-            ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-' | ':' | '[' | ']')
-        });
-    if !user_valid || !host_valid {
-        return Err("focused SSH target contains an unsafe user or host".to_string());
-    }
-    Ok(())
-}
-
-fn safe_extra_args(info: &SshConnectionInfo) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut args = info.extra_args.iter();
-    while let Some(flag) = args.next() {
-        let Some(value) = args.next() else {
-            break;
-        };
-        if matches!(flag.as_str(), "-i" | "-J") {
-            out.push(flag.clone());
-            out.push(value.clone());
-        }
-    }
-    out
-}
-
-fn append_target_args(command: &mut Command, target: &ResolvedTarget) {
-    if target.port != 22 {
-        command.arg("-p").arg(target.port.to_string());
-    }
-    command.args(&target.extra_args);
-}
-
-async fn select_control_socket(
-    target: &ResolvedTarget,
-    runtime_id: &str,
-) -> Result<(PathBuf, bool), String> {
-    if let Some(socket) = target.requested_socket.as_ref() {
-        if check_master(target, socket).await {
-            return Ok((socket.clone(), true));
-        }
-    }
-    let base = crate::config::config_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join("ssh-sockets");
-    std::fs::create_dir_all(&base)
-        .map_err(|e| format!("create SSH socket directory {}: {e}", base.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700))
-            .map_err(|e| format!("secure SSH socket directory {}: {e}", base.display()))?;
-    }
+/// Remote Harness owns one master per runtime.
+fn owned_socket_name(target: &ResolvedTarget, runtime_id: &str) -> String {
     let mut hasher = DefaultHasher::new();
-    target.destination.hash(&mut hasher);
-    target.port.hash(&mut hasher);
+    target.ssh.destination.hash(&mut hasher);
+    target.ssh.port.hash(&mut hasher);
     runtime_id.hash(&mut hasher);
-    Ok((base.join(format!("remote-{:016x}", hasher.finish())), false))
-}
-
-async fn check_master(target: &ResolvedTarget, socket: &Path) -> bool {
-    let mut command = Command::new("ssh");
-    command.arg("-S").arg(socket).arg("-O").arg("check");
-    append_target_args(&mut command, target);
-    command
-        .arg(&target.destination)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await
-        .map(|status| status.success())
-        .unwrap_or(false)
-}
-
-fn expand_home(path: String) -> PathBuf {
-    if path == "~" {
-        return dirs::home_dir().unwrap_or_else(|| PathBuf::from(path));
-    }
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest);
-        }
-    }
-    PathBuf::from(path)
+    format!("remote-{:016x}", hasher.finish())
 }
 
 async fn run_runtime_reader<R>(
@@ -1623,37 +1470,11 @@ mod tests {
     }
 
     #[test]
-    fn safe_extra_args_keep_only_identity_and_jump_host() {
-        let info = SshConnectionInfo {
-            user: "alice".into(),
-            host: "buildbox".into(),
-            port: 22,
-            control_socket: None,
-            active_control_socket: None,
-            extra_args: vec![
-                "-i".into(),
-                "/tmp/key".into(),
-                "-o".into(),
-                "ForwardAgent=yes".into(),
-                "-J".into(),
-                "jump".into(),
-            ],
-        };
-        assert_eq!(safe_extra_args(&info), vec!["-i", "/tmp/key", "-J", "jump"]);
-    }
-
-    #[test]
     fn workspace_method_allowlist_is_narrow() {
         assert_eq!(
             parse_workspace_method("read").unwrap(),
             RemoteMethod::WorkspaceRead
         );
         assert!(parse_workspace_method("agent_spawn").is_err());
-    }
-
-    #[test]
-    fn focused_ssh_identity_rejects_option_like_user() {
-        assert!(validate_ssh_identity("-oProxyCommand", "host").is_err());
-        assert!(validate_ssh_identity("alice", "2001:db8::1").is_ok());
     }
 }

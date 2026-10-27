@@ -91,6 +91,7 @@ async function main(): Promise<void> {
   try {
     await startPtyBridge(bus, compositor, {
       onCwd: (sessionId, cwd, hostname) => {
+        compositor.noteOsc7(sessionId, cwd, hostname);
         void invoke('set_ssh_remote_cwd', { sessionId, cwd, hostname })
           .catch(() => { /* ignore — ssh feature may be disabled */ });
       },

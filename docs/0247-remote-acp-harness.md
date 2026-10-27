@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-09-13
 > Milestone: ACP Harness — remote execution
+> Amended by: [0336](./0336-inline-ai-verify-on-pane-host.md) — the focused-SSH resolution and ssh command helpers moved from `remote_harness.rs` to `src-tauri/src/ssh_channel.rs` (shared with Inline AI's `host_exec`); behaviour unchanged. `SshManager::detect` now re-parses when the pane's `ssh` pid changes.
 
 ## Problem
 

@@ -250,13 +250,16 @@ export interface XenonConfig {
 /** spec 333: `[inline_ai]` — the ACP backend behind the terminal `Cmd+K`
  *  overlay. `model` and `mode` are applied after `session/new`; '' keeps the
  *  backend's own. `context` (spec 334) attaches the pane snapshot.
- *  `follow_up` (spec 335) proposes a fix when an accepted command fails. */
+ *  `follow_up` (spec 335) proposes a fix when an accepted command fails.
+ *  `remote_checks` (spec 336) lets an SSH pane's Cmd+K run read-only checks
+ *  on that host. */
 export interface InlineAiConfig {
   backend: string;
   model: string;
   mode: string;
   context: boolean;
   follow_up: boolean;
+  remote_checks: boolean;
 }
 
 export interface KryptonConfig {

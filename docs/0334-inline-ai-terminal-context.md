@@ -5,6 +5,7 @@
 > Milestone: M8 — Polish
 > Builds on: [0050](./0050-inline-ai.md) (overlay) · [0333](./0333-inline-ai-acp-backend.md) (ACP transport) · [0284](./0284-program-status-osc7501.md) (OSC 133 hook)
 > Extended by: [0335](./0335-inline-ai-failure-follow-up.md) — the OSC 133 handler also feeds the failure follow-up; `commandOutput` is exported, and `rejectedOutput` / `buildCommandResult` build its `<command_result>` with the same caps and redaction. Note that fish sends no `C`/`D` for a line it rejects as a syntax error, so this snapshot never lists such a line.
+> Amended by: [0336](./0336-inline-ai-verify-on-pane-host.md) — in an SSH pane with `[inline_ai] remote_checks` on, the snapshot omits its `ssh:` and local `shell:` lines; a `<pane_host>` block with the host, its `$SHELL`, its OSC 7 cwd and `host_exec`'s limits takes their place on the first prompt. The SSH edge case below still holds when `remote_checks = false`.
 
 ## Problem
 

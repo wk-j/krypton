@@ -1541,7 +1541,7 @@ See `docs/0323-harness-follow-up-actions.md` and `docs/0327-harness-follow-up-pr
 ```
 1. Cmd+K → overlay → ↵ (insert) or ⇧↵ (insert + '\n'), cmd mode. The overlay writes the
    command, then hooks.onAccept → Compositor.acceptInlineAI: with follow_up on, the Quick
-   Terminal hidden and OSC 133 seen on the focused terminal, overlay.detach() (the
+   Terminal hidden and the terminal's latest OSC 133 event a prompt (spec 336), overlay.detach() (the
    conversation stays open) and new InlineFollowUp(pane, overlay, command, run).
    Otherwise overlay.close() as before.
 2. ⇧↵ marks the cursor row at once; ↵ waits for the user's Enter (onData '\r').
@@ -1561,6 +1561,34 @@ See `docs/0323-harness-follow-up-actions.md` and `docs/0327-harness-follow-up-pr
 ```
 
 See `docs/0335-inline-ai-failure-follow-up.md`.
+
+## Inline AI Host Checks Flow (spec 336)
+
+```
+1. Cmd+K in a pane whose foreground process is ssh, [inline_ai] remote_checks on:
+   compositor → detect_ssh_session → openInlineRemote(sessionId, "user@host",
+   latest OSC 7 {host, cwd}) — not awaited; the overlay opens at once.
+2. Rust inline_remote_open: SshManager::detect (re-parsed if the ssh pid changed) →
+   ssh_channel focused_target + ssh -G → borrow the pane's ControlMaster after -O check,
+   else own ssh-sockets/inline-<hash>.sock (BatchMode=yes) → probe over `sh -s`:
+   basename "$SHELL", hostname -s → token. Failure → { kind: 'off', reason }.
+3. InlineAcpSession.setup awaits the MCP list: setMcpServers([krypton_inline →
+   http://127.0.0.1:<hook port>/mcp/inline, header x-krypton-inline-capability]) → session/new.
+   A local pane's session gets setMcpServers([]).
+4. First prompt = instructions (read-only + verify-first rules) + <terminal_context>
+   (without ssh:/shell: lines) + <pane_host> (host, $SHELL, OSC 7 cwd, host_exec limits).
+5. Agent calls host_exec → session/request_permission (title mcp__krypton_inline__host_exec)
+   → inline fence: isExactMcpTool → allow_once; the overlay shows "<host> $ <command>".
+6. POST /mcp/inline tools/call → token check → read_only_script(command, cwd):
+   None → isError "Not run: only Krypton's read-only commands …" (nothing spawned);
+   Some(script) → ssh … <dest> sh -s, script on stdin, 15 s timeout, 2 per token →
+   "exit N / --- stdout --- / --- stderr ---", 8 KiB head + tail each.
+7. Conversation close (Esc, accept without follow-up, follow-up end, next Cmd+K) →
+   inline_remote_close(token): token revoked, running checks killed; an owned master
+   stays for ControlPersist.
+```
+
+See `docs/0336-inline-ai-verify-on-pane-host.md`.
 
 ## E2E Commands Flow (spec 328)
 

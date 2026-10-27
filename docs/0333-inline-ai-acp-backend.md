@@ -4,6 +4,7 @@
 > Date: 2026-10-26
 > Milestone: M8 — Polish
 > Amends: [0050](./0050-inline-ai.md) (model transport only; keys, modes and overlay UI unchanged)
+> Amended by: [0336](./0336-inline-ai-verify-on-pane-host.md) — sessions are no longer always `mcpServers: []`: `setup` calls `setMcpServers` before every `session/new`, with `krypton_inline` (`host_exec`) in an SSH pane and none elsewhere. The fence approves that one tool, matched exactly, with `allow_once`; every other request is still declined.
 
 ## Problem
 

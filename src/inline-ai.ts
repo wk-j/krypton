@@ -12,6 +12,7 @@ import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import type { InlineAcpConversation, InlineTurnEvent } from './inline-ai-session';
 import { collapseSpace, type TerminalContextSnapshot } from './terminal-context';
+import { remoteHostBlock, remoteLabel, type InlineRemote } from './inline-ai-remote';
 import { STREAMING_GRID_MAX_LINES, gridifyCodeBlocks } from './acp/cell-grid';
 import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 
@@ -49,6 +50,10 @@ export type FixOutcome =
 
 const READ_ONLY_RULE = `You may run read-only commands (git status, git diff, git log, ls, cat, grep, find) to gather context first. NEVER run anything that changes state — files, processes, git history, packages. Such calls are refused, and the user runs the command themselves.`;
 
+// Spec 336: the agent decides whether to look before it answers, and a cheap
+// model often does not; this makes looking the default.
+const VERIFY_RULE = `VERIFY FIRST: before you answer, check every fact the answer depends on — paths, file contents, names, scripts, ports, PIDs, services, installed tools — with read-only commands. Combine checks into one command where you can. Never guess something you can look up. If you could not check something, say so in the # comment (command) or in the answer.`;
+
 const INLINE_CMD_INSTRUCTIONS = `You are a terminal command generator. Your ONLY job is to output a shell command the user can run. NEVER output results, lists, explanations, or prose.
 
 RULES:
@@ -59,6 +64,7 @@ RULES:
 - "commit changes" → run \`git diff --stat\` to understand what changed, then output a \`git commit\` command with a good message.
 - "kill the server" → find the PID with a read-only command, then output the \`kill\` command. Do NOT kill it yourself.
 - ${READ_ONLY_RULE}
+- ${VERIFY_RULE}
 
 OUTPUT FORMAT:
 - Line 1: the shell command. Nothing else.
@@ -68,6 +74,7 @@ OUTPUT FORMAT:
 const INLINE_ASK_INSTRUCTIONS = `You are a concise terminal expert. Answer directly. NEVER ask follow-up questions.
 
 - ${READ_ONLY_RULE}
+- ${VERIFY_RULE}
 - Be brief — a few sentences or a short list. Use markdown formatting (headings, lists, code blocks, bold) for readability.
 - No XML tags.
 - If the answer is a command, show it in a \`code span\` or fenced code block.`;
@@ -159,8 +166,13 @@ export class InlineAIOverlay {
   private cwd: string | null;
   /** spec 334: the pane snapshot taken at Cmd+K; null when off or unavailable. */
   private context: TerminalContextSnapshot | null;
-  /** True once a turn carrying `context` completed; follow-ups skip it. */
-  private contextSent = false;
+  /** True once a turn carrying the preamble (context, pane host) completed; follow-ups skip it. */
+  private preambleSent = false;
+  /** Spec 336: the SSH pane's host channel, or null for a local pane. */
+  private readonly remote: Promise<InlineRemote> | null;
+  /** The host `host_exec` runs on, once the channel is up. */
+  private remoteHost: string | null = null;
+  private remoteSettled = false;
   private closed = false;
   /** Spec 335: set by `runFix`; an accept then replaces the shell line. */
   private replaceLine = false;
@@ -176,11 +188,13 @@ export class InlineAIOverlay {
     hooks: InlineAIOverlayHooks,
     cwd: string | null,
     context: TerminalContextSnapshot | null,
+    remote: Promise<InlineRemote> | null,
   ) {
     this.conversation = conversation;
     this.hooks = hooks;
     this.cwd = cwd;
     this.context = context;
+    this.remote = remote;
 
     // ── Build DOM ──────────────────────────────────────────────
     this.el = document.createElement('div');
@@ -211,6 +225,12 @@ export class InlineAIOverlay {
     inputRow.appendChild(this.inputEl);
     inputRow.appendChild(this.modeEl);
     if (context) this.setLabel(context.label);
+    remote?.then((state) => {
+      this.remoteSettled = true;
+      if (this.closed) return;
+      if (state.kind === 'on') this.remoteHost = state.info.host;
+      this.setLabel([context?.label, remoteLabel(state)].filter(Boolean).join(' \u00b7 '));
+    });
     this.el.appendChild(inputRow);
 
     // Result area (hidden initially)
@@ -364,7 +384,7 @@ export class InlineAIOverlay {
     this.replaceLine = true;
     this.setLabel(label);
     this.fixFor = failedCommand;
-    const error = await this.stream(`${INLINE_CMD_INSTRUCTIONS}\n\n${report}\n\nRequest: ${FIX_REQUEST}`, null);
+    const error = await this.stream(`${INLINE_CMD_INSTRUCTIONS}\n\n${report}\n\nRequest: ${FIX_REQUEST}`, false);
     this.fixFor = null;
     if (error !== null) return { kind: 'error', message: error };
     if (this.command === '') return { kind: 'none', reason: this.explanation };
@@ -432,17 +452,26 @@ export class InlineAIOverlay {
 
   private async submit(query: string): Promise<void> {
     // ACP has no system-prompt field: every prompt carries the mode's rules.
-    // The pane snapshot (spec 334) rides only the first completed turn; the
-    // session keeps it for follow-ups, and it already names the cwd.
+    // The preamble — the pane snapshot (spec 334) and the SSH pane's host
+    // (spec 336) — rides only the first completed turn; the session keeps it
+    // for follow-ups, and the snapshot already names the cwd.
     const instructions = this.askMode ? INLINE_ASK_INSTRUCTIONS : INLINE_CMD_INSTRUCTIONS;
-    const pendingContext = this.contextSent ? null : this.context;
-    const terminal = pendingContext ? `${pendingContext.text}\n\n` : '';
+    const carriesPreamble = !this.preambleSent;
     const where = this.context === null && this.cwd ? `Working directory: ${this.cwd}\n\n` : '';
-    await this.stream(`${instructions}\n\n${terminal}${where}Request: ${query}`, pendingContext);
+    const text = this.preamble(carriesPreamble).then((preamble) => `${instructions}\n\n${preamble}${where}Request: ${query}`);
+    await this.stream(text, carriesPreamble);
+  }
+
+  /** The context block and the pane-host block, each followed by a blank line. */
+  private async preamble(send: boolean): Promise<string> {
+    if (!send) return '';
+    const blocks = [this.context?.text];
+    if (this.remote) blocks.push(remoteHostBlock(await this.remote));
+    return blocks.filter(Boolean).map((block) => `${block}\n\n`).join('');
   }
 
   /** One turn: streams into the result area, then paints it. Resolves to the error message, or null. */
-  private async stream(text: string, pendingContext: TerminalContextSnapshot | null): Promise<string | null> {
+  private async stream(prompt: string | Promise<string>, carriesPreamble: boolean): Promise<string | null> {
     this.phase = 'loading';
     this.inputEl.readOnly = true;
     this.spinnerEl.hidden = false;
@@ -455,6 +484,11 @@ export class InlineAIOverlay {
     this.explainEl.classList.remove('krypton-inline-ai__explain--error');
 
     const dots = this.spinnerEl.querySelector('.krypton-inline-ai__dots') as HTMLElement;
+    // Spec 336: the SSH channel may still be connecting.
+    if (typeof prompt !== 'string' && this.remote && !this.remoteSettled && dots) {
+      dots.textContent = 'Connecting to the SSH host...';
+    }
+    const text = await prompt;
 
     this.command = '';
     this.answer = '';
@@ -499,7 +533,7 @@ export class InlineAIOverlay {
           this.resultEl.hidden = true;
           this.commandEl.textContent = '';
           this.explainEl.textContent = '';
-          if (dots) dots.textContent = `Running ${e.title}...`;
+          if (dots) dots.textContent = e.command ? `${this.remoteHost ?? 'host'} $ ${e.command}` : `Running ${e.title}...`;
           this.spinnerEl.hidden = false;
           usedTools = true;
           break;
@@ -508,7 +542,7 @@ export class InlineAIOverlay {
 
     try {
       await this.conversation.prompt(text, onEvent);
-      if (pendingContext) this.contextSent = true;
+      if (carriesPreamble) this.preambleSent = true;
       if (this.fixFor !== null) this.screenFix(this.fixFor);
       if (!this.closed) this.onComplete();
       return null;

@@ -4,6 +4,7 @@
 > Date: 2026-10-26
 > Milestone: Inline AI
 > Builds on: 0050 (overlay) · 0333 (ACP backend) · 0334 (terminal context) · 0323 (harness follow-up pattern)
+> Amended by: [0336](./0336-inline-ai-verify-on-pane-host.md) — an accept arms a watch only when the terminal's latest OSC 133 event is a prompt (`A`). A local fish running `ssh` into a host that sends no OSC 133 has `C` last, so it is not armed; before this, logging out with `Ctrl+D` sent a bogus "rejected" fix request (reproduced with a nested `bash --norc`). The report's `shell:` is the pane's shell (the host's `$SHELL` in an SSH pane).
 
 ## Problem
 
@@ -178,8 +179,8 @@ The compositor holds one or none. Fields: `paneId`, `terminal`, the detached `ov
 `watch`, the chip, and `state: 'watching' | 'fixing' | 'ready' | 'none' | 'error'`.
 
 1. **Arm.** An accept in cmd mode calls `onAccept(command, run)`. The compositor arms when all of
-   these hold: `follow_up` is true, the Quick Terminal is hidden, and the focused pane has sent at
-   least one OSC 133 sequence (a `WeakSet<Terminal>` filled by the 133 handler). Otherwise it
+   these hold: `follow_up` is true, the Quick Terminal is hidden, and the terminal's latest OSC 133
+   event is a prompt (`osc133Last`; spec 336 — originally "has sent at least one OSC 133"). Otherwise it
    calls `overlay.close()`, as today. `inlineAI` becomes `null` in both cases, so the router
    returns to Normal (`input-router.ts:1341`).
 2. **Watch.** In `wirePaneInput`, `onData` calls `followUp.input(pane.id, data)`, which is one
@@ -272,13 +273,13 @@ gets `InlineAiConfig.follow_up: boolean`.
 - **`↵` insert, then `Ctrl+C`:** no Enter was seen, so fish's `A` is taken as a repaint and the
   watch stays armed (observed in the smoke run). The next command's `C` (another cmdline), a
   typed line without the command, or the next `Cmd+K` ends it.
-- **zsh/bash without shell integration; tmux; Quick Terminal:** no OSC 133, so never armed.
+- **zsh/bash without shell integration; tmux; Quick Terminal; `ssh` from a local fish into a host
+  that sends no OSC 133:** the latest event is not a prompt, so never armed (spec 336).
 - **SSH pane running fish remotely:** works; the remote `A`/`C`/`D` come through the PTY.
 - **Two panes:** one follow-up at a time; `Cmd+K` elsewhere ends it (0333 / `acp.rs` rule).
 - **The backend dies mid-fix:** the chip shows `--error`, and the next `Cmd+K` respawns (0333).
 - **Secrets in the output:** they are redacted, as in 0334.
-- **vi-mode line editors:** `\x05\x15` may not clear the line. The next `C` then has a different
-  cmdline, and that watch drops.
+- **vi-mode line editors:** `\x05\x15` may not clear the line; the next `C` then differs and drops.
 - **App restart:** nothing is persisted.
 
 ## Tests

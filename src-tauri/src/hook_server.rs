@@ -2891,34 +2891,14 @@ async fn handle_harness_memory_mcp(
     }
 
     let result = match method {
-        "initialize" => {
-            // Echo back the client's protocolVersion when we recognize it; the
-            // Kotlin MCP SDK that Junie ships throws `Server's protocol
-            // version is not supported: <ours>` if we unconditionally return
-            // a newer version than what the client requested. Falling back to
-            // the request version (or our default if absent/unknown) keeps
-            // every existing client working — our handler only implements
-            // `tools/list` + `tools/call`, both unchanged across these spec
-            // versions.
-            const SUPPORTED_PROTOCOL_VERSIONS: &[&str] =
-                &["2025-06-18", "2025-03-26", "2024-11-05"];
-            const DEFAULT_PROTOCOL_VERSION: &str = "2025-06-18";
-            let requested = request
-                .get("params")
-                .and_then(|p| p.get("protocolVersion"))
-                .and_then(|v| v.as_str());
-            let negotiated = requested
-                .filter(|v| SUPPORTED_PROTOCOL_VERSIONS.contains(v))
-                .unwrap_or(DEFAULT_PROTOCOL_VERSION);
-            Ok(json!({
-                "protocolVersion": negotiated,
-                "capabilities": { "tools": {} },
-                "serverInfo": {
-                    "name": "krypton-harness-bus",
-                    "version": env!("CARGO_PKG_VERSION"),
-                },
-            }))
-        }
+        "initialize" => Ok(json!({
+            "protocolVersion": negotiated_mcp_protocol_version(&request),
+            "capabilities": { "tools": {} },
+            "serverInfo": {
+                "name": "krypton-harness-bus",
+                "version": env!("CARGO_PKG_VERSION"),
+            },
+        })),
         "tools/list" => {
             let mut tools = without_disabled_lesson_tools(
                 bus_tool_descriptors_for_project(
@@ -2960,6 +2940,28 @@ async fn handle_harness_memory_mcp(
         other => Err(json!({ "code": -32601, "message": format!("Method not found: {other}") })),
     };
 
+    json_rpc_reply(id, result)
+}
+
+/// Echo back the client's protocolVersion when we recognize it; the Kotlin
+/// MCP SDK that Junie ships throws `Server's protocol version is not
+/// supported: <ours>` if we unconditionally return a newer version than what
+/// the client requested. Falling back to the request version (or our default
+/// if absent/unknown) keeps every existing client working — our handlers only
+/// implement `tools/list` + `tools/call`, both unchanged across these spec
+/// versions.
+fn negotiated_mcp_protocol_version(request: &Value) -> &str {
+    const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
+    const DEFAULT_PROTOCOL_VERSION: &str = "2025-06-18";
+    request
+        .get("params")
+        .and_then(|p| p.get("protocolVersion"))
+        .and_then(|v| v.as_str())
+        .filter(|v| SUPPORTED_PROTOCOL_VERSIONS.contains(v))
+        .unwrap_or(DEFAULT_PROTOCOL_VERSION)
+}
+
+fn json_rpc_reply(id: Option<Value>, result: Result<Value, Value>) -> Response {
     match (id, result) {
         (Some(id), Ok(result)) => {
             Json(json!({ "jsonrpc": "2.0", "id": id, "result": result })).into_response()
@@ -2970,6 +2972,55 @@ async fn handle_harness_memory_mcp(
         (None, Ok(_)) => StatusCode::ACCEPTED.into_response(),
         (None, Err(error)) => Json(json!({ "jsonrpc": "2.0", "error": error })).into_response(),
     }
+}
+
+/// GET /mcp/inline — idle Streamable HTTP SSE channel, like
+/// `handle_harness_memory_mcp_sse`.
+async fn handle_inline_mcp_sse() -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>
+{
+    let initial = stream::once(async { Ok::<_, Infallible>(Event::default().comment("ready")) });
+    let s = initial.chain(stream::pending::<Result<Event, Infallible>>());
+    Sse::new(s).keep_alive(KeepAlive::new().interval(Duration::from_secs(5)))
+}
+
+/// POST /mcp/inline — Inline AI's `krypton_inline` MCP server (spec 336): one
+/// tool, `host_exec`, authorised by the `x-krypton-inline-capability` token.
+async fn handle_inline_mcp(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    headers: HeaderMap,
+    Json(request): Json<Value>,
+) -> Response {
+    let id = request.get("id").cloned();
+    let method = request.get("method").and_then(|v| v.as_str()).unwrap_or("");
+    if id.is_none() && method == "notifications/initialized" {
+        return StatusCode::ACCEPTED.into_response();
+    }
+    let token = headers
+        .get(crate::inline_remote::CAPABILITY_HEADER)
+        .and_then(|value| value.to_str().ok());
+    let manager = state
+        .app_handle
+        .state::<Arc<crate::inline_remote::InlineRemoteManager>>()
+        .inner()
+        .clone();
+    let result = match method {
+        "initialize" => Ok(json!({
+            "protocolVersion": negotiated_mcp_protocol_version(&request),
+            "capabilities": { "tools": {} },
+            "serverInfo": {
+                "name": crate::inline_remote::SERVER_NAME,
+                "version": env!("CARGO_PKG_VERSION"),
+            },
+        })),
+        "tools/list" => Ok(manager.tools_list(token)),
+        "tools/call" => {
+            let params = request.get("params").cloned().unwrap_or(Value::Null);
+            manager.tools_call(token, params).await
+        }
+        "" => Err(json!({ "code": -32600, "message": "Missing method" })),
+        other => Err(json!({ "code": -32601, "message": format!("Method not found: {other}") })),
+    };
+    json_rpc_reply(id, result)
 }
 
 /// GET /artifact/:token — serve the registered artifact's HTML (spec 149).
@@ -10153,6 +10204,10 @@ pub fn start(
                     "/mcp/harness/{harness_id}/lane/{lane_label}",
                     get(handle_harness_memory_mcp_sse).post(handle_harness_memory_mcp),
                 )
+                .route(
+                    "/mcp/inline",
+                    get(handle_inline_mcp_sse).post(handle_inline_mcp),
+                )
                 .route("/dashboard", get(handle_dashboard))
                 .route("/telemetry", get(handle_telemetry))
                 .route("/gallery", get(handle_gallery))
@@ -11314,6 +11369,7 @@ mod tests {
                 "/mcp/harness/{harness_id}/lane/{lane_label}",
                 get(ok).post(ok),
             )
+            .route("/mcp/inline", get(ok).post(ok))
             .route("/dashboard", get(ok))
             .route("/telemetry", get(ok))
             .route("/gallery", get(ok))

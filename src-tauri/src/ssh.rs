@@ -24,12 +24,20 @@ pub struct SshConnectionInfo {
     pub extra_args: Vec<String>,
 }
 
+/// A detected connection plus the pid of the `ssh` process it was parsed
+/// from, so a later `detect` can tell the pane reconnected elsewhere.
+#[derive(Debug, Clone)]
+struct CachedConnection {
+    pid: u32,
+    info: SshConnectionInfo,
+}
+
 /// Manages SSH connection detection and control socket lifecycle.
 pub struct SshManager {
     /// Directory for control sockets: ~/.config/krypton/ssh-sockets/
     socket_dir: PathBuf,
-    /// Cached connection info per PTY session ID.
-    connections: Mutex<HashMap<u32, SshConnectionInfo>>,
+    /// Cached connection info per PTY session ID, keyed to the ssh pid.
+    connections: Mutex<HashMap<u32, CachedConnection>>,
     /// Last-known remote CWD per session, reported by frontend via OSC 7.
     remote_cwds: Mutex<HashMap<u32, String>>,
     /// Seconds to keep a ControlMaster alive after the last client disconnects.
@@ -75,31 +83,47 @@ impl SshManager {
     ///
     /// Walks the process tree from the PTY's foreground process upward
     /// to find an `ssh` process, then parses its command-line arguments
-    /// to extract user, host, port, and any extra flags.
+    /// to extract user, host, port, and any extra flags. The parse is
+    /// cached per session only while the same `ssh` pid is running
+    /// (spec 336): a pane that reconnected elsewhere is re-parsed, and a
+    /// pane with no `ssh` process left has no connection.
     pub fn detect(&self, session_id: u32, pty_manager: &PtyManager) -> Option<SshConnectionInfo> {
-        // Check cache first
-        if let Ok(conns) = self.connections.lock() {
-            if let Some(info) = conns.get(&session_id) {
-                return Some(info.clone());
-            }
+        let found = self.find_ssh_process(session_id, pty_manager);
+        self.detect_from(session_id, found)
+    }
+
+    /// `detect` after the process lookup: `found` is the pane's current
+    /// `ssh` pid and command line, if any.
+    fn detect_from(
+        &self,
+        session_id: u32,
+        found: Option<(u32, Vec<String>)>,
+    ) -> Option<SshConnectionInfo> {
+        let mut conns = self.connections.lock().unwrap_or_else(|e| e.into_inner());
+        let Some((pid, cmdline)) = found else {
+            conns.remove(&session_id);
+            return None;
+        };
+        if let Some(cached) = conns.get(&session_id).filter(|cached| cached.pid == pid) {
+            return Some(cached.info.clone());
         }
-
-        // Find the SSH process in the PTY's process tree
-        let ssh_cmdline = self.find_ssh_process(session_id, pty_manager)?;
-
-        // Parse the SSH command line
-        let mut info = parse_ssh_args(&ssh_cmdline)?;
+        let Some(mut info) = parse_ssh_args(&cmdline) else {
+            conns.remove(&session_id);
+            return None;
+        };
 
         // Assign a control socket path
         let socket_name = format!("{}@{}:{}", info.user, info.host, info.port);
         let socket_path = self.socket_dir.join(&socket_name);
         info.control_socket = Some(socket_path.to_string_lossy().to_string());
 
-        // Cache it
-        if let Ok(mut conns) = self.connections.lock() {
-            conns.insert(session_id, info.clone());
-        }
-
+        conns.insert(
+            session_id,
+            CachedConnection {
+                pid,
+                info: info.clone(),
+            },
+        );
         Some(info)
     }
 
@@ -253,9 +277,13 @@ impl SshManager {
     }
 
     /// Walk the process tree for a PTY session to find an ssh process.
-    /// Returns the full command line of the ssh process if found.
+    /// Returns the pid and full command line of the ssh process if found.
     #[cfg(unix)]
-    fn find_ssh_process(&self, session_id: u32, pty_manager: &PtyManager) -> Option<Vec<String>> {
+    fn find_ssh_process(
+        &self,
+        session_id: u32,
+        pty_manager: &PtyManager,
+    ) -> Option<(u32, Vec<String>)> {
         use sysinfo::System;
 
         let shell_pid = pty_manager.get_shell_pid(session_id)?;
@@ -268,7 +296,11 @@ impl SshManager {
     }
 
     #[cfg(not(unix))]
-    fn find_ssh_process(&self, _session_id: u32, _pty_manager: &PtyManager) -> Option<Vec<String>> {
+    fn find_ssh_process(
+        &self,
+        _session_id: u32,
+        _pty_manager: &PtyManager,
+    ) -> Option<(u32, Vec<String>)> {
         None
     }
 
@@ -279,7 +311,7 @@ impl SshManager {
         pid: sysinfo::Pid,
         depth: u32,
         max_depth: u32,
-    ) -> Option<Vec<String>> {
+    ) -> Option<(u32, Vec<String>)> {
         if depth >= max_depth {
             return None;
         }
@@ -296,9 +328,9 @@ impl SshManager {
                     .collect();
                 if cmdline.is_empty() {
                     // macOS fallback: use ps
-                    return read_cmdline_ps(pid.as_u32());
+                    return read_cmdline_ps(pid.as_u32()).map(|cmdline| (pid.as_u32(), cmdline));
                 }
-                return Some(cmdline);
+                return Some((pid.as_u32(), cmdline));
             }
         }
 
@@ -614,6 +646,30 @@ mod tests {
     fn test_parse_no_host_returns_none() {
         let args = vec!["ssh".into(), "-v".into()];
         assert!(parse_ssh_args(&args).is_none());
+    }
+
+    #[test]
+    fn detect_reparses_when_the_ssh_pid_changes() {
+        let mgr = SshManager {
+            socket_dir: PathBuf::from("/tmp/test-sockets"),
+            connections: Mutex::new(HashMap::new()),
+            remote_cwds: Mutex::new(HashMap::new()),
+            control_persist: 600,
+            local_hostname: "my-mac".into(),
+        };
+        let argv = |dest: &str| vec!["ssh".to_string(), dest.to_string()];
+
+        let first = mgr.detect_from(7, Some((100, argv("alice@a")))).unwrap();
+        assert_eq!(first.host, "a");
+        // Same pid: the cached parse is reused.
+        let cached = mgr.detect_from(7, Some((100, argv("bob@b")))).unwrap();
+        assert_eq!(cached.host, "a");
+        // The pane reconnected elsewhere: a new pid is re-parsed.
+        let moved = mgr.detect_from(7, Some((200, argv("bob@b")))).unwrap();
+        assert_eq!((moved.user.as_str(), moved.host.as_str()), ("bob", "b"));
+        // No ssh process left: no connection, and the entry is dropped.
+        assert!(mgr.detect_from(7, None).is_none());
+        assert!(mgr.connections.lock().unwrap().is_empty());
     }
 
     #[test]
