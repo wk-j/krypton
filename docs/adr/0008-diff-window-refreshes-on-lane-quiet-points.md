@@ -48,3 +48,10 @@ design, not a bug.
 - A reader mid-file when a refresh lands still sees content change under
   them at quiet points; preserving file + scroll position is the mitigation,
   and `r` puts the timing in the human's hands when that is not enough.
+
+## Rails
+
+Applies to: `src/diff-view.ts`
+
+- The Diff Window never watches the filesystem and never refreshes while a lane is writing; it re-collects the working diff only when a same-repo harness lane goes `idle`, once on reveal after being marked dirty, or on `r`.
+- A refresh keeps the current file and scroll position.

@@ -38,3 +38,14 @@ ADR-0001 had rejected an "independent observer LLM watching all lane streams" an
 - **Accepted cost:** one more fenced backend process per harness, disposed after 10 minutes without a run, and model tokens for every changed working tree once a project trusts its manifest. `[acp_harness.rails] mode = "off"` or `#rails off` stops it.
 - **Accepted risk: a stale result.** A lane may write while a run is in flight. The run is then marked `stale` and re-run at the next quiet point; it is never presented as current.
 - **Machine-local.** The run ledger lives in `.krypton/rails/runs/` of the project and is not published to Xenon. Remote harnesses do not get the verifier.
+
+## Rails
+
+Applies to: `src/acp/harness-rails-controller.ts`, `src/acp/rails/**`, `src/acp/components/rails-dock/**`, `src-tauri/src/rails.rs`, `src/workspace-footer-rails.ts`
+
+- The verdict is computed in code: any `fail` or `timeout` check makes the run `check_failed` whatever the judge returns, and a judge finding whose `rule` is not an id the harness sent is dropped. `check:rails-verdict`
+- `rails_run_check` re-hashes `.krypton/rails.toml` and refuses with `untrusted` unless that exact content is in the trust store; the gate lives in Rust, not in the frontend. `check:rails-trust-gate`
+- The verifier never sends findings to a lane by itself; only `#rails send` and `s` in the Rails dock deliver a `[rails]` envelope.
+- Rails findings never become attention items; rails code never raises a judgement item or writes the demand queue.
+- Only a failed check is coloured, as a fault; model findings carry no score, no ranking and no alarm colour.
+- The verifier never edits project files; its only writes are the run ledger under `.krypton/rails/` and the trust store.
