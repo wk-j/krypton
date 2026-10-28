@@ -125,16 +125,23 @@
     list-style: none;
   }
 
+  /* Name above its command, not beside it: in the 352px column a side-by-side
+     grid sized each row to its own name, so the commands started at a
+     different column per row and wrapped in whatever width was left. */
   .acp-rails-dock__argv li {
-    display: grid;
-    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
-    gap: 8px;
-    padding: 2px 0;
+    padding: 3px 0;
+  }
+
+  .acp-rails-dock__argv .acp-rails-dock__name {
+    display: block;
+    overflow-wrap: anywhere;
   }
 
   .acp-rails-dock__argv code {
+    display: block;
+    padding-left: 2ch;
     overflow-wrap: anywhere;
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
     font: inherit;
   }
 
