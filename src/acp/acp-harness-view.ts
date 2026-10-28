@@ -24,6 +24,8 @@ import { DEFAULT_LIVE_VOICE, type LiveDelivery } from './live-voice';
 import { HarnessTimelineController } from './harness-timeline-controller';
 import { HarnessE2eController } from './harness-e2e-controller';
 import { HarnessTicketController } from './harness-ticket-controller';
+import { HarnessRailsController } from './harness-rails-controller';
+import { HarnessDock } from './harness-dock';
 import { HarnessReviewLoopController } from './harness-review-loop-controller';
 import { HarnessSteerController } from './harness-steer-controller';
 import { HarnessAssistController } from './harness-assist-controller';
@@ -53,6 +55,7 @@ import type {
   HarnessReviewLoopHost,
   HarnessSteerHost,
   HarnessTicketHost,
+  HarnessRailsHost,
   HarnessTimelineHost,
   ReviewSubjectResult,
 } from './harness-view-host';
@@ -73,6 +76,7 @@ import {
   parsePanelsCommand,
   readHiddenPanels,
   writeHiddenPanels,
+  type HarnessDockTab,
   type HarnessPanelId,
   type PanelsCommand,
 } from './harness-panel-visibility';
@@ -877,6 +881,9 @@ const REMOTE_UNSUPPORTED_HASH_COMMANDS = new Set([
   '#fix-github-issue', '#handle-github-issue', '#post-github-comment', '#tag-github-issue',
 ]);
 
+/** spec 337: composer editing chords a focused Rails dock swallows (Ctrl+U/K/W/H/D/A/E). */
+const RAILS_DOCK_CTRL_EDIT_KEYS: Readonly<Record<string, true>> = { u: true, k: true, w: true, h: true, d: true, a: true, e: true };
+
 export const ACP_HARNESS_LEADER_KEYS: readonly LeaderKeySpec[] = [
   { key: '+', label: 'Add Lane', group: 'Harness' },
   { key: '_', label: 'Close Active Lane', group: 'Harness', effect: 'danger' },
@@ -1254,6 +1261,10 @@ export class AcpHarnessView implements ContentView {
    *  (acp_save/load_issue_bindings) and rehydrated on register. */
   private readonly issueBindings = new Map<string, IssueBinding>();
   private readonly ticketCtl = new HarnessTicketController(this.ticketHost());
+  /** spec 337: the `dock.right` column — Ticket and Rails tabs, shown tab, reserved width. */
+  private readonly dock: HarnessDock;
+  /** spec 337: the Rails verifier. Null on a remote harness, where it never exists. */
+  private readonly railsCtl: HarnessRailsController | null;
   /** Project-local autonomous Timeline settings and legacy migration state. */
   private readonly timelineCtl = new HarnessTimelineController(this.timelineHost());
   /** spec 328: `#e2e` — run and track the project's e2e cases from the transcript. */
@@ -1624,6 +1635,8 @@ export class AcpHarnessView implements ContentView {
     this.element = document.createElement('div');
     this.element.className = 'acp-harness';
     this.element.tabIndex = 0;
+    this.dock = new HarnessDock(this.element, () => this.projectDir, (tab) => this.onDockShown(tab));
+    this.railsCtl = this.remoteRuntimeId ? null : new HarnessRailsController(this.railsHost());
     if (SPEC114_DEV) installLaneBodyScrollTracer();
     this.coordinator = new InterLaneCoordinator(this.laneBus, this.buildLaneHost());
     // spec 240: transcript annotations drain on idle like other human→lane
@@ -4533,6 +4546,32 @@ export class AcpHarnessView implements ContentView {
       if (review) return this.handleFsReviewKey(e, lane, review);
     }
 
+    // spec 337: a focused dock column. Pending permission / write-review prompts
+    // above keep their keys (questions returned earlier); only then does the
+    // column own `[` / `]` and the focused Rails dock its list keys.
+    const dockFocused = document.activeElement instanceof Node && this.dock.el.contains(document.activeElement);
+    const laneBlocked = lane !== null && (
+      lane.pendingComputerCommands.length > 0
+      || lane.pendingPermissions.length > 0
+      || this.firstUnresolvedFsReview(lane) !== null
+    );
+    if (dockFocused && !laneBlocked) {
+      if (this.dock.handleKey(e)) return true;
+      if (this.railsCtl?.dockEl.contains(document.activeElement)) {
+        if (this.railsCtl.handleDockKey(e)) return true;
+        // Nothing else may reach the composer it hides: no typing, no
+        // Backspace/arrows/Tab editing the draft or cycling the permission
+        // mode, no Ctrl editing chords. Cmd and leader shortcuts pass.
+        if (!e.metaKey && !e.altKey && (!e.ctrlKey || RAILS_DOCK_CTRL_EDIT_KEYS[e.key.toLowerCase()] === true)) {
+          e.preventDefault();
+          return true;
+        }
+      } else if (e.key === 'Escape') {
+        // spec 331: the Ticket dock's own listener hides it.
+        return false;
+      }
+    }
+
     if (this.focus === 'transcript' && this.handleTranscriptKey(e)) return true;
 
     if (!lane) return false;
@@ -4921,6 +4960,7 @@ export class AcpHarnessView implements ContentView {
     this.dictationCtl.abort(false);
     this.liveVoiceCtl.dispose();
     this.assistCtl.dispose(); // spec 306
+    this.railsCtl?.dispose(); // spec 337: cancels a run, writes no record
     this.composerBloomLayer?.replaceChildren();
     this.composerBloomLayer = null;
     this.composerBloomLaneId = null;
@@ -5053,6 +5093,7 @@ export class AcpHarnessView implements ContentView {
       this.issueReportUnlisten = null;
     }
     this.ticketCtl.dispose();
+    this.dock.dispose();
     if (this.reviewOutcomeUnlisten) {
       this.reviewOutcomeUnlisten();
       this.reviewOutcomeUnlisten = null;
@@ -6295,7 +6336,12 @@ export class AcpHarnessView implements ContentView {
     });
     body.appendChild(this.dashboardEl);
 
-    this.ticketCtl.mountDock(body);
+    // Spec 337: the dock column (tab strip + `dock.right` slot) sits in the
+    // Active Ticket dock's old place; it owns each dock's `hidden`.
+    this.ticketCtl.mountDock();
+    this.dock.setPane('ticket', this.ticketCtl.ticketDockEl);
+    if (this.railsCtl) this.dock.setPane('rails', this.railsCtl.dockEl);
+    body.appendChild(this.dock.el);
 
     // Anchors in this view — agent-rendered markdown and ticket links — always
     // open in the OS browser; intercept clicks so the app webview never navigates.
@@ -6473,7 +6519,7 @@ export class AcpHarnessView implements ContentView {
         'lane.understats': layoutSlotContainer('lane.understats'),
         'rail.top': railTop,
         'rail.bottom': railBottom,
-        'dock.right': this.ticketCtl.dockSlotEl,
+        'dock.right': this.dock.slotEl,
         // The composer places its own strips in paint order (spec 302 §6.1).
         'composer.above': layoutSlotContainer('composer.above'),
         'composer.below': layoutSlotContainer('composer.below'),
@@ -6483,6 +6529,7 @@ export class AcpHarnessView implements ContentView {
     this.railLayout.mount('plan', this.planSlot);
     this.railLayout.mount('queue', this.queueSlot);
     this.railLayout.mount('ticket', this.ticketCtl.ticketDock);
+    if (this.railsCtl) this.railLayout.mount('rails', this.railsCtl.dock);
 
     this.lanePicker = new LanePicker();
     body.appendChild(this.lanePicker.el);
@@ -6667,6 +6714,8 @@ export class AcpHarnessView implements ContentView {
       this.harnessMemoryWarning = errorText(e);
       this.memoryEntries = [];
     }
+    // spec 337: projectDir is resolved now; load the manifest and run history.
+    void this.railsCtl?.mount();
 
     // spec 141: join the cross-harness directory once the harness id is known.
     // No-op when memory init failed (no id). Removal is in dispose().
@@ -11683,6 +11732,15 @@ export class AcpHarnessView implements ContentView {
       await this.e2eCtl.runCommand(lane, text);
       return;
     }
+    if (parts[0] === '#rails') {
+      this.setDraft(lane, '', 0);
+      if (!this.railsCtl) {
+        this.flashChip('#rails: local projects only');
+        return;
+      }
+      await this.railsCtl.runCommand(lane, parts.slice(1), text);
+      return;
+    }
     if (parts[0] === '#cancel') {
       await this.cancelLane(lane);
       this.setDraft(lane, '', 0);
@@ -12548,6 +12606,7 @@ export class AcpHarnessView implements ContentView {
         this.renderPlanPanel(this.activeLane());
         this.renderActiveLaneQueue();
         this.ticketCtl.renderTicketDock();
+        this.railsCtl?.renderDock();
         return;
       case 'composer':
         this.renderComposer();
@@ -15892,7 +15951,37 @@ export class AcpHarnessView implements ContentView {
     }
     const hidden = nextHidden(command.action, this.hiddenPanels.has(command.panel));
     this.setPanelHidden(command.panel, hidden);
+    // spec 337: showing a dock (toggle, `#panels <id> show`, `#ticket panel`) selects its tab.
+    if (!hidden && (command.panel === 'ticket' || command.panel === 'rails')) this.dock.select(command.panel);
     this.flashChip(panelFlash(command.panel, hidden, this.panelsHidden));
+  }
+
+  /** spec 337: the column changed its shown tab — only a shown dock paints. */
+  private onDockShown(tab: HarnessDockTab | null): void {
+    if (tab === 'ticket') this.ticketCtl.renderTicketDock();
+    else if (tab === 'rails') this.railsCtl?.renderDock();
+  }
+
+  /** spec 337: bare `#rails` — clear its own flag, select and focus the tab. */
+  private showRailsDock(): void {
+    this.setPanelHidden('rails', false);
+    this.dock.select('rails');
+    if (this.panelsHidden) {
+      this.flashChip('all panels hidden · #panels show');
+      return;
+    }
+    this.railsCtl?.renderDock();
+    if (!this.railsCtl || !this.dock.isShown('rails')) {
+      this.flashChip('rails: no .krypton/rails.toml · #rails init');
+      return;
+    }
+    this.railsCtl.dockEl.focus({ preventScroll: true });
+  }
+
+  private focusComposer(): void {
+    this.focus = 'text';
+    this.element.focus({ preventScroll: true });
+    this.invalidate('composer');
   }
 
   private notifyTitlebarTogglesChanged(): void {
@@ -16312,6 +16401,8 @@ export class AcpHarnessView implements ContentView {
       get projectDir() { return view.projectDir; },
       isPanelHidden: (panel) => view.isPanelHidden(panel),
       applyPanelsCommand: (command) => view.applyPanelsCommand(command),
+      setDockTabAvailable: (tab, available) => view.dock.setAvailable(tab, available),
+      dockTabShown: (tab) => view.dock.isShown(tab),
       get openMarkdownViewCb() { return view.openMarkdownViewCb; },
       get openFileReferenceCb() { return view.openFileReferenceCb; },
       flashChip: (text) => view.flashChip(text),
@@ -16484,6 +16575,34 @@ export class AcpHarnessView implements ContentView {
       invalidate: (region) => view.invalidate(region),
       setDraft: (lane, text, cursor) => view.setDraft(lane, text, cursor),
       patchFollowUps: (lane, itemId) => view.patchFollowUps(lane, itemId),
+    };
+  }
+
+  private railsHost(): HarnessRailsHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const view = this;
+    return {
+      get element() { return view.element; },
+      get lanes() { return view.lanes; },
+      get activeLaneId() { return view.activeLaneId; },
+      get projectDir() { return view.projectDir; },
+      flashChip: (text) => view.flashChip(text),
+      subscribeLaneBus: (handler) => view.laneBus.subscribe(handler),
+      isPanelHidden: (panel) => view.isPanelHidden(panel),
+      setDockTabAvailable: (tab, available) => view.dock.setAvailable(tab, available),
+      dockTabShown: (tab) => view.dock.isShown(tab),
+      setRailsBadge: (badge) => view.dock.setRailsBadge(badge),
+      showRailsDock: () => view.showRailsDock(),
+      focusComposer: () => view.focusComposer(),
+      injectEnvelope: (laneId, message) => view.coordinator.injectHarnessEnvelope(laneId, message),
+      publishRailsSignal: (signal) => {
+        view.viewBus?.publishSignal({
+          kind: 'system:rails',
+          source: SYSTEM_SOURCE,
+          value: { sourceId: view.attentionSourceId, ...signal },
+        });
+      },
+      enqueueSystemPrompt: (lane, text, drain, label) => view.enqueueSystemPrompt(lane, text, drain, label),
     };
   }
 

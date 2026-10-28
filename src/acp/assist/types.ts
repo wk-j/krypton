@@ -78,7 +78,23 @@ export type AssistPanelState =
  *  and feed the breaker. */
 export type AssistFailure = 'no-backend' | 'no-model' | 'timeout' | 'unavailable' | 'invalid';
 
-export interface AssistTask<T> {
+/**
+ * One model call the engine can run: a fixed system prompt, a payload built
+ * from a context `C` within the budget, and a strict parser. Assist tasks are
+ * calls over `AssistContext`; the rails judge (spec 337) is a call over its
+ * own context.
+ */
+export interface AssistCall<T, C> {
+  /** Breaker key; for a task, also `#assist <id>` and the TOML table key. */
+  readonly id: string;
+  system(cfg: AssistTaskConfig): string;
+  payload(ctx: C, budget: AssistBudget): string;
+  /** Strict parse. `null` means the model did not answer ⇒ `'invalid'`.
+   *  `ctx` is the context `payload` was built from. */
+  parse(raw: string, cfg: AssistTaskConfig, ctx: C): T | null;
+}
+
+export interface AssistTask<T> extends AssistCall<T, AssistContext> {
   /** `#assist <id>` and the `[acp_harness.assist.tasks.<id>]` key. */
   readonly id: string;
   /** One line, listed by bare `#assist`. */
@@ -94,12 +110,6 @@ export interface AssistTask<T> {
   readonly defaults: AssistTaskDefaults;
   /** The task's own gate, on top of the engine's. Default: always eligible. */
   eligible?(ctx: AssistContext, cfg: AssistTaskConfig): boolean;
-  system(cfg: AssistTaskConfig): string;
-  payload(ctx: AssistContext, budget: AssistBudget): string;
-  /** Strict parse. `null` means the model did not answer ⇒ `'invalid'`.
-   *  `ctx` is the context `payload` was built from (spec 323 resolves the
-   *  candidate numbers it sent). */
-  parse(raw: string, cfg: AssistTaskConfig, ctx: AssistContext): T | null;
 }
 
 /** A review of the sent prompt in the right rail (`GrammarPanel`). */

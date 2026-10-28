@@ -1652,6 +1652,43 @@ renderE2ePrompt(create_prompt | report_prompt, {issue, issue_url, run_id, result
 
 See `docs/0328-harness-e2e-commands.md` and `docs/0329-harness-e2e-browser-explorer.md`.
 
+## Rails Verifier Flow (spec 337)
+
+The harness, not a lane, runs and judges (ADR-0025). Nothing here blocks a lane or writes
+transcript DOM.
+
+```
+mount (local harness only)    HarnessRailsController.mount → rails_load + rails_history(20)
+                              → Rails dock tab available iff the manifest exists and `rails` is not hidden
+1. LaneBus lane:status busy → idle, mode auto, projectDir set → arm debounce_ms
+   (any later busy → idle re-arms it).
+2. Debounce fires: a lane still busy / needs_permission → do nothing (the next idle re-arms).
+   An open judge breaker does not stop the run; step 7 skips only the judge (`judge cooling down`).
+3. invoke('working_diff_stat') → files == 0 → `clean tree`, stop. Its repoRoot is the rails root.
+4. invoke('rails_load', { root }) → no manifest → stop; manifest error → `error`;
+   trust ≠ trusted on an auto run → `paused` (the dock lists the argv), stop.
+5. invoke('acp_collect_review_git_state', { cwd, untrackedAll: true }) → diffFingerprint (SHA-256);
+   an auto run whose fingerprint equals the newest completed run's → stop, unless that run skipped
+   checks (untrusted) and the manifest is trusted now.
+6. Trusted: invoke('rails_run_check', { root, name }) per [[check]], progress `check i/n`.
+   Rust re-hashes the manifest, holds a per-root slot (`busy`), spawns with the login env in its
+   own process group, TERM → KILL on timeout. `cancelled` → drop the run, no record.
+7. selectRules(changed paths) + selectGlossary(added lines) → if anything applies,
+   AssistEngine.run(railsJudge) on the controller's own fenced AcpAssistSession;
+   strict parse keeps only findings that cite a sent id and a diffstat file.
+8. invoke('working_diff_stat') again → counts moved → run marked stale, debounce re-armed.
+9. previousCompletedRun(history) snapshot → trackFindings / ruleStatuses / computeVerdict
+   → invoke('rails_record_run') (.krypton/rails/runs/<runId>.json, newest 200 kept)
+   → rails_history → RailsDock update, Rails tab badge, ViewBus `system:rails` → footer.
+
+#rails now | r in the dock     manual run from step 3, no fingerprint stop; untrusted → judge only
+#rails send | s in the dock    railsEnvelope → injectHarnessEnvelope(lane) → drained on its next idle
+#rails trust                   rails_trust → sha256 into ~/.config/krypton/rails-trust.toml
+#rails off | dispose           engine.cancel() (+ rails_cancel(root) while a check runs) → no record written
+```
+
+See `docs/0337-rails-verifier.md`.
+
 ## Workspace Lifecycle Flow
 
 ### Startup

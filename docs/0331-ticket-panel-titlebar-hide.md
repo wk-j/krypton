@@ -5,6 +5,9 @@
 > Milestone: M6 — ACP Harness
 > Amended (rev 2): the < 960px overlay gets a solid background, because without
 > the collapsed state a narrow harness now shows it until the user hides it.
+> Amended by spec 337 (2026-10-27): the dock now shares the right column with the Rails dock as a
+> second tab. `harness-dock.ts` owns placement, `hidden` and the width-reserving root class, renamed
+> `acp-harness--dock-active`; this spec's hide paths (`›`, Escape, `#ticket panel`) are unchanged.
 
 ## Problem
 

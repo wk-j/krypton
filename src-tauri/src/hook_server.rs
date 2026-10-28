@@ -1105,8 +1105,7 @@ impl HookServer {
 
         let root = reviews_root(&project_dir)
             .ok_or_else(|| "could not resolve review root".to_string())?;
-        ensure_reviews_gitignore(&root)
-            .map_err(|e| format!("could not prepare review root: {e}"))?;
+        ensure_ignored_dir(&root).map_err(|e| format!("could not prepare review root: {e}"))?;
 
         let (slug, dir) = allocate_review_dir(&root, title)
             .map_err(|e| format!("could not create review bundle dir: {e}"))?;
@@ -6055,9 +6054,12 @@ fn count_value(v: &Value) -> Option<u64> {
 /// collect_git_state — run a few git commands in the lane's cwd and assemble a
 /// JSON payload matching the frontend's `ReviewGitState` shape (spec 145, shared
 /// by `#review` and attention triage). Never panics; on any failure returns
-/// `{ hasGitRepo: false, ... empty }`.
-pub fn collect_git_state_public(cwd: Option<&str>) -> Value {
-    collect_git_state(cwd)
+/// `{ hasGitRepo: false, ... empty }`. `untracked_all` lists every untracked
+/// file instead of collapsing a new directory into one row (`git status
+/// --untracked-files=all`), so each file gets its own diffstat row and head
+/// excerpt within the same caps; the Rails verifier (spec 337) needs it.
+pub fn collect_git_state_public(cwd: Option<&str>, untracked_all: bool) -> Value {
+    collect_git_state(cwd, untracked_all)
 }
 
 /// Truncate a `&str` to at most `max_bytes` bytes without slicing a UTF-8
@@ -6089,7 +6091,7 @@ fn clamp_headline(s: &str, max: usize) -> String {
     clamped
 }
 
-fn collect_git_state(cwd: Option<&str>) -> Value {
+fn collect_git_state(cwd: Option<&str>, untracked_all: bool) -> Value {
     // Bounds the payload (not process memory): the unified diff is capped, and
     // each untracked file contributes only a head excerpt.
     const REVIEW_DIFF_CAP: usize = 40_960;
@@ -6119,7 +6121,12 @@ fn collect_git_state(cwd: Option<&str>) -> Value {
     // know to diff against the empty tree / report "no committed baseline".
     let is_unborn_head = run(&["rev-parse", "--verify", "HEAD"]).is_none();
 
-    let porcelain = run(&["status", "--porcelain=v1"]).unwrap_or_default();
+    let porcelain = if untracked_all {
+        run(&["status", "--porcelain=v1", "--untracked-files=all"])
+    } else {
+        run(&["status", "--porcelain=v1"])
+    }
+    .unwrap_or_default();
 
     // Diff base: HEAD for a normal repo; the empty-tree object when HEAD is
     // unborn. `git diff <base>` (one tree-ish) compares the WORKING tree against
@@ -8316,9 +8323,11 @@ fn reviews_root(project_dir: &str) -> Option<PathBuf> {
     Some(base.join(".krypton").join("reviews"))
 }
 
-/// `*`-ignore the review root the same way the artifact root is handled, so a
-/// bundle never shows up in the user's `git status`.
-fn ensure_reviews_gitignore(root: &StdPath) -> std::io::Result<()> {
+/// Create `root` and `*`-ignore it (keeping only its own `.gitignore`) so its
+/// contents never show up in the user's `git status` or working diff. An
+/// existing `.gitignore` is left as is. Used by the review root and the Rails
+/// run ledger (`.krypton/rails/`, spec 337).
+pub(crate) fn ensure_ignored_dir(root: &StdPath) -> std::io::Result<()> {
     std::fs::create_dir_all(root)?;
     let gitignore = root.join(".gitignore");
     if !gitignore.exists() {
@@ -8329,7 +8338,7 @@ fn ensure_reviews_gitignore(root: &StdPath) -> std::io::Result<()> {
 
 /// Write a file atomically (temp + rename) so an interrupted write never leaves a
 /// truncated document. Shared by the seeded `review.md` and `response.md`.
-fn write_file_atomic(path: &StdPath, contents: &str) -> std::io::Result<()> {
+pub(crate) fn write_file_atomic(path: &StdPath, contents: &str) -> std::io::Result<()> {
     let tmp = path.with_extension("tmp");
     if let Err(e) = std::fs::write(&tmp, contents) {
         let _ = std::fs::remove_file(&tmp);
@@ -12921,12 +12930,16 @@ mod git_state_tests {
     }
 
     fn collect(dir: &Path) -> Value {
-        collect_git_state(Some(dir.to_str().unwrap()))
+        collect_git_state(Some(dir.to_str().unwrap()), false)
+    }
+
+    fn collect_all(dir: &Path) -> Value {
+        collect_git_state(Some(dir.to_str().unwrap()), true)
     }
 
     #[test]
     fn no_cwd_and_non_git_dir_report_no_repo() {
-        assert_eq!(collect_git_state(None)["hasGitRepo"], json!(false));
+        assert_eq!(collect_git_state(None, false)["hasGitRepo"], json!(false));
         let dir = std::env::temp_dir().join(format!("krypton-nogit-{}", rand_suffix()));
         std::fs::create_dir_all(&dir).unwrap();
         let v = collect(&dir);
@@ -12974,6 +12987,60 @@ mod git_state_tests {
         assert!(diffstat
             .iter()
             .any(|e| e["path"] == json!("new.txt") && e["status"] == json!("?")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn untracked_all_lists_each_file_of_a_new_directory_within_the_caps() {
+        let dir = temp_repo();
+        std::fs::write(dir.join("seed"), "x").unwrap();
+        git(&dir, &["add", "seed"]);
+        git(&dir, &["commit", "-qm", "seed"]);
+        std::fs::create_dir_all(dir.join("pkg/inner")).unwrap();
+        std::fs::write(dir.join("pkg/a.ts"), "export const a = 1;\n").unwrap();
+        std::fs::write(dir.join("pkg/inner/b.ts"), "export const b = 2;\n").unwrap();
+
+        // Default (`#review`, attention): the directory collapses into one row.
+        let v = collect(&dir);
+        let paths: Vec<&str> = v["diffstat"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["path"].as_str().unwrap())
+            .collect();
+        assert_eq!(paths, ["pkg/"]);
+        assert_eq!(v["untracked"][0]["head"], json!("<unreadable>"));
+
+        let v = collect_all(&dir);
+        let diffstat = v["diffstat"].as_array().unwrap();
+        let paths: Vec<&str> = diffstat
+            .iter()
+            .map(|e| e["path"].as_str().unwrap())
+            .collect();
+        assert_eq!(paths, ["pkg/a.ts", "pkg/inner/b.ts"]);
+        assert!(diffstat.iter().all(|e| e["status"] == json!("?")));
+        let untracked = v["untracked"].as_array().unwrap();
+        assert_eq!(untracked.len(), 2);
+        assert_eq!(untracked[0]["head"], json!("export const a = 1;"));
+        assert_eq!(untracked[1]["head"], json!("export const b = 2;"));
+
+        // Heads stay within the 4 KiB-per-file / 40 KiB-total caps; every file
+        // still gets its diffstat row.
+        for i in 0..15 {
+            std::fs::write(dir.join(format!("pkg/big{i:02}.txt")), "y".repeat(10_000)).unwrap();
+        }
+        let v = collect_all(&dir);
+        assert_eq!(v["diffstat"].as_array().unwrap().len(), 17);
+        let untracked = v["untracked"].as_array().unwrap();
+        let total: usize = untracked
+            .iter()
+            .map(|u| u["head"].as_str().unwrap().len())
+            .sum();
+        assert!(untracked
+            .iter()
+            .all(|u| u["head"].as_str().unwrap().len() <= 4_096));
+        assert!(total <= 40_960, "{total}");
+        assert!(untracked.len() < 17);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

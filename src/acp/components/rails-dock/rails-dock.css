@@ -1,0 +1,319 @@
+/* Spec 337 §UI Content — `RailsDock`.
+   The ticket-dock family: amber eyebrow, 1px borders, pills. The root
+   `.acp-harness__rails-dock` (position, width, background, `hidden`) is the
+   dock column's placement and lives with the harness layout; this sheet
+   declares only the `acp-rails-dock` content block.
+
+   Colour rule: model findings are neutral evidence (ADR-0004) — severities,
+   tags and rule statuses use ink tiers and amber only. The fault colour is
+   reserved for a failed check (`FAIL`, `TIMEOUT`, the `CHECK FAILED` pill, a
+   `fail` rule status and the `✗` run glyph), ADR-0017. No animation. */
+
+@layer krypton.component {
+  .acp-rails-dock {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .acp-rails-dock[hidden] {
+    display: none;
+  }
+
+  .acp-rails-dock__rows {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .acp-rails-dock__row {
+    padding: 5px 14px;
+    border-left: 1px solid transparent;
+    border-bottom: 1px solid rgba(255, 176, 0, 0.07);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    cursor: default;
+  }
+
+  .acp-rails-dock__row--selected {
+    border-left-color: #ffb000;
+    background: rgba(255, 176, 0, 0.07);
+  }
+
+  .acp-rails-dock__row--head {
+    padding: 13px 14px 11px;
+    border-bottom: 1px solid rgba(255, 176, 0, 0.22);
+  }
+
+  .acp-rails-dock__line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .acp-rails-dock__eyebrow {
+    color: #ffb000;
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+  }
+
+  .acp-rails-dock__pill {
+    flex: 0 0 auto;
+    padding: 1px 7px;
+    border: 1px solid rgba(255, 176, 0, 0.32);
+    border-radius: 999px;
+    color: #ffd880;
+    letter-spacing: 0.04em;
+  }
+
+  .acp-rails-dock__pill--none,
+  .acp-rails-dock__pill--error {
+    border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.22);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+  }
+
+  .acp-rails-dock__pill--check_failed {
+    border-color: rgba(255, 109, 138, 0.48);
+    color: #ff9caf;
+    background: rgba(255, 109, 138, 0.08);
+  }
+
+  .acp-rails-dock__time {
+    margin-left: auto;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    font-variant-numeric: tabular-nums;
+  }
+
+  .acp-rails-dock__row--run .acp-rails-dock__time {
+    margin-left: 0;
+  }
+
+  .acp-rails-dock__meta {
+    margin-top: 5px;
+    overflow: hidden;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-rails-dock__progress,
+  .acp-rails-dock__trust,
+  .acp-rails-dock__hint,
+  .acp-rails-dock__error {
+    margin: 6px 0 0;
+    overflow-wrap: anywhere;
+  }
+
+  .acp-rails-dock__progress {
+    color: #ffd880;
+  }
+
+  .acp-rails-dock__trust,
+  .acp-rails-dock__hint,
+  .acp-rails-dock__error {
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+  }
+
+  .acp-rails-dock__argv,
+  .acp-rails-dock__warnings,
+  .acp-rails-dock__list {
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .acp-rails-dock__argv li {
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+    gap: 8px;
+    padding: 2px 0;
+  }
+
+  .acp-rails-dock__argv code {
+    overflow-wrap: anywhere;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    font: inherit;
+  }
+
+  .acp-rails-dock__warnings li {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    overflow-wrap: anywhere;
+  }
+
+  .acp-rails-dock__list li {
+    padding: 3px 0;
+    overflow-wrap: anywhere;
+  }
+
+  .acp-rails-dock__section {
+    display: flex;
+    justify-content: space-between;
+    padding: 9px 14px 3px;
+    color: #ffb000;
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+  }
+
+  .acp-rails-dock__section-key {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
+  }
+
+  .acp-rails-dock__name,
+  .acp-rails-dock__rule {
+    flex: 0 0 auto;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+  }
+
+  .acp-rails-dock__loc,
+  .acp-rails-dock__text,
+  .acp-rails-dock__summary,
+  .acp-rails-dock__lane {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-rails-dock__loc,
+  .acp-rails-dock__lane,
+  .acp-rails-dock__count,
+  .acp-rails-dock__duration {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+  }
+
+  .acp-rails-dock__duration,
+  .acp-rails-dock__tag,
+  .acp-rails-dock__disclosure {
+    flex: 0 0 auto;
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .acp-rails-dock__outcome,
+  .acp-rails-dock__status,
+  .acp-rails-dock__severity {
+    flex: 0 0 auto;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
+    letter-spacing: 0.04em;
+  }
+
+  .acp-rails-dock__outcome--pass,
+  .acp-rails-dock__status--pass {
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+  }
+
+  .acp-rails-dock__outcome--fail,
+  .acp-rails-dock__outcome--timeout,
+  .acp-rails-dock__status--fail,
+  .acp-rails-dock__glyph--check_failed {
+    color: #ff9caf;
+  }
+
+  .acp-rails-dock__severity {
+    color: #ffd880;
+  }
+
+  .acp-rails-dock__tag {
+    padding: 0 6px;
+    border: 1px solid rgba(255, 176, 0, 0.28);
+    border-radius: 999px;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
+  }
+
+  .acp-rails-dock__tag--new {
+    color: #ffd880;
+  }
+
+  .acp-rails-dock__glyph {
+    flex: 0 0 1ch;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+  }
+
+  .acp-rails-dock__note {
+    margin: 2px 0 0;
+    overflow: hidden;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-rails-dock__row--expanded .acp-rails-dock__note,
+  .acp-rails-dock__row--expanded .acp-rails-dock__text {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .acp-rails-dock__detail {
+    margin: 5px 0 2px;
+    padding: 6px 8px;
+    border: 1px solid rgba(255, 176, 0, 0.14);
+    border-radius: var(--krypton-border-radius, 8px);
+  }
+
+  .acp-rails-dock__detail-line {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 8px;
+    padding: 1px 0;
+  }
+
+  .acp-rails-dock__label {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+  }
+
+  .acp-rails-dock__value {
+    overflow-wrap: anywhere;
+  }
+
+  .acp-rails-dock__tail {
+    max-height: 18em;
+    margin: 4px 0 0;
+    overflow: auto;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    font: inherit;
+    font-size: 0.92em;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .acp-rails-dock__keys {
+    flex: 0 0 auto;
+    padding: 6px 14px;
+    border-top: 1px solid rgba(255, 176, 0, 0.12);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* Light scheme: the amber and fault accents are neon values tuned for a dark
+   ground; cap them to legible ink (spec 321 §Accent ink). */
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-rails-dock__eyebrow,
+  html[data-theme-scheme='light'] .acp-rails-dock__section,
+  html[data-theme-scheme='light'] .acp-rails-dock__pill,
+  html[data-theme-scheme='light'] .acp-rails-dock__progress,
+  html[data-theme-scheme='light'] .acp-rails-dock__severity,
+  html[data-theme-scheme='light'] .acp-rails-dock__tag--new {
+    color: #8a5a00;
+  }
+
+  html[data-theme-scheme='light'] .acp-rails-dock__pill--none,
+  html[data-theme-scheme='light'] .acp-rails-dock__pill--error {
+    color: var(--krypton-ink-3);
+  }
+
+  html[data-theme-scheme='light'] .acp-rails-dock__pill--check_failed,
+  html[data-theme-scheme='light'] .acp-rails-dock__outcome--fail,
+  html[data-theme-scheme='light'] .acp-rails-dock__outcome--timeout,
+  html[data-theme-scheme='light'] .acp-rails-dock__status--fail,
+  html[data-theme-scheme='light'] .acp-rails-dock__glyph--check_failed {
+    color: #b3261e;
+  }
+}

@@ -10,7 +10,9 @@ import type { JournalKind } from './journal';
 import type { GithubTicketReference } from './harness-view-types';
 import type { HarnessLane, HarnessTranscriptItem, StagedImage } from './harness-view-types';
 import type { ReviewSubject } from './review';
-import type { HarnessPanelId, PanelsCommand } from './harness-panel-visibility';
+import type { HarnessDockTab, HarnessPanelId, PanelsCommand } from './harness-panel-visibility';
+import type { RailsTabBadge } from './harness-dock';
+import type { RailsFooterSignal } from './rails/types';
 import type { ContentBlock, LaneBusEvent, ReviewFinding, StopReason } from './types';
 import type { LiveDelivery } from './live-voice';
 
@@ -142,6 +144,10 @@ export interface HarnessTicketHost extends HarnessViewHost {
   isPanelHidden(panel: HarnessPanelId): boolean;
   /** spec 331: the dock's hide button, Escape and `#ticket panel` go through the same path as `#panels ticket`. */
   applyPanelsCommand(command: Exclude<PanelsCommand, { kind: 'usage' }>): void;
+  /** spec 337: the Ticket tab of the dock column is available (ticket active, not hidden). */
+  setDockTabAvailable(tab: HarnessDockTab, available: boolean): void;
+  /** spec 337: whether the dock column shows this tab right now. */
+  dockTabShown(tab: HarnessDockTab): boolean;
   readonly openMarkdownViewCb: ((path: string) => Promise<void>) | null;
   readonly openFileReferenceCb: ((path: string, line?: number, column?: number) => Promise<boolean>) | null;
   invalidate(region: HarnessRegion): void;
@@ -187,4 +193,31 @@ export interface HarnessAssistHost extends HarnessViewHost {
   setDraft(lane: HarnessLane, text: string, cursor: number): void;
   /** Spec 323: `itemId`'s `followUps` changed — repaint only that reply's rail. */
   patchFollowUps(lane: HarnessLane, itemId: string): void;
+}
+
+/** Spec 337 Rails verifier host. Local harness only: the view never builds the
+ *  controller for a remote one. Every Tauri call goes through the controller's
+ *  injected `invoke`, so the host carries only view-side effects. */
+export interface HarnessRailsHost extends HarnessViewHost {
+  readonly projectDir: string | null;
+  subscribeLaneBus(handler: (event: LaneBusEvent) => void): () => void;
+  /** spec 320: `#panels` master switch or the `rails` flag. */
+  isPanelHidden(panel: HarnessPanelId): boolean;
+  setDockTabAvailable(tab: HarnessDockTab, available: boolean): void;
+  dockTabShown(tab: HarnessDockTab): boolean;
+  setRailsBadge(badge: RailsTabBadge): void;
+  /** Bare `#rails`: clear the rails flag, select the Rails tab and focus it. */
+  showRailsDock(): void;
+  /** The dock's Escape: focus back to the composer; the tab stays shown. */
+  focusComposer(): void;
+  /** `InterLaneCoordinator.injectHarnessEnvelope`: delivered on the lane's next idle. */
+  injectEnvelope(laneId: string, message: string): void;
+  /** `system:rails` on the ViewBus with `SYSTEM_SOURCE`; the host adds its `sourceId`. */
+  publishRailsSignal(signal: Omit<RailsFooterSignal, 'sourceId'>): void;
+  enqueueSystemPrompt(
+    lane: HarnessLane,
+    text: string,
+    drain?: CoordinatorDrainContext,
+    label?: string,
+  ): Promise<boolean>;
 }

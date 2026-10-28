@@ -59,8 +59,6 @@ export class HarnessTicketController {
   /** Spec 302 §7.5 — the `#ticket` dialog. Its root IS the overlay aside. */
   ticketPickerCmp!: TicketPicker;
   ticketDockEl!: HTMLElement;
-  /** The `dock.right` layout slot this controller appends; the host places the dock in it. */
-  dockSlotEl!: HTMLElement;
   /** Spec 302 §5.7 — the dock's content. Its root IS `ticketDockEl`. */
   ticketDock!: TicketDock;
 
@@ -78,24 +76,21 @@ export class HarnessTicketController {
   constructor(private readonly host: HarnessTicketHost) {}
 
   /**
-   * Spec 301 §Layout: the dock is placed by the view's `LayoutHost`, so what is
-   * appended here is the `dock.right` SLOT — a `display: contents` box — and
-   * the dock itself is a component the host mounts into it. The element keeps
-   * its class, its aria label and its two delegated listeners: those are the
-   * dock's placement and keyboard contract, not its content.
+   * Spec 301 §Layout / spec 337: the dock is placed by the view's `LayoutHost`
+   * into the dock column (`HarnessDock`), which owns the element's `hidden` and
+   * the reserved width. The element keeps its class, its aria label and its two
+   * delegated listeners: those are the dock's keyboard contract, not its content.
    */
-  mountDock(body: HTMLElement): void {
-    this.dockSlotEl = document.createElement('div');
-    this.dockSlotEl.className = 'acp-harness__layout-slot';
-    this.dockSlotEl.dataset.layoutSlot = 'dock.right';
+  mountDock(): void {
     this.ticketDockEl = document.createElement('aside');
     this.ticketDockEl.className = 'acp-harness__ticket-dock';
+    // spec 337: `[` / `]` from the Rails tab moves focus here (never onto a hidden node).
+    this.ticketDockEl.tabIndex = -1;
     this.ticketDockEl.hidden = true;
     this.ticketDockEl.setAttribute('aria-label', 'Active ticket');
     this.ticketDockEl.addEventListener('click', this.ticketDockClickHandler);
     this.ticketDockEl.addEventListener('keydown', this.ticketDockKeyHandler);
     this.ticketDock = new TicketDock(this.ticketDockEl);
-    body.appendChild(this.dockSlotEl);
   }
 
   /** spec 194: `#ticket` picker — its own modal dialog, not a composer popup. */
@@ -584,14 +579,15 @@ export class HarnessTicketController {
     }
   }
 
+  /**
+   * Spec 337: the Ticket tab is available while a ticket is active and spec
+   * 320 has not hidden it; the dock column decides whether it is the SHOWN
+   * tab, and only a shown dock paints.
+   */
   renderTicketDock(): void {
     const ticket = this.activeTicket;
-    // spec 320: a hidden dock drops its root class too, so the dashboard
-    // gives back the 352px it reserves.
-    const shown = ticket !== null && !this.host.isPanelHidden('ticket');
-    this.ticketDockEl.hidden = !shown;
-    this.host.element.classList.toggle('acp-harness--ticket-active', shown);
-    if (!ticket || !shown) return;
+    this.host.setDockTabAvailable('ticket', ticket !== null && !this.host.isPanelHidden('ticket'));
+    if (!ticket || !this.host.dockTabShown('ticket')) return;
     this.ticketDock.update({
       ticket,
       workerName: this.ticketWorker?.laneDisplayName ?? null,

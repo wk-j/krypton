@@ -66,6 +66,7 @@ import { def as planPanel } from './plan-panel';
 import { def as providerErrorRow } from './provider-error-row';
 import { def as questionRow } from './question-row';
 import { def as queueCard } from './queue-card';
+import { def as railsDock } from './rails-dock';
 import { def as railEntry } from './rail-entry';
 import { def as remotePicker } from './remote-picker';
 import { def as resourceRail } from './resource-rail';
@@ -148,6 +149,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   queueCard,
   planPanel,
   ticketDock,
+  railsDock,
   annotationRail,
   // layer 6 — composer
   composer,

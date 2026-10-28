@@ -1,14 +1,17 @@
 // Spec 320 — per-panel visibility for the ACP Harness.
 //
 // Each persistent panel (plan, lane peek, live thought, grammar review, prompt
-// queue, Active Ticket dock) carries its own hidden flag, persisted per
+// queue, Active Ticket dock, Rails dock) carries its own hidden flag, persisted per
 // project. `#panels` (spec 251) stays the master switch above them: the two
 // levels never rewrite each other. The view's renderers ask
 // `isPanelHidden(id)`, which is `panelsHidden || hiddenPanels.has(id)`.
 
 import type { TitlebarToggle } from '../types';
 
-export type HarnessPanelId = 'plan' | 'peek' | 'thought' | 'grammar' | 'queue' | 'ticket';
+export type HarnessPanelId = 'plan' | 'peek' | 'thought' | 'grammar' | 'queue' | 'ticket' | 'rails';
+
+/** Spec 337: the two tabs of the `dock.right` column. */
+export type HarnessDockTab = 'ticket' | 'rails';
 
 export interface HarnessTogglePanel {
   readonly id: HarnessPanelId;
@@ -25,13 +28,14 @@ export const HARNESS_TOGGLE_PANELS: readonly HarnessTogglePanel[] = [
   { id: 'grammar', label: 'Grammar', icon: 'krypton-icon-panel-grammar' },
   { id: 'queue', label: 'Prompt queue', icon: 'krypton-icon-panel-queue' },
   { id: 'ticket', label: 'Ticket dock', icon: 'krypton-icon-panel-ticket' },
+  { id: 'rails', label: 'Rails dock', icon: 'krypton-icon-panel-rails' },
 ];
 
 /** Titlebar id of the master toggle — the same switch as bare `#panels`. */
 export const ALL_PANELS_TOGGLE_ID = 'all';
 
 export const PANELS_USAGE =
-  'usage: #panels [hide | show | toggle] [plan | peek | thought | grammar | queue | ticket]';
+  'usage: #panels [hide | show | toggle] [plan | peek | thought | grammar | queue | ticket | rails]';
 
 export type PanelsAction = 'hide' | 'show' | 'toggle';
 
@@ -47,6 +51,7 @@ const PANEL_ID: Record<HarnessPanelId, true> = {
   grammar: true,
   queue: true,
   ticket: true,
+  rails: true,
 };
 
 export function isHarnessPanelId(value: string): value is HarnessPanelId {
@@ -91,7 +96,7 @@ export function panelFlash(panel: HarnessPanelId, hidden: boolean, allHidden: bo
   return allHidden ? `${base} · all panels hidden` : base;
 }
 
-/** The view's titlebar contribution: six panels, a divider, then the master toggle. */
+/** The view's titlebar contribution: seven panels, a divider, then the master toggle. */
 export function harnessTitlebarToggles(
   hidden: ReadonlySet<HarnessPanelId>,
   allHidden: boolean,
@@ -143,5 +148,27 @@ export function writeHiddenPanels(projectDir: string | null, hidden: ReadonlySet
     localStorage.setItem(key, JSON.stringify(ordered));
   } catch {
     // localStorage unavailable — the preference simply won't persist
+  }
+}
+
+/** Spec 337: the selected dock tab, persisted beside the hidden flags. */
+const DOCK_TAB_KEY_PREFIX = 'krypton:acp-harness:dock-tab:';
+
+/** Anything but a stored `rails` reads as the Ticket tab, today's only dock. */
+export function readDockTab(projectDir: string | null): HarnessDockTab {
+  try {
+    return localStorage.getItem(`${DOCK_TAB_KEY_PREFIX}${projectDir ?? ''}`) === 'rails' ? 'rails' : 'ticket';
+  } catch {
+    return 'ticket';
+  }
+}
+
+export function writeDockTab(projectDir: string | null, tab: HarnessDockTab): void {
+  try {
+    const key = `${DOCK_TAB_KEY_PREFIX}${projectDir ?? ''}`;
+    if (tab === 'ticket') localStorage.removeItem(key);
+    else localStorage.setItem(key, tab);
+  } catch {
+    // localStorage unavailable — the choice simply won't persist
   }
 }

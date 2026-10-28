@@ -39,11 +39,11 @@ describe('nextHidden', () => {
 });
 
 describe('harnessTitlebarToggles', () => {
-  it('lists six panels then the master toggle behind a divider', () => {
+  it('lists seven panels then the master toggle behind a divider', () => {
     const toggles = harnessTitlebarToggles(new Set<HarnessPanelId>(['thought']), false);
 
-    expect(toggles.map((toggle) => toggle.id)).toEqual(['plan', 'peek', 'thought', 'grammar', 'queue', 'ticket', 'all']);
-    expect(toggles.map((toggle) => toggle.pressed)).toEqual([true, true, false, true, true, true, true]);
+    expect(toggles.map((toggle) => toggle.id)).toEqual(['plan', 'peek', 'thought', 'grammar', 'queue', 'ticket', 'rails', 'all']);
+    expect(toggles.map((toggle) => toggle.pressed)).toEqual([true, true, false, true, true, true, true, true]);
     expect(toggles.filter((toggle) => toggle.separatorBefore).map((toggle) => toggle.id)).toEqual(['all']);
     expect(toggles.some((toggle) => toggle.disabledReason)).toBe(false);
   });
@@ -52,7 +52,7 @@ describe('harnessTitlebarToggles', () => {
     const toggles = harnessTitlebarToggles(new Set<HarnessPanelId>(['grammar']), true);
     const master = toggles[toggles.length - 1];
 
-    expect(toggles.slice(0, 6).every((toggle) => typeof toggle.disabledReason === 'string')).toBe(true);
+    expect(toggles.slice(0, 7).every((toggle) => typeof toggle.disabledReason === 'string')).toBe(true);
     // The per-panel preference still shows underneath the master switch.
     expect(toggles.find((toggle) => toggle.id === 'grammar')?.pressed).toBe(false);
     expect(master).toMatchObject({ id: 'all', pressed: false });

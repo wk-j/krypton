@@ -208,6 +208,8 @@ export interface AcpHarnessConfig {
   lane_models: Record<string, LaneModelConfig>;
   /** spec 306: cheap-model turn sidecar. Absent when the TOML omits it. */
   assist?: AcpHarnessAssistConfig;
+  /** spec 337: Rails verifier. Absent when the TOML omits it. */
+  rails?: AcpHarnessRailsConfig;
 }
 
 /** `[acp_harness.assist.tasks.<id>]`. Every generic key is optional and falls
@@ -233,6 +235,19 @@ export interface AcpHarnessAssistConfig {
   timeout_ms?: number;
   max_input_chars?: number;
   tasks?: Record<string, AcpHarnessAssistTaskOverride>;
+}
+
+/** `[acp_harness.rails]` (spec 337). Clamps (timeout_ms 10000–180000,
+ *  max_input_chars 4000–80000, debounce_ms 1000–60000) are applied in the
+ *  frontend by `resolveRailsConfig`. `mode` is `off | manual | auto`; auto
+ *  still needs a trusted `.krypton/rails.toml`. */
+export interface AcpHarnessRailsConfig {
+  mode?: string;
+  backend?: string;
+  model?: string;
+  timeout_ms?: number;
+  max_input_chars?: number;
+  debounce_ms?: number;
 }
 
 /** spec 212/213: Xenon resource server. The bearer token is deliberately absent

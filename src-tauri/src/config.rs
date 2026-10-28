@@ -789,6 +789,42 @@ pub struct AcpHarnessConfig {
     /// the frontend untouched as that task's `options`.
     #[serde(default)]
     pub assist: AcpHarnessAssistConfig,
+    /// spec 337: the per-harness Rails verifier (check step + headless judge).
+    #[serde(default)]
+    pub rails: AcpHarnessRailsConfig,
+}
+
+/// `[acp_harness.rails]` — spec 337. Like `assist`, `mode` and the numeric
+/// ranges are validated and clamped in the frontend (`src/acp/rails/config.ts`),
+/// never here, so a bad value degrades instead of failing the config load.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AcpHarnessRailsConfig {
+    /// `off` | `manual` | `auto`. `auto` still needs a trusted manifest.
+    pub mode: String,
+    /// ACP backend id the judge step spawns (`claude`, `codex`, …).
+    pub backend: String,
+    /// ACP model id or alias for the judge; empty keeps the backend default.
+    pub model: String,
+    /// Judge-step deadline. Clamped to 10_000..180_000 in the frontend.
+    pub timeout_ms: u64,
+    /// Judge payload cap. Clamped to 4_000..80_000.
+    pub max_input_chars: u32,
+    /// Quiet time after a lane goes idle before a run. Clamped to 1_000..60_000.
+    pub debounce_ms: u64,
+}
+
+impl Default for AcpHarnessRailsConfig {
+    fn default() -> Self {
+        Self {
+            mode: "auto".to_string(),
+            backend: "claude".to_string(),
+            model: "haiku".to_string(),
+            timeout_ms: 60_000,
+            max_input_chars: 32_000,
+            debounce_ms: 5_000,
+        }
+    }
 }
 
 /// `[acp_harness.assist]` — the generic knobs the engine enforces. `mode` is
@@ -929,6 +965,7 @@ impl Default for AcpHarnessConfig {
             remote_profiles: Vec::new(),
             lane_models: HashMap::new(),
             assist: AcpHarnessAssistConfig::default(),
+            rails: AcpHarnessRailsConfig::default(),
         }
     }
 }
@@ -1296,6 +1333,39 @@ min_confidence = 0.65
         assert_eq!(assist.timeout_ms, 8_000);
         assert_eq!(assist.max_input_chars, 6_000);
         assert!(assist.tasks.is_empty());
+    }
+
+    #[test]
+    fn acp_harness_rails_defaults_when_section_omitted() {
+        let cfg: KryptonConfig = toml::from_str("[acp_harness]\n").unwrap();
+        let rails = &cfg.acp_harness.rails;
+        assert_eq!(rails.mode, "auto");
+        assert_eq!(rails.backend, "claude");
+        assert_eq!(rails.model, "haiku");
+        assert_eq!(rails.timeout_ms, 60_000);
+        assert_eq!(rails.max_input_chars, 32_000);
+        assert_eq!(rails.debounce_ms, 5_000);
+    }
+
+    #[test]
+    fn acp_harness_rails_partial_table_keeps_defaults_and_serializes_snake_case() {
+        let cfg: KryptonConfig = toml::from_str(
+            "[acp_harness.rails]\nmode = \"manual\"\nmodel = \"\"\ndebounce_ms = 2000\n",
+        )
+        .unwrap();
+        let rails = &cfg.acp_harness.rails;
+        assert_eq!(rails.mode, "manual");
+        assert_eq!(rails.model, "");
+        assert_eq!(rails.debounce_ms, 2_000);
+        assert_eq!(rails.backend, "claude");
+        assert_eq!(rails.timeout_ms, 60_000);
+        assert_eq!(rails.max_input_chars, 32_000);
+
+        // The frontend reads `acp_harness.rails` from the untyped get_config blob.
+        let json = serde_json::to_value(&cfg.acp_harness).unwrap();
+        assert_eq!(json["rails"]["mode"], serde_json::json!("manual"));
+        assert_eq!(json["rails"]["debounce_ms"], serde_json::json!(2000));
+        assert_eq!(json["rails"]["max_input_chars"], serde_json::json!(32000));
     }
 
     #[test]

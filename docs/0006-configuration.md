@@ -464,6 +464,17 @@ max_input_chars = 6000         # hard cap on the payload sent to the model (500�
 # model = "haiku"
 # count = 3                    # 1..3 buttons per reply (run, open and prompt together)
 
+# Rails verifier (spec 337). Runs only in projects that have a trusted
+# `.krypton/rails.toml` (`#rails trust`); the judge spends the backend's
+# subscription quota once per changed working tree.
+[acp_harness.rails]
+mode = "auto"                  # off | manual | auto
+backend = "claude"             # ACP backend id for the judge
+model = "haiku"                # id/alias for session/set_model ("" = backend default)
+timeout_ms = 60000             # judge deadline in ms (10000–180000)
+max_input_chars = 32000        # judge payload cap (4000–80000)
+debounce_ms = 5000             # quiet time after a lane goes idle before a run (1000–60000)
+
 # --- ACP Wire Profiler (spec 288) ---
 # Records ACP traffic (Krypton ↔ agent stdio and Rust → UI events) into an
 # in-memory ring for the loopback profiler page (palette: ACP Wire: Open
@@ -905,6 +916,21 @@ model = "haiku"
 [acp_harness.assist.tasks.follow-up]
 count = 3
 ```
+
+### ACP Harness Rails Verifier (spec 337)
+
+`[acp_harness.rails]` configures the background Rails verifier (`docs/0337-rails-verifier.md`). At harness quiet points it runs the checks a project declares in `.krypton/rails.toml`, then asks a cheap judge model whether the diff breaks the `## Rails` bullets that apply to the changed paths. The judge goes through an ACP backend subprocess, like `[acp_harness.assist]`, so it needs no API key. No check command runs, and no automatic run starts, until the manifest exists and `#rails trust` has approved that exact file; a manual `#rails now` before that runs the judge step only. The project manifest's own format (`version`, `sources`, `glossary`, `[[check]]`) is described in the spec, not here: it lives in the target repo, not in `krypton.toml`.
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[acp_harness.rails]` | `mode` | string | `"auto"` | `off` (never runs), `manual` (only `#rails now` and `r` in the Rails dock), or `auto` (also runs at quiet points once the manifest is trusted). Any other value is treated as `off`. `#rails off\|manual\|auto` overrides it for the session without rewriting this file |
+| `[acp_harness.rails]` | `backend` | string | `"claude"` | ACP backend id for the judge step |
+| `[acp_harness.rails]` | `model` | string | `"haiku"` | Model id or alias sent with `session/set_model`; `""` keeps the backend's default |
+| `[acp_harness.rails]` | `timeout_ms` | int | `60000` | Judge deadline in milliseconds, clamped to 10000–180000. Checks have their own `timeout_s` in the project manifest |
+| `[acp_harness.rails]` | `max_input_chars` | int | `32000` | Cap on the judge payload (rules, failed-check output, diff, glossary), clamped to 4000–80000 |
+| `[acp_harness.rails]` | `debounce_ms` | int | `5000` | Quiet time after a lane goes busy → idle before a run starts, clamped to 1000–60000. Any later busy → idle restarts it |
+
+The clamps live in the frontend, so an out-of-range value in TOML is corrected, not rejected. The trust store is `~/.config/krypton/rails-trust.toml`, written only by `#rails trust`; deleting an entry makes that project's checks wait for trust again.
 
 ### ACP Harness Directives (`acp-harness.toml`)
 

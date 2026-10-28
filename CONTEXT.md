@@ -192,3 +192,25 @@ _Avoid_: job, attempt, session
 **Verdict** (spec 328):
 The outcome of one E2E run. PASS and FAIL judge the app; ERROR means the test harness itself broke; BLOCKED means a precondition failed and the app was never exercised, so it is never counted as a failure. A launch with no usable result has a Krypton-side verdict instead: CANCELLED, NO RESULT, INVALID RESULT or INTERRUPTED.
 _Avoid_: status (a check inside a run has a status; the run has a verdict), result (the whole normalized document, not its outcome)
+
+### Architecture rails
+
+**Rails** (spec 337):
+The project's declared, checkable architecture rules: the bullets under `## Rails` headings in the rule sources a project lists (usually its ADRs), plus the commands it declares as [[Check]]s in `.krypton/rails.toml`. A decision that is only prose in an ADR is not a rail until someone writes a bullet for it.
+_Avoid_: guardrails (too broad: approval gates and permission modes are also guardrails), lint rules (a lint rule is one possible [[Check]]), policy (the lane policy is advice injected into prompts; rails are checked against the code)
+
+**Enforced rule** (spec 337):
+A rails bullet tied to a [[Check]] by a trailing `check:<name>` marker, so code decides whether it holds. Every other bullet is **judge-only**: only the cheap model in a [[Rails run]] can catch a break, and it can be wrong.
+_Avoid_: hard rule / soft rule (the difference is who checks it, not how much it matters)
+
+**Check** (spec 337):
+One command a project declares in `.krypton/rails.toml` and Krypton runs in a [[Rails run]] after the human has trusted that exact manifest. Its outcome is pass, fail, timeout, or error (the command could not start); only fail and timeout break the rails.
+_Avoid_: test (a check may be a typecheck, a linter, or a whole test suite), E2E case (spec 328 cases run on demand through an adapter, not at quiet points)
+
+**Rails run** (spec 337):
+One background pass over the working tree, started at a harness quiet point or by `#rails now`: the [[Check]]s first, then the judge over the rails that apply to the changed paths. Code, not the model, decides its verdict: clean, findings, check failed, or error. Every run is kept in `.krypton/rails/runs/`; one the working tree changed under is **stale** and runs again.
+_Avoid_: review (a `#review` round is reviewer lanes reading a subject; a rails run is a harness pass with no lane), scan, CI run
+
+**Rails finding** (spec 337):
+A judge result that cites exactly one rail or glossary entry, as a **violation** (clearly breaks it) or **suspect** (may break it). It is tracked across runs by rule and file: **new**, **open since** the run that first reported it, **not re-checked** when its rule fell out of scope, or **resolved** when a later run judged the rule again and the finding was gone. Evidence for the human, never a [[Judgement item]] and never a score.
+_Avoid_: violation for every finding (suspect is a separate severity), alert (only a failed check is coloured), issue (GitHub issues are a different thing)

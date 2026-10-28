@@ -23,6 +23,8 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
+use crate::child_process::{kill_group, login_command, read_capped, Signal};
+
 type Obj = Map<String, Value>;
 
 const LIST_TIMEOUT: Duration = Duration::from_secs(60);
@@ -1184,61 +1186,6 @@ async fn case_infos(root: &Path, cases: &[Case]) -> Vec<E2eCaseInfo> {
 
 // ─── Processes ──────────────────────────────────────────────────────
 
-#[derive(Clone, Copy)]
-enum Signal {
-    Term,
-    Kill,
-}
-
-/// Signal a whole process group (negative pid), as `acp::dispose_client` does.
-fn kill_group(pgid: Option<i32>, signal: Signal) {
-    #[cfg(unix)]
-    if let Some(pgid) = pgid.filter(|p| *p > 0) {
-        let sig = match signal {
-            Signal::Term => libc::SIGTERM,
-            Signal::Kill => libc::SIGKILL,
-        };
-        unsafe {
-            libc::kill(-pgid, sig);
-        }
-    }
-    #[cfg(not(unix))]
-    let _ = (pgid, signal);
-}
-
-/// Adapter process: login env, stdin null, own process group, cwd = root.
-fn adapter_command(root: &Path, argv: &[String]) -> Result<tokio::process::Command, String> {
-    let (program, args) = argv
-        .split_first()
-        .ok_or_else(|| "adapter argv is empty".to_string())?;
-    let mut cmd = tokio::process::Command::new(program);
-    cmd.args(args).current_dir(root).stdin(Stdio::null());
-    for (k, v) in crate::pty::login_env_pairs() {
-        cmd.env(k, v);
-    }
-    #[cfg(unix)]
-    cmd.process_group(0);
-    Ok(cmd)
-}
-
-async fn read_capped<R: AsyncRead + Unpin>(reader: Option<R>, cap: usize) -> Vec<u8> {
-    let mut out = Vec::new();
-    let Some(mut reader) = reader else {
-        return out;
-    };
-    let mut buf = [0u8; 8192];
-    loop {
-        match reader.read(&mut buf).await {
-            Ok(0) | Err(_) => break,
-            Ok(n) => {
-                let room = cap.saturating_sub(out.len());
-                out.extend_from_slice(&buf[..n.min(room)]);
-            }
-        }
-    }
-    out
-}
-
 fn tail_lines(text: &str, n: usize) -> String {
     let lines: Vec<&str> = text.lines().collect();
     lines[lines.len().saturating_sub(n)..].join("\n")
@@ -1261,7 +1208,7 @@ async fn run_capture(
         message,
         stderr: String::new(),
     };
-    let mut cmd = adapter_command(root, argv).map_err(fail)?;
+    let mut cmd = login_command(root, argv).map_err(fail)?;
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd
         .spawn()
@@ -1496,7 +1443,7 @@ pub(crate) async fn run_launch(
         truncated: false,
     });
 
-    let spawned = adapter_command(root, &argv).and_then(|mut cmd| {
+    let spawned = login_command(root, &argv).and_then(|mut cmd| {
         cmd.env("KRYPTON_E2E_RESULT", run_dir.join("result.json"))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

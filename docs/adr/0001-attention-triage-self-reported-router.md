@@ -25,3 +25,15 @@ We chose, against reasonable alternatives, the following shape:
 - **Accepted risk: late redirect cost.** Because lanes never block, a human `redirect` may arrive several turns late (delivered on the lane's next idle via the existing `InterLaneCoordinator` / `enqueueSystemPrompt` path). The resulting rework is treated as cheap machine work, traded for saved human attention.
 - The `attention_flag` tool must carry a guard against over-flagging ("skip the machine-verifiable 80%, never flag to cover yourself"), mirroring `peer_send` and `review_request`; without it the demand queue floods and the backpressure gauge lies. **Calibration is two-sided, though** (spec 134): the *first* implementation made this guard prohibition-dominant and saw the tool fall to near-zero use — the cognitive-surrender risk below, realized. The guard now trails positive fork triggers and a symmetric "letting a genuine fork pass unflagged is as costly as over-flagging" framing. This is a prompt-wording correction; the self-report model of this ADR is unchanged.
 - **Follow-up (spec 130): attention tools are default-on.** The per-lane opt-in / directive-grant model from specs 128/129 was superseded for ergonomics and testability: every lane that receives the `krypton-harness-memory` MCP server is advertised `attention_flag` / `attention_resolve` by default. `triage_equipped` remains as legacy directive metadata and a visible badge, but no longer controls tool visibility or assignment approval. See `docs/0130-default-attention-triage.md`.
+
+## 2026-10-27 Update: Rails verifier (ADR-0025)
+
+The "no automatic safety net" consequence no longer holds for **declared rails**. At the user's request, spec 337 adds a harness-owned background checker. At harness quiet points it runs the project's declared checks and a cheap judge limited to the `## Rails` bullets the project wrote, then reports in its own dock tab and the footer.
+
+It does **not** change this ADR's decisions about triage:
+
+- Judgement items still come only from lane self-report; the verifier never creates one.
+- Nothing blocks a lane.
+- The human still keeps the lock: findings reach a lane only when the human sends them.
+
+See `docs/adr/0025-rails-verifier-is-a-harness-owned-background-checker.md`.

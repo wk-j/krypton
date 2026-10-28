@@ -26,7 +26,7 @@
 @layer krypton.base {
 /* ── Root · `acp-harness-view.ts:1482` sets `element.className`; the
       `--concise` / `--zen` / `--panels-hidden` toggles at `:11593-11595`
-      and the `--ticket-active` toggle at `harness-ticket-controller.ts:593`
+      and the `--dock-active` toggle in `harness-dock.ts` (spec 337)
       compose on top of it. ──────────────────────────────────── */
 
 .acp-harness {
@@ -116,18 +116,20 @@
   opacity: 0.72;
 }
 
-/* Ticket dock column · `harness-ticket-controller.ts:92` builds the dock,
-   `:593` toggles the `.acp-harness--ticket-active` root class that gates
-   every rule in this group. */
-/* spec 238: the active ticket is a flush split pane of the harness window,
-   not a nested 8px card. Dashboard yields exactly the panel width; Lane Peek
-   keeps its own 12px rail inset. spec 331: no collapsed state — a hidden dock
-   (spec 320 `ticket` flag) drops the root class and reserves nothing. */
-.acp-harness--ticket-active .acp-harness__dashboard {
+/* Dock column · `harness-dock.ts` builds `.acp-harness__dock` (spec 337): the
+   `acp-dock` tab strip, then the `dock.right` layout slot holding the Ticket
+   and Rails docks at full height, one shown, the other `hidden`. It toggles
+   the `.acp-harness--dock-active` root class while any tab is shown. */
+/* spec 238: the dock is a flush split pane of the harness window, not a
+   nested 8px card. Dashboard yields exactly the column width; Lane Peek
+   keeps its own 12px rail inset. spec 331: no collapsed state — a column
+   with no available tab (spec 320 flags) drops the root class and reserves
+   nothing. */
+.acp-harness--dock-active .acp-harness__dashboard {
   margin-right: 352px;
 }
 
-.acp-harness__ticket-dock {
+.acp-harness__dock {
   position: absolute;
   inset: 0 0 0 auto;
   z-index: 5;
@@ -135,21 +137,102 @@
   flex-direction: column;
   width: 352px;
   max-width: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   contain: layout paint;
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88);
   /* Same as the harness root: a solid slab hid the host window backdrop
      that the dashboard and lane body already show through. */
   background: transparent;
-  border: 0;
-  border-radius: 0;
+}
+
+.acp-harness__dock[hidden] {
+  display: none;
+}
+
+/* `TabStrip` (block `acp-dock`, item `tab`): rendered only while both docks
+   are available, so a ticket-only harness looks as it did before. */
+.acp-dock__tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  padding: 6px 14px;
+  border-bottom: 1px solid rgba(255, 176, 0, 0.14);
+}
+
+.acp-dock__tabs[hidden] {
+  display: none;
+}
+
+.acp-dock__tab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: transparent;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
+  font: inherit;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.09em;
+  line-height: 1;
+  cursor: default;
+}
+
+.acp-dock__tab:hover {
+  border-color: rgba(255, 176, 0, 0.22);
+  color: #ffd880;
+}
+
+.acp-dock__tab--active {
+  border-color: rgba(255, 176, 0, 0.42);
+  background: rgba(255, 176, 0, 0.10);
+  color: #ffd880;
+}
+
+.acp-dock__tab:focus-visible {
+  outline: 1px solid #ffd880;
+  outline-offset: 2px;
+}
+
+.acp-dock__tab-count {
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  opacity: 0.72;
+}
+
+/* The shown dock fills the column under the strip and scrolls on its own. */
+.acp-harness__ticket-dock,
+.acp-harness__rails-dock {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88);
   font-size: 1em;
   line-height: 1.5;
 }
 
-.acp-harness__ticket-dock[hidden] {
+.acp-harness__ticket-dock[hidden],
+.acp-harness__rails-dock[hidden] {
   display: none;
+}
+
+/* Focused by bare `#rails` or a tab switch (tabindex -1) so its list keys
+   apply. The selected row looks the same focused or not, so the dock itself
+   shows whether it holds the keyboard: a 1px inset outline, no animation. */
+.acp-harness__rails-dock:focus,
+.acp-harness__ticket-dock:focus {
+  outline: none;
+}
+
+.acp-harness__rails-dock:focus-within,
+.acp-harness__ticket-dock:focus-within {
+  outline: 1px solid rgba(255, 176, 0, 0.42);
+  outline-offset: -1px;
 }
 
 .acp-harness__ticket-dock section {
@@ -204,18 +287,18 @@
 }
 
 @container (max-width: 959px) {
-  .acp-harness--ticket-active .acp-harness__dashboard {
+  .acp-harness--dock-active .acp-harness__dashboard {
     margin-right: 0;
   }
 
-  .acp-harness--ticket-active .acp-harness__lane-rail {
+  .acp-harness--dock-active .acp-harness__lane-rail {
     visibility: hidden;
   }
 
-  /* spec 331: here the dock overlays the transcript instead of sitting beside
-     it, so it needs the solid surface the annotation overlay uses. The docked
-     pane above 960px stays transparent (spec 238). */
-  .acp-harness--ticket-active .acp-harness__ticket-dock {
+  /* spec 331: here the column overlays the transcript instead of sitting
+     beside it, so it needs the solid surface the annotation overlay uses.
+     The docked column above 960px stays transparent (spec 238). */
+  .acp-harness--dock-active .acp-harness__dock {
     width: min(352px, 100%);
     background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
     box-shadow: -12px 0 28px rgba(0, 0, 0, 0.45);
@@ -1407,12 +1490,12 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
   margin-left: clamp(180px, 14vw, 240px);
 }
 
-.acp-harness--ticket-active .acp-harness__anno-overlay {
+.acp-harness--dock-active .acp-harness__anno-overlay {
   margin-right: 352px;
 }
 
 @container (max-width: 959px) {
-  .acp-harness--ticket-active .acp-harness__anno-overlay {
+  .acp-harness--dock-active .acp-harness__anno-overlay {
     margin-right: 0;
   }
 }

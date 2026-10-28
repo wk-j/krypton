@@ -233,6 +233,15 @@ The compositor is a TypeScript module running in the webview that manages worksp
     `subscribe()`/`dispose()`; ones that own DOM expose `mount*()`. Orchestrator console, review, lane
     lifecycle and composer are still in the class. See `docs/0275-harness-view-controllers.md`.
 
+    **Rails verifier (spec 337, ADR-0025).** `harness-rails-controller.ts` is a local-only controller of
+    the same shape. At harness quiet points it runs the project's declared checks through
+    `src-tauri/src/rails.rs` (manifest, trust store, per-root check runner, run ledger), then a fenced
+    judge model with its own `AssistEngine` + `AcpAssistSession`. Pure parts live in `src/acp/rails/`
+    (glob, rule selection, judge payload/parse, tracking, dock rows, envelope, config). The right dock
+    column is `harness-dock.ts`: one `.acp-harness__dock` with a `TabStrip` and two tabs, the Ticket dock
+    and the `RailsDock` component. It owns each tab's `hidden` and the `acp-harness--dock-active` root
+    class.
+
     **UI components (specs 301/302).** The harness no longer paints with string builders and a
     hand-maintained render signature. `src/ui/` is a generic, harness-free kernel —
     `Component`/`LiveComponent`, `reconcile()`, `RenderScheduler`, `el()`, `LayoutHost` — and every

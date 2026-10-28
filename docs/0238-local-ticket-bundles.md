@@ -276,6 +276,10 @@ Ticket Panel เป็น split pane ชิดขอบขวาของ harnes
   ปุ่ม `›` ใน header (`aria-label="Hide ticket panel"`), Escape ใน panel และ `#ticket panel` ซ่อน panel
   ผ่านค่าเดียวกับไอคอน `Ticket dock` บน title bar ของ spec 320 ซึ่งเป็นปุ่มเปิดกลับ; ข้อความสถานะ
   ไม่พึ่งสีอย่างเดียว
+- ตั้งแต่ spec 337 Ticket Panel เป็นแท็บหนึ่งในคอลัมน์ dock ด้านขวา คู่กับแท็บ Rails เมื่อมีทั้งสองแท็บ
+  แถบแท็บ `TICKET | RAILS` จะขึ้นด้านบน แท็บที่เลือกใช้ความสูงเต็มคอลัมน์ และ `[` / `]` ใช้สลับแท็บ
+  ถ้ามีแค่ ticket หน้าตาจะเหมือนเดิม class ที่กันความกว้าง 352px ของ dashboard เปลี่ยนชื่อเป็น
+  `acp-harness--dock-active`
 - Lane Peek ยังอยู่ใน `.acp-harness__lane-rail` ของพื้นที่ lane ที่เหลือ; inset 12px เป็นของตัว rail
   เอง และขยับตามตอน panel แสดงหรือซ่อน
 - เมื่อ harness แคบกว่า 960px panel ที่แสดงอยู่เป็น overlay ด้านขวาและซ่อน Lane Peek ชั่วคราว

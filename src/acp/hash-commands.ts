@@ -19,6 +19,7 @@ import {
   dailyBriefPrompt,
   directivePrompt,
   e2eInitPrompt,
+  railsInitPrompt,
   fixGithubIssuePrompt,
   handleGithubIssuePrompt,
   handoffResumePrompt,
@@ -63,7 +64,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'mcp', args: '', description: 'print harness MCP server status' },
   {
     name: 'panels',
-    args: '[hide | show | toggle] [plan | peek | thought | grammar | queue | ticket]',
+    args: '[hide | show | toggle] [plan | peek | thought | grammar | queue | ticket | rails]',
     description: 'hide or restore harness panels — all, or one by name',
   },
   {
@@ -155,6 +156,12 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
     args: '[status [<case>] | run <case|all> [k=v…] [--fresh] | rerun | cancel | open [<case>] | init [<hint>] | case <issue> | report <case|runId>]',
     description:
       "run and track this project's e2e cases locally; `init` adopts its test runner or builds one from zero after a plan you approve",
+  },
+  {
+    name: 'rails',
+    args: '[now | send | trust | init [<hint>] | off | manual | auto]',
+    description:
+      'background architecture checker: runs declared checks and a cheap judge against `## Rails` at lane quiet points; bare opens the Rails dock',
   },
   {
     name: 'ticket',
@@ -306,6 +313,14 @@ export function commandMeta(): Record<string, CommandMeta> {
         'init: survey repo → adopt runner or PLAN.md → approve → build → e2e_adapter_check · run/status/rerun/cancel: Krypton runs the adapter, no model turn · open: read-only browser explorer',
       lanes: 'same lane',
       prompt: e2eInitPrompt('<hint>', null),
+    },
+    rails: {
+      category: 'agent',
+      badges: ['workflow'],
+      anatomy:
+        'lanes go quiet → declared checks (no tokens) → cheap judge vs `## Rails` → Rails dock + footer · init: ADRs → `## Rails` + rails.toml + arch tests → #rails trust',
+      lanes: 'same lane',
+      prompt: railsInitPrompt('<hint>'),
     },
     commands: { category: 'surface', badges: [] },
     tools: { category: 'surface', badges: [] },

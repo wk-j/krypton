@@ -98,6 +98,20 @@ export interface SignalValueMap {
     /** Unix seconds. */
     checkedAt: number;
   };
+  // spec 337: one ACP harness's Rails verifier state, published globally with
+  // SYSTEM_SOURCE so the workspace footer can show it regardless of focused
+  // view. `sourceId` identifies the publishing harness; the footer shows the
+  // worst state across all of them. `state: 'none'` (no `.krypton/rails.toml`,
+  // or the harness was disposed) removes the entry. Only `check_failed` is
+  // coloured (ADR-0017: a failed check is a fault); `findings` stays neutral
+  // (ADR-0004: model findings are evidence). Inline union, structurally equal
+  // to acp `RailsFooterSignal`, so the bus stays decoupled from the ACP types.
+  'system:rails': {
+    sourceId: string;
+    state: 'none' | 'running' | 'paused' | 'clean' | 'findings' | 'check_failed' | 'error';
+    findings: number;
+    failedCheck: string | null;
+  };
   // spec 155: published by an ACP harness whenever one of its lanes
   // transitions to `idle` — a lane quiet point (ADR-0008). `cwd` is the
   // harness's projectDir; consumers (the Diff Window) resolve it to a repo

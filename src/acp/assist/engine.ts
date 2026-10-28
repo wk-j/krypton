@@ -3,7 +3,7 @@
 // the per-task circuit breaker. The call itself is injected — `AcpAssistSession`
 // in the app, a stub in tests — so nothing here knows about ACP either.
 
-import type { AssistContext, AssistFailure, AssistTask, AssistTaskConfig } from './types';
+import type { AssistCall, AssistFailure, AssistTaskConfig } from './types';
 
 export type AssistCompletion = (call: {
   system: string;
@@ -46,10 +46,11 @@ export class AssistEngine {
     this.now = now;
   }
 
-  async run<T>(task: AssistTask<T>, ctx: AssistContext, cfg: AssistTaskConfig): Promise<AssistRun<T>> {
+  /** Run one call. The breaker is keyed by `call.id`. */
+  async run<T, C>(call: AssistCall<T, C>, ctx: C, cfg: AssistTaskConfig): Promise<AssistRun<T>> {
     const budget = { maxInputChars: cfg.maxInputChars, timeoutMs: cfg.timeoutMs };
-    // The task bounds its own payload; this is the backstop.
-    const built = task.payload(ctx, budget);
+    // The call bounds its own payload; this is the backstop.
+    const built = call.payload(ctx, budget);
     const user = built.length > cfg.maxInputChars ? built.slice(0, cfg.maxInputChars) : built;
 
     // Single flight: the previous call loses, this one wins.
@@ -70,7 +71,7 @@ export class AssistEngine {
 
     try {
       const raw = await this.complete({
-        system: task.system(cfg),
+        system: call.system(cfg),
         user,
         backendId: cfg.backendId,
         modelId: cfg.modelId,
@@ -81,21 +82,21 @@ export class AssistEngine {
           timer = arm();
         },
       });
-      const value = task.parse(raw, cfg, ctx);
-      if (value === null) return this.record(task.id, 'invalid');
-      this.softFailures.set(task.id, 0);
-      this.cooldowns.set(task.id, 0);
+      const value = call.parse(raw, cfg, ctx);
+      if (value === null) return this.record(call.id, 'invalid');
+      this.softFailures.set(call.id, 0);
+      this.cooldowns.set(call.id, 0);
       return { ok: true, value };
     } catch (e) {
-      if (e instanceof AssistError) return this.record(task.id, e.reason);
-      if (deadlineHit) return this.record(task.id, 'timeout');
+      if (e instanceof AssistError) return this.record(call.id, e.reason);
+      if (deadlineHit) return this.record(call.id, 'timeout');
       if (controller.signal.aborted) {
         // Aborted by `cancel()` or by a superseding run — not the model's
         // fault, and the caller discards a superseded result anyway, so this
         // must never feed the breaker.
         return { ok: false, reason: 'timeout' };
       }
-      return this.record(task.id, 'unavailable');
+      return this.record(call.id, 'unavailable');
     } finally {
       clearTimeout(timer);
       if (this.generation === generation) this.controller = null;

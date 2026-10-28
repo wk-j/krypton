@@ -341,6 +341,26 @@
   color: rgba(255, 93, 108, 0.75);
 }
 
+/* spec 337: Rails verifier — worst state across harnesses. Muted like the link
+   chip; findings stay neutral (ADR-0004: model findings are evidence). Only a
+   failed check is coloured, as a fault (ADR-0017). Hidden when no harness has a
+   `.krypton/rails.toml`. Static — no pulse, no animation. */
+.krypton-workspace-footer__segment--rails {
+  flex: 0 0 auto;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  overflow: visible;
+  text-overflow: clip;
+  letter-spacing: 0.04em;
+  color: var(--krypton-ink-3, rgba(216, 232, 216, 0.5));
+}
+
+.krypton-workspace-footer__segment--rails-fault {
+  color: var(--krypton-danger, #ff5d6c);
+}
+
 /* Tier colours — same palette as the triage-overlay cards so the footer chip
    and the overlay agree on what each colour means (cyan < amber < red). */
 .krypton-workspace-footer__segment--rev-reversible {

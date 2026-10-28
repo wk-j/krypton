@@ -3,6 +3,7 @@ pub mod acp_harness_config;
 mod acp_install;
 mod acp_updates;
 pub mod acp_wire;
+mod child_process;
 mod commands;
 mod computer_read_only;
 mod config;
@@ -25,6 +26,7 @@ mod process_metrics;
 mod prompt_history;
 mod pty;
 mod quick_search;
+mod rails;
 pub mod remote_harness;
 mod review_excerpt;
 mod review_threads;
@@ -178,6 +180,7 @@ pub fn run() {
         .manage(workspace_state::WorkspaceState::default())
         .manage(Arc::new(prompt_history::PromptHistoryStore::new()))
         .manage(Arc::new(e2e::E2eState::default()))
+        .manage(Arc::new(rails::RailsState::default()))
         // MusicEngine is initialized in .setup() because it needs app_handle
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
@@ -187,6 +190,12 @@ pub fn run() {
             e2e::e2e_rerun,
             e2e::e2e_cancel,
             e2e::e2e_find_run,
+            rails::rails_load,
+            rails::rails_trust,
+            rails::rails_run_check,
+            rails::rails_cancel,
+            rails::rails_record_run,
+            rails::rails_history,
             connected_computers::computer_list,
             connected_computers::computer_profile_save,
             connected_computers::computer_profile_delete,
@@ -630,6 +639,7 @@ pub fn run() {
                 let control = app.state::<Arc<control::ControlServer>>().inner().clone();
                 app.state::<telegram::TelegramService>().shutdown();
                 e2e::shutdown(app.state::<Arc<e2e::E2eState>>().inner());
+                rails::shutdown(app.state::<Arc<rails::RailsState>>().inner());
                 app.state::<Arc<connected_computers::ConnectedComputerManager>>()
                     .shutdown();
                 control.remove_descriptor();

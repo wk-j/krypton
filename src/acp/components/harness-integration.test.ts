@@ -424,3 +424,55 @@ describe('harness view integration (spec 301)', () => {
     }
   });
 });
+
+describe('focused Rails dock keys (spec 337)', () => {
+  interface DockSeam {
+    dock: { setAvailable(tab: 'ticket' | 'rails', available: boolean): void; select(tab: 'ticket' | 'rails'): void };
+    railsCtl: { dockEl: HTMLElement; handleDockKey(e: KeyboardEvent): boolean };
+  }
+
+  function focusedRailsDock(): { lane: HarnessLane; seam: DockSeam } {
+    const lane = call<HarnessLane>(view, 'createLane', 'claude', 'claude-1');
+    lanes(view).push(lane);
+    activate(view, lane.id);
+    lane.draft = 'keep me';
+    lane.cursor = lane.draft.length;
+    const seam = view as unknown as DockSeam;
+    seam.dock.setAvailable('rails', true);
+    seam.dock.select('rails');
+    seam.railsCtl.dockEl.focus();
+    expect(document.activeElement).toBe(seam.railsCtl.dockEl);
+    return { lane, seam };
+  }
+
+  function press(key: string, init: KeyboardEventInit = {}): boolean {
+    return view.onKeyDown(new KeyboardEvent('keydown', { key, cancelable: true, ...init }));
+  }
+
+  it('swallows typing, editing keys and Ctrl editing chords so the hidden draft never changes', () => {
+    const { lane } = focusedRailsDock();
+
+    for (const key of ['x', 'Backspace', 'Delete', 'ArrowLeft', 'Home', 'End', 'Tab']) {
+      expect(press(key), key).toBe(true);
+    }
+    expect(press('Tab', { shiftKey: true })).toBe(true);
+    for (const key of ['u', 'k', 'w', 'd', 'a', 'e']) {
+      expect(press(key, { ctrlKey: true }), `Ctrl+${key}`).toBe(true);
+    }
+    expect(lane.draft).toBe('keep me');
+  });
+
+  it('lets a pending permission answer first', () => {
+    const { lane, seam } = focusedRailsDock();
+    const dockKey = vi.spyOn(seam.railsCtl, 'handleDockKey');
+    lane.pendingPermissions.push({} as HarnessLane['pendingPermissions'][number]);
+
+    expect(press('j')).toBe(true);
+    expect(press('1')).toBe(true);
+    expect(dockKey).not.toHaveBeenCalled();
+
+    lane.pendingPermissions.length = 0;
+    press('j');
+    expect(dockKey).toHaveBeenCalledTimes(1);
+  });
+});

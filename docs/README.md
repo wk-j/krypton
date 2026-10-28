@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (322)
+## Specs (323)
 
 | # | Spec |
 |---|------|
@@ -339,8 +339,9 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 334 | [Inline AI Terminal Context](./0334-inline-ai-terminal-context.md) |
 | 335 | [Inline AI Failure Follow-up](./0335-inline-ai-failure-follow-up.md) |
 | 336 | [Inline AI Verify First, on the Pane's Machine](./0336-inline-ai-verify-on-pane-host.md) |
+| 337 | [Rails Verifier](./0337-rails-verifier.md) |
 
-## ADRs (24)
+## ADRs (25)
 
 | # | Decision |
 |---|----------|
@@ -368,6 +369,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 22 | [Handoffs are the one resource Krypton pulls from Xenon, and only on a human command](./adr/0022-handoffs-are-the-one-resource-pulled-from-xenon.md) |
 | 23 | [A handoff belongs to a work thread, not a lane](./adr/0023-a-handoff-belongs-to-a-work-thread-not-a-lane.md) |
 | 24 | [Lessons are global rules the harness holds and injects into every lane](./adr/0024-lessons-are-global-harness-held-rules.md) |
+| 25 | [The Rails verifier is a harness-owned background checker, separate from attention triage](./adr/0025-rails-verifier-is-a-harness-owned-background-checker.md) |
 
 ## Also
 

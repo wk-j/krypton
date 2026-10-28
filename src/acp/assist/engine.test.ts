@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { AssistEngine, AssistError, type AssistCompletion } from './engine';
-import type { AssistContext, AssistTask, AssistTaskConfig } from './types';
+import type { AssistCall, AssistContext, AssistTask, AssistTaskConfig } from './types';
 
 const FIVE_MIN = 5 * 60_000;
 const TEN_MIN = 10 * 60_000;
@@ -129,6 +129,25 @@ describe('AssistEngine.run', () => {
     expect(second).toEqual({ ok: true, value: 'second' });
     expect(await first).toEqual({ ok: false, reason: 'timeout' });
     expect(engine.cooldownUntil('test')).toBe(0);
+  });
+
+  it('runs a call over its own context type and passes that context to parse', async () => {
+    const engine = new AssistEngine(async (call) => `${call.system}|${call.user}`);
+    const seen: number[] = [];
+    const call: AssistCall<string[], { readonly words: readonly string[]; readonly limit: number }> = {
+      id: 'words',
+      system: () => 'sys',
+      payload: (c) => c.words.join(' '),
+      parse: (raw, _cfg, c) => {
+        seen.push(c.limit);
+        return raw.split('|')[1].split(' ').slice(0, c.limit);
+      },
+    };
+
+    const run = await engine.run(call, { words: ['a', 'b', 'c'], limit: 2 }, cfg());
+
+    expect(run).toEqual({ ok: true, value: ['a', 'b'] });
+    expect(seen).toEqual([2]);
   });
 });
 

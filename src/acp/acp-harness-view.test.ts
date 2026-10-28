@@ -2982,10 +2982,11 @@ describe('ACP peer activity UI (spec 118)', () => {
   it('does not style a pin-slot ticket bar next to the Ticket Panel (spec 238)', () => {
     const dock = styleSheet('components/ticket-dock/ticket-dock.css');
     const shared = styleSheet('../styles/harness-shared.css');
-    const dockRule = shared.match(/\.acp-harness__ticket-dock\s*\{([^}]*)\}/)?.[1];
+    // spec 337: the dock column owns placement and surface; the docks fill it.
+    const dockRule = shared.match(/\.acp-harness__dock\s*\{([^}]*)\}/)?.[1];
 
     expect(dockRule).toBeDefined();
-    // The dock is chrome-less: the only background it declares is transparent.
+    // The column is chrome-less: the only background it declares is transparent.
     expect(dockRule?.match(/background:[^;]*/g)).toEqual(['background: transparent']);
     for (const sheet of [dock, shared]) {
       expect(sheet).not.toMatch(/\.acp-harness__ticket-bar\s*\{/);
@@ -4131,6 +4132,8 @@ describe('#panels and titlebar toggles (specs 251, 320)', () => {
         else target.hiddenPanels.delete(panel);
         changes.push(`${panel}:${value}`);
       },
+      // spec 337: showing a dock panel selects its tab in the dock column.
+      dock: { select: (tab: string): void => { changes.push(`select:${tab}`); } },
     });
     return { target, drafts, flashes, changes };
   }
@@ -4154,7 +4157,7 @@ describe('#panels and titlebar toggles (specs 251, 320)', () => {
       await proto.runHashCommand.call(h.target, { status: 'idle' }, text);
     }
 
-    expect(h.changes).toEqual(['grammar:true', 'grammar:false', 'ticket:true', 'ticket:true', 'ticket:false']);
+    expect(h.changes).toEqual(['grammar:true', 'grammar:false', 'ticket:true', 'ticket:true', 'ticket:false', 'select:ticket']);
     expect(h.target.panelsHidden).toBe(false);
   });
 
@@ -4189,6 +4192,17 @@ describe('#panels and titlebar toggles (specs 251, 320)', () => {
     proto.activateTitlebarToggle.call(h.target, 'zen');
 
     expect(h.changes).toEqual(['thought:true', 'queue:false', 'all:true']);
+  });
+
+  it('selects the Rails or Ticket tab only when its panel is shown (spec 337)', () => {
+    const h = harnessDouble({ hidden: ['rails'] });
+
+    proto.activateTitlebarToggle.call(h.target, 'rails');
+    proto.activateTitlebarToggle.call(h.target, 'rails');
+    proto.activateTitlebarToggle.call(h.target, 'ticket');
+    proto.activateTitlebarToggle.call(h.target, 'ticket');
+
+    expect(h.changes).toEqual(['rails:false', 'select:rails', 'rails:true', 'ticket:true', 'ticket:false', 'select:ticket']);
   });
 
   type RailRenderers = {
@@ -4260,33 +4274,38 @@ describe('#panels and titlebar toggles (specs 251, 320)', () => {
     expect(target.queueSlot.hidden).toBe(false);
   });
 
-  it('gives back the ticket dock width only while the dock is hidden', () => {
+  it('reports the Ticket tab available only while the dock is not hidden, and paints only when shown', () => {
     type DockHost = { renderTicketDock(): void };
     const renderTicketDock = (HarnessTicketController.prototype as unknown as DockHost).renderTicketDock;
     let ticketHidden = true;
-    const classes = new Map<string, boolean>();
+    let shown = false;
+    const available: boolean[] = [];
     const updates: unknown[] = [];
     const ctl = {
       activeTicket: { id: 'KR-320' },
       ticketWorker: null,
-      ticketDockEl: { hidden: false },
       ticketDock: { update: (props: unknown): void => { updates.push(props); } },
       host: {
         isPanelHidden: (panel: HarnessPanelId): boolean => panel === 'ticket' && ticketHidden,
-        element: { classList: { toggle: (name: string, on: boolean): void => { classes.set(name, on); } } },
+        setDockTabAvailable: (tab: string, value: boolean): void => {
+          if (tab === 'ticket') available.push(value);
+        },
+        dockTabShown: (tab: string): boolean => tab === 'ticket' && shown,
       },
     };
 
     renderTicketDock.call(ctl);
-    expect(ctl.ticketDockEl.hidden).toBe(true);
-    expect(Object.fromEntries(classes)).toEqual({ 'acp-harness--ticket-active': false });
+    expect(available).toEqual([false]);
     expect(updates).toEqual([]);
 
+    // Available, but the Rails tab is the one shown: nothing paints.
     ticketHidden = false;
     renderTicketDock.call(ctl);
-    expect(ctl.ticketDockEl.hidden).toBe(false);
-    // spec 331: one root class — there is no collapsed width left to reserve.
-    expect(Object.fromEntries(classes)).toEqual({ 'acp-harness--ticket-active': true });
+    expect(available).toEqual([false, true]);
+    expect(updates).toEqual([]);
+
+    shown = true;
+    renderTicketDock.call(ctl);
     expect(updates).toHaveLength(1);
   });
 });

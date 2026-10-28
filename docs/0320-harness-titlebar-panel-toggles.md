@@ -3,6 +3,9 @@
 > Status: Implemented
 > Date: 2026-10-21
 > Milestone: M6 — ACP Harness
+> Amended by spec 337 (2026-10-27): a seventh panel, `rails` (the Rails dock), joins the titlebar after
+> `ticket`. Ticket and Rails are two tabs of one dock column (`harness-dock.ts`); the
+> `acp-harness--dock-active` root class replaces `--ticket-active`, and showing either panel selects its tab.
 
 ## Problem
 
@@ -45,9 +48,10 @@ optional `ContentView` hook, modelled on the spec 218 lane strip.
   is the seam this spec widens.
 - **The right rail is an absolutely positioned 320px overlay**
   (`harness-shared.css` `.acp-harness__lane-rail`), so hiding single panels
-  inside it reflows nothing. The ticket dock is the exception: the
-  `acp-harness--ticket-active` root class reserves 352px of dashboard margin
-  (spec 331 removed the former 46px collapsed state and its classes).
+  inside it reflows nothing. The dock column is the exception: the
+  `acp-harness--dock-active` root class reserves 352px of dashboard margin
+  (spec 331 removed the former 46px collapsed state; spec 337 renamed the class
+  from `--ticket-active` when the column gained the Rails tab).
 - **Icons:** `src/acp/harness-icons.ts` holds 16×16 `currentColor` `<symbol>`s,
   injected once at document level by `ensureHarnessSymbolDefs()` precisely so
   window chrome outside the view can `<use>` them (spec 218 footer strip).
@@ -154,7 +158,8 @@ rail itself rather than rely on the root-class CSS:
 | peek | unmount, `peekCard = null`, `peekLaneId = null` (same as no candidate); `syncPeekToolRow` returns |
 | thought | stop teletype RAF, cancel hide timer, unmount; `patchPeekThoughtIfLane` returns |
 | grammar | unmount (existing path) |
-| ticket | `ticketDockEl.hidden = true`; `--ticket-active` toggled on `ticket !== null && !hidden`, so the dashboard margin returns with no extra CSS. Since spec 331 the dock's `›` button, Escape and `#ticket panel` set this same flag; the dock has no collapsed state |
+| ticket | The column stops offering the Ticket tab (`HarnessDock.setAvailable('ticket', false)`); with no tab left the column hides and `--dock-active` drops, so the dashboard margin returns with no extra CSS. Since spec 331 the dock's `›` button, Escape and `#ticket panel` set this same flag; the dock has no collapsed state |
+| rails | Same, for the Rails tab (spec 337). Escape in the Rails dock only returns focus; the titlebar toggle or `#panels rails` hides it |
 
 Panel *state* (plan entries/collapse, peek selection and lock, grammar result,
 queued prompts) is never touched. Showing re-renders from

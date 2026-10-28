@@ -15,6 +15,7 @@ import {
 import { centerSegments, leftSegments } from './workspace-footer-segments';
 import { FooterGit } from './workspace-footer-git';
 import { FooterAttention } from './workspace-footer-attention';
+import { FooterRails } from './workspace-footer-rails';
 import { FooterPriority, FooterReviews } from './workspace-footer-review-gauges';
 import { FooterLink } from './workspace-footer-link';
 import { FooterProgramStatus } from './workspace-footer-program-status';
@@ -42,6 +43,7 @@ export class WorkspaceFooter {
   private rightEl: HTMLElement;
   private hintEl: HTMLElement;
   private readonly attention = new FooterAttention();
+  private readonly rails = new FooterRails();
   private readonly programStatus = new FooterProgramStatus();
   private readonly reviews = new FooterReviews();
   private readonly priority = new FooterPriority();
@@ -100,6 +102,7 @@ export class WorkspaceFooter {
       this.priority.el,
       this.reviews.el,
       this.attention.el,
+      this.rails.el,
       this.programStatus.el,
       this.hintEl,
       this.music.el,
@@ -156,6 +159,13 @@ export class WorkspaceFooter {
       const { sourceId, openCount, maxReversibility } = s.value;
       this.attention.set(sourceId, openCount, maxReversibility);
       this.attention.render();
+    });
+
+    // spec 337: global (not focus-gated) — each harness's Rails verifier state;
+    // the segment shows the worst across harnesses.
+    this.bus.onSignal({ kind: 'system:rails' }, (s) => {
+      this.rails.set(s.value);
+      this.rails.render();
     });
 
     // spec 284: global (not focus-gated) — a pane needing you matters wherever
@@ -302,6 +312,7 @@ export class WorkspaceFooter {
     this.priority.render();
     this.reviews.render();
     this.attention.render();
+    this.rails.render();
     this.renderProgramStatus();
     this.music.render();
   }

@@ -18,9 +18,9 @@
 // surfaces (`ticket`, `workerName`) arrive as data, and the head button
 // carries `data-ticket-dock-action="hide"` for the delegated click handler the
 // controller installed on the dock element. That handler, the `hidden` flag
-// (spec 320's per-panel `ticket` flag, which `#panels` also answers to) and the
-// `acp-harness--ticket-active` class on the harness root stay with the view:
-// they are the dock's placement, not its content.
+// (owned by the dock column, `harness-dock.ts`, from spec 320's per-panel
+// `ticket` flag and the shown tab) and the `acp-harness--dock-active` class on
+// the harness root stay outside: they are the dock's placement, not its content.
 //
 // Spec 331: the dock has no collapsed state. `›` hides it through the same
 // flag, and the titlebar `Ticket dock` toggle shows it again.

@@ -465,10 +465,18 @@ pub fn get_acp_harness_config_path() -> Result<String, String> {
 /// spec 145: collect git working-tree state (diff + untracked excerpts +
 /// diffstat) for the lane's cwd. Shared by the user-triggered `#review` command
 /// (which forwards the diff/doc subject to reviewers) and attention triage
-/// (which uses `diffstat` for a flagged decision's blast-radius).
+/// (which uses `diffstat` for a flagged decision's blast-radius). `untrackedAll`
+/// (spec 337, the Rails verifier) lists each new file on its own instead of one
+/// row per untracked directory; omitted or false keeps the `#review` payload.
 #[tauri::command]
-pub fn acp_collect_review_git_state(cwd: String) -> Result<serde_json::Value, String> {
-    Ok(crate::hook_server::collect_git_state_public(Some(&cwd)))
+pub fn acp_collect_review_git_state(
+    cwd: String,
+    untracked_all: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    Ok(crate::hook_server::collect_git_state_public(
+        Some(&cwd),
+        untracked_all.unwrap_or(false),
+    ))
 }
 
 /// spec 155: collect the [[Working diff]] for the Diff Window — `git diff -M`
