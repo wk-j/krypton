@@ -157,6 +157,7 @@ function rig(options: RigOptions = {}) {
   const flashes: string[] = [];
   const signals: Omit<RailsFooterSignal, 'sourceId'>[] = [];
   const envelopes: { laneId: string; message: string }[] = [];
+  const systemPrompts: { laneId: string; text: string; label: string | undefined }[] = [];
   const host: HarnessRailsHost = {
     element: document.createElement('div'),
     lanes,
@@ -175,7 +176,10 @@ function rig(options: RigOptions = {}) {
     focusComposer: () => undefined,
     injectEnvelope: (laneId, message) => { envelopes.push({ laneId, message }); },
     publishRailsSignal: (signal) => { signals.push(signal); },
-    enqueueSystemPrompt: async () => true,
+    enqueueSystemPrompt: async (lane, text, _drain, label) => {
+      systemPrompts.push({ laneId: lane.id, text, label });
+      return true;
+    },
   };
   const ctl = new HarnessRailsController(host, {
     invoke,
@@ -194,7 +198,7 @@ function rig(options: RigOptions = {}) {
     await ctl.whenIdle();
   };
   const commands = (): string[] => calls.map((call) => call.cmd);
-  return { ctl, host, lanes, calls, commands, records, prompts, flashes, signals, envelopes, transition, quietPoint };
+  return { ctl, host, lanes, calls, commands, records, prompts, systemPrompts, flashes, signals, envelopes, transition, quietPoint };
 }
 
 describe('HarnessRailsController (spec 337)', () => {
@@ -464,6 +468,53 @@ describe('HarnessRailsController (spec 337)', () => {
     expect(r.envelopes[0].laneId).toBe('lane-2');
     expect(r.envelopes[0].message).toContain('[rails]');
     expect(r.envelopes[0].message).toContain('/repo/.krypton/rails/runs/20261027T010000Z-0001.json');
+  });
+
+  it('#rails update sends the typed lane a freshly loaded rails state and the request (spec 338)', async () => {
+    const options: RigOptions = { history: [priorRun()] };
+    const r = rig(options);
+    await r.ctl.mount();
+    // The manifest changed after mount: the prompt must carry the new load, not the mounted snapshot.
+    options.snapshot = {
+      ...SNAPSHOT,
+      trust: 'changed',
+      checks: [...SNAPSHOT.checks, { name: 'arch', argv: ['sh', 'arch.sh'], timeoutS: 60 }],
+    };
+    r.calls.length = 0;
+
+    await r.ctl.runCommand(r.lanes[1], ['update', 'typecheck', 'times', 'out'], '#rails update typecheck times out');
+    expect(r.commands()).toEqual(['rails_load']);
+    expect(r.flashes).toEqual([]);
+    expect(r.systemPrompts).toHaveLength(1);
+    const sent = r.systemPrompts[0];
+    expect(sent).toMatchObject({ laneId: 'lane-2', label: 'rails update' });
+    expect(sent.text).toContain('trust changed');
+    expect(sent.text).toContain('- arch · timeout_s 60 · argv ["sh","arch.sh"] · not run');
+    expect(sent.text).toContain('/repo/.krypton/rails/runs/20261027T010000Z-0001.json');
+    expect(sent.text).toContain(`${RULE} · judge-only · violated`);
+    expect(sent.text).toContain('"typecheck times out"');
+
+    // Bare: no request line, so the lane only proposes.
+    await r.ctl.runCommand(r.lanes[1], ['update'], '#rails update');
+    expect(r.systemPrompts).toHaveLength(2);
+    expect(r.systemPrompts[1].text).not.toContain('My request');
+  });
+
+  it('#rails update refuses a busy lane and a project without a manifest, queuing nothing', async () => {
+    const busy = rig();
+    await busy.ctl.mount();
+    busy.calls.length = 0;
+    busy.lanes[0].status = 'busy';
+    await busy.ctl.runCommand(busy.lanes[0], ['update', 'x'], '#rails update x');
+    expect(busy.flashes).toEqual(['lane busy - #cancel first']);
+    expect(busy.commands()).toEqual([]);
+    expect(busy.systemPrompts).toEqual([]);
+
+    const none = rig({ snapshot: { ...SNAPSHOT, present: false } });
+    await none.ctl.mount();
+    await none.ctl.runCommand(none.lanes[0], ['update'], '#rails update');
+    expect(none.flashes).toEqual(['rails: no .krypton/rails.toml — #rails init']);
+    expect(none.systemPrompts).toEqual([]);
   });
 
   it('moves over the dock rows with j/k, jumps sections and sends the selected finding with s', async () => {

@@ -24,7 +24,7 @@ import { AssistEngine } from './assist/engine';
 import type { AssistFailure } from './assist/types';
 import { RailsDock } from './components/rails-dock';
 import type { RailsTabBadge } from './harness-dock';
-import { railsInitPrompt } from './harness-prompts';
+import { railsInitPrompt, railsUpdatePrompt } from './harness-prompts';
 import type { HarnessRailsHost } from './harness-view-host';
 import type { HarnessLane } from './harness-view-types';
 import { railsAssistConfig, resolveRailsConfig } from './rails/config';
@@ -40,6 +40,7 @@ import {
   ruleStatuses,
   trackFindings,
 } from './rails/track';
+import { railsUpdateState } from './rails/update-state';
 import type {
   RailsCheckResult,
   RailsConfig,
@@ -63,7 +64,7 @@ export const RAILS_HISTORY_LIMIT = 20;
 /** The warm judge backend is killed after this long without a run. */
 export const RAILS_SESSION_IDLE_MS = 10 * 60_000;
 
-export const RAILS_USAGE = 'usage: #rails [now | send | trust | init [<hint>] | off | manual | auto]';
+export const RAILS_USAGE = 'usage: #rails [now | send | trust | init [<hint>] | update [<request>] | off | manual | auto]';
 
 const JUDGE_FAILURE_TEXT: Record<AssistFailure, string> = {
   'no-backend': 'judge backend did not start',
@@ -210,7 +211,7 @@ export class HarnessRailsController {
     return this.runPromise;
   }
 
-  /** `#rails <sub…>`; `text` is the whole typed command (for the `init` hint). */
+  /** `#rails <sub…>`; `text` is the whole typed command (for the `init` hint and the `update` request). */
   async runCommand(lane: HarnessLane, args: readonly string[], text: string): Promise<void> {
     const sub = (args[0] ?? '').toLowerCase();
     const extra = args.length > 1;
@@ -220,6 +221,10 @@ export class HarnessRailsController {
     }
     if (sub === 'init') {
       await this.init(lane, text.trim().replace(/^#rails\s+init\b/i, '').trim());
+      return;
+    }
+    if (sub === 'update') {
+      await this.update(lane, text.trim().replace(/^#rails\s+update\b/i, '').trim());
       return;
     }
     if (extra) {
@@ -624,6 +629,36 @@ export class HarnessRailsController {
       return;
     }
     await this.host.enqueueSystemPrompt(lane, railsInitPrompt(hint), undefined, 'rails init');
+  }
+
+  /** spec 338: a fresh snapshot plus the newest runs, and the human's request, to the typed lane. */
+  private async update(lane: HarnessLane, request: string): Promise<void> {
+    if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
+      this.host.flashChip('lane busy - #cancel first');
+      return;
+    }
+    const root = await this.resolveRoot();
+    if (!root) {
+      this.host.flashChip('#rails: no project dir');
+      return;
+    }
+    // Feeds only the prompt: a run in flight keeps the snapshot it loaded.
+    let snapshot: RailsSnapshot;
+    try {
+      snapshot = await this.invoke<RailsSnapshot>('rails_load', { root });
+    } catch (e) {
+      this.host.flashChip(`rails update failed: ${errorText(e)}`);
+      return;
+    }
+    if (this.disposed) return;
+    // A manifest error does not stop: a broken manifest is a reason to update.
+    if (!snapshot.present) {
+      this.host.flashChip('rails: no .krypton/rails.toml — #rails init');
+      return;
+    }
+    const latest = this.history[0];
+    const state = railsUpdateState(snapshot, this.history, latest ? this.runPath(latest) : null);
+    await this.host.enqueueSystemPrompt(lane, railsUpdatePrompt(request, state), undefined, 'rails update');
   }
 
   /** `only` null: every open finding of the newest run. */

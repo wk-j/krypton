@@ -1684,6 +1684,8 @@ mount (local harness only)    HarnessRailsController.mount → rails_load + rail
 #rails now | r in the dock     manual run from step 3, no fingerprint stop; untrusted → judge only
 #rails send | s in the dock    railsEnvelope → injectHarnessEnvelope(lane) → drained on its next idle
 #rails trust                   rails_trust → sha256 into ~/.config/krypton/rails-trust.toml
+#rails update [<request>]      rails_load (fresh) + history → railsUpdateState (fenced, ≤ 12 000 chars)
+                               → railsUpdatePrompt → enqueueSystemPrompt(lane) (spec 338)
 #rails off | dispose           engine.cancel() (+ rails_cancel(root) while a check runs) → no record written
 ```
 

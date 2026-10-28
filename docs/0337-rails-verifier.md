@@ -18,7 +18,7 @@ Add a per-harness background **Rails verifier**. When the harness goes quiet, it
 
 Code, not the model, decides the verdict. Every run is kept in `.krypton/rails/runs/`. The **Rails dock** is a dedicated panel that sits where the Active Ticket dock sits, as a second tab of the harness's right dock column. It tracks the current run, open findings and how long each has been open, what got resolved, every rule's latest status, and recent runs. A footer indicator shows the verdict outside the harness.
 
-The human sends findings to a lane from the dock or with `#rails send`. The verifier never blocks a lane, never edits code, and never creates attention items. `#rails init` asks the current lane to turn existing ADRs into rails: it adds `## Rails` sections, writes `.krypton/rails.toml`, and writes architecture tests for the bullets that code can check.
+The human sends findings to a lane from the dock or with `#rails send`. The verifier never blocks a lane, never edits code, and never creates attention items. `#rails init` asks the current lane to turn existing ADRs into rails: it adds `## Rails` sections, writes `.krypton/rails.toml`, and writes architecture tests for the bullets that code can check. `#rails update` (spec 338) asks the current lane to change the existing rails from the human's own words.
 
 ## Research
 
@@ -234,13 +234,14 @@ The model never overrides a check result (the Empryo gap; ADR-0021 precedent).
 
 ### Commands
 
-There is no new key binding; the Leader map is full (spec 222). The command is `#rails [now | send | trust | init [<hint>] | off | manual | auto]`:
+There is no new key binding; the Leader map is full (spec 222). The command is `#rails [now | send | trust | init [<hint>] | update [<request>] | off | manual | auto]`:
 
 - **bare**: selects and focuses the Rails tab, clearing its own hidden flag first; a master `#panels hide` still wins, as for every panel.
 - **now**: starts a manual run. With mode `off`, it refuses and says so, as `#assist` does.
 - **send**: sends the open findings of the newest run to the lane the command was typed in, as one `[rails]` envelope through `injectHarnessEnvelope`: at most 4 000 chars plus the path of the run file, asking the lane to fix each finding or explain why the rule does not apply, and never to weaken a check.
 - **trust**: calls `rails_trust`.
 - **init**: sends the one-shot `railsInitPrompt` to the current lane.
+- **update**: sends `railsUpdatePrompt` to the current lane, carrying a fresh `rails_load` snapshot and the newest runs as fenced state plus the human's request; bare, the lane only proposes. Spec 338.
 - **off | manual | auto**: an in-memory mode override, as `#assist` does.
 
 ### `#rails init` prompt
