@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it, vi } from 'vitest';
+import { invoke } from '@tauri-apps/api/core';
 
 import { HarnessTicketController } from './harness-ticket-controller';
 import { HarnessDock } from './harness-dock';
 import type { HarnessDockTab, PanelsCommand } from './harness-panel-visibility';
+import type { TicketDockAction } from './harness-ticket-helpers';
 import type { HarnessTicketHost } from './harness-view-host';
-import type { LocalTicketDetail } from './harness-view-types';
+import type { HarnessLane, LocalTicketDetail } from './harness-view-types';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
@@ -27,15 +29,46 @@ const TICKET: LocalTicketDetail = {
   resources: [],
 };
 
-function ticketDouble(activeTicket: LocalTicketDetail | null, ticketHidden = false): {
+const LINKED: LocalTicketDetail = {
+  ...TICKET,
+  github: {
+    issueKey: 'wk/krypton#342',
+    issueUrl: 'https://github.com/wk/krypton/issues/342',
+    repo: 'wk/krypton',
+    number: 342,
+    title: 'Ticket actions',
+    state: 'open',
+    fetchedAt: 0,
+  },
+};
+
+function laneDouble(over: Partial<HarnessLane> = {}): HarnessLane {
+  return { id: 'lane-1', displayName: 'codex-1', status: 'idle', client: {}, error: null, ...over } as HarnessLane;
+}
+
+interface VerbCall {
+  lane: string;
+  verb: string;
+  args: string[];
+}
+
+function ticketDouble(
+  activeTicket: LocalTicketDetail | null,
+  ticketHidden = false,
+  options: { lane?: HarnessLane; runVerb?: () => Promise<void> } = {},
+): {
   ctl: HarnessTicketController;
   dock: HarnessDock;
   root: HTMLElement;
   commands: ApplyPanels[];
   flashes: string[];
+  verbs: VerbCall[];
+  lane: HarnessLane;
 } {
   const commands: ApplyPanels[] = [];
   const flashes: string[] = [];
+  const verbs: VerbCall[] = [];
+  const lane = options.lane ?? laneDouble();
   const root = document.createElement('div');
   let ctl: HarnessTicketController | null = null;
   const dock = new HarnessDock(root, () => '/repo', (tab) => {
@@ -43,19 +76,32 @@ function ticketDouble(activeTicket: LocalTicketDetail | null, ticketHidden = fal
   });
   const host = {
     element: root,
+    harnessMemoryId: 'harness-1',
     isPanelHidden: (panel: string): boolean => panel === 'ticket' && ticketHidden,
     applyPanelsCommand: (command: ApplyPanels): void => { commands.push(command); },
     setDockTabAvailable: (tab: HarnessDockTab, available: boolean): void => dock.setAvailable(tab, available),
     dockTabShown: (tab: HarnessDockTab): boolean => dock.isShown(tab),
     flashChip: (text: string): void => { flashes.push(text); },
+    activeLane: (): HarnessLane => lane,
+    issueBinding: (): null => null,
+    runGithubIssuePromptVerb: (target: HarnessLane, verb: string, args: string[]): Promise<void> => {
+      verbs.push({ lane: target.displayName, verb, args });
+      return options.runVerb?.() ?? Promise.resolve();
+    },
   } as unknown as HarnessTicketHost;
   ctl = new HarnessTicketController(host);
   ctl.mountDock();
   dock.setPane('ticket', ctl.ticketDockEl);
   ctl.activeTicket = activeTicket;
   ctl.renderTicketDock();
-  return { ctl, dock, root, commands, flashes };
+  return { ctl, dock, root, commands, flashes, verbs, lane };
 }
+
+const actionButton = (ctl: HarnessTicketController, verb: TicketDockAction): HTMLButtonElement => {
+  const button = ctl.ticketDockEl.querySelector<HTMLButtonElement>(`[data-ticket-dock-action="${verb}"]`);
+  if (!button) throw new Error(`no ${verb} button`);
+  return button;
+};
 
 describe('Ticket tab of the dock column (spec 337)', () => {
   it('is available only while a ticket is active and its flag is clear', () => {
@@ -113,5 +159,83 @@ describe('Ticket Panel hide (spec 331)', () => {
 
     expect(commands).toEqual([]);
     expect(flashes).toEqual(['no working ticket set']);
+  });
+});
+
+describe('Ticket Panel issue actions (spec 342)', () => {
+  it('runs the clicked verb in the active lane with the ticket issue URL', () => {
+    const { ctl, verbs } = ticketDouble(LINKED);
+
+    actionButton(ctl, 'post-github-comment').click();
+
+    expect(verbs).toEqual([
+      { lane: 'codex-1', verb: 'post-github-comment', args: ['https://github.com/wk/krypton/issues/342'] },
+    ]);
+  });
+
+  it('lets one dock action start per lane until its turn begins', () => {
+    const { ctl, verbs, flashes, lane } = ticketDouble(LINKED, false, { runVerb: () => new Promise(() => {}) });
+
+    actionButton(ctl, 'analyze-github-issue').click();
+    actionButton(ctl, 'fix-github-issue').click();
+
+    expect(verbs.map((call) => call.verb)).toEqual(['analyze-github-issue']);
+    expect(flashes).toEqual(['Fix here: codex-1 is starting an action']);
+
+    // The turn begins: the guard lifts and the button shows it running.
+    ctl.beginAction(lane, 'analyze-github-issue');
+    expect(actionButton(ctl, 'analyze-github-issue').textContent).toBe('Analyzerunning · codex-1');
+  });
+
+  it('records a finished turn and turns the button done without disabling it', async () => {
+    const recorded: LocalTicketDetail = {
+      ...LINKED,
+      actions: { 'post-github-comment': { at: Date.now(), laneDisplayName: 'codex-1' } },
+    };
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockResolvedValueOnce(recorded);
+    const { ctl, lane } = ticketDouble(LINKED);
+
+    ctl.beginAction(lane, 'post-github-comment');
+    expect(actionButton(ctl, 'post-github-comment').classList.contains('acp-ticket-dock__action--running')).toBe(true);
+    ctl.onTurnEnd(lane, 'end_turn');
+    await vi.waitFor(() => {
+      expect(actionButton(ctl, 'post-github-comment').classList.contains('acp-ticket-dock__action--done')).toBe(true);
+    });
+
+    expect(invoke).toHaveBeenCalledWith('acp_record_ticket_action', {
+      harnessId: 'harness-1',
+      ticketId: 'KR-331',
+      verb: 'post-github-comment',
+      laneDisplayName: 'codex-1',
+    });
+    expect(actionButton(ctl, 'post-github-comment').disabled).toBe(false);
+  });
+
+  it('records nothing for a turn that did not finish, and clears running', () => {
+    vi.mocked(invoke).mockReset();
+    const { ctl, lane } = ticketDouble(LINKED);
+
+    ctl.beginAction(lane, 'fix-github-issue');
+    ctl.onTurnEnd(lane, 'cancelled');
+    ctl.beginAction(lane, 'fix-github-issue');
+    lane.error = 'prompt failed';
+    ctl.onTurnEnd(lane, 'end_turn');
+
+    expect(invoke).not.toHaveBeenCalled();
+    expect(actionButton(ctl, 'fix-github-issue').className).toBe('acp-ticket-dock__action');
+  });
+
+  it('cancels only the entry its own token registered', () => {
+    const { ctl, lane } = ticketDouble(LINKED);
+
+    const first = ctl.beginAction(lane, 'analyze-github-issue');
+    const second = ctl.beginAction(lane, 'fix-github-issue');
+    expect(first).not.toBeNull();
+    expect(second).toBeNull();
+    ctl.cancelAction(lane, {});
+    expect(actionButton(ctl, 'analyze-github-issue').textContent).toBe('Analyzerunning · codex-1');
+    if (first) ctl.cancelAction(lane, first);
+    expect(actionButton(ctl, 'analyze-github-issue').textContent).toBe('Analyze');
   });
 });

@@ -563,6 +563,16 @@ d. The loop stops once the grip, the mouse and the button fades settle
        snapshot enrichment. A GitHub-linked work prompt reports `issue_progress`
        separately, so the injected GitHub issue card remains GitHub-status-only
        while the docked Ticket Panel shows local status and resources.
+       Spec 342: the panel's Issue actions buttons run the same spec-191 verb
+       as the typed `#` command (runGithubIssuePromptVerb with the ticket's
+       issue URL, in the active lane). A verb on the active ticket's issue
+       registers a running entry (memory only) before enqueueSystemPrompt;
+       finishTurn hands it to the ticket controller, which records only an
+       `end_turn` without lane error via `acp_record_ticket_action` into
+       `ticket.json` `actions` and repaints the button as done. setLaneStatus
+       on the active lane and an `issue_progress` report for the ticket's issue
+       repaint the dock; lane removal / restart / `#new` (releaseLane) drop the
+       lane's worker binding and running entry together.
        The browser extension popup now also reads that local Ticket Panel state
        via `ticket.active` for its selected lane (spec 268). The control bridge
        resolves the lane's harness; `AcpHarnessView` returns only a bounded

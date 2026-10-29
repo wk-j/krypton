@@ -787,7 +787,7 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 | 5.4 | `ThoughtCard` L | `claude-1   thinking` <br> `the tail window can slide past a live row…` | `lane-peek.ts:608-642` + `patchLaneThoughtCard` |
 | 5.5 | `QueueCard` | `omp-1                        ⏎ QUEUE 3 · HELD` <br> `▸1  rerun the type check against the whole` <br> `    workspace and report what it covers` <br> `    →codex-2 +1   img×2` <br> `2   open the model picker` <br> `#unqueue · #queue clear` | `acp-harness-view.ts:11982-12026` |
 | 5.6 | `PlanPanel` | `plan 4/9` <br> `✓ extract kernel` · `▸ wire composer meta segments` · `· delete signature` | `acp-harness-view.ts:14668-14726` |
-| 5.7 | `TicketDock` | `active ticket` <br> `Harness UI refactor                 ›` <br> `open  KR-301` <br> `GitHub  wk/krypton  #301 · open` <br> `Worker  codex-1` | `harness-ticket-controller.ts:603-676` |
+| 5.7 | `TicketDock` | `active ticket` <br> `Harness UI refactor                 ›` <br> `open  KR-301` <br> `GitHub  wk/krypton  #301 · open` <br> `Worker  codex-1` <br> `ISSUE ACTIONS  run in codex-1 · idle` <br> `[Analyze ✓ 10-27] [Fix here ✓ PR] [Handle]` (spec 342) | `harness-ticket-controller.ts:603-676` |
 | 5.8 | `AnnotationRail` | `ANNOTATED  3 · 2 unsent              [ send 2 ]` <br> `deps tuple needs the lane arg            [ del ]` | `transcript-annotation.ts:329-370` |
 
 ---

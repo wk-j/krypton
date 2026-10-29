@@ -919,6 +919,12 @@ export interface TicketResource {
   modifiedAt: number;
 }
 
+/** Spec 342: one issue verb's latest completed run, keyed by verb in `ticket.json`. */
+export interface TicketActionRun {
+  at: number;
+  laneDisplayName: string;
+}
+
 export interface LocalTicketSummary {
   schemaVersion: 1;
   id: string;
@@ -934,6 +940,8 @@ export interface LocalTicketSummary {
   contextExcerpt?: string;
   resourceCount: number;
   analysis?: TicketAnalysisSummary;
+  /** Spec 342: absent until the first completed action. */
+  actions?: Record<string, TicketActionRun>;
 }
 
 export interface LocalTicketDetail extends LocalTicketSummary {

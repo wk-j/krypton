@@ -3,6 +3,7 @@
 //! Rust owns every filesystem boundary. The frontend supplies a harness id and
 //! a one-segment ticket id; the project root always comes from `HookServer`.
 
+use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -19,6 +20,16 @@ const MAX_RESOURCE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_EXCERPT_CHARS: usize = 320;
 const MAX_PROGRESS_CHARS: usize = 500;
 static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+/// Spec 342: the issue prompt verbs whose latest completed run a ticket records.
+const TICKET_ACTION_VERBS: [&str; 6] = [
+    "analyze-github-issue",
+    "fix-github-issue",
+    "handle-github-issue",
+    "post-github-comment",
+    "tag-github-issue",
+    "attach-issue-artifact",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -46,6 +57,14 @@ pub struct GithubTicketReference {
     pub source_updated_at: Option<String>,
 }
 
+/// Spec 342: one verb's latest completed run (the lane turn ended with `end_turn`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TicketActionRun {
+    pub at: u64,
+    pub lane_display_name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TicketMetadata {
@@ -62,6 +81,9 @@ pub struct TicketMetadata {
     pub last_progress_at: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubTicketReference>,
+    /// Spec 342: keyed by verb; absent in files written before it.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub actions: BTreeMap<String, TicketActionRun>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -475,6 +497,7 @@ pub fn acp_create_ticket_bundle(
         last_progress_summary: None,
         last_progress_at: None,
         github,
+        actions: BTreeMap::new(),
     };
     atomic_write_json(&dir.join("ticket.json"), &metadata)?;
     fs::write(dir.join("ticket.md"), format!("# {title}\n\n"))
@@ -739,6 +762,54 @@ pub fn acp_update_ticket_github(
     update_ticket_github_for_project(&project_dir(&hook_server, &harness_id)?, &ticket_id, github)
 }
 
+/// Spec 342: record that `verb` finished in `lane_display_name` just now. Same
+/// read-modify-write as the GitHub update; the verb set is closed so a stray
+/// frontend string cannot grow the file.
+pub(crate) fn record_ticket_action_for_project(
+    project_dir: &Path,
+    ticket_id: &str,
+    verb: &str,
+    lane_display_name: &str,
+) -> Result<TicketBundleDetail, String> {
+    if !TICKET_ACTION_VERBS.contains(&verb) {
+        return Err(format!("unknown ticket action {verb}"));
+    }
+    let lane_display_name = lane_display_name.trim();
+    if lane_display_name.is_empty() {
+        return Err("ticket action lane is required".to_string());
+    }
+    let dir = bundle_dir(project_dir, ticket_id)?;
+    let mut metadata = read_metadata(&dir)?;
+    let timestamp = now_ms();
+    metadata.actions.insert(
+        verb.to_string(),
+        TicketActionRun {
+            at: timestamp,
+            lane_display_name: lane_display_name.to_string(),
+        },
+    );
+    metadata.updated_at = timestamp;
+    atomic_write_json(&dir.join("ticket.json"), &metadata)?;
+    load_bundle(project_dir, ticket_id)?
+        .ok_or_else(|| "ticket disappeared after action record".to_string())
+}
+
+#[tauri::command]
+pub fn acp_record_ticket_action(
+    harness_id: String,
+    ticket_id: String,
+    verb: String,
+    lane_display_name: String,
+    hook_server: tauri::State<'_, Arc<HookServer>>,
+) -> Result<TicketBundleDetail, String> {
+    record_ticket_action_for_project(
+        &project_dir(&hook_server, &harness_id)?,
+        &ticket_id,
+        &verb,
+        &lane_display_name,
+    )
+}
+
 #[tauri::command]
 pub fn acp_set_ticket_worker(
     harness_id: String,
@@ -788,6 +859,7 @@ mod tests {
                 last_progress_summary: None,
                 last_progress_at: None,
                 github: None,
+                actions: BTreeMap::new(),
             },
         )
         .expect("write metadata");
@@ -1010,6 +1082,52 @@ mod tests {
         assert_eq!(bundle.summary.metadata.title, "Local title");
         let bundle = update_ticket_github_for_project(&project, &id, None).expect("unlink github");
         assert!(bundle.summary.metadata.github.is_none());
+        fs::remove_dir_all(project).expect("remove temp project");
+    }
+
+    #[test]
+    fn action_record_keeps_latest_run_per_verb() {
+        let project = temp_project("action");
+        let id = seed_bundle(&project, "Action log");
+        record_ticket_action_for_project(&project, &id, "post-github-comment", "codex-1")
+            .expect("record comment");
+        let bundle =
+            record_ticket_action_for_project(&project, &id, "post-github-comment", " claude-1 ")
+                .expect("record comment again");
+        let actions = &bundle.summary.metadata.actions;
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions["post-github-comment"].lane_display_name, "claude-1");
+        let bundle = record_ticket_action_for_project(&project, &id, "fix-github-issue", "codex-1")
+            .expect("record fix");
+        assert_eq!(bundle.summary.metadata.actions.len(), 2);
+        fs::remove_dir_all(project).expect("remove temp project");
+    }
+
+    #[test]
+    fn action_record_rejects_unknown_verb_and_empty_lane() {
+        let project = temp_project("action-reject");
+        let id = seed_bundle(&project, "Action reject");
+        let error =
+            record_ticket_action_for_project(&project, &id, "dispatch-github-issue", "codex-1")
+                .expect_err("unknown verb rejected");
+        assert!(error.contains("unknown ticket action"), "{error}");
+        let error = record_ticket_action_for_project(&project, &id, "fix-github-issue", "  ")
+            .expect_err("empty lane rejected");
+        assert!(error.contains("lane"), "{error}");
+        let bundle = load_bundle(&project, &id).expect("load").expect("exists");
+        assert!(bundle.summary.metadata.actions.is_empty());
+        fs::remove_dir_all(project).expect("remove temp project");
+    }
+
+    #[test]
+    fn ticket_written_before_actions_still_loads_and_omits_the_field() {
+        let project = temp_project("action-legacy");
+        let id = seed_bundle(&project, "Legacy ticket");
+        let path = ticket_root(&project).join(&id).join("ticket.json");
+        let body = fs::read_to_string(&path).expect("read ticket.json");
+        assert!(!body.contains("\"actions\""), "{body}");
+        let bundle = load_bundle(&project, &id).expect("load").expect("exists");
+        assert!(bundle.summary.metadata.actions.is_empty());
         fs::remove_dir_all(project).expect("remove temp project");
     }
 

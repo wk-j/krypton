@@ -302,6 +302,7 @@ pub fn run() {
             ticket_bundle::acp_add_ticket_resource,
             ticket_bundle::acp_update_ticket_status,
             ticket_bundle::acp_update_ticket_github,
+            ticket_bundle::acp_record_ticket_action,
             ticket_bundle::acp_set_ticket_worker,
             timeline::timeline_settings,
             timeline::timeline_set_enabled,

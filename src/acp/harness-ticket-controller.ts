@@ -21,6 +21,7 @@ import type {
   TicketPickerRow,
   TicketWorkerBinding,
 } from './harness-view-types';
+import type { StopReason } from './types';
 import { TICKET_COMMAND_ARGS } from './hash-commands';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -28,9 +29,14 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { openLoopback } from '../loopback-open';
 import {
   PointerPersistGate,
+  TICKET_DOCK_ACTIONS,
   controlError,
+  type TicketDockAction,
   type TicketPickerAction,
   type TicketPickerTab,
+  githubIssueRefRequiredMessage,
+  ticketActionStates,
+  ticketDockActionFromData,
   ticketPickerActionForKey,
   ticketPickerTabCounts,
   filterTicketPickerRows,
@@ -63,6 +69,14 @@ export class HarnessTicketController {
   ticketDockEl!: HTMLElement;
   /** Spec 302 §5.7 — the dock's content. Its root IS `ticketDockEl`. */
   ticketDock!: TicketDock;
+  /** Spec 342: issue actions whose turn is running, by lane id. Memory only,
+   *  so a crash can never leave a button stuck on `running`. */
+  private readonly runningActions = new Map<
+    string,
+    { ticketId: string; verb: TicketDockAction; laneName: string; token: object }
+  >();
+  /** Spec 342: lane a dock click is starting a verb in, until its turn begins. */
+  private dockActionStartingLaneId: string | null = null;
 
   private readonly ticketDockClickHandler = (event: MouseEvent): void => {
     this.handleTicketDockClick(event);
@@ -123,7 +137,7 @@ export class HarnessTicketController {
     // spec 239: a worker tool call on an unassigned active ticket claims the
     // binding hook-server-side with the lane display name as a placeholder id.
     // Mirror it locally and reconcile the real lane id so lane-removal cleanup
-    // (clearTicketWorkerForLane) keeps matching.
+    // (releaseLane) keeps matching.
     this.ticketWorkerUnlisten = await listen<{
       harnessId: string;
       ticketId: string;
@@ -235,10 +249,99 @@ export class HarnessTicketController {
     this.host.invalidate('rightRail');
   }
 
-  async clearTicketWorkerForLane(laneId: string): Promise<void> {
+  /** The lane's session ended (removed, restarted, `#new`): drop its worker
+   *  binding and, spec 342, any issue action it was running. */
+  async releaseLane(laneId: string): Promise<void> {
+    if (this.runningActions.delete(laneId)) this.renderTicketDock();
     if (this.ticketWorker?.laneId !== laneId) return;
     this.ticketWorker = null;
     await this.setTicketWorker(null);
+  }
+
+  /**
+   * Spec 342: a verb on the active ticket's issue is about to start a turn in
+   * `lane`. Returns the token `cancelAction` needs, or null when there is no
+   * active ticket or the lane already runs one.
+   */
+  beginAction(lane: HarnessLane, verb: TicketDockAction): object | null {
+    if (this.dockActionStartingLaneId === lane.id) this.dockActionStartingLaneId = null;
+    const ticket = this.activeTicket;
+    if (!ticket || this.runningActions.has(lane.id)) return null;
+    const token = {};
+    this.runningActions.set(lane.id, { ticketId: ticket.id, verb, laneName: lane.displayName, token });
+    this.renderTicketDock();
+    return token;
+  }
+
+  /** Spec 342: the turn never started. Only the entry `token` registered is removed. */
+  cancelAction(lane: HarnessLane, token: object): void {
+    if (this.runningActions.get(lane.id)?.token !== token) return;
+    this.runningActions.delete(lane.id);
+    this.renderTicketDock();
+  }
+
+  /**
+   * Spec 342: called by `finishTurn` before the status change. Only a turn the
+   * agent finished (`end_turn`, no lane error) is recorded; the entry goes
+   * either way.
+   */
+  onTurnEnd(lane: HarnessLane, stopReason: StopReason): void {
+    const entry = this.runningActions.get(lane.id);
+    if (!entry) return;
+    this.runningActions.delete(lane.id);
+    this.renderTicketDock();
+    if (stopReason !== 'end_turn' || lane.error) return;
+    void this.recordAction(entry.ticketId, entry.verb, entry.laneName);
+  }
+
+  private async recordAction(ticketId: string, verb: TicketDockAction, laneName: string): Promise<void> {
+    if (!this.host.harnessMemoryId) return;
+    try {
+      const detail = await invoke<LocalTicketDetail>('acp_record_ticket_action', {
+        harnessId: this.host.harnessMemoryId,
+        ticketId,
+        verb,
+        laneDisplayName: laneName,
+      });
+      if (this.activeTicket?.id !== ticketId) return;
+      this.activeTicket = detail;
+      this.renderTicketDock();
+    } catch (e) {
+      console.warn('[acp-harness] ticket action record failed; the run is not marked done:', e);
+    }
+  }
+
+  /**
+   * Spec 342: a Ticket Panel button. The same path as the `#` verb typed with
+   * no reference, so a typed verb and a click share every check and the state.
+   */
+  async runTicketDockAction(action: TicketDockAction): Promise<void> {
+    const ticket = this.activeTicket;
+    if (!ticket?.github) {
+      this.host.flashChip(githubIssueRefRequiredMessage(action, ticket));
+      return;
+    }
+    const lane = this.host.activeLane();
+    const reason = ticketWorkActionDisabledReason(lane
+      ? { displayName: lane.displayName, status: lane.status, hasClient: lane.client !== null }
+      : null);
+    if (!lane || reason) {
+      this.host.flashChip(reason ?? 'no active lane');
+      return;
+    }
+    // Analyze/Fix await the worker binding before the lane flips to busy; a
+    // second click in that window would otherwise be a silent no-op.
+    if (this.dockActionStartingLaneId === lane.id) {
+      const label = TICKET_DOCK_ACTIONS.find((entry) => entry.verb === action)?.label ?? action;
+      this.host.flashChip(`${label}: ${lane.displayName} is starting an action`);
+      return;
+    }
+    this.dockActionStartingLaneId = lane.id;
+    try {
+      await this.host.runGithubIssuePromptVerb(lane, action, [ticket.github.issueUrl]);
+    } finally {
+      if (this.dockActionStartingLaneId === lane.id) this.dockActionStartingLaneId = null;
+    }
   }
 
   /** Refresh optional GitHub metadata without changing local context or status. */
@@ -283,8 +386,13 @@ export class HarnessTicketController {
     if (!(event.target instanceof Element)) return;
     const button = event.target.closest<HTMLButtonElement>('[data-ticket-dock-action]');
     if (!button || !this.ticketDockEl.contains(button) || button.disabled) return;
-    if (button.dataset.ticketDockAction !== 'hide') return;
-    this.hideTicketDock();
+    const value = button.dataset.ticketDockAction;
+    if (value === 'hide') {
+      this.hideTicketDock();
+      return;
+    }
+    const action = ticketDockActionFromData(value);
+    if (action) void this.runTicketDockAction(action);
   }
 
   /** spec 331: the dock has no collapsed state — hiding is spec 320's `ticket` flag. */
@@ -352,7 +460,7 @@ export class HarnessTicketController {
    * spec 239: a worker tool call on the unassigned active ticket claimed the
    * binding hook-server-side, with the lane display name standing in for the
    * lane id. Mirror the binding locally and reconcile the real lane id back to
-   * the hook server so lane-removal cleanup (clearTicketWorkerForLane) matches.
+   * the hook server so lane-removal cleanup (releaseLane) matches.
    */
   handleTicketWorkerClaim(env: { ticketId: string; laneDisplayName: string }): void {
     if (env.ticketId !== this.activeTicket?.id) return;
@@ -578,15 +686,34 @@ export class HarnessTicketController {
   /**
    * Spec 337: the Ticket tab is available while a ticket is active and spec
    * 320 has not hidden it; the dock column decides whether it is the SHOWN
-   * tab, and only a shown dock paints.
+   * tab, and only a shown dock paints. Spec 342: the issue actions target the
+   * active lane, and each shows whether it is running (in any lane) or ran.
    */
   renderTicketDock(): void {
     const ticket = this.activeTicket;
     this.host.setDockTabAvailable('ticket', ticket !== null && !this.host.isPanelHidden('ticket'));
     if (!ticket || !this.host.dockTabShown('ticket')) return;
+    const lane = this.host.activeLane();
+    const running = new Map<TicketDockAction, string>();
+    for (const entry of this.runningActions.values()) {
+      if (entry.ticketId === ticket.id) running.set(entry.verb, entry.laneName);
+    }
     this.ticketDock.update({
       ticket,
       workerName: this.ticketWorker?.laneDisplayName ?? null,
+      laneName: lane?.displayName ?? null,
+      laneStatus: lane?.status ?? null,
+      workDisabledReason: ticketWorkActionDisabledReason(lane
+        ? { displayName: lane.displayName, status: lane.status, hasClient: lane.client !== null }
+        : null),
+      actions: ticket.github
+        ? ticketActionStates({
+            ticket,
+            binding: this.host.issueBinding(ticket.github.issueKey),
+            running,
+            now: Date.now(),
+          })
+        : null,
     });
   }
 

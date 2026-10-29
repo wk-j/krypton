@@ -7,7 +7,7 @@
 
 import type { CoordinatorDrainContext, MentionFanOutResult, MentionFanOutTarget } from './inter-lane';
 import type { JournalKind } from './journal';
-import type { GithubTicketReference } from './harness-view-types';
+import type { GithubTicketReference, IssueBinding } from './harness-view-types';
 import type { HarnessLane, HarnessTranscriptItem, StagedImage } from './harness-view-types';
 import type { ReviewSubject } from './review';
 import type { HarnessDockTab, HarnessPanelId, PanelsCommand } from './harness-panel-visibility';
@@ -157,6 +157,8 @@ export interface HarnessTicketHost extends HarnessViewHost {
   githubReference(ref: GithubIssueRef, previous?: GithubTicketReference): GithubTicketReference;
   runWorkspaceCommand(program: string, args: string[], cwd?: string | null): Promise<string>;
   recordJournal(laneLabel: string, kind: JournalKind, summary: string, meta?: Record<string, unknown>): void;
+  /** Spec 342: the persisted spec-178 binding for an issue (its `issue_progress` phase / PR). */
+  issueBinding(issueKey: string): IssueBinding | null;
   runGithubIssuePromptVerb(
     lane: HarnessLane,
     verb:

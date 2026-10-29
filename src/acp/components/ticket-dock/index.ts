@@ -5,6 +5,9 @@
 //   open   KR-301
 //   GitHub  wk/krypton   #301 · open
 //   Worker  codex-1
+//   ISSUE ACTIONS   run in codex-1 · idle
+//   [Analyze ✓ 10-27] [Fix here ✓ PR] [Handle]      (each label has its icon)
+//   [Comment]         [Label]          [Attach]
 //   CONTEXT     …
 //   RESOURCES 7 …
 //
@@ -14,9 +17,10 @@
 // that only changed the worker binding or the GitHub state — so the resource
 // list and the progress note were rebuilt to repaint a single `<strong>`.
 //
-// **Props only.** The component never imports the controller: the dock's two
-// surfaces (`ticket`, `workerName`) arrive as data, and the head button
-// carries `data-ticket-dock-action="hide"` for the delegated click handler the
+// **Props only.** The component never imports the controller: the ticket, the
+// worker, the target lane and the per-action states arrive as data. The head
+// button carries `data-ticket-dock-action="hide"` and each issue action
+// `data-ticket-dock-action="<verb>"`, both for the delegated click handler the
 // controller installed on the dock element. That handler, the `hidden` flag
 // (owned by the dock column, `harness-dock.ts`, from spec 320's per-panel
 // `ticket` flag and the shown tab) and the `acp-harness--dock-active` class on
@@ -26,14 +30,23 @@
 // flag, and the titlebar `Ticket dock` toggle shows it again.
 //
 // The hide button is hand-built rather than an `ActionButton`: it needs an
-// `aria-label`, and `ActionButton` carries no ARIA props.
+// `aria-label`, and `ActionButton` carries no ARIA props. Spec 342's action
+// buttons are `IssueActionButton`s for the same kind of reason: an icon, a
+// state badge line and a tooltip while enabled are three things `ActionButton`
+// does not have.
 
 import './ticket-dock.css';
 
 import { Component } from '../../../ui/component';
-import { el } from '../../../ui/dom';
+import { el, setAttr } from '../../../ui/dom';
 import { disposeList, reconcile } from '../../../ui/list';
-import { formatTicketBytes } from '../../harness-ticket-helpers';
+import { harnessIconEl } from '../../harness-icons';
+import {
+  TICKET_DOCK_ACTIONS,
+  formatTicketBytes,
+  type TicketActionState,
+  type TicketDockAction,
+} from '../../harness-ticket-helpers';
 import type { LocalTicketDetail } from '../../harness-view-types';
 import { EmptyState } from '../empty-state';
 import type { ComponentDef } from '../types';
@@ -45,6 +58,80 @@ export interface TicketDockProps {
   readonly ticket: LocalTicketDetail | null;
   /** The lane bound to this ticket, or null when nobody is working it. */
   readonly workerName: string | null;
+  /** Spec 342: the active lane — every issue action runs there. */
+  readonly laneName: string | null;
+  readonly laneStatus: string | null;
+  /** `ticketWorkActionDisabledReason()`; non-null disables every issue action. */
+  readonly workDisabledReason: string | null;
+  /** `ticketActionStates()`; null paints every action idle. */
+  readonly actions: Readonly<Record<TicketDockAction, TicketActionState>> | null;
+}
+
+const ACTION_BLOCK = 'acp-ticket-dock__action';
+const IDLE: TicketActionState = { kind: 'idle' };
+
+interface IssueActionProps {
+  readonly state: TicketActionState;
+  readonly disabledReason: string | null;
+}
+
+/** One stable string per state, so the dock's deps compare by value. */
+function stateKey(state: TicketActionState): string {
+  if (state.kind === 'running') return `running\u001f${state.lane}`;
+  if (state.kind === 'done') return `done\u001f${state.badge}\u001f${state.detail}`;
+  return 'idle';
+}
+
+/**
+ * Spec 342: one issue action. Verb, label and icon are fixed for the button's
+ * life; only the state and the lane's disabled reason change. A `done` button
+ * stays enabled — its colour warns, it never blocks. A `running` button keeps
+ * its colour while the lane is busy, so you can still see what is running.
+ */
+class IssueActionButton extends Component<IssueActionProps> {
+  private readonly stateEl = el('span', { class: `${ACTION_BLOCK}-state` });
+  private readonly headEl: HTMLElement;
+
+  constructor(
+    readonly verb: TicketDockAction,
+    private readonly label: string,
+    icon: string,
+  ) {
+    super(el('button', { attrs: { type: 'button' }, data: { 'ticket-dock-action': verb } }));
+    this.headEl = el(
+      'span',
+      { class: `${ACTION_BLOCK}-head` },
+      harnessIconEl(icon, `${ACTION_BLOCK}-icon`),
+      el('span', { class: `${ACTION_BLOCK}-label`, text: label }),
+    );
+  }
+
+  protected readDeps(next: IssueActionProps): readonly unknown[] {
+    return [stateKey(next.state), next.disabledReason];
+  }
+
+  protected syncClasses(next: IssueActionProps): void {
+    const state = next.state.kind;
+    this.el.className = state === 'idle' ? ACTION_BLOCK : `${ACTION_BLOCK} ${ACTION_BLOCK}--${state}`;
+  }
+
+  protected paint(next: IssueActionProps): void {
+    this.syncClasses(next);
+    const state = next.state;
+    const disabled = next.disabledReason !== null;
+    setAttr(this.el, 'disabled', disabled);
+    let title: string | undefined;
+    if (disabled) title = next.disabledReason ?? undefined;
+    else if (state.kind === 'running') title = `${this.label} running in ${state.lane}`;
+    else if (state.kind === 'done') title = state.detail;
+    setAttr(this.el, 'title', title);
+    if (state.kind === 'idle') {
+      this.el.replaceChildren(this.headEl);
+      return;
+    }
+    this.stateEl.textContent = state.kind === 'running' ? `running · ${state.lane}` : state.badge;
+    this.el.replaceChildren(this.headEl, this.stateEl);
+  }
 }
 
 type ResourceItem =
@@ -114,6 +201,16 @@ export class TicketDock extends Component<TicketDockProps> {
   private readonly workerNameEl = el('strong');
   private readonly workerNoneEl = el('em', { text: 'not assigned' });
 
+  private readonly actionsHead = el('h3', { text: 'Issue actions' });
+  private readonly actionTargetEl = el('p');
+  private readonly actionGridEl = el('div', {
+    class: 'acp-ticket-dock__actions',
+    attrs: { role: 'group', 'aria-label': 'Issue actions' },
+  });
+  private readonly actionButtons: readonly IssueActionButton[];
+  private readonly actionsEmpty = new EmptyState('p');
+  private readonly actionsSection: HTMLElement;
+
   private readonly contextEl = el('p');
   private readonly resourceCountEl = el('span');
   private readonly resourcesEl = el('ul');
@@ -147,11 +244,17 @@ export class TicketDock extends Component<TicketDockProps> {
     this.githubEl.appendChild(el('span', { text: 'GitHub' }));
     this.workerEl.appendChild(el('span', { text: 'Worker' }));
     this.progressSection = el('section', {}, this.progressHead);
+    this.actionButtons = TICKET_DOCK_ACTIONS.map(
+      (action) => new IssueActionButton(action.verb, action.label, action.icon),
+    );
+    for (const button of this.actionButtons) this.actionGridEl.appendChild(button.el);
+    this.actionsSection = el('section', {}, this.actionsHead);
     this.parts = [
       this.headEl,
       this.statusRowEl,
       this.githubEl,
       this.workerEl,
+      this.actionsSection,
       el('section', {}, el('h3', { text: 'Context' }), this.contextEl),
       el(
         'section',
@@ -167,9 +270,14 @@ export class TicketDock extends Component<TicketDockProps> {
   protected readDeps(next: TicketDockProps): readonly unknown[] {
     const ticket = next.ticket;
     const github = ticket?.github ?? null;
+    const actions = next.actions;
     return [
       ticket === null,
       next.workerName,
+      next.laneName,
+      next.laneStatus,
+      next.workDisabledReason,
+      actions ? TICKET_DOCK_ACTIONS.map((action) => stateKey(actions[action.verb])).join('\u001e') : null,
       ticket?.id,
       ticket?.title,
       ticket?.status,
@@ -205,8 +313,34 @@ export class TicketDock extends Component<TicketDockProps> {
     this.idEl.textContent = ticket.id;
     this.paintGithub(ticket);
     this.paintWorker(next.workerName);
+    this.paintActions(next, ticket);
     this.paintBody(ticket);
     this.el.replaceChildren(...this.parts);
+  }
+
+  /**
+   * Spec 342: six buttons, or a hint when there is no issue to act on. The
+   * target line names the lane every action runs in, or says why it cannot
+   * take one — in text, not only as greyed buttons.
+   */
+  private paintActions(next: TicketDockProps, ticket: LocalTicketDetail): void {
+    if (!ticket.github) {
+      this.actionsEmpty.update({
+        block: 'acp-ticket-dock__empty',
+        text: 'Link a GitHub issue to run issue actions: #ticket link <ref>',
+      });
+      this.actionsSection.replaceChildren(this.actionsHead, this.actionsEmpty.el);
+      return;
+    }
+    const reason = next.workDisabledReason;
+    this.actionTargetEl.className = reason === null
+      ? 'acp-ticket-dock__target'
+      : 'acp-ticket-dock__target acp-ticket-dock__target--blocked';
+    this.actionTargetEl.textContent = reason ?? `run in ${next.laneName ?? ''} · ${next.laneStatus ?? ''}`;
+    for (const button of this.actionButtons) {
+      button.update({ state: next.actions?.[button.verb] ?? IDLE, disabledReason: reason });
+    }
+    this.actionsSection.replaceChildren(this.actionsHead, this.actionTargetEl, this.actionGridEl);
   }
 
   /** `GitHub  wk/krypton  #301 · open`, or `GitHub  not linked`. */
@@ -289,6 +423,8 @@ export class TicketDock extends Component<TicketDockProps> {
   protected onDispose(): void {
     disposeList(this.resourcesEl);
     this.progressEmpty.dispose();
+    this.actionsEmpty.dispose();
+    for (const button of this.actionButtons) button.dispose();
   }
 }
 

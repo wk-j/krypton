@@ -103,6 +103,11 @@ interface LocalTicketMetadata {
   lastProgressSummary?: string;
   lastProgressAt?: number;
   github?: GithubTicketReference;
+  actions?: Record<TicketDockAction, TicketActionRun>; // spec 342; omitted while empty
+}
+interface TicketActionRun {     // spec 342: one issue verb's latest finished run
+  at: number;
+  laneDisplayName: string;
 }
 interface LocalTicketSummary extends LocalTicketMetadata {
   relativePath: string;      // .krypton/tickets/<id>/
@@ -154,6 +159,7 @@ fn acp_append_ticket_note(harness_id: String, ticket_id: String, markdown: Strin
 fn acp_add_ticket_resource(harness_id: String, ticket_id: String, source_path: String) -> Result<TicketBundleDetail, String>;
 fn acp_update_ticket_status(harness_id: String, ticket_id: String, status: LocalTicketStatus, summary: Option<String>) -> Result<TicketBundleDetail, String>;
 fn acp_update_ticket_github(harness_id: String, ticket_id: String, github: Option<GithubTicketReference>) -> Result<TicketBundleDetail, String>;
+fn acp_record_ticket_action(harness_id: String, ticket_id: String, verb: String, lane_display_name: String) -> Result<TicketBundleDetail, String>; // spec 342
 fn acp_set_ticket_worker(harness_id: String, binding: Option<TicketWorkerBinding>) -> Result<(), String>;
 ```
 
@@ -271,8 +277,13 @@ Ticket Panel เป็น split pane ชิดขอบขวาของ harnes
   managed resources, derived analysis และ progress summary
   uppercase labels (`ACTIVE TICKET`, `CONTEXT`, …) ใช้ `--krypton-chrome-font-size` (11px)
   ให้สมดุลกับ window chrome ไม่ใช้ body `1em`
-- Ticket Panel เป็น read surface ไม่มี action button footer — Start work / open / analysis /
-  refresh ใช้ `#ticket work`, `#ticket open`, `#analyses` และ `#ticket refresh` เท่านั้น
+- ตั้งแต่ [spec 342](./0342-ticket-panel-issue-actions.md) Ticket Panel มี section **Issue actions**
+  ใต้แถว Worker: ปุ่ม Analyze, Fix here, Handle, Comment, Label และ Attach มีไอคอนประจำปุ่ม และเรียก
+  `#` verb ตัวเดียวกับที่พิมพ์โดยไม่ใส่ issue ref ใน lane ที่ active ปุ่มแสดงสถานะของ ticket นี้:
+  amber คือยังไม่เคยรัน cyan คือกำลังรัน (บอกชื่อ lane) และสีเขียวคือเคยรันจนจบแล้ว ซึ่งยังกดได้
+  สถานะ "เคยรัน" มาจาก `actions` ใน `ticket.json` ร่วมกับ analysis bundle, issue ที่ปิดแล้ว และ PR
+  จาก `issue_progress` ส่วน Start work / open / refresh ยังใช้ `#ticket work`, `#ticket open`,
+  `#analyses` และ `#ticket refresh`
   ปุ่ม `›` ใน header (`aria-label="Hide ticket panel"`), Escape ใน panel และ `#ticket panel` ซ่อน panel
   ผ่านค่าเดียวกับไอคอน `Ticket dock` บน title bar ของ spec 320 ซึ่งเป็นปุ่มเปิดกลับ; ข้อความสถานะ
   ไม่พึ่งสีอย่างเดียว

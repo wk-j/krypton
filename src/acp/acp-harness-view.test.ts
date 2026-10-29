@@ -189,6 +189,7 @@ describe('#ui preflight turns (spec 312)', () => {
           proto.finishTurn.call(target, subject, reason);
         },
       },
+      ticketCtl: { onTurnEnd: (): void => {} },
     });
     const send = (text: string, messageId = 'answer'): void => {
       proto.onLaneEvent.call(target, lane, {
@@ -1393,12 +1394,13 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
 
   it('clears the runtime worker for a restarted lane', async () => {
     const workerSets: unknown[] = [];
-    const clearTicketWorkerForLane = (
+    const releaseLane = (
       HarnessTicketController.prototype as unknown as {
-        clearTicketWorkerForLane(laneId: string): Promise<void>;
+        releaseLane(laneId: string): Promise<void>;
       }
-    ).clearTicketWorkerForLane;
+    ).releaseLane;
     const target = {
+      runningActions: new Map(),
       ticketWorker: {
         laneId: 'lane-1',
         ticketId: '2026-08-31-auth-timeout',
@@ -1410,7 +1412,7 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
       },
     };
 
-    await clearTicketWorkerForLane.call(selfHost(target), 'lane-1');
+    await releaseLane.call(selfHost(target), 'lane-1');
 
     expect(target.ticketWorker).toBeNull();
     expect(workerSets).toEqual([null]);
@@ -2976,8 +2978,9 @@ describe('ACP peer activity UI (spec 118)', () => {
   });
 
   // The dock's own markup — eyebrow, head, status row, issue link, sections —
-  // is asserted by `components/ticket-dock/ticket-dock.test.ts`; the spine, the
-  // vertical title and the action buttons are gone from it by construction.
+  // is asserted by `components/ticket-dock/ticket-dock.test.ts`; the spine and
+  // the vertical title are gone from it by construction (spec 342 brought issue
+  // action buttons back, as a section of the shown dock).
   // What stays here is the CSS half of spec 238.
   it('does not style a pin-slot ticket bar next to the Ticket Panel (spec 238)', () => {
     const dock = styleSheet('components/ticket-dock/ticket-dock.css');
@@ -2990,7 +2993,6 @@ describe('ACP peer activity UI (spec 118)', () => {
     expect(dockRule?.match(/background:[^;]*/g)).toEqual(['background: transparent']);
     for (const sheet of [dock, shared]) {
       expect(sheet).not.toMatch(/\.acp-harness__ticket-bar\s*\{/);
-      expect(sheet).not.toMatch(/\.acp-ticket-dock__actions\s*\{/);
       expect(sheet).not.toMatch(/\.acp-ticket-dock__spine\s*\{/);
       expect(sheet).not.toMatch(/writing-mode:\s*vertical-rl/);
     }
@@ -4284,6 +4286,7 @@ describe('#panels and titlebar toggles (specs 251, 320)', () => {
     const ctl = {
       activeTicket: { id: 'KR-320' },
       ticketWorker: null,
+      runningActions: new Map(),
       ticketDock: { update: (props: unknown): void => { updates.push(props); } },
       host: {
         isPanelHidden: (panel: HarnessPanelId): boolean => panel === 'ticket' && ticketHidden,
@@ -4291,6 +4294,7 @@ describe('#panels and titlebar toggles (specs 251, 320)', () => {
           if (tab === 'ticket') available.push(value);
         },
         dockTabShown: (tab: string): boolean => tab === 'ticket' && shown,
+        activeLane: (): null => null,
       },
     };
 
@@ -4756,7 +4760,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
       dropVeiledThoughtRow: () => {},
       cancelPendingArtifactsForLane: () => {},
       cancelPendingReviewsForLane: () => {},
-      ticketCtl: { clearTicketWorkerForLane: async () => {} },
+      ticketCtl: { releaseLane: async () => {} },
       clearCancelEscalation: clear,
       spawnLane: async (_l: EscLane, resumeSessionId?: string | null) => {
         resumed.push(resumeSessionId);

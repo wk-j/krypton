@@ -138,6 +138,15 @@ export const HARNESS_ICON_SVG_DEFS = [
   // spec 327 rev 4: the prompt card's paste control — a clipboard holding two
   // text lines; the message goes into the composer instead of being sent.
   '<symbol id="krypton-icon-follow-up-paste" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M5.6 3.3 H4.3 A1.2 1.2 0 0 0 3.1 4.5 V12.7 A1.2 1.2 0 0 0 4.3 13.9 H11.7 A1.2 1.2 0 0 0 12.9 12.7 V4.5 A1.2 1.2 0 0 0 11.7 3.3 H10.4"/><rect x="5.6" y="2.1" width="4.8" height="2.4" rx="0.7"/><path d="M5.7 7.6 H10.3"/><path d="M5.7 10 H8.9"/></g></symbol>',
+  // spec 342: Ticket Panel issue actions. Fix reuses `krypton-icon-tool` (one
+  // wrench in the app). `issue-handle` is two steps joined into an arrow — one
+  // action running several; `issue-comment` is a round bubble with no text
+  // lines, so it never reads as the follow-up `prompt` bubble above.
+  '<symbol id="krypton-icon-issue-analyze" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.3"/><path d="M10.2 10.2 L13.8 13.8"/></g></symbol>',
+  '<symbol id="krypton-icon-issue-handle" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><circle cx="3.2" cy="8" r="1.7"/><circle cx="8.4" cy="8" r="1.7"/><path d="M4.9 8 H6.7 M10.1 8 H13.8 M11.9 6.1 L13.8 8 L11.9 9.9"/></g></symbol>',
+  '<symbol id="krypton-icon-issue-comment" viewBox="0 0 16 16"><path d="M8 2.8 C11.6 2.8 14 4.8 14 7.4 C14 10 11.6 12 8 12 C7.2 12 6.5 11.9 5.8 11.7 L3 13.4 L3.6 10.8 C2.6 10 2 8.8 2 7.4 C2 4.8 4.4 2.8 8 2.8 Z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/></symbol>',
+  '<symbol id="krypton-icon-issue-label" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M2.4 3.6 V7.6 L8.6 13.8 L13.8 8.6 L7.6 2.4 H3.6 A1.2 1.2 0 0 0 2.4 3.6 Z"/><circle cx="5.4" cy="5.4" r="1"/></g></symbol>',
+  '<symbol id="krypton-icon-issue-attach" viewBox="0 0 16 16"><path d="M12 7.2 L7.7 11.5 A2.7 2.7 0 0 1 3.9 7.7 L8.6 3 A1.8 1.8 0 0 1 11.1 5.5 L6.6 10 A0.9 0.9 0 0 1 5.3 8.7 L9.2 4.8" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
 ].join('');
 
 const SYMBOL_DEFS_ID = 'krypton-harness-symbol-defs';

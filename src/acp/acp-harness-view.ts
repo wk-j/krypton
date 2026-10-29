@@ -1801,6 +1801,10 @@ export class AcpHarnessView implements ContentView {
     // themselves. Idempotent and cheap.
     this.updateComposerTick();
     this.updateSpinnerTicker();
+    // spec 342: the Ticket Panel's action buttons follow the active lane's
+    // status (busy disables them). A deps compare when nothing changed; never
+    // a render() — turn end only patches chrome.
+    if (lane.id === this.activeLaneId && this.ticketCtl.activeTicket) this.ticketCtl.renderTicketDock();
   }
 
   private buildLaneHost(): LaneHost {
@@ -3005,6 +3009,8 @@ export class AcpHarnessView implements ContentView {
       binding.updatedAt = Date.now();
       this.persistIssueBindings();
       this.publishIssueStatus(binding);
+      // spec 342: a PR / done phase turns the Ticket Panel's Fix button green.
+      if (this.ticketCtl.activeTicket?.github?.issueKey === issueKey) this.ticketCtl.renderTicketDock();
       sendReply({ ok: true });
       // spec 223: phase changes are how an issue's day reads back — "analysed"
       // in the morning and "pr_opened" by evening is the story of that issue.
@@ -8901,6 +8907,8 @@ export class AcpHarnessView implements ContentView {
     this.liveVoiceCtl.onTurnEnd(lane, stopReason);
     // spec 306: the sidecar reads the turn before its pointers are cleared below.
     this.assistCtl.onTurnEnd(lane, stopReason);
+    // spec 342: record a finished Ticket Panel action before the status change.
+    this.ticketCtl.onTurnEnd(lane, stopReason);
     if (stopReason === 'cancelled') {
       // `reason` is set only for harness-synthesized stops (e.g. the subprocess
       // exited mid-turn) — distinguish that from a user-initiated cancel so a
@@ -11109,7 +11117,7 @@ export class AcpHarnessView implements ContentView {
     if (index !== -1) this.lanes.splice(index, 1);
     this.steerCtl.resetLane(lane.id); // spec 278
     this.updateToolTick();
-    await this.ticketCtl.clearTicketWorkerForLane(lane.id);
+    await this.ticketCtl.releaseLane(lane.id);
     this.notifyUsageProvidersChanged();
     this.mcpStatsByLane.delete(lane.displayName);
     this.laneMetricHistory.delete(lane.id);
@@ -11272,7 +11280,7 @@ export class AcpHarnessView implements ContentView {
     // stay: the transcript survives, unlike #new.)
     this.cancelPendingArtifactsForLane(lane);
     this.cancelPendingReviewsForLane(lane);
-    await this.ticketCtl.clearTicketWorkerForLane(lane.id);
+    await this.ticketCtl.releaseLane(lane.id);
     const client = lane.client;
     lane.client = null;
     await client.dispose();
@@ -11314,7 +11322,7 @@ export class AcpHarnessView implements ContentView {
     // write grant so the restarted lane can't inherit it.
     this.cancelPendingArtifactsForLane(lane);
     this.cancelPendingReviewsForLane(lane);
-    await this.ticketCtl.clearTicketWorkerForLane(lane.id);
+    await this.ticketCtl.releaseLane(lane.id);
     this.appendTranscript(lane, 'restart', '--- session restarted ---');
     await this.spawnLane(lane);
   }
@@ -11357,7 +11365,7 @@ export class AcpHarnessView implements ContentView {
     this.dropAllReviewsForLane(lane);
     // spec 293: #new / #new! start a new work thread — the next #handoff mints.
     this.unbindLaneHandoff(lane);
-    await this.ticketCtl.clearTicketWorkerForLane(lane.id);
+    await this.ticketCtl.releaseLane(lane.id);
     if (lane.client) {
       await lane.client.dispose();
       lane.client = null;
@@ -12310,7 +12318,11 @@ export class AcpHarnessView implements ContentView {
         ].join('\n');
       }
     }
-    await this.enqueueSystemPrompt(lane, prompt, undefined, label);
+    // spec 342: a verb on the active ticket's issue shows as running in the
+    // Ticket Panel until finishTurn records it (or the turn never starts).
+    const ticketAction = matchesActiveTicket ? this.ticketCtl.beginAction(lane, verb) : null;
+    const started = await this.enqueueSystemPrompt(lane, prompt, undefined, label);
+    if (!started && ticketAction) this.ticketCtl.cancelAction(lane, ticketAction);
   }
 
   /** Create a NEW GitHub issue from a plain-language request. Args are the free-text
@@ -16346,6 +16358,7 @@ export class AcpHarnessView implements ContentView {
       runWorkspaceCommand: (program, args, cwd) =>
         cwd === undefined ? view.runWorkspaceCommand(program, args) : view.runWorkspaceCommand(program, args, cwd),
       recordJournal: (laneLabel, kind, summary, meta) => view.recordJournal(laneLabel, kind, summary, meta),
+      issueBinding: (issueKey) => view.issueBindings.get(issueKey) ?? null,
       runGithubIssuePromptVerb: (lane, verb, args) => view.runGithubIssuePromptVerb(lane, verb, args),
     };
   }

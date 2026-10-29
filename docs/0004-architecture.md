@@ -1087,7 +1087,10 @@ is claimed atomically by the first successful writer (`acp-ticket-worker`
 notifies the frontend, which reconciles the real lane id). Every agent write
 re-emits `acp-ticket-progress` so the Ticket Panel refreshes without a
 filesystem watcher. GitHub-facing `issue_progress` remains independent,
-so the browser extension contract is unchanged.
+so the browser extension contract is unchanged. The panel's Issue actions
+(spec 342) are mouse shortcuts for the spec-191 `#` verbs on the active
+ticket's issue; `ticket.json` keeps each verb's latest finished run so the
+buttons show what already ran.
 
 The project timeline ([spec 316](0316-llm-managed-timeline.md), replacing the
 human capture gates of specs 253–255 and 263) is an append-only provenance ledger.
