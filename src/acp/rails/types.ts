@@ -173,6 +173,8 @@ export interface RailsConfig {
   readonly timeoutMs: number;
   readonly maxInputChars: number;
   readonly debounceMs: number;
+  /** spec 339: `0` = auto runs are not spaced. */
+  readonly minIntervalMs: number;
 }
 
 /** What the dock head shows while nothing new is recorded. */
@@ -185,6 +187,8 @@ export type RailsProgress =
   | { readonly kind: 'clean-tree' }
   /** Another harness holds the per-root check lock. */
   | { readonly kind: 'busy' }
+  /** spec 339: an auto run waits for `min_interval_ms` until this epoch ms. */
+  | { readonly kind: 'held'; readonly until: number }
   /** The judge breaker is open until this epoch ms. */
   | { readonly kind: 'cooling'; readonly until: number }
   | { readonly kind: 'error'; readonly message: string };

@@ -46,6 +46,20 @@ export function previousCompletedRun(history: readonly RailsRunRecord[]): RailsR
   return history.find((run) => run.verdict !== 'error') ?? null;
 }
 
+/**
+ * spec 339: ms an auto run must still wait so that it starts at least
+ * `minIntervalMs` after the newest recorded run (any trigger, any verdict)
+ * started; 0 = it may start now. Capped at `minIntervalMs`, so a `startedAt`
+ * in the future (the clock moved back) never holds longer than one interval.
+ */
+export function autoRunHoldMs(history: readonly RailsRunRecord[], minIntervalMs: number, now: number): number {
+  const latest = history[0];
+  if (minIntervalMs <= 0 || !latest) return 0;
+  const started = Date.parse(latest.startedAt);
+  if (!Number.isFinite(started)) return 0;
+  return Math.min(minIntervalMs, Math.max(0, started + minIntervalMs - now));
+}
+
 export function findingKey(finding: Pick<RailsFinding, 'rule' | 'file'>): string {
   return `${finding.rule}\u0000${finding.file}`;
 }

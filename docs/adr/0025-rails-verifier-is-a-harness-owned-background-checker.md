@@ -35,8 +35,8 @@ ADR-0001 had rejected an "independent observer LLM watching all lane streams" an
   - No latency is added before work reaches the human, because runs start only when lanes are idle.
   - No new orchestration seat exists, because the verifier is a controller inside the harness view (ADR-0007), not a lane.
   - The mis-judging risk is narrowed to declared rules. A judge-only rule can still be misjudged; enforced rules (`check:<name>`) cannot.
-- **Accepted cost:** one more fenced backend process per harness, disposed after 10 minutes without a run, and model tokens for every changed working tree once a project trusts its manifest. `[acp_harness.rails] mode = "off"` or `#rails off` stops it.
-- **Accepted risk: a stale result.** A lane may write while a run is in flight. The run is then marked `stale` and re-run at the next quiet point; it is never presented as current.
+- **Accepted cost:** one more fenced backend process per harness, disposed after 10 minutes without a run, and model tokens for every changed working tree once a project trusts its manifest. `[acp_harness.rails] mode = "off"` or `#rails off` stops it; `min_interval_ms` (spec 339) caps how often auto runs start.
+- **Accepted risk: a stale result.** A lane may write while a run is in flight. The run is then marked `stale` and re-run at the next quiet point (after `min_interval_ms`, when set); it is never presented as current.
 - **Machine-local.** The run ledger lives in `.krypton/rails/runs/` of the project and is not published to Xenon. Remote harnesses do not get the verifier.
 
 ## Rails

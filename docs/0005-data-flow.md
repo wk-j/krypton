@@ -1664,6 +1664,8 @@ mount (local harness only)    HarnessRailsController.mount → rails_load + rail
    (any later busy → idle re-arms it).
 2. Debounce fires: a lane still busy / needs_permission → do nothing (the next idle re-arms).
    An open judge breaker does not stop the run; step 7 skips only the judge (`judge cooling down`).
+   Spec 339: autoRunHoldMs(history, min_interval_ms, now) > 0 → hold on the same timer
+   (dock `auto run held until HH:MM`), then step 2 again; a later busy → idle replaces the hold.
 3. invoke('working_diff_stat') → files == 0 → `clean tree`, stop. Its repoRoot is the rails root.
 4. invoke('rails_load', { root }) → no manifest → stop; manifest error → `error`;
    trust ≠ trusted on an auto run → `paused` (the dock lists the argv), stop.

@@ -105,6 +105,8 @@ interface RigOptions {
   cooldownUntil?: number;
   runCheck?: (name: string) => Promise<RailsCheckResult>;
   mode?: string;
+  /** `min_interval_ms` (spec 339); absent = off. */
+  minIntervalMs?: number;
 }
 
 function rig(options: RigOptions = {}) {
@@ -185,7 +187,13 @@ function rig(options: RigOptions = {}) {
     invoke,
     engine,
     loadConfig: async () => ({
-      acp_harness: { rails: { debounce_ms: DEBOUNCE_MS, ...(options.mode ? { mode: options.mode } : {}) } },
+      acp_harness: {
+        rails: {
+          debounce_ms: DEBOUNCE_MS,
+          ...(options.mode ? { mode: options.mode } : {}),
+          ...(options.minIntervalMs !== undefined ? { min_interval_ms: options.minIntervalMs } : {}),
+        },
+      },
     }),
   });
 
@@ -601,5 +609,87 @@ describe('HarnessRailsController (spec 337)', () => {
     await r.ctl.whenIdle();
     expect(r.commands()).not.toContain('rails_cancel');
     expect(r.records).toEqual([]);
+  });
+});
+
+describe('HarnessRailsController min_interval_ms (spec 339)', () => {
+  const MIN = 60_000;
+  const moved = (n: number): ReviewGitState => ({ ...GIT, diff: `${GIT.diff}+const bar = ${n};\n` });
+  const held = (dock: HTMLElement): boolean => dock.textContent?.includes('auto run held until') ?? false;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('holds an auto run inside the window and starts it once, with the latest trigger, when the window ends', async () => {
+    const r = rig({ minIntervalMs: MIN, gits: [GIT, moved(1), moved(2)] });
+    await r.ctl.mount();
+    await r.quietPoint();
+    expect(r.records).toHaveLength(1);
+    const windowEnd = Date.parse(r.records[0].startedAt) + MIN;
+
+    await r.quietPoint('lane-1');
+    expect(r.records).toHaveLength(1);
+    expect(held(r.ctl.dockEl)).toBe(true);
+
+    // A later quiet point replaces the held run instead of adding one.
+    await vi.advanceTimersByTimeAsync(10_000);
+    await r.quietPoint('lane-2');
+    await vi.advanceTimersByTimeAsync(windowEnd - Date.now() - 1);
+    expect(r.records).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await r.ctl.whenIdle();
+    expect(r.records).toHaveLength(2);
+    expect(r.records[1].trigger).toEqual({ kind: 'auto', laneId: 'lane-2', laneName: 'codex-1' });
+    expect(Date.parse(r.records[1].startedAt)).toBe(windowEnd);
+    expect(held(r.ctl.dockEl)).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(MIN * 2);
+    expect(r.records).toHaveLength(2);
+  });
+
+  it('lets #rails now through a hold, counts it for the window, and drops a held run on #rails manual', async () => {
+    const r = rig({ minIntervalMs: MIN, gits: [GIT, moved(1), moved(2)] });
+    await r.ctl.mount();
+    await r.quietPoint();
+    await r.quietPoint();
+    expect(held(r.ctl.dockEl)).toBe(true);
+
+    await r.ctl.runCommand(r.lanes[0], ['now'], '#rails now');
+    await r.ctl.whenIdle();
+    expect(r.records).toHaveLength(2);
+    expect(r.records[1].trigger.kind).toBe('manual');
+
+    // The manual run is now the newest: a quiet point after it is held from its start.
+    await vi.advanceTimersByTimeAsync(MIN / 2);
+    await r.quietPoint();
+    expect(held(r.ctl.dockEl)).toBe(true);
+
+    r.ctl.setMode('manual');
+    expect(held(r.ctl.dockEl)).toBe(false);
+    await vi.advanceTimersByTimeAsync(MIN * 2);
+    expect(r.records).toHaveLength(2);
+  });
+
+  it('releases the hold line when a lane is busy as the window ends', async () => {
+    const r = rig({ minIntervalMs: MIN, gits: [GIT, moved(1)] });
+    await r.ctl.mount();
+    await r.quietPoint();
+    await r.quietPoint();
+    expect(held(r.ctl.dockEl)).toBe(true);
+
+    r.lanes[0].status = 'busy';
+    await vi.advanceTimersByTimeAsync(MIN);
+    expect(held(r.ctl.dockEl)).toBe(false);
+    expect(r.records).toHaveLength(1);
+
+    r.lanes[0].status = 'idle';
+    await r.quietPoint();
+    expect(r.records).toHaveLength(2);
   });
 });

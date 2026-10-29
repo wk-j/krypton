@@ -11,6 +11,8 @@ export const RAILS_LIMITS = {
   timeoutMs: { min: 10_000, max: 180_000, fallback: 60_000 },
   maxInputChars: { min: 4_000, max: 80_000, fallback: 32_000 },
   debounceMs: { min: 1_000, max: 60_000, fallback: 5_000 },
+  /** spec 339: `0` = off; at most one hour between auto run starts. */
+  minIntervalMs: { min: 0, max: 3_600_000, fallback: 0 },
 } as const;
 
 export const RAILS_DEFAULT_BACKEND = 'claude';
@@ -60,6 +62,7 @@ export function resolveRailsConfig(rawConfig: unknown): RailsConfig {
     timeoutMs: readClamped(rails, 'timeout_ms', RAILS_LIMITS.timeoutMs),
     maxInputChars: readClamped(rails, 'max_input_chars', RAILS_LIMITS.maxInputChars),
     debounceMs: readClamped(rails, 'debounce_ms', RAILS_LIMITS.debounceMs),
+    minIntervalMs: readClamped(rails, 'min_interval_ms', RAILS_LIMITS.minIntervalMs),
   };
 }
 

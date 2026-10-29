@@ -33,6 +33,7 @@ import { RAILS_JUDGE_ID, judgePayload, railsJudge } from './rails/judge';
 import { railsDockRows } from './rails/rows';
 import { addedLines, selectGlossary, selectRules } from './rails/select';
 import {
+  autoRunHoldMs,
   computeVerdict,
   diffFingerprint,
   newRunId,
@@ -203,6 +204,11 @@ export class HarnessRailsController {
     this.modeOverride = mode;
     if (mode === 'off') this.cancel();
     else this.engine.clearCooldown(RAILS_JUDGE_ID);
+    // spec 339: `manual` also drops an armed or held auto run.
+    if (mode === 'manual') {
+      this.clearDebounce();
+      if (this.progress.kind === 'held') this.progress = { kind: 'idle' };
+    }
     this.renderDock();
   }
 
@@ -336,14 +342,29 @@ export class HarnessRailsController {
     this.debounceTimer = setTimeout(() => this.onDebounce(), this.config().debounceMs);
   }
 
-  /** Step 2: a busy lane means "wait for the next transition", which re-arms. */
+  /**
+   * Step 2: a busy lane means "wait for the next transition", which re-arms.
+   * Step 2a (spec 339): inside `min_interval_ms` the run is held, not dropped.
+   * The hold reuses the debounce timer and trigger, so a later busy → idle
+   * replaces it and the next fire recomputes the same window end.
+   */
   private onDebounce(): void {
     this.debounceTimer = undefined;
     const trigger = this.armedTrigger;
     this.armedTrigger = null;
-    if (this.disposed || !trigger || this.running || this.mode() !== 'auto') return;
+    if (this.disposed) return;
     const quiet = this.host.lanes.every((lane) => lane.status !== 'busy' && lane.status !== 'needs_permission');
-    if (!quiet) return;
+    if (!trigger || this.running || this.mode() !== 'auto' || !quiet) {
+      if (this.progress.kind === 'held') this.setProgress({ kind: 'idle' });
+      return;
+    }
+    const hold = autoRunHoldMs(this.history, this.config().minIntervalMs, this.now());
+    if (hold > 0) {
+      this.armedTrigger = trigger;
+      this.debounceTimer = setTimeout(() => this.onDebounce(), hold);
+      this.setProgress({ kind: 'held', until: this.now() + hold });
+      return;
+    }
     // A cooling judge does not stop the run: `run()` still does the checks
     // and records the judge as skipped by the breaker.
     this.startRun(trigger);

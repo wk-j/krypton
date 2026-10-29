@@ -474,6 +474,7 @@ model = "haiku"                # id/alias for session/set_model ("" = backend de
 timeout_ms = 60000             # judge deadline in ms (10000–180000)
 max_input_chars = 32000        # judge payload cap (4000–80000)
 debounce_ms = 5000             # quiet time after a lane goes idle before a run (1000–60000)
+min_interval_ms = 0            # spec 339: shortest time between auto run starts (0–3600000; 0 = off)
 
 # --- ACP Wire Profiler (spec 288) ---
 # Records ACP traffic (Krypton ↔ agent stdio and Rust → UI events) into an
@@ -929,6 +930,7 @@ count = 3
 | `[acp_harness.rails]` | `timeout_ms` | int | `60000` | Judge deadline in milliseconds, clamped to 10000–180000. Checks have their own `timeout_s` in the project manifest |
 | `[acp_harness.rails]` | `max_input_chars` | int | `32000` | Cap on the judge payload (rules, failed-check output, diff, glossary), clamped to 4000–80000 |
 | `[acp_harness.rails]` | `debounce_ms` | int | `5000` | Quiet time after a lane goes busy → idle before a run starts, clamped to 1000–60000. Any later busy → idle restarts it |
+| `[acp_harness.rails]` | `min_interval_ms` | int | `0` | Shortest time from the start of the newest recorded run (auto or manual) to the start of the next auto run, clamped to 0–3600000; `0` = off. A run due inside the window is held and starts once when it ends, if the harness is quiet; the dock head shows `auto run held until HH:MM`. `#rails now` ignores it; `#rails manual` drops a held run (spec 339) |
 
 The clamps live in the frontend, so an out-of-range value in TOML is corrected, not rejected. The trust store is `~/.config/krypton/rails-trust.toml`, written only by `#rails trust`; deleting an entry makes that project's checks wait for trust again.
 

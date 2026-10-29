@@ -187,6 +187,8 @@ struct RailsCheckResult { name: String, outcome: CheckOutcome, exit_code: Option
 1. A lane moves busy → idle (LaneBus lane:status). Preconditions: mode is auto, the harness is local,
    projectDir is set. Arm a debounce of debounce_ms; any later busy → idle re-arms it.
 2. The debounce fires. If any lane is busy or needs_permission, wait for the next transition.
+   Spec 339: inside `min_interval_ms` of the newest recorded run's start, hold the run instead (same timer,
+   dock head "auto run held until HH:MM"); when the hold ends, step 2 runs again.
 3. invoke working_diff_stat(projectDir). If files == 0: dock shows "clean tree", stop. Its repoRoot is the rails root.
 4. invoke rails_load(root). On error: dock shows the error. If trust != trusted and the run is automatic: "paused", stop.
 5. invoke acp_collect_review_git_state(cwd, untrackedAll: true) (one row per new file; #review keeps the default).
@@ -242,7 +244,7 @@ There is no new key binding; the Leader map is full (spec 222). The command is `
 - **trust**: calls `rails_trust`.
 - **init**: sends the one-shot `railsInitPrompt` to the current lane.
 - **update**: sends `railsUpdatePrompt` to the current lane, carrying a fresh `rails_load` snapshot and the newest runs as fenced state plus the human's request; bare, the lane only proposes. Spec 338.
-- **off | manual | auto**: an in-memory mode override, as `#assist` does.
+- **off | manual | auto**: an in-memory mode override, as `#assist` does. `manual` also drops an armed or held auto run (spec 339).
 
 ### `#rails init` prompt
 
@@ -306,11 +308,12 @@ model = "haiku"
 timeout_ms = 60000       # judge step, 10_000..180_000
 max_input_chars = 32000  # 4_000..80_000
 debounce_ms = 5000       # 1_000..60_000
+min_interval_ms = 0      # 0..3_600_000; 0 = off. Spaces auto run starts (spec 339)
 ```
 
 ## Edge Cases
 
-- **A lane writes during a run.** Step 8 marks the run stale, and the next quiet point re-runs it.
+- **A lane writes during a run.** Step 8 marks the run stale, and the next quiet point re-runs it (after `min_interval_ms` when set, spec 339).
 - **Two harness views on one root.** `rails_run_check` returns `busy`, and the second dock shows "busy (another harness)".
 - **The manifest is edited after trust.** Trust becomes `changed`; automatic runs pause and the dock shows the new argv.
 - **A check binary is missing.** The outcome is `error` and the run is shown as an error, not as `check_failed`.

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  autoRunHoldMs,
   computeVerdict,
   diffFingerprint,
   latestRuleStatus,
@@ -82,6 +83,25 @@ describe('previousCompletedRun', () => {
     expect(previousCompletedRun(history)?.runId).toBe('2');
     expect(previousCompletedRun([run('1', { verdict: 'error' })])).toBeNull();
     expect(previousCompletedRun([])).toBeNull();
+  });
+});
+
+describe('autoRunHoldMs', () => {
+  const started = Date.parse('2026-10-27T10:00:00Z');
+  const MIN = 600_000;
+
+  it('holds until one interval after the newest run started, whatever its trigger or verdict', () => {
+    const history = [run('2', { trigger: { kind: 'manual', laneId: null, laneName: null }, verdict: 'error' }), run('1', { startedAt: '2026-10-27T09:00:00Z' })];
+    expect(autoRunHoldMs(history, MIN, started + 60_000)).toBe(MIN - 60_000);
+    expect(autoRunHoldMs(history, MIN, started + MIN - 1)).toBe(1);
+    expect(autoRunHoldMs(history, MIN, started + MIN)).toBe(0);
+  });
+
+  it('never holds when off, with no runs, or on an unreadable start, and caps a future start', () => {
+    expect(autoRunHoldMs([run('1')], 0, started + 1)).toBe(0);
+    expect(autoRunHoldMs([], MIN, started)).toBe(0);
+    expect(autoRunHoldMs([run('1', { startedAt: 'not a date' })], MIN, started)).toBe(0);
+    expect(autoRunHoldMs([run('1')], MIN, started - 3_600_000)).toBe(MIN);
   });
 });
 

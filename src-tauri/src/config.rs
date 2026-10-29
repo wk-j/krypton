@@ -812,6 +812,9 @@ pub struct AcpHarnessRailsConfig {
     pub max_input_chars: u32,
     /// Quiet time after a lane goes idle before a run. Clamped to 1_000..60_000.
     pub debounce_ms: u64,
+    /// spec 339: shortest time from the newest recorded run's start to the next
+    /// auto run's start; `0` = off. Clamped to 0..3_600_000.
+    pub min_interval_ms: u64,
 }
 
 impl Default for AcpHarnessRailsConfig {
@@ -823,6 +826,7 @@ impl Default for AcpHarnessRailsConfig {
             timeout_ms: 60_000,
             max_input_chars: 32_000,
             debounce_ms: 5_000,
+            min_interval_ms: 0,
         }
     }
 }
@@ -1345,12 +1349,13 @@ min_confidence = 0.65
         assert_eq!(rails.timeout_ms, 60_000);
         assert_eq!(rails.max_input_chars, 32_000);
         assert_eq!(rails.debounce_ms, 5_000);
+        assert_eq!(rails.min_interval_ms, 0);
     }
 
     #[test]
     fn acp_harness_rails_partial_table_keeps_defaults_and_serializes_snake_case() {
         let cfg: KryptonConfig = toml::from_str(
-            "[acp_harness.rails]\nmode = \"manual\"\nmodel = \"\"\ndebounce_ms = 2000\n",
+            "[acp_harness.rails]\nmode = \"manual\"\nmodel = \"\"\ndebounce_ms = 2000\nmin_interval_ms = 600000\n",
         )
         .unwrap();
         let rails = &cfg.acp_harness.rails;
@@ -1366,6 +1371,8 @@ min_confidence = 0.65
         assert_eq!(json["rails"]["mode"], serde_json::json!("manual"));
         assert_eq!(json["rails"]["debounce_ms"], serde_json::json!(2000));
         assert_eq!(json["rails"]["max_input_chars"], serde_json::json!(32000));
+        // A key the struct does not declare would never reach the frontend.
+        assert_eq!(json["rails"]["min_interval_ms"], serde_json::json!(600000));
     }
 
     #[test]

@@ -133,6 +133,8 @@ export function progressText(progress: RailsProgress): string | null {
       return 'no changes to check';
     case 'busy':
       return 'busy (another harness)';
+    case 'held':
+      return `auto run held until ${localHhMm(progress.until)} · min interval`;
     case 'cooling':
       return `judge cooling until ${localHhMm(progress.until)}`;
     case 'error':

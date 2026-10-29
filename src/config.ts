@@ -238,9 +238,9 @@ export interface AcpHarnessAssistConfig {
 }
 
 /** `[acp_harness.rails]` (spec 337). Clamps (timeout_ms 10000–180000,
- *  max_input_chars 4000–80000, debounce_ms 1000–60000) are applied in the
- *  frontend by `resolveRailsConfig`. `mode` is `off | manual | auto`; auto
- *  still needs a trusted `.krypton/rails.toml`. */
+ *  max_input_chars 4000–80000, debounce_ms 1000–60000, min_interval_ms
+ *  0–3600000) are applied in the frontend by `resolveRailsConfig`. `mode` is
+ *  `off | manual | auto`; auto still needs a trusted `.krypton/rails.toml`. */
 export interface AcpHarnessRailsConfig {
   mode?: string;
   backend?: string;
@@ -248,6 +248,8 @@ export interface AcpHarnessRailsConfig {
   timeout_ms?: number;
   max_input_chars?: number;
   debounce_ms?: number;
+  /** spec 339: shortest time between auto run starts; `0` = off. */
+  min_interval_ms?: number;
 }
 
 /** spec 212/213: Xenon resource server. The bearer token is deliberately absent
