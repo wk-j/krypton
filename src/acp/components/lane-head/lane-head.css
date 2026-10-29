@@ -186,6 +186,23 @@
     color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #0cf))) 70%, var(--krypton-fg, #d8e8d8));
   }
 
+  /* spec 343: a built-in `#` command in flight on this lane. The `bg N` pill,
+     tinted and inked in the lane's own accent — this lane's own work, not a
+     warning. No animation: the elapsed clock in the text is the liveness cue. */
+  .acp-harness__lane-run {
+    flex: 0 0 auto;
+    justify-self: start;
+    padding: 1px 6px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #0cf)) 16%, transparent);
+    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #0cf)));
+    font-size: 0.72em;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+    text-shadow: none;
+    white-space: nowrap;
+  }
+
   .acp-harness__lane-mcp {
     flex: 0 0 auto;
     justify-self: start;

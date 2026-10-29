@@ -38,6 +38,7 @@ function props(over: Partial<LaneShellProps> = {}): LaneShellProps {
     inboxDepth: 0,
     pendingPeers: [],
     isOrchestrator: false,
+    runs: [],
     projectDir: '/tmp/proj',
     reviewThread: null,
     onStartReview: () => {},

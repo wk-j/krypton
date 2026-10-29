@@ -23,6 +23,7 @@ import { el } from '../../../ui/dom';
 import { syncOrder } from '../../../ui/list';
 import { formatCpu, formatRss } from '../../harness-format';
 import { harnessSymbolEl } from '../../harness-icons';
+import type { CommandRunView } from '../../harness-command-runs';
 import { isPollyImplementerBypass, isSaltyExecutorBypass, laneActivity, metricsBucket } from '../../harness-lane-chrome';
 import { backendLogoId } from '../../harness-lane-identity';
 import type { HarnessLane } from '../../harness-view-types';
@@ -41,6 +42,8 @@ export interface LaneHeadProps {
   readonly inboxDepth: number;
   readonly pendingPeers: PendingPeerSummary[];
   readonly isOrchestrator: boolean;
+  /** spec 343: built-in `#` commands in flight on this lane, oldest first. */
+  readonly runs: readonly CommandRunView[];
 }
 
 interface HeadChip {
@@ -102,7 +105,7 @@ const WARN_ICON = { id: 'warn', cls: 'acp-harness__icon--dot' } as const;
  */
 function headChips(next: LaneHeadProps): HeadChip[] {
   const lane = next.lane;
-  const out: HeadChip[] = [];
+  const out: HeadChip[] = runChips(next.runs);
 
   // Inbox rides inside the chips span (grid column 4). As a loose head-grid
   // sibling it has no `grid-column` and stretches across the 1fr activity track.
@@ -265,6 +268,34 @@ function headChips(next: LaneHeadProps): HeadChip[] {
   return out;
 }
 
+/** spec 343: at most this many run chips; the rest fold into one `+N` chip. */
+const MAX_RUN_CHIPS = 2;
+
+/** spec 343: the running built-ins lead the strip — column 4 is `max-content`,
+ *  so they are never squeezed out; the `1fr` activity tail gives way first. */
+function runChips(runs: readonly CommandRunView[]): HeadChip[] {
+  const out: HeadChip[] = runs.slice(0, MAX_RUN_CHIPS).map((run) => ({
+    key: `run:${run.id}`,
+    props: {
+      block: 'acp-harness__lane-run',
+      text: `${run.text} · ${run.elapsed}`,
+      title: `running ${run.text} · ${run.elapsed}`,
+    },
+  }));
+  const rest = runs.slice(MAX_RUN_CHIPS);
+  if (rest.length > 0) {
+    out.push({
+      key: 'run-more',
+      props: {
+        block: 'acp-harness__lane-run',
+        text: `+${rest.length}`,
+        title: `also running ${rest.map((run) => `${run.text} · ${run.elapsed}`).join(', ')}`,
+      },
+    });
+  }
+  return out;
+}
+
 export class LaneHead extends Component<LaneHeadProps> {
   private readonly symbol = new LaneSymbol();
   private readonly nameEl = el('span', { class: 'acp-harness__lane-name' });
@@ -395,6 +426,7 @@ export const def: ComponentDef = {
     'acp-harness__lane-status',
     'acp-harness__lane-chips',
     'acp-harness__lane-activity',
+    'acp-harness__lane-run',
     'acp-harness__lane-inbox',
     'acp-harness__lane-orchestrator',
     'acp-harness__lane-model',

@@ -263,6 +263,27 @@ describe('HarnessReviewLoopController (spec 276)', () => {
     await t.ctl.start(t.author, []);
     expect(last(t.flashes)).toBe('#review: loop already running — #review stop');
   });
+
+  it('reports whether a loop started, and its whenDone settles only when the loop ends (spec 343)', async () => {
+    const t = setup();
+    expect(await t.ctl.start(t.author, ['9'])).toBe(false);
+    expect(t.ctl.whenDone(t.author.id)).toBeNull();
+
+    expect(await t.ctl.start(t.author, [])).toBe(true);
+    let settled = false;
+    void t.ctl.whenDone(t.author.id)?.then(() => {
+      settled = true;
+    });
+    // A refused second `#review pass` must not end, or adopt, the running loop.
+    expect(await t.ctl.start(t.author, [])).toBe(false);
+    await flush();
+    expect(settled).toBe(false);
+
+    await t.answer(PASS);
+    await flush();
+    expect(t.ctl.isRunning(t.author.id)).toBe(false);
+    expect(settled).toBe(true);
+  });
 });
 
 describe('HarnessReviewLoopController telemetry (spec 277)', () => {

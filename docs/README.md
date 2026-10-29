@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (328)
+## Specs (329)
 
 | # | Spec |
 |---|------|
@@ -345,6 +345,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 340 | [Attach Issue Artifact Verb](./0340-attach-issue-artifact.md) |
 | 341 | [Loopback App — One Browser Application with a Home Page and a Shared Kit](./0341-loopback-app.md) |
 | 342 | [Ticket Panel Issue Actions](./0342-ticket-panel-issue-actions.md) |
+| 343 | [Lane Running-Command Chips](./0343-lane-running-command-chips.md) |
 
 ## ADRs (26)
 

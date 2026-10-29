@@ -305,6 +305,14 @@ describe('HarnessRailsController (spec 337)', () => {
     expect(r.flashes).toEqual(['rails: off — #rails manual']);
   });
 
+  it('#rails now settles only once its run is recorded (spec 343: the lane shows it until then)', async () => {
+    const r = rig({});
+    await r.ctl.mount();
+
+    await r.ctl.runCommand(r.lanes[0], ['now'], '#rails now');
+    expect(r.records).toHaveLength(1);
+  });
+
   it('skips an automatic run whose tree matches the last completed run, but not a manual one', async () => {
     const fingerprint = await diffFingerprint(GIT);
     const r = rig({

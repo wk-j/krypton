@@ -65,6 +65,9 @@ interface ReviewLoop {
   replyTimes: Map<string, number>;
   /** Set when the loop starts to stop; a drop without one is `lane_lost`. */
   stopReason: ReviewLoopStop | null;
+  /** spec 343: settles in `drop`, the loop's single exit; `#review pass` awaits it. */
+  done: Promise<void>;
+  settle: () => void;
 }
 
 function isLive(lane: HarnessLane | undefined): lane is HarnessLane {
@@ -118,40 +121,51 @@ export class HarnessReviewLoopController {
     return loop ? this.view(loop, null) : (this.ended.get(laneId) ?? null);
   }
 
-  /** `#review pass [board] [N] [<lane> …] [-- <docpath | note>]` — `rest` is after `pass`. */
-  async start(lane: HarnessLane, rest: string[]): Promise<void> {
+  /** spec 343: the running loop's end, so `#review pass` lasts as long as its loop. */
+  whenDone(laneId: string): Promise<void> | null {
+    return this.loops.get(laneId)?.done ?? null;
+  }
+
+  /** `#review pass [board] [N] [<lane> …] [-- <docpath | note>]` — `rest` is after `pass`.
+   *  Resolves true once a loop started (round 1 is under way), false on a refusal. */
+  async start(lane: HarnessLane, rest: string[]): Promise<boolean> {
     const { board, rest: passArgs } = takeBoardToken(rest);
     const args = parseReviewPassArgs(passArgs);
     if ('error' in args) {
       this.host.flashChip(args.error);
-      return;
+      return false;
     }
     if (!this.host.projectDir) {
       this.host.flashChip('#review: no project dir');
-      return;
+      return false;
     }
     if (this.loops.has(lane.id)) {
       this.host.flashChip('#review: loop already running — #review stop');
-      return;
+      return false;
     }
     if (lane.status !== 'idle') {
       this.host.flashChip('lane busy - #cancel first');
-      return;
+      return false;
     }
     if (!lane.client) {
       this.host.flashChip('#review: lane not ready');
-      return;
+      return false;
     }
     // A pending peer to a reviewer would fail the fan-out with peer_in_flight.
     if (this.host.pendingPeerCount(lane) > 0) {
       this.host.flashChip('#review: lane is waiting on a peer - #cancel first');
-      return;
+      return false;
     }
     const { reviewers, skipped } = this.host.resolveReviewers(lane, args.nameTokens);
     if (reviewers.length === 0) {
       this.host.flashChip('#review: no reviewable lanes');
-      return;
+      return false;
     }
+    // Executor form: tsconfig's ES2021 lib has no `Promise.withResolvers`.
+    let settle!: () => void;
+    const done = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
     const loop: ReviewLoop = {
       laneId: lane.id,
       reviewers: reviewers.map((r) => ({ laneId: r.id, displayName: r.displayName })),
@@ -171,6 +185,8 @@ export class HarnessReviewLoopController {
       phaseSince: Date.now(),
       replyTimes: new Map(),
       stopReason: null,
+      done,
+      settle,
     };
     this.loops.set(lane.id, loop);
     this.ended.delete(lane.id);
@@ -184,6 +200,7 @@ export class HarnessReviewLoopController {
       }`,
     );
     await this.startRound(loop);
+    return true;
   }
 
   /** `#review stop` — graceful: end at the next step and write the summary. */
@@ -504,6 +521,7 @@ export class HarnessReviewLoopController {
 
   private drop(loop: ReviewLoop): void {
     loop.cancelled = true;
+    loop.settle();
     if (this.loops.get(loop.laneId) === loop) {
       this.loops.delete(loop.laneId);
       if (this.laneFor(loop)) this.ended.set(loop.laneId, this.view(loop, Date.now()));

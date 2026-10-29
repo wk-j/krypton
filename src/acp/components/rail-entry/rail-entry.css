@@ -131,6 +131,17 @@
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   }
 
+  /* spec 343: a built-in `#` command in flight takes the status word's (or the
+     directive title's) place. Plain text, no pill: padding would change the
+     meta row height spec 125 keeps constant. It shrinks first, never below 6ch. */
+  .acp-harness__rail-meta__run {
+    flex: 0 1 auto;
+    min-width: 6ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #0cf)));
+  }
+
   /* Tints mark lanes you are NOT on. The active entry is the merged tab: any
    * fill of its own would part it from the body (spec 325). */
   .acp-harness__rail-entry--directive:not(.acp-harness__rail-entry--active) {

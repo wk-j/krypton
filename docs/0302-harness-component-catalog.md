@@ -767,10 +767,10 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 | # | Component | Props | Example UI | Replaces |
 |---|---|---|---|---|
 | 4.1 | `LaneShell` | `{ lane, active, zen }` | lane `<section>` holding head · stats · body · rail slots | `acp-harness-view.ts:12945-12994`. **Never rebuilt** → both halves of the `prevScrollTop` dance (capture `:12908-12915`, write-back `:13001-13006`) are deleted — in **phase 4**, the phase that lands this component, never earlier |
-| 4.2 | `LaneHead` | `{ lane, active, mcp, metrics, inboxDepth, pendingPeers, isOrchestrator }` | `⠙ claude-1 busy  ◆ orch  sonnet-4-6  mcp ✓ 14  12.4% 843M  ⚒ Edit src/acp/lane-peek.ts` | `harness-lane-chrome.ts:86-130` + the per-head `innerHTML` on the 2 s metrics tick (`acp-harness-view.ts:13550`) |
+| 4.2 | `LaneHead` | `{ lane, active, mcp, metrics, inboxDepth, pendingPeers, isOrchestrator, runs }` | `⠙ claude-1 busy  #handoff · 0:42  ◆ orch  sonnet-4-6  mcp ✓ 14  12.4% 843M  ⚒ Edit src/acp/lane-peek.ts` — spec 343: running built-ins lead the chip strip (two at most, then `+N`) | `harness-lane-chrome.ts:86-130` + the per-head `innerHTML` on the 2 s metrics tick (`acp-harness-view.ts:13550`) |
 | 4.3 | `LaneSymbol` | `{ status }` | busy `⠋` · perm/peer/error/starting → icon · idle → empty | `harness-lane-chrome.ts:612-652`. Status vocabulary unchanged: `starting · idle · busy · action required · awaiting peer · error · stopped` |
 | 4.4 | `LaneStats` | `{ lane, projectDir }` | `sess 4f2a9c · krypton · ⌁128.4k/200.0k (64%) · cache 93% · $0.4412 USD · ⚒37 · ≡412` | `harness-lane-chrome.ts:464-537` (`StatList` inline) |
-| 4.5 | `RailEntry` | `{ lane, active, peerHint, directive, reviewCount }` | `● [logo] claude-1 ⇆ 37 128.4k` / `impl  harness UI refactor · next send` | `acp-harness-view.ts:13024-13141` |
+| 4.5 | `RailEntry` | `{ lane, active, peerHint, directive, reviewCount, runs }` | `● [logo] claude-1 ⇆ 37 128.4k` / `impl  harness UI refactor · next send`; spec 343: a running built-in replaces the status word (`#e2e run login +1`) or the directive title | `acp-harness-view.ts:13024-13141` |
 | 4.6 | `LaneRail` | `{ lanes, activeId }` | zen-mode left rail, `reconcile` over `RailEntry` | `acp-harness-view.ts:12930-12943,12660-12667` |
 
 ---

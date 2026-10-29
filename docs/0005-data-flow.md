@@ -1493,6 +1493,30 @@ The spinner ticker (`updateSpinnerTicker`) counts a running task as live, but on
 while the metrics overlay is open — that is the one surface where a task spinner is
 mounted, and the lane itself is `idle` the whole time.
 
+## Running Built-in Command Flow (spec 343)
+
+A `#` command can work for seconds or minutes without touching lane status. Examples
+are `#push` uploading, `#e2e run`, and `#resume list` listing Xenon. The harness
+therefore tracks the command itself, not the lane.
+
+```
+1. submitLanePrompt(L, '#…') → beginCommandRun(L, text)
+   → CommandRunTracker.begin (text redacted: `#xenon token <secret>` → `#xenon token`, ≤ 28 chars)
+   → 500 ms reveal timer; updateComposerTick() (the 1 Hz clock runs while any run exists)
+2. try { await runHashCommand(L, text) }: harness IPC, the turn it injected (client.prompt
+   resolves at turn end), `#rails now`'s run (requestRun's promise) and `#review pass`'s
+   loop (whenDone, settled in drop) all count
+3. Reveal timer → invalidate('rail') → laneShellProps.runs / railEntryProps.runs
+   = CommandRunTracker.visible(L) → LaneHead run chips lead the chip strip;
+   Zen RailEntry shows the first run (+N) where the status word was
+4. 1 Hz tick → tickLaneRuns: LaneShell.update for lanes with runs (elapsed text only)
+5. finally endCommandRun → clear the timer; if it was on screen → invalidate('rail')
+```
+
+A lane closing drops its runs; view dispose clears them, so a late `finally` neither
+repaints nor restarts the clock. Lane status, peer drain and the composer busy chip are
+unchanged.
+
 ## Assist Sidecar Flow (spec 306)
 
 A cheap second model reads the turn that just ended (or the prompt just sent) and

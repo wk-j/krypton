@@ -35,6 +35,7 @@ function props(over: Partial<RailEntryProps> = {}): RailEntryProps {
     peerHint: NO_PEERS,
     directive: null,
     reviewCount: 0,
+    runs: [],
     ...over,
   };
 }
@@ -234,6 +235,59 @@ describe('RailEntry', () => {
 
     entry.update(props({ lane }));
     expect(hint.textContent).toBe('SENTINEL');
+    entry.dispose();
+  });
+});
+
+describe('RailEntry running-command meta (spec 343)', () => {
+  const run = (id: number, text: string): { id: number; text: string; elapsed: string } => ({ id, text, elapsed: '0:05' });
+
+  it('puts the running command where the status word was, and restores the word after', () => {
+    const entry = new RailEntry();
+    const lane = makeLane({ status: 'idle' });
+    entry.update(props({ lane, runs: [run(1, '#e2e run login'), run(2, '#push')] }));
+
+    const meta = entry.el.querySelector('.acp-harness__rail-meta');
+    expect([...(meta?.children ?? [])].map((node) => node.className)).toEqual(['acp-harness__rail-meta__run']);
+    expect(meta?.textContent).toBe('#e2e run login +1');
+    // The head line is unchanged: it has no room for a run.
+    expect(entry.el.querySelector('.acp-harness__rail-head')?.textContent).toBe('Claude-1');
+    expect(entry.el.title).toBe('idle · running #e2e run login, #push');
+
+    entry.update(props({ lane, runs: [] }));
+    expect(meta?.textContent).toBe('idle');
+    expect(entry.el.querySelector('.acp-harness__rail-meta__run')).toBeNull();
+    entry.dispose();
+  });
+
+  it('keeps the permission hint on a lane that needs the user', () => {
+    const entry = new RailEntry();
+    entry.update(props({
+      lane: makeLane({
+        status: 'needs_permission',
+        pendingQuestions: [{ wire: 'elicitation' }] as unknown as HarnessLane['pendingQuestions'],
+      }),
+      runs: [run(1, '#push')],
+    }));
+    expect(entry.el.querySelector('.acp-harness__rail-meta')?.textContent).toBe('ask · 1–9/Enter · x decline');
+    entry.dispose();
+  });
+
+  it('takes the directive title’s place but keeps the role tag and the pending hint', () => {
+    const entry = new RailEntry();
+    entry.update(props({ directive: { directive: directive(), pending: 'swap' }, runs: [run(1, '#daily')] }));
+
+    const meta = entry.el.querySelector('.acp-harness__rail-meta');
+    expect([...(meta?.children ?? [])].map((node) => node.className)).toEqual([
+      'acp-harness__rail-tag acp-harness__rail-tag--impl',
+      'acp-harness__rail-meta__run',
+      'acp-harness__rail-meta__hint',
+    ]);
+    expect(meta?.querySelector('.acp-harness__rail-meta__run')?.textContent).toBe('#daily');
+
+    entry.update(props({ directive: { directive: directive(), pending: 'swap' }, runs: [] }));
+    expect(meta?.querySelector('.acp-harness__rail-meta__title')?.textContent).toBe('harness UI refactor');
+    expect(meta?.querySelector('.acp-harness__rail-meta__run')).toBeNull();
     entry.dispose();
   });
 });

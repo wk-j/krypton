@@ -36,6 +36,7 @@ function props(over: Partial<LaneHeadProps> = {}): LaneHeadProps {
     inboxDepth: 0,
     pendingPeers: [],
     isOrchestrator: false,
+    runs: [],
     ...over,
   };
 }
@@ -228,6 +229,62 @@ describe('LaneHead lane-mail inbox chip', () => {
     const head = new LaneHead();
     head.update(props({ inboxDepth: 0 }));
     expect(head.el.querySelector('.acp-harness__lane-inbox')).toBeNull();
+    head.dispose();
+  });
+});
+
+describe('LaneHead running-command chips (spec 343)', () => {
+  it('leads the chip strip with the running built-ins, ahead of the inbox chip', () => {
+    const head = new LaneHead();
+    head.update(props({
+      lane: makeLane({ status: 'idle', modelName: 'gpt-5.5' }),
+      inboxDepth: 1,
+      runs: [{ id: 4, text: '#e2e run login', elapsed: '2:14' }],
+    }));
+
+    const chips = [...(head.el.querySelector('.acp-harness__lane-chips')?.children ?? [])];
+    expect(chips.map((chip) => chip.className)).toEqual([
+      'acp-harness__lane-run',
+      'acp-harness__lane-inbox',
+      'acp-harness__lane-model',
+      'acp-harness__lane-mcp acp-harness__lane-mcp--off',
+    ]);
+    expect(chips[0].textContent).toBe('#e2e run login · 2:14');
+    expect(chips[0].getAttribute('title')).toBe('running #e2e run login · 2:14');
+    // The status word still reports the agent, not the harness.
+    expect(head.el.querySelector('.acp-harness__lane-status')?.textContent).toBe('idle');
+    head.dispose();
+  });
+
+  it('shows two runs and folds the rest into one +N chip whose title names them', () => {
+    const head = new LaneHead();
+    head.update(props({
+      runs: [
+        { id: 1, text: '#push review', elapsed: '0:05' },
+        { id: 2, text: '#daily', elapsed: '0:03' },
+        { id: 3, text: '#e2e status', elapsed: '0:01' },
+        { id: 5, text: '#resume list', elapsed: '0:00' },
+      ],
+    }));
+
+    const runs = [...head.el.querySelectorAll('.acp-harness__lane-run')];
+    expect(runs.map((chip) => chip.textContent)).toEqual(['#push review · 0:05', '#daily · 0:03', '+2']);
+    expect(runs[2].getAttribute('title')).toBe('also running #e2e status · 0:01, #resume list · 0:00');
+    head.dispose();
+  });
+
+  it('advances the clock in the same chip node and drops the chip when the run ends', () => {
+    const head = new LaneHead();
+    const lane = makeLane();
+    head.update(props({ lane, runs: [{ id: 7, text: '#push', elapsed: '0:01' }] }));
+    const chip = head.el.querySelector('.acp-harness__lane-run');
+
+    head.update(props({ lane, runs: [{ id: 7, text: '#push', elapsed: '0:02' }] }));
+    expect(head.el.querySelector('.acp-harness__lane-run')).toBe(chip);
+    expect(chip?.textContent).toBe('#push · 0:02');
+
+    head.update(props({ lane, runs: [] }));
+    expect(head.el.querySelector('.acp-harness__lane-run')).toBeNull();
     head.dispose();
   });
 });

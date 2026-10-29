@@ -238,7 +238,10 @@ export class HarnessRailsController {
       return;
     }
     if (sub === 'now') {
-      this.requestRun(lane);
+      // spec 343: the command lasts as long as the run it started, so the lane
+      // shows `#rails now` until the checks and the judge are done.
+      const run = this.requestRun(lane);
+      if (run) await run;
       return;
     }
     if (sub === 'send') {
@@ -258,18 +261,20 @@ export class HarnessRailsController {
     this.host.flashChip(RAILS_USAGE);
   }
 
-  /** `#rails now` and `r` in the dock: start at step 3, no fingerprint stop. */
-  requestRun(lane: HarnessLane | null): void {
-    if (this.disposed) return;
+  /** `#rails now` and `r` in the dock: start at step 3, no fingerprint stop.
+   *  Returns the started run (it never rejects), or null when none started. */
+  requestRun(lane: HarnessLane | null): Promise<void> | null {
+    if (this.disposed) return null;
     if (this.mode() === 'off') {
       this.host.flashChip('rails: off — #rails manual');
-      return;
+      return null;
     }
     if (this.running) {
       this.host.flashChip('rails: a run is already in progress');
-      return;
+      return null;
     }
     this.startRun({ kind: 'manual', laneId: lane?.id ?? null, laneName: lane?.displayName ?? null });
+    return this.runPromise;
   }
 
   /** The dock's keys while it has focus. `[` / `]` belong to the dock column. */
@@ -281,7 +286,7 @@ export class HarnessRailsController {
     else if (key === 'Enter') this.toggleExpanded();
     else if (key >= '1' && key <= '5' && key.length === 1) this.jumpToSection(Number(key) as RailsDockSection);
     else if (key === 's') this.sendSelected();
-    else if (key === 'r') this.requestRun(this.host.lanes.find((lane) => lane.id === this.host.activeLaneId) ?? null);
+    else if (key === 'r') void this.requestRun(this.host.lanes.find((lane) => lane.id === this.host.activeLaneId) ?? null);
     else if (key === 'Escape') this.host.focusComposer();
     else return false;
     event.preventDefault();

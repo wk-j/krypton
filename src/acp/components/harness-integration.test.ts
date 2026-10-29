@@ -45,6 +45,12 @@ function activate(v: AcpHarnessView, laneId: string): void {
   state.activeLaneId = laneId;
 }
 
+/** Spec 343: Zen mode swaps the collapsed lanes for the left rail. */
+function enterZen(v: AcpHarnessView): void {
+  const state = v as unknown as { zenMode: boolean };
+  state.zenMode = true;
+}
+
 function call<T>(v: AcpHarnessView, name: string, ...args: unknown[]): T {
   const fn = (v as unknown as Record<string, (...a: unknown[]) => T>)[name];
   return fn.call(v, ...args);
@@ -420,6 +426,55 @@ describe('harness view integration (spec 301)', () => {
       await lane.imageState.queue;
       expect(captions('bytes-first')).toEqual(['b.png · 70 B']);
     } finally {
+      vi.mocked(invoke).mockImplementation(async () => []);
+    }
+  });
+});
+
+// Spec 343 — the reported bug: `#push` uploads for seconds while its lane reads
+// plain `idle`, with nothing naming the command once the 2 s flash clears.
+describe('running built-in command chips (spec 343)', () => {
+  it('names a slow # command on the lane head and the Zen rail until it settles', async () => {
+    vi.useFakeTimers();
+    // Executor form: tsconfig's ES2021 lib has no `Promise.withResolvers`.
+    let failPush: (error: Error) => void = () => {};
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === 'xenon_push') return new Promise((_resolve, reject) => { failPush = reject; });
+      return [];
+    });
+    const runChip = (): Element | null => view.element.querySelector('.acp-harness__lane-run');
+    try {
+      const lane = call<HarnessLane>(view, 'createLane', 'claude', 'claude-1');
+      lanes(view).push(lane);
+      activate(view, lane.id);
+      lane.status = 'idle';
+
+      const pushing = call<Promise<void>>(view, 'submitLanePrompt', lane, '#push review', []);
+      call(view, 'renderDashboard');
+      expect(runChip(), 'not shown before the reveal delay').toBeNull();
+
+      await vi.advanceTimersByTimeAsync(500);
+      call(view, 'renderDashboard');
+      const chip = runChip();
+      expect(chip?.textContent).toBe('#push review · 0:00');
+      expect(view.element.querySelector('.acp-harness__lane-status')?.textContent).toBe('idle');
+
+      // The 1 Hz clock writes the chip in place, without a dashboard render.
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(runChip()).toBe(chip);
+      expect(chip?.textContent).toBe('#push review · 0:01');
+
+      enterZen(view);
+      call(view, 'renderDashboard');
+      expect(view.element.querySelector('.acp-harness__rail-meta')?.textContent).toBe('#push review');
+
+      failPush(new Error('offline'));
+      await pushing;
+      call(view, 'renderDashboard');
+      expect(runChip()).toBeNull();
+      expect(view.element.querySelector('.acp-harness__rail-meta')?.textContent).toBe('idle');
+    } finally {
+      vi.useRealTimers();
       vi.mocked(invoke).mockImplementation(async () => []);
     }
   });

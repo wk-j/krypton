@@ -470,6 +470,7 @@ import {
   shortId,
   truncate,
 } from './harness-format';
+import { COMMAND_RUN_REVEAL_MS, CommandRunTracker } from './harness-command-runs';
 import {
   applyTaskStatus,
   formatBackgroundTaskLines,
@@ -1454,6 +1455,9 @@ export class AcpHarnessView implements ContentView {
   private referenceGitRefreshGeneration = 0;
   private referenceGitDisposed = false;
   private composerTickTimer: number | null = null;
+  /** spec 343: built-in `#` commands in flight, and the timer that first paints each. */
+  private readonly commandRuns = new CommandRunTracker();
+  private readonly commandRunRevealTimers = new Map<number, number>();
   private thoughtHideTimer: number | null = null;
   private toolTickTimer: number | null = null;
   private metricsBySession = new Map<number, AcpLaneMetrics>();
@@ -5035,6 +5039,11 @@ export class AcpHarnessView implements ContentView {
     this.orchestratorLaneBusUnsub?.();
     this.orchestratorLaneBusUnsub = null;
     this.stopComposerTick();
+    // spec 343: a command still in flight settles after the view is gone; its
+    // end must neither repaint nor restart the clock.
+    for (const timer of this.commandRunRevealTimers.values()) window.clearTimeout(timer);
+    this.commandRunRevealTimers.clear();
+    this.commandRuns.clear();
     this.cancelThoughtSlotHide();
     this.cancelSmoothFollow();
     this.stopThoughtTeletypeTick();
@@ -8448,7 +8457,14 @@ export class AcpHarnessView implements ContentView {
     delivery: PromptDelivery = 'queue',
   ): Promise<void> {
     if (text.startsWith('#')) {
-      await this.runHashCommand(lane, text);
+      // spec 343: the lane names the built-in for as long as its work runs —
+      // harness IPC, the turn it injected, or the loop it started.
+      const runId = this.beginCommandRun(lane, text);
+      try {
+        await this.runHashCommand(lane, text);
+      } finally {
+        this.endCommandRun(runId);
+      }
       return;
     }
     if (text.startsWith('!')) {
@@ -11136,6 +11152,7 @@ export class AcpHarnessView implements ContentView {
     // whole view disposes (the matrix observes the per-session trend; closing or
     // restarting a lane mid-session must not erase its history). The record
     // snapshots the lane displayName so the overlay can still label these rows.
+    this.commandRuns.dropLane(lane.id);
     this.laneBus.emit({
       type: 'lane:closed',
       payload: { laneId: lane.id, displayName: lane.displayName },
@@ -12096,8 +12113,16 @@ export class AcpHarnessView implements ContentView {
       this.setDraft(lane, '', 0);
       // spec 276: `pass` / `stop` drive the review-till-pass loop; anything
       // else is the one-shot spec 145 review (lane names never equal either).
-      if (parts[1] === 'pass') await this.reviewLoopCtl.start(lane, parts.slice(2));
-      else if (parts[1] === 'stop') this.reviewLoopCtl.stop(lane);
+      if (parts[1] === 'pass') {
+        const started = await this.reviewLoopCtl.start(lane, parts.slice(2));
+        this.render();
+        // spec 343: the command lasts as long as its loop, so the lane keeps
+        // showing `#review pass` through every round, fix and summary.
+        const done = started ? this.reviewLoopCtl.whenDone(lane.id) : null;
+        if (done) await done;
+        return;
+      }
+      if (parts[1] === 'stop') this.reviewLoopCtl.stop(lane);
       else await this.runReviewCommand(lane, parts.slice(1));
       this.render();
       return;
@@ -13097,6 +13122,7 @@ export class AcpHarnessView implements ContentView {
         ? { directive: metaDirective, pending: swapTarget ? 'swap' : pendingClear ? 'clear' : 'none' }
         : null,
       reviewCount: lane.sessionId ? this.reviewThreadCounts.get(lane.sessionId) ?? 0 : 0,
+      runs: this.commandRuns.visible(lane.id),
     };
   }
 
@@ -13298,6 +13324,7 @@ export class AcpHarnessView implements ContentView {
       inboxDepth: this.coordinator.inboxDepth(lane.id),
       pendingPeers: this.coordinator.pendingPeersFor(lane.id),
       isOrchestrator: lane.id === this.orchestratorLaneId,
+      runs: this.commandRuns.visible(lane.id),
       projectDir: this.projectDir,
       reviewThread: canReview
         ? {
@@ -13702,13 +13729,16 @@ export class AcpHarnessView implements ContentView {
    * and writes nothing at all.
    */
   private updateComposerTick(): void {
-    const shouldTick = this.lanes.some((lane) => {
+    const shouldTick = this.commandRuns.size > 0 || this.lanes.some((lane) => {
       if (lane.status === 'busy' && lane.activeTurnStartedAt !== null) return true;
       if (this.coordinator.pendingPeersFor(lane.id).length > 0) return true;
       return lane.status === 'awaiting_peer';
     });
     if (shouldTick && this.composerTickTimer === null) {
-      this.composerTickTimer = window.setInterval(() => this.tickComposerClock(), 1000);
+      this.composerTickTimer = window.setInterval(() => {
+        this.tickLaneRuns();
+        this.tickComposerClock();
+      }, 1000);
     } else if (!shouldTick) {
       this.stopComposerTick();
     }
@@ -13735,6 +13765,41 @@ export class AcpHarnessView implements ContentView {
     if (this.composerTickTimer === null) return;
     window.clearInterval(this.composerTickTimer);
     this.composerTickTimer = null;
+  }
+
+  /** spec 343: open a command run. It is painted only once it is
+   *  COMMAND_RUN_REVEAL_MS old, so an instant command never flickers. */
+  private beginCommandRun(lane: HarnessLane, text: string): number {
+    const id = this.commandRuns.begin(lane.id, text);
+    this.commandRunRevealTimers.set(id, window.setTimeout(() => {
+      this.commandRunRevealTimers.delete(id);
+      this.invalidate('rail');
+    }, COMMAND_RUN_REVEAL_MS));
+    this.updateComposerTick();
+    return id;
+  }
+
+  private endCommandRun(id: number): void {
+    const timer = this.commandRunRevealTimers.get(id);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      this.commandRunRevealTimers.delete(id);
+    }
+    if (this.commandRuns.end(id)) this.invalidate('rail');
+    this.updateComposerTick();
+  }
+
+  /** spec 343: the 1 Hz clock advances each run chip's elapsed time in place —
+   *  the `refreshMetricsRender` path, limited to lanes with a run in flight.
+   *  LaneHead depends on the formatted text, so only the chip is written. */
+  private tickLaneRuns(): void {
+    if (this.commandRuns.size === 0) return;
+    const host = this.zenBodyCellEl ?? this.dashboardEl;
+    for (const lane of this.lanes) {
+      if (!this.commandRuns.hasLane(lane.id)) continue;
+      const shell = listComponent(host, laneShellKey(lane.id, lane.id === this.activeLaneId));
+      (shell as LaneShell | undefined)?.update(this.laneShellProps(lane));
+    }
   }
 
   /** Run a single braille-spinner interval whenever any lane is busy, advancing

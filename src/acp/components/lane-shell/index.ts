@@ -25,6 +25,7 @@ import { el } from '../../../ui/dom';
 import { LaneHead } from '../lane-head';
 import { LaneStats } from '../lane-stats';
 import type { AcpLaneMetrics } from '../../../types';
+import type { CommandRunView } from '../../harness-command-runs';
 import type { PendingPeerSummary } from '../../inter-lane';
 import type { HarnessLane } from '../../harness-view-types';
 import type { HarnessMcpLaneStats } from '../../types';
@@ -38,6 +39,8 @@ export interface LaneShellProps {
   readonly inboxDepth: number;
   readonly pendingPeers: PendingPeerSummary[];
   readonly isOrchestrator: boolean;
+  /** spec 343: built-in `#` commands in flight on this lane, for the head. */
+  readonly runs: readonly CommandRunView[];
   readonly projectDir: string | null;
   /** Review-thread action in the head; null when the lane cannot start one. */
   readonly reviewThread: { readonly count: number; readonly enabled: boolean } | null;
@@ -121,6 +124,7 @@ export class LaneShell extends Component<LaneShellProps> {
       inboxDepth: next.inboxDepth,
       pendingPeers: next.pendingPeers,
       isOrchestrator: next.isOrchestrator,
+      runs: next.runs,
     });
     this.stats?.update({ lane: next.lane, projectDir: next.projectDir });
   }
