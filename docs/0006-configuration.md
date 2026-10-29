@@ -932,7 +932,7 @@ count = 3
 | `[acp_harness.rails]` | `debounce_ms` | int | `5000` | Quiet time after a lane goes busy → idle before a run starts, clamped to 1000–60000. Any later busy → idle restarts it |
 | `[acp_harness.rails]` | `min_interval_ms` | int | `0` | Shortest time from the start of the newest recorded run (auto or manual) to the start of the next auto run, clamped to 0–3600000; `0` = off. A run due inside the window is held and starts once when it ends, if the harness is quiet; the dock head shows `auto run held until HH:MM`. `#rails now` ignores it; `#rails manual` drops a held run (spec 339) |
 
-The clamps live in the frontend, so an out-of-range value in TOML is corrected, not rejected. The trust store is `~/.config/krypton/rails-trust.toml`, written only by `#rails trust`; deleting an entry makes that project's checks wait for trust again.
+The clamps live in the frontend, so an out-of-range value in TOML is corrected, not rejected. The trust store is `~/.config/krypton/rails-trust.toml`, written only by `#rails trust` or the Rails dock's Trust button (spec 344), both a human action; deleting an entry makes that project's checks wait for trust again.
 
 ### ACP Harness Directives (`acp-harness.toml`)
 

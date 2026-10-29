@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AssistEngine } from './assist/engine';
-import { HarnessRailsController, type RailsInvoke } from './harness-rails-controller';
+import { HarnessRailsController, RAILS_UPDATE_LABEL, type RailsInvoke } from './harness-rails-controller';
 import type { HarnessRailsHost } from './harness-view-host';
 import type { HarnessLane } from './harness-view-types';
 import { diffFingerprint } from './rails/track';
@@ -548,6 +548,66 @@ describe('HarnessRailsController (spec 337)', () => {
     expect(press('j')).toBe(true);
     expect(press('k')).toBe(true);
     expect(press('x')).toBe(false);
+  });
+
+  // Spec 344 — the Actions bar.
+
+  it('runs each Actions bar button down the path of its #rails sub-command, in the active lane', async () => {
+    const r = rig({ history: [priorRun()], snapshot: { ...SNAPSHOT, trust: 'changed' } });
+    await r.ctl.mount();
+    const button = (verb: string): HTMLButtonElement => {
+      const node = r.ctl.dockEl.querySelector<HTMLButtonElement>(`[data-rails-action="${verb}"]`);
+      if (!node) throw new Error(`no ${verb} button`);
+      return node;
+    };
+
+    button('send').click();
+    expect(r.envelopes.map((envelope) => envelope.laneId)).toEqual(['lane-1']);
+    expect(r.flashes).toEqual(['rails: sent 1 finding → claude-1']);
+    expect(button('send').className).toBe('acp-dock-action acp-dock-action--done');
+    expect(button('send').disabled).toBe(false);
+
+    button('trust').click();
+    await vi.waitFor(() => expect(button('trust').className).toBe('acp-dock-action acp-dock-action--done'));
+    expect(r.commands()).toContain('rails_trust');
+
+    button('update').click();
+    await vi.waitFor(() => expect(r.systemPrompts).toHaveLength(1));
+    expect(r.systemPrompts[0]).toMatchObject({ laneId: 'lane-1', label: RAILS_UPDATE_LABEL });
+
+    button('now').click();
+    // Running from the first step, before any progress is reported.
+    expect(button('now').className).toBe('acp-dock-action acp-dock-action--running');
+    expect(button('now').disabled).toBe(true);
+    await r.ctl.whenIdle();
+    expect(r.records).toHaveLength(1);
+    expect(r.records[0].trigger).toMatchObject({ kind: 'manual', laneId: 'lane-1' });
+    expect(button('now').className).toBe('acp-dock-action');
+    expect(button('now').disabled).toBe(false);
+  });
+
+  it('shows Update running while a lane carries the rails update label, and gates it on the active lane', async () => {
+    const r = rig({ history: [priorRun()] });
+    await r.ctl.mount();
+    const update = (): HTMLButtonElement | null => r.ctl.dockEl.querySelector('[data-rails-action="update"]');
+
+    r.lanes[1].activeSystemLabel = RAILS_UPDATE_LABEL;
+    r.lanes[1].status = 'busy';
+    r.transition('lane-2', 'idle', 'busy');
+    expect(update()?.className).toBe('acp-dock-action acp-dock-action--running');
+    expect(update()?.textContent).toBe('Updaterunning · codex-1');
+    expect(update()?.disabled).toBe(false);
+
+    r.lanes[1].activeSystemLabel = null;
+    r.lanes[1].status = 'idle';
+    r.transition('lane-2', 'busy', 'idle');
+    expect(update()?.className).toBe('acp-dock-action');
+
+    r.lanes[0].status = 'busy';
+    r.transition('lane-1', 'idle', 'busy');
+    expect(update()?.disabled).toBe(true);
+    expect(update()?.title).toBe('claude-1 is busy');
+    expect(r.ctl.dockEl.querySelector('.acp-rails-dock__lane-line')?.textContent).toBe('lane claude-1 · busy');
   });
 
   it('collects every untracked file for the subject', async () => {

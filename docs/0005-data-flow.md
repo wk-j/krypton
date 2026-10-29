@@ -1727,7 +1727,7 @@ mount (local harness only)    HarnessRailsController.mount → rails_load + rail
    (dock `auto run held until HH:MM`), then step 2 again; a later busy → idle replaces the hold.
 3. invoke('working_diff_stat') → files == 0 → `clean tree`, stop. Its repoRoot is the rails root.
 4. invoke('rails_load', { root }) → no manifest → stop; manifest error → `error`;
-   trust ≠ trusted on an auto run → `paused` (the dock lists the argv), stop.
+   trust ≠ trusted on an auto run → `paused` (each check row shows its argv), stop.
 5. invoke('acp_collect_review_git_state', { cwd, untrackedAll: true }) → diffFingerprint (SHA-256);
    an auto run whose fingerprint equals the newest completed run's → stop, unless that run skipped
    checks (untrusted) and the manifest is trusted now.
@@ -1742,15 +1742,21 @@ mount (local harness only)    HarnessRailsController.mount → rails_load + rail
    → invoke('rails_record_run') (.krypton/rails/runs/<runId>.json, newest 200 kept)
    → rails_history → RailsDock update, Rails tab badge, ViewBus `system:rails` → footer.
 
-#rails now | r in the dock     manual run from step 3, no fingerprint stop; untrusted → judge only
-#rails send | s in the dock    railsEnvelope → injectHarnessEnvelope(lane) → drained on its next idle
-#rails trust                   rails_trust → sha256 into ~/.config/krypton/rails-trust.toml
+#rails now | r | Run button    manual run from step 3, no fingerprint stop; untrusted → judge only
+#rails send | s | Send button  railsEnvelope → injectHarnessEnvelope(lane) → drained on its next idle
+                               (Send button = send-all to the active lane; marks the run's Send done)
+#rails trust | Trust button    rails_trust → sha256 into ~/.config/krypton/rails-trust.toml
 #rails update [<request>]      rails_load (fresh) + history → railsUpdateState (fenced, ≤ 12 000 chars)
-                               → railsUpdatePrompt → enqueueSystemPrompt(lane) (spec 338)
+  | Update button (bare)       → railsUpdatePrompt → enqueueSystemPrompt(lane, …, 'rails update') (spec 338)
 #rails off | dispose           engine.cancel() (+ rails_cancel(root) while a check runs) → no record written
 ```
 
-See `docs/0337-rails-verifier.md`.
+Spec 344: the dock's Actions bar buttons call the controller method of the matching sub-command
+(`runDockAction`). Their state is recomputed by `railsDockActions()` on every `renderDock()`;
+the controller also calls `renderDock()` on every LaneBus `lane:status` (Update shows running
+while a lane's `activeSystemLabel` is `rails update`) and at a run's start and end.
+
+See `docs/0337-rails-verifier.md` and `docs/0344-rails-panel-actions.md`.
 
 ## Workspace Lifecycle Flow
 

@@ -197,10 +197,10 @@ describe('Ticket Panel issue actions (spec 342)', () => {
     const { ctl, lane } = ticketDouble(LINKED);
 
     ctl.beginAction(lane, 'post-github-comment');
-    expect(actionButton(ctl, 'post-github-comment').classList.contains('acp-ticket-dock__action--running')).toBe(true);
+    expect(actionButton(ctl, 'post-github-comment').classList.contains('acp-dock-action--running')).toBe(true);
     ctl.onTurnEnd(lane, 'end_turn');
     await vi.waitFor(() => {
-      expect(actionButton(ctl, 'post-github-comment').classList.contains('acp-ticket-dock__action--done')).toBe(true);
+      expect(actionButton(ctl, 'post-github-comment').classList.contains('acp-dock-action--done')).toBe(true);
     });
 
     expect(invoke).toHaveBeenCalledWith('acp_record_ticket_action', {
@@ -223,7 +223,7 @@ describe('Ticket Panel issue actions (spec 342)', () => {
     ctl.onTurnEnd(lane, 'end_turn');
 
     expect(invoke).not.toHaveBeenCalled();
-    expect(actionButton(ctl, 'fix-github-issue').className).toBe('acp-ticket-dock__action');
+    expect(actionButton(ctl, 'fix-github-issue').className).toBe('acp-dock-action');
   });
 
   it('cancels only the entry its own token registered', () => {

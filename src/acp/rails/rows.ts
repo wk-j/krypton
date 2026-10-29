@@ -16,8 +16,12 @@ export function shortRuleId(id: string): string {
   return `${number ? number[0] : stem}${suffix}`;
 }
 
+/** Spec 345: runs listed before the `older` row; the head already shows the newest. */
+export const RAILS_DOCK_RECENT_RUNS = 5;
+
 /** Paint order: head · checks · open findings · resolved · rules (+ each rule
- *  when expanded) · uncovered sources · runs. */
+ *  when expanded) · uncovered sources · the newest runs · `older` (+ the rest
+ *  when expanded). */
 export function railsDockRows(model: RailsDockModel): RailsDockRow[] {
   const rows: RailsDockRow[] = [{ kind: 'head', key: 'head', section: 1 }];
   const latest = model.history[0] ?? null;
@@ -37,14 +41,7 @@ export function railsDockRows(model: RailsDockModel): RailsDockRow[] {
 
   const rules = snapshot?.rules ?? [];
   const enforced = rules.filter((rule) => rule.check !== null).length;
-  rows.push({
-    kind: 'rules',
-    key: 'rules',
-    section: 4,
-    total: rules.length,
-    enforced,
-    judgeOnly: rules.length - enforced,
-  });
+  rows.push({ kind: 'rules', key: 'rules', section: 4, total: rules.length, enforced });
   if (model.expanded.has('rules')) {
     for (const rule of rules) {
       rows.push({ kind: 'rule', key: `rule:${rule.id}`, section: 4, rule, status: latestRuleStatus(model.history, rule.id) });
@@ -53,6 +50,14 @@ export function railsDockRows(model: RailsDockModel): RailsDockRow[] {
   const uncovered = snapshot?.uncoveredSources ?? [];
   if (uncovered.length > 0) rows.push({ kind: 'uncovered', key: 'uncovered', section: 4, sources: uncovered });
 
-  for (const run of model.history) rows.push({ kind: 'run', key: `run:${run.runId}`, section: 5, run });
+  const recent = model.history.slice(0, RAILS_DOCK_RECENT_RUNS);
+  for (const run of recent) rows.push({ kind: 'run', key: `run:${run.runId}`, section: 5, run });
+  const older = model.history.slice(RAILS_DOCK_RECENT_RUNS);
+  if (older.length > 0) {
+    rows.push({ kind: 'older', key: 'older', section: 5, count: older.length });
+    if (model.expanded.has('older')) {
+      for (const run of older) rows.push({ kind: 'run', key: `run:${run.runId}`, section: 5, run });
+    }
+  }
   return rows;
 }

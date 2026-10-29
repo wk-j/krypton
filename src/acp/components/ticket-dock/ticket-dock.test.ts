@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import type { TicketActionState, TicketDockAction } from '../../harness-ticket-helpers';
+import type { TicketDockAction } from '../../harness-ticket-helpers';
 import type { LocalTicketDetail, TicketResource } from '../../harness-view-types';
+import type { DockActionState } from '../dock-action';
 import { TicketDock, type TicketDockProps } from './index';
 
 function resource(name: string, sizeBytes: number): TicketResource {
@@ -47,9 +48,9 @@ const GITHUB = {
   fetchedAt: 0,
 };
 
-const IDLE: TicketActionState = { kind: 'idle' };
+const IDLE: DockActionState = { kind: 'idle' };
 
-function states(over: Partial<Record<TicketDockAction, TicketActionState>> = {}): Record<TicketDockAction, TicketActionState> {
+function states(over: Partial<Record<TicketDockAction, DockActionState>> = {}): Record<TicketDockAction, DockActionState> {
   return {
     'analyze-github-issue': IDLE,
     'fix-github-issue': IDLE,
@@ -208,24 +209,24 @@ describe('TicketDock', () => {
       ticket: ticket({ github: GITHUB }),
       actions: states({
         'post-github-comment': { kind: 'done', badge: '✓ 14:02', detail: 'Comment ran 2026-10-29 14:02 in codex-1' },
-        'fix-github-issue': { kind: 'running', lane: 'claude-1' },
+        'fix-github-issue': { kind: 'running', badge: 'running · claude-1', detail: 'Fix here running in claude-1' },
       }),
     }));
 
     const comment = action(dock, 'post-github-comment');
-    expect(comment.className).toBe('acp-ticket-dock__action acp-ticket-dock__action--done');
+    expect(comment.className).toBe('acp-dock-action acp-dock-action--done');
     expect(comment.disabled).toBe(false);
     expect(comment.textContent).toBe('Comment✓ 14:02');
     expect(comment.title).toBe('Comment ran 2026-10-29 14:02 in codex-1');
     expect(comment.querySelector('use')?.getAttribute('href')).toBe('#krypton-icon-issue-comment');
 
     const fix = action(dock, 'fix-github-issue');
-    expect(fix.className).toBe('acp-ticket-dock__action acp-ticket-dock__action--running');
+    expect(fix.className).toBe('acp-dock-action acp-dock-action--running');
     expect(fix.textContent).toBe('Fix hererunning · claude-1');
     expect(fix.querySelector('use')?.getAttribute('href')).toBe('#krypton-icon-tool');
 
     const label = action(dock, 'tag-github-issue');
-    expect(label.className).toBe('acp-ticket-dock__action');
+    expect(label.className).toBe('acp-dock-action');
     expect(label.textContent).toBe('Label');
     expect(label.hasAttribute('title')).toBe(false);
   });
@@ -235,13 +236,13 @@ describe('TicketDock', () => {
     dock.update(props({
       ticket: ticket({ github: GITHUB }),
       workDisabledReason: 'codex-1 is busy',
-      actions: states({ 'post-github-comment': { kind: 'running', lane: 'codex-1' } }),
+      actions: states({ 'post-github-comment': { kind: 'running', badge: 'running · codex-1', detail: 'Comment running in codex-1' } }),
     }));
 
-    const buttons = [...dock.el.querySelectorAll<HTMLButtonElement>('.acp-ticket-dock__action')];
+    const buttons = [...dock.el.querySelectorAll<HTMLButtonElement>('.acp-dock-action')];
     expect(buttons.map((button) => button.disabled)).toEqual([true, true, true, true, true, true]);
     expect(action(dock, 'analyze-github-issue').title).toBe('codex-1 is busy');
-    expect(action(dock, 'post-github-comment').classList.contains('acp-ticket-dock__action--running')).toBe(true);
+    expect(action(dock, 'post-github-comment').classList.contains('acp-dock-action--running')).toBe(true);
     const target = dock.el.querySelector('.acp-ticket-dock__target');
     expect(target?.textContent).toBe('codex-1 is busy');
     expect(target?.classList.contains('acp-ticket-dock__target--blocked')).toBe(true);
@@ -255,7 +256,7 @@ describe('TicketDock', () => {
   it('writes nothing when equal action states arrive as a new object', () => {
     const dock = new TicketDock();
     const detail = ticket({ github: GITHUB });
-    const done = (): TicketActionState => ({ kind: 'done', badge: '✓ PR', detail: 'PR opened' });
+    const done = (): DockActionState => ({ kind: 'done', badge: '✓ PR', detail: 'PR opened' });
     dock.update(props({ ticket: detail, actions: states({ 'fix-github-issue': done() }) }));
 
     let mutations = 0;

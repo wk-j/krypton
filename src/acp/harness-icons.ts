@@ -147,6 +147,13 @@ export const HARNESS_ICON_SVG_DEFS = [
   '<symbol id="krypton-icon-issue-comment" viewBox="0 0 16 16"><path d="M8 2.8 C11.6 2.8 14 4.8 14 7.4 C14 10 11.6 12 8 12 C7.2 12 6.5 11.9 5.8 11.7 L3 13.4 L3.6 10.8 C2.6 10 2 8.8 2 7.4 C2 4.8 4.4 2.8 8 2.8 Z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/></symbol>',
   '<symbol id="krypton-icon-issue-label" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M2.4 3.6 V7.6 L8.6 13.8 L13.8 8.6 L7.6 2.4 H3.6 A1.2 1.2 0 0 0 2.4 3.6 Z"/><circle cx="5.4" cy="5.4" r="1"/></g></symbol>',
   '<symbol id="krypton-icon-issue-attach" viewBox="0 0 16 16"><path d="M12 7.2 L7.7 11.5 A2.7 2.7 0 0 1 3.9 7.7 L8.6 3 A1.8 1.8 0 0 1 11.1 5.5 L6.6 10 A0.9 0.9 0 0 1 5.3 8.7 L9.2 4.8" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
+  // spec 344: Rails dock actions. Run is a play triangle, Send a paper plane
+  // (findings go to a lane), Trust a shield holding a check (allow the
+  // manifest's commands), Update a pencil (the lane edits the rails).
+  '<symbol id="krypton-icon-rails-run" viewBox="0 0 16 16"><path d="M5 3.2 L12.8 8 L5 12.8 Z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/></symbol>',
+  '<symbol id="krypton-icon-rails-send" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2 L2 7.2 L7 9 L9 14 Z"/><path d="M7 9 L14 2"/></g></symbol>',
+  '<symbol id="krypton-icon-rails-trust" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.8 L13 3.7 V7.6 C13 10.8 10.9 13 8 14.2 C5.1 13 3 10.8 3 7.6 V3.7 Z"/><path d="M5.6 8.1 L7.3 9.8 L10.5 6.4"/></g></symbol>',
+  '<symbol id="krypton-icon-rails-update" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M10.4 2.6 L13.4 5.6 L5.8 13.2 L2.4 13.6 L2.8 10.2 Z"/><path d="M9 4 L12 7"/></g></symbol>',
 ].join('');
 
 const SYMBOL_DEFS_ID = 'krypton-harness-symbol-defs';

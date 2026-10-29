@@ -7,7 +7,9 @@
    Colour rule: model findings are neutral evidence (ADR-0004) — severities,
    tags and rule statuses use ink tiers and amber only. The fault colour is
    reserved for a failed check (`FAIL`, `TIMEOUT`, the `CHECK FAILED` pill, a
-   `fail` rule status and the `✗` run glyph), ADR-0017. No animation. */
+   `fail` rule status and the `✗` run glyph), ADR-0017. The Actions bar's
+   buttons (spec 344) are `DockActionButton`s: their running / done colours are
+   action states shared with the Ticket Panel, never verdicts. No animation. */
 
 @layer krypton.component {
   .acp-rails-dock {
@@ -91,6 +93,12 @@
     margin-left: 0;
   }
 
+  /* The head's `▸` sits right after the time, which already took the slack. */
+  .acp-rails-dock__row--head .acp-rails-dock__disclosure {
+    margin-left: 0;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+  }
+
   .acp-rails-dock__meta {
     margin-top: 5px;
     overflow: hidden;
@@ -100,7 +108,6 @@
   }
 
   .acp-rails-dock__progress,
-  .acp-rails-dock__trust,
   .acp-rails-dock__hint,
   .acp-rails-dock__error {
     margin: 6px 0 0;
@@ -111,38 +118,37 @@
     color: #ffd880;
   }
 
-  .acp-rails-dock__trust,
   .acp-rails-dock__hint,
   .acp-rails-dock__error {
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
   }
 
-  .acp-rails-dock__argv,
+  /* Spec 345: the head's one state line. It takes `__progress` (amber) or
+     `__hint` (ink) for its colour and stays one line; `title` and the head
+     detail carry the full text. */
+  .acp-rails-dock__state {
+    margin: 5px 0 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Spec 345: a check's command while trust is pending, one line under its
+     name; `Enter` on the row shows it whole. */
+  .acp-rails-dock__cmd {
+    margin: 1px 0 0;
+    padding-left: 2ch;
+    overflow: hidden;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .acp-rails-dock__warnings,
   .acp-rails-dock__list {
     margin: 6px 0 0;
     padding: 0;
     list-style: none;
-  }
-
-  /* Name above its command, not beside it: in the 352px column a side-by-side
-     grid sized each row to its own name, so the commands started at a
-     different column per row and wrapped in whatever width was left. */
-  .acp-rails-dock__argv li {
-    padding: 3px 0;
-  }
-
-  .acp-rails-dock__argv .acp-rails-dock__name {
-    display: block;
-    overflow-wrap: anywhere;
-  }
-
-  .acp-rails-dock__argv code {
-    display: block;
-    padding-left: 2ch;
-    overflow-wrap: anywhere;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
-    font: inherit;
   }
 
   .acp-rails-dock__warnings li {
@@ -297,6 +303,49 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+
+  /* Spec 344 — the Actions bar: fixed between the scrolling rows and the key
+     hints. The heading takes the section style; the lane line on its right
+     names where Send and Update go. */
+  .acp-rails-dock__actions {
+    flex: 0 0 auto;
+    padding: 8px 14px 10px;
+    border-top: 1px solid rgba(255, 176, 0, 0.12);
+  }
+
+  .acp-rails-dock__actions-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .acp-rails-dock__actions-label {
+    flex: 0 0 auto;
+    color: #ffb000;
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+  }
+
+  .acp-rails-dock__lane-line {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Two columns, so a badge such as `check 2/3 typecheck` fits; rows share one
+     height, so a button without a badge centres its label. */
+  .acp-rails-dock__action-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: minmax(36px, auto);
+    gap: 6px;
+  }
 }
 
 /* Light scheme: the amber and fault accents are neon values tuned for a dark
@@ -304,6 +353,7 @@
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-rails-dock__eyebrow,
   html[data-theme-scheme='light'] .acp-rails-dock__section,
+  html[data-theme-scheme='light'] .acp-rails-dock__actions-label,
   html[data-theme-scheme='light'] .acp-rails-dock__pill,
   html[data-theme-scheme='light'] .acp-rails-dock__progress,
   html[data-theme-scheme='light'] .acp-rails-dock__severity,

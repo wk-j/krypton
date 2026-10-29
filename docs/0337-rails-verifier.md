@@ -1,6 +1,6 @@
 # Rails Verifier — Implementation Spec
 
-> Status: Implemented (rev 3, 2026-10-28: the Rails dock is a second tab in the Active Ticket dock's place)
+> Status: Implemented (rev 3, 2026-10-28: the Rails dock is a second tab in the Active Ticket dock's place; amended by spec 344, 2026-10-29: an Actions bar with Run, Send, Trust and Update buttons; and by spec 345, 2026-10-29: a display budget for the dock content)
 > Date: 2026-10-27
 > Milestone: ACP Harness — architecture conformance
 > Builds on: 306 (assist sidecar) · 276 / ADR-0021 (harness-owned verdict) · 145 (`#review` diff subject) · 328 (`#e2e` process runner) · 238 / 320 / 331 (ticket dock, panel toggles) · ADR-0001 · ADR-0004 · ADR-0007 · ADR-0008 · ADR-0017
@@ -144,7 +144,7 @@ Unknown keys become warnings, as in `e2e.rs:184-189`. A `version` other than 1 i
 - `~/.config/krypton/rails-trust.toml` holds `[[project]] root, sha256` entries, where `sha256` is the hash of the manifest bytes.
 - `rails_load` reports `trust` as `trusted`, `untrusted` or `changed`.
 - `rails_run_check` re-hashes the manifest and refuses to run unless it is trusted. The gate lives in Rust, not in the frontend.
-- While trust is not `trusted`, the dock lists each check's argv. `#rails trust` approves exactly that file content.
+- While trust is not `trusted`, each check row shows its argv on one line, and `Enter` on the row shows it whole (spec 345). `#rails trust`, or the dock's Trust button (spec 344), approves exactly that file content.
 - Automatic runs require `trusted`. Without trust, a manual run does the judge step only.
 
 ### Rust API (`src-tauri/src/rails.rs`, serde camelCase)
@@ -269,15 +269,15 @@ The prompt tells the current lane to:
 
 **Content**
 
-`RailsDock` lives in `src/acp/components/rails-dock/` (layer `krypton.component`, BEM `.acp-rails-dock`). Its sections, top to bottom:
+`RailsDock` lives in `src/acp/components/rails-dock/` (layer `krypton.component`, BEM `.acp-rails-dock`). Its sections, top to bottom, sized by spec 345:
 
-1. **Head**: `RAILS`, the verdict pill, the run age, the trigger lane, trust and mode.
-   - While running, it shows static text: `check 2/3 typecheck` or `judging`.
-   - When paused, it lists the argv waiting for `#rails trust`.
-2. **Checks**: `name  PASS|FAIL|TIMEOUT|ERROR  1.2s`.
+1. **Head**, at most three lines: `RAILS`, the verdict pill and the run time (`▸` when an error or warnings are behind `Enter`); one state line (a run in progress such as `check 2/3 typecheck`, an error, the trust state such as `changed since trust · 4 checks wait`, the other progress lines, the empty-manifest hint or a warning count, the first that applies); and the trigger, lane and mode. `Enter` on the head shows the full state line, the manifest path, the full error and the warnings.
+2. **Checks**: `name  PASS|FAIL|TIMEOUT|ERROR  1.2s`, or `skipped` / `not run`. While trust is pending, each check's argv follows on one line.
 3. **Findings**: each open finding as `violation|suspect  0008#2  file:line`, with the note on a second line and a tag `new` or `since 14:02`. A collapsed `resolved N` row follows.
-4. **Rules**: one line such as `24 rules · 9 enforced · 15 judge-only · 3 sources without rails`. It expands to every rule with its latest status.
-5. **Runs**: the last 20 runs, newest first, each with time, verdict glyph, findings count, trigger lane and a `stale` mark.
+4. **Rules**: one line such as `24 rules · 9 enforced`, then `3 sources without rails`. It expands to every rule with its latest status.
+5. **Runs**: the newest 5 of the last 20, each with time, verdict glyph, findings count, trigger lane and a `stale` mark; `N older runs ▸` expands to the rest.
+
+Below the rows, outside the list, a fixed **Actions** bar (spec 344) holds four buttons: Run (`#rails now`), Send (`#rails send`), Trust (`#rails trust`) and Update (bare `#rails update`). A click takes the same path as the typed sub-command. Each button shows its state the way the Ticket Panel's issue actions do, through the shared `DockActionButton`; the bar's head line names the active lane that Send and Update go to.
 
 **Keys** (dock focused):
 
@@ -291,7 +291,7 @@ The prompt tells the current lane to:
 | `[` / `]` | Switch dock tab (from either tab) |
 | `Escape` | Return focus to the composer |
 
-In the Rails tab, `Escape` does not hide the tab, unlike the Ticket tab (spec 331), because tracking is meant to stay on screen; the titlebar toggle hides it. The view routes these keys only after a pending permission, question or file review has had them, and while the dock has focus it consumes every other unmodified key and the Ctrl editing chords, so nothing reaches the hidden draft. A tab switch moves focus to the newly shown dock. Section headings show their jump key as `[n]`. Rows are also clickable; the mouse is secondary. The dock has no `infinite` animation.
+In the Rails tab, `Escape` does not hide the tab, unlike the Ticket tab (spec 331), because tracking is meant to stay on screen; the titlebar toggle hides it. The view routes these keys only after a pending permission, question or file review has had them, and while the dock has focus it consumes every other unmodified key and the Ctrl editing chords, so nothing reaches the hidden draft. A tab switch moves focus to the newly shown dock. Section headings show their jump key as `[n]`. Rows and the Actions bar buttons are also clickable; the mouse is secondary, and Trust and Update have no dock key (spec 344). The dock has no `infinite` animation.
 
 **Footer**
 
@@ -340,7 +340,7 @@ None. The user confirmed every recommended default on 2026-10-27: findings must 
 - Attention items, scores and rankings (ADR-0001, ADR-0004).
 - CI or pre-commit integration; a project can run the same checks there itself.
 - Editing the external `grill-with-docs` and `domain-modeling` skills. `#rails init` is the bridge.
-- Editing rules, the manifest or trust from the dock; a separate Rails content view or browser page.
+- Editing rules or the manifest from the dock; a separate Rails content view or browser page. (Trust from the dock was here too; spec 344 adds a Trust button, which stays a human click with no dock key.)
 - Inline annotations in the Diff Window, token metering (spec 306, ADR-0018/0019), and a built-in rule engine or DSL.
 
 ## Resources

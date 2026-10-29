@@ -1,26 +1,36 @@
-// Spec 337 §UI Content — `RailsDock`.
+// Spec 337 §UI Content — `RailsDock`; display budget per spec 345.
 //
-//   RAILS  [3 findings]  14:02
-//   auto run · codex-1 · trusted · mode auto
-//   check 2/3 typecheck
+//   RAILS  [3 findings]  14:02  ▸           ▸ = an error or warnings behind ↵
+//   check 2/3 typecheck                     the one state line
+//   auto · codex-1 · mode auto
 //   checks ─────────────────────────── [2]
 //   typecheck   PASS     1.2s
+//     npx tsc --noEmit                      only while untrusted, one line
 //   findings ───────────────────────── [3]
 //   violation  0008#2  src/acp/x.ts:12   new
 //     note on its own line
 //   resolved 1
 //   rules ──────────────────────────── [4]
-//   24 rules · 9 enforced · 15 judge-only
+//   24 rules · 9 enforced
 //   3 sources without rails
 //   runs ───────────────────────────── [5]
-//   14:02  •  3 open  codex-1  stale
+//   14:02  •  3 open  codex-1  stale      the newest 5
+//   15 older runs ▸
+//   ACTIONS                          lane codex-1 · idle
+//   [ Run ]  [ Send ✓ 14:02 ]
+//   [ Trust ✓ trusted ]  [ Update ]
 //   j/k · ↵ · 1–5 · s send · r run · [ ] tab · esc
 //
 // **Props only.** The row list is `railsDockRows(model)` — the same list the
 // controller moves the selection over — so the painted order and the `j`/`k`
 // order cannot disagree. Selection and expansion live in the model; the
 // component only reflects them. One delegated click listener on the root
-// reports the clicked row's key.
+// reports the clicked row's key, or the clicked action (spec 344).
+//
+// Spec 344: the Actions bar sits outside the scrolling listbox, above the key
+// hints, so it never scrolls away and `j`/`k` never land on it. It is its own
+// sub-component with its own deps: a lane going busy repaints the buttons, not
+// the rows. Its states arrive as data (`railsDockActions()`).
 //
 // The root is the `<aside class="acp-harness__rails-dock">` the view creates:
 // its class and `hidden` are placement, owned by the dock column. The
@@ -36,6 +46,13 @@ import './rails-dock.css';
 import { Component } from '../../../ui/component';
 import { classes, el, setAttr } from '../../../ui/dom';
 import { disposeList, listComponent, reconcile } from '../../../ui/list';
+import {
+  RAILS_DOCK_ACTIONS,
+  railsDockActionFromData,
+  type RailsDockAction,
+  type RailsDockActions,
+} from '../../rails/actions';
+import { headStateLine, isEmptyManifest, localHhMm, plural, type HeadState } from '../../rails/format';
 import { railsDockRows, shortRuleId } from '../../rails/rows';
 import type {
   RailsCheckOutcome,
@@ -51,11 +68,15 @@ import type {
   RailsSnapshot,
   RailsVerdict,
 } from '../../rails/types';
+import { DockActionButton, dockActionKey } from '../dock-action';
 import type { ComponentDef } from '../types';
 
 export interface RailsDockProps {
   readonly model: RailsDockModel;
+  /** Spec 344: what the Actions bar shows. */
+  readonly actions: RailsDockActions;
   readonly onSelectRow?: (key: string) => void;
+  readonly onAction?: (action: RailsDockAction) => void;
 }
 
 export const RAILS_DOCK_KEY_HINTS = 'j/k · ↵ · 1–5 · s send · r run · [ ] tab · esc';
@@ -94,13 +115,6 @@ const RULE_STATUS_LABEL: Record<RailsRuleStatus, string> = {
 
 // ── formatting ──────────────────────────────────────────────────────────────
 
-/** Local `HH:MM` of an RFC 3339 string or epoch ms; `--:--` when unparseable. */
-export function localHhMm(at: string | number): string {
-  const date = new Date(at);
-  if (Number.isNaN(date.getTime())) return '--:--';
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-}
-
 function formatDuration(ms: number): string {
   return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
 }
@@ -109,37 +123,9 @@ function location(finding: RailsFinding): string {
   return finding.line === null ? finding.file : `${finding.file}:${finding.line}`;
 }
 
-function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`;
-}
-
 function triggerText(run: RailsRunRecord): string {
   const kind = run.trigger.kind === 'auto' ? 'auto run' : 'manual run';
   return run.trigger.laneName ? `${kind} · ${run.trigger.laneName}` : kind;
-}
-
-/** Static head progress line; null when idle. */
-export function progressText(progress: RailsProgress): string | null {
-  switch (progress.kind) {
-    case 'idle':
-      return null;
-    case 'checking':
-      return `check ${progress.index}/${progress.total} ${progress.name}`;
-    case 'judging':
-      return 'judging';
-    case 'paused':
-      return 'auto run paused at trust';
-    case 'clean-tree':
-      return 'no changes to check';
-    case 'busy':
-      return 'busy (another harness)';
-    case 'held':
-      return `auto run held until ${localHhMm(progress.until)} · min interval`;
-    case 'cooling':
-      return `judge cooling until ${localHhMm(progress.until)}`;
-    case 'error':
-      return progress.message;
-  }
 }
 
 interface Pill {
@@ -164,9 +150,16 @@ function verdictPill(snapshot: RailsSnapshot | null, latest: RailsRunRecord | nu
   }
 }
 
-/** A manifest that declares nothing: no `## Rails` bullets and no `[[check]]`. */
-function isEmptyManifest(snapshot: RailsSnapshot): boolean {
-  return snapshot.present && snapshot.rules.length === 0 && snapshot.checks.length === 0;
+function headDetail(snapshot: RailsSnapshot | null, state: HeadState | null): HTMLElement {
+  const lines: HTMLElement[] = [];
+  // The state line is cut at one line; its full text, unless it is the manifest error below.
+  if (state && state.text !== snapshot?.error) lines.push(detailLine('state', state.text));
+  if (snapshot) lines.push(detailLine('manifest', snapshot.manifestPath));
+  if (snapshot?.error) lines.push(el('p', { class: `${B}__error`, text: snapshot.error }));
+  if (snapshot && snapshot.warnings.length > 0) {
+    lines.push(el('ul', { class: `${B}__warnings` }, ...snapshot.warnings.map((warning) => el('li', { text: warning }))));
+  }
+  return detail(...lines);
 }
 
 function checksSummary(run: RailsRunRecord): string {
@@ -199,6 +192,8 @@ interface HeadProps extends RowProps<RowOf<'head'>> {
 interface CheckProps extends RowProps<RowOf<'check'>> {
   /** The latest run skipped checks (untrusted manifest). */
   readonly skipped: boolean;
+  /** Spec 345: the manifest is not trusted, so each check shows the command trust would allow. */
+  readonly untrusted: boolean;
 }
 
 /**
@@ -261,6 +256,11 @@ class HeadRow extends RowView<RowOf<'head'>, HeadProps> {
     return [next.snapshot, next.mode, next.progressKey, next.latest];
   }
 
+  /**
+   * Spec 345: at most three lines — the verdict, one state line, one meta
+   * line. The manifest path, the full error and the warnings are behind
+   * `Enter`; `▸` marks a head that hides an error or warnings.
+   */
   protected content(next: HeadProps): readonly HTMLElement[] {
     const { snapshot, latest } = next;
     const pill = verdictPill(snapshot, latest);
@@ -269,47 +269,28 @@ class HeadRow extends RowView<RowOf<'head'>, HeadProps> {
       span(`${B}__pill ${B}__pill--${pill.tone}`, pill.text),
     );
     if (latest) top.append(span(`${B}__time`, localHhMm(latest.finishedAt)));
+    if (snapshot?.error || (snapshot && snapshot.warnings.length > 0)) {
+      top.append(span(`${B}__disclosure`, next.expanded ? '▾' : '▸'));
+    }
+    const out: HTMLElement[] = [top];
 
+    const state = headStateLine(snapshot, next.progress);
+    if (state) {
+      out.push(el('p', {
+        class: classes(`${B}__state`, state.tone === 'accent' ? `${B}__progress` : `${B}__hint`),
+        title: state.text,
+        text: state.text,
+      }));
+    }
+
+    // Trust lives on the state line; the trigger is `auto` / `manual` without "run".
     const meta: string[] = [];
-    if (latest) meta.push(triggerText(latest));
-    if (snapshot?.present) meta.push(snapshot.trust);
+    if (latest) meta.push(latest.trigger.laneName ? `${latest.trigger.kind} · ${latest.trigger.laneName}` : latest.trigger.kind);
     meta.push(`mode ${next.mode}`);
     if (latest?.stale) meta.push('stale');
-    const out: HTMLElement[] = [top, el('div', { class: `${B}__meta`, text: meta.join(' · ') })];
+    out.push(el('div', { class: `${B}__meta`, text: meta.join(' · ') }));
 
-    const progress = progressText(next.progress);
-    if (progress !== null) {
-      out.push(el('p', { class: classes(`${B}__progress`, `${B}__progress--${next.progress.kind}`), text: progress }));
-    }
-    if (snapshot && isEmptyManifest(snapshot)) {
-      out.push(el('p', { class: `${B}__hint`, text: 'no rails yet — #rails init asks the lane to write them' }));
-    }
-    // Any untrusted manifest, whatever the progress or mode: these are the
-    // commands `#rails trust` would allow to run.
-    if (snapshot?.present && snapshot.trust !== 'trusted' && snapshot.checks.length > 0) {
-      out.push(
-        el('p', {
-          class: `${B}__trust`,
-          text:
-            snapshot.trust === 'changed'
-              ? 'rails.toml changed since trust — checks wait for #rails trust'
-              : 'rails.toml not trusted — checks wait for #rails trust',
-        }),
-        el(
-          'ul',
-          { class: `${B}__argv` },
-          ...snapshot.checks.map((check) =>
-            el('li', {}, span(`${B}__name`, check.name), el('code', { text: check.argv.join(' ') })),
-          ),
-        ),
-      );
-    }
-    if (snapshot?.error) out.push(el('p', { class: `${B}__error`, text: snapshot.error }));
-    if (snapshot && snapshot.warnings.length > 0) {
-      out.push(
-        el('ul', { class: `${B}__warnings` }, ...snapshot.warnings.map((warning) => el('li', { text: warning }))),
-      );
-    }
+    if (next.expanded) out.push(headDetail(snapshot, state));
     return out;
   }
 }
@@ -320,14 +301,14 @@ class CheckRow extends RowView<RowOf<'check'>, CheckProps> {
   }
 
   protected contentDeps(next: CheckProps): readonly unknown[] {
-    return [next.row.decl, next.row.result, next.skipped];
+    return [next.row.decl, next.row.result, next.skipped, next.untrusted];
   }
 
   protected content(next: CheckProps): readonly HTMLElement[] {
     const { decl, result } = next.row;
     const outcome = result
       ? span(`${B}__outcome ${B}__outcome--${result.outcome}`, OUTCOME_LABEL[result.outcome])
-      : span(`${B}__outcome ${B}__outcome--none`, next.skipped ? 'skipped' : '—');
+      : span(`${B}__outcome ${B}__outcome--none`, next.skipped ? 'skipped' : 'not run');
     const out: HTMLElement[] = [
       line(
         span(`${B}__name`, decl.name),
@@ -335,8 +316,33 @@ class CheckRow extends RowView<RowOf<'check'>, CheckProps> {
         span(`${B}__duration`, result ? formatDuration(result.durationMs) : ''),
       ),
     ];
+    // Spec 345: the command trust would allow, one line; `Enter` shows it whole.
     if (next.expanded) out.push(checkDetail(decl.argv, result));
+    else if (next.untrusted) {
+      const command = decl.argv.join(' ');
+      out.push(el('p', { class: `${B}__cmd`, title: command, text: command }));
+    }
     return out;
+  }
+}
+
+/** Spec 345: the runs past the newest few, folded; `Enter` lists them below it. */
+class OlderRow extends RowView<RowOf<'older'>> {
+  constructor() {
+    super('older');
+  }
+
+  protected contentDeps(next: RowProps<RowOf<'older'>>): readonly unknown[] {
+    return [next.row.count];
+  }
+
+  protected content(next: RowProps<RowOf<'older'>>): readonly HTMLElement[] {
+    return [
+      line(
+        span(`${B}__summary`, plural(next.row.count, 'older run')),
+        span(`${B}__disclosure`, next.expanded ? '▾' : '▸'),
+      ),
+    ];
   }
 }
 
@@ -419,14 +425,14 @@ class RulesRow extends RowView<RowOf<'rules'>> {
   }
 
   protected contentDeps(next: RowProps<RowOf<'rules'>>): readonly unknown[] {
-    return [next.row.total, next.row.enforced, next.row.judgeOnly];
+    return [next.row.total, next.row.enforced];
   }
 
   protected content(next: RowProps<RowOf<'rules'>>): readonly HTMLElement[] {
-    const { total, enforced, judgeOnly } = next.row;
+    const { total, enforced } = next.row;
     return [
       line(
-        span(`${B}__summary`, `${plural(total, 'rule')} · ${enforced} enforced · ${judgeOnly} judge-only`),
+        span(`${B}__summary`, `${plural(total, 'rule')} · ${enforced} enforced`),
         span(`${B}__disclosure`, next.expanded ? '▾' : '▸'),
       ),
     ];
@@ -559,7 +565,8 @@ type ItemView =
   | RulesRow
   | RuleRow
   | UncoveredRow
-  | RunRow;
+  | RunRow
+  | OlderRow;
 
 function itemKey(item: Item): string {
   return item.kind === 'section' ? `section\u001f${item.section}` : `${item.row.kind}\u001f${item.row.key}`;
@@ -578,6 +585,44 @@ function items(rows: readonly RailsDockRow[]): Item[] {
   return out;
 }
 
+/** Spec 344: the fixed bar between the rows and the key hints. */
+class ActionsBar extends Component<RailsDockActions> {
+  private readonly laneLineEl = el('span', { class: `${B}__lane-line` });
+  private readonly buttons = RAILS_DOCK_ACTIONS.map((action) => ({
+    verb: action.verb,
+    button: new DockActionButton({ label: action.label, icon: action.icon, data: { 'rails-action': action.verb } }),
+  }));
+
+  constructor() {
+    super(el('div', { attrs: { role: 'group', 'aria-label': 'Rails actions' } }));
+    this.el.append(
+      el('div', { class: `${B}__actions-head` }, el('span', { class: `${B}__actions-label`, text: 'actions' }), this.laneLineEl),
+      el('div', { class: `${B}__action-grid` }, ...this.buttons.map(({ button }) => button.el)),
+    );
+  }
+
+  protected readDeps(next: RailsDockActions): readonly unknown[] {
+    return [
+      next.laneLine,
+      ...RAILS_DOCK_ACTIONS.flatMap(({ verb }) => [dockActionKey(next.states[verb].state), next.states[verb].disabledReason]),
+    ];
+  }
+
+  protected syncClasses(_next: RailsDockActions): void {
+    this.el.className = `${B}__actions`;
+  }
+
+  protected paint(next: RailsDockActions): void {
+    this.syncClasses(next);
+    this.laneLineEl.textContent = next.laneLine;
+    for (const { verb, button } of this.buttons) button.update(next.states[verb]);
+  }
+
+  protected onDispose(): void {
+    for (const { button } of this.buttons) button.dispose();
+  }
+}
+
 export class RailsDock extends Component<RailsDockProps> {
   private readonly contentEl = el('div', { class: B });
   private readonly rowsEl = el('div', {
@@ -585,16 +630,27 @@ export class RailsDock extends Component<RailsDockProps> {
     attrs: { role: 'listbox', 'aria-label': 'Rails' },
   });
   private readonly keysEl = el('footer', { class: `${B}__keys`, text: RAILS_DOCK_KEY_HINTS });
+  private readonly actionsBar = new ActionsBar();
   private selectRow: ((key: string) => void) | undefined;
+  private runAction: ((action: RailsDockAction) => void) | undefined;
   /** The selection last scrolled into view; scroll happens only when it moves. */
   private scrolledKey: string | null = null;
 
   constructor(root: HTMLElement) {
     super(root);
-    this.contentEl.append(this.rowsEl, this.keysEl);
+    this.contentEl.append(this.rowsEl, this.actionsBar.el, this.keysEl);
     root.appendChild(this.contentEl);
     this.bag.listen(this.el, 'click', (event: Event) => {
-      if (!this.selectRow || !(event.target instanceof Element)) return;
+      if (!(event.target instanceof Element)) return;
+      const button = event.target.closest<HTMLButtonElement>('[data-rails-action]');
+      if (button && this.actionsBar.el.contains(button)) {
+        // The second click of a double click would send the findings twice.
+        if (button.disabled || (event instanceof MouseEvent && event.detail > 1)) return;
+        const action = railsDockActionFromData(button.dataset.railsAction);
+        if (action) this.runAction?.(action);
+        return;
+      }
+      if (!this.selectRow) return;
       const node = event.target.closest<HTMLElement>('[data-rails-key]');
       if (!node || !this.rowsEl.contains(node)) return;
       const key = node.dataset.railsKey;
@@ -604,6 +660,8 @@ export class RailsDock extends Component<RailsDockProps> {
 
   update(next: RailsDockProps): void {
     this.selectRow = next.onSelectRow;
+    this.runAction = next.onAction;
+    this.actionsBar.update(next.actions);
     super.update(next);
   }
 
@@ -629,6 +687,7 @@ export class RailsDock extends Component<RailsDockProps> {
     const latest = model.history[0] ?? null;
     const progressKey = JSON.stringify(model.progress);
     const skipped = latest?.checksSkipped ?? false;
+    const untrusted = model.snapshot?.present === true && model.snapshot.trust !== 'trusted';
     const rows = railsDockRows(model);
 
     const rowState = (row: RailsDockRow): { selected: boolean; expanded: boolean } => ({
@@ -649,7 +708,7 @@ export class RailsDock extends Component<RailsDockProps> {
           }
           return;
         case 'check':
-          if (view instanceof CheckRow) view.update({ row, ...state, skipped });
+          if (view instanceof CheckRow) view.update({ row, ...state, skipped, untrusted });
           return;
         case 'finding':
           if (view instanceof FindingRow) view.update({ row, ...state });
@@ -668,6 +727,9 @@ export class RailsDock extends Component<RailsDockProps> {
           return;
         case 'run':
           if (view instanceof RunRow) view.update({ row, ...state });
+          return;
+        case 'older':
+          if (view instanceof OlderRow) view.update({ row, ...state });
           return;
       }
     };
@@ -690,6 +752,8 @@ export class RailsDock extends Component<RailsDockProps> {
           return new UncoveredRow();
         case 'run':
           return new RunRow();
+        case 'older':
+          return new OlderRow();
       }
     };
 
@@ -713,6 +777,7 @@ export class RailsDock extends Component<RailsDockProps> {
 
   protected onDispose(): void {
     disposeList(this.rowsEl);
+    this.actionsBar.dispose();
     this.contentEl.remove();
   }
 }

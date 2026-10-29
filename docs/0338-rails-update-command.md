@@ -1,6 +1,6 @@
 # Rails Update Command — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented (amended by spec 344, 2026-10-29: the Rails dock's Update button runs bare `#rails update`)
 > Date: 2026-10-28
 > Milestone: ACP Harness — architecture conformance
 > Builds on: 337 (Rails verifier, `#rails init`) · 328 (`#e2e init` re-init sends the current manifest) · ADR-0025
@@ -109,8 +109,8 @@ None.
 
 ## Out of Scope
 
-- Any lane-callable trust, and editing rails from the Rails dock (spec 337 Out of Scope stands).
-- A dock key for update; the command is typed in the composer, like `#rails init`.
+- Any lane-callable trust, and editing rails from the Rails dock itself (spec 337 Out of Scope stands).
+- A dock key for update. A request is typed in the composer, like `#rails init`; spec 344's Update button sends only the bare form, so the lane proposes and waits.
 - Changes to `#rails init`.
 - Rust changes.
 

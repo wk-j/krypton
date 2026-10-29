@@ -182,7 +182,7 @@ export type RailsProgress =
   | { readonly kind: 'idle' }
   | { readonly kind: 'checking'; readonly index: number; readonly total: number; readonly name: string }
   | { readonly kind: 'judging' }
-  /** An automatic run stopped at trust; the dock lists the argv waiting for `#rails trust`. */
+  /** An automatic run stopped at trust; each check row shows the argv waiting for `#rails trust`. */
   | { readonly kind: 'paused' }
   | { readonly kind: 'clean-tree' }
   /** Another harness holds the per-root check lock. */
@@ -233,7 +233,6 @@ export type RailsDockRow =
       readonly section: 4;
       readonly total: number;
       readonly enforced: number;
-      readonly judgeOnly: number;
     }
   /** Present only while the `rules` row is expanded. */
   | {
@@ -245,7 +244,9 @@ export type RailsDockRow =
       readonly status: RailsRuleStatus | null;
     }
   | { readonly kind: 'uncovered'; readonly key: 'uncovered'; readonly section: 4; readonly sources: readonly string[] }
-  | { readonly kind: 'run'; readonly key: string; readonly section: 5; readonly run: RailsRunRecord }; // `run:<runId>`
+  | { readonly kind: 'run'; readonly key: string; readonly section: 5; readonly run: RailsRunRecord } // `run:<runId>`
+  /** Spec 345: after the newest runs, when more exist; expanding it lists them below it. */
+  | { readonly kind: 'older'; readonly key: 'older'; readonly section: 5; readonly count: number };
 
 /** `system:rails` ViewBus signal value (footer). `none` = this harness has no manifest. */
 export interface RailsFooterSignal {

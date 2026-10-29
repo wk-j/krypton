@@ -27,6 +27,7 @@ import type { RailsTabBadge } from './harness-dock';
 import { railsInitPrompt, railsUpdatePrompt } from './harness-prompts';
 import type { HarnessRailsHost } from './harness-view-host';
 import type { HarnessLane } from './harness-view-types';
+import { railsDockActions, type RailsDockAction, type RailsDockActions, type RailsSendMark } from './rails/actions';
 import { railsAssistConfig, resolveRailsConfig } from './rails/config';
 import { railsEnvelope } from './rails/envelope';
 import { RAILS_JUDGE_ID, judgePayload, railsJudge } from './rails/judge';
@@ -66,6 +67,10 @@ export const RAILS_HISTORY_LIMIT = 20;
 export const RAILS_SESSION_IDLE_MS = 10 * 60_000;
 
 export const RAILS_USAGE = 'usage: #rails [now | send | trust | init [<hint>] | update [<request>] | off | manual | auto]';
+
+/** The turn label `#rails update` runs under. Spec 344: a lane carrying it is
+ *  running Update, whether it was clicked or typed. */
+export const RAILS_UPDATE_LABEL = 'rails update';
 
 const JUDGE_FAILURE_TEXT: Record<AssistFailure, string> = {
   'no-backend': 'judge backend did not start',
@@ -134,6 +139,8 @@ export class HarnessRailsController {
   private selectedKey: string | null = null;
   private expanded: ReadonlySet<string> = new Set();
   private readonly runPaths = new Map<string, string>();
+  /** Spec 344: the newest run's findings went to a lane (send-all). Memory only. */
+  private lastSend: RailsSendMark | null = null;
 
   /** Bumped by `cancel()`: an in-flight run whose token differs is dropped unrecorded. */
   private epoch = 0;
@@ -149,6 +156,26 @@ export class HarnessRailsController {
   private readonly selectRow = (key: string): void => {
     this.selectedKey = key;
     this.renderDock();
+  };
+
+  /** Spec 344: an Actions bar button. The same call as its typed `#rails` sub-command. */
+  readonly runDockAction = (action: RailsDockAction): void => {
+    const lane = this.activeLane();
+    switch (action) {
+      case 'now':
+        void this.requestRun(lane);
+        return;
+      case 'send':
+        this.send(this.host.activeLaneId, null);
+        return;
+      case 'trust':
+        void this.trust();
+        return;
+      case 'update':
+        if (lane) void this.update(lane, '');
+        else this.host.flashChip('no active lane');
+        return;
+    }
   };
 
   constructor(private readonly host: HarnessRailsHost, deps: RailsControllerDeps = {}) {
@@ -173,7 +200,11 @@ export class HarnessRailsController {
     this.dockEl.setAttribute('aria-label', 'Rails');
     this.dock = new RailsDock(this.dockEl);
     this.unsubscribe = host.subscribeLaneBus((event: LaneBusEvent) => {
-      if (event.type === 'lane:status') this.onLaneStatus(event.payload.laneId, event.payload.prev, event.payload.next);
+      if (event.type !== 'lane:status') return;
+      this.onLaneStatus(event.payload.laneId, event.payload.prev, event.payload.next);
+      // Spec 344: the Actions bar follows lane status — the active lane's line
+      // and Update's running state. A deps compare when nothing changed.
+      this.renderDock();
     });
     this.bag.add(() => {
       this.clearDebounce();
@@ -286,7 +317,7 @@ export class HarnessRailsController {
     else if (key === 'Enter') this.toggleExpanded();
     else if (key >= '1' && key <= '5' && key.length === 1) this.jumpToSection(Number(key) as RailsDockSection);
     else if (key === 's') this.sendSelected();
-    else if (key === 'r') void this.requestRun(this.host.lanes.find((lane) => lane.id === this.host.activeLaneId) ?? null);
+    else if (key === 'r') void this.requestRun(this.activeLane());
     else if (key === 'Escape') this.host.focusComposer();
     else return false;
     event.preventDefault();
@@ -300,7 +331,12 @@ export class HarnessRailsController {
     this.host.setDockTabAvailable('rails', present && !this.host.isPanelHidden('rails'));
     this.host.setRailsBadge(this.badge());
     if (!this.host.dockTabShown('rails')) return;
-    this.dock.update({ model: this.model(), onSelectRow: this.selectRow });
+    this.dock.update({
+      model: this.model(),
+      actions: this.actions(),
+      onSelectRow: this.selectRow,
+      onAction: this.runDockAction,
+    });
   }
 
   /** `#rails off`, a lane-set close, dispose: drop the run unrecorded. */
@@ -385,6 +421,8 @@ export class HarnessRailsController {
 
   private startRun(trigger: RailsRunTrigger): void {
     this.running = true;
+    // Spec 344: Run shows the run from its first step, before any progress.
+    this.renderDock();
     // A run in flight must not lose its warm judge backend to the idle timer.
     this.clearSessionTimer();
     const token = this.epoch;
@@ -399,6 +437,7 @@ export class HarnessRailsController {
         if (token !== this.epoch) return;
         this.running = false;
         this.armSessionTimer();
+        this.renderDock();
         this.publish();
       });
   }
@@ -684,7 +723,7 @@ export class HarnessRailsController {
     }
     const latest = this.history[0];
     const state = railsUpdateState(snapshot, this.history, latest ? this.runPath(latest) : null);
-    await this.host.enqueueSystemPrompt(lane, railsUpdatePrompt(request, state), undefined, 'rails update');
+    await this.host.enqueueSystemPrompt(lane, railsUpdatePrompt(request, state), undefined, RAILS_UPDATE_LABEL);
   }
 
   /** `only` null: every open finding of the newest run. */
@@ -698,6 +737,10 @@ export class HarnessRailsController {
     const name = this.host.lanes.find((lane) => lane.id === laneId)?.displayName ?? laneId;
     const count = only ? 1 : latest.open.length;
     this.host.flashChip(`rails: sent ${count} finding${count === 1 ? '' : 's'} → ${name}`);
+    if (!only) {
+      this.lastSend = { runId: latest.runId, laneName: name, count, at: this.now() };
+      this.renderDock();
+    }
   }
 
   private sendSelected(): void {
@@ -722,6 +765,25 @@ export class HarnessRailsController {
       selectedKey: this.selectedKey,
       expanded: this.expanded,
     };
+  }
+
+  private actions(): RailsDockActions {
+    const lane = this.activeLane();
+    return railsDockActions({
+      snapshot: this.snapshot,
+      mode: this.mode(),
+      progress: this.progress,
+      running: this.running,
+      latest: this.history[0] ?? null,
+      lastSend: this.lastSend,
+      activeLane: lane ? { displayName: lane.displayName, status: lane.status, hasClient: lane.client !== null } : null,
+      updateLane: this.host.lanes.find((candidate) => candidate.activeSystemLabel === RAILS_UPDATE_LABEL)?.displayName ?? null,
+      now: this.now(),
+    });
+  }
+
+  private activeLane(): HarnessLane | null {
+    return this.host.lanes.find((lane) => lane.id === this.host.activeLaneId) ?? null;
   }
 
   private moveSelection(delta: 1 | -1): void {

@@ -303,6 +303,32 @@ further right than with no caret; with the underline it starts exactly where it 
 glyph to narrow, so the fork collapses with no prop at all; only its window-accent colour survives,
 as a context rule in `caret.css`.
 
+## 1.10 `DockActionButton` (spec 344)
+
+```ts
+type DockActionState = { kind: 'idle'; detail?: string } | { kind: 'running' | 'done'; badge: string; detail: string };
+interface DockActionProps { state: DockActionState; disabledReason: string | null }
+new DockActionButton({ label, icon, data })   // label, icon and data-* fixed for the button's life
+```
+
+**Example UI**
+
+```
+[ ◇ Analyze ] [ ◇ Fix here ] [ ◇ Comment ]     ← Ticket Panel issue actions (spec 342), 3 columns
+[  ✓ 10-27  ] [    ✓ PR    ] [  ✓ 14:02  ]
+[ ▷ Run              ] [ ➚ Send              ]  ← Rails dock Actions bar (spec 344), 2 columns
+[  check 2/3 tsc     ] [  ✓ 14:02            ]
+```
+
+**Emits** `<button type="button" class="acp-dock-action[ acp-dock-action--running|--done]" ${data} ${disabled} title="${disabledReason ?? detail}">`
+holding `<span class="acp-dock-action__head">` (icon + `__label`) and, while running or done, the
+badge `<span class="acp-dock-action__state">`. A done button stays enabled; a running button keeps
+its colour while disabled. No click listener: each dock routes clicks through one delegated handler
+that reads the `data-*` attribute. Deps `[dockActionKey(state), disabledReason]`.
+
+**Replaces** the Ticket Panel's private `IssueActionButton` (spec 342) and its
+`.acp-ticket-dock__action*` rules. **2 docks → 1.**
+
 ---
 
 # Layer 2 — Composite primitives
@@ -787,7 +813,7 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 | 5.4 | `ThoughtCard` L | `claude-1   thinking` <br> `the tail window can slide past a live row…` | `lane-peek.ts:608-642` + `patchLaneThoughtCard` |
 | 5.5 | `QueueCard` | `omp-1                        ⏎ QUEUE 3 · HELD` <br> `▸1  rerun the type check against the whole` <br> `    workspace and report what it covers` <br> `    →codex-2 +1   img×2` <br> `2   open the model picker` <br> `#unqueue · #queue clear` | `acp-harness-view.ts:11982-12026` |
 | 5.6 | `PlanPanel` | `plan 4/9` <br> `✓ extract kernel` · `▸ wire composer meta segments` · `· delete signature` | `acp-harness-view.ts:14668-14726` |
-| 5.7 | `TicketDock` | `active ticket` <br> `Harness UI refactor                 ›` <br> `open  KR-301` <br> `GitHub  wk/krypton  #301 · open` <br> `Worker  codex-1` <br> `ISSUE ACTIONS  run in codex-1 · idle` <br> `[Analyze ✓ 10-27] [Fix here ✓ PR] [Handle]` (spec 342) | `harness-ticket-controller.ts:603-676` |
+| 5.7 | `TicketDock` | `active ticket` <br> `Harness UI refactor                 ›` <br> `open  KR-301` <br> `GitHub  wk/krypton  #301 · open` <br> `Worker  codex-1` <br> `ISSUE ACTIONS  run in codex-1 · idle` <br> `[Analyze ✓ 10-27] [Fix here ✓ PR] [Handle]` (spec 342; `DockActionButton` §1.10) | `harness-ticket-controller.ts:603-676` |
 | 5.8 | `AnnotationRail` | `ANNOTATED  3 · 2 unsent              [ send 2 ]` <br> `deps tuple needs the lane arg            [ del ]` | `transcript-annotation.ts:329-370` |
 
 ---

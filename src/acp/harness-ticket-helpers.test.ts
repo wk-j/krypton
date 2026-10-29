@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import type { DockActionState } from './components/dock-action';
 import {
   formatActionTime,
   ticketActionStates,
-  type TicketActionState,
   type TicketDockAction,
 } from './harness-ticket-helpers';
 import type { GithubTicketReference, LocalTicketDetail } from './harness-view-types';
@@ -32,7 +32,7 @@ function states(
     binding?: { phase?: 'pr_opened' | 'done' | 'fixing'; prUrl?: string } | null;
     running?: [TicketDockAction, string][];
   } = {},
-): Record<TicketDockAction, TicketActionState> {
+): Record<TicketDockAction, DockActionState> {
   return ticketActionStates({
     ticket,
     binding: options.binding ?? null,
@@ -72,7 +72,11 @@ describe('ticketActionStates', () => {
       { github: GITHUB, actions: { 'fix-github-issue': { at: OCT_27, laneDisplayName: 'codex-1' } } },
       { running: [['fix-github-issue', 'claude-1']] },
     );
-    expect(result['fix-github-issue']).toEqual({ kind: 'running', lane: 'claude-1' });
+    expect(result['fix-github-issue']).toEqual({
+      kind: 'running',
+      badge: 'running · claude-1',
+      detail: 'Fix here running in claude-1',
+    });
   });
 
   it('marks Fix from the issue itself: closed, then a reported PR, then the log', () => {

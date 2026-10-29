@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { railsDockRows, shortRuleId } from './rows';
-import type { RailsDockModel, RailsRunRecord, RailsSnapshot, TrackedFinding } from './types';
+import { RAILS_DOCK_RECENT_RUNS, railsDockRows, shortRuleId } from './rows';
+import type { RailsDockModel, RailsDockRow, RailsRunRecord, RailsSnapshot, TrackedFinding } from './types';
 
 function tracked(rule: string, file: string): TrackedFinding {
   return {
@@ -79,7 +79,7 @@ describe('railsDockRows', () => {
     ]);
     const checks = rows.filter((row) => row.kind === 'check');
     expect(checks.map((row) => row.kind === 'check' && row.result?.outcome)).toEqual([undefined, 'fail']);
-    expect(rows.find((row) => row.kind === 'rules')).toMatchObject({ total: 3, enforced: 1, judgeOnly: 2 });
+    expect(rows.find((row) => row.kind === 'rules')).toMatchObject({ total: 3, enforced: 1 });
   });
 
   it('lists each rule with its latest in-scope status only while rules is expanded', () => {
@@ -107,5 +107,21 @@ describe('railsDockRows', () => {
   it('still has a head and a rules row before the snapshot loads', () => {
     const rows = railsDockRows(model({ snapshot: null }));
     expect(rows.map((row) => row.key)).toEqual(['head', 'rules']);
+  });
+
+  it('lists the newest runs, folds the rest under older, and lists them below it when expanded', () => {
+    const history = Array.from({ length: RAILS_DOCK_RECENT_RUNS + 3 }, (_unused, i) => run(`r${i}`));
+    const runKeys = (rows: readonly RailsDockRow[]): string[] =>
+      rows.filter((row) => row.section === 5).map((row) => row.key);
+
+    const folded = railsDockRows(model({ history }));
+    expect(runKeys(folded)).toEqual(['run:r0', 'run:r1', 'run:r2', 'run:r3', 'run:r4', 'older']);
+    expect(folded.find((row) => row.kind === 'older')).toMatchObject({ count: 3 });
+
+    const open = railsDockRows(model({ history, expanded: new Set(['older']) }));
+    expect(runKeys(open)).toEqual(['run:r0', 'run:r1', 'run:r2', 'run:r3', 'run:r4', 'older', 'run:r5', 'run:r6', 'run:r7']);
+
+    // Exactly the cap: no older row.
+    expect(runKeys(railsDockRows(model({ history: history.slice(0, RAILS_DOCK_RECENT_RUNS) })))).not.toContain('older');
   });
 });

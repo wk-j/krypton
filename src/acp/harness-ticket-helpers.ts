@@ -3,6 +3,7 @@
 // Extracted from acp-harness-view.ts (spec 275) so the ticket controller and
 // the view share them without an import cycle. Re-exported from the view.
 
+import type { DockActionState } from './components/dock-action';
 import type { IssueBinding, LocalTicketDetail, TicketPickerRow } from './harness-view-types';
 
 export function controlError(code: string, message: string): Error {
@@ -45,12 +46,6 @@ export function ticketDockActionFromData(value: string | undefined): TicketDockA
   return TICKET_DOCK_ACTIONS.find((action) => action.verb === value)?.verb ?? null;
 }
 
-/** Spec 342: what one action button shows. `done` stays clickable; the colour warns. */
-export type TicketActionState =
-  | { readonly kind: 'idle' }
-  | { readonly kind: 'running'; readonly lane: string }
-  | { readonly kind: 'done'; readonly badge: string; readonly detail: string };
-
 function pad2(value: number): string {
   return String(value).padStart(2, '0');
 }
@@ -68,7 +63,8 @@ export function formatActionTime(at: number, now: number): string {
     : `${pad2(when.getMonth() + 1)}-${pad2(when.getDate())}`;
 }
 
-function fullActionTime(at: number): string {
+/** Full local `YYYY-MM-DD HH:MM` for an action's tooltip. */
+export function fullActionTime(at: number): string {
   const when = new Date(at);
   return `${when.getFullYear()}-${pad2(when.getMonth() + 1)}-${pad2(when.getDate())} `
     + `${pad2(when.getHours())}:${pad2(when.getMinutes())}`;
@@ -85,17 +81,17 @@ const HANDLE_COVERS: Partial<Record<TicketDockAction, true>> = {
  * Spec 342 state rules. `running` wins; then the first piece of evidence: the
  * issue's own state for Fix, the action log, a finished Handle, and for Analyze
  * an existing analysis bundle. "Done" means the turn finished, not that GitHub
- * accepted a write.
+ * accepted a write. A `done` button stays clickable; the colour warns.
  */
 export function ticketActionStates(input: {
   readonly ticket: Pick<LocalTicketDetail, 'actions' | 'analysis' | 'github'>;
   readonly binding: Pick<IssueBinding, 'phase' | 'prUrl'> | null;
   readonly running: ReadonlyMap<TicketDockAction, string>;
   readonly now: number;
-}): Record<TicketDockAction, TicketActionState> {
+}): Record<TicketDockAction, DockActionState> {
   const { ticket, binding, running, now } = input;
   const log = ticket.actions ?? {};
-  const fromLog = (verb: TicketDockAction, label: string): TicketActionState | null => {
+  const fromLog = (verb: TicketDockAction, label: string): DockActionState | null => {
     const run = log[verb];
     if (!run) return null;
     return {
@@ -104,14 +100,14 @@ export function ticketActionStates(input: {
       detail: `${label} ran ${fullActionTime(run.at)} in ${run.laneDisplayName}`,
     };
   };
-  const states = {} as Record<TicketDockAction, TicketActionState>;
+  const states = {} as Record<TicketDockAction, DockActionState>;
   for (const { verb, label } of TICKET_DOCK_ACTIONS) {
     const lane = running.get(verb);
     if (lane !== undefined) {
-      states[verb] = { kind: 'running', lane };
+      states[verb] = { kind: 'running', badge: `running · ${lane}`, detail: `${label} running in ${lane}` };
       continue;
     }
-    let state: TicketActionState | null = null;
+    let state: DockActionState | null = null;
     if (verb === 'fix-github-issue') {
       if (ticket.github?.state === 'closed') {
         state = { kind: 'done', badge: '✓ closed', detail: 'The issue is closed on GitHub' };

@@ -237,10 +237,11 @@ The compositor is a TypeScript module running in the webview that manages worksp
     the same shape. At harness quiet points it runs the project's declared checks through
     `src-tauri/src/rails.rs` (manifest, trust store, per-root check runner, run ledger), then a fenced
     judge model with its own `AssistEngine` + `AcpAssistSession`. Pure parts live in `src/acp/rails/`
-    (glob, rule selection, judge payload/parse, tracking, dock rows, envelope, config). The right dock
+    (glob, rule selection, judge payload/parse, tracking, dock rows, action states, envelope, config). The right dock
     column is `harness-dock.ts`: one `.acp-harness__dock` with a `TabStrip` and two tabs, the Ticket dock
     and the `RailsDock` component. It owns each tab's `hidden` and the `acp-harness--dock-active` root
-    class.
+    class. Both docks' action buttons are the shared `DockActionButton` (specs 342, 344); the Rails
+    dock's Actions bar (Run, Send, Trust, Update) calls the same controller methods as `#rails`.
 
     **UI components (specs 301/302).** The harness no longer paints with string builders and a
     hand-maintained render signature. `src/ui/` is a generic, harness-free kernel —

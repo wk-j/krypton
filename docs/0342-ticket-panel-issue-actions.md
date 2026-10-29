@@ -1,6 +1,6 @@
 # Ticket Panel Issue Actions — Implementation Spec
 
-> Status: Implemented (rev 3: action icons; rev 2: buttons show whether each action already ran for this ticket)
+> Status: Implemented (rev 3: action icons; rev 2: buttons show whether each action already ran for this ticket; spec 344, 2026-10-29: the button is the shared `DockActionButton`, the Rails dock's button too)
 > Date: 2026-10-29
 > Milestone: ACP Harness — working-ticket workflow
 > Amends: [0238](./0238-local-ticket-bundles.md) (the Ticket Panel stops being a read-only surface)
@@ -86,7 +86,8 @@ takes its button's state colour.
   `title` only while disabled (`components/action-button/index.ts:92-102`), and it has no icon
   slot and no second line. Widening the shared component for one caller would put three props on
   every other caller. The dock builds its own small `IssueActionButton` instead, next to its
-  existing `ResourceRow`.
+  existing `ResourceRow`. (Spec 344 moved that button into the shared `DockActionButton` once the
+  Rails dock became its second caller.)
 
 ## Prior Art
 
@@ -142,17 +143,18 @@ export const TICKET_DOCK_ACTIONS = [
 ] as const;
 export type TicketDockAction = (typeof TICKET_DOCK_ACTIONS)[number]['verb'];
 
-export type TicketActionState =
-  | { kind: 'idle' }
-  | { kind: 'running'; lane: string }
-  | { kind: 'done'; badge: string; detail: string };   // badge: "✓ 14:02" · "✓ PR" · "✓ closed"
+// components/dock-action (spec 344; this spec's TicketActionState until then)
+export type DockActionState =
+  | { kind: 'idle'; detail?: string }
+  | { kind: 'running' | 'done'; badge: string; detail: string };
+// done badge: "✓ 14:02" · "✓ PR" · "✓ closed"; running badge: "running · <lane>"
 
 export function ticketActionStates(input: {
   ticket: LocalTicketDetail;
   binding: IssueBinding | null;          // host.issueBinding(ticket.github.issueKey)
   running: ReadonlyMap<TicketDockAction, string>; // verb → lane, for THIS ticket
   now: number;
-}): Record<TicketDockAction, TicketActionState>;
+}): Record<TicketDockAction, DockActionState>;
 ```
 
 ### State rules
@@ -251,18 +253,18 @@ run in codex-1 · idle
 | Label | `krypton-icon-issue-label` | A tag with a hole |
 | Attach | `krypton-icon-issue-attach` | A paperclip |
 
-- Each button is an `IssueActionButton`: `<button type="button" class="acp-ticket-dock__action"
-  data-ticket-dock-action="<verb>">`. Inside it, the first line holds the icon
-  (`harnessIconEl(icon, 'acp-ticket-dock__action-icon')`, `aria-hidden`, 13px) and the label. The
-  second line is the badge `.acp-ticket-dock__action-state`. The button's accessible name stays
-  the label text. It has no click listener of its own, because the controller's delegated
-  handler stays the only click path, as it is for `›`. Grid rows share one height, so a button
-  without a badge centres its icon and label.
+- Each button is a `DockActionButton` (spec 344; `IssueActionButton` until then):
+  `<button type="button" class="acp-dock-action" data-ticket-dock-action="<verb>">`. Inside it,
+  the first line holds the icon (`harnessIconEl(icon, 'acp-dock-action__icon')`, `aria-hidden`,
+  13px) and the label. The second line is the badge `.acp-dock-action__state`. The button's
+  accessible name stays the label text. It has no click listener of its own, because the
+  controller's delegated handler stays the only click path, as it is for `›`. Grid rows share one
+  height, so a button without a badge centres its icon and label.
 - **idle:** the amber secondary style of the dock's `›` button.
-- **running:** `acp-ticket-dock__action--running`. It has the accent (cyan) border and text and the
+- **running:** `acp-dock-action--running`. It has the accent (cyan) border and text and the
   badge `running · <lane>`. It stays static, with no animation. A long lane name is cut with an
   ellipsis, and the full name is in the tooltip.
-- **done:** `acp-ticket-dock__action--done`. It uses the green of the dock's existing
+- **done:** `acp-dock-action--done`. It uses the green of the dock's existing
   `pill--done` (`#a8ffbf`) for border and text, with the `✓` badge. It is **not** disabled.
 - **Lane not runnable** (busy, stopped, not connected): every button gets `disabled` and the reason
   as its tooltip, and the target line shows the reason as text. A running button keeps full opacity

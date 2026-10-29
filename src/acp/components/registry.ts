@@ -27,6 +27,7 @@ import { def as diffBlock } from './diff-block';
 import { def as directiveDiffRow } from './directive-diff-row';
 import { def as directivePicker } from './directive-picker';
 import { def as docCardRow } from './doc-card-row';
+import { def as dockAction } from './dock-action';
 import { def as draftLine } from './draft-line';
 import { def as emptyState } from './empty-state';
 import { def as executionCard } from './execution-card';
@@ -105,6 +106,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   keyHintBar,
   tabStrip,
   caret,
+  dockAction,
   // layer 2 — composite primitives
   card,
   overlayShell,
