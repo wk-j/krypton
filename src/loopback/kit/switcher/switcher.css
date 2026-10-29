@@ -1,0 +1,39 @@
+@layer lb.kit {
+  .lb-switcher__list { list-style: none; margin: 0; padding: 0; }
+  .lb-switcher__item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 7px 10px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .lb-switcher__item[aria-selected='true'] { background: var(--tint); border-color: var(--accent); }
+  .lb-switcher__item--off { cursor: default; opacity: .55; }
+  .lb-switcher__item--current .lb-switcher__title::after {
+    content: ' · here';
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .lb-switcher__title { color: var(--fg); font-size: 13px; white-space: nowrap; }
+  .lb-switcher__meta {
+    min-width: 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lb-switcher__empty {
+    padding: 18px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+}

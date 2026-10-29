@@ -112,6 +112,12 @@ function applySgr(style: Style, params: number[]): Style {
   return s;
 }
 
+/** Strips ANSI SGR color codes and other CSI escape sequences. */
+export function stripAnsi(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '');
+}
+
 export function ansiToHtml(text: string): string {
   const out: string[] = [];
   let style = emptyStyle();

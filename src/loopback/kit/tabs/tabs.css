@@ -1,0 +1,31 @@
+@layer lb.kit {
+  .lb-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 0;
+  }
+  .lb-tabs--sticky {
+    position: sticky;
+    top: var(--shell-h);
+    z-index: 5;
+    background: var(--bg);
+  }
+  .lb-tabs__tab {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 4px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .lb-tabs__tab:hover { color: var(--accent); }
+  .lb-tabs__tab[aria-selected='true'] { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+  .lb-tabs__count { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .lb-tabs__key { font-size: 10px; opacity: .6; }
+}

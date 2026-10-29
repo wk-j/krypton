@@ -3,6 +3,7 @@
 > Status: Approved (rev 2 — chart / option A-hybrid)
 > Date: 2026-06-20
 > Milestone: ACP Harness — observability
+> Revision — spec 341 loopback app: the sparkline, memory bar and heat colours now live in `src/loopback/surfaces/dashboard/` (`lane-card.ts`, `canvas.ts`; colours read from CSS tokens). `artifact-dashboard.html` is deleted, and the schema constant is shared from `src/acp/harness-telemetry-schema.ts`, so the "move in lockstep" rule below is enforced by the compiler. See spec 168 rev 5.
 
 ## Problem
 

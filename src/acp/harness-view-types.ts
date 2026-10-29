@@ -18,7 +18,7 @@ import type { AcpClient } from './client';
 import type { ComputerApprovalRequest } from './computer-approval';
 import type { QuestionTarget } from './elicitation';
 import type { UiFenceEntry } from './genui/types';
-import type { TelemetryReviewLoop } from './harness-telemetry';
+import type { TelemetryReviewLoop } from './harness-telemetry-schema';
 import type {
   AcpAgentMode,
   AcpAvailableCommand,

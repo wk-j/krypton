@@ -1,0 +1,64 @@
+@layer lb.surface {
+  /* The index wants the whole column for long paths; a doc keeps the 820px measure. */
+  .lb-docs .lb-prose:has(> .lb-docs__list) { max-width: none; }
+
+  /* Harness switcher: kit tabs, as links inside the prose (which would
+   * otherwise underline and recolour them). */
+  .lb-docs .lb-tabs { padding-top: 0; margin-bottom: 12px; }
+  .lb-docs .lb-tabs__tab { color: var(--muted); text-decoration: none; }
+  .lb-docs .lb-tabs__tab:hover { color: var(--accent); opacity: 1; }
+  .lb-docs .lb-tabs__count { color: inherit; }
+  .lb-docs .lb-tabs__tab[aria-selected='true'] { color: var(--on-accent); }
+
+  .lb-docs__filter {
+    margin: 0 0 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .lb-docs__filter .lb-filter__input { font-size: 13px; padding: 8px 12px; }
+  .lb-docs__filter .lb-filter__count { font-size: 12px; }
+
+  .lb-docs__list { list-style: none; margin: 0; padding: 0; }
+  .lb-prose .lb-docs__item { margin: 0; }
+  .lb-docs__link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px;
+    font-size: 14px;
+    color: var(--fg);
+    text-decoration: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+  }
+  .lb-prose .lb-docs__link { color: var(--fg); text-decoration: none; }
+  .lb-prose .lb-docs__link:hover { opacity: 1; }
+  .lb-docs__link:hover,
+  .lb-docs__item--selected > .lb-docs__link { background: var(--tint); border-color: var(--border); }
+  .lb-docs__item--selected > .lb-docs__link { border-color: var(--accent); }
+  .lb-docs__icon { flex-shrink: 0; width: 18px; text-align: center; font-size: 13px; color: var(--muted); }
+  .lb-docs__name {
+    min-width: 0;
+    font-family: var(--mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lb-docs__dir { color: var(--muted); }
+  .lb-docs__link:hover .lb-docs__name,
+  .lb-docs__item--selected .lb-docs__name { color: var(--accent); }
+  .lb-docs__link:hover .lb-docs__dir,
+  .lb-docs__item--selected .lb-docs__dir { color: var(--muted); }
+  .lb-docs__date {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  @media (max-width: 480px) {
+    .lb-docs__date { display: none; }
+  }
+  .lb-docs__empty { padding: 24px 12px; font-family: var(--mono); font-size: 13px; color: var(--muted); }
+}

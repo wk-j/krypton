@@ -177,3 +177,7 @@ None.
 - [Bruno “Generate code”](https://github.com/usebruno/bruno/discussions/4017) — Copy as cURL via context menu
 - `docs/0227-hurl-web-client.md` — page, env picker, `y` copy body
 - `docs/0065-hurl-client-window.md` Q13 — `*.env` via `--variables-file` only
+
+## Revision — spec 341 loopback app
+
+`artifact-hurl.html` and its inline converter are deleted. The loopback Hurl surface (`src/loopback/surfaces/hurl/index.ts`) imports `hurlToCurl` and `hurlCliCommand` from `src/hurl-curl.ts` directly, so there is one converter and no keep-in-sync note. The `curl`/`hurl` chips are kit buttons in the page toolbar; `c`/`H` are `keymap()` bindings; copy goes through the kit `copyText` and the result through `Banner`.

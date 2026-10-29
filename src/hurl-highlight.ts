@@ -75,7 +75,17 @@ function findJsonBlocks(src: string): Region[] {
   return out;
 }
 
-export function highlightHurl(source: string, vars?: Record<string, string>): string {
+export interface HighlightOptions {
+  /** Render a resolved `{{name}}` as its value (default) or keep the name and show the value in its title. */
+  readonly substitute?: boolean;
+}
+
+export function highlightHurl(
+  source: string,
+  vars?: Record<string, string>,
+  options: HighlightOptions = {},
+): string {
+  const substitute = options.substitute ?? true;
   const regions: Region[] = [];
 
   // Comments — full line starting with #
@@ -130,7 +140,7 @@ export function highlightHurl(source: string, vars?: Record<string, string>): st
           start: vm.index,
           end: vm.index + vm[0].length,
           cls: 'hurl-token--resolved',
-          replace: value,
+          replace: substitute ? value : undefined,
           title: `${name} = ${value}`,
         });
       } else {

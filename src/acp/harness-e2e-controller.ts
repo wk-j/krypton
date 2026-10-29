@@ -7,6 +7,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
+import { loopbackPath, openLoopback } from '../loopback-open';
 import {
   E2E_USAGE,
   type E2eCaseInfo,
@@ -80,10 +81,9 @@ export class HarnessE2eController {
   /** Spec 329: the project's read-only explorer page, at `#case=<id>` when given. */
   private async openBrowser(root: string, caseId: string | null): Promise<void> {
     try {
-      const base = await invoke<string>('get_e2e_web_url', { root });
-      const url = caseId ? `${base}#${new URLSearchParams({ case: caseId }).toString()}` : base;
-      await invoke('open_url', { url });
-      this.host.flashChip(url);
+      const base = loopbackPath(await invoke<string>('get_e2e_web_url', { root }));
+      const path = caseId ? `${base}#${new URLSearchParams({ case: caseId }).toString()}` : base;
+      this.host.flashChip(await openLoopback(path));
     } catch (e) {
       this.host.flashChip(`e2e open failed: ${errorText(e)}`);
     }

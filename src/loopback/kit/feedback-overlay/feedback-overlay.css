@@ -1,0 +1,68 @@
+@layer lb.kit {
+  /* One bottom-right stack: the composer on top, then the artifact pill and
+   * the comment pill, so neither overlay has to know the other's height. */
+  .lb-feedback {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    z-index: 2147483646;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    font-family: var(--mono);
+  }
+  .lb-feedback__pill {
+    display: block;
+    max-width: 280px;
+    padding: 10px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: left;
+    color: var(--fg);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, .35);
+    cursor: pointer;
+  }
+  .lb-feedback__pill:disabled { cursor: default; }
+  .lb-feedback__main { color: var(--accent); }
+  .lb-feedback__sub { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
+  .lb-feedback__pill[data-state='sending'] { cursor: wait; opacity: .85; }
+  .lb-feedback__pill[data-state='queued'] { border-color: var(--accent); }
+  .lb-feedback__pill[data-state='error'] { border-color: var(--del); }
+  .lb-feedback__pill[data-state='error'] :is(.lb-feedback__main, .lb-feedback__sub) { color: var(--del); }
+
+  .lb-feedback__hi {
+    position: fixed;
+    z-index: 2147483645;
+    pointer-events: none;
+    background: var(--tint);
+    border: 2px solid var(--accent);
+    border-radius: 3px;
+  }
+
+  .lb-feedback__box {
+    width: 300px;
+    padding: 10px;
+    color: var(--fg);
+    background: var(--card);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .5);
+  }
+  .lb-feedback__target {
+    margin-bottom: 6px;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lb-feedback__text { display: block; min-height: 64px; resize: vertical; background: var(--bg); }
+  .lb-feedback__row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
+  .lb-feedback__keys { font-size: 10px; color: var(--muted); }
+  .lb-feedback__actions { display: inline-flex; gap: 4px; }
+}

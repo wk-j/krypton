@@ -1,0 +1,25 @@
+@layer lb.kit {
+  .lb-stats { display: flex; flex-wrap: wrap; gap: 22px; }
+  .lb-stats--end { justify-content: flex-end; }
+  .lb-stats--end .lb-stat { text-align: right; }
+  .lb-stat { min-width: 0; }
+  .lb-stat__value {
+    display: block;
+    font-family: var(--mono);
+    font-size: 19px;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-stat--add .lb-stat__value { color: var(--add); }
+  .lb-stat--del .lb-stat__value { color: var(--del); }
+  .lb-stat--muted .lb-stat__value { color: var(--muted); }
+  .lb-stat__label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .04em;
+    color: var(--muted);
+  }
+}

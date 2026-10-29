@@ -337,6 +337,32 @@ None.
   `127.0.0.1:1420`, which fails when Vite listens on `[::1]` only. Left
   unchanged here.
 
+## Revision — spec 341 loopback app
+
+- The page is now the `termctrl` entry of the loopback app:
+  `src/loopback/entries/termctrl.ts` mounts `TermctrlView`
+  (`src/loopback/surfaces/termctrl/index.ts`, `termctrl.css`). Rust returns
+  `AppPage::new("termctrl", …)`; token and `/termctrl/api/<token>/…` routes are
+  unchanged.
+- The inline ANSI decoder is `src/loopback/surfaces/termctrl/ansi-text.ts`
+  (`createAnsiText`). The Screen view imports `gridifyText` and
+  `cell-grid.css` directly, so `src/acp/loopback-cell-grid.ts`,
+  `window.KryptonCellGrid`, the `krypton-cell-grid-ready` event,
+  `handle_termctrl_asset` and `/termctrl/assets/{name}` are gone.
+- Kit: `RosterList` (own wrap-around `j`/`k`/↑/↓ bindings), `SearchFilter`,
+  `StatBar` (version, sessions, last refresh), toggle `button`s for
+  Screen/Log, `kbdHints`, `keymap()` for `/ Esc r v g G w`, and three `poll()`
+  loops (list 2 s, screen 1 s, log 1 s with the `length`/`anchor` cursor), all
+  paused while hidden.
+- Visual: the page header is the app shell; one `dot('live')` for the
+  connection (no scale beacon, no skeleton shimmer); the selected session has
+  a full accent border; labels are sentence case (`Visible screen`,
+  `Full log`).
+- Tests: `src/loopback/surfaces/termctrl/termctrl.test.ts` (decoder cases,
+  retained log + reset, selection kept across a failed poll, screen as text)
+  replaces `src/acp/artifact-termctrl.test.ts`; the CSS-literal assertion was
+  dropped.
+
 ## Resources
 
 - [Dozzle README](https://github.com/amir20/dozzle) — live browser log viewer, regex search, no stored logs.
@@ -345,4 +371,4 @@ None.
 - [kitty `@ get-text`](https://manpages.debian.org/testing/kitty/kitten-@-get-text.1.en.html) — `--extent screen|all`.
 - [WezTerm `cli get-text`](https://wezterm.org/cli/cli/get-text.html) — negative start lines address scrollback.
 - terminal-control 1.2.1 crate source (`session.rs`, `terminal_core.rs`, `main.rs`, `mcp.rs`, `driver.rs`) and Ghostty `a887df42` (`Screen.zig`, `PageList.zig`, `formatter.zig`) — retention, formats, and the absence of incremental reads.
-- `docs/0198-termctrl-session-monitor.md`, `src-tauri/src/termctrl_monitor.rs`, `src/acp/artifact-termctrl.html` — current monitor contract.
+- `docs/0198-termctrl-session-monitor.md`, `src-tauri/src/termctrl_monitor.rs`, `src/loopback/surfaces/termctrl/` — current monitor contract.

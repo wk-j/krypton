@@ -1,0 +1,82 @@
+@layer lb.surface {
+  .lb-termctrl { gap: 12px; padding-bottom: 12px; }
+  .lb-termctrl__bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .lb-termctrl__bar .lb-stats { flex: 1; }
+  .lb-termctrl__conn { display: inline-flex; align-items: center; gap: 8px; font: 600 12px var(--mono); }
+  .lb-termctrl__conn[data-state='del'] { color: var(--del); }
+
+  .lb-termctrl__layout {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+  }
+  .lb-termctrl__roster { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--border); }
+  .lb-termctrl__roster-head { display: flex; flex-direction: column; gap: 9px; padding: 13px; border-bottom: 1px solid var(--border); }
+  .lb-termctrl__roster .lb-roster { flex: 1; min-height: 0; overflow: auto; padding: 8px; }
+  .lb-termctrl__no-match { margin: 0; padding: 0 16px 12px; color: var(--muted); font: 11px var(--mono); }
+  .lb-termctrl__roster .lb-roster__item { border: 1px solid transparent; border-radius: 8px; }
+  .lb-termctrl__roster .lb-roster__item[aria-selected='true'] { border-color: var(--accent); }
+  .lb-termctrl__session { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .lb-termctrl__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .lb-termctrl__name { overflow: hidden; font: 600 12px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+  .lb-termctrl__cmd,
+  .lb-termctrl__sub { overflow: hidden; color: var(--muted); font: 10px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+
+  .lb-termctrl__preview { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .lb-termctrl__preview-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 56px; padding: 10px 13px; border-bottom: 1px solid var(--border); }
+  .lb-termctrl__meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .lb-termctrl__command,
+  .lb-termctrl__context { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 12px var(--mono); }
+  .lb-termctrl__context { color: var(--muted); font-size: 10px; font-weight: 400; }
+  .lb-termctrl__actions,
+  .lb-termctrl__views { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+  .lb-termctrl__views { gap: 0; }
+
+  .lb-termctrl__wrap { position: relative; display: flex; flex: 1; min-height: 0; padding: 12px; background: var(--bg); }
+  .lb-termctrl__screen {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 17px;
+    background: var(--code-bg);
+    color: var(--code-fg);
+    font: 12px/1.58 var(--mono);
+    tab-size: 2;
+    white-space: pre;
+  }
+  .lb-termctrl__log { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .lb-termctrl__log--nowrap { white-space: pre; overflow-wrap: normal; }
+  .lb-termctrl__log:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .lb-termctrl__state {
+    position: absolute;
+    right: 23px;
+    top: 21px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 6px;
+    background: var(--card);
+    color: var(--muted);
+    font: 9px var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-termctrl__state--paused { border-color: var(--accent); color: var(--accent); }
+
+  .lb-termctrl__empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 28px; text-align: center; }
+  .lb-termctrl__empty p { max-width: 65ch; margin: 0; }
+  .lb-termctrl__empty-icon { display: grid; width: 46px; height: 46px; place-items: center; border: 1px solid var(--border); border-radius: 50%; color: var(--accent); font: 18px var(--mono); }
+  .lb-termctrl__empty--error .lb-termctrl__empty-icon { color: var(--del); }
+
+  @media (max-width: 760px) {
+    .lb-termctrl__layout { grid-template-columns: 1fr; overflow: visible; }
+    .lb-termctrl__roster { max-height: 330px; border-right: 0; border-bottom: 1px solid var(--border); }
+    .lb-termctrl__screen { min-height: 390px; font-size: 11px; }
+  }
+}

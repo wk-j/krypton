@@ -73,12 +73,15 @@ describe('autonomous Timeline state', () => {
   });
 
   it('opens read-only browser history with an optional topic', async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(34123).mockResolvedValueOnce(undefined);
+    vi.mocked(invoke).mockImplementation(async (cmd: string) =>
+      cmd === 'loopback_url' ? 'http://127.0.0.1:34123/app/session/t?next=x' : undefined,
+    );
     const { host, controller } = setup();
     await controller.runCommand(lane, '#timeline open upload validation');
-    expect(invoke).toHaveBeenCalledWith('open_url', {
-      url: 'http://127.0.0.1:34123/timeline?harness=h1&topic=upload+validation',
+    expect(invoke).toHaveBeenCalledWith('loopback_url', {
+      path: '/timeline?harness=h1&topic=upload+validation',
     });
+    expect(invoke).toHaveBeenCalledWith('open_url', { url: 'http://127.0.0.1:34123/app/session/t?next=x' });
     expect(host.enqueueSystemPrompt).not.toHaveBeenCalled();
   });
 

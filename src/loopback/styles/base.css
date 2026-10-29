@@ -1,0 +1,189 @@
+/* Spec 341 — the loopback app's one token sheet (DESIGN.binance.md).
+ *
+ * Layer order, declared before any other sheet the entry imports, so the
+ * app's own `krypton.*` layers (pulled in by src/ui and the GenUI catalog)
+ * rank ABOVE every `lb.*` layer: a GenUI component inside the gallery stage
+ * keeps its own padding against this file's reset.
+ *   lb.reset    element reset + [hidden]
+ *   lb.base     tokens, page chrome, typography helpers
+ *   lb.kit      kit components (src/loopback/kit/*)
+ *   lb.surface  one surface's own sheet
+ */
+@layer lb.reset, lb.base, lb.kit, lb.surface;
+/* The app's own order (src/styles/layers.css), pinned after ours. */
+@layer krypton.reset, krypton.base, krypton.component, krypton.scheme, krypton.theme;
+
+@layer lb.reset {
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  [hidden] { display: none !important; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  img, svg, canvas { max-width: 100%; }
+}
+
+@layer lb.base {
+  :root {
+    --bg: #17191d;
+    --fg: #eaecef;
+    --text: #b7bdc6;
+    --muted: #707a8a;
+    --border: #2f353d;
+    --accent: #fcd535;
+    --card: #21242a;
+    --code-bg: #1d1f24;
+    --code-fg: #f0b90b;
+    --add: #0ecb81;
+    --del: #f6465d;
+    --tint: rgba(252, 213, 53, .06);
+    --on-accent: #17191d;
+    --sans: 'BinanceNova', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: 'BinancePlex', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+    --shell-h: 44px;
+    color-scheme: dark;
+  }
+
+  /* Readers follow the OS (DESIGN.binance.md theming policy). */
+  @media (prefers-color-scheme: light) {
+    html[data-scheme='auto'] {
+      --bg: #fafafa;
+      --fg: #0d1117;
+      --text: #474d57;
+      --muted: #707a8a;
+      --border: #eaecef;
+      --accent: #c99400;
+      --card: #ffffff;
+      --code-bg: #f5f5f5;
+      --code-fg: #9a6a00;
+      --tint: rgba(201, 148, 0, .08);
+      --on-accent: #ffffff;
+      color-scheme: light;
+    }
+  }
+
+  * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  body {
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    background: var(--bg);
+    color: var(--fg);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  a { color: inherit; }
+  :focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+
+  .lb-main { display: block; }
+  .lb-boot {
+    max-width: 1140px;
+    margin: 48px auto;
+    padding: 0 20px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* Page widths: single column, two-pane, split (DESIGN.binance.md Geometry). */
+  .lb-page { max-width: 1140px; margin: 0 auto; padding: 16px 20px 48px; }
+  .lb-page--wide { max-width: 1180px; }
+  .lb-page--split { max-width: 1400px; }
+  .lb-page--fill {
+    max-width: 1400px;
+    height: calc(100vh - var(--shell-h));
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 12px;
+    overflow: hidden;
+  }
+  .lb-split {
+    display: grid;
+    grid-template-columns: var(--lb-rail, 280px) minmax(0, 1fr);
+    gap: 18px;
+    min-height: 0;
+  }
+  @media (max-width: 760px) {
+    .lb-split { grid-template-columns: 1fr; }
+  }
+
+  .lb-h2 { font-size: 14px; font-weight: 700; letter-spacing: .04em; margin: 0; color: var(--fg); }
+  .lb-h3 { font-size: 11px; font-weight: 600; letter-spacing: .04em; margin: 0 0 10px; color: var(--muted); }
+  .lb-mono { font-family: var(--mono); }
+  .lb-muted { color: var(--muted); }
+  .lb-num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  /* Read by screen readers, not drawn. */
+  .lb-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .lb-section { margin-top: 18px; }
+  .lb-section + .lb-section { padding-top: 16px; border-top: 1px solid var(--border); }
+
+  kbd, .lb-kbd {
+    display: inline-block;
+    min-width: 1.6em;
+    padding: 0 4px;
+    font-family: var(--mono);
+    font-size: 10px;
+    line-height: 16px;
+    text-align: center;
+    color: var(--fg);
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+  }
+
+  .lb-code {
+    margin: 0;
+    padding: 10px 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--fg);
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: auto;
+    white-space: pre;
+  }
+  .lb-code--wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+  .lb-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    min-height: 0;
+  }
+
+  .lb-input {
+    width: 100%;
+    min-width: 0;
+    padding: 7px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--fg);
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    outline: none;
+  }
+  .lb-input::placeholder { color: var(--muted); }
+  .lb-input:focus { border-color: var(--accent); }
+  .lb-input::-webkit-search-cancel-button { display: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0s !important; transition-duration: 0s !important; }
+  }
+}

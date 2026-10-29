@@ -3,6 +3,8 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+
+import { openLoopback } from '../loopback-open';
 import { timelineConflictsPrompt, timelineTracePrompt } from './harness-prompts';
 import { errorText } from './harness-permission-scan';
 import type { HarnessLane } from './harness-view-types';
@@ -63,17 +65,10 @@ export class HarnessTimelineController {
       this.host.flashChip('ใช้ timeline ไม่ได้: ยังไม่ได้ลงทะเบียน project กับ Harness');
       return;
     }
-    const port = await invoke<number>('get_hook_server_port').catch(() => 0);
-    if (!port) {
-      this.host.flashChip('ใช้ timeline ไม่ได้: hook server ยังไม่พร้อม');
-      return;
-    }
     const query = new URLSearchParams({ harness: this.host.harnessMemoryId });
     if (topic) query.set('topic', topic);
-    const url = `http://127.0.0.1:${port}/timeline?${query.toString()}`;
     try {
-      await invoke('open_url', { url });
-      this.host.flashChip(url);
+      this.host.flashChip(await openLoopback(`/timeline?${query.toString()}`));
     } catch (e) {
       this.host.flashChip(`เปิด timeline ไม่สำเร็จ: ${errorText(e)}`);
     }

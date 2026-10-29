@@ -1,6 +1,6 @@
 # Harness Lane Monitor (Live Web Dashboard) — Implementation Spec
 
-> Status: Implemented (rev 4 — attention flag details in dashboard)
+> Status: Implemented (rev 5 — spec 341 loopback app)
 > Date: 2026-06-19
 > Milestone: ACP Harness — observability
 > Extended by: `docs/0169-dashboard-resource-status.md` — adds per-lane CPU sparkline + memory bar; repurposes the activity-pulse canvas into a real CPU chart and adds a metrics-driven publish that fires only while a lane is active.
@@ -9,11 +9,19 @@
 
 The dashboard is a **fixed page served by the built-in loopback HTTP server**, opened in an external browser at a **stable, bookmarkable URL** — NOT a per-lane artifact and NOT an in-app view:
 
-- `GET /dashboard` — serves a standalone HTML page (`src/acp/artifact-dashboard.html`, embedded via `include_str!`). No token, no auth, loopback-only.
+- `GET /dashboard` — serves the `dashboard` entry of the loopback app (`AppPage::new("dashboard", "Lane monitor", Scheme::Dark)`; see the rev 5 note below). No token, no auth, loopback-only.
 - `GET /telemetry` — token-free JSON `{ harnesses: [ <snapshot>, ... ] }` (all cached harness snapshots via `all_telemetry_snapshots()`). The page polls this relative URL ~1 s.
 - **Stable URL:** `LoopbackServerConfig.port` (`[loopback_server] port`) defaults to **8765** (`config.rs`), so the dashboard lives at `http://127.0.0.1:8765/dashboard`. `start()` binds the configured port and falls back to an ephemeral port on conflict (never hard-fails the server); the actual bound port is emitted so the command always builds a working URL.
 - **Open commands** — an **app-level command**: command palette `Open Lane Monitor Dashboard` + keybinding **`Leader Shift+L`** → `compositor.openDashboard()` (opens from anywhere, like the Usage view's `Leader $`); plus the harness **`#dashboard`** composer command. Both build the URL from `get_hook_server_port` + `open_url` (independent of the memory session).
 - **Kept** from the original design: the `HarnessTelemetryPublisher` (`src/acp/harness-telemetry.ts`) → `acp_publish_telemetry` → per-harness Rust cache pipeline. **Dropped:** the token-gated `/artifact/telemetry/:token` route, `viewerLane`, and the artifact-packaging/open-via-card flow.
+
+### Revision — spec 341 loopback app (rev 5)
+
+The self-contained `src/acp/artifact-dashboard.html` is gone. The lane monitor is the `dashboard` entry of the single loopback Vite app (`docs/0341-loopback-app.md`): `src/loopback/entries/dashboard.ts` boots `DashboardView` from `src/loopback/surfaces/dashboard/` — `index.ts` (view, poll, status line), `harness-section.ts` (heading, attention gauge, flag cards, lanes, foreign peers, event feed), `lane-card.ts` (pill, turn counter, activity beat, CPU sparkline, memory bar, chips, spec-277 review-pass loop), `canvas.ts` (gauge/beat/sparkline drawing), `format.ts`, `dashboard.css`, `dashboard.test.ts`.
+
+- **Schema:** the snapshot types and `TELEMETRY_SCHEMA_VERSION` moved from `harness-telemetry.ts` into the Tauri-free `src/acp/harness-telemetry-schema.ts`; the publisher and the dashboard both import the constant, so the spec-169 "bump both in lockstep" rule is now enforced by the compiler. A snapshot on any other `schemaVersion` is still dropped; if every harness mismatches, the page says `refresh the dashboard (schema mismatch)`.
+- **Kit:** the 1 s `/telemetry` loop is the kit `poll()` (in-flight guard, signature skip on `[harnessId, version, generatedAt]`, `connecting...`/`reconnecting...` status; it now pauses while the tab is hidden and refreshes on return). Header numbers are a `StatBar` (uptime, harnesses, lanes, observed turns); the state line is a `Banner`; lane status is `pill(label, statusTone(status))`; the header beacon is `dot('live')`; lane cards are kit `card()`s and count capsules kit `chip()`s; the reviewer verdict is a pill. Harness sections and lane cards are `Component`s reconciled by key, so a poll repaints them in place and each card keeps its canvases and CPU history.
+- **Visual normalisation:** the page's brand bar is gone (the shell is the header); canvas colours (status, heat, gauge, track lines) are read from the token sheet (`--add`, `--accent`, `--del`, `--muted`, `--border`) instead of hex literals; flag ages use the kit `formatAgo` (`1m ago`); live counters keep the whole-second `42s` / `3m 5s` format.
 
 The sections below are the original artifact/token design, retained as history.
 

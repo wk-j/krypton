@@ -1,5 +1,5 @@
-// Folder expand/collapse helpers shared by HurlContentView.
-// The web client (artifact-hurl.html) mirrors these rules inline.
+// Folder expand/collapse helpers shared by HurlContentView and the loopback
+// Hurl page (src/loopback/surfaces/hurl).
 
 /** Ancestor dirs of a file (`hurl/temp/foo.hurl` → `['hurl', 'hurl/temp']`). */
 export function fileAncestorDirs(relPath: string): string[] {

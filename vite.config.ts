@@ -30,7 +30,7 @@ export default defineConfig({
           name: 'node',
           environment: 'node',
           include: ['src/**/*.test.ts'],
-          exclude: ['**/node_modules/**', 'src/ui/**', 'src/acp/components/**'],
+          exclude: ['**/node_modules/**', 'src/ui/**', 'src/acp/components/**', 'src/loopback/**'],
         },
       },
       {
@@ -38,7 +38,7 @@ export default defineConfig({
         test: {
           name: 'dom',
           environment: 'happy-dom',
-          include: ['src/ui/**/*.test.ts', 'src/acp/components/**/*.test.ts'],
+          include: ['src/ui/**/*.test.ts', 'src/acp/components/**/*.test.ts', 'src/loopback/**/*.test.ts'],
         },
       },
     ],

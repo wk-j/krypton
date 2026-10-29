@@ -1,0 +1,139 @@
+/* Spec 313 / 341 — the GenUI component gallery surface. The rail, search,
+ * detail and pager are loopback chrome (tokens from base.css); the stage is
+ * the one exception on any loopback page: it reproduces the Krypton window a
+ * component actually lives in, painted with the app's own theme. */
+
+/* The catalog is authored against the app's global reset (src/styles/base.css):
+ * border-box, no UA margins or padding. The loopback reset sits in `lb.reset`,
+ * which ranks below every `krypton.*` layer, and does not zero margins or
+ * padding, so without this the same markup measures differently here than in
+ * the window — `.acp-genui__list-row` (full-width row + `padding: 5px 9px`)
+ * spilled 18px past its own block. Scoped to the preview, and in
+ * `krypton.reset` so it stays the floor underneath every component rule. */
+@layer krypton.reset {
+  .lb-genui__preview, .lb-genui__preview *, .lb-genui__preview *::before,
+  .lb-genui__preview *::after { margin: 0; padding: 0; box-sizing: border-box; }
+}
+
+@layer lb.surface {
+  /* Fallback only. `theme.ts` fetches `/genui-gallery/theme.json` and writes
+   * the app's real `themeCssProperties()` onto :root inline, which wins over
+   * these. They are the built-in krypton-dark values
+   * (src-tauri/themes/krypton-dark.toml), so a page that cannot reach the
+   * route still paints the catalog in Krypton's default palette rather than an
+   * invented one. Only names the app itself sets belong here:
+   * `--krypton-error`, `--krypton-danger` and `--krypton-font-mono` are NOT app
+   * tokens, so the catalog's own literal fallbacks must stand, exactly as they
+   * do in-app. Scoped to this surface: release builds merge every surface's
+   * sheet into one `app.css`. */
+  html[data-surface='genui'] {
+    --krypton-fg: #b0c4d8;
+    --krypton-fg-rgb: 176, 196, 216;
+    --krypton-bg: rgba(10, 10, 15, 0.5);
+    --krypton-accent: #0cf;
+    --krypton-accent-rgb: 0, 204, 255;
+    --krypton-window-accent: #0cf;
+    --krypton-window-accent-rgb: 0, 204, 255;
+    --krypton-success-rgb: 51, 221, 255;
+    --krypton-warning-rgb: 232, 197, 71;
+    --krypton-danger-rgb: 255, 58, 92;
+    --krypton-info-rgb: 74, 158, 255;
+    --krypton-special-rgb: 199, 125, 255;
+    --krypton-border-width: 1px;
+    --krypton-border-radius: 8px;
+    --krypton-backdrop-color: rgba(6, 10, 18, 0.5);
+    --krypton-shadow-blur: 15px;
+    --krypton-font-family: 'Mononoki Nerd Font Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --krypton-font-size: 14px;
+    --krypton-line-height: 1.2;
+    --krypton-content-line-height: 1.2;
+    --agent-text: #b0c4d8;
+    --agent-green: #0cf;
+    --agent-green-rgb: 0, 204, 255;
+    --agent-cyan: #0cf;
+    --agent-red: #ff3a5c;
+    /* agent.css declares exactly this at :root; the harness font resolves through it. */
+    --agent-font: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  }
+
+  .lb-genui__layout { --lb-rail: 240px; flex: 1 1 auto; grid-template-rows: minmax(0, 1fr); }
+
+  /* ── index rail ───────────────────────────────────────────────────────── */
+  .lb-genui__side { display: flex; flex-direction: column; min-height: 0; padding-top: 6px;
+    border-right: 1px solid var(--border); }
+  .lb-genui__theme { padding: 0 12px 8px 0; color: var(--muted); font-family: var(--mono);
+    font-size: 11px; overflow-wrap: anywhere; }
+  .lb-genui__search { padding: 0 12px 12px 0; }
+  .lb-genui__nav { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 10px 14px 0; }
+  .lb-genui__nav-group + .lb-genui__nav-group { margin-top: 14px; }
+  .lb-genui__nav-heading { position: sticky; top: 0; z-index: 1; margin: 0 0 4px; padding: 4px 6px 5px;
+    border-bottom: 1px solid var(--border); background: var(--bg); color: var(--muted);
+    font-family: var(--mono); font-size: 11px; font-weight: 600; }
+  .lb-genui__nav-item { display: block; padding: 4px 8px; border-radius: 6px; color: var(--fg);
+    font-family: var(--mono); font-size: 12px; text-decoration: none; scroll-margin: 30px 0 14px; }
+  .lb-genui__nav-item:hover { background: var(--tint); color: var(--accent); }
+  .lb-genui__nav-item--current { background: var(--tint); color: var(--accent); font-weight: 700; }
+  .lb-genui__empty { margin: 0; padding: 0 12px 10px 0; color: var(--muted); font-size: 12px; }
+  .lb-genui__side .lb-hints { margin-top: 0; padding: 9px 12px 0 0; font-size: 10px; }
+
+  /* ── one component ────────────────────────────────────────────────────── */
+  .lb-genui__main { min-width: 0; min-height: 0; overflow: auto; }
+  .lb-genui__detail, .lb-genui__pager, .lb-genui__foot { max-width: 820px; margin: 0 auto;
+    padding-inline: 12px; }
+  .lb-genui__view { padding: 10px 0 4px; }
+  .lb-genui__crumb { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+  .lb-genui__view-title { display: flex; align-items: baseline; gap: 14px; margin-top: 5px; }
+  .lb-genui__view-name { margin: 0; font: 700 20px/1.3 var(--mono); color: var(--fg); }
+  .lb-genui__view-actions { display: flex; gap: 6px; margin-left: auto; }
+  .lb-genui__view-summary { margin: 6px 0 0; color: var(--text); font-size: 13px; }
+  .lb-genui__label { margin: 22px 0 10px; padding-bottom: 5px; border-bottom: 1px solid var(--border); }
+  /* The one surface on this page that is NOT a loopback surface: it reproduces
+   * the Krypton window the component actually lives in. Border, radius, shadow
+   * and backdrop are `.krypton-window` (window.css) by value; the inner block
+   * copies the typography and alias declarations `.acp-harness`
+   * (harness-shared.css) puts around a seated panel. The opaque base under the
+   * translucent backdrop stands in for the user's desktop, which no browser
+   * page can see. */
+  .lb-genui__stage { padding: 14px 16px;
+    border: var(--krypton-border-width, 1px) solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: linear-gradient(var(--krypton-backdrop-color, rgba(6, 10, 18, .5)),
+      var(--krypton-backdrop-color, rgba(6, 10, 18, .5))), #0b0d12;
+    box-shadow: 0 0 var(--krypton-shadow-blur, 15px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12); }
+  .lb-genui__preview { min-height: 26px;
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    font-size: var(--krypton-font-size, 13px);
+    color: var(--agent-text, var(--krypton-fg, #d8e8d8));
+    --agent-accent: var(--agent-green, #8effb0);
+    --agent-user: var(--agent-cyan, #6dd0ff);
+    --agent-error: var(--agent-red, #ff6d8a); }
+  .lb-genui__status { margin-top: 10px; color: var(--accent); font-family: var(--mono); font-size: 11px;
+    overflow-wrap: anywhere; }
+  .lb-genui__status:empty { display: none; }
+  .lb-genui__source { max-height: 300px; margin-top: 12px; font-size: 11px; line-height: 1.6; }
+  .lb-genui__param-list { display: grid; grid-template-columns: max-content 1fr; gap: 5px 18px;
+    margin: 0; font-family: var(--mono); font-size: 11px; }
+  .lb-genui__param-name { display: flex; align-items: baseline; gap: 7px; margin: 0; color: var(--fg); }
+  .lb-genui__param-required { color: var(--accent); font-size: 10px; }
+  .lb-genui__param-kind { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+  .lb-genui__pager { display: flex; gap: 10px; margin-top: 26px; padding-top: 12px;
+    border-top: 1px solid var(--border); }
+  .lb-genui__pager:empty { display: none; }
+  .lb-genui__pager-link { display: flex; flex-direction: column; gap: 2px; flex: 0 1 auto;
+    padding: 7px 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--card);
+    color: var(--fg); text-decoration: none; }
+  .lb-genui__pager-link--next { margin-left: auto; text-align: right; }
+  .lb-genui__pager-link:hover { border-color: var(--accent); color: var(--accent); }
+  .lb-genui__pager-dir { color: var(--muted); font-family: var(--mono); font-size: 10px; }
+  .lb-genui__pager-name { font: 700 12px/1.3 var(--mono); }
+  .lb-genui__foot { padding-block: 16px 26px; color: var(--muted); font-family: var(--mono); font-size: 10px; }
+
+  @media (max-width: 760px) {
+    .lb-genui { height: auto; overflow: visible; }
+    .lb-genui__side { border-right: 0; border-bottom: 1px solid var(--border); }
+    .lb-genui__nav { max-height: 220px; }
+    .lb-genui__side .lb-hints { display: none; }
+    .lb-genui__view-title { flex-wrap: wrap; }
+    .lb-genui__view-actions { margin-left: 0; }
+  }
+}

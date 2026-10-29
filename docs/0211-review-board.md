@@ -837,3 +837,9 @@ Everything above landed as specified except where noted here.
 - [Zed Agent Panel](https://zed.dev/docs/ai/agent-panel) — keyboard triage of agent output.
 - [marked](https://marked.js.org/) / [diff2html](https://diff2html.xyz/) — the already-pinned
   renderers the Board composes; `marked`'s lexer is what makes block-level splitting cheap.
+
+## Revision — spec 341 loopback app
+
+`src/acp/artifact-reviews.html` is deleted. `/reviews` and `/review` now return `AppPage::new("reviews", <title>, Scheme::Auto)` whose body comes from `reader_split_body` in `hook_server.rs` (shared with analyses): `div.lb-page.lb-page--wide.lb-reviews[data-title]` (capped at 1180 px; the old layout was 1220 px) with `div.lb-split` holding the bundle tree (`nav.lb-tree-nav`, kit tree-nav markup with `lb-tree--stacked` so the count sits under the title) and `<article class="lb-prose">` (was `article.doc`). The review · response strip is kit tabs (`nav.lb-tabs > a.lb-tabs__tab[aria-selected]`, still `#rv-review` / `#rv-answers` jump links); `render_review_blocks`, the source excerpts (spec 217), `/review-asset` and path validation are unchanged, as are the `rv-*` block classes.
+
+The page code is `src/loopback/entries/reviews.ts` mounting `src/loopback/surfaces/reviews/` (`index.ts`, `reviews.css`, `reviews.test.ts`): the kit `hydrateTreeNav` keeps the tree's scroll in sessionStorage `krv:<harness query param>`, `localizeTimes` rewrites the dates, and `shell.setTitle()` shows the review title. Visual normalisation: `.rv-steps__title` and the attachments heading are no longer uppercase, cards (`rv-row`, `rv-steps`, `rv-finding`, `rv-chart`, attachments) use the 10 px radius, and the caution colour `--warn` is the token sheet's `--code-fg` (no hard-coded hex).

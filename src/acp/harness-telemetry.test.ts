@@ -12,10 +12,8 @@ import {
   HarnessTelemetryPublisher,
   loopEventDetails,
   type LaneResourceSample,
-  type TelemetryEvent,
-  type TelemetryReviewLoop,
-  type TelemetrySnapshot,
 } from './harness-telemetry';
+import type { TelemetryEvent, TelemetryReviewLoop, TelemetrySnapshot } from './harness-telemetry-schema';
 import { LaneBus } from './lane-bus';
 import type { HarnessLaneStatus, JudgementItem, LaneSummary, LaneTriageStats, ReviewOutcome } from './types';
 

@@ -862,12 +862,33 @@ Packs are bundled as Tauri resources (declared in `tauri.conf.json`) and loaded 
 
 `src-tauri/src/hook_server.rs` is the one `127.0.0.1` HTTP host, started once in
 `lib.rs::setup`. It serves the harness memory MCP endpoint
-(`/mcp/harness/{id}/lane/{label}`), the read-only browser surfaces (`/dashboard`,
-`/gallery`, `/artifacts`, `/genui-gallery` (with its `/genui-gallery/theme.json`
-theme feed), `/timeline`, `/docs`, `/journal`, `/reviews`,
-`/analyses`, `/commands`, `/tools`), the token-gated viewers (`/termctrl`,
-`/acp-wire`, `/hurl`), artifact and doc feedback POSTs, and the Claude Code
-`/hook` endpoint.
+(`/mcp/harness/{id}/lane/{label}`), the browser surfaces of the loopback app
+(Home `/`, `/dashboard`, `/gallery`, `/genui-gallery`, `/timeline`, `/docs`,
+`/journal`, `/doc`, `/reviews`, `/review`, `/analyses`, `/analysis`,
+`/commands`, `/tools`), their JSON feeds (`/telemetry`, `/artifacts`,
+`/genui-gallery/theme.json`, `/timeline.json`, `/commands.json`, `/tools.json`,
+`/app/api/directory`), the token-gated viewers (`/termctrl`, `/acp-wire`,
+`/hurl`, `/e2e`), artifact and doc feedback POSTs, and the Claude Code `/hook`
+endpoint.
+
+**Loopback app (spec 341).** Every browser page is one document of a single
+Vite app under `src/loopback/`. Rust builds the document
+(`loopback_app::AppPage` → `<header id="lb-shell">` + `<main id="lb-main">`,
+`data-scheme`, `data-surface`) and the page's code is
+`/app/assets/<entry>.js`, one entry per file in `src/loopback/entries/`.
+Release builds serve `dist/app/` (built by `vite.loopback.config.ts`, one merged
+`app.css`) from the embedded `frontendDist`; debug builds redirect the entry to
+the Vite dev server on `localhost:1420`, which also injects the CSS the modules
+import. Readers (`/docs`, `/doc`, `/journal`, `/analyses`, `/analysis`,
+`/reviews`, `/review`) still render their body in Rust and the entry hydrates
+it. Every page carries the shell (`src/loopback/kit/shell`): brand → Home,
+project / surface location, the switcher (`` ` ``) and key help (`?`). The kit
+(`src/loopback/kit/`) builds on the spec-301 component kernel (`src/ui/`); one
+`Keymap` per page dispatches every key. Krypton opens every page through
+`openLoopback(path)` → `loopback_url` → `/app/session/<token>?next=<path>`,
+which stores the process-wide session capability in `localStorage` so the
+shell can trade it for Terminal Control / ACP wire / Hurl / E2E paths at
+`/app/api/<token>/capabilities` (ADR 0026). See `docs/0341-loopback-app.md`.
 
 `[loopback_server] enabled` / `port` controls the server itself (load-time only);
 `[hooks] enabled` gates `/hook` alone and is read per request. While the server
@@ -908,12 +929,9 @@ requests. The page turns the raw bytes into plain text with a small stateful
 decoder (the backend still does no VT parsing) and reads only while the Log
 view is visible and the session has printed since the last read.
 
-The Screen view lays the visible text on the harness cell grid (specs 324/326).
-The page is inline HTML, so `vite.loopback.config.ts` bundles
-`src/acp/loopback-cell-grid.ts` into `dist/loopback/`, and the tokenless
-`/termctrl/assets/{cell-grid.js,cell-grid.css}` route serves it from the embedded
-`dist` in release builds and redirects to the Vite dev server in debug builds.
-See `docs/0198-termctrl-session-monitor.md` and
+The Screen view lays the visible text on the harness cell grid (specs 324/326):
+the page's loopback-app module imports `gridifyText` and `cell-grid.css`
+directly (spec 341). See `docs/0198-termctrl-session-monitor.md` and
 `docs/0330-termctrl-monitor-full-log.md`.
 
 ### ACP Wire Profiler
@@ -1238,7 +1256,7 @@ git-checks each case's `files`, and — when the manifest names an
 `issue_label` — scans one `gh issue list --json …,comments` for known runIds.
 
 **Browser explorer (spec 329).** `src-tauri/src/e2e_web.rs` serves a read-only
-page, `src/acp/artifact-e2e.html`, at `/e2e/{token}` on the loopback server. It
+page, the loopback app's `e2e` entry (`src/loopback/surfaces/e2e/`, spec 341), at `/e2e/{token}` on the loopback server. It
 has its own router and state (`E2eWebSessions` + the shared `E2eState`), which
 `hook_server::start` merges into the loopback router. The token is per canonical
 project root (128-bit, reused until exit, like Hurl's per-cwd capability), and an

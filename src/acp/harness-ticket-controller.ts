@@ -24,6 +24,8 @@ import type {
 import { TICKET_COMMAND_ARGS } from './hash-commands';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+
+import { openLoopback } from '../loopback-open';
 import {
   PointerPersistGate,
   controlError,
@@ -375,17 +377,11 @@ export class HarnessTicketController {
       this.host.flashChip('active ticket has no local analysis bundle');
       return;
     }
-    const port = await invoke<number>('get_hook_server_port').catch(() => 0);
-    if (!port) {
-      this.host.flashChip('analysis viewer unavailable - hook server not ready');
-      return;
-    }
     const issue = `${ticket.github.repo}/${ticket.github.number}`;
-    const url = `http://127.0.0.1:${port}/analysis?harness=${encodeURIComponent(this.host.harnessMemoryId)}` +
+    const path = `/analysis?harness=${encodeURIComponent(this.host.harnessMemoryId)}` +
       `&issue=${encodeURIComponent(issue)}`;
     try {
-      await invoke('open_url', { url });
-      this.host.flashChip(url);
+      this.host.flashChip(await openLoopback(path));
     } catch (e) {
       this.host.flashChip(`analysis open failed: ${errorText(e)}`);
     }

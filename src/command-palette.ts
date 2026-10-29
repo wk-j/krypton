@@ -879,6 +879,12 @@ export class CommandPalette {
       execute: () => c.openConnectedComputers(),
     });
     this.register({
+      id: 'loopback.home',
+      label: 'Open Krypton Home (every browser surface)',
+      category: 'Window',
+      execute: () => c.openLoopbackHome(),
+    });
+    this.register({
       id: 'dashboard.open',
       label: 'Open Lane Monitor Dashboard',
       category: 'Window',

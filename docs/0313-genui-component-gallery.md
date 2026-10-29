@@ -5,6 +5,20 @@
 > Milestone: ACP Harness
 > Builds on: [spec 309](./0309-harness-genui-catalog.md), [spec 310](./0310-harness-genui-inline-panel.md), and the loopback gallery pattern in [spec 170](./0170-artifact-gallery-endpoint.md)
 
+## Revision — spec 341 loopback app
+
+> Status: Implemented
+> Date: 2026-10-29
+
+The gallery is no longer a second Vite app. It is the `genui` entry of the loopback app ([spec 341](./0341-loopback-app.md)): `GET /genui-gallery` returns `app_page_response(AppPage::new("genui", "GenUI components", Scheme::Dark).with_csp(..))`, and the page code is `src/loopback/entries/genui.ts` mounting `GenuiGallery` from `src/loopback/surfaces/genui/` — `index.ts` (rail, search, detail, pager, keys; was `src/acp/genui-gallery/main.ts` plus the markup of `genui-gallery/index.html`, now built with `el()`), `preview.ts` (`GalleryPreview`, unchanged), `theme.ts` (`theme.json` → `:root`), `genui.css` (was `gallery.css`), `examples.ts` / `examples.test.ts` (moved) and `genui.test.ts` (search, Enter, Esc, `[`/`]`, `↑`/`↓`, source toggle). Deleted: `genui-gallery/index.html`, `vite.genui-gallery.config.ts`, its `vite build --config` step in `npm run build`, `/genui-gallery/assets/{name}` with `handle_genui_gallery_asset`, `valid_genui_gallery_asset_name` and its test. `/genui-gallery/theme.json` stays.
+
+- **Shell.** The brand header (`KRYPTON / COMPONENTS`, title) is gone: the loopback shell is the header and its title follows the open component (`Slider · GenUI components`). The rail keeps the theme read-out; the component count moved into the kit `SearchFilter`'s count (`40 components`, `1 / 40 match`). Classes are BEM `lb-genui__*`; the `--gallery-*` tokens are replaced by the loopback tokens; uppercase labels (`PARAMETERS`, the crumb, rail group headings) are sentence case; Source/Reset are kit `button()`s; the key footer is `kbdHints`. The page is `.lb-page--fill` with an `.lb-split` 240px rail — still one centred, capped shell (Revision 4), at the app's 1400px.
+- **Keys** go through the page `keymap()`, so `?` lists them: `/` (SearchFilter), `[`/`]`, `↑`/`↓` in the rail and `↓` from the search box, `Enter` on a rail item, `Esc` outside an input clears a non-empty search. Esc inside the box uses `SearchFilter`'s `clear-and-leave` mode, which keeps the old one-press "clear and return to the open entry".
+- **Stage exception, unchanged in substance.** `.lb-genui__stage` is `.krypton-window` by value over the opaque desktop stand-in; the preview host carries `acp-genui-panel__body acp-genui`, the `--agent-*` aliases and the scoped `krypton.reset` floor. The krypton-dark fallback block is scoped to `html[data-surface='genui']`, because release builds merge every surface sheet into one `app.css`. The `@import` of `src/styles/layers.css` is gone: the loopback token sheet declares the `krypton.*` layer order (after its own `lb.*` layers) before any other sheet loads.
+- **`theme.json` in dev.** Revision 3 kept the fallback for "a debug build's Vite page, which is a different origin". That case no longer exists: in debug the document stays on the loopback origin and only the module comes from `http://localhost:1420`, so the same-origin `theme.json` fetch succeeds in dev too. The fallback now covers only a failed fetch.
+- **CSP.** Release keeps the gallery's own policy (`default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'`). Debug (`cfg!(debug_assertions)`) adds `http://localhost:1420` to script, style, img, font and connect sources and `ws://localhost:1420` to `connect-src` for Vite HMR.
+- **Copy** uses the kit `copyText` (with its textarea fallback), so the feedback is `Copied` or `Copy failed`; the separate `Clipboard unavailable` message is gone.
+
 ## Revision 4 — Capped Shell Width, and the App's Own Reset Under the Preview
 
 > Status: Implemented

@@ -1,0 +1,27 @@
+@layer lb.kit {
+  .lb-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .lb-table th {
+    position: sticky;
+    top: 0;
+    padding: 6px 8px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-align: left;
+    color: var(--accent);
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+  }
+  .lb-table td {
+    padding: 5px 8px;
+    font-family: var(--mono);
+    color: var(--fg);
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .lb-table__num { text-align: right; font-variant-numeric: tabular-nums; }
+  .lb-table__row--link { cursor: pointer; }
+  .lb-table__row--link:hover td { background: var(--tint); }
+  .lb-table__row--selected td { background: var(--tint); }
+}

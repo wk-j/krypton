@@ -13,7 +13,7 @@ import type { HarnessLaneStatus } from './types';
 import type { HarnessLane } from './harness-view-types';
 import type { HarnessReviewLoopHost } from './harness-view-host';
 import type { HarnessConsumedReply } from './inter-lane';
-import type { TelemetryReviewLoop } from './harness-telemetry';
+import type { TelemetryReviewLoop } from './harness-telemetry-schema';
 import { lessonsEnabled } from './lessons';
 import { takeBoardToken } from './review';
 import {

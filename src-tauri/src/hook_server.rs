@@ -40,6 +40,7 @@ use crate::hurl::{
     save_sidebar_state, start_run, HurlEvent, HurlRunArgs, HurlSidebarState, HurlState,
     HurlWebSession, HurlWebSessions,
 };
+use crate::loopback_app::{app_page_response, AppPage, Scheme};
 use crate::review_excerpt::{rv_anchor, validate_doc_path, RvExcerpt, RvSkip, RvSrcCtx};
 use crate::termctrl_monitor::{
     parse_log_cursor, TermctrlLogChunk, TermctrlMonitor, TermctrlSessionList, LOG_TOO_LARGE,
@@ -176,11 +177,21 @@ pub const SERVER_UNAVAILABLE: &str =
     "Krypton loopback server is not running; set [loopback_server] enabled = true in krypton.toml";
 
 /// Shared state for the axum handler.
-struct HookServerState {
+pub(crate) struct HookServerState {
     app_handle: AppHandle,
     hook_server: Arc<HookServer>,
     hurl: Arc<HurlState>,
     config: Arc<std::sync::RwLock<crate::config::KryptonConfig>>,
+}
+
+impl HookServerState {
+    pub(crate) fn app_handle(&self) -> &AppHandle {
+        &self.app_handle
+    }
+
+    pub(crate) fn hook_server(&self) -> &HookServer {
+        &self.hook_server
+    }
 }
 
 /// Handle for the running hook server (managed by Tauri).
@@ -245,6 +256,8 @@ pub struct HookServer {
     /// Spec 288: ACP wire profiler tap (shared with `acp.rs` via Tauri state)
     /// and its process-lifetime page token.
     pub acp_wire: Arc<AcpWire>,
+    /// Spec 341: process-lifetime session capability for the loopback app shell.
+    loopback_session: crate::loopback_app::LoopbackSession,
 }
 
 /// Spec 149: registry record for an artifact feedback token. Maps the
@@ -307,6 +320,7 @@ impl Default for HookServer {
             e2e_web: Arc::new(crate::e2e_web::E2eWebSessions::default()),
             ticket_workers: std::sync::Mutex::new(HashMap::new()),
             acp_wire: Arc::new(AcpWire::new()),
+            loopback_session: crate::loopback_app::LoopbackSession::new(),
         }
     }
 }
@@ -336,6 +350,7 @@ impl HookServer {
             e2e_web: Arc::new(crate::e2e_web::E2eWebSessions::default()),
             ticket_workers: std::sync::Mutex::new(HashMap::new()),
             acp_wire: Arc::new(AcpWire::new()),
+            loopback_session: crate::loopback_app::LoopbackSession::new(),
         }
     }
 
@@ -476,6 +491,20 @@ impl HookServer {
         }
         let token = self.e2e_web.issue(root)?;
         Ok(format!("http://127.0.0.1:{port}/e2e/{token}"))
+    }
+
+    /// Spec 341: the URL Krypton opens for a loopback page — the session landing
+    /// that stores the shell's capability and forwards to `path`.
+    pub fn loopback_url(&self, path: &str) -> Result<String, String> {
+        let port = self.get_port();
+        if port == 0 {
+            return Err(SERVER_UNAVAILABLE.to_string());
+        }
+        crate::loopback_app::session_url(port, self.loopback_session.token(), path)
+    }
+
+    pub(crate) fn loopback_session(&self) -> &crate::loopback_app::LoopbackSession {
+        &self.loopback_session
     }
 
     pub fn unavailable_reason(&self) -> String {
@@ -1602,6 +1631,121 @@ impl HookServer {
             .and_then(|store| store.project_dir.clone())
     }
 
+    /// Spec 341: the loopback app's project directory — one row per project with
+    /// a live harness, its harness ids, lane counts from the published telemetry
+    /// and artifact counts. In-memory only: no disk walk.
+    pub(crate) fn loopback_directory(&self) -> Value {
+        struct ProjectAcc {
+            name: String,
+            dir: String,
+            harness_ids: Vec<String>,
+            /// artifact id → live (union across harnesses on one project tree).
+            artifacts: HashMap<String, bool>,
+        }
+        let mut projects: HashMap<String, ProjectAcc> = HashMap::new();
+        {
+            let artifacts = self.artifacts.lock().unwrap_or_else(|e| e.into_inner());
+            for (harness_id, store) in artifacts.iter() {
+                let Some(dir) = store.project_dir.as_deref() else {
+                    continue;
+                };
+                let Some((project_id, name)) = gallery_project_identity(dir) else {
+                    continue;
+                };
+                let project = projects.entry(project_id).or_insert_with(|| ProjectAcc {
+                    name,
+                    dir: dir.to_string(),
+                    harness_ids: Vec::new(),
+                    artifacts: HashMap::new(),
+                });
+                project.harness_ids.push(harness_id.clone());
+                for entry in store.entries.values() {
+                    let live = entry.state == ArtifactState::RegisteredLive;
+                    let slot = project.artifacts.entry(entry.id.clone()).or_insert(live);
+                    *slot = *slot || live;
+                }
+            }
+        }
+        let telemetry = self.telemetry.lock().unwrap_or_else(|e| e.into_inner());
+        let mut rows: Vec<(String, ProjectAcc)> = projects.into_iter().collect();
+        rows.sort_by(|(id_a, a), (id_b, b)| {
+            a.name
+                .to_lowercase()
+                .cmp(&b.name.to_lowercase())
+                .then_with(|| id_a.cmp(id_b))
+        });
+        let projects: Vec<Value> = rows
+            .into_iter()
+            .map(|(project_id, mut project)| {
+                project
+                    .harness_ids
+                    .sort_by(|a, b| crate::loopback_app::harness_id_order(a, b));
+                let (mut lanes, mut busy, mut attention) = (0u64, 0u64, 0u64);
+                for harness_id in &project.harness_ids {
+                    let Some((_, snapshot)) = telemetry.get(harness_id) else {
+                        continue;
+                    };
+                    if let Some(rows) = snapshot.get("lanes").and_then(Value::as_array) {
+                        lanes += rows.len() as u64;
+                        busy += rows
+                            .iter()
+                            .filter(|lane| {
+                                lane.get("status").and_then(Value::as_str) == Some("busy")
+                            })
+                            .count() as u64;
+                    }
+                    attention += snapshot
+                        .pointer("/attention/openCount")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0);
+                }
+                let live = project.artifacts.values().filter(|live| **live).count();
+                json!({
+                    "projectId": project_id,
+                    "name": project.name,
+                    "dir": project.dir,
+                    "harnessIds": project.harness_ids,
+                    "lanes": { "total": lanes, "busy": busy },
+                    "attention": attention,
+                    "artifacts": { "live": live, "pending": project.artifacts.len() - live },
+                })
+            })
+            .collect();
+        json!({ "projects": projects })
+    }
+
+    /// Spec 341: capability paths for the loopback shell. Terminal Control and
+    /// ACP wire are process-wide; Hurl and E2E are issued per directory project
+    /// through their existing (idempotent) session maps.
+    pub(crate) fn loopback_capabilities(&self) -> Value {
+        let mut seen = HashSet::new();
+        let mut projects = Vec::new();
+        for (_, dir) in self.docs_project_dirs() {
+            let Some((project_id, _)) = gallery_project_identity(&dir) else {
+                continue;
+            };
+            if !seen.insert(project_id.clone()) {
+                continue;
+            }
+            let hurl = self
+                .hurl_sessions
+                .issue(&dir)
+                .ok()
+                .map(|session| format!("/hurl/{}", session.token));
+            let e2e = self
+                .e2e_web
+                .issue(&dir)
+                .ok()
+                .map(|token| format!("/e2e/{token}"));
+            projects.push(json!({ "projectId": project_id, "hurl": hurl, "e2e": e2e }));
+        }
+        json!({
+            "termctrl": format!("/termctrl/{}", self.termctrl_monitor.token()),
+            "acpWire": format!("/acp-wire/{}", self.acp_wire.token()),
+            "projects": projects,
+        })
+    }
+
     /// Render the docs browser index as ONE flat, filterable list of every `.md`
     /// file under the selected harness's working dir — no folder tree, no
     /// drill-down (spec 171 rev 4: the hierarchy made navigation too slow).
@@ -1749,7 +1893,7 @@ impl HookServer {
             return render_analyses_page(
                 "Issue analyses",
                 "",
-                Some(""),
+                "",
                 "<p class=\"welcome\">ยังไม่มีบทวิเคราะห์ issue — รัน #analyze-github-issue ในเลนเพื่อสร้างบทวิเคราะห์</p>",
             );
         }
@@ -1770,7 +1914,7 @@ impl HookServer {
             "Issue analyses · {}",
             analysis_project_label(&projects, selected)
         );
-        render_analyses_page(&title, &tabs, Some(&nav), &content)
+        render_analyses_page(&title, &tabs, &nav, &content)
     }
 
     /// Discover review bundles for every harness: `(harness_id, project_dir,
@@ -1794,7 +1938,7 @@ impl HookServer {
         if per.is_empty() {
             return render_reviews_page(
                 "Review Boards",
-                Some(""),
+                "",
                 "<p class=\"welcome\">No harness working directory is available.</p>",
             );
         }
@@ -1822,7 +1966,7 @@ impl HookServer {
             Some(harness_id) => format!("Review Boards · {harness_id}"),
             None => "Review Boards".to_string(),
         };
-        render_reviews_page(&title, Some(&nav), &content)
+        render_reviews_page(&title, &nav, &content)
     }
 
     /// `artifact_new` — allocate an id, issue a destination path inside the
@@ -3101,20 +3245,6 @@ async fn handle_artifact_state(
     resp
 }
 
-const DASHBOARD_HTML: &str = include_str!("../../src/acp/artifact-dashboard.html");
-const GALLERY_HTML: &str = include_str!("../../src/acp/artifact-gallery.html");
-const DOCS_HTML: &str = include_str!("../../src/acp/artifact-docs.html");
-const ANALYSES_HTML: &str = include_str!("../../src/acp/artifact-analyses.html");
-/// spec 211: the read-only Review Board archive shell (Binance-dark, cloned from
-/// the analyses shell). The Board itself is in-app; this page only browses.
-const REVIEWS_HTML: &str = include_str!("../../src/acp/artifact-reviews.html");
-const COMMANDS_HTML: &str = include_str!("../../src/acp/artifact-commands.html");
-const TOOLS_HTML: &str = include_str!("../../src/acp/artifact-tools.html");
-const TERMCTRL_HTML: &str = include_str!("../../src/acp/artifact-termctrl.html");
-const HURL_HTML: &str = include_str!("../../src/acp/artifact-hurl.html");
-const TIMELINE_HTML: &str = include_str!("../../src/acp/artifact-timeline.html");
-const ACP_WIRE_HTML: &str = include_str!("../../src/acp/artifact-acpwire.html");
-
 pub(crate) fn secured_json_response<T: Serialize>(status: StatusCode, payload: T) -> Response {
     let mut response = (status, Json(payload)).into_response();
     response.headers_mut().insert(
@@ -3136,7 +3266,7 @@ fn termctrl_token_matches(state: &HookServerState, token: &str) -> bool {
     constant_time_token_eq(token, state.hook_server.termctrl_monitor.token())
 }
 
-fn constant_time_token_eq(candidate: &str, expected: &str) -> bool {
+pub(crate) fn constant_time_token_eq(candidate: &str, expected: &str) -> bool {
     if candidate.len() != expected.len() {
         return false;
     }
@@ -3155,7 +3285,7 @@ async fn handle_termctrl_page(
     if !termctrl_token_matches(&state, &token) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    html_response(TERMCTRL_HTML)
+    app_page_response(AppPage::new("termctrl", "Terminal Control", Scheme::Dark))
 }
 
 /// GET /termctrl/api/{token}/sessions: normalized session inventory.
@@ -3241,32 +3371,6 @@ fn termctrl_log_response(chunk: TermctrlLogChunk) -> Response {
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
-/// GET /termctrl/assets/{name}: the harness cell grid (specs 324/326) bundled
-/// for the monitor page by `vite.loopback.config.ts` (spec 330). Static code
-/// with no session data, so it needs no capability token. Debug builds embed no
-/// `dist`, so Vite serves the sources, as for the GenUI gallery.
-async fn handle_termctrl_asset(
-    AxumState(state): AxumState<Arc<HookServerState>>,
-    Path(name): Path<String>,
-) -> Response {
-    let (built, source) = match name.as_str() {
-        "cell-grid.js" => ("loopback/cell-grid.js", "src/acp/loopback-cell-grid.ts"),
-        "cell-grid.css" => ("loopback/cell-grid.css", "src/acp/cell-grid.css"),
-        _ => return StatusCode::NOT_FOUND.into_response(),
-    };
-    if cfg!(debug_assertions) {
-        // `localhost`, not 127.0.0.1: Vite binds `localhost`, which can be
-        // IPv6-only (`[::1]:1420`); the browser tries both addresses.
-        return Response::builder()
-            .status(StatusCode::TEMPORARY_REDIRECT)
-            .header(header::LOCATION, format!("http://localhost:1420/{source}"))
-            .header(header::CACHE_CONTROL, "no-store")
-            .body(Body::empty())
-            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
-    }
-    frontend_dist_asset(&state.app_handle, built)
-}
-
 fn acp_wire_token_matches(state: &HookServerState, token: &str) -> bool {
     constant_time_token_eq(token, state.hook_server.acp_wire.token())
 }
@@ -3279,7 +3383,7 @@ async fn handle_acp_wire_page(
     if !acp_wire_token_matches(&state, &token) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    html_response(ACP_WIRE_HTML)
+    app_page_response(AppPage::new("acp-wire", "ACP wire", Scheme::Dark))
 }
 
 /// GET /acp-wire/{token}/message/{seq}: the same page in full-page message mode.
@@ -3291,7 +3395,7 @@ async fn handle_acp_wire_message_page(
     if !acp_wire_token_matches(&state, &token) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    html_response(ACP_WIRE_HTML)
+    app_page_response(AppPage::new("acp-wire", "ACP wire", Scheme::Dark))
 }
 
 /// GET /acp-wire/{token}/summary: ring aggregates.
@@ -3401,7 +3505,7 @@ async fn handle_hurl_page(
     if hurl_session(&state, &token).is_none() {
         return StatusCode::NOT_FOUND.into_response();
     }
-    html_response(HURL_HTML)
+    app_page_response(AppPage::new("hurl", "Hurl", Scheme::Dark))
 }
 
 /// GET /hurl/api/{token}/listing
@@ -3670,7 +3774,7 @@ async fn handle_hurl_state_put(
 
 /// GET /dashboard — fixed external-browser lane monitor page (spec 168 pivot).
 async fn handle_dashboard() -> Response {
-    html_response(DASHBOARD_HTML)
+    app_page_response(AppPage::new("dashboard", "Lane monitor", Scheme::Dark))
 }
 
 /// GET /telemetry — read-only snapshots for all live harness dashboards.
@@ -3688,31 +3792,24 @@ async fn handle_telemetry(AxumState(state): AxumState<Arc<HookServerState>>) -> 
 
 /// GET /gallery — fixed external-browser artifact gallery page.
 async fn handle_gallery() -> Response {
-    html_response(GALLERY_HTML)
+    app_page_response(AppPage::new("gallery", "Artifacts", Scheme::Dark))
 }
 
-/// Spec 313: the browser gallery uses the same bundled GenUI renderer as the app.
-/// Vite serves its source in dev; release assets come from Tauri's frontendDist.
-async fn handle_genui_gallery(AxumState(state): AxumState<Arc<HookServerState>>) -> Response {
-    if cfg!(debug_assertions) {
-        return Response::builder()
-            .status(StatusCode::TEMPORARY_REDIRECT)
-            .header(header::LOCATION, "http://127.0.0.1:1420/genui-gallery/")
-            .header(header::CACHE_CONTROL, "no-store")
-            .body(Body::empty())
-            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
-    }
-    frontend_dist_asset(&state.app_handle, "genui-gallery/index.html")
-}
+/// The gallery's own CSP (spec 313): self-hosted script, inline styles for the
+/// catalog renderers, same-origin fetch for `theme.json`. Debug builds load the
+/// entry and its imports from the Vite dev server and keep its HMR socket.
+const GENUI_GALLERY_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'";
+const GENUI_GALLERY_DEV_CSP: &str = "default-src 'none'; script-src 'self' http://localhost:1420; style-src 'self' 'unsafe-inline' http://localhost:1420; img-src 'self' data: http://localhost:1420; font-src 'self' data: http://localhost:1420; connect-src 'self' http://localhost:1420 ws://localhost:1420; object-src 'none'; base-uri 'none'";
 
-async fn handle_genui_gallery_asset(
-    AxumState(state): AxumState<Arc<HookServerState>>,
-    Path(name): Path<String>,
-) -> Response {
-    if !valid_genui_gallery_asset_name(&name) {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    frontend_dist_asset(&state.app_handle, &format!("genui-gallery/assets/{name}"))
+/// GET /genui-gallery — every GenUI component, live, through the app's own
+/// compiler and renderer (spec 313; a loopback app page since spec 341).
+async fn handle_genui_gallery() -> Response {
+    let csp = if cfg!(debug_assertions) {
+        GENUI_GALLERY_DEV_CSP
+    } else {
+        GENUI_GALLERY_CSP
+    };
+    app_page_response(AppPage::new("genui", "GenUI components", Scheme::Dark).with_csp(csp))
 }
 
 /// GET /genui-gallery/theme.json — the app's resolved theme plus the configured
@@ -3746,16 +3843,7 @@ async fn handle_genui_gallery_theme(AxumState(state): AxumState<Arc<HookServerSt
     resp
 }
 
-fn valid_genui_gallery_asset_name(name: &str) -> bool {
-    !name.is_empty()
-        && name != "."
-        && name != ".."
-        && name
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-}
-
-fn frontend_dist_asset(app: &AppHandle, path: &str) -> Response {
+pub(crate) fn frontend_dist_asset(app: &AppHandle, path: &str) -> Response {
     let resolver = app.asset_resolver();
     // In release, get() falls back to the app's index.html for a missing key.
     // Check the exact embedded path before letting that fallback turn a 404 into 200.
@@ -3785,7 +3873,7 @@ fn frontend_dist_asset(app: &AppHandle, path: &str) -> Response {
 
 /// GET /timeline — read-only project decision/requirement history (spec 253).
 async fn handle_timeline() -> Response {
-    html_response(TIMELINE_HTML)
+    app_page_response(AppPage::new("timeline", "Timeline", Scheme::Auto).with_lang("th"))
 }
 
 /// GET /timeline.json?harness=<id> — bounded local records for one Harness
@@ -3806,7 +3894,7 @@ async fn handle_timeline_json(
 
 /// GET /commands — fixed external-browser built-in `#` command reference (spec 185).
 async fn handle_commands() -> Response {
-    html_response(COMMANDS_HTML)
+    app_page_response(AppPage::new("commands", "Commands", Scheme::Dark))
 }
 
 /// GET /commands.json — the command manifest the frontend pushed at register.
@@ -3826,7 +3914,7 @@ async fn handle_commands_json(AxumState(state): AxumState<Arc<HookServerState>>)
 
 /// GET /tools — fixed external-browser built-in MCP tool reference (spec 186).
 async fn handle_tools() -> Response {
-    html_response(TOOLS_HTML)
+    app_page_response(AppPage::new("tools", "MCP tools", Scheme::Dark))
 }
 
 /// spec 186: reference-page category per built-in MCP tool. Page-only — the
@@ -4051,7 +4139,7 @@ async fn handle_analysis(
     let issue_ref = format!("{}/{}/{}", bundle.owner, bundle.repo, bundle.number);
     let tabs = render_analyses_tabs(&projects, &project.project_id);
     let nav = render_analyses_nav(project, &issue_ref);
-    render_analyses_page(&bundle.issue_key, &tabs, Some(&nav), &content)
+    render_analyses_page(&bundle.issue_key, &tabs, &nav, &content)
 }
 
 /// GET /analysis-asset?harness=<id>&path=<rel> — serve a whitelisted image from
@@ -4167,7 +4255,7 @@ async fn handle_review(
         .unwrap_or_default();
     let content = render_review_bundle(&harness_id, &project_dir, bundle, sel_file);
     let nav = render_reviews_nav(&per, &harness_id, &bundle.slug);
-    render_reviews_page(&bundle.title, Some(&nav), &content)
+    render_reviews_page(&bundle.title, &nav, &content)
 }
 
 /// GET /review-asset?harness=<id>&path=<rel> — serve a whitelisted image from a
@@ -7682,9 +7770,10 @@ fn split_doc_rel(rel: &str) -> (&str, &str) {
     }
 }
 
-/// Header of the index: one pill per harness whose working dir has docs, the
-/// active one highlighted. Rendered only when more than one harness is
-/// available — with a single lane the flat list needs no chrome above it.
+/// Header of the index: one kit tab (`nav.lb-tabs`, spec 341) per harness whose
+/// working dir has docs, the active one `aria-selected`. Rendered only when more
+/// than one harness is available — with a single lane the flat list needs no
+/// chrome above it.
 fn render_docs_harness_bar(
     harnesses: &[(String, usize)],
     selected_harness: &str,
@@ -7693,21 +7782,23 @@ fn render_docs_harness_bar(
     if harnesses.len() < 2 {
         return String::new();
     }
-    let mut out = String::from("<nav class=\"harness-bar\">");
+    let mut out = String::from("<nav class=\"lb-tabs\" aria-label=\"Harnesses\">");
     for (harness_id, count) in harnesses {
-        out.push_str("<a class=\"harness-bar__pill");
-        if harness_id == selected_harness {
-            out.push_str(" is-active");
-        }
+        out.push_str("<a class=\"lb-tabs__tab\" aria-selected=\"");
+        out.push_str(if harness_id == selected_harness {
+            "true"
+        } else {
+            "false"
+        });
         out.push_str("\" href=\"");
         out.push_str(route);
         out.push_str("?harness=");
         out.push_str(&url_encode(harness_id));
-        out.push_str("\">");
+        out.push_str("\"><span class=\"lb-tabs__label\">");
         out.push_str(&html_escape(harness_id));
-        out.push_str("<span class=\"harness-bar__count\">");
+        out.push_str("</span><b class=\"lb-tabs__count\">");
         out.push_str(&count.to_string());
-        out.push_str("</span></a>");
+        out.push_str("</b></a>");
     }
     out.push_str("</nav>");
     out
@@ -7783,28 +7874,29 @@ fn render_journal_list(harness_id: &str, notes: &[JournalNote]) -> String {
             .to_string();
     }
 
-    let mut out = String::from("<div class=\"docs-filter\"><input class=\"docs-filter__input\" id=\"docs-filter\" type=\"search\" placeholder=\"filter days — type to narrow, ↑↓ to move, enter to open\" autocomplete=\"off\" autocorrect=\"off\" spellcheck=\"false\" autofocus><span class=\"docs-filter__count\" id=\"docs-count\">");
-    out.push_str(&notes.len().to_string());
-    out.push_str(" days</span></div>");
+    // The page module mounts the kit SearchFilter into this slot (spec 341).
+    let mut out = String::from("<div class=\"lb-docs__filter\" id=\"docs-filter\" data-placeholder=\"filter days — type to narrow, ↑↓ to move, enter to open\" data-unit=\"days\"></div>");
 
-    out.push_str("<ul class=\"browser\" id=\"docs-list\">");
+    out.push_str("<ul class=\"lb-docs__list\" id=\"docs-list\">");
     for note in notes {
-        out.push_str("<li class=\"browser__item browser__item--file\" data-path=\"");
+        out.push_str("<li class=\"lb-docs__item\" data-path=\"");
         out.push_str(&html_escape(&note.date.to_lowercase()));
-        out.push_str("\"><a target=\"_blank\" rel=\"noopener\" href=\"/doc?harness=");
+        out.push_str(
+            "\"><a class=\"lb-docs__link\" target=\"_blank\" rel=\"noopener\" href=\"/doc?harness=",
+        );
         out.push_str(&url_encode(harness_id));
         out.push_str("&amp;path=");
         out.push_str(&url_encode(&note.rel));
-        out.push_str("\"><span class=\"browser__icon\">◆</span><span class=\"browser__name\">");
+        out.push_str("\"><span class=\"lb-docs__icon\">◆</span><span class=\"lb-docs__name\">");
         out.push_str(&html_escape(&note.date));
         if note.generated_copy {
             // The canonical name is a note the human edited; say which file this
             // row actually opens rather than showing two identical-looking days.
-            out.push_str("<span class=\"browser__dir\"> · generated copy</span>");
+            out.push_str("<span class=\"lb-docs__dir\"> · generated copy</span>");
         }
         out.push_str("</span>");
         if let Some((ms, label)) = note.modified.and_then(format_doc_mtime) {
-            out.push_str("<time class=\"browser__date\" data-ts=\"");
+            out.push_str("<time class=\"lb-docs__date\" data-ts=\"");
             out.push_str(&ms.to_string());
             out.push_str("\">");
             out.push_str(&html_escape(&label));
@@ -7814,14 +7906,14 @@ fn render_journal_list(harness_id: &str, notes: &[JournalNote]) -> String {
     }
     out.push_str("</ul>");
     out.push_str(
-        "<p class=\"browser__empty\" id=\"docs-empty\" hidden>No day matches that filter.</p>",
+        "<p class=\"lb-docs__empty\" id=\"docs-empty\" hidden>No day matches that filter.</p>",
     );
     out
 }
 
-/// The index itself: a filter box plus EVERY `.md` file in the harness working
+/// The index itself: a filter slot plus EVERY `.md` file in the harness working
 /// dir as one flat list of full relative paths (each opens `/doc` in a new tab).
-/// `data-path` carries the lowercased path the page script filters on; the
+/// `data-path` carries the lowercased path the page module filters on; the
 /// server does no filtering, so the list stays a single cacheless render.
 fn render_docs_list(harness_id: &str, entries: &[DocEntry]) -> String {
     if entries.is_empty() {
@@ -7829,29 +7921,30 @@ fn render_docs_list(harness_id: &str, entries: &[DocEntry]) -> String {
             .to_string();
     }
 
-    let mut out = String::from("<div class=\"docs-filter\"><input class=\"docs-filter__input\" id=\"docs-filter\" type=\"search\" placeholder=\"filter paths — type to narrow, ↑↓ to move, enter to open\" autocomplete=\"off\" autocorrect=\"off\" spellcheck=\"false\" autofocus><span class=\"docs-filter__count\" id=\"docs-count\">");
-    out.push_str(&entries.len().to_string());
-    out.push_str(" files</span></div>");
+    // The page module mounts the kit SearchFilter into this slot (spec 341).
+    let mut out = String::from("<div class=\"lb-docs__filter\" id=\"docs-filter\" data-placeholder=\"filter paths — type to narrow, ↑↓ to move, enter to open\" data-unit=\"files\"></div>");
 
-    out.push_str("<ul class=\"browser\" id=\"docs-list\">");
+    out.push_str("<ul class=\"lb-docs__list\" id=\"docs-list\">");
     for entry in entries {
         let (dir, name) = split_doc_rel(&entry.rel);
-        out.push_str("<li class=\"browser__item browser__item--file\" data-path=\"");
+        out.push_str("<li class=\"lb-docs__item\" data-path=\"");
         out.push_str(&html_escape(&entry.rel.to_lowercase()));
-        out.push_str("\"><a target=\"_blank\" rel=\"noopener\" href=\"/doc?harness=");
+        out.push_str(
+            "\"><a class=\"lb-docs__link\" target=\"_blank\" rel=\"noopener\" href=\"/doc?harness=",
+        );
         out.push_str(&url_encode(harness_id));
         out.push_str("&amp;path=");
         out.push_str(&url_encode(&entry.rel));
-        out.push_str("\"><span class=\"browser__icon\">◆</span><span class=\"browser__name\">");
+        out.push_str("\"><span class=\"lb-docs__icon\">◆</span><span class=\"lb-docs__name\">");
         if !dir.is_empty() {
-            out.push_str("<span class=\"browser__dir\">");
+            out.push_str("<span class=\"lb-docs__dir\">");
             out.push_str(&html_escape(dir));
             out.push_str("</span>");
         }
         out.push_str(&html_escape(name));
         out.push_str("</span>");
         if let Some((ms, label)) = entry.modified.and_then(format_doc_mtime) {
-            out.push_str("<time class=\"browser__date\" data-ts=\"");
+            out.push_str("<time class=\"lb-docs__date\" data-ts=\"");
             out.push_str(&ms.to_string());
             out.push_str("\">");
             out.push_str(&html_escape(&label));
@@ -7861,7 +7954,7 @@ fn render_docs_list(harness_id: &str, entries: &[DocEntry]) -> String {
     }
     out.push_str("</ul>");
     out.push_str(
-        "<p class=\"browser__empty\" id=\"docs-empty\" hidden>No path matches that filter.</p>",
+        "<p class=\"lb-docs__empty\" id=\"docs-empty\" hidden>No path matches that filter.</p>",
     );
     out
 }
@@ -8052,21 +8145,38 @@ fn discover_analysis_bundles(project_dir: &str) -> Vec<AnalysisBundle> {
     bundles
 }
 
-fn render_analyses_page(title: &str, tabs: &str, tree: Option<&str>, content: &str) -> Response {
-    let escaped_title = html_escape(title);
-    let nav = match tree {
-        Some(tree) => format!("<nav class=\"tree-pane\">{tree}</nav>"),
-        None => String::new(),
+/// Spec 341 — the two-pane reader body shared by analyses and reviews: an
+/// optional toolbar, then the kit tree-nav pane beside the prose column (the
+/// pane is dropped when there is no tree). The page module (`src/loopback/
+/// surfaces/<surface>`) hydrates it; `data-title` feeds the shell's title.
+fn reader_split_body(
+    surface: &str,
+    title: &str,
+    toolbar: &str,
+    tree_label: &str,
+    tree: &str,
+    content: &str,
+) -> String {
+    let article = format!("<article class=\"lb-prose\">{content}</article>");
+    let panes = if tree.is_empty() {
+        article
+    } else {
+        format!(
+            "<div class=\"lb-split\"><nav class=\"lb-tree-nav\" aria-label=\"{tree_label}\">{tree}</nav>{article}</div>"
+        )
     };
-    let html = ANALYSES_HTML
-        .replace("<!--ANALYSES_TITLE-->", &escaped_title)
-        .replace("<!--ANALYSES_TABS-->", tabs)
-        .replace("<nav class=\"tree-pane\"><!--ANALYSES_TREE--></nav>", &nav)
-        .replace(
-            "<article class=\"doc\"><!--ANALYSES_CONTENT--></article>",
-            &format!("<article class=\"doc\">{content}</article>"),
-        );
-    html_response(html)
+    format!(
+        "<div class=\"lb-page lb-page--wide lb-{surface}\" data-title=\"{}\">{toolbar}{panes}</div>",
+        html_escape(title)
+    )
+}
+
+fn render_analyses_page(title: &str, tabs: &str, tree: &str, content: &str) -> Response {
+    app_page_response(
+        AppPage::new("analyses", title, Scheme::Auto).with_body(reader_split_body(
+            "analyses", title, tabs, "Issues", tree, content,
+        )),
+    )
 }
 
 fn analysis_project_label(projects: &[AnalysisProject], project: &AnalysisProject) -> String {
@@ -8082,31 +8192,39 @@ fn analysis_project_label(projects: &[AnalysisProject], project: &AnalysisProjec
     }
 }
 
+/// Project tabs: kit tabs (`nav.lb-tabs`) as plain links; the page module binds
+/// `[`/`]`/`1`–`9` to them.
 fn render_analyses_tabs(projects: &[AnalysisProject], selected_id: &str) -> String {
-    let mut out = String::from("<nav class=\"project-tabs\" aria-label=\"Projects\">");
-    for project in projects {
-        out.push_str("<a class=\"project-tab");
-        if project.project_id == selected_id {
-            out.push_str(" is-active");
-        }
+    let mut out = String::from("<nav class=\"lb-tabs lb-analyses__tabs\" aria-label=\"Projects\">");
+    for (index, project) in projects.iter().enumerate() {
+        let selected = project.project_id == selected_id;
+        out.push_str("<a class=\"lb-tabs__tab\" aria-selected=\"");
+        out.push_str(if selected { "true" } else { "false" });
         out.push_str("\" href=\"/analyses?project=");
         out.push_str(&url_encode(&project.project_id));
-        if project.project_id == selected_id {
+        if selected {
             out.push_str("\" aria-current=\"page");
         }
-        out.push_str("\">");
+        out.push_str("\"><span class=\"lb-tabs__label\">");
         out.push_str(&html_escape(&analysis_project_label(projects, project)));
-        out.push_str(" <span>");
+        out.push_str("</span><b class=\"lb-tabs__count\">");
         out.push_str(&project.bundles.len().to_string());
-        out.push_str("</span></a>");
+        out.push_str("</b>");
+        if index < 9 {
+            out.push_str("<span class=\"lb-tabs__key\">");
+            out.push_str(&(index + 1).to_string());
+            out.push_str("</span>");
+        }
+        out.push_str("</a>");
     }
     out.push_str("</nav>");
     out
 }
 
-/// Sidebar: repository groups and issue links within the selected project.
+/// Sidebar (kit tree-nav markup): repository groups and issue links within the
+/// selected project.
 fn render_analyses_nav(project: &AnalysisProject, sel_issue: &str) -> String {
-    let mut out = String::from("<ul class=\"tree\">");
+    let mut out = String::from("<ul class=\"lb-tree\">");
     let mut cur_repo = String::new();
     for bundle in &project.bundles {
         let repo_full = format!("{}/{}", bundle.owner, bundle.repo);
@@ -8115,15 +8233,14 @@ fn render_analyses_nav(project: &AnalysisProject, sel_issue: &str) -> String {
                 out.push_str("</ul></li>");
             }
             cur_repo = repo_full.clone();
-            out.push_str("<li class=\"tree-group\"><div class=\"tree-group__label\">");
+            out.push_str("<li class=\"lb-tree__group\"><div class=\"lb-tree__label\">");
             out.push_str(&html_escape(&repo_full));
-            out.push_str("</div><ul class=\"tree\">");
+            out.push_str("</div><ul class=\"lb-tree__items\">");
         }
         let issue_ref = format!("{}/{}/{}", bundle.owner, bundle.repo, bundle.number);
-        let active = issue_ref == sel_issue;
-        out.push_str("<li class=\"tree-file\"><a");
-        if active {
-            out.push_str(" class=\"is-active\"");
+        out.push_str("<li class=\"lb-tree__item\"><a class=\"lb-tree__link\"");
+        if issue_ref == sel_issue {
+            out.push_str(" aria-current=\"page\"");
         }
         out.push_str(" href=\"/analysis?project=");
         out.push_str(&url_encode(&project.project_id));
@@ -8131,7 +8248,7 @@ fn render_analyses_nav(project: &AnalysisProject, sel_issue: &str) -> String {
         out.push_str(&url_encode(&issue_ref));
         out.push_str("\">#");
         out.push_str(&html_escape(&bundle.number));
-        out.push_str(" <span class=\"tree-file__count\">");
+        out.push_str(" <span class=\"lb-tree__count\">");
         out.push_str(&html_escape(&analysis_count_label(bundle.md_files.len())));
         out.push_str("</span></a></li>");
     }
@@ -8226,13 +8343,16 @@ fn render_analysis_bundle(
     let mut content = String::new();
     if bundle.md_files.len() > 1 {
         let issue_ref = format!("{}/{}/{}", bundle.owner, bundle.repo, bundle.number);
-        content.push_str("<nav class=\"file-strip\">");
+        content.push_str("<nav class=\"lb-tabs\" aria-label=\"Files\">");
         for rel in &bundle.md_files {
             let name = rel.rsplit('/').next().unwrap_or(rel);
-            content.push_str("<a");
-            if Some(rel.as_str()) == sel_file {
-                content.push_str(" class=\"is-active\"");
-            }
+            content.push_str("<a class=\"lb-tabs__tab\" aria-selected=\"");
+            content.push_str(if Some(rel.as_str()) == sel_file {
+                "true"
+            } else {
+                "false"
+            });
+            content.push('"');
             content.push_str(" href=\"/analysis?project=");
             content.push_str(&url_encode(project_id));
             content.push_str("&amp;issue=");
@@ -8904,57 +9024,41 @@ pub(crate) fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
-/// Render the `/reviews` shell: title, sidebar, content. Same `<!--SLOT-->`
-/// substitution as the analyses shell — the wrapping element is replaced along
-/// with its comment, so the wrapper is re-emitted with the content inside.
-fn render_reviews_page(title: &str, tree: Option<&str>, content: &str) -> Response {
-    html_response(reviews_page_html(title, tree, content))
+/// Render a `/reviews` or `/review` page (spec 341): the loopback app document
+/// with the tree-nav pane and the prose column as its body.
+fn render_reviews_page(title: &str, tree: &str, content: &str) -> Response {
+    app_page_response(
+        AppPage::new("reviews", title, Scheme::Auto).with_body(reader_split_body(
+            "reviews", title, "", "Reviews", tree, content,
+        )),
+    )
 }
 
-/// The slot substitution, split out from the `Response` wrapper so a test can pin
-/// all three markers without reading an async body. This pattern fails SILENTLY
-/// when a marker drifts between the HTML file and the string here — the page still
-/// renders 200, just with an empty body — so it is worth a test.
-fn reviews_page_html(title: &str, tree: Option<&str>, content: &str) -> String {
-    let escaped_title = html_escape(title);
-    let nav = match tree {
-        Some(tree) => format!("<nav class=\"tree-pane\">{tree}</nav>"),
-        None => String::new(),
-    };
-    REVIEWS_HTML
-        .replace("<!--REVIEWS_TITLE-->", &escaped_title)
-        .replace("<nav class=\"tree-pane\"><!--REVIEWS_TREE--></nav>", &nav)
-        .replace(
-            "<article class=\"doc\"><!--REVIEWS_CONTENT--></article>",
-            &format!("<article class=\"doc\">{content}</article>"),
-        )
-}
-
-/// Sidebar: every harness with bundles, newest first, each a link to `/review`.
-/// The current bundle gets `is-active`.
+/// Sidebar (kit tree-nav markup, stacked counts): every harness with bundles,
+/// newest first, each a link to `/review`. The current bundle is
+/// `aria-current="page"`.
 fn render_reviews_nav(
     per: &[(String, String, Vec<ReviewBundleInfo>)],
     sel_harness: &str,
     sel_slug: &str,
 ) -> String {
     let multi = per.iter().filter(|(_, _, b)| !b.is_empty()).count() > 1;
-    let mut out = String::from("<ul class=\"tree\">");
+    let mut out = String::from("<ul class=\"lb-tree lb-tree--stacked\">");
     for (harness_id, _project_dir, bundles) in per {
         if bundles.is_empty() {
             continue;
         }
-        out.push_str("<li class=\"tree-group\"><div class=\"tree-group__label\">");
+        out.push_str("<li class=\"lb-tree__group\"><div class=\"lb-tree__label\">");
         out.push_str(&html_escape(&if multi {
             format!("{harness_id} · {} reviews", bundles.len())
         } else {
             format!("{} reviews", bundles.len())
         }));
-        out.push_str("</div><ul class=\"tree\">");
+        out.push_str("</div><ul class=\"lb-tree__items\">");
         for bundle in bundles {
-            let active = harness_id == sel_harness && bundle.slug == sel_slug;
-            out.push_str("<li class=\"tree-file\"><a");
-            if active {
-                out.push_str(" class=\"is-active\"");
+            out.push_str("<li class=\"lb-tree__item\"><a class=\"lb-tree__link\"");
+            if harness_id == sel_harness && bundle.slug == sel_slug {
+                out.push_str(" aria-current=\"page\"");
             }
             out.push_str(" href=\"/review?harness=");
             out.push_str(&url_encode(harness_id));
@@ -8962,7 +9066,7 @@ fn render_reviews_nav(
             out.push_str(&url_encode(&bundle.slug));
             out.push_str("\">");
             out.push_str(&html_escape(&bundle.title));
-            out.push_str("<span class=\"tree-file__count\">");
+            out.push_str("<span class=\"lb-tree__count\">");
             out.push_str(&html_escape(&review_meta_label(bundle)));
             out.push_str("</span></a></li>");
         }
@@ -9065,7 +9169,7 @@ fn render_review_bundle(
     // spec 217 — both files live on ONE page, so the strip scrolls rather than
     // navigating. `file=` still selects which entry is marked, so existing links
     // (and the index rows) keep meaning what they meant.
-    content.push_str("<nav class=\"file-strip\">");
+    content.push_str("<nav class=\"lb-tabs\" aria-label=\"Files\">");
     for (name, anchor, present) in [
         ("review", "rv-review", true),
         ("response", "rv-answers", has_response),
@@ -9073,11 +9177,9 @@ fn render_review_bundle(
         if !present {
             continue;
         }
-        content.push_str("<a");
-        if name == sel_file {
-            content.push_str(" class=\"is-active\"");
-        }
-        content.push_str(" href=\"#");
+        content.push_str("<a class=\"lb-tabs__tab\" aria-selected=\"");
+        content.push_str(if name == sel_file { "true" } else { "false" });
+        content.push_str("\" href=\"#");
         content.push_str(anchor);
         content.push_str("\">");
         content.push_str(name);
@@ -9697,17 +9799,15 @@ fn render_rv_diff(body: &str) -> String {
     out
 }
 
-/// Render the docs shell. Both surfaces are single-pane: the index is a flat
-/// list (spec 171 rev 4) and `/doc` is a clean reader, so there is no sidebar.
+/// Render a docs page (`/docs`, `/journal`, `/doc`) as a loopback app document
+/// (spec 341). Single-pane: the index is a flat list (spec 171 rev 4) and
+/// `/doc` is a clean reader. The body sits in the served document, so raw
+/// HTML/JS in the markdown still runs (ADR-0010 rev 2).
 fn render_docs_page(title: &str, content: &str) -> Response {
-    let escaped_title = html_escape(title);
-    let html = DOCS_HTML
-        .replace("<!--DOCS_TITLE-->", &escaped_title)
-        .replace(
-            "<article class=\"doc\"><!--DOCS_CONTENT--></article>",
-            &format!("<article class=\"doc\">{content}</article>"),
-        );
-    html_response(html)
+    app_page_response(
+        AppPage::new("docs", title, Scheme::Auto)
+            .with_body(reader_split_body("docs", title, "", "", "", content)),
+    )
 }
 
 pub(crate) fn html_response(html: impl Into<Body>) -> Response {
@@ -10208,6 +10308,23 @@ pub fn start(
             });
 
             let app = Router::new()
+                .route("/", get(crate::loopback_app::handle_home))
+                .route(
+                    "/app/session/{token}",
+                    get(crate::loopback_app::handle_session),
+                )
+                .route(
+                    "/app/assets/{*name}",
+                    get(crate::loopback_app::handle_app_asset),
+                )
+                .route(
+                    "/app/api/directory",
+                    get(crate::loopback_app::handle_directory),
+                )
+                .route(
+                    "/app/api/{token}/capabilities",
+                    get(crate::loopback_app::handle_capabilities),
+                )
                 .route("/hook", post(handle_hook))
                 .route(
                     "/mcp/harness/{harness_id}/lane/{lane_label}",
@@ -10221,10 +10338,6 @@ pub fn start(
                 .route("/telemetry", get(handle_telemetry))
                 .route("/gallery", get(handle_gallery))
                 .route("/genui-gallery", get(handle_genui_gallery))
-                .route(
-                    "/genui-gallery/assets/{name}",
-                    get(handle_genui_gallery_asset),
-                )
                 .route(
                     "/genui-gallery/theme.json",
                     get(handle_genui_gallery_theme),
@@ -10246,7 +10359,6 @@ pub fn start(
                     get(handle_termctrl_screen),
                 )
                 .route("/termctrl/api/{token}/log/{name}", get(handle_termctrl_log))
-                .route("/termctrl/assets/{name}", get(handle_termctrl_asset))
                 .route("/acp-wire/{token}", get(handle_acp_wire_page))
                 .route("/acp-wire/{token}/summary", get(handle_acp_wire_summary))
                 .route("/acp-wire/{token}/events", get(handle_acp_wire_events))
@@ -11373,6 +11485,11 @@ mod tests {
             "ok"
         }
         let _app: Router = Router::new()
+            .route("/", get(ok))
+            .route("/app/session/{token}", get(ok))
+            .route("/app/assets/{*name}", get(ok))
+            .route("/app/api/directory", get(ok))
+            .route("/app/api/{token}/capabilities", get(ok))
             .route("/hook", post(ok))
             .route(
                 "/mcp/harness/{harness_id}/lane/{lane_label}",
@@ -11383,7 +11500,6 @@ mod tests {
             .route("/telemetry", get(ok))
             .route("/gallery", get(ok))
             .route("/genui-gallery", get(ok))
-            .route("/genui-gallery/assets/{name}", get(ok))
             .route("/genui-gallery/theme.json", get(ok))
             .route("/artifacts", get(ok))
             .route("/timeline", get(ok))
@@ -11396,7 +11512,6 @@ mod tests {
             .route("/termctrl/api/{token}/sessions", get(ok))
             .route("/termctrl/api/{token}/screen/{name}", get(ok))
             .route("/termctrl/api/{token}/log/{name}", get(ok))
-            .route("/termctrl/assets/{name}", get(ok))
             .route("/acp-wire/{token}", get(ok))
             .route("/acp-wire/{token}/summary", get(ok))
             .route("/acp-wire/{token}/events", get(ok))
@@ -11434,22 +11549,6 @@ mod tests {
                 Arc::new(crate::e2e_web::E2eWebSessions::default()),
                 Arc::new(crate::e2e::E2eState::default()),
             ));
-    }
-
-    #[test]
-    fn genui_gallery_asset_names_stay_in_one_directory() {
-        assert!(valid_genui_gallery_asset_name("gallery-C4d2.js"));
-        assert!(valid_genui_gallery_asset_name("gallery.8b3a.css"));
-        for name in [
-            "",
-            ".",
-            "..",
-            "../index.html",
-            "nested/file.js",
-            "file%2Fpath.js",
-        ] {
-            assert!(!valid_genui_gallery_asset_name(name), "accepted {name:?}");
-        }
     }
 
     #[test]
@@ -11527,42 +11626,6 @@ mod tests {
         assert_eq!(
             server.command_manifest(),
             Some(json!([{ "name": "debby" }]))
-        );
-    }
-
-    #[test]
-    fn timeline_page_is_read_only_and_uses_safe_text_rendering() {
-        assert!(TIMELINE_HTML.contains("/timeline.json?harness="));
-        assert!(TIMELINE_HTML.contains("textContent"));
-        assert!(TIMELINE_HTML.contains("event.evidenceExcerpt"));
-        assert!(TIMELINE_HTML.contains("event.instructionExcerpt"));
-        assert!(TIMELINE_HTML.contains("event.key === ' '"));
-        assert!(TIMELINE_HTML.contains("event.key === 'i'"));
-        assert!(TIMELINE_HTML.contains("aria-expanded"));
-        assert!(TIMELINE_HTML.contains("detailMode"));
-        // spec 266: made_by is shown as recorded; open conflict pairs mark the
-        // time cell only and announce the pair to screen readers.
-        assert!(!TIMELINE_HTML.contains("isGenericActor"));
-        assert!(TIMELINE_HTML.contains(".event.conflict .event-time"));
-        assert!(TIMELINE_HTML.contains("มีบันทึกอีกข้อที่ให้คำสั่งต่างกัน"));
-        assert!(!TIMELINE_HTML.contains("method: 'POST'"));
-        assert!(TIMELINE_HTML.contains("<html lang=\"th\">"));
-        assert!(TIMELINE_HTML.contains("เฉพาะเครื่องนี้"));
-        assert!(TIMELINE_HTML.contains("toLocaleDateString('th-TH'"));
-        assert!(!TIMELINE_HTML.contains("event.kind"));
-        assert!(!TIMELINE_HTML.contains("border-left:"));
-        assert!(!TIMELINE_HTML.contains("backdrop-filter"));
-        assert!(!TIMELINE_HTML.contains("setInterval("));
-        let marker = "\n  .event-summary {";
-        let start = TIMELINE_HTML.find(marker).expect("event-summary CSS rule") + marker.len();
-        let summary_rule = TIMELINE_HTML[start..]
-            .split('}')
-            .next()
-            .expect("event-summary CSS rule body");
-        assert!(
-            !summary_rule.contains("text-overflow: ellipsis")
-                && !summary_rule.contains("white-space: nowrap"),
-            "collapsed event titles must wrap in full, not ellipsize: {summary_rule}"
         );
     }
 
@@ -11654,7 +11717,7 @@ mod tests {
             "deep file must link by full path: {html}"
         );
         assert!(
-            html.contains("<span class=\"browser__dir\">docs/adr/</span>0001-peer.md"),
+            html.contains("<span class=\"lb-docs__dir\">docs/adr/</span>0001-peer.md"),
             "path prefix must render muted: {html}"
         );
         assert!(
@@ -13175,7 +13238,7 @@ mod git_state_tests {
         assert!(nav.contains("acme/widget"), "sidebar groups by repo: {nav}");
         assert!(!nav.contains("hm-1"), "harness is not visible: {nav}");
         assert!(
-            nav.contains("class=\"is-active\""),
+            nav.contains("class=\"lb-tree__link\" aria-current=\"page\""),
             "current issue is highlighted: {nav}"
         );
         let _ = std::fs::remove_dir_all(&tmp);
@@ -13229,11 +13292,11 @@ mod git_state_tests {
     }
 
     #[tokio::test]
-    async fn render_analyses_page_substitutes_placeholders() {
+    async fn render_analyses_page_serves_the_reader_body() {
         let page = render_analyses_page(
             "Issue analyses · widget",
-            "<nav class=\"project-tabs\"></nav>",
-            Some("<ul class=\"tree\"></ul>"),
+            "<nav class=\"lb-tabs lb-analyses__tabs\"></nav>",
+            "<ul class=\"lb-tree\"></ul>",
             "<p>hi</p>",
         );
         let body = String::from_utf8(
@@ -13243,19 +13306,28 @@ mod git_state_tests {
                 .to_vec(),
         )
         .unwrap();
-        assert!(body.contains("<title>Issue analyses · widget</title>"));
-        assert!(body.contains("<nav class=\"project-tabs\"></nav>"));
-        assert!(body.contains("<p>hi</p>"));
+        assert!(body.contains("<title>Issue analyses · widget · Krypton</title>"));
+        assert!(body.contains("data-surface=\"analyses\""), "{body}");
+        assert!(body.contains("/app/assets/analyses.js"), "{body}");
         assert!(
-            body.contains("<ul class=\"tree\">"),
+            body.contains("data-title=\"Issue analyses · widget\"><nav class=\"lb-tabs lb-analyses__tabs\"></nav><div class=\"lb-split\">"),
+            "tabs sit above the two panes: {body}"
+        );
+        assert!(
+            body.contains("<nav class=\"lb-tree-nav\" aria-label=\"Issues\"><ul class=\"lb-tree\"></ul></nav>"),
             "tree injected: {body}"
         );
-        // The real placeholder tokens are fully replaced (the bare words survive
-        // in the shell's explanatory comment, exactly as the docs shell does).
-        assert!(!body.contains("<!--ANALYSES_CONTENT-->"));
-        assert!(!body.contains("<!--ANALYSES_TREE-->"));
-        assert!(!body.contains("<!--ANALYSES_TITLE-->"));
-        assert!(!body.contains("<!--ANALYSES_TABS-->"));
+        assert!(
+            body.contains("<article class=\"lb-prose\"><p>hi</p></article>"),
+            "{body}"
+        );
+
+        // No tree (no analyses yet): no empty pane beside the welcome text.
+        let bare = reader_split_body("analyses", "t", "", "Issues", "", "<p>none</p>");
+        assert!(
+            !bare.contains("lb-tree-nav") && !bare.contains("lb-split"),
+            "{bare}"
+        );
     }
 
     #[test]
@@ -13290,7 +13362,7 @@ mod git_state_tests {
 
         assert!(html.contains("root-cause.md"), "md filename header: {html}");
         assert!(
-            !html.contains("file-strip"),
+            !html.contains("aria-label=\"Files\""),
             "single-file bundle has no file strip: {html}"
         );
         assert!(html.contains("หัวข้อ"), "rendered md body: {html}");
@@ -13330,7 +13402,7 @@ mod git_state_tests {
         );
         // The strip lists every file with a file= link; the selected one is active.
         assert!(
-            html.contains("file-strip"),
+            html.contains("<nav class=\"lb-tabs\" aria-label=\"Files\">"),
             "multi-file strip shown: {html}"
         );
         assert!(
@@ -13342,8 +13414,9 @@ mod git_state_tests {
             "file navigation retains the project: {html}"
         );
         let active = html
-            .split("<a class=\"is-active\"")
+            .split("aria-selected=\"true\"")
             .nth(1)
+            .and_then(|rest| rest.split("</a>").next())
             .expect("one active strip entry");
         assert!(
             active.contains("file=root-cause.md"),
@@ -14144,32 +14217,60 @@ recommended: 2
         }
     }
 
-    /// The `include_str!` + `str::replace` shell pattern fails SILENTLY when a
-    /// marker drifts between the HTML file and the Rust replace string: the page
-    /// still renders 200, just with an empty body. Pin all three markers.
-    #[test]
-    fn reviews_shell_slots_are_substituted() {
-        let body = reviews_page_html("My Title", Some("<ul class=\"tree\">NAV</ul>"), "BODY");
+    async fn response_text(response: Response) -> String {
+        String::from_utf8(
+            axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap()
+    }
 
-        // No marker may survive into the served page.
-        for marker in [
-            "<!--REVIEWS_TITLE-->",
-            "<!--REVIEWS_TREE-->",
-            "<!--REVIEWS_CONTENT-->",
-        ] {
-            assert!(!body.contains(marker), "unsubstituted {marker}");
-        }
-        // Title lands in BOTH slots (`str::replace` is global): <title> + header.
-        assert_eq!(body.matches("My Title").count(), 2, "title slots: {body}");
-        // The wrappers survive with the content inside them.
-        assert!(body.contains("<nav class=\"tree-pane\"><ul class=\"tree\">NAV</ul></nav>"));
-        assert!(body.contains("<article class=\"doc\">BODY</article>"));
-        // And the shell itself is intact.
-        assert!(body.contains("Review Boards"));
+    /// Spec 341: a review page is a loopback app document whose `<main>` holds
+    /// the tree pane and the prose column the reviews module hydrates.
+    #[tokio::test]
+    async fn reviews_page_serves_the_reader_body() {
+        let body = response_text(render_reviews_page(
+            "My <Title>",
+            "<ul class=\"lb-tree\">NAV</ul>",
+            "BODY",
+        ))
+        .await;
         assert!(
-            body.contains("krv:"),
-            "sidebar scroll key must be review-scoped"
+            body.contains("<title>My &lt;Title&gt; · Krypton</title>"),
+            "{body}"
         );
+        assert!(body.contains("data-surface=\"reviews\""), "{body}");
+        assert!(body.contains("/app/assets/reviews.js"), "{body}");
+        assert!(
+            body.contains(
+                "<div class=\"lb-page lb-page--wide lb-reviews\" data-title=\"My &lt;Title&gt;\">"
+            ),
+            "reviews are capped at the wide page width: {body}"
+        );
+        assert!(body.contains(
+            "<nav class=\"lb-tree-nav\" aria-label=\"Reviews\"><ul class=\"lb-tree\">NAV</ul></nav>"
+        ));
+        assert!(body.contains("<article class=\"lb-prose\">BODY</article>"));
+    }
+
+    /// ADR-0010 rev 2: raw HTML/JS in a doc runs. The reader body is part of the
+    /// served document (not injected later), so a `<script>` stays a script.
+    #[tokio::test]
+    async fn docs_page_serves_raw_markdown_html_in_the_document() {
+        let body = response_text(render_docs_page(
+            "docs/a.md",
+            "<h1>A</h1><script>window.ran = true</script>",
+        ))
+        .await;
+        assert!(body.contains("data-surface=\"docs\""), "{body}");
+        assert!(body.contains("/app/assets/docs.js"), "{body}");
+        assert!(
+            body.contains("<article class=\"lb-prose\"><h1>A</h1><script>window.ran = true</script></article>"),
+            "{body}"
+        );
+        assert!(body.contains("data-title=\"docs/a.md\""), "{body}");
     }
 
     #[test]

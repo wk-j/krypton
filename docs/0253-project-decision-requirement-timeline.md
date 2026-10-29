@@ -19,6 +19,21 @@ and `timeline_pending_count`. Recording, grouping, and legacy intake resolution 
 The read-only browser, evidence/authority distinction, private append-only history, additive
 supersession, and Thai-prose/verbatim-evidence principles remain. Publishing is still explicit.
 
+### Revision — spec 341 loopback app
+
+The `/timeline` browser page moved out of the self-contained `src/acp/artifact-timeline.html`
+(deleted) into the loopback Vite app: `handle_timeline` returns `AppPage::new("timeline", …)`
+(`lang="th"`), the entry is `src/loopback/entries/timeline.ts` and the view
+`src/loopback/surfaces/timeline/` (`index.ts`, `timeline.css`, `timeline.test.ts`). It keeps the
+same `/timeline.json` reads (GET only), focus/visibility refresh at most once a second with no
+interval (kit `poll`), the `harness` / `topic` / `event` URL params, every key (`/`, `Esc`, `h`,
+`[`, `]`, `r`, `j`/`k`, `Space`, `i`, `p`, `Enter`) now registered through the kit `keymap()` so `?`
+lists them, and the topic rail + event list on `.lb-split`. Kit pieces: `SearchFilter`, `chip`
+(`เฉพาะเครื่องนี้`), `emptyState`, `kbdHints`. Visual normalisation: the page's own header bar is
+gone (the shell is the header), tokens only (the conflict time cell uses `--accent` / `--on-accent`),
+10px card radius on diagnostics. A conflicted time cell also carries visually hidden Thai text
+`มีบันทึกอีกข้อที่ให้คำสั่งต่างกัน`. DOM tests replace the deleted Rust HTML-text test.
+
 # Historical implementation — not the current contract
 
 Everything below preserves this spec's original design and subsequent pre-0316 amendments,

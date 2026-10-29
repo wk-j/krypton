@@ -96,7 +96,7 @@ import type {
   MessageResource,
   PermissionPayload,
 } from './harness-view-types';
-import type { TelemetryReviewLoop } from './harness-telemetry';
+import type { TelemetryReviewLoop } from './harness-telemetry-schema';
 import type { SpeechRecognitionLike } from './harness-dictation';
 import { HarnessDictationController, type ActiveDictationSession } from './harness-dictation-controller';
 import type { HarnessDictationHost } from './harness-view-host';

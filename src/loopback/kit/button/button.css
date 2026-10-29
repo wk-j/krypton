@@ -1,0 +1,30 @@
+@layer lb.kit {
+  .lb-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--fg);
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color .12s, border-color .12s, background .12s;
+  }
+  .lb-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .lb-btn:disabled {
+    color: var(--muted);
+    background: var(--code-bg);
+    border-color: var(--border);
+    pointer-events: none;
+  }
+  .lb-btn--primary { color: var(--on-accent); background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .lb-btn--primary:hover { color: var(--on-accent); filter: brightness(1.08); }
+  .lb-btn--primary kbd { color: var(--on-accent); background: transparent; border-color: currentColor; }
+  .lb-btn--ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  .lb-btn--toggle[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); background: var(--tint); }
+}

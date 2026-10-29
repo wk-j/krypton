@@ -1,0 +1,184 @@
+@layer lb.surface {
+  /* The archive's caution colour (unanswered, the anchored source line) is
+   * the code yellow of the token sheet, light and dark. */
+  .lb-reviews { --lb-rail: min(300px, 38vw); --warn: var(--code-fg); }
+  .lb-reviews .lb-prose { max-width: 860px; }
+
+  /* Kit tabs rendered as links (the review · response jump strip). */
+  .lb-reviews .lb-tabs__tab { color: var(--muted); text-decoration: none; }
+  .lb-reviews .lb-tabs__tab:hover { color: var(--accent); opacity: 1; }
+  .lb-reviews .lb-tabs__tab[aria-selected='true'] { color: var(--on-accent); }
+  .lb-reviews .lb-prose .lb-tabs { padding-top: 0; margin: 0 0 20px; }
+
+  /* Index: one row per bundle, newest first. */
+  .lb-reviews .reviews-index { list-style: none; margin: 0; padding: 0; }
+  .lb-reviews .rv-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 10px;
+    padding: 12px 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .lb-reviews .rv-row a { text-decoration: none; }
+  .lb-reviews .rv-row a:hover { opacity: 1; }
+  .lb-reviews .rv-row__main { flex: 1; min-width: 0; color: var(--fg); }
+  .lb-reviews .rv-row__main:hover .rv-row__title { color: var(--accent); }
+  .lb-reviews .rv-row__title { display: block; font-weight: 600; font-size: 15px; }
+  .lb-reviews .rv-row__meta { display: block; margin-top: 3px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .lb-reviews .rv-row__side { flex-shrink: 0; text-align: right; font-family: var(--mono); font-size: 12px; }
+  .lb-reviews .rv-row__unanswered { display: block; margin-top: 3px; color: var(--warn); }
+  .lb-reviews .rv-status { display: block; }
+  .lb-reviews .rv-status--sent { color: var(--add); }
+  .lb-reviews .rv-status--answered { color: var(--warn); }
+  .lb-reviews .rv-status--unopened { color: var(--muted); }
+  .lb-reviews .rv-status--reference { color: var(--accent); }
+  .lb-reviews .rv-status--uncomposed { color: var(--del); }
+
+  /* Bundle: review.md and response.md as two sections of one page. */
+  .lb-reviews .review-file { margin: 0 0 28px; scroll-margin-top: calc(var(--shell-h) + 16px); }
+  .lb-reviews .review-file__name {
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .lb-reviews .attachments { margin-top: 32px; }
+  .lb-reviews .attachments h3 { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+  .lb-reviews .attachments__grid { display: flex; flex-wrap: wrap; gap: 12px; }
+  .lb-reviews :is(figure.att, .att--file) {
+    width: 168px;
+    margin: 0;
+    overflow: hidden;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .lb-reviews figure.att img {
+    display: block;
+    width: 100%;
+    height: 108px;
+    object-fit: cover;
+    background: var(--code-bg);
+    border-radius: 0;
+  }
+  .lb-reviews :is(.att figcaption, .att__name) {
+    display: block;
+    padding: 7px 9px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lb-reviews .att--file { display: flex; align-items: center; min-height: 44px; }
+
+  /* ── typed review blocks (render_review_blocks post-pass) ──
+   * Severity and state are carried by the heading colour and a full border,
+   * never a left rail. */
+  .lb-reviews ol.rv-steps {
+    list-style: decimal;
+    margin: 1em 0;
+    padding: 14px 14px 14px 2.4em;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .lb-reviews ol.rv-steps > li { margin: 0 0 10px; }
+  .lb-reviews ol.rv-steps > li:last-child { margin-bottom: 0; }
+  .lb-reviews .rv-step__at { display: block; font-family: var(--mono); font-size: 12px; color: var(--accent); word-break: break-all; }
+  .lb-reviews .rv-step__say { display: block; margin-top: 2px; color: var(--text); }
+  .lb-reviews .rv-steps__title { margin: 1.4em 0 .4em; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+  .lb-reviews .rv-finding {
+    margin: 1em 0;
+    padding: 12px 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .lb-reviews .rv-finding__head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .lb-reviews .rv-finding__sev { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
+  .lb-reviews .rv-finding--blocking :is(.rv-finding__sev, .rv-finding__title) { color: var(--del); }
+  .lb-reviews .rv-finding--warn :is(.rv-finding__sev, .rv-finding__title) { color: var(--warn); }
+  .lb-reviews .rv-finding--sugg .rv-finding__sev { color: var(--muted); }
+  .lb-reviews .rv-finding--sugg .rv-finding__title { color: var(--fg); }
+  .lb-reviews .rv-finding__title { font-weight: 600; }
+  .lb-reviews .rv-finding__at { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); word-break: break-all; }
+
+  /* Source excerpts under an anchor (spec 217): flat inside the card — no
+   * second border, no rail; long lines wrap rather than scroll sideways. */
+  .lb-reviews .rv-src { margin: 8px 0 0; font-family: var(--mono); font-size: 12px; line-height: 1.6; }
+  .lb-reviews .rv-src__head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 0 0 3px;
+    font-size: 11px;
+    color: var(--muted);
+    word-break: break-all;
+  }
+  .lb-reviews .rv-src__chip { color: var(--warn); }
+  .lb-reviews .rv-src__body { padding: 6px 0; background: var(--code-bg); border-radius: 6px; overflow-x: auto; }
+  .lb-reviews .rv-src__line { display: flex; gap: 12px; padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .lb-reviews .rv-src__ln { flex: 0 0 auto; min-width: 5ch; text-align: right; color: var(--muted); user-select: none; }
+  .lb-reviews .rv-src__line > span:last-child { flex: 1 1 auto; min-width: 0; }
+  .lb-reviews .rv-src__line--anchor { background: color-mix(in srgb, var(--warn) 14%, transparent); }
+  .lb-reviews .rv-src__line--anchor .rv-src__ln { color: var(--warn); }
+  .lb-reviews .rv-src__more { margin: 3px 0 0; font-size: 11px; color: var(--muted); }
+  .lb-reviews .rv-notice { margin: 1em 0 0; font-size: 13px; color: var(--muted); }
+
+  .lb-reviews ol.rv-options { list-style: decimal; margin: .6em 0 1em; padding-left: 1.7em; }
+  .lb-reviews ol.rv-options > li { margin: .3em 0; }
+  .lb-reviews ol.rv-options > li.is-chosen { color: var(--accent); font-weight: 600; }
+  .lb-reviews .rv-decision__question { margin: 1em 0 0; font-weight: 600; color: var(--fg); }
+  .lb-reviews .rv-option__rec { margin-left: 8px; font-family: var(--mono); font-size: 10px; letter-spacing: .06em; color: var(--muted); }
+
+  .lb-reviews dl.rv-metrics {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 16px;
+    margin: 1em 0;
+    padding: 12px 14px;
+    font-size: 13px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .lb-reviews dl.rv-metrics dt { font-family: var(--mono); font-weight: 600; color: var(--muted); white-space: nowrap; }
+  .lb-reviews dl.rv-metrics dd { margin: 0; color: var(--fg); word-break: break-word; }
+
+  /* Chart: label/value rows with proportional CSS bars — deliberately not the
+   * Board's SVG geometry. */
+  .lb-reviews .rv-chart { margin: 1em 0; padding: 12px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+  .lb-reviews .rv-chart__title { margin-bottom: 10px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .lb-reviews .rv-chart__row { display: flex; align-items: center; gap: 10px; margin: 4px 0; }
+  .lb-reviews .rv-chart__label {
+    flex: 0 0 34%;
+    font-family: var(--mono);
+    font-size: 12px;
+    text-align: right;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lb-reviews .rv-chart__track { flex: 1; min-width: 0; height: 10px; background: var(--code-bg); border-radius: 2px; }
+  .lb-reviews .rv-chart__bar { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+  .lb-reviews .rv-chart__value { flex: 0 0 auto; min-width: 3.5em; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+  .lb-reviews pre.rv-diff span { display: block; }
+  .lb-reviews .rv-diff__add { color: var(--add); }
+  .lb-reviews .rv-diff__del { color: var(--del); }
+  .lb-reviews .rv-diff__hunk { color: var(--muted); }
+
+  .lb-reviews .rv-svg { margin: 1em 0; text-align: center; }
+  .lb-reviews .rv-svg svg { max-width: 100%; height: auto; }
+  .lb-reviews .rv-unknown { margin: 1em 0 -.6em; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+}

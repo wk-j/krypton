@@ -1,0 +1,48 @@
+@layer lb.kit {
+  /* The pane: a card that scrolls on its own and stays under the shell while
+   * the reading column scrolls the window. */
+  .lb-tree-nav {
+    position: sticky;
+    top: calc(var(--shell-h) + 16px);
+    align-self: start;
+    max-height: calc(100vh - var(--shell-h) - 32px);
+    overflow: auto;
+    padding: 10px 0 16px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  @media (max-width: 760px) {
+    .lb-tree-nav { position: static; max-height: 40vh; }
+  }
+
+  .lb-tree, .lb-tree__items { list-style: none; margin: 0; padding: 0; }
+  .lb-tree { padding: 0 8px; }
+  .lb-tree__items { padding-left: 8px; }
+  .lb-tree__group { margin: 0 0 12px; }
+  .lb-tree__group:last-child { margin-bottom: 0; }
+  .lb-tree__label {
+    padding: 6px 8px 4px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .lb-tree__item { margin: 1px 0; }
+  .lb-tree__link {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 14px;
+    color: var(--fg);
+    text-decoration: none;
+  }
+  .lb-tree__link:hover { background: var(--tint); color: var(--accent); }
+  .lb-tree__link[aria-current='page'] { background: var(--tint); color: var(--accent); font-weight: 600; }
+  .lb-tree__count { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--muted); }
+
+  /* Long titles (reviews): the count drops to its own line. */
+  .lb-tree--stacked .lb-tree__link { display: block; font-size: 13px; }
+  .lb-tree--stacked .lb-tree__count { display: block; }
+}

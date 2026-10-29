@@ -110,6 +110,7 @@ import { refreshLessons, setLessonsEnabled } from './acp/lessons';
 import { refreshSvgFencePreviews } from './acp/harness-svg-fence';
 import { openAcpWireProfiler, type AcpWireMode } from './acp/acp-wire';
 import { DEFAULT_SHADER_CONFIG, loadConfig } from './config';
+import { loopbackPath, openLoopback } from './loopback-open';
 import { effectiveBackdropAlpha, type FrontendThemeEngine } from './theme';
 import { ExtensionManager } from './extensions';
 import type { ExtensionHost } from './extensions';
@@ -3644,23 +3645,19 @@ export class Compositor {
    * the app with `Leader Shift+R`.
    */
   async openReviews(): Promise<void> {
-    let port = 0;
+    await this.openLoopbackPage('/reviews', 'reviews');
+  }
+
+  /**
+   * Spec 341: open a loopback page through the session landing and report the
+   * page URL (never the session token) or why it could not open.
+   */
+  private async openLoopbackPage(path: string, label: string): Promise<void> {
     try {
-      port = await invoke<number>('get_hook_server_port');
+      this.showNotification(await openLoopback(path));
     } catch (e) {
-      console.error('[Reviews] failed to read hook server port:', e);
-    }
-    if (!port) {
-      this.showNotification('reviews unavailable — hook server not ready');
-      return;
-    }
-    const url = `http://127.0.0.1:${port}/reviews`;
-    try {
-      await invoke('open_url', { url });
-      this.showNotification(url);
-    } catch (e) {
-      console.error('[Reviews] failed to open reviews:', e);
-      this.showNotification('reviews open failed');
+      console.error(`[Loopback] failed to open ${label}:`, e);
+      this.showNotification(`${label} unavailable — ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -4008,118 +4005,38 @@ export class Compositor {
    * Open the live harness lane monitor dashboard in the system browser.
    */
   async openDashboard(): Promise<void> {
-    let port = 0;
-    try {
-      port = await invoke<number>('get_hook_server_port');
-    } catch (e) {
-      console.error('[Dashboard] failed to read hook server port:', e);
-    }
-    if (!port) {
-      this.showNotification('dashboard unavailable — hook server not ready');
-      return;
-    }
-    const url = `http://127.0.0.1:${port}/dashboard`;
-    try {
-      await invoke('open_url', { url });
-      this.showNotification(url);
-    } catch (e) {
-      console.error('[Dashboard] failed to open dashboard:', e);
-      this.showNotification('dashboard open failed');
-    }
+    await this.openLoopbackPage('/dashboard', 'dashboard');
+  }
+
+  /** Spec 341: open the loopback Home page — every browser surface in one place. */
+  async openLoopbackHome(): Promise<void> {
+    await this.openLoopbackPage('/', 'Krypton Home');
   }
 
   /**
    * Open the artifact gallery in the system browser.
    */
   async openGallery(): Promise<void> {
-    let port = 0;
-    try {
-      port = await invoke<number>('get_hook_server_port');
-    } catch (e) {
-      console.error('[Gallery] failed to read hook server port:', e);
-    }
-    if (!port) {
-      this.showNotification('gallery unavailable — hook server not ready');
-      return;
-    }
-    const url = `http://127.0.0.1:${port}/gallery`;
-    try {
-      await invoke('open_url', { url });
-      this.showNotification(url);
-    } catch (e) {
-      console.error('[Gallery] failed to open gallery:', e);
-      this.showNotification('gallery open failed');
-    }
+    await this.openLoopbackPage('/gallery', 'gallery');
   }
 
   /** Open the live GenUI component catalog in the system browser. */
   async openGenUiGallery(): Promise<void> {
-    let port = 0;
-    try {
-      port = await invoke<number>('get_hook_server_port');
-    } catch (e) {
-      console.error('[GenUI Gallery] failed to read hook server port:', e);
-    }
-    if (!port) {
-      this.showNotification('GenUI gallery unavailable — hook server not ready');
-      return;
-    }
-    const url = `http://127.0.0.1:${port}/genui-gallery`;
-    try {
-      await invoke('open_url', { url });
-      this.showNotification(url);
-    } catch (e) {
-      console.error('[GenUI Gallery] failed to open gallery:', e);
-      this.showNotification('GenUI gallery open failed');
-    }
+    await this.openLoopbackPage('/genui-gallery', 'GenUI gallery');
   }
 
   /**
    * Open the docs browser in the system browser.
    */
   async openDocs(): Promise<void> {
-    let port = 0;
-    try {
-      port = await invoke<number>('get_hook_server_port');
-    } catch (e) {
-      console.error('[Docs] failed to read hook server port:', e);
-    }
-    if (!port) {
-      this.showNotification('docs unavailable — hook server not ready');
-      return;
-    }
-    const url = `http://127.0.0.1:${port}/docs`;
-    try {
-      await invoke('open_url', { url });
-      this.showNotification(url);
-    } catch (e) {
-      console.error('[Docs] failed to open docs:', e);
-      this.showNotification('docs open failed');
-    }
+    await this.openLoopbackPage('/docs', 'docs');
   }
 
   /**
    * Open the GitHub issue analysis viewer in the system browser (spec 192).
    */
   async openAnalyses(): Promise<void> {
-    let port = 0;
-    try {
-      port = await invoke<number>('get_hook_server_port');
-    } catch (e) {
-      console.error('[Analyses] failed to read hook server port:', e);
-    }
-    if (!port) {
-      this.showNotification('analyses unavailable — hook server not ready');
-      return;
-    }
-    const url = `http://127.0.0.1:${port}/analyses`;
-    try {
-      await invoke('open_url', { url });
-      this.showNotification(url);
-    } catch (e) {
-      console.error('[Analyses] failed to open analyses:', e);
-      this.showNotification('analyses open failed');
-    }
+    await this.openLoopbackPage('/analyses', 'analyses');
   }
 
   /**
@@ -4134,13 +4051,7 @@ export class Compositor {
       this.showNotification('termctrl monitor unavailable');
       return;
     }
-    try {
-      await invoke('open_url', { url });
-      this.showNotification(url);
-    } catch (e) {
-      console.error('[Termctrl] failed to open monitor:', e);
-      this.showNotification('termctrl monitor open failed');
-    }
+    await this.openLoopbackPage(loopbackPath(url), 'termctrl monitor');
   }
 
   /**
@@ -4716,13 +4627,7 @@ export class Compositor {
       this.showNotification('hurl web client unavailable');
       return;
     }
-    try {
-      await invoke('open_url', { url });
-      this.showNotification(url);
-    } catch (e) {
-      console.error('[Hurl] failed to open web client:', e);
-      this.showNotification('hurl web client open failed');
-    }
+    await this.openLoopbackPage(loopbackPath(url), 'hurl web client');
   }
 
   /**

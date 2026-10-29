@@ -188,6 +188,7 @@ function buildSections(): readonly HelpSection[] {
         desc: 'Draw in an open tldraw Offline document (focused or named) — static shapes or durable document scripts',
       },
       { term: '#ui <request>', desc: 'Ask for an interactive UI card; actions load a visible draft' },
+      { term: '#home', desc: 'Open Krypton Home — every browser surface on one page' },
       { term: '#ui-gallery', desc: 'Open the live GenUI component gallery in a browser' },
       { term: '#telegram', desc: 'Open Telegram controller settings' },
       { term: '#mcp', desc: 'Show MCP endpoint and lane status' },

@@ -5,7 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import type { ContentView, PaneContentType } from './types';
-import { ansiToHtml } from './hurl-ansi';
+import { ansiToHtml, stripAnsi } from './hurl-ansi';
 import { gridifyText } from './acp/cell-grid';
 import { highlightHurl } from './hurl-highlight';
 import { collapsedCover, revealDir, revealFile } from './hurl-tree';
@@ -15,12 +15,6 @@ function escapeHtmlText(s: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-}
-
-// Strips ANSI SGR color codes and other CSI escape sequences.
-function stripAnsi(s: string): string {
-  // eslint-disable-next-line no-control-regex
-  return s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '');
 }
 
 interface HurlFile {

@@ -153,6 +153,7 @@ describe('#e2e open', () => {
   it('opens the project explorer selected on the requested case', async () => {
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
       if (cmd === 'get_e2e_web_url') return 'http://127.0.0.1:8765/e2e/abc';
+      if (cmd === 'loopback_url') return 'http://127.0.0.1:8765/app/session/t?next=x';
       if (cmd === 'open_url') return undefined;
       throw new Error(`unexpected ${cmd}`);
     });
@@ -161,7 +162,8 @@ describe('#e2e open', () => {
     expect(invoke).not.toHaveBeenCalled();
     await controller.runCommand(lane, '#e2e open issue-7&x');
     expect(invoke).toHaveBeenCalledWith('get_e2e_web_url', { root: '/repo' });
-    expect(invoke).toHaveBeenCalledWith('open_url', { url: 'http://127.0.0.1:8765/e2e/abc#case=issue-7%26x' });
+    expect(invoke).toHaveBeenCalledWith('loopback_url', { path: '/e2e/abc#case=issue-7%26x' });
+    expect(invoke).toHaveBeenCalledWith('open_url', { url: 'http://127.0.0.1:8765/app/session/t?next=x' });
   });
 
   it('opens nothing when the loopback server cannot issue a URL', async () => {

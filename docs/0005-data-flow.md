@@ -713,10 +713,10 @@ lane reset/close or Harness disposal.
 ### GenUI component gallery (spec 313)
 
 The command palette's `genui-gallery.open` entry or the Harness's `#ui-gallery`
-reads `get_hook_server_port`, then uses `open_url` to open
-`http://127.0.0.1:<port>/genui-gallery` in the OS browser. The loopback server
-serves the separate Vite-built page and its assets from Tauri's `frontendDist`
-in release builds; debug builds redirect to the local Vite page. The gallery
+opens `/genui-gallery` through `openLoopback` (the session landing, see "Loopback
+App Flow" below). The page is the loopback app's `genui` entry: release builds
+serve it from `dist/app/`, debug builds redirect the entry script to the Vite dev
+server while the document stays on the loopback origin (spec 341). The gallery
 enumerates the shipped catalog into an index rail and opens **one component at a
 time**: the fragment (`#<ComponentName>`) is the route, so only the open
 component is compiled through `compile()` and rendered with the same GenUI
@@ -730,9 +730,34 @@ Before the first component mounts, the page fetches `/genui-gallery/theme.json`
 `themeCssProperties()` and the `--krypton-font-*` properties onto its own
 `:root`, the same values the Krypton window carries, so a preview is the
 component as the user's theme draws it. It re-fetches on window `focus`, so a
-palette switch or Reload Config lands on the next look. A debug build's Vite
-page is a different origin, cannot reach the route, and falls back to the
-built-in krypton-dark values in `gallery.css`.
+palette switch or Reload Config lands on the next look. If the route cannot be
+reached the page falls back to the built-in krypton-dark values, scoped to
+`html[data-surface='genui']` in `genui.css`.
+
+## Loopback App Flow (spec 341)
+
+```
+1. The user opens a browser surface: palette entry (e.g. Open Krypton Home,
+   Open Lane Monitor Dashboard), a `#` command (`#home`, `#docs`, `#termctrl`…)
+   or `#daily open` / `#timeline open` / `#e2e open`.
+2. The opener calls openLoopback(path) (src/loopback-open.ts). Capability
+   openers first fetch their own URL (get_termctrl_monitor_url, get_hurl_web_url,
+   get_e2e_web_url, get_acp_wire_url) and pass its path.
+3. invoke('loopback_url', { path }) → Rust validates the same-origin path and
+   returns http://127.0.0.1:<port>/app/session/<session-token>?next=<path>;
+   open_url launches the OS browser.
+4. GET /app/session/<token>: constant-time token check (404), `next` check (400),
+   then the `session` entry stores the token in localStorage and
+   location.replace(next).
+5. GET <path>: Rust returns the AppPage document (readers with their Rust body).
+   The entry boots: token sheet → shell → surface.
+6. The shell fetches /app/api/directory (projects, harness ids, lane/artifact
+   counts — in memory) and, with a stored token, /app/api/<token>/capabilities
+   (termctrl / acp-wire paths, per-project hurl / e2e paths). A 404 clears the
+   token: those four surfaces show as unavailable with "Krypton restarted".
+7. ` opens the switcher (surfaces + projects), ? lists the page's keys, the
+   brand returns to Home. Every navigation is a plain document load.
+```
 
 ## Global Lane Lessons Flow (spec 298)
 
@@ -1960,17 +1985,16 @@ the local Telegram Settings view accepts it.
 
 1. The user runs `#termctrl` or selects **Open Terminal Control Monitor** from
    the command palette.
-2. The frontend invokes `get_termctrl_monitor_url`; Rust returns the hook-server
-   port plus its process-lifetime capability token, then `open_url` launches the
-   system browser.
+2. The frontend invokes `get_termctrl_monitor_url`, then opens its path through
+   `openLoopback` (the session landing forwards to `/termctrl/<token>`).
 3. While the page is visible, it requests the normalized session list every two
    seconds. `TermctrlMonitor` resolves the external binary if needed and runs
    the absolute path with `list --json` under a two-second timeout and one-MiB
    output cap.
 4. The page retains selection by session name. In the Screen view it requests
    only the selected session's `show NAME` visible text, assigns it with
-   `textContent` to its `<pre>`, and — once `/termctrl/assets/cell-grid.js` has
-   loaded — lays it on the harness cell grid (specs 324/326). Unchanged text is
+   `textContent` to its `<pre>`, and lays it on the harness cell grid (specs
+   324/326; the page module imports `gridifyText` directly). Unchanged text is
    not repainted. Running screens refresh every second; an exited screen is
    fetched once and cached because it can no longer change.
 5. Stale and incompatible entries render their list diagnostics without a

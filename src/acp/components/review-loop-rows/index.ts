@@ -24,7 +24,7 @@ import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
 import { disposeList, reconcile } from '../../../ui/list';
 import { truncateInline } from '../../harness-format';
-import type { TelemetryReviewLoop, TelemetryReviewLoopReviewer } from '../../harness-telemetry';
+import type { TelemetryReviewLoop, TelemetryReviewLoopReviewer } from '../../harness-telemetry-schema';
 import { PeekRow, type PeekRowProps, type PeekSegment } from '../peek-card/row';
 import type { ComponentDef } from '../types';
 

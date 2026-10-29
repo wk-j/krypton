@@ -227,6 +227,14 @@ Where the shipped code differs from the draft, and why:
   - `Tab Tab j Enter` opened `responses/01-loopback-identity.json`.
 - **Not exercised:** `#e2e open` → `open_url` inside a rebuilt Krypton (it needs a new build), and the "stop Krypton → 404" step (the forged-token route test covers the same response).
 
+## Revision — spec 341 loopback app
+
+The page moved into the loopback Vite app (spec 341). `src/acp/artifact-e2e.html` and its script-extracting test are gone. `e2e_web::page` returns `AppPage::new("e2e", …)`. The entry `src/loopback/entries/e2e.ts` mounts `E2eView` from `src/loopback/surfaces/e2e/index.ts`, styled by `e2e.css`. The API, the token, the `#case=&run=` hash, the 10 s focus reload, the 2 s `/active` poll, the 250 ms `loading run…` delay, the expired-link text and every key (`/ j k ↑ ↓ Tab ⇧Tab Enter f l y r Esc`) are unchanged.
+
+- **Kit.** The status load runs through `poll` (no interval, `refreshOnFocus`, `minGapMs` 10 s). The case, run and artifact lists use `RosterList`, with keys gated by the active pane. The filter uses `SearchFilter`. Keys go through `keymap()` and are listed by `?`. The page also uses `StatBar`, `pill`, `keyValue`, `button`, `emptyState`, `kbdHints` and `fetchJson`/`fetchText`.
+- **Normalised.** The shell replaces the page's own brand bar. The page uses one `dot('live')` beacon instead of its own `beacon` keyframes. Error chips became error `Banner` blocks. The copy and artifact-problem flash is a transient `Banner`. All colours are tokens.
+- **Tests.** `src/loopback/surfaces/e2e/e2e.test.ts` keeps the same 8 behaviour cases and runs them against the module.
+
 ## Resources
 
 - [Playwright — Reporters (HTML reporter)](https://playwright.dev/docs/test-reporters) — a self-contained report served locally, opened on failure.

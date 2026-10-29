@@ -24,9 +24,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::e2e::{self, E2eActiveLaunch, E2eState, E2eStatus};
-use crate::hook_server::{html_response, secured_json_response};
-
-const E2E_HTML: &str = include_str!("../../src/acp/artifact-e2e.html");
+use crate::hook_server::secured_json_response;
+use crate::loopback_app::{app_page_response, AppPage, Scheme};
 
 /// Capability tokens for the explorer, one per canonical project root.
 #[derive(Default)]
@@ -118,7 +117,7 @@ struct ArtifactQuery {
 
 async fn page(State(state): State<WebState>, UrlPath(token): UrlPath<String>) -> Response {
     match state.sessions.root(&token) {
-        Some(_) => html_response(E2E_HTML),
+        Some(_) => app_page_response(AppPage::new("e2e", "E2E", Scheme::Dark)),
         None => StatusCode::NOT_FOUND.into_response(),
     }
 }

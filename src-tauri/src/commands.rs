@@ -1442,6 +1442,16 @@ pub fn get_hook_server_port(hook_server: State<'_, Arc<HookServer>>) -> u16 {
     hook_server.get_port()
 }
 
+/// Spec 341: the URL Krypton opens for a loopback page `path` — the session
+/// landing that hands the browser shell its capability, then forwards to `path`.
+#[tauri::command]
+pub fn loopback_url(
+    hook_server: State<'_, Arc<HookServer>>,
+    path: String,
+) -> Result<String, String> {
+    hook_server.loopback_url(&path)
+}
+
 /// Return the capability URL for the read-only Terminal Control monitor.
 #[tauri::command]
 pub fn get_termctrl_monitor_url(hook_server: State<'_, Arc<HookServer>>) -> Result<String, String> {

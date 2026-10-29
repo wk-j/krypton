@@ -235,6 +235,7 @@ import {
 } from './hash-commands';
 import type { DayDigest } from './daily-note';
 import { openAcpWireProfiler } from './acp-wire';
+import { loopbackPath, openLoopback } from '../loopback-open';
 import { journalAppend, type JournalKind } from './journal';
 import {
   backendListsMcpTools,
@@ -7101,18 +7102,13 @@ export class AcpHarnessView implements ContentView {
     // straight to its /doc page instead of making the reader scan the index.
     // One word, one meaning — the in-app viewer is Leader J's job.
     if (sub === 'open') {
-      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
-      if (!port) {
-        this.flashChip('daily open unavailable - hook server not ready');
-        return;
-      }
       const date = args[1] ?? '';
       if (date && !isDate(date)) {
         this.flashChip('daily: #daily open [<YYYY-MM-DD>]');
         return;
       }
       const harness = this.harnessMemoryId ? `harness=${encodeURIComponent(this.harnessMemoryId)}` : '';
-      let url = `http://127.0.0.1:${port}/journal${harness ? `?${harness}` : ''}`;
+      let path = `/journal${harness ? `?${harness}` : ''}`;
       if (date) {
         // Resolving through Rust keeps one answer for "where does a day live",
         // and refuses a day nobody has written rather than opening a 404.
@@ -7128,14 +7124,9 @@ export class AcpHarnessView implements ContentView {
           this.flashChip(`daily ${date} is outside the project - no browser page`);
           return;
         }
-        url = `http://127.0.0.1:${port}/doc?${harness ? `${harness}&` : ''}path=${encodeURIComponent(abs.slice(prefix.length))}`;
+        path = `/doc?${harness ? `${harness}&` : ''}path=${encodeURIComponent(abs.slice(prefix.length))}`;
       }
-      try {
-        await invoke('open_url', { url });
-        this.flashChip(url);
-      } catch (e) {
-        this.flashChip(`daily open failed: ${errorText(e)}`);
-      }
+      await this.openLoopbackPage(path, 'daily open');
       return;
     }
 
@@ -11828,86 +11819,36 @@ export class AcpHarnessView implements ContentView {
       }
       return;
     }
+    if (parts[0] === '#home') {
+      this.setDraft(lane, '', 0);
+      await this.openLoopbackPage('/', 'home');
+      return;
+    }
     if (parts[0] === '#dashboard') {
       this.setDraft(lane, '', 0);
-      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
-      if (!port) {
-        this.flashChip('dashboard unavailable - hook server not ready');
-        return;
-      }
-      const url = `http://127.0.0.1:${port}/dashboard`;
-      try {
-        await invoke('open_url', { url });
-        this.flashChip(url);
-      } catch (e) {
-        this.flashChip(`dashboard open failed: ${errorText(e)}`);
-      }
+      await this.openLoopbackPage('/dashboard', 'dashboard');
       return;
     }
     if (parts[0] === '#gallery') {
       this.setDraft(lane, '', 0);
-      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
-      if (!port) {
-        this.flashChip('gallery unavailable - hook server not ready');
-        return;
-      }
-      const url = `http://127.0.0.1:${port}/gallery`;
-      try {
-        await invoke('open_url', { url });
-        this.flashChip(url);
-      } catch (e) {
-        this.flashChip(`gallery open failed: ${errorText(e)}`);
-      }
+      await this.openLoopbackPage('/gallery', 'gallery');
       return;
     }
     if (parts[0] === '#ui-gallery') {
       this.setDraft(lane, '', 0);
-      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
-      if (!port) {
-        this.flashChip('GenUI gallery unavailable - hook server not ready');
-        return;
-      }
-      const url = `http://127.0.0.1:${port}/genui-gallery`;
-      try {
-        await invoke('open_url', { url });
-        this.flashChip(url);
-      } catch (e) {
-        this.flashChip(`GenUI gallery open failed: ${errorText(e)}`);
-      }
+      await this.openLoopbackPage('/genui-gallery', 'GenUI gallery');
       return;
     }
     if (parts[0] === '#docs') {
       this.setDraft(lane, '', 0);
-      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
-      if (!port) {
-        this.flashChip('docs unavailable - hook server not ready');
-        return;
-      }
-      const url = `http://127.0.0.1:${port}/docs`;
-      try {
-        await invoke('open_url', { url });
-        this.flashChip(url);
-      } catch (e) {
-        this.flashChip(`docs open failed: ${errorText(e)}`);
-      }
+      await this.openLoopbackPage('/docs', 'docs');
       return;
     }
     // spec 211: Review Board archive (.krypton/reviews bundles). READ-ONLY — you
     // browse here and WORK a review in the app with `Leader Shift+R`.
     if (parts[0] === '#reviews') {
       this.setDraft(lane, '', 0);
-      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
-      if (!port) {
-        this.flashChip('reviews unavailable - hook server not ready');
-        return;
-      }
-      const url = `http://127.0.0.1:${port}/reviews`;
-      try {
-        await invoke('open_url', { url });
-        this.flashChip(url);
-      } catch (e) {
-        this.flashChip(`reviews open failed: ${errorText(e)}`);
-      }
+      await this.openLoopbackPage('/reviews', 'reviews');
       return;
     }
     // spec 212: publish harness-generated resources to the Xenon server.
@@ -11942,18 +11883,7 @@ export class AcpHarnessView implements ContentView {
     // spec 192: GitHub issue analysis viewer (.krypton/analyses bundles).
     if (parts[0] === '#analyses') {
       this.setDraft(lane, '', 0);
-      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
-      if (!port) {
-        this.flashChip('analyses unavailable - hook server not ready');
-        return;
-      }
-      const url = `http://127.0.0.1:${port}/analyses`;
-      try {
-        await invoke('open_url', { url });
-        this.flashChip(url);
-      } catch (e) {
-        this.flashChip(`analyses open failed: ${errorText(e)}`);
-      }
+      await this.openLoopbackPage('/analyses', 'analyses');
       return;
     }
     // spec 227: capability-gated Hurl web client.
@@ -11962,8 +11892,7 @@ export class AcpHarnessView implements ContentView {
       try {
         const cwd = this.projectDir || (await invoke<string>('get_app_cwd').catch(() => '/'));
         const url = await invoke<string>('get_hurl_web_url', { cwd });
-        await invoke('open_url', { url });
-        this.flashChip(url);
+        await this.openLoopbackPage(loopbackPath(url), 'hurl');
       } catch (e) {
         this.flashChip(`hurl open failed: ${errorText(e)}`);
       }
@@ -11974,8 +11903,7 @@ export class AcpHarnessView implements ContentView {
       this.setDraft(lane, '', 0);
       try {
         const url = await invoke<string>('get_termctrl_monitor_url');
-        await invoke('open_url', { url });
-        this.flashChip(url);
+        await this.openLoopbackPage(loopbackPath(url), 'termctrl monitor');
       } catch (e) {
         this.flashChip(`termctrl monitor open failed: ${errorText(e)}`);
       }
@@ -11995,35 +11923,13 @@ export class AcpHarnessView implements ContentView {
     // spec 185: fixed external-browser reference for the built-in # commands.
     if (parts[0] === '#commands') {
       this.setDraft(lane, '', 0);
-      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
-      if (!port) {
-        this.flashChip('commands unavailable - hook server not ready');
-        return;
-      }
-      const url = `http://127.0.0.1:${port}/commands`;
-      try {
-        await invoke('open_url', { url });
-        this.flashChip(url);
-      } catch (e) {
-        this.flashChip(`commands open failed: ${errorText(e)}`);
-      }
+      await this.openLoopbackPage('/commands', 'commands');
       return;
     }
     // spec 186: fixed external-browser reference for the built-in MCP tools.
     if (parts[0] === '#tools') {
       this.setDraft(lane, '', 0);
-      const port = await invoke<number>('get_hook_server_port').catch(() => 0);
-      if (!port) {
-        this.flashChip('tools unavailable - hook server not ready');
-        return;
-      }
-      const url = `http://127.0.0.1:${port}/tools`;
-      try {
-        await invoke('open_url', { url });
-        this.flashChip(url);
-      } catch (e) {
-        this.flashChip(`tools open failed: ${errorText(e)}`);
-      }
+      await this.openLoopbackPage('/tools', 'tools');
       return;
     }
     // spec 139: user-triggered handoff. #handoff asks the lane to write the
@@ -16021,6 +15927,15 @@ export class AcpHarnessView implements ContentView {
     else if (key === 'End') next = rows.length - 1;
     this.memoryCursorRowId = rows[next].id;
     this.renderMemory();
+  }
+
+  /** Spec 341: open a loopback page via the session landing; flash its URL or the failure. */
+  private async openLoopbackPage(path: string, label: string): Promise<void> {
+    try {
+      this.flashChip(await openLoopback(path));
+    } catch (e) {
+      this.flashChip(`${label} open failed: ${errorText(e)}`);
+    }
   }
 
   private flashChip(text: string): void {

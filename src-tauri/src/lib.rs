@@ -19,6 +19,7 @@ pub mod journal;
 pub mod lessons;
 pub mod live_assist;
 mod live_voice;
+mod loopback_app;
 pub mod music;
 pub mod native_host;
 pub mod pencil;
@@ -348,6 +349,7 @@ pub fn run() {
             music::music_get_state,
             commands::set_agent_active,
             commands::get_hook_server_port,
+            commands::loopback_url,
             commands::get_termctrl_monitor_url,
             commands::get_hurl_web_url,
             commands::get_e2e_web_url,

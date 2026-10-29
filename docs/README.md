@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (326)
+## Specs (327)
 
 | # | Spec |
 |---|------|
@@ -343,8 +343,9 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 338 | [Rails Update Command](./0338-rails-update-command.md) |
 | 339 | [Rails Minimum Interval](./0339-rails-min-interval.md) |
 | 340 | [Attach Issue Artifact Verb](./0340-attach-issue-artifact.md) |
+| 341 | [Loopback App — One Browser Application with a Home Page and a Shared Kit](./0341-loopback-app.md) |
 
-## ADRs (25)
+## ADRs (26)
 
 | # | Decision |
 |---|----------|
@@ -373,6 +374,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 23 | [A handoff belongs to a work thread, not a lane](./adr/0023-a-handoff-belongs-to-a-work-thread-not-a-lane.md) |
 | 24 | [Lessons are global rules the harness holds and injects into every lane](./adr/0024-lessons-are-global-harness-held-rules.md) |
 | 25 | [The Rails verifier is a harness-owned background checker, separate from attention triage](./adr/0025-rails-verifier-is-a-harness-owned-background-checker.md) |
+| 26 | [The loopback app shell holds a session capability in localStorage](./adr/0026-loopback-app-session-capability-in-local-storage.md) |
 
 ## Also
 

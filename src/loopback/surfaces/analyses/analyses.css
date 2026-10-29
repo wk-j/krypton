@@ -1,0 +1,79 @@
+@layer lb.surface {
+  .lb-analyses { --lb-rail: min(280px, 36vw); }
+  .lb-analyses__tabs { padding-top: 0; margin-bottom: 12px; }
+
+  /* Kit tabs rendered as links (project tabs, the bundle's file strip). */
+  .lb-analyses .lb-tabs__tab { color: var(--muted); text-decoration: none; }
+  .lb-analyses .lb-tabs__tab:hover { color: var(--accent); opacity: 1; }
+  .lb-analyses .lb-tabs__tab[aria-selected='true'] { color: var(--on-accent); }
+  .lb-analyses .lb-prose .lb-tabs { padding-top: 0; margin: 0 0 20px; }
+
+  /* Index: issue rows grouped by repo. */
+  .lb-analyses .analyses-index { list-style: none; margin: 0; padding: 0; }
+  .lb-analyses .ai-group {
+    margin: 20px 0 8px;
+    padding: 0 2px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .lb-analyses .ai-group:first-child { margin-top: 0; }
+  .lb-analyses .ai-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 10px;
+    padding: 12px 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .lb-analyses .ai-row a { text-decoration: none; }
+  .lb-analyses .ai-row a:hover { opacity: 1; }
+  .lb-analyses .ai-row__main { flex: 1; min-width: 0; color: var(--fg); }
+  .lb-analyses .ai-row__main:hover .ai-row__key { color: var(--accent); }
+  .lb-analyses .ai-row__key { display: block; font-family: var(--mono); font-weight: 600; font-size: 15px; }
+  .lb-analyses .ai-row__meta { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
+  .lb-analyses .ai-gh { flex-shrink: 0; font-size: 12px; white-space: nowrap; color: var(--accent); }
+
+  /* Bundle: the selected file, then the attachment strip. */
+  .lb-analyses .analysis-file { margin: 0 0 28px; }
+  .lb-analyses .analysis-file__name {
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .lb-analyses .attachments { margin-top: 32px; }
+  .lb-analyses .attachments h3 { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+  .lb-analyses .attachments__grid { display: flex; flex-wrap: wrap; gap: 12px; }
+  .lb-analyses :is(figure.att, .att--file) {
+    width: 168px;
+    margin: 0;
+    overflow: hidden;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .lb-analyses figure.att img {
+    display: block;
+    width: 100%;
+    height: 108px;
+    object-fit: cover;
+    background: var(--code-bg);
+    border-radius: 0;
+  }
+  .lb-analyses :is(.att figcaption, .att__name) {
+    display: block;
+    padding: 7px 9px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lb-analyses .att--file { display: flex; align-items: center; min-height: 44px; }
+}

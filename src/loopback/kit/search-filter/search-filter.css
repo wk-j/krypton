@@ -1,0 +1,12 @@
+@layer lb.kit {
+  .lb-filter { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .lb-filter__input { flex: 1; }
+  .lb-filter__count {
+    flex-shrink: 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-filter__count:empty { display: none; }
+}

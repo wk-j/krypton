@@ -9,7 +9,7 @@
 
 import type { HarnessLaneStatus } from './types';
 import type { PendingPeerSummary } from './inter-lane';
-import type { TelemetryReviewLoop } from './harness-telemetry';
+import type { TelemetryReviewLoop } from './harness-telemetry-schema';
 import { FILE_TOUCH_WINDOW_MS } from './harness-view-types';
 import type {
   FileTouchRecord,

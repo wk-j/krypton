@@ -1,0 +1,13 @@
+@layer lb.kit {
+  .lb-banner {
+    padding: 8px 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--tint);
+    color: var(--accent);
+  }
+  .lb-banner--ok { color: var(--add); background: rgba(14, 203, 129, .06); }
+  .lb-banner--error { color: var(--del); background: rgba(246, 70, 93, .06); }
+}

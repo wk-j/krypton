@@ -1,0 +1,207 @@
+@layer lb.surface {
+  .lb-dashboard__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 14px 16px;
+    margin: 6px 0 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .lb-dashboard__brand { display: flex; align-items: center; gap: 12px; }
+  .lb-dashboard__session,
+  .lb-dashboard__meta,
+  .lb-dashboard__footer { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  .lb-dashboard .lb-banner { margin-bottom: 14px; }
+
+  .lb-dashboard__harness { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .lb-dashboard__harness-head {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .lb-dashboard__triage-section { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .lb-dashboard__triage-body {
+    display: grid;
+    grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+    gap: 22px;
+    align-items: start;
+  }
+  @media (max-width: 640px) {
+    .lb-dashboard__triage-body { grid-template-columns: 1fr; }
+  }
+  .lb-dashboard__gauge { max-width: 260px; }
+  .lb-dashboard__gauge-canvas { display: block; width: 100%; }
+  .lb-dashboard__gauge-label { text-align: center; margin-top: -6px; }
+  .lb-dashboard__gauge-value {
+    font-family: var(--mono);
+    font-size: 30px;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-dashboard__gauge-value--add { color: var(--add); }
+  .lb-dashboard__gauge-value--del { color: var(--del); }
+  .lb-dashboard__gauge-label span { display: block; font-size: 10px; color: var(--muted); }
+
+  .lb-dashboard__flags {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 8px;
+    align-content: start;
+  }
+  .lb-dashboard__flag { padding: 10px; background: var(--tint); border: 1px solid var(--border); border-radius: 8px; }
+  .lb-dashboard__flag-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 7px;
+  }
+  .lb-dashboard__flag-lane {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lb-dashboard__flag-tier { font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; }
+  .lb-dashboard__flag-tier--irreversible { color: var(--del); }
+  .lb-dashboard__flag-tier--costly { color: var(--accent); }
+  .lb-dashboard__flag-tier--reversible { color: var(--add); }
+  .lb-dashboard__flag-question { font-size: 13px; color: var(--fg); overflow-wrap: anywhere; }
+  .lb-dashboard__flag-meta {
+    display: grid;
+    gap: 3px;
+    margin-top: 7px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .lb-dashboard__flag-meta b { color: var(--fg); font-weight: 500; }
+  .lb-dashboard__flags-empty { padding: 10px 0; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  .lb-dashboard__lanes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+    gap: 12px;
+  }
+  .lb-dashboard__lane-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .lb-dashboard__lane-name { font-size: 13px; font-weight: 700; }
+  .lb-dashboard__lane-agent { margin-top: 2px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .lb-dashboard__turn { min-height: 16px; margin: 8px 0 6px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .lb-dashboard__beat,
+  .lb-dashboard__spark { display: block; width: 100%; }
+  .lb-dashboard__beat { margin-top: 2px; }
+  .lb-dashboard__row { display: flex; align-items: baseline; justify-content: space-between; }
+  .lb-dashboard__label { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--muted); }
+  .lb-dashboard__value { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .lb-dashboard__value--fg { color: var(--fg); }
+  .lb-dashboard__value--muted { color: var(--muted); }
+  .lb-dashboard__value--add { color: var(--add); }
+  .lb-dashboard__value--accent { color: var(--accent); }
+  .lb-dashboard__value--del { color: var(--del); }
+  .lb-dashboard__mem { margin-top: 7px; }
+  .lb-dashboard__bar {
+    height: 6px;
+    margin-top: 3px;
+    overflow: hidden;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+  }
+  .lb-dashboard__bar-fill { display: block; width: 0; height: 100%; background: var(--add); transition: width .3s ease; }
+  .lb-dashboard__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+
+  /* spec 277 — review pass loop: flat on the lane card, one hairline above, no inner box */
+  .lb-dashboard__loop { margin-top: 11px; padding-top: 9px; border-top: 1px solid var(--border); }
+  .lb-dashboard__loop-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .lb-dashboard__loop-head .lb-dashboard__label { white-space: nowrap; }
+  .lb-dashboard__loop-state,
+  .lb-dashboard__loop-phase {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-dashboard__loop-phase { margin-top: 1px; }
+  .lb-dashboard__phase-name { color: var(--accent); }
+  .lb-dashboard__rounds { display: flex; gap: 4px; margin: 7px 0 6px; }
+  .lb-dashboard__round {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 18px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-style: normal;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+  }
+  .lb-dashboard__round--current { border-color: var(--accent); }
+  .lb-dashboard__round--pass { color: var(--add); }
+  .lb-dashboard__round--fail { color: var(--del); }
+  .lb-dashboard__round--partial { color: var(--accent); }
+  .lb-dashboard__reviewer {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    padding: 2px 0;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .lb-dashboard__reviewer-name { color: var(--fg); }
+  .lb-dashboard__reviewer-state { margin-left: 6px; color: var(--muted); }
+  .lb-dashboard__loop-note {
+    margin-top: 4px;
+    overflow: hidden;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lb-dashboard__loop-note--stop { color: var(--fg); white-space: normal; }
+
+  .lb-dashboard__foreign { margin: 14px 0 0; padding: 0; list-style: none; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .lb-dashboard__foreign li { padding: 3px 0; border-bottom: 1px solid var(--border); }
+  .lb-dashboard__foreign li:last-child { border-bottom: none; }
+  .lb-dashboard__foreign-name { color: var(--fg); }
+
+  .lb-dashboard__feed {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: 18px;
+    padding-top: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .lb-dashboard__event {
+    display: grid;
+    grid-template-columns: 64px 96px 1fr;
+    gap: 10px;
+    align-items: baseline;
+    padding: 4px 2px;
+    border-bottom: 1px solid var(--border);
+  }
+  .lb-dashboard__event:last-child { border-bottom: none; }
+  .lb-dashboard__event-time { color: var(--muted); }
+  .lb-dashboard__event-lane { overflow: hidden; color: var(--accent); text-overflow: ellipsis; white-space: nowrap; }
+  .lb-dashboard__event-text { color: var(--fg); }
+
+  .lb-dashboard__footer { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--border); }
+}

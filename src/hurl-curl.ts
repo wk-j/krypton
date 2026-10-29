@@ -1,5 +1,5 @@
 // Convert a Hurl source file to POSIX curl, substituting {{vars}} from a
-// selected *.env map. Inlined into src/acp/artifact-hurl.html — keep in sync.
+// selected *.env map. Shared by HurlContentView and the loopback Hurl page.
 
 const METHODS = new Set([
   'GET',

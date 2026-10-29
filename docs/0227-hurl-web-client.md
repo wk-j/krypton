@@ -240,3 +240,11 @@ None — the surface (OS browser), auth (capability token), and editor-or-not (n
 - `docs/0198-termctrl-session-monitor.md` — capability URL, demand-signal polling, Binance page
 - `docs/adr/0002-html-artifacts-open-in-os-browser.md` — OS browser, not webview
 - `DESIGN.binance.md` — visual contract for hook_server pages
+
+## Revision — spec 341 loopback app
+
+The page moved from the self-contained `src/acp/artifact-hurl.html` (deleted) into the loopback Vite app: entry `src/loopback/entries/hurl.ts`, surface `src/loopback/surfaces/hurl/` (`index.ts` view, `tree.ts` roster rows, `response.ts` exchange parsing/painting, `splits.ts` resizable splits, `hurl.css`, `hurl.test.ts`). `GET /hurl/{token}` returns `AppPage::new("hurl", …)`; the `/hurl/api/<token>/…` routes, SSE run events, debounced `PUT /state` with keepalive flush on `visibilitychange`/`pagehide`/`beforeunload`, and localStorage `krypton-hurl-splits` are unchanged.
+
+- The inline copies are gone: the page imports `src/hurl-curl.ts`, `src/hurl-tree.ts`, `src/hurl-highlight.ts` and `stripAnsi` from `src/hurl-ansi.ts` (now exported and shared with `hurl-view.ts`). `highlightHurl` gained `{ substitute }` so the page keeps `{{name}}` text (value in the title) unless the saved `resolved_view` is on.
+- The brand topbar is gone (the shell is the header). Env select, `v`/`VV` toggles (kit `button` toggle variant, `aria-pressed`), `curl`, `hurl` and Run form a toolbar inside `main`; stats use `StatBar`, the roster `RosterList` + `SearchFilter` + `Tabs`, messages `Banner`, the footer `kbdHints`. Every key goes through the page `keymap()` (a focused separator's arrows/Home are gated bindings).
+- Normalised to DESIGN tokens: the `pulse` keyframe is dropped — a running run shows `dot('live')` next to the cwd, a finished run `dot('add')` (exit 0) or `dot('del')`; token colors use `--accent/--add/--del/--muted/--text`. The local run list is `runHistory` (no longer shadows `window.history`).

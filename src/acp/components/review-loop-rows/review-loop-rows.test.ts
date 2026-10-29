@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { TelemetryReviewLoop } from '../../harness-telemetry';
+import type { TelemetryReviewLoop } from '../../harness-telemetry-schema';
 import { ReviewLoopRows } from './index';
 
 function loop(over: Partial<TelemetryReviewLoop> = {}): TelemetryReviewLoop {
