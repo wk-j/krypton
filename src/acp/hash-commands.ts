@@ -15,6 +15,7 @@
 import {
   HANDOFF_WRITE_PROMPT,
   analyzeGithubIssuePrompt,
+  attachIssueArtifactPrompt,
   createGithubIssuePrompt,
   dailyBriefPrompt,
   directivePrompt,
@@ -197,6 +198,11 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
     name: 'post-github-comment',
     args: '<issue url | owner/repo#123>',
     description: 'post a comment to a GitHub issue',
+  },
+  {
+    name: 'attach-issue-artifact',
+    args: '[<issue url | owner/repo#123>] [<file | url>…]',
+    description: 'attach the analysis Markdown (or named files / URLs) to a GitHub issue as issue artifacts',
   },
   {
     name: 'handle-github-issue',
@@ -525,6 +531,12 @@ export function commandMeta(): Record<string, CommandMeta> {
       badges: ['agent'],
       lanes: 'same lane',
       prompt: postGithubCommentPrompt(ISSUE_VERB_PLACEHOLDER),
+    },
+    'attach-issue-artifact': {
+      category: 'agent',
+      badges: ['agent'],
+      lanes: 'same lane',
+      prompt: attachIssueArtifactPrompt(ISSUE_VERB_PLACEHOLDER),
     },
     'handle-github-issue': {
       category: 'agent',

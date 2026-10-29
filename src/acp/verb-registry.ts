@@ -8,6 +8,7 @@
 
 import {
   analyzeGithubIssuePrompt,
+  attachIssueArtifactPrompt,
   fixGithubIssuePrompt,
   postGithubCommentPrompt,
   tagGithubIssuePrompt,
@@ -20,6 +21,7 @@ const INJECTABLE_VERBS: Record<string, () => string> = {
   'fix-github-issue': () => fixGithubIssuePrompt(),
   'tag-github-issue': () => tagGithubIssuePrompt(),
   'post-github-comment': () => postGithubCommentPrompt(),
+  'attach-issue-artifact': () => attachIssueArtifactPrompt(),
 };
 
 /** The `lookup` passed to `resolveVerbTokens`. Returns a verb's rendered prompt, or

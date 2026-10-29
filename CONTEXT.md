@@ -72,6 +72,10 @@ _Avoid_: completion condition / "keep working until met" (that is Claude Code's 
 A browser-rendered, possibly interactive HTML view a lane hands to the human: the lane writes it to a harness-issued path under `.krypton/artifacts/` and registers it, and the human opens it on demand in the OS browser. A live, editable file — the lane may iterate on it across turns — not an immutable snapshot. An opt-in, ephemeral deliverable a lane *chooses* to emit (normally swept on harness close; stale leftovers swept on startup) — never the harness's default output format. Distinct from the lane's transcript text and from tool output.
 _Avoid_: prototype (a `docs/prototypes/*.html` is an author-side design mockup committed to this repo, not a lane-registered artifact), preview, output (a lane's ordinary turn text is its output; an artifact is a separate registered thing)
 
+**GitHub issue artifact** (spec 340):
+A Markdown document, HTML document or link that GitHub stores on one issue (the Issue Artifacts preview), each with its own page and version history. Krypton creates them only when asked, by having a [[Lane]] publish its issue analysis or named resources to the issue, so people working on the issue can read them there. The local analysis stays the source; publishing again saves a new version rather than a second copy.
+_Avoid_: HTML artifact (a lane-registered local browser view that never leaves the machine), Actions artifact (an output file of a GitHub Actions workflow run), attachment (a file dropped into an issue comment; an issue artifact is a separate, versioned object on the issue)
+
 ### Verbs
 
 **Verb**:

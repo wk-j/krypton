@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (325)
+## Specs (326)
 
 | # | Spec |
 |---|------|
@@ -342,6 +342,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 337 | [Rails Verifier](./0337-rails-verifier.md) |
 | 338 | [Rails Update Command](./0338-rails-update-command.md) |
 | 339 | [Rails Minimum Interval](./0339-rails-min-interval.md) |
+| 340 | [Attach Issue Artifact Verb](./0340-attach-issue-artifact.md) |
 
 ## ADRs (25)
 

@@ -41,6 +41,7 @@ has no text to substitute and cannot be a token.
 | `#analyze-github-issue <url>` | prompt | Investigate the issue to find a fix solution; download its attached resources; write markdown analysis into the per-issue bundle `.krypton/analyses/<owner>/<repo>/<number>/` |
 | `#tag-github-issue <url> [labels…]` | prompt | Apply labels via `gh issue edit … --add-label …` |
 | `#post-github-comment <url>` | prompt | Draft and post a comment via `gh issue comment …` (writes immediately — see §Risk) |
+| `#attach-issue-artifact [<url>] [<file \| url>…]` | prompt | Attach the bundle's analysis Markdown (or the named files / URLs) to the issue as GitHub issue artifacts via `gh api` (writes immediately — spec 340) |
 | `#fix-github-issue <url>` | prompt | Fix the issue's bug **in the current lane** (injectable) |
 | `#dispatch-github-issue <url>` | control-op | Existing spec-178 dispatch (spawn/target a fresh lane, send fix prompt). **Not injectable.** |
 
@@ -148,6 +149,10 @@ the exception — it files a new issue from free text, so it carries no ref and 
   `gh issue edit <n> -R <repo> --add-label …`.
 - **`#post-github-comment`** — prompt: draft a comment and post with
   `gh issue comment <n> -R <repo> --body …`. **Writes to GitHub immediately.**
+- **`#attach-issue-artifact`** (spec 340) — prompt: attach the bundle's top-level
+  `.md` files, or the named files / URLs, to the issue as GitHub issue artifacts
+  with `gh api …/artifacts`; a re-run saves a new version of the lane user's own
+  artifact. **Writes to GitHub immediately.** See `docs/0340-attach-issue-artifact.md`.
 - **`#fix-github-issue`** — prompt: implement the fix for the issue **in the
   current lane** (edit code, run tests). This is the injectable "fix" building
   block, distinct from dispatch.

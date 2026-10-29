@@ -134,7 +134,7 @@ describe('buildCommandManifest', () => {
       'handoff', 'resume', 'wiki', 'recall',
       'directive', 'draw', 'review', 'polly', 'debby', 'dispatch-github-issue',
       'analyze-github-issue', 'fix-github-issue', 'tag-github-issue',
-      'post-github-comment', 'handle-github-issue', 'rails',
+      'post-github-comment', 'attach-issue-artifact', 'handle-github-issue', 'rails',
     ];
     for (const name of promptBacked) {
       const prompt = byName.get(name)?.prompt ?? '';

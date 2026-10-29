@@ -263,6 +263,7 @@ import {
   type GithubIssueVerbInput,
   type HandoffResumeDoc,
   analyzeGithubIssuePrompt,
+  attachIssueArtifactPrompt,
   createGithubIssuePrompt,
   dailyBriefPrompt,
   directivePrompt,
@@ -878,7 +879,7 @@ const REMOTE_UNSUPPORTED_HASH_COMMANDS = new Set([
   '#gallery', '#ui-gallery', '#docs', '#analyses', '#reviews', '#push', '#usage', '#daily', '#lessons',
   '#xenon', '#termctrl', '#hurl', '#draw', '#ticket', '#review', '#review-thread', '#directive', '#e2e',
   '#analyze-github-issue', '#create-github-issue', '#dispatch-github-issue',
-  '#fix-github-issue', '#handle-github-issue', '#post-github-comment', '#tag-github-issue',
+  '#fix-github-issue', '#handle-github-issue', '#post-github-comment', '#tag-github-issue', '#attach-issue-artifact',
 ]);
 
 /** spec 337: composer editing chords a focused Rails dock swallows (Ctrl+U/K/W/H/D/A/E). */
@@ -12295,6 +12296,11 @@ export class AcpHarnessView implements ContentView {
       await this.runGithubIssuePromptVerb(lane, 'post-github-comment', parts.slice(1));
       return;
     }
+    if (parts[0] === '#attach-issue-artifact') {
+      this.setDraft(lane, '', 0);
+      await this.runGithubIssuePromptVerb(lane, 'attach-issue-artifact', parts.slice(1));
+      return;
+    }
     if (parts[0] === '#handle-github-issue') {
       this.setDraft(lane, '', 0);
       await this.runGithubIssuePromptVerb(lane, 'handle-github-issue', parts.slice(1));
@@ -12310,11 +12316,18 @@ export class AcpHarnessView implements ContentView {
    *  via issue_progress + auto-bind (spec 190). */
   private async runGithubIssuePromptVerb(
     lane: HarnessLane,
-    verb: 'analyze-github-issue' | 'fix-github-issue' | 'tag-github-issue' | 'post-github-comment' | 'handle-github-issue',
+    verb:
+      | 'analyze-github-issue'
+      | 'fix-github-issue'
+      | 'tag-github-issue'
+      | 'post-github-comment'
+      | 'attach-issue-artifact'
+      | 'handle-github-issue',
     args: string[],
   ): Promise<void> {
     let ref = this.parseIssueRef(args[0] ?? '');
-    // Args after the ref token are verb payload (labels for #tag-github-issue).
+    // Args after the ref token are verb payload (labels for #tag-github-issue,
+    // files / URLs for #attach-issue-artifact).
     let payload = args.slice(1);
     if (!ref && this.ticketCtl.activeTicket?.github) {
       // spec 194: a no-ref verb resolves to the shared working ticket. No ref
@@ -12358,6 +12371,10 @@ export class AcpHarnessView implements ContentView {
       case 'post-github-comment':
         prompt = postGithubCommentPrompt(input);
         label = 'commenting on issue';
+        break;
+      case 'attach-issue-artifact':
+        prompt = attachIssueArtifactPrompt(input, payload);
+        label = 'attaching to issue';
         break;
       case 'handle-github-issue':
         prompt = handleGithubIssuePrompt(input);

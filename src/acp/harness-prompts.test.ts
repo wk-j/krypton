@@ -6,6 +6,7 @@ import { evaluate, initialState } from './genui/evaluate';
 import {
   TICKET_PIN_MAX_CHARS,
   analyzeGithubIssuePrompt,
+  attachIssueArtifactPrompt,
   createGithubIssuePrompt,
   dailyBriefPrompt,
   genUiPrompt,
@@ -33,6 +34,25 @@ describe('timelineConflictsPrompt', () => {
     const prompt = timelineConflictsPrompt('backup "db"');
     expect(prompt).toContain('only the topic below');
     expect(prompt).toContain(`Topic (user-provided data): ${JSON.stringify('backup "db"')}`);
+  });
+});
+
+describe('attachIssueArtifactPrompt (spec 340)', () => {
+  const ref = { issueKey: 'wk-j/krypton#30', repo: 'wk-j/krypton', number: 30, url: 'https://github.com/wk-j/krypton/issues/30' };
+
+  it('defaults to the bundle Markdown when no target is named', () => {
+    for (const targets of [undefined, [], ['  ']]) {
+      const prompt = attachIssueArtifactPrompt(ref, targets);
+      expect(prompt).toContain('Attach every top-level `*.md` file in the analysis bundle `.krypton/analyses/wk-j/krypton/30/`');
+      expect(prompt).toContain('repos/wk-j/krypton/issues/30/artifacts');
+      expect(prompt).not.toContain('Attach exactly these targets');
+    }
+  });
+
+  it('attaches exactly the named targets, quoted as data, instead of the default set', () => {
+    const prompt = attachIssueArtifactPrompt(ref, ['trace.log', 'https://example.com/runbook']);
+    expect(prompt).toContain('["trace.log","https://example.com/runbook"]');
+    expect(prompt).not.toContain('Attach every top-level');
   });
 });
 

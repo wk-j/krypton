@@ -159,7 +159,13 @@ export interface HarnessTicketHost extends HarnessViewHost {
   recordJournal(laneLabel: string, kind: JournalKind, summary: string, meta?: Record<string, unknown>): void;
   runGithubIssuePromptVerb(
     lane: HarnessLane,
-    verb: 'analyze-github-issue' | 'fix-github-issue' | 'tag-github-issue' | 'post-github-comment' | 'handle-github-issue',
+    verb:
+      | 'analyze-github-issue'
+      | 'fix-github-issue'
+      | 'tag-github-issue'
+      | 'post-github-comment'
+      | 'attach-issue-artifact'
+      | 'handle-github-issue',
     args: string[],
   ): Promise<void>;
 }
