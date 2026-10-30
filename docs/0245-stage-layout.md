@@ -188,7 +188,7 @@ Both directional pairs are intentional aliases: `h/l` match left/right switching
 ### Animation and Styling
 
 - Add `.krypton-window--stage` plus `data-stage-role`; `data-stage-project-initials`
-  supplies the centered shelf initials.
+  supplies the shelf initials, anchored bottom-right with a 12 px on-screen inset.
 - Use full existing window chrome in previews; no duplicate thumbnail DOM and no bitmap capture pipeline.
 - Stage transitions animate `transform`, `opacity`, and `filter` for 200ms with the existing ease-out curve.
 - Shelf cards use reduced brightness and opacity; the active card keeps its normal focus border and layered glow.

@@ -1047,8 +1047,10 @@
 .krypton-window--stage[data-stage-role='shelf']::before {
   content: attr(data-stage-project-initials);
   position: absolute;
-  top: 50%;
-  left: 50%;
+  /* The card is scaled down; multiply by the inverse scale so the inset stays
+     12 screen px at every shelf size. */
+  bottom: calc(12px * var(--krypton-stage-inverse-scale, 1));
+  right: calc(12px * var(--krypton-stage-inverse-scale, 1));
   z-index: 20;
   color: var(--krypton-window-accent, var(--krypton-titlebar-text, #0cf));
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
@@ -1057,8 +1059,7 @@
   letter-spacing: 0.04em;
   line-height: 1;
   white-space: nowrap;
-  text-shadow: 0 2px 8px #060a12, 0 0 18px #060a12;
-  transform: scale(var(--krypton-stage-inverse-scale, 1)) translate(-50%, -50%);
-  transform-origin: top left;
+  transform: scale(var(--krypton-stage-inverse-scale, 1));
+  transform-origin: bottom right;
   pointer-events: none;
 }
