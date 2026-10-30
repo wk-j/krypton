@@ -111,7 +111,7 @@ Where:
   - `2` — error state (red), progress optional
   - `3` — indeterminate (pulsing), no progress value
   - `4` — paused state (yellow), progress optional
-- `<progress>`: optional integer 0-100 (defaults to 0 if absent)
+- `<progress>`: optional integer 0-100 (defaults to 0 if absent or empty — e.g. omp clears with `9;4;0;`, a trailing `;` and no digits; a non-numeric value drops the sequence)
 - `ST` (String Terminator): either `BEL` (0x07) or `ESC \` (0x1B 0x5C)
 
 ### Parser Design
@@ -159,7 +159,7 @@ The gauge container is `position: absolute; top/left: 50%; transform: translate(
 **States:**
 - **Normal (1)**: Arc fills clockwise from 12 o'clock. Percentage text (e.g. `75%`) + label `LOADING`.
 - **Error (2)**: Full arc in red. Text shows percentage or `ERR`. Label `ERROR`. Red glow.
-- **Indeterminate (3)**: A 25% arc segment orbits continuously (`@keyframes krypton-gauge-orbit`, 1.8s). No percentage text. Label `WORKING`.
+- **Indeterminate (3)**: A 25% arc segment orbits continuously (`@keyframes krypton-gauge-orbit`, 1.8s). No percentage text. Label `WORKING`, moved to the ring's center (`y="50"`) since there is no percentage above it.
 - **Paused (4)**: Arc frozen at current fill in amber. Label `PAUSED`.
 - **Hidden (0)**: Gauge div removed from DOM.
 

@@ -14,6 +14,10 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 /** Circumference of the gauge arc (r=40 in a 100x100 viewBox, C = 2*pi*40 ~= 251.327) */
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 40;
 
+/** Label y (viewBox units): below the percentage text, or centered when the label is alone */
+const LABEL_Y_UNDER_PCT = '60';
+const LABEL_Y_CENTERED = '50';
+
 /** Callback interface for resolving compositor state */
 export interface ProgressGaugeHost {
   getWindowElement(windowId: WindowId): HTMLElement | null;
@@ -208,6 +212,10 @@ export class ProgressGauge {
         break;
       }
     }
+
+    // Indeterminate has no percentage — center the label in the ring instead
+    // of leaving it parked below an empty line.
+    labelText.setAttribute('y', pctText.textContent ? LABEL_Y_UNDER_PCT : LABEL_Y_CENTERED);
   }
 
   /**
@@ -252,7 +260,7 @@ export class ProgressGauge {
     // Status label text
     const label = document.createElementNS(ns, 'text');
     label.setAttribute('x', '50');
-    label.setAttribute('y', '60');
+    label.setAttribute('y', LABEL_Y_UNDER_PCT);
     label.setAttribute('class', 'krypton-progress-gauge__label');
     label.textContent = '';
 

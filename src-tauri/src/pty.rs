@@ -307,11 +307,13 @@ impl OscProgressParser {
             return None;
         }
 
-        let progress: u8 = if let Some(pr_str) = parts.next() {
-            let raw: u16 = pr_str.parse().ok()?;
-            raw.min(100) as u8
-        } else {
-            0
+        // An empty progress field (`9;4;0;`, as emitted by omp) means 0.
+        let progress: u8 = match parts.next() {
+            Some(pr_str) if !pr_str.is_empty() => {
+                let raw: u16 = pr_str.parse().ok()?;
+                raw.min(100) as u8
+            }
+            _ => 0,
         };
 
         Some(ProgressPayload {
@@ -1196,7 +1198,7 @@ fn read_process_cwd(_pid: u32) -> Option<String> {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::is_password_prompt_lflag;
+    use super::{is_password_prompt_lflag, OscProgressParser};
 
     #[test]
     fn password_prompt_is_echo_off_canonical() {
@@ -1207,5 +1209,21 @@ mod tests {
         // raw TUI (zsh ZLE, vim, ssh session): echo off and non-canonical
         assert!(!is_password_prompt_lflag(libc::ISIG));
         assert!(!is_password_prompt_lflag(0));
+    }
+
+    #[test]
+    fn osc_progress_clear_with_empty_progress_field() {
+        // omp emits `ESC]9;4;3 BEL` while working and `ESC]9;4;0; BEL`
+        // (empty progress field) to clear; the clear must not be dropped.
+        let mut parser = OscProgressParser::new();
+        let events = parser.feed(b"\x1b]9;4;3\x07output\x1b]9;4;0;\x07");
+        let states: Vec<(u8, u8)> = events.iter().map(|e| (e.state, e.progress)).collect();
+        assert_eq!(states, vec![(3, 0), (0, 0)]);
+    }
+
+    #[test]
+    fn osc_progress_rejects_non_numeric_progress() {
+        let mut parser = OscProgressParser::new();
+        assert!(parser.feed(b"\x1b]9;4;1;abc\x07").is_empty());
     }
 }
