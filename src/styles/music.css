@@ -206,13 +206,14 @@
   font-size: var(--krypton-chrome-font-size, 11px);
   color: rgba(var(--krypton-foreground-rgb, 192, 200, 212), 0.7);
   cursor: default;
-  border-left: 2px solid transparent;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
+/* Tint + full inset outline — never a left rail (ADR-0027). */
 .krypton-music-dashboard__track--selected {
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
-  border-left-color: var(--krypton-cyan, #00d4ff);
+  outline: 1px solid color-mix(in srgb, var(--krypton-cyan, #00d4ff) 50%, transparent);
+  outline-offset: -1px;
   color: var(--krypton-foreground, #c0c8d4);
 }
 
@@ -222,7 +223,6 @@
 
 .krypton-music-dashboard__track--playing.krypton-music-dashboard__track--selected {
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
-  border-left-color: var(--krypton-cyan, #00d4ff);
 }
 
 .krypton-music-dashboard__track-indicator {

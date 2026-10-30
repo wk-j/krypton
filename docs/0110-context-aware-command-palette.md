@@ -259,8 +259,10 @@ The closure captures `this`, not lane objects — lane state is re-read at execu
   padding: 0.25rem 0.75rem;
   border-bottom: 1px solid var(--krypton-border-subtle);
 }
-.krypton-palette__item--section-context {
-  border-left: 2px solid var(--krypton-accent);
+/* Marked on the category tag, never a left rail (ADR-0027). */
+.krypton-palette__item--section-context .krypton-palette__item-category {
+  color: var(--krypton-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--krypton-accent) 45%, transparent);
 }
 ```
 

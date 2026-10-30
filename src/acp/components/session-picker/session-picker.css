@@ -77,12 +77,14 @@
     padding: 6px 14px;
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     cursor: default;
-    border-left: 2px solid transparent;
   }
 
+  /* Tint + full inset outline, as the lane / model pickers — never a left
+     rail (ADR-0027). */
   .acp-harness__session-row--active {
     background: rgba(142, 255, 176, 0.09);
-    border-left-color: var(--agent-accent, #8effb0);
+    outline: 1px solid color-mix(in srgb, var(--agent-accent, #8effb0) 50%, transparent);
+    outline-offset: -1px;
     color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
   }
 
