@@ -32,15 +32,15 @@
 
   .acp-rails-dock__row {
     padding: 5px 14px;
-    border-left: 1px solid transparent;
     border-bottom: 1px solid rgba(255, 176, 0, 0.07);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     cursor: default;
   }
 
+  /* Selection is a full-row tint, as the Ticket Panel's
+     `.acp-ticket__row--selected` — never a left-edge accent rail (ADR-0027). */
   .acp-rails-dock__row--selected {
-    border-left-color: #ffb000;
-    background: rgba(255, 176, 0, 0.07);
+    background: rgba(255, 176, 0, 0.16);
   }
 
   .acp-rails-dock__row--head {

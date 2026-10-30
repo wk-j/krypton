@@ -349,7 +349,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 344 | [Rails Panel Actions](./0344-rails-panel-actions.md) |
 | 345 | [Rails Dock Display Budget](./0345-rails-dock-display-budget.md) |
 
-## ADRs (26)
+## ADRs (27)
 
 | # | Decision |
 |---|----------|
@@ -379,6 +379,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 24 | [Lessons are global rules the harness holds and injects into every lane](./adr/0024-lessons-are-global-harness-held-rules.md) |
 | 25 | [The Rails verifier is a harness-owned background checker, separate from attention triage](./adr/0025-rails-verifier-is-a-harness-owned-background-checker.md) |
 | 26 | [The loopback app shell holds a session capability in localStorage](./adr/0026-loopback-app-session-capability-in-local-storage.md) |
+| 27 | [No surface marks state with a left-edge accent rail](./adr/0027-no-left-edge-accent-rails.md) |
 
 ## Also
 
