@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (331)
+## Specs (332)
 
 | # | Spec |
 |---|------|
@@ -348,6 +348,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 343 | [Lane Running-Command Chips](./0343-lane-running-command-chips.md) |
 | 344 | [Rails Panel Actions](./0344-rails-panel-actions.md) |
 | 345 | [Rails Dock Display Budget](./0345-rails-dock-display-budget.md) |
+| 346 | [OSC Support — Registry](./0346-osc-support.md) |
 
 ## ADRs (27)
 
