@@ -13,7 +13,7 @@ const BASE: ComposerMetaProps = {
     {
       key: 'permission-mode',
       block: 'acp-harness__lane-sandbox',
-      text: 'auto-edit ⇧⇥',
+      text: 'auto-edit',
       title: 'Auto-edit — file edits are auto-accepted; commands still ask. Shift+Tab to change.',
     },
     {
@@ -56,7 +56,7 @@ describe('ComposerMeta', () => {
         '<span class="acp-harness__meta-seg" data-seg="queued">3 queued</span>' +
         '</span>' +
         '<span class="acp-harness__lane-sandbox" title="Auto-edit — file edits are auto-accepted; ' +
-        'commands still ask. Shift+Tab to change.">auto-edit ⇧⇥</span>' +
+        'commands still ask. Shift+Tab to change.">auto-edit</span>' +
         '<span class="acp-harness__directive-chip acp-harness__directive-chip--set" ' +
         'title="Cmd+P then . to change" data-open-directive-picker="1">directive 0301-impl</span>' +
         '<span class="acp-harness__project-status" title="/Users/wk/Source/krypton on main">' +

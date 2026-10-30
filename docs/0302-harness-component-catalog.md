@@ -116,7 +116,7 @@ interface ChipProps { text: string; tone?: 'neutral' | 'warn' | 'on' | 'off' | '
 **Example UI**
 
 ```
- Code   polly-bypass   ⚠ bypass ⇧⇥   claude-sonnet-4-5   mcp ✓ 14   12.4% 843M
+ Code   polly-bypass   ⚠ bypass   claude-sonnet-4-5   mcp ✓ 14   12.4% 843M
 ```
 
 **Emits** `<span class="${block}" title="${title}">${icon?}${text}</span>` — `block` keeps the existing
@@ -825,7 +825,7 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 | # | Component | Example UI | Replaces |
 |---|---|---|---|
 | 6.1 | `Composer` | root; owns `--command` / `--memory` / `--dictating` modifiers and slot order | `acp-harness-view.ts:13190-13296`. **Deletes the 1 Hz full `innerHTML` rebuild** (`:13409`) — only `ComposerMeta` ticks |
-| 6.2 | `ComposerMeta` | `reviewing · 2:14 · 3 queued      auto-edit ⇧⇥   directive 0301-impl   ⟨branch icon⟩ main        ? help` (the branch mark is the `krypton-icon-branch` symbol, geometry shared with the workspace footer — `src/chrome-icons.ts`) | `harness-composer-meta.ts:48-68` + `composerStatusChip` `:13410-13460` (`Chip` + `StatList`) |
+| 6.2 | `ComposerMeta` | `reviewing · 2:14 · 3 queued      auto-edit   directive 0301-impl   ⟨branch icon⟩ main        ? help` (the branch mark is the `krypton-icon-branch` symbol, geometry shared with the workspace footer — `src/chrome-icons.ts`) | `harness-composer-meta.ts:48-68` + `composerStatusChip` `:13410-13460` (`Chip` + `StatList`) |
 | 6.3 | `DraftLine` | `claude-1  ⠋  convert the UI into reusable comp_onents` (underline caret over the next cell, ghost text inline) | `acp-harness-view.ts:13246-13293,15417-15420` |
 | 6.4 | `StagingStrip` | `[▣ screenshot.png  x] [▣ diagram.png  x]   2 images · Esc to clear` | `acp-harness-view.ts:13228-13245` |
 | 6.5 | `PeerStrip` | `⇆ awaiting codex · 5m+ · #cancel drops pending lane-mail wait` / `▼3 lane mails queued` | `lane-peek.ts:731-779` |

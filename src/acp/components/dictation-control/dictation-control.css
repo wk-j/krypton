@@ -33,7 +33,6 @@
     background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 6%, transparent);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
     font: inherit;
-    font-size: 0.65em;
     letter-spacing: 0.08em;
     line-height: 1;
     text-transform: uppercase;

@@ -13498,9 +13498,9 @@ export class AcpHarnessView implements ContentView {
       chips.push({
         key: 'permission-mode',
         block: 'acp-harness__lane-sandbox',
-        text: bypass ? '' : 'auto-edit ⇧⇥',
+        text: bypass ? '' : 'auto-edit',
         icon: bypass ? { id: 'warn', cls: 'acp-harness__icon--dot' } : undefined,
-        trailing: bypass ? ' bypass ⇧⇥' : undefined,
+        trailing: bypass ? ' bypass' : undefined,
         title: bypass
           ? 'Bypass — every tool permission is auto-accepted, including high-risk commands. Shift+Tab to change.'
           : 'Auto-edit — file edits are auto-accepted; commands still ask. Shift+Tab to change.',

@@ -607,7 +607,7 @@ The default focus is the composer. Almost every key acts on the composer or on o
 | `?` | Transcript scroll focus | Toggle help overlay. |
 | `Esc` / `?` / `q` | Help overlay open | Close help overlay. |
 | `Ctrl+C` | Composer text mode, active lane busy | Cancel active lane. |
-| `Shift+Tab` | Composer text mode (no palette open) | Cycle the active lane's persistent permission mode `normal` → `acceptEdits` → `bypass` (same order as the Agent view). `acceptEdits` auto-accepts file edits only; `bypass` auto-accepts every request, including high-risk. A non-`normal` mode shows a composer-meta chip (`auto-edit ⇧⇥` / `⚠ bypass ⇧⇥`); Polly/Salty bypass keeps its own chip. The mode survives turns; `kryptonctl acp permission-mode` and Raycast set the same field. |
+| `Shift+Tab` | Composer text mode (no palette open) | Cycle the active lane's persistent permission mode `normal` → `acceptEdits` → `bypass` (same order as the Agent view). `acceptEdits` auto-accepts file edits only; `bypass` auto-accepts every request, including high-risk. A non-`normal` mode shows a composer-meta chip (`auto-edit` / `⚠ bypass`); the chip carries no key glyph — `Shift+Tab` is listed in `?` help and in the chip's tooltip. Polly/Salty bypass keeps its own chip. The mode survives turns; `kryptonctl acp permission-mode` and Raycast set the same field. |
 | `Esc` | Composer text mode | Enter transcript/command focus. Composer is disabled until `i` or `Esc` returns to input. |
 | `a` | Permission pending (composer or transcript focus) | Accept the focused permission. |
 | `A` | Permission pending (composer or transcript focus) | Accept-all-from-this-lane for the **current `session/prompt` turn only**; clears when the turn returns. |

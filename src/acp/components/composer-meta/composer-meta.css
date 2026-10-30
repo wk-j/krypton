@@ -33,12 +33,16 @@
   /* Status chips on the left, help + MIC on the right. The tools sit on this
      row instead of the input line so they stay above the window footer's
      magnified KR/GR drop caps, which overflow upward over the pane (specs
-     218–220) and were painting on top of the input-line control. */
+     218–220) and were painting on top of the input-line control.
+     `font-size` is the bar's one type size: every readout and control in it —
+     status, lane pill, directive, branch, `? help`, MIC — inherits it rather
+     than scaling its own `em`, so the run reads as one line of text. */
   .acp-harness__composer-chrome {
     display: flex;
     align-items: center;
     gap: 8px;
     min-width: 0;
+    font-size: 0.72em;
   }
 
   .acp-harness__composer-tools {
@@ -64,13 +68,23 @@
     min-height: 16px;
     overflow: hidden;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
-    font-size: 0.72em;
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
 
+  /* The lane pill's own 0.72em is sized for the lane head; here it would
+     compound on the bar's size and print smaller than its neighbours. */
+  .acp-harness__composer-meta .acp-harness__lane-sandbox {
+    font-size: inherit;
+  }
+
   /* Telemetry-deck separators: a dim accent middot before each segment after
-     the first. A divider between readouts — not a left-edge accent rail. */
+     the first. A divider between readouts — not a left-edge accent rail.
+     A lane chip (`⚠ bypass`, `auto-edit`) is a filled pill, so its own
+     `::before` would paint inside the pill: the status readout before it
+     carries that middot instead, mirroring the one after it. An empty readout
+     leaves the pill first in the row, where no divider belongs. */
+  .acp-harness__memory-chip:not(:empty):has(+ .acp-harness__lane-sandbox)::after,
   .acp-harness__directive-chip::before,
   .acp-harness__project-status::before {
     content: '·';
@@ -160,7 +174,6 @@
   .acp-harness__help-hint {
     flex: 0 0 auto;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
-    font-size: 0.65em;
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
@@ -190,7 +203,6 @@
      after acp-harness.css today. */
   .acp-harness__directive-chip__triage {
     margin-left: 6px;
-    font-size: 0.9em;
     letter-spacing: 0.04em;
     color: var(--krypton-window-accent, #0cf);
   }

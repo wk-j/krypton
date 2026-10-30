@@ -10,14 +10,14 @@ svg{--fg:#b0c4d8;--muted:#6b8299;--border:#2a4a6c;--surface:#10131a;--accent:#00
 <text x="33" y="58" fill="var(--fg)" xml:space="preserve">Code</text>
 <rect x="78.8" y="44" width="100.4" height="20" rx="3" fill="none" stroke="var(--border)"/>
 <text x="85.8" y="58" fill="var(--fg)" xml:space="preserve">polly-bypass</text>
-<rect x="189.2" y="44" width="93.2" height="20" rx="3" fill="none" stroke="var(--warning)"/>
-<text x="196.2" y="58" fill="var(--warning)" xml:space="preserve">⚠ bypass ⇧⇥</text>
-<rect x="292.4" y="44" width="136.4" height="20" rx="3" fill="none" stroke="var(--border)"/>
-<text x="299.4" y="58" fill="var(--fg)" xml:space="preserve">claude-sonnet-4-5</text>
-<rect x="438.8" y="44" width="71.6" height="20" rx="3" fill="none" stroke="var(--success)"/>
-<text x="445.8" y="58" fill="var(--success)" xml:space="preserve">mcp ✓ 14</text>
-<rect x="520.4" y="44" width="86" height="20" rx="3" fill="none" stroke="var(--border)"/>
-<text x="527.4" y="58" fill="var(--fg)" xml:space="preserve">12.4% 843M</text>
+<rect x="189.2" y="44" width="71.6" height="20" rx="3" fill="none" stroke="var(--warning)"/>
+<text x="196.2" y="58" fill="var(--warning)" xml:space="preserve">⚠ bypass</text>
+<rect x="270.8" y="44" width="136.4" height="20" rx="3" fill="none" stroke="var(--border)"/>
+<text x="277.8" y="58" fill="var(--fg)" xml:space="preserve">claude-sonnet-4-5</text>
+<rect x="417.2" y="44" width="71.6" height="20" rx="3" fill="none" stroke="var(--success)"/>
+<text x="424.2" y="58" fill="var(--success)" xml:space="preserve">mcp ✓ 14</text>
+<rect x="498.8" y="44" width="86" height="20" rx="3" fill="none" stroke="var(--border)"/>
+<text x="505.8" y="58" fill="var(--fg)" xml:space="preserve">12.4% 843M</text>
 <text x="26" y="81" xml:space="preserve"><tspan fill="var(--muted)">tone:</tspan>  neutral · warn · on · off · hot    <tspan fill="var(--muted)">blocks:</tspan>  lane-mode · lane-sandbox · lane-model · lane-mcp · tool-kind · ticket__badge</text>
 <text x="12" y="116" font-size="11" fill="var(--accent)" xml:space="preserve">1.2  Spinner  L   — frames owned by the component; deletes the liveSpinnerGlyph module global</text>
 <rect x="12" y="122" width="956" height="54" rx="3" fill="none" stroke="var(--border)"/>
