@@ -337,8 +337,11 @@ export class HarnessTicketController {
       return;
     }
     this.dockActionStartingLaneId = lane.id;
+    const issueUrl = ticket.github.issueUrl;
     try {
-      await this.host.runGithubIssuePromptVerb(lane, action, [ticket.github.issueUrl]);
+      // Spec 343: the lane shows `#<verb>` as a run chip, as the typed verb does.
+      await this.host.trackCommandRun(lane, `#${action}`, () =>
+        this.host.runGithubIssuePromptVerb(lane, action, [issueUrl]));
     } finally {
       if (this.dockActionStartingLaneId === lane.id) this.dockActionStartingLaneId = null;
     }

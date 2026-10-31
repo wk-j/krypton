@@ -160,6 +160,7 @@ function rig(options: RigOptions = {}) {
   const signals: Omit<RailsFooterSignal, 'sourceId'>[] = [];
   const envelopes: { laneId: string; message: string }[] = [];
   const systemPrompts: { laneId: string; text: string; label: string | undefined }[] = [];
+  const runs: { laneId: string; text: string; settled: boolean }[] = [];
   const host: HarnessRailsHost = {
     element: document.createElement('div'),
     lanes,
@@ -181,6 +182,15 @@ function rig(options: RigOptions = {}) {
     enqueueSystemPrompt: async (lane, text, _drain, label) => {
       systemPrompts.push({ laneId: lane.id, text, label });
       return true;
+    },
+    trackCommandRun: async (lane, text, work) => {
+      const run = { laneId: lane.id, text, settled: false };
+      runs.push(run);
+      try {
+        await work();
+      } finally {
+        run.settled = true;
+      }
     },
   };
   const ctl = new HarnessRailsController(host, {
@@ -206,7 +216,7 @@ function rig(options: RigOptions = {}) {
     await ctl.whenIdle();
   };
   const commands = (): string[] => calls.map((call) => call.cmd);
-  return { ctl, host, lanes, calls, commands, records, prompts, systemPrompts, flashes, signals, envelopes, transition, quietPoint };
+  return { ctl, host, lanes, calls, commands, records, prompts, systemPrompts, flashes, signals, envelopes, runs, transition, quietPoint };
 }
 
 describe('HarnessRailsController (spec 337)', () => {
@@ -584,6 +594,33 @@ describe('HarnessRailsController (spec 337)', () => {
     expect(r.records[0].trigger).toMatchObject({ kind: 'manual', laneId: 'lane-1' });
     expect(button('now').className).toBe('acp-dock-action');
     expect(button('now').disabled).toBe(false);
+
+    // Spec 343: each click is a command run on the active lane, as if typed.
+    expect(r.runs.map((run) => [run.laneId, run.text])).toEqual([
+      ['lane-1', '#rails send'],
+      ['lane-1', '#rails trust'],
+      ['lane-1', '#rails update'],
+      ['lane-1', '#rails now'],
+    ]);
+    await vi.waitFor(() => expect(r.runs.every((run) => run.settled)).toBe(true));
+  });
+
+  it('keeps the Run chip up until the clicked run is recorded, and so does r', async () => {
+    const r = rig({ history: [priorRun()] });
+    await r.ctl.mount();
+    const press = (key: string): boolean => r.ctl.handleDockKey(new KeyboardEvent('keydown', { key, cancelable: true }));
+
+    r.ctl.dockEl.querySelector<HTMLButtonElement>('[data-rails-action="now"]')?.click();
+    expect(r.runs).toEqual([{ laneId: 'lane-1', text: '#rails now', settled: false }]);
+    await r.ctl.whenIdle();
+    await vi.waitFor(() => expect(r.runs[0].settled).toBe(true));
+    expect(r.records).toHaveLength(1);
+
+    expect(press('r')).toBe(true);
+    expect(r.runs[1]).toEqual({ laneId: 'lane-1', text: '#rails now', settled: false });
+    await r.ctl.whenIdle();
+    await vi.waitFor(() => expect(r.runs[1].settled).toBe(true));
+    expect(r.records).toHaveLength(2);
   });
 
   it('shows Update running while a lane carries the rails update label, and gates it on the active lane', async () => {

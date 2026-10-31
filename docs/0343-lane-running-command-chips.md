@@ -14,6 +14,11 @@
 >    - `#rails now` settles only once its run is recorded (`harness-rails-controller.test.ts`).
 >    - `start` reports a refusal, and `whenDone` settles only at the loop's end
 >      (`harness-review-loop-controller.test.ts`).
+>
+> Amended 2026-10-31: a dock action button is a command run too. That covers the Rails Actions bar
+> (spec 344), the Ticket Panel's issue actions (spec 342) and the Rails dock's `r` key. Each one
+> enters at `trackCommandRun`, the same wrap `submitLanePrompt` uses, so a click shows the chip of
+> its typed command. See §Dock action buttons.
 > Date: 2026-10-29
 > Milestone: ACP Harness — lane chrome
 > Amends: [0302](./0302-harness-component-catalog.md) §4.2 `LaneHead`, §4.5 `RailEntry`
@@ -172,6 +177,21 @@ the chip must not undo that.
 reviewLoopCtl.whenDone(lane.id); }`. `start` returns `false` on every bail, including "loop
 already running", so a second invocation never attaches to the first loop. `whenDone` is a
 promise created with the loop and resolved in `drop`, the loop's single exit.
+
+#### Dock action buttons
+
+`trackCommandRun(lane, text, work)` holds steps 2, 3 and 6: begin the run, `await work()`, then
+end it in `finally`. `submitLanePrompt` calls it with `runHashCommand`. The Rails and Ticket hosts
+expose it too, so a button runs inside the same run as its typed command:
+
+| Trigger | Run text | `work` |
+|---------|----------|--------|
+| Rails Actions bar button, Rails dock `r` | `#rails <verb>` (`now`, `send`, `trust`, `update`) | `runCommand(lane, [verb], text)`: the typed sub-command, so `#rails now` lasts until its run is recorded |
+| Ticket Panel issue action | `#<verb>` (`#analyze-github-issue`, …), the verb typed with no reference | `runGithubIssuePromptVerb(lane, verb, [issueUrl])` |
+
+The lane is the active lane. With no active lane, Rails Run and Trust still act and no chip is
+shown, because a run has no lane to show on. A click never goes through `runHashCommand`, which
+would clear the lane's composer draft.
 
 ### UI Changes
 

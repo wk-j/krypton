@@ -52,6 +52,12 @@ interface VerbCall {
   args: string[];
 }
 
+interface CommandRun {
+  lane: string;
+  text: string;
+  settled: boolean;
+}
+
 function ticketDouble(
   activeTicket: LocalTicketDetail | null,
   ticketHidden = false,
@@ -63,11 +69,13 @@ function ticketDouble(
   commands: ApplyPanels[];
   flashes: string[];
   verbs: VerbCall[];
+  runs: CommandRun[];
   lane: HarnessLane;
 } {
   const commands: ApplyPanels[] = [];
   const flashes: string[] = [];
   const verbs: VerbCall[] = [];
+  const runs: CommandRun[] = [];
   const lane = options.lane ?? laneDouble();
   const root = document.createElement('div');
   let ctl: HarnessTicketController | null = null;
@@ -88,13 +96,22 @@ function ticketDouble(
       verbs.push({ lane: target.displayName, verb, args });
       return options.runVerb?.() ?? Promise.resolve();
     },
+    trackCommandRun: async (target: HarnessLane, text: string, work: () => Promise<void>): Promise<void> => {
+      const run = { lane: target.displayName, text, settled: false };
+      runs.push(run);
+      try {
+        await work();
+      } finally {
+        run.settled = true;
+      }
+    },
   } as unknown as HarnessTicketHost;
   ctl = new HarnessTicketController(host);
   ctl.mountDock();
   dock.setPane('ticket', ctl.ticketDockEl);
   ctl.activeTicket = activeTicket;
   ctl.renderTicketDock();
-  return { ctl, dock, root, commands, flashes, verbs, lane };
+  return { ctl, dock, root, commands, flashes, verbs, runs, lane };
 }
 
 const actionButton = (ctl: HarnessTicketController, verb: TicketDockAction): HTMLButtonElement => {
@@ -171,6 +188,19 @@ describe('Ticket Panel issue actions (spec 342)', () => {
     expect(verbs).toEqual([
       { lane: 'codex-1', verb: 'post-github-comment', args: ['https://github.com/wk/krypton/issues/342'] },
     ]);
+  });
+
+  it('shows the clicked verb as a command run on the lane until its work settles (spec 343)', async () => {
+    let finish: () => void = () => undefined;
+    const { ctl, runs } = ticketDouble(LINKED, false, {
+      runVerb: () => new Promise<void>((resolve) => { finish = resolve; }),
+    });
+
+    actionButton(ctl, 'analyze-github-issue').click();
+    expect(runs).toEqual([{ lane: 'codex-1', text: '#analyze-github-issue', settled: false }]);
+
+    finish();
+    await vi.waitFor(() => expect(runs[0].settled).toBe(true));
   });
 
   it('lets one dock action start per lane until its turn begins', () => {

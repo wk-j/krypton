@@ -5,6 +5,8 @@
 > Milestone: ACP Harness — architecture conformance
 > Builds on: 337 (Rails dock) · 338 (`#rails update`) · 342 (Ticket Panel issue actions) · ADR-0025
 > Amends: 337 and 338 Out of Scope (trust and update from the dock)
+> Amended by: 343 (2026-10-31). A click and the dock's `r` run the typed sub-command inside a
+> spec-343 command run, so the lane head shows `#rails now · 0:03` as it does for the typed command.
 
 ## Problem
 
@@ -18,8 +20,8 @@ column has state buttons for its actions (spec 342). The Rails dock has none.
 
 Add an **Actions** bar to the Rails dock with four buttons. Each one is a `#rails` sub-command that
 takes no argument and acts now: **Run** (`now`), **Send** (`send`), **Trust** (`trust`) and
-**Update** (`update`, bare: the lane proposes changes and waits). A click calls the same controller
-method as the typed sub-command. Each button shows its state the way the Ticket Panel's buttons
+**Update** (`update`, bare: the lane proposes changes and waits). A click runs the typed
+sub-command (`runCommand`) in the active lane, inside the same spec-343 command run as typing it. Each button shows its state the way the Ticket Panel's buttons
 do: plain when idle, cyan `running` while it runs, green `✓` when done, and disabled with the
 reason as its tooltip when it cannot run. Spec 342's private `IssueActionButton` becomes a shared
 `DockActionButton`, so both docks use one button and cannot drift apart.
@@ -165,8 +167,11 @@ timer. A done button stays enabled. A running button keeps its colour when disab
 export const RAILS_UPDATE_LABEL = 'rails update'; // the label update() already passes
 private lastSend: RailsSendMark | null = null;    // set by send(…, null), the send-all path
 runDockAction(action: RailsDockAction): void;
-// now → requestRun(activeLane) · send → send(activeLaneId, null) · trust → trust()
-// update → update(activeLane, '') (no active lane: flash "no active lane")
+// active lane L → host.trackCommandRun(L, `#rails ${verb}`, () => runCommand(L, [verb], text)):
+//   now → requestRun(L), awaited until recorded · send → send(L.id, null) · trust → trust()
+//   update → update(L, '')
+// no active lane: now → requestRun(null) · trust → trust() · else flash "no active lane"
+// `r` in the dock is runDockAction('now')
 ```
 
 The lane-bus subscription calls `renderDock()` after `onLaneStatus` on every `lane:status`.
@@ -185,8 +190,9 @@ Send
 1. Click Send. RailsDock's delegated listener finds [data-rails-action="send"]. It ignores a
    disabled button and the second click of a double click (event.detail > 1), then calls
    onAction('send').
-2. runDockAction('send') → send(activeLaneId, null): the same call as `#rails send` and as `s` on
-   the head row → injectEnvelope; chip "rails: sent 3 findings → codex-1".
+2. runDockAction('send') → trackCommandRun(L, '#rails send', …) → runCommand → send(L.id, null):
+   the same call as `#rails send` and as `s` on the head row → injectEnvelope; chip
+   "rails: sent 3 findings → codex-1".
 3. lastSend = { runId, laneName, count, at } → renderDock() → Send repaints as "✓ 14:02" in the
    done colour and stays enabled.
 4. A newer run lands (history[0] changes) → the mark no longer matches → Send is idle again.

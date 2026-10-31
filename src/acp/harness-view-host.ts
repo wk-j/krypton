@@ -170,6 +170,8 @@ export interface HarnessTicketHost extends HarnessViewHost {
       | 'handle-github-issue',
     args: string[],
   ): Promise<void>;
+  /** Spec 343: `lane` shows `text` as a run chip until `work` settles, as a typed `#` command does. */
+  trackCommandRun(lane: HarnessLane, text: string, work: () => Promise<void>): Promise<void>;
 }
 
 /** Spec 278 mid-turn steering controller host. */
@@ -228,4 +230,6 @@ export interface HarnessRailsHost extends HarnessViewHost {
     drain?: CoordinatorDrainContext,
     label?: string,
   ): Promise<boolean>;
+  /** Spec 343: `lane` shows `text` as a run chip until `work` settles, as a typed `#` command does. */
+  trackCommandRun(lane: HarnessLane, text: string, work: () => Promise<void>): Promise<void>;
 }

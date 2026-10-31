@@ -158,24 +158,18 @@ export class HarnessRailsController {
     this.renderDock();
   };
 
-  /** Spec 344: an Actions bar button. The same call as its typed `#rails` sub-command. */
+  /** Spec 344: an Actions bar button. It runs its typed `#rails` sub-command in
+   *  the active lane, which shows the same spec-343 run chip as typing it. */
   readonly runDockAction = (action: RailsDockAction): void => {
     const lane = this.activeLane();
-    switch (action) {
-      case 'now':
-        void this.requestRun(lane);
-        return;
-      case 'send':
-        this.send(this.host.activeLaneId, null);
-        return;
-      case 'trust':
-        void this.trust();
-        return;
-      case 'update':
-        if (lane) void this.update(lane, '');
-        else this.host.flashChip('no active lane');
-        return;
+    if (!lane) {
+      if (action === 'now') void this.requestRun(null);
+      else if (action === 'trust') void this.trust();
+      else this.host.flashChip('no active lane');
+      return;
     }
+    const text = `#rails ${action}`;
+    void this.host.trackCommandRun(lane, text, () => this.runCommand(lane, [action], text));
   };
 
   constructor(private readonly host: HarnessRailsHost, deps: RailsControllerDeps = {}) {
@@ -317,7 +311,7 @@ export class HarnessRailsController {
     else if (key === 'Enter') this.toggleExpanded();
     else if (key >= '1' && key <= '5' && key.length === 1) this.jumpToSection(Number(key) as RailsDockSection);
     else if (key === 's') this.sendSelected();
-    else if (key === 'r') void this.requestRun(this.activeLane());
+    else if (key === 'r') this.runDockAction('now');
     else if (key === 'Escape') this.host.focusComposer();
     else return false;
     event.preventDefault();

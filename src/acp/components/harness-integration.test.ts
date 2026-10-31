@@ -478,6 +478,37 @@ describe('running built-in command chips (spec 343)', () => {
       vi.mocked(invoke).mockImplementation(async () => []);
     }
   });
+
+  it('names a dock action button on the lane head the same way as its typed command', async () => {
+    vi.useFakeTimers();
+    let failTrust: (error: Error) => void = () => {};
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === 'rails_trust') return new Promise((_resolve, reject) => { failTrust = reject; });
+      return [];
+    });
+    const runChip = (): Element | null => view.element.querySelector('.acp-harness__lane-run');
+    const rails = (view as unknown as { railsCtl: { runDockAction(action: 'trust'): void } }).railsCtl;
+    try {
+      const lane = call<HarnessLane>(view, 'createLane', 'claude', 'claude-1');
+      lanes(view).push(lane);
+      activate(view, lane.id);
+      lane.status = 'idle';
+
+      rails.runDockAction('trust');
+      await vi.advanceTimersByTimeAsync(500);
+      call(view, 'renderDashboard');
+      expect(runChip()?.textContent).toBe('#rails trust · 0:00');
+
+      failTrust(new Error('denied'));
+      await vi.waitFor(() => {
+        call(view, 'renderDashboard');
+        expect(runChip()).toBeNull();
+      });
+    } finally {
+      vi.useRealTimers();
+      vi.mocked(invoke).mockImplementation(async () => []);
+    }
+  });
 });
 
 describe('focused Rails dock keys (spec 337)', () => {

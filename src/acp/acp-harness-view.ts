@@ -8463,12 +8463,7 @@ export class AcpHarnessView implements ContentView {
     if (text.startsWith('#')) {
       // spec 343: the lane names the built-in for as long as its work runs —
       // harness IPC, the turn it injected, or the loop it started.
-      const runId = this.beginCommandRun(lane, text);
-      try {
-        await this.runHashCommand(lane, text);
-      } finally {
-        this.endCommandRun(runId);
-      }
+      await this.trackCommandRun(lane, text, () => this.runHashCommand(lane, text));
       return;
     }
     if (text.startsWith('!')) {
@@ -13786,6 +13781,17 @@ export class AcpHarnessView implements ContentView {
     return id;
   }
 
+  /** spec 343: `lane` shows `text` as a run chip until `work` settles. A typed
+   *  `#` command and a dock button that runs one share it, so both read alike. */
+  private async trackCommandRun(lane: HarnessLane, text: string, work: () => Promise<void>): Promise<void> {
+    const runId = this.beginCommandRun(lane, text);
+    try {
+      await work();
+    } finally {
+      this.endCommandRun(runId);
+    }
+  }
+
   private endCommandRun(id: number): void {
     const timer = this.commandRunRevealTimers.get(id);
     if (timer !== undefined) {
@@ -16432,6 +16438,7 @@ export class AcpHarnessView implements ContentView {
       recordJournal: (laneLabel, kind, summary, meta) => view.recordJournal(laneLabel, kind, summary, meta),
       issueBinding: (issueKey) => view.issueBindings.get(issueKey) ?? null,
       runGithubIssuePromptVerb: (lane, verb, args) => view.runGithubIssuePromptVerb(lane, verb, args),
+      trackCommandRun: (lane, text, work) => view.trackCommandRun(lane, text, work),
     };
   }
 
@@ -16620,6 +16627,7 @@ export class AcpHarnessView implements ContentView {
         });
       },
       enqueueSystemPrompt: (lane, text, drain, label) => view.enqueueSystemPrompt(lane, text, drain, label),
+      trackCommandRun: (lane, text, work) => view.trackCommandRun(lane, text, work),
     };
   }
 

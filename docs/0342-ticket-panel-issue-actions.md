@@ -19,7 +19,8 @@ Add an **Issue actions** section to the Ticket Panel with six buttons, one for e
 prompt verb that needs only the issue reference: Analyze, Fix here, Handle, Comment, Label and
 Attach. A button runs the same path as the matching `#` verb typed with no reference. It calls
 `runGithubIssuePromptVerb` with the active ticket's issue URL, in the active lane. The `#ticket`
-picker's actions (spec 203) already work this way.
+picker's actions (spec 203) already work this way. Since 2026-10-31 the call runs inside a
+spec-343 command run named `#<verb>`, so the lane head shows the same chip as the typed verb.
 
 Each button also shows the action's **state** for this ticket. A plain button has never run. A
 `running` button is running now in some lane. A `done` button has finished at least once, and its

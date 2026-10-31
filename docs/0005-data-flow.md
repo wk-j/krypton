@@ -1555,6 +1555,12 @@ therefore tracks the command itself, not the lane.
 5. finally endCommandRun → clear the timer; if it was on screen → invalidate('rail')
 ```
 
+Steps 1, 2 and 5 are `trackCommandRun(L, text, work)`. A dock action button enters there too,
+with the active lane and the text of its typed command. The Rails Actions bar and the Rails dock's
+`r` use `#rails <verb>` with `runCommand` as the work. A Ticket Panel issue action uses
+`#<verb>` with `runGithubIssuePromptVerb` as the work. A click therefore shows the same chip as
+typing the command.
+
 A lane closing drops its runs; view dispose clears them, so a late `finally` neither
 repaints nor restarts the clock. Lane status, peer drain and the composer busy chip are
 unchanged.
