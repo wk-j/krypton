@@ -242,7 +242,7 @@ callback.
 
 ### UI Changes
 
-- The button is appended after `all` with `separatorBefore: true`:
+- The button is appended after `all` (since spec 347, after `right`) with `separatorBefore: true`:
   `{ id: 'backend-update', icon: 'krypton-icon-backend-update', label:
   'Backend updates: OMP 18.12.6 → 18.13.0', attention: true }`, with no
   `pressed`. Two updates are joined with `, `.

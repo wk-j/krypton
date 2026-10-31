@@ -24,10 +24,10 @@
    this file, in `krypton.scheme`.
    ═══════════════════════════════════════════════════════════════ */
 @layer krypton.base {
-/* ── Root · `acp-harness-view.ts:1482` sets `element.className`; the
-      `--concise` / `--zen` / `--panels-hidden` toggles at `:11593-11595`
-      and the `--dock-active` toggle in `harness-dock.ts` (spec 337)
-      compose on top of it. ──────────────────────────────────── */
+/* ── Root · `acp-harness-view.ts` `syncRootClasses()` composes the
+      `--concise` / `--zen` / `--left-panel-hidden` toggles, and
+      `harness-dock.ts` the `--dock-active` toggle (spec 337), on top of
+      `element.className`. ──────────────────────────────────── */
 
 .acp-harness {
   container-type: inline-size;
@@ -1382,7 +1382,7 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
    reads an `auto` line as the grid's padding edge) and paints above the rail;
    the rail is clipped there, so a tab scrolled into that corner still shows
    one body layer. */
-.acp-harness--zen:not(.acp-harness--panels-hidden) .acp-harness__dashboard:has(> .acp-harness__rail > .acp-harness__rail-entry--active)::after {
+.acp-harness--zen:not(.acp-harness--left-panel-hidden) .acp-harness__dashboard:has(> .acp-harness__rail > .acp-harness__rail-entry--active)::after {
   content: '';
   position: absolute;
   grid-area: 1 / 1 / 2 / 2;
@@ -1397,7 +1397,7 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
 /* When the tab is not the first row, the body's own top-left corner faces the
    titlebar and the rail: round it like the tab's rail-side corners. A
    first-row tab joins the body at that corner, so it stays square there. */
-.acp-harness--zen:not(.acp-harness--panels-hidden) .acp-harness__dashboard:not(:has(> .acp-harness__rail > .acp-harness__rail-entry--active:first-child)) > .acp-harness__body-cell > .acp-harness__lane--active {
+.acp-harness--zen:not(.acp-harness--left-panel-hidden) .acp-harness__dashboard:not(:has(> .acp-harness__rail > .acp-harness__rail-entry--active:first-child)) > .acp-harness__body-cell > .acp-harness__lane--active {
   border-top-left-radius: var(--acp-rail-tab-r, 8px);
 }
 
@@ -1410,22 +1410,20 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   PANEL VISIBILITY — #panels hide/show/toggle (spec 251)
+   LEFT PANEL — `#panels left` / the titlebar `left` toggle (spec 347)
    ═══════════════════════════════════════════════════════════════ */
 
-/* Persistent supporting surfaces disappear as one reversible layer. The
-   transcript, composer, lane identity/status, and summon-on-demand overlays
-   remain available. The ticket dock needs no rule here: under `#panels hide`
-   (and spec 320's per-panel `ticket` flag) the controller sets its `hidden`
-   attribute and drops the `--ticket-*` root classes that reserve its width. */
-.acp-harness--panels-hidden .acp-harness__lane-rail,
-.acp-harness--panels-hidden .acp-harness__rail {
+/* The left panel is the Zen lane rail; `Tab` / `Shift+Tab` still switch lanes
+   while it is hidden. The right panel (the dock column) needs no rule here:
+   its tabs report themselves unavailable, so `harness-dock.ts` hides the
+   column and drops `--dock-active`, which reserves its width. */
+.acp-harness--left-panel-hidden .acp-harness__rail {
   display: none;
 }
 
-/* Zen normally allocates a left navigation column. With panels hidden the
-   active lane keeps the same body and fills the reclaimed column. */
-.acp-harness--panels-hidden.acp-harness--zen .acp-harness__dashboard {
+/* Zen normally allocates a left navigation column. With the left panel hidden
+   the active lane keeps the same body and fills the reclaimed column. */
+.acp-harness--left-panel-hidden.acp-harness--zen .acp-harness__dashboard {
   grid-template-columns: minmax(0, 1fr);
 }
 

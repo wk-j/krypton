@@ -1,6 +1,6 @@
 # Harness Panel Visibility Command — Implementation Spec
 
-> Status: Implemented — extended by [spec 320](./0320-harness-titlebar-panel-toggles.md)
+> Status: Implemented — extended by [spec 320](./0320-harness-titlebar-panel-toggles.md); the all-panels switch was removed by [spec 347](./0347-harness-left-right-panel-toggles.md) (2026-10-30): bare `#panels` and `#panels hide | show | toggle` now answer with usage, the `panels-hidden` key is no longer read, and `#panels left` / `#panels right` hide the Zen lane rail / the dock column one side at a time.
 > Date: 2026-09-16
 > Milestone: M6 — ACP Harness
 

@@ -287,8 +287,8 @@ component, never a DOM field).
 | Composer | Keyboard-first (`CLAUDE.md` constraint 1): the command escape hatch must always be present and reachable. The slot may move; the component may not be unmounted. |
 | Inline permission / question / write-review rows, annotation rail | Transcript content, not panels. Spec 251 already draws this line: hiding or moving a panel must never conceal an action that unblocks a lane. The annotation rail (spec 302 §5.8) belongs to the reply it annotates — `AssistantRow` appends it to that message body, so a `rail.top` slot would MOVE it, not place it. |
 
-`#panels` (spec 251) stays exactly as it is — it hides the *whole* rail via a root class, which is a
-coarser control than, and independent of, slot placement.
+`#panels` decides visibility, independent of slot placement. (Spec 347 removed the spec 251 switch that hid
+the whole rail; `#panels left` / `right` now hide the Zen lane rail / the dock column, one side each.)
 
 ### Data Flow
 

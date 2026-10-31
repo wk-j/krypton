@@ -7,7 +7,7 @@ import type { TitlebarToggle } from './types';
 const PANELS: readonly TitlebarToggle[] = [
   { id: 'plan', icon: 'krypton-icon-panel-plan', label: 'Plan panel', pressed: true },
   { id: 'grammar', icon: 'krypton-icon-panel-grammar', label: 'Grammar panel', pressed: false },
-  { id: 'all', icon: 'krypton-icon-panel-all', label: 'All panels', pressed: true, separatorBefore: true },
+  { id: 'right', icon: 'krypton-icon-panel-right', label: 'Right panel', pressed: true, separatorBefore: true },
 ];
 
 function makeEnd(): HTMLElement {
@@ -45,7 +45,7 @@ describe('syncTitlebarToggles', () => {
     expect(cluster?.getAttribute('role')).toBe('toolbar');
     expect(cluster?.getAttribute('aria-label')).toBe('Panels');
     expect(end.children).toHaveLength(2);
-    expect(buttons(end).map((b) => b.dataset.toggleId)).toEqual(['plan', 'grammar', 'all']);
+    expect(buttons(end).map((b) => b.dataset.toggleId)).toEqual(['plan', 'grammar', 'right']);
   });
 
   it('reflects pressed state, labels and icons on non-focusable buttons', () => {
@@ -65,7 +65,7 @@ describe('syncTitlebarToggles', () => {
   });
 
   it('disables a toggle with a reason and shows the reason as its tooltip', () => {
-    const reason = 'all panels hidden · #panels show';
+    const reason = 'plan unavailable · open a lane';
     syncTitlebarToggles(end, [{ ...PANELS[0], disabledReason: reason }], () => {});
     const plan = button(end, 'plan');
     expect(plan.disabled).toBe(true);
@@ -79,7 +79,7 @@ describe('syncTitlebarToggles', () => {
     const seps = cluster.querySelectorAll('.krypton-window__view-toggle-sep');
     expect(seps).toHaveLength(1);
     expect(seps[0].getAttribute('aria-hidden')).toBe('true');
-    expect(seps[0].nextElementSibling).toBe(button(end, 'all'));
+    expect(seps[0].nextElementSibling).toBe(button(end, 'right'));
     expect(seps[0].previousElementSibling).toBe(button(end, 'grammar'));
   });
 

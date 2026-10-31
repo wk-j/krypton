@@ -194,8 +194,8 @@ function buildSections(): readonly HelpSection[] {
       { term: '#mcp', desc: 'Show MCP endpoint and lane status' },
       { term: '#bg', desc: 'List this lane’s background shell tasks' },
       {
-        term: '#panels [hide | show | toggle] [panel]',
-        desc: 'Hide or restore Harness panels: all, or one of plan · peek · thought · grammar · queue · ticket (also the window titlebar icons)',
+        term: '#panels [hide | show | toggle] <left | right | panel>',
+        desc: 'Hide or restore the left panel (Zen lane rail), the right panel (ticket/rails dock), or one of plan · peek · thought · grammar · queue · ticket · rails (also the window titlebar icons)',
       },
       {
         term: '#timeline [open | trace | conflicts | auto]',

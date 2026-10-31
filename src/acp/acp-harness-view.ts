@@ -67,17 +67,22 @@ import { clampCursor, nextCursor, prevCursor } from './components/list-picker';
 import { LayoutHost, type Mountable } from '../ui/layout';
 import { HARNESS_LAYOUT_DEFAULT, type HarnessSlot } from './harness-layout';
 import {
-  ALL_PANELS_TOGGLE_ID,
   harnessTitlebarToggles,
+  isDockTab,
   isHarnessPanelId,
+  isHarnessSide,
   nextHidden,
   panelFlash,
   PANELS_USAGE,
   parsePanelsCommand,
   readHiddenPanels,
+  readSideHidden,
+  sideFlash,
   writeHiddenPanels,
+  writeSideHidden,
   type HarnessDockTab,
   type HarnessPanelId,
+  type HarnessSide,
   type PanelsCommand,
 } from './harness-panel-visibility';
 import { HelpOverlay } from './components/help-overlay';
@@ -1424,9 +1429,11 @@ export class AcpHarnessView implements ContentView {
   private zenMode = false;
   /** spec 157: collapse tool cards to their head line, hide side-channel rows. */
   private conciseMode = false;
-  /** spec 251: hide persistent auxiliary panels without discarding their state. */
-  private panelsHidden = false;
-  /** spec 320: per-panel hidden flags, beneath `panelsHidden` as the master switch. */
+  /** spec 347: the left panel — the Zen lane rail. */
+  private leftPanelHidden = false;
+  /** spec 347: the right panel — the dock column (the `ticket` and `rails` tabs). */
+  private rightPanelHidden = false;
+  /** spec 320: per-panel hidden flags, independent of the side flags. */
   private hiddenPanels: ReadonlySet<HarnessPanelId> = new Set();
   private titlebarToggleListeners = new Set<() => void>();
   private memoryCursorRowId: string | null = null;
@@ -1640,7 +1647,8 @@ export class AcpHarnessView implements ContentView {
     this.backendUpdatesUnsubscribe = onBackendUpdatesChange(() => this.notifyTitlebarTogglesChanged());
     this.zenMode = readZenModePreference(projectDir);
     this.conciseMode = readConciseModePreference(projectDir);
-    this.panelsHidden = readPanelsHiddenPreference(projectDir);
+    this.leftPanelHidden = readSideHidden(projectDir, 'left');
+    this.rightPanelHidden = readSideHidden(projectDir, 'right');
     this.hiddenPanels = readHiddenPanels(projectDir);
     this.element = document.createElement('div');
     this.element.className = 'acp-harness';
@@ -4926,7 +4934,7 @@ export class AcpHarnessView implements ContentView {
   /** spec 320: the panel toggles this view contributes to its window titlebar.
    *  spec 322: plus a one-shot backend-update action while Grok/OMP are behind. */
   getTitlebarToggles(): readonly TitlebarToggle[] {
-    const toggles = harnessTitlebarToggles(this.hiddenPanels, this.panelsHidden);
+    const toggles = harnessTitlebarToggles(this.hiddenPanels, { left: this.leftPanelHidden, right: this.rightPanelHidden });
     const updates = backendUpdates();
     if (this.openTerminalTabCb === null || updates.length === 0) return toggles;
     return [
@@ -4949,7 +4957,7 @@ export class AcpHarnessView implements ContentView {
   /** A titlebar click is the bare-toggle form of the matching `#panels` command. */
   activateTitlebarToggle(id: string): void {
     if (id === BACKEND_UPDATE_TOGGLE_ID) this.runBackendUpdate();
-    else if (id === ALL_PANELS_TOGGLE_ID) this.applyPanelsCommand({ kind: 'all', action: 'toggle' });
+    else if (isHarnessSide(id)) this.applyPanelsCommand({ kind: 'side', side: id, action: 'toggle' });
     else if (isHarnessPanelId(id)) this.applyPanelsCommand({ kind: 'panel', panel: id, action: 'toggle' });
   }
 
@@ -12594,7 +12602,7 @@ export class AcpHarnessView implements ContentView {
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
     this.element.classList.toggle('acp-harness--zen', this.zenMode);
     this.element.classList.toggle('acp-harness--concise', this.conciseMode);
-    this.element.classList.toggle('acp-harness--panels-hidden', this.panelsHidden);
+    this.element.classList.toggle('acp-harness--left-panel-hidden', this.leftPanelHidden);
     this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
   }
 
@@ -15929,15 +15937,16 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
-  private setPanelsHidden(hidden: boolean): void {
-    this.panelsHidden = hidden;
-    writePanelsHiddenPreference(this.projectDir, hidden);
-    if (hidden) this.stopThoughtTeletypeTick();
+  /** spec 347: one side panel's flag. Writes nothing else — no panel flag, not the other side. */
+  private setSideHidden(side: HarnessSide, hidden: boolean): void {
+    if (side === 'left') this.leftPanelHidden = hidden;
+    else this.rightPanelHidden = hidden;
+    writeSideHidden(this.projectDir, side, hidden);
     this.notifyTitlebarTogglesChanged();
     this.render();
   }
 
-  /** spec 320: one panel's own flag. Independent of `panelsHidden`: neither setter writes the other's flag. */
+  /** spec 320: one panel's own flag. Writes nothing else — no side flag, no other panel. */
   private setPanelHidden(panel: HarnessPanelId, hidden: boolean): void {
     if (this.hiddenPanels.has(panel) === hidden) return;
     const next = new Set(this.hiddenPanels);
@@ -15949,24 +15958,25 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
-  /** spec 320: the master switch wins; otherwise the panel's own flag. */
+  /** spec 320: the panel's own flag; spec 347: the two dock tabs also hide with the right panel. */
   private isPanelHidden(panel: HarnessPanelId): boolean {
-    return this.panelsHidden || this.hiddenPanels.has(panel);
+    return this.hiddenPanels.has(panel) || (this.rightPanelHidden && isDockTab(panel));
   }
 
   /** Shared by `#panels` and the titlebar toggles, so both flash the same chip. */
   private applyPanelsCommand(command: Exclude<PanelsCommand, { kind: 'usage' }>): void {
-    if (command.kind === 'all') {
-      const hidden = nextHidden(command.action, this.panelsHidden);
-      this.setPanelsHidden(hidden);
-      this.flashChip(hidden ? 'panels hidden · #panels show' : 'panels shown');
+    if (command.kind === 'side') {
+      const current = command.side === 'left' ? this.leftPanelHidden : this.rightPanelHidden;
+      const hidden = nextHidden(command.action, current);
+      this.setSideHidden(command.side, hidden);
+      this.flashChip(sideFlash(command.side, hidden));
       return;
     }
     const hidden = nextHidden(command.action, this.hiddenPanels.has(command.panel));
     this.setPanelHidden(command.panel, hidden);
     // spec 337: showing a dock (toggle, `#panels <id> show`, `#ticket panel`) selects its tab.
-    if (!hidden && (command.panel === 'ticket' || command.panel === 'rails')) this.dock.select(command.panel);
-    this.flashChip(panelFlash(command.panel, hidden, this.panelsHidden));
+    if (!hidden && isDockTab(command.panel)) this.dock.select(command.panel);
+    this.flashChip(panelFlash(command.panel, hidden, this.rightPanelHidden));
   }
 
   /** spec 337: the column changed its shown tab — only a shown dock paints. */
@@ -15979,8 +15989,8 @@ export class AcpHarnessView implements ContentView {
   private showRailsDock(): void {
     this.setPanelHidden('rails', false);
     this.dock.select('rails');
-    if (this.panelsHidden) {
-      this.flashChip('all panels hidden · #panels show');
+    if (this.rightPanelHidden) {
+      this.flashChip(sideFlash('right', true));
       return;
     }
     this.railsCtl?.renderDock();
@@ -16695,27 +16705,6 @@ function writeConciseModePreference(projectDir: string | null, value: boolean): 
   try {
     if (value) localStorage.setItem(conciseModeStorageKey(projectDir), '1');
     else localStorage.removeItem(conciseModeStorageKey(projectDir));
-  } catch {
-    // localStorage unavailable — preference simply won't persist
-  }
-}
-
-function panelsHiddenStorageKey(projectDir: string | null): string {
-  return `krypton:acp-harness:panels-hidden:${projectDir ?? ''}`;
-}
-
-function readPanelsHiddenPreference(projectDir: string | null): boolean {
-  try {
-    return localStorage.getItem(panelsHiddenStorageKey(projectDir)) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function writePanelsHiddenPreference(projectDir: string | null, value: boolean): void {
-  try {
-    if (value) localStorage.setItem(panelsHiddenStorageKey(projectDir), '1');
-    else localStorage.removeItem(panelsHiddenStorageKey(projectDir));
   } catch {
     // localStorage unavailable — preference simply won't persist
   }

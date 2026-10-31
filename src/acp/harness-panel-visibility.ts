@@ -2,9 +2,10 @@
 //
 // Each persistent panel (plan, lane peek, live thought, grammar review, prompt
 // queue, Active Ticket dock, Rails dock) carries its own hidden flag, persisted per
-// project. `#panels` (spec 251) stays the master switch above them: the two
-// levels never rewrite each other. The view's renderers ask
-// `isPanelHidden(id)`, which is `panelsHidden || hiddenPanels.has(id)`.
+// project. Spec 347 adds one flag per side panel beside them: `left` hides the
+// Zen lane rail, `right` hides the dock column. No flag ever rewrites another.
+// The view's renderers ask `isPanelHidden(id)`: the panel's own flag, or, for
+// the two dock tabs, the `right` flag too.
 
 import type { TitlebarToggle } from '../types';
 
@@ -31,16 +32,16 @@ export const HARNESS_TOGGLE_PANELS: readonly HarnessTogglePanel[] = [
   { id: 'rails', label: 'Rails dock', icon: 'krypton-icon-panel-rails' },
 ];
 
-/** Titlebar id of the master toggle — the same switch as bare `#panels`. */
-export const ALL_PANELS_TOGGLE_ID = 'all';
+/** Spec 347: the side panels — `left` is the Zen lane rail, `right` the dock column. */
+export type HarnessSide = 'left' | 'right';
 
 export const PANELS_USAGE =
-  'usage: #panels [hide | show | toggle] [plan | peek | thought | grammar | queue | ticket | rails]';
+  'usage: #panels [hide | show | toggle] <left | right | plan | peek | thought | grammar | queue | ticket | rails>';
 
 export type PanelsAction = 'hide' | 'show' | 'toggle';
 
 export type PanelsCommand =
-  | { kind: 'all'; action: PanelsAction }
+  | { kind: 'side'; side: HarnessSide; action: PanelsAction }
   | { kind: 'panel'; panel: HarnessPanelId; action: PanelsAction }
   | { kind: 'usage' };
 
@@ -58,28 +59,31 @@ export function isHarnessPanelId(value: string): value is HarnessPanelId {
   return Object.prototype.hasOwnProperty.call(PANEL_ID, value);
 }
 
+export function isHarnessSide(value: string): value is HarnessSide {
+  return value === 'left' || value === 'right';
+}
+
+/** The two panels that are tabs of the dock column, which the `right` flag hides. */
+export function isDockTab(panel: HarnessPanelId): panel is HarnessDockTab {
+  return panel === 'ticket' || panel === 'rails';
+}
+
 function isPanelsAction(value: string): value is PanelsAction {
   return value === 'hide' || value === 'show' || value === 'toggle';
 }
 
 /**
- * Parse the words after `#panels`:
- * `[]` / `[action]` address every panel; `[panel]` / `[action, panel]` one.
- * Anything else — unknown words, reversed order, extra words — is usage.
+ * Parse the words after `#panels`: `[target]` toggles one side or panel,
+ * `[action, target]` sets it. Anything else — no target (spec 347 removed the
+ * all-panels forms), unknown words, reversed order, extra words — is usage.
  */
 export function parsePanelsCommand(args: readonly string[]): PanelsCommand {
   const words = args.map((word) => word.toLowerCase());
-  if (words.length === 0) return { kind: 'all', action: 'toggle' };
-  if (words.length > 2) return { kind: 'usage' };
-  const [first, second] = words;
-  if (words.length === 1) {
-    if (isPanelsAction(first)) return { kind: 'all', action: first };
-    if (isHarnessPanelId(first)) return { kind: 'panel', panel: first, action: 'toggle' };
-    return { kind: 'usage' };
-  }
-  if (isPanelsAction(first) && isHarnessPanelId(second)) {
-    return { kind: 'panel', panel: second, action: first };
-  }
+  if (words.length === 0 || words.length > 2) return { kind: 'usage' };
+  const [action, target] = words.length === 1 ? ['toggle', words[0]] : words;
+  if (!isPanelsAction(action)) return { kind: 'usage' };
+  if (isHarnessSide(target)) return { kind: 'side', side: target, action };
+  if (isHarnessPanelId(target)) return { kind: 'panel', panel: target, action };
   return { kind: 'usage' };
 }
 
@@ -90,36 +94,59 @@ export function nextHidden(action: PanelsAction, hidden: boolean): boolean {
   return !hidden;
 }
 
-/** Chip flashed after a single-panel change. */
-export function panelFlash(panel: HarnessPanelId, hidden: boolean, allHidden: boolean): string {
+/** Chip flashed after a single-panel change; a dock tab says when the right panel hides it. */
+export function panelFlash(panel: HarnessPanelId, hidden: boolean, rightPanelHidden: boolean): string {
   const base = hidden ? `${panel} hidden · #panels show ${panel}` : `${panel} shown`;
-  return allHidden ? `${base} · all panels hidden` : base;
+  return rightPanelHidden && isDockTab(panel) ? `${base} · right panel hidden` : base;
 }
 
-/** The view's titlebar contribution: seven panels, a divider, then the master toggle. */
+/** Chip flashed after a side-panel change. */
+export function sideFlash(side: HarnessSide, hidden: boolean): string {
+  return hidden ? `${side} panel hidden · #panels show ${side}` : `${side} panel shown`;
+}
+
+/** The view's titlebar contribution: seven panels, a divider, then the left and right panels. */
 export function harnessTitlebarToggles(
   hidden: ReadonlySet<HarnessPanelId>,
-  allHidden: boolean,
+  sides: Readonly<Record<HarnessSide, boolean>>,
 ): TitlebarToggle[] {
-  const disabledReason = allHidden ? 'all panels hidden · #panels show' : undefined;
   const toggles: TitlebarToggle[] = HARNESS_TOGGLE_PANELS.map((panel) => ({
     id: panel.id,
     icon: panel.icon,
     label: panel.label,
     pressed: !hidden.has(panel.id),
-    ...(disabledReason ? { disabledReason } : {}),
   }));
-  toggles.push({
-    id: ALL_PANELS_TOGGLE_ID,
-    icon: 'krypton-icon-panel-all',
-    label: 'All panels',
-    pressed: !allHidden,
-    separatorBefore: true,
-  });
+  toggles.push(
+    { id: 'left', icon: 'krypton-icon-panel-left', label: 'Left panel', pressed: !sides.left, separatorBefore: true },
+    { id: 'right', icon: 'krypton-icon-panel-right', label: 'Right panel', pressed: !sides.right },
+  );
   return toggles;
 }
 
-/** Persisted per project, beside spec 251's `krypton:acp-harness:panels-hidden:`. */
+/** Spec 347: `'1'` while that side panel is hidden; the key is removed when it is shown. */
+function sideHiddenKey(projectDir: string | null, side: HarnessSide): string {
+  return `krypton:acp-harness:${side}-panel-hidden:${projectDir ?? ''}`;
+}
+
+/** Unavailable storage reads as "shown". */
+export function readSideHidden(projectDir: string | null, side: HarnessSide): boolean {
+  try {
+    return localStorage.getItem(sideHiddenKey(projectDir, side)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function writeSideHidden(projectDir: string | null, side: HarnessSide, hidden: boolean): void {
+  try {
+    if (hidden) localStorage.setItem(sideHiddenKey(projectDir, side), '1');
+    else localStorage.removeItem(sideHiddenKey(projectDir, side));
+  } catch {
+    // localStorage unavailable — the preference simply won't persist
+  }
+}
+
+/** Persisted per project, beside the side flags. */
 const HIDDEN_PANELS_KEY_PREFIX = 'krypton:acp-harness:hidden-panels:';
 
 /** Unknown ids, corrupt JSON and unavailable storage all read as "not hidden". */

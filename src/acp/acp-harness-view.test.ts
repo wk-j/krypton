@@ -105,7 +105,7 @@ import { HarnessTicketController } from './harness-ticket-controller';
 import type { LaneToolGates } from './lane-context';
 import { refreshLessons } from './lessons';
 import type { ActiveTicketPinInput } from './harness-prompts';
-import type { HarnessPanelId } from './harness-panel-visibility';
+import { PANELS_USAGE, type HarnessPanelId } from './harness-panel-visibility';
 
 // Spec 301: the behaviour tests below cross exactly two module boundaries —
 // the tauri bridge and the project MCP loader. `importOriginal` keeps every
@@ -426,7 +426,6 @@ describe('assistant reference Git state', () => {
       (AcpHarnessView.prototype as unknown as ThoughtSlotHost).renderLaneThought;
     const unmounted: string[] = [];
     const target: {
-      panelsHidden: boolean;
       hiddenPanels: ReadonlySet<HarnessPanelId>;
       thoughtCard: unknown;
       thoughtLaneId: string | null;
@@ -435,7 +434,6 @@ describe('assistant reference Git state', () => {
       resolveThoughtTarget(): unknown;
       stopThoughtTeletypeTick(): void;
     } = viewDouble({
-      panelsHidden: false,
       hiddenPanels: new Set<HarnessPanelId>(),
       thoughtCard: {} as unknown,
       thoughtLaneId: 'lane-1' as string | null,
@@ -4102,16 +4100,18 @@ describe('#telegram dispatch', () => {
   });
 });
 
-describe('#panels and titlebar toggles (specs 251, 320)', () => {
+describe('#panels and titlebar toggles (specs 320, 347)', () => {
   type TestLane = { status: string };
   type PanelsView = {
     runHashCommand(lane: TestLane, text: string): Promise<void>;
     activateTitlebarToggle(id: string): void;
+    isPanelHidden(panel: HarnessPanelId): boolean;
   };
   const proto = AcpHarnessView.prototype as unknown as PanelsView;
+  type PanelsTarget = { leftPanelHidden: boolean; rightPanelHidden: boolean; hiddenPanels: Set<HarnessPanelId> };
 
-  function harnessDouble(options: { allHidden?: boolean; hidden?: HarnessPanelId[] } = {}): {
-    target: { panelsHidden: boolean; hiddenPanels: Set<HarnessPanelId> };
+  function harnessDouble(options: { left?: boolean; right?: boolean; hidden?: HarnessPanelId[] } = {}): {
+    target: PanelsTarget;
     drafts: string[];
     flashes: string[];
     changes: string[];
@@ -4120,14 +4120,16 @@ describe('#panels and titlebar toggles (specs 251, 320)', () => {
     const flashes: string[] = [];
     const changes: string[] = [];
     // Real `applyPanelsCommand` (from the prototype) over stubbed setters.
-    const target: { panelsHidden: boolean; hiddenPanels: Set<HarnessPanelId> } = viewDouble({
-      panelsHidden: options.allHidden ?? false,
+    const target: PanelsTarget = viewDouble({
+      leftPanelHidden: options.left ?? false,
+      rightPanelHidden: options.right ?? false,
       hiddenPanels: new Set<HarnessPanelId>(options.hidden ?? []),
       setDraft: (_lane: TestLane, value: string): void => { drafts.push(value); },
       flashChip: (value: string): void => { flashes.push(value); },
-      setPanelsHidden: (value: boolean): void => {
-        target.panelsHidden = value;
-        changes.push(`all:${value}`);
+      setSideHidden: (side: 'left' | 'right', value: boolean): void => {
+        if (side === 'left') target.leftPanelHidden = value;
+        else target.rightPanelHidden = value;
+        changes.push(`${side}:${value}`);
       },
       setPanelHidden: (panel: HarnessPanelId, value: boolean): void => {
         if (value) target.hiddenPanels.add(panel);
@@ -4140,19 +4142,26 @@ describe('#panels and titlebar toggles (specs 251, 320)', () => {
     return { target, drafts, flashes, changes };
   }
 
-  it('keeps the all-panels forms of spec 251', async () => {
-    const h = harnessDouble();
+  it('toggles or sets one side panel without touching the other side or any panel', async () => {
+    const h = harnessDouble({ hidden: ['plan'] });
 
-    for (const text of ['#panels', '#panels show', '#panels hide', '#panels toggle']) {
-      await proto.runHashCommand.call(h.target, { status: 'busy' }, text);
+    for (const text of ['#panels left', '#panels left', '#panels hide right', '#panels hide right', '#panels show right']) {
+      await proto.runHashCommand.call(h.target, { status: 'idle' }, text);
     }
 
-    expect(h.drafts).toEqual(['', '', '', '']);
-    expect(h.changes).toEqual(['all:true', 'all:false', 'all:true', 'all:false']);
-    expect(h.target.hiddenPanels.size).toBe(0);
+    expect(h.drafts).toEqual(['', '', '', '', '']);
+    expect(h.changes).toEqual(['left:true', 'left:false', 'right:true', 'right:true', 'right:false']);
+    expect(h.flashes).toEqual([
+      'left panel hidden · #panels show left',
+      'left panel shown',
+      'right panel hidden · #panels show right',
+      'right panel hidden · #panels show right',
+      'right panel shown',
+    ]);
+    expect([...h.target.hiddenPanels]).toEqual(['plan']);
   });
 
-  it('toggles or sets one panel without touching the master switch', async () => {
+  it('toggles or sets one panel without touching the side flags', async () => {
     const h = harnessDouble();
 
     for (const text of ['#panels grammar', '#panels grammar', '#panels hide ticket', '#panels hide ticket', '#panels show ticket']) {
@@ -4160,40 +4169,53 @@ describe('#panels and titlebar toggles (specs 251, 320)', () => {
     }
 
     expect(h.changes).toEqual(['grammar:true', 'grammar:false', 'ticket:true', 'ticket:true', 'ticket:false', 'select:ticket']);
-    expect(h.target.panelsHidden).toBe(false);
+    expect([h.target.leftPanelHidden, h.target.rightPanelHidden]).toEqual([false, false]);
   });
 
-  it('still records a per-panel choice while every panel is hidden, and says so', async () => {
-    const h = harnessDouble({ allHidden: true, hidden: ['plan'] });
+  it('still records a dock tab choice while the right panel is hidden, and says so', async () => {
+    const h = harnessDouble({ right: true, hidden: ['ticket'] });
 
-    await proto.runHashCommand.call(h.target, { status: 'idle' }, '#panels show plan');
+    await proto.runHashCommand.call(h.target, { status: 'idle' }, '#panels show ticket');
 
-    expect(h.changes).toEqual(['plan:false']);
-    expect(h.target.panelsHidden).toBe(true);
-    expect(h.flashes[0]).toContain('all panels hidden');
+    expect(h.changes).toEqual(['ticket:false', 'select:ticket']);
+    expect(h.target.rightPanelHidden).toBe(true);
+    expect(h.flashes).toEqual(['ticket shown · right panel hidden']);
   });
 
-  it('rejects unknown, reversed or extra arguments without changing visibility', async () => {
-    const h = harnessDouble({ allHidden: true });
+  it('answers the removed all-panels forms and bad arguments with usage', async () => {
+    const h = harnessDouble();
+    const texts = ['#panels', '#panels hide', '#panels show', '#panels toggle', '#panels maybe', '#panels grammar hide', '#panels hide plan now'];
 
-    for (const text of ['#panels maybe', '#panels grammar hide', '#panels hide plan now']) {
+    for (const text of texts) {
       await proto.runHashCommand.call(h.target, { status: 'idle' }, text);
     }
 
     expect(h.changes).toEqual([]);
-    expect(h.drafts).toEqual(['', '', '']);
-    expect(h.flashes).toHaveLength(3);
+    expect(h.drafts).toEqual(texts.map(() => ''));
+    expect(new Set(h.flashes)).toEqual(new Set([PANELS_USAGE]));
   });
 
   it('maps a titlebar click to the bare toggle of the matching command', () => {
     const h = harnessDouble({ hidden: ['queue'] });
 
-    proto.activateTitlebarToggle.call(h.target, 'thought');
-    proto.activateTitlebarToggle.call(h.target, 'queue');
-    proto.activateTitlebarToggle.call(h.target, 'all');
-    proto.activateTitlebarToggle.call(h.target, 'zen');
+    for (const id of ['thought', 'queue', 'left', 'right', 'all', 'zen']) {
+      proto.activateTitlebarToggle.call(h.target, id);
+    }
 
-    expect(h.changes).toEqual(['thought:true', 'queue:false', 'all:true']);
+    expect(h.changes).toEqual(['thought:true', 'queue:false', 'left:true', 'right:true']);
+  });
+
+  it('hides the two dock tabs with the right panel and never the rail cards', () => {
+    const ids: HarnessPanelId[] = ['plan', 'peek', 'thought', 'grammar', 'queue', 'ticket', 'rails'];
+    const target: PanelsTarget = viewDouble({
+      leftPanelHidden: true,
+      rightPanelHidden: true,
+      hiddenPanels: new Set<HarnessPanelId>(['plan']),
+    });
+
+    expect(ids.map((id) => proto.isPanelHidden.call(target, id))).toEqual([true, false, false, false, false, true, true]);
+    target.rightPanelHidden = false;
+    expect(ids.map((id) => proto.isPanelHidden.call(target, id))).toEqual([true, false, false, false, false, false, false]);
   });
 
   it('selects the Rails or Ticket tab only when its panel is shown (spec 337)', () => {
@@ -4216,7 +4238,7 @@ describe('#panels and titlebar toggles (specs 251, 320)', () => {
   };
   const rail = AcpHarnessView.prototype as unknown as RailRenderers;
 
-  function railDouble(panelsHidden: boolean, hidden: HarnessPanelId[]): {
+  function railDouble(hidden: HarnessPanelId[]): {
     target: {
       queueSlot: { hidden: boolean };
       planSlot: { hidden: boolean };
@@ -4231,7 +4253,6 @@ describe('#panels and titlebar toggles (specs 251, 320)', () => {
     const unmounted: string[] = [];
     const lane = { id: 'lane-1', queuedPrompts: [{}], plan: [{}] } as unknown as HarnessLane;
     const target = viewDouble({
-      panelsHidden,
       hiddenPanels: new Set<HarnessPanelId>(hidden),
       queueSlot: { hidden: false },
       planSlot: { hidden: false },
@@ -4256,19 +4277,8 @@ describe('#panels and titlebar toggles (specs 251, 320)', () => {
     return { target, painted, unmounted };
   }
 
-  it('takes every panel out of the rail under the master switch', () => {
-    const { target, painted, unmounted } = railDouble(true, []);
-
-    // Nothing paints; the live thought's teletype is parked, not left ticking.
-    expect(painted).toEqual(['thought-tick-stop']);
-    expect(unmounted).toEqual(['peek', 'thought', 'grammar']);
-    expect(target.queueSlot.hidden).toBe(true);
-    expect(target.planSlot.hidden).toBe(true);
-    expect([target.peekCard, target.thoughtCard, target.grammarPanel]).toEqual([null, null, null]);
-  });
-
   it('removes only the hidden panels while the rail stays up', () => {
-    const { target, painted, unmounted } = railDouble(false, ['plan', 'peek', 'thought']);
+    const { target, painted, unmounted } = railDouble(['plan', 'peek', 'thought']);
 
     expect(painted).toEqual(['queue', 'thought-tick-stop', 'grammar']);
     expect(unmounted).toEqual(['peek', 'thought']);

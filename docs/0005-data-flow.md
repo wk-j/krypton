@@ -954,13 +954,16 @@ reached the page falls back to the built-in krypton-dark values, scoped to
    handler resolves the focused view AT CLICK TIME and calls
    activateTitlebarToggle(id).
 4. AcpHarnessView maps the id to the bare-toggle #panels command:
-   applyPanelsCommand → setPanelHidden(panel) or setPanelsHidden() → persist to
-   localStorage, notify titlebar listeners, render(), flash the chip.
+   applyPanelsCommand → setPanelHidden(panel) or setSideHidden('left' | 'right')
+   (spec 347) → persist to localStorage, notify titlebar listeners, render(),
+   flash the chip. Each setter writes only its own flag.
 5. render() → rightRail region: each renderer asks isPanelHidden(id)
-   (= panelsHidden || hiddenPanels.has(id)) and empties or unmounts its slot;
-   the ticket controller drops the --ticket-* root classes so the dashboard
-   gives back the dock's width.
-6. The listener re-runs syncTitlebarToggles() → aria-pressed / disabled update.
+   (= hiddenPanels.has(id), or rightPanelHidden for the ticket/rails tabs) and
+   empties or unmounts its slot; with no dock tab available the column hides
+   and drops --dock-active, so the dashboard gives back the dock's width. The
+   left flag toggles the acp-harness--left-panel-hidden root class, which hides
+   the Zen lane rail.
+6. The listener re-runs syncTitlebarToggles() → aria-pressed update.
 7. closeWindow() fires the titlebar unsubscribe.
 ```
 

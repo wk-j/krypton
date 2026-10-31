@@ -199,8 +199,8 @@
   /* Clip the ack/progress sweep. The session mark stays in this rail
      (spec 226) — it does not hang into the oscilloscope. */
   overflow: hidden;
-  /* spec 320: narrow-tile rule — the view-toggle cluster collapses to `all`
-     below 480px so the label keeps room. */
+  /* spec 320: narrow-tile rule — below 480px the view-toggle cluster keeps
+     only the spec 347 `left` / `right` toggles so the label keeps room. */
   container-type: inline-size;
   /* Same default as `--krypton-lane-zoom` on the footer strip (spec 218).
      Capped to titlebar height on the focused rule so the digits cannot
@@ -389,7 +389,7 @@
 }
 
 @container (max-width: 480px) {
-  .krypton-window__view-toggle:not([data-toggle-id='all']):not([data-toggle-id='backend-update']),
+  .krypton-window__view-toggle:not([data-toggle-id='left']):not([data-toggle-id='right']):not([data-toggle-id='backend-update']),
   .krypton-window__view-toggle-sep {
     display: none;
   }

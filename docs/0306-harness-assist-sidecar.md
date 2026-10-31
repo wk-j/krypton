@@ -332,7 +332,7 @@ Styling follows `DESIGN.md` (the harness is Krypton Dark; `DESIGN.amber.md` is t
 - **Model returns prose, fenced JSON, or four entries** — parser strips fences, takes the outermost object, caps at `count`; unparseable ⇒ `invalid`, counts toward the breaker.
 - **Suggestion contains newlines** — `label` collapses whitespace; `prompt` keeps newlines, truncated at 240 characters.
 - **Remote runtime lanes (0247)** — `remoteRuntimeId` is passed to `acp_spawn`, so the sidecar's backend starts on the same remote runtime as the lanes and the transcript text does not travel to a third host.
-- **Zen mode (0080) / `#panels hide` (0251)** — both leave the composer mounted (`HARNESS_PINNED_SURFACES`), so the strip is unaffected by either.
+- **Zen mode (0080) / `#panels` (0251, 347)** — both leave the composer mounted (`HARNESS_PINNED_SURFACES`), so the strip is unaffected by either.
 
 ## Testing
 
@@ -367,7 +367,7 @@ A second registered task, `grammar` (`src/acp/assist/tasks/grammar.ts`), reviews
   - `pending` — header `GRAMMAR · CHECKING` and the checked prompt, dimmed.
   - fixes — header `GRAMMAR · N FIXES`, the `wrong → right` list, the corrected prompt, and the legend `cmd+g use · cmd+0 dismiss`.
   - clean — `GRAMMAR · OK` and `✓ no grammar issues`. It unmounts after `ASSIST_PANEL_OK_HIDE_MS` (4 s).
-- `Cmd+G` loads the corrected text into the empty composer and closes the panel; it never re-sends. `Cmd+0` closes the panel. `#panels hide` hides the panel with the rest of the rail, and `#panels hide grammar` (or the window-titlebar grammar toggle, spec 320) hides it alone; while it is hidden neither `Cmd+G` nor `Cmd+0` acts on it.
+- `Cmd+G` loads the corrected text into the empty composer and closes the panel; it never re-sends. `Cmd+0` closes the panel. `#panels hide grammar` (or the window-titlebar grammar toggle, spec 320) hides it; while it is hidden neither `Cmd+G` nor `Cmd+0` acts on it. (The spec 251 `#panels hide` that hid it with the rest of the rail was removed by spec 347.)
 - Default `mode = "off"`. Enable it with `#assist grammar auto`, or persist it in config:
 
 ```toml

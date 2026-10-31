@@ -140,7 +140,7 @@ export type GithubIssueRef = { repo: string; number: number; url: string };
 export interface HarnessTicketHost extends HarnessViewHost {
   readonly harnessMemoryId: string | null;
   readonly projectDir: string | null;
-  /** spec 320: `#panels` master switch or the panel's own flag. */
+  /** spec 320: the panel's own flag; spec 347: for `ticket` / `rails`, also the right-panel flag. */
   isPanelHidden(panel: HarnessPanelId): boolean;
   /** spec 331: the dock's hide button, Escape and `#ticket panel` go through the same path as `#panels ticket`. */
   applyPanelsCommand(command: Exclude<PanelsCommand, { kind: 'usage' }>): void;
@@ -211,7 +211,7 @@ export interface HarnessAssistHost extends HarnessViewHost {
 export interface HarnessRailsHost extends HarnessViewHost {
   readonly projectDir: string | null;
   subscribeLaneBus(handler: (event: LaneBusEvent) => void): () => void;
-  /** spec 320: `#panels` master switch or the `rails` flag. */
+  /** spec 320: the `rails` flag, or spec 347's right-panel flag. */
   isPanelHidden(panel: HarnessPanelId): boolean;
   setDockTabAvailable(tab: HarnessDockTab, available: boolean): void;
   dockTabShown(tab: HarnessDockTab): boolean;

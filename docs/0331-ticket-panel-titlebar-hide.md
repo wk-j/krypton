@@ -122,12 +122,13 @@ No IPC, config or backend change.
 ## Edge Cases
 
 - **Narrow titlebar (< 480px):** spec 320 hides every per-panel toggle except
-  `all`, so `#panels ticket` or `#ticket panel` shows the dock. The rule is
-  unchanged; it is now the only way back at that size.
-- **`#panels hide` (master switch):** dock hidden; the `ticket` flag is
-  untouched (spec 320). The header and Escape cannot fire because the dock is
-  not shown. `#ticket panel` records the flag, and the chip adds
-  ` · all panels hidden`.
+  `all` (since spec 347: except `left` / `right`), so `#panels ticket` or
+  `#ticket panel` shows the dock. The rule is unchanged; it is now the only way
+  back at that size.
+- **Right panel hidden (spec 347; formerly the `#panels hide` master switch):**
+  dock hidden; the `ticket` flag is untouched. The header and Escape cannot
+  fire because the dock is not shown. `#ticket panel` records the flag, and the
+  chip adds ` · right panel hidden`.
 - **Ticket removed or cleared:** the dock is hidden by `ticket === null`; the
   flag is untouched.
 - **Showing repaints from memory.** The old expand path re-read the ticket from

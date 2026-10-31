@@ -59,9 +59,10 @@ export const HARNESS_LAYOUT_DEFAULT = {
  *   panels. Spec 251 already drew that line — hiding or moving a panel must
  *   never conceal an action that unblocks a lane.
  *
- * `#panels` (spec 251) and the per-panel flags of spec 320 decide VISIBILITY,
- * never placement: the master switch hides the whole rail via a root class,
- * a single panel's flag empties or unmounts its own slot. Both are orthogonal
+ * The per-panel flags of spec 320 and the side flags of spec 347 decide
+ * VISIBILITY, never placement: a panel's flag empties or unmounts its own
+ * slot, the `right` flag makes both `dock.right` tabs unavailable, and the
+ * `left` flag hides the Zen lane rail via a root class. All are orthogonal
  * to this table.
  */
 export const HARNESS_PINNED_SURFACES = ['transcript', 'composer', 'inlineDecisions'] as const;

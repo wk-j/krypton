@@ -5,10 +5,11 @@
 // yield its width. With the Rails dock as a second tab, placement, the shown
 // tab and the reserved width belong to one owner: this column.
 //
-// A tab is AVAILABLE when its dock has content and spec 320 has not hidden it;
-// each owner reports that, the column decides what is SHOWN. The selected tab
-// is a stored preference that availability never rewrites: when it becomes
-// unavailable the column shows the other one, and goes back as soon as it can.
+// A tab is AVAILABLE when its dock has content and neither its own spec 320
+// flag nor the spec 347 right-panel flag hides it; each owner reports that,
+// the column decides what is SHOWN. The selected tab is a stored preference
+// that availability never rewrites: when it becomes unavailable the column
+// shows the other one, and goes back as soon as it can.
 
 import { TabStrip, type TabStripTab } from './components/tab-strip';
 import { readDockTab, writeDockTab, type HarnessDockTab } from './harness-panel-visibility';

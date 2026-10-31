@@ -121,7 +121,7 @@ The tab, the body and the composer are one sheet, and the rail colour `S` shows 
 | Rail colour ending at the body and the composer | The rail's `border-bottom-right-radius: R`. The rail clips its overflow to that curve, so the tab layer's `S` shadow ends in a round corner. The zen dashboard's `::after` paints `C` in the sliver outside the curve. It uses the same gradient as a tab fillet (`radial-gradient(circle at 0 0, transparent calc(R - .5px), C R)`), and its box is `R × R` at the bottom-right of the rail's grid cell |
 | Body facing the titlebar, when the tab is not the first row | `border-top-left-radius: R` on the active lane. The sliver outside it shows the dashboard, like the titlebar beside it. When the first row is the tab, the tab joins the body at that corner, so it stays square |
 
-Both new rules are scoped to `.acp-harness--zen:not(.acp-harness--panels-hidden)`. The fillet also requires an active entry. With `#panels hide` the rail is `display: none` and the body fills the grid, so neither corner exists.
+Both new rules are scoped to `.acp-harness--zen:not(.acp-harness--left-panel-hidden)` (spec 347 renamed the former `--panels-hidden`). The fillet also requires an active entry. With `#panels hide left` the rail is `display: none` and the body fills the grid, so neither corner exists.
 
 ### Stacking invariants
 
@@ -161,7 +161,7 @@ None change. Lane switching remains `Ctrl+N` / `Ctrl+P` / `1`–`9`; rail entrie
 - **Active lane `needs_permission`:** no gold tint and no row pulse on the tab. The dot still pulses gold, and the composer banner already owns the prompt.
 - **`chrome.border.radius = 0`:** `R = 0`, so the corners and fillets collapse and the tab is a plain rectangle flush with the body. The rail's corner and the body's corner are square, and the corner fillet has no area. Still seamless.
 - **Large radius themes:** `R` is capped at 12px so the left corners fit a two-line row. Above 8px, the outer part of a last row's lower fillet falls outside the rail's 8px bottom padding and is clipped. A first row's upper fillet is always clipped since rev 2.
-- **`#panels hide`:** the rail is `display: none`, as today. The rev 2 corner rules are scoped off, so the body keeps square corners where the rail was.
+- **`#panels hide left`** (spec 347; formerly `#panels hide`): the rail is `display: none`, as today. The rev 2 corner rules are scoped off, so the body keeps square corners where the rail was.
 - **Font zoom:** all sizes are em-relative except R and G. Nothing is measured.
 - **Reduced motion:** nothing new animates.
 - **Custom themes:** both colours come from the theme engine's tokens, so a theme changes rail and body together.

@@ -6,6 +6,9 @@
 > Amended by spec 337 (2026-10-27): a seventh panel, `rails` (the Rails dock), joins the titlebar after
 > `ticket`. Ticket and Rails are two tabs of one dock column (`harness-dock.ts`); the
 > `acp-harness--dock-active` root class replaces `--ticket-active`, and showing either panel selects its tab.
+> Amended by spec 347 (2026-10-30): the `all` master toggle and `panelsHidden` are gone. The cluster ends with
+> `left` (Zen lane rail) and `right` (dock column) toggles, each with its own per-project flag; no toggle disables
+> another, `ticket` / `rails` also read as hidden while `right` is off, and below 480px only `left` / `right` stay.
 
 ## Problem
 

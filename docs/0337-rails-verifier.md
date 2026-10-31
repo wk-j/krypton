@@ -238,7 +238,7 @@ The model never overrides a check result (the Empryo gap; ADR-0021 precedent).
 
 There is no new key binding; the Leader map is full (spec 222). The command is `#rails [now | send | trust | init [<hint>] | update [<request>] | off | manual | auto]`:
 
-- **bare**: selects and focuses the Rails tab, clearing its own hidden flag first; a master `#panels hide` still wins, as for every panel.
+- **bare**: selects and focuses the Rails tab, clearing its own hidden flag first; a hidden right panel (`#panels hide right`, spec 347) still wins and the chip says `right panel hidden · #panels show right`.
 - **now**: starts a manual run. With mode `off`, it refuses and says so, as `#assist` does.
 - **send**: sends the open findings of the newest run to the lane the command was typed in, as one `[rails]` envelope through `injectHarnessEnvelope`: at most 4 000 chars plus the path of the run file, asking the lane to fix each finding or explain why the rule does not apply, and never to weaken a check.
 - **trust**: calls `rails_trust`.

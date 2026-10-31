@@ -23,8 +23,9 @@
 // `data-ticket-dock-action="<verb>"`, both for the delegated click handler the
 // controller installed on the dock element. That handler, the `hidden` flag
 // (owned by the dock column, `harness-dock.ts`, from spec 320's per-panel
-// `ticket` flag and the shown tab) and the `acp-harness--dock-active` class on
-// the harness root stay outside: they are the dock's placement, not its content.
+// `ticket` flag, spec 347's right-panel flag and the shown tab) and the
+// `acp-harness--dock-active` class on the harness root stay outside: they are
+// the dock's placement, not its content.
 //
 // Spec 331: the dock has no collapsed state. `›` hides it through the same
 // flag, and the titlebar `Ticket dock` toggle shows it again.
