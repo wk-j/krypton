@@ -97,11 +97,11 @@ const OUTCOME_LABEL: Record<RailsCheckOutcome, string> = {
   error: 'ERROR',
 };
 
-const VERDICT_GLYPH: Record<RailsVerdict, string> = {
-  clean: '✓',
-  check_failed: '✗',
-  findings: '•',
-  error: '!',
+const VERDICT_BADGE: Record<RailsVerdict, string> = {
+  clean: '✓ CLEAN',
+  check_failed: '✗ CHECK FAILED',
+  findings: '• FINDINGS',
+  error: '! ERROR',
 };
 
 const RULE_STATUS_LABEL: Record<RailsRuleStatus, string> = {
@@ -505,7 +505,7 @@ class RunRow extends RowView<RowOf<'run'>> {
     const run = next.row.run;
     const head = line(
       span(`${B}__time`, localHhMm(run.finishedAt)),
-      span(`${B}__glyph ${B}__glyph--${run.verdict}`, VERDICT_GLYPH[run.verdict]),
+      span(`${B}__verdict ${B}__verdict--${run.verdict}`, VERDICT_BADGE[run.verdict]),
       span(`${B}__count`, `${run.open.length} open`),
       span(`${B}__lane`, run.trigger.laneName ?? run.trigger.kind),
     );

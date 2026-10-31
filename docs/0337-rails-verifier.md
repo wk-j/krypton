@@ -272,10 +272,10 @@ The prompt tells the current lane to:
 `RailsDock` lives in `src/acp/components/rails-dock/` (layer `krypton.component`, BEM `.acp-rails-dock`). Its sections, top to bottom, sized by spec 345:
 
 1. **Head**, at most three lines: `RAILS`, the verdict pill and the run time (`▸` when an error or warnings are behind `Enter`); one state line (a run in progress such as `check 2/3 typecheck`, an error, the trust state such as `changed since trust · 4 checks wait`, the other progress lines, the empty-manifest hint or a warning count, the first that applies); and the trigger, lane and mode. `Enter` on the head shows the full state line, the manifest path, the full error and the warnings.
-2. **Checks**: `name  PASS|FAIL|TIMEOUT|ERROR  1.2s`, or `skipped` / `not run`. While trust is pending, each check's argv follows on one line.
+2. **Checks**: `name  PASS|FAIL|TIMEOUT|ERROR  1.2s`, with a labelled outcome badge (success, fault or warning), or muted `skipped` / `not run`. While trust is pending, each check's argv follows on one line.
 3. **Findings**: each open finding as `violation|suspect  0008#2  file:line`, with the note on a second line and a tag `new` or `since 14:02`. A collapsed `resolved N` row follows.
 4. **Rules**: one line such as `24 rules · 9 enforced`, then `3 sources without rails`. It expands to every rule with its latest status.
-5. **Runs**: the newest 5 of the last 20, each with time, verdict glyph, findings count, trigger lane and a `stale` mark; `N older runs ▸` expands to the rest.
+5. **Runs**: the newest 5 of the last 20, each with time, a labelled verdict badge (`✓ CLEAN`, `✗ CHECK FAILED`, `• FINDINGS` or `! ERROR`), findings count, trigger lane and a `stale` mark; `N older runs ▸` expands to the rest.
 
 Below the rows, outside the list, a fixed **Actions** bar (spec 344) holds four buttons: Run (`#rails now`), Send (`#rails send`), Trust (`#rails trust`) and Update (bare `#rails update`). A click takes the same path as the typed sub-command. Each button shows its state the way the Ticket Panel's issue actions do, through the shared `DockActionButton`; the bar's head line names the active lane that Send and Update go to.
 

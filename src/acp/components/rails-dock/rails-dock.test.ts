@@ -176,9 +176,10 @@ describe('RailsDock', () => {
     expect(rowEl(dock, 'uncovered')?.textContent).toBe('1 source without rails');
 
     const stale = rowEl(dock, 'run:20261027T130000Z-0000');
-    expect(stale?.querySelector('.acp-rails-dock__glyph')?.textContent).toBe('✓');
+    expect(stale?.querySelector('.acp-rails-dock__verdict--clean')?.textContent).toBe('✓ CLEAN');
     expect(stale?.querySelector('.acp-rails-dock__tag--stale')?.textContent).toBe('stale');
-    expect(rowEl(dock, 'run:20261027T140200Z-ab12')?.querySelector('.acp-rails-dock__glyph')?.textContent).toBe('✗');
+    expect(rowEl(dock, 'run:20261027T140200Z-ab12')?.querySelector('.acp-rails-dock__verdict--check_failed')?.textContent)
+      .toBe('✗ CHECK FAILED');
   });
 
   it('tags carried and earlier findings with their time or not re-checked', () => {

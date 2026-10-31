@@ -85,11 +85,11 @@ check already is, instead of dropping it as direnv does.
 | argv list | Every check, full argv, wrapped (26 lines here) | Removed from the head |
 | Manifest error | Full paragraph | In the state line (one line, `…`); full text when the head is expanded |
 | Warnings | One line per warning | In the state line as `2 manifest warnings` when nothing above it applies; list when the head is expanded |
-| Check row | `name  PASS  1.2s`; `—` when not run | Same; `—` becomes `not run`. While trust ≠ `trusted`, a second line holds the argv, one line with `…` |
+| Check row | `name  PASS  1.2s`; `—` when not run | Outcome is a labelled badge; the name truncates before the badge. `—` becomes `not run`. While trust ≠ `trusted`, a second line holds the argv, one line with `…` |
 | Findings, resolved | 2 lines / 1 line | Same |
 | Rules summary | `12 rules · 4 enforced · 8 judge-only ▸` (cut) | `12 rules · 4 enforced ▸`; judge-only is the rest, and the expanded list shows each rule |
 | Sources without rails | 1 line | Same |
-| Runs | Up to 20 rows | Newest 5, then `15 older runs ▸`, which expands to the rest |
+| Runs | Up to 20 rows | Newest 5 with labelled verdict badges, then `15 older runs ▸`, which expands to the rest |
 | Actions bar, key hints | Fixed | Same |
 
 ### The state line

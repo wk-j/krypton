@@ -5,9 +5,10 @@
    declares only the `acp-rails-dock` content block.
 
    Colour rule: model findings are neutral evidence (ADR-0004) — severities,
-   tags and rule statuses use ink tiers and amber only. The fault colour is
-   reserved for a failed check (`FAIL`, `TIMEOUT`, the `CHECK FAILED` pill, a
-   `fail` rule status and the `✗` run glyph), ADR-0017. The Actions bar's
+   tags and rule statuses use ink tiers and amber only. Check outcomes are
+   distinct badges: success for PASS, fault for FAIL/TIMEOUT, warning for
+   ERROR. Run badges keep model-derived clean/findings neutral; a run error is
+   warning and a failed check is fault (ADR-0017). The Actions bar's
    buttons (spec 344) are `DockActionButton`s: their running / done colours are
    action states shared with the Ticket Panel, never verdicts. No animation. */
 
@@ -181,6 +182,19 @@
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   }
 
+  .acp-rails-dock__row--check .acp-rails-dock__line,
+  .acp-rails-dock__row--run .acp-rails-dock__line {
+    align-items: center;
+  }
+
+  .acp-rails-dock__row--check .acp-rails-dock__name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .acp-rails-dock__loc,
   .acp-rails-dock__text,
   .acp-rails-dock__summary,
@@ -214,17 +228,45 @@
     letter-spacing: 0.04em;
   }
 
-  .acp-rails-dock__outcome--pass,
   .acp-rails-dock__status--pass {
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
   }
 
-  .acp-rails-dock__outcome--fail,
-  .acp-rails-dock__outcome--timeout,
-  .acp-rails-dock__status--fail,
-  .acp-rails-dock__glyph--check_failed {
+  .acp-rails-dock__status--fail {
     color: #ff9caf;
   }
+
+  .acp-rails-dock__outcome--pass {
+    --rails-outcome-rgb: var(--krypton-success-rgb, 57, 255, 127);
+  }
+
+  .acp-rails-dock__outcome--fail,
+  .acp-rails-dock__outcome--timeout {
+    --rails-outcome-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+  }
+
+  .acp-rails-dock__outcome--error {
+    --rails-outcome-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+  }
+
+  .acp-rails-dock__outcome:not(.acp-rails-dock__outcome--none) {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border: 1px solid rgba(var(--rails-outcome-rgb), 0.65);
+    border-radius: 8px;
+    background: rgba(var(--rails-outcome-rgb), 0.16);
+    color: rgb(var(--rails-outcome-rgb));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .acp-rails-dock__outcome--pass::before { content: '✓'; }
+  .acp-rails-dock__outcome--fail::before { content: '✕'; }
+  .acp-rails-dock__outcome--timeout::before,
+  .acp-rails-dock__outcome--error::before { content: '!'; }
 
   .acp-rails-dock__severity {
     color: #ffd880;
@@ -241,9 +283,33 @@
     color: #ffd880;
   }
 
-  .acp-rails-dock__glyph {
-    flex: 0 0 1ch;
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+  .acp-rails-dock__verdict {
+    flex: 0 0 auto;
+    padding: 2px 6px;
+    border: 1px solid rgba(var(--rails-verdict-rgb), 0.65);
+    border-radius: 8px;
+    background: rgba(var(--rails-verdict-rgb), 0.16);
+    color: rgb(var(--rails-verdict-rgb));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .acp-rails-dock__verdict--clean {
+    --rails-verdict-rgb: var(--krypton-fg-rgb, 216, 232, 216);
+  }
+
+  .acp-rails-dock__verdict--check_failed {
+    --rails-verdict-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+  }
+
+  .acp-rails-dock__verdict--findings {
+    --rails-verdict-rgb: var(--krypton-fg-rgb, 216, 232, 216);
+  }
+
+  .acp-rails-dock__verdict--error {
+    --rails-verdict-rgb: var(--krypton-warning-rgb, 232, 197, 71);
   }
 
   .acp-rails-dock__note {
@@ -367,10 +433,28 @@
   }
 
   html[data-theme-scheme='light'] .acp-rails-dock__pill--check_failed,
-  html[data-theme-scheme='light'] .acp-rails-dock__outcome--fail,
-  html[data-theme-scheme='light'] .acp-rails-dock__outcome--timeout,
-  html[data-theme-scheme='light'] .acp-rails-dock__status--fail,
-  html[data-theme-scheme='light'] .acp-rails-dock__glyph--check_failed {
+  html[data-theme-scheme='light'] .acp-rails-dock__status--fail {
     color: #b3261e;
+  }
+
+  html[data-theme-scheme='light'] .acp-rails-dock__outcome--pass {
+    --rails-outcome-rgb: 19, 107, 59;
+  }
+
+  html[data-theme-scheme='light'] .acp-rails-dock__outcome--fail,
+  html[data-theme-scheme='light'] .acp-rails-dock__outcome--timeout {
+    --rails-outcome-rgb: 179, 38, 30;
+  }
+
+  html[data-theme-scheme='light'] .acp-rails-dock__outcome--error {
+    --rails-outcome-rgb: 138, 90, 0;
+  }
+
+  html[data-theme-scheme='light'] .acp-rails-dock__verdict--check_failed {
+    --rails-verdict-rgb: 179, 38, 30;
+  }
+
+  html[data-theme-scheme='light'] .acp-rails-dock__verdict--error {
+    --rails-verdict-rgb: 138, 90, 0;
   }
 }
