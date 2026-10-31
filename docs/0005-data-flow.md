@@ -82,6 +82,41 @@
    compositor closes the editor tab.
 ```
 
+## Open to Side Flow (spec 296)
+
+```
+1. Entry: Harness `f` hint `Shift+<label>` on a file resource, Alt+click on a
+   REFERENCES rail file row (local Harness only), `Leader O`, or palette
+   `pane.markdown-to-side`.
+2. Compositor.openToSide(target) works on the focused window's active tab:
+   - markdown target in an SSH/remote Harness window → refused
+   - markdown target with an existing markdown side pane →
+     MarkdownContentView.showFile(path), focus that pane, done
+3. No side column (`Tab.sidePaneIds` empty) → vertical split of the focused
+   pane (new column to the right); otherwise horizontal split below the
+   column's last pane. The new pane id joins `sidePaneIds` (not persisted).
+4. Helix target → spawn `hx path:line:col` in the new leaf; spawn failure
+   removes the leaf. Helix side panes are never replaced; they stack.
+5. Closing a side pane (Alt+x, `q`/`Esc` in the markdown view, Helix exit)
+   removes it from the column; when only side panes remain, the column clears.
+   A content view's onClose → closeContentViewHost: closes only its pane when
+   the tab has other panes, else its tab (or the window when last tab and
+   `close_window_on_last_tab`).
+```
+
+## Split Divider Drag Flow (spec 296)
+
+```
+1. pointerdown on `.krypton-split__divider` (7px `::before` hit area) →
+   findSplitByElement; split container gets `.krypton-split--dragging`
+   (pane pointer-events and selection off).
+2. pointermove → ratioFromPointer, clamped [0.1, 0.9] → applySplitFlex, at most
+   one flex write per animation frame. No resize_pty during the drag.
+3. pointerup → remove the dragging class, fitPaneTree once (terminals refit +
+   resize_pty, content views onResize). The ratio persists in the workspace
+   snapshot.
+```
+
 ## Keyboard Overlay Observe Flow (spec 271)
 
 ```
@@ -213,6 +248,7 @@ d. The loop stops once the grip, the mouse and the button fades settle
    - G       -> cycle shader preset on focused pane (none → crt → hologram → ...)
    - Shift+G -> toggle shaders on/off globally
    - Shift+Y -> open ACP Harness for the focused working directory
+   - Shift+O -> open the markdown viewer in a split to the side (spec 296; bare o opens it in a new tab)
    - Escape  -> cancel, return to Normal mode
 6. After action executes, Input Router returns to Normal mode
 ```
@@ -1317,7 +1353,7 @@ PUBLISH
 ```
 1. Input Router enters Resize mode
 2. UI shows "RESIZE" indicator + edge highlight on focused window
-3. User presses arrow keys repeatedly:
+3. User presses arrow keys repeatedly (or h/j/k/l, lower-cased so Caps Lock still resizes the window):
    - Right: grow width by step_size
    - Left:  shrink width by step_size
    - Down:  grow height by step_size
@@ -1325,6 +1361,11 @@ PUBLISH
    (step_size configurable, default 20px per keypress)
 4. Window resizes in real-time, xterm.js addon-fit recalculates
 5. Each resize step sends invoke("resize_pty", { window_id, rows, cols })
+5b. Split resize (spec 296): Shift+H/L move the nearest vertical divider
+    left/right, Shift+K/J the nearest horizontal divider up/down, by
+    `[workspaces] resize_step` px converted to a ratio; `=` resets the nearest
+    split to 0.5. Ratio clamps to [0.1, 0.9] (src/pane-split.ts) →
+    applySplitFlex → fitPaneTree (terminals fit + resize_pty; content views onResize)
 6. Enter or Escape exits Resize mode -> return to Normal mode
 ```
 
@@ -1396,7 +1437,8 @@ Sending (Board → lane)
     restored cursor — a renamed heading never costs the reader their place
 10b. A pane resize crosses 1180px → the view's own ResizeObserver switches the
     Review Map between a persistent column and an on-demand overlay. This is
-    presentation only; `ContentView.onResize` is never called by the compositor
+    presentation only, driven by the observer rather than `ContentView.onResize`
+    (which `fitPaneTree` now calls, spec 296)
 
 Later
 11. Days later: the picker's directory walk finds the bundle — no session state

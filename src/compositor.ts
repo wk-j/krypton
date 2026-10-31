@@ -93,7 +93,9 @@ import {
 } from './wheel-layout';
 import { wheelEyeText } from './wheel-eye';
 import { WheelRail } from './wheel-rail';
-import { mountPaneTree } from './pane-tree-dom';
+import { applySplitFlex, mountPaneTree } from './pane-tree-dom';
+import { clampSplitRatio, findResizableSplit, findSplitByElement, nearestSplit, ratioFromPointer } from './pane-split';
+import type { MarkdownContentView } from './markdown-view';
 import { AnimationEngine, BoundsSnapshot, type StageTransitionLayer } from './animation';
 import { SoundEngine } from './sound';
 import { ShaderEngine } from './shaders';
@@ -214,6 +216,12 @@ function webviewTitleForUrl(url: string): string {
   } catch {
     return 'WEB // ?';
   }
+}
+
+/** Helix's `path:line:col` open argument; the column defaults to 1. Shared by
+ *  the new-tab and open-to-side paths so both land on the same position. */
+function helixFileArg(path: string, line?: number | null, col?: number | null): string {
+  return line !== undefined && line !== null ? `${path}:${line}:${col ?? 1}` : path;
 }
 
 /** Replace the alpha channel of an rgba() color string.
@@ -2628,6 +2636,7 @@ export class Compositor {
       focusedPaneId: pane.id,
       element: tabEl,
       contentWrapperEl: wrapper,
+      sidePaneIds: [],
     };
 
     // Create window record
@@ -2647,6 +2656,7 @@ export class Compositor {
       ? this.snapshotStageVisuals()
       : null;
     this.windows.set(id, win);
+    this.wirePaneMouse(win);
     this.updateTabBar(win);
     this.syncWindowChrome(win);
 
@@ -2963,6 +2973,7 @@ export class Compositor {
         focusedPaneId: focusedPane.id,
         element: tabEl,
         contentWrapperEl: wrapper,
+        sidePaneIds: [],
       };
       win.tabs.push(tab);
     }
@@ -3044,9 +3055,7 @@ export class Compositor {
     const second = this.restorePaneTree(
       snapshot.second, splitEl, windowId, tabId, activeSessions, usedSessions, counters, onTitle,
     );
-    this.paneNodeElement(first).style.flex = `${snapshot.ratio} 1 0`;
-    this.paneNodeElement(second).style.flex = `${1 - snapshot.ratio} 1 0`;
-    return {
+    const node: PaneNode = {
       type: 'split',
       direction: snapshot.direction,
       ratio: snapshot.ratio,
@@ -3054,10 +3063,8 @@ export class Compositor {
       second,
       element: splitEl,
     };
-  }
-
-  private paneNodeElement(node: PaneNode): HTMLElement {
-    return node.type === 'leaf' ? node.pane.element : node.element;
+    applySplitFlex(node);
+    return node;
   }
 
   private createRecoveryPane(
@@ -3233,6 +3240,7 @@ export class Compositor {
       focusedPaneId: pane.id,
       element: tabEl,
       contentWrapperEl: cvWrapper,
+      sidePaneIds: [],
     };
 
     const win: KryptonWindow = {
@@ -3251,6 +3259,7 @@ export class Compositor {
       ? this.snapshotStageVisuals()
       : null;
     this.windows.set(id, win);
+    this.wirePaneMouse(win);
     this.updateTabBar(win);
     this.syncWindowChrome(win);
 
@@ -3507,9 +3516,7 @@ export class Compositor {
       }
     }
 
-    view.onClose(() => {
-      void this.closeTab();
-    });
+    view.onClose(() => this.closeContentViewHost(view));
   }
 
   /** The tab hosting an already-open Board for `slug`, if there is one. */
@@ -3793,10 +3800,8 @@ export class Compositor {
       });
     }
 
-    // Wire close callback to close the tab
-    diffView.onClose(() => {
-      this.closeTab();
-    });
+    // Wire close callback to close the view's pane (or its tab when alone)
+    diffView.onClose(() => this.closeContentViewHost(diffView));
   }
 
   /** spec 298: open the generated global lessons index in the Markdown Viewer. */
@@ -3814,12 +3819,23 @@ export class Compositor {
    */
   async openMarkdownView(initialFile?: string): Promise<void> {
     if (this.blockLocalViewForRemote('Markdown viewer')) return;
+    const built = await this.buildMarkdownView(initialFile);
+    if (!built) return;
+    await this.createContentTab(built.title, built.view);
+    built.view.onClose(() => this.closeContentViewHost(built.view));
+  }
+
+  /** A markdown viewer over the focused cwd, for a new tab or a side pane.
+   *  The git-repo gate is skipped when the caller targets a specific file (e.g.
+   *  a .md opened from hint mode outside a git repo). Null after notifying
+   *  when the gate refuses. */
+  private async buildMarkdownView(
+    initialFile?: string,
+  ): Promise<{ view: MarkdownContentView; title: string } | null> {
     const cwd = await this.getFocusedCwd() ?? undefined;
-    // Skip the git-repo gate when caller targets a specific file (e.g.,
-    // opening a .md from hint mode outside a git repo).
     if (!initialFile && !await this.isGitRepo(cwd ?? null)) {
       this.showNotification('Not a git repository — markdown viewer unavailable');
-      return;
+      return null;
     }
 
     const { listMarkdownFiles, MarkdownContentView } = await import('./markdown-view');
@@ -3833,15 +3849,11 @@ export class Compositor {
     const container = document.createElement('div');
     container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
 
-    const mdView = new MarkdownContentView(files, cwd ?? '.', container, initialFile);
+    const view = new MarkdownContentView(files, cwd ?? '.', container, initialFile);
 
     // Use the last path component of CWD as title
     const dirName = (cwd ?? '.').split('/').filter(Boolean).pop() ?? 'docs';
-    await this.createContentTab(`MD // ${dirName}`, mdView);
-
-    mdView.onClose(() => {
-      this.closeTab();
-    });
+    return { view, title: `MD // ${dirName}` };
   }
 
   /**
@@ -3890,9 +3902,7 @@ export class Compositor {
     const dirName = cwd.split('/').filter(Boolean).pop() ?? '/';
     await this.createContentTab(`FILE // ${dirName}`, fm);
 
-    fm.onClose(() => {
-      this.closeTab();
-    });
+    fm.onClose(() => this.closeContentViewHost(fm));
   }
 
   /**
@@ -3937,9 +3947,7 @@ export class Compositor {
 
     vaultView.onTitleChange((newName) => this.retitleFocusedTab(`VAULT // ${newName}`));
 
-    vaultView.onClose(() => {
-      this.closeTab();
-    });
+    vaultView.onClose(() => this.closeContentViewHost(vaultView));
   }
 
   /**
@@ -3953,9 +3961,7 @@ export class Compositor {
     const usageView = new UsageContentView(container);
     await this.createContentTab('USAGE // credits', usageView);
 
-    usageView.onClose(() => {
-      this.closeTab();
-    });
+    usageView.onClose(() => this.closeContentViewHost(usageView));
   }
 
   /** Open the app-managed Telegram Harness Controller settings. */
@@ -3967,9 +3973,7 @@ export class Compositor {
     const view = new TelegramSettingsContentView(container);
     await this.createContentTab('TELEGRAM // controller', view);
 
-    view.onClose(() => {
-      this.closeTab();
-    });
+    view.onClose(() => this.closeContentViewHost(view));
   }
 
   /** Open or focus the app-owned SSH connection manager. */
@@ -3991,7 +3995,7 @@ export class Compositor {
     container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
     const view = new ConnectedComputersContentView(container);
     await this.createContentTab('CONNECTIONS // computers', view);
-    view.onClose(() => { void this.closeTab(); });
+    view.onClose(() => this.closeContentViewHost(view));
     view.onOpenSshTerminal(async (profile) => {
       const shellArgs = ['-tt'];
       if (profile.user) shellArgs.push('-l', profile.user);
@@ -4608,9 +4612,7 @@ export class Compositor {
     const dirName = cwd.split('/').filter(Boolean).pop() ?? '/';
     await this.createContentTab(`HURL // ${dirName}`, view);
 
-    view.onClose(() => {
-      this.closeTab();
-    });
+    view.onClose(() => this.closeContentViewHost(view));
   }
 
   /**
@@ -4653,6 +4655,7 @@ export class Compositor {
       focusedPaneId: pane.id,
       element: tabEl,
       contentWrapperEl: wrapper,
+      sidePaneIds: [],
     };
 
     win.tabs.push(tab);
@@ -4663,42 +4666,55 @@ export class Compositor {
     await this.nextFrame();
     this.fitWindow(win.id);
 
-    // Wire input before spawn, but do not flush pre-session xterm.js replies
-    // into full-screen editor processes. Shell panes need those replies during
-    // startup; editors can interpret them as literal text.
-    this.wirePaneInput(pane, { bufferBeforeSession: false });
-    if (pane.terminal) {
-      try {
-        const sessionId = await invoke<number>('spawn_pty', {
-          cols: pane.terminal.cols,
-          rows: pane.terminal.rows,
-          cwd: fileDir,
-          shell: editor,
-          shellArgs: [filePath],
-        });
-        pane.sessionId = sessionId;
-        this.sessionMap.set(sessionId, { windowId: win.id, tabId, paneId: pane.id });
-        this.flushPendingPtyOutput(sessionId, pane.terminal);
-        this.flushPendingInput(pane);
-        this.closePaneIfSessionAlreadyExited(sessionId);
-      } catch (e) {
-        console.error(`Failed to spawn editor: ${String(e)}`);
-        const failedTabIndex = win.tabs.findIndex((t) => t.id === tabId);
-        if (failedTabIndex >= 0) {
-          this.closeTabByIndex(win, failedTabIndex);
-        }
-        return false;
+    if (!await this.spawnEditorSession(pane, win.id, tabId, fileDir, editor, [filePath])) {
+      const failedTabIndex = win.tabs.findIndex((t) => t.id === tabId);
+      if (failedTabIndex >= 0) {
+        this.closeTabByIndex(win, failedTabIndex);
       }
+      return false;
     }
     pane.terminal?.focus();
     this.sound.play('tab.create');
     return true;
   }
 
+  /** Wire input and spawn `<editor> <args>` in `pane`. Pre-session xterm.js
+   *  replies are not flushed into full-screen editor processes: shell panes
+   *  need them during startup, editors can read them as literal text. Returns
+   *  false when the spawn fails; the caller removes the pane or tab. */
+  private async spawnEditorSession(
+    pane: Pane,
+    windowId: WindowId,
+    tabId: TabId,
+    cwd: string | null,
+    editor: string,
+    args: string[],
+  ): Promise<boolean> {
+    this.wirePaneInput(pane, { bufferBeforeSession: false });
+    if (!pane.terminal) return true;
+    try {
+      const sessionId = await invoke<number>('spawn_pty', {
+        cols: pane.terminal.cols,
+        rows: pane.terminal.rows,
+        cwd,
+        shell: editor,
+        shellArgs: args,
+      });
+      pane.sessionId = sessionId;
+      this.sessionMap.set(sessionId, { windowId, tabId, paneId: pane.id });
+      this.flushPendingPtyOutput(sessionId, pane.terminal);
+      this.flushPendingInput(pane);
+      this.closePaneIfSessionAlreadyExited(sessionId);
+      return true;
+    } catch (e) {
+      console.error(`Failed to spawn editor: ${String(e)}`);
+      return false;
+    }
+  }
+
   async openHelixTab(filePath: string, line?: number | null, col?: number | null): Promise<boolean> {
-    const suffix = line !== undefined && line !== null ? `:${line}:${col ?? 1}` : '';
     const cwd = await this.getFocusedCwd();
-    return this.openEditorTab(cwd, 'hx', `${filePath}${suffix}`);
+    return this.openEditorTab(cwd, 'hx', helixFileArg(filePath, line, col));
   }
 
   /**
@@ -4884,7 +4900,7 @@ export class Compositor {
 
     const agentView = new AgentView();
     agentView.setProjectDir(projectDir);
-    agentView.onClose(() => this.closeTab());
+    agentView.onClose(() => this.closeContentViewHost(agentView));
     agentView.onOpenContext((ctrl) => this.openContextView(ctrl));
     agentView.onOpenDiff((diff, title) => this.openDiffFromString(diff, title));
 
@@ -4920,6 +4936,8 @@ export class Compositor {
       // spec 322: backend updates run in a terminal tab of the focused window;
       // spec 323 follow-up commands too, in the harness's project dir.
       (options) => this.createTab({ ...options, cwd: options.cwd ?? null }),
+      // spec 296: Shift+<label> / Alt+click open a file beside the harness.
+      (path, line, column) => this.openToSide({ kind: 'file', path, line, col: column }),
     );
 
     await this.mountAcpHarnessView(view);
@@ -4986,8 +5004,8 @@ export class Compositor {
 
     const launchTabId = launchWin.tabs[launchWin.activeTabIndex]?.id ?? null;
 
-    // Harness is a tab now — closing it closes its tab, not the window.
-    view.onClose(() => this.closeTab());
+    // Harness is a tab now — closing it closes its pane or tab, not the window.
+    view.onClose(() => this.closeContentViewHost(view));
     await this.createContentTab('ACP Harness', view);
 
     // Drop the terminal tab we launched from. createContentTab appended the
@@ -5282,7 +5300,7 @@ export class Compositor {
   async openContextView(controller: import('./agent/agent').AgentController): Promise<void> {
     const { ContextView } = await import('./agent/context-view');
     const contextView = new ContextView(controller);
-    contextView.onClose(() => this.closeTab());
+    contextView.onClose(() => this.closeContentViewHost(contextView));
     await this.createContentTab('CTX  agent', contextView);
   }
 
@@ -5294,7 +5312,7 @@ export class Compositor {
     const container = document.createElement('div');
     container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
     const diffView = new DiffContentView(unifiedDiff, container);
-    diffView.onClose(() => this.closeTab());
+    diffView.onClose(() => this.closeContentViewHost(diffView));
     await this.createContentTab(title, diffView);
   }
 
@@ -6071,6 +6089,7 @@ export class Compositor {
       focusedPaneId: pane.id,
       element: tabEl,
       contentWrapperEl: wrapper,
+      sidePaneIds: [],
     };
 
     win.tabs.push(tab);
@@ -6121,42 +6140,7 @@ export class Compositor {
 
     // Create wrapper and pane with content view (no terminal/PTY)
     const ctWrapper = this.createTabWrapper(win.contentElement);
-    const paneId = nextPaneId();
-    const paneEl = document.createElement('div');
-    paneEl.className = 'krypton-pane';
-    paneEl.dataset.paneId = paneId;
-    ctWrapper.appendChild(paneEl);
-
-    paneEl.appendChild(contentView.element);
-
-    // Edge glow overlays — match terminal pane glow
-    const ctGlowTop = document.createElement('div');
-    ctGlowTop.className = 'krypton-glow-overlay';
-    paneEl.appendChild(ctGlowTop);
-
-    const ctGlowBottom = document.createElement('div');
-    ctGlowBottom.className = 'krypton-glow-overlay krypton-glow-overlay--bottom';
-    paneEl.appendChild(ctGlowBottom);
-
-    // Drive the host window's oscilloscope band from this view's streamed
-    // output (spec 189). The band lives on the window chrome and is shared by
-    // every tab/pane, so a content tab pumps the same scope the launching
-    // terminal fed — matching the "all panes pump the single window band" rule.
-    // The scope is null when the header-accent style is 'ticks'; the pump still
-    // feeds the Wheel rail's activity dot (spec 272).
-    contentView.onOutputPump = (chars: number): void => this.pumpWindowActivity(win.id, chars);
-
-    const pane: Pane = {
-      id: paneId,
-      viewId: crypto.randomUUID(),
-      sessionId: null,
-      terminal: null,
-      fitAddon: null,
-      element: paneEl,
-      shaderInstance: null,
-      contentView,
-      pendingInput: [],
-    };
+    const pane = this.mountContentPane(ctWrapper, contentView, win.id);
 
     const tabNum = win.tabs.length + 1;
     const tabEl = this.buildTabElement(tabId, tabNum - 1, title);
@@ -6168,6 +6152,7 @@ export class Compositor {
       focusedPaneId: pane.id,
       element: tabEl,
       contentWrapperEl: ctWrapper,
+      sidePaneIds: [],
     };
 
     win.tabs.push(tab);
@@ -6180,6 +6165,46 @@ export class Compositor {
 
     this.focusContentView(contentView);
     this.sound.play('tab.create');
+  }
+
+  /** Build a leaf pane hosting `contentView` inside `container` (no terminal/PTY). */
+  private mountContentPane(container: HTMLElement, contentView: ContentView, winId: WindowId): Pane {
+    const paneId = nextPaneId();
+    const paneEl = document.createElement('div');
+    paneEl.className = 'krypton-pane';
+    paneEl.dataset.paneId = paneId;
+    container.appendChild(paneEl);
+
+    paneEl.appendChild(contentView.element);
+
+    // Edge glow overlays — match terminal pane glow
+    const glowTop = document.createElement('div');
+    glowTop.className = 'krypton-glow-overlay';
+    paneEl.appendChild(glowTop);
+
+    const glowBottom = document.createElement('div');
+    glowBottom.className = 'krypton-glow-overlay krypton-glow-overlay--bottom';
+    paneEl.appendChild(glowBottom);
+
+    // Drive the host window's oscilloscope band from this view's streamed
+    // output (spec 189). The band lives on the window chrome and is shared by
+    // every tab/pane, so a content pane pumps the same scope the launching
+    // terminal fed — matching the "all panes pump the single window band" rule.
+    // The scope is null when the header-accent style is 'ticks'; the pump still
+    // feeds the Wheel rail's activity dot (spec 272).
+    contentView.onOutputPump = (chars: number): void => this.pumpWindowActivity(winId, chars);
+
+    return {
+      id: paneId,
+      viewId: crypto.randomUUID(),
+      sessionId: null,
+      terminal: null,
+      fitAddon: null,
+      element: paneEl,
+      shaderInstance: null,
+      contentView,
+      pendingInput: [],
+    };
   }
 
   /** Open a URL in an in-app webview pane (feature 102). */
@@ -6380,53 +6405,8 @@ export class Compositor {
     const splitDir = direction ?? (this.tabsConfig.default_split as SplitDirection);
     const cwd = await this.getFocusedCwd();
 
-    // Find the focused pane's parent in the tree and replace it with a split.
-    // `as` keeps TS from narrowing to `null`: the closure below assigns it.
-    let created = null as Pane | null;
-    const replaceInTree = (node: PaneNode): PaneNode => {
-      if (node.type === 'leaf' && node.pane.id === tab.focusedPaneId) {
-        // Create split container element
-        const splitEl = document.createElement('div');
-        splitEl.className = `krypton-split krypton-split--${splitDir}`;
-
-        const divider = document.createElement('div');
-        divider.className = 'krypton-split__divider';
-
-        // Reparent old pane into the split
-        node.pane.element.remove();
-        splitEl.appendChild(node.pane.element);
-        splitEl.appendChild(divider);
-
-        // Create new pane inside the split
-        created = this.createPane(splitEl);
-
-        return {
-          type: 'split',
-          direction: splitDir,
-          ratio: 0.5,
-          first: node,
-          second: { type: 'leaf', pane: created },
-          element: splitEl,
-        };
-      }
-      if (node.type === 'split') {
-        return {
-          ...node,
-          first: replaceInTree(node.first),
-          second: replaceInTree(node.second),
-        };
-      }
-      return node;
-    };
-
-    tab.paneTree = replaceInTree(tab.paneTree);
-
-    // Rebuild the pane tree inside the tab's wrapper
-    const splitContainer = tab.contentWrapperEl ?? win.contentElement;
-    this.clearPaneTree(splitContainer);
-    mountPaneTree(tab.paneTree, splitContainer);
-    if (!created) return;
-    const newPane = created;
+    const newPane = this.insertBesidePane(tab, win, tab.focusedPaneId, splitDir, (container) => this.createPane(container));
+    if (!newPane) return;
 
     // Wire input BEFORE spawn so xterm.js replies during startup are buffered.
     this.wirePaneInput(newPane);
@@ -6450,6 +6430,260 @@ export class Compositor {
     newPane.terminal?.focus();
     this.updatePaneFocusIndicator(tab);
     this.sound.play('pane.split');
+  }
+
+  /** Replace `anchorId`'s leaf with a split holding the anchor first and a leaf
+   *  built by `makeLeaf` second, at an even ratio, then rebuild the tab's split
+   *  DOM. Returns the new pane; null when the anchor is not in the tree. */
+  private insertBesidePane(
+    tab: Tab,
+    win: KryptonWindow,
+    anchorId: PaneId,
+    direction: SplitDirection,
+    makeLeaf: (container: HTMLElement) => Pane,
+  ): Pane | null {
+    // `as` keeps TS from narrowing to `null`: the closure below assigns it.
+    let created = null as Pane | null;
+    const replaceInTree = (node: PaneNode): PaneNode => {
+      if (node.type === 'leaf' && node.pane.id === anchorId) {
+        const splitEl = document.createElement('div');
+        splitEl.className = `krypton-split krypton-split--${direction}`;
+
+        const divider = document.createElement('div');
+        divider.className = 'krypton-split__divider';
+
+        // Reparent the anchor pane into the split
+        node.pane.element.remove();
+        splitEl.appendChild(node.pane.element);
+        splitEl.appendChild(divider);
+
+        created = makeLeaf(splitEl);
+
+        return {
+          type: 'split',
+          direction,
+          ratio: 0.5,
+          first: node,
+          second: { type: 'leaf', pane: created },
+          element: splitEl,
+        };
+      }
+      if (node.type === 'split') {
+        return {
+          ...node,
+          first: replaceInTree(node.first),
+          second: replaceInTree(node.second),
+        };
+      }
+      return node;
+    };
+
+    tab.paneTree = replaceInTree(tab.paneTree);
+    if (!created) return null;
+    this.remountPaneTree(tab, win);
+    return created;
+  }
+
+  /** Rebuild a tab's split DOM from its pane tree after the tree changed. */
+  private remountPaneTree(tab: Tab, win: KryptonWindow): void {
+    const container = tab.contentWrapperEl ?? win.contentElement;
+    this.clearPaneTree(container);
+    mountPaneTree(tab.paneTree, container);
+  }
+
+  /**
+   * spec 296: open `target` in a split beside the focused pane, in the same tab.
+   * Panes created here form the tab's side column: a markdown side pane is
+   * reused for the next markdown file, other targets stack inside the column,
+   * so the origin pane shrinks only once. Helix side panes are never replaced:
+   * no command kills a PTY, so replacing one would orphan the editor.
+   */
+  async openToSide(
+    target: { kind: 'file'; path: string; line?: number | null; col?: number | null } | { kind: 'markdown' },
+  ): Promise<boolean> {
+    const isMarkdown = target.kind === 'markdown' || target.path.toLowerCase().endsWith('.md');
+    if (isMarkdown && this.blockLocalViewForRemote('Markdown viewer')) return false;
+    if (!this.focusedWindowId) return false;
+    const win = this.windows.get(this.focusedWindowId);
+    const tab = win?.tabs[win.activeTabIndex];
+    if (!win || !tab) return false;
+
+    const sideId = tab.sidePaneIds[tab.sidePaneIds.length - 1];
+    const side = sideId ? this.findPaneInTree(tab.paneTree, sideId) : null;
+    const sideView = side?.contentView;
+    if (isMarkdown && side && sideView?.type === 'markdown') {
+      if (target.kind === 'file') await (sideView as MarkdownContentView).showFile(target.path);
+      tab.focusedPaneId = side.id;
+      this.focusPaneSurface(side);
+      this.updatePaneFocusIndicator(tab);
+      return true;
+    }
+
+    // An existing side column takes the new pane below its last entry; without
+    // one, the new pane opens a column to the right of the focused pane.
+    const anchorId = side?.id ?? tab.focusedPaneId;
+    const direction: SplitDirection = side ? 'horizontal' : 'vertical';
+    // The tab or anchor can go away while the awaits below run.
+    const anchorAlive = (): boolean =>
+      win.tabs.includes(tab) && this.findPaneInTree(tab.paneTree, anchorId) !== null;
+
+    let leaf: Pane | null;
+    if (isMarkdown) {
+      const built = await this.buildMarkdownView(target.kind === 'file' ? target.path : undefined);
+      if (!built) return false;
+      if (!anchorAlive()) {
+        built.view.dispose();
+        return false;
+      }
+      leaf = this.insertBesidePane(tab, win, anchorId, direction, (container) =>
+        this.mountContentPane(container, built.view, win.id));
+      if (!leaf) return false;
+      built.view.onClose(() => this.closeContentViewHost(built.view));
+    } else {
+      const cwd = await this.getFocusedCwd();
+      if (!anchorAlive()) return false;
+      leaf = this.insertBesidePane(tab, win, anchorId, direction, (container) => this.createPane(container));
+      if (!leaf) return false;
+      // Size the terminal before Helix starts so it draws at the split's size.
+      await this.nextFrame();
+      this.fitPaneTree(tab.paneTree);
+      const fileArg = helixFileArg(target.path, target.line, target.col);
+      if (!await this.spawnEditorSession(leaf, win.id, tab.id, cwd, 'hx', [fileArg])) {
+        this.closePaneInTab(tab, leaf.id, win);
+        return false;
+      }
+    }
+
+    tab.sidePaneIds.push(leaf.id);
+    tab.focusedPaneId = leaf.id;
+    await this.nextFrame();
+    this.fitPaneTree(tab.paneTree);
+    this.focusPaneSurface(leaf);
+    this.updatePaneFocusIndicator(tab);
+    this.sound.play('pane.split');
+    return true;
+  }
+
+  /** Close the pane hosting `view`: only that pane when its tab has others,
+   *  otherwise its tab, or its window when that is the last tab and
+   *  `close_window_on_last_tab` is set. Content views call this from `onClose`,
+   *  so a view inside a split never closes the panes beside it. */
+  private closeContentViewHost(view: ContentView): void {
+    for (const win of this.windows.values()) {
+      for (let i = 0; i < win.tabs.length; i++) {
+        const tab = win.tabs[i];
+        const panes = this.collectPanes(tab.paneTree);
+        const pane = panes.find((candidate) => candidate.contentView === view);
+        if (!pane) continue;
+        if (panes.length > 1) {
+          this.closePaneInTab(tab, pane.id, win);
+          this.sound.play('pane.close');
+        } else if (win.tabs.length > 1) {
+          this.closeTabByIndex(win, i);
+          this.sound.play('tab.close');
+        } else if (this.tabsConfig.close_window_on_last_tab) {
+          void this.closeWindow(win.id);
+        }
+        return;
+      }
+    }
+  }
+
+  /** spec 296: move the focused pane's nearest divider on the pressed axis by
+   *  one `resize_step`. The divider moves in the pressed direction whichever
+   *  side of it the focused pane is on. */
+  resizeFocusedSplit(direction: 'left' | 'right' | 'up' | 'down'): void {
+    if (!this.focusedWindowId) return;
+    const win = this.windows.get(this.focusedWindowId);
+    const tab = win?.tabs[win.activeTabIndex];
+    if (!tab) return;
+    const sideways = direction === 'left' || direction === 'right';
+    const split = findResizableSplit(tab.paneTree, tab.focusedPaneId, sideways ? 'vertical' : 'horizontal');
+    if (!split) return;
+    const extent = sideways ? split.element.clientWidth : split.element.clientHeight;
+    if (extent <= 0) return;
+    const sign = direction === 'left' || direction === 'up' ? -1 : 1;
+    this.setSplitRatio(split, split.ratio + sign * this.stepSize / extent);
+  }
+
+  /** spec 296: reset the focused pane's nearest split to 50/50. */
+  equalizeFocusedSplit(): void {
+    if (!this.focusedWindowId) return;
+    const win = this.windows.get(this.focusedWindowId);
+    const tab = win?.tabs[win.activeTabIndex];
+    if (!tab) return;
+    const split = nearestSplit(tab.paneTree, tab.focusedPaneId);
+    if (split) this.setSplitRatio(split, 0.5);
+  }
+
+  private setSplitRatio(split: Extract<PaneNode, { type: 'split' }>, ratio: number): void {
+    split.ratio = clampSplitRatio(ratio);
+    applySplitFlex(split);
+    this.fitPaneTree(split);
+    this.scheduleWorkspaceStateSave();
+  }
+
+  /** spec 296: pane click-to-focus and divider drag on a window's content area.
+   *  The click listener runs beside the window's own `focusWindow` listener
+   *  and does not `preventDefault`, so clicks inside views behave as before. */
+  private wirePaneMouse(win: KryptonWindow): void {
+    const content = win.contentElement;
+    content.addEventListener('mousedown', (e: MouseEvent) => {
+      const target = e.target instanceof Element ? e.target : null;
+      const paneId = target?.closest<HTMLElement>('.krypton-pane')?.dataset.paneId;
+      const tab = win.tabs[win.activeTabIndex];
+      if (!tab || !paneId || paneId === tab.focusedPaneId) return;
+      const pane = this.findPaneInTree(tab.paneTree, paneId);
+      if (!pane) return;
+      tab.focusedPaneId = pane.id;
+      this.updatePaneFocusIndicator(tab);
+      this.focusPaneSurface(pane);
+    });
+
+    content.addEventListener('pointerdown', (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      const target = e.target instanceof Element ? e.target : null;
+      const divider = target?.closest<HTMLElement>('.krypton-split__divider');
+      const splitEl = divider?.parentElement;
+      const tab = win.tabs[win.activeTabIndex];
+      const split = splitEl && tab ? findSplitByElement(tab.paneTree, splitEl) : null;
+      if (!divider || !splitEl || !split) return;
+      e.preventDefault();
+      divider.setPointerCapture(e.pointerId);
+      splitEl.classList.add('krypton-split--dragging');
+
+      // One flex write per frame; terminals refit once on release so a drag
+      // never sends resize_pty per frame.
+      let frame = 0;
+      let x = e.clientX;
+      let y = e.clientY;
+      const apply = (): void => {
+        frame = 0;
+        split.ratio = clampSplitRatio(ratioFromPointer(splitEl.getBoundingClientRect(), split.direction, x, y));
+        applySplitFlex(split);
+      };
+      const move = (ev: PointerEvent): void => {
+        x = ev.clientX;
+        y = ev.clientY;
+        if (!frame) frame = requestAnimationFrame(apply);
+      };
+      const end = (): void => {
+        if (frame) {
+          cancelAnimationFrame(frame);
+          apply();
+        }
+        divider.removeEventListener('pointermove', move);
+        divider.removeEventListener('pointerup', end);
+        divider.removeEventListener('pointercancel', end);
+        if (divider.hasPointerCapture(e.pointerId)) divider.releasePointerCapture(e.pointerId);
+        splitEl.classList.remove('krypton-split--dragging');
+        this.fitPaneTree(split);
+        this.scheduleWorkspaceStateSave();
+      };
+      divider.addEventListener('pointermove', move);
+      divider.addEventListener('pointerup', end);
+      divider.addEventListener('pointercancel', end);
+    });
   }
 
   /** Close the focused pane */
@@ -6512,13 +6746,17 @@ export class Compositor {
       tab.paneTree = newTree;
     }
 
-    // Rebuild DOM inside the tab's wrapper
-    const closeContainer = tab.contentWrapperEl ?? win.contentElement;
-    this.clearPaneTree(closeContainer);
-    mountPaneTree(tab.paneTree, closeContainer);
+    this.remountPaneTree(tab, win);
+
+    // A side pane leaves the column; once nothing but side panes remain, the
+    // column is no longer beside anything.
+    const remainingPanes = this.collectPanes(tab.paneTree);
+    tab.sidePaneIds = tab.sidePaneIds.filter((id) => id !== paneId);
+    if (remainingPanes.every((p) => tab.sidePaneIds.includes(p.id))) {
+      tab.sidePaneIds = [];
+    }
 
     // Focus the first remaining pane
-    const remainingPanes = this.collectPanes(tab.paneTree);
     if (remainingPanes.length > 0) {
       tab.focusedPaneId = remainingPanes[0].id;
       this.focusPaneSurface(remainingPanes[0]);
@@ -8512,6 +8750,7 @@ export class Compositor {
         focusedPaneId: pane.id,
         element: tabEl,
         contentWrapperEl: sshWrapper,
+        sidePaneIds: [],
       };
 
       win.tabs.push(tab);

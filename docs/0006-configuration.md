@@ -148,6 +148,9 @@ shrink_up = "Up"
 step_large = "Shift+Arrow"        # larger step
 confirm = "Enter"
 cancel = "Escape"
+# Split resize (spec 296, fixed keys, not configurable): Shift+H/L move the
+# nearest vertical split divider left/right, Shift+K/J the nearest horizontal
+# one up/down, by [workspaces] resize_step px; "=" resets the nearest split to 50/50.
 
 # Move mode keys (active only in move mode)
 [keybindings.move_mode]
@@ -514,7 +517,7 @@ startup = "coding"           # workspace to activate on launch
 gap = 6                      # space between tiled windows, and the workspace
                              # edge inset in Grid/Scroll (0-64, live on Reload Config)
 padding = 0                  # reserved: parsed but not applied yet
-resize_step = 20             # pixels per arrow key press in resize mode
+resize_step = 20             # pixels per arrow key press in resize mode; also the split-divider step (Shift+H/J/K/L, spec 296)
 move_step = 20               # pixels per arrow key press in move mode
 resize_step_large = 100      # pixels per Shift+Arrow in resize mode
 move_step_large = 100        # pixels per Shift+Arrow in move mode
@@ -1205,7 +1208,7 @@ Built-in extensions (system-level, not user-configurable): Java Resource Monitor
 | `[workspaces.scroll]` | `always_center_single_column` | bool | `true` | Center a lone column regardless of `center_focused_column` |
 | `[workspaces]` | `gap` | int | `6` | Pixel space between tiled windows. Also the workspace edge inset in **Grid**, **Scroll**, and **Stage**; Stage also uses it between recent-window previews. Clamped to `0`–`64`. Applies on **Reload Config** — no restart. **Depth** ignores it (ratio-centered), as does a lone Grid window. |
 | `[workspaces]` | `padding` | int | `0` | Reserved — parsed but not yet applied. Use `gap` for both window spacing and the workspace edge inset. |
-| `[workspaces]` | `resize_step` | int | `20` | Pixels per arrow key press in resize mode |
+| `[workspaces]` | `resize_step` | int | `20` | Pixels per arrow key press in resize mode; also the split-divider step for `Shift+H/J/K/L` (spec 296) |
 | `[workspaces]` | `move_step` | int | `20` | Pixels per arrow key press in move mode |
 | `[workspaces]` | `resize_step_large` | int | `100` | Pixels per Shift+Arrow in resize mode |
 | `[workspaces]` | `move_step_large` | int | `100` | Pixels per Shift+Arrow in move mode |

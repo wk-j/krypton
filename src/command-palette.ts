@@ -719,6 +719,49 @@ export class CommandPalette {
       keybinding: 'Cmd+[',
       execute: () => c.cyclePaneFocus(-1),
     });
+    // spec 296: open-to-side and split ratios.
+    this.register({
+      id: 'pane.markdown-to-side',
+      label: 'Markdown Viewer To Side',
+      category: 'Pane',
+      keybinding: 'Leader O',
+      execute: () => c.openToSide({ kind: 'markdown' }),
+    });
+    this.register({
+      id: 'pane.split-grow-left',
+      label: 'Move Split Divider Left',
+      category: 'Pane',
+      keybinding: 'Leader r Shift+H',
+      execute: () => c.resizeFocusedSplit('left'),
+    });
+    this.register({
+      id: 'pane.split-grow-right',
+      label: 'Move Split Divider Right',
+      category: 'Pane',
+      keybinding: 'Leader r Shift+L',
+      execute: () => c.resizeFocusedSplit('right'),
+    });
+    this.register({
+      id: 'pane.split-grow-up',
+      label: 'Move Split Divider Up',
+      category: 'Pane',
+      keybinding: 'Leader r Shift+K',
+      execute: () => c.resizeFocusedSplit('up'),
+    });
+    this.register({
+      id: 'pane.split-grow-down',
+      label: 'Move Split Divider Down',
+      category: 'Pane',
+      keybinding: 'Leader r Shift+J',
+      execute: () => c.resizeFocusedSplit('down'),
+    });
+    this.register({
+      id: 'pane.split-equalize',
+      label: 'Even Split',
+      category: 'Pane',
+      keybinding: 'Leader r =',
+      execute: () => c.equalizeFocusedSplit(),
+    });
 
     // ── Terminal actions ──
     this.register({

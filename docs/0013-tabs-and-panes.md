@@ -58,6 +58,7 @@ export interface Tab {
   title: string;                 // display title (from OSC or "Shell N")
   paneTree: PaneNode;            // root of the pane tree
   focusedPaneId: PaneId;         // which pane has focus within this tab
+  sidePaneIds: PaneId[];         // spec 296: panes opened by openToSide (the side column); not persisted
 }
 
 /** Updated KryptonWindow — replaces single sessionId/terminalContainer */
@@ -182,6 +183,40 @@ This factory is used by: window creation (first tab, first pane), new tab creati
 4. Returns to Normal mode
 ```
 
+#### Open to Side (spec 296)
+
+```
+1. Harness `f` hint Shift+<label> on a file resource, Alt+click on a REFERENCES
+   rail file row, Leader O (markdown viewer), or palette `pane.markdown-to-side`
+2. compositor.openToSide(target), target = markdown viewer or Helix (`hx path:line:col`)
+3. Compositor:
+   a. Markdown target in an SSH/remote Harness window → refused
+   b. Markdown target with an existing markdown side pane → showFile(path) on it
+      (file added to its sidebar), focus it, done
+   c. No side column → vertical split of the focused pane (new column to the right);
+      else horizontal split below the column's last pane. New pane joins sidePaneIds
+   d. Helix target: spawn hx in the new leaf; spawn failure removes the leaf.
+      Helix side panes are never replaced, they stack
+4. Closing a side pane (Alt+x, q/Esc in the markdown view, Helix exit) removes it from
+   the column; when only side panes remain in the tab, the column is cleared
+```
+
+#### Resize Splits (spec 296)
+
+```
+Keyboard (Resize mode, Leader r):
+  Shift+H / Shift+L → move the nearest vertical divider left / right
+  Shift+K / Shift+J → move the nearest horizontal divider up / down
+  step = [workspaces] resize_step px; `=` resets the nearest split to 0.5
+  The divider moves in the pressed direction whichever side the focused pane is on.
+  Plain h/j/k/l and arrows (also Shift+Arrow) still resize the window; letters are
+  lower-cased, so Caps Lock h/j/k/l resizes the window — only a held Shift targets a split.
+Mouse: drag .krypton-split__divider; ratio updates live (one flex write per frame),
+  terminals refit once on release (no resize_pty per frame).
+Ratios clamp to [0.1, 0.9] (src/pane-split.ts), render as `flex: <ratio> 1 0` on both
+children (applySplitFlex, src/pane-tree-dom.ts), and persist in the workspace snapshot.
+```
+
 #### Navigate Panes (Leader + h/j/k/l)
 
 ```
@@ -252,6 +287,10 @@ where Alt leaves `e.key` a plain letter, the plain `h/j/k/l` path handles it.
 | `Alt+h/j/k/l` | Compositor mode | Focus the adjacent pane only (never leaves the window) |
 | `Cmd+[` / `Cmd+]` | Global (any mode) | Cycle pane focus backward / forward in the active tab, no Leader |
 | `Alt+x` | Compositor mode | Close focused pane |
+| `O` (Shift+o) | Compositor mode | Open the markdown viewer to the side (spec 296); bare `o` opens it in a new tab |
+| `Shift+H/J/K/L` | Resize mode | Move the nearest vertical/horizontal split divider (spec 296) |
+| `=` | Resize mode | Reset the nearest split to 50/50 (spec 296) |
+| click | Any pane | Focus that pane (and its window) |
 
 ### Tab Bar UI
 
@@ -324,7 +363,8 @@ When a tab is split, the focused pane gets a subtle 1px inset ring (`box-shadow:
 | `.krypton-split` | Split container (flex row or column) |
 | `.krypton-split--vertical` | Vertical split (flex-direction: row) |
 | `.krypton-split--horizontal` | Horizontal split (flex-direction: column) |
-| `.krypton-split__divider` | Draggable divider between panes |
+| `.krypton-split__divider` | Draggable divider between panes (7px transparent `::before` hit area) |
+| `.krypton-split--dragging` | On the split while a divider drags; disables pane pointer-events and text selection |
 
 ### Configuration
 
@@ -370,16 +410,18 @@ New events added to `SoundEvent` type:
 2. **Close last tab in window**: Closes the window (existing `closeWindow` flow).
 3. **Close last window**: Quits the app (existing behavior preserved).
 4. **PTY exit in a pane**: Closes that pane (not the whole tab). If it's the last pane, closes the tab.
+4a. **Content view closes itself** (`q`/`Esc`, etc.): `closeContentViewHost` closes only that pane when its tab has other panes; otherwise the tab (or the window when it is the last tab and `close_window_on_last_tab` is set).
+4b. **Close a pane**: `mountPaneTree` re-derives every split's flex from the tree, so the promoted sibling takes its new share.
 5. **Move tab to same window**: No-op.
 6. **Move tab to non-existent window index**: No-op (beep/flash).
 7. **Split when window is very small**: Enforce minimum pane size (e.g., 20 cols x 5 rows). Reject split if it would create panes below minimum.
 8. **Tab title from OSC**: Update the active pane's tab title when OSC title-change is received. If multiple panes exist, use the focused pane's title.
-9. **Resize window with panes**: `fitAll()` recursively fits all visible panes in the active tab, respecting split ratios.
+9. **Resize window with panes**: `fitAll()` recursively fits all visible panes in the active tab, respecting split ratios; content panes get `ContentView.onResize`.
 10. **Maximize with panes**: Works at the window level (all panes grow proportionally).
 
 ## Out of Scope
 
-- **Pane resize via keyboard** — Could be added later as a "Pane Resize" mode (similar to window Resize mode). Not in this spec.
+- ~~**Pane resize via keyboard**~~ — shipped in spec 296 (Resize mode `Shift+H/J/K/L`, `=`, plus divider drag).
 - **Pane drag-and-drop reordering** — Mouse interaction, secondary priority. Not in this spec.
 - **Tab drag-and-drop reordering** — Mouse interaction, secondary priority. Not in this spec.
 - **Persistent tab/pane layout in config** — Workspace presets don't yet define per-window tab/pane layouts. Future enhancement.

@@ -1513,6 +1513,8 @@ export class AcpHarnessView implements ContentView {
   private closeCb: (() => void) | null = null;
   private readonly openTelegramSettingsCb: (() => Promise<void>) | null;
   private readonly openFileReferenceCb: ((path: string, line?: number, column?: number) => Promise<boolean>) | null;
+  /** spec 296: open a file in a split beside the harness (Shift+<label>, Alt+click). */
+  private readonly openFileToSideCb: ((path: string, line?: number, column?: number) => Promise<boolean>) | null;
   /** spec 211: open a Review Board content window over a durable bundle. Injected
    *  by the compositor, which owns tab creation; null when unavailable. */
   private readonly openReviewBoardCb:
@@ -1623,6 +1625,7 @@ export class AcpHarnessView implements ContentView {
     openMarkdownView: ((path: string) => Promise<void>) | null = null,
     workspace: WorkspaceRef = { kind: 'local', path: projectDir },
     openTerminalTab: OpenTerminalTab | null = null,
+    openFileToSide: ((path: string, line?: number, column?: number) => Promise<boolean>) | null = null,
   ) {
     this.projectDir = projectDir;
     this.workspace = Object.freeze({ ...workspace }) as WorkspaceRef;
@@ -1630,6 +1633,7 @@ export class AcpHarnessView implements ContentView {
     this.viewBus = bus;
     this.openTelegramSettingsCb = openTelegramSettings;
     this.openFileReferenceCb = openFileReference;
+    this.openFileToSideCb = openFileToSide;
     this.openReviewBoardCb = openReviewBoard;
     this.openMarkdownViewCb = openMarkdownView;
     this.openTerminalTabCb = openTerminalTab;
@@ -6406,7 +6410,7 @@ export class AcpHarnessView implements ContentView {
         const resource = this.activeLane()?.transcript
           .flatMap((item) => item.resources ?? [])
           .find((candidate) => candidate.key === resourceButton.dataset.responseResource);
-        if (resource) void this.openMessageResource(resource);
+        if (resource) void this.openMessageResource(resource, { side: e.altKey });
         return;
       }
       // spec 283: SVG card — click the preview to zoom; toolbar Source/Preview and Copy.
@@ -9973,7 +9977,7 @@ export class AcpHarnessView implements ContentView {
       else if ('recentTools' in exact) this.toggleSubagentDetail(this.activeLane(), exact);
       else if ('available' in exact) void this.openArtifact(exact);
       else if ('slug' in exact) void this.openReviewBoard(exact);
-      else void this.openMessageResource(exact);
+      else void this.openMessageResource(exact, { side: e.shiftKey });
       this.exitOpenHintMode();
       return true;
     }
@@ -10250,7 +10254,9 @@ export class AcpHarnessView implements ContentView {
     this.releaseProgrammaticScroll(token);
   }
 
-  private async openMessageResource(resource: MessageResource): Promise<void> {
+  /** `side` (spec 296) opens a file beside the harness instead of in a new tab;
+   *  url and image targets ignore it. */
+  private async openMessageResource(resource: MessageResource, options: { side?: boolean } = {}): Promise<void> {
     if (resource.kind === 'url') {
       openExternalUrl(resource.target, { external: true });
       this.flashChip(`opening ${resource.label}`);
@@ -10264,12 +10270,13 @@ export class AcpHarnessView implements ContentView {
       this.openImageViewer(image.imageId);
       return;
     }
-    if (!this.openFileReferenceCb) {
+    const openFile = options.side ? this.openFileToSideCb : this.openFileReferenceCb;
+    if (!openFile) {
       this.flashChip('file opener unavailable');
       return;
     }
     try {
-      const opened = await this.openFileReferenceCb(resource.target, resource.line, resource.column);
+      const opened = await openFile(resource.target, resource.line, resource.column);
       this.flashChip(opened ? `opening ${resource.label}` : 'file unavailable');
     } catch {
       this.flashChip('file unavailable');

@@ -987,9 +987,13 @@ export class InputRouter {
         this.toNormal();
         break;
 
-      // o — open markdown viewer
+      // o — open markdown viewer / O — markdown viewer to the side (spec 296)
       case 'o':
-        this.compositor.openMarkdownView().then(() => this.toNormal());
+        if (e.shiftKey) {
+          this.compositor.openToSide({ kind: 'markdown' }).then(() => this.toNormal());
+        } else {
+          this.compositor.openMarkdownView().then(() => this.toNormal());
+        }
         break;
 
       // J — open today's day if it was written (spec 225); j is Focus Down
@@ -1171,34 +1175,49 @@ export class InputRouter {
   // ─── Resize Mode ─────────────────────────────────────────────────
 
   private handleResizeKey(e: KeyboardEvent): void {
-    switch (e.key) {
+    // spec 296: `=` resets the focused pane's nearest split to 50/50. Matched on
+    // e.key alone, so layouts that need Shift to type `=` still reach it.
+    if (e.key === '=') {
+      this.compositor.equalizeFocusedSplit();
+      this.compositor.soundEngine.play('resize.step');
+      return;
+    }
+
+    // Letters compare lower-cased, so h/j/k/l with Caps Lock still resize the
+    // window; only a held Shift moves a split divider instead (spec 296).
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    let direction: 'left' | 'right' | 'up' | 'down';
+    switch (key) {
       case 'ArrowLeft':
       case 'h':
-        this.compositor.resizeFocused('left');
-        this.compositor.soundEngine.play('resize.step');
+        direction = 'left';
         break;
       case 'ArrowRight':
       case 'l':
-        this.compositor.resizeFocused('right');
-        this.compositor.soundEngine.play('resize.step');
+        direction = 'right';
         break;
       case 'ArrowUp':
       case 'k':
-        this.compositor.resizeFocused('up');
-        this.compositor.soundEngine.play('resize.step');
+        direction = 'up';
         break;
       case 'ArrowDown':
       case 'j':
-        this.compositor.resizeFocused('down');
-        this.compositor.soundEngine.play('resize.step');
+        direction = 'down';
         break;
       case 'Enter':
         this.toNormal();
-        break;
+        return;
       default:
         // Ignore unknown keys, stay in Resize mode
-        break;
+        return;
     }
+    // Shift+Arrow stays a window resize: only Shift+letter targets a split.
+    if (e.shiftKey && key.length === 1) {
+      this.compositor.resizeFocusedSplit(direction);
+    } else {
+      this.compositor.resizeFocused(direction);
+    }
+    this.compositor.soundEngine.play('resize.step');
   }
 
   // ─── Move Mode ───────────────────────────────────────────────────

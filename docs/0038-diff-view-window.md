@@ -296,7 +296,7 @@ In Normal mode, when the focused pane has a `contentView`:
 - **Very large diffs**: Use `VirtualizedFileDiff` instead of `FileDiff` when file line count > 5000
 - **Window close during diff load**: Guard async `run_command` with window existence check
 - **No git repo**: Show error message if `git diff` fails
-- **Content pane splits**: Disabled — split keybindings are no-ops for content panes
+- **Content pane splits**: Supported since spec 296 — content panes split like terminals and receive `onResize` from `fitPaneTree`; a content view's close goes through `closeContentViewHost` (its own pane when the tab has others)
 - **Tabs**: A window can mix terminal tabs and diff tabs — tab switching works normally
 - **Theme changes**: Re-render diffs when `theme-changed` event fires (update Shiki theme bridge)
 - **React peer dep**: Not needed — we only import from `@pierre/diffs` (main export), not `@pierre/diffs/react`

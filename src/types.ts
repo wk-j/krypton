@@ -327,6 +327,10 @@ export interface Tab {
   /** Persistent wrapper that holds the pane tree DOM and stays mounted (hidden/shown via CSS).
    *  Created lazily on first showActiveTab call. */
   contentWrapperEl: HTMLElement | null;
+  /** spec 296: panes created by openToSide, oldest first. The last live entry is
+   *  the side column's insertion point. Not persisted (restored content leaves
+   *  are notices). */
+  sidePaneIds: PaneId[];
 }
 
 /** Represents a terminal window's state */

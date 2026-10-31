@@ -253,6 +253,8 @@ agent  Implemented the parser in `client.ts` and documented the ACP contract.
 | `f` | Transcript command mode | Enter unified follow/open hint mode for visible resources, available artifacts, and follow-up buttons (spec 323) |
 | hint label | Hint mode | Open the matching resource/artifact (or run, open or send the follow-up action), then exit hint mode |
 | `Shift+<label>` | Hint mode, prompt follow-up | Paste the prompt into the composer instead of sending it (spec 327) |
+| `Shift+<label>` | Hint mode, file resource | Open the file in a split beside the Harness pane (spec 296): `.md` in the markdown viewer (a markdown side pane is reused), other files in Helix. Shift counts on the last key of a multi-key label. Plain `<label>` opens Helix in a new tab |
+| `Alt+click` | Resource (REFERENCES) rail, file row | Same as `Shift+<label>` (spec 296). Local Harness only; during `#live`, Left Option is hold-to-talk, so use Right Option |
 | `Esc` | Hint mode | Exit without opening |
 
 Hint targets are assigned in transcript order, so resources stay associated

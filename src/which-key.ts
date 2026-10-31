@@ -105,6 +105,8 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
     { key: '-', label: 'Split Horizontal' },
     { key: 'A-hjkl', label: 'Focus Pane Only' },
     { key: 'A-x', label: 'Close Pane', effect: 'danger' },
+    // spec 296. Shift-only: bare `o` is Markdown Viewer in a new tab.
+    { key: 'O', label: 'Markdown To Side', effect: 'important' },
   ]),
 
   ...groupEntries('Apps', [
@@ -167,6 +169,10 @@ const RESIZE_KEYS: KeyEntry[] = [
   { key: '\u2192', label: 'Grow Width' },
   { key: '\u2191', label: 'Shrink Height' },
   { key: '\u2193', label: 'Grow Height' },
+  // spec 296: Shift+letter moves the nearest split divider, not the window.
+  { key: 'H/L', label: 'Split Divider \u2190/\u2192' },
+  { key: 'K/J', label: 'Split Divider \u2191/\u2193' },
+  { key: '=', label: 'Even Split' },
   { key: 'Esc', label: 'Done', effect: 'important' },
 ];
 

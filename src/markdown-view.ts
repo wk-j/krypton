@@ -225,6 +225,19 @@ export class MarkdownContentView implements ContentView {
     this.closeCallback = cb;
   }
 
+  /** spec 296: show `path` (absolute, or relative to this viewer's cwd) as an
+   *  open-to-side markdown pane does for the next file. A path the cwd scan did
+   *  not list joins the sidebar, as the constructor's `initialFile` does. */
+  async showFile(path: string): Promise<void> {
+    if (this.isFilterActive) this.closeFilter();
+    if (!this.files.includes(path)) this.files = [path, ...this.files];
+    this.filteredFiles = [...this.files];
+    this.selectedIndex = this.filteredFiles.indexOf(path);
+    this.renderFileList();
+    await this.loadFile(path);
+    this.setFocus('preview');
+  }
+
   // ── File List ──
 
   private renderFileList(): void {

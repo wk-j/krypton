@@ -38,11 +38,11 @@ comments, source jumps, autosave, and send behavior remain unchanged.
 - The reading column is capped at 860px (`src/styles/review-board.css:111`). On a wide Board the
   remaining horizontal space holds a 272px map without narrowing the authored content. Pane width,
   not application viewport width, is authoritative because Krypton windows tile.
-- `ContentView.onResize(width, height)` is declared in `src/types.ts:190` and implemented by most
-  views, but **nothing ever calls it** — a repo-wide search finds no call site, so `onResize` is
-  currently dead. Views that need their own measurement each run a `ResizeObserver`
-  (`webview-view.ts`, `acp-harness-view.ts`, `header-scope.ts`). The Board must do the same; a
-  responsive layout hung off `onResize` would silently never fire.
+- `ContentView.onResize(width, height)` is declared in `src/types.ts` and implemented by most
+  views. When this spec shipped nothing called it; since spec 296 `fitPaneTree` calls it on pane
+  fits, but only on compositor-driven fits. Views that need their own measurement each run a
+  `ResizeObserver` (`webview-view.ts`, `acp-harness-view.ts`, `header-scope.ts`). The Board does
+  the same, so its responsive layout follows every element size change.
 - The existing keymap reserves `1`…`9` for decision answers. The prototype's numeric chapter keys
   therefore cannot ship. `[` / `]` are free in the Board and match large-review navigation prior
   art.
@@ -262,9 +262,9 @@ required `:focus-visible` ring.
 
 - A `ResizeObserver` on `this.element` compares pane width against
   `REVIEW_MAP_WIDE_MIN_PX = 1180` and sets a root layout attribute. It is created in the
-  constructor and disconnected in `dispose()`. `onResize()` is *not* the trigger: the compositor
-  never calls it (see Research). The Board keeps a no-op `onResize()` so it still satisfies
-  `ContentView`.
+  constructor and disconnected in `dispose()`. `onResize()` is *not* the trigger (it was never
+  called when this shipped; spec 296 now calls it from `fitPaneTree`). The Board keeps a no-op
+  `onResize()`; the observer covers split-divider drags and window resizes alike.
 - At or above the threshold, the 272px map is persistent and the 860px reading column retains its
   current maximum width.
 - Below the threshold, the map is hidden by default and opens as an opaque, bordered overlay over

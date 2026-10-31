@@ -38,10 +38,10 @@ describe('mountPaneTree', () => {
     const b = pane('B');
     const c = pane('C');
     const inner: PaneTreeDomNode = {
-      type: 'split', first: b, second: c, element: splitEl(b.pane.element, divider(), c.pane.element),
+      type: 'split', ratio: 0.5, first: b, second: c, element: splitEl(b.pane.element, divider(), c.pane.element),
     };
     const root: PaneTreeDomNode = {
-      type: 'split', first: a, second: inner, element: splitEl(a.pane.element, divider()),
+      type: 'split', ratio: 0.5, first: a, second: inner, element: splitEl(a.pane.element, divider()),
     };
     const container = document.createElement('div');
 
@@ -63,8 +63,31 @@ describe('mountPaneTree', () => {
     c.pane.element.remove();
     innerEl.remove();
     container.replaceChildren();
-    mountPaneTree({ type: 'split', first: a, second: b, element: rootEl }, container);
+    mountPaneTree({ type: 'split', ratio: 0.5, first: a, second: b, element: rootEl }, container);
 
     expect(Array.from(container.children).map(shape)).toEqual(['(A | B)']);
+  });
+
+  it('sizes children from each split ratio and clears the share of a sibling promoted to the root', () => {
+    const a = pane('A');
+    const b = pane('B');
+    const c = pane('C');
+    const inner: PaneTreeDomNode = {
+      type: 'split', ratio: 0.25, first: b, second: c, element: splitEl(b.pane.element, divider(), c.pane.element),
+    };
+    const container = document.createElement('div');
+    mountPaneTree({ type: 'split', ratio: 0.75, first: a, second: inner, element: splitEl(a.pane.element, divider()) }, container);
+
+    expect(a.pane.element.style.flexGrow).toBe('0.75');
+    expect(inner.element.style.flexGrow).toBe('0.25');
+    expect(b.pane.element.style.flexGrow).toBe('0.25');
+    expect(c.pane.element.style.flexGrow).toBe('0.75');
+
+    // Closing A and then C leaves B alone in the tab: it must fill the wrapper,
+    // not keep the 25% it had beside C.
+    container.replaceChildren();
+    mountPaneTree(b, container);
+
+    expect(b.pane.element.style.flex).toBe('');
   });
 });

@@ -1012,9 +1012,17 @@
 }
 
 .krypton-split__divider {
+  position: relative;
+  z-index: 1;
   flex-shrink: 0;
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
   transform: translateZ(30px);
+}
+
+/* spec 296: a 7px transparent grab area centred on the 1px divider. */
+.krypton-split__divider::before {
+  content: '';
+  position: absolute;
 }
 
 .krypton-split--vertical > .krypton-split__divider {
@@ -1022,8 +1030,45 @@
   cursor: col-resize;
 }
 
+.krypton-split--vertical > .krypton-split__divider::before {
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 7px;
+}
+
 .krypton-split--horizontal > .krypton-split__divider {
   height: 1px;
+  cursor: row-resize;
+}
+
+.krypton-split--horizontal > .krypton-split__divider::before {
+  left: 0;
+  right: 0;
+  top: -3px;
+  height: 7px;
+}
+
+.krypton-split__divider:hover,
+.krypton-split--dragging > .krypton-split__divider {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+}
+
+/* While a divider drags, panes (xterm, views, iframes) must not swallow
+   pointermove or start a text selection. */
+.krypton-split--dragging {
+  user-select: none;
+}
+
+.krypton-split--dragging .krypton-pane {
+  pointer-events: none;
+}
+
+.krypton-split--vertical.krypton-split--dragging {
+  cursor: col-resize;
+}
+
+.krypton-split--horizontal.krypton-split--dragging {
   cursor: row-resize;
 }
 
