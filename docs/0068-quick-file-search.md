@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-04-25
 > Milestone: Tooling / productivity
+> Amended by: [0349](./0349-unified-search-palette-tabs.md) — Quick File Search is now the **Files** and **Grep** tabs of the Search Palette, one overlay shared with the command palette. `Cmd+O` opens it on Files; `Tab` / `Shift+Tab` cycle Commands → Files → Grep (Tab used to toggle file ↔ grep). `src/quick-file-search.ts` holds `ProjectRoot`, `FileScope` and `GrepScope`; the overlay, keys and DOM live in `src/search-palette.ts`, the mode is `Mode.SearchPalette`, and the styles are `.krypton-search-palette*`. Hovering a row selects it and clicking runs Enter's action (open in Helix). The Rust commands are unchanged. The Frontend module, Keybindings, UI, Grep mode and Open in editor sections below are updated to match.
 
 ## Implementation Notes (post-spec)
 
@@ -224,73 +225,67 @@ exposes a frecency-only sort, use it; else `fuzzy_search("")` and re-sort by
 
 ### Frontend module (`src/quick-file-search.ts`)
 
-```typescript
-export class QuickFileSearch {
-  private overlay: HTMLElement;
-  private input: HTMLInputElement;
-  private resultsList: HTMLElement;
-  private statusBar: HTMLElement;
-  private hintBar: HTMLElement;
-  private results: QuickSearchHit[] = [];
-  private selectedIndex = 0;
-  private visible = false;
-  private currentRoot: string | null = null;
-  private queryToken = 0;       // discards stale async responses
-  private debounceTimer = 0;
+Since spec 0349 the module holds the two tabs' engines; the overlay is
+`SearchPalette` (`src/search-palette.ts`).
 
-  open(cwd: string): Promise<void>;   // calls warm_root, opens overlay
-  close(): void;
-  isVisible(): boolean;
-  handleKey(e: KeyboardEvent): boolean;
+```typescript
+export class ProjectRoot {          // shared by both tabs, reset on every palette open
+  ensure(): Promise<void>;          // focused cwd → quick_search_warm_root, once per open
+  get path(): string | null;        // null while resolving or after a failed warm-up
+  get display(): string;            // abbreviated root shown right of the input
 }
+export class FileScope implements SearchScope { /* quick_search_query */ }
+export class GrepScope implements SearchScope { /* quick_grep_query */ }
 ```
 
-Query is debounced 16 ms; each query bumps `queryToken` and the response
-handler discards mismatched tokens.
+Query is debounced 16 ms by the palette; each query bumps one `queryToken`
+shared by all tabs and the response handler discards mismatched tokens, so a
+slow grep answer never paints over another tab.
 
 ### Keybindings
 
 | Key | Context | Action |
 |-----|---------|--------|
-| `Cmd+O` | All modes except CommandPalette / PromptDialog / QuickFileSearch | Open dialog |
-| typing | QuickFileSearch | Update query |
-| `↑` / `Ctrl+P` | QuickFileSearch | Cursor up |
-| `↓` / `Ctrl+N` | QuickFileSearch | Cursor down |
-| `Enter` | QuickFileSearch | Open file in Helix in a new tab (see "Open in editor" below) |
-| `Ctrl+E` | QuickFileSearch | Copy **relative** path → flash row + sound → close, return to Normal |
-| `Cmd+Enter` | QuickFileSearch | Copy **absolute** path → flash row + sound → close, return to Normal |
-| `Esc` | QuickFileSearch | Close, return to Normal (no record) |
-| `Ctrl+U` | QuickFileSearch | Clear query |
+| `Cmd+O` | All modes except PromptDialog | Open the Search Palette on Files; close it when Files is active; switch to Files from another tab |
+| `Tab` / `Shift+Tab` | Search Palette | Next / previous tab (Commands → Files → Grep); the query carries over |
+| typing | Search Palette | Update query |
+| `↑` / `Ctrl+P` | Search Palette | Cursor up |
+| `↓` / `Ctrl+N` | Search Palette | Cursor down |
+| `Enter` | Files, Grep | Open file in Helix in a new tab (see "Open in editor" below) |
+| `Ctrl+E` | Files, Grep | Copy **relative** path → flash row + sound → close, return to Normal |
+| `Cmd+Enter` | Files, Grep | Copy **absolute** path → flash row + sound → close, return to Normal |
+| `Esc` | Search Palette | Close, return to Normal (no record) |
+| `Ctrl+U` | Search Palette | Clear query |
 
-Opening from a transient mode (Resize/Move/Swap/Selection/Hint/TabMove)
-cancels that mode immediately. Closing always returns to Normal — no mode
-restoration.
+Opening from Selection, Hint, PromptDialog, InlineAI or QuickOverview closes
+that mode first. Closing always returns to Normal — no mode restoration.
 
 ### UI
 
 ```
-.krypton-quicksearch                          (full-screen scrim)
-  .krypton-quicksearch__container             (centered card)
-    .krypton-quicksearch__input-row
-      .krypton-quicksearch__prompt            ("⟶")
-      input.krypton-quicksearch__input
-      .krypton-quicksearch__root              (right-aligned, dim, shows resolved root)
-    ul.krypton-quicksearch__results
-      li.krypton-quicksearch__result[.is-selected][.is-flashing]
-        .krypton-quicksearch__filename        (filename, match chars highlighted)
-        .krypton-quicksearch__parent          (right-aligned, dim)
-    .krypton-quicksearch__statusbar           ("50 matches" | "indexing… (1,234 files)" | "no matches")
-    .krypton-quicksearch__hint                ("↵ copy · ⌘↵ copy absolute · ⎋ close")
+.krypton-search-palette[data-scope="files"|"grep"]   (full-screen scrim)
+  .krypton-search-palette__container                  (centered card; purple border on Grep)
+    .krypton-search-palette__tabs                     (Commands ⇧⌘P · Files ⌘O · Grep)
+    .krypton-search-palette__input-row
+      .krypton-search-palette__prompt                 ("⟶")
+      input.krypton-search-palette__input
+      .krypton-search-palette__aside                  (right-aligned, dim, shows resolved root)
+    .krypton-search-palette__results
+      .krypton-search-palette__row--file[--selected][--flashing]
+        .krypton-search-palette__filename             (filename, match chars highlighted)
+        .krypton-search-palette__parent               (right-aligned, dim)
+    .krypton-search-palette__status                   ("50 matches" | "indexing… (1,234 files)" | "no matches")
+    .krypton-search-palette__hint                     ("↵ open in hx · ^E copy · ⌘↵ copy absolute · ⇥ next tab · ⎋ close")
 ```
 
-**Visual feedback on copy** — selected row gets `.is-flashing` (CSS
+**Visual feedback on copy** — selected row gets `__row--flashing` (CSS
 `@keyframes` 80 ms colored pulse), the corresponding hint segment also
-pulses (so user knows whether relative or absolute was copied), sound engine
-plays the existing `select`/`confirm` event, then `close()` runs.
+pulses (so user knows whether relative or absolute was copied), the sound
+engine plays `command_palette.execute`, then the palette closes.
 
-Highlight: render filename and parent dir as character spans, wrapping
-matched indices in `<span class="match">…</span>`. Reuse existing
-`--krypton-*` theme variables (border, accent, dim foreground).
+Highlight: filename characters matched by the query are wrapped in `<mark>`
+(subsequence walk); grep snippets mark the byte ranges fff-search reports.
+Reuse existing `--krypton-palette-*` theme variables.
 
 Result list = top 50 hits, plain DOM (no virtualization).
 
@@ -314,8 +309,8 @@ crate) for free; plain text behaves as fuzzy match. No help overlay in v1
 - **Stale async results** → frontend `queryToken` discards mismatches.
 - **Picker evicted by LRU then root revisited** → new picker constructed; LMDB
   frecency for those paths is intact, so ranking returns instantly.
-- **Clipboard write fails** (rare; permission revoked) → notification toast
-  via existing `notification.ts`, dialog stays open.
+- **Clipboard write fails** (rare; permission revoked) → the status line reads
+  `clipboard write failed` and the palette stays open.
 - **Empty query in brand-new root** → empty list + placeholder
   `"Type to search this project (no history yet)"`.
 - **Window closes while dialog open** → compositor close-callback closes
@@ -341,16 +336,20 @@ None — all design decisions resolved during the grilling pass:
 
 ## Grep mode (added post-spec)
 
-The same overlay now toggles between **file mode** (default, fuzzy filename
-match — `Cmd+O`) and **grep mode** (`Tab` inside the dialog, content search
-via `picker.grep()` with `GrepConfig`-parsed query). Sharing the picker means
-no extra scan/cache cost for grep — the on-disk index is reused.
+The **Grep** tab sits next to **Files** in the Search Palette (`Tab` from
+Files, or `Shift+Tab` from Commands). It searches content via `picker.grep()`
+with a `GrepConfig`-parsed query. Sharing the picker means no extra scan/cache
+cost for grep — the on-disk index is reused.
 
 - **Hit format**: `path:line | snippet` with the matched substring spans
-  highlighted via `match_byte_offsets` from `GrepResult` (no JS heuristic
-  required — fff-search reports byte ranges directly).
+  highlighted via `match_byte_offsets` from `GrepResult`. Those spans and the
+  hit's `col` are **UTF-8 byte offsets**; `highlightRanges` maps them to
+  UTF-16 indices before slicing the JS string, so Thai and other multi-byte
+  lines highlight the right characters.
 - **Ctrl+E** copies `path:line:col`, **Cmd+Enter** copies `absolute:line:col`
-  (so `vim`/`hx` can jump straight from clipboard).
+  (so `hx` can jump straight from clipboard). `col` is `grepColumn()`: the
+  1-based **grapheme** column Helix counts (`pos_at_coords`), not the byte
+  column — a Thai consonant with its tone mark is one column.
 - **Empty query in grep mode**: shows nothing (grep without a pattern is
   meaningless); status reads "grep — type a query".
 - **Regex fallback**: if a regex query fails to compile, fff-search falls back
@@ -359,9 +358,9 @@ no extra scan/cache cost for grep — the on-disk index is reused.
   as plaintext.
 - **Frecency**: grep picks call `quick_search_record_pick` with the absolute
   path, so heavily-greppped files also get bumped in file-mode rankings.
-- **Mouse behavior**: result rows can be clicked to accept, but hover does not
-  move selection. Keyboard navigation remains the single source of highlighted
-  row focus so pointer movement cannot race arrow-key selection.
+- **Mouse behavior**: hovering a row selects it and clicking runs Enter's
+  action (open in Helix), the same on every Search Palette tab (spec 0349).
+  Clicking a tab switches to it.
 
 ## Open in editor (added post-spec)
 
@@ -381,15 +380,16 @@ Behavior:
   before the backend returns the new PTY session id. Shell tabs still buffer
   and flush those startup replies, but Helix can treat them as literal editor
   input, so the pre-session editor bytes are discarded.
-- In **grep mode** the hit's `:line:col` is appended to the file argument so
-  Helix jumps to the matching position (`hx /path/file.ts:123:5`).
+- In **grep mode** the hit's `:line:col` (grapheme column, see above) is
+  appended to the file argument so Helix jumps to the matching position
+  (`hx /path/file.ts:123:5`).
 - When Helix exits, Krypton's normal `pty-exit` cleanup closes the editor tab
   automatically instead of leaving a shell behind. `pty-exit` is driven by a
   direct backend child-process wait, not only PTY EOF, so Quick File Search
   editor tabs close reliably when `hx` exits.
-- `quick_search_record_pick` is fired (frecency boost), the row flashes and
-  the same `select`/`execute` sound plays as the clipboard actions, then
-  the dialog closes and returns to Normal.
+- `quick_search_record_pick` is fired (frecency boost), the
+  `command_palette.execute` sound plays, and the palette closes and returns
+  to Normal before `hx` spawns.
 - The editor command is currently hardcoded to `hx`. Making it configurable
   in `krypton.toml` is a follow-up if other editors are requested.
 

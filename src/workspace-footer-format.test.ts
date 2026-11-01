@@ -94,7 +94,8 @@ describe('hintFor', () => {
   it('prioritises mode, then role, then music', () => {
     expect(hintFor(Mode.Compositor, 'acp_harness', true)).toBe('n new · h/j/k/l focus · ? details');
     expect(hintFor(Mode.Resize, null, false)).toBe('arrows adjust · Esc cancel');
-    expect(hintFor(Mode.CommandPalette, null, false)).toBe('Esc close');
+    expect(hintFor(Mode.SearchPalette, null, false)).toBe('Tab scope · Esc close');
+    expect(hintFor(Mode.PromptDialog, null, false)).toBe('Esc close');
     expect(hintFor(Mode.Normal, 'acp_harness', true)).toBe('Cmd+P lanes · #cancel running');
     expect(hintFor(Mode.Normal, null, true)).toBe('Cmd+Shift+M music');
     expect(hintFor(Mode.Normal, null, false)).toBe('Leader v select · Cmd+O files · Cmd+Shift+G git');

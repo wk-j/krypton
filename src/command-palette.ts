@@ -1,21 +1,23 @@
-// Krypton — Command Palette
-// Fuzzy-searchable overlay listing every action in Krypton.
-// Activated by Cmd+Shift+P. Each entry shows the action name and keybinding.
+// Krypton — Commands scope of the Search Palette (spec 349)
+// Fuzzy-searchable list of every action in Krypton, plus the focused view's
+// contextual actions. `Cmd+Shift+P` opens the Search Palette on this tab; the
+// overlay itself lives in search-palette.ts.
 
 import { invoke } from './profiler/ipc';
 import { Compositor } from './compositor';
 import { LayoutMode, type DashboardShortcut } from './types';
-import type { PaletteAction, PaletteContext, PaletteSection } from './palette-types';
+import type {
+  AcceptControl,
+  AcceptHow,
+  PaletteAction,
+  PaletteContext,
+  PaletteSection,
+  ScopeHint,
+  ScopeQueryResult,
+  ScopeRow,
+  SearchScope,
+} from './palette-types';
 import type { WorkspaceFooter } from './workspace-footer';
-
-export type { PaletteAction, PaletteContext, PaletteSection } from './palette-types';
-
-/** Fuzzy match result with scoring and match indices */
-interface FuzzyResult {
-  action: PaletteAction;
-  score: number;
-  matchIndices: number[];
-}
 
 /**
  * Fuzzy subsequence match.
@@ -70,76 +72,78 @@ function fuzzyMatch(query: string, target: string): { score: number; matchIndice
   return { score, matchIndices };
 }
 
-export class CommandPalette {
-  private overlay: HTMLElement;
-  private container: HTMLElement;
-  private input: HTMLInputElement;
-  private resultsList: HTMLElement;
-  private staticActions: PaletteAction[] = [];
-  private actions: PaletteAction[] = [];
-  private filtered: FuzzyResult[] = [];
-  private selectedIndex = 0;
-  private visible = false;
+/** A command row: one action plus the label indices the query matched. */
+class ActionRow implements ScopeRow {
+  readonly section?: PaletteSection;
+
+  constructor(
+    readonly action: PaletteAction,
+    private readonly matchIndices: readonly number[],
+  ) {
+    this.section = action.section;
+  }
+
+  render(el: HTMLElement): void {
+    el.classList.add('krypton-search-palette__row--action');
+
+    const category = document.createElement('span');
+    category.className = 'krypton-search-palette__category';
+    category.textContent = this.action.category;
+    el.appendChild(category);
+
+    if (this.action.swatch !== undefined) {
+      const swatch = document.createElement('span');
+      swatch.className = 'krypton-search-palette__swatch';
+      swatch.style.background = this.action.swatch;
+      el.appendChild(swatch);
+    }
+
+    const label = document.createElement('span');
+    label.className = 'krypton-search-palette__label';
+    const matchSet = new Set(this.matchIndices);
+    for (let ci = 0; ci < this.action.label.length; ci++) {
+      if (matchSet.has(ci)) {
+        const mark = document.createElement('mark');
+        mark.textContent = this.action.label[ci];
+        label.appendChild(mark);
+      } else {
+        label.appendChild(document.createTextNode(this.action.label[ci]));
+      }
+    }
+    el.appendChild(label);
+
+    const key = document.createElement('span');
+    key.className = 'krypton-search-palette__key';
+    key.textContent = this.action.keybinding ?? '';
+    el.appendChild(key);
+  }
+}
+
+export class CommandScope implements SearchScope {
+  readonly id = 'commands' as const;
+  readonly label = 'Commands';
+  readonly shortcut = '⇧⌘P';
+  readonly prompt = '>';
+  readonly placeholder = 'Type a command…';
+  readonly hints: readonly ScopeHint[] = [
+    { text: '↵ run' },
+    { text: '⌥1–9 pick' },
+    { text: '⇥ next tab' },
+    { text: '⎋ close' },
+  ];
+
   private compositor: Compositor;
   private workspaceFooter: WorkspaceFooter | null = null;
+  private staticActions: PaletteAction[] = [];
+  private actions: PaletteAction[] = [];
+  private invalidate: (() => void) | null = null;
 
-  /** Callbacks to notify when the palette opens/closes */
-  private onOpenCallbacks: Array<() => void> = [];
-  private onCloseCallbacks: Array<() => void> = [];
-
-  /** Cached color themes (refreshed when palette opens) */
+  /** Cached color themes (refreshed each time the tab activates) */
   private colorThemes: string[] = [];
   private activeColorTheme = '';
 
   constructor(compositor: Compositor) {
     this.compositor = compositor;
-
-    // Build DOM
-    this.overlay = document.createElement('div');
-    this.overlay.className = 'krypton-palette';
-
-    this.container = document.createElement('div');
-    this.container.className = 'krypton-palette__container';
-
-    const inputRow = document.createElement('div');
-    inputRow.className = 'krypton-palette__input-row';
-
-    const prompt = document.createElement('span');
-    prompt.className = 'krypton-palette__prompt';
-    prompt.textContent = '>';
-
-    this.input = document.createElement('input');
-    this.input.className = 'krypton-palette__input';
-    this.input.type = 'text';
-    this.input.placeholder = 'Type a command...';
-    this.input.spellcheck = false;
-    this.input.autocomplete = 'off';
-
-    inputRow.appendChild(prompt);
-    inputRow.appendChild(this.input);
-
-    this.resultsList = document.createElement('div');
-    this.resultsList.className = 'krypton-palette__results';
-
-    this.container.appendChild(inputRow);
-    this.container.appendChild(this.resultsList);
-    this.overlay.appendChild(this.container);
-    document.body.appendChild(this.overlay);
-
-    // Wire input events
-    this.input.addEventListener('input', () => {
-      this.filter();
-    });
-
-    // Prevent overlay clicks from propagating (would steal focus from input)
-    this.overlay.addEventListener('mousedown', (e) => {
-      // If clicking outside the container, close
-      if (e.target === this.overlay) {
-        this.close();
-      }
-    });
-
-    // Register all built-in actions
     this.registerActions();
   }
 
@@ -147,315 +151,39 @@ export class CommandPalette {
     this.workspaceFooter = footer;
   }
 
-  /** Register a callback for when the palette opens */
-  onOpen(cb: () => void): void {
-    this.onOpenCallbacks.push(cb);
+  setInvalidate(cb: () => void): void {
+    this.invalidate = cb;
   }
 
-  /** Register a callback for when the palette closes */
-  onClose(cb: () => void): void {
-    this.onCloseCallbacks.push(cb);
+  aside(): string {
+    return '';
   }
 
-  /** Whether the palette is currently visible */
-  get isVisible(): boolean {
-    return this.visible;
+  reset(): void {
+    // Actions are rebuilt on every activate(); nothing is kept per open.
   }
 
-  /** Open the palette pre-filtered to a query string. */
-  openWithQuery(query: string): void {
-    this.open();
-    this.input.value = query;
-    this.filter();
-  }
-
-  /** Open the palette */
-  open(): void {
-    if (this.visible) return;
-    this.visible = true;
-    this.input.value = '';
-    this.selectedIndex = 0;
-    this.overlay.classList.add('krypton-palette--visible');
-    this.compositor.soundEngine.play('command_palette.open');
-
-    for (const cb of this.onOpenCallbacks) cb();
-
-    // Rebuild actions (static + dynamic based on current state)
+  async activate(): Promise<void> {
+    // Static + dynamic actions, and the focused view's Context section.
     this.rebuildActions();
-
-    // Filter with empty query shows all actions
-    this.filter();
-
     void this.refreshColorThemes();
-
-    // Focus the input after a microtask to ensure DOM is rendered
-    requestAnimationFrame(() => {
-      this.input.focus();
-    });
   }
 
-  /** Close the palette without executing */
-  close(): void {
-    if (!this.visible) return;
-    this.visible = false;
-    this.overlay.classList.remove('krypton-palette--visible');
-    this.compositor.soundEngine.play('command_palette.close');
-
-    for (const cb of this.onCloseCallbacks) cb();
+  async query(q: string): Promise<ScopeQueryResult> {
+    const rows = this.filter(q.trim());
+    const status = rows.length === 0
+      ? 'no matches'
+      : `${rows.length} command${rows.length === 1 ? '' : 's'}`;
+    return { rows, status, pending: false };
   }
 
-  /** Toggle open/close */
-  toggle(): void {
-    if (this.visible) {
-      this.close();
-    } else {
-      this.open();
-    }
-  }
+  async accept(row: ScopeRow, how: AcceptHow, ctl: AcceptControl): Promise<void> {
+    if (how !== 'primary' || !(row instanceof ActionRow)) return;
+    const action = row.action;
 
-  /**
-   * Handle a keydown event while the palette is open.
-   * Returns true if the event was consumed.
-   */
-  handleKey(e: KeyboardEvent): boolean {
-    if (!this.visible) return false;
-
-    // Ctrl+N / Ctrl+P — readline-style next/prev (same as quick-file-search
-    // and other pickers). Palette mode owns these so they do not lane-switch.
-    if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-      if (e.key === 'n' || e.key === 'N' || e.code === 'KeyN') {
-        e.preventDefault();
-        this.selectNext();
-        return true;
-      }
-      if (e.key === 'p' || e.key === 'P' || e.code === 'KeyP') {
-        e.preventDefault();
-        this.selectPrev();
-        return true;
-      }
-    }
-
-    switch (e.key) {
-      case 'Escape':
-        this.close();
-        return true;
-
-      case 'ArrowDown':
-        e.preventDefault();
-        this.selectNext();
-        return true;
-
-      case 'ArrowUp':
-        e.preventDefault();
-        this.selectPrev();
-        return true;
-
-      case 'Enter':
-        e.preventDefault();
-        this.executeSelected();
-        return true;
-
-      case 'Tab':
-        // Tab acts like ArrowDown, Shift+Tab like ArrowUp
-        e.preventDefault();
-        if (e.shiftKey) {
-          this.selectPrev();
-        } else {
-          this.selectNext();
-        }
-        return true;
-
-      default:
-        // Alt+1..9 quickselect — fire the Nth visible result directly.
-        // Useful for the ACP picker where each backend gets a digit.
-        if (e.altKey && !e.metaKey && !e.ctrlKey && e.key >= '1' && e.key <= '9') {
-          const idx = parseInt(e.key, 10) - 1;
-          if (idx < this.filtered.length) {
-            e.preventDefault();
-            this.selectedIndex = idx;
-            this.executeSelected();
-            return true;
-          }
-        }
-        // Let the input handle all other keys (typing, backspace, etc.)
-        return false;
-    }
-  }
-
-  // ─── Private ──────────────────────────────────────────────────────
-
-  private filter(): void {
-    const query = this.input.value.trim();
-
-    if (query.length === 0) {
-      // Show all actions grouped by category
-      this.filtered = this.actions.map((action) => ({
-        action,
-        score: 0,
-        matchIndices: [],
-      }));
-    } else {
-      // Fuzzy match against "category: label" combined string
-      this.filtered = [];
-      for (const action of this.actions) {
-        // Match against label, then fall back to "Category: Label"
-        const labelMatch = fuzzyMatch(query, action.label);
-        const fullMatch = fuzzyMatch(query, `${action.category}: ${action.label}`);
-
-        // Take the better match
-        const match = labelMatch && fullMatch
-          ? (labelMatch.score >= fullMatch.score ? labelMatch : null)
-          : labelMatch;
-        const bestMatch = match ?? fullMatch;
-
-        if (bestMatch) {
-          this.filtered.push({
-            action,
-            score: bestMatch.score,
-            matchIndices: match ? bestMatch.matchIndices : [],
-          });
-        }
-      }
-
-      // Sort by score descending
-      this.filtered.sort((a, b) => b.score - a.score);
-    }
-
-    this.selectedIndex = 0;
-    this.renderResults();
-  }
-
-  private renderResults(): void {
-    this.resultsList.innerHTML = '';
-
-    if (this.filtered.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'krypton-palette__empty';
-      empty.textContent = 'No results';
-      this.resultsList.appendChild(empty);
-      return;
-    }
-
-    const queryEmpty = this.input.value.trim().length === 0;
-    let lastSection: PaletteSection | null = null;
-
-    for (let i = 0; i < this.filtered.length; i++) {
-      const { action, matchIndices } = this.filtered[i];
-      const section: PaletteSection = action.section ?? 'static';
-
-      // Section headers — only when query is empty and section changes to a labeled one.
-      if (queryEmpty && section !== lastSection && section === 'context') {
-        const header = document.createElement('div');
-        header.className = 'krypton-palette__section-header';
-        header.textContent = 'Context';
-        this.resultsList.appendChild(header);
-      }
-      lastSection = section;
-
-      const item = document.createElement('div');
-      item.className = 'krypton-palette__item';
-      if (section === 'context') {
-        item.classList.add('krypton-palette__item--section-context');
-      }
-      if (i === this.selectedIndex) {
-        item.classList.add('krypton-palette__item--selected');
-      }
-      item.dataset.index = String(i);
-
-      // Category tag
-      const category = document.createElement('span');
-      category.className = 'krypton-palette__item-category';
-      category.textContent = action.category;
-
-      // Label with highlighted match characters
-      const label = document.createElement('span');
-      label.className = 'krypton-palette__item-label';
-
-      const matchSet = new Set(matchIndices);
-      for (let ci = 0; ci < action.label.length; ci++) {
-        if (matchSet.has(ci)) {
-          const mark = document.createElement('mark');
-          mark.textContent = action.label[ci];
-          label.appendChild(mark);
-        } else {
-          label.appendChild(document.createTextNode(action.label[ci]));
-        }
-      }
-
-      // Keybinding hint
-      const key = document.createElement('span');
-      key.className = 'krypton-palette__item-key';
-      key.textContent = action.keybinding ?? '';
-
-      item.appendChild(category);
-      if (action.swatch !== undefined) {
-        const swatch = document.createElement('span');
-        swatch.className = 'krypton-palette__item-swatch';
-        swatch.style.background = action.swatch;
-        item.appendChild(swatch);
-      }
-      item.appendChild(label);
-      item.appendChild(key);
-
-      // Click to execute
-      item.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        this.selectedIndex = i;
-        this.executeSelected();
-      });
-
-      // Hover to select
-      item.addEventListener('mouseenter', () => {
-        this.selectedIndex = i;
-        this.updateSelection();
-      });
-
-      this.resultsList.appendChild(item);
-    }
-  }
-
-  private selectNext(): void {
-    if (this.filtered.length === 0) return;
-    this.selectedIndex = (this.selectedIndex + 1) % this.filtered.length;
-    this.updateSelection();
-    this.scrollToSelected();
-  }
-
-  private selectPrev(): void {
-    if (this.filtered.length === 0) return;
-    this.selectedIndex = (this.selectedIndex - 1 + this.filtered.length) % this.filtered.length;
-    this.updateSelection();
-    this.scrollToSelected();
-  }
-
-  private updateSelection(): void {
-    const items = this.resultsList.querySelectorAll('.krypton-palette__item');
-    items.forEach((el, i) => {
-      if (i === this.selectedIndex) {
-        el.classList.add('krypton-palette__item--selected');
-      } else {
-        el.classList.remove('krypton-palette__item--selected');
-      }
-    });
-  }
-
-  private scrollToSelected(): void {
-    const items = this.resultsList.querySelectorAll('.krypton-palette__item');
-    const selected = items[this.selectedIndex];
-    if (selected) {
-      selected.scrollIntoView({ block: 'nearest' });
-    }
-  }
-
-  private executeSelected(): void {
-    if (this.filtered.length === 0 || this.selectedIndex >= this.filtered.length) return;
-
-    const action = this.filtered[this.selectedIndex].action;
-    this.visible = false;
-    this.overlay.classList.remove('krypton-palette--visible');
-    this.compositor.soundEngine.play('command_palette.execute');
-
-    for (const cb of this.onCloseCallbacks) cb();
+    // Close first: an action may open another overlay and set its own mode.
+    ctl.playExecute();
+    ctl.close();
 
     // Visual ack on the focused window's titlebar — silent confirmation that
     // the palette commit landed. See docs/0104-chrome-signal-upgrades.md.
@@ -465,12 +193,41 @@ export class CommandPalette {
     try {
       result = action.execute();
     } catch (err) {
-      console.error(`[CommandPalette] Action "${action.id}" threw:`, err);
+      console.error(`[CommandScope] Action "${action.id}" threw:`, err);
       return;
     }
     if (result instanceof Promise) {
-      result.catch((err) => console.error(`[CommandPalette] Action "${action.id}" rejected:`, err));
+      result.catch((err) => console.error(`[CommandScope] Action "${action.id}" rejected:`, err));
     }
+  }
+
+  /** Empty query: every action in order. Otherwise fuzzy-match the label, or
+   *  "Category: Label", and sort by score. */
+  private filter(query: string): ActionRow[] {
+    if (query.length === 0) {
+      return this.actions.map((action) => new ActionRow(action, []));
+    }
+
+    const scored: Array<{ row: ActionRow; score: number }> = [];
+    for (const action of this.actions) {
+      const labelMatch = fuzzyMatch(query, action.label);
+      const fullMatch = fuzzyMatch(query, `${action.category}: ${action.label}`);
+
+      // Take the better match; label indices only highlight when the label won.
+      const match = labelMatch && fullMatch
+        ? (labelMatch.score >= fullMatch.score ? labelMatch : null)
+        : labelMatch;
+      const bestMatch = match ?? fullMatch;
+
+      if (bestMatch) {
+        scored.push({
+          row: new ActionRow(action, match ? bestMatch.matchIndices : []),
+          score: bestMatch.score,
+        });
+      }
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.map((s) => s.row);
   }
 
   // ─── Action Registry ──────────────────────────────────────────────
@@ -1131,7 +888,7 @@ export class CommandPalette {
 
   /**
    * Rebuild the full action list: static actions + dynamic actions
-   * based on current compositor state. Called each time the palette opens.
+   * based on current compositor state. Called each time the Commands tab activates.
    */
   private rebuildActions(): void {
     const c = this.compositor;
@@ -1276,9 +1033,9 @@ export class CommandPalette {
         active === this.activeColorTheme;
       this.colorThemes = names;
       this.activeColorTheme = active;
-      if (!same && this.visible) {
+      if (!same) {
         this.rebuildActions();
-        this.filter();
+        this.invalidate?.();
       }
     } catch (e) {
       console.warn('[CommandPalette] list_themes failed:', e);

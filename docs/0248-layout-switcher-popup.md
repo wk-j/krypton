@@ -3,6 +3,7 @@
 > Status: Draft
 > Date: 2026-09-14
 > Milestone: Post-M-current polish
+> Note (2026-10-31): [0349](./0349-unified-search-palette-tabs.md) replaced `CommandPalette` and `Mode.CommandPalette` with the tabbed `SearchPalette` (`src/search-palette.ts`, `Mode.SearchPalette`); `src/command-palette.ts` now holds only `CommandScope`. The Research and Data Flow below predate that and need revising before implementation.
 
 ## Problem
 

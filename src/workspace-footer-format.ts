@@ -125,7 +125,8 @@ export function plural(n: number, noun: string): string {
 export function hintFor(mode: Mode, role: FooterRole, musicOn: boolean): string {
   if (mode === Mode.Compositor) return 'n new · h/j/k/l focus · ? details';
   if (mode === Mode.Resize || mode === Mode.Move || mode === Mode.Swap) return 'arrows adjust · Esc cancel';
-  if (mode === Mode.CommandPalette || mode === Mode.Dashboard || mode === Mode.PromptDialog || mode === Mode.QuickFileSearch) return 'Esc close';
+  if (mode === Mode.SearchPalette) return 'Tab scope · Esc close';
+  if (mode === Mode.Dashboard || mode === Mode.PromptDialog) return 'Esc close';
   if (role === 'acp_harness') return 'Cmd+P lanes · #cancel running';
   if (musicOn) return 'Cmd+Shift+M music';
   return 'Leader v select · Cmd+O files · Cmd+Shift+G git';
@@ -133,7 +134,7 @@ export function hintFor(mode: Mode, role: FooterRole, musicOn: boolean): string 
 
 /** Spec 236: leading token of a ` · `-separated hint part that is a key. */
 const HINT_KEY_RE =
-  /^(?:Leader|Esc|arrows|h\/j\/k\/l|#\w+|\?|Cmd(?:\+[A-Za-z]+)+|[a-z])$/;
+  /^(?:Leader|Esc|Tab|arrows|h\/j\/k\/l|#\w+|\?|Cmd(?:\+[A-Za-z]+)+|[a-z])$/;
 
 export interface HintChip {
   key: string | null;

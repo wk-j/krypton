@@ -1,0 +1,323 @@
+/* ─── Search Palette (spec 349): Commands | Files | Grep ─── */
+
+.krypton-search-palette {
+  position: fixed;
+  inset: 0;
+  z-index: 10002;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 14vh;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.krypton-search-palette--visible {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.krypton-search-palette__container {
+  width: 600px;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--krypton-palette-bg, rgba(6, 10, 18, 0.94));
+  border: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.4));
+  border-radius: var(--krypton-border-radius, 8px);
+  box-shadow:
+    0 0 30px rgba(0, 200, 255, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.krypton-search-palette[data-scope="grep"] .krypton-search-palette__container {
+  border-color: var(--krypton-prompt-border, rgba(199, 125, 255, 0.45));
+}
+
+/* ─── Tabs ─── */
+
+.krypton-search-palette__tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.2));
+}
+
+.krypton-search-palette__tab {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 12px 6px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.45));
+  cursor: pointer;
+  transition: color 0.06s ease, background 0.06s ease;
+}
+
+.krypton-search-palette__tab:hover {
+  color: var(--krypton-palette-input-text, #c0c5ce);
+}
+
+.krypton-search-palette__tab--active {
+  color: var(--krypton-palette-highlight, #0cf);
+  background: rgba(0, 200, 255, 0.08);
+  border-bottom-color: var(--krypton-palette-highlight, #0cf);
+}
+
+.krypton-search-palette[data-scope="grep"] .krypton-search-palette__tab--active {
+  color: var(--krypton-prompt-accent, #c77dff);
+  background: rgba(199, 125, 255, 0.08);
+  border-bottom-color: var(--krypton-prompt-accent, #c77dff);
+}
+
+.krypton-search-palette__tab-key {
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  opacity: 0.7;
+}
+
+/* ─── Input ─── */
+
+.krypton-search-palette__input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.2));
+}
+
+.krypton-search-palette__prompt {
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: var(--krypton-font-size);
+  font-weight: 700;
+  color: var(--krypton-palette-highlight, #0cf);
+  flex-shrink: 0;
+}
+
+.krypton-search-palette__input {
+  flex: 1;
+  background: var(--krypton-palette-input-bg, transparent);
+  border: none;
+  outline: none;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: var(--krypton-font-size);
+  color: var(--krypton-palette-input-text, #c0c5ce);
+  caret-color: var(--krypton-palette-highlight, #0cf);
+}
+
+.krypton-search-palette__input::placeholder {
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.35));
+  font-style: italic;
+}
+
+/* The project root on the Files and Grep tabs. */
+.krypton-search-palette__aside {
+  flex-shrink: 0;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.45));
+  letter-spacing: 0.04em;
+  max-width: 38%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* ─── Results ─── */
+
+.krypton-search-palette__results {
+  max-height: 50vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--krypton-palette-border, rgba(0, 200, 255, 0.2)) transparent;
+}
+
+.krypton-search-palette__section-header {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--krypton-text-muted, rgba(192, 197, 206, 0.5));
+  padding: 0.25rem 0.75rem;
+  border-bottom: 1px solid var(--krypton-border-subtle, rgba(192, 197, 206, 0.1));
+}
+
+.krypton-search-palette__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: background 0.06s ease;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: var(--krypton-chrome-font-size, 11px);
+}
+
+.krypton-search-palette__row:hover {
+  background: rgba(0, 200, 255, 0.04);
+}
+
+.krypton-search-palette__row--selected {
+  background: rgba(0, 200, 255, 0.1);
+}
+
+@keyframes krypton-search-palette-flash {
+  0%   { background: rgba(0, 200, 255, 0.1); }
+  50%  { background: rgba(0, 200, 255, 0.45); }
+  100% { background: rgba(0, 200, 255, 0.1); }
+}
+
+.krypton-search-palette__row--flashing {
+  animation: krypton-search-palette-flash 80ms ease;
+}
+
+/* Commands rows */
+
+.krypton-search-palette__category {
+  flex-shrink: 0;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--krypton-palette-highlight, #0cf);
+  background: rgba(0, 200, 255, 0.08);
+  padding: 1px 5px;
+  border-radius: var(--krypton-border-radius, 8px);
+  min-width: 48px;
+  text-align: center;
+}
+
+/* A context action is marked on its category tag — accent ink and a full
+   inset ring (no layout shift) — never a left rail (ADR-0027). */
+.krypton-search-palette__row--context .krypton-search-palette__category {
+  color: var(--krypton-accent, #00ffd1);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--krypton-accent, #00ffd1) 45%, transparent);
+}
+
+/* Color swatch for the `Window Color` group (spec 304). */
+.krypton-search-palette__swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.krypton-search-palette__label {
+  flex: 1;
+  font-weight: 500;
+  color: var(--krypton-palette-text, #c0c5ce);
+}
+
+.krypton-search-palette__label mark,
+.krypton-search-palette__filename mark {
+  background: none;
+  color: var(--krypton-palette-highlight, #0cf);
+  font-weight: 700;
+}
+
+.krypton-search-palette__key {
+  flex-shrink: 0;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.35));
+}
+
+/* Files rows */
+
+.krypton-search-palette__row--file {
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.krypton-search-palette__filename {
+  color: var(--krypton-palette-input-text, #c0c5ce);
+  font-weight: 500;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+.krypton-search-palette__parent {
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.4));
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  direction: rtl; /* keep tail of long paths visible */
+}
+
+/* Grep rows */
+
+.krypton-search-palette__row--grep {
+  display: grid;
+  grid-template-columns: minmax(0, 38%) 1fr;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.krypton-search-palette__grep-loc {
+  color: var(--krypton-prompt-accent, #c77dff);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+}
+
+.krypton-search-palette__grep-snippet {
+  color: var(--krypton-palette-input-text, #c0c5ce);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.krypton-search-palette__grep-snippet mark {
+  background: rgba(199, 125, 255, 0.18);
+  color: var(--krypton-prompt-accent, #c77dff);
+  font-weight: 700;
+  border-radius: var(--krypton-border-radius, 8px);
+}
+
+/* ─── Status + hints ─── */
+
+.krypton-search-palette__status {
+  padding: 5px 14px;
+  border-top: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.18));
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.55));
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  min-height: 1.4em;
+}
+
+.krypton-search-palette__hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 5px 14px 7px;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.4));
+  letter-spacing: 0.06em;
+}
+
+.krypton-search-palette__hint[data-flash="relative"] span[data-kind="relative"],
+.krypton-search-palette__hint[data-flash="absolute"] span[data-kind="absolute"],
+.krypton-search-palette__hint[data-flash="helix"] span[data-kind="helix"] {
+  color: var(--krypton-palette-highlight, #0cf);
+}

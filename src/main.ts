@@ -8,9 +8,10 @@ import { invoke } from './profiler/ipc';
 import { Compositor } from './compositor';
 import { InputRouter } from './input-router';
 import { WhichKey } from './which-key';
-import { CommandPalette } from './command-palette';
+import { CommandScope } from './command-palette';
 import { PromptDialog } from './prompt-dialog';
-import { QuickFileSearch } from './quick-file-search';
+import { FileScope, GrepScope, ProjectRoot } from './quick-file-search';
+import { SearchPalette } from './search-palette';
 import { QuickOverview } from './quick-overview';
 import { loadConfig, type KryptonConfig } from './config';
 import { FrontendThemeEngine } from './theme';
@@ -117,9 +118,20 @@ async function main(): Promise<void> {
   // Wire the custom key handler so xterm.js yields control to InputRouter
   compositor.setCustomKeyHandler(inputRouter.customKeyHandler);
 
-  // Initialize command palette
-  const commandPalette = new CommandPalette(compositor);
-  inputRouter.setCommandPalette(commandPalette);
+  // Search Palette (spec 349): Commands | Files | Grep tabs in one overlay.
+  // Cmd+Shift+P opens it on Commands, Cmd+O on Files.
+  const commandScope = new CommandScope(compositor);
+  const projectRoot = new ProjectRoot(compositor);
+  const searchPalette = new SearchPalette(
+    {
+      commands: commandScope,
+      files: new FileScope(compositor, projectRoot),
+      grep: new GrepScope(compositor, projectRoot),
+    },
+    compositor.soundEngine,
+    () => inputRouter.exitSearchPalette(),
+  );
+  inputRouter.setSearchPalette(searchPalette);
 
   // Shared workspace footer: mode/focus/project status plus music segment.
   const workspaceFooter = new WorkspaceFooter({
@@ -130,7 +142,7 @@ async function main(): Promise<void> {
   });
   workspaceFooter.start();
   inputRouter.setWorkspaceFooter(workspaceFooter);
-  commandPalette.setWorkspaceFooter(workspaceFooter);
+  commandScope.setWorkspaceFooter(workspaceFooter);
   // Keyboard overlay (spec 271) docks above the footer rail, or the screen edge when hidden.
   compositor.setKeyboardOverlayFooterVisible(workspaceFooter.isVisible);
   workspaceFooter.onVisibleChange((visible) => compositor.setKeyboardOverlayFooterVisible(visible));
@@ -138,10 +150,6 @@ async function main(): Promise<void> {
   // Initialize smart prompt dialog (Cmd+Shift+K → dispatch prompt to Claude tab)
   const promptDialog = new PromptDialog(compositor, () => inputRouter.exitPromptDialog());
   inputRouter.setPromptDialog(promptDialog);
-
-  // Initialize quick file search (Cmd+O → fff-search-backed picker, copies to clipboard)
-  const quickFileSearch = new QuickFileSearch(compositor, () => inputRouter.exitQuickFileSearch());
-  inputRouter.setQuickFileSearch(quickFileSearch);
 
   // Initialize the quick overview dialog (read-only peek modal; first consumer
   // is hint mode's filepath action — see docs/0210-quick-overview-dialog.md)

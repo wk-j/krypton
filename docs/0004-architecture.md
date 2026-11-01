@@ -18,7 +18,7 @@
 |  |  (Window 2, Window 3... hidden — belong to other workspaces)      |  |
 |  |                                                                   |  |
 |  |  [ Compositor: z-order, focus, move, resize, animations ]         |  |
-|  |  [ Mode Indicator ]  [ Command Palette ]  [ Sound Engine ]        |  |
+|  |  [ Mode Indicator ]  [ Search Palette ]  [ Sound Engine ]         |  |
 |  +-------------------------------------------------------------------+  |
 |                          |  IPC (Tauri Commands & Events)               |
 +--------------------------|----------------------------------------------+
@@ -175,7 +175,7 @@ The compositor is a TypeScript module running in the webview that manages worksp
 4. **Input routing & mode management** — manage keyboard modes (normal, compositor, resize, move) and route keys accordingly
 5. **Focus management** — track which window is focused; route keyboard events to the focused window's PTY in normal mode
 6. **Keyboard-driven window control** — handle window move, resize, swap, maximize, and focus cycling via keybindings
-7. **Command palette** — overlay for fuzzy-searching and executing all available actions by name
+7. **Search Palette (spec 349)** — one overlay with **Commands | Files | Grep** tabs: fuzzy-search and run every action by name, find project files, and grep the project (open the hit in Helix or copy its path). `Cmd+Shift+P` opens it on Commands, `Cmd+O` on Files; `Tab` / `Shift+Tab` switch tabs
 8. **Animation engine** — orchestrate workspace transition animations (slide, crossfade, morph) and window entrance/exit effects
 9. **Quick Terminal** — manage a persistent overlay terminal (toggled via `Cmd+I`) that floats centered on screen above all workspace windows; separate from the tiling layout
 10. **Z-order** — manage window stacking within a workspace; focused window rises to top
@@ -328,7 +328,7 @@ The compositor is a TypeScript module running in the webview that manages worksp
 
 32. **Diff review priority (spec 160)** — The authoring lane self-reports a per-change *reading-order hint* over the working diff via the default-on `mark_review_priority { ranges }` MCP tool (new-side line anchors; `high` / `routine` only — `normal` is the unreported default, so silence yields today's full diff). `hook_server.rs` validates and round-trips it (`acp-review-priority` → `AcpHarnessView.handleReviewPriority`, which stores the latest report per authoring lane in `reviewPriorityReports`, replies `{ recorded }`). The **Diff Window** (`src/diff-view.ts`) pulls a merged snapshot on open and on each auto-refresh through the compositor broker (`resolveDiffReviewPriority` → `diff.review-priority` control op on every harness owning the repo — a pull, no ViewBus broadcast), then maps each diff2html hunk to the overlapping ranges (highest level wins): `routine` hunks **collapse in place** to a one-line summary (`Enter`/click expands, remembered for the session via `expandedHunks`), `high` hunks get a full-cell gutter tint + a `◆ high` header badge and a dedicated `}`/`{` navigation (plain `n`/`N` still walk all hunks). The diff **always stays in file order — nothing is hidden or reordered**, and a range that maps to no hunk reverts to `normal` (under-collapse, never over-collapse). The nav header carries a static `N high · N routine` depth count. A **cross-file priority panel** (`p`, `.krypton-diff__priority`) docks right of the diff inside a flex `krypton-diff__content-row` (collapses via `[hidden]` so the diff reflows to full width — never covers it) and lists every reported range, `high` grouped first then `routine`. It is **live-preview** (variant B): `j`/`k` move the selection *and* scroll+tint the region immediately (`.krypton-diff__preview-row`), no `Enter` — same-file scroll is instant, cross-file switches debounced ~80ms (`priorityPreviewTimer`) to coalesce fast runs; `Esc` restores the pre-open file+scroll, `Enter`/`q`/`p` keep the previewed position. Re-maps on auto-refresh. Purely advisory; the human keeps the lock (ADR-0009 — the silent-pile principle applied to a diff). Complements spec 158 (carries the *human's notes in*; 160 carries the *lane's hints out*) and reuses its line-range anchor concept. See `docs/0160-diff-review-priority.md` and `docs/adr/0009-diff-review-priority-is-lane-self-reported.md`.
 
-33. **Quick Overview dialog (spec 210)** — `QuickOverview` (`src/quick-overview.ts`) is the one global *read-only* modal for showing content, as opposed to the pickers/composers (command palette, quick file search, prompt dialog). It renders a pluggable `OverviewSource` — `{ title, meta, load(signal), actions }` returning an `OverviewBody` of `code` / `markdown` / `notice` / `element` — and owns the shell, the single scroll container, cancellation (`AbortController` per open), and the keyboard (`j`/`k`, `Ctrl+D`/`Ctrl+U`, `g`/`G`, `y`, `Esc`; source actions are dispatched first so a source can override a key). Editing is never inline: a source action escalates (`Enter`). The first consumer is hint mode's `filepath` rule via `createFilePeekSource()` (`src/file-peek-source.ts`), which resolves the path as written (absolute / `~` / `file://` / relative to `getFocusedWorkingDirectory()`), reads it with `read_file`, classifies it with the shared helpers in `src/file-preview.ts` (also used by the file manager preview), and maps `Enter` back to the pre-210 openers — Helix tab, markdown viewer, or OS browser. `[hints] file_action = "editor"` restores direct opening. `InputRouter` owns the `Mode.QuickOverview` transition, including the hint→overview handoff. See `docs/0210-quick-overview-dialog.md`.
+33. **Quick Overview dialog (spec 210)** — `QuickOverview` (`src/quick-overview.ts`) is the one global *read-only* modal for showing content, as opposed to the pickers/composers (the Search Palette, prompt dialog). It renders a pluggable `OverviewSource` — `{ title, meta, load(signal), actions }` returning an `OverviewBody` of `code` / `markdown` / `notice` / `element` — and owns the shell, the single scroll container, cancellation (`AbortController` per open), and the keyboard (`j`/`k`, `Ctrl+D`/`Ctrl+U`, `g`/`G`, `y`, `Esc`; source actions are dispatched first so a source can override a key). Editing is never inline: a source action escalates (`Enter`). The first consumer is hint mode's `filepath` rule via `createFilePeekSource()` (`src/file-peek-source.ts`), which resolves the path as written (absolute / `~` / `file://` / relative to `getFocusedWorkingDirectory()`), reads it with `read_file`, classifies it with the shared helpers in `src/file-preview.ts` (also used by the file manager preview), and maps `Enter` back to the pre-210 openers — Helix tab, markdown viewer, or OS browser. `[hints] file_action = "editor"` restores direct opening. `InputRouter` owns the `Mode.QuickOverview` transition, including the hint→overview handoff. See `docs/0210-quick-overview-dialog.md`.
 
 34. **Review Board (spec 211)** — The surface where a lane *explains code* to the human and the human works through it. A `PaneContentType = 'review'` content window (`src/review-board/view.ts`) over a **lane-authored Markdown document plus typed fenced blocks** (`walkthrough`, `diff`, `finding`, `decision`, `chart`, `metrics`, `svg`), parsed by `src/review-board/parse.ts` (one `ReviewBlock` per top-level `marked` lexer token; a malformed or unknown `review:*` fence degrades to a diagnostic-carrying `markdown` block and is **never dropped**) and built into DOM by `src/review-board/render.ts` (markdown via the Markdown Viewer's `marked`+`highlight.js` stack, `diff` via `diff2html`, single-series accent-hued inline SVG for charts, allowlist-sanitized `svg`). Blocks are addressed by **stable content-addressed id** (`b<ordinal>-<fnv1a(raw)>`, `data-block-id`), never by CSS selector into rendered content — that is what lets a comment re-attach after the lane rewrites the document (`reattachBlockId` falls back from an exact id to a *unique* hash match). **Comprehension is the job, not defect-hunting**: prose plus a `walkthrough` is the required spine, findings/decisions are optional additions, and a Board with neither reads as `reference` rather than "0 unanswered" — never a score (ADR-0004). Keyboard: `n`/`N` block cursor, `}`/`{` next unanswered, `Tab`/`Shift+Tab` the guided walkthrough read (each step jumping the Diff Window via `DiffContentView.revealLocation`, falling back to a reader when the path is not in the diff), `a`/`x` triage, `1`…`9` decisions, `c` comment, `o` Review Map, `O` Overview, `[`/`]` chapter, `/` search, `s` send, `r` reload. **Spec 244 made it a chaptered reader**: chapters are derived from the document's own `H1`/`H2` headings (`ReviewDocument.sections`, derived state that is never serialized), the body renders one chapter at a time, and a 272px **Review Map** — `Overview`, the chapters with block/unanswered counts, `Open items`, `Full document` — is a permanent column at ≥1180px pane width and an on-demand overlay below it (driven by the view's own `ResizeObserver`, which sees every element size change including split-divider drags; the Board's `onResize` is a no-op). `Overview` renders no authored block and reports raw counts only, never a score. Render paths are split so a cursor move inside a chapter re-classes one element instead of rebuilding the document. **The result is a file, not session state**: `review_new`/`review_register`/`review_cancel` (`hook_server.rs`) clone spec 133's path-handoff into a durable gitignored bundle at `.krypton/reviews/<date>-<slug>/` (`review.md` + `response.md` + `assets/`), with issued-path write auto-approval widened from one file to the whole directory (`reviewWritePathMatches`, trailing-slash bounded so a sibling `-2` bundle cannot match). Answers **autosave** (debounced 400 ms → `write_review_response`; frontmatter is the source of truth, the body a generated rendering), so closing loses nothing and `s` is a separate act that routes `review.response` → `ReviewResponseQueue` (a third drain-on-idle queue beside specs 149/158) → a system turn. Bundles are **never swept** and are rediscovered by a directory walk (`list_review_bundles`), so `Leader Shift+R` → picker reopens a review from a previous app run intact; `#reviews` opens the read-only `/reviews` archive (spec 192's template, typed blocks re-rendered by a fence-aware post-pass over comrak). `#review`'s synthesis step now composes a Board instead of ending in turn text. See `docs/0211-review-board.md`.
 
@@ -596,12 +596,12 @@ Focused content views may add local leader actions by implementing `ContentView.
 | `G` (Shift+g) | Toggle shaders on/off globally |
 | `c` | Clone SSH session from focused pane into a new tab (via ControlMaster multiplexing) |
 | `C` (Shift+c) | Clone SSH session from focused pane into a new window |
-| **Command Palette** | `CmdOrCtrl+Shift+P` | Text input filters the action list; Enter executes; Escape closes | `Escape` or action execution |
+| **Search Palette** | `CmdOrCtrl+Shift+P` (Commands) / `CmdOrCtrl+O` (Files) | `Tab` / `Shift+Tab` switch Commands, Files and Grep; text filters the active tab; Enter runs the command or opens the hit in Helix; `Ctrl+E` / `Cmd+Enter` copy a path | `Escape`, accepting a row, or the active tab's shortcut |
 | **Search** | `CmdOrCtrl+F` | Text input searches scrollback in the focused window | `Escape` to close |
 
 **Global hotkeys that work from any mode:**
 - `Cmd+I` — Toggle Quick Terminal (show/hide centered overlay terminal)
-- `Cmd+Shift+P` — Toggle Command Palette (fuzzy-searchable action list)
+- `Cmd+Shift+P` / `Cmd+O` — Search Palette on Commands / Files (the active tab's shortcut closes it; the other one switches tabs)
 - `Leader Y` — Open ACP Harness, a multi-lane ACP content view sharing the focused CWD
 - `Ctrl+Shift+S` — Global macOS screen capture; stages into the active ACP Harness lane when that view is focused, otherwise routes to the smart prompt dialog queue
 - `Cmd+Shift+<` / `Cmd+Shift+>` — Cycle focus counterclockwise / clockwise through visible Grid and Focus windows; other layouts retain their native linear or stack order
@@ -633,16 +633,16 @@ Keypress
   +-- Selection -----> Navigate virtual cursor / expand selection
   +-- Hint ----------> Filter/select hint labels -> execute action
   +-- QuickOverview -> Scroll the peeked content / run a source action
-  +-- Cmd Palette ---> Filter/select action list
+  +-- SearchPalette -> Tab switches scope; filter/select commands, files or grep hits
   +-- Dashboard -----> Delegate to active dashboard's onKeyDown handler
   +-- Search --------> Update search query
 ```
 
 Native `Cmd+V` is a `paste` event on `document.activeElement`, not a key routed through `onKeyDown`. Switching windows moves DOM focus onto the newly focused pane so that event lands on the compositor-focused surface. If it still lands on a background content view, InputRouter retargets it to `ContentView.handlePaste`.
 
-### Command Palette
+### Search Palette
 
-The command palette is a fuzzy-searchable overlay listing **every action** in Krypton:
+The Search Palette (spec 349, `src/search-palette.ts`) is one overlay with three tabs. **Commands** (`src/command-palette.ts`, `CommandScope`) is a fuzzy-searchable list of **every action** in Krypton, with the focused view's Context actions first:
 
 - Window actions: new, close, focus next/prev, focus by index, maximize, restore, swap, reset layout, toggle focus layout, toggle pin
 - Tab actions: new, close, next/prev, move to window
@@ -656,7 +656,7 @@ The command palette is a fuzzy-searchable overlay listing **every action** in Kr
 - SSH actions: clone session to new tab/window
 - Application: quit
 
-Each entry displays the action name and its current keybinding (if any).
+Each command entry displays the action name and its current keybinding (if any). **Files** and **Grep** (`src/quick-file-search.ts`) search the focused project through `fff-search` (spec 68); Enter opens the hit in Helix, `Ctrl+E` / `Cmd+Enter` copy its relative / absolute path.
 
 ## 5.7 Animation Engine (Frontend)
 

@@ -3,6 +3,7 @@
 > Status: Shipped (v4, MRU cut to follow-up)
 > Date: 2026-05-19
 > Milestone: Post-M-current polish (backlog item #4 from `docs/0108-overall-ui-improvements.md`)
+> Amended by: [0349](./0349-unified-search-palette-tabs.md) — the palette is now the **Commands** tab of the Search Palette. `CommandScope.activate()` (in `src/command-palette.ts`) builds `PaletteContext` and calls `getPaletteActions` each time the Commands tab becomes active, not only on open. `SearchPalette.setRows` (`src/search-palette.ts`) draws the Context header on a zero query; rows are `.krypton-search-palette__row[--context]` and the styles live in `src/styles/search-palette.css`. The `ContentView.getPaletteActions` contract is unchanged.
 
 ## Problem
 
@@ -141,11 +142,11 @@ No dedupe needed in v1 because contextual actions for ACP do not alias static co
 
 ### Section Header Rendering
 
-Headers are non-interactive DOM nodes inserted between sections **only when the query is empty and the section is non-empty**. They are not appended to `this.filtered`, so:
+Headers are non-interactive DOM nodes inserted between sections **only when the query is empty and the section is non-empty**. They are not part of the palette's row list (`SearchPalette.rows`; `this.filtered` before spec 0349), so:
 
-- `selectedIndex` and Arrow/`j`/`k` navigation skip them naturally.
-- Mouse `mouseenter` / `mousedown` handlers continue to live only on item rows (which carry `dataset.index` indexing into `this.filtered`).
-- `updateSelection()` queries `.krypton-palette__item`, which does not match the header class.
+- `selectedIndex` and Arrow/`Ctrl+N/P` navigation skip them naturally.
+- Mouse `mouseenter` / `mousedown` handlers live only on result rows; headers carry none.
+- Selection is tracked on the row elements (`.krypton-search-palette__row`), which the header class never matches (since spec 0349).
 
 ### Action ID Stability (Invariant)
 

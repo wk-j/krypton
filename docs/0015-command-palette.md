@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-03-09
 > Milestone: M4 — Keyboard System & Workspaces
+> Amended by: [0349](./0349-unified-search-palette-tabs.md) — the palette is now the **Commands** tab of the Search Palette, one overlay shared with Files and Grep. `src/command-palette.ts` holds only `CommandScope` (action registry, fuzzy filter, execute); the overlay, keys and DOM live in `src/search-palette.ts`, the mode is `Mode.SearchPalette`, and the styles are `.krypton-search-palette*` in `src/styles/search-palette.css`. `Tab` / `Shift+Tab` switch tabs (they used to move the selection). The Data Flow, Keybindings, UI Changes and Edge Cases below are updated to match.
 
 ## Problem
 
@@ -10,7 +11,7 @@ Users must memorize keybindings to perform actions. There is no discoverable, se
 
 ## Solution
 
-Add a fuzzy-searchable command palette overlay activated by `Cmd+Shift+P`. It lists every action in Krypton with its keybinding. The user types to filter, uses arrow keys or Ctrl+N/P to navigate, and presses Enter to execute. A new `src/command-palette.ts` module owns the UI and action registry. The input router gains a `CommandPalette` mode.
+Add a fuzzy-searchable command palette overlay activated by `Cmd+Shift+P`. It lists every action in Krypton with its keybinding. The user types to filter, uses arrow keys or Ctrl+N/P to navigate, and presses Enter to execute. Since spec 0349, `src/command-palette.ts` is the `CommandScope` (action registry + filter) and the overlay is the Search Palette (`src/search-palette.ts`, `Mode.SearchPalette`), opened on its Commands tab.
 
 ## Affected Files
 
@@ -65,58 +66,43 @@ Implementation: for each action, check if query characters appear in order (subs
 
 ```
 1. User presses Cmd+Shift+P
-2. InputRouter intercepts (global hotkey), calls commandPalette.open()
-3. CommandPalette shows overlay, focuses <input>, sets mode to CommandPalette
-4. SoundEngine plays 'command_palette.open'
-5. User types → input event fires → filter actions → update result list
-6. User presses ArrowUp/ArrowDown or Ctrl+P/Ctrl+N → navigate selection
-7. User presses Enter → execute selected action
-8. CommandPalette hides overlay, plays 'command_palette.execute'
-9. InputRouter returns to Normal mode
-10. User presses Escape → close without executing, play 'command_palette.close'
+2. InputRouter intercepts (global hotkey) → toggleSearchPalette('commands'):
+   hidden → searchPalette.open('commands') and Mode.SearchPalette;
+   visible on Commands → close; visible on another tab → switch to Commands
+3. SoundEngine plays 'command_palette.open'; CommandScope.activate() rebuilds the
+   actions (Context section from the focused view first)
+4. User types → 16 ms debounce → CommandScope.query() → result list
+5. User presses ArrowUp/ArrowDown or Ctrl+P/Ctrl+N → navigate selection
+6. User presses Enter (or Alt+1..9) → CommandScope.accept(): play 'command_palette.execute',
+   close the palette (router → Normal), flashAck, run the action
+7. User presses Escape → close without executing, play 'command_palette.close'
 ```
 
 ### Keybindings
 
 | Key | Context | Action |
 |-----|---------|--------|
-| `Cmd+Shift+P` | Global (any mode) | Open/close command palette |
-| `ArrowUp` / `ArrowDown`, `Ctrl+P` / `Ctrl+N` | CommandPalette mode | Navigate result list |
-| `Enter` | CommandPalette mode | Execute selected action |
-| `Escape` | CommandPalette mode | Close palette |
+| `Cmd+Shift+P` | Global (any mode) | Open the Search Palette on Commands; close it when Commands is active; switch to Commands from another tab |
+| `Tab` / `Shift+Tab` | Search Palette | Next / previous tab (Commands → Files → Grep) |
+| `ArrowUp` / `ArrowDown`, `Ctrl+P` / `Ctrl+N` | Search Palette | Navigate result list |
+| `Enter` | Search Palette | Execute selected action |
+| `Alt+1`..`Alt+9` | Search Palette | Execute the Nth visible action |
+| `Ctrl+U` | Search Palette | Clear the query |
+| `Escape` | Search Palette | Close palette |
 
 ### UI Changes
 
-DOM structure (appended to `document.body`):
-
-```html
-<div class="krypton-palette">                         <!-- fixed overlay backdrop -->
-  <div class="krypton-palette__container">             <!-- centered popup -->
-    <div class="krypton-palette__input-row">
-      <span class="krypton-palette__prompt">></span>
-      <input class="krypton-palette__input" type="text" placeholder="Type a command..." />
-    </div>
-    <div class="krypton-palette__results">
-      <div class="krypton-palette__item krypton-palette__item--selected">
-        <span class="krypton-palette__item-label">
-          <mark>New</mark> <mark>Win</mark>dow         <!-- highlighted match chars -->
-        </span>
-        <span class="krypton-palette__item-key">Leader n</span>
-      </div>
-      <!-- ... more items ... -->
-    </div>
-  </div>
-</div>
-```
+The overlay DOM and styles are spec 0349's: `.krypton-search-palette` with a tab strip,
+one input row, one result list, a status line and a hint line. A Commands row is
+`div.krypton-search-palette__row.krypton-search-palette__row--action` holding
+`__category`, an optional `__swatch`, `__label` (matched characters in `<mark>`) and
+`__key` (keybinding, right-aligned and dimmed).
 
 Key visual properties:
-- Fixed overlay, `z-index: 10002` (above which-key and hints)
-- Backdrop blur from theme (`--krypton-palette-blur`)
-- Container: centered top-third, max 500px wide, max 400px tall results
-- Results scrollable, max ~12 visible items
-- Selected item highlighted with `--krypton-palette-highlight`
-- Keybinding shown right-aligned in dimmed text
-- Visibility toggled via `krypton-palette--visible` class
+- Fixed overlay, `z-index: 10002` (above which-key and hints), scrim `rgba(0, 0, 0, 0.35)`, no backdrop blur
+- Container: centered near the top, 600px wide (max 92vw), results up to 50vh, scrollable
+- Selected row highlighted; the active tab uses `--krypton-palette-highlight`
+- Visibility toggled via `krypton-search-palette--visible`
 
 ### CSS Variables (to map in theme.ts)
 
@@ -137,11 +123,11 @@ Add missing mappings (4 new):
 | Case | Behavior |
 |------|----------|
 | Open palette while Quick Terminal is visible | Works — palette overlays QT |
-| Open palette from Compositor/other mode | Force-exit current mode first, then open palette |
-| No matching actions | Show "No results" placeholder |
+| Open palette from Compositor/other mode | Force-exit Selection, Hint, PromptDialog, InlineAI or QuickOverview first, then open |
+| No matching actions | Status line shows `no matches` |
 | Execute async action (e.g. createWindow) | Close palette immediately, action runs in background |
 | Rapid open/close | Debounce not needed — open/close is instant toggle |
-| Empty query | Show all actions grouped by category |
+| Empty query | Context section (focused view's actions) first, then every action in registration order |
 
 ## Out of Scope
 

@@ -29,6 +29,10 @@ describe('parseHint', () => {
       { key: 'Esc', rest: 'cancel' },
     ]);
     expect(parseHint('Esc close')).toEqual([{ key: 'Esc', rest: 'close' }]);
+    expect(parseHint('Tab scope · Esc close')).toEqual([
+      { key: 'Tab', rest: 'scope' },
+      { key: 'Esc', rest: 'close' },
+    ]);
     expect(parseHint('Cmd+Shift+M music')).toEqual([{ key: 'Cmd+Shift+M', rest: 'music' }]);
     expect(parseHint('Leader v select · Cmd+O files · Cmd+Shift+G git')).toEqual([
       { key: 'Leader', rest: 'v select' },

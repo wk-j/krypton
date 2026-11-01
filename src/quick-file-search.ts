@@ -1,181 +1,92 @@
-// Krypton — Quick File Search
+// Krypton — Files and Grep scopes of the Search Palette (spec 349)
 //
-// Cmd+O opens a centered overlay backed by `fff-search` running in the Rust
-// process. Enter opens the highlighted file in Helix in a new tab. Ctrl+E
-// copies the relative path to the clipboard; Cmd+Enter copies the absolute
-// path. Clipboard picks are never auto-pasted, so behavior is identical
-// across terminal, agent, hurl, markdown, vault windows.
-//
-// See docs/0068-quick-file-search.md.
+// Both tabs search the focused project with `fff-search` running in the Rust
+// process (docs/0068-quick-file-search.md). Enter opens the highlighted hit in
+// Helix in a new tab. Ctrl+E copies the relative path to the clipboard;
+// Cmd+Enter copies the absolute path. Clipboard picks are never auto-pasted.
+// `Cmd+O` opens the Search Palette on the Files tab; the overlay itself lives
+// in search-palette.ts.
 
 import { invoke } from '@tauri-apps/api/core';
 import { Compositor } from './compositor';
 import { openInHelixTab } from './editor-open';
+import type {
+  AcceptControl,
+  AcceptHow,
+  ScopeHint,
+  ScopeQueryResult,
+  ScopeRow,
+  SearchScope,
+} from './palette-types';
 import type { QuickGrepHit, QuickGrepResponse, QuickSearchHit, QuickSearchResponse } from './types';
 
-type SearchMode = 'file' | 'grep';
-
 const RESULT_LIMIT = 50;
-const QUERY_DEBOUNCE_MS = 16;
-const FLASH_MS = 80;
 
-export class QuickFileSearch {
-  private compositor: Compositor;
-  private overlay: HTMLElement;
-  private input: HTMLInputElement;
-  private rootEl: HTMLElement;
-  private resultsList: HTMLElement;
-  private statusBar: HTMLElement;
-  private hintBar: HTMLElement;
+const HINTS: readonly ScopeHint[] = [
+  { text: '↵ open in hx', kind: 'helix' },
+  { text: '^E copy', kind: 'relative' },
+  { text: '⌘↵ copy absolute', kind: 'absolute' },
+  { text: '⇥ next tab' },
+  { text: '⎋ close' },
+];
 
-  private results: QuickSearchHit[] = [];
-  private grepResults: QuickGrepHit[] = [];
-  private mode: SearchMode = 'file';
-  private selectedIndex = 0;
-  private visible = false;
-  private currentRoot: string | null = null;
+/**
+ * The project root both tabs search: the git root above the focused cwd
+ * (resolved by `quick_search_warm_root`). Resolved once per palette open and
+ * shared, so switching Files ↔ Grep does not warm it again.
+ */
+export class ProjectRoot {
+  private root: string | null = null;
+  private error: string | null = null;
+  private resolving: Promise<void> | null = null;
+  /** Bumped on reset so a warm-up from an earlier open cannot write back. */
+  private generation = 0;
 
-  private queryToken = 0;
-  private debounceTimer: number | null = null;
+  constructor(private readonly compositor: Compositor) {}
 
-  private onCloseCallback: () => void;
-
-  constructor(compositor: Compositor, onClose: () => void) {
-    this.compositor = compositor;
-    this.onCloseCallback = onClose;
-    this.overlay = this.buildDom();
-    this.input = this.overlay.querySelector('.krypton-quicksearch__input')!;
-    this.rootEl = this.overlay.querySelector('.krypton-quicksearch__root')!;
-    this.resultsList = this.overlay.querySelector('.krypton-quicksearch__results')!;
-    this.statusBar = this.overlay.querySelector('.krypton-quicksearch__statusbar')!;
-    this.hintBar = this.overlay.querySelector('.krypton-quicksearch__hint')!;
-
-    this.input.addEventListener('input', () => {
-      this.scheduleQuery();
-    });
-
-    this.overlay.addEventListener('mousedown', (e) => {
-      if (e.target === this.overlay) {
-        this.close();
-      }
-    });
-
-    document.body.appendChild(this.overlay);
+  reset(): void {
+    this.generation++;
+    this.root = null;
+    this.error = null;
+    this.resolving = null;
   }
 
-  get isVisible(): boolean {
-    return this.visible;
+  ensure(): Promise<void> {
+    this.resolving ??= this.resolve();
+    return this.resolving;
   }
 
-  async open(): Promise<void> {
-    if (this.visible) return;
-    this.visible = true;
-    this.results = [];
-    this.grepResults = [];
-    this.mode = 'file';
-    this.selectedIndex = 0;
-    this.input.value = '';
-    this.input.placeholder = 'find file…';
-    this.updateModeBadge();
-    this.renderResults();
-    this.statusBar.textContent = 'resolving…';
-    this.overlay.classList.add('krypton-quicksearch--visible');
-    this.compositor.soundEngine.play('command_palette.open');
+  /** The resolved root, or null while unresolved or after a failed warm-up. */
+  get path(): string | null {
+    return this.error === null ? this.root : null;
+  }
 
-    requestAnimationFrame(() => this.input.focus());
+  get display(): string {
+    return this.root ? abbreviatePath(this.root) : '';
+  }
 
+  /** The result a tab shows when there is no usable root. */
+  unresolved(): ScopeQueryResult {
+    const status = this.error === null ? 'resolving…' : `error: ${this.error}`;
+    return { rows: [], status, pending: false };
+  }
+
+  private async resolve(): Promise<void> {
+    const generation = this.generation;
     const cwd = await this.resolveCwd();
     let root: string;
+    let error: string | null = null;
     try {
       root = await invoke<string>('quick_search_warm_root', { cwd });
     } catch (e) {
-      console.error('[QuickFileSearch] warm_root failed:', e);
-      this.statusBar.textContent = `error: ${String(e)}`;
-      this.rootEl.textContent = abbreviatePath(cwd);
-      this.currentRoot = cwd;
-      return;
+      console.error('[ProjectRoot] warm_root failed:', e);
+      root = cwd;
+      error = String(e);
     }
-    this.currentRoot = root;
-    this.rootEl.textContent = abbreviatePath(root);
-    void this.runQuery();
+    if (generation !== this.generation) return;
+    this.root = root;
+    this.error = error;
   }
-
-  close(): void {
-    if (!this.visible) return;
-    this.visible = false;
-    this.overlay.classList.remove('krypton-quicksearch--visible');
-    if (this.debounceTimer !== null) {
-      window.clearTimeout(this.debounceTimer);
-      this.debounceTimer = null;
-    }
-    this.compositor.soundEngine.play('command_palette.close');
-    this.onCloseCallback();
-  }
-
-  /** Returns true if the event was consumed. */
-  handleKey(e: KeyboardEvent): boolean {
-    if (!this.visible) return false;
-
-    // Cmd+Enter — copy absolute path
-    if (e.key === 'Enter' && e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey) {
-      e.preventDefault();
-      void this.acceptSelected('absolute');
-      return true;
-    }
-
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      this.toggleMode();
-      return true;
-    }
-
-    switch (e.key) {
-      case 'Escape':
-        e.preventDefault();
-        this.close();
-        return true;
-
-      case 'Enter':
-        e.preventDefault();
-        void this.openInHelix();
-        return true;
-
-      case 'ArrowDown':
-        e.preventDefault();
-        this.move(1);
-        return true;
-
-      case 'ArrowUp':
-        e.preventDefault();
-        this.move(-1);
-        return true;
-    }
-
-    // Ctrl+P / Ctrl+N readline-style cursor; Ctrl+E copy relative path
-    if (e.ctrlKey && !e.metaKey && !e.altKey) {
-      if (e.key === 'n' || e.key === 'p') {
-        e.preventDefault();
-        this.move(e.key === 'n' ? 1 : -1);
-        return true;
-      }
-      if (e.key === 'u') {
-        e.preventDefault();
-        this.input.value = '';
-        this.scheduleQuery();
-        return true;
-      }
-      if (e.key === 'e' || e.key === 'E') {
-        e.preventDefault();
-        void this.acceptSelected('relative');
-        return true;
-      }
-    }
-
-    // Let typing flow to the <input>
-    return false;
-  }
-
-  // ─── private ──────────────────────────────────────────────
 
   private async resolveCwd(): Promise<string> {
     try {
@@ -184,326 +95,223 @@ export class QuickFileSearch {
     } catch {
       // fall through
     }
-    // Fallback: $HOME (resolve via backend by canonicalizing ".")
+    // Fallback: the backend canonicalizes "."
     return '.';
   }
+}
 
-  private scheduleQuery(): void {
-    if (this.debounceTimer !== null) {
-      window.clearTimeout(this.debounceTimer);
+/** A hit both tabs can open or copy. `line`/`col` are set for grep hits. */
+interface Hit {
+  path: string;
+  absolute: string;
+  line: number | null;
+  /** 1-based column. */
+  col: number | null;
+}
+
+class FileRow implements ScopeRow {
+  constructor(readonly hit: QuickSearchHit, private readonly query: string) {}
+
+  get target(): Hit {
+    return { path: this.hit.path, absolute: this.hit.absolute, line: null, col: null };
+  }
+
+  render(el: HTMLElement): void {
+    el.classList.add('krypton-search-palette__row--file');
+    const { dir, name } = splitPath(this.hit.path);
+
+    const filenameEl = document.createElement('span');
+    filenameEl.className = 'krypton-search-palette__filename';
+    filenameEl.append(...highlight(name, this.query));
+
+    const parentEl = document.createElement('span');
+    parentEl.className = 'krypton-search-palette__parent';
+    parentEl.textContent = dir;
+
+    el.append(filenameEl, parentEl);
+  }
+}
+
+class GrepRow implements ScopeRow {
+  constructor(readonly hit: QuickGrepHit) {}
+
+  get target(): Hit {
+    return {
+      path: this.hit.path,
+      absolute: this.hit.absolute,
+      line: this.hit.line,
+      col: grepColumn(this.hit.line_content, this.hit.col),
+    };
+  }
+
+  render(el: HTMLElement): void {
+    el.classList.add('krypton-search-palette__row--grep');
+
+    const locEl = document.createElement('span');
+    locEl.className = 'krypton-search-palette__grep-loc';
+    locEl.textContent = `${this.hit.path}:${this.hit.line}`;
+
+    const snippetEl = document.createElement('span');
+    snippetEl.className = 'krypton-search-palette__grep-snippet';
+    snippetEl.append(...highlightRanges(this.hit.line_content, this.hit.match_ranges));
+
+    el.append(locEl, snippetEl);
+  }
+}
+
+function targetOf(row: ScopeRow): Hit | null {
+  if (row instanceof FileRow || row instanceof GrepRow) return row.target;
+  return null;
+}
+
+function recordPick(absolute: string): void {
+  invoke('quick_search_record_pick', { absolute }).catch((e) => {
+    console.warn('[ProjectSearch] record_pick failed:', e);
+  });
+}
+
+/** Shared accept for file and grep hits. */
+async function acceptHit(compositor: Compositor, hit: Hit, how: AcceptHow, ctl: AcceptControl): Promise<void> {
+  if (how === 'primary') {
+    // Close BEFORE awaiting spawn so InputRouter leaves the palette mode at
+    // once and keystrokes flow to the new hx tab.
+    if (!compositor.hasFocusedWindow()) {
+      ctl.setStatus('open failed: no focused window');
+      return;
     }
-    this.debounceTimer = window.setTimeout(() => {
-      this.debounceTimer = null;
-      void this.runQuery();
-    }, QUERY_DEBOUNCE_MS);
+    ctl.playExecute();
+    ctl.close();
+    void openInHelixTab(compositor, { path: hit.absolute, line: hit.line, col: hit.col }).then((result) => {
+      if (result !== 'opened') console.warn(`[ProjectSearch] openInHelixTab: ${result}`);
+    });
+    recordPick(hit.absolute);
+    return;
   }
 
-  private toggleMode(): void {
-    this.mode = this.mode === 'file' ? 'grep' : 'file';
-    this.input.placeholder = this.mode === 'grep' ? 'grep this project…' : 'find file…';
-    this.updateModeBadge();
-    this.selectedIndex = 0;
-    this.renderResults();
-    void this.runQuery();
+  const absolute = how === 'copy-absolute';
+  const base = absolute ? hit.absolute : hit.path;
+  const text = hit.line === null ? base : `${base}:${hit.line}:${hit.col}`;
+  let copied = true;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    copied = false;
+    console.error('[ProjectSearch] clipboard write failed:', e);
+    ctl.setStatus('clipboard write failed');
+  }
+  recordPick(hit.absolute);
+  if (!copied) return;
+
+  ctl.playExecute();
+  await ctl.flash(absolute ? 'absolute' : 'relative');
+  ctl.close();
+}
+
+export class FileScope implements SearchScope {
+  readonly id = 'files' as const;
+  readonly label = 'Files';
+  readonly shortcut = '⌘O';
+  readonly prompt = '⟶';
+  readonly placeholder = 'find file…';
+  readonly hints = HINTS;
+
+  constructor(private readonly compositor: Compositor, private readonly root: ProjectRoot) {}
+
+  aside(): string {
+    return this.root.display;
   }
 
-  private updateModeBadge(): void {
-    this.overlay.dataset.mode = this.mode;
+  reset(): void {
+    this.root.reset();
   }
 
-  private async runQuery(): Promise<void> {
-    if (!this.currentRoot) return;
-    if (this.mode === 'grep') {
-      return this.runGrepQuery();
-    }
-    const myToken = ++this.queryToken;
-    const q = this.input.value;
+  activate(): Promise<void> {
+    return this.root.ensure();
+  }
+
+  async query(q: string): Promise<ScopeQueryResult> {
+    await this.root.ensure();
+    const root = this.root.path;
+    if (root === null) return this.root.unresolved();
 
     let resp: QuickSearchResponse;
     try {
-      resp = await invoke<QuickSearchResponse>('quick_search_query', {
-        root: this.currentRoot,
-        query: q,
-        limit: RESULT_LIMIT,
-      });
+      resp = await invoke<QuickSearchResponse>('quick_search_query', { root, query: q, limit: RESULT_LIMIT });
     } catch (e) {
-      if (myToken !== this.queryToken) return;
-      this.statusBar.textContent = `error: ${String(e)}`;
-      this.results = [];
-      this.renderResults();
-      return;
+      return { rows: [], status: `error: ${String(e)}`, pending: false };
     }
-    if (myToken !== this.queryToken) return;
 
-    this.results = resp.hits;
-    this.selectedIndex = 0;
-    this.renderResults();
-
+    const rows = resp.hits.map((hit) => new FileRow(hit, q));
+    let status: string;
     if (resp.indexing) {
-      const n = resp.indexed_count.toLocaleString();
-      this.statusBar.textContent = `indexing… (${n} files)`;
-      // Re-poll after a short delay so the UI catches up as the scan completes.
-      window.setTimeout(() => {
-        if (myToken === this.queryToken) void this.runQuery();
-      }, 250);
+      status = `indexing… (${resp.indexed_count.toLocaleString()} files)`;
     } else if (resp.hits.length === 0) {
-      this.statusBar.textContent = q.length === 0
-        ? 'Type to search this project (no history yet)'
-        : 'no matches';
+      status = q.length === 0 ? 'Type to search this project (no history yet)' : 'no matches';
     } else {
-      this.statusBar.textContent = `${resp.hits.length} matches`;
+      status = `${resp.hits.length} matches`;
     }
+    return { rows, status, pending: resp.indexing };
   }
 
-  private async runGrepQuery(): Promise<void> {
-    if (!this.currentRoot) return;
-    const myToken = ++this.queryToken;
-    const q = this.input.value;
+  async accept(row: ScopeRow, how: AcceptHow, ctl: AcceptControl): Promise<void> {
+    const hit = targetOf(row);
+    if (hit) await acceptHit(this.compositor, hit, how, ctl);
+  }
+}
 
-    if (q.trim().length === 0) {
-      this.grepResults = [];
-      this.selectedIndex = 0;
-      this.renderResults();
-      this.statusBar.textContent = 'grep — type a query';
-      return;
-    }
+export class GrepScope implements SearchScope {
+  readonly id = 'grep' as const;
+  readonly label = 'Grep';
+  readonly shortcut = '';
+  readonly prompt = '⟶';
+  readonly placeholder = 'grep this project…';
+  readonly hints = HINTS;
+
+  constructor(private readonly compositor: Compositor, private readonly root: ProjectRoot) {}
+
+  aside(): string {
+    return this.root.display;
+  }
+
+  reset(): void {
+    this.root.reset();
+  }
+
+  activate(): Promise<void> {
+    return this.root.ensure();
+  }
+
+  async query(q: string): Promise<ScopeQueryResult> {
+    if (q.trim().length === 0) return { rows: [], status: 'grep — type a query', pending: false };
+
+    await this.root.ensure();
+    const root = this.root.path;
+    if (root === null) return this.root.unresolved();
 
     let resp: QuickGrepResponse;
     try {
-      resp = await invoke<QuickGrepResponse>('quick_grep_query', {
-        root: this.currentRoot,
-        query: q,
-        limit: RESULT_LIMIT,
-      });
+      resp = await invoke<QuickGrepResponse>('quick_grep_query', { root, query: q, limit: RESULT_LIMIT });
     } catch (e) {
-      if (myToken !== this.queryToken) return;
-      this.statusBar.textContent = `error: ${String(e)}`;
-      this.grepResults = [];
-      this.renderResults();
-      return;
+      return { rows: [], status: `error: ${String(e)}`, pending: false };
     }
-    if (myToken !== this.queryToken) return;
 
-    this.grepResults = resp.hits;
-    this.selectedIndex = 0;
-    this.renderResults();
-
-    const re = resp.regex_fallback_error;
+    const rows = resp.hits.map((hit) => new GrepRow(hit));
+    let status: string;
     if (resp.indexing) {
-      this.statusBar.textContent = `indexing… (${resp.indexed_count.toLocaleString()} files)`;
-      window.setTimeout(() => {
-        if (myToken === this.queryToken) void this.runGrepQuery();
-      }, 250);
-    } else if (re) {
-      this.statusBar.textContent = `regex fallback: ${re}`;
+      status = `indexing… (${resp.indexed_count.toLocaleString()} files)`;
+    } else if (resp.regex_fallback_error) {
+      status = `regex fallback: ${resp.regex_fallback_error}`;
     } else if (resp.hits.length === 0) {
-      this.statusBar.textContent = 'no matches';
+      status = 'no matches';
     } else {
-      this.statusBar.textContent = `${resp.hits.length} matches (grep)`;
+      status = `${resp.hits.length} matches (grep)`;
     }
+    return { rows, status, pending: resp.indexing };
   }
 
-  private currentLength(): number {
-    return this.mode === 'grep' ? this.grepResults.length : this.results.length;
-  }
-
-  private move(delta: number): void {
-    const len = this.currentLength();
-    if (len === 0) return;
-    this.selectedIndex = (this.selectedIndex + delta + len) % len;
-    this.updateSelection();
-    this.scrollToSelected();
-  }
-
-  private updateSelection(): void {
-    const items = this.resultsList.querySelectorAll('.krypton-quicksearch__result');
-    items.forEach((el, i) => {
-      el.classList.toggle('is-selected', i === this.selectedIndex);
-    });
-  }
-
-  private scrollToSelected(): void {
-    const el = this.resultsList.children[this.selectedIndex] as HTMLElement | undefined;
-    el?.scrollIntoView({ block: 'nearest' });
-  }
-
-  private async acceptSelected(kind: 'relative' | 'absolute'): Promise<void> {
-    if (this.currentLength() === 0) return;
-
-    let text: string;
-    let absolute: string;
-    if (this.mode === 'grep') {
-      const hit = this.grepResults[this.selectedIndex];
-      if (!hit) return;
-      const base = kind === 'absolute' ? hit.absolute : hit.path;
-      text = `${base}:${hit.line}:${hit.col + 1}`;
-      absolute = hit.absolute;
-    } else {
-      const hit = this.results[this.selectedIndex];
-      if (!hit) return;
-      text = kind === 'absolute' ? hit.absolute : hit.path;
-      absolute = hit.absolute;
-    }
-
-    let copied = true;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch (e) {
-      copied = false;
-      console.error('[QuickFileSearch] clipboard write failed:', e);
-      this.statusBar.textContent = 'clipboard write failed';
-    }
-
-    // Record the pick (frecency) — fire-and-forget.
-    invoke('quick_search_record_pick', { absolute }).catch((e) => {
-      console.warn('[QuickFileSearch] record_pick failed:', e);
-    });
-
-    if (!copied) return;
-
-    this.compositor.soundEngine.play('command_palette.execute');
-    this.flashSelected(kind);
-    window.setTimeout(() => this.close(), FLASH_MS);
-  }
-
-  private async openInHelix(): Promise<void> {
-    if (this.currentLength() === 0) return;
-
-    let absolute: string;
-    let line: number | null = null;
-    let col: number | null = null;
-    if (this.mode === 'grep') {
-      const hit = this.grepResults[this.selectedIndex];
-      if (!hit) return;
-      absolute = hit.absolute;
-      line = hit.line;
-      col = hit.col + 1;
-    } else {
-      const hit = this.results[this.selectedIndex];
-      if (!hit) return;
-      absolute = hit.absolute;
-    }
-
-    // Close the dialog BEFORE awaiting spawn so InputRouter exits
-    // QuickFileSearch mode immediately and keystrokes flow to the new hx tab.
-    // Otherwise the dialog stays visible during spawn_pty (and an extra
-    // 100ms flash), making the app feel stuck.
-    if (!this.compositor.hasFocusedWindow()) {
-      this.statusBar.textContent = 'open failed: no focused window';
-      return;
-    }
-
-    this.compositor.soundEngine.play('command_palette.execute');
-    this.close();
-
-    void openInHelixTab(this.compositor, { path: absolute, line, col }).then((result) => {
-      if (result !== 'opened') {
-        console.warn(`[QuickFileSearch] openInHelixTab: ${result}`);
-      }
-    });
-
-    invoke('quick_search_record_pick', { absolute }).catch((e) => {
-      console.warn('[QuickFileSearch] record_pick failed:', e);
-    });
-  }
-
-  private flashSelected(kind: 'relative' | 'absolute' | 'helix'): void {
-    const row = this.resultsList.children[this.selectedIndex] as HTMLElement | undefined;
-    if (row) row.classList.add('is-flashing');
-    this.hintBar.dataset.flash = kind;
-    window.setTimeout(() => {
-      row?.classList.remove('is-flashing');
-      delete this.hintBar.dataset.flash;
-    }, FLASH_MS);
-  }
-
-  private renderResults(): void {
-    this.resultsList.innerHTML = '';
-    if (this.mode === 'grep') {
-      this.renderGrepResults();
-    } else {
-      this.renderFileResults();
-    }
-  }
-
-  private renderFileResults(): void {
-    const q = this.input.value;
-    for (let i = 0; i < this.results.length; i++) {
-      const hit = this.results[i];
-      const li = document.createElement('li');
-      li.className = 'krypton-quicksearch__result';
-      if (i === this.selectedIndex) li.classList.add('is-selected');
-
-      const { dir, name } = splitPath(hit.path);
-      const filenameEl = document.createElement('span');
-      filenameEl.className = 'krypton-quicksearch__filename';
-      filenameEl.append(...highlight(name, q));
-
-      const parentEl = document.createElement('span');
-      parentEl.className = 'krypton-quicksearch__parent';
-      parentEl.textContent = dir;
-
-      li.appendChild(filenameEl);
-      li.appendChild(parentEl);
-      this.attachRowEvents(li, i);
-      this.resultsList.appendChild(li);
-    }
-  }
-
-  private renderGrepResults(): void {
-    for (let i = 0; i < this.grepResults.length; i++) {
-      const hit = this.grepResults[i];
-      const li = document.createElement('li');
-      li.className = 'krypton-quicksearch__result krypton-quicksearch__result--grep';
-      if (i === this.selectedIndex) li.classList.add('is-selected');
-
-      const locEl = document.createElement('span');
-      locEl.className = 'krypton-quicksearch__grep-loc';
-      locEl.textContent = `${hit.path}:${hit.line}`;
-
-      const snippetEl = document.createElement('span');
-      snippetEl.className = 'krypton-quicksearch__grep-snippet';
-      snippetEl.append(...highlightRanges(hit.line_content, hit.match_ranges));
-
-      li.appendChild(locEl);
-      li.appendChild(snippetEl);
-      this.attachRowEvents(li, i);
-      this.resultsList.appendChild(li);
-    }
-  }
-
-  private attachRowEvents(li: HTMLElement, i: number): void {
-    li.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      this.selectedIndex = i;
-      this.updateSelection();
-      void this.acceptSelected(e.metaKey ? 'absolute' : 'relative');
-    });
-  }
-
-  private buildDom(): HTMLElement {
-    const overlay = document.createElement('div');
-    overlay.className = 'krypton-quicksearch';
-    overlay.innerHTML = `
-      <div class="krypton-quicksearch__container">
-        <div class="krypton-quicksearch__input-row">
-          <span class="krypton-quicksearch__prompt">⟶</span>
-          <input class="krypton-quicksearch__input" type="text" spellcheck="false"
-                 autocomplete="off" placeholder="find file…" />
-          <span class="krypton-quicksearch__root"></span>
-        </div>
-        <ul class="krypton-quicksearch__results"></ul>
-        <div class="krypton-quicksearch__statusbar"></div>
-        <div class="krypton-quicksearch__hint">
-          <span data-kind="helix">↵ open in hx</span>
-          <span data-kind="relative">^E copy</span>
-          <span data-kind="absolute">⌘↵ copy absolute</span>
-          <span>⇥ toggle file/grep</span>
-          <span>⎋ close</span>
-        </div>
-      </div>
-    `;
-    return overlay;
+  async accept(row: ScopeRow, how: AcceptHow, ctl: AcceptControl): Promise<void> {
+    const hit = targetOf(row);
+    if (hit) await acceptHit(this.compositor, hit, how, ctl);
   }
 }
 
@@ -523,12 +331,56 @@ function abbreviatePath(p: string): string {
   return s;
 }
 
-/** Highlight explicit byte ranges (used by grep — fff-search reports
- *  match_byte_offsets directly so we don't need to re-derive indices). */
-function highlightRanges(text: string, ranges: Array<[number, number]>): Node[] {
+interface GraphemeSegmenter {
+  segment(input: string): Iterable<{ segment: string }>;
+}
+
+// lib is ES2021; Intl.Segmenter typings arrive with ES2022.
+const graphemeSegmenter: GraphemeSegmenter | null = (() => {
+  const Ctor = (Intl as typeof Intl & {
+    Segmenter?: new (locale: string | undefined, options: { granularity: 'grapheme' }) => GraphemeSegmenter;
+  }).Segmenter;
+  return Ctor ? new Ctor(undefined, { granularity: 'grapheme' }) : null;
+})();
+
+/**
+ * Walk `text` to the UTF-8 byte offset `byteOffset` (the unit fff-search
+ * reports): the UTF-16 index there, which JS strings use, and how many bytes
+ * lie past the end of `text` (fff-search truncates long lines).
+ */
+function walkBytes(text: string, byteOffset: number): { index: number; overflow: number } {
+  let bytes = 0;
+  let index = 0;
+  for (const ch of text) {
+    if (bytes >= byteOffset) return { index, overflow: 0 };
+    const cp = ch.codePointAt(0) ?? 0;
+    bytes += cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+    index += ch.length;
+  }
+  return { index, overflow: Math.max(0, byteOffset - bytes) };
+}
+
+/**
+ * 1-based column for `hx path:line:col` from fff-search's 0-based byte column.
+ * Helix counts graphemes (helix-core `pos_at_coords`), so a Thai consonant with
+ * its tone mark is one column. Bytes past a truncated line count one each.
+ */
+export function grepColumn(line: string, byteCol: number): number {
+  const { index, overflow } = walkBytes(line, byteCol);
+  const prefix = line.slice(0, index);
+  const graphemes = graphemeSegmenter
+    ? Array.from(graphemeSegmenter.segment(prefix)).length
+    : Array.from(prefix).length;
+  return graphemes + overflow + 1;
+}
+
+/** Highlight fff-search's match spans, which are UTF-8 byte offsets into `text`. */
+export function highlightRanges(text: string, ranges: Array<[number, number]>): Node[] {
   if (ranges.length === 0) return [document.createTextNode(text)];
-  // Sort + merge overlapping ranges defensively.
-  const sorted = [...ranges].sort((a, b) => a[0] - b[0]);
+  // Map to UTF-16 indices, then sort + merge overlapping spans defensively.
+  const sorted = ranges
+    .map(([s, e]): [number, number] => [walkBytes(text, s).index, walkBytes(text, e).index])
+    .sort((a, b) => a[0] - b[0]);
   const out: Node[] = [];
   let cursor = 0;
   for (const [s, e] of sorted) {
@@ -547,8 +399,8 @@ function highlightRanges(text: string, ranges: Array<[number, number]>): Node[] 
   return out;
 }
 
-/** Subsequence highlight — matches the same case-insensitive walk used by
- *  `command-palette` so highlights line up with what the user typed. */
+/** Subsequence highlight — the same case-insensitive walk the Commands tab
+ *  uses, so highlights line up with what the user typed. */
 function highlight(text: string, query: string): Node[] {
   if (!query) return [document.createTextNode(text)];
   const ql = query.toLowerCase();

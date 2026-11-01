@@ -5,6 +5,7 @@
 > Scope: frontend only — one public Compositor API, one palette command group, one CSS rule, one optional snapshot field.
 > Depends on: [142 — Active-Lane → Window Accent](./0142-active-lane-window-accent.md), whose O4 reserved this
 > follow-up with the rule "auto by default, an explicit pick wins".
+> Amended by: [0349](./0349-unified-search-palette-tabs.md) — the swatch rule is now `.krypton-search-palette__swatch` in `src/styles/search-palette.css` (was `.krypton-palette__item-swatch` in `overlays.css`); behaviour is unchanged.
 
 ## Problem
 

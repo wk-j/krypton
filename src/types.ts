@@ -31,12 +31,11 @@ export enum Mode {
   Selection = 'Selection',
   Hint = 'Hint',
   TabMove = 'TabMove',
-  CommandPalette = 'CommandPalette',
+  SearchPalette = 'SearchPalette',
   Dashboard = 'Dashboard',
   InlineAI = 'InlineAI',
   Music = 'Music',
   PromptDialog = 'PromptDialog',
-  QuickFileSearch = 'QuickFileSearch',
   QuickOverview = 'QuickOverview',
 }
 

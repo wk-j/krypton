@@ -49,7 +49,7 @@
    - **Selection mode?** -> navigate virtual cursor, expand/toggle selection, yank
    - **Hint mode?** -> filter/match labels, execute action on match (file path -> Helix tab, otherwise open/copy/paste)
    - **Dashboard mode?** -> delegate to active dashboard's `onKeyDown()` handler; Escape closes the dashboard
-   - **Command palette / Search mode?** -> route to overlay's text input handler
+   - **Search Palette / Search mode?** -> route to overlay's text input handler (the Search Palette also takes `Tab` / `Shift+Tab` to switch Commands, Files and Grep)
 3. **If forwarded to PTY**: Tauri `invoke("write_to_pty", { window_id, data })` via IPC
 4. **Rust backend writes** -> Raw bytes written to PTY file descriptor
 5. **Shell processes input** -> Shell sends output back through PTY
@@ -62,15 +62,17 @@
 10b. **Program status (OSC 7501)** -> While parsing, xterm.js hands `ESC ] 7501 ; … ST` to the pane's handler. `parseProgramStatus` validates it: a `?` query is answered via `terminal.input` → `onData` → `write_to_pty`, and a report is applied to `ProgramStatusStore`. A changed summary makes the compositor repaint the tab, window and chip, publish `view:program-status` (the footer re-pulls counts), and, for an unfocused pane entering blocked/error/done, show one rate-limited rail message. OSC 133 `A` or a `process-changed` back to the shell drops working/blocked/idle. See `docs/0284-program-status-osc7501.md`
 11. **PTY exits** -> Backend emits `pty-exit` when either the PTY reader hits EOF/error or the owning child process exits. Compositor clears progress and closes the matching pane/tab; if an exit arrives before the frontend has registered the new session, it is held briefly and replayed after registration.
 
-## Quick File Search to Helix Flow
+## Search Palette Files / Grep to Helix Flow
 
 ```
-1. User presses Cmd+O -> Input Router enters QuickFileSearch mode.
-2. QuickFileSearch resolves the focused cwd through the compositor and warms
-   the backend quick-search picker for that root.
+1. User presses Cmd+O -> Input Router opens the Search Palette on the Files tab
+   and enters SearchPalette mode (Tab / Shift+Tab reach Grep and Commands; the
+   typed query carries over).
+2. ProjectRoot resolves the focused cwd through the compositor and warms the
+   backend quick-search picker for that root, once per palette open.
 3. User selects a hit and presses Enter.
-4. QuickFileSearch closes before awaiting editor spawn, so keyboard routing
-   returns to Normal immediately.
+4. The palette closes before awaiting editor spawn and reports the close to the
+   Input Router, so keyboard routing returns to Normal immediately.
 5. Compositor creates a new terminal tab and spawns `hx` directly with the
    selected path as argv; grep hits append `:line:col`.
 6. Editor tabs wire xterm input before spawn but disable pre-session input

@@ -8,10 +8,10 @@ import { Mode, LayoutMode } from './types';
 import { Compositor } from './compositor';
 import { SelectionController } from './selection';
 import { HintController } from './hints';
-import { CommandPalette } from './command-palette';
 import { DashboardManager } from './dashboard';
 import { PromptDialog } from './prompt-dialog';
-import { QuickFileSearch } from './quick-file-search';
+import { SearchPalette } from './search-palette';
+import type { ScopeId } from './palette-types';
 import { QuickOverview } from './quick-overview';
 import { GLOBAL_LEADER_RESERVED_KEYS, normalizeLeaderKeyEvent } from './leader-keys';
 import { shouldRetargetContentPaste, summonOverlayOwnsKeyboard } from './content-focus';
@@ -35,13 +35,12 @@ export class InputRouter {
   private modeChangeCallbacks: ModeChangeCallback[] = [];
   private selection: SelectionController = new SelectionController();
   private hints: HintController;
-  private commandPalette: CommandPalette | null = null;
+  private searchPalette: SearchPalette | null = null;
   private dashboardManager: DashboardManager | null = null;
   private musicPlayer: MusicPlayer | null = null;
   private workspaceFooter: WorkspaceFooter | null = null;
   private backendLinkProbe: BackendLinkProbe | null = null;
   private promptDialog: PromptDialog | null = null;
-  private quickFileSearch: QuickFileSearch | null = null;
   private quickOverview: QuickOverview | null = null;
 
   constructor(compositor: Compositor) {
@@ -117,8 +116,8 @@ export class InputRouter {
       if (InputRouter.isPromptDialogKey(e)) {
         return false;
       }
-      // Prevent xterm from consuming Cmd+O (quick file search)
-      if (InputRouter.isQuickFileSearchKey(e)) {
+      // Prevent xterm from consuming Cmd+O (Search Palette, Files tab)
+      if (InputRouter.isFileSearchKey(e)) {
         return false;
       }
       // Prevent xterm from consuming dashboard toggle shortcuts
@@ -172,9 +171,9 @@ export class InputRouter {
     );
   }
 
-  /** Set the command palette instance (called after construction) */
-  setCommandPalette(palette: CommandPalette): void {
-    this.commandPalette = palette;
+  /** Set the Search Palette instance (called after construction) */
+  setSearchPalette(palette: SearchPalette): void {
+    this.searchPalette = palette;
   }
 
   /** Set the dashboard manager instance (called after construction) */
@@ -250,8 +249,8 @@ export class InputRouter {
     );
   }
 
-  /** Check if a key event is the Quick File Search shortcut (Cmd+O) */
-  static isQuickFileSearchKey(e: KeyboardEvent): boolean {
+  /** Check if a key event is the Search Palette Files shortcut (Cmd+O) */
+  static isFileSearchKey(e: KeyboardEvent): boolean {
     return (
       e.code === 'KeyO' &&
       e.metaKey &&
@@ -261,16 +260,33 @@ export class InputRouter {
     );
   }
 
-  /** Set the quick file search instance (called after construction) */
-  setQuickFileSearch(qfs: QuickFileSearch): void {
-    this.quickFileSearch = qfs;
-  }
-
-  /** Called by QuickFileSearch when it self-closes (accept, click-outside, Esc). */
-  exitQuickFileSearch(): void {
-    if (this.mode === Mode.QuickFileSearch) {
+  /** Called by SearchPalette whenever it closes itself (accept, Esc, click, toggle). */
+  exitSearchPalette(): void {
+    if (this.mode === Mode.SearchPalette) {
       this.toNormal();
     }
+  }
+
+  /**
+   * Cmd+Shift+P (Commands) / Cmd+O (Files): open the palette on `scope`; while
+   * it is open, close it when `scope` is the active tab, otherwise switch tabs.
+   */
+  private toggleSearchPalette(scope: ScopeId): void {
+    const palette = this.searchPalette;
+    if (!palette) return;
+    if (palette.isVisible) {
+      if (palette.activeScope === scope) palette.close();
+      else palette.switchTo(scope);
+      return;
+    }
+    // Force-exit transient/overlay modes before opening
+    if (this.mode === Mode.Selection) this.exitSelectionMode();
+    else if (this.mode === Mode.Hint) this.hints.exit();
+    else if (this.mode === Mode.PromptDialog) this.promptDialog?.close();
+    else if (this.mode === Mode.InlineAI) this.compositor.closeInlineAI();
+    else if (this.mode === Mode.QuickOverview) this.quickOverview?.close();
+    palette.open(scope);
+    this.setMode(Mode.SearchPalette);
   }
 
   /** Set the quick overview dialog instance (called after construction) */
@@ -313,7 +329,7 @@ export class InputRouter {
     if (!this.promptDialog || this.promptDialog.isVisible) return;
     if (this.mode === Mode.Selection) this.exitSelectionMode();
     else if (this.mode === Mode.Hint) this.hints.exit();
-    else if (this.mode === Mode.CommandPalette) this.commandPalette?.close();
+    else if (this.mode === Mode.SearchPalette) this.searchPalette?.close({ notify: false });
     else if (this.mode === Mode.InlineAI) this.compositor.closeInlineAI();
     else if (this.mode === Mode.QuickOverview) this.quickOverview?.close();
     void this.promptDialog.open();
@@ -404,27 +420,11 @@ export class InputRouter {
         return;
       }
 
-      // Global: Cmd+Shift+P — toggle Command Palette (works from any mode)
+      // Global: Cmd+Shift+P — Search Palette on the Commands tab (works from any mode)
       if (InputRouter.isCommandPaletteKey(e)) {
         e.preventDefault();
         e.stopPropagation();
-        if (this.commandPalette) {
-          if (this.commandPalette.isVisible) {
-            this.commandPalette.close();
-            this.toNormal();
-          } else {
-            // Force-exit current mode before opening palette
-            if (this.mode === Mode.Selection) {
-              this.exitSelectionMode();
-            } else if (this.mode === Mode.Hint) {
-              this.hints.exit();
-            } else if (this.mode === Mode.QuickOverview) {
-              this.quickOverview?.close();
-            }
-            this.commandPalette.open();
-            this.setMode(Mode.CommandPalette);
-          }
-        }
+        this.toggleSearchPalette('commands');
         return;
       }
 
@@ -458,9 +458,11 @@ export class InputRouter {
         if (this.mode === Mode.Normal) {
           this.setMode(Mode.Compositor);
         } else {
-          // The overview is a full-screen scrim: leaving its mode without
-          // closing it would strand a visible dialog that no longer routes keys.
+          // The overview and the Search Palette are full-screen scrims: leaving
+          // their mode without closing them would strand a visible dialog that
+          // no longer routes keys.
           if (this.mode === Mode.QuickOverview) this.quickOverview?.close();
+          else if (this.mode === Mode.SearchPalette) this.searchPalette?.close({ notify: false });
           this.toNormal();
         }
         return;
@@ -479,12 +481,10 @@ export class InputRouter {
           this.compositor.soundEngine.play('hint.cancel');
           this.hints.exit();
           this.toNormal();
-        } else if (this.mode === Mode.CommandPalette) {
-          this.commandPalette?.close();
-          this.toNormal();
-        } else if (this.mode === Mode.QuickFileSearch) {
-          this.quickFileSearch?.close();
-          this.toNormal();
+        } else if (this.mode === Mode.SearchPalette) {
+          // close() reports back through exitSearchPalette → toNormal.
+          if (this.searchPalette?.isVisible) this.searchPalette.close();
+          else this.toNormal();
         } else if (this.mode === Mode.QuickOverview) {
           this.quickOverview?.close();
         } else if (this.mode === Mode.PromptDialog) {
@@ -559,25 +559,11 @@ export class InputRouter {
         return;
       }
 
-      // Global: Cmd+O — toggle quick file search (works from any non-overlay mode)
-      if (InputRouter.isQuickFileSearchKey(e)) {
+      // Global: Cmd+O — Search Palette on the Files tab (works from any non-overlay mode)
+      if (InputRouter.isFileSearchKey(e)) {
         e.preventDefault();
         e.stopPropagation();
-        if (!this.quickFileSearch) return;
-        if (this.quickFileSearch.isVisible) {
-          this.quickFileSearch.close();
-          this.toNormal();
-        } else {
-          // Force-exit transient/overlay modes before opening
-          if (this.mode === Mode.Selection) this.exitSelectionMode();
-          else if (this.mode === Mode.Hint) this.hints.exit();
-          else if (this.mode === Mode.CommandPalette) this.commandPalette?.close();
-          else if (this.mode === Mode.PromptDialog) this.promptDialog?.close();
-          else if (this.mode === Mode.InlineAI) this.compositor.closeInlineAI();
-          else if (this.mode === Mode.QuickOverview) this.quickOverview?.close();
-          void this.quickFileSearch.open();
-          this.setMode(Mode.QuickFileSearch);
-        }
+        this.toggleSearchPalette('files');
         return;
       }
 
@@ -592,7 +578,7 @@ export class InputRouter {
           // Force-exit transient modes before opening
           if (this.mode === Mode.Selection) this.exitSelectionMode();
           else if (this.mode === Mode.Hint) this.hints.exit();
-          else if (this.mode === Mode.CommandPalette) this.commandPalette?.close();
+          else if (this.mode === Mode.SearchPalette) this.searchPalette?.close({ notify: false });
           else if (this.mode === Mode.InlineAI) this.compositor.closeInlineAI();
           else if (this.mode === Mode.QuickOverview) this.quickOverview?.close();
           void this.promptDialog.open();
@@ -657,15 +643,13 @@ export class InputRouter {
         return;
       }
 
-      // Quick File Search mode: let typing flow to the <input>; intercept
-      // navigation keys (Enter/Cmd+Enter/Arrows/Esc/Ctrl-P/N).
-      if (this.mode === Mode.QuickFileSearch) {
-        if (this.quickFileSearch?.handleKey(e)) {
+      // Search Palette mode: typing flows to the <input>; the palette intercepts
+      // Tab (scope), navigation, accept and copy keys. Every close reports back
+      // through exitSearchPalette.
+      if (this.mode === Mode.SearchPalette) {
+        if (this.searchPalette?.handleKey(e)) {
           e.preventDefault();
           e.stopPropagation();
-          if (!this.quickFileSearch.isVisible) {
-            this.toNormal();
-          }
         }
         return;
       }
@@ -688,13 +672,6 @@ export class InputRouter {
           e.preventDefault();
           e.stopPropagation();
         }
-        return;
-      }
-
-      // Command Palette mode: let typing flow to the <input>, only
-      // intercept navigation keys (ArrowUp/Down, Ctrl+N/P, Enter, Tab, Escape).
-      if (this.mode === Mode.CommandPalette) {
-        this.handleCommandPaletteKey(e);
         return;
       }
 
@@ -1299,30 +1276,6 @@ export class InputRouter {
       // Any other key cancels
       this.toNormal();
     }
-  }
-
-  // ─── Command Palette Mode ──────────────────────────────────────
-  // The palette has its own <input> that receives typing events.
-  // We only intercept navigation keys (ArrowUp/Down, Ctrl+N/P, Enter, Tab).
-  // All other keys pass through to the input element.
-
-  private handleCommandPaletteKey(e: KeyboardEvent): void {
-    if (!this.commandPalette) {
-      this.toNormal();
-      return;
-    }
-
-    const consumed = this.commandPalette.handleKey(e);
-    if (consumed) {
-      e.preventDefault();
-      e.stopPropagation();
-      // If the action closed the palette, return to Normal
-      if (!this.commandPalette.isVisible) {
-        this.toNormal();
-      }
-    }
-    // If not consumed (regular typing), do NOT preventDefault —
-    // let the event reach the <input> element naturally.
   }
 
   // ─── Dashboard Mode ────────────────────────────────────────────
