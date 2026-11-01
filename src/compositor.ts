@@ -5017,7 +5017,7 @@ export class Compositor {
     try {
       remote = await invoke('remote_harness_connect', { launch });
     } catch (error) {
-      console.error('[Krypton] Remote Harness connection failed:', error);
+      this.showNotification(`Remote Harness connection failed: ${error}`);
       return;
     }
     // spec 247: the next Current SSH launch to this destination prefills it.
