@@ -1,5 +1,6 @@
 use krypton_remote_protocol::{
-    RemoteMethod, RemoteWorkspace, RuntimeError, RuntimeFrame, MAX_FRAME_BYTES, PROTOCOL_VERSION,
+    diff_stat, RemoteMethod, RemoteWorkspace, RuntimeError, RuntimeFrame,
+    CAPABILITY_WORKSPACE_DIFF_STAT, MAX_FRAME_BYTES, PROTOCOL_VERSION,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -77,6 +78,11 @@ struct RunParams {
     program: String,
     #[serde(default)]
     args: Vec<String>,
+    cwd: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CwdParams {
     cwd: String,
 }
 
@@ -189,6 +195,7 @@ async fn serve() -> Result<(), String> {
                 "runtime_overlays".to_string(),
                 "workspace_fs".to_string(),
                 "workspace_run".to_string(),
+                CAPABILITY_WORKSPACE_DIFF_STAT.to_string(),
             ],
         },
     )
@@ -205,6 +212,18 @@ async fn serve() -> Result<(), String> {
             terminate_all(&agents).await;
             let _ = tokio::fs::remove_dir_all(&runtime_root).await;
             return Ok(());
+        }
+        if method == RemoteMethod::WorkspaceDiffStat {
+            // Polled every few seconds per window showing this Harness (spec
+            // 220): answer it off the request loop, so a slow repo never holds
+            // up agent input queued behind it.
+            let writer = writer.clone();
+            let root = root.clone();
+            tokio::spawn(async move {
+                let outcome = workspace_diff_stat(params, &root).await;
+                let _ = write_response(&writer, id, outcome).await;
+            });
+            continue;
         }
         let outcome = handle_request(
             method,
@@ -233,7 +252,9 @@ async fn handle_request(
     next_agent_id: &mut u64,
 ) -> Result<Value, RuntimeError> {
     match method {
-        RemoteMethod::RuntimeShutdown => unreachable!("handled by serve loop"),
+        RemoteMethod::RuntimeShutdown | RemoteMethod::WorkspaceDiffStat => {
+            unreachable!("handled by serve loop")
+        }
         RemoteMethod::AgentSpawn => {
             let params: AgentSpawnParams = parse_params(params)?;
             let cwd = resolve_scoped(root, &params.cwd).await?;
@@ -479,6 +500,20 @@ async fn handle_request(
             }))
         }
     }
+}
+
+/// The window rail's diff stat for a workspace cwd (specs 220, 247): the same
+/// `diff_stat::working_diff_stat` the app runs for a local project, so a remote
+/// Harness reports the counts a local one would.
+async fn workspace_diff_stat(params: Value, root: &Path) -> Result<Value, RuntimeError> {
+    let params: CwdParams = parse_params(params)?;
+    let cwd = resolve_scoped(root, &params.cwd).await?;
+    let stat =
+        tokio::task::spawn_blocking(move || diff_stat::working_diff_stat(&cwd.to_string_lossy()))
+            .await
+            .map_err(|e| RuntimeError::new("diff_stat_failed", e.to_string()))?
+            .map_err(|e| RuntimeError::new("diff_stat_failed", e))?;
+    serde_json::to_value(stat).map_err(|e| RuntimeError::new("diff_stat_failed", e.to_string()))
 }
 
 fn overlay_path(

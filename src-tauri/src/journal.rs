@@ -157,7 +157,7 @@ pub struct ProjectDigest {
 
     pub commits: Vec<CommitEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub uncommitted: Option<git::WorkingDiffStat>,
+    pub uncommitted: Option<krypton_remote_protocol::diff_stat::WorkingDiffStat>,
     pub reviews: Vec<ReviewEntry>,
     pub artifacts: Vec<ArtifactEntry>,
 }
@@ -518,7 +518,8 @@ fn project_digest(cwd: &Path, start: i64, end: i64, truncated: &mut bool) -> Pro
     // Uncommitted work is a property of *now*, not of the day — it only belongs
     // to a note for a day that is still running.
     if end > now_ms() {
-        digest.uncommitted = git::working_diff_stat(&digest.path).ok();
+        digest.uncommitted =
+            krypton_remote_protocol::diff_stat::working_diff_stat(&digest.path).ok();
     }
 
     digest.reviews = collect_reviews(cwd, start, end);

@@ -4,6 +4,9 @@
 > Date: 2026-06-11
 > Milestone: M8 — Polish
 > Builds on: spec 38 (Diff View Window) · ADR-0008 · `CONTEXT.md` [[Working diff]]
+> Amended (2026-11-01, spec 220's SSH amendment): `harness:lane-idle` is now
+> `{ cwd: string; runtimeId: string | null }`. A non-null `runtimeId` marks an SSH Harness
+> (spec 247), whose `cwd` is a path on the remote host.
 
 ## Problem
 

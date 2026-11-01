@@ -147,7 +147,7 @@ import { projectBadge, type ProjectBadge } from './window-footer-project';
 import { nextTitleLabel } from './window-title-label';
 import { syncTitlebarToggles } from './titlebar-toggles';
 import { diffStatBadge, type DiffStatBadge } from './window-footer-diff-stat';
-import { diffStatStore } from './diff-stat-store';
+import { diffStatKey, diffStatStore, type DiffStatSource } from './diff-stat-store';
 import type { ViewBus } from './view-bus';
 import { SYSTEM_SOURCE, type ViewAddress } from './view-bus-types';
 import {
@@ -574,9 +574,9 @@ export class Compositor {
   private projectBadgeKeyByWindow = new Map<WindowId, string>();
   /** spec 220: per-window subscription to the diff-stat poll of its repo. */
   private diffStatUnsubscribeByWindow = new Map<WindowId, () => void>();
-  /** spec 220: the repo root each window's rail is currently reporting on.
-   *  Also the staleness guard for the async root resolution below. */
-  private diffStatRootByWindow = new Map<WindowId, string | null>();
+  /** spec 220: the `diffStatKey` each window's rail is currently reporting on
+   *  (null: no repo). Also the staleness guard for the async root resolution. */
+  private diffStatSourceByWindow = new Map<WindowId, string | null>();
   /** spec 220: each window's rendered counts; skips no-op repaints, which is
    *  what keeps a poll that finds no change from touching the DOM at all. */
   private diffStatKeyByWindow = new Map<WindowId, string>();
@@ -1315,12 +1315,19 @@ export class Compositor {
 
     // spec 220: a lane finishing a turn is the moment the diff stat is knowably
     // stale, so push the poll rather than waiting out its interval. One
-    // subscription for the whole compositor: the store is keyed by repo root and
-    // ignores a root no window is watching, so this costs nothing when the rail
-    // is not showing counts for that repo.
+    // subscription for the whole compositor: the store is keyed by repo and
+    // ignores one no window is watching, so this costs nothing when the rail
+    // is not showing counts for that repo. An SSH Harness's cwd is a remote
+    // path (spec 247): it names its runtime's source and is never resolved
+    // against local git.
     bus.onSignal({ kind: 'harness:lane-idle' }, (sig) => {
-      void this.resolveRepoRoot(sig.value.cwd).then((root) => {
-        if (root) diffStatStore.refresh(root);
+      const { cwd, runtimeId } = sig.value;
+      if (runtimeId !== null) {
+        diffStatStore.refresh({ kind: 'ssh', runtimeId, cwd });
+        return;
+      }
+      void this.resolveRepoRoot(cwd).then((root) => {
+        if (root) diffStatStore.refresh({ kind: 'local', root });
       });
     });
 
@@ -1927,7 +1934,7 @@ export class Compositor {
    */
   private async syncWindowDiffStat(win: KryptonWindow): Promise<void> {
     const dir = this.focusedProjectDir(win);
-    const root = dir ? await this.resolveRepoRoot(dir) : null;
+    const source = dir ? await this.diffStatSource(win, dir) : null;
 
     // The window may have closed or moved on while git answered.
     if (!this.windows.has(win.id)) return;
@@ -1936,26 +1943,39 @@ export class Compositor {
     // — so without this the slower, older answer would win and leave the rail
     // reporting the pane the user just left.
     if (this.focusedProjectDir(win) !== dir) return;
-    if (this.diffStatRootByWindow.has(win.id) && this.diffStatRootByWindow.get(win.id) === root) {
+    const key = source ? diffStatKey(source) : null;
+    if (this.diffStatSourceByWindow.has(win.id) && this.diffStatSourceByWindow.get(win.id) === key) {
       // Same repo: keep the subscription and just re-render. Cheap — the
       // key compare below drops it before it touches the DOM.
-      this.renderWindowDiffStat(win, root ? diffStatBadge(diffStatStore.snapshot(root)) : null);
+      this.renderWindowDiffStat(win, source ? diffStatBadge(diffStatStore.snapshot(source)) : null);
       return;
     }
 
     this.diffStatUnsubscribeByWindow.get(win.id)?.();
     this.diffStatUnsubscribeByWindow.delete(win.id);
-    this.diffStatRootByWindow.set(win.id, root);
+    this.diffStatSourceByWindow.set(win.id, key);
 
-    if (!root) {
+    if (!source) {
       this.renderWindowDiffStat(win, null);
       return;
     }
     const render = (): void =>
-      this.renderWindowDiffStat(win, diffStatBadge(diffStatStore.snapshot(root)));
-    this.diffStatUnsubscribeByWindow.set(win.id, diffStatStore.subscribe(root, render));
+      this.renderWindowDiffStat(win, diffStatBadge(diffStatStore.snapshot(source)));
+    this.diffStatUnsubscribeByWindow.set(win.id, diffStatStore.subscribe(source, render));
     // A repo already being polled for another window has counts to show now.
     render();
+  }
+
+  /**
+   * spec 220: where the focused view's counts come from. An SSH Harness's
+   * directory is a path on the remote host (spec 247), so its runtime answers;
+   * resolving that path locally would find nothing, or a same-named local repo.
+   */
+  private async diffStatSource(win: KryptonWindow, dir: string): Promise<DiffStatSource | null> {
+    const workspace = this.focusedContentView(win)?.getWorkspace?.();
+    if (workspace?.kind === 'ssh') return { kind: 'ssh', runtimeId: workspace.runtimeId, cwd: dir };
+    const root = await this.resolveRepoRoot(dir);
+    return root ? { kind: 'local', root } : null;
   }
 
   /**
@@ -2006,13 +2026,19 @@ export class Compositor {
     el.setAttribute('aria-label', badge.title);
   }
 
-  /** The working directory the window's rail currently answers for: the active
-   *  tab's focused pane's content view. Shared by the project badge and the diff
-   *  stat, which must never disagree about whose project they are describing. */
-  private focusedProjectDir(win: KryptonWindow): string | null {
+  /** The active tab's focused pane's content view — what the window's rail
+   *  currently answers for. */
+  private focusedContentView(win: KryptonWindow): ContentView | null {
     const tab = win.tabs[win.activeTabIndex];
     const pane = tab ? this.findPaneInTree(tab.paneTree, tab.focusedPaneId) : null;
-    return pane?.contentView?.getWorkingDirectory?.() ?? null;
+    return pane?.contentView ?? null;
+  }
+
+  /** The working directory the window's rail currently answers for. Shared by
+   *  the project badge and the diff stat, which must never disagree about whose
+   *  project they are describing. */
+  private focusedProjectDir(win: KryptonWindow): string | null {
+    return this.focusedContentView(win)?.getWorkingDirectory?.() ?? null;
   }
 
   /** spec 219: follow the active tab's focused content view and name its project
@@ -5346,7 +5372,7 @@ export class Compositor {
     // ref-counted), so a closed workspace costs nothing.
     this.diffStatUnsubscribeByWindow.get(id)?.();
     this.diffStatUnsubscribeByWindow.delete(id);
-    this.diffStatRootByWindow.delete(id);
+    this.diffStatSourceByWindow.delete(id);
     this.diffStatKeyByWindow.delete(id);
 
     // Exit maximize mode if the maximized window is being closed

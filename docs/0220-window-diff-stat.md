@@ -3,6 +3,8 @@
 > Status: Implemented
 > Date: 2026-08-14
 > Milestone: M9 — harness observability
+> Amended (2026-11-01): an SSH Harness (spec 247) reports its counts through its remote
+> runtime. See [SSH Harness](#ssh-harness-spec-247).
 
 ## Problem
 
@@ -84,7 +86,7 @@ project, not a file.
 
 | File | Change |
 |------|--------|
-| `src-tauri/src/git.rs` | **New** `WorkingDiffStat` + `working_diff_stat(cwd)`; extract the untracked walk's caps so the stat and the diff agree on what counts |
+| `src-tauri/src/git.rs` | **New** `WorkingDiffStat` + `working_diff_stat(cwd)`; extract the untracked walk's caps so the stat and the diff agree on what counts. Since the SSH amendment these live in `src-tauri/remote-protocol/src/diff_stat.rs` |
 | `src-tauri/src/commands.rs` | **New** `working_diff_stat` command wrapping the above |
 | `src-tauri/src/lib.rs` | Register the command in `generate_handler!` |
 | `src/window-footer-diff-stat.ts` | **New.** Pure formatting: counts → `{ added, removed, title } \| null` |
@@ -104,7 +106,7 @@ project, not a file.
 ### Data Structures
 
 ```rust
-// src-tauri/src/git.rs
+// src-tauri/remote-protocol/src/diff_stat.rs (was src-tauri/src/git.rs)
 
 /// Uncommitted line volume for the repo containing a cwd — the rail readout
 /// behind spec 220. Deliberately carries no diff text.
@@ -151,15 +153,19 @@ export function diffStatBadge(stat: WorkingDiffStat | null): DiffStatBadge | nul
  *  4 s is ~0.7% of one core for a repo with at least one visible window. */
 export const DIFF_STAT_POLL_MS = 4_000;
 
+export type DiffStatSource =
+  | { kind: 'local'; root: string }
+  | { kind: 'ssh'; runtimeId: string; cwd: string }; // see "SSH Harness"
+
 export class DiffStatStore {
-  /** Ref-counted: the first subscriber for a root starts its timer and fires an
+  /** Ref-counted: the first subscriber for a repo starts its timer and fires an
    *  immediate fetch; the last one clears it. Returns the unsubscribe. */
-  subscribe(repoRoot: string, callback: () => void): () => void;
-  /** Last known counts for a root, or `null` before the first fetch lands. */
-  snapshot(repoRoot: string): WorkingDiffStat | null;
+  subscribe(source: DiffStatSource, callback: () => void): () => void;
+  /** Last known counts for a repo, or `null` before the first fetch lands. */
+  snapshot(source: DiffStatSource): WorkingDiffStat | null;
   /** Out-of-band refresh (lane quiet point). No-op without subscribers; coalesced
    *  against an in-flight fetch. */
-  refresh(repoRoot: string): void;
+  refresh(source: DiffStatSource): void;
 }
 export const diffStatStore: DiffStatStore;
 ```
@@ -171,6 +177,7 @@ export const diffStatStore: DiffStatStore;
 | Command | Signature | Notes |
 |---------|-----------|-------|
 | `working_diff_stat` | `(cwd: String) -> Result<WorkingDiffStat, String>` | Runs from the repo root. `Err("not a git repository")` outside a work tree |
+| `remote_harness_request` method `diff_stat` | `{ runtimeId, method: 'diff_stat', params: { cwd } }` → `WorkingDiffStat` | SSH Harness only; see "SSH Harness" |
 
 Backend git invocations, in order:
 
@@ -191,14 +198,18 @@ No new IPC event: the frontend pulls.
 ```
 1. syncWindowFooter(win) runs (tab visible / window created / pane focus moved)
 2. syncWindowDiffStat(win) reads the focused pane's getWorkingDirectory()
-3. resolveRepoRoot(cwd) — already cached per cwd — yields the repo root, or null
-4. null  → the element is removed, the window's subscription is dropped
-   root  → subscribe(root) on diffStatStore, re-rendering on every tick
-5. First subscriber for that root: immediate invoke('working_diff_stat'), then a
-   4 s interval; further windows on the same root ride the same timer
-6. A lane finishing a turn emits ViewBus `harness:lane-idle { cwd }`; the
-   compositor resolves its root and calls diffStatStore.refresh(root) — the
-   counts update at the turn boundary, not up to 4 s later
+3. SSH Harness (getWorkspace().kind === 'ssh') → source { ssh, runtimeId, cwd };
+   otherwise resolveRepoRoot(cwd) — already cached per cwd — yields the repo
+   root (source { local, root }), or null
+4. null    → the element is removed, the window's subscription is dropped
+   source  → subscribe(source) on diffStatStore, re-rendering on every tick
+5. First subscriber for that source: immediate fetch (local invoke
+   'working_diff_stat', or the runtime's diff_stat), then a 4 s interval;
+   further windows on the same repo ride the same timer
+6. A lane finishing a turn emits ViewBus `harness:lane-idle { cwd, runtimeId }`;
+   the compositor refreshes the SSH source for a non-null runtimeId, otherwise
+   resolves cwd to its root and calls diffStatStore.refresh — the counts update
+   at the turn boundary, not up to 4 s later
 7. document.visibilitychange → hidden stops every timer; visible restarts them
    and fires one immediate fetch, so a returning user never reads a stale number
 8. renderWindowDiffStat() compares against the window's cached "+a -r" key and
@@ -264,6 +275,9 @@ None. `DIFF_STAT_POLL_MS` is a single exported constant. A TOML knob is delibera
 | App hidden / another Space | Every timer stops; one immediate fetch on return |
 | Poll finds no change | Cached-key compare returns early; zero DOM writes |
 | Window closed mid-flight | Unsubscribe in `closeWindow()`; a late response finds no subscriber and is dropped |
+| SSH Harness | Counts come from its remote runtime; the remote path is never resolved against local git, where it would find nothing or a same-named local repo. A remote directory outside a repo answers `not a git repository` on each poll and renders nothing |
+| SSH Harness on a helper older than this amendment | It advertises no `workspace_diff_stat` capability, so the request is refused locally and no element renders. The helper is replaced on the next connection that can resolve the bundled one (spec 247) |
+| SSH Harness disconnected | The request fails, the element is removed; the next poll after reconnect brings it back |
 
 ## Out of Scope
 
@@ -276,6 +290,32 @@ None. `DIFF_STAT_POLL_MS` is a single exported constant. A TOML knob is delibera
   priority hints own that.
 - **The workspace footer, live-assist (spec 208), and the loopback surfaces** — window rail only.
 - **Making it interactive** (clicking to open the Diff Window). Keyboard-first; `Cmd+P d` exists.
+
+## SSH Harness (spec 247)
+
+An SSH Harness's working directory is a path on the remote host. Before this amendment the
+compositor resolved it with local `git rev-parse`, which failed, so the rail showed no counts at
+all. When the same path also existed locally, it would have shown the local repo's counts.
+
+- **Source.** `syncWindowDiffStat` asks the focused view for `getWorkspace()`. For `kind: 'ssh'`
+  the store source is `{ kind: 'ssh', runtimeId, cwd }`, keyed `ssh:<runtimeId>:<cwd>`, and it is
+  fetched with `remote_harness_request` method `diff_stat`. Nothing is resolved locally. The
+  runtime resolves the repo root itself.
+- **One implementation.** `WorkingDiffStat` and `working_diff_stat` moved from `git.rs` to
+  `krypton_remote_protocol::diff_stat`, with the primitives `git.rs` shares with them
+  (`looks_binary`, `UNTRACKED_MAX_BYTES`, `parse_numstat_z`, `count_untracked_lines`,
+  `diff_base`). The app and the companion run the same code, so both report the same counts,
+  including the untracked additions that a `git diff HEAD` run through `run` would miss.
+- **Runtime.** `RemoteMethod::WorkspaceDiffStat { cwd }` is confined to the workspace like every
+  other workspace method. It runs on a blocking task outside the request loop, so a slow repo
+  polled every 4 s never delays agent input queued behind it.
+- **Capability gate.** The runtime advertises `workspace_diff_stat` in its Hello. A helper built
+  before this method fails to parse the request frame and exits (observed: `invalid frame: unknown
+  variant`), which would disconnect the whole Harness. So `RemoteRuntimeClient::request` refuses
+  any method whose `RemoteMethod::required_capability()` the runtime did not advertise. Protocol
+  stays 1: a bump would turn a stale bundled Linux helper into a failed connection instead of a
+  missing readout.
+- **Lane quiet point.** `harness:lane-idle` carries `runtimeId` (null for a local Harness).
 
 ## Deviations During Implementation
 

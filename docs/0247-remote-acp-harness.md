@@ -54,7 +54,7 @@ The execution target belongs to the whole Harness, not an individual lane. Every
 | File | Change |
 |------|--------|
 | `src-tauri/src/remote_harness.rs` | New SSH manager, framed-protocol client, request registry, reverse forward, and teardown. |
-| `src-tauri/remote-protocol/` | New Serde-only crate shared by the app and companion. |
+| `src-tauri/remote-protocol/` | New crate shared by the app and companion: the Serde wire types, plus `diff_stat`, the window rail's diff stat (spec 220) that both ends compute. |
 | `src-tauri/remote-runtime/` | New headless `krypton-remote` package with no Tauri/WebKit/audio dependency. |
 | `src-tauri/remote-binaries/`, `scripts/stage-remote-runtime.sh` | Stage the host helper as an app resource for development and packaging. |
 | `.github/workflows/release.yml` | Build four platform helpers and SHA-256 files with the macOS app, then publish them together on one Krypton release. |
@@ -188,7 +188,7 @@ No project path, backend argument, environment value, or user text appears in th
 ```rust
 #[serde(tag = "stream", rename_all = "snake_case")]
 enum RuntimeFrame {
-    Hello { protocol: u16, app_version: String, workspace: RemoteWorkspace },
+    Hello { protocol: u16, app_version: String, workspace: RemoteWorkspace, capabilities: Vec<String> },
     Request { id: u64, method: RemoteMethod, params: serde_json::Value },
     Response { id: u64, result: Option<Value>, error: Option<RuntimeError> },
     Event { topic: String, payload: Value },
@@ -208,10 +208,18 @@ enum RemoteMethod {
     WorkspaceStat,
     WorkspaceReadDir,
     WorkspaceRun,
+    WorkspaceDiffStat, // gated by the `workspace_diff_stat` capability
 }
 ```
 
 Frames are newline-delimited UTF-8 JSON with a 32 MiB decoded-line cap. ACP values remain nested under `params`/`payload`; neither side parses agent text as shell. Unknown methods, duplicate ids, oversized frames, and version mismatch close with a typed error. `WorkspaceRemove` exists for exact project-file cleanup (currently Cursor MCP entries); directories require `recursive: true`, and the companion rejects paths outside the canonical workspace. Junie/Cline overlays use the dedicated runtime-overlay methods, live under a mode-0700 temporary directory outside the repository, and are removed with the companion.
+
+A runtime that predates a method fails to parse its request frame and exits, which disconnects
+the whole Harness. The companion's Hello therefore lists `capabilities`, and
+`RemoteRuntimeClient::request` refuses, without sending it, any method whose
+`RemoteMethod::required_capability()` the runtime did not advertise. `WorkspaceDiffStat` is the
+first gated method (capability `workspace_diff_stat`). The protocol version stays 1, so a stale
+helper still connects and only that one readout is missing.
 
 The companion emits `agent_stdout`, `agent_stderr`, and `agent_exit` events keyed by remote child id. Local `acp.rs` feeds stdout JSON into its existing dispatcher and retains request correlation, permissions, fs-write review, session state, and `acp-event-<session>` emission. `WorkspaceRun` uses `Command::new` with argv, never a shell, and accepts only the executable families required by existing Harness operations.
 
@@ -233,7 +241,9 @@ Remote mode never falls back to local `std::fs` or local `run_command` for a rem
 - ACP `fs/*` validation, diff preview, approval, read, and write;
 - project `.mcp.json` loading plus backend-specific Cursor/Cline overlays;
 - Harness memory and frontend-routed peering/attention tools through the reverse tunnel;
-- Git branch and explicit working/staged diff reads through the remote command allowlist.
+- Git branch and explicit working/staged diff reads through the remote command allowlist;
+- the window rail's diff stat (spec 220) through `WorkspaceDiffStat`, which runs the app's own
+  `diff_stat::working_diff_stat` on the remote host, outside the request loop.
 
 Unsupported operations are visibly disabled and never fall back locally. The current implementation disables local Helix/Markdown opens for remote files, File Manager, Vault, Pencil, Hurl, tickets, docs, artifacts, daily notes, Xenon, usage persistence, and local image resolution. Harness memory remains available in-memory through the reverse tunnel; project-backed Harness persistence and loopback project browsers are deferred until the hook server has target-aware storage.
 Project-backed MCP tools are omitted from `tools/list` for this in-memory
@@ -331,7 +341,10 @@ If SSH drops, the Harness becomes `disconnected`, in-flight requests become outc
   passive CWD, and host-qualified workspace identity; the full existing
   frontend suite guards the shared ACP/Harness UI.
 - Direct stdio smoke tests cover hello/shutdown, workspace write/read/remove,
-  agent stdout forwarding, and agent exit.
+  agent stdout forwarding, and agent exit. `WorkspaceDiffStat` answered a temp repo with
+  `+5 -1` across 2 files (one untracked), refused `/etc` with `path_outside_workspace`, and a
+  `WorkspaceStat` sent after it was answered first. The pre-change helper exited on the same
+  request with `invalid frame: unknown variant`, which is why the method is capability-gated.
 - `npm test`, `npm run check`, `npm run build`, `cargo fmt -- --check`, targeted
   `cargo clippy -D warnings`, and sequential `cargo test --workspace` pass.
 - Manual two-machine acceptance remains required for two lanes, gated write, memory, network loss, resume, and clean remote exit.

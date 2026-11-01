@@ -51,7 +51,7 @@ export interface ArtifactEntry {
   at: number;
 }
 
-/** Mirrors `git::WorkingDiffStat` in Rust (spec 220). */
+/** Mirrors `krypton_remote_protocol::diff_stat::WorkingDiffStat` in Rust (spec 220). */
 export interface WorkingDiffStat {
   repoRoot: string;
   files: number;

@@ -129,6 +129,9 @@ pub struct RemoteRuntimeClient {
     id: String,
     target: ResolvedTarget,
     workspace: RwLock<RemoteWorkspace>,
+    /// What the runtime advertised in its Hello; gates `RemoteMethod`s added
+    /// after protocol 1 shipped (`RemoteMethod::required_capability`).
+    capabilities: RwLock<Vec<String>>,
     control_socket: PathBuf,
     borrowed_master: bool,
     stdin: Mutex<Option<ChildStdin>>,
@@ -147,6 +150,15 @@ impl RemoteRuntimeClient {
     pub async fn request(&self, method: RemoteMethod, params: Value) -> Result<Value, String> {
         if self.disconnected.load(Ordering::Relaxed) {
             return Err("remote Harness is disconnected".to_string());
+        }
+        if let Some(capability) = method.required_capability() {
+            let advertised = self
+                .capabilities
+                .read()
+                .is_ok_and(|capabilities| capabilities.iter().any(|c| c == capability));
+            if !advertised {
+                return Err(format!("remote runtime does not support {capability}"));
+            }
         }
         let id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
@@ -1019,6 +1031,7 @@ async fn start_remote_runtime(
         id: runtime_id.clone(),
         target: target.clone(),
         workspace: RwLock::new(requested_workspace.clone()),
+        capabilities: RwLock::new(Vec::new()),
         control_socket,
         borrowed_master,
         stdin: Mutex::new(Some(stdin)),
@@ -1302,8 +1315,12 @@ async fn run_runtime_reader<R>(
             RuntimeFrame::Hello {
                 protocol,
                 workspace,
+                capabilities,
                 ..
             } => {
+                if let Ok(mut advertised) = client.capabilities.write() {
+                    *advertised = capabilities;
+                }
                 let result = if protocol == PROTOCOL_VERSION {
                     Ok(workspace)
                 } else {
@@ -1405,6 +1422,7 @@ fn parse_workspace_method(method: &str) -> Result<RemoteMethod, String> {
         "stat" => Ok(RemoteMethod::WorkspaceStat),
         "read_dir" => Ok(RemoteMethod::WorkspaceReadDir),
         "run" => Ok(RemoteMethod::WorkspaceRun),
+        "diff_stat" => Ok(RemoteMethod::WorkspaceDiffStat),
         _ => Err(format!("unsupported remote workspace method: {method}")),
     }
 }

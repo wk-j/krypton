@@ -1,8 +1,13 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub mod diff_stat;
+
 pub const PROTOCOL_VERSION: u16 = 1;
 pub const MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;
+
+/// Hello capability of a runtime that answers `WorkspaceDiffStat`.
+pub const CAPABILITY_WORKSPACE_DIFF_STAT: &str = "workspace_diff_stat";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -26,6 +31,21 @@ pub enum RemoteMethod {
     WorkspaceStat,
     WorkspaceReadDir,
     WorkspaceRun,
+    /// The window rail's `diff_stat::WorkingDiffStat` for a workspace cwd.
+    WorkspaceDiffStat,
+}
+
+impl RemoteMethod {
+    /// The Hello capability a runtime must advertise before this method may be
+    /// sent. A runtime that predates a method fails to parse its request frame
+    /// and exits, so a method added after protocol 1 shipped is gated here
+    /// rather than sent blind. `None`: every protocol-1 runtime handles it.
+    pub fn required_capability(&self) -> Option<&'static str> {
+        match self {
+            RemoteMethod::WorkspaceDiffStat => Some(CAPABILITY_WORKSPACE_DIFF_STAT),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

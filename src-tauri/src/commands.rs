@@ -745,8 +745,10 @@ pub fn review_thread_mark_guide(cwd: String, thread_id: String, ready: bool) -> 
 /// a few seconds apart per repo, so it deliberately returns totals rather than
 /// the diff `collect_working_diff` above builds.
 #[tauri::command]
-pub fn working_diff_stat(cwd: String) -> Result<crate::git::WorkingDiffStat, String> {
-    crate::git::working_diff_stat(&cwd)
+pub fn working_diff_stat(
+    cwd: String,
+) -> Result<krypton_remote_protocol::diff_stat::WorkingDiffStat, String> {
+    krypton_remote_protocol::diff_stat::working_diff_stat(&cwd)
 }
 
 /// spec 207: collect lightweight, deterministic Git status and line counts for

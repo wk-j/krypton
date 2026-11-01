@@ -1,9 +1,9 @@
 // Krypton — window status-bar diff stat (spec 220): the polling store.
 //
-// Keyed by *repo root*, not by window: four windows open on one project share
-// one timer and one git call per tick. Ref-counted like `UsageStore` — the
-// first subscriber for a root starts its poll, the last one stops it — so a
-// repo nobody is looking at costs nothing.
+// Keyed by *repo*, not by window: four windows open on one project share one
+// timer and one git call per tick. Ref-counted like `UsageStore` — the first
+// subscriber for a repo starts its poll, the last one stops it — so a repo
+// nobody is looking at costs nothing.
 //
 // Why polling at all, when ADR-0008 has the Diff Window refresh only at lane
 // quiet points: this readout is two integers with no scroll position to disturb,
@@ -16,6 +16,30 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import type { WorkingDiffStat } from './window-footer-diff-stat';
+
+/**
+ * Where a window's counts come from. A local project is keyed by its repo root.
+ * An SSH Harness's `cwd` is a path on the remote host (spec 247), so its counts
+ * come from that Harness's runtime — resolving the path locally would report
+ * nothing, or a same-named local repo.
+ */
+export type DiffStatSource =
+  | { kind: 'local'; root: string }
+  | { kind: 'ssh'; runtimeId: string; cwd: string };
+
+/** Store key: a local repo root, or the remote runtime plus its cwd. */
+export function diffStatKey(source: DiffStatSource): string {
+  return source.kind === 'local' ? source.root : `ssh:${source.runtimeId}:${source.cwd}`;
+}
+
+function fetchStat(source: DiffStatSource): Promise<WorkingDiffStat> {
+  if (source.kind === 'local') return invoke<WorkingDiffStat>('working_diff_stat', { cwd: source.root });
+  return invoke<WorkingDiffStat>('remote_harness_request', {
+    runtimeId: source.runtimeId,
+    method: 'diff_stat',
+    params: { cwd: source.cwd },
+  });
+}
 
 /**
  * Cadence per repo root.
@@ -44,6 +68,7 @@ const documentVisibility: VisibilitySource = {
 };
 
 interface RepoState {
+  source: DiffStatSource;
   stat: WorkingDiffStat | null;
   subscribers: Set<() => void>;
   timer: ReturnType<typeof setInterval> | null;
@@ -62,22 +87,22 @@ export class DiffStatStore {
     this.visibility = visibility;
   }
 
-  /** Last known counts for `repoRoot`, or `null` before the first fetch lands
+  /** Last known counts for `source`, or `null` before the first fetch lands
    *  (and after one that failed — an unreadable repo reports nothing rather
    *  than a stale number). */
-  snapshot(repoRoot: string): WorkingDiffStat | null {
-    return this.repos.get(repoRoot)?.stat ?? null;
+  snapshot(source: DiffStatSource): WorkingDiffStat | null {
+    return this.repos.get(diffStatKey(source))?.stat ?? null;
   }
 
   /** Watch one repo. Returns the unsubscribe; the last one out stops the poll. */
-  subscribe(repoRoot: string, callback: () => void): () => void {
+  subscribe(source: DiffStatSource, callback: () => void): () => void {
     this.bindVisibility();
-    const state = this.stateFor(repoRoot);
+    const state = this.stateFor(source);
     const wasEmpty = state.subscribers.size === 0;
     state.subscribers.add(callback);
     if (wasEmpty) {
-      void this.fetch(repoRoot);
-      this.startTimer(repoRoot, state);
+      void this.fetch(state);
+      this.startTimer(state);
     }
     return () => {
       state.subscribers.delete(callback);
@@ -85,7 +110,7 @@ export class DiffStatStore {
       this.stopTimer(state);
       // Keep the last snapshot: reopening a window on this repo then renders
       // the previous counts immediately instead of flashing empty for a tick.
-      this.repos.set(repoRoot, state);
+      this.repos.set(diffStatKey(source), state);
     };
   }
 
@@ -93,23 +118,25 @@ export class DiffStatStore {
    * Out-of-band refresh — a lane just went idle in this repo, so the counts are
    * knowably stale a tick early. No-op for a repo nobody is watching.
    */
-  refresh(repoRoot: string): void {
-    if (!this.repos.get(repoRoot)?.subscribers.size) return;
-    void this.fetch(repoRoot);
+  refresh(source: DiffStatSource): void {
+    const state = this.repos.get(diffStatKey(source));
+    if (!state?.subscribers.size) return;
+    void this.fetch(state);
   }
 
-  private stateFor(repoRoot: string): RepoState {
-    let state = this.repos.get(repoRoot);
+  private stateFor(source: DiffStatSource): RepoState {
+    const key = diffStatKey(source);
+    let state = this.repos.get(key);
     if (!state) {
-      state = { stat: null, subscribers: new Set(), timer: null, inFlight: null, again: false };
-      this.repos.set(repoRoot, state);
+      state = { source, stat: null, subscribers: new Set(), timer: null, inFlight: null, again: false };
+      this.repos.set(key, state);
     }
     return state;
   }
 
-  private startTimer(repoRoot: string, state: RepoState): void {
+  private startTimer(state: RepoState): void {
     if (state.timer !== null || this.hidden()) return;
-    state.timer = setInterval(() => void this.fetch(repoRoot), DIFF_STAT_POLL_MS);
+    state.timer = setInterval(() => void this.fetch(state), DIFF_STAT_POLL_MS);
   }
 
   private stopTimer(state: RepoState): void {
@@ -119,30 +146,30 @@ export class DiffStatStore {
 
   /** Single-flight per repo: a tick that lands while the previous git call is
    *  still running rides it rather than spawning a second one. */
-  private fetch(repoRoot: string): Promise<void> {
-    const state = this.stateFor(repoRoot);
+  private fetch(state: RepoState): Promise<void> {
     if (state.inFlight) {
       state.again = true;
       return state.inFlight;
     }
-    const request = this.fetchRepo(repoRoot, state).finally(() => {
+    const request = this.fetchRepo(state).finally(() => {
       state.inFlight = null;
       if (state.again) {
         state.again = false;
-        if (state.subscribers.size > 0) void this.fetch(repoRoot);
+        if (state.subscribers.size > 0) void this.fetch(state);
       }
     });
     state.inFlight = request;
     return request;
   }
 
-  private async fetchRepo(repoRoot: string, state: RepoState): Promise<void> {
+  private async fetchRepo(state: RepoState): Promise<void> {
     let next: WorkingDiffStat | null = null;
     try {
-      next = await invoke<WorkingDiffStat>('working_diff_stat', { cwd: repoRoot });
+      next = await fetchStat(state.source);
     } catch {
-      // A repo that vanished, a missing git, a call that raced a `rm -rf`: the
-      // rail drops the readout. Never an alert — a status line must not nag.
+      // A repo that vanished, a missing git, a call that raced a `rm -rf`, a
+      // disconnected remote Harness: the rail drops the readout. Never an
+      // alert — a status line must not nag.
       next = null;
     }
     state.stat = next;
@@ -159,13 +186,13 @@ export class DiffStatStore {
     if (this.visibilityBound) return;
     this.visibilityBound = true;
     this.visibility.onChange(() => {
-      for (const [repoRoot, state] of this.repos) {
+      for (const state of this.repos.values()) {
         if (state.subscribers.size === 0) continue;
         if (this.hidden()) {
           this.stopTimer(state);
         } else {
-          void this.fetch(repoRoot);
-          this.startTimer(repoRoot, state);
+          void this.fetch(state);
+          this.startTimer(state);
         }
       }
     });

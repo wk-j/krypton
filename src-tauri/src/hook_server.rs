@@ -6341,7 +6341,7 @@ fn collect_git_state(cwd: Option<&str>, untracked_all: bool) -> Value {
                     .read_to_end(&mut bytes)
                 {
                     Ok(_) => {
-                        if crate::git::looks_binary(&bytes) {
+                        if krypton_remote_protocol::diff_stat::looks_binary(&bytes) {
                             "<binary>".to_string()
                         } else {
                             String::from_utf8_lossy(&bytes)

@@ -1805,7 +1805,7 @@ export class AcpHarnessView implements ContentView {
       this.viewBus?.publishSignal({
         kind: 'harness:lane-idle',
         source: SYSTEM_SOURCE,
-        value: { cwd: this.projectDir },
+        value: { cwd: this.projectDir, runtimeId: this.remoteRuntimeId },
       });
       this.scheduleReferenceGitRefresh();
       this.scheduleGitBranchRefresh();
