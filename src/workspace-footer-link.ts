@@ -78,8 +78,9 @@ export class FooterLink {
    * Hidden entirely when no backend is configured, rather than shown greyed:
    * the footer's established idiom is to stay quiet about subsystems that are
    * switched off, not to advertise them. Coloured only when faulted (ADR-0017)
-   * — a healthy link is ambient and must not compete with the attention gauge.
-   * Static, like every other footer chip: no pulse, no animation.
+   * — a healthy link is ambient and must not compete with the attention gauge,
+   * so spec 350 shows it in detail density only. Static, like every other
+   * footer chip: no pulse, no animation.
    */
   render(detail: boolean): void {
     // One backend exists today; if a second ever publishes, the worst state
@@ -90,7 +91,7 @@ export class FooterLink {
         worst = entry;
       }
     }
-    if (!worst) {
+    if (!worst || (worst.state === 'linked' && !detail)) {
       this.el.hidden = true;
       this.el.replaceChildren();
       this.el.removeAttribute('title');

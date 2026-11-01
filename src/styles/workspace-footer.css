@@ -37,13 +37,18 @@
 }
 
 .krypton-workspace-footer__left {
-  /* Hug the mode + role/title content (min-width: 0 lets it shrink and
-     ellipsize when crowded) instead of reserving a fixed 190px column. The
-     center telemetry deck sits immediately after, so there is no dead gap —
-     the trade is that the deck shifts slightly as the left label's width
-     changes (e.g. NORMAL → COMMAND_PALETTE, or a focus change). */
+  /* Hug the mode chip (min-width: 0 lets it shrink and ellipsize when
+     crowded) instead of reserving a fixed column. The center deck sits
+     immediately after, so it shifts by the chip's width when a non-Normal
+     mode shows one (spec 350). */
   flex: 0 1 auto;
   min-width: 0;
+}
+
+/* Spec 350: compact Normal mode has no chip — drop the zone so the root's
+   flex gap does not indent the branch. */
+.krypton-workspace-footer__left:empty {
+  display: none;
 }
 
 .krypton-workspace-footer__center {
@@ -400,28 +405,7 @@
   opacity: 0.18;
 }
 
-.krypton-workspace-footer__hint {
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.48));
-}
-
-.krypton-workspace-footer__hint kbd {
-  border: 1px solid rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.22);
-  border-radius: var(--krypton-border-radius, 8px);
-  padding: 0 4px;
-  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.78));
-  font-family: inherit;
-  font-size: inherit;
-}
-
-.krypton-workspace-footer[data-density="compact"] .krypton-workspace-footer__segment--detail {
-  display: none;
-}
-
 .krypton-workspace-footer:not([data-music="on"]) .krypton-workspace-footer__music {
-  display: none;
-}
-
-.krypton-workspace-footer[data-music="on"] .krypton-workspace-footer__hint {
   display: none;
 }
 
@@ -471,8 +455,7 @@
 }
 
 @media (max-width: 700px) {
-  .krypton-workspace-footer__segment--process,
-  .krypton-workspace-footer__hint {
+  .krypton-workspace-footer__segment--process {
     display: none;
   }
 
@@ -489,8 +472,7 @@
 
   .krypton-workspace-footer__segment--role,
   .krypton-workspace-footer__segment--p2,
-  .krypton-workspace-footer__segment--p3,
-  .krypton-workspace-footer__hint {
+  .krypton-workspace-footer__segment--p3 {
     display: none;
   }
 

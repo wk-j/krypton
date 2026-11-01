@@ -4,6 +4,7 @@
 > Date: 2026-08-24
 > Milestone: visual chrome
 > Related: [121](./0121-workspace-status-bar.md), [235](./0235-harness-tool-output-palette.md)
+> Spec 350 (2026-11-01): the footer hint is removed, with its `<kbd>` markup, `parseHint` / `fillHint` and the `__hint` CSS. The other colours stand.
 
 ## Problem
 
@@ -93,8 +94,6 @@ stays the mode instrument, not the alphabet.
 | Counts / process | fg 0.52 | P2 |
 | Throughput | accent 0.70 | Live data; cyan earned |
 | Progress | fg 0.40 | P3 |
-| Hint body | fg 0.48 | |
-| Hint `<kbd>` | fg 0.78 + 1px border at fg 0.22 | No fill, no cyan |
 | Music track | fg 0.88 | |
 | Music flags | warning | Unchanged |
 | Music icon / time | fg 0.52 | Recede |
@@ -104,14 +103,7 @@ stays the mode instrument, not the alphabet.
 
 ### Hint markup
 
-`hintFor()` still returns the same strings. `renderRight` splits on ` · `.
-Each part's leading key token (`Cmd+P`, `Leader`, `Esc`, `arrows`,
-`h/j/k/l`, `#cancel`, `?`) becomes `<kbd>`; the rest is a text node.
-
-```
-Cmd+P lanes · #cancel running
-→ <kbd>Cmd+P</kbd> lanes · <kbd>#cancel</kbd> running
-```
+Removed by spec 350.
 
 ### CSS (shape)
 
@@ -127,12 +119,6 @@ Cmd+P lanes · #cancel running
   color: rgb(var(--krypton-success-rgb, 57, 255, 127));
   text-shadow: none;
 }
-.krypton-workspace-footer__hint kbd {
-  border: 1px solid rgba(var(--krypton-fg-rgb), 0.22);
-  border-radius: var(--krypton-border-radius, 8px);
-  padding: 0 4px;
-  color: rgba(var(--krypton-fg-rgb), 0.78);
-}
 ```
 
 Light scheme deletes the accent-mix rules for default / p0 / p2 / p3 / git
@@ -143,7 +129,6 @@ so dark kind colors flow. Keep ink as the footer `color` fallback.
 - `--krypton-success-rgb` on krypton-light / legacy-radiance: same token,
   different hue; do not hardcode `#39ff7f`.
 - Reduced motion: none. This is static color.
-- Hint with no key token (`no skills match`) stays plain text.
 - Dirty git: green ref + gold dot. Color is not the only signal (glyph +
   `aria-label` already say uncommitted).
 - Compact density / music-on: same colors; hiding rules unchanged.

@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-05-26
 > Milestone: M8 — Polish
+> Spec 350 (2026-11-01): compact density is now the git ref, a mode chip only outside Normal, and the right-zone exceptions (attention, program status, Rails findings/faults, backend-link faults, music). Mode `NORMAL`, role/title, cwd, counts, process and activity, a healthy link, quiet Rails states and the review gauges show in detail density only. The contextual hint is removed. Sections below are updated where they describe current behavior.
 
 ## Problem
 
@@ -47,7 +48,7 @@ Alternatives ruled out:
 | File | Change |
 |------|--------|
 | `src/workspace-footer.ts` *(new)* | Shared workspace footer controller, slot rendering, subscriptions, git branch cache, render/update logic. |
-| `src/workspace-footer-*.ts` | **Module layout:** `workspace-footer.ts` is the facade (public API, subscriptions, RAF/generation guard, bus state, root DOM). Siblings: `-format` (pure text helpers, `hintFor`, `parseHint`/`fillHint`), `-dom` (icons + segment builder), `-segments` (left/center segments), `-git` (`FooterGit` cache + debounce), and one right-zone component each: `-attention`, `-review-gauges`, `-typesafe`, `-link`, `-program-status`, `-music`. |
+| `src/workspace-footer-*.ts` | **Module layout:** `workspace-footer.ts` is the facade (public API, subscriptions, RAF/generation guard, bus state, root DOM). Siblings: `-format` (pure text helpers), `-dom` (icons + segment builder), `-segments` (left/center segments, density-gated), `-git` (`FooterGit` cache + debounce), and one right-zone component each: `-attention`, `-review-gauges`, `-link`, `-rails`, `-program-status`, `-music`. |
 | `src/music.ts` | Stop owning the whole fixed footer; expose music playback as a footer segment or register with `WorkspaceFooter`. |
 | `src/main.ts` | Construct the footer after `ViewBus`, `Compositor`, and `InputRouter` exist; pass it to `MusicPlayer` or register music after init. |
 | `src/input-router.ts` | Add `Leader ?` in compositor mode to toggle compact/detail status; notify mode callbacks when mode changes as already done. |
@@ -121,13 +122,13 @@ The class owns the existing bottom footer responsibility:
 ```html
 <div class="krypton-workspace-footer" role="status" aria-live="polite">
   <div class="krypton-workspace-footer__left">
-    <!-- P0: mode + focused role/title -->
+    <!-- mode chip: non-Normal modes; NORMAL in detail only (spec 350) -->
   </div>
   <div class="krypton-workspace-footer__center">
-    <!-- P1/P2/P3: cwd/git/process/counts/activity -->
+    <!-- git ref (compact); cwd · git · role/title · counts · process · activity (detail) -->
   </div>
   <div class="krypton-workspace-footer__right">
-    <!-- music segment when active; otherwise contextual hint -->
+    <!-- attention, program status, rails, link, reviews, priority, music; each hides when it has nothing to say in the current density -->
   </div>
 </div>
 ```
@@ -174,9 +175,9 @@ New input action:
 
 | Zone | Contents | Behavior |
 |------|----------|----------|
-| Left | Mode chip + focused pane role/title | Always visible; strongest space priority. Built by `composeRoleTitle`: the shell-embedded cwd is stripped from the title (`stripCwdToken`, matched against the focused cwd — exact or shell-abbreviated like `~/S/krypton`) so it is never duplicated with the center CWD segment, while real path arguments (`vim /tmp/a`) and separators (`MD // foo`) are kept. The role prefix is dropped when the title already names the same kind of view, so `acp_harness` + "ACP Harness" shows just "ACP Harness", not "acp_harness ACP Harness". |
-| Center | CWD, git ref/dirty summary, process, counts, activity/progress | Main compression zone; each segment has a priority class. |
-| Right | Music segment when active, otherwise one contextual hint | Music gets reserved width while active; hints disappear before core status. |
+| Left | Mode chip | Shown for every non-Normal mode; `NORMAL` shows in detail density only (spec 350). |
+| Center | Compact: git ref/dirty summary. Detail: CWD, git, focused role/title, counts, process, activity/progress, state, program status | Main compression zone; each segment has a priority class. Role/title is built by `composeRoleTitle`: the shell-embedded cwd is stripped from the title (`stripCwdToken`, matched against the focused cwd — exact or shell-abbreviated like `~/S/krypton`), while real path arguments (`vim /tmp/a`) and separators (`MD // foo`) are kept. The role prefix is dropped when the title already names the same kind of view, so `acp_harness` + "ACP Harness" shows just "ACP Harness". |
+| Right | Attention, program status, Rails, backend link, review gauges, music | Compact shows only demand (attention, program status, Rails findings/error/failed check, link `auth`/`offline`); detail adds a healthy link with latency, quiet Rails states and the review gauges. Music keeps reserved width while active. |
 
 Spec 258 extends the right zone with a global `⚡ TS N` segment immediately
 before the Xenon link indicator. It is hidden while TypeSafe is disabled or the
@@ -191,36 +192,38 @@ jitter the rail.
 
 | Tier | Content | Compact Behavior |
 |------|---------|------------------|
-| P0 | Input mode, focused pane role/title | Never hidden except extreme truncation. |
-| P1 | Project path + git ref | Abbreviate path before hiding. |
-| P2 | Contextual hint, window/tab/pane counts, foreground process | Hide when music or width pressure requires it; counts only show when >1. |
+| P0 | Input mode, focused pane role/title | Mode: non-Normal always, `NORMAL` in detail; role/title detail only (spec 350). |
+| P1 | Project path + git ref | Git ref always; the path is detail only (spec 350) and abbreviates before hiding. |
+| P2 | Window/tab/pane counts, foreground process | Detail only (spec 350); counts only show when >1. |
 | P3 | Throughput, progress percentage, signal state | First to hide; detail mode can show fuller labels. |
 | Music | Track, time, progress, optional mini visualizer | Visible only when a track exists; bounded width so it cannot consume the rail. |
 
-Default compact layout, no music active:
+Since spec 350 the tiers order detail density; compact shows the git ref, a non-Normal mode chip and the right-zone exceptions.
+
+Compact, healthy:
 
 ```text
-NORMAL | terminal session_03 | ~/Source/krypton main * | win 2 tab 1 pane 1 | zsh | 0.8K/s | Leader ? details
+main *
 ```
 
-Compact layout with music active:
+Compact with a non-Normal mode, a fault and music active:
 
 ```text
-NORMAL | terminal session_03 | ~/Source/krypton main *          ▶ track.mp3 · 02:14 / 04:10 [=====---]
+RESIZE | main *                    2 attention ▮▮▯▯  RAILS ✗ tsc  ▶ track.mp3 · 02:14 / 04:10 [=====---]
 ```
 
-Detail mode adds progress/state and slightly fuller paths:
+Detail:
 
 ```text
-NORMAL | terminal session_03 pane_7 | /Users/wk/Source/krypton | git main +3 -1 ?2 | proc zsh pid 12345 | io 0.8K/s | progress 42% | windows 2 tabs 4 panes 5
+NORMAL | ~/Source/krypton | main * | terminal session_03 | 2/1/1 | zsh 12345 | 0.8K/s | 42%      RAILS ✓  ⇄ xenon 42ms
 ```
 
 Responsive priorities:
 
-- Always show: P0 mode + focused role/title, then P1 project/git.
+- Compact always shows any non-Normal mode chip and the git ref.
 - Hide first below 900px: P3 activity/progress, then P2 counts.
-- Hide below 700px: P2 process and contextual hint.
-- Below 520px: P0 mode plus abbreviated P1 project/git only.
+- Hide below 700px: P2 process.
+- Below 520px: the mode chip plus the git ref (and the abbreviated cwd in detail) only.
 - When music is active: reserve the music segment first, then apply the same priority hiding to the status side.
 
 CSS constraints:
@@ -236,7 +239,7 @@ CSS constraints:
 - The footer remains `pointer-events: none` in v1; no click targets are introduced.
 - Segment classes carry priority modifiers such as `.krypton-workspace-footer__segment--p0` through `--p3` so CSS can hide lower-priority content at breakpoints without JS measuring text.
 
-Kind color (spec 236): default type is phosphor (`--krypton-fg-rgb`) at the priority opacity ladder (P0 0.88, P1 0.72, P2 0.52, P3 0.40). Hue is kind, not priority: cyan only for non-normal mode and live throughput; git is `--krypton-success-rgb`; dirty stays the warning dot; hint keys wrap in `<kbd>`. Composer-meta branch uses the same git green.
+Kind color (spec 236): default type is phosphor (`--krypton-fg-rgb`) at the priority opacity ladder (P0 0.88, P1 0.72, P2 0.52, P3 0.40). Hue is kind, not priority: cyan only for non-normal mode and live throughput; git is `--krypton-success-rgb`; dirty stays the warning dot. Composer-meta branch uses the same git green.
 
 ### Motion
 
@@ -245,7 +248,6 @@ The footer should feel alive, but motion must remain telemetry-like and never ch
 | Trigger | Animation | Constraints |
 |---------|-----------|-------------|
 | Mode changes | 320-400 ms vertical snap/fade on the mode chip | Only runs when `Mode` changes; no idle loop. |
-| Contextual hint changes | 250-350 ms fade/slide on the hint segment | Only runs on mode/focus/content-type changes. |
 | View throughput/progress pulse | One-shot 600-800 ms scan sweep across the footer background | Optional v1.1 polish; if included, trigger only on throughput band crossing or progress changes, max ~1 pulse / 2s. |
 | Music playing | Mini visualizer bar motion and subtle play-glyph blink | Runs only while music segment is visible and playback status is `Playing`. |
 | Music progress | Thin progress fill shimmer | Paused/stopped disables shimmer. |
@@ -254,23 +256,14 @@ Implementation rules:
 
 - All animations are CSS transforms/opacity/background-position only.
 - No animation changes footer height, segment width, or text content measurements.
-- `prefers-reduced-motion: reduce` disables snap, hint fade, sweep, mini visualizer motion, blink, and shimmer.
+- `prefers-reduced-motion: reduce` disables snap, sweep, mini visualizer motion, blink, and shimmer.
 - Footer hidden stops the music mini visualizer RAF or CSS animation class.
 - Activity sweeps are rate-limited by the existing `view:throughput` 5 Hz budget and the footer's RAF render coalescing; do not add another timer per pane.
 - Activity sweeps are decorative (`aria-hidden`) and may be deferred without blocking the first implementation.
 
 ### Contextual Hints
 
-Hints are derived from `Mode` and focused content type, not from ad-hoc strings scattered across the compositor.
-
-| Context | Hint |
-|---------|------|
-| Normal terminal | `Leader v select · Cmd+O files · Cmd+Shift+G git` |
-| Compositor | `n new · h/j/k/l focus · ? details` |
-| Resize/Move/Swap | `arrows adjust · Esc cancel` |
-| Command palette / dashboard / prompt dialog | `Esc close` |
-| ACP harness | `Cmd+P lanes · #cancel running` |
-| Music active | `Cmd+Shift+M music` when the right segment has room for a hint; otherwise music wins. |
+Removed by spec 350. The hint was fixed per mode and view kind, so after the first read it carried no state; which-key shows each mode's keys and overlays carry their own `Esc`.
 
 ### Configuration
 
@@ -284,7 +277,7 @@ Persistent config can be added later under `[workspace.status_bar]` if the bar p
 
 ## Edge Cases
 
-- **No focused pane** — show `NORMAL | no focus | win N` and omit cwd/git/process.
+- **No focused pane** — compact shows only the right-zone exceptions; detail shows the mode and `no focus` and omits cwd/git/process.
 - **Non-git directory** — omit the git segment; cache negative result per CWD for 10 seconds.
 - **Detached HEAD** — show `HEAD <sha>`.
 - **Git probe failure** — fail silent; never surface command errors in the bar.
@@ -295,11 +288,10 @@ Persistent config can be added later under `[workspace.status_bar]` if the bar p
 - **Music inactive** — music segment is hidden and workspace status fills the footer.
 - **Music active** — music segment gets fixed/minmax width, workspace status compresses by priority before overflowing.
 - **Long branch/path/track names** — every segment has `min-width: 0`; no wrapping; path and track names ellipsize before the rail grows.
-- **Overlay modes** — mode segment reflects `CommandPalette`, `Dashboard`, `PromptDialog`, `QuickFileSearch`, etc.; hints point to `Esc`/current overlay where known.
+- **Overlay modes** — the mode chip reflects `CommandPalette`, `Dashboard`, `PromptDialog`, `QuickFileSearch`, etc.
 - **Webview panes** — process/throughput may be absent; show role/title/project only.
 - **Reduced motion** — all motion is disabled; state changes are direct text/color updates.
 - **Footer hidden** — music mini visualizer RAF stops; playback continues.
-- **Hint staleness** — hints update on mode/focus/content-type changes only, not every keypress.
 - **Screen readers** — text segments use `role="status"` / `aria-live="polite"` at low frequency; decorative sweeps and visualizer bars are `aria-hidden`.
 
 ## Future Protocol Extension
@@ -308,7 +300,7 @@ Do not add `view:status` in v1. The footer derives from existing signals:
 
 | Source | Footer Use |
 |--------|------------|
-| `InputRouter` | Mode chip and contextual hints. |
+| `InputRouter` | Mode chip. |
 | `Compositor` | Focused role/title, CWD, counts, focused `viewId`. |
 | `run_command` | Debounced git branch / detached HEAD / dirty summary. |
 | `view:metrics` | Foreground process name, pid, command when available. |

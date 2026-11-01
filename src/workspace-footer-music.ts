@@ -32,10 +32,6 @@ export class FooterMusic {
     this.progressFillEl.className = 'krypton-workspace-footer__music-progress-fill';
   }
 
-  get active(): boolean {
-    return this.musicSegment !== null;
-  }
-
   set(segment: MusicFooterSegment | null): void {
     this.musicSegment = segment;
     this.el.setAttribute('aria-hidden', segment ? 'false' : 'true');

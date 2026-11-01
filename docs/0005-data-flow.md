@@ -260,7 +260,7 @@ d. The loop stops once the grip, the mouse and the button fades settle
 ```
 1. main.ts creates ViewBus, Compositor, InputRouter, and WorkspaceFooter.
 2. WorkspaceFooter mounts one fixed 28px bottom rail under #krypton-workspace.
-3. InputRouter.onModeChange() updates the footer mode chip and contextual hint.
+3. InputRouter.onModeChange() updates the footer mode chip (non-Normal modes; NORMAL in detail only).
 4. Compositor focus/relayout callbacks provide focused role/title, CWD, and window/tab/pane counts.
 5. pty-bridge translates existing Tauri events into ViewBus signals:
    - view:metrics -> foreground process name/pid
@@ -274,7 +274,10 @@ d. The loop stops once the grip, the mouse and the button fades settle
 8. MusicPlayer no longer owns a fixed mini-player DOM node; it calls
    WorkspaceFooter.setMusicSegment() with track/time/progress/visualizer state.
 9. Footer renders through requestAnimationFrame so focus, mode, music, and bus
-   updates coalesce into one DOM patch.
+   updates coalesce into one DOM patch. Every segment and right-zone component is
+   gated by density there (spec 350): compact keeps the git ref, a non-Normal mode
+   chip and the right-zone exceptions; Leader ? (toggleDensity) re-renders with
+   the rest.
 ```
 
 ## Pencil Picker Rename Flow

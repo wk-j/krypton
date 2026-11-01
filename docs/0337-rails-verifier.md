@@ -295,7 +295,7 @@ In the Rails tab, `Escape` does not hide the tab, unlike the Ticket tab (spec 33
 
 **Footer**
 
-- The ViewBus signal `system:rails {sourceId, state, findings, failedCheck?}` feeds `workspace-footer-rails.ts`, which renders `RAILS ✓`, `RAILS 3` (neutral) or `RAILS ✗ <check>`, and hides itself when no harness has a manifest.
+- The ViewBus signal `system:rails {sourceId, state, findings, failedCheck?}` feeds `workspace-footer-rails.ts`, which renders `RAILS ✓`, `RAILS 3` (neutral) or `RAILS ✗ <check>`, and hides itself when no harness has a manifest. Since spec 350, compact density shows only `RAILS N`, `RAILS error` and `RAILS ✗ <check>`; `clean`, `running` and `paused` show in detail density.
 - Only a failed check is coloured, as a fault under ADR-0017. Model findings stay neutral, as evidence under ADR-0004.
 
 ### Configuration

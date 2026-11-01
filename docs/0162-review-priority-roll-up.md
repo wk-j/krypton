@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-06-15
 > Milestone: ACP harness — attention & review surfaces
+> Spec 350 (2026-11-01): the footer `N priority` indicator shows in detail density (`Leader ?`) only; `Leader /` is unchanged.
 
 ## Problem
 

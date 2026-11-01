@@ -1,6 +1,7 @@
 // spec 146 / spec 162: the two neutral review depth indicators. Near-identical
 // shape (summed per-source count, glyph + label, hidden at zero, never
-// coloured), so they share a file.
+// coloured), so they share a file. Spec 350: both mean "inspect", not "act",
+// so they show in detail density only.
 
 export class FooterReviews {
   readonly el: HTMLElement;
@@ -27,11 +28,12 @@ export class FooterReviews {
   /** spec 146: render the neutral review-count depth indicator — total recorded
    * #review rounds summed across sources. Deliberately NOT a gauge: a single
    * glyph + count, never coloured by badness, never pulses (ADR-0004). Hidden at
-   * zero. Distinct from the attention gauge — depth ("inspect"), not demand. */
-  render(): void {
+   * zero and in compact density. Distinct from the attention gauge — depth
+   * ("inspect"), not demand. */
+  render(detail: boolean): void {
     let n = 0;
     for (const total of this.reviewsBySource.values()) n += total;
-    if (n <= 0) {
+    if (n <= 0 || !detail) {
       this.el.hidden = true;
       this.el.replaceChildren();
       this.el.removeAttribute('title');
@@ -71,12 +73,12 @@ export class FooterPriority {
   }
 
   /** spec 162: neutral count of `high` review-priority spots summed across
-   * sources. Hidden at zero so the footer stays quiet when no lane has marked a
-   * reading priority. Depth ("inspect"), never demand — never coloured. */
-  render(): void {
+   * sources. Hidden at zero and in compact density so the footer stays quiet.
+   * Depth ("inspect"), never demand — never coloured. */
+  render(detail: boolean): void {
     let n = 0;
     for (const total of this.priorityBySource.values()) n += total;
-    if (n <= 0) {
+    if (n <= 0 || !detail) {
       this.el.hidden = true;
       this.el.replaceChildren();
       this.el.removeAttribute('title');

@@ -151,7 +151,7 @@
 | FR-WS-005 | The system shall support named workspace definitions in the TOML configuration file. | Must |
 | FR-WS-006 | The system shall ship with built-in workspace presets: `single`, `2-column`, `3-column`, `2x2-grid`, `main+sidebar`, `main+bottom`. | Must |
 | FR-WS-007 | User-defined workspaces in config shall override built-in presets of the same name. | Must |
-| FR-WS-008 | The active workspace shall expose a single bottom footer rail for mode, focus, project/git, process/activity, contextual hints, and music playback status. The footer shall remain keyboard-first and shall not require mouse interaction. | Should |
+| FR-WS-008 | The active workspace shall expose a single bottom footer rail for mode, focus, project/git, process/activity, global exceptions, and music playback status. By default it shall show only the git ref, a non-Normal mode and the exceptions, with the rest one key away (spec 350). The footer shall remain keyboard-first and shall not require mouse interaction. | Should |
 
 ### 3.8.2 Windows (Terminal Instances)
 

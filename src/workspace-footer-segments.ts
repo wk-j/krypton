@@ -1,6 +1,7 @@
 // Left + center zone segment builders for the workspace footer. Pure functions
 // of their inputs: each returns a fresh element (or null when its datum is
-// absent), so the caller's ordering IS the layout.
+// absent), so the caller's ordering IS the layout. Spec 350: compact density
+// is the git ref plus a non-Normal mode chip; detail adds everything else.
 import { Mode } from './types';
 import { programStatusSentence, type ProgramStatusSummary } from './program-status';
 import type { SignalState } from './view-bus-types';
@@ -16,32 +17,42 @@ import {
   type FocusSummary,
 } from './workspace-footer-format';
 
-export function leftSegments(mode: Mode, summary: FocusSummary): HTMLElement[] {
-  return [
-    footerSegment(modeLabel(mode), mode === Mode.Normal ? 'mode mode-normal' : 'mode'),
-    footerSegment(composeRoleTitle(summary.role, summary.title, summary.cwd), 'p0 role'),
-  ];
+/** The mode chip. Normal is the default and needs no label, so it shows in
+ *  detail only; any other mode always shows. */
+export function leftSegments(mode: Mode, detail: boolean): HTMLElement[] {
+  if (mode === Mode.Normal) return detail ? [footerSegment(modeLabel(mode), 'mode mode-normal')] : [];
+  return [footerSegment(modeLabel(mode), 'mode')];
 }
 
 /** Compose the center zone from independent per-datum segment builders. Each
  *  returns null when its datum is absent, so the order here IS the layout and
- *  nothing is entangled in a chain of ifs. */
+ *  nothing is entangled in a chain of ifs. Compact is the git ref alone. */
 export function centerSegments(
   summary: FocusSummary,
   gitText: string | null,
   busState: FocusedBusState,
   programStatus: ProgramStatusSummary | null,
+  detail: boolean,
 ): HTMLElement[] {
-  return [
-    workingDirSegment(summary.cwd),
-    gitSegment(gitText),
-    countsSegment(summary),
-    processSegment(busState.process),
-    throughputSegment(busState.throughput),
-    progressSegment(busState.progress),
-    stateSegment(busState.state),
-    programStatusSegment(programStatus),
-  ].filter((el): el is HTMLElement => el !== null);
+  const segments = detail
+    ? [
+      workingDirSegment(summary.cwd),
+      gitSegment(gitText),
+      roleSegment(summary),
+      countsSegment(summary),
+      processSegment(busState.process),
+      throughputSegment(busState.throughput),
+      progressSegment(busState.progress),
+      stateSegment(busState.state),
+      programStatusSegment(programStatus),
+    ]
+    : [gitSegment(gitText)];
+  return segments.filter((el): el is HTMLElement => el !== null);
+}
+
+/** Focused pane role + title (`composeRoleTitle`). Detail density only. */
+export function roleSegment(summary: FocusSummary): HTMLElement {
+  return footerSegment(composeRoleTitle(summary.role, summary.title, summary.cwd), 'p0 role');
 }
 
 /** Build the single canonical working-directory segment for the workspace
@@ -121,7 +132,7 @@ export function throughputSegment(throughput: number): HTMLElement | null {
 export function progressSegment(progressState: FocusedBusState['progress']): HTMLElement | null {
   const progress = progressText(progressState);
   if (!progress) return null;
-  const el = footerSegment(progress, 'p3 detail');
+  const el = footerSegment(progress, 'p3');
   el.title = `progress ${progress}`;
   el.setAttribute('aria-label', el.title);
   return el;
@@ -131,7 +142,7 @@ export function progressSegment(progressState: FocusedBusState['progress']): HTM
  *  Tagged via data-state so CSS colours it by meaning, not the flat p3 tier. */
 export function stateSegment(state: SignalState): HTMLElement | null {
   if (state === 'normal') return null;
-  const el = footerSegment(state, 'p3 detail state');
+  const el = footerSegment(state, 'p3 state');
   el.dataset.state = state;
   el.prepend(footerIcon('dot', 'fill dot'));
   el.title = `state: ${state}`;
@@ -139,12 +150,12 @@ export function stateSegment(state: SignalState): HTMLElement | null {
   return el;
 }
 
-/** spec 284: the focused pane's OSC 7501 summary as `app: message`. Detail
- *  density only; null when the pane has no records or is idle. */
+/** spec 284: the focused pane's OSC 7501 summary as `app: message`. Null when
+ *  the pane has no records or is idle. */
 export function programStatusSegment(status: ProgramStatusSummary | null): HTMLElement | null {
   if (!status || status.state === 'idle') return null;
   const sentence = programStatusSentence(status);
-  const el = footerSegment(status.app ? `${status.app}: ${sentence}` : sentence, 'p3 detail program');
+  const el = footerSegment(status.app ? `${status.app}: ${sentence}` : sentence, 'p3 program');
   el.dataset.state = status.state;
   el.title = `program status: ${status.state} — ${sentence}`;
   el.setAttribute('aria-label', el.title);

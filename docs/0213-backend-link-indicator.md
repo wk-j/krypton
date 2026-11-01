@@ -5,6 +5,7 @@
 > Milestone: M-ACP — Harness convergence
 > Builds on: 212 + ADR-0016 (Xenon publisher) · 128/138 (attention gauge) · 146 (review depth) ·
 > 162 (priority depth) — the three existing workspace-footer indicators whose idioms this follows
+> Spec 350 (2026-11-01): a `linked` backend shows in detail density only; `unauthorized` and `offline` still show in both.
 
 ## Problem
 
@@ -17,8 +18,8 @@ link are indistinguishable until a push fails.
 ## Solution
 
 Add one **backend link segment** to the workspace footer's right-hand global cluster, driven by a
-periodic authenticated probe in the Rust backend. It is always visible while `[xenon].enabled`,
-dim and unobtrusive when the link is healthy, and coloured when it is not. A new Tauri command
+periodic authenticated probe in the Rust backend. It is visible while `[xenon].enabled` (a healthy
+link in detail density only since spec 350), dim when healthy, and coloured when it is not. A new Tauri command
 `xenon_probe` performs a single authenticated `GET /v1/projects` — one request that distinguishes
 *unreachable* (transport error), *unauthorized* (401/403), and *linked* (2xx), because a probe
 that only pinged `/healthz` would report green while a revoked token silently blocked every push.
@@ -199,7 +200,7 @@ global cluster (VS Code's remote-indicator placement).
 
 | State | Text (detail density) | Text (compact) | Colour |
 |-------|----------------------|----------------|--------|
-| `linked` | `⇄ xenon 24ms` | `⇄ xenon` | dim/neutral (footer foreground, reduced opacity) |
+| `linked` | `⇄ xenon 24ms` | *(hidden, spec 350)* | dim/neutral (footer foreground, reduced opacity) |
 | `unauthorized` | `⇄ xenon auth` | `⇄ xenon auth` | warning |
 | `offline` | `⇄ xenon offline` | `⇄ xenon offline` | fault |
 | `off` | *(segment hidden)* | *(hidden)* | — |

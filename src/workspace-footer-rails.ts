@@ -7,6 +7,8 @@ import type { SignalValueMap } from './view-bus-types';
 // Only a failed check is coloured — a fault under ADR-0017. Model findings stay
 // neutral (ADR-0004): `RAILS 3` means "evidence to inspect", not "act on me".
 // Static text only; nothing here pulses or animates.
+// Spec 350: compact density shows only what needs a look (findings, error,
+// failed check); clean/running/paused wait for detail density.
 
 export type RailsFooterSignalValue = SignalValueMap['system:rails'];
 export type RailsFooterState = RailsFooterSignalValue['state'];
@@ -17,6 +19,8 @@ export interface RailsFooterView {
   readonly text: string;
   /** True only for `check_failed`. */
   readonly fault: boolean;
+  /** Spec 350: nothing to inspect (`clean`, `running`, `paused`) — detail density only. */
+  readonly quiet: boolean;
   readonly title: string;
 }
 
@@ -59,6 +63,7 @@ export function railsFooterView(entries: Iterable<RailsFooterEntry>): RailsFoote
       return {
         text: `RAILS ✗${first ? ` ${first}` : ''}${more}`,
         fault: true,
+        quiet: false,
         title:
           `Rails: check ${first ?? '(unknown)'} failed` +
           (failed.length > 1 ? ` (and ${failed.length - 1} more harness${failed.length > 2 ? 'es' : ''})` : '') +
@@ -66,19 +71,20 @@ export function railsFooterView(entries: Iterable<RailsFooterEntry>): RailsFoote
       };
     }
     case 'error':
-      return { text: 'RAILS error', fault: false, title: 'Rails: the last run could not judge the tree — see the Rails tab' };
+      return { text: 'RAILS error', fault: false, quiet: false, title: 'Rails: the last run could not judge the tree — see the Rails tab' };
     case 'findings':
       return {
         text: `RAILS ${findings}`,
         fault: false,
+        quiet: false,
         title: `Rails: ${findings} open finding${findings === 1 ? '' : 's'} — see the Rails tab`,
       };
     case 'paused':
-      return { text: 'RAILS paused', fault: false, title: 'Rails: checks wait for #rails trust' };
+      return { text: 'RAILS paused', fault: false, quiet: true, title: 'Rails: checks wait for #rails trust' };
     case 'running':
-      return { text: 'RAILS …', fault: false, title: 'Rails: a run is in progress' };
+      return { text: 'RAILS …', fault: false, quiet: true, title: 'Rails: a run is in progress' };
     case 'clean':
-      return { text: 'RAILS ✓', fault: false, title: 'Rails: clean' };
+      return { text: 'RAILS ✓', fault: false, quiet: true, title: 'Rails: clean' };
   }
 }
 
@@ -106,9 +112,9 @@ export class FooterRails {
     });
   }
 
-  render(): void {
+  render(detail: boolean): void {
     const view = railsFooterView(this.bySource.values());
-    if (!view) {
+    if (!view || (view.quiet && !detail)) {
       this.el.hidden = true;
       this.el.className = BASE_CLASS;
       this.el.textContent = '';

@@ -5,6 +5,7 @@
 > Milestone: M-ACP — Harness Peering
 > Builds on `docs/0145-harness-design-review-panel.md` (agent-orchestrated `#review`).
 > Decision record: `docs/adr/0004-review-matrix-observation-not-score.md`.
+> Spec 350 (2026-11-01): the footer `N reviews` indicator shows in detail density (`Leader ?`) only; `Leader '` is unchanged.
 > Revision: a 2-reviewer design review (Cursor-1 arch/correctness, Codex-2
 > requirements-fit) blocked the original "rich record" design on retained
 > review-session state. The user chose a **summary-only** record — no stored

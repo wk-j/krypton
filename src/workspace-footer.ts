@@ -6,12 +6,7 @@ import type { Compositor } from './compositor';
 import type { InputRouter } from './input-router';
 import type { ViewBus } from './view-bus';
 import type { SignalSource, ViewAddress } from './view-bus-types';
-import {
-  fillHint,
-  hintFor,
-  isViewSource,
-  type FocusedBusState,
-} from './workspace-footer-format';
+import { isViewSource, type FocusedBusState } from './workspace-footer-format';
 import { centerSegments, leftSegments } from './workspace-footer-segments';
 import { FooterGit } from './workspace-footer-git';
 import { FooterAttention } from './workspace-footer-attention';
@@ -21,7 +16,6 @@ import { FooterLink } from './workspace-footer-link';
 import { FooterProgramStatus } from './workspace-footer-program-status';
 import { FooterMusic, type MusicFooterSegment } from './workspace-footer-music';
 
-export { parseHint, fillHint, type HintChip } from './workspace-footer-format';
 export type { MusicFooterSegment } from './workspace-footer-music';
 
 export type WorkspaceFooterDensity = 'compact' | 'detail';
@@ -41,7 +35,6 @@ export class WorkspaceFooter {
   private leftEl: HTMLElement;
   private centerEl: HTMLElement;
   private rightEl: HTMLElement;
-  private hintEl: HTMLElement;
   private readonly attention = new FooterAttention();
   private readonly rails = new FooterRails();
   private readonly programStatus = new FooterProgramStatus();
@@ -81,7 +74,6 @@ export class WorkspaceFooter {
     });
     this.root = document.createElement('footer');
     this.root.className = 'krypton-workspace-footer';
-    this.root.dataset.density = this.density;
     this.root.dataset.music = 'off';
     this.root.setAttribute('role', 'status');
     this.root.setAttribute('aria-live', 'polite');
@@ -92,19 +84,17 @@ export class WorkspaceFooter {
     this.centerEl.className = 'krypton-workspace-footer__center';
     this.rightEl = document.createElement('div');
     this.rightEl.className = 'krypton-workspace-footer__right';
-    this.hintEl = document.createElement('span');
-    this.hintEl.className = 'krypton-workspace-footer__segment krypton-workspace-footer__hint';
 
-    // The backend link leads the global cluster, separate from focus-scoped
-    // segments so it reads as a property of the app rather than the pane.
+    // Spec 350: demand first (attention, program status, rails, link), then the
+    // inspect-only gauges, then music. Each hides itself when it has nothing to
+    // say in the current density.
     this.rightEl.append(
-      this.link.el,
-      this.priority.el,
-      this.reviews.el,
       this.attention.el,
-      this.rails.el,
       this.programStatus.el,
-      this.hintEl,
+      this.rails.el,
+      this.link.el,
+      this.reviews.el,
+      this.priority.el,
       this.music.el,
     );
     this.root.append(this.leftEl, this.centerEl, this.rightEl);
@@ -165,7 +155,7 @@ export class WorkspaceFooter {
     // the segment shows the worst across harnesses.
     this.bus.onSignal({ kind: 'system:rails' }, (s) => {
       this.rails.set(s.value);
-      this.rails.render();
+      this.rails.render(this.detail);
     });
 
     // spec 284: global (not focus-gated) — a pane needing you matters wherever
@@ -179,25 +169,25 @@ export class WorkspaceFooter {
     this.bus.onSignal({ kind: 'review:quality' }, (s) => {
       const { sourceId, totalReviews } = s.value;
       this.reviews.set(sourceId, totalReviews);
-      this.reviews.render();
+      this.reviews.render(this.detail);
     });
 
     // spec 162: global (not focus-gated) review-priority depth indicator.
     this.bus.onSignal({ kind: 'review:priority' }, (s) => {
       const { sourceId, highCount } = s.value;
       this.priority.set(sourceId, highCount);
-      this.priority.render();
+      this.priority.render(this.detail);
     });
 
     // spec 213: global (not focus-gated) backend link state.
     this.bus.onSignal({ kind: 'system:backend-link' }, (s) => {
       const { backendId, state, ...rest } = s.value;
       this.link.set(backendId, state, rest);
-      this.link.render(this.density === 'detail');
+      this.link.render(this.detail);
     });
 
     this.timer = setInterval(() => {
-      if (this.density === 'detail') this.refresh('timer');
+      if (this.detail) this.refresh('timer');
     }, 1000);
     this.refresh('focus');
   }
@@ -232,7 +222,6 @@ export class WorkspaceFooter {
 
   toggleDensity(): void {
     this.density = this.density === 'compact' ? 'detail' : 'compact';
-    this.root.dataset.density = this.density;
     this.refresh('config');
   }
 
@@ -259,6 +248,10 @@ export class WorkspaceFooter {
       // render() abort at its own guard — dropping the repaint entirely.
       void this.render(this.renderGeneration);
     });
+  }
+
+  private get detail(): boolean {
+    return this.density === 'detail';
   }
 
   private isFocusedSource(source: SignalSource): source is ViewAddress {
@@ -300,19 +293,16 @@ export class WorkspaceFooter {
     if (generation !== this.renderGeneration) return;
     this.git.update(summary.cwd);
 
-    this.leftEl.replaceChildren(...leftSegments(this.mode, summary));
+    const detail = this.detail;
+    this.leftEl.replaceChildren(...leftSegments(this.mode, detail));
     const status = summary.viewId ? this.compositor.programStatus.summary(summary.viewId) : null;
-    this.centerEl.replaceChildren(...centerSegments(summary, this.git.text, this.busState, status));
+    this.centerEl.replaceChildren(...centerSegments(summary, this.git.text, this.busState, status, detail));
 
-    const hint = hintFor(this.mode, summary.role, this.music.active);
-    this.hintEl.setAttribute('aria-label', hint);
-    fillHint(this.hintEl, hint);
-    const detail = this.density === 'detail';
     this.link.render(detail);
-    this.priority.render();
-    this.reviews.render();
+    this.priority.render(detail);
+    this.reviews.render(detail);
     this.attention.render();
-    this.rails.render();
+    this.rails.render(detail);
     this.renderProgramStatus();
     this.music.render();
   }

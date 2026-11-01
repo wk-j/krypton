@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (335)
+## Specs (336)
 
 | # | Spec |
 |---|------|
@@ -352,6 +352,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 347 | [Harness Left / Right Panel Toggles](./0347-harness-left-right-panel-toggles.md) |
 | 348 | [ACP Chat for Typed Agent CLIs](./0348-acp-chat-for-typed-agent-clis.md) |
 | 349 | [Unified Search Palette with Scope Tabs](./0349-unified-search-palette-tabs.md) |
+| 350 | [Minimal Workspace Footer](./0350-minimal-workspace-footer.md) |
 
 ## ADRs (27)
 
