@@ -4381,7 +4381,7 @@ export class AcpHarnessView implements ContentView {
     }
     if (e.key === '.' && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
       e.preventDefault();
-      this.toggleZenMode();
+      this.setZenMode(!this.zenMode);
       return true;
     }
     // spec 157: Cmd+Shift+. — with Shift held macOS reports the shifted char,
@@ -4934,7 +4934,11 @@ export class AcpHarnessView implements ContentView {
   /** spec 320: the panel toggles this view contributes to its window titlebar.
    *  spec 322: plus a one-shot backend-update action while Grok/OMP are behind. */
   getTitlebarToggles(): readonly TitlebarToggle[] {
-    const toggles = harnessTitlebarToggles(this.hiddenPanels, { left: this.leftPanelHidden, right: this.rightPanelHidden });
+    // spec 347 rev 3: `left` shows the lane sidebar as seen; outside Zen there is none.
+    const toggles = harnessTitlebarToggles(this.hiddenPanels, {
+      left: !this.zenMode || this.leftPanelHidden,
+      right: this.rightPanelHidden,
+    });
     const updates = backendUpdates();
     if (this.openTerminalTabCb === null || updates.length === 0) return toggles;
     return [
@@ -15925,9 +15929,11 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
-  private toggleZenMode(): void {
-    this.zenMode = !this.zenMode;
-    writeZenModePreference(this.projectDir, this.zenMode);
+  /** spec 347 rev 3: the `left` toggle reads Zen, so a Zen change re-syncs the titlebar. */
+  private setZenMode(on: boolean): void {
+    this.zenMode = on;
+    writeZenModePreference(this.projectDir, on);
+    this.notifyTitlebarTogglesChanged();
     this.render();
   }
 
@@ -15966,8 +15972,11 @@ export class AcpHarnessView implements ContentView {
   /** Shared by `#panels` and the titlebar toggles, so both flash the same chip. */
   private applyPanelsCommand(command: Exclude<PanelsCommand, { kind: 'usage' }>): void {
     if (command.kind === 'side') {
-      const current = command.side === 'left' ? this.leftPanelHidden : this.rightPanelHidden;
+      // spec 347 rev 3: `left` acts on the lane sidebar as seen. Outside Zen there
+      // is none, so it reads as hidden, and showing it turns Zen on.
+      const current = command.side === 'left' ? !this.zenMode || this.leftPanelHidden : this.rightPanelHidden;
       const hidden = nextHidden(command.action, current);
+      if (command.side === 'left' && !hidden && !this.zenMode) this.setZenMode(true);
       this.setSideHidden(command.side, hidden);
       this.flashChip(sideFlash(command.side, hidden));
       return;

@@ -9,6 +9,7 @@
 > Amended by spec 347 (2026-10-30): the `all` master toggle and `panelsHidden` are gone. The cluster ends with
 > `left` (Zen lane rail) and `right` (dock column) toggles, each with its own per-project flag; no toggle disables
 > another, `ticket` / `rails` also read as hidden while `right` is off, and below 480px only `left` / `right` stay.
+> Spec 347 rev 3 (2026-10-31): outside Zen Mode `left` is unpressed, and a click on it turns Zen on with the lane rail shown.
 
 ## Problem
 

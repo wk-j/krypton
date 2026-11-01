@@ -1,9 +1,13 @@
 # Harness Left / Right Panel Toggles — Implementation Spec
 
-> Status: Implemented (rev 2, approved 2026-10-30)
+> Status: Implemented (rev 3, 2026-10-31; rev 2 approved 2026-10-30)
 > Date: 2026-10-30
 > Milestone: M6 — ACP Harness
 > Replaces the spec 251 master switch; amends spec 320's titlebar cluster.
+> Rev 3 (2026-10-31): `left` acts on the lane sidebar as the user sees it. Outside
+> Zen Mode there is no sidebar, so `left` reads as hidden and showing it turns Zen
+> on. Before rev 3 a click outside Zen only flipped a stored flag, and the button
+> showed "pressed" with no sidebar on screen.
 
 ## Problem
 
@@ -18,10 +22,13 @@ Remove the master switch: its state, storage key, root class, `all` button and
 the bare `#panels` / `#panels hide|show|toggle` forms. Add two buttons that
 each do one thing:
 
-- **`left`** shows or hides the left panel: the Zen lane-navigation rail.
+- **`left`** shows or hides the left panel: the Zen lane-navigation rail. The
+  rail exists only in Zen Mode, so outside Zen `left` reads as hidden, and
+  showing it turns Zen Mode on (rev 3).
 - **`right`** shows or hides the right panel: the dock column (Ticket / Rails tabs).
 
-Neither button changes any other panel, flag or button. The five per-panel
+Neither button changes any other panel, flag or button, except that showing
+`left` outside Zen also turns Zen Mode on. The five per-panel
 toggles for the floating rail cards (plan, peek, thought, grammar, queue) are
 unchanged and are the only controls for those cards.
 
@@ -61,7 +68,8 @@ unchanged and are the only controls for those cards.
 
 **Krypton delta** — matches both: one button per side region, persisted, left
 before right. The keyboard path is `#panels left|right` in the composer, not a
-new global chord (spec 320 rule). The left panel exists only in Zen Mode.
+new global chord (spec 320 rule). The left panel exists only in Zen Mode, so
+showing it from outside Zen enters Zen (rev 3).
 
 ## Affected Files
 
@@ -116,12 +124,19 @@ isPanelHidden(id) {
 `render()`. It writes only its own flag. A per-panel change writes only its own
 flag. No button is ever disabled by another button's state.
 
+Rev 3: `left` acts on the rail as seen. Its current state is
+`!zenMode || leftPanelHidden`, so outside Zen it reads as hidden. When a `left`
+command resolves to shown while Zen is off, `applyPanelsCommand` first calls
+`setZenMode(true)`, which persists the Zen key, notifies titlebar listeners and
+renders. `Cmd+.` goes through the same `setZenMode`, so the `left` button
+follows Zen in both directions.
+
 ### Command
 
 | Input | Effect |
 |-------|--------|
-| `#panels left` / `#panels right` | Toggle that side |
-| `#panels hide\|show\|toggle left\|right` | Set that side |
+| `#panels left` / `#panels right` | Toggle that side (outside Zen, `left` reads as hidden, so this shows it) |
+| `#panels hide\|show\|toggle left\|right` | Set that side. `show left` outside Zen turns Zen on; `hide left` never changes Zen |
 | `#panels <panel>`, `#panels <action> <panel>` | Unchanged (spec 320) |
 | `#panels`, `#panels hide\|show\|toggle` | Usage — the master switch is gone |
 
@@ -140,7 +155,7 @@ then the spec 322 `backend-update` action when present.
 
 | Button | Icon | Label | Pressed | Disabled |
 |--------|------|-------|---------|----------|
-| `left` | `krypton-icon-panel-left` | `Left panel` | `!leftPanelHidden` | never |
+| `left` | `krypton-icon-panel-left` | `Left panel` | `zenMode && !leftPanelHidden` | never |
 | `right` | `krypton-icon-panel-right` | `Right panel` | `!rightPanelHidden` | never |
 | seven panels | unchanged | unchanged | `!hiddenPanels.has(id)` | never (the spec 320 reason is deleted) |
 
@@ -172,12 +187,18 @@ cluster keeps `left`, `right` and `backend-update`.
 ```
 
 For `left`, steps 4–6: write the key, the root class hides the rail, the active
-body fills the Zen grid, and `left` re-syncs.
+body fills the Zen grid, and `left` re-syncs. Outside Zen, a click first runs
+`setZenMode(true)`: the dashboard rebuilds as Zen with the rail shown, and `left`
+re-syncs as pressed.
 
 ## Edge Cases
 
-- **Zen off:** there is no left panel. `left` still toggles and stores its flag,
-  which takes effect on entering Zen.
+- **Zen off:** there is no left panel, so `left` shows unpressed whatever its
+  stored flag says. A click or `#panels show left` clears the flag and turns Zen
+  on; `#panels hide left` stores the flag and leaves Zen off. Leaving Zen with
+  `Cmd+.` unpresses `left`.
+- **Left shown in Zen, then clicked:** the rail hides and Zen stays on. Leaving
+  Zen is still `Cmd+.` only.
 - **No dock content** (no active ticket, no `.krypton/rails.toml`): there is
   nothing to show on the right. `right` still toggles and stores its flag.
 - **Left hidden in Zen:** `Tab` / `Shift+Tab` still switch lanes. Another lane
@@ -202,7 +223,8 @@ None.
 ## Out of Scope
 
 - New global or leader chords (`Cmd+B`-style) or palette entries.
-- A left panel outside Zen Mode; changing Zen or Concise semantics.
+- A left panel outside Zen Mode (showing `left` enters Zen instead); changing
+  what Zen or Concise Mode show.
 - Any control that hides several regions at once.
 - Changing the dock's own `›` / Escape hide (spec 331) or the ticket/rails tabs.
 - Migrating the old `panels-hidden` key.
@@ -225,6 +247,13 @@ None.
   `right`. Both icons resolve to their `<symbol>` with non-empty geometry.
 - Not exercised: WKWebView and the in-app path. The installed app picks up the
   change only after a rebuild / `make install`.
+- Rev 3: real `AcpHarnessView` under happy-dom (throwaway script, Zen off, one
+  lane). Before the change, `left` started pressed with no rail; three clicks
+  only flipped `--left-panel-hidden` and `pressed`, with Zen off and no rail.
+  After it, `left` started unpressed. Click 1 turned Zen on, built the rail and
+  pressed `left`. Click 2 added `--left-panel-hidden` and kept Zen. Click 3
+  showed the rail again. `setZenMode(false)` notified the titlebar once and
+  unpressed `left`.
 
 ## Resources
 

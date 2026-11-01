@@ -4106,11 +4106,12 @@ describe('#panels and titlebar toggles (specs 320, 347)', () => {
     runHashCommand(lane: TestLane, text: string): Promise<void>;
     activateTitlebarToggle(id: string): void;
     isPanelHidden(panel: HarnessPanelId): boolean;
+    getTitlebarToggles(): readonly { id: string; pressed?: boolean }[];
   };
   const proto = AcpHarnessView.prototype as unknown as PanelsView;
-  type PanelsTarget = { leftPanelHidden: boolean; rightPanelHidden: boolean; hiddenPanels: Set<HarnessPanelId> };
+  type PanelsTarget = { zenMode: boolean; leftPanelHidden: boolean; rightPanelHidden: boolean; hiddenPanels: Set<HarnessPanelId> };
 
-  function harnessDouble(options: { left?: boolean; right?: boolean; hidden?: HarnessPanelId[] } = {}): {
+  function harnessDouble(options: { zen?: boolean; left?: boolean; right?: boolean; hidden?: HarnessPanelId[] } = {}): {
     target: PanelsTarget;
     drafts: string[];
     flashes: string[];
@@ -4121,11 +4122,16 @@ describe('#panels and titlebar toggles (specs 320, 347)', () => {
     const changes: string[] = [];
     // Real `applyPanelsCommand` (from the prototype) over stubbed setters.
     const target: PanelsTarget = viewDouble({
+      zenMode: options.zen ?? true,
       leftPanelHidden: options.left ?? false,
       rightPanelHidden: options.right ?? false,
       hiddenPanels: new Set<HarnessPanelId>(options.hidden ?? []),
       setDraft: (_lane: TestLane, value: string): void => { drafts.push(value); },
       flashChip: (value: string): void => { flashes.push(value); },
+      setZenMode: (on: boolean): void => {
+        target.zenMode = on;
+        changes.push(`zen:${on}`);
+      },
       setSideHidden: (side: 'left' | 'right', value: boolean): void => {
         if (side === 'left') target.leftPanelHidden = value;
         else target.rightPanelHidden = value;
@@ -4159,6 +4165,32 @@ describe('#panels and titlebar toggles (specs 320, 347)', () => {
       'right panel shown',
     ]);
     expect([...h.target.hiddenPanels]).toEqual(['plan']);
+  });
+
+  it('acts on the lane sidebar as seen: outside Zen it reads hidden, and showing it turns Zen on', async () => {
+    const h = harnessDouble({ zen: false });
+    const leftPressed = (): boolean | undefined =>
+      proto.getTitlebarToggles.call(h.target).find((toggle) => toggle.id === 'left')?.pressed;
+
+    // Outside Zen nothing is on the left, whatever the stored flag says.
+    expect(leftPressed()).toBe(false);
+    await proto.runHashCommand.call(h.target, { status: 'idle' }, '#panels hide left');
+    expect(h.changes).toEqual(['left:true']);
+    expect(h.target.zenMode).toBe(false);
+
+    proto.activateTitlebarToggle.call(h.target, 'left');
+    expect(h.changes).toEqual(['left:true', 'zen:true', 'left:false']);
+    expect(leftPressed()).toBe(true);
+
+    // In Zen the next click hides the sidebar and keeps Zen.
+    proto.activateTitlebarToggle.call(h.target, 'left');
+    expect(h.changes.slice(3)).toEqual(['left:true']);
+    expect([h.target.zenMode, leftPressed()]).toEqual([true, false]);
+    expect(h.flashes).toEqual([
+      'left panel hidden · #panels show left',
+      'left panel shown',
+      'left panel hidden · #panels show left',
+    ]);
   });
 
   it('toggles or sets one panel without touching the side flags', async () => {
@@ -4208,6 +4240,7 @@ describe('#panels and titlebar toggles (specs 320, 347)', () => {
   it('hides the two dock tabs with the right panel and never the rail cards', () => {
     const ids: HarnessPanelId[] = ['plan', 'peek', 'thought', 'grammar', 'queue', 'ticket', 'rails'];
     const target: PanelsTarget = viewDouble({
+      zenMode: true,
       leftPanelHidden: true,
       rightPanelHidden: true,
       hiddenPanels: new Set<HarnessPanelId>(['plan']),
