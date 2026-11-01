@@ -100,12 +100,14 @@ import { AnimationEngine, BoundsSnapshot, type StageTransitionLayer } from './an
 import { SoundEngine } from './sound';
 import { ShaderEngine } from './shaders';
 import type { ShaderPreset } from './shaders';
-import type { KryptonConfig, TabsConfig, ShaderConfig, KeyboardOverlayConfig, InlineAiConfig } from './config';
+import type { KryptonConfig, TabsConfig, ShaderConfig, KeyboardOverlayConfig, InlineAiConfig, NativeOutputConfig } from './config';
 import type { InlineAcpConversation, InlineAcpSession } from './inline-ai-session';
 import type { InlineAIOverlay } from './inline-ai';
 import { InlineFollowUp } from './inline-ai-follow-up';
 import { closeInlineRemote, inlineRemoteMcpServers, openInlineRemote, type InlineRemote, type Osc7Report } from './inline-ai-remote';
 import { ShellCommandLog, buildTerminalContext, parseOsc133, type BufferReader, type Osc133, type TerminalContextSnapshot } from './terminal-context';
+import { NativeOutputLayer } from './native-output/layer';
+import type { NativeGitStatusRaw } from './native-output/git-status';
 import { applyComposerBloomSettings } from './acp/harness-composer-bloom';
 import { setWordAutocompleteEnabled } from './acp/word-predict';
 import { refreshLessons, setLessonsEnabled } from './acp/lessons';
@@ -559,6 +561,10 @@ export class Compositor {
   private inlineRemote: Promise<InlineRemote> | null = null;
   /** The current conversation's pane shell: local, the host's `$SHELL`, or unknown. */
   private inlineShell: string | null = null;
+  /** spec 351: `[native_output]` from the last applied config; read per finished command. */
+  private nativeOutputConfig: NativeOutputConfig = { enabled: true, default_view: 'native' };
+  /** spec 351: the native output layer of each terminal pane; dies with the terminal. */
+  private readonly nativeOutput = new WeakMap<Terminal, NativeOutputLayer>();
 
   /** Latest foreground process per session, populated from process-changed events.
    *  Used by findSessionsByProcess() for the Smart Prompt Dialog. */
@@ -833,6 +839,7 @@ export class Compositor {
 
     void this.applyKeyboardOverlayConfig(config.keyboard_overlay);
     this.inlineAiConfig = config.inline_ai;
+    this.nativeOutputConfig = config.native_output;
     this.shellName = config.shell.program.split('/').pop() || null;
 
     this.configApplied = true;
@@ -975,7 +982,7 @@ export class Compositor {
       console.log('[krypton:shaders] Shader skipped — enabled:', this.shaderConfig.enabled, 'preset:', this.shaderConfig.preset);
     }
 
-    return {
+    const pane: Pane = {
       id: paneId,
       viewId,
       sessionId: null,
@@ -986,6 +993,48 @@ export class Compositor {
       contentView: null,
       pendingInput: [],
     };
+    this.nativeOutput.set(terminal, new NativeOutputLayer(terminal, {
+      enabled: () => this.nativeOutputConfig.enabled,
+      defaultView: () => (this.nativeOutputConfig.default_view === 'raw' ? 'raw' : 'native'),
+      rerunGitDiff: (cmdline) => this.rerunLocalGit<string>(pane, 'native_git_diff', cmdline),
+      rerunGitStatus: (cmdline) => this.rerunLocalGit<NativeGitStatusRaw>(pane, 'native_git_status', cmdline),
+      notify: (message) => this.showNotification(message),
+    }));
+    return pane;
+  }
+
+  /**
+   * specs 351/352: run a finished `git diff` / `git status` once more in a
+   * machine-readable form, so its card does not depend on what the pager or
+   * colour config printed. Only while the pane's own shell is in front: an
+   * `ssh` or `docker exec` in front means the command ran elsewhere, and
+   * re-running it here would show the wrong repo. Rust validates the argv.
+   */
+  private async rerunLocalGit<T>(pane: Pane, command: 'native_git_diff' | 'native_git_status', cmdline: string): Promise<T | null> {
+    const sessionId = pane.sessionId;
+    if (sessionId === null) return null;
+    try {
+      const foreground = await invoke<ProcessInfo | null>('get_foreground_process', { sessionId });
+      if (foreground) return null;
+      const cwd = await invoke<string | null>('get_pty_cwd', { sessionId });
+      if (!cwd) return null;
+      return await invoke<T>(command, { cwd, cmdline });
+    } catch (e) {
+      console.warn(`[native-output] ${command} re-run failed:`, e);
+      return null;
+    }
+  }
+
+  /** spec 351 `Leader i`: flip the focused pane's newest visible card between Native and Raw. */
+  toggleNativeOutput(): boolean {
+    const terminal = this.getFocusedPane()?.terminal;
+    return terminal ? this.nativeOutput.get(terminal)?.toggleTarget() ?? false : false;
+  }
+
+  /** spec 351 `Leader Shift+I`: copy that card's diff or status. */
+  copyNativeOutput(): boolean {
+    const terminal = this.getFocusedPane()?.terminal;
+    return terminal ? this.nativeOutput.get(terminal)?.copyTarget() ?? false : false;
   }
 
   /**

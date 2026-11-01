@@ -265,6 +265,8 @@ pub fn run() {
             commands::get_acp_harness_config_path,
             commands::acp_collect_review_git_state,
             commands::collect_working_diff,
+            commands::native_git_diff,
+            commands::native_git_status,
             commands::review_thread_preview,
             commands::review_thread_create,
             commands::review_thread_reissue_guide,

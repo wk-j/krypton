@@ -279,6 +279,13 @@ export interface InlineAiConfig {
   remote_checks: boolean;
 }
 
+/** spec 351: `[native_output]` — native cards over command output.
+ *  `default_view` is `"native"` or `"raw"`; Rust passes any string through. */
+export interface NativeOutputConfig {
+  enabled: boolean;
+  default_view: string;
+}
+
 export interface KryptonConfig {
   shell: ShellConfig;
   font: FontConfig;
@@ -297,6 +304,7 @@ export interface KryptonConfig {
   music: MusicConfig;
   acp_harness: AcpHarnessConfig;
   inline_ai: InlineAiConfig;
+  native_output: NativeOutputConfig;
   xenon: XenonConfig;
   keyboard_overlay?: KeyboardOverlayConfig;
 }

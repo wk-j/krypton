@@ -438,6 +438,11 @@ context = true                 # attach a pane snapshot to the first prompt of e
 follow_up = true               # when an accepted Cmd+K command fails, propose a fix on a pane chip (spec 335)
 remote_checks = true           # in an SSH pane, let Cmd+K run read-only checks on that host (spec 336)
 
+# --- Native command output (spec 351) ---
+[native_output]
+enabled = true                 # draw native cards over unified-diff command output
+default_view = "native"        # "native" | "raw" for new cards; Leader i flips one
+
 # --- ACP Harness ---
 # Multi-lane ACP orchestration view opened with Leader Y.
 
@@ -664,6 +669,17 @@ To switch models, change `active` to the name of another preset. Changes take ef
 Edits apply on **Reload Config** at the next `Cmd+K`; an overlay that is already open keeps its session. `follow_up` is read when a command is accepted.
 
 Every Inline AI prompt also tells the agent to check, with read-only commands, every fact its answer depends on before answering (spec 336); there is no switch for it.
+
+### Native Command Output (specs 351, 352)
+
+A finished command whose output is a unified diff gets a native card over its rows: one line-number column, syntax colour, word marks and a `command · Native | Raw · Copy` bar. The card needs OSC 133 command marks, which fish 4 sends by default. If the rows hold something else (delta, a pager's leftovers), a plain local `git [--no-pager] diff …` is re-run once without pager or colour to get the diff. A plain local `git status` is re-run as porcelain v2 and shown as the branch line plus Conflicts / Staged / Unstaged / Untracked groups with `+A -D` counts. Cards are transparent; the raw rows under them are hidden while the card is in Native view. `Leader i` flips the newest visible card between Native and Raw, and `Leader Shift+I` copies its diff or status.
+
+| Section | Key | Type | Default | Description |
+|---------|-----|------|---------|-------------|
+| `[native_output]` | `enabled` | bool | `true` | `false` draws no new cards; existing ones stay |
+| `[native_output]` | `default_view` | string | `"native"` | View of new cards: `"native"` or `"raw"`. Any other value means `"native"` |
+
+Edits apply on **Reload Config** to the next finished command.
 
 ### Timeline Automatic Recording
 

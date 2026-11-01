@@ -1,0 +1,294 @@
+/* Spec 351 — native command output cards.
+   The layer sits inside `.xterm-screen`, so its coordinates are the cell grid.
+   Cards are transparent like the rest of the terminal: the layer hides the raw
+   rows under a Native card with a generated rule on the DOM renderer's rows,
+   so nothing has to be painted over them. No left-edge accent rail
+   (ADR 0027): changed rows are marked by tint and sign only. */
+
+@layer krypton.component {
+  .krypton-native-output {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    overflow: hidden;
+    pointer-events: none;
+    font-family: var(--krypton-native-font, monospace);
+    font-size: var(--krypton-native-font-size, 13px);
+    line-height: var(--krypton-native-cell-h, 1.2);
+    color: var(--krypton-fg);
+    /* Dim ink the way the terminal draws SGR 2 (foreground at reduced
+       opacity). Not `--krypton-fg-dim`: that is the titlebar text colour, and
+       some themes (legacy-radiance: #304838) make it near-invisible here. */
+    --krypton-native-dim: rgba(var(--krypton-fg-rgb), 0.55);
+  }
+
+  .krypton-native-output--alt,
+  :root.krypton-native-output--suspended .krypton-native-output {
+    display: none;
+  }
+
+  .krypton-native-block {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+  }
+
+  .krypton-native-block__body {
+    position: absolute;
+    inset: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    pointer-events: auto;
+    background: transparent;
+  }
+
+  .krypton-native-block--raw .krypton-native-block__body {
+    display: none;
+  }
+
+  /* ── Bar: command · Native|Raw · Copy ── */
+
+  .krypton-native-block__bar {
+    position: absolute;
+    top: 0;
+    right: 6px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--krypton-native-cell-h, 1.2em);
+    padding: 0 2px 0 8px;
+    pointer-events: auto;
+    font-size: 0.85em;
+    color: var(--krypton-native-dim);
+    background: var(--krypton-bg-elev);
+    border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
+    border-radius: 8px;
+    box-sizing: border-box;
+  }
+
+  .krypton-native-block--raw .krypton-native-block__bar {
+    opacity: 0;
+  }
+
+  .krypton-native-block--raw .krypton-native-block__bar:hover,
+  :root.krypton-native-output--leader .krypton-native-block--raw .krypton-native-block__bar {
+    opacity: 1;
+  }
+
+  .krypton-native-block__label {
+    max-width: 32ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .krypton-native-block__switch {
+    display: flex;
+  }
+
+  .krypton-native-block__opt {
+    padding: 0 6px;
+    font: inherit;
+    font-size: 0.9em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--krypton-native-dim);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .krypton-native-block__opt:hover {
+    color: var(--krypton-fg);
+  }
+
+  .krypton-native-block__opt[aria-pressed='true'] {
+    color: var(--krypton-accent);
+    border-color: rgba(var(--krypton-accent-rgb), var(--krypton-opacity-active));
+  }
+
+  /* ── Diff body ── */
+
+  .krypton-native-diff__head {
+    display: flex;
+    gap: 1ch;
+    min-height: var(--krypton-native-cell-h);
+    padding-left: 1ch;
+    white-space: nowrap;
+  }
+
+  .krypton-native-diff__status--modified { color: var(--krypton-ansi-3); }
+  .krypton-native-diff__status--added { color: var(--krypton-ansi-2); }
+  .krypton-native-diff__status--deleted { color: var(--krypton-ansi-1); }
+  .krypton-native-diff__status--renamed { color: var(--krypton-ansi-5); }
+  .krypton-native-diff__status--binary { color: var(--krypton-native-dim); }
+
+  .krypton-native-diff__path {
+    color: var(--krypton-ansi-6);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .krypton-native-diff__added { color: var(--krypton-ansi-2); }
+  .krypton-native-diff__deleted { color: var(--krypton-ansi-1); }
+
+  .krypton-native-diff__row {
+    display: grid;
+    grid-template-columns: calc(var(--krypton-native-gutter, 4ch) + 2ch) 2ch minmax(0, 1fr);
+    min-height: var(--krypton-native-cell-h);
+  }
+
+  .krypton-native-diff__row--add {
+    background: rgba(var(--krypton-success-rgb), 0.1);
+  }
+
+  .krypton-native-diff__row--del {
+    background: rgba(var(--krypton-danger-rgb), 0.12);
+  }
+
+  .krypton-native-diff__num {
+    padding-right: 1ch;
+    text-align: right;
+    color: var(--krypton-native-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .krypton-native-diff__sign {
+    text-align: center;
+  }
+
+  .krypton-native-diff__row--add .krypton-native-diff__sign { color: var(--krypton-ansi-2); }
+  .krypton-native-diff__row--del .krypton-native-diff__sign { color: var(--krypton-ansi-1); }
+
+  .krypton-native-diff__code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    tab-size: 8;
+  }
+
+  .krypton-native-diff__row--gap .krypton-native-diff__code {
+    color: var(--krypton-native-dim);
+  }
+
+  .krypton-native-diff__row--add .krypton-native-diff__mark {
+    background: rgba(var(--krypton-success-rgb), 0.28);
+  }
+
+  .krypton-native-diff__row--del .krypton-native-diff__mark {
+    background: rgba(var(--krypton-danger-rgb), 0.32);
+  }
+
+  /* ── git status body (spec 352) ── */
+
+  .krypton-native-status__branch {
+    min-height: var(--krypton-native-cell-h);
+    padding-left: 1ch;
+    color: var(--krypton-ansi-6);
+    white-space: nowrap;
+  }
+
+  .krypton-native-status__clean {
+    padding-left: 1ch;
+    color: var(--krypton-native-dim);
+  }
+
+  .krypton-native-status__label {
+    display: flex;
+    gap: 1ch;
+    min-height: var(--krypton-native-cell-h);
+    padding-left: 1ch;
+    font-size: 0.85em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--krypton-native-dim);
+    align-items: center;
+  }
+
+  .krypton-native-status__count {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .krypton-native-status__group--conflicts .krypton-native-status__label { color: var(--krypton-ansi-1); }
+  .krypton-native-status__group--staged .krypton-native-status__label { color: var(--krypton-ansi-2); }
+
+  .krypton-native-status__entry {
+    display: grid;
+    grid-template-columns: 5ch minmax(0, 1fr) auto;
+    min-height: var(--krypton-native-cell-h);
+    padding-right: 2ch;
+  }
+
+  .krypton-native-status__code {
+    padding-right: 1ch;
+    text-align: right;
+  }
+
+  .krypton-native-status__code--modified { color: var(--krypton-ansi-3); }
+  .krypton-native-status__code--added { color: var(--krypton-ansi-2); }
+  .krypton-native-status__code--deleted,
+  .krypton-native-status__code--conflict { color: var(--krypton-ansi-1); }
+  .krypton-native-status__code--renamed { color: var(--krypton-ansi-5); }
+  .krypton-native-status__code--untracked,
+  .krypton-native-status__code--ignored,
+  .krypton-native-status__code--other { color: var(--krypton-native-dim); }
+
+  .krypton-native-status__path {
+    overflow-wrap: anywhere;
+  }
+
+  .krypton-native-status__dir,
+  .krypton-native-status__arrow {
+    color: var(--krypton-native-dim);
+  }
+
+  .krypton-native-status__group--ignored .krypton-native-status__path {
+    color: var(--krypton-native-dim);
+  }
+
+  .krypton-native-status__counts {
+    display: flex;
+    gap: 1ch;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .krypton-native-status__added { color: var(--krypton-ansi-2); }
+  .krypton-native-status__deleted { color: var(--krypton-ansi-1); }
+}
+
+/* ── Syntax: highlight.js classes on the terminal's ANSI palette ──
+   UNLAYERED on purpose: the github-dark sheets other views import are
+   unlayered, and an unlayered rule beats any layered one. The extra
+   `.krypton-native-output` ancestor outranks their `.hljs-title.function_`. */
+
+.krypton-native-output .krypton-native-diff__code [class*='hljs-'] {
+  color: inherit;
+  font-weight: inherit;
+  font-style: inherit;
+}
+.krypton-native-output .krypton-native-diff__code .hljs-keyword,
+.krypton-native-output .krypton-native-diff__code .hljs-selector-tag,
+.krypton-native-output .krypton-native-diff__code .hljs-literal,
+.krypton-native-output .krypton-native-diff__code .hljs-type { color: var(--krypton-ansi-4); }
+.krypton-native-output .krypton-native-diff__code .hljs-string,
+.krypton-native-output .krypton-native-diff__code .hljs-regexp,
+.krypton-native-output .krypton-native-diff__code .hljs-template-tag,
+.krypton-native-output .krypton-native-diff__code .hljs-code { color: var(--krypton-ansi-3); }
+.krypton-native-output .krypton-native-diff__code .hljs-number,
+.krypton-native-output .krypton-native-diff__code .hljs-symbol,
+.krypton-native-output .krypton-native-diff__code .hljs-bullet { color: var(--krypton-ansi-5); }
+.krypton-native-output .krypton-native-diff__code .hljs-title,
+.krypton-native-output .krypton-native-diff__code .hljs-section { color: var(--krypton-ansi-2); }
+.krypton-native-output .krypton-native-diff__code .hljs-built_in,
+.krypton-native-output .krypton-native-diff__code .hljs-attr,
+.krypton-native-output .krypton-native-diff__code .hljs-attribute,
+.krypton-native-output .krypton-native-diff__code .hljs-link { color: var(--krypton-ansi-6); }
+.krypton-native-output .krypton-native-diff__code .hljs-comment,
+.krypton-native-output .krypton-native-diff__code .hljs-quote,
+.krypton-native-output .krypton-native-diff__code .hljs-meta { color: var(--krypton-native-dim); }
+.krypton-native-output .krypton-native-diff__code .hljs-strong { font-weight: bold; }
+.krypton-native-output .krypton-native-diff__code .hljs-emphasis { font-style: italic; }

@@ -10,6 +10,8 @@ import { InputRouter } from './input-router';
 import { WhichKey } from './which-key';
 import { CommandScope } from './command-palette';
 import { PromptDialog } from './prompt-dialog';
+import { syncNativeOutputMode } from './native-output/layer';
+import { Mode } from './types';
 import { FileScope, GrepScope, ProjectRoot } from './quick-file-search';
 import { SearchPalette } from './search-palette';
 import { QuickOverview } from './quick-overview';
@@ -228,6 +230,11 @@ async function main(): Promise<void> {
   const whichKey = new WhichKey();
   inputRouter.onModeChange((mode, contentType, leaderKeys, layoutMode) => {
     whichKey.setMode(mode, contentType, leaderKeys, layoutMode);
+    // spec 351: Selection/Hint paint on raw cells; Compositor reveals Raw cards' bars.
+    syncNativeOutputMode({
+      suspended: mode === Mode.Selection || mode === Mode.Hint,
+      leader: mode === Mode.Compositor,
+    });
   });
 
   // Surface unhandled promise rejections and uncaught errors in the console

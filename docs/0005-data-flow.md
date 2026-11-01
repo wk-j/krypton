@@ -2247,3 +2247,29 @@ the local Telegram Settings view accepts it.
    channel. It returns bounded stdout,
    stderr and exit code. Timeout, lane close or disconnect cancels the local SSH
    child and reports the remote outcome as unknown; Krypton never retries it.
+
+## Native Command Output Flow (specs 351, 352)
+
+```
+1. fish → PTY → xterm parser → OSC 133;C;cmdline_url=… → NativeOutputLayer's own handler
+   (observes, returns false) → CommandBlockTracker opens a block: start = registerMarker(0)
+2. OSC 133;D;<exit> → end = registerMarker(0), endCol = cursorX. A without D, or RIS, drops it.
+3. setTimeout(0) → layer.tryMount: [native_output] enabled, rawRows ≥ 1, exit ∈ {0, 1, none}
+   a. first 8 logical lines of buffer.normal look like a unified diff → read the whole block
+   b. else cmdline is `git [--no-pager] diff …` or `git [--no-pager] status …` →
+      Compositor.rerunLocalGit: get_foreground_process (must be null: the pane's own shell is
+      in front) → get_pty_cwd → native_git_diff / native_git_status(cwd, cmdline)
+      (Rust validates the argv; diff runs `--no-pager --no-color --no-ext-diff --no-textconv`,
+      status runs `--porcelain=v2 --branch -z` + staged/unstaged `diff --numstat -z`;
+      5 s / 2 MiB per git call)
+   c. parseNativeDiff (≤ 5 000 lines, no combined diff) or parseGitStatus → NativeCard
+      painted once
+4. terminal.onRender / onScroll / onResize / buffer change → layout(): per card
+   top = (start.line − viewportY) × cellH, height = rawRows × cellH (cellH from
+   .xterm-screen's inline height ÷ rows); off-screen cards hide; alt buffer hides the layer.
+   The viewport rows under Native cards go into the layer's <style> as
+   `.xterm-rows > div:nth-child(n+a):nth-child(-n+b) { visibility: hidden }`
+5. Leader i → Compositor.toggleNativeOutput → focused pane's newest visible card flips
+   Native ⇄ Raw (one class; its rows are un-hidden). Leader Shift+I → copy → toast
+6. Marker dispose (scrollback trim, clear) or RIS → card removed; > 16 cards → oldest removed
+```

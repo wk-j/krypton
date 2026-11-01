@@ -48,6 +48,7 @@ pub struct KryptonConfig {
     pub music: MusicConfig,
     pub agent: AgentConfig,
     pub inline_ai: InlineAiConfig,
+    pub native_output: NativeOutputConfig,
     pub vault: VaultConfig,
     pub hurl: HurlConfig,
     pub pencil: PencilConfig,
@@ -723,6 +724,28 @@ impl Default for InlineAiConfig {
     }
 }
 
+/// `[native_output]` — native cards painted over a shell command's output
+/// (spec 351). `default_view` (`native` | `raw`) is validated in the
+/// frontend, so an unknown value falls back there rather than failing the
+/// whole config load.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NativeOutputConfig {
+    /// `false`: no native cards.
+    pub enabled: bool,
+    /// View new cards open in: `native` or `raw`.
+    pub default_view: String,
+}
+
+impl Default for NativeOutputConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            default_view: "native".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VaultConfig {
@@ -1384,6 +1407,17 @@ min_confidence = 0.65
         assert!(cfg.inline_ai.context);
         assert!(cfg.inline_ai.follow_up);
         assert!(cfg.inline_ai.remote_checks);
+    }
+
+    #[test]
+    fn native_output_defaults_when_section_missing() {
+        let cfg: KryptonConfig = toml::from_str("").unwrap();
+        assert!(cfg.native_output.enabled);
+        assert_eq!(cfg.native_output.default_view, "native");
+        let cfg: KryptonConfig =
+            toml::from_str("[native_output]\ndefault_view = \"raw\"\n").unwrap();
+        assert!(cfg.native_output.enabled);
+        assert_eq!(cfg.native_output.default_view, "raw");
     }
 
     #[test]

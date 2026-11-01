@@ -488,6 +488,27 @@ pub fn collect_working_diff(cwd: String, staged: bool) -> Result<crate::git::Wor
     crate::git::collect_working_diff(&cwd, staged)
 }
 
+/// spec 351: re-run a plain `git diff` for a native diff card when the
+/// terminal rows hold no parseable diff (e.g. a `delta` pager). The
+/// validation in `git::git_diff_rerun_args` decides what may run; the git
+/// process can take up to 5 s, so it runs on the blocking pool.
+#[tauri::command]
+pub async fn native_git_diff(cwd: String, cmdline: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::git::native_git_diff(&cwd, &cmdline))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
+}
+
+#[tauri::command]
+pub async fn native_git_status(
+    cwd: String,
+    cmdline: String,
+) -> Result<crate::git::NativeGitStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::git::native_git_status(&cwd, &cmdline))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
+}
+
 /// spec 270: preview and freeze one review round without a worktree.
 #[tauri::command]
 pub fn review_thread_preview(cwd: String, base: String) -> Result<serde_json::Value, String> {

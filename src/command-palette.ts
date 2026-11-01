@@ -558,6 +558,20 @@ export class CommandScope implements SearchScope {
       keybinding: 'Leader D',
       execute: () => c.openDiffView({ staged: true }),
     });
+    this.register({
+      id: 'terminal.native-output.toggle',
+      label: 'Toggle Native / Raw Command Output',
+      category: 'Terminal',
+      keybinding: 'Leader i',
+      execute: () => c.toggleNativeOutput(),
+    });
+    this.register({
+      id: 'terminal.native-output.copy',
+      label: 'Copy Native Command Output',
+      category: 'Terminal',
+      keybinding: 'Leader I',
+      execute: () => c.copyNativeOutput(),
+    });
 
     // ── AI Agent ──
     this.register({

@@ -983,6 +983,14 @@ export class InputRouter {
         this.compositor.openDiffView({ staged: e.shiftKey }).then(() => this.toNormal());
         break;
 
+      // i — spec 351: Native/Raw on the newest visible card / I — copy its diff
+      case 'i': {
+        const done = e.shiftKey ? this.compositor.copyNativeOutput() : this.compositor.toggleNativeOutput();
+        if (!done) console.info('[InputRouter] no native output card in view');
+        this.toNormal();
+        break;
+      }
+
       // a — open AI agent window (pi-agent). Shift+a is unbound.
       case 'a':
         if (e.shiftKey) {

@@ -136,6 +136,8 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
     { key: 'V', label: 'Select Lines', contentTypes: [null] },
     { key: 'd', label: 'Git Diff', effect: 'important', contentTypes: [null] },
     { key: 'D', label: 'Git Diff Staged', effect: 'important', contentTypes: [null] },
+    { key: 'i', label: 'Native / Raw Output', contentTypes: [null] },
+    { key: 'I', label: 'Copy Native Output', contentTypes: [null] },
     { key: 'o', label: 'Markdown Viewer', effect: 'important', contentTypes: [null] },
     { key: 'J', label: 'Daily Note', effect: 'important', contentTypes: [null] },
     { key: 'c', label: 'Clone SSH Tab', contentTypes: [null] },

@@ -16,8 +16,11 @@ use krypton_remote_protocol::diff_stat::{
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,6 +88,298 @@ pub fn repo_root(cwd: &Path) -> Option<String> {
         None
     } else {
         Some(trimmed.to_string())
+    }
+}
+
+/// Characters that make a command line more than a plain git argv
+/// (shell syntax, quoting, globbing, expansion, comments).
+const RERUN_FORBIDDEN_CHARS: &[char] = &[
+    '|', '&', ';', '<', '>', '(', ')', '$', '`', '\'', '"', '\\', '*', '?', '[', ']', '{', '}',
+    '#', '\n', '\r',
+];
+
+/// Long options a re-run may not carry: they write files, run external
+/// programs, or change the output away from a plain unified diff. Matched
+/// in both prefix directions so git's unambiguous abbreviations (`--out=x`)
+/// and longer spellings (`--color-words`, `--word-diff-regex`) are refused.
+const RERUN_DENIED_OPTIONS: &[&str] = &[
+    "--output",
+    "--ext-diff",
+    "--textconv",
+    "--word-diff",
+    "--color",
+];
+
+const NATIVE_GIT_TIMEOUT: Duration = Duration::from_secs(5);
+const NATIVE_GIT_MAX_BYTES: usize = 2 * 1024 * 1024;
+
+/// Shared gate of specs 351/352: the command line must be exactly
+/// `git [--no-pager] <subcommand> <rest>` with no shell syntax; returns
+/// the whitespace-split `<rest>`.
+fn git_rerun_tokens(cmdline: &str, subcommand: &str) -> Result<Vec<String>, String> {
+    let cmdline = cmdline.trim();
+    if let Some(c) = cmdline.chars().find(|c| RERUN_FORBIDDEN_CHARS.contains(c)) {
+        return Err(format!("command line contains {c:?}"));
+    }
+    // A shell expands `~` only at a word start or after `=` / `:`; mid-word
+    // (`HEAD~1`) it reaches git verbatim, exactly as in this argv.
+    if cmdline
+        .split_whitespace()
+        .any(|token| token.starts_with('~') || token.contains("=~") || token.contains(":~"))
+    {
+        return Err("command line contains a tilde expansion".to_string());
+    }
+    let mut tokens = cmdline.split_whitespace();
+    if tokens.next() != Some("git") {
+        return Err("not a git command".to_string());
+    }
+    let mut sub = tokens.next();
+    if sub == Some("--no-pager") {
+        sub = tokens.next();
+    }
+    if sub != Some(subcommand) {
+        return Err(format!("not a plain `git {subcommand}`"));
+    }
+    Ok(tokens.map(str::to_string).collect())
+}
+
+/// spec 351: validate a shell command line for a native diff re-run. It
+/// must be exactly `git [--no-pager] diff <rest>` with no shell syntax;
+/// returns `<rest>`. This is the only gate on what `native_git_diff` runs.
+pub fn git_diff_rerun_args(cmdline: &str) -> Result<Vec<String>, String> {
+    let rest = git_rerun_tokens(cmdline, "diff")?;
+    for token in &rest {
+        if !token.starts_with("--") || token == "--" {
+            continue;
+        }
+        let name = token.split_once('=').map_or(token.as_str(), |(n, _)| n);
+        if RERUN_DENIED_OPTIONS
+            .iter()
+            .any(|denied| denied.starts_with(name) || name.starts_with(denied))
+        {
+            return Err(format!("option {name} is not allowed"));
+        }
+    }
+    Ok(rest)
+}
+
+/// spec 351: run `git --no-pager diff --no-color --no-ext-diff --no-textconv
+/// <rest>` in `cwd` and return its stdout. Killed after 5 s; stdout over
+/// 2 MiB or an exit status other than 0/1 is an `Err`.
+pub fn native_git_diff(cwd: &str, cmdline: &str) -> Result<String, String> {
+    let rest = git_diff_rerun_args(cmdline)?;
+    if cwd.is_empty() {
+        return Err("no working directory".to_string());
+    }
+    let mut args = owned_args(&["diff", "--no-color", "--no-ext-diff", "--no-textconv"]);
+    args.extend(rest);
+    match run_git_capped(cwd, &args)? {
+        (Some(0 | 1), stdout) => Ok(stdout),
+        (Some(code), _) => Err(format!("git diff exited with status {code}")),
+        (None, _) => Err("git diff was terminated by a signal".to_string()),
+    }
+}
+
+/// spec 352: the parts of a user's `git status` that survive a native
+/// re-run. Format flags are dropped (the re-run is always porcelain v2).
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct StatusRerun {
+    /// `--untracked-files=<mode>`: `no` | `normal` | `all`.
+    pub untracked: Option<String>,
+    /// `--ignored=<mode>`: `traditional` | `no` | `matching`.
+    pub ignored: Option<String>,
+    /// Pathspecs, passed after `--`.
+    pub paths: Vec<String>,
+}
+
+/// spec 352: validate a shell command line for a native status re-run. It
+/// must be exactly `git [--no-pager] status <rest>` where `<rest>` holds
+/// only format flags (dropped), untracked/ignored modes and pathspecs.
+/// This is the only gate on what `native_git_status` runs.
+pub fn git_status_rerun_args(cmdline: &str) -> Result<StatusRerun, String> {
+    let mut rerun = StatusRerun::default();
+    let mut tokens = git_rerun_tokens(cmdline, "status")?.into_iter();
+    while let Some(token) = tokens.next() {
+        match token.as_str() {
+            "--" => {
+                rerun.paths.extend(tokens.by_ref());
+                break;
+            }
+            "-s" | "--short" | "-b" | "--branch" | "-sb" | "-bs" | "--long" => {}
+            "-u" | "--untracked-files" => rerun.untracked = Some("all".to_string()),
+            "--ignored" => rerun.ignored = Some("traditional".to_string()),
+            path if !path.starts_with('-') => rerun.paths.push(path.to_string()),
+            option => {
+                if let Some(mode) = option
+                    .strip_prefix("--untracked-files=")
+                    .or_else(|| option.strip_prefix("-u"))
+                    .filter(|mode| matches!(*mode, "no" | "normal" | "all"))
+                {
+                    rerun.untracked = Some(mode.to_string());
+                } else if let Some(mode) = option
+                    .strip_prefix("--ignored=")
+                    .filter(|mode| matches!(*mode, "traditional" | "no" | "matching"))
+                {
+                    rerun.ignored = Some(mode.to_string());
+                } else {
+                    return Err(format!("option {option} is not allowed"));
+                }
+            }
+        }
+    }
+    Ok(rerun)
+}
+
+/// spec 352: raw output of a native `git status` re-run; the frontend
+/// parses all three fields.
+#[derive(Debug, Serialize)]
+pub struct NativeGitStatus {
+    /// `git status --porcelain=v2 --branch -z` stdout.
+    pub status: String,
+    /// `git diff --cached --numstat -z` stdout; empty when it failed.
+    pub staged_numstat: String,
+    /// `git diff --numstat -z` stdout; empty when it failed.
+    pub unstaged_numstat: String,
+}
+
+/// spec 352: re-run a validated `git status` in `cwd` as porcelain v2 plus
+/// best-effort staged/unstaged numstats over the same pathspecs. The
+/// status run must exit 0; a failed numstat run yields an empty string.
+pub fn native_git_status(cwd: &str, cmdline: &str) -> Result<NativeGitStatus, String> {
+    let rerun = git_status_rerun_args(cmdline)?;
+    if cwd.is_empty() {
+        return Err("no working directory".to_string());
+    }
+    let mut args = owned_args(&["status", "--porcelain=v2", "--branch", "-z"]);
+    if let Some(mode) = &rerun.untracked {
+        args.push(format!("--untracked-files={mode}"));
+    }
+    if let Some(mode) = &rerun.ignored {
+        args.push(format!("--ignored={mode}"));
+    }
+    let mut pathspec = Vec::new();
+    if !rerun.paths.is_empty() {
+        pathspec.push("--".to_string());
+        pathspec.extend(rerun.paths);
+    }
+    args.extend(pathspec.iter().cloned());
+    let status = match run_git_capped(cwd, &args)? {
+        (Some(0), stdout) => stdout,
+        (Some(code), _) => return Err(format!("git status exited with status {code}")),
+        (None, _) => return Err("git status was terminated by a signal".to_string()),
+    };
+    let numstat = |cached: bool| {
+        let mut args = owned_args(&["diff"]);
+        if cached {
+            args.push("--cached".to_string());
+        }
+        args.extend(owned_args(&[
+            "--numstat",
+            "-z",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+        ]));
+        args.extend(pathspec.iter().cloned());
+        match run_git_capped(cwd, &args) {
+            Ok((Some(0), stdout)) => stdout,
+            Ok((code, _)) => {
+                log::debug!("native_git_status: numstat (cached={cached}) exited {code:?}");
+                String::new()
+            }
+            Err(e) => {
+                log::debug!("native_git_status: numstat (cached={cached}) failed: {e}");
+                String::new()
+            }
+        }
+    };
+    Ok(NativeGitStatus {
+        status,
+        staged_numstat: numstat(true),
+        unstaged_numstat: numstat(false),
+    })
+}
+
+fn owned_args(args: &[&str]) -> Vec<String> {
+    args.iter().map(|arg| arg.to_string()).collect()
+}
+
+/// Run `git --no-pager <args>` in `cwd` for a native re-run (specs
+/// 351/352): optional locks off, stdin/stderr null, killed after 5 s,
+/// stdout over 2 MiB is an `Err`. `args[0]` is the subcommand. Returns the
+/// exit code (`None` when terminated by a signal) and stdout.
+fn run_git_capped(cwd: &str, args: &[String]) -> Result<(Option<i32>, String), String> {
+    let what = format!("git {}", args.first().map_or("", String::as_str));
+    let mut child = Command::new("git")
+        .arg("--no-pager")
+        .args(args)
+        .current_dir(cwd)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("failed to run git: {e}"))?;
+    let deadline = Instant::now() + NATIVE_GIT_TIMEOUT;
+
+    let Some(stdout) = child.stdout.take() else {
+        kill_child(&mut child);
+        return Err("git stdout unavailable".to_string());
+    };
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let read = stdout
+            .take(NATIVE_GIT_MAX_BYTES as u64 + 1)
+            .read_to_end(&mut buf)
+            .map(|_| buf);
+        // The receiver is gone when the run already timed out.
+        let _ = tx.send(read);
+    });
+
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    let bytes = match rx.recv_timeout(remaining) {
+        Ok(Ok(bytes)) => bytes,
+        Ok(Err(e)) => {
+            kill_child(&mut child);
+            return Err(format!("failed to read git output: {e}"));
+        }
+        Err(_) => {
+            kill_child(&mut child);
+            log::warn!("native {what}: `{}` timed out in {cwd}", args.join(" "));
+            return Err(format!("{what} timed out"));
+        }
+    };
+    if bytes.len() > NATIVE_GIT_MAX_BYTES {
+        kill_child(&mut child);
+        return Err(format!("{what} output exceeded 2 MiB"));
+    }
+
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() >= deadline => {
+                kill_child(&mut child);
+                log::warn!("native {what}: `{}` timed out in {cwd}", args.join(" "));
+                return Err(format!("{what} timed out"));
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+            Err(e) => {
+                kill_child(&mut child);
+                return Err(format!("failed to wait for git: {e}"));
+            }
+        }
+    };
+    Ok((status.code(), String::from_utf8_lossy(&bytes).into_owned()))
+}
+
+/// Kill and reap a child; failures only mean it already exited.
+fn kill_child(child: &mut std::process::Child) {
+    if let Err(e) = child.kill() {
+        log::debug!("kill git child: {e}");
+    }
+    if let Err(e) = child.wait() {
+        log::debug!("reap git child: {e}");
     }
 }
 
@@ -746,6 +1041,207 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn git_diff_rerun_args_accepts_plain_git_diff() {
+        assert_eq!(git_diff_rerun_args("git diff"), Ok(vec![]));
+        assert_eq!(
+            git_diff_rerun_args("  git --no-pager diff --staged -- src  "),
+            Ok(vec!["--staged".into(), "--".into(), "src".into()])
+        );
+        assert_eq!(
+            git_diff_rerun_args("git diff --no-color HEAD~1"),
+            Ok(vec!["--no-color".into(), "HEAD~1".into()])
+        );
+        assert_eq!(
+            git_diff_rerun_args("git diff --no-color --no-ext-diff --no-textconv HEAD^"),
+            Ok(vec![
+                "--no-color".into(),
+                "--no-ext-diff".into(),
+                "--no-textconv".into(),
+                "HEAD^".into()
+            ])
+        );
+    }
+
+    #[test]
+    fn git_diff_rerun_args_rejects_shell_syntax_other_commands_and_denied_options() {
+        for cmdline in [
+            "git diff | head",
+            "git diff 'a b'",
+            "git diff $X",
+            "git diff\nrm x",
+            "git -C x diff",
+            "git -c a=b diff",
+            "git show",
+            "env X=1 git diff",
+            "git diff --output=x",
+            "git diff --out=x",
+            "git diff --ext-diff",
+            "git diff --textconv",
+            "git diff --word-diff",
+            "git diff --word-diff-regex=.",
+            "git diff --color=always",
+            "git diff --color-words",
+            "git diff --color-moved",
+            "git diff ~/x",
+            "git diff --src-prefix=~/x",
+        ] {
+            assert!(
+                git_diff_rerun_args(cmdline).is_err(),
+                "{cmdline:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn native_git_diff_ignores_pager_and_color_config() {
+        let dir = test_repo("native-diff");
+        git_ok(&dir, &["config", "core.pager", "less"]);
+        git_ok(&dir, &["config", "color.ui", "always"]);
+        std::fs::write(dir.join("tracked.txt"), "old\n").expect("write tracked");
+        git_ok(&dir, &["add", "."]);
+        git_ok(&dir, &["commit", "-qm", "init"]);
+        std::fs::write(dir.join("tracked.txt"), "new\n").expect("modify tracked");
+
+        let cwd = dir.to_str().expect("utf8 path");
+        let diff = native_git_diff(cwd, "git diff").expect("native diff");
+        assert!(diff.contains("diff --git"), "missing diff header: {diff}");
+        assert!(diff.contains("+new"), "missing change: {diff}");
+        assert!(!diff.contains('\x1b'), "diff must be plain: {diff:?}");
+        assert_eq!(
+            native_git_diff(cwd, "git diff --staged").expect("staged diff"),
+            ""
+        );
+        assert!(native_git_diff(cwd, "git diff --color=always").is_err());
+        assert!(native_git_diff("", "git diff").is_err());
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[test]
+    fn git_status_rerun_args_accepts_plain_git_status() {
+        assert_eq!(
+            git_status_rerun_args("git status"),
+            Ok(StatusRerun::default())
+        );
+        assert_eq!(
+            git_status_rerun_args("git --no-pager status -sb"),
+            Ok(StatusRerun::default())
+        );
+        assert_eq!(
+            git_status_rerun_args("git status -uno -- src docs"),
+            Ok(StatusRerun {
+                untracked: Some("no".into()),
+                ignored: None,
+                paths: vec!["src".into(), "docs".into()],
+            })
+        );
+        assert_eq!(
+            git_status_rerun_args("git status --ignored=matching"),
+            Ok(StatusRerun {
+                ignored: Some("matching".into()),
+                ..StatusRerun::default()
+            })
+        );
+        assert_eq!(
+            git_status_rerun_args("git status -s --long -u --ignored src -- -odd"),
+            Ok(StatusRerun {
+                untracked: Some("all".into()),
+                ignored: Some("traditional".into()),
+                paths: vec!["src".into(), "-odd".into()],
+            })
+        );
+        assert_eq!(
+            git_status_rerun_args("git status --untracked-files=normal"),
+            Ok(StatusRerun {
+                untracked: Some("normal".into()),
+                ..StatusRerun::default()
+            })
+        );
+    }
+
+    #[test]
+    fn git_status_rerun_args_rejects_shell_syntax_other_commands_and_options() {
+        for cmdline in [
+            "git status -v",
+            "git status --porcelain",
+            "git status --porcelain=v2",
+            "git status -z",
+            "git status --column",
+            "git -C x status",
+            "git status | cat",
+            "git status 'a b'",
+            "git stash",
+            "git status -ufoo",
+            "git status --untracked-files=",
+            "git status --ignored=all",
+            "git status ~/x",
+            "git status -- a*",
+        ] {
+            assert!(
+                git_status_rerun_args(cmdline).is_err(),
+                "{cmdline:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn native_git_status_returns_porcelain_v2_and_numstats() {
+        let dir = test_repo("native-status");
+        git_ok(&dir, &["config", "color.ui", "always"]);
+        git_ok(&dir, &["config", "status.short", "true"]);
+        std::fs::write(dir.join("staged.txt"), "old\n").expect("seed staged");
+        std::fs::write(dir.join("unstaged.txt"), "old\n").expect("seed unstaged");
+        git_ok(&dir, &["add", "."]);
+        git_ok(&dir, &["commit", "-qm", "init"]);
+        std::fs::write(dir.join("staged.txt"), "new\n").expect("modify staged");
+        git_ok(&dir, &["add", "staged.txt"]);
+        std::fs::write(dir.join("unstaged.txt"), "new\n").expect("modify unstaged");
+        std::fs::write(dir.join("untracked.txt"), "new\n").expect("write untracked");
+
+        let cwd = dir.to_str().expect("utf8 path");
+        let out = native_git_status(cwd, "git status -sb").expect("native status");
+        let entries: Vec<&str> = out.status.split('\0').collect();
+        assert!(
+            entries.iter().any(|e| e.starts_with("# branch.head ")),
+            "missing branch header: {:?}",
+            out.status
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|e| e.starts_with("1 M. ") && e.ends_with(" staged.txt")),
+            "missing staged entry: {:?}",
+            out.status
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|e| e.starts_with("1 .M ") && e.ends_with(" unstaged.txt")),
+            "missing unstaged entry: {:?}",
+            out.status
+        );
+        assert!(
+            entries.contains(&"? untracked.txt"),
+            "missing untracked entry: {:?}",
+            out.status
+        );
+        assert!(!out.status.contains('\x1b'), "status must be plain");
+        assert!(out.staged_numstat.contains("staged.txt"));
+        assert!(!out.staged_numstat.contains("unstaged.txt"));
+        assert!(out.unstaged_numstat.contains("unstaged.txt"));
+        assert!(!out.unstaged_numstat.contains('\x1b'));
+
+        let scoped = native_git_status(cwd, "git status -uno -- staged.txt").expect("scoped");
+        assert!(scoped.status.contains("staged.txt"));
+        assert!(!scoped.status.contains("unstaged.txt"));
+        assert!(!scoped.status.contains("untracked.txt"));
+        assert_eq!(scoped.unstaged_numstat, "");
+
+        assert!(native_git_status(cwd, "git status -v").is_err());
+        assert!(native_git_status("", "git status").is_err());
+        std::fs::remove_dir_all(dir).expect("cleanup");
     }
 
     #[test]
