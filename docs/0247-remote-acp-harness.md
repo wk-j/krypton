@@ -4,6 +4,7 @@
 > Date: 2026-09-13
 > Milestone: ACP Harness — remote execution
 > Amended by: [0336](./0336-inline-ai-verify-on-pane-host.md) — the focused-SSH resolution and ssh command helpers moved from `remote_harness.rs` to `src-tauri/src/ssh_channel.rs` (shared with Inline AI's `host_exec`); behaviour unchanged. `SshManager::detect` now re-parses when the pane's `ssh` pid changes.
+> Amended (2026-11-01): Current SSH without an OSC 7 cwd prefills the path input with the last path that connected to the same `user@host:port` (see Edge Cases). Stock macOS zsh and most distro shells send no OSC 7 over SSH, so without this the path had to be typed on every launch.
 
 ## Problem
 
@@ -68,7 +69,7 @@ The execution target belongs to the whole Harness, not an individual lane. Every
 | `src/acp/client.ts` | Pass an execution target when spawning/probing ACP sessions. |
 | `src/acp/harness-directory.ts` | Carry a host-qualified workspace key so equal remote paths on different hosts do not collide. |
 | `src/acp/acp-harness-view.ts` | Own one immutable workspace target, route project operations, show remote state, and recover lanes after reconnect. |
-| `src/acp/remote-harness-picker.ts` | New keyboard-first picker for the focused SSH terminal and configured profiles, including missing-CWD and connection errors. |
+| `src/acp/remote-harness-picker.ts` | New keyboard-first picker for the focused SSH terminal and configured profiles, including missing-CWD and connection errors. Remembers the last connected path per destination for the missing-CWD case. |
 | `src/pty-bridge.ts`, `src/main.ts` | Reassemble split OSC 7 reports and forward their path and hostname to Rust's filtered remote-CWD cache. |
 | `src/ssh-session.ts` | Expose detected SSH metadata and passive remote-CWD state without injecting a probe command. |
 | `src/compositor.ts` | Open a remote Harness and preserve its workspace identity when opening related views. |
@@ -140,7 +141,7 @@ pub struct RemoteHarnessProfile {
 
 For a profile or focused session without a reusable master, Krypton sets `BatchMode=yes`, `ControlMaster=auto`, a Krypton-owned `ControlPath`, `ControlPersist=60`, `ServerAliveInterval=15`, `ServerAliveCountMax=2`, and `ExitOnForwardFailure=yes`. Password/passphrase and host-key prompts are not collected; failure tells the user to establish `ssh <host>` in a terminal.
 
-For `focused_ssh`, Rust calls the existing `detect_ssh_session`, accepts only its structured destination, port, identity-file, and jump-host fields, and resolves effective settings with `ssh -G`. The PTY bridge reassembles OSC 7 sequences split across output chunks and forwards the latest complete report to Rust, whose hostname filter rejects local-shell CWDs before caching the active remote path. The picker uses that cached path by default; if none exists, it requires an absolute project path. This flow never calls `probeRemoteCwd` or writes into the active PTY. If the detected or resolved `ControlPath` passes `ssh -O check`, Krypton borrows it; otherwise it opens a new Krypton-owned master and may require authentication.
+For `focused_ssh`, Rust calls the existing `detect_ssh_session`, accepts only its structured destination, port, identity-file, and jump-host fields, and resolves effective settings with `ssh -G`. The PTY bridge reassembles OSC 7 sequences split across output chunks and forwards the latest complete report to Rust, whose hostname filter rejects local-shell CWDs before caching the active remote path. The picker uses that cached path by default; if none exists, it asks for an absolute project path, prefilled with the last path that connected to the same destination. This flow never calls `probeRemoteCwd` or writes into the active PTY. If the detected or resolved `ControlPath` passes `ssh -O check`, Krypton borrows it; otherwise it opens a new Krypton-owned master and may require authentication.
 
 ```rust
 enum ControlMasterLease {
@@ -259,8 +260,9 @@ Local `kryptonctl`, Telegram, browser extension, queues, orchestration, permissi
    ACP Harness…
 2. The picker shows Current SSH first when detection succeeds, followed by
    configured profiles. Current SSH preselects the active remote CWD from the
-   Rust OSC 7 cache. If it is missing, the user must enter an absolute project
-   path.
+   Rust OSC 7 cache. If it is missing, the user enters an absolute project
+   path; the input starts with the last path that connected to that
+   `user@host:port`, selected, so Enter accepts it and typing replaces it.
 3. Local Rust resolves the selected launch source. It borrows a verified active
    ControlMaster when available; otherwise it starts a dedicated one for the
    same destination.
@@ -315,7 +317,7 @@ If SSH drops, the Harness becomes `disconnected`, in-flight requests become outc
   helper still disagrees, abort before lanes.
 - **Host key/password needed:** `BatchMode` fails with bounded stderr and tells the user to connect once in a terminal.
 - **Focused terminal is not SSH:** omit Current SSH and leave configured profiles available.
-- **Focused SSH has no cached remote CWD:** request an absolute project path; never inject `pwd` into the PTY or silently use remote `$HOME`.
+- **Focused SSH has no cached remote CWD:** request an absolute project path; never inject `pwd` into the PTY or silently use remote `$HOME`. The row reads `· last used <path>` and the input is prefilled with the canonical path of the last successful Current SSH connection to the same `user@host:port` (localStorage `krypton:remote-harness:last-project-dir:<user>@<host>:<port>`, written after `remote_harness_connect` succeeds). A live OSC 7 cwd always wins over it. The remembered path is only ever offered in the editable input, never sent without Enter. The remote shell sends OSC 7 only if configured to: macOS `/etc/zshrc` does it only inside Apple Terminal (`TERM_PROGRAM`), which SSH does not forward, so a `precmd` hook printing `\e]7;file://$HOST<percent-encoded $PWD>\a` in the remote `~/.zshrc` restores the automatic cwd.
 - **Active SSH has no reusable master:** connect separately to the detected destination and state that authentication may be required.
 - **Borrowed master disappears:** mark the Harness disconnected and use the resolved descriptor to reconnect through an owned master; never replay an in-flight prompt.
 - **Invalid remote path:** hello returns `invalid_workspace`; never fall back to `$HOME`.
@@ -338,7 +340,8 @@ If SSH drops, the Harness becomes `disconnected`, in-flight requests become outc
   normalization, versioned paths, SHA-256 verification, the bootstrap probe
   command, and replacing a cached helper whose bytes differ.
 - TypeScript tests cover picker ordering, split OSC 7 forwarding, missing
-  passive CWD, and host-qualified workspace identity; the full existing
+  passive CWD, the remembered-path prefill and OSC 7 precedence, and
+  host-qualified workspace identity; the full existing
   frontend suite guards the shared ACP/Harness UI.
 - Direct stdio smoke tests cover hello/shutdown, workspace write/read/remove,
   agent stdout forwarding, and agent exit. `WorkspaceDiffStat` answered a temp repo with

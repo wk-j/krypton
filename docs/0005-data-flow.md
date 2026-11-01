@@ -2168,7 +2168,10 @@ the local Telegram Settings view accepts it.
 1. `Leader Shift+S` captures the focused terminal session id and requests remote
    choices. Rust detects SSH metadata and reads only passively cached OSC 7 CWD.
 2. The picker returns either a configured profile or the focused SSH target plus
-   an absolute project path. No probe command is injected into the terminal.
+   an absolute project path: the OSC 7 cwd, else what the user enters into an
+   input prefilled with the last path that connected to that user@host:port
+   (localStorage, written after a successful connect). No probe command is
+   injected into the terminal.
 3. Rust resolves OpenSSH config and borrows a verified ControlMaster when possible.
    It probes the versioned remote user cache; on a miss, it detects the target,
    resolves a bundled or SHA-256-verified release helper, uploads it atomically,

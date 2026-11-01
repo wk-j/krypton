@@ -4973,7 +4973,7 @@ export class Compositor {
   async openRemoteAcpHarnessView(): Promise<void> {
     const launchPane = this.getFocusedPane();
     const terminalSessionId = launchPane?.contentView ? null : launchPane?.sessionId ?? null;
-    const { showRemoteHarnessPicker } = await import('./acp/remote-harness-picker');
+    const { showRemoteHarnessPicker, rememberLastProjectDir } = await import('./acp/remote-harness-picker');
     const choices = await invoke<import('./acp/remote-harness-picker').RemoteHarnessChoices>(
       'remote_harness_choices',
       { terminalSessionId },
@@ -4987,6 +4987,10 @@ export class Compositor {
     } catch (error) {
       console.error('[Krypton] Remote Harness connection failed:', error);
       return;
+    }
+    // spec 247: the next Current SSH launch to this destination prefills it.
+    if (launch.kind === 'focused_ssh' && choices.focusedSsh) {
+      rememberLastProjectDir(choices.focusedSsh, remote.path);
     }
 
     const { AcpHarnessView } = await import('./acp/acp-harness-view');

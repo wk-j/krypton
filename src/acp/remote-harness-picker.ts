@@ -35,21 +35,52 @@ interface PickerRow {
   detail: string;
   launch: RemoteHarnessLaunch;
   needsPath: boolean;
+  /** What the path input starts with when the row needs one ('' = empty). */
+  pathPrefill: string;
 }
 
-export function remoteHarnessPickerRows(choices: RemoteHarnessChoices): PickerRow[] {
+/** Spec 247: the last project path a Current SSH Harness connected with, per destination. */
+function lastProjectDirKey(ssh: FocusedSshCandidate): string {
+  return `krypton:remote-harness:last-project-dir:${ssh.user}@${ssh.host}:${ssh.port}`;
+}
+
+function lastProjectDir(ssh: FocusedSshCandidate): string | null {
+  try {
+    return localStorage.getItem(lastProjectDirKey(ssh));
+  } catch {
+    return null; // localStorage unavailable — nothing to prefill
+  }
+}
+
+/** Spec 247: remember the canonical path a Current SSH Harness connected with,
+ *  so the next launch to that destination without an OSC 7 cwd prefills it. */
+export function rememberLastProjectDir(ssh: FocusedSshCandidate, path: string): void {
+  try {
+    localStorage.setItem(lastProjectDirKey(ssh), path);
+  } catch {
+    // localStorage unavailable — the path simply won't be prefilled next time
+  }
+}
+
+/** `lastDir` is the remembered path for `choices.focusedSsh`; the live OSC 7
+ *  cwd wins over it, and it is only ever offered in the editable path input. */
+export function remoteHarnessPickerRows(choices: RemoteHarnessChoices, lastDir: string | null): PickerRow[] {
   const rows: PickerRow[] = [];
   if (choices.focusedSsh) {
     const ssh = choices.focusedSsh;
+    const where = ssh.projectDir
+      ? ` · ${ssh.projectDir}`
+      : lastDir ? ` · last used ${lastDir}` : ' · project path required';
     rows.push({
       label: 'Current SSH',
-      detail: `${ssh.user}@${ssh.host}:${ssh.port}${ssh.projectDir ? ` · ${ssh.projectDir}` : ' · project path required'}`,
+      detail: `${ssh.user}@${ssh.host}:${ssh.port}${where}`,
       launch: {
         kind: 'focused_ssh',
         terminalSessionId: ssh.terminalSessionId,
         ...(ssh.projectDir ? { projectDir: ssh.projectDir } : {}),
       },
       needsPath: !ssh.projectDir,
+      pathPrefill: ssh.projectDir ? '' : lastDir ?? '',
     });
   }
   for (const profile of choices.profiles) {
@@ -58,6 +89,7 @@ export function remoteHarnessPickerRows(choices: RemoteHarnessChoices): PickerRo
       detail: `${profile.host} · ${profile.project_dir}`,
       launch: { kind: 'profile', profile: profile.name },
       needsPath: false,
+      pathPrefill: '',
     });
   }
   return rows;
@@ -72,7 +104,10 @@ export function showRemoteHarnessPicker(
   host: HTMLElement,
   choices: RemoteHarnessChoices,
 ): Promise<RemoteHarnessLaunch | null> {
-  const rows = remoteHarnessPickerRows(choices);
+  const rows = remoteHarnessPickerRows(
+    choices,
+    choices.focusedSsh ? lastProjectDir(choices.focusedSsh) : null,
+  );
   return new Promise((resolve) => {
     const picker = new RemotePicker();
     let cursor = 0;
@@ -104,7 +139,10 @@ export function showRemoteHarnessPicker(
         pathMode = true;
         pathInvalid = false;
         render();
+        // Selected, so Enter accepts the remembered path and typing replaces it.
+        picker.pathInput.value = row.pathPrefill;
         picker.pathInput.focus();
+        picker.pathInput.select();
         return;
       }
       finish(row.launch);
