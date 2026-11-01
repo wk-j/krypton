@@ -713,21 +713,25 @@ uses structured process metadata and passive OSC 7 CWD only; the Harness never
 drives the existing interactive shell. If no passive CWD exists, the picker asks
 for an absolute remote project path.
 
-The resulting Harness owns one immutable SSH workspace for all lanes. Its header
-shows the profile or resolved `user@host:port`, remote path, and connection state.
+The resulting Harness owns one immutable SSH workspace for all lanes. Its host
+window's titlebar shows a connection badge right after the panel toggles: the
+profile or short host name while connected, with the full `user@host:port`,
+remote path, state and last error in the tooltip.
 On first connection Krypton installs the matching helper automatically under the
 remote user's versioned cache, using a bundled binary when possible and a
 SHA-256-verified release asset otherwise. No manual `krypton-remote` install is
 required; only the selected agent CLI and its authentication must already exist.
-When the stream drops, Enter on the disconnected header (or “Reconnect Remote
+When the stream drops, the badge turns red; clicking it (or “Reconnect Remote
 Harness” in the contextual command palette) starts a fresh companion and resumes
 saved agent sessions without replaying an in-flight prompt.
 
 Remote mode currently supports ACP lane lifecycle, permissions, remote fs
 callbacks, project MCP discovery/overlays, tunneled in-memory Harness MCP, Git
-branch, and explicit diff opens. Local editor/file views, images, project-backed
-tickets/docs/artifacts, daily notes, usage persistence, Hurl and Xenon are visibly
-unavailable rather than accidentally operating on a same-looking local path.
+branch, explicit diff opens, and `!` commands, which run on the remote host in
+the workspace through `WorkspaceShell`. Local editor/file views, images,
+project-backed tickets/docs/artifacts, daily notes, usage persistence, Hurl and
+Xenon are visibly unavailable rather than accidentally operating on a
+same-looking local path.
 
 ## Connected Computers from local lanes (spec 311)
 

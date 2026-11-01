@@ -1204,53 +1204,7 @@ fn run_shell_blocking(id: &str, command: &str, cwd: Option<&str>) -> Result<Stri
         return Err("Shell output exceeded 10 MB limit".to_string());
     }
 
-    let stdout = String::from_utf8_lossy(&stdout_bytes);
-    let stderr = String::from_utf8_lossy(&stderr_bytes);
-    let mut combined = stdout.into_owned();
-    if !stderr.is_empty() {
-        if !combined.is_empty() && !combined.ends_with('\n') {
-            combined.push('\n');
-        }
-        combined.push_str(&stderr);
-    }
-
-    if status.success() {
-        Ok(combined)
-    } else if let Some(signal) = signal_label(&status) {
-        Err(format!(
-            "{signal}{}",
-            if combined.is_empty() {
-                String::new()
-            } else {
-                format!("\n{combined}")
-            }
-        ))
-    } else {
-        let code = status
-            .code()
-            .map_or("signal".to_string(), |c| c.to_string());
-        if combined.is_empty() {
-            Err(format!("exit code {code}"))
-        } else {
-            Err(combined)
-        }
-    }
-}
-
-#[cfg(unix)]
-fn signal_label(status: &std::process::ExitStatus) -> Option<String> {
-    use std::os::unix::process::ExitStatusExt;
-    status.signal().map(|s| match s {
-        libc::SIGTERM => "terminated (SIGTERM)".to_string(),
-        libc::SIGKILL => "killed (SIGKILL)".to_string(),
-        libc::SIGINT => "interrupted (SIGINT)".to_string(),
-        other => format!("signal {other}"),
-    })
-}
-
-#[cfg(not(unix))]
-fn signal_label(_status: &std::process::ExitStatus) -> Option<String> {
-    None
+    krypton_remote_protocol::shell::shell_outcome(&status, &stdout_bytes, &stderr_bytes)
 }
 
 /// Execute a read-only SQL query against a SQLite database and return rows as JSON.

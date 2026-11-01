@@ -1,6 +1,6 @@
 use krypton_remote_protocol::{
-    diff_stat, RemoteMethod, RemoteWorkspace, RuntimeError, RuntimeFrame,
-    CAPABILITY_WORKSPACE_DIFF_STAT, MAX_FRAME_BYTES, PROTOCOL_VERSION,
+    diff_stat, shell::shell_outcome, RemoteMethod, RemoteWorkspace, RuntimeError, RuntimeFrame,
+    CAPABILITY_WORKSPACE_DIFF_STAT, CAPABILITY_WORKSPACE_SHELL, MAX_FRAME_BYTES, PROTOCOL_VERSION,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -11,11 +11,17 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Lines, Stdin, Stdout};
-use tokio::process::{ChildStdin, Command};
+use tokio::io::{
+    self, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, Lines,
+    Stdin, Stdout,
+};
+use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{Mutex, OnceCell};
 
 type SharedWriter = Arc<Mutex<BufWriter<Stdout>>>;
+/// Running `WorkspaceShell` commands by the app's shell id: the pid that leads
+/// each one's process group.
+type Shells = Arc<Mutex<HashMap<String, Option<u32>>>>;
 
 /// Login-shell environment applied to every agent adapter (spec 247). The
 /// runtime itself starts from `ssh host exec …`, a non-login command whose
@@ -24,6 +30,14 @@ type SharedWriter = Arc<Mutex<BufWriter<Stdout>>>;
 /// `codex-acp`) would not resolve.
 static LOGIN_ENV: OnceCell<HashMap<String, String>> = OnceCell::const_new();
 const LOGIN_ENV_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Output kept per `WorkspaceShell` command (spec 247). The app waits for that
+/// reply with no deadline, so it must always fit one frame: at 4 MiB the
+/// worst-case JSON encoding (6 bytes per byte, `\u00XX`) is 24 MiB, under
+/// `MAX_FRAME_BYTES`. A reply that did not fit would be dropped unsent.
+const SHELL_OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
+/// SIGTERM to SIGKILL for a killed shell, the same grace `terminate_pid` gives.
+const KILL_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
 struct RemoteAgent {
@@ -84,6 +98,20 @@ struct RunParams {
 #[derive(Debug, Deserialize)]
 struct CwdParams {
     cwd: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShellParams {
+    shell_id: String,
+    command: String,
+    cwd: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShellIdParams {
+    shell_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -196,12 +224,14 @@ async fn serve() -> Result<(), String> {
                 "workspace_fs".to_string(),
                 "workspace_run".to_string(),
                 CAPABILITY_WORKSPACE_DIFF_STAT.to_string(),
+                CAPABILITY_WORKSPACE_SHELL.to_string(),
             ],
         },
     )
     .await?;
 
     let agents: Arc<Mutex<HashMap<u64, RemoteAgent>>> = Arc::new(Mutex::new(HashMap::new()));
+    let shells: Shells = Arc::new(Mutex::new(HashMap::new()));
     let mut next_agent_id = 1_u64;
     while let Some(frame) = read_frame(&mut lines).await? {
         let RuntimeFrame::Request { id, method, params } = frame else {
@@ -209,7 +239,7 @@ async fn serve() -> Result<(), String> {
         };
         if method == RemoteMethod::RuntimeShutdown {
             write_response(&writer, id, Ok(json!({}))).await?;
-            terminate_all(&agents).await;
+            tokio::join!(terminate_all(&agents), terminate_shells(&shells));
             let _ = tokio::fs::remove_dir_all(&runtime_root).await;
             return Ok(());
         }
@@ -225,6 +255,28 @@ async fn serve() -> Result<(), String> {
             });
             continue;
         }
+        if method == RemoteMethod::WorkspaceShell {
+            // A typed `!` command runs as long as it runs (spec 247). It is
+            // spawned and registered here, so a kill sent after it always finds
+            // it, and awaited off the loop, so agent input never queues behind it.
+            match spawn_shell(params, &root, &shells).await {
+                Ok((shell_id, child)) => {
+                    let writer = writer.clone();
+                    let shells = shells.clone();
+                    tokio::spawn(async move {
+                        let outcome = finish_shell(child, shell_id, &shells).await;
+                        let _ = write_response(&writer, id, outcome).await;
+                    });
+                }
+                Err(error) => write_response(&writer, id, Err(error)).await?,
+            }
+            continue;
+        }
+        if method == RemoteMethod::WorkspaceShellKill {
+            let outcome = kill_shell(params, &shells).await;
+            write_response(&writer, id, outcome).await?;
+            continue;
+        }
         let outcome = handle_request(
             method,
             params,
@@ -237,7 +289,7 @@ async fn serve() -> Result<(), String> {
         .await;
         write_response(&writer, id, outcome).await?;
     }
-    terminate_all(&agents).await;
+    tokio::join!(terminate_all(&agents), terminate_shells(&shells));
     let _ = tokio::fs::remove_dir_all(&runtime_root).await;
     Ok(())
 }
@@ -252,7 +304,10 @@ async fn handle_request(
     next_agent_id: &mut u64,
 ) -> Result<Value, RuntimeError> {
     match method {
-        RemoteMethod::RuntimeShutdown | RemoteMethod::WorkspaceDiffStat => {
+        RemoteMethod::RuntimeShutdown
+        | RemoteMethod::WorkspaceDiffStat
+        | RemoteMethod::WorkspaceShell
+        | RemoteMethod::WorkspaceShellKill => {
             unreachable!("handled by serve loop")
         }
         RemoteMethod::AgentSpawn => {
@@ -514,6 +569,133 @@ async fn workspace_diff_stat(params: Value, root: &Path) -> Result<Value, Runtim
             .map_err(|e| RuntimeError::new("diff_stat_failed", e.to_string()))?
             .map_err(|e| RuntimeError::new("diff_stat_failed", e))?;
     serde_json::to_value(stat).map_err(|e| RuntimeError::new("diff_stat_failed", e.to_string()))
+}
+
+/// Spawn a typed `!` command (spec 247): `/bin/sh -c` in a workspace cwd with
+/// the login-shell environment, in its own process group, and with no stdin —
+/// the runtime's stdin is the protocol stream. It is registered under the
+/// app's shell id before this returns to the request loop.
+async fn spawn_shell(
+    params: Value,
+    root: &Path,
+    shells: &Shells,
+) -> Result<(String, Child), RuntimeError> {
+    let params: ShellParams = parse_params(params)?;
+    let cwd = resolve_scoped(root, &params.cwd).await?;
+    let env = login_env().await;
+    let mut registry = shells.lock().await;
+    if registry.contains_key(&params.shell_id) {
+        return Err(RuntimeError::new(
+            "duplicate_shell",
+            format!("shell {} is already running", params.shell_id),
+        ));
+    }
+    let mut command = Command::new("/bin/sh");
+    command
+        .arg("-c")
+        .arg(&params.command)
+        .envs(env)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    command.process_group(0);
+    let child = command
+        .spawn()
+        .map_err(|e| RuntimeError::new("shell_spawn_failed", e.to_string()))?;
+    registry.insert(params.shell_id.clone(), child.id());
+    Ok((params.shell_id, child))
+}
+
+/// Await a spawned shell and answer `{ ok, output }`. Whatever the command
+/// itself did — exit status, signal, output over the cap — is `ok: false`, not
+/// a protocol error, and reads exactly as a local `!shell` row would.
+async fn finish_shell(
+    mut child: Child,
+    shell_id: String,
+    shells: &Shells,
+) -> Result<Value, RuntimeError> {
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let (stdout, stderr, status) =
+        tokio::join!(read_capped(stdout), read_capped(stderr), child.wait());
+    shells.lock().await.remove(&shell_id);
+    let status = status.map_err(io_error("shell_wait_failed"))?;
+    let (ok, output) = if stdout.len() + stderr.len() > SHELL_OUTPUT_LIMIT {
+        (
+            false,
+            format!(
+                "Shell output exceeded {} MiB limit",
+                SHELL_OUTPUT_LIMIT / (1024 * 1024)
+            ),
+        )
+    } else {
+        match shell_outcome(&status, &stdout, &stderr) {
+            Ok(output) => (true, output),
+            Err(output) => (false, output),
+        }
+    };
+    Ok(json!({ "ok": ok, "output": output }))
+}
+
+/// Read a pipe to EOF, keeping one byte past `SHELL_OUTPUT_LIMIT` at most —
+/// enough to know the limit was crossed — and discarding the rest, so the
+/// command never blocks on a full pipe. A read error ends the stream.
+async fn read_capped<R: AsyncRead + Unpin>(reader: Option<R>) -> Vec<u8> {
+    let mut kept = Vec::new();
+    let Some(mut reader) = reader else {
+        return kept;
+    };
+    let mut chunk = vec![0_u8; 64 * 1024];
+    loop {
+        match reader.read(&mut chunk).await {
+            Ok(0) | Err(_) => return kept,
+            Ok(read) => {
+                let room = (SHELL_OUTPUT_LIMIT + 1).saturating_sub(kept.len());
+                kept.extend_from_slice(&chunk[..read.min(room)]);
+            }
+        }
+    }
+}
+
+/// SIGTERM a running shell's process group and answer at once. SIGKILL
+/// follows `KILL_GRACE` later if the same shell is still registered.
+async fn kill_shell(params: Value, shells: &Shells) -> Result<Value, RuntimeError> {
+    let params: ShellIdParams = parse_params(params)?;
+    let pid = shells
+        .lock()
+        .await
+        .get(&params.shell_id)
+        .copied()
+        .ok_or_else(|| {
+            RuntimeError::new(
+                "unknown_shell",
+                format!("no shell with id {}", params.shell_id),
+            )
+        })?;
+    #[cfg(unix)]
+    signal_group(pid, libc::SIGTERM);
+    let shells = shells.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(KILL_GRACE).await;
+        if shells.lock().await.get(&params.shell_id) == Some(&pid) {
+            #[cfg(unix)]
+            signal_group(pid, libc::SIGKILL);
+        }
+    });
+    Ok(json!({}))
+}
+
+#[cfg(unix)]
+fn signal_group(pid: Option<u32>, signal: libc::c_int) {
+    if let Some(pid) = pid {
+        // SAFETY: kill(2) takes plain integers and touches no memory.
+        unsafe {
+            libc::kill(-(pid as i32), signal);
+        }
+    }
 }
 
 fn overlay_path(
@@ -797,6 +979,18 @@ async fn terminate_all(agents: &Arc<Mutex<HashMap<u64, RemoteAgent>>>) {
     }
 }
 
+async fn terminate_shells(shells: &Shells) {
+    let drained = shells
+        .lock()
+        .await
+        .drain()
+        .map(|(_, pid)| pid)
+        .collect::<Vec<_>>();
+    for pid in drained {
+        terminate_pid(pid).await;
+    }
+}
+
 async fn terminate_pid(pid: Option<u32>) {
     #[cfg(unix)]
     if let Some(pid) = pid {
@@ -903,5 +1097,140 @@ mod tests {
             overlay_path(&root, &invalid, true).unwrap_err().code,
             "invalid_overlay"
         );
+    }
+
+    async fn workspace(label: &str) -> PathBuf {
+        let root = temp_root(label);
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        tokio::fs::canonicalize(root).await.unwrap()
+    }
+
+    fn shell_params(id: &str, command: &str, cwd: &Path) -> Value {
+        json!({ "shellId": id, "command": command, "cwd": cwd.to_str().unwrap() })
+    }
+
+    async fn run_shell(root: &Path, shells: &Shells, id: &str, command: &str) -> Value {
+        let (shell_id, child) = spawn_shell(shell_params(id, command, root), root, shells)
+            .await
+            .unwrap();
+        finish_shell(child, shell_id, shells).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn shell_starts_in_the_workspace_and_never_reads_the_protocol_stream() {
+        let root = workspace("shell-cwd").await;
+        let shells: Shells = Arc::default();
+        // `cat` with no file reads stdin: it must see EOF at once, not the
+        // runtime's request frames.
+        let reply = tokio::time::timeout(
+            Duration::from_secs(10),
+            run_shell(&root, &shells, "a", "pwd; cat"),
+        )
+        .await
+        .expect("the shell inherited the protocol stdin");
+        assert_eq!(
+            reply,
+            json!({ "ok": true, "output": format!("{}\n", root.display()) })
+        );
+        assert!(shells.lock().await.is_empty());
+        tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shell_ids_are_unique_and_the_start_dir_stays_in_the_workspace() {
+        let root = workspace("shell-scope").await;
+        let outside = workspace("shell-outside").await;
+        let shells: Shells = Arc::default();
+        let escaped = spawn_shell(shell_params("a", "true", &outside), &root, &shells)
+            .await
+            .unwrap_err();
+        assert_eq!(escaped.code, "path_outside_workspace");
+
+        let (shell_id, child) = spawn_shell(shell_params("a", "sleep 5", &root), &root, &shells)
+            .await
+            .unwrap();
+        let duplicate = spawn_shell(shell_params("a", "true", &root), &root, &shells)
+            .await
+            .unwrap_err();
+        assert_eq!(duplicate.code, "duplicate_shell");
+        kill_shell(json!({ "shellId": "a" }), &shells)
+            .await
+            .unwrap();
+        finish_shell(child, shell_id, &shells).await.unwrap();
+        assert_eq!(
+            kill_shell(json!({ "shellId": "a" }), &shells)
+                .await
+                .unwrap_err()
+                .code,
+            "unknown_shell"
+        );
+        tokio::fs::remove_dir_all(root).await.unwrap();
+        tokio::fs::remove_dir_all(outside).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shell_output_up_to_the_limit_fits_one_frame_and_beyond_it_is_refused() {
+        let root = workspace("shell-cap").await;
+        let shells: Shells = Arc::default();
+        // NUL encodes as `\u0000`, the worst case: six bytes per output byte.
+        let at_limit = run_shell(
+            &root,
+            &shells,
+            "a",
+            &format!("head -c {SHELL_OUTPUT_LIMIT} /dev/zero"),
+        )
+        .await;
+        assert_eq!(at_limit["ok"], json!(true));
+        assert_eq!(
+            at_limit["output"].as_str().unwrap().len(),
+            SHELL_OUTPUT_LIMIT
+        );
+        let frame = RuntimeFrame::Response {
+            id: 1,
+            result: Some(at_limit),
+            error: None,
+        };
+        assert!(serde_json::to_vec(&frame).unwrap().len() <= MAX_FRAME_BYTES);
+
+        let over = run_shell(
+            &root,
+            &shells,
+            "b",
+            &format!("head -c {SHELL_OUTPUT_LIMIT} /dev/zero; echo x >&2"),
+        )
+        .await;
+        assert_eq!(
+            over,
+            json!({ "ok": false, "output": "Shell output exceeded 4 MiB limit" })
+        );
+        tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn killing_a_shell_ends_its_whole_process_group() {
+        let root = workspace("shell-kill").await;
+        let shells: Shells = Arc::default();
+        let (shell_id, child) =
+            spawn_shell(shell_params("a", "sleep 30 & wait", &root), &root, &shells)
+                .await
+                .unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        kill_shell(json!({ "shellId": "a" }), &shells)
+            .await
+            .unwrap();
+        // The background `sleep` holds stdout open, so the reply comes before
+        // the SIGKILL grace only if SIGTERM reached the whole group.
+        let reply = tokio::time::timeout(
+            Duration::from_secs(1),
+            finish_shell(child, shell_id, &shells),
+        )
+        .await
+        .expect("a process in the group outlived SIGTERM")
+        .unwrap();
+        assert_eq!(
+            reply,
+            json!({ "ok": false, "output": "terminated (SIGTERM)" })
+        );
+        tokio::fs::remove_dir_all(root).await.unwrap();
     }
 }

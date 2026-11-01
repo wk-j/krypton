@@ -160,22 +160,33 @@ impl RemoteRuntimeClient {
                 return Err(format!("remote runtime does not support {capability}"));
             }
         }
+        let deadline = reply_deadline(&method);
         let id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         self.pending.lock().await.insert(id, tx);
+        // `finalize_disconnect` flags before it drains `pending`, so a request
+        // registered after the drain sees the flag here. Without this it would
+        // never be answered, which matters for a reply with no deadline.
+        if self.disconnected.load(Ordering::Relaxed) {
+            self.pending.lock().await.remove(&id);
+            return Err("remote Harness is disconnected".to_string());
+        }
         let frame = RuntimeFrame::Request { id, method, params };
         if let Err(error) = self.write_frame(&frame).await {
             self.pending.lock().await.remove(&id);
             return Err(error);
         }
-        match tokio::time::timeout(Duration::from_secs(30), rx).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err("remote runtime closed before reply".to_string()),
-            Err(_) => {
-                self.pending.lock().await.remove(&id);
-                Err("remote runtime request timed out".to_string())
-            }
-        }
+        let reply = match deadline {
+            Some(deadline) => match tokio::time::timeout(deadline, rx).await {
+                Ok(reply) => reply,
+                Err(_) => {
+                    self.pending.lock().await.remove(&id);
+                    return Err("remote runtime request timed out".to_string());
+                }
+            },
+            None => rx.await,
+        };
+        reply.unwrap_or_else(|_| Err("remote runtime closed before reply".to_string()))
     }
 
     pub async fn spawn_agent(
@@ -1423,7 +1434,19 @@ fn parse_workspace_method(method: &str) -> Result<RemoteMethod, String> {
         "read_dir" => Ok(RemoteMethod::WorkspaceReadDir),
         "run" => Ok(RemoteMethod::WorkspaceRun),
         "diff_stat" => Ok(RemoteMethod::WorkspaceDiffStat),
+        "shell" => Ok(RemoteMethod::WorkspaceShell),
+        "shell_kill" => Ok(RemoteMethod::WorkspaceShellKill),
         _ => Err(format!("unsupported remote workspace method: {method}")),
+    }
+}
+
+/// How long `RemoteRuntimeClient::request` waits for a reply. A typed `!`
+/// command (spec 247) runs as long as it runs, like local `run_shell`; a
+/// disconnect still answers it with the disconnect reason.
+fn reply_deadline(method: &RemoteMethod) -> Option<Duration> {
+    match method {
+        RemoteMethod::WorkspaceShell => None,
+        _ => Some(Duration::from_secs(30)),
     }
 }
 

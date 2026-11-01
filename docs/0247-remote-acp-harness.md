@@ -5,6 +5,8 @@
 > Milestone: ACP Harness — remote execution
 > Amended by: [0336](./0336-inline-ai-verify-on-pane-host.md) — the focused-SSH resolution and ssh command helpers moved from `remote_harness.rs` to `src-tauri/src/ssh_channel.rs` (shared with Inline AI's `host_exec`); behaviour unchanged. `SshManager::detect` now re-parses when the pane's `ssh` pid changes.
 > Amended (2026-11-01): Current SSH without an OSC 7 cwd prefills the path input with the last path that connected to the same `user@host:port` (see Edge Cases). Stock macOS zsh and most distro shells send no OSC 7 over SSH, so without this the path had to be typed on every launch.
+> Amended (2026-11-01): a `!` command in a remote Harness runs on the remote host through the capability-gated `WorkspaceShell` method instead of being refused (see [Typed `!shell` commands](#typed-shell-commands)).
+> Amended (2026-11-01): the full-width `SSH … · connected` strip inside the view is gone. The connection now shows as a status badge in the host window's titlebar, right after the spec 320 toggles: the machine name while connected, red and clickable while disconnected (see [UI and keybindings](#ui-and-keybindings)).
 
 ## Problem
 
@@ -31,6 +33,8 @@ The execution target belongs to the whole Harness, not an individual lane. Every
   second file-transfer argument parser.
 - VS Code Remote SSH likewise runs workspace extensions, source access, tasks, and terminals remotely; its docs distinguish this from SSHFS/rsync.
 - ACP stays newline-delimited JSON-RPC over stdio. Krypton's outer framing preserves each ACP JSON value and opens no network ACP endpoint.
+- Local `!shell` (`run_shell`) blocks until exit with no deadline, merges stdout then stderr, caps output at 10 MB and labels signals; its `kill_shell` sends SIGTERM to `sh` only, and it runs with the GUI environment (spec 328). The companion already runs any argv the app sends through `AgentSpawn`, so the `WorkspaceRun` allowlist narrows the app's automatic project probes rather than what the helper can be told to run.
+- A reply written from a spawned companion task that exceeds the frame cap fails `write_frame` and is dropped, so a request with no deadline must never produce an oversized reply.
 
 ### Alternatives considered
 
@@ -47,6 +51,7 @@ The execution target belongs to the whole Harness, not an individual lane. Every
 |-----|----------------|-------|
 | Zed | Local GPUI client starts a version-matched remote server over SSH; filesystem, terminals, tasks, language servers, and remote external-agent commands run through the remote project client. | Closest architecture; also reuses an OpenSSH ControlMaster. |
 | VS Code Remote SSH | Local UI connects to VS Code Server; workspace extensions and commands run beside the remote source tree. | Establishes the local-UI/remote-workspace convention and avoids file mirroring. |
+| Claude Code | `!` at the start of the prompt is shell mode: it runs the command and adds its output to the session. | Precedent for typed `!` commands in an agent transcript. |
 
 **Krypton delta** — use the familiar local-UI/remote-runtime split, but keep the companion per-Harness, non-daemonized, and accessible only through system SSH configuration. Preserve Krypton's keyboard-first multi-lane UI, permissions, queues, peering, and local controls without repository sync or a public runtime port.
 
@@ -55,11 +60,12 @@ The execution target belongs to the whole Harness, not an individual lane. Every
 | File | Change |
 |------|--------|
 | `src-tauri/src/remote_harness.rs` | New SSH manager, framed-protocol client, request registry, reverse forward, and teardown. |
-| `src-tauri/remote-protocol/` | New crate shared by the app and companion: the Serde wire types, plus `diff_stat`, the window rail's diff stat (spec 220) that both ends compute. |
+| `src-tauri/remote-protocol/` | New crate shared by the app and companion: the Serde wire types, plus `diff_stat`, the window rail's diff stat (spec 220) that both ends compute, and `shell::shell_outcome`, the `!shell` row text both ends produce. |
 | `src-tauri/remote-runtime/` | New headless `krypton-remote` package with no Tauri/WebKit/audio dependency. |
 | `src-tauri/remote-binaries/`, `scripts/stage-remote-runtime.sh` | Stage the host helper as an app resource for development and packaging. |
 | `.github/workflows/release.yml` | Build four platform helpers and SHA-256 files with the macOS app, then publish them together on one Krypton release. |
 | `src-tauri/src/acp.rs` | Add local/remote agent transports while retaining ACP JSON-RPC, permissions, and event semantics locally. |
+| `src-tauri/src/commands.rs` | Local `run_shell` builds its row text through `shell::shell_outcome`. |
 | `src-tauri/src/ssh.rs` | Resolve a focused SSH terminal into a safe launch descriptor and verify any reusable ControlMaster socket. |
 | `src-tauri/src/config.rs` | Add remote Harness profile configuration and validation. |
 | `src-tauri/src/lib.rs` | Manage `RemoteHarnessRegistry` and register remote commands/events. |
@@ -68,14 +74,15 @@ The execution target belongs to the whole Harness, not an individual lane. Every
 | `src/acp/types.ts` | Add remote profile, connection state, and Harness execution-target types. |
 | `src/acp/client.ts` | Pass an execution target when spawning/probing ACP sessions. |
 | `src/acp/harness-directory.ts` | Carry a host-qualified workspace key so equal remote paths on different hosts do not collide. |
-| `src/acp/acp-harness-view.ts` | Own one immutable workspace target, route project operations, show remote state, and recover lanes after reconnect. |
+| `src/acp/acp-harness-view.ts` | Own one immutable workspace target, route project operations, show remote state, and recover lanes after reconnect. Route `!shell` and its cancel through `WorkspaceShell` / `WorkspaceShellKill`. |
 | `src/acp/remote-harness-picker.ts` | New keyboard-first picker for the focused SSH terminal and configured profiles, including missing-CWD and connection errors. Remembers the last connected path per destination for the missing-CWD case. |
 | `src/pty-bridge.ts`, `src/main.ts` | Reassemble split OSC 7 reports and forward their path and hostname to Rust's filtered remote-CWD cache. |
 | `src/ssh-session.ts` | Expose detected SSH metadata and passive remote-CWD state without injecting a probe command. |
 | `src/compositor.ts` | Open a remote Harness and preserve its workspace identity when opening related views. |
 | `src/input-router.ts` / `src/which-key.ts` | Add `Leader Shift+S` for the remote Harness profile picker. |
 | `src/command-palette.ts` | Add “Open Remote ACP Harness…” and “Reconnect Remote Harness”. |
-| `src/styles/acp-harness.css` | Remote badge, picker, connecting, disconnected, and retry states. |
+| `src/acp/components/remote-picker/remote-picker.css` | Remote profile picker. |
+| `src/styles/window.css`, `src/titlebar-status.ts`, `src/acp/harness-remote-status.ts` | Titlebar connection badge (connected, connecting/closing, disconnected + reconnect). |
 | `src-tauri/src/*test*`, `src/acp/*.test.ts` | Protocol, path confinement, SSH parsing, picker, and UI regression coverage. |
 | `docs/0004-architecture.md`, `docs/0005-data-flow.md`, `docs/0006-configuration.md`, `docs/0069-acp-agent-support.md`, `docs/0072-acp-harness-view.md` | Document the implemented remote path. |
 
@@ -209,7 +216,9 @@ enum RemoteMethod {
     WorkspaceStat,
     WorkspaceReadDir,
     WorkspaceRun,
-    WorkspaceDiffStat, // gated by the `workspace_diff_stat` capability
+    WorkspaceDiffStat,  // gated by the `workspace_diff_stat` capability
+    WorkspaceShell,     // gated by `workspace_shell`; see Typed `!shell` commands
+    WorkspaceShellKill, // gated by `workspace_shell`
 }
 ```
 
@@ -219,10 +228,11 @@ A runtime that predates a method fails to parse its request frame and exits, whi
 the whole Harness. The companion's Hello therefore lists `capabilities`, and
 `RemoteRuntimeClient::request` refuses, without sending it, any method whose
 `RemoteMethod::required_capability()` the runtime did not advertise. `WorkspaceDiffStat` is the
-first gated method (capability `workspace_diff_stat`). The protocol version stays 1, so a stale
-helper still connects and only that one readout is missing.
+first gated method (capability `workspace_diff_stat`); `WorkspaceShell` and `WorkspaceShellKill`
+share `workspace_shell`. The protocol version stays 1, so a stale helper still connects and only
+the gated features are missing.
 
-The companion emits `agent_stdout`, `agent_stderr`, and `agent_exit` events keyed by remote child id. Local `acp.rs` feeds stdout JSON into its existing dispatcher and retains request correlation, permissions, fs-write review, session state, and `acp-event-<session>` emission. `WorkspaceRun` uses `Command::new` with argv, never a shell, and accepts only the executable families required by existing Harness operations.
+The companion emits `agent_stdout`, `agent_stderr`, and `agent_exit` events keyed by remote child id. Local `acp.rs` feeds stdout JSON into its existing dispatcher and retains request correlation, permissions, fs-write review, session state, and `acp-event-<session>` emission. `WorkspaceRun` uses `Command::new` with argv, never a shell, and accepts only the executable families required by existing Harness operations. `WorkspaceShell` is the one method that runs a shell, and only for text the user typed after `!`.
 
 ### Harness MCP reverse tunnel
 
@@ -244,7 +254,8 @@ Remote mode never falls back to local `std::fs` or local `run_command` for a rem
 - Harness memory and frontend-routed peering/attention tools through the reverse tunnel;
 - Git branch and explicit working/staged diff reads through the remote command allowlist;
 - the window rail's diff stat (spec 220) through `WorkspaceDiffStat`, which runs the app's own
-  `diff_stat::working_diff_stat` on the remote host, outside the request loop.
+  `diff_stat::working_diff_stat` on the remote host, outside the request loop;
+- typed `!shell` commands through `WorkspaceShell` (below).
 
 Unsupported operations are visibly disabled and never fall back locally. The current implementation disables local Helix/Markdown opens for remote files, File Manager, Vault, Pencil, Hurl, tickets, docs, artifacts, daily notes, Xenon, usage persistence, and local image resolution. Harness memory remains available in-memory through the reverse tunnel; project-backed Harness persistence and loopback project browsers are deferred until the hook server has target-aware storage.
 Project-backed MCP tools are omitted from `tools/list` for this in-memory
@@ -252,6 +263,24 @@ session and cached calls are rejected, while handoff, peering, attention, review
 outcomes, and review-priority hints remain available.
 
 Local `kryptonctl`, Telegram, browser extension, queues, orchestration, permissions, transcripts, and lane selection still target `AcpHarnessView`, preserving ADR-0007 frontend authority.
+
+### Typed `!shell` commands
+
+A `!<command>` submitted in a remote Harness runs on the remote host and keeps the local `!shell` life cycle: one `shell` row, pending, filled once when the command ends.
+
+```rust
+WorkspaceShell,     // { shellId, command, cwd } -> { ok, output }
+WorkspaceShellKill, // { shellId } -> {}
+```
+
+1. `runShellCommand` keeps the one-shell-per-lane guard and the pending row, then calls `remote_harness_request { runtimeId, method: 'shell', params: { shellId, command, cwd: projectDir } }` in place of local `run_shell`. `Esc`, lane restart and lane close send `method: 'shell_kill'`.
+2. `RemoteRuntimeClient::request` refuses both methods locally unless the Hello advertised `workspace_shell`. `WorkspaceShell` waits for its reply with no deadline (`reply_deadline`), like local `run_shell`; every other method keeps 30 s. A request registered after a disconnect drained `pending` sees the disconnected flag and fails at once instead of waiting forever.
+3. The companion spawns `/bin/sh -c <command>` inside the request loop, so a kill sent afterwards always finds it registered, and awaits it in a task, so agent input never queues behind it. The start directory goes through `resolve_scoped`. The child gets the login-shell environment snapshot, `Stdio::null()` stdin (the companion's stdin is the protocol stream), its own process group, and `kill_on_drop`. A second command under a running `shellId` fails with `duplicate_shell`; each lane's command has its own id, and the view still allows one shell per lane.
+4. stdout and stderr are read to EOF, keeping at most 4 MiB (`SHELL_OUTPUT_LIMIT`) and discarding the rest. `krypton_remote_protocol::shell::shell_outcome`, the function local `run_shell` also uses, builds the text: stdout then stderr; on failure the output, `exit code N`, or a signal label such as `terminated (SIGTERM)`. Combined output over 4 MiB answers `Shell output exceeded 4 MiB limit`. At 4 MiB the worst-case JSON encoding (6 bytes per byte, `\u00XX`) is 24 MiB, so the reply always fits a 32 MiB frame; one that did not would be dropped unsent and leave the request waiting.
+5. Whatever the command did (non-zero exit, signal, output cap) is `{ ok: false, output }`. Protocol failures (`invalid_params`, `path_outside_workspace`, `shell_spawn_failed`, `duplicate_shell`, `unknown_shell`) are `RuntimeError`s. The view fills the row once: `ok` → completed, otherwise failed.
+6. `WorkspaceShellKill` sends SIGTERM to the process group and answers at once; if the same shell is still registered 2 s later, it sends SIGKILL. `RuntimeShutdown` and stdin EOF terminate running shells the way they terminate agents.
+
+The typed text travels as JSON on the existing channel; the fixed `ssh … serve --stdio` command line still carries no user text. The command runs with the remote user's full rights, as if typed into the SSH terminal; only its start directory is confined. No agent output reaches `WorkspaceShell`: `!` text enters only through `submitLanePrompt`, from the lane composer and the orchestrator console seat prompt, and agent-written follow-up prompts that start with `!` are rejected (`ROUTED_PREFIX`). `WorkspaceRun` keeps its argv allowlist. Like local `!shell`, a typed command has no permission gate.
 
 ### Connection and lane lifecycle
 
@@ -298,10 +327,21 @@ If SSH drops, the Harness becomes `disconnected`, in-flight requests become outc
 |-----|---------|--------|
 | `Leader Shift+S` | Compositor | Open the remote-Harness picker; show focused SSH first when available. |
 | `j` / `k`, arrows | Remote profile picker | Move selection. |
-| `Enter` | Remote profile picker or disconnected card | Connect/reconnect. |
+| `Enter` | Remote profile picker | Connect. |
+| Palette “Reconnect Remote Harness” | Disconnected Harness | Reconnect (same call as clicking the red titlebar badge). |
 | `Esc` | Remote profile picker | Close without starting a connection. |
 
-`Leader s` remains Swap; only the unused shifted variant changes. A profile-backed header shows `SSH <profile> · <remote-path>`; a focused-session launch shows `SSH <user>@<host>:<port> · <remote-path>`. Connection state (`connecting|connected|disconnected|closing`) stays separate from lane/provider state. Remote controls use existing full-border components and no L-shaped brackets.
+`Leader s` remains Swap; only the unused shifted variant changes. Connection state (`connecting|connected|disconnected|closing`) stays separate from lane/provider state.
+
+The view has no connection strip of its own. It contributes one `TitlebarStatus` badge (`ContentView.getTitlebarStatus()` + `onTitlebarStatusChange()` + `activateTitlebarStatus()`) that the compositor renders in the host window's titlebar right after the spec 320 toggle cluster, following the active tab's focused pane like the toggles. `remoteTitlebarStatus()` (`src/acp/harness-remote-status.ts`) derives it:
+
+| State | Badge text | Tone |
+|-------|------------|------|
+| `connected` | `<name>` | `ok`: success dot, window accent text (the theme's titlebar text colour is its dim unfocused tone, unreadable on the badge fill) |
+| `connecting` / `closing` | `<name> · <state>` | `pending`: warning dot |
+| `disconnected` | `<name> · offline · reconnect` | `error`: danger text and fill; the only actionable state, and a click calls `reconnectRemoteHarness()` |
+
+`<name>` is the profile name for a profile-backed launch. Otherwise it is the first DNS label of the host (`wks-mac-mini` for `wks-mac-mini.tail0fc908.ts.net`; an IP literal stays whole), plus `:<port>` when the port is not 22. The tooltip and accessible name carry everything the text drops: `SSH <profile> (<user>@<host>:<port>)` or `SSH <user>@<host>:<port>`, then the remote path, the state and the last connection error. Below a 480px titlebar the text hides and the icon and dot stay. The badge is `tabindex=-1` like the toggles; the keyboard path to reconnect is the palette command. No L-shaped brackets.
 
 ## Edge Cases
 
@@ -331,6 +371,10 @@ If SSH drops, the Harness becomes `disconnected`, in-flight requests become outc
 - **Large prompt:** the 32 MiB cap rejects before partial send and keeps the draft/images staged.
 - **Cross-target peering:** allowed across Harnesses, but each Harness stays single-target and labels peers with host-qualified workspace.
 - **Unclean exit:** next start checks only its exact runtime id and never uses broad `pkill`.
+- **`!shell` on a helper without `workspace_shell`:** the row fails with `remote runtime does not support workspace_shell`; the next connection that resolves the bundled helper replaces it.
+- **Disconnect during `!shell`:** the row fails with the disconnect reason and the companion terminates the group on EOF. The outcome is unknown; reconnect never re-runs the command.
+- **Interactive `!` commands** (`vim`, `sudo` asking for a password, `git commit` without `-m`): stdin is `/dev/null` and there is no PTY, so they read EOF and exit, as they do locally. A command that never ends (`tail -f`) runs until `Esc`.
+- **`!shell` environment:** `PATH` comes from the login-shell snapshot, so `npm` under nvm resolves; `.zshrc` aliases and functions do not exist, as with local `sh -c`. With no snapshot, the companion's sshd environment applies. `cd` inside a command moves only that `sh`; the next `!` starts in the workspace again.
 
 ## Validation
 
@@ -338,7 +382,10 @@ If SSH drops, the Harness becomes `disconnected`, in-flight requests become outc
   runtime-overlay scoping, the read-only command allowlist, profile validation,
   safe SSH argument reuse, focused-session identity validation, platform
   normalization, versioned paths, SHA-256 verification, the bootstrap probe
-  command, and replacing a cached helper whose bytes differ.
+  command, and replacing a cached helper whose bytes differ. `!shell` adds the shared outcome
+  text and, in the companion, the start directory's confinement, `shellId` uniqueness, a closed
+  stdin, the 4 MiB cap (the worst-case reply at the cap fits one frame) and the process-group
+  kill. Removing `Stdio::null()` makes the stdin test time out.
 - TypeScript tests cover picker ordering, split OSC 7 forwarding, missing
   passive CWD, the remembered-path prefill and OSC 7 precedence, and
   host-qualified workspace identity; the full existing
@@ -348,9 +395,16 @@ If SSH drops, the Harness becomes `disconnected`, in-flight requests become outc
   `+5 -1` across 2 files (one untracked), refused `/etc` with `path_outside_workspace`, and a
   `WorkspaceStat` sent after it was answered first. The pre-change helper exited on the same
   request with `invalid frame: unknown variant`, which is why the method is capability-gated.
+- `WorkspaceShell` stdio smoke: `git status --short` answered `{ ok: true, output: "?? a.txt\n" }`;
+  `echo out; echo err >&2; exit 3` answered `ok: false` with `out\nerr\n`; `cat` returned empty
+  at once while the runtime's stdin stayed open; `/etc` was refused with
+  `path_outside_workspace`; a `WorkspaceStat` sent during `sleep 35` was answered at once and the
+  sleep answered `done` after 35 s; `WorkspaceShellKill` on `sleep 30 & wait` answered and the
+  shell replied `terminated (SIGTERM)` at once; an unknown id answered `unknown_shell`; after
+  `RuntimeShutdown`, and after stdin EOF, no shell process remained.
 - `npm test`, `npm run check`, `npm run build`, `cargo fmt -- --check`, targeted
   `cargo clippy -D warnings`, and sequential `cargo test --workspace` pass.
-- Manual two-machine acceptance remains required for two lanes, gated write, memory, network loss, resume, and clean remote exit.
+- Manual two-machine acceptance remains required for two lanes, gated write, memory, network loss, resume, clean remote exit, and `!shell` with `Esc` (the app's deadline-free wait has no automated test).
 
 ## Open Questions
 
@@ -372,6 +426,9 @@ bootstrap into the remote user's cache.
 - Running ACP framing inside or taking ownership of an existing interactive SSH shell.
 - Full local-editor integration for remote file paths.
 - Remote project-backed ticket/docs/artifact/gallery/review storage and browser rendering.
+- A PTY, streamed output, or stdin for `!` commands; a permission gate or allowlist for typed commands.
+- Agent-initiated commands through `WorkspaceShell`; `WorkspaceRun` stays the narrow route.
+- Changing local `!shell` (GUI environment, 10 MB cap, SIGTERM to `sh` only).
 
 ## Resources
 
@@ -381,3 +438,4 @@ bootstrap into the remote user's cache.
 - [Zed External Agents](https://zed.dev/docs/ai/external-agents) — ACP process/config/auth boundary and remote-project caveats.
 - Zed local checkout `crates/agent_servers/src/acp.rs`, `AcpConnection::stdio` — confirms external-agent commands are resolved through the project's remote client before attaching stdio ACP.
 - [VS Code Remote Development using SSH](https://code.visualstudio.com/docs/remote/ssh) — remote server/workspace execution model and limitations of SSHFS/rsync for local tools.
+- [Claude Code — Interactive mode](https://code.claude.com/docs/en/interactive-mode) — `!` shell mode runs a command and adds its output to the session.

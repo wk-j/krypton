@@ -345,6 +345,7 @@ import type {
   LeaderKeyBinding,
   LeaderKeySpec,
   PaneContentType,
+  TitlebarStatus,
   TitlebarToggle,
   WorkspaceRef,
 } from '../types';
@@ -441,6 +442,7 @@ import {
   pickLaneAccent,
 } from './harness-lane-identity';
 import { ensureHarnessSymbolDefs } from './harness-icons';
+import { remoteTitlebarStatus, type RemoteConnectionState } from './harness-remote-status';
 import {
   backendUpdates,
   describeBackendUpdates,
@@ -1231,7 +1233,7 @@ export class AcpHarnessView implements ContentView {
   private readonly workspace: WorkspaceRef;
   private readonly remoteRuntimeId: string | null;
   private remoteMemoryPort: number | null = null;
-  private remoteConnectionState: 'connecting' | 'connected' | 'disconnected' | 'closing' = 'connected';
+  private remoteConnectionState: RemoteConnectionState = 'connected';
   private remoteConnectionMessage: string | null = null;
   private remoteConnectionUnlisten: UnlistenFn | null = null;
   /** spec 128: global ViewBus, used to publish the open attention count so the
@@ -1436,6 +1438,8 @@ export class AcpHarnessView implements ContentView {
   /** spec 320: per-panel hidden flags, independent of the side flags. */
   private hiddenPanels: ReadonlySet<HarnessPanelId> = new Set();
   private titlebarToggleListeners = new Set<() => void>();
+  /** spec 247: compositor subscribers to the remote-connection titlebar badge. */
+  private titlebarStatusListeners = new Set<() => void>();
   private memoryCursorRowId: string | null = null;
   private focus: ComposerFocus = 'text';
   /** spec 252: direct-insertion letter afterimage consumed by the synchronous composer render. */
@@ -1568,7 +1572,6 @@ export class AcpHarnessView implements ContentView {
   private composerEl!: HTMLElement;
   /** Spec 301 §6 — the composer root component; `composerEl` is its node. */
   private composer!: Composer;
-  private remoteStatusEl: HTMLElement | null = null;
   // Spec 301 phase 4: the lane shells, the zen rail and the transcript list are
   // components now. `zenBodyCellEl` is non-null exactly while zen mode wraps
   // the shells beside the rail; `transcriptBodyEl` is the pinned lane body the
@@ -4965,6 +4968,24 @@ export class AcpHarnessView implements ContentView {
     else if (isHarnessPanelId(id)) this.applyPanelsCommand({ kind: 'panel', panel: id, action: 'toggle' });
   }
 
+  /** spec 247: an SSH Harness reports its connection in the window titlebar —
+   *  a host badge, red and clickable while disconnected. Local: none. */
+  getTitlebarStatus(): TitlebarStatus | null {
+    if (this.workspace.kind !== 'ssh') return null;
+    return remoteTitlebarStatus(this.workspace, this.remoteConnectionState, this.remoteConnectionMessage);
+  }
+
+  onTitlebarStatusChange(cb: () => void): () => void {
+    this.titlebarStatusListeners.add(cb);
+    return () => this.titlebarStatusListeners.delete(cb);
+  }
+
+  /** The badge is actionable only while disconnected; the palette's
+   *  “Reconnect Remote Harness” is the keyboard path to the same call. */
+  activateTitlebarStatus(): void {
+    void this.reconnectRemoteHarness();
+  }
+
   /** spec 322: open a terminal tab running each pending backend update. */
   private runBackendUpdate(): void {
     if (this.openTerminalTabCb !== null) void runBackendUpdates(this.openTerminalTabCb);
@@ -6322,24 +6343,6 @@ export class AcpHarnessView implements ContentView {
     // register the same ids twice.
     ensureHarnessSymbolDefs();
 
-    if (this.workspace.kind === 'ssh') {
-      this.remoteStatusEl = document.createElement('div');
-      this.remoteStatusEl.className = 'acp-harness__remote-status';
-      this.remoteStatusEl.dataset.state = this.remoteConnectionState;
-      this.remoteStatusEl.tabIndex = 0;
-      this.remoteStatusEl.addEventListener('keydown', (event: KeyboardEvent) => {
-        if (event.key === 'Enter' && this.remoteConnectionState === 'disconnected') {
-          event.preventDefault();
-          void this.reconnectRemoteHarness();
-        }
-      });
-      this.remoteStatusEl.addEventListener('click', () => {
-        if (this.remoteConnectionState === 'disconnected') void this.reconnectRemoteHarness();
-      });
-      this.element.appendChild(this.remoteStatusEl);
-      this.renderRemoteStatus();
-    }
-
     const body = document.createElement('div');
     body.className = 'acp-harness__body';
     this.dashboardEl = document.createElement('div');
@@ -6665,7 +6668,7 @@ export class AcpHarnessView implements ContentView {
         if (state === 'connected' || state === 'disconnected' || state === 'closing') {
           this.remoteConnectionState = state;
           this.remoteConnectionMessage = event.payload.message ?? null;
-          this.renderRemoteStatus();
+          this.notifyTitlebarStatusChanged();
           if (state === 'disconnected') {
             for (const lane of this.lanes) {
               if (lane.status !== 'stopped') {
@@ -6680,23 +6683,11 @@ export class AcpHarnessView implements ContentView {
     );
   }
 
-  private renderRemoteStatus(): void {
-    if (!this.remoteStatusEl || this.workspace.kind !== 'ssh') return;
-    const target = this.workspace.profile
-      ? this.workspace.profile
-      : `${this.workspace.user}@${this.workspace.host}:${this.workspace.port}`;
-    this.remoteStatusEl.dataset.state = this.remoteConnectionState;
-    const retry = this.remoteConnectionState === 'disconnected' ? ' · Enter to reconnect' : '';
-    this.remoteStatusEl.textContent = `SSH ${target} · ${this.workspace.path} · ${this.remoteConnectionState}`
-      + (this.remoteConnectionMessage ? ` · ${this.remoteConnectionMessage}` : '');
-    this.remoteStatusEl.textContent += retry;
-  }
-
   public async reconnectRemoteHarness(): Promise<void> {
     if (!this.remoteRuntimeId || this.remoteConnectionState !== 'disconnected') return;
     this.remoteConnectionState = 'connecting';
     this.remoteConnectionMessage = null;
-    this.renderRemoteStatus();
+    this.notifyTitlebarStatusChanged();
     const sessions = new Map(this.lanes.map((lane) => [lane.id, lane.sessionId]));
     for (const lane of this.lanes) {
       this.uiGenerations.delete(lane.id);
@@ -6734,7 +6725,7 @@ export class AcpHarnessView implements ContentView {
         lane.error = this.remoteConnectionMessage;
       }
     }
-    this.renderRemoteStatus();
+    this.notifyTitlebarStatusChanged();
     this.render();
   }
 
@@ -12481,10 +12472,6 @@ export class AcpHarnessView implements ContentView {
   }
 
   private async runShellCommand(lane: HarnessLane, command: string): Promise<void> {
-    if (this.remoteRuntimeId) {
-      this.flashChip('!shell is unavailable in a remote Harness');
-      return;
-    }
     if (lane.pendingShellId) {
       this.flashChip('shell already running');
       return;
@@ -12497,13 +12484,24 @@ export class AcpHarnessView implements ContentView {
     let output: string;
     let status: 'completed' | 'failed';
     try {
-      const result = await invoke<string>('run_shell', {
-        id,
-        command,
-        cwd: this.projectDir,
-      });
-      output = result;
-      status = 'completed';
+      if (this.remoteRuntimeId) {
+        // spec 247: the companion runs it with `/bin/sh -c` on the remote host,
+        // starting in the workspace; the outcome text matches a local run.
+        const result = await invoke<{ ok: boolean; output: string }>('remote_harness_request', {
+          runtimeId: this.remoteRuntimeId,
+          method: 'shell',
+          params: { shellId: id, command, cwd: this.projectDir },
+        });
+        output = result.output;
+        status = result.ok ? 'completed' : 'failed';
+      } else {
+        output = await invoke<string>('run_shell', {
+          id,
+          command,
+          cwd: this.projectDir,
+        });
+        status = 'completed';
+      }
     } catch (e) {
       output = String(e);
       status = 'failed';
@@ -12519,9 +12517,18 @@ export class AcpHarnessView implements ContentView {
     const id = lane.pendingShellId;
     if (!id) return;
     try {
-      await invoke('kill_shell', { id });
+      if (this.remoteRuntimeId) {
+        await invoke('remote_harness_request', {
+          runtimeId: this.remoteRuntimeId,
+          method: 'shell_kill',
+          params: { shellId: id },
+        });
+      } else {
+        await invoke('kill_shell', { id });
+      }
     } catch (e) {
-      this.appendTranscript(lane, 'system', `kill_shell failed: ${String(e)}`);
+      const label = this.remoteRuntimeId ? 'shell_kill' : 'kill_shell';
+      this.appendTranscript(lane, 'system', `${label} failed: ${String(e)}`);
       this.render();
     }
   }
@@ -16018,6 +16025,10 @@ export class AcpHarnessView implements ContentView {
 
   private notifyTitlebarTogglesChanged(): void {
     for (const listener of [...this.titlebarToggleListeners]) listener();
+  }
+
+  private notifyTitlebarStatusChanged(): void {
+    for (const listener of [...this.titlebarStatusListeners]) listener();
   }
 
   private sortedMemoryRows(): HandoffEntry[] {

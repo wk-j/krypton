@@ -971,6 +971,29 @@ reached the page falls back to the built-in krypton-dark values, scoped to
 7. closeWindow() fires the titlebar unsubscribe.
 ```
 
+## Window Titlebar Status Badge Flow (spec 247)
+
+```
+1. syncWindowChrome(win), right after syncWindowTitlebarToggles(win), calls
+   syncWindowTitlebarStatus(win): drop the window's previous subscription,
+   resolve the active tab's focused pane's ContentView, and render
+   getTitlebarStatus?.() into the window's own .krypton-window__titlebar-end
+   (local Harness and terminals return none, so the badge is removed).
+2. syncTitlebarStatus() (src/titlebar-status.ts) seats the badge right after
+   the toggle cluster (first child when there is none) and writes the DOM only
+   when its icon/text/tone/title/actionable key changes.
+3. A remote Harness's connection changes — a remote-harness-event-<runtimeId>
+   (connected / disconnected / closing), or reconnectRemoteHarness() entering
+   connecting and settling — set remoteConnectionState, then
+   notifyTitlebarStatusChanged() → the compositor re-runs step 2 with
+   remoteTitlebarStatus(workspace, state, message).
+4. A click on the red disconnected badge (aria-disabled="false"): mousedown
+   preventDefault keeps the composer focused; the click resolves the focused
+   view AT CLICK TIME and calls activateTitlebarStatus() → reconnectRemoteHarness().
+   The palette's "Reconnect Remote Harness" is the keyboard path to the same call.
+5. closeWindow() fires the status unsubscribe.
+```
+
 ## ACP Backend Update Check Flow (spec 322)
 
 ```
@@ -2184,7 +2207,13 @@ the local Telegram Settings view accepts it.
 6. The local hook server opens a dynamic reverse forward. Remote agents use the
    allocated remote-loopback port for Harness memory MCP; no public listener is
    created.
-7. On disconnect, in-flight work becomes outcome-unknown and is never replayed.
+7. A `!<command>` in the composer sends `remote_harness_request` method
+   `shell` (`RemoteMethod::WorkspaceShell`, gated on the `workspace_shell`
+   capability). The companion spawns `/bin/sh -c` in the workspace, inside the
+   request loop, and answers `{ ok, output }` from a task when the command ends;
+   the app waits with no deadline and fills the `shell` row once. `Esc` sends
+   `shell_kill`: SIGTERM to the process group, SIGKILL 2 s later.
+8. On disconnect, in-flight work becomes outcome-unknown and is never replayed.
    Reconnect starts a fresh companion under the same runtime identity and tries
    ACP resume/load for each saved session before falling back to a warned fresh
    session.

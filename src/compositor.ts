@@ -146,6 +146,7 @@ import {
 import { projectBadge, type ProjectBadge } from './window-footer-project';
 import { nextTitleLabel } from './window-title-label';
 import { syncTitlebarToggles } from './titlebar-toggles';
+import { syncTitlebarStatus } from './titlebar-status';
 import { diffStatBadge, type DiffStatBadge } from './window-footer-diff-stat';
 import { diffStatKey, diffStatStore, type DiffStatSource } from './diff-stat-store';
 import type { ViewBus } from './view-bus';
@@ -568,6 +569,8 @@ export class Compositor {
   private laneMarksUnsubscribeByWindow = new Map<WindowId, () => void>();
   /** spec 320: per-window subscription to the focused view's titlebar toggles. */
   private titlebarTogglesUnsubscribeByWindow = new Map<WindowId, () => void>();
+  /** spec 247: per-window subscription to the focused view's titlebar status badge. */
+  private titlebarStatusUnsubscribeByWindow = new Map<WindowId, () => void>();
   /** spec 218: `laneStripKey` of each window's rendered strip; skips no-op rebuilds. */
   private laneStripKeyByWindow = new Map<WindowId, string>();
   /** spec 219: each window's rendered project badge; skips no-op repaints. */
@@ -1689,11 +1692,13 @@ export class Compositor {
   /** Re-derive the window chrome that follows this window's active tab's
    *  focused pane: the status bar items — project badge (spec 219), AI credit
    *  quotas (spec 153), lane strip (spec 218), diff stat (spec 220) — and the
-   *  titlebar view toggles (spec 320). All follow focus *within* the window,
-   *  so two windows — or a window and a background one — each report their
-   *  own state. */
+   *  titlebar view toggles (spec 320) and status badge (spec 247). All follow
+   *  focus *within* the window, so two windows — or a window and a background
+   *  one — each report their own state. */
   private syncWindowChrome(win: KryptonWindow): void {
     this.syncWindowTitlebarToggles(win);
+    // After the toggles: the badge seats itself right behind their cluster.
+    this.syncWindowTitlebarStatus(win);
     this.syncWindowUsageStatus(win);
     this.syncWindowLaneStrip(win);
     void this.syncWindowDiffStat(win);
@@ -1847,6 +1852,33 @@ export class Compositor {
         win.id,
         view.onTitlebarTogglesChange(() => {
           syncTitlebarToggles(end, view.getTitlebarToggles?.() ?? [], activate);
+        }),
+      );
+    }
+  }
+
+  /** spec 247: render the focused view's titlebar status badge into this
+   *  window's own titlebar, resubscribing to that view. Same focus rule and
+   *  click-time resolution as `syncWindowTitlebarToggles`. */
+  private syncWindowTitlebarStatus(win: KryptonWindow): void {
+    this.titlebarStatusUnsubscribeByWindow.get(win.id)?.();
+    this.titlebarStatusUnsubscribeByWindow.delete(win.id);
+
+    const end = win.element.querySelector<HTMLElement>(
+      ':scope > .krypton-window__chrome > .krypton-window__titlebar > .krypton-window__titlebar-end',
+    );
+    if (!end) return;
+
+    const activate = (): void => {
+      this.focusedContentView(win)?.activateTitlebarStatus?.();
+    };
+    const view = this.focusedContentView(win);
+    syncTitlebarStatus(end, view?.getTitlebarStatus?.() ?? null, activate);
+    if (view?.onTitlebarStatusChange) {
+      this.titlebarStatusUnsubscribeByWindow.set(
+        win.id,
+        view.onTitlebarStatusChange(() => {
+          syncTitlebarStatus(end, view.getTitlebarStatus?.() ?? null, activate);
         }),
       );
     }
@@ -5370,6 +5402,8 @@ export class Compositor {
     this.laneMarksUnsubscribeByWindow.delete(id);
     this.titlebarTogglesUnsubscribeByWindow.get(id)?.();
     this.titlebarTogglesUnsubscribeByWindow.delete(id);
+    this.titlebarStatusUnsubscribeByWindow.get(id)?.();
+    this.titlebarStatusUnsubscribeByWindow.delete(id);
     this.laneStripKeyByWindow.delete(id);
     this.projectBadgeKeyByWindow.delete(id);
     // spec 220: the last window on a repo stops its poll (the store is

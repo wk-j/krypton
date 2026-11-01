@@ -241,6 +241,22 @@ export interface TitlebarToggle {
   readonly separatorBefore?: boolean;
 }
 
+/** spec 247: one text badge a content view shows in its window's titlebar,
+ *  right after its spec 320 toggles — the remote Harness's SSH host. The
+ *  compositor renders it; the view owns the state behind it. */
+export interface TitlebarStatus {
+  /** Full `<symbol>` id resolvable at document level, e.g. `krypton-icon-remote`. */
+  readonly icon: string;
+  /** Visible text. Keep it short; the detail belongs in `title`. */
+  readonly text: string;
+  /** Dot colour: `ok` success, `pending` warning, `error` danger (text and fill too). */
+  readonly tone: 'ok' | 'pending' | 'error';
+  /** Tooltip and accessible name. */
+  readonly title: string;
+  /** True → a click calls `activateTitlebarStatus`. */
+  readonly actionable?: boolean;
+}
+
 /** Interface for non-terminal content views */
 export interface ContentView {
   type: PaneContentType;
@@ -283,6 +299,12 @@ export interface ContentView {
   onTitlebarTogglesChange?(cb: () => void): () => void;
   /** A titlebar toggle was clicked. */
   activateTitlebarToggle?(id: string): void;
+  /** spec 247: text badge for this view's window titlebar; null → none. */
+  getTitlebarStatus?(): TitlebarStatus | null;
+  /** Subscribe to badge changes. Returns an unsubscribe function. */
+  onTitlebarStatusChange?(cb: () => void): () => void;
+  /** The badge was clicked while `actionable`. */
+  activateTitlebarStatus?(): void;
   /** Optional staging hook for global screen-capture images. */
   stageCapturedImage?(image: CapturedImage): boolean;
   /** Optional focused-view leader key bindings. Keys must not conflict with global leader keys. */

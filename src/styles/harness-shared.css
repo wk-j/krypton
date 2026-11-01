@@ -90,32 +90,6 @@
   --acp-lane-canvas: var(--agent-surface-mid, rgba(6, 10, 18, 0.48));
 }
 
-/* Remote (ssh) connection badge · `acp-harness-view.ts:6026`; the
-   `[data-state]` values come from the same writer. */
-.acp-harness__remote-status {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 28px;
-  padding: 4px 10px;
-  border: 1px solid rgba(109, 208, 255, 0.26);
-  background: rgba(21, 45, 57, 0.48);
-  color: var(--agent-user, #6dd0ff);
-  font-size: 0.82em;
-}
-
-.acp-harness__remote-status[data-state='disconnected'] {
-  border-color: rgba(255, 109, 138, 0.42);
-  background: rgba(69, 22, 35, 0.52);
-  color: var(--agent-error, #ff6d8a);
-}
-
-.acp-harness__remote-status[data-state='connecting'],
-.acp-harness__remote-status[data-state='closing'] {
-  opacity: 0.72;
-}
-
 /* Dock column · `harness-dock.ts` builds `.acp-harness__dock` (spec 337): the
    `acp-dock` tab strip, then the `dock.right` layout slot holding the Ticket
    and Rails docks at full height, one shown, the other `hidden`. It toggles

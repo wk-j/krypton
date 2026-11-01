@@ -200,7 +200,8 @@
      (spec 226) — it does not hang into the oscilloscope. */
   overflow: hidden;
   /* spec 320: narrow-tile rule — below 480px the view-toggle cluster keeps
-     only the spec 347 `left` / `right` toggles so the label keeps room. */
+     only the spec 347 `left` / `right` toggles and the spec 247 status badge
+     drops its text (icon + dot stay) so the label keeps room. */
   container-type: inline-size;
   /* Same default as `--krypton-lane-zoom` on the footer strip (spec 218).
      Capped to titlebar height on the focused rule so the digits cannot
@@ -388,9 +389,76 @@
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25);
 }
 
+/* ─── Titlebar view status (spec 247) ───
+   One text badge a content view shows right after its toggles: the remote
+   Harness's SSH host. Quiet while healthy; danger-tinted and clickable when
+   the view marks it actionable. tabindex -1, like the toggles. 6px radius:
+   it sits in the 28px rail with the tab pills (DESIGN.md). Text is the window
+   accent, like the label: every built-in theme's `--krypton-titlebar-text` is
+   the dim unfocused tone (#304838, 0.3-alpha cyan) and vanishes on the fill. */
+.krypton-window__view-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 18px;
+  padding: 0 8px;
+  margin: 0;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
+  color: var(--krypton-window-accent, var(--krypton-titlebar-text, #0cf));
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.krypton-window__view-status-icon {
+  width: 12px;
+  height: 12px;
+  display: block;
+  flex: none;
+}
+
+.krypton-window__view-status-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: rgb(var(--krypton-success-rgb, 57, 255, 127));
+}
+
+.krypton-window__view-status[data-tone='pending'] .krypton-window__view-status-dot {
+  background: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+}
+
+.krypton-window__view-status[data-tone='error'] {
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+  background: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.16);
+}
+
+.krypton-window__view-status[data-tone='error'] .krypton-window__view-status-dot {
+  background: currentColor;
+}
+
+.krypton-window__view-status[aria-disabled='false'] {
+  cursor: pointer;
+}
+
+.krypton-window__view-status[aria-disabled='false']:hover {
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.16);
+}
+
+.krypton-window__view-status[data-tone='error'][aria-disabled='false']:hover {
+  background: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.26);
+}
+
 @container (max-width: 480px) {
   .krypton-window__view-toggle:not([data-toggle-id='left']):not([data-toggle-id='right']):not([data-toggle-id='backend-update']),
-  .krypton-window__view-toggle-sep {
+  .krypton-window__view-toggle-sep,
+  .krypton-window__view-status-text {
     display: none;
   }
 }

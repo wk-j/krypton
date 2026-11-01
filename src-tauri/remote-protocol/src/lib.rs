@@ -2,12 +2,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub mod diff_stat;
+pub mod shell;
 
 pub const PROTOCOL_VERSION: u16 = 1;
 pub const MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;
 
 /// Hello capability of a runtime that answers `WorkspaceDiffStat`.
 pub const CAPABILITY_WORKSPACE_DIFF_STAT: &str = "workspace_diff_stat";
+
+/// Hello capability of a runtime that answers `WorkspaceShell` and
+/// `WorkspaceShellKill`.
+pub const CAPABILITY_WORKSPACE_SHELL: &str = "workspace_shell";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +38,11 @@ pub enum RemoteMethod {
     WorkspaceRun,
     /// The window rail's `diff_stat::WorkingDiffStat` for a workspace cwd.
     WorkspaceDiffStat,
+    /// A command the user typed after `!` in a remote Harness, run with
+    /// `/bin/sh -c` in the workspace (spec 247).
+    WorkspaceShell,
+    /// Signal a running `WorkspaceShell` command's process group.
+    WorkspaceShellKill,
 }
 
 impl RemoteMethod {
@@ -43,6 +53,9 @@ impl RemoteMethod {
     pub fn required_capability(&self) -> Option<&'static str> {
         match self {
             RemoteMethod::WorkspaceDiffStat => Some(CAPABILITY_WORKSPACE_DIFF_STAT),
+            RemoteMethod::WorkspaceShell | RemoteMethod::WorkspaceShellKill => {
+                Some(CAPABILITY_WORKSPACE_SHELL)
+            }
             _ => None,
         }
     }

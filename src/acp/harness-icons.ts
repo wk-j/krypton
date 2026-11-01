@@ -129,6 +129,9 @@ export const HARNESS_ICON_SVG_DEFS = [
   '<symbol id="krypton-icon-panel-right" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"><rect x="1.9" y="2.9" width="12.2" height="10.2" rx="1.4"/><path d="M9.9 2.9 V13.1"/></g><rect x="10.6" y="3.6" width="2.8" height="8.8" fill="currentColor" opacity="0.35"/></symbol>',
   // spec 322: titlebar backend-update action — a down arrow into a tray.
   '<symbol id="krypton-icon-backend-update" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.4 V9.6 M4.9 6.7 L8 9.8 L11.1 6.7"/><path d="M2.6 10.4 V13.2 H13.4 V10.4"/></g></symbol>',
+  // spec 247: titlebar remote-connection badge — two opposed arrows, the link
+  // between this window and the SSH host.
+  '<symbol id="krypton-icon-remote" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6 H12 M10 4 L12 6 L10 8"/><path d="M13 10 H4 M6 8 L4 10 L6 12"/></g></symbol>',
   // spec 323: FOLLOW-UP buttons. `run` is a terminal window with a prompt (the
   // action opens a terminal tab); `open` is a box with an arrow leaving it (the
   // URL opens in the OS browser). Same frame, stroke and caps as the panel set.
