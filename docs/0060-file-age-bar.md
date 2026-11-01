@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-04-14
 > Milestone: M8 — Polish
+> Amended 2026-11-01 (File Manager restyle to the Harness look): the bar is a 32×2px meter on a `fg@0.08` track with an accent fill (`rgba(--krypton-accent-rgb, 0.72)`, no glow). `ageFillStyle` sets only width (15%→100%) and opacity (0.4→1). The amber→red HSL ramp that spec 317 had kept is gone, which restores this spec's single-colour intent. The CSS below is historical.
 
 ## Problem
 

@@ -58,7 +58,6 @@ export class FileRow extends Component<FileRowProps> {
         const fill = el('span', { class: `${B}__age-fill` });
         const style = ageFillStyle(p.recency);
         fill.style.width = style.width;
-        fill.style.background = style.background;
         fill.style.opacity = style.opacity;
         this.ageBarEl.appendChild(fill);
       }

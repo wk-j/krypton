@@ -1,7 +1,17 @@
-/* ─── File Manager — Krypton Dark ─── */
-/* See DESIGN.md. All colors flow through --krypton-* tokens; no hard-coded hex. */
+/* ─── File Manager ─── */
+/* Matches the ACP Harness surfaces: hairline rules, ink tiers derived from the
+   foreground, a tinted + outlined cursor row, no glow on text you read and no
+   scanline texture. All colors flow through theme tokens; no hard-coded hex.
+   Ink tiers fall back to the foreground at reduced alpha — never
+   `--krypton-fg-dim` (that is the titlebar colour, near-invisible in some
+   themes) and never ANSI bright-black for text. */
 
 .krypton-file-manager {
+  --fm-ink: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb), 0.86));
+  --fm-ink-dim: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.56));
+  --fm-ink-faint: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb), 0.4));
+  --fm-rule: rgba(var(--krypton-accent-rgb), 0.18);
+  --fm-accent: var(--krypton-window-accent, var(--krypton-accent));
   position: relative;
   display: flex;
   flex-direction: column;
@@ -17,39 +27,23 @@
   user-select: text;
 }
 
-/* CRT scanline overlay — texture layer, sits below edge glow per DESIGN.md § Textures */
-.krypton-file-manager::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 0, 0, 0.03) 2px,
-    rgba(0, 0, 0, 0.03) 4px
-  );
-  pointer-events: none;
-  z-index: var(--krypton-z-edge-glow, 200);
-}
-
 .krypton-file-manager__breadcrumb {
   flex-shrink: 0;
   font-family: var(--krypton-font-family, monospace);
   font-size: 12px;
-  height: 20px;
-  line-height: 20px;
-  padding: 0 10px;
-  color: var(--krypton-focused-accent);
-  letter-spacing: 0;
-  font-weight: 500;
-  border-bottom: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-active));
+  height: 24px;
+  line-height: 24px;
+  padding: 0 12px;
+  color: var(--fm-ink-dim);
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--fm-rule);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow:
-    0 0 8px rgba(var(--krypton-accent-rgb), 0.4),
-    0 0 14px rgba(var(--krypton-accent-rgb), 0.15);
+}
+
+.krypton-file-manager__breadcrumb--search {
+  color: var(--fm-accent);
 }
 
 .krypton-file-manager__body {
@@ -79,7 +73,7 @@
 .krypton-file-manager__preview {
   flex: 1 1 0;
   overflow: hidden;
-  border-left: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-active));
+  border-left: 1px solid var(--fm-rule);
   min-width: 0;
 }
 
@@ -89,27 +83,25 @@
 
 .krypton-file-manager__preview-content {
   margin: 0;
-  padding: 8px 12px;
+  padding: 8px 14px;
   font-family: inherit;
   font-size: inherit;
   line-height: max(var(--krypton-content-line-height, 1.5), 1.4);
   color: var(--krypton-fg);
-  text-shadow:
-    0 0 6px rgba(var(--krypton-accent-rgb), 0.12);
   white-space: pre-wrap;
   word-break: break-word;
   overflow-y: auto;
   height: 100%;
 }
 
+/* Prose — after the harness markdown (`harness-shared.css`
+   `.acp-harness__msg-body--markdown`), in theme tokens instead of its hex. */
 .krypton-file-manager__preview-markdown {
-  padding: 8px 16px;
+  padding: 10px 18px;
   font-family: inherit;
   font-size: inherit;
-  line-height: max(var(--krypton-prose-line-height, 1.7), 1.4);
+  line-height: max(var(--krypton-prose-line-height, 1.6), 1.4);
   color: var(--krypton-fg);
-  text-shadow:
-    0 0 6px rgba(var(--krypton-accent-rgb), 0.12);
   overflow-y: auto;
   height: 100%;
 }
@@ -120,71 +112,74 @@
 .krypton-file-manager__preview-markdown h4,
 .krypton-file-manager__preview-markdown h5,
 .krypton-file-manager__preview-markdown h6 {
-  color: var(--krypton-focused-accent);
-  font-family: var(--krypton-font-family, 'Fira Code', monospace);
-  margin: 1em 0 0.5em;
-  line-height: var(--krypton-content-line-height, 1.5);
-  text-shadow:
-    0 0 8px rgba(var(--krypton-accent-rgb), 0.4),
-    0 0 14px rgba(var(--krypton-accent-rgb), 0.15);
+  font-family: var(--krypton-font-family, monospace);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+  margin: 1.1em 0 0.45em;
+  color: var(--agent-user, var(--krypton-ansi-6));
 }
 
 .krypton-file-manager__preview-markdown h1 {
-  font-size: 1.6em;
-  border-bottom: 1px solid var(--krypton-focused-accent);
-  padding-bottom: 0.3em;
-}
-.krypton-file-manager__preview-markdown h2 {
-  font-size: 1.3em;
-  border-bottom: 1px solid var(--krypton-focused-accent);
+  font-size: 1.35em;
+  color: var(--agent-cyan, var(--krypton-ansi-6));
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb), 0.25);
   padding-bottom: 0.2em;
 }
-.krypton-file-manager__preview-markdown h3 { font-size: 1.15em; }
-
-.krypton-file-manager__preview-markdown p {
-  margin: 0.6em 0;
+.krypton-file-manager__preview-markdown h2 { font-size: 1.18em; }
+.krypton-file-manager__preview-markdown h3 {
+  font-size: 1.06em;
+  color: var(--agent-accent, var(--krypton-ansi-2));
+}
+.krypton-file-manager__preview-markdown h4,
+.krypton-file-manager__preview-markdown h5,
+.krypton-file-manager__preview-markdown h6 {
+  font-size: 0.9em;
+  color: var(--fm-ink);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
-/* Inline-link styling per DESIGN.md § Links: solid underline, link token color, no dashed */
+.krypton-file-manager__preview-markdown p {
+  margin: 0.5em 0;
+}
+
 .krypton-file-manager__preview-markdown a {
-  color: var(--krypton-ansi-14);
+  color: var(--agent-user, var(--krypton-ansi-6));
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration-color: rgba(var(--krypton-accent-rgb), 0.45);
+  text-underline-offset: 3px;
 }
 
 .krypton-file-manager__preview-markdown a:hover {
-  opacity: 1;
+  text-decoration-color: currentColor;
 }
 
 .krypton-file-manager__preview-markdown strong {
   color: var(--krypton-ansi-15);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .krypton-file-manager__preview-markdown em {
-  color: var(--krypton-ansi-5);
+  color: var(--krypton-ansi-13);
   font-style: italic;
 }
 
-/* Inline code chip per DESIGN.md § Inline code */
 .krypton-file-manager__preview-markdown code {
-  font-family: var(--krypton-font-family, 'Fira Code', monospace);
-  font-size: 0.9em;
-  color: var(--krypton-focused-accent);
-  background: rgba(var(--krypton-accent-rgb), 0.08);
-  border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
+  font-family: var(--krypton-font-family, monospace);
+  font-size: 0.92em;
+  color: var(--agent-accent, var(--krypton-ansi-2));
+  background: rgba(var(--krypton-fg-rgb), 0.07);
   border-radius: var(--krypton-border-radius, 8px);
-  padding: 0 2px;
+  padding: 0.05em 0.4ch;
 }
 
 .krypton-file-manager__preview-markdown pre {
-  background: rgba(var(--krypton-bg-rgb), 0.6);
-  border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
-  border-left: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-active));
+  background: rgba(0, 0, 0, 0.32);
   border-radius: var(--krypton-border-radius, 8px);
-  padding: 12px;
+  padding: 8px 10px;
   overflow-x: auto;
-  margin: 0.8em 0;
+  margin: 0.6em 0;
 }
 
 .krypton-file-manager__preview-markdown pre code {
@@ -200,11 +195,11 @@
 }
 
 .krypton-file-manager__preview-markdown blockquote {
-  border-left: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-active));
-  margin: 1em 0;
-  padding: 0.5em 1em;
-  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb), 0.7));
-  background: rgba(var(--krypton-accent-rgb), 0.04);
+  margin: 0.8em 0;
+  padding: 6px 10px;
+  color: var(--fm-ink);
+  background: rgba(var(--krypton-fg-rgb), 0.04);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .krypton-file-manager__preview-markdown ul,
@@ -222,7 +217,7 @@
 }
 
 .krypton-file-manager__preview-markdown li::marker {
-  color: var(--krypton-focused-accent);
+  color: var(--agent-accent, var(--krypton-ansi-2));
 }
 
 .krypton-file-manager__preview-markdown table {
@@ -230,15 +225,15 @@
   border-spacing: 0;
   width: 100%;
   margin: 0.8em 0;
-  border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
+  border: 1px solid rgba(var(--krypton-accent-rgb), 0.25);
   border-radius: var(--krypton-border-radius, 8px);
 }
 
 .krypton-file-manager__preview-markdown th,
 .krypton-file-manager__preview-markdown td {
   border: 0;
-  border-right: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
-  border-bottom: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
+  border-right: 1px solid rgba(var(--krypton-accent-rgb), 0.25);
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb), 0.25);
   padding: 6px 12px;
   text-align: left;
 }
@@ -269,19 +264,17 @@
 }
 
 .krypton-file-manager__preview-markdown th {
-  background: rgba(var(--krypton-accent-rgb), 0.06);
-  color: var(--krypton-focused-accent);
+  background: rgba(var(--krypton-accent-rgb), 0.1);
+  color: var(--agent-user, var(--krypton-ansi-6));
+  font-weight: 700;
+  letter-spacing: 0.04em;
   font-size: 0.9em;
-}
-
-.krypton-file-manager__preview-markdown tr:nth-child(even) td {
-  background: rgba(var(--krypton-fg-rgb), 0.02);
 }
 
 .krypton-file-manager__preview-markdown hr {
   border: none;
-  border-top: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
-  margin: 1.5em 0;
+  border-top: 1px solid rgba(var(--krypton-fg-rgb), 0.1);
+  margin: 1.2em 0;
 }
 
 .krypton-file-manager__preview-markdown img {
@@ -289,74 +282,66 @@
   height: auto;
 }
 
-/* ─── Claude Code Skill — Spec Card ─── */
+/* ─── Frontmatter / Skill Card — the harness rail-panel card ─── */
 
 .krypton-skill-spec {
-  margin: 0 0 1.5em;
-  padding: 12px 14px;
-  border: 1px solid var(--krypton-focused-accent);
+  margin: 0 0 1.2em;
+  padding: 8px 12px 7px;
+  border: 1px solid rgba(var(--krypton-accent-rgb), 0.24);
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(var(--krypton-accent-rgb), 0.04);
-  color: var(--krypton-fg);
+  background: rgba(var(--krypton-fg-rgb), 0.03);
+  color: var(--fm-ink);
 }
 
 .krypton-skill-spec__header {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--krypton-focused-accent);
+  gap: 10px;
+  margin-bottom: 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid rgba(var(--krypton-accent-rgb), 0.12);
 }
 
-.krypton-skill-spec__tag {
-  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+.krypton-skill-spec__tag,
+.krypton-skill-spec__label {
+  font-family: var(--krypton-font-family, monospace);
   font-size: 0.72em;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--krypton-focused-accent);
+  color: var(--fm-ink-dim);
 }
 
 .krypton-skill-spec__name {
-  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 1.15em;
-  font-weight: 600;
-  color: var(--krypton-ansi-15);
-  text-shadow:
-    0 0 8px rgba(var(--krypton-accent-rgb), 0.4),
-    0 0 14px rgba(var(--krypton-accent-rgb), 0.15);
+  font-family: var(--krypton-font-family, monospace);
+  font-size: 1.08em;
+  font-weight: 700;
+  color: var(--krypton-fg);
 }
 
 .krypton-skill-spec__description {
   font-size: 0.95em;
-  line-height: 1.55;
-  margin-bottom: 10px;
-  color: var(--krypton-fg);
+  line-height: 1.5;
+  margin-bottom: 6px;
+  color: var(--fm-ink);
 }
 
 .krypton-skill-spec__row {
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
   gap: 12px;
-  margin: 6px 0;
+  margin: 3px 0;
 }
 
 .krypton-skill-spec__label {
   flex-shrink: 0;
   width: 108px;
-  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  font-size: 0.72em;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--krypton-focused-accent);
-  padding-top: 3px;
 }
 
 .krypton-skill-spec__value {
   flex: 1;
   font-size: 0.92em;
-  color: var(--krypton-fg);
+  color: var(--fm-ink);
   word-break: break-word;
 }
 
@@ -368,13 +353,12 @@
 }
 
 .krypton-skill-spec__tool {
-  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-family: var(--krypton-font-family, monospace);
   font-size: 0.82em;
-  padding: 1px 8px;
-  border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-hover));
-  border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(var(--krypton-accent-rgb), 0.06);
-  color: var(--krypton-focused-accent);
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(var(--krypton-fg-rgb), 0.07);
+  color: var(--fm-ink);
   white-space: nowrap;
 }
 
@@ -385,110 +369,66 @@
   align-items: center;
   height: var(--krypton-terminal-cell-height, 20px);
   line-height: var(--krypton-terminal-cell-height, 20px);
-  padding: 0 8px;
+  margin: 0 6px;
+  padding: 0 6px;
+  border-radius: var(--krypton-border-radius, 8px);
   cursor: default;
   white-space: nowrap;
   overflow: hidden;
   position: relative;
-  letter-spacing: 0.04em;
-  transition: background 0.1s ease;
+  color: var(--fm-ink);
+  letter-spacing: 0.02em;
 }
 
-.krypton-file-manager__item:nth-child(even) {
-  background: rgba(var(--krypton-accent-rgb), 0.015);
-}
-
-/* Cursor row — inverted: solid accent fill, dark text. Translucent washes
-   blend into already-tinted rows (dir=cyan, code=blue), so the selected
-   row inverts the palette to be unambiguous. */
+/* Cursor row — the harness picker's active row: a tint plus a 1px outline
+   drawn inside the row; the row keeps its own colours (spec 0052: plain
+   subtle background, no cursor-specific type-colour overrides). */
 .krypton-file-manager__item.krypton-file-manager__item--cursor {
-  background: var(--krypton-focused-accent);
-  box-shadow:
-    0 0 8px rgba(var(--krypton-accent-rgb), 0.6),
-    0 0 18px rgba(var(--krypton-accent-rgb), 0.2);
-}
-
-.krypton-file-manager__item.krypton-file-manager__item--cursor,
-.krypton-file-manager__item.krypton-file-manager__item--cursor .krypton-file-manager__name,
-.krypton-file-manager__item.krypton-file-manager__item--cursor .krypton-file-manager__icon,
-.krypton-file-manager__item.krypton-file-manager__item--cursor .krypton-file-manager__size,
-.krypton-file-manager__item.krypton-file-manager__item--cursor .krypton-file-manager__mark {
-  color: var(--krypton-bg);
-  opacity: 1;
-  text-shadow: none;
-  font-weight: 600;
-}
-
-.krypton-file-manager__item.krypton-file-manager__item--cursor .krypton-file-manager__age-bar {
-  background: rgba(var(--krypton-bg-rgb), 0.25);
-}
-
-.krypton-file-manager__item.krypton-file-manager__item--cursor .krypton-file-manager__age-fill {
-  background: var(--krypton-bg);
-  box-shadow: none;
+  background: rgba(var(--krypton-accent-rgb), 0.12);
+  outline: 1px solid rgba(var(--krypton-accent-rgb), 0.5);
+  outline-offset: -1px;
 }
 
 /* ── Directory styling ── */
 
 .krypton-file-manager__item--dir .krypton-file-manager__name {
-  color: var(--krypton-focused-accent);
+  color: var(--fm-accent);
   font-weight: 600;
 }
 
 .krypton-file-manager__item--dir .krypton-file-manager__icon {
-  color: var(--krypton-focused-accent);
-  opacity: var(--krypton-opacity-active);
-  transition: transform 0.15s ease;
+  color: var(--fm-accent);
+  opacity: 0.7;
 }
 
 /* ── Symlink ── */
 
 .krypton-file-manager__item--symlink .krypton-file-manager__name {
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.5));
+  color: var(--fm-ink-dim);
   font-style: italic;
 }
 
 /* ── File type accents ────────────────────────────────────────────
-   File-type colors route through the theme's ANSI palette so themes can
-   override them. In monochrome themes (Krypton Dark) several types
-   collapse to the same hue — that's intentional, see DESIGN.md
-   § Colors "monochromatic by intent".
+   A family keeps a hint of its ANSI hue, mixed toward the foreground so the
+   list reads as one surface rather than a rainbow. Themes still override
+   the hues. Data files are ink, not ANSI bright-black (near-invisible in
+   some themes).
    ─────────────────────────────────────────────────────────────── */
 
-.krypton-file-manager__item--ft-code .krypton-file-manager__name { color: var(--krypton-ansi-4); }
-.krypton-file-manager__item--ft-code .krypton-file-manager__icon { color: var(--krypton-ansi-4); opacity: var(--krypton-opacity-hover); }
-
-.krypton-file-manager__item--ft-config .krypton-file-manager__name { color: var(--krypton-ansi-5); }
-.krypton-file-manager__item--ft-config .krypton-file-manager__icon { color: var(--krypton-ansi-5); opacity: var(--krypton-opacity-hover); }
-
-.krypton-file-manager__item--ft-markup .krypton-file-manager__name { color: var(--krypton-ansi-14); }
-.krypton-file-manager__item--ft-markup .krypton-file-manager__icon { color: var(--krypton-ansi-14); opacity: var(--krypton-opacity-hover); }
-
-.krypton-file-manager__item--ft-doc .krypton-file-manager__name { color: var(--krypton-ansi-10); }
-.krypton-file-manager__item--ft-doc .krypton-file-manager__icon { color: var(--krypton-ansi-10); opacity: var(--krypton-opacity-hover); }
-
-.krypton-file-manager__item--ft-image .krypton-file-manager__name { color: var(--krypton-ansi-13); }
-.krypton-file-manager__item--ft-image .krypton-file-manager__icon { color: var(--krypton-ansi-13); opacity: var(--krypton-opacity-hover); }
-
-.krypton-file-manager__item--ft-media .krypton-file-manager__name { color: var(--krypton-ansi-9); }
-.krypton-file-manager__item--ft-media .krypton-file-manager__icon { color: var(--krypton-ansi-9); opacity: var(--krypton-opacity-hover); }
-
-.krypton-file-manager__item--ft-archive .krypton-file-manager__name { color: var(--krypton-ansi-3); }
-.krypton-file-manager__item--ft-archive .krypton-file-manager__icon { color: var(--krypton-ansi-3); opacity: var(--krypton-opacity-hover); }
-
-.krypton-file-manager__item--ft-data .krypton-file-manager__name { color: var(--krypton-ansi-8); }
-.krypton-file-manager__item--ft-data .krypton-file-manager__icon { color: var(--krypton-ansi-8); opacity: var(--krypton-opacity-hover); }
-
-.krypton-file-manager__item--ft-script .krypton-file-manager__name { color: var(--krypton-ansi-11); }
-.krypton-file-manager__item--ft-script .krypton-file-manager__icon { color: var(--krypton-ansi-11); opacity: var(--krypton-opacity-hover); }
+.krypton-file-manager__item--ft-code .krypton-file-manager__name { color: color-mix(in srgb, var(--krypton-ansi-4) 70%, var(--krypton-fg)); }
+.krypton-file-manager__item--ft-config .krypton-file-manager__name { color: color-mix(in srgb, var(--krypton-ansi-5) 70%, var(--krypton-fg)); }
+.krypton-file-manager__item--ft-markup .krypton-file-manager__name { color: color-mix(in srgb, var(--krypton-ansi-14) 70%, var(--krypton-fg)); }
+.krypton-file-manager__item--ft-doc .krypton-file-manager__name { color: color-mix(in srgb, var(--krypton-ansi-10) 70%, var(--krypton-fg)); }
+.krypton-file-manager__item--ft-image .krypton-file-manager__name { color: color-mix(in srgb, var(--krypton-ansi-13) 70%, var(--krypton-fg)); }
+.krypton-file-manager__item--ft-media .krypton-file-manager__name { color: color-mix(in srgb, var(--krypton-ansi-9) 70%, var(--krypton-fg)); }
+.krypton-file-manager__item--ft-archive .krypton-file-manager__name { color: color-mix(in srgb, var(--krypton-ansi-3) 70%, var(--krypton-fg)); }
+.krypton-file-manager__item--ft-data .krypton-file-manager__name { color: var(--fm-ink-dim); }
+.krypton-file-manager__item--ft-script .krypton-file-manager__name { color: color-mix(in srgb, var(--krypton-ansi-11) 70%, var(--krypton-fg)); }
 
 /* ── Marked items ── */
 
 .krypton-file-manager__item--marked .krypton-file-manager__mark {
-  color: var(--krypton-focused-accent);
-  text-shadow:
-    0 0 6px rgba(var(--krypton-accent-rgb), 0.6),
-    0 0 14px rgba(var(--krypton-accent-rgb), 0.15);
+  color: var(--fm-accent);
 }
 
 /* ── Child elements ── */
@@ -504,7 +444,7 @@
 .krypton-file-manager__icon {
   flex-shrink: 0;
   width: 1.2em;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.5));
+  color: var(--fm-ink-dim);
   -webkit-user-select: none;
   user-select: none;
 }
@@ -516,15 +456,16 @@
   text-overflow: ellipsis;
 }
 
-/* ── Age Bar: recency heat indicator ── */
+/* ── Age Bar: recency meter (spec 0060) — the harness metrics meter: a thin
+   foreground track, an accent fill whose width and opacity carry recency. ── */
 
 .krypton-file-manager__age-bar {
   flex-shrink: 0;
-  width: 40px;
-  height: 4px;
+  width: 32px;
+  height: 2px;
   margin: 0 8px;
-  background: rgba(var(--krypton-accent-rgb), var(--krypton-opacity-ghost));
-  border-radius: var(--krypton-border-radius, 8px);
+  background: rgba(var(--krypton-fg-rgb), 0.08);
+  border-radius: 999px;
   overflow: hidden;
   align-self: center;
   display: flex;
@@ -535,50 +476,47 @@
 
 .krypton-file-manager__age-fill {
   height: 100%;
-  background: rgba(var(--krypton-accent-rgb), var(--krypton-opacity-active));
-  border-radius: var(--krypton-border-radius, 8px);
-  box-shadow: 0 0 6px rgba(var(--krypton-accent-rgb), 0.6);
+  background: rgba(var(--krypton-accent-rgb), 0.72);
+  border-radius: 999px;
 }
 
 .krypton-file-manager__size {
   flex-shrink: 0;
-  margin-left: 12px;
-  opacity: 0.35;
+  margin-left: 10px;
+  color: var(--fm-ink-faint);
   text-align: right;
   width: 52px;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.02em;
 }
 
 .krypton-file-manager__size--large {
-  color: var(--krypton-ansi-3);
-  opacity: 0.5;
+  color: color-mix(in srgb, var(--krypton-ansi-3) 70%, transparent);
 }
 
 .krypton-file-manager__size--mega {
-  color: var(--krypton-ansi-1);
-  opacity: 0.6;
+  color: color-mix(in srgb, var(--krypton-ansi-1) 80%, transparent);
 }
 
 .krypton-file-manager__empty {
-  padding: 24px 12px;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.4));
+  padding: 24px 14px;
+  color: var(--fm-ink-dim);
   font-style: italic;
 }
 
-/* ─── Status Bar — industrial readout ─── */
+/* ─── Status Bar — the harness composer-meta readout ─── */
 
 .krypton-file-manager__status {
   flex-shrink: 0;
   font-family: var(--krypton-font-family, monospace);
   font-size: 11px;
-  height: 20px;
-  line-height: 20px;
-  padding: 0 10px;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.6));
+  height: 22px;
+  line-height: 22px;
+  padding: 0 12px;
+  color: var(--fm-ink-dim);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  border-top: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-active));
+  border-top: 1px solid var(--fm-rule);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -587,24 +525,15 @@
 
 .krypton-file-manager__status--filter,
 .krypton-file-manager__status--prompt {
-  color: var(--krypton-focused-accent);
-  text-shadow:
-    0 0 8px rgba(var(--krypton-accent-rgb), 0.4),
-    0 0 14px rgba(var(--krypton-accent-rgb), 0.15);
+  color: var(--fm-accent);
 }
 
 .krypton-file-manager__status--error {
   color: var(--krypton-ansi-1);
-  text-shadow:
-    0 0 8px rgba(var(--krypton-danger-rgb), 0.4),
-    0 0 14px rgba(var(--krypton-danger-rgb), 0.15);
 }
 
 .krypton-file-manager__status--confirm {
   color: var(--krypton-ansi-3);
-  text-shadow:
-    0 0 8px rgba(var(--krypton-warning-rgb), 0.4),
-    0 0 14px rgba(var(--krypton-warning-rgb), 0.15);
 }
 
 /* ─── Syntax Highlighting ─── */
@@ -612,13 +541,10 @@
 
 .krypton-file-manager__preview-content [class^="hljs"] { color: var(--krypton-fg); }
 .krypton-file-manager__preview-content .hljs-comment,
-.krypton-file-manager__preview-content .hljs-quote { color: var(--krypton-ansi-8); font-style: italic; }
+.krypton-file-manager__preview-content .hljs-quote { color: var(--fm-ink-dim); font-style: italic; }
 
 .krypton-file-manager__preview-content .hljs-keyword,
-.krypton-file-manager__preview-content .hljs-selector-tag {
-  color: var(--krypton-ansi-4);
-  text-shadow: 0 0 6px rgba(var(--krypton-info-rgb), 0.25);
-}
+.krypton-file-manager__preview-content .hljs-selector-tag { color: var(--krypton-ansi-4); }
 
 .krypton-file-manager__preview-content .hljs-string,
 .krypton-file-manager__preview-content .hljs-addition { color: var(--krypton-ansi-10); }
@@ -627,12 +553,7 @@
 .krypton-file-manager__preview-content .hljs-literal { color: var(--krypton-ansi-9); }
 
 .krypton-file-manager__preview-content .hljs-function,
-.krypton-file-manager__preview-content .hljs-title {
-  color: var(--krypton-ansi-15);
-  text-shadow:
-    0 0 6px rgba(var(--krypton-accent-rgb), 0.4),
-    0 0 14px rgba(var(--krypton-accent-rgb), 0.15);
-}
+.krypton-file-manager__preview-content .hljs-title { color: var(--krypton-ansi-15); }
 
 .krypton-file-manager__preview-content .hljs-type,
 .krypton-file-manager__preview-content .hljs-class { color: var(--krypton-ansi-5); }
@@ -656,7 +577,7 @@
 .krypton-file-manager__preview-content .hljs-template-variable { color: var(--krypton-ansi-7); }
 
 .krypton-file-manager__preview-content .hljs-punctuation,
-.krypton-file-manager__preview-content .hljs-operator { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.45)); }
+.krypton-file-manager__preview-content .hljs-operator { color: var(--fm-ink-dim); }
 
 .krypton-file-manager__preview-content .hljs-deletion { color: var(--krypton-ansi-1); }
 
@@ -668,11 +589,8 @@
 /* ─── Fuzzy Search Match Highlight ─── */
 
 .krypton-file-manager__match {
-  color: var(--krypton-focused-accent);
+  color: var(--fm-accent);
   font-weight: 600;
-  text-shadow:
-    0 0 8px rgba(var(--krypton-accent-rgb), 0.5),
-    0 0 14px rgba(var(--krypton-accent-rgb), 0.15);
 }
 
 /* ─── File Manager AI Overlay ─── */
@@ -683,8 +601,8 @@
   left: 0;
   right: 0;
   z-index: var(--krypton-z-overlay, 1000);
-  background: rgba(var(--krypton-bg-rgb), 0.85);
-  border-top: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-active));
+  background: var(--agent-surface-solid, rgba(var(--krypton-bg-rgb), 0.92));
+  border-top: 1px solid rgba(var(--krypton-accent-rgb), 0.22);
   padding: 8px 12px;
   display: flex;
   flex-direction: column;
@@ -694,10 +612,7 @@
   transition:
     opacity 120ms cubic-bezier(0.22, 0.61, 0.36, 1),
     transform 120ms cubic-bezier(0.22, 0.61, 0.36, 1);
-  box-shadow:
-    0 -4px 20px rgba(0, 0, 0, 0.5),
-    0 0 6px rgba(var(--krypton-accent-rgb), 0.6),
-    0 0 20px rgba(var(--krypton-accent-rgb), 0.15);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
 }
 
 .krypton-file-manager-ai--visible {
@@ -715,27 +630,21 @@
   font-family: inherit;
   font-size: 11px;
   font-weight: 600;
-  color: var(--krypton-focused-accent);
+  color: var(--krypton-window-accent, var(--krypton-accent));
   flex-shrink: 0;
-  text-shadow:
-    0 0 8px rgba(var(--krypton-accent-rgb), 0.4),
-    0 0 14px rgba(var(--krypton-accent-rgb), 0.15);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .krypton-file-manager-ai__prompt--ask {
   color: var(--krypton-ansi-5);
-  text-shadow:
-    0 0 8px rgba(var(--krypton-special-rgb), 0.4),
-    0 0 14px rgba(var(--krypton-special-rgb), 0.15);
 }
 
 .krypton-file-manager-ai__mode {
   font-family: inherit;
   font-size: 11px;
   font-weight: 400;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.4));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.5));
   flex-shrink: 0;
   cursor: default;
 }
@@ -748,15 +657,12 @@
   font-family: inherit;
   font-size: var(--krypton-font-size);
   color: var(--krypton-fg);
-  caret-color: var(--krypton-focused-accent);
+  caret-color: var(--krypton-window-accent, var(--krypton-accent));
 }
 
 .krypton-file-manager-ai__input:focus-visible {
-  outline: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-active));
+  outline: 1px solid rgba(var(--krypton-accent-rgb), 0.5);
   outline-offset: 2px;
-  box-shadow:
-    0 0 6px rgba(var(--krypton-accent-rgb), 0.6),
-    0 0 12px rgba(var(--krypton-accent-rgb), 0.2);
 }
 
 .krypton-file-manager-ai__input::placeholder {
@@ -771,8 +677,8 @@
 
 .krypton-file-manager-ai__result {
   padding: 6px 8px;
-  background: rgba(var(--krypton-accent-rgb), 0.04);
-  border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
+  background: rgba(var(--krypton-fg-rgb), 0.03);
+  border: 1px solid rgba(var(--krypton-accent-rgb), 0.18);
   border-radius: var(--krypton-border-radius, 8px);
   max-height: 14em;
   overflow-y: auto;
@@ -793,16 +699,14 @@
 }
 .krypton-file-manager-ai__response code {
   font-family: inherit;
-  font-size: var(--krypton-font-size);
-  background: rgba(var(--krypton-accent-rgb), 0.08);
-  border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
+  font-size: 0.92em;
+  background: rgba(var(--krypton-fg-rgb), 0.07);
   border-radius: var(--krypton-border-radius, 8px);
-  padding: 0 2px;
-  color: var(--krypton-focused-accent);
+  padding: 0.05em 0.4ch;
+  color: var(--agent-accent, var(--krypton-ansi-2));
 }
 .krypton-file-manager-ai__response pre {
-  background: rgba(var(--krypton-bg-rgb), 0.6);
-  border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
+  background: rgba(0, 0, 0, 0.32);
   border-radius: var(--krypton-border-radius, 8px);
   padding: 6px 8px;
   margin: 0.4em 0;
@@ -823,7 +727,7 @@
 .krypton-file-manager-ai__response h2,
 .krypton-file-manager-ai__response h3,
 .krypton-file-manager-ai__response h4 {
-  color: var(--krypton-focused-accent);
+  color: var(--krypton-window-accent, var(--krypton-accent));
   font-size: var(--krypton-font-size);
   font-weight: 600;
   margin: 0.5em 0 0.25em;
@@ -844,7 +748,7 @@
 .krypton-file-manager-ai__dots {
   font-family: inherit;
   font-size: 11px;
-  color: var(--krypton-focused-accent);
+  color: var(--krypton-window-accent, var(--krypton-accent));
   animation: krypton-fm-ai-pulse 1.2s ease-in-out infinite;
 }
 
@@ -859,11 +763,11 @@
   font-weight: 400;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.4));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.45));
   text-align: right;
 }
 
-/* ─── Scrollbar — industrial per DESIGN.md § Scrollbars ─── */
+/* ─── Scrollbar ─── */
 
 .krypton-file-manager ::-webkit-scrollbar {
   width: 8px;
@@ -875,12 +779,12 @@
 }
 
 .krypton-file-manager ::-webkit-scrollbar-thumb {
-  background: rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
-  border-radius: var(--krypton-border-radius, 8px);
+  background: rgba(var(--krypton-fg-rgb), 0.12);
+  border-radius: 999px;
 }
 
 .krypton-file-manager ::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--krypton-accent-rgb), var(--krypton-opacity-hover));
+  background: rgba(var(--krypton-fg-rgb), 0.24);
 }
 
 /* ─── Reduced motion per DESIGN.md § Reduced Motion ─── */

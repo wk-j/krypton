@@ -44,14 +44,14 @@ export function recencyByPath(entries: readonly FileEntry[]): ReadonlyMap<string
   return out;
 }
 
-/** The age-bar fill ramp: newest → hot amber, middle → orange, oldest → dim red. */
-export function ageFillStyle(recency: number): { width: string; background: string; opacity: string } {
-  const hue = 50 - (1 - recency) * 40; // 50 (yellow) → 10 (red)
-  const sat = 85 + recency * 15;       // 85% → 100%
-  const light = 35 + recency * 25;     // 35% → 60%
+/**
+ * The age-bar fill: newest → full width and opacity, oldest → 15% at 0.4.
+ * The colour is the theme accent from CSS, so recency reads as one meter
+ * rather than a heat ramp (spec 0060: single colour).
+ */
+export function ageFillStyle(recency: number): { width: string; opacity: string } {
   return {
     width: `${15 + recency * 85}%`,
-    background: `hsl(${hue}, ${sat}%, ${light}%)`,
     opacity: `${0.4 + recency * 0.6}`,
   };
 }

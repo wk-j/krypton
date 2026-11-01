@@ -386,8 +386,8 @@ export const ROW_CLASS_DECORATORS: readonly RowClassDecorator[] = [
 export function sizeClass(entry: FileEntry): string | null;
 /** Rank by `modified` (> 0 only) → 0..1; n === 1 → 0.5. Memoised on the `filtered` array identity. */
 export function recencyByPath(entries: readonly FileEntry[]): ReadonlyMap<string, number>;
-/** width 15+85r %, hsl(50-(1-r)*40, 85+15r %, 35+25r %), opacity 0.4+0.6r — today's ramp, verbatim. */
-export function ageFillStyle(recency: number): { width: string; background: string; opacity: string };
+/** width 15+85r %, opacity 0.4+0.6r; colour from CSS (accent). Was an hsl ramp until the 2026-11-01 restyle. */
+export function ageFillStyle(recency: number): { width: string; opacity: string };
 ```
 
 `FileRow.syncClasses` emits, in today's order: `__item`, `--cursor`, `--dir`, `--symlink`, `--marked`, then

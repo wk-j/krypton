@@ -46,8 +46,8 @@ describe('recencyByPath', () => {
 });
 
 describe('ageFillStyle', () => {
-  it('reproduces the ramp', () => {
-    expect(ageFillStyle(0)).toEqual({ width: '15%', background: 'hsl(10, 85%, 35%)', opacity: '0.4' });
-    expect(ageFillStyle(1)).toEqual({ width: '100%', background: 'hsl(50, 100%, 60%)', opacity: '1' });
+  it('grows width and opacity with recency, leaving the colour to CSS', () => {
+    expect(ageFillStyle(0)).toEqual({ width: '15%', opacity: '0.4' });
+    expect(ageFillStyle(1)).toEqual({ width: '100%', opacity: '1' });
   });
 });

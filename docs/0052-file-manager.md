@@ -210,7 +210,16 @@ Generated from `NORMAL_KEYMAP` (`src/file-manager/keymap.ts`, spec 317), in tabl
 
 ### CSS Approach
 
-All colors via `--krypton-*` CSS custom properties. BEM naming with `.krypton-file-manager` block. Monospace font matching terminal. The selected row uses a plain subtle background only; cursor glyphs, pipe chrome, pulse animations, and cursor-specific type-color overrides are omitted. Directories render in accent color. Marked files get a distinct marker glyph. No scroll bars — virtual scrolling with visible row count calculated from container height and line height.
+All colors via theme custom properties. BEM naming with `.krypton-file-manager` block. Monospace font matching terminal. The surface follows the ACP Harness look (restyle 2026-11-01):
+
+- **Lines and text.** Hairline rules at accent@0.18. Ink tiers are the foreground at 0.86 / 0.56 / 0.4 (`--fm-ink*`, via `--krypton-ink-2/3/4` on light themes), never `--krypton-fg-dim` or ANSI bright-black for text.
+- **No decoration.** No text glow and no CRT scanline texture.
+- **Cursor row.** It is the harness picker's active row: accent@0.12 tint plus a 1px accent@0.5 outline inside a rounded row. The row keeps its own text colours: no inverted fill and no cursor-specific type-colour overrides.
+- **List colours.** Directories render in the window accent. File-type hues are mixed 70% toward the foreground. Marked files get a distinct marker glyph.
+- **Preview.** Prose follows the harness markdown: graded cyan/green headings, a rule under h1 only, borderless code chip and `pre`, and no left-edge rails (ADR 0027).
+- **Frontmatter card.** It is the harness rail-panel card.
+
+No scroll bars — virtual scrolling with visible row count calculated from container height and line height.
 
 The file manager surface allows native text selection across the breadcrumb, file list, status line, and preview content so global copy-on-select can copy visible paths, names, and preview text. Decorative columns such as mark glyphs, file icons, and age bars remain non-selectable to keep copied list text focused on content.
 
