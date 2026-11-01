@@ -3,15 +3,26 @@ use krypton_remote_protocol::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Lines, Stdin, Stdout};
 use tokio::process::{ChildStdin, Command};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OnceCell};
 
 type SharedWriter = Arc<Mutex<BufWriter<Stdout>>>;
+
+/// Login-shell environment applied to every agent adapter (spec 247). The
+/// runtime itself starts from `ssh host exec …`, a non-login command whose
+/// environment is sshd's default — on macOS `PATH=/usr/bin:/bin:/usr/sbin:/sbin`
+/// — so adapters installed through Homebrew, nvm and the like (`npx`,
+/// `codex-acp`) would not resolve.
+static LOGIN_ENV: OnceCell<HashMap<String, String>> = OnceCell::const_new();
+const LOGIN_ENV_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug)]
 struct RemoteAgent {
@@ -82,10 +93,16 @@ struct OverlayParams {
 #[tokio::main]
 async fn main() {
     match std::env::args().skip(1).collect::<Vec<_>>().as_slice() {
-        [command] if command == "version" => {
-            println!("{}", version_line());
-            return;
-        }
+        [command] if command == "version" => match version_line() {
+            Ok(line) => {
+                println!("{line}");
+                return;
+            }
+            Err(error) => {
+                eprintln!("krypton-remote: {error}");
+                std::process::exit(1);
+            }
+        },
         [command, transport] if command == "serve" && transport == "--stdio" => {}
         _ => {
             eprintln!("usage: krypton-remote <version|serve --stdio>");
@@ -98,11 +115,22 @@ async fn main() {
     }
 }
 
-fn version_line() -> String {
-    format!(
-        "protocol={PROTOCOL_VERSION} version={}",
+/// The bootstrap probe line (spec 247). The SHA-256 of this executable lets
+/// the app replace a cached helper whose bytes differ from the one it ships,
+/// even when protocol and package version are unchanged.
+fn version_line() -> Result<String, String> {
+    let exe = std::env::current_exe().map_err(|e| format!("locate executable: {e}"))?;
+    let mut file = std::fs::File::open(&exe).map_err(|e| format!("open {}: {e}", exe.display()))?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher).map_err(|e| format!("read {}: {e}", exe.display()))?;
+    let mut line = format!(
+        "protocol={PROTOCOL_VERSION} version={} sha256=",
         env!("CARGO_PKG_VERSION")
-    )
+    );
+    for byte in hasher.finalize() {
+        let _ = write!(line, "{byte:02x}");
+    }
+    Ok(line)
 }
 
 async fn serve() -> Result<(), String> {
@@ -212,6 +240,7 @@ async fn handle_request(
             let mut command = Command::new(&params.command);
             command
                 .args(&params.args)
+                .envs(login_env().await)
                 .envs(&params.env)
                 .current_dir(cwd)
                 .stdin(Stdio::piped())
@@ -587,6 +616,43 @@ where
     });
 }
 
+/// Snapshot `$SHELL -l -c '/usr/bin/env -0'` once, the remote counterpart of
+/// the app's local `pty::cached_login_env`. Failure or timeout yields an empty
+/// map, leaving the runtime's own environment in place.
+async fn login_env() -> &'static HashMap<String, String> {
+    LOGIN_ENV
+        .get_or_init(|| async {
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+            let mut command = Command::new(shell);
+            // stdin is the framed protocol channel; the probe shell must not read it.
+            command
+                .args(["-l", "-c", "/usr/bin/env -0"])
+                .stdin(Stdio::null())
+                .kill_on_drop(true);
+            match tokio::time::timeout(LOGIN_ENV_TIMEOUT, command.output()).await {
+                Ok(Ok(output)) => parse_env_block(&output.stdout),
+                _ => HashMap::new(),
+            }
+        })
+        .await
+}
+
+/// Parse NUL-separated `env -0` output, dropping variables that describe the
+/// probe shell rather than the adapter it is captured for.
+fn parse_env_block(bytes: &[u8]) -> HashMap<String, String> {
+    bytes
+        .split(|&byte| byte == 0)
+        .filter_map(|entry| std::str::from_utf8(entry).ok()?.split_once('='))
+        .filter(|(key, _)| {
+            !matches!(
+                *key,
+                "" | "TERM" | "COLORTERM" | "PWD" | "OLDPWD" | "SHLVL" | "_"
+            )
+        })
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .collect()
+}
+
 async fn read_frame(lines: &mut Lines<BufReader<Stdin>>) -> Result<Option<RuntimeFrame>, String> {
     let Some(line) = lines.next_line().await.map_err(|e| e.to_string())? else {
         return Ok(None);
@@ -712,17 +778,6 @@ async fn terminate_pid(pid: Option<u32>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn version_probe_reports_protocol_and_package_version() {
-        assert_eq!(
-            version_line(),
-            format!(
-                "protocol={PROTOCOL_VERSION} version={}",
-                env!("CARGO_PKG_VERSION")
-            )
-        );
-    }
 
     fn temp_root(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!(

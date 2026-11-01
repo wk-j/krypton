@@ -267,8 +267,8 @@ None.
 Standalone ACP windows remain local. Spec 247 adds SSH execution only to the
 multi-lane ACP Harness: `AcpClient.spawn` may name a live remote runtime, while
 the same frontend event model and permission flow remain local. The companion
-inherits the remote login environment; Krypton forwards no local environment or
-credentials wholesale.
+gives each adapter the remote login-shell environment (spec 247); Krypton
+forwards no local environment or credentials wholesale.
 
 The remote computer must already contain and authenticate the selected agent
 CLI/adapter. Krypton installs its own version-matched `krypton-remote` companion

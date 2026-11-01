@@ -517,11 +517,38 @@ fn remote_runtime_relative_path() -> String {
     )
 }
 
-fn expected_remote_runtime_version() -> String {
+/// Protocol and package version a cached helper must report to be launched at
+/// all.
+fn compatible_remote_runtime_version() -> String {
     format!(
         "protocol={PROTOCOL_VERSION} version={}",
         env!("CARGO_PKG_VERSION")
     )
+}
+
+/// The exact `krypton-remote version` line of a helper built from `bytes`.
+/// Comparing it, not just the version, replaces a cached helper rebuilt at the
+/// same package version.
+fn remote_runtime_identity(bytes: &[u8]) -> String {
+    format!(
+        "{} sha256={}",
+        compatible_remote_runtime_version(),
+        sha256_hex(bytes)
+    )
+}
+
+/// Whether the cached helper may be launched without an upload. `shipped` is
+/// the identity of the helper this app would upload, when it can be resolved;
+/// without it, a helper of the same protocol and package version is reused
+/// unchecked rather than failing a connection that needs no upload.
+fn cached_runtime_is_usable(installed: Option<&str>, shipped: Option<&str>) -> bool {
+    match (installed, shipped) {
+        (Some(installed), Some(shipped)) => installed == shipped,
+        (Some(installed), None) => installed
+            .strip_prefix(compatible_remote_runtime_version().as_str())
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(' ')),
+        (None, _) => false,
+    }
 }
 
 fn remote_runtime_install_command() -> String {
@@ -568,48 +595,20 @@ async fn run_remote_command(
     .map_err(|e| format!("failed to run ssh: {e}"))
 }
 
-async fn probe_remote_runtime(
-    target: &ResolvedTarget,
-    control_socket: &Path,
-    borrowed_master: bool,
-    control_persist: u64,
-) -> Result<bool, String> {
-    let relative_path = remote_runtime_relative_path();
-    let command =
-        format!("runtime=\"$HOME/{relative_path}\"; [ -x \"$runtime\" ] && \"$runtime\" version");
-    let output = run_remote_command(
-        target,
-        control_socket,
-        borrowed_master,
-        control_persist,
-        &command,
-    )
-    .await?;
-    Ok(output.status.success()
-        && String::from_utf8_lossy(&output.stdout).trim() == expected_remote_runtime_version())
+struct RemoteHostProbe {
+    platform: &'static str,
+    /// The cached helper's `version` line, if it exists and runs.
+    installed: Option<String>,
 }
 
-async fn detect_remote_platform(
-    target: &ResolvedTarget,
-    control_socket: &Path,
-    borrowed_master: bool,
-    control_persist: u64,
-) -> Result<&'static str, String> {
-    let output = run_remote_command(
-        target,
-        control_socket,
-        borrowed_master,
-        control_persist,
-        "uname -s; uname -m",
+fn remote_host_probe_command() -> String {
+    format!(
+        "uname -s; uname -m; runtime=\"$HOME/{}\"; if [ -x \"$runtime\" ]; then \"$runtime\" version 2>/dev/null || :; fi",
+        remote_runtime_relative_path()
     )
-    .await?;
-    if !output.status.success() {
-        return Err(format!(
-            "failed to detect remote platform: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
+}
+
+fn parse_remote_host_probe(stdout: &str) -> Result<RemoteHostProbe, String> {
     let mut lines = stdout.lines();
     let os = lines
         .next()
@@ -617,7 +616,37 @@ async fn detect_remote_platform(
     let arch = lines
         .next()
         .ok_or_else(|| "remote uname did not report an architecture".to_string())?;
-    normalize_remote_platform(os, arch)
+    Ok(RemoteHostProbe {
+        platform: normalize_remote_platform(os, arch)?,
+        installed: lines
+            .next()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string),
+    })
+}
+
+async fn probe_remote_host(
+    target: &ResolvedTarget,
+    control_socket: &Path,
+    borrowed_master: bool,
+    control_persist: u64,
+) -> Result<RemoteHostProbe, String> {
+    let output = run_remote_command(
+        target,
+        control_socket,
+        borrowed_master,
+        control_persist,
+        &remote_host_probe_command(),
+    )
+    .await?;
+    if !output.status.success() {
+        return Err(format!(
+            "failed to probe remote host: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    parse_remote_host_probe(&String::from_utf8_lossy(&output.stdout))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -878,12 +907,21 @@ async fn ensure_remote_runtime(
     borrowed_master: bool,
     control_persist: u64,
 ) -> Result<String, String> {
-    if probe_remote_runtime(target, control_socket, borrowed_master, control_persist).await? {
+    let probe = probe_remote_host(target, control_socket, borrowed_master, control_persist).await?;
+    let shipped = resolve_local_runtime(app, probe.platform)
+        .await
+        .map(|bytes| {
+            let identity = remote_runtime_identity(&bytes);
+            (bytes, identity)
+        });
+    let shipped_identity = shipped.as_ref().ok().map(|(_, identity)| identity.as_str());
+    if cached_runtime_is_usable(probe.installed.as_deref(), shipped_identity) {
+        if let Err(error) = &shipped {
+            log::warn!("Reusing the cached remote runtime without a content check: {error}");
+        }
         return Ok(remote_runtime_relative_path());
     }
-    let platform =
-        detect_remote_platform(target, control_socket, borrowed_master, control_persist).await?;
-    let bytes = resolve_local_runtime(app, platform).await?;
+    let (bytes, expected) = shipped?;
     upload_remote_runtime(
         target,
         control_socket,
@@ -892,7 +930,10 @@ async fn ensure_remote_runtime(
         &bytes,
     )
     .await?;
-    if !probe_remote_runtime(target, control_socket, borrowed_master, control_persist).await? {
+    let installed = probe_remote_host(target, control_socket, borrowed_master, control_persist)
+        .await?
+        .installed;
+    if installed.as_deref() != Some(expected.as_str()) {
         return Err("uploaded remote runtime did not pass its version probe".to_string());
     }
     Ok(remote_runtime_relative_path())
@@ -1415,6 +1456,98 @@ mod tests {
         assert!(verify_remote_runtime(bytes, &checksum).is_ok());
         assert!(parse_sha256("ABC").is_err());
         assert!(verify_remote_runtime(b"tampered", &checksum).is_err());
+    }
+
+    #[test]
+    fn cached_runtime_is_replaced_unless_its_bytes_match() {
+        let shipped = remote_runtime_identity(b"rebuilt-runtime");
+        let probe = |installed: &str| {
+            parse_remote_host_probe(&format!("Darwin\narm64\n{installed}\n"))
+                .unwrap()
+                .installed
+        };
+
+        // Same protocol and package version, other bytes.
+        let legacy = probe(&compatible_remote_runtime_version());
+        let rebuilt = probe(&remote_runtime_identity(b"older-runtime"));
+        assert!(!cached_runtime_is_usable(legacy.as_deref(), Some(&shipped)));
+        assert!(!cached_runtime_is_usable(
+            rebuilt.as_deref(),
+            Some(&shipped)
+        ));
+        assert!(cached_runtime_is_usable(
+            probe(&shipped).as_deref(),
+            Some(&shipped)
+        ));
+
+        // Nothing to upload: reuse only a protocol- and version-matched helper.
+        assert!(cached_runtime_is_usable(legacy.as_deref(), None));
+        assert!(cached_runtime_is_usable(rebuilt.as_deref(), None));
+        let longer_version = format!("{}1", compatible_remote_runtime_version());
+        assert!(!cached_runtime_is_usable(Some(&longer_version), None));
+        let other_protocol = format!(
+            "protocol={} version={}",
+            PROTOCOL_VERSION + 1,
+            env!("CARGO_PKG_VERSION")
+        );
+        assert!(!cached_runtime_is_usable(Some(&other_protocol), None));
+
+        let missing = parse_remote_host_probe("Linux\nx86_64\n").unwrap();
+        assert_eq!(missing.platform, "x86_64-unknown-linux-gnu");
+        assert!(!cached_runtime_is_usable(
+            missing.installed.as_deref(),
+            Some(&shipped)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn host_probe_succeeds_whether_or_not_the_helper_runs() {
+        use std::os::unix::fs::PermissionsExt;
+
+        async fn run_probe(home: &Path) -> Option<String> {
+            let output = Command::new("/bin/sh")
+                .arg("-c")
+                .arg(remote_host_probe_command())
+                .env("HOME", home)
+                .output()
+                .await
+                .unwrap();
+            assert!(output.status.success());
+            parse_remote_host_probe(&String::from_utf8_lossy(&output.stdout))
+                .unwrap()
+                .installed
+        }
+
+        let home = std::env::temp_dir().join(format!(
+            "krypton-probe-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let runtime = home.join(remote_runtime_relative_path());
+        tokio::fs::create_dir_all(runtime.parent().unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(run_probe(&home).await, None);
+
+        for (script, expected) in [
+            (
+                "#!/bin/sh\necho 'protocol=1 version=0.1.0 sha256=00'\n",
+                Some("protocol=1 version=0.1.0 sha256=00".to_string()),
+            ),
+            ("#!/bin/sh\necho broken >&2\nexit 1\n", None),
+        ] {
+            tokio::fs::write(&runtime, script).await.unwrap();
+            tokio::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o700))
+                .await
+                .unwrap();
+            assert_eq!(run_probe(&home).await, expected);
+        }
+        tokio::fs::remove_dir_all(home).await.unwrap();
     }
 
     #[cfg(unix)]

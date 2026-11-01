@@ -151,22 +151,32 @@ enum ControlMasterLease {
 
 Teardown cancels only the exact reverse forward on a borrowed master and never closes that master. It closes an owned master after the companion and forward stop.
 
-Krypton probes `uname` through the resolved SSH target and normalizes the result
-to one of `aarch64-apple-darwin`, `x86_64-apple-darwin`,
+One bootstrap probe through the resolved SSH target runs `uname` and, when the
+cached helper is executable, its `version` subcommand. Krypton normalizes the
+`uname` result to one of `aarch64-apple-darwin`, `x86_64-apple-darwin`,
 `aarch64-unknown-linux-gnu`, or `x86_64-unknown-linux-gnu`. Unsupported targets
 fail before any upload. It resolves the companion from a bundled resource first,
 then a verified local download cache. Release downloads come from the matching
 Krypton GitHub release and must match the accompanying SHA-256 file.
 
-The verified bytes are streamed over SSH stdin to a mode-0700 temporary file,
-then renamed atomically to
-`~/.cache/krypton/remote/<app-version>/krypton-remote`. A successful `version`
-probe skips all download/upload work on later connections. The runtime is
-launched by that exact versioned path, never through remote `PATH`.
+`krypton-remote version` prints
+`protocol=<n> version=<app-version> sha256=<digest of its own executable>`.
+Krypton launches the cached helper without an upload only when that line equals
+the one the resolved companion bytes would print, so a helper rebuilt at the
+same package version is replaced rather than reused. If no companion bytes can
+be resolved (no bundled resource, no cache, download unavailable), a cached
+helper reporting the same protocol and package version is reused with a logged
+warning instead of failing the connection.
+
+Otherwise the verified bytes are streamed over SSH stdin to a mode-0700
+temporary file, then renamed atomically to
+`~/.cache/krypton/remote/<app-version>/krypton-remote`, and the probe must then
+report the uploaded helper's exact line. The runtime is launched by that exact
+versioned path, never through remote `PATH`.
 
 ### Runtime protocol
 
-Bootstrap uses only fixed `uname`, version-probe, and atomic-install commands.
+Bootstrap uses only fixed `uname`/version-probe and atomic-install commands.
 The long-lived runtime channel then executes only this fixed remote command:
 
 ```text
@@ -244,16 +254,22 @@ Local `kryptonctl`, Telegram, browser extension, queues, orchestration, permissi
 3. Local Rust resolves the selected launch source. It borrows a verified active
    ControlMaster when available; otherwise it starts a dedicated one for the
    same destination.
-4. Local probes the versioned remote helper. If absent, it detects the remote
-   platform, resolves a bundled or SHA-256-verified release asset, uploads it
-   atomically to the remote user cache, and verifies `krypton-remote version`.
+4. Local probes the remote platform and the versioned remote helper in one
+   command, resolves a bundled or SHA-256-verified release asset, and, unless
+   the helper already reports that asset's exact `version` line, uploads it
+   atomically to the remote user cache and verifies the line again.
 5. Local starts the exact cached helper path with no PTY, then sends Hello.
 6. Remote verifies protocol compatibility, canonicalizes the project root, and
    returns its app version and runtime capabilities.
 7. Local creates the loopback-only reverse MCP forward, then Compositor creates
    AcpHarnessView with an immutable SSH WorkspaceRef.
 8. The existing lane picker opens. Every lane spawn routes to this runtime;
-   agent adapters inherit the remote login environment and remote cwd.
+   agent adapters inherit the remote login environment and remote cwd. The
+   companion itself runs from a non-login `ssh … exec` command whose
+   environment is sshd's default (on macOS
+   `PATH=/usr/bin:/bin:/usr/sbin:/sbin`), so before the first agent spawn it
+   snapshots `$SHELL -l -c '/usr/bin/env -0'` once — the remote counterpart of
+   local `pty::cached_login_env` — and applies it to every adapter.
 9. Agent stdio crosses the runtime stream; local ACP dispatch and frontend
    rendering remain unchanged.
 10. On view close, local sends RuntimeShutdown. Remote cancels pending requests,
@@ -277,8 +293,9 @@ If SSH drops, the Harness becomes `disconnected`, in-flight requests become outc
 
 ## Edge Cases
 
-- **Remote cache missing:** automatically resolve and upload the matching helper;
-  never ask the user to install or compile it manually.
+- **Remote cache missing or stale:** automatically resolve and upload the
+  matching helper, including when only the companion's bytes changed; never ask
+  the user to install or compile it manually.
 - **Download unavailable:** keep the terminal/Harness launch surface intact and
   report the target triple plus release URL; never upload unverified bytes.
 - **Checksum mismatch:** delete the local temporary download and abort before SSH upload.
@@ -297,6 +314,7 @@ If SSH drops, the Harness becomes `disconnected`, in-flight requests become outc
 - **Drop during write/prompt:** mark outcome unknown, never replay, and refresh Git/files after reconnect.
 - **Remote child after channel loss:** companion owns process groups and disposes them on EOF; keepalives bound detection.
 - **Remote agent auth missing:** report adapter stderr and require remote CLI auth; copy no local keys or secrets.
+- **Adapter outside sshd's default PATH** (Homebrew `npx`, nvm, `~/.local/bin`): resolved through the login-shell snapshot. A zsh login shell reads `.zshenv`, `.zprofile` and `.zlogin` but not `.zshrc`, so a `PATH` set only in `.zshrc` stays invisible, as it does locally. If the probe shell yields no environment or exceeds 10 s, adapters fall back to the companion's own environment, and an adapter outside sshd's default `PATH` fails with `agent_spawn_failed: <command>: No such file or directory`.
 - **Agent forwarding:** Krypton never adds `-A` and warns if `ssh -G` reports it enabled.
 - **Large prompt:** the 32 MiB cap rejects before partial send and keeps the draft/images staged.
 - **Cross-target peering:** allowed across Harnesses, but each Harness stays single-target and labels peers with host-qualified workspace.
@@ -307,7 +325,8 @@ If SSH drops, the Harness becomes `disconnected`, in-flight requests become outc
 - Rust unit tests cover protocol framing/capabilities, workspace confinement,
   runtime-overlay scoping, the read-only command allowlist, profile validation,
   safe SSH argument reuse, focused-session identity validation, platform
-  normalization, versioned paths, and SHA-256 verification.
+  normalization, versioned paths, SHA-256 verification, the bootstrap probe
+  command, and replacing a cached helper whose bytes differ.
 - TypeScript tests cover picker ordering, split OSC 7 forwarding, missing
   passive CWD, and host-qualified workspace identity; the full existing
   frontend suite guards the shared ACP/Harness UI.
