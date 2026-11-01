@@ -79,7 +79,7 @@ exit 0. Each numstat is best-effort: on failure its field is empty.
 ### Data Flow
 
 ```
-1. OSC 133 C…D for `git status` (0351 steps 1–3); exit ∈ {0, 1, none}, rawRows ≥ 1
+1. OSC 133 C…D for `git status` (0351 steps 1–3); exit ∈ {0, 1, 141, none}, rawRows ≥ 1
 2. layer.resolve: the rows are not a diff → isGitStatusCmdline → host.rerunGitStatus
    → compositor.rerunLocalGit: get_foreground_process null → get_pty_cwd → native_git_status
 3. parseGitStatus: each `1`/`2` entry splits into a Staged (X) and an Unstaged (Y) side, with

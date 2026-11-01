@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { IMarker } from '@xterm/xterm';
 
-import { CommandBlockTracker, rawRows, type CommandBlock } from './blocks';
+import { acceptsExit, CommandBlockTracker, rawRows, type CommandBlock } from './blocks';
 
 interface FakeMarker extends IMarker {
   line: number;
@@ -81,5 +81,12 @@ describe('rawRows', () => {
 
   it('is 0 once a marker is trimmed out of scrollback', () => {
     expect(rawRows({ start: fakeMarker(-1), end: fakeMarker(6), endCol: 0 })).toBe(0);
+  });
+});
+
+describe('acceptsExit', () => {
+  it('keeps a diff whose pager was quit early (SIGPIPE 141), and drops real failures', () => {
+    expect([0, 1, 141, null].map(acceptsExit)).toEqual([true, true, true, true]);
+    expect([2, 127, 128, 130].map(acceptsExit)).toEqual([false, false, false, false]);
   });
 });

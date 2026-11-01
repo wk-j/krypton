@@ -78,7 +78,8 @@ context; the agent does not have to ask for it through a tool.
 | Zed | Terminal inline assist (`ctrl-enter`) sends shell, cwd and the last 50 non-empty lines (`terminal_inline_assistant.rs:37, 223-235`). No command boundaries | The fallback here matches Zed's 50 lines |
 
 **Krypton delta** — attached automatically on every `Cmd+K`, with nothing to type. Built on
-the OSC 133 the user's shell already emits; Krypton injects no shell script. A visible
+the OSC 133 the user's shell already emits; Krypton injects no shell script for this. (Spec
+0353 later added a fish `vendor_conf.d` script, but only for native-output pager hints.) A visible
 label says what went out, and `[inline_ai] context = false` turns it off.
 
 ## Affected Files

@@ -679,7 +679,7 @@ A finished command whose output is a unified diff gets a native card over its ro
 | `[native_output]` | `enabled` | bool | `true` | `false` draws no new cards; existing ones stay |
 | `[native_output]` | `default_view` | string | `"native"` | View of new cards: `"native"` or `"raw"`. Any other value means `"native"` |
 
-Edits apply on **Reload Config** to the next finished command.
+Edits apply on **Reload Config** to the next finished command. In fish panes, `enabled = true` also loads Krypton's pager hints (spec 353): for the run of a plain `git diff`, `GIT_PAGER=cat` keeps the diff out of less/delta, so the whole diff is in the terminal for the card. Raw then shows git's own coloured diff. The hints follow `enabled` only for panes opened after the change.
 
 ### Timeline Automatic Recording
 

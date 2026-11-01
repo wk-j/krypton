@@ -97,3 +97,14 @@ export function rawRows(block: Pick<CommandBlock, 'start' | 'end' | 'endCol'>): 
   if (start < 0 || end < 0 || end < start) return 0;
   return end - start + (block.endCol > 0 ? 1 : 0);
 }
+
+/**
+ * Whether a finished block's exit status can still have a native view.
+ * `git diff --exit-code` and `diff -u` report differences with 1. 141 is
+ * SIGPIPE: quitting a pager (delta/less) before the end kills `git diff`
+ * with it, although nothing went wrong — the common case for any diff
+ * longer than a screen. null: the shell sent `D` without a status.
+ */
+export function acceptsExit(exit: number | null): boolean {
+  return exit === null || exit === 0 || exit === 1 || exit === 141;
+}

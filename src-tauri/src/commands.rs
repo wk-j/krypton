@@ -43,7 +43,15 @@ pub fn spawn_pty(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| cfg.shell.program.clone());
     let args = shell_args.unwrap_or_else(|| cfg.shell.args.clone());
-    pty_manager.spawn(&app_handle, cols, rows, cwd, &program, &args)
+    pty_manager.spawn(
+        &app_handle,
+        cols,
+        rows,
+        cwd,
+        &program,
+        &args,
+        cfg.native_output.enabled,
+    )
 }
 
 #[tauri::command]
@@ -1408,7 +1416,7 @@ pub fn clone_ssh_session(
         cwd,
     );
 
-    pty_manager.spawn(&app_handle, cols, rows, None, &program, &args)
+    pty_manager.spawn(&app_handle, cols, rows, None, &program, &args, false)
 }
 
 // ─── Claude Code Hook Server ───────────────────────────────────────

@@ -5,6 +5,7 @@
 > Milestone: M8 — Polish
 > Builds on: [0334](./0334-inline-ai-terminal-context.md) (OSC 133 command records) · [0346](./0346-osc-support.md) (OSC table)
 > Extended by: [0352](./0352-native-git-status.md) — `git status` is a second renderer; the card became `native-card.ts` with a `diff` | `status` model, and the diff body moved to `render-diff.ts`.
+> Amended by: [0353](./0353-native-output-pager-hints.md) — following Tern, fish panes load a script that sets `GIT_PAGER=cat` for the run of a plain `git diff`, so the whole diff reaches the buffer path below. That reverses Research item (c) for this one command, scoped per command and restored afterwards. The re-run path stays for other shells and as a fallback.
 
 ## Problem
 
@@ -143,7 +144,7 @@ that decides what may run):
    so wireProgramStatus's handler still runs) → open block { start: registerMarker(0), cmdline }
 2. OSC 133;D;0 → end = registerMarker(0), endCol = cursorX; A with an open block → drop it
 3. setTimeout(0), out of the parser callback → layer.tryMount(block). Drop unless: enabled,
-   rawRows ≥ 1, exit ∈ {0, 1, null}. Rows are read from buffer.normal.
+   rawRows ≥ 1, exit ∈ {0, 1, 141, null} (`acceptsExit`). Rows are read from buffer.normal.
    a. the first 8 logical lines look like a unified diff → read every line of the block
    b. else isGitDiffCmdline → get_foreground_process must be null (the pane's own shell is in
       front, so the command ran locally) → get_pty_cwd → native_git_diff
@@ -275,6 +276,11 @@ None.
   The latter is the theme's titlebar text colour; legacy-radiance sets it to `#304838`, which made
   line numbers, directories, group labels and the bar's labels nearly invisible on the terminal.
   Foreground-at-opacity is how xterm draws SGR 2 (dim), so it tracks every theme the same way.
+- **Exit 141 is accepted.** With delta as `core.pager`, a diff longer than a screen opens less
+  (`LESS=FRX`, no alternate screen). Quitting it with `q` before the end kills `git diff` with
+  SIGPIPE, so fish reports `D;141`. The first build accepted only 0/1, so every long `git diff`
+  silently stayed raw; reproduced in a PTY with the user's pager env. The re-run reads the whole
+  diff anyway, and the card covers the page less left on screen, scrolling inside.
 - **Word marks follow `diffWordsWithSpace` tokens:** `console.error` → `this.notify` marks
   `console` and `error` and leaves the `.` unmarked. Pairs with under 25% common text, or longer
   than 500 characters, get no marks.

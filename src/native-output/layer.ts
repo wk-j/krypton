@@ -10,7 +10,7 @@
 import type { IBuffer, Terminal } from '@xterm/xterm';
 
 import { parseOsc133 } from '../terminal-context';
-import { CommandBlockTracker, rawRows, type CommandBlock } from './blocks';
+import { acceptsExit, CommandBlockTracker, rawRows, type CommandBlock } from './blocks';
 import { isGitDiffCmdline, looksLikeUnifiedDiff, parseNativeDiff } from './git-diff';
 import { gitStatusText, isGitStatusCmdline, parseGitStatus, type NativeGitStatusRaw } from './git-status';
 import { NativeCard, type NativeModel, type NativeView } from './native-card';
@@ -114,8 +114,7 @@ export class NativeOutputLayer {
 
   private async tryMount(block: CommandBlock): Promise<boolean> {
     if (!this.host.enabled() || rawRows(block) < 1) return false;
-    // `git diff --exit-code` and `diff -u` report differences with 1.
-    if (block.exit !== null && block.exit !== 0 && block.exit !== 1) return false;
+    if (!acceptsExit(block.exit)) return false;
     const content = await this.resolve(block);
     if (content === null || block.start.isDisposed || block.end.isDisposed) return false;
     return this.mount({ ...content, block, label: block.cmdline ?? 'output' });

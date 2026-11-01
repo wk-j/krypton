@@ -32,6 +32,7 @@ pub mod remote_harness;
 mod review_excerpt;
 mod review_threads;
 mod session;
+mod shell_integration;
 pub mod sound;
 pub mod ssh;
 mod ssh_channel;

@@ -49,7 +49,11 @@
     display: none;
   }
 
-  /* ── Bar: command · Native|Raw · Copy ── */
+  /* ── Bar: command · Native|Raw · Copy ──
+     One row tall, but the bar must contain its controls: `line-height: 1`
+     stops them inheriting the cell height, and `min-height` lets a row too
+     short for them grow the bar instead of letting a pill cross its border.
+     The pills stretch to the padding box, 2px inside the bar's border. */
 
   .krypton-native-block__bar {
     position: absolute;
@@ -59,10 +63,11 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    height: var(--krypton-native-cell-h, 1.2em);
-    padding: 0 2px 0 8px;
+    min-height: var(--krypton-native-cell-h, 1.2em);
+    padding: 2px 2px 2px 8px;
     pointer-events: auto;
     font-size: 0.85em;
+    line-height: 1;
     color: var(--krypton-native-dim);
     background: var(--krypton-bg-elev);
     border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
@@ -88,9 +93,11 @@
 
   .krypton-native-block__switch {
     display: flex;
+    align-self: stretch;
   }
 
   .krypton-native-block__opt {
+    align-self: stretch;
     padding: 0 6px;
     font: inherit;
     font-size: 0.9em;
@@ -99,7 +106,8 @@
     color: var(--krypton-native-dim);
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 8px;
+    /* concentric with the bar: 8px radius − 1px border − 2px inset */
+    border-radius: 5px;
     cursor: pointer;
   }
 

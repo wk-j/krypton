@@ -356,7 +356,9 @@ impl PtyManager {
     }
 
     /// Spawn a new PTY session with a given shell, args, and optional working directory.
+    /// `native_output`: spec 353 — a fish shell loads Krypton's pager hints.
     /// Returns the session ID.
+    #[allow(clippy::too_many_arguments)]
     pub fn spawn(
         &self,
         app_handle: &AppHandle,
@@ -365,6 +367,7 @@ impl PtyManager {
         cwd: Option<String>,
         shell: &str,
         args: &[String],
+        native_output: bool,
     ) -> Result<u32, String> {
         let pty_system = native_pty_system();
 
@@ -396,6 +399,13 @@ impl PtyManager {
 
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        // spec 353: after the login env, so the hints' XDG_DATA_DIRS wins.
+        if native_output {
+            let inherited = login_env.get("XDG_DATA_DIRS").map(String::as_str);
+            for (k, v) in crate::shell_integration::native_output_env(shell, inherited) {
+                cmd.env(k, v);
+            }
+        }
 
         // Ensure UTF-8 locale is set — fall back if login env didn't provide it.
         if !login_env.contains_key("LANG") && std::env::var("LANG").unwrap_or_default().is_empty() {
