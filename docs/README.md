@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (339)
+## Specs (340)
 
 | # | Spec |
 |---|------|
@@ -356,6 +356,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 351 | [Native Command Output](./0351-native-command-output.md) |
 | 352 | [Native `git status` Output](./0352-native-git-status.md) |
 | 353 | [Native Output Pager Hints (fish)](./0353-native-output-pager-hints.md) |
+| 354 | [Review Board Redesign — Typeset, Not Carded](./0354-review-board-redesign.md) |
 
 ## ADRs (27)
 

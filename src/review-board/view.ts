@@ -37,7 +37,14 @@ import {
   reattachBlockId,
   sectionIndexOfBlock,
 } from './parse';
-import { renderBlock, type BlockAnswerState, type RenderContext } from './render';
+import { reviewIcon } from './icons';
+import {
+  keyHint,
+  renderBlock,
+  renderKicker,
+  type BlockAnswerState,
+  type RenderContext,
+} from './render';
 import {
   isResponseEmpty,
   parseResponseFile,
@@ -224,12 +231,18 @@ export interface ReviewBoardOptions {
   jump?: (target: ReviewJumpTarget) => void;
   /** Deliver the response to the authoring lane. Absent when no harness backs it. */
   review?: ReviewSendChannel;
+  /**
+   * Embedded use (a review thread, spec 354): the host renders the one header
+   * row and hands the Board this persistent node for its status segments — open
+   * count, save state, search, flashes. The Board then renders no header.
+   */
+  statusHost?: HTMLElement;
 }
 
 type Overlay = 'none' | 'comment' | 'send';
 
 /** Pane width at which the Review Map stops being an overlay and becomes a
- *  permanent column. 860px of reading column + 272px of map + gutters. */
+ *  permanent column: the 240px map still leaves the reading column 940px. */
 export const REVIEW_MAP_WIDE_MIN_PX = 1180;
 
 export class ReviewBoardView implements ContentView {
@@ -269,6 +282,8 @@ export class ReviewBoardView implements ContentView {
   private overlayEl: HTMLElement | null = null;
   private commentInput: HTMLTextAreaElement | null = null;
   private commentQuote = '';
+  /** The commented block's label, captured before the overlay opens. */
+  private commentLabel = '';
   private commentBlockId: string | null = null;
   private noteInput: HTMLTextAreaElement | null = null;
 
@@ -292,7 +307,11 @@ export class ReviewBoardView implements ContentView {
   private searchReturn: { mode: ReviewViewMode; sectionIndex: number; cursor: number } | null = null;
   private static readonly SEARCH_MATCH_CAP = 500;
 
+  /** Title row of a standalone Board; never attached when embedded. */
   private header: HTMLElement;
+  /** Right-hand exceptions: inside `header`, or the embedding host's node. */
+  private status: HTMLElement;
+  private readonly embedded: boolean;
   private content: HTMLElement;
   private map: HTMLElement;
   private body: HTMLElement;
@@ -318,7 +337,14 @@ export class ReviewBoardView implements ContentView {
 
     this.header = document.createElement('div');
     this.header.className = 'krypton-review__header';
-    this.element.appendChild(this.header);
+    this.embedded = options.statusHost !== undefined;
+    if (options.statusHost) {
+      this.status = options.statusHost;
+    } else {
+      this.status = document.createElement('span');
+      this.element.appendChild(this.header);
+    }
+    this.status.classList.add('krypton-review__status');
 
     this.content = document.createElement('div');
     this.content.className = 'krypton-review__content';
@@ -384,6 +410,11 @@ export class ReviewBoardView implements ContentView {
   /** Bundle slug — the durable id, so the compositor can de-dupe open Boards. */
   bundleSlug(): string {
     return this.slug;
+  }
+
+  /** The review's own title once loaded — the embedding thread's header. */
+  documentTitle(): string | null {
+    return this.doc.title;
   }
 
   /** Snapshot the human's current Board answers for a review-thread verdict. */
@@ -512,6 +543,7 @@ export class ReviewBoardView implements ContentView {
       answerOf: (blockId) => this.answerStateOf(blockId),
       resolveImageSrc: (src) => this.resolveImageSrc(src),
       isDiffExpanded: (blockId) => this.expandedDiffs.has(blockId),
+      showFindingDetail: this.viewMode === 'open',
     };
   }
 
@@ -547,79 +579,63 @@ export class ReviewBoardView implements ContentView {
     this.renderOverlay();
   }
 
+  /**
+   * Title on the left, exceptions on the right (spec 354): open work, the save
+   * state once there are answers, search mode. Lane, slug and load age live on
+   * the Overview; the step position lives on the walkthrough kicker. Embedded,
+   * only the exceptions render — into the host's node.
+   */
   private renderHeader(): void {
-    this.header.innerHTML = '';
-    const seg = (className: string, text: string): HTMLElement => {
-      const el = document.createElement('span');
-      el.className = `krypton-review__seg ${className}`;
-      el.textContent = text;
-      return el;
-    };
-
-    const title = this.doc.title ?? this.slug;
-    this.header.appendChild(seg('krypton-review__seg--title', `Review // ${title}`));
-    this.header.appendChild(seg('krypton-review__seg--lane', this.laneName));
-    this.header.appendChild(seg('krypton-review__seg--slug', this.slug));
-
-    if (this.doc.blocks.length > 0) {
-      this.header.appendChild(seg('krypton-review__seg--pos', this.positionLabel()));
+    if (!this.embedded) {
+      this.header.replaceChildren(seg('krypton-review__seg--title', this.doc.title ?? this.slug));
+      // With the map hidden, nothing else on screen names the chapter.
+      const section = this.activeSection();
+      if (!this.wide && this.viewMode === 'section' && section) {
+        this.header.appendChild(seg('krypton-review__seg--chapter', section.title));
+      }
+      this.header.appendChild(this.status);
     }
+
+    this.status.replaceChildren();
     // Search renders the whole document temporarily; say so rather than letting
     // the chapter appear to vanish.
     if (this.searchActive) {
-      this.header.appendChild(seg('krypton-review__seg--search', 'search · full document'));
+      this.status.appendChild(seg('krypton-review__seg--search', 'search · full document'));
     }
-    if (this.steps.length > 0) {
-      const at = this.stepCursor >= 0 ? `${this.stepCursor + 1}/` : '';
-      this.header.appendChild(seg('krypton-review__seg--steps', `step ${at}${this.steps.length}`));
-    }
-
-    // A Board with nothing to answer is `reference`, not "0 unanswered": it is an
+    // A Board with nothing to answer is `reference`, not "0 open": it is an
     // explanation to come back to, not a task. Never a score (ADR-0004).
-    const answerable = answerableBlocks(this.doc.blocks).length;
-    if (answerable === 0) {
-      this.header.appendChild(seg('krypton-review__seg--reference', 'reference'));
+    if (answerableBlocks(this.doc.blocks).length === 0) {
+      this.status.appendChild(seg('krypton-review__seg--reference', 'reference'));
     } else {
       const open = unansweredBlocks(this.doc.blocks, this.answers).length;
-      const el = seg(
-        open > 0 ? 'krypton-review__seg--open' : 'krypton-review__seg--done',
-        open > 0 ? `${open} unanswered` : 'all answered',
+      this.status.appendChild(
+        open > 0
+          ? seg('krypton-review__seg--open', `${open} open`)
+          : seg('krypton-review__seg--done', 'all answered'),
       );
-      this.header.appendChild(el);
     }
-
-    this.header.appendChild(seg('krypton-review__seg--save', this.saveLabel()));
-    this.header.appendChild(seg('krypton-review__seg--sync', this.syncLabel()));
+    const save = this.saveLabel();
+    if (save) {
+      this.status.appendChild(
+        seg(this.saveState === 'error' ? 'krypton-review__seg--failed' : 'krypton-review__seg--save', save),
+      );
+    }
   }
 
-  /** Chapter + block position, in the terms of the current view. */
-  private positionLabel(): string {
-    const total = this.doc.blocks.length;
-    if (this.viewMode === 'overview') return 'overview';
-    if (this.viewMode === 'open') {
-      const visible = this.openIndices();
-      const at = visible.indexOf(this.cursor);
-      return `open items · block ${at + 1 || 0}/${visible.length}`;
-    }
-    if (this.viewMode === 'document' || this.doc.sections.length === 0) {
-      return `block ${this.cursor + 1}/${total}`;
-    }
-    return `chapter ${this.sectionIndex + 1}/${this.doc.sections.length} · block ${this.cursor + 1}/${total}`;
-  }
-
-  private saveLabel(): string {
+  /** Save state, or null while there is nothing to save. */
+  private saveLabel(): string | null {
     if (this.saveState === 'error') return 'save failed';
     if (this.saveState === 'saving') return 'saving…';
-    if (isResponseEmpty(toResponse(this.slug, this.answers, this.doc.blocks))) return 'no answers';
-    return this.sentAt !== undefined ? 'sent' : 'saved · not sent yet';
+    if (isResponseEmpty(toResponse(this.slug, this.answers, this.doc.blocks))) return null;
+    return this.sentAt !== undefined ? 'sent' : 'unsent';
   }
 
-  private syncLabel(): string {
+  private loadedLabel(): string {
     if (this.lastSyncAt === 0) return 'loading…';
     const age = Math.max(0, Math.round((Date.now() - this.lastSyncAt) / 1000));
-    if (age < 5) return 'synced just now';
-    if (age < 90) return `synced ${age}s ago`;
-    return `synced ${Math.round(age / 60)}m ago`;
+    if (age < 5) return 'just now';
+    if (age < 90) return `${age}s ago`;
+    return `${Math.round(age / 60)}m ago`;
   }
 
   private renderBody(): void {
@@ -661,13 +677,11 @@ export class ReviewBoardView implements ContentView {
 
     const ctx = this.renderContext();
     for (const index of visible) {
-      const block = this.doc.blocks[index];
-      const el = renderBlock(block, ctx);
+      const el = renderBlock(this.doc.blocks[index], ctx);
       if (index === this.cursor) el.classList.add('krypton-review__block--cursor');
-      // Only mark the walkthrough step the guided read is on.
-      if (block.kind === 'walkthrough') this.markCurrentStep(el, block.id);
       this.body.appendChild(el);
     }
+    this.paintStep();
 
     const cursorEl = this.body.querySelector('.krypton-review__block--cursor');
     this.scrollElementIntoView(cursorEl, 'nearest');
@@ -705,22 +719,6 @@ export class ReviewBoardView implements ContentView {
     if (this.map.dataset.state === 'hidden') return;
 
     const openIndices = this.openIndices();
-    const answerable = answerableBlocks(this.doc.blocks).length;
-
-    const head = document.createElement('div');
-    head.className = 'krypton-review__map-head';
-    head.append(
-      span('krypton-review__map-count', `${this.doc.blocks.length} blocks`),
-      span('krypton-review__map-count', `${answerable} answerable`),
-      span(
-        openIndices.length > 0
-          ? 'krypton-review__map-count krypton-review__map-count--open'
-          : 'krypton-review__map-count',
-        answerable === 0 ? 'reference' : `${openIndices.length} unanswered`,
-      ),
-    );
-    this.map.appendChild(head);
-
     const rows = reviewMapRows(this.doc.sections.length);
     const list = document.createElement('div');
     list.className = 'krypton-review__map-rows';
@@ -736,43 +734,31 @@ export class ReviewBoardView implements ContentView {
         el.classList.add('krypton-review__map-row--active');
         el.setAttribute('aria-current', 'page');
       }
+      // Only open work is counted: a block count says nothing the reader needs.
+      let open = 0;
       if (row.kind === 'section') {
         const section = this.doc.sections[row.index];
-        const open = openIndices.filter(
-          (i) => i >= section.startBlock && i < section.endBlock,
-        ).length;
+        open = openIndices.filter((i) => i >= section.startBlock && i < section.endBlock).length;
         el.dataset.depth = String(section.depth);
         el.append(
           span('krypton-review__map-index', String(row.index + 1)),
           span('krypton-review__map-label', section.title),
-          span('krypton-review__map-blocks', String(section.endBlock - section.startBlock)),
         );
-        if (open > 0) el.appendChild(span('krypton-review__map-open', String(open)));
       } else {
         el.classList.add('krypton-review__map-row--smart');
         const label =
-          row.kind === 'overview'
-            ? 'Overview'
-            : row.kind === 'open'
-              ? 'Open items'
-              : 'Full document';
-        el.append(span('krypton-review__map-label', label));
-        if (row.kind === 'open' && openIndices.length > 0) {
-          el.appendChild(span('krypton-review__map-open', String(openIndices.length)));
-        }
-        if (row.kind === 'document') {
-          el.appendChild(span('krypton-review__map-blocks', String(this.doc.blocks.length)));
-        }
+          row.kind === 'overview' ? 'Overview' : row.kind === 'open' ? 'Open items' : 'Full document';
+        el.append(reviewIcon(row.kind), span('krypton-review__map-label', label));
+        if (row.kind === 'open') open = openIndices.length;
       }
+      if (open > 0) el.appendChild(span('krypton-review__map-open', String(open)));
       list.appendChild(el);
     });
     this.map.appendChild(list);
 
     const foot = document.createElement('div');
     foot.className = 'krypton-review__map-foot';
-    foot.textContent = this.mapFocused
-      ? 'j/k move · Enter open · Esc back'
-      : 'o map · [ ] chapter · O overview';
+    foot.textContent = this.mapFocused ? 'j k move  ↵ open  Esc back' : 'o map  [ ] chapters';
     this.map.appendChild(foot);
 
     list
@@ -802,7 +788,21 @@ export class ReviewBoardView implements ContentView {
     if (this.doc.subject) {
       identity.appendChild(span('krypton-review__overview-subject', this.doc.subject));
     }
-    identity.appendChild(span('krypton-review__overview-meta', `${this.laneName} · ${this.slug}`));
+    // What the header no longer carries: who wrote it, where it lives, how fresh.
+    const meta = document.createElement('dl');
+    meta.className = 'krypton-review__overview-meta';
+    for (const [label, value] of [
+      ['lane', this.laneName],
+      ['bundle', this.slug],
+      ['loaded', this.loadedLabel()],
+    ]) {
+      const dt = document.createElement('dt');
+      dt.textContent = label;
+      const dd = document.createElement('dd');
+      dd.textContent = value;
+      meta.append(dt, dd);
+    }
+    identity.appendChild(meta);
     root.appendChild(identity);
 
     const answerable = answerableBlocks(this.doc.blocks);
@@ -862,7 +862,7 @@ export class ReviewBoardView implements ContentView {
   private overviewSection(title: string, rows: readonly (readonly [string, string])[]): HTMLElement {
     const el = document.createElement('section');
     el.className = 'krypton-review__overview-group';
-    el.appendChild(span('krypton-review__overview-heading', title));
+    el.appendChild(renderKicker({ label: title }));
     for (const [label, value] of rows) {
       const row = document.createElement('div');
       row.className = 'krypton-review__overview-row';
@@ -875,13 +875,23 @@ export class ReviewBoardView implements ContentView {
     return el;
   }
 
-  private markCurrentStep(blockEl: HTMLElement, blockId: string): void {
-    const current = this.steps[this.stepCursor];
-    if (!current || current.blockId !== blockId) return;
-    const item = blockEl.querySelector<HTMLElement>(
-      `.krypton-review__step[data-step-index="${current.index}"]`,
-    );
-    item?.classList.add('krypton-review__step--current');
+  /**
+   * Mark the guided read's step on the rendered walkthrough(s), in place: the
+   * step class and the kicker's `step k of n`. Runs after every body render and
+   * on every `Tab`, which otherwise only moves the block cursor.
+   */
+  private paintStep(): void {
+    const current = this.steps[this.stepCursor] ?? null;
+    for (const blockEl of this.body.querySelectorAll<HTMLElement>(
+      '.krypton-review__block--walkthrough',
+    )) {
+      // -1 when the guided read is elsewhere (or has not started).
+      const at = current && current.blockId === blockEl.dataset.blockId ? current.index : -1;
+      const items = blockEl.querySelectorAll<HTMLElement>('.krypton-review__step');
+      items.forEach((item, i) => item.classList.toggle('krypton-review__step--current', i === at));
+      const pos = blockEl.querySelector('.krypton-review__step-pos');
+      if (pos) pos.textContent = at >= 0 ? `step ${at + 1} of ${items.length}` : '';
+    }
   }
 
   // ─── Cursor movement ────────────────────────────────────────────────────
@@ -1150,17 +1160,18 @@ export class ReviewBoardView implements ContentView {
     }
   }
 
-  /** Pane width decides whether the map is a column or an overlay. Three tiers,
-   *  because the header also sheds segments as the pane narrows. */
+  /** Pane width decides whether the map is a column or an overlay — and so
+   *  whether the header has to name the chapter itself. */
   private applyLayout(width: number): void {
     const wide = width >= REVIEW_MAP_WIDE_MIN_PX;
-    this.element.dataset.layout = wide ? 'wide' : width >= 760 ? 'narrow' : 'tight';
+    this.element.dataset.layout = wide ? 'wide' : 'narrow';
     if (wide === this.wide) return;
     this.wide = wide;
     // Crossing the threshold must not strand map focus or a floating overlay.
     this.mapFocused = false;
     this.mapRevealed = false;
     this.renderMap();
+    this.renderHeader();
   }
 
   /** `}` / `{` — jump between findings and decisions with nothing recorded. */
@@ -1198,6 +1209,8 @@ export class ReviewBoardView implements ContentView {
     // out of whatever filtered view) it lives in.
     if (blockIndex >= 0) this.setCursor(blockIndex);
     else this.render();
+    // `setCursor` only moves a class when the walkthrough is already on screen.
+    this.paintStep();
     this.scrollElementIntoView(
       this.body.querySelector('.krypton-review__step--current'),
       'center',
@@ -1340,7 +1353,7 @@ export class ReviewBoardView implements ContentView {
   /** Human-readable label for a block, used in the generated `response.md` body
    *  and in the payload handed to the lane — a raw block id means nothing to
    *  either reader. */
-  private blockLabel(blockId: string): string {
+  blockLabel(blockId: string): string {
     const block = this.doc.blocks.find((b) => b.id === blockId);
     if (!block) return blockId;
     if (block.kind === 'finding') {
@@ -1371,8 +1384,11 @@ export class ReviewBoardView implements ContentView {
 
   // ─── Overlays ───────────────────────────────────────────────────────────
 
+  /** Replace whatever overlay is up. It only tears down the old node: the
+   *  caller has already set the state the new overlay needs (`startComment()`
+   *  sets `commentBlockId` first), so this must not run `closeOverlay()`. */
   private openOverlay(kind: Overlay): void {
-    this.closeOverlay();
+    this.removeOverlay();
     this.overlay = kind;
     this.overlayEl = document.createElement('div');
     this.overlayEl.className = `krypton-review__overlay krypton-review__overlay--${kind}`;
@@ -1380,12 +1396,18 @@ export class ReviewBoardView implements ContentView {
     this.renderOverlay();
   }
 
-  private closeOverlay(): void {
+  private removeOverlay(): void {
     this.overlayEl?.remove();
     this.overlayEl = null;
     this.overlay = 'none';
     this.commentInput = null;
     this.noteInput = null;
+  }
+
+  /** Dismiss the overlay: drop the pending comment target and hand the
+   *  keyboard back to the Board. */
+  private closeOverlay(): void {
+    this.removeOverlay();
     this.commentBlockId = null;
     this.element.focus();
   }
@@ -1397,50 +1419,37 @@ export class ReviewBoardView implements ContentView {
   }
 
   /** `c` — comment on the focused block. The selection is quoted when there is
-   *  one, else the block's head, so the lane always gets an anchor it can find. */
+   *  one, else the block's label (the same label the send payload uses), so the
+   *  lane always gets an anchor it can find. */
   private startComment(): void {
     const block = this.currentBlock();
     if (!block) return;
     const selection = window.getSelection()?.toString().trim() ?? '';
     this.commentBlockId = block.id;
-    this.commentQuote = (selection.length > 0 ? selection : this.blockHead(block)).slice(
-      0,
-      QUOTE_CAP,
-    );
+    this.commentLabel = this.blockLabel(block.id);
+    this.commentQuote = (selection.length > 0 ? selection : this.commentLabel).slice(0, QUOTE_CAP);
     this.openOverlay('comment');
     this.commentInput?.focus();
-  }
-
-  /** The first couple of lines of a block, as a fallback quote. */
-  private blockHead(block: ReviewBlock): string {
-    return block.raw
-      .split('\n')
-      .filter((l) => l.trim().length > 0)
-      .slice(0, 2)
-      .join(' ')
-      .slice(0, 200);
   }
 
   private renderCommentComposer(): void {
     const root = this.overlayEl;
     if (!root) return;
     root.innerHTML = '';
-    const head = document.createElement('div');
-    head.className = 'krypton-review__overlay-head';
-    head.textContent = 'comment · Cmd+Enter to save · Esc to cancel';
-    root.appendChild(head);
-
-    const quote = document.createElement('div');
-    quote.className = 'krypton-review__comment-quote';
-    quote.textContent = this.commentQuote;
-    root.appendChild(quote);
+    root.append(
+      span('krypton-review__overlay-head', 'Comment on'),
+      span('krypton-review__comment-label', this.commentLabel),
+    );
+    if (this.commentQuote !== this.commentLabel) {
+      root.appendChild(span('krypton-review__comment-quote', this.commentQuote));
+    }
 
     this.commentInput = document.createElement('textarea');
     this.commentInput.className = 'krypton-review__comment-input';
     this.commentInput.rows = 4;
     this.commentInput.placeholder = 'what should the lane do about this?';
     this.commentInput.addEventListener('keydown', (e) => this.onComposerKey(e));
-    root.appendChild(this.commentInput);
+    root.append(this.commentInput, overlayFoot([['⌘↵', 'save'], ['Esc', 'cancel']]));
   }
 
   private onComposerKey(e: KeyboardEvent): void {
@@ -1482,12 +1491,12 @@ export class ReviewBoardView implements ContentView {
     root.innerHTML = '';
     const response = toResponse(this.slug, this.answers, this.doc.blocks, this.sentAt);
 
-    const head = document.createElement('div');
-    head.className = 'krypton-review__overlay-head';
-    head.textContent = this.sending
-      ? `sending → ${this.laneName}…`
-      : `send → ${this.laneName} · Cmd+Enter to confirm · Esc to cancel`;
-    root.appendChild(head);
+    root.appendChild(
+      span(
+        'krypton-review__overlay-head',
+        this.sending ? `Sending to ${this.laneName}…` : `Send to ${this.laneName}`,
+      ),
+    );
 
     if (this.banner) {
       const notice = document.createElement('div');
@@ -1531,7 +1540,7 @@ export class ReviewBoardView implements ContentView {
         void this.confirmSend();
       }
     });
-    root.appendChild(this.noteInput);
+    root.append(this.noteInput, overlayFoot([['⌘↵', 'send'], ['Esc', 'cancel']]));
   }
 
   private async confirmSend(): Promise<void> {
@@ -1924,9 +1933,9 @@ export class ReviewBoardView implements ContentView {
   }
 
   onShow(): void {
-    // Idempotent: the header's sync age is the only thing that goes stale while
-    // the tab is hidden.
-    this.renderHeader();
+    // The Overview's load age is the only thing that goes stale while the tab
+    // is hidden.
+    if (this.viewMode === 'overview') this.renderBody();
   }
 
   onResize(): void {
@@ -1954,12 +1963,10 @@ export class ReviewBoardView implements ContentView {
     this.element.remove();
   }
 
-  /** Transient one-line notice in the header. */
+  /** Transient one-line notice beside the status segments. */
   private flash(text: string): void {
-    const el = document.createElement('span');
-    el.className = 'krypton-review__seg krypton-review__seg--flash';
-    el.textContent = text;
-    this.header.appendChild(el);
+    const el = seg('krypton-review__seg--flash', text);
+    this.status.appendChild(el);
     window.setTimeout(() => el.remove(), 2200);
   }
 
@@ -1975,6 +1982,18 @@ function span(className: string, text: string): HTMLElement {
   el.className = className;
   el.textContent = text;
   return el;
+}
+
+function seg(modifier: string, text: string): HTMLElement {
+  return span(`krypton-review__seg ${modifier}`, text);
+}
+
+/** Key hints along the bottom of a floating panel. */
+function overlayFoot(hints: readonly (readonly [string, string])[]): HTMLElement {
+  const foot = document.createElement('div');
+  foot.className = 'krypton-review__overlay-foot';
+  for (const hint of hints) foot.appendChild(keyHint(hint));
+  return foot;
 }
 
 function sendRow(mark: string, label: string): HTMLElement {

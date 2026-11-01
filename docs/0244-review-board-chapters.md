@@ -154,7 +154,8 @@ IPC payload, or lane memory.
 
 - `section` mode renders only the active section's half-open block range.
 - `open` mode renders unanswered `finding` and `decision` blocks in document order. A finding's
-  existing `detail` field keeps its explanatory paragraph inside the card.
+  existing `detail` field shows its explanatory paragraph under the title — only here, since the
+  other views already show that paragraph as its own block (spec 354).
 - `document` mode renders every block exactly as today.
 - First open keeps spec 211's priority: select the first unanswered block, else block 1. The active
   chapter is the one containing that block.
@@ -191,7 +192,8 @@ IPC payload, or lane memory.
 `overview` is the map's first row and the `O` key. It is a read-only landing surface that renders
 **no authored block**, so it can neither reorder nor hide lane content:
 
-1. Identity — title, subject, lane, slug.
+1. Identity — title, subject, then lane, bundle slug and load age as label/value rows (the header
+   no longer carries them, spec 354).
 2. Work remaining, as **raw counts only**: unanswered findings broken out by severity
    (`blocking` / `non-blocking` / `suggestion`) and unanswered decisions. A Board with nothing
    answerable shows `reference` exactly as the header does.
@@ -224,9 +226,9 @@ Board splits that into three paths so the map does not make it worse:
   chapter, expand/collapse, or an answer that removes an item in `open` mode.
 - `renderMap()` — runs when sections, answers, or the active view change. Never on a plain cursor
   move.
-- `moveCursor()` — moves the `krypton-review__block--cursor` class between two elements and updates
-  the header position segment. No rebuild, so `n` / `N` stay well inside the 16ms budget and the
-  spec 243 RAF scroll is no longer fighting a fresh DOM.
+- `moveCursor()` — moves the `krypton-review__block--cursor` class between two elements and
+  re-renders the (now exceptions-only) header. No rebuild, so `n` / `N` stay well inside the 16ms
+  budget and the spec 243 RAF scroll is no longer fighting a fresh DOM.
 
 Cursor movement that crosses a chapter boundary is the one case that still rebuilds the body.
 
@@ -244,19 +246,22 @@ The root DOM becomes:
 </div>
 ```
 
-The map contains:
+The map contains (as amended by spec 354 — no head counts, no block counts; `Overview`, `Open items`
+and `Full document` lead with an icon):
 
-1. Global counts: blocks, findings/decisions, unanswered — the one-line form of what `Overview`
-   shows in full. Both read the same `answerableBlocks()` / `unansweredBlocks()` helpers; neither
-   keeps its own tally.
-2. Authored chapters in document order, indented by heading depth, with block and unanswered
-   counts.
-3. `Overview`, `Open items`, and `Full document` smart rows — `Overview` first, the other two last.
-4. A footer reminder for map and chapter keys.
+1. `Overview` first.
+2. Authored chapters in document order, indented by heading depth, each with its number and, when
+   above zero, its open count in the warning hue. Counts read the same `unansweredBlocks()` helper
+   the header and `Overview` use; nothing keeps its own tally.
+3. `Open items` (with its open count) and `Full document`, after a gap.
+4. A footer reminder: `o map  [ ] chapters`, or `j k move  ↵ open  Esc back` while the map holds
+   the keyboard.
 
-The active row uses a full background tint and full border, never a left accent rail. All changing
-counts use tabular numerics. Rows use buttons with `aria-current="page"`; keyboard focus uses the
-required `:focus-visible` ring.
+The map is transparent and 240px wide. Rows are 8px-rounded. The active row (the view on screen)
+is accent text at weight 600; the map cursor (only while the map holds the keyboard) adds a
+full-row accent tint at 0.12, no border. Never a left accent rail. All changing counts use tabular
+numerics. Rows use buttons with `aria-current="page"`; keyboard focus uses the required
+`:focus-visible` ring.
 
 ### Responsive Layout
 
@@ -265,10 +270,10 @@ required `:focus-visible` ring.
   constructor and disconnected in `dispose()`. `onResize()` is *not* the trigger (it was never
   called when this shipped; spec 296 now calls it from `fitPaneTree`). The Board keeps a no-op
   `onResize()`; the observer covers split-divider drags and window resizes alike.
-- At or above the threshold, the 272px map is persistent and the 860px reading column retains its
-  current maximum width.
-- Below the threshold, the map is hidden by default and opens as an opaque, bordered overlay over
-  the body. No `backdrop-filter` is used.
+- At or above the threshold, the 240px map is persistent beside the reading column, which fills the
+  rest of the pane (spec 354).
+- Below the threshold, the map is hidden by default and opens as an opaque overlay over the body;
+  its opaque fill sets it apart, with no divider line at its edge. No `backdrop-filter` is used.
 - Crossing from wide to narrow closes map focus and hides the overlay. Crossing back restores the
   persistent map. There is no saved width preference.
 - Pointer clicks on a map row select its view and return focus to the Board; the narrow overlay
@@ -288,20 +293,12 @@ required `:focus-visible` ring.
 
 ### Header
 
-The existing header remains one line but replaces the lone position segment with:
-
-```text
-chapter 2/5 · block 8/19
-```
-
-`Open items` displays `open items · block 2/5`; `Full document` displays the original global block
-position; `Overview` displays `overview`. Unanswered, save, send, and sync segments remain global
-and unchanged.
-
-The header is already eight segments wide before this change. Segments therefore drop in a fixed
-order as the pane narrows — slug, then lane, then steps — so position, unanswered, save, and sync
-survive on the narrowest pane. The title truncates with an ellipsis and never wraps: the header
-stays one line at every width.
+Superseded by spec 354: the header is the document title on the left (plus the chapter title when
+the map is hidden) and only exceptions on the right — open count, save state once there are
+answers, and `search · full document` while search is open. The position segment
+(`chapter 2/5 · block 8/19`), lane, slug, step count and sync age are gone; the active map row
+already names the chapter, and the walkthrough kicker carries `step k of n`. The header stays one
+line: the title truncates with an ellipsis.
 
 ### API / Commands
 

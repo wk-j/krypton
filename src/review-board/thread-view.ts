@@ -1,14 +1,40 @@
 // Review thread reader over the existing Review Board and fixed Diff views.
+//
+// One header row (spec 354): the Board's title, text tabs, the snapshot, then
+// the embedded Board's status, which it writes into `boardStatus`.
 
 import { invoke } from '../profiler/ipc';
 import type { DiffReviewComment, ReviewResponse } from '../acp/types';
 import type { ContentView, LeaderKeyBinding, PaneContentType } from '../types';
 import type { ReviewLineComment, ReviewThread, ReviewThreadRead, ReviewThreadVerdict } from '../acp/review-thread';
 import { DiffContentView } from '../diff-view';
+import { renderKicker } from './render';
 import { ReviewBoardView } from './view';
 
 type Mode = 'guide' | 'diff' | 'comments' | 'submit';
 type VerdictKind = 'approve' | 'request_changes';
+
+/** `label key`: a text control with its shortcut trailing in a dimmer ink. */
+function keyButton(className: string, key: string | null, label: string): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = className;
+  button.appendChild(document.createTextNode(label));
+  if (key) {
+    const hint = document.createElement('span');
+    hint.className = 'krypton-review-thread__key';
+    hint.textContent = key;
+    button.appendChild(hint);
+  }
+  return button;
+}
+
+function textEl(tag: string, className: string, text: string): HTMLElement {
+  const el = document.createElement(tag);
+  el.className = className;
+  el.textContent = text;
+  return el;
+}
 
 export interface ReviewThreadViewOptions {
   cwd: string;
@@ -31,6 +57,9 @@ export class ReviewThreadView implements ContentView {
   private selectedVerdict: VerdictKind | null = null;
   private closeCallback: (() => void) | null = null;
   private readonly nav: HTMLElement;
+  /** Persistent node the embedded Board writes its status into; re-appended to
+   *  the nav on every rebuild so the Board's flashes survive it. */
+  private readonly boardStatus: HTMLElement;
   private readonly boardHost: HTMLElement;
   private readonly guideStatus: HTMLElement;
   private readonly guideMessage: HTMLElement;
@@ -68,11 +97,13 @@ export class ReviewThreadView implements ContentView {
     this.diffHost = this.host('diff');
     this.commentsHost = this.host('comments');
     this.submitHost = this.host('submit');
+    this.boardStatus = document.createElement('span');
     this.board = new ReviewBoardView(this.boardHost, {
       cwd: options.cwd,
       dir: options.dir,
       slug: options.slug,
       laneName: options.laneName,
+      statusHost: this.boardStatus,
       jump: ({ path, line }) => {
         this.showMode('diff');
         this.diff?.revealLocation(path, line);
@@ -81,13 +112,10 @@ export class ReviewThreadView implements ContentView {
     this.board.onClose(() => this.closeCallback?.());
     this.board.element.style.display = 'none';
     this.guideStatus = document.createElement('div');
-    this.guideStatus.className = 'krypton-review__empty';
+    this.guideStatus.className = 'krypton-review-thread__guide-status';
     this.guideStatus.setAttribute('role', 'status');
     this.guideMessage = document.createElement('p');
-    this.guideDiffButton = document.createElement('button');
-    this.guideDiffButton.type = 'button';
-    this.guideDiffButton.className = 'krypton-review-thread__tab';
-    this.guideDiffButton.textContent = 'D เปิด snapshot diff';
+    this.guideDiffButton = keyButton('krypton-review-thread__button', 'D', 'เปิด snapshot diff');
     this.guideDiffButton.addEventListener('click', () => this.showMode('diff'));
     this.guideStatus.append(this.guideMessage, this.guideDiffButton);
     this.boardHost.appendChild(this.guideStatus);
@@ -177,6 +205,8 @@ export class ReviewThreadView implements ContentView {
     this.guideAvailable = this.thread?.phase === 'ready' || this.obsoleteGuide;
     this.board.element.style.display = this.guideAvailable ? '' : 'none';
     this.guideStatus.hidden = this.guideAvailable;
+    const failed = this.thread?.phase === 'guide_failed';
+    this.guideStatus.classList.toggle('krypton-review-thread__guide-status--failed', failed);
     this.guideMessage.textContent = this.thread?.phase === 'guide_failed'
       ? 'สร้าง Guide ไม่สำเร็จ กด Retry Guide ด้านบน หรือเปิด snapshot diff เพื่อตรวจต่อ'
       : this.thread
@@ -217,39 +247,20 @@ export class ReviewThreadView implements ContentView {
 
   private renderNav(): void {
     this.nav.replaceChildren();
-    const label = document.createElement('span');
-    label.className = 'krypton-review-thread__title';
-    label.textContent = `Review // ${this.options.threadId}`;
-    this.nav.appendChild(label);
+    this.nav.appendChild(
+      textEl('span', 'krypton-review-thread__title', this.board.documentTitle() ?? 'Review thread'),
+    );
     for (const [key, mode, name] of [
       ['G', 'guide', 'Guide'], ['D', 'diff', 'Diff'],
       ['C', 'comments', 'Comments'], ['V', 'submit', 'Submit'],
     ] as const) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.textContent = `${key} ${name}`;
-      button.className = 'krypton-review-thread__tab';
+      const button = keyButton('krypton-review-thread__tab', key, name);
       if (this.mode === mode) button.classList.add('krypton-review-thread__tab--active');
       button.addEventListener('click', () => this.showMode(mode));
       this.nav.appendChild(button);
     }
-    const status = document.createElement('span');
-    status.className = 'krypton-review-thread__status';
-    status.textContent = this.thread
-      ? `${this.thread.phase}${this.obsoleteGuide ? ' · Guide รอบเก่า' : ''}${this.stale ? ' · งานเปลี่ยนหลัง snapshot' : ''} · ${this.thread.baseRef} @ ${this.thread.baseOid.slice(0, 8)}`
-      : 'loading snapshot…';
-    this.nav.appendChild(status);
-    const refresh = document.createElement('button');
-    refresh.type = 'button';
-    refresh.className = 'krypton-review-thread__tab';
-    refresh.textContent = 'r Refresh';
-    refresh.addEventListener('click', () => this.requestRefresh());
-    this.nav.appendChild(refresh);
     if (this.thread?.phase === 'guide_failed') {
-      const retry = document.createElement('button');
-      retry.type = 'button';
-      retry.className = 'krypton-review-thread__tab';
-      retry.textContent = 'Retry Guide';
+      const retry = keyButton('krypton-review-thread__tab', null, 'Retry Guide');
       retry.addEventListener('click', () => {
         if (!this.thread) return;
         void this.options.retryGuide(this.thread).then((started) => {
@@ -260,29 +271,42 @@ export class ReviewThreadView implements ContentView {
       });
       this.nav.appendChild(retry);
     }
+    // Exceptions only: the phase unless it is `ready`, then the snapshot.
+    const status = document.createElement('span');
+    status.className = 'krypton-review-thread__status';
+    if (this.thread) {
+      const warnings: string[] = [];
+      if (this.obsoleteGuide) warnings.push('Guide รอบเก่า');
+      if (this.stale) warnings.push('งานเปลี่ยนหลัง snapshot');
+      if (this.thread.phase !== 'ready') status.append(`${this.thread.phase}  `);
+      if (warnings.length > 0) {
+        status.append(textEl('span', 'krypton-review-thread__warn', warnings.join('  ')), '  ');
+      }
+      status.append(`${this.thread.baseRef} @ ${this.thread.baseOid.slice(0, 8)}`);
+    } else {
+      status.textContent = 'loading snapshot…';
+    }
+    this.nav.append(status, this.boardStatus);
   }
 
   private renderComments(): void {
     this.commentsHost.replaceChildren();
     const thread = this.thread;
     if (!thread) return;
-    const head = document.createElement('h2');
-    head.textContent = `Comments · ${thread.lineComments.length} line`;
-    this.commentsHost.appendChild(head);
+    this.commentsHost.appendChild(
+      renderKicker({ label: 'Line comments', meta: [{ text: String(thread.lineComments.length) }] }, 'h2'),
+    );
     for (const comment of thread.lineComments.slice(0, this.commentsVisible)) {
-      const item = document.createElement('div');
-      item.className = 'krypton-review-thread__comment';
-      const loc = document.createElement('strong');
-      loc.textContent = `${comment.file}:${comment.lineStart} (${comment.side})`;
-      const body = document.createElement('p');
-      body.textContent = comment.body;
-      item.append(loc, body);
-      this.commentsHost.appendChild(item);
+      this.commentsHost.appendChild(
+        this.commentRow(`${comment.file}:${comment.lineStart} (${comment.side})`, comment.body),
+      );
     }
     if (thread.lineComments.length > this.commentsVisible) {
-      const more = document.createElement('button');
-      more.type = 'button';
-      more.textContent = `Show 100 more (${this.commentsVisible}/${thread.lineComments.length})`;
+      const more = keyButton(
+        'krypton-review-thread__button',
+        null,
+        `Show 100 more (${this.commentsVisible}/${thread.lineComments.length})`,
+      );
       more.addEventListener('click', () => {
         this.commentsVisible += 100;
         this.renderComments();
@@ -290,43 +314,54 @@ export class ReviewThreadView implements ContentView {
       this.commentsHost.appendChild(more);
     }
     const boardComments = this.board.draftResponse().comments;
+    if (boardComments.length > 0) {
+      this.commentsHost.appendChild(
+        renderKicker({ label: 'Guide comments', meta: [{ text: String(boardComments.length) }] }, 'h2'),
+      );
+    }
     for (const comment of boardComments.slice(0, this.boardCommentsVisible)) {
-      const item = document.createElement('div');
-      item.className = 'krypton-review-thread__comment';
-      item.textContent = `Guide block ${comment.blockId}: ${comment.body}`;
-      this.commentsHost.appendChild(item);
+      this.commentsHost.appendChild(
+        this.commentRow(this.board.blockLabel(comment.blockId), comment.body),
+      );
     }
     if (boardComments.length > this.boardCommentsVisible) {
-      const more = document.createElement('button');
-      more.type = 'button';
-      more.textContent = `Show 100 more Guide comments (${this.boardCommentsVisible}/${boardComments.length})`;
+      const more = keyButton(
+        'krypton-review-thread__button',
+        null,
+        `Show 100 more Guide comments (${this.boardCommentsVisible}/${boardComments.length})`,
+      );
       more.addEventListener('click', () => {
         this.boardCommentsVisible += 100;
         this.renderComments();
       });
       this.commentsHost.appendChild(more);
     }
-    const history = document.createElement('h2');
-    history.textContent = `Verdicts · ${thread.verdicts.length}`;
-    this.commentsHost.appendChild(history);
+    this.commentsHost.appendChild(
+      renderKicker({ label: 'Verdicts', meta: [{ text: String(thread.verdicts.length) }] }, 'h2'),
+    );
     for (const verdict of [...thread.verdicts].reverse().slice(0, this.verdictsVisible)) {
+      const approve = verdict.kind === 'approve';
       const row = document.createElement('div');
-      row.className = 'krypton-review-thread__verdict';
-      row.textContent = `${verdict.kind === 'approve' ? 'Approve' : 'Request Changes'} · ${verdict.delivery} · ${verdict.summary}`;
+      row.className = `krypton-review-thread__verdict krypton-review-thread__verdict--${approve ? 'approve' : 'changes'}`;
+      row.append(
+        textEl('span', 'krypton-review-thread__verdict-kind', approve ? 'Approve' : 'Request changes'),
+        textEl('span', 'krypton-review-thread__verdict-delivery', verdict.delivery.replace('_', ' ')),
+        textEl('p', 'krypton-review-thread__verdict-summary', verdict.summary),
+      );
       this.commentsHost.appendChild(row);
       if (verdict.delivery === 'pending' || verdict.delivery === 'queued' ||
           verdict.delivery === 'uncertain') {
-        const retry = document.createElement('button');
-        retry.type = 'button';
-        retry.textContent = 'Send again';
+        const retry = keyButton('krypton-review-thread__button', null, 'Send again');
         retry.addEventListener('click', () => { void this.deliver(verdict); });
         this.commentsHost.appendChild(retry);
       }
     }
     if (thread.verdicts.length > this.verdictsVisible) {
-      const more = document.createElement('button');
-      more.type = 'button';
-      more.textContent = `Show 100 older verdicts (${this.verdictsVisible}/${thread.verdicts.length})`;
+      const more = keyButton(
+        'krypton-review-thread__button',
+        null,
+        `Show 100 older verdicts (${this.verdictsVisible}/${thread.verdicts.length})`,
+      );
       more.addEventListener('click', () => {
         this.verdictsVisible += 100;
         this.renderComments();
@@ -335,29 +370,44 @@ export class ReviewThreadView implements ContentView {
     }
   }
 
+  /** Location above body: the comment row of the Comments tab. */
+  private commentRow(location: string, body: string): HTMLElement {
+    const item = document.createElement('div');
+    item.className = 'krypton-review-thread__comment';
+    item.append(
+      textEl('span', 'krypton-review-thread__loc', location),
+      textEl('p', 'krypton-review-thread__comment-body', body),
+    );
+    return item;
+  }
+
   private renderSubmit(): void {
-    this.submitHost.replaceChildren();
-    const instruction = document.createElement('p');
-    instruction.textContent = 'เลือก verdict แล้วกด Cmd+Enter เพื่อส่ง comment และคำตอบทั้งหมด';
-    this.submitHost.append(instruction, this.summary);
-    for (const [kind, label] of [
-      ['approve', '1 Approve'], ['request_changes', '2 Request Changes'],
+    this.submitHost.replaceChildren(renderKicker({ label: 'Verdict' }));
+    for (const [kind, key, label] of [
+      ['approve', '1', 'Approve'], ['request_changes', '2', 'Request changes'],
     ] as const) {
+      // Decision-style option row: number, label, and the reason it is off.
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'krypton-review-thread__choice';
+      button.append(
+        textEl('span', 'krypton-review-thread__choice-key', key),
+        textEl('span', 'krypton-review-thread__choice-label', label),
+      );
       if (kind === 'approve' && (this.stale || this.thread?.phase !== 'ready')) {
+        const reason = this.stale ? 'เริ่ม review รอบใหม่ก่อน Approve' : 'รอ Guide ให้พร้อม';
         button.disabled = true;
-        button.title = this.stale ? 'เริ่ม review รอบใหม่ก่อน Approve' : 'รอ Guide ให้พร้อม';
+        button.title = reason;
+        button.appendChild(textEl('span', 'krypton-review-thread__choice-reason', reason));
       }
       if (this.selectedVerdict === kind) button.classList.add('krypton-review-thread__choice--active');
-      button.textContent = label;
       button.addEventListener('click', () => {
         this.selectedVerdict = kind;
         this.renderSubmit();
       });
       this.submitHost.appendChild(button);
     }
+    this.submitHost.append(renderKicker({ label: 'Summary' }), this.summary);
     if (this.thread?.omitted.length) {
       const row = document.createElement('label');
       row.className = 'krypton-review-thread__omitted';
@@ -366,10 +416,9 @@ export class ReviewThreadView implements ContentView {
       row.append(this.omittedCheck, text);
       this.submitHost.appendChild(row);
     }
-    const send = document.createElement('button');
-    send.type = 'button';
-    send.className = 'krypton-review-thread__send';
-    send.textContent = this.submitting ? 'กำลังส่ง…' : 'Submit Review · Cmd+Enter';
+    const send = this.submitting
+      ? keyButton('krypton-review-thread__send', null, 'กำลังส่ง…')
+      : keyButton('krypton-review-thread__send', '⌘↵', 'Submit review');
     send.disabled = this.submitting;
     send.addEventListener('click', () => { void this.submit(); });
     this.submitHost.appendChild(send);

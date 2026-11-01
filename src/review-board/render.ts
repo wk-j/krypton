@@ -1,10 +1,14 @@
-// Krypton — Review Board block renderers (spec 211)
+// Krypton — Review Board block renderers (spec 211, redesign 354)
 //
 // Per-block DOM builders, plus the pure helpers they are built from. The split
 // is deliberate: chart geometry, the SVG sanitizer, and the markup vocabulary
-// (severity chips, anchor labels) are pure functions with no DOM dependency, so
+// (severity labels, anchor labels) are pure functions with no DOM dependency, so
 // the parts that can be silently wrong are covered by unit tests while the DOM
 // assembly stays thin enough to read.
+//
+// Every typed block renders the same head (spec 354): a kicker line (icon and
+// uppercase label, metadata, state, comment count, cursor-only key hints) and a
+// title.
 
 import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
@@ -19,6 +23,7 @@ import type {
 } from '../acp/types';
 
 import { gridifyCodeBlocks, gridifyText } from '../acp/cell-grid';
+import { reviewIcon, type ReviewIconName } from './icons';
 import { parseWalkthroughAnchor } from './parse';
 
 /** The Markdown Viewer's stack (spec 39/137), configured identically so a review
@@ -42,25 +47,18 @@ export const DIFF_SUMMARY_THRESHOLD = 2000;
 
 // ─── Severity vocabulary ──────────────────────────────────────────────────
 
-/** Chip label + tone class suffix for a finding severity. Tone drives the
- *  heading/chip colour only — never a left accent rail (house rule), and never a
- *  score or grade (ADR-0004). */
-export function severityChip(severity: ReviewBlockSeverity): { label: string; tone: string } {
+/** Kicker label + tone class suffix for a finding severity. The tone colours
+ *  the label word only — never the title, a fill, or a left rail (spec 354),
+ *  and never a score or grade (ADR-0004). */
+export function severityKicker(severity: ReviewBlockSeverity): { label: string; tone: string } {
   switch (severity) {
     case 'blocking':
-      return { label: 'block', tone: 'blocking' };
+      return { label: 'Blocking', tone: 'blocking' };
     case 'non-blocking':
-      return { label: 'warn', tone: 'warn' };
+      return { label: 'Non-blocking', tone: 'non-blocking' };
     case 'suggestion':
-      return { label: 'sugg', tone: 'sugg' };
+      return { label: 'Suggestion', tone: 'suggestion' };
   }
-}
-
-/** Glyph for a finding's triage state, matching the spec's legend. */
-export function findingStateGlyph(state: 'accepted' | 'dismissed' | null): string {
-  if (state === 'accepted') return '✓';
-  if (state === 'dismissed') return '✗';
-  return '·';
 }
 
 /** `file:line` corner label for a finding, or null when it carries no anchor. */
@@ -322,6 +320,10 @@ export interface RenderContext {
   resolveImageSrc(src: string): string;
   /** True once a `diff` block over the summary threshold has been expanded. */
   isDiffExpanded(blockId: string): boolean;
+  /** Render a finding's `detail` paragraph. Only `Open items` wants it: in the
+   *  chapter and full-document views the author's paragraph is already on
+   *  screen as its own block, so repeating it shows every explanation twice. */
+  showFindingDetail: boolean;
 }
 
 const el = (tag: string, className?: string, text?: string): HTMLElement => {
@@ -331,11 +333,75 @@ const el = (tag: string, className?: string, text?: string): HTMLElement => {
   return node;
 };
 
+/** `[key, label]` — one shortcut hint, e.g. `['a', 'accept']`. */
+export type KeyHint = readonly [key: string, label: string];
+
+/** `a accept`: the key in ink-3, its action in ink-4. */
+export function keyHint([key, label]: KeyHint): HTMLElement {
+  const hint = el('span', 'krypton-review__hint');
+  hint.append(el('kbd', 'krypton-review__key', key), ` ${label}`);
+  return hint;
+}
+
+export interface KickerMeta {
+  text: string;
+  /** A location `Enter` opens — rendered in the dimmed link colour. */
+  target?: boolean;
+  className?: string;
+}
+
+export interface KickerSpec {
+  label: string;
+  /** Leading mark inside the label, so it takes the label's colour. */
+  icon?: ReviewIconName;
+  /** Severity tone suffix; colours the label word only. */
+  tone?: string;
+  meta?: readonly KickerMeta[];
+  state?: { text: string; tone: string } | null;
+  comments?: number;
+  /** Shown only while the block holds the cursor (CSS). */
+  hints?: readonly KeyHint[];
+}
+
+/** The kicker line every typed block, Overview section and thread section
+ *  opens with: label, metadata, then state / comments / hints on the right. */
+export function renderKicker(spec: KickerSpec, tag = 'div'): HTMLElement {
+  const kicker = el(tag, 'krypton-review__kicker');
+  const label = el('span', 'krypton-review__kicker-label', spec.label);
+  if (spec.tone) label.classList.add(`krypton-review__kicker-label--${spec.tone}`);
+  if (spec.icon) label.prepend(reviewIcon(spec.icon));
+  kicker.appendChild(label);
+  for (const meta of spec.meta ?? []) {
+    const node = el('span', 'krypton-review__kicker-meta', meta.text);
+    if (meta.target) node.classList.add('krypton-review__kicker-meta--target');
+    if (meta.className) node.classList.add(meta.className);
+    kicker.appendChild(node);
+  }
+  const end = el('span', 'krypton-review__kicker-end');
+  if (spec.state) {
+    end.appendChild(
+      el('span', `krypton-review__kicker-state krypton-review__kicker-state--${spec.state.tone}`, spec.state.text),
+    );
+  }
+  if (spec.comments) end.appendChild(el('span', 'krypton-review__kicker-meta', commentCountLabel(spec.comments)));
+  if (spec.hints && spec.hints.length > 0) {
+    const hints = el('span', 'krypton-review__kicker-hints');
+    for (const hint of spec.hints) hints.appendChild(keyHint(hint));
+    end.appendChild(hints);
+  }
+  if (end.childElementCount > 0) kicker.appendChild(end);
+  return kicker;
+}
+
+function commentCountLabel(count: number): string {
+  return `${count} comment${count === 1 ? '' : 's'}`;
+}
+
 /**
  * Build the DOM for one block. The wrapper always carries `data-block-id` and
- * `data-kind`, which is how the view's cursor, outline, and comment anchoring
- * address blocks — never a CSS selector into the rendered content (the crit
- * failure mode spec 211 was designed to avoid).
+ * `data-kind`, which is how the view's cursor and comment anchoring address
+ * blocks — never a CSS selector into the rendered content (the crit failure
+ * mode spec 211 was designed to avoid).
  */
 export function renderBlock(block: ReviewBlock, ctx: RenderContext): HTMLElement {
   const wrapper = el('div', 'krypton-review__block');
@@ -344,16 +410,17 @@ export function renderBlock(block: ReviewBlock, ctx: RenderContext): HTMLElement
   wrapper.classList.add(`krypton-review__block--${block.kind}`);
 
   const answer = ctx.answerOf(block.id) ?? EMPTY_ANSWER;
+  const comments = answer.commentCount;
 
   switch (block.kind) {
     case 'markdown':
       wrapper.appendChild(renderMarkdown(block.raw, ctx));
       break;
     case 'walkthrough':
-      wrapper.appendChild(renderWalkthrough(block));
+      wrapper.appendChild(renderWalkthrough(block, comments));
       break;
     case 'diff':
-      wrapper.appendChild(renderDiff(block, ctx.isDiffExpanded(block.id)));
+      wrapper.appendChild(renderDiff(block, ctx.isDiffExpanded(block.id), comments));
       break;
     case 'finding':
       wrapper.appendChild(renderFinding(block, answer, ctx));
@@ -362,10 +429,10 @@ export function renderBlock(block: ReviewBlock, ctx: RenderContext): HTMLElement
       wrapper.appendChild(renderDecision(block, answer));
       break;
     case 'chart':
-      wrapper.appendChild(renderChart(block));
+      wrapper.appendChild(renderChart(block, comments));
       break;
     case 'metrics':
-      wrapper.appendChild(renderMetrics(block));
+      wrapper.appendChild(renderMetrics(block, comments));
       break;
     case 'svg':
       wrapper.appendChild(renderSvg(block, wrapper));
@@ -373,10 +440,11 @@ export function renderBlock(block: ReviewBlock, ctx: RenderContext): HTMLElement
   }
 
   if (block.diagnostic) {
-    wrapper.appendChild(el('div', 'krypton-review__diagnostic', `⚠ ${block.diagnostic}`));
+    wrapper.appendChild(el('div', 'krypton-review__diagnostic', block.diagnostic));
   }
-  if (answer.commentCount > 0) {
-    wrapper.appendChild(el('div', 'krypton-review__comment-mark', `✎ ${answer.commentCount}`));
+  // Prose and figures have no kicker to carry the count.
+  if (comments > 0 && (block.kind === 'markdown' || block.kind === 'svg')) {
+    wrapper.appendChild(el('div', 'krypton-review__comment-mark', commentCountLabel(comments)));
   }
   return wrapper;
 }
@@ -395,10 +463,25 @@ function renderMarkdown(source: string, ctx: RenderContext): HTMLElement {
   return host;
 }
 
-function renderWalkthrough(block: Extract<ReviewBlock, { kind: 'walkthrough' }>): HTMLElement {
+function renderWalkthrough(
+  block: Extract<ReviewBlock, { kind: 'walkthrough' }>,
+  comments: number,
+): HTMLElement {
   const host = el('div', 'krypton-review__walkthrough');
-  host.appendChild(
-    el('div', 'krypton-review__walkthrough-title', block.data.title ?? 'read it in this order'),
+  const count = block.data.steps.length;
+  host.append(
+    renderKicker({
+      label: 'Walkthrough',
+      icon: 'walkthrough',
+      // The view writes `step k of n` into the empty slot as `Tab` moves.
+      meta: [
+        { text: `${count} step${count === 1 ? '' : 's'}` },
+        { text: '', className: 'krypton-review__step-pos' },
+      ],
+      comments,
+      hints: [['Tab', 'next step'], ['↵', 'open']],
+    }),
+    el('div', 'krypton-review__title', block.data.title ?? 'Read it in this order'),
   );
   const list = el('ol', 'krypton-review__steps');
   block.data.steps.forEach((step, i) => {
@@ -414,21 +497,36 @@ function renderWalkthrough(block: Extract<ReviewBlock, { kind: 'walkthrough' }>)
   return host;
 }
 
-function renderDiff(block: Extract<ReviewBlock, { kind: 'diff' }>, expanded: boolean): HTMLElement {
+function renderDiff(
+  block: Extract<ReviewBlock, { kind: 'diff' }>,
+  expanded: boolean,
+  comments: number,
+): HTMLElement {
   const host = el('div', 'krypton-review__diff');
   const lines = block.data.unified.split('\n').length;
-  if (lines > DIFF_SUMMARY_THRESHOLD && !expanded) {
-    host.appendChild(
-      el('div', 'krypton-review__diff-summary', `${lines} diff lines — Enter to expand`),
-    );
+  const folds = lines > DIFF_SUMMARY_THRESHOLD;
+  host.appendChild(
+    renderKicker({
+      label: 'Diff',
+      icon: 'diff',
+      meta: [{ text: `${lines} lines` }],
+      comments,
+      hints: folds ? [['↵', expanded ? 'collapse' : 'expand']] : [],
+    }),
+  );
+  if (folds && !expanded) {
+    host.appendChild(el('div', 'krypton-review__diff-summary', 'Enter to expand'));
     return host;
   }
   try {
-    host.innerHTML = diff2html(block.data.unified, {
-      drawFileList: false,
-      outputFormat: 'line-by-line',
-      matching: 'lines',
-    });
+    host.insertAdjacentHTML(
+      'beforeend',
+      diff2html(block.data.unified, {
+        drawFileList: false,
+        outputFormat: 'line-by-line',
+        matching: 'lines',
+      }),
+    );
   } catch {
     // A fragment the lane wrote by hand may not carry a file header. Falling
     // back to the raw text keeps the change readable instead of blanking it.
@@ -445,21 +543,34 @@ function renderFinding(
   ctx: RenderContext,
 ): HTMLElement {
   const host = el('div', 'krypton-review__finding');
-  const chip = severityChip(block.data.severity);
-  host.classList.add(`krypton-review__finding--${chip.tone}`);
+  const severity = severityKicker(block.data.severity);
+  host.classList.add(`krypton-review__finding--${severity.tone}`);
   if (answer.findingState) host.classList.add(`krypton-review__finding--${answer.findingState}`);
 
-  const head = el('div', 'krypton-review__finding-head');
-  head.appendChild(el('span', 'krypton-review__severity', chip.label));
-  head.appendChild(el('span', 'krypton-review__finding-title', block.data.title));
-  const anchorLabel = findingAnchorLabel(block.data);
-  if (anchorLabel) head.appendChild(el('span', 'krypton-review__finding-anchor', anchorLabel));
-  head.appendChild(
-    el('span', 'krypton-review__finding-state', findingStateGlyph(answer.findingState)),
+  const anchor = findingAnchorLabel(block.data);
+  const hints: KeyHint[] = [['a', 'accept'], ['x', 'dismiss'], ['c', 'comment']];
+  if (anchor) hints.push(['↵', 'open']);
+  host.append(
+    renderKicker({
+      label: severity.label,
+      icon: block.data.severity,
+      tone: severity.tone,
+      meta: anchor ? [{ text: anchor, target: true }] : [],
+      state:
+        answer.findingState === 'accepted'
+          ? { text: 'Accepted', tone: 'accepted' }
+          : answer.findingState === 'dismissed'
+            ? { text: 'Dismissed', tone: 'dismissed' }
+            : null,
+      comments: answer.commentCount,
+      hints,
+    }),
+    el('div', 'krypton-review__title', block.data.title),
   );
-  host.appendChild(head);
 
-  if (block.data.detail) host.appendChild(renderMarkdown(block.data.detail, ctx));
+  if (ctx.showFindingDetail && block.data.detail) {
+    host.appendChild(renderMarkdown(block.data.detail, ctx));
+  }
   return host;
 }
 
@@ -468,7 +579,16 @@ function renderDecision(
   answer: BlockAnswerState,
 ): HTMLElement {
   const host = el('div', 'krypton-review__decision');
-  host.appendChild(el('div', 'krypton-review__decision-question', block.data.question));
+  host.append(
+    renderKicker({
+      label: 'Decision',
+      icon: 'decision',
+      state: answer.chosen !== null ? { text: 'Answered', tone: 'answered' } : null,
+      comments: answer.commentCount,
+      hints: [['1–9', 'choose'], ['c', 'comment']],
+    }),
+    el('div', 'krypton-review__title', block.data.question),
+  );
   const list = el('ol', 'krypton-review__options');
   block.data.options.forEach((option, i) => {
     const n = i + 1;
@@ -478,7 +598,7 @@ function renderDecision(
     item.appendChild(el('span', 'krypton-review__option-key', String(n)));
     item.appendChild(el('span', 'krypton-review__option-text', option));
     if (block.data.recommended === n) {
-      item.appendChild(el('span', 'krypton-review__option-rec', 'rec'));
+      item.appendChild(el('span', 'krypton-review__option-rec', 'recommended'));
     }
     list.appendChild(item);
   });
@@ -486,10 +606,11 @@ function renderDecision(
   return host;
 }
 
-function renderChart(block: Extract<ReviewBlock, { kind: 'chart' }>): HTMLElement {
+function renderChart(block: Extract<ReviewBlock, { kind: 'chart' }>, comments: number): HTMLElement {
   const host = el('div', 'krypton-review__chart');
   // Single series: the title names it, so there is no legend box.
-  if (block.data.title) host.appendChild(el('div', 'krypton-review__chart-title', block.data.title));
+  host.appendChild(renderKicker({ label: 'Chart', icon: 'chart', comments, hints: [['c', 'comment']] }));
+  if (block.data.title) host.appendChild(el('div', 'krypton-review__title', block.data.title));
 
   const geom = chartGeometry(block.data);
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -576,12 +697,18 @@ export function extremeIndices(values: readonly number[]): Set<number> {
   return new Set([lo, hi]);
 }
 
-function renderMetrics(block: Extract<ReviewBlock, { kind: 'metrics' }>): HTMLElement {
-  const host = el('dl', 'krypton-review__metrics');
+function renderMetrics(
+  block: Extract<ReviewBlock, { kind: 'metrics' }>,
+  comments: number,
+): HTMLElement {
+  const host = el('div', 'krypton-review__metrics-block');
+  host.appendChild(renderKicker({ label: 'Metrics', icon: 'metrics', comments, hints: [['c', 'comment']] }));
+  const list = el('dl', 'krypton-review__metrics');
   for (const row of block.data.rows) {
-    host.appendChild(el('dt', 'krypton-review__metric-label', row.label));
-    host.appendChild(el('dd', 'krypton-review__metric-value', row.value));
+    list.appendChild(el('dt', 'krypton-review__metric-label', row.label));
+    list.appendChild(el('dd', 'krypton-review__metric-value', row.value));
   }
+  host.appendChild(list);
   return host;
 }
 
@@ -589,7 +716,7 @@ function renderSvg(block: Extract<ReviewBlock, { kind: 'svg' }>, wrapper: HTMLEl
   const host = el('div', 'krypton-review__svg');
   const { svg, removed } = sanitizeSvg(block.data.svg);
   if (!svg) {
-    host.appendChild(el('div', 'krypton-review__diagnostic', '⚠ svg could not be rendered safely'));
+    host.appendChild(el('div', 'krypton-review__diagnostic', 'svg could not be rendered safely'));
     return host;
   }
   host.innerHTML = svg;

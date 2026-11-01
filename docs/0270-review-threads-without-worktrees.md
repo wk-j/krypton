@@ -150,6 +150,8 @@ review_thread_check { cwd, threadId } -> { stale, currentHash, omitted }
 - เมื่อ `review_thread_check` พบ diff ปัจจุบันต่างจาก snapshot แสดง “งานเปลี่ยนหลังเริ่ม review”; `Approve` ต้องเริ่ม thread ใหม่จาก snapshot ล่าสุด ส่วน `Request Changes` ยังส่ง comment ที่อ้าง snapshot เดิมได้พร้อมป้าย stale
 - รายการ omitted ไม่ถูกซ่อน; ก่อน Approve ต้องยืนยันว่าตรวจไฟล์เหล่านั้นด้วยวิธีอื่น Verdict บันทึกรายการ omitted ไปด้วย
 - รูปแบบใช้ CSS tokens ของ Krypton, ไม่ใช้ `backdrop-filter`, ไม่เพิ่ม left accent rail หรือเส้นขอบเลือก lane ที่เด่นเกินไป
+- หน้า thread มี header แถวเดียว (spec 354): ซ้ายเป็นชื่อเอกสารของ Guide ตามด้วยแท็บ Guide/Diff/Comments/Submit เป็นข้อความธรรมดา (`label key` แท็บที่เปิดอยู่เป็นสี accent ตัวหนา แท็บอื่นสีจาง) ขวาแสดง phase เฉพาะเมื่อไม่ใช่ `ready` คำเตือน stale/Guide รอบเก่าเป็นสีเตือน แล้วจึงเป็น `main @ <oid>` และสถานะของ Review Board (`N open`, `unsent`) ที่ Board เขียนลง node ที่ thread ส่งให้ (`statusHost`) Review Board ที่ฝังอยู่จึงไม่มี header ของตัวเอง ไม่มีปุ่ม Refresh (กด `r` ได้เหมือนเดิม) ปุ่ม `Retry Guide` ขึ้นเฉพาะเมื่อ `guide_failed`
+- header, Comments และ Submit ของ thread ไม่มี icon (Board ที่ฝังอยู่ในแท็บ Guide มี icon นำหน้า kicker ตาม spec 354 revision 1) หน้า Comments กับ Submit ใช้คอลัมน์เต็มความกว้างเดียวกับ Board และหัวข้อแบบ kicker (`LINE COMMENTS`, `GUIDE COMMENTS`, `VERDICTS`, `VERDICT`, `SUMMARY`) ทุกแถวเป็น location บรรทัดบน เนื้อหาบรรทัดล่าง ไม่มีพื้นหรือกรอบ verdict ใส่สีที่คำว่า `Approve` / `Request changes` เท่านั้น ตัวเลือก verdict เป็นแถวแบบตัวเลือกของ decision (`1 Approve`, `2 Request changes`) และเหตุผลที่ Approve ใช้ไม่ได้แสดงเป็นข้อความข้างแถว ปุ่ม `Submit review ⌘↵` เป็น primary ปุ่มเดียว focus ใช้ `:focus-visible` 1px accent + glow
 
 ### Configuration
 

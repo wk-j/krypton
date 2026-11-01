@@ -5,12 +5,10 @@ import {
   DEFAULT_CHART_LAYOUT,
   extremeIndices,
   findingAnchorLabel,
-  findingStateGlyph,
   formatChartValue,
   isAllowedSvgAttribute,
   isAllowedSvgElement,
   isUnsafeAttrValue,
-  severityChip,
 } from './render';
 import type { ReviewChartBlock } from '../acp/types';
 
@@ -27,19 +25,7 @@ const chart = (
   title?: string,
 ): ReviewChartBlock => ({ kind, title, data: data.map(([label, value]) => ({ label, value })) });
 
-describe('severity vocabulary', () => {
-  it('maps each severity to a chip label and tone', () => {
-    expect(severityChip('blocking')).toEqual({ label: 'block', tone: 'blocking' });
-    expect(severityChip('non-blocking')).toEqual({ label: 'warn', tone: 'warn' });
-    expect(severityChip('suggestion')).toEqual({ label: 'sugg', tone: 'sugg' });
-  });
-
-  it('renders the triage state as a glyph, open by default', () => {
-    expect(findingStateGlyph(null)).toBe('·');
-    expect(findingStateGlyph('accepted')).toBe('✓');
-    expect(findingStateGlyph('dismissed')).toBe('✗');
-  });
-
+describe('finding anchor', () => {
   it('labels a finding anchor only when it has one', () => {
     expect(findingAnchorLabel({ severity: 'blocking', title: 't', file: 'a.ts', line: 12 })).toBe('a.ts:12');
     expect(findingAnchorLabel({ severity: 'blocking', title: 't', file: 'a.ts' })).toBe('a.ts');
