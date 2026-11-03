@@ -6,6 +6,8 @@
 > Builds on: 0328 (`#e2e` commands, `src-tauri/src/e2e.rs`) · 0227 (per-cwd capability page, Hurl) · 0198/0288 (capability-token tier) · 0316 timeline page (refresh-on-focus) · `DESIGN.binance.md`
 > Prerequisite: the 0328 implementation. This spec edits those files; 0328 and 0329 were committed together in `0e00bea`.
 
+> Later: [0355](0355-e2e-system-map.md) (2026-11-02) draws the shown run on its case's system map in the run pane; `m` switches between the map and the check list.
+
 ## Problem
 
 User, 2026-10-24: "I want loopback UI in browser to explore test in project and the test result". `#e2e status` prints a fixed table in the transcript. It shows the last 10 runs of one case and only the failed checks of the newest run. You cannot browse every case's history, read a passing run's checks, open a run's log, or look at the evidence files an adapter lists in `artifacts`. Rust validates those files and then drops them (`e2e.rs:510-525`).
@@ -141,13 +143,13 @@ Fixed dark (a status wall, like acp-wire), 1400 px split shell, Binance tokens.
   - title, files, declared `params`/`fresh`, and the command `#e2e run <id>` (`y` copies it);
   - a runs table with verdict, runId, origin (`krypton`/`ext`), start, duration, pass/fail counts, `sha*`/branch and versions.
 - **Run pane** (right, bottom):
-  - message, then every check grouped by `group`, with status chips; `f` toggles failures only;
+  - message, then every check grouped by `group`, with status chips; `f` toggles failures only. Since 0355, a case with a map shows the map and one block per pin instead, and `m` switches to this list;
   - artifacts (label, path, size or problem). Enter on one opens it: text in a `<pre>`, images inline, other types download;
   - `l` loads the Krypton log into a `<pre>`;
   - INTERRUPTED, NO RESULT and INVALID RESULT runs show their message and the log.
 - **Keys:**
   - `/` filter cases; `j`/`k` move in the focused list; `Tab`/`Shift+Tab` cycle cases → runs → checks/artifacts; `Enter` open;
-  - `f` failures only; `l` log; `y` copy the run command; `r` reload;
+  - `f` failures only; `m` map / check list (0355); `l` log; `y` copy the run command; `r` reload;
   - `Esc` closes the viewer, then clears the filter.
 - **Selection:** the list highlight moves at once. The case and run panes keep the previous selection until `/run` answers, then both render in one task, so a switch never paints an empty pane or moves the page scroll. `loading run…` shows only when the answer takes longer than 250 ms (`LOADING_DELAY_MS`).
 - **Refresh:**
@@ -234,6 +236,17 @@ The page moved into the loopback Vite app (spec 341). `src/acp/artifact-e2e.html
 - **Kit.** The status load runs through `poll` (no interval, `refreshOnFocus`, `minGapMs` 10 s). The case, run and artifact lists use `RosterList`, with keys gated by the active pane. The filter uses `SearchFilter`. Keys go through `keymap()` and are listed by `?`. The page also uses `StatBar`, `pill`, `keyValue`, `button`, `emptyState`, `kbdHints` and `fetchJson`/`fetchText`.
 - **Normalised.** The shell replaces the page's own brand bar. The page uses one `dot('live')` beacon instead of its own `beacon` keyframes. Error chips became error `Banner` blocks. The copy and artifact-problem flash is a transient `Banner`. All colours are tokens.
 - **Tests.** `src/loopback/surfaces/e2e/e2e.test.ts` keeps the same 8 behaviour cases and runs them against the module.
+
+## Revision — spec 355 system map
+
+- **Data.** `/status` carries `E2eStatus.maps`: each case's map, keyed by its `Case.map` path, loaded once per `gather`. A broken map is an error line, like any status error.
+- **Run pane.**
+  - When the case has a loaded map and the run has a Result, the pane shows the map first, then one block per pin with that pin's checks, then "not on the map".
+  - `m` switches to the grouped check list and back.
+  - `f` trims the list only; the picture stays whole.
+- **Comparison.** For a run that is not PASS, the page first loads the newest earlier PASS with one extra `GET /run`. That run feeds the comparison note on each pin whose result changed.
+- **One paint.** The switch still paints the case pane, run pane and map together, after `/run` and the map render have both finished. The 250 ms `loading run…` rule is unchanged.
+- **Rendering.** The SVG reaches the DOM only as an `<img>` data URL, the same way as GenUI's Diagram. Every request is still a GET.
 
 ## Resources
 

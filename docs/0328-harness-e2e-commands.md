@@ -7,6 +7,8 @@
 
 > Later: [0329](0329-harness-e2e-browser-explorer.md) (2026-10-24) adds a read-only browser page opened by `#e2e open [<case>]`. Control stays in `#e2e` commands, and there is still no in-app view, panel, keybinding or palette entry.
 
+> Later: [0355](0355-e2e-system-map.md) (2026-11-02) adds two optional contract fields, `Case.map` and `checks[].at`, which the browser page uses to draw a run on the case's system map.
+
 ## Problem
 
 User, 2026-10-23, in order:
@@ -113,10 +115,10 @@ report_prompt = "Use the run-e2e-test-case skill to post run {run_id} ({result_p
 | `history` | stdout `{"version":1,"runs":[Result]}`, runs made outside Krypton | only when `history = true`; 60 s |
 
 ```
-Case   { id, title, code?, issue?: number, params?: {k: string|number}, fresh?: {k: string}, files?: [path] }
+Case   { id, title, code?, issue?: number, params?: {k: string|number}, fresh?: {k: string}, files?: [path], map?: path }
 Result { version: 1, caseId, runId, verdict: "PASS"|"FAIL"|"ERROR"|"BLOCKED", startedAt, finishedAt,
          env?, versions?: {component: version}, params?,
-         checks: [{ group?, label, status: "pass"|"fail"|"skip"|"blocked"|"info", detail? }],
+         checks: [{ group?, label, status: "pass"|"fail"|"skip"|"blocked"|"info", detail?, at? }],
          artifacts?: [{ label, path }], message? }
 ```
 
@@ -126,6 +128,7 @@ Result { version: 1, caseId, runId, verdict: "PASS"|"FAIL"|"ERROR"|"BLOCKED", st
 - `runId` is the adapter's own id, unique per case. Launches and `history` dedupe by `(caseId, runId)`.
 - `BLOCKED`: a precondition failed and the app was never exercised.
 - `ERROR`: the harness itself broke.
+- `map` and `at` (spec 0355) are optional. `map` is a repo-relative TOML map of the system the case tests. `at` is the id of the map node a check is about. Readers that predate them ignore both.
 
 **Expected Adopt output for tli-api-service.** This is the lane's work; the repo is unchanged.
 

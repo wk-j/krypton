@@ -1,0 +1,280 @@
+{
+  "source": "valence e2e/runs/push-and-browse/20261102T160558061Z/result.json; map transcribed from spec 0355 example A",
+  "runId": "20261102T160558061Z",
+  "map": {
+    "direction": "LR",
+    "groups": [
+      {
+        "id": "cli",
+        "label": "valence push"
+      },
+      {
+        "id": "serve",
+        "label": "valence serve"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "fixture",
+        "label": ".krypton/e2e\n3 runs + artifacts",
+        "group": null,
+        "shape": "actor",
+        "source": "e2e/fixtures/demo"
+      },
+      {
+        "id": "krypton-reader",
+        "label": "internal/krypton\nreads Contract v1",
+        "group": "cli",
+        "shape": "box",
+        "source": "internal/krypton"
+      },
+      {
+        "id": "push",
+        "label": "internal/push\nname from origin · sends new runs",
+        "group": "cli",
+        "shape": "box",
+        "source": "internal/push/push.go"
+      },
+      {
+        "id": "ingest",
+        "label": "internal/ingest\nPOST /api/v1/…",
+        "group": "serve",
+        "shape": "box",
+        "source": "internal/ingest/ingest.go"
+      },
+      {
+        "id": "store",
+        "label": "internal/store\ndata dir",
+        "group": "serve",
+        "shape": "store",
+        "source": "internal/store/store.go"
+      },
+      {
+        "id": "report",
+        "label": "internal/report\norders cases",
+        "group": "serve",
+        "shape": "box",
+        "source": "internal/report/report.go"
+      },
+      {
+        "id": "w-home",
+        "label": "GET /",
+        "group": "serve",
+        "shape": "box",
+        "source": null
+      },
+      {
+        "id": "w-project",
+        "label": "GET /p/{slug}",
+        "group": "serve",
+        "shape": "box",
+        "source": null
+      },
+      {
+        "id": "w-run",
+        "label": "GET /p/{slug}/runs/{id}",
+        "group": "serve",
+        "shape": "box",
+        "source": null
+      },
+      {
+        "id": "w-case",
+        "label": "GET /p/{slug}/case",
+        "group": "serve",
+        "shape": "box",
+        "source": null
+      },
+      {
+        "id": "w-raw",
+        "label": "GET …/raw/files/…",
+        "group": "serve",
+        "shape": "box",
+        "source": "internal/web/files.go"
+      },
+      {
+        "id": "w-other",
+        "label": "GET …/log · …/view/… · …/raw/log",
+        "group": "serve",
+        "shape": "box",
+        "source": null
+      }
+    ],
+    "edges": [
+      {
+        "from": "fixture",
+        "to": "krypton-reader",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "krypton-reader",
+        "to": "push",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "push",
+        "to": "ingest",
+        "label": "HTTP + token",
+        "kind": "flow"
+      },
+      {
+        "from": "ingest",
+        "to": "store",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "store",
+        "to": "report",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "report",
+        "to": "w-home",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "report",
+        "to": "w-project",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "report",
+        "to": "w-run",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "report",
+        "to": "w-case",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "store",
+        "to": "w-raw",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "store",
+        "to": "w-other",
+        "label": null,
+        "kind": "flow"
+      }
+    ]
+  },
+  "checks": [
+    {
+      "group": "precondition",
+      "label": "git on PATH",
+      "status": "info",
+      "detail": "/opt/homebrew/bin/git"
+    },
+    {
+      "group": "precondition",
+      "label": "sh on PATH",
+      "status": "info",
+      "detail": "/bin/sh"
+    },
+    {
+      "group": "precondition",
+      "label": "fixture project",
+      "status": "info",
+      "detail": "e2e/fixtures/demo, origin git@github.com:acme/demo-app.git"
+    },
+    {
+      "group": "build",
+      "label": "valence builds from the working tree",
+      "status": "pass"
+    },
+    {
+      "group": "serve",
+      "label": "valence serve answers GET / with 200",
+      "status": "pass",
+      "detail": "http://127.0.0.1:52217",
+      "at": "w-home"
+    },
+    {
+      "group": "push",
+      "label": "valence push uploads all 3 runs",
+      "status": "pass",
+      "detail": "demo-app: 3 run(s) found, 3 uploaded, 0 already on the server\nhttp://127.0.0.1:52217/p/demo-app",
+      "at": "push"
+    },
+    {
+      "group": "report",
+      "label": "the home page shows the project as demo-app (acme/demo-app)",
+      "status": "pass",
+      "detail": "HTTP 200",
+      "at": "push"
+    },
+    {
+      "group": "report",
+      "label": "the project page lists search, login, export (latest run first, never-run last)",
+      "status": "pass",
+      "detail": "case?id=search@7061, case?id=login@8197, case?id=export@9552",
+      "at": "w-project"
+    },
+    {
+      "group": "report",
+      "label": "the run page shows the failed check \"token issued\" with \"status 500\"",
+      "status": "pass",
+      "detail": "HTTP 200",
+      "at": "w-run"
+    },
+    {
+      "group": "report",
+      "label": "?only=failed keeps \"token issued\" and drops the passing \"page opens\"",
+      "status": "pass",
+      "detail": "HTTP 200",
+      "at": "w-run"
+    },
+    {
+      "group": "evidence",
+      "label": "an HTML artifact is served with CSP sandbox and nosniff",
+      "status": "pass",
+      "detail": "HTTP 200, Content-Security-Policy: sandbox, X-Content-Type-Options: nosniff",
+      "at": "w-raw"
+    },
+    {
+      "group": "evidence",
+      "label": "the page the HTML report links to was pushed with it",
+      "status": "pass",
+      "detail": "HTTP 200",
+      "at": "w-raw"
+    },
+    {
+      "group": "evidence",
+      "label": "a file the Result does not list gives 404",
+      "status": "pass",
+      "detail": "HTTP 404",
+      "at": "w-raw"
+    },
+    {
+      "group": "push",
+      "label": "a second valence push uploads 0 runs",
+      "status": "pass",
+      "detail": "demo-app: 3 run(s) found, 0 uploaded, 3 already on the server\nhttp://127.0.0.1:52217/p/demo-app",
+      "at": "push"
+    },
+    {
+      "group": "serve",
+      "label": "valence serve answers GET / with 200",
+      "status": "pass",
+      "detail": "http://127.0.0.1:52227",
+      "at": "w-home"
+    },
+    {
+      "group": "restart",
+      "label": "after a restart the home page still shows demo-app with 3 runs",
+      "status": "pass",
+      "detail": "HTTP 200",
+      "at": "store"
+    }
+  ]
+}

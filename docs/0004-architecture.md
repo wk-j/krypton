@@ -1286,6 +1286,17 @@ evidence goes out as `text/plain`. `gather` keeps the last `history` Results per
 root in `E2eState.history`, so the page reads ext runs without re-spawning
 `history` or writing `runs/ext-*`. Nothing on the page runs, cancels or writes.
 
+**System map (spec 355).** `gather` also loads each case's map (`Case.map`) into
+`E2eStatus.maps` through `load_map`. The file must be repo-relative TOML, confined
+to the canonical root like artifacts, and at most 64 KiB; ids, references, enums
+and limits are validated, and unknown keys are warnings. The page's pure
+`src/loopback/surfaces/e2e/map.ts` places one pin per check `(at, group)`. It
+greys every node that no `flow` path takes from an actor to a pin, and generates
+the mermaid source itself: generated ids, every project string escaped.
+`renderMermaid` draws it, and the SVG is shown only as an `<img>` data URL.
+`e2e_adapter_check` validates every listed map, and checks the smoke Result's
+`at` values against its case's map.
+
 ## Review Threads (spec 270)
 
 A human starts a fixed review round from an idle local ACP lane through

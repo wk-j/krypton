@@ -10,6 +10,7 @@ export const meta: CaseMeta = {
   id: 'control-api-roundtrip',
   title: 'Control API round trip through the running app',
   code: 'S0154',
+  map: 'e2e/maps/control-api.toml',
 };
 
 const CORE_OPERATIONS = ['harness.list', 'lane.list', 'peer.list'];
@@ -25,6 +26,8 @@ export async function execute({ run }: CaseContext): Promise<void> {
     });
     return { status: exchange.status, reply: asRecord(exchange.json) };
   };
+  // 504 means the bridge never answered; otherwise the reply came back from HarnessDirectory.
+  const reached = (status: number): string => (status === 504 ? 'bridge' : 'harness-directory');
   // The frontend caches replies by operationId, so each run uses fresh ids.
   const opId = (name: string): string => `e2e-${run.runId}-${name}`;
 
@@ -36,6 +39,7 @@ export async function execute({ run }: CaseContext): Promise<void> {
     'GET /capabilities answers 200 with apiVersion 1.x',
     caps.status === 200 && apiVersion.split('.')[0] === '1',
     `status ${caps.status}, apiVersion ${apiVersion || '(missing)'}`,
+    'axum',
   );
   const operations = Array.isArray(capsResult.operations) ? capsResult.operations : [];
   const missing = CORE_OPERATIONS.filter((name) => !operations.includes(name));
@@ -45,6 +49,7 @@ export async function execute({ run }: CaseContext): Promise<void> {
     'advertises harness.list, lane.list, peer.list and the SSE path',
     missing.length === 0 && sse === '/control/v1/events',
     `${operations.length} operations${missing.length ? `, missing ${missing.join(', ')}` : ''}; streaming.sse ${String(sse)}`,
+    'axum',
   );
 
   const invalid = await operation('operation-empty-id', 'harness.list', '');
@@ -54,6 +59,7 @@ export async function execute({ run }: CaseContext): Promise<void> {
     'empty operationId is rejected in Rust with 400 invalid_request',
     invalid.status === 400 && invalidCode === 'invalid_request',
     `status ${invalid.status}, error.code ${String(invalidCode)}`,
+    'validate',
   );
 
   const harnesses = await operation('harness-list', 'harness.list', opId('harness-list'));
@@ -70,6 +76,7 @@ export async function execute({ run }: CaseContext): Promise<void> {
     harnesses.status === 504
       ? 'status 504 — the frontend control bridge did not answer'
       : `status ${harnesses.status}, ${harnessRows === null ? `error ${JSON.stringify(harnesses.reply.error ?? null)}` : `${harnessRows.length} harness(es)`}`,
+    reached(harnesses.status),
   );
   const rows = harnessRows ?? [];
   if (rows.length === 0) run.info('frontend round trip', 'no ACP harness open', 'lane checks run on empty lists');
@@ -87,6 +94,7 @@ export async function execute({ run }: CaseContext): Promise<void> {
     'peer.list names the same lanes as harness.list',
     peers.status === 200 && peerNames !== null && JSON.stringify(peerNames) === JSON.stringify(harnessLaneNames),
     `status ${peers.status}; peer.list [${(peerNames ?? []).join(', ')}]; harness.list [${harnessLaneNames.join(', ')}]`,
+    reached(peers.status),
   );
 
   const lanes = await operation('lane-list', 'lane.list', opId('lane-list'));
@@ -99,6 +107,7 @@ export async function execute({ run }: CaseContext): Promise<void> {
     'lane.list rows carry a displayName and a harnessId from harness.list',
     lanes.status === 200 && laneRows !== null && strays.length === 0,
     `status ${lanes.status}, ${laneRows?.length ?? 0} lane(s)${strays.length ? `, ${strays.length} without a known harness` : ''}`,
+    reached(lanes.status),
   );
 
   const events = await firstSseEvent(run, 'events-stream', `${control.url}/events`, auth, 5000);
@@ -107,5 +116,6 @@ export async function execute({ run }: CaseContext): Promise<void> {
     'GET /events streams a ready event within 5 s',
     events.status === 200 && events.event === 'ready',
     `status ${events.status}, first event ${events.event ?? '(none)'}`,
+    'sse',
   );
 }

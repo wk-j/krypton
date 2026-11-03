@@ -115,3 +115,14 @@ browse every case, run, check, log and evidence file in the browser, use
      declared type. Convert with `Number()` or `String()` before use.
 4. Run it once: `node e2e/krypton-e2e.ts run <case-id>`. `list` picks the new
    file up automatically, in file-name order.
+
+### Map
+
+A case may set `meta.map` to a TOML file in `e2e/maps/` that draws the parts of
+the system it tests (spec 0355). Pass a node id as the last argument of
+`run.check`, `run.info`, `run.skip` or `run.block` to say which node the check
+is about: the node it proves when it passes, the node where the failure was
+found when it fails. `#e2e open` draws the map with one pin per (`at`, group)
+and greys nodes no check reaches. `e2e_adapter_check` reports an `at` that is
+not a node of the map as an error; the page lists that check under "not on the
+map".

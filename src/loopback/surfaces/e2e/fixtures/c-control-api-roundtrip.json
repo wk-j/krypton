@@ -1,0 +1,218 @@
+{
+  "source": "PASS = e2e/runs/control-api-roundtrip/20261023T172243445Z/result.json with at added; FAIL is synthetic (504 from the bridge); map = e2e/maps/control-api.toml",
+  "map": {
+    "direction": "LR",
+    "groups": [
+      {
+        "id": "rust",
+        "label": "Rust · control.rs"
+      },
+      {
+        "id": "frontend",
+        "label": "Frontend (webview)"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "runner",
+        "label": "e2e runner",
+        "group": null,
+        "shape": "actor",
+        "source": null
+      },
+      {
+        "id": "axum",
+        "label": "axum route + auth",
+        "group": "rust",
+        "shape": "box",
+        "source": "src-tauri/src/control.rs"
+      },
+      {
+        "id": "validate",
+        "label": "request check",
+        "group": "rust",
+        "shape": "box",
+        "source": "src-tauri/src/control.rs"
+      },
+      {
+        "id": "sse",
+        "label": "SSE /events\nsends ready itself",
+        "group": "rust",
+        "shape": "box",
+        "source": "src-tauri/src/control.rs"
+      },
+      {
+        "id": "bridge",
+        "label": "control-bridge.ts",
+        "group": "frontend",
+        "shape": "box",
+        "source": "src/acp/control-bridge.ts"
+      },
+      {
+        "id": "harness-directory",
+        "label": "HarnessDirectory /\nAcpHarnessView",
+        "group": "frontend",
+        "shape": "box",
+        "source": "src/acp/harness-directory.ts"
+      }
+    ],
+    "edges": [
+      {
+        "from": "runner",
+        "to": "axum",
+        "label": "HTTP + bearer",
+        "kind": "flow"
+      },
+      {
+        "from": "axum",
+        "to": "validate",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "validate",
+        "to": "bridge",
+        "label": "Tauri event\nacp-control-request",
+        "kind": "flow"
+      },
+      {
+        "from": "bridge",
+        "to": "harness-directory",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "harness-directory",
+        "to": "axum",
+        "label": "acp_control_reply",
+        "kind": "reply"
+      },
+      {
+        "from": "axum",
+        "to": "sse",
+        "label": null,
+        "kind": "flow"
+      }
+    ]
+  },
+  "pass": {
+    "runId": "20261023T172243445Z",
+    "checks": [
+      {
+        "group": "precondition",
+        "label": "control API is up",
+        "status": "info",
+        "detail": "http://127.0.0.1:8766/control/v1, pid 78149, app 0.1.0, API 1.0"
+      },
+      {
+        "group": "capabilities",
+        "label": "GET /capabilities answers 200 with apiVersion 1.x",
+        "status": "pass",
+        "detail": "status 200, apiVersion 1.0",
+        "at": "axum"
+      },
+      {
+        "group": "capabilities",
+        "label": "advertises harness.list, lane.list, peer.list and the SSE path",
+        "status": "pass",
+        "detail": "39 operations; streaming.sse /control/v1/events",
+        "at": "axum"
+      },
+      {
+        "group": "validation",
+        "label": "empty operationId is rejected in Rust with 400 invalid_request",
+        "status": "pass",
+        "detail": "status 400, error.code invalid_request",
+        "at": "validate"
+      },
+      {
+        "group": "frontend round trip",
+        "label": "harness.list returns 200 with {harnessId, cwd, lanes[]} rows",
+        "status": "pass",
+        "detail": "status 200, 1 harness(es)",
+        "at": "harness-directory"
+      },
+      {
+        "group": "frontend round trip",
+        "label": "peer.list names the same lanes as harness.list",
+        "status": "pass",
+        "detail": "status 200; peer.list [OMP-1]; harness.list [OMP-1]",
+        "at": "harness-directory"
+      },
+      {
+        "group": "frontend round trip",
+        "label": "lane.list rows carry a displayName and a harnessId from harness.list",
+        "status": "pass",
+        "detail": "status 200, 1 lane(s)",
+        "at": "harness-directory"
+      },
+      {
+        "group": "events",
+        "label": "GET /events streams a ready event within 5 s",
+        "status": "pass",
+        "detail": "status 200, first event ready",
+        "at": "sse"
+      }
+    ]
+  },
+  "fail": {
+    "runId": "20261102T120000000Z",
+    "checks": [
+      {
+        "group": "precondition",
+        "label": "control API is up",
+        "status": "info",
+        "detail": "http://127.0.0.1:8766/control/v1, pid 78149, app 0.1.0, API 1.0"
+      },
+      {
+        "group": "capabilities",
+        "label": "GET /capabilities answers 200 with apiVersion 1.x",
+        "status": "pass",
+        "detail": "status 200, apiVersion 1.0",
+        "at": "axum"
+      },
+      {
+        "group": "capabilities",
+        "label": "advertises harness.list, lane.list, peer.list and the SSE path",
+        "status": "pass",
+        "detail": "39 operations; streaming.sse /control/v1/events",
+        "at": "axum"
+      },
+      {
+        "group": "validation",
+        "label": "empty operationId is rejected in Rust with 400 invalid_request",
+        "status": "pass",
+        "detail": "status 400, error.code invalid_request",
+        "at": "validate"
+      },
+      {
+        "group": "frontend round trip",
+        "label": "harness.list returns 200 with {harnessId, cwd, lanes[]} rows",
+        "status": "fail",
+        "detail": "status 504 — the frontend control bridge did not answer",
+        "at": "bridge"
+      },
+      {
+        "group": "frontend round trip",
+        "label": "peer.list names the same lanes as harness.list",
+        "status": "fail",
+        "detail": "status 504 — the frontend control bridge did not answer",
+        "at": "bridge"
+      },
+      {
+        "group": "frontend round trip",
+        "label": "lane.list rows carry a displayName and a harnessId from harness.list",
+        "status": "fail",
+        "detail": "status 504 — the frontend control bridge did not answer",
+        "at": "bridge"
+      },
+      {
+        "group": "events",
+        "label": "GET /events streams a ready event within 5 s",
+        "status": "pass",
+        "detail": "status 200, first event ready",
+        "at": "sse"
+      }
+    ]
+  }
+}

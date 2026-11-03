@@ -293,6 +293,7 @@ pub(crate) struct Case {
     pub params: Obj,
     pub fresh: BTreeMap<String, String>,
     pub files: Vec<String>,
+    pub map: Option<String>,
 }
 
 /// Validate adapter `list` stdout: `{"version":1,"cases":[Case]}`.
@@ -372,6 +373,20 @@ pub(crate) fn validate_case_list(value: &Value) -> Result<Vec<Case>, Vec<String>
             }
             Some(_) => errors.push(format!("{p}files: must be an array")),
         }
+        let map = match o.get("map") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(s)) if is_relative_clean(s) => Some(s.clone()),
+            Some(Value::String(s)) => {
+                errors.push(format!(
+                    "{p}map: \"{s}\" must be a relative path without \"..\""
+                ));
+                None
+            }
+            Some(_) => {
+                errors.push(format!("{p}map: must be a string"));
+                None
+            }
+        };
         if errors.len() == before {
             if let (Some(id), Some(title)) = (id, title) {
                 cases.push(Case {
@@ -382,6 +397,7 @@ pub(crate) fn validate_case_list(value: &Value) -> Result<Vec<Case>, Vec<String>
                     params,
                     fresh,
                     files,
+                    map,
                 });
             }
         }
@@ -401,6 +417,8 @@ pub(crate) struct Check {
     pub label: String,
     pub status: String,
     pub detail: Option<String>,
+    /// Id of the map node this check is about (spec 0355); not checked here.
+    pub at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -485,6 +503,7 @@ pub(crate) fn validate_result(value: &Value, path: &str) -> Result<RunResult, Ve
                 };
                 let group = optional_str(o, "group", &p, &mut errors);
                 let detail = optional_str(o, "detail", &p, &mut errors);
+                let at = optional_str(o, "at", &p, &mut errors);
                 let label = required_str(o, "label", &p, &mut errors);
                 let status = match required_str(o, "status", &p, &mut errors) {
                     Some(s) if CHECK_STATUSES.contains(&s.as_str()) => Some(s),
@@ -503,6 +522,7 @@ pub(crate) fn validate_result(value: &Value, path: &str) -> Result<RunResult, Ve
                         label,
                         status,
                         detail,
+                        at,
                     });
                 }
             }
@@ -561,6 +581,405 @@ pub(crate) fn validate_history(value: &Value) -> (Vec<(RunResult, Value)>, Vec<S
         }
     }
     (runs, errors)
+}
+
+// ─── System map (spec 0355) ─────────────────────────────────────────
+
+const MAP_MAX_BYTES: u64 = 64 * 1024;
+const MAP_MAX_NODES: usize = 60;
+const MAP_MAX_EDGES: usize = 120;
+const MAP_MAX_GROUPS: usize = 20;
+const MAP_LABEL_LINES: usize = 3;
+const MAP_LABEL_CHARS: usize = 60;
+const MAP_SOURCE_CHARS: usize = 200;
+const MAP_ID_PATTERN: &str = "^[a-z0-9][a-z0-9._-]{0,47}$";
+const MAP_DIRECTIONS: [&str; 2] = ["LR", "TB"];
+const MAP_SHAPES: [&str; 4] = ["box", "gate", "store", "actor"];
+const MAP_EDGE_KINDS: [&str; 3] = ["flow", "reply", "refused"];
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct E2eMapGroup {
+    pub id: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct E2eMapNode {
+    pub id: String,
+    pub label: String,
+    pub group: Option<String>,
+    pub shape: String,
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct E2eMapEdge {
+    pub from: String,
+    pub to: String,
+    pub label: Option<String>,
+    pub kind: String,
+}
+
+/// A validated map file with every default filled in.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct E2eMap {
+    pub direction: String,
+    pub groups: Vec<E2eMapGroup>,
+    pub nodes: Vec<E2eMapNode>,
+    pub edges: Vec<E2eMapEdge>,
+}
+
+/// One `Case.map` path as loaded by `gather`: the map, or the errors that
+/// kept it from loading.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct E2eMapEntry {
+    pub map: Option<E2eMap>,
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+fn is_map_id(id: &str) -> bool {
+    let Some((first, rest)) = id.as_bytes().split_first() else {
+        return false;
+    };
+    id.len() <= 48
+        && (first.is_ascii_lowercase() || first.is_ascii_digit())
+        && rest.iter().all(|&b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-')
+        })
+}
+
+fn toml_error(text: &str, error: &toml::de::Error) -> String {
+    let message = error
+        .message()
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ");
+    match error.span() {
+        Some(span) => {
+            let end = span.start.min(text.len());
+            let line = text.as_bytes()[..end]
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count()
+                + 1;
+            format!("toml: {message} (line {line})")
+        }
+        None => format!("toml: {message}"),
+    }
+}
+
+fn toml_str(table: &toml::Table, key: &str, p: &str, errors: &mut Vec<String>) -> Option<String> {
+    match table.get(key) {
+        None => None,
+        Some(toml::Value::String(s)) => Some(s.clone()),
+        Some(_) => {
+            errors.push(format!("{p}{key}: must be a string"));
+            None
+        }
+    }
+}
+
+fn toml_required_str(
+    table: &toml::Table,
+    key: &str,
+    p: &str,
+    errors: &mut Vec<String>,
+) -> Option<String> {
+    if !table.contains_key(key) {
+        errors.push(format!("{p}{key}: required"));
+        return None;
+    }
+    toml_str(table, key, p, errors)
+}
+
+fn toml_enum(
+    table: &toml::Table,
+    key: &str,
+    p: &str,
+    allowed: &[&str],
+    default: &str,
+    errors: &mut Vec<String>,
+) -> String {
+    match toml_str(table, key, p, errors) {
+        Some(s) if allowed.contains(&s.as_str()) => s,
+        Some(s) => {
+            errors.push(format!(
+                "{p}{key}: \"{s}\" is not one of {}",
+                allowed.join("|")
+            ));
+            default.to_string()
+        }
+        None => default.to_string(),
+    }
+}
+
+/// The tables of one `[[key]]` array with their error paths (`nodes[3]`).
+fn toml_tables<'a>(
+    table: &'a toml::Table,
+    key: &str,
+    path: &str,
+    limit: usize,
+    errors: &mut Vec<String>,
+) -> Vec<(String, &'a toml::Table)> {
+    let mut out = Vec::new();
+    match table.get(key) {
+        None => {}
+        Some(toml::Value::Array(items)) => {
+            if items.len() > limit {
+                errors.push(format!(
+                    "{path}: {} is over the limit of {limit}",
+                    items.len()
+                ));
+            }
+            for (i, item) in items.iter().enumerate() {
+                match item {
+                    toml::Value::Table(t) => out.push((format!("{path}[{i}]"), t)),
+                    _ => errors.push(format!("{path}[{i}]: must be a table")),
+                }
+            }
+        }
+        Some(_) => errors.push(format!("{path}: must be an array of tables")),
+    }
+    out
+}
+
+fn warn_unknown_keys(table: &toml::Table, known: &[&str], at: &str, warnings: &mut Vec<String>) {
+    for key in table.keys() {
+        if known.contains(&key.as_str()) {
+            continue;
+        }
+        if at.is_empty() {
+            warnings.push(format!("unknown key \"{key}\""));
+        } else {
+            warnings.push(format!("{at}: unknown key \"{key}\""));
+        }
+    }
+}
+
+/// `"\n"` breaks a line; at most 3 lines of at most 60 characters.
+fn check_map_label(label: &str, at: &str, errors: &mut Vec<String>) {
+    if label.split('\n').count() > MAP_LABEL_LINES {
+        errors.push(format!("{at}: more than {MAP_LABEL_LINES} lines"));
+        return;
+    }
+    for (i, line) in label.split('\n').enumerate() {
+        if line.chars().count() > MAP_LABEL_CHARS {
+            errors.push(format!(
+                "{at}: line {} is longer than {MAP_LABEL_CHARS} characters",
+                i + 1
+            ));
+        }
+    }
+}
+
+/// Required, non-empty label of a node or group.
+fn map_label(table: &toml::Table, p: &str, errors: &mut Vec<String>) -> String {
+    match toml_required_str(table, "label", p, errors) {
+        Some(s) if s.trim().is_empty() => {
+            errors.push(format!("{p}label: must not be empty"));
+            String::new()
+        }
+        Some(s) => {
+            check_map_label(&s, &format!("{p}label"), errors);
+            s
+        }
+        None => String::new(),
+    }
+}
+
+/// Required id of a node or group; every string id is recorded in `seen`
+/// (even a malformed one) so references to it are not reported twice.
+fn map_id(
+    table: &toml::Table,
+    p: &str,
+    seen: &mut HashSet<String>,
+    errors: &mut Vec<String>,
+) -> String {
+    let Some(id) = toml_required_str(table, "id", p, errors) else {
+        return String::new();
+    };
+    if !is_map_id(&id) {
+        errors.push(format!("{p}id: \"{id}\" must match {MAP_ID_PATTERN}"));
+    }
+    if !seen.insert(id.clone()) {
+        errors.push(format!("{p}id: duplicate \"{id}\""));
+    }
+    id
+}
+
+fn map_endpoint(
+    table: &toml::Table,
+    key: &str,
+    p: &str,
+    nodes: &HashSet<String>,
+    errors: &mut Vec<String>,
+) -> String {
+    let Some(id) = toml_required_str(table, key, p, errors) else {
+        return String::new();
+    };
+    if !nodes.contains(&id) {
+        errors.push(format!("{p}{key}: unknown node \"{id}\""));
+    }
+    id
+}
+
+/// Parse a map file (TOML). Ok carries the map with defaults filled plus
+/// warnings (unknown keys); Err carries every validation error.
+pub(crate) fn parse_map(text: &str) -> Result<(E2eMap, Vec<String>), Vec<String>> {
+    let table: toml::Table = toml::from_str(text).map_err(|e| vec![toml_error(text, &e)])?;
+    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
+
+    match table.get("version") {
+        Some(toml::Value::Integer(1)) => {}
+        _ => errors.push("version: must be 1".to_string()),
+    }
+    let direction = toml_enum(&table, "direction", "", &MAP_DIRECTIONS, "LR", &mut errors);
+    warn_unknown_keys(
+        &table,
+        &["version", "direction", "group", "node", "edge"],
+        "",
+        &mut warnings,
+    );
+
+    let mut groups = Vec::new();
+    let mut group_ids = HashSet::new();
+    for (at, t) in toml_tables(&table, "group", "group", MAP_MAX_GROUPS, &mut errors) {
+        let p = format!("{at}.");
+        let id = map_id(t, &p, &mut group_ids, &mut errors);
+        let label = map_label(t, &p, &mut errors);
+        warn_unknown_keys(t, &["id", "label"], &at, &mut warnings);
+        groups.push(E2eMapGroup { id, label });
+    }
+
+    let mut nodes = Vec::new();
+    let mut node_ids = HashSet::new();
+    for (at, t) in toml_tables(&table, "node", "nodes", MAP_MAX_NODES, &mut errors) {
+        let p = format!("{at}.");
+        let id = map_id(t, &p, &mut node_ids, &mut errors);
+        let label = map_label(t, &p, &mut errors);
+        let group = toml_str(t, "group", &p, &mut errors);
+        if let Some(g) = &group {
+            if !group_ids.contains(g) {
+                errors.push(format!("{p}group: unknown group \"{g}\""));
+            }
+        }
+        let shape = toml_enum(t, "shape", &p, &MAP_SHAPES, "box", &mut errors);
+        let source = toml_str(t, "source", &p, &mut errors);
+        if let Some(s) = &source {
+            if s.contains('\n') {
+                errors.push(format!("{p}source: must be a single line"));
+            } else if s.chars().count() > MAP_SOURCE_CHARS {
+                errors.push(format!(
+                    "{p}source: longer than {MAP_SOURCE_CHARS} characters"
+                ));
+            }
+        }
+        warn_unknown_keys(
+            t,
+            &["id", "label", "group", "shape", "source"],
+            &at,
+            &mut warnings,
+        );
+        nodes.push(E2eMapNode {
+            id,
+            label,
+            group,
+            shape,
+            source,
+        });
+    }
+
+    let mut edges = Vec::new();
+    for (at, t) in toml_tables(&table, "edge", "edges", MAP_MAX_EDGES, &mut errors) {
+        let p = format!("{at}.");
+        let from = map_endpoint(t, "from", &p, &node_ids, &mut errors);
+        let to = map_endpoint(t, "to", &p, &node_ids, &mut errors);
+        let label = toml_str(t, "label", &p, &mut errors).filter(|s| !s.is_empty());
+        if let Some(s) = &label {
+            check_map_label(s, &format!("{p}label"), &mut errors);
+        }
+        let kind = toml_enum(t, "kind", &p, &MAP_EDGE_KINDS, "flow", &mut errors);
+        warn_unknown_keys(t, &["from", "to", "label", "kind"], &at, &mut warnings);
+        edges.push(E2eMapEdge {
+            from,
+            to,
+            label,
+            kind,
+        });
+    }
+
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+    Ok((
+        E2eMap {
+            direction,
+            groups,
+            nodes,
+            edges,
+        },
+        warnings,
+    ))
+}
+
+/// Load the map file at repo-relative `rel`: no absolute path or `..`, no
+/// symlink escape from the canonical root, a regular file of at most 64 KiB.
+pub(crate) fn load_map(root: &Path, rel: &str) -> Result<(E2eMap, Vec<String>), Vec<String>> {
+    if !is_relative_clean(rel) {
+        return Err(vec!["must be a relative path without \"..\"".to_string()]);
+    }
+    let base = root
+        .canonicalize()
+        .map_err(|e| vec![format!("project root: {e}")])?;
+    let file = base
+        .join(rel)
+        .canonicalize()
+        .map_err(|_| vec!["not found".to_string()])?;
+    if file.strip_prefix(&base).is_err() {
+        return Err(vec!["outside the project".to_string()]);
+    }
+    let meta = std::fs::metadata(&file).map_err(|_| vec!["not found".to_string()])?;
+    if !meta.is_file() {
+        return Err(vec!["not a regular file".to_string()]);
+    }
+    if meta.len() > MAP_MAX_BYTES {
+        return Err(vec!["larger than 64 KiB".to_string()]);
+    }
+    let text = std::fs::read_to_string(&file).map_err(|e| vec![format!("cannot read: {e}")])?;
+    parse_map(&text)
+}
+
+/// Every distinct `Case.map` path loaded once, keyed as written.
+fn case_maps(root: &Path, cases: &[Case]) -> BTreeMap<String, E2eMapEntry> {
+    let mut maps = BTreeMap::new();
+    for rel in cases.iter().filter_map(|c| c.map.as_deref()) {
+        if maps.contains_key(rel) {
+            continue;
+        }
+        let entry = match load_map(root, rel) {
+            Ok((map, warnings)) => E2eMapEntry {
+                map: Some(map),
+                errors: Vec::new(),
+                warnings,
+            },
+            Err(errors) => E2eMapEntry {
+                map: None,
+                errors,
+                warnings: Vec::new(),
+            },
+        };
+        maps.insert(rel.to_string(), entry);
+    }
+    maps
 }
 
 // ─── Output types ───────────────────────────────────────────────────
@@ -626,6 +1045,8 @@ pub struct E2eCaseInfo {
     pub params: Obj,
     pub fresh: BTreeMap<String, String>,
     pub files: Vec<String>,
+    /// Repo-relative map path (`Case.map`); its entry is in `E2eStatus.maps`.
+    pub map: Option<String>,
     pub case_hash: Option<String>,
     pub uncommitted: bool,
 }
@@ -669,6 +1090,8 @@ pub struct E2eStatus {
     pub issues: Option<Vec<E2eIssueInfo>>,
     pub issues_error: Option<String>,
     pub active_launch: Option<E2eActiveLaunch>,
+    /// Each distinct `Case.map` path, loaded once per gather.
+    pub maps: BTreeMap<String, E2eMapEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1178,6 +1601,7 @@ async fn case_infos(root: &Path, cases: &[Case]) -> Vec<E2eCaseInfo> {
             params: c.params.clone(),
             fresh: c.fresh.clone(),
             files: c.files.clone(),
+            map: c.map.clone(),
             case_hash: case_hash(root, &c.files),
             uncommitted: files_dirty(&c.files, &dirty),
         })
@@ -1560,6 +1984,7 @@ async fn gather(state: &E2eState, root: &Path, include_issues: bool) -> Gathered
         issues: None,
         issues_error: None,
         active_launch,
+        maps: BTreeMap::new(),
     };
     let mut gathered_cases = Vec::new();
     let mut ext_raw = HashMap::new();
@@ -1611,6 +2036,12 @@ async fn gather(state: &E2eState, root: &Path, include_issues: bool) -> Gathered
     match list_cases(root, &manifest).await {
         Ok(cases) => {
             status.cases = case_infos(root, &cases).await;
+            status.maps = case_maps(root, &cases);
+            for (path, entry) in &status.maps {
+                status
+                    .errors
+                    .extend(entry.errors.iter().map(|e| format!("map {path}: {e}")));
+            }
             gathered_cases = cases;
         }
         Err(e) => status.errors.push(e),
@@ -1874,6 +2305,38 @@ fn adapter_resolves(root: &Path, program: &str) -> bool {
         .any(|dir| is_executable(&Path::new(dir).join(program)))
 }
 
+/// A smoke Result's `checks[].at` against its case's map (spec 0355): each
+/// `at` must name a node of a loaded map; `at` on a case without a map warns.
+fn check_result_at(
+    case: &Case,
+    maps: &BTreeMap<String, E2eMapEntry>,
+    checks: &[Check],
+    report: &mut E2eAdapterCheck,
+) {
+    let Some(path) = &case.map else {
+        if checks.iter().any(|c| c.at.is_some()) {
+            report.warnings.push(format!(
+                "result: checks carry \"at\" but case \"{}\" has no map",
+                case.id
+            ));
+        }
+        return;
+    };
+    let Some(map) = maps.get(path).and_then(|entry| entry.map.as_ref()) else {
+        return;
+    };
+    let nodes: HashSet<&str> = map.nodes.iter().map(|n| n.id.as_str()).collect();
+    for (i, check) in checks.iter().enumerate() {
+        if let Some(at) = &check.at {
+            if !nodes.contains(at.as_str()) {
+                report.errors.push(format!(
+                    "result: checks[{i}].at: \"{at}\" is not a node of {path}"
+                ));
+            }
+        }
+    }
+}
+
 /// MCP `e2e_adapter_check` body.
 pub(crate) async fn adapter_check(root: &Path, result_path: Option<&str>) -> E2eAdapterCheck {
     let mut report = E2eAdapterCheck {
@@ -1924,6 +2387,18 @@ pub(crate) async fn adapter_check(root: &Path, result_path: Option<&str>) -> E2e
             None
         }
     };
+    let maps = cases
+        .as_deref()
+        .map(|cases| case_maps(root, cases))
+        .unwrap_or_default();
+    for (path, entry) in &maps {
+        report
+            .errors
+            .extend(entry.errors.iter().map(|e| format!("map {path}: {e}")));
+        report
+            .warnings
+            .extend(entry.warnings.iter().map(|w| format!("map {path}: {w}")));
+    }
     if let Some(path) = result_path {
         match confine_result_path(root, path) {
             Err(e) => report.errors.push(e),
@@ -1938,11 +2413,14 @@ pub(crate) async fn adapter_check(root: &Path, result_path: Option<&str>) -> E2e
                     Err(errors) => report.errors.extend(prefix_errors("result", &errors)),
                     Ok(result) => {
                         if let Some(cases) = &cases {
-                            if !cases.iter().any(|c| c.id == result.case_id) {
-                                report.errors.push(format!(
+                            match cases.iter().find(|c| c.id == result.case_id) {
+                                Some(case) => {
+                                    check_result_at(case, &maps, &result.checks, &mut report)
+                                }
+                                None => report.errors.push(format!(
                                     "result: caseId \"{}\" is not a listed case",
                                     result.case_id
-                                ));
+                                )),
                             }
                         }
                     }
@@ -2296,7 +2774,8 @@ and its own process group (cancel kills the whole group).
           "issue": { "type": "integer", "minimum": 1, "description": "GitHub issue number this case covers" },
           "params": { "type": "object", "additionalProperties": { "type": ["string", "number"] }, "description": "declared parameters and their defaults" },
           "fresh": { "type": "object", "additionalProperties": { "type": "string" }, "description": "params that request single-use data, used by `#e2e run --fresh`" },
-          "files": { "type": "array", "items": { "type": "string", "description": "repo-relative path (file or directory); no absolute paths, no '..'" } }
+          "files": { "type": "array", "items": { "type": "string", "description": "repo-relative path (file or directory); no absolute paths, no '..'" } },
+          "map": { "type": "string", "description": "repo-relative path to the case's system map (TOML); no absolute paths, no '..'" }
         }
       }
     }
@@ -2310,6 +2789,8 @@ and its own process group (cancel kills the whole group).
 - `fresh`: `#e2e run <case> --fresh` starts from the case's `fresh` map, then
   explicit `k=v` arguments override it. Use it for single-use data, e.g.
   `{"tempRpNo": "new"}` meaning "create a new record instead of reusing one".
+- `map` (optional) points at the case's system map (see "Map file"). Cases
+  may share one file.
 
 ## Result (written by `run`, items of `history`)
 
@@ -2338,7 +2819,8 @@ and its own process group (cancel kills the whole group).
           "group": { "type": "string" },
           "label": { "type": "string", "minLength": 1 },
           "status": { "enum": ["pass", "fail", "skip", "blocked", "info"] },
-          "detail": { "type": "string" }
+          "detail": { "type": "string" },
+          "at": { "type": "string", "description": "id of the map node this check is about: the node it proves when it passes, the node where the failure was found when it fails" }
         }
       }
     },
@@ -2355,9 +2837,45 @@ and its own process group (cancel kills the whole group).
 }
 ```
 
+## Map file
+
+A case may point `map` at a small TOML picture of the system under test.
+`#e2e open` draws it with one pin per (`at`, `group`) of the run's checks.
+
+```toml
+version = 1                 # required, must be 1
+direction = "LR"            # optional: LR (default) | TB
+
+[[group]]                   # optional; drawn as a box; no nesting
+id = "rust"
+label = "Rust · control.rs"
+
+[[node]]
+id = "validate"             # ^[a-z0-9][a-z0-9._-]{0,47}$, unique
+label = "request check"     # "\n" breaks a line; ≤ 3 lines of ≤ 60 chars
+group = "rust"              # optional, must name a group
+shape = "box"               # box (default) | gate | store | actor
+source = "src-tauri/src/control.rs:264"  # optional, one line ≤ 200 chars
+
+[[edge]]
+from = "harness-directory"  # must name a node
+to = "axum"                 # must name a node
+label = "acp_control_reply" # optional; same line rules as node labels
+kind = "reply"              # flow (default) | reply | refused
+```
+
+- Limits: file ≤ 64 KiB; ≤ 60 nodes, ≤ 120 edges, ≤ 20 groups. Node and group
+  labels are required.
+- Edge kinds: `flow` is a step a request takes. `reply` is a response going
+  back; it is drawn but not followed when Krypton decides which nodes a check
+  reaches. `refused` is a connection the system must refuse, drawn with a cross.
+- A check's `at` must be the id of a node in its case's map;
+  `e2e_adapter_check` reports any other `at` as an error.
+- Unknown keys are warnings, not errors.
+
 ## Rules
 
-- **Paths** (`files`, `artifacts[].path`) are relative to the repo root.
+- **Paths** (`files`, `map`, `artifacts[].path`) are relative to the repo root.
 - **runId** is the adapter's own id, unique per case and stable: the same run
   reported by `run` and later by `history` must carry the same `runId`, because
   Krypton dedupes by `(caseId, runId)`. A timestamp like `20261023T082053Z` works.
@@ -2683,6 +3201,266 @@ mod tests {
         );
     }
 
+    #[test]
+    fn e2e_case_list_map() {
+        let cases = validate_case_list(&json!({"version":1,"cases":[
+            {"id":"a","title":"A","map":"e2e/maps/a.toml"},
+            {"id":"b","title":"B"}
+        ]}))
+        .unwrap();
+        assert_eq!(cases[0].map.as_deref(), Some("e2e/maps/a.toml"));
+        assert_eq!(cases[1].map, None);
+        let e = errs(validate_case_list(&json!({"version":1,"cases":[
+            {"id":"a","title":"A","map":"../x"},
+            {"id":"b","title":"B","map":3}
+        ]})));
+        assert_eq!(
+            e,
+            vec![
+                "cases[0].map: \"../x\" must be a relative path without \"..\"",
+                "cases[1].map: must be a string"
+            ]
+        );
+    }
+
+    #[test]
+    fn e2e_result_at_is_a_string() {
+        let mut v = good_result();
+        v["checks"][0]["at"] = json!("axum");
+        let r = validate_result(&v, "").unwrap();
+        assert_eq!(r.checks[0].at.as_deref(), Some("axum"));
+        assert_eq!(r.checks[1].at, None);
+        v["checks"][1]["at"] = json!(3);
+        assert_eq!(
+            errs(validate_result(&v, "")),
+            vec!["checks[1].at: must be a string"]
+        );
+    }
+
+    // ── system map ──
+
+    const GOOD_MAP: &str = r##"version = 1
+colour = "red"
+
+[[group]]
+id = "rust"
+label = "Rust · control.rs"
+
+[[node]]
+id = "runner"
+label = "e2e runner"
+shape = "actor"
+
+[[node]]
+id = "axum"
+label = "axum route\n+ auth"
+group = "rust"
+source = "src-tauri/src/control.rs"
+colour = "blue"
+
+[[edge]]
+from = "runner"
+to = "axum"
+label = "HTTP + bearer"
+
+[[edge]]
+from = "axum"
+to = "runner"
+kind = "reply"
+"##;
+
+    #[test]
+    fn e2e_map_valid_with_defaults_and_warnings() {
+        let (map, warnings) = parse_map(GOOD_MAP).unwrap();
+        assert_eq!(map.direction, "LR");
+        assert_eq!(
+            map.groups,
+            vec![E2eMapGroup {
+                id: "rust".into(),
+                label: "Rust · control.rs".into()
+            }]
+        );
+        assert_eq!(
+            map.nodes[0],
+            E2eMapNode {
+                id: "runner".into(),
+                label: "e2e runner".into(),
+                group: None,
+                shape: "actor".into(),
+                source: None,
+            }
+        );
+        assert_eq!(
+            map.nodes[1],
+            E2eMapNode {
+                id: "axum".into(),
+                label: "axum route\n+ auth".into(),
+                group: Some("rust".into()),
+                shape: "box".into(),
+                source: Some("src-tauri/src/control.rs".into()),
+            }
+        );
+        assert_eq!(
+            map.edges,
+            vec![
+                E2eMapEdge {
+                    from: "runner".into(),
+                    to: "axum".into(),
+                    label: Some("HTTP + bearer".into()),
+                    kind: "flow".into(),
+                },
+                E2eMapEdge {
+                    from: "axum".into(),
+                    to: "runner".into(),
+                    label: None,
+                    kind: "reply".into(),
+                },
+            ]
+        );
+        assert_eq!(
+            warnings,
+            vec!["unknown key \"colour\"", "nodes[1]: unknown key \"colour\""]
+        );
+        let (tb, _) = parse_map("version = 1\ndirection = \"TB\"\n").unwrap();
+        assert_eq!(tb.direction, "TB");
+        assert!(tb.nodes.is_empty() && tb.edges.is_empty() && tb.groups.is_empty());
+    }
+
+    #[test]
+    fn e2e_map_rules() {
+        let text = format!(
+            r##"version = 2
+direction = "RL"
+
+[[group]]
+id = "rust"
+label = "Rust"
+
+[[group]]
+id = "rust"
+label = ""
+
+[[node]]
+id = "Axum"
+label = "a"
+
+[[node]]
+id = "x"
+label = "one\ntwo\nthree\nfour"
+shape = "circle"
+
+[[node]]
+id = "x"
+label = "ok\n{long}"
+group = "rustt"
+source = "a\nb"
+
+[[node]]
+label = 3
+
+[[edge]]
+from = "x"
+to = "nowhere"
+kind = "back"
+
+[[edge]]
+from = "ghost"
+to = "x"
+label = "{long}"
+"##,
+            long = "y".repeat(61)
+        );
+        let e = errs(parse_map(&text));
+        for needle in [
+            "version: must be 1",
+            "direction: \"RL\" is not one of LR|TB",
+            "group[1].id: duplicate \"rust\"",
+            "group[1].label: must not be empty",
+            "nodes[0].id: \"Axum\" must match ^[a-z0-9][a-z0-9._-]{0,47}$",
+            "nodes[1].label: more than 3 lines",
+            "nodes[1].shape: \"circle\" is not one of box|gate|store|actor",
+            "nodes[2].id: duplicate \"x\"",
+            "nodes[2].label: line 2 is longer than 60 characters",
+            "nodes[2].group: unknown group \"rustt\"",
+            "nodes[2].source: must be a single line",
+            "nodes[3].id: required",
+            "nodes[3].label: must be a string",
+            "edges[0].to: unknown node \"nowhere\"",
+            "edges[0].kind: \"back\" is not one of flow|reply|refused",
+            "edges[1].from: unknown node \"ghost\"",
+            "edges[1].label: line 1 is longer than 60 characters",
+        ] {
+            assert!(has(&e, needle), "missing {needle}: {e:?}");
+        }
+        assert_eq!(e.len(), 17, "{e:?}");
+
+        let mut over = String::from("version = 1\n");
+        for i in 0..61 {
+            over.push_str(&format!("[[node]]\nid = \"n{i}\"\nlabel = \"n\"\n"));
+        }
+        assert_eq!(
+            errs(parse_map(&over)),
+            vec!["nodes: 61 is over the limit of 60"]
+        );
+        assert_eq!(
+            errs(parse_map("version = 1\nnode = 3\n")),
+            vec!["nodes: must be an array of tables"]
+        );
+        assert_eq!(
+            errs(parse_map("version = 1\n[[node]]\nid = 3\nlabel = \"a\"\n")),
+            vec!["nodes[0].id: must be a string"]
+        );
+        assert_eq!(errs(parse_map("")), vec!["version: must be 1"]);
+        let syntax = errs(parse_map("version = = 1\n"));
+        assert_eq!(syntax.len(), 1);
+        assert!(syntax[0].starts_with("toml: "), "{syntax:?}");
+        assert!(!syntax[0].contains('\n'), "{syntax:?}");
+    }
+
+    #[test]
+    fn e2e_map_path_rules() {
+        let tmp = TempDir::new("map-paths");
+        let root = &tmp.0;
+        std::fs::create_dir_all(root.join("maps")).unwrap();
+        std::fs::write(root.join("maps/good.toml"), GOOD_MAP).unwrap();
+        assert_eq!(
+            load_map(root, "maps/good.toml").unwrap(),
+            parse_map(GOOD_MAP).unwrap()
+        );
+        let relative = "must be a relative path without \"..\"";
+        for (path, error) in [
+            ("../x.toml", relative),
+            ("/etc/x.toml", relative),
+            ("maps/../maps/good.toml", relative),
+            ("maps/missing.toml", "not found"),
+            ("maps", "not a regular file"),
+        ] {
+            assert_eq!(errs(load_map(root, path)), vec![error], "{path}");
+        }
+        std::fs::write(
+            root.join("maps/big.toml"),
+            format!("version = 1\n#{}\n", "x".repeat(65536)),
+        )
+        .unwrap();
+        assert_eq!(
+            errs(load_map(root, "maps/big.toml")),
+            vec!["larger than 64 KiB"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn e2e_map_symlink_cannot_escape_the_root() {
+        let tmp = TempDir::new("map-link");
+        let outside = TempDir::new("map-outside");
+        std::fs::write(outside.0.join("evil.toml"), GOOD_MAP).unwrap();
+        std::os::unix::fs::symlink(outside.0.join("evil.toml"), tmp.0.join("link.toml")).unwrap();
+        assert_eq!(
+            errs(load_map(&tmp.0, "link.toml")),
+            vec!["outside the project"]
+        );
+    }
+
     // ── ledger join ──
 
     fn start(id: &str, case: &str, at: &str) -> LedgerLine {
@@ -2860,6 +3638,7 @@ mod tests {
             params: Obj::new(),
             fresh: BTreeMap::from([("b".into(), "new".into()), ("z".into(), "new".into())]),
             files: Vec::new(),
+            map: None,
         };
         let explicit = BTreeMap::from([
             ("b".to_string(), "mine".to_string()),
@@ -3280,5 +4059,91 @@ esac
         );
         // Reading an ext run never writes `runs/ext-*` (unlike `find_run`).
         assert!(!runs_dir(&root).join(ext_dir_name("h", "x1")).exists());
+    }
+
+    const MAP_ADAPTER_SH: &str = r#"#!/bin/sh
+case "$1" in
+  list) echo '{"version":1,"cases":[{"id":"a","title":"A","map":"maps/good.toml"},{"id":"b","title":"B","map":"maps/good.toml"},{"id":"c","title":"C","map":"maps/bad.toml"},{"id":"d","title":"D"}]}' ;;
+  *) exit 3 ;;
+esac
+"#;
+
+    fn smoke_result(case_id: &str, at: &str) -> String {
+        json!({
+            "version":1,"caseId":case_id,"runId":"r","verdict":"PASS",
+            "startedAt":"2026-10-23T08:17:09Z","finishedAt":"2026-10-23T08:18:00Z",
+            "checks":[{"label":"x","status":"pass","at":at}]
+        })
+        .to_string()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn e2e_status_and_adapter_check_load_maps() {
+        let tmp = TempDir::new("maps");
+        let root = tmp.0.clone();
+        let dir = e2e_dir(&root);
+        std::fs::write(dir.join("adapter.sh"), MAP_ADAPTER_SH).unwrap();
+        std::fs::write(
+            dir.join("project.toml"),
+            "version = 1\nname = \"m\"\nadapter = [\"sh\", \".krypton/e2e/adapter.sh\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("maps")).unwrap();
+        std::fs::write(root.join("maps/good.toml"), GOOD_MAP).unwrap();
+        std::fs::write(root.join("maps/bad.toml"), "version = 2\n").unwrap();
+        let bad = "map maps/bad.toml: version: must be 1";
+        let good_warnings = vec![
+            "unknown key \"colour\"".to_string(),
+            "nodes[1]: unknown key \"colour\"".to_string(),
+        ];
+
+        // gather: each path once, map errors also in status.errors.
+        let status = status(&E2eState::default(), &root, false).await;
+        assert_eq!(status.errors, vec![bad]);
+        assert_eq!(status.maps.len(), 2);
+        let good = &status.maps["maps/good.toml"];
+        assert_eq!(good.map.as_ref().map(|m| m.nodes.len()), Some(2));
+        assert!(good.errors.is_empty());
+        assert_eq!(good.warnings, good_warnings);
+        assert_eq!(status.maps["maps/bad.toml"].map, None);
+        assert_eq!(
+            status.maps["maps/bad.toml"].errors,
+            vec!["version: must be 1"]
+        );
+        assert_eq!(status.cases[0].map.as_deref(), Some("maps/good.toml"));
+        assert_eq!(status.cases[3].map, None);
+
+        // adapter_check: map errors and warnings, `at` against the case's map.
+        let smoke = dir.join("smoke.json");
+        let smoke_rel = Some(".krypton/e2e/smoke.json");
+        std::fs::write(&smoke, smoke_result("a", "nope")).unwrap();
+        let check = adapter_check(&root, smoke_rel).await;
+        assert_eq!(
+            check.errors,
+            vec![
+                bad,
+                "result: checks[0].at: \"nope\" is not a node of maps/good.toml"
+            ]
+        );
+        for w in &good_warnings {
+            let w = format!("map maps/good.toml: {w}");
+            assert!(check.warnings.contains(&w), "{:?}", check.warnings);
+        }
+        assert!(!check.ok);
+
+        std::fs::write(&smoke, smoke_result("a", "axum")).unwrap();
+        let check = adapter_check(&root, smoke_rel).await;
+        assert_eq!(check.errors, vec![bad]);
+
+        std::fs::write(&smoke, smoke_result("d", "axum")).unwrap();
+        let check = adapter_check(&root, smoke_rel).await;
+        assert_eq!(check.errors, vec![bad]);
+        assert!(
+            check
+                .warnings
+                .contains(&"result: checks carry \"at\" but case \"d\" has no map".to_string()),
+            "{:?}",
+            check.warnings
+        );
     }
 }

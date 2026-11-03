@@ -1,0 +1,146 @@
+# System map for e2e/cases/loopback-api-authorization.ts (spec 0355).
+version = 1
+direction = "LR"
+
+[[group]]
+id = "control"
+label = "Control API · control.rs"
+
+[[group]]
+id = "loopback"
+label = "Loopback server · hook_server.rs"
+
+[[node]]
+id = "lan"
+label = "another machine\non the LAN"
+shape = "actor"
+
+[[node]]
+id = "web"
+label = "another website\nin the browser"
+shape = "actor"
+
+[[node]]
+id = "local"
+label = "process on\nthis machine"
+shape = "actor"
+
+[[node]]
+id = "bind-control"
+label = "bind 127.0.0.1"
+shape = "gate"
+group = "control"
+source = "src-tauri/src/control.rs"
+
+[[node]]
+id = "cors-control"
+label = "CORS: exact origin only"
+shape = "gate"
+group = "control"
+
+[[node]]
+id = "bearer"
+label = "bearer token"
+shape = "gate"
+group = "control"
+
+[[node]]
+id = "lane-capability"
+label = "lane capability"
+shape = "gate"
+group = "control"
+
+[[node]]
+id = "control-handlers"
+label = "/capabilities · /operations\n/events"
+group = "control"
+
+[[node]]
+id = "computer-handlers"
+label = "/computer/list\n/computer/exec"
+group = "control"
+
+[[node]]
+id = "bind-loopback"
+label = "bind 127.0.0.1"
+shape = "gate"
+group = "loopback"
+source = "src-tauri/src/hook_server.rs"
+
+[[node]]
+id = "cors-loopback"
+label = "CORS"
+shape = "gate"
+group = "loopback"
+
+[[node]]
+id = "json-only"
+label = "JSON body only"
+shape = "gate"
+group = "loopback"
+
+[[node]]
+id = "capability-token"
+label = "capability token in the path"
+shape = "gate"
+group = "loopback"
+
+[[node]]
+id = "doc-feedback"
+label = "/doc-feedback"
+group = "loopback"
+
+[[node]]
+id = "token-pages"
+label = "termctrl · acp-wire\nhurl · artifact"
+group = "loopback"
+
+[[edge]]
+from = "lan"
+to = "bind-control"
+kind = "refused"
+
+[[edge]]
+from = "lan"
+to = "bind-loopback"
+kind = "refused"
+
+[[edge]]
+from = "web"
+to = "cors-control"
+
+[[edge]]
+from = "web"
+to = "cors-loopback"
+
+[[edge]]
+from = "cors-loopback"
+to = "json-only"
+
+[[edge]]
+from = "json-only"
+to = "doc-feedback"
+
+[[edge]]
+from = "local"
+to = "bearer"
+
+[[edge]]
+from = "bearer"
+to = "control-handlers"
+
+[[edge]]
+from = "bearer"
+to = "lane-capability"
+
+[[edge]]
+from = "lane-capability"
+to = "computer-handlers"
+
+[[edge]]
+from = "local"
+to = "capability-token"
+
+[[edge]]
+from = "capability-token"
+to = "token-pages"

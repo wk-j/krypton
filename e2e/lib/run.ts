@@ -19,6 +19,7 @@ export interface Check {
   label: string;
   status: CheckStatus;
   detail?: string;
+  at?: string;
 }
 
 export interface Artifact {
@@ -48,6 +49,7 @@ export interface CaseMeta {
   issue?: number;
   params?: Record<string, ParamValue>;
   fresh?: Record<string, string>;
+  map?: string;
 }
 
 export interface CaseContext {
@@ -113,21 +115,21 @@ export class Run {
     appendFileSync(this.logPath, `${new Date().toISOString()} ${line}\n`);
   }
 
-  check(group: string, label: string, ok: boolean, detail: string): boolean {
-    this.record({ group, label, status: ok ? 'pass' : 'fail', detail });
+  check(group: string, label: string, ok: boolean, detail: string, at?: string): boolean {
+    this.record({ group, label, status: ok ? 'pass' : 'fail', detail }, at);
     return ok;
   }
 
-  info(group: string, label: string, detail: string): void {
-    this.record({ group, label, status: 'info', detail });
+  info(group: string, label: string, detail: string, at?: string): void {
+    this.record({ group, label, status: 'info', detail }, at);
   }
 
-  skip(group: string, label: string, detail: string): void {
-    this.record({ group, label, status: 'skip', detail });
+  skip(group: string, label: string, detail: string, at?: string): void {
+    this.record({ group, label, status: 'skip', detail }, at);
   }
 
-  block(group: string, label: string, detail: string): never {
-    this.record({ group, label, status: 'blocked', detail });
+  block(group: string, label: string, detail: string, at?: string): never {
+    this.record({ group, label, status: 'blocked', detail }, at);
     throw new BlockedError(this.redact(detail));
   }
 
@@ -159,9 +161,9 @@ export class Run {
     return result;
   }
 
-  private record(check: Check): void {
+  private record(check: Check, at?: string): void {
     const detail = check.detail === undefined ? undefined : this.redact(check.detail);
-    this.checks.push({ ...check, detail });
+    this.checks.push(at === undefined ? { ...check, detail } : { ...check, detail, at });
     const tag = check.status.toUpperCase().padEnd(7);
     this.log(`${tag} [${check.group ?? ''}] ${check.label}${detail ? ` — ${detail}` : ''}`);
   }

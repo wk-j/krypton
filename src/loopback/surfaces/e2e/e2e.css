@@ -51,6 +51,15 @@
   .lb-e2e__viewer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); font: 11px var(--mono); }
   .lb-e2e__viewer-text { max-height: 520px; margin: 0; padding: 12px; overflow: auto; font: 11px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
   .lb-e2e__viewer-img { display: block; max-width: 100%; margin: 12px auto; }
+  /* Spec 355: the run on its case's system map, then one block per pin. Full borders only (ADR 0027). */
+  .lb-e2e__map { margin: 12px 0 0; padding: 12px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--code-bg); }
+  .lb-e2e__map-img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  .lb-e2e__pins { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  .lb-e2e__pin { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .lb-e2e__pin-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-bottom: 6px; font: 11px var(--mono); }
+  .lb-e2e__pin-source { color: var(--muted); font: 10px var(--mono); }
+  .lb-e2e__pin-note { display: block; padding-bottom: 4px; color: var(--muted); font: 10px var(--mono); }
+  .lb-e2e__pin-note.lb-e2e__problem { color: var(--del); }
   @media (max-width: 900px) {
     .lb-e2e__layout { grid-template-columns: 1fr; }
     .lb-e2e__cases { max-height: 340px; border-right: 0; border-bottom: 1px solid var(--border); }

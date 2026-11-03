@@ -1,0 +1,74 @@
+# System map for e2e/cases/control-api-roundtrip.ts (spec 0355).
+version = 1
+direction = "LR"
+
+[[group]]
+id = "rust"
+label = "Rust · control.rs"
+
+[[group]]
+id = "frontend"
+label = "Frontend (webview)"
+
+[[node]]
+id = "runner"
+label = "e2e runner"
+shape = "actor"
+
+[[node]]
+id = "axum"
+label = "axum route + auth"
+group = "rust"
+source = "src-tauri/src/control.rs"
+
+[[node]]
+id = "validate"
+label = "request check"
+group = "rust"
+source = "src-tauri/src/control.rs"
+
+[[node]]
+id = "sse"
+label = "SSE /events\nsends ready itself"
+group = "rust"
+source = "src-tauri/src/control.rs"
+
+[[node]]
+id = "bridge"
+label = "control-bridge.ts"
+group = "frontend"
+source = "src/acp/control-bridge.ts"
+
+[[node]]
+id = "harness-directory"
+label = "HarnessDirectory /\nAcpHarnessView"
+group = "frontend"
+source = "src/acp/harness-directory.ts"
+
+[[edge]]
+from = "runner"
+to = "axum"
+label = "HTTP + bearer"
+
+[[edge]]
+from = "axum"
+to = "validate"
+
+[[edge]]
+from = "validate"
+to = "bridge"
+label = "Tauri event\nacp-control-request"
+
+[[edge]]
+from = "bridge"
+to = "harness-directory"
+
+[[edge]]
+from = "harness-directory"
+to = "axum"
+label = "acp_control_reply"
+kind = "reply"
+
+[[edge]]
+from = "axum"
+to = "sse"

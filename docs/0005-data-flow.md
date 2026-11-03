@@ -1788,13 +1788,18 @@ renderE2ePrompt(create_prompt | report_prompt, {issue, issue_url, run_id, result
 1. invoke('get_e2e_web_url', { root }) → HookServer.e2e_web_url → E2eWebSessions.issue
    (one 128-bit token per canonical root) → http://127.0.0.1:<port>/e2e/<token>
    [+ #case=<id>] → invoke('open_url'); a down server flashes the error, opens nothing.
-2. GET /e2e/<token> → artifact-e2e.html → GET /e2e/api/<token>/status (the same gather
-   as #e2e status, issues included; refills E2eState.history) → cases, verdict strips,
-   marks; the URL hash (case, run) keeps the selection.
+2. GET /e2e/<token> → the loopback app's e2e entry → GET /e2e/api/<token>/status (the
+   same gather as #e2e status, issues included; refills E2eState.history; loads each
+   case's map into maps) → cases, verdict strips, marks; the URL hash (case, run)
+   keeps the selection.
 3. Selecting a run → GET …/run?case=&run= → ledger ⨝ runs/<launchId>/result.json, or
    the history cache for an ext run → every check + artifact list. `l` → GET …/log
    (ledger-listed launch only); Enter on an artifact → GET …/artifact?…&index=
    (confined to the root, ≤ 25 MiB, CSP sandbox, HTML/SVG as text).
+   With a case map and a Result (spec 355): a run that is not PASS first GETs the
+   newest earlier PASS's …/run; buildPins → litNodes → mapSource → renderMermaid
+   (strict, shown as an <img> data URL); then the case pane, run pane and map paint
+   in one task. `m` switches to the check list.
 4. Refresh: full status on load, `r`, and focus/visibility after ≥ 10 s; while a launch
    is active and the tab visible, GET …/active every 2 s (no spawn) and one full reload
    when it ends. Unknown token → 404 on every route ("run #e2e open again").

@@ -23,6 +23,7 @@ export const meta: CaseMeta = {
   title: 'Loopback API authorization: bearer, lane capability, capability tokens, CORS, loopback-only binding',
   code: 'S0154',
   params: { loopbackPort: 0 },
+  map: 'e2e/maps/loopback-auth.toml',
 };
 
 const FOREIGN_ORIGIN = 'https://krypton-e2e.invalid';
@@ -31,9 +32,9 @@ function forged(): string {
   return randomBytes(16).toString('hex');
 }
 
-function expectUnauthorized(run: Run, group: string, label: string, exchange: Exchange): void {
+function expectUnauthorized(run: Run, group: string, label: string, exchange: Exchange, at: string): void {
   const code = String(asRecord(asRecord(exchange.json).error).code ?? '(none)');
-  run.check(group, label, exchange.status === 401 && code === 'authentication_failed', `status ${exchange.status}, error.code ${code}`);
+  run.check(group, label, exchange.status === 401 && code === 'authentication_failed', `status ${exchange.status}, error.code ${code}`, at);
 }
 
 function expectHiddenCapability(run: Run, label: string, exchange: Exchange): void {
@@ -42,6 +43,7 @@ function expectHiddenCapability(run: Run, label: string, exchange: Exchange): vo
     label,
     exchange.status === 404 && exchange.text.length === 0,
     `status ${exchange.status}, body ${exchange.text.length} bytes`,
+    'capability-token',
   );
 }
 
@@ -59,12 +61,14 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     'the descriptor bearer token is accepted (positive control)',
     accepted.status === 200,
     `status ${accepted.status}`,
+    'control-handlers',
   );
   expectUnauthorized(
     run,
     'control API bearer',
     'GET /capabilities without Authorization → 401',
     await http(run, 'capabilities-no-auth', `${control.url}/capabilities`),
+    'bearer',
   );
   expectUnauthorized(
     run,
@@ -73,6 +77,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     await http(run, 'capabilities-forged-bearer', `${control.url}/capabilities`, {
       headers: { authorization: `Bearer ${forged()}` },
     }),
+    'bearer',
   );
   expectUnauthorized(
     run,
@@ -81,12 +86,14 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     await http(run, 'capabilities-no-scheme', `${control.url}/capabilities`, {
       headers: { authorization: control.token },
     }),
+    'bearer',
   );
   expectUnauthorized(
     run,
     'control API bearer',
     'POST /operations without Authorization → 401, the operation never runs',
     await http(run, 'operations-no-auth', `${control.url}/operations`, { method: 'POST', headers: json, body: harnessList }),
+    'bearer',
   );
   const eventsNoAuth = await firstSseEvent(run, 'events-no-auth', `${control.url}/events`, {}, 5000);
   run.check(
@@ -94,6 +101,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     'GET /events without credentials → 401, no stream',
     eventsNoAuth.status === 401 && eventsNoAuth.event === null,
     `status ${eventsNoAuth.status}, first event ${eventsNoAuth.event ?? '(none)'}`,
+    'bearer',
   );
   const eventsForged = await firstSseEvent(run, 'events-forged-query-token', `${control.url}/events?token=${forged()}`, {}, 5000);
   run.check(
@@ -101,6 +109,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     'GET /events?token=<forged> → 401, no stream',
     eventsForged.status === 401 && eventsForged.event === null,
     `status ${eventsForged.status}, first event ${eventsForged.event ?? '(none)'}`,
+    'bearer',
   );
 
   // Control API: the connected-computer routes need a live lane capability on top.
@@ -109,6 +118,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     'control API lane capability',
     'GET /computer/list with a valid bearer but no lane capability → 401',
     await http(run, 'computer-list-no-capability', `${control.url}/computer/list`, { headers: bearer }),
+    'lane-capability',
   );
   expectUnauthorized(
     run,
@@ -117,6 +127,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     await http(run, 'computer-list-forged-capability', `${control.url}/computer/list`, {
       headers: { ...bearer, 'x-krypton-computer-capability': forged() },
     }),
+    'lane-capability',
   );
   expectUnauthorized(
     run,
@@ -127,6 +138,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
       headers: { ...bearer, ...json, 'x-krypton-computer-capability': forged() },
       body: JSON.stringify({ computerId: 'krypton-e2e-none', command: 'true' }),
     }),
+    'lane-capability',
   );
 
   // Cross-origin: a web page in the user's browser must not get a CORS grant.
@@ -145,6 +157,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     'control API grants no CORS to a foreign origin',
     !controlPreflight.headers.has('access-control-allow-origin'),
     `status ${controlPreflight.status}, access-control-allow-origin ${controlPreflight.headers.get('access-control-allow-origin') ?? '(absent)'}`,
+    'cors-control',
   );
   const docFeedback = `${loopback.url}/doc-feedback?harness=krypton-e2e-none&path=README.md`;
   const loopbackPreflight = await preflight(docFeedback, 'doc-feedback-preflight-foreign-origin');
@@ -153,6 +166,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     'loopback server grants no CORS to a foreign origin on /doc-feedback',
     !loopbackPreflight.headers.has('access-control-allow-origin'),
     `status ${loopbackPreflight.status}, access-control-allow-origin ${loopbackPreflight.headers.get('access-control-allow-origin') ?? '(absent)'}`,
+    'cors-loopback',
   );
   const simplePost = await http(run, 'doc-feedback-cross-site-simple-post', docFeedback, {
     method: 'POST',
@@ -164,6 +178,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     'a cross-site text/plain POST to the tokenless /doc-feedback is refused with 415 before any lane',
     simplePost.status === 415,
     `status ${simplePost.status}`,
+    'json-only',
   );
 
   // Loopback server: capability-token routes hide unknown tokens.
@@ -198,9 +213,9 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     run.skip('network exposure', 'servers refuse non-loopback connections', 'this machine has no non-internal IPv4 address');
     return;
   }
-  for (const [name, port] of [
-    ['control API', Number(new URL(control.url).port)],
-    ['loopback server', loopback.port],
+  for (const [name, port, at] of [
+    ['control API', Number(new URL(control.url).port), 'bind-control'],
+    ['loopback server', loopback.port, 'bind-loopback'],
   ] as const) {
     const outcome = await tcpProbe(external, port, 3000);
     run.check(
@@ -208,6 +223,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
       `${name} port ${port} refuses connections on ${external}`,
       outcome !== 'connected',
       outcome === 'connected' ? `${external}:${port} accepted a connection` : `${external}:${port} → ${outcome}`,
+      at,
     );
   }
 }

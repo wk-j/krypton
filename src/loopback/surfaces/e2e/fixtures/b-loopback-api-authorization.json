@@ -1,0 +1,380 @@
+{
+  "source": "e2e/runs/loopback-api-authorization/20261024T020217510Z/result.json with at added; map = e2e/maps/loopback-auth.toml",
+  "runId": "20261024T020217510Z",
+  "map": {
+    "direction": "LR",
+    "groups": [
+      {
+        "id": "control",
+        "label": "Control API · control.rs"
+      },
+      {
+        "id": "loopback",
+        "label": "Loopback server · hook_server.rs"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "lan",
+        "label": "another machine\non the LAN",
+        "group": null,
+        "shape": "actor",
+        "source": null
+      },
+      {
+        "id": "web",
+        "label": "another website\nin the browser",
+        "group": null,
+        "shape": "actor",
+        "source": null
+      },
+      {
+        "id": "local",
+        "label": "process on\nthis machine",
+        "group": null,
+        "shape": "actor",
+        "source": null
+      },
+      {
+        "id": "bind-control",
+        "label": "bind 127.0.0.1",
+        "group": "control",
+        "shape": "gate",
+        "source": "src-tauri/src/control.rs"
+      },
+      {
+        "id": "cors-control",
+        "label": "CORS: exact origin only",
+        "group": "control",
+        "shape": "gate",
+        "source": null
+      },
+      {
+        "id": "bearer",
+        "label": "bearer token",
+        "group": "control",
+        "shape": "gate",
+        "source": null
+      },
+      {
+        "id": "lane-capability",
+        "label": "lane capability",
+        "group": "control",
+        "shape": "gate",
+        "source": null
+      },
+      {
+        "id": "control-handlers",
+        "label": "/capabilities · /operations\n/events",
+        "group": "control",
+        "shape": "box",
+        "source": null
+      },
+      {
+        "id": "computer-handlers",
+        "label": "/computer/list\n/computer/exec",
+        "group": "control",
+        "shape": "box",
+        "source": null
+      },
+      {
+        "id": "bind-loopback",
+        "label": "bind 127.0.0.1",
+        "group": "loopback",
+        "shape": "gate",
+        "source": "src-tauri/src/hook_server.rs"
+      },
+      {
+        "id": "cors-loopback",
+        "label": "CORS",
+        "group": "loopback",
+        "shape": "gate",
+        "source": null
+      },
+      {
+        "id": "json-only",
+        "label": "JSON body only",
+        "group": "loopback",
+        "shape": "gate",
+        "source": null
+      },
+      {
+        "id": "capability-token",
+        "label": "capability token in the path",
+        "group": "loopback",
+        "shape": "gate",
+        "source": null
+      },
+      {
+        "id": "doc-feedback",
+        "label": "/doc-feedback",
+        "group": "loopback",
+        "shape": "box",
+        "source": null
+      },
+      {
+        "id": "token-pages",
+        "label": "termctrl · acp-wire\nhurl · artifact",
+        "group": "loopback",
+        "shape": "box",
+        "source": null
+      }
+    ],
+    "edges": [
+      {
+        "from": "lan",
+        "to": "bind-control",
+        "label": null,
+        "kind": "refused"
+      },
+      {
+        "from": "lan",
+        "to": "bind-loopback",
+        "label": null,
+        "kind": "refused"
+      },
+      {
+        "from": "web",
+        "to": "cors-control",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "web",
+        "to": "cors-loopback",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "cors-loopback",
+        "to": "json-only",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "json-only",
+        "to": "doc-feedback",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "local",
+        "to": "bearer",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "bearer",
+        "to": "control-handlers",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "bearer",
+        "to": "lane-capability",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "lane-capability",
+        "to": "computer-handlers",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "local",
+        "to": "capability-token",
+        "label": null,
+        "kind": "flow"
+      },
+      {
+        "from": "capability-token",
+        "to": "token-pages",
+        "label": null,
+        "kind": "flow"
+      }
+    ]
+  },
+  "checks": [
+    {
+      "group": "precondition",
+      "label": "control API is up",
+      "status": "info",
+      "detail": "http://127.0.0.1:8766/control/v1, pid 78149, app 0.1.0, API 1.0"
+    },
+    {
+      "group": "precondition",
+      "label": "loopback server is up",
+      "status": "info",
+      "detail": "http://127.0.0.1:64732 (from /Users/wk/.config/krypton/krypton.toml [loopback_server] port)"
+    },
+    {
+      "group": "control API bearer",
+      "label": "the descriptor bearer token is accepted (positive control)",
+      "status": "pass",
+      "detail": "status 200",
+      "at": "control-handlers"
+    },
+    {
+      "group": "control API bearer",
+      "label": "GET /capabilities without Authorization → 401",
+      "status": "pass",
+      "detail": "status 401, error.code authentication_failed",
+      "at": "bearer"
+    },
+    {
+      "group": "control API bearer",
+      "label": "GET /capabilities with a forged bearer → 401",
+      "status": "pass",
+      "detail": "status 401, error.code authentication_failed",
+      "at": "bearer"
+    },
+    {
+      "group": "control API bearer",
+      "label": "the real token without the Bearer scheme → 401",
+      "status": "pass",
+      "detail": "status 401, error.code authentication_failed",
+      "at": "bearer"
+    },
+    {
+      "group": "control API bearer",
+      "label": "POST /operations without Authorization → 401, the operation never runs",
+      "status": "pass",
+      "detail": "status 401, error.code authentication_failed",
+      "at": "bearer"
+    },
+    {
+      "group": "control API bearer",
+      "label": "GET /events without credentials → 401, no stream",
+      "status": "pass",
+      "detail": "status 401, first event (none)",
+      "at": "bearer"
+    },
+    {
+      "group": "control API bearer",
+      "label": "GET /events?token=<forged> → 401, no stream",
+      "status": "pass",
+      "detail": "status 401, first event (none)",
+      "at": "bearer"
+    },
+    {
+      "group": "control API lane capability",
+      "label": "GET /computer/list with a valid bearer but no lane capability → 401",
+      "status": "pass",
+      "detail": "status 401, error.code authentication_failed",
+      "at": "lane-capability"
+    },
+    {
+      "group": "control API lane capability",
+      "label": "GET /computer/list with a forged lane capability → 401",
+      "status": "pass",
+      "detail": "status 401, error.code authentication_failed",
+      "at": "lane-capability"
+    },
+    {
+      "group": "control API lane capability",
+      "label": "POST /computer/exec with a forged lane capability → 401, nothing executes",
+      "status": "pass",
+      "detail": "status 401, error.code authentication_failed",
+      "at": "lane-capability"
+    },
+    {
+      "group": "cross-origin",
+      "label": "control API grants no CORS to a foreign origin",
+      "status": "pass",
+      "detail": "status 405, access-control-allow-origin (absent)",
+      "at": "cors-control"
+    },
+    {
+      "group": "cross-origin",
+      "label": "loopback server grants no CORS to a foreign origin on /doc-feedback",
+      "status": "pass",
+      "detail": "status 405, access-control-allow-origin (absent)",
+      "at": "cors-loopback"
+    },
+    {
+      "group": "cross-origin",
+      "label": "a cross-site text/plain POST to the tokenless /doc-feedback is refused with 415 before any lane",
+      "status": "pass",
+      "detail": "status 415",
+      "at": "json-only"
+    },
+    {
+      "group": "capability tokens",
+      "label": "GET /termctrl/<forged> → 404, empty body",
+      "status": "pass",
+      "detail": "status 404, body 0 bytes",
+      "at": "capability-token"
+    },
+    {
+      "group": "capability tokens",
+      "label": "GET /termctrl/api/<forged>/sessions → 404, empty body",
+      "status": "pass",
+      "detail": "status 404, body 0 bytes",
+      "at": "capability-token"
+    },
+    {
+      "group": "capability tokens",
+      "label": "GET /acp-wire/<forged> → 404, empty body",
+      "status": "pass",
+      "detail": "status 404, body 0 bytes",
+      "at": "capability-token"
+    },
+    {
+      "group": "capability tokens",
+      "label": "GET /acp-wire/<forged>/export.jsonl → 404, empty body",
+      "status": "pass",
+      "detail": "status 404, body 0 bytes",
+      "at": "capability-token"
+    },
+    {
+      "group": "capability tokens",
+      "label": "GET /hurl/<forged> → 404, empty body",
+      "status": "pass",
+      "detail": "status 404, body 0 bytes",
+      "at": "capability-token"
+    },
+    {
+      "group": "capability tokens",
+      "label": "GET /hurl/api/<forged>/source → 404, empty body",
+      "status": "pass",
+      "detail": "status 404, body 0 bytes",
+      "at": "capability-token"
+    },
+    {
+      "group": "capability tokens",
+      "label": "GET /artifact/<forged> → 404, empty body",
+      "status": "pass",
+      "detail": "status 404, body 0 bytes",
+      "at": "capability-token"
+    },
+    {
+      "group": "capability tokens",
+      "label": "GET /artifact/state/<forged> → 404, empty body",
+      "status": "pass",
+      "detail": "status 404, body 0 bytes",
+      "at": "capability-token"
+    },
+    {
+      "group": "capability tokens",
+      "label": "POST /artifact/feedback/<forged> → 404, no feedback reaches a lane",
+      "status": "pass",
+      "detail": "status 404, body 0 bytes",
+      "at": "capability-token"
+    },
+    {
+      "group": "network exposure",
+      "label": "control API port 8766 refuses connections on 192.0.2.10",
+      "status": "pass",
+      "detail": "192.0.2.10:8766 → ECONNREFUSED",
+      "at": "bind-control"
+    },
+    {
+      "group": "network exposure",
+      "label": "loopback server port 64732 refuses connections on 192.0.2.10",
+      "status": "pass",
+      "detail": "192.0.2.10:64732 → ECONNREFUSED",
+      "at": "bind-loopback"
+    }
+  ]
+}

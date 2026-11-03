@@ -1,6 +1,7 @@
 // Spec 329 / 341 — the e2e explorer: a read-only browser over the project's
 // e2e cases, their runs, each run's checks, log and artifacts. Ported from the
-// self-contained `src/acp/artifact-e2e.html` into the loopback app.
+// self-contained `src/acp/artifact-e2e.html` into the loopback app. Spec 355
+// adds the system map: a run's checks pinned on its case's map (`./map.ts`).
 
 import { DisposableBag } from '../../../ui/component';
 import { el, setChildren } from '../../../ui/dom';
@@ -26,6 +27,11 @@ import {
   StatBar,
 } from '../../kit';
 import type { Poller, Tone } from '../../kit';
+import { buildMermaidTheme, renderMermaid } from '../../../acp/harness-mermaid-fence';
+import type { MermaidTheme } from '../../../acp/harness-mermaid-fence';
+import type { SvgPalette } from '../../../acp/harness-svg-fence';
+import { buildPins, countsText, DEFAULT_PIN_COLOURS, hexColour, litNodes, mapSource, MAX_PINS } from './map';
+import type { E2eMap, E2eMapEntry, MapPin, PassRun, PinColours, Unplaced } from './map';
 
 import './e2e.css';
 
@@ -35,6 +41,8 @@ const LOADING_DELAY_MS = 250;
 const EXPIRED = 'This link has expired: Krypton restarted. Run #e2e open again.';
 const TEXT_EXT = ['json', 'txt', 'log', 'md', 'csv', 'xml', 'yaml', 'yml', 'html', 'htm', 'svg'];
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+/** The drawn map reaches the DOM only as an inert `<img>` (spec 294), as GenUI's Diagram does. */
+const SVG_DATA_URL_PREFIX = 'data:image/svg+xml;charset=utf-8,';
 const LETTER: Readonly<Record<string, string>> = {
   PASS: 'P',
   FAIL: 'F',
@@ -56,6 +64,8 @@ export interface E2eCase {
   readonly files: readonly string[];
   readonly caseHash: string | null;
   readonly uncommitted: boolean;
+  /** Spec 355: repo-relative path of the case's system map, a key of `E2eStatus.maps`. */
+  readonly map?: string | null;
 }
 
 export interface E2eRun {
@@ -100,6 +110,7 @@ export interface E2eStatus {
   readonly activeLaunch: ActiveLaunch | null;
   readonly cases: readonly E2eCase[];
   readonly runs: readonly E2eRun[];
+  readonly maps?: Readonly<Record<string, E2eMapEntry>>;
 }
 
 interface Check {
@@ -107,6 +118,7 @@ interface Check {
   readonly label: string;
   readonly status: string;
   readonly detail?: string;
+  readonly at?: unknown;
 }
 
 interface Artifact {
@@ -123,6 +135,17 @@ interface RunDetail {
   readonly log: boolean;
   readonly artifacts: readonly Omit<Artifact, 'index'>[];
 }
+
+interface DrawnMap {
+  readonly kind: 'drawn';
+  readonly map: E2eMap;
+  readonly pins: readonly MapPin[];
+  readonly unplaced: readonly Unplaced[];
+  readonly svg: string;
+}
+
+/** The shown run on its case's map, or why the run pane fell back to the check list. */
+type MapShot = DrawnMap | { readonly kind: 'error'; readonly message: string };
 
 type Pane = 'cases' | 'runs' | 'artifacts';
 
@@ -219,6 +242,10 @@ export class E2eView {
   private loadingTimer: number | undefined;
   private detailRequest = 0;
   private retriedMissingRun = false;
+  private mapShot: MapShot | null = null;
+  /** `m`: the map (default when the case has one) or the grouped check list; kept across runs. */
+  private showMap = true;
+  private mapStyle: { readonly theme: MermaidTheme; readonly colours: PinColours } | null = null;
 
   constructor(private readonly options: E2eViewOptions) {
     this.api = `/e2e/api/${encodeURIComponent(options.token)}`;
@@ -317,6 +344,7 @@ export class E2eView {
           ['Tab', 'next pane'],
           ['Enter', 'open'],
           ['f', 'failures only'],
+          ['m', 'map'],
           ['l', 'log'],
           ['y', 'copy run command'],
           ['r', 'reload'],
@@ -366,6 +394,7 @@ export class E2eView {
         { key: 'Tab', shift: true, label: 'Previous pane', display: '⇧Tab', run: () => this.cyclePane(true) },
         { key: 'Enter', label: 'Open: runs, artifacts, then the artifact', run: () => this.enter() },
         { key: 'f', label: 'Failed and blocked checks only', run: () => this.toggleFailures() },
+        { key: 'm', label: 'System map / check list', run: () => this.toggleMap() },
         { key: 'l', label: 'Open the run log', run: () => this.openLog() },
         { key: 'y', label: 'Copy the run command', run: () => void this.copyCommand() },
         { key: 'r', label: 'Reload', run: () => void this.poller.refresh() },
@@ -664,6 +693,7 @@ export class E2eView {
     this.selectedArtifact = 0;
     // The old detail's log and artifacts must not open under the new run id.
     this.detail = null;
+    this.mapShot = null;
     this.writeHash();
     window.clearTimeout(this.loadingTimer);
     const request = ++this.detailRequest;
@@ -686,25 +716,28 @@ export class E2eView {
       paint(() => setChildren(this.runBox, [emptyState('loading run…')]));
     }, LOADING_DELAY_MS);
     const url = `${this.api}/run?case=${encodeURIComponent(caseId)}&run=${encodeURIComponent(runId)}`;
-    fetchJson<RunDetail>(url).then(
-      (next) => {
-        if (request !== this.detailRequest) return;
-        window.clearTimeout(this.loadingTimer);
-        this.detail = next;
-        paint(() => this.renderRun());
-      },
-      (error: unknown) => {
-        if (request !== this.detailRequest) return;
-        if (error instanceof HttpError && error.status === 404 && !this.retriedMissingRun) {
+    fetchJson<RunDetail>(url)
+      .then(async (next) => ({ next, shot: await this.prepareMap(caseId, runId, next, () => request === this.detailRequest) }))
+      .then(
+        ({ next, shot }) => {
+          if (request !== this.detailRequest) return;
           window.clearTimeout(this.loadingTimer);
-          this.retriedMissingRun = true;
-          void this.poller.refresh();
-          return;
-        }
-        window.clearTimeout(this.loadingTimer);
-        paint(() => setChildren(this.runBox, [emptyState(failureText(error))]));
-      },
-    );
+          this.detail = next;
+          this.mapShot = shot;
+          paint(() => this.renderRun());
+        },
+        (error: unknown) => {
+          if (request !== this.detailRequest) return;
+          if (error instanceof HttpError && error.status === 404 && !this.retriedMissingRun) {
+            window.clearTimeout(this.loadingTimer);
+            this.retriedMissingRun = true;
+            void this.poller.refresh();
+            return;
+          }
+          window.clearTimeout(this.loadingTimer);
+          paint(() => setChildren(this.runBox, [emptyState(failureText(error))]));
+        },
+      );
   }
 
   private writeHash(): void {
@@ -748,13 +781,16 @@ export class E2eView {
           kbd: 'f',
           onClick: () => this.toggleFailures(),
         }),
+        this.mapShot?.kind === 'drawn'
+          ? button('map', { variant: 'toggle', pressed: this.showMap, kbd: 'm', onClick: () => this.toggleMap() })
+          : null,
         detail.log ? button('log', { kbd: 'l', onClick: () => this.openLog() }) : null,
         el('span', {
           class: 'lb-muted lb-e2e__meta',
           text: `${c.pass} pass · ${c.fail} fail · ${c.blocked} blocked · ${c.skip} skip · ${c.info} info`,
         }),
       ),
-      this.renderChecks(detail),
+      ...this.renderResult(detail),
     ];
     if (detail.artifacts.length) {
       this.artifacts.setItems(detail.artifacts.map((a, index) => ({ ...a, index })));
@@ -784,22 +820,166 @@ export class E2eView {
           'div',
           { class: 'lb-e2e__group' },
           name ? el('div', { class: 'lb-e2e__group-name', text: name }) : null,
-          ...list.map((check) =>
-            el(
-              'div',
-              { class: 'lb-e2e__check' },
-              el('span', {}, pill(check.status, checkTone(check.status))),
-              el(
-                'span',
-                { class: 'lb-e2e__check-label' },
-                check.label,
-                check.detail ? el('span', { class: 'lb-e2e__check-detail', text: check.detail }) : null,
-              ),
-            ),
-          ),
+          ...list.map((check) => this.checkRow(check)),
         ),
       ),
     );
+  }
+
+  private checkRow(check: Check): HTMLElement {
+    return el(
+      'div',
+      { class: 'lb-e2e__check' },
+      el('span', {}, pill(check.status, checkTone(check.status))),
+      el(
+        'span',
+        { class: 'lb-e2e__check-label' },
+        check.label,
+        check.detail ? el('span', { class: 'lb-e2e__check-detail', text: check.detail }) : null,
+      ),
+    );
+  }
+
+  // ── system map (spec 355) ──
+
+  private renderResult(detail: RunDetail): ElChild[] {
+    const shot = this.mapShot;
+    if (shot?.kind === 'error') return [this.errorBlock(shot.message), this.renderChecks(detail)];
+    if (shot?.kind === 'drawn' && this.showMap && detail.result) return [this.renderMap(shot, detail.result.checks ?? [])];
+    return [this.renderChecks(detail)];
+  }
+
+  /** The run on its case's map, then each pin's checks; `f` trims the list, never the picture. */
+  private renderMap(shot: DrawnMap, checks: readonly Check[]): HTMLElement {
+    const shown = (index: number): boolean =>
+      !this.failuresOnly || checks[index].status === 'fail' || checks[index].status === 'blocked';
+    const nodes = new Map(shot.map.nodes.map((n) => [n.id, n]));
+    const blocks: HTMLElement[] = [];
+    for (const pin of shot.pins) {
+      const rows = pin.checks.filter(shown);
+      if (!rows.length) continue;
+      const node = nodes.get(pin.at);
+      blocks.push(
+        el(
+          'div',
+          { class: 'lb-e2e__pin' },
+          el(
+            'div',
+            { class: 'lb-e2e__pin-head' },
+            el('strong', { text: pin.key }),
+            el('span', { text: node ? node.label.replace(/\n/g, ' ') : pin.at }),
+            pin.group ? el('span', { class: 'lb-muted', text: pin.group }) : null,
+            pill(countsText(pin.counts), checkTone(pin.tone)),
+            node?.source ? el('code', { class: 'lb-e2e__pin-source', text: node.source }) : null,
+          ),
+          pin.before
+            ? el('span', { class: 'lb-e2e__pin-note', text: `PASS ${pin.before.runId}: ${countsText(pin.before.counts)}` })
+            : null,
+          ...rows.map((index) => this.checkRow(checks[index])),
+        ),
+      );
+    }
+    const loose = shot.unplaced.filter((u) => shown(u.index));
+    if (loose.length) {
+      blocks.push(
+        el(
+          'div',
+          { class: 'lb-e2e__pin' },
+          el('div', { class: 'lb-e2e__pin-head' }, el('strong', { text: 'not on the map' })),
+          ...loose.flatMap((u) => [
+            this.checkRow(checks[u.index]),
+            u.reason ? el('span', { class: 'lb-e2e__pin-note lb-e2e__problem', text: u.reason }) : null,
+          ]),
+        ),
+      );
+    }
+    return el(
+      'div',
+      { class: 'lb-e2e__map-view' },
+      el(
+        'figure',
+        { class: 'lb-e2e__map' },
+        el('img', {
+          class: 'lb-e2e__map-img',
+          attrs: { src: SVG_DATA_URL_PREFIX + encodeURIComponent(shot.svg), alt: `System map with ${shot.pins.length} pins` },
+        }),
+      ),
+      blocks.length
+        ? el('div', { class: 'lb-e2e__pins' }, ...blocks)
+        : emptyState(this.failuresOnly ? 'No failed or blocked checks' : 'No checks'),
+    );
+  }
+
+  private toggleMap(): void {
+    if (this.mapShot?.kind !== 'drawn') return;
+    this.showMap = !this.showMap;
+    this.renderRun();
+  }
+
+  /**
+   * Draw the run on its case's map before the run pane paints, so a run
+   * switch stays one paint (0329). Resolves null when the case has no map,
+   * the run has no Result, or a newer selection made this one moot.
+   */
+  private async prepareMap(caseId: string, runId: string, detail: RunDetail, wanted: () => boolean): Promise<MapShot | null> {
+    const path = this.status?.cases.find((c) => c.id === caseId)?.map;
+    const entry = path ? this.status?.maps?.[path] : undefined;
+    if (!path || !entry || !detail.result) return null;
+    if (!entry.map) return { kind: 'error', message: `map ${path}: ${entry.errors.join('; ') || 'not loaded'}` };
+    const before = await this.earlierPass(caseId, runId, detail.info.verdict);
+    const { pins, unplaced } = buildPins(detail.result.checks ?? [], entry.map, before);
+    if (pins.length > MAX_PINS) return { kind: 'error', message: `map ${path}: too many pins (${pins.length} > ${MAX_PINS})` };
+    this.mapStyle ??= this.readMapStyle();
+    const source = mapSource(entry.map, pins, litNodes(entry.map, pins), this.mapStyle.colours);
+    const result = await renderMermaid(source, this.mapStyle.theme, wanted);
+    if (!result) return null;
+    if (!result.ok) return { kind: 'error', message: `map could not be drawn: ${result.error}` };
+    return { kind: 'drawn', map: entry.map, pins, unplaced, svg: result.svg };
+  }
+
+  /** The newest PASS older than `runId`, when this run did not pass; null when there is none or it cannot load. */
+  private async earlierPass(caseId: string, runId: string, verdict: string): Promise<PassRun | null> {
+    if (verdict === 'PASS') return null;
+    const runs = this.runsOf(caseId);
+    const at = runs.findIndex((r) => r.runId === runId);
+    const pass = at < 0 ? undefined : runs.slice(at + 1).find((r) => r.verdict === 'PASS');
+    if (!pass) return null;
+    try {
+      const url = `${this.api}/run?case=${encodeURIComponent(caseId)}&run=${encodeURIComponent(pass.runId)}`;
+      const detail = await fetchJson<RunDetail>(url);
+      return detail.result ? { runId: pass.runId, checks: detail.result.checks ?? [] } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The page is fixed dark with its own tokens, not the app's `--krypton-*` ones `readSvgPalette` reads. */
+  private readMapStyle(): { theme: MermaidTheme; colours: PinColours } {
+    const style = getComputedStyle(document.documentElement);
+    const token = (name: string): string => style.getPropertyValue(name).trim();
+    const sources: ReadonlyArray<readonly [keyof SvgPalette, string]> = [
+      ['fg', '--fg'],
+      ['muted', '--muted'],
+      ['border', '--border'],
+      ['accent', '--accent'],
+      ['success', '--add'],
+      ['error', '--del'],
+      ['surface', '--card'],
+    ];
+    const palette: SvgPalette = {};
+    for (const [key, name] of sources) {
+      const value = token(name);
+      if (value) palette[key] = value;
+    }
+    return {
+      theme: buildMermaidTheme(palette, token('--mono'), true),
+      colours: {
+        pass: hexColour(token('--add')) ?? DEFAULT_PIN_COLOURS.pass,
+        fail: hexColour(token('--del')) ?? DEFAULT_PIN_COLOURS.fail,
+        blocked: hexColour(token('--accent')) ?? DEFAULT_PIN_COLOURS.blocked,
+        muted: hexColour(token('--muted')) ?? DEFAULT_PIN_COLOURS.muted,
+      },
+    };
   }
 
   private toggleFailures(): void {
