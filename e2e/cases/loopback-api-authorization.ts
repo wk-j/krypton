@@ -28,13 +28,16 @@ export const meta: CaseMeta = {
 
 const FOREIGN_ORIGIN = 'https://krypton-e2e.invalid';
 
-function forged(): string {
-  return randomBytes(16).toString('hex');
+function forged(run: Run): string {
+  const value = randomBytes(16).toString('hex');
+  run.addSecret(value);
+  return value;
 }
 
 function expectUnauthorized(run: Run, group: string, label: string, exchange: Exchange, at: string): void {
   const code = String(asRecord(asRecord(exchange.json).error).code ?? '(none)');
-  run.check(group, label, exchange.status === 401 && code === 'authentication_failed', `status ${exchange.status}, error.code ${code}`, at);
+  run.check(group, label, exchange.status === 401 && code === 'authentication_failed', `status ${exchange.status}, error.code ${code}`, at,
+    { ...exchange.check, expected: 'status 401, error.code authentication_failed', actual: `status ${exchange.status}, error.code ${code}` });
 }
 
 function expectHiddenCapability(run: Run, label: string, exchange: Exchange): void {
@@ -44,6 +47,7 @@ function expectHiddenCapability(run: Run, label: string, exchange: Exchange): vo
     exchange.status === 404 && exchange.text.length === 0,
     `status ${exchange.status}, body ${exchange.text.length} bytes`,
     'capability-token',
+    { ...exchange.check, expected: 'status 404, body 0 bytes', actual: `status ${exchange.status}, body ${exchange.text.length} bytes` },
   );
 }
 
@@ -62,6 +66,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     accepted.status === 200,
     `status ${accepted.status}`,
     'control-handlers',
+    { ...accepted.check, expected: '200', actual: String(accepted.status) },
   );
   expectUnauthorized(
     run,
@@ -75,7 +80,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     'control API bearer',
     'GET /capabilities with a forged bearer → 401',
     await http(run, 'capabilities-forged-bearer', `${control.url}/capabilities`, {
-      headers: { authorization: `Bearer ${forged()}` },
+      headers: { authorization: `Bearer ${forged(run)}` },
     }),
     'bearer',
   );
@@ -102,14 +107,16 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     eventsNoAuth.status === 401 && eventsNoAuth.event === null,
     `status ${eventsNoAuth.status}, first event ${eventsNoAuth.event ?? '(none)'}`,
     'bearer',
+    { ...eventsNoAuth.check, expected: 'status 401, first event null', actual: `status ${eventsNoAuth.status}, first event ${eventsNoAuth.event}` },
   );
-  const eventsForged = await firstSseEvent(run, 'events-forged-query-token', `${control.url}/events?token=${forged()}`, {}, 5000);
+  const eventsForged = await firstSseEvent(run, 'events-forged-query-token', `${control.url}/events?token=${forged(run)}`, {}, 5000);
   run.check(
     'control API bearer',
     'GET /events?token=<forged> → 401, no stream',
     eventsForged.status === 401 && eventsForged.event === null,
     `status ${eventsForged.status}, first event ${eventsForged.event ?? '(none)'}`,
     'bearer',
+    { ...eventsForged.check, expected: 'status 401, first event null', actual: `status ${eventsForged.status}, first event ${eventsForged.event}` },
   );
 
   // Control API: the connected-computer routes need a live lane capability on top.
@@ -125,7 +132,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     'control API lane capability',
     'GET /computer/list with a forged lane capability → 401',
     await http(run, 'computer-list-forged-capability', `${control.url}/computer/list`, {
-      headers: { ...bearer, 'x-krypton-computer-capability': forged() },
+      headers: { ...bearer, 'x-krypton-computer-capability': forged(run) },
     }),
     'lane-capability',
   );
@@ -135,7 +142,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     'POST /computer/exec with a forged lane capability → 401, nothing executes',
     await http(run, 'computer-exec-forged-capability', `${control.url}/computer/exec`, {
       method: 'POST',
-      headers: { ...bearer, ...json, 'x-krypton-computer-capability': forged() },
+      headers: { ...bearer, ...json, 'x-krypton-computer-capability': forged(run) },
       body: JSON.stringify({ computerId: 'krypton-e2e-none', command: 'true' }),
     }),
     'lane-capability',
@@ -158,6 +165,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     !controlPreflight.headers.has('access-control-allow-origin'),
     `status ${controlPreflight.status}, access-control-allow-origin ${controlPreflight.headers.get('access-control-allow-origin') ?? '(absent)'}`,
     'cors-control',
+    { ...controlPreflight.check, expected: 'access-control-allow-origin absent', actual: controlPreflight.headers.get('access-control-allow-origin') ?? 'access-control-allow-origin absent' },
   );
   const docFeedback = `${loopback.url}/doc-feedback?harness=krypton-e2e-none&path=README.md`;
   const loopbackPreflight = await preflight(docFeedback, 'doc-feedback-preflight-foreign-origin');
@@ -167,6 +175,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     !loopbackPreflight.headers.has('access-control-allow-origin'),
     `status ${loopbackPreflight.status}, access-control-allow-origin ${loopbackPreflight.headers.get('access-control-allow-origin') ?? '(absent)'}`,
     'cors-loopback',
+    { ...loopbackPreflight.check, expected: 'access-control-allow-origin absent', actual: loopbackPreflight.headers.get('access-control-allow-origin') ?? 'access-control-allow-origin absent' },
   );
   const simplePost = await http(run, 'doc-feedback-cross-site-simple-post', docFeedback, {
     method: 'POST',
@@ -179,10 +188,11 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
     simplePost.status === 415,
     `status ${simplePost.status}`,
     'json-only',
+    { ...simplePost.check, expected: '415', actual: String(simplePost.status) },
   );
 
   // Loopback server: capability-token routes hide unknown tokens.
-  const token = forged();
+  const token = forged(run);
   const capabilityRoutes: Array<[string, string, string]> = [
     ['termctrl-page', `/termctrl/${token}`, 'GET /termctrl/<forged> → 404, empty body'],
     ['termctrl-sessions', `/termctrl/api/${token}/sessions`, 'GET /termctrl/api/<forged>/sessions → 404, empty body'],
@@ -224,6 +234,7 @@ export async function execute({ run, params }: CaseContext): Promise<void> {
       outcome !== 'connected',
       outcome === 'connected' ? `${external}:${port} accepted a connection` : `${external}:${port} → ${outcome}`,
       at,
+      { target: { type: 'process', name }, params: { host: external, port }, expected: 'not connected', actual: outcome },
     );
   }
 }

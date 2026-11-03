@@ -32,6 +32,8 @@ import type { MermaidTheme } from '../../../acp/harness-mermaid-fence';
 import type { SvgPalette } from '../../../acp/harness-svg-fence';
 import { buildPins, countsText, DEFAULT_PIN_COLOURS, hexColour, litNodes, mapSource, MAX_PINS } from './map';
 import type { E2eMap, E2eMapEntry, MapPin, PassRun, PinColours, Unplaced } from './map';
+import { clip, kindTag, paramsText, resolvePointer, stepLayout, stepLinks } from './checks';
+import type { Check, CheckEvidence, PointerHit, StepLinks } from './checks';
 
 import './e2e.css';
 
@@ -113,14 +115,6 @@ export interface E2eStatus {
   readonly maps?: Readonly<Record<string, E2eMapEntry>>;
 }
 
-interface Check {
-  readonly group?: string;
-  readonly label: string;
-  readonly status: string;
-  readonly detail?: string;
-  readonly at?: unknown;
-}
-
 interface Artifact {
   readonly label: string;
   readonly path: string;
@@ -147,7 +141,10 @@ interface DrawnMap {
 /** The shown run on its case's map, or why the run pane fell back to the check list. */
 type MapShot = DrawnMap | { readonly kind: 'error'; readonly message: string };
 
-type Pane = 'cases' | 'runs' | 'artifacts';
+type Pane = 'cases' | 'runs' | 'checks' | 'artifacts';
+
+/** The run pane's layouts, in `m` order (spec 0328 rev 5). */
+type Layout = 'map' | 'group' | 'step';
 
 function when(iso: string | null): string {
   if (!iso) return '—';
@@ -243,8 +240,15 @@ export class E2eView {
   private detailRequest = 0;
   private retriedMissingRun = false;
   private mapShot: MapShot | null = null;
-  /** `m`: the map (default when the case has one) or the grouped check list; kept across runs. */
-  private showMap = true;
+  /** `m`: map (default when the case has one) → by group → by step; kept across runs. */
+  private layout: Layout = 'map';
+  /** The shown run's checks and their step links, set on every run-pane paint. */
+  private checks: readonly Check[] = [];
+  private links: StepLinks = stepLinks([]);
+  /** Rows with `evidence`, in display order: the stops of the `checks` pane's cursor. */
+  private evidenceRows: { readonly index: number; readonly el: HTMLElement }[] = [];
+  /** Index into `checks` of the row under that cursor. */
+  private cursor: number | null = null;
   private mapStyle: { readonly theme: MermaidTheme; readonly colours: PinColours } | null = null;
 
   constructor(private readonly options: E2eViewOptions) {
@@ -344,7 +348,7 @@ export class E2eView {
           ['Tab', 'next pane'],
           ['Enter', 'open'],
           ['f', 'failures only'],
-          ['m', 'map'],
+          ['m', 'view'],
           ['l', 'log'],
           ['y', 'copy run command'],
           ['r', 'reload'],
@@ -392,9 +396,11 @@ export class E2eView {
         },
         { key: 'Tab', shift: false, label: 'Next pane', run: () => this.cyclePane(false) },
         { key: 'Tab', shift: true, label: 'Previous pane', display: '⇧Tab', run: () => this.cyclePane(true) },
-        { key: 'Enter', label: 'Open: runs, artifacts, then the artifact', run: () => this.enter() },
+        { key: ['j', 'ArrowDown'], label: 'Next row with evidence', when: () => this.pane === 'checks', run: () => this.moveCursor(1) },
+        { key: ['k', 'ArrowUp'], label: 'Previous row with evidence', when: () => this.pane === 'checks', run: () => this.moveCursor(-1) },
+        { key: 'Enter', label: "Open: runs, artifacts, the artifact or the row's evidence", run: () => this.enter() },
         { key: 'f', label: 'Failed and blocked checks only', run: () => this.toggleFailures() },
-        { key: 'm', label: 'System map / check list', run: () => this.toggleMap() },
+        { key: 'm', label: 'View: map / by group / by step', run: () => this.cycleLayout() },
         { key: 'l', label: 'Open the run log', run: () => this.openLog() },
         { key: 'y', label: 'Copy the run command', run: () => void this.copyCommand() },
         { key: 'r', label: 'Reload', run: () => void this.poller.refresh() },
@@ -420,12 +426,15 @@ export class E2eView {
     if (this.pane === 'cases') this.setPane('runs');
     else if (this.pane === 'runs') {
       if (this.detail && this.detail.artifacts.length) this.setPane('artifacts');
+    } else if (this.pane === 'checks') {
+      if (this.cursor !== null) this.openEvidence(this.cursor);
     } else this.openArtifact(this.selectedArtifact);
   }
 
   private cyclePane(back: boolean): void {
-    const order: Pane[] = ['cases', 'runs', 'artifacts'];
-    if (!this.detail || !this.detail.artifacts.length) order.pop();
+    const order: Pane[] = ['cases', 'runs'];
+    if (this.evidenceRows.length) order.push('checks');
+    if (this.detail?.artifacts.length) order.push('artifacts');
     const i = Math.max(0, order.indexOf(this.pane));
     this.setPane(order[(i + (back ? order.length - 1 : 1)) % order.length]);
   }
@@ -435,6 +444,7 @@ export class E2eView {
     this.casePane.classList.toggle('lb-e2e__pane--focused', next === 'cases');
     this.runsPane.classList.toggle('lb-e2e__pane--focused', next === 'runs');
     this.runBox.classList.toggle('lb-e2e__pane--focused', next === 'artifacts');
+    this.runBox.classList.toggle('lb-e2e__run--checks', next === 'checks');
   }
 
   // ── loading ──
@@ -691,6 +701,7 @@ export class E2eView {
   private selectRun(runId: string | null, paintCase?: () => void): void {
     this.selectedRun = runId;
     this.selectedArtifact = 0;
+    this.cursor = null;
     // The old detail's log and artifacts must not open under the new run id.
     this.detail = null;
     this.mapShot = null;
@@ -753,6 +764,10 @@ export class E2eView {
     if (!detail) return;
     const info = detail.info;
     const c = info.counts;
+    const checks = detail.result?.checks;
+    this.checks = Array.isArray(checks) ? checks : [];
+    this.links = stepLinks(this.checks);
+    this.evidenceRows = [];
     const children: ElChild[] = [
       el(
         'div',
@@ -781,8 +796,8 @@ export class E2eView {
           kbd: 'f',
           onClick: () => this.toggleFailures(),
         }),
-        this.mapShot?.kind === 'drawn'
-          ? button('map', { variant: 'toggle', pressed: this.showMap, kbd: 'm', onClick: () => this.toggleMap() })
+        this.layouts().length > 1
+          ? button(`view: ${this.shownLayout()}`, { kbd: 'm', onClick: () => this.cycleLayout() })
           : null,
         detail.log ? button('log', { kbd: 'l', onClick: () => this.openLog() }) : null,
         el('span', {
@@ -800,63 +815,178 @@ export class E2eView {
     this.closeViewer();
     children.push(this.viewer);
     setChildren(this.runBox, children);
+    this.placeCursor();
   }
 
-  private renderChecks(detail: RunDetail): HTMLElement {
-    if (!detail.result) return emptyState('No Result for this run — see the message and the log');
-    const checks = Array.isArray(detail.result.checks) ? detail.result.checks : [];
-    const shown = checks.filter((c) => !this.failuresOnly || c.status === 'fail' || c.status === 'blocked');
-    if (!shown.length) return emptyState(this.failuresOnly ? 'No failed or blocked checks' : 'No checks');
-    const groups = new Map<string, Check[]>();
-    for (const check of shown) {
-      const name = check.group ?? '';
-      groups.set(name, [...(groups.get(name) ?? []), check]);
+  /** The layouts the shown run offers, in `m` order. */
+  private layouts(): Layout[] {
+    const out: Layout[] = [];
+    if (this.mapShot?.kind === 'drawn' && this.detail?.result) out.push('map');
+    out.push('group');
+    if (this.links.heads.length) out.push('step');
+    return out;
+  }
+
+  /** The chosen layout when this run offers it, else the grouped list. */
+  private shownLayout(): Layout {
+    return this.layouts().includes(this.layout) ? this.layout : 'group';
+  }
+
+  private cycleLayout(): void {
+    const layouts = this.layouts();
+    if (!this.detail || layouts.length < 2) return;
+    this.layout = layouts[(layouts.indexOf(this.shownLayout()) + 1) % layouts.length];
+    this.renderRun();
+  }
+
+  /** `f` keeps failed and blocked rows. */
+  private shows(index: number): boolean {
+    const status = this.checks[index].status;
+    return !this.failuresOnly || status === 'fail' || status === 'blocked';
+  }
+
+  private noChecks(): HTMLElement {
+    return emptyState(this.failuresOnly ? 'No failed or blocked checks' : 'No checks');
+  }
+
+  private renderGroups(): HTMLElement {
+    const shown = this.checks.map((_, index) => index).filter((index) => this.shows(index));
+    return shown.length ? el('div', { class: 'lb-e2e__checks' }, ...this.groupBlocks(shown, true)) : this.noChecks();
+  }
+
+  /** Rows grouped by `group`, groups in first-appearance order. */
+  private groupBlocks(indexes: readonly number[], showLink: boolean): HTMLElement[] {
+    const groups = new Map<string, number[]>();
+    for (const index of indexes) {
+      const name = this.checks[index].group ?? '';
+      groups.set(name, [...(groups.get(name) ?? []), index]);
     }
-    return el(
-      'div',
-      { class: 'lb-e2e__checks' },
-      ...[...groups].map(([name, list]) =>
-        el(
-          'div',
-          { class: 'lb-e2e__group' },
-          name ? el('div', { class: 'lb-e2e__group-name', text: name }) : null,
-          ...list.map((check) => this.checkRow(check)),
-        ),
+    return [...groups].map(([name, list]) =>
+      el(
+        'div',
+        { class: 'lb-e2e__group' },
+        name ? el('div', { class: 'lb-e2e__group-name', text: name }) : null,
+        ...list.map((index) => this.checkRow(index, showLink)),
       ),
     );
   }
 
-  private checkRow(check: Check): HTMLElement {
-    return el(
+  /** Spec 0328 rev 5: preconditions, then each step with the rows that link to it, then the rest by group. */
+  private renderSteps(): HTMLElement {
+    const layout = stepLayout(this.checks, this.links);
+    const blocks: HTMLElement[] = [];
+    const preconditions = layout.preconditions.filter((index) => this.shows(index));
+    if (preconditions.length) {
+      blocks.push(
+        el(
+          'div',
+          { class: 'lb-e2e__group' },
+          el('div', { class: 'lb-e2e__group-name', text: 'Preconditions' }),
+          ...preconditions.map((index) => this.checkRow(index, false)),
+        ),
+      );
+    }
+    for (const step of layout.steps) {
+      const rows = step.rows.filter((index) => this.shows(index));
+      if (!rows.length && !this.shows(step.head)) continue;
+      const head = this.checkRow(step.head, false);
+      head.classList.add('lb-e2e__check--head');
+      blocks.push(el('div', { class: 'lb-e2e__step' }, head, ...rows.map((index) => this.checkRow(index, false))));
+    }
+    const other = layout.other.filter((index) => this.shows(index));
+    if (other.length) {
+      blocks.push(
+        el(
+          'div',
+          { class: 'lb-e2e__group' },
+          el('div', { class: 'lb-e2e__group-name', text: 'Other checks' }),
+          ...this.groupBlocks(other, false),
+        ),
+      );
+    }
+    return blocks.length ? el('div', { class: 'lb-e2e__checks' }, ...blocks) : this.noChecks();
+  }
+
+  /** One check; the rev 5 fields add a line each only when present, so an older row reads as before. */
+  private checkRow(index: number, showLink: boolean): HTMLElement {
+    const check = this.checks[index];
+    const tag = kindTag(check.kind);
+    const link = showLink ? this.links.linkOf[index] : null;
+    const unknownStep = this.links.unknownStep[index];
+    const row = el(
       'div',
       { class: 'lb-e2e__check' },
       el('span', {}, pill(check.status, checkTone(check.status))),
       el(
         'span',
         { class: 'lb-e2e__check-label' },
+        tag ? el('span', { class: 'lb-e2e__check-kind', text: tag }) : null,
         check.label,
+        check.target ? el('span', { class: 'lb-e2e__check-target', text: `${check.target.type} · ${check.target.name}` }) : null,
+        link === null ? null : el('span', { class: 'lb-e2e__check-link', text: `← ${this.checks[link].label}` }),
         check.detail ? el('span', { class: 'lb-e2e__check-detail', text: check.detail }) : null,
+        check.params && Object.keys(check.params).length
+          ? el('span', { class: 'lb-e2e__check-params', text: paramsText(check.params) })
+          : null,
+        check.expected === undefined ? null : el('span', { class: 'lb-e2e__check-value', text: `expected ${clip(check.expected)}` }),
+        check.actual === undefined
+          ? null
+          : el('span', {
+              class: check.status === 'fail' ? 'lb-e2e__check-value lb-e2e__check-value--fail' : 'lb-e2e__check-value',
+              text: `actual ${clip(check.actual)}`,
+            }),
+        check.evidence ? this.evidenceLine(check.evidence) : null,
+        unknownStep === null ? null : el('span', { class: 'lb-e2e__check-detail lb-e2e__problem', text: `no step "${unknownStep}"` }),
       ),
     );
+    if (check.evidence) this.evidenceRows.push({ index, el: row });
+    return row;
+  }
+
+  private evidenceLine(evidence: CheckEvidence): HTMLElement {
+    const artifact = this.detail?.artifacts.find((a) => a.label === evidence.artifact);
+    const problem = artifact ? artifact.problem : `no artifact "${evidence.artifact}"`;
+    return el(
+      'span',
+      { class: 'lb-e2e__check-evidence' },
+      `evidence: ${evidence.artifact}${evidence.pointer ? ` ${evidence.pointer}` : ''}`,
+      problem ? el('span', { class: 'lb-e2e__problem', text: ` — ${problem}` }) : null,
+    );
+  }
+
+  /** Keep the cursor on its row across repaints; leave the `checks` pane when no shown row has evidence. */
+  private placeCursor(): void {
+    if (!this.evidenceRows.some((row) => row.index === this.cursor)) this.cursor = this.evidenceRows[0]?.index ?? null;
+    for (const row of this.evidenceRows) row.el.classList.toggle('lb-e2e__check--cursor', row.index === this.cursor);
+    if (this.pane === 'checks' && this.cursor === null) this.setPane('runs');
+  }
+
+  private moveCursor(delta: number): void {
+    const at = this.evidenceRows.findIndex((row) => row.index === this.cursor);
+    const next = this.evidenceRows[Math.min(this.evidenceRows.length - 1, Math.max(0, at + delta))];
+    if (!next) return;
+    this.cursor = next.index;
+    for (const row of this.evidenceRows) row.el.classList.toggle('lb-e2e__check--cursor', row === next);
+    next.el.scrollIntoView?.({ block: 'nearest' });
   }
 
   // ── system map (spec 355) ──
 
   private renderResult(detail: RunDetail): ElChild[] {
     const shot = this.mapShot;
-    if (shot?.kind === 'error') return [this.errorBlock(shot.message), this.renderChecks(detail)];
-    if (shot?.kind === 'drawn' && this.showMap && detail.result) return [this.renderMap(shot, detail.result.checks ?? [])];
-    return [this.renderChecks(detail)];
+    const layout = this.shownLayout();
+    if (layout === 'map' && shot?.kind === 'drawn') return [this.renderMap(shot)];
+    const lead = shot?.kind === 'error' ? [this.errorBlock(shot.message)] : [];
+    if (!detail.result) return [...lead, emptyState('No Result for this run — see the message and the log')];
+    return [...lead, layout === 'step' ? this.renderSteps() : this.renderGroups()];
   }
 
   /** The run on its case's map, then each pin's checks; `f` trims the list, never the picture. */
-  private renderMap(shot: DrawnMap, checks: readonly Check[]): HTMLElement {
-    const shown = (index: number): boolean =>
-      !this.failuresOnly || checks[index].status === 'fail' || checks[index].status === 'blocked';
+  private renderMap(shot: DrawnMap): HTMLElement {
     const nodes = new Map(shot.map.nodes.map((n) => [n.id, n]));
     const blocks: HTMLElement[] = [];
     for (const pin of shot.pins) {
-      const rows = pin.checks.filter(shown);
+      const rows = pin.checks.filter((index) => this.shows(index));
       if (!rows.length) continue;
       const node = nodes.get(pin.at);
       blocks.push(
@@ -875,11 +1005,11 @@ export class E2eView {
           pin.before
             ? el('span', { class: 'lb-e2e__pin-note', text: `PASS ${pin.before.runId}: ${countsText(pin.before.counts)}` })
             : null,
-          ...rows.map((index) => this.checkRow(checks[index])),
+          ...rows.map((index) => this.checkRow(index, true)),
         ),
       );
     }
-    const loose = shot.unplaced.filter((u) => shown(u.index));
+    const loose = shot.unplaced.filter((u) => this.shows(u.index));
     if (loose.length) {
       blocks.push(
         el(
@@ -887,7 +1017,7 @@ export class E2eView {
           { class: 'lb-e2e__pin' },
           el('div', { class: 'lb-e2e__pin-head' }, el('strong', { text: 'not on the map' })),
           ...loose.flatMap((u) => [
-            this.checkRow(checks[u.index]),
+            this.checkRow(u.index, true),
             u.reason ? el('span', { class: 'lb-e2e__pin-note lb-e2e__problem', text: u.reason }) : null,
           ]),
         ),
@@ -904,16 +1034,8 @@ export class E2eView {
           attrs: { src: SVG_DATA_URL_PREFIX + encodeURIComponent(shot.svg), alt: `System map with ${shot.pins.length} pins` },
         }),
       ),
-      blocks.length
-        ? el('div', { class: 'lb-e2e__pins' }, ...blocks)
-        : emptyState(this.failuresOnly ? 'No failed or blocked checks' : 'No checks'),
+      blocks.length ? el('div', { class: 'lb-e2e__pins' }, ...blocks) : this.noChecks(),
     );
-  }
-
-  private toggleMap(): void {
-    if (this.mapShot?.kind !== 'drawn') return;
-    this.showMap = !this.showMap;
-    this.renderRun();
   }
 
   /**
@@ -989,8 +1111,14 @@ export class E2eView {
 
   // ── viewer ──
 
-  private showViewer(title: string, content: HTMLElement): void {
+  private showViewer(title: string, content: HTMLElement, note?: string): void {
     this.viewer.hidden = false;
+    let noteEl: HTMLElement | null = null;
+    if (note) {
+      const banner = new Banner();
+      banner.show(note, 'info');
+      noteEl = banner.el;
+    }
     setChildren(this.viewer, [
       el(
         'div',
@@ -998,6 +1126,7 @@ export class E2eView {
         el('span', { text: title }),
         button('close', { variant: 'ghost', kbd: 'Esc', onClick: () => this.closeViewer() }),
       ),
+      noteEl,
       content,
     ]);
     this.viewer.scrollIntoView?.({ block: 'nearest' });
@@ -1010,9 +1139,9 @@ export class E2eView {
     return true;
   }
 
-  private showText(title: string, url: string): void {
+  private showText(title: string, url: string, note?: string): void {
     const pre = el('pre', { class: 'lb-e2e__viewer-text', text: 'loading…' });
-    this.showViewer(title, pre);
+    this.showViewer(title, pre, note);
     fetchText(url).then(
       (text) => {
         pre.textContent = text || '(empty)';
@@ -1029,23 +1158,71 @@ export class E2eView {
     this.showText(`log · ${detail.info.launchId}`, `${this.api}/log?launch=${encodeURIComponent(detail.info.launchId)}`);
   }
 
-  private openArtifact(index: number): void {
+  private artifactUrl(index: number): string {
+    return `${this.api}/artifact?case=${encodeURIComponent(this.selectedCase ?? '')}&run=${encodeURIComponent(this.selectedRun ?? '')}&index=${index}`;
+  }
+
+  private openArtifact(index: number, note?: string): void {
     const a = this.detail?.artifacts[index];
     if (!a || !this.selectedCase || !this.selectedRun) return;
     if (a.problem) {
       this.flash.show(`${a.path}: ${a.problem}`, 'error', 4000);
       return;
     }
-    const url = `${this.api}/artifact?case=${encodeURIComponent(this.selectedCase)}&run=${encodeURIComponent(this.selectedRun)}&index=${index}`;
+    const url = this.artifactUrl(index);
     const ext = (a.path.split('.').pop() ?? '').toLowerCase();
     const title = `${a.label} · ${a.path}`;
     if (IMAGE_EXT.includes(ext)) {
-      this.showViewer(title, el('img', { class: 'lb-e2e__viewer-img', attrs: { alt: a.label, src: url } }));
+      this.showViewer(title, el('img', { class: 'lb-e2e__viewer-img', attrs: { alt: a.label, src: url } }), note);
     } else if (TEXT_EXT.includes(ext)) {
-      this.showText(title, url);
+      this.showText(title, url, note);
     } else {
-      this.showViewer(title, el('pre', { class: 'lb-e2e__viewer-text' }, el('a', { text: `download ${a.path}`, attrs: { href: url } })));
+      this.showViewer(title, el('pre', { class: 'lb-e2e__viewer-text' }, el('a', { text: `download ${a.path}`, attrs: { href: url } })), note);
     }
+  }
+
+  /** Enter in the `checks` pane: the row's evidence, at its pointer when the artifact is a `.json` file. */
+  private openEvidence(index: number): void {
+    const evidence = this.checks[index]?.evidence;
+    const artifacts = this.detail?.artifacts ?? [];
+    if (!evidence) return;
+    const at = artifacts.findIndex((a) => a.label === evidence.artifact);
+    if (at < 0) {
+      this.flash.show(`no artifact "${evidence.artifact}"`, 'error', 4000);
+      return;
+    }
+    const { path, problem } = artifacts[at];
+    if (evidence.pointer === undefined || problem) this.openArtifact(at);
+    else if ((path.split('.').pop() ?? '').toLowerCase() === 'json') this.showPointer(at, evidence.pointer);
+    else this.openArtifact(at, `pointer ${evidence.pointer} not found — whole file`);
+  }
+
+  /** The value at `pointer`, pretty-printed; the whole file under a note when the pointer misses. */
+  private showPointer(index: number, pointer: string): void {
+    const a = this.detail?.artifacts[index];
+    if (!a || !this.selectedCase || !this.selectedRun) return;
+    const note = new Banner();
+    const pre = el('pre', { class: 'lb-e2e__viewer-text', text: 'loading…' });
+    this.showViewer(`${a.label} · ${a.path} · ${pointer}`, el('div', {}, note.el, pre));
+    fetchText(this.artifactUrl(index)).then(
+      (text) => {
+        let hit: PointerHit = { found: false };
+        try {
+          hit = resolvePointer(JSON.parse(text), pointer);
+        } catch {
+          /* not JSON after all: the whole file below */
+        }
+        if (hit.found) {
+          pre.textContent = JSON.stringify(hit.value, null, 2);
+          return;
+        }
+        note.show(`pointer ${pointer} not found — whole file`, 'info');
+        pre.textContent = text || '(empty)';
+      },
+      (error: unknown) => {
+        pre.textContent = failureText(error);
+      },
+    );
   }
 
   private async copyCommand(): Promise<void> {

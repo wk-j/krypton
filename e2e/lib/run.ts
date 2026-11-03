@@ -14,7 +14,17 @@ export type Verdict = 'PASS' | 'FAIL' | 'ERROR' | 'BLOCKED';
 export type CheckStatus = 'pass' | 'fail' | 'skip' | 'blocked' | 'info';
 export type ParamValue = string | number;
 
-export interface Check {
+export interface CheckFields {
+  kind?: 'precondition' | 'step' | 'expect';
+  step?: string;
+  target?: { type: 'http' | 'db' | 'log' | 'file' | 'ui' | 'cli' | 'process' | 'other'; name: string };
+  params?: Record<string, ParamValue | boolean>;
+  evidence?: { artifact: string; pointer?: string };
+  expected?: string;
+  actual?: string;
+}
+
+export interface Check extends CheckFields {
   group?: string;
   label: string;
   status: CheckStatus;
@@ -115,21 +125,21 @@ export class Run {
     appendFileSync(this.logPath, `${new Date().toISOString()} ${line}\n`);
   }
 
-  check(group: string, label: string, ok: boolean, detail: string, at?: string): boolean {
-    this.record({ group, label, status: ok ? 'pass' : 'fail', detail }, at);
+  check(group: string, label: string, ok: boolean, detail: string, at?: string, fields: CheckFields = {}): boolean {
+    this.record({ group, label, status: ok ? 'pass' : 'fail', detail, kind: 'expect', ...fields }, at);
     return ok;
   }
 
-  info(group: string, label: string, detail: string, at?: string): void {
-    this.record({ group, label, status: 'info', detail }, at);
+  info(group: string, label: string, detail: string, at?: string, fields: CheckFields = {}): void {
+    this.record({ group, label, status: 'info', detail, ...fields }, at);
   }
 
   skip(group: string, label: string, detail: string, at?: string): void {
     this.record({ group, label, status: 'skip', detail }, at);
   }
 
-  block(group: string, label: string, detail: string, at?: string): never {
-    this.record({ group, label, status: 'blocked', detail }, at);
+  block(group: string, label: string, detail: string, at?: string, fields: CheckFields = {}): never {
+    this.record({ group, label, status: 'blocked', detail, ...fields, kind: 'precondition' }, at);
     throw new BlockedError(this.redact(detail));
   }
 
@@ -162,7 +172,17 @@ export class Run {
   }
 
   private record(check: Check, at?: string): void {
-    const detail = check.detail === undefined ? undefined : this.redact(check.detail);
+    // New metadata may contain secrets too; preserve scalar types and object keys.
+    const redactValue = (value: unknown): unknown => {
+      if (typeof value === 'string') return this.redact(value);
+      if (Array.isArray(value)) return value.map(redactValue);
+      if (value !== null && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactValue(item)]));
+      }
+      return value;
+    };
+    check = redactValue(check) as Check;
+    const detail = check.detail;
     this.checks.push(at === undefined ? { ...check, detail } : { ...check, detail, at });
     const tag = check.status.toUpperCase().padEnd(7);
     this.log(`${tag} [${check.group ?? ''}] ${check.label}${detail ? ` — ${detail}` : ''}`);

@@ -157,7 +157,7 @@ export function mapSource(map: E2eMap, pins: readonly MapPin[], lit: ReadonlySet
 **View (`index.ts`):**
 
 - **Theme:** `buildMermaidTheme(palette, --mono, true)`, with the palette read from the loopback tokens (`fg muted border accent`, success = `--add`, error = `--del`, surface = `--card`).
-- **When the map shows:** the run pane draws it when the case's `map` has a loaded entry and the run has a Result. It is the default view; `m` toggles to the 0329 grouped check list. The choice persists while the page is open.
+- **When the map shows:** the run pane draws it when the case's `map` has a loaded entry and the run has a Result. It is the default view; `m` toggles to the 0329 grouped check list (since 0328 rev 5 it cycles map → by group → by step). The choice persists while the page is open.
 - **Run switch, still one paint:** after `/run` answers, the page fetches the earlier PASS's `/run` (only when `before` applies) and awaits `renderMermaid`. Then it paints the case pane, the run pane and the map together.
   - `loading run…` keeps its 250 ms rule.
   - A render error shows an error `Banner` (`map could not be drawn: …`) and falls back to the check list.
@@ -182,7 +182,7 @@ export function mapSource(map: E2eMap, pins: readonly MapPin[], lit: ReadonlySet
 
 | Key | Context | Action |
 |---|---|---|
-| `m` | e2e page, a case with a map | Toggle map / check list (listed by `?`) |
+| `m` | e2e page, a case with a map | Toggle map / check list (listed by `?`); since 0328 rev 5, cycle map / by group / by step |
 
 ## Test cases
 

@@ -1,0 +1,421 @@
+{
+  "source": "tli-api-service run 20261103T091029Z of case 1368 (e2e/reports/1368/20261103T091029Z/evidence.json), with the spec 0328 rev 5 fields added by hand: kind from the phase, step links from the sections, targets, the params each call sent, and evidence pointers into evidence.json.",
+  "runId": "20261103T091029Z",
+  "checks": [
+    {
+      "group": "environment",
+      "label": "tli-api running",
+      "status": "pass",
+      "detail": "reg.bcecm.com/tli/tli-api:fast-7f662dba (running)",
+      "kind": "precondition",
+      "target": {
+        "type": "process",
+        "name": "docker tli-api"
+      }
+    },
+    {
+      "group": "environment",
+      "label": "mock-core-api running",
+      "status": "pass",
+      "detail": "reg.bcecm.com/tli/mock-core-api-server:cr12-949a5bdc (running)",
+      "kind": "precondition",
+      "target": {
+        "type": "process",
+        "name": "docker mock-core-api"
+      }
+    },
+    {
+      "group": "environment",
+      "label": "tli-api /actuator/health",
+      "status": "pass",
+      "detail": "status=UP",
+      "kind": "precondition",
+      "target": {
+        "type": "http",
+        "name": "GET /actuator/health"
+      }
+    },
+    {
+      "group": "test data",
+      "label": "poRequestDate is BE yyyyMMdd",
+      "status": "pass",
+      "detail": "25691103",
+      "kind": "precondition"
+    },
+    {
+      "group": "test data",
+      "label": "CJ in mt_tr_type_storage (checkList/POS accepts it)",
+      "status": "pass",
+      "detail": "CJ",
+      "kind": "precondition",
+      "target": {
+        "type": "db",
+        "name": "dim.mt_tr_type_storage"
+      }
+    },
+    {
+      "group": "test data",
+      "label": "provisioned a POS policy in mock-core",
+      "status": "info",
+      "detail": "83697031 / CJ",
+      "target": {
+        "type": "db",
+        "name": "mockcore.mock_policy"
+      }
+    },
+    {
+      "group": "test data",
+      "label": "known to Core — mock_policy POS 83697031/CJ",
+      "status": "pass",
+      "detail": "rows=1",
+      "kind": "precondition",
+      "target": {
+        "type": "db",
+        "name": "mockcore.mock_policy"
+      }
+    },
+    {
+      "group": "test data",
+      "label": "not in DIM yet — tr_policy 83697031",
+      "status": "pass",
+      "detail": "rows=0",
+      "kind": "precondition",
+      "target": {
+        "type": "db",
+        "name": "dim.tr_policy"
+      }
+    },
+    {
+      "group": "execute",
+      "label": "checkList/POS New (puts the job in place)",
+      "status": "pass",
+      "detail": "200 {\"message\":\"Success.\",\"scan_no\":\"20261103161034290\"}",
+      "at": "online001",
+      "kind": "step",
+      "step": "checklist",
+      "target": {
+        "type": "http",
+        "name": "POST /tli-online/checkList/POS"
+      },
+      "params": {
+        "action_type": "New",
+        "policy_no": "83697031",
+        "po_tr_type": "CJ",
+        "po_request_date": "25691103"
+      },
+      "evidence": {
+        "artifact": "evidence",
+        "pointer": "/evidence/checkList~1POS New"
+      }
+    },
+    {
+      "group": "execute",
+      "label": "uploadNewDocument/POS (puts the job in place)",
+      "status": "pass",
+      "detail": "200 Upload document success.",
+      "at": "online002",
+      "kind": "step",
+      "step": "upload",
+      "target": {
+        "type": "http",
+        "name": "POST /tli-online/uploadNewDocument/POS"
+      },
+      "params": {
+        "scan_no": "20261103161034290",
+        "doc_type": "300002"
+      },
+      "evidence": {
+        "artifact": "evidence",
+        "pointer": "/evidence/uploadNewDocument~1POS"
+      }
+    },
+    {
+      "group": "execute",
+      "label": "BE date: tli-api answered",
+      "status": "pass",
+      "detail": "200",
+      "at": "api001",
+      "kind": "step",
+      "step": "call-be",
+      "target": {
+        "type": "http",
+        "name": "POST /tli/getWIPDocuments/POS"
+      },
+      "params": {
+        "policy_no": "83697031",
+        "po_tr_type": "CJ",
+        "po_request_date": "25691103",
+        "user_name": "9003684"
+      },
+      "evidence": {
+        "artifact": "evidence",
+        "pointer": "/evidence/getWIPDocuments~1POS BE date (25691103)"
+      }
+    },
+    {
+      "group": "execute",
+      "label": "CE date: tli-api answered",
+      "status": "pass",
+      "detail": "204",
+      "at": "api001",
+      "kind": "step",
+      "step": "call-ce",
+      "target": {
+        "type": "http",
+        "name": "POST /tli/getWIPDocuments/POS"
+      },
+      "params": {
+        "policy_no": "83697031",
+        "po_tr_type": "CJ",
+        "po_request_date": "20261103",
+        "user_name": "9003684"
+      },
+      "evidence": {
+        "artifact": "evidence",
+        "pointer": "/evidence/getWIPDocuments~1POS CE date (20261103)"
+      }
+    },
+    {
+      "group": "execute",
+      "label": "unconvertible year: tli-api answered",
+      "status": "pass",
+      "detail": "400",
+      "at": "api001",
+      "kind": "step",
+      "step": "call-bad",
+      "target": {
+        "type": "http",
+        "name": "POST /tli/getWIPDocuments/POS"
+      },
+      "params": {
+        "policy_no": "83697031",
+        "po_tr_type": "CJ",
+        "po_request_date": "25aa1103",
+        "user_name": "9003684"
+      },
+      "evidence": {
+        "artifact": "evidence",
+        "pointer": "/evidence/getWIPDocuments~1POS unconvertible year (25aa1103)"
+      }
+    },
+    {
+      "group": "verify",
+      "label": "tli-api image",
+      "status": "info",
+      "detail": "reg.bcecm.com/tli/tli-api:fast-7f662dba"
+    },
+    {
+      "group": "verify",
+      "label": "job",
+      "status": "info",
+      "detail": "83697031 / CJ / 25691103 (CE 20261103) scan_no 20261103161034290"
+    },
+    {
+      "group": "1. ส่ง po_request_date ปี พ.ศ. (25691103) → พบงาน WPG",
+      "label": "HTTP status",
+      "status": "pass",
+      "detail": "= 200",
+      "at": "api001",
+      "step": "call-be",
+      "kind": "expect",
+      "target": {
+        "type": "http",
+        "name": "POST /tli/getWIPDocuments/POS"
+      },
+      "expected": "200",
+      "actual": "200"
+    },
+    {
+      "group": "1. ส่ง po_request_date ปี พ.ศ. (25691103) → พบงาน WPG",
+      "label": "policy_no / po_tr_type",
+      "status": "pass",
+      "detail": "= [\"83697031\",\"CJ\"]",
+      "at": "api001",
+      "step": "call-be",
+      "kind": "expect",
+      "target": {
+        "type": "http",
+        "name": "POST /tli/getWIPDocuments/POS"
+      },
+      "expected": "[\"83697031\",\"CJ\"]",
+      "actual": "[\"83697031\",\"CJ\"]"
+    },
+    {
+      "group": "1. ส่ง po_request_date ปี พ.ศ. (25691103) → พบงาน WPG",
+      "label": "document_list มีเอกสาร WPG ของงานนี้ครบ (doc_id)",
+      "status": "pass",
+      "detail": "= [\"75ebb6dd-29e2-4f59-abb6-dd29e28f598b\"]",
+      "at": "api001",
+      "step": "call-be",
+      "kind": "expect",
+      "target": {
+        "type": "http",
+        "name": "POST /tli/getWIPDocuments/POS"
+      },
+      "expected": "[\"75ebb6dd-29e2-4f59-abb6-dd29e28f598b\"]",
+      "actual": "[\"75ebb6dd-29e2-4f59-abb6-dd29e28f598b\"]"
+    },
+    {
+      "group": "2. scan_items[].po_request_date เป็น yyyyMMdd ปี พ.ศ. (25691103)",
+      "label": "มี scan_items",
+      "status": "pass",
+      "detail": "count=1",
+      "at": "api001",
+      "step": "call-be",
+      "kind": "expect",
+      "target": {
+        "type": "http",
+        "name": "POST /tli/getWIPDocuments/POS"
+      }
+    },
+    {
+      "group": "2. scan_items[].po_request_date เป็น yyyyMMdd ปี พ.ศ. (25691103)",
+      "label": "scan_items[].po_request_date",
+      "status": "pass",
+      "detail": "= [\"25691103\"]",
+      "at": "api001",
+      "step": "call-be",
+      "kind": "expect",
+      "target": {
+        "type": "http",
+        "name": "POST /tli/getWIPDocuments/POS"
+      },
+      "expected": "[\"25691103\"]",
+      "actual": "[\"25691103\"]"
+    },
+    {
+      "group": "3. tr_log ของการเรียกที่สำเร็จเก็บวันที่เป็น ค.ศ. (20261103)",
+      "label": "มีแถว tr_log action 7",
+      "status": "pass",
+      "detail": "rows=1",
+      "at": "dim-log",
+      "step": "call-be",
+      "kind": "expect",
+      "target": {
+        "type": "db",
+        "name": "dim.tr_log"
+      }
+    },
+    {
+      "group": "3. tr_log ของการเรียกที่สำเร็จเก็บวันที่เป็น ค.ศ. (20261103)",
+      "label": "tr_log.po_request_date",
+      "status": "pass",
+      "detail": "= [\"20261103\"]",
+      "at": "dim-log",
+      "step": "call-be",
+      "kind": "expect",
+      "target": {
+        "type": "db",
+        "name": "dim.tr_log"
+      },
+      "expected": "[\"20261103\"]",
+      "actual": "[\"20261103\"]"
+    },
+    {
+      "group": "3. tr_log ของการเรียกที่สำเร็จเก็บวันที่เป็น ค.ศ. (20261103)",
+      "label": "tr_log.detail",
+      "status": "pass",
+      "detail": "= [\"call API001 getWIPDocuments POS Success.\"]",
+      "at": "dim-log",
+      "step": "call-be",
+      "kind": "expect",
+      "target": {
+        "type": "db",
+        "name": "dim.tr_log"
+      },
+      "expected": "[\"call API001 getWIPDocuments POS Success.\"]",
+      "actual": "[\"call API001 getWIPDocuments POS Success.\"]"
+    },
+    {
+      "group": "3. tr_log ของการเรียกที่สำเร็จเก็บวันที่เป็น ค.ศ. (20261103)",
+      "label": "หนึ่งแถวต่อเอกสาร (log_type D, doc_id)",
+      "status": "pass",
+      "detail": "= [\"D:75ebb6dd-29e2-4f59-abb6-dd29e28f598b\"]",
+      "at": "dim-log",
+      "step": "call-be",
+      "kind": "expect",
+      "target": {
+        "type": "db",
+        "name": "dim.tr_log"
+      },
+      "expected": "[\"D:75ebb6dd-29e2-4f59-abb6-dd29e28f598b\"]",
+      "actual": "[\"D:75ebb6dd-29e2-4f59-abb6-dd29e28f598b\"]"
+    },
+    {
+      "group": "4. ส่งวันที่เดียวกันเป็นปี ค.ศ. (20261103) → ระบบเดิมอ่านเป็นปี พ.ศ. (ลบ 543) จึงไม่พบ",
+      "label": "HTTP status",
+      "status": "pass",
+      "detail": "= 204",
+      "at": "api001",
+      "step": "call-ce",
+      "kind": "expect",
+      "target": {
+        "type": "http",
+        "name": "POST /tli/getWIPDocuments/POS"
+      },
+      "expected": "204",
+      "actual": "204"
+    },
+    {
+      "group": "4. ส่งวันที่เดียวกันเป็นปี ค.ศ. (20261103) → ระบบเดิมอ่านเป็นปี พ.ศ. (ลบ 543) จึงไม่พบ",
+      "label": "ไม่มีแถว tr_log เพิ่ม",
+      "status": "pass",
+      "detail": "= 1",
+      "at": "dim-log",
+      "step": "call-ce",
+      "kind": "expect",
+      "target": {
+        "type": "db",
+        "name": "dim.tr_log"
+      },
+      "expected": "1",
+      "actual": "1"
+    },
+    {
+      "group": "4. ส่งวันที่เดียวกันเป็นปี ค.ศ. (20261103) → ระบบเดิมอ่านเป็นปี พ.ศ. (ลบ 543) จึงไม่พบ",
+      "label": "204 body",
+      "status": "info",
+      "step": "call-ce"
+    },
+    {
+      "group": "5. ปีแปลงไม่ได้ (25aa1103) → 400 \"Invalid input.\"",
+      "label": "HTTP status / message",
+      "status": "pass",
+      "detail": "= [400,\"Invalid input.\"]",
+      "at": "api001",
+      "step": "call-bad",
+      "kind": "expect",
+      "target": {
+        "type": "http",
+        "name": "POST /tli/getWIPDocuments/POS"
+      },
+      "expected": "[400,\"Invalid input.\"]",
+      "actual": "[400,\"Invalid input.\"]"
+    },
+    {
+      "group": "5. ปีแปลงไม่ได้ (25aa1103) → 400 \"Invalid input.\"",
+      "label": "ไม่มีแถว tr_log เพิ่ม",
+      "status": "pass",
+      "detail": "= 1",
+      "at": "dim-log",
+      "step": "call-bad",
+      "kind": "expect",
+      "target": {
+        "type": "db",
+        "name": "dim.tr_log"
+      },
+      "expected": "1",
+      "actual": "1"
+    }
+  ],
+  "artifacts": [
+    {
+      "label": "report",
+      "path": "e2e/reports/1368/20261103T091029Z/report.md"
+    },
+    {
+      "label": "evidence",
+      "path": "e2e/reports/1368/20261103T091029Z/evidence.json"
+    }
+  ]
+}

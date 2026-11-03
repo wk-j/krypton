@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as MermaidFence from '../../../acp/harness-mermaid-fence';
 
 import { E2eView } from '.';
+import tli1368 from './fixtures/d-tli-api-1368-rev5.json';
 
 // Spec 329: the explorer against a mocked loopback API. Spec 355: the system
 // map, with mermaid replaced by a recorder (map.test.ts covers the source).
@@ -345,5 +346,152 @@ describe('system map (spec 355)', () => {
     expect(texts('.lb-e2e__run .lb-banner--error')).toEqual(['map e2e/maps/a.toml: nodes[0].id: duplicate "x"']);
     expect(mapImg()).toBeNull();
     expect(mermaid.sources).toEqual([]);
+  });
+});
+
+describe('check fields (spec 0328 rev 5)', () => {
+  /** The served `evidence.json`: one call is in it, the upload is not. */
+  const EVIDENCE_DOC = { evidence: { 'checkList/POS New': { status: 200, body: { scan_no: '20261103161034290' } } } };
+  type FixtureCheck = Record<string, unknown>;
+
+  function rev5Responder(checks: readonly FixtureCheck[] = tli1368.checks): (url: URL) => Response {
+    const base = defaultResponder();
+    return (url) => {
+      if (url.pathname.endsWith('/run')) {
+        return json({
+          info: run('a', 'r2', 'PASS'),
+          result: { checks },
+          log: false,
+          artifacts: [
+            { label: 'report', path: 'e2e/reports/1368/x/report.md', size: 10, problem: null },
+            { label: 'evidence', path: 'e2e/reports/1368/x/evidence.json', size: 10, problem: null },
+          ],
+        });
+      }
+      if (url.pathname.endsWith('/artifact')) {
+        return url.searchParams.get('index') === '1' ? json(EVIDENCE_DOC) : new Response('# report', { status: 200 });
+      }
+      return base(url);
+    };
+  }
+
+  const rows = (): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElement>('.lb-e2e__run .lb-e2e__check'));
+  /** The row's own label: the label span's first text node (the kind tag and the field lines are elements). */
+  const labelOf = (row: Element): string | null =>
+    Array.from(row.querySelector('.lb-e2e__check-label')?.childNodes ?? []).find((n) => n.nodeType === Node.TEXT_NODE)?.textContent ?? null;
+  const rowOf = (label: string, nth = 0): HTMLElement | undefined => rows().filter((row) => labelOf(row) === label)[nth];
+  const viewerText = (): string => document.querySelector('.lb-e2e__viewer .lb-e2e__viewer-text')?.textContent ?? '';
+
+  async function bootRev5(checks?: readonly FixtureCheck[]): Promise<void> {
+    respond = rev5Responder(checks);
+    boot();
+    await vi.waitFor(() => expect(rows()).toHaveLength((checks ?? tli1368.checks).length));
+  }
+
+  it('m lays the run out by step: preconditions, each call with the checks about it, then the rest', async () => {
+    await bootRev5();
+    expect(document.querySelector('.lb-e2e__step')).toBeNull();
+    press('m');
+    expect(texts('.lb-e2e__checks > .lb-e2e__group > .lb-e2e__group-name')).toEqual(['Preconditions', 'Other checks']);
+    expect(document.querySelectorAll('.lb-e2e__checks > .lb-e2e__group')[0].querySelectorAll('.lb-e2e__check')).toHaveLength(7);
+    const steps = Array.from(document.querySelectorAll('.lb-e2e__step'));
+    // checkList and upload set the job up and have no checks of their own; each getWIPDocuments call carries its own.
+    expect(steps.map((step) => step.querySelectorAll('.lb-e2e__check').length)).toEqual([1, 1, 10, 4, 3]);
+    expect(steps.map((step) => step.querySelector('.lb-e2e__check--head .lb-e2e__check-target')?.textContent)).toEqual([
+      'http · POST /tli-online/checkList/POS',
+      'http · POST /tli-online/uploadNewDocument/POS',
+      'http · POST /tli/getWIPDocuments/POS',
+      'http · POST /tli/getWIPDocuments/POS',
+      'http · POST /tli/getWIPDocuments/POS',
+    ]);
+    expect(Array.from(steps[3].querySelectorAll('.lb-e2e__check-target'), (n) => n.textContent)).toEqual([
+      'http · POST /tli/getWIPDocuments/POS',
+      'http · POST /tli/getWIPDocuments/POS',
+      'db · dim.tr_log',
+    ]);
+    // A step row repeats no "← step" link inside its own block.
+    expect(document.querySelector('.lb-e2e__step .lb-e2e__check-link')).toBeNull();
+    press('m');
+    expect(document.querySelector('.lb-e2e__step')).toBeNull();
+  });
+
+  it('shows what each row called, sent and saw, and names its step in the group layout', async () => {
+    await bootRev5();
+    const call = rowOf('CE date: tli-api answered');
+    expect(call?.querySelector('.lb-e2e__check-kind')?.textContent).toBe('step');
+    expect(call?.querySelector('.lb-e2e__check-params')?.textContent).toBe(
+      'po_request_date=20261103 · po_tr_type=CJ · policy_no=83697031 · user_name=9003684',
+    );
+    expect(call?.querySelector('.lb-e2e__check-evidence')?.textContent).toBe('evidence: evidence /evidence/getWIPDocuments~1POS CE date (20261103)');
+    const status = rowOf('HTTP status', 1);
+    expect(status?.querySelector('.lb-e2e__check-kind')?.textContent).toBe('expect');
+    expect(status?.querySelector('.lb-e2e__check-link')?.textContent).toBe('← CE date: tli-api answered');
+    expect(Array.from(status?.querySelectorAll('.lb-e2e__check-value') ?? [], (n) => n.textContent)).toEqual(['expected 204', 'actual 204']);
+    // A row without the fields reads exactly as before.
+    const note = rowOf('tli-api image');
+    expect(note?.querySelector('.lb-e2e__check-label')?.textContent).toBe('tli-api imagereg.bcecm.com/tli/tli-api:fast-7f662dba');
+  });
+
+  it('f keeps a failing check with its step head, and colours the actual value', async () => {
+    const checks = tli1368.checks.map((check, index) =>
+      index === tli1368.checks.findIndex((c) => c.label === 'HTTP status' && c.step === 'call-ce') ? { ...check, status: 'fail', actual: '200' } : check,
+    );
+    await bootRev5(checks);
+    press('m');
+    press('f');
+    const steps = Array.from(document.querySelectorAll('.lb-e2e__step'));
+    expect(steps).toHaveLength(1);
+    expect(Array.from(steps[0].querySelectorAll('.lb-e2e__check'), labelOf)).toEqual([
+      'CE date: tli-api answered',
+      'HTTP status',
+    ]);
+    expect(steps[0].querySelector('.lb-e2e__check-value--fail')?.textContent).toBe('actual 200');
+    expect(texts('.lb-e2e__checks .lb-e2e__group-name')).toEqual([]);
+  });
+
+  it('walks the rows with evidence in a checks pane and opens each at its pointer', async () => {
+    await bootRev5();
+    press('Tab');
+    press('Tab');
+    expect(document.querySelector('.lb-e2e__run')?.classList.contains('lb-e2e__run--checks')).toBe(true);
+    expect(document.querySelector('.lb-e2e__check--cursor')?.textContent).toContain('checkList/POS New');
+    press('Enter');
+    await vi.waitFor(() => expect(viewerText()).toBe(JSON.stringify(EVIDENCE_DOC.evidence['checkList/POS New'], null, 2)));
+    expect(document.querySelector('.lb-e2e__viewer-head')?.textContent).toContain('evidence · e2e/reports/1368/x/evidence.json · /evidence/checkList~1POS New');
+    expect(requested('/artifact?case=a&run=r2&index=1')).toBe(true);
+    press('j');
+    expect(document.querySelector('.lb-e2e__check--cursor')?.textContent).toContain('uploadNewDocument/POS');
+    press('Enter');
+    await vi.waitFor(() => expect(viewerText()).toBe(JSON.stringify(EVIDENCE_DOC)));
+    expect(texts('.lb-e2e__viewer .lb-banner--info')).toEqual(['pointer /evidence/uploadNewDocument~1POS not found — whole file']);
+    press('Escape');
+    expect(document.querySelector<HTMLElement>('.lb-e2e__viewer')?.hidden).toBe(true);
+  });
+
+  it('opens a non-JSON artifact whole under a note, and flags links and evidence that point nowhere', async () => {
+    await bootRev5([
+      { kind: 'step', step: 'call', label: 'call', status: 'pass', evidence: { artifact: 'report', pointer: '/x' } },
+      { kind: 'expect', step: 'nope', label: 'orphan', status: 'pass', evidence: { artifact: 'missing' } },
+    ]);
+    expect(texts('.lb-e2e__run .lb-e2e__problem')).toEqual([' — no artifact "missing"', 'no step "nope"']);
+    press('Tab');
+    press('Tab');
+    press('Enter');
+    await vi.waitFor(() => expect(viewerText()).toBe('# report'));
+    expect(texts('.lb-e2e__viewer .lb-banner--info')).toEqual(['pointer /x not found — whole file']);
+    press('j');
+    press('Enter');
+    expect(texts('.lb-banner--error')).toContain('no artifact "missing"');
+  });
+
+  it('offers no step layout or checks pane for a run without the fields', async () => {
+    boot();
+    await vi.waitFor(() => expect(texts('.lb-e2e__check-label')).toHaveLength(3));
+    expect(document.querySelector('.lb-e2e__toolbar')?.textContent).not.toContain('view:');
+    press('m');
+    expect(document.querySelector('.lb-e2e__step')).toBeNull();
+    press('Tab');
+    press('Tab');
+    expect(document.querySelector('.lb-e2e__run')?.classList.contains('lb-e2e__run--checks')).toBe(false);
   });
 });

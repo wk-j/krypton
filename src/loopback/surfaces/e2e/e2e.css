@@ -44,6 +44,17 @@
   .lb-e2e__check { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; padding: 4px 0; border-top: 1px solid var(--border); font: 11px/1.45 var(--mono); }
   .lb-e2e__check-label { overflow-wrap: anywhere; }
   .lb-e2e__check-detail { display: block; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* Spec 0328 rev 5: the check fields, one muted line each; steps as bordered blocks. Full borders only (ADR 0027). */
+  .lb-e2e__check-kind { margin-right: 6px; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; color: var(--muted); font: 600 9px var(--mono); text-transform: uppercase; }
+  .lb-e2e__check-target { margin-left: 8px; color: var(--accent); }
+  .lb-e2e__check-link { margin-left: 8px; color: var(--muted); }
+  .lb-e2e__check-params, .lb-e2e__check-value, .lb-e2e__check-evidence { display: block; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .lb-e2e__check-value--fail { color: var(--del); }
+  .lb-e2e__step { margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 2px 10px; }
+  .lb-e2e__step > .lb-e2e__check:first-child { border-top: 0; }
+  .lb-e2e__step > .lb-e2e__check:not(.lb-e2e__check--head) { margin-left: 16px; }
+  .lb-e2e__check--head .lb-e2e__check-label { font-weight: 600; }
+  .lb-e2e__run--checks .lb-e2e__check--cursor { outline: 1px solid var(--accent); outline-offset: -1px; }
   .lb-e2e__artifact { display: grid; grid-template-columns: minmax(120px, .6fr) minmax(0, 1.4fr) 90px; gap: 8px; font: 11px var(--mono); }
   .lb-e2e__artifact > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lb-e2e__problem { color: var(--del); }

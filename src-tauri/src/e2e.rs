@@ -37,6 +37,10 @@ const STDERR_TAIL_LINES: usize = 20;
 
 const VERDICTS: [&str; 4] = ["PASS", "FAIL", "ERROR", "BLOCKED"];
 const CHECK_STATUSES: [&str; 5] = ["pass", "fail", "skip", "blocked", "info"];
+/// Rev 5 check fields (spec 0328).
+const CHECK_KINDS: [&str; 3] = ["precondition", "step", "expect"];
+const TARGET_TYPES: [&str; 8] = ["http", "db", "log", "file", "ui", "cli", "process", "other"];
+const TARGET_NAME_CHARS: usize = 200;
 
 // ─── Paths ──────────────────────────────────────────────────────────
 
@@ -282,6 +286,18 @@ fn optional_object<'a>(
     }
 }
 
+/// Every value of a `params` object (`Result.params`, `checks[].params`) is a
+/// scalar.
+fn check_scalar_params(params: &Obj, path: &str, errors: &mut Vec<String>) {
+    for (k, v) in params {
+        if !(v.is_string() || v.is_number() || v.is_boolean()) {
+            errors.push(format!(
+                "{path}params.{k}: must be a string, number or boolean"
+            ));
+        }
+    }
+}
+
 // ─── Case list ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]
@@ -419,6 +435,12 @@ pub(crate) struct Check {
     pub detail: Option<String>,
     /// Id of the map node this check is about (spec 0355); not checked here.
     pub at: Option<String>,
+    /// `precondition` | `step` | `expect` (rev 5).
+    pub kind: Option<String>,
+    /// Step key: declared by a `kind: "step"` check, a link on any other.
+    pub step: Option<String>,
+    /// `evidence.artifact`: the label of one of the Result's artifacts.
+    pub evidence_artifact: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -432,6 +454,8 @@ pub(crate) struct RunResult {
     pub params: Option<Obj>,
     pub checks: Vec<Check>,
     pub message: Option<String>,
+    /// `artifacts[].label`, in order.
+    pub artifact_labels: Vec<String>,
 }
 
 fn timestamp(obj: &Obj, key: &str, path: &str, errors: &mut Vec<String>) -> String {
@@ -443,6 +467,70 @@ fn timestamp(obj: &Obj, key: &str, path: &str, errors: &mut Vec<String>) -> Stri
         }
         None => String::new(),
     }
+}
+
+fn check_kind(o: &Obj, p: &str, errors: &mut Vec<String>) -> Option<String> {
+    match optional_str(o, "kind", p, errors) {
+        Some(k) if CHECK_KINDS.contains(&k.as_str()) => Some(k),
+        Some(k) => {
+            errors.push(format!(
+                "{p}kind: \"{k}\" is not one of {}",
+                CHECK_KINDS.join("|")
+            ));
+            None
+        }
+        None => None,
+    }
+}
+
+/// A check's `step` key follows the map node id rule.
+fn check_step(o: &Obj, p: &str, errors: &mut Vec<String>) -> Option<String> {
+    let step = optional_str(o, "step", p, errors)?;
+    if is_map_id(&step) {
+        Some(step)
+    } else {
+        errors.push(format!("{p}step: \"{step}\" must match {MAP_ID_PATTERN}"));
+        None
+    }
+}
+
+/// A check's `target`: `{ type, name }`, `name` one line of at most 200 chars.
+fn check_target(o: &Obj, p: &str, errors: &mut Vec<String>) {
+    let Some(target) = optional_object(o, "target", p, errors) else {
+        return;
+    };
+    let tp = format!("{p}target.");
+    if let Some(ty) = required_str(target, "type", &tp, errors) {
+        if !TARGET_TYPES.contains(&ty.as_str()) {
+            errors.push(format!(
+                "{tp}type: \"{ty}\" is not one of {}",
+                TARGET_TYPES.join("|")
+            ));
+        }
+    }
+    if let Some(name) = required_str(target, "name", &tp, errors) {
+        if name.contains(['\n', '\r']) {
+            errors.push(format!("{tp}name: must be a single line"));
+        } else if name.chars().count() > TARGET_NAME_CHARS {
+            errors.push(format!(
+                "{tp}name: longer than {TARGET_NAME_CHARS} characters"
+            ));
+        }
+    }
+}
+
+/// A check's `evidence`: `{ artifact, pointer? }`; returns the artifact label.
+fn check_evidence(o: &Obj, p: &str, errors: &mut Vec<String>) -> Option<String> {
+    let evidence = optional_object(o, "evidence", p, errors)?;
+    let ep = format!("{p}evidence.");
+    if let Some(pointer) = optional_str(evidence, "pointer", &ep, errors) {
+        if !(pointer.is_empty() || pointer.starts_with('/')) {
+            errors.push(format!(
+                "{ep}pointer: \"{pointer}\" must be empty or start with \"/\""
+            ));
+        }
+    }
+    required_str(evidence, "artifact", &ep, errors)
 }
 
 /// Validate one Result object. `path` prefixes error locations (e.g. `runs[3].`).
@@ -484,13 +572,7 @@ pub(crate) fn validate_result(value: &Value, path: &str) -> Result<RunResult, Ve
     }
     let params = optional_object(obj, "params", path, &mut errors).cloned();
     if let Some(map) = &params {
-        for (k, v) in map {
-            if !(v.is_string() || v.is_number() || v.is_boolean()) {
-                errors.push(format!(
-                    "{path}params.{k}: must be a string, number or boolean"
-                ));
-            }
-        }
+        check_scalar_params(map, path, &mut errors);
     }
     let mut checks = Vec::new();
     match obj.get("checks") {
@@ -504,6 +586,15 @@ pub(crate) fn validate_result(value: &Value, path: &str) -> Result<RunResult, Ve
                 let group = optional_str(o, "group", &p, &mut errors);
                 let detail = optional_str(o, "detail", &p, &mut errors);
                 let at = optional_str(o, "at", &p, &mut errors);
+                let kind = check_kind(o, &p, &mut errors);
+                let step = check_step(o, &p, &mut errors);
+                check_target(o, &p, &mut errors);
+                if let Some(params) = optional_object(o, "params", &p, &mut errors) {
+                    check_scalar_params(params, &p, &mut errors);
+                }
+                let evidence_artifact = check_evidence(o, &p, &mut errors);
+                optional_str(o, "expected", &p, &mut errors);
+                optional_str(o, "actual", &p, &mut errors);
                 let label = required_str(o, "label", &p, &mut errors);
                 let status = match required_str(o, "status", &p, &mut errors) {
                     Some(s) if CHECK_STATUSES.contains(&s.as_str()) => Some(s),
@@ -523,12 +614,16 @@ pub(crate) fn validate_result(value: &Value, path: &str) -> Result<RunResult, Ve
                         status,
                         detail,
                         at,
+                        kind,
+                        step,
+                        evidence_artifact,
                     });
                 }
             }
         }
         _ => errors.push(format!("{path}checks: must be an array")),
     }
+    let mut artifact_labels = Vec::new();
     match obj.get("artifacts") {
         None | Some(Value::Null) => {}
         Some(Value::Array(items)) => {
@@ -536,7 +631,9 @@ pub(crate) fn validate_result(value: &Value, path: &str) -> Result<RunResult, Ve
                 let p = format!("{path}artifacts[{i}].");
                 match item.as_object() {
                     Some(o) => {
-                        required_str(o, "label", &p, &mut errors);
+                        if let Some(label) = required_str(o, "label", &p, &mut errors) {
+                            artifact_labels.push(label);
+                        }
                         required_str(o, "path", &p, &mut errors);
                     }
                     None => errors.push(format!("{path}artifacts[{i}]: must be an object")),
@@ -558,6 +655,7 @@ pub(crate) fn validate_result(value: &Value, path: &str) -> Result<RunResult, Ve
         params,
         checks,
         message,
+        artifact_labels,
     })
 }
 
@@ -2337,6 +2435,45 @@ fn check_result_at(
     }
 }
 
+/// A smoke Result's rev 5 references (spec 0328): a `step` key is declared by
+/// one `kind: "step"` check, every other `step` links to a declared key, and
+/// `evidence.artifact` names an artifact label. A failed precondition warns.
+fn check_result_refs(result: &RunResult, report: &mut E2eAdapterCheck) {
+    let mut declared: HashMap<&str, usize> = HashMap::new();
+    for (i, check) in result.checks.iter().enumerate() {
+        if let (Some("step"), Some(step)) = (check.kind.as_deref(), check.step.as_deref()) {
+            declared.entry(step).or_insert(i);
+        }
+    }
+    let labels: HashSet<&str> = result.artifact_labels.iter().map(String::as_str).collect();
+    for (j, check) in result.checks.iter().enumerate() {
+        let is_step = check.kind.as_deref() == Some("step");
+        if let Some(step) = &check.step {
+            match declared.get(step.as_str()) {
+                Some(&i) if is_step && i != j => report.errors.push(format!(
+                    "result: checks[{j}].step: \"{step}\" is already declared by checks[{i}]"
+                )),
+                None if !is_step => report.errors.push(format!(
+                    "result: checks[{j}].step: \"{step}\" is not a declared step"
+                )),
+                _ => {}
+            }
+        }
+        if let Some(artifact) = &check.evidence_artifact {
+            if !labels.contains(artifact.as_str()) {
+                report.errors.push(format!(
+                    "result: checks[{j}].evidence.artifact: \"{artifact}\" is not an artifact label"
+                ));
+            }
+        }
+        if check.kind.as_deref() == Some("precondition") && check.status == "fail" {
+            report.warnings.push(format!(
+                "result: checks[{j}]: a failed precondition is \"blocked\""
+            ));
+        }
+    }
+}
+
 /// MCP `e2e_adapter_check` body.
 pub(crate) async fn adapter_check(root: &Path, result_path: Option<&str>) -> E2eAdapterCheck {
     let mut report = E2eAdapterCheck {
@@ -2412,6 +2549,7 @@ pub(crate) async fn adapter_check(root: &Path, result_path: Option<&str>) -> E2e
                 match parsed {
                     Err(errors) => report.errors.extend(prefix_errors("result", &errors)),
                     Ok(result) => {
+                        check_result_refs(&result, &mut report);
                         if let Some(cases) = &cases {
                             match cases.iter().find(|c| c.id == result.case_id) {
                                 Some(case) => {
@@ -2820,7 +2958,28 @@ and its own process group (cancel kills the whole group).
           "label": { "type": "string", "minLength": 1 },
           "status": { "enum": ["pass", "fail", "skip", "blocked", "info"] },
           "detail": { "type": "string" },
-          "at": { "type": "string", "description": "id of the map node this check is about: the node it proves when it passes, the node where the failure was found when it fails" }
+          "at": { "type": "string", "description": "id of the map node this check is about: the node it proves when it passes, the node where the failure was found when it fails" },
+          "kind": { "enum": ["precondition", "step", "expect"], "description": "precondition: the environment or test data is ready; step: something the harness did to the system; expect: one expected result" },
+          "step": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,47}$", "description": "on a kind step check: declares the step; on any other check: links it to that step" },
+          "target": {
+            "type": "object",
+            "required": ["type", "name"],
+            "properties": {
+              "type": { "enum": ["http", "db", "log", "file", "ui", "cli", "process", "other"] },
+              "name": { "type": "string", "minLength": 1, "maxLength": 200, "description": "one line, e.g. POST /orders, app.orders, api application.log" }
+            }
+          },
+          "params": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean"] }, "description": "inputs the step sent, or the keys a read used" },
+          "evidence": {
+            "type": "object",
+            "required": ["artifact"],
+            "properties": {
+              "artifact": { "type": "string", "minLength": 1, "description": "label of an entry in artifacts" },
+              "pointer": { "type": "string", "pattern": "^(/.*)?$", "description": "RFC 6901 JSON Pointer into a .json artifact" }
+            }
+          },
+          "expected": { "type": "string", "description": "what the check wanted; JSON text for structured values" },
+          "actual": { "type": "string", "description": "what the check saw; JSON text for structured values" }
         }
       }
     },
@@ -2835,6 +2994,44 @@ and its own process group (cancel kills the whole group).
     "message": { "type": "string" }
   }
 }
+```
+
+## Check fields
+
+Only `label` and `status` are required. A reader ignores a field it does not
+know, so write what your runner already records.
+
+| Field | Meaning |
+|---|---|
+| `group` | The section the check belongs to, e.g. the expected result a set of checks proves. The role goes in `kind`, not here. |
+| `detail` | One line saying what was observed. Keep it even when `expected`/`actual` are set: `#e2e status` shows only `detail`. |
+| `at` | The map node the check is about (see "Map file"). |
+| `kind` | `precondition`: the environment or test data is ready (a failure is `blocked`). `step`: something the harness did to the system, such as an API call, a file drop or a UI action. `expect`: one expected result. A note (`status: "info"`) needs no `kind`. |
+| `step` | On a `kind: "step"` check, declares the step; the key is unique in the Result. On any other check, links it to that step, so a reader shows each call with the checks about it. |
+| `target` | What the check called or read: `type` (`http`, `db`, `log`, `file`, `ui`, `cli`, `process`, `other`) and `name` (`POST /orders`, `app.orders`, `api application.log`). |
+| `params` | The inputs the step sent (the key fields of the request), or the keys a read used. Scalars only. |
+| `evidence` | Where the raw material is: `artifact` is the `label` of an entry in `artifacts`; `pointer` is a JSON Pointer (RFC 6901) into it when it is a `.json` file. Put large bodies there, not in the check. |
+| `expected`, `actual` | What the check wanted and what it saw, as text (JSON text for structured values). |
+
+`e2e_adapter_check` reports a `step` declared twice, a link to an undeclared
+step and an `evidence.artifact` that is not an artifact label, and warns about a
+`precondition` with status `fail`.
+
+One call and two checks about it:
+
+```json
+[
+  { "kind": "step", "step": "create-order", "label": "create an order", "status": "pass", "detail": "201",
+    "target": { "type": "http", "name": "POST /orders" },
+    "params": { "sku": "A-1", "qty": 2 },
+    "evidence": { "artifact": "evidence", "pointer": "/calls/create-order" } },
+  { "kind": "expect", "step": "create-order", "group": "1. an order is created", "label": "HTTP status",
+    "status": "pass", "detail": "= 201", "expected": "201", "actual": "201",
+    "target": { "type": "http", "name": "POST /orders" } },
+  { "kind": "expect", "step": "create-order", "group": "1. an order is created", "label": "one row in orders",
+    "status": "pass", "detail": "rows=1", "expected": "1", "actual": "1",
+    "target": { "type": "db", "name": "app.orders" }, "params": { "sku": "A-1" } }
+]
 ```
 
 ## Map file
@@ -2883,10 +3080,12 @@ kind = "reply"              # flow (default) | reply | refused
   and at least one expected result did not hold. `BLOCKED` a precondition failed
   (environment down, missing data or secret) and the app was never exercised —
   never report that as `FAIL`. `ERROR` the harness itself broke.
-- **Checks.** One check per expected result, in order; `group` is the section
-  or phase. `detail` says what was observed. `info` is for notes, not assertions.
+- **Checks.** One check per expected result (`kind: "expect"`), in order;
+  `group` is the section. `detail` says what was observed. `info` is for
+  notes, not assertions. See "Check fields".
 - **Secrets** come from environment variables; never write their values into
-  the Result, the log or the repo.
+  the Result (`target`, `params`, `expected` and `actual` included), the log or
+  the repo. Write a URL that carries a token as its template (`/items/{token}`).
 - Nothing may wait for input: stdin is closed. SSH must use keys/agent
   (`BatchMode=yes`).
 
@@ -3143,6 +3342,21 @@ mod tests {
         );
         assert_eq!(failed.len(), 2);
         assert_eq!(failed[0].detail.as_deref(), Some("boom"));
+        // A pre-rev-5 Result: no rev 5 field is set.
+        assert_eq!(
+            r.checks[0],
+            Check {
+                group: Some("g".into()),
+                label: "one".into(),
+                status: "pass".into(),
+                detail: None,
+                at: None,
+                kind: None,
+                step: None,
+                evidence_artifact: None,
+            }
+        );
+        assert_eq!(r.artifact_labels, ["report"]);
     }
 
     #[test]
@@ -3187,6 +3401,81 @@ mod tests {
             "{e:?}"
         );
         assert!(has(&e, "runs[3].checks: must be an array"), "{e:?}");
+    }
+
+    fn rev5_result(case_id: &str) -> Value {
+        json!({
+            "version":1,"caseId":case_id,"runId":"r","verdict":"PASS",
+            "startedAt":"2026-10-23T08:17:09Z","finishedAt":"2026-10-23T08:18:00Z",
+            "checks":[
+                {"kind":"precondition","label":"db up","status":"pass"},
+                {"kind":"step","step":"create-order","label":"create","status":"pass","detail":"201",
+                 "target":{"type":"http","name":"POST /orders"},
+                 "params":{"sku":"A-1","qty":2,"dry":false},
+                 "evidence":{"artifact":"evidence","pointer":"/calls/create-order"}},
+                {"kind":"expect","step":"create-order","group":"1. created","label":"one row",
+                 "status":"pass","detail":"rows=1","expected":"1","actual":"1",
+                 "target":{"type":"db","name":"app.orders"},"params":{"sku":"A-1"},
+                 "evidence":{"artifact":"evidence","pointer":""}},
+                {"kind":"step","label":"setup","status":"pass"},
+                {"label":"note","status":"info"}
+            ],
+            "artifacts":[{"label":"evidence","path":"e2e/evidence.json"}]
+        })
+    }
+
+    #[test]
+    fn e2e_result_check_fields_valid() {
+        let r = validate_result(&rev5_result("c"), "").unwrap();
+        assert_eq!(r.checks.len(), 5);
+        let step = &r.checks[1];
+        assert_eq!(step.kind.as_deref(), Some("step"));
+        assert_eq!(step.step.as_deref(), Some("create-order"));
+        assert_eq!(step.evidence_artifact.as_deref(), Some("evidence"));
+        assert_eq!(r.checks[0].kind.as_deref(), Some("precondition"));
+        assert_eq!(r.checks[3].step, None);
+        assert_eq!(r.checks[4].kind, None);
+        assert_eq!(r.artifact_labels, ["evidence"]);
+    }
+
+    #[test]
+    fn e2e_result_check_field_rules() {
+        let mut v = good_result();
+        v["checks"] = json!([
+            {"label":"a","status":"pass","kind":"assert","step":"Bad Step","expected":1,"actual":false},
+            {"label":"b","status":"pass","target":"POST /x","params":[1],"evidence":"e"},
+            {"label":"c","status":"pass","target":{"type":"web"},"params":{"o":{}},"evidence":{"pointer":"x"}},
+            {"label":"d","status":"pass","target":{"type":"http","name":"a\nb"},"evidence":{"artifact":"","pointer":3}},
+            {"label":"e","status":"pass","target":{"type":"http","name":"x".repeat(201)}},
+            {"label":"f","status":"pass","target":{"name":""}}
+        ]);
+        let e = errs(validate_result(&v, ""));
+        for needle in [
+            "checks[0].kind: \"assert\" is not one of precondition|step|expect",
+            "checks[0].step: \"Bad Step\" must match ^[a-z0-9][a-z0-9._-]{0,47}$",
+            "checks[0].expected: must be a string",
+            "checks[0].actual: must be a string",
+            "checks[1].target: must be an object",
+            "checks[1].params: must be an object",
+            "checks[1].evidence: must be an object",
+            "checks[2].target.type: \"web\" is not one of http|db|log|file|ui|cli|process|other",
+            "checks[2].target.name: required",
+            "checks[2].params.o: must be a string, number or boolean",
+            "checks[2].evidence.artifact: required",
+            "checks[2].evidence.pointer: \"x\" must be empty or start with \"/\"",
+            "checks[3].target.name: must be a single line",
+            "checks[3].evidence.artifact: must be a non-empty string",
+            "checks[3].evidence.pointer: must be a string",
+            "checks[4].target.name: longer than 200 characters",
+            "checks[5].target.type: required",
+            "checks[5].target.name: must be a non-empty string",
+        ] {
+            assert!(has(&e, needle), "missing {needle}: {e:?}");
+        }
+        assert_eq!(e.len(), 18, "{e:?}");
+        // The path prefix reaches the nested fields.
+        let e = errs(validate_result(&v, "runs[2]."));
+        assert!(has(&e, "runs[2].checks[2].target.name: required"), "{e:?}");
     }
 
     #[test]
@@ -4144,6 +4433,67 @@ esac
                 .contains(&"result: checks carry \"at\" but case \"d\" has no map".to_string()),
             "{:?}",
             check.warnings
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn e2e_adapter_check_check_references() {
+        let tmp = setup_project("refs");
+        let root = tmp.0.clone();
+        let smoke = e2e_dir(&root).join("smoke.json");
+        let smoke_rel = Some(".krypton/e2e/smoke.json");
+
+        std::fs::write(&smoke, rev5_result("ok").to_string()).unwrap();
+        let check = adapter_check(&root, smoke_rel).await;
+        assert!(check.ok, "{:?}", check.errors);
+        assert!(
+            !check.warnings.iter().any(|w| w.starts_with("result:")),
+            "{:?}",
+            check.warnings
+        );
+
+        let mut v = rev5_result("ok");
+        v["checks"] = json!([
+            {"kind":"expect","step":"call","label":"linked before the declaration","status":"pass"},
+            {"kind":"step","step":"call","label":"call","status":"pass"},
+            {"kind":"step","step":"call","label":"call again","status":"pass"},
+            {"kind":"expect","step":"nope","label":"orphan","status":"pass","evidence":{"artifact":"evidence"}},
+            {"kind":"precondition","step":"call","label":"env","status":"fail","evidence":{"artifact":"missing"}},
+            {"kind":"precondition","label":"data","status":"blocked"}
+        ]);
+        let refs = [
+            "result: checks[2].step: \"call\" is already declared by checks[1]",
+            "result: checks[3].step: \"nope\" is not a declared step",
+            "result: checks[4].evidence.artifact: \"missing\" is not an artifact label",
+        ];
+        let warning = "result: checks[4]: a failed precondition is \"blocked\"".to_string();
+        std::fs::write(&smoke, v.to_string()).unwrap();
+        let check = adapter_check(&root, smoke_rel).await;
+        assert_eq!(check.errors, refs);
+        assert!(check.warnings.contains(&warning), "{:?}", check.warnings);
+        assert_eq!(
+            check
+                .warnings
+                .iter()
+                .filter(|w| w.contains("precondition"))
+                .count(),
+            1
+        );
+        assert!(!check.ok);
+
+        // References are checked even when the case is not listed.
+        v["caseId"] = json!("zzz");
+        std::fs::write(&smoke, v.to_string()).unwrap();
+        let check = adapter_check(&root, smoke_rel).await;
+        for e in refs {
+            assert!(check.errors.iter().any(|x| x == e), "{:?}", check.errors);
+        }
+        assert!(
+            check
+                .errors
+                .contains(&"result: caseId \"zzz\" is not a listed case".to_string()),
+            "{:?}",
+            check.errors
         );
     }
 }

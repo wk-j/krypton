@@ -12,7 +12,7 @@ import { connect } from 'node:net';
 import { homedir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 
-import type { ParamValue, Run } from './run.ts';
+import type { CheckFields, ParamValue, Run } from './run.ts';
 
 const START_HINT = 'start Krypton (open -a Krypton, or make dev) and run again';
 const TEXT_CAPTURE_LIMIT = 16 * 1024;
@@ -31,6 +31,7 @@ export interface LoopbackTarget {
 }
 
 export interface Exchange {
+  check: CheckFields;
   status: number;
   headers: Headers;
   text: string;
@@ -90,7 +91,8 @@ export async function requireControl(run: Run): Promise<ControlTarget> {
   }
   run.versions.app = target.appVersion;
   run.versions.controlApi = target.apiVersion;
-  run.info(group, label, `${target.url}, pid ${target.pid}, app ${target.appVersion}, API ${target.apiVersion}`);
+  run.info(group, label, `${target.url}, pid ${target.pid}, app ${target.appVersion}, API ${target.apiVersion}`, undefined,
+    { kind: 'precondition', target: { type: 'process', name: 'Krypton control API' } });
   return target;
 }
 
@@ -126,7 +128,8 @@ export async function requireLoopback(run: Run, params: Record<string, ParamValu
   if (probe.status !== 200 || !Array.isArray(asRecord(probe.json).tools)) {
     run.block(group, label, `${url}/tools.json answered ${probe.status} without a tools list — not Krypton's loopback server`);
   }
-  run.info(group, label, `${url} (${explicit ? 'from --param loopbackPort' : `from ${configured.source}`})`);
+  run.info(group, label, `${url} (${explicit ? 'from --param loopbackPort' : `from ${configured.source}`})`, undefined,
+    { ...probe.check, kind: 'precondition' });
   return { url, port };
 }
 
@@ -149,14 +152,46 @@ export async function http(run: Run, step: string, url: string, options: Request
     json = undefined;
   }
   run.capture(step, {
-    request: { method, url, headerNames: Object.keys(headers) },
+    request: { method, url: safeUrl(run, url), headerNames: Object.keys(headers), body: options.body },
     response: {
       status: response.status,
       headers: Object.fromEntries(response.headers),
       body: json ?? truncate(text),
     },
   });
-  return { status: response.status, headers: response.headers, text, json };
+  const check = requestCheck(run, step, url, options, `status ${response.status}`);
+  return { status: response.status, headers: response.headers, text, json, check };
+}
+
+function safeUrl(run: Run, url: string): string {
+  const safe = new URL(url);
+  for (const key of [...safe.searchParams.keys()]) {
+    if (/token|secret|password|authorization|capability/i.test(key)) safe.searchParams.set(key, '{token}');
+  }
+  return run.redact(safe.toString());
+}
+
+function requestCheck(run: Run, step: string, url: string, options: RequestOptions, detail: string): CheckFields {
+  const parsed = new URL(url);
+  const method = options.method ?? 'GET';
+  const params: Record<string, ParamValue | boolean> = {};
+  for (const [key, value] of parsed.searchParams) {
+    if (!/token|secret|password|authorization|capability/i.test(key)) params[key] = value;
+  }
+  if (options.body) {
+    try {
+      for (const [key, value] of Object.entries(asRecord(JSON.parse(options.body)))) {
+        if (!/token|secret|password|authorization|capability/i.test(key)
+          && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')) params[key] = value;
+      }
+    } catch { /* Non-JSON bodies stay in the evidence only. */ }
+  }
+  const target: NonNullable<CheckFields['target']> = {
+    type: 'http', name: `${method} ${run.redact(parsed.pathname).replaceAll('<redacted>', '{token}')}`,
+  };
+  const evidence = { artifact: step, pointer: '/response' };
+  run.info('requests', target.name, detail, undefined, { kind: 'step', step, target, params, evidence });
+  return { step, target, evidence };
 }
 
 /**
@@ -170,7 +205,7 @@ export async function firstSseEvent(
   url: string,
   headers: Record<string, string>,
   timeoutMs: number,
-): Promise<{ status: number; event: string | null; json: unknown }> {
+): Promise<{ status: number; event: string | null; json: unknown; check: CheckFields }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let status = 0;
@@ -205,10 +240,11 @@ export async function firstSseEvent(
     clearTimeout(timer);
   }
   run.capture(step, {
-    request: { method: 'GET', url, headerNames: Object.keys(headers) },
+    request: { method: 'GET', url: safeUrl(run, url), headerNames: Object.keys(headers) },
     response: { status, firstEvent: event, received: json ?? truncate(received) },
   });
-  return { status, event, json };
+  const check = requestCheck(run, step, url, { headers }, `status ${status}, first event ${event ?? '(none)'}`);
+  return { status, event, json, check };
 }
 
 /** `connected`, or the socket error code (ECONNREFUSED, ETIMEDOUT, …). */

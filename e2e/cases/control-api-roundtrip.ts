@@ -4,7 +4,7 @@
 // `acp_control_reply` → HTTP reply. Read-only: nothing is created or sent.
 
 import { asRecord, firstSseEvent, http, requireControl } from '../lib/target.ts';
-import type { CaseContext, CaseMeta } from '../lib/run.ts';
+import type { CaseContext, CaseMeta, CheckFields } from '../lib/run.ts';
 
 export const meta: CaseMeta = {
   id: 'control-api-roundtrip',
@@ -18,13 +18,13 @@ const CORE_OPERATIONS = ['harness.list', 'lane.list', 'peer.list'];
 export async function execute({ run }: CaseContext): Promise<void> {
   const control = await requireControl(run);
   const auth = { authorization: `Bearer ${control.token}` };
-  const operation = async (step: string, name: string, operationId: string): Promise<{ status: number; reply: Record<string, unknown> }> => {
+  const operation = async (step: string, name: string, operationId: string): Promise<{ status: number; reply: Record<string, unknown>; check: CheckFields }> => {
     const exchange = await http(run, step, `${control.url}/operations`, {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },
       body: JSON.stringify({ operationId, operation: name, params: {} }),
     });
-    return { status: exchange.status, reply: asRecord(exchange.json) };
+    return { status: exchange.status, reply: asRecord(exchange.json), check: exchange.check };
   };
   // 504 means the bridge never answered; otherwise the reply came back from HarnessDirectory.
   const reached = (status: number): string => (status === 504 ? 'bridge' : 'harness-directory');
@@ -40,6 +40,7 @@ export async function execute({ run }: CaseContext): Promise<void> {
     caps.status === 200 && apiVersion.split('.')[0] === '1',
     `status ${caps.status}, apiVersion ${apiVersion || '(missing)'}`,
     'axum',
+    { ...caps.check, expected: 'status 200, apiVersion 1.x', actual: `status ${caps.status}, apiVersion ${apiVersion}` },
   );
   const operations = Array.isArray(capsResult.operations) ? capsResult.operations : [];
   const missing = CORE_OPERATIONS.filter((name) => !operations.includes(name));
@@ -50,6 +51,7 @@ export async function execute({ run }: CaseContext): Promise<void> {
     missing.length === 0 && sse === '/control/v1/events',
     `${operations.length} operations${missing.length ? `, missing ${missing.join(', ')}` : ''}; streaming.sse ${String(sse)}`,
     'axum',
+    { ...caps.check, expected: JSON.stringify({ operations: CORE_OPERATIONS, sse: '/control/v1/events' }), actual: JSON.stringify({ operations, sse }) },
   );
 
   const invalid = await operation('operation-empty-id', 'harness.list', '');
@@ -60,6 +62,7 @@ export async function execute({ run }: CaseContext): Promise<void> {
     invalid.status === 400 && invalidCode === 'invalid_request',
     `status ${invalid.status}, error.code ${String(invalidCode)}`,
     'validate',
+    { ...invalid.check, expected: 'status 400, error.code invalid_request', actual: `status ${invalid.status}, error.code ${String(invalidCode)}` },
   );
 
   const harnesses = await operation('harness-list', 'harness.list', opId('harness-list'));
@@ -77,6 +80,7 @@ export async function execute({ run }: CaseContext): Promise<void> {
       ? 'status 504 — the frontend control bridge did not answer'
       : `status ${harnesses.status}, ${harnessRows === null ? `error ${JSON.stringify(harnesses.reply.error ?? null)}` : `${harnessRows.length} harness(es)`}`,
     reached(harnesses.status),
+    { ...harnesses.check, expected: 'status 200, rows with harnessId, cwd and lanes[]', actual: JSON.stringify({ status: harnesses.status, validShape: harnessShapeOk, rows: harnessRows?.length ?? null }) },
   );
   const rows = harnessRows ?? [];
   if (rows.length === 0) run.info('frontend round trip', 'no ACP harness open', 'lane checks run on empty lists');
@@ -95,6 +99,7 @@ export async function execute({ run }: CaseContext): Promise<void> {
     peers.status === 200 && peerNames !== null && JSON.stringify(peerNames) === JSON.stringify(harnessLaneNames),
     `status ${peers.status}; peer.list [${(peerNames ?? []).join(', ')}]; harness.list [${harnessLaneNames.join(', ')}]`,
     reached(peers.status),
+    { ...peers.check, expected: JSON.stringify({ status: 200, names: harnessLaneNames }), actual: JSON.stringify({ status: peers.status, names: peerNames }) },
   );
 
   const lanes = await operation('lane-list', 'lane.list', opId('lane-list'));
@@ -108,6 +113,7 @@ export async function execute({ run }: CaseContext): Promise<void> {
     lanes.status === 200 && laneRows !== null && strays.length === 0,
     `status ${lanes.status}, ${laneRows?.length ?? 0} lane(s)${strays.length ? `, ${strays.length} without a known harness` : ''}`,
     reached(lanes.status),
+    { ...lanes.check, expected: 'status 200, rows with displayName and a known harnessId', actual: JSON.stringify({ status: lanes.status, rows: laneRows?.length ?? null, invalidRows: strays.length }) },
   );
 
   const events = await firstSseEvent(run, 'events-stream', `${control.url}/events`, auth, 5000);
@@ -117,5 +123,6 @@ export async function execute({ run }: CaseContext): Promise<void> {
     events.status === 200 && events.event === 'ready',
     `status ${events.status}, first event ${events.event ?? '(none)'}`,
     'sse',
+    { ...events.check, expected: 'status 200, first event ready', actual: `status ${events.status}, first event ${events.event}` },
   );
 }

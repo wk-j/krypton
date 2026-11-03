@@ -42,8 +42,14 @@ browse every case, run, check, log and evidence file in the browser, use
   `e2e/runs/<caseId>/<runId>/`. The folder is git-ignored and holds:
   - `result.json`: the Result, in the contract's format.
   - `log.txt`: the same log the run prints.
-  - `responses/NN-<step>.json`: each request (method, URL, header **names**) and
-    its full response.
+  - `responses/NN-<step>.json`: each request (method, safe URL, header **names**,
+    and body when present) and its full response, with registered secrets redacted.
+- Checks use the rev 5 fields: `kind` separates preconditions, request steps and
+  assertions; `step` links each assertion to its request. Request steps show
+  `target`, scalar `params` and an `evidence` reference to the captured response.
+  Assertions retain `detail` and include separate `expected` and `actual` values.
+  Completed requests are informational steps: an expected 401/404 is not a
+  failed action, and a request alone cannot make a run PASS.
 - When `KRYPTON_E2E_RESULT` is set, the Result is also written to that path.
 - Exit codes: `0` PASS, `1` FAIL, `2` BLOCKED, `3` ERROR, `64` usage.
 - Verdicts:
@@ -92,7 +98,8 @@ browse every case, run, check, log and evidence file in the browser, use
        headers: { authorization: `Bearer ${control.token}`, 'content-type': 'application/json' },
        body: JSON.stringify({ operationId: `e2e-${run.runId}-lanes`, operation: 'lane.list', params: {} }),
      });
-     run.check('lanes', 'lane.list answers 200', reply.status === 200, `status ${reply.status}`);
+     run.check('lanes', 'lane.list answers 200', reply.status === 200, `status ${reply.status}`, undefined,
+       { ...reply.check, expected: '200', actual: String(reply.status) });
    }
    ```
 
@@ -104,7 +111,9 @@ browse every case, run, check, log and evidence file in the browser, use
      issue, in order. `detail` says what was observed. Use `run.info` for notes
      and `run.skip` for checks that do not apply on this machine.
    - Send every request through `http()` or `firstSseEvent()`, so its evidence
-     lands in `responses/`.
+     lands in `responses/`. Pass `reply.check` as shown above to link assertions
+     explicitly. Register generated test credentials with `run.addSecret()`
+     before sending them, including forged capability tokens used in URL paths.
    - Use a fresh `operationId` per run (`e2e-${run.runId}-…`). The frontend caches
      replies by `operationId`.
    - Cases run against the user's live app. A write-path case (`harness.create`,

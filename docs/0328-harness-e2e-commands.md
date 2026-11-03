@@ -1,6 +1,6 @@
 # Harness E2E Commands — Implementation Spec
 
-> Status: Implemented (rev 4: no new UI; everything is a `#e2e` command in the ACP Harness)
+> Status: Implemented (rev 4: no new UI; everything is a `#e2e` command in the ACP Harness) · rev 5 Implemented (check fields, 2026-11-03)
 > Date: 2026-10-23
 > Milestone: ACP Harness — commands
 > Builds on: 0065 (Hurl runner) · 0305 (`#bg` transcript table) · 0326 (cell grid for output) · 0211 (new→register tool pattern)
@@ -8,6 +8,8 @@
 > Later: [0329](0329-harness-e2e-browser-explorer.md) (2026-10-24) adds a read-only browser page opened by `#e2e open [<case>]`. Control stays in `#e2e` commands, and there is still no in-app view, panel, keybinding or palette entry.
 
 > Later: [0355](0355-e2e-system-map.md) (2026-11-02) adds two optional contract fields, `Case.map` and `checks[].at`, which the browser page uses to draw a run on the case's system map.
+
+> Rev 5 (2026-11-03, Implemented): seven optional check fields, `kind`, `step`, `target`, `params`, `evidence`, `expected` and `actual`, so a reader can tell preconditions, calls and expected results apart and see what each call sent. See [Rev 5 — Check Fields](#rev-5--check-fields).
 
 ## Problem
 
@@ -118,7 +120,8 @@ report_prompt = "Use the run-e2e-test-case skill to post run {run_id} ({result_p
 Case   { id, title, code?, issue?: number, params?: {k: string|number}, fresh?: {k: string}, files?: [path], map?: path }
 Result { version: 1, caseId, runId, verdict: "PASS"|"FAIL"|"ERROR"|"BLOCKED", startedAt, finishedAt,
          env?, versions?: {component: version}, params?,
-         checks: [{ group?, label, status: "pass"|"fail"|"skip"|"blocked"|"info", detail?, at? }],
+         checks: [{ group?, label, status: "pass"|"fail"|"skip"|"blocked"|"info", detail?, at?,
+                    kind?, step?, target?, params?, evidence?, expected?, actual? }],   // rev 5
          artifacts?: [{ label, path }], message? }
 ```
 
@@ -129,12 +132,191 @@ Result { version: 1, caseId, runId, verdict: "PASS"|"FAIL"|"ERROR"|"BLOCKED", st
 - `BLOCKED`: a precondition failed and the app was never exercised.
 - `ERROR`: the harness itself broke.
 - `map` and `at` (spec 0355) are optional. `map` is a repo-relative TOML map of the system the case tests. `at` is the id of the map node a check is about. Readers that predate them ignore both.
+- `kind`, `step`, `target`, `params`, `evidence`, `expected` and `actual` (rev 5) are optional; see [Rev 5 — Check Fields](#rev-5--check-fields). Readers that predate them ignore them.
 
 **Expected Adopt output for tli-api-service.** This is the lane's work; the repo is unchanged.
 
 - `list` imports each `e2e/cases/<N>/case.mjs` → `id`/`issue` = N, `code`, `params`, `files: ["e2e/cases/N"]`, `fresh` (#1328 `{tempRpNo:"new"}`).
 - `run` spawns `node e2e/run.mjs N --set k=v` and reads the `report …` line. It maps `results` → `checks` (`section` → `group`), `state.images` → `versions`, and `report.md`/`files/` → `artifacts`.
 - `history` converts every `e2e/reports/*/*/evidence.json`.
+
+## Rev 5 — Check Fields
+
+> Date: 2026-11-03. Approved and implemented the same day; see "Implementation Notes (rev 5)" at the end of this section.
+
+### Problem
+
+User, 2026-11-03, on valence run `tli-api-service/runs/f4e38d26221cfd5d` (case 1368, 29 checks): "i see everthing max together user unable to identify what apicall, log, etc", then "have multiple api call, why i see only one parameter panel?"
+
+- A check carries `group`, `label`, `status`, `detail` and `at`. Nothing says whether a row is a precondition, something the harness did, or an expected result, nor which API, table or log it read.
+- `CONTRACT.md` says "`group` is the section or phase": one field, two meanings. tli-api-service writes `group = section ?? phase` (`.krypton/e2e/adapter.mjs:69`). Rows with a section lose their phase, so group `verify` holds only 2 notes, and `execute` mixes the calls that set up the job with the calls under test.
+- `Result.params` is one object per run: the case inputs (`policyNo=new`, `poRequestDate=today`). The run's 5 calls, and the values they actually sent (`83697031`; `25691103`, `20261103`, `25aa1103`), have no place in the Result.
+- The raw responses exist (`evidence.json`, written by `e2e/run.mjs:114-116`), but only as one whole-file artifact that no check points into.
+
+### Solution
+
+Seven optional fields on a check. Existing fields keep their meaning, and a Result without the new fields is read exactly as today. Every field is optional, so the Result stays `version: 1`.
+
+| Field | Answers | Type |
+|---|---|---|
+| `kind` | Is the row a precondition, something the harness did, or an expected result? | `"precondition"` \| `"step"` \| `"expect"` |
+| `step` | Which step is the row about? On a `kind: "step"` row it declares the step; on any other row it links the row to that step | string, `^[a-z0-9][a-z0-9._-]{0,47}$` (the map node id rule) |
+| `target` | What was called or read | `{ type, name }`: `type` ∈ `http` `db` `log` `file` `ui` `cli` `process` `other`; `name` one line, ≤ 200 chars |
+| `params` | The inputs the step sent, or the keys a read used | `{k: string\|number\|boolean}`, the `Result.params` rule |
+| `evidence` | Where the raw request, response, rows or screenshot are | `{ artifact, pointer? }`: `artifact` is the `label` of an `artifacts` entry; `pointer` is an RFC 6901 JSON Pointer into it when it is a `.json` file |
+| `expected`, `actual` | What the check wanted and what it saw | strings; JSON text for structured values |
+
+Writing rules, stated in `CONTRACT.md`:
+
+- `status: "info"` stays the note; a note needs no `kind`.
+- `detail` stays the one-line summary even when `expected`/`actual` are set, because `#e2e status` and pre-rev-5 readers show only `detail`.
+- `group` is the section, for example the expected result a set of rows proves; the role belongs in `kind`. A pre-rev-5 adapter that put the phase in `group` stays valid.
+- No secret values in `target.name`, `params`, `expected` or `actual`. A URL that carries a token is written as its template (`/e2e/{token}`).
+- Large bodies go in an artifact that `evidence` points at.
+
+Case 1368, the call that sends the CE date, and two rows about it:
+
+```json
+{ "kind": "step", "step": "call-ce", "label": "getWIPDocuments/POS · CE date (20261103)", "status": "pass", "detail": "204",
+  "target": { "type": "http", "name": "POST /tli/getWIPDocuments/POS" }, "at": "api001",
+  "params": { "policy_no": "83697031", "po_tr_type": "CJ", "po_request_date": "20261103", "user_name": "9003684" },
+  "evidence": { "artifact": "evidence", "pointer": "/evidence/getWIPDocuments~1POS CE date (20261103)" } }
+{ "kind": "expect", "step": "call-ce", "group": "4. ส่งวันที่เดียวกันเป็นปี ค.ศ. (20261103) → … จึงไม่พบ", "label": "HTTP status",
+  "status": "pass", "detail": "= 204", "expected": "204", "actual": "204",
+  "target": { "type": "http", "name": "POST /tli/getWIPDocuments/POS" }, "at": "api001" }
+{ "kind": "expect", "step": "call-ce", "group": "4. ส่งวันที่เดียวกันเป็นปี ค.ศ. (20261103) → … จึงไม่พบ", "label": "ไม่มีแถว tr_log เพิ่ม",
+  "status": "pass", "detail": "= 1", "expected": "1", "actual": "1",
+  "target": { "type": "db", "name": "dim.tr_log" }, "params": { "action": 7, "policy_no": "83697031" }, "at": "dim-log" }
+```
+
+### Research
+
+- **The run.** Its 29 rows are 8 preconditions (one a note), 2 setup calls, 3 calls under test, 7 response checks, 6 `tr_log` checks and 3 notes. The runner already knows most roles: `require` is a precondition, `check`/`checkThat` an expected result, `note` an info row (`e2e/lib/context.mjs:30-54`). It records only `{phase, section, at, status, label, detail}` (`:24`), and `check()` folds its separate `actual` and `expected` into `detail` (`:41-45`).
+- **Readers today.** `validate_result` reads `group`, `detail`, `at`, `label` and `status`, and ignores other keys without error (`e2e.rs:504-508`). The browser page receives the whole Result (`E2eRunDetail.result: Option<Value>`, `e2e.rs:2461-2464`) and draws four of its fields (`surfaces/e2e/index.ts:116-122`, `:829-841`). valence decodes five fields (`internal/krypton/contract.go:234-240`) and pushes the raw Result unchanged (`internal/push/push.go:201`). An adapter can therefore write the new fields before any reader shows them.
+- **The `at` precedent (0355).** `e2e_adapter_check` checks references; `validate_result` does not, because `INVALID RESULT` hides every row. Rev 5's references follow it.
+
+**Alternatives rejected**
+
+1. **Nested `steps[]` (Allure).** Every reader and the 0355 pins use the flat `checks` list, and a pre-rev-5 reader would lose nested rows. A key keeps the list flat.
+2. **The role in `group`** (`prepare › environment`). One field keeps two meanings, and renamed groups break the 0355 comparison with the last PASS, which matches by `group`.
+3. **The role from `status`.** `pass` does not tell a precondition from an expected result.
+4. **The target from the map node's `shape`.** `store` covers tables and log files alike, and rows off the map have no node.
+5. **A separate `id` for steps.** `step` on a `kind: "step"` row is the declaration, so one field does both.
+6. **Request and response bodies inline.** Size and the secret rule; `evidence` points at the artifact instead.
+
+### Prior Art
+
+| Tool | Implementation | Taken |
+|---|---|---|
+| Allure | `result.json`: the test and each nested step carry `name`, `status`, `parameters[{name, value, excluded, mode}]` and `attachments[{name, source, type}]` | params and evidence per step |
+| Playwright Test | `TestStep.category`: `expect`, `fixture`, `hook`, `pw:api`, `test.step`, `test.attach` | a role per row separates setup, actions and assertions |
+| Hurl | `--report-json` writes `report.json` with each file's `--json` export and a reference to every HTTP response dumped to disk | evidence by reference, not inline |
+| Node `assert` | `AssertionError` carries `actual`, `expected` and `operator` apart from its message | `expected`/`actual` apart from `detail` |
+
+**Krypton delta.** The list stays flat and links by key instead of nesting. Three coarse roles instead of Playwright's six categories. No `masked` params as in Allure: Contract v1 forbids secret values outright.
+
+### Validation
+
+`validate_result` checks types only. A violation is an error, and the run is `INVALID RESULT`, as for `status` today.
+
+| Field | Error |
+|---|---|
+| `kind` | `checks[i].kind: "x" is not one of precondition\|step\|expect` |
+| `step` | `checks[i].step: "x" must match ^[a-z0-9][a-z0-9._-]{0,47}$` |
+| `target` | an object; `type` one of the eight; `name` a non-empty single line ≤ 200 chars |
+| `params` | an object; `checks[i].params.k: must be a string, number or boolean` |
+| `evidence` | an object; `artifact` a non-empty string; `pointer` a string that is empty or starts with `/` |
+| `expected`, `actual` | `checks[i].expected: must be a string` |
+
+`e2e_adapter_check` also checks references in the smoke `result_path`. They are errors, so the wiring is fixed at init:
+
+- `checks[j].step: "x" is already declared by checks[i]`: two `kind: "step"` rows share a key.
+- `checks[j].step: "x" is not a declared step`: a link with no `kind: "step"` row.
+- `checks[j].evidence.artifact: "x" is not an artifact label`.
+- Warning `checks[j]: a failed precondition is "blocked"`, for `kind: "precondition"` with `status: "fail"`.
+
+### Readers
+
+**Browser page (`#e2e open`; 0329, 0355).**
+
+- **Row,** in every layout:
+  - a `kind` tag before the label (`pre`, `step`, `expect`);
+  - the target as `http · POST /tli/getWIPDocuments/POS`;
+  - `params` as `k=v · k=v`, keys sorted;
+  - `expected` and `actual` lines, `actual` in the fail tone when the row failed, each cut at 500 chars with `…`;
+  - `evidence: <label> <pointer>`;
+  - in the group and map layouts, `← <step label>` when the row links to a step.
+
+  A field that is absent adds nothing, so a pre-rev-5 row looks as it does today.
+- **`m` cycles the run pane:** map → by group → by step → map. The map is skipped when the case has no loaded map (0355), and "by step" when the Result has no `kind: "step"` row. The choice persists while the page is open.
+- **By step:**
+  1. **Preconditions:** `kind: "precondition"` rows without a resolvable `step` link.
+  2. **One block per declared step,** in Result order: the `kind: "step"` row that first carries a key, or a `kind: "step"` row with no key. The step row is the head, followed by the rows that link to it, in Result order. A step with no linked row is a setup call and shows its head alone.
+  3. **Other checks:** every remaining row, including a `kind: "step"` row that repeats an earlier key, grouped by `group` as in the group layout.
+
+  `f` keeps failed and blocked rows; a step head stays when any of its rows does.
+- **Evidence by keyboard.** When a shown row has `evidence`, `Tab` adds a `checks` pane: cases → runs → checks → artifacts.
+  - `j`/`k` (`↓`/`↑`) move a cursor over the rows that have `evidence`, in display order.
+  - `Enter` opens the artifact in the existing viewer. For a `.json` artifact whose `pointer` resolves, the viewer shows that value pretty-printed under the title `<label> · <path> · <pointer>`. Otherwise it shows the whole artifact under a banner `pointer <p> not found — whole file`.
+  - `Esc` closes the viewer, as today.
+- **Map pins** stay one per (`at`, `group`); their rows are the enriched rows.
+
+**`#e2e status`** is unchanged. Failure lines stay `✗ group › label — detail`, which is why `CONTRACT.md` asks for `detail` alongside `expected`/`actual`.
+
+**valence** draws the fields in its own repo, as it followed 0355. Its `push` already sends them in the raw Result.
+
+**Adopt for tli-api-service** (a later project change, not part of rev 5). Adopt changes no project code, so the adapter can write only what the runner records: `kind` from `phase` (`prepare` → `precondition`, `execute` → `step`, `verify` → `expect`; `info` rows get no `kind`). `step`, `target`, per-step `params`, `evidence` pointers and `expected`/`actual` need the runner to record them, which is a project change the user asks for separately.
+
+### Affected Files (rev 5)
+
+| File | Change |
+|------|--------|
+| `src-tauri/src/e2e.rs` | `CONTRACT_MD`: Result schema, "Check fields", Rules. `validate_result`: the type rules. `Check` gains `kind`, `step`, `evidence_artifact`. `adapter_check`: the reference checks |
+| `src/loopback/surfaces/e2e/index.ts` | `Check` type; enriched `checkRow`; `m` three-way cycle; by-step layout; `checks` pane; pointer viewer |
+| `src/loopback/surfaces/e2e/e2e.css` | kind tag, target, params, expected/actual, cursor, step block |
+| `src/loopback/surfaces/e2e/e2e.test.ts`, `fixtures/` | a fixture shaped like run 1368 with the new fields |
+| `docs/0329-harness-e2e-browser-explorer.md`, `docs/0355-e2e-system-map.md` | run pane rows, the `m` cycle, the `checks` pane |
+
+### Edge Cases (rev 5)
+
+- **A Result without the fields.** Validated and drawn as today; "by step" and the `checks` pane never appear.
+- **A step key declared twice.** The first `kind: "step"` row declares it; later ones render under "Other checks". `e2e_adapter_check` reports it.
+- **A link to an undeclared step.** The row is placed as if it had no `step`, and shows `no step "x"`.
+- **An `evidence.artifact` not in `artifacts`, or an artifact with a problem** (missing, too large). The row shows the problem, and `Enter` flashes it, as for an artifact with a problem today.
+- **A pointer on a non-JSON artifact or a directory, or one that does not resolve.** The whole artifact opens under the banner.
+- **A step row that fails** (no response). It heads its block in the fail tone; its linked rows keep their own status.
+- **A pre-rev-5 adapter that writes the phase in `group`.** Still valid; nothing is migrated.
+
+### Out of Scope (rev 5)
+
+- Nested steps, per-check timing, severity and tags.
+- Any change to `#e2e status` output.
+- valence's report (its repo). tli-api-service's adapter and runner, and Krypton's own `e2e/` runner, writing the fields.
+- A new contract version.
+
+### Testing (rev 5)
+
+- **Rust:** each type rule with its error text; a Result with every field validates; each reference error and the precondition warning in `e2e_adapter_check`; a pre-rev-5 Result validates unchanged.
+- **TS:** the by-step blocks (preconditions, steps in order, a setup step alone, other checks); `f` with step heads; the `m` cycle skipping map and steps; the `checks` pane cursor; pointer hit, miss and non-JSON; a row without new fields renders as today.
+- **Smoke:** a copy of run 1368's Result with the fields added by hand, through `e2e_adapter_check` and `#e2e open`.
+
+### Implementation Notes (rev 5)
+
+**Where the shipped code adds to the design above:**
+
+- **A pure module.** Step links, the by-step layout, row text and the JSON Pointer resolver live in `src/loopback/surfaces/e2e/checks.ts` (with `checks.test.ts` for the RFC 6901 escapes), as `map.ts` holds the pin rules.
+- **`RunResult.artifact_labels`.** `validate_result` keeps the artifact labels, so `adapter_check` checks `evidence.artifact` without reading the JSON again.
+- **Error texts the design left open.** `checks[i].evidence.pointer: "x" must be empty or start with "/"`. `target.type` and `target.name` use the map `source` wording (`must be a single line`, `longer than 200 characters`), and `target.name` treats `\r` as a line break too.
+- **Toolbar.** The map toggle became `view: <layout>` (`m`), shown when the run offers more than one layout.
+- **`Enter` from the runs pane** still goes to the artifacts; the `checks` pane is reached with `Tab`.
+- **Fixture D** (`fixtures/d-tli-api-1368-rev5.json`) is tli-api-service run `20261103T091029Z` of case 1368 with the fields added by hand: `kind` from the phase, step links from the sections, targets, the params each call sent, and evidence pointers into that run's real `evidence.json`.
+
+**Verified (2026-11-03):**
+
+- **Checks.** `cargo test e2e::` passes 33 tests. `cargo fmt --check` and `cargo clippy -- -D warnings` are clean; `cargo clippy --all-targets` stops on a `bool_assert_comparison` in `timeline.rs` tests that this change does not touch. `npx vitest run src/loopback/surfaces/e2e` passes 31 tests (6 new page cases, 2 pointer cases), and `npx tsc --noEmit` exits 0.
+- **Smoke, validator.** Fixture D through `adapter_check` in a scratch project: ok, no reference errors. An unknown `kind` made the Result invalid (`checks[3].kind: "setup" is not one of precondition|step|expect`), and a dangling link gave `result: checks[20].step: "call-xx" is not a declared step`.
+- **Smoke, page.** The real page under Vite, with fixture D and the run's real `evidence.json` behind a stubbed API, in headless Chromium: 29 rows; `m` gave 5 step blocks (1, 1, 10, 4 and 3 rows); `Tab Tab`, `j j j`, `Enter` opened the CE-date call's response and its `tr_log` row at `/evidence/getWIPDocuments~1POS CE date (20261103)`; `Esc` closed it.
+- **Not exercised.** `#e2e open` inside a rebuilt Krypton, and valence.
 
 ## Initialize (`#e2e init [<hint>]`)
 
@@ -344,3 +526,7 @@ None.
 - [Playwright intro](https://playwright.dev/docs/intro), [Cypress Launchpad](https://docs.cypress.io/app/get-started/open-the-app), [Cypress recorded runs](https://docs.cypress.io/cloud/features/recorded-runs): ask-then-scaffold, review of generated files, recent-status strip.
 - [go-junit-report `junit.go`](https://github.com/jstemmer/go-junit-report/blob/master/junit/junit.go): JUnit testcase states have no blocked state and no params.
 - tli-api-service `e2e/README.md`, `e2e/run.mjs`, `e2e/lib/context.mjs`, `.claude/skills/{create,run}-e2e-test-case/SKILL.md` at `7c88246d`: the first Adopt target.
+- [Allure test result file](https://allurereport.org/docs/how-it-works-test-result-file/): per-step `parameters` and `attachments`, with a `masked` mode (rev 5).
+- [Playwright `testReporter.d.ts`, `TestStep.category`](https://github.com/microsoft/playwright/blob/main/packages/playwright/types/testReporter.d.ts): `expect`, `fixture`, `hook`, `pw:api`, `test.step`, `test.attach` (rev 5).
+- [Hurl running tests, JSON report](https://hurl.dev/docs/running-tests.html#json-report): `report.json` refers to each HTTP response dumped to disk (rev 5).
+- [Node.js `assert.AssertionError`](https://nodejs.org/api/assert.html#class-assertassertionerror): `actual`, `expected`, `operator` apart from the message (rev 5).

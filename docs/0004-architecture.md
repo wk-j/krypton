@@ -1302,6 +1302,17 @@ the mermaid source itself: generated ids, every project string escaped.
 `e2e_adapter_check` validates every listed map, and checks the smoke Result's
 `at` values against its case's map.
 
+**Check fields (spec 328 rev 5).** A check may carry `kind`
+(`precondition`/`step`/`expect`), `step` (declared by a `kind: "step"` check,
+a link on any other), `target`, `params`, `evidence` (an artifact label plus a
+JSON Pointer) and `expected`/`actual`. `validate_result` checks their types;
+`e2e_adapter_check` checks the smoke Result's references (a key declared twice,
+a link to no step, an `evidence.artifact` that is not an artifact label) and
+warns on a failed precondition. The page's pure
+`src/loopback/surfaces/e2e/checks.ts` builds the step links and the by-step
+layout (`m` cycles map → by group → by step) and resolves the pointer; a
+`checks` pane walks the rows with evidence and opens one at its pointer.
+
 ## Review Threads (spec 270)
 
 A human starts a fixed review round from an idle local ACP lane through
