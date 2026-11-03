@@ -7,10 +7,12 @@
      * `.acp-harness__help__panel` is the shell's panel wrapper, which the help
        overlay had no equivalent of: it must not be a layout box. */
 @layer krypton.component {
+  /* Modal tier (80, as `ImageViewer`): paints over the dock column (5) and
+     lane rail (4). */
   .acp-harness__help-overlay {
     position: absolute;
     inset: 0;
-    z-index: 3;
+    z-index: 80;
     display: flex;
     flex-direction: column;
     background:

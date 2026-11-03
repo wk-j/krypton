@@ -9,10 +9,12 @@
        declarations, which `acp-harness.css` shares with `.acp-harness__empty`
        (that selector stays where it is — it is not this component's). */
 @layer krypton.component {
+  /* Modal tier (80, as `ImageViewer`): paints over the dock column (5) and
+     lane rail (4). */
   .acp-harness__memory-overlay {
     position: absolute;
     inset: 0;
-    z-index: 2;
+    z-index: 80;
     display: flex;
     flex-direction: column;
     background: var(--agent-surface-solid, rgba(4, 8, 13, 0.96));

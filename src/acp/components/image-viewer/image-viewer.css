@@ -8,11 +8,13 @@
        boxes, and the shell's head carries nothing here — full bleed. */
 @layer krypton.component {
   /* spec 281 — image viewer. Solid backdrop (no backdrop-filter: WKWebView
-     freeze); zoom/pan is one transform on the image. */
+     freeze); zoom/pan is one transform on the image. Modal tier (80, as
+     `ExecutionDialog` / `ReviewThreadDialog`): the viewer paints over every
+     harness panel and pane, the dock column (5) and lane rail (4) included. */
   .acp-harness__image-viewer-overlay {
     position: absolute;
     inset: 0;
-    z-index: 4;
+    z-index: 80;
     display: flex;
     flex-direction: column;
     background: rgba(2, 5, 9, 0.94);

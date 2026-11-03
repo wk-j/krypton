@@ -278,6 +278,7 @@ pub async fn read_image_file(path: String) -> Result<tauri::ipc::Response, Strin
 - **Style:**
   - Full 1px `--krypton-*` border, with no corner brackets and no `backdrop-filter`.
   - The viewer backdrop is a solid rgba fill.
+  - The viewer sits in the modal tier (`z-index: 80`, as the Execution Inspector and review-thread dialogs), above every harness panel and pane: the dock column (Ticket/Rails) and the lane rail never paint over an open image.
   - Zoom and pan use `transform: translate() scale()`.
 - **Text content:** `alt` and `figcaption` are set only through attributes and `textContent`.
 - **Viewer status chip:** `image viewer · n/p next · =/- zoom · 0 fit · o open · Esc close`.

@@ -7,12 +7,13 @@
   /* ── Lane picker overlay ───────────────────────────────────
      One 8px panel (same chrome as the command palette). Header and list
      are not independently bordered — that used to sit them side-by-side
-     as two capsules, with the 1px stroke reading as wire. */
+     as two capsules, with the 1px stroke reading as wire. Modal tier (80,
+     as `ImageViewer`): paints over the dock column (5) and lane rail (4). */
 
   .acp-harness__picker {
     position: absolute;
     inset: 0;
-    z-index: 4;
+    z-index: 80;
     display: flex;
     flex-direction: column;
     align-items: center;
