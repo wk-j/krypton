@@ -110,6 +110,11 @@ pub struct TimelineDirectRecordRequest {
     pub relation: Option<TimelineRelation>,
     #[serde(default)]
     pub related_event: Option<String>,
+    /// spec 356: the human's request to record, quoted. Required while the
+    /// project is in manual mode (automatic recording off); a gate only, never
+    /// stored, so event identity and provenance do not depend on it.
+    #[serde(default)]
+    pub user_request_excerpt: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -265,10 +270,12 @@ pub struct TimelineSettings {
     pub automatic_recording: bool,
 }
 
+/// spec 356: a project with no settings file is in manual mode; automatic
+/// recording is an explicit `#timeline auto on`.
 impl Default for TimelineSettings {
     fn default() -> Self {
         Self {
-            automatic_recording: true,
+            automatic_recording: false,
         }
     }
 }
@@ -1897,6 +1904,13 @@ fn validate_direct_request(
     if let Some(related) = request.related_event.take() {
         request.related_event = Some(validate_event_id(&related)?);
     }
+    if let Some(excerpt) = request.user_request_excerpt.take() {
+        let excerpt = validate_body_with_limit("userRequestExcerpt", &excerpt, MAX_EVIDENCE_CHARS)?;
+        if excerpt.is_empty() {
+            return Err("userRequestExcerpt must not be empty when supplied".to_string());
+        }
+        request.user_request_excerpt = Some(excerpt);
+    }
     Ok(request)
 }
 
@@ -1925,8 +1939,10 @@ pub(crate) fn record_direct_project(
         .map_err(|_| "timeline mutation lock is unavailable".to_string())?;
     let request = validate_direct_request(request)?;
     let lane_label = validate_single_line("recorderLane", lane_label, MAX_ACTOR_CHARS)?;
-    if !settings_project_locked(project_dir)?.automatic_recording {
-        return Err("automatic timeline recording is disabled for this project".to_string());
+    if !settings_project_locked(project_dir)?.automatic_recording
+        && request.user_request_excerpt.is_none()
+    {
+        return Err("timeline is in manual mode for this project: record only when the human's current message asks, and pass user_request_excerpt quoting that request".to_string());
     }
     if let Some(related) = &request.related_event {
         event_detail_project(project_dir, related)?;
@@ -2570,6 +2586,9 @@ mod tests {
             source_ref: Some("conversation:turn-5".to_string()),
             relation: None,
             related_event: None,
+            // spec 356: projects default to manual mode, so the shared request
+            // carries the human's quoted request to record.
+            user_request_excerpt: Some("บันทึกเรื่องนี้ลง timeline".to_string()),
         }
     }
 
@@ -3200,7 +3219,7 @@ mod tests {
     fn settings_migrate_both_values_without_changing_event_schema_or_pending() {
         for enabled in [false, true] {
             let dir = TestDir::new("settings-migration");
-            assert!(settings_project(&dir.0).unwrap().automatic_recording);
+            assert!(!settings_project(&dir.0).unwrap().automatic_recording);
             let (candidate, _) = seed_pending(&dir.0, 0);
             let path = settings_path(&dir.0);
             fs::write(
@@ -3228,9 +3247,11 @@ mod tests {
                     .automatic_recording,
                 false
             );
-            assert!(record_direct_project(&dir.0, "Codex-2", direct_request())
+            let mut unrequested = direct_request();
+            unrequested.user_request_excerpt = None;
+            assert!(record_direct_project(&dir.0, "Codex-2", unrequested)
                 .unwrap_err()
-                .contains("disabled"));
+                .contains("manual mode"));
             assert_eq!(pending_count_project(&dir.0).unwrap(), 1);
             let promoted = resolve_pending_project(
                 &dir.0,
@@ -3246,6 +3267,57 @@ mod tests {
                     .automatic_recording
             );
         }
+    }
+
+    #[test]
+    fn manual_mode_records_only_with_a_quoted_user_request_and_never_stores_it() {
+        let dir = TestDir::new("manual-mode");
+        assert!(!settings_project(&dir.0).unwrap().automatic_recording);
+        let mut unrequested = direct_request();
+        unrequested.user_request_excerpt = None;
+        let error = record_direct_project(&dir.0, "Codex-2", unrequested).unwrap_err();
+        assert!(error.contains("manual mode"));
+        assert!(error.contains("user_request_excerpt"));
+        for bad in [" \n ".to_string(), "x".repeat(MAX_EVIDENCE_CHARS + 1)] {
+            let mut request = direct_request();
+            request.user_request_excerpt = Some(bad);
+            assert!(record_direct_project(&dir.0, "Codex-2", request).is_err());
+        }
+        assert!(!event_root(&dir.0).exists());
+
+        let quote = "บันทึกลง timeline ว่าต้องส่ง metadata ก่อนจบงาน";
+        let mut requested = direct_request();
+        requested.user_request_excerpt = Some(quote.to_string());
+        let created = record_direct_project(&dir.0, "Codex-2", requested).unwrap();
+        assert_eq!(
+            created.disposition,
+            TimelineDirectRecordDisposition::Created
+        );
+        assert_eq!(created.event.recorded_by, "Agent");
+        assert!(created.event.instruction_excerpt.is_none());
+        let stored = fs::read_to_string(dir.0.join(&created.event.path)).unwrap();
+        assert!(!stored.contains(quote));
+
+        // The quote is not part of event identity: a retry with other wording
+        // returns the same event instead of a second one.
+        let mut retry = direct_request();
+        retry.user_request_excerpt = Some("ช่วยบันทึกเรื่องนี้ด้วย".to_string());
+        let retried = record_direct_project(&dir.0, "Codex-2", retry).unwrap();
+        assert_eq!(
+            retried.disposition,
+            TimelineDirectRecordDisposition::Existing
+        );
+        assert_eq!(retried.event.id, created.event.id);
+
+        set_enabled_project(&dir.0, true).unwrap();
+        let mut automatic = direct_request();
+        automatic.summary = "Automatic intake needs no quoted request".to_string();
+        automatic.user_request_excerpt = None;
+        let recorded = record_direct_project(&dir.0, "Codex-2", automatic).unwrap();
+        assert_eq!(
+            recorded.disposition,
+            TimelineDirectRecordDisposition::Created
+        );
     }
 
     #[test]

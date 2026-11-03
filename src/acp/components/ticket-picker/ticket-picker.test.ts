@@ -10,6 +10,7 @@ const ROWS: readonly TicketPickerRow[] = [
   {
     kind: 'local',
     ticketId: 'KR-301',
+    number: 301,
     title: 'Harness UI refactor',
     labels: ['ui', 'refactor'],
     state: 'open',
@@ -25,6 +26,14 @@ const ROWS: readonly TicketPickerRow[] = [
     url: 'https://github.com/wk/krypton/issues/412',
   },
 ];
+
+const UNLINKED: TicketPickerRow = {
+  kind: 'local',
+  ticketId: '2026-10-14-scratch',
+  title: 'Scratch notes',
+  labels: [],
+  state: 'todo',
+};
 
 const UNAVAILABLE: TicketPickerRow = {
   kind: 'unavailable',
@@ -110,7 +119,7 @@ describe('TicketPicker', () => {
     const picker = mount(base());
 
     expect(picker.el.querySelector('header')?.outerHTML).toBe(
-      '<header class="acp-ticket__head">local tickets + GitHub' +
+      '<header class="acp-ticket__head">GitHub + local tickets' +
         '<span class="acp-ticket__sub">target: codex-1 · idle</span></header>',
     );
   });
@@ -151,33 +160,25 @@ describe('TicketPicker', () => {
     );
   });
 
-  it('emits a local row as a button and an unavailable row as a div', () => {
-    const picker = mount(base({ rows: [...ROWS, UNAVAILABLE] }));
+  it('leads each row with its source icon and a linked local ticket with its issue number', () => {
+    const picker = mount(base({ rows: [...ROWS, UNLINKED, UNAVAILABLE] }));
     const rows = [...picker.el.querySelectorAll('.acp-ticket__row')];
+    const iconOf = (row: Element): string | null | undefined =>
+      row.querySelector('.acp-ticket__title > svg.acp-ticket__icon:first-child use')?.getAttribute('href');
+    const identityOf = (row: Element): string | null | undefined =>
+      row.querySelector('.acp-ticket__identity')?.textContent;
 
-    expect(rows[0].outerHTML).toBe(
-      '<button type="button" class="acp-ticket__row acp-ticket__row--selected" role="option" ' +
-        'aria-selected="true" data-ticket-index="0">' +
-        '<span class="acp-ticket__title">Harness UI refactor</span>' +
-        '<span class="acp-ticket__identity"><span class="acp-ticket__num">KR-301</span>' +
-        '<span class="acp-ticket__badge">LOCAL</span></span>' +
-        '<span class="acp-ticket__labels">ui, refactor</span>' +
-        '<span class="acp-ticket__age">10m · open</span>' +
-        '</button>',
-    );
-    expect(rows[1].outerHTML).toBe(
-      '<button type="button" class="acp-ticket__row" role="option" aria-selected="false" ' +
-        'data-ticket-index="1">' +
-        '<span class="acp-ticket__title">Picker loses its scroll offset</span>' +
-        '<span class="acp-ticket__identity"><span class="acp-ticket__num">#412</span>' +
-        '<span class="acp-ticket__badge">IMPORT</span></span>' +
-        '<span class="acp-ticket__age"> · open</span>' +
-        '</button>',
-    );
-    expect(rows[2].tagName).toBe('DIV');
-    expect(rows[2].className).toBe('acp-ticket__row acp-ticket__row--unavailable');
-    expect(rows[2].getAttribute('aria-disabled')).toBe('true');
-    expect(rows[2].querySelector('.acp-ticket__num')?.textContent).toBe('gh');
+    expect(rows.map(iconOf)).toStrictEqual([
+      '#krypton-icon-github',
+      '#krypton-icon-github',
+      '#krypton-icon-panel-ticket',
+      '#krypton-icon-warn',
+    ]);
+    expect(rows.map(identityOf)).toStrictEqual(['#301LOCAL', '#412IMPORT', '2026-10-14-scratchLOCAL', 'gh']);
+    expect(rows[0].querySelector('.acp-ticket__title')?.textContent).toBe('Harness UI refactor');
+    expect(rows.map((row) => row.tagName)).toStrictEqual(['BUTTON', 'BUTTON', 'BUTTON', 'DIV']);
+    expect(rows[3].className).toBe('acp-ticket__row acp-ticket__row--unavailable');
+    expect(rows[3].getAttribute('aria-disabled')).toBe('true');
   });
 
   it('counts the rows it is showing on the listbox', () => {

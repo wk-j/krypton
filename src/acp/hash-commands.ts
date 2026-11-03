@@ -88,7 +88,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   {
     name: 'timeline',
     args: '[open [<topic>] | trace <topic> | conflicts [<topic>] | auto [on|off] | <topic>]',
-    description: 'เปิดดูหรือไล่ประวัติ ตรวจข้อขัดกัน และตั้งค่าบันทึกอัตโนมัติของ project ในเครื่อง',
+    description: 'เปิดดูหรือไล่ประวัติ ตรวจข้อขัดกัน และเลือกให้บันทึกอัตโนมัติหรือเฉพาะเมื่อสั่งของ project ในเครื่อง',
   },
   {
     name: 'push',

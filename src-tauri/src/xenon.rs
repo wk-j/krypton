@@ -2223,6 +2223,7 @@ mod tests {
                 source_ref: Some("docs/0259-timeline-xenon-publishing.md".into()),
                 relation: None,
                 related_event: None,
+                user_request_excerpt: Some("publish this timeline event".into()),
             },
         )
         .unwrap()

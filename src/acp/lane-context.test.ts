@@ -110,7 +110,7 @@ describe('tool advertising follows the tool gates', () => {
     expect(renderToolIndex(gates)).not.toContain('review_outcome');
   });
 
-  it('keeps legacy tools advertised when new automatic intake is disabled', () => {
+  it('keeps every Timeline tool advertised in manual mode, for calls the human asks for', () => {
     const gates = { timeline: true, timelineAutomaticRecording: false, timelinePendingCount: 24, peers: true, lessons: false };
     expect(renderToolNameLine(gates)).toContain('timeline_pending_resolve');
     expect(renderToolNameLine(gates)).toContain('peer_send, peer_list, review_outcome');
@@ -127,14 +127,24 @@ describe('tool advertising follows the tool gates', () => {
   });
 
   it('keeps the legacy count out of the hashed policy and in a header line while above 0 (spec 332)', () => {
-    const gates = { timeline: true, timelineAutomaticRecording: false, timelinePendingCount: 24, peers: false, lessons: false };
+    const gates = { timeline: true, timelineAutomaticRecording: true, timelinePendingCount: 24, peers: false, lessons: false };
     const initial = hashPolicy(renderToolIndex(gates));
     const sent = planPolicyDelivery(null, initial, []).next;
     expect(planPolicyDelivery(sent, hashPolicy(renderToolIndex({ ...gates, timelinePendingCount: 23 })), []).send).toBe(false);
     expect(renderTimelinePendingLine(gates)).toContain('Timeline legacy pending: 24.');
     expect(renderTimelinePendingLine({ ...gates, timelinePendingCount: 23 })).toContain('Timeline legacy pending: 23.');
     expect(renderTimelinePendingLine({ ...gates, timelinePendingCount: 0 })).toBeNull();
-    expect(planPolicyDelivery(sent, hashPolicy(renderToolIndex({ ...gates, timelineAutomaticRecording: true })), []).send).toBe(true);
+  });
+
+  it('manual mode resends the policy and leaves the legacy backlog out of the header (spec 356)', () => {
+    const automatic = { timeline: true, timelineAutomaticRecording: true, timelinePendingCount: 24, peers: false, lessons: false };
+    const manual = { ...automatic, timelineAutomaticRecording: false };
+    const sent = planPolicyDelivery(null, hashPolicy(renderToolIndex(automatic)), []).next;
+    expect(planPolicyDelivery(sent, hashPolicy(renderToolIndex(manual)), []).send).toBe(true);
+    expect(renderTimelinePendingLine(manual)).toBeNull();
+    const back = planPolicyDelivery(null, hashPolicy(renderToolIndex(manual)), []).next;
+    expect(planPolicyDelivery(back, hashPolicy(renderToolIndex(automatic)), []).send).toBe(true);
+    expect(renderTimelinePendingLine(automatic)).toContain('Timeline legacy pending: 24.');
   });
 
   it('does not deliver local Timeline maintenance to incapable lanes', () => {

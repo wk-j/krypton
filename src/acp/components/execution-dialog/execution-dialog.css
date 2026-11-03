@@ -108,7 +108,14 @@
   .acp-execution-dialog__button[aria-pressed='true'] { color: var(--acp-execution-accent, var(--krypton-window-accent)); }
   .acp-execution-dialog__tab-key,
   .acp-execution-dialog__tab-count { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.45)); }
-  .acp-execution-dialog__tab:focus-visible,
+  /* Spec 319: the section glyph sits on the label and takes the tab's colour. */
+  .acp-execution-dialog__tab-icon { margin-right: 0.35em; }
+  /* Roving tabindex: only the selected tab takes focus, so an outline here
+     would always stack on the selected border. Focus deepens that border. */
+  .acp-execution-dialog__tab:focus-visible {
+    outline: none;
+    border-color: var(--acp-execution-accent, var(--krypton-window-accent));
+  }
   .acp-execution-dialog__button:focus-visible,
   .acp-execution-dialog__scroll:focus-visible {
     outline: 1px solid var(--acp-execution-accent, var(--krypton-window-accent));

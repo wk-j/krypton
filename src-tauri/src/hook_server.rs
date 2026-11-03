@@ -7055,9 +7055,14 @@ fn project_backed_bus_tool(name: &str) -> bool {
 }
 
 const TIMELINE_AUTONOMOUS_CONTRACT: &str =
-    "The working lane owns durable Timeline selection, recording, topic grouping and conflicts \
-     automatically; this supersedes old human-approval guidance. No human persistence request \
-     or quote is required and there is no one-item/turn restriction. Never open approval UI, \
+    "With automatic recording on, the working lane owns durable Timeline selection, recording, \
+     topic grouping and conflicts automatically; this supersedes old human-approval guidance. No \
+     human persistence request or quote is required then, and there is no one-item/turn \
+     restriction. With automatic recording off (manual mode), call Timeline tools only when the \
+     human's current message or a #timeline command asks for Timeline work: timeline_record then \
+     requires user_request_excerpt, legacy resolution waits for such a request, and never ask \
+     whether to record. The lane policy states the mode; a manual-mode error from timeline_record \
+     means it is off. Never open approval UI, \
      ask the human to choose Timeline outcomes, or use attention_flag for them. Respect explicit \
      read-only scope (including timeline trace): do not record, merge, resolve pending or write \
      conflict state then; defer maintenance to an ordinary write-capable working turn, never \
@@ -7071,8 +7076,8 @@ const TIMELINE_AUTONOMOUS_CONTRACT: &str =
      not which business decision is true. If evidence cannot decide, record insufficient_evidence \
      with a rationale yourself, not a question to the human. Resolve legacy pending candidates \
      with evidence-backed record/duplicate/discard and continue listing until none remain \
-     (diagnostics still count), without five-topic or per-turn migration caps. Automatic recording \
-     off blocks new intake, not legacy resolution. Write agent-composed prose in natural Thai; \
+     (diagnostics still count), without five-topic or per-turn migration caps. Write \
+     agent-composed prose in natural Thai; \
      preserve exact supporting quotes, actors, source refs, IDs and technical terms. Never store \
      secrets, tokens, environment values or raw tool-output dumps.";
 
@@ -7099,10 +7104,14 @@ fn timeline_record_input_schema() -> Value {
 }
 
 fn timeline_record_tool_descriptor() -> Value {
+    // spec 356: the manual-mode gate belongs to timeline_record alone; legacy
+    // resolution reuses the payload schema without it and is not gated.
+    let mut input_schema = timeline_record_input_schema();
+    input_schema["properties"]["user_request_excerpt"] = json!({ "type": "string", "minLength": 1, "maxLength": 1000, "description": "Exact quote from the human's current message asking to record this. Required in manual mode (automatic recording off); ignored otherwise and never stored." });
     json!({
         "name": "timeline_record",
         "description": format!("Persist an evidence-backed project event selected by the agent. Returns event_id/topic_id/path and conflict_check, including on duplicate retry; report the stored provenance accurately. Normal recording never implicitly promotes pending candidates: use timeline_pending_resolve by ID. {}", TIMELINE_AUTONOMOUS_CONTRACT),
-        "inputSchema": timeline_record_input_schema()
+        "inputSchema": input_schema
     })
 }
 
@@ -10788,9 +10797,19 @@ mod tests {
             .get("instruction_excerpt")
             .is_none());
         let resolver = timeline_pending_resolve_tool_descriptor();
+        // spec 356: only timeline_record carries the manual-mode request quote;
+        // legacy resolution is not gated by it.
+        assert!(record_schema["properties"]
+            .get("user_request_excerpt")
+            .is_some());
         assert_eq!(
             resolver["inputSchema"]["properties"]["record"],
-            record_schema
+            timeline_record_input_schema()
+        );
+        assert!(
+            resolver["inputSchema"]["properties"]["record"]["properties"]
+                .get("user_request_excerpt")
+                .is_none()
         );
         assert_eq!(
             resolver["inputSchema"]["oneOf"].as_array().unwrap().len(),
@@ -10829,7 +10848,10 @@ mod tests {
             }
         }
 
-        fn record(&self, args: Value) -> Value {
+        /// spec 356: projects default to manual mode, so a recording test
+        /// quotes the human's request to record.
+        fn record(&self, mut args: Value) -> Value {
+            args["user_request_excerpt"] = json!("บันทึกเรื่องนี้ลง timeline");
             timeline_record(&self.server, &self.harness, "Codex-test", args).unwrap()
         }
 

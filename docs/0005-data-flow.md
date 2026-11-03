@@ -586,7 +586,10 @@ d. The loop stops once the grip, the mouse and the button fades settle
        app's watcher embeds them; tldraw Offline remains the sole document owner.
     h. #ticket is local-first (spec 238). With no arguments it renders
        `.krypton/tickets/` immediately, then adds unlinked GitHub issues when
-       `gh issue list` completes. The picker splits Open (live local tickets
+       `gh issue list` completes. Rows are GitHub-first: every row backed by
+       an issue (imported or a linked local ticket) sorts by issue number,
+       newest first, ahead of unlinked local tickets; the cursor stays on its
+       row when the GitHub rows sort in above it. The picker splits Open (live local tickets
        plus open GitHub issues) from Closed (local `done`, and GitHub `closed`
        if present). Tab toggles the tab; the live filter applies only to the
        visible tab. Creating or selecting a ticket persists only a
@@ -647,12 +650,16 @@ d. The loop stops once the grip, the mouse and the button fades settle
        form, pending creation or one-item-per-turn cap. Agent prose uses Thai;
        supporting quotes/actors/source references remain exact, without secrets.
     k. Initialization reads `timeline_settings` and `timeline_pending_count`.
-       The default-on automaticRecording setting is stored as schema 2 in
+       The default-off automaticRecording setting is stored as schema 2 in
        `.krypton/timeline/settings.json`; schema 1 automaticSuggestions migrates
        atomically, preserving false. `#timeline auto [on|off]` uses
-       `timeline_set_enabled`; off rejects new record calls but not legacy
-       resolution. Nonvisual pending count affects the ordinary-turn policy
-       hash. In a writable working turn the agent reads
+       `timeline_set_enabled`. Off is manual mode (spec 356): the lane calls
+       Timeline tools only when the human's current message or a `#timeline`
+       command asks, `timeline_record` needs `user_request_excerpt` (checked,
+       never stored) and the header carries no backlog line. In automatic mode
+       the nonvisual pending count rides the ordinary turn header while above
+       0 (spec 332). In a writable working turn (automatic mode, or on request
+       in manual mode) the agent reads
        `timeline_list({pending:true})` (default 5/max 20) and evaluates each
        candidate through `timeline_pending_resolve` with pending_id, outcome
        (record/duplicate/discard) and rationale, plus record or event_id only

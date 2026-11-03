@@ -856,7 +856,7 @@ cursor math, its own shell, or its own empty state.
 | 7.2 | `DirectivePicker` | Shell + ListPicker + preview pane | `// directive · claude-1` | `:12715-12777` |
 | 7.3 | `ModelPicker` | Shell + ListPicker | `// model · claude-1` | `:12779-12818` |
 | 7.4 | `SessionPicker` | Shell + ListPicker, 4 phases (`backend · loading · error · list`) | `// claude-code sessions` | `:12820-12894` |
-| 7.5 | `TicketPicker` | Shell + TabStrip + filter + ListPicker + ActionButton row | `local tickets + GitHub   target: codex-1 · idle` | `harness-ticket-controller.ts:678-783` |
+| 7.5 | `TicketPicker` | Shell + TabStrip + filter + ListPicker + ActionButton row | `GitHub + local tickets   target: codex-1 · idle` | `harness-ticket-controller.ts:678-783` |
 | 7.6 | `RemotePicker` | Shell + ListPicker | `remote harness` | `remote-harness-picker.ts:69-170` |
 | 7.7 | `TriageOverlay` | Shell + Card(judgement) + StatList + KeyHintBar | `Judgement queue    2 / 5` | `attention-overlay.ts:59-198` |
 | 7.8 | `ReviewMatrixOverlay` | Shell + TabStrip + table + KeyHintBar | `Review quality matrix` | `acp-harness-view.ts:5297-5480`. **Deletes the inline-style findings block** (`:5434-5480`, no classes today) |

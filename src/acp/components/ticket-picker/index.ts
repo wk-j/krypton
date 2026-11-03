@@ -24,6 +24,7 @@ import './ticket-picker.css';
 import { Component } from '../../../ui/component';
 import { el, frag, setChildren } from '../../../ui/dom';
 import { formatAge } from '../../harness-format';
+import { harnessIconEl } from '../../harness-icons';
 import type { TicketPickerAction, TicketPickerTab } from '../../harness-ticket-helpers';
 import type { TicketPickerRow } from '../../harness-view-types';
 import { ActionButton } from '../action-button';
@@ -40,7 +41,7 @@ const BLOCK = 'acp-ticket';
 const PARTS: OverlayShellParts = {
   panel: `${BLOCK}__panel`,
   head: `${BLOCK}__head`,
-  // `<header class="acp-ticket__head">local tickets + GitHub<span …__sub>…`:
+  // `<header class="acp-ticket__head">GitHub + local tickets<span …__sub>…`:
   // the title is a bare text node, with no span of its own.
   titleAsText: true,
   sub: `${BLOCK}__sub`,
@@ -52,7 +53,17 @@ const PANEL_ATTRS: Readonly<Record<string, string>> = {
   'aria-label': 'Working ticket',
 };
 
-const TITLE = 'local tickets + GitHub';
+const TITLE = 'GitHub + local tickets';
+
+/** Where a row's work lives — the leading glyph on its title. */
+type TicketIcon = 'github' | 'local' | 'unavailable';
+
+/** `krypton-icon-*` suffix per row source (`harness-icons.ts`). */
+const ICON_ID: Readonly<Record<TicketIcon, string>> = {
+  github: 'github',
+  local: 'panel-ticket',
+  unavailable: 'warn',
+};
 
 const FOOT_HINTS = [
   { keys: ['Tab'], label: 'open/closed' },
@@ -62,6 +73,7 @@ const FOOT_HINTS = [
 
 /** One row, with every string it prints already resolved. */
 interface TicketEntry {
+  readonly icon: TicketIcon;
   readonly title: string;
   readonly num: string;
   readonly badge: string | null;
@@ -297,7 +309,12 @@ export class TicketPicker extends Component<TicketPickerProps> {
 
   private readonly renderRow = (entry: TicketEntry): Node =>
     frag(
-      el('span', { class: `${BLOCK}__title`, text: entry.title }),
+      el(
+        'span',
+        { class: `${BLOCK}__title` },
+        harnessIconEl(ICON_ID[entry.icon], `${BLOCK}__icon ${BLOCK}__icon--${entry.icon}`),
+        entry.title,
+      ),
       el(
         'span',
         { class: `${BLOCK}__identity` },
@@ -344,7 +361,7 @@ export class TicketPicker extends Component<TicketPickerProps> {
     return next.rows
       .map((row) => {
         const entry = entryFor(row, next.now);
-        return [entry.title, entry.num, entry.badge ?? '', entry.labels ?? '', entry.age, entry.unavailable].join('\u0000');
+        return [entry.icon, entry.title, entry.num, entry.badge ?? '', entry.labels ?? '', entry.age, entry.unavailable].join('\u0000');
       })
       .join('\u0001');
   }
@@ -360,18 +377,26 @@ export class TicketPicker extends Component<TicketPickerProps> {
   }
 }
 
-/** Everything a row prints, resolved once per row rather than per repaint. */
+/** Everything a row prints, resolved once per row rather than per repaint. A
+ *  local ticket linked to an issue leads with the issue (`#34`), like an
+ *  imported one; only an unlinked local ticket shows its bundle id. */
 function entryFor(row: TicketPickerRow, now: number): TicketEntry {
   const updated = Date.parse(row.updatedAt ?? '');
   const age = Number.isNaN(updated) ? '' : formatAge(now - updated);
   const state = row.kind === 'unavailable' ? '' : ` · ${row.state}`;
-  const num = row.kind === 'local'
-    ? row.ticketId ?? 'local'
-    : row.kind === 'unavailable'
-      ? 'gh'
-      : `#${row.number ?? '?'}`;
+  const icon: TicketIcon = row.kind === 'unavailable'
+    ? 'unavailable'
+    : row.kind === 'github' || row.number !== undefined
+      ? 'github'
+      : 'local';
+  const num = row.kind === 'unavailable'
+    ? 'gh'
+    : icon === 'github'
+      ? `#${row.number ?? '?'}`
+      : row.ticketId ?? 'local';
   const badge = row.kind === 'local' ? 'LOCAL' : row.kind === 'github' ? 'IMPORT' : null;
   return {
+    icon,
     title: row.title,
     num,
     badge,

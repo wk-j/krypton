@@ -40,6 +40,7 @@ import {
   ticketPickerActionForKey,
   ticketPickerTabCounts,
   filterTicketPickerRows,
+  orderTicketPickerRows,
   ticketWorkActionDisabledReason,
   ticketMarkdownPath,
   isSameTicketPicker,
@@ -529,7 +530,7 @@ export class HarnessTicketController {
       const local = await invoke<LocalTicketSummary[]>('acp_list_ticket_bundles', {
         harnessId: this.host.harnessMemoryId,
       });
-      const rows: TicketPickerRow[] = local.map((ticket) => ({
+      const rows = orderTicketPickerRows(local.map((ticket): TicketPickerRow => ({
         kind: 'local',
         ticketId: ticket.id,
         number: ticket.github?.number,
@@ -538,7 +539,7 @@ export class HarnessTicketController {
         state: ticket.status,
         updatedAt: new Date(ticket.updatedAt).toISOString(),
         url: ticket.github?.issueUrl,
-      }));
+      })));
       const started = { rows, filter: '', index: 0, tab: 'open' as const };
       this.ticketPicker = started;
       this.renderTicketOverlayEl();
@@ -563,7 +564,6 @@ export class HarnessTicketController {
             const ref = this.host.parseIssueRef(r.url ?? '');
             return !ref || !linked.has(`${ref.repo}#${ref.number}`);
           })
-          .sort((a, b) => b.number - a.number)
           .map((r) => ({
             kind: 'github' as const,
             number: r.number,
@@ -574,6 +574,10 @@ export class HarnessTicketController {
             url: r.url as string,
           }));
         if (isSameTicketPicker(started, this.ticketPicker)) {
+          // GitHub rows sort in above local ones, so the cursor follows the row
+          // it was on rather than its index — Enter must not land on a row that
+          // slid under it while `gh` was loading.
+          const selected = this.ticketPickerMatches()[started.index];
           const seen = new Set(started.rows.map((row) => row.url ?? row.ticketId ?? row.title));
           for (const row of githubRows) {
             const key = row.url ?? row.title;
@@ -581,6 +585,8 @@ export class HarnessTicketController {
             seen.add(key);
             started.rows.push(row);
           }
+          started.rows = orderTicketPickerRows(started.rows);
+          started.index = selected ? Math.max(0, this.ticketPickerMatches().indexOf(selected)) : 0;
           this.renderTicketOverlayEl();
         }
       } catch (e) {

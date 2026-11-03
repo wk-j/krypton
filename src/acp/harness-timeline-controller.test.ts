@@ -20,14 +20,14 @@ const lane = { status: 'idle' } as HarnessLane;
 beforeEach(() => { vi.resetAllMocks(); });
 
 describe('autonomous Timeline state', () => {
-  it('loads numeric legacy count and migrated recording preference without starting a turn', async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(24).mockResolvedValueOnce({ automaticRecording: false });
+  it('starts in manual mode and loads numeric legacy count and the stored preference without starting a turn', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(24).mockResolvedValueOnce({ automaticRecording: true });
     const { host, controller } = setup();
-    expect(controller.automaticRecording).toBe(true);
+    expect(controller.automaticRecording).toBe(false);
     await controller.refreshPendingCount();
     await controller.refreshSettings();
     expect(controller.pendingCount).toBe(24);
-    expect(controller.automaticRecording).toBe(false);
+    expect(controller.automaticRecording).toBe(true);
     expect(invoke).toHaveBeenCalledWith('timeline_pending_count', { harnessId: 'h1' });
     expect(invoke).toHaveBeenCalledWith('timeline_settings', { harnessId: 'h1' });
     expect(host.enqueueSystemPrompt).not.toHaveBeenCalled();
@@ -62,12 +62,12 @@ describe('autonomous Timeline state', () => {
   });
 
   it('changes automatic recording without starting migration or a model turn', async () => {
-    vi.mocked(invoke).mockResolvedValue({ automaticRecording: false });
+    vi.mocked(invoke).mockResolvedValue({ automaticRecording: true });
     const { host, controller } = setup();
     controller.pendingCount = 24;
-    await controller.runCommand(lane, '#timeline auto off');
-    expect(invoke).toHaveBeenCalledWith('timeline_set_enabled', { harnessId: 'h1', enabled: false });
-    expect(controller.automaticRecording).toBe(false);
+    await controller.runCommand(lane, '#timeline auto on');
+    expect(invoke).toHaveBeenCalledWith('timeline_set_enabled', { harnessId: 'h1', enabled: true });
+    expect(controller.automaticRecording).toBe(true);
     expect(controller.pendingCount).toBe(24);
     expect(host.enqueueSystemPrompt).not.toHaveBeenCalled();
   });

@@ -188,11 +188,27 @@
     font-style: italic;
   }
 
+  /* The hanging indent keeps a wrapped title's later lines under its text,
+     not under the leading source icon (1.05em glyph + 0.55em gap). */
   .acp-ticket__title {
     grid-area: title;
     min-width: 0;
+    padding-left: 1.6em;
     overflow-wrap: anywhere;
+    text-indent: -1.6em;
     white-space: normal;
+  }
+
+  .acp-ticket__icon {
+    width: 1.05em;
+    height: 1.05em;
+    margin-right: 0.55em;
+    vertical-align: -0.17em;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+  }
+
+  .acp-ticket__icon--github {
+    color: #ffd880;
   }
 
   .acp-ticket__labels {

@@ -4,6 +4,7 @@
 > Date: 2026-10-20
 > Milestone: ACP Harness — autonomous project provenance
 > Supersedes: ขั้น human approval ของ specs 253–255, 257 และ 263; ขยาย agent-owned workflow ของ spec 267
+> Amended by: [0356](./0356-timeline-manual-mode.md) — `#timeline auto off` เป็น manual mode (§5 บรรทัด legacy pending, §6 settings และ edge case ของ settings เดิม)
 
 ## Problem
 
@@ -158,7 +159,7 @@ Manifest เก็บ acting lane/rationale; undo เก็บ undone lane/ratio
 - ไม่ใช้ `rawInput`/arguments ยืนยันตัวตน; explicit foreign qualified title ไม่ถูกแทนที่ด้วยข้อความใน arguments, content หรือ option labels
 - มี accept option: ใช้ `respondPermission(requestId, optionId)` ตามเดิม
 - เป็น built-in Timeline call แต่ adapter ไม่มี accept option: ตอบ `respondPermission(requestId, null)` และแสดง diagnostic ว่าดำเนินการไม่ได้; ห้ามเข้า `pendingPermissions` หรือ `needs_permission` เพื่อให้คนตัดสิน
-- ตอน register local Harness อ่าน legacy count; ส่ง migration obligation ในบรรทัด `Timeline legacy pending: N …` ของ turn header ทุก ordinary turn ที่ count > 0 (spec 332 ย้ายออกจาก lane policy เพื่อไม่ให้ count ที่ลดลงระหว่างแก้คิวทำให้ส่ง policy ซ้ำทั้งก้อน)
+- ตอน register local Harness อ่าน legacy count; ส่ง migration obligation ในบรรทัด `Timeline legacy pending: N …` ของ turn header ทุก ordinary turn ที่ count > 0 (spec 332 ย้ายออกจาก lane policy เพื่อไม่ให้ count ที่ลดลงระหว่างแก้คิวทำให้ส่ง policy ซ้ำทั้งก้อน); spec 356 ส่งบรรทัดนี้เฉพาะตอนเปิดบันทึกอัตโนมัติ
 - Agent จัดการ legacy intake ภายใน working turn ปกติของ local MCP-capable lane แล้วทำงานผู้ใช้ต่อ ไม่เปิด turn ใหม่จาก startup/event/finishTurn
 - Tool results ส่ง remaining count/continuation จน 0; count ที่ stale จากอีก Harness ไม่ทำให้เขียนซ้ำ เพราะ resolver idempotent
 - ไม่มีการบังคับให้ผู้ใช้พิมพ์ `#timeline review`; remote/Pi ที่ไม่มี project-backed tools ไม่แตะ local storage
@@ -173,8 +174,8 @@ Manifest เก็บ acting lane/rationale; undo เก็บ undone lane/ratio
 - คง `Start Review`, general attention และ permission flow ของ feature อื่น
 - เปลี่ยน settings DTO/IPC เป็น `TimelineSettings { automaticRecording: boolean }`, `timeline_settings`, `timeline_set_enabled`; `timeline_pending_count` คืนจำนวน backlog ให้ policy โดยไม่สร้าง UI หรือ model turn
 - ย้าย settings schema 1 `automaticSuggestions` เป็น settings schema 2 `automaticRecording` แบบ atomic โดยรักษาค่าเดิม; event schema ไม่เปลี่ยนตาม settings
-- Default เปิด; off ปิด autonomous intake ใหม่ แต่ไม่ทำให้ legacy candidates กลับไปเป็นงานของคน การย้ายคิวเดิมยังทำจนจบผ่าน resolver
-- Tool record คืน disabled error เมื่อ autonomous intake ถูกปิด; ไม่มี fallback เป็นฟอร์มหรือ pending candidate
+- Default เดิมคือเปิด; spec 356 เปลี่ยนเป็นปิด (manual mode) สำหรับ project ที่ยังไม่มี settings file: lane เรียก Timeline tools เฉพาะเมื่อผู้ใช้ขอ และคิว legacy รอคำขอ ไม่กลับไปเป็น approval queue
+- ใน manual mode tool record ปฏิเสธ call ที่ไม่มี `user_request_excerpt` ก่อนเขียน; ไม่มี fallback เป็นฟอร์มหรือ pending candidate
 - ถอด Timeline-only TypeSafe topic-choice และ config ที่หมดผู้เรียก ไม่เก็บ hidden semantic dependency
 - หน้า `/timeline` แสดง evidence kind/agent provenance และ refresh เมื่อกลับมา focus ตามเดิม; ไม่มี mutation UI หรือ automatic Xenon publish
 
@@ -184,7 +185,7 @@ Manifest เก็บ acting lane/rationale; undo เก็บ undone lane/ratio
 - ไม่มี capable lane หรือ MCP/storage ใช้ไม่ได้: คงข้อมูลเดิมและแจ้งข้อผิดพลาดทางเทคนิค ไม่สร้างฟอร์ม/approval queue หรืออ้างว่าบันทึกแล้ว
 - หลาย Harness ของ project เดียวกันอาจเห็น count เก่า: resolver ต้องตรวจ terminal receipt ภายใต้ lock และคืนผลที่มีอยู่
 - Source เดิมอ้างชื่อเอกสารก่อนเปลี่ยนชื่อ: LLM หาเอกสารปัจจุบันเพื่อประเมินได้ แต่ receipt ต้องรักษา source reference ต้นฉบับ
-- Settings เดิมที่ปิด suggestions ยังรักษาความต้องการปิด intake ใหม่; ไม่ทำให้การจัดการ legacy candidates ต้องรอคน
+- Settings เดิมที่ปิด suggestions ยังรักษาความต้องการไม่บันทึกเอง; ตั้งแต่ spec 356 ค่านี้คือ manual mode และคิว legacy รอคำขอของผู้ใช้
 - ทุก platform flush เนื้อหาไฟล์ก่อน atomic publication; directory flush ใช้เฉพาะ Unix ไม่เรียก POSIX-style directory open บน Windows และไม่อ้าง portable directory-fsync guarantee
 
 ## Validation / Acceptance

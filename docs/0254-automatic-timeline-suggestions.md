@@ -20,7 +20,9 @@ working turns, never a sidecar or extra model turn; explicit read-only scope def
 This describes the migration mechanism, not a claim that any live queue has been drained.
 
 Settings schema 2 uses `automaticRecording`; schema 1 `automaticSuggestions` migrates while
-preserving `false`. Default is on. Off blocks new recording, not legacy resolution. Native IPCs
+preserving `false`. Default is off (manual mode) when no settings file exists; a stored value is kept. Off is manual mode ([spec 356](./0356-timeline-manual-mode.md)):
+Timeline tools run only on the human's request, `timeline_record` needs a quoted
+`user_request_excerpt`, and legacy resolution waits for a request. Native IPCs
 are now only `timeline_settings`, `timeline_set_enabled`, and `timeline_pending_count`.
 
 # Historical implementation — not the current contract

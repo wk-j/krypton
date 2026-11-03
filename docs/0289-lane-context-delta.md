@@ -12,8 +12,9 @@ invalidation remain. `src/acp/lane-context.ts` now advertises record, list, merg
 pending-resolve, and the three conflict tools for capable local lanes; no `timeline_suggest`.
 The lane owns evidence-backed intake, grouping, legacy record/duplicate/discard resolution,
 and conflict verdicts/checkpoints without a human queue or extra model turn.
-Explicit read-only scope forbids Timeline mutations. Automatic recording off stops new
-intake, not legacy resolution. The internal pending count is part of the policy text, so a
+Explicit read-only scope forbids Timeline mutations. Automatic recording off is manual mode
+([0356](./0356-timeline-manual-mode.md)): Timeline tools only on the human's request, including
+legacy resolution. The internal pending count is part of the policy text, so a
 count change invalidates its delivery hash for the next ordinary turn; neither refresh cadence
 nor the conflict-topic budget limits legacy resolution.
 
@@ -35,7 +36,8 @@ of the hashed policy:
 - **Ticket.** The pin keeps id, title and rules. Status, context revision and resource count ride a
   `Ticket state:` header line on every turn while a ticket is active.
 - **Timeline.** The policy carries one trigger line. The legacy backlog count rides a
-  `Timeline legacy pending:` header line while it is above 0.
+  `Timeline legacy pending:` header line while it is above 0 in automatic mode; manual mode
+  ([0356](./0356-timeline-manual-mode.md)) sends none.
 
 The roster, directive/role, ticket id/title, gates, automatic-recording setting and lessons
 on/off still change the hash.

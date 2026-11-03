@@ -199,7 +199,7 @@ function buildSections(): readonly HelpSection[] {
       },
       {
         term: '#timeline [open | trace | conflicts | auto]',
-        desc: 'เปิดดูหรือไล่ประวัติ ตรวจข้อขัดกัน และตั้งค่าบันทึกอัตโนมัติของ project ในเครื่อง',
+        desc: 'เปิดดูหรือไล่ประวัติ ตรวจข้อขัดกัน และเลือกให้บันทึกอัตโนมัติหรือเฉพาะเมื่อสั่งของ project ในเครื่อง',
       },
       { term: '#queue [clear | edit N]', desc: 'Manage prompts queued while the lane is busy' },
       { term: '#unqueue [N]', desc: 'Remove the last (or Nth) queued prompt' },

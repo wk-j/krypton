@@ -14,10 +14,13 @@ as `made_by`. Never infer human approval or default the authority to `Current us
 Historical authorizing instructions and recorder labels remain readable.
 
 The lane reads history, reuses topic IDs, deduplicates, and follows conflict/checkpoint
-continuations itself. New intake respects `automaticRecording`; off blocks direct recording.
-Normal record no longer implicitly promotes matching pending items: legacy resolution uses
-`timeline_pending_resolve` by ID with a terminal record/duplicate/discard receipt, even when
-new intake is off. There is no suggestion tool, manual capture/review fallback, or human gate.
+continuations itself. New intake respects `automaticRecording`; off is manual mode
+([spec 356](./0356-timeline-manual-mode.md)), where a natural-language request is again the
+trigger: the lane records only when asked and passes `user_request_excerpt` quoting the request,
+which is checked and never stored. Normal record no longer implicitly promotes matching pending
+items: legacy resolution uses `timeline_pending_resolve` by ID with a terminal
+record/duplicate/discard receipt. There is no suggestion tool, manual capture/review fallback, or
+human approval queue.
 Explicit read-only work remains read-only; the browser and append-only provenance remain.
 
 # Historical implementation — not the current contract

@@ -57,10 +57,12 @@ export interface PolicyPlan {
 export interface LaneToolGates {
   /** Local workspace and a backend that supports the timeline tools. */
   timeline: boolean;
-  /** New automatic intake; legacy resolution remains available when disabled. */
+  /** Automatic recording on; off is manual mode (spec 356): Timeline tools only
+   *  on the human's request, and no legacy backlog line in the header. */
   timelineAutomaticRecording: boolean;
-  /** Legacy Timeline backlog. Rendered in the turn header while above 0 and
-   *  never in the hashed policy, so a changing count does not resend it (spec 332). */
+  /** Legacy Timeline backlog. Rendered in the turn header while above 0 in
+   *  automatic mode and never in the hashed policy, so a changing count does
+   *  not resend it (spec 332). */
   timelinePendingCount: number;
   /** More than one lane in the harness. */
   peers: boolean;
@@ -136,9 +138,10 @@ export function renderToolNameLine(gates: LaneToolGates): string {
 }
 
 /** spec 332: the legacy Timeline backlog rides the header while it is above 0.
- *  The count changes as the lane resolves it, so it stays out of the hashed policy. */
+ *  The count changes as the lane resolves it, so it stays out of the hashed policy.
+ *  spec 356: manual mode leaves the backlog for the human to ask about. */
 export function renderTimelinePendingLine(gates: LaneToolGates): string | null {
-  if (!gates.timeline || gates.timelinePendingCount <= 0) return null;
+  if (!gates.timeline || !gates.timelineAutomaticRecording || gates.timelinePendingCount <= 0) return null;
   return `Timeline legacy pending: ${gates.timelinePendingCount}. In this working turn read timeline_list { pending: true } and resolve each ID with timeline_pending_resolve (record / duplicate / discard), then continue the user's task; if only unreadable diagnostics remain, report them and stop retrying.`;
 }
 
@@ -156,7 +159,7 @@ export function renderToolIndex(gates: LaneToolGates): string {
     // (spec 316:33) and the timeline_record result carries the conflict check.
     lines.push(gates.timelineAutomaticRecording
       ? '- timeline_*: you own durable project history — in ordinary working turns record evidence-backed requirements, decisions and observed outcomes yourself; this replaces older human-approval guidance (no approval queue, never attention_flag). Never write Timeline state in a read-only turn.'
-      : '- timeline_*: automatic recording is off — record no new intake; legacy resolution and conflict verdicts stay yours, never a human approval queue. Never write Timeline state in a read-only turn.');
+      : "- timeline_*: manual mode — call timeline_* tools only when the human's current message or a #timeline command asks for Timeline work (record, look up, merge, conflicts, legacy queue); no unprompted reads, records, conflict sweeps or legacy resolution, and never ask whether to record. A requested timeline_record passes user_request_excerpt and follows its own conflict_check. Never write Timeline state in a read-only turn.");
   }
   if (gates.peers) {
     lines.push('- review_outcome: once, after synthesizing a #review round you convened.');

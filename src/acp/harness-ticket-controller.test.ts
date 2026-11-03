@@ -8,7 +8,7 @@ import { HarnessDock } from './harness-dock';
 import type { HarnessDockTab, PanelsCommand } from './harness-panel-visibility';
 import type { TicketDockAction } from './harness-ticket-helpers';
 import type { HarnessTicketHost } from './harness-view-host';
-import type { HarnessLane, LocalTicketDetail } from './harness-view-types';
+import type { HarnessLane, LocalTicketDetail, LocalTicketSummary } from './harness-view-types';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
@@ -267,5 +267,62 @@ describe('Ticket Panel issue actions (spec 342)', () => {
     expect(actionButton(ctl, 'analyze-github-issue').textContent).toBe('Analyzerunning · codex-1');
     if (first) ctl.cancelAction(lane, first);
     expect(actionButton(ctl, 'analyze-github-issue').textContent).toBe('Analyze');
+  });
+});
+
+describe('#ticket picker order', () => {
+  const summary = (id: string, title: string, issue?: number): LocalTicketSummary => ({
+    ...TICKET,
+    id,
+    title,
+    github: issue === undefined ? undefined : {
+      ...LINKED.github!,
+      issueKey: `wk/krypton#${issue}`,
+      issueUrl: `https://github.com/wk/krypton/issues/${issue}`,
+      number: issue,
+    },
+  });
+  const issue = (number: number): object => ({
+    number,
+    title: `Issue ${number}`,
+    labels: [],
+    state: 'OPEN',
+    url: `https://github.com/wk/krypton/issues/${number}`,
+  });
+
+  it('sorts GitHub issues in above local tickets without moving the cursor off its row', async () => {
+    let answerGh: (raw: string) => void = () => undefined;
+    const host = {
+      element: document.createElement('div'),
+      harnessMemoryId: 'harness-1',
+      lanes: [],
+      activeLane: (): null => null,
+      flashChip: (): void => {},
+      runWorkspaceCommand: (): Promise<string> => new Promise((resolve) => { answerGh = resolve; }),
+      parseIssueRef: (url: string): { repo: string; number: number } | null => {
+        const match = /github\.com\/([^/]+\/[^/]+)\/issues\/(\d+)/.exec(url);
+        return match ? { repo: match[1], number: Number(match[2]) } : null;
+      },
+    } as unknown as HarnessTicketHost;
+    const ctl = new HarnessTicketController(host);
+    ctl.mountOverlay(document.createElement('div'));
+    vi.mocked(invoke).mockReset();
+    // Rust lists the most recently updated bundle first: the unlinked one.
+    vi.mocked(invoke).mockResolvedValueOnce([summary('scratch', 'Scratch'), summary('local-34', 'Linked 34', 34)]);
+    const titles = (): string[] => ctl.ticketPickerMatches().map((row) => row.title);
+
+    const opening = ctl.openTicketPicker();
+    await vi.waitFor(() => expect(ctl.ticketPicker).not.toBeNull());
+    expect(titles()).toEqual(['Linked 34', 'Scratch']);
+
+    // The user moves onto Scratch before `gh issue list` answers.
+    ctl.ticketPicker!.index = 1;
+    answerGh(JSON.stringify([issue(12), issue(34), issue(35)]));
+    await opening;
+
+    expect(titles()).toEqual(['Issue 35', 'Linked 34', 'Issue 12', 'Scratch']);
+    expect(ctl.ticketPicker!.index).toBe(3);
+    const selected = ctl.ticketPickerCmp.el.querySelector('.acp-ticket__row--selected .acp-ticket__title');
+    expect(selected?.textContent).toBe('Scratch');
   });
 });

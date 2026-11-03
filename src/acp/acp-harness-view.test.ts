@@ -95,6 +95,7 @@ import type {
   LanePeekCandidate,
   MessageResource,
   PermissionPayload,
+  TicketPickerRow,
 } from './harness-view-types';
 import type { TelemetryReviewLoop } from './harness-telemetry-schema';
 import type { SpeechRecognitionLike } from './harness-dictation';
@@ -102,6 +103,7 @@ import { HarnessDictationController, type ActiveDictationSession } from './harne
 import type { HarnessDictationHost } from './harness-view-host';
 import { HarnessTimelineController } from './harness-timeline-controller';
 import { HarnessTicketController } from './harness-ticket-controller';
+import { orderTicketPickerRows } from './harness-ticket-helpers';
 import type { LaneToolGates } from './lane-context';
 import { refreshLessons } from './lessons';
 import type { ActiveTicketPinInput } from './harness-prompts';
@@ -1141,6 +1143,46 @@ describe('ticket picker open/closed tabs', () => {
   });
 });
 
+describe('ticket picker order', () => {
+  const local = (ticketId: string, number?: number): TicketPickerRow => ({
+    kind: 'local',
+    ticketId,
+    number,
+    title: ticketId,
+    labels: [],
+    state: 'todo',
+  });
+  const github = (number: number): TicketPickerRow => ({
+    kind: 'github',
+    number,
+    title: `#${number}`,
+    labels: [],
+    state: 'open',
+  });
+
+  it('leads with GitHub issues by number, a linked local ticket at its issue, then unlinked local, notice last', () => {
+    const rows: TicketPickerRow[] = [
+      local('scratch-new'),
+      local('linked-34', 34),
+      { kind: 'unavailable', title: 'GitHub unavailable', labels: [], state: 'open' },
+      local('scratch-old'),
+      github(32),
+      github(35),
+      local('linked-4', 4),
+    ];
+
+    expect(orderTicketPickerRows(rows).map((row) => row.title)).toEqual([
+      '#35',
+      'linked-34',
+      '#32',
+      'linked-4',
+      'scratch-new',
+      'scratch-old',
+      'GitHub unavailable',
+    ]);
+  });
+});
+
 describe('ticket picker direct actions', () => {
   type TicketActionRunner = {
     runTicketPickerAction(action: 'set-ticket' | 'analyze-github-issue' | 'post-github-comment' | 'fix-github-issue'): Promise<void>;
@@ -1917,7 +1959,7 @@ describe('Lane context delivery through the production view methods', () => {
 
   function setup(backendId = 'claude', remoteRuntimeId: string | null = null) {
     const lane = { displayName: 'Lane-1', backendId, policyDelivery: null } as HarnessLane;
-    const timelineCtl = { automaticRecording: false, pendingCount: 24 };
+    const timelineCtl = { automaticRecording: true, pendingCount: 24 };
     const ticketCtl: { activeTicket: ActiveTicketPinInput | null } = { activeTicket: null };
     const target = viewDouble({
       harnessMemoryId: 'h1', harnessMemoryPort: 34123, remoteRuntimeId,
@@ -1946,7 +1988,7 @@ describe('Lane context delivery through the production view methods', () => {
   it('uses local Timeline settings; a backlog count change rides the header, not the policy (spec 332)', () => {
     const { lane, timelineCtl, target, compose } = setup();
     expect(prototype.laneToolGates.call(target, lane)).toMatchObject({
-      timeline: true, timelineAutomaticRecording: false, timelinePendingCount: 24,
+      timeline: true, timelineAutomaticRecording: true, timelinePendingCount: 24,
     });
     const first = compose();
     expect(first).toContain(POLICY_MARK);
@@ -1958,6 +2000,21 @@ describe('Lane context delivery through the production view methods', () => {
     timelineCtl.pendingCount = 0;
     expect(compose()).not.toContain('Timeline legacy pending');
     expect(lane.policyDelivery?.turnsSince).toBe(2);
+  });
+
+  it('manual mode keeps the legacy backlog out of the header (spec 356)', () => {
+    const { lane, timelineCtl, target, compose } = setup();
+    timelineCtl.automaticRecording = false;
+    expect(prototype.laneToolGates.call(target, lane)).toMatchObject({
+      timeline: true, timelineAutomaticRecording: false, timelinePendingCount: 24,
+    });
+    const first = compose();
+    expect(first).toContain(POLICY_MARK);
+    expect(first).not.toContain('Timeline legacy pending');
+    timelineCtl.automaticRecording = true;
+    const resumed = compose();
+    expect(resumed).toContain(POLICY_MARK);
+    expect(resumed).toContain('Timeline legacy pending: 24.');
   });
 
   it.each([['claude', 'remote-1'], ['pi-acp', null]])(

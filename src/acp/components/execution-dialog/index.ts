@@ -26,6 +26,7 @@ import {
   isExecutionLive,
   type ExecutionOutputPart,
 } from '../../harness-execution';
+import { harnessIconEl } from '../../harness-icons';
 import type { ExecutionActivity, ExecutionPayload, ExecutionView } from '../../harness-view-types';
 import { paintExecutionTiming } from '../execution-card';
 import type { KeyHintBarProps } from '../key-hint-bar';
@@ -210,7 +211,8 @@ export class ExecutionDialog extends Component<ExecutionDialogProps> {
       const tab = el('button', {
         class: 'acp-execution-dialog__tab',
         attrs: { type: 'button', role: 'tab', id: `${this.ids}-tab-${section}`, 'aria-controls': `${this.ids}-panel-${section}` },
-      }, el('span', { class: 'acp-execution-dialog__tab-key', text: String(index + 1) }), ` ${SECTION_LABEL[section]}`, count);
+      }, el('span', { class: 'acp-execution-dialog__tab-key', text: String(index + 1) }), ' ',
+      harnessIconEl(`exec-${section}`, 'acp-execution-dialog__tab-icon'), SECTION_LABEL[section], count);
       const panel = el('section', {
         class: 'acp-execution-dialog__section',
         attrs: { role: 'tabpanel', id: `${this.ids}-panel-${section}`, 'aria-labelledby': tab.id },

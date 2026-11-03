@@ -147,6 +147,16 @@ export function ticketPickerTabCounts(rows: TicketPickerRow[]): { open: number; 
   return { open, closed };
 }
 
+/** GitHub-backed rows lead, newest issue number first; a local ticket linked to
+ *  an issue ranks by that issue's number, not ahead of it. Unlinked local tickets
+ *  follow in their incoming order (Rust sends most recently updated first), and
+ *  the GitHub-unavailable notice stays last. */
+export function orderTicketPickerRows(rows: readonly TicketPickerRow[]): TicketPickerRow[] {
+  const group = (row: TicketPickerRow): number =>
+    row.kind === 'unavailable' ? 2 : row.number === undefined ? 1 : 0;
+  return [...rows].sort((a, b) => group(a) - group(b) || (b.number ?? 0) - (a.number ?? 0));
+}
+
 export function filterTicketPickerRows(
   rows: TicketPickerRow[],
   filter: string,

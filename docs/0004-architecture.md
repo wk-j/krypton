@@ -1144,14 +1144,19 @@ Malformed candidates remain present, diagnosed and counted. No API creates
 new pending files; older dismissed files remain historical local data.
 
 `harness-timeline-controller.ts` uses only `timeline_settings`,
-`timeline_set_enabled` and `timeline_pending_count` native IPCs. The default-on
+`timeline_set_enabled` and `timeline_pending_count` native IPCs. The default-off
 `TimelineSettings { automaticRecording }` is persisted in settings schema 2;
+a project with no settings file is in manual mode, and a stored value is kept.
 schema 1 `automaticSuggestions` migrates atomically, preserving false.
-Off rejects new recording but not legacy resolution. Initialization/count
+Off is manual mode (spec 356): the lane policy limits every Timeline tool to
+the human's current message or a `#timeline` command, `timeline_record`
+requires a `user_request_excerpt` quoting that request (a gate only, never
+stored), and legacy resolution waits for a request. Initialization/count
 changes reach the lane through nonvisual state and `acp-timeline-changed`
-(`harnessId`, `pendingCount`): the count rides the ordinary turn header while it
-is above 0 and never the hashed lane policy (spec 332); no badge, form, permission
-handoff or extra model turn is created. Local non-Pi MCP-capable lanes process
+(`harnessId`, `pendingCount`): in automatic mode the count rides the ordinary
+turn header while it is above 0 and never the hashed lane policy (spec 332);
+manual mode sends no count line. No badge, form, permission handoff or extra
+model turn is created. In automatic mode local non-Pi MCP-capable lanes process
 the backlog without a one-item or five-topic migration cap. Remote/Pi lanes
 without project tools do not mutate local storage; explicit read-only work,
 including trace, defers all Timeline mutations to a later writable turn.

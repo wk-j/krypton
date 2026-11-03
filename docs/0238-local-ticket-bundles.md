@@ -253,10 +253,21 @@ GitHub reference: wk-j/krypton#238 (open); `gh issue view 238 -R wk-j/krypton`. 
 
 ## Picker / UI
 
-Picker เดิมยังเป็น flat amber modal: section `LOCAL` โหลดก่อน, section `GITHUB` เติมภายหลัง
+Picker เดิมยังเป็น flat amber modal หัวข้อ `GitHub + local tickets`: local row โหลดก่อน, GitHub row เติมภายหลัง
 แบบ asynchronous โดยไม่บล็อก local row GitHub row ใช้ badge `LOCAL` หรือ `IMPORT` และ action
 Analyze, Post comment, Fix here ใช้ได้เฉพาะเมื่อมี GitHub reference
-GitHub issue ที่ยังไม่ผูกกับ local ticket เรียงตามเลข issue จากมากไปน้อย (issue ใหม่ก่อน)
+
+ลำดับยึด GitHub เป็นหลัก ไม่ดัน local ticket ขึ้นก่อน (`orderTicketPickerRows`): แถวที่มี GitHub issue
+(ทั้ง `IMPORT` และ `LOCAL` ที่ผูก issue แล้ว) อยู่บนสุด เรียงตามเลข issue จากมากไปน้อย; local ticket
+ที่ยังไม่ผูก issue ตามมาตามลำดับที่ Rust ส่ง (แก้ไขล่าสุดก่อน); แถว GitHub unavailable อยู่ท้ายสุด
+เมื่อ GitHub row มาถึงและแทรกขึ้นไปด้านบน cursor ยังอยู่ที่แถวเดิม ไม่ใช่ index เดิม จึงไม่มีทางกด Enter
+โดนแถวที่เลื่อนเข้ามาแทนระหว่างรอ `gh`
+
+ต้นบรรทัด title ของทุกแถวมีไอคอน SVG บอกแหล่งที่มา: GitHub mark (`krypton-icon-github`, สี amber)
+สำหรับแถวที่มี GitHub issue, ตั๋ว (`krypton-icon-panel-ticket`, สีจาง) สำหรับ local ticket ที่ยังไม่ผูก issue
+และ `krypton-icon-warn` สำหรับแถว unavailable title ที่ขึ้นบรรทัดใหม่จะเยื้องตรงกับตัวอักษร ไม่ใช่ใต้ไอคอน
+แถวที่มี GitHub issue แสดงเลข `#34` เป็นตัวระบุหลักแม้เป็น local ticket ส่วน local ticket ที่ยังไม่ผูก issue
+แสดง bundle id (`2026-11-02-…`) id นี้ยังใช้ filter ได้ทุกแถว
 
 รายการแยกสองแท็บ **Open** / **Closed** (นับจำนวนบนปุ่ม): Open คือ local ที่ยังไม่ `done`
 (`todo` / `in_progress` / `blocked`) บวก GitHub issue ที่ยังเปิด และแถว GitHub unavailable;

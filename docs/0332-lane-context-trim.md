@@ -137,7 +137,7 @@ Header (every ordinary turn, in this order; each line only when its condition ho
 You are lane OMP-1.
 Krypton tools (if not visible, …): …                       ← gates && !backendListsMcpTools
 Ticket state: in_progress · context r15 · 0 resources — re-read ticket.md when the revision changes.
-Timeline legacy pending: 3. In this working turn read timeline_list { pending: true } and resolve each ID with timeline_pending_resolve (record / duplicate / discard), then continue the user's task; if only unreadable diagnostics remain, report them and stop retrying.
+Timeline legacy pending: 3. In this working turn read timeline_list { pending: true } and resolve each ID with timeline_pending_resolve (record / duplicate / discard), then continue the user's task; if only unreadable diagnostics remain, report them and stop retrying.   ← automatic mode only (spec 356)
 Lessons update (replaces the matching entries in your Lessons list):
 - [new-slug] rule text
 - [old-slug] retired
@@ -149,8 +149,8 @@ Policy (unchanged order). Changed parts:
 - Pin first line: `Active local ticket: <id> — <title>.`
 - Timeline index, automatic recording on:
   `- timeline_*: you own durable project history — in ordinary working turns record evidence-backed requirements, decisions and observed outcomes yourself; this replaces older human-approval guidance (no approval queue, never attention_flag). Never write Timeline state in a read-only turn.`
-- Automatic recording off:
-  `- timeline_*: automatic recording is off — record no new intake; legacy resolution and conflict verdicts stay yours, never a human approval queue. Never write Timeline state in a read-only turn.`
+- Automatic recording off — manual mode; this wording replaced the earlier off line in [spec 356](0356-timeline-manual-mode.md):
+  `- timeline_*: manual mode — call timeline_* tools only when the human's current message or a #timeline command asks for Timeline work (record, look up, merge, conflicts, legacy queue); no unprompted reads, records, conflict sweeps or legacy resolution, and never ask whether to record. A requested timeline_record passes user_request_excerpt and follows its own conflict_check. Never write Timeline state in a read-only turn.`
 - The `Respect explicit read-only…`, `Legacy pending count…` and `After a record…` lines are removed.
 
 `hashInput` is the policy text with the lessons block replaced by `LESSONS_HEADING` alone, or by

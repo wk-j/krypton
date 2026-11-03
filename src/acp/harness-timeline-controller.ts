@@ -13,7 +13,8 @@ import { TIMELINE_USAGE, parseTimelineCommand, type TimelineSettings } from './t
 
 export class HarnessTimelineController {
   pendingCount = 0;
-  automaticRecording = true;
+  /** spec 356: manual mode until `timeline_settings` says otherwise. */
+  automaticRecording = false;
   private changedUnlisten: UnlistenFn | null = null;
 
   constructor(private readonly host: HarnessTimelineHost) {}
@@ -125,7 +126,7 @@ export class HarnessTimelineController {
           });
           this.automaticRecording = settings.automaticRecording;
         }
-        this.host.flashChip(`บันทึก timeline อัตโนมัติ · ${this.automaticRecording ? 'เปิด' : 'ปิด'}`);
+        this.host.flashChip(`บันทึก timeline · ${this.automaticRecording ? 'อัตโนมัติ' : 'เฉพาะเมื่อสั่ง'}`);
       } catch (e) {
         this.host.flashChip(`ตั้งค่า timeline ไม่สำเร็จ: ${errorText(e)}`);
       }

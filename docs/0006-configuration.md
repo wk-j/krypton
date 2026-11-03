@@ -686,10 +686,14 @@ Edits apply on **Reload Config** to the next finished command. In fish panes, `e
 Timeline is managed by the working local MCP-capable lane, not a separate
 semantic service ([spec 316](0316-llm-managed-timeline.md)). It needs no
 additional API key or model configuration. `#timeline auto` reports the
-per-project setting; `#timeline auto on` / `off` changes it. It defaults on.
+per-project setting; `#timeline auto on` / `off` changes it. It defaults off
+(manual mode, [spec 356](0356-timeline-manual-mode.md)); `#timeline auto on`
+turns on automatic recording.
 
 This is persisted outside TOML in the gitignored
-`.krypton/timeline/settings.json`:
+`.krypton/timeline/settings.json`. The file exists only after `#timeline auto`
+on/off or a schema 1 migration; without it the project is in manual mode, and a
+stored value is kept as is. After `#timeline auto on`:
 
 ```json
 { "schema": 2, "automaticRecording": true }
@@ -700,10 +704,12 @@ through `timeline_settings` / `timeline_set_enabled`; `timeline_pending_count`
 supplies nonvisual legacy migration state. Reading schema 1 settings migrates
 `automaticSuggestions` to schema 2 `automaticRecording` atomically while
 preserving the old value, including false. Event records remain schema 1.
-Off blocks new `timeline_record` intake; it does not delete history or stop
-`timeline_pending_resolve` from evaluating legacy candidates during an ordinary
-writable working turn. There is no fallback capture form, human queue or
-extra model turn. Explicit read-only work cannot mutate Timeline, and
+Off is manual mode: the lane calls Timeline tools only when the human's current
+message or a `#timeline` command asks, `timeline_record` requires a
+`user_request_excerpt` quoting that request (checked, never stored), and the
+legacy backlog line is not sent, so `timeline_pending_resolve` runs only on
+request. Off never deletes history. There is no fallback capture form, human
+queue or extra model turn. Explicit read-only work cannot mutate Timeline, and
 Remote/Pi lanes without project-backed tools do not access local storage.
 
 The former `[typesafe]` and `[typesafe.timeline_topics]` configuration,
