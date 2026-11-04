@@ -536,6 +536,7 @@ export class UsageContentView implements ContentView {
         id: 'usage.refresh',
         label: 'Refresh usage',
         category: 'Usage',
+        icon: 'refresh-cw',
         keybinding: 'r',
         execute: () => void this.refresh(),
       },

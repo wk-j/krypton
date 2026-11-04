@@ -184,6 +184,27 @@
 
 /* Commands rows */
 
+/* Leading glyph from `palette-icons.ts` (spec 358): a fixed column at the same
+   x on every row. Ink-coloured; the selected row lights it. Fill is set on the
+   svg only, so the few Lucide dots that fill themselves keep their fill. */
+.krypton-search-palette__icon {
+  flex: none;
+  width: 1.3em;
+  height: 1.3em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--krypton-palette-text, #c0c5ce);
+  opacity: 0.7;
+}
+
+.krypton-search-palette__row--selected .krypton-search-palette__icon {
+  color: var(--krypton-palette-highlight, #0cf);
+  opacity: 1;
+}
+
 .krypton-search-palette__category {
   flex-shrink: 0;
   font-weight: 600;

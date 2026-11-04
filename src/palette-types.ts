@@ -4,6 +4,7 @@
 // ContentView.getPaletteActions?. The scope types are the contract between the
 // SearchPalette overlay and its Commands / Files / Grep tabs.
 
+import type { PaletteIconName } from './palette-icons';
 import type { PaneContentType } from './types';
 
 export type PaletteSection = 'context' | 'static';
@@ -16,6 +17,9 @@ export interface PaletteAction {
   category: string;
   keybinding?: string;
   execute: () => unknown;
+  /** Glyph drawn first in the row (spec 358). One concept keeps one glyph
+   *  across categories: every "focus left" is `arrow-left`. */
+  icon: PaletteIconName;
   /** CSS colour painted as a small square before the label (spec 304). */
   swatch?: string;
   section?: PaletteSection;

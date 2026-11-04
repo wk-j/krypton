@@ -4,6 +4,7 @@
 > Date: 2026-05-19
 > Milestone: Post-M-current polish (backlog item #4 from `docs/0108-overall-ui-improvements.md`)
 > Amended by: [0349](./0349-unified-search-palette-tabs.md) — the palette is now the **Commands** tab of the Search Palette. `CommandScope.activate()` (in `src/command-palette.ts`) builds `PaletteContext` and calls `getPaletteActions` each time the Commands tab becomes active, not only on open. `SearchPalette.setRows` (`src/search-palette.ts`) draws the Context header on a zero query; rows are `.krypton-search-palette__row[--context]` and the styles live in `src/styles/search-palette.css`. The `ContentView.getPaletteActions` contract is unchanged.
+> Amended by: [0358](./0358-command-palette-icons.md) — `PaletteAction` gains a required `icon: PaletteIconName` (`src/palette-icons.ts`), so every action a view returns from `getPaletteActions` must name its glyph; the snippet below predates it (and the spec 304 `swatch`).
 
 ## Problem
 

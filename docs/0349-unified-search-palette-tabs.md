@@ -4,6 +4,7 @@
 > Date: 2026-10-31
 > Milestone: M8 — Polish
 > Amends: [0015](./0015-command-palette.md), [0068](./0068-quick-file-search.md), [0110](./0110-context-aware-command-palette.md)
+> Amended by: [0358](./0358-command-palette-icons.md) — a Commands row now starts with the action's icon (`svg.krypton-search-palette__icon`).
 
 ## Problem
 
@@ -220,7 +221,7 @@ No Rust or Tauri command changes: `quick_search_warm_root`, `quick_search_query`
   └ __footer  __status (scope status) · __hint (scope hint; flash on copy)
 ```
 - Rows keep today's content per kind:
-  - action: category, swatch, highlighted label, key
+  - action: icon (spec 0358), category, swatch, highlighted label, key
   - file: highlighted name and parent directory
   - grep: `path:line` and the snippet
 - Hovering a row selects it, and clicking it runs the primary action. Before this, a QFS click

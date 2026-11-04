@@ -15837,6 +15837,7 @@ export class AcpHarnessView implements ContentView {
         id: 'acp.harness.reconnect-remote',
         label: 'Reconnect Remote Harness',
         category: 'ACP Harness',
+        icon: 'link',
         execute: () => this.reconnectRemoteHarness(),
       });
     }
@@ -15846,6 +15847,7 @@ export class AcpHarnessView implements ContentView {
         id: 'acp.backends.update',
         label: `Update ACP Backends (${describeBackendUpdates(backendUpdateList)})`,
         category: 'ACP Harness',
+        icon: 'download',
         execute: () => this.runBackendUpdate(),
       });
     }
@@ -15853,6 +15855,7 @@ export class AcpHarnessView implements ContentView {
       id: 'acp.harness.assistants',
       label: 'Open Assistant Instances',
       category: 'ACP Harness',
+      icon: 'square-stack',
       execute: () => this.showAssistantsDock(),
     });
     if (!lane) return out;
@@ -15861,6 +15864,7 @@ export class AcpHarnessView implements ContentView {
         id: 'acp.harness.start-review-thread',
         label: 'Start Review Thread',
         category: 'ACP Harness',
+        icon: 'messages-square',
         execute: () => { void this.startReviewThread(lane); },
       });
     }
@@ -15875,6 +15879,7 @@ export class AcpHarnessView implements ContentView {
         id: 'acp.harness.cancel',
         label: 'Cancel Current Turn',
         category: 'ACP Harness',
+        icon: 'circle-stop',
         keybinding: 'Ctrl+C',
         execute: () => this.cancelActiveLane(),
       });
@@ -15884,6 +15889,7 @@ export class AcpHarnessView implements ContentView {
         id: 'acp.harness.restart',
         label: 'Restart Lane Session',
         category: 'ACP Harness',
+        icon: 'rotate-ccw',
         execute: () => this.restartActiveLane(),
       });
     }
@@ -15892,6 +15898,7 @@ export class AcpHarnessView implements ContentView {
         id: 'acp.harness.switch-lane',
         label: `Switch Lane (current: ${lane.displayName})`,
         category: 'ACP Harness',
+        icon: 'arrow-up-down',
         keybinding: 'Ctrl+n',
         execute: () => this.cycleActiveLane(1),
       });
@@ -15900,6 +15907,7 @@ export class AcpHarnessView implements ContentView {
       id: 'acp.harness.show-memory',
       label: 'Open Lane Memory Drawer',
       category: 'ACP Harness',
+      icon: 'brain',
       keybinding: 'Ctrl+M',
       execute: () => this.showMemoryDrawer(),
     });
@@ -15910,6 +15918,7 @@ export class AcpHarnessView implements ContentView {
       id: 'acp.harness.dispatch-github-issue',
       label: 'Fix GitHub Issue…',
       category: 'ACP Harness',
+      icon: 'wrench',
       execute: () => {
         this.setDraft(lane, '#dispatch-github-issue ', '#dispatch-github-issue '.length);
         this.render();
@@ -15921,6 +15930,7 @@ export class AcpHarnessView implements ContentView {
         id: 'acp.harness.open-issue',
         label: `Open Bound GitHub Issue (#${boundForLane.number})`,
         category: 'ACP Harness',
+        icon: 'external-link',
         execute: () => {
           void invoke('open_url', { url: boundForLane.issueUrl }).catch(() =>
             this.flashChip('open issue failed'),

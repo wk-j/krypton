@@ -17,6 +17,7 @@ import type {
   ScopeRow,
   SearchScope,
 } from './palette-types';
+import { paletteIcon } from './palette-icons';
 import type { WorkspaceFooter } from './workspace-footer';
 
 /**
@@ -85,6 +86,7 @@ class ActionRow implements ScopeRow {
 
   render(el: HTMLElement): void {
     el.classList.add('krypton-search-palette__row--action');
+    el.appendChild(paletteIcon(this.action.icon));
 
     const category = document.createElement('span');
     category.className = 'krypton-search-palette__category';
@@ -240,6 +242,7 @@ export class CommandScope implements SearchScope {
       id: 'window.create',
       label: 'New Window',
       category: 'Window',
+      icon: 'square-plus',
       keybinding: 'Leader n',
       execute: () => c.createWindow(),
     });
@@ -247,6 +250,7 @@ export class CommandScope implements SearchScope {
       id: 'window.close',
       label: 'Close Window',
       category: 'Window',
+      icon: 'x',
       keybinding: 'Leader x',
       execute: () => {
         const id = c.focusedId;
@@ -261,6 +265,7 @@ export class CommandScope implements SearchScope {
       id: 'window.maximize',
       label: 'Toggle Maximize',
       category: 'Window',
+      icon: 'maximize-2',
       keybinding: 'Leader z',
       execute: () => c.toggleMaximize(),
     });
@@ -268,6 +273,7 @@ export class CommandScope implements SearchScope {
       id: 'window.pin',
       label: 'Toggle Pin',
       category: 'Window',
+      icon: 'pin',
       keybinding: 'Leader p',
       execute: () => c.togglePin(),
     });
@@ -275,6 +281,7 @@ export class CommandScope implements SearchScope {
       id: 'window.focus-left',
       label: 'Focus Left',
       category: 'Window',
+      icon: 'arrow-left',
       keybinding: 'Leader h',
       execute: () => c.focusDirection('left'),
     });
@@ -282,6 +289,7 @@ export class CommandScope implements SearchScope {
       id: 'window.focus-right',
       label: 'Focus Right',
       category: 'Window',
+      icon: 'arrow-right',
       keybinding: 'Leader l',
       execute: () => c.focusDirection('right'),
     });
@@ -289,6 +297,7 @@ export class CommandScope implements SearchScope {
       id: 'window.focus-up',
       label: 'Focus Up',
       category: 'Window',
+      icon: 'arrow-up',
       keybinding: 'Leader k',
       execute: () => c.focusDirection('up'),
     });
@@ -296,6 +305,7 @@ export class CommandScope implements SearchScope {
       id: 'window.focus-down',
       label: 'Focus Down',
       category: 'Window',
+      icon: 'arrow-down',
       keybinding: 'Leader j',
       execute: () => c.focusDirection('down'),
     });
@@ -305,6 +315,7 @@ export class CommandScope implements SearchScope {
       id: 'workspace.footer.toggle-density',
       label: 'Toggle Workspace Footer Detail',
       category: 'Workspace',
+      icon: 'list',
       keybinding: 'Leader ?',
       execute: () => this.workspaceFooter?.toggleDensity(),
     });
@@ -312,12 +323,14 @@ export class CommandScope implements SearchScope {
       id: 'workspace.footer.toggle-visible',
       label: 'Toggle Workspace Footer',
       category: 'Workspace',
+      icon: 'panel-bottom',
       execute: () => this.workspaceFooter?.toggleVisible(),
     });
     this.register({
       id: 'workspace.keyboard-overlay.toggle',
       label: 'Toggle Keyboard Overlay',
       category: 'Workspace',
+      icon: 'keyboard',
       keybinding: 'Leader Shift+K',
       execute: () => c.toggleKeyboardOverlay(),
     });
@@ -326,6 +339,7 @@ export class CommandScope implements SearchScope {
       id: 'window.focus-next',
       label: 'Focus Next',
       category: 'Window',
+      icon: 'chevrons-right',
       keybinding: 'Cmd+Shift+>',
       execute: () => c.focusCycle(1),
     });
@@ -333,6 +347,7 @@ export class CommandScope implements SearchScope {
       id: 'window.focus-prev',
       label: 'Focus Previous',
       category: 'Window',
+      icon: 'chevrons-left',
       keybinding: 'Cmd+Shift+<',
       execute: () => c.focusCycle(-1),
     });
@@ -342,6 +357,7 @@ export class CommandScope implements SearchScope {
       id: 'layout.toggle',
       label: 'Cycle Layout (Grid/Focus/Depth/Scroll/Stage/Wheel)',
       category: 'Layout',
+      icon: 'repeat',
       keybinding: 'Leader f',
       execute: () => c.toggleFocusLayout(),
     });
@@ -349,36 +365,42 @@ export class CommandScope implements SearchScope {
       id: 'layout.scroll',
       label: 'Layout: Scroll',
       category: 'Layout',
+      icon: 'gallery-horizontal',
       execute: () => c.applyLayoutMode(LayoutMode.Scroll),
     });
     this.register({
       id: 'layout.grid',
       label: 'Layout: Grid',
       category: 'Layout',
+      icon: 'layout-grid',
       execute: () => c.applyLayoutMode(LayoutMode.Grid),
     });
     this.register({
       id: 'layout.focus',
       label: 'Layout: Focus',
       category: 'Layout',
+      icon: 'layout-panel-left',
       execute: () => c.applyLayoutMode(LayoutMode.Focus),
     });
     this.register({
       id: 'layout.depth',
       label: 'Layout: Depth',
       category: 'Layout',
+      icon: 'layers',
       execute: () => c.applyLayoutMode(LayoutMode.Depth),
     });
     this.register({
       id: 'layout.stage',
       label: 'Layout: Stage',
       category: 'Layout',
+      icon: 'gallery-horizontal-end',
       execute: () => c.applyLayoutMode(LayoutMode.Stage),
     });
     this.register({
       id: 'layout.wheel',
       label: 'Layout: Wheel',
       category: 'Layout',
+      icon: 'orbit',
       execute: () => c.applyLayoutMode(LayoutMode.Wheel),
     });
 
@@ -387,6 +409,7 @@ export class CommandScope implements SearchScope {
       id: 'tab.create',
       label: 'New Tab',
       category: 'Tab',
+      icon: 'plus',
       keybinding: 'Leader t',
       execute: () => c.createTab(),
     });
@@ -394,6 +417,7 @@ export class CommandScope implements SearchScope {
       id: 'tab.close',
       label: 'Close Tab',
       category: 'Tab',
+      icon: 'x',
       keybinding: 'Leader w',
       execute: () => c.closeTab(),
     });
@@ -401,6 +425,7 @@ export class CommandScope implements SearchScope {
       id: 'tab.next',
       label: 'Next Tab',
       category: 'Tab',
+      icon: 'chevrons-right',
       keybinding: 'Leader ]',
       execute: () => c.switchTab(1),
     });
@@ -408,6 +433,7 @@ export class CommandScope implements SearchScope {
       id: 'tab.prev',
       label: 'Previous Tab',
       category: 'Tab',
+      icon: 'chevrons-left',
       keybinding: 'Leader [',
       execute: () => c.switchTab(-1),
     });
@@ -417,6 +443,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.split-vertical',
       label: 'Split Vertical',
       category: 'Pane',
+      icon: 'columns-2',
       keybinding: 'Leader \\',
       execute: () => c.splitPane('vertical'),
     });
@@ -424,6 +451,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.split-horizontal',
       label: 'Split Horizontal',
       category: 'Pane',
+      icon: 'rows-2',
       keybinding: 'Leader -',
       execute: () => c.splitPane('horizontal'),
     });
@@ -431,6 +459,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.close',
       label: 'Close Pane',
       category: 'Pane',
+      icon: 'x',
       keybinding: 'Leader Alt+x',
       execute: () => c.closePane(),
     });
@@ -438,6 +467,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.focus-left',
       label: 'Focus Pane Left',
       category: 'Pane',
+      icon: 'arrow-left',
       keybinding: 'Leader Alt+h',
       execute: () => c.focusPaneDirection('left'),
     });
@@ -445,6 +475,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.focus-right',
       label: 'Focus Pane Right',
       category: 'Pane',
+      icon: 'arrow-right',
       keybinding: 'Leader Alt+l',
       execute: () => c.focusPaneDirection('right'),
     });
@@ -452,6 +483,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.focus-up',
       label: 'Focus Pane Up',
       category: 'Pane',
+      icon: 'arrow-up',
       keybinding: 'Leader Alt+k',
       execute: () => c.focusPaneDirection('up'),
     });
@@ -459,6 +491,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.focus-down',
       label: 'Focus Pane Down',
       category: 'Pane',
+      icon: 'arrow-down',
       keybinding: 'Leader Alt+j',
       execute: () => c.focusPaneDirection('down'),
     });
@@ -466,6 +499,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.cycle-next',
       label: 'Next Pane',
       category: 'Pane',
+      icon: 'chevrons-right',
       keybinding: 'Cmd+]',
       execute: () => c.cyclePaneFocus(1),
     });
@@ -473,6 +507,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.cycle-prev',
       label: 'Previous Pane',
       category: 'Pane',
+      icon: 'chevrons-left',
       keybinding: 'Cmd+[',
       execute: () => c.cyclePaneFocus(-1),
     });
@@ -481,6 +516,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.markdown-to-side',
       label: 'Markdown Viewer To Side',
       category: 'Pane',
+      icon: 'panel-right',
       keybinding: 'Leader O',
       execute: () => c.openToSide({ kind: 'markdown' }),
     });
@@ -488,6 +524,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.split-grow-left',
       label: 'Move Split Divider Left',
       category: 'Pane',
+      icon: 'arrow-left-from-line',
       keybinding: 'Leader r Shift+H',
       execute: () => c.resizeFocusedSplit('left'),
     });
@@ -495,6 +532,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.split-grow-right',
       label: 'Move Split Divider Right',
       category: 'Pane',
+      icon: 'arrow-right-from-line',
       keybinding: 'Leader r Shift+L',
       execute: () => c.resizeFocusedSplit('right'),
     });
@@ -502,6 +540,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.split-grow-up',
       label: 'Move Split Divider Up',
       category: 'Pane',
+      icon: 'arrow-up-from-line',
       keybinding: 'Leader r Shift+K',
       execute: () => c.resizeFocusedSplit('up'),
     });
@@ -509,6 +548,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.split-grow-down',
       label: 'Move Split Divider Down',
       category: 'Pane',
+      icon: 'arrow-down-from-line',
       keybinding: 'Leader r Shift+J',
       execute: () => c.resizeFocusedSplit('down'),
     });
@@ -516,6 +556,7 @@ export class CommandScope implements SearchScope {
       id: 'pane.split-equalize',
       label: 'Even Split',
       category: 'Pane',
+      icon: 'scale',
       keybinding: 'Leader r =',
       execute: () => c.equalizeFocusedSplit(),
     });
@@ -525,6 +566,7 @@ export class CommandScope implements SearchScope {
       id: 'terminal.quick-toggle',
       label: 'Toggle Quick Terminal',
       category: 'Terminal',
+      icon: 'square-terminal',
       keybinding: 'Cmd+I',
       execute: () => c.toggleQuickTerminal(),
     });
@@ -532,6 +574,7 @@ export class CommandScope implements SearchScope {
       id: 'terminal.scroll-up',
       label: 'Scroll Up',
       category: 'Terminal',
+      icon: 'arrow-up-to-line',
       keybinding: 'Ctrl+Shift+U',
       execute: () => c.scrollPages(-1),
     });
@@ -539,6 +582,7 @@ export class CommandScope implements SearchScope {
       id: 'terminal.scroll-down',
       label: 'Scroll Down',
       category: 'Terminal',
+      icon: 'arrow-down-to-line',
       keybinding: 'Ctrl+Shift+D',
       execute: () => c.scrollPages(1),
     });
@@ -548,6 +592,7 @@ export class CommandScope implements SearchScope {
       id: 'diff.open',
       label: 'Open Diff View',
       category: 'Window',
+      icon: 'diff',
       keybinding: 'Leader d',
       execute: () => c.openDiffView(),
     });
@@ -555,6 +600,7 @@ export class CommandScope implements SearchScope {
       id: 'diff.open-staged',
       label: 'Open Diff View (Staged)',
       category: 'Window',
+      icon: 'diff',
       keybinding: 'Leader D',
       execute: () => c.openDiffView({ staged: true }),
     });
@@ -562,6 +608,7 @@ export class CommandScope implements SearchScope {
       id: 'terminal.native-output.toggle',
       label: 'Toggle Native / Raw Command Output',
       category: 'Terminal',
+      icon: 'toggle-left',
       keybinding: 'Leader i',
       execute: () => c.toggleNativeOutput(),
     });
@@ -569,6 +616,7 @@ export class CommandScope implements SearchScope {
       id: 'terminal.native-output.copy',
       label: 'Copy Native Command Output',
       category: 'Terminal',
+      icon: 'copy',
       keybinding: 'Leader I',
       execute: () => c.copyNativeOutput(),
     });
@@ -578,6 +626,7 @@ export class CommandScope implements SearchScope {
       id: 'agent.open',
       label: 'Open AI Agent Window',
       category: 'Window',
+      icon: 'sparkles',
       keybinding: 'Leader a',
       execute: () => c.openAgentView(),
     });
@@ -587,6 +636,7 @@ export class CommandScope implements SearchScope {
       id: 'acp.live-assist.toggle',
       label: 'Toggle Harness Live Assist',
       category: 'ACP',
+      icon: 'picture-in-picture-2',
       keybinding: 'Ctrl+Shift+I',
       execute: () => invoke('live_assist_toggle'),
     });
@@ -594,54 +644,63 @@ export class CommandScope implements SearchScope {
       id: 'acp.peek.show',
       label: 'ACP: Show Lane Peek',
       category: 'ACP',
+      icon: 'eye',
       execute: () => c.showAcpLanePeek(),
     });
     this.register({
       id: 'acp.peek.hide',
       label: 'ACP: Hide Lane Peek',
       category: 'ACP',
+      icon: 'eye-off',
       execute: () => c.hideAcpLanePeek(),
     });
     this.register({
       id: 'acp.peek.next',
       label: 'ACP: Peek Next Lane',
       category: 'ACP',
+      icon: 'chevrons-right',
       execute: () => c.peekAcpLaneByDelta(1),
     });
     this.register({
       id: 'acp.peek.prev',
       label: 'ACP: Peek Previous Lane',
       category: 'ACP',
+      icon: 'chevrons-left',
       execute: () => c.peekAcpLaneByDelta(-1),
     });
     this.register({
       id: 'acp.peek.activate',
       label: 'ACP: Activate Peeked Lane',
       category: 'ACP',
+      icon: 'corner-down-left',
       execute: () => c.activateAcpPeekedLane(),
     });
     this.register({
       id: 'acp.peek.unlock',
       label: 'ACP: Unlock Lane Peek',
       category: 'ACP',
+      icon: 'lock-open',
       execute: () => c.unlockAcpLanePeek(),
     });
     this.register({
       id: 'acp.peek.heat.metric',
       label: 'ACP: Cycle Peek Heat Metric',
       category: 'ACP',
+      icon: 'flame',
       execute: () => c.cycleAcpPeekHeatMetric(),
     });
     this.register({
       id: 'acp.peek.heat.window',
       label: 'ACP: Cycle Peek Heat Window',
       category: 'ACP',
+      icon: 'clock',
       execute: () => c.cycleAcpPeekHeatWindow(),
     });
     this.register({
       id: 'acp.peek.heat.detail',
       label: 'ACP: Toggle Peek Heat Detail',
       category: 'ACP',
+      icon: 'list',
       execute: () => c.toggleAcpPeekHeatDetail(),
     });
 
@@ -650,6 +709,7 @@ export class CommandScope implements SearchScope {
       id: 'markdown.open',
       label: 'Open Markdown Viewer',
       category: 'Window',
+      icon: 'file-text',
       keybinding: 'Leader o',
       execute: () => c.openMarkdownView(),
     });
@@ -659,6 +719,7 @@ export class CommandScope implements SearchScope {
       id: 'daily.open',
       label: 'Open Today',
       category: 'Window',
+      icon: 'calendar',
       keybinding: 'Leader J',
       execute: () => c.openDailyNote(),
     });
@@ -668,6 +729,7 @@ export class CommandScope implements SearchScope {
       id: 'pencil.open',
       label: 'Open Pencil (Excalidraw)',
       category: 'Window',
+      icon: 'pencil',
       keybinding: 'Leader e',
       execute: () => c.openPencil(),
     });
@@ -677,6 +739,7 @@ export class CommandScope implements SearchScope {
       id: 'usage.open',
       label: 'Open Credit Usage',
       category: 'Window',
+      icon: 'chart-column',
       keybinding: 'Leader $',
       execute: () => c.openUsageView(),
     });
@@ -684,24 +747,28 @@ export class CommandScope implements SearchScope {
       id: 'telegram.settings',
       label: 'Open Telegram Controller Settings',
       category: 'Window',
+      icon: 'send',
       execute: () => c.openTelegramSettings(),
     });
     this.register({
       id: 'computers.open',
       label: 'Connected Computers…',
       category: 'Window',
+      icon: 'monitor',
       execute: () => c.openConnectedComputers(),
     });
     this.register({
       id: 'loopback.home',
       label: 'Open Krypton Home (every browser surface)',
       category: 'Window',
+      icon: 'house',
       execute: () => c.openLoopbackHome(),
     });
     this.register({
       id: 'dashboard.open',
       label: 'Open Lane Monitor Dashboard',
       category: 'Window',
+      icon: 'activity',
       keybinding: 'Leader Shift+L',
       execute: () => c.openDashboard(),
     });
@@ -709,18 +776,21 @@ export class CommandScope implements SearchScope {
       id: 'gallery.open',
       label: 'Open Artifact Gallery',
       category: 'Window',
+      icon: 'images',
       execute: () => c.openGallery(),
     });
     this.register({
       id: 'genui-gallery.open',
       label: 'Open GenUI Component Gallery',
       category: 'Window',
+      icon: 'shapes',
       execute: () => c.openGenUiGallery(),
     });
     this.register({
       id: 'docs.open',
       label: 'Open Docs Browser',
       category: 'Window',
+      icon: 'book-open',
       execute: () => c.openDocs(),
     });
     // spec 298: same as the harness `#lessons` command.
@@ -728,12 +798,14 @@ export class CommandScope implements SearchScope {
       id: 'lessons.open',
       label: 'Open Lessons',
       category: 'ACP',
+      icon: 'lightbulb',
       execute: () => c.openLessons(),
     });
     this.register({
       id: 'analyses.open',
       label: 'Open Issue Analysis Viewer',
       category: 'Window',
+      icon: 'file-search',
       execute: () => c.openAnalyses(),
     });
     // spec 211: `review.open` WORKS a review (the in-app keyboard Board);
@@ -742,6 +814,7 @@ export class CommandScope implements SearchScope {
       id: 'review.open',
       label: 'Open Review Board',
       category: 'Window',
+      icon: 'clipboard-list',
       keybinding: 'Leader Shift+R',
       execute: () => c.openReviewPicker(),
     });
@@ -749,12 +822,14 @@ export class CommandScope implements SearchScope {
       id: 'reviews.open',
       label: 'Open Review Board Archive',
       category: 'Window',
+      icon: 'archive',
       execute: () => c.openReviews(),
     });
     this.register({
       id: 'termctrl.open',
       label: 'Open Terminal Control Monitor',
       category: 'Window',
+      icon: 'radar',
       execute: () => c.openTermctrlMonitor(),
     });
     // spec 288: ACP wire profiler
@@ -762,30 +837,35 @@ export class CommandScope implements SearchScope {
       id: 'acp-wire.open',
       label: 'ACP Wire: Open Profiler',
       category: 'Window',
+      icon: 'cable',
       execute: () => c.openAcpWire(),
     });
     this.register({
       id: 'acp-wire.capture-off',
       label: 'ACP Wire: Capture Off',
       category: 'Window',
+      icon: 'circle-off',
       execute: () => c.setAcpWireMode('off'),
     });
     this.register({
       id: 'acp-wire.capture-meta',
       label: 'ACP Wire: Capture Meta',
       category: 'Window',
+      icon: 'circle-dashed',
       execute: () => c.setAcpWireMode('meta'),
     });
     this.register({
       id: 'acp-wire.capture-full',
       label: 'ACP Wire: Capture Full',
       category: 'Window',
+      icon: 'circle-dot',
       execute: () => c.setAcpWireMode('full'),
     });
     this.register({
       id: 'acp-wire.clear',
       label: 'ACP Wire: Clear',
       category: 'Window',
+      icon: 'trash-2',
       execute: () => c.clearAcpWire(),
     });
     // spec 284: OSC 7501 program status
@@ -793,6 +873,7 @@ export class CommandScope implements SearchScope {
       id: 'program-status.next',
       label: 'Focus Next Program Needing You',
       category: 'Window',
+      icon: 'bell-ring',
       keybinding: 'Leader !',
       execute: () => {
         if (!c.focusNextProgramAttention()) console.info('[Palette] no program needs you');
@@ -804,6 +885,7 @@ export class CommandScope implements SearchScope {
       id: 'hurl.open',
       label: 'Open Hurl Client',
       category: 'Window',
+      icon: 'arrow-right-left',
       keybinding: 'Leader H',
       execute: () => c.openHurlClient(),
     });
@@ -811,12 +893,14 @@ export class CommandScope implements SearchScope {
       id: 'hurl.open-web',
       label: 'Open Hurl Web Client',
       category: 'Window',
+      icon: 'globe',
       execute: () => c.openHurlWebClient(),
     });
     this.register({
       id: 'hurl.clear-cache',
       label: 'Hurl: Clear Cache',
       category: 'Window',
+      icon: 'trash-2',
       execute: async () => {
         try {
           await invoke('hurl_clear_cache', { filePath: null });
@@ -831,6 +915,7 @@ export class CommandScope implements SearchScope {
       id: 'ssh.clone-tab',
       label: 'Clone SSH Session (New Tab)',
       category: 'SSH',
+      icon: 'copy-plus',
       keybinding: 'Leader c',
       execute: () => c.cloneSshSession(),
     });
@@ -838,6 +923,7 @@ export class CommandScope implements SearchScope {
       id: 'ssh.clone-window',
       label: 'Clone SSH Session (New Window)',
       category: 'SSH',
+      icon: 'copy-plus',
       keybinding: 'Leader Shift+C',
       execute: () => c.cloneSshSessionToNewWindow(),
     });
@@ -847,6 +933,7 @@ export class CommandScope implements SearchScope {
       id: 'config.reload',
       label: 'Reload Config',
       category: 'Config',
+      icon: 'refresh-cw',
       execute: async () => {
         try {
           await this.compositor.reloadConfig();
@@ -861,6 +948,7 @@ export class CommandScope implements SearchScope {
       id: 'claude.copy-hook-config',
       label: 'Copy Hook Config to Clipboard',
       category: 'Claude Code',
+      icon: 'copy',
       execute: async () => {
         try {
           await invoke<string>('get_hook_server_config_snippet');
@@ -873,6 +961,7 @@ export class CommandScope implements SearchScope {
       id: 'claude.show-hook-port',
       label: 'Show Hook Server Port',
       category: 'Claude Code',
+      icon: 'plug',
       execute: async () => {
         try {
           const port = await invoke<number>('get_hook_server_port');
@@ -933,6 +1022,7 @@ export class CommandScope implements SearchScope {
         id: `window.unpin.${id}`,
         label: `Unpin: ${label}`,
         category: 'Window',
+        icon: 'pin-off',
         execute: () => c.togglePin(id),
       });
     }
@@ -947,6 +1037,7 @@ export class CommandScope implements SearchScope {
         id: `dashboard.${dashId}`,
         label: `Toggle ${dash.title}`,
         category: 'Dashboard',
+        icon: 'layout-dashboard',
         keybinding: shortcutLabel,
         execute: () => c.dashboardManager.toggle(dashId),
       });
@@ -957,6 +1048,7 @@ export class CommandScope implements SearchScope {
       id: 'acp.harness.open',
       label: 'Open ACP Harness',
       category: 'Window',
+      icon: 'bot',
       keybinding: 'Leader Shift y',
       execute: () => c.openAcpHarnessView(),
     });
@@ -964,6 +1056,7 @@ export class CommandScope implements SearchScope {
       id: 'acp.harness.open-remote',
       label: 'Open Remote ACP Harness…',
       category: 'Window',
+      icon: 'server',
       keybinding: 'Leader Shift s',
       execute: () => c.openRemoteAcpHarnessView(),
     });
@@ -975,6 +1068,7 @@ export class CommandScope implements SearchScope {
         id: `theme.color.${themeName}`,
         label: `Color Theme: ${themeLabel(themeName)}${isCurrent ? ' (active)' : ''}`,
         category: 'Color Theme',
+        icon: 'palette',
         execute: () => {
           void invoke('set_theme', { name: themeName }).catch((e) => {
             console.error('[CommandPalette] set_theme failed:', e);
@@ -994,6 +1088,7 @@ export class CommandScope implements SearchScope {
         id: `window.accent.${color.name}`,
         label: `Window Color: ${themeLabel(color.name)}${suffix}${isCurrent ? ' (current)' : ''}`,
         category: 'Window Color',
+        icon: 'droplet',
         swatch: color.hex,
         execute: () => {
           const id = c.focusedId;
@@ -1009,6 +1104,7 @@ export class CommandScope implements SearchScope {
       id: 'window.accent.auto',
       label: `Window Color: Auto${currentAccent === null ? ' (current)' : ''}`,
       category: 'Window Color',
+      icon: 'droplet',
       execute: () => {
         const id = c.focusedId;
         if (id === null) {
@@ -1029,6 +1125,7 @@ export class CommandScope implements SearchScope {
         id: `sound.theme.${themeName}`,
         label: `${displayName}${isCurrent ? ' (active)' : ''}`,
         category: 'Sound Theme',
+        icon: 'volume-2',
         execute: () => soundEngine.loadTheme(themeName),
       });
     }

@@ -4,6 +4,7 @@
 > Date: 2026-03-09
 > Milestone: M4 — Keyboard System & Workspaces
 > Amended by: [0349](./0349-unified-search-palette-tabs.md) — the palette is now the **Commands** tab of the Search Palette, one overlay shared with Files and Grep. `src/command-palette.ts` holds only `CommandScope` (action registry, fuzzy filter, execute); the overlay, keys and DOM live in `src/search-palette.ts`, the mode is `Mode.SearchPalette`, and the styles are `.krypton-search-palette*` in `src/styles/search-palette.css`. `Tab` / `Shift+Tab` switch tabs (they used to move the selection). The Data Flow, Keybindings, UI Changes and Edge Cases below are updated to match.
+> Amended by: [0358](./0358-command-palette-icons.md) — every `PaletteAction` carries a required `icon` (a `PaletteIconName` from `src/palette-icons.ts`), drawn first in the row.
 
 ## Problem
 
@@ -94,9 +95,9 @@ Implementation: for each action, check if query characters appear in order (subs
 
 The overlay DOM and styles are spec 0349's: `.krypton-search-palette` with a tab strip,
 one input row, one result list, a status line and a hint line. A Commands row is
-`div.krypton-search-palette__row.krypton-search-palette__row--action` holding
-`__category`, an optional `__swatch`, `__label` (matched characters in `<mark>`) and
-`__key` (keybinding, right-aligned and dimmed).
+`div.krypton-search-palette__row.krypton-search-palette__row--action` holding `svg.__icon`
+(spec 0358: the action's glyph, a fixed column), `__category`, an optional `__swatch`,
+`__label` (matched characters in `<mark>`) and `__key` (keybinding, right-aligned and dimmed).
 
 Key visual properties:
 - Fixed overlay, `z-index: 10002` (above which-key and hints), scrim `rgba(0, 0, 0, 0.35)`, no backdrop blur
