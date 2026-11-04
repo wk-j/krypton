@@ -20,6 +20,7 @@ export const BACKEND_LABELS: Record<string, string> = {
   mimo: 'MiMo',
   cline: 'Cline',
   antigravity: 'Antigravity',
+  fx: 'fx',
 };
 
 /** Preferred add-lane picker order. Remaining installed backends follow by id. */
@@ -132,6 +133,8 @@ export function backendLogoId(backendId: string): string {
       return 'krypton-logo-cline';
     case 'antigravity':
       return 'krypton-logo-antigravity';
+    case 'fx':
+      return 'krypton-logo-fx';
     default:
       return 'krypton-logo-omp';
   }
@@ -163,6 +166,7 @@ export function laneAccent(index: number): string {
     '#ff8552',
     '#56d6c0',
     '#ff7ad9',
+    '#c6f05a',
   ];
   return accents[(index - 1) % accents.length];
 }
@@ -192,6 +196,7 @@ export const LANE_ACCENT_PALETTE: readonly LaneAccentColor[] = [
   { color: '#ff8552', rgb: '255, 133, 82' },
   { color: '#56d6c0', rgb: '86, 214, 192' },
   { color: '#ff7ad9', rgb: '255, 122, 217' },
+  { color: '#c6f05a', rgb: '198, 240, 90' },
 ];
 
 /** Picks a random palette color no live lane is using. Falls back to the whole
@@ -219,6 +224,7 @@ export function laneAccentForLabel(label: string): string {
   if (/mimo/i.test(label)) return laneAccent(12);
   if (/cline/i.test(label)) return laneAccent(13);
   if (/antigravity/i.test(label)) return laneAccent(14);
+  if (/^fx(-|$)/i.test(label)) return laneAccent(15);
   const match = label.match(/-(\d+)$/);
   return match ? laneAccent(Number(match[1])) : 'var(--krypton-window-accent, #0cf)';
 }

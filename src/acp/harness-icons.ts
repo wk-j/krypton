@@ -7,7 +7,7 @@
 import { BRANCH_ICON_BODY } from '../chrome-icons';
 import { CODEX_LOGO_MARK, GROK_LOGO_MARK, codeAgentLogoSymbol } from '../code-agent-logos';
 
-// Inline <symbol> defs for the thirteen built-in backends. Codex and Grok use
+// Inline <symbol> defs for the fourteen built-in backends. Codex and Grok use
 // the official shared geometry above; the remaining compact marks come from
 // docs/prototypes/125-lane-rail-disambiguation.html. All strokes/fills use
 // currentColor so the rail can recolor via a single CSS class.
@@ -82,6 +82,12 @@ export const BACKEND_LOGO_SVG_DEFS = [
     '<path d="M4 7.5 L8 3.5 L12 7.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
     '<path d="M5.2 10.6 L8 7.8 L10.8 10.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
     '<line x1="3.5" y1="13" x2="12.5" y2="13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+    '</symbol>',
+  // fx: italic script "f" + "x" (Vercel Labs fx wordmark)
+  '<symbol id="krypton-logo-fx" viewBox="0 0 16 16">' +
+    '<path d="M9.6 3.1 Q7.6 2.4 7 4.6 L5.6 11.6 Q5.1 13.8 3 13.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<line x1="4.6" y1="6.6" x2="8.6" y2="6.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+    '<path d="M9.4 8.2 L13 12.4 M13 8.2 L9.4 12.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
     '</symbol>',
 ].join('');
 

@@ -415,6 +415,20 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
                 display_name: "Antigravity".to_string(),
             },
         ),
+        (
+            "fx",
+            AcpBackend {
+                // Vercel Labs fx: native ACP server over stdio (`fx acp`, the
+                // command fx documents for ACP clients). No flags, so the lane
+                // keeps fx's saved provider and permission mode. Auth is
+                // `fx login` outside Krypton (no ACP authMethods); an
+                // unauthenticated fx fails `initialize` with its own reason.
+                // See docs/0359-acp-fx-lane.md.
+                command: "fx".to_string(),
+                args: vec!["acp".to_string()],
+                display_name: "fx".to_string(),
+            },
+        ),
     ]
 }
 
@@ -527,7 +541,7 @@ struct SessionModelState {
 
 /// Read model state from a `session/new` / resume / load response. A valid
 /// `models` object wins (the verified `session/set_model` path); otherwise the
-/// first `configOptions` select with `category: "model"` is used.
+/// `configOptions` model selector (`parse_config_model_option`) is used.
 fn parse_session_model_state(response: &Value) -> SessionModelState {
     let models = response.get("models");
     if advertises_models(models) {
@@ -565,14 +579,23 @@ fn advertises_models(models: Option<&Value>) -> bool {
         .unwrap_or(false)
 }
 
-/// Parse the ACP Session Config Options model selector. `options` is either a
-/// flat `[{value, name, description?}]` list or grouped
+/// Parse the ACP Session Config Options model selector: among the `select`
+/// options with `category: "model"`, the one whose `id` is `"model"`, else the
+/// agent's first (ACP's array-order tie-break). fx lists a `provider` select
+/// before its `model` select under that category (spec 359). `options` is
+/// either a flat `[{value, name, description?}]` list or grouped
 /// `[{group, name, options: [...]}]`; both flatten into one model list.
 fn parse_config_model_option(config_options: Option<&Value>) -> Option<SessionModelState> {
-    let option = config_options?.as_array()?.iter().find(|o| {
+    let is_model_select = |o: &&Value| {
         o.get("category").and_then(|c| c.as_str()) == Some("model")
             && o.get("type").and_then(|t| t.as_str()) == Some("select")
-    })?;
+    };
+    let options = config_options?.as_array()?;
+    let option = options
+        .iter()
+        .filter(is_model_select)
+        .find(|o| o.get("id").and_then(|i| i.as_str()) == Some("model"))
+        .or_else(|| options.iter().find(is_model_select))?;
     let config_id = option.get("id")?.as_str()?.to_string();
     let mut available = Vec::new();
     for entry in option
@@ -4020,6 +4043,21 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
             return "Antigravity's ACP server did not answer initialize and no stderr was captured; retry, or check the `acp-agents/antigravity` install in Krypton's app cache.".to_string();
         }
     }
+    if backend_id == "fx" {
+        // Before the generic fallbacks below — they name `claude /login` and
+        // the claude-agent-acp npm package, both wrong advice for fx.
+        if s.contains("command not found") || s.contains("enoent") || s.contains("no such file") {
+            return "Install fx: `curl -fsSL https://fx.sh/setup.sh | bash` (installs to `~/.local/bin`), then restart Krypton so the login-shell PATH cache includes `fx`.".to_string();
+        }
+        if s.contains("unknown subcommand") {
+            return "Your fx predates ACP mode (`fx acp`). Run `fx upgrade`.".to_string();
+        }
+        if stderr.is_empty() {
+            // Not signed in: fx fails `initialize` with its own reason (which
+            // precedes this hint) and writes nothing to stderr.
+            return "fx wrote no diagnostics. Run `fx doctor` in a terminal to check sign-in (`fx login`) and setup, then retry.".to_string();
+        }
+    }
     if s.contains("/login") || s.contains("not authenticated") {
         return "Run `claude /login` in a terminal, then retry.".to_string();
     }
@@ -4714,6 +4752,58 @@ mod tests {
     }
 
     #[test]
+    fn fx_model_selector_skips_provider_select() {
+        // fx 0.0.16 session/new: `provider` precedes `model` under category
+        // "model", and a `fast` select follows it (spec 359).
+        let response = json!({
+            "sessionId": "s",
+            "configOptions": [
+                { "id": "provider", "category": "model", "type": "select", "currentValue": "codex",
+                  "options": [{ "value": "gateway", "name": "Vercel AI Gateway" },
+                              { "value": "codex", "name": "Codex subscription" }] },
+                { "id": "model", "category": "model", "type": "select", "currentValue": "gpt-6.1-sol",
+                  "options": [{ "value": "gpt-6.1-sol", "name": "gpt-6.1-sol" },
+                              { "value": "gpt-6-luna", "name": "gpt-6-luna" }] },
+                { "id": "mode", "category": "mode", "type": "select", "currentValue": "auto",
+                  "options": [] },
+                { "id": "fast", "category": "model", "type": "select", "currentValue": "false",
+                  "options": [{ "value": "false", "name": "Off" }, { "value": "true", "name": "On" }] }
+            ]
+        });
+        let state = parse_session_model_state(&response);
+
+        assert_eq!(
+            state.control,
+            Some(ModelControl::ConfigOption("model".into()))
+        );
+        assert_eq!(state.current.as_deref(), Some("gpt-6.1-sol"));
+        let ids: Vec<&str> = state
+            .available
+            .iter()
+            .map(|m| m.model_id.as_str())
+            .collect();
+        assert_eq!(ids, ["gpt-6.1-sol", "gpt-6-luna"]);
+    }
+
+    #[test]
+    fn config_model_selector_without_model_id_keeps_agent_order() {
+        let state = parse_session_model_state(&json!({
+            "configOptions": [
+                { "id": "llm", "category": "model", "type": "select", "currentValue": "x",
+                  "options": [{ "value": "x", "name": "X" }] },
+                { "id": "tier", "category": "model", "type": "select", "currentValue": "t",
+                  "options": [{ "value": "t", "name": "T" }] }
+            ]
+        }));
+
+        assert_eq!(
+            state.control,
+            Some(ModelControl::ConfigOption("llm".into()))
+        );
+        assert_eq!(state.current.as_deref(), Some("x"));
+    }
+
+    #[test]
     fn copilot_startup_hint_reports_missing_cli() {
         let hint = startup_hint("copilot", "No such file or directory (os error 2)");
 
@@ -4788,6 +4878,38 @@ mod tests {
         let hint = startup_hint("claude", "cline: unknown option '--acp'");
 
         assert!(!hint.contains("Cline CLI predates ACP mode"));
+    }
+
+    #[test]
+    fn fx_startup_hint_reports_missing_cli() {
+        let hint = startup_hint("fx", "No such file or directory (os error 2)");
+
+        assert!(hint.contains("Install fx"));
+        assert!(hint.contains("fx.sh/setup.sh"));
+        assert!(!hint.contains("claude-agent-acp"));
+    }
+
+    #[test]
+    fn fx_startup_hint_reports_missing_acp_subcommand() {
+        let hint = startup_hint("fx", "fx: unknown subcommand: acp");
+
+        assert!(hint.contains("predates ACP mode"));
+        assert!(hint.contains("fx upgrade"));
+    }
+
+    #[test]
+    fn fx_startup_hint_empty_stderr_points_at_doctor() {
+        let hint = startup_hint("fx", "");
+
+        assert!(hint.contains("fx doctor"));
+        assert!(hint.contains("fx login"));
+    }
+
+    #[test]
+    fn fx_startup_hint_does_not_leak_to_other_backends() {
+        let hint = startup_hint("claude", "fx: unknown subcommand: acp");
+
+        assert!(!hint.contains("fx upgrade"));
     }
 
     #[test]

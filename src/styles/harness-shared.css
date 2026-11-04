@@ -77,6 +77,7 @@
   --krypton-backend-mimo:     #ff8552;
   --krypton-backend-cline:    #56d6c0;
   --krypton-backend-antigravity: #ff7ad9;
+  --krypton-backend-fx:       #c6f05a;
 
   /* Transcript message-body accents. Carried as a background tint (no
    * side-stripe) so the accent is themeable and the chrome stays flat. */
@@ -1538,6 +1539,7 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
     --krypton-backend-mimo:     #c45a28;
     --krypton-backend-cline:    #1a8a80;
     --krypton-backend-antigravity: #b0308a;
+    --krypton-backend-fx:       #5f7f12;
 
     --krypton-role-analysis: #2a7aa0;
     --krypton-role-review:   #8a7820;

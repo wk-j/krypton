@@ -87,7 +87,7 @@ import {
   syncPeekThoughtBody,
 } from './lane-peek';
 
-import type { AcpEvent, PermissionOption, StopReason, ToolCall } from './types';
+import type { AcpEvent, ContentBlock, PermissionOption, StopReason, ToolCall } from './types';
 import type { ComputerApprovalRequest } from './computer-approval';
 import type {
   HarnessLane,
@@ -1841,6 +1841,36 @@ describe('ACP harness auto-allow permission detection', () => {
       ],
     ))).toBeNull();
   });
+
+  // spec 359: fx 0.0.16 sends `mcp_<server>_<tool>` (single underscores) as the
+  // permission request's toolCall name/title, with no server key.
+  it.each(['handoff_set', 'peer_send', 'attention_flag', 'lesson_record'])(
+    'accepts fx-qualified %s on the harness server',
+    (name) => {
+      expect(harnessAutoAllowToolName(permissionFor({
+        title: `mcp_krypton-harness-memory_${name}`,
+        kind: 'other',
+        rawInput: { text: 'x' },
+      }, [
+        { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'allow_always', name: 'Allow for this session', kind: 'allow_always' },
+      ]))).toBe(name);
+    },
+  );
+
+  it('rejects an fx-qualified tool from a third-party server', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'mcp_third-party-memory_peer_send',
+      kind: 'other',
+    }))).toBeNull();
+  });
+
+  it('rejects an fx-qualified unknown tool on the harness server', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'mcp_krypton-harness-memory_shell_run',
+      kind: 'other',
+    }))).toBeNull();
+  });
 });
 
 describe('Timeline permission execution without human gates', () => {
@@ -1903,6 +1933,35 @@ describe('Timeline permission execution without human gates', () => {
       expect(target.liveVoiceCtl.onPermissionRequested).not.toHaveBeenCalled();
     },
   );
+
+  it.each(['timeline_record', 'timeline_merge', 'timeline_pending_resolve'])(
+    'runs fx-qualified built-in %s without handing the decision to the human',
+    async (name) => {
+      const { lane, target, respondPermission } = setup();
+      const permission = permissionFor({ title: `mcp_krypton-harness-memory_${name}`, kind: 'other' }, [
+        { optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' },
+        { optionId: 'reject_once', kind: 'reject_once', name: 'Reject' },
+      ]);
+      addPermission.call(target, lane, 11, permission.toolCall, permission.options);
+      await Promise.resolve();
+      expect(respondPermission).toHaveBeenCalledWith(11, 'allow_once');
+      expect(lane.pendingPermissions).toEqual([]);
+      expect(target.liveVoiceCtl.onPermissionRequested).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps a foreign fx-qualified timeline tool with the human', async () => {
+    const { lane, target, respondPermission } = setup();
+    const permission = permissionFor({
+      title: 'mcp_other-server_timeline_record',
+      kind: 'other',
+      content: [{ type: 'content', content: { type: 'text', text: 'krypton-harness-memory__timeline_record' } }],
+    }, [{ optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' }]);
+    addPermission.call(target, lane, 12, permission.toolCall, permission.options);
+    await Promise.resolve();
+    expect(respondPermission).not.toHaveBeenCalled();
+    expect(lane.pendingPermissions).toHaveLength(1);
+  });
 
   it.each(['timeline_record', 'timeline_merge', 'timeline_pending_resolve'])(
     'cancels built-in %s with a diagnostic if the adapter has no accept option',
@@ -3274,6 +3333,32 @@ describe('lane peek heat (slice 109)', () => {
   });
 });
 
+describe('lane-context prompt block', () => {
+  type PromptView = {
+    buildPromptBlocks(lane: HarnessLane, userText: string): ContentBlock[];
+  };
+  const build = (backendId: string): ContentBlock[] => {
+    const view = viewDouble({ composeLeadingContext: () => 'LANE CONTEXT' }) as unknown as PromptView;
+    const lane = { backendId, supportsEmbeddedContext: true } as unknown as HarnessLane;
+    return view.buildPromptBlocks(lane, 'hi');
+  };
+
+  it('embeds the packet as a resource for embedded-context lanes', () => {
+    expect(build('claude')[0]).toMatchObject({
+      type: 'resource',
+      resource: { uri: 'krypton://acp-harness/lane-context.md', text: 'LANE CONTEXT' },
+    });
+  });
+
+  it('sends fx the packet as text so fx posts no unsafe-target notice', () => {
+    // spec 359: fx flags every non-file:// resource URI as an omitted target.
+    expect(build('fx')).toEqual([
+      { type: 'text', text: 'LANE CONTEXT' },
+      { type: 'text', text: 'hi' },
+    ]);
+  });
+});
+
 describe('laneAccentForLabel', () => {
   it('routes Junie-N labels to the 8th palette slot, not the numeric fallback', () => {
     // Regression for the spec-119 must-fix: without the explicit /junie/i arm
@@ -3320,26 +3405,34 @@ describe('laneAccentForLabel', () => {
     expect(laneAccentForLabel('Antigravity-1')).not.toBe(laneAccent(1));
   });
 
-  it('keeps a 14-color palette wider than the 14 named lanes', () => {
-    // Junie=8 … Cline=13, Antigravity=14 all occupy distinct slots, so the
-    // palette must have at least 14 distinct entries — otherwise
-    // laneAccent(14) wraps modulo to Codex blue.
-    const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map(laneAccent);
-    expect(new Set(slots).size).toBe(14);
+  it('routes fx labels to the 15th palette slot, anchored to the label start', () => {
+    // Spec 359: fx is the 15th named lane. The arm is anchored like Pi/OMP so a
+    // label that merely contains "fx" keeps the numeric fallback.
+    expect(laneAccentForLabel('fx-1')).toBe(laneAccent(15));
+    expect(laneAccentForLabel('fx-1')).not.toBe(laneAccent(1));
+    expect(laneAccentForLabel('gfx-2')).toBe(laneAccent(2));
+  });
+
+  it('keeps a 15-color palette wider than the 15 named lanes', () => {
+    // Junie=8 … Antigravity=14, fx=15 all occupy distinct slots, so the
+    // palette must have at least 15 distinct entries — otherwise
+    // laneAccent(15) wraps modulo to Codex blue.
+    const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map(laneAccent);
+    expect(new Set(slots).size).toBe(15);
   });
 });
 
 describe('pickLaneAccent', () => {
   it('never hands out a color a live lane already holds', () => {
-    const taken = LANE_ACCENT_PALETTE.slice(0, 13).map((entry) => entry.color);
-    expect(pickLaneAccent(taken, () => 0)).toBe(LANE_ACCENT_PALETTE[13]);
-    expect(pickLaneAccent(taken, () => 0.999)).toBe(LANE_ACCENT_PALETTE[13]);
+    const taken = LANE_ACCENT_PALETTE.slice(0, 14).map((entry) => entry.color);
+    expect(pickLaneAccent(taken, () => 0)).toBe(LANE_ACCENT_PALETTE[14]);
+    expect(pickLaneAccent(taken, () => 0.999)).toBe(LANE_ACCENT_PALETTE[14]);
   });
 
   it('picks from the free colors by the random draw', () => {
     const taken = [LANE_ACCENT_PALETTE[0].color];
     expect(pickLaneAccent(taken, () => 0)).toBe(LANE_ACCENT_PALETTE[1]);
-    expect(pickLaneAccent(taken, () => 0.999)).toBe(LANE_ACCENT_PALETTE[13]);
+    expect(pickLaneAccent(taken, () => 0.999)).toBe(LANE_ACCENT_PALETTE[14]);
   });
 
   it('falls back to the whole palette once every color is taken', () => {
@@ -3528,6 +3621,7 @@ describe('spec 125 lane rail disambiguation', () => {
       expect(backendLogoId('mimo')).toBe('krypton-logo-mimo');
       expect(backendLogoId('cline')).toBe('krypton-logo-cline');
       expect(backendLogoId('antigravity')).toBe('krypton-logo-antigravity');
+      expect(backendLogoId('fx')).toBe('krypton-logo-fx');
     });
 
     it('falls back to the neutral OMP mark for unknown backends', () => {

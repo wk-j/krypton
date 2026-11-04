@@ -273,7 +273,7 @@ function buildPromptBlocks(userText: string, lane: HarnessLane): ContentBlock[] 
   const stub = renderPromptMemoryPacket(lane);
   const userBlock: ContentBlock = { type: 'text', text: userText };
   if (!stub) return [userBlock];
-  if (laneSupportsEmbeddedContext(lane)) {
+  if (laneSupportsEmbeddedContext(lane) && lane.backendId !== 'fx') {
     return [
       {
         type: 'resource',
@@ -292,6 +292,8 @@ function buildPromptBlocks(userText: string, lane: HarnessLane): ContentBlock[] 
   ];
 }
 ```
+
+fx gets the text form even though it advertises `embeddedContext`. fx treats a non-`file://` resource URI as an unsafe target and posts an "omitted" notice, and it inlines the text into the prompt anyway (`docs/0359-acp-fx-lane.md`).
 
 ### Data Flow
 

@@ -60,4 +60,5 @@
   .acp-harness__lane-mail-logo--mimo     { color: var(--krypton-backend-mimo); }
   .acp-harness__lane-mail-logo--cline    { color: var(--krypton-backend-cline); }
   .acp-harness__lane-mail-logo--antigravity { color: var(--krypton-backend-antigravity); }
+  .acp-harness__lane-mail-logo--fx       { color: var(--krypton-backend-fx); }
 }

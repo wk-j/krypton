@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (344)
+## Specs (345)
 
 | # | Spec |
 |---|------|
@@ -361,6 +361,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 356 | [Timeline Manual Mode](./0356-timeline-manual-mode.md) |
 | 357 | [Assistant Instance Monitor](./0357-assistant-instance-monitor.md) |
 | 358 | [Command Palette Icons](./0358-command-palette-icons.md) |
+| 359 | [ACP fx Lane](./0359-acp-fx-lane.md) |
 
 ## ADRs (27)
 

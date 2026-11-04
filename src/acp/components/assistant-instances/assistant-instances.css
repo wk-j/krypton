@@ -231,6 +231,7 @@
   .acp-assistant-instances__logo--mimo     { color: var(--krypton-backend-mimo); }
   .acp-assistant-instances__logo--cline    { color: var(--krypton-backend-cline); }
   .acp-assistant-instances__logo--antigravity { color: var(--krypton-backend-antigravity); }
+  .acp-assistant-instances__logo--fx       { color: var(--krypton-backend-fx); }
 
   .acp-assistant-instances__line,
   .acp-assistant-instances__alerts {

@@ -84,6 +84,7 @@
   .acp-harness__rail-logo--mimo     { color: var(--krypton-backend-mimo); }
   .acp-harness__rail-logo--cline    { color: var(--krypton-backend-cline); }
   .acp-harness__rail-logo--antigravity { color: var(--krypton-backend-antigravity); }
+  .acp-harness__rail-logo--fx       { color: var(--krypton-backend-fx); }
 
   .acp-harness__rail-tag {
     flex: 0 0 auto;

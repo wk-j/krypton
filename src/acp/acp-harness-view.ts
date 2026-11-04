@@ -8770,7 +8770,10 @@ export class AcpHarnessView implements ContentView {
     // lane-context stub so adapters that only honor the first resource/text
     // block still see both. Never emit the directive as a second block.
     const leading = this.composeLeadingContext(lane);
-    if (lane.supportsEmbeddedContext) {
+    // spec 359: fx treats every resource URI as a target for scoped AGENTS.md
+    // loading and posts an "unsafe target" notice for `krypton://`; it inlines
+    // resource text into the prompt anyway, so a text block loses nothing.
+    if (lane.supportsEmbeddedContext && lane.backendId !== 'fx') {
       return [
         {
           type: 'resource',

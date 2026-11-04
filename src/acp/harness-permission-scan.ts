@@ -79,6 +79,9 @@ const TIMELINE_SERVER_NAMES: Record<string, true> = {
   krypton_harness_memory: true,
 };
 const TIMELINE_SERVER_KEYS = ['server', 'serverName', 'server_name', 'serverUrl', 'server_url'] as const;
+/** spec 359: fx qualifies MCP tools as `mcp_<server>_<tool>` (single
+ *  underscores) in the permission request's toolCall `name`/`title`. */
+const FX_QUALIFIED_HARNESS_TOOL = /^mcp_(?:krypton-harness-(?:bus|memory)|krypton_harness_(?:bus|memory))_([a-z_]+)$/;
 
 function isTimelineServer(value: string): boolean {
   if (TIMELINE_SERVER_NAMES[value.trim().toLowerCase()] === true) return true;
@@ -95,7 +98,7 @@ function isTimelineServer(value: string): boolean {
 function qualifiedTimelineTool(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const match = /^(?:tool:\s*)?(?:mcp__)?(krypton-harness-(?:bus|memory)|krypton_harness_(?:bus|memory))(?:__|\/|:)(timeline_[a-z_]+)$/i.exec(value.trim());
-  const name = match?.[2].toLowerCase();
+  const name = match?.[2].toLowerCase() ?? FX_QUALIFIED_HARNESS_TOOL.exec(value.trim().toLowerCase())?.[1];
   return name && HARNESS_TIMELINE_TOOL_NAMES.has(name) ? name : null;
 }
 
@@ -112,7 +115,8 @@ function timelinePermissionToolName(call: ToolCall, optionNames: string[]): stri
   if (qualified) return qualified;
   // A foreign qualified title cannot be overridden by arguments, content or
   // option labels claiming to belong to the built-in server.
-  if (title && (/^mcp__/.test(title) || /^(?:tool:\s*)?[^\s/:]+[/:][^\s]+$/.test(title))) return null;
+  // `mcp_` also covers fx's single-underscore `mcp_<server>_<tool>` form.
+  if (title && (/^mcp_/.test(title) || /^(?:tool:\s*)?[^\s/:]+[/:][^\s]+$/.test(title))) return null;
   const hasServer = TIMELINE_SERVER_KEYS.some((key) => {
     const server = metadata[key];
     return typeof server === 'string' && isTimelineServer(server);
@@ -218,6 +222,8 @@ export function harnessToolNameFromUnknown(value: unknown, depth = 0): string | 
 export function harnessToolNameFromString(value: string | undefined): string | null {
   if (!value) return null;
   const normalized = value.trim().toLowerCase();
+  const fx = FX_QUALIFIED_HARNESS_TOOL.exec(normalized)?.[1];
+  if (fx && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(fx)) return fx;
   const timeline = /^(?:tool:\s*)?(?:(?:mcp__)?krypton[_-]harness[_-](?:bus|memory)(?:__|\/))?(timeline_record|timeline_list|timeline_merge|timeline_pending_resolve|timeline_conflict_list|timeline_conflict_record|timeline_conflict_checked)$/.exec(normalized);
   if (timeline) return timeline[1];
   for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {

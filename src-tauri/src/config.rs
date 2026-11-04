@@ -791,8 +791,8 @@ pub struct AcpHarnessConfig {
     /// absolute remote project directory.
     pub remote_profiles: Vec<RemoteHarnessProfile>,
     /// Per-backend model selection. Keyed by backend id (`opencode`,
-    /// `claude`, `codex`, `cursor`, `droid`, `junie`, `mimo`, `cline`). `active` is the
-    /// model applied to the lane: Droid via `-m`, OpenCode
+    /// `claude`, `codex`, `cursor`, `droid`, `junie`, `mimo`, `cline`, `fx`). `active` is the
+    /// model applied to the lane: Droid via `-m`, OpenCode and fx
     /// via `session/set_config_option`, and any ACP-native backend that advertises
     /// model state in `session/new` (verified: `claude`, `mimo`) via a post-`session/new`
     /// `session/set_model` (sent verbatim so aliases like `opus`/`sonnet`
