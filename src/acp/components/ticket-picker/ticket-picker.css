@@ -67,7 +67,7 @@
 
   .acp-ticket__tab {
     display: inline-flex;
-    align-items: baseline;
+    align-items: center;
     gap: 6px;
     min-height: 26px;
     padding: 3px 9px;
