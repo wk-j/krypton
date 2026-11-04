@@ -178,7 +178,8 @@
 
 /* The shown dock fills the column under the strip and scrolls on its own. */
 .acp-harness__ticket-dock,
-.acp-harness__rails-dock {
+.acp-harness__rails-dock,
+.acp-harness__assistants-dock {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -191,7 +192,8 @@
 }
 
 .acp-harness__ticket-dock[hidden],
-.acp-harness__rails-dock[hidden] {
+.acp-harness__rails-dock[hidden],
+.acp-harness__assistants-dock[hidden] {
   display: none;
 }
 
@@ -199,12 +201,14 @@
    apply. The selected row looks the same focused or not, so the dock itself
    shows whether it holds the keyboard: a 1px inset outline, no animation. */
 .acp-harness__rails-dock:focus,
-.acp-harness__ticket-dock:focus {
+.acp-harness__ticket-dock:focus,
+.acp-harness__assistants-dock:focus {
   outline: none;
 }
 
 .acp-harness__rails-dock:focus-within,
-.acp-harness__ticket-dock:focus-within {
+.acp-harness__ticket-dock:focus-within,
+.acp-harness__assistants-dock:focus-within {
   outline: 1px solid rgba(255, 176, 0, 0.42);
   outline-offset: -1px;
 }

@@ -15,6 +15,7 @@
 import { def as actionButton } from './action-button';
 import { def as annotationRail } from './annotation-rail';
 import { def as assistantRow } from './assistant-row';
+import { def as assistantInstances } from './assistant-instances';
 import { def as backgroundTasks } from './background-tasks';
 import { def as card } from './card';
 import { def as caret } from './caret';
@@ -152,6 +153,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   planPanel,
   ticketDock,
   railsDock,
+  assistantInstances,
   annotationRail,
   // layer 6 — composer
   composer,

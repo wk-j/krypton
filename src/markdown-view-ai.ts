@@ -86,7 +86,7 @@ export class MarkdownViewAI {
     this.onCloseCallback = opts.onClose;
 
     // Lightweight disposable controller
-    this.controller = new AgentController();
+    this.controller = new AgentController({ role: 'markdown_ai', label: 'Markdown AI' });
     this.controller.setProjectDir(opts.cwd);
 
     // ── Build DOM ──────────────────────────────────────────
@@ -153,11 +153,9 @@ export class MarkdownViewAI {
     });
   }
 
-  /** Remove from DOM and abort any running agent */
+  /** Remove from DOM and dispose the underlying agent. */
   close(): void {
-    if (this.controller.isRunning) {
-      this.controller.abort();
-    }
+    this.controller.dispose();
     this.el.classList.remove('krypton-md-ai--visible');
     this.el.remove();
   }
@@ -311,6 +309,7 @@ export class MarkdownViewAI {
 
     // Build contextual prompt
     const contextPrefix = this.buildContextPrefix();
+    this.controller.setProjectDir(this.getContext().cwd);
     const fullPrompt = `${contextPrefix}\n\nUser request: ${query}`;
 
     let latestResponse = '';

@@ -29,6 +29,184 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, Mutex};
 
 const MIMO_DEFAULT_MODEL: &str = "mimo/mimo-auto";
+fn instance_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AcpInstanceRole {
+    HarnessLane,
+    SessionProbe,
+    Assist,
+    RailsJudge,
+    InlineAi,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct AcpInstanceOwner {
+    pub role: AcpInstanceRole,
+    pub label: String,
+    pub harness_id: Option<String>,
+    pub lane_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AcpExecutionKind {
+    Local,
+    Remote,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AcpInstanceExecution {
+    pub kind: AcpExecutionKind,
+    pub runtime_id: Option<String>,
+    pub host: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AcpInstanceLifecycle {
+    Initializing,
+    Ready,
+    Terminating,
+    Disconnected,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AcpInstanceActivity {
+    Idle,
+    Running,
+    Waiting,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AcpInstanceLiveness {
+    Alive,
+    Exited,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AcpInstanceSnapshot {
+    pub session: u64,
+    pub backend_id: String,
+    pub owner: AcpInstanceOwner,
+    pub cwd: String,
+    pub acp_session_id: Option<String>,
+    pub execution: AcpInstanceExecution,
+    pub pid: Option<u32>,
+    pub lifecycle: AcpInstanceLifecycle,
+    pub activity: AcpInstanceActivity,
+    pub liveness: AcpInstanceLiveness,
+    pub has_error: bool,
+    pub requested_model_id: Option<String>,
+    pub confirmed_model_id: Option<String>,
+    pub model_uncertain: bool,
+    pub started_at_ms: u64,
+    pub last_activity_at_ms: u64,
+}
+
+struct InstanceObservation {
+    owner: AcpInstanceOwner,
+    execution: AcpInstanceExecution,
+    lifecycle: AcpInstanceLifecycle,
+    liveness: AcpInstanceLiveness,
+    has_error: bool,
+    confirmed_model_id: Option<String>,
+    model_uncertain: bool,
+    model_ids: Vec<String>,
+    model_revision: u64,
+    model_change_epoch: u64,
+    active_requests: u32,
+    started_at_ms: u64,
+    last_activity_at_ms: u64,
+}
+
+/// Lives with the request future, so timeouts/cancellation cannot leave a
+/// phantom running turn. No prompt, auth, argv, or environment is retained.
+struct InstanceRequest<'a> {
+    client: &'a AcpClient,
+    initializing: bool,
+    model_change: bool,
+    model_revision: u64,
+    model_change_epoch: u64,
+    request_id: Option<u64>,
+    finished: bool,
+}
+
+impl InstanceRequest<'_> {
+    fn finish(&mut self, result: &Result<Value, String>) {
+        let mut state = self
+            .client
+            .instance
+            .write()
+            .unwrap_or_else(|p| p.into_inner());
+        if state.lifecycle != AcpInstanceLifecycle::Terminating
+            && (!self.model_change || state.model_change_epoch == self.model_change_epoch)
+        {
+            state.has_error = result.is_err();
+        }
+        if result.is_ok() {
+            if self.initializing && state.lifecycle == AcpInstanceLifecycle::Initializing {
+                state.lifecycle = AcpInstanceLifecycle::Ready;
+            }
+            if self.model_change
+                && state.model_change_epoch == self.model_change_epoch
+                && state.model_revision == self.model_revision
+            {
+                let requested = self
+                    .client
+                    .model_override
+                    .read()
+                    .ok()
+                    .and_then(|g| g.clone());
+                state.confirmed_model_id = requested.filter(|id| state.model_ids.contains(id));
+                state.model_uncertain = state.confirmed_model_id.is_none();
+            }
+        }
+        self.finished = true;
+    }
+}
+
+impl Drop for InstanceRequest<'_> {
+    fn drop(&mut self) {
+        if let Some(id) = self.request_id {
+            self.client
+                .pending
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .remove(&id);
+        }
+        let mut state = self
+            .client
+            .instance
+            .write()
+            .unwrap_or_else(|p| p.into_inner());
+        state.active_requests = state.active_requests.saturating_sub(1);
+        state.last_activity_at_ms = instance_now_ms();
+        if !self.finished {
+            if state.lifecycle != AcpInstanceLifecycle::Terminating
+                && (!self.model_change || state.model_change_epoch == self.model_change_epoch)
+            {
+                state.has_error = true;
+            }
+            if self.model_change
+                && state.model_change_epoch == self.model_change_epoch
+                && state.model_revision == self.model_revision
+            {
+                state.confirmed_model_id = None;
+                state.model_uncertain = true;
+            }
+        }
+    }
+}
 
 pub(crate) fn resolve_kryptonctl_path(app: &AppHandle) -> Option<PathBuf> {
     if let Ok(resources) = app.path().resource_dir() {
@@ -307,15 +485,10 @@ pub struct AgentSessionInfo {
     pub current_model_id: Option<String>,
 }
 
-/// Richer result of `apply_session_model` (spec 127): the spawn path needs to
-/// know not just whether the apply failed, but which canonical id was applied so
-/// `acp_session_new` can correct the stale pre-switch `currentModelId` marker.
+/// Non-fatal spawn-time selection result. Confirmed identity lives in the
+/// same observation used by live switches and agent-reported updates.
 struct ModelApplyResult {
     failed: bool,
-    /// The id that was successfully applied AND is an exact advertised id. `None`
-    /// when nothing was applied, the apply failed, or the configured value was a
-    /// non-canonical alias (then we leave the marker unverified rather than guess).
-    applied_model_id: Option<String>,
 }
 
 /// How the session accepts a model selection — decided by what `session/new`
@@ -524,7 +697,11 @@ struct AcpClient {
     #[allow(dead_code)]
     display_name: String,
     transport: Mutex<Option<AcpTransport>>,
-    pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
+    instance: RwLock<InstanceObservation>,
+    process_identity: RwLock<Option<crate::process_metrics::ProcessIdentity>>,
+    remote_observation: RwLock<Option<Arc<crate::remote_harness::RemoteAgentObservation>>>,
+    teardown_complete: tokio::sync::watch::Sender<bool>,
+    pending: std::sync::Mutex<HashMap<u64, oneshot::Sender<Value>>>,
     /// spec 278: requests whose response the reader also announces on the
     /// event stream as a `turn_marker`, in stdout order with session updates.
     turn_markers: Mutex<HashMap<u64, &'static str>>,
@@ -585,6 +762,7 @@ impl AcpClient {
         display_name: String,
         wire: Arc<AcpWire>,
         remote: bool,
+        owner: AcpInstanceOwner,
     ) -> Self {
         let wire_lane = WireLane::new(krypton_session, &display_name, &backend_id, remote);
         Self {
@@ -592,7 +770,33 @@ impl AcpClient {
             backend_id,
             display_name,
             transport: Mutex::new(None),
-            pending: Mutex::new(HashMap::new()),
+            instance: RwLock::new(InstanceObservation {
+                owner,
+                execution: AcpInstanceExecution {
+                    kind: if remote {
+                        AcpExecutionKind::Remote
+                    } else {
+                        AcpExecutionKind::Local
+                    },
+                    runtime_id: None,
+                    host: None,
+                },
+                lifecycle: AcpInstanceLifecycle::Initializing,
+                liveness: AcpInstanceLiveness::Alive,
+                has_error: false,
+                confirmed_model_id: None,
+                model_uncertain: false,
+                model_ids: Vec::new(),
+                model_revision: 0,
+                model_change_epoch: 0,
+                active_requests: 0,
+                started_at_ms: instance_now_ms(),
+                last_activity_at_ms: instance_now_ms(),
+            }),
+            process_identity: RwLock::new(None),
+            remote_observation: RwLock::new(None),
+            teardown_complete: tokio::sync::watch::channel(false).0,
+            pending: std::sync::Mutex::new(HashMap::new()),
             turn_markers: Mutex::new(HashMap::new()),
             perm_pending: Mutex::new(HashMap::new()),
             ask_pending: Mutex::new(HashMap::new()),
@@ -614,6 +818,155 @@ impl AcpClient {
             disposed: std::sync::atomic::AtomicBool::new(false),
             wire,
             wire_lane,
+        }
+    }
+    fn touch(&self) {
+        self.instance
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .last_activity_at_ms = instance_now_ms();
+    }
+
+    fn observe_models(&self, models: &SessionModelState) {
+        let mut state = self.instance.write().unwrap_or_else(|p| p.into_inner());
+        state.confirmed_model_id.clone_from(&models.current);
+        state.model_uncertain = false;
+        state.model_ids = models
+            .available
+            .iter()
+            .map(|model| model.model_id.clone())
+            .collect();
+        state.model_revision += 1;
+        state.last_activity_at_ms = instance_now_ms();
+    }
+
+    fn begin_request<'a>(&'a self, method: &str, params: &Value) -> InstanceRequest<'a> {
+        let initializing = matches!(
+            method,
+            "initialize" | "session/new" | "session/load" | "session/resume"
+        );
+        let model = if method == "session/set_model" {
+            params.get("modelId").and_then(Value::as_str)
+        } else if method == "session/set_config_option" {
+            let is_model = self.model_control.read().ok().is_some_and(|control|
+                matches!(&*control, Some(ModelControl::ConfigOption(id)) if Some(id.as_str()) == params.get("configId").and_then(Value::as_str)));
+            if is_model {
+                params.get("value").and_then(Value::as_str)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if let Some(model) = model {
+            *self
+                .model_override
+                .write()
+                .unwrap_or_else(|p| p.into_inner()) = Some(model.to_string());
+        }
+        let mut state = self.instance.write().unwrap_or_else(|p| p.into_inner());
+        state.active_requests += 1;
+        state.last_activity_at_ms = instance_now_ms();
+        if model.is_some() {
+            state.model_change_epoch += 1;
+        }
+        if initializing && state.lifecycle == AcpInstanceLifecycle::Ready {
+            state.lifecycle = AcpInstanceLifecycle::Initializing;
+        }
+        InstanceRequest {
+            client: self,
+            initializing,
+            model_change: model.is_some(),
+            model_revision: state.model_revision,
+            model_change_epoch: state.model_change_epoch,
+            request_id: None,
+            finished: false,
+        }
+    }
+
+    fn observe_disconnect(&self, confirmed_exit: bool) {
+        let mut state = self.instance.write().unwrap_or_else(|p| p.into_inner());
+        if state.lifecycle != AcpInstanceLifecycle::Terminating {
+            let changed = state.lifecycle != AcpInstanceLifecycle::Disconnected;
+            state.lifecycle = AcpInstanceLifecycle::Disconnected;
+            state.has_error = true;
+            if changed {
+                state.last_activity_at_ms = instance_now_ms();
+            }
+        }
+        if confirmed_exit || state.liveness == AcpInstanceLiveness::Exited {
+            if state.liveness != AcpInstanceLiveness::Exited {
+                state.last_activity_at_ms = instance_now_ms();
+            }
+            state.liveness = AcpInstanceLiveness::Exited;
+        } else {
+            state.liveness = AcpInstanceLiveness::Unknown;
+        }
+    }
+
+    async fn snapshot(&self) -> AcpInstanceSnapshot {
+        // A closed stdout is not proof that the local process ended.
+        if self.child_pid.load(Ordering::Relaxed) != 0 {
+            let mut transport = self.transport.lock().await;
+            if let Some(AcpTransport::Local { child, .. }) = transport.as_mut() {
+                match child.try_wait() {
+                    Ok(Some(_)) => self.observe_disconnect(true),
+                    Ok(None) => {
+                        self.instance
+                            .write()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .liveness = AcpInstanceLiveness::Alive;
+                    }
+                    Err(_) => self.observe_disconnect(false),
+                }
+            }
+        }
+        if self
+            .remote_observation
+            .read()
+            .ok()
+            .is_some_and(|observation| {
+                observation
+                    .as_ref()
+                    .is_some_and(|observation| observation.exited())
+            })
+        {
+            self.observe_disconnect(true);
+        }
+        let waiting = !self.perm_pending.lock().await.is_empty()
+            || !self.ask_pending.lock().await.is_empty()
+            || !self.elicit_pending.lock().await.is_empty()
+            || !self.fs_write_pending.lock().await.is_empty();
+        let state = self.instance.read().unwrap_or_else(|p| p.into_inner());
+        let pid = self.child_pid.load(Ordering::Relaxed);
+        AcpInstanceSnapshot {
+            session: self.krypton_session,
+            backend_id: self.backend_id.clone(),
+            owner: state.owner.clone(),
+            cwd: self
+                .cwd
+                .read()
+                .ok()
+                .and_then(|g| g.clone())
+                .unwrap_or_default(),
+            acp_session_id: self.acp_session_id.read().ok().and_then(|g| g.clone()),
+            execution: state.execution.clone(),
+            pid: (pid != 0).then_some(pid),
+            lifecycle: state.lifecycle,
+            activity: if waiting {
+                AcpInstanceActivity::Waiting
+            } else if state.active_requests > 0 {
+                AcpInstanceActivity::Running
+            } else {
+                AcpInstanceActivity::Idle
+            },
+            liveness: state.liveness,
+            has_error: state.has_error,
+            requested_model_id: self.model_override.read().ok().and_then(|g| g.clone()),
+            confirmed_model_id: state.confirmed_model_id.clone(),
+            model_uncertain: state.model_uncertain,
+            started_at_ms: state.started_at_ms,
+            last_activity_at_ms: state.last_activity_at_ms,
         }
     }
 
@@ -647,9 +1000,11 @@ impl AcpClient {
     }
 
     async fn request_with_id(&self, id: u64, method: &str, params: Value) -> Result<Value, String> {
+        let mut observation = self.begin_request(method, &params);
+        observation.request_id = Some(id);
         let (tx, rx) = oneshot::channel();
         {
-            let mut pending = self.pending.lock().await;
+            let mut pending = self.pending.lock().unwrap_or_else(|p| p.into_inner());
             pending.insert(id, tx);
         }
         let payload = json!({
@@ -658,26 +1013,36 @@ impl AcpClient {
             "method": method,
             "params": params,
         });
-        self.write_line(&payload).await?;
-        match rx.await {
-            Ok(v) => {
-                if let Some(err) = v.get("error") {
-                    Err(format!("{method} failed: {err}"))
-                } else {
-                    Ok(v.get("result").cloned().unwrap_or(Value::Null))
-                }
+        let result = match self.write_line(&payload).await {
+            Err(error) => {
+                self.pending
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .remove(&id);
+                Err(error)
             }
-            Err(_) => {
-                // The oneshot was dropped without a reply — almost always
-                // `finalize_disconnect` clearing `pending` after the subprocess
-                // went away. Surface the captured cause if it set one.
-                let detail = self.disconnect_reason.read().ok().and_then(|g| g.clone());
-                match detail {
-                    Some(reason) => Err(format!("{method}: {reason}")),
-                    None => Err(format!("{method}: subprocess closed before reply")),
+            Ok(()) => match rx.await {
+                Ok(v) => {
+                    if let Some(err) = v.get("error") {
+                        Err(format!("{method} failed: {err}"))
+                    } else {
+                        Ok(v.get("result").cloned().unwrap_or(Value::Null))
+                    }
                 }
-            }
-        }
+                Err(_) => {
+                    // The oneshot was dropped without a reply — almost always
+                    // `finalize_disconnect` clearing `pending` after the subprocess
+                    // went away. Surface the captured cause if it set one.
+                    let detail = self.disconnect_reason.read().ok().and_then(|g| g.clone());
+                    match detail {
+                        Some(reason) => Err(format!("{method}: {reason}")),
+                        None => Err(format!("{method}: subprocess closed before reply")),
+                    }
+                }
+            },
+        };
+        observation.finish(&result);
+        result
     }
 
     /// Send a JSON-RPC notification (no id, no response).
@@ -692,6 +1057,7 @@ impl AcpClient {
 
     async fn write_line(&self, value: &Value) -> Result<(), String> {
         let mut text = serde_json::to_string(value).map_err(|e| format!("serialize: {e}"))?;
+        self.touch();
         let mut guard = self.transport.lock().await;
         let transport = guard
             .as_mut()
@@ -787,10 +1153,15 @@ async fn run_remote_reader(
                 client.append_stderr(&format!("{line}\n")).await;
             }
             RemoteAgentEvent::Exit(code) => {
+                client.observe_disconnect(true);
                 log::info!(
                     "[acp:{}] remote adapter exited code={code:?}",
                     client.krypton_session
                 );
+                break;
+            }
+            RemoteAgentEvent::Disconnected => {
+                client.observe_disconnect(false);
                 break;
             }
         }
@@ -848,7 +1219,7 @@ async fn dispatch_message(client: &Arc<AcpClient>, app: &AppHandle, value: Value
         if let Some(kind) = marker {
             client.emit_event(app, turn_marker_event(kind, id, &value));
         }
-        let mut pending = client.pending.lock().await;
+        let mut pending = client.pending.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(tx) = pending.remove(&id) {
             let _ = tx.send(value);
         } else {
@@ -1327,6 +1698,9 @@ async fn handle_inbound_request(
     method: String,
     params: Value,
 ) {
+    let mut observation = client.begin_request(&method, &params);
+    // Inbound work contributes activity; individual handlers own their errors.
+    observation.finished = true;
     match method.as_str() {
         "fs/read_text_file" => {
             let path = params
@@ -1438,6 +1812,7 @@ async fn handle_inbound_request(
                     },
                 );
             }
+            client.touch();
             client.emit_event(
                 &app,
                 json!({
@@ -1562,6 +1937,7 @@ async fn handle_inbound_request(
                 }
                 pending.insert(request_id, tx);
             }
+            client.touch();
             log::info!(
                 "[acp:{}] Grok ask_user_question: parking {} question(s) (toolCallId={tool_call_id})",
                 client.krypton_session,
@@ -1609,6 +1985,7 @@ async fn handle_inbound_request(
             let request_id = client.elicit_seq.fetch_add(1, Ordering::Relaxed);
             let (tx, rx) = oneshot::channel();
             client.elicit_pending.lock().await.insert(request_id, tx);
+            client.touch();
             client.emit_event(
                 &app,
                 json!({
@@ -1633,6 +2010,7 @@ async fn handle_inbound_request(
                 let mut perm = client.perm_pending.lock().await;
                 perm.insert(request_id, tx);
             }
+            client.touch();
             client.emit_event(
                 &app,
                 json!({
@@ -1670,6 +2048,7 @@ async fn handle_inbound_request(
 }
 
 fn handle_notification(client: &Arc<AcpClient>, app: &AppHandle, method: &str, params: Value) {
+    client.touch();
     match method {
         "session/update" => {
             let update_kind = params
@@ -1678,6 +2057,19 @@ fn handle_notification(client: &Arc<AcpClient>, app: &AppHandle, method: &str, p
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             let update = params.get("update").cloned().unwrap_or(Value::Null);
+            if update_kind == "current_model_update" {
+                if let Some(model) = update.get("currentModelId").and_then(Value::as_str) {
+                    let mut state = client.instance.write().unwrap_or_else(|p| p.into_inner());
+                    state.confirmed_model_id = Some(model.to_string());
+                    state.model_revision += 1;
+                    state.model_uncertain = false;
+                }
+            } else if update_kind == "config_option_update" {
+                let models = parse_session_model_state(&update);
+                if models.control.is_some() {
+                    client.observe_models(&models);
+                }
+            }
             match update_kind {
                 "agent_message_chunk"
                 | "user_message_chunk"
@@ -1716,6 +2108,7 @@ fn handle_notification(client: &Arc<AcpClient>, app: &AppHandle, method: &str, p
 }
 
 async fn finalize_disconnect(client: &Arc<AcpClient>, app: &AppHandle) {
+    client.observe_disconnect(false);
     app.state::<Arc<crate::connected_computers::ConnectedComputerManager>>()
         .revoke_session(client.krypton_session);
     // Capture *why* the subprocess went away before waking the in-flight
@@ -1729,7 +2122,7 @@ async fn finalize_disconnect(client: &Arc<AcpClient>, app: &AppHandle) {
     }
     // Cancel all pending request oneshots.
     {
-        let mut pending = client.pending.lock().await;
+        let mut pending = client.pending.lock().unwrap_or_else(|p| p.into_inner());
         pending.clear();
     }
     {
@@ -1786,16 +2179,27 @@ where
 
 // ─── Registry ──────────────────────────────────────────────────────
 
+struct UnresolvedRemoteInstance {
+    snapshot: AcpInstanceSnapshot,
+    observation: Arc<crate::remote_harness::RemoteAgentObservation>,
+}
+
+#[derive(Default)]
+struct RegistryEntries {
+    clients: HashMap<u64, Arc<AcpClient>>,
+    unresolved: HashMap<u64, UnresolvedRemoteInstance>,
+}
+
 pub struct AcpRegistry {
     next_session: AtomicU64,
-    clients: RwLock<HashMap<u64, Arc<AcpClient>>>,
+    entries: RwLock<RegistryEntries>,
 }
 
 impl AcpRegistry {
     pub fn new() -> Self {
         Self {
             next_session: AtomicU64::new(1),
-            clients: RwLock::new(HashMap::new()),
+            entries: RwLock::new(RegistryEntries::default()),
         }
     }
 
@@ -1804,45 +2208,120 @@ impl AcpRegistry {
     }
 
     fn get(&self, session: u64) -> Option<Arc<AcpClient>> {
-        self.clients.read().ok()?.get(&session).cloned()
+        self.entries.read().ok()?.clients.get(&session).cloned()
+    }
+    fn set_owner(&self, session: u64, owner: AcpInstanceOwner) -> Result<(), String> {
+        let client = self
+            .get(session)
+            .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+        client.instance.write().map_err(|e| e.to_string())?.owner = owner;
+        Ok(())
     }
 
     fn insert(&self, session: u64, client: Arc<AcpClient>) {
-        if let Ok(mut map) = self.clients.write() {
-            map.insert(session, client);
+        {
+            let mut state = client.instance.write().unwrap_or_else(|p| p.into_inner());
+            state.started_at_ms = instance_now_ms();
+            state.last_activity_at_ms = state.started_at_ms;
+        }
+        if let Ok(mut entries) = self.entries.write() {
+            entries.clients.insert(session, client);
         }
     }
 
-    fn remove(&self, session: u64) -> Option<Arc<AcpClient>> {
-        self.clients.write().ok()?.remove(&session)
+    fn snapshot_clients(&self) -> Vec<Arc<AcpClient>> {
+        self.entries
+            .read()
+            .map(|entries| entries.clients.values().cloned().collect())
+            .unwrap_or_default()
     }
 
-    /// Snapshot of (session, child_pid) pairs for live lanes with a known PID.
-    /// Used by the metrics sampler — does not hold the registry lock across
-    /// sysinfo work.
-    fn snapshot_pids(&self) -> Vec<(u64, u32)> {
-        let Ok(map) = self.clients.read() else {
+    fn snapshot_pids(&self) -> Vec<(u64, crate::process_metrics::ProcessIdentity)> {
+        let Ok(entries) = self.entries.read() else {
             return Vec::new();
         };
-        map.iter()
-            .filter_map(|(session, client)| {
-                let pid = client.child_pid.load(Ordering::Relaxed);
-                if pid == 0 {
-                    None
-                } else {
-                    Some((*session, pid))
-                }
+        entries
+            .clients
+            .values()
+            .filter_map(|client| {
+                let identity = *client.process_identity.read().ok()?;
+                identity.map(|identity| (client.krypton_session, identity))
             })
             .collect()
     }
 
-    /// Drain all sessions and return them. Used on app shutdown to ensure
-    /// every spawned adapter (and its MCP grandchildren via process-group
-    /// signal) is torn down rather than reparented to launchd.
-    fn drain(&self) -> Vec<(u64, Arc<AcpClient>)> {
-        match self.clients.write() {
-            Ok(mut map) => map.drain().collect(),
-            Err(_) => Vec::new(),
+    async fn list_instances(&self) -> Result<Vec<AcpInstanceSnapshot>, String> {
+        // Capture both collections atomically. No registry lock survives an
+        // await, process observation, or copying per-client metadata.
+        let (clients, mut snapshots) = {
+            let mut entries = self.entries.write().map_err(|e| e.to_string())?;
+            entries
+                .unresolved
+                .retain(|_, entry| !entry.observation.exited());
+            (
+                entries.clients.values().cloned().collect::<Vec<_>>(),
+                entries
+                    .unresolved
+                    .values()
+                    .map(|entry| entry.snapshot.clone())
+                    .collect::<Vec<_>>(),
+            )
+        };
+        snapshots.reserve(clients.len());
+        for client in clients {
+            snapshots.push(client.snapshot().await);
+        }
+        snapshots.sort_unstable_by_key(|snapshot| snapshot.session);
+        Ok(snapshots)
+    }
+
+    async fn dispose(self: &Arc<Self>, session: u64) {
+        let Some(client) = self.get(session) else {
+            return;
+        };
+        let mut completion = client.teardown_complete.subscribe();
+        if !client.disposed.swap(true, Ordering::AcqRel) {
+            {
+                let mut state = client.instance.write().unwrap_or_else(|p| p.into_inner());
+                state.lifecycle = AcpInstanceLifecycle::Terminating;
+                state.last_activity_at_ms = instance_now_ms();
+            }
+            // Tauri callers may disappear while teardown awaits the adapter.
+            // The single detached owner still finishes and retires the epoch.
+            let registry = self.clone();
+            let owner = client.clone();
+            tokio::spawn(async move {
+                dispose_client(&owner).await;
+                registry.retire(&owner).await;
+                owner.teardown_complete.send_replace(true);
+            });
+        }
+        let _ = completion.wait_for(|finished| *finished).await;
+    }
+
+    async fn retire(&self, client: &AcpClient) {
+        let session = client.krypton_session;
+        let mut snapshot = client.snapshot().await;
+        let observation = client
+            .remote_observation
+            .read()
+            .ok()
+            .and_then(|g| g.clone());
+        let mut entries = self.entries.write().unwrap_or_else(|p| p.into_inner());
+        if entries.clients.remove(&session).is_none() {
+            return; // Another disposer already retired this exact epoch.
+        }
+        if let Some(observation) = observation.filter(|observation| !observation.exited()) {
+            snapshot.lifecycle = AcpInstanceLifecycle::Disconnected;
+            snapshot.liveness = AcpInstanceLiveness::Unknown;
+            snapshot.activity = AcpInstanceActivity::Idle;
+            entries.unresolved.insert(
+                session,
+                UnresolvedRemoteInstance {
+                    snapshot,
+                    observation,
+                },
+            );
         }
     }
 }
@@ -1851,6 +2330,21 @@ impl Default for AcpRegistry {
     fn default() -> Self {
         Self::new()
     }
+}
+#[tauri::command]
+pub async fn acp_list_instances(
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<Vec<AcpInstanceSnapshot>, String> {
+    registry.list_instances().await
+}
+
+#[tauri::command]
+pub fn acp_set_instance_owner(
+    session: u64,
+    owner: AcpInstanceOwner,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<(), String> {
+    registry.set_owner(session, owner)
 }
 
 // ─── Tauri commands ────────────────────────────────────────────────
@@ -1874,6 +2368,7 @@ pub fn acp_list_backends() -> Result<Vec<AcpBackendDescriptor>, String> {
 pub async fn acp_spawn(
     backend_id: String,
     cwd: Option<String>,
+    owner: AcpInstanceOwner,
     mcp_servers: Option<Vec<Value>>,
     junie_mcp_location: Option<String>,
     cline_mcp_settings_path: Option<String>,
@@ -1945,9 +2440,14 @@ pub async fn acp_spawn(
         display_name,
         wire.inner().clone(),
         remote,
+        owner,
     ));
     if let Ok(mut g) = client.cwd.write() {
-        *g = cwd.clone();
+        *g = cwd.clone().or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .map(|path| path.to_string_lossy().into_owned())
+        });
     }
     if let Ok(mut g) = client.mcp_servers.write() {
         *g = mcp_servers.unwrap_or_default();
@@ -1960,6 +2460,11 @@ pub async fn acp_spawn(
         let runtime = remote_registry
             .get(&runtime_id)
             .ok_or_else(|| format!("Unknown remote Harness: {runtime_id}"))?;
+        {
+            let mut state = client.instance.write().unwrap_or_else(|p| p.into_inner());
+            state.execution.runtime_id = Some(runtime.runtime_id().to_string());
+            state.execution.host = Some(runtime.host().to_string());
+        }
         let remote_cwd = cwd
             .clone()
             .ok_or_else(|| "remote ACP spawn requires a working directory".to_string())?;
@@ -1989,6 +2494,10 @@ pub async fn acp_spawn(
             *workspace = Some(runtime);
         }
         let crate::remote_harness::RemoteAgentHandle { transport, events } = handle;
+        *client
+            .remote_observation
+            .write()
+            .unwrap_or_else(|p| p.into_inner()) = Some(transport.observation());
         *client.transport.lock().await = Some(AcpTransport::Remote(transport));
         registry.insert(session, client.clone());
         tokio::spawn(run_remote_reader(client, app, events));
@@ -2039,6 +2548,11 @@ pub async fn acp_spawn(
             .ok_or_else(|| "child stderr missing".to_string())?;
         if let Some(pid) = child.id() {
             client.child_pid.store(pid, Ordering::Relaxed);
+            *client
+                .process_identity
+                .write()
+                .unwrap_or_else(|p| p.into_inner()) =
+                crate::process_metrics::ProcessIdentity::capture(pid);
         }
         *client.transport.lock().await = Some(AcpTransport::Local { stdin, child });
         if let Some(ref capability) = computer_capability {
@@ -2224,13 +2738,21 @@ pub async fn acp_session_new(
     let acp_session_id = new_session
         .get("sessionId")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| "session/new: missing sessionId".to_string())?
+        .ok_or_else(|| {
+            client
+                .instance
+                .write()
+                .unwrap_or_else(|p| p.into_inner())
+                .has_error = true;
+            "session/new: missing sessionId".to_string()
+        })?
         .to_string();
     set_client_session_id(&client, &acp_session_id);
 
     // Surface the agent-advertised model list to the frontend (spec 127) and
     // remember how this session switches models.
     let model_state = parse_session_model_state(&new_session);
+    client.observe_models(&model_state);
     set_client_model_control(&client, model_state.control.clone());
 
     // Apply the configured model AFTER session/new (never as a session/new field),
@@ -2238,9 +2760,13 @@ pub async fn acp_session_new(
     // prompt. Non-fatal: a rejected or unavailable model leaves the agent default.
     let apply = apply_session_model(&client, &acp_session_id, &model_state).await;
 
-    // `currentModelId` from session/new is captured BEFORE the spawn-time apply, so
-    // prefer the applied canonical id when we have one (spec 127, Codex-1 #1).
-    let current_model_id = apply.applied_model_id.or(model_state.current);
+    // Do not restore the pre-switch default after an alias or timed-out change.
+    let current_model_id = client
+        .instance
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .confirmed_model_id
+        .clone();
 
     Ok(AgentSessionInfo {
         session_id: acp_session_id,
@@ -2281,7 +2807,6 @@ async fn acp_session_restore(
     method: &str,
     session_id: String,
 ) -> Result<AgentSessionInfo, String> {
-    set_client_session_id(&client, &session_id);
     let session_cwd = client_session_cwd(&client);
     let mcp_servers = client_mcp_servers(&client);
     let response = request_with_auth_retry(
@@ -2295,12 +2820,14 @@ async fn acp_session_restore(
         None,
     )
     .await?;
+    set_client_session_id(&client, &session_id);
     // Resumed/loaded sessions keep whatever model they were saved with — v1 does
     // not force them to the current config, so no apply is attempted here. But we
     // DO surface any advertised model list/current id so the picker works on
     // restored lanes too (spec 127, Codex-1 #2). When the backend advertises no
     // model state, available_models is empty and the picker stays disabled.
     let model_state = parse_session_model_state(&response);
+    client.observe_models(&model_state);
     set_client_model_control(&client, model_state.control);
     Ok(AgentSessionInfo {
         session_id,
@@ -2430,10 +2957,7 @@ async fn apply_session_model(
     acp_session_id: &str,
     state: &SessionModelState,
 ) -> ModelApplyResult {
-    let no_op = ModelApplyResult {
-        failed: false,
-        applied_model_id: None,
-    };
+    let no_op = ModelApplyResult { failed: false };
     let Some(control) = &state.control else {
         return no_op; // no advertised model state — nothing to switch
     };
@@ -2445,40 +2969,20 @@ async fn apply_session_model(
     let (method, params) = control.request(acp_session_id, &model);
     let res = tokio::time::timeout(Duration::from_secs(10), client.request(method, params)).await;
     match res {
-        Ok(Ok(_)) => {
-            // Spec 127: only report a confirmed current id when the configured
-            // value is an EXACT advertised id (canonical). Aliases resolve
-            // adapter-side to an id we can't know here, so leave it unverified
-            // rather than asserting the pre-switch default or a guess.
-            let applied_model_id = state
-                .available
-                .iter()
-                .any(|m| m.model_id == model)
-                .then(|| model.clone());
-            ModelApplyResult {
-                failed: false,
-                applied_model_id,
-            }
-        }
+        Ok(Ok(_)) => ModelApplyResult { failed: false },
         Ok(Err(e)) => {
             log::warn!(
                 "{method} modelId={model} failed for backend {}: {e}",
                 client.backend_id
             );
-            ModelApplyResult {
-                failed: true,
-                applied_model_id: None,
-            }
+            ModelApplyResult { failed: true }
         }
         Err(_) => {
             log::warn!(
                 "{method} modelId={model} timed out for backend {}",
                 client.backend_id
             );
-            ModelApplyResult {
-                failed: true,
-                applied_model_id: None,
-            }
+            ModelApplyResult { failed: true }
         }
     }
 }
@@ -2657,20 +3161,19 @@ pub async fn acp_dispose(
     connected_computers: State<'_, Arc<crate::connected_computers::ConnectedComputerManager>>,
 ) -> Result<(), String> {
     connected_computers.revoke_session(session);
-    let Some(client) = registry.remove(session) else {
-        return Ok(());
-    };
-    dispose_client(&client).await;
+    registry.dispose(session).await;
     Ok(())
 }
 
-/// Drain every registered session and tear each one down. Used on app exit
-/// so adapters (and their MCP grandchildren via the process-group signal)
-/// don't get reparented to launchd.
-pub async fn dispose_all(registry: &AcpRegistry) {
-    let drained = registry.drain();
-    for (_session, client) in drained {
-        dispose_client(&client).await;
+/// Tear down every registered transport without hiding stopping instances.
+pub async fn dispose_all(registry: &Arc<AcpRegistry>) {
+    let sessions: Vec<u64> = registry
+        .snapshot_clients()
+        .iter()
+        .map(|client| client.krypton_session)
+        .collect();
+    for session in sessions {
+        registry.dispose(session).await;
     }
 }
 
@@ -2678,13 +3181,26 @@ pub async fn dispose_all(registry: &AcpRegistry) {
 /// grandchildren) with SIGTERM, then SIGKILL on timeout. Used by both the
 /// per-session `acp_dispose` command and the app-shutdown drain.
 async fn dispose_client(client: &AcpClient) {
-    client.disposed.store(true, Ordering::Relaxed);
-    client.child_pid.store(0, Ordering::Relaxed);
+    client
+        .pending
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clear();
+    client.turn_markers.lock().await.clear();
+    client.perm_pending.lock().await.clear();
+    client.ask_pending.lock().await.clear();
+    client.elicit_pending.lock().await.clear();
+    client.fs_write_pending.lock().await.clear();
     client.wire.forget_session(client.krypton_session);
     let transport = client.transport.lock().await.take();
     match transport {
         Some(AcpTransport::Remote(remote)) => {
-            let _ = remote.terminate().await;
+            let observation = remote.observation();
+            if remote.terminate().await.is_ok() {
+                let _ =
+                    tokio::time::timeout(Duration::from_secs(2), observation.wait_for_exit()).await;
+            }
+            client.observe_disconnect(observation.exited());
         }
         Some(AcpTransport::Local { stdin, mut child }) => {
             drop(stdin);
@@ -2699,7 +3215,7 @@ async fn dispose_client(client: &AcpClient) {
                 }
             }
             let wait_result = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
-            if wait_result.is_err() {
+            if !matches!(wait_result, Ok(Ok(_))) {
                 #[cfg(unix)]
                 {
                     if let Some(pid) = child.id() {
@@ -2711,9 +3227,19 @@ async fn dispose_client(client: &AcpClient) {
                 let _ = child.start_kill();
                 let _ = child.wait().await;
             }
+            client.observe_disconnect(matches!(child.try_wait(), Ok(Some(_))));
         }
         None => {}
     }
+    client.child_pid.store(0, Ordering::Relaxed);
+    *client
+        .process_identity
+        .write()
+        .unwrap_or_else(|p| p.into_inner()) = None;
+    *client
+        .remote_workspace
+        .write()
+        .unwrap_or_else(|p| p.into_inner()) = None;
 }
 
 // ─── Lane resource metrics ─────────────────────────────────────────
@@ -2723,6 +3249,7 @@ pub struct AcpLaneMetrics {
     pub session: u64,
     pub root_pid: u32,
     pub root_alive: bool,
+    pub cpu_ready: bool,
     pub total_cpu_percent: f64,
     pub total_rss_mb: f64,
     pub proc_count: u32,
@@ -2738,7 +3265,7 @@ pub fn acp_get_lane_metrics(
     if pairs.is_empty() {
         return Ok(Vec::new());
     }
-    let roots: Vec<u32> = pairs.iter().map(|(_, pid)| *pid).collect();
+    let roots: Vec<_> = pairs.iter().map(|(_, identity)| *identity).collect();
     let trees = sampler.collect(&roots);
     Ok(pairs
         .into_iter()
@@ -2747,6 +3274,7 @@ pub fn acp_get_lane_metrics(
             session,
             root_pid: t.root_pid,
             root_alive: t.root_alive,
+            cpu_ready: t.cpu_ready,
             total_cpu_percent: t.total_cpu_percent,
             total_rss_mb: t.total_rss_mb,
             proc_count: t.proc_count,
@@ -4377,5 +4905,364 @@ mod tests {
             "oauth-personal"
         ));
         assert!(!advertises_auth_method(&[], "oauth-personal"));
+    }
+}
+
+#[cfg(test)]
+mod instance_tests {
+    use super::*;
+
+    fn owner(role: AcpInstanceRole, label: &str) -> AcpInstanceOwner {
+        AcpInstanceOwner {
+            role,
+            label: label.to_string(),
+            harness_id: Some(format!("harness-{label}")),
+            lane_id: None,
+        }
+    }
+
+    fn client(registry: &AcpRegistry, role: AcpInstanceRole, remote: bool) -> Arc<AcpClient> {
+        Arc::new(AcpClient::new(
+            registry.allocate_session(),
+            "fixture".to_string(),
+            "Fixture".to_string(),
+            Arc::new(AcpWire::new()),
+            remote,
+            owner(role, "fixture"),
+        ))
+    }
+
+    #[cfg(unix)]
+    async fn local(registry: &AcpRegistry, role: AcpInstanceRole, script: &str) -> Arc<AcpClient> {
+        let client = client(registry, role, false);
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", script])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        // The fixture announces readiness after installing any signal handler.
+        let mut stdout = BufReader::new(child.stdout.take().unwrap());
+        let mut ready = String::new();
+        stdout.read_line(&mut ready).await.unwrap();
+        assert_eq!(ready, "ready\n");
+        let pid = child.id().unwrap();
+        client.child_pid.store(pid, Ordering::Relaxed);
+        *client.process_identity.write().unwrap() =
+            crate::process_metrics::ProcessIdentity::capture(pid);
+        *client.cwd.write().unwrap() = Some("/fixture/project".to_string());
+        let stdin = child.stdin.take().unwrap();
+        *client.transport.lock().await = Some(AcpTransport::Local { stdin, child });
+        registry.insert(client.krypton_session, client.clone());
+        client
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn inventory_counts_real_transports_and_promotes_probe_without_respawn() {
+        let registry = Arc::new(AcpRegistry::new());
+        let unstarted = client(&registry, AcpInstanceRole::Assist, false);
+        assert!(registry.list_instances().await.unwrap().is_empty());
+        drop(unstarted);
+        let mut clients = Vec::new();
+        for role in [
+            AcpInstanceRole::HarnessLane,
+            AcpInstanceRole::SessionProbe,
+            AcpInstanceRole::Assist,
+            AcpInstanceRole::RailsJudge,
+            AcpInstanceRole::InlineAi,
+        ] {
+            clients.push(local(&registry, role, "printf 'ready\\n'; cat >/dev/null").await);
+        }
+        let before = registry.list_instances().await.unwrap();
+        assert_eq!(before.len(), 5);
+        let probe = &clients[1];
+        let pid = probe.child_pid.load(Ordering::Relaxed);
+        let mut promoted = owner(AcpInstanceRole::HarnessLane, "another-project");
+        promoted.lane_id = Some("lane-promoted".to_string());
+        registry
+            .set_owner(probe.krypton_session, promoted.clone())
+            .unwrap();
+        set_client_session_id(probe, "conversation-one");
+        set_client_session_id(probe, "conversation-two");
+        let after = registry.list_instances().await.unwrap();
+        assert_eq!(after.len(), 5);
+        let row = after
+            .iter()
+            .find(|row| row.session == probe.krypton_session)
+            .unwrap();
+        assert_eq!(row.owner, promoted);
+        assert_eq!(row.pid, Some(pid));
+        assert_eq!(row.acp_session_id.as_deref(), Some("conversation-two"));
+        assert!(registry.set_owner(u64::MAX, promoted).is_err());
+        dispose_all(&registry).await;
+        assert!(registry.list_instances().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn inventory_request_and_all_human_wait_maps_drive_distinct_activity() {
+        let registry = AcpRegistry::new();
+        let client = client(&registry, AcpInstanceRole::Assist, false);
+        let mut initialize = client.begin_request("initialize", &json!({}));
+        assert_eq!(
+            client.snapshot().await.lifecycle,
+            AcpInstanceLifecycle::Initializing
+        );
+        assert_eq!(
+            client.snapshot().await.activity,
+            AcpInstanceActivity::Running
+        );
+        initialize.finish(&Ok(json!({})));
+        drop(initialize);
+        assert_eq!(
+            client.snapshot().await.lifecycle,
+            AcpInstanceLifecycle::Ready
+        );
+        let mut prompt = client.begin_request("session/prompt", &json!({}));
+        let (permission, _) = oneshot::channel();
+        client.perm_pending.lock().await.insert(1, permission);
+        assert_eq!(
+            client.snapshot().await.activity,
+            AcpInstanceActivity::Waiting
+        );
+        client.perm_pending.lock().await.clear();
+        assert_eq!(
+            client.snapshot().await.activity,
+            AcpInstanceActivity::Running
+        );
+        let (question, _) = oneshot::channel();
+        client.ask_pending.lock().await.insert(2, question);
+        assert_eq!(
+            client.snapshot().await.activity,
+            AcpInstanceActivity::Waiting
+        );
+        client.ask_pending.lock().await.clear();
+        let (elicitation, _) = oneshot::channel();
+        client.elicit_pending.lock().await.insert(3, elicitation);
+        assert_eq!(
+            client.snapshot().await.activity,
+            AcpInstanceActivity::Waiting
+        );
+        client.elicit_pending.lock().await.clear();
+        let (reply, _) = oneshot::channel();
+        client.fs_write_pending.lock().await.insert(
+            4,
+            FsWriteCtx {
+                reply,
+                path: "/fixture/file".to_string(),
+                new_content: "private".to_string(),
+            },
+        );
+        assert_eq!(
+            client.snapshot().await.activity,
+            AcpInstanceActivity::Waiting
+        );
+        client.fs_write_pending.lock().await.clear();
+        prompt.finish(&Ok(json!({ "stopReason": "cancelled" })));
+        drop(prompt);
+        let idle = client.snapshot().await;
+        assert_eq!(idle.activity, AcpInstanceActivity::Idle);
+        assert_eq!(idle.lifecycle, AcpInstanceLifecycle::Ready);
+        assert!(!idle.has_error);
+        let mut failed = client.begin_request("session/load", &json!({}));
+        failed.finish(&Err("restore rejected".to_string()));
+        drop(failed);
+        let error = client.snapshot().await;
+        assert_eq!(error.lifecycle, AcpInstanceLifecycle::Initializing);
+        assert_eq!(error.activity, AcpInstanceActivity::Idle);
+        assert!(error.has_error);
+    }
+
+    #[tokio::test]
+    async fn inventory_model_alias_timeout_and_reported_confirmation_stay_distinct() {
+        let registry = AcpRegistry::new();
+        let client = client(&registry, AcpInstanceRole::HarnessLane, false);
+        let models = parse_session_model_state(&json!({ "models": {
+            "currentModelId": "old", "availableModels": [
+                { "modelId": "old", "name": "Old" },
+                { "modelId": "canonical", "name": "Canonical" },
+            ],
+        }}));
+        client.observe_models(&models);
+        let mut canonical =
+            client.begin_request("session/set_model", &json!({ "modelId": "canonical" }));
+        canonical.finish(&Ok(json!({})));
+        drop(canonical);
+        assert_eq!(
+            client.snapshot().await.confirmed_model_id.as_deref(),
+            Some("canonical")
+        );
+        let mut alias = client.begin_request("session/set_model", &json!({ "modelId": "alias" }));
+        alias.finish(&Ok(json!({})));
+        drop(alias);
+        let uncertain = client.snapshot().await;
+        assert_eq!(uncertain.requested_model_id.as_deref(), Some("alias"));
+        assert!(uncertain.confirmed_model_id.is_none());
+        assert!(uncertain.model_uncertain);
+        let timed_out =
+            client.begin_request("session/set_model", &json!({ "modelId": "canonical" }));
+        drop(timed_out);
+        assert!(client.snapshot().await.model_uncertain);
+        client.observe_models(&models);
+        assert!(!client.snapshot().await.model_uncertain);
+        let mut alias = client.begin_request("session/set_model", &json!({ "modelId": "alias" }));
+        client.observe_models(&models); // Agent report wins over a requested alias.
+        alias.finish(&Ok(json!({})));
+        drop(alias);
+        assert_eq!(
+            client.snapshot().await.confirmed_model_id.as_deref(),
+            Some("old")
+        );
+        let mut failed = client.begin_request("session/set_model", &json!({ "modelId": "bad" }));
+        failed.finish(&Err("unsupported model".to_string()));
+        drop(failed);
+        let rejected = client.snapshot().await;
+        assert_eq!(rejected.confirmed_model_id.as_deref(), Some("old"));
+        assert!(!rejected.model_uncertain);
+        assert!(rejected.has_error);
+    }
+
+    #[tokio::test]
+    async fn inventory_older_model_reply_cannot_confirm_newer_request() {
+        let registry = AcpRegistry::new();
+        let client = client(&registry, AcpInstanceRole::HarnessLane, false);
+        client.observe_models(&parse_session_model_state(&json!({ "models": {
+            "currentModelId": "one",
+            "availableModels": [{ "modelId": "one", "name": "One" }, { "modelId": "two", "name": "Two" }],
+        }})));
+        let mut older = client.begin_request("session/set_model", &json!({ "modelId": "one" }));
+        let newer = client.begin_request("session/set_model", &json!({ "modelId": "two" }));
+        drop(newer); // Newer request timed out; an older success cannot settle it.
+        older.finish(&Ok(json!({})));
+        drop(older);
+        let row = client.snapshot().await;
+        assert_eq!(row.requested_model_id.as_deref(), Some("two"));
+        assert!(row.confirmed_model_id.is_none());
+        assert!(row.model_uncertain);
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn inventory_stdout_disconnect_does_not_invent_local_process_exit() {
+        let registry = Arc::new(AcpRegistry::new());
+        let client = local(
+            &registry,
+            AcpInstanceRole::InlineAi,
+            "printf 'ready\\n'; exec 1>&-; cat >/dev/null",
+        )
+        .await;
+        client.observe_disconnect(false);
+        let row = client.snapshot().await;
+        assert_eq!(row.lifecycle, AcpInstanceLifecycle::Disconnected);
+        assert_eq!(row.liveness, AcpInstanceLiveness::Alive);
+        registry.dispose(client.krypton_session).await;
+        assert!(registry.list_instances().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn inventory_concurrent_disposal_keeps_stopping_row_and_survives_caller_abort() {
+        let registry = Arc::new(AcpRegistry::new());
+        let client = local(
+            &registry,
+            AcpInstanceRole::HarnessLane,
+            "trap 'sleep 0.15; exit 0' TERM; printf 'ready\\n'; while :; do sleep 1; done",
+        )
+        .await;
+        let session = client.krypton_session;
+        let first_registry = registry.clone();
+        let first = tokio::spawn(async move { first_registry.dispose(session).await });
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !client.disposed.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let stopping = registry.list_instances().await.unwrap();
+        assert_eq!(stopping.len(), 1);
+        assert_eq!(stopping[0].lifecycle, AcpInstanceLifecycle::Terminating);
+        assert!(stopping[0].pid.is_some());
+        first.abort();
+        let _ = first.await;
+        tokio::join!(registry.dispose(session), registry.dispose(session));
+        assert!(registry.list_instances().await.unwrap().is_empty());
+        assert!(*client.teardown_complete.borrow());
+        registry.dispose(session).await;
+    }
+
+    #[tokio::test]
+    async fn inventory_retains_unknown_remote_epoch_across_disposal_and_reconnect() {
+        let registry = Arc::new(AcpRegistry::new());
+        let old = client(&registry, AcpInstanceRole::SessionProbe, true);
+        let observation = Arc::new(crate::remote_harness::RemoteAgentObservation::default());
+        *old.remote_observation.write().unwrap() = Some(observation.clone());
+        {
+            let mut state = old.instance.write().unwrap();
+            state.execution.runtime_id = Some("runtime-old".to_string());
+            state.execution.host = Some("remote.example".to_string());
+        }
+        registry.insert(old.krypton_session, old.clone());
+        old.observe_disconnect(false);
+        registry.dispose(old.krypton_session).await;
+        let retained = registry.list_instances().await.unwrap();
+        assert_eq!(retained.len(), 1);
+        assert_eq!(retained[0].liveness, AcpInstanceLiveness::Unknown);
+        assert_eq!(
+            retained[0].execution.runtime_id.as_deref(),
+            Some("runtime-old")
+        );
+        assert_eq!(
+            retained[0].execution.host.as_deref(),
+            Some("remote.example")
+        );
+        assert!(retained[0].pid.is_none());
+        assert!(registry.snapshot_pids().is_empty());
+        let replacement = client(&registry, AcpInstanceRole::HarnessLane, true);
+        registry.insert(replacement.krypton_session, replacement.clone());
+        let reconnected = registry.list_instances().await.unwrap();
+        assert_eq!(reconnected.len(), 2);
+        assert_ne!(reconnected[0].session, reconnected[1].session);
+        observation.observe(&RemoteAgentEvent::Exit(None)); // Signal exits are still confirmed.
+        let confirmed = registry.list_instances().await.unwrap();
+        assert_eq!(confirmed.len(), 1);
+        assert_eq!(confirmed[0].session, replacement.krypton_session);
+        registry.dispose(replacement.krypton_session).await;
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn inventory_cancelled_request_releases_activity_and_pending_reply() {
+        let registry = Arc::new(AcpRegistry::new());
+        let client = local(
+            &registry,
+            AcpInstanceRole::Assist,
+            "printf 'ready\\n'; cat >/dev/null",
+        )
+        .await;
+        let requesting = client.clone();
+        let request =
+            tokio::spawn(async move { requesting.request("initialize", json!({})).await });
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while client.pending.lock().unwrap().is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let running = client.snapshot().await;
+        assert_eq!(running.activity, AcpInstanceActivity::Running);
+        assert_eq!(running.liveness, AcpInstanceLiveness::Alive);
+        request.abort();
+        let _ = request.await;
+        let cancelled = client.snapshot().await;
+        assert_eq!(cancelled.activity, AcpInstanceActivity::Idle);
+        assert_eq!(cancelled.liveness, AcpInstanceLiveness::Alive);
+        assert!(cancelled.has_error);
+        assert!(client.pending.lock().unwrap().is_empty());
+        registry.dispose(client.krypton_session).await;
     }
 }

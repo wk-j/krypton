@@ -1,18 +1,15 @@
 // Spec 320 — per-panel visibility for the ACP Harness.
 //
-// Each persistent panel (plan, lane peek, live thought, grammar review, prompt
-// queue, Active Ticket dock, Rails dock) carries its own hidden flag, persisted per
-// project. Spec 347 adds one flag per side panel beside them: `left` hides the
-// Zen lane rail, `right` hides the dock column. No flag ever rewrites another.
-// The view's renderers ask `isPanelHidden(id)`: the panel's own flag, or, for
-// the two dock tabs, the `right` flag too.
+// Each persistent panel carries its own hidden flag, persisted per project.
+// The `left` flag hides the Zen lane rail; `right` hides every dock tab.
+// No flag ever rewrites another. Assistants is opt-in, including on upgrade.
 
 import type { TitlebarToggle } from '../types';
 
-export type HarnessPanelId = 'plan' | 'peek' | 'thought' | 'grammar' | 'queue' | 'ticket' | 'rails';
+export type HarnessPanelId = 'plan' | 'peek' | 'thought' | 'grammar' | 'queue' | 'ticket' | 'rails' | 'assistants';
 
-/** Spec 337: the two tabs of the `dock.right` column. */
-export type HarnessDockTab = 'ticket' | 'rails';
+/** Ordered tabs of the `dock.right` column. */
+export type HarnessDockTab = 'ticket' | 'rails' | 'assistants';
 
 export interface HarnessTogglePanel {
   readonly id: HarnessPanelId;
@@ -36,7 +33,7 @@ export const HARNESS_TOGGLE_PANELS: readonly HarnessTogglePanel[] = [
 export type HarnessSide = 'left' | 'right';
 
 export const PANELS_USAGE =
-  'usage: #panels [hide | show | toggle] <left | right | plan | peek | thought | grammar | queue | ticket | rails>';
+  'usage: #panels [hide | show | toggle] <left | right | plan | peek | thought | grammar | queue | ticket | rails | assistants>';
 
 export type PanelsAction = 'hide' | 'show' | 'toggle';
 
@@ -53,6 +50,7 @@ const PANEL_ID: Record<HarnessPanelId, true> = {
   queue: true,
   ticket: true,
   rails: true,
+  assistants: true,
 };
 
 export function isHarnessPanelId(value: string): value is HarnessPanelId {
@@ -63,9 +61,9 @@ export function isHarnessSide(value: string): value is HarnessSide {
   return value === 'left' || value === 'right';
 }
 
-/** The two panels that are tabs of the dock column, which the `right` flag hides. */
+/** Dock tabs also obey the independent right-side flag. */
 export function isDockTab(panel: HarnessPanelId): panel is HarnessDockTab {
-  return panel === 'ticket' || panel === 'rails';
+  return panel === 'ticket' || panel === 'rails' || panel === 'assistants';
 }
 
 function isPanelsAction(value: string): value is PanelsAction {
@@ -149,30 +147,37 @@ export function writeSideHidden(projectDir: string | null, side: HarnessSide, hi
 /** Persisted per project, beside the side flags. */
 const HIDDEN_PANELS_KEY_PREFIX = 'krypton:acp-harness:hidden-panels:';
 
-/** Unknown ids, corrupt JSON and unavailable storage all read as "not hidden". */
+/** Legacy flags migrate once; only the new Assistants panel defaults hidden. */
 export function readHiddenPanels(projectDir: string | null): ReadonlySet<HarnessPanelId> {
+  const defaults = new Set<HarnessPanelId>(['assistants']);
   try {
     const raw = localStorage.getItem(`${HIDDEN_PANELS_KEY_PREFIX}${projectDir ?? ''}`);
-    if (!raw) return new Set();
+    if (!raw) return defaults;
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return new Set();
-    return new Set(
-      parsed.filter((value): value is HarnessPanelId => typeof value === 'string' && isHarnessPanelId(value)),
-    );
+    const legacy = Array.isArray(parsed);
+    const values: unknown = legacy
+      ? parsed
+      : parsed !== null && typeof parsed === 'object' && 'version' in parsed && parsed.version === 2 && 'hidden' in parsed
+        ? parsed.hidden
+        : null;
+    if (!Array.isArray(values)) return defaults;
+    const hidden = new Set(values.filter((value): value is HarnessPanelId =>
+      typeof value === 'string' && isHarnessPanelId(value)));
+    if (legacy) {
+      hidden.add('assistants');
+      writeHiddenPanels(projectDir, hidden);
+    }
+    return hidden;
   } catch {
-    return new Set();
+    return defaults;
   }
 }
 
 export function writeHiddenPanels(projectDir: string | null, hidden: ReadonlySet<HarnessPanelId>): void {
   try {
     const key = `${HIDDEN_PANELS_KEY_PREFIX}${projectDir ?? ''}`;
-    if (hidden.size === 0) {
-      localStorage.removeItem(key);
-      return;
-    }
-    const ordered = HARNESS_TOGGLE_PANELS.map((panel) => panel.id).filter((id) => hidden.has(id));
-    localStorage.setItem(key, JSON.stringify(ordered));
+    const ordered = Object.keys(PANEL_ID).filter((id) => hidden.has(id as HarnessPanelId));
+    localStorage.setItem(key, JSON.stringify({ version: 2, hidden: ordered }));
   } catch {
     // localStorage unavailable — the preference simply won't persist
   }
@@ -181,10 +186,11 @@ export function writeHiddenPanels(projectDir: string | null, hidden: ReadonlySet
 /** Spec 337: the selected dock tab, persisted beside the hidden flags. */
 const DOCK_TAB_KEY_PREFIX = 'krypton:acp-harness:dock-tab:';
 
-/** Anything but a stored `rails` reads as the Ticket tab, today's only dock. */
+/** Unknown values retain the Ticket preference. */
 export function readDockTab(projectDir: string | null): HarnessDockTab {
   try {
-    return localStorage.getItem(`${DOCK_TAB_KEY_PREFIX}${projectDir ?? ''}`) === 'rails' ? 'rails' : 'ticket';
+    const tab = localStorage.getItem(`${DOCK_TAB_KEY_PREFIX}${projectDir ?? ''}`);
+    return tab === 'rails' || tab === 'assistants' ? tab : 'ticket';
   } catch {
     return 'ticket';
   }

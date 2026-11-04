@@ -46,6 +46,7 @@ function metrics(cpu: number, rss: number): AcpLaneMetrics {
     session: 1,
     root_pid: 4242,
     root_alive: true,
+    cpu_ready: true,
     total_cpu_percent: cpu,
     total_rss_mb: rss,
     proc_count: 3,

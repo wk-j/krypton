@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AcpClient } from '../client';
-import type { AcpEvent, StopReason } from '../types';
+import type { AcpEvent, AcpInstanceOwner, StopReason } from '../types';
 
 import { AcpAssistSession, type AcpSpawn } from './acp-completion';
 import { AssistError } from './engine';
@@ -26,6 +26,11 @@ class FakeClient {
   turn = deferred<StopReason>();
   modelError: Error | null = null;
   disposed = false;
+  owner!: AcpInstanceOwner;
+
+  async setInstanceOwner(owner: AcpInstanceOwner): Promise<void> {
+    this.owner = owner;
+  }
 
   constructor(readonly backendId: string, private readonly onPrompt: () => void) {}
 
@@ -97,13 +102,14 @@ interface Harness {
 function harness(options: {
   spawnError?: Error;
   onSpawn?: (client: FakeClient) => void;
+  owner?: () => AcpInstanceOwner;
 } = {}): Harness {
   const spawned: FakeClient[] = [];
   const spawnArgs: Array<{ backendId: string; cwd: string | null; remote: string | null }> = [];
   let waiter: (() => void) | null = null;
   let pendingPrompt = false;
 
-  const spawn: AcpSpawn = async (backendId, cwd, remoteRuntimeId) => {
+  const spawn: AcpSpawn = async (backendId, cwd, owner, remoteRuntimeId) => {
     spawnArgs.push({ backendId, cwd, remote: remoteRuntimeId });
     if (options.spawnError) throw options.spawnError;
     const client = new FakeClient(backendId, () => {
@@ -112,6 +118,7 @@ function harness(options: {
       waiter = null;
       resume?.();
     });
+    client.owner = owner;
     options.onSpawn?.(client);
     spawned.push(client);
     return client as unknown as AcpClient;
@@ -120,6 +127,7 @@ function harness(options: {
   const session = new AcpAssistSession({
     projectDir: () => '/repo',
     remoteRuntimeId: () => null,
+    owner: options.owner ?? (() => ({ role: 'assist', label: 'Assist', harness_id: 'harness-1', lane_id: null })),
     spawn,
   });
 
@@ -150,6 +158,28 @@ function call(
 }
 
 describe('AcpAssistSession', () => {
+  it('resolves ownership lazily and refreshes it without replacing the warm process', async () => {
+    let harnessId: string | null = null;
+    let label = 'Uninitialized';
+    const h = harness({ owner: () => ({ role: 'rails_judge', label, harness_id: harnessId, lane_id: null }) });
+    expect(h.spawned).toHaveLength(0);
+    harnessId = 'ready-harness';
+    label = 'Rails · project';
+    const first = call(h.session);
+    const client = await h.prompted();
+    expect(client.owner).toEqual({ role: 'rails_judge', label, harness_id: harnessId, lane_id: null });
+    client.turn.resolve('end_turn');
+    await first;
+
+    harnessId = 'renamed-harness';
+    label = 'Rails · renamed project';
+    const second = call(h.session);
+    (await h.prompted()).turn.resolve('end_turn');
+    await second;
+    expect(h.spawned).toHaveLength(1);
+    expect(client.owner).toEqual({ role: 'rails_judge', label, harness_id: harnessId, lane_id: null });
+  });
+
   it('spawns once, sets the model, and returns the assistant text', async () => {
     const h = harness();
     const pending = call(h.session);

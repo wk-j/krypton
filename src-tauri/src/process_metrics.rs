@@ -33,25 +33,153 @@ pub struct ProcMetric {
 pub struct TreeMetrics {
     pub root_pid: u32,
     pub root_alive: bool,
+    pub cpu_ready: bool,
     pub total_cpu_percent: f64,
     pub total_rss_mb: f64,
     pub proc_count: u32,
     pub processes: Vec<ProcMetric>,
 }
+/// Captured at spawn, never learned from a later metrics poll.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ProcessIdentity {
+    pub pid: u32,
+    pub start_time: u64,
+    /// OS birth token: microseconds on macOS, clock ticks on Linux, FILETIME on Windows.
+    birth_token: u64,
+}
+
+impl ProcessIdentity {
+    pub fn capture(pid: u32) -> Option<Self> {
+        let mut sys = sysinfo::System::new();
+        sys.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::Some(&[sysinfo::Pid::from_u32(pid)]),
+            true,
+            sysinfo::ProcessRefreshKind::nothing(),
+        );
+        sys.process(sysinfo::Pid::from_u32(pid))
+            .and_then(|process| {
+                Some(Self {
+                    pid,
+                    start_time: process.start_time(),
+                    birth_token: process_birth_token(pid, process.start_time())?,
+                })
+            })
+    }
+
+    fn matches(&self, process: &sysinfo::Process) -> bool {
+        self.start_time == process.start_time()
+            && process_birth_token(self.pid, process.start_time()) == Some(self.birth_token)
+    }
+}
+#[cfg(target_os = "macos")]
+fn process_birth_token(pid: u32, _start_time: u64) -> Option<u64> {
+    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
+    let size = std::mem::size_of::<libc::proc_bsdinfo>();
+    let read = unsafe {
+        libc::proc_pidinfo(
+            pid as i32,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            size as i32,
+        )
+    };
+    if read != size as i32 {
+        return None;
+    }
+    let info = unsafe { info.assume_init() };
+    Some(info.pbi_start_tvsec.saturating_mul(1_000_000) + info.pbi_start_tvusec)
+}
+
+#[cfg(target_os = "linux")]
+fn process_birth_token(pid: u32, _start_time: u64) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    // comm may itself contain spaces and parentheses. Field 22 follows the
+    // final ')' and the 19 fields beginning with state (field 3).
+    stat.rsplit_once(')')?
+        .1
+        .split_whitespace()
+        .nth(19)?
+        .parse()
+        .ok()
+}
+
+#[cfg(target_os = "windows")]
+fn process_birth_token(pid: u32, _start_time: u64) -> Option<u64> {
+    use std::ffi::c_void;
+    use std::mem::MaybeUninit;
+
+    #[repr(C)]
+    struct FileTime {
+        low: u32,
+        high: u32,
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        #[link_name = "OpenProcess"]
+        fn open_process(access: u32, inherit_handle: i32, pid: u32) -> *mut c_void;
+        #[link_name = "GetProcessTimes"]
+        fn get_process_times(
+            process: *mut c_void,
+            creation: *mut FileTime,
+            exit: *mut FileTime,
+            kernel: *mut FileTime,
+            user: *mut FileTime,
+        ) -> i32;
+        #[link_name = "CloseHandle"]
+        fn close_handle(handle: *mut c_void) -> i32;
+    }
+
+    // PROCESS_QUERY_LIMITED_INFORMATION; no debug privilege or full-access handle.
+    let process = unsafe { open_process(0x1000, 0, pid) };
+    if process.is_null() {
+        return None;
+    }
+    let mut creation = MaybeUninit::<FileTime>::uninit();
+    let mut exit = MaybeUninit::<FileTime>::uninit();
+    let mut kernel = MaybeUninit::<FileTime>::uninit();
+    let mut user = MaybeUninit::<FileTime>::uninit();
+    let success = unsafe {
+        get_process_times(
+            process,
+            creation.as_mut_ptr(),
+            exit.as_mut_ptr(),
+            kernel.as_mut_ptr(),
+            user.as_mut_ptr(),
+        )
+    };
+    unsafe {
+        close_handle(process);
+    }
+    if success == 0 {
+        return None;
+    }
+    let creation = unsafe { creation.assume_init() };
+    Some((u64::from(creation.high) << 32) | u64::from(creation.low))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn process_birth_token(_pid: u32, _start_time: u64) -> Option<u64> {
+    // Do not attach a reused PID's resources when precise identity is unavailable.
+    None
+}
 
 pub struct MetricsSampler {
     sys: Mutex<sysinfo::System>,
+    sampled: Mutex<HashMap<ProcessIdentity, std::time::Instant>>,
 }
 
 impl MetricsSampler {
     pub fn new() -> Self {
         Self {
             sys: Mutex::new(sysinfo::System::new()),
+            sampled: Mutex::new(HashMap::new()),
         }
     }
 
     /// Refresh once and collect metrics for each root PID and its descendants.
-    pub fn collect(&self, roots: &[u32]) -> Vec<TreeMetrics> {
+    pub fn collect(&self, roots: &[ProcessIdentity]) -> Vec<TreeMetrics> {
         let mut sys = match self.sys.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -84,9 +212,21 @@ impl MetricsSampler {
             }
         }
 
+        let mut sampled = self.sampled.lock().unwrap_or_else(|p| p.into_inner());
+        sampled.retain(|identity, _| roots.contains(identity));
+        let now = std::time::Instant::now();
         roots
             .iter()
-            .map(|&root| collect_tree(&sys, &children, root))
+            .map(|root| {
+                let mut tree = collect_tree(&sys, &children, *root);
+                if tree.root_alive {
+                    tree.cpu_ready = sampled.get(root).is_some_and(|first| {
+                        now.duration_since(*first) >= sysinfo::MINIMUM_CPU_UPDATE_INTERVAL
+                    });
+                    sampled.entry(*root).or_insert(now);
+                }
+                tree
+            })
             .collect()
     }
 }
@@ -100,13 +240,15 @@ impl Default for MetricsSampler {
 fn collect_tree(
     sys: &sysinfo::System,
     children: &HashMap<u32, Vec<u32>>,
-    root: u32,
+    identity: ProcessIdentity,
 ) -> TreeMetrics {
+    let root = identity.pid;
     let root_proc = sys.process(sysinfo::Pid::from_u32(root));
-    if root_proc.is_none() {
+    if !root_proc.is_some_and(|process| identity.matches(process)) {
         return TreeMetrics {
             root_pid: root,
             root_alive: false,
+            cpu_ready: false,
             total_cpu_percent: 0.0,
             total_rss_mb: 0.0,
             proc_count: 0,
@@ -155,6 +297,7 @@ fn collect_tree(
     TreeMetrics {
         root_pid: root,
         root_alive: true,
+        cpu_ready: false,
         total_cpu_percent: total_cpu,
         total_rss_mb: total_rss,
         proc_count: processes.len() as u32,
@@ -188,4 +331,46 @@ fn clamp_cmd(cmd: &[std::ffi::OsString]) -> Vec<String> {
         .take(MAX_CMD_ARGS)
         .map(|s| clamp_str(&s.to_string_lossy()))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sampler_rejects_reused_pid_even_with_the_same_start_second() {
+        let identity = ProcessIdentity::capture(std::process::id()).unwrap();
+        let sampler = MetricsSampler::new();
+        let live = sampler.collect(&[identity]).remove(0);
+        assert!(live.root_alive);
+        assert!(live
+            .processes
+            .iter()
+            .any(|process| process.pid == identity.pid));
+        let reused = ProcessIdentity {
+            birth_token: identity.birth_token.wrapping_add(1),
+            ..identity
+        };
+        let rejected = sampler.collect(&[reused]).remove(0);
+        assert!(!rejected.root_alive);
+        assert!(!rejected.cpu_ready);
+        assert!(rejected.processes.is_empty());
+        assert_eq!(rejected.proc_count, 0);
+    }
+
+    #[test]
+    fn sampler_cpu_stays_warming_until_identity_has_a_baseline() {
+        let identity = ProcessIdentity::capture(std::process::id()).unwrap();
+        let sampler = MetricsSampler::new();
+        let first = sampler.collect(&[identity]).remove(0);
+        assert!(first.root_alive);
+        assert!(!first.cpu_ready);
+        sampler.sampled.lock().unwrap().insert(
+            identity,
+            std::time::Instant::now() - sysinfo::MINIMUM_CPU_UPDATE_INTERVAL,
+        );
+        let next = sampler.collect(&[identity]).remove(0);
+        assert!(next.root_alive);
+        assert!(next.cpu_ready);
+    }
 }

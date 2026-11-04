@@ -815,6 +815,7 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 | 5.6 | `PlanPanel` | `plan 4/9` <br> `✓ extract kernel` · `▸ wire composer meta segments` · `· delete signature` | `acp-harness-view.ts:14668-14726` |
 | 5.7 | `TicketDock` | `active ticket` <br> `Harness UI refactor                 ›` <br> `open  KR-301` <br> `GitHub  wk/krypton  #301 · open` <br> `Worker  codex-1` <br> `ISSUE ACTIONS  run in codex-1 · idle` <br> `[Analyze ✓ 10-27] [Fix here ✓ PR] [Handle]` (spec 342; `DockActionButton` §1.10) | `harness-ticket-controller.ts:603-676` |
 | 5.8 | `AnnotationRail` | `ANNOTATED  3 · 2 unsent              [ send 2 ]` <br> `deps tuple needs the lane arg            [ del ]` | `transcript-annotation.ts:329-370` |
+| 5.9 | `AssistantInstances` | `⁂ All projects                ◷ Updated 01:44:14` <br> `▣ 5 ACP   ◈ 3 embedded   ∿ 1 working   ? 0 unknown` <br> `◎ OMP-1                ( ○ idle )  0.3%  318M` <br> `  krypton · claude-opus-5-5             ◷ 38s` <br> Pinned details: one label/value grid in identity / execution / timing bands; key hints | New app-wide read-only dock (spec 357), props `{ inventory, selectedId, now }`; not a replacement for `MetricsOverlay` |
 
 ---
 
@@ -901,8 +902,8 @@ HarnessView
 # Totals
 
 Current registry counts come from `HARNESS_COMPONENTS` in `src/acp/components/registry.ts`.
-The registry has **79 component definitions**; `LayoutHost` is a separate layout entry, so
-the inventory total is **80**. The historical numbered catalog predates later additions:
+The registry has **80 component definitions**; `LayoutHost` is a separate layout entry, so
+the inventory total is **81**. The historical numbered catalog predates later additions:
 the transcript registry also includes `GenuiCard`, `DirectiveDiffRow` and `FollowUpRail` (spec 323);
 overlays include `BackgroundTasks`, `ExecutionDialog`, `GenuiPanel`, and `GenuiCatalog`. The composer's
 `AssistStrip` (spec 306) was removed on 2026-10-23 with the `next-prompt` task.
@@ -915,10 +916,10 @@ overlays include `BackgroundTasks`, `ExecutionDialog`, `GenuiPanel`, and `GenuiC
 | 2 — composite | 5 | ~45 (incl. 8 cursor handlers, 4 palette handlers, 12 overlay shells) |
 | 3 — transcript | 22 | Original cutover plus ExecutionCard (spec 315), GenuiCard, DirectiveDiffRow, and FollowUpRail |
 | 4 — lane chrome | 6 | `renderDashboard`, `renderActiveLaneChrome`, `refreshMetricsRender`, `renderRailEntry`, `refreshZenRail` |
-| 5 — right rail | 8 | 8 builders + 3 `patch*` functions |
+| 5 — right rail | 9 | Original cutover plus `AssistantInstances` (spec 357); historical 8 builders + 3 `patch*` functions |
 | 6 — composer | 9 | Original composer cutover; AssistStrip came and went (spec 306) |
 | 7 — overlays | 20 | Current registry; historical 7.15 retired, later additions (incl. `ExecutionDialog`, spec 319) retained |
-| **Total** | **80 (79 registered + LayoutHost)** | **Historical cutover counts remain historical; no Timeline capture implementation or style owner remains** |
+| **Total** | **81 (80 registered + LayoutHost)** | **Historical cutover counts remain historical; no Timeline capture implementation or style owner remains** |
 
 # Packaging, style ownership, and theming
 

@@ -168,6 +168,15 @@ export const HARNESS_ICON_SVG_DEFS = [
   '<symbol id="krypton-icon-exec-code" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M5.2 4.4 L1.9 8 L5.2 11.6"/><path d="M10.8 4.4 L14.1 8 L10.8 11.6"/><path d="M9.2 3.2 L6.8 12.8"/></g></symbol>',
   '<symbol id="krypton-icon-exec-output" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><rect x="1.9" y="2.9" width="12.2" height="10.2" rx="1.4"/><path d="M4.6 6 H11.4"/><path d="M4.6 8.2 H9.4"/><path d="M4.6 10.4 H10.6"/></g></symbol>',
   '<symbol id="krypton-icon-exec-activity" viewBox="0 0 16 16"><path d="M1.8 8.4 H4.6 L6.4 4.2 L9.4 11.8 L11.2 8.4 H14.2" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></symbol>',
+  // spec 357: Assistants dock. `assistants` is three linked agent nodes;
+  // `process` a chip with pins (an OS process); `embedded` stacked layers (an
+  // agent living inside the WebView); `unknown` a question in a ring; `clock`
+  // an age or timestamp. Same stroke and caps as the panel set.
+  '<symbol id="krypton-icon-assistants" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="3.9" r="1.9"/><circle cx="3.6" cy="11.8" r="1.9"/><circle cx="12.4" cy="11.8" r="1.9"/><path d="M7 5.6 L4.6 10.1 M9 5.6 L11.4 10.1 M5.5 11.8 H10.5"/></g></symbol>',
+  '<symbol id="krypton-icon-process" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><rect x="4.2" y="4.2" width="7.6" height="7.6" rx="1.2"/><rect x="6.6" y="6.6" width="2.8" height="2.8" rx="0.4"/><path d="M6.4 1.9 V4.2 M9.6 1.9 V4.2 M6.4 11.8 V14.1 M9.6 11.8 V14.1 M1.9 6.4 H4.2 M1.9 9.6 H4.2 M11.8 6.4 H14.1 M11.8 9.6 H14.1"/></g></symbol>',
+  '<symbol id="krypton-icon-embedded" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2 L13.8 5.2 L8 8.2 L2.2 5.2 Z"/><path d="M2.2 8.2 L8 11.2 L13.8 8.2"/><path d="M2.2 11 L8 14 L13.8 11"/></g></symbol>',
+  '<symbol id="krypton-icon-unknown" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M6.2 6.3 A1.9 1.9 0 1 1 8.8 8.1 C8.3 8.4 8 8.8 8 9.5"/></g><circle cx="8" cy="11.5" r="0.85" fill="currentColor"/></symbol>',
+  '<symbol id="krypton-icon-clock" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.7 V8 L10.3 9.5"/></g></symbol>',
 ].join('');
 
 const SYMBOL_DEFS_ID = 'krypton-harness-symbol-defs';

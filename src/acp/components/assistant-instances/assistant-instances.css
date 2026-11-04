@@ -1,0 +1,460 @@
+/* Spec 357 — `AssistantInstances`, the right dock's Assistants tab.
+   The ticket-dock family, like `RailsDock`: amber hairlines, ink tiers for
+   values, pills, and a full-row selection tint — never a left-edge accent
+   rail (ADR-0027). The root IS the dock host (`.acp-harness__assistants-dock`:
+   placement, scroll fallback and `hidden` live in harness-shared.css); this
+   sheet only lays out its content.
+
+   One type size: everything inherits the dock's body size, as the Rails and
+   Ticket rows do. Hierarchy comes from weight and ink tier, never a smaller
+   font. Alignment comes from three fixed edges — the 14px inset, the text
+   column after the 16px logo, and the right edge — plus fixed-width figure
+   cells and one shared label column in the details.
+
+   Colour carries state only: amber is work in progress, warning a human wait
+   or liveness nobody confirmed, fault an error. Settled values stay ink.
+   No animation — a running row is still a still row. */
+
+@layer krypton.component {
+  /* Rows: head, counts, list, details, spacer, keys. The list and the
+     details are `minmax(0, auto)`: free height is shared equally between
+     them until each reaches its content, so a short list leaves the details
+     whole, a long one keeps half the column, and either scrolls inside its
+     own track. The 1fr spacer holds the key hints at the bottom. */
+  .acp-assistant-instances {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, auto) minmax(0, auto) 1fr auto;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .acp-assistant-instances[hidden],
+  .acp-assistant-instances__status[hidden],
+  .acp-assistant-instances__empty[hidden],
+  .acp-assistant-instances__role[hidden],
+  .acp-assistant-instances__chip[hidden],
+  .acp-assistant-instances__metric[hidden],
+  .acp-assistant-instances__note[hidden],
+  .acp-assistant-instances__fact[hidden],
+  .acp-assistant-instances__alerts[hidden],
+  .acp-assistant-instances__details[hidden] {
+    display: none;
+  }
+
+  /* ── Head: scope left, freshness right. A stale or failed refresh drops
+     to its own full-width line so it cannot be missed. */
+  .acp-assistant-instances__head {
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 1ch;
+    row-gap: 6px;
+    padding: 10px 14px 8px;
+  }
+
+  .acp-assistant-instances__title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    color: #ffb000;
+  }
+
+  .acp-assistant-instances__title .acp-harness__icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .acp-assistant-instances__title h2 {
+    margin: 0;
+    overflow: hidden;
+    color: var(--krypton-fg, rgb(var(--krypton-fg-rgb, 216, 232, 216)));
+    font: inherit;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-assistant-instances__status {
+    display: flex;
+    align-items: center;
+    gap: 0.5ch;
+    margin: 0;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    white-space: nowrap;
+  }
+
+  .acp-assistant-instances__status[data-stale="true"] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    align-items: flex-start;
+    padding: 4px 8px;
+    border: 1px solid rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.4);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.08);
+    color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .acp-assistant-instances__status-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+  }
+
+  .acp-assistant-instances__status[data-stale="true"] .acp-assistant-instances__status-icon {
+    margin-top: 0.25em;
+  }
+
+  .acp-assistant-instances__status-icon svg {
+    width: 1em;
+    height: 1em;
+  }
+
+  /* ── Counts: four equal columns, figure over label, no boxes. */
+  .acp-assistant-instances__summary {
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    column-gap: 8px;
+    padding: 0 14px 10px;
+    border-bottom: 1px solid rgba(255, 176, 0, 0.14);
+  }
+
+  .acp-assistant-instances__stat {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'icon value'
+      'label label';
+    align-items: center;
+    column-gap: 0.6ch;
+    min-width: 0;
+  }
+
+  .acp-assistant-instances__stat .acp-harness__icon {
+    grid-area: icon;
+    color: rgba(255, 176, 0, 0.72);
+  }
+
+  .acp-assistant-instances__stat-value {
+    grid-area: value;
+    color: var(--krypton-fg, rgb(var(--krypton-fg-rgb, 216, 232, 216)));
+    font-weight: 600;
+  }
+
+  .acp-assistant-instances__stat-label {
+    grid-area: label;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-assistant-instances__stat[data-tone="live"] .acp-harness__icon,
+  .acp-assistant-instances__stat[data-tone="live"] .acp-assistant-instances__stat-value {
+    color: #ffd880;
+  }
+
+  .acp-assistant-instances__stat[data-tone="warn"] .acp-harness__icon,
+  .acp-assistant-instances__stat[data-tone="warn"] .acp-assistant-instances__stat-value {
+    color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+  }
+
+  /* ── Rows scroll in their own track; the details sit pinned under them
+     (track sizing on the root). */
+  .acp-assistant-instances__body {
+    grid-row: 3;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .acp-assistant-instances__empty {
+    margin: 0;
+    padding: 10px 14px;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+  }
+
+  .acp-assistant-instances__list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Logo column, then every line in one text column whose right edge is the
+     row's: left text clips, the right cluster never does. */
+  .acp-assistant-instances__row {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 2px;
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(255, 176, 0, 0.08);
+    min-width: 0;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    cursor: default;
+  }
+
+  .acp-assistant-instances__row--selected {
+    background: rgba(255, 176, 0, 0.16);
+  }
+
+  .acp-assistant-instances__logo {
+    grid-column: 1;
+    grid-row: 1;
+    display: flex;
+    width: 16px;
+    height: 16px;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
+  }
+
+  .acp-assistant-instances__logo .acp-harness__icon {
+    width: 100%;
+    height: 100%;
+  }
+
+  .acp-assistant-instances__logo--claude   { color: var(--krypton-backend-claude); }
+  .acp-assistant-instances__logo--codex    { color: var(--krypton-backend-codex); }
+  .acp-assistant-instances__logo--opencode { color: var(--krypton-backend-opencode); }
+  .acp-assistant-instances__logo--pi       { color: var(--krypton-backend-pi); }
+  .acp-assistant-instances__logo--droid    { color: var(--krypton-backend-droid); }
+  .acp-assistant-instances__logo--cursor   { color: var(--krypton-backend-cursor); }
+  .acp-assistant-instances__logo--junie    { color: var(--krypton-backend-junie); }
+  .acp-assistant-instances__logo--omp      { color: var(--krypton-backend-omp); }
+  .acp-assistant-instances__logo--grok     { color: var(--krypton-backend-grok); }
+  .acp-assistant-instances__logo--copilot  { color: var(--krypton-backend-copilot); }
+  .acp-assistant-instances__logo--mimo     { color: var(--krypton-backend-mimo); }
+  .acp-assistant-instances__logo--cline    { color: var(--krypton-backend-cline); }
+  .acp-assistant-instances__logo--antigravity { color: var(--krypton-backend-antigravity); }
+
+  .acp-assistant-instances__line,
+  .acp-assistant-instances__alerts {
+    grid-column: 2;
+    min-width: 0;
+  }
+
+  .acp-assistant-instances__line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1ch;
+    white-space: nowrap;
+  }
+
+  .acp-assistant-instances__ident {
+    display: flex;
+    align-items: baseline;
+    gap: 1ch;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .acp-assistant-instances__name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--krypton-fg, rgb(var(--krypton-fg-rgb, 216, 232, 216)));
+    font: inherit;
+    font-weight: 600;
+    text-overflow: ellipsis;
+  }
+
+  /* The role gives way first: it is the least specific word in the row. */
+  .acp-assistant-instances__role {
+    flex: 0 10 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    text-overflow: ellipsis;
+  }
+
+  .acp-assistant-instances__live,
+  .acp-assistant-instances__age-cell {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 1ch;
+  }
+
+  /* Fixed figure cells: `0.3%` and `24%`, `318M` and `1.2G` end on the same
+     column in every row. */
+  .acp-assistant-instances__metric {
+    min-width: 5ch;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+    text-align: right;
+  }
+
+  .acp-assistant-instances__note {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+  }
+
+  /* A stale sample keeps its figures but drops them to the muted tier. */
+  .acp-assistant-instances__live[data-stale="true"] .acp-assistant-instances__metric {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+  }
+
+  .acp-assistant-instances__facts {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
+    text-overflow: ellipsis;
+  }
+
+  .acp-assistant-instances__fact + .acp-assistant-instances__fact::before {
+    content: '·';
+    margin: 0 0.7ch;
+  }
+
+  .acp-assistant-instances__age-cell {
+    gap: 0.5ch;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+  }
+
+  .acp-assistant-instances__age-cell .acp-harness__icon {
+    width: 0.9em;
+    height: 0.9em;
+  }
+
+  .acp-assistant-instances__alerts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6ch;
+    padding-top: 2px;
+  }
+
+  .acp-assistant-instances__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5ch;
+    padding: 0 0.7ch;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+    border-radius: 999px;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+
+  .acp-assistant-instances__chip .acp-harness__icon {
+    width: 0.8em;
+    height: 0.8em;
+  }
+
+  .acp-assistant-instances__chip--muted {
+    border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+  }
+
+  .acp-assistant-instances__chip--pending {
+    border-color: rgba(255, 176, 0, 0.32);
+    color: #ffd880;
+  }
+
+  .acp-assistant-instances__chip--live {
+    border-color: rgba(255, 176, 0, 0.5);
+    background: rgba(255, 176, 0, 0.12);
+    color: #ffd880;
+  }
+
+  .acp-assistant-instances__chip--warn {
+    border-color: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.5);
+    background: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.08);
+    color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+  }
+
+  .acp-assistant-instances__chip--fault {
+    border-color: rgba(255, 109, 138, 0.48);
+    background: rgba(255, 109, 138, 0.08);
+    color: #ff9caf;
+  }
+
+  /* ── Selected instance: every value whole. One grid holds every group, so
+     all values start on one column; groups are subgrid bands split by a
+     hairline rather than boxes or headings. */
+  .acp-assistant-instances__details {
+    grid-row: 4;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 10px 14px;
+    border-top: 1px solid rgba(255, 176, 0, 0.22);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    user-select: text;
+  }
+
+  .acp-assistant-instances__details-name {
+    margin: 0 0 6px;
+    color: var(--krypton-fg, rgb(var(--krypton-fg-rgb, 216, 232, 216)));
+    font: inherit;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  .acp-assistant-instances__fields {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    column-gap: 1.5ch;
+    margin: 0;
+  }
+
+  .acp-assistant-instances__group {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    grid-template-columns: subgrid;
+    padding: 5px 0;
+  }
+
+  .acp-assistant-instances__group:first-child {
+    padding-top: 0;
+  }
+
+  .acp-assistant-instances__group + .acp-assistant-instances__group {
+    border-top: 1px solid rgba(255, 176, 0, 0.1);
+  }
+
+  .acp-assistant-instances__fields dt {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+  }
+
+  .acp-assistant-instances__fields dd {
+    margin: 0;
+    min-width: 0;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+    overflow-wrap: anywhere;
+  }
+
+  .acp-assistant-instances__keys {
+    grid-row: 6;
+    padding: 6px 14px;
+    border-top: 1px solid rgba(255, 176, 0, 0.12);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* Light scheme: amber, warning and fault are neon values tuned for a dark
+   ground; cap them to legible ink (spec 321 §Accent ink), as `RailsDock`. */
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-assistant-instances__title,
+  html[data-theme-scheme='light'] .acp-assistant-instances__stat .acp-harness__icon,
+  html[data-theme-scheme='light'] .acp-assistant-instances__stat[data-tone="live"] .acp-assistant-instances__stat-value,
+  html[data-theme-scheme='light'] .acp-assistant-instances__stat[data-tone="warn"] .acp-assistant-instances__stat-value,
+  html[data-theme-scheme='light'] .acp-assistant-instances__chip--pending,
+  html[data-theme-scheme='light'] .acp-assistant-instances__chip--live,
+  html[data-theme-scheme='light'] .acp-assistant-instances__chip--warn,
+  html[data-theme-scheme='light'] .acp-assistant-instances__status[data-stale="true"] {
+    color: #8a5a00;
+  }
+
+  html[data-theme-scheme='light'] .acp-assistant-instances__chip--fault {
+    color: #b3261e;
+  }
+}

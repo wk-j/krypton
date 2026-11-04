@@ -14,7 +14,7 @@
 
 import { AcpClient } from './acp/client';
 import { answerFencedRequest } from './acp/headless-fence';
-import type { AcpEvent, AcpMcpServerDescriptor, StopReason } from './acp/types';
+import type { AcpEvent, AcpInstanceOwner, AcpMcpServerDescriptor, StopReason } from './acp/types';
 import type { InlineAiConfig } from './config';
 import { INLINE_HOST_EXEC, hostExecCommand } from './inline-ai-remote';
 
@@ -32,7 +32,7 @@ export class InlineAiError extends Error {
   }
 }
 
-export type InlineAcpSpawn = (backendId: string, cwd: string | null) => Promise<AcpClient>;
+export type InlineAcpSpawn = (backendId: string, cwd: string | null, owner: AcpInstanceOwner) => Promise<AcpClient>;
 
 export interface InlineAcpConversation {
   /** One turn on this conversation's session. Resolves on `end_turn`. */
@@ -61,16 +61,16 @@ export class InlineAcpSession {
   private current: Conversation | null = null;
 
   constructor(deps: { spawn?: InlineAcpSpawn; graceMs?: number } = {}) {
-    this.spawn = deps.spawn ?? ((backendId, cwd) => AcpClient.spawn(backendId, cwd, []));
+    this.spawn = deps.spawn ?? ((backendId, cwd, owner) => AcpClient.spawn(backendId, cwd, owner, []));
     this.graceMs = deps.graceMs ?? CANCEL_GRACE_MS;
   }
 
   /** Called on Cmd+K. Supersedes the previous conversation and prepares a
    *  fresh session in the background; returns at once. `mcp` resolves to the
    *  session's MCP servers (spec 336: `host_exec` in an SSH pane); none by default. */
-  open(cfg: InlineAiConfig, cwd: string | null, mcp?: Promise<AcpMcpServerDescriptor[]>): InlineAcpConversation {
+  open(cfg: InlineAiConfig, cwd: string | null, owner: AcpInstanceOwner, mcp?: Promise<AcpMcpServerDescriptor[]>): InlineAcpConversation {
     this.current?.close();
-    const conversation = new Conversation(this, { ...cfg }, cwd, mcp ?? Promise.resolve([]), this.graceMs);
+    const conversation = new Conversation(this, { ...cfg }, cwd, { ...owner }, mcp ?? Promise.resolve([]), this.graceMs);
     this.current = conversation;
     conversation.ready = this.enqueue(() => this.setup(conversation));
     // Errors surface through `prompt()`; an overlay closed before submitting
@@ -141,7 +141,7 @@ export class InlineAcpSession {
   private async setup(conversation: Conversation): Promise<AcpClient> {
     if (conversation.closed) throw new InlineAiError('inline AI: closed');
     const { backend, model, mode } = conversation.cfg;
-    const client = await this.ensure(backend, conversation.cwd);
+    const client = await this.ensure(backend, conversation.cwd, conversation.instanceOwner);
     // The process outlives conversations: every session sets its own list, so
     // a local pane after an SSH pane gets none again.
     const servers = await conversation.mcp;
@@ -177,13 +177,16 @@ export class InlineAcpSession {
     return client;
   }
 
-  private async ensure(backend: string, cwd: string | null): Promise<AcpClient> {
+  private async ensure(backend: string, cwd: string | null, owner: AcpInstanceOwner): Promise<AcpClient> {
     const key = `${backend}\u0000${cwd ?? ''}`;
-    if (this.client && this.key === key) return this.client;
+    if (this.client && this.key === key) {
+      await this.client.setInstanceOwner(owner);
+      return this.client;
+    }
     if (this.client) this.forget(this.client);
     let client: AcpClient;
     try {
-      client = await this.spawn(backend, cwd);
+      client = await this.spawn(backend, cwd, owner);
     } catch (e) {
       throw new InlineAiError(`inline AI: "${backend}" did not start — ${errorText(e)}`);
     }
@@ -231,6 +234,7 @@ class Conversation implements InlineAcpConversation {
     private readonly owner: InlineAcpSession,
     readonly cfg: InlineAiConfig,
     readonly cwd: string | null,
+    readonly instanceOwner: AcpInstanceOwner,
     readonly mcp: Promise<AcpMcpServerDescriptor[]>,
     private readonly graceMs: number,
   ) {

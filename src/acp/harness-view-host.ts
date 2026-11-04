@@ -196,6 +196,7 @@ export interface HarnessSteerHost extends HarnessViewHost {
  *  a result by dirtying a region or, for spec 323 follow-ups, asking the view
  *  to patch one reply's rail; it never touches the DOM. */
 export interface HarnessAssistHost extends HarnessViewHost {
+  readonly harnessId: string | null;
   readonly projectDir: string | null;
   /** Non-null on a remote harness (spec 247): the sidecar's backend spawns there too. */
   readonly remoteRuntimeId: string | null;
@@ -209,6 +210,7 @@ export interface HarnessAssistHost extends HarnessViewHost {
  *  controller for a remote one. Every Tauri call goes through the controller's
  *  injected `invoke`, so the host carries only view-side effects. */
 export interface HarnessRailsHost extends HarnessViewHost {
+  readonly harnessId: string | null;
   readonly projectDir: string | null;
   subscribeLaneBus(handler: (event: LaneBusEvent) => void): () => void;
   /** spec 320: the `rails` flag, or spec 347's right-panel flag. */

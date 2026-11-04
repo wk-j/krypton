@@ -43,6 +43,7 @@ export const HARNESS_LAYOUT_DEFAULT = {
   ticket: { slot: 'dock.right', order: 10 },
   // spec 337: the Rails dock is the dock column's second tab.
   rails: { slot: 'dock.right', order: 20 },
+  assistants: { slot: 'dock.right', order: 30 },
   peerStrip: { slot: 'composer.above', order: 10 },
 } as const satisfies HarnessLayout;
 
@@ -61,7 +62,7 @@ export const HARNESS_LAYOUT_DEFAULT = {
  *
  * The per-panel flags of spec 320 and the side flags of spec 347 decide
  * VISIBILITY, never placement: a panel's flag empties or unmounts its own
- * slot, the `right` flag makes both `dock.right` tabs unavailable, and the
+ * slot, the `right` flag makes all `dock.right` tabs unavailable, and the
  * `left` flag hides the Zen lane rail via a root class. All are orthogonal
  * to this table.
  */

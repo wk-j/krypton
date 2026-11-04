@@ -10,6 +10,7 @@ function column(projectDir = '/repo'): {
   root: HTMLElement;
   ticket: HTMLElement;
   rails: HTMLElement;
+  assistants: HTMLElement;
   shown: (HarnessDockTab | null)[];
 } {
   const root = document.createElement('div');
@@ -17,9 +18,11 @@ function column(projectDir = '/repo'): {
   const dock = new HarnessDock(root, () => projectDir, (tab) => shown.push(tab));
   const ticket = document.createElement('aside');
   const rails = document.createElement('aside');
+  const assistants = document.createElement('aside');
   dock.setPane('ticket', ticket);
   dock.setPane('rails', rails);
-  return { dock, root, ticket, rails, shown };
+  dock.setPane('assistants', assistants);
+  return { dock, root, ticket, rails, assistants, shown };
 }
 
 function tabs(dock: HarnessDock): { strip: HTMLElement; labels: string[]; active: string | null } {
@@ -187,5 +190,50 @@ describe('HarnessDock (spec 337)', () => {
 
     // A finished run never switches tabs.
     expect(dock.shown()).toBe('ticket');
+  });
+
+  it('traverses all three tabs directionally and wraps in display order', () => {
+    const { dock } = column();
+    for (const tab of ['ticket', 'rails', 'assistants'] as const) dock.setAvailable(tab, true);
+    expect(tabs(dock).labels).toEqual(['TICKET', 'RAILS', 'ASSISTANTS']);
+    for (const [keyName, expected] of [
+      [']', 'rails'], [']', 'assistants'], [']', 'ticket'],
+      ['[', 'assistants'], ['[', 'rails'], ['[', 'ticket'],
+    ]) {
+      expect(dock.handleKey(key(keyName))).toBe(true);
+      expect(dock.shown()).toBe(expected);
+    }
+  });
+
+  it('skips unavailable tabs, falls forward without changing preference, and restores Assistants', () => {
+    const { dock, assistants } = column();
+    dock.setAvailable('ticket', true);
+    dock.setAvailable('assistants', true);
+    expect(tabs(dock).labels).toEqual(['TICKET', 'ASSISTANTS']);
+    expect(dock.handleKey(key(']'))).toBe(true);
+    expect(dock.shown()).toBe('assistants');
+    expect(assistants.hidden).toBe(false);
+    dock.setAvailable('assistants', false);
+    expect(dock.shown()).toBe('ticket');
+    expect(dock.selectedTab()).toBe('assistants');
+    expect(readDockTab('/repo')).toBe('assistants');
+    dock.setAvailable('rails', true);
+    dock.setAvailable('ticket', false);
+    expect(dock.shown()).toBe('rails');
+    dock.setAvailable('assistants', true);
+    expect(dock.shown()).toBe('assistants');
+    const reopened = column();
+    reopened.dock.setAvailable('assistants', true);
+    expect(reopened.dock.shown()).toBe('assistants');
+  });
+
+  it('shows an available empty Assistants tab and hides its strip when it is alone', () => {
+    const { dock, root, assistants, ticket, rails } = column();
+    dock.setAvailable('assistants', true);
+    expect(dock.shown()).toBe('assistants');
+    expect(root.classList.contains(DOCK_ACTIVE_CLASS)).toBe(true);
+    expect([ticket.hidden, rails.hidden, assistants.hidden]).toEqual([true, true, false]);
+    expect(tabs(dock).strip.hidden).toBe(true);
+    expect(dock.handleKey(key('['))).toBe(false);
   });
 });

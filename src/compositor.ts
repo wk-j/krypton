@@ -5197,7 +5197,12 @@ export class Compositor {
       this.inlineAcp = new InlineAcpSession();
     }
     // Opening now starts the backend (≈2.5 s cold) while the user types.
-    const session = this.inlineAcp.open(this.inlineAiConfig, cwd, remote?.then(inlineRemoteMcpServers));
+    const session = this.inlineAcp.open(this.inlineAiConfig, cwd, {
+      role: 'inline_ai',
+      label: `Inline AI · ${cwd ?? 'Terminal'} · ${pane.viewId}`,
+      harness_id: null,
+      lane_id: null,
+    }, remote?.then(inlineRemoteMcpServers));
     // spec 336: the channel's capability lives exactly as long as the conversation.
     const conversation: InlineAcpConversation = remote
       ? {

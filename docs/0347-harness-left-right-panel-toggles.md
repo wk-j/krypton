@@ -25,7 +25,7 @@ each do one thing:
 - **`left`** shows or hides the left panel: the Zen lane-navigation rail. The
   rail exists only in Zen Mode, so outside Zen `left` reads as hidden, and
   showing it turns Zen Mode on (rev 3).
-- **`right`** shows or hides the right panel: the dock column (Ticket / Rails tabs).
+- **`right`** shows or hides the right panel: the dock column (Ticket / Rails / Assistants tabs; spec 357).
 
 Neither button changes any other panel, flag or button, except that showing
 `left` outside Zen also turns Zen Mode on. The five per-panel
@@ -47,11 +47,11 @@ unchanged and are the only controls for those cards.
   `:not(.acp-harness--panels-hidden)`.
 - **Right panel** is `.acp-harness__dock` (`harness-dock.ts`), a 352px split
   pane that reserves dashboard width through `acp-harness--dock-active`. It shows
-  while a tab is AVAILABLE. The ticket and rails controllers report availability
-  as `content && !isPanelHidden(tab)` (`harness-ticket-controller.ts:694`,
-  `harness-rails-controller.ts:331`). When no tab is available, the column hides
-  and the width comes back. So the right flag only has to make both dock tabs
-  read as hidden. The dock needs no new API and no CSS.
+  while a tab is AVAILABLE. Ticket and Rails require content and a shown panel
+  flag; Assistants (spec 357) requires its shown flag but may have zero rows.
+  Every dock tab also respects the right-side flag. When none is available,
+  the column hides and the width comes back. The right flag makes all three
+  dock tabs read as hidden without changing their individual flags.
 - **The floating rail cards** (`.acp-harness__lane-rail`, a 320px overlay with
   `pointer-events: none`) reserve no width and are not a side panel. Each card
   already empties or unmounts its own slot (spec 320).
@@ -110,19 +110,26 @@ the spec 251 pattern. Storage failures read as "shown". The old
 `panels-hidden` key is no longer read and gets no migration: a project that had
 it set shows its panels after the upgrade.
 
+Spec 357 extends the separate hidden-panel preference to
+`{ version: 2, hidden: HarnessPanelId[] }`. Legacy arrays preserve every old
+flag and add only `assistants` as hidden; missing/invalid data keeps existing
+old-panel defaults and hides Assistants. This is not migration of the removed
+`panels-hidden` master key. The seven existing individual titlebar icons stay.
+
 ### State
 
 ```ts
 private leftPanelHidden: boolean;   // the Zen lane rail
 private rightPanelHidden: boolean;  // the dock column
 isPanelHidden(id) {
-  return this.hiddenPanels.has(id) || (this.rightPanelHidden && (id === 'ticket' || id === 'rails'));
+  return this.hiddenPanels.has(id) || (this.rightPanelHidden && isDockTab(id));
 }
 ```
 
-`setSideHidden(side, hidden)` persists, notifies titlebar listeners and calls
-`render()`. It writes only its own flag. A per-panel change writes only its own
-flag. No button is ever disabled by another button's state.
+`setSideHidden(side, hidden)` persists and notifies titlebar listeners. A right
+side or dock-tab flag change invalidates only `rightRail`; left/floating-card
+changes keep their existing render path. Each setter writes only its own flag.
+No button is ever disabled by another button's state.
 
 Rev 3: `left` acts on the rail as seen. Its current state is
 `!zenMode || leftPanelHidden`, so outside Zen it reads as hidden. When a `left`
@@ -140,13 +147,17 @@ follows Zen in both directions.
 | `#panels <panel>`, `#panels <action> <panel>` | Unchanged (spec 320) |
 | `#panels`, `#panels hide\|show\|toggle` | Usage — the master switch is gone |
 
-`usage: #panels [hide | show | toggle] <left | right | plan | peek | thought | grammar | queue | ticket | rails>`
+`usage: #panels [hide | show | toggle] <left | right | plan | peek | thought | grammar | queue | ticket | rails | assistants>`
 
 Chips: `left panel hidden · #panels show left` / `left panel shown`, and the
-same for `right`. The `ticket` and `rails` chips append ` · right panel hidden`
+same for `right`. The `ticket`, `rails` and `assistants` chips append ` · right panel hidden`
 while the right panel is hidden (was ` · all panels hidden`); the other five
 panels no longer get a suffix. Bare `#rails` while the right panel is hidden
 flashes `right panel hidden · #panels show right`.
+
+Spec 357's **Open Assistant Instances** palette command is an explicit composed
+Open action: show the right side, unhide Assistants, select it and focus it.
+Ordinary `#panels assistants show` still changes only its own panel flag.
 
 ### Titlebar
 
@@ -179,8 +190,8 @@ cluster keeps `left`, `right` and `backend-update`.
 1. User clicks `right` in the window titlebar.
 2. mousedown preventDefault keeps focus in the composer (spec 320).
 3. activateTitlebarToggle('right') → applyPanelsCommand({ kind: 'side', side: 'right', action: 'toggle' }).
-4. setSideHidden('right', true): write the key, notify listeners, render(), flash.
-5. The ticket and rails controllers report their tabs unavailable, so the dock
+4. setSideHidden('right', true): write the key, notify listeners, invalidate rightRail, flash.
+5. The ticket, rails and assistants controllers report their tabs unavailable, so the dock
    column hides, `--dock-active` drops and the dashboard takes the width back.
    The floating rail cards are untouched.
 6. The titlebar re-syncs: `right` aria-pressed="false"; no other button changes.
@@ -199,13 +210,14 @@ re-syncs as pressed.
   `Cmd+.` unpresses `left`.
 - **Left shown in Zen, then clicked:** the rail hides and Zen stays on. Leaving
   Zen is still `Cmd+.` only.
-- **No dock content** (no active ticket, no `.krypton/rails.toml`): there is
-  nothing to show on the right. `right` still toggles and stores its flag.
+- **No dock content** (no active ticket, no `.krypton/rails.toml`, Assistants
+  hidden): there is nothing to show on the right. `right` still stores its flag.
+  Opting into Assistants shows its empty state even with no initialized agent.
 - **Left hidden in Zen:** `Tab` / `Shift+Tab` still switch lanes. Another lane
   that needs permission is still signalled by the footer lane strip (spec 251).
 - **Right hidden, then a ticket activates:** its state updates and the column
   stays hidden until `right` is shown.
-- **`ticket` / `rails` toggled while the right panel is hidden:** the flag is
+- **`ticket` / `rails` / `assistants` toggled while the right panel is hidden:** the flag is
   stored, nothing appears, and the chip says ` · right panel hidden`. The
   buttons stay enabled.
 - **`#ticket panel`, dock `›`, Escape:** these set the `ticket` flag as today
@@ -222,11 +234,11 @@ None.
 
 ## Out of Scope
 
-- New global or leader chords (`Cmd+B`-style) or palette entries.
+- New global or leader chords (`Cmd+B`-style), or palette entries for these side toggles. The Assistants Open entry belongs to spec 357.
 - A left panel outside Zen Mode (showing `left` enters Zen instead); changing
   what Zen or Concise Mode show.
 - Any control that hides several regions at once.
-- Changing the dock's own `›` / Escape hide (spec 331) or the ticket/rails tabs.
+- Changing the dock's own `›` / Escape hide (spec 331). The third dock tab and its explicit Open command are defined by spec 357, not a new side-toggle behavior.
 - Migrating the old `panels-hidden` key.
 
 ## Verification

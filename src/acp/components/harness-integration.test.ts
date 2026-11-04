@@ -6,7 +6,7 @@
 // (the regression `LaneShell` exists to make impossible), that no row carries a
 // render signature any more, and that a turn-end seal reaches the row
 // component.
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The view talks to Tauri on mount and on its metric poll; every call returns an
 // empty list so the poll parses instead of rejecting.
@@ -22,6 +22,7 @@ vi.mock('../../profiler/ipc', () => ({ invoke: vi.fn(async () => []) }));
 
 import { invoke } from '@tauri-apps/api/core';
 
+import { assistantInstanceStore } from '../../assistant-instance-store';
 import { AcpHarnessView } from '../acp-harness-view';
 import type { HarnessLane, HarnessTranscriptItem } from '../harness-view-types';
 import type { TranscriptAnnotation } from '../types';
@@ -63,8 +64,19 @@ function genUiPanel(v: AcpHarnessView): { el: HTMLElement; isOpen: boolean } {
 
 beforeEach(() => {
   document.body.replaceChildren();
+  const storage = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string): string | null => storage.get(key) ?? null,
+    setItem: (key: string, value: string): void => { storage.set(key, value); },
+    removeItem: (key: string): void => { storage.delete(key); },
+  });
   view = new AcpHarnessView('/tmp/proj');
   document.body.appendChild(view.element);
+});
+
+afterEach(() => {
+  view.dispose();
+  vi.unstubAllGlobals();
 });
 
 describe('harness view integration (spec 301)', () => {
@@ -560,5 +572,79 @@ describe('focused Rails dock keys (spec 337)', () => {
     lane.pendingPermissions.length = 0;
     press('j');
     expect(dockKey).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Assistant Instances dock (spec 357)', () => {
+  interface AssistantsSeam {
+    assistantsCtl: { dockEl: HTMLElement };
+  }
+
+  function openInstances(): HTMLElement {
+    const actions = call<readonly { id: string; execute(): unknown }[]>(view, 'getPaletteActions', {});
+    const action = actions.find((candidate) => candidate.id === 'acp.harness.assistants');
+    expect(action, 'available even without a lane').toBeDefined();
+    action!.execute();
+    return (view as unknown as AssistantsSeam).assistantsCtl.dockEl;
+  }
+
+  it('opens an empty inventory from a zero-lane Harness with its right side hidden', async () => {
+    call(view, 'setSideHidden', 'right', true);
+    vi.mocked(invoke).mockClear();
+
+    const dock = openInstances();
+    await vi.waitFor(() => {
+      expect(dock.hidden).toBe(false);
+      expect(dock.textContent).toContain('No assistant instances started');
+    });
+    expect(document.activeElement).toBe(dock);
+    expect(dock.querySelectorAll('[data-assistant-id]')).toHaveLength(0);
+    expect(dock.querySelector('[data-stat="acp"] .acp-assistant-instances__stat-value')?.textContent).toBe('0');
+    expect(invoke).not.toHaveBeenCalledWith('acp_spawn', expect.anything());
+  });
+
+  it('observes another project without touching a sealed transcript or the composer draft', async () => {
+    const lane = call<HarnessLane>(view, 'createLane', 1, 'omp', 'OMP-1');
+    lane.status = 'idle';
+    lane.draft = 'keep my draft';
+    lanes(view).push(lane);
+    activate(view, lane.id);
+    lane.transcript.push({ id: 'sealed-monitor-proof', kind: 'assistant', text: 'A completed reply.' });
+    call(view, 'renderDashboard');
+    const sealed = view.element.querySelector<HTMLElement>('[data-msg-id="sealed-monitor-proof"]')!;
+    expect(sealed).not.toBeNull();
+    const changes: MutationRecord[] = [];
+    const observer = new MutationObserver((records) => changes.push(...records));
+    observer.observe(sealed, { attributes: true, childList: true, subtree: true, characterData: true });
+    const registration = assistantInstanceStore.registerEmbedded({
+      role: 'file_manager_ai', label: 'Other project assistant',
+      cwd: '/tmp/another-project', model_id: 'example-model',
+    });
+    try {
+      const dock = openInstances();
+      await vi.waitFor(() => expect(dock.textContent).toContain('another-project'));
+      registration.update({ activity: 'running' });
+      await vi.waitFor(() => expect(dock.textContent).toContain('running'));
+      expect(dock.textContent).toContain('shared WebView process');
+
+      const press = (key: string, init: KeyboardEventInit = {}): boolean => {
+        const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+        dock.dispatchEvent(event);
+        return view.onKeyDown(event);
+      };
+      for (const key of ['j', 'k', 'Home', 'End', 'x', 'Backspace', 'Tab']) {
+        expect(press(key), key).toBe(true);
+      }
+      expect(press('u', { ctrlKey: true })).toBe(true);
+      expect(lane.draft).toBe('keep my draft');
+      expect(press('Escape')).toBe(true);
+      expect(document.activeElement).toBe(view.element);
+      expect(dock.hidden).toBe(false);
+      expect(view.element.querySelector('[data-msg-id="sealed-monitor-proof"]')).toBe(sealed);
+      expect([...changes, ...observer.takeRecords()]).toHaveLength(0);
+    } finally {
+      observer.disconnect();
+      registration.retire();
+    }
   });
 });

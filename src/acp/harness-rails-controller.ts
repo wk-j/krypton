@@ -183,6 +183,12 @@ export class HarnessRailsController {
       const session = new AcpAssistSession({
         projectDir: () => host.projectDir,
         remoteRuntimeId: () => null,
+        owner: () => ({
+          role: 'rails_judge',
+          label: `Rails judge · ${host.projectDir ?? 'Harness'}`,
+          harness_id: host.harnessId,
+          lane_id: null,
+        }),
       });
       this.session = session;
       this.engine = new AssistEngine(session.complete, this.now);

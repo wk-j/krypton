@@ -1,21 +1,14 @@
 // Spec 337 §UI Placement — the harness's right dock column.
 //
-// `dock.right` used to hold only the Active Ticket dock, which placed itself
-// (`position: absolute`) and toggled the root class that makes the dashboard
-// yield its width. With the Rails dock as a second tab, placement, the shown
-// tab and the reserved width belong to one owner: this column.
-//
-// A tab is AVAILABLE when its dock has content and neither its own spec 320
-// flag nor the spec 347 right-panel flag hides it; each owner reports that,
-// the column decides what is SHOWN. The selected tab is a stored preference
-// that availability never rewrites: when it becomes unavailable the column
-// shows the other one, and goes back as soon as it can.
+// One column owns placement, availability and the persisted selected tab.
+// Owners report availability (Assistants does not require inventory rows).
+// Fallback follows tab order without rewriting the stored preference.
 
 import { TabStrip, type TabStripTab } from './components/tab-strip';
 import { readDockTab, writeDockTab, type HarnessDockTab } from './harness-panel-visibility';
 
 /** Paint order of the tab strip, left to right. */
-const DOCK_TABS: readonly HarnessDockTab[] = ['ticket', 'rails'];
+const DOCK_TABS: readonly HarnessDockTab[] = ['ticket', 'rails', 'assistants'];
 
 /** The root class that reserves the column's width (`harness-shared.css`). */
 export const DOCK_ACTIVE_CLASS = 'acp-harness--dock-active';
@@ -29,9 +22,6 @@ export interface RailsTabBadge {
 
 const NO_BADGE: RailsTabBadge = { failedCheck: null, open: null };
 
-function otherTab(tab: HarnessDockTab): HarnessDockTab {
-  return tab === 'ticket' ? 'rails' : 'ticket';
-}
 
 export class HarnessDock {
   /** The column, `.acp-harness__dock`: the tab strip, then the shown dock. */
@@ -40,7 +30,7 @@ export class HarnessDock {
   readonly slotEl: HTMLElement;
   private readonly strip = new TabStrip('button');
   private readonly panes = new Map<HarnessDockTab, HTMLElement>();
-  private readonly available: Record<HarnessDockTab, boolean> = { ticket: false, rails: false };
+  private readonly available: Record<HarnessDockTab, boolean> = { ticket: false, rails: false, assistants: false };
   private selected: HarnessDockTab;
   private shownTab: HarnessDockTab | null = null;
   private badge: RailsTabBadge = NO_BADGE;
@@ -111,10 +101,12 @@ export class HarnessDock {
     return this.shownTab === tab;
   }
 
-  /** `[` / `]`: with two tabs there is only "the other one". False when there is nothing to switch to. */
-  cycle(): boolean {
-    if (!this.available.ticket || !this.available.rails || this.shownTab === null) return false;
-    this.select(otherTab(this.shownTab));
+  /** Traverse available tabs in paint order, wrapping in either direction. */
+  cycle(direction: 1 | -1 = 1): boolean {
+    if (this.shownTab === null) return false;
+    const next = this.nextAvailable(this.shownTab, direction);
+    if (next === null || next === this.shownTab) return false;
+    this.select(next);
     return true;
   }
 
@@ -122,7 +114,7 @@ export class HarnessDock {
   handleKey(event: KeyboardEvent): boolean {
     if (event.key !== '[' && event.key !== ']') return false;
     if (event.metaKey || event.ctrlKey || event.altKey) return false;
-    if (!this.cycle()) return false;
+    if (!this.cycle(event.key === '[' ? -1 : 1)) return false;
     event.preventDefault();
     return true;
   }
@@ -132,12 +124,17 @@ export class HarnessDock {
     this.root.classList.remove(DOCK_ACTIVE_CLASS);
   }
 
+  private nextAvailable(from: HarnessDockTab, direction: 1 | -1): HarnessDockTab | null {
+    const start = DOCK_TABS.indexOf(from);
+    for (let step = 1; step <= DOCK_TABS.length; step++) {
+      const tab = DOCK_TABS[(start + step * direction + DOCK_TABS.length) % DOCK_TABS.length];
+      if (this.available[tab]) return tab;
+    }
+    return null;
+  }
+
   private sync(): void {
-    const next = this.available[this.selected]
-      ? this.selected
-      : this.available[otherTab(this.selected)]
-        ? otherTab(this.selected)
-        : null;
+    const next = this.available[this.selected] ? this.selected : this.nextAvailable(this.selected, 1);
     const changed = next !== this.shownTab;
     this.shownTab = next;
     for (const [tab, el] of this.panes) el.hidden = tab !== next;
@@ -159,10 +156,10 @@ export class HarnessDock {
   }
 
   private paintStrip(): void {
-    const both = this.available.ticket && this.available.rails;
-    this.strip.el.hidden = !both;
-    if (!both) return;
-    const tabs: TabStripTab[] = DOCK_TABS.map((tab) => this.tabFor(tab));
+    const available = DOCK_TABS.filter((tab) => this.available[tab]);
+    this.strip.el.hidden = available.length < 2;
+    if (available.length < 2) return;
+    const tabs: TabStripTab[] = available.map((tab) => this.tabFor(tab));
     this.strip.update({
       tabs,
       activeId: this.shownTab ?? this.selected,
@@ -173,13 +170,14 @@ export class HarnessDock {
       role: 'tablist',
       ariaLabel: 'Dock',
       onSelect: (id) => {
-        if (id === 'ticket' || id === 'rails') this.select(id);
+        if (id === 'ticket' || id === 'rails' || id === 'assistants') this.select(id);
       },
     });
   }
 
   private tabFor(tab: HarnessDockTab): TabStripTab {
     if (tab === 'ticket') return { id: 'ticket', label: 'TICKET' };
+    if (tab === 'assistants') return { id: 'assistants', label: 'ASSISTANTS' };
     if (this.badge.failedCheck !== null) return { id: 'rails', label: 'RAILS ✗' };
     return this.badge.open === null
       ? { id: 'rails', label: 'RAILS' }

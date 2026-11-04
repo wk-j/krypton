@@ -165,6 +165,7 @@ function rig(options: RigOptions = {}) {
     element: document.createElement('div'),
     lanes,
     activeLaneId: 'lane-1',
+    harnessId: 'harness-1',
     projectDir: '/repo',
     flashChip: (text) => { flashes.push(text); },
     subscribeLaneBus: (handler) => {

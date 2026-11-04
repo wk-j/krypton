@@ -392,6 +392,8 @@ pub fn run() {
             quick_search::quick_search_record_pick,
             acp::acp_list_backends,
             acp::acp_spawn,
+            acp::acp_list_instances,
+            acp::acp_set_instance_owner,
             acp::computer_cli_available,
             acp::acp_initialize,
             acp::acp_set_mcp_servers,

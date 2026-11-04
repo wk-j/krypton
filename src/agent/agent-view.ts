@@ -233,7 +233,7 @@ export class AgentView implements ContentView {
   private collapsedMessages = new Map<HTMLElement, { html: string; height: number }>();
 
   constructor() {
-    this.controller = new AgentController();
+    this.controller = new AgentController({ role: 'agent_view', label: 'Agent View' });
     this.controller.setWriteApprovalHandler((request) => this.requestWriteApproval(request));
     this.controller.setBashApprovalHandler((request) => this.requestCommandApproval(request));
 
@@ -2707,7 +2707,7 @@ export class AgentView implements ContentView {
   }
 
   dispose(): void {
-    this.controller.abort();
+    this.controller.dispose();
     this.stopSpinner();
     this.virtualObserver?.disconnect();
     this.collapsedMessages.clear();

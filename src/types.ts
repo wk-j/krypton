@@ -610,6 +610,8 @@ export interface AcpLaneMetrics {
   session: number;
   root_pid: number;
   root_alive: boolean;
+  /** True only after the sampler has a fresh CPU delta for this process identity. */
+  cpu_ready: boolean;
   total_cpu_percent: number;
   total_rss_mb: number;
   proc_count: number;

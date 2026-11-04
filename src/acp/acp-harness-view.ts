@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { openExternalUrl } from '../external-url';
 import { nextPermissionMode, permissionModeDescription } from '../agent/permission-mode';
+import { assistantInstanceStore } from '../assistant-instance-store';
 import { AcpClient } from './client';
 import { COMPUTER_APPROVAL_HINT, computerApprovalPayload, type ComputerApprovalRequest } from './computer-approval';
 import {
@@ -25,6 +26,7 @@ import { HarnessTimelineController } from './harness-timeline-controller';
 import { HarnessE2eController } from './harness-e2e-controller';
 import { HarnessTicketController } from './harness-ticket-controller';
 import { HarnessRailsController } from './harness-rails-controller';
+import { HarnessAssistantsController } from './harness-assistants-controller';
 import { HarnessDock } from './harness-dock';
 import { HarnessReviewLoopController } from './harness-review-loop-controller';
 import { HarnessSteerController } from './harness-steer-controller';
@@ -154,6 +156,7 @@ import { parseElicitationForm } from './elicitation';
 import type {
   AcpBackendDescriptor,
   AcpEvent,
+  AcpInstanceOwner,
   DiffReviewComment,
   ReviewResponse,
   AcpMcpCapabilities,
@@ -1271,10 +1274,11 @@ export class AcpHarnessView implements ContentView {
    *  (acp_save/load_issue_bindings) and rehydrated on register. */
   private readonly issueBindings = new Map<string, IssueBinding>();
   private readonly ticketCtl = new HarnessTicketController(this.ticketHost());
-  /** spec 337: the `dock.right` column — Ticket and Rails tabs, shown tab, reserved width. */
+  /** The shared `dock.right` column — Ticket, Rails, and Assistants. */
   private readonly dock: HarnessDock;
   /** spec 337: the Rails verifier. Null on a remote harness, where it never exists. */
   private readonly railsCtl: HarnessRailsController | null;
+  private readonly assistantsCtl: HarnessAssistantsController;
   /** Project-local autonomous Timeline settings and legacy migration state. */
   private readonly timelineCtl = new HarnessTimelineController(this.timelineHost());
   /** spec 328: `#e2e` — run and track the project's e2e cases from the transcript. */
@@ -1472,7 +1476,8 @@ export class AcpHarnessView implements ContentView {
   private thoughtHideTimer: number | null = null;
   private toolTickTimer: number | null = null;
   private metricsBySession = new Map<number, AcpLaneMetrics>();
-  private metricsTimer: number | null = null;
+  private metricsUnsubscribe: (() => void) | null = null;
+  private metricsEpoch = 0;
   private spinnerTimer: number | null = null;
   private metricsPanelOpen = false;
   private pickerOpen = false;
@@ -1658,6 +1663,13 @@ export class AcpHarnessView implements ContentView {
     this.element.tabIndex = 0;
     this.dock = new HarnessDock(this.element, () => this.projectDir, (tab) => this.onDockShown(tab));
     this.railsCtl = this.remoteRuntimeId ? null : new HarnessRailsController(this.railsHost());
+    this.assistantsCtl = new HarnessAssistantsController({
+      isPanelHidden: () => this.isPanelHidden('assistants'),
+      setDockTabAvailable: (available) => this.dock.setAvailable('assistants', available),
+      dockTabShown: () => this.dock.isShown('assistants'),
+      invalidate: () => this.invalidate('rightRail'),
+      focusComposer: () => this.focusComposer(),
+    });
     if (SPEC114_DEV) installLaneBodyScrollTracer();
     this.coordinator = new InterLaneCoordinator(this.laneBus, this.buildLaneHost());
     // spec 240: transcript annotations drain on idle like other human→lane
@@ -4584,7 +4596,9 @@ export class AcpHarnessView implements ContentView {
     );
     if (dockFocused && !laneBlocked) {
       if (this.dock.handleKey(e)) return true;
-      if (this.railsCtl?.dockEl.contains(document.activeElement)) {
+      if (this.assistantsCtl.dockEl.contains(document.activeElement)) {
+        if (this.assistantsCtl.handleDockKey(e)) return true;
+      } else if (this.railsCtl?.dockEl.contains(document.activeElement)) {
         if (this.railsCtl.handleDockKey(e)) return true;
         // Nothing else may reach the composer it hides: no typing, no
         // Backspace/arrows/Tab editing the draft or cycling the permission
@@ -5010,6 +5024,7 @@ export class AcpHarnessView implements ContentView {
     this.liveVoiceCtl.dispose();
     this.assistCtl.dispose(); // spec 306
     this.railsCtl?.dispose(); // spec 337: cancels a run, writes no record
+    this.assistantsCtl.dispose();
     this.composerBloomLayer?.replaceChildren();
     this.composerBloomLayer = null;
     this.composerBloomLaneId = null;
@@ -6377,6 +6392,7 @@ export class AcpHarnessView implements ContentView {
     this.ticketCtl.mountDock();
     this.dock.setPane('ticket', this.ticketCtl.ticketDockEl);
     if (this.railsCtl) this.dock.setPane('rails', this.railsCtl.dockEl);
+    this.dock.setPane('assistants', this.assistantsCtl.dockEl);
     body.appendChild(this.dock.el);
 
     // Anchors in this view — agent-rendered markdown and ticket links — always
@@ -6566,6 +6582,7 @@ export class AcpHarnessView implements ContentView {
     this.railLayout.mount('queue', this.queueSlot);
     this.railLayout.mount('ticket', this.ticketCtl.ticketDock);
     if (this.railsCtl) this.railLayout.mount('rails', this.railsCtl.dock);
+    this.railLayout.mount('assistants', this.assistantsCtl.dock);
 
     this.lanePicker = new LanePicker();
     body.appendChild(this.lanePicker.el);
@@ -7842,6 +7859,15 @@ export class AcpHarnessView implements ContentView {
     return lane;
   }
 
+  private laneInstanceOwner(lane: HarnessLane): AcpInstanceOwner {
+    return {
+      role: 'harness_lane',
+      label: lane.displayName,
+      harness_id: this.harnessMemoryId,
+      lane_id: lane.id,
+    };
+  }
+
   /** Spawn (or respawn) the lane's agent process. With `resumeSessionId`
    *  (spec 199: force-restart of a hung lane) the fresh process is steered
    *  back into that agent session — `session/resume` preferred, `session/load`
@@ -7927,6 +7953,7 @@ export class AcpHarnessView implements ContentView {
       client = await AcpClient.spawn(
         lane.backendId,
         this.projectDir,
+        this.laneInstanceOwner(lane),
         seedMcp,
         junieMcpLocation,
         clineMcpSettingsPath,
@@ -10889,7 +10916,12 @@ export class AcpHarnessView implements ContentView {
     this.render();
     let client: AcpClient | null = null;
     try {
-      client = await AcpClient.spawn(backendId, this.projectDir, [], null, null, this.remoteRuntimeId);
+      client = await AcpClient.spawn(backendId, this.projectDir, {
+        role: 'session_probe',
+        label: `${backendLabel(backendId)} session picker`,
+        harness_id: this.harnessMemoryId,
+        lane_id: null,
+      }, [], null, null, this.remoteRuntimeId);
       const init = await client.initializeOnly();
       const capabilities = sessionCapabilitiesFromAgent(init.agent_capabilities);
       if (!capabilities.canList) {
@@ -10983,6 +11015,7 @@ export class AcpHarnessView implements ContentView {
       this.onLaneEvent(lane, event);
     });
     try {
+      await client.setInstanceOwner(this.laneInstanceOwner(lane));
       const servers = await this.mcpServersForLane(lane, init.agent_capabilities);
       await client.setMcpServers(servers ?? []);
       const info = mode === 'resume'
@@ -12588,6 +12621,7 @@ export class AcpHarnessView implements ContentView {
         this.renderActiveLaneQueue();
         this.ticketCtl.renderTicketDock();
         this.railsCtl?.renderDock();
+        this.assistantsCtl.renderDock();
         return;
       case 'composer':
         this.renderComposer();
@@ -13903,29 +13937,26 @@ export class AcpHarnessView implements ContentView {
   }
 
   private startMetricsTick(): void {
-    if (this.metricsTimer !== null) return;
-    void this.pollMetrics();
-    this.metricsTimer = window.setInterval(() => void this.pollMetrics(), METRICS_POLL_MS);
+    if (this.metricsUnsubscribe !== null) return;
+    this.metricsUnsubscribe = assistantInstanceStore.subscribeMetrics((entries) => {
+      void this.applyMetrics(entries);
+    });
   }
 
   private stopMetricsTick(): void {
-    if (this.metricsTimer === null) return;
-    window.clearInterval(this.metricsTimer);
-    this.metricsTimer = null;
+    this.metricsUnsubscribe?.();
+    this.metricsUnsubscribe = null;
+    this.metricsEpoch += 1;
   }
 
-  private async pollMetrics(): Promise<void> {
-    let entries: AcpLaneMetrics[];
-    try {
-      entries = await invoke<AcpLaneMetrics[]>('acp_get_lane_metrics');
-    } catch {
-      return;
-    }
+  private async applyMetrics(entries: readonly AcpLaneMetrics[]): Promise<void> {
+    const epoch = this.metricsEpoch;
     const next = new Map<number, AcpLaneMetrics>();
     for (const m of entries) next.set(m.session, m);
     this.metricsBySession = next;
     // spec 305: the same tick folds in every live background task's file status.
     await this.refreshBackgroundTasks();
+    if (epoch !== this.metricsEpoch) return;
     // Lightweight refresh — only redraw chips and the breakdown panel,
     // not the whole transcript (which would thrash on every tick).
     this.refreshMetricsRender();
@@ -13951,6 +13982,7 @@ export class AcpHarnessView implements ContentView {
   /** spec 305: one IPC round trip for every still-live task across all lanes,
    *  folded back with the lane's process tree as the liveness cross-check. */
   private async refreshBackgroundTasks(): Promise<void> {
+    const epoch = this.metricsEpoch;
     const live: { lane: HarnessLane; task: BackgroundTask }[] = [];
     for (const lane of this.lanes) {
       for (const task of lane.backgroundTasks) {
@@ -13966,6 +13998,7 @@ export class AcpHarnessView implements ContentView {
     } catch {
       return; // a failed stat is not news; the next tick retries.
     }
+    if (epoch !== this.metricsEpoch) return;
     const now = Date.now();
     for (const status of statuses) {
       const entry = live.find(({ task }) => task.id === status.id);
@@ -15816,6 +15849,12 @@ export class AcpHarnessView implements ContentView {
         execute: () => this.runBackendUpdate(),
       });
     }
+    out.push({
+      id: 'acp.harness.assistants',
+      label: 'Open Assistant Instances',
+      category: 'ACP Harness',
+      execute: () => this.showAssistantsDock(),
+    });
     if (!lane) return out;
     if (!this.remoteRuntimeId && this.projectDir && lane.status === 'idle' && lane.sessionId) {
       out.push({
@@ -15956,7 +15995,8 @@ export class AcpHarnessView implements ContentView {
     else this.rightPanelHidden = hidden;
     writeSideHidden(this.projectDir, side, hidden);
     this.notifyTitlebarTogglesChanged();
-    this.render();
+    if (side === 'right') this.invalidate('rightRail');
+    else this.render();
   }
 
   /** spec 320: one panel's own flag. Writes nothing else — no side flag, no other panel. */
@@ -15968,10 +16008,11 @@ export class AcpHarnessView implements ContentView {
     this.hiddenPanels = next;
     writeHiddenPanels(this.projectDir, next);
     this.notifyTitlebarTogglesChanged();
-    this.render();
+    if (isDockTab(panel)) this.invalidate('rightRail');
+    else this.render();
   }
 
-  /** spec 320: the panel's own flag; spec 347: the two dock tabs also hide with the right panel. */
+  /** A dock tab also follows the right-side visibility flag. */
   private isPanelHidden(panel: HarnessPanelId): boolean {
     return this.hiddenPanels.has(panel) || (this.rightPanelHidden && isDockTab(panel));
   }
@@ -15997,6 +16038,7 @@ export class AcpHarnessView implements ContentView {
 
   /** spec 337: the column changed its shown tab — only a shown dock paints. */
   private onDockShown(tab: HarnessDockTab | null): void {
+    this.assistantsCtl.renderDock();
     if (tab === 'ticket') this.ticketCtl.renderTicketDock();
     else if (tab === 'rails') this.railsCtl?.renderDock();
   }
@@ -16015,6 +16057,14 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     this.railsCtl.dockEl.focus({ preventScroll: true });
+  }
+
+  private showAssistantsDock(): void {
+    this.setSideHidden('right', false);
+    this.setPanelHidden('assistants', false);
+    this.assistantsCtl.renderDock();
+    this.dock.select('assistants');
+    this.assistantsCtl.focus();
   }
 
   private focusComposer(): void {
@@ -16624,6 +16674,7 @@ export class AcpHarnessView implements ContentView {
       get lanes() { return view.lanes; },
       get activeLaneId() { return view.activeLaneId; },
       get projectDir() { return view.projectDir; },
+      get harnessId() { return view.harnessMemoryId; },
       get remoteRuntimeId() { return view.remoteRuntimeId; },
       flashChip: (text) => view.flashChip(text),
       invalidate: (region) => view.invalidate(region),
@@ -16640,6 +16691,7 @@ export class AcpHarnessView implements ContentView {
       get lanes() { return view.lanes; },
       get activeLaneId() { return view.activeLaneId; },
       get projectDir() { return view.projectDir; },
+      get harnessId() { return view.harnessMemoryId; },
       flashChip: (text) => view.flashChip(text),
       subscribeLaneBus: (handler) => view.laneBus.subscribe(handler),
       isPanelHidden: (panel) => view.isPanelHidden(panel),

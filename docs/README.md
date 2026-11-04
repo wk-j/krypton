@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (342)
+## Specs (343)
 
 | # | Spec |
 |---|------|
@@ -359,6 +359,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 354 | [Review Board Redesign — Typeset, Not Carded](./0354-review-board-redesign.md) |
 | 355 | [E2E System Map — Check Pins on a Project-Authored Map](./0355-e2e-system-map.md) |
 | 356 | [Timeline Manual Mode](./0356-timeline-manual-mode.md) |
+| 357 | [Assistant Instance Monitor](./0357-assistant-instance-monitor.md) |
 
 ## ADRs (27)
 

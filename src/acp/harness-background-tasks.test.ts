@@ -57,6 +57,7 @@ const metrics = (processes: AcpLaneProcMetric[]): AcpLaneMetrics => ({
   session: 1,
   root_pid: 100,
   root_alive: true,
+  cpu_ready: true,
   total_cpu_percent: 0,
   total_rss_mb: 0,
   proc_count: processes.length,

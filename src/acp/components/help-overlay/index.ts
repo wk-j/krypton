@@ -195,7 +195,7 @@ function buildSections(): readonly HelpSection[] {
       { term: '#bg', desc: 'List this lane’s background shell tasks' },
       {
         term: '#panels [hide | show | toggle] <left | right | panel>',
-        desc: 'Hide or restore the left panel (Zen lane rail), the right panel (ticket/rails dock), or one of plan · peek · thought · grammar · queue · ticket · rails (also the window titlebar icons)',
+        desc: 'Hide or restore the left panel (Zen lane rail), the right panel (Ticket/Rails/Assistants dock), or one of plan · peek · thought · grammar · queue · ticket · rails · assistants (the first seven also have titlebar icons)',
       },
       {
         term: '#timeline [open | trace | conflicts | auto]',

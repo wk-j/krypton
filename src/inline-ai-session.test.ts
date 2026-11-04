@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AcpClient } from './acp/client';
-import type { AcpEvent, AcpMcpServerDescriptor, StopReason } from './acp/types';
+import type { AcpEvent, AcpInstanceOwner, AcpMcpServerDescriptor, StopReason } from './acp/types';
 import type { InlineAiConfig } from './config';
 import {
   InlineAcpSession,
@@ -29,6 +29,11 @@ class FakeClient {
   private readonly listeners: Array<(e: AcpEvent) => void> = [];
   modeError: Error | null = null;
   disposed = false;
+  owner!: AcpInstanceOwner;
+
+  async setInstanceOwner(owner: AcpInstanceOwner): Promise<void> {
+    this.owner = owner;
+  }
   private promptWaiter: (() => void) | null = null;
 
   async initializeOnly(): Promise<unknown> {
@@ -107,6 +112,10 @@ const CFG: InlineAiConfig = {
   backend: 'claude', model: 'haiku', mode: 'default', context: true, follow_up: true, remote_checks: true,
 };
 
+const OWNER: AcpInstanceOwner = {
+  role: 'inline_ai', label: 'Inline AI · /repo · pane-1', harness_id: null, lane_id: null,
+};
+
 const HOST_EXEC_SERVER: AcpMcpServerDescriptor = {
   name: 'krypton_inline', type: 'http', url: 'http://127.0.0.1:1/mcp/inline', headers: [],
 };
@@ -129,10 +138,11 @@ function harness(
   const spawned: FakeClient[] = [];
   const spawnArgs: Array<{ backend: string; cwd: string | null }> = [];
   const spawnWaiters: Array<() => void> = [];
-  const spawn: InlineAcpSpawn = async (backend, cwd) => {
+  const spawn: InlineAcpSpawn = async (backend, cwd, owner) => {
     spawnArgs.push({ backend, cwd });
     if (options.spawnError) throw options.spawnError;
     const client = new FakeClient();
+    client.owner = owner;
     options.onSpawn?.(client);
     spawned.push(client);
     for (const wake of spawnWaiters.splice(0)) wake();
@@ -170,10 +180,22 @@ async function settleMicrotasks(): Promise<void> {
 }
 
 describe('InlineAcpSession', () => {
+  it('reassigns a warm process to the current pane without spawning another process', async () => {
+    const h = harness();
+    expect(h.spawned).toHaveLength(0);
+    await completeTurn(h, h.session.open(CFG, '/repo', OWNER), 1, 1);
+    expect(h.spawned[0].owner).toEqual(OWNER);
+    const nextOwner = { ...OWNER, label: 'Inline AI · /repo · pane-2' };
+    await completeTurn(h, h.session.open(CFG, '/repo', nextOwner), 1, 2);
+    expect(h.spawned).toHaveLength(1);
+    expect(h.spawned[0].owner).toEqual(nextOwner);
+    expect(h.spawned[0].calls.filter((call) => call === 'sessionNew')).toHaveLength(2);
+  });
+
   it('opens a fresh session per Cmd+K on one warm process, applying model and mode each time', async () => {
     const h = harness();
-    await completeTurn(h, h.session.open(CFG, '/repo'), 1, 1);
-    await completeTurn(h, h.session.open(CFG, '/repo'), 1, 2);
+    await completeTurn(h, h.session.open(CFG, '/repo', OWNER), 1, 1);
+    await completeTurn(h, h.session.open(CFG, '/repo', OWNER), 1, 2);
 
     expect(h.spawned).toHaveLength(1);
     expect(h.spawned[0].calls).toEqual([
@@ -185,8 +207,8 @@ describe('InlineAcpSession', () => {
 
   it('gives each session its own MCP servers, so a local pane after an SSH pane gets none', async () => {
     const h = harness();
-    await completeTurn(h, h.session.open(CFG, '/repo', Promise.resolve([HOST_EXEC_SERVER])), 1, 1);
-    await completeTurn(h, h.session.open(CFG, '/repo'), 1, 2);
+    await completeTurn(h, h.session.open(CFG, '/repo', OWNER, Promise.resolve([HOST_EXEC_SERVER])), 1, 1);
+    await completeTurn(h, h.session.open(CFG, '/repo', OWNER), 1, 2);
 
     expect(h.spawned[0].calls.filter((c) => c.startsWith('mcp:') || c === 'sessionNew')).toEqual([
       'mcp:[krypton_inline]', 'sessionNew',
@@ -198,7 +220,7 @@ describe('InlineAcpSession', () => {
     const h = harness();
     let connect!: (servers: AcpMcpServerDescriptor[]) => void;
     const servers = new Promise<AcpMcpServerDescriptor[]>((resolve) => { connect = resolve; });
-    const turn = h.session.open(CFG, '/repo', servers).prompt('x', () => undefined);
+    const turn = h.session.open(CFG, '/repo', OWNER, servers).prompt('x', () => undefined);
     const client = await h.nthClient(1);
     await settleMicrotasks();
     expect(client.calls).toEqual(['initialize']);
@@ -211,7 +233,7 @@ describe('InlineAcpSession', () => {
 
   it('keeps follow-up questions of one overlay on its session', async () => {
     const h = harness();
-    const conversation = h.session.open(CFG, '/repo');
+    const conversation = h.session.open(CFG, '/repo', OWNER);
     await completeTurn(h, conversation, 1, 1);
     await completeTurn(h, conversation, 1, 2);
 
@@ -220,16 +242,16 @@ describe('InlineAcpSession', () => {
 
   it('skips model and mode when configured empty', async () => {
     const h = harness();
-    await completeTurn(h, h.session.open({ ...CFG, backend: 'omp', model: '', mode: '' }, '/repo'), 1, 1);
+    await completeTurn(h, h.session.open({ ...CFG, backend: 'omp', model: '', mode: '' }, '/repo', OWNER), 1, 1);
 
     expect(h.spawned[0].calls).toEqual(['initialize', 'mcp:[]', 'sessionNew', 'prompt']);
   });
 
   it('respawns when the pane cwd or the backend changes', async () => {
     const h = harness();
-    await completeTurn(h, h.session.open(CFG, '/repo'), 1, 1);
-    await completeTurn(h, h.session.open(CFG, '/other'), 2, 1);
-    await completeTurn(h, h.session.open({ ...CFG, backend: 'codex' }, '/other'), 3, 1);
+    await completeTurn(h, h.session.open(CFG, '/repo', OWNER), 1, 1);
+    await completeTurn(h, h.session.open(CFG, '/other', OWNER), 2, 1);
+    await completeTurn(h, h.session.open({ ...CFG, backend: 'codex' }, '/other', OWNER), 3, 1);
 
     expect(h.spawnArgs).toEqual([
       { backend: 'claude', cwd: '/repo' },
@@ -241,8 +263,8 @@ describe('InlineAcpSession', () => {
 
   it('never starts a backend for an overlay closed before setup ran', async () => {
     const h = harness();
-    h.session.open(CFG, '/repo').close();
-    await completeTurn(h, h.session.open(CFG, '/repo'), 1, 1);
+    h.session.open(CFG, '/repo', OWNER).close();
+    await completeTurn(h, h.session.open(CFG, '/repo', OWNER), 1, 1);
 
     expect(h.spawned).toHaveLength(1);
     expect(h.spawned[0].calls.filter((c) => c === 'sessionNew')).toHaveLength(1);
@@ -251,7 +273,7 @@ describe('InlineAcpSession', () => {
   it('streams chunks and tool titles after the Starting and Thinking statuses', async () => {
     const h = harness();
     const events: InlineTurnEvent[] = [];
-    const turn = h.session.open(CFG, '/repo').prompt('x', (e) => events.push(e));
+    const turn = h.session.open(CFG, '/repo', OWNER).prompt('x', (e) => events.push(e));
     const client = await h.nthClient(1);
     const wire = await client.prompted(1);
     client.emit({ type: 'tool_call', call: { toolCallId: 't1', title: 'Terminal' } });
@@ -275,7 +297,7 @@ describe('InlineAcpSession', () => {
 
   it('declines every request the backend raises, even after the turn settled', async () => {
     const h = harness();
-    const turn = h.session.open(CFG, '/repo').prompt('x', () => undefined);
+    const turn = h.session.open(CFG, '/repo', OWNER).prompt('x', () => undefined);
     const client = await h.nthClient(1);
     const wire = await client.prompted(1);
     client.emit({ type: 'permission_request', requestId: 7, toolCall: { toolCallId: 't' }, options: [] });
@@ -291,7 +313,7 @@ describe('InlineAcpSession', () => {
   it('approves the host_exec tool once, and only that tool, showing its command', async () => {
     const h = harness();
     const events: InlineTurnEvent[] = [];
-    const turn = h.session.open(CFG, '/repo').prompt('x', (e) => events.push(e));
+    const turn = h.session.open(CFG, '/repo', OWNER).prompt('x', (e) => events.push(e));
     const client = await h.nthClient(1);
     const wire = await client.prompted(1);
     const options = [
@@ -318,14 +340,14 @@ describe('InlineAcpSession', () => {
   it('cancels on close and holds the next session/new until the cancelled turn settles', async () => {
     const h = harness();
     const events: InlineTurnEvent[] = [];
-    const first = h.session.open(CFG, '/repo');
+    const first = h.session.open(CFG, '/repo', OWNER);
     const turn = first.prompt('x', (e) => events.push(e));
     const client = await h.nthClient(1);
     const wire = await client.prompted(1);
 
     first.close();
     expect(client.calls).toContain('cancel');
-    const late = h.session.open(CFG, '/repo').prompt('y', () => undefined);
+    const late = h.session.open(CFG, '/repo', OWNER).prompt('y', () => undefined);
     await settleMicrotasks();
     expect(client.calls.filter((c) => c === 'sessionNew')).toHaveLength(1);
 
@@ -342,7 +364,7 @@ describe('InlineAcpSession', () => {
   it('kills a process whose cancelled turn never settles and respawns for the next Cmd+K', async () => {
     vi.useFakeTimers();
     const h = harness({ graceMs: 1_000 });
-    const first = h.session.open(CFG, '/repo');
+    const first = h.session.open(CFG, '/repo', OWNER);
     const turn = first.prompt('x', () => undefined);
     await (await h.nthClient(1)).prompted(1);
     first.close();
@@ -350,21 +372,21 @@ describe('InlineAcpSession', () => {
     await vi.advanceTimersByTimeAsync(1_000);
     await rejected;
 
-    await completeTurn(h, h.session.open(CFG, '/repo'), 2, 1);
+    await completeTurn(h, h.session.open(CFG, '/repo', OWNER), 2, 1);
 
     expect(h.spawned.map((c) => c.disposed)).toEqual([true, false]);
   });
 
   it('names the backend when it does not start', async () => {
     const h = harness({ spawnError: new Error('ENOENT') });
-    const conversation = h.session.open(CFG, '/repo');
+    const conversation = h.session.open(CFG, '/repo', OWNER);
 
     await expect(conversation.prompt('x', () => undefined)).rejects.toThrow('inline AI: "claude" did not start — ENOENT');
   });
 
   it('reports a rejected mode and keeps the process', async () => {
     const h = harness({ onSpawn: (c) => { c.modeError = new Error('unknown mode'); } });
-    const conversation = h.session.open(CFG, '/repo');
+    const conversation = h.session.open(CFG, '/repo', OWNER);
 
     await expect(conversation.prompt('x', () => undefined)).rejects.toThrow('rejected mode "default"');
     expect(h.spawned[0].disposed).toBe(false);
@@ -372,9 +394,9 @@ describe('InlineAcpSession', () => {
 
   it('respawns after the subprocess died between turns', async () => {
     const h = harness();
-    await completeTurn(h, h.session.open(CFG, '/repo'), 1, 1);
+    await completeTurn(h, h.session.open(CFG, '/repo', OWNER), 1, 1);
     h.spawned[0].emit({ type: 'stop', stopReason: 'cancelled', reason: 'backend exited' });
-    await completeTurn(h, h.session.open(CFG, '/repo'), 2, 1);
+    await completeTurn(h, h.session.open(CFG, '/repo', OWNER), 2, 1);
 
     expect(h.spawned.map((c) => c.disposed)).toEqual([true, false]);
   });

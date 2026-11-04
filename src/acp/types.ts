@@ -3,6 +3,36 @@
 
 export type StopReason = 'end_turn' | 'max_tokens' | 'max_turn_requests' | 'refusal' | 'cancelled';
 
+/** Spec 357: explicit attribution for one spawned ACP transport. */
+export type AcpInstanceRole = 'harness_lane' | 'session_probe' | 'assist' | 'rails_judge' | 'inline_ai';
+
+export interface AcpInstanceOwner {
+  role: AcpInstanceRole;
+  label: string;
+  harness_id: string | null;
+  lane_id: string | null;
+}
+
+/** Read-only process-epoch inventory; ACP conversation IDs are separate. */
+export interface AcpInstanceSnapshot {
+  session: number;
+  backend_id: string;
+  owner: AcpInstanceOwner;
+  cwd: string;
+  acp_session_id: string | null;
+  execution: { kind: 'local' | 'remote'; runtime_id: string | null; host: string | null };
+  pid: number | null;
+  lifecycle: 'initializing' | 'ready' | 'terminating' | 'disconnected';
+  activity: 'idle' | 'running' | 'waiting';
+  liveness: 'alive' | 'exited' | 'unknown';
+  has_error: boolean;
+  requested_model_id: string | null;
+  confirmed_model_id: string | null;
+  model_uncertain: boolean;
+  started_at_ms: number;
+  last_activity_at_ms: number;
+}
+
 export type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'image'; data: string; mimeType: string; uri?: string }

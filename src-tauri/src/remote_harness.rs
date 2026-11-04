@@ -84,6 +84,8 @@ pub enum RemoteAgentEvent {
     Stdout(String),
     Stderr(String),
     Exit(Option<i32>),
+    /// The SSH/runtime channel ended without observing this agent's exit.
+    Disconnected,
 }
 
 pub struct RemoteAgentHandle {
@@ -91,13 +93,54 @@ pub struct RemoteAgentHandle {
     pub events: mpsc::UnboundedReceiver<RemoteAgentEvent>,
 }
 
+#[derive(Default)]
+pub struct RemoteAgentObservation {
+    exited: AtomicBool,
+    changed: tokio::sync::Notify,
+}
+
+impl RemoteAgentObservation {
+    pub fn exited(&self) -> bool {
+        self.exited.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn observe(&self, event: &RemoteAgentEvent) {
+        if matches!(event, RemoteAgentEvent::Exit(_)) {
+            self.exited.store(true, Ordering::Release);
+            self.changed.notify_waiters();
+        }
+    }
+
+    pub async fn wait_for_exit(&self) {
+        loop {
+            let notified = self.changed.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.exited() {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+struct RemoteAgentSink {
+    events: mpsc::UnboundedSender<RemoteAgentEvent>,
+    observation: Arc<RemoteAgentObservation>,
+}
+
 #[derive(Clone)]
 pub struct RemoteAgentTransport {
     runtime: Arc<RemoteRuntimeClient>,
     agent_id: u64,
+    observation: Arc<RemoteAgentObservation>,
 }
 
 impl RemoteAgentTransport {
+    pub fn observation(&self) -> Arc<RemoteAgentObservation> {
+        self.observation.clone()
+    }
+
     pub async fn write(&self, data: String) -> Result<(), String> {
         self.runtime
             .request(
@@ -137,7 +180,7 @@ pub struct RemoteRuntimeClient {
     stdin: Mutex<Option<ChildStdin>>,
     child: Mutex<Option<Child>>,
     pending: Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>,
-    agents: Mutex<HashMap<u64, mpsc::UnboundedSender<RemoteAgentEvent>>>,
+    agents: Mutex<HashMap<u64, RemoteAgentSink>>,
     orphan_agent_events: Mutex<HashMap<u64, Vec<RemoteAgentEvent>>>,
     reverse_forward: Mutex<Option<ReverseForward>>,
     stderr: Mutex<String>,
@@ -147,6 +190,14 @@ pub struct RemoteRuntimeClient {
 }
 
 impl RemoteRuntimeClient {
+    pub fn runtime_id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn host(&self) -> &str {
+        &self.target.ssh.host
+    }
+
     pub async fn request(&self, method: RemoteMethod, params: Value) -> Result<Value, String> {
         if self.disconnected.load(Ordering::Relaxed) {
             return Err("remote Harness is disconnected".to_string());
@@ -212,16 +263,29 @@ impl RemoteRuntimeClient {
             .and_then(Value::as_u64)
             .ok_or_else(|| "agent_spawn response missing agentId".to_string())?;
         let (tx, rx) = mpsc::unbounded_channel();
-        self.agents.lock().await.insert(agent_id, tx.clone());
+        let observation = Arc::new(RemoteAgentObservation::default());
+        self.agents.lock().await.insert(
+            agent_id,
+            RemoteAgentSink {
+                events: tx.clone(),
+                observation: observation.clone(),
+            },
+        );
         if let Some(events) = self.orphan_agent_events.lock().await.remove(&agent_id) {
             for event in events {
+                observation.observe(&event);
                 let _ = tx.send(event);
             }
+        }
+        if self.disconnected.load(Ordering::Relaxed) {
+            self.agents.lock().await.remove(&agent_id);
+            let _ = tx.send(RemoteAgentEvent::Disconnected);
         }
         Ok(RemoteAgentHandle {
             transport: RemoteAgentTransport {
                 runtime: self.clone(),
                 agent_id,
+                observation,
             },
             events: rx,
         })
@@ -293,9 +357,12 @@ impl RemoteRuntimeClient {
     }
 
     async fn dispatch_agent_event(&self, agent_id: u64, event: RemoteAgentEvent) {
-        if let Some(tx) = self.agents.lock().await.get(&agent_id).cloned() {
-            let _ = tx.send(event);
+        let agents = self.agents.lock().await;
+        if let Some(sink) = agents.get(&agent_id) {
+            sink.observation.observe(&event);
+            let _ = sink.events.send(event);
         } else {
+            drop(agents);
             self.orphan_agent_events
                 .lock()
                 .await
@@ -313,8 +380,8 @@ impl RemoteRuntimeClient {
         for (_, tx) in self.pending.lock().await.drain() {
             let _ = tx.send(Err(reason.clone()));
         }
-        for (_, tx) in self.agents.lock().await.drain() {
-            let _ = tx.send(RemoteAgentEvent::Exit(None));
+        for (_, sink) in self.agents.lock().await.drain() {
+            let _ = sink.events.send(RemoteAgentEvent::Disconnected);
         }
         self.emit_state("disconnected", Some(&reason));
     }
@@ -405,7 +472,8 @@ impl RemoteRuntimeClient {
         if !self.borrowed_master {
             let _ = self.control_command("exit", &[]).await;
         }
-        self.disconnected.store(true, Ordering::Relaxed);
+        self.finalize_disconnect("remote runtime shut down".to_string())
+            .await;
         self.emit_state("closing", None);
     }
 }
@@ -1379,12 +1447,16 @@ async fn run_runtime_reader<R>(
                         client
                             .dispatch_agent_event(
                                 agent_id,
-                                RemoteAgentEvent::Exit(
-                                    payload
-                                        .get("code")
-                                        .and_then(Value::as_i64)
-                                        .map(|v| v as i32),
-                                ),
+                                if payload.get("error").is_some() {
+                                    RemoteAgentEvent::Disconnected
+                                } else {
+                                    RemoteAgentEvent::Exit(
+                                        payload
+                                            .get("code")
+                                            .and_then(Value::as_i64)
+                                            .map(|v| v as i32),
+                                    )
+                                },
                             )
                             .await;
                     }
@@ -1650,5 +1722,22 @@ mod tests {
             RemoteMethod::WorkspaceRead
         );
         assert!(parse_workspace_method("agent_spawn").is_err());
+    }
+}
+
+#[cfg(test)]
+mod agent_observation_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn remote_channel_loss_does_not_confirm_exit_but_signal_exit_does() {
+        let observation = RemoteAgentObservation::default();
+        observation.observe(&RemoteAgentEvent::Disconnected);
+        assert!(!observation.exited());
+        observation.observe(&RemoteAgentEvent::Exit(None));
+        assert!(observation.exited());
+        observation.wait_for_exit().await;
+        observation.observe(&RemoteAgentEvent::Disconnected);
+        assert!(observation.exited());
     }
 }

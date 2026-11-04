@@ -23,6 +23,7 @@ describe('parsePanelsCommand (specs 320, 347)', () => {
     expect(parsePanelsCommand(['grammar'])).toEqual({ kind: 'panel', panel: 'grammar', action: 'toggle' });
     expect(parsePanelsCommand(['hide', 'Ticket'])).toEqual({ kind: 'panel', panel: 'ticket', action: 'hide' });
     expect(parsePanelsCommand(['show', 'peek'])).toEqual({ kind: 'panel', panel: 'peek', action: 'show' });
+    expect(parsePanelsCommand(['show', 'assistants'])).toEqual({ kind: 'panel', panel: 'assistants', action: 'show' });
   });
 
   it('treats the removed all-panels forms as usage', () => {
@@ -68,6 +69,7 @@ describe('panelFlash', () => {
   it('mentions the hidden right panel only for the two dock tabs', () => {
     expect(panelFlash('ticket', false, true)).toBe('ticket shown · right panel hidden');
     expect(panelFlash('rails', true, true)).toBe('rails hidden · #panels show rails · right panel hidden');
+    expect(panelFlash('assistants', false, true)).toBe('assistants shown · right panel hidden');
     expect(panelFlash('plan', false, true)).toBe('plan shown');
     expect(panelFlash('ticket', false, false)).toBe('ticket shown');
   });
@@ -89,7 +91,7 @@ describe('hidden panel persistence', () => {
     vi.unstubAllGlobals();
   });
 
-  it('round-trips per project and removes the key when nothing is hidden', () => {
+  it('round-trips v2 per project and preserves an explicitly empty hidden list', () => {
     writeHiddenPanels('/repo/a', new Set<HarnessPanelId>(['ticket', 'grammar']));
     writeHiddenPanels('/repo/b', new Set<HarnessPanelId>(['plan']));
 
@@ -98,7 +100,7 @@ describe('hidden panel persistence', () => {
 
     writeHiddenPanels('/repo/a', new Set());
     expect(readHiddenPanels('/repo/a').size).toBe(0);
-    expect([...store.keys()]).toEqual(['krypton:acp-harness:hidden-panels:/repo/b']);
+    expect(JSON.parse(store.get('krypton:acp-harness:hidden-panels:/repo/a')!)).toEqual({ version: 2, hidden: [] });
   });
 
   it('stores each side per project and removes the key when shown', () => {
@@ -114,18 +116,28 @@ describe('hidden panel persistence', () => {
     expect([...store.keys()]).toEqual(['krypton:acp-harness:right-panel-hidden:/repo/b']);
   });
 
-  it('reads corrupt or foreign values as visible', () => {
+  it('keeps old panels visible and Assistants hidden for missing or invalid storage', () => {
     store.set('krypton:acp-harness:hidden-panels:/repo', '{not json');
-    expect(readHiddenPanels('/repo').size).toBe(0);
+    expect([...readHiddenPanels('/repo')]).toEqual(['assistants']);
 
     store.set('krypton:acp-harness:hidden-panels:/repo', JSON.stringify({ plan: true }));
-    expect(readHiddenPanels('/repo').size).toBe(0);
+    expect([...readHiddenPanels('/repo')]).toEqual(['assistants']);
 
-    store.set('krypton:acp-harness:hidden-panels:/repo', JSON.stringify(['plan', 'zen', 7, 'constructor']));
+    store.delete('krypton:acp-harness:hidden-panels:/repo');
+    expect([...readHiddenPanels('/repo')]).toEqual(['assistants']);
+  });
+
+  it('migrates legacy flags into one v2 envelope, adding only the opt-in panel', () => {
+    const key = 'krypton:acp-harness:hidden-panels:/repo';
+    store.set(key, JSON.stringify(['plan', 'ticket', 'rails', 'zen', 7, 'constructor']));
+    expect([...readHiddenPanels('/repo')]).toEqual(['plan', 'ticket', 'rails', 'assistants']);
+    expect(JSON.parse(store.get(key)!)).toEqual({ version: 2, hidden: ['plan', 'ticket', 'rails', 'assistants'] });
+    expect([...readHiddenPanels('/repo')]).toEqual(['plan', 'ticket', 'rails', 'assistants']);
+    writeHiddenPanels('/repo', new Set(['plan']));
     expect([...readHiddenPanels('/repo')]).toEqual(['plan']);
   });
 
-  it('degrades to visible when storage throws', () => {
+  it('keeps Assistants opt-in when storage throws without hiding older panels', () => {
     vi.stubGlobal('localStorage', {
       getItem: (): string | null => { throw new Error('denied'); },
       setItem: (): void => { throw new Error('denied'); },
@@ -134,7 +146,7 @@ describe('hidden panel persistence', () => {
 
     writeHiddenPanels('/repo', new Set<HarnessPanelId>(['plan']));
     writeSideHidden('/repo', 'right', true);
-    expect(readHiddenPanels('/repo').size).toBe(0);
+    expect([...readHiddenPanels('/repo')]).toEqual(['assistants']);
     expect(readSideHidden('/repo', 'right')).toBe(false);
   });
 });

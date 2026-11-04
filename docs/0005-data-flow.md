@@ -967,11 +967,12 @@ reached the page falls back to the built-in krypton-dark values, scoped to
    activateTitlebarToggle(id).
 4. AcpHarnessView maps the id to the bare-toggle #panels command:
    applyPanelsCommand → setPanelHidden(panel) or setSideHidden('left' | 'right')
-   (spec 347) → persist to localStorage, notify titlebar listeners, render(),
+   (spec 347) → persist to localStorage, notify titlebar listeners, invalidate
+   rightRail for right/dock-tab changes (render() for left/floating cards),
    flash the chip. Each setter writes only its own flag. Outside Zen, `left`
    reads as hidden, so showing it first calls setZenMode(true) (spec 347 rev 3).
-5. render() → rightRail region: each renderer asks isPanelHidden(id)
-   (= hiddenPanels.has(id), or rightPanelHidden for the ticket/rails tabs) and
+5. rightRail update: each renderer asks isPanelHidden(id)
+   (= hiddenPanels.has(id), or rightPanelHidden for ticket/rails/assistants) and
    empties or unmounts its slot; with no dock tab available the column hides
    and drops --dock-active, so the dashboard gives back the dock's width. The
    left flag toggles the acp-harness--left-panel-hidden root class, which hides
@@ -1568,7 +1569,7 @@ cannot see (`clientCapabilities.terminal` is `false` — `src-tauri/src/acp.rs`)
 1. tool_call / tool_call_update → captureBackgroundLaunch(lane, call)
    → parseBackgroundLaunch: `Command running in background with ID: <id>. Output is
      being written to: <abs path>` → registerBackgroundTask (dedupes by id, cap 20)
-2. Existing 2 s metrics tick: pollMetrics → refreshBackgroundTasks
+2. Existing shared 2 s metrics feed → refreshBackgroundTasks
    → invoke('acp_background_task_status', { queries: [{id, path}, …] })  — one round trip
 3. Rust stats the file and reads at most 4 KiB from its END
    → `[exited with code N]` as the LAST non-empty line → exit_code; otherwise none
@@ -1860,6 +1861,46 @@ the controller also calls `renderDock()` on every LaneBus `lane:status` (Update 
 while a lane's `activeSystemLabel` is `rails update`) and at a run's start and end.
 
 See `docs/0337-rails-verifier.md` and `docs/0344-rails-panel-actions.md`.
+
+## Assistant Instance Monitor Flow (spec 357)
+
+```
+1. Cmd+Shift+P → Open Assistant Instances works even with no lane:
+   show right side → unhide assistants → select dock tab → focus monitor.
+   Opening only observes state; it never spawns, initializes or prompts an agent.
+2. Every successful ACP spawn records an explicit owner in AcpRegistry:
+   harness_lane / session_probe / assist / rails_judge / inline_ai.
+   A numeric transport epoch is one instance. Probe promotion and reused
+   Inline AI conversations update its owner without adding a process.
+3. acp_list_instances snapshots registry lifecycle/activity/model/liveness.
+   acp_set_instance_owner changes attribution, not authorization.
+   Local stdout EOF is not process exit; remote channel loss is unknown.
+   Unresolved remote epochs remain in the backend through reconnect/disposal.
+4. AgentController registers only a real initialized Pi Agent:
+   agent_view / file_manager_ai / markdown_ai. Reset/model replacement/dispose
+   retires that identity; pending settlement keeps it stopping and generation
+   guards prevent late work from touching a replacement. Abort keeps warm agents.
+5. assistantInstanceStore merges ACP and embedded records app-wide.
+   A shown, document-visible monitor subscribes to inventory. Existing Harness
+   consumers retain construction-to-disposal demand for the shared metrics feed.
+   One non-overlapping cycle starts immediately, then repeats every 2000 ms;
+   metadata is requested only with inventory demand. No consumers → no timer.
+6. Join metrics by numeric ACP epoch and captured process identity, never a
+   conversation ID or PID alone. CPU needs a fresh baseline before it is ready.
+   Remote/embedded resources stay unavailable, not zero; embedded agents share
+   the WebView process. Descendant processes never increase assistant counts.
+7. AssistantInstances reconciles keyed rows with complete value dependencies.
+   Updates touch only the owning component/rightRail, never composer/transcript.
+   Refresh errors preserve last-good rows and expose staleness.
+8. j/k, arrows, Home/End select; [/] traverse available Ticket/Rails/Assistants.
+   Permission/question handlers keep precedence. Other monitor typing is
+   consumed. Escape restores composer/root focus without hiding the monitor.
+```
+
+The tab starts hidden, but once shown it is available even with no rows.
+Hidden-panel storage v2 preserves legacy flags and hides only this new tab;
+selected-tab and side visibility remain separate per-project preferences.
+The inventory itself is never filtered to that project or its active lane.
 
 ## Workspace Lifecycle Flow
 

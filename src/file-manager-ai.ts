@@ -99,7 +99,7 @@ export class FileManagerAI {
     this.onCloseCallback = opts.onClose;
 
     // Lightweight disposable controller
-    this.controller = new AgentController();
+    this.controller = new AgentController({ role: 'file_manager_ai', label: 'File Manager AI' });
     this.controller.setProjectDir(opts.cwd);
 
     // ── Build DOM ──────────────────────────────────────────
@@ -166,11 +166,9 @@ export class FileManagerAI {
     });
   }
 
-  /** Remove from DOM and abort any running agent */
+  /** Remove from DOM and dispose the underlying agent. */
   close(): void {
-    if (this.controller.isRunning) {
-      this.controller.abort();
-    }
+    this.controller.dispose();
     this.el.classList.remove('krypton-file-manager-ai--visible');
     this.el.remove();
   }
@@ -344,6 +342,7 @@ export class FileManagerAI {
 
     // Build contextual prompt
     const contextPrefix = this.buildContextPrefix();
+    this.controller.setProjectDir(this.getContext().cwd);
     const fullPrompt = `${contextPrefix}\n\nUser request: ${query}`;
 
     let latestResponse = '';

@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-05-07
 > Milestone: ACP Harness — observability
+> Updated: 2026-11-04 — shared sampling and process-identity contract from spec 357
 
 ## Problem
 
@@ -14,14 +15,15 @@ or stuck in a CPU spin without dropping out to `top`/Activity Monitor.
 ## Solution
 
 Track CPU% and RSS for each ACP adapter subprocess **and its descendants**
-(the MCP servers it spawns are reparented under it via `setsid`, so a tree
-walk captures them) using the existing `sysinfo` infrastructure already used
-by `pty.rs::get_process_metrics` and the Java extension. Surface aggregate
-numbers as a compact chip in the lane header; expose a tree breakdown via a
-new contextual leader key for users who want to see which MCP server is the
-heavy one. Frontend polls a single Rust command for *all* lanes at ~2 Hz;
-backend does one `sysinfo::System::refresh_all` per call so cost stays flat
-regardless of lane count.
+(MCP servers and tool subprocesses still parented under the adapter) using
+the existing `sysinfo` infrastructure. Surface aggregates in the lane header
+and a process-tree breakdown behind contextual Leader `=`.
+
+One app-scoped frontend feed samples all registered local ACP roots every
+2000 ms (0.5 Hz), including helpers and probes, not just Harness lanes.
+Each cycle performs one shared process refresh; tree walks scale with the
+roots and descendants. Remote transports are absent from local resource
+samples, not from the separate assistant inventory (spec 357).
 
 ## Research
 
@@ -36,14 +38,13 @@ regardless of lane count.
   are the visual precedent.
 
 **ACP child handling (`src-tauri/src/acp.rs`):**
-- `AcpClient.child: Mutex<Option<Child>>` (`acp.rs:154`) holds the
-  `tokio::process::Child`. `child.id()` is read at `acp.rs:1184` to send
-  SIGTERM, so the PID is recoverable on demand.
-- `setsid` is used so MCP grandchildren inherit the process group
-  (`acp.rs:809-810`). They will appear as descendants in the sysinfo tree
-  rooted at the adapter's PID until they reparent on adapter death.
-- `AcpRegistry` (`acp.rs:699`) holds `RwLock<HashMap<u64, Arc<AcpClient>>>` —
-  iterable for a single batched metrics call.
+- Each successful local launch captures the child PID and its process start
+  identity. A numeric ACP session identifies the transport epoch; the string
+  conversation ID may change without another process.
+- Process-group setup allows existing teardown to target adapter descendants.
+  Resource collection follows actual parent links until children reparent.
+- `AcpRegistry::snapshot_pids` reads registered local process identities under
+  a short registry lock. OS sampling happens after that lock is released.
 
 **sysinfo cost / accuracy notes:**
 - `cpu_usage()` returns 0 on the first refresh. The Java path
@@ -55,12 +56,13 @@ regardless of lane count.
 - Memory is `proc.memory()` in bytes on sysinfo ≥ 0.30 (used elsewhere in
   the codebase as `/ (1024*1024)` to MB — match that convention).
 
-**Polling cadence:**
-- Java extension polls per terminal at its own rate. The harness has
-  ≤ 6 lanes today and the chip is decorative, so 2 s (0.5 Hz) is plenty.
-- Pause polling when the harness view is not the active dashboard
-  (`acp-harness-view.ts` already tracks active state) to keep idle CPU
-  near zero.
+**Polling cadence and demand (spec 357):**
+- `assistantInstanceStore` owns one non-overlapping 2 s cycle across all
+  Harness views and monitor panels.
+- Existing Harness metrics consumers subscribe at construction and release
+  at disposal; switching the active dashboard does not remove that demand.
+- The Assistants monitor adds inventory/metrics demand only while its tab is
+  actually shown and the document is visible. With no consumers, timers stop.
 
 **Alternatives considered & rejected:**
 - *Per-lane Tauri command (`acp_get_metrics(session_id)`)* — N round-trips
@@ -72,8 +74,8 @@ regardless of lane count.
 
 ## Prior Art
 
-Resource per-agent surfacing in agent UIs is fairly novel; the closest
-analogues are dev tools and supervisors:
+At the original May 2026 design, the researched analogues were dev tools and
+supervisors:
 
 | App | Implementation | Notes |
 |-----|---------------|-------|
@@ -85,26 +87,23 @@ analogues are dev tools and supervisors:
 | tmux | `display-message '#{pane_pid}'` then user runs `top` themselves. | Nothing built-in. |
 | Warp | No per-agent metrics surfaced in the agent panel. | — |
 
-**Krypton delta** — no agent harness today exposes per-agent CPU/RSS in the
-header. The closest paradigm is VS Code's Process Explorer, but as a
-dedicated window. Krypton's twist: collapse the tree into a single chip
-inline with model/mode/MCP chips (familiar location), with an opt-in
-breakdown popover behind a leader key. Aggregate numbers (adapter +
-descendants) match the user's mental model: "what is *this lane*
-costing me?", not "what is the adapter binary itself doing?".
+**Krypton delta** — collapse the adapter tree into a lane-header chip,
+with an opt-in breakdown behind a leader key. Aggregates answer "what is
+this lane costing me?" rather than just the adapter binary's cost.
+The separate spec-357 Assistants dock answers app-wide instance ownership
+and counting; it deliberately does not duplicate this process-tree overlay.
 
 ## Affected Files
 
 | File | Change |
 |------|--------|
-| `src-tauri/src/acp.rs` | Store `child_pid: AtomicU32` on `AcpClient`; expose getter. |
-| `src-tauri/src/process_metrics.rs` *(new)* | `collect_tree_metrics(roots: &[u32]) -> Vec<TreeMetrics>` — single sysinfo refresh, tree walk, aggregate per root. |
-| `src-tauri/src/lib.rs` | Register new command `acp_get_lane_metrics`. |
-| `src/types.ts` | Add `AcpLaneMetrics`, `AcpLaneProcMetric` types. |
-| `src/acp/acp-harness-view.ts` | Poll loop (start/stop on view show/hide), store metrics on lane, render chip in `renderLaneHead`, toggle breakdown panel. |
-| `src/styles/acp-harness.css` | Style `.acp-harness__lane-metrics` chip + `.acp-harness__metrics-panel` breakdown. |
-| `src/input-router.ts` | Wire contextual leader key `m` (harness mode) to toggle breakdown. |
-| `docs/PROGRESS.md` | Append entry. |
+| `src-tauri/src/acp.rs` | Capture local process identity, snapshot all registered roots, expose `acp_get_lane_metrics`. |
+| `src-tauri/src/process_metrics.rs` | Long-lived `MetricsSampler`: one process refresh, identity-checked tree walk, aggregate and CPU-baseline readiness per root. |
+| `src-tauri/src/lib.rs` | Register `acp_get_lane_metrics` and manage the sampler. |
+| `src/types.ts` | `AcpLaneMetrics`, `AcpLaneProcMetric`, including required `cpu_ready`. |
+| `src/assistant-instance-store.ts` | App-scoped demand, one shared metrics cycle, inventory join and stale-result protection (spec 357). |
+| `src/acp/acp-harness-view.ts` | Subscribe from construction to disposal; route samples to own lanes, chrome/background-task updates and overlay. `ACP_HARNESS_LEADER_KEYS` declares contextual Leader `=`. |
+| `src/acp/components/lane-head/`, `src/acp/components/metrics-overlay/` | Current component-owned chip and process-tree rendering/styles. |
 | `docs/0004-architecture.md` | Note metrics IPC under ACP harness section. |
 | `docs/0072-acp-harness-view.md` | Cross-reference this spec. |
 
@@ -118,6 +117,7 @@ costing me?", not "what is the adapter binary itself doing?".
 pub struct TreeMetrics {
     pub root_pid: u32,
     pub root_alive: bool,
+    pub cpu_ready: bool,         // a fresh delta exists for this exact process identity
     pub total_cpu_percent: f64,   // sum across tree, capped at NCPU*100 by sysinfo
     pub total_rss_mb: f64,        // sum across tree
     pub proc_count: u32,
@@ -142,17 +142,20 @@ pub struct ProcMetric {
 > plus `.with_cmd(UpdateKind::OnlyIfNotSet)` — cmd/exe are read once per
 > process and cached, keeping the per-tick cost flat. argv is bounded
 > (`MAX_CMD_ARGS = 48`, `MAX_ARG_LEN = 1024`, char-boundary safe) so a
-> pathological `node -e '<blob>'` can't bloat the 2 Hz payload.
+> pathological `node -e '<blob>'` can't bloat the 2 s payload.
 
 A long-lived `Mutex<sysinfo::System>` lives in Tauri state
-(`AcpMetricsSampler`). Each call:
-1. `sys.refresh_processes(ProcessesToUpdate::All, true)`
+(`MetricsSampler`). Each call:
+1. Refresh all processes once.
 2. Build a `parent -> Vec<child>` map once.
-3. For each root PID, BFS the map collecting `ProcMetric`s; sum CPU/RSS.
+3. Validate each root against its captured `ProcessIdentity` (PID, start
+   time and OS birth token), then collect the matching process tree.
+4. Sum CPU/RSS and expose `cpu_ready` only after a genuine CPU baseline.
 
-Two refreshes are *not* needed because the sampler is long-lived: the
-previous poll's snapshot is the baseline for `cpu_usage()`. On the first
-call after app start the chip shows `--%` for one tick.
+The previous refresh supplies the CPU delta; no synthetic sleep or second
+refresh is added per call. New/reused identities cannot inherit readiness
+or resource values from an earlier process. Assistants displays **warming up**
+until `cpu_ready`; the legacy chip/overlay still receives the raw baseline.
 
 **TypeScript (`src/types.ts`):**
 
@@ -171,6 +174,7 @@ export interface AcpLaneMetrics {
   session: number;            // krypton_session id
   root_pid: number;
   root_alive: boolean;
+  cpu_ready: boolean;         // fresh CPU delta for this exact root identity
   total_cpu_percent: number;
   total_rss_mb: number;
   proc_count: number;
@@ -180,56 +184,54 @@ export interface AcpLaneMetrics {
 
 ### API / Commands
 
-**New Tauri command:**
+**Tauri command:**
 
 ```rust
 #[tauri::command]
-pub async fn acp_get_lane_metrics(
+pub fn acp_get_lane_metrics(
     registry: State<'_, Arc<AcpRegistry>>,
-    sampler: State<'_, Arc<AcpMetricsSampler>>,
+    sampler: State<'_, Arc<crate::process_metrics::MetricsSampler>>,
 ) -> Result<Vec<AcpLaneMetrics>, String>
 ```
 
-Returns one entry per live lane. Lanes whose child PID is `None` (dispose
-in flight, spawn failed) are omitted. Lanes whose root PID is no longer in
-the sysinfo snapshot return with `root_alive: false` and zeros — the UI
-shows that state for one tick before the lane transitions to `error` or
-the entry vanishes on next poll.
+Returns one entry per registered local ACP root with a captured process
+identity, including non-lane helpers. Remote transports and unavailable
+local identities are omitted. A root absent from the process snapshot or
+failing identity validation yields `root_alive: false`, `cpu_ready: false`
+and empty/zero resource fields; these are unavailable observations, not
+proof that the owned assistant exited.
 
-**`AcpClient` change** (`acp.rs:131`):
-
-```rust
-child_pid: AtomicU32,  // 0 = unset
-```
-
-Set in `acp_spawn` immediately after `cmd.spawn()` from `child.id()`
-(`acp.rs:817`). Cleared (set to 0) in `acp_dispose`.
+`AcpClient` captures its PID/start identity after a successful local spawn.
+The registry retains terminating clients until teardown completes, so a
+still-running stopping process can remain observable. Inventory liveness
+comes from separate actual process/remote exit observations, not this API.
 
 ### Data Flow
 
 ```
-1. Harness view becomes active → starts pollMetrics() at 2 s interval.
-2. Frontend invokes `acp_get_lane_metrics` (one call, all lanes).
-3. Rust: sampler.refresh_all_processes() once.
-4. For each lane in registry: read child_pid; if non-zero, collect tree.
-5. Return Vec<AcpLaneMetrics>.
-6. Frontend updates lane.metrics map keyed by session id.
-7. renderLaneHead() includes a metrics chip from lane.metrics if present.
-8. View becomes inactive (workspace switch / harness closed) → poll stops.
+1. Harness construction subscribes to the shared metrics feed.
+2. A visible Assistants monitor adds demand to that same feed.
+3. assistantInstanceStore invokes acp_get_lane_metrics once per cycle.
+4. Rust snapshots local process identities, releases registry lock, samples.
+5. Return Vec<AcpLaneMetrics>; the store publishes one shared result.
+6. Each Harness filters by its numeric ACP handles and updates lane metrics,
+   background-task observations, chrome and its open Lane Metrics overlay.
+7. The monitor joins aggregate metrics to app-wide inventory (no process argv).
+8. Disposal/hidden monitor releases demand; no consumers stops the timer.
 ```
 
-The poll task is `setInterval`-based and stored on the harness view as
-`metricsTimer: number | null`. Started in the existing `onActivate`
-hook, cleared in `onDeactivate` and `dispose`.
+The store starts immediately and repeats after 2000 ms, never overlapping
+cycles. Subscription generations reject late responses after close/reopen;
+failed refreshes preserve last-good monitor rows and label stale resources.
 
 ### Keybindings
 
-Contextual leader key, harness-only (registered in `input-router.ts`
-alongside the existing harness leader keys). Per memory rule, no Alt.
+Contextual leader key, Harness-only, declared by `ACP_HARNESS_LEADER_KEYS` in `acp-harness-view.ts`.
+No new global chord is added.
 
 | Key | Context | Action |
 |-----|---------|--------|
-| `m` | Harness leader (`Cmd+P → m`) | Toggle metrics breakdown panel for active lane |
+| `=` | Harness leader (`Cmd+P → =`) | Toggle Lane Metrics breakdown for this Harness |
 
 Esc closes the panel.
 
@@ -239,7 +241,7 @@ Esc closes the panel.
 and `lane-activity`:
 
 ```html
-<span class="acp-harness__lane-metrics" title="adapter + 3 children — click ⌘P m for breakdown">
+<span class="acp-harness__lane-metrics" title="adapter + 3 children — ⌘P = for breakdown">
   <span class="acp-harness__lane-metrics-cpu">12%</span>
   <span class="acp-harness__lane-metrics-rss">184M</span>
 </span>
@@ -260,7 +262,8 @@ node  @agentclientprotocol/claude-agent-acp  [adapter]   pid 8421   cpu 12%   rs
 └ rg                                                     pid 8470   cpu  9%   rss  12M
 ```
 
-Shows tree from the active lane only. Updated live by the same poll loop.
+Shows process trees for this Harness's lanes, not all app-wide helpers.
+It receives the same shared samples as the header chips and Assistants dock.
 
 **Process labelling (`describeProc`).** A bare process tree is mostly
 indistinguishable `node` rows (the adapter wrapper, each MCP server, tool
@@ -284,35 +287,29 @@ The label never echoes the process name back at itself.
 
 ### Configuration
 
-```toml
-[acp_harness.metrics]
-enabled = true               # default true; set false to skip polling entirely
-poll_interval_ms = 2000      # 500..=10000; clamped
-```
-
-Both keys optional; defaults applied if missing. Disabling at runtime via
-hot-reload stops the timer immediately and clears chips.
+There are no runtime `[acp_harness.metrics]` configuration keys.
+The shared cycle is fixed at 2000 ms and controlled by subscriber demand;
+the Assistants panel adds no TOML configuration (spec 357).
 
 ## Edge Cases
 
-- **Lane spawn fails** → `child_pid == 0`, lane omitted from metrics
-  response; chip not rendered. Existing error UI handles the failure.
-- **Adapter dies (zombie)** → root PID gone from sysinfo snapshot. Return
-  `root_alive: false, total_*: 0, processes: []`. Chip dims; one tick
-  later the lane transitions to `error` via existing path and the chip
-  disappears with the lane.
-- **MCP child reparents** (adapter SIGKILL'd, child still alive briefly) →
-  not our problem; once the adapter root dies, the lane is gone.
-- **Frontend invokes during a `dispose`** → registry returns the (now
-  removed) lane's `Option<Arc<AcpClient>>` as `None`; metrics omits it.
-  Race-safe.
-- **First tick after spawn** → `cpu_usage()` returns 0 because there is
-  no prior snapshot. UI shows `0%` rather than `--`; acceptable.
+- **Spawn/identity unavailable** → no local root entry; no invented metrics.
+- **Root disappears or PID is reused** → `root_alive: false`, `cpu_ready: false`,
+  empty process tree and unavailable measurements. Do not infer lifecycle
+  from this result; inventory separately observes the owned process.
+- **MCP child reparents** → it is no longer in the adapter's descendant tree
+  and does not belong in that root's aggregate.
+- **Dispose in progress** → the registry keeps its stopping client until
+  teardown ends; a matching live root may still have a sample.
+- **First sample for an identity** → `cpu_ready: false`; Assistants says
+  warming up, never a measured zero. The next valid delta enables CPU display.
+- **Remote/embedded** → not local ACP roots. Spec 357 inventories them with
+  explicit unavailable resources; embedded agents share the WebView process.
+- **Poll failure or late response** → retain last-good monitor data with an
+  error/freshness indicator; reject superseded subscription generations.
 - **>100% CPU on multi-core** → sysinfo reports per-core (e.g. 380% on a
   4-thread spin). Chip renders the raw number; gauge color clamps at
   the >95 bucket — anything above is red regardless.
-- **Hot-reload of `poll_interval_ms`** → on next config-changed event,
-  clear timer and restart with new interval.
 
 ## Open Questions
 
@@ -326,9 +323,8 @@ None — all decisions resolved above.
 - Disk / network IO. sysinfo can report disk read/write but the use case
   is CPU/memory; adding columns now is feature creep.
 - Alerting / threshold notifications. The color bucket is the only signal.
-- Windows support for the tree walk — current code paths in `pty.rs`
-  already use `sysinfo` cross-platform; no extra work expected, but
-  validation is a follow-up.
+- Remote PID/CPU/RSS protocol extensions. Remote instances are inventoried
+  separately by spec 357 with unknown/unavailable measurements when needed.
 
 ## Resources
 
@@ -337,3 +333,5 @@ None — all decisions resolved above.
 - `src-tauri/src/pty.rs:711-777` — existing `get_process_metrics` showing the cpu/rss extraction we mirror.
 - `src/extensions/java.ts:14-52` — UI precedent for CPU%/RSS rendering and gauge color buckets.
 - [VS Code Process Explorer source](https://github.com/microsoft/vscode/blob/main/src/vs/code/electron-browser/processExplorer/processExplorerMain.ts) — tree-of-procs UI inspiration for the breakdown panel.
+- [Assistant Instance Monitor](./0357-assistant-instance-monitor.md) — app-wide ownership, shared sampling, unknown liveness and CPU readiness.
+- [Windows GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) — creation FILETIME for exact Windows birth identity; macOS uses microseconds and Linux `/proc` start ticks. Windows/Linux runtime validation was not available in the macOS implementation environment.

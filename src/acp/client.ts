@@ -12,6 +12,7 @@ import { claudeParentToolUseId } from './harness-subagents';
 import type {
   AcpAvailableCommand,
   AcpBackendDescriptor,
+  AcpInstanceOwner,
   AcpSessionListResult,
   AcpMcpServerDescriptor,
   AcpEvent,
@@ -86,6 +87,7 @@ export class AcpClient {
   static async spawn(
     backendId: string,
     cwd: string | null,
+    owner: AcpInstanceOwner,
     mcpServers: AcpMcpServerDescriptor[] = [],
     junieMcpLocation: string | null = null,
     clineMcpSettingsPath: string | null = null,
@@ -95,6 +97,7 @@ export class AcpClient {
     const session = await invoke<number>('acp_spawn', {
       backendId,
       cwd,
+      owner,
       mcpServers,
       junieMcpLocation,
       clineMcpSettingsPath,
@@ -114,6 +117,10 @@ export class AcpClient {
 
   get backendId(): string {
     return this.backend;
+  }
+
+  async setInstanceOwner(owner: AcpInstanceOwner): Promise<void> {
+    await invoke('acp_set_instance_owner', { session: this.session, owner });
   }
 
   /** Run `initialize` → optional capability-dependent MCP injection → `session/new`.

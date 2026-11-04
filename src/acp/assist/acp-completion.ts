@@ -12,7 +12,7 @@
 
 import { AcpClient } from '../client';
 import { answerFencedRequest } from '../headless-fence';
-import type { AcpEvent, ContentBlock } from '../types';
+import type { AcpEvent, AcpInstanceOwner, ContentBlock } from '../types';
 
 import { AssistError } from './engine';
 import type { AssistCompletion } from './engine';
@@ -20,6 +20,7 @@ import type { AssistCompletion } from './engine';
 export type AcpSpawn = (
   backendId: string,
   cwd: string | null,
+  owner: AcpInstanceOwner,
   remoteRuntimeId: string | null,
 ) => Promise<AcpClient>;
 
@@ -28,11 +29,13 @@ export interface AcpAssistDeps {
   projectDir(): string | null;
   /** Non-null on a remote harness (spec 247); the backend spawns there. */
   remoteRuntimeId(): string | null;
+  /** Read at launch/reuse, after the host's Harness identity is initialized. */
+  owner(): AcpInstanceOwner;
   spawn?: AcpSpawn;
 }
 
-const defaultSpawn: AcpSpawn = (backendId, cwd, remoteRuntimeId) =>
-  AcpClient.spawn(backendId, cwd, [], null, null, remoteRuntimeId);
+const defaultSpawn: AcpSpawn = (backendId, cwd, owner, remoteRuntimeId) =>
+  AcpClient.spawn(backendId, cwd, owner, [], null, null, remoteRuntimeId);
 
 function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -109,9 +112,12 @@ export class AcpAssistSession {
     void client.dispose();
   }
 
-  private ensure(backendId: string, modelId: string | undefined): Promise<AcpClient> {
+  private async ensure(backendId: string, modelId: string | undefined): Promise<AcpClient> {
     const key = `${backendId}\u0000${modelId ?? ''}`;
-    if (this.client && this.key === key) return Promise.resolve(this.client);
+    if (this.client && this.key === key) {
+      await this.client.setInstanceOwner(this.deps.owner());
+      return this.client;
+    }
     if (this.starting && this.key === key) return this.starting;
     const starting = this.start(backendId, modelId, key);
     this.key = key;
@@ -124,7 +130,7 @@ export class AcpAssistSession {
     this.key = key;
     let client: AcpClient;
     try {
-      client = await this.spawn(backendId, this.deps.projectDir(), this.deps.remoteRuntimeId());
+      client = await this.spawn(backendId, this.deps.projectDir(), this.deps.owner(), this.deps.remoteRuntimeId());
     } catch (e) {
       this.key = '';
       this.starting = null;

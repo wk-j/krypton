@@ -3,8 +3,15 @@
 // CWD-aware system prompt, Krypton-specific tool registration,
 // and pi-compatible JSONL session persistence.
 
+import type { Agent as PiAgent } from '@mariozechner/pi-agent-core';
 import { invoke } from '../profiler/ipc';
 import { collector } from '../profiler/metrics';
+import {
+  assistantInstanceStore,
+  type AssistantInstanceStore,
+  type EmbeddedInstanceOptions,
+  type EmbeddedInstanceRegistration,
+} from '../assistant-instance-store';
 import {
   createKryptonTools,
   type BashApprovalHandler,
@@ -80,6 +87,14 @@ const BASE_SYSTEM_PROMPT = `You are an AI coding assistant embedded in Krypton, 
 CRITICAL RULE: NEVER use tools unless the user explicitly asks you to do something that requires them. If the user says "hi", "hello", or anything conversational, just respond with text. Do NOT run git commands, read files, check status, or take any action on your own initiative. Wait for the user to give you a specific task.
 
 Be concise and direct. When writing files, prefer small targeted edits over full rewrites. Write the complete file content.`;
+interface EmbeddedAgentInstance {
+  agent: PiAgent;
+  registration: EmbeddedInstanceRegistration;
+  pending: boolean;
+  retired: boolean;
+  unsubscribe: (() => void) | null;
+}
+
 
 export class AgentController {
   // Lazy-initialized pi-agent-core Agent instance
@@ -87,7 +102,10 @@ export class AgentController {
   private agent: any = null;
   private projectDir: string | null = null;
   private running = false;
-  private unsubscribe: (() => void) | null = null;
+  private instance: EmbeddedAgentInstance | null = null;
+  private generation = 0;
+  private preparing = false;
+  private disposed = false;
 
   // Session persistence
   private session: SessionHandle | null = null;
@@ -114,6 +132,11 @@ export class AgentController {
 
   // Change listeners for real-time context window updates
   private changeListeners: Set<() => void> = new Set();
+  constructor(
+    private readonly owner: Pick<EmbeddedInstanceOptions, 'role' | 'label'>,
+    private readonly inventory: AssistantInstanceStore = assistantInstanceStore,
+  ) {}
+
 
   get isRunning(): boolean {
     return this.running;
@@ -131,6 +154,7 @@ export class AgentController {
 
   setProjectDir(dir: string | null): void {
     this.projectDir = dir;
+    this.instance?.registration.update({ cwd: dir ?? '' });
   }
 
   setWriteApprovalHandler(handler: WriteApprovalHandler | null): void {
@@ -185,7 +209,7 @@ export class AgentController {
       };
     }
 
-    this.modelContextWindow = model.contextWindow ?? preset.context_window;
+    const modelContextWindow = model.contextWindow ?? preset.context_window;
 
     const getApiKey = (_provider: string): string | undefined =>
       apiKey ?? 'ollama';
@@ -206,7 +230,7 @@ export class AgentController {
       afterToolCall: createAfterToolCallHook(COMPACTION_DEFAULTS),
       transformContext: createTransformContext(
         model,
-        this.modelContextWindow,
+        modelContextWindow,
         getApiKey,
         COMPACTION_DEFAULTS,
       ),
@@ -218,9 +242,12 @@ export class AgentController {
   /** Discover skills from project skill directories. Called once at init. */
   private async ensureSkillsDiscovered(): Promise<void> {
     if (this.skillsDiscovered || !this.projectDir) return;
+    const generation = this.generation;
     this.skillsDiscovered = true;
     try {
-      this.skillIndex = await discoverSkills(this.projectDir);
+      const skills = await discoverSkills(this.projectDir);
+      if (generation !== this.generation || this.disposed) return;
+      this.skillIndex = skills;
       if (this.skillIndex.length > 0) {
         console.log('[agent] discovered skills:', this.skillIndex.map((s) => s.name).join(', '));
       }
@@ -235,6 +262,8 @@ export class AgentController {
    */
   private async applySkills(_input: string, commandArgs?: string): Promise<string[]> {
     if (!this.agent || this.skillIndex.length === 0) return [];
+    const generation = this.generation;
+    const agent = this.agent;
 
     let matches: SkillMatch[];
     if (this.forcedSkill) {
@@ -253,13 +282,14 @@ export class AgentController {
     }
 
     const skillSection = await buildSkillPrompt(matches, commandArgs);
+    if (generation !== this.generation || this.agent !== agent || this.disposed) return [];
     if (!skillSection) {
       this.revertSystemPrompt();
       return [];
     }
 
     const basePrompt = this.buildBasePrompt();
-    this.agent.state.systemPrompt = basePrompt + skillSection;
+    agent.state.systemPrompt = basePrompt + skillSection;
 
     const names = matches.map((m) => m.skill.name);
     console.log('[agent] active skills:', names.join(', '));
@@ -336,20 +366,21 @@ export class AgentController {
 
   /** Initialize or continue a session for the current project directory. */
   async initSession(): Promise<void> {
-    if (!this.projectDir) return;
+    if (!this.projectDir || this.disposed) return;
+    const generation = this.generation;
+    const projectDir = this.projectDir;
 
     // Discover skills early so /skills works before first prompt
     await this.ensureSkillsDiscovered();
 
-    if (this.session) return;
+    if (this.session || generation !== this.generation || this.disposed) return;
     try {
-      const existing = this.forceNewSession ? null : await continueRecentSession(this.projectDir);
+      const existing = this.forceNewSession ? null : await continueRecentSession(projectDir);
+      if (generation !== this.generation || this.disposed) return;
+      const session = existing ?? await createSession(projectDir);
+      if (generation !== this.generation || this.disposed) return;
+      this.session = session;
       this.forceNewSession = false;
-      if (existing) {
-        this.session = existing;
-      } else {
-        this.session = await createSession(this.projectDir);
-      }
     } catch (e) {
       console.warn('[agent] session init failed:', e);
     }
@@ -358,8 +389,10 @@ export class AgentController {
   /** Restore agent messages from the current session file. Returns restored message entries for UI rendering. */
   async restoreFromSession(): Promise<Array<{ role: string; message: Record<string, unknown> }>> {
     if (!this.session) return [];
+    const generation = this.generation;
     try {
       const entries = await loadEntries(this.session.filePath);
+      if (generation !== this.generation || this.disposed) return [];
       const messageEntries = extractMessages(entries);
       if (messageEntries.length === 0) return [];
 
@@ -382,12 +415,14 @@ export class AgentController {
   /** Persist a message to the session file. */
   private async persistMessage(message: Record<string, unknown>): Promise<void> {
     if (!this.session) return;
+    const generation = this.generation;
     try {
-      this.lastEntryId = await appendMessage(
+      const entryId = await appendMessage(
         this.session.filePath,
         this.lastEntryId,
         message,
       );
+      if (generation === this.generation && !this.disposed) this.lastEntryId = entryId;
     } catch (e) {
       console.warn('[agent] persist failed:', e);
     }
@@ -444,14 +479,13 @@ export class AgentController {
 
   /** Switch to a different model preset at runtime. Conversation history is preserved. */
   async switchModel(name: string): Promise<{ ok: boolean; error?: string }> {
+    if (this.disposed) return { ok: false, error: 'Agent has been disposed.' };
+    const generation = this.generation;
     const result = await this.resolvePreset(name);
+    if (generation !== this.generation || this.disposed) return { ok: false, error: 'Agent changed while switching models.' };
     if ('error' in result) return { ok: false, error: result.error };
 
-    // Abort any running prompt
-    this.abort();
-
-    // Null the agent so it re-inits on next prompt with the new preset
-    this.agent = null;
+    this.retireInstance();
     this.activePreset = result.preset;
 
     console.log('[agent] switchModel:', result.preset.name, `(${result.preset.provider}/${result.preset.model})`);
@@ -475,180 +509,184 @@ export class AgentController {
   }
 
   async prompt(text: string, onEvent: AgentEventCallback, commandArgs?: string, images?: ImageContent[]): Promise<void> {
-    if (this.running) return;
-
-    // Lazy init — resolve model preset and API key
-    if (!this.agent) {
-      // Use stored preset from switchModel(), or resolve from config
-      const result = this.activePreset
-        ? await this.resolvePreset(this.activePreset.name)
-        : await this.resolvePreset();
-      if ('error' in result) {
-        onEvent({ type: 'error', message: result.error });
-        return;
-      }
-
-      const { preset, apiKey } = result;
-      this.activePreset = preset;
-
-      try {
-        // Skip skill discovery and session restore for inline mode (lightweight, disposable)
-        if (!this.inlineSystemPrompt) {
-          await this.ensureSkillsDiscovered();
+    if (this.running || this.preparing || this.instance?.pending || this.disposed) return;
+    const generation = this.generation;
+    this.preparing = true;
+    let instance: EmbeddedAgentInstance | null = null;
+    try {
+      // Lazy init — a controller or a restored transcript is not an initialized agent.
+      if (!this.agent) {
+        const result = this.activePreset
+          ? await this.resolvePreset(this.activePreset.name)
+          : await this.resolvePreset();
+        if (generation !== this.generation || this.disposed) return;
+        if ('error' in result) {
+          onEvent({ type: 'error', message: result.error });
+          return;
         }
-
-        this.agent = await this.buildAgent(apiKey, preset);
-        console.log('[agent] initialized with preset:', preset.name, `(${preset.provider}/${preset.model})`, 'projectDir:', this.projectDir);
-
-        if (!this.inlineSystemPrompt) {
-          await this.restoreFromSession();
+        const { preset, apiKey } = result;
+        this.activePreset = preset;
+        try {
+          if (!this.inlineSystemPrompt) await this.ensureSkillsDiscovered();
+          if (generation !== this.generation || this.disposed) return;
+          const agent: PiAgent = await this.buildAgent(apiKey, preset);
+          if (generation !== this.generation || this.disposed) return;
+          this.agent = agent;
+          this.modelContextWindow = agent.state.model?.contextWindow ?? preset.context_window;
+          const model = agent.state.model;
+          instance = {
+            agent, pending: true, retired: false, unsubscribe: null,
+            registration: this.inventory.registerEmbedded({
+              ...this.owner, cwd: this.projectDir,
+              model_id: model ? `${model.provider}/${model.id}` : null,
+            }),
+          };
+          this.instance = instance;
+          console.log('[agent] initialized with preset:', preset.name, `(${preset.provider}/${preset.model})`, 'projectDir:', this.projectDir);
+          if (!this.inlineSystemPrompt) await this.restoreFromSession();
+        } catch (e) {
+          if (generation !== this.generation || this.disposed) return;
+          instance?.registration.update({ has_error: true });
+          console.error('[agent] buildAgent failed:', e);
+          onEvent({ type: 'error', message: `Failed to initialize agent: ${e}` });
+          return;
         }
-      } catch (e) {
-        console.error('[agent] buildAgent failed:', e);
-        onEvent({ type: 'error', message: `Failed to initialize agent: ${e}` });
-        return;
+      } else {
+        instance = this.instance;
+        if (instance) instance.pending = true;
       }
-    }
+      if (!instance || generation !== this.generation || this.disposed) return;
+      const current = instance;
 
-    // Skip session and skill matching for inline mode
-    if (!this.inlineSystemPrompt) {
-      await this.initSession();
-      this.lastActiveSkills = await this.applySkills(text, commandArgs);
-    } else {
-      this.lastActiveSkills = [];
-    }
+      if (!this.inlineSystemPrompt) {
+        await this.initSession();
+        if (generation !== this.generation || this.disposed) return;
+        const activeSkills = await this.applySkills(text, commandArgs);
+        if (generation !== this.generation || this.disposed) return;
+        this.lastActiveSkills = activeSkills;
+      } else {
+        this.lastActiveSkills = [];
+      }
+      if (generation !== this.generation || this.disposed) return;
 
-    // Persist the user message — strip images (base64 would bloat JSONL), append placeholder
-    const hasImages = images && images.length > 0;
-    const persistedText = hasImages
-      ? (text ? `${text}\n[${images!.length} image${images!.length > 1 ? 's' : ''} attached]` : `[${images!.length} image${images!.length > 1 ? 's' : ''} attached]`)
-      : text;
-    await this.persistMessage({ role: 'user', content: persistedText, timestamp: Date.now() });
+      // Persist placeholders rather than image payloads.
+      const hasImages = images && images.length > 0;
+      const persistedText = hasImages
+        ? (text ? `${text}\n[${images.length} image${images.length > 1 ? 's' : ''} attached]` : `[${images.length} image${images.length > 1 ? 's' : ''} attached]`)
+        : text;
+      await this.persistMessage({ role: 'user', content: persistedText, timestamp: Date.now() });
+      if (generation !== this.generation || this.disposed) return;
 
-    // Subscribe to events and map to our simplified AgentEventType
-    this.unsubscribe = this.agent.subscribe((raw: unknown) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const e = raw as any;
-      console.log('[agent] event:', e.type, e);
-      switch (e.type) {
-        case 'agent_start':
-          this.running = true;
-          onEvent({ type: 'agent_start' });
-          this.notifyChange();
-          break;
+      current.unsubscribe = current.agent.subscribe((e) => {
+        if (generation !== this.generation || this.instance !== current || this.disposed) return;
+        switch (e.type) {
+          case 'agent_start':
+            this.running = true;
+            current.registration.update({ activity: 'running', has_error: false });
+            onEvent({ type: 'agent_start' });
+            this.notifyChange();
+            break;
 
-        case 'agent_end': {
-          this.running = false;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const lastMsg = e.messages?.[e.messages.length - 1] as any;
-          const errMsg = lastMsg?.errorMessage as string | undefined;
-          console.log('[agent] agent_end, lastMsg:', lastMsg, 'errMsg:', errMsg);
-          if (errMsg) {
-            onEvent({ type: 'error', message: `Agent error: ${errMsg}` });
-          }
-
-          // Persist assistant and tool result messages from this turn
-          if (e.messages) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            for (const msg of e.messages as any[]) {
+          case 'agent_end': {
+            this.running = false;
+            const lastMsg = e.messages[e.messages.length - 1];
+            const errMsg = lastMsg && 'errorMessage' in lastMsg && typeof lastMsg.errorMessage === 'string'
+              ? lastMsg.errorMessage : undefined;
+            current.registration.update({ activity: 'idle', has_error: Boolean(errMsg) });
+            if (errMsg) onEvent({ type: 'error', message: `Agent error: ${errMsg}` });
+            for (const msg of e.messages) {
               if (msg.role === 'assistant' || msg.role === 'toolResult') {
-                this.persistMessage(msg);
+                // Pi messages are JSON-serializable records, without an index signature.
+                const persisted = msg as unknown as Record<string, unknown>;
+                void this.persistMessage(persisted);
               }
             }
-          }
-
-          collector.agentPromptEnd(this.cumulativeUsage.output);
-          onEvent({ type: 'agent_end', usage: { ...this.cumulativeUsage } });
-          this.notifyChange();
-          break;
-        }
-
-        case 'message_end': {
-          // Extract usage from completed assistant message
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const msg = e.message as any;
-          if (msg?.usage) {
-            const u = msg.usage;
-            this.cumulativeUsage.input += u.input ?? 0;
-            this.cumulativeUsage.output += u.output ?? 0;
-            this.cumulativeUsage.cacheRead += u.cacheRead ?? 0;
-            this.cumulativeUsage.cacheWrite += u.cacheWrite ?? 0;
-            this.cumulativeUsage.totalTokens += u.totalTokens ?? 0;
-            this.cumulativeUsage.cost += u.cost?.total ?? 0;
-            // usage.input from the latest response = current context size
-            this.cumulativeUsage.contextWindow = this.modelContextWindow;
-            this.cumulativeUsage.contextPercent = this.modelContextWindow > 0
-              ? Math.round(((u.input ?? 0) / this.modelContextWindow) * 100)
-              : 0;
-            onEvent({ type: 'usage_update', usage: { ...this.cumulativeUsage } });
-            onEvent({ type: 'message_usage', outputTokens: u.output ?? 0 });
-          }
-          break;
-        }
-
-        case 'message_update': {
-          // AssistantMessageEvent is a discriminated union; we only care about text_delta
-          const ev = e.assistantMessageEvent;
-          if (ev?.type === 'text_delta' && typeof ev.delta === 'string') {
-            collector.agentFirstToken();
-            onEvent({ type: 'message_update', delta: ev.delta });
+            collector.agentPromptEnd(this.cumulativeUsage.output);
+            onEvent({ type: 'agent_end', usage: { ...this.cumulativeUsage } });
             this.notifyChange();
+            break;
           }
-          break;
+
+          case 'message_end': {
+            const msg = e.message;
+            if (msg.role === 'assistant') {
+              const u = msg.usage;
+              this.cumulativeUsage.input += u.input ?? 0;
+              this.cumulativeUsage.output += u.output ?? 0;
+              this.cumulativeUsage.cacheRead += u.cacheRead ?? 0;
+              this.cumulativeUsage.cacheWrite += u.cacheWrite ?? 0;
+              this.cumulativeUsage.totalTokens += u.totalTokens ?? 0;
+              this.cumulativeUsage.cost += u.cost?.total ?? 0;
+              this.cumulativeUsage.contextWindow = this.modelContextWindow;
+              this.cumulativeUsage.contextPercent = this.modelContextWindow > 0
+                ? Math.round(((u.input ?? 0) / this.modelContextWindow) * 100) : 0;
+              onEvent({ type: 'usage_update', usage: { ...this.cumulativeUsage } });
+              onEvent({ type: 'message_usage', outputTokens: u.output ?? 0 });
+            }
+            break;
+          }
+
+          case 'message_update': {
+            const ev = e.assistantMessageEvent;
+            if (ev.type === 'text_delta') {
+              collector.agentFirstToken();
+              onEvent({ type: 'message_update', delta: ev.delta });
+              this.notifyChange();
+            }
+            break;
+          }
+
+          case 'tool_execution_start':
+            onEvent({
+              type: 'tool_start', name: e.toolName,
+              args: typeof e.args === 'object' ? JSON.stringify(e.args) : String(e.args ?? ''),
+            });
+            this.notifyChange();
+            break;
+
+          case 'tool_execution_end': {
+            const res = e.result as { details?: unknown; diff?: string; filePath?: string; content?: Array<{ type: string; text?: string }> };
+            const result = typeof res.details === 'string'
+              ? res.details : res.content?.find((c) => c.type === 'text')?.text;
+            if (e.isError) current.registration.update({ has_error: true });
+            onEvent({
+              type: 'tool_end', name: e.toolName, isError: e.isError,
+              result, diff: res.diff, filePath: res.filePath,
+            });
+            this.notifyChange();
+            break;
+          }
         }
+      });
 
-        case 'tool_execution_start':
-          onEvent({
-            type: 'tool_start',
-            name: String(e.toolName ?? ''),
-            args: typeof e.args === 'object' ? JSON.stringify(e.args) : String(e.args ?? ''),
-          });
-          this.notifyChange();
-          break;
-
-        case 'tool_execution_end': {
-          // result is AgentToolResult<T>; details holds the display string
-          const res = e.result as { details?: unknown; diff?: string; filePath?: string; content?: Array<{ type: string; text?: string }> } | undefined;
-          const result =
-            typeof res?.details === 'string'
-              ? res.details
-              : res?.content?.find((c) => c.type === 'text')?.text;
-          onEvent({
-            type: 'tool_end',
-            name: String(e.toolName ?? ''),
-            isError: Boolean(e.isError),
-            result,
-            diff: res?.diff,
-            filePath: res?.filePath,
-          });
-          this.notifyChange();
-          break;
-        }
-      }
-    });
-
-    try {
-      console.log('[agent] calling agent.prompt()');
       collector.agentPromptStart(text);
-      // Build multi-part UserMessage when images are present
       if (images && images.length > 0) {
-        const contentBlocks: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [];
+        const contentBlocks: Array<{ type: 'text'; text: string } | ImageContent> = [];
         if (text) contentBlocks.push({ type: 'text', text });
-        for (const img of images) contentBlocks.push(img);
-        await this.agent.prompt({ role: 'user', content: contentBlocks, timestamp: Date.now() });
+        contentBlocks.push(...images);
+        await current.agent.prompt({ role: 'user', content: contentBlocks, timestamp: Date.now() });
       } else {
-        await this.agent.prompt(text);
+        await current.agent.prompt(text);
       }
-      console.log('[agent] agent.prompt() resolved');
     } catch (e) {
-      console.error('[agent] agent.prompt() threw:', e);
+      if (generation !== this.generation || this.disposed) return;
       this.running = false;
+      instance?.registration.update({ has_error: true });
+      console.error('[agent] agent.prompt() threw:', e);
       onEvent({ type: 'error', message: `Agent error: ${e}` });
     } finally {
-      this.unsubscribe?.();
-      this.unsubscribe = null;
-      // Revert to base prompt after turn (skills are per-turn)
-      this.revertSystemPrompt();
+      if (instance) {
+        instance.unsubscribe?.();
+        instance.unsubscribe = null;
+        instance.pending = false;
+        if (instance.retired) instance.registration.retire();
+        else instance.registration.update({ activity: 'idle' });
+      }
+      if (generation === this.generation && !this.disposed) {
+        this.preparing = false;
+        this.running = false;
+        this.revertSystemPrompt();
+      }
     }
   }
 
@@ -658,12 +696,39 @@ export class AgentController {
       this.running = false;
     }
   }
+  /** Retire identity now, but keep a stopping row until its old run settles. */
+  private retireInstance(): void {
+    this.generation++;
+    this.preparing = false;
+    this.running = false;
+    const instance = this.instance;
+    this.instance = null;
+    this.agent = null;
+    if (!instance) return;
+    instance.retired = true;
+    instance.unsubscribe?.();
+    instance.unsubscribe = null;
+    if (instance.pending) {
+      instance.registration.update({ lifecycle: 'terminating' });
+      instance.agent.abort();
+    } else {
+      instance.registration.retire();
+    }
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.retireInstance();
+    this.changeListeners.clear();
+  }
+
 
   /** Start a new session (old session file is preserved). */
   async reset(): Promise<void> {
-    this.abort();
-    this.agent?.clearMessages?.();
-    this.agent = null; // force re-init on next prompt (picks up new projectDir)
+    if (this.disposed) return;
+    this.retireInstance();
+    const generation = this.generation;
     this.session = null;
     this.lastEntryId = null;
     this.forceNewSession = true;
@@ -676,7 +741,9 @@ export class AgentController {
     // Eagerly create the new session file so it exists immediately
     if (this.projectDir) {
       try {
-        this.session = await createSession(this.projectDir);
+        const session = await createSession(this.projectDir);
+        if (generation !== this.generation || this.disposed) return;
+        this.session = session;
         this.forceNewSession = false;
       } catch (e) {
         console.warn('[agent] reset: failed to create new session, will retry on next prompt:', e);

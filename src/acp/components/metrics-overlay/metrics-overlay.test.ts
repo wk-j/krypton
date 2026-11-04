@@ -19,6 +19,7 @@ const metrics = (over: Partial<AcpLaneMetrics> = {}): AcpLaneMetrics => ({
   session: 1,
   root_pid: 100,
   root_alive: true,
+  cpu_ready: true,
   total_cpu_percent: 18,
   total_rss_mb: 512,
   proc_count: 2,

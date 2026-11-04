@@ -91,6 +91,12 @@ export class HarnessAssistController {
       const session = new AcpAssistSession({
         projectDir: () => host.projectDir,
         remoteRuntimeId: () => host.remoteRuntimeId,
+        owner: () => ({
+          role: 'assist',
+          label: `Assist · ${host.projectDir ?? 'Harness'}`,
+          harness_id: host.harnessId,
+          lane_id: null,
+        }),
       });
       this.session = session;
       this.engine = new AssistEngine(session.complete);
