@@ -190,9 +190,12 @@ export interface AcpEnvVar {
   value: string;
 }
 
+/** ACP's stdio variant is the untagged member of `McpServer`: only http/sse
+ *  carry a `type`. Strict agents (fx 0.0.16) reject `type: "stdio"` with
+ *  -32602 "Unsupported MCP server transport". */
 export interface AcpMcpServerStdio {
   name: string;
-  type?: 'stdio';
+  type?: never;
   command: string;
   args: string[];
   env: AcpEnvVar[];

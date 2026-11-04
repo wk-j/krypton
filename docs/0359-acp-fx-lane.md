@@ -44,6 +44,7 @@ Register `fx` as a PATH backend launched as `fx acp`. That is exactly what fx do
 **fx docs** ([ACP server](https://fx.sh/docs/using-fx/acp)):
 
 - Client `mcpServers` merge with the approved servers from the project `.mcp.json`. A client entry wins over a project entry with the same name, so Krypton's bridge creates no duplicates.
+- Krypton therefore forwards only the harness memory server. A follow-up probe (fx 0.0.16) showed `session/new` rejects a stdio entry tagged `type: "stdio"` (`-32602 "Unsupported MCP server transport"`) and an untagged one whose `command` is relative (`-32602 "MCP server command must be an absolute executable path"`). `.mcp.json` entries such as `npx …` would fail the whole `session/new`. fx lists them itself (`fx mcp list` reports `waiting_for_approval`) and the user approves them with `fx mcp approve <name> | --all`.
 - `~/.fx/mcp.json` profile servers are inherited only when the client sets `_meta.fx.profileMcpServers: true`.
 - Steering is `session/prompt` with `_meta.fx.steer: true`.
 
@@ -161,7 +162,7 @@ The empty-stderr row is the not-signed-in case. fx's own `-32600` message comes 
 1. Cmd+P → + → picker lists "fx" → spawnLane(fx)
 2. acp_spawn: `fx acp` with login env, cwd = project
 3. initialize → caps (http MCP, image, loadSession, resume)
-4. session/new {cwd, mcpServers: memory + gated .mcp.json}
+4. session/new {cwd, mcpServers: memory only — fx loads .mcp.json itself}
 5. parse_session_model_state → ConfigOption("model"); chip = current model
 6. lane_models.fx.active set → session/set_config_option {configId: "model"}
 7. prompts / tool calls / permissions on the generic path

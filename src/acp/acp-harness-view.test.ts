@@ -5192,6 +5192,22 @@ describe('mcpServersForLane bridge policy', () => {
 
     expect(projectMcpMock).not.toHaveBeenCalled();
   });
+
+  it('gives fx only the harness memory server, never project .mcp.json entries', async () => {
+    // fx 0.0.16 rejects relative stdio commands in session/new and loads
+    // .mcp.json itself behind `fx mcp approve` (spec 359).
+    projectMcpMock.mockClear();
+    const memory = { name: 'krypton-harness-memory', type: 'http', url: 'http://127.0.0.1:1/mcp', headers: [] };
+
+    const servers = await mcpServersForLane.call(
+      { ...target, memoryServerForLane: () => [memory] },
+      { id: 'lane-1', backendId: 'fx' } as unknown as HarnessLane,
+      { mcpCapabilities: { http: true, sse: false } },
+    );
+
+    expect(servers).toEqual([memory]);
+    expect(projectMcpMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('connected computer approval (spec 311)', () => {

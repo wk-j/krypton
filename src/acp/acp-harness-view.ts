@@ -8102,12 +8102,15 @@ export class AcpHarnessView implements ContentView {
     // gets servers via a native `cline_mcp_settings.json` (CLINE_MCP_SETTINGS_PATH).
     // Cursor ignores session/new mcpServers entirely (upstream regression); it
     // gets the harness memory server via native `.cursor/mcp.json` at spawn time.
+    // fx reads `.mcp.json` itself behind its own approval gate (`fx mcp approve`),
+    // and requires absolute stdio commands Krypton cannot guarantee (spec 359).
     if (
       lane.backendId === 'claude' ||
       lane.backendId === 'pi-acp' ||
       lane.backendId === 'junie' ||
       lane.backendId === 'cline' ||
-      lane.backendId === 'cursor'
+      lane.backendId === 'cursor' ||
+      lane.backendId === 'fx'
     ) {
       return lane.backendId === 'junie' ||
         lane.backendId === 'cline' ||

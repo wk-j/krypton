@@ -108,6 +108,7 @@ Steps performed:
    - For stdio: expand `${VAR}` in `command`, each `args[i]`, and each `env` value.
    - For http/sse: expand `${VAR}` in `url` and each `headers` value.
    - Translate object → array of `{name, value}` for `env`/`headers`.
+   - Emit stdio descriptors untagged (no `type`); only http/sse carry `type`. That is ACP's `McpServer` schema, and strict agents reject `type: "stdio"` (fx 0.0.16: `-32602 "Unsupported MCP server transport"`).
    - On expansion of an undefined `${VAR}` with no `:-default`: log warning, skip server (do **not** crash whole list).
 6. Return descriptors in source order. Empty array on any fatal error (never throw — bridge must be resilient).
 
@@ -136,6 +137,7 @@ Current skip policy:
 - `omp` → return `memoryServerForLane(lane)` only; OMP native-loads root `.mcp.json` in ACP mode but still accepts injected harness memory.
 - `pi-acp` → return `[]`; Pi has no MCP host.
 - `junie` → return `[]`; Junie receives memory/project servers through the native `--mcp-location` overlay instead of `session/new`.
+- `fx` → return `memoryServerForLane(lane)` only; fx loads the project `.mcp.json` itself behind its own approval gate (`fx mcp approve`) and rejects relative stdio commands in `session/new` (spec 359).
 
 ### Spawn-time vs initialize-time
 

@@ -206,7 +206,7 @@ function translate(
       console.warn(`[mcp-bridge] skip "${name}": unresolved \${VAR} in env`);
       return null;
     }
-    const out: AcpMcpServerStdio = { name, type: 'stdio', command, args, env: envPairs };
+    const out: AcpMcpServerStdio = { name, command, args, env: envPairs };
     return out;
   }
   if (type === 'http' || type === 'sse') {

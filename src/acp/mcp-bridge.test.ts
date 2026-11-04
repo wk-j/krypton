@@ -12,7 +12,6 @@ describe('toClaudeMcpFile', () => {
   it('round-trips stdio servers to object env shape', () => {
     const servers: AcpMcpServerDescriptor[] = [{
       name: 'ctx',
-      type: 'stdio',
       command: 'npx',
       args: ['-y', 'tool'],
       env: [{ name: 'TOKEN', value: 'secret' }],
@@ -76,7 +75,7 @@ describe('toClineMcpFile', () => {
   it('tags an sse server as sse and a stdio server as stdio', () => {
     const servers: AcpMcpServerDescriptor[] = [
       { name: 'evt', type: 'sse', url: 'http://sse', headers: [] },
-      { name: 'ctx', type: 'stdio', command: 'npx', args: ['-y', 't'], env: [] },
+      { name: 'ctx', command: 'npx', args: ['-y', 't'], env: [] },
     ];
     const file = toClineMcpFile(servers);
     expect(file.mcpServers.evt).toEqual({ type: 'sse', url: 'http://sse' });
