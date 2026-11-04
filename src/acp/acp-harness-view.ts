@@ -1383,7 +1383,6 @@ export class AcpHarnessView implements ContentView {
     quote: string;
     quoteIndex: number;
     heading?: string;
-    rect: DOMRect;
   } | null = null;
   private annotationSeq = 0;
   private telemetryPublisher: HarnessTelemetryPublisher | null = null;
@@ -12835,7 +12834,6 @@ export class AcpHarnessView implements ContentView {
       lane.savedScrollAnchor = this.captureTranscriptScrollAnchor(body) ?? anchor;
     }
     this.observeActiveTranscriptBody();
-    this.syncAnnotationPill();
   }
 
   private renderLanePeek(): void {
@@ -13747,7 +13745,7 @@ export class AcpHarnessView implements ContentView {
       return textSegments('image viewer · n/p next · =/- zoom · 0 fit · 1 100% · o open · Esc close');
     }
     if (this.openHintMode) return textSegments('open reference: press label · Esc cancel');
-    if (this.annotationArmed) return textSegments('selection armed · c annotate · Esc dismiss');
+    if (this.annotationArmed) return [{ id: 'armed', text: 'selection armed · c annotate · Esc dismiss' }];
     if (this.focus === 'transcript') {
       const unsent = collectUnsent(lane.transcript).length;
       const send = unsent > 0 ? ` · s send ${unsent}` : '';
@@ -15119,11 +15117,9 @@ export class AcpHarnessView implements ContentView {
     }
     if (captured === 'outside') {
       this.annotationArmed = null;
-      this.removeAnnotationPill();
       this.flashChip('select inside one reply');
     } else {
       this.annotationArmed = captured;
-      this.syncAnnotationPill();
       this.flushRegion('composer');
     }
     this.pinStickyAfterComposerKey();
@@ -15135,7 +15131,6 @@ export class AcpHarnessView implements ContentView {
       quote: string;
       quoteIndex: number;
       heading?: string;
-      rect: DOMRect;
     }
     | 'outside'
     | null {
@@ -15167,7 +15162,6 @@ export class AcpHarnessView implements ContentView {
       quote,
       quoteIndex: occurrenceIndex(annotatable, quote, range),
       heading: heading || undefined,
-      rect: range.getBoundingClientRect(),
     };
   }
 
@@ -15176,7 +15170,6 @@ export class AcpHarnessView implements ContentView {
     quote: string;
     quoteIndex: number;
     heading?: string;
-    rect: DOMRect;
   } | null {
     const body = this.activeTranscriptBody();
     if (!body) return null;
@@ -15208,13 +15201,11 @@ export class AcpHarnessView implements ContentView {
       quote,
       quoteIndex: occurrenceIndex(target, quote, range),
       heading: heading || undefined,
-      rect: chosen.getBoundingClientRect(),
     };
   }
 
   private disarmAnnotation(): void {
     this.annotationArmed = null;
-    this.removeAnnotationPill();
     this.flushRegion('composer');
     this.pinStickyAfterComposerKey();
   }
@@ -15237,7 +15228,6 @@ export class AcpHarnessView implements ContentView {
     this.annotationInputEl.value = '';
     this.annotationOverlayOpen = true;
     this.annotationOverlayEl.hidden = false;
-    this.removeAnnotationPill();
     this.annotationInputEl.focus();
   }
 
@@ -15277,7 +15267,6 @@ export class AcpHarnessView implements ContentView {
     this.annotationOverlayEl.hidden = true;
     this.annotationArmed = null;
     window.getSelection()?.removeAllRanges();
-    this.removeAnnotationPill();
     this.renderActiveTranscript(lane);
     this.flushRegion('composer');
     this.flashChip(`added · s to send ${collectUnsent(lane.transcript).length}`);
@@ -15351,32 +15340,6 @@ export class AcpHarnessView implements ContentView {
         if (wanted.has(a.id)) a.status = status;
       }
     }
-  }
-
-  private removeAnnotationPill(): void {
-    this.activeTranscriptBody()?.querySelector('.acp-harness__anno-pill')?.remove();
-  }
-
-  private syncAnnotationPill(): void {
-    this.removeAnnotationPill();
-    if (!this.annotationArmed || this.annotationOverlayOpen) return;
-    const body = this.activeTranscriptBody();
-    if (!body) return;
-    const pill = document.createElement('button');
-    pill.type = 'button';
-    pill.className = 'acp-harness__anno-pill';
-    pill.append(el('kbd', { text: 'c' }), ' annotate · Esc dismiss');
-    const rect = this.annotationArmed.rect;
-    const br = body.getBoundingClientRect();
-    pill.style.top = `${rect.bottom - br.top + body.scrollTop + 6}px`;
-    pill.style.left = `${Math.max(8, rect.left - br.left)}px`;
-    pill.addEventListener('mousedown', (e) => e.preventDefault());
-    pill.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.openAnnotationOverlay();
-    });
-    body.appendChild(pill);
   }
 
   private handleTranscriptKey(e: KeyboardEvent): boolean {

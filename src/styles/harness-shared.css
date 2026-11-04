@@ -1425,25 +1425,6 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
   background: color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 14%, transparent);
 }
 
-.acp-harness__anno-pill {
-  position: absolute;
-  z-index: 4;
-  font: inherit;
-  font-size: 11px;
-  color: var(--agent-text, #eaf3ea);
-  background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
-  border: 1px solid var(--acp-accent-quote, #d6b8ff);
-  border-radius: 6px;
-  padding: 4px 8px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.acp-harness__anno-pill kbd {
-  font: inherit;
-  color: var(--acp-accent-quote, #d6b8ff);
-}
-
 .acp-harness__anno-overlay {
   display: flex;
   flex-direction: column;

@@ -13,8 +13,10 @@
 
 /** `text` is the whole-chip form: every non-busy state (idle memory readout,
  *  command mode, peer waits, flash overrides) is a single message with no
- *  internal structure worth splitting. */
-type MetaSegId = 'verb' | 'elapsed' | 'queued' | 'text';
+ *  internal structure worth splitting. `armed` is the same whole-chip form for
+ *  an armed annotation selection (spec 240), tinted as the indicator instead of
+ *  a pill drawn over the transcript. */
+type MetaSegId = 'verb' | 'elapsed' | 'queued' | 'text' | 'armed';
 
 export interface MetaSegment {
   id: MetaSegId;

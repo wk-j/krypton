@@ -67,10 +67,10 @@ describe('KeyHintBar · kbd', () => {
     );
   });
 
-  it('renders a key-less hint as bare text — the annotate pill', () => {
+  it('renders a key-less hint as bare text', () => {
     const bar = new KeyHintBar();
     bar.update({
-      block: 'acp-harness__anno-pill',
+      block: 'acp-triage__action-hint',
       style: 'kbd',
       layout: 'bare',
       hints: [

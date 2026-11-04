@@ -48,7 +48,7 @@ This is **not** ChatGPT-style "paste the quote into the composer." The composer 
 | `src/acp/harness-view-types.ts` | `annotations?: TranscriptAnnotation[]` on `HarnessTranscriptItem` |
 | `src/acp/harness-transcript-render.ts` | After sealed markdown paint: wrap marks, append notes rail; include annotation ids in `transcriptRenderSignature` |
 | `src/acp/acp-harness-view.ts` | Construct queue after coordinator; mouseup arming; `c` / overlay / send; dropLane on close / `#new`; help + command-mode hint |
-| `src/styles/acp-harness.css` | Mark tint, notes rail, floating pill, overlay composer. Full 1px border, no left rail, no L-brackets, no `backdrop-filter` |
+| `src/styles/acp-harness.css` | Mark tint, notes rail, overlay composer. Full 1px border, no left rail, no L-brackets, no `backdrop-filter` |
 | `docs/0072-acp-harness-view.md`, `docs/0005-data-flow.md`, `docs/README.md` | Index + transcript/input flow |
 
 No Rust, no TOML, no ACP protocol change.
@@ -105,9 +105,10 @@ comment). Address each note in this turn, then reply.
    presses `c` with no selection → nearest visible block in the latest
    visible sealed assistant row becomes the quote.
 2. Mouseup inside a sealed (or already-written streaming) assistant body
-   with a non-empty selection arms a target and shows a pill
-   `c annotate · Esc dismiss`. Any other composer key disarms without
-   consuming the key. Escape disarms. Selection collapse disarms.
+   with a non-empty selection arms a target; the composer status line reads
+   `selection armed · c annotate · Esc dismiss`. Any other composer key
+   disarms without consuming the key. Escape disarms. Selection collapse
+   disarms.
 3. `c` (armed, or transcript-focus) opens the annotation overlay — a
    <textarea> sheet, not the lane composer. Empty Enter is ignored.
    Shift+Enter inserts a newline. Esc cancels (does not add).
@@ -142,7 +143,7 @@ comment). Address each note in this turn, then reply.
 
 ### UI
 
-- **Armed pill** — small fixed label near the selection (`position: absolute` inside the lane body, 1px border, lane-accent tint). Not a hover-only control.
+- **Armed indicator** — the composer status line shows `selection armed · c annotate · Esc dismiss` as its own `armed` segment, tinted with `--acp-accent-quote` (the mark colour). Nothing is drawn over the transcript: the earlier floating pill under the selection covered the reply being read and was removed.
 - **Overlay** — bottom sheet on the active lane (diff-view composer shape): label `annotate`, textarea, hint `Enter add · Shift+Enter newline · Esc cancel`. 8px radius, full border, no blur, no left rail.
 - **Mark** — background tint on the quoted span (`--acp-accent-quote` already exists). Same line-height as the prose so sticky-scroll (spec 95 / 114) does not see a height jump inside the paragraph. Unsent marks are the bright tint; sent (queued) marks a quieter tint; drained marks dim.
 - **Notes rail** — after the message body, before the resource rail:

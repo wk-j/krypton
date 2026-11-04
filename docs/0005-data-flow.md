@@ -888,8 +888,10 @@ reached the page falls back to the built-in krypton-dark values, scoped to
 
 ```
 1. User selects text in a sealed (or already-written streaming) assistant body.
-   Mouseup arms a target and shows a `c annotate` pill. Any other composer
-   letter disarms without consuming the key. Esc disarms.
+   Mouseup arms a target; the composer status line shows
+   `selection armed · c annotate · Esc dismiss` in the quote accent (nothing is
+   drawn over the transcript). Any other composer letter disarms without
+   consuming the key. Esc disarms.
 2. `c` (armed, or transcript focus with no selection → nearest visible block)
    opens the annotate overlay. Enter adds an unsent note to that transcript
    item; the lane is not contacted. Repeat.

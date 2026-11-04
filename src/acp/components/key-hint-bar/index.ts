@@ -1,16 +1,15 @@
 // Spec 302 §1.7 — `KeyHintBar`.
 //
-// The "what can I press here" strip. Nine call sites paint it four different
+// The "what can I press here" strip. Eight call sites paint it four different
 // ways today, and the differences are real markup, not noise:
 //
 //   * review / priority overlay foot  — one `<span>` per hint, no separator,
 //     trailing `<span class="…__foot-note">` (acp-harness-view.ts:5412-5429,
 //     review-priority-overlay.ts:121-127);
-//   * triage action hint + annotate pill — `<kbd>` runs written straight into
-//     the container, joined by ` · ` (attention-overlay.ts:127-130,
-//     acp-harness-view.ts:15081) — and the redirect variant of that same
-//     container is plain text with the note joined by ` — `
-//     (attention-overlay.ts:124);
+//   * triage action hint — `<kbd>` runs written straight into the container,
+//     joined by ` · ` (attention-overlay.ts:127-130) — and the redirect
+//     variant of that same container is plain text with the note joined by
+//     ` — ` (attention-overlay.ts:124);
 //   * picker / palette headers — one `<span>` of `·`-joined plain text
 //     (acp-harness-view.ts:12705-12710,12770-12774,12807-12811,12838-12892,
 //     harness-lane-chrome.ts:463);

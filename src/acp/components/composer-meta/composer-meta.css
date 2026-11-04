@@ -119,11 +119,18 @@
 
   /* Long idle / command-mode messages ellipsize. Live action left this row
      in spec 231 (it lives on the rail HUD). */
-  .acp-harness__meta-seg[data-seg='text'] {
+  .acp-harness__meta-seg[data-seg='text'],
+  .acp-harness__meta-seg[data-seg='armed'] {
     flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* spec 240: an armed annotation selection is signalled here, in the quote
+     accent the marks use, instead of a pill drawn over the transcript. */
+  .acp-harness__meta-seg[data-seg='armed'] {
+    color: var(--acp-accent-quote, #d6b8ff);
   }
 
   /* Divider as a pseudo-element rather than a character, so a segment that is not
