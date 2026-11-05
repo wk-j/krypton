@@ -110,22 +110,24 @@ Add a dedicated markdown viewer window with a two-panel layout: a **file browser
 
 Layout: sidebar 250px fixed width, preview fills remaining space.
 
-Sidebar styling:
-- File list: monospace, one file per row, relative paths from CWD
-- Selected file: accent-colored highlight bar
-- Focused panel: subtle accent border on the active side
-- Filter input: appears at top when `/` pressed, accent-colored underline
+The surface follows the ACP Harness look, as the File Manager does (restyle 2026-11-05):
 
-Preview styling (dark theme matching Krypton):
-- Headings: accent-colored, monospace, sized h1→h6
-- Code blocks: dark background with accent border, uses configured font
-- Inline code: subtle background highlight
-- Links: accent-colored, clickable — local `.md` links navigate within the viewer, external URLs open in browser via `open_url`. Keyboard-accessible via link hint mode (`o`)
-- Lists: accent-colored bullets/numbers
-- Blockquotes: left border accent, dimmed text
-- Tables: bordered, alternating row tint
-- Images: rendered inline — relative `src` is resolved against the current file's directory and loaded via Tauri's `convertFileSrc()` (asset protocol; raw `file://` is blocked cross-origin in the webview). A failed load is replaced with a styled `IMG BREACH // <path>` notice. See `docs/0137-markdown-viewer-search-hints-images.md`.
-- Horizontal rules: accent-colored line
+- **Lines and text.** Hairline rules at accent@0.18. Ink tiers are the foreground at 0.86 / 0.56 / 0.4 (`--md-ink*`, via `--krypton-ink-2/3/4` on light themes). No text glow, no edge rails (ADR 0027), no hard-coded colours.
+- **Headers.** The sidebar header (`DOCS`) is an uppercase panel label; the preview header is the file path in natural case. The focused panel's header is the window accent and the other drops to the faint tier.
+- **File list.** Rounded rows in the foreground ink. The selected file is the harness picker's active row — accent@0.12 tint plus a 1px accent@0.5 inset outline — while the sidebar has focus; with the preview focused only the tint stays.
+- **Filter input.** A rounded field on a faint foreground wash, hairline border that steps to accent@0.5 on focus; it appears when `/` is pressed in the sidebar.
+
+Preview styling — the harness markdown (`harness-shared.css` `.acp-harness__msg-body--markdown`), in theme tokens:
+- Headings: monospace, graded h1 (`--agent-cyan`, rule underneath) → h2 (`--agent-user`) → h3 (`--agent-accent`) → h4–h6 small uppercase ink
+- Code blocks: a borderless rounded well (dark wash; foreground wash on light themes). Syntax tokens map to the theme's ANSI colours, so light themes stay legible
+- Inline code: borderless chip on a faint foreground wash, `--agent-accent` text
+- Links: `--agent-user` text with an accent underline, clickable — local `.md` links navigate within the viewer, external URLs open in browser via `open_url`. Keyboard-accessible via link hint mode (`o`), whose labels are the global hint-mode labels
+- Lists: `--agent-accent` bullets/numbers
+- Blockquotes: a tinted, rounded block in the foreground ink — no left border
+- Tables: one rounded hairline frame, accent-tinted header row
+- Images: rendered inline — relative `src` is resolved against the current file's directory and loaded via Tauri's `convertFileSrc()` (asset protocol; raw `file://` is blocked cross-origin in the webview). A failed load is replaced with an `IMG BREACH // <path>` notice. See `docs/0137-markdown-viewer-search-hints-images.md`.
+- Horizontal rules: a neutral foreground hairline
+- Reveal: on load the first 40 blocks fade and rise in a 30ms stagger, headings included. No glow or blur.
 
 ## Edge Cases
 

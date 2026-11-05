@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-05-31
 > Milestone: M8 — Polish
+> Amended: 2026-11-05 — the viewer takes the ACP Harness look (spec 39 §UI Changes). Search highlights, the broken-image notice and the focused-panel cue below describe the current treatment; the original neon glow, scanline flash, dashed notice and 3px accent bars are gone.
 
 ## Problem
 
@@ -18,10 +19,10 @@ The markdown viewer (`docs/0039-markdown-viewer.md`) has three gaps for docs-hea
 
 Three independent, keyboard-first additions that reuse existing viewer subsystems (link-hint engine, mode dispatch in `onKeyDown`, `run_command`):
 
-1. **In-doc search HUD** — `/` while focus=preview opens a transient bottom HUD (vim-style). Live neon-glow highlight on matches, `n`/`N` cycle with a brief flash, `Esc` clears.
+1. **In-doc search HUD** — `/` while focus=preview opens a transient bottom HUD (vim-style). Live tinted highlight on matches, `n`/`N` cycle with the current match filled in the accent, `Esc` clears.
 2. **`H` heading-hint overlay** — reuses `enterLinkHintMode`'s label engine over `h1`–`h6`; type a label to jump+scroll. Transient overlay only (no persistent TOC panel — respects spec 39's out-of-scope).
 3. **Image src rewrite + onerror** — after render, walk `img[src]`, resolve relative paths against the current file's directory, convert to a webview-loadable URL via `convertFileSrc()`, and attach an `onerror` that swaps in a styled `IMG BREACH // <path>` notice.
-4. **Strong focused-panel indicator** — a glowing accent bar on the focused panel's inner edge plus a brightened, glowing panel header; the unfocused panel's header dims. Pure CSS on the existing `krypton-md__panel--focused` class (no TS change).
+4. **Strong focused-panel indicator** — the focused panel's header turns accent while the other dims, and the sidebar's selected row carries the harness cursor outline only while the sidebar has focus. Pure CSS on the existing `krypton-md__panel--focused` class (no TS change).
 5. **No-op re-selection guard** — `loadFile` early-returns when the requested file is already loaded (unless `force`), so re-selecting the current file just moves focus to the preview without re-fetch/re-animate/scroll-reset. `r` (reload) passes `force: true`.
 
 ## Research
@@ -44,7 +45,7 @@ Three independent, keyboard-first additions that reuse existing viewer subsystem
 | Obsidian | `Ctrl+F` in-note, match count, `Ctrl+G` next | Persistent Outline panel |
 | VS Code MD preview | `Ctrl+F` | Persistent outline |
 
-**Krypton delta** — Search matches the universal `/` + `n`/`N` + `Esc` muscle memory, but rendered as a transient bottom HUD with neon match-glow + scanline flash rather than a docked find-bar (cyberpunk, no persistent chrome). Heading jump deliberately diverges from the Obsidian/VS Code *persistent outline panel* (out-of-scope per spec 39) in favor of a transient `H` hint overlay — reusing the link-hint pattern Krypton users already know, zero added panels, zero mouse.
+**Krypton delta** — Search matches the universal `/` + `n`/`N` + `Esc` muscle memory, but rendered as a transient bottom HUD rather than a docked find-bar (no persistent chrome). Heading jump deliberately diverges from the Obsidian/VS Code *persistent outline panel* (out-of-scope per spec 39) in favor of a transient `H` hint overlay — reusing the link-hint pattern Krypton users already know, zero added panels, zero mouse.
 
 ## Affected Files
 
@@ -79,7 +80,7 @@ private searchIndex = -1;
 
 - On `/` (preview focus): build/show the HUD, focus its input.
 - On input: clear prior marks, walk text nodes under `previewContent` (skip `<pre>`/`<code>`), wrap case-insensitive matches in `<mark class="krypton-md__match">`. Cap at 500 matches (perf). Update `count` label `N matches`.
-- `Enter`/`n` → next, `Shift+Enter`/`N` → prev: move `searchIndex`, add `--current` to active mark, `scrollIntoView({block:'center'})`, trigger one-shot scanline flash class.
+- `Enter`/`n` → next, `Shift+Enter`/`N` → prev: move `searchIndex`, add `--current` to active mark, `scrollIntoView({block:'center'})`.
 - `Esc`: unwrap all marks (normalize text), hide HUD, return focus to preview.
 - Highlighting uses real DOM `<mark>` wrapping (not CSS) so `n`/`N` can target elements; unwrap restores original text nodes on close/reload.
 
@@ -118,18 +119,18 @@ private searchIndex = -1;
 
 ### UI Changes
 
-- `.krypton-md__search` — absolute-positioned bottom HUD inside `.krypton-md__preview` (mirrors `.krypton-md__select-indicator` placement): prompt glyph `/`, input, `N matches` counter. Slide-up + fade in (matches AI overlay transition).
-- `.krypton-md__match` — match highlight: subtle accent bg + text-shadow glow.
-- `.krypton-md__match--current` — stronger glow + brief scanline flash keyframe.
-- `.krypton-md__img-breach` — broken-image notice: warning-amber dashed border, monospace label (reuses `--krypton` warning tone from `.krypton-md__truncated`).
+- `.krypton-md__search` — absolute-positioned bottom HUD inside `.krypton-md__preview` (mirrors `.krypton-md__select-indicator` placement): prompt glyph `/`, input, `N matches` counter, all at the body font size. It is the harness floating panel: one 1px foreground hairline, a dense surface, a drop shadow, no glow.
+- `.krypton-md__match` — match highlight: accent tint at 0.24, text colour unchanged, no glow.
+- `.krypton-md__match--current` — filled in the window accent with background-coloured text. No animation.
+- `.krypton-md__img-breach` — broken-image notice: warning-ink label in a warning-tinted chip with a solid 1px warning border (the same warning tone as `.krypton-md__truncated`).
 
 ### Focused-panel indicator (pure CSS)
 
-`setFocus` already toggles `.krypton-md__panel--focused` on both the sidebar and the preview, so this is CSS-only. Replace the current subtle treatment with:
+`setFocus` already toggles `.krypton-md__panel--focused` on both the sidebar and the preview, so this is CSS-only. Revised 2026-11-05 to drop the accent bars (ADR 0027 bans edge rails):
 
-- **Inner-edge accent bar** — a 3px solid accent bar on the focused panel's inner edge (sidebar: `border-right`; preview: `box-shadow: inset 3px 0 0`), full accent color + a soft outer glow (`box-shadow` accent at ~0.25). Unfocused panel keeps a faint `0.12` hairline.
-- **Header brighten** — focused panel's header (`.krypton-md__sidebar-header` / `.krypton-md__preview-header`) goes to full accent color with a `text-shadow` glow; unfocused header dims to ~`0.4` opacity. This gives a second, larger-area cue beyond the edge bar.
-- A `0.12s` transition on the bar/header so focus changes feel like a deliberate handoff, not a flicker. (No `backdrop-filter` — platform gotcha.)
+- **Header ink** — the focused panel's header (`.krypton-md__sidebar-header` / `.krypton-md__preview-header`) is the window accent; the unfocused header drops to the faint ink tier. No glow.
+- **Cursor row** — the sidebar's selected file is the harness picker's active row (accent tint plus a 1px inset outline) while the sidebar has focus. With the preview focused the tint stays and the outline drops, so the cursor reads as parked.
+- The column divider between the panels is a neutral full-height hairline: layout, not a focus mark. No transition.
 
 ### No-op re-selection guard (in `loadFile`)
 
