@@ -61,8 +61,8 @@ export class ExecutionCard extends Component<ExecutionCardProps> {
   constructor() {
     super(el('div', { class: 'acp-execution-card' }));
     this.el.append(
-      el('div', { class: 'acp-execution-card__head' }, this.glyph.el, this.language,
-        this.title, this.state, this.timer, this.timingSource, this.inspector),
+      el('div', { class: 'acp-execution-card__head' }, this.glyph.el, this.language, this.title,
+        el('span', { class: 'acp-execution-card__meta' }, this.state, this.timer, this.timingSource, this.inspector)),
       this.activity,
     );
   }

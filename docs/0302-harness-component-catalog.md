@@ -601,8 +601,9 @@ tool  ✓  Python  Inspect records                  Done  200ms runtime  Inspect
           fixture started
 ```
 
-**Emits** `.acp-execution-card`, `__head`, `__language`, `__title`, `__state`,
-`__timer`, `__timing-source`, `__button[data-execution-inspector][aria-haspopup=dialog]`, `__activity`.
+**Emits** `.acp-execution-card`, `__head`, `__language`, `__title`, `__meta` (wraps `__state`,
+`__timer`, `__timing-source`, `__button[data-execution-inspector][aria-haspopup=dialog]`), `__activity`.
+The whole head is one type size; `__meta` wraps as one right-aligned group.
 Uses the existing `Spinner` and shared tool ticker. A terminal-only replay has no observed timer;
 detached running state is static `Background · last reported`, not job tracking.
 `setHint()` is the owning component's mutation boundary after row seal. `paintExecutionTiming()`

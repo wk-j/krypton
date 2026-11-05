@@ -154,7 +154,7 @@ Rides the first labeled section (`output` / `stdout` / `terminal` / grep) so `TE
 }
 ```
 
-Dump body (plain `<pre>`, grep rows, git-rich) inherits that size. Kind chips, `OUTPUT`/`exit` labels, and timers stay chrome-scale (`0.7em` / `0.78em`). The tool-card `0.88em` shrink does not apply to the payload.
+Dump body (plain `<pre>`, grep rows, git-rich) inherits that size. Kind chips, `OUTPUT`/`exit` labels, and timers stay chrome-scale (`0.7em` / `0.78em`). The execution card (spec 315) is the exception: its head, timer included, is one size. The tool-card `0.88em` shrink does not apply to the payload.
 
 ## Edge Cases
 

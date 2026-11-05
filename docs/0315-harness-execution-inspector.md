@@ -184,8 +184,8 @@ Compact card ใช้ header เดิมของ tool: status glyph, Python/J
 
 | ส่วน | ใช้ contract เดิม |
 |------|------------------|
-| Typography | Inherit `--agent-font` และ `--krypton-font-size`; title/output ขนาดเดียวกับ tool row รอบข้าง Labels/timer ใช้ relative sizing เดิม และตัวเลขใช้ tabular-nums ไม่กำหนด font family หรือ display heading ใหม่ |
-| Density / alignment | Header gap 8px, row rhythm 4px และ glyph cell 1.4ch ตาม `tool-row.css`; title, status และ timer วางแนวเดียวกับ tool อื่น ไม่มี page-like header หรือ padding แบบ artifact |
+| Typography | Inherit `--agent-font` และ `--krypton-font-size`; title/output ขนาดเดียวกับ tool row รอบข้าง ทุกส่วนใน card header (ภาษา, title, สถานะ, เวลา, `runtime`/`observed` และปุ่ม `Inspector`) ใช้ขนาดเดียวกับแถว แยกลำดับความสำคัญด้วยสีหมึก ไม่ใช่ขนาดตัวอักษร (แก้ 2026-11-05: เดิม label/เวลาเล็กลงเป็น 0.78em/0.82em ข้าง `Done` ที่ขนาดเต็ม จึงดูไม่สมดุลและ baseline ไม่ตรงกัน) ตัวเลขใช้ tabular-nums ไม่กำหนด font family หรือ display heading ใหม่ |
+| Density / alignment | Header gap 8px, row rhythm 4px และ glyph cell 1.4ch ตาม `tool-row.css`; สถานะ เวลา provenance และ `Inspector` อยู่ในกลุ่ม `__meta` ที่ชิดขวาและขึ้นบรรทัดใหม่พร้อมกันทั้งกลุ่มเมื่อ title ยาว ปุ่ม `Inspector` เป็น pill พื้นจางไม่มีขอบแบบ action ของ lane head ช่องว่างสองข้างจึงเท่ากัน ไม่มี page-like header หรือ padding แบบ artifact |
 | Inline panel | ใช้ neutral foreground hairline ที่ alpha 0.1 และ inset 12px ตาม `genui-panel.css`; ไม่มี outer dashboard card หรือ nested frame เพิ่ม สีพื้นตาม parent ไม่สร้างแผ่นดำ/ขาวทึบใหม่ |
 | Geometry | Border 1px; radius อ่าน `--krypton-border-radius` ในจุดที่ต้องมีกรอบ ไม่ hard-code radius 10px จาก mockup หรือวาด corner brackets |
 | Color / emphasis | เนื้อหาใช้ `--krypton-fg`/`--krypton-fg-rgb`; accent/focus ใช้ resolved `--krypton-window-accent`; running/done/error ใช้ `--agent-gold`/`--agent-accent`/`--agent-error` ตาม ToolRow สีต้องเปลี่ยนตาม theme ไม่บังคับ Binance yellow หรือ default amber |
