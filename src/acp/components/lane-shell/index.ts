@@ -22,6 +22,7 @@ import './lane-shell.css';
 
 import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
+import { harnessIconEl } from '../../harness-icons';
 import { LaneHead } from '../lane-head';
 import { LaneStats } from '../lane-stats';
 import type { AcpLaneMetrics } from '../../../types';
@@ -63,6 +64,8 @@ export class LaneShell extends Component<LaneShellProps> {
   /** The head's trailing Start Review action occupies its reserved grid cell. */
   private actions: HTMLElement | null = null;
   private reviewButton: HTMLButtonElement | null = null;
+  /** The button's label; a text node so relabelling never drops the icon. */
+  private reviewLabel: Text | null = null;
   private onStartReview: (() => void) | null = null;
   private readonly active: boolean;
 
@@ -151,18 +154,20 @@ export class LaneShell extends Component<LaneShellProps> {
     if (!wanted) {
       this.reviewButton?.remove();
       this.reviewButton = null;
+      this.reviewLabel = null;
       return;
     }
-    if (!this.reviewButton) {
+    if (!this.reviewButton || !this.reviewLabel) {
+      this.reviewLabel = document.createTextNode('');
       this.reviewButton = el('button', {
         class: 'acp-harness__review-thread-action',
         attrs: { type: 'button' },
-      });
+      }, harnessIconEl('review-thread'), this.reviewLabel);
       this.bag.listen(this.reviewButton, 'click', () => this.onStartReview?.());
       this.actionSlot().appendChild(this.reviewButton);
     }
     this.onStartReview = next.onStartReview;
-    this.reviewButton.textContent = wanted.count ? `Start Review · ${wanted.count}` : 'Start Review';
+    this.reviewLabel.data = wanted.count ? `Start Review · ${wanted.count}` : 'Start Review';
     this.reviewButton.title = wanted.enabled ? 'Start Review Thread' : 'รอให้ turn จบ';
     this.reviewButton.disabled = !wanted.enabled;
   }

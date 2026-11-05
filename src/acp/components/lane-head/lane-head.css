@@ -109,7 +109,9 @@
 
   /* Lane chips share one flat language: a faint tinted pill, no border. Hue +
      text color carry the meaning (identity / status / warning) so the row reads
-     as one surface that's scannable by color, not a strip of outlined boxes. */
+     as one surface that's scannable by color, not a strip of outlined boxes.
+     Model, mode and mcp inherit the head's full font size, the size of the
+     Start Review action (lane-shell.css); the 0.72em chip size was too small. */
   .acp-harness__lane-model {
     justify-self: start;
     min-width: 0;
@@ -120,7 +122,6 @@
     border-radius: var(--krypton-border-radius, 8px);
     background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68));
-    font-size: 0.72em;
     letter-spacing: 0.04em;
     text-shadow: none;
     white-space: nowrap;
@@ -139,7 +140,6 @@
     border-radius: var(--krypton-border-radius, 8px);
     background: color-mix(in oklab, #c77dff 16%, transparent);
     color: color-mix(in oklab, #c77dff 78%, white 22%);
-    font-size: 0.72em;
     letter-spacing: 0.04em;
     text-shadow: none;
     white-space: nowrap;
@@ -209,7 +209,6 @@
     padding: 1px 6px;
     border-radius: var(--krypton-border-radius, 8px);
     background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
-    font-size: 0.72em;
     letter-spacing: 0.04em;
     white-space: nowrap;
   }

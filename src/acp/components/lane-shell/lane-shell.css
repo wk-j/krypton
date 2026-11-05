@@ -10,37 +10,38 @@
     min-width: 0;
   }
 
-  /* Match the geometry of the adjacent static lane chips. */
+  /* Review-thread action · `components/lane-shell/index.ts` `syncReviewAction()`;
+     the picker it opens is `components/review-thread-dialog/`.
+     It borrows the head chips' look (lane-head.css): a faint pill tinted in the
+     lane's own accent, no border. It keeps the head's full font size — the
+     reduced chip size is too small to read. The leading glyph is the palette
+     command's `messages-square`, 1em like every harness icon. Hover deepens
+     the tint. */
   .acp-harness__review-thread-action {
-    min-height: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     padding: 1px 6px;
-    border: 1px solid transparent;
+    border: 0;
     border-radius: var(--krypton-border-radius, 8px);
+    background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #0cf)) 16%, transparent);
+    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #0cf)));
     font: inherit;
-    font-size: 0.72em;
     letter-spacing: 0.04em;
     text-shadow: none;
     white-space: nowrap;
     cursor: pointer;
   }
 
-  .acp-harness__review-thread-action:focus-visible,
-  .acp-harness__review-thread-action:hover {
-    border-color: currentColor;
+  .acp-harness__review-thread-action:enabled:hover,
+  .acp-harness__review-thread-action:focus-visible {
+    background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #0cf)) 30%, transparent);
     outline: none;
   }
 
   .acp-harness__review-thread-action:disabled {
     opacity: 0.45;
     cursor: default;
-  }
-
-  /* Review-thread action · `components/lane-shell/index.ts` `syncReviewAction()`.
-     The picker overlay it opens is `components/review-thread-dialog/`. */
-  .acp-harness__review-thread-action {
-    border-color: color-mix(in srgb, var(--agent-accent) 48%, transparent);
-    background: color-mix(in srgb, var(--agent-accent) 8%, transparent);
-    color: var(--agent-accent);
   }
 }
 
