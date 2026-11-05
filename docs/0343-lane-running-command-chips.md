@@ -221,7 +221,7 @@ would clear the lane's composer draft.
   `.acp-harness__rail-meta__run` in `rail-entry.css`, both in `@layer krypton.component`. The head
   chips follow the head's flat chip language (`lane-head.css:110-112`: "a faint tinted pill, no
   border"). They use the same pill as the spec-305 `bg N` chip, which already marks detached work
-  on an idle lane: `padding: 1px 6px`, `0.72em`, radius `var(--krypton-border-radius)`. Tint and
+  on an idle lane: `padding: 1px 6px`, the chrome font size (`--krypton-chrome-font-size`, shared by every head pill and the Start Review action since 2026-11-05; was `0.72em`), radius `var(--krypton-border-radius)`. Tint and
   text are the lane accent (`--acp-lane-ink`, falling back to `--acp-lane-accent`), so a run reads
   as this lane's own work, not a warning. There is no animation: the ticking clock is the liveness
   cue, and the head's status symbol keeps the only spinner.

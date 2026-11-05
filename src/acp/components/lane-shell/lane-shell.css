@@ -13,10 +13,10 @@
   /* Review-thread action · `components/lane-shell/index.ts` `syncReviewAction()`;
      the picker it opens is `components/review-thread-dialog/`.
      It borrows the head chips' look (lane-head.css): a faint pill tinted in the
-     lane's own accent, no border. It keeps the head's full font size — the
-     reduced chip size is too small to read. The leading glyph is the palette
-     command's `messages-square`, 1em like every harness icon. Hover deepens
-     the tint. */
+     lane's own accent, no border, at the chrome font size like every head
+     chip — the head's full size read as oversized next to them. The leading
+     glyph is the palette command's `messages-square`, 1em like every harness
+     icon. Hover deepens the tint. */
   .acp-harness__review-thread-action {
     display: inline-flex;
     align-items: center;
@@ -27,6 +27,7 @@
     background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #0cf)) 16%, transparent);
     color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #0cf)));
     font: inherit;
+    font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.04em;
     text-shadow: none;
     white-space: nowrap;

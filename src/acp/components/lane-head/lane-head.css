@@ -110,8 +110,9 @@
   /* Lane chips share one flat language: a faint tinted pill, no border. Hue +
      text color carry the meaning (identity / status / warning) so the row reads
      as one surface that's scannable by color, not a strip of outlined boxes.
-     Model, mode and mcp inherit the head's full font size, the size of the
-     Start Review action (lane-shell.css); the 0.72em chip size was too small. */
+     Every pill — and the Start Review action (lane-shell.css) — sits at the
+     chrome font size, the size of the harness's other chips (`THOUGHT`, plan,
+     queue). The head's full size read as oversized; 0.72em was too small. */
   .acp-harness__lane-model {
     justify-self: start;
     min-width: 0;
@@ -122,6 +123,7 @@
     border-radius: var(--krypton-border-radius, 8px);
     background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68));
+    font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.04em;
     text-shadow: none;
     white-space: nowrap;
@@ -140,6 +142,7 @@
     border-radius: var(--krypton-border-radius, 8px);
     background: color-mix(in oklab, #c77dff 16%, transparent);
     color: color-mix(in oklab, #c77dff 78%, white 22%);
+    font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.04em;
     text-shadow: none;
     white-space: nowrap;
@@ -155,7 +158,7 @@
     border-radius: var(--krypton-border-radius, 8px);
     background: rgba(255, 170, 102, 0.16);
     color: rgba(255, 200, 150, 0.92);
-    font-size: 0.72em;
+    font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.04em;
     white-space: nowrap;
     text-shadow: none;
@@ -177,7 +180,7 @@
     padding: 1px 6px;
     border-radius: var(--krypton-border-radius, 8px);
     background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
-    font-size: 0.72em;
+    font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.04em;
     white-space: nowrap;
   }
@@ -196,7 +199,7 @@
     border-radius: var(--krypton-border-radius, 8px);
     background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #0cf)) 16%, transparent);
     color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #0cf)));
-    font-size: 0.72em;
+    font-size: var(--krypton-chrome-font-size, 11px);
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.04em;
     text-shadow: none;
@@ -209,6 +212,7 @@
     padding: 1px 6px;
     border-radius: var(--krypton-border-radius, 8px);
     background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
+    font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.04em;
     white-space: nowrap;
   }
@@ -230,7 +234,7 @@
     padding: 1px 6px;
     border-radius: var(--krypton-border-radius, 8px);
     background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
-    font-size: 0.72em;
+    font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.04em;
     white-space: nowrap;
     text-shadow: none;
@@ -294,7 +298,7 @@
     border-radius: var(--krypton-border-radius, 8px);
     background: rgba(0, 204, 255, 0.14);
     color: var(--krypton-window-accent, #0cf);
-    font-size: 0.72em;
+    font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.04em;
     text-shadow: none;
     white-space: nowrap;
