@@ -1,6 +1,4 @@
 import { bootPage } from '../app';
-import { TermctrlView, tokenFromPath } from '../surfaces/termctrl';
+import { TermctrlPage } from '../surfaces/termctrl';
 
-bootPage('termctrl', ({ main }) => {
-  main.replaceChildren(new TermctrlView(tokenFromPath(location.pathname)).el);
-});
+bootPage('termctrl', TermctrlPage);

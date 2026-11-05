@@ -340,8 +340,8 @@ None.
 ## Revision — spec 341 loopback app
 
 - The page is now the `termctrl` entry of the loopback app:
-  `src/loopback/entries/termctrl.ts` mounts `TermctrlView`
-  (`src/loopback/surfaces/termctrl/index.ts`, `termctrl.css`). Rust returns
+  `src/loopback/entries/termctrl.ts` mounts `TermctrlPage`
+  (React since spec 361; `src/loopback/surfaces/termctrl/index.tsx`, `termctrl.css`). Rust returns
   `AppPage::new("termctrl", …)`; token and `/termctrl/api/<token>/…` routes are
   unchanged.
 - The inline ANSI decoder is `src/loopback/surfaces/termctrl/ansi-text.ts`
@@ -350,15 +350,15 @@ None.
   `window.KryptonCellGrid`, the `krypton-cell-grid-ready` event,
   `handle_termctrl_asset` and `/termctrl/assets/{name}` are gone.
 - Kit: `RosterList` (own wrap-around `j`/`k`/↑/↓ bindings), `SearchFilter`,
-  `StatBar` (version, sessions, last refresh), toggle `button`s for
-  Screen/Log, `kbdHints`, `keymap()` for `/ Esc r v g G w`, and three `poll()`
+  `StatBar` (version, sessions, last refresh), toggle `<Button>`s for
+  Screen/Log, `<KbdHints>`, `keymap()` for `/ Esc r v g G w`, and three `poll()`
   loops (list 2 s, screen 1 s, log 1 s with the `length`/`anchor` cursor), all
   paused while hidden.
-- Visual: the page header is the app shell; one `dot('live')` for the
+- Visual: the page header is the app shell; one `<Dot state="live">` for the
   connection (no scale beacon, no skeleton shimmer); the selected session has
   a full accent border; labels are sentence case (`Visible screen`,
   `Full log`).
-- Tests: `src/loopback/surfaces/termctrl/termctrl.test.ts` (decoder cases,
+- Tests: `src/loopback/surfaces/termctrl/termctrl.test.tsx` (decoder cases,
   retained log + reset, selection kept across a failed poll, screen as text)
   replaces `src/acp/artifact-termctrl.test.ts`; the CSS-literal assertion was
   dropped.

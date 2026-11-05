@@ -4,6 +4,7 @@
 > Date: 2026-10-29
 > Milestone: ACP Harness
 > Supersedes the per-page shells of specs 168, 170, 171, 185, 186, 192, 198, 211, 223, 227, 253, 288, 313, 329 and 330 (their endpoints and behaviour stay; only the page shell, styling and opening path change)
+> Amended by spec 361 (2026-11-05): the kit and every surface are React 19 components; hosting, URLs, session capability, classes and look are unchanged. Where this spec says `Component`/`el()`/`reconcile()`/`hydrate…`, read spec 361.
 
 ## Problem
 
@@ -138,7 +139,7 @@ Hurl and E2E URLs come from the existing `HurlWebSessions::issue` / `E2eWebSessi
 
 ### Kit
 
-Components extend `src/ui` `Component` and build nodes with `el()`; lists use `reconcile()`. Each component's BEM class set (`lb-<block>__<element>--<modifier>`) is also its contract for Rust-rendered markup, which a `hydrate…(root)` function wires up.
+Components extend `src/ui` `Component` and build nodes with `el()`; lists use `reconcile()`. Each component's BEM class set (`lb-<block>__<element>--<modifier>`) is also its contract for Rust-rendered markup, which a `hydrate…(root)` function wires up. *(Spec 361: now React function components with the same class sets; reader pages attach to Rust markup in effects.)*
 
 | Group | Components |
 |---|---|

@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (346)
+## Specs (347)
 
 | # | Spec |
 |---|------|
@@ -363,8 +363,9 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 358 | [Command Palette Icons](./0358-command-palette-icons.md) |
 | 359 | [ACP fx Lane](./0359-acp-fx-lane.md) |
 | 360 | [Which-Key Icons](./0360-which-key-icons.md) |
+| 361 | [Loopback App on React](./0361-loopback-app-react.md) |
 
-## ADRs (27)
+## ADRs (28)
 
 | # | Decision |
 |---|----------|
@@ -395,6 +396,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 25 | [The Rails verifier is a harness-owned background checker, separate from attention triage](./adr/0025-rails-verifier-is-a-harness-owned-background-checker.md) |
 | 26 | [The loopback app shell holds a session capability in localStorage](./adr/0026-loopback-app-session-capability-in-local-storage.md) |
 | 27 | [No surface marks state with a left-edge accent rail](./adr/0027-no-left-edge-accent-rails.md) |
+| 28 | [The loopback app is written in React; the Tauri app frontend stays framework-free](./adr/0028-loopback-app-uses-react.md) |
 
 ## Also
 

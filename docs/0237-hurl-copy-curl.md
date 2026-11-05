@@ -180,4 +180,4 @@ None.
 
 ## Revision — spec 341 loopback app
 
-`artifact-hurl.html` and its inline converter are deleted. The loopback Hurl surface (`src/loopback/surfaces/hurl/index.ts`) imports `hurlToCurl` and `hurlCliCommand` from `src/hurl-curl.ts` directly, so there is one converter and no keep-in-sync note. The `curl`/`hurl` chips are kit buttons in the page toolbar; `c`/`H` are `keymap()` bindings; copy goes through the kit `copyText` and the result through `Banner`.
+`artifact-hurl.html` and its inline converter are deleted. The loopback Hurl surface (`src/loopback/surfaces/hurl/index.tsx`) imports `hurlToCurl` and `hurlCliCommand` from `src/hurl-curl.ts` directly, so there is one converter and no keep-in-sync note. The `curl`/`hurl` chips are kit `<Button>`s in the page toolbar; `c`/`H` are `keymap()` bindings; copy goes through the kit `copyText` and the result through `Banner`.

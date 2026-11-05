@@ -23,13 +23,13 @@ supersession, and Thai-prose/verbatim-evidence principles remain. Publishing is 
 
 The `/timeline` browser page moved out of the self-contained `src/acp/artifact-timeline.html`
 (deleted) into the loopback Vite app: `handle_timeline` returns `AppPage::new("timeline", …)`
-(`lang="th"`), the entry is `src/loopback/entries/timeline.ts` and the view
-`src/loopback/surfaces/timeline/` (`index.ts`, `timeline.css`, `timeline.test.ts`). It keeps the
+(`lang="th"`), the entry is `src/loopback/entries/timeline.ts` and the page
+`TimelinePage` (React since spec 361) in `src/loopback/surfaces/timeline/` (`index.tsx`, `timeline.css`, `timeline.test.tsx`). It keeps the
 same `/timeline.json` reads (GET only), focus/visibility refresh at most once a second with no
 interval (kit `poll`), the `harness` / `topic` / `event` URL params, every key (`/`, `Esc`, `h`,
 `[`, `]`, `r`, `j`/`k`, `Space`, `i`, `p`, `Enter`) now registered through the kit `keymap()` so `?`
-lists them, and the topic rail + event list on `.lb-split`. Kit pieces: `SearchFilter`, `chip`
-(`เฉพาะเครื่องนี้`), `emptyState`, `kbdHints`. Visual normalisation: the page's own header bar is
+lists them, and the topic rail + event list on `.lb-split`. Kit pieces: `SearchFilter`, `<Chip>`
+(`เฉพาะเครื่องนี้`), `<EmptyState>`, `<KbdHints>`. Visual normalisation: the page's own header bar is
 gone (the shell is the header), tokens only (the conflict time cell uses `--accent` / `--on-accent`),
 10px card radius on diagnostics. A conflicted time cell also carries visually hidden Thai text
 `มีบันทึกอีกข้อที่ให้คำสั่งต่างกัน`. DOM tests replace the deleted Rust HTML-text test.

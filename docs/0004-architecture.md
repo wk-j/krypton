@@ -912,12 +912,19 @@ Vite app under `src/loopback/`. Rust builds the document
 Release builds serve `dist/app/` (built by `vite.loopback.config.ts`, one merged
 `app.css`) from the embedded `frontendDist`; debug builds redirect the entry to
 the Vite dev server on `localhost:1420`, which also injects the CSS the modules
-import. Readers (`/docs`, `/doc`, `/journal`, `/analyses`, `/analysis`,
-`/reviews`, `/review`) still render their body in Rust and the entry hydrates
-it. Every page carries the shell (`src/loopback/kit/shell`): brand → Home,
-project / surface location, the switcher (`` ` ``) and key help (`?`). The kit
-(`src/loopback/kit/`) builds on the spec-301 component kernel (`src/ui/`); one
-`Keymap` per page dispatches every key. Krypton opens every page through
+import. One React root on `#lb-shell` renders the shell and portals the page
+(spec 361). Readers (`/docs`, `/doc`, `/journal`, `/analyses`, `/analysis`,
+`/reviews`, `/review`) still render their body in Rust; React never owns that
+markup: the reader page portals into a separate `#lb-page-root`, wires
+behaviour onto the Rust nodes in effects and portals kit widgets into their
+empty slots. Every page carries the shell (`src/loopback/kit/shell`): brand →
+Home, project / surface location, the switcher (`` ` ``) and key help (`?`).
+The kit (`src/loopback/kit/`) is React function components over
+framework-free libraries (`Keymap`, `poll()`, `fetchJson`) exposed through hooks;
+harness renderers that must render exactly as in the app (GenUI catalog, cell
+grid, Mermaid/SVG fences) and canvas drawing stay imperative, mounted through
+`Island` or a ref + layout effect, never re-implemented. One `Keymap` per page
+dispatches every key. Krypton opens every page through
 `openLoopback(path)` → `loopback_url` → `/app/session/<token>?next=<path>`,
 which stores the process-wide session capability in `localStorage` so the
 shell can trade it for Terminal Control / ACP wire / Hurl / E2E paths at

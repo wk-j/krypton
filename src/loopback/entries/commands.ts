@@ -1,8 +1,4 @@
 import { bootPage } from '../app';
-import { CommandsView } from '../surfaces/commands';
+import { CommandsPage } from '../surfaces/commands';
 
-bootPage('commands', async ({ main }) => {
-  const view = new CommandsView();
-  main.replaceChildren(view.el);
-  await view.load();
-});
+bootPage('commands', CommandsPage);

@@ -1,6 +1,4 @@
 import { bootPage } from '../app';
-import { mountReviews } from '../surfaces/reviews';
+import { ReviewsPage } from '../surfaces/reviews';
 
-bootPage('reviews', ({ shell, main }) => {
-  mountReviews(shell, main);
-});
+bootPage('reviews', ReviewsPage);

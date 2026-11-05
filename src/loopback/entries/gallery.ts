@@ -1,6 +1,4 @@
 import { bootPage } from '../app';
-import { GalleryView } from '../surfaces/gallery';
+import { GalleryPage } from '../surfaces/gallery';
 
-bootPage('gallery', ({ shell, main }) => {
-  main.replaceChildren(new GalleryView(shell).el);
-});
+bootPage('gallery', GalleryPage);

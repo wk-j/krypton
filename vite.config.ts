@@ -38,7 +38,7 @@ export default defineConfig({
         test: {
           name: 'dom',
           environment: 'happy-dom',
-          include: ['src/ui/**/*.test.ts', 'src/acp/components/**/*.test.ts', 'src/loopback/**/*.test.ts'],
+          include: ['src/ui/**/*.test.ts', 'src/acp/components/**/*.test.ts', 'src/loopback/**/*.test.{ts,tsx}'],
         },
       },
     ],

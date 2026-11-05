@@ -1,34 +1,42 @@
 // Spec 341 — the loopback kit. Surfaces import from here; a component's own
 // sheet is imported by its module, so importing the barrel brings every kit
 // style along (release builds merge all CSS into one `app.css` anyway).
+// Spec 361: components are React function components; `lib/*` stays framework-free.
 
-export { Banner } from './banner';
-export type { BannerTone } from './banner';
-export { chip, dot, pill, statusTone } from './badge';
-export type { Tone } from './badge';
-export { button, setPressed } from './button';
-export type { ButtonOptions } from './button';
-export { card } from './card';
-export type { CardOptions } from './card';
+export { Chip, Dot, Pill, statusTone } from './badge';
+export type { ChipProps, DotProps, DotState, PillProps, Tone } from './badge';
+export { Banner, useBanner } from './banner';
+export type { BannerController, BannerProps, BannerTone } from './banner';
+export { Button } from './button';
+export type { ButtonProps } from './button';
+export { Card } from './card';
+export type { CardOptions, CardProps } from './card';
 export { DataTable } from './data-table';
 export type { Column, DataTableOptions } from './data-table';
-export { emptyState } from './empty-state';
-export { kbdHints } from './kbd-hints';
-export { keyValue } from './key-value';
+export { EmptyState } from './empty-state';
+export type { EmptyStateProps } from './empty-state';
+export { FeedbackOverlay } from './feedback-overlay';
+export type { DocPin, FeedbackOverlayProps } from './feedback-overlay';
+export { Island } from './island';
+export type { IslandProps } from './island';
+export { KbdHints } from './kbd-hints';
+export type { KbdHintsProps } from './kbd-hints';
+export { KeyValue } from './key-value';
+export type { KeyValueProps } from './key-value';
 export { PROSE_CLASS } from './prose';
 export { RosterList } from './roster';
-export type { RosterOptions } from './roster';
+export type { RosterHandle, RosterOptions } from './roster';
 export { SearchFilter } from './search-filter';
 export type { SearchFilterOptions } from './search-filter';
-export { AppShell, mountShell } from './shell';
-export type { ShellOptions } from './shell';
+export { AppShell, ShellProvider, useShell } from './shell';
+export type { ShellApi } from './shell';
 export { StatBar } from './stat-bar';
-export type { Stat } from './stat-bar';
+export type { Stat, StatBarProps } from './stat-bar';
 export { Tabs } from './tabs';
 export type { TabItem, TabsOptions } from './tabs';
-export { FeedbackOverlay } from './feedback-overlay';
-export type { DocPin, FeedbackOverlayOptions } from './feedback-overlay';
 export { hydrateTreeNav } from './tree-nav';
+export { useKeyFallback, useKeymap, useLatest, useModal, usePoll } from './hooks';
+export type { PollState, UsePollOptions } from './hooks';
 
 export { copyText } from './lib/clipboard';
 export { fetchJson, fetchText, HttpError, postJson } from './lib/fetch-json';

@@ -3,7 +3,7 @@
 > Status: Implemented
 > Date: 2026-10-05
 > Milestone: ACP Harness — observability
-> Revision — spec 341 loopback app: the lane-card `.loop` section now lives in `src/loopback/surfaces/dashboard/lane-card.ts` (`lb-dashboard__loop*` classes; reviewer verdict is a kit `pill`). `TelemetryReviewLoop*` types moved to `src/acp/harness-telemetry-schema.ts`. See spec 168 rev 5.
+> Revision — spec 341 loopback app: the lane-card `.loop` section now lives in `src/loopback/surfaces/dashboard/lane-card.tsx` (`lb-dashboard__loop*` classes; reviewer verdict is a kit `<Pill>`; React since spec 361). `TelemetryReviewLoop*` types moved to `src/acp/harness-telemetry-schema.ts`. See spec 168 rev 5.
 
 ## Problem
 

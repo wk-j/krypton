@@ -1,5 +1,7 @@
 // Spec 288 — per-lane waterfall of the last 60 s: request spans (latency) and
 // notification ticks. Colors are token vars, resolved by the SVG renderer.
+// Spec 361: the page renders the `<svg class="lb-acp-wire__wf">`; this paints
+// its children imperatively from a layout effect (React renders none of them).
 
 import type { Held, Selection, WireSummary } from './model';
 import { fmtUs, isGap, isGroup, WINDOW_US } from './model';
@@ -100,12 +102,4 @@ export function paintWaterfall(
     out.push(g);
   });
   svg.replaceChildren(...out);
-}
-
-export function createWaterfallSvg(): SVGSVGElement {
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('class', 'lb-acp-wire__wf');
-  svg.setAttribute('viewBox', '0 0 1000 60');
-  svg.setAttribute('preserveAspectRatio', 'none');
-  return svg;
 }

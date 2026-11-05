@@ -1,9 +1,9 @@
 // Specs 168/169 — the lane monitor's canvases: the attention gauge, the
 // synthetic activity beat and the CPU sparkline. Colours come from the token
 // sheet (`getComputedStyle`), never from literals, so the canvases follow the
-// same palette as the pills next to them.
+// same palette as the pills next to them. Spec 361: React renders the
+// `<canvas>`; drawing stays imperative here.
 
-import { el } from '../../../ui/dom';
 import type { Tone } from '../../kit';
 
 type Palette = Readonly<Record<Tone | 'border', string>>;
@@ -57,16 +57,13 @@ interface Surface2D {
 
 /** A full-width canvas of fixed CSS height, refitted to its width and DPR on demand. */
 export class FittedCanvas {
-  readonly el: HTMLCanvasElement;
   private current: Surface2D | null = null;
   private dpr = 0;
 
   constructor(
-    className: string,
+    readonly el: HTMLCanvasElement,
     private readonly height: number,
-  ) {
-    this.el = el('canvas', { class: className, style: { height: `${height}px` } });
-  }
+  ) {}
 
   /** The drawing surface at the current size; null without a 2D context. */
   surface(): Surface2D | null {

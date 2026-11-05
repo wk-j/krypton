@@ -198,8 +198,9 @@ only separates a fixed rail from fixed content.
 ## Components
 
 The kit (`src/loopback/kit/`, exported from `kit/index.ts`) is the component
-catalog; a surface uses these before writing its own. Class names are BEM under
-`lb-`; Rust-rendered markup uses the same classes so the kit styles it.
+catalog; a surface uses these before writing its own. Components are React
+function components (spec 361); class names are BEM under `lb-`, and
+Rust-rendered markup uses the same classes so the kit styles it.
 
 - **Shell** (`.lb-shell`, `AppShell`) — 44px sticky bar on every page: brand →
   Home, `/ project ▾ / surface` in mono, a `limited` marker without a session,
@@ -208,37 +209,37 @@ catalog; a surface uses these before writing its own. Class names are BEM under
 - **Switcher / key help** (`.lb-switcher`, `.lb-keyhelp` on `.lb-overlay`) —
   centred `--card` panel over a flat `rgba(0,0,0,.55)` scrim (never a blur).
   Selected row = `--tint` fill + accent border.
-- **Card** (`.lb-card`, `card()`) — `--card` fill, `1px --border`, `10px`
+- **Card** (`.lb-card`, `<Card>`) — `--card` fill, `1px --border`, `10px`
   radius, `12–13px` padding. The standard surface; Home tiles (`.lb-tile`) are
   cards. Do **not** nest one inside another.
-- **Status dot** (`.lb-dot`, `dot()`) — `10px` circle; `--muted` idle, static
+- **Status dot** (`.lb-dot`, `<Dot>`) — `10px` circle; `--muted` idle, static
   `--add` / `--accent` / `--del` states, and `live`: `--add` with the
   `lb-beacon` keyframe (expanding green ring, `2s` loop). The single sanctioned
   animation in this system.
-- **Pill** (`.lb-pill--{accent,add,del,muted}`, `pill()` + `statusTone()`) —
+- **Pill** (`.lb-pill--{accent,add,del,muted}`, `<Pill>` + `statusTone()`) —
   `10px` mono, `.04em` tracking, full 1px border in the tone; colored by the
   status table above. State badge, not a button.
-- **Stat tile** (`.lb-stat`, `StatBar`) — small `--muted` mono label under a
+- **Stat tile** (`.lb-stat`, `<StatBar>`) — small `--muted` mono label under a
   large accent mono numeral (`19px`, tabular); `add`/`del`/`muted` tones.
-- **Chip** (`.lb-chip`, `chip()`) — `--code-bg` capsule with a mono count;
+- **Chip** (`.lb-chip`, `<Chip>`) — `--code-bg` capsule with a mono count;
   accent numeral, red when `--alert`, `--muted` for constraint/meta labels.
-- **Button** (`.lb-btn`, `button()`) — `primary` is accent-filled with
+- **Button** (`.lb-btn`, `<Button>`) — `primary` is accent-filled with
   `--on-accent` text (the one place text sits *on* the accent); `secondary` and
   `ghost`; `toggle` shows `aria-pressed="true"` as accent text + border + tint.
   Disabled: `--code-bg` fill, `--muted` text, `pointer-events:none`.
-- **Tabs** (`.lb-tabs`, `Tabs`) — mono segmented row; the selected tab is
+- **Tabs** (`.lb-tabs`, `<Tabs>`) — mono segmented row; the selected tab is
   accent-filled; optional `1`–`9` key hints.
-- **Filter** (`.lb-filter`, `SearchFilter`) — `--code-bg` mono input with a
+- **Filter** (`.lb-filter`, `<SearchFilter>`) — `--code-bg` mono input with a
   muted match count; `/` focuses it.
-- **Roster** (`.lb-roster`, `RosterList`) — keyboard list; the selected row is
+- **Roster** (`.lb-roster`, `<RosterList>`) — keyboard list; the selected row is
   `--tint` + a full accent border (never a left rail).
-- **Table** (`.lb-table`, `DataTable`) — mono cells, accent `th` on `--card`,
-  hairline rows; **key/value** (`.lb-kv`, `keyValue()`).
-- **Banner** (`.lb-banner`) — the transient status line: accent tint (info),
+- **Table** (`.lb-table`, `<DataTable>`) — mono cells, accent `th` on `--card`,
+  hairline rows; **key/value** (`.lb-kv`, `<KeyValue>`).
+- **Banner** (`.lb-banner`, `<Banner>` + `useBanner()`) — the transient status line: accent tint (info),
   green (ok), red (error).
-- **Empty state** (`.lb-empty`) — centered `--muted` mono line. Every list/grid
+- **Empty state** (`.lb-empty`, `<EmptyState>`) — centered `--muted` mono line. Every list/grid
   has one.
-- **Key hints** (`.lb-hints`, `kbdHints()`) — `--muted` mono footer under a top
+- **Key hints** (`.lb-hints`, `<KbdHints>`) — `--muted` mono footer under a top
   hairline, `kbd` caps; carries poll cadence / counts.
 - **Prose** (`.lb-prose`) — the markdown reader: `820px` max-width, `15px`/1.65,
   `--text` body, accent h1/h3, hairline-ruled h2, `--code-fg` inline code,
@@ -283,7 +284,7 @@ toggle to a status wall or strip auto-theming from a reader.
 ### Feedback overlay (artifact scaffold + docs browser)
 
 The artifact scaffold (spec 149) self-injects a small fixed comment overlay; the
-docs browser (spec 172) uses the kit's `FeedbackOverlay`
+docs browser (spec 172) uses the kit's `<FeedbackOverlay>`
 (`src/loopback/kit/feedback-overlay/`, `.lb-feedback*`). Both are a
 bottom-right pill, an accent hover-highlight box, and a composer card built from
 the shared tokens (`--card`, `--accent`, `--border`, `--muted`, mono font), so

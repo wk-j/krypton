@@ -8,16 +8,16 @@
 > self-contained `src/acp/artifact-acpwire.html` (deleted). Both
 > `/acp-wire/{token}` and `/acp-wire/{token}/message/{seq}` return an
 > `AppPage` for entry `src/loopback/entries/acp-wire.ts`; the surface lives in
-> `src/loopback/surfaces/acp-wire/` (`index.ts` view, `model.ts` held ring /
-> grouping / stats, `waterfall.ts` SVG, `json-tree.ts` readable payload,
-> `acp-wire.css`, `acp-wire.test.ts`). Kit usage: `poll()` (1 s, paused while
+> `src/loopback/surfaces/acp-wire/` (React since spec 361: `index.tsx` `AcpWirePage`, `model.ts` held ring /
+> grouping / stats, `waterfall.ts` paints into a React `<svg>`, `json-tree.tsx` readable payload,
+> `acp-wire.css`, `acp-wire.test.tsx`). Kit usage: `poll()` (1 s, paused while
 > hidden or on Space), `fetchJson`, `StatBar` tiles, `Banner` (capture-off
 > notice, copy status), `SearchFilter` (`/`), `DataTable` (By method),
-> `keyValue`, `card`, `kbdHints`, toggle `button`s for lane/dir/readable-raw,
+> `<KeyValue>`, `<Card>`, `<KbdHints>`, toggle `<Button>`s for lane/dir/readable-raw,
 > and every key through `keymap()` gated per mode (dashboard vs message).
-> The message table is a surface-local `reconcile` list (gap and group rows).
+> The message table is a surface-local keyed React list (gap and group rows).
 > Visual normalisation: the shell replaces the brand bar and READ ONLY badge,
-> one `dot('live')` beacon, lowercase labels, token colors only. References
+> one `<Dot state="live">` beacon, lowercase labels, token colors only. References
 > below to the old HTML file describe the original implementation.
 
 ## Problem
