@@ -34,8 +34,8 @@ const EMPTY_SCENE = (): ExcalidrawScene => ({
 const AUTOSAVE_DEBOUNCE_MS = 800;
 
 export const PENCIL_LEADER_KEYS: readonly LeaderKeySpec[] = [
-  { key: '/', label: 'Open Drawing Here', group: 'Pencil', effect: 'important' },
-  { key: '?', label: 'New Drawing', group: 'Pencil', effect: 'important' },
+  { key: '/', label: 'Open Drawing Here', icon: 'folder-open', group: 'Pencil', effect: 'important' },
+  { key: '?', label: 'New Drawing', icon: 'file-plus-corner', group: 'Pencil', effect: 'important' },
 ];
 
 export class PencilContentView implements ContentView {

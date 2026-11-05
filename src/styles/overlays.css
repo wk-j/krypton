@@ -20,12 +20,12 @@
   border-radius: var(--krypton-border-radius, 8px);
   padding: 10px 14px;
   min-width: 240px;
-  max-width: min(420px, calc(100vw - 24px));
+  max-width: min(760px, calc(100vw - 24px));
 }
 
 .krypton-whichkey__title {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-chrome-font-size, 11px);
+  font-size: var(--krypton-font-size, 13px);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -35,25 +35,70 @@
   border-bottom: 1px solid var(--krypton-whichkey-separator, rgba(0, 200, 255, 0.2));
 }
 
+/* Columns stretch to the taller one's height, so the shorter column's
+   leftover space is a box the Compositor emblem can centre in. */
 .krypton-whichkey__keys {
   display: flex;
+  align-items: stretch;
+  gap: 20px;
+}
+
+.krypton-whichkey__column {
+  display: flex;
   flex-direction: column;
-  gap: 1px;
+  min-width: 0;
+}
+
+/* The key track is as wide as the column's widest key, so a long chord
+   (`A-hjkl`) keeps every icon and label in the column aligned. */
+.krypton-whichkey__list {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 1px;
+  min-width: 0;
+}
+
+/* Compositor emblem (`layout-dashboard`, palette-icons.ts). which-key.ts adds
+   it only when the shorter column has 4+ spare lines, so the 4em glyph never
+   grows the popup. Static: the popup is idle UI. */
+.krypton-whichkey__emblem {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 8px;
+  font-size: var(--krypton-font-size, 13px);
+}
+
+.krypton-whichkey__emblem-icon {
+  width: 4em;
+  height: 4em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--krypton-whichkey-title, #0cf);
+  opacity: 0.4;
+  filter: drop-shadow(0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5));
 }
 
 .krypton-whichkey__entry {
   position: relative;
-  display: flex;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: 10px;
   padding: 2px 6px;
 }
 
 .krypton-whichkey__group {
+  grid-column: 1 / -1;
   margin: 8px 0 2px;
   padding: 0 6px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   text-transform: uppercase;
   color: var(--krypton-whichkey-label, rgba(0, 200, 255, 0.4));
@@ -73,20 +118,22 @@
 }
 
 .krypton-whichkey__entry--important .krypton-whichkey__label,
-.krypton-whichkey__entry--important .krypton-whichkey__key {
+.krypton-whichkey__entry--important .krypton-whichkey__key,
+.krypton-whichkey__entry--important .krypton-whichkey__icon {
   color: var(--krypton-whichkey-title, #0cf);
   text-shadow: 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.55);
 }
 
 .krypton-whichkey__entry--danger .krypton-whichkey__label,
-.krypton-whichkey__entry--danger .krypton-whichkey__key {
+.krypton-whichkey__entry--danger .krypton-whichkey__key,
+.krypton-whichkey__entry--danger .krypton-whichkey__icon {
   color: var(--krypton-error, #ff506e);
   text-shadow: 0 0 8px rgba(255, 80, 110, 0.55);
 }
 
 .krypton-whichkey__key {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-chrome-font-size, 11px);
+  font-size: var(--krypton-font-size, 13px);
   font-weight: 600;
   color: var(--krypton-whichkey-key, #0cf);
   min-width: 28px;
@@ -95,7 +142,23 @@
 
 .krypton-whichkey__label {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-chrome-font-size, 11px);
+  font-size: var(--krypton-font-size, 13px);
+  color: var(--krypton-whichkey-label, rgba(0, 200, 255, 0.4));
+}
+
+/* Row glyph (spec 360) — a Lucide icon from palette-icons.ts between key and
+   label. 1em, so it stays inside the label's line box and the row keeps its
+   height (a 1.1em glyph made each row 0.3px taller). It takes the label's
+   colour; the effect rules above recolour it with the row. Static. */
+.krypton-whichkey__icon {
+  font-size: var(--krypton-font-size, 13px);
+  width: 1em;
+  height: 1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   color: var(--krypton-whichkey-label, rgba(0, 200, 255, 0.4));
 }
 

@@ -4,6 +4,7 @@
 > Date: 2026-11-04
 > Milestone: M8 — Polish
 > Amends: [0349](./0349-unified-search-palette-tabs.md) (Commands row content), [0110](./0110-context-aware-command-palette.md) (`PaletteAction`)
+> Amended by: [0360](./0360-which-key-icons.md) — which-key rows draw glyphs from the same module
 
 ## Problem
 
@@ -82,10 +83,12 @@ key column. Icons are ink-coloured and light up on the selected row; nothing nee
 
 ```ts
 // src/palette-icons.ts
-const ICON_BODY = { /* 87 Lucide inner-markup strings, verbatim */ } as const satisfies Record<string, string>;
+const ICON_BODY = { /* Lucide inner-markup strings, verbatim: 87 here, 132 after spec 0360 */ } as const satisfies Record<string, string>;
 export type PaletteIconName = keyof typeof ICON_BODY; // the names live in one place
-export function paletteIcon(name: PaletteIconName): SVGElement;
-// <svg class="krypton-search-palette__icon" viewBox="0 0 24 24" aria-hidden="true">…</svg>
+export function paletteIcon(name: PaletteIconName, className = 'krypton-search-palette__icon'): SVGElement;
+// <svg class="${className}" viewBox="0 0 24 24" aria-hidden="true">…</svg>
+// The which-key popup passes 'krypton-whichkey__icon' for its rows (spec 0360) and
+// 'krypton-whichkey__emblem-icon' for its Compositor emblem.
 
 // src/palette-types.ts
 export interface PaletteAction {
@@ -154,8 +157,8 @@ export interface PaletteAction {
 
 ## Out of Scope
 
-- Icons on Files and Grep rows, the harness `#` inline palette, the which-key popup and the
-  keyboard overlay.
+- Icons on Files and Grep rows, the harness `#` inline palette and the keyboard overlay. (The
+  which-key popup was listed here; spec 0360 gives every which-key row a glyph from this module.)
 - Changing, removing or restyling the category tag.
 - Theme schema or `[tokens]` changes.
 - Migrating the footer, harness or Review Board icons to Lucide.

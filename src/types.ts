@@ -5,6 +5,7 @@ import type { FitAddon } from '@xterm/addon-fit';
 import type { ShaderInstance } from './shaders';
 import type { UsageProvider } from './usage-store';
 import type { HarnessLaneMark } from './window-footer-lanes';
+import type { PaletteIconName } from './palette-icons';
 
 /** Unique identifier for a terminal window */
 export type WindowId = string;
@@ -192,6 +193,8 @@ export type LeaderKeyId = string;
 export interface LeaderKeySpec {
   key: LeaderKeyId;
   label: string;
+  /** Which-key glyph drawn between key and label (spec 360). */
+  icon: PaletteIconName;
   group?: string;
   effect?: 'important' | 'danger';
 }

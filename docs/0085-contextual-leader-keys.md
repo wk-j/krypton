@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-05-06
 > Milestone: M4 — Keyboard System & Workspaces
+> Amended by: [0360](./0360-which-key-icons.md) — `LeaderKeySpec` gains a required `icon: PaletteIconName` (`src/palette-icons.ts`) that which-key draws between key and label, so every local binding names its glyph.
 
 ## Problem
 
@@ -61,6 +62,8 @@ export interface LeaderKeySpec {
   /** Canonical key id, e.g. "o", "O", "[", "Alt+h". */
   key: LeaderKeyId;
   label: string;
+  /** Which-key glyph (spec 0360). */
+  icon: PaletteIconName;
   group?: string;
   effect?: 'important' | 'danger';
 }
@@ -90,7 +93,7 @@ Each view with local leader keys exports static metadata for test-time validatio
 
 ```ts
 export const MARKDOWN_LEADER_KEYS: readonly LeaderKeySpec[] = [
-  { key: ';', label: 'Link Hints', group: 'Markdown', effect: 'important' },
+  { key: ';', label: 'Link Hints', icon: 'mouse-pointer-click', group: 'Markdown', effect: 'important' },
 ];
 ```
 

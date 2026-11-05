@@ -17,7 +17,7 @@ import type { MarkdownViewAI } from './markdown-view-ai';
 import type { MarkdownViewContext } from './markdown-view-ai';
 
 export const MARKDOWN_LEADER_KEYS: readonly LeaderKeySpec[] = [
-  { key: ';', label: 'Link Hints', group: 'Markdown', effect: 'important' },
+  { key: ';', label: 'Link Hints', icon: 'mouse-pointer-click', group: 'Markdown', effect: 'important' },
 ];
 
 /** List .md files in a directory, respecting .gitignore when possible. */

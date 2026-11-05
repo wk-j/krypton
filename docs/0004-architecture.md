@@ -500,7 +500,16 @@ Krypton uses a cyberpunk/sci-fi chrome style. Each window has a titlebar with se
       </div>
     </div>
 
-    <!-- Which-key popup (shown during compositor/resize/move/tab-move modes) -->
+    <!-- Which-key popup (shown during compositor/resize/move/tab-move modes).
+         Entries render in two .krypton-whichkey__column wrappers, each holding a
+         .krypton-whichkey__list grid at --krypton-font-size; groups stay whole and are
+         split for near-equal column height, an ungrouped mode splits its entries in
+         half. Each .krypton-whichkey__entry is key · svg.krypton-whichkey__icon (a 1em
+         Lucide glyph from paletteIcon, coloured like its label; spec 0360) · label, and
+         the key track fits the column's widest key. Columns stretch to equal
+         height; in Compositor mode, when the shorter column has 4+ spare lines, a
+         static .krypton-whichkey__emblem (Lucide `layout-dashboard` via
+         paletteIcon) centres in that leftover space. -->
     <div class="krypton-whichkey">...</div>
 
     <!-- Workspace footer (single 28px bottom rail: status + music segment).
@@ -610,7 +619,7 @@ The input router is the central keyboard dispatcher. It determines what happens 
 
 **Compositor single-action keys (in Compositor mode):**
 
-Focused content views may add local leader actions by implementing `ContentView.getLeaderKeyBindings()`. Each view exports static `LeaderKeySpec` metadata beside the view implementation; `src/leader-keys.ts` owns canonical key normalization and the global reserved-key list. `src/leader-keys.test.ts` imports all local metadata and fails if any local key conflicts with a global key or another local key. Disabled local bindings are hidden from which-key and never fall back to global behavior. Current local bindings include Markdown `;` for link hints, ACP Harness `+`/`_`/`=`/`0` for lane lifecycle, metrics, and project-scoped session resume, and Pencil `/` to open an existing drawing in the focused tab plus `?` for creating a new drawing beside the focused file.
+Focused content views may add local leader actions by implementing `ContentView.getLeaderKeyBindings()`. Each view exports static `LeaderKeySpec` metadata beside the view implementation; every spec names a required `icon` (a `PaletteIconName`, spec 0360) that which-key draws between key and label. `src/leader-keys.ts` owns canonical key normalization and the global reserved-key list. `src/leader-keys.test.ts` imports all local metadata and fails if any local key conflicts with a global key or another local key. Disabled local bindings are hidden from which-key and never fall back to global behavior. Current local bindings include Markdown `;` for link hints, ACP Harness `+`/`_`/`=`/`0` for lane lifecycle, metrics, and project-scoped session resume, and Pencil `/` to open an existing drawing in the focused tab plus `?` for creating a new drawing beside the focused file.
 
 | Key | Action |
 |-----|--------|

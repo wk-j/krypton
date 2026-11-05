@@ -898,11 +898,11 @@ const REMOTE_UNSUPPORTED_HASH_COMMANDS = new Set([
 const RAILS_DOCK_CTRL_EDIT_KEYS: Readonly<Record<string, true>> = { u: true, k: true, w: true, h: true, d: true, a: true, e: true };
 
 export const ACP_HARNESS_LEADER_KEYS: readonly LeaderKeySpec[] = [
-  { key: '+', label: 'Add Lane', group: 'Harness' },
-  { key: '_', label: 'Close Active Lane', group: 'Harness', effect: 'danger' },
-  { key: '=', label: 'Lane Metrics', group: 'Harness' },
-  { key: '0', label: 'Resume Session', group: 'Harness', effect: 'important' },
-  { key: '.', label: 'Directives', group: 'Harness' },
+  { key: '+', label: 'Add Lane', icon: 'circle-plus', group: 'Harness' },
+  { key: '_', label: 'Close Active Lane', icon: 'x', group: 'Harness', effect: 'danger' },
+  { key: '=', label: 'Lane Metrics', icon: 'chart-line', group: 'Harness' },
+  { key: '0', label: 'Resume Session', icon: 'rotate-ccw-clock', group: 'Harness', effect: 'important' },
+  { key: '.', label: 'Directives', icon: 'scroll-text', group: 'Harness' },
 ];
 
 /** spec 299: the transcript line for a lesson write. The store pressure rides
@@ -4265,12 +4265,14 @@ export class AcpHarnessView implements ContentView {
       {
         key: '+',
         label: 'Add Lane',
+        icon: 'circle-plus',
         group: 'Harness',
         run: () => this.openLanePicker(),
       },
       {
         key: '_',
         label: 'Close Active Lane',
+        icon: 'x',
         group: 'Harness',
         effect: 'danger',
         run: () => this.closeActiveLane(),
@@ -4280,12 +4282,14 @@ export class AcpHarnessView implements ContentView {
       {
         key: '=',
         label: 'Lane Metrics',
+        icon: 'chart-line',
         group: 'Harness',
         run: () => this.toggleMetricsPanel(),
       },
       {
         key: '0',
         label: 'Resume Session',
+        icon: 'rotate-ccw-clock',
         group: 'Harness',
         effect: 'important',
         run: () => this.openSessionPicker(),
@@ -4296,6 +4300,7 @@ export class AcpHarnessView implements ContentView {
         // free non-reserved key is `.`.
         key: '.',
         label: 'Directives',
+        icon: 'scroll-text',
         group: 'Harness',
         run: () => this.openDirectivePicker(),
         isEnabled: () => this.lanes.length > 0,
@@ -4306,6 +4311,7 @@ export class AcpHarnessView implements ContentView {
         // are reserved global leader keys; ⌃/⌘M is the memory drawer).
         key: ',',
         label: 'Switch Model',
+        icon: 'cpu',
         group: 'Lane',
         run: () => this.openModelPicker(),
         isEnabled: () => (this.activeLane()?.availableModels.length ?? 0) > 0,
@@ -4318,6 +4324,7 @@ export class AcpHarnessView implements ContentView {
         // judgement queue. Inside the overlay, j/k/a/r/o navigate directly.
         key: ';',
         label: 'Triage Queue',
+        icon: 'inbox',
         group: 'Harness',
         run: () => this.openTriageOverlay(),
       },
@@ -4327,6 +4334,7 @@ export class AcpHarnessView implements ContentView {
         // triage queue, `,` `.` are model/directives). Inside, j/k switch lane.
         key: "'",
         label: 'Review Matrix',
+        icon: 'grid-3x3',
         group: 'Harness',
         run: () => this.openReviewMatrixOverlay(),
         isEnabled: () => this.reviewQualityStore.totalReviews() > 0,
@@ -4338,6 +4346,7 @@ export class AcpHarnessView implements ContentView {
         // live. Read-only; inside, j/k switch lane.
         key: '/',
         label: 'Review Priority',
+        icon: 'flag',
         group: 'Harness',
         run: () => this.openReviewPriorityOverlay(),
         isEnabled: () => this.reviewPriorityStore.lanesWithReports().length > 0,
@@ -4352,6 +4361,7 @@ export class AcpHarnessView implements ContentView {
         // if there is none yet, exactly like `#orchestrator`/`#console`).
         key: '`',
         label: 'Orchestrator',
+        icon: 'network',
         group: 'Harness',
         run: () => {
           const lane = this.activeLane();

@@ -4,11 +4,15 @@
 
 import type { LeaderKeyBinding, PaneContentType } from './types';
 import { LayoutMode, Mode } from './types';
+import { paletteIcon } from './palette-icons';
+import type { PaletteIconName } from './palette-icons';
 
 /** A single keybinding entry displayed in the popup */
 interface KeyEntry {
   key: string;
   label: string;
+  /** Glyph drawn between key and label (spec 360); same concept, same glyph as the palette. */
+  icon: PaletteIconName;
   effect?: 'important' | 'danger';
   group?: string;
   /** If set, only show this entry when focused pane matches one of these types.
@@ -20,6 +24,7 @@ function leaderBindingsToEntries(bindings: LeaderKeyBinding[]): KeyEntry[] {
   return bindings.map((binding) => ({
     key: binding.key,
     label: binding.label,
+    icon: binding.icon,
     group: binding.group,
     effect: binding.effect,
   }));
@@ -31,123 +36,123 @@ function groupEntries(group: string, entries: KeyEntry[]): KeyEntry[] {
 
 /** Keybindings per mode — compositor keys are content-type-aware */
 const SCROLL_WINDOW_KEYS: KeyEntry[] = groupEntries('Windows', [
-  { key: 'n', label: 'New Window' },
-  { key: 'x', label: 'Close Window', effect: 'danger' },
-  { key: 'h', label: 'Pane/Column Left' },
-  { key: 'j', label: 'Pane/Window Down' },
-  { key: 'k', label: 'Pane/Window Up' },
-  { key: 'l', label: 'Pane/Column Right' },
-  { key: ',', label: 'Consume/Expel Left' },
-  { key: '.', label: 'Consume/Expel Right' },
-  { key: '=', label: 'Cycle Column Width' },
-  { key: '1-9', label: 'Focus By Index' },
-  { key: 'f', label: 'Cycle Layout' },
-  { key: 'r', label: 'Resize Mode', effect: 'important' },
-  { key: 'm', label: 'Move Mode', effect: 'important' },
-  { key: 's', label: 'Swap Mode', effect: 'important' },
-  { key: 'z', label: 'Maximize', effect: 'important' },
-  { key: 'p', label: 'Pin Window' },
+  { key: 'n', label: 'New Window', icon: 'square-plus' },
+  { key: 'x', label: 'Close Window', icon: 'x', effect: 'danger' },
+  { key: 'h', label: 'Pane/Column Left', icon: 'arrow-left' },
+  { key: 'j', label: 'Pane/Window Down', icon: 'arrow-down' },
+  { key: 'k', label: 'Pane/Window Up', icon: 'arrow-up' },
+  { key: 'l', label: 'Pane/Column Right', icon: 'arrow-right' },
+  { key: ',', label: 'Consume/Expel Left', icon: 'arrow-left-to-line' },
+  { key: '.', label: 'Consume/Expel Right', icon: 'arrow-right-to-line' },
+  { key: '=', label: 'Cycle Column Width', icon: 'unfold-horizontal' },
+  { key: '1-9', label: 'Focus By Index', icon: 'hash' },
+  { key: 'f', label: 'Cycle Layout', icon: 'repeat' },
+  { key: 'r', label: 'Resize Mode', icon: 'scaling', effect: 'important' },
+  { key: 'm', label: 'Move Mode', icon: 'move', effect: 'important' },
+  { key: 's', label: 'Swap Mode', icon: 'replace', effect: 'important' },
+  { key: 'z', label: 'Maximize', icon: 'maximize-2', effect: 'important' },
+  { key: 'p', label: 'Pin Window', icon: 'pin' },
 ]);
 
 const STAGE_WINDOW_KEYS: KeyEntry[] = groupEntries('Windows', [
-  { key: 'n', label: 'New Window' },
-  { key: 'x', label: 'Close Window', effect: 'danger' },
-  { key: 'h/k', label: 'Pane/Prev Stage' },
-  { key: 'j/l', label: 'Pane/Next Stage' },
-  { key: '1-9', label: 'Activate Stage' },
-  { key: '!', label: 'Next Needing You' },
-  { key: 'f', label: 'Cycle Layout' },
-  { key: 'r', label: 'Resize Stage', effect: 'important' },
-  { key: 'm', label: 'Move Stage', effect: 'important' },
-  { key: '=', label: 'Reset Stage Frame' },
-  { key: 'z', label: 'Maximize', effect: 'important' },
-  { key: 'p', label: 'Pin (No Stage Effect)' },
+  { key: 'n', label: 'New Window', icon: 'square-plus' },
+  { key: 'x', label: 'Close Window', icon: 'x', effect: 'danger' },
+  { key: 'h/k', label: 'Pane/Prev Stage', icon: 'chevrons-left' },
+  { key: 'j/l', label: 'Pane/Next Stage', icon: 'chevrons-right' },
+  { key: '1-9', label: 'Activate Stage', icon: 'hash' },
+  { key: '!', label: 'Next Needing You', icon: 'bell-ring' },
+  { key: 'f', label: 'Cycle Layout', icon: 'repeat' },
+  { key: 'r', label: 'Resize Stage', icon: 'scaling', effect: 'important' },
+  { key: 'm', label: 'Move Stage', icon: 'move', effect: 'important' },
+  { key: '=', label: 'Reset Stage Frame', icon: 'rotate-ccw-square' },
+  { key: 'z', label: 'Maximize', icon: 'maximize-2', effect: 'important' },
+  { key: 'p', label: 'Pin (No Stage Effect)', icon: 'pin' },
 ]);
 
 // spec 272: resize/move/pin/= have no Wheel effect, so they are not listed.
 const WHEEL_WINDOW_KEYS: KeyEntry[] = groupEntries('Windows', [
-  { key: 'n', label: 'New Window' },
-  { key: 'x', label: 'Close Window', effect: 'danger' },
-  { key: 'h/k', label: 'Pane/Prev Window' },
-  { key: 'j/l', label: 'Pane/Next Window' },
-  { key: '1-9', label: 'Jump To Window' },
-  { key: '!', label: 'Next Needing You' },
-  { key: 'f', label: 'Cycle Layout' },
-  { key: 's', label: 'Reorder Wheel', effect: 'important' },
-  { key: 'z', label: 'Maximize', effect: 'important' },
+  { key: 'n', label: 'New Window', icon: 'square-plus' },
+  { key: 'x', label: 'Close Window', icon: 'x', effect: 'danger' },
+  { key: 'h/k', label: 'Pane/Prev Window', icon: 'chevrons-left' },
+  { key: 'j/l', label: 'Pane/Next Window', icon: 'chevrons-right' },
+  { key: '1-9', label: 'Jump To Window', icon: 'hash' },
+  { key: '!', label: 'Next Needing You', icon: 'bell-ring' },
+  { key: 'f', label: 'Cycle Layout', icon: 'repeat' },
+  { key: 's', label: 'Reorder Wheel', icon: 'replace', effect: 'important' },
+  { key: 'z', label: 'Maximize', icon: 'maximize-2', effect: 'important' },
 ]);
 
 const COMPOSITOR_KEYS: KeyEntry[] = [
   ...groupEntries('Windows', [
-    { key: 'n', label: 'New Window' },
-    { key: 'x', label: 'Close Window', effect: 'danger' },
-    { key: 'h', label: 'Pane/Window Left' },
-    { key: 'j', label: 'Pane/Window Down' },
-    { key: 'k', label: 'Pane/Window Up' },
-    { key: 'l', label: 'Pane/Window Right' },
-    { key: '1-9', label: 'Focus By Index' },
-    { key: '!', label: 'Next Needing You' },
-    { key: 'f', label: 'Cycle Layout' },
-    { key: 'r', label: 'Resize Mode', effect: 'important' },  // Shift+R = Review Board (AI group)
-    { key: 'm', label: 'Move Mode', effect: 'important' },
-    { key: 's', label: 'Swap Mode', effect: 'important' },
-    { key: 'z', label: 'Maximize', effect: 'important' },
-    { key: 'p', label: 'Pin Window' },
+    { key: 'n', label: 'New Window', icon: 'square-plus' },
+    { key: 'x', label: 'Close Window', icon: 'x', effect: 'danger' },
+    { key: 'h', label: 'Pane/Window Left', icon: 'arrow-left' },
+    { key: 'j', label: 'Pane/Window Down', icon: 'arrow-down' },
+    { key: 'k', label: 'Pane/Window Up', icon: 'arrow-up' },
+    { key: 'l', label: 'Pane/Window Right', icon: 'arrow-right' },
+    { key: '1-9', label: 'Focus By Index', icon: 'hash' },
+    { key: '!', label: 'Next Needing You', icon: 'bell-ring' },
+    { key: 'f', label: 'Cycle Layout', icon: 'repeat' },
+    { key: 'r', label: 'Resize Mode', icon: 'scaling', effect: 'important' },  // Shift+R = Review Board (AI group)
+    { key: 'm', label: 'Move Mode', icon: 'move', effect: 'important' },
+    { key: 's', label: 'Swap Mode', icon: 'replace', effect: 'important' },
+    { key: 'z', label: 'Maximize', icon: 'maximize-2', effect: 'important' },
+    { key: 'p', label: 'Pin Window', icon: 'pin' },
   ]),
 
   ...groupEntries('Tabs / Panes', [
-    { key: 't', label: 'New Tab' },
-    { key: 'w', label: 'Close Tab', effect: 'danger' },
-    { key: '[', label: 'Previous Tab' },
-    { key: ']', label: 'Next Tab' },
-    { key: 'T', label: 'Move Tab', effect: 'important' },
-    { key: '\\', label: 'Split Vertical' },
-    { key: '-', label: 'Split Horizontal' },
-    { key: 'A-hjkl', label: 'Focus Pane Only' },
-    { key: 'A-x', label: 'Close Pane', effect: 'danger' },
+    { key: 't', label: 'New Tab', icon: 'plus' },
+    { key: 'w', label: 'Close Tab', icon: 'x', effect: 'danger' },
+    { key: '[', label: 'Previous Tab', icon: 'chevrons-left' },
+    { key: ']', label: 'Next Tab', icon: 'chevrons-right' },
+    { key: 'T', label: 'Move Tab', icon: 'square-arrow-right', effect: 'important' },
+    { key: '\\', label: 'Split Vertical', icon: 'columns-2' },
+    { key: '-', label: 'Split Horizontal', icon: 'rows-2' },
+    { key: 'A-hjkl', label: 'Focus Pane Only', icon: 'crosshair' },
+    { key: 'A-x', label: 'Close Pane', icon: 'x', effect: 'danger' },
     // spec 296. Shift-only: bare `o` is Markdown Viewer in a new tab.
-    { key: 'O', label: 'Markdown To Side', effect: 'important' },
+    { key: 'O', label: 'Markdown To Side', icon: 'panel-right', effect: 'important' },
   ]),
 
   ...groupEntries('Apps', [
-    { key: 'b', label: 'File Manager', effect: 'important' },
-    { key: 'u', label: 'Vault Viewer', effect: 'important' },
-    { key: 'e', label: 'Pencil', effect: 'important' },
-    { key: 'q', label: 'Hurl Client', effect: 'important' },
-    { key: '$', label: 'Credit Usage', effect: 'important' },
-    { key: 'M', label: 'Music Dashboard', effect: 'important' },
-    { key: 'P', label: 'Profiler HUD', effect: 'important' },
-    { key: 'K', label: 'Keyboard Overlay', effect: 'important' },
-    { key: 'H', label: 'Hint Mode', effect: 'important' },
+    { key: 'b', label: 'File Manager', icon: 'folder-tree', effect: 'important' },
+    { key: 'u', label: 'Vault Viewer', icon: 'vault', effect: 'important' },
+    { key: 'e', label: 'Pencil', icon: 'pencil', effect: 'important' },
+    { key: 'q', label: 'Hurl Client', icon: 'arrow-right-left', effect: 'important' },
+    { key: '$', label: 'Credit Usage', icon: 'chart-column', effect: 'important' },
+    { key: 'M', label: 'Music Dashboard', icon: 'eighth-notes', effect: 'important' },
+    { key: 'P', label: 'Profiler HUD', icon: 'gauge', effect: 'important' },
+    { key: 'K', label: 'Keyboard Overlay', icon: 'keyboard', effect: 'important' },
+    { key: 'H', label: 'Hint Mode', icon: 'mouse-pointer-click', effect: 'important' },
     // spec 213. Shift-only: bare `x` is Close Window, listed under Windows.
-    { key: 'X', label: 'Probe Backend Link', effect: 'important' },
+    { key: 'X', label: 'Probe Backend Link', icon: 'satellite-dish', effect: 'important' },
   ]),
 
   ...groupEntries('AI', [
-    { key: 'a', label: 'AI Agent', effect: 'important' },
-    { key: 'Y', label: 'ACP Harness', effect: 'important' },
-    { key: 'S', label: 'Remote ACP Harness', effect: 'important' },
+    { key: 'a', label: 'AI Agent', icon: 'sparkles', effect: 'important' },
+    { key: 'Y', label: 'ACP Harness', icon: 'bot', effect: 'important' },
+    { key: 'S', label: 'Remote ACP Harness', icon: 'server', effect: 'important' },
     // spec 211. Shift-only: bare `r` is Resize Mode, listed under Windows.
-    { key: 'R', label: 'Review Board', effect: 'important' },
+    { key: 'R', label: 'Review Board', icon: 'clipboard-list', effect: 'important' },
   ]),
 
   ...groupEntries('Terminal', [
-    { key: 'v', label: 'Select Mode', contentTypes: [null] },
-    { key: 'V', label: 'Select Lines', contentTypes: [null] },
-    { key: 'd', label: 'Git Diff', effect: 'important', contentTypes: [null] },
-    { key: 'D', label: 'Git Diff Staged', effect: 'important', contentTypes: [null] },
-    { key: 'i', label: 'Native / Raw Output', contentTypes: [null] },
-    { key: 'I', label: 'Copy Native Output', contentTypes: [null] },
-    { key: 'o', label: 'Markdown Viewer', effect: 'important', contentTypes: [null] },
-    { key: 'J', label: 'Daily Note', effect: 'important', contentTypes: [null] },
-    { key: 'c', label: 'Clone SSH Tab', contentTypes: [null] },
-    { key: 'C', label: 'Clone SSH Window', contentTypes: [null] },
-    { key: 'g', label: 'Cycle Shader' },
-    { key: 'G', label: 'Toggle Shaders', effect: 'important' },
+    { key: 'v', label: 'Select Mode', icon: 'text-cursor', contentTypes: [null] },
+    { key: 'V', label: 'Select Lines', icon: 'text-align-start', contentTypes: [null] },
+    { key: 'd', label: 'Git Diff', icon: 'diff', effect: 'important', contentTypes: [null] },
+    { key: 'D', label: 'Git Diff Staged', icon: 'diff', effect: 'important', contentTypes: [null] },
+    { key: 'i', label: 'Native / Raw Output', icon: 'toggle-left', contentTypes: [null] },
+    { key: 'I', label: 'Copy Native Output', icon: 'copy', contentTypes: [null] },
+    { key: 'o', label: 'Markdown Viewer', icon: 'file-text', effect: 'important', contentTypes: [null] },
+    { key: 'J', label: 'Daily Note', icon: 'calendar', effect: 'important', contentTypes: [null] },
+    { key: 'c', label: 'Clone SSH Tab', icon: 'copy-plus', contentTypes: [null] },
+    { key: 'C', label: 'Clone SSH Window', icon: 'copy-plus', contentTypes: [null] },
+    { key: 'g', label: 'Cycle Shader', icon: 'wand-sparkles' },
+    { key: 'G', label: 'Toggle Shaders', icon: 'wand-sparkles', effect: 'important' },
   ]),
 
   ...groupEntries('Markdown', [
-    { key: 'o', label: 'Markdown Viewer', effect: 'important', contentTypes: ['markdown'] },
+    { key: 'o', label: 'Markdown Viewer', icon: 'file-text', effect: 'important', contentTypes: ['markdown'] },
   ]),
 ];
 
@@ -167,54 +172,54 @@ const WHEEL_COMPOSITOR_KEYS: KeyEntry[] = [
 ];
 
 const RESIZE_KEYS: KeyEntry[] = [
-  { key: '\u2190', label: 'Shrink Width' },
-  { key: '\u2192', label: 'Grow Width' },
-  { key: '\u2191', label: 'Shrink Height' },
-  { key: '\u2193', label: 'Grow Height' },
+  { key: '\u2190', label: 'Shrink Width', icon: 'chevrons-right-left' },
+  { key: '\u2192', label: 'Grow Width', icon: 'chevrons-left-right' },
+  { key: '\u2191', label: 'Shrink Height', icon: 'chevrons-down-up' },
+  { key: '\u2193', label: 'Grow Height', icon: 'chevrons-up-down' },
   // spec 296: Shift+letter moves the nearest split divider, not the window.
-  { key: 'H/L', label: 'Split Divider \u2190/\u2192' },
-  { key: 'K/J', label: 'Split Divider \u2191/\u2193' },
-  { key: '=', label: 'Even Split' },
-  { key: 'Esc', label: 'Done', effect: 'important' },
+  { key: 'H/L', label: 'Split Divider \u2190/\u2192', icon: 'separator-vertical' },
+  { key: 'K/J', label: 'Split Divider \u2191/\u2193', icon: 'separator-horizontal' },
+  { key: '=', label: 'Even Split', icon: 'scale' },
+  { key: 'Esc', label: 'Done', icon: 'check', effect: 'important' },
 ];
 
 const MOVE_KEYS: KeyEntry[] = [
-  { key: '\u2190', label: 'Move Left' },
-  { key: '\u2192', label: 'Move Right' },
-  { key: '\u2191', label: 'Move Up' },
-  { key: '\u2193', label: 'Move Down' },
-  { key: 'Esc', label: 'Done', effect: 'important' },
+  { key: '\u2190', label: 'Move Left', icon: 'arrow-left' },
+  { key: '\u2192', label: 'Move Right', icon: 'arrow-right' },
+  { key: '\u2191', label: 'Move Up', icon: 'arrow-up' },
+  { key: '\u2193', label: 'Move Down', icon: 'arrow-down' },
+  { key: 'Esc', label: 'Done', icon: 'check', effect: 'important' },
 ];
 
 const SWAP_KEYS: KeyEntry[] = [
-  { key: 'h/\u2190', label: 'Swap Left' },
-  { key: 'l/\u2192', label: 'Swap Right' },
-  { key: 'k/\u2191', label: 'Swap Up' },
-  { key: 'j/\u2193', label: 'Swap Down' },
+  { key: 'h/\u2190', label: 'Swap Left', icon: 'arrow-left' },
+  { key: 'l/\u2192', label: 'Swap Right', icon: 'arrow-right' },
+  { key: 'k/\u2191', label: 'Swap Up', icon: 'arrow-up' },
+  { key: 'j/\u2193', label: 'Swap Down', icon: 'arrow-down' },
 ];
 
 const TAB_MOVE_KEYS: KeyEntry[] = [
-  { key: '1-9', label: 'Move To Window N' },
-  { key: 'Esc', label: 'Cancel', effect: 'important' },
+  { key: '1-9', label: 'Move To Window N', icon: 'hash' },
+  { key: 'Esc', label: 'Cancel', icon: 'circle-x', effect: 'important' },
 ];
 
 const HINT_KEYS: KeyEntry[] = [
-  { key: 'a-z', label: 'Type Label' },
-  { key: 'Bksp', label: 'Undo Char' },
-  { key: 'Esc', label: 'Cancel', effect: 'important' },
+  { key: 'a-z', label: 'Type Label', icon: 'type' },
+  { key: 'Bksp', label: 'Undo Char', icon: 'delete' },
+  { key: 'Esc', label: 'Cancel', icon: 'circle-x', effect: 'important' },
 ];
 
 const SELECTION_KEYS: KeyEntry[] = [
-  { key: 'h/l', label: 'Move Left/Right' },
-  { key: 'j/k', label: 'Move Down/Up' },
-  { key: 'w/b', label: 'Word Forward/Back' },
-  { key: 'e', label: 'Word End' },
-  { key: '0/$', label: 'Line Start/End' },
-  { key: 'gg/G', label: 'Buffer Top/Bottom' },
-  { key: 'v', label: 'Toggle Char Select' },
-  { key: 'V', label: 'Toggle Line Select' },
-  { key: 'y', label: 'Yank To Clipboard' },
-  { key: 'Esc', label: 'Exit', effect: 'important' },
+  { key: 'h/l', label: 'Move Left/Right', icon: 'move-horizontal' },
+  { key: 'j/k', label: 'Move Down/Up', icon: 'move-vertical' },
+  { key: 'w/b', label: 'Word Forward/Back', icon: 'whole-word' },
+  { key: 'e', label: 'Word End', icon: 'arrow-right-to-line' },
+  { key: '0/$', label: 'Line Start/End', icon: 'arrow-left-right' },
+  { key: 'gg/G', label: 'Buffer Top/Bottom', icon: 'arrow-up-down' },
+  { key: 'v', label: 'Toggle Char Select', icon: 'text-cursor' },
+  { key: 'V', label: 'Toggle Line Select', icon: 'text-align-start' },
+  { key: 'y', label: 'Yank To Clipboard', icon: 'clipboard-copy' },
+  { key: 'Esc', label: 'Exit', icon: 'circle-x', effect: 'important' },
 ];
 
 /** Filter key entries by focused pane content type. */
@@ -223,6 +228,72 @@ function filterByContentType(entries: KeyEntry[], contentType: PaneContentType |
     if (!e.contentTypes) return true; // no restriction — always show
     return e.contentTypes.includes(contentType);
   });
+}
+
+/** Consecutive entries under one group header. An ungrouped entry joins the open section. */
+interface KeySection {
+  group?: string;
+  entries: KeyEntry[];
+}
+
+function toSections(entries: KeyEntry[]): KeySection[] {
+  const sections: KeySection[] = [];
+  for (const entry of entries) {
+    const open = sections[sections.length - 1];
+    if (open && (!entry.group || entry.group === open.group)) {
+      open.entries.push(entry);
+    } else {
+      sections.push({ group: entry.group, entries: [entry] });
+    }
+  }
+  return sections;
+}
+
+/** A group header occupies a line like an entry does. */
+function sectionLines(section: KeySection): number {
+  return section.entries.length + (section.group ? 1 : 0);
+}
+
+/**
+ * Split sections into two columns of near-equal height. Groups stay whole;
+ * a lone section (the ungrouped modes) splits between its entries instead.
+ */
+function splitColumns(sections: KeySection[]): KeySection[][] {
+  if (sections.length === 1) {
+    const [only] = sections;
+    const half = Math.ceil(only.entries.length / 2);
+    const right = only.entries.slice(half);
+    const left: KeySection = { group: only.group, entries: only.entries.slice(0, half) };
+    return right.length > 0 ? [[left], [{ entries: right }]] : [[left]];
+  }
+
+  const lines = sections.map(sectionLines);
+  const total = lines.reduce((sum, count) => sum + count, 0);
+  let split = 1;
+  let bestDiff = Infinity;
+  let leftLines = 0;
+  for (let i = 1; i < sections.length; i++) {
+    leftLines += lines[i - 1];
+    const diff = Math.abs(total - 2 * leftLines);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      split = i;
+    }
+  }
+  return [sections.slice(0, split), sections.slice(split)];
+}
+
+/** A line is ~1.5em tall; the 4em emblem plus its gap fits in four of them. */
+const EMBLEM_MIN_SPARE_LINES = 4;
+
+/** Index of the shorter column when its leftover space fits the emblem, else -1. */
+function emblemColumn(columns: KeySection[][]): number {
+  if (columns.length !== 2) return -1;
+  const [left, right] = columns.map((sections) =>
+    sections.reduce((sum, section) => sum + sectionLines(section), 0),
+  );
+  if (Math.abs(left - right) < EMBLEM_MIN_SPARE_LINES) return -1;
+  return left < right ? 0 : 1;
 }
 
 export class WhichKey {
@@ -332,35 +403,54 @@ export class WhichKey {
     this.title.textContent = titleText;
     this.keyList.innerHTML = '';
 
-    let currentGroup: string | undefined;
+    const columns = splitColumns(toSections(entries));
+    const emblemAt = mode === Mode.Compositor ? emblemColumn(columns) : -1;
+    columns.forEach((sections, index) => {
+      const column = document.createElement('div');
+      column.className = 'krypton-whichkey__column';
 
-    for (const entry of entries) {
-      if (entry.group && entry.group !== currentGroup) {
-        currentGroup = entry.group;
-        const header = document.createElement('div');
-        header.className = 'krypton-whichkey__group';
-        header.textContent = entry.group;
-        this.keyList.appendChild(header);
+      const list = document.createElement('div');
+      list.className = 'krypton-whichkey__list';
+
+      for (const section of sections) {
+        if (section.group) {
+          const header = document.createElement('div');
+          header.className = 'krypton-whichkey__group';
+          header.textContent = section.group;
+          list.appendChild(header);
+        }
+
+        for (const entry of section.entries) {
+          const row = document.createElement('div');
+          row.className = 'krypton-whichkey__entry';
+          if (entry.effect) {
+            row.classList.add(`krypton-whichkey__entry--${entry.effect}`);
+          }
+
+          const key = document.createElement('span');
+          key.className = 'krypton-whichkey__key';
+          key.textContent = entry.key;
+
+          const label = document.createElement('span');
+          label.className = 'krypton-whichkey__label';
+          label.textContent = entry.label;
+
+          row.appendChild(key);
+          row.appendChild(paletteIcon(entry.icon, 'krypton-whichkey__icon'));
+          row.appendChild(label);
+          list.appendChild(row);
+        }
       }
 
-      const row = document.createElement('div');
-      row.className = 'krypton-whichkey__entry';
-      if (entry.effect) {
-        row.classList.add(`krypton-whichkey__entry--${entry.effect}`);
+      column.appendChild(list);
+      if (index === emblemAt) {
+        const emblem = document.createElement('div');
+        emblem.className = 'krypton-whichkey__emblem';
+        emblem.appendChild(paletteIcon('layout-dashboard', 'krypton-whichkey__emblem-icon'));
+        column.appendChild(emblem);
       }
-
-      const key = document.createElement('span');
-      key.className = 'krypton-whichkey__key';
-      key.textContent = entry.key;
-
-      const label = document.createElement('span');
-      label.className = 'krypton-whichkey__label';
-      label.textContent = entry.label;
-
-      row.appendChild(key);
-      row.appendChild(label);
-      this.keyList.appendChild(row);
-    }
+      this.keyList.appendChild(column);
+    });
 
     this.show();
   }
