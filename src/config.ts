@@ -162,9 +162,24 @@ export interface HooksConfig {
   enabled: boolean;
 }
 
-/** `[fire]` — spec 0362: OSC 7501 states that set a window on fire. Empty = off. */
-export interface FireConfig {
+/** One fire look (spec 0363). Unset keys are absent; `inf`/`nan` arrive as `null`. */
+export interface FireLookConfig {
+  height?: number | null;
+  intensity?: number | null;
+  speed?: number | null;
+  low?: string | null;
+  mid?: string | null;
+  hot?: string | null;
+}
+
+/** `[fire]` — specs 0362/0363: OSC 7501 states that set a window on fire
+ *  (empty = off), the shared look, and per-state overrides. */
+export interface FireConfig extends FireLookConfig {
   on: string[];
+  working?: FireLookConfig | null;
+  blocked?: FireLookConfig | null;
+  error?: FireLookConfig | null;
+  done?: FireLookConfig | null;
 }
 
 export interface AcpControllerConfig {

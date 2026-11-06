@@ -449,7 +449,30 @@ impl Default for HooksConfig {
     }
 }
 
-// ─── Program-status fire (spec 0362) ───────────────────────────────
+// ─── Program-status fire (specs 0362, 0363) ────────────────────────
+
+/// One fire look (spec 0363). Every key is optional: `[fire.<state>]` falls
+/// back to `[fire]`, then to the built-in look. Ranges and colour validity are
+/// checked in the frontend (`src/fire.ts`), never here.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FireLook {
+    /// Flame height multiplier; 1 = the spec 0362 look. Clamped to 0.25..3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<f64>,
+    /// Brightness multiplier. Clamped to 0.1..2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intensity: Option<f64>,
+    /// Animation speed multiplier. Clamped to 0.25..4.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<f64>,
+    /// CSS colours; unset falls back to the `krypton-fire-*` theme tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub low: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hot: Option<String>,
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -458,6 +481,18 @@ pub struct FireConfig {
     /// "working", "blocked", "error", "done". Empty (the default) = off.
     /// Unknown values are dropped by the frontend with a warning.
     pub on: Vec<String>,
+    /// `[fire]` look keys shared by every state.
+    #[serde(flatten)]
+    pub look: FireLook,
+    /// `[fire.<state>]` overrides, key by key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub working: Option<FireLook>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked: Option<FireLook>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<FireLook>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub done: Option<FireLook>,
 }
 
 // ─── Loopback server ───────────────────────────────────────────────
@@ -1514,5 +1549,38 @@ min_confidence = 0.65
             .fire
             .on
             .is_empty());
+    }
+
+    #[test]
+    fn fire_look_keys_and_state_tables_reach_the_frontend() {
+        // Spec 0363: `[fire]` look keys sit beside `on` (flattened) and each
+        // state table overrides key by key; an integer literal is a valid float.
+        let cfg: KryptonConfig = toml::from_str(
+            "[fire]\non = [\"working\", \"blocked\"]\nheight = 2\nmid = \"#ff5a14\"\n\
+             [fire.blocked]\nspeed = 1.5\nhot = \"var(--krypton-fire-hot)\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            cfg.fire.on,
+            vec!["working".to_string(), "blocked".to_string()]
+        );
+        assert_eq!(cfg.fire.look.height, Some(2.0));
+        assert_eq!(cfg.fire.look.mid.as_deref(), Some("#ff5a14"));
+        let blocked = cfg.fire.blocked.as_ref().expect("blocked table");
+        assert_eq!(blocked.speed, Some(1.5));
+        assert_eq!(blocked.height, None);
+        assert!(cfg.fire.working.is_none());
+
+        // Unset keys and tables are omitted, so the frontend sees them as absent.
+        let json = serde_json::to_value(&cfg.fire).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "on": ["working", "blocked"],
+                "height": 2.0,
+                "mid": "#ff5a14",
+                "blocked": { "speed": 1.5, "hot": "var(--krypton-fire-hot)" },
+            })
+        );
     }
 }

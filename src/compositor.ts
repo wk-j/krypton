@@ -774,8 +774,8 @@ export class Compositor {
       this.extensions.setEnabled(config.extensions.enabled);
     }
 
-    // Fire — program states that set a window on fire (spec 362)
-    this.fire.configure(config.fire?.on ?? []);
+    // Fire — program states that set a window on fire, and their looks (specs 362, 363)
+    this.fire.configure(config.fire);
     for (const win of this.windows.values()) this.paintProgramStatus(win);
 
     // Visual — 3D perspective depth and tilt

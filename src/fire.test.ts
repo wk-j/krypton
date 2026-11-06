@@ -1,11 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
-import { FIRE, fireBand, fireEmbers, stepHeat } from './fire';
+import type { FireConfig } from './config';
+import {
+  FIRE,
+  FIRE_LOOK_LIMITS,
+  fireBand,
+  fireEmbers,
+  resolveFireLooks,
+  stepHeat,
+  stepLook,
+  type FireLook,
+  type FireState,
+  type LiveLook,
+} from './fire';
 
 const EMBER_FLOATS = FIRE.embers * 8;
 
 describe('fireEmbers', () => {
-  const band = fireBand(900, 600);
+  const band = fireBand(900, 600, 1);
 
   it('is deterministic, so redrawing the same instant never jitters', () => {
     const a = new Float32Array(EMBER_FLOATS);
@@ -53,15 +65,106 @@ describe('stepHeat', () => {
 });
 
 describe('fireBand', () => {
-  it('never extends past the content area', () => {
+  it('never extends past the content area, however tall the look', () => {
     for (const h of [0, 30, 90, 180, 400, 2000]) {
-      expect(fireBand(800, h).cssHeight).toBeLessThanOrEqual(h);
+      expect(fireBand(800, h, 1).cssHeight).toBeLessThanOrEqual(h);
+      expect(fireBand(800, h, FIRE_LOOK_LIMITS.height.max).cssHeight).toBeLessThanOrEqual(h);
     }
   });
 
-  it('keeps flame height within 40–120 px', () => {
-    expect(fireBand(800, 100).flameMax).toBe(40);
-    expect(fireBand(800, 400).flameMax).toBeCloseTo(88);
-    expect(fireBand(800, 2000).flameMax).toBe(120);
+  it('keeps the built-in flame height within 40–120 px', () => {
+    expect(fireBand(800, 100, 1).flameMax).toBe(40);
+    expect(fireBand(800, 400, 1).flameMax).toBeCloseTo(88);
+    expect(fireBand(800, 2000, 1).flameMax).toBe(120);
+  });
+
+  it('scales the flame and its band by the look height', () => {
+    expect(fireBand(800, 2000, 2).flameMax).toBe(240);
+    expect(fireBand(800, 2000, 2).cssHeight).toBe(2 * fireBand(800, 2000, 1).cssHeight);
+    expect(fireBand(800, 400, 0.5).flameMax).toBeCloseTo(44);
+  });
+});
+
+describe('resolveFireLooks', () => {
+  const resolve = (cfg: FireConfig, isColor: (v: string) => boolean = () => true): {
+    looks: Record<FireState, FireLook>;
+    warnings: string[];
+  } => {
+    const warnings: string[] = [];
+    return { looks: resolveFireLooks(cfg, (m) => warnings.push(m), isColor), warnings };
+  };
+
+  it('takes each key from [fire.<state>], then [fire], then the built-in value', () => {
+    const { looks } = resolve({
+      on: ['working', 'blocked'],
+      height: 2,
+      speed: 1.5,
+      mid: '#111111',
+      blocked: { speed: 3, hot: '#222222' },
+    });
+    expect(looks.blocked).toEqual({ height: 2, intensity: 1, speed: 3, low: null, mid: '#111111', hot: '#222222' });
+    expect(looks.working).toEqual({ height: 2, intensity: 1, speed: 1.5, low: null, mid: '#111111', hot: null });
+    expect(looks.done).toEqual({ height: 2, intensity: 1, speed: 1.5, low: null, mid: '#111111', hot: null });
+  });
+
+  it('clamps out-of-range numbers to the limits and says so', () => {
+    const { looks, warnings } = resolve({ on: [], height: 10, error: { intensity: 0, speed: -1 } });
+    expect(looks.working.height).toBe(FIRE_LOOK_LIMITS.height.max);
+    expect(looks.error.intensity).toBe(FIRE_LOOK_LIMITS.intensity.min);
+    expect(looks.error.speed).toBe(FIRE_LOOK_LIMITS.speed.min);
+    expect(warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining('[fire] height = 10'),
+      expect.stringContaining('[fire.error] intensity = 0'),
+      expect.stringContaining('[fire.error] speed = -1'),
+    ]));
+  });
+
+  it('treats null (inf/nan in TOML) as unset, so the next table decides', () => {
+    const { looks, warnings } = resolve({ on: [], speed: 2, blocked: { speed: null, mid: null } });
+    expect(looks.blocked.speed).toBe(2);
+    expect(looks.blocked.mid).toBeNull();
+    expect(warnings).toEqual([]);
+  });
+
+  it('skips an invalid colour with a warning and falls through to [fire]', () => {
+    const isHex = (v: string): boolean => /^#[0-9a-f]{6}$/i.test(v);
+    const { looks, warnings } = resolve({ on: [], mid: '#111111', blocked: { mid: 'orangey', low: 'nope' } }, isHex);
+    expect(looks.blocked.mid).toBe('#111111');
+    expect(looks.blocked.low).toBeNull();
+    expect(warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining('[fire.blocked] mid = "orangey"'),
+      expect.stringContaining('[fire.blocked] low = "nope"'),
+    ]));
+  });
+});
+
+describe('stepLook', () => {
+  const look = (height: number, intensity: number, speed: number, rgb: number): LiveLook => ({
+    height, intensity, speed, low: [rgb, 0, 0], mid: [0, rgb, 0], hot: [0, 0, rgb],
+  });
+
+  it('reaches the target within 0.01 in 1.5 s at 60 fps and then reports settled', () => {
+    const live = look(FIRE_LOOK_LIMITS.height.min, 0.1, 0.25, 0);
+    const target = look(FIRE_LOOK_LIMITS.height.max, 2, 4, 1);
+    let settledAt = -1;
+    for (let i = 0; i < 150; i++) {
+      if (stepLook(live, target, 1 / 60) && settledAt < 0) settledAt = i;
+      if (i === 89) {
+        expect(Math.abs(live.height - target.height)).toBeLessThan(0.01);
+        expect(Math.abs(live.speed - target.speed)).toBeLessThan(0.01);
+        expect(Math.abs(live.hot[2] - 1)).toBeLessThan(0.01);
+      }
+    }
+    expect(settledAt).toBeGreaterThan(0);
+    expect(live).toEqual(target);
+  });
+
+  it('a stalled frame lands on the target without overshooting', () => {
+    const live = look(1, 1, 1, 0.2);
+    const target = look(3, 2, 4, 0.9);
+    stepLook(live, target, 10);
+    expect(live.height).toBeLessThanOrEqual(3);
+    expect(live.mid[1]).toBeLessThanOrEqual(0.9);
+    expect(live).toEqual(target);
   });
 });

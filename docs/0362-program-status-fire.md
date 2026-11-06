@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-11-06
 > Milestone: Window chrome — program status presentation (extends [0284](./0284-program-status-osc7501.md))
+> Extended by: [0363](./0363-program-status-fire-look.md) — per-state look keys (`height`, `intensity`, `speed`, colours)
 
 ## Problem
 
@@ -134,13 +135,13 @@ It does not include the fluid simulation, so there is no smoke and no heat haze.
 // src/fire.ts
 export type FireState = 'working' | 'blocked' | 'error' | 'done';
 export class FireController {
-  configure(on: readonly string[]): void;          // keep known FireState values; warn once per unknown value
+  configure(on: readonly string[]): void;          // keep known FireState values; warn once per unknown value (0363: takes the whole FireConfig)
   sync(win: KryptonWindow, state: ProgramState | null): void;
   resize(): void;                                   // burning windows only
   remove(windowId: WindowId): void;                 // dispose that window's FireAnimation
 }
 export interface FireBand { cssWidth: number; cssHeight: number; flameMax: number }
-export function fireBand(contentW: number, contentH: number): FireBand;
+export function fireBand(contentW: number, contentH: number): FireBand; // 0363: adds a height multiplier
 // flameMax = clamp(0.22·contentH, 40, 120); cssHeight = min(contentH, ceil(flameMax·2.2))
 export function stepHeat(heat: number, target: 0 | 1, dt: number): number;
 // exponential approach: τ 0.25 s toward 1 (ignite), τ 0.45 s toward 0 (put out)
@@ -152,7 +153,7 @@ const FIRE = { scale: 26, speed: 1.5, warp: 1.0, baseGlow: 0.5, occlusion: 0.25,
   glowRadius: 30, glowReach: 80, fpsCap: 60 } as const;
 ```
 
-These constants are starting values. Smoke tuning may change them; final values go in Implementation Notes. Every configured state gets the same look.
+These constants are starting values. Smoke tuning may change them; final values go in Implementation Notes. Every configured state gets the same look; spec 0363 adds per-state looks on top of these constants.
 
 ### Rendering
 
@@ -237,8 +238,8 @@ The key hot-reloads through `config-changed` → `applyConfig` → `fire.configu
 - **More than 16 burning windows:** WebKit drops the oldest context, and that window goes dark through the handler above. Krypton creates no other WebGL contexts.
 - **`prefers-reduced-motion: reduce`:** `start()` draws one frame at `heat = 1, t = 0` with no embers and no loop. `stop()` hides at once. A live `change` event switches between the static frame and the loop, as `header-scope.ts:77-82` does.
 - **Content shorter than the band:** `cssHeight = contentH`. A 0×0 content (hidden workspace) skips the draw that frame.
-- **High-refresh displays:** the timestamp gate caps drawing at 60 fps. `u_time` is real elapsed seconds, so flame speed does not change.
-- **Theme change mid-burn:** colours are re-read on the next `start()`.
+- **High-refresh displays:** the timestamp gate caps drawing at 60 fps. `u_time` is real elapsed seconds (scaled by the look's `speed` since 0363), so flame speed does not change.
+- **Theme change mid-burn:** colours are re-read on the next `start()` (0363: also on a look change).
 - **Very long burns:** `t` resets on every `start()` and wraps every 600 s, so the `highp` noise inputs stay small. The one-frame pattern jump at the wrap is lost in the flicker.
 - **Old config files:** `[hooks] animation = "…"` is silently ignored once the field is removed (`HooksConfig` does not deny unknown fields). Nothing migrates it to `[fire]`, because the trigger and the meaning both change.
 
@@ -280,7 +281,7 @@ None.
 - Windows without OSC 7501: harness lanes, the Agent view and the Quick Terminal. Lanes have their own ACP status.
 - OSC 9;4 progress as a trigger.
 - Smoke, the fluid simulation, heat haze (it needs backdrop sampling, and WebGL cannot read DOM pixels), and WebGPU.
-- Fire outside a window's edges, a different look per state, a worker/`OffscreenCanvas` path, and intensity or size keys.
+- Fire outside a window's edges and a worker/`OffscreenCanvas` path. (A different look per state and intensity/size keys were added by spec 0363.)
 - Loading `@xterm/addon-webgl`.
 
 ## Resources
