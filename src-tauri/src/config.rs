@@ -43,6 +43,7 @@ pub struct KryptonConfig {
     pub extensions: ExtensionsConfig,
     pub ssh: SshConfig,
     pub hooks: HooksConfig,
+    pub fire: FireConfig,
     pub loopback_server: LoopbackServerConfig,
     pub acp_controller: AcpControllerConfig,
     pub music: MusicConfig,
@@ -440,17 +441,23 @@ pub struct HooksConfig {
     /// endpoint only; the server hosting it is `[loopback_server]`. Read per
     /// request, so Reload Config applies it without a restart.
     pub enabled: bool,
-    /// Background animation style: "flame", "brainwave", "matrix", or "none"
-    pub animation: String,
 }
 
 impl Default for HooksConfig {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            animation: "brainwave".to_string(),
-        }
+        Self { enabled: true }
     }
+}
+
+// ─── Program-status fire (spec 0362) ───────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FireConfig {
+    /// OSC 7501 program states that set a terminal window on fire:
+    /// "working", "blocked", "error", "done". Empty (the default) = off.
+    /// Unknown values are dropped by the frontend with a warning.
+    pub on: Vec<String>,
 }
 
 // ─── Loopback server ───────────────────────────────────────────────
@@ -1487,5 +1494,25 @@ min_confidence = 0.65
         assert!(!split.loopback_server.enabled);
         assert_eq!(split.loopback_server.port, 64999);
         assert!(split.hooks.enabled);
+    }
+
+    #[test]
+    fn retired_hook_animation_is_ignored_and_fire_states_parse() {
+        // Spec 0362 removed `[hooks] animation`; an old file must still load
+        // with its other settings instead of falling back to defaults.
+        let cfg: KryptonConfig = toml::from_str(
+            "[hooks]\nenabled = false\nanimation = \"matrix\"\n[fire]\non = [\"working\", \"error\"]\n",
+        )
+        .unwrap();
+        assert!(!cfg.hooks.enabled);
+        assert_eq!(
+            cfg.fire.on,
+            vec!["working".to_string(), "error".to_string()]
+        );
+        assert!(toml::from_str::<KryptonConfig>("")
+            .unwrap()
+            .fire
+            .on
+            .is_empty());
     }
 }

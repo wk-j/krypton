@@ -2,22 +2,16 @@
 // Implements BackgroundAnimation but delegates all rendering to a Web Worker
 // via OffscreenCanvas. The main thread only sends lightweight control messages.
 
-import type { BackgroundAnimation } from './flame';
+import type { BackgroundAnimation } from './background-animation';
 
-type AnimationType = 'flame' | 'matrix' | 'brainwave' | 'circuit-trace';
+type AnimationType = 'circuit-trace';
 
 const FADE_DURATION = 600;
 const BASE_OPACITY: Record<AnimationType, number> = {
-  flame: 0.25,
-  matrix: 0.25,
-  brainwave: 0.22,
   'circuit-trace': 0.35,
 };
 
 const CANVAS_CLASS: Record<AnimationType, string> = {
-  flame: 'krypton-flame-canvas',
-  matrix: 'krypton-matrix-canvas',
-  brainwave: 'krypton-brainwave-canvas',
   'circuit-trace': 'krypton-circuit-trace-canvas',
 };
 

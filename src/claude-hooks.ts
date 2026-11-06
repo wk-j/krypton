@@ -6,11 +6,6 @@
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from './profiler/ipc';
 
-import { BackgroundAnimation, FlameAnimation } from './flame';
-import { BrainwaveAnimation } from './brainwave';
-import { MatrixAnimation } from './matrix';
-import { OffscreenAnimationProxy, supportsOffscreenCanvas } from './offscreen-animation';
-
 /** Claude Code hook event payload (emitted by Rust hook server) */
 export interface ClaudeHookEvent {
   session_id: string;
@@ -93,11 +88,6 @@ const TICK_FADE_MS = 30_000;
 /** High-intensity tool names that speed up the uplink bar */
 const FAST_TOOLS = new Set(['Bash', 'Edit', 'Write', 'NotebookEdit']);
 
-/** Safety net: auto-stop background animation if no hook event arrives for this
- *  long. Prevents orphaned animations when Stop/SessionEnd hooks are dropped
- *  (session crash, abrupt exit, HTTP failure). See docs/0064-matrix-animation-cpu-burn.md. */
-const ANIMATION_IDLE_TIMEOUT_MS = 60_000;
-
 /** Map tool names to activity trace tick categories */
 function toolTickCategory(toolName: string): string {
   switch (toolName) {
@@ -125,9 +115,6 @@ export class ClaudeHookManager {
   private hookPort: number = 0;
   private decodeTimer: ReturnType<typeof setTimeout> | null = null;
   private toolClearTimer: ReturnType<typeof setTimeout> | null = null;
-  private animations: Set<BackgroundAnimation> = new Set();
-  private animationType: string = 'flame';
-  private animationIdleTimer: ReturnType<typeof setTimeout> | null = null;
 
   async init(): Promise<void> {
     // Listen for hook server ready event to get the port
@@ -160,10 +147,6 @@ export class ClaudeHookManager {
 
   private handleHookEvent(event: ClaudeHookEvent): void {
     const { hook_event_name, session_id } = event;
-
-    // Any hook event while the animation is running resets the idle safety timer.
-    // Prevents a stale PreToolUse → …silence… from leaving the animation orphaned.
-    if (this.isAnyAnimationRunning()) this.armAnimationIdleTimer();
 
     switch (hook_event_name) {
       case 'SessionStart':
@@ -209,7 +192,6 @@ export class ClaudeHookManager {
       lastEvent: 'SessionStart',
       originalTitle: null,
     });
-    this.startFlame();
   }
 
   private onPreToolUse(event: ClaudeHookEvent): void {
@@ -217,9 +199,6 @@ export class ClaudeHookManager {
     session.active = true;
     session.currentTool = event.tool_name ?? null;
     session.lastEvent = 'PreToolUse';
-
-    // Ensure animation is running — Stop may have paused it between agentic turns
-    this.startFlame();
 
     // Cancel any pending tool-clear so new tool text stays visible
     if (this.toolClearTimer) {
@@ -266,16 +245,12 @@ export class ClaudeHookManager {
       session.currentTool = null;
       session.lastEvent = 'Stop';
     }
-    // Stop animation — Claude is idle, waiting for next prompt.
-    // Animation restarts on next UserPromptSubmit.
-    this.stopFlame();
   }
 
   private onUserPromptSubmit(event: ClaudeHookEvent): void {
     const session = this.getOrCreateSession(event.session_id);
     session.active = true;
     session.lastEvent = 'UserPromptSubmit';
-    this.startFlame();
   }
 
   private onPostToolUseFailure(event: ClaudeHookEvent): void {
@@ -302,7 +277,6 @@ export class ClaudeHookManager {
       session.lastEvent = 'SessionEnd';
     }
     this.flashSigilComplete();
-    this.stopFlame();
   }
 
   private getOrCreateSession(sessionId: string): ClaudeSession {
@@ -591,116 +565,5 @@ export class ClaudeHookManager {
     const trace = document.createElement('div');
     trace.className = 'krypton-activity-trace';
     return trace;
-  }
-
-  /** Set the animation type ("flame", "brainwave", or "none"). */
-  setAnimationType(type: string): void {
-    const normalized = type === 'brainwave' || type === 'matrix' || type === 'none' ? type : 'flame';
-    if (normalized === this.animationType) return;
-
-    const wasActive = Array.from(this.animations).some((a) => a.isRunning());
-
-    // Collect parent elements before disposing
-    const parents: HTMLElement[] = [];
-    for (const anim of this.animations) {
-      const parent = anim.getElement().parentElement;
-      if (parent) parents.push(parent);
-      anim.dispose();
-    }
-    this.animations.clear();
-
-    // Re-create with new type
-    if (normalized !== 'none') {
-      for (const parent of parents) {
-        const replacement = this.createAnimationInstance(normalized);
-        parent.insertBefore(replacement.getElement(), parent.firstChild);
-        this.animations.add(replacement);
-        if (wasActive) replacement.start();
-      }
-    }
-
-    this.animationType = normalized;
-  }
-
-  /** Create a background animation canvas for a window content area. */
-  createAnimationCanvas(): HTMLCanvasElement | null {
-    if (this.animationType === 'none') return null;
-    const anim = this.createAnimationInstance(this.animationType);
-    this.animations.add(anim);
-    return anim.getElement();
-  }
-
-  /** Remove an animation instance when its window is destroyed. */
-  disposeAnimation(canvas: HTMLCanvasElement): void {
-    for (const anim of this.animations) {
-      if (anim.getElement() === canvas) {
-        anim.dispose();
-        this.animations.delete(anim);
-        return;
-      }
-    }
-  }
-
-  /** Resize all animation canvases (call after window relayout). */
-  resizeAnimations(): void {
-    for (const anim of this.animations) {
-      if (anim.isRunning()) {
-        anim.resize();
-      }
-    }
-  }
-
-  /** Start all background animations. */
-  private startFlame(): void {
-    for (const anim of this.animations) {
-      anim.start();
-    }
-    this.armAnimationIdleTimer();
-  }
-
-  /** Stop all background animations. */
-  private stopFlame(): void {
-    for (const anim of this.animations) {
-      anim.stop();
-    }
-    this.clearAnimationIdleTimer();
-  }
-
-  private isAnyAnimationRunning(): boolean {
-    for (const anim of this.animations) if (anim.isRunning()) return true;
-    return false;
-  }
-
-  private armAnimationIdleTimer(): void {
-    this.clearAnimationIdleTimer();
-    this.animationIdleTimer = setTimeout(() => {
-      this.animationIdleTimer = null;
-      if (!this.isAnyAnimationRunning()) return;
-      console.warn(
-        `[Krypton] Animation idle timeout (${ANIMATION_IDLE_TIMEOUT_MS / 1000}s) — force stopping to prevent orphaned CPU burn`,
-      );
-      this.stopFlame();
-    }, ANIMATION_IDLE_TIMEOUT_MS);
-  }
-
-  private clearAnimationIdleTimer(): void {
-    if (this.animationIdleTimer) {
-      clearTimeout(this.animationIdleTimer);
-      this.animationIdleTimer = null;
-    }
-  }
-
-  private createAnimationInstance(type: string): BackgroundAnimation {
-    // Use OffscreenCanvas worker to avoid main-thread jank during heavy PTY output
-    if (supportsOffscreenCanvas()) {
-      const anim = type === 'brainwave' ? 'brainwave'
-        : type === 'matrix' ? 'matrix'
-        : 'flame';
-      return new OffscreenAnimationProxy(anim);
-    }
-    // Fallback to main-thread rendering
-    if (type === 'brainwave') return new BrainwaveAnimation();
-    if (type === 'matrix') return new MatrixAnimation();
-    return new FlameAnimation();
   }
 }

@@ -160,7 +160,11 @@ export interface ExtensionsConfig {
  *  frontend reaches through the `get_hook_server_port` command. */
 export interface HooksConfig {
   enabled: boolean;
-  animation: string;
+}
+
+/** `[fire]` — spec 0362: OSC 7501 states that set a window on fire. Empty = off. */
+export interface FireConfig {
+  on: string[];
 }
 
 export interface AcpControllerConfig {
@@ -300,6 +304,7 @@ export interface KryptonConfig {
   visual: VisualConfig;
   extensions: ExtensionsConfig;
   hooks: HooksConfig;
+  fire: FireConfig;
   acp_controller: AcpControllerConfig;
   music: MusicConfig;
   acp_harness: AcpHarnessConfig;

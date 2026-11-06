@@ -6,11 +6,11 @@
 // window's band consumes 0 CPU — honoring the <1% idle-CPU architecture budget.
 // Under prefers-reduced-motion it renders a single static hairline and never
 // animates. Implements BackgroundAnimation so it shares the canvas-in-chrome
-// lifecycle conventions used by claude-hooks (start/stop/resize/dispose).
+// lifecycle conventions (start/stop/resize/dispose) of the other canvas animations.
 //
 // See docs/0188-oscilloscope-header-band.md.
 
-import { BackgroundAnimation } from './flame';
+import { BackgroundAnimation } from './background-animation';
 
 /** Per-frame energy decay — energy falls below EPS ~0.6s after the last pump,
  *  which is what guarantees the loop self-stops when output ceases. */

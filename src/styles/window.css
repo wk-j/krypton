@@ -964,16 +964,17 @@
   display: none;
 }
 
-/* ─── Background Animations (Claude processing) ─── */
-.krypton-flame-canvas,
-.krypton-brainwave-canvas,
-.krypton-matrix-canvas {
+/* ─── Program-Status Fire (spec 0362) ─── */
+/* A band pinned to the bottom of the content, under the panes. Its height is
+   set inline from fireBand(); the canvas shows only while a window burns. */
+.krypton-fire-canvas {
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 0;
   pointer-events: none;
   display: none;
-  opacity: 0;
   /* Force GPU compositing in preserve-3d context (WebKit) */
   transform: translateZ(0);
 }

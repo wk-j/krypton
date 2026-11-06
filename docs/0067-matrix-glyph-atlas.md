@@ -3,6 +3,8 @@
 > Status: Spec — pending approval
 > Date: 2026-04-24
 > Supersedes mitigation in: [0064-matrix-animation-cpu-burn.md](0064-matrix-animation-cpu-burn.md)
+>
+> **2026-11-06:** the matrix animation was removed by spec [0362](./0362-program-status-fire.md). Kept as design history.
 
 ## Goal
 

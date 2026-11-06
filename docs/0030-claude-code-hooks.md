@@ -389,9 +389,9 @@ port = 8765
 [hooks]
 # Accept Claude Code hook events on POST /hook (503 when false)
 enabled = true
-# Background animation style: "flame" | "brainwave" | "matrix" | "none"
-animation = "brainwave"
 ```
+
+The `animation` key and the background animations it selected were removed by spec 0362. An old `animation = "…"` line is ignored. Window effects now follow OSC 7501 program status (`[fire]`) instead of Claude Code hooks.
 
 ### Keybindings / Command Palette
 

@@ -2,7 +2,7 @@
 // PCB-style orthogonal signal traces that light up in response to audio
 // frequency data. Renders behind terminal windows on a workspace-level canvas.
 
-import type { RenderCtx } from './flame';
+import type { RenderCtx } from './background-animation';
 
 // ─── Types ────────────────────────────────────────────────────────
 

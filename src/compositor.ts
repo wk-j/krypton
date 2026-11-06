@@ -123,6 +123,7 @@ import type { ClaudeHookManager } from './claude-hooks';
 import type { RemoteHarnessWorkspace } from './acp/remote-harness-picker';
 import { installPerspectiveMouseFix } from './perspective-fix';
 import { HeaderScope } from './header-scope';
+import { FireController } from './fire';
 import { ProgressGauge } from './progress-gauge';
 import {
   PROGRAM_STATUS_QUERY_REPLY,
@@ -455,7 +456,6 @@ export class Compositor {
 
   // ─── Claude Hook Manager ────────────────────────────────────────
   private claudeHookManager: ClaudeHookManager | null = null;
-  private pendingHookAnimation: string | null = null;
 
   // ─── Config-backed settings ──────────────────────────────────────
   /** xterm.js theme — built-in default, overridable by config theme.colors */
@@ -500,6 +500,10 @@ export class Compositor {
    *  footer and `Leader !` read it back. */
   readonly programStatus = new ProgramStatusStore((viewId, _prev, next) =>
     this.handleProgramStatusChange(viewId, next));
+
+  // ─── Program-Status Fire (spec 362) ──────────────────────────────
+  /** Opt-in window fire, lit from the same aggregate `paintProgramStatus` shows. */
+  private readonly fire = new FireController();
 
   // ─── Quick Terminal State ─────────────────────────────────────────
   private qtConfig: QuickTerminalConfig = { ...DEFAULT_QUICK_TERMINAL_CONFIG };
@@ -770,14 +774,9 @@ export class Compositor {
       this.extensions.setEnabled(config.extensions.enabled);
     }
 
-    // Hooks — background animation type
-    if (config.hooks?.animation) {
-      this.pendingHookAnimation = config.hooks.animation;
-      if (this.claudeHookManager) {
-        this.claudeHookManager.setAnimationType(this.pendingHookAnimation);
-        this.pendingHookAnimation = null;
-      }
-    }
+    // Fire — program states that set a window on fire (spec 362)
+    this.fire.configure(config.fire?.on ?? []);
+    for (const win of this.windows.values()) this.paintProgramStatus(win);
 
     // Visual — 3D perspective depth and tilt
     if (config.visual) {
@@ -1469,6 +1468,7 @@ export class Compositor {
         winTop = tabTop;
       }
     }
+    this.fire.sync(win, winTop?.state ?? null);
 
     const label = winTop ? programStatusLabel(winTop) : null;
     let chip = win.element.querySelector<HTMLElement>('.krypton-window__program-status');
@@ -2209,9 +2209,7 @@ export class Compositor {
     const toRemove: Element[] = [];
     for (const child of Array.from(contentEl.children)) {
       const cl = child.classList;
-      if (!cl.contains('krypton-flame-canvas') &&
-          !cl.contains('krypton-brainwave-canvas') &&
-          !cl.contains('krypton-matrix-canvas') &&
+      if (!cl.contains('krypton-fire-canvas') &&
           !cl.contains('krypton-circuit-trace-canvas') &&
           !cl.contains('krypton-uplink') &&
           !cl.contains('krypton-activity-trace')) {
@@ -2320,10 +2318,6 @@ export class Compositor {
    */
   setClaudeHookManager(manager: ClaudeHookManager): void {
     this.claudeHookManager = manager;
-    if (this.pendingHookAnimation) {
-      manager.setAnimationType(this.pendingHookAnimation);
-      this.pendingHookAnimation = null;
-    }
   }
 
   /** Get the currently focused window ID */
@@ -2706,8 +2700,6 @@ export class Compositor {
 
     // Claude Code HUD elements inside content area
     if (this.claudeHookManager) {
-      const animCanvas = this.claudeHookManager.createAnimationCanvas();
-      if (animCanvas) content.appendChild(animCanvas);
       content.appendChild(this.claudeHookManager.createUplinkBar());
       content.appendChild(this.claudeHookManager.createActivityTrace());
     }
@@ -5481,13 +5473,8 @@ export class Compositor {
     // Dispose the oscilloscope band (cancels rAF, disconnects ResizeObserver)
     win.headerScope?.dispose();
 
-    // Dispose flame animation for this window
-    if (this.claudeHookManager) {
-      const animCanvas = win.contentElement.querySelector('.krypton-flame-canvas, .krypton-brainwave-canvas, .krypton-matrix-canvas') as HTMLCanvasElement | null;
-      if (animCanvas) {
-        this.claudeHookManager.disposeAnimation(animCanvas);
-      }
-    }
+    // Put out and release this window's fire (spec 362)
+    this.fire.remove(win.id);
 
     // Free accent color for reuse
     this.freeAccentColor(id);
@@ -8638,10 +8625,7 @@ export class Compositor {
       }
       this.fitWindow(win.id);
     }
-    // Resize flame canvases to match new window dimensions
-    if (this.claudeHookManager) {
-      this.claudeHookManager.resizeAnimations();
-    }
+    this.fire.resize();
     for (const cb of this.onRelayoutCallbacks) cb();
   }
 

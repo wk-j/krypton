@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (347)
+## Specs (348)
 
 | # | Spec |
 |---|------|
@@ -364,6 +364,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 359 | [ACP fx Lane](./0359-acp-fx-lane.md) |
 | 360 | [Which-Key Icons](./0360-which-key-icons.md) |
 | 361 | [Loopback App on React](./0361-loopback-app-react.md) |
+| 362 | [Program-Status Fire](./0362-program-status-fire.md) |
 
 ## ADRs (29)
 

@@ -121,7 +121,8 @@ class ProgramStatusStore {
    - null → drop; clear/set → store.apply(viewId, report)
 4. Store recomputes the pane summary; if changed → compositor.handleProgramStatusChange:
    publishSignal('view:program-status', address ?? SYSTEM_SOURCE, { viewId, summary })
-5. Compositor paints tab dot + window border/status dot + titlebar chip (aggregate over panes);
+5. Compositor paints tab dot + window border/status dot + titlebar chip (aggregate over panes),
+   and passes the window aggregate to the opt-in window fire (`[fire] on`, spec 0362);
    workspace-footer re-pulls counts and the focused pane's app/msg
 6. Pane not focused and next.state ∈ {blocked, error, done}, entered from a different
    state → console: "W2·<tab> — <msg or phrase>" labelled <APP> (1 per pane per 5 s)

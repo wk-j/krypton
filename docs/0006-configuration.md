@@ -272,7 +272,13 @@ port = 8765                    # Port to listen on (0 = auto-assign;
 
 [hooks]
 enabled = true                 # Accept hook events on /hook (hot-reloadable)
-animation = "brainwave"        # Background animation: flame | brainwave | matrix | none
+
+# --- Program-Status Fire (spec 0362) ---
+# OSC 7501 states (spec 0284) that set a terminal window on fire: a WebGL2 fire
+# along the bottom of its content, behind the text. Hot-reloadable. Empty = off.
+
+[fire]
+on = []                        # any of: "working", "blocked", "error", "done"
 
 # --- ACP Harness Controller CLI ---
 # Starts the authenticated local endpoint used by kryptonctl. Load-time only.
@@ -808,7 +814,7 @@ curl -fsSL https://omp.sh/install | sh
 
 Then authenticate outside Krypton by running `omp` once for first-run/auth-broker setup, or export a provider key such as `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` in the login shell before launching Krypton. Krypton does not provide a TTY for interactive OAuth or auth-broker setup. Startup failures include OMP-specific install, old-CLI-without-ACP, auth, API-key, and empty-stderr hints.
 
-OMP is a regular permission-gated lane, but it native-loads project root `.mcp.json` in ACP mode. To avoid duplicate MCP server registration, Krypton skips only the project `.mcp.json` bridge for OMP while still injecting the per-lane `krypton-harness-memory` MCP server through `session/new.mcpServers`.
+OMP is a regular permission-gated lane. Headless `omp acp` creates its sessions with `enableMCP: false`, so it reads no on-disk MCP config — neither the project `.mcp.json` nor `~/.omp/agent/mcp.json`. Krypton passes the project `.mcp.json` servers (the spec-83 bridge) plus the per-lane `krypton-harness-memory` server through `session/new.mcpServers`. A server listed only in `~/.omp/agent/mcp.json` does not reach OMP lanes; put it in the project `.mcp.json`. Krypton re-reads `.mcp.json` on every lane spawn, so a file created or edited while a lane runs reaches the next lane spawn or respawn.
 
 Optional: `acp_harness.lane_models.omp.active` is accepted for the lane model chip, but Krypton does not pass it to OMP at spawn or via `session/set_model` until either path is verified to take effect under `omp acp`.
 
@@ -1113,7 +1119,7 @@ browser surface and the hurl/termctrl/acp-wire viewers.
 | `[loopback_server]` | `enabled` | bool | `true` | Start the loopback HTTP server: harness memory MCP, `#dashboard`/`#gallery`/`#docs`/`#journal`/`#reviews`/`#analyses`/`#commands`/`#tools`, hurl, termctrl, acp-wire, artifact/doc feedback, and `/hook`. Off = lanes run without `krypton-harness-memory` and no surface opens. Load-time only; restart Krypton after changing it |
 | `[loopback_server]` | `port` | int | `8765` | Port to listen on. `0` = OS auto-assigns. A busy fixed port falls back to an ephemeral one |
 | `[hooks]` | `enabled` | bool | `true` | Accept Claude Code hook events on `POST /hook` (`503` when off). Read per request, so Reload Config applies it. Does **not** control the server |
-| `[hooks]` | `animation` | string | `"brainwave"` | Background animation driven by hook lifecycle events: `flame`, `brainwave`, `matrix`, `none`. See doc 0034 |
+| `[fire]` | `on` | string[] | `[]` | OSC 7501 program states (`working`, `blocked`, `error`, `done`) that set a terminal window on fire. The window burns while the status its chrome shows (highest-priority pane) is in the list, so `working` goes out at the next prompt or program exit and `done`/`error` when you type in that pane. Unknown values are ignored with a warning. Hot-reloadable. Theme tokens `krypton-fire-low`/`-mid`/`-hot` recolour it. See doc 0362 |
 | `[acp_controller]` | `enabled` | bool | `true` | Start the authenticated local `kryptonctl` control endpoint. Load-time only; restart Krypton after changing it |
 | `[acp_controller]` | `port` | int | `8766` | Fixed loopback port for the control API (stable URL for external clients). Ephemeral fallback on conflict; `0` = auto-assign. Load-time only. See doc 175 |
 | `[acp_controller]` | `cors_origins` | string[] | `[]` | Exact browser origins allowed to call the control API directly (CORS). Empty = proxy-only (secure default); never `"*"`. Load-time only. See doc 175 |
@@ -1364,3 +1370,5 @@ Lives in a theme file under `~/.config/krypton/themes/*.toml`, not in `krypton.t
 | Precedence | After every built-in property (so `"agent-text"` beats the derived one), before per-element `style.setProperty`, which still wins |
 
 Entries that fail these rules are dropped individually with a `theme token rejected: <key>` warning and the rest of the theme still loads. Tokens apply live through **Color Theme** and **Reload Config**. See `docs/0010-theme-specification.md` and `docs/0303-themeable-component-tokens.md`.
+
+`krypton-fire-low`, `krypton-fire-mid` and `krypton-fire-hot` recolour the program-status fire (doc 0362); any colour the allowlist accepts works, including `oklch()` and `color-mix()`.

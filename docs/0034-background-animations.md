@@ -1,10 +1,12 @@
 # Background Animations — Flame, Brainwave, Matrix
 
-> Status: Implemented
+> Status: Removed (spec [0362](./0362-program-status-fire.md))
 > Date: 2026-03-23
 > Milestone: N/A — Visual enhancement
 >
 > Consolidates: former docs 34 (flame wave), 35 (configurable animations), 36 (matrix)
+>
+> **Removed 2026-11-06.** The `[hooks] animation` key, the flame, brainwave and matrix animations, and the hook-driven start/stop lifecycle were deleted by spec 0362. Window effects now follow OSC 7501 program status (`[fire]`), not Claude Code hooks. `BackgroundAnimation` moved to `src/background-animation.ts`. This document is kept as design history.
 
 ---
 

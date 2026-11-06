@@ -3,6 +3,8 @@
 > Status: Phase 2 implemented (glyph atlas eliminates `fillText` from hot path)
 > Date: 2026-04-18 (phase 1), 2026-04-24 (phase 2)
 > Related: [0034-background-animations.md](0034-background-animations.md), [0048-offscreen-canvas-animations.md](0048-offscreen-canvas-animations.md), [0030-claude-code-hooks.md](0030-claude-code-hooks.md), [0067-matrix-glyph-atlas.md](0067-matrix-glyph-atlas.md)
+>
+> **2026-11-06:** spec [0362](./0362-program-status-fire.md) removed the matrix, brainwave and flame animations and their hook lifecycle, so this burn path no longer exists. Kept as investigation history.
 
 ## TL;DR
 

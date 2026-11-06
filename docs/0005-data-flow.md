@@ -378,9 +378,10 @@ d. The loop stops once the grip, the mouse and the button fades settle
    in session/new.mcpServers, and listens to its own acp-event-<session> stream.
    Lanes render into a shared dashboard, but prompts are dispatched only to the
    active tab in the command center.
-   a. OMP lanes skip Krypton's project `.mcp.json` bridge because OMP native-loads
-      root `.mcp.json` in ACP mode; they still receive the per-lane
-      `krypton-harness-memory` MCP server.
+   a. OMP lanes also receive the project `.mcp.json` servers (spec-83 bridge,
+      re-read on every lane spawn) in the same `session/new.mcpServers` list:
+      headless `omp acp` runs with `enableMCP: false` and never reads
+      `.mcp.json` itself.
    b. In composer text mode, `Cmd+D` or the `MIC` control starts one frontend
       Web Speech recognition session in English (`en-US`); `Cmd+Shift+D` starts
       the same session in Thai (`th-TH`) when the host webview exposes it.

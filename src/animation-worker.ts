@@ -3,12 +3,9 @@
 // main thread. PTY output processing on the main thread cannot starve these
 // animations because they run in their own rAF loop here.
 
-import { FlameRenderer } from './flame';
-import { MatrixRenderer } from './matrix';
-import { BrainwaveRenderer } from './brainwave';
 import { CircuitTraceRenderer } from './circuit-trace';
 
-type AnimationType = 'flame' | 'matrix' | 'brainwave' | 'circuit-trace';
+type AnimationType = 'circuit-trace';
 
 interface Renderer {
   init(W: number, H: number): void;
@@ -23,17 +20,10 @@ type WorkerMessage =
   | { type: 'dispose' }
   | { type: 'fft'; bins: number[] };
 
-// Per-renderer frame budget. brainwave still uses fillText for labels/readouts
-// (cheap at ~12 calls/frame but not free). matrix now renders via a pre-baked
-// glyph atlas (see docs/0067-matrix-glyph-atlas.md) so the per-frame cost is
-// pure drawImage blits — restored to 60 fps. circuit-trace pulses read fine
-// at 30 fps. flame is cheap primitives and benefits from 60 fps.
+// Per-renderer frame budget. circuit-trace pulses read fine at 30 fps.
 // See docs/0064-matrix-animation-cpu-burn.md.
 const TARGET_FPS_BY_TYPE: Record<AnimationType, number> = {
-  matrix: 60,
-  brainwave: 30,
   'circuit-trace': 30,
-  flame: 60,
 };
 
 let canvas: OffscreenCanvas | null = null;
@@ -49,10 +39,7 @@ let lastTick = 0;
 
 function createRenderer(type: AnimationType): Renderer {
   switch (type) {
-    case 'matrix': return new MatrixRenderer();
-    case 'brainwave': return new BrainwaveRenderer();
     case 'circuit-trace': return new CircuitTraceRenderer();
-    default: return new FlameRenderer();
   }
 }
 

@@ -3,6 +3,8 @@
 > Status: Implemented (Phase 1 + Phase 2)
 > Date: 2026-03-31
 > Milestone: M8 — Polish
+>
+> **2026-11-06:** spec [0362](./0362-program-status-fire.md) removed the flame, brainwave and matrix animations. The worker and `OffscreenAnimationProxy` remain for the music visualizer (`circuit-trace`) only.
 
 ## Problem
 
