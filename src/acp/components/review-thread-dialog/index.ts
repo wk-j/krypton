@@ -12,6 +12,7 @@
 
 import { Component } from '../../../ui/component';
 import { el, setAttr } from '../../../ui/dom';
+import { harnessIconEl } from '../../harness-icons';
 import { ActionButton } from '../action-button';
 import { OverlayShell } from '../overlay-shell';
 import type { ComponentDef } from '../types';
@@ -48,6 +49,8 @@ export class ReviewThreadDialog extends Component<ReviewThreadDialogProps> {
   private readonly details: HTMLElement;
   private readonly confirm = new ActionButton();
   private readonly cancel = new ActionButton();
+  /** Same `messages-square` mark as the lane chip and the palette command. */
+  private readonly titleIcon = harnessIconEl('review-thread');
   private readonly inputs: HTMLInputElement[] = [];
   private select: ((base: string) => void) | null = null;
 
@@ -134,6 +137,10 @@ export class ReviewThreadDialog extends Component<ReviewThreadDialogProps> {
       body: this.body,
       onAutoClose: next.onAutoClose,
     });
+    // The shell writes the title as text, which drops element children. Put the
+    // glyph back only when that happened, so a later paint does not move it.
+    const title = this.el.querySelector('.acp-review-thread__title');
+    if (title && this.titleIcon.parentNode !== title) title.prepend(this.titleIcon);
   }
 
   protected onDispose(): void {

@@ -5,7 +5,8 @@
      * `.acp-review-thread-picker__panel` → `.acp-review-thread__panel`
      * `… __panel h2`                     → `.acp-review-thread__head` (the
        16px gap) + `.acp-review-thread__title` (the 1.1em step); the title is
-       the shell's `<span>`, so it is given `display: block`.
+       the shell's `<span>`, a flex row so the review-thread glyph sits
+       beside the words.
    Everything else keeps its declarations verbatim. */
 @layer krypton.component {
   .acp-harness__review-thread-overlay {
@@ -43,8 +44,14 @@
   }
 
   .acp-review-thread__title {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 1.1em;
+  }
+
+  .acp-review-thread__title .acp-harness__icon {
+    color: var(--agent-accent);
   }
 
   .acp-review-thread__bases {

@@ -30,7 +30,9 @@ describe('ReviewThreadDialog', () => {
   it('emits the dialog, the two bases, the preview and the action row', () => {
     const dialog = mount();
     expect(dialog.el.className).toBe('acp-harness__review-thread-overlay');
-    expect(dialog.el.querySelector('.acp-review-thread__title')?.textContent).toBe('Start Review Thread');
+    const title = dialog.el.querySelector('.acp-review-thread__title');
+    expect(title?.textContent).toBe('Start Review Thread');
+    expect(title?.querySelector('use')?.getAttribute('href')).toBe('#krypton-icon-review-thread');
     const body = dialog.el.querySelector<HTMLElement>('.acp-review-thread__body');
     expect(body?.getAttribute('role')).toBe('dialog');
     expect(body?.getAttribute('aria-modal')).toBe('true');
