@@ -334,6 +334,9 @@ pub struct VisualConfig {
     pub glow_intensity: f64,
     /// Show the accent-colored outline around terminal windows. false = hidden.
     pub window_border: bool,
+    /// Show the centred progress ring while a program reports OSC 9;4 busy
+    /// (state 3). false = hidden; other progress states still show (spec 364).
+    pub progress_gauge_working: bool,
 }
 
 impl Default for VisualConfig {
@@ -346,6 +349,7 @@ impl Default for VisualConfig {
             blur: 12,
             glow_intensity: 0.8,
             window_border: true,
+            progress_gauge_working: true,
         }
     }
 }

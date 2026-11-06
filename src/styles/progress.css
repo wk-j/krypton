@@ -119,6 +119,12 @@
   transform-origin: 50px 50px;
 }
 
+/* [visual] progress_gauge_working = false — no ring while busy (spec 364).
+   display:none also stops the infinite orbit; the titlebar sweep stays. */
+.krypton-no-working-gauge .krypton-progress-gauge--indeterminate {
+  display: none;
+}
+
 /* ── Completion flare ────────────────────────── */
 .krypton-progress-gauge--flare .krypton-progress-gauge__svg {
   animation: krypton-gauge-flare 0.8s ease-out forwards;

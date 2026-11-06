@@ -137,6 +137,7 @@ export interface VisualConfig {
   blur: number;              // px, window backdrop blur radius
   glow_intensity: number;    // 0.0–3.0, top-line glow brightness boost
   window_border: boolean;    // false = hide the accent outline around windows
+  progress_gauge_working: boolean; // false = hide the OSC 9;4 busy ring (spec 364)
 }
 
 /** `[keyboard_overlay]` — read-only on-screen keyboard + wireframe hands (spec 271). */

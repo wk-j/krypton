@@ -230,6 +230,11 @@ glow_intensity = 0.8           # Top-line glow brightness boost (0.0 = off, 3.0 
 window_border = true           # Show the accent-colored outline around terminal
                                # windows. false hides the border AND the accent
                                # glow shadow (geometry unchanged). Default: true
+progress_gauge_working = true  # Show the centre progress ring while a program
+                               # reports busy (OSC 9;4 state 3, label "working").
+                               # false hides only that ring; percent, error and
+                               # paused rings and the titlebar sweep still show
+                               # (spec 364). Default: true
 
 # --- Keyboard Overlay (spec 271) ---
 # Read-only on-screen keyboard with wireframe "ghost hands", docked at the
@@ -1226,6 +1231,7 @@ Shader presets can be cycled at runtime via `Leader g` (per-pane) or toggled glo
 | `[visual]` | `opacity` | float | `0.5` | Window backdrop opacity (0.0 = fully transparent, 1.0 = fully opaque). Overrides the theme's backdrop alpha. Under a light-scheme theme the effective value is at least 0.94 ([spec 321](./0321-light-scheme-legibility.md)). Diff View (dark scheme) lets this show through the code surface. |
 | `[visual]` | `glow_intensity` | float | `0.8` | Top-line glow brightness boost. 0.0 disables the glow, higher = stronger. Clamped to 0.0–3.0. |
 | `[visual]` | `window_border` | bool | `true` | Show the accent-colored outline around terminal windows. `false` hides the border and the accent glow shadow (border stays transparent, so window geometry is unchanged). The Quick Terminal overlay keeps its own chrome. |
+| `[visual]` | `progress_gauge_working` | bool | `true` | Show the centre progress ring while a program reports busy (OSC 9;4 state `3`, label `working`). `false` hides only that ring: percent, error and paused rings and the titlebar sweep still show. Hot-reloadable. See [spec 364](./0364-progress-gauge-hide-working.md) |
 
 ### SSH Configuration
 

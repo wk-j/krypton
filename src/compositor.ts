@@ -834,6 +834,13 @@ export class Compositor {
         'krypton-no-window-border',
         config.visual.window_border === false,
       );
+
+      // Busy progress ring — hidden by CSS while the gauge is indeterminate
+      // (spec 364); percent, error and paused rings still show.
+      document.documentElement.classList.toggle(
+        'krypton-no-working-gauge',
+        config.visual.progress_gauge_working === false,
+      );
     }
 
     void this.applyKeyboardOverlayConfig(config.keyboard_overlay);

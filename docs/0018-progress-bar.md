@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-03-13
 > Milestone: M8 — Polish
+> Amended by: [0364](./0364-progress-gauge-hide-working.md) — `[visual] progress_gauge_working = false` hides the ring while the state is indeterminate
 
 ## Problem
 
