@@ -1,13 +1,12 @@
 # 7. Configuration File Format
 
-Configuration is read from a TOML file at `~/.config/krypton/krypton.toml` on all platforms. The file is created with defaults on first launch if it doesn't exist.
+Configuration is read from a TOML file at `~/.config/krypton/krypton.toml` on all platforms. Krypton never writes this file except to persist `[theme] name` (see [Load Behavior](#load-behavior)); every key is optional, and a missing file means built-in defaults.
 
-Custom themes and sound packs are stored as separate TOML files:
+Custom themes are stored as separate TOML files:
 
 | Content | Path |
 |---------|------|
 | Custom themes | `~/.config/krypton/themes/*.toml` |
-| Custom sound packs | `~/.config/krypton/sounds/*.toml` |
 
 ## Reference
 
@@ -72,111 +71,25 @@ bright_cyan = "#5fb3b3"
 bright_white = "#ffffff"
 
 # --- Keybindings ---
-# Every action in Krypton has a keybinding. All are configurable.
-
-[keybindings]
-
-# Leader key — enters compositor mode
-leader = "Ctrl+Space"
-
-# Command palette
-command_palette = "CmdOrCtrl+Shift+P"
-
-# Global (work in any mode)
-workspace_1 = "CmdOrCtrl+1"
-workspace_2 = "CmdOrCtrl+2"
-workspace_3 = "CmdOrCtrl+3"
-workspace_next = "CmdOrCtrl+]"
-workspace_prev = "CmdOrCtrl+["
-
-# Tab management
-new_tab = "CmdOrCtrl+T"
-close_tab = "CmdOrCtrl+W"
-next_tab = "CmdOrCtrl+Shift+]"
-prev_tab = "CmdOrCtrl+Shift+["
-tab_1 = "CmdOrCtrl+Alt+1"
-tab_2 = "CmdOrCtrl+Alt+2"
-tab_3 = "CmdOrCtrl+Alt+3"
-move_tab_to_window = "Leader T"    # then window index
-
-# Window management (via leader key sequences)
-new_window = "Leader N"
-close_window = "Leader X"
-maximize_window = "Leader F"
-resize_mode = "Leader R"           # enter resize mode
-move_mode = "Leader M"             # enter move mode
-swap_window = "Leader S"           # then target window index
-reset_layout = "Leader ="
-
-# Window focus navigation
-focus_left = "Leader H"
-focus_down = "Leader J"
-focus_up = "Leader K"
-focus_right = "Leader L"
-focus_next = "Leader N"
-focus_prev = "Leader P"
-focus_window_1 = "Leader 1"
-focus_window_2 = "Leader 2"
-focus_window_3 = "Leader 3"
-
-# Pane splits
-split_horizontal = "CmdOrCtrl+Shift+H"
-split_vertical = "CmdOrCtrl+Shift+V"
-
-# Clipboard
-copy = "CmdOrCtrl+C"
-paste = "CmdOrCtrl+V"
-
-# Quick Terminal
-quick_terminal = "Cmd+I"
-
-# Scrollback
-scroll_page_up = "Ctrl+Shift+U"
-scroll_page_down = "Ctrl+Shift+D"
-
-# Search
-search = "CmdOrCtrl+F"
-search_next = "CmdOrCtrl+G"
-search_prev = "CmdOrCtrl+Shift+G"
-
-# Resize mode keys (active only in resize mode)
-[keybindings.resize_mode]
-grow_right = "Right"
-shrink_left = "Left"
-grow_down = "Down"
-shrink_up = "Up"
-step_large = "Shift+Arrow"        # larger step
-confirm = "Enter"
-cancel = "Escape"
-# Split resize (spec 296, fixed keys, not configurable): Shift+H/L move the
-# nearest vertical split divider left/right, Shift+K/J the nearest horizontal
-# one up/down, by [workspaces] resize_step px; "=" resets the nearest split to 50/50.
-
-# Move mode keys (active only in move mode)
-[keybindings.move_mode]
-move_right = "Right"
-move_left = "Left"
-move_down = "Down"
-move_up = "Up"
-step_large = "Shift+Arrow"
-confirm = "Enter"
-cancel = "Escape"
+# Keybindings are built in and NOT configurable: there is no [keybindings]
+# section, and one in this file is ignored. The leader is Cmd+P; press it to
+# open the which-key popup listing the compositor actions.
+# Resize and move modes use the arrow keys (Shift+Arrow for the large step),
+# Enter to confirm and Escape to cancel. Split resize (spec 296): Shift+H/L move
+# the nearest vertical split divider left/right, Shift+K/J the nearest
+# horizontal one up/down, by [workspaces] resize_step px; "=" resets the
+# nearest split to 50/50.
 
 # --- Sound Effects ---
-# Procedural sound effects synthesized via Web Audio API.
-# All sounds use additive + subtractive functional synthesis (no audio files).
+# WAV packs bundled with the app, played by the Rust backend (rodio).
 
 [sound]
 enabled = true                 # master toggle for all sound effects
 volume = 0.5                   # master volume (0.0 to 1.0)
-pack = "krypton-cyber"         # sound pack name: "krypton-cyber", "ghost-signal",
-                               # "chill-city-fm", "orbit-deck", "mach-line",
-                               # "deep-glyph", or custom
-keyboard_type = "cherry-mx-brown"  # keypress sound: "cherry-mx-blue", "cherry-mx-red",
-                                   # "cherry-mx-brown", "topre", "buckling-spring",
-                                   # "membrane", "none" (disable keypress sounds)
+pack = "deep-glyph"            # bundled packs: "deep-glyph", "mach-line", "holo-dash"
+keyboard_type = "cherry-mx-brown"  # reserved: parsed, not applied (the pack supplies keypress sounds)
 keyboard_volume = 1.0          # volume multiplier for keypress sounds (0.0 to 1.0)
-# Custom sound packs: place .toml files in ~/.config/krypton/sounds/
+# Custom sound packs are not supported: packs load only from the app bundle.
 
 # Per-event overrides: set to false to disable, or a float (0.0-1.0) for volume
 [sound.events]
@@ -235,6 +148,7 @@ progress_gauge_working = true  # Show the centre progress ring while a program
                                # false hides only that ring; percent, error and
                                # paused rings and the titlebar sweep still show
                                # (spec 364). Default: true
+blur = 12                      # reserved: parsed, not applied
 
 # --- Keyboard Overlay (spec 271) ---
 # Read-only on-screen keyboard with wireframe "ghost hands", docked at the
@@ -425,11 +339,12 @@ active = "zai"                          # which model preset to use
 [[agent.models]]
 name = "zai"
 provider = "zai"
-model = "glm-4.7"
+model = "glm-5.1"
 base_url = "https://api.z.ai/api/coding/paas/v4"
 api_key_env = "ZAI_API_KEY"             # env var for API key (empty = no key)
-context_window = 128000
-max_tokens = 8192
+context_window = 128000                 # required
+max_tokens = 8192                       # required
+# vision = false                        # optional: model accepts image input
 
 # Example: Ollama local model
 # [[agent.models]]
@@ -536,12 +451,13 @@ height_ratio = 0.5             # fraction of screen height (default: 50%)
 animation = "slide"            # entrance/exit animation: "slide", "fade", "none"
 shell = ""                     # shell override (empty = use default [shell] config)
 cwd = ""                       # working directory override (empty = $HOME)
+backdrop_blur = 20             # reserved: parsed, not applied
 
 # --- Workspaces ---
 # Each workspace is a virtual desktop containing arranged terminal windows.
 
 [workspaces]
-startup = "coding"           # workspace to activate on launch
+startup = "single"           # reserved: parsed, not applied
 # default_layout = "focus"   # grid | focus | depth | scroll | stage | wheel
 gap = 6                      # space between tiled windows, and the workspace
                              # edge inset in Grid/Scroll (0-64, live on Reload Config)
@@ -560,82 +476,39 @@ move_step_large = 100        # pixels per Shift+Arrow in move mode
 # center_focused_column = "always"         # never | always | on-overflow
 # always_center_single_column = true
 
-# Built-in presets (single, 2-column, 3-column, 2x2-grid, main+sidebar,
-# main+bottom) are always available. User definitions below can override them.
+# --- Tabs ---
 
-[[workspaces.layouts]]
-name = "coding"
-grid = { cols = 3, rows = 1 }
+[tabs]
+always_show_tabbar = false      # show the tab strip even when a window has one tab
+default_split = "vertical"      # pane split direction when the action names none: "vertical" | "horizontal"
+close_window_on_last_tab = true # closing a window's last tab closes the window
 
-  [[workspaces.layouts.windows]]
-  label = "editor"
-  col = 0
-  row = 0
-  col_span = 2
-  row_span = 1
-  shell = "/bin/zsh"
-  cwd = "~/projects"
+# --- Music Player ---
 
-  [[workspaces.layouts.windows]]
-  label = "terminal"
-  col = 2
-  row = 0
-  col_span = 1
-  row_span = 1
+[music]
+enabled = true                 # reserved: parsed, not applied
+volume = 0.7                   # playback volume at launch (0.0–1.0)
+directory = "~/Music"          # MP3 directory loaded at launch ("~" expands). Opening
+                               # another directory in the player is not saved here.
+visualizer = true              # Circuit Trace background visualizer
+visualizer_opacity = 0.18      # visualizer canvas opacity (0.0–1.0)
 
-[[workspaces.layouts]]
-name = "monitoring"
-grid = { cols = 2, rows = 2 }
+# --- Vault Viewer ---
 
-  [[workspaces.layouts.windows]]
-  label = "logs"
-  col = 0
-  row = 0
-  col_span = 1
-  row_span = 1
-  shell = "/bin/zsh"
-  args = ["-c", "tail -f /var/log/system.log"]
-
-  [[workspaces.layouts.windows]]
-  label = "htop"
-  col = 1
-  row = 0
-  col_span = 1
-  row_span = 1
-  shell = "/usr/bin/htop"
-
-  [[workspaces.layouts.windows]]
-  label = "network"
-  col = 0
-  row = 1
-  col_span = 2
-  row_span = 1
-
-# Absolute positioning override example
-[[workspaces.layouts]]
-name = "custom-fixed"
-
-  [[workspaces.layouts.windows]]
-  label = "main"
-  x = 100
-  y = 100
-  width = 1200
-  height = 800
-
-  [[workspaces.layouts.windows]]
-  label = "side"
-  x = 1320
-  y = 100
-  width = 500
-  height = 800
+[vault]
+path = ""                      # default vault directory ("" = none)
+# More named vaults for the vault picker:
+# [[vault.paths]]
+# name = "notes"
+# path = "/path/to/notes"
 ```
 
 ## Section Reference
 
 | Section | Key | Type | Default | Description |
 |---------|-----|------|---------|-------------|
-| `[shell]` | `program` | string | System default | Shell binary path |
-| `[shell]` | `args` | string[] | `[]` | Arguments passed to shell |
+| `[shell]` | `program` | string | `$SHELL`, else `/bin/sh` | Shell binary path |
+| `[shell]` | `args` | string[] | `["--login"]` | Arguments passed to shell |
 | `[font]` | `family` | string \| string[] | `"Mononoki Nerd Font Mono"` | Font family name, or an array of names for fallback (first match per glyph) |
 | `[font]` | `size` | float | `14.0` | Font size in points |
 | `[font]` | `line_height` | float | `1.2` | Line height multiplier |
@@ -653,14 +526,16 @@ name = "custom-fixed"
 | `[keyboard_overlay]` | `mouse` | bool | `true` | Draw a mouse the right hand grips while the pointer moves; clicks light its buttons. `false` keeps the compact keyboard-only overlay |
 | `[theme]` | `name` | string | `"krypton-dark"` | Built-in or custom theme name (see [Theme Specification](./0010-theme-specification.md)). Command palette **Color Theme** actions call `set_theme` and persist this key. File edits apply on **Reload Config** or the next launch. |
 | `[theme.colors]` | *(various)* | string | — | Hex color overrides (applied on top of named theme) |
-| `[keybindings]` | `leader` | string | `"Ctrl+Space"` | Leader key to enter compositor mode |
-| `[keybindings]` | `command_palette` | string | `"CmdOrCtrl+Shift+P"` | Open command palette |
-| `[keybindings]` | `quick_terminal` | string | `"Cmd+I"` | Toggle Quick Terminal overlay |
-| `[keybindings]` | `scroll_page_up` | string | `"Ctrl+Shift+U"` | Scroll terminal buffer up one page |
-| `[keybindings]` | `scroll_page_down` | string | `"Ctrl+Shift+D"` | Scroll terminal buffer down one page |
-| `[keybindings]` | *(various)* | string | — | See full keybinding reference in TOML example above |
-| `[keybindings.resize_mode]` | *(various)* | string | — | Keys active in resize mode |
-| `[keybindings.move_mode]` | *(various)* | string | — | Keys active in move mode |
+| `[tabs]` | `always_show_tabbar` | bool | `false` | Show the tab strip even when a window has a single tab |
+| `[tabs]` | `default_split` | string | `"vertical"` | Pane split direction when the split action does not name one: `"vertical"` or `"horizontal"` |
+| `[tabs]` | `close_window_on_last_tab` | bool | `true` | Closing a window's last tab (or the content view in it) closes the window |
+| `[music]` | `enabled` | bool | `true` | Reserved — parsed, not applied |
+| `[music]` | `volume` | float | `0.7` | Playback volume at launch (0.0–1.0) |
+| `[music]` | `directory` | string | `"~/Music"` | MP3 directory loaded at launch when no playlist is loaded; `~` expands. Opening another directory in the player changes the in-memory value only — the file is not rewritten |
+| `[music]` | `visualizer` | bool | `true` | Circuit Trace background visualizer |
+| `[music]` | `visualizer_opacity` | float | `0.18` | Visualizer canvas opacity (0.0–1.0) |
+| `[vault]` | `path` | string | `""` | Default vault directory for the Vault Viewer picker |
+| `[[vault.paths]]` | `name`, `path` | string | — | Further named vaults for the picker. Entries with an empty `path` or a `path` already listed are skipped; an empty `name` shows the last path segment. The focused project's `docs/wiki` is added without an entry (spec 144) |
 
 ### Agent Configuration
 
@@ -668,14 +543,17 @@ name = "custom-fixed"
 |---------|-----|------|---------|-------------|
 | `[agent]` | `active` | string | `"zai"` | Name of the active model preset |
 | `[[agent.models]]` | `name` | string | *required* | Unique preset name (e.g. `"zai"`, `"ollama-gemma4"`) |
-| `[[agent.models]]` | `provider` | string | — | Provider: `"zai"`, `"ollama"`, `"openai"`, `"anthropic"`, etc. |
-| `[[agent.models]]` | `model` | string | — | Model identifier (e.g. `"glm-4.7"`, `"gemma4:latest"`, `"gpt-4o"`) |
-| `[[agent.models]]` | `base_url` | string | — | API endpoint URL |
-| `[[agent.models]]` | `api_key_env` | string | — | Environment variable name for API key. Empty string = no key needed (local models) |
-| `[[agent.models]]` | `context_window` | int | `128000` | Model's context window in tokens |
-| `[[agent.models]]` | `max_tokens` | int | `8192` | Maximum output tokens per response |
+| `[[agent.models]]` | `provider` | string | *required* | Provider: `"zai"`, `"ollama"`, `"openai"`, `"anthropic"`, etc. |
+| `[[agent.models]]` | `model` | string | *required* | Model identifier (e.g. `"glm-5.1"`, `"gemma4:latest"`, `"gpt-4o"`) |
+| `[[agent.models]]` | `base_url` | string | *required* | API endpoint URL |
+| `[[agent.models]]` | `api_key_env` | string | *required* | Environment variable name for API key. Empty string = no key needed (local models) |
+| `[[agent.models]]` | `context_window` | int | *required* | Model's context window in tokens |
+| `[[agent.models]]` | `max_tokens` | int | *required* | Maximum output tokens per response |
+| `[[agent.models]]` | `vision` | bool | `false` | Model accepts image input |
 
 To switch models, change `active` to the name of another preset. Changes take effect on next agent session (reset the agent or open a new agent window).
+
+Every `[[agent.models]]` key except `vision` is required: a preset missing one makes the whole `krypton.toml` fail to parse, and Krypton then runs on built-in defaults for every section (see [Load Behavior](#load-behavior)). Defining any `[[agent.models]]` entry replaces the built-in preset list.
 
 ### Inline AI Configuration (spec 333)
 
@@ -1190,9 +1068,9 @@ needed.
 |---------|-----|------|---------|-------------|
 | `[hints]` | `alphabet` | string | `"asdfghjklqweruiop"` | Characters used for hint label generation (should be easy to type) |
 | `[hints]` | `file_action` | string | `"peek"` | What selecting a `filepath` hint does: `"peek"` opens the Quick Overview dialog (Enter escalates to Helix / markdown viewer / browser), `"editor"` opens the target directly as before. See `docs/0210-quick-overview-dialog.md` |
-| `[[hints.rules]]` | `name` | string | — | Unique identifier for the rule |
-| `[[hints.rules]]` | `regex` | string | — | Regular expression pattern to match in terminal content |
-| `[[hints.rules]]` | `action` | string | `"Copy"` | Action on selection: `"Copy"`, `"Open"`, or `"Paste"`; the built-in `filepath` rule ignores this and follows `[hints] file_action` instead |
+| `[[hints.rules]]` | `name` | string | *required* | Unique identifier for the rule |
+| `[[hints.rules]]` | `regex` | string | *required* | Regular expression pattern to match in terminal content |
+| `[[hints.rules]]` | `action` | string | *required* | Action on selection: `"Copy"`, `"Open"`, or `"Paste"`; the built-in `filepath` rule ignores this and follows `[hints] file_action` instead |
 | `[[hints.rules]]` | `enabled` | bool | `true` | Whether this rule is active |
 
 Built-in rules (active by default): `url` (Open), `filepath` (peek in the Quick Overview dialog), `email` (Copy).
@@ -1203,12 +1081,12 @@ Built-in rules (active by default): `url` (Open), `filepath` (peek in the Quick 
 |---------|-----|------|---------|-------------|
 | `[sound]` | `enabled` | bool | `true` | Master toggle — enables/disables all sound effects |
 | `[sound]` | `volume` | float | `0.5` | Master volume (0.0 = silent, 1.0 = full) |
-| `[sound]` | `pack` | string | `"krypton-cyber"` | Sound pack name. Built-in options: `"krypton-cyber"` (patch-based synthesis), `"ghost-signal"`, `"chill-city-fm"`, `"orbit-deck"`, `"mach-line"`, `"deep-glyph"` (ghost-signal function-based themes). Custom packs from `~/.config/krypton/sounds/` also supported. |
-| `[sound]` | `keyboard_type` | string | `"cherry-mx-brown"` | Keyboard type for keypress sounds. Options: `"cherry-mx-blue"`, `"cherry-mx-red"`, `"cherry-mx-brown"`, `"topre"`, `"buckling-spring"`, `"membrane"`, `"none"`. **Ignored when a ghost-signal theme is active** (the theme provides its own typing sounds with per-key routing: Backspace, Enter, Space, and letters each use distinct sounds). |
+| `[sound]` | `pack` | string | `"deep-glyph"` | Sound pack name. Bundled packs: `"deep-glyph"`, `"mach-line"`, `"holo-dash"`. Packs are WAV sets shipped as app resources; custom packs are not supported. |
+| `[sound]` | `keyboard_type` | string | `"cherry-mx-brown"` | Reserved — parsed, not applied. Keypress sounds come from the pack, with separate sounds for Backspace, Enter, Space and other keys. |
 | `[sound]` | `keyboard_volume` | float | `1.0` | Volume multiplier for keypress sounds (0.0 = silent, 1.0 = full). Multiplied with master volume. |
 | `[sound.events]` | `<event_name>` | bool \| float | `true` | Per-event toggle or volume override. `false` disables, `true` uses master volume, float (0.0–1.0) sets individual volume. |
 
-Valid event names: `window.create`, `window.close`, `window.focus`, `window.maximize`, `window.restore`, `mode.enter`, `mode.exit`, `quick_terminal.show`, `quick_terminal.hide`, `workspace.switch`, `command_palette.open`, `command_palette.close`, `command_palette.execute`, `layout.toggle`, `swap.complete`, `resize.step`, `move.step`, `terminal.bell`, `terminal.exit`, `startup`, `keypress`.
+Valid event names: `startup`, `window.create`, `window.close`, `window.focus`, `window.maximize`, `window.restore`, `window.pin`, `window.unpin`, `mode.enter`, `mode.exit`, `quick_terminal.show`, `quick_terminal.hide`, `workspace.switch`, `command_palette.open`, `command_palette.close`, `command_palette.execute`, `hint.activate`, `hint.select`, `hint.cancel`, `layout.toggle`, `swap.complete`, `resize.step`, `move.step`, `terminal.bell`, `terminal.exit`, `tab.create`, `tab.close`, `tab.switch`, `tab.move`, `pane.split`, `pane.close`, `pane.focus`, `keypress`.
 
 ### Shader Configuration
 
@@ -1227,11 +1105,13 @@ Shader presets can be cycled at runtime via `Leader g` (per-pane) or toggled glo
 | Section | Key | Type | Default | Description |
 |---------|-----|------|---------|-------------|
 | `[visual]` | `perspective_depth` | int | `800` | 3D perspective depth in pixels. Higher = subtler effect. 0 = disabled. Recommended: 400–1200 |
-| `[visual]` | `perspective_tilt` | float | `2.0` | Tilt angle in degrees for 3D layer separation. 0 = no tilt. Recommended: 1–6 |
+| `[visual]` | `perspective_tilt_x` | float | `2.0` | X-axis (top/bottom) tilt in degrees for 3D layer separation. 0 = no tilt. Recommended: 1–6. The old name `perspective_tilt` is accepted as an alias |
+| `[visual]` | `perspective_tilt_y` | float | `0.0` | Y-axis (left/right) tilt in degrees. 0 = no tilt |
 | `[visual]` | `opacity` | float | `0.5` | Window backdrop opacity (0.0 = fully transparent, 1.0 = fully opaque). Overrides the theme's backdrop alpha. Under a light-scheme theme the effective value is at least 0.94 ([spec 321](./0321-light-scheme-legibility.md)). Diff View (dark scheme) lets this show through the code surface. |
 | `[visual]` | `glow_intensity` | float | `0.8` | Top-line glow brightness boost. 0.0 disables the glow, higher = stronger. Clamped to 0.0–3.0. |
 | `[visual]` | `window_border` | bool | `true` | Show the accent-colored outline around terminal windows. `false` hides the border and the accent glow shadow (border stays transparent, so window geometry is unchanged). The Quick Terminal overlay keeps its own chrome. |
 | `[visual]` | `progress_gauge_working` | bool | `true` | Show the centre progress ring while a program reports busy (OSC 9;4 state `3`, label `working`). `false` hides only that ring: percent, error and paused rings and the titlebar sweep still show. Hot-reloadable. See [spec 364](./0364-progress-gauge-hide-working.md) |
+| `[visual]` | `blur` | int | `12` | Reserved — parsed, not applied |
 
 ### SSH Configuration
 
@@ -1259,12 +1139,13 @@ Built-in extensions (system-level, not user-configurable): Java Resource Monitor
 | `[quick_terminal]` | `animation` | string | `"slide"` | Entrance/exit animation: `slide`, `fade`, `none` |
 | `[quick_terminal]` | `shell` | string | `""` | Shell override (empty = use default `[shell]` config) |
 | `[quick_terminal]` | `cwd` | string | `""` | Working directory override (empty = `$HOME`) |
+| `[quick_terminal]` | `backdrop_blur` | int | `20` | Reserved — parsed, not applied |
 
 ### Workspace Configuration
 
 | Section | Key | Type | Default | Description |
 |---------|-----|------|---------|-------------|
-| `[workspaces]` | `startup` | string | `"single"` | Workspace to activate on launch |
+| `[workspaces]` | `startup` | string | `"single"` | Reserved — parsed, not applied |
 | `[workspaces]` | `default_layout` | string | `"focus"` | Default layout mode: `"grid"`, `"focus"`, `"depth"`, `"scroll"`, `"stage"`, or `"wheel"` |
 | `[workspaces.scroll]` | `default_column_width` | float | `0.5` | New-column width as a fraction of the usable viewport (Scroll layout) |
 | `[workspaces.scroll]` | `default_window_height` | float | `1.0` | New-window height as a fraction of the usable viewport (Scroll layout). `1.0` fills the column; smaller values top-align and leave empty space below. Clamped to `0.15`–`1.0`. Live: Resize `↓`/`↑`. |
@@ -1277,20 +1158,6 @@ Built-in extensions (system-level, not user-configurable): Java Resource Monitor
 | `[workspaces]` | `move_step` | int | `20` | Pixels per arrow key press in move mode |
 | `[workspaces]` | `resize_step_large` | int | `100` | Pixels per Shift+Arrow in resize mode |
 | `[workspaces]` | `move_step_large` | int | `100` | Pixels per Shift+Arrow in move mode |
-| `[[workspaces.layouts]]` | `name` | string | *required* | Unique workspace name |
-| `[[workspaces.layouts]]` | `grid` | object | — | Grid definition `{ cols, rows }` (omit for absolute positioning) |
-| `[[workspaces.layouts.windows]]` | `label` | string | — | Human-readable window label |
-| `[[workspaces.layouts.windows]]` | `col` | int | — | Grid column (0-indexed) |
-| `[[workspaces.layouts.windows]]` | `row` | int | — | Grid row (0-indexed) |
-| `[[workspaces.layouts.windows]]` | `col_span` | int | `1` | Number of grid columns to span |
-| `[[workspaces.layouts.windows]]` | `row_span` | int | `1` | Number of grid rows to span |
-| `[[workspaces.layouts.windows]]` | `x` | int | — | Absolute X position in pixels (overrides grid) |
-| `[[workspaces.layouts.windows]]` | `y` | int | — | Absolute Y position in pixels (overrides grid) |
-| `[[workspaces.layouts.windows]]` | `width` | int | — | Absolute width in pixels (overrides grid) |
-| `[[workspaces.layouts.windows]]` | `height` | int | — | Absolute height in pixels (overrides grid) |
-| `[[workspaces.layouts.windows]]` | `shell` | string | Default shell | Shell binary for this window |
-| `[[workspaces.layouts.windows]]` | `args` | string[] | `[]` | Shell arguments |
-| `[[workspaces.layouts.windows]]` | `cwd` | string | `$HOME` | Working directory |
 
 ---
 
@@ -1308,42 +1175,17 @@ Binary auto-detection checks the process `PATH`, the cached login-shell `PATH`,
 `~/.cargo/bin`, `/opt/homebrew/bin`, and `/usr/local/bin`. This keeps Finder or
 Spotlight launches working on macOS even when the GUI process receives a sparse
 environment. The monitor is opened through `#termctrl` or the command palette;
-it does not require a configuration entry and does not write one during config
-flush.
+it does not require a configuration entry.
 
-## Config Flush Defaults
+## Load Behavior
 
-> Status: Implemented — Date: 2026-03-22
+Krypton reads `krypton.toml` at startup and again on the palette's **Reload Config** (there is no filesystem watcher). It never writes the file except as described below.
 
-When new configuration fields are added to the Rust `KryptonConfig` structs, existing users' `krypton.toml` files don't include those new keys. After loading and deserializing the config (which merges defaults for missing fields via `#[serde(default)]`), the fully-populated config is serialized back to disk. This "flushes" any new fields into the user's file with their default values.
-
-### Flush Behavior
-
-```rust
-fn flush_config(path: &PathBuf, config: &KryptonConfig) {
-    match toml::to_string_pretty(config) {
-        Ok(toml_str) => {
-            let content = format!(
-                "# Krypton configuration\n\
-                 # See docs/0006-configuration.md for full reference\n\n\
-                 {toml_str}"
-            );
-            if let Err(e) = fs::write(path, &content) {
-                log::error!("Failed to flush config to {}: {e}", path.display());
-            }
-        }
-        Err(e) => log::error!("Failed to serialize config for flush: {e}"),
-    }
-}
-```
-
-The flush runs on startup so the file reflects the complete schema. It compares serialized content against the existing file and only writes if they differ.
-
-### Caveats
-
-- **User comments stripped**: `toml::to_string_pretty` does not preserve comments. The config file header directs users to the docs for reference.
-- **Parse error recovery**: When the file has syntax errors, flushing defaults overwrites the broken file — the user gets a working config instead of being stuck.
-- **Read-only file**: The flush logs an error and continues. The app still works with the in-memory config.
+- **Missing file**: Krypton runs on built-in defaults and does not create the file.
+- **Missing keys**: every section and key is optional and takes its default independently. The exceptions are array entries: `[[agent.models]]` requires every key except `vision`, and `[[hints.rules]]` requires `name`, `regex` and `action`.
+- **Unknown sections and keys** are ignored, so a retired section such as `[typesafe]` (or a `[keybindings]` table) still loads.
+- **Parse error** (invalid TOML, a wrong value type, a missing required key): at startup Krypton logs the error and runs on built-in defaults for every section; on **Reload Config** it reports the error and keeps the config already loaded. The file is left untouched in both cases.
+- **The only write**: the palette's **Color Theme** action (`set_theme`) rewrites the `[theme] name` line in place. Comments and other sections are kept, and nothing is written when the file does not exist. Other runtime changes (the agent's active preset, a directory opened in the music player) live in memory only.
 
 ## [hurl]
 

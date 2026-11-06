@@ -64,7 +64,7 @@ Another standalone piece lives outside the app build: the **Raycast extension** 
 
 ### Config & Themes
 
-- User config: `~/.config/krypton/krypton.toml` (auto-created with defaults on first run)
+- User config: `~/.config/krypton/krypton.toml` (optional; never created or rewritten by Krypton except `[theme] name` — missing file = built-in defaults)
 - Built-in themes: `krypton-dark`, `krypton-light`, `legacy-radiance`
 - Custom themes: `~/.config/krypton/themes/*.toml`
 - Theme colors applied as `--krypton-*` CSS custom properties on `document.documentElement`
