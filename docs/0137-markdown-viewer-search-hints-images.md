@@ -22,7 +22,7 @@ Three independent, keyboard-first additions that reuse existing viewer subsystem
 1. **In-doc search HUD** — `/` while focus=preview opens a transient bottom HUD (vim-style). Live tinted highlight on matches, `n`/`N` cycle with the current match filled in the accent, `Esc` clears.
 2. **`H` heading-hint overlay** — reuses `enterLinkHintMode`'s label engine over `h1`–`h6`; type a label to jump+scroll. Transient overlay only (no persistent TOC panel — respects spec 39's out-of-scope).
 3. **Image src rewrite + onerror** — after render, walk `img[src]`, resolve relative paths against the current file's directory, convert to a webview-loadable URL via `convertFileSrc()`, and attach an `onerror` that swaps in a styled `IMG BREACH // <path>` notice.
-4. **Strong focused-panel indicator** — the focused panel's header turns accent while the other dims, and the sidebar's selected row carries the harness cursor outline only while the sidebar has focus. Pure CSS on the existing `krypton-md__panel--focused` class (no TS change).
+4. **Strong focused-panel indicator** — the sidebar's selected row carries the harness cursor outline only while the sidebar has focus, and the path line turns accent while the preview has focus (since the 2026-11-06 File Manager restyle; before it, each panel's header turned accent). `setFocus` toggles `krypton-md__panel--focused` on both panels and `krypton-md__breadcrumb--focused` on the path line.
 5. **No-op re-selection guard** — `loadFile` early-returns when the requested file is already loaded (unless `force`), so re-selecting the current file just moves focus to the preview without re-fetch/re-animate/scroll-reset. `r` (reload) passes `force: true`.
 
 ## Research
@@ -124,11 +124,11 @@ private searchIndex = -1;
 - `.krypton-md__match--current` — filled in the window accent with background-coloured text. No animation.
 - `.krypton-md__img-breach` — broken-image notice: warning-ink label in a warning-tinted chip with a solid 1px warning border (the same warning tone as `.krypton-md__truncated`).
 
-### Focused-panel indicator (pure CSS)
+### Focused-panel indicator
 
-`setFocus` already toggles `.krypton-md__panel--focused` on both the sidebar and the preview, so this is CSS-only. Revised 2026-11-05 to drop the accent bars (ADR 0027 bans edge rails):
+`setFocus` toggles `.krypton-md__panel--focused` on both the sidebar and the preview. Revised 2026-11-05 to drop the accent bars (ADR 0027 bans edge rails), and 2026-11-06 when the viewer took the File Manager layout (`docs/0039-markdown-viewer.md`), which has no panel headers:
 
-- **Header ink** — the focused panel's header (`.krypton-md__sidebar-header` / `.krypton-md__preview-header`) is the window accent; the unfocused header drops to the faint ink tier. No glow.
+- **Path line ink** — while the preview has focus, the path line (`.krypton-md__breadcrumb--focused`) is the window accent; with the list focused it is the File Manager breadcrumb's ink-dim. No glow.
 - **Cursor row** — the sidebar's selected file is the harness picker's active row (accent tint plus a 1px inset outline) while the sidebar has focus. With the preview focused the tint stays and the outline drops, so the cursor reads as parked.
 - The column divider between the panels is a neutral full-height hairline: layout, not a focus mark. No transition.
 
@@ -145,7 +145,7 @@ at top of loadFile:
   this.currentLoadedFile = relativePath;
 ```
 
-- New field `private currentLoadedFile: string | null = null` (don't rely on `previewHeader.textContent` for the comparison, though it stays in sync as today).
+- New field `private currentLoadedFile: string | null = null` (don't rely on `shownFile` — the path line's file, set when a load starts — for the comparison).
 - `reloadCurrentFile()` calls `loadFile(file, true, /*force*/ true)` so `r` still re-reads from disk.
 - `refreshFileList()` / `navigateJump` / `navigateToLocalMd` unaffected (jumplist has no top-dups; navigating to a *different* file passes the guard). Local-anchor jumps to the *same* file (future `#frag` work) would scroll, not reload — out of scope here.
 - Callers (`handleSidebarKey`, click handler) keep their `setFocus('preview')` call, so re-selecting the current file still hands focus to the content pane (the user's intent) without the re-render.

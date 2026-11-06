@@ -1,8 +1,10 @@
 /* ─── Markdown Viewer ─── */
-/* Matches the ACP Harness surfaces and the File Manager (file-manager.css):
-   hairline rules, ink tiers derived from the foreground, the harness picker's
-   tinted + outlined cursor row, harness markdown prose, no glow on text and no
-   edge rails (ADR 0027). All colours flow through theme tokens.
+/* The File Manager's design (file-manager.css) applied to a document reader:
+   a path line on top, the file list and the preview side by side, and a
+   status readout at the bottom. Hairline rules, ink tiers derived from the
+   foreground, the harness picker's tinted + outlined cursor row, the File
+   Manager's preview prose, no glow on text and no edge rails (ADR 0027).
+   All colours flow through theme tokens.
    Ink tiers fall back to the foreground at reduced alpha — never
    `--krypton-fg-dim` and never ANSI bright-black for text. */
 
@@ -14,12 +16,17 @@
   --md-accent: var(--krypton-window-accent, var(--krypton-accent));
   --md-well: rgba(0, 0, 0, 0.32);
   --md-surface: var(--agent-surface-solid, rgba(var(--krypton-bg-rgb), 0.92));
+  position: relative;
   display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  background: transparent;
   color: var(--krypton-fg);
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: var(--krypton-font-size, 14px);
+  contain: content;
 }
 
 /* A dark code well is a slab on a light theme; use a foreground wash there. */
@@ -27,108 +34,88 @@
   --md-well: rgba(var(--krypton-fg-rgb), 0.05);
 }
 
-/* ── Sidebar ── */
-/* The full-height divider separates two columns; it is layout, not a focus
-   rail. Which panel has focus shows in its header ink and, for the sidebar,
-   in the cursor row's outline. */
-.krypton-md__sidebar {
-  width: 250px;
-  min-width: 250px;
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--md-rule);
-}
-
-.krypton-md__sidebar-header,
-.krypton-md__preview-header {
+/* ── Path line ── */
+/* The File Manager breadcrumb, holding the shown document's path. It takes
+   the window accent while the preview has focus; with the list focused the
+   cursor row's outline marks focus instead. */
+.krypton-md__breadcrumb {
   flex-shrink: 0;
   height: 24px;
   line-height: 24px;
   padding: 0 12px;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  color: var(--md-ink-faint);
+  font-size: 12px;
+  color: var(--md-ink-dim);
+  letter-spacing: 0.02em;
   border-bottom: 1px solid var(--md-rule);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Panel label voice: uppercase, tracked. */
-.krypton-md__sidebar-header {
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-/* The preview header is a file path: natural case, like the File Manager
-   breadcrumb. */
-.krypton-md__preview-header {
-  padding: 0 16px;
-  letter-spacing: 0.02em;
-}
-
-.krypton-md__panel--focused > .krypton-md__sidebar-header,
-.krypton-md__panel--focused > .krypton-md__preview-header {
+.krypton-md__breadcrumb--focused {
   color: var(--md-accent);
 }
 
-.krypton-md__filter {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--md-rule);
-  flex-shrink: 0;
+.krypton-md__body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.krypton-md__filter-input {
-  width: 100%;
-  height: 24px;
-  padding: 0 8px;
-  background: rgba(var(--krypton-fg-rgb), 0.04);
-  border: 1px solid rgba(var(--krypton-accent-rgb), 0.18);
-  border-radius: var(--krypton-border-radius, 8px);
-  color: var(--krypton-fg);
-  caret-color: var(--md-accent);
-  font-family: inherit;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  outline: none;
-}
-
-.krypton-md__filter-input:focus-visible {
-  border-color: rgba(var(--krypton-accent-rgb), 0.5);
-}
-
-.krypton-md__filter-input::placeholder {
-  color: var(--md-ink-faint);
+/* ── File list ── */
+/* The File Manager list column. Rows are its search rows (a repo-relative
+   path after an icon column) at the terminal cell height, the name in the
+   File Manager's document hue. */
+.krypton-md__sidebar {
+  flex: 0 0 333px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .krypton-md__file-list {
   flex: 1;
-  overflow-y: auto;
   min-height: 0;
-  padding: 4px 0;
+  overflow-y: auto;
 }
 
 .krypton-md__file {
-  margin: 1px 6px;
-  padding: 3px 8px;
+  display: flex;
+  align-items: center;
+  height: var(--krypton-terminal-cell-height, 20px);
+  line-height: var(--krypton-terminal-cell-height, 20px);
+  margin: 0 6px;
+  padding: 0 6px;
   border-radius: var(--krypton-border-radius, 8px);
-  font-size: var(--krypton-chrome-font-size, 11px);
   cursor: default;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   color: var(--md-ink);
   letter-spacing: 0.02em;
 }
 
-.krypton-md__file:hover {
-  background: rgba(var(--krypton-fg-rgb), 0.04);
+.krypton-md__file-icon {
+  flex-shrink: 0;
+  width: 1.2em;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-/* Selected file — the harness picker's active row while the sidebar has
+.krypton-md__file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: color-mix(in srgb, var(--krypton-ansi-10) 70%, var(--krypton-fg));
+}
+
+/* Selected file — the harness picker's active row while the list has
    focus: a tint plus a 1px outline inside the row. With the preview focused
    the tint stays and the outline drops, so the cursor reads as parked. The
    row keeps its own text colour. */
-.krypton-md__file--selected,
-.krypton-md__file--selected:hover {
+.krypton-md__file--selected {
   background: rgba(var(--krypton-accent-rgb), 0.08);
 }
 
@@ -138,24 +125,29 @@
   outline-offset: -1px;
 }
 
+.krypton-md__list-empty {
+  padding: 24px 14px;
+  color: var(--md-ink-dim);
+  font-style: italic;
+}
+
 /* ── Preview ── */
 .krypton-md__preview {
-  flex: 1;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
   position: relative;
+  border-left: 1px solid var(--md-rule);
 }
 
 .krypton-md__preview-content {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
-  padding: 14px 24px 24px;
+  padding: 10px 18px;
   line-height: max(var(--krypton-prose-line-height, 1.6), 1.4);
-  font-size: var(--krypton-font-size);
-  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   color: var(--krypton-fg);
 }
 
@@ -166,6 +158,56 @@
   height: 100%;
   color: var(--md-ink-dim);
   font-style: italic;
+}
+
+/* ── Status bar ── */
+/* The File Manager status readout. `/` in the list turns it into the filter
+   prompt: the line takes the accent and the query field reads as text in
+   it — no box, the line's own type. */
+.krypton-md__status {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  line-height: 22px;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--md-ink-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-top: 1px solid var(--md-rule);
+  white-space: nowrap;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.krypton-md__status--filter {
+  color: var(--md-accent);
+}
+
+.krypton-md__status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.krypton-md__filter-input {
+  flex: none;
+  min-width: 1ch;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  caret-color: var(--md-accent);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+.krypton-md__filter-count {
+  flex: none;
+  margin-left: 2ch;
 }
 
 .krypton-md__truncated {
@@ -181,10 +223,13 @@
 }
 
 /* ── Markdown rendered content ── */
-/* Prose follows the harness markdown (`harness-shared.css`
-   `.acp-harness__msg-body--markdown`) as the File Manager preview does:
-   graded cyan/green headings, a rule under h1 only, a borderless code chip
-   and `pre` well, tinted blockquotes. */
+/* Prose is the File Manager preview's (`file-manager.css`
+   `__preview-markdown`) by value — itself after the harness markdown: graded
+   cyan/green headings, a rule under h1 only, a borderless code chip and `pre`
+   well, tinted blockquotes. The reader adds no top margin on the first block,
+   task-list checkboxes, struck text, rounded images, a light-theme code well,
+   and ANSI-mapped syntax colours (the File Manager's markdown code blocks keep
+   highlight.js github-dark). */
 .krypton-md__preview-content > :first-child {
   margin-top: 0;
 }
@@ -199,19 +244,19 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   line-height: 1.25;
-  margin: 1.3em 0 0.5em;
+  margin: 1.1em 0 0.45em;
   color: var(--agent-user, var(--krypton-ansi-6));
 }
 
 .krypton-md__preview-content h1 {
-  font-size: 1.45em;
+  font-size: 1.35em;
   color: var(--agent-cyan, var(--krypton-ansi-6));
   border-bottom: 1px solid rgba(var(--krypton-accent-rgb), 0.25);
-  padding-bottom: 0.25em;
+  padding-bottom: 0.2em;
 }
-.krypton-md__preview-content h2 { font-size: 1.22em; }
+.krypton-md__preview-content h2 { font-size: 1.18em; }
 .krypton-md__preview-content h3 {
-  font-size: 1.08em;
+  font-size: 1.06em;
   color: var(--agent-accent, var(--krypton-ansi-2));
 }
 .krypton-md__preview-content h4,
@@ -224,7 +269,7 @@
 }
 
 .krypton-md__preview-content p {
-  margin: 0.7em 0;
+  margin: 0.5em 0;
 }
 
 .krypton-md__preview-content strong {
@@ -265,17 +310,15 @@
 .krypton-md__preview-content pre {
   background: var(--md-well);
   border-radius: var(--krypton-border-radius, 8px);
-  padding: 10px 14px;
+  padding: 8px 10px;
   overflow-x: auto;
-  margin: 0.8em 0;
-  line-height: var(--krypton-content-line-height, 1.5);
+  margin: 0.6em 0;
 }
 
 .krypton-md__preview-content pre code {
   background: none;
+  border: none;
   padding: 0;
-  font-size: 0.92em;
-  line-height: var(--krypton-content-line-height, 1.5);
   color: var(--krypton-fg);
 }
 
@@ -324,8 +367,8 @@
 .krypton-md__preview-content .hljs-regexp { color: var(--krypton-ansi-9); }
 
 .krypton-md__preview-content blockquote {
-  margin: 0.9em 0;
-  padding: 6px 12px;
+  margin: 0.8em 0;
+  padding: 6px 10px;
   color: var(--md-ink);
   background: rgba(var(--krypton-fg-rgb), 0.04);
   border-radius: var(--krypton-border-radius, 8px);
@@ -334,7 +377,7 @@
 .krypton-md__preview-content ul,
 .krypton-md__preview-content ol {
   padding-left: 1.5em;
-  margin: 0.7em 0;
+  margin: 0.6em 0;
 }
 
 .krypton-md__preview-content ol {
@@ -363,7 +406,7 @@
   border-collapse: separate;
   border-spacing: 0;
   width: 100%;
-  margin: 0.9em 0;
+  margin: 0.8em 0;
   border: 1px solid rgba(var(--krypton-accent-rgb), 0.25);
   border-radius: var(--krypton-border-radius, 8px);
 }
@@ -413,7 +456,7 @@
 .krypton-md__preview-content hr {
   border: none;
   border-top: 1px solid rgba(var(--krypton-fg-rgb), 0.1);
-  margin: 1.6em 0;
+  margin: 1.2em 0;
 }
 
 .krypton-md__preview-content img {

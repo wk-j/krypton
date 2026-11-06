@@ -84,40 +84,46 @@ Add a dedicated markdown viewer window with a two-panel layout: a **file browser
 
 ```html
 <div class="krypton-md">
-  <!-- Left: file browser -->
-  <div class="krypton-md__sidebar">
-    <div class="krypton-md__sidebar-header">DOCS</div>
-    <div class="krypton-md__filter">
-      <input class="krypton-md__filter-input" placeholder="filter..." />
+  <!-- Top: path line — the shown document -->
+  <div class="krypton-md__breadcrumb">~/proj/docs/architecture.md</div>
+  <div class="krypton-md__body">
+    <!-- Left: file list -->
+    <div class="krypton-md__sidebar krypton-md__panel--focused">
+      <div class="krypton-md__file-list">
+        <div class="krypton-md__file krypton-md__file--selected">
+          <span class="krypton-md__file-icon"></span>
+          <span class="krypton-md__file-name">README.md</span>
+        </div>
+        <div class="krypton-md__file">…docs/architecture.md…</div>
+      </div>
     </div>
-    <div class="krypton-md__file-list">
-      <div class="krypton-md__file krypton-md__file--selected">README.md</div>
-      <div class="krypton-md__file">docs/architecture.md</div>
-      <div class="krypton-md__file">CHANGELOG.md</div>
+    <!-- Right: rendered preview -->
+    <div class="krypton-md__preview">
+      <div class="krypton-md__preview-content">
+        <!-- rendered markdown HTML -->
+      </div>
     </div>
   </div>
-  <!-- Right: rendered preview -->
-  <div class="krypton-md__preview">
-    <div class="krypton-md__preview-header">
-      <span class="krypton-md__file-path">README.md</span>
-    </div>
-    <div class="krypton-md__preview-content">
-      <!-- rendered markdown HTML -->
-    </div>
+  <!-- Bottom: status readout; hosts the `/` filter prompt -->
+  <div class="krypton-md__status">
+    <span class="krypton-md__status-text">12 docs │ 3/12</span>
+    <input class="krypton-md__filter-input" style="display: none" />
+    <span class="krypton-md__filter-count" style="display: none"></span>
   </div>
 </div>
 ```
 
-Layout: sidebar 250px fixed width, preview fills remaining space.
+Layout: the File Manager's (`docs/0052-file-manager.md`) — a path line on top, the file list (333px) beside the preview (fills the rest), a status bar at the bottom.
 
-The surface follows the ACP Harness look, as the File Manager does (restyle 2026-11-05):
+The surface follows the File Manager design (restyle 2026-11-06; it took the ACP Harness look on 2026-11-05):
 
 - **Lines and text.** Hairline rules at accent@0.18. Ink tiers are the foreground at 0.86 / 0.56 / 0.4 (`--md-ink*`, via `--krypton-ink-2/3/4` on light themes). No text glow, no edge rails (ADR 0027), no hard-coded colours.
-- **Headers.** The sidebar header (`DOCS`) is an uppercase panel label; the preview header is the file path in natural case. The focused panel's header is the window accent and the other drops to the faint tier.
-- **File list.** Rounded rows in the foreground ink. The selected file is the harness picker's active row — accent@0.12 tint plus a 1px accent@0.5 inset outline — while the sidebar has focus; with the preview focused only the tint stays.
-- **Filter input.** A rounded field on a faint foreground wash, hairline border that steps to accent@0.5 on focus; it appears when `/` is pressed in the sidebar.
+- **Path line.** The File Manager breadcrumb: 12px, ink-dim, the shown document's path with the home directory as `~` (the cwd before a document loads). It takes the window accent while the preview has focus.
+- **File list.** The File Manager's search rows: terminal cell height and font size, an icon column, then the repo-relative path in the File Manager's document hue. The selected file is the harness picker's active row — accent@0.12 tint plus a 1px accent@0.5 inset outline — while the list has focus; with the preview focused only the tint stays. A filter with no hits shows `No matches`.
+- **Status bar.** The File Manager status readout: 11px uppercase, tracked, ink-dim — `N docs │ filter: <query> │ i/N` (the filter part only while a kept filter is applied).
+- **Filter.** `/` in the list turns the status bar into the File Manager's filter prompt: the line takes the accent and reads `/<query>  (N matches)`; the query field has no box and the line's own type. `Enter` keeps the filtered list, `Escape` clears it.
 
-Preview styling — the harness markdown (`harness-shared.css` `.acp-harness__msg-body--markdown`), in theme tokens:
+Preview styling — the File Manager preview prose (`file-manager.css` `__preview-markdown`, itself after the harness markdown `.acp-harness__msg-body--markdown`) by value, in theme tokens:
 - Headings: monospace, graded h1 (`--agent-cyan`, rule underneath) → h2 (`--agent-user`) → h3 (`--agent-accent`) → h4–h6 small uppercase ink
 - Code blocks: a borderless rounded well (dark wash; foreground wash on light themes). Syntax tokens map to the theme's ANSI colours, so light themes stay legible
 - Inline code: borderless chip on a faint foreground wash, `--agent-accent` text
@@ -131,7 +137,7 @@ Preview styling — the harness markdown (`harness-shared.css` `.acp-harness__ms
 
 ## Edge Cases
 
-- **No .md files**: Show "No markdown files found" in sidebar
+- **No .md files**: Show "No markdown files found" in the preview
 - **File read error**: Show error message in preview area
 - **Very large files**: Cap at 200KB, show "File truncated" notice
 - **Deep directories**: List files recursively, show relative paths, max depth 5

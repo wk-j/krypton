@@ -1,5 +1,6 @@
 // Krypton — Markdown Viewer
-// Two-panel layout: file browser (left) + rendered preview (right).
+// File Manager layout (spec 52): a path line, the .md file list (left) beside
+// the rendered preview (right), and a status readout that hosts the `/` filter.
 
 import { Marked, Lexer } from 'marked';
 import { markedHighlight } from 'marked-highlight';
@@ -9,6 +10,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 
 import { invoke } from './profiler/ipc';
 import { openExternalUrl } from './external-url';
+import { getHome } from './file-manager/ops';
 
 import type { ContentView, LeaderKeyBinding, LeaderKeySpec, PaneContentType } from './types';
 import type { MarkdownViewAI } from './markdown-view-ai';
@@ -70,6 +72,10 @@ export class MarkdownContentView implements ContentView {
   private closeCallback: (() => void) | null = null;
   /** Path of the file currently rendered in the preview (guards no-op reloads). */
   private currentLoadedFile: string | null = null;
+  /** Path the path line shows; set when a load starts, before it succeeds. */
+  private shownFile: string | null = null;
+  /** `/` until getHome() resolves; the path line abbreviates under it. */
+  private homeDir = '/';
 
   getWorkingDirectory(): string | null {
     return this.cwd;
@@ -85,11 +91,13 @@ export class MarkdownContentView implements ContentView {
   }
 
   // DOM elements
+  private breadcrumb: HTMLElement;
   private sidebar: HTMLElement;
   private fileListEl: HTMLElement;
+  private statusEl: HTMLElement;
+  private statusTextEl: HTMLElement;
   private filterInput: HTMLInputElement;
-  private filterContainer: HTMLElement;
-  private previewHeader: HTMLElement;
+  private filterCountEl: HTMLElement;
   private previewContent: HTMLElement;
   private isFilterActive = false;
   private focusPanel: 'sidebar' | 'preview' | 'select' = 'sidebar';
@@ -144,26 +152,13 @@ export class MarkdownContentView implements ContentView {
     this.element.tabIndex = 0;
     container.appendChild(this.element);
 
-    // ── Sidebar ──
+    // ── Path line (the File Manager breadcrumb) ──
+    this.breadcrumb = document.createElement('div');
+    this.breadcrumb.className = 'krypton-md__breadcrumb';
+
+    // ── File list ──
     this.sidebar = document.createElement('div');
     this.sidebar.className = 'krypton-md__sidebar krypton-md__panel--focused';
-
-    const sidebarHeader = document.createElement('div');
-    sidebarHeader.className = 'krypton-md__sidebar-header';
-    sidebarHeader.textContent = 'DOCS';
-    this.sidebar.appendChild(sidebarHeader);
-
-    this.filterContainer = document.createElement('div');
-    this.filterContainer.className = 'krypton-md__filter';
-    this.filterContainer.style.display = 'none';
-    this.filterInput = document.createElement('input');
-    this.filterInput.className = 'krypton-md__filter-input';
-    this.filterInput.placeholder = 'filter...';
-    this.filterInput.addEventListener('input', () => this.applyFilter());
-    this.filterInput.addEventListener('keydown', (e) => this.handleFilterKey(e));
-    this.filterContainer.appendChild(this.filterInput);
-    this.sidebar.appendChild(this.filterContainer);
-
     this.fileListEl = document.createElement('div');
     this.fileListEl.className = 'krypton-md__file-list';
     this.sidebar.appendChild(this.fileListEl);
@@ -171,17 +166,36 @@ export class MarkdownContentView implements ContentView {
     // ── Preview ──
     const preview = document.createElement('div');
     preview.className = 'krypton-md__preview';
-
-    this.previewHeader = document.createElement('div');
-    this.previewHeader.className = 'krypton-md__preview-header';
-    preview.appendChild(this.previewHeader);
-
     this.previewContent = document.createElement('div');
     this.previewContent.className = 'krypton-md__preview-content';
     preview.appendChild(this.previewContent);
 
-    this.element.appendChild(this.sidebar);
-    this.element.appendChild(preview);
+    const body = document.createElement('div');
+    body.className = 'krypton-md__body';
+    body.append(this.sidebar, preview);
+
+    // ── Status bar: the readout, or the `/` filter prompt ──
+    this.statusEl = document.createElement('div');
+    this.statusEl.className = 'krypton-md__status';
+    this.statusTextEl = document.createElement('span');
+    this.statusTextEl.className = 'krypton-md__status-text';
+    this.filterInput = document.createElement('input');
+    this.filterInput.className = 'krypton-md__filter-input';
+    this.filterInput.spellcheck = false;
+    this.filterInput.style.display = 'none';
+    this.filterInput.addEventListener('input', () => this.applyFilter());
+    this.filterInput.addEventListener('keydown', (e) => this.handleFilterKey(e));
+    this.filterCountEl = document.createElement('span');
+    this.filterCountEl.className = 'krypton-md__filter-count';
+    this.filterCountEl.style.display = 'none';
+    this.statusEl.append(this.statusTextEl, this.filterInput, this.filterCountEl);
+
+    this.element.append(this.breadcrumb, body, this.statusEl);
+    this.renderBreadcrumb();
+    void getHome().then((home) => {
+      this.homeDir = home;
+      this.renderBreadcrumb();
+    });
 
     // Render file list
     this.renderFileList();
@@ -240,13 +254,24 @@ export class MarkdownContentView implements ContentView {
 
   private renderFileList(): void {
     this.fileListEl.innerHTML = '';
+    if (this.filteredFiles.length === 0 && this.files.length > 0) {
+      const empty = document.createElement('div');
+      empty.className = 'krypton-md__list-empty';
+      empty.textContent = 'No matches';
+      this.fileListEl.appendChild(empty);
+    }
     for (let i = 0; i < this.filteredFiles.length; i++) {
       const el = document.createElement('div');
       el.className = 'krypton-md__file';
       if (i === this.selectedIndex) {
         el.classList.add('krypton-md__file--selected');
       }
-      el.textContent = this.filteredFiles[i];
+      const icon = document.createElement('span');
+      icon.className = 'krypton-md__file-icon';
+      const name = document.createElement('span');
+      name.className = 'krypton-md__file-name';
+      name.textContent = this.filteredFiles[i];
+      el.append(icon, name);
       el.addEventListener('click', () => {
         this.selectedIndex = i;
         this.renderFileList();
@@ -260,6 +285,37 @@ export class MarkdownContentView implements ContentView {
     if (selected) {
       selected.scrollIntoView({ block: 'nearest' });
     }
+    this.renderStatus();
+  }
+
+  /** The status readout, or the `/` prompt's match count while filtering —
+   *  the File Manager's `selectStatus` voice. */
+  private renderStatus(): void {
+    const count = this.filteredFiles.length;
+    if (this.isFilterActive) {
+      this.statusEl.className = 'krypton-md__status krypton-md__status--filter';
+      this.statusTextEl.textContent = '/';
+      this.filterCountEl.textContent = `(${count} matches)`;
+      return;
+    }
+    this.statusEl.className = 'krypton-md__status';
+    this.filterCountEl.textContent = '';
+    const parts = [`${count} docs`];
+    if (this.filterInput.value) parts.push(`filter: ${this.filterInput.value}`);
+    if (count > 0) parts.push(`${this.selectedIndex + 1}/${count}`);
+    this.statusTextEl.textContent = parts.join(' \u2502 ');
+  }
+
+  /** The path line: the shown document, abbreviated under `~`, or the cwd
+   *  before a document loads. */
+  private renderBreadcrumb(): void {
+    const file = this.shownFile;
+    let path = file === null ? this.cwd : file.startsWith('/') ? file : `${this.cwd}/${file}`;
+    const home = this.homeDir;
+    if (home !== '/' && (path === home || path.startsWith(`${home}/`))) {
+      path = `~${path.slice(home.length)}`;
+    }
+    this.breadcrumb.textContent = path;
   }
 
   private applyFilter(): void {
@@ -268,7 +324,15 @@ export class MarkdownContentView implements ContentView {
       ? this.files.filter((f) => f.toLowerCase().includes(query))
       : [...this.files];
     this.selectedIndex = 0;
+    this.sizeFilterInput();
     this.renderFileList();
+  }
+
+  /** The query field is as wide as its text, so the count follows it as in
+   *  the File Manager's `/` prompt. Width per glyph: one monospace cell plus
+   *  the status bar's 0.08em tracking. */
+  private sizeFilterInput(): void {
+    this.filterInput.style.width = `calc(${this.filterInput.value.length + 1} * (1ch + 0.08em))`;
   }
 
   private handleFilterKey(e: KeyboardEvent): void {
@@ -277,9 +341,8 @@ export class MarkdownContentView implements ContentView {
       this.closeFilter();
     } else if (e.key === 'Enter') {
       e.stopPropagation();
-      // Close filter UI but keep filtered results
-      this.isFilterActive = false;
-      this.filterContainer.style.display = 'none';
+      // Close the prompt but keep the filtered results
+      this.setFilterPrompt(false);
       this.element.focus();
       if (this.filteredFiles.length > 0) {
         this.loadFile(this.filteredFiles[this.selectedIndex]);
@@ -294,18 +357,26 @@ export class MarkdownContentView implements ContentView {
     }
   }
 
+  /** Show or hide the `/` prompt in the status bar. */
+  private setFilterPrompt(active: boolean): void {
+    this.isFilterActive = active;
+    const display = active ? '' : 'none';
+    this.filterInput.style.display = display;
+    this.filterCountEl.style.display = display;
+    this.renderStatus();
+  }
+
   private openFilter(): void {
-    this.isFilterActive = true;
-    this.filterContainer.style.display = '';
     this.filterInput.value = '';
+    this.sizeFilterInput();
+    this.setFilterPrompt(true);
     this.filterInput.focus();
   }
 
   private closeFilter(): void {
-    this.isFilterActive = false;
-    this.filterContainer.style.display = 'none';
     this.filterInput.value = '';
     this.filteredFiles = [...this.files];
+    this.setFilterPrompt(false);
     this.renderFileList();
     this.element.focus();
   }
@@ -347,7 +418,7 @@ export class MarkdownContentView implements ContentView {
 
   private navigateToLocalMd(href: string): void {
     // Resolve relative to the directory of the currently viewed file
-    const currentFile = this.previewHeader.textContent || '';
+    const currentFile = this.shownFile ?? '';
     const currentDir = currentFile.includes('/')
       ? currentFile.slice(0, currentFile.lastIndexOf('/'))
       : '';
@@ -384,7 +455,8 @@ export class MarkdownContentView implements ContentView {
     if (this.focusPanel === 'select') this.exitSelectMode();
 
     if (recordJump) this.pushJump(relativePath);
-    this.previewHeader.textContent = relativePath;
+    this.shownFile = relativePath;
+    this.renderBreadcrumb();
 
     try {
       const content = await invoke<string>('run_command', {
@@ -501,6 +573,7 @@ export class MarkdownContentView implements ContentView {
       this.sidebar.classList.remove('krypton-md__panel--focused');
       this.previewContent.parentElement?.classList.add('krypton-md__panel--focused');
     }
+    this.breadcrumb.classList.toggle('krypton-md__breadcrumb--focused', panel !== 'sidebar');
   }
 
   // ── Keyboard ──
@@ -839,7 +912,7 @@ export class MarkdownContentView implements ContentView {
     const texts = this.collectSelectedText();
     if (texts.length === 0) return;
 
-    const filePath = this.previewHeader.textContent || 'unknown';
+    const filePath = this.shownFile || 'unknown';
     const range = this.getSelectedLineRange();
     const content = texts.join('\n\n');
 
@@ -862,7 +935,7 @@ export class MarkdownContentView implements ContentView {
 
   /** Copy the active file's relative path to clipboard. */
   private async copyFilePath(): Promise<void> {
-    const file = this.previewHeader.textContent;
+    const file = this.shownFile;
     if (!file) return;
     try {
       await navigator.clipboard.writeText(file);
@@ -1281,7 +1354,7 @@ export class MarkdownContentView implements ContentView {
   }
 
   private getAIContext(): MarkdownViewContext {
-    const currentFile = this.previewHeader.textContent || null;
+    const currentFile = this.shownFile || null;
 
     // Collect selected text if in select mode
     let selectedText: string | null = null;
