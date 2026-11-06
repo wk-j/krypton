@@ -6,6 +6,7 @@ import {
   FIRE_LOOK_LIMITS,
   fireBand,
   fireEmbers,
+  fireLookState,
   resolveFireLooks,
   stepHeat,
   stepLook,
@@ -166,5 +167,26 @@ describe('stepLook', () => {
     expect(live.height).toBeLessThanOrEqual(3);
     expect(live.mid[1]).toBeLessThanOrEqual(0.9);
     expect(live).toEqual(target);
+  });
+});
+
+describe('fireLookState (spec 0365)', () => {
+  const on = (...values: Array<FireState | 'tool_error'>): ReadonlySet<FireState | 'tool_error'> => new Set(values);
+
+  it('burns a Harness tool error with the error look only when on lists tool_error', () => {
+    expect(fireLookState(null, 'tool_error', on('tool_error'))).toBe('error');
+    expect(fireLookState(null, 'tool_error', on('error', 'working'))).toBeNull();
+  });
+
+  it('ranks tool_error as error against the window program state', () => {
+    expect(fireLookState('working', 'tool_error', on('working', 'tool_error'))).toBe('error');
+    expect(fireLookState('done', 'tool_error', on('done', 'tool_error'))).toBe('error');
+    expect(fireLookState('blocked', 'tool_error', on('blocked', 'tool_error'))).toBe('blocked');
+  });
+
+  it('keeps a listed program state burning when the trigger is not listed or absent', () => {
+    expect(fireLookState('working', 'tool_error', on('working'))).toBe('working');
+    expect(fireLookState('working', null, on('working', 'tool_error'))).toBe('working');
+    expect(fireLookState('idle', null, on('working', 'tool_error'))).toBeNull();
   });
 });

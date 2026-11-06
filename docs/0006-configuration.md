@@ -192,14 +192,16 @@ port = 8765                    # Port to listen on (0 = auto-assign;
 [hooks]
 enabled = true                 # Accept hook events on /hook (hot-reloadable)
 
-# --- Program-Status Fire (specs 0362, 0363) ---
+# --- Program-Status Fire (specs 0362, 0363, 0365) ---
 # OSC 7501 states (spec 0284) that set a terminal window on fire: a WebGL2 fire
 # along the bottom of its content, behind the text. Hot-reloadable. Empty = off.
+# "tool_error" also burns an ACP Harness window after a lane's tool call fails,
+# with the [fire.error] look, until you type in that lane (spec 0365).
 # The look keys are optional multipliers (1 = built-in look) and CSS colours;
 # a [fire.<state>] table overrides them for that state only, key by key.
 
 [fire]
-on = []                        # any of: "working", "blocked", "error", "done"
+on = []                        # any of: "working", "blocked", "error", "done", "tool_error"
 # height = 1.0                 # flame height, 0.25–3
 # intensity = 1.0              # brightness, 0.1–2
 # speed = 1.0                  # animation speed, 0.25–4
@@ -1015,7 +1017,7 @@ browser surface and the hurl/termctrl/acp-wire viewers.
 | `[loopback_server]` | `enabled` | bool | `true` | Start the loopback HTTP server: harness memory MCP, `#dashboard`/`#gallery`/`#docs`/`#journal`/`#reviews`/`#analyses`/`#commands`/`#tools`, hurl, termctrl, acp-wire, artifact/doc feedback, and `/hook`. Off = lanes run without `krypton-harness-memory` and no surface opens. Load-time only; restart Krypton after changing it |
 | `[loopback_server]` | `port` | int | `8765` | Port to listen on. `0` = OS auto-assigns. A busy fixed port falls back to an ephemeral one |
 | `[hooks]` | `enabled` | bool | `true` | Accept Claude Code hook events on `POST /hook` (`503` when off). Read per request, so Reload Config applies it. Does **not** control the server |
-| `[fire]` | `on` | string[] | `[]` | OSC 7501 program states (`working`, `blocked`, `error`, `done`) that set a terminal window on fire. The window burns while the status its chrome shows (highest-priority pane) is in the list, so `working` goes out at the next prompt or program exit and `done`/`error` when you type in that pane. Unknown values are ignored with a warning. Hot-reloadable. See doc 0362 |
+| `[fire]` | `on` | string[] | `[]` | OSC 7501 program states (`working`, `blocked`, `error`, `done`) that set a terminal window on fire. The window burns while the status its chrome shows (highest-priority pane) is in the list, so `working` goes out at the next prompt or program exit and `done`/`error` when you type in that pane. `tool_error` burns a window holding an ACP Harness while any lane has a failed top-level tool call (not `canceled`, `!` shell rows or subagent children) that you have not acknowledged by typing while that lane is active; it uses the `error` look and ranks as `error` against the program states. Unknown values are ignored with a warning. Hot-reloadable. See docs 0362, 0365 |
 | `[fire]` | `height` | float | `1.0` | Flame height multiplier, clamped to 0.25–3. Scales the built-in height (22% of the content height, 40–120 px). Hot-reloadable. See doc 0363 |
 | `[fire]` | `intensity` | float | `1.0` | Brightness multiplier, clamped to 0.1–2. Hot-reloadable |
 | `[fire]` | `speed` | float | `1.0` | Animation speed multiplier (flicker, rise and embers together), clamped to 0.25–4. Hot-reloadable |

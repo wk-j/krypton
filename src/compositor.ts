@@ -123,7 +123,7 @@ import type { ClaudeHookManager } from './claude-hooks';
 import type { RemoteHarnessWorkspace } from './acp/remote-harness-picker';
 import { installPerspectiveMouseFix } from './perspective-fix';
 import { HeaderScope } from './header-scope';
-import { FireController } from './fire';
+import { FireController, type FireTrigger } from './fire';
 import { ProgressGauge } from './progress-gauge';
 import {
   PROGRAM_STATUS_QUERY_REPLY,
@@ -1458,9 +1458,11 @@ export class Compositor {
   }
 
   /** Paint the tab dots, window accent and titlebar chip of one window from
-   *  the store. Tabs and the window show their highest-priority pane. */
+   *  the store. Tabs and the window show their highest-priority pane. The fire
+   *  also reads each content view's trigger (spec 365); the chrome does not. */
   private paintProgramStatus(win: KryptonWindow): void {
     let winTop: ProgramStatusSummary | null = null;
+    let fireTrigger: FireTrigger | null = null;
     for (const tab of win.tabs) {
       let tabTop: ProgramStatusSummary | null = null;
       for (const pane of this.collectPanes(tab.paneTree)) {
@@ -1468,6 +1470,7 @@ export class Compositor {
         if (s && (tabTop === null || programStatePriority(s.state) > programStatePriority(tabTop.state))) {
           tabTop = s;
         }
+        fireTrigger ??= pane.contentView?.getFireTrigger?.() ?? null;
       }
       if (tabTop && tabTop.state !== 'idle') tab.element.dataset.programStatus = tabTop.state;
       else delete tab.element.dataset.programStatus;
@@ -1475,7 +1478,7 @@ export class Compositor {
         winTop = tabTop;
       }
     }
-    this.fire.sync(win, winTop?.state ?? null);
+    this.fire.sync(win, winTop?.state ?? null, fireTrigger);
 
     const label = winTop ? programStatusLabel(winTop) : null;
     let chip = win.element.querySelector<HTMLElement>('.krypton-window__program-status');
@@ -3333,6 +3336,11 @@ export class Compositor {
       shaderInstance: null,
       contentView,
       pendingInput: [],
+    };
+    // Spec 365: same window lookup as mountContentPane, for tab moves.
+    contentView.onFireTriggerChange = (): void => {
+      const info = this.findPaneInfoByViewId(pane.viewId);
+      if (info) this.paintProgramStatus(info.win);
     };
 
     const tabId = nextTabId();
@@ -6306,7 +6314,7 @@ export class Compositor {
     // feeds the Wheel rail's activity dot (spec 272).
     contentView.onOutputPump = (chars: number): void => this.pumpWindowActivity(winId, chars);
 
-    return {
+    const pane: Pane = {
       id: paneId,
       viewId: crypto.randomUUID(),
       sessionId: null,
@@ -6317,6 +6325,13 @@ export class Compositor {
       contentView,
       pendingInput: [],
     };
+    // Spec 365: repaint whichever window holds this pane now, so the fire
+    // follows the view across tab moves (a captured winId would go stale).
+    contentView.onFireTriggerChange = (): void => {
+      const info = this.findPaneInfoByViewId(pane.viewId);
+      if (info) this.paintProgramStatus(info.win);
+    };
+    return pane;
   }
 
   /** Open a URL in an in-app webview pane (feature 102). */

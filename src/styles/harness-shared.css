@@ -1143,6 +1143,13 @@
   overflow: hidden;
   background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
 }
+/* Spec 365: the window fire burns along the bottom of the window content,
+   right under this strip. While it is lit (`data-fire-lit`, set by
+   `FireAnimation`), the strip takes the lane body's surface instead of the
+   solid one, so the flames show through as they do behind terminal text. */
+.krypton-window[data-fire-lit] .acp-harness__command-center {
+  background: var(--acp-lane-canvas);
+}
 /* Drop target · `acp-harness-view.ts:6290-6297`. */
 .acp-harness--drag-over {
   outline: 1px dashed var(--acp-lane-accent, rgba(142, 255, 176, 0.6));

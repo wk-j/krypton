@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (350)
+## Specs (351)
 
 | # | Spec |
 |---|------|
@@ -367,6 +367,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 362 | [Program-Status Fire](./0362-program-status-fire.md) |
 | 363 | [Program-Status Fire Look](./0363-program-status-fire-look.md) |
 | 364 | [Hide the Working Progress Ring](./0364-progress-gauge-hide-working.md) |
+| 365 | [Harness Tool-Error Fire](./0365-harness-tool-error-fire.md) |
 
 ## ADRs (29)
 

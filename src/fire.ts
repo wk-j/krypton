@@ -1,8 +1,10 @@
-// Krypton — Program-Status Fire (specs 0362, 0363).
+// Krypton — Program-Status Fire (specs 0362, 0363, 0365).
 //
 // A window burns while its program-status aggregate (OSC 7501, spec 0284) is
-// one of the states listed in `[fire] on`. The compositor calls `sync` from
-// `paintProgramStatus`, so the fire always matches what the window chrome shows.
+// one of the states listed in `[fire] on`, or while a content view in it
+// reports a fire trigger listed there (`tool_error`: an ACP Harness tool call
+// failed, spec 0365). The compositor calls `sync` from `paintProgramStatus`,
+// the only driver, so the fire always matches what the window holds.
 // Each burning window gets a WebGL2 canvas pinned to the bottom of its content
 // area, under the panes. The context is created on the first ignite, the loop
 // stops once the fire is out, and a window that never burns allocates nothing.
@@ -15,13 +17,37 @@
 import type { BackgroundAnimation } from './background-animation';
 import type { FireConfig, FireLookConfig } from './config';
 import { FIRE_EMBER_VEC4S, FIRE_FRAGMENT_SHADER, FIRE_VERTEX_SHADER } from './fire-shader';
-import type { ProgramState } from './program-status';
+import { programStatePriority, type ProgramState } from './program-status';
 import type { KryptonWindow, WindowId } from './types';
 
 export type FireState = 'working' | 'blocked' | 'error' | 'done';
+/** A non-program-status reason to burn, reported by a content view (spec 0365). */
+export type FireTrigger = 'tool_error';
 
 const FIRE_STATE_LIST: readonly FireState[] = ['working', 'blocked', 'error', 'done'];
 const FIRE_STATES: Record<string, true> = { working: true, blocked: true, error: true, done: true };
+
+function isFireState(value: string): value is FireState {
+  return FIRE_STATES[value] === true;
+}
+
+/**
+ * The look a window burns with: its program state when `on` lists it, or
+ * `error` for a listed `tool_error`, whichever ranks higher by program-status
+ * priority. Null when nothing listed in `on` applies.
+ */
+export function fireLookState(
+  state: ProgramState | null,
+  trigger: FireTrigger | null,
+  on: ReadonlySet<FireState | FireTrigger>,
+): FireState | null {
+  let look: FireState | null = state !== null && isFireState(state) && on.has(state) ? state : null;
+  if (trigger === 'tool_error' && on.has('tool_error')
+    && (look === null || programStatePriority('error') > programStatePriority(look))) {
+    look = 'error';
+  }
+  return look;
+}
 
 /** Look constants (rune `FireParams` defaults, Ship-page scale and ember count). */
 export const FIRE = {
@@ -415,7 +441,7 @@ export class FireAnimation implements BackgroundAnimation {
       copyLook(this.live, this.target);
       this.settled = true;
       this.radius = parseFloat(getComputedStyle(this.windowEl).borderTopLeftRadius) || 8;
-      this.canvas.style.display = 'block';
+      this.setShown(true);
       this.resize();
     }
     if (this.reduceMotion.matches) {
@@ -476,6 +502,7 @@ export class FireAnimation implements BackgroundAnimation {
     this.vao = null;
     this.uniforms = null;
     this.canvas.remove();
+    delete this.windowEl.dataset.fireLit;
   }
 
   private initContext(): boolean {
@@ -550,7 +577,15 @@ export class FireAnimation implements BackgroundAnimation {
   private hide(): void {
     this.cancelLoop();
     this.heat = 0;
-    this.canvas.style.display = 'none';
+    this.setShown(false);
+  }
+
+  /** The canvas and the window's `data-fire-lit`, which lets content views
+   *  thin the surfaces that would hide the flames (spec 0365), change together. */
+  private setShown(shown: boolean): void {
+    this.canvas.style.display = shown ? 'block' : 'none';
+    if (shown) this.windowEl.dataset.fireLit = '';
+    else delete this.windowEl.dataset.fireLit;
   }
 
   /** `target` = the current look with its colours resolved through the cascade. */
@@ -642,7 +677,7 @@ export class FireAnimation implements BackgroundAnimation {
     e.preventDefault();
     this.lost = true;
     this.cancelLoop();
-    this.canvas.style.display = 'none';
+    this.setShown(false);
     this.program = null;
     this.vao = null;
     this.uniforms = null;
@@ -651,7 +686,7 @@ export class FireAnimation implements BackgroundAnimation {
   private readonly onContextRestored = (): void => {
     this.lost = false;
     if (this.disposed || !this.initResources() || !this.running) return;
-    this.canvas.style.display = 'block';
+    this.setShown(true);
     this.lastDraw = 0;
     if (this.reduceMotion.matches) this.drawStatic();
     else this.ensureLoop();
@@ -662,7 +697,7 @@ export class FireAnimation implements BackgroundAnimation {
 
 /** Per-window fires, driven by the compositor's program-status paint. */
 export class FireController {
-  private states: ReadonlySet<FireState> = new Set();
+  private on: ReadonlySet<FireState | FireTrigger> = new Set();
   private looks: Record<FireState, FireLook> = {
     working: BUILT_IN_LOOK,
     blocked: BUILT_IN_LOOK,
@@ -674,22 +709,23 @@ export class FireController {
   private readonly warned = new Set<string>();
   private unavailable = false;
 
-  /** `[fire]`: keep known `on` states and resolve every state's look. */
+  /** `[fire]`: keep known `on` values and resolve every state's look. */
   configure(cfg: FireConfig | null | undefined): void {
-    const next = new Set<FireState>();
+    const next = new Set<FireState | FireTrigger>();
     for (const value of cfg?.on ?? []) {
-      if (FIRE_STATES[value] === true) next.add(value as FireState);
-      else this.warnOnce(`[fire] on: unknown program state "${value}" ignored`);
+      if (isFireState(value)) next.add(value);
+      else if (value === 'tool_error') next.add(value);
+      else this.warnOnce(`[fire] on: unknown value "${value}" ignored`);
     }
-    this.states = next;
+    this.on = next;
     this.looks = resolveFireLooks(cfg, this.warnOnce, (value) => CSS.supports('color', value));
   }
 
-  /** Light or put out `win` for its current program-status aggregate. */
-  sync(win: KryptonWindow, state: ProgramState | null): void {
-    const burning = state !== null && this.states.has(state as FireState);
+  /** Light or put out `win` for its program-status aggregate and content-view trigger. */
+  sync(win: KryptonWindow, state: ProgramState | null, trigger: FireTrigger | null): void {
+    const look = fireLookState(state, trigger, this.on);
     let fire = this.fires.get(win.id);
-    if (!burning) {
+    if (look === null) {
       fire?.stop();
       return;
     }
@@ -699,7 +735,7 @@ export class FireController {
       this.fires.set(win.id, fire);
       win.contentElement.insertBefore(fire.getElement(), win.contentElement.firstChild);
     }
-    fire.setLook(this.looks[state as FireState]);
+    fire.setLook(this.looks[look]);
     fire.start();
   }
 

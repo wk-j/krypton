@@ -4,6 +4,7 @@
 > Date: 2026-11-06
 > Milestone: Window chrome — program status presentation (extends [0284](./0284-program-status-osc7501.md))
 > Extended by: [0363](./0363-program-status-fire-look.md) — per-state look keys (`height`, `intensity`, `speed`, colours)
+> Extended by: [0365](./0365-harness-tool-error-fire.md) — `tool_error` in `on`: a failed ACP Harness tool call burns its window
 
 ## Problem
 
@@ -34,7 +35,7 @@ It does not include the fluid simulation, so there is no smoke and no heat haze.
   - `working` and `blocked` are dropped on prompt start (OSC 133 `A`, `:1063`) and on program exit (process poller, 0284).
   - `done` and `error` are dropped when the user types into the pane (`acknowledge`, `:1082`; `program-status.ts:279-281`).
 - `paintProgramStatus` also runs after tab moves, splits and closes (`:1704`; 0284 edge 8).
-- The Quick Terminal and non-terminal views (agent, harness, vault) register no OSC 7501 handler (0284 edge 9), so they never burn.
+- The Quick Terminal and non-terminal views (agent, harness, vault) register no OSC 7501 handler (0284 edge 9), so they never burn. (0365: a Harness can burn through its `tool_error` content-view trigger.)
 
 **Source effect** (rune `8ee30954`, `crates/rune-fx`, MIT, © 2026 Anomaly):
 
@@ -136,7 +137,7 @@ It does not include the fluid simulation, so there is no smoke and no heat haze.
 export type FireState = 'working' | 'blocked' | 'error' | 'done';
 export class FireController {
   configure(on: readonly string[]): void;          // keep known FireState values; warn once per unknown value (0363: takes the whole FireConfig)
-  sync(win: KryptonWindow, state: ProgramState | null): void;
+  sync(win: KryptonWindow, state: ProgramState | null): void; // 0365: adds `trigger: FireTrigger | null` from content views
   resize(): void;                                   // burning windows only
   remove(windowId: WindowId): void;                 // dispose that window's FireAnimation
 }
@@ -278,7 +279,7 @@ None.
 ## Out of Scope
 
 - Any agent-specific trigger. The rest of the Claude Code hook integration (`POST /hook`, badge, tool HUD, uplink bar, activity trace) is unchanged.
-- Windows without OSC 7501: harness lanes, the Agent view and the Quick Terminal. Lanes have their own ACP status.
+- Windows without OSC 7501: harness lanes, the Agent view and the Quick Terminal. Lanes have their own ACP status. (Spec 0365 later added one Harness trigger, a failed tool call, through a content-view hook.)
 - OSC 9;4 progress as a trigger.
 - Smoke, the fluid simulation, heat haze (it needs backdrop sampling, and WebGL cannot read DOM pixels), and WebGPU.
 - Fire outside a window's edges and a worker/`OffscreenCanvas` path. (A different look per state and intensity/size keys were added by spec 0363.)

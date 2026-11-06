@@ -2,6 +2,7 @@
 
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
+import type { FireTrigger } from './fire';
 import type { ShaderInstance } from './shaders';
 import type { UsageProvider } from './usage-store';
 import type { HarnessLaneMark } from './window-footer-lanes';
@@ -308,6 +309,11 @@ export interface ContentView {
   onTitlebarStatusChange?(cb: () => void): () => void;
   /** The badge was clicked while `actionable`. */
   activateTitlebarStatus?(): void;
+  /** spec 365: a reason for this view's window to burn (`[fire] on`); null → none. */
+  getFireTrigger?(): FireTrigger | null;
+  /** Set by the compositor at mount. The view calls it whenever `getFireTrigger()`
+   *  may have changed; the compositor repaints the window that holds it now. */
+  onFireTriggerChange?: (() => void) | null;
   /** Optional staging hook for global screen-capture images. */
   stageCapturedImage?(image: CapturedImage): boolean;
   /** Optional focused-view leader key bindings. Keys must not conflict with global leader keys. */

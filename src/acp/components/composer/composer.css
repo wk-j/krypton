@@ -47,6 +47,18 @@
   .acp-harness__composer--command {
     background: rgba(255, 209, 102, 0.026);
   }
+
+  /* Spec 365: the window fire burns along the bottom edge, under this strip.
+     While it is lit the command centre (harness-shared.css) already carries the
+     lane body's surface, so the composer keeps only its accent tint and the
+     flames show through as they do behind terminal text. */
+  .krypton-window[data-fire-lit] .acp-harness__composer:not(.acp-harness__composer--permission, .acp-harness__composer--command) {
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 5%, transparent),
+      transparent 46%
+    );
+  }
 }
 
 /* Spec 321 — see lane-shell.css: the composer carries its own inline accent. */

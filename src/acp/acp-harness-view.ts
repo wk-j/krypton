@@ -354,6 +354,7 @@ import type {
 } from '../types';
 import { workspaceKey } from '../types';
 import { contentRootIsInFocusedWindow } from '../content-focus';
+import type { FireTrigger } from '../fire';
 import type { PaletteAction, PaletteContext } from '../palette-types';
 import type { ViewBus } from '../view-bus';
 import type { AttentionTier } from '../view-bus-types';
@@ -1231,6 +1232,10 @@ export class AcpHarnessView implements ContentView {
   /** Set by the compositor to drive the window's oscilloscope band. Pumped by any
    *  lane's streamed output — the band reads aggregate window activity. See docs/189. */
   onOutputPump?: (chars: number) => void;
+  /** spec 365: set by the compositor; called when `getFireTrigger()` may have changed. */
+  onFireTriggerChange: (() => void) | null = null;
+  /** spec 365: lanes with a failed top-level tool call the user has not acknowledged. */
+  private readonly toolErrorLanes = new Set<string>();
 
   private projectDir: string | null;
   private readonly workspace: WorkspaceRef;
@@ -4374,6 +4379,9 @@ export class AcpHarnessView implements ContentView {
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
+    // spec 365: typing while a marked lane is active acknowledges its failed
+    // tool call (the terminal `error` rule); the key itself is not consumed.
+    this.clearToolError(this.activeLaneId);
     const dictationChord = (e.code === 'KeyD' || e.key.toLowerCase() === 'd')
       && e.metaKey
       && !e.ctrlKey
@@ -5009,6 +5017,16 @@ export class AcpHarnessView implements ContentView {
     void this.reconnectRemoteHarness();
   }
 
+  /** spec 365: the window burns while any lane has an unacknowledged failed tool call. */
+  getFireTrigger(): FireTrigger | null {
+    return this.toolErrorLanes.size > 0 ? 'tool_error' : null;
+  }
+
+  /** spec 365: drop a lane's failed-tool mark (acknowledged, closed or restarted). */
+  private clearToolError(laneId: string): void {
+    if (this.toolErrorLanes.delete(laneId)) this.onFireTriggerChange?.();
+  }
+
   /** spec 322: open a terminal tab running each pending backend update. */
   private runBackendUpdate(): void {
     if (this.openTerminalTabCb !== null) void runBackendUpdates(this.openTerminalTabCb);
@@ -5031,6 +5049,11 @@ export class AcpHarnessView implements ContentView {
     this.element.removeEventListener('focusout', this.dictationFocusOutHandler);
     this.dictationCtl.abort(false);
     this.liveVoiceCtl.dispose();
+    // spec 365: put out this view's share of the window fire.
+    if (this.toolErrorLanes.size > 0) {
+      this.toolErrorLanes.clear();
+      this.onFireTriggerChange?.();
+    }
     this.assistCtl.dispose(); // spec 306
     this.railsCtl?.dispose(); // spec 337: cancels a run, writes no record
     this.assistantsCtl.dispose();
@@ -11115,6 +11138,7 @@ export class AcpHarnessView implements ContentView {
     this.dropGenUiLane(lane.id);
     if (this.dictationCtl.session?.laneId === lane.id) this.dictationCtl.abort(false);
     this.liveVoiceCtl.onLaneGone(lane); // spec 280
+    this.clearToolError(lane.id); // spec 365
     this.assistCtl.onLaneGone(lane); // spec 306
     lane.spawnEpoch += 1;
     this.publishStream(lane, 'lane_closed', {
@@ -11384,6 +11408,7 @@ export class AcpHarnessView implements ContentView {
     lane.queuedPrompts = []; // spec 136: fresh session — queued prompts were for the old context
     this.steerCtl.resetLane(lane.id); // spec 278
     this.liveVoiceCtl.onLaneGone(lane); // spec 280: the voice session spoke to the old session
+    this.clearToolError(lane.id); // spec 365: the failure belonged to the old session
     this.assistCtl.resetLane(lane.id); // spec 306: suggestions were for the old session
     this.clearPollyBuiltinRole(lane);
     this.clearDebbyBuiltinRole(lane);
@@ -11450,6 +11475,7 @@ export class AcpHarnessView implements ContentView {
     lane.queuedPrompts = []; // spec 136: fresh session — drop queued prompts
     this.steerCtl.resetLane(lane.id); // spec 278
     this.liveVoiceCtl.onLaneGone(lane); // spec 280: the voice session spoke to the old session
+    this.clearToolError(lane.id); // spec 365: the failure belonged to the old session
     this.assistCtl.resetLane(lane.id); // spec 306: suggestions were for the old session
     disposeAllImages(lane.imageState);
     lane.subagentChildren.clear();
@@ -14919,6 +14945,12 @@ export class AcpHarnessView implements ContentView {
     if (justEnded) {
       target.toolEndedAt = performance.now();
       this.scheduleGitBranchRefresh();
+    }
+    // spec 365: a top-level tool call that just ended failed marks its lane
+    // for the window fire until the user acknowledges it in that lane.
+    if (justEnded && status === 'failed' && !this.toolErrorLanes.has(lane.id)) {
+      this.toolErrorLanes.add(lane.id);
+      this.onFireTriggerChange?.();
     }
     const isActive = target.toolStartedAt !== undefined && target.toolEndedAt === undefined;
     if (wasActive !== isActive) {
