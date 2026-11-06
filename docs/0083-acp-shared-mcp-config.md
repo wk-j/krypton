@@ -10,7 +10,7 @@ Krypton's ACP harness runs four lanes (Claude-1, Codex-1, Gemini-1, OpenCode-1) 
 
 ## Solution
 
-Read `.mcp.json` from the harness `projectDir` on the frontend, translate its object-shaped `env`/`headers` into ACP's array-shaped `{name, value}` entries, expand `${VAR}` against the cached login env, and inject the resulting `McpServer[]` into `session/new` for lanes that need the shared project bridge. Claude Code and OMP load root `.mcp.json` natively, Pi has no MCP host, and Junie uses a native `--mcp-location` overlay, so those backends do not receive the bridged project list through `session/new`. Capability-gate `http`/`sse` types against `agentCapabilities.mcpCapabilities` advertised in the `initialize` response and skip incompatible servers per lane. The `krypton-harness-memory` server continues to be appended when the backend can accept it.
+Read `.mcp.json` from the harness `projectDir` on the frontend each time a lane spawns, translate its object-shaped `env`/`headers` into ACP's array-shaped `{name, value}` entries, expand `${VAR}` against the cached login env, and inject the resulting `McpServer[]` into `session/new` for lanes that take MCP servers there. Claude Code and fx load root `.mcp.json` natively, Pi has no MCP host, Junie and Cline receive the bridged list through a native config overlay written at spawn, and Cursor ignores `session/new` MCP servers, so those backends do not receive the bridged project list through `session/new`. OMP is a bridged lane: headless `omp acp` creates its sessions with `enableMCP: false` and never reads `.mcp.json` itself, so its project servers come only from this bridge (spec 122). Capability-gate `http`/`sse` types against `agentCapabilities.mcpCapabilities` advertised in the `initialize` response and skip incompatible servers per lane. The `krypton-harness-memory` server continues to be appended when the backend can accept it.
 
 ## Research
 
@@ -39,7 +39,7 @@ Read `.mcp.json` from the harness `projectDir` on the frontend, translate its ob
 | File | Change |
 |------|--------|
 | `src/acp/mcp-bridge.ts` | NEW — read & translate `.mcp.json` to `AcpMcpServerDescriptor[]`. |
-| `src/acp/acp-harness-view.ts` | Call bridge alongside `memoryServerForLane`; merge & dedupe by `name`; skip the project bridge for `claude`, `pi-acp`, `junie`, and `omp` according to each backend's MCP behavior. |
+| `src/acp/acp-harness-view.ts` | Call bridge alongside `memoryServerForLane`; merge & dedupe by `name`; skip the `session/new` project bridge for `claude`, `pi-acp`, `junie`, `cline`, `cursor`, and `fx` according to each backend's MCP behavior. |
 | `src/types.ts` | Extend `AcpMcpServerDescriptor` only if needed (likely already covers stdio/http/sse). |
 | `src-tauri/src/lib.rs` | Register new command `read_mcp_config_file`. |
 | `src-tauri/src/acp.rs` | Add `read_mcp_config_file(path) -> Result<String, String>` and `acp_get_login_env() -> Result<HashMap<String,String>, String>` (or expose existing cached env). |
@@ -102,7 +102,7 @@ Steps performed:
 1. Resolve path: `${projectDir}/.mcp.json`. Skip if `projectDir` is empty/null.
 2. Invoke `read_mcp_config_file`. Return `[]` on `null` (file missing) or any IO/parse error (log warning).
 3. Parse JSON; reject if `mcpServers` field is missing or not an object.
-4. Lazy-load login env via `acp_login_env` once per harness lifetime.
+4. Lazy-load login env via `acp_login_env` once per webview lifetime (a module-level promise).
 5. For each `(name, server)` pair:
    - Detect type (default `stdio` if `type` absent).
    - For stdio: expand `${VAR}` in `command`, each `args[i]`, and each `env` value.
@@ -111,10 +111,11 @@ Steps performed:
    - Emit stdio descriptors untagged (no `type`); only http/sse carry `type`. That is ACP's `McpServer` schema, and strict agents reject `type: "stdio"` (fx 0.0.16: `-32602 "Unsupported MCP server transport"`).
    - On expansion of an undefined `${VAR}` with no `:-default`: log warning, skip server (do **not** crash whole list).
 6. Return descriptors in source order. Empty array on any fatal error (never throw — bridge must be resilient).
+7. Do not memoize the result. Every call re-reads `.mcp.json`, and every lane spawn makes a call, so a file created or edited after an earlier lane spawned reaches the next lane without restarting Krypton.
 
 ### Capability gating
 
-In `acp-harness-view.ts` `connectLane()`, after `client.initialize()` populates `lane.agentCapabilities`:
+In `acp-harness-view.ts` `mcpServersForLane()`, called from the `initialize` callback after `lane.agentCapabilities` is known:
 
 ```ts
 const projectServers = await loadProjectMcpServers(this.projectDir);
@@ -131,13 +132,16 @@ const merged   = dedupeByName([...filtered, ...memory]);
 
 ### Lane skip
 
-Current skip policy:
+Current skip policy (`mcpServersForLane`):
 
 - `claude` → return `memoryServerForLane(lane)` only; Claude Code's adapter already loads `.mcp.json` natively.
-- `omp` → return `memoryServerForLane(lane)` only; OMP native-loads root `.mcp.json` in ACP mode but still accepts injected harness memory.
-- `pi-acp` → return `[]`; Pi has no MCP host.
-- `junie` → return `[]`; Junie receives memory/project servers through the native `--mcp-location` overlay instead of `session/new`.
+- `pi-acp` → return `[]`; Pi has no MCP host (`memoryServerForLane` is empty for Pi).
+- `junie` → return `[]`; Junie receives memory and capability-gated project servers through the native `--mcp-location` overlay written at spawn instead of `session/new`.
+- `cline` → return `[]`; Cline advertises no `mcpCapabilities` and drops `session/new` MCP servers, so memory and project servers go into a per-lane `cline_mcp_settings.json` (`CLINE_MCP_SETTINGS_PATH`) written at spawn.
+- `cursor` → return `[]`; `cursor-agent` ignores `session/new` MCP servers, so the memory server goes into native `<project>/.cursor/mcp.json` at spawn (spec 113).
 - `fx` → return `memoryServerForLane(lane)` only; fx loads the project `.mcp.json` itself behind its own approval gate (`fx mcp approve`) and rejects relative stdio commands in `session/new` (spec 359).
+
+Every other backend, OMP included, gets the capability-gated project servers plus the memory server. OMP is not skipped: `omp acp` disables its own on-disk MCP discovery in ACP mode and uses only the client's `session/new` list (spec 122).
 
 ### Spawn-time vs initialize-time
 
@@ -167,14 +171,16 @@ Re-inspection of `acp.rs:705-797`: `acp_initialize` does `initialize` then `sess
 ```
 1. User opens ACP harness on project P
 2. For each lane L:
-   2a. acp_spawn(L.backendId, P, [])         # spawn child, empty mcpServers
+   2a. acp_spawn(L.backendId, P, seed)       # seed = memory server; Junie,
+                                              # Cline and Cursor get [] and a
+                                              # native overlay written first
    2b. info ← acp_initialize(L.session)       # JSON-RPC initialize only;
                                               # capabilities cached in client
-   2c. projectServers ← loadProjectMcpServers(P)   # frontend reads .mcp.json
+   2c. projectServers ← loadProjectMcpServers(P)   # re-reads .mcp.json
    2d. gated ← projectServers
               .filter(s => isSupportedByLane(s, L))   # using info.capabilities
    2e. final ← dedupe([...gated, ...memoryServerForLane(L)])
-   2f. if L.backendId is claude/omp/pi-acp/junie:
+   2f. if L.backendId is claude/pi-acp/junie/cline/cursor/fx:
          final ← backend-specific skip policy above
    2g. acp_set_mcp_servers(L.session, final)
    2h. acp_session_new(L.session) → sessionId
@@ -182,7 +188,7 @@ Re-inspection of `acp.rs:705-797`: `acp_initialize` does `initialize` then `sess
    servers and the memory server.
 ```
 
-Steps 2c-2f can be hoisted out of the loop and computed once per harness boot for efficiency (one read of `.mcp.json`, four filter passes). Memoize `loadProjectMcpServers(projectDir)` for the harness lifetime; invalidate on project change.
+`loadProjectMcpServers` is not memoized: each lane spawn reads `.mcp.json` again (Junie and Cline when their overlay is written, every other backend inside the `initialize` callback). An earlier memo keyed by `projectDir` held a missing-file `[]` for the whole webview lifetime, so a `.mcp.json` created after the first lane in that project spawned never reached later lanes until Krypton restarted. The cost is one small file read per lane spawn.
 
 ### Permissions
 
@@ -195,10 +201,11 @@ Servers loaded from `.mcp.json` will trigger `permission_request` events for eac
 - **Server with `${UNDEFINED_VAR}`** and no `:-default`: log warning, skip that server, keep the rest.
 - **Server name collides between `.mcp.json` and `memoryServerForLane`**: dedupe keeps the bridge entry — but we control the memory name (`krypton-harness-memory`), so this is unlikely; document the reservation.
 - **Same name appears twice in `.mcp.json`** (only possible if it's an array, but it's keyed object): JSON object semantics — last wins; nothing for us to do.
-- **Project-dir change at runtime**: harness re-spawns lanes (existing behaviour); cache key is `projectDir` so new dir → fresh read.
+- **Project-dir change at runtime**: harness re-spawns lanes (existing behaviour); each spawn reads the new dir's `.mcp.json`.
+- **`.mcp.json` created or edited while lanes run**: running lanes keep the servers they got at spawn; the next lane spawn or respawn reads the new file.
 - **Claude lane on a project with `.mcp.json` AND user also lists same server in `~/.gemini/settings.json`**: Gemini lane will see duplicate via native + ACP injection. Mitigation: documentation note "if you bridge via `.mcp.json`, remove from per-agent native configs". Detecting this from outside is impractical.
 - **HTTP/SSE server, lane doesn't advertise the capability**: skip with one-line log; no error toast (would be noisy when 3 of 4 lanes silently filter).
-- **Lane respawn from harness (`#new!`)**: re-runs the same pipeline — no extra plumbing.
+- **Lane respawn from harness (`#new!`)**: re-runs the same pipeline, including a fresh read of `.mcp.json` — no extra plumbing.
 
 ## Open Questions
 

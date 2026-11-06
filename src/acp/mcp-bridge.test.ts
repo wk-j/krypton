@@ -1,12 +1,42 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   dedupeByName,
+  loadProjectMcpServers,
   toClaudeMcpFile,
   toClineMcpFile,
   type ClaudeMcpFile,
 } from './mcp-bridge';
 import type { AcpMcpServerDescriptor } from './types';
+
+const mcpFile = vi.hoisted(() => ({ content: null as string | null }));
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(async (cmd: string) => {
+    if (cmd === 'read_mcp_config_file') return mcpFile.content;
+    if (cmd === 'acp_login_env') return {};
+    throw new Error(`unexpected invoke: ${cmd}`);
+  }),
+}));
+
+describe('loadProjectMcpServers', () => {
+  it('re-reads .mcp.json on every call, so a file created or edited after an earlier lane spawn reaches the next lane', async () => {
+    const dir = '/repo/created-late';
+    mcpFile.content = null;
+    expect(await loadProjectMcpServers(dir)).toEqual([]);
+
+    mcpFile.content = JSON.stringify({ mcpServers: { db: { command: 'yaam', args: ['mcp', 'a'] } } });
+    expect((await loadProjectMcpServers(dir)).map((s) => s.name)).toEqual(['db']);
+
+    mcpFile.content = JSON.stringify({
+      mcpServers: {
+        db: { command: 'yaam', args: ['mcp', 'a'] },
+        other: { command: 'yaam', args: ['mcp', 'b'] },
+      },
+    });
+    expect((await loadProjectMcpServers(dir)).map((s) => s.name)).toEqual(['db', 'other']);
+  });
+});
 
 describe('toClaudeMcpFile', () => {
   it('round-trips stdio servers to object env shape', () => {

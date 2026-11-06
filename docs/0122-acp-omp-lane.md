@@ -10,7 +10,7 @@ Krypton's ACP harness runs Codex, Claude, Gemini, OpenCode, Pi (`pi-acp`), Droid
 
 ## Solution
 
-Add Oh My Pi as a built-in ACP backend using OMP's **native** ACP mode: `omp acp`. OMP is a regular ACP lane like Codex/Cursor/Junie for process lifecycle, prompt streaming, peering, memory, and permission UI. OMP accepts `session/new mcpServers` but also native-loads project root `.mcp.json`, so Krypton must skip the project `.mcp.json` bridge for OMP while still injecting the per-lane `krypton-harness-memory` MCP server. OMP routes destructive tools through `session/request_permission` under Krypton's advertised capabilities, so no OMP warning chip is required in v1. Lanes should be labeled `OMP-1`, `OMP-2`, … (not `Oh My Pi-1`).
+Add Oh My Pi as a built-in ACP backend using OMP's **native** ACP mode: `omp acp`. OMP is a regular ACP lane like Codex/Cursor/Junie for process lifecycle, prompt streaming, peering, memory, and permission UI. Headless `omp acp` creates its sessions with `enableMCP: false` and does not read project root `.mcp.json` itself; it uses only the servers in `session/new mcpServers`. Krypton therefore forwards project `.mcp.json` servers through the spec-83 bridge, merged with the per-lane `krypton-harness-memory` MCP server. OMP routes destructive tools through `session/request_permission` under Krypton's advertised capabilities, so no OMP warning chip is required in v1. Lanes should be labeled `OMP-1`, `OMP-2`, … (not `Oh My Pi-1`).
 
 Use `Oh My Pi` only when referring to the upstream project/product in prose. Krypton identifiers use `omp` for the backend id and `OMP` for picker labels, lane labels, accent matching, config keys, and docs examples.
 
@@ -141,7 +141,7 @@ Suggested hint copy:
 - **OAuth/auth-broker needs TTY** → `initialize` may block or fail; startup hint recommends running `omp` once outside Krypton.
 - **User expects `omp-acp` npm package** → not used; document that Krypton calls native `omp acp`.
 - **Coexistence with `pi-acp` lane** → both appear in picker; distinct config dirs and capabilities.
-- **Native MCP + bridge duplication** → handled by skipping Krypton's project `.mcp.json` bridge for OMP while still injecting `krypton-harness-memory`.
+- **Native MCP + bridge duplication** → does not occur: `omp acp` skips its own on-disk MCP discovery, so the bridged project servers are the only copy. Krypton forwards them together with `krypton-harness-memory`.
 
 ## Out of Scope
 

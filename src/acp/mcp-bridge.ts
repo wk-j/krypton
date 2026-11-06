@@ -63,7 +63,6 @@ export interface ClineMcpFile {
 export const JUNIE_MCP_CAPABILITIES: AcpMcpCapabilities = { http: true, sse: true };
 
 let loginEnvPromise: Promise<Record<string, string>> | null = null;
-const projectCache = new Map<string, AcpMcpServerDescriptor[]>();
 
 interface RemoteRunResult {
   success: boolean;
@@ -238,16 +237,14 @@ function translate(
 
 /** Read & translate `<projectDir>/.mcp.json` into ACP `McpServer[]` form.
  *  Returns `[]` if the file is missing, malformed, or unreadable — the bridge
- *  is best-effort and never throws. Memoized per `projectDir` for the harness
- *  lifetime; call `invalidateMcpBridgeCache(projectDir?)` on project change. */
+ *  is best-effort and never throws. Not memoized: every lane spawn re-reads
+ *  the file, so a `.mcp.json` created or edited after an earlier lane spawned
+ *  reaches the next lane without restarting Krypton. */
 export async function loadProjectMcpServers(
   projectDir: string | null | undefined,
   remoteRuntimeId?: string | null,
 ): Promise<AcpMcpServerDescriptor[]> {
   if (!projectDir) return [];
-  const cacheKey = `${remoteRuntimeId ?? 'local'}:${projectDir}`;
-  const cached = projectCache.get(cacheKey);
-  if (cached) return cached;
 
   const path = `${projectDir.replace(/\/$/, '')}/.mcp.json`;
   let raw: string | null;
@@ -264,27 +261,19 @@ export async function loadProjectMcpServers(
     }
   } catch (e) {
     console.warn(`[mcp-bridge] read failed: ${String(e)}`);
-    projectCache.set(cacheKey, []);
     return [];
   }
-  if (!raw) {
-    projectCache.set(cacheKey, []);
-    return [];
-  }
+  if (!raw) return [];
 
   let parsed: ClaudeMcpFile;
   try {
     parsed = JSON.parse(raw) as ClaudeMcpFile;
   } catch (e) {
     console.warn(`[mcp-bridge] ${path}: invalid JSON: ${String(e)}`);
-    projectCache.set(cacheKey, []);
     return [];
   }
   const servers = parsed?.mcpServers;
-  if (!servers || typeof servers !== 'object') {
-    projectCache.set(cacheKey, []);
-    return [];
-  }
+  if (!servers || typeof servers !== 'object') return [];
 
   const env = remoteRuntimeId
     ? await loadReferencedRemoteEnv(remoteRuntimeId, projectDir, raw)
@@ -295,18 +284,7 @@ export async function loadProjectMcpServers(
     const descriptor = translate(name, server as ClaudeMcpServer, env);
     if (descriptor) result.push(descriptor);
   }
-  projectCache.set(cacheKey, result);
   return result;
-}
-
-export function invalidateMcpBridgeCache(projectDir?: string): void {
-  if (!projectDir) {
-    projectCache.clear();
-    return;
-  }
-  for (const key of projectCache.keys()) {
-    if (key.endsWith(`:${projectDir}`)) projectCache.delete(key);
-  }
 }
 
 /** Filter http/sse servers that the agent did not advertise support for.
