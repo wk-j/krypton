@@ -365,7 +365,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 360 | [Which-Key Icons](./0360-which-key-icons.md) |
 | 361 | [Loopback App on React](./0361-loopback-app-react.md) |
 
-## ADRs (28)
+## ADRs (29)
 
 | # | Decision |
 |---|----------|
@@ -397,6 +397,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 26 | [The loopback app shell holds a session capability in localStorage](./adr/0026-loopback-app-session-capability-in-local-storage.md) |
 | 27 | [No surface marks state with a left-edge accent rail](./adr/0027-no-left-edge-accent-rails.md) |
 | 28 | [The loopback app is written in React; the Tauri app frontend stays framework-free](./adr/0028-loopback-app-uses-react.md) |
+| 29 | [Rails scans a changed lockfile whole for known vulnerabilities](./adr/0029-rails-scans-changed-lockfiles-for-known-vulnerabilities.md) |
 
 ## Also
 
