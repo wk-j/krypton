@@ -9,8 +9,10 @@
 //!     webview as `live-voice-event`.
 //!
 //! One call exists app-wide. A new `live_voice_signal` supersedes the previous
-//! call (webview reloads) and bumps the generation; every other command checks
-//! the generation, so a stale frontend can never touch a newer session.
+//! call and bumps the generation; the old generation gets `live-voice-closed`
+//! (`superseded`) so a page still holding its media releases it (after a
+//! webview reload nobody listens for it). Every other command checks the
+//! generation, so a stale frontend can never touch a newer session.
 //!
 //! The access token is read from `<codex_home>/auth.json` (Codex CLI owns
 //! refresh; this module never refreshes or writes it). It never crosses IPC
@@ -68,6 +70,7 @@ const ERR_STALE_GENERATION: &str = "stale-generation";
 const ERR_SIDEBAND_NOT_OPEN: &str = "sideband-not-open";
 const ERR_SIDEBAND_ALREADY_OPEN: &str = "sideband-already-open";
 const ERR_SIDEBAND_FAILED: &str = "sideband-failed";
+const ERR_SUPERSEDED: &str = "superseded";
 
 const HEADER_OPENAI_ALPHA: &str = "openai-alpha";
 const HEADER_X_SESSION_ID: &str = "x-session-id";
@@ -121,14 +124,32 @@ struct LiveCall {
 }
 
 impl LiveCall {
-    /// Silent teardown (close or supersede): no `live-voice-closed` is emitted.
-    /// Dropping the sender makes the task send a close frame and exit; the
-    /// task is aborted if it has not finished within the grace period.
+    /// Silent teardown: no `live-voice-closed` is emitted. Dropping the sender
+    /// makes the task send a close frame and exit; the task is aborted if it
+    /// has not finished within the grace period.
     fn teardown(self) {
         if let Sideband::Open { tx, task } = self.sideband {
             drop(tx);
             reap_sideband_task(task);
         }
+    }
+
+    /// Replaced by generation `next`. Closing only the sideband leaves the
+    /// WebRTC media in the old page connected, so the page that owns this
+    /// generation is told to stop before the socket goes.
+    fn supersede(self, app: &AppHandle, next: u64) {
+        log::info!(
+            "live voice call superseded (generation {} -> {next})",
+            self.generation
+        );
+        app.emit_or_log(
+            EVENT_CLOSED,
+            LiveVoiceClosed {
+                generation: self.generation,
+                error: Some(ERR_SUPERSEDED.to_string()),
+            },
+        );
+        self.teardown();
     }
 }
 
@@ -476,17 +497,14 @@ async fn run_sideband(
 #[tauri::command]
 pub async fn live_voice_signal(
     state: State<'_, LiveVoiceState>,
+    app: AppHandle,
     offer_sdp: String,
     instructions: String,
     voice: String,
 ) -> Result<LiveSignal, String> {
     let generation = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
     if let Some(previous) = state.inner.lock().await.take() {
-        log::info!(
-            "live voice call superseded (generation {} -> {generation})",
-            previous.generation
-        );
-        previous.teardown();
+        previous.supersede(&app, generation);
     }
 
     let access = load_access().await?;
@@ -499,7 +517,7 @@ pub async fn live_voice_signal(
         return Err(ERR_STALE_GENERATION.to_string());
     }
     if let Some(previous) = guard.take() {
-        previous.teardown();
+        previous.supersede(&app, generation);
     }
     log::info!("live voice call signaled (generation {generation}, {call_id})");
     *guard = Some(LiveCall {

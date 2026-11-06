@@ -93,6 +93,12 @@ const LIVE_KEYS = {
 } as const;
 
 export class HarnessLiveVoiceController {
+  /**
+   * The controller holding the one live session of this webview. Every
+   * Harness view has its own controller and Rust keeps one call app-wide, so
+   * the "already active" check must look here, not at `this.session`.
+   */
+  private static owner: HarnessLiveVoiceController | null = null;
   private session: LiveSession | null = null;
   private endNote: { laneId: string; text: string; error: boolean; until: number } | null = null;
   private readonly levelBuffer = new Float32Array(1024);
@@ -120,9 +126,13 @@ export class HarnessLiveVoiceController {
     await this.start(lane, command.voice);
   }
 
-  /** Only the focused Harness routes presses here; release is captured globally. */
+  /**
+   * Only the focused Harness routes presses here, and only the lane showing the
+   * live strip opens the microphone; release is captured globally.
+   */
   handleKeyDown(event: KeyboardEvent): boolean {
-    if (!this.session || event.code !== 'AltLeft') return false;
+    const s = this.session;
+    if (!s || event.code !== 'AltLeft' || this.host.activeLaneId !== s.laneId) return false;
     if (!event.repeat && !this.talkHeld) {
       this.talkHeld = true;
       if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !document.hidden) {
@@ -174,8 +184,10 @@ export class HarnessLiveVoiceController {
   }
 
   async start(lane: HarnessLane, voice: string): Promise<void> {
-    if (this.session) {
-      const bound = this.host.lanes.find((l) => l.id === this.session?.laneId);
+    const owner = HarnessLiveVoiceController.owner;
+    if (owner?.session) {
+      const boundId = owner.session.laneId;
+      const bound = owner.host.lanes.find((l) => l.id === boundId);
       this.host.flashChip(`live already active on ${bound?.displayName ?? 'another lane'}`);
       return;
     }
@@ -215,6 +227,7 @@ export class HarnessLiveVoiceController {
       sendChain: Promise.resolve(),
     };
     this.session = s;
+    HarnessLiveVoiceController.owner = this;
     this.talkHeld = false;
     this.bindTalkRelease(s);
     this.endNote = null;
@@ -428,6 +441,7 @@ export class HarnessLiveVoiceController {
     this.setMuted(true);
     this.talkHeld = false;
     this.session = null;
+    if (HarnessLiveVoiceController.owner === this) HarnessLiveVoiceController.owner = null;
     if (s.levelTimer !== null) window.clearInterval(s.levelTimer);
     for (const unlisten of s.unlisten) unlisten();
     const generation = s.generation;

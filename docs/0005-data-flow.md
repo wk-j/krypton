@@ -467,14 +467,20 @@ d. The loop stops once the grip, the mouse and the button fades settle
       so turn-end cleanup never hits the newer turn and no peer-mail or queue
       drain can send a colliding session/prompt.
    c. Live voice (Specs 280, 314): `#live [voice]` or Cmd+Shift+L on a lane.
-      1. HarnessLiveVoiceController starts muted and installs release/safety
-         listeners before awaiting getUserMedia (echo cancellation). Set
-         track.enabled = !session.muted before attaching capture tracks to
-         RTCPeerConnection; startup tracks are disabled unless a valid hold
-         began while capture was pending. Create `oai-events` channel → offer.
-      2. invoke live_voice_signal(offerSdp, instructions, voice): Rust reads
-         ~/.codex/auth.json, POSTs the offer with Codex Desktop headers, keeps
-         the token, returns {generation, answerSdp, callId}.
+      1. If any Harness view's controller already owns a session (one owner
+         shared by all controllers), flash `live already active on <lane>`
+         and stop here. Otherwise HarnessLiveVoiceController starts muted and
+         installs release/safety listeners before awaiting getUserMedia (echo
+         cancellation). Set track.enabled = !session.muted before attaching
+         capture tracks to RTCPeerConnection; startup tracks are disabled
+         unless a valid hold began while capture was pending. Create
+         `oai-events` channel → offer.
+      2. invoke live_voice_signal(offerSdp, instructions, voice): Rust emits
+         `live-voice-closed` {generation: <old>, error: "superseded"} for a
+         call still in the slot (its page stops and releases mic, peer, and
+         playback), reads ~/.codex/auth.json, POSTs the offer with Codex
+         Desktop headers, keeps the token, returns {generation, answerSdp,
+         callId}.
       3. setRemoteDescription(answer) → data channel open →
          invoke live_voice_open_sideband(generation). Rust forwards each
          sideband text frame as `live-voice-event` {generation, payload};
@@ -493,7 +499,8 @@ d. The loop stops once the grip, the mouse and the button fades settle
          `"Agent Final Message"` (or `"Agent Turn Cancelled"`) — all via
          live_voice_send, serialized per session — and the model speaks it.
          Bare Left Option (AltLeft) held in the focused Harness opens the
-         microphone; release closes it immediately. Any other key cancels
+         microphone only while the bound lane is active (the lane showing the
+         live strip); release closes it immediately. Any other key cancels
          the hold until Left Option is released. Right Option is untouched.
          Blur, document hidden, or focus leaving Harness mutes without
          ending playback, delegation, or the session; refocus requires a

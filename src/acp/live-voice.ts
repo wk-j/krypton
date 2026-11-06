@@ -285,6 +285,7 @@ export function liveErrorMessage(raw: string): string {
     return `live signaling failed (${status})${body.length ? `: ${body.join(':')}` : ''}`;
   }
   if (raw === 'signaling-network') return 'live signaling: network error';
+  if (raw === 'superseded') return 'live replaced by a newer session';
   if (raw.startsWith('sideband-closed:')) return `live connection closed (${raw.slice('sideband-closed:'.length)})`;
   if (raw.startsWith('sideband')) return 'live connection lost';
   return raw;

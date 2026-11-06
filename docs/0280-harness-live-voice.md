@@ -132,9 +132,17 @@ struct LiveCall { generation: u64, access: CodexAccess, realtime_session_id: Str
 //        "live-voice-closed" { generation, error: Option<String> }
 ```
 
-- `signal` **supersedes** any existing call: it tears the old call down silently and bumps the
-  generation, so a reloaded webview never finds the slot stuck. "Already active" is enforced by the
-  frontend controller. It reads `auth.json` and fails with
+- `signal` **supersedes** any existing call: it emits `live-voice-closed`
+  `{ generation: <old>, error: "superseded" }`, tears the old call down, and bumps the generation,
+  so a reloaded webview never finds the slot stuck. Closing only the sideband would leave a page that
+  still runs with its peer connection, microphone and playback attached to a call nothing can stop;
+  the event makes that page's controller stop and release them (`live replaced by a newer session`).
+  After a webview reload nobody listens for it. "Already active" is enforced by the frontend: each
+  Harness view has its own `HarnessLiveVoiceController`, so they share one owner
+  (`HarnessLiveVoiceController.owner`) and a second Harness view cannot start a call while another
+  one runs. Before 2026-11-06 the check read only the controller's own session, so a second Harness
+  silently superseded the first and left its call connected (user report: the voice answered room
+  sound after `#live` had been stopped). `signal` reads `auth.json` and fails with
   `codex-not-connected` if the file is missing, or `codex-token-expired` if JWT `exp` has passed.
   It never refreshes or writes the file. It POSTs with the OMP headers above, **without**
   `x-oai-attestation`, matching OMP's path on non-darwin-arm64.
@@ -233,8 +241,8 @@ every delegation reaches the lane.
 
 | Key | Context | Action |
 |-----|---------|--------|
-| `Cmd+Shift+L` | Harness focused | Start live on the active lane / stop the running session |
-| Hold bare `Left Option` | Live session in focused Harness | Talk while held; Right Option is untouched |
+| `Cmd+Shift+L` | Harness focused | Start live on the active lane / stop this Harness's running session; while another Harness owns the session, flash `live already active on <lane>` |
+| Hold bare `Left Option` | Live session in focused Harness, bound lane active | Talk while held; Right Option is untouched |
 | Release `Left Option` | Live session | Mute without stopping playback or the session |
 | `#live [voice]`, `#live stop` | Harness composer | Start or stop the session |
 
@@ -257,7 +265,10 @@ request by voice, so hiding the strip there removed the only live readout at the
 
 ## Edge Cases
 
-- **Second `#live` anywhere:** flash `live already active on <lane>`. One session app-wide.
+- **Second `#live` anywhere:** flash `live already active on <lane>`. One session app-wide, across
+  every Harness view; the shared controller owner names the bound lane.
+- **Call superseded while its page still runs:** the controller receives `live-voice-closed`
+  (`superseded`), stops, and releases the microphone, peer connection, and playback.
 - **Mic denied / `mediaDevices` missing:** flash the reason; no signaling call is made.
 - **401/403 from signaling:** `codex auth rejected — run codex once to refresh`.
   **Other non-2xx:** show the bounded body.
@@ -313,6 +324,17 @@ request by voice, so hiding the strip there removed the only live readout at the
   whether playback continues while Krypton is not frontmost. A second dev instance next to the
   installed app raised a keychain prompt, so the GUI smoke run was stopped. These historical
   observations do not verify spec 314's microphone gate.
+
+### Revision Results (2026-11-06)
+
+- Before: `Krypton.log` showed `superseded (generation 2 -> 3)` with no `WebContent reload` in between,
+  and generation 2 never logged `closed`; a second Harness had started a call while the first kept
+  its peer, microphone, and playback.
+- After: one owner shared by every controller refuses the second Harness (`live already active on
+  <lane>`, no `live_voice_signal`), and a `superseded` close makes the old controller stop and release
+  its media. Covered by controller tests and a two-`AcpHarnessView` smoke with a fake Rust slot;
+  details in [spec 314](./0314-harness-live-push-to-talk.md#bound-lane-gate-results-2026-11-06).
+  The Rust emit is verified by build, clippy, and unit tests only, not in the running app.
 
 ## Out of Scope
 

@@ -13,7 +13,7 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) })
 
 const controllers: HarnessLiveVoiceController[] = [];
 
-function setup() {
+function setup(laneName = 'OMP-2') {
   const track = { enabled: true, stop: vi.fn() };
   const stream = {
     getAudioTracks: () => [track],
@@ -40,42 +40,48 @@ function setup() {
     }
     createMediaStreamSource(): { connect(): void } { return { connect: () => {} }; }
   });
-  const lane = { id: 'lane-1', displayName: 'OMP-2', client: {}, status: 'idle' } as HarnessLane;
+  const lane = { id: `lane-${laneName}`, displayName: laneName, client: {}, status: 'idle' } as HarnessLane;
+  const other = { id: `other-${laneName}`, displayName: `${laneName}-other`, client: {}, status: 'idle' } as HarnessLane;
+  let activeLaneId = lane.id;
   const element = document.createElement('div');
   const composerEl = document.createElement('div');
   element.appendChild(composerEl);
   document.body.appendChild(element);
+  const flashChip = vi.fn();
   const host: HarnessLiveVoiceHost = {
     element,
     composerEl,
-    lanes: [lane],
-    activeLaneId: lane.id,
-    flashChip: vi.fn(),
+    lanes: [lane, other],
+    get activeLaneId() { return activeLaneId; },
+    flashChip,
     invalidate: vi.fn(),
     deliverLivePrompt: async () => 'started',
   };
   const ctl = new HarnessLiveVoiceController(host);
   controllers.push(ctl);
+  const show = (laneId: string): void => { activeLaneId = laneId; };
   const start = (): Promise<void> => ctl.start(lane, 'sol');
+  /** Delivers a Rust event to the newest listener, i.e. this controller's session. */
+  const rustEvent = (name: string, payload: unknown): void => {
+    const calls = vi.mocked(listen).mock.calls.filter(([n]) => n === name);
+    const handler = calls[calls.length - 1]?.[1];
+    handler?.({ event: name, id: 1, payload });
+  };
   const connect = async (): Promise<void> => {
     const pending = start();
     resolveCapture(stream);
     await pending;
-    const handler = vi.mocked(listen).mock.calls.find(([name]) => name === 'live-voice-event')?.[1];
-    handler?.({
-      event: 'live-voice-event', id: 1,
-      payload: { generation: 7, payload: JSON.stringify({ type: 'session.started' }) },
-    });
+    rustEvent('live-voice-event', { generation: 7, payload: JSON.stringify({ type: 'session.started' }) });
   };
-  const press = (init: KeyboardEventInit = {}): void => {
+  const press = (init: KeyboardEventInit = {}): boolean => {
     const event = new KeyboardEvent('keydown', { code: 'AltLeft', key: 'Alt', altKey: true, ...init });
     window.dispatchEvent(event);
-    ctl.handleKeyDown(event);
+    return ctl.handleKeyDown(event);
   };
   const release = (init: KeyboardEventInit = {}): void => {
     window.dispatchEvent(new KeyboardEvent('keyup', { code: 'AltLeft', key: 'Alt', ...init }));
   };
-  return { ctl, lane, element, track, stream, attached, close, resolveCapture, start, connect, press, release };
+  return { ctl, lane, other, show, flashChip, element, track, stream, attached, close, resolveCapture, start, connect, press, release, rustEvent };
 }
 
 beforeEach(() => {
@@ -211,5 +217,44 @@ describe('live microphone hold-to-talk', () => {
     expect(next.track.enabled).toBe(true);
     next.release();
     expect(next.track.enabled).toBe(false);
+  });
+
+  it('opens the microphone only while the bound lane is on screen', async () => {
+    const h = setup();
+    await h.connect();
+    h.show(h.other.id);
+    expect(h.press()).toBe(false);
+    expect(h.track.enabled).toBe(false);
+    h.release();
+    h.show(h.lane.id);
+    expect(h.press()).toBe(true);
+    expect(h.track.enabled).toBe(true);
+  });
+});
+
+describe('one live session per app', () => {
+  it('refuses a session from another Harness view until the first one ends', async () => {
+    const first = setup('OMP-1');
+    await first.connect();
+    const second = setup('OMP-2');
+    await second.start();
+    expect(second.flashChip).toHaveBeenCalledWith(expect.stringContaining('OMP-1'));
+    expect(second.ctl.laneId).toBeNull();
+    expect(vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === 'live_voice_signal')).toHaveLength(1);
+
+    first.ctl.stop('stopped');
+    await second.connect();
+    expect(second.ctl.laneId).toBe(second.lane.id);
+  });
+
+  it('releases the microphone and peer when Rust reports the call superseded', async () => {
+    const h = setup();
+    await h.connect();
+    h.press();
+    h.rustEvent('live-voice-closed', { generation: 7, error: 'superseded' });
+    expect(h.ctl.laneId).toBeNull();
+    expect(h.track.enabled).toBe(false);
+    expect(h.track.stop).toHaveBeenCalled();
+    expect(h.close).toHaveBeenCalled();
   });
 });

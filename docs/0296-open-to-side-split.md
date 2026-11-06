@@ -204,7 +204,7 @@ None. The keyboard step reuses `[workspaces] resize_step`.
 - **WebContent reload**: side markdown panes return as recovery notices, as whole-tab views do today. Helix PTYs reattach. `sidePaneIds` starts empty after restore.
 - **Wheel layout** reads `ratio` (`toWheelPaneNode`), so resized splits render proportionally there with no change.
 - **Caps Lock on in Resize mode**: the split branch requires `e.shiftKey`, so `h/j/k/l` with Caps Lock resize the window (lower-cased key), never the split.
-- **`#live` session and Alt+click**: Left Option is hold-to-talk, so holding it for Alt+click unmutes the mic for the length of the press. Right Option avoids it. Accepted; not special-cased.
+- **`#live` session and Alt+click**: on the lane bound to `#live`, Left Option is hold-to-talk, so holding it for Alt+click unmutes the mic for the length of the press (other lanes leave the mic closed, spec 314). Right Option avoids it. Accepted; not special-cased.
 - **Non-US layouts**: letters match the lower-cased `e.key`, as compositor mode does (the typed letter, not the physical key); `=` matches `e.key` with Shift ignored.
 - **T-junction of dividers**: where a nested split's divider meets its parent's, the two 7px hit areas overlap and the nested divider (later in the DOM) takes the press. Grab the parent divider away from the junction.
 
