@@ -209,7 +209,7 @@ impl Drop for InstanceRequest<'_> {
 }
 
 pub(crate) fn resolve_kryptonctl_path(app: &AppHandle) -> Option<PathBuf> {
-    if let Ok(resources) = app.path().resource_dir() {
+    if let Ok(resources) = crate::util::resource_dir::resource_dir(app) {
         if let Ok(targets) = std::fs::read_dir(resources.join("remote-binaries")) {
             for target in targets.flatten() {
                 if !target

@@ -874,7 +874,7 @@ async fn cache_downloaded_runtime(
 }
 
 async fn resolve_local_runtime(app: &AppHandle, target: &str) -> Result<Vec<u8>, String> {
-    if let Ok(resource_dir) = app.path().resource_dir() {
+    if let Ok(resource_dir) = crate::util::resource_dir::resource_dir(app) {
         let bundled = resource_dir
             .join("remote-binaries")
             .join(target)

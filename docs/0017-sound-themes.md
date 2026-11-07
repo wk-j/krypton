@@ -196,7 +196,7 @@ On `AudioMsg::LoadPack`, the audio thread:
 2. Reads each of the 17 WAV files from `<resource_dir>/sounds/<pack>/<NAME>.wav`
 3. Stores raw bytes as `Vec<u8>` in `HashMap<String, Vec<u8>>`
 
-WAV files are bundled as Tauri resources (declared in `tauri.conf.json` under `bundle.resources`). At runtime, resolved via `app.path().resource_dir()`.
+WAV files are bundled as Tauri resources (declared in `tauri.conf.json` under `bundle.resources`). At runtime, resolved via `util::resource_dir::resource_dir(app)`, which also covers dev builds under a custom `CARGO_TARGET_DIR` (see `docs/0004-architecture.md`).
 
 ### Pack Switching
 

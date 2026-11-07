@@ -826,6 +826,14 @@ Symptoms that point at this bug recurring:
 - Shell complains `Unknown command: '[…][app_lib::…][…]'` or `Unsupported use of '='`
 - Only the first one or two panes after launch are affected — once a master grabs fds 0/1/2, later `openpty()` calls land on fd ≥ 3
 
+### Custom `CARGO_TARGET_DIR` Breaks Dev Resource Lookup (Platform Gotcha)
+
+> Implemented: 2026-11-07
+
+In a dev build, Tauri (`tauri-utils` `platform::resource_dir_from`) uses the executable's directory as the resource directory only when a parent folder is literally named `target`. With `CARGO_TARGET_DIR=~/.cargo-target` the executable is `~/.cargo-target/debug/app`, so the check fails, macOS falls through to `<exe_dir>/../Resources`, and `app.path().resource_dir()` returns `UnknownPath`. The sound-engine init then panics with `failed to resolve resource directory`, even though tauri-build copied `sounds/` and `remote-binaries/` beside the executable.
+
+**Fix:** every lookup goes through `util::resource_dir::resource_dir(app)`. It tries Tauri's resolver first, then falls back to the executable's directory when that directory holds `.cargo-lock` (the same Cargo-output test Tauri applies). A bundled `.app` never has `.cargo-lock` beside its executable. Do not call `app.path().resource_dir()` directly. `scripts/stage-remote-runtime.sh` and the `Makefile` read the target directory from `cargo metadata` for the same reason.
+
 ### WebKit Shapes Each Text Node Alone (Platform Gotcha)
 
 WKWebView shapes every DOM `Text` node on its own. If a combining mark starts a new `Text` node, it loses its base letter: Thai tone marks and vowels (`่ ั ิ`) drift right and leave gaps (`ที่อนุมัติ` → `ที ่อนุมัต ิ`).

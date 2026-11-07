@@ -510,9 +510,7 @@ pub fn run() {
 
             // Initialize sound engine with resource path and config
             {
-                let resource_dir = app
-                    .path()
-                    .resource_dir()
+                let resource_dir = util::resource_dir::resource_dir(app.handle())
                     .expect("failed to resolve resource directory");
                 let sound_config = krypton_config.read().ok().map(|cfg| cfg.sound.clone());
                 let sound_state = app.state::<sound::SoundEngineState>();
