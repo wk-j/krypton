@@ -207,6 +207,7 @@ describe('ruleStatuses', () => {
       ],
       checks: [check('arch', 'pass'), check('tests', 'timeout')],
       judged: true,
+      manualChecks: new Set(),
     });
     expect(statuses).toEqual<Record<string, RailsRuleStatus>>({
       'E#1': 'pass',
@@ -226,6 +227,7 @@ describe('ruleStatuses', () => {
       findings: [],
       checks: [check('arch', 'error')],
       judged: false,
+      manualChecks: new Set(),
     });
     expect(statuses).toEqual({ 'E#1': 'out-of-scope', 'J#1': 'out-of-scope' });
   });
@@ -233,7 +235,19 @@ describe('ruleStatuses', () => {
   it('marks a failing check as fail', () => {
     expect(ruleStatuses({
       rules: [rule('E#1', 'arch')], selectedRuleIds: new Set(), findings: [], checks: [check('arch', 'fail')], judged: true,
+      manualChecks: new Set(),
     })).toEqual({ 'E#1': 'fail' });
+  });
+
+  it('never calls a rule whose check is manual clean, but keeps what the judge cited (spec 368)', () => {
+    expect(ruleStatuses({
+      rules: [rule('M#1', 'osv'), rule('M#2', 'osv'), rule('E#1', 'arch')],
+      selectedRuleIds: new Set(['M#1', 'M#2', 'E#1']),
+      findings: [finding('M#2', 'package-lock.json', { severity: 'suspect' })],
+      checks: [],
+      judged: true,
+      manualChecks: new Set(['osv']),
+    })).toEqual({ 'M#1': 'out-of-scope', 'M#2': 'suspect', 'E#1': 'clean' });
   });
 });
 

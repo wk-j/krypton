@@ -1,6 +1,6 @@
 # Rails Dock Display Budget — Implementation Spec
 
-> Status: Implemented (approved 2026-10-29 after the UI preview: "ลงมือ implement สเปก docs/0345-rails-dock-display-budget.md ตามภาพจำลองที่แก้แล้วได้เลย")
+> Status: Implemented (approved 2026-10-29 after the UI preview: "ลงมือ implement สเปก docs/0345-rails-dock-display-budget.md ตามภาพจำลองที่แก้แล้วได้เลย"); amended by spec 368, 2026-11-07: manual check rows
 > Date: 2026-10-29
 > Milestone: ACP Harness — architecture conformance
 > Builds on: 337 (Rails dock content) · 344 (Actions bar)
@@ -86,7 +86,7 @@ check already is, instead of dropping it as direnv does.
 | argv list | Every check, full argv, wrapped (26 lines here) | Removed from the head |
 | Manifest error | Full paragraph | In the state line (one line, `…`); full text when the head is expanded |
 | Warnings | One line per warning | In the state line as `2 manifest warnings` when nothing above it applies; list when the head is expanded |
-| Check row | `name  PASS  1.2s`; `—` when not run | Outcome is a labelled badge; the name truncates before the badge. `—` becomes `not run`. While trust ≠ `trusted`, a second line holds the argv, one line with `…` |
+| Check row | `name  PASS  1.2s`; `—` when not run | Outcome is a labelled badge; the name truncates before the badge. `—` becomes `not run`. While trust ≠ `trusted`, a second line holds the argv, one line with `…`. A manual check row (spec 368): `name  RUN  FAIL  14:02`, the `RUN` key between name and badge, muted `manual` when never run, the finish time in place of the duration |
 | Findings, resolved | 2 lines / 1 line | Same |
 | Rules summary | `12 rules · 4 enforced · 8 judge-only ▸` (cut) | `12 rules · 4 enforced ▸`; judge-only is the rest, and the expanded list shows each rule |
 | Sources without rails | 1 line | Same |

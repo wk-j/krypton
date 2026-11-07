@@ -9,6 +9,7 @@ import type { HarnessLane } from './harness-view-types';
 import { diffFingerprint } from './rails/track';
 import type {
   RailsCheckResult,
+  RailsCheckRun,
   RailsFooterSignal,
   RailsRunRecord,
   RailsSnapshot,
@@ -25,7 +26,7 @@ const SNAPSHOT: RailsSnapshot = {
   present: true,
   manifestPath: '/repo/.krypton/rails.toml',
   trust: 'trusted',
-  checks: [{ name: 'typecheck', argv: ['npx', 'tsc'], timeoutS: 300 }],
+  checks: [{ name: 'typecheck', argv: ['npx', 'tsc'], timeoutS: 300, manual: false }],
   rules: [{ id: RULE, source: 'docs/adr/0001-lanes.md', appliesTo: ['src/**'], check: null, text: 'No foo in src.' }],
   glossary: [],
   uncoveredSources: [],
@@ -112,6 +113,8 @@ interface RigOptions {
 function rig(options: RigOptions = {}) {
   const calls: { cmd: string; args: Record<string, unknown> }[] = [];
   const records: RailsRunRecord[] = [];
+  /** Spec 368: `.krypton/rails/checks/*.json`, by name. */
+  const checkRuns = new Map<string, RailsCheckRun>();
   let history = [...(options.history ?? [])];
   const stats = [...(options.stats ?? [])];
   const gits = [...(options.gits ?? [])];
@@ -136,6 +139,13 @@ function rig(options: RigOptions = {}) {
         history = [run, ...history];
         return `/repo/.krypton/rails/runs/${run.runId}.json`;
       }
+      case 'rails_record_check': {
+        const run = args.run as RailsCheckRun;
+        checkRuns.set(run.name, run);
+        return `/repo/.krypton/rails/checks/${run.name}.json`;
+      }
+      case 'rails_check_runs':
+        return [...checkRuns.values()];
       case 'rails_cancel':
         return undefined;
       default:
@@ -217,7 +227,7 @@ function rig(options: RigOptions = {}) {
     await ctl.whenIdle();
   };
   const commands = (): string[] => calls.map((call) => call.cmd);
-  return { ctl, host, lanes, calls, commands, records, prompts, systemPrompts, flashes, signals, envelopes, runs, transition, quietPoint };
+  return { ctl, host, lanes, calls, commands, records, checkRuns, prompts, systemPrompts, flashes, signals, envelopes, runs, transition, quietPoint };
 }
 
 describe('HarnessRailsController (spec 337)', () => {
@@ -343,7 +353,7 @@ describe('HarnessRailsController (spec 337)', () => {
 
   it('runs checks in order, then judges, and records tracking against the previous completed run', async () => {
     const r = rig({
-      snapshot: { ...SNAPSHOT, checks: [SNAPSHOT.checks[0], { name: 'arch', argv: ['npm', 'test'], timeoutS: 60 }] },
+      snapshot: { ...SNAPSHOT, checks: [SNAPSHOT.checks[0], { name: 'arch', argv: ['npm', 'test'], timeoutS: 60, manual: false }] },
       history: [priorRun({ runId: '20261027T020000Z-0002', verdict: 'error', open: [] }), priorRun()],
       reply: `note ${JSON.stringify({ findings: [finding('src/a.ts'), finding('src/b.ts'), finding('elsewhere.ts')] })}`,
       runCheck: async (name) => ({ ...PASS, name }),
@@ -366,7 +376,7 @@ describe('HarnessRailsController (spec 337)', () => {
     ]);
     expect(run.ruleStatus).toEqual({ [RULE]: 'violated' });
     // The dock's history is the refreshed ledger, new run first.
-    expect(r.calls[r.calls.length - 1]).toEqual({ cmd: 'rails_history', args: { root: '/repo', limit: 20 } });
+    expect(r.calls.slice(r.commands().lastIndexOf('rails_record_run'))).toContainEqual({ cmd: 'rails_history', args: { root: '/repo', limit: 20 } });
     expect(r.signals[r.signals.length - 1]).toEqual({ state: 'findings', findings: 2, failedCheck: null });
   });
 
@@ -505,7 +515,7 @@ describe('HarnessRailsController (spec 337)', () => {
     options.snapshot = {
       ...SNAPSHOT,
       trust: 'changed',
-      checks: [...SNAPSHOT.checks, { name: 'arch', argv: ['sh', 'arch.sh'], timeoutS: 60 }],
+      checks: [...SNAPSHOT.checks, { name: 'arch', argv: ['sh', 'arch.sh'], timeoutS: 60, manual: false }],
     };
     r.calls.length = 0;
 
@@ -574,7 +584,7 @@ describe('HarnessRailsController (spec 337)', () => {
 
     button('send').click();
     expect(r.envelopes.map((envelope) => envelope.laneId)).toEqual(['lane-1']);
-    expect(r.flashes).toEqual(['rails: sent 1 finding → claude-1']);
+    expect(r.flashes).toEqual(['rails: sent 1 open finding → claude-1']);
     expect(button('send').className).toBe('acp-dock-action acp-dock-action--done');
     expect(button('send').disabled).toBe(false);
 
@@ -797,5 +807,223 @@ describe('HarnessRailsController min_interval_ms (spec 339)', () => {
     r.lanes[0].status = 'idle';
     await r.quietPoint();
     expect(r.records).toHaveLength(2);
+  });
+});
+
+describe('HarnessRailsController manual checks (spec 368)', () => {
+  const OSV_RULE = 'docs/adr/0029-osv.md#1';
+  const MANUAL: RailsSnapshot = {
+    ...SNAPSHOT,
+    checks: [...SNAPSHOT.checks, { name: 'osv', argv: ['python3', 'scripts/rails-osv.py'], timeoutS: 120, manual: true }],
+    rules: [
+      ...SNAPSHOT.rules,
+      { id: OSV_RULE, source: 'docs/adr/0029-osv.md', appliesTo: ['src/**'], check: 'osv', text: 'No lockfile carries a known vulnerability.' },
+    ],
+  };
+  const FAIL: RailsCheckResult = { name: 'osv', outcome: 'fail', exitCode: 1, durationMs: 3700, outputTail: 'osv: 185 known vulnerabilities' };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('leaves a manual check out of every run, and its rule out of the judge\'s clean', async () => {
+    const r = rig({ snapshot: MANUAL, runCheck: async (name) => ({ ...PASS, name }) });
+    await r.ctl.mount();
+    await r.quietPoint();
+    await r.ctl.runCommand(r.lanes[0], ['now'], '#rails now');
+
+    expect(r.calls.filter((call) => call.cmd === 'rails_run_check').map((call) => call.args.name)).toEqual(['typecheck', 'typecheck']);
+    expect(r.records).toHaveLength(2);
+    for (const record of r.records) {
+      expect(record.checks.map((check) => check.name)).toEqual(['typecheck']);
+      // The judge saw the rule and found nothing; only osv itself could call it clean.
+      expect(record.ruleStatus[OSV_RULE]).toBe('out-of-scope');
+      expect(record.ruleStatus[RULE]).toBe('clean');
+    }
+  });
+
+  it('#rails check runs one manual check alone, keeps its result, and shows it in its row', async () => {
+    const r = rig({ snapshot: MANUAL, runCheck: async (name) => (name === 'osv' ? FAIL : { ...PASS, name }) });
+    await r.ctl.mount();
+    r.calls.length = 0;
+
+    await r.ctl.runCommand(r.lanes[0], ['check', 'osv'], '#rails check osv');
+    // No clean-tree probe, no fingerprint, no judge, no run record.
+    expect(r.commands()).toEqual(['rails_run_check', 'rails_record_check', 'rails_check_runs']);
+    expect(r.records).toEqual([]);
+    expect(r.prompts).toEqual([]);
+    expect(r.checkRuns.get('osv')).toMatchObject({ version: 1, name: 'osv', laneName: 'claude-1', result: FAIL });
+    const row = [...r.ctl.dockEl.querySelectorAll<HTMLElement>('.acp-rails-dock__row')]
+      .find((node) => node.dataset.railsKey === 'check:osv');
+    expect(row?.querySelector('.acp-rails-dock__outcome--fail')?.textContent).toBe('FAIL');
+    // A manual result never colours the footer.
+    expect(r.signals[r.signals.length - 1]).toEqual({ state: 'none', findings: 0, failedCheck: null });
+
+    await r.ctl.runCommand(r.lanes[0], ['check'], '#rails check');
+    await r.ctl.runCommand(r.lanes[0], ['check', 'typecheck'], '#rails check typecheck');
+    expect(r.flashes).toEqual(['rails: manual checks — osv', 'rails: no manual check typecheck']);
+  });
+
+  it('refuses a manual check while untrusted, while off, or while a run is in flight', async () => {
+    const untrusted = rig({ snapshot: { ...MANUAL, trust: 'changed' } });
+    await untrusted.ctl.mount();
+    await untrusted.ctl.runCommand(untrusted.lanes[0], ['check', 'osv'], '#rails check osv');
+    expect(untrusted.flashes).toEqual(['rails: not trusted — #rails trust']);
+    expect(untrusted.commands()).not.toContain('rails_run_check');
+
+    let release: (result: RailsCheckResult) => void = () => undefined;
+    const r = rig({
+      snapshot: MANUAL,
+      runCheck: (name) => (name === 'typecheck' ? new Promise((resolve) => { release = resolve; }) : Promise.resolve(FAIL)),
+    });
+    await r.ctl.mount();
+    const run = r.ctl.requestRun(r.lanes[0]);
+    await vi.waitFor(() => expect(r.commands()).toContain('rails_run_check'));
+    await r.ctl.runCommand(r.lanes[0], ['check', 'osv'], '#rails check osv');
+    expect(r.flashes).toEqual(['rails: a run is already in progress']);
+    release(PASS);
+    await run;
+
+    r.ctl.setMode('off');
+    await r.ctl.runCommand(r.lanes[0], ['check', 'osv'], '#rails check osv');
+    expect(r.flashes[r.flashes.length - 1]).toBe('rails: off — #rails manual');
+    expect(r.checkRuns.size).toBe(0);
+  });
+
+  it('runs the selected manual check on r, and a full run on r anywhere else', async () => {
+    const r = rig({ snapshot: MANUAL, runCheck: async (name) => (name === 'osv' ? FAIL : { ...PASS, name }) });
+    await r.ctl.mount();
+    const press = (key: string): boolean => r.ctl.handleDockKey(new KeyboardEvent('keydown', { key }));
+
+    press('j'); // head
+    press('j'); // check:typecheck
+    press('j'); // check:osv
+    press('r');
+    await r.ctl.whenIdle();
+    expect(r.runs.map((run) => run.text)).toEqual(['#rails check osv']);
+    expect(r.checkRuns.get('osv')?.result).toEqual(FAIL);
+    expect(r.records).toEqual([]);
+
+    press('k'); // check:typecheck
+    press('r');
+    await r.ctl.whenIdle();
+    expect(r.runs.map((run) => run.text)).toEqual(['#rails check osv', '#rails now']);
+    expect(r.records).toHaveLength(1);
+  });
+
+  it('holds an auto run that comes due during a manual check until the check is done', async () => {
+    let release: (result: RailsCheckResult) => void = () => undefined;
+    const r = rig({
+      snapshot: MANUAL,
+      runCheck: (name) => (name === 'osv' ? new Promise((resolve) => { release = resolve; }) : Promise.resolve({ ...PASS, name })),
+    });
+    await r.ctl.mount();
+    const check = r.ctl.requestCheck('osv', r.lanes[0]);
+    await vi.waitFor(() => expect(r.commands()).toContain('rails_run_check'));
+
+    r.transition('lane-1', 'busy', 'idle');
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(r.records).toEqual([]);
+    expect(r.calls.filter((call) => call.cmd === 'rails_run_check')).toHaveLength(1);
+
+    release(FAIL);
+    await check;
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    await r.ctl.whenIdle();
+    expect(r.records).toHaveLength(1);
+    expect(r.records[0].trigger.kind).toBe('auto');
+  });
+
+  // Spec 368 amendment A: Send carries failed manual results.
+
+  const osvRun = (result: RailsCheckResult, finishedAt = '2026-11-07T12:40:13.761Z'): RailsCheckRun => ({
+    version: 1, name: 'osv', startedAt: '2026-11-07T12:40:06.000Z', finishedAt, laneName: 'claude-1', result,
+  });
+
+  it('sends a failed manual result with a clean newest run, from Send, #rails send and s on its row', async () => {
+    const r = rig({ snapshot: MANUAL, history: [priorRun({ verdict: 'clean', open: [] })] });
+    r.checkRuns.set('osv', osvRun(FAIL));
+    await r.ctl.mount();
+    const send = (): HTMLButtonElement => {
+      const node = r.ctl.dockEl.querySelector<HTMLButtonElement>('[data-rails-action="send"]');
+      if (!node) throw new Error('no send button');
+      return node;
+    };
+    expect(send().disabled).toBe(false);
+
+    await r.ctl.runCommand(r.lanes[1], ['send'], '#rails send');
+    expect(r.envelopes).toHaveLength(1);
+    expect(r.envelopes[0].laneId).toBe('lane-2');
+    const message = r.envelopes[0].message;
+    expect(message.split('\n')[0]).toBe('[rails] manual checks');
+    expect(message).toContain('- osv (exit 1) at ');
+    expect(message).toContain('last line: osv: 185 known vulnerabilities');
+    expect(message).toContain('Check file osv: /repo/.krypton/rails/checks/osv.json');
+    expect(message).toContain('rerun for the full output: python3 scripts/rails-osv.py');
+    expect(r.flashes).toEqual(['rails: sent failed osv → codex-1']);
+    expect(send().className).toBe('acp-dock-action acp-dock-action--done');
+
+    const press = (key: string): boolean => r.ctl.handleDockKey(new KeyboardEvent('keydown', { key }));
+    press('j'); // head
+    press('j'); // check:typecheck
+    press('s');
+    expect(r.flashes[r.flashes.length - 1]).toBe('rails: select a finding, a failed manual check, or the head row to send all');
+    press('j'); // check:osv
+    press('s');
+    expect(r.envelopes).toHaveLength(2);
+    expect(r.envelopes[1].laneId).toBe('lane-1');
+    expect(r.envelopes[1].message).toContain('Check file osv:');
+    expect(r.flashes[r.flashes.length - 1]).toBe('rails: sent failed osv → claude-1');
+  });
+
+  it('carries the run\'s findings and the failed manual result together, and re-arms Send on a newer failure', async () => {
+    const r = rig({ snapshot: MANUAL, history: [priorRun()], runCheck: async (name) => (name === 'osv' ? FAIL : { ...PASS, name }) });
+    r.checkRuns.set('osv', osvRun(FAIL));
+    await r.ctl.mount();
+    const send = (): HTMLButtonElement | null => r.ctl.dockEl.querySelector<HTMLButtonElement>('[data-rails-action="send"]');
+
+    send()?.click();
+    const lines = r.envelopes[0].message.split('\n');
+    expect(lines[0]).toBe('[rails] run 20261027T010000Z-0001 — verdict findings');
+    expect(lines.indexOf('Failed manual checks (1):')).toBeLessThan(lines.indexOf('Open findings (1):'));
+    expect(r.flashes).toEqual(['rails: sent 1 open finding and failed osv → claude-1']);
+    expect(send()?.className).toBe('acp-dock-action acp-dock-action--done');
+
+    // Running osv again records a new failure: Send has something unsent again.
+    await r.ctl.runCommand(r.lanes[0], ['check', 'osv'], '#rails check osv');
+    expect(send()?.className).toBe('acp-dock-action');
+    expect(send()?.title).toBe('Send 1 open finding and failed osv to claude-1 (#rails send · s on the head row)');
+  });
+
+  it('leaves out a manual check while it runs, and a passed or error result', async () => {
+    let release: (result: RailsCheckResult) => void = () => undefined;
+    const r = rig({
+      snapshot: MANUAL,
+      history: [priorRun({ verdict: 'clean', open: [] })],
+      runCheck: () => new Promise((resolve) => { release = resolve; }),
+    });
+    r.checkRuns.set('osv', osvRun(FAIL));
+    await r.ctl.mount();
+    const press = (key: string): boolean => r.ctl.handleDockKey(new KeyboardEvent('keydown', { key }));
+    const check = r.ctl.requestCheck('osv', r.lanes[0]);
+    await vi.waitFor(() => expect(r.commands()).toContain('rails_run_check'));
+
+    await r.ctl.runCommand(r.lanes[0], ['send'], '#rails send');
+    press('j');
+    press('j');
+    press('j'); // check:osv
+    press('s');
+    expect(r.flashes).toEqual(['rails: no open findings or failed manual checks', 'rails: osv is running']);
+
+    release({ ...FAIL, outcome: 'error', exitCode: null });
+    await check;
+    press('s');
+    await r.ctl.runCommand(r.lanes[0], ['send'], '#rails send');
+    expect(r.flashes.slice(2)).toEqual(['rails: osv has no failed result to send', 'rails: no open findings or failed manual checks']);
+    expect(r.envelopes).toEqual([]);
   });
 });

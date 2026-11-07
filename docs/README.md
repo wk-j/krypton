@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (353)
+## Specs (354)
 
 | # | Spec |
 |---|------|
@@ -370,6 +370,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 365 | [Harness Tool-Error Fire](./0365-harness-tool-error-fire.md) |
 | 366 | [Console Faceplate UI](./0366-console-faceplate-ui.md) |
 | 367 | [Light Scheme Redesign](./0367-light-scheme-redesign.md) (Draft) |
+| 368 | [Rails Manual Checks](./0368-rails-manual-checks.md) |
 
 ## ADRs (30)
 
@@ -403,7 +404,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 26 | [The loopback app shell holds a session capability in localStorage](./adr/0026-loopback-app-session-capability-in-local-storage.md) |
 | 27 | [No surface marks state with a left-edge accent rail](./adr/0027-no-left-edge-accent-rails.md) |
 | 28 | [The loopback app is written in React; the Tauri app frontend stays framework-free](./adr/0028-loopback-app-uses-react.md) |
-| 29 | [Rails scans a changed lockfile whole for known vulnerabilities](./adr/0029-rails-scans-changed-lockfiles-for-known-vulnerabilities.md) |
+| 29 | [Rails scans every lockfile for known vulnerabilities as a manual check](./adr/0029-rails-scans-changed-lockfiles-for-known-vulnerabilities.md) |
 | 30 | [The console faceplate is Krypton's one in-app visual identity](./adr/0030-console-faceplate-is-the-base-identity.md) |
 
 ## Also

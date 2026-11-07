@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { railsDockActions, type RailsDockActionsInput } from './actions';
-import type { RailsRunRecord, RailsSnapshot } from './types';
+import type { RailsSendSet } from './envelope';
+import type { RailsSnapshot } from './types';
 
 // Spec 344 §State rules for the Rails dock's action buttons.
 
@@ -17,9 +18,12 @@ const SNAPSHOT = {
   ],
 } as unknown as RailsSnapshot;
 
-function run(runId: string, open: number): RailsRunRecord {
-  return { runId, open: Array.from({ length: open }, (_unused, i) => ({ key: `k${i}` })) } as unknown as RailsRunRecord;
+/** Only `keys` and `label` reach the Send button. */
+function sendSet(keys: readonly string[], label: string): RailsSendSet {
+  return { run: null, manual: [], keys, label };
 }
+
+const OPEN_3 = sendSet(['run:r2'], '3 open findings');
 
 const IDLE_LANE = { displayName: 'codex-1', status: 'idle', hasClient: true };
 
@@ -29,7 +33,8 @@ function input(over: Partial<RailsDockActionsInput> = {}): RailsDockActionsInput
     mode: 'auto',
     progress: { kind: 'idle' },
     running: false,
-    latest: run('r2', 3),
+    checkInFlight: null,
+    sendSet: OPEN_3,
     lastSend: null,
     activeLane: IDLE_LANE,
     updateLane: null,
@@ -61,26 +66,52 @@ describe('railsDockActions', () => {
     expect(untrusted.disabledReason).toBeNull();
   });
 
-  it('marks Send done only for the run whose findings were sent', () => {
-    const mark = { runId: 'r2', laneName: 'claude-1', count: 3, at: AT_1402 };
-    const sent = railsDockActions(input({ lastSend: mark })).states.send;
-    expect(sent.state).toEqual({
-      kind: 'done',
-      badge: '✓ 14:02',
-      detail: '3 findings sent to claude-1 2026-10-29 14:02',
-    });
-    expect(sent.disabledReason).toBeNull();
+  it('names the auto checks on Run, and holds Run and every RUN key while a manual check runs (spec 368)', () => {
+    const idle = railsDockActions(input());
+    expect(idle.states.now.state).toEqual({ kind: 'idle', detail: 'Run the auto checks and the judge now (#rails now · r)' });
+    expect(idle.checkDisabledReason).toBeNull();
 
-    const newer = railsDockActions(input({ lastSend: mark, latest: run('r3', 3) })).states.send;
-    expect(newer.state).toEqual({
-      kind: 'idle',
-      detail: 'Send 3 open findings to codex-1 (#rails send · s on the head row)',
-    });
+    const checking = railsDockActions(input({ checkInFlight: 'osv' }));
+    expect(checking.states.now.state.kind).toBe('idle');
+    expect(checking.states.now.disabledReason).toBe('a run is already in progress');
+    expect(checking.checkDisabledReason).toBe('a run is already in progress');
+
+    expect(railsDockActions(input({ running: true })).checkDisabledReason).toBe('a run is already in progress');
+    expect(railsDockActions(input({ mode: 'off' })).checkDisabledReason).toBe('rails is off · #rails manual');
+    expect(railsDockActions(input({ snapshot: { ...SNAPSHOT, trust: 'changed' } })).checkDisabledReason)
+      .toBe('not trusted · #rails trust');
   });
 
-  it('disables Send without an open finding or without a lane', () => {
-    expect(railsDockActions(input({ latest: run('r2', 0) })).states.send.disabledReason).toBe('no open findings');
-    expect(railsDockActions(input({ latest: null })).states.send.disabledReason).toBe('no open findings');
+  it('marks Send done while the set holds nothing unsent (spec 368 amendment A)', () => {
+    const mark = { keys: ['run:r2', 'check:osv@t1'], label: '3 open findings and failed osv', laneName: 'claude-1', at: AT_1402 };
+    const done = {
+      kind: 'done',
+      badge: '✓ 14:02',
+      detail: '3 open findings and failed osv sent to claude-1 2026-10-29 14:02',
+    };
+    const sent = railsDockActions(input({ lastSend: mark, sendSet: sendSet(mark.keys, mark.label) })).states.send;
+    expect(sent.state).toEqual(done);
+    expect(sent.disabledReason).toBeNull();
+
+    // A clean run after the send leaves only osv, which was sent: still done.
+    expect(railsDockActions(input({ lastSend: mark, sendSet: sendSet(['check:osv@t1'], 'failed osv') })).states.send.state)
+      .toEqual(done);
+
+    // A newer run's findings, or a newer osv failure, are unsent.
+    expect(railsDockActions(input({ lastSend: mark, sendSet: sendSet(['run:r3', 'check:osv@t1'], '3 open findings and failed osv') }))
+      .states.send.state).toEqual({
+      kind: 'idle',
+      detail: 'Send 3 open findings and failed osv to codex-1 (#rails send · s on the head row)',
+    });
+    expect(railsDockActions(input({ lastSend: mark, sendSet: sendSet(['check:osv@t2'], 'failed osv') })).states.send.state)
+      .toEqual({ kind: 'idle', detail: 'Send failed osv to codex-1 (#rails send · s on the head row)' });
+  });
+
+  it('disables Send with nothing to send or without a lane', () => {
+    const mark = { keys: ['run:r2'], label: '3 open findings', laneName: 'claude-1', at: AT_1402 };
+    const empty = railsDockActions(input({ lastSend: mark, sendSet: sendSet([], '') })).states.send;
+    expect(empty.disabledReason).toBe('no open findings or failed manual checks');
+    expect(empty.state.kind).toBe('idle');
     expect(railsDockActions(input({ activeLane: null })).states.send.disabledReason).toBe('no active lane');
   });
 

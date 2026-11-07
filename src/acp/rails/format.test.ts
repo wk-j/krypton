@@ -10,8 +10,8 @@ const SNAPSHOT: RailsSnapshot = {
   manifestPath: '/repo/.krypton/rails.toml',
   trust: 'changed',
   checks: [
-    { name: 'typecheck', argv: ['npx', 'tsc'], timeoutS: 300 },
-    { name: 'arch', argv: ['npx', 'vitest'], timeoutS: 300 },
+    { name: 'typecheck', argv: ['npx', 'tsc'], timeoutS: 300, manual: false },
+    { name: 'arch', argv: ['npx', 'vitest'], timeoutS: 300, manual: false },
   ],
   rules: [{ id: 'docs/adr/0001-x.md#1', source: 'docs/adr/0001-x.md', appliesTo: [], check: null, text: 'a' }],
   glossary: [],

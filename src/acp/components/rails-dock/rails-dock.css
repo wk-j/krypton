@@ -386,6 +386,56 @@
     filter: none;
   }
 
+  /* Spec 368: a manual check's RUN key — a small dense key (DESIGN.md "Key")
+     beside the check's lamp. Running: latched down and backlit cyan, the
+     spec 344 running key; it stays lit while it is disabled. */
+  .acp-rails-dock__run {
+    flex: 0 0 auto;
+    padding: 2px 8px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--mat-lit);
+    font: inherit;
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.09em;
+    line-height: 1.2;
+    text-shadow: var(--mat-print);
+    white-space: nowrap;
+    cursor: default;
+  }
+
+  .acp-rails-dock__run:hover:not(:disabled) {
+    background: var(--mat-key-hover);
+  }
+
+  .acp-rails-dock__run:active:not(:disabled) {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    transform: translateY(1px);
+  }
+
+  .acp-rails-dock__run:focus-visible {
+    outline: 1px solid var(--mat-lit);
+    outline-offset: 2px;
+  }
+
+  .acp-rails-dock__run:disabled {
+    opacity: 0.45;
+  }
+
+  .acp-rails-dock__run--running,
+  .acp-rails-dock__run--running:disabled {
+    border-color: rgba(109, 208, 255, 0.55);
+    background:
+      radial-gradient(ellipse at 50% 100%, rgba(109, 208, 255, 0.26), transparent 70%),
+      var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk), inset 0 0 10px rgba(109, 208, 255, 0.18);
+    color: var(--agent-user, #6dd0ff);
+    opacity: 1;
+  }
+
   .acp-rails-dock__severity {
     color: var(--mat-lit);
   }
@@ -577,5 +627,9 @@
 
   html[data-theme-scheme='light'] .acp-rails-dock__verdict--error {
     --rails-verdict-rgb: 138, 90, 0;
+  }
+
+  html[data-theme-scheme='light'] .acp-rails-dock__run--running {
+    color: var(--agent-user, #007799);
   }
 }

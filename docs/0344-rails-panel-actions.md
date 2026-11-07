@@ -7,6 +7,11 @@
 > Amends: 337 and 338 Out of Scope (trust and update from the dock)
 > Amended by: 343 (2026-10-31). A click and the dock's `r` run the typed sub-command inside a
 > spec-343 command run, so the lane head shows `#rails now · 0:03` as it does for the typed command.
+> Amended by: 368 (2026-11-07). Run starts a run of the auto checks only; manual checks run alone
+> from their row (`r` on a manual check row, its `RUN` key, `#rails check <name>`).
+> Amended by: 368 amendment A (2026-11-07). Send delivers the Send set: the newest run's open
+> findings (when it has any) and every manual check result shown as `FAIL` or `TIMEOUT`. The Send
+> mark records the set's keys instead of a `runId`; the Send row below is current.
 > Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): `DESIGN.console.md` merged into DESIGN.md; dock tokens are `--mat-*`.
 
 ## Problem
@@ -56,8 +61,8 @@ reason as its tooltip when it cannot run. Spec 342's private `IssueActionButton`
   active lane already repaints the dock: `activateLane` → `render()` → `rightRail` →
   `railsCtl.renderDock()` (`acp-harness-view.ts:15879`, `:12569`).
 - **Send has no record.** The Ticket Panel persists `done` in `ticket.json` because its actions
-  write to GitHub. A rails send writes nothing durable and belongs to one run. A mark in memory,
-  keyed by `runId`, is enough, and it resets when a newer run lands.
+  write to GitHub. A rails send writes nothing durable. A mark in memory is enough; spec 368
+  amendment A keys it on the Send set's items, so it clears when something unsent appears.
 - **Run gets no done state.** A green `✓` beside a run whose verdict is `check_failed` would
   contradict ADR-0025 item 5, where only a failed check is coloured, as a fault. The head row
   already shows the latest run's time and verdict.
@@ -133,7 +138,7 @@ export const RAILS_DOCK_ACTIONS = [
 ] as const;
 export type RailsDockAction = (typeof RAILS_DOCK_ACTIONS)[number]['verb'];
 export function railsDockActionFromData(value: string | undefined): RailsDockAction | null;
-export interface RailsSendMark { runId: string; laneName: string; count: number; at: number }
+export interface RailsSendMark { keys: readonly string[]; label: string; laneName: string; at: number } // spec 368 amendment A
 export interface RailsActionView { state: DockActionState; disabledReason: string | null }
 export interface RailsDockActions {
   states: Record<RailsDockAction, RailsActionView>;
@@ -141,7 +146,7 @@ export interface RailsDockActions {
 }
 export function railsDockActions(input: {
   snapshot: RailsSnapshot | null; mode: RailsMode; progress: RailsProgress; running: boolean;
-  latest: RailsRunRecord | null; lastSend: RailsSendMark | null;
+  sendSet: RailsSendSet; lastSend: RailsSendMark | null; // RailsSendSet: spec 368 amendment A
   activeLane: { displayName: string; status: string; hasClient: boolean } | null;
   updateLane: string | null; // display name of the lane whose activeSystemLabel is RAILS_UPDATE_LABEL
   now: number;
@@ -152,8 +157,8 @@ export function railsDockActions(input: {
 
 | Button | running | done | disabled (tooltip) | idle tooltip |
 |--------|---------|------|--------------------|--------------|
-| Run | A run is in flight: badge `progressText(progress)` while `checking` / `judging`, else `running` (an older `held` or `cooling` line is not progress) | never | mode `off`: `rails is off · #rails manual`; a run in flight: `a run is already in progress` | trusted: `Run the checks and the judge now (#rails now · r)`; otherwise `Judge only — checks wait for trust (#rails now · r)` |
-| Send | never | `lastSend.runId === latest.runId`: badge `✓ <time>`, tooltip `<n> findings sent to <lane> <date time>` | no open finding: `no open findings`; no active lane: `no active lane` | `Send <n> open findings to <lane> (#rails send · s on the head row)` |
+| Run | A run is in flight: badge `progressText(progress)` while `checking` / `judging`, else `running` (an older `held` or `cooling` line is not progress) | never | mode `off`: `rails is off · #rails manual`; a run or a manual check (spec 368) in flight: `a run is already in progress` | trusted: `Run the auto checks and the judge now (#rails now · r)`; otherwise `Judge only — checks wait for trust (#rails now · r)` |
+| Send | never | the Send set is not empty and every key is in `lastSend.keys`: badge `✓ <time>`, tooltip `<label> sent to <lane> <date time>` | empty Send set: `no open findings or failed manual checks`; no active lane: `no active lane` | `Send <label> to <lane> (#rails send · s on the head row)`, where `<label>` is `3 open findings and failed osv` (spec 368 amendment A) |
 | Trust | never | `trust === 'trusted'`: badge `✓ trusted`, tooltip `rails.toml is trusted · <n> checks may run` | never | `untrusted`: `Allow the <n> checks listed above to run (#rails trust)`; `changed`: `rails.toml changed since trust — allow the <n> checks listed above (#rails trust)`; no checks: `Trust rails.toml so auto runs can start (#rails trust)` |
 | Update | `updateLane` set: badge `running · <lane>`, tooltip `Update running in <lane>` | never | `ticketWorkActionDisabledReason(activeLane)` | `<lane> proposes rails changes, then waits for you (#rails update)` |
 
@@ -192,11 +197,12 @@ Send
    disabled button and the second click of a double click (event.detail > 1), then calls
    onAction('send').
 2. runDockAction('send') → trackCommandRun(L, '#rails send', …) → runCommand → send(L.id, null):
-   the same call as `#rails send` and as `s` on the head row → injectEnvelope; chip
-   "rails: sent 3 findings → codex-1".
-3. lastSend = { runId, laneName, count, at } → renderDock() → Send repaints as "✓ 14:02" in the
+   the same call as `#rails send` and as `s` on the head row → railsSendSet → injectEnvelope; chip
+   "rails: sent 3 open findings and failed osv → codex-1".
+3. lastSend = { keys, label, laneName, at } → renderDock() → Send repaints as "✓ 14:02" in the
    done colour and stays enabled.
-4. A newer run lands (history[0] changes) → the mark no longer matches → Send is idle again.
+4. Open findings in a newer run, or a newer failed manual result, put an unsent key in the set →
+   Send is idle again. A clean run after the send leaves it done (spec 368 amendment A).
 
 Update
 1. Click Update while the active lane is idle → update(lane, '') → rails_load →
@@ -213,7 +219,7 @@ No new keys. Each button's keyboard path already exists:
 
 | Button | Keyboard path |
 |--------|---------------|
-| Run | `r` in the dock, `#rails now` |
+| Run | `r` in the dock on any row but a manual check row (there `r` runs that check alone, spec 368), `#rails now` |
 | Send | `s` on the head row, `#rails send` |
 | Trust | `#rails trust` |
 | Update | `#rails update` |
@@ -260,8 +266,8 @@ j/k · ↵ · 1–5 · s send · r run · [ ] tab · esc
 - **Update typed with a request** (`#rails update <request>`): it uses the same label, so the
   button shows the same running state.
 - **Active lane switched:** `render()` repaints the dock. The Send and Update tooltips name the new
-  lane. The Send mark stays, because it is keyed by run, not by lane; its tooltip names the lane it
-  went to.
+  lane. The Send mark stays, because it is keyed by the Send set, not by lane; its tooltip names the
+  lane it went to.
 - **Lane closed mid-update:** the lane leaves `lanes` before `closeLane` ends in `render()`, which
   repaints the dock. No lane carries the label, so Update is idle.
 - **Manifest edited after trust:** `trust` becomes `changed`, and Trust is idle again with the
@@ -289,7 +295,8 @@ None. These choices are deliberate:
 ## Out of Scope
 
 - Init and mode buttons; any new dock key.
-- A Send button on each finding row (`s` on a finding row already sends one).
+- A Send button on each finding row (`s` on a finding row already sends one). Per-row buttons in
+  general: spec 368 adds a `RUN` key on manual check rows only.
 - Keeping the Send mark across restarts.
 - A confirmation dialog for Trust.
 - Any change to what the Ticket Panel shows or does: its six verbs, their states, badges and

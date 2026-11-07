@@ -198,6 +198,8 @@ pub fn run() {
             rails::rails_cancel,
             rails::rails_record_run,
             rails::rails_history,
+            rails::rails_record_check,
+            rails::rails_check_runs,
             connected_computers::computer_list,
             connected_computers::computer_profile_save,
             connected_computers::computer_profile_delete,

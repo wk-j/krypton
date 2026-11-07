@@ -4,6 +4,7 @@
 > Date: 2026-10-27
 > Spec: `docs/0337-rails-verifier.md`
 > Updated: 2026-10-29 — spec 344 adds the Rails dock's Send and Trust buttons as further human paths; see `docs/0344-rails-panel-actions.md`.
+> Updated: 2026-11-07 — spec 368 adds manual checks, which run only when the human starts them, and its amendment A lets Send carry a failed manual result; see `docs/0368-rails-manual-checks.md`.
 
 ## Context
 
@@ -13,7 +14,7 @@ ADR-0001 had rejected an "independent observer LLM watching all lane streams" an
 
 ## Decision
 
-1. **Harness-owned, not lane-owned.** Each local harness runs one Rails verifier. It starts at harness quiet points: debounced after a lane goes busy → idle, and only once no lane is busy or waiting for permission. It never runs inside a lane turn, never blocks a lane, never edits code, and never sends anything to a lane by itself. The human sends findings with `#rails send`, `s` in the Rails dock, or the dock's Send button (spec 344).
+1. **Harness-owned, not lane-owned.** Each local harness runs one Rails verifier. It starts at harness quiet points: debounced after a lane goes busy → idle, and only once no lane is busy or waiting for permission. A check declared `manual` in `.krypton/rails.toml` runs only when the human starts it (spec 368), never at a quiet point. It never runs inside a lane turn, never blocks a lane, never edits code, and never sends anything to a lane by itself. The human sends findings, and failed manual check results (spec 368 amendment A), with `#rails send`, `s` in the Rails dock, or the dock's Send button (spec 344).
 2. **Two steps, verdict in code.**
    - The **check step** runs the commands the project declares in `.krypton/rails.toml`. It is deterministic and costs no tokens.
    - The **judge step** is a cheap headless model (the spec 306 transport, fenced) that may cite only the `## Rails` bullets and glossary entries the harness sent it.

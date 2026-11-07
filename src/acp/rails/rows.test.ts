@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { RAILS_DOCK_RECENT_RUNS, railsDockRows, shortRuleId } from './rows';
-import type { RailsDockModel, RailsDockRow, RailsRunRecord, RailsSnapshot, TrackedFinding } from './types';
+import type { RailsCheckRun, RailsDockModel, RailsDockRow, RailsRunRecord, RailsSnapshot, TrackedFinding } from './types';
 
 function tracked(rule: string, file: string): TrackedFinding {
   return {
@@ -23,7 +23,7 @@ const snapshot: RailsSnapshot = {
   present: true,
   manifestPath: '/repo/.krypton/rails.toml',
   trust: 'trusted',
-  checks: [{ name: 'typecheck', argv: ['tsc'], timeoutS: 300 }, { name: 'arch', argv: ['vitest'], timeoutS: 300 }],
+  checks: [{ name: 'typecheck', argv: ['tsc'], timeoutS: 300, manual: false }, { name: 'arch', argv: ['vitest'], timeoutS: 300, manual: false }],
   rules: [
     { id: 'docs/adr/0008-x.md#1', source: 'docs/adr/0008-x.md', appliesTo: [], check: 'arch', text: 'a' },
     { id: 'AGENTS.md#1', source: 'AGENTS.md', appliesTo: [], check: null, text: 'b' },
@@ -43,6 +43,8 @@ function model(over: Partial<RailsDockModel> = {}): RailsDockModel {
     history: [],
     selectedKey: null,
     expanded: new Set(),
+    checkRuns: new Map(),
+    checkInFlight: null,
     ...over,
   };
 }
@@ -107,6 +109,35 @@ describe('railsDockRows', () => {
   it('still has a head and a rules row before the snapshot loads', () => {
     const rows = railsDockRows(model({ snapshot: null }));
     expect(rows.map((row) => row.key)).toEqual(['head', 'rules']);
+  });
+
+  it('reads a manual check and its rule from the manual run, never from a Rails run (spec 368)', () => {
+    const manual: RailsSnapshot = {
+      ...snapshot,
+      checks: snapshot.checks.map((decl) => (decl.name === 'arch' ? { ...decl, manual: true } : decl)),
+    };
+    // The newest run still carries arch from before it was manual.
+    const history = [run('r2', {
+      checks: [{ name: 'arch', outcome: 'pass', exitCode: 0, durationMs: 9, outputTail: '' }],
+      ruleStatus: { 'docs/adr/0008-x.md#1': 'pass' },
+    })];
+    const ofRows = (rows: readonly RailsDockRow[]): unknown[] => rows
+      .filter((row) => row.key === 'check:arch' || row.key === 'rule:docs/adr/0008-x.md#1')
+      .map((row) => (row.kind === 'check' ? [row.result, row.manualRun] : row.kind === 'rule' && [row.status, row.manualCheck]));
+
+    expect(ofRows(railsDockRows(model({ snapshot: manual, history, expanded: new Set(['rules']) }))))
+      .toEqual([[null, null], [null, true]]);
+
+    const ran: RailsCheckRun = {
+      version: 1,
+      name: 'arch',
+      startedAt: 's',
+      finishedAt: 'f',
+      laneName: null,
+      result: { name: 'arch', outcome: 'timeout', exitCode: null, durationMs: 9, outputTail: '' },
+    };
+    expect(ofRows(railsDockRows(model({ snapshot: manual, history, checkRuns: new Map([['arch', ran]]), expanded: new Set(['rules']) }))))
+      .toEqual([[ran.result, ran], ['fail', true]]);
   });
 
   it('lists the newest runs, folds the rest under older, and lists them below it when expanded', () => {

@@ -18,6 +18,8 @@ export interface RailsCheckDecl {
   readonly name: string;
   readonly argv: readonly string[];
   readonly timeoutS: number;
+  /** Spec 368: Rails runs skip it; only the human starts it, alone. */
+  readonly manual: boolean;
 }
 
 /** One `## Rails` bullet. `id` is `<relative path>#<n>` (1-based). */
@@ -63,6 +65,20 @@ export interface RailsCheckResult {
   readonly exitCode: number | null;
   readonly durationMs: number;
   readonly outputTail: string;
+}
+
+/**
+ * Spec 368: `.krypton/rails/checks/<name>.json`, the newest manual run of one
+ * check. Rust validates `name` against the manifest and stores the rest as is.
+ */
+export interface RailsCheckRun {
+  readonly version: 1;
+  readonly name: string;
+  readonly startedAt: string;
+  readonly finishedAt: string;
+  /** The lane `#rails check` was typed in, or the active lane for `r` / a click; null without one. */
+  readonly laneName: string | null;
+  readonly result: RailsCheckResult;
 }
 
 export type RailsSeverity = 'violation' | 'suspect';
@@ -205,6 +221,10 @@ export interface RailsDockModel {
   readonly selectedKey: string | null;
   /** Keys of expanded rows. */
   readonly expanded: ReadonlySet<string>;
+  /** Spec 368: the newest manual run of each check, by name, as read from disk. */
+  readonly checkRuns: ReadonlyMap<string, RailsCheckRun>;
+  /** Spec 368: the manual check running now, or null. */
+  readonly checkInFlight: string | null;
 }
 
 /** 1 head · 2 checks · 3 findings · 4 rules · 5 runs (the `1`–`5` jump keys). */
@@ -222,7 +242,9 @@ export type RailsDockRow =
       readonly key: string; // `check:<name>`
       readonly section: 2;
       readonly decl: RailsCheckDecl;
-      /** From the latest run; null when it has not run (or checks were skipped). */
+      /** A manual check's newest manual run; null for an auto check, or a manual one never run. */
+      readonly manualRun: RailsCheckRun | null;
+      /** From the latest run (null when it has not run, or checks were skipped); a manual check's from `manualRun`. */
       readonly result: RailsCheckResult | null;
     }
   | { readonly kind: 'finding'; readonly key: string; readonly section: 3; readonly finding: TrackedFinding } // `finding:<TrackedFinding.key>`
@@ -240,8 +262,11 @@ export type RailsDockRow =
       readonly key: string; // `rule:<id>`
       readonly section: 4;
       readonly rule: RailsRule;
-      /** Status from the newest run in which the rule was in scope; null if never. */
+      /** Status from the newest run in which the rule was in scope; null if never. A rule
+       *  enforced by a manual check takes its check's manual result instead (spec 368). */
       readonly status: RailsRuleStatus | null;
+      /** Spec 368: the rule's `check:<name>` is a manual check. */
+      readonly manualCheck: boolean;
     }
   | { readonly kind: 'uncovered'; readonly key: 'uncovered'; readonly section: 4; readonly sources: readonly string[] }
   | { readonly kind: 'run'; readonly key: string; readonly section: 5; readonly run: RailsRunRecord } // `run:<runId>`

@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { railsDockActions, type RailsDockActionsInput } from '../../rails/actions';
+import { railsSendSet } from '../../rails/envelope';
 import { localHhMm } from '../../rails/format';
 import { railsDockRows } from '../../rails/rows';
 import type {
   RailsCheckResult,
+  RailsCheckRun,
   RailsDockModel,
   RailsRunRecord,
   RailsSnapshot,
@@ -17,8 +19,8 @@ const snapshot: RailsSnapshot = {
   manifestPath: '/repo/.krypton/rails.toml',
   trust: 'trusted',
   checks: [
-    { name: 'typecheck', argv: ['npx', 'tsc', '--noEmit'], timeoutS: 120 },
-    { name: 'arch', argv: ['npx', 'vitest', 'run', 'arch'], timeoutS: 60 },
+    { name: 'typecheck', argv: ['npx', 'tsc', '--noEmit'], timeoutS: 120, manual: false },
+    { name: 'arch', argv: ['npx', 'vitest', 'run', 'arch'], timeoutS: 60, manual: false },
   ],
   rules: [
     { id: 'docs/adr/0008-lanes.md#1', source: 'docs/adr/0008-lanes.md', appliesTo: [], check: 'arch', text: 'Lanes never import views.' },
@@ -72,6 +74,8 @@ function run(over: Partial<RailsRunRecord> = {}): RailsRunRecord {
 
 const history: readonly RailsRunRecord[] = [run(), run({ runId: '20261027T130000Z-0000', verdict: 'clean', open: [], stale: true })];
 
+const NO_CHECK_RUNS: ReadonlyMap<string, RailsCheckRun> = new Map();
+
 function model(over: Partial<RailsDockModel> = {}): RailsDockModel {
   return {
     snapshot,
@@ -80,6 +84,8 @@ function model(over: Partial<RailsDockModel> = {}): RailsDockModel {
     history,
     selectedKey: null,
     expanded: new Set<string>(),
+    checkRuns: NO_CHECK_RUNS,
+    checkInFlight: null,
     ...over,
   };
 }
@@ -96,7 +102,8 @@ function actions(over: Partial<RailsDockActionsInput> = {}): RailsDockProps['act
     mode: 'auto',
     progress: { kind: 'idle' },
     running: false,
-    latest: history[0],
+    checkInFlight: null,
+    sendSet: railsSendSet(model()),
     lastSend: null,
     activeLane: IDLE_LANE,
     updateLane: null,
@@ -347,6 +354,78 @@ describe('RailsDock', () => {
     dock.update(props(model()));
     dock.dispose();
     expect(root.childElementCount).toBe(0);
+  });
+
+  // Spec 368 — manual checks.
+
+  it('paints a manual check from its own manual run, with a RUN key, never from a Rails run', () => {
+    const manual: RailsSnapshot = {
+      ...snapshot,
+      checks: [...snapshot.checks, { name: 'osv', argv: ['python3', 'scripts/rails-osv.py'], timeoutS: 120, manual: true }],
+      rules: [...snapshot.rules, { ...snapshot.rules[0], id: 'docs/adr/0029-osv.md#1', check: 'osv' }],
+    };
+    // An older run that still ran osv automatically must not show as its result.
+    const history = [run({ checks: [...run().checks, check('osv', 'pass')] })];
+    const dock = mount();
+    dock.update(props(model({ snapshot: manual, history, expanded: new Set(['rules']) })));
+
+    const osv = (): HTMLElement | null => rowEl(dock, 'check:osv');
+    const key = (): HTMLButtonElement | null | undefined => osv()?.querySelector<HTMLButtonElement>('.acp-rails-dock__run');
+    expect(osv()?.querySelector('.acp-rails-dock__outcome--none')?.textContent).toBe('manual');
+    expect(key()?.textContent).toBe('RUN');
+    expect(key()?.disabled).toBe(false);
+    const ruleStatus = rowEl(dock, 'rule:docs/adr/0029-osv.md#1')?.querySelector('.acp-rails-dock__status');
+    expect(ruleStatus?.textContent).toBe('manual · not run');
+
+    const finished = new Date(2026, 10, 7, 14, 2).toISOString();
+    const ran: RailsCheckRun = {
+      version: 1,
+      name: 'osv',
+      startedAt: finished,
+      finishedAt: finished,
+      laneName: 'OMP-1',
+      result: { ...check('osv', 'fail', '185 known vulnerabilities'), durationMs: 3700 },
+    };
+    const checkRuns = new Map([['osv', ran]]);
+    dock.update(props(model({ snapshot: manual, history, checkRuns, expanded: new Set(['rules', 'check:osv']) })));
+    expect(osv()?.querySelector('.acp-rails-dock__outcome--fail')?.textContent).toBe('FAIL');
+    expect(osv()?.querySelector('.acp-rails-dock__duration')?.getAttribute('title')).toBe('2026-11-07 14:02 · OMP-1 · 3.7s');
+    expect(osv()?.querySelector('.acp-rails-dock__detail')?.textContent).toContain('ran2026-11-07 14:02 · OMP-1 · 3.7s');
+    expect(osv()?.querySelector('pre')?.textContent).toBe('185 known vulnerabilities');
+    expect(rowEl(dock, 'rule:docs/adr/0029-osv.md#1')?.querySelector('.acp-rails-dock__status')?.textContent).toBe('fail');
+
+    dock.update(props(model({ snapshot: manual, history, checkRuns, checkInFlight: 'osv' }), { actions: actions({ checkInFlight: 'osv' }) }));
+    expect(key()?.textContent).toBe('RUNNING');
+    expect(key()?.classList.contains('acp-rails-dock__run--running')).toBe(true);
+    expect(osv()?.querySelector('.acp-rails-dock__outcome--none')?.textContent).toBe('running');
+
+    dock.update(props(model({ snapshot: { ...manual, trust: 'changed' }, history, checkRuns }), {
+      actions: actions({ snapshot: { ...manual, trust: 'changed' } }),
+    }));
+    expect(key()?.disabled).toBe(true);
+    expect(key()?.title).toBe('not trusted · #rails trust');
+  });
+
+  it('reports a RUN click through onRunCheck without selecting the row, and ignores a disabled key', () => {
+    const manual: RailsSnapshot = {
+      ...snapshot,
+      checks: [{ name: 'osv', argv: ['python3', 'scripts/rails-osv.py'], timeoutS: 120, manual: true }],
+    };
+    const onRunCheck = vi.fn();
+    const onSelectRow = vi.fn();
+    const dock = mount();
+    dock.update(props(model({ snapshot: manual }), { onRunCheck, onSelectRow, actions: actions({ snapshot: manual }) }));
+    const key = (): HTMLButtonElement | null => dock.el.querySelector<HTMLButtonElement>('[data-rails-check="osv"]');
+
+    key()?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    key()?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
+    expect(onRunCheck.mock.calls).toEqual([['osv']]);
+    expect(onSelectRow).not.toHaveBeenCalled();
+
+    dock.update(props(model({ snapshot: manual }), { onRunCheck, actions: actions({ snapshot: manual, running: true }) }));
+    expect(key()?.title).toBe('a run is already in progress');
+    key()?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    expect(onRunCheck.mock.calls).toEqual([['osv']]);
   });
 
   // Spec 344 — the Actions bar.

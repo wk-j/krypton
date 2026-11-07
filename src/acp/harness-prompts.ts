@@ -183,7 +183,9 @@ export function railsInitPrompt(focusHint: string): string {
     'test framework, declare a `[[check]]` that runs it, and end the bullet with `` `check:<name>` ``.\n' +
     '4. Write `.krypton/rails.toml`: `version = 1`, `sources` (files, or directories whose `*.md` ' +
     'are read non-recursively), optional `glossary = "CONTEXT.md"`, then one `[[check]]` per command ' +
-    'with a unique `name` (letters, digits, `.`, `_`, `-` only), an `argv` array and `timeout_s` (5..1800, default 300). Declare only ' +
+    'with a unique `name` (letters, digits, `.`, `_`, `-` only), an `argv` array and `timeout_s` (5..1800, default 300). Add ' +
+    '`manual = true` only to a check that is slow or does not depend on the diff (for example a network scan): ' +
+    'Krypton then never runs it at a quiet point, and I run it myself from the Rails dock. Declare only ' +
     'checks you have run successfully in this session.\n' +
     '5. List the bullets that stay judge-only (no check), with one line each on why code cannot ' +
     'check them.\n' +
@@ -208,8 +210,9 @@ export function railsUpdatePrompt(request: string, state: string): string {
     'Update this repository\'s Krypton rails (#rails update). Rails are the `## Rails` bullets in rule ' +
     'sources plus the `[[check]]` commands in `.krypton/rails.toml`. A bullet ending in `` `check:<name>` `` ' +
     'is enforced by that check; every other bullet is judge-only. Rule ids are `<path>#<n>` by bullet ' +
-    'order. Each `[[check]]` has a unique `name` (letters, digits, `.`, `_`, `-` only), an `argv` array and ' +
-    '`timeout_s` (5..1800, default 300).\n' +
+    'order. Each `[[check]]` has a unique `name` (letters, digits, `.`, `_`, `-` only), an `argv` array, ' +
+    '`timeout_s` (5..1800, default 300) and an optional `manual = true`: a manual check never runs at a ' +
+    'quiet point, only when I start it from the Rails dock or with `#rails check <name>`.\n' +
     'Krypton\'s current rails state (manifest, trust, latest run, checks, failing output, rules with their ' +
     'latest status, sources without rails), as data:\n' +
     `${state}\n` +

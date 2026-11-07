@@ -4,6 +4,9 @@
 // working tree: the declared checks (no tokens), then a cheap headless judge
 // against the `## Rails` bullets that apply to the changed paths. Code, not the
 // model, decides the verdict; every run is recorded under `.krypton/rails/runs/`.
+// Spec 368: a check declared `manual` is skipped by every run; the human runs
+// it alone (`r` on its row, its RUN key, `#rails check <name>`), and its newest
+// result is kept per check under `.krypton/rails/checks/`.
 //
 // Spec 275 shape: a plain class over a narrow host. It owns its OWN
 // `AssistEngine` + `AcpAssistSession`, so its single-flight and breaker never
@@ -29,7 +32,7 @@ import type { HarnessRailsHost } from './harness-view-host';
 import type { HarnessLane } from './harness-view-types';
 import { railsDockActions, type RailsDockAction, type RailsDockActions, type RailsSendMark } from './rails/actions';
 import { railsAssistConfig, resolveRailsConfig } from './rails/config';
-import { railsEnvelope } from './rails/envelope';
+import { failedChecksLabel, isFailedCheck, railsEnvelope, railsSendSet, type RailsEnvelopeCheck } from './rails/envelope';
 import { RAILS_JUDGE_ID, judgePayload, railsJudge } from './rails/judge';
 import { railsDockRows } from './rails/rows';
 import { addedLines, selectGlossary, selectRules } from './rails/select';
@@ -45,6 +48,7 @@ import {
 import { railsUpdateState } from './rails/update-state';
 import type {
   RailsCheckResult,
+  RailsCheckRun,
   RailsConfig,
   RailsDockModel,
   RailsDockSection,
@@ -66,7 +70,7 @@ export const RAILS_HISTORY_LIMIT = 20;
 /** The warm judge backend is killed after this long without a run. */
 export const RAILS_SESSION_IDLE_MS = 10 * 60_000;
 
-export const RAILS_USAGE = 'usage: #rails [now | send | trust | init [<hint>] | update [<request>] | off | manual | auto]';
+export const RAILS_USAGE = 'usage: #rails [now | check [<name>] | send | trust | init [<hint>] | update [<request>] | off | manual | auto]';
 
 /** The turn label `#rails update` runs under. Spec 344: a lane carrying it is
  *  running Update, whether it was clicked or typed. */
@@ -109,6 +113,24 @@ function isRunRecord(value: unknown): value is RailsRunRecord {
     && typeof run.ruleStatus === 'object';
 }
 
+/** `rails_check_runs` returns opaque JSON: keep only records the dock can paint. */
+function isCheckRun(value: unknown): value is RailsCheckRun {
+  if (value === null || typeof value !== 'object') return false;
+  const run = value as Partial<RailsCheckRun>;
+  const result = run.result as Partial<RailsCheckResult> | undefined;
+  return run.version === 1
+    && typeof run.name === 'string'
+    && typeof run.startedAt === 'string'
+    && typeof run.finishedAt === 'string'
+    && (run.laneName === null || typeof run.laneName === 'string')
+    && result !== null
+    && typeof result === 'object'
+    && result.name === run.name
+    && typeof result.outcome === 'string'
+    && typeof result.durationMs === 'number'
+    && typeof result.outputTail === 'string';
+}
+
 function sameStat(a: WorkingDiffStat, b: WorkingDiffStat): boolean {
   return a.files === b.files && a.added === b.added && a.removed === b.removed && a.truncated === b.truncated;
 }
@@ -139,8 +161,14 @@ export class HarnessRailsController {
   private selectedKey: string | null = null;
   private expanded: ReadonlySet<string> = new Set();
   private readonly runPaths = new Map<string, string>();
-  /** Spec 344: the newest run's findings went to a lane (send-all). Memory only. */
+  /** Spec 368 amendment A: what the last Send-all delivered. Memory only. */
   private lastSend: RailsSendMark | null = null;
+  /** Spec 368: the newest manual run of each check, by name, from `rails_check_runs`. */
+  private checkRuns: ReadonlyMap<string, RailsCheckRun> = new Map();
+  /** Spec 368: the manual check running now; it blocks runs, and they block it. */
+  private checkInFlight: string | null = null;
+  /** Spec 368: an auto run that came due while a manual check ran; armed again after it. */
+  private deferredAuto: RailsRunTrigger | null = null;
 
   /** Bumped by `cancel()`: an in-flight run whose token differs is dropped unrecorded. */
   private epoch = 0;
@@ -170,6 +198,18 @@ export class HarnessRailsController {
     }
     const text = `#rails ${action}`;
     void this.host.trackCommandRun(lane, text, () => this.runCommand(lane, [action], text));
+  };
+
+  /** Spec 368: `r` on a manual check row and its RUN key. They run the typed
+   *  `#rails check <name>` in the active lane, as the Actions bar buttons do. */
+  readonly runCheckAction = (name: string): void => {
+    const lane = this.activeLane();
+    if (!lane) {
+      void this.requestCheck(name, null);
+      return;
+    }
+    const text = `#rails check ${name}`;
+    void this.host.trackCommandRun(lane, text, () => this.runCommand(lane, ['check', name], text));
   };
 
   constructor(private readonly host: HarnessRailsHost, deps: RailsControllerDeps = {}) {
@@ -264,6 +304,21 @@ export class HarnessRailsController {
       await this.update(lane, text.trim().replace(/^#rails\s+update\b/i, '').trim());
       return;
     }
+    if (sub === 'check') {
+      if (args.length > 2) {
+        this.host.flashChip(RAILS_USAGE);
+        return;
+      }
+      if (args.length === 1) {
+        const names = (this.snapshot?.checks ?? []).filter((decl) => decl.manual).map((decl) => decl.name);
+        this.host.flashChip(names.length > 0 ? `rails: manual checks — ${names.join(', ')}` : 'rails: no manual checks');
+        return;
+      }
+      // spec 343: the command lasts as long as the check it started.
+      const check = this.requestCheck(args[1], lane);
+      if (check) await check;
+      return;
+    }
     if (extra) {
       this.host.flashChip(RAILS_USAGE);
       return;
@@ -292,7 +347,8 @@ export class HarnessRailsController {
     this.host.flashChip(RAILS_USAGE);
   }
 
-  /** `#rails now` and `r` in the dock: start at step 3, no fingerprint stop.
+  /** `#rails now`, the Run button, and `r` on any dock row but a manual check's:
+   *  start at step 3, no fingerprint stop.
    *  Returns the started run (it never rejects), or null when none started. */
   requestRun(lane: HarnessLane | null): Promise<void> | null {
     if (this.disposed) return null;
@@ -300,11 +356,38 @@ export class HarnessRailsController {
       this.host.flashChip('rails: off — #rails manual');
       return null;
     }
-    if (this.running) {
+    if (this.running || this.checkInFlight !== null) {
       this.host.flashChip('rails: a run is already in progress');
       return null;
     }
     this.startRun({ kind: 'manual', laneId: lane?.id ?? null, laneName: lane?.displayName ?? null });
+    return this.runPromise;
+  }
+
+  /**
+   * Spec 368: run one manual check alone — no clean-tree stop, no fingerprint,
+   * no judge, no run record. Returns the started check (it never rejects), or
+   * null when it was refused.
+   */
+  requestCheck(name: string, lane: HarnessLane | null): Promise<void> | null {
+    if (this.disposed) return null;
+    if (this.mode() === 'off') {
+      this.host.flashChip('rails: off — #rails manual');
+      return null;
+    }
+    if (this.snapshot?.trust !== 'trusted') {
+      this.host.flashChip('rails: not trusted — #rails trust');
+      return null;
+    }
+    if (this.running || this.checkInFlight !== null) {
+      this.host.flashChip('rails: a run is already in progress');
+      return null;
+    }
+    if (!(this.snapshot?.checks ?? []).some((decl) => decl.manual && decl.name === name)) {
+      this.host.flashChip(`rails: no manual check ${name}`);
+      return null;
+    }
+    this.startCheck(name, lane?.displayName ?? null);
     return this.runPromise;
   }
 
@@ -317,7 +400,7 @@ export class HarnessRailsController {
     else if (key === 'Enter') this.toggleExpanded();
     else if (key >= '1' && key <= '5' && key.length === 1) this.jumpToSection(Number(key) as RailsDockSection);
     else if (key === 's') this.sendSelected();
-    else if (key === 'r') this.runDockAction('now');
+    else if (key === 'r') this.runSelected();
     else if (key === 'Escape') this.host.focusComposer();
     else return false;
     event.preventDefault();
@@ -336,16 +419,18 @@ export class HarnessRailsController {
       actions: this.actions(),
       onSelectRow: this.selectRow,
       onAction: this.runDockAction,
+      onRunCheck: this.runCheckAction,
     });
   }
 
-  /** `#rails off`, a lane-set close, dispose: drop the run unrecorded. */
+  /** `#rails off`, a lane-set close, dispose: drop the run or manual check unrecorded. */
   cancel(): void {
     this.epoch += 1;
     this.clearDebounce();
     this.engine.cancel();
-    if (!this.running) return;
+    if (!this.running && this.checkInFlight === null) return;
     this.running = false;
+    this.checkInFlight = null;
     // Only a check holds the per-root lock; killing it while this view judges
     // would kill another harness's check on the same root.
     if (this.root && this.progress.kind === 'checking') {
@@ -394,6 +479,11 @@ export class HarnessRailsController {
     const trigger = this.armedTrigger;
     this.armedTrigger = null;
     if (this.disposed) return;
+    // Spec 368: a manual check holds the per-root lock; the run waits for it.
+    if (trigger && this.checkInFlight !== null && this.mode() === 'auto') {
+      this.deferredAuto = trigger;
+      return;
+    }
     const quiet = this.host.lanes.every((lane) => lane.status !== 'busy' && lane.status !== 'needs_permission');
     if (!trigger || this.running || this.mode() !== 'auto' || !quiet) {
       if (this.progress.kind === 'held') this.setProgress({ kind: 'idle' });
@@ -415,6 +505,7 @@ export class HarnessRailsController {
     clearTimeout(this.debounceTimer);
     this.debounceTimer = undefined;
     this.armedTrigger = null;
+    this.deferredAuto = null;
   }
 
   // ─── the run ────────────────────────────────────────────────────
@@ -445,6 +536,92 @@ export class HarnessRailsController {
   /** Throws `RunCancelled` once `cancel()` has superseded `token`. */
   private live(token: number): void {
     if (this.disposed || token !== this.epoch) throw new RunCancelled();
+  }
+
+  /** Spec 368: one manual check, settled like a run (cancel drops it unrecorded). */
+  private startCheck(name: string, laneName: string | null): void {
+    this.checkInFlight = name;
+    // The RUN key latches from the first step, as Run does for a run.
+    this.renderDock();
+    const token = this.epoch;
+    this.runPromise = this.runCheck(name, laneName, token)
+      .catch((e: unknown) => {
+        if (this.disposed || token !== this.epoch) return;
+        this.setProgress(e instanceof RunCancelled ? { kind: 'idle' } : { kind: 'error', message: errorText(e) });
+      })
+      .finally(() => {
+        if (token !== this.epoch) return;
+        this.checkInFlight = null;
+        this.renderDock();
+        this.publish();
+        // Step 6: an auto run that came due during the check starts at the next quiet point.
+        const deferred = this.deferredAuto;
+        this.deferredAuto = null;
+        if (deferred && this.mode() === 'auto') this.arm(deferred);
+      });
+  }
+
+  private async runCheck(name: string, laneName: string | null, token: number): Promise<void> {
+    await this.loading;
+    this.live(token);
+    const root = await this.resolveRoot();
+    this.live(token);
+    if (!root) {
+      this.setProgress({ kind: 'error', message: 'no project dir' });
+      return;
+    }
+    const startedAt = new Date(this.now()).toISOString();
+    this.setProgress({ kind: 'checking', index: 1, total: 1, name });
+    let result: RailsCheckResult;
+    try {
+      result = await this.invoke<RailsCheckResult>('rails_run_check', { root, name });
+    } catch (e) {
+      this.live(token);
+      const message = errorText(e);
+      if (message === 'cancelled') throw new RunCancelled();
+      if (message === 'busy') {
+        this.setProgress({ kind: 'busy' });
+        return;
+      }
+      // Trust changed between the dock's gate and Rust's.
+      if (message === 'untrusted') {
+        this.setProgress({ kind: 'paused' });
+        return;
+      }
+      result = { name, outcome: 'error', exitCode: null, durationMs: 0, outputTail: message };
+    }
+    this.live(token);
+    const run: RailsCheckRun = {
+      version: 1,
+      name,
+      startedAt,
+      finishedAt: new Date(this.now()).toISOString(),
+      laneName,
+      result,
+    };
+    // The row shows the result even when it cannot be kept.
+    this.checkRuns = new Map([...this.checkRuns, [name, run]]);
+    try {
+      await this.invoke<string>('rails_record_check', { root, run });
+    } catch (e) {
+      this.live(token);
+      this.setProgress({ kind: 'error', message: `check ${name} result not saved: ${errorText(e)}` });
+      return;
+    }
+    this.live(token);
+    this.checkRuns = await this.readCheckRuns(root);
+    this.live(token);
+    this.setProgress({ kind: 'idle' });
+  }
+
+  /** Spec 368: every manual result on disk, by name. A failed read keeps the local map. */
+  private async readCheckRuns(root: string): Promise<ReadonlyMap<string, RailsCheckRun>> {
+    try {
+      const runs = await this.invoke<unknown[]>('rails_check_runs', { root });
+      return new Map(runs.filter(isCheckRun).map((run) => [run.name, run]));
+    } catch {
+      return this.checkRuns;
+    }
   }
 
   private async run(trigger: RailsRunTrigger, token: number): Promise<void> {
@@ -501,10 +678,12 @@ export class HarnessRailsController {
     }
 
     // 6. Check step (skipped without trust: a manual run is then judge-only).
+    // Spec 368: only the human starts a manual check; `i/n` counts the rest.
     const checks: RailsCheckResult[] = [];
     if (trusted) {
-      for (const [index, decl] of snapshot.checks.entries()) {
-        this.setProgress({ kind: 'checking', index: index + 1, total: snapshot.checks.length, name: decl.name });
+      const auto = snapshot.checks.filter((decl) => !decl.manual);
+      for (const [index, decl] of auto.entries()) {
+        this.setProgress({ kind: 'checking', index: index + 1, total: auto.length, name: decl.name });
         let result: RailsCheckResult;
         try {
           result = await this.invoke<RailsCheckResult>('rails_run_check', { root, name: decl.name });
@@ -604,13 +783,22 @@ export class HarnessRailsController {
       resolved: tracked.resolved,
       dropped,
       rulesTruncated,
-      ruleStatus: ruleStatuses({ rules: snapshot.rules, selectedRuleIds, findings, checks, judged }),
+      ruleStatus: ruleStatuses({
+        rules: snapshot.rules,
+        selectedRuleIds,
+        findings,
+        checks,
+        judged,
+        manualChecks: new Set(snapshot.checks.filter((decl) => decl.manual).map((decl) => decl.name)),
+      }),
       error,
     };
     const path = await this.invoke<string>('rails_record_run', { root, run: record });
     this.live(token);
     this.runPaths.set(runId, path);
     this.history = await this.readHistory(root, record);
+    this.live(token);
+    this.checkRuns = await this.readCheckRuns(root);
     this.live(token);
     const cooling = this.engine.cooldownUntil(RAILS_JUDGE_ID);
     this.setProgress(cooling > this.now() ? { kind: 'cooling', until: cooling } : { kind: 'idle' });
@@ -651,6 +839,7 @@ export class HarnessRailsController {
       } catch {
         this.history = [];
       }
+      this.checkRuns = await this.readCheckRuns(root);
     }
     if (this.disposed) return;
     this.renderDock();
@@ -722,32 +911,69 @@ export class HarnessRailsController {
       return;
     }
     const latest = this.history[0];
-    const state = railsUpdateState(snapshot, this.history, latest ? this.runPath(latest) : null);
+    const state = railsUpdateState(snapshot, this.history, latest ? this.runPath(latest) : null, this.checkRuns);
     await this.host.enqueueSystemPrompt(lane, railsUpdatePrompt(request, state), undefined, RAILS_UPDATE_LABEL);
   }
 
-  /** `only` null: every open finding of the newest run. */
+  /** `only` null: Send-all, the Send set (spec 368 amendment A); else one finding of the newest run. */
   private send(laneId: string, only: TrackedFinding | null): void {
-    const latest = this.history[0];
-    if (!latest || latest.open.length === 0) {
-      this.host.flashChip('rails: no open findings');
+    const name = this.host.lanes.find((lane) => lane.id === laneId)?.displayName ?? laneId;
+    if (only) {
+      const latest = this.history[0];
+      if (!latest) return;
+      this.host.injectEnvelope(laneId, railsEnvelope({ record: latest, path: this.runPath(latest), only }, []));
+      this.host.flashChip(`rails: sent 1 finding → ${name}`);
       return;
     }
-    this.host.injectEnvelope(laneId, railsEnvelope(latest, this.runPath(latest), only ?? undefined));
-    const name = this.host.lanes.find((lane) => lane.id === laneId)?.displayName ?? laneId;
-    const count = only ? 1 : latest.open.length;
-    this.host.flashChip(`rails: sent ${count} finding${count === 1 ? '' : 's'} → ${name}`);
-    if (!only) {
-      this.lastSend = { runId: latest.runId, laneName: name, count, at: this.now() };
-      this.renderDock();
+    const set = railsSendSet(this.model());
+    if (set.keys.length === 0) {
+      this.host.flashChip('rails: no open findings or failed manual checks');
+      return;
     }
+    const run = set.run ? { record: set.run, path: this.runPath(set.run) } : null;
+    this.host.injectEnvelope(laneId, railsEnvelope(run, set.manual.flatMap((result) => this.envelopeCheck(result))));
+    this.host.flashChip(`rails: sent ${set.label} → ${name}`);
+    this.lastSend = { keys: set.keys, label: set.label, laneName: name, at: this.now() };
+    this.renderDock();
+  }
+
+  /** Spec 368 amendment A: `s` on a manual check row sends its failed result alone. No mark, as for one finding. */
+  private sendCheck(laneId: string, name: string): void {
+    if (this.checkInFlight === name) {
+      this.host.flashChip(`rails: ${name} is running`);
+      return;
+    }
+    const result = this.checkRuns.get(name);
+    const check = result && isFailedCheck(result.result.outcome) ? this.envelopeCheck(result) : [];
+    if (check.length === 0) {
+      this.host.flashChip(`rails: ${name} has no failed result to send`);
+      return;
+    }
+    const lane = this.host.lanes.find((candidate) => candidate.id === laneId)?.displayName ?? laneId;
+    this.host.injectEnvelope(laneId, railsEnvelope(null, check));
+    this.host.flashChip(`rails: sent ${failedChecksLabel([name])} → ${lane}`);
   }
 
   private sendSelected(): void {
     const row = railsDockRows(this.model()).find((candidate) => candidate.key === this.selectedKey);
     if (row?.kind === 'finding') this.send(this.host.activeLaneId, row.finding);
     else if (row?.kind === 'head') this.send(this.host.activeLaneId, null);
-    else this.host.flashChip('rails: select a finding, or the head row to send all');
+    else if (row?.kind === 'check' && row.decl.manual) this.sendCheck(this.host.activeLaneId, row.decl.name);
+    else this.host.flashChip('rails: select a finding, a failed manual check, or the head row to send all');
+  }
+
+  /** A manual result with its manifest entry and check file; empty when the manifest no longer declares it. */
+  private envelopeCheck(result: RailsCheckRun): RailsEnvelopeCheck[] {
+    const decl = this.snapshot?.checks.find((candidate) => candidate.manual && candidate.name === result.name);
+    const path = `${this.root ?? this.host.projectDir ?? ''}/.krypton/rails/checks/${result.name}.json`;
+    return decl ? [{ result, decl, path }] : [];
+  }
+
+  /** `r`: on a manual check row, that check alone (spec 368); on any other row, a run. */
+  private runSelected(): void {
+    const row = railsDockRows(this.model()).find((candidate) => candidate.key === this.selectedKey);
+    if (row?.kind === 'check' && row.decl.manual) this.runCheckAction(row.decl.name);
+    else this.runDockAction('now');
   }
 
   private runPath(run: RailsRunRecord): string {
@@ -764,6 +990,8 @@ export class HarnessRailsController {
       history: this.history,
       selectedKey: this.selectedKey,
       expanded: this.expanded,
+      checkRuns: this.checkRuns,
+      checkInFlight: this.checkInFlight,
     };
   }
 
@@ -774,7 +1002,8 @@ export class HarnessRailsController {
       mode: this.mode(),
       progress: this.progress,
       running: this.running,
-      latest: this.history[0] ?? null,
+      checkInFlight: this.checkInFlight,
+      sendSet: railsSendSet(this.model()),
       lastSend: this.lastSend,
       activeLane: lane ? { displayName: lane.displayName, status: lane.status, hasClient: lane.client !== null } : null,
       updateLane: this.host.lanes.find((candidate) => candidate.activeSystemLabel === RAILS_UPDATE_LABEL)?.displayName ?? null,

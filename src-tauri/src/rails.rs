@@ -26,6 +26,7 @@ use crate::child_process::{kill_group, login_command, Signal};
 const MANIFEST_REL: &str = ".krypton/rails.toml";
 const RAILS_DIR_REL: &str = ".krypton/rails";
 const RUNS_REL: &str = ".krypton/rails/runs";
+const CHECKS_REL: &str = ".krypton/rails/checks";
 const TRUST_FILE: &str = "rails-trust.toml";
 const DEFAULT_TIMEOUT_S: u64 = 300;
 const MIN_TIMEOUT_S: u64 = 5;
@@ -57,6 +58,7 @@ pub struct RailsCheckDecl {
     pub name: String,
     pub argv: Vec<String>,
     pub timeout_s: u64,
+    pub manual: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -279,7 +281,15 @@ fn parse_check(
             DEFAULT_TIMEOUT_S
         }
     };
-    const KNOWN: [&str; 3] = ["name", "argv", "timeout_s"];
+    let manual = match entry.get("manual") {
+        None => false,
+        Some(toml::Value::Boolean(b)) => *b,
+        Some(_) => {
+            errors.push(format!("check[{i}]: manual must be true or false"));
+            false
+        }
+    };
+    const KNOWN: [&str; 4] = ["name", "argv", "timeout_s", "manual"];
     for key in entry.keys() {
         if !KNOWN.contains(&key.as_str()) {
             warnings.push(format!("check[{i}]: unknown key \"{key}\""));
@@ -289,6 +299,7 @@ fn parse_check(
         name,
         argv,
         timeout_s,
+        manual,
     })
 }
 
@@ -1236,6 +1247,64 @@ fn history(root: &Path, limit: u32) -> Vec<Value> {
         .collect()
 }
 
+fn checks_dir(root: &Path) -> PathBuf {
+    root.join(CHECKS_REL)
+}
+
+/// Record a manual check's result. The name must be a `manual = true` check
+/// of the freshly loaded manifest before it becomes part of a path.
+fn record_check(root: &Path, run: &Value) -> Result<PathBuf, String> {
+    let name = run
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "run.name: required string".to_string())?;
+    let snapshot = load(root, None).snapshot;
+    if !snapshot.present {
+        return Err(format!("no {MANIFEST_REL} in {}", root.display()));
+    }
+    if let Some(e) = snapshot.error {
+        return Err(e);
+    }
+    let decl = snapshot
+        .checks
+        .iter()
+        .find(|c| c.name == name && c.manual)
+        .ok_or_else(|| format!("not a manual check: {name}"))?;
+    let rails_dir = root.join(RAILS_DIR_REL);
+    crate::hook_server::ensure_ignored_dir(&rails_dir)
+        .map_err(|e| format!("{}: {e}", rails_dir.display()))?;
+    let dir = checks_dir(root);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let path = dir.join(format!("{}.json", decl.name));
+    let text = serde_json::to_string_pretty(run).map_err(|e| format!("run: {e}"))?;
+    crate::hook_server::write_file_atomic(&path, &text)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(path)
+}
+
+/// Every readable, parseable check record, sorted by file name.
+fn check_runs(root: &Path) -> Vec<Value> {
+    let dir = checks_dir(root);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name.ends_with(".json"))
+        .collect();
+    names.sort_unstable();
+    names
+        .iter()
+        .filter_map(|name| {
+            let text = std::fs::read_to_string(dir.join(name)).ok()?;
+            serde_json::from_str::<Value>(&text)
+                .ok()
+                .filter(Value::is_object)
+        })
+        .collect()
+}
+
 // ─── Tauri commands ─────────────────────────────────────────────────
 
 fn root_path(root: &str) -> Result<PathBuf, String> {
@@ -1286,6 +1355,17 @@ pub fn rails_record_run(root: String, run: Value) -> Result<String, String> {
 #[tauri::command]
 pub fn rails_history(root: String, limit: u32) -> Result<Vec<Value>, String> {
     Ok(history(&root_path(&root)?, limit))
+}
+
+#[tauri::command]
+pub fn rails_record_check(root: String, run: Value) -> Result<String, String> {
+    let path = record_check(&root_path(&root)?, &run)?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn rails_check_runs(root: String) -> Result<Vec<Value>, String> {
+    Ok(check_runs(&root_path(&root)?))
 }
 
 #[cfg(test)]
@@ -1354,11 +1434,13 @@ mod tests {
                     name: "arch-tests".into(),
                     argv: vec!["npx".into(), "vitest".into(), "run".into()],
                     timeout_s: 300,
+                    manual: false,
                 },
                 RailsCheckDecl {
                     name: "typecheck".into(),
                     argv: vec!["npx".into(), "tsc".into()],
                     timeout_s: 600,
+                    manual: false,
                 },
             ]
         );
@@ -1829,6 +1911,7 @@ mod tests {
             name: "t".into(),
             argv: vec!["sh".into(), "-c".into(), script.into()],
             timeout_s: 5,
+            manual: false,
         }
     }
 
@@ -1990,6 +2073,86 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(tmp.0.join(".krypton/rails/.gitignore")).unwrap(),
             "runs/\n"
+        );
+    }
+
+    // ── Manual checks ──
+
+    #[test]
+    fn manifest_manual_flag() {
+        let (m, _) = parse_manifest(
+            "version = 1\nsources = []\n\
+             [[check]]\nname = \"a\"\nargv = [\"true\"]\n\
+             [[check]]\nname = \"b\"\nargv = [\"true\"]\nmanual = true\n",
+        )
+        .unwrap();
+        assert!(!m.checks[0].manual);
+        assert!(m.checks[1].manual);
+        assert_eq!(
+            manifest_errors(
+                "version = 1\nsources = []\n\
+                 [[check]]\nname = \"a\"\nargv = [\"true\"]\n\
+                 [[check]]\nname = \"b\"\nargv = [\"true\"]\nmanual = \"yes\"\n"
+            ),
+            ["check[1]: manual must be true or false"]
+        );
+    }
+
+    fn manual_project(name: &str) -> TempDir {
+        let tmp = TempDir::new(name);
+        tmp.write(
+            MANIFEST_REL,
+            "version = 1\nsources = []\n\
+             [[check]]\nname = \"auto\"\nargv = [\"true\"]\n\
+             [[check]]\nname = \"smoke\"\nargv = [\"true\"]\nmanual = true\n",
+        );
+        tmp
+    }
+
+    #[test]
+    fn record_check_round_trips() {
+        let tmp = manual_project("record-check");
+        let run = json!({"version": 1, "name": "smoke", "result": {"outcome": "pass"}});
+        let path = record_check(&tmp.0, &run).unwrap();
+        assert_eq!(path, tmp.0.join(".krypton/rails/checks/smoke.json"));
+        assert!(tmp.0.join(".krypton/rails/.gitignore").is_file());
+        assert_eq!(check_runs(&tmp.0), [run]);
+    }
+
+    #[test]
+    fn record_check_rejects_undeclared_and_non_manual() {
+        let tmp = manual_project("record-check-reject");
+        for name in ["nope", "auto", "../smoke"] {
+            assert_eq!(
+                record_check(&tmp.0, &json!({"name": name})).unwrap_err(),
+                format!("not a manual check: {name}")
+            );
+        }
+        assert!(record_check(&tmp.0, &json!({})).is_err());
+        assert!(!tmp.0.join(".krypton/rails/checks").exists());
+    }
+
+    #[test]
+    fn record_check_requires_valid_manifest() {
+        let tmp = TempDir::new("record-check-nomanifest");
+        assert!(record_check(&tmp.0, &json!({"name": "smoke"})).is_err());
+        tmp.write(MANIFEST_REL, "version = 9\n");
+        assert!(record_check(&tmp.0, &json!({"name": "smoke"})).is_err());
+    }
+
+    #[test]
+    fn check_runs_skips_bad_files_and_missing_dir() {
+        let tmp = manual_project("check-runs");
+        assert!(check_runs(&tmp.0).is_empty());
+        tmp.write(".krypton/rails/checks/a.json", "{not json");
+        tmp.write(".krypton/rails/checks/b.json", "{\"name\": \"b\"}");
+        tmp.write(".krypton/rails/checks/c.json", "[1]");
+        std::fs::create_dir_all(tmp.0.join(".krypton/rails/checks/d.json")).unwrap();
+        tmp.write(".krypton/rails/checks/e.txt", "{}");
+        tmp.write(".krypton/rails/checks/f.json", "{\"name\": \"f\"}");
+        assert_eq!(
+            check_runs(&tmp.0),
+            [json!({"name": "b"}), json!({"name": "f"})]
         );
     }
 

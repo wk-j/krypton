@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Rails check `osv` (ADR 0029): a changed lockfile must carry no known vulnerability.
+"""Rails check `osv` (ADR 0029): no lockfile may carry a known vulnerability.
 
-Only lockfiles whose content differs from HEAD are scanned, and each is scanned
-whole with OSV-Scanner: every known vulnerability in it fails the check, whether
-the change brought it in or the lockfile already had it.
+A manual check (spec 368): it runs only when the human starts it. Every lockfile
+in LOCKFILES that exists is scanned whole with OSV-Scanner on every run, and every
+known vulnerability in it fails the check.
 
-Exit 0: no lockfile differs from HEAD, or the changed ones have no known vulnerability.
+Exit 0: no lockfile exists, or none has a known vulnerability.
 Exit 1: a known vulnerability, or the scan could not run (the output says which).
 """
 
@@ -24,16 +24,6 @@ SUMMARY_CHARS = 90
 
 class ScanError(Exception):
     """OSV-Scanner did not produce a result; never a vulnerability finding."""
-
-
-def head_blob(root: Path, rel: str) -> bytes | None:
-    shown = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=root, capture_output=True)
-    return shown.stdout if shown.returncode == 0 else None
-
-
-def working_blob(root: Path, rel: str) -> bytes | None:
-    path = root / rel
-    return path.read_bytes() if path.is_file() else None
 
 
 def lockfile_for(reported: str, rels: Iterable[str]) -> str | None:
@@ -103,14 +93,9 @@ def report(rows: list[dict]) -> str:
 
 def main() -> int:
     root = Path(__file__).resolve().parent.parent
-    blobs = {rel: (head_blob(root, rel), working_blob(root, rel)) for rel in LOCKFILES}
-    changed = [rel for rel, (head, now) in blobs.items() if head != now]
-    if not changed:
-        print("osv: lockfiles match HEAD, nothing to scan")
-        return 0
-    rels = [rel for rel in changed if blobs[rel][1] is not None]
+    rels = [rel for rel in LOCKFILES if (root / rel).is_file()]
     if not rels:
-        print(f"osv: {', '.join(changed)} removed, nothing to scan")
+        print(f"osv: none of {', '.join(LOCKFILES)} exists, nothing to scan")
         return 0
 
     scanner = shutil.which(SCANNER)

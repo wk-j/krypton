@@ -1859,8 +1859,10 @@ mount (local harness only)    HarnessRailsController.mount → rails_load + rail
    → rails_history → RailsDock update, Rails tab badge, ViewBus `system:rails` → footer.
 
 #rails now | r | Run button    manual run from step 3, no fingerprint stop; untrusted → judge only
-#rails send | s | Send button  railsEnvelope → injectHarnessEnvelope(lane) → drained on its next idle
-                               (Send button = send-all to the active lane; marks the run's Send done)
+#rails send | s | Send button  railsSendSet (newest run's open findings + manual results shown FAIL/TIMEOUT,
+                               spec 368 amendment A) → railsEnvelope → injectHarnessEnvelope(lane) → next idle
+                               (Send button = send-all to the active lane; marks the set's keys sent;
+                               s on a failed manual check row sends that result alone, no mark)
 #rails trust | Trust button    rails_trust → sha256 into ~/.config/krypton/rails-trust.toml
 #rails update [<request>]      rails_load (fresh) + history → railsUpdateState (fenced, ≤ 12 000 chars)
   | Update button (bare)       → railsUpdatePrompt → enqueueSystemPrompt(lane, …, 'rails update') (spec 338)

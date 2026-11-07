@@ -7,6 +7,7 @@
 import type { ReviewGitState } from '../types';
 import type {
   RailsCheckResult,
+  RailsCheckRun,
   RailsFinding,
   RailsJudgeState,
   RailsRule,
@@ -131,13 +132,16 @@ function judgeStatus(
 }
 
 /** Every rule → its status in this run. An enforced rule follows its check
- *  unless the check has no result or could not start. */
+ *  unless the check has no result or could not start. Spec 368: a rule whose
+ *  check is manual never takes `clean` from the judge — only its check can say
+ *  it holds, and a run never runs it — so it is out of scope unless cited. */
 export function ruleStatuses(input: {
   rules: readonly RailsRule[];
   selectedRuleIds: ReadonlySet<string>;
   findings: readonly RailsFinding[];
   checks: readonly RailsCheckResult[];
   judged: boolean;
+  manualChecks: ReadonlySet<string>;
 }): Record<string, RailsRuleStatus> {
   const byName = new Map(input.checks.map((check) => [check.name, check]));
   const statuses: Record<string, RailsRuleStatus> = {};
@@ -148,10 +152,21 @@ export function ruleStatuses(input: {
     } else if (check?.outcome === 'fail' || check?.outcome === 'timeout') {
       statuses[rule.id] = 'fail';
     } else {
-      statuses[rule.id] = judgeStatus(rule.id, input.selectedRuleIds.has(rule.id), input.findings, input.judged);
+      const judged = judgeStatus(rule.id, input.selectedRuleIds.has(rule.id), input.findings, input.judged);
+      const manual = rule.check !== null && input.manualChecks.has(rule.check);
+      statuses[rule.id] = manual && judged === 'clean' ? 'out-of-scope' : judged;
     }
   }
   return statuses;
+}
+
+/** Spec 368: what a manual check's newest run says about the rule it enforces;
+ *  null when it never ran or could not start. */
+export function manualCheckStatus(run: RailsCheckRun | undefined): RailsRuleStatus | null {
+  const outcome = run?.result.outcome;
+  if (outcome === 'pass') return 'pass';
+  if (outcome === 'fail' || outcome === 'timeout') return 'fail';
+  return null;
 }
 
 /** spec 337 §Verdict. A check that could not start is a run error, not a rails failure. */

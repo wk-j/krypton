@@ -6,6 +6,7 @@
 //   checks ─────────────────────────── [2]
 //   typecheck   PASS     1.2s
 //     npx tsc --noEmit                      only while untrusted, one line
+//   osv     RUN   FAIL   14:02              spec 368: a manual check, its RUN key, when it ran
 //   findings ───────────────────────── [3]
 //   violation  0008#2  src/acp/x.ts:12   new
 //     note on its own line
@@ -27,6 +28,9 @@
 // component only reflects them. One delegated click listener on the root
 // reports the clicked row's key, or the clicked action (spec 344).
 //
+// Spec 368: a manual check's row reads its own newest manual run, never a
+// Rails run, and carries a RUN key that runs it alone (`#rails check <name>`).
+//
 // Spec 344: the Actions bar sits outside the scrolling listbox, above the key
 // hints, so it never scrolls away and `j`/`k` never land on it. It is its own
 // sub-component with its own deps: a lane going busy repaints the buttons, not
@@ -46,6 +50,7 @@ import './rails-dock.css';
 import { Component } from '../../../ui/component';
 import { classes, el, setAttr } from '../../../ui/dom';
 import { disposeList, listComponent, reconcile } from '../../../ui/list';
+import { formatActionTime, fullActionTime } from '../../harness-ticket-helpers';
 import {
   RAILS_DOCK_ACTIONS,
   railsDockActionFromData,
@@ -57,6 +62,7 @@ import { railsDockRows, shortRuleId } from '../../rails/rows';
 import type {
   RailsCheckOutcome,
   RailsCheckResult,
+  RailsCheckRun,
   RailsDockModel,
   RailsDockRow,
   RailsDockSection,
@@ -77,6 +83,8 @@ export interface RailsDockProps {
   readonly actions: RailsDockActions;
   readonly onSelectRow?: (key: string) => void;
   readonly onAction?: (action: RailsDockAction) => void;
+  /** Spec 368: a click on a manual check's RUN key. */
+  readonly onRunCheck?: (name: string) => void;
 }
 
 export const RAILS_DOCK_KEY_HINTS = 'j/k · ↵ · 1–5 · s send · r run · [ ] tab · esc';
@@ -194,6 +202,10 @@ interface CheckProps extends RowProps<RowOf<'check'>> {
   readonly skipped: boolean;
   /** Spec 345: the manifest is not trusted, so each check shows the command trust would allow. */
   readonly untrusted: boolean;
+  /** Spec 368: this manual check is running now. */
+  readonly inFlight: boolean;
+  /** Spec 368: why the RUN key is disabled, or null. */
+  readonly runDisabledReason: string | null;
 }
 
 /**
@@ -301,29 +313,65 @@ class CheckRow extends RowView<RowOf<'check'>, CheckProps> {
   }
 
   protected contentDeps(next: CheckProps): readonly unknown[] {
-    return [next.row.decl, next.row.result, next.skipped, next.untrusted];
+    return [next.row.decl, next.row.result, next.row.manualRun, next.skipped, next.untrusted, next.inFlight, next.runDisabledReason];
   }
 
   protected content(next: CheckProps): readonly HTMLElement[] {
-    const { decl, result } = next.row;
-    const outcome = result
-      ? span(`${B}__outcome ${B}__outcome--${result.outcome}`, OUTCOME_LABEL[result.outcome])
-      : span(`${B}__outcome ${B}__outcome--none`, next.skipped ? 'skipped' : 'not run');
-    const out: HTMLElement[] = [
-      line(
-        span(`${B}__name`, decl.name),
-        outcome,
-        span(`${B}__duration`, result ? formatDuration(result.durationMs) : ''),
-      ),
-    ];
+    const { decl, result, manualRun } = next.row;
+    const out: HTMLElement[] = [decl.manual ? this.manualLine(next) : this.autoLine(next)];
     // Spec 345: the command trust would allow, one line; `Enter` shows it whole.
-    if (next.expanded) out.push(checkDetail(decl.argv, result));
+    if (next.expanded) out.push(checkDetail(decl.argv, result, manualRun));
     else if (next.untrusted) {
       const command = decl.argv.join(' ');
       out.push(el('p', { class: `${B}__cmd`, title: command, text: command }));
     }
     return out;
   }
+
+  private autoLine(next: CheckProps): HTMLElement {
+    const { decl, result } = next.row;
+    const outcome = result
+      ? span(`${B}__outcome ${B}__outcome--${result.outcome}`, OUTCOME_LABEL[result.outcome])
+      : span(`${B}__outcome ${B}__outcome--none`, next.skipped ? 'skipped' : 'not run');
+    return line(
+      span(`${B}__name`, decl.name),
+      outcome,
+      span(`${B}__duration`, result ? formatDuration(result.durationMs) : ''),
+    );
+  }
+
+  /** Spec 368: `osv  RUN  FAIL  14:02` — the key, its own result, when it finished. */
+  private manualLine(next: CheckProps): HTMLElement {
+    const { decl, result, manualRun } = next.row;
+    const run = el('button', {
+      class: classes(`${B}__run`, next.inFlight && `${B}__run--running`),
+      text: next.inFlight ? 'RUNNING' : 'RUN',
+      attrs: { type: 'button', 'data-rails-check': decl.name },
+    });
+    run.disabled = next.inFlight || next.runDisabledReason !== null;
+    run.title = next.inFlight
+      ? `${decl.name} is running`
+      : next.runDisabledReason ?? `Run ${decl.name} alone (#rails check ${decl.name} · r)`;
+    let outcome: HTMLElement;
+    if (next.inFlight) outcome = span(`${B}__outcome ${B}__outcome--none`, 'running');
+    else if (result) outcome = span(`${B}__outcome ${B}__outcome--${result.outcome}`, OUTCOME_LABEL[result.outcome]);
+    else outcome = span(`${B}__outcome ${B}__outcome--none`, 'manual');
+    const time = span(`${B}__duration`, '');
+    if (manualRun && !next.inFlight) {
+      const at = Date.parse(manualRun.finishedAt);
+      time.textContent = formatActionTime(at, Date.now());
+      time.title = ranText(manualRun);
+    }
+    return line(span(`${B}__name`, decl.name), run, outcome, time);
+  }
+}
+
+/** `2026-11-07 14:02 · OMP-1 · 3.7s`: when a manual check ran, who started it, how long. */
+function ranText(run: RailsCheckRun): string {
+  const parts = [fullActionTime(Date.parse(run.finishedAt))];
+  if (run.laneName) parts.push(run.laneName);
+  parts.push(formatDuration(run.result.durationMs));
+  return parts.join(' · ');
 }
 
 /** Spec 345: the runs past the newest few, folded; `Enter` lists them below it. */
@@ -346,8 +394,13 @@ class OlderRow extends RowView<RowOf<'older'>> {
   }
 }
 
-function checkDetail(argv: readonly string[], result: RailsCheckResult | null): HTMLElement {
+function checkDetail(
+  argv: readonly string[],
+  result: RailsCheckResult | null,
+  manualRun: RailsCheckRun | null,
+): HTMLElement {
   const lines: HTMLElement[] = [detailLine('argv', argv.join(' '))];
+  if (manualRun) lines.push(detailLine('ran', ranText(manualRun)));
   if (result) {
     lines.push(detailLine('exit', result.exitCode === null ? '—' : String(result.exitCode)));
     lines.push(el('pre', { class: `${B}__tail`, text: result.outputTail || '(no output)' }));
@@ -445,14 +498,17 @@ class RuleRow extends RowView<RowOf<'rule'>> {
   }
 
   protected contentDeps(next: RowProps<RowOf<'rule'>>): readonly unknown[] {
-    return [next.row.rule, next.row.status];
+    return [next.row.rule, next.row.status, next.row.manualCheck];
   }
 
   protected content(next: RowProps<RowOf<'rule'>>): readonly HTMLElement[] {
     const { rule, status } = next.row;
     const out: HTMLElement[] = [
       line(
-        span(`${B}__status ${B}__status--${status ?? 'none'}`, status ? RULE_STATUS_LABEL[status] : '—'),
+        span(
+          `${B}__status ${B}__status--${status ?? 'none'}`,
+          status ? RULE_STATUS_LABEL[status] : next.row.manualCheck ? 'manual · not run' : '—',
+        ),
         span(`${B}__rule`, shortRuleId(rule.id)),
         span(`${B}__text`, rule.text),
       ),
@@ -633,6 +689,7 @@ export class RailsDock extends Component<RailsDockProps> {
   private readonly actionsBar = new ActionsBar();
   private selectRow: ((key: string) => void) | undefined;
   private runAction: ((action: RailsDockAction) => void) | undefined;
+  private runCheck: ((name: string) => void) | undefined;
   /** The selection last scrolled into view; scroll happens only when it moves. */
   private scrolledKey: string | null = null;
 
@@ -650,6 +707,14 @@ export class RailsDock extends Component<RailsDockProps> {
         if (action) this.runAction?.(action);
         return;
       }
+      // Spec 368: a manual check's RUN key runs it; it does not select the row.
+      const run = event.target.closest<HTMLButtonElement>('[data-rails-check]');
+      if (run && this.rowsEl.contains(run)) {
+        if (run.disabled || (event instanceof MouseEvent && event.detail > 1)) return;
+        const name = run.dataset.railsCheck;
+        if (name !== undefined) this.runCheck?.(name);
+        return;
+      }
       if (!this.selectRow) return;
       const node = event.target.closest<HTMLElement>('[data-rails-key]');
       if (!node || !this.rowsEl.contains(node)) return;
@@ -661,6 +726,7 @@ export class RailsDock extends Component<RailsDockProps> {
   update(next: RailsDockProps): void {
     this.selectRow = next.onSelectRow;
     this.runAction = next.onAction;
+    this.runCheck = next.onRunCheck;
     this.actionsBar.update(next.actions);
     super.update(next);
   }
@@ -674,6 +740,9 @@ export class RailsDock extends Component<RailsDockProps> {
       model.history,
       model.selectedKey,
       [...model.expanded].sort().join('\u0000'),
+      model.checkRuns,
+      model.checkInFlight,
+      next.actions.checkDisabledReason,
     ];
   }
 
@@ -708,7 +777,16 @@ export class RailsDock extends Component<RailsDockProps> {
           }
           return;
         case 'check':
-          if (view instanceof CheckRow) view.update({ row, ...state, skipped, untrusted });
+          if (view instanceof CheckRow) {
+            view.update({
+              row,
+              ...state,
+              skipped,
+              untrusted,
+              inFlight: model.checkInFlight === row.decl.name,
+              runDisabledReason: next.actions.checkDisabledReason,
+            });
+          }
           return;
         case 'finding':
           if (view instanceof FindingRow) view.update({ row, ...state });

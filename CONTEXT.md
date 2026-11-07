@@ -208,11 +208,11 @@ A rails bullet tied to a [[Check]] by a trailing `check:<name>` marker, so code 
 _Avoid_: hard rule / soft rule (the difference is who checks it, not how much it matters)
 
 **Check** (spec 337):
-One command a project declares in `.krypton/rails.toml` and Krypton runs in a [[Rails run]] after the human has trusted that exact manifest. Its outcome is pass, fail, timeout, or error (the command could not start); only fail and timeout break the rails.
+One command a project declares in `.krypton/rails.toml` and Krypton runs in a [[Rails run]] after the human has trusted that exact manifest. Its outcome is pass, fail, timeout, or error (the command could not start); only fail and timeout break the rails. A check declared `manual` (spec 368) runs only when the human starts it, alone, outside any Rails run; its newest result stays in its dock row and never changes a run's verdict, and a failed one rides Send to a lane.
 _Avoid_: test (a check may be a typecheck, a linter, or a whole test suite), E2E case (spec 328 cases run on demand through an adapter, not at quiet points)
 
 **Rails run** (spec 337):
-One background pass over the working tree, started at a harness quiet point or by `#rails now`: the [[Check]]s first, then the judge over the rails that apply to the changed paths. Code, not the model, decides its verdict: clean, findings, check failed, or error. Every run is kept in `.krypton/rails/runs/`; one the working tree changed under is **stale** and runs again.
+One background pass over the working tree, started at a harness quiet point or by `#rails now`: the non-manual [[Check]]s first, then the judge over the rails that apply to the changed paths. Code, not the model, decides its verdict: clean, findings, check failed, or error. Every run is kept in `.krypton/rails/runs/`; one the working tree changed under is **stale** and runs again.
 _Avoid_: review (a `#review` round is reviewer lanes reading a subject; a rails run is a harness pass with no lane), scan, CI run
 
 **Rails finding** (spec 337):

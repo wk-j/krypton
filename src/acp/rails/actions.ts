@@ -8,8 +8,9 @@
 
 import type { DockActionState } from '../components/dock-action';
 import { formatActionTime, fullActionTime, ticketWorkActionDisabledReason } from '../harness-ticket-helpers';
+import type { RailsSendSet } from './envelope';
 import { plural, progressText } from './format';
-import type { RailsMode, RailsProgress, RailsRunRecord, RailsSnapshot } from './types';
+import type { RailsMode, RailsProgress, RailsSnapshot } from './types';
 
 /** Paint order. `verb` is the `#rails` sub-command; `icon` the `krypton-icon-*` suffix. */
 export const RAILS_DOCK_ACTIONS = [
@@ -25,11 +26,12 @@ export function railsDockActionFromData(value: string | undefined): RailsDockAct
   return RAILS_DOCK_ACTIONS.find((action) => action.verb === value)?.verb ?? null;
 }
 
-/** The newest run's findings were sent to a lane (send-all only). Memory only. */
+/** A Send-all delivered these Send-set keys (spec 368 amendment A). Memory only. */
 export interface RailsSendMark {
-  readonly runId: string;
+  readonly keys: readonly string[];
+  /** The set's label at send time: `3 open findings and failed osv`. */
+  readonly label: string;
   readonly laneName: string;
-  readonly count: number;
   readonly at: number;
 }
 
@@ -44,6 +46,8 @@ export interface RailsDockActions {
   readonly states: Readonly<Record<RailsDockAction, RailsActionView>>;
   /** `lane codex-1 · idle`: where Send and Update go. */
   readonly laneLine: string;
+  /** Spec 368: why a manual check's RUN key is disabled (its tooltip), or null. */
+  readonly checkDisabledReason: string | null;
 }
 
 export interface RailsDockActionsInput {
@@ -52,7 +56,10 @@ export interface RailsDockActionsInput {
   readonly progress: RailsProgress;
   /** The controller has a run in flight (from the clean-tree probe to the record). */
   readonly running: boolean;
-  readonly latest: RailsRunRecord | null;
+  /** Spec 368: the manual check running now, or null. */
+  readonly checkInFlight: string | null;
+  /** What Send-all would deliver now. */
+  readonly sendSet: RailsSendSet;
   readonly lastSend: RailsSendMark | null;
   readonly activeLane: { readonly displayName: string; readonly status: string; readonly hasClient: boolean } | null;
   /** Display name of the lane whose turn carries the `rails update` label, if any. */
@@ -69,33 +76,46 @@ function runView(input: RailsDockActionsInput, trusted: boolean): RailsActionVie
       disabledReason: 'a run is already in progress',
     };
   }
+  let disabledReason: string | null = null;
+  if (input.mode === 'off') disabledReason = 'rails is off · #rails manual';
+  else if (input.checkInFlight !== null) disabledReason = 'a run is already in progress';
   return {
     state: {
       kind: 'idle',
       detail: trusted
-        ? 'Run the checks and the judge now (#rails now · r)'
+        ? 'Run the auto checks and the judge now (#rails now · r)'
         : 'Judge only — checks wait for trust (#rails now · r)',
     },
-    disabledReason: input.mode === 'off' ? 'rails is off · #rails manual' : null,
+    disabledReason,
   };
 }
 
+/** Spec 368: a manual check runs only when Rails is on, trusted, and idle. */
+function checkDisabledReason(input: RailsDockActionsInput): string | null {
+  if (input.mode === 'off') return 'rails is off · #rails manual';
+  if (input.snapshot?.trust !== 'trusted') return 'not trusted · #rails trust';
+  if (input.running || input.checkInFlight !== null) return 'a run is already in progress';
+  return null;
+}
+
+/** Done while the set is not empty and every item in it was sent: a clean run
+ *  keeps it; open findings in a newer run, or a newer failed result, clear it. */
 function sendView(input: RailsDockActionsInput): RailsActionView {
-  const { latest, lastSend, activeLane, now } = input;
-  const open = latest?.open.length ?? 0;
-  const disabledReason = open === 0 ? 'no open findings' : activeLane ? null : 'no active lane';
-  if (latest && lastSend?.runId === latest.runId) {
+  const { sendSet, lastSend, activeLane, now } = input;
+  const empty = sendSet.keys.length === 0;
+  const disabledReason = empty ? 'no open findings or failed manual checks' : activeLane ? null : 'no active lane';
+  if (!empty && lastSend && sendSet.keys.every((key) => lastSend.keys.includes(key))) {
     return {
       state: {
         kind: 'done',
         badge: `✓ ${formatActionTime(lastSend.at, now)}`,
-        detail: `${plural(lastSend.count, 'finding')} sent to ${lastSend.laneName} ${fullActionTime(lastSend.at)}`,
+        detail: `${lastSend.label} sent to ${lastSend.laneName} ${fullActionTime(lastSend.at)}`,
       },
       disabledReason,
     };
   }
-  const detail = activeLane
-    ? `Send ${plural(open, 'open finding')} to ${activeLane.displayName} (#rails send · s on the head row)`
+  const detail = activeLane && !empty
+    ? `Send ${sendSet.label} to ${activeLane.displayName} (#rails send · s on the head row)`
     : undefined;
   return { state: { kind: 'idle', detail }, disabledReason };
 }
@@ -142,5 +162,6 @@ export function railsDockActions(input: RailsDockActionsInput): RailsDockActions
       update: updateView(input),
     },
     laneLine: lane ? `lane ${lane.displayName} · ${lane.status}` : 'no active lane',
+    checkDisabledReason: checkDisabledReason(input),
   };
 }

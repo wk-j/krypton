@@ -4,8 +4,8 @@
 // Capped at `RAILS_UPDATE_STATE_MAX`; the first line that does not fit is
 // replaced by a pointer to the run file and the rule sources.
 
-import { latestRuleStatus } from './track';
-import type { RailsCheckResult, RailsRunRecord, RailsSnapshot } from './types';
+import { latestRuleStatus, manualCheckStatus } from './track';
+import type { RailsCheckResult, RailsCheckRun, RailsRunRecord, RailsSnapshot } from './types';
 
 export const RAILS_UPDATE_STATE_MAX = 12_000;
 /** Each non-pass check contributes at most this much of its output tail. */
@@ -21,17 +21,25 @@ function oneLine(text: string): string {
 /**
  * `history` is newest first; `runPath` is the newest run's file. A check reads
  * `not run` when there is no run, that run skipped checks, or it was declared
- * since.
+ * since. Spec 368: a manual check reads its own newest manual run from
+ * `checkRuns`, never a Rails run.
  */
 export function railsUpdateState(
   snapshot: RailsSnapshot,
   history: readonly RailsRunRecord[],
   runPath: string | null,
+  checkRuns: ReadonlyMap<string, RailsCheckRun>,
 ): string {
   const latest = history[0] ?? null;
-  const results = new Map<string, RailsCheckResult>(
+  const runResults = new Map<string, RailsCheckResult>(
     latest && !latest.checksSkipped ? latest.checks.map((check) => [check.name, check]) : [],
   );
+  const results = new Map<string, RailsCheckResult>();
+  for (const decl of snapshot.checks) {
+    const result = decl.manual ? checkRuns.get(decl.name)?.result : runResults.get(decl.name);
+    if (result) results.set(decl.name, result);
+  }
+  const manualChecks = new Set(snapshot.checks.filter((decl) => decl.manual).map((decl) => decl.name));
 
   const lines: string[] = [`manifest ${snapshot.manifestPath} · trust ${snapshot.trust}`];
   if (snapshot.error !== null) lines.push(`manifest error: ${oneLine(snapshot.error)}`);
@@ -47,7 +55,9 @@ export function railsUpdateState(
     const outcome = result
       ? `${result.outcome} (exit ${result.exitCode ?? '—'}, ${(result.durationMs / 1000).toFixed(1)}s)`
       : 'not run';
-    lines.push(`- ${decl.name} · timeout_s ${decl.timeoutS} · argv ${JSON.stringify(decl.argv)} · ${outcome}`);
+    const ran = decl.manual ? checkRuns.get(decl.name)?.finishedAt : undefined;
+    const shown = decl.manual ? `manual · ${outcome}${ran ? ` at ${ran}` : ''}` : outcome;
+    lines.push(`- ${decl.name} · timeout_s ${decl.timeoutS} · argv ${JSON.stringify(decl.argv)} · ${shown}`);
   }
 
   for (const decl of snapshot.checks) {
@@ -62,7 +72,10 @@ export function railsUpdateState(
   for (const rule of snapshot.rules) {
     const text = oneLine(rule.text);
     const cut = text.length > RULE_TEXT_MAX ? `${text.slice(0, RULE_TEXT_MAX - 1)}…` : text;
-    const status = latestRuleStatus(history, rule.id) ?? 'no status';
+    const manual = rule.check !== null && manualChecks.has(rule.check) ? rule.check : null;
+    const status = manual !== null
+      ? manualCheckStatus(checkRuns.get(manual)) ?? 'manual · not run'
+      : latestRuleStatus(history, rule.id) ?? 'no status';
     lines.push(`- ${rule.id} · ${rule.check === null ? 'judge-only' : `check:${rule.check}`} · ${status} · ${cut}`);
   }
 

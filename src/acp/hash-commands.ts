@@ -161,7 +161,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   },
   {
     name: 'rails',
-    args: '[now | send | trust | init [<hint>] | update [<request>] | off | manual | auto]',
+    args: '[now | check [<name>] | send | trust | init [<hint>] | update [<request>] | off | manual | auto]',
     description:
       'background architecture checker: runs declared checks and a cheap judge against `## Rails` at lane quiet points; bare opens the Rails dock',
   },
@@ -326,7 +326,7 @@ export function commandMeta(): Record<string, CommandMeta> {
       category: 'agent',
       badges: ['workflow'],
       anatomy:
-        'lanes go quiet → declared checks (no tokens) → cheap judge vs `## Rails` → Rails dock + footer · init: ADRs → `## Rails` + rails.toml + arch tests → #rails trust · update: rails state + your request → lane edits checks/bullets and runs them → #rails trust',
+        'lanes go quiet → declared checks (no tokens; `manual` ones skipped) → cheap judge vs `## Rails` → Rails dock + footer · check <name>: one manual check, alone, when you ask · init: ADRs → `## Rails` + rails.toml + arch tests → #rails trust · update: rails state + your request → lane edits checks/bullets and runs them → #rails trust',
       lanes: 'same lane',
       prompt: railsInitPrompt('<hint>'),
     },
