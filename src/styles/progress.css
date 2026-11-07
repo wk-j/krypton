@@ -1,10 +1,11 @@
 /* ─── Progress Gauge (OSC 9;4) ─── */
-/* Large centred arc gauge behind terminal content (DESIGN.md "Gauges and
-   progress"): a recessed well track with a flat fill, its value a readout in
-   the centre and its label engraved under it. No glow, no sweep, no orbit.
-   The fill takes `--x-rgb`: the window accent while running, the warning and
-   danger tokens while paused or errored. Faint on purpose: it sits under the
-   terminal text. */
+/* Large centred ring gauge behind terminal content (DESIGN.md "Gauges and
+   progress"): the one glowing gauge. The arc is lit in `--x-rgb` with a soft
+   halo (the SVG filter `createGaugeElement` attaches to the fill), over an
+   unlit ring of the same colour and width: no dark well, so no black edge.
+   `--x-rgb` is the window accent while running, the warning and danger
+   tokens while paused or errored. The readout and its label never glow.
+   Faint on purpose: it sits under the terminal text. No sweep, no orbit. */
 
 .krypton-progress-gauge {
   --x-rgb: var(--krypton-window-accent-rgb, 0, 204, 255);
@@ -38,17 +39,17 @@
   overflow: visible;
 }
 
-/* The well: a dark recessed groove. */
+/* The unlit ring: the arc's colour, dim, the arc's width. */
 .krypton-progress-gauge__track {
   fill: none;
-  stroke: var(--mat-well-fill);
-  stroke-width: 5;
+  stroke: rgba(var(--x-rgb), 0.1);
+  stroke-width: 2.5;
 }
 
 .krypton-progress-gauge__fill {
   fill: none;
-  stroke: rgba(var(--x-rgb), 0.28);
-  stroke-width: 3;
+  stroke: rgba(var(--x-rgb), 0.55);
+  stroke-width: 2.5;
   stroke-linecap: round;
   transition: stroke-dasharray 300ms ease-out;
 }
@@ -110,9 +111,9 @@
 }
 
 @keyframes krypton-gauge-flare {
-  0%   { stroke: rgba(var(--x-rgb), 0.28); }
-  40%  { stroke: rgba(var(--x-rgb), 0.6); }
-  100% { stroke: rgba(var(--x-rgb), 0.28); }
+  0%   { stroke: rgba(var(--x-rgb), 0.55); }
+  40%  { stroke: rgba(var(--x-rgb), 0.9); }
+  100% { stroke: rgba(var(--x-rgb), 0.55); }
 }
 
 @media (prefers-reduced-motion: reduce) {

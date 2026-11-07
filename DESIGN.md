@@ -1,6 +1,6 @@
 ---
 name: Krypton Console
-version: 2.0.1
+version: 2.0.2
 description: Skeuomorphic instrument faceplate — brushed graphite (aluminium in the light scheme) with engraved labels, recessed display wells, raised keys and lit lamps, over a transparent desktop
 appliesTo: "Every surface in the Tauri webview and the live-assist webview. Materials: src/styles/materials.css (--mat-*)."
 colors:
@@ -56,7 +56,7 @@ forbidden:
   - "backdrop-filter: blur()"
   - "fully opaque plate (max alpha 0.94; a narrow overlay adds a solid underlay)"
   - "infinite or decorative animation: pulses, sweeps, shimmers, orbits, scanlines, vignettes"
-  - "glow on anything but a lamp or an LED lens: legends, labels and titles never glow (the one exception is the composer bloom's one-shot afterimage flash)"
+  - "glow on anything but a lamp, an LED lens or the terminal progress ring's arc: legends, labels and titles never glow (the one exception is the composer bloom's one-shot afterimage flash)"
   - "box-shadow, text-shadow or gradient on a repeated row (transcript row, diff line, list row)"
   - "a button taller than one line: a key's state badge sits beside its label or is dropped"
   - "left-edge accent rails for selection (ADR-0027)"
@@ -269,6 +269,11 @@ A gauge is a 4px well track with a flat fill in `--mat-silk` or the state colour
 highlight; no glow, no sweep. Its label is engraved above it, its value a readout at the right end.
 Indeterminate work shows a steady lit lamp and a label saying what is running.
 
+The terminal progress ring (OSC 9;4, centred behind the terminal text) is the one glowing gauge. Its
+arc is lit in the state colour (the window accent, warning when paused, fault on error) with a soft
+halo of its own colour, over an unlit ring of that colour at the same width: no well, so no dark
+edge. Its percentage readout and label never glow, and it has no sweep and no orbit.
+
 ## States
 
 - **Disabled** — unpowered: 0.45 opacity, geometry kept, `cursor: not-allowed`.
@@ -366,6 +371,9 @@ selector, and nothing in it bleeds out of that selector.
 
 ## Changelog
 
+- **2.0.2** — The terminal progress ring glows: its arc is lit with a soft halo in the state colour
+  over a dim ring of the same colour and width. The dark well track under it is gone, and with it the
+  black edge on both sides of the arc. The readout and label stay unlit.
 - **2.0.1** — A status LED that belongs to a chip or readout sits inside it, before the legend: the
   tool kind chip, the permission and question decision chips and the decision composer's `PERM` /
   `ASK` label, which is now a chrome-size readout instead of a full-size lit capsule. The tool output

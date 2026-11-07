@@ -18,6 +18,9 @@ const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 40;
 const LABEL_Y_UNDER_PCT = '60';
 const LABEL_Y_CENTERED = '50';
 
+/** Gives each gauge's glow filter a document-unique id (one gauge per window). */
+let glowFilterSeq = 0;
+
 /** Callback interface for resolving compositor state */
 export interface ProgressGaugeHost {
   getWindowElement(windowId: WindowId): HTMLElement | null;
@@ -241,6 +244,32 @@ export class ProgressGauge {
     track.setAttribute('r', '40');
     track.setAttribute('class', 'krypton-progress-gauge__track');
 
+    // Glow: the arc's own colour blurred under it, so it follows the state
+    // colour. A per-gauge id, because every window can show a gauge at once.
+    const glowId = `krypton-progress-gauge-glow-${++glowFilterSeq}`;
+    const defs = document.createElementNS(ns, 'defs');
+    const glow = document.createElementNS(ns, 'filter');
+    glow.setAttribute('id', glowId);
+    // The arc and its halo stay inside the 100x100 viewBox: r 40 + stroke + 3 sigma.
+    glow.setAttribute('filterUnits', 'userSpaceOnUse');
+    glow.setAttribute('x', '0');
+    glow.setAttribute('y', '0');
+    glow.setAttribute('width', '100');
+    glow.setAttribute('height', '100');
+    glow.setAttribute('color-interpolation-filters', 'sRGB');
+    const blur = document.createElementNS(ns, 'feGaussianBlur');
+    blur.setAttribute('in', 'SourceGraphic');
+    blur.setAttribute('stdDeviation', '2');
+    blur.setAttribute('result', 'halo');
+    const merge = document.createElementNS(ns, 'feMerge');
+    for (const input of ['halo', 'halo', 'SourceGraphic']) {
+      const node = document.createElementNS(ns, 'feMergeNode');
+      node.setAttribute('in', input);
+      merge.appendChild(node);
+    }
+    glow.append(blur, merge);
+    defs.appendChild(glow);
+
     // Progress fill arc
     const fill = document.createElementNS(ns, 'circle');
     fill.setAttribute('cx', '50');
@@ -249,6 +278,7 @@ export class ProgressGauge {
     fill.setAttribute('class', 'krypton-progress-gauge__fill');
     fill.setAttribute('stroke-dasharray', `0 ${GAUGE_CIRCUMFERENCE}`);
     fill.setAttribute('transform', 'rotate(-90 50 50)');
+    fill.setAttribute('filter', `url(#${glowId})`);
 
     // Large percentage text
     const pct = document.createElementNS(ns, 'text');
@@ -264,6 +294,7 @@ export class ProgressGauge {
     label.setAttribute('class', 'krypton-progress-gauge__label');
     label.textContent = '';
 
+    svg.appendChild(defs);
     svg.appendChild(track);
     svg.appendChild(fill);
     svg.appendChild(pct);
