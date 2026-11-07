@@ -1407,6 +1407,16 @@ PUBLISH
        when source changes; table/JSON output replaces only unambiguous
        backend-provided spans. No job polling or spilled-output fetch is
        introduced.
+    j. OMP background subagents (spec 370): an async `task` keeps sending
+       tool_call_update on its own call after returning. renderTool keeps the
+       row's terminal status (details.async present), and parseSubagentPayload
+       merges forward only. A `wait` update's rawOutput.details.jobs[] becomes
+       the row's JobList, and its task jobs are folded into the newest spawn
+       card that owns each agent id, which takes effect on the same transcript
+       pass. The card stays live after its row seals until the agents settle.
+       OMP stops forwarding job updates at turn end, so finishTurn (and a failed
+       prompt, a restart reconnect, or a picker load) marks still-running
+       cards `last reported` and schedules one body pass, never render().
 ```
 ## Resize Mode Flow (e.g., Leader then r)
 

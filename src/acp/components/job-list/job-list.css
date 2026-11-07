@@ -1,0 +1,101 @@
+/* Spec 370 — `JobList`: the body of an OMP `wait` row.
+   One well, one line per background job, grooves between lines. Each status
+   glyph is an LED in the subagent card's style (spec 366): a running job is a
+   steady lit lamp, never an animation (CLAUDE.md constraint 10). */
+
+@layer krypton.component {
+  .acp-harness__jobs {
+    display: flex;
+    flex-direction: column;
+    margin-top: 4px;
+    padding: 2px 8px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well-fill);
+    box-shadow: var(--mat-well-shadow);
+    white-space: normal;
+  }
+
+  .acp-harness__jobs[hidden] {
+    display: none;
+  }
+
+  .acp-harness__job {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    padding: 3px 0;
+  }
+
+  .acp-harness__job + .acp-harness__job {
+    border-top: 1px solid var(--mat-groove-lo);
+  }
+
+  /* The status LED, in the glyph's cell; the glyph text stays in the DOM. */
+  .acp-harness__job-glyph {
+    position: relative;
+    flex: 0 0 auto;
+    width: 1ch;
+    color: transparent;
+  }
+
+  .acp-harness__job-glyph::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    margin: -3px 0 0 -3px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .acp-harness__job--running .acp-harness__job-glyph::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
+  }
+
+  /* Pass: lit lens, no bloom (ADR-0017). */
+  .acp-harness__job--completed .acp-harness__job-glyph::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--krypton-success-rgb, 57, 255, 127)) 45%, rgba(var(--krypton-success-rgb, 57, 255, 127), 0.55) 100%);
+    box-shadow: none;
+  }
+
+  .acp-harness__job--failed .acp-harness__job-glyph::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--krypton-danger-rgb, 255, 58, 92)) 45%, rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.9), 0 0 10px rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.4);
+  }
+
+  .acp-harness__job-name {
+    flex: 0 1 auto;
+    overflow: hidden;
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-harness__job-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.7));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-harness__job-type,
+  .acp-harness__job-stats,
+  .acp-harness__job-more {
+    flex: 0 0 auto;
+    font-size: 0.82em;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .acp-harness__job-type {
+    letter-spacing: 0.04em;
+  }
+}

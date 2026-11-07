@@ -3,9 +3,16 @@ import { describe, expect, it } from 'vitest';
 import {
   absorbChildToolCall,
   appendChildOutput,
+  applyOmpJobs,
   claudeParentToolUseId,
+  jobsSummary,
+  markLastReported,
+  parseOmpJobs,
   parseSubagentPayload,
+  subagentSummary,
+  type OmpJob,
 } from './harness-subagents';
+import type { SubagentPayload } from './harness-view-types';
 import type { ToolCall } from './types';
 
 const NO_NAMES = new Map<string, string>();
@@ -139,5 +146,171 @@ describe('parseSubagentPayload — Codex spawnAgent', () => {
       new Map([['thread_aaaaaa', 'explorer']]),
     );
     expect(payload?.agents.map((a) => [a.id, a.status])).toEqual([['explorer', 'running'], ['agent-bbbbbb', 'failed']]);
+  });
+});
+
+describe('OMP background jobs (spec 370)', () => {
+  const start: ToolCall = {
+    toolCallId: 't1',
+    title: 'Spawning two parallel reviewers',
+    kind: 'other',
+    rawInput: { tasks: [{ name: 'ReviewSortCode', task: 'review sort' }, { name: 'ReviewRepo', task: 'review repo' }] },
+  };
+  const running = { state: 'running', jobId: 'ReviewSortCode', type: 'task' };
+
+  function backgroundCard(): SubagentPayload {
+    const card = parseSubagentPayload(
+      {
+        ...start,
+        rawOutput: {
+          details: {
+            progress: [ompProgress('running'), { ...ompProgress('running'), id: 'ReviewRepo', index: 1 }],
+            async: running,
+          },
+        },
+      },
+      'completed',
+      undefined,
+      NO_NAMES,
+    );
+    if (!card) throw new Error('card');
+    return card;
+  }
+
+  function job(over: Partial<OmpJob>): OmpJob {
+    return {
+      id: 'ReviewSortCode', type: 'task', status: 'running', label: '', durationMs: 0, exitCode: null,
+      agentId: 'ReviewSortCode', output: '', ...over,
+    };
+  }
+
+  it('never moves an agent back when the spawn returns its spawn-time snapshot', () => {
+    // Captured order: running frames, then the spawn's own `completed` frame
+    // repeating `pending` with zero counters, then late frames with durationMs 0.
+    const live = parseSubagentPayload(
+      { ...start, rawOutput: { details: { progress: [ompProgress('running', { durationMs: 9000 })], async: running } } },
+      'in_progress',
+      undefined,
+      NO_NAMES,
+    );
+    const returned = parseSubagentPayload(
+      {
+        ...start,
+        rawOutput: {
+          details: { progress: [ompProgress('pending', { recentTools: [], toolCount: 0, tokens: 0, durationMs: 0 })], async: running },
+        },
+      },
+      'completed',
+      live,
+      NO_NAMES,
+    );
+    expect(returned?.agents[0]).toMatchObject({
+      status: 'running', toolCount: 4, tokens: 38_000, durationMs: 9000, recentTools: ['grep', 'read'],
+    });
+    expect(returned?.background).toBe(true);
+  });
+
+  it('closes the background once every agent settled, whatever a late async frame says', () => {
+    const card = backgroundCard();
+    const late = parseSubagentPayload(
+      {
+        toolCallId: 't1',
+        rawOutput: {
+          details: {
+            progress: [ompProgress('completed'), { ...ompProgress('completed'), id: 'ReviewRepo', index: 1 }],
+            async: running,
+          },
+        },
+      },
+      'completed',
+      card,
+      NO_NAMES,
+    );
+    expect(late?.background).toBe(false);
+    expect(late && subagentSummary(late)).toBe('2/2 done');
+  });
+
+  it('reads the jobs snapshot of a wait and leaves other wait shapes alone', () => {
+    const snapshot = {
+      content: [
+        { type: 'text', text: '## Still Running (1)\n\n- `ReviewSortCode` [task] — 2m44s · 36 req' },
+        { type: 'text', text: '<system-notice>\nWaiting is not progress.\n</system-notice>' },
+      ],
+      details: {
+        op: 'wait',
+        meta: { source: { type: 'report', value: 'background jobs snapshot' } },
+        jobs: [
+          { id: 'ReviewSortCode', type: 'task', status: 'running', label: 'ReviewSortCode', durationMs: 164900, requests: 36, agentUrlId: 'ReviewSortCode' },
+          { id: 'build', type: 'bash', status: 'failed', label: 'npm run build', durationMs: 3200, exitCode: 2 },
+        ],
+      },
+    };
+    expect(parseOmpJobs(snapshot)?.jobs).toEqual([
+      job({ label: 'ReviewSortCode', durationMs: 164900 }),
+      { id: 'build', type: 'bash', status: 'failed', label: 'npm run build', durationMs: 3200, exitCode: 2, agentId: 'build', output: '' },
+    ]);
+    expect(parseOmpJobs({ details: { op: 'wait', jobs: [], interrupted: true } })).toEqual({ jobs: [], interrupted: true });
+    // IRC peer wait: no jobs. vibe_wait: `op: "wait"` with another element shape.
+    expect(parseOmpJobs({ details: { op: 'wait', from: 'OMP-2', waited: [{ text: 'hi' }] } })).toBeNull();
+    expect(parseOmpJobs({ details: { op: 'wait', jobs: [{ name: 'vibe', state: 'done' }] } })).toBeNull();
+    expect(parseOmpJobs({ details: { op: 'cancel', jobs: [] } })).toBeNull();
+  });
+
+  it('folds a settled job into its card by agent id, with the task-result body as output', () => {
+    const card = backgroundCard();
+    const resultText = '<task-result id="ReviewSortCode" agent="reviewer" status="completed" duration="2m">\n'
+      + '<meta lines="2" size="1KB" />\n<preview full-output="agent://ReviewSortCode">\nLGTM\nall good\n</preview>\n'
+      + '</task-result>\n\nReviewSortCode is now idle — message it via `write agent://ReviewSortCode`';
+    const [settled] = parseOmpJobs({
+      details: {
+        op: 'wait',
+        jobs: [{ id: 'ReviewSortCode-2', type: 'task', status: 'completed', label: 'x', durationMs: 120_000, resultText, agentUrlId: 'ReviewSortCode' }],
+      },
+    })?.jobs ?? [];
+    const first = applyOmpJobs(card, [settled]);
+    expect(first?.agents.map((a) => [a.id, a.status, a.output, a.durationMs])).toEqual([
+      ['ReviewSortCode', 'completed', 'LGTM\nall good', 120_000],
+      ['ReviewRepo', 'running', '', null],
+    ]);
+    // ReviewRepo is absent from the snapshot: absence settles nothing.
+    expect(first?.background).toBe(true);
+
+    const errorText = '<task-result id="ReviewRepo" agent="reviewer" status="failed (exit 1)" duration="1m">\n<error>boom</error>\n</task-result>';
+    const failed = parseOmpJobs({
+      details: { op: 'wait', jobs: [{ id: 'ReviewRepo', type: 'task', status: 'failed', durationMs: 60_000, errorText }] },
+    })?.jobs ?? [];
+    const second = first && applyOmpJobs(first, failed);
+    expect(second?.agents[1]).toMatchObject({ status: 'failed', output: 'boom' });
+    expect(second?.background).toBe(false);
+    // A late running report cannot reopen a settled agent; nothing moved, no new payload.
+    expect(second && applyOmpJobs(second, [job({ status: 'running', durationMs: 1 })])).toBeNull();
+    expect(applyOmpJobs(card, [job({ agentId: 'SomeoneElse' })])).toBeNull();
+  });
+
+  it('marks a still-running card last reported until fresh data arrives', () => {
+    const card = backgroundCard();
+    const stale = markLastReported(card);
+    expect(stale?.lastReported).toBe(true);
+    expect(stale && subagentSummary(stale)).toBe('0/2 done · background · last reported');
+    expect(stale && markLastReported(stale)).toBeNull();
+    expect(markLastReported({ ...card, background: false })).toBeNull();
+    // The same report again is still news: the card is live data, not a snapshot.
+    const fresh = stale && applyOmpJobs(stale, [job({ durationMs: 0 })]);
+    expect(fresh?.lastReported).toBe(false);
+  });
+
+  it('summarises a wait head by status', () => {
+    const line = { label: '', exitCode: null, durationMs: 0, type: 'task' as const };
+    expect(jobsSummary({
+      jobs: [
+        { ...line, id: 'a', status: 'completed' },
+        { ...line, id: 'b', status: 'running' },
+        { ...line, id: 'c', status: 'completed' },
+      ],
+      overflow: 0,
+      interrupted: false,
+    })).toBe('1 running · 2 done');
+    expect(jobsSummary({ jobs: [], overflow: 0, interrupted: false })).toBe('no jobs');
+    expect(jobsSummary({ jobs: [], overflow: 0, interrupted: true })).toBe('interrupted');
   });
 });

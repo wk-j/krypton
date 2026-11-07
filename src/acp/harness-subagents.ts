@@ -1,7 +1,9 @@
 // Krypton — ACP Harness subagent payloads (spec 282).
 // Detects subagent-spawning tool calls from adapter data (never titles) and
 // parses them into the payload `SubagentCard` (spec 302) paints:
-//   OMP    — rawInput.tasks[] + rawOutput.details.{progress,results,async}
+//   OMP    — rawInput.tasks[] + rawOutput.details.{progress,results,async};
+//            background jobs also report through `wait` snapshots
+//            (rawOutput.details.jobs[], spec 370), routed to the card by agent id
 //   Claude — _meta.claudeCode.toolName ∈ {Task, Agent}; children stamped with
 //            _meta.claudeCode.parentToolUseId are absorbed by the view
 //   Codex  — _meta.codex.collaboration.tool === 'spawnAgent'
@@ -12,9 +14,16 @@ import { Type, type TSchema } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 
 import type { ToolCall, ToolCallUpdate } from './types';
-import type { SubagentEntry, SubagentPayload, SubagentStatus } from './harness-view-types';
+import type {
+  JobLine,
+  JobsPayload,
+  SubagentEntry,
+  SubagentPayload,
+  SubagentStatus,
+} from './harness-view-types';
 
 const MAX_AGENTS = 16;
+const MAX_JOBS = 16;
 const ACTIVITY_LIMIT = 160;
 const TASK_LIMIT = 2 * 1024;
 const OUTPUT_LIMIT = 4 * 1024;
@@ -67,6 +76,28 @@ const CodexCollabMeta = loose({
 const CodexSubagentMeta = loose({ codex: loose({ subagent: loose({ threadId: Type.String(), path: Type.String() }) }) });
 const CodexInput = loose({ prompt: maybe, agentsStates: Type.Optional(Type.Record(Type.String(), Type.Unknown())) });
 const CodexAgentState = loose({ status: maybe, message: maybe });
+// spec 370: OMP `wait` result. `vibe_wait` reuses `op: "wait"` with another
+// shape and IRC waits carry `waited` without `jobs`, so the job elements are
+// what identify a background-jobs snapshot.
+const OmpWaitOutput = loose({
+  details: loose({ op: Type.Literal('wait'), jobs: Type.Array(Type.Unknown()), interrupted: maybe }),
+});
+const OmpJobSnapshot = loose({
+  id: Type.String({ minLength: 1 }),
+  type: Type.Union([Type.Literal('task'), Type.Literal('bash'), Type.Literal('eval')]),
+  status: Type.Union([
+    Type.Literal('running'),
+    Type.Literal('completed'),
+    Type.Literal('failed'),
+    Type.Literal('cancelled'),
+  ]),
+  durationMs: Type.Number(),
+  label: maybe,
+  exitCode: maybe,
+  resultText: maybe,
+  errorText: maybe,
+  agentUrlId: maybe,
+});
 
 function text(value: unknown, limit: number): string {
   return typeof value === 'string' ? value.trim().slice(0, limit) : '';
@@ -148,6 +179,48 @@ function toolStatusToSubagent(status: string): SubagentStatus {
   return status === 'pending' ? 'pending' : 'running';
 }
 
+const STATUS_RANK: Readonly<Record<SubagentStatus, number>> = {
+  pending: 0,
+  running: 1,
+  completed: 2,
+  failed: 2,
+  cancelled: 2,
+};
+
+/** A larger count wins; unknown (null) never erases a known one. */
+function maxCount(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.max(a, b);
+}
+
+/**
+ * spec 370: OMP entries only move forward. The spawn's own `completed` frame
+ * repeats the spawn-time snapshot (`pending`, zero counters) after later
+ * frames reported `running`, and background frames report `durationMs: 0`
+ * until the end. Status climbs pending → running → terminal and a terminal
+ * entry keeps its first terminal status; counters never drop; an empty field
+ * never erases a reported one.
+ */
+function forwardEntry(prev: SubagentEntry, next: SubagentEntry): SubagentEntry {
+  return {
+    ...next,
+    status: STATUS_RANK[next.status] > STATUS_RANK[prev.status] ? next.status : prev.status,
+    activity: next.activity || prev.activity,
+    recentTools: next.recentTools.length > 0 ? next.recentTools : prev.recentTools,
+    toolCount: maxCount(prev.toolCount, next.toolCount),
+    tokens: maxCount(prev.tokens, next.tokens),
+    durationMs: maxCount(prev.durationMs, next.durationMs),
+    task: next.task || prev.task,
+    output: next.output || prev.output,
+  };
+}
+
+/** Pending or running — the agent can still report. */
+function isLive(entry: SubagentEntry): boolean {
+  return entry.status === 'pending' || entry.status === 'running';
+}
+
 function parseOmp(call: ToolCall | ToolCallUpdate, previous: SubagentPayload | undefined): SubagentPayload | null {
   const details = Value.Check(OmpOutput, call.rawOutput) ? call.rawOutput.details : null;
   const progress = (details?.progress ?? []).filter((p) => Value.Check(OmpProgress, p));
@@ -203,7 +276,17 @@ function parseOmp(call: ToolCall | ToolCallUpdate, previous: SubagentPayload | u
     entry.durationMs = count(result.durationMs) ?? entry.durationMs;
   });
   const background = details?.async ? details.async.state === 'running' : (carried?.background ?? false);
-  return finishPayload('omp', background, entries, previous);
+  const payload = finishPayload('omp', background, entries, previous);
+  if (carried) {
+    payload.agents = payload.agents.map((entry) => {
+      const prev = carried.agents.find((old) => old.id === entry.id);
+      return prev ? forwardEntry(prev, entry) : entry;
+    });
+  }
+  // Background means agents still running; a late `async.state: running`
+  // frame cannot reopen a card whose agents all settled.
+  payload.background = payload.background && payload.agents.some(isLive);
+  return payload;
 }
 
 function parseClaude(
@@ -322,18 +405,145 @@ export function appendChildOutput(payload: SubagentPayload, chunk: string): void
   entry.output = tail(entry.output + chunk, OUTPUT_LIMIT);
 }
 
+/** spec 370: an OMP update carrying `details.async` — a background spawn
+ *  reporting on its own call after the call already returned. */
+export function isOmpBackgroundUpdate(rawOutput: unknown): boolean {
+  return Value.Check(OmpOutput, rawOutput) && rawOutput.details.async !== undefined;
+}
+
+// ─── OMP background jobs (spec 370) ───────────────────────────────────────
+
+/** One `wait` job. `agentId` and `output` route a task job into its card. */
+export interface OmpJob extends JobLine {
+  /** The card entry key: `agentUrlId` (the agent id), else the job id. */
+  agentId: string;
+  /** Task result body (`resultText`, else `errorText`), last 4 KB. */
+  output: string;
+}
+
+export interface OmpJobs {
+  jobs: OmpJob[];
+  interrupted: boolean;
+}
+
+/** `<task-result>` envelope → the body of its `<output>` / `<preview>`, else
+ *  `<error>`; text without an envelope is returned as is. */
+function taskResultBody(value: string): string {
+  for (const tag of ['output', 'preview', 'error']) {
+    const open = new RegExp(`<${tag}\\b[^>]*>`).exec(value);
+    if (!open) continue;
+    const start = open.index + open[0].length;
+    const end = value.lastIndexOf(`</${tag}>`);
+    return end > start ? value.slice(start, end) : value.slice(start);
+  }
+  return value;
+}
+
+/** spec 370: the background-jobs snapshot of an OMP `wait` result, or null
+ *  for any other shape (`vibe_wait`, IRC waits, ordinary tools). */
+export function parseOmpJobs(rawOutput: unknown): OmpJobs | null {
+  if (!Value.Check(OmpWaitOutput, rawOutput)) return null;
+  const { jobs: raw, interrupted } = rawOutput.details;
+  const jobs: OmpJob[] = [];
+  for (const job of raw) {
+    if (!Value.Check(OmpJobSnapshot, job)) continue;
+    const result = job.type === 'task'
+      ? text(job.resultText, Number.POSITIVE_INFINITY) || text(job.errorText, Number.POSITIVE_INFINITY)
+      : '';
+    jobs.push({
+      id: job.id,
+      type: job.type,
+      status: job.status,
+      label: text(job.label, ACTIVITY_LIMIT),
+      durationMs: Math.max(0, job.durationMs),
+      exitCode: count(job.exitCode),
+      agentId: text(job.agentUrlId, ACTIVITY_LIMIT) || job.id,
+      output: result ? tail(taskResultBody(result).trim(), OUTPUT_LIMIT) : '',
+    });
+  }
+  if (jobs.length === 0 && raw.length > 0) return null;
+  return { jobs, interrupted: interrupted === true };
+}
+
+/** What the `wait` row paints: the display fields, capped. */
+export function jobsPayload(parsed: OmpJobs): JobsPayload {
+  return {
+    jobs: parsed.jobs
+      .slice(0, MAX_JOBS)
+      .map(({ id, type, status, label, durationMs, exitCode }) => ({ id, type, status, label, durationMs, exitCode })),
+    overflow: Math.max(0, parsed.jobs.length - MAX_JOBS),
+    interrupted: parsed.interrupted,
+  };
+}
+
+/**
+ * spec 370: fold a snapshot's task jobs into an OMP card. Returns a new
+ * payload, or null when no job names one of its agents or nothing moved. A job
+ * missing from the snapshot changes nothing: OMP drops a job from later
+ * snapshots once its result was consumed. Fresh data clears `lastReported`.
+ */
+export function applyOmpJobs(payload: SubagentPayload, jobs: readonly OmpJob[]): SubagentPayload | null {
+  if (payload.source !== 'omp') return null;
+  let matched = false;
+  let changed = false;
+  const agents = payload.agents.map((entry) => {
+    const job = jobs.find((candidate) => candidate.type === 'task' && candidate.agentId === entry.id);
+    if (!job) return entry;
+    matched = true;
+    const next = forwardEntry(entry, {
+      ...entry,
+      status: mapSubagentStatus(job.status),
+      durationMs: job.durationMs,
+      output: job.output,
+    });
+    if (next.status === entry.status && next.durationMs === entry.durationMs && next.output === entry.output) {
+      return entry;
+    }
+    changed = true;
+    return next;
+  });
+  if (!matched || (!changed && !payload.lastReported)) return null;
+  return { ...payload, background: payload.background && agents.some(isLive), lastReported: false, agents };
+}
+
+/** spec 370: the turn ended while the card's agents still run in the
+ *  background. Null when there is nothing to mark. */
+export function markLastReported(payload: SubagentPayload): SubagentPayload | null {
+  if (payload.source !== 'omp' || !payload.background || payload.lastReported) return null;
+  return { ...payload, lastReported: true };
+}
+
+/** spec 370: the `wait` head summary — counts per status, running first. */
+export function jobsSummary(payload: JobsPayload): string {
+  const labels: ReadonlyArray<readonly [JobLine['status'], string]> = [
+    ['running', 'running'],
+    ['completed', 'done'],
+    ['failed', 'failed'],
+    ['cancelled', 'cancelled'],
+  ];
+  const parts: string[] = [];
+  for (const [status, label] of labels) {
+    const n = payload.jobs.filter((job) => job.status === status).length;
+    if (n > 0) parts.push(`${n} ${label}`);
+  }
+  if (payload.interrupted) parts.push('interrupted');
+  return parts.length > 0 ? parts.join(' \u00b7 ') : 'no jobs';
+}
+
 // ─── Signature ────────────────────────────────────────────────────────────
 
 /** Structural: changes here rebuild the subagent card. */
 export function subagentStructureSignature(payload: SubagentPayload | undefined, expanded: readonly string[]): string {
   if (!payload) return '';
   const agents = payload.agents.map((a) => `${a.id}:${a.status}:${a.hintLabel ?? ''}`).join(',');
-  return `${payload.source}|${payload.background ? 1 : 0}|${payload.overflow}|${agents}|${expanded.join(',')}`;
+  const flags = `${payload.background ? 1 : 0}${payload.lastReported ? 1 : 0}`;
+  return `${payload.source}|${flags}|${payload.overflow}|${agents}|${expanded.join(',')}`;
 }
 
 export function subagentSummary(payload: SubagentPayload): string {
   const total = payload.agents.length + payload.overflow;
-  const done = payload.agents.filter((a) => a.status !== 'pending' && a.status !== 'running').length;
-  return `${done}/${total} done${payload.background ? ' · background' : ''}`;
+  const done = payload.agents.filter((a) => !isLive(a)).length;
+  const background = payload.background ? ' \u00b7 background' : '';
+  return `${done}/${total} done${background}${payload.lastReported ? ' \u00b7 last reported' : ''}`;
 }
 

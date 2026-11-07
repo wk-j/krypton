@@ -570,7 +570,7 @@ user · voice   open the model picker
 
 ## 3.4 `ToolRow` L
 
-**Props** the shared `RowProps` (`{ item, … }`, no tool-only field — every caller that holds a `TranscriptRow` may pass the same props, including late image/Git patches and seals) · Generic **Deps** `[statusBucket, kind, subject, command, result, exitCode, sections, diffs, subagents, expandedKey]`, where `expandedKey` is read from `item.subagentExpanded`.
+**Props** the shared `RowProps` (`{ item, … }`, no tool-only field — every caller that holds a `TranscriptRow` may pass the same props, including late image/Git patches and seals) · Generic **Deps** `[statusBucket, kind, subject, command, result, exitCode, sections, diffs, subagents, expandedKey, jobs]`, where `expandedKey` is read from `item.subagentExpanded` and `jobs` is spec 370's `wait` snapshot.
 Spec-315 execution rows instead compare `[statusBucket, title, language, cellStatus, durationMs, detached, diffs]`;
 both include the image-strip signature and streaming flag. Output and Inspector presentation state are not structural row deps.
 
@@ -590,7 +590,7 @@ tool  ✓  edit     src/acp/list.ts                     +42 −8    0.3s
 then `.acp-harness__tool-output > -section > -label + <pre> -text`, `.acp-harness__tool-exit[data-status]`,
 `.acp-harness__tool-diffs` (`DiffBlock`), `.acp-harness__tool-rich--diffstat|--unidiff|--gitstatus`.
 
-**Live contract** — generic `appendChunk()` updates only `.acp-harness__tool-output`; recognized executions update their owning `ExecutionCard`. Render precedence is artifact redaction → subagent card → execution → generic. Diffs and the base row's image strip remain available.
+**Live contract** — generic `appendChunk()` updates only `.acp-harness__tool-output`; recognized executions update their owning `ExecutionCard`. Render precedence is artifact redaction → subagent card → execution → job list (spec 370) → generic. Diffs and the base row's image strip remain available. A subagent card whose agents still run in the background (spec 370) stays live after the row seals and is sealed by the row once it settles or turns `last reported`.
 **Replaces** `harness-tool-render.ts:551-673,776-860,862-1060` and `patchStreamingToolBody` `:635-664`
 (including its `body.dataset.toolStreamSig` / `subagentLiveSig` dedupe keys — the component's deps do that job).
 
@@ -667,6 +667,24 @@ use existing `--agent-*` / `--krypton-*` properties. No private palette or unlay
 **Emits** `.acp-harness__subagents[data-background] > .acp-harness__subagent--${status} > -line > -hint -glyph -name -agent -activity -stats`, `-tools`, `-detail > -label + <pre> -text`, `-more`.
 Status glyphs `○ ● ✓ ✗ –`.
 **Replaces** `harness-subagents.ts:353-455`, including `morphSubagentCard` — the morph becomes `appendChunk()`.
+
+## 3.5a `JobList` (spec 370)
+
+**Props** `{ payload: JobsPayload }` · **Deps** `[payload]`; each line's deps are `[id, type, status, label, durationMs, exitCode]`.
+The body of an OMP `wait` row, built from `rawOutput.details.jobs[]`. The model-facing `content`
+text (markdown, `<system-notice>`) is never rendered. The head summary (`1 running · 2 done`) is the
+tool row's.
+
+**Example UI**
+
+```
+tool  ✓  wait   Waiting for keyboard hint inventory   1 running
+         ● KeyHintInventory   task   2m 44s
+         ✗ build              bash   npm run build   exit 2 · 3.2s
+```
+
+**Emits** `.acp-harness__jobs[hidden?] > .acp-harness__job--${status} > -glyph -name -type -label -stats`, `-more`.
+Status glyphs `● ✓ ✗ –` (the subagent card's LEDs). Lines are keyed by job id.
 
 ## 3.6 `PermissionRow`
 

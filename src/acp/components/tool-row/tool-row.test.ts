@@ -4,7 +4,7 @@ import { ToolRow } from './index';
 import { mergeToolPayloadForUpdate } from '../../harness-tool-retention';
 import { tickAllSpinners } from '../spinner';
 import type { RowProps } from '../transcript-row';
-import type { HarnessTranscriptItem, SubagentEntry, ToolPayload } from '../../harness-view-types';
+import type { HarnessTranscriptItem, JobsPayload, SubagentEntry, SubagentPayload, ToolPayload } from '../../harness-view-types';
 import type { ToolCallUpdate } from '../../types';
 
 function payload(over: Partial<ToolPayload> = {}): ToolPayload {
@@ -534,6 +534,62 @@ describe('ToolRow subagents', () => {
       'acp-harness__tool-head',
       'acp-harness__artifact-redaction',
     ]);
+  });
+
+  it('keeps a background card live after the row seals, and seals it once it is last reported', () => {
+    const bg = (entry: Partial<SubagentEntry>, extra: Partial<SubagentPayload> = {}): ToolPayload => payload({
+      status: 'completed',
+      glyph: '\u2713',
+      kind: 'agents',
+      subagents: { source: 'omp', background: true, agents: [agent(entry)], overflow: 0, ...extra },
+    });
+    const row = new ToolRow(props(bg({ tokens: 1000 })));
+    mount(row);
+    row.update(props(bg({ tokens: 1000 })));
+    const stats = (): string | null | undefined => row.el.querySelector('.acp-harness__subagent-stats')?.textContent;
+    expect(stats()).toBe('1k tok');
+
+    // The spawn returned and the row sealed; its agent still reports.
+    row.update(props(bg({ tokens: 5000 })));
+    expect(stats()).toBe('5k tok');
+
+    row.update(props(bg({ tokens: 6000 }, { lastReported: true })));
+    expect(head(row).querySelector('.acp-harness__subagent-summary')?.textContent)
+      .toBe('0/1 done \u00b7 background \u00b7 last reported');
+    const card = row.el.querySelector('.acp-harness__subagents');
+    if (!card) throw new Error('no card');
+    expect(records(card, () => row.update(props(bg({ tokens: 9000 }, { lastReported: true }))))).toHaveLength(0);
+
+    // Settling is structural, so the sealed card still lands the final stats.
+    row.update(props(bg({ status: 'completed', tokens: 9000 }, { background: false })));
+    expect(stats()).toBe('9k tok');
+    expect(row.el.querySelector('.acp-harness__subagent')?.className).toContain('acp-harness__subagent--completed');
+  });
+
+  it('paints a wait row from its job snapshot, never from its text sections', () => {
+    const jobs: JobsPayload = {
+      jobs: [{ id: 'KeyHintInventory', type: 'task', status: 'running', label: 'KeyHintInventory', durationMs: 164_900, exitCode: null }],
+      overflow: 0,
+      interrupted: false,
+    };
+    const tool = payload({
+      kind: 'wait',
+      command: '',
+      subject: 'Waiting for keyboard hint inventory',
+      sections: [{ label: 'content', text: '## Still Running (1) <system-notice>' }],
+      jobs,
+    });
+    const row = new ToolRow(props(tool));
+    row.update(props(tool));
+
+    const body = row.el.querySelector('.acp-harness__msg-body');
+    expect(Array.from(body?.children ?? []).map((node) => node.getAttribute('class'))).toEqual([
+      'acp-harness__tool-head',
+      'acp-harness__jobs',
+    ]);
+    expect(head(row).querySelector('.acp-harness__subagent-summary')?.textContent).toBe('1 running');
+    expect(row.el.querySelector('.acp-harness__job')?.textContent).toBe('\u25cfKeyHintInventorytask2m 44s');
+    expect(row.el.textContent).not.toContain('system-notice');
   });
 });
 

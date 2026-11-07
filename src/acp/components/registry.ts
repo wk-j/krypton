@@ -45,6 +45,7 @@ import { def as helpOverlay } from './help-overlay';
 import { def as imageStrip } from './image-strip';
 import { def as imageViewer } from './image-viewer';
 import { def as inlinePalette } from './inline-palette';
+import { def as jobList } from './job-list';
 import { def as interLaneRow } from './inter-lane-row';
 import { def as keyHintBar } from './key-hint-bar';
 import { def as laneHead } from './lane-head';
@@ -124,6 +125,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   toolRow,
   executionCard,
   subagentCard,
+  jobList,
   permissionRow,
   questionRow,
   fsActivityRow,

@@ -10,7 +10,7 @@
 - **Terminal settlement.** When a foreground (non-background) spawn ends, any agent still marked `running` takes the parent's terminal status (`completed` / `failed` / `cancelled`), not `cancelled` every time. An agent still `pending` never started, so a `failed` or cancelled parent settles it as `cancelled` (`–`), never `failed` (`✗`).
 - **Rejected spawns.** If the parent fails while every agent is still `pending` (the adapter rejected the call before anything started, e.g. invalid input), `parseSubagentPayload` returns `undefined`. The row falls back to a plain failed tool row that shows the adapter's error text. A card would hide that text and show every agent as failed.
 - **OMP status-only or results-only updates** build on the previous card instead of re-reading `rawInput.tasks`. Compaction can drop `rawInput`, and re-reading would reset every agent to pending.
-- **OMP background spawns** count as in flight, for both the signature and the in-place patch, until `details.async.state` leaves `running`.
+- **OMP background spawns** count as in flight until every agent settles (spec [370](./0370-harness-omp-background-jobs.md)): OMP keeps reporting on the spawn call after it returned, `wait` job snapshots fill in status, duration and OUTPUT, entries only move forward, and the card stays live after its row seals. A turn that ends with agents still running leaves the card `last reported`.
 - **Adapter payloads are checked with loose TypeBox schemas** (`@sinclair/typebox/value`) at the boundary in `harness-subagents.ts`.
 - **No `theme-scheme.css` override is needed.** The card colours derive from `--krypton-fg-rgb`.
 
@@ -110,7 +110,8 @@ export interface SubagentEntry {
 }
 export interface SubagentPayload {
   source: 'omp' | 'claude' | 'codex';
-  background: boolean;        // OMP details.async.state === 'running'
+  background: boolean;        // OMP details.async.state === 'running' while an agent is still live
+  lastReported?: boolean;     // spec 370: the turn ended with agents still live
   agents: SubagentEntry[];    // ≤ 16
   overflow: number;
 }
@@ -163,12 +164,12 @@ Detection is shape-based; titles are never used.
 </div>
 ```
 
-- **The tool head** keeps its spinner, timer, and subject. Its kind chip reads `agents`, and its `result` slot shows `N/M done`, plus `· background` while `background` is true.
+- **The tool head** keeps its spinner, timer, and subject. Its kind chip reads `agents`, and its `result` slot shows `N/M done`, plus `· background` while `background` is true and `· last reported` once the turn ended with agents still running (spec 370).
 - **Sections are hidden** for subagent cards, because the content text repeats the card. Diffs still render.
 - **Glyphs:** `pending ○`, `running ●` (pulsing, with the existing spinner animation; reduced motion → static), `completed ✓`, `failed ✗`, `cancelled –`.
 - **Style:** a full 1px border, no corner brackets, no `backdrop-filter`. Positioning uses the transform rule, and only rows are reflowed.
 - **Text:** every value is set through `textContent`.
-- **Signature:** the structural part is `source`, the agent ids and statuses, `overflow`, `background`, `subagentExpanded`, and the hint labels. While the card is in flight, the activity, tools, and stats stay out of the signature. `patchStreamingToolBody` replaces `.acp-harness__subagents` in place, deduped on a string of those mutable fields, the same way sections are patched today.
+- **Signature:** the structural part is `source`, the agent ids and statuses, `overflow`, `background`, `lastReported`, `subagentExpanded`, and the hint labels. While the card is in flight, the activity, tools, and stats stay out of the signature. `patchStreamingToolBody` replaces `.acp-harness__subagents` in place, deduped on a string of those mutable fields, the same way sections are patched today.
 
 ### Keybindings
 
@@ -185,7 +186,7 @@ None.
 
 ## Edge Cases
 
-- **Updates after a background spawn** (OMP `async.state: running`): they keep rebuilding the card even though the tool status is `completed`. The card shows `background` until `async.state` becomes `completed` or `failed`.
+- **Updates after a background spawn** (OMP `async.state: running`): spec 370 governs them. The row keeps its terminal status, the card stays live and takes each update until its agents settle, and `wait` snapshots are folded in by agent id.
 - **An update without `rawOutput`** (status only): `mergeToolPayloadForUpdate` keeps the previous `subagents`.
 - **Hint labels during updates:** labels and expanded state carry over by entry `id`. An entry that disappears drops its label.
 - **Two agents with the same `id`:** the second becomes `id#2`.
@@ -202,7 +203,7 @@ None.
 ## Out of Scope
 
 - Child session transcripts (ACP `subagents` capability, `subagent_spawned` / `subagent_state_update`, Claude `subagent-transcript`). That is a later spec.
-- Folding the OMP `wait`/job tool row ("WAITING FOR REVIEWERS") into the card. It is a separate tool call and I have not verified its payload shape.
+- Folding the OMP `wait`/job tool row into the card. Spec [370](./0370-harness-omp-background-jobs.md) does this: the `wait` row is a job list and its snapshots update the card.
 - Steering or cancelling a single subagent from the card.
 - Codex `sendInput` / `wait` / `closeAgent` collab calls. They stay plain tool rows.
 

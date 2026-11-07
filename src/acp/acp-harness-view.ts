@@ -640,9 +640,15 @@ import {
 import {
   absorbChildToolCall,
   appendChildOutput,
+  applyOmpJobs,
   claudeParentToolUseId,
   codexSubagentName,
+  isOmpBackgroundUpdate,
+  jobsPayload,
+  markLastReported,
+  parseOmpJobs,
   parseSubagentPayload,
+  type OmpJob,
 } from './harness-subagents';
 import { HarnessImageViewer } from './harness-image-viewer';
 
@@ -8161,6 +8167,8 @@ export class AcpHarnessView implements ContentView {
         lane.currentModelId = session.current_model_id ?? null;
         lane.modelApplyFailed = session.model_apply_failed ?? false;
         this.setLaneStatus(lane, 'idle');
+        // spec 370: the old OMP process took its background jobs with it.
+        this.markBackgroundCardsLastReported(lane);
         this.appendTranscript(
           lane,
           'system',
@@ -8810,6 +8818,7 @@ export class AcpHarnessView implements ContentView {
       lane.policyDelivery = null;
       const message = String(e);
       this.sealStreaming(lane);
+      this.markBackgroundCardsLastReported(lane); // spec 370
       // Reset this turn's pointers first, matching finishTurn — an errored (or
       // recovered) lane must not carry a stale active assistant/thought row
       // (Grok-1 R3 #1).
@@ -9062,6 +9071,8 @@ export class AcpHarnessView implements ContentView {
 
   private finishTurn(lane: HarnessLane, stopReason: StopReason, reason?: string): void {
     this.sealStreaming(lane);
+    // spec 370: OMP reports nothing for a background job once the turn is over.
+    this.markBackgroundCardsLastReported(lane);
     const uiGeneration = this.uiGenerationFor(lane);
     let repairPrompt: string | null = null;
     let releasedUiItemId: string | null = null;
@@ -11185,6 +11196,7 @@ export class AcpHarnessView implements ContentView {
       lane.currentModelId = info.current_model_id ?? null;
       this.setLaneStatus(lane, 'idle');
       this.sealStreaming(lane);
+      this.markBackgroundCardsLastReported(lane); // spec 370: replay is over
       this.appendTranscript(lane, 'system', `${mode === 'resume' ? 'resumed' : 'loaded'} ${shortId(session.sessionId)}.`);
     } catch (e) {
       if (lane.spawnEpoch !== spawnEpoch) {
@@ -15054,10 +15066,17 @@ export class AcpHarnessView implements ContentView {
     // means this is a late update for completed state that has been released.
     if (updateOnly && isOrphanToolCallUpdate(lane, call.toolCallId)) return;
     const merged = mergeToolCall(lane.toolCalls.get(call.toolCallId), call);
-    const status = merged.status ?? 'pending';
     const existingId = lane.toolTranscriptIds.get(merged.toolCallId);
     const existing = existingId ? lane.transcript.find((item) => item.id === existingId) : null;
     const target = existing ?? this.appendTranscript(lane, 'tool', '');
+    // spec 370: an OMP background spawn keeps reporting on its own call after
+    // it returned. Those `in_progress` frames refresh the card; they never
+    // reopen the sealed row, its timer or the lane's active-tool count.
+    const wireStatus = merged.status ?? 'pending';
+    const status = target.tool && isTerminalToolStatus(target.tool.status) && !isTerminalToolStatus(wireStatus) &&
+        lane.backendId === 'omp' && isOmpBackgroundUpdate(call.rawOutput)
+      ? target.tool.status
+      : wireStatus;
     // Spec 114: before/after delta on the row's "active" state. A row is
     // active iff it has a start timestamp but no end timestamp.
     const wasActive = target.toolStartedAt !== undefined && target.toolEndedAt === undefined;
@@ -15120,6 +15139,20 @@ export class AcpHarnessView implements ContentView {
     if (!tool.artifactRedaction && !tool.subagents) {
       tool.execution = parseExecutionPayload(lane.backendId, call, target.tool?.execution);
     }
+    // spec 370: an OMP `wait` paints its structured job snapshot, never the
+    // model-facing text, and reports on the agents of earlier spawn cards.
+    if (!tool.artifactRedaction && !tool.subagents && !tool.execution && lane.backendId === 'omp') {
+      const parsed = parseOmpJobs(merged.rawOutput);
+      const jobs = parsed ? jobsPayload(parsed) : target.tool?.jobs;
+      if (jobs) {
+        tool.jobs = jobs;
+        tool.kind = 'wait';
+        tool.subject = cleanToolTitle(merged.title, 'wait') || tool.subject;
+        tool.sections = [];
+      }
+      // Only a frame that carried the snapshot is news for the cards.
+      if (parsed && call.rawOutput !== undefined) this.applyJobsToCards(lane, parsed.jobs);
+    }
     if (tool.execution) {
       target.executionTarget ??= { executionItemId: target.id, hintLabel: null };
     } else {
@@ -15135,6 +15168,47 @@ export class AcpHarnessView implements ContentView {
     lane.toolCalls.set(merged.toolCallId, compactToolCallForRetention(merged));
     if (SPEC114_DEV) assertActiveToolCount(lane);
     this.updateToolTick();
+  }
+
+  /**
+   * spec 370: a `wait` snapshot reports on agents that spawn cards in this lane
+   * own. Newest card first; once a card claims an agent id, older cards (an
+   * earlier session in the same lane) are not offered it. The card's row picks
+   * the new payload up on the transcript pass the caller already scheduled.
+   */
+  private applyJobsToCards(lane: HarnessLane, jobs: readonly OmpJob[]): void {
+    let remaining = jobs.filter((job) => job.type === 'task');
+    for (let i = lane.transcript.length - 1; i >= 0 && remaining.length > 0; i--) {
+      const item = lane.transcript[i];
+      const payload = item.tool?.subagents;
+      if (!item.tool || payload?.source !== 'omp') continue;
+      const ids = new Set(payload.agents.map((agent) => agent.id));
+      const mine = remaining.filter((job) => ids.has(job.agentId));
+      if (mine.length === 0) continue;
+      remaining = remaining.filter((job) => !ids.has(job.agentId));
+      const next = applyOmpJobs(payload, mine);
+      if (next) item.tool = { ...item.tool, subagents: next };
+    }
+  }
+
+  /**
+   * spec 370: OMP forwards background-job updates only while a prompt turn is
+   * open, so a card whose agents were still live when the turn ended (or a
+   * replay finished, or the process restarted) is a last-reported snapshot
+   * from here on. Payload-only: the row seals its card on the transcript pass
+   * this schedules; no `render()` (CLAUDE.md constraint 10).
+   */
+  private markBackgroundCardsLastReported(lane: HarnessLane): void {
+    let marked = false;
+    for (const item of lane.transcript) {
+      const payload = item.tool?.subagents;
+      if (!item.tool || !payload) continue;
+      const next = markLastReported(payload);
+      if (!next) continue;
+      item.tool = { ...item.tool, subagents: next };
+      marked = true;
+    }
+    if (marked) this.scheduleStreamingBodyOnly(lane);
   }
 
   private renderPlan(lane: HarnessLane, entries: PlanEntry[]): void {

@@ -271,6 +271,8 @@ export interface ToolPayload {
   subagents?: SubagentPayload;
   /** spec 315: bounded OMP code-cell snapshot, decoded before wire compaction. */
   execution?: ExecutionPayload;
+  /** spec 370: OMP background-job snapshot (`wait`); renders the job list. */
+  jobs?: JobsPayload;
 }
 
 export interface ExecutionActivity {
@@ -337,8 +339,32 @@ export interface SubagentPayload {
   source: 'omp' | 'claude' | 'codex';
   /** OMP background spawn still running after the task tool returned. */
   background: boolean;
+  /** spec 370: the turn ended (or replay finished) with agents still live, so
+   *  the card shows its last reported state, not a live one. Absent = false. */
+  lastReported?: boolean;
   agents: SubagentEntry[];
   overflow: number;
+}
+
+export type JobStatus = 'running' | 'completed' | 'failed' | 'cancelled';
+
+/** spec 370 — one OMP background job in a `wait` snapshot. */
+export interface JobLine {
+  /** Job id, shown and used as the list key. */
+  id: string;
+  type: 'task' | 'bash' | 'eval';
+  status: JobStatus;
+  /** Shown only when it differs from `id`. */
+  label: string;
+  durationMs: number;
+  exitCode: number | null;
+}
+
+export interface JobsPayload {
+  /** ≤ 16. */
+  jobs: JobLine[];
+  overflow: number;
+  interrupted: boolean;
 }
 
 export interface StagedImage {

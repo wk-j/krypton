@@ -10,7 +10,7 @@
 // joined string for every visible row on every pass — 3 `.map()` + 4 `.join()`
 // over the whole section/diff/subagent payload — and compared it against the
 // string stashed on the node. `bodyDeps()` below is that signature as ten
-// values compared with `Object.is`. Two of them are arrays compared by
+// values (plus spec 370's `jobs`) compared with `Object.is`. Two of them are arrays compared by
 // REFERENCE, which is only sound because `mergeToolPayloadForUpdate`
 // (`harness-tool-retention.ts:140-159`) preserves `sections` / `diffs` identity
 // when the ACP update carried no output (`:155-156`) — verified, and tested in
@@ -52,8 +52,9 @@ import { Meter } from '../meter';
 import { Spinner } from '../spinner';
 import { SubagentCard } from '../subagent-card';
 import { ExecutionCard } from '../execution-card';
+import { JobList } from '../job-list';
 import { TranscriptRow, type RowProps } from '../transcript-row';
-import { subagentSummary } from '../../harness-subagents';
+import { jobsSummary, subagentSummary } from '../../harness-subagents';
 import { gridifyText } from '../../cell-grid';
 import {
   formatToolElapsed,
@@ -153,7 +154,8 @@ export class ToolRow extends TranscriptRow {
   private readonly kind = new Chip();
   private readonly subject = el('span', { class: `${PREFIX}__tool-subject` });
   private readonly result = el('span');
-  /** spec 282 — `3/4 done · background`, a second `--result` span in the head. */
+  /** spec 282 — `3/4 done · background`; spec 370 — `1 running · 2 done` for a
+   *  `wait` row. A second `--result` span in the head. */
   private readonly summary = el('span', {
     class: classes(`${PREFIX}__tool-result`, `${PREFIX}__subagent-summary`),
   });
@@ -165,6 +167,7 @@ export class ToolRow extends TranscriptRow {
    *  every head repaint rebuild the chip's children for nothing. */
   private kindData: Readonly<Record<string, string>> = { kind: '' };
   private card: SubagentCard | null = null;
+  private jobList: JobList | null = null;
   private executionCard: ExecutionCard | null = null;
   private unidiff: DiffBlock | null = null;
   private readonly statBars: Meter[] = [];
@@ -205,7 +208,7 @@ export class ToolRow extends TranscriptRow {
     return [imageStripSignature(next.item), next.streaming, ...this.bodyDeps(next)];
   }
 
-  /** The ten of spec 302 §3.4. */
+  /** The ten of spec 302 §3.4, plus spec 370's `jobs`. */
   protected bodyDeps(next: RowProps): readonly unknown[] {
     const tool = next.item.tool;
     if (tool?.execution && !tool.artifactRedaction && !tool.subagents) {
@@ -231,6 +234,7 @@ export class ToolRow extends TranscriptRow {
       tool?.diffs,
       tool?.subagents,
       (next.item.subagentExpanded ?? []).join('\u001f'),
+      tool?.jobs,
     ];
   }
 
@@ -255,6 +259,7 @@ export class ToolRow extends TranscriptRow {
     }
     if (tool.execution && !tool.artifactRedaction && !tool.subagents) {
       this.dropCard();
+      this.dropJobList();
       this.glyph.update({ running: false, terminalGlyph: tool.glyph });
       this.executionCard ??= new ExecutionCard();
       this.paintExecution(next);
@@ -277,6 +282,7 @@ export class ToolRow extends TranscriptRow {
         this.redactionFor = tool.artifactRedaction;
       }
       this.dropCard();
+      this.dropJobList();
       children.push(this.redaction);
       syncOrder(body, children);
       return;
@@ -284,11 +290,20 @@ export class ToolRow extends TranscriptRow {
 
     if (tool.subagents) {
       // spec 282: the card replaces the "Running agent X…" sections.
+      this.dropJobList();
       this.card ??= new SubagentCard();
       this.card.update({ payload: tool.subagents, expanded: next.item.subagentExpanded ?? [] });
+      this.sealSettledCard(next);
       children.push(this.card.el);
+    } else if (tool.jobs) {
+      // spec 370: the job list replaces the model-facing `wait` text.
+      this.dropCard();
+      this.jobList ??= new JobList();
+      this.jobList.update({ payload: tool.jobs });
+      children.push(this.jobList.el);
     } else {
       this.dropCard();
+      this.dropJobList();
       this.paintOutput(tool);
       if (tool.sections.length > 0 || shouldRenderExecuteExit(tool)) children.push(this.output);
     }
@@ -312,15 +327,29 @@ export class ToolRow extends TranscriptRow {
       this.card?.update({ payload: tool.subagents, expanded: next.item.subagentExpanded ?? [] });
       return;
     }
+    // A fresh jobs payload per frame moves the deps, so `paint()` already ran.
+    if (tool.jobs) return;
     this.paintOutput(tool);
   }
 
   /** The spinner has already been told to stop by the terminal `paint()`. */
   protected onSeal(): void {
-    const tool = this.props?.item.tool;
-    if (this.card && tool?.subagents && this.props) {
-      this.card.seal({ payload: tool.subagents, expanded: this.props.item.subagentExpanded ?? [] });
-    }
+    if (this.props) this.sealSettledCard(this.props);
+  }
+
+  /**
+   * spec 370: an OMP background spawn returns before its agents finish, so the
+   * row seals while the card still has live agents. The card is the owning
+   * sub-component of that late state: it stays live, taking each new payload
+   * through `update()`, until its agents settle or the turn ends with them
+   * last reported — then this seals it. A card cold-mounted in an already
+   * sealed row is sealed here on its first paint.
+   */
+  private sealSettledCard(next: RowProps): void {
+    const payload = next.item.tool?.subagents;
+    if (!this.card || !payload || this.isLive) return;
+    if (payload.background && !payload.lastReported) return;
+    this.card.seal({ payload, expanded: next.item.subagentExpanded ?? [] });
   }
 
   private paintHead(tool: ToolPayload): void {
@@ -353,8 +382,9 @@ export class ToolRow extends TranscriptRow {
       setText(this.result, tool.result);
       nodes.push(this.result);
     }
-    if (tool.subagents) {
-      setText(this.summary, subagentSummary(tool.subagents));
+    const summary = tool.subagents ? subagentSummary(tool.subagents) : tool.jobs ? jobsSummary(tool.jobs) : '';
+    if (summary) {
+      setText(this.summary, summary);
       nodes.push(this.summary);
     }
     if (tool.startedAt !== undefined) {
@@ -529,9 +559,17 @@ export class ToolRow extends TranscriptRow {
     this.card = null;
   }
 
+  private dropJobList(): void {
+    if (!this.jobList) return;
+    this.jobList.el.remove();
+    this.jobList.dispose();
+    this.jobList = null;
+  }
+
   protected onDispose(): void {
     super.onDispose();
     this.dropCard();
+    this.dropJobList();
     this.dropExecutionCard();
     this.glyph.dispose();
     this.kind.dispose();
