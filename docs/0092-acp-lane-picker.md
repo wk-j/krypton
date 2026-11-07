@@ -142,7 +142,7 @@ New block `.acp-harness__picker*` overlay (~95 lines as shipped):
 - `position: absolute; inset: 0` column-flex centered shell, semi-transparent backdrop `rgba(4, 8, 13, 0.72)`.
 - Inner `.acp-harness__picker-panel`: one container `width: clamp(320px, 38vw, 480px)`, theme accent border `rgba(0, 204, 255, 0.32)`, `border-radius: var(--krypton-border-radius, 8px)`, `overflow: hidden`. Header and list are not independently bordered (a row-flex of sibling boxes sat side-by-side as two 8px capsules; the 1px stroke on the curve read as wire). No `backdrop-filter` (platform gotcha).
 - Header: `// add lane` + hint `j/k move · enter spawn · esc cancel`.
-- Rows: backend label + dim backend id + amber `·N running` count when running > 0; cursor highlight via accent tint + inset outline (no left-border rail).
+- Rows: backend logo (the `backendLogoId()` symbol, tinted with its `--krypton-backend-*` colour as on the lane rail) + backend label + dim backend id + amber `·N running` count when running > 0; cursor highlight via accent tint + inset outline (no left-border rail).
 - z-index `4` — above plan (1), memory overlay (2), and metrics overlay; help overlay (3) and the picker are mutually exclusive (`openLanePicker` clears help/memory; help/memory toggles never co-occur with picker).
 
 ### Empty-state hint

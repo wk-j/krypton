@@ -82,6 +82,30 @@
     color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
   }
 
+  /* The backend mark, tinted like its rail logo (`rail-entry.css`). An svg's
+     baseline is its bottom edge, so it centres instead of joining the row's
+     text baseline. */
+  .acp-harness__picker-logo {
+    align-self: center;
+    width: 1.1em;
+    height: 1.1em;
+  }
+
+  .acp-harness__picker-logo--claude   { color: var(--krypton-backend-claude); }
+  .acp-harness__picker-logo--codex    { color: var(--krypton-backend-codex); }
+  .acp-harness__picker-logo--opencode { color: var(--krypton-backend-opencode); }
+  .acp-harness__picker-logo--pi       { color: var(--krypton-backend-pi); }
+  .acp-harness__picker-logo--droid    { color: var(--krypton-backend-droid); }
+  .acp-harness__picker-logo--cursor   { color: var(--krypton-backend-cursor); }
+  .acp-harness__picker-logo--junie    { color: var(--krypton-backend-junie); }
+  .acp-harness__picker-logo--omp      { color: var(--krypton-backend-omp); }
+  .acp-harness__picker-logo--grok     { color: var(--krypton-backend-grok); }
+  .acp-harness__picker-logo--copilot  { color: var(--krypton-backend-copilot); }
+  .acp-harness__picker-logo--mimo     { color: var(--krypton-backend-mimo); }
+  .acp-harness__picker-logo--cline    { color: var(--krypton-backend-cline); }
+  .acp-harness__picker-logo--antigravity { color: var(--krypton-backend-antigravity); }
+  .acp-harness__picker-logo--fx       { color: var(--krypton-backend-fx); }
+
   .acp-harness__picker-label {
     flex: 0 0 auto;
     letter-spacing: 0.04em;

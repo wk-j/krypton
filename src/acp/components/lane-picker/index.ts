@@ -10,7 +10,7 @@
 // root, the `hidden` toggle, the panel, the head and the empty state;
 // `ListPicker` owns the cursor math, the `--active` modifier and the
 // `data-picker-index` attributes. What is left here is this picker's own
-// content: the head line, the three key hints and one row's three spans.
+// content: the head line, the three key hints and one row's logo and spans.
 //
 // It owns no key table (CLAUDE.md constraint 1). `cursor` is a prop — today it
 // is the view's `pickerCursor` field (`acp-harness-view.ts:1280`) — and the
@@ -21,7 +21,8 @@ import './lane-picker.css';
 import type { HarnessDirective } from '../../../config';
 import { Component } from '../../../ui/component';
 import { el, frag } from '../../../ui/dom';
-import { backendLabel } from '../../harness-lane-identity';
+import { harnessSymbolEl } from '../../harness-icons';
+import { backendLabel, backendLogoId } from '../../harness-lane-identity';
 import type { AcpBackendDescriptor } from '../../types';
 import { ListPicker } from '../list-picker';
 import { OverlayShell, type OverlayShellParts } from '../overlay-shell';
@@ -33,6 +34,9 @@ const BLOCK = 'acp-harness__picker';
 const HINTS = 'j/k move · enter spawn · esc cancel';
 
 const EMPTY = 'no ACP backends installed';
+
+/** `backendLogoId()` prefix; the rest names the `--krypton-backend-*` tint. */
+const LOGO_PREFIX = 'krypton-logo-';
 
 // Single-dash element names on the `acp-harness` block, an unclassed title and
 // an unclassed hint span — the shape `acp-harness.css:6140-6238` styles.
@@ -133,8 +137,10 @@ export class LanePicker extends Component<LanePickerProps> {
   }
 
   /** `·2 running` is dropped entirely at zero, as the template does today. */
-  private readonly renderRow = (entry: BackendEntry): Node =>
-    frag(
+  private readonly renderRow = (entry: BackendEntry): Node => {
+    const logoId = backendLogoId(entry.id);
+    return frag(
+      harnessSymbolEl(logoId, `${BLOCK}-logo ${BLOCK}-logo--${logoId.slice(LOGO_PREFIX.length)}`),
       el('span', { class: `${BLOCK}-label`, text: entry.label }),
       el('span', { class: `${BLOCK}-id`, text: entry.id }),
       entry.running > 0 ? ' ' : null,
@@ -142,6 +148,7 @@ export class LanePicker extends Component<LanePickerProps> {
         ? el('span', { class: `${BLOCK}-count`, text: `·${entry.running} running` })
         : null,
     );
+  };
 
   private readonly emitAutoClose = (): void => {
     this.autoClose?.();

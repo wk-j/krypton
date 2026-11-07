@@ -53,34 +53,39 @@ afterEach(() => {
 });
 
 describe('LanePicker', () => {
-  it('emits the panel, the head and one row per backend', () => {
+  it('emits the head and one row per backend: logo, label, id, running count', () => {
     const picker = mount(base({ cursor: 1 }));
 
-    expect(picker.el.outerHTML).toBe(
-      '<aside class="acp-harness__picker">' +
-        '<div class="acp-harness__picker-panel">' +
-        '<header class="acp-harness__picker-head">' +
-        '<span>// add lane</span>' +
-        '<span>j/k move · enter spawn · esc cancel</span>' +
-        '</header>' +
-        '<ul class="acp-harness__picker-list">' +
-        '<li class="acp-harness__picker-row" data-picker-index="0">' +
-        '<span class="acp-harness__picker-label">Claude</span>' +
-        '<span class="acp-harness__picker-id">claude</span>' +
-        ' <span class="acp-harness__picker-count">·2 running</span>' +
-        '</li>' +
-        '<li class="acp-harness__picker-row acp-harness__picker-row--active" data-picker-index="1">' +
-        '<span class="acp-harness__picker-label">Codex</span>' +
-        '<span class="acp-harness__picker-id">codex</span>' +
-        '</li>' +
-        '<li class="acp-harness__picker-row" data-picker-index="2">' +
-        '<span class="acp-harness__picker-label">Droid</span>' +
-        '<span class="acp-harness__picker-id">droid</span>' +
-        '</li>' +
-        '</ul>' +
-        '</div>' +
-        '</aside>',
-    );
+    expect([...picker.el.querySelectorAll('header span')].map((span) => span.textContent))
+      .toStrictEqual(['// add lane', 'j/k move · enter spawn · esc cancel']);
+    expect([...picker.el.querySelectorAll('li')].map((row) => ({
+      logo: row.querySelector('use')?.getAttribute('href'),
+      label: row.querySelector('.acp-harness__picker-label')?.textContent,
+      id: row.querySelector('.acp-harness__picker-id')?.textContent,
+      count: row.querySelector('.acp-harness__picker-count')?.textContent ?? null,
+      active: row.classList.contains('acp-harness__picker-row--active'),
+    }))).toStrictEqual([
+      { logo: '#krypton-logo-claude', label: 'Claude', id: 'claude', count: '·2 running', active: false },
+      { logo: '#krypton-logo-codex', label: 'Codex', id: 'codex', count: null, active: true },
+      { logo: '#krypton-logo-droid', label: 'Droid', id: 'droid', count: null, active: false },
+    ]);
+  });
+
+  it('tints each logo with its backend colour, pi-acp and unknown ids included', () => {
+    const picker = mount(base({
+      backends: [
+        { id: 'pi-acp', display_name: 'Pi', command: 'pi-acp' },
+        { id: 'made-up', display_name: 'Made Up', command: 'made-up' },
+      ],
+    }));
+
+    expect([...picker.el.querySelectorAll('li svg')].map((svg) => [
+      svg.getAttribute('class'),
+      svg.querySelector('use')?.getAttribute('href'),
+    ])).toStrictEqual([
+      ['acp-harness__icon acp-harness__picker-logo acp-harness__picker-logo--pi', '#krypton-logo-pi'],
+      ['acp-harness__icon acp-harness__picker-logo acp-harness__picker-logo--omp', '#krypton-logo-omp'],
+    ]);
   });
 
   it('names the pending spawn directive in the head (spec 163)', () => {
@@ -148,7 +153,7 @@ describe('LanePicker', () => {
 
     expect([...picker.el.querySelectorAll('li')]).toStrictEqual(rows);
     expect(rows[0].textContent).toBe('Claudeclaude ·3 running');
-    expect(rows[1].childNodes.length).toBe(2);
+    expect(rows[1].querySelector('.acp-harness__picker-count')).toBeNull();
   });
 
   it('writes nothing to the DOM when the props say the same thing', () => {
