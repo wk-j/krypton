@@ -1,6 +1,8 @@
 /* ─── Workspace Footer ─────────────────────────────────────────────
-   Shared 28px bottom rail. Music is one segment; workspace status uses the
-   remaining space. No backdrop-filter: transparent WKWebView safety. */
+   Shared 28px bottom rail: a plate strip (DESIGN.md "Parts") with its seam on
+   the top edge, the side that meets the workspace. Segments are ink readouts
+   split by etched grooves; mode and attention chips are lamps; the music
+   progress is a gauge well. No backdrop-filter: transparent WKWebView safety. */
 
 .krypton-workspace-footer {
   position: fixed;
@@ -15,12 +17,14 @@
   min-width: 0;
   padding: 0 12px;
   overflow: hidden;
-  background: transparent;
+  background: var(--mat-brush), var(--mat-plate);
+  border-top: 1px solid var(--mat-key-edge);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   color: var(--krypton-fg, #b0c4d8);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
-  /* DESIGN.md § Numerics: HUD digits (counts, io, %, clock) must not jitter as
-     they tick — tabular figures hold the columns and keep the deck instrumented. */
+  /* DESIGN.md "Typography": HUD digits (counts, io, %, clock) must not jitter
+     as they tick — tabular figures hold the columns. */
   font-variant-numeric: tabular-nums;
   user-select: none;
   pointer-events: none;
@@ -58,14 +62,18 @@
   gap: 0;
 }
 
-/* Telemetry-deck separators — a dim accent middot before each center readout
-   after the first, matching the composer-meta deck (acp-harness.css). A divider
-   between readouts so the eye can parse cwd / git / counts / process as distinct
-   fields instead of one undifferentiated run. Not a left-edge accent rail. */
+/* An etched groove before each center readout after the first, so the eye
+   parses cwd / git / counts / process as distinct fields. Not a left-edge
+   accent rail: a 1px cut with its light edge, like every groove. */
 .krypton-workspace-footer__center > .krypton-workspace-footer__segment:not(:first-child)::before {
-  content: '·';
-  margin: 0 8px;
-  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.28));
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 12px;
+  margin: 0 9px 0 8px;
+  vertical-align: -0.2em;
+  border-left: 1px solid var(--mat-groove-lo);
+  border-right: 1px solid var(--mat-groove-hi);
 }
 
 .krypton-workspace-footer__right {
@@ -96,20 +104,35 @@
 }
 
 .krypton-workspace-footer__segment--p0 {
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.88);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.88));
 }
 
+/* Mode lamp: an unlit capsule with a lit amber LED and a backlit legend. */
 .krypton-workspace-footer__segment--mode {
   flex: 0 0 auto;
   height: 18px;
   display: inline-flex;
   align-items: center;
-  padding: 0 7px;
+  gap: 6px;
+  padding: 0 8px;
   border: 0;
-  color: var(--krypton-window-accent, var(--krypton-accent, #0cf));
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
-  letter-spacing: 0.08em;
+  border-radius: 999px;
+  color: var(--mat-lit);
+  background: var(--mat-well-fill);
+  box-shadow: var(--mat-well-shadow);
+  text-shadow: var(--mat-lit-glow);
+  letter-spacing: 0.09em;
   text-transform: uppercase;
+}
+
+.krypton-workspace-footer__segment--mode::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
 }
 
 .krypton-workspace-footer__segment--mode-normal {
@@ -117,16 +140,22 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.88);
+  box-shadow: none;
+  text-shadow: none;
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.88));
+}
+
+.krypton-workspace-footer__segment--mode-normal::before {
+  content: none;
 }
 
 .krypton-workspace-footer__segment--role {
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.88);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.88));
 }
 
-/* Priority ladder — telemetry recedes as it gets less actionable. Tiers ride
-   phosphor opacity (spec 236): cwd P1, p2 secondary, p3 ambient. Hue is kind,
-   not priority — cyan is not the default type color. */
+/* Priority ladder — telemetry recedes as it gets less actionable through the
+   ink tiers (spec 236): cwd P1, p2 secondary, p3 ambient. Hue is kind, not
+   priority. */
 .krypton-workspace-footer__segment--project {
   color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.72));
 }
@@ -139,12 +168,18 @@
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4));
 }
 
-.krypton-workspace-footer__segment--throughput {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
+/* The track clock is a readout: the figure in a small well. (Center-deck
+   figures stay plain ink: the groove before each would land inside a well.) */
+.krypton-workspace-footer__segment--music-time {
+  padding: 2px 5px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  line-height: 1;
 }
 
 .krypton-workspace-footer__segment--music-flags {
-  color: var(--krypton-yellow, #ffcc00);
+  color: var(--mat-silk);
 }
 
 /* git ref — success phosphor so a branch is a repo state, not more cyan.
@@ -189,17 +224,18 @@
 
 /* pid suffix on the process readout — present but de-emphasised */
 .krypton-workspace-footer__pid {
-  opacity: 0.6;
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4));
 }
 
 /* Focused-view state — coloured by meaning so a non-normal state is legible at
-   a glance instead of blending into the p3 tier. Theme-aware via the semantic
-   -rgb triplets. Detail density only (like progress). */
+   a glance instead of blending into the p3 tier. Busy is backlit amber (a
+   live state), ok is plain ink; the rest take the semantic -rgb triplets.
+   Detail density only (like progress). */
 .krypton-workspace-footer__segment--state[data-state='busy'] {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.78);
+  color: var(--mat-lit);
 }
 .krypton-workspace-footer__segment--state[data-state='ok'] {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.72));
 }
 .krypton-workspace-footer__segment--state[data-state='warn'],
 .krypton-workspace-footer__segment--state[data-state='needs_attention'] {
@@ -236,26 +272,30 @@
   color: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.92);
 }
 
-/* spec 128/138: attention-triage gauge — a quiet chip that only shows when the
-   ACP harness has items awaiting the human's judgement. As the single ambient
+/* spec 128/138: attention-triage gauge — a lamp that only shows when the ACP
+   harness has items awaiting the human's judgement. As the single ambient
    pull, it must never be clipped: it keeps its intrinsic width and opts out of
-   the base segment's shrink/ellipsis so it always reads in full. Mirrors the
-   --mode chip box. spec 138 makes it weight-dynamic: a reversibility tier
-   modifier (--rev-*) colours it, and a pip strip encodes the count — both are
-   STATIC encodings (no blink, no pulse), per the spec-128 static-by-design rule. */
+   the base segment's shrink/ellipsis so it always reads in full. spec 138
+   makes it weight-dynamic: a reversibility tier modifier (--rev-*) sets the
+   lamp colour, and a pip strip encodes the count — both STATIC encodings (no
+   blink, no pulse), per the spec-128 static-by-design rule. A lit status
+   capsule (DESIGN.md "Lamps") in `--x-rgb`. */
 .krypton-workspace-footer__segment--attention {
+  --x-rgb: var(--krypton-info-rgb, 0, 200, 255);
   flex: 0 0 auto;
   height: 18px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0 7px;
+  padding: 0 8px;
   overflow: visible;
   text-overflow: clip;
-  border-radius: var(--krypton-border-radius, 8px);
-  border: 1px solid;
+  border: 1px solid rgba(var(--x-rgb), 0.5);
+  border-radius: 999px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(var(--x-rgb), 0.3), rgba(var(--x-rgb), 0.07) 75%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--x-rgb), 0.22);
+  color: rgb(var(--x-rgb));
   letter-spacing: 0.04em;
-  transition: color 160ms, border-color 160ms, background 160ms;
 }
 
 /* spec 146: review-count depth indicator — a quiet neutral chip that only shows
@@ -273,11 +313,11 @@
   overflow: visible;
   text-overflow: clip;
   letter-spacing: 0.04em;
-  color: rgba(216, 232, 216, 0.5);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.5));
 }
 
 .krypton-workspace-footer__reviews-glyph {
-  color: rgba(216, 232, 216, 0.42);
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.42));
   font-size: 0.96em;
 }
 
@@ -294,11 +334,11 @@
   overflow: visible;
   text-overflow: clip;
   letter-spacing: 0.04em;
-  color: rgba(216, 232, 216, 0.5);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.5));
 }
 
 .krypton-workspace-footer__priority-glyph {
-  color: rgba(216, 232, 216, 0.42);
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.42));
   font-size: 0.96em;
 }
 
@@ -318,32 +358,25 @@
   overflow: visible;
   text-overflow: clip;
   letter-spacing: 0.04em;
-  color: rgba(216, 232, 216, 0.5);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.5));
   transition: color 160ms;
 }
 
 .krypton-workspace-footer__link-glyph {
-  color: rgba(216, 232, 216, 0.42);
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.42));
   font-size: 0.96em;
 }
 
 /* A healthy link stays at the base muted colour — it is ambient information and
    must not compete with the attention gauge for the eye. */
-.krypton-workspace-footer__segment--link-unauthorized {
-  color: var(--krypton-amber, #ffb040);
+.krypton-workspace-footer__segment--link-unauthorized,
+.krypton-workspace-footer__segment--link-unauthorized .krypton-workspace-footer__link-glyph {
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
 }
 
-.krypton-workspace-footer__segment--link-unauthorized
-  .krypton-workspace-footer__link-glyph {
-  color: rgba(255, 176, 64, 0.75);
-}
-
-.krypton-workspace-footer__segment--link-offline {
-  color: var(--krypton-danger, #ff5d6c);
-}
-
+.krypton-workspace-footer__segment--link-offline,
 .krypton-workspace-footer__segment--link-offline .krypton-workspace-footer__link-glyph {
-  color: rgba(255, 93, 108, 0.75);
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }
 
 /* spec 337: Rails verifier — worst state across harnesses. Muted like the link
@@ -359,31 +392,24 @@
   overflow: visible;
   text-overflow: clip;
   letter-spacing: 0.04em;
-  color: var(--krypton-ink-3, rgba(216, 232, 216, 0.5));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.5));
 }
 
 .krypton-workspace-footer__segment--rails-fault {
-  color: var(--krypton-danger, #ff5d6c);
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }
 
-/* Tier colours — same palette as the triage-overlay cards so the footer chip
-   and the overlay agree on what each colour means (cyan < amber < red). */
+/* Tier lamps — same meaning as the triage-overlay cards (blue < amber < red). */
 .krypton-workspace-footer__segment--rev-reversible {
-  color: var(--krypton-cyan, #00d4ff);
-  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.45);
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  --x-rgb: var(--krypton-info-rgb, 0, 200, 255);
 }
 
 .krypton-workspace-footer__segment--rev-costly {
-  color: var(--krypton-amber, #ffb040);
-  border-color: rgba(255, 176, 64, 0.45);
-  background: rgba(255, 176, 64, 0.1);
+  --x-rgb: var(--krypton-warning-rgb, 232, 197, 71);
 }
 
 .krypton-workspace-footer__segment--rev-irreversible {
-  color: var(--krypton-danger, #ff5d6c);
-  border-color: rgba(255, 93, 108, 0.5);
-  background: rgba(255, 93, 108, 0.12);
+  --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
 }
 
 /* Count pip strip — discrete bars in the chip's own colour; dim for the
@@ -416,7 +442,7 @@
 
 .krypton-workspace-footer__segment--music-track {
   flex: 1 1 auto;
-  color: rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.88);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.88));
 }
 
 .krypton-workspace-footer__segment--music-info {
@@ -429,16 +455,22 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* A gauge (DESIGN.md "Gauges"): a 4px well track, flat silk fill with a 1px
+   inset top highlight, no glow. */
 .krypton-workspace-footer__music-progress {
   flex: 0 0 120px;
-  height: 3px;
+  height: 4px;
   overflow: hidden;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  border-radius: 2px;
+  background: var(--mat-well-fill);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-workspace-footer__music-progress-fill {
   height: 100%;
-  background: var(--krypton-window-accent, var(--krypton-accent, #0cf));
+  border-radius: 2px;
+  background: var(--mat-silk);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
 }
 
 .krypton-mini-player__viz {

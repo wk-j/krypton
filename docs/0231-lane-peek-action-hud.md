@@ -7,6 +7,7 @@
 > Removed (rev 4, 2026-09-02): the rail `[data-slot="action"]` stack and the peek-embedded HUD are deleted. Kind wells, instrument motion, and the 2s hide timer were broken (wrong kind/subject, overlay covering the transcript) and are not replaced. Peek is back to a flat `tool` row (`data-peek-row="tool"`) for a busy lane's in-flight call. The composer still has no activity segment (that move from spec 156/221 stays). Thought-slot hide delay lives as `THOUGHT_SLOT_HIDE_MS` on the thought teletype module. Files `harness-action-hud.ts` / `.test.ts` and the `krypton-action-*` SVG symbols are gone. The rest of this spec is historical.
 > Milestone: ACP Harness polish
 > Related: `docs/0109-acp-contextual-lane-peek.md`, `docs/0111-harness-right-rail.md`, `docs/0156-lane-activity-ticker.md`, `docs/0216-workspace-thought-field.md`, `docs/0221-harness-status-line-density.md`
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): HUD loops, scanline wipes and neon removed; HUD is a plate.
 
 ## Problem
 

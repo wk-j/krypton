@@ -1,5 +1,5 @@
 // Krypton — Progress Gauge (OSC 9;4)
-// Renders SVG arc gauges and titlebar scanline sweep for progress tracking.
+// Renders SVG arc gauges and the titlebar progress lamp for progress tracking.
 
 import {
   SessionId,
@@ -48,7 +48,7 @@ export class ProgressGauge {
 
   /**
    * Handle a progress update for a session. Updates internal state and
-   * drives the status dot arc gauge + titlebar scanline sweep.
+   * drives the status dot arc gauge + titlebar progress lamp.
    */
   handleProgress(
     sessionId: SessionId,
@@ -97,7 +97,7 @@ export class ProgressGauge {
 
   /**
    * Create or update the large centered background gauge in a window's
-   * content area, and toggle the titlebar scanline sweep.
+   * content area, and toggle the titlebar progress lamp.
    */
   private updateProgressGauge(
     winEl: HTMLElement,
@@ -144,7 +144,7 @@ export class ProgressGauge {
       'krypton-window__titlebar--progress-paused',
     );
 
-    // Activate titlebar scanline sweep
+    // Light the titlebar progress lamp
     titlebar.classList.add('krypton-window__titlebar--progress');
 
     const C = GAUGE_CIRCUMFERENCE;

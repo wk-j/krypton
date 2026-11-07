@@ -1,7 +1,12 @@
 /* ─── File Manager ─── */
-/* Matches the ACP Harness surfaces: hairline rules, ink tiers derived from the
-   foreground, a tinted + outlined cursor row, no glow on text you read and no
-   scanline texture. All colors flow through theme tokens; no hard-coded hex.
+/* Krypton Console parts (DESIGN.md 2.0.0, spec 366): the path line and the
+   status readout are plate strips, the list is a recessed well pane of flat
+   groove-split rows, the preview is the window's screen with the file flat
+   on it. Rows are virtualized and translated (smooth-scroll.ts): they keep
+   the terminal cell height and carry no shadow or gradient — the recess is
+   drawn once, on the list. Selection is a full-row `--mat-select` tint,
+   never an edge rail (ADR-0027). All colours flow through theme and material
+   tokens; no hard-coded hex.
    Ink tiers fall back to the foreground at reduced alpha — never
    `--krypton-fg-dim` (that is the titlebar colour, near-invisible in some
    themes) and never ANSI bright-black for text. */
@@ -10,8 +15,7 @@
   --fm-ink: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb), 0.86));
   --fm-ink-dim: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.56));
   --fm-ink-faint: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb), 0.4));
-  --fm-rule: rgba(var(--krypton-accent-rgb), 0.18);
-  --fm-accent: var(--krypton-window-accent, var(--krypton-accent));
+  --fm-rule: rgba(var(--krypton-fg-rgb), 0.14);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -27,6 +31,9 @@
   user-select: text;
 }
 
+/* A plate strip meeting the screen on its bottom edge: the path engraved in
+   ink (natural case), or the search prompt lit. Its height is read back for
+   the visible row count (view.ts `onResize`) — keep it. */
 .krypton-file-manager__breadcrumb {
   flex-shrink: 0;
   font-family: var(--krypton-font-family, monospace);
@@ -36,14 +43,18 @@
   padding: 0 12px;
   color: var(--fm-ink-dim);
   letter-spacing: 0.02em;
-  border-bottom: 1px solid var(--fm-rule);
+  text-shadow: var(--mat-engrave);
+  background: var(--mat-brush), var(--mat-plate);
+  border-bottom: 1px solid var(--mat-key-edge);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .krypton-file-manager__breadcrumb--search {
-  color: var(--fm-accent);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
 .krypton-file-manager__body {
@@ -58,11 +69,15 @@
   font-family: var(--krypton-font-family, monospace);
 }
 
+/* The well pane, flush with the strips: no vertical inset, because the row
+   count is computed from the body height. */
 .krypton-file-manager__list {
   flex: 0 0 333px;
   overflow: hidden;
   min-width: 0;
   contain: layout;
+  background: var(--mat-well-fill);
+  box-shadow: var(--mat-well-depth), inset -1px 0 0 var(--mat-well-wall);
 }
 
 /* Overscanned row window; JS translates it for smooth scrolling (smooth-scroll.ts). */
@@ -70,10 +85,12 @@
   will-change: transform;
 }
 
+/* The screen: the window's own fill shows through. The left border is the
+   lip where the list well meets it. */
 .krypton-file-manager__preview {
   flex: 1 1 0;
   overflow: hidden;
-  border-left: 1px solid var(--fm-rule);
+  border-left: 1px solid var(--mat-groove-hi);
   min-width: 0;
 }
 
@@ -81,6 +98,7 @@
   display: none;
 }
 
+/* Content: flat on the screen. */
 .krypton-file-manager__preview-content {
   margin: 0;
   padding: 8px 14px;
@@ -94,8 +112,9 @@
   height: 100%;
 }
 
-/* Prose — after the harness markdown (`harness-shared.css`
-   `.acp-harness__msg-body--markdown`), in theme tokens instead of its hex. */
+/* Prose — content, flat on the screen (DESIGN.md "Content views"); after the
+   harness markdown, in theme tokens: links in the theme accent, inline code
+   in a well-fill chip, `pre` on the well fill, neutral rules. */
 .krypton-file-manager__preview-markdown {
   padding: 10px 18px;
   font-family: inherit;
@@ -123,7 +142,7 @@
 .krypton-file-manager__preview-markdown h1 {
   font-size: 1.35em;
   color: var(--agent-cyan, var(--krypton-ansi-6));
-  border-bottom: 1px solid rgba(var(--krypton-accent-rgb), 0.25);
+  border-bottom: 1px solid var(--fm-rule);
   padding-bottom: 0.2em;
 }
 .krypton-file-manager__preview-markdown h2 { font-size: 1.18em; }
@@ -145,10 +164,10 @@
 }
 
 .krypton-file-manager__preview-markdown a {
-  color: var(--agent-user, var(--krypton-ansi-6));
+  color: var(--krypton-accent);
   text-decoration: underline;
   text-decoration-color: rgba(var(--krypton-accent-rgb), 0.45);
-  text-underline-offset: 3px;
+  text-underline-offset: 2px;
 }
 
 .krypton-file-manager__preview-markdown a:hover {
@@ -169,13 +188,14 @@
   font-family: var(--krypton-font-family, monospace);
   font-size: 0.92em;
   color: var(--agent-accent, var(--krypton-ansi-2));
-  background: rgba(var(--krypton-fg-rgb), 0.07);
+  background: var(--mat-well-fill);
+  border: 1px solid var(--mat-groove-lo);
   border-radius: var(--krypton-border-radius, 8px);
   padding: 0.05em 0.4ch;
 }
 
 .krypton-file-manager__preview-markdown pre {
-  background: rgba(0, 0, 0, 0.32);
+  background: var(--mat-well-fill);
   border-radius: var(--krypton-border-radius, 8px);
   padding: 8px 10px;
   overflow-x: auto;
@@ -225,15 +245,15 @@
   border-spacing: 0;
   width: 100%;
   margin: 0.8em 0;
-  border: 1px solid rgba(var(--krypton-accent-rgb), 0.25);
+  border: 1px solid var(--fm-rule);
   border-radius: var(--krypton-border-radius, 8px);
 }
 
 .krypton-file-manager__preview-markdown th,
 .krypton-file-manager__preview-markdown td {
   border: 0;
-  border-right: 1px solid rgba(var(--krypton-accent-rgb), 0.25);
-  border-bottom: 1px solid rgba(var(--krypton-accent-rgb), 0.25);
+  border-right: 1px solid var(--fm-rule);
+  border-bottom: 1px solid var(--fm-rule);
   padding: 6px 12px;
   text-align: left;
 }
@@ -264,7 +284,7 @@
 }
 
 .krypton-file-manager__preview-markdown th {
-  background: rgba(var(--krypton-accent-rgb), 0.1);
+  background: rgba(var(--krypton-fg-rgb), 0.05);
   color: var(--agent-user, var(--krypton-ansi-6));
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -282,12 +302,12 @@
   height: auto;
 }
 
-/* ─── Frontmatter / Skill Card — the harness rail-panel card ─── */
+/* ─── Frontmatter / Skill Card — content: a neutral ruled card, no material ─── */
 
 .krypton-skill-spec {
   margin: 0 0 1.2em;
   padding: 8px 12px 7px;
-  border: 1px solid rgba(var(--krypton-accent-rgb), 0.24);
+  border: 1px solid var(--fm-rule);
   border-radius: var(--krypton-border-radius, 8px);
   background: rgba(var(--krypton-fg-rgb), 0.03);
   color: var(--fm-ink);
@@ -300,7 +320,7 @@
   gap: 10px;
   margin-bottom: 6px;
   padding-bottom: 5px;
-  border-bottom: 1px solid rgba(var(--krypton-accent-rgb), 0.12);
+  border-bottom: 1px solid var(--fm-rule);
 }
 
 .krypton-skill-spec__tag,
@@ -364,14 +384,16 @@
 
 /* ─── List Items ─── */
 
+/* A flat slice of the list well: the groove sits inside the terminal cell
+   height (border-box), so the virtualized row pitch never changes. */
 .krypton-file-manager__item {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   height: var(--krypton-terminal-cell-height, 20px);
-  line-height: var(--krypton-terminal-cell-height, 20px);
-  margin: 0 6px;
-  padding: 0 6px;
-  border-radius: var(--krypton-border-radius, 8px);
+  line-height: calc(var(--krypton-terminal-cell-height, 20px) - 1px);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--mat-groove-lo);
   cursor: default;
   white-space: nowrap;
   overflow: hidden;
@@ -380,25 +402,24 @@
   letter-spacing: 0.02em;
 }
 
-/* Cursor row — the harness picker's active row: a tint plus a 1px outline
-   drawn inside the row; the row keeps its own colours (spec 0052: plain
-   subtle background, no cursor-specific type-colour overrides). */
+/* Cursor row — the full-row selection tint plus the 1px focus outline inside
+   the row; the row keeps its own colours (spec 0052: plain subtle
+   background, no cursor-specific type-colour overrides). */
 .krypton-file-manager__item.krypton-file-manager__item--cursor {
-  background: rgba(var(--krypton-accent-rgb), 0.12);
-  outline: 1px solid rgba(var(--krypton-accent-rgb), 0.5);
+  background: var(--mat-select);
+  outline: 1px solid var(--mat-lit);
   outline-offset: -1px;
 }
 
 /* ── Directory styling ── */
 
 .krypton-file-manager__item--dir .krypton-file-manager__name {
-  color: var(--fm-accent);
+  color: var(--krypton-fg);
   font-weight: 600;
 }
 
 .krypton-file-manager__item--dir .krypton-file-manager__icon {
-  color: var(--fm-accent);
-  opacity: 0.7;
+  color: var(--mat-silk);
 }
 
 /* ── Symlink ── */
@@ -427,8 +448,9 @@
 
 /* ── Marked items ── */
 
+/* A marked row's dot is lit amber. */
 .krypton-file-manager__item--marked .krypton-file-manager__mark {
-  color: var(--fm-accent);
+  color: var(--mat-silk);
 }
 
 /* ── Child elements ── */
@@ -456,15 +478,17 @@
   text-overflow: ellipsis;
 }
 
-/* ── Age Bar: recency meter (spec 0060) — the harness metrics meter: a thin
-   foreground track, an accent fill whose width and opacity carry recency. ── */
+/* ── Age Bar: recency gauge (spec 0060, DESIGN.md "Gauges") — a 4px track cut
+   into the well (dark cut over its light lip) with a flat silk fill whose
+   width and opacity carry recency. Per row, so no shadow and no glow. ── */
 
 .krypton-file-manager__age-bar {
   flex-shrink: 0;
   width: 32px;
-  height: 2px;
+  height: 3px;
   margin: 0 8px;
-  background: rgba(var(--krypton-fg-rgb), 0.08);
+  background: var(--mat-groove-lo);
+  border-bottom: 1px solid var(--mat-groove-hi);
   border-radius: 999px;
   overflow: hidden;
   align-self: center;
@@ -476,7 +500,7 @@
 
 .krypton-file-manager__age-fill {
   height: 100%;
-  background: rgba(var(--krypton-accent-rgb), 0.72);
+  background: var(--mat-silk);
   border-radius: 999px;
 }
 
@@ -491,22 +515,28 @@
 }
 
 .krypton-file-manager__size--large {
-  color: color-mix(in srgb, var(--krypton-ansi-3) 70%, transparent);
+  color: rgb(var(--krypton-warning-rgb));
 }
 
 .krypton-file-manager__size--mega {
-  color: color-mix(in srgb, var(--krypton-ansi-1) 80%, transparent);
+  color: rgb(var(--krypton-danger-rgb));
 }
 
 .krypton-file-manager__empty {
   padding: 24px 14px;
   color: var(--fm-ink-dim);
-  font-style: italic;
+  text-align: center;
 }
 
-/* ─── Status Bar — the harness composer-meta readout ─── */
+/* ─── Status Bar ─── */
+/* A plate strip meeting the screen on its top edge, holding one readout
+   window (the `::before` well) — drawn inside the strip so its 22px height,
+   read back for the visible row count, never moves. Prompts light the
+   legend; an error or a confirmation takes its lamp colour. */
 
 .krypton-file-manager__status {
+  position: relative;
+  isolation: isolate;
   flex-shrink: 0;
   font-family: var(--krypton-font-family, monospace);
   font-size: 11px;
@@ -516,24 +546,37 @@
   color: var(--fm-ink-dim);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  border-top: 1px solid var(--fm-rule);
+  background: var(--mat-brush), var(--mat-plate);
+  border-top: 1px solid var(--mat-key-edge);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
 }
 
+.krypton-file-manager__status::before {
+  content: '';
+  position: absolute;
+  inset: 3px 6px;
+  z-index: -1;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+}
+
 .krypton-file-manager__status--filter,
 .krypton-file-manager__status--prompt {
-  color: var(--fm-accent);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
 .krypton-file-manager__status--error {
-  color: var(--krypton-ansi-1);
+  color: rgb(var(--krypton-danger-rgb));
 }
 
 .krypton-file-manager__status--confirm {
-  color: var(--krypton-ansi-3);
+  color: rgb(var(--krypton-warning-rgb));
 }
 
 /* ─── Syntax Highlighting ─── */
@@ -589,11 +632,15 @@
 /* ─── Fuzzy Search Match Highlight ─── */
 
 .krypton-file-manager__match {
-  color: var(--fm-accent);
+  color: var(--mat-silk);
   font-weight: 600;
 }
 
 /* ─── File Manager AI Overlay ─── */
+/* A floating plate along the bottom edge over a solid underlay (it covers
+   the list and the preview): the mode engraved, the prompt in an input well,
+   the answer in a well, the key hints printed legend. Working is a steady lit
+   lamp, never a pulse (DESIGN.md "Motion"). */
 
 .krypton-file-manager-ai {
   position: absolute;
@@ -601,8 +648,9 @@
   left: 0;
   right: 0;
   z-index: var(--krypton-z-overlay, 1000);
-  background: var(--agent-surface-solid, rgba(var(--krypton-bg-rgb), 0.92));
-  border-top: 1px solid rgba(var(--krypton-accent-rgb), 0.22);
+  background: var(--mat-brush), var(--mat-plate), var(--agent-surface-solid, rgb(var(--krypton-bg-rgb)));
+  border-top: 1px solid var(--mat-key-edge);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
   padding: 8px 12px;
   display: flex;
   flex-direction: column;
@@ -612,7 +660,6 @@
   transition:
     opacity 120ms cubic-bezier(0.22, 0.61, 0.36, 1),
     transform 120ms cubic-bezier(0.22, 0.61, 0.36, 1);
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
 }
 
 .krypton-file-manager-ai--visible {
@@ -630,38 +677,46 @@
   font-family: inherit;
   font-size: 11px;
   font-weight: 600;
-  color: var(--krypton-window-accent, var(--krypton-accent));
+  color: var(--mat-silk);
+  text-shadow: var(--mat-engrave);
   flex-shrink: 0;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.13em;
 }
 
+/* Ask mode: the same label, backlit. */
 .krypton-file-manager-ai__prompt--ask {
-  color: var(--krypton-ansi-5);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
 .krypton-file-manager-ai__mode {
   font-family: inherit;
   font-size: 11px;
   font-weight: 400;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.5));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.62));
+  text-shadow: var(--mat-engrave);
   flex-shrink: 0;
   cursor: default;
 }
 
 .krypton-file-manager-ai__input {
   flex: 1;
-  background: transparent;
+  min-width: 0;
+  padding: 3px 8px;
+  background: var(--mat-well);
   border: none;
+  border-radius: var(--krypton-border-radius, 8px);
+  box-shadow: var(--mat-well-shadow);
   outline: none;
   font-family: inherit;
   font-size: var(--krypton-font-size);
   color: var(--krypton-fg);
-  caret-color: var(--krypton-window-accent, var(--krypton-accent));
+  caret-color: var(--krypton-cursor, currentColor);
 }
 
 .krypton-file-manager-ai__input:focus-visible {
-  outline: 1px solid rgba(var(--krypton-accent-rgb), 0.5);
+  outline: 1px solid var(--mat-lit);
   outline-offset: 2px;
 }
 
@@ -677,8 +732,8 @@
 
 .krypton-file-manager-ai__result {
   padding: 6px 8px;
-  background: rgba(var(--krypton-fg-rgb), 0.03);
-  border: 1px solid rgba(var(--krypton-accent-rgb), 0.18);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   border-radius: var(--krypton-border-radius, 8px);
   max-height: 14em;
   overflow-y: auto;
@@ -700,13 +755,14 @@
 .krypton-file-manager-ai__response code {
   font-family: inherit;
   font-size: 0.92em;
-  background: rgba(var(--krypton-fg-rgb), 0.07);
+  background: var(--mat-well-fill);
+  border: 1px solid var(--mat-groove-lo);
   border-radius: var(--krypton-border-radius, 8px);
   padding: 0.05em 0.4ch;
   color: var(--agent-accent, var(--krypton-ansi-2));
 }
 .krypton-file-manager-ai__response pre {
-  background: rgba(0, 0, 0, 0.32);
+  background: var(--mat-well-fill);
   border-radius: var(--krypton-border-radius, 8px);
   padding: 6px 8px;
   margin: 0.4em 0;
@@ -727,7 +783,7 @@
 .krypton-file-manager-ai__response h2,
 .krypton-file-manager-ai__response h3,
 .krypton-file-manager-ai__response h4 {
-  color: var(--krypton-window-accent, var(--krypton-accent));
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb), 0.86));
   font-size: var(--krypton-font-size);
   font-weight: 600;
   margin: 0.5em 0 0.25em;
@@ -736,7 +792,7 @@
 }
 
 .krypton-file-manager-ai__error {
-  color: var(--krypton-ansi-1);
+  color: rgb(var(--krypton-danger-rgb));
 }
 
 .krypton-file-manager-ai__spinner {
@@ -745,29 +801,39 @@
   padding: 4px 0;
 }
 
+/* Working: the status line behind a steady lit amber LED. */
 .krypton-file-manager-ai__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-family: inherit;
   font-size: 11px;
-  color: var(--krypton-window-accent, var(--krypton-accent));
-  animation: krypton-fm-ai-pulse 1.2s ease-in-out infinite;
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
-@keyframes krypton-fm-ai-pulse {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
+.krypton-file-manager-ai__dots::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
 }
 
 .krypton-file-manager-ai__hint {
   font-family: inherit;
   font-size: 11px;
   font-weight: 400;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.45));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.62));
+  text-shadow: var(--mat-print);
   text-align: right;
 }
 
-/* ─── Scrollbar ─── */
+/* ─── Scrollbar (DESIGN.md "Scrollbars") ─── */
 
 .krypton-file-manager ::-webkit-scrollbar {
   width: 8px;
@@ -779,24 +845,18 @@
 }
 
 .krypton-file-manager ::-webkit-scrollbar-thumb {
-  background: rgba(var(--krypton-fg-rgb), 0.12);
-  border-radius: 999px;
+  background: rgba(var(--krypton-fg-rgb), 0.18);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .krypton-file-manager ::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--krypton-fg-rgb), 0.24);
+  background: rgba(var(--krypton-fg-rgb), 0.32);
 }
 
-/* ─── Reduced motion per DESIGN.md § Reduced Motion ─── */
+/* ─── Reduced motion (DESIGN.md "Motion") ─── */
 
 @media (prefers-reduced-motion: reduce) {
-  .krypton-file-manager__item,
-  .krypton-file-manager__item--dir .krypton-file-manager__icon,
   .krypton-file-manager-ai {
     transition: none;
-  }
-  .krypton-file-manager-ai__dots {
-    animation: none;
-    opacity: 1;
   }
 }

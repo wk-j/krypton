@@ -3099,12 +3099,6 @@ describe('ACP peer activity UI (spec 118)', () => {
   it('does not style a pin-slot ticket bar next to the Ticket Panel (spec 238)', () => {
     const dock = styleSheet('components/ticket-dock/ticket-dock.css');
     const shared = styleSheet('../styles/harness-shared.css');
-    // spec 337: the dock column owns placement and surface; the docks fill it.
-    const dockRule = shared.match(/\.acp-harness__dock\s*\{([^}]*)\}/)?.[1];
-
-    expect(dockRule).toBeDefined();
-    // The column is chrome-less: the only background it declares is transparent.
-    expect(dockRule?.match(/background:[^;]*/g)).toEqual(['background: transparent']);
     for (const sheet of [dock, shared]) {
       expect(sheet).not.toMatch(/\.acp-harness__ticket-bar\s*\{/);
       expect(sheet).not.toMatch(/\.acp-ticket-dock__spine\s*\{/);

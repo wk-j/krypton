@@ -12,37 +12,49 @@
 
   /* Review-thread action · `components/lane-shell/index.ts` `syncReviewAction()`;
      the picker it opens is `components/review-thread-dialog/`.
-     It borrows the head chips' look (lane-head.css): a faint pill tinted in the
-     lane's own accent, no border, at the chrome font size like every head
-     chip — the head's full size read as oversized next to them. The leading
-     glyph is the palette command's `messages-square`, 1em like every harness
-     icon. Hover deepens the tint. */
+     Spec 366: a key on the head's plate strip (DESIGN.md "Key"), dense so it
+     fits the 28px strip; legend at the chrome font size beside the palette
+     command's `messages-square` glyph. */
   .acp-harness__review-thread-action {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 1px 6px;
-    border: 0;
+    min-height: 22px;
+    padding: 0 8px;
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #0cf)) 16%, transparent);
-    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #0cf)));
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
     font: inherit;
     font-size: var(--krypton-chrome-font-size, 11px);
-    letter-spacing: 0.04em;
-    text-shadow: none;
+    letter-spacing: 0.09em;
+    text-shadow: var(--mat-print);
     white-space: nowrap;
     cursor: pointer;
   }
 
-  .acp-harness__review-thread-action:enabled:hover,
+  .acp-harness__review-thread-action:enabled:hover {
+    background: var(--mat-key-hover);
+    color: var(--mat-lit);
+  }
+
+  .acp-harness__review-thread-action:enabled:active {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
+    transform: translateY(1px);
+  }
+
   .acp-harness__review-thread-action:focus-visible {
-    background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #0cf)) 30%, transparent);
-    outline: none;
+    outline: 1px solid var(--mat-lit);
+    outline-offset: 2px;
   }
 
   .acp-harness__review-thread-action:disabled {
     opacity: 0.45;
-    cursor: default;
+    cursor: not-allowed;
   }
 }
 

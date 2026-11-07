@@ -1,15 +1,13 @@
 /* Spec 302 §5.8 — `AnnotationRail`.
-   Carved VERBATIM from src/styles/acp-harness.css:6772-6868. Delete that range
-   when this directory is registered.
+   Carved from src/styles/acp-harness.css. The rest of the `__anno-` family
+   stays in harness-shared.css, because it is not this component: `-mark` is
+   the inline highlight `applyTranscriptAnnotations` wraps around the quoted
+   text, and `-overlay*` is the capture affordance and its editor.
 
-   The rest of the `__anno-` family stays behind, because it is not this
-   component: `-mark` (:6757-6770) is the inline highlight `applyTranscriptAnnotations`
-   wraps around the quoted text, and `-pill` (:6870-6887) / `-overlay*`
-   (:6889-6960) are the capture affordance and its composer. Only the rail's own
-   block is carved out here.
-
-   theme-scheme.css declares no light-mode rule for any `anno-` selector, so
-   there is no `krypton.scheme` layer in this file. */
+   Spec 366 (DESIGN.md "Well"): the list sits under an assistant row as a well
+   inside the row — a flat well fill with a 1px groove edge (it lives inside a
+   transcript row, so no shadow) — with an engraved-type head, notes in the
+   quote ink and its actions as small keys. */
 
 @layer krypton.component {
   .acp-harness__anno-rail {
@@ -17,42 +15,70 @@
     flex-direction: column;
     gap: 4px;
     margin-top: 10px;
-    padding: 8px 10px;
-    border: 1px solid var(--acp-border, rgba(216, 232, 216, 0.14));
+    padding: 6px 10px 8px;
+    border: 1px solid var(--mat-groove-lo);
     border-radius: var(--krypton-border-radius, 8px);
-    background: color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 6%, transparent);
+    background: var(--mat-well-fill);
   }
 
   .acp-harness__anno-rail-head {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
+    color: var(--mat-silk);
     font-size: 0.7em;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    color: rgba(185, 245, 255, 0.68);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
   }
 
-  .acp-harness__anno-send {
+  .acp-harness__anno-send,
+  .acp-harness__anno-del {
     appearance: none;
     font: inherit;
     font-size: 10px;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.09em;
     text-transform: uppercase;
-    color: var(--acp-accent-quote, #d6b8ff);
-    background: transparent;
-    border: 1px solid color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 45%, transparent);
-    border-radius: 5px;
-    padding: 2px 8px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
+    text-shadow: var(--mat-print);
     cursor: pointer;
   }
 
+  .acp-harness__anno-send {
+    padding: 2px 8px;
+  }
+
+  .acp-harness__anno-del {
+    padding: 0 6px;
+  }
+
+  .acp-harness__anno-send:enabled:hover,
+  .acp-harness__anno-del:hover {
+    background: var(--mat-key-hover);
+    color: var(--mat-lit);
+  }
+
+  .acp-harness__anno-send:enabled:active,
+  .acp-harness__anno-del:active {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    transform: translateY(1px);
+  }
+
+  .acp-harness__anno-send:focus-visible,
+  .acp-harness__anno-del:focus-visible {
+    outline: 1px solid var(--mat-lit);
+    outline-offset: 2px;
+  }
+
   .acp-harness__anno-send:disabled {
-    opacity: 0.4;
-    cursor: default;
-    color: rgba(216, 232, 216, 0.42);
-    border-color: rgba(216, 232, 216, 0.14);
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 
   .acp-harness__anno-list {
@@ -71,42 +97,25 @@
 
   .acp-harness__anno-note::before {
     content: "· ";
-    color: var(--acp-accent-quote, #d6b8ff);
+    color: var(--acp-accent-quote);
   }
 
   .acp-harness__anno-item--unsent .acp-harness__anno-note {
-    color: var(--acp-accent-quote, #d6b8ff);
+    color: var(--acp-accent-quote);
   }
 
-  .acp-harness__anno-item--sent .acp-harness__anno-note {
-    color: var(--agent-gold, #ffd166);
-  }
-
+  .acp-harness__anno-item--sent .acp-harness__anno-note,
   .acp-harness__anno-item--sent .acp-harness__anno-note::before {
     color: var(--agent-gold, #ffd166);
   }
 
   .acp-harness__anno-item--drained .acp-harness__anno-note,
   .acp-harness__anno-item--drained .acp-harness__anno-note::before {
-    color: rgba(216, 232, 216, 0.45);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
   .acp-harness__anno-item--drifted .acp-harness__anno-note::after {
     content: " (drifted)";
     color: var(--agent-error, #ff6d8a);
-  }
-
-  .acp-harness__anno-del {
-    appearance: none;
-    font: inherit;
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: rgba(216, 232, 216, 0.45);
-    background: transparent;
-    border: 1px solid rgba(216, 232, 216, 0.14);
-    border-radius: 4px;
-    padding: 0 6px;
-    cursor: pointer;
   }
 }

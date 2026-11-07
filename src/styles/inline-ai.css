@@ -1,22 +1,24 @@
-/* ─── Inline AI Overlay ─── */
+/* ─── Inline AI Overlay ───
+   Spec 366 / DESIGN.md (Krypton Console): a plate drawer that rises out of
+   the pane's bottom edge — its mode engraved, the query in an input well, the
+   answer in a well, the key hints printed. It meets the screen on its top
+   edge only. No ambient motion: a running request is a steady lit lamp. */
 .krypton-inline-ai {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
   z-index: 8000;
-  background: var(--krypton-inline-ai-bg, rgba(6, 10, 18, 0.92));
-  border-top: 1px solid var(--krypton-inline-ai-border, rgba(0, 200, 255, 0.4));
-  padding: 8px 12px;
+  background: var(--mat-brush), var(--mat-plate);
+  border-top: 1px solid var(--mat-key-edge);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   opacity: 0;
   transform: translateY(8px);
   transition: opacity 0.12s ease, transform 0.12s ease;
-  box-shadow:
-    0 -4px 20px rgba(0, 0, 0, 0.4),
-    0 0 20px rgba(0, 200, 255, 0.06);
 }
 
 .krypton-inline-ai--visible {
@@ -24,32 +26,36 @@
   transform: translateY(0);
 }
 
-/* ── Input Row ── */
+/* ── Input Row ── the query well, with the mode legend inside it. */
 .krypton-inline-ai__input-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
+/* CMD ▸ / ASK ▸: the mode, lit amber. */
 .krypton-inline-ai__prompt {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
-  color: var(--krypton-inline-ai-accent, #0cf);
+  letter-spacing: 0.09em;
+  color: var(--mat-silk);
   flex-shrink: 0;
-  text-shadow: 0 0 8px rgba(0, 200, 255, 0.4);
 }
 
 .krypton-inline-ai__prompt--ask {
-  color: var(--krypton-inline-ai-ask-accent, #c4f);
-  text-shadow: 0 0 8px rgba(204, 68, 255, 0.4);
+  color: var(--mat-lit);
 }
 
 .krypton-inline-ai__mode {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 500;
-  color: rgba(192, 197, 206, 0.30);
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   flex-shrink: 0;
   cursor: default;
 }
@@ -58,8 +64,7 @@
 .krypton-inline-ai__context {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: var(--krypton-inline-ai-accent, #0cf);
-  opacity: 0.55;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   min-width: 0;
   max-width: 40%;
   flex-shrink: 1;
@@ -71,21 +76,22 @@
 
 .krypton-inline-ai__input {
   flex: 1;
+  min-width: 0;
   background: transparent;
   border: none;
   outline: none;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size);
-  color: var(--krypton-inline-ai-text, #c0c5ce);
-  caret-color: var(--krypton-inline-ai-accent, #0cf);
+  color: var(--krypton-fg, #b0c4d8);
+  caret-color: var(--krypton-cursor);
 }
 
 .krypton-inline-ai__input::placeholder {
-  color: rgba(192, 197, 206, 0.30);
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   font-style: italic;
 }
 
-/* ── Result Area ── */
+/* ── Result Area ── a well holding the command or the answer. */
 .krypton-inline-ai__result[hidden],
 .krypton-inline-ai__spinner[hidden] {
   display: none !important;
@@ -95,39 +101,38 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 6px 8px;
-  background: rgba(0, 200, 255, 0.04);
-  border: 1px solid rgba(0, 200, 255, 0.15);
+  padding: 6px 10px;
   border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
+/* The proposed command: shell text in the screen ink, bold. */
 .krypton-inline-ai__command {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size);
   font-weight: 600;
-  color: var(--krypton-inline-ai-command, #0f6);
+  color: var(--krypton-fg, #b0c4d8);
   margin: 0;
   padding: 0;
   white-space: pre-wrap;
   word-break: break-all;
   max-height: 4.5em;
   overflow-y: auto;
-  text-shadow: 0 0 6px rgba(0, 255, 102, 0.3);
 }
 
 .krypton-inline-ai__command--answer {
-  color: var(--krypton-inline-ai-text, #c0c5ce);
+  color: var(--krypton-fg, #b0c4d8);
   font-weight: 400;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: var(--krypton-font-size);
-  text-shadow: none;
   white-space: normal;
   word-break: normal;
   max-height: 12em;
   line-height: var(--krypton-content-line-height, 1.5);
 }
 
-/* Markdown inside ask-mode answers */
+/* Markdown inside ask-mode answers: flat prose. */
 .krypton-inline-ai__command--answer p {
   margin: 0 0 0.4em;
 }
@@ -135,25 +140,26 @@
   margin-bottom: 0;
 }
 .krypton-inline-ai__command--answer strong {
-  color: #fff;
-  font-weight: 600;
+  color: var(--krypton-fg, #b0c4d8);
+  font-weight: 700;
 }
 .krypton-inline-ai__command--answer em {
-  color: rgba(192, 197, 206, 0.8);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   font-style: italic;
 }
+/* Inline code: a small fill chip with a groove edge (DESIGN.md). */
 .krypton-inline-ai__command--answer code {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size);
-  background: rgba(0, 200, 255, 0.08);
-  border: 1px solid rgba(0, 200, 255, 0.15);
-  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well-fill);
+  border: 1px solid var(--mat-groove-lo);
+  border-radius: 4px;
   padding: 1px 4px;
-  color: #0cf;
+  color: var(--krypton-fg, #b0c4d8);
 }
 .krypton-inline-ai__command--answer pre {
-  background: rgba(6, 10, 18, 0.6);
-  border: 1px solid rgba(0, 200, 255, 0.15);
+  background: var(--mat-well-fill);
+  border: 1px solid var(--mat-groove-lo);
   border-radius: var(--krypton-border-radius, 8px);
   padding: 6px 8px;
   margin: 0.4em 0;
@@ -177,7 +183,7 @@
 .krypton-inline-ai__command--answer h2,
 .krypton-inline-ai__command--answer h3,
 .krypton-inline-ai__command--answer h4 {
-  color: #0cf;
+  color: var(--krypton-fg, #b0c4d8);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size);
   font-weight: 700;
@@ -193,26 +199,31 @@
 .krypton-inline-ai__command--answer blockquote {
   margin: 0.3em 0;
   padding: 4px 8px;
-  background: rgba(0, 200, 255, 0.07);
-  color: rgba(192, 197, 206, 0.6);
+  border-radius: 4px;
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.05);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 .krypton-inline-ai__command--answer a {
-  color: #0cf;
-  text-decoration: none;
+  color: var(--krypton-ansi-14, #6cf);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .krypton-inline-ai__command--answer hr {
   border: none;
-  border-top: 1px solid rgba(0, 200, 255, 0.15);
+  border-top: 1px solid var(--mat-groove-lo);
+  border-bottom: 1px solid var(--mat-groove-hi);
   margin: 0.5em 0;
 }
 
-.krypton-inline-ai__command--ready {
-  animation: krypton-inline-ai-flash 0.3s ease-out;
+/* The command is ready to accept: a one-shot lamp flash on the well — its
+   wall lights amber and goes out (≤600ms, DESIGN.md "Motion"). */
+.krypton-inline-ai__result:has(.krypton-inline-ai__command--ready) {
+  animation: krypton-inline-ai-ready 0.3s ease-out;
 }
 
-@keyframes krypton-inline-ai-flash {
-  0% { text-shadow: 0 0 12px rgba(0, 255, 102, 0.8); }
-  100% { text-shadow: 0 0 6px rgba(0, 255, 102, 0.3); }
+@keyframes krypton-inline-ai-ready {
+  0% { box-shadow: var(--mat-well-depth), inset 0 0 0 1px var(--mat-lit), 0 1px 0 var(--mat-well-lip); }
+  100% { box-shadow: var(--mat-well-shadow); }
 }
 
 .krypton-inline-ai__command-line {
@@ -222,49 +233,59 @@
 .krypton-inline-ai__explain {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size);
-  color: rgba(192, 197, 206, 0.5);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-style: italic;
 }
 
 .krypton-inline-ai__explain--error {
-  color: rgba(255, 51, 85, 0.8);
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
   font-style: normal;
 }
 
-/* ── Spinner ── */
+/* ── Working ── a steady lit lamp beside the JS glyphs; nothing pulses. */
 .krypton-inline-ai__spinner {
   display: flex;
   align-items: center;
-  padding: 4px 0;
+  gap: 8px;
+  padding: 4px 2px;
+}
+
+.krypton-inline-ai__spinner::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
 }
 
 .krypton-inline-ai__dots {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: var(--krypton-inline-ai-accent, #0cf);
-  animation: krypton-inline-ai-pulse 1.2s ease-in-out infinite;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
-@keyframes krypton-inline-ai-pulse {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
-}
-
-/* ── Hint Bar ── */
+/* ── Hint Bar ── printed legend. */
 .krypton-inline-ai__hint {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 500;
   letter-spacing: 0.06em;
-  color: rgba(192, 197, 206, 0.30);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  text-shadow: var(--mat-print);
   text-align: right;
 }
 
 /* ─── Failure follow-up chip (spec 335) ───
    Bottom-right of the `.krypton-pane` whose Cmd+K command failed. It takes no
-   focus; Cmd+K in that pane opens the overlay on the fix. Only `--fixing`
-   animates, and only while its turn runs. */
+   focus; Cmd+K in that pane opens the overlay on the fix. A small floating
+   plate with a lamp: lit cyan while the fix runs (a running action), lit
+   green when a fix is ready (done), unlit when there is none, lit fault when
+   the turn failed. Steady — no pulse. */
 .krypton-inline-followup {
+  --followup-rgb: var(--agent-cyan-rgb, 109, 208, 255);
+
   position: absolute;
   right: 8px;
   bottom: 8px;
@@ -274,8 +295,10 @@
   gap: 8px;
   max-width: 70%;
   padding: 3px 8px;
-  background: var(--krypton-inline-ai-bg, rgba(6, 10, 18, 0.92));
-  border: 1px solid var(--krypton-inline-ai-border, rgba(0, 200, 255, 0.4));
+  background: var(--mat-brush), var(--mat-plate);
+  border: 1px solid var(--mat-key-edge);
+  border-radius: var(--krypton-border-radius, 8px);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   cursor: pointer;
@@ -285,11 +308,33 @@
   display: none;
 }
 
+.krypton-inline-followup--ready {
+  --followup-rgb: var(--krypton-success-rgb, 57, 255, 127);
+}
+
+.krypton-inline-followup--error {
+  --followup-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+}
+
+/* The "AI FIX" tag is the lamp: a lit capsule in the state colour. */
 .krypton-inline-followup__tag {
   flex-shrink: 0;
+  padding: 0 7px;
+  border: 1px solid rgba(var(--followup-rgb), 0.5);
+  border-radius: 999px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(var(--followup-rgb), 0.3), rgba(var(--followup-rgb), 0.07) 75%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--followup-rgb), 0.22);
   font-weight: 700;
   letter-spacing: 0.06em;
-  color: var(--krypton-inline-ai-accent, #0cf);
+  color: rgb(var(--followup-rgb));
+}
+
+/* Nothing to offer: an unlit capsule. */
+.krypton-inline-followup--none .krypton-inline-followup__tag {
+  border-color: var(--mat-groove-lo);
+  background: var(--mat-well-fill);
+  box-shadow: none;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
 .krypton-inline-followup__text {
@@ -297,27 +342,20 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: rgba(192, 197, 206, 0.85);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
 }
 
 .krypton-inline-followup__key {
   flex-shrink: 0;
-  color: rgba(192, 197, 206, 0.30);
-}
-
-.krypton-inline-followup--fixing .krypton-inline-followup__tag {
-  animation: krypton-inline-ai-pulse 1.2s ease-in-out infinite;
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+  text-shadow: var(--mat-print);
 }
 
 .krypton-inline-followup--none .krypton-inline-followup__text {
-  color: rgba(192, 197, 206, 0.5);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-style: italic;
 }
 
-.krypton-inline-followup--error {
-  border-color: rgba(255, 51, 85, 0.5);
-}
-
 .krypton-inline-followup--error .krypton-inline-followup__text {
-  color: rgba(255, 51, 85, 0.8);
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }

@@ -6,6 +6,10 @@
    which sits further down next to the `#usage` container queries and has
    exactly one emitter — this row.
 
+   Spec 366 (DESIGN.md "Well"): the diff is one well with flat lines inside;
+   add / delete lines take the theme's pass / fault ink, context the tertiary
+   ink.
+
    `white-space: pre-wrap` on the `<pre>` is why `DiffBlock` builds its `raw`
    root as a `<pre>`: the monospace comes from the UA sheet, not from here.
 
@@ -16,18 +20,20 @@
   .acp-harness__directive-diff {
     margin: 4px 0 0;
     padding: 6px 8px;
-    background: var(--agent-surface-mid, rgba(4, 8, 13, 0.5));
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well-fill);
+    box-shadow: var(--mat-well-shadow);
     font-size: 0.84em;
     white-space: pre-wrap;
     overflow-x: auto;
   }
 
   .acp-harness__directive-diff-add {
-    color: rgba(122, 255, 178, 0.9);
+    color: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.9);
   }
 
   .acp-harness__directive-diff-del {
-    color: rgba(255, 138, 138, 0.9);
+    color: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.9);
   }
 
   .acp-harness__directive-diff-ctx {

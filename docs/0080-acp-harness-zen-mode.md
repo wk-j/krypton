@@ -5,6 +5,7 @@
 > Milestone: M8 — Polish
 > Amended by: [0325](./0325-harness-zen-rail-merged-tab.md) — the active rail entry is no longer a highlighted row. It is a tab painted in the active lane body's colour, rounded on the rail side and joined to the body by two concave fillets. Inactive entries are 8px-rounded inset rows, and in Zen the active lane's head and stats bands carry no tint. Rev 2: the rail has no top padding, and every body corner that faces the rail is rounded.
 > Amended by: [0347](./0347-harness-left-right-panel-toggles.md) rev 3 (2026-10-31) — showing the left panel from outside Zen (the window titlebar `left` button, `#panels left`, `#panels show left`) also turns Zen on, with the lane rail shown. `Cmd+.` remains the only way to leave Zen.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): attention dot pulse removed; rail is a plate column of keys.
 
 ## Problem
 

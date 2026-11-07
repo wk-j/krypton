@@ -50,10 +50,13 @@
   }
 
   /* ── Bar: command · Native|Raw · Copy ──
+     A small plate (DESIGN.md "Parts"): brushed plate, key-edge border, bevel.
+     No cast shadow: a pane can hold many cards, and the bar sits on the grid.
+     Native|Raw are selector keys in a recessed channel; Copy is a key.
      One row tall, but the bar must contain its controls: `line-height: 1`
      stops them inheriting the cell height, and `min-height` lets a row too
-     short for them grow the bar instead of letting a pill cross its border.
-     The pills stretch to the padding box, 2px inside the bar's border. */
+     short for them grow the bar instead of letting a key cross its border.
+     The keys stretch to the padding box, 2px inside the bar's border. */
 
   .krypton-native-block__bar {
     position: absolute;
@@ -68,10 +71,11 @@
     pointer-events: auto;
     font-size: 0.85em;
     line-height: 1;
-    color: var(--krypton-native-dim);
-    background: var(--krypton-bg-elev);
-    border: 1px solid rgba(var(--krypton-accent-rgb), var(--krypton-opacity-inactive));
+    color: var(--krypton-ink-3, var(--krypton-native-dim));
+    background: var(--mat-brush), var(--mat-plate);
+    border: 1px solid var(--mat-key-edge);
     border-radius: 8px;
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
     box-sizing: border-box;
   }
 
@@ -89,11 +93,18 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-shadow: var(--mat-engrave);
   }
 
+  /* The recessed channel: concentric with the bar (8px − 1px border − 2px). */
   .krypton-native-block__switch {
     display: flex;
     align-self: stretch;
+    gap: 2px;
+    padding: 1px;
+    border-radius: 5px;
+    background: var(--mat-well-fill);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .krypton-native-block__opt {
@@ -101,23 +112,28 @@
     padding: 0 6px;
     font: inherit;
     font-size: 0.9em;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.09em;
     text-transform: uppercase;
-    color: var(--krypton-native-dim);
-    background: transparent;
-    border: 1px solid transparent;
-    /* concentric with the bar: 8px radius − 1px border − 2px inset */
-    border-radius: 5px;
+    color: var(--krypton-ink-3, var(--krypton-native-dim));
+    text-shadow: var(--mat-print);
+    background: var(--mat-key);
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 4px;
+    box-shadow: var(--mat-key-raise);
     cursor: pointer;
   }
 
   .krypton-native-block__opt:hover {
-    color: var(--krypton-fg);
+    background: var(--mat-key-hover);
+    color: var(--mat-lit);
   }
 
+  .krypton-native-block__opt:active,
   .krypton-native-block__opt[aria-pressed='true'] {
-    color: var(--krypton-accent);
-    border-color: rgba(var(--krypton-accent-rgb), var(--krypton-opacity-active));
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
   }
 
   /* ── Diff body ── */

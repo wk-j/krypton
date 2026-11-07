@@ -7,26 +7,19 @@
    modifiers in the named shared sheet rather than pretending a directory
    declares them.
 
-   Moved verbatim from src/styles/theme-scheme.css:293-316. */
+   Spec 366 (DESIGN.md "Colour and state"): row labels are silk engraving
+   from the shared skeleton in both schemes, so no label override lives here;
+   only the body text takes the light scheme's ink tiers. */
 
 @layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-harness__msg-label {
-    color: var(--krypton-ink-3);
-  }
-
   html[data-theme-scheme='light'] .acp-harness__msg-body {
-    color: var(--krypton-ink);
+    color: var(--krypton-fg);
   }
 
   html[data-theme-scheme='light'] .acp-harness__msg--thought .acp-harness__msg-body {
     color: var(--krypton-ink-2);
   }
 
-  html[data-theme-scheme='light'] .acp-harness__msg--assistant .acp-harness__msg-label {
-    color: var(--acp-lane-ink);
-  }
-
-  html[data-theme-scheme='light'] .acp-harness__msg--user .acp-harness__msg-label,
   html[data-theme-scheme='light'] .acp-harness__msg--user .acp-harness__msg-body {
     color: var(--agent-user, #007799);
   }

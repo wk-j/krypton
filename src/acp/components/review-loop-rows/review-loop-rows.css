@@ -1,16 +1,19 @@
 /* Spec 302 §5.2 — `ReviewLoopRows`.
-   Carved VERBATIM from src/styles/acp-harness.css:1329-1334. Delete that range
-   when this directory is registered.
+   Carved from src/styles/acp-harness.css.
 
    The `-row` / `-prefix` / `-value` rules the three rows paint into stay with
    `peek-card`, which owns that markup; this sheet declares only the wrapper
-   and the verdict badge. theme-scheme.css has no light-mode rule for either. */
+   and the verdict.
+
+   Spec 366 / ADR-0004: a review pass verdict is a model finding, so it stays
+   neutral evidence — ink for a clean pass, amber silk where the reviewer
+   found something — never pass/fail colours. */
 
 @layer krypton.component {
   /* spec 277 — `#review pass` rows; the wrapper only groups them for in-place patching. */
   .acp-harness__lane-peek-loop { display: contents; }
   .acp-harness__lane-peek-verdict { font-variant-numeric: tabular-nums; }
-  .acp-harness__lane-peek-verdict[data-verdict="pass"] { color: var(--agent-accent, #8effb0); }
-  .acp-harness__lane-peek-verdict[data-verdict="fail"] { color: #ff8b8b; }
-  .acp-harness__lane-peek-verdict[data-verdict="partial"] { color: #ffd27a; }
+  .acp-harness__lane-peek-verdict[data-verdict="pass"] { color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8)); }
+  .acp-harness__lane-peek-verdict[data-verdict="fail"],
+  .acp-harness__lane-peek-verdict[data-verdict="partial"] { color: var(--mat-silk); }
 }

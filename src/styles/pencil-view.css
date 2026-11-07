@@ -1,5 +1,7 @@
 /* Krypton — Pencil window (Excalidraw editor).
-   Wrapper chrome only; the Excalidraw stylesheet handles the canvas. */
+   Wrapper chrome only; the Excalidraw stylesheet handles the canvas, which
+   stays flat content (DESIGN.md "Content views", spec 366). The status bar is
+   a plate strip with the file path engraved and the save state on a lamp. */
 
 .krypton-pencil {
   position: relative;
@@ -9,33 +11,52 @@
   height: 100%;
   background: var(--krypton-bg, #0c0d10);
   color: var(--krypton-fg, #c8d3df);
-  font-family: var(--krypton-mono-font, 'JetBrains Mono', 'Cascadia Code', monospace);
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   outline: none;
 }
 
+/* Plate strip meeting the canvas: border on that one side only. */
 .krypton-pencil__statusbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   padding: 4px 10px;
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  border-bottom: 1px solid var(--krypton-border, rgba(255, 255, 255, 0.08));
-  background: var(--krypton-panel-bg, rgba(0, 0, 0, 0.25));
+  font-size: var(--krypton-chrome-font-size, 11px);
+  border-bottom: 1px solid var(--mat-key-edge);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   user-select: none;
   flex: 0 0 auto;
 }
 
+/* A path keeps its natural case (DESIGN.md "Typography"); secondary
+   engraving in the ink tier. */
 .krypton-pencil__path {
-  color: var(--krypton-fg-dim, rgba(200, 211, 223, 0.6));
-  font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-shadow: var(--mat-engrave);
+  white-space: nowrap;
 }
 
+/* The save state: a lit status capsule in its state colour (DESIGN.md
+   "Lamps"). Saved is an action done, so it may be green. */
 .krypton-pencil__pill {
-  font-size: 10px;
+  --pencil-pill-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+
+  flex: 0 0 auto;
   padding: 1px 8px;
-  border-radius: var(--krypton-border-radius, 8px);
-  letter-spacing: 0.06em;
+  border: 1px solid rgba(var(--pencil-pill-rgb), 0.5);
+  border-radius: 999px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(var(--pencil-pill-rgb), 0.3), rgba(var(--pencil-pill-rgb), 0.07) 75%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--pencil-pill-rgb), 0.22);
+  color: rgb(var(--pencil-pill-rgb));
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.09em;
   text-transform: uppercase;
 }
 
@@ -44,21 +65,15 @@
 }
 
 .krypton-pencil__pill--saving {
-  background: rgba(255, 200, 60, 0.12);
-  color: var(--krypton-warning, #ffc83c);
-  border: 1px solid rgba(255, 200, 60, 0.35);
+  --pencil-pill-rgb: var(--krypton-warning-rgb, 232, 197, 71);
 }
 
 .krypton-pencil__pill--saved {
-  background: rgba(80, 200, 120, 0.10);
-  color: var(--krypton-success, #50c878);
-  border: 1px solid rgba(80, 200, 120, 0.30);
+  --pencil-pill-rgb: var(--krypton-success-rgb, 57, 255, 127);
 }
 
 .krypton-pencil__pill--error {
-  background: rgba(255, 80, 80, 0.12);
-  color: var(--krypton-error, #ff5050);
-  border: 1px solid rgba(255, 80, 80, 0.35);
+  --pencil-pill-rgb: var(--krypton-danger-rgb, 255, 58, 92);
 }
 
 .krypton-pencil__canvas {
@@ -82,7 +97,7 @@
 
 .krypton-pencil__error {
   padding: 16px;
-  color: var(--krypton-error, #ff5050);
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
   font-size: 12px;
   white-space: pre-wrap;
 }

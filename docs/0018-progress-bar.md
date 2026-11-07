@@ -4,6 +4,7 @@
 > Date: 2026-03-13
 > Milestone: M8 — Polish
 > Amended by: [0364](./0364-progress-gauge-hide-working.md) — `[visual] progress_gauge_working = false` hides the ring while the state is indeterminate
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): titlebar scanline sweep, gauge orbit and glows removed.
 
 ## Problem
 

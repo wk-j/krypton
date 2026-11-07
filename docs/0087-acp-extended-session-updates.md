@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-05-07
 > Milestone: M-ACP — Harness convergence
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): slash palette is a floating plate; scanline border removed.
 
 ## Problem
 

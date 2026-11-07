@@ -1,13 +1,14 @@
 /* Spec 302 §6.3 — `DraftLine`.
-   Carved verbatim from src/styles/acp-harness.css: :3955-3957 (the input-line
-   half of the shared flex rule — the `.acp-harness__composer-chrome` half moved
-   to composer-meta.css), :4738-4762, :4775-4781, :4966-4972, :4978-4980 and
-   :4998-5004.
+   Carved from src/styles/acp-harness.css.
 
    The composer-modifier rules come along because their subject is this row:
-   command mode dims the draft and golds the prompt, memory mode hides the row
-   outright. `.acp-harness__composer--command .acp-harness__caret` (:4974-4976)
-   is the caret's and already lives in caret.css. */
+   command mode dims the draft and lights the prompt, memory mode hides the row
+   outright. `.acp-harness__composer--command .acp-harness__caret` is the
+   caret's and lives in caret.css.
+
+   Spec 366 (DESIGN.md "Well", "Form controls"): the draft line is an input
+   well set into the composer plate. The lane tag before the prompt is silk
+   type, the prompt glyph a backlit legend; the draft is theme ink. */
 
 @layer krypton.component {
   .acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__input-line {
@@ -18,17 +19,20 @@
     display: flex;
     align-items: flex-start;
     gap: 8px;
-    margin-top: 2px;
+    margin-top: 4px;
+    padding: 3px 8px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
     line-height: 1.55;
   }
 
   .acp-harness__lane-tag {
     flex: 0 0 auto;
-    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
+    color: var(--mat-silk);
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: none;
-    text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 32%, transparent);
   }
 
   .acp-harness__prompt {
@@ -36,8 +40,8 @@
     position: relative;
     width: 1ch;
     text-align: center;
-    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
-    text-shadow: 0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 40%, transparent);
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-harness__input {
@@ -45,15 +49,11 @@
     min-width: 0;
     flex: 1 1 auto;
     white-space: pre-wrap;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.95);
+    color: var(--krypton-fg, #d8e8d8);
   }
 
   .acp-harness__composer--command .acp-harness__input {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
-  }
-
-  .acp-harness__composer--command .acp-harness__prompt {
-    color: var(--agent-gold, #ffd166);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
   .acp-harness__composer--memory .acp-harness__input-line {
@@ -62,8 +62,7 @@
 
   /* spec 285: word-autocomplete suggestion after the caret (Tab / → accept). */
   .acp-harness__ghost {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
-    text-shadow: none;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     pointer-events: none;
     user-select: none;
   }

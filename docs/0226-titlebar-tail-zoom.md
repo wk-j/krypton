@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-08-17
 > Milestone: M9 — chrome scanability
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): focused mark is backlit silk in a well; titlebar scanline removed.
 
 ## Problem
 

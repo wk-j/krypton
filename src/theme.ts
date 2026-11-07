@@ -157,14 +157,6 @@ export interface ChromeBorder {
   radius: number;
 }
 
-export interface ChromeShadow {
-  color: string;
-  blur: number;
-  spread: number;
-  offset_x: number;
-  offset_y: number;
-}
-
 export interface ChromeBackdrop {
   color: string;
   blur: number;
@@ -172,8 +164,6 @@ export interface ChromeBackdrop {
 
 export interface ChromeTitlebar {
   height: number;
-  background: string;
-  text_color: string;
   font_size: number;
   font_weight: number;
   letter_spacing: number;
@@ -183,7 +173,6 @@ export interface ChromeTitlebar {
 
 export interface ChromeStatusDot {
   size: number;
-  color: string;
   shape: string;
 }
 
@@ -214,7 +203,6 @@ export interface ChromeTabs {
 export interface ChromeConfig {
   style: string;
   border: ChromeBorder;
-  shadow: ChromeShadow;
   backdrop: ChromeBackdrop;
   titlebar: ChromeTitlebar;
   status_dot: ChromeStatusDot;
@@ -224,9 +212,6 @@ export interface ChromeConfig {
 }
 
 export interface FocusedConfig {
-  border_color: string;
-  shadow_color: string;
-  shadow_blur: number;
   titlebar_text_color: string;
   status_dot_color: string;
   header_accent_color: string;
@@ -238,16 +223,6 @@ export interface FocusedConfig {
 export interface WorkspaceThemeConfig {
   background: string;
   blur: number;
-}
-
-export interface UiCommandPalette {
-  background: string;
-  border: string;
-  text_color: string;
-  highlight_color: string;
-  input_background: string;
-  input_text_color: string;
-  backdrop_blur: number;
 }
 
 export interface UiSearch {
@@ -264,36 +239,15 @@ export interface UiModeIndicator {
   position: string;
 }
 
-export interface UiWhichKey {
-  background: string;
-  border: string;
-  title_color: string;
-  key_color: string;
-  label_color: string;
-  separator_color: string;
-  backdrop_blur: number;
-}
-
 export interface UiQuickTerminal {
   backdrop_blur: number;
   background: string;
-  shadow_color: string;
-  shadow_blur: number;
-}
-
-export interface UiHints {
-  background: string;
-  foreground: string;
-  matched_foreground: string;
 }
 
 export interface UiConfig {
-  command_palette: UiCommandPalette;
   search: UiSearch;
   mode_indicator: UiModeIndicator;
-  which_key: UiWhichKey;
   quick_terminal: UiQuickTerminal;
-  hints: UiHints;
 }
 
 export interface FullTheme {
@@ -366,31 +320,20 @@ export function themeCssProperties(theme: FullTheme): Record<string, string> {
   const scheme = themeScheme(theme);
   const light = scheme === 'light';
   const backdrop = theme.chrome.backdrop.color;
-  // Light: a cooler rail vs paper canvas so the zen sidebar and transcript
-  // don't collapse into one frost slab. Dark keeps the existing alpha ladder.
-  const surfaceRail = light
-    ? withAlpha(mixColors(c.foreground, backdrop, 0.09), 0.92)
-    : withAlpha(accent, 0.08);
+  // Light: paper canvas (spec 321). Dark keeps the existing alpha ladder.
   const surfaceCanvas = light
     ? withAlpha('#ffffff', 0.78)
     : withAlpha(backdrop, 0.55);
-  const surfaceHigh = light
-    ? withAlpha(mixColors(accent, '#ffffff', 0.06), 0.92)
-    : withAlpha(backdrop, 0.85);
   // Light: opaque — rail cards float over the transcript (spec 321).
   const surfaceSolid = light
     ? withAlpha('#ffffff', 1)
     : withAlpha(backdrop, 0.96);
-  const textDim = light
-    ? mixColors(c.foreground, backdrop, 0.68)
-    : theme.chrome.titlebar.text_color;
   const props: Record<string, string> = {
     '--krypton-fg': c.foreground,
     '--krypton-bg': c.background,
     '--krypton-cursor': c.cursor,
     '--krypton-selection': c.selection,
     '--krypton-scheme': scheme,
-    '--krypton-fg-dim': textDim,
     ...(light ? lightInkTiers(c.foreground, backdrop) : {}),
 
     '--krypton-accent': accent,
@@ -402,12 +345,6 @@ export function themeCssProperties(theme: FullTheme): Record<string, string> {
     '--krypton-success-rgb': colorToRgb(c.bright_green),
     '--krypton-special-rgb': colorToRgb(c.magenta),
     '--krypton-info-rgb': colorToRgb(c.blue),
-
-    '--krypton-opacity-ghost': '0.04',
-    '--krypton-opacity-inactive': '0.15',
-    '--krypton-opacity-hover': '0.4',
-    '--krypton-opacity-active': '0.7',
-    '--krypton-opacity-neon': '1',
 
     '--krypton-z-window': '100',
     '--krypton-z-window-focused': '110',
@@ -438,19 +375,12 @@ export function themeCssProperties(theme: FullTheme): Record<string, string> {
     '--krypton-border-width': `${theme.chrome.border.width}px`,
     '--krypton-border-radius': `${theme.chrome.border.radius}px`,
 
-    '--krypton-shadow-color': theme.chrome.shadow.color,
-    '--krypton-shadow-blur': `${theme.chrome.shadow.blur}px`,
-
     '--krypton-backdrop-color': theme.chrome.backdrop.color,
     '--krypton-backdrop-blur': `${theme.chrome.backdrop.blur}px`,
-    '--krypton-bg-elev': withAlpha(theme.chrome.backdrop.color, 0.92),
 
-    '--krypton-titlebar-bg': theme.chrome.titlebar.background,
     '--krypton-titlebar-height': `${theme.chrome.titlebar.height}px`,
-    '--krypton-titlebar-text': theme.chrome.titlebar.text_color,
 
     '--krypton-status-dot-size': `${theme.chrome.status_dot.size}px`,
-    '--krypton-status-dot-color': theme.chrome.status_dot.color,
 
     '--krypton-header-accent-color': theme.chrome.header_accent.color,
     '--krypton-header-accent-height': `${theme.chrome.header_accent.height}px`,
@@ -465,9 +395,6 @@ export function themeCssProperties(theme: FullTheme): Record<string, string> {
     '--krypton-tab-active-color': theme.chrome.tabs.active_color,
     '--krypton-tab-inactive-color': theme.chrome.tabs.inactive_color,
 
-    '--krypton-focused-border': theme.focused.border_color,
-    '--krypton-focused-shadow': theme.focused.shadow_color,
-    '--krypton-focused-shadow-blur': `${theme.focused.shadow_blur}px`,
     '--krypton-focused-accent': theme.focused.corner_accent_color,
     '--krypton-focused-accent-glow': theme.focused.corner_accent_glow,
     '--krypton-focused-titlebar-text': theme.focused.titlebar_text_color,
@@ -475,26 +402,8 @@ export function themeCssProperties(theme: FullTheme): Record<string, string> {
     '--krypton-focused-header-accent': theme.focused.header_accent_color,
     '--krypton-focused-label': theme.focused.label_color,
 
-    '--krypton-whichkey-bg': theme.ui.which_key.background,
-    '--krypton-whichkey-border': theme.ui.which_key.border,
-    '--krypton-whichkey-title': theme.ui.which_key.title_color,
-    '--krypton-whichkey-key': theme.ui.which_key.key_color,
-    '--krypton-whichkey-label': theme.ui.which_key.label_color,
-    '--krypton-whichkey-separator': theme.ui.which_key.separator_color,
-    '--krypton-whichkey-blur': `${theme.ui.which_key.backdrop_blur}px`,
-
     '--krypton-qt-bg': theme.ui.quick_terminal.background,
     '--krypton-qt-blur': `${theme.ui.quick_terminal.backdrop_blur}px`,
-    '--krypton-qt-shadow-color': theme.ui.quick_terminal.shadow_color,
-    '--krypton-qt-shadow-blur': `${theme.ui.quick_terminal.shadow_blur}px`,
-
-    '--krypton-palette-bg': theme.ui.command_palette.background,
-    '--krypton-palette-border': theme.ui.command_palette.border,
-    '--krypton-palette-highlight': theme.ui.command_palette.highlight_color,
-    '--krypton-palette-text': theme.ui.command_palette.text_color,
-    '--krypton-palette-input-bg': theme.ui.command_palette.input_background,
-    '--krypton-palette-input-text': theme.ui.command_palette.input_text_color,
-    '--krypton-palette-blur': `${theme.ui.command_palette.backdrop_blur}px`,
 
     '--krypton-search-bg': theme.ui.search.background,
     '--krypton-search-match': theme.ui.search.match_color,
@@ -502,40 +411,24 @@ export function themeCssProperties(theme: FullTheme): Record<string, string> {
     '--krypton-mode-bg': theme.ui.mode_indicator.background,
     '--krypton-mode-text': theme.ui.mode_indicator.text_color,
 
-    '--krypton-hint-bg': theme.ui.hints.background,
-    '--krypton-hint-fg': theme.ui.hints.foreground,
-    '--krypton-hint-matched-fg': theme.ui.hints.matched_foreground,
-
     // Default window accent — per-window inline overrides still win, except
     // index-0 / lane-slot-1 which inherit the theme accent.
     '--krypton-window-accent': accent,
     '--krypton-window-accent-rgb': accentRgb,
 
-    // Agent / ACP harness (DESIGN.amber structure, color from the active theme)
+    // Agent / ACP harness surface palette (colour from the active theme; the
+    // material is DESIGN.md's `--mat-*`)
     '--agent-text': c.foreground,
-    '--agent-bg': backdrop,
-    '--agent-panel': backdrop,
-    '--agent-surface-low': light ? withAlpha(mixColors(c.foreground, backdrop, 0.05), 0.88) : withAlpha(backdrop, 0.35),
-    '--agent-surface-mid': surfaceCanvas,
-    '--agent-surface-high': surfaceHigh,
     // Solid panels follow the chrome backdrop, not ANSI black — light themes
     // use a dark `colors.black` for terminal output, which would paint the
     // harness thought card as a black slab on frost.
     '--agent-surface-solid': surfaceSolid,
-    '--agent-surface-rail': surfaceRail,
     '--agent-surface-canvas': surfaceCanvas,
-    '--agent-border': theme.chrome.border.color,
-    '--agent-border-active': theme.focused.border_color,
-    '--agent-primary': accent,
-    '--agent-primary-rgb': accentRgb,
     '--agent-accent': c.green,
     '--agent-user': c.cyan,
     '--agent-error': c.red,
     '--agent-bright': theme.focused.titlebar_text_color,
     '--agent-dim': withAlpha(accent, light ? 0.55 : 0.35),
-    '--agent-ghost': surfaceRail,
-    '--agent-text-rgb': fgRgb,
-    '--agent-text-dim': textDim,
     '--agent-green': c.green,
     '--agent-green-rgb': colorToRgb(c.green),
     '--agent-red': c.red,
@@ -546,26 +439,6 @@ export function themeCssProperties(theme: FullTheme): Record<string, string> {
     '--agent-cyan': c.cyan,
     '--agent-cyan-rgb': colorToRgb(c.cyan),
     '--agent-blue': c.blue,
-    '--agent-blue-rgb': colorToRgb(c.blue),
-
-    // Vault viewer (DESIGN.nasa structure, color from the active theme)
-    '--vault-bg': c.background,
-    '--vault-panel': theme.chrome.backdrop.color,
-    '--vault-border': theme.chrome.border.color,
-    '--vault-border-active': theme.focused.border_color,
-    '--vault-primary': accent,
-    '--vault-primary-rgb': accentRgb,
-    '--vault-bright': theme.focused.titlebar_text_color,
-    '--vault-dim': withAlpha(accent, light ? 0.55 : 0.35),
-    '--vault-ghost': withAlpha(accent, light ? 0.12 : 0.08),
-    '--vault-text': c.foreground,
-    '--vault-text-dim': textDim,
-    '--vault-orange': c.yellow,
-    '--vault-gold': c.bright_yellow,
-    '--vault-green': c.green,
-    '--vault-cyan': c.cyan,
-    '--vault-red': c.red,
-    '--vault-magenta': c.magenta,
   };
 
   // Spec 303 — user component tokens are merged last, so a token named after a

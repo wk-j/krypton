@@ -19,10 +19,10 @@
    `krypton.scheme` layer only caps the status lamps' neon legends. */
 
 @layer krypton.component {
-  /* DESIGN.console.md: the head is engraved on the plate; the status row and
-     the GitHub / Worker lines are one recessed well (the first slice carries
-     its top, the last meta its bottom); `›` is a raised key. The `--dock-*`
-     tokens come from the dock column in harness-shared.css. */
+  /* DESIGN.md (Krypton Console): the head is engraved on the plate; the status
+     row and the GitHub / Worker lines are one recessed well (the first slice
+     carries its top, the last meta its bottom); `›` is a raised key. The
+     `--mat-*` tokens are the root set in src/styles/materials.css. */
   .acp-ticket-dock__head {
     display: flex;
     align-items: flex-start;
@@ -46,10 +46,10 @@
   }
 
   .acp-ticket-dock__eyebrow {
-    color: var(--dock-silk);
+    color: var(--mat-silk);
     font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.13em;
-    text-shadow: var(--dock-engrave);
+    text-shadow: var(--mat-engrave);
     text-transform: uppercase;
   }
 
@@ -57,15 +57,15 @@
     flex: 0 0 28px;
     width: 28px;
     height: 28px;
-    border: 1px solid var(--dock-key-edge);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    background: var(--dock-key);
-    box-shadow: var(--dock-key-raise);
-    color: var(--dock-lit);
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--mat-lit);
     font: inherit;
     font-size: 1em;
     line-height: 1;
-    text-shadow: var(--dock-print);
+    text-shadow: var(--mat-print);
     cursor: default;
   }
 
@@ -75,14 +75,14 @@
     gap: 8px;
     margin: 0 8px;
     padding: 8px 10px;
-    border-bottom: 1px solid var(--dock-groove-lo);
+    border-bottom: 1px solid var(--mat-groove-lo);
     border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
-    background-color: var(--dock-well-fill);
+    background-color: var(--mat-well-fill);
     box-shadow:
-      var(--dock-well-depth),
-      inset 1px 0 0 var(--dock-well-wall),
-      inset -1px 0 0 var(--dock-well-wall),
-      inset 0 1px 0 var(--dock-well-wall);
+      var(--mat-well-depth),
+      inset 1px 0 0 var(--mat-well-wall),
+      inset -1px 0 0 var(--mat-well-wall),
+      inset 0 1px 0 var(--mat-well-wall);
   }
 
   .acp-ticket-dock__status-row code {
@@ -108,9 +108,9 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.14),
       0 0 6px rgba(var(--ticket-pill-rgb), 0.2),
       0 0 16px rgba(var(--ticket-pill-rgb), 0.07);
-    color: var(--dock-lit);
+    color: var(--mat-lit);
     letter-spacing: 0.04em;
-    text-shadow: var(--dock-lit-glow);
+    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-ticket-dock__pill--blocked {
@@ -134,12 +134,12 @@
     align-items: baseline;
     margin: 0 8px;
     padding: 6px 10px;
-    border-bottom: 1px solid var(--dock-groove-lo);
-    background-color: var(--dock-well-fill);
+    border-bottom: 1px solid var(--mat-groove-lo);
+    background-color: var(--mat-well-fill);
     box-shadow:
-      inset 1px 0 0 var(--dock-well-wall),
-      inset -1px 0 0 var(--dock-well-wall),
-      inset 0 1px 0 var(--dock-groove-hi);
+      inset 1px 0 0 var(--mat-well-wall),
+      inset -1px 0 0 var(--mat-well-wall),
+      inset 0 1px 0 var(--mat-groove-hi);
   }
 
   .acp-ticket-dock__meta:not(:has(+ .acp-ticket-dock__meta)) {
@@ -147,11 +147,11 @@
     border-bottom: 0;
     border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
     box-shadow:
-      inset 1px 0 0 var(--dock-well-wall),
-      inset -1px 0 0 var(--dock-well-wall),
-      inset 0 -1px 0 var(--dock-well-wall),
-      inset 0 1px 0 var(--dock-groove-hi),
-      0 1px 0 var(--dock-well-lip);
+      inset 1px 0 0 var(--mat-well-wall),
+      inset -1px 0 0 var(--mat-well-wall),
+      inset 0 -1px 0 var(--mat-well-wall),
+      inset 0 1px 0 var(--mat-groove-hi),
+      0 1px 0 var(--mat-well-lip);
   }
 
   .acp-ticket-dock__meta > span,
@@ -195,17 +195,17 @@
   }
 
   .acp-ticket-dock__head button:hover {
-    background: var(--dock-key-hover);
+    background: var(--mat-key-hover);
   }
 
   .acp-ticket-dock__head button:active {
-    background: var(--dock-key-down);
-    box-shadow: var(--dock-key-sunk);
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
     transform: translateY(1px);
   }
 
   .acp-ticket-dock__head button:focus-visible {
-    outline: 1px solid var(--dock-lit);
+    outline: 1px solid var(--mat-lit);
     outline-offset: -3px;
   }
 
@@ -219,7 +219,7 @@
     background: none;
     box-shadow: none;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
-    text-shadow: var(--dock-engrave);
+    text-shadow: var(--mat-engrave);
   }
 
   .acp-ticket-dock__target--blocked {
@@ -238,7 +238,7 @@
   }
 }
 
-/* Light scheme: the faceplate tokens swap to aluminium in harness-shared.css;
+/* Light scheme: the faceplate tokens swap to aluminium in materials.css;
    the blocked and done lamps are neon values tuned for a dark ground, so their
    legends cap to legible ink (spec 321 §Accent ink). */
 @layer krypton.scheme {

@@ -1,0 +1,150 @@
+/* Spec 366 — the Krypton Console material set (DESIGN.md 2.0.0).
+
+   Every surface in the app is built from five parts — plate, engraving, well,
+   key, lamp — and every part reads these tokens. They are declared once, here,
+   on the document root: graphite for the dark scheme, brushed aluminium for the
+   light one. Component and view sheets read `--mat-*`; they never declare it.
+
+   Gradient-valued tokens are composed from colour-stop tokens on the same
+   element. A theme's `[tokens]` table (spec 303) is written inline on <html>,
+   so it beats these :root values, and the composed gradients re-resolve with
+   the theme's stops — through the existing value allowlist, which admits
+   colours and shadows but no gradient functions (theme.rs).
+
+   A custom property that references another is resolved where it is declared,
+   so a component cannot re-tint a composed token by overriding a stop on its
+   own element. Coloured lamps therefore spell their own lens (DESIGN.md
+   "Lamps") from `--mat-glint` and their state colour. */
+
+@layer krypton.base {
+  :root {
+    /* Plate: the faceplate. A top-lit graphite gradient at 0.9 alpha under a
+       2-3% vertical brush; never fully opaque (the backdrop still reads). */
+    --mat-plate-sheen: rgba(255, 255, 255, 0.035);
+    --mat-plate-hi: rgba(46, 49, 56, 0.9);
+    --mat-plate-mid: rgba(32, 34, 40, 0.9);
+    --mat-plate-lo: rgba(23, 25, 30, 0.9);
+    --mat-plate:
+      linear-gradient(180deg, var(--mat-plate-sheen), transparent 160px),
+      linear-gradient(180deg, var(--mat-plate-hi) 0%, var(--mat-plate-mid) 50%, var(--mat-plate-lo) 100%);
+    --mat-brush-hi: rgba(255, 255, 255, 0.018);
+    --mat-brush-lo: rgba(0, 0, 0, 0.035);
+    --mat-brush: repeating-linear-gradient(90deg, var(--mat-brush-hi) 0 1px, transparent 1px 2px, var(--mat-brush-lo) 2px 3px, transparent 3px 5px);
+    --mat-bevel-hi: rgba(255, 255, 255, 0.08);
+    --mat-bevel-lo: rgba(0, 0, 0, 0.6);
+
+    /* Well: a recessed display. Gradient for a standalone well, flat fill for
+       a well cut into row slices; depth + wall + lip make the recess. */
+    --mat-well-hi: rgba(6, 7, 10, 0.8);
+    --mat-well-lo: rgba(13, 14, 18, 0.74);
+    --mat-well: linear-gradient(180deg, var(--mat-well-hi), var(--mat-well-lo));
+    --mat-well-fill: rgba(9, 10, 14, 0.78);
+    --mat-well-depth: inset 0 2px 5px rgba(0, 0, 0, 0.6);
+    --mat-well-wall: rgba(0, 0, 0, 0.6);
+    --mat-well-lip: rgba(255, 255, 255, 0.07);
+    --mat-well-shadow: var(--mat-well-depth), inset 0 0 0 1px var(--mat-well-wall), 0 1px 0 var(--mat-well-lip);
+
+    /* Groove: an etched line — the dark cut plus the light edge below it. */
+    --mat-groove-lo: rgba(0, 0, 0, 0.5);
+    --mat-groove-hi: rgba(255, 255, 255, 0.045);
+
+    /* Key: raised at rest, sinks 1px while held or latched. */
+    --mat-key-hi: rgba(76, 80, 90, 0.95);
+    --mat-key-mid: rgba(55, 58, 66, 0.95);
+    --mat-key-lo: rgba(43, 46, 53, 0.95);
+    --mat-key: linear-gradient(180deg, var(--mat-key-hi) 0%, var(--mat-key-mid) 52%, var(--mat-key-lo) 100%);
+    --mat-key-hover-hi: rgba(90, 94, 105, 0.95);
+    --mat-key-hover-mid: rgba(64, 67, 76, 0.95);
+    --mat-key-hover-lo: rgba(50, 53, 61, 0.95);
+    --mat-key-hover: linear-gradient(180deg, var(--mat-key-hover-hi) 0%, var(--mat-key-hover-mid) 52%, var(--mat-key-hover-lo) 100%);
+    --mat-key-down-hi: rgba(28, 30, 35, 0.95);
+    --mat-key-down-lo: rgba(42, 45, 51, 0.95);
+    --mat-key-down: linear-gradient(180deg, var(--mat-key-down-hi), var(--mat-key-down-lo));
+    --mat-key-edge: rgba(0, 0, 0, 0.72);
+    --mat-key-raise: inset 0 1px 0 rgba(255, 255, 255, 0.15), inset 0 -1px 0 rgba(0, 0, 0, 0.28), 0 1px 0 rgba(0, 0, 0, 0.5), 0 2px 5px rgba(0, 0, 0, 0.38);
+    --mat-key-sunk: inset 0 2px 4px rgba(0, 0, 0, 0.62), inset 0 0 0 1px rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.06);
+
+    /* Text: engraved into the plate; printed on a key; amber silk labels and
+       the backlit legend with its tight + bloom glow. */
+    --mat-engrave: 0 1px 0 rgba(255, 255, 255, 0.07), 0 -1px 0 rgba(0, 0, 0, 0.7);
+    --mat-print: 0 -1px 0 rgba(0, 0, 0, 0.55);
+    --mat-silk: #ffb000;
+    --mat-lit: #ffd880;
+    --mat-lit-glow: 0 0 6px rgba(255, 176, 0, 0.45), 0 0 14px rgba(255, 176, 0, 0.15);
+
+    /* Lens: the amber indicator LED, unlit and lit, and the specular glint
+       every coloured lamp starts its own lens from. */
+    --mat-glint: rgba(255, 255, 255, 0.9);
+    --mat-lens-off-glint: rgba(255, 255, 255, 0.2);
+    --mat-lens-off-mid: rgba(62, 48, 20, 0.95);
+    --mat-lens-off-lo: rgba(22, 17, 8, 0.98);
+    --mat-lens-off: radial-gradient(circle at 35% 30%, var(--mat-lens-off-glint) 0 14%, var(--mat-lens-off-mid) 46%, var(--mat-lens-off-lo) 100%);
+    --mat-lens-on-glint: #fff4cc;
+    --mat-lens-on-mid: #ffb000;
+    --mat-lens-on-lo: #a86400;
+    --mat-lens-on: radial-gradient(circle at 35% 30%, var(--mat-lens-on-glint) 0 14%, var(--mat-lens-on-mid) 48%, var(--mat-lens-on-lo) 100%);
+    --mat-lens-glow: 0 0 4px rgba(255, 176, 0, 0.85), 0 0 10px rgba(255, 176, 0, 0.35);
+
+    /* Selection: a full-row tint inside its well, never an edge rail (ADR-0027). */
+    --mat-select: rgba(255, 176, 0, 0.16);
+
+    /* Floating plates: the dimmer behind a modal, and the one shadow a plate
+       casts on what is under it. */
+    --mat-scrim: rgba(4, 5, 8, 0.55);
+    --mat-cast: 0 10px 28px rgba(0, 0, 0, 0.45);
+
+    /* Screen: the terminal / lane display behind the bezel. Follows the
+       theme backdrop with `[visual] opacity` applied (compositor.ts). */
+    --mat-screen: var(--krypton-backdrop-color, rgba(6, 10, 18, 0.5));
+  }
+}
+
+/* Light scheme: brushed aluminium. Wells are a darker grey recess with a white
+   lip; keys are white-to-grey with a white top highlight; engraving is a white
+   highlight under the text. Plates sit at 0.94, the light backdrop floor
+   (spec 321). Amber labels cap to #6e4700: 5.2:1 on the plate over a black
+   wallpaper, 6.1:1 over white. A backlight does not read on a light plate, so
+   the legend glow becomes an engraving; LED lenses still glow. */
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] {
+    --mat-plate-sheen: rgba(255, 255, 255, 0.45);
+    --mat-plate-hi: rgba(234, 235, 238, 0.94);
+    --mat-plate-mid: rgba(218, 220, 224, 0.94);
+    --mat-plate-lo: rgba(204, 207, 212, 0.94);
+    --mat-brush-hi: rgba(255, 255, 255, 0.14);
+    --mat-brush-lo: rgba(0, 0, 0, 0.018);
+    --mat-bevel-hi: rgba(255, 255, 255, 0.85);
+    --mat-bevel-lo: rgba(0, 0, 0, 0.2);
+    --mat-well-hi: rgba(194, 197, 203, 0.72);
+    --mat-well-lo: rgba(222, 224, 228, 0.68);
+    --mat-well-fill: rgba(208, 211, 216, 0.7);
+    --mat-well-depth: inset 0 2px 4px rgba(0, 0, 0, 0.16);
+    --mat-well-wall: rgba(0, 0, 0, 0.14);
+    --mat-well-lip: rgba(255, 255, 255, 0.85);
+    --mat-groove-lo: rgba(0, 0, 0, 0.12);
+    --mat-groove-hi: rgba(255, 255, 255, 0.6);
+    --mat-key-hi: rgba(255, 255, 255, 0.97);
+    --mat-key-mid: rgba(238, 239, 242, 0.97);
+    --mat-key-lo: rgba(223, 225, 229, 0.97);
+    --mat-key-hover-hi: rgba(255, 255, 255, 0.98);
+    --mat-key-hover-mid: rgba(244, 245, 247, 0.98);
+    --mat-key-hover-lo: rgba(231, 233, 236, 0.98);
+    --mat-key-down-hi: rgba(203, 206, 212, 0.97);
+    --mat-key-down-lo: rgba(223, 225, 229, 0.97);
+    --mat-key-edge: rgba(0, 0, 0, 0.22);
+    --mat-key-raise: inset 0 1px 0 rgba(255, 255, 255, 1), inset 0 -1px 0 rgba(0, 0, 0, 0.06), 0 1px 0 rgba(0, 0, 0, 0.14), 0 2px 4px rgba(0, 0, 0, 0.12);
+    --mat-key-sunk: inset 0 2px 3px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(0, 0, 0, 0.08), 0 1px 0 rgba(255, 255, 255, 0.8);
+    --mat-engrave: 0 1px 0 rgba(255, 255, 255, 0.85);
+    --mat-print: 0 1px 0 rgba(255, 255, 255, 0.9);
+    --mat-silk: #6e4700;
+    --mat-lit: #6e4700;
+    --mat-lit-glow: 0 1px 0 rgba(255, 255, 255, 0.85);
+    --mat-lens-off-glint: rgba(255, 255, 255, 0.9);
+    --mat-lens-off-mid: rgba(176, 160, 130, 0.95);
+    --mat-lens-off-lo: rgba(120, 104, 76, 0.98);
+    --mat-lens-glow: 0 0 3px rgba(255, 150, 0, 0.8), 0 0 8px rgba(255, 150, 0, 0.3);
+    --mat-select: rgba(255, 176, 0, 0.2);
+    --mat-scrim: rgba(40, 42, 48, 0.28);
+    --mat-cast: 0 8px 22px rgba(0, 0, 0, 0.18);
+  }
+}

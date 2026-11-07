@@ -6,7 +6,10 @@
    The one rule that is not a carve-out is the empty state. The builder emitted
    no node at all when nothing was staged; the component keeps its node and
    hides it, and `display: flex` above would otherwise beat the UA's
-   `[hidden] { display: none }`. */
+   `[hidden] { display: none }`.
+
+   Spec 366: each staged image is a small well on the composer plate holding
+   its thumbnail and name; its remove control is a small key. */
 
 @layer krypton.component {
   .acp-harness__staging {
@@ -26,19 +29,18 @@
     align-items: center;
     gap: 6px;
     max-width: min(260px, 100%);
-    padding: 3px 5px 3px 3px;
-    border: 1px solid color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 36%, transparent);
+    padding: 3px 4px 3px 3px;
     border-radius: var(--krypton-border-radius, 8px);
-    background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 7%, transparent);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-harness__staged-thumb {
     width: 36px;
     height: 28px;
     object-fit: cover;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    opacity: 0.9;
   }
 
   .acp-harness__staged-label {
@@ -53,29 +55,41 @@
 
   .acp-harness__staged-remove {
     flex: 0 0 auto;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     padding: 0;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    background: var(--agent-surface-mid, rgba(2, 5, 10, 0.42));
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68));
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
     font: inherit;
-    line-height: 16px;
+    line-height: 18px;
+    text-shadow: var(--mat-print);
     cursor: pointer;
   }
 
-  .acp-harness__staged-remove:hover,
+  .acp-harness__staged-remove:hover {
+    background: var(--mat-key-hover);
+    color: var(--mat-lit);
+  }
+
+  .acp-harness__staged-remove:active {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    transform: translateY(1px);
+  }
+
   .acp-harness__staged-remove:focus-visible {
-    color: var(--agent-error, #ff6b8b);
-    border-color: rgba(255, 107, 139, 0.45);
-    outline: none;
+    outline: 1px solid var(--mat-lit);
+    outline-offset: 2px;
   }
 
   .acp-harness__staging-hint {
     font-size: 0.72em;
-    letter-spacing: 0.06em;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45));
+    letter-spacing: 0.09em;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    text-shadow: var(--mat-print);
     text-transform: uppercase;
   }
 }

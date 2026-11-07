@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-10-09
 > Milestone: M-VT — terminal protocol support
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): working dot pulse and border glow removed; status lights lamps.
 
 ## Problem
 

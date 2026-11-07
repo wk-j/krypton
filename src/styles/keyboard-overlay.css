@@ -1,8 +1,10 @@
 /* Krypton — Keyboard overlay (spec 271)
    Read-only ghost-hands keyboard docked at the center-bottom of the workspace
-   screen, flush on the 28px workspace footer. Transparent canvas only: no
-   background, no border, no corner brackets. Above windows and the Quick
-   Terminal (5000), below inline AI prompts (8000) and every modal overlay. */
+   screen, flush on the 28px workspace footer. The canvas paints its own
+   faceplate: key caps on a plate in the `--mat-*` material stops (spec 366,
+   keyboard-overlay-model.ts), so the element itself has no background or
+   border. Above windows and the Quick Terminal (5000), below inline AI prompts
+   (8000) and every modal overlay. */
 
 .krypton-keyboard-overlay {
   position: fixed;

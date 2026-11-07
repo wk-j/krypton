@@ -14,19 +14,17 @@
      :1081-1087  `acp-harness__lane-mail-provenance` — `AssistantRow` (§3.1).
 
    theme-scheme.css declares nothing for these blocks, so there is no
-   `krypton.scheme` section. */
+   `krypton.scheme` section. Spec 366: the meta line is flat secondary ink for
+   both directions (the row label says in or out); the backend logos keep
+   their theme brand tokens. */
 
 @layer krypton.component {
   .acp-harness__lane-mail-meta {
     display: block;
     font-size: 0.78em;
     letter-spacing: 0.04em;
-    color: rgba(184, 166, 255, 0.8);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
     margin-bottom: 3px;
-  }
-
-  .acp-harness__msg--mail-out .acp-harness__lane-mail-meta {
-    color: rgba(120, 200, 255, 0.8);
   }
 
   .acp-harness__lane-mail-logo {

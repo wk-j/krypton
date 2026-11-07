@@ -4,6 +4,7 @@
 > Date: 2026-05-26
 > Milestone: M8 — Polish
 > Spec 350 (2026-11-01): compact density is now the git ref, a mode chip only outside Normal, and the right-zone exceptions (attention, program status, Rails findings/faults, backend-link faults, music). Mode `NORMAL`, role/title, cwd, counts, process and activity, a healthy link, quiet Rails states and the review gauges show in detail density only. The contextual hint is removed. Sections below are updated where they describe current behavior.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): footer is a plate strip; sweeps, shimmer and glows removed.
 
 ## Problem
 

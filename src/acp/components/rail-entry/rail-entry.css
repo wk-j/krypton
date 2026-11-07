@@ -1,33 +1,50 @@
 /* Spec 302 §4.5 — `RailEntry`.
-   Carved verbatim from src/styles/acp-harness.css (:5322-5572 except the
-   unrelated `.acp-harness__rail-name` rule's neighbours, plus :5600-5606 and
-   :6978-6985) and src/styles/theme-scheme.css:179-239.
-
-   `.acp-harness__rail-entry--needs_permission` is additionally one selector of
-   the shared pulse lists at :5240-5246 and :5252-5261; those two selectors are
-   taken here and the `acp-harness-permission-pulse` keyframes stays where it
-   is, since `.acp-harness__lane-symbol` and `.acp-harness__tab--*` still use
-   it. */
+   Carved from src/styles/acp-harness.css and theme-scheme.css; restyled by
+   spec 366 (DESIGN.md "Harness", "Selector keys"). Each lane is a key on the
+   rail's plate column (`lane-rail.css`) with a 6px LED before its legend. The
+   shown lane's key is latched down with its LED lit and its name backlit; the
+   others stand raised. A lane that needs the human, waits on a peer or failed
+   lights its LED in that state's colour — steadily: no pulse anywhere. The
+   key must stay one line of legend plus the spec 125 meta line, so row height
+   stays the same across lanes. */
 
 @layer krypton.component {
   .acp-harness__rail-entry {
     /* spec 125 — three-column / two-row grid:
-     *   col 1 = status dot (8px), col 2 = backend logo (14px), col 3 = body
+     *   col 1 = LED (8px cell), col 2 = backend logo (14px), col 3 = body
      *   row 1 = head (name + peer hints + metrics, flex inside)
      *   row 2 = meta (tag chip + trimmed directive title, or status label)
-     * The meta row always renders so row height stays consistent across lanes. */
+     * The meta row always renders so row height stays consistent across lanes.
+     * The 1px key edge comes out of the old 6px/8px padding, so the text
+     * keeps its place. */
     display: grid;
     grid-template-columns: 8px 14px minmax(0, 1fr);
     column-gap: 8px;
     row-gap: 2px;
-    /* spec 325 — an inset rounded row: G (8px) clear of the rail's left edge,
-     * R clear of its right edge so a tint never reaches the active tab's
-     * fillet column. The padding gives 4px of each inset back to the text. */
-    margin: 0 var(--acp-rail-tab-r, 8px) 0 8px;
-    padding: 6px 8px;
-    border-radius: var(--acp-rail-tab-r, 8px);
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
+    padding: 5px 7px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
     letter-spacing: 0.04em;
+    text-shadow: var(--mat-print);
+  }
+
+  .acp-harness__rail-entry:hover {
+    background: var(--mat-key-hover);
+  }
+
+  /* The shown lane: latched down, legend backlit. */
+  .acp-harness__rail-entry--active,
+  .acp-harness__rail-entry--active:hover {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+  }
+
+  .acp-harness__rail-entry--active .acp-harness__rail-name {
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-harness__rail-head {
@@ -48,7 +65,7 @@
     gap: 6px;
     min-width: 0;
     font-size: 0.76em;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     letter-spacing: 0.04em;
     white-space: nowrap;
     overflow: hidden;
@@ -61,7 +78,7 @@
     justify-self: center;
     width: 14px;
     height: 14px;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     flex-shrink: 0;
   }
 
@@ -86,6 +103,8 @@
   .acp-harness__rail-logo--antigravity { color: var(--krypton-backend-antigravity); }
   .acp-harness__rail-logo--fx       { color: var(--krypton-backend-fx); }
 
+  /* A role tag is an embossed label on the key face, tinted by its role
+     (DESIGN.md "Chips"). */
   .acp-harness__rail-tag {
     flex: 0 0 auto;
     display: inline-block;
@@ -93,12 +112,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    padding: 1px 5px;
-    border: 1px solid currentColor;
-    border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(0, 0, 0, 0.2);
+    padding: 0 5px;
+    border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+    border-radius: 999px;
     font-size: 0.92em;
-    line-height: 1.1;
+    line-height: 1.3;
     letter-spacing: 0.06em;
     text-transform: lowercase;
   }
@@ -112,11 +130,12 @@
   .acp-harness__rail-tag--hash-2   { color: var(--krypton-role-hash-2); }
   .acp-harness__rail-tag--hash-3   { color: var(--krypton-role-hash-3); }
 
+  /* Clearing on the next send: struck through, read at the secondary ink tier
+     (never dimmed with opacity). */
   .acp-harness__rail-tag--clearing {
-    text-decoration: line-through;
-    text-decoration-color: rgba(255, 209, 102, 0.65);
     border-style: dashed;
-    opacity: 0.55;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    text-decoration: line-through;
   }
 
   .acp-harness__rail-meta__title {
@@ -124,39 +143,31 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: rgba(226, 238, 226, 0.74);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
   }
 
   .acp-harness__rail-meta__hint {
     flex: 0 0 auto;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
   /* spec 343: a built-in `#` command in flight takes the status word's (or the
      directive title's) place. Plain text, no pill: padding would change the
-     meta row height spec 125 keeps constant. It shrinks first, never below 6ch. */
+     meta row height spec 125 keeps constant. It shrinks first, never below 6ch.
+     Running work reads in the running-key cyan. */
   .acp-harness__rail-meta__run {
     flex: 0 1 auto;
     min-width: 6ch;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #0cf)));
+    color: rgb(var(--agent-cyan-rgb, 109, 208, 255));
   }
 
-  /* Tints mark lanes you are NOT on. The active entry is the merged tab: any
-   * fill of its own would part it from the body (spec 325). */
-  .acp-harness__rail-entry--directive:not(.acp-harness__rail-entry--active) {
-    background: color-mix(in srgb, #c7a2ff 6%, transparent);
-    color: rgba(226, 238, 226, 0.86);
-  }
-
-  .acp-harness__rail-entry--pending:not(.acp-harness__rail-entry--active) {
-    background: color-mix(in srgb, var(--agent-gold, #ffd166) 5%, transparent);
-  }
-
+  /* A directive swap/clear waiting for the next send is something the user set
+     and may want to undo: warning ink on the title and its hint. */
   .acp-harness__rail-entry--pending .acp-harness__rail-meta__title,
   .acp-harness__rail-entry--pending .acp-harness__rail-meta__hint {
-    color: var(--agent-gold, #ffd166);
+    color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
   }
 
   .acp-harness__rail-peers {
@@ -169,11 +180,31 @@
     text-overflow: ellipsis;
   }
 
+  .acp-harness__rail-peer {
+    flex: 0 0 auto;
+    font-size: 0.72em;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
+    max-width: 4ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Peer mail count: a small readout window on the key. */
+  .acp-harness__rail-peer--inbox {
+    padding: 0 3px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    font-size: 0.68em;
+    font-variant-numeric: tabular-nums;
+    text-shadow: none;
+  }
+
   .acp-harness__rail-metric {
     flex: 0 0 auto;
     font-size: 0.74em;
     font-variant-numeric: tabular-nums;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     letter-spacing: 0.02em;
   }
 
@@ -185,141 +216,61 @@
   .acp-harness__rail-metric--ctx {
     min-width: 4ch;
     text-align: right;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   }
 
-  /* spec 325 — the active entry is a tab cut from the lane body's surface:
-   * rounded on the rail side, flush with the body, joined to it by two
-   * concave fillets. The rail paints nothing itself while it has an active
-   * entry: `::before` is the tab (body colour C, left corners rounded) and
-   * its spread shadow paints the rail colour S everywhere else, following
-   * the rounded corners. So the tab is C over the same backdrop as the body —
-   * the same colour, no seam — and S never abuts S at a box edge (a 1px
-   * hairline wherever a row sits at a fractional pixel). `::after` adds the
-   * two fillet slivers above and below the tab's flush end.
-   *
-   * Invariant: the entry must stay a non-stacking box (no opacity, transform,
-   * filter, or an animation of them). Otherwise its `z-index: -1` layers move
-   * inside it and the rail colour paints over the tab. */
-  .acp-harness__rail-entry--active {
-    position: relative;
-    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0))) 55%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
-  }
-
-  .acp-harness__rail-entry--active::before,
-  .acp-harness__rail-entry--active::after {
-    content: '';
-    position: absolute;
-    z-index: -1;
-    pointer-events: none;
-  }
-
-  /* The tab: the row's box, carried on to the rail's right edge. */
-  .acp-harness__rail-entry--active::before {
-    inset: 0 calc(-1 * var(--acp-rail-tab-r, 8px)) 0 0;
-    border-radius: var(--acp-rail-tab-r, 8px) 0 0 var(--acp-rail-tab-r, 8px);
-    background: var(--acp-lane-canvas);
-    box-shadow: 0 0 0 9999px var(--acp-rail-surface);
-  }
-
-  /* The fillets: an R-wide column at the rail's right edge, R above and below
-   * the tab. Inside each quarter circle the shadow's S shows through; the
-   * corner outside it is C. */
-  .acp-harness__rail-entry--active::after {
-    inset: calc(-1 * var(--acp-rail-tab-r, 8px)) calc(-1 * var(--acp-rail-tab-r, 8px)) calc(-1 * var(--acp-rail-tab-r, 8px)) auto;
-    width: var(--acp-rail-tab-r, 8px);
-    background:
-      radial-gradient(circle at 0 0, transparent calc(var(--acp-rail-tab-r, 8px) - 0.5px), var(--acp-lane-canvas) var(--acp-rail-tab-r, 8px)) top / 100% var(--acp-rail-tab-r, 8px),
-      radial-gradient(circle at 0 100%, transparent calc(var(--acp-rail-tab-r, 8px) - 0.5px), var(--acp-lane-canvas) var(--acp-rail-tab-r, 8px)) bottom / 100% var(--acp-rail-tab-r, 8px);
-    background-repeat: no-repeat;
-  }
-
+  /* The LED (DESIGN.md "Lamps"): unlit at rest, lit amber on the shown lane,
+     and in a state colour when the lane needs the human (warning), waits on a
+     peer (theme magenta), failed (fault) or runs (the lane's own accent, as
+     window LEDs take the window accent). */
   .acp-harness__rail-dot {
     grid-column: 1;
     grid-row: 1;
     align-self: center;
-    width: 8px;
-    height: 8px;
+    justify-self: center;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42);
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .acp-harness__rail-entry--active .acp-harness__rail-dot {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
   }
 
   .acp-harness__rail-entry--busy .acp-harness__rail-dot {
-    background: var(--krypton-window-accent, #0cf);
-    box-shadow: 0 0 6px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.6);
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, var(--acp-lane-accent, var(--krypton-accent, #0cf)) 45%, color-mix(in srgb, var(--acp-lane-accent, var(--krypton-accent, #0cf)) 55%, transparent) 100%);
+    box-shadow:
+      0 0 4px color-mix(in srgb, var(--acp-lane-accent, var(--krypton-accent, #0cf)) 90%, transparent),
+      0 0 10px color-mix(in srgb, var(--acp-lane-accent, var(--krypton-accent, #0cf)) 40%, transparent);
   }
 
-  /* spec 118 — zen rail peer activity (rail is zen-only today; scope under
-   * --zen so a future rail outside zen mode keeps a neutral dot). */
-  .acp-harness--zen .acp-harness__rail-entry--awaiting_peer .acp-harness__rail-dot,
-  .acp-harness--zen .acp-harness__rail-entry--peer-awaiting .acp-harness__rail-dot {
-    background: #b8a6ff;
-    box-shadow: 0 0 5px rgba(184, 166, 255, 0.45);
-    animation: acp-harness-zen-attention 1.4s ease-in-out infinite;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .acp-harness--zen .acp-harness__rail-entry--awaiting_peer .acp-harness__rail-dot,
-    .acp-harness--zen .acp-harness__rail-entry--peer-awaiting .acp-harness__rail-dot {
-      animation: none;
-    }
-  }
-
-  .acp-harness__rail-peer {
-    flex: 0 0 auto;
-    font-size: 0.72em;
-    color: #b8a6ff;
-    max-width: 4ch;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .acp-harness__rail-peer--inbox {
-    padding: 0 3px;
-    border: 1px solid rgba(184, 166, 255, 0.45);
-    border-radius: var(--krypton-border-radius, 8px);
-    font-size: 0.68em;
-  }
-
+  .acp-harness__rail-entry--awaiting_peer .acp-harness__rail-dot,
+  .acp-harness__rail-entry--peer-awaiting .acp-harness__rail-dot,
+  .acp-harness__rail-entry--error .acp-harness__rail-dot,
   .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot {
-    background: var(--agent-gold, #ffd166);
-    box-shadow: 0 0 8px rgba(255, 209, 102, 0.72);
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--rail-led-rgb)) 45%, rgba(var(--rail-led-rgb), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--rail-led-rgb), 0.9), 0 0 10px rgba(var(--rail-led-rgb), 0.4);
   }
 
-  .acp-harness__rail-entry--needs_permission:not(.acp-harness__rail-entry--active) {
-    background: rgba(255, 209, 102, 0.12);
-    color: #ffe3a0;
-    animation: acp-harness-permission-pulse 1.1s ease-in-out infinite;
+  .acp-harness__rail-entry--awaiting_peer,
+  .acp-harness__rail-entry--peer-awaiting {
+    --rail-led-rgb: var(--krypton-special-rgb, 184, 166, 255);
   }
 
+  .acp-harness__rail-entry--error {
+    --rail-led-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+  }
+
+  .acp-harness__rail-entry--needs_permission {
+    --rail-led-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+  }
+
+  /* The permission / question hint is what the human has to answer. */
   .acp-harness__rail-entry--needs_permission .acp-harness__rail-meta__hint {
-    color: #ffe3a0;
+    color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
     font-weight: 700;
-  }
-
-  .acp-harness__rail-entry--error .acp-harness__rail-dot {
-    background: var(--agent-error, #ff6b8b);
-  }
-
-  .acp-harness--zen .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot,
-  .acp-harness--zen .acp-harness__rail-entry--error .acp-harness__rail-dot {
-    animation: acp-harness-zen-attention 1.2s ease-in-out infinite;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .acp-harness--zen .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot {
-      animation: none;
-    }
-
-    .acp-harness__rail-entry--needs_permission {
-      animation: none;
-      opacity: 1;
-    }
-  }
-
-  @keyframes acp-harness-zen-attention {
-    0%, 100% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.4); opacity: 0.6; }
   }
 
   .acp-harness__rail-name {
@@ -330,73 +281,32 @@
     text-overflow: ellipsis;
   }
 
+  /* Review count: a readout window on the key. */
   .acp-harness__rail-review-count {
     margin-left: auto;
-    padding: 2px 5px;
-    color: var(--agent-accent);
+    padding: 0 5px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
     font-size: var(--krypton-chrome-font-size, 11px);
-    white-space: nowrap;
     font-variant-numeric: tabular-nums;
+    text-shadow: none;
+    white-space: nowrap;
   }
 }
 
+/* Light scheme: the key, LED and readouts swap at the root (materials.css).
+   Lamp colours tuned for a dark ground are too pale as text on aluminium, so
+   the warning / running inks cap to dark ink (spec 321). */
 @layer krypton.scheme {
-  /* Spec 321 — see lane-shell.css: the entry carries its own inline accent. */
-  html[data-theme-scheme='light'] .acp-harness__rail-entry {
-    --acp-lane-ink: oklch(from var(--acp-lane-accent, var(--krypton-accent, #007799)) min(l, var(--krypton-accent-l-max)) c h);
-    color: var(--krypton-ink-2);
-  }
-
-  html[data-theme-scheme='light'] .acp-harness__rail-meta {
-    color: var(--krypton-ink-2);
-  }
-
-  html[data-theme-scheme='light'] .acp-harness__rail-meta__title {
-    color: var(--krypton-ink-2);
-  }
-
-  html[data-theme-scheme='light'] .acp-harness__rail-meta__hint,
-  html[data-theme-scheme='light'] .acp-harness__rail-metric,
-  html[data-theme-scheme='light'] .acp-harness__rail-metric--ctx {
-    color: var(--krypton-ink-3);
-  }
-
-  html[data-theme-scheme='light'] .acp-harness__rail-name {
-    color: var(--acp-lane-ink);
-  }
-
-  html[data-theme-scheme='light'] .acp-harness__rail-entry--active {
-    color: var(--acp-lane-ink);
-  }
-
-  html[data-theme-scheme='light'] .acp-harness__rail-entry--directive:not(.acp-harness__rail-entry--active) {
-    color: color-mix(in srgb, #7a38b0 35%, var(--krypton-ink));
-    background: color-mix(in srgb, #7a38b0 10%, transparent);
-  }
-
-  html[data-theme-scheme='light'] .acp-harness__rail-logo {
-    color: var(--krypton-ink-2);
-  }
-
-  html[data-theme-scheme='light'] .acp-harness__rail-dot {
-    background: color-mix(in srgb, var(--krypton-ink) 55%, transparent);
-  }
-
-  html[data-theme-scheme='light'] .acp-harness__rail-tag {
-    background: color-mix(in srgb, var(--krypton-ink) 6%, transparent);
-  }
-
-  html[data-theme-scheme='light'] .acp-harness__rail-entry--needs_permission:not(.acp-harness__rail-entry--active) {
-    background: rgba(154, 107, 0, 0.12);
-    color: #8a5a00;
-  }
-
+  html[data-theme-scheme='light'] .acp-harness__rail-entry--pending .acp-harness__rail-meta__title,
+  html[data-theme-scheme='light'] .acp-harness__rail-entry--pending .acp-harness__rail-meta__hint,
   html[data-theme-scheme='light'] .acp-harness__rail-entry--needs_permission .acp-harness__rail-meta__hint {
     color: #8a5a00;
   }
 
-  html[data-theme-scheme='light'] .acp-harness__rail-entry--busy .acp-harness__rail-dot,
-  html[data-theme-scheme='light'] .acp-harness__rail-entry--needs_permission .acp-harness__rail-dot {
-    box-shadow: none;
+  html[data-theme-scheme='light'] .acp-harness__rail-meta__run {
+    color: var(--agent-user, #007799);
   }
 }

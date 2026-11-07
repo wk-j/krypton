@@ -3,12 +3,14 @@
    The submit control carries its own block rather than borrowing
    `.acp-genui__button` from inputs.css: it has a terminal disabled state that
    no Button has, and a group sheet must not depend on a sibling group's
-   selectors. Its resting look matches `--primary` on purpose.
+   selectors. It is the form's single confirming action, so it is a raised key
+   with a backlit legend, like `--primary` (DESIGN.md "Form controls").
 
    The read-only state after a draft is a native `<fieldset disabled>`, so the
    controls inside it stop taking input without any renderer knowing a form is
-   above it. Every colour goes through a `--krypton-*` token the light scheme
-   retargets, so there is no `krypton.scheme` layer in this file. */
+   above it; the whole set drops to the unpowered 0.45. Every colour is a
+   `--mat-*` or `--krypton-*` token the light scheme swaps at the root, so
+   there is no `krypton.scheme` layer in this file. */
 
 @layer krypton.component {
   .acp-genui__form {
@@ -29,7 +31,7 @@
   }
 
   .acp-genui__form-fields[disabled] {
-    opacity: 0.62;
+    opacity: 0.45;
   }
 
   .acp-genui__form-foot {
@@ -37,29 +39,46 @@
     align-items: center;
     gap: 8px;
     padding-top: 8px;
-    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    border-top: 1px solid var(--mat-groove-lo);
+    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
+  }
+
+  .acp-genui__form-submit,
+  .acp-genui__followup {
+    min-height: 28px;
+    padding: 3px 12px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    font: inherit;
+    letter-spacing: 0.04em;
+    text-shadow: var(--mat-print);
+    cursor: default;
   }
 
   .acp-genui__form-submit {
-    padding: 6px 14px;
-    border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.45);
-    border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.1);
-    color: var(--krypton-window-accent, #0cf);
-    font: inherit;
-    letter-spacing: 0.04em;
-    cursor: pointer;
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
   }
 
-  .acp-genui__form-submit:hover:not([disabled]) {
-    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
+  .acp-genui__form-submit:hover:not([disabled]),
+  .acp-genui__followup:hover {
+    background: var(--mat-key-hover);
   }
 
+  .acp-genui__form-submit:active:not([disabled]),
+  .acp-genui__followup:active {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    transform: translateY(1px);
+  }
+
+  /* Drafted: unpowered, geometry kept. */
   .acp-genui__form-submit[disabled] {
-    border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
-    background: transparent;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45));
-    cursor: default;
+    opacity: 0.45;
+    text-shadow: var(--mat-print);
+    cursor: not-allowed;
   }
 
   .acp-genui__followups {
@@ -69,21 +88,11 @@
     min-width: 0;
   }
 
+  /* A suggested prompt is a key; a long one wraps rather than being cut. */
   .acp-genui__followup {
     max-width: 100%;
-    padding: 4px 11px;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
-    border-radius: var(--krypton-border-radius, 8px);
-    background: transparent;
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
-    font: inherit;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     text-align: left;
     overflow-wrap: anywhere;
-    cursor: pointer;
-  }
-
-  .acp-genui__followup:hover {
-    border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.4);
-    color: var(--krypton-window-accent, #0cf);
   }
 }

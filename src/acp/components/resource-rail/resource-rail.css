@@ -1,27 +1,35 @@
 /* Spec 302 §3.16 — `ResourceRail`.
-   Carved verbatim from src/styles/acp-harness.css:3168-3386. */
+   Carved verbatim from src/styles/acp-harness.css:3168-3386.
+
+   Spec 366 (DESIGN.md "Well", "Performance"): the references are one well
+   under a silk label. The rows are its slices — flat well fill, 1px walls,
+   split by grooves, first and last slices carrying the corners — with no
+   shadow or gradient, because a sealed transcript repeats them per reply. The
+   hovered, focused or hinted row is the full-row selection tint (ADR-0027);
+   thumbnails are small recesses; the hint label is a key cap. */
 
 @layer krypton.component {
   /* Deterministic references extracted from a sealed assistant message (spec 206). */
   .acp-harness__resources {
     display: flex;
     flex-direction: column;
-    gap: 3px;
     margin-top: 10px;
   }
 
   .acp-harness__resources-head {
     display: flex;
     justify-content: space-between;
-    padding: 0 7px 1px;
+    padding: 0 7px 4px;
     font-size: 0.7em;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    color: rgba(185, 245, 255, 0.68);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--mat-silk);
   }
 
   .acp-harness__resource-count {
-    color: rgba(216, 232, 240, 0.42);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    font-variant-numeric: tabular-nums;
     letter-spacing: 0.05em;
   }
 
@@ -37,17 +45,39 @@
     font: inherit;
     text-align: left;
     color: inherit;
-    background: rgba(109, 208, 255, 0.035);
-    border: 0;
-    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well-fill);
+    border: 1px solid var(--mat-well-wall);
+    border-top: 0;
+    border-bottom: 1px solid var(--mat-groove-lo);
+    border-radius: 0;
     cursor: pointer;
+  }
+
+  .acp-harness__resources-head + .acp-harness__resource {
+    border-top: 1px solid var(--mat-well-wall);
+    border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
+  }
+
+  .acp-harness__resource:last-child {
+    border-bottom-color: var(--mat-well-wall);
+    border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
+  }
+
+  .acp-harness__resources-head + .acp-harness__resource:last-child {
+    border-radius: var(--krypton-border-radius, 8px);
   }
 
   .acp-harness__resource:hover,
   .acp-harness__resource:focus-visible,
   .acp-harness__resource--hinted {
-    background: rgba(109, 208, 255, 0.16);
+    /* The selection tint laid flat over the well fill: no gradient on a row. */
+    background: color-mix(in srgb, var(--mat-silk) 16%, var(--mat-well-fill));
     outline: none;
+  }
+
+  .acp-harness__resource:focus-visible {
+    outline: 1px solid var(--mat-lit);
+    outline-offset: -2px;
   }
 
   /* spec 286: 48×34 leading thumbnail — image pixels, or an extension glyph. */
@@ -60,10 +90,10 @@
     width: 48px;
     height: 34px;
     overflow: hidden;
-    border: 1px solid rgba(109, 208, 255, 0.26);
+    border: 1px solid var(--mat-well-wall);
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(109, 208, 255, 0.045);
-    color: rgba(216, 232, 240, 0.56);
+    background: var(--mat-well-fill);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
   }
 
   .acp-harness__resource-thumb img {
@@ -111,6 +141,7 @@
     border-color: currentColor;
   }
 
+  /* Hint-mode label: a key cap. */
   .acp-harness__resource-hint {
     position: absolute;
     top: 2px;
@@ -119,9 +150,10 @@
     padding: 0 3px;
     text-align: center;
     font-size: 0.8em;
-    font-weight: 800;
-    color: #071013;
-    background: var(--agent-user, #6dd0ff);
+    font-weight: 700;
+    color: var(--mat-lit);
+    background: var(--mat-key);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
   }
 
@@ -140,12 +172,12 @@
   }
 
   .acp-harness__resource-label {
-    color: rgba(234, 243, 234, 0.94);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.94);
   }
 
   .acp-harness__resource-target {
     font-size: 0.78em;
-    color: rgba(216, 232, 240, 0.48);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   }
 
   .acp-harness__resource-git {
@@ -194,7 +226,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px;
     text-align: right;
-    color: rgba(216, 232, 240, 0.56);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
   }
 
   .acp-harness__resource-git-add {
@@ -208,8 +240,8 @@
   .acp-harness__resource-action {
     justify-self: end;
     font-size: 0.7em;
-    letter-spacing: 0.06em;
-    color: rgba(109, 208, 255, 0.7);
+    letter-spacing: 0.09em;
+    color: var(--mat-silk);
   }
 
   @media (max-width: 680px) {

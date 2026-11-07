@@ -1,14 +1,21 @@
 /* Spec 309 — Content group.
 
-   The catalog's five tones (`TONE_CLASS` in renderer.ts) resolve to one custom
-   property, `--acp-genui-tone`, so a toned Text, Callout, Metric, Badge or List
-   value is one rule set plus five colour declarations instead of five families
-   of five. Every tone is a `--krypton-*` token the light scheme retargets, so
-   there is no `krypton.scheme` layer in this file.
+   The catalog's five tones (`TONE_CLASS` in renderer.ts) resolve to two
+   custom properties: `--acp-genui-tone`, the ink a toned Text, Callout,
+   Metric, Badge or List value is written in, and `--acp-genui-tone-rgb`, the
+   channel triple a lamp or a lit capsule needs for its glow (DESIGN.md
+   "Lamps"). One rule set plus five tone declarations instead of five families
+   of five. Untoned, the tone is ink and the lamps stay unlit; a tone is a
+   theme state token (`--krypton-success/warning/danger/info-rgb`), so the
+   light scheme retargets it and this file has no `krypton.scheme` layer.
+
+   Prose, key/value pairs and list text stay flat content (spec 366). A
+   Callout and a List are recesses, a Metric value is a readout, a Badge a
+   capsule.
 
    `Sources` rows are buttons, never anchors: the host runs `OpenUrl`, so the
-   panel contains no navigable href at all. They are styled to read as links,
-   because that is what they are to the eye. */
+   panel contains no navigable href at all. They are styled as links — the
+   theme link colour, underlined — because that is what they are to the eye. */
 
 @layer krypton.component {
   .acp-genui__prose,
@@ -16,7 +23,13 @@
   .acp-genui__metric,
   .acp-genui__badge,
   .acp-genui__list-value {
-    --acp-genui-tone: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86);
+    --acp-genui-tone: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+    --acp-genui-tone-rgb: var(--krypton-fg-rgb, 216, 232, 216);
+  }
+
+  /* An untoned Metric is a backlit readout figure. */
+  .acp-genui__metric {
+    --acp-genui-tone: var(--mat-lit);
   }
 
   .acp-genui__prose--good,
@@ -24,7 +37,8 @@
   .acp-genui__metric--good,
   .acp-genui__badge--good,
   .acp-genui__list-value--good {
-    --acp-genui-tone: rgb(var(--agent-green-rgb, 139, 195, 74));
+    --acp-genui-tone-rgb: var(--krypton-success-rgb, 57, 255, 127);
+    --acp-genui-tone: rgb(var(--acp-genui-tone-rgb));
   }
 
   .acp-genui__prose--warn,
@@ -32,7 +46,8 @@
   .acp-genui__metric--warn,
   .acp-genui__badge--warn,
   .acp-genui__list-value--warn {
-    --acp-genui-tone: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+    --acp-genui-tone-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+    --acp-genui-tone: rgb(var(--acp-genui-tone-rgb));
   }
 
   .acp-genui__prose--bad,
@@ -40,7 +55,8 @@
   .acp-genui__metric--bad,
   .acp-genui__badge--bad,
   .acp-genui__list-value--bad {
-    --acp-genui-tone: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+    --acp-genui-tone-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+    --acp-genui-tone: rgb(var(--acp-genui-tone-rgb));
   }
 
   .acp-genui__prose--info,
@@ -48,7 +64,8 @@
   .acp-genui__metric--info,
   .acp-genui__badge--info,
   .acp-genui__list-value--info {
-    --acp-genui-tone: var(--krypton-window-accent, #0cf);
+    --acp-genui-tone-rgb: var(--krypton-info-rgb, 74, 158, 255);
+    --acp-genui-tone: rgb(var(--acp-genui-tone-rgb));
   }
 
   .acp-genui__prose {
@@ -57,15 +74,22 @@
     line-height: 1.45;
   }
 
+  /* Inline code: a small `--mat-well-fill` chip with a groove border
+     (DESIGN.md "Links and inline code"). Both inline marks take the
+     surrounding ink, so the transcript's markdown sheet does not recolour
+     them when the panel is seated in a message body. */
   .acp-genui__md-code {
     padding: 0.05em 0.4ch;
+    border: 1px solid var(--mat-groove-lo);
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
+    background: var(--mat-well-fill);
+    color: inherit;
     font-family: var(--agent-font, var(--krypton-font-family, monospace));
     font-size: 0.92em;
   }
 
   .acp-genui__md-strong {
+    color: inherit;
     font-weight: 700;
   }
 
@@ -73,53 +97,95 @@
     font-style: italic;
   }
 
+  /* A deeper recess; the tone lights the lamp beside the title and inks the
+     title, the text stays flat. */
   .acp-genui__callout {
     padding: 8px 10px;
-    border: 1px solid color-mix(in srgb, var(--acp-genui-tone) 40%, transparent);
     border-radius: var(--krypton-border-radius, 8px);
-    background: color-mix(in srgb, var(--acp-genui-tone) 8%, transparent);
+    background: var(--mat-well-fill);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-genui__callout-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
     margin-bottom: 3px;
     color: var(--acp-genui-tone);
     font-weight: 600;
   }
 
+  .acp-genui__callout-title::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .acp-genui__callout--good .acp-genui__callout-title::before,
+  .acp-genui__callout--warn .acp-genui__callout-title::before,
+  .acp-genui__callout--bad .acp-genui__callout-title::before,
+  .acp-genui__callout--info .acp-genui__callout-title::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--acp-genui-tone-rgb)) 45%, rgba(var(--acp-genui-tone-rgb), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--acp-genui-tone-rgb), 0.9), 0 0 10px rgba(var(--acp-genui-tone-rgb), 0.4);
+  }
+
   .acp-genui__callout-text {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
     line-height: 1.45;
   }
 
   .acp-genui__metric {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
     min-width: 0;
   }
 
+  /* The figure is a readout: a small well holding tabular digits. */
   .acp-genui__metric-value {
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 2px 8px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
     color: var(--acp-genui-tone);
     font-size: 1.5em;
     font-weight: 600;
     line-height: 1.15;
+    overflow-wrap: anywhere;
   }
 
   .acp-genui__metric-note {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.85em;
   }
 
+  /* Untoned: an unlit capsule in ink. Toned: lit glass in the state colour. */
   .acp-genui__badge {
     display: inline-block;
-    padding: 1px 7px;
-    border: 1px solid color-mix(in srgb, var(--acp-genui-tone) 45%, transparent);
-    border-radius: var(--krypton-border-radius, 8px);
-    background: color-mix(in srgb, var(--acp-genui-tone) 10%, transparent);
+    padding: 1px 8px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: var(--mat-well-fill);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.45);
     color: var(--acp-genui-tone);
     font-size: 0.85em;
     letter-spacing: 0.02em;
     white-space: nowrap;
+  }
+
+  .acp-genui__badge--good,
+  .acp-genui__badge--warn,
+  .acp-genui__badge--bad,
+  .acp-genui__badge--info {
+    border-color: rgba(var(--acp-genui-tone-rgb), 0.5);
+    background: radial-gradient(ellipse at 50% 0%, rgba(var(--acp-genui-tone-rgb), 0.3), rgba(var(--acp-genui-tone-rgb), 0.07) 75%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--acp-genui-tone-rgb), 0.22);
   }
 
   .acp-genui__kv {
@@ -137,16 +203,19 @@
   .acp-genui__kv-value {
     margin: 0;
     min-width: 0;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9);
+    color: var(--krypton-fg, #b0c4d8);
     overflow-wrap: anywhere;
   }
 
+  /* One well; rows are slices split by a groove, with no shadow of their own. */
   .acp-genui__list {
     display: flex;
     flex-direction: column;
     min-width: 0;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    overflow: hidden;
     border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-genui__list-row {
@@ -156,15 +225,15 @@
     width: 100%;
     padding: 5px 9px;
     border: 0;
-    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
-    background: transparent;
+    border-bottom: 1px solid var(--mat-groove-lo);
+    background: none;
     color: inherit;
     font: inherit;
     text-align: left;
   }
 
-  .acp-genui__list-row:first-child {
-    border-top: 0;
+  .acp-genui__list-row:last-child {
+    border-bottom: 0;
   }
 
   .acp-genui__list-row--action {
@@ -178,13 +247,13 @@
   .acp-genui__list-title {
     flex: 0 1 auto;
     min-width: 0;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+    color: var(--krypton-fg, #b0c4d8);
   }
 
   .acp-genui__list-detail {
     flex: 1 1 auto;
     min-width: 0;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.52));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.88em;
   }
 
@@ -209,16 +278,11 @@
     padding: 3px 6px;
     border: 0;
     border-radius: var(--krypton-border-radius, 8px);
-    background: transparent;
-    color: var(--krypton-window-accent, #0cf);
+    background: none;
+    color: var(--krypton-accent, #0cf);
     font: inherit;
     text-align: left;
     cursor: pointer;
-  }
-
-  .acp-genui__source:hover .acp-genui__source-title {
-    text-decoration: underline;
-    text-underline-offset: 2px;
   }
 
   .acp-genui__source-title {
@@ -227,12 +291,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
 
   .acp-genui__source-note {
     flex: 1 1 auto;
     min-width: 0;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.88em;
   }
 }

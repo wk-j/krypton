@@ -3,7 +3,13 @@
      * `.acp-triage__count` is now `.acp-triage__sub`, the class `OverlayShell`
        emits for a head's second span (same declarations);
      * `.acp-triage__caret` is gone — the fork collapsed into the shared
-       `Caret` component, which paints `.acp-harness__caret`. */
+       `Caret` component, which paints `.acp-harness__caret`.
+
+   Spec 366 / DESIGN.md "Overlays and dialogs": one floating plate over the
+   scrim, the head engraved on it, the judgement card flat text in one
+   recessed well. Reversibility is the one colour: an irreversible or costly
+   decision is something the human must act on (ADR-0017), so it lights a
+   danger / warning capsule; a reversible one stays an unlit capsule. */
 @layer krypton.component {
   .acp-harness__triage-overlay {
     position: absolute;
@@ -13,7 +19,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: rgba(4, 8, 13, 0.78);
+    background: var(--mat-scrim);
   }
 
   .acp-harness__triage-overlay[hidden] {
@@ -24,36 +30,46 @@
     display: flex;
     flex-direction: column;
     width: clamp(480px, 76vw, 1080px);
+    max-width: calc(100% - 24px);
     max-height: 84vh;
-    background: rgba(8, 14, 18, 0.98);
-    border: 1px solid rgba(0, 204, 255, 0.32);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+    background: var(--mat-brush), var(--mat-plate);
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
     overflow: hidden;
   }
 
   .acp-triage__head {
     display: flex;
     justify-content: space-between;
+    align-items: baseline;
     gap: 10px;
-    padding: 8px 14px;
-    border-bottom: 1px solid rgba(0, 204, 255, 0.22);
-    color: var(--krypton-window-accent, #0cf);
-    letter-spacing: 0.08em;
-    text-shadow: 0 0 8px rgba(0, 204, 255, 0.18);
+    padding: 9px 14px 8px;
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    text-shadow: var(--mat-engrave);
   }
 
   .acp-triage__sub {
-    color: rgba(216, 232, 216, 0.5);
-    font-size: 0.84em;
-    text-shadow: none;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
     letter-spacing: 0.04em;
+    text-transform: none;
   }
 
+  /* Empty: a well with its line centred in it. */
   .acp-triage__empty {
+    margin: 0 9px 9px;
     padding: 28px 18px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
     text-align: center;
-    color: rgba(216, 232, 216, 0.55);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     letter-spacing: 0.03em;
   }
 
@@ -61,7 +77,11 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 10px;
+    margin: 0 9px 9px;
+    padding: 12px 14px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
     /* flex:1 + min-height:0 let this claim the panel's remaining height and own
        the scroll, so a single information-dense card (long traded-off /
        uncertainty) scrolls internally instead of being clipped by the panel's
@@ -73,15 +93,25 @@
 
   /* ── Judgement card ───────────────────────────────────────── */
 
-  /* The card is a flat layout container, not a box: the panel is the only frame.
-     Single-detail view shows exactly one card, so a border/tint here would just
-     be a box nested in the panel. Hierarchy comes from type. */
+  /* The card is a flat layout container, not a box: the well is the only
+     frame. Single-detail view shows exactly one card. Hierarchy comes from
+     type. */
   .acp-triage__card {
+    --triage-rgb: var(--krypton-fg-rgb, 216, 232, 216);
+
     display: flex;
     flex-direction: column;
     gap: 11px;
-    padding: 2px 4px;
-    color: rgba(216, 232, 216, 0.86);
+    padding: 2px 0;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+  }
+
+  .acp-triage__card[data-reversibility='irreversible'] {
+    --triage-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+  }
+
+  .acp-triage__card[data-reversibility='costly'] {
+    --triage-rgb: var(--krypton-warning-rgb, 232, 197, 71);
   }
 
   .acp-triage__card-head {
@@ -91,40 +121,39 @@
     font-size: 0.82em;
   }
 
+  /* Reversible: an unlit capsule in ink. */
   .acp-triage__badge {
-    padding: 0 6px;
-    border-radius: var(--krypton-border-radius, 8px);
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--mat-well-fill);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.45);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     letter-spacing: 0.06em;
     text-transform: lowercase;
   }
 
-  .acp-triage__badge--irreversible {
-    color: #ff5d6c;
-    border: 1px solid rgba(255, 93, 108, 0.5);
-  }
-
+  /* Irreversible / costly: a lit capsule in the state colour. */
+  .acp-triage__badge--irreversible,
   .acp-triage__badge--costly {
-    color: #ffb454;
-    border: 1px solid rgba(255, 180, 84, 0.5);
-  }
-
-  .acp-triage__badge--reversible {
-    color: rgba(0, 204, 255, 0.85);
-    border: 1px solid rgba(0, 204, 255, 0.4);
+    border: 1px solid rgba(var(--triage-rgb), 0.5);
+    background: radial-gradient(ellipse at 50% 0%, rgba(var(--triage-rgb), 0.3), rgba(var(--triage-rgb), 0.07) 75%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--triage-rgb), 0.22);
+    color: rgb(var(--triage-rgb));
   }
 
   .acp-triage__lane {
-    color: rgba(216, 232, 216, 0.7);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
   }
 
   .acp-triage__diffstat {
     margin-left: auto;
-    color: rgba(216, 232, 216, 0.45);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.95em;
+    font-variant-numeric: tabular-nums;
   }
 
   .acp-triage__question {
-    color: rgba(216, 232, 216, 0.98);
+    color: var(--krypton-fg, rgba(216, 232, 216, 0.98));
     font-weight: 600;
     font-size: 1.04em;
     line-height: 1.4;
@@ -133,8 +162,8 @@
   /* ── Decision (verdict) ───────────────────────────────────────
      The answer the human acknowledges — promoted above the supporting prose by
      type alone (brighter + heavier + a size step over the 0.9em sections), NOT a
-     tinted box or rail: no box-in-a-box. Reversibility is carried by the label
-     colour, reusing the badge's colour language as type. */
+     tinted box or rail: no box-in-a-box. An irreversible or costly decision
+     carries its state colour on the label. */
   .acp-triage__decision {
     margin-top: 2px;
   }
@@ -142,29 +171,26 @@
   .acp-triage__decision-label {
     display: block;
     margin-bottom: 3px;
-    color: rgba(0, 204, 255, 0.7);
-    letter-spacing: 0.1em;
+    color: var(--mat-silk);
+    letter-spacing: 0.13em;
     text-transform: uppercase;
     font-size: 0.72em;
   }
 
-  .acp-triage__card[data-reversibility='irreversible'] .acp-triage__decision-label {
-    color: rgba(255, 93, 108, 0.85);
-  }
-
+  .acp-triage__card[data-reversibility='irreversible'] .acp-triage__decision-label,
   .acp-triage__card[data-reversibility='costly'] .acp-triage__decision-label {
-    color: rgba(255, 180, 84, 0.85);
+    color: rgb(var(--triage-rgb));
   }
 
   .acp-triage__decision-text {
-    color: rgba(232, 244, 232, 0.98);
+    color: var(--krypton-fg, rgba(232, 244, 232, 0.98));
     font-size: 1.04em;
     font-weight: 500;
     line-height: 1.45;
   }
 
   /* ── Stacked sections (rationale / traded-off / uncertainty) ──
-     Eyebrow label above a full-width body — each reads as its own beat. */
+     Label above a full-width body — each reads as its own beat. */
   .acp-triage__section {
     display: flex;
     flex-direction: column;
@@ -172,31 +198,27 @@
   }
 
   .acp-triage__section-label {
-    color: rgba(0, 204, 255, 0.6);
-    letter-spacing: 0.1em;
+    color: var(--mat-silk);
+    letter-spacing: 0.13em;
     text-transform: uppercase;
     font-size: 0.72em;
   }
 
   .acp-triage__section-body {
-    color: rgba(216, 232, 216, 0.82);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     font-size: 0.9em;
     line-height: 1.5;
   }
 
   /* Rationale recedes — supporting "why", not the answer. */
   .acp-triage__section--rationale .acp-triage__section-body {
-    color: rgba(216, 232, 216, 0.66);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
   }
 
-  /* Uncertainty flagged amber via label + body colour — the "watch this" beat.
+  /* Uncertainty is the "watch this" beat: its body in the amber legend.
      No left rail; the amber type alone carries the flag. */
-  .acp-triage__section--uncertainty .acp-triage__section-label {
-    color: rgba(255, 180, 84, 0.75);
-  }
-
   .acp-triage__section--uncertainty .acp-triage__section-body {
-    color: #ffb454;
+    color: var(--mat-lit);
   }
 
   .acp-triage__tradeoff-list {
@@ -213,39 +235,47 @@
 
   .acp-triage__actions {
     margin-top: 4px;
-    padding-top: 6px;
-    border-top: 1px dashed rgba(0, 204, 255, 0.18);
+    padding-top: 8px;
+    border-top: 1px solid var(--mat-groove-lo);
+    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
   }
 
   .acp-triage__action-hint {
-    color: rgba(216, 232, 216, 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.82em;
     letter-spacing: 0.03em;
   }
 
+  /* Each shortcut is a small key cap. */
   .acp-triage__action-hint kbd {
-    color: var(--krypton-window-accent, #0cf);
-    border: 1px solid rgba(0, 204, 255, 0.3);
-    border-radius: var(--krypton-border-radius, 8px);
+    display: inline-block;
     padding: 0 4px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 4px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--mat-lit);
+    font: inherit;
     font-size: 0.92em;
+    line-height: 1.4;
+    text-shadow: var(--mat-print);
   }
 
   .acp-triage__redirect {
     display: flex;
     align-items: baseline;
     gap: 6px;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
   }
 
   .acp-triage__redirect-label {
-    color: var(--krypton-window-accent, #0cf);
+    color: var(--mat-silk);
     letter-spacing: 0.04em;
   }
 
   .acp-triage__redirect-input {
     flex: 1;
-    color: rgba(216, 232, 216, 0.95);
+    color: var(--krypton-fg, rgba(216, 232, 216, 0.95));
     white-space: pre-wrap;
     word-break: break-word;
   }

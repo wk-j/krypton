@@ -83,8 +83,8 @@ export interface OverlayShellProps {
   /**
    * A caller-owned node between the title and the sub line.
    *
-   * The orchestrator console's head is three parts — title, the cyan seat
-   * pill, then the summary — and folding the seat into `sub` turned the pill
+   * The orchestrator console's head is three parts — title, the seat lamp
+   * capsule, then the summary — and folding the seat into `sub` turned the pill
    * into dim subtitle text. Spec 301 promises no visual change, so the shell
    * carries the third node rather than the caller losing it.
    */

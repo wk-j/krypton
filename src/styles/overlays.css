@@ -1,4 +1,12 @@
-/* ─── Which-Key Popup ─── */
+/* Spec 366 / DESIGN.md 2.0.0 (Krypton Console): every overlay here is one
+   floating plate — brush + plate, 1px key edge, lit top bevel and one
+   `--mat-cast` — with its head engraved, its inputs and lists in wells, its
+   actions on keys and its key-hint foot printed. The `--mat-*` set comes from
+   src/styles/materials.css; no glow outside a lamp or a backlit legend. */
+
+/* ─── Which-Key Popup ───
+   A key legend shown while a mode is held, so it gets no scrim: in Resize,
+   Move and Swap the windows under it are what the user is watching. */
 .krypton-whichkey {
   position: fixed;
   inset: 0;
@@ -15,10 +23,11 @@
 
 .krypton-whichkey__popup {
   position: fixed;
-  background: var(--krypton-whichkey-bg, rgba(6, 10, 18, 0.85));
-  border: 1px solid var(--krypton-whichkey-border, rgba(0, 200, 255, 0.4));
+  background: var(--mat-brush), var(--mat-plate);
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
-  padding: 10px 14px;
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
+  padding: 10px 14px 12px;
   min-width: 240px;
   max-width: min(760px, calc(100vw - 24px));
 }
@@ -26,13 +35,15 @@
 .krypton-whichkey__title {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size, 13px);
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-weight: 600;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: var(--krypton-whichkey-title, #0cf);
+  color: var(--mat-silk);
+  text-shadow: var(--mat-engrave);
   margin-bottom: 8px;
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--krypton-whichkey-separator, rgba(0, 200, 255, 0.2));
+  border-bottom: 1px solid var(--mat-groove-lo);
+  box-shadow: 0 1px 0 var(--mat-groove-hi);
 }
 
 /* Columns stretch to the taller one's height, so the shorter column's
@@ -55,13 +66,14 @@
   display: grid;
   grid-template-columns: max-content max-content minmax(0, 1fr);
   column-gap: 10px;
-  row-gap: 1px;
+  row-gap: 3px;
   min-width: 0;
 }
 
 /* Compositor emblem (`layout-dashboard`, palette-icons.ts). which-key.ts adds
    it only when the shorter column has 4+ spare lines, so the 4em glyph never
-   grows the popup. Static: the popup is idle UI. */
+   grows the popup. Static: the popup is idle UI. Drawn in the faintest ink,
+   like a mark stamped into the plate. */
 .krypton-whichkey__emblem {
   flex: 1 1 auto;
   display: flex;
@@ -79,9 +91,7 @@
   stroke-width: 1;
   stroke-linecap: round;
   stroke-linejoin: round;
-  color: var(--krypton-whichkey-title, #0cf);
-  opacity: 0.4;
-  filter: drop-shadow(0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5));
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.3));
 }
 
 .krypton-whichkey__entry {
@@ -90,66 +100,58 @@
   display: grid;
   grid-template-columns: subgrid;
   align-items: center;
-  padding: 2px 6px;
+  padding: 0 6px;
 }
 
+/* Group names are secondary labels engraved in ink. */
 .krypton-whichkey__group {
   grid-column: 1 / -1;
   margin: 8px 0 2px;
   padding: 0 6px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
+  font-weight: 600;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: var(--krypton-whichkey-label, rgba(0, 200, 255, 0.4));
-  opacity: 0.65;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
+  text-shadow: var(--mat-engrave);
 }
 
 .krypton-whichkey__group:first-child {
   margin-top: 0;
 }
 
-.krypton-whichkey__entry--important {
-  background: linear-gradient(90deg, rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.16), transparent 75%);
-}
-
-.krypton-whichkey__entry--danger {
-  background: linear-gradient(90deg, rgba(255, 80, 110, 0.18), transparent 75%);
-}
-
-.krypton-whichkey__entry--important .krypton-whichkey__label,
-.krypton-whichkey__entry--important .krypton-whichkey__key,
-.krypton-whichkey__entry--important .krypton-whichkey__icon {
-  color: var(--krypton-whichkey-title, #0cf);
-  text-shadow: 0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.55);
-}
-
-.krypton-whichkey__entry--danger .krypton-whichkey__label,
-.krypton-whichkey__entry--danger .krypton-whichkey__key,
-.krypton-whichkey__entry--danger .krypton-whichkey__icon {
-  color: var(--krypton-error, #ff506e);
-  text-shadow: 0 0 8px rgba(255, 80, 110, 0.55);
-}
-
+/* The key glyph is a key cap. 6px corners: a cap one text line tall reads as
+   a capsule at 8px (DESIGN.md "Parts", deviation noted). */
 .krypton-whichkey__key {
-  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-font-size, 13px);
-  font-weight: 600;
-  color: var(--krypton-whichkey-key, #0cf);
+  box-sizing: border-box;
   min-width: 28px;
+  padding: 1px 6px;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: 6px;
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+  text-shadow: var(--mat-print);
   text-align: center;
+  white-space: nowrap;
 }
 
 .krypton-whichkey__label {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size, 13px);
-  color: var(--krypton-whichkey-label, rgba(0, 200, 255, 0.4));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
 }
 
 /* Row glyph (spec 360) — a Lucide icon from palette-icons.ts between key and
    label. 1em, so it stays inside the label's line box and the row keeps its
-   height (a 1.1em glyph made each row 0.3px taller). It takes the label's
-   colour; the effect rules above recolour it with the row. Static. */
+   height. It takes the label's ink; the effect rules below recolour it with
+   the row. Static. */
 .krypton-whichkey__icon {
   font-size: var(--krypton-font-size, 13px);
   width: 1em;
@@ -159,7 +161,26 @@
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
-  color: var(--krypton-whichkey-label, rgba(0, 200, 255, 0.4));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
+}
+
+/* An important entry is backlit: its cap legend and label take the lit
+   amber. No row tint or gradient — the cap carries it. */
+.krypton-whichkey__entry--important .krypton-whichkey__key {
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
+}
+
+.krypton-whichkey__entry--important .krypton-whichkey__label,
+.krypton-whichkey__entry--important .krypton-whichkey__icon {
+  color: var(--mat-lit);
+}
+
+/* A destructive entry is a fault colour on the legend (ADR-0017). */
+.krypton-whichkey__entry--danger .krypton-whichkey__key,
+.krypton-whichkey__entry--danger .krypton-whichkey__label,
+.krypton-whichkey__entry--danger .krypton-whichkey__icon {
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }
 
 /* ─── Hint Mode Overlay ─── */
@@ -177,83 +198,91 @@
   pointer-events: none;
 }
 
+/* A small key cap over the terminal text. The face is near-opaque, so the
+   legend stays legible over any glyph under it; the legend is backlit amber
+   because a hint is something to act on (ADR-0017). 4px corners: at one
+   chrome line tall, 8px would read as a capsule (deviation noted). */
 .krypton-hint__label {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   line-height: 1;
-  padding: 1px 3px;
-  border-radius: var(--krypton-border-radius, 8px);
-  background: var(--krypton-hint-bg, #f4bf75);
-  color: var(--krypton-hint-fg, #181818);
+  padding: 2px 4px;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: 4px;
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-print);
   white-space: nowrap;
   transition: opacity 0.08s ease;
 }
 
+/* A cap that can no longer match is switched off. */
 .krypton-hint--dimmed .krypton-hint__label {
   opacity: 0.15;
 }
 
+/* The typed prefix is spent: printed in faint ink. */
 .krypton-hint__label-matched {
-  color: var(--krypton-hint-matched-fg, #8a7444);
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
 }
 
-/* "No hints found" toast */
+/* "No hints found" toast: a small floating plate with a lit amber lamp. */
 .krypton-hint-toast {
   position: fixed;
   bottom: 80px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10001;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: #ffb300;
-  background: rgba(20, 14, 8, 0.9);
-  border: 1px solid rgba(255, 179, 0, 0.35);
+  color: var(--mat-silk);
+  text-shadow: var(--mat-engrave);
+  background: var(--mat-brush), var(--mat-plate);
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
-  padding: 6px 14px;
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
+  padding: 6px 14px 6px 12px;
   opacity: 0;
   transition: opacity 0.15s ease;
-  text-shadow: 0 0 8px rgba(255, 179, 0, 0.4);
+}
+
+.krypton-hint-toast::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
 }
 
 .krypton-hint-toast--visible {
   opacity: 1;
 }
 
-/* ─── Quick Terminal Overlay ─── */
+/* ─── Quick Terminal Overlay ───
+   A plate drawer around a screen: it is a `.krypton-window`, so the bezel
+   (border, bevel, cast, focus ring, titlebar/footer plates and the screen's
+   inset depth) comes from window.css. Only the screen fill differs — the
+   theme's Quick Terminal background, alpha set by `[visual] opacity`
+   (compositor writes `--krypton-qt-bg`). */
 .krypton-quick-terminal {
   z-index: 5000;
-  /* Slightly stronger background for overlay feel */
   background: var(--krypton-qt-bg, rgba(6, 10, 18, 0.6));
-  box-shadow:
-    0 0 var(--krypton-qt-shadow-blur, 30px) var(--krypton-qt-shadow-color, rgba(0, 200, 255, 0.1)),
-    0 8px 32px rgba(0, 0, 0, 0.4);
   /* Hidden by default — toggled via JS */
   display: none;
 }
 
 .krypton-quick-terminal.krypton-quick-terminal--visible {
   display: flex;
-  box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.6),
-    0 0 var(--krypton-qt-shadow-blur, 30px) var(--krypton-qt-shadow-color, rgba(0, 200, 255, 0.12)),
-    0 0 80px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    inset 0 0 40px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.02);
-}
-
-.krypton-quick-terminal.krypton-window--focused {
-  border-color: var(--krypton-focused-border, rgba(0, 200, 255, 0.6));
-  box-shadow:
-    0 24px 70px rgba(0, 0, 0, 0.65),
-    0 0 var(--krypton-qt-shadow-blur, 30px) var(--krypton-qt-shadow-color, rgba(0, 200, 255, 0.18)),
-    0 0 100px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    inset 0 0 40px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.03);
 }
 
 /* ─── Smart Prompt Dialog ─── */
@@ -268,7 +297,7 @@
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.1s ease;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--mat-scrim);
 }
 
 .krypton-prompt-dialog--visible {
@@ -283,12 +312,13 @@
   max-height: 72vh;
   display: flex;
   flex-direction: column;
-  background: var(--krypton-prompt-bg, rgba(8, 6, 14, 0.94));
-  border: 1px solid var(--krypton-prompt-border, rgba(199, 125, 255, 0.45));
+  gap: 8px;
+  padding: 10px;
+  box-sizing: border-box;
+  background: var(--mat-brush), var(--mat-plate);
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
-  box-shadow:
-    0 0 30px rgba(199, 125, 255, 0.1),
-    0 8px 32px rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
   overflow: visible;
 }
 
@@ -300,67 +330,91 @@
   80% { transform: translateX(4px); }
 }
 
+/* Rejected submit: a one-shot shake with the edge in the fault colour. */
 .krypton-prompt-dialog__panel--shake {
   animation: krypton-prompt-shake 400ms ease;
-  border-color: rgba(255, 80, 80, 0.6);
+  border-color: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.7);
 }
 
-/* ─── Target chip ─── */
+/* ─── Target chip ───
+   The head of the plate: the target is a lamp — lit amber while a Claude
+   session is attached, lit warning when there is none — then its name
+   engraved and the switch key at the end. */
 .krypton-prompt-dialog__target-chip {
+  --prompt-lamp-rgb: 255, 176, 0;
+
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--krypton-prompt-border, rgba(199, 125, 255, 0.22));
+  padding: 0 2px 8px;
+  border-bottom: 1px solid var(--mat-groove-lo);
+  box-shadow: 0 1px 0 var(--mat-groove-hi);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.06em;
 }
 
 .krypton-prompt-dialog__target-chip--empty {
-  background: rgba(255, 120, 60, 0.04);
-  border-bottom-color: rgba(255, 120, 60, 0.3);
+  --prompt-lamp-rgb: var(--krypton-warning-rgb, 232, 197, 71);
 }
 
-.krypton-prompt-dialog__target-chip--loading .krypton-prompt-dialog__chip-cwd {
-  opacity: 0.5;
-}
-
-.krypton-prompt-dialog__chip-arrow {
-  color: var(--krypton-prompt-accent, #c77dff);
-  font-weight: 700;
-}
-
+/* The arrow / warning glyph sits on a small LED: the glyph is dropped, the
+   lens says the state. */
+.krypton-prompt-dialog__chip-arrow,
 .krypton-prompt-dialog__chip-warn {
-  color: #ffb300;
-  font-weight: 700;
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin: 0 2px;
+  overflow: hidden;
+  border-radius: 50%;
+  color: transparent;
+  font-size: 0;
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--prompt-lamp-rgb)) 45%, rgba(var(--prompt-lamp-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--prompt-lamp-rgb), 0.9), 0 0 10px rgba(var(--prompt-lamp-rgb), 0.4);
+}
+
+/* Still resolving the session's cwd: the lamp is unlit. */
+.krypton-prompt-dialog__target-chip--loading .krypton-prompt-dialog__chip-arrow {
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .krypton-prompt-dialog__chip-label {
-  color: var(--krypton-prompt-accent, #c77dff);
-  font-weight: 700;
+  color: var(--mat-silk);
+  font-weight: 600;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
+  text-shadow: var(--mat-engrave);
 }
 
 .krypton-prompt-dialog__chip-cwd {
-  color: var(--krypton-prompt-text, #c0c5ce);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 280px;
 }
 
-.krypton-prompt-dialog__chip-pid {
-  color: var(--krypton-prompt-dim, rgba(192, 197, 206, 0.45));
-  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+.krypton-prompt-dialog__target-chip--loading .krypton-prompt-dialog__chip-cwd {
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
 }
 
+.krypton-prompt-dialog__chip-pid {
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+  font-variant-numeric: tabular-nums;
+}
+
+/* "N avail" is a small readout let into the plate. */
 .krypton-prompt-dialog__chip-count {
-  color: var(--krypton-prompt-accent, #c77dff);
-  background: rgba(199, 125, 255, 0.1);
   padding: 1px 6px;
   border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+  font-variant-numeric: tabular-nums;
 }
 
 .krypton-prompt-dialog__chip-spacer {
@@ -368,85 +422,108 @@
 }
 
 .krypton-prompt-dialog__chip-switch {
-  background: transparent;
-  border: 1px solid rgba(199, 125, 255, 0.3);
+  min-height: 24px;
+  padding: 2px 10px;
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
-  color: var(--krypton-prompt-accent, #c77dff);
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+  text-shadow: var(--mat-print);
   font-family: inherit;
   font-size: var(--krypton-chrome-font-size, 11px);
-  padding: 2px 8px;
   cursor: pointer;
-  transition: background 0.08s ease, border-color 0.08s ease;
 }
 
 .krypton-prompt-dialog__chip-switch:hover {
-  background: rgba(199, 125, 255, 0.1);
-  border-color: rgba(199, 125, 255, 0.55);
+  background: var(--mat-key-hover);
 }
 
-/* ─── Picker ─── */
+.krypton-prompt-dialog__chip-switch:active {
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
+  color: var(--mat-lit);
+  transform: translateY(1px);
+}
+
+.krypton-prompt-dialog__chip-switch:focus-visible {
+  outline: 1px solid var(--mat-lit);
+  outline-offset: 2px;
+}
+
+/* ─── Picker ───
+   The session list is one well: its heading is printed inside in ink (an
+   engraving belongs on the plate, not in a well), the rows are flat and split
+   by grooves, the selected row takes the full-row tint (ADR-0027). */
 .krypton-prompt-dialog__picker {
   max-height: 260px;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(199, 125, 255, 0.22) transparent;
-  border-bottom: 1px solid var(--krypton-prompt-border, rgba(199, 125, 255, 0.22));
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-prompt-dialog__picker-header {
-  padding: 8px 12px 6px;
+  padding: 7px 12px 5px;
+  border-bottom: 1px solid var(--mat-groove-lo);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-weight: 600;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: var(--krypton-prompt-accent, #c77dff);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
 .krypton-prompt-dialog__picker-empty {
-  padding: 10px 14px 16px;
+  padding: 12px 14px 16px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: var(--krypton-prompt-dim, rgba(192, 197, 206, 0.55));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
 .krypton-prompt-dialog__picker-empty code {
-  color: var(--krypton-prompt-accent, #c77dff);
-  background: rgba(199, 125, 255, 0.08);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+  background: var(--mat-well-fill);
+  border: 1px solid var(--mat-groove-lo);
+  border-radius: 4px;
   padding: 0 4px;
 }
 
+/* A repeated row: no shadow, no gradient — one groove and the tint. */
 .krypton-prompt-dialog__picker-row {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 5px 12px;
   cursor: pointer;
+  border-bottom: 1px solid var(--mat-groove-lo);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
-  transition: background 0.06s ease;
+}
+
+.krypton-prompt-dialog__picker-row:last-child {
+  border-bottom: 0;
 }
 
 .krypton-prompt-dialog__picker-row:hover {
-  background: rgba(199, 125, 255, 0.05);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
 }
 
 .krypton-prompt-dialog__picker-row.is-selected {
-  background: rgba(199, 125, 255, 0.12);
+  background: var(--mat-select);
 }
 
 .krypton-prompt-dialog__picker-hotkey {
   flex-shrink: 0;
-  color: var(--krypton-prompt-accent, #c77dff);
-  background: rgba(199, 125, 255, 0.1);
-  padding: 1px 5px;
   min-width: 20px;
-  text-align: center;
+  color: var(--mat-silk);
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .krypton-prompt-dialog__picker-proc {
-  color: var(--krypton-prompt-accent, #c77dff);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -454,47 +531,50 @@
 
 .krypton-prompt-dialog__picker-cwd {
   flex: 1;
-  color: var(--krypton-prompt-text, #c0c5ce);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .krypton-prompt-dialog__picker-pid {
-  color: var(--krypton-prompt-dim, rgba(192, 197, 206, 0.45));
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+  font-variant-numeric: tabular-nums;
 }
 
 .krypton-prompt-dialog__picker-last {
-  color: var(--krypton-prompt-accent, #c77dff);
+  color: var(--mat-silk);
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
-  opacity: 0.75;
 }
 
-/* ─── Textarea ─── */
+/* ─── Textarea ─── the draft is an input well. */
 .krypton-prompt-dialog__textarea {
   display: block;
   width: 100%;
   resize: none;
   border: none;
   outline: none;
-  background: transparent;
-  color: var(--krypton-prompt-text, #e0e5ee);
-  caret-color: var(--krypton-prompt-accent, #c77dff);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  color: var(--krypton-fg, #b0c4d8);
+  caret-color: var(--krypton-cursor);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size);
   line-height: 1.5;
-  padding: 12px 14px;
+  padding: 10px 12px;
   box-sizing: border-box;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(199, 125, 255, 0.2) transparent;
 }
 
 .krypton-prompt-dialog__textarea::placeholder {
-  color: var(--krypton-prompt-dim, rgba(192, 197, 206, 0.35));
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   font-style: italic;
 }
 
-/* ─── Mention popup ─── */
+/* ─── Mention popup ───
+   The completion list hangs off the draft well, so it is a well too — one
+   that floats: the well over a solid underlay (it must hide the draft under
+   it, DESIGN.md "Transparency hierarchy") with the one cast shadow. */
 .krypton-prompt-dialog__mention-popup {
   position: absolute;
   z-index: 1;
@@ -502,13 +582,10 @@
   max-width: 520px;
   max-height: 240px;
   overflow-y: auto;
-  background: rgba(8, 6, 14, 0.98);
-  border: 1px solid rgba(199, 125, 255, 0.4);
+  background: var(--mat-well), var(--agent-surface-solid, rgba(10, 12, 16, 0.96));
   border-radius: var(--krypton-border-radius, 8px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--mat-well-shadow), var(--mat-cast);
   display: none;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(199, 125, 255, 0.25) transparent;
 }
 
 .krypton-prompt-dialog__mention-popup--visible {
@@ -516,49 +593,49 @@
 }
 
 .krypton-prompt-dialog__mention-row {
-  padding: 4px 10px;
-  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-chrome-font-size, 11px);
-  color: var(--krypton-prompt-text, #c0c5ce);
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: background 0.05s ease;
-}
-
-.krypton-prompt-dialog__mention-row:hover {
-  background: rgba(199, 125, 255, 0.06);
-}
-
-.krypton-prompt-dialog__mention-row.is-selected {
-  background: rgba(199, 125, 255, 0.14);
-}
-
-.krypton-prompt-dialog__mention-row .hl {
-  color: var(--krypton-prompt-accent, #c77dff);
-  font-weight: 700;
-}
-
-.krypton-prompt-dialog__mention-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--mat-groove-lo);
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.krypton-prompt-dialog__mention-row:last-child {
+  border-bottom: 0;
+}
+
+.krypton-prompt-dialog__mention-row:hover {
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
+}
+
+.krypton-prompt-dialog__mention-row.is-selected {
+  background: var(--mat-select);
+}
+
+.krypton-prompt-dialog__mention-row .hl {
+  color: var(--mat-lit);
+  font-weight: 700;
 }
 
 .krypton-prompt-dialog__mention-row--selection {
-  color: var(--krypton-prompt-accent, #c77dff);
+  color: var(--mat-silk);
 }
 
 .krypton-prompt-dialog__mention-row--selection::before {
   content: '◆';
   margin-right: 6px;
-  opacity: 0.8;
 }
 
 .krypton-prompt-dialog__mention-hint {
-  color: var(--krypton-prompt-dim, rgba(192, 197, 206, 0.45));
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
   flex-shrink: 0;
 }
@@ -568,8 +645,7 @@
   display: none;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  border-top: 1px solid var(--krypton-prompt-border, rgba(199, 125, 255, 0.18));
+  padding: 2px;
 }
 
 .krypton-prompt-dialog__staged-thumb-wrap {
@@ -582,9 +658,10 @@
   height: 40px;
   object-fit: cover;
   border-radius: var(--krypton-border-radius, 8px);
-  border: 1px solid rgba(199, 125, 255, 0.3);
+  border: 1px solid var(--mat-key-edge);
 }
 
+/* The remove button is a tiny fault-coloured key. */
 .krypton-prompt-dialog__staged-remove {
   position: absolute;
   top: -4px;
@@ -592,11 +669,11 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: none;
-  background: rgba(255, 80, 80, 0.85);
-  color: #fff;
+  border: 1px solid var(--mat-key-edge);
+  background: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+  color: var(--krypton-bg, #fff);
   font-size: 11px;
-  line-height: 16px;
+  line-height: 14px;
   text-align: center;
   padding: 0;
   cursor: pointer;
@@ -608,41 +685,77 @@
   opacity: 1;
 }
 
+/* A drop target: the plate edge lights amber, no glow. */
 .krypton-prompt-dialog__panel--drag-over {
-  border-color: rgba(199, 125, 255, 0.8);
-  box-shadow:
-    0 0 30px rgba(199, 125, 255, 0.25),
-    0 8px 32px rgba(0, 0, 0, 0.55);
+  border-color: var(--mat-lit);
 }
 
-/* ─── Footer ─── */
+/* ─── Footer ─── the key hints are printed legend on the plate. */
 .krypton-prompt-dialog__footer {
   display: flex;
   gap: 14px;
-  padding: 6px 12px;
-  border-top: 1px solid var(--krypton-prompt-border, rgba(199, 125, 255, 0.18));
+  padding: 0 2px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
-  color: var(--krypton-prompt-dim, rgba(192, 197, 206, 0.45));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  text-shadow: var(--mat-print);
   letter-spacing: 0.06em;
 }
 
-/* ─── Target window flash (triggered by Compositor.flashWindow) ─── */
+/* Scrollbars (DESIGN.md "Scrollbars"): 8px, transparent track, ink thumb. */
+.krypton-prompt-dialog__picker::-webkit-scrollbar,
+.krypton-prompt-dialog__textarea::-webkit-scrollbar,
+.krypton-prompt-dialog__mention-popup::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.krypton-prompt-dialog__picker::-webkit-scrollbar-track,
+.krypton-prompt-dialog__textarea::-webkit-scrollbar-track,
+.krypton-prompt-dialog__mention-popup::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.krypton-prompt-dialog__picker::-webkit-scrollbar-thumb,
+.krypton-prompt-dialog__textarea::-webkit-scrollbar-thumb,
+.krypton-prompt-dialog__mention-popup::-webkit-scrollbar-thumb {
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+  border-radius: 8px;
+}
+
+.krypton-prompt-dialog__picker::-webkit-scrollbar-thumb:hover,
+.krypton-prompt-dialog__textarea::-webkit-scrollbar-thumb:hover,
+.krypton-prompt-dialog__mention-popup::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.32);
+}
+
+/* ─── Target window flash (triggered by Compositor.flashWindow) ───
+   A one-shot lamp flash: the window's edge lights amber and goes out. The
+   ring is a hard 1px/2px spread, not a blurred glow; the window's own border
+   and shadow (window.css) return when the animation ends. */
 @keyframes krypton-window-flash {
   0% {
-    box-shadow: 0 0 0 0 rgba(199, 125, 255, 0);
-    border-color: var(--krypton-window-border, rgba(0, 200, 255, 0.25));
+    border-color: var(--mat-key-edge);
+    outline-color: transparent;
   }
   30% {
-    box-shadow: 0 0 24px 4px rgba(199, 125, 255, 0.55);
-    border-color: rgba(199, 125, 255, 0.9);
+    border-color: var(--mat-lit);
+    outline-color: var(--mat-lit);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(199, 125, 255, 0);
-    border-color: var(--krypton-window-border, rgba(0, 200, 255, 0.25));
+    border-color: var(--mat-key-edge);
+    outline-color: transparent;
   }
 }
 
 .krypton-window--flash {
+  outline: 2px solid transparent;
+  outline-offset: 1px;
   animation: krypton-window-flash 600ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .krypton-prompt-dialog__panel--shake {
+    animation: none;
+  }
 }

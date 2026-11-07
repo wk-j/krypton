@@ -1,7 +1,13 @@
 /* ─── Progress Gauge (OSC 9;4) ─── */
-/* Large centered arc gauge rendered behind terminal content as a HUD background */
+/* Large centred arc gauge behind terminal content (DESIGN.md "Gauges and
+   progress"): a recessed well track with a flat fill, its value a readout in
+   the centre and its label engraved under it. No glow, no sweep, no orbit.
+   The fill takes `--x-rgb`: the window accent while running, the warning and
+   danger tokens while paused or errored. Faint on purpose: it sits under the
+   terminal text. */
 
 .krypton-progress-gauge {
+  --x-rgb: var(--krypton-window-accent-rgb, 0, 204, 255);
   position: absolute;
   top: 50%;
   left: 50%;
@@ -18,43 +24,50 @@
   opacity: 1;
 }
 
+.krypton-progress-gauge--error {
+  --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+}
+
+.krypton-progress-gauge--paused {
+  --x-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+}
+
 .krypton-progress-gauge__svg {
   width: 100%;
   height: 100%;
   overflow: visible;
-  filter:
-    drop-shadow(0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5))
-    drop-shadow(0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15));
 }
 
+/* The well: a dark recessed groove. */
 .krypton-progress-gauge__track {
   fill: none;
-  stroke: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.06);
-  stroke-width: 3;
+  stroke: var(--mat-well-fill);
+  stroke-width: 5;
 }
 
 .krypton-progress-gauge__fill {
   fill: none;
-  stroke: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.2);
-  stroke-width: 4;
+  stroke: rgba(var(--x-rgb), 0.28);
+  stroke-width: 3;
   stroke-linecap: round;
   transition: stroke-dasharray 300ms ease-out;
 }
 
-/* Percentage text centered inside the gauge — font-size in SVG user units (viewBox is 100x100) */
+/* Percentage readout centred inside the gauge — font-size in SVG user units
+   (viewBox is 100x100). */
 .krypton-progress-gauge__pct {
-  fill: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
+  fill: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
   font-size: 18px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   text-anchor: middle;
   dominant-baseline: central;
-  transition: fill 0.3s ease;
 }
 
-/* Smaller status label below percentage ("LOADING", "ERROR", "PAUSED") */
+/* Engraved status label below the percentage ("LOADING", "ERROR", "PAUSED"). */
 .krypton-progress-gauge__label {
-  fill: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.08);
+  fill: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.12);
   font-size: 8px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-weight: 600;
@@ -64,70 +77,31 @@
   text-transform: uppercase;
 }
 
-/* ── Normal state ────────────────────────────── */
-/* (default styles above) */
-
-/* ── Error state ─────────────────────────────── */
-.krypton-progress-gauge--error .krypton-progress-gauge__fill {
-  stroke: rgba(255, 51, 102, 0.25);
-}
-
-.krypton-progress-gauge--error .krypton-progress-gauge__track {
-  stroke: rgba(255, 51, 102, 0.06);
-}
-
-.krypton-progress-gauge--error .krypton-progress-gauge__pct {
-  fill: rgba(255, 51, 102, 0.15);
-}
-
-.krypton-progress-gauge--error .krypton-progress-gauge__label {
-  fill: rgba(255, 51, 102, 0.1);
-}
-
-.krypton-progress-gauge--error .krypton-progress-gauge__svg {
-  filter:
-    drop-shadow(0 0 6px rgba(255, 51, 102, 0.5))
-    drop-shadow(0 0 20px rgba(255, 51, 102, 0.15));
-}
-
-/* ── Paused state ────────────────────────────── */
-.krypton-progress-gauge--paused .krypton-progress-gauge__fill {
-  stroke: rgba(255, 170, 0, 0.2);
-}
-
-.krypton-progress-gauge--paused .krypton-progress-gauge__track {
-  stroke: rgba(255, 170, 0, 0.06);
-}
-
-.krypton-progress-gauge--paused .krypton-progress-gauge__pct {
-  fill: rgba(255, 170, 0, 0.12);
-}
-
+.krypton-progress-gauge--error .krypton-progress-gauge__pct,
+.krypton-progress-gauge--error .krypton-progress-gauge__label,
+.krypton-progress-gauge--paused .krypton-progress-gauge__pct,
 .krypton-progress-gauge--paused .krypton-progress-gauge__label {
-  fill: rgba(255, 170, 0, 0.08);
-}
-
-.krypton-progress-gauge--paused .krypton-progress-gauge__svg {
-  filter:
-    drop-shadow(0 0 6px rgba(255, 170, 0, 0.4))
-    drop-shadow(0 0 20px rgba(255, 170, 0, 0.1));
+  fill: rgba(var(--x-rgb), 0.2);
 }
 
 /* ── Indeterminate state ─────────────────────── */
+/* No orbit: indeterminate work is a steady lit lamp and a label (DESIGN.md).
+   The titlebar LED carries it (`--progress` below); the ring shows only its
+   track and label. */
 .krypton-progress-gauge--indeterminate .krypton-progress-gauge__fill {
-  animation: krypton-gauge-orbit 1.8s linear infinite;
-  transform-origin: 50px 50px;
+  stroke: none;
 }
 
 /* [visual] progress_gauge_working = false — no ring while busy (spec 364).
-   display:none also stops the infinite orbit; the titlebar sweep stays. */
+   The titlebar LED stays lit. */
 .krypton-no-working-gauge .krypton-progress-gauge--indeterminate {
   display: none;
 }
 
-/* ── Completion flare ────────────────────────── */
-.krypton-progress-gauge--flare .krypton-progress-gauge__svg {
-  animation: krypton-gauge-flare 0.8s ease-out forwards;
+/* ── Completion ──────────────────────────────── */
+/* A one-shot fill flash (≤600ms), then the 1.5s fade-out. */
+.krypton-progress-gauge--flare .krypton-progress-gauge__fill {
+  animation: krypton-gauge-flare 0.6s ease-out forwards;
 }
 
 .krypton-progress-gauge--fade-out {
@@ -135,65 +109,28 @@
   transition: opacity 1.5s ease-out;
 }
 
-@keyframes krypton-gauge-orbit {
-  0%   { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
 @keyframes krypton-gauge-flare {
-  0%   {
-    filter: drop-shadow(0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5))
-            drop-shadow(0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15));
-  }
-  50%  {
-    filter: drop-shadow(0 0 15px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.9))
-            drop-shadow(0 0 40px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4));
-  }
-  100% {
-    filter: drop-shadow(0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5))
-            drop-shadow(0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15));
+  0%   { stroke: rgba(var(--x-rgb), 0.28); }
+  40%  { stroke: rgba(var(--x-rgb), 0.6); }
+  100% { stroke: rgba(var(--x-rgb), 0.28); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .krypton-progress-gauge--flare .krypton-progress-gauge__fill {
+    animation: none;
   }
 }
 
-/* ── Titlebar scanline sweep (secondary cue) ── */
-/* Do not set overflow on `.krypton-window__titlebar` here. window.css owns
-   `overflow: hidden` so the session mark stays in the 28px rail (spec 226)
-   and the OSC 9;4 sweep stays in the rail. The sweep is `inset: 0` +
-   translateX. */
-
-.krypton-window__titlebar--progress::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12) 40%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2) 50%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12) 60%,
-    transparent 100%
-  );
-  animation: krypton-scanline-sweep 2.5s linear infinite;
-  pointer-events: none;
+/* ── Titlebar cue (secondary) ── */
+/* While OSC 9;4 progress runs, the titlebar LED is lit steadily (window.css
+   lights `.krypton-window__titlebar--progress .krypton-window__status-dot`);
+   error and paused re-colour it. Do not set overflow on
+   `.krypton-window__titlebar` here: window.css owns `overflow: hidden` so the
+   session mark stays in the 28px rail (spec 226). */
+.krypton-window__titlebar--progress-error .krypton-window__status-dot {
+  --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
 }
 
-.krypton-window__titlebar--progress-error::after {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 51, 102, 0.12) 40%,
-    rgba(255, 51, 102, 0.2) 50%,
-    rgba(255, 51, 102, 0.12) 60%,
-    transparent 100%
-  );
+.krypton-window__titlebar--progress-paused .krypton-window__status-dot {
+  --x-rgb: var(--krypton-warning-rgb, 232, 197, 71);
 }
-
-.krypton-window__titlebar--progress-paused::after {
-  animation-play-state: paused;
-}
-
-@keyframes krypton-scanline-sweep {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(200%); }
-}
-

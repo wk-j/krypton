@@ -5,6 +5,7 @@
 > Milestone: M8 — Polish
 >
 > Enhancements (in-doc search, heading hints, image fix, focus indicator, re-select guard): see `docs/0137-markdown-viewer-search-hints-images.md`.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): path line, file list and status bar become plate, well and readout.
 
 ## Problem
 

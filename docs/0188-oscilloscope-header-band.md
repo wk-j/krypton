@@ -7,6 +7,7 @@
 > **Resolved (2026-07-05):** (1) unfocused windows **do** animate (idle-stops when quiet),
 > so the band signals background activity. (2) The `chrome.header_accent.style` config toggle
 > (`ticks | oscilloscope`, default `oscilloscope`) ships in v1 for reversibility.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): band redrawn as a display well; trace behaviour unchanged.
 
 ## Problem
 

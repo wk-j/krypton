@@ -5,6 +5,7 @@
 > Milestone: ACP Harness polish
 > Prototype: `art-78-211cbee0` (`Harness Prompt Layer Animation`) — timing and
 > controls only; the expanding ellipse boom is **not** shipped.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): composer is a plate with a draft well; no text glows.
 
 ## Problem
 

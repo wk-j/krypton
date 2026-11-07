@@ -1,60 +1,40 @@
 /* Spec 306 addendum — `GrammarPanel`.
 
-   The thought card's family: same surface, border, radius and head rule, so
-   the two read as siblings in the 320px rail column. Slot geometry
-   (`[data-slot="grammar"]`) lives in harness-shared.css with the other rail
-   slots. Colours are variable-driven; no `krypton.scheme` layer needed. */
+   Spec 366 (DESIGN.md "Harness"): the thought card's sibling in the 320px rail
+   column — the same small plate, the lane name engraved in its head and the
+   check in a recessed well. Slot geometry (`[data-slot="grammar"]`) lives in
+   harness-shared.css with the other rail slots.
+
+   The status is a capsule: lit amber and STEADY while the check runs or has
+   fixes to offer, unlit when the prompt is clean. Suggested fixes are the
+   model's findings (ADR-0004): marked in amber silk, not pass/fail. The diff
+   itself keeps its removed / added inks so the change reads at a glance. */
 
 @layer krypton.component {
-  /* Phase palette. Every colour on the card derives from these four, so a
-     theme overrides them in one place. */
   .acp-harness__grammar {
     --grammar-del: var(--agent-error, #ff6d8a);
     --grammar-add: var(--agent-green, #8effb0);
-    --grammar-warn: #ffcc66;
-    --grammar-tone: var(--krypton-accent, #00ccff);
 
     position: relative;
     width: 100%;
     display: flex;
     flex-direction: column;
     min-height: 0;
-    padding: 8px 12px 7px;
-    background:
-      linear-gradient(180deg, color-mix(in srgb, var(--grammar-tone) 10%, transparent), transparent 48px),
-      var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
-    border: 1px solid color-mix(in srgb, var(--grammar-tone) 38%, transparent);
+    padding: 8px 10px 8px;
+    background: var(--mat-brush), var(--mat-plate), var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    box-shadow:
-      0 8px 24px rgba(0, 0, 0, 0.4),
-      0 0 18px color-mix(in srgb, var(--grammar-tone) 14%, transparent);
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
     font-family: var(--agent-font, var(--krypton-font-family, monospace));
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
     pointer-events: auto;
-    transition: border-color 180ms ease, box-shadow 180ms ease;
-  }
-
-  .acp-harness__grammar[data-phase="pending"] { --grammar-tone: var(--krypton-accent, #00ccff); }
-  .acp-harness__grammar[data-phase="fixes"] { --grammar-tone: var(--grammar-warn); }
-  .acp-harness__grammar[data-phase="ok"] { --grammar-tone: var(--grammar-add); }
-
-  /* Checking: the status pill pulses. */
-  .acp-harness__grammar[data-phase="pending"] .acp-harness__grammar-label {
-    animation: acp-harness-grammar-pulse 1.1s ease-in-out infinite;
-  }
-
-  @keyframes acp-harness-grammar-pulse {
-    0%, 100% { opacity: 0.45; }
-    50% { opacity: 1; }
   }
 
   .acp-harness__grammar-head {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
-    padding-bottom: 4px;
-    margin-bottom: 4px;
-    border-bottom: 1px solid color-mix(in srgb, var(--grammar-tone) 22%, transparent);
+    padding: 0 2px 6px;
     flex: 0 0 auto;
   }
 
@@ -64,23 +44,43 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--acp-lane-ink, var(--acp-lane-accent, #00ccff));
+    color: var(--mat-silk);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-shadow: var(--mat-engrave);
   }
 
-  /* Status as a tinted pill in the phase colour. */
+  /* Status: an unlit capsule … */
   .acp-harness__grammar-label {
-    padding: 0 6px;
+    padding: 0 7px;
+    border: 1px solid var(--mat-groove-lo);
     border-radius: 999px;
-    background: color-mix(in srgb, var(--grammar-tone) 16%, transparent);
-    color: var(--grammar-tone);
+    background: var(--mat-well-fill);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: var(--krypton-chrome-font-size, 11px);
-    letter-spacing: 0.06em;
+    letter-spacing: 0.09em;
+    line-height: 1.4;
     text-transform: uppercase;
     white-space: nowrap;
   }
 
+  /* … lit amber while checking or holding fixes. */
+  .acp-harness__grammar[data-phase="pending"] .acp-harness__grammar-label,
+  .acp-harness__grammar[data-phase="fixes"] .acp-harness__grammar-label {
+    border-color: rgba(255, 176, 0, 0.5);
+    background: radial-gradient(ellipse at 50% 0%, rgba(255, 176, 0, 0.3), rgba(255, 176, 0, 0.07) 75%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(255, 176, 0, 0.22);
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
+  }
+
+  /* The check sits in a well. */
   .acp-harness__grammar-body {
     min-height: 0;
+    padding: 5px 8px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -90,12 +90,12 @@
   }
 
   .acp-harness__grammar-original {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-style: italic;
   }
 
   .acp-harness__grammar-ok {
-    color: var(--grammar-add);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
   }
 
   .acp-harness__grammar-fixes {
@@ -105,15 +105,16 @@
   }
 
   .acp-harness__grammar-fix {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
   .acp-harness__grammar-fix::before {
     content: '• ';
-    color: var(--grammar-warn);
+    color: var(--mat-silk);
   }
 
-  /* Diff colouring: removed text red and struck, added text green. */
+  /* Diff colouring: removed text struck in the error ink, added text in the
+     theme green. */
   .acp-harness__grammar-wrong {
     padding: 0 2px;
     border-radius: 2px;
@@ -124,7 +125,7 @@
   }
 
   .acp-harness__grammar-arrow {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
   .acp-harness__grammar-right {
@@ -134,14 +135,14 @@
     color: var(--grammar-add);
   }
 
-  /* The corrected prompt: plain full-brightness text, no box of its own. */
+  /* The corrected prompt: plain full-ink text, no box of its own. */
   .acp-harness__grammar-corrected {
     margin: 2px 0 6px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.96);
+    color: var(--krypton-fg, #d8e8d8);
   }
 
   .acp-harness__grammar-hint {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.04em;
     white-space: nowrap;
@@ -149,18 +150,16 @@
     text-overflow: ellipsis;
   }
 
+  /* A shortcut is a key cap. */
   .acp-harness__grammar-key {
     padding: 0 4px;
-    border: 1px solid color-mix(in srgb, var(--acp-lane-accent, #00ccff) 45%, transparent);
-    border-radius: 3px;
-    color: var(--acp-lane-ink, var(--acp-lane-accent, #00ccff));
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 4px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
     font-family: inherit;
     font-size: inherit;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .acp-harness__grammar[data-phase="pending"] .acp-harness__grammar-label {
-      animation: none;
-    }
+    text-shadow: var(--mat-print);
   }
 }

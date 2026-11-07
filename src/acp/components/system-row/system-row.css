@@ -1,12 +1,16 @@
 /* Spec 302 §3.14 — the two `system` row variants that carry their own rules.
 
    Copied VERBATIM from src/styles/acp-harness.css: the
-   `.acp-harness__msg--harness-event .acp-harness__msg-label` +
-   `.acp-harness__harness-event-body` pair that sits between the
+   `.acp-harness__harness-event-body` rule that sat between the
    `__lane-mail-logo--*` list and `__lane-mail-provenance`, and the
-   `.acp-harness__msg--hidden-indicator` trio that sits between
+   `.acp-harness__msg--hidden-indicator` trio that sat between
    `.acp-harness__msg--shell.acp-harness__msg--pending …` and
    `.acp-harness__tool`.
+
+   Spec 366: both are flat rows on the screen under the shared silk row label
+   (the harness-event label no longer takes its own violet). Secondary text
+   reads at the ink tiers, never via opacity, and the hidden-content note
+   carries no left-edge rule (ADR-0027).
 
    The plain variant has no rules of its own — it is `.acp-harness__msg` and
    `.acp-harness__msg-body`, which belong to the row chrome, not to this kind.
@@ -15,19 +19,14 @@
    selector family. */
 
 @layer krypton.component {
-  .acp-harness__msg--harness-event .acp-harness__msg-label {
-    color: rgba(184, 166, 255, 0.75);
-  }
-
   .acp-harness__harness-event-body {
     font-size: 0.86em;
-    color: rgba(184, 166, 255, 0.65);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
     letter-spacing: 0.02em;
   }
 
   .acp-harness__msg--hidden-indicator {
     display: block;
-    opacity: 0.55;
     font-size: 0.78em;
     font-style: italic;
     letter-spacing: 0.02em;
@@ -40,8 +39,6 @@
   }
 
   .acp-harness__msg--hidden-indicator .acp-harness__msg-body {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
-    border-left: 1px dashed rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.25);
-    padding-left: 8px;
+    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   }
 }

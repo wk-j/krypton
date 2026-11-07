@@ -1,23 +1,25 @@
 /* Spec 302 §5.3 — `HeatPanel`.
-   Carved VERBATIM from src/styles/acp-harness.css:1529-1707 (the
-   `Slice 109 — lane-pair activity heat (peek rail)` span, including its
-   `prefers-reduced-motion` tail). Delete that range when this directory is
-   registered.
+   Carved from src/styles/acp-harness.css (the `Slice 109 — lane-pair activity
+   heat (peek rail)` span).
 
    `acp-harness__lane-peek-heat-root` is the panel's own root element, not a
    slot the peek card owns: `renderLanePeek` emitted an empty div and the view
    filled it. The component IS that div, so the whole `-heat*` family belongs
    here even though it shares the `-lane-peek` prefix.
 
-   theme-scheme.css declares no light-mode rule for any `lane-peek` selector,
-   so there is no `krypton.scheme` layer in this file. */
+   Spec 366 (DESIGN.md "Gauges and progress"): the panel sits on the peek
+   card's plate behind an etched groove. Each side's heat is a gauge — a 4px
+   well track with a flat fill in the lane's own accent (set inline as
+   `--acp-peek-heat-active` / `--acp-peek-heat-peek`) and a 1px top highlight,
+   no glow — and its score a tabular readout. */
 
 @layer krypton.component {
   /* Slice 109 — lane-pair activity heat (peek rail) */
   .acp-harness__lane-peek-heat-root {
     margin-top: 5px;
-    padding-top: 5px;
-    border-top: 1px solid rgba(12, 255, 255, 0.12);
+    padding-top: 6px;
+    border-top: 1px solid var(--mat-groove-lo);
+    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
   }
 
   .acp-harness__lane-peek-heat {
@@ -33,30 +35,36 @@
   }
 
   .acp-harness__lane-peek-heat-prefix {
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
+    color: var(--mat-silk);
     font-weight: 600;
+    letter-spacing: 0.13em;
+    text-shadow: var(--mat-engrave);
+    text-transform: uppercase;
   }
 
   .acp-harness__lane-peek-heat-cmd {
     font: inherit;
     letter-spacing: 0.04em;
-    color: var(--acp-peek-accent, var(--agent-accent, #8effb0));
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
     background: transparent;
     border: none;
-    border-bottom: 1px dashed rgba(142, 255, 176, 0.35);
+    border-bottom: 1px dashed rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.35);
     padding: 0;
     cursor: pointer;
   }
 
   .acp-harness__lane-peek-heat-cmd:hover {
-    color: #fff;
-    border-bottom-color: rgba(142, 255, 176, 0.65);
+    color: var(--mat-lit);
+    border-bottom-color: var(--mat-lit);
+  }
+
+  .acp-harness__lane-peek-heat-cmd:focus-visible {
+    outline: 1px solid var(--mat-lit);
+    outline-offset: 2px;
   }
 
   .acp-harness__lane-peek-heat-sep {
-    opacity: 0.35;
+    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
   }
 
   .acp-harness__lane-peek-heat-bars {
@@ -77,31 +85,32 @@
     font-weight: 700;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     margin-bottom: 2px;
   }
 
   .acp-harness__lane-peek-heat-tag--active {
-    color: color-mix(in srgb, var(--acp-peek-heat-active, #0cf) 85%, white);
+    color: var(--acp-peek-heat-active, var(--krypton-accent, #0cf));
   }
 
   .acp-harness__lane-peek-heat-tag--peek {
-    color: color-mix(in srgb, var(--acp-peek-heat-peek, #c77dff) 85%, white);
+    color: var(--acp-peek-heat-peek, rgb(var(--krypton-special-rgb, 199, 125, 255)));
   }
 
   .acp-harness__lane-peek-heat-bar-row {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
   }
 
   .acp-harness__lane-peek-heat-track {
     flex: 1 1 56px;
-    height: 8px;
-    background: rgba(0, 0, 0, 0.35);
+    height: 4px;
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
     position: relative;
     min-width: 48px;
-    border-radius: var(--krypton-border-radius, 8px);
+    border-radius: 999px;
     overflow: hidden;
   }
 
@@ -111,35 +120,35 @@
     left: 0;
     bottom: 0;
     width: 0%;
+    border-radius: inherit;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
   }
 
   .acp-harness__lane-peek-heat-fill--active {
-    background: linear-gradient(
-      90deg,
-      var(--acp-peek-heat-active, #0cf),
-      color-mix(in srgb, var(--acp-peek-heat-active, #0cf) 55%, transparent)
-    );
+    background: var(--acp-peek-heat-active, var(--krypton-accent, #0cf));
   }
 
   .acp-harness__lane-peek-heat-fill--peek {
-    background: linear-gradient(
-      90deg,
-      var(--acp-peek-heat-peek, #c77dff),
-      color-mix(in srgb, var(--acp-peek-heat-peek, #c77dff) 55%, transparent)
-    );
+    background: var(--acp-peek-heat-peek, rgb(var(--krypton-special-rgb, 199, 125, 255)));
   }
 
+  /* The score: a readout window at the right end of the gauge. */
   .acp-harness__lane-peek-heat-score {
+    min-width: 2ch;
+    padding: 0 4px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
     font-size: 0.95em;
     font-weight: 600;
-    min-width: 2ch;
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.75));
+    text-align: right;
   }
 
   .acp-harness__lane-peek-heat-delta {
     flex: 1 1 100%;
     font-size: 0.82em;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -175,15 +184,15 @@
   .acp-harness__lane-peek-heat-table th,
   .acp-harness__lane-peek-heat-table td {
     padding: 3px 6px 3px 0;
-    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
+    border-bottom: 1px solid var(--mat-groove-lo);
     text-align: left;
   }
 
   .acp-harness__lane-peek-heat-table tr:first-child th {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    color: var(--mat-silk);
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.13em;
     font-size: 0.85em;
   }
 
@@ -194,8 +203,8 @@
   }
 }
 
-/* Spec 321 — on a light field the lightened tag is unreadable; cap the
-   accent's OKLCH lightness instead (vars are set inline on the panel root). */
+/* Spec 321 — on a light field a raw lane accent as text is too pale; cap its
+   OKLCH lightness (the vars are set inline on the panel root). */
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness__lane-peek-heat-tag--active {
     color: oklch(from var(--acp-peek-heat-active, #007799) min(l, var(--krypton-accent-l-max)) c h);

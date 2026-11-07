@@ -4,6 +4,7 @@
 > Date: 2026-09-14
 > Milestone: Post-M-current polish
 > Note (2026-10-31): [0349](./0349-unified-search-palette-tabs.md) replaced `CommandPalette` and `Mode.CommandPalette` with the tabbed `SearchPalette` (`src/search-palette.ts`, `Mode.SearchPalette`); `src/command-palette.ts` now holds only `CommandScope`. The Research and Data Flow below predate that and need revising before implementation.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): switcher is a floating plate; selected-row glow removed.
 
 ## Problem
 

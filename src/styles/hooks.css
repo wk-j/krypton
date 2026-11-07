@@ -1,51 +1,34 @@
-/* ─── Claude Code Hook Integration ─── */
+/* ─── Claude Code Hook Integration ───
+   Instrument parts (DESIGN.md 2.0.0, spec 366): the presence badge is an LED,
+   the uplink a meter well, the tool HUD and activity trace readouts. Live
+   state is a steady lit lamp — no ping, no stream, no glow on the ticks. */
 
-/* ─── Claude Code Hook UI — Futuristic HUD ─── */
-
-/* 1. Sigil Badge (◈) — AI presence indicator in titlebar */
+/* 1. Presence LED — AI presence indicator in the titlebar. The element still
+   carries its ◈ text for the tooltip/accessibility tree; the LED hides it. */
 .krypton-claude-badge {
-  width: 14px;
-  height: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(255, 255, 255, 0.15);
+  --x-rgb: var(--krypton-window-accent-rgb, 0, 200, 255);
+  width: 6px;
+  height: 6px;
   flex-shrink: 0;
-  transition: color 0.4s ease, text-shadow 0.4s ease;
+  overflow: hidden;
+  border-radius: 50%;
+  font-size: 0;
+  color: transparent;
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.krypton-claude-badge--active {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
-  text-shadow:
-    0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5),
-    0 0 14px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
-}
-
+/* Active (a Claude session in this window) and working (a tool running): lit
+   steadily in the window accent. */
+.krypton-claude-badge--active,
 .krypton-claude-badge--working {
-  animation: krypton-sigil-ping 1.5s ease-out infinite;
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
 }
 
-@keyframes krypton-sigil-ping {
-  0% {
-    text-shadow:
-      0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6),
-      0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
-  }
-  40% {
-    text-shadow:
-      0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9),
-      0 0 20px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4),
-      0 0 36px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
-  }
-  100% {
-    text-shadow:
-      0 0 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6),
-      0 0 8px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
-  }
-}
-
-/* 2. Neural Uplink Bar — luminous strip at bottom of terminal content */
+/* 2. Uplink meter — a 2px well along the bottom of the terminal content: the
+   empty track while a session is active, filled flat in the accent while a
+   tool runs. An error flashes it in the danger colour once (600ms). */
 .krypton-uplink {
   position: absolute;
   bottom: 0;
@@ -56,7 +39,8 @@
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.4s ease;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+  background: var(--mat-well-fill);
+  box-shadow: inset 0 1px 0 var(--mat-well-wall);
 }
 
 .krypton-uplink--active {
@@ -65,36 +49,13 @@
 
 .krypton-uplink--working {
   opacity: 1;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 15%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8) 30%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 45%,
-    transparent 50%,
-    transparent 55%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 65%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6) 78%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 88%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  animation: krypton-uplink-stream 1.8s linear infinite;
-}
-
-.krypton-uplink--fast {
-  animation-duration: 0.9s;
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.55);
 }
 
 .krypton-uplink--error {
   opacity: 1;
-  background: rgba(255, 64, 64, 0.8);
+  background: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.8);
   animation: krypton-uplink-error 0.3s ease 2;
-}
-
-@keyframes krypton-uplink-stream {
-  0% { background-position: 100% 0; }
-  100% { background-position: -100% 0; }
 }
 
 @keyframes krypton-uplink-error {
@@ -102,11 +63,17 @@
   50% { opacity: 0.2; }
 }
 
-/* 3. Tool Execution HUD — decode-style readout in titlebar */
+@media (prefers-reduced-motion: reduce) {
+  .krypton-uplink--error {
+    animation: none;
+  }
+}
+
+/* 3. Tool HUD — a readout of the running tool in the titlebar. */
 .krypton-claude-tool {
   font-size: var(--krypton-chrome-font-size, 11px);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -121,13 +88,15 @@
   opacity: 1;
 }
 
+/* While the decode effect scrambles the name, it reads in the faint tier. */
 .krypton-claude-tool--decoding {
   max-width: 220px;
   opacity: 1;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35);
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
 }
 
-/* 5. Activity Trace — seismograph ticker on right edge of content area */
+/* 5. Activity trace — a column of flat tick segments on the right edge of the
+   content area, newest at the bottom. Each tick fades out (claude-hooks.ts). */
 .krypton-activity-trace {
   position: absolute;
   right: 0;
@@ -149,29 +118,25 @@
   width: 6px;
   height: 10px;
   flex-shrink: 0;
-  border-radius: var(--krypton-border-radius, 8px);
+  border-radius: 3px;
   opacity: 1;
   transition: opacity 1s linear, transform 0.3s ease;
-  box-shadow: 0 0 6px currentColor;
 }
 
-/* Tool-type tick colors */
+/* Tool-kind tick colours: edits in the window accent, shell in amber silk,
+   reads a faint accent, errors the danger colour. */
 .krypton-activity-trace__tick--edit {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
 }
 
 .krypton-activity-trace__tick--bash {
-  background: rgba(240, 160, 48, 0.9);
-  color: rgba(240, 160, 48, 0.5);
+  background: var(--mat-silk);
 }
 
 .krypton-activity-trace__tick--read {
   background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
 }
 
 .krypton-activity-trace__tick--error {
-  background: rgba(255, 64, 64, 0.9);
-  color: rgba(255, 64, 64, 0.5);
+  background: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.9);
 }

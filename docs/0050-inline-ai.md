@@ -7,6 +7,7 @@
 > Amended by: [0334](./0334-inline-ai-terminal-context.md) — `Cmd+K` attaches a `<terminal_context>` snapshot of the pane (selection, last commands from OSC 133 with exit codes, newest output or screen tail; secrets redacted) to the first prompt. `[inline_ai] context = false` turns it off.
 > Amended by: [0335](./0335-inline-ai-failure-follow-up.md) — accepting a command no longer ends the conversation: Krypton watches the command, and when it fails it asks the same session for a fix, shown on an `AI FIX` chip in the pane; `Cmd+K` in that pane reopens the overlay on it. `Enter` / `Shift+Enter` with nothing to insert (an error or a `NO_FIX` answer) do nothing. `[inline_ai] follow_up = false` turns it off.
 > Amended by: [0336](./0336-inline-ai-verify-on-pane-host.md) — both modes' instructions now require checking every fact with read-only commands before answering. In an SSH pane the agent gets `host_exec` to run read-only checks on that host; a `<pane_host>` block rides the first prompt, and the label shows `checks on <host>` or `no remote checks`. `[inline_ai] remote_checks = false` turns the SSH part off.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): inline AI is a floating plate; result glow removed.
 
 ## Problem
 

@@ -1,6 +1,11 @@
 /* Spec 302 §7.3 — `ModelPicker`.
    Carved verbatim from src/styles/acp-harness.css:6421-6505.
-   No scheme override exists for this block in theme-scheme.css. */
+
+   Spec 366 / DESIGN.md "Overlays and dialogs": one floating plate over the
+   scrim. The shell runs without a panel wrapper (head and list are direct
+   children of the root), so the root is a one-column grid and its `::before`
+   is the plate behind both rows: the head engraved on it, the models one
+   recessed well split by grooves. */
 
 @layer krypton.component {
   /* ── Model picker (spec 127) ──────────────────────────────── */
@@ -9,68 +14,81 @@
     position: absolute;
     inset: 0;
     z-index: 5;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: var(--agent-surface-high, rgba(4, 8, 13, 0.74));
+    display: grid;
+    grid-template-columns: min(clamp(360px, 46vw, 580px), calc(100% - 24px));
+    grid-template-rows: auto auto;
+    place-content: center;
+    background: var(--mat-scrim);
   }
 
   .acp-harness__model-picker[hidden] {
     display: none;
   }
 
-  .acp-harness__model-head,
-  .acp-harness__model-list {
-    width: clamp(360px, 46vw, 580px);
-    background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
-    border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
-    border-bottom: none;
+  /* The plate behind the head and the list. */
+  .acp-harness__model-picker::before {
+    content: '';
+    grid-area: 1 / 1 / 3 / 2;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-brush), var(--mat-plate);
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
   }
 
   .acp-harness__model-head {
-    border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
+    grid-area: 1 / 1;
     display: flex;
     justify-content: space-between;
+    align-items: baseline;
     gap: 10px;
-    padding: 7px 12px;
-    color: var(--krypton-window-accent, #0cf);
-    letter-spacing: 0.08em;
-    text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
+    min-width: 0;
+    padding: 9px 13px 8px;
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    text-shadow: var(--mat-engrave);
   }
 
   .acp-harness__model-head span:last-child {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
-    font-size: 0.84em;
-    text-shadow: none;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-weight: 400;
     letter-spacing: 0.04em;
+    text-transform: none;
   }
 
   .acp-harness__model-list {
+    grid-area: 2 / 1;
     list-style: none;
-    margin: 0;
-    padding: 6px 0;
+    min-width: 0;
+    margin: 0 9px 9px;
+    padding: 0;
     max-height: 52vh;
     overflow-y: auto;
-    border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
-    border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
+  /* A repeated row: one groove, the selection tint, nothing else. */
   .acp-harness__model-row {
     display: flex;
     flex-direction: column;
     gap: 2px;
     padding: 7px 14px;
+    border-bottom: 1px solid var(--mat-groove-lo);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84));
     cursor: default;
   }
 
+  .acp-harness__model-row:last-child {
+    border-bottom: 0;
+  }
+
   .acp-harness__model-row--active {
-    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
-    outline: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.5);
-    outline-offset: -1px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
+    background: var(--mat-select);
+    color: var(--krypton-fg, rgba(216, 232, 216, 0.98));
   }
 
   .acp-harness__model-name {
@@ -79,13 +97,13 @@
     gap: 8px;
   }
 
+  /* The lane's current model: an amber tick in the row, no glow. */
   .acp-harness__model-current {
-    color: var(--krypton-window-accent, #0cf);
-    text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.2);
+    color: var(--mat-silk);
   }
 
   .acp-harness__model-desc {
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.85em;
   }
 }

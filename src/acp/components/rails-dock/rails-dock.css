@@ -1,8 +1,9 @@
-/* Spec 337 §UI Content — `RailsDock`, in the console faceplate of
-   DESIGN.console.md. The root `.acp-harness__rails-dock` (position, width,
-   `hidden`) is the dock column's placement and lives with the harness layout,
-   which also declares the `--dock-*` material tokens this sheet reads; this
-   sheet declares only the `acp-rails-dock` content block.
+/* Spec 337 §UI Content — `RailsDock`, in the console faceplate of DESIGN.md
+   (Krypton Console). The root `.acp-harness__rails-dock` (position, width,
+   `hidden`) is the dock column's placement and lives with the harness layout;
+   the `--mat-*` material tokens this sheet reads are the root set in
+   src/styles/materials.css. This sheet declares only the `acp-rails-dock`
+   content block.
 
    Faceplate: section headings are engraved into the plate. The rows between
    two headings are slices of one recessed well — the first slice carries the
@@ -44,12 +45,12 @@
   .acp-rails-dock__row {
     margin: 0 8px;
     padding: 6px 10px;
-    border-bottom: 1px solid var(--dock-groove-lo);
-    background-color: var(--dock-well-fill);
+    border-bottom: 1px solid var(--mat-groove-lo);
+    background-color: var(--mat-well-fill);
     box-shadow:
-      inset 1px 0 0 var(--dock-well-wall),
-      inset -1px 0 0 var(--dock-well-wall),
-      inset 0 1px 0 var(--dock-groove-hi);
+      inset 1px 0 0 var(--mat-well-wall),
+      inset -1px 0 0 var(--mat-well-wall),
+      inset 0 1px 0 var(--mat-groove-hi);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     cursor: default;
   }
@@ -58,10 +59,10 @@
     border-top-left-radius: var(--krypton-border-radius, 8px);
     border-top-right-radius: var(--krypton-border-radius, 8px);
     box-shadow:
-      var(--dock-well-depth),
-      inset 1px 0 0 var(--dock-well-wall),
-      inset -1px 0 0 var(--dock-well-wall),
-      inset 0 1px 0 var(--dock-well-wall);
+      var(--mat-well-depth),
+      inset 1px 0 0 var(--mat-well-wall),
+      inset -1px 0 0 var(--mat-well-wall),
+      inset 0 1px 0 var(--mat-well-wall);
   }
 
   .acp-rails-dock__row:has(+ .acp-rails-dock__section),
@@ -70,11 +71,11 @@
     border-bottom-left-radius: var(--krypton-border-radius, 8px);
     border-bottom-right-radius: var(--krypton-border-radius, 8px);
     box-shadow:
-      inset 1px 0 0 var(--dock-well-wall),
-      inset -1px 0 0 var(--dock-well-wall),
-      inset 0 -1px 0 var(--dock-well-wall),
-      inset 0 1px 0 var(--dock-groove-hi),
-      0 1px 0 var(--dock-well-lip);
+      inset 1px 0 0 var(--mat-well-wall),
+      inset -1px 0 0 var(--mat-well-wall),
+      inset 0 -1px 0 var(--mat-well-wall),
+      inset 0 1px 0 var(--mat-groove-hi),
+      0 1px 0 var(--mat-well-lip);
   }
 
   /* A section with one row, and the head: the whole well in one slice. */
@@ -82,19 +83,19 @@
   .acp-rails-dock__rows > .acp-rails-dock__row--head {
     border-bottom: 0;
     border-radius: var(--krypton-border-radius, 8px);
-    box-shadow: var(--dock-well-shadow);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-rails-dock__rows > .acp-rails-dock__row--head {
     margin: 10px 8px 2px;
     padding: 11px 10px 10px;
-    background-image: var(--dock-well);
+    background-image: var(--mat-well);
   }
 
   /* Selection backlights the slice: a full-row tint over the well fill. */
   .acp-rails-dock__row--selected,
   .acp-rails-dock__rows > .acp-rails-dock__row--head.acp-rails-dock__row--selected {
-    background-image: linear-gradient(var(--dock-select), var(--dock-select));
+    background-image: linear-gradient(var(--mat-select), var(--mat-select));
   }
 
   .acp-rails-dock__line {
@@ -111,10 +112,10 @@
     align-items: baseline;
     justify-content: space-between;
     padding: 12px 12px 6px;
-    color: var(--dock-silk);
+    color: var(--mat-silk);
     font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.13em;
-    text-shadow: var(--dock-engrave);
+    text-shadow: var(--mat-engrave);
     text-transform: uppercase;
   }
 
@@ -125,10 +126,10 @@
   /* ── Head: the status window ───────────────────────────────────────── */
 
   .acp-rails-dock__eyebrow {
-    color: var(--dock-silk);
+    color: var(--mat-silk);
     font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.13em;
-    text-shadow: var(--dock-lit-glow);
+    text-shadow: var(--mat-lit-glow);
     text-transform: uppercase;
   }
 
@@ -145,17 +146,17 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.14),
       0 0 6px rgba(var(--rails-pill-rgb), 0.22),
       0 0 16px rgba(var(--rails-pill-rgb), 0.08);
-    color: var(--dock-lit);
+    color: var(--mat-lit);
     letter-spacing: 0.04em;
-    text-shadow: var(--dock-lit-glow);
+    text-shadow: var(--mat-lit-glow);
   }
 
   /* An unlit lamp: nothing to report yet, or the run errored. */
   .acp-rails-dock__pill--none,
   .acp-rails-dock__pill--error {
     border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
-    background: var(--dock-well);
-    box-shadow: var(--dock-well-shadow);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     text-shadow: none;
   }
@@ -199,8 +200,8 @@
   }
 
   .acp-rails-dock__progress {
-    color: var(--dock-lit);
-    text-shadow: var(--dock-lit-glow);
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-rails-dock__hint,
@@ -358,7 +359,7 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--dock-lens-off);
+    background: var(--mat-lens-off);
     box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
     filter: grayscale(1);
   }
@@ -370,20 +371,20 @@
   }
 
   .acp-rails-dock__severity {
-    color: var(--dock-lit);
+    color: var(--mat-lit);
   }
 
   .acp-rails-dock__tag {
     padding: 0 7px;
     border-radius: 999px;
-    background: var(--dock-well);
-    box-shadow: var(--dock-well-shadow);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
   }
 
   .acp-rails-dock__tag--new {
-    color: var(--dock-lit);
-    text-shadow: var(--dock-lit-glow);
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
   }
 
   /* ── Run chips: embossed labels ────────────────────────────────────── */
@@ -391,17 +392,17 @@
   .acp-rails-dock__verdict {
     flex: 0 0 auto;
     padding: 2px 7px;
-    border: 1px solid var(--dock-key-edge);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
     background:
       linear-gradient(180deg, rgba(var(--rails-verdict-rgb), 0.18), rgba(var(--rails-verdict-rgb), 0.04)),
-      var(--dock-key);
-    box-shadow: var(--dock-key-raise);
+      var(--mat-key);
+    box-shadow: var(--mat-key-raise);
     color: rgb(var(--rails-verdict-rgb));
     font-size: var(--krypton-chrome-font-size, 11px);
     font-weight: 700;
     line-height: 1.2;
-    text-shadow: var(--dock-print);
+    text-shadow: var(--mat-print);
     white-space: nowrap;
   }
 
@@ -441,8 +442,8 @@
     margin: 6px 0 2px;
     padding: 7px 9px;
     border-radius: var(--krypton-border-radius, 8px);
-    background: var(--dock-well);
-    box-shadow: var(--dock-well-shadow);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-rails-dock__detail-line {
@@ -476,11 +477,11 @@
   .acp-rails-dock__keys {
     flex: 0 0 auto;
     padding: 7px 12px 9px;
-    border-top: 1px solid var(--dock-groove-lo);
-    box-shadow: inset 0 1px 0 var(--dock-groove-hi);
+    border-top: 1px solid var(--mat-groove-lo);
+    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font-size: var(--krypton-chrome-font-size, 11px);
-    text-shadow: var(--dock-engrave);
+    text-shadow: var(--mat-engrave);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -492,8 +493,8 @@
   .acp-rails-dock__actions {
     flex: 0 0 auto;
     padding: 10px 8px 12px;
-    border-top: 1px solid var(--dock-groove-lo);
-    box-shadow: inset 0 1px 0 var(--dock-groove-hi);
+    border-top: 1px solid var(--mat-groove-lo);
+    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
   }
 
   .acp-rails-dock__actions-head {
@@ -506,10 +507,10 @@
 
   .acp-rails-dock__actions-label {
     flex: 0 0 auto;
-    color: var(--dock-silk);
+    color: var(--mat-silk);
     font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.13em;
-    text-shadow: var(--dock-engrave);
+    text-shadow: var(--mat-engrave);
     text-transform: uppercase;
   }
 
@@ -519,7 +520,7 @@
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font-size: var(--krypton-chrome-font-size, 11px);
     text-overflow: ellipsis;
-    text-shadow: var(--dock-engrave);
+    text-shadow: var(--mat-engrave);
     white-space: nowrap;
   }
 
@@ -533,7 +534,7 @@
   }
 }
 
-/* Light scheme: the faceplate tokens swap to aluminium in harness-shared.css;
+/* Light scheme: the faceplate tokens swap to aluminium in materials.css;
    the fault and outcome accents are neon values tuned for a dark ground, so
    cap them to legible ink (spec 321 §Accent ink). */
 @layer krypton.scheme {

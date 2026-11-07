@@ -8,16 +8,23 @@
   background: transparent;
 }
 
-/* ─── Window ─── */
+/* ─── Window ───
+   DESIGN.md 2.0.0 "Terminal window" (spec 366): a bezel around a screen. The
+   window box is the screen — `--mat-screen`, the theme backdrop at `[visual]
+   opacity` — and the titlebar, tab bar and footer are plate strips laid on it.
+   A 1px key-edge border, the bevel on the top edge and one `--mat-cast`; no
+   accent glow (a 20px blurred shadow was a paint cost while WAAPI moved the
+   window). Focus is the lit titlebar LED, the backlit title and a 1px accent
+   ring below. */
 .krypton-window {
   position: absolute;
   display: flex;
   flex-direction: column;
-  background: var(--krypton-backdrop-color, rgba(6, 10, 18, 0.5));
-  border: var(--krypton-border-width, 1px) solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  background: var(--mat-screen);
+  border: var(--krypton-border-width, 1px) solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
   overflow: visible;
-  box-shadow: 0 0 var(--krypton-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
   /* backdrop-filter removed: on macOS, blur() in a transparent WKWebView causes
      the compositor to snapshot (freeze) the desktop behind the element when the
      window is focused, breaking live wallpaper / video desktop transparency.
@@ -28,86 +35,76 @@
   transform-origin: top left;
 }
 
+/* A 1px window-accent ring, no blur (DESIGN.md "Focus"). */
 .krypton-window--focused {
-  border-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8);
-  /* Layered glow (tight + wide bloom per DESIGN.md § Glows) — clearly brighter
-     than the base single shadow so the focused window reads at a glance now that
-     the corner accents no longer carry focus. */
   box-shadow:
-    0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.45),
-    0 0 var(--krypton-focused-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.22);
+    inset 0 1px 0 var(--mat-bevel-hi),
+    0 0 0 1px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.55),
+    var(--mat-cast);
 }
 
 /* ─── Program status (OSC 7501, spec 284) ───
    The compositor sets data-program-status on the window (highest-priority pane
-   across its tabs) and on each tab. blocked / error / done recolor the border,
-   glow and status dot so an unfocused window reads at a glance; working only
-   pulses the dot. A dedicated var (not --krypton-window-accent-rgb) keeps the
-   other tabs' dots on the window's own accent. Placed before the
-   window_border = false block so that preference still wins. */
+   across its tabs) and on each tab. blocked / error / done ring the window and
+   light its LED in the state colour so an unfocused window reads at a glance;
+   working lights the LED steadily in the window accent (DESIGN.md: live state
+   is a steady lamp, nothing pulses). A dedicated var (not
+   --krypton-window-accent-rgb) keeps the other tabs' LEDs on the window's own
+   accent. Placed before the window_border = false block so that preference
+   still wins. */
 .krypton-window[data-program-status='blocked'] { --krypton-program-status-rgb: var(--krypton-warning-rgb, 232, 197, 71); }
 .krypton-window[data-program-status='error']   { --krypton-program-status-rgb: var(--krypton-danger-rgb, 255, 58, 92); }
 .krypton-window[data-program-status='done']    { --krypton-program-status-rgb: var(--krypton-success-rgb, 57, 255, 127); }
 
 .krypton-window:is([data-program-status='blocked'], [data-program-status='error'], [data-program-status='done']) {
-  border-color: rgba(var(--krypton-program-status-rgb), 0.85);
   box-shadow:
-    0 0 6px rgba(var(--krypton-program-status-rgb), 0.45),
-    0 0 var(--krypton-focused-shadow-blur, 20px) rgba(var(--krypton-program-status-rgb), 0.22);
+    inset 0 1px 0 var(--mat-bevel-hi),
+    0 0 0 1px rgba(var(--krypton-program-status-rgb), 0.55),
+    var(--mat-cast);
 }
 
-.krypton-window:is([data-program-status='blocked'], [data-program-status='error'], [data-program-status='done']) .krypton-window__status-dot {
-  background: rgb(var(--krypton-program-status-rgb));
-}
-
-.krypton-window[data-program-status='working'] .krypton-window__status-dot {
-  animation: krypton-program-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes krypton-program-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.45; transform: scale(0.7); }
-}
-
-/* Titlebar chip — window's top summary: `CARGO · 62%`, `TERRAFORM · PERMISSION`. */
+/* Titlebar chip — window's top summary: `CARGO · 62%`, `TERRAFORM · PERMISSION`.
+   A lit status capsule (DESIGN.md "Lamps") in the program-status colour, or
+   the window accent while working. */
 .krypton-window__program-status {
+  --x-rgb: var(--krypton-program-status-rgb, var(--krypton-window-accent-rgb, 0, 200, 255));
   flex: 0 0 auto;
   margin-right: 8px;
-  padding: 0 6px;
+  padding: 0 8px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   line-height: 16px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   white-space: nowrap;
-  color: rgb(var(--krypton-program-status-rgb, var(--krypton-window-accent-rgb, 0, 200, 255)));
-  border: 1px solid currentColor;
-  border-radius: 2px;
-  background: rgba(var(--krypton-program-status-rgb, var(--krypton-window-accent-rgb, 0, 200, 255)), 0.12);
+  color: rgb(var(--x-rgb));
+  border: 1px solid rgba(var(--x-rgb), 0.5);
+  border-radius: 999px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(var(--x-rgb), 0.3), rgba(var(--x-rgb), 0.07) 75%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--x-rgb), 0.22);
 }
 
 .krypton-window__program-status[hidden] {
   display: none;
 }
 
-/* [visual] window_border = false — hide the window outline. Transparent color
-   (not width 0) keeps the border box, so window geometry and xterm fit are
-   unchanged when toggled via config hot-reload. The accent glow shadows go with
-   it: at the window edge they read as a blurred border, so "no border" must
-   drop them too. Quick Terminal keeps its own chrome (its --visible/--focused
-   rules load later and win the cascade); agent/vault !important borders are
-   their own aesthetic and also untouched. */
+/* [visual] window_border = false — hide the bezel's 1px edge and the accent /
+   status ring. Transparent color (not width 0) keeps the border box, so window
+   geometry and xterm fit are unchanged when toggled via config hot-reload.
+   Plates, screen, LEDs and the cast shadow stay. Quick Terminal keeps its own
+   chrome (its --visible/--focused rules load later and win the cascade). */
 .krypton-no-window-border .krypton-window,
 .krypton-no-window-border .krypton-window--focused {
   border-color: transparent;
-  box-shadow: none;
+  box-shadow: var(--mat-cast);
 }
 
-/* ─── Signal-state chrome — drives corner accent + border tint via the focused
-   pane's view:state signal. See docs/0104-chrome-signal-upgrades.md and
+/* ─── Signal-state chrome — re-tints the window's LEDs and focus ring via the
+   focused pane's view:state signal. See docs/0104-chrome-signal-upgrades.md and
    docs/0105-view-protocol.md. The override re-targets --krypton-window-accent-rgb
-   for descendants (corners, border, header accent, edge glow) — no per-element
-   rule changes needed. */
+   for descendants (titlebar / tab / footer LEDs, ring, oscilloscope trace) — no
+   per-element rule changes needed. */
 /* ─── Active-lane accent (spec 142) ─── */
 /* The ACP harness sets data-lane-accent on its host window when the active
    lane changes, plus the lane's identity color in --acp-host-lane-accent /
@@ -146,24 +143,31 @@
 .krypton-window[data-signal='busy'],
 .krypton-window[data-signal='normal']  { /* default primary */ }
 
-/* ─── Header accent bar ─── */
-/* Decorative striped bar below the titlebar */
+/* ─── Header band ───
+   A small display well let into the titlebar plate under the title row
+   (DESIGN.md "Motion": the header oscilloscope draws inside a display well).
+   The `ticks` style keeps its static accent graticule inside the well. */
 .krypton-window__header-accent {
   height: var(--krypton-header-accent-height, 6px);
   margin: 0 var(--krypton-header-accent-margin, 20px);
-  background: repeating-linear-gradient(
-    90deg,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35) 0px,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35) 1px,
-    transparent 1px,
-    transparent 3px
-  );
+  /* A slot: half the band height, never more than the part radius. */
+  border-radius: min(var(--krypton-border-radius, 8px), calc(var(--krypton-header-accent-height, 6px) / 2));
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35) 0px,
+      rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    var(--mat-well-fill);
+  box-shadow: var(--mat-well-shadow);
   flex-shrink: 0;
   pointer-events: none;
 }
 
 /* Oscilloscope variant — a <canvas> drawn by HeaderScope (fed by PTY
-   throughput). Override the striped gradient so only the canvas trace shows;
+   throughput). Drops the graticule so only the trace shows on the well;
    keep the shared height/margin so themes still control the band's box.
    See docs/0188-oscilloscope-header-band.md. */
 .krypton-window__header-accent--scope {
@@ -172,15 +176,26 @@
      intrinsic 300px instead of tracking the window. Fill the band minus the
      shared horizontal margin so the trace spans the whole head. */
   width: calc(100% - 2 * var(--krypton-header-accent-margin, 20px));
-  background: none;
+  background: var(--mat-well-fill);
 }
 
-/* ─── Chrome — title bar ─── */
+/* ─── Chrome — titlebar plate ───
+   Titlebar (and the header band under it) is one plate strip. It meets the
+   screen on its bottom side only; that seam is an inset shadow, not a border,
+   so the chrome keeps its height and the terminal cell grid does not move.
+   The radius is the window's minus its 1px border, so the plate sits flush
+   inside the bezel corner. */
 .krypton-window__chrome {
   flex-shrink: 0;
   overflow: hidden;
   position: relative;
   z-index: 2;
+  background: var(--mat-brush), var(--mat-plate);
+  border-radius:
+    calc(var(--krypton-border-radius, 8px) - var(--krypton-border-width, 1px))
+    calc(var(--krypton-border-radius, 8px) - var(--krypton-border-width, 1px))
+    0 0;
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), inset 0 -1px 0 var(--mat-bevel-lo);
 }
 
 .krypton-window__titlebar {
@@ -190,14 +205,12 @@
   gap: 10px;
   height: var(--krypton-titlebar-height, 28px);
   padding: 0 12px;
-  background: var(--krypton-titlebar-bg, transparent);
-  border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
   -webkit-user-select: none;
   user-select: none;
   position: relative;
   z-index: 1;
-  /* Clip the ack/progress sweep. The session mark stays in this rail
-     (spec 226) — it does not hang into the oscilloscope. */
+  /* Keep the titlebar's contents in the rail. The session mark stays in this
+     rail (spec 226) — it does not hang into the oscilloscope. */
   overflow: hidden;
   /* spec 320: narrow-tile rule — below 480px the view-toggle cluster keeps
      only the spec 347 `left` / `right` toggles and the spec 247 status badge
@@ -209,37 +222,6 @@
   --krypton-title-tail-zoom: 2.9;
 }
 
-/* One-shot scan-wipe ack — flashed by compositor.flashAck(viewId) after
-   palette commit, hint pick, dialog OK. 400ms linear, single iteration.
-   Distinct from the infinite progress sweep used during OSC 9;4 progress. */
-@keyframes krypton-ack-wipe {
-  from { transform: translateX(-100%); }
-  to   { transform: translateX(100%); }
-}
-
-.krypton-window__titlebar--ack::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35) 50%,
-    transparent 100%
-  );
-  animation: krypton-ack-wipe 400ms linear;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .krypton-window__titlebar--ack::after {
-    animation: none;
-  }
-}
-
 .krypton-window__label-group {
   display: flex;
   align-items: center;
@@ -248,31 +230,74 @@
   flex: 1 1 auto;
 }
 
+/* Titlebar LED (DESIGN.md "Lamps", 8px in titlebars; a theme may enlarge it
+   through `[chrome.status_dot] size`). Unlit on an unfocused idle window. */
 .krypton-window__status-dot {
-  width: var(--krypton-status-dot-size, 6px);
-  height: var(--krypton-status-dot-size, 6px);
-  background: var(--krypton-window-accent, var(--krypton-status-dot-color, #0cf));
+  --x-rgb: var(--krypton-program-status-rgb, var(--krypton-window-accent-rgb, 0, 200, 255));
+  flex: none;
+  width: max(8px, var(--krypton-status-dot-size, 8px));
+  height: max(8px, var(--krypton-status-dot-size, 8px));
+  border-radius: 50%;
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
+/* Lit in the window accent when focused, steadily while a program works, and
+   in the state colour while it is blocked / errored / done. */
+.krypton-window--focused .krypton-window__status-dot,
+.krypton-window[data-program-status] .krypton-window__status-dot,
+.krypton-window__titlebar--progress .krypton-window__status-dot {
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
+}
+
+/* One-shot ack — flashed by compositor.flashAck(viewId) after palette commit,
+   hint pick, dialog OK: the titlebar LED flares once (400ms) and settles.
+   compositor removes the class on the bubbled `animationend`. */
+.krypton-window__titlebar--ack .krypton-window__status-dot {
+  animation: krypton-ack-flash 400ms ease-out;
+}
+
+@keyframes krypton-ack-flash {
+  from {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 30%, rgb(var(--x-rgb)) 60%, rgba(var(--x-rgb), 0.7) 100%);
+    box-shadow: 0 0 6px rgba(var(--x-rgb), 1), 0 0 16px rgba(var(--x-rgb), 0.7);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .krypton-window__titlebar--ack .krypton-window__status-dot {
+    animation: none;
+  }
+}
+
+/* The window title: engraved ink on an unfocused window, backlit amber on
+   the focused one. Labels stay silk; the accent is only the LED and ring. */
 .krypton-window__label {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: var(--krypton-window-accent, var(--krypton-titlebar-text, #0cf));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  text-shadow: var(--mat-engrave);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.krypton-window--focused .krypton-window__label {
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
+}
+
 /* spec 226: session identity (`01`) on the titlebar's right edge.
-   Quiet 11px on every tile; zoomed only on the focused window, capped
-   to the 28px rail so the ID stays at the top of the window and never
-   collides with the oscilloscope. `font-size` (not a transform) so the
-   box carries its painted width. The end cluster is locked to the
-   titlebar height so the type cannot grow the rail. */
+   A readout: the figure in a small well. Quiet 11px on every tile; zoomed and
+   backlit only on the focused window, capped inside the 28px rail so the ID
+   stays at the top of the window and never collides with the oscilloscope.
+   `font-size` (not a transform) so the box carries its painted width. The end
+   cluster is locked to the titlebar height so the type cannot grow the rail. */
 .krypton-window__titlebar-end {
   display: flex;
   align-items: center;
@@ -288,24 +313,30 @@
   flex: none;
   align-self: center;
   margin-left: 2px;
+  padding: 2px 5px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.08em;
   line-height: 1;
   text-transform: uppercase;
-  color: var(--krypton-window-accent, var(--krypton-titlebar-text, #0cf));
-  opacity: 0.45;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   pointer-events: none;
 }
 
+/* The well adds 4px of padding, so the zoomed figure caps 8px under the rail. */
 .krypton-window--focused .krypton-window__label-tail {
   font-size: min(
     calc(var(--krypton-chrome-font-size, 11px) * var(--krypton-title-tail-zoom, 2.9)),
-    var(--krypton-titlebar-height, 28px)
+    calc(var(--krypton-titlebar-height, 28px) - 8px)
   );
   letter-spacing: -0.02em;
-  opacity: 1;
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
 .krypton-window__label-tail[hidden] {
@@ -318,16 +349,19 @@
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--krypton-titlebar-text, rgba(0, 200, 255, 0.4));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+  text-shadow: var(--mat-engrave);
 }
 
 /* ─── Titlebar view toggles (spec 320) ───
-   Icon buttons a content view contributes to its host window's titlebar.
-   First child of `-end`; tabindex -1 so a click never steals the composer. */
+   Keys a content view contributes to its host window's titlebar.
+   First child of `-end`; tabindex -1 so a click never steals the composer.
+   Dense keys: the 28px rail holds a 20px key, under DESIGN.md's 24px dense
+   minimum, because the titlebar height is the theme's, not the part's. */
 .krypton-window__view-toggles {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   flex: none;
   height: 100%;
 }
@@ -344,10 +378,11 @@
   height: 20px;
   padding: 0;
   margin: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--krypton-titlebar-text, rgba(0, 200, 255, 0.4));
+  border: 1px solid var(--mat-key-edge);
+  border-radius: 6px;
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   cursor: pointer;
 }
 
@@ -357,46 +392,53 @@
   display: block;
 }
 
-.krypton-window__view-toggle[aria-pressed='true'] {
-  color: var(--krypton-window-accent, #0cf);
+.krypton-window__view-toggle:not(:disabled):hover {
+  background: var(--mat-key-hover);
+  color: var(--mat-lit);
 }
 
-.krypton-window__view-toggle:not(:disabled):hover {
-  color: var(--krypton-window-accent, #0cf);
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+/* Held or latched: sunk 1px, legend backlit. */
+.krypton-window__view-toggle:not(:disabled):active,
+.krypton-window__view-toggle[aria-pressed='true'],
+.krypton-window__view-toggle[aria-pressed='true']:not(:disabled):hover {
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
+  color: var(--mat-lit);
+}
+
+.krypton-window__view-toggle:focus-visible {
+  outline: 1px solid var(--mat-lit);
+  outline-offset: 2px;
 }
 
 .krypton-window__view-toggle:disabled {
-  opacity: 0.35;
-  cursor: default;
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* spec 322: an action that needs the user (e.g. backend updates available). */
-.krypton-window__view-toggle--attention {
-  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
-}
-
+.krypton-window__view-toggle--attention,
 .krypton-window__view-toggle--attention:not(:disabled):hover {
   color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
-  background: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.1);
 }
 
+/* An etched divider between toggle groups. */
 .krypton-window__view-toggle-sep {
-  width: 1px;
+  width: 0;
   height: 14px;
   margin: 0 4px;
   flex: none;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25);
+  border-left: 1px solid var(--mat-groove-lo);
+  border-right: 1px solid var(--mat-groove-hi);
 }
 
 /* ─── Titlebar view status (spec 247) ───
-   One text badge a content view shows right after its toggles: the remote
-   Harness's SSH host. Quiet while healthy; danger-tinted and clickable when
-   the view marks it actionable. tabindex -1, like the toggles. 6px radius:
-   it sits in the 28px rail with the tab pills (DESIGN.md). Text is the window
-   accent, like the label: every built-in theme's `--krypton-titlebar-text` is
-   the dim unfocused tone (#304838, 0.3-alpha cyan) and vanishes on the fill. */
+   One badge a content view shows right after its toggles: the remote
+   Harness's SSH host. A status capsule: unlit (a well-fill capsule in ink)
+   with an LED for its tone while healthy or pending; lit danger glass when it
+   faults (ADR-0017). tabindex -1, like the toggles. */
 .krypton-window__view-status {
+  --x-rgb: var(--krypton-success-rgb, 57, 255, 127);
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -404,10 +446,11 @@
   height: 18px;
   padding: 0 8px;
   margin: 0;
-  border: 0;
-  border-radius: 6px;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
-  color: var(--krypton-window-accent, var(--krypton-titlebar-text, #0cf));
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--mat-well-fill);
+  box-shadow: var(--mat-well-shadow);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   line-height: 1;
@@ -427,20 +470,20 @@
   height: 6px;
   flex: none;
   border-radius: 50%;
-  background: rgb(var(--krypton-success-rgb, 57, 255, 127));
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
 }
 
-.krypton-window__view-status[data-tone='pending'] .krypton-window__view-status-dot {
-  background: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+.krypton-window__view-status[data-tone='pending'] {
+  --x-rgb: var(--krypton-warning-rgb, 232, 197, 71);
 }
 
 .krypton-window__view-status[data-tone='error'] {
-  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
-  background: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.16);
-}
-
-.krypton-window__view-status[data-tone='error'] .krypton-window__view-status-dot {
-  background: currentColor;
+  --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+  border-color: rgba(var(--x-rgb), 0.5);
+  background: radial-gradient(ellipse at 50% 0%, rgba(var(--x-rgb), 0.3), rgba(var(--x-rgb), 0.07) 75%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--x-rgb), 0.22);
+  color: rgb(var(--x-rgb));
 }
 
 .krypton-window__view-status[aria-disabled='false'] {
@@ -448,11 +491,12 @@
 }
 
 .krypton-window__view-status[aria-disabled='false']:hover {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.16);
+  color: var(--mat-lit);
 }
 
 .krypton-window__view-status[data-tone='error'][aria-disabled='false']:hover {
-  background: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.26);
+  border-color: rgba(var(--x-rgb), 0.8);
+  color: rgb(var(--x-rgb));
 }
 
 @container (max-width: 480px) {
@@ -463,10 +507,26 @@
   }
 }
 
-/* ─── Window footer AI subscription usage (spec 153) ─── */
-
+/* ─── Window footer rail ───
+   A plate strip along the bezel's bottom edge (DESIGN.md "Terminal window").
+   It meets the screen on its top side only, so that side alone takes the
+   seam border; box-sizing keeps the rail at its theme height. The radius is
+   the window's minus its 1px border, flush inside the bezel corner. */
 .krypton-window__footer {
-  border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
+  display: flex;
+  align-items: center;
+  height: var(--krypton-footer-height, 28px);
+  padding: 0 10px;
+  flex-shrink: 0;
+  background: var(--mat-brush), var(--mat-plate);
+  border-top: 1px solid var(--mat-bevel-lo);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
+  -webkit-user-select: none;
+  user-select: none;
+  border-radius:
+    0 0
+    calc(var(--krypton-border-radius, 8px) - var(--krypton-border-width, 1px))
+    calc(var(--krypton-border-radius, 8px) - var(--krypton-border-width, 1px));
   container-type: inline-size;
   /* spec 219: two-letter glance mark. Same factor as `--krypton-lane-zoom` so
      the pair and the active lane's drop cap share one ink height. Width is
@@ -498,8 +558,9 @@
    a transformed head would sit on top of the quotas. Scaling type instead gives
    the element its true painted width, and the quotas beside it are already the
    compressible half of the rail (spec 153).
-   Flat: no border box, no underline, no left rail, no glow. The pair is neon
-   accent at two sizes. The tail stays 11px. */
+   Flat type on the plate: no border box, no underline, no left rail, no glow.
+   The head is silk (a label, DESIGN.md "Colour and state"), the tail ink; the
+   window accent stays on the LEDs. The tail stays 11px. */
 
 .krypton-window__project {
   /* Trails the rail, just inside the lane strip (`order: 2`). `order` rather
@@ -545,8 +606,8 @@
   white-space: nowrap;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
-  /* Tail colour. The two-letter head is neon; this stays quiet. */
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.45);
+  /* Tail colour: quiet ink beside the silk head. */
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
 }
 
 .krypton-window__project-initials {
@@ -557,7 +618,7 @@
   font-weight: 600;
   letter-spacing: 0;
   text-transform: uppercase;
-  color: rgb(var(--krypton-window-accent-rgb, 0, 200, 255));
+  color: var(--mat-silk);
 }
 
 .krypton-window__project-rest {
@@ -606,15 +667,16 @@
   font-size: calc(
     var(--krypton-chrome-font-size, 11px) * var(--krypton-window-diff-zoom, 2.9)
   );
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
 
 .krypton-window__diff-add {
-  color: var(--krypton-ansi-green, #39ff7f);
+  color: var(--krypton-ansi-2, #39ff7f);
 }
 
 .krypton-window__diff-del {
-  color: var(--krypton-ansi-red, #ff3a5c);
+  color: var(--krypton-ansi-1, #ff3a5c);
 }
 
 /* ─── Window footer harness lane strip (spec 218) ───
@@ -622,9 +684,11 @@
    pane, so "what is running here, and which lane am I driving" is legible from
    the window's own rail — with the harness scrolled, zen-collapsed, or
    unfocused. Pinned to the rail's right edge.
-   The active lane magnifies its first two letters the same way the project
-   badge magnifies `KR` and adds a small lane number. Inactive lanes are the
-   two letters at rail size. No tab surface or motion. */
+   Each lane carries an LED in its identity colour (DESIGN.md: lane marks are
+   window LEDs): lit on the active lane, a dim tinted lens on the others so
+   de-emphasis never drops the hue (spec 215). The active lane magnifies its
+   first two letters the same way the project badge magnifies `KR` and adds a
+   small lane number; the letters are silk/ink type, not accent. No motion. */
 
 .krypton-window__lane-strip {
   display: flex;
@@ -667,19 +731,33 @@
 }
 
 .krypton-window__lane {
+  /* The lens is resolved here, where the inline `--krypton-lane-accent` lives. */
+  --krypton-lane-led-colour: var(--krypton-lane-accent, var(--krypton-window-accent, #00c8ff));
+  --krypton-lane-led: radial-gradient(circle at 35% 30%, var(--mat-lens-off-glint) 0 14%, color-mix(in srgb, var(--krypton-lane-led-colour) 45%, var(--mat-lens-off-lo)) 50%, color-mix(in srgb, var(--krypton-lane-led-colour) 20%, var(--mat-lens-off-lo)) 100%);
+  --krypton-lane-led-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
   display: inline-flex;
   align-items: baseline;
   gap: 4px;
   flex: none;
-  /* Dimmed but still hued — the spec-215 rule: de-emphasis must not drop lane
-     identity, so the accent survives at low opacity. */
-  color: var(--krypton-lane-accent, var(--krypton-window-accent, #00c8ff));
-  opacity: 0.45;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+}
+
+.krypton-window__lane::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-right: 1px;
+  border-radius: 50%;
+  background: var(--krypton-lane-led);
+  box-shadow: var(--krypton-lane-led-shadow);
 }
 
 .krypton-window__lane--active {
-  opacity: 1;
+  --krypton-lane-led: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, var(--krypton-lane-led-colour) 45%, color-mix(in srgb, var(--krypton-lane-led-colour) 55%, transparent) 100%);
+  --krypton-lane-led-shadow: 0 0 4px color-mix(in srgb, var(--krypton-lane-led-colour) 90%, transparent), 0 0 10px color-mix(in srgb, var(--krypton-lane-led-colour) 40%, transparent);
   gap: 2px;
+  color: var(--mat-silk);
 }
 
 .krypton-window__lane-initials {
@@ -693,7 +771,6 @@
   font-size: calc(
     var(--krypton-chrome-font-size, 11px) * var(--krypton-lane-zoom, 2.9)
   );
-  color: var(--krypton-lane-accent, var(--krypton-window-accent, #00c8ff));
 }
 
 .krypton-window__lane-number {
@@ -701,11 +778,13 @@
   margin-top: 1px;
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
 .krypton-window__lane-more {
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+  font-variant-numeric: tabular-nums;
 }
 
 .krypton-window__usage-status {
@@ -729,34 +808,37 @@
   align-items: center;
   gap: 5px;
   min-width: 0;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.55);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
 }
 
 .krypton-window__usage-provider + .krypton-window__usage-provider::before {
   content: '·';
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.24);
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.3));
 }
 
-.krypton-window__usage-provider--loading,
-.krypton-window__usage-provider--stale {
-  opacity: 0.58;
-}
-
+/* Engraved provider label beside its readouts. */
 .krypton-window__usage-name {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.82);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
+  text-shadow: var(--mat-engrave);
 }
 
+/* Each quota is a readout: its figure in a small well. */
 .krypton-window__usage-quota {
-  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  padding: 2px 5px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  line-height: 1;
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
 }
 
-.krypton-window__usage-quota + .krypton-window__usage-quota::before {
-  content: '/';
-  margin-right: 5px;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.25);
+/* Loading / stale: the figures drop to the faint ink tier, never opacity. */
+.krypton-window__usage-provider--loading .krypton-window__usage-quota,
+.krypton-window__usage-provider--stale .krypton-window__usage-quota {
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
 }
 
 .krypton-window__usage-quota--warn {
@@ -783,32 +865,37 @@
     gap: 4px;
     margin-left: 6px;
   }
-
-  .krypton-window__usage-quota--secondary + .krypton-window__usage-quota::before {
-    content: none;
-  }
 }
 
 /* ─── Pinned Window Indicator ─── */
 .krypton-window--pinned .krypton-window__label-group::after {
   content: '\u25C8';  /* Unicode diamond with dot */
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: var(--krypton-window-accent, var(--krypton-pin-color, #0cf));
-  text-shadow: 0 0 6px rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
+  color: var(--mat-silk);
+  text-shadow: var(--mat-engrave);
   margin-left: 4px;
 }
 
 /* ─── Tab Bar ─── */
 /* Lives inside the titlebar row (between label group and end cluster), like a
-   browser tab strip. Hidden for single-tab windows unless always_show_tabbar. */
+   browser tab strip. Hidden for single-tab windows unless always_show_tabbar.
+   DESIGN.md "Selector keys": a recessed channel (a well with 3px padding) of
+   6px keys, each with an LED before its legend. It hugs its keys and sits
+   left; its height is cut from the titlebar, so the rail never grows. */
 .krypton-window__tabbar {
   display: none;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
-  height: 100%;
-  gap: 2px;
-  align-items: center;
+  /* `[chrome.tabs] height` sizes the channel; it never outgrows the rail. */
+  height: calc(min(var(--krypton-tab-height, 28px), var(--krypton-titlebar-height, 28px)) - 4px);
+  margin-right: auto;
+  padding: 3px;
+  gap: 3px;
+  align-items: stretch;
   overflow: hidden;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-window__tabbar--visible {
@@ -842,101 +929,114 @@
 }
 
 /* ─── Tab ─── */
-/* Rounded pill: inactive tabs are bare muted text, the active tab gets a soft
-   neutral fill. No underline, no chamfer, no glow. */
+/* A selector key: raised and dark at rest, latched down with its LED lit and
+   its legend backlit when shown. No underline, no chamfer, no transition. */
 .krypton-tab {
   display: flex;
   align-items: center;
   gap: 7px;
   min-width: 0;
-  /* `[chrome.tabs] height` sizes the pill row; the pill never outgrows the rail. */
-  height: min(
-    calc(var(--krypton-tab-height, 28px) - 6px),
-    calc(var(--krypton-titlebar-height, 28px) - 6px)
-  );
-  padding: 0 10px;
+  height: 100%;
+  padding: 0 9px;
   cursor: default;
   -webkit-user-select: none;
   user-select: none;
   overflow: hidden;
+  border: 1px solid var(--mat-key-edge);
+  /* DESIGN.md's 6px selector key: concentric with the 8px channel. */
   border-radius: 6px;
-  background: transparent;
-  transition: background-color 0.12s ease, color 0.12s ease;
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  text-shadow: var(--mat-print);
 }
 
 .krypton-tab:not(.krypton-tab--active):hover {
-  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
+  background: var(--mat-key-hover);
 }
 
+.krypton-tab:active,
 .krypton-tab--active {
-  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.09);
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
 }
 
 /* ─── Tab Index ─── */
 .krypton-tab__index {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-font-size, 14px);
-  font-weight: 500;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28));
+  line-height: 1;
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
   flex-shrink: 0;
 }
 
 .krypton-tab--active .krypton-tab__index {
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
-/* ─── Tab Dot (status indicator) ─── */
+/* ─── Tab LED (status indicator) ─── */
 .krypton-tab__dot {
-  width: 5px;
-  height: 5px;
+  --x-rgb: var(--krypton-window-accent-rgb, 0, 200, 255);
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.krypton-tab--active .krypton-tab__dot {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
-}
+/* spec 284: per-tab program status (highest-priority pane in the tab). A tab
+   with a status lights its LED in the state colour whether or not it is shown;
+   working lights it steadily in the window accent. */
+.krypton-tab[data-program-status='blocked'] .krypton-tab__dot { --x-rgb: var(--krypton-warning-rgb, 232, 197, 71); }
+.krypton-tab[data-program-status='error'] .krypton-tab__dot   { --x-rgb: var(--krypton-danger-rgb, 255, 58, 92); }
+.krypton-tab[data-program-status='done'] .krypton-tab__dot    { --x-rgb: var(--krypton-success-rgb, 57, 255, 127); }
 
-/* spec 284: per-tab program status (highest-priority pane in the tab). */
-.krypton-tab[data-program-status='blocked'] .krypton-tab__dot { background: rgb(var(--krypton-warning-rgb, 232, 197, 71)); }
-.krypton-tab[data-program-status='error'] .krypton-tab__dot   { background: rgb(var(--krypton-danger-rgb, 255, 58, 92)); }
-.krypton-tab[data-program-status='done'] .krypton-tab__dot    { background: rgb(var(--krypton-success-rgb, 57, 255, 127)); }
-.krypton-tab[data-program-status='working'] .krypton-tab__dot {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
-  animation: krypton-program-pulse 1.5s ease-in-out infinite;
+.krypton-tab--active .krypton-tab__dot,
+.krypton-tab[data-program-status] .krypton-tab__dot {
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
 }
 
 /* ─── Tab Title ─── */
+/* A key legend in its natural case (a path or a command). */
 .krypton-tab__title {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-font-size, 14px);
+  font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 500;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .krypton-tab:not(.krypton-tab--active):hover .krypton-tab__title {
-  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
+  color: var(--mat-lit);
 }
 
 .krypton-tab--active .krypton-tab__title {
-  color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.95);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
 /* ─── Window content area (body + sidebar) ─── */
 /* 3D perspective wrapper — sits between the window and content area.
    Isolates the 3D context from backdrop-filter on .krypton-window
-   (backdrop-filter flattens preserve-3d in all browsers). */
+   (backdrop-filter flattens preserve-3d in all browsers).
+   It is also the screen well (DESIGN.md "Screen"): the window's
+   `--mat-screen` fill shows through, and the well's inset depth and wall are
+   shadows drawn inside this box, so the terminal cell grid never shrinks.
+   It does not tilt with `__content`, so the recess stays put. */
 .krypton-window__perspective {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   perspective: var(--krypton-perspective, none);
+  box-shadow: var(--mat-well-depth), inset 0 0 0 1px var(--mat-well-wall);
 }
 
 .krypton-window__content {
@@ -1038,7 +1138,7 @@
    A lone pane is the whole window: a ring there is just a second border inside
    the window edge (and survives window_border = false). */
 .krypton-split .krypton-pane--focused {
-  box-shadow: inset 0 0 0 1px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
+  box-shadow: inset 0 0 0 1px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
 }
 
 .krypton-pane--recovery {
@@ -1047,22 +1147,26 @@
   padding: 24px;
 }
 
+/* A small plate on the screen; the heading is the fault (ADR-0017). */
 .krypton-recovery-notice {
   display: grid;
   gap: 10px;
   max-width: 560px;
   padding: 20px;
-  border: 1px solid rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.55);
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(6, 10, 18, 0.72);
-  color: var(--krypton-foreground, #b0c4d8);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   line-height: var(--krypton-content-line-height, 1.4);
 }
 
 .krypton-recovery-notice strong {
-  color: var(--krypton-warning, #e8c547);
-  letter-spacing: 0.08em;
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  text-shadow: var(--mat-engrave);
 }
 
 .krypton-split {
@@ -1080,11 +1184,12 @@
   flex-direction: column;
 }
 
+/* An etched groove between panes: the dark cut plus its light edge. */
 .krypton-split__divider {
   position: relative;
   z-index: 1;
   flex-shrink: 0;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  background: var(--mat-groove-lo);
   transform: translateZ(30px);
 }
 
@@ -1096,6 +1201,7 @@
 
 .krypton-split--vertical > .krypton-split__divider {
   width: 1px;
+  box-shadow: 1px 0 0 var(--mat-groove-hi);
   cursor: col-resize;
 }
 
@@ -1108,6 +1214,7 @@
 
 .krypton-split--horizontal > .krypton-split__divider {
   height: 1px;
+  box-shadow: 0 1px 0 var(--mat-groove-hi);
   cursor: row-resize;
 }
 
@@ -1120,7 +1227,7 @@
 
 .krypton-split__divider:hover,
 .krypton-split--dragging > .krypton-split__divider {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  background: var(--mat-lit);
 }
 
 /* While a divider drags, panes (xterm, views, iframes) must not swallow
@@ -1166,7 +1273,8 @@
   bottom: calc(12px * var(--krypton-stage-inverse-scale, 1));
   right: calc(12px * var(--krypton-stage-inverse-scale, 1));
   z-index: 20;
-  color: var(--krypton-window-accent, var(--krypton-titlebar-text, #0cf));
+  color: var(--mat-silk);
+  text-shadow: var(--mat-engrave);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: 56px;
   font-weight: 700;
@@ -1176,4 +1284,57 @@
   transform: scale(var(--krypton-stage-inverse-scale, 1));
   transform-origin: bottom right;
   pointer-events: none;
+}
+
+/* ─── Toast (compositor.showNotification) ───
+   A floating plate (DESIGN.md "Overlays and dialogs"): brushed plate, key-edge
+   border, bevel and one cast shadow, with a lit amber lamp before the message.
+   Slides in from the right above the workspace footer; compositor toggles
+   `--visible`. */
+.krypton-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 40px;
+  z-index: var(--krypton-z-toast, 3000);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 14px;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(24px);
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.krypton-toast::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
+}
+
+.krypton-toast--visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .krypton-toast {
+    transform: none;
+    transition: opacity 120ms ease;
+  }
 }

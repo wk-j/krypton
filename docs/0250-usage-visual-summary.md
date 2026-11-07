@@ -4,6 +4,7 @@
 > Date: 2026-09-16
 > Milestone: Post-M-current polish
 > Builds on: 214 (LLM usage log) · 249 (prompt-cache hit rate)
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): `DESIGN.amber.md` retired; harness constraints now live in DESIGN.md.
 
 ## Problem
 
@@ -223,4 +224,4 @@ and degrades to the existing text where structured rendering is unavailable.
 - [ccusage daily reports](https://github.com/ccusage/ccusage/blob/main/docs/guide/daily-reports.md) — separate cache columns and responsive terminal reporting.
 - `docs/0214-llm-usage-statistics.md` — Krypton's usage data and privacy contract.
 - `docs/0249-harness-cache-hit-rate.md` — Krypton's cache-hit formula and coherent-counter rules.
-- `DESIGN.amber.md` — Harness typography, color, geometry, and motion constraints.
+- `DESIGN.md` — Harness typography, color, geometry, and motion constraints.

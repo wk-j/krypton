@@ -1,14 +1,14 @@
 /* Spec 302 §6.2 — `ComposerMeta`.
-   Carved verbatim from src/styles/acp-harness.css: :3954-3957 (the chrome half
-   of the shared flex rule — the `.acp-harness__input-line` half moved to
-   draft-line.css), :3987-4000, :4091-4124, :4661-4669, :4671-4712, :4714-4736,
-   :4982-4988 and :6507-6526, plus src/styles/attention-triage.css:13-18.
+   Carved from src/styles/acp-harness.css and attention-triage.css.
 
-   The two context rules whose SUBJECT is a block owned here come with it: the
-   composer modifiers style this row, not the composer. The triage marker is
-   declared twice today (acp-harness.css then attention-triage.css, same layer,
-   later file wins); both are kept in that order so the computed value does not
-   move. */
+   The context rules whose SUBJECT is a block owned here come with it: the
+   composer modifiers style this row, not the composer.
+
+   Spec 366 (DESIGN.md "Readouts", "Lamps", "Key"): the chrome row sits on the
+   composer plate. The status run is a readout window with an LED that lights
+   while the lane works; the lane chips are capsules (`lane-head.css`); the
+   directive is a small key; the branch and `? help` are printed legend. A
+   decision row's label is a lit warning capsule — it waits on the human. */
 
 @layer krypton.component {
   .acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__composer-chrome {
@@ -23,7 +23,12 @@
     container-type: normal;
     flex: 0 0 auto;
     min-width: 0;
-    color: #ffe3a0;
+    padding: 0 8px;
+    border: 1px solid rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.5);
+    border-radius: 999px;
+    background: radial-gradient(ellipse at 50% 0%, rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.3), rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.07) 75%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.22);
+    color: color-mix(in srgb, rgb(var(--krypton-warning-rgb, 232, 197, 71)) 60%, var(--krypton-fg, #d8e8d8));
     font-weight: 700;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -57,58 +62,68 @@
      segments painted straight past the composer's right edge and outside the
      window. Everything inside is either fixed-width or the one shrinkable
      segment, so clipping is a backstop, not the fitting mechanism. Tools live
-     in the sibling `.acp-harness__composer-tools` so this clip cannot eat MIC. */
+     in the sibling `.acp-harness__composer-tools` so this clip cannot eat MIC.
+     Spec 366: parts sit apart on the plate by a gap, not by middot dividers. */
   .acp-harness__composer-meta {
     container-type: inline-size;
     display: flex;
     align-items: center;
-    gap: 0;
+    gap: 8px;
     flex: 1 1 auto;
     min-width: 0;
-    min-height: 16px;
+    min-height: 18px;
     overflow: hidden;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
 
-  /* The lane pill's own 0.72em is sized for the lane head; here it would
-     compound on the bar's size and print smaller than its neighbours. */
+  /* The lane pill's own size is set for the lane head; here it would compound
+     on the bar's size and print smaller than its neighbours. */
   .acp-harness__composer-meta .acp-harness__lane-sandbox {
     font-size: inherit;
   }
 
-  /* Telemetry-deck separators: a dim accent middot before each segment after
-     the first. A divider between readouts — not a left-edge accent rail.
-     A lane chip (`⚠ bypass`, `auto-edit`) is a filled pill, so its own
-     `::before` would paint inside the pill: the status readout before it
-     carries that middot instead, mirroring the one after it. An empty readout
-     leaves the pill first in the row, where no divider belongs. */
-  .acp-harness__memory-chip:not(:empty):has(+ .acp-harness__lane-sandbox)::after,
-  .acp-harness__directive-chip::before,
-  .acp-harness__project-status::before {
-    content: '·';
-    margin: 0 8px;
-    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0))) 38%, transparent);
-    text-shadow: none;
-  }
-
-  /* Memory readout: the lane's heartbeat — tinted + softly lit, not flat gray.
-     spec 221: shrinkable, so the row's spring (the activity segment inside it) can
-     actually give. It used to be `flex: 0 0 auto`, which is why the chips to its
-     right were the ones pushed off the edge. */
+  /* The status run: a readout window with an LED. spec 221: shrinkable, so the
+     row's spring (the activity segment inside it) can actually give. An empty
+     run takes no slot in the row. */
   .acp-harness__memory-chip {
     flex: 0 1 auto;
     min-width: 0;
     display: inline-flex;
     align-items: center;
+    gap: 6px;
+    padding: 1px 7px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
     overflow: hidden;
-    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0))) 42%, var(--krypton-fg, #d8e8d8));
-    text-shadow: 0 0 6px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 26%, transparent);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
+    font-variant-numeric: tabular-nums;
   }
 
+  .acp-harness__memory-chip:empty {
+    display: none;
+  }
+
+  .acp-harness__memory-chip::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  /* Busy lane: the LED is lit and steady; the clock in the text ticks. */
   .acp-harness__memory-chip--running {
-    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0))) 78%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+    color: var(--krypton-fg, #d8e8d8);
+  }
+
+  .acp-harness__memory-chip--running::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
   }
 
   /* spec 221 — status-line segments. */
@@ -130,17 +145,15 @@
   /* spec 240: an armed annotation selection is signalled here, in the quote
      accent the marks use, instead of a pill drawn over the transcript. */
   .acp-harness__meta-seg[data-seg='armed'] {
-    color: var(--acp-accent-quote, #d6b8ff);
+    color: var(--acp-accent-quote);
   }
 
-  /* Divider as a pseudo-element rather than a character, so a segment that is not
-     rendered takes its separator with it — no orphan or doubled middots. Same
-     voice as the chip separators further down this file. */
+  /* Divider inside the readout, as a pseudo-element so a segment that is not
+     rendered takes its separator with it — no orphan or doubled middots. */
   .acp-harness__meta-seg + .acp-harness__meta-seg::before {
     content: '·';
-    margin: 0 8px;
-    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0))) 38%, transparent);
-    text-shadow: none;
+    margin: 0 6px;
+    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
   }
 
   /* spec 221: the branch is all that is left here — the cwd moved out entirely
@@ -155,23 +168,22 @@
 
   .acp-harness__project-branch {
     flex: 0 0 auto;
-    color: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.92);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
   }
 
   /* The branch mark is the `krypton-icon-branch` symbol — the same body the
-     workspace footer draws (`chrome-icons.ts`) — tinted with the ref so the
-     pair reads as one segment. `center`, not the row's `baseline`: a replaced
-     element baselines on its bottom edge, which would float the box high. */
+     workspace footer draws (`chrome-icons.ts`). `center`, not the row's
+     `baseline`: a replaced element baselines on its bottom edge, which would
+     float the box high. */
   .acp-harness__project-status .acp-harness__icon {
     margin-right: 4px;
     align-self: center;
-    color: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.92);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
   /* The last width-gated readout. On a third-width window the branch yields to the
      activity text: it is the only segment left with an off-screen fallback — the
-     workspace footer prints it as soon as this window is focused. The whole
-     segment goes, icon and `·` separator with it. */
+     workspace footer prints it as soon as this window is focused. */
   @container (max-width: 480px) {
     .acp-harness__project-status {
       display: none;
@@ -180,47 +192,59 @@
 
   .acp-harness__help-hint {
     flex: 0 0 auto;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
-    letter-spacing: 0.08em;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    letter-spacing: 0.09em;
+    text-shadow: var(--mat-print);
     text-transform: uppercase;
   }
 
-  /* ── Composer directive chip ──────────────────────────────── */
+  /* ── Composer directive chip: a small key that opens the picker ───────── */
 
   .acp-harness__directive-chip {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
-    letter-spacing: 0.04em;
+    flex: 0 0 auto;
+    padding: 1px 7px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
+    letter-spacing: 0.09em;
+    text-shadow: var(--mat-print);
     cursor: pointer;
   }
 
+  .acp-harness__directive-chip:hover {
+    background: var(--mat-key-hover);
+  }
+
+  .acp-harness__directive-chip:active {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+  }
+
+  /* A bound directive backlights the legend. */
   .acp-harness__directive-chip--set {
-    color: var(--krypton-window-accent, #0cf);
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
   }
 
+  /* A swap/clear queued for the next send: warning ink. */
   .acp-harness__directive-chip--pending {
-    color: rgba(255, 196, 122, 0.85);
+    color: color-mix(in srgb, rgb(var(--krypton-warning-rgb, 232, 197, 71)) 70%, var(--krypton-fg, #d8e8d8));
+    text-shadow: var(--mat-print);
   }
 
-  .acp-harness__directive-chip__triage {
-    color: color-mix(in srgb, var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0))) 58%, var(--krypton-fg, #d8e8d8));
-    text-shadow: 0 0 6px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 24%, transparent);
-  }
-
-  /* spec 129 — the triage grant marker, as attention-triage.css declares it
-     after acp-harness.css today. */
+  /* spec 129 — the triage grant marker inside the directive key. */
   .acp-harness__directive-chip__triage {
     margin-left: 6px;
     letter-spacing: 0.04em;
-    color: var(--krypton-window-accent, #0cf);
+    color: var(--mat-silk);
   }
 }
 
 @layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-harness__composer-meta {
-    color: var(--krypton-ink-2);
-  }
-
-  html[data-theme-scheme='light'] .acp-harness__composer--permission .acp-harness__composer-meta {
+  html[data-theme-scheme='light'] .acp-harness__composer--permission .acp-harness__composer-meta,
+  html[data-theme-scheme='light'] .acp-harness__directive-chip--pending {
     color: #8a5a00;
   }
 }

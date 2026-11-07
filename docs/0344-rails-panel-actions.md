@@ -7,6 +7,7 @@
 > Amends: 337 and 338 Out of Scope (trust and update from the dock)
 > Amended by: 343 (2026-10-31). A click and the dock's `r` run the typed sub-command inside a
 > spec-343 command run, so the lane head shows `#rails now · 0:03` as it does for the typed command.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): `DESIGN.console.md` merged into DESIGN.md; dock tokens are `--mat-*`.
 
 ## Problem
 
@@ -239,9 +240,9 @@ j/k · ↵ · 1–5 · s send · r run · [ ] tab · esc
 - Each button is a `DockActionButton` with `data-rails-action="<verb>"`. The ticket buttons keep
   `data-ticket-dock-action`. The `acp-dock-action` block keeps the ticket states: amber idle, cyan
   running, green done, 0.45 opacity when disabled, and full opacity for a running button that is
-  disabled. There is no animation. Since `DESIGN.console.md` the button is a raised key (pressed
+  disabled. There is no animation. Since `DESIGN.md` the button is a raised key (pressed
   while held; latched down and backlit while running; backlit and still raised when done).
-- The light scheme swaps the dock column's `--dock-*` tokens (DESIGN.console.md), which the bar
+- The light scheme swaps the `--mat-*` tokens (DESIGN.md), which the bar
   heading reads.
 - Icons, 16×16, stroke 1.35, round caps and joins, `currentColor`: Run is a play triangle, Send a
   paper plane, Trust a shield holding a check, Update a pencil.

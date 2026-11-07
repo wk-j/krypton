@@ -5,9 +5,13 @@
        `OverlayShell` derives from the overlay's name (same declarations as the
        old `.acp-harness__image-viewer`);
      * the shell's panel and the component's one body node are not layout
-       boxes, and the shell's head carries nothing here — full bleed. */
+       boxes, and the shell's head carries nothing here — full bleed.
+
+   Spec 366 / DESIGN.md: a bezel around a screen. The overlay is a plate over
+   a solid underlay (it must hide the harness), the image sits flat in one
+   recessed well, and the meta line is engraved on the plate strip below. */
 @layer krypton.component {
-  /* spec 281 — image viewer. Solid backdrop (no backdrop-filter: WKWebView
+  /* spec 281 — image viewer. Solid underlay (no backdrop-filter: WKWebView
      freeze); zoom/pan is one transform on the image. Modal tier (80, as
      `ExecutionDialog` / `ReviewThreadDialog`): the viewer paints over every
      harness panel and pane, the dock column (5) and lane rail (4) included. */
@@ -17,7 +21,8 @@
     z-index: 80;
     display: flex;
     flex-direction: column;
-    background: rgba(2, 5, 9, 0.94);
+    background: var(--mat-brush), var(--mat-plate), var(--agent-surface-solid, rgba(8, 12, 22, 0.96));
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
     cursor: zoom-out;
   }
 
@@ -38,7 +43,11 @@
     position: relative;
     flex: 1 1 auto;
     min-height: 0;
+    margin: 8px 8px 0;
     overflow: hidden;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-harness__image-viewer-img {
@@ -68,11 +77,12 @@
 
   .acp-harness__image-viewer-meta {
     flex: 0 0 auto;
-    padding: 6px 12px;
-    border-top: 1px solid rgba(109, 208, 255, 0.2);
-    color: rgba(109, 208, 255, 0.78);
+    padding: 6px 12px 7px;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.8em;
+    font-variant-numeric: tabular-nums;
     letter-spacing: 0.03em;
+    text-shadow: var(--mat-engrave);
     white-space: pre;
     overflow: hidden;
     text-overflow: ellipsis;

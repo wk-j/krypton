@@ -6,6 +6,7 @@
 > Decision record: `docs/adr/0011-orchestrator-privileged-lane-and-acting-console.md`
 > Terms: see `CONTEXT.md` → **Orchestrator**, **Orchestrator console**, **Dispatch**
 > Related: `docs/0164-polly-orchestration.md`, `docs/0166-polly-live-plan.md`, `docs/0168-harness-lane-monitor.md`, `docs/0106-inter-lane-messaging.md`, `docs/0111-harness-right-rail.md`, `docs/0148-lane-goal-focus-scope.md` (removed)
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): amber phosphor chrome retired; the console uses faceplate parts.
 
 > **Update (2026-09-01):** the lane-goal feature (spec 148) was removed — lane
 > cards no longer show a goal line. The design decision below ("a dispatch is a
@@ -170,4 +171,4 @@ Mechanics: `consoleObscuringModalOpen()` ORs the modal-open flags; `syncOrchestr
 - `src/acp/harness-telemetry.ts` + `docs/168` — the read-only dashboard whose signals the console reuses in-app.
 - `docs/0111-harness-right-rail.md` — the slot extensibility pattern the region shell follows.
 - `src/acp/acp-harness-view.ts:4501` (triage overlay), `:6962/:6876/:1881` (cancel/close/restart) — overlay + lifecycle prior art.
-- `DESIGN.amber.md` — amber-phosphor chrome the console matches.
+- `DESIGN.md` — faceplate chrome the console matches.

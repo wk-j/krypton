@@ -1,21 +1,36 @@
 /* Spec 302 §6.5 — `PeerStrip`.
-   Carved verbatim from src/styles/acp-harness.css:4002-4011.
+   Carved from src/styles/acp-harness.css.
 
    The `[hidden]` rule is the component's empty state: the builder returned `''`
    and emitted no node, so the kept node must take no space. It is declared
    rather than left to the UA sheet because the block's own padding is what
-   would show through if a later rule ever gave it a `display`. */
+   would show through if a later rule ever gave it a `display`.
+
+   Spec 366: the hint is printed on the composer plate in ink, after a steady
+   LED lit in the theme magenta that peer activity uses everywhere. */
 
 @layer krypton.component {
   /* spec 118 — peer activity hint (informational; does not block input) */
   .acp-harness__composer-peer {
     padding: 2px 0 4px;
-    color: #b8a6ff;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
     font-size: 0.74em;
     letter-spacing: 0.04em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .acp-harness__composer-peer::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 7px;
+    vertical-align: 0.05em;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--krypton-special-rgb, 184, 166, 255)) 45%, rgba(var(--krypton-special-rgb, 184, 166, 255), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--krypton-special-rgb, 184, 166, 255), 0.9), 0 0 10px rgba(var(--krypton-special-rgb, 184, 166, 255), 0.4);
   }
 
   .acp-harness__composer-peer[hidden] {

@@ -21,26 +21,28 @@
    selector in this file. */
 
 @layer krypton.component {
-  .acp-harness__msg--artifact .acp-harness__msg-label {
-    color: var(--krypton-window-accent, #0cf);
-  }
-
+  /* Spec 366 (DESIGN.md "Well", "Lamps"): both document cards are a small
+     well under the shared silk row label. The hint label is a key cap, the
+     glyph and the action legend are silk; an unavailable card tints its well
+     with the fault colour and reads at the tertiary ink, never via opacity. */
   .acp-harness__msg--artifact .acp-harness__msg-body {
     display: flex;
     flex-direction: column;
     gap: 4px;
     padding: 6px 8px;
-    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 8%, transparent);
+    background: var(--mat-well-fill);
+    box-shadow: var(--mat-well-shadow);
     border-radius: var(--krypton-border-radius, 8px);
   }
 
   .acp-harness__msg--artifact-unavailable .acp-harness__msg-body {
-    background: rgba(255, 118, 118, 0.07);
-    opacity: 0.72;
+    background: color-mix(in srgb, rgb(var(--krypton-danger-rgb, 255, 58, 92)) 6%, var(--mat-well-fill));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
   .acp-harness__msg--artifact-hinted .acp-harness__msg-body {
-    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 14%, transparent);
+    outline: 1px solid var(--mat-lit);
+    outline-offset: 1px;
   }
 
   .acp-harness__artifact-head {
@@ -55,27 +57,28 @@
     padding: 0 0.35em;
     text-align: center;
     font-weight: bold;
-    color: #0a0e12;
-    background: var(--krypton-window-accent, #0cf);
+    color: var(--mat-lit);
+    background: var(--mat-key);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
   }
 
   .acp-harness__artifact-glyph {
-    color: var(--krypton-window-accent, #0cf);
+    color: var(--mat-silk);
   }
 
   .acp-harness__artifact-title {
     font-weight: 600;
-    color: rgba(216, 232, 240, 0.95);
+    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.95);
   }
 
   .acp-harness__artifact-meta,
   .acp-harness__artifact-action {
     font-size: 0.82em;
-    color: rgba(216, 232, 240, 0.55);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.58));
   }
 
   .acp-harness__artifact-action {
-    color: color-mix(in srgb, var(--krypton-window-accent, #0cf) 70%, rgba(216, 232, 240, 0.6));
+    color: var(--mat-silk);
   }
 }

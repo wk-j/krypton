@@ -1,27 +1,25 @@
 /* Spec 302 §6.1 — `Composer`.
-   Carved verbatim from src/styles/acp-harness.css: :3928-3944, :3946-3953,
-   :3971-3978 and :4013-4015 — the composer ROOT rules only.
+   Carved from src/styles/acp-harness.css — the composer ROOT rules only.
 
    Everything else the composer paints already belongs to a part: the chrome
    row and its `--permission` label to composer-meta, the input line and the
    `--command` / `--memory` input rules to draft-line, the caret's `--command`
    rule to caret, the palette's flex/scroll rules to inline-palette, the peer
-   strip to peer-strip. None of those are duplicated here. */
+   strip to peer-strip. None of those are duplicated here.
+
+   Spec 366 (DESIGN.md "Harness"): the composer is a flush plate — 0px, it
+   meets the window edges — with the draft line in a well. The plate itself is
+   the command centre's (`harness-shared.css`), which this root sits on, so the
+   composer draws no second fill. */
 
 @layer krypton.component {
-  /* Prompt is a command line, not an 8px container card (agent input-rows
-     are already 0px). The host window keeps the theme bevel —
-     squaring the frame, titlebar, and footer made the 8px chrome vanish
-     from the main window while a harness tab was showing. */
+  /* Prompt is a command line, not an 8px container card. The host window
+     keeps the theme bevel — squaring the frame, titlebar, and footer made the
+     8px chrome vanish from the main window while a harness tab was showing. */
   .acp-harness__composer {
     border-radius: 0;
     min-height: 42px;
     padding: 6px 10px 8px;
-    background: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 5%, var(--agent-surface-solid, rgba(2, 5, 10, 0.96))),
-      var(--agent-surface-solid, rgba(2, 5, 10, 0.96)) 46%
-    );
   }
 
   /* Autocomplete can contain the full command catalog. Keep the input line in
@@ -41,29 +39,5 @@
     justify-content: center;
     min-height: 32px;
     padding-block: 5px;
-    background: color-mix(in srgb, var(--acp-lane-accent, var(--agent-gold, #ffd166)) 8%, transparent);
-  }
-
-  .acp-harness__composer--command {
-    background: rgba(255, 209, 102, 0.026);
-  }
-
-  /* Spec 365: the window fire burns along the bottom edge, under this strip.
-     While it is lit the command centre (harness-shared.css) already carries the
-     lane body's surface, so the composer keeps only its accent tint and the
-     flames show through as they do behind terminal text. */
-  .krypton-window[data-fire-lit] .acp-harness__composer:not(.acp-harness__composer--permission, .acp-harness__composer--command) {
-    background: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 5%, transparent),
-      transparent 46%
-    );
-  }
-}
-
-/* Spec 321 — see lane-shell.css: the composer carries its own inline accent. */
-@layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-harness__composer {
-    --acp-lane-ink: oklch(from var(--acp-lane-accent, var(--krypton-accent, #007799)) min(l, var(--krypton-accent-l-max)) c h);
   }
 }

@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (351)
+## Specs (352)
 
 | # | Spec |
 |---|------|
@@ -368,8 +368,9 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 363 | [Program-Status Fire Look](./0363-program-status-fire-look.md) |
 | 364 | [Hide the Working Progress Ring](./0364-progress-gauge-hide-working.md) |
 | 365 | [Harness Tool-Error Fire](./0365-harness-tool-error-fire.md) |
+| 366 | [Console Faceplate UI](./0366-console-faceplate-ui.md) |
 
-## ADRs (29)
+## ADRs (30)
 
 | # | Decision |
 |---|----------|
@@ -402,6 +403,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 27 | [No surface marks state with a left-edge accent rail](./adr/0027-no-left-edge-accent-rails.md) |
 | 28 | [The loopback app is written in React; the Tauri app frontend stays framework-free](./adr/0028-loopback-app-uses-react.md) |
 | 29 | [Rails scans a changed lockfile whole for known vulnerabilities](./adr/0029-rails-scans-changed-lockfiles-for-known-vulnerabilities.md) |
+| 30 | [The console faceplate is Krypton's one in-app visual identity](./adr/0030-console-faceplate-is-the-base-identity.md) |
 
 ## Also
 

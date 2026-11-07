@@ -1,5 +1,7 @@
 # 3. Functional Requirements
 
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): focus glow and cyberpunk chrome replaced by faceplate parts.
+
 ## 3.1 Shell & PTY Management
 
 | ID | Requirement | Priority |

@@ -3,6 +3,7 @@
 > Status: Draft (revised 2026-05-18 to match Krypton's mode-based input system)
 > Date: 2026-05-18
 > Milestone: Post-M-current polish
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): corner, edge-glow, scan-wipe and breathing signals retired; state lights lamps.
 
 ## Problem
 

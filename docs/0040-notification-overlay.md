@@ -8,6 +8,7 @@
 > Date: 2026-03-26
 > Updated: 2026-08-14 — messages decay back to empty (`duration`, `.krypton-notif--empty`)
 > Milestone: M8 — Polish
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): scanline sweep and level glows removed; notifications are floating plates.
 
 ## Problem
 

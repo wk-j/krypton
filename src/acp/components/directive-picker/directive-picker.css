@@ -3,87 +3,110 @@
    directory's to declare: `.acp-harness__directive-chip*` (:6507-6528, composer meta) and
    `.acp-harness__directive-diff*` (:6530-6551, the transcript directive diff), which share
    the `acp-harness__directive` prefix but belong to other components.
-   No scheme override exists for this block in theme-scheme.css. */
+
+   Spec 366 / DESIGN.md "Overlays and dialogs": one floating plate over the
+   scrim. The shell runs without a panel wrapper (head, list and preview are
+   direct children of the root), so the root is a one-column grid and its
+   `::before` is the plate spanning all three rows. On it: the engraved head,
+   the directives as one recessed well split by grooves, and the prompt
+   preview as a second well under its own engraved label. */
 
 @layer krypton.component {
-  /* ── Directive picker overlay (spec 124) ──────────────────────
-     No left-border rails: state via full outline, tint, and badges. */
-
   .acp-harness__directive-picker {
     position: absolute;
     inset: 0;
     z-index: 5;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: var(--agent-surface-high, rgba(4, 8, 13, 0.74));
+    display: grid;
+    grid-template-columns: min(clamp(480px, 62vw, 860px), calc(100% - 24px));
+    grid-template-rows: auto auto auto;
+    place-content: center;
+    background: var(--mat-scrim);
   }
 
   .acp-harness__directive-picker[hidden] {
     display: none;
   }
 
-  .acp-harness__directive-head,
-  .acp-harness__directive-list,
-  .acp-harness__directive-preview {
-    width: clamp(480px, 62vw, 860px);
-    background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
-    border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
-    border-bottom: none;
+  /* The plate behind the head, the list and the preview. */
+  .acp-harness__directive-picker::before {
+    content: '';
+    grid-area: 1 / 1 / 4 / 2;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-brush), var(--mat-plate);
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
   }
 
   .acp-harness__directive-head {
-    border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
+    grid-area: 1 / 1;
     display: flex;
     justify-content: space-between;
+    align-items: baseline;
     gap: 10px;
-    padding: 7px 12px;
-    color: var(--krypton-window-accent, #0cf);
-    letter-spacing: 0.08em;
-    text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
+    min-width: 0;
+    padding: 9px 13px 8px;
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    text-shadow: var(--mat-engrave);
+  }
+
+  .acp-harness__directive-head span:first-child {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .acp-harness__directive-head span:last-child {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
-    font-size: 0.84em;
-    text-shadow: none;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-weight: 400;
     letter-spacing: 0.04em;
+    text-transform: none;
   }
 
   .acp-harness__directive-list {
+    grid-area: 2 / 1;
     list-style: none;
-    margin: 0;
-    padding: 6px 0;
+    min-width: 0;
+    margin: 0 9px 9px;
+    padding: 0;
     max-height: 52vh;
     overflow-y: auto;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
+  /* A repeated row: one groove, the selection tint, nothing else. */
   .acp-harness__directive-row {
     display: flex;
     align-items: baseline;
     gap: 8px;
     padding: 4px 14px;
+    border-bottom: 1px solid var(--mat-groove-lo);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84));
     cursor: default;
   }
 
+  .acp-harness__directive-row:last-child {
+    border-bottom: 0;
+  }
+
   .acp-harness__directive-row--active {
-    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
-    outline: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.5);
-    outline-offset: -1px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
+    background: var(--mat-select);
+    color: var(--krypton-fg, rgba(216, 232, 216, 0.98));
   }
 
   .acp-harness__directive-row--disabled {
-    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
+    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
   }
 
   .acp-harness__directive-icon {
     flex: 0 0 auto;
     width: 1.4em;
     text-align: center;
-    color: var(--krypton-window-accent, #0cf);
+    color: var(--mat-silk);
   }
 
   .acp-harness__directive-title {
@@ -99,16 +122,17 @@
     white-space: nowrap;
     letter-spacing: 0.03em;
     font-weight: 600;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9));
   }
 
   .acp-harness__directive-row--active .acp-harness__directive-title {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
+    color: var(--krypton-fg, rgba(216, 232, 216, 0.98));
   }
 
+  /* The lane's current directive: an amber label, not a pass colour. */
   .acp-harness__directive-assigned {
     flex: 0 0 auto;
-    color: rgba(122, 255, 178, 0.9);
+    color: var(--mat-silk);
     font-size: 0.74em;
     letter-spacing: 0.06em;
     white-space: nowrap;
@@ -116,7 +140,7 @@
 
   .acp-harness__directive-badge {
     flex: 0 0 auto;
-    color: rgba(255, 196, 122, 0.85);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.74em;
     letter-spacing: 0.06em;
     white-space: nowrap;
@@ -127,8 +151,7 @@
      inline tag so it doesn't compete with the directive title/meta.
      Emitted by `index.ts:177` as `${BLOCK}-badge--triage`. */
   .acp-harness__directive-badge--triage {
-    color: rgba(0, 204, 255, 0.42);
-    background: none;
+    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font-size: 0.7em;
     letter-spacing: 0.08em;
   }
@@ -141,60 +164,53 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.85em;
   }
 
   /* Fixed height (not max-height) so the panel never resizes/re-centers when
      navigating between directives — prompts of different lengths must not move
-     the layout. Short prompts leave trailing space; long ones scroll. */
+     the layout. The label is engraved on the plate; the prompt scrolls in its
+     own well below it. */
   .acp-harness__directive-preview {
-    position: relative;
-    padding: 0;
-    border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
-    border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
+    grid-area: 3 / 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
     height: 22vh;
-    overflow-y: auto;
+    padding: 0 9px 9px;
     white-space: pre-wrap;
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     font-size: 0.86em;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
   }
 
   .acp-harness__directive-preview-head {
-    position: sticky;
-    top: 0;
+    flex: 0 0 auto;
     display: flex;
     justify-content: space-between;
     gap: 10px;
-    padding: 6px 14px 5px;
-    border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.14);
-    background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
-    color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.7);
-    font-size: 0.92em;
-    letter-spacing: 0.05em;
-  }
-
-  .acp-harness__directive-preview-scope {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
-    overflow: hidden;
-    text-overflow: ellipsis;
+    padding: 0 4px 5px;
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.13em;
+    text-shadow: var(--mat-engrave);
     white-space: nowrap;
   }
 
-  .acp-harness__directive-preview-body {
-    padding: 8px 14px 16px;
+  .acp-harness__directive-preview-scope {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    letter-spacing: 0.04em;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  /* Bottom fade hinting the prompt scrolls past the fixed-height edge. */
-  .acp-harness__directive-preview::after {
-    content: '';
-    position: sticky;
-    bottom: 0;
-    display: block;
-    height: 26px;
-    margin-top: -26px;
-    pointer-events: none;
-    background: linear-gradient(to top, var(--agent-surface-solid, rgba(8, 14, 18, 0.98)), transparent);
+  .acp-harness__directive-preview-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px 14px 12px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 }

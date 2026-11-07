@@ -21,7 +21,12 @@
    empty one, which is where a terminal draws it too.
 
    Both context rules live here because the caret block is their SUBJECT: they
-   style the caret in a state its ancestor owns, not the ancestor itself. */
+   style the caret in a state its ancestor owns, not the ancestor itself.
+
+   Spec 366 (DESIGN.md "Well", "Motion"): an input well's caret is the theme
+   cursor colour — every caret, so the triage redirect line needs no rule of
+   its own — a flat bar with no glow. It is one of the few things allowed to
+   blink, and it stops under `prefers-reduced-motion`. */
 
 @layer krypton.component {
   .acp-harness__caret {
@@ -35,7 +40,7 @@
        `[font] line_height`). */
     height: 1em;
     vertical-align: -0.2em;
-    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
+    color: var(--krypton-cursor, var(--krypton-accent, #0cf));
     animation: acp-harness-caret 1s step-end infinite;
   }
 
@@ -48,8 +53,6 @@
     width: 1ch;
     height: max(2px, 0.1em);
     background: currentColor;
-    /* The glow sits on the bar, not on the (empty) host box. */
-    box-shadow: 0 0 5px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 45%, transparent);
   }
 
   /* `blink: false` — a caret that marks a position without drawing the eye. */
@@ -63,9 +66,10 @@
     display: none;
   }
 
-  /* The triage redirect line is window-accented, not lane-accented. */
-  .acp-triage__redirect-input .acp-harness__caret {
-    color: var(--krypton-window-accent, #0cf);
+  @media (prefers-reduced-motion: reduce) {
+    .acp-harness__caret {
+      animation: none;
+    }
   }
 
   @keyframes acp-harness-caret {

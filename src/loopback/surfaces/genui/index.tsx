@@ -5,7 +5,10 @@
 
 // The panel body the Harness seats a spec in: the gallery preview carries the
 // same block, so the roots get the app's own column rhythm, not a gallery one.
+// Spec 366: the catalog paints with the app's material tokens (plate, well,
+// key, lamp), so the preview loads the same root set the app does.
 import '../../../acp/components/genui-panel/genui-panel.css';
+import '../../../styles/materials.css';
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';

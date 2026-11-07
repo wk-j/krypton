@@ -815,12 +815,6 @@ export class Compositor {
         ?? 'rgba(6, 10, 18, 0.6)';
       root.setProperty('--krypton-qt-bg', replaceAlpha(themeQtBg, surfaceAlpha));
 
-      // Also override dashboard backdrop and panel alpha with config opacity.
-      root.setProperty('--krypton-dashboard-backdrop', `rgba(0, 0, 0, ${opacity * 0.6})`);
-      const themeBg = this.themeEngine?.theme?.colors?.background
-        ?? 'rgba(10, 10, 15, 0.95)';
-      root.setProperty('--krypton-dashboard-panel-bg', replaceAlpha(themeBg, surfaceAlpha));
-
       // Update existing terminals so their background alpha matches
       this.updateTerminalThemes();
 
@@ -1316,7 +1310,7 @@ export class Compositor {
     return this.getFocusedPane()?.viewId ?? null;
   }
 
-  /** One-shot scan-wipe ack across the titlebar of the window containing
+  /** One-shot LED flare ack on the titlebar of the window containing
    *  the given viewId (or the focused window if omitted). Used by palette
    *  commit, hint pick, dialog confirm. Auto-cleans on animationend. */
   flashAck(viewId?: string): void {
@@ -8992,23 +8986,14 @@ export class Compositor {
    */
   private showNotification(message: string): void {
     console.warn(`[krypton] ${message}`);
-    // Create a simple toast notification
+    // A floating plate styled by `.krypton-toast` (window.css, spec 366).
     const toast = document.createElement('div');
     toast.className = 'krypton-toast';
     toast.textContent = message;
-    toast.style.cssText = `
-      position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
-      padding: 8px 20px; border-radius: 2px; z-index: 9999;
-      font-family: var(--krypton-font-family, monospace);
-      font-size: 13px; color: var(--krypton-ui-text, #c0c5ce);
-      background: var(--krypton-ui-bg, rgba(30, 40, 50, 0.95));
-      border: 1px solid var(--krypton-chrome-border, rgba(0, 255, 255, 0.3));
-      pointer-events: none; opacity: 0; transition: opacity 0.2s ease;
-    `;
     document.body.appendChild(toast);
-    requestAnimationFrame(() => { toast.style.opacity = '1'; });
+    requestAnimationFrame(() => { toast.classList.add('krypton-toast--visible'); });
     setTimeout(() => {
-      toast.style.opacity = '0';
+      toast.classList.remove('krypton-toast--visible');
       setTimeout(() => toast.remove(), 200);
     }, 2500);
   }

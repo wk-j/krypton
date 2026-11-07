@@ -8,6 +8,7 @@
 > Amended by spec 337 (2026-10-27): the dock now shares the right column with the Rails dock as a
 > second tab. `harness-dock.ts` owns placement, `hidden` and the width-reserving root class, renamed
 > `acp-harness--dock-active`; this spec's hide paths (`›`, Escape, `#ticket panel`) are unchanged.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): `DESIGN.console.md` merged into DESIGN.md; dock tokens are `--mat-*`.
 
 ## Problem
 
@@ -115,7 +116,7 @@ pane, so transcript text showed through its head (seen in a 700px smoke page:
 lane text over `ACTIVE TICKET`). The 959px container rule now sets
 `background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96))`, the surface the
 annotation overlay already uses; it follows the theme's chrome backdrop. Since
-`DESIGN.console.md` the docked pane is a 0.9-alpha faceplate rather than
+`DESIGN.md` the docked pane is a 0.9-alpha faceplate rather than
 transparent, and this rule lays the same plate over that solid surface.
 
 No IPC, config or backend change.

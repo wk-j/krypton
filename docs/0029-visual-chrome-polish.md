@@ -5,6 +5,7 @@
 > Milestone: M5/M8 — Visual Polish
 >
 > Consolidates: former docs 29 (terminal glow), 32 (tab styling), 33 (selection glow)
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): terminal, tab and selection glows removed; tabs are selector keys.
 
 ---
 

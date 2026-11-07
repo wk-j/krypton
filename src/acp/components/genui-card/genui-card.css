@@ -1,38 +1,49 @@
 /* Spec 308 §UX — the transcript card; spec 310 §UI — its expanded state.
  *
- * It sits among `acp-harness__msg--artifact` document cards, so it borrows
- * their shape: accent tint + radius, a filled hint badge, and one 1px border
- * at low alpha (spec 308 asks for a full border; CLAUDE.md constraint 9 bans
- * only corner brackets). A full-strength accent border made it the loudest
- * thing in a sealed transcript, which it is not. No animation, on the card or
- * on the expand: the row is sealed. */
+ * A small Krypton Console plate mounted on the lane screen (DESIGN.md
+ * "Parts", "Harness": floating lane cards are small plates), among the flat
+ * transcript text. A plate, not a well: the panel it opens carries keys,
+ * input wells, readouts and gauges, and those only read as hardware on the
+ * metal — a well inside a well loses its edge. The catalog's own `Card` is
+ * the well (layout.css). Its head is one strip of the plate — the title
+ * engraved, the summary a tier down, and the hint label a small keycap,
+ * because it is the key the hint layer will take. Expanded, the same plate
+ * holds the panel (genui-panel.css etches the groove between them). It does
+ * not float, so it casts no shadow. No tint, no accent edge, no glow, and no
+ * animation, on the card or on the expand: the row is sealed. */
 @layer krypton.component {
   .acp-genui-card {
     margin: 8px 0;
-    border: 1px solid color-mix(in srgb, var(--krypton-window-accent, #0cf) 28%, transparent);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 7%, transparent);
-  }
-
-  /* Expanded, the card is the panel's frame: the tint would then wash the
-     whole panel body, so only the edge stays. */
-  .acp-genui-card--open {
-    background: transparent;
+    background: var(--mat-brush), var(--mat-plate);
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   }
 
   /* The seat the view moves the single live panel into. Empty on every other
      card, and an empty block would still draw the slot's own box. */
   .acp-genui-card__panel:empty { display: none; }
 
-  /* Spec 309 revision — the streaming stand-in. It keeps the card's border,
+  /* Spec 309 revision — the streaming stand-in. It keeps the card's plate,
      radius and margin so the seal swap does not move the rows under it, but
-     drops the tint and every affordance: it is not openable. */
+     drops every affordance: it is not openable. Receiving is a working state,
+     so its lamp is lit and steady (DESIGN.md "Motion": live state is a steady
+     lit lamp); the growing line count is the liveness signal. */
   .acp-genui-card--live {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 10px;
     padding: 7px 10px;
-    background: transparent;
+  }
+
+  .acp-genui-card--live::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
   }
 
   /* The fence's own `pre` keeps receiving parser output behind the strip —
@@ -51,7 +62,7 @@
     padding: 7px 10px;
     border: 0;
     border-radius: inherit;
-    background: transparent;
+    background: none;
     color: inherit;
     font: inherit;
     text-align: left;
@@ -59,22 +70,28 @@
   }
 
   .acp-genui-card__open:hover {
-    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 6%, transparent);
+    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.05);
   }
 
+  /* Inset: the head spans the plate, so an outset ring would sit on its edge. */
   .acp-genui-card__open:focus-visible {
-    outline: 1px solid var(--krypton-window-accent, #0cf);
-    outline-offset: -1px;
+    outline: 1px solid var(--mat-lit);
+    outline-offset: -2px;
   }
 
+  /* The title is engraved into the plate, the summary a secondary ink tier. */
   .acp-genui-card__title {
     flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
     font-weight: 600;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 240), 0.95);
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    text-shadow: var(--mat-engrave);
   }
 
   .acp-genui-card__summary {
@@ -84,28 +101,34 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.82em;
-    letter-spacing: 0.02em;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 240), 0.55));
+    letter-spacing: 0.04em;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    text-shadow: var(--mat-engrave);
   }
 
-  /* Same badge as the artifact card's `f` hint. Empty until the hint layer
-     assigns a label, and an empty filled badge is a stray swatch. */
+  /* The hint label is a keycap (DESIGN.md: hint labels are key caps). Empty
+     until the hint layer assigns a label, and an empty cap is a stray part. */
   .acp-genui-card__hint {
     flex: 0 0 auto;
     min-width: 1.4em;
-    padding: 0 0.35em;
-    border-radius: var(--krypton-border-radius, 8px);
-    background: var(--krypton-window-accent, #0cf);
-    color: #0a0e12;
+    padding: 0 4px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 4px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--mat-lit);
     font-weight: bold;
     text-align: center;
+    text-shadow: var(--mat-print);
   }
 
   .acp-genui-card__hint:empty { display: none; }
 
+  /* A spec that does not compile is a fault: the one place this card spends
+     colour (ADR-0017). */
   .acp-genui-card__error {
     margin: 6px 0 0;
     font-size: 0.82em;
-    color: var(--agent-error, #ff6d8a);
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
   }
 }

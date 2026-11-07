@@ -6,7 +6,9 @@
   /* no display/flex overrides — layout is already correct */
 }
 
-/* ─── Context Extension Bars ─── */
+/* ─── Context Extension Bars ───
+   Plate strips on the pane (DESIGN.md "Parts": plate, readouts, gauges). Each
+   bar takes its seam only on the side that meets the terminal. */
 
 /* Extension bar — horizontal strip at top or bottom of a pane.
    Bars are flex children of .krypton-pane, pushing the xterm terminal inward. */
@@ -17,28 +19,26 @@
   padding: 6px 12px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: var(--krypton-chrome-text, #a0a8b7);
-  background: rgba(0, 0, 0, 0.5);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   flex-shrink: 0;
   z-index: 5;
   position: relative;
 }
 
-/* Top bar: border on bottom */
+/* Top bar: seam on the bottom */
 .krypton-extension-bar:first-child {
-  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
+  border-bottom: 1px solid var(--mat-bevel-lo);
 }
 
-/* Bottom bar: border on top */
+/* Bottom bar: seam on the top */
 .krypton-extension-bar:last-child:not(:first-child) {
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.2);
+  border-top: 1px solid var(--mat-bevel-lo);
 }
 
-/* Accent style for identity bars */
+/* Identity bars may host several server rows; stack them vertically. */
 .krypton-extension-bar--accent {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.08);
-  border-bottom-color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
-  /* When hosting multiple server rows, stack them vertically */
   flex-wrap: wrap;
 }
 
@@ -50,17 +50,17 @@
   width: 100%;
 }
 
-/* Subtle separator between server rows */
+/* An etched groove between server rows */
 .krypton-extension-bar__server + .krypton-extension-bar__server {
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.1);
+  border-top: 1px solid var(--mat-groove-lo);
+  box-shadow: inset 0 1px 0 var(--mat-groove-hi);
   padding-top: 4px;
   margin-top: 2px;
 }
 
-/* Stats bar with monospace numbers */
+/* Stats bar: a run of readouts split by grooves */
 .krypton-extension-bar--stats {
   font-variant-numeric: tabular-nums;
-  background: rgba(0, 0, 0, 0.55);
   gap: 0;
 }
 
@@ -69,33 +69,38 @@
   align-items: center;
   gap: 5px;
   padding: 2px 12px;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid var(--mat-groove-lo);
 }
 
 .krypton-extension-bar--stats .krypton-extension-bar__stat:last-child {
   border-right: none;
 }
 
+/* The extension's name: an embossed chip on a key face, silk legend. */
 .krypton-extension-bar__label {
   font-weight: 700;
   font-size: var(--krypton-chrome-font-size, 11px);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 1);
+  letter-spacing: 0.09em;
+  color: var(--mat-silk);
+  text-shadow: var(--mat-print);
   padding: 1px 6px;
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3);
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
 }
 
 .krypton-extension-bar__content {
-  color: var(--krypton-chrome-text, #a0a8b7);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .krypton-extension-bar__stat {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.6);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   font-size: var(--krypton-chrome-font-size, 11px);
 }
@@ -104,25 +109,32 @@
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.35);
+  letter-spacing: 0.13em;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+  text-shadow: var(--mat-engrave);
 }
 
+/* A readout: the figure in a small well. */
 .krypton-extension-bar__stat-value {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.8);
+  padding: 1px 5px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   font-size: var(--krypton-chrome-font-size, 11px);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Warning state: heap > 80% */
 .krypton-extension-bar__stat--warn .krypton-extension-bar__stat-value,
 .krypton-extension-bar__stat--warn .krypton-extension-bar__stat-label {
-  color: #fac863;
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
 }
 
 /* Critical state: heap > 95% */
 .krypton-extension-bar__stat--critical .krypton-extension-bar__stat-value,
 .krypton-extension-bar__stat--critical .krypton-extension-bar__stat-label {
-  color: #ec5f67;
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }
 
 /* ─── Java Resource Monitor Panel ─── */
@@ -130,8 +142,9 @@
 .krypton-java-panel {
   display: flex;
   align-items: stretch;
-  background: rgba(0, 0, 0, 0.6);
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15);
+  background: var(--mat-brush), var(--mat-plate);
+  border-top: 1px solid var(--mat-bevel-lo);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   flex-shrink: 0;
   flex-grow: 0;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
@@ -146,7 +159,7 @@
 .krypton-java-panel__heap {
   flex: 1.2;
   padding: 10px 16px;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid var(--mat-groove-lo);
 }
 
 .krypton-java-panel__header {
@@ -156,25 +169,29 @@
   margin-bottom: 4px;
 }
 
+/* Engraved label */
 .krypton-java-panel__label {
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.13em;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
+  text-shadow: var(--mat-engrave);
 }
 
 .krypton-java-panel__value {
   font-size: var(--krypton-chrome-font-size, 11px);
   font-variant-numeric: tabular-nums;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.85);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
 }
 
-/* Heap gauge bar */
+/* Heap gauge (DESIGN.md "Gauges"): a 4px well track with a flat silk fill and
+   a 1px inset top highlight; no glow. */
 .krypton-java-panel__gauge {
   position: relative;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.06);
+  height: 4px;
+  background: var(--mat-well-fill);
+  box-shadow: var(--mat-well-shadow);
   border-radius: var(--krypton-border-radius, 8px);
   overflow: hidden;
 }
@@ -185,8 +202,9 @@
   left: 0;
   height: 100%;
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7);
-  transition: width 0.5s ease, background 0.5s ease;
+  background: var(--mat-silk);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
+  transition: width 0.5s ease;
 }
 
 .krypton-java-panel__gauge-pct {
@@ -196,27 +214,31 @@
   transform: translateY(-50%);
   font-size: var(--krypton-font-size);
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.6);
-  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+  font-variant-numeric: tabular-nums;
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
   line-height: 1;
 }
 
-/* Heap warning/critical states */
-.krypton-java-panel__heap--warn .krypton-java-panel__value {
-  color: #fac863;
-}
+/* Heap warning/critical states: the fill and figures take the state colour. */
+.krypton-java-panel__heap--warn .krypton-java-panel__value,
 .krypton-java-panel__heap--warn .krypton-java-panel__label {
-  color: #fac863;
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
 }
 
-.krypton-java-panel__heap--critical .krypton-java-panel__value {
-  color: #ec5f67;
+.krypton-java-panel__heap--warn .krypton-java-panel__gauge-fill {
+  background: rgb(var(--krypton-warning-rgb, 232, 197, 71));
 }
+
+.krypton-java-panel__heap--critical .krypton-java-panel__value,
 .krypton-java-panel__heap--critical .krypton-java-panel__label {
-  color: #ec5f67;
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }
 
-/* Right-side metric cards */
+.krypton-java-panel__heap--critical .krypton-java-panel__gauge-fill {
+  background: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+}
+
+/* Right-side metric readouts, split by grooves */
 .krypton-java-panel__metrics {
   display: flex;
   flex: 1;
@@ -230,7 +252,7 @@
   justify-content: center;
   padding: 8px 12px;
   gap: 2px;
-  border-right: 1px solid rgba(255, 255, 255, 0.04);
+  border-right: 1px solid var(--mat-groove-lo);
 }
 
 .krypton-java-panel__metric:last-child {
@@ -239,18 +261,17 @@
 
 .krypton-java-panel__metric-icon {
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.4);
+  color: var(--mat-silk);
   line-height: 1;
 }
 
 .krypton-java-panel__metric .krypton-java-panel__label {
   font-size: var(--krypton-font-size);
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
 }
 
 .krypton-java-panel__metric .krypton-java-panel__value {
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.9);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
 }
-

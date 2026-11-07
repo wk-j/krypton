@@ -111,16 +111,4 @@ describe('project badge chrome', () => {
     expect(badge).toMatch(/gap:\s*4px/);
     expect(initials).not.toMatch(/letter-spacing:\s*-/);
   });
-
-  it('does not glow the two-letter mark on the light scheme either', () => {
-    const light = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), 'styles/theme-scheme.css'),
-      'utf8',
-    );
-    const lightInitials =
-      light.match(
-        /html\[data-theme-scheme='light'\] \.krypton-window__project-initials\s*\{[^}]*\}/,
-      )?.[0] ?? '';
-    expect(lightInitials).not.toMatch(/text-shadow/);
-  });
 });

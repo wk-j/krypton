@@ -7,6 +7,7 @@
 > hook text now. Kept as design history.
 > Date: 2026-03-26
 > Milestone: N/A — Visual enhancement
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): toasts are floating plates; border-draw, dot grid and glows removed.
 
 ## Problem
 

@@ -1,76 +1,80 @@
 /* Spec 309 §Catalog — the Data group sheet.
  *
- * Every selector lives under the `acp-genui` block. Structure (table rules,
- * chart axes, progress tracks) is hairline `--krypton-fg-rgb`; saturated colour
- * is spent only on the marks that carry a value. The six series slots are the
- * one place this sheet introduces a palette, and each slot is an existing
- * `--krypton-*` token rather than a new literal.
+ * Every selector lives under the `acp-genui` block. Tables, charts, code and
+ * diffs are content and stay flat (DESIGN.md, spec 366): a table has an
+ * engraved head row and rows split by one groove, with no shadow or gradient
+ * on a row. The chrome around the data is Krypton Console parts: a progress
+ * bar is a gauge (a 4px well track with a flat fill), a figure on its own is
+ * a readout, a timeline dot is a lamp, a code block a recess with a key.
  *
- * No `backdrop-filter`, no corner brackets, no `infinite` animation: a pending
- * diagram is a static sized placeholder, not a spinner. */
+ * Marks are drawn in `--genui-series` / `--genui-ink`, a colour: the amber
+ * silk by default, a theme state token when a tone or a series slot asks for
+ * one. Every slot is an existing `--krypton-*` or `--mat-*` token rather than
+ * a new literal. A lamp needs a channel triple for its glow, so the timeline
+ * dot keeps `--genui-tone` as `r, g, b`.
+ *
+ * No `backdrop-filter`, no corner brackets, no animation of any kind: a
+ * pending diagram is a static sized placeholder, not a spinner, and a gauge
+ * jumps to its value. */
 @layer krypton.component {
   .acp-genui__chart-mark,
   .acp-genui__chart-swatch,
   .acp-genui__chart-line,
   .acp-genui__chart-area {
-    --genui-series: var(--krypton-accent-rgb, 0, 204, 255);
+    --genui-series: var(--mat-silk);
   }
 
   .acp-genui__chart-mark[data-series='1'],
   .acp-genui__chart-key[data-series='1'] .acp-genui__chart-swatch,
   .acp-genui__chart-line[data-series='1'],
   .acp-genui__chart-area[data-series='1'] {
-    --genui-series: var(--krypton-success-rgb, 120, 200, 140);
+    --genui-series: rgb(var(--krypton-success-rgb, 57, 255, 127));
   }
 
   .acp-genui__chart-mark[data-series='2'],
   .acp-genui__chart-key[data-series='2'] .acp-genui__chart-swatch,
   .acp-genui__chart-line[data-series='2'],
   .acp-genui__chart-area[data-series='2'] {
-    --genui-series: var(--krypton-warning-rgb, 224, 176, 96);
+    --genui-series: rgb(var(--krypton-warning-rgb, 232, 197, 71));
   }
 
   .acp-genui__chart-mark[data-series='3'],
   .acp-genui__chart-key[data-series='3'] .acp-genui__chart-swatch,
   .acp-genui__chart-line[data-series='3'],
   .acp-genui__chart-area[data-series='3'] {
-    --genui-series: var(--krypton-danger-rgb, 220, 120, 120);
+    --genui-series: rgb(var(--krypton-danger-rgb, 255, 58, 92));
   }
 
   .acp-genui__chart-mark[data-series='4'],
   .acp-genui__chart-key[data-series='4'] .acp-genui__chart-swatch,
   .acp-genui__chart-line[data-series='4'],
   .acp-genui__chart-area[data-series='4'] {
-    --genui-series: var(--krypton-info-rgb, 120, 176, 224);
+    --genui-series: rgb(var(--krypton-info-rgb, 74, 158, 255));
   }
 
   .acp-genui__chart-mark[data-series='5'],
   .acp-genui__chart-key[data-series='5'] .acp-genui__chart-swatch,
   .acp-genui__chart-line[data-series='5'],
   .acp-genui__chart-area[data-series='5'] {
-    --genui-series: var(--krypton-special-rgb, 180, 150, 220);
+    --genui-series: rgb(var(--krypton-special-rgb, 199, 125, 255));
   }
 
   /* ── Table ─────────────────────────────────────────────────────────────── */
 
-  /* The frame is the component's own, in this sheet's hairline `fg` scale, so
-     the table reads like the Callout, Code and Button blocks beside it.
+  /* Flat content in an etched frame. `border-collapse: collapse` is what used
+     to leave it square: a collapsed table discards its `border-radius`, and
+     since this sheet sits in `krypton.component` it outranked the `separate`
+     that `harness-shared.css` sets on tables inside a message body.
+     `separate` + zero spacing keeps the groove grid AND the corners.
 
-     `border-collapse: collapse` is what used to leave it square: a collapsed
-     table discards every `border-radius` its cells declare, and since this
-     sheet sits in `krypton.component` it outranked the `separate` that
-     `harness-shared.css` sets on tables inside a message body — so the radii
-     that sheet puts on the corner cells computed as 8px and rendered as right
-     angles. `separate` + zero spacing keeps the hairline grid AND the corners.
-
-     Column separators and the accent header wash are not re-declared: they
-     were the markdown sheet showing through, which made the table the one
-     block in the panel whose look depended on where it was seated. */
+     The cells reset `border` and `background`, so the markdown sheet's column
+     separators and head fill never show through: the table looks the same
+     wherever it is seated. */
   .acp-genui__table {
     width: 100%;
     border-collapse: separate;
     border-spacing: 0;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
+    border: 1px solid var(--mat-groove-lo);
     border-radius: var(--krypton-border-radius, 8px);
     font-variant-numeric: tabular-nums;
   }
@@ -81,7 +85,8 @@
     text-align: left;
     vertical-align: top;
     border: 0;
-    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    border-bottom: 1px solid var(--mat-groove-lo);
+    background: none;
   }
 
   .acp-genui__table > tbody > tr:last-child > .acp-genui__table-cell,
@@ -89,28 +94,19 @@
     border-bottom: 0;
   }
 
-  .acp-genui__table > thead > tr > .acp-genui__table-head:first-child {
-    border-top-left-radius: var(--krypton-border-radius, 8px);
-  }
-
-  .acp-genui__table > thead > tr > .acp-genui__table-head:last-child {
-    border-top-right-radius: var(--krypton-border-radius, 8px);
-  }
-
-  .acp-genui__table > tbody > tr:last-child > :first-child {
-    border-bottom-left-radius: var(--krypton-border-radius, 8px);
-  }
-
-  .acp-genui__table > tbody > tr:last-child > :last-child {
-    border-bottom-right-radius: var(--krypton-border-radius, 8px);
-  }
-
+  /* The head row is engraved: label typography, one row, so it may carry the
+     engraving shadow that a repeated row may not. */
   .acp-genui__table-head {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.05);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-size: var(--krypton-chrome-font-size, 11px);
     font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: lowercase;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    text-shadow: var(--mat-engrave);
+  }
+
+  .acp-genui__table-cell {
+    color: var(--krypton-fg, #b0c4d8);
   }
 
   .acp-genui__table-head--num,
@@ -121,7 +117,8 @@
   .acp-genui__table-more {
     padding: 4px 8px;
     border: 0;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    background: none;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-style: italic;
   }
 
@@ -140,28 +137,28 @@
   }
 
   .acp-genui__chart-mark {
-    fill: rgba(var(--genui-series), 0.82);
+    fill: color-mix(in srgb, var(--genui-series) 82%, transparent);
   }
 
   .acp-genui__chart-line {
     fill: none;
-    stroke: rgb(var(--genui-series));
+    stroke: var(--genui-series);
     stroke-width: 1.5;
     stroke-linejoin: round;
   }
 
   .acp-genui__chart-area {
-    fill: rgba(var(--genui-series), 0.18);
+    fill: color-mix(in srgb, var(--genui-series) 18%, transparent);
     stroke: none;
   }
 
   .acp-genui__chart-axis {
-    stroke: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+    stroke: var(--mat-groove-lo);
     stroke-width: 1;
   }
 
   .acp-genui__chart-text {
-    fill: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
+    fill: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-family: var(--krypton-font-mono, var(--krypton-font-family, monospace));
     font-size: 11px;
   }
@@ -172,7 +169,7 @@
     flex-wrap: wrap;
     gap: 4px 12px;
     font-size: 0.82em;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
   .acp-genui__chart-ticks {
@@ -189,28 +186,56 @@
     width: 9px;
     height: 9px;
     border-radius: 2px;
-    background: rgba(var(--genui-series), 0.82);
+    background: color-mix(in srgb, var(--genui-series) 82%, transparent);
   }
 
   .acp-genui__chart-unit {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.8em;
   }
+
+  /* ── Tone ink for the single-colour marks ──────────────────────────────── */
+
+  .acp-genui__spark,
+  .acp-genui__progress-fill,
+  .acp-genui__segbar-part,
+  .acp-genui__segbar-swatch,
+  .acp-genui__gauge-fill {
+    --genui-ink: var(--mat-silk);
+  }
+
+  .acp-genui__spark--good,
+  .acp-genui__progress-fill--good,
+  .acp-genui__segbar-part--good,
+  .acp-genui__segbar-swatch--good,
+  .acp-genui__gauge-fill--good { --genui-ink: rgb(var(--krypton-success-rgb, 57, 255, 127)); }
+
+  .acp-genui__spark--warn,
+  .acp-genui__progress-fill--warn,
+  .acp-genui__segbar-part--warn,
+  .acp-genui__segbar-swatch--warn,
+  .acp-genui__gauge-fill--warn { --genui-ink: rgb(var(--krypton-warning-rgb, 232, 197, 71)); }
+
+  .acp-genui__spark--bad,
+  .acp-genui__progress-fill--bad,
+  .acp-genui__segbar-part--bad,
+  .acp-genui__segbar-swatch--bad,
+  .acp-genui__gauge-fill--bad { --genui-ink: rgb(var(--krypton-danger-rgb, 255, 58, 92)); }
+
+  .acp-genui__spark--info,
+  .acp-genui__progress-fill--info,
+  .acp-genui__segbar-part--info,
+  .acp-genui__segbar-swatch--info,
+  .acp-genui__gauge-fill--info { --genui-ink: rgb(var(--krypton-info-rgb, 74, 158, 255)); }
 
   /* ── Sparkline ─────────────────────────────────────────────────────────── */
 
   .acp-genui__spark {
-    --genui-tone: var(--krypton-accent-rgb, 0, 204, 255);
     display: block;
     width: 100%;
     max-width: 200px;
     height: 28px;
   }
-
-  .acp-genui__spark--good { --genui-tone: var(--krypton-success-rgb, 120, 200, 140); }
-  .acp-genui__spark--warn { --genui-tone: var(--krypton-warning-rgb, 224, 176, 96); }
-  .acp-genui__spark--bad { --genui-tone: var(--krypton-danger-rgb, 220, 120, 120); }
-  .acp-genui__spark--info { --genui-tone: var(--krypton-info-rgb, 120, 176, 224); }
 
   .acp-genui__spark-svg {
     display: block;
@@ -220,17 +245,19 @@
 
   .acp-genui__spark-line {
     fill: none;
-    stroke: rgb(var(--genui-tone));
+    stroke: var(--genui-ink);
     stroke-width: 1.5;
     vector-effect: non-scaling-stroke;
   }
 
   .acp-genui__spark-dot {
-    fill: rgb(var(--genui-tone));
+    fill: var(--genui-ink);
   }
 
   /* ── Progress / Gauge / SegmentedBar ───────────────────────────────────── */
 
+  /* A gauge (DESIGN.md "Gauges and progress"): label, a 4px well track with
+     a flat fill, and the value a readout at the right end. */
   .acp-genui__progress {
     display: flex;
     align-items: center;
@@ -239,39 +266,40 @@
 
   .acp-genui__progress-label {
     flex: 0 0 auto;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
   .acp-genui__progress-track,
   .acp-genui__segbar-track {
     flex: 1 1 auto;
     display: flex;
-    height: 8px;
+    height: 4px;
     overflow: hidden;
-    border-radius: 4px;
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    border-radius: 999px;
+    background: var(--mat-well-fill);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.55), 0 1px 0 var(--mat-well-lip);
   }
 
   .acp-genui__progress-fill,
   .acp-genui__segbar-part {
-    --genui-tone: var(--krypton-accent-rgb, 0, 204, 255);
     height: 100%;
-    background: rgba(var(--genui-tone), 0.76);
-    transition: width 120ms ease-out;
+    background: var(--genui-ink);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
   }
 
-  .acp-genui__progress-fill--good,
-  .acp-genui__segbar-part--good { --genui-tone: var(--krypton-success-rgb, 120, 200, 140); }
-  .acp-genui__progress-fill--warn,
-  .acp-genui__segbar-part--warn { --genui-tone: var(--krypton-warning-rgb, 224, 176, 96); }
-  .acp-genui__progress-fill--bad,
-  .acp-genui__segbar-part--bad { --genui-tone: var(--krypton-danger-rgb, 220, 120, 120); }
-  .acp-genui__progress-fill--info,
-  .acp-genui__segbar-part--info { --genui-tone: var(--krypton-info-rgb, 120, 176, 224); }
+  /* A seam between stacked segments, so two parts in one ink stay two. */
+  .acp-genui__segbar-part + .acp-genui__segbar-part {
+    box-shadow: inset 1px 0 0 var(--mat-well-wall), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
 
-  .acp-genui__progress-value {
+  .acp-genui__progress-value,
+  .acp-genui__gauge-value {
     flex: 0 0 auto;
-    color: var(--krypton-window-accent, #0cf);
+    padding: 2px 6px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    color: var(--mat-lit);
     font-variant-numeric: tabular-nums;
   }
 
@@ -279,7 +307,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
   }
 
   .acp-genui__gauge-svg {
@@ -290,32 +318,25 @@
 
   .acp-genui__gauge-track {
     fill: none;
-    stroke: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.12);
+    stroke: var(--mat-well-fill);
     stroke-width: 10;
     stroke-linecap: round;
   }
 
   .acp-genui__gauge-fill {
-    --genui-tone: var(--krypton-accent-rgb, 0, 204, 255);
     fill: none;
-    stroke: rgb(var(--genui-tone));
+    stroke: var(--genui-ink);
     stroke-width: 10;
     stroke-linecap: round;
   }
 
-  .acp-genui__gauge-fill--good { --genui-tone: var(--krypton-success-rgb, 120, 200, 140); }
-  .acp-genui__gauge-fill--warn { --genui-tone: var(--krypton-warning-rgb, 224, 176, 96); }
-  .acp-genui__gauge-fill--bad { --genui-tone: var(--krypton-danger-rgb, 220, 120, 120); }
-  .acp-genui__gauge-fill--info { --genui-tone: var(--krypton-info-rgb, 120, 176, 224); }
-
   .acp-genui__gauge-value {
-    color: var(--krypton-window-accent, #0cf);
+    padding: 2px 8px;
     font-size: 1.3em;
-    font-variant-numeric: tabular-nums;
   }
 
   .acp-genui__gauge-label {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.84em;
   }
 
@@ -339,24 +360,18 @@
   }
 
   .acp-genui__segbar-swatch {
-    --genui-tone: var(--krypton-accent-rgb, 0, 204, 255);
     width: 9px;
     height: 9px;
     border-radius: 2px;
-    background: rgba(var(--genui-tone), 0.76);
+    background: var(--genui-ink);
   }
 
-  .acp-genui__segbar-swatch--good { --genui-tone: var(--krypton-success-rgb, 120, 200, 140); }
-  .acp-genui__segbar-swatch--warn { --genui-tone: var(--krypton-warning-rgb, 224, 176, 96); }
-  .acp-genui__segbar-swatch--bad { --genui-tone: var(--krypton-danger-rgb, 220, 120, 120); }
-  .acp-genui__segbar-swatch--info { --genui-tone: var(--krypton-info-rgb, 120, 176, 224); }
-
   .acp-genui__segbar-name {
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
   }
 
   .acp-genui__segbar-amount {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-variant-numeric: tabular-nums;
   }
 
@@ -377,8 +392,21 @@
     display: flex;
     align-items: baseline;
     gap: 8px;
+    margin: 0;
+    padding: 0;
   }
 
+  /* Seated in a transcript message, the markdown sheet (harness-shared.css)
+     numbers and bullets every `li` with a `::before`; these lists draw their
+     own marks. */
+  .acp-genui__step-row::before,
+  .acp-genui__event::before,
+  .acp-genui__tree-item::before {
+    content: none;
+  }
+
+  /* A step mark is a small recessed disc holding its glyph; the state inks
+     the glyph (done pass, current lit, blocked fault). */
   .acp-genui__step-mark {
     flex: 0 0 auto;
     width: 18px;
@@ -386,25 +414,23 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.2);
     border-radius: 50%;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
+    background: var(--mat-well-fill);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.45), 0 1px 0 var(--mat-well-lip);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.74em;
   }
 
   .acp-genui__step-row--done .acp-genui__step-mark {
-    border-color: rgba(var(--krypton-success-rgb, 120, 200, 140), 0.5);
-    color: rgb(var(--krypton-success-rgb, 120, 200, 140));
+    color: rgb(var(--krypton-success-rgb, 57, 255, 127));
   }
 
   .acp-genui__step-row--current .acp-genui__step-mark {
-    border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.6);
-    color: var(--krypton-window-accent, #0cf);
+    color: var(--mat-lit);
   }
 
   .acp-genui__step-row--blocked .acp-genui__step-mark {
-    border-color: rgba(var(--krypton-danger-rgb, 220, 120, 120), 0.5);
-    color: rgb(var(--krypton-danger-rgb, 220, 120, 120));
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
   }
 
   .acp-genui__step-body,
@@ -416,28 +442,37 @@
 
   .acp-genui__step-detail,
   .acp-genui__event-detail {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.86em;
   }
 
+  /* A timeline dot is a lamp: unlit without a tone, lit in the tone's colour. */
   .acp-genui__event-dot {
-    --genui-tone: var(--krypton-accent-rgb, 0, 204, 255);
     flex: 0 0 auto;
-    width: 7px;
-    height: 7px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
-    background: rgb(var(--genui-tone));
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
-  .acp-genui__event-dot--good { --genui-tone: var(--krypton-success-rgb, 120, 200, 140); }
-  .acp-genui__event-dot--warn { --genui-tone: var(--krypton-warning-rgb, 224, 176, 96); }
-  .acp-genui__event-dot--bad { --genui-tone: var(--krypton-danger-rgb, 220, 120, 120); }
-  .acp-genui__event-dot--info { --genui-tone: var(--krypton-info-rgb, 120, 176, 224); }
+  .acp-genui__event-dot--good { --genui-tone: var(--krypton-success-rgb, 57, 255, 127); }
+  .acp-genui__event-dot--warn { --genui-tone: var(--krypton-warning-rgb, 232, 197, 71); }
+  .acp-genui__event-dot--bad { --genui-tone: var(--krypton-danger-rgb, 255, 58, 92); }
+  .acp-genui__event-dot--info { --genui-tone: var(--krypton-info-rgb, 74, 158, 255); }
+
+  .acp-genui__event-dot--good,
+  .acp-genui__event-dot--warn,
+  .acp-genui__event-dot--bad,
+  .acp-genui__event-dot--info {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--genui-tone)) 45%, rgba(var(--genui-tone), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--genui-tone), 0.9), 0 0 10px rgba(var(--genui-tone), 0.4);
+  }
 
   .acp-genui__event-time {
     flex: 0 0 auto;
     min-width: 64px;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-variant-numeric: tabular-nums;
   }
 
@@ -447,6 +482,11 @@
     margin: 0;
     padding: 0 0 0 14px;
     list-style: none;
+  }
+
+  .acp-genui__tree-item {
+    margin: 0;
+    padding: 0;
   }
 
   .acp-genui__tree-row {
@@ -461,14 +501,14 @@
     padding: 0;
     border: 0;
     background: none;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font: inherit;
     line-height: 1;
     cursor: pointer;
   }
 
   .acp-genui__tree-toggle:hover {
-    color: var(--krypton-window-accent, #0cf);
+    color: var(--mat-lit);
   }
 
   .acp-genui__tree-leaf {
@@ -477,15 +517,17 @@
   }
 
   .acp-genui__tree-note {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.86em;
   }
 
   /* ── Code ──────────────────────────────────────────────────────────────── */
 
+  /* A deeper recess; the code itself stays flat. */
   .acp-genui__code {
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.12);
-    border-radius: var(--krypton-border-radius, 6px);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well-fill);
+    box-shadow: var(--mat-well-shadow);
     overflow: hidden;
   }
 
@@ -494,31 +536,39 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 3px 8px;
-    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
+    padding: 3px 4px 3px 8px;
+    border-bottom: 1px solid var(--mat-groove-lo);
   }
 
   .acp-genui__code-lang {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.78em;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
   }
 
   .acp-genui__code-copy {
     padding: 1px 8px;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
-    border-radius: 3px;
-    background: none;
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 6px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     font: inherit;
     font-size: 0.78em;
-    cursor: pointer;
+    letter-spacing: 0.09em;
+    text-shadow: var(--mat-print);
+    cursor: default;
   }
 
   .acp-genui__code-copy:hover {
-    border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.42);
-    color: var(--krypton-window-accent, #0cf);
+    background: var(--mat-key-hover);
+  }
+
+  .acp-genui__code-copy:active {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    transform: translateY(1px);
   }
 
   .acp-genui__code-body {
@@ -534,7 +584,7 @@
 
   .acp-genui__diff-path {
     padding-bottom: 3px;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.84em;
   }
 
@@ -553,7 +603,7 @@
   .acp-genui__tool-diff-mark {
     flex: 0 0 auto;
     width: 14px;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36));
+    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
   }
 
   .acp-genui__tool-diff-text {
@@ -569,11 +619,11 @@
     white-space: pre;
   }
 
-  .acp-genui__tool-diff-line--add { color: rgb(var(--krypton-success-rgb, 120, 200, 140)); }
-  .acp-genui__tool-diff-line--del { color: rgb(var(--krypton-danger-rgb, 220, 120, 120)); }
-  .acp-genui__tool-diff-line--hunk { color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.72); }
+  .acp-genui__tool-diff-line--add { color: rgb(var(--krypton-success-rgb, 57, 255, 127)); }
+  .acp-genui__tool-diff-line--del { color: rgb(var(--krypton-danger-rgb, 255, 58, 92)); }
+  .acp-genui__tool-diff-line--hunk { color: rgb(var(--krypton-info-rgb, 74, 158, 255)); }
   .acp-genui__tool-diff-line--meta,
-  .acp-genui__tool-diff-file { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42)); }
+  .acp-genui__tool-diff-file { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62)); }
   .acp-genui__tok-path { font-family: var(--krypton-font-mono, monospace); }
 
   /* ── Diagram ───────────────────────────────────────────────────────────── */
@@ -590,28 +640,23 @@
   }
 
   .acp-genui__diagram-pending {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.86em;
   }
 
   .acp-genui__diagram-error {
-    color: rgb(var(--krypton-danger-rgb, 220, 120, 120));
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
     font-size: 0.86em;
   }
 }
 
 @layer krypton.scheme {
-  /* The light scheme retargets `--krypton-*-rgb`, so only the flat fills that
-   * read as washed-out at low alpha need a nudge. */
-  :root[data-theme-scheme='light'] .acp-genui__chart-mark {
-    fill: rgba(var(--genui-series), 0.9);
+  /* Chart fills at low alpha wash out on aluminium; give them more body. */
+  html[data-theme-scheme='light'] .acp-genui__chart-mark {
+    fill: color-mix(in srgb, var(--genui-series) 90%, transparent);
   }
 
-  :root[data-theme-scheme='light'] .acp-genui__chart-area {
-    fill: rgba(var(--genui-series), 0.24);
-  }
-
-  :root[data-theme-scheme='light'] .acp-genui__code-head {
-    background: rgba(var(--krypton-fg-rgb, 32, 40, 32), 0.06);
+  html[data-theme-scheme='light'] .acp-genui__chart-area {
+    fill: color-mix(in srgb, var(--genui-series) 24%, transparent);
   }
 }

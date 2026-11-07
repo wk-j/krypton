@@ -1,9 +1,11 @@
 /* Specs 323, 327 — `FollowUpRail`.
  *
- * The FOLLOW-UP buttons under a sealed reply. Its head matches the REFERENCES
- * rail above it; the buttons are ghost buttons with one full 1px border at low
- * accent alpha (CLAUDE.md constraint 9 bans only corner brackets). No
- * animation of any kind, entrance included: the row is sealed. */
+ * The FOLLOW-UP actions under a sealed reply. Its head is the same silk label
+ * as the REFERENCES rail above it. Spec 366 (DESIGN.md "Key"): each action is
+ * a key — key face, 1px key edge, raised; held it sinks 1px. The command under
+ * the label makes some keys two lines tall: the command is the action's
+ * content, not a state badge, so it stays. No animation of any kind, entrance
+ * included: the row is sealed. */
 @layer krypton.component {
   /* A sibling of the row body, so it takes the body's column of the row grid
      (`harness-shared.css` `.acp-harness__msg`), as the spec 281 image strip does. */
@@ -22,9 +24,10 @@
   .acp-harness__followups-head {
     padding: 0 7px 1px;
     font-size: 0.7em;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 240), 0.55));
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--mat-silk);
   }
 
   /* One action per line, every button as wide as the widest, so the commands
@@ -32,7 +35,7 @@
   .acp-harness__followups-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
     width: fit-content;
     max-width: 100%;
   }
@@ -53,24 +56,30 @@
     font: inherit;
     text-align: left;
     color: inherit;
-    background: transparent;
-    border: 1px solid color-mix(in srgb, var(--krypton-window-accent, #0cf) 28%, transparent);
+    background: var(--mat-key);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
+    box-shadow: var(--mat-key-raise);
     cursor: pointer;
   }
 
   .acp-harness__followups-btn:hover {
-    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 8%, transparent);
-    border-color: color-mix(in srgb, var(--krypton-window-accent, #0cf) 55%, transparent);
+    background: var(--mat-key-hover);
+  }
+
+  .acp-harness__followups-btn:active {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    transform: translateY(1px);
   }
 
   .acp-harness__followups-btn:focus-visible {
-    outline: 1px solid var(--krypton-window-accent, #0cf);
-    outline-offset: -1px;
+    outline: 1px solid var(--mat-lit);
+    outline-offset: 2px;
   }
 
-  /* The `f` open-hint badge — the GenUI card's. Empty outside hint mode, and
-     an empty filled badge would be a stray swatch. */
+  /* The `f` open-hint label — a key cap let into the key. Empty outside hint
+     mode, and an empty cap would be a stray swatch. */
   .acp-harness__followups-hint {
     grid-column: 1;
     grid-row: 1;
@@ -79,8 +88,9 @@
     min-width: 1.4em;
     padding: 0 0.35em;
     border-radius: var(--krypton-border-radius, 8px);
-    background: var(--krypton-window-accent, #0cf);
-    color: rgb(var(--krypton-bg-rgb, 10, 14, 18));
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    color: var(--mat-lit);
     font-weight: bold;
     text-align: center;
   }
@@ -93,7 +103,7 @@
     grid-column: 2;
     grid-row: 1;
     margin-right: 8px;
-    color: var(--krypton-window-accent, #0cf);
+    color: var(--mat-silk);
   }
 
   .acp-harness__followups-btn--open .acp-harness__followups-glyph {
@@ -104,21 +114,22 @@
     color: rgb(var(--krypton-info-rgb, 90, 160, 255));
   }
 
-  /* Spec 327 rev 4: a prompt is one card. The item carries the border and the
-     hover tint, the send button fills it, and the paste icon sits inside the
-     right edge on the label's row. As wide as every other action, so the
-     right edges still line up. */
+  /* Spec 327 rev 4: a prompt is one key. The item carries the key face, the
+     send button fills it, and the paste icon sits inside the right edge on the
+     label's row. As wide as every other action, so the right edges still
+     line up. */
   .acp-harness__followups-item {
     display: flex;
     align-items: flex-start;
     width: 100%;
-    border: 1px solid color-mix(in srgb, var(--krypton-window-accent, #0cf) 28%, transparent);
+    background: var(--mat-key);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
+    box-shadow: var(--mat-key-raise);
   }
 
   .acp-harness__followups-item:hover {
-    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 8%, transparent);
-    border-color: color-mix(in srgb, var(--krypton-window-accent, #0cf) 55%, transparent);
+    background: var(--mat-key-hover);
   }
 
   .acp-harness__followups-item > .acp-harness__followups-btn {
@@ -126,10 +137,16 @@
     width: auto;
     min-width: 0;
     border: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .acp-harness__followups-item > .acp-harness__followups-btn:hover {
     background: transparent;
+  }
+
+  .acp-harness__followups-item > .acp-harness__followups-btn:active {
+    transform: none;
   }
 
   .acp-harness__followups-paste {
@@ -148,12 +165,16 @@
   }
 
   .acp-harness__followups-paste:hover {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 240), 0.95);
-    background: color-mix(in srgb, var(--krypton-window-accent, #0cf) 18%, transparent);
+    color: var(--mat-lit);
+  }
+
+  .acp-harness__followups-paste:active {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
   }
 
   .acp-harness__followups-paste:focus-visible {
-    outline: 1px solid var(--krypton-window-accent, #0cf);
+    outline: 1px solid var(--mat-lit);
     outline-offset: -1px;
   }
 

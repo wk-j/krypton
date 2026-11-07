@@ -1,47 +1,44 @@
-/* Spec 302 §2.4 — InlinePalette. Carved from the monolith, verbatim.
-
-   Sources (to be deleted by the integrator in one pass):
-     src/styles/acp-harness.css:5608-5661  — the block (Spec 87 comment + 7 rules)
-     src/styles/acp-harness.css:5819-5872  — the byte-identical SECOND copy of
-                                             that span; the later one is the one
-                                             the cascade actually used
-     src/styles/acp-harness.css:3959-3969  — the composer-scoped overrides
-     src/styles/theme-scheme.css:347-349   — the light-scheme selected row
+/* Spec 302 §2.4 — InlinePalette. Carved from the monolith.
 
    The composer-scoped rules live here, not in the composer's directory,
    because their SUBJECT is `.acp-harness__slash-palette*` — the composer class
    is only an ancestor context. A component sheet may declare rules for the
    blocks it owns; the composer directory declaring `-palette` rules would be
-   the opposite of that. */
+   the opposite of that.
+
+   Spec 366 (DESIGN.md "Overlays and dialogs"): the palette is one well set
+   into the composer plate; its rows are cut by grooves and the selected row
+   takes the full-row `--mat-select` tint with a backlit legend. Rows are
+   repeated rows: no shadow, no gradient. */
 
 @layer krypton.component {
   /* Spec 87 — slash command palette */
   .acp-harness__slash-palette {
     display: flex;
     flex-direction: column;
-    gap: 1px;
     margin-bottom: 6px;
-    padding: 4px 0;
-    background: var(--krypton-bg-elev, var(--agent-surface-solid, #0c1018));
-    border: 1px solid color-mix(in oklab, #c77dff 30%, transparent);
+    padding: 3px 0;
     border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
     font-size: 0.78em;
   }
 
   /* The component's empty state. The builder returned `''` when the palette had
      no matches, so no element existed at all; the component keeps one node and
      sets `hidden` instead — and `display: flex` above would otherwise beat the
-     UA's `[hidden] { display: none }`, leaving four empty bordered bars stacked
-     above the composer input. */
+     UA's `[hidden] { display: none }`, leaving four empty wells stacked above
+     the composer input. */
   .acp-harness__slash-palette[hidden] {
     display: none;
   }
 
   .acp-harness__slash-palette-meta {
-    padding: 2px 8px;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    padding: 2px 8px 3px;
+    border-bottom: 1px solid var(--mat-groove-lo);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.78em;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.13em;
     text-transform: uppercase;
   }
 
@@ -50,23 +47,32 @@
     align-items: baseline;
     gap: 10px;
     padding: 2px 8px;
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
+    border-bottom: 1px solid var(--mat-groove-lo);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
+  }
+
+  .acp-harness__slash-palette-row:last-child {
+    border-bottom: 0;
   }
 
   .acp-harness__slash-palette-row--selected {
-    background: color-mix(in oklab, #c77dff 22%, transparent);
-    color: rgba(255, 255, 255, 0.92);
+    background: var(--mat-select);
+    color: var(--krypton-fg, #d8e8d8);
   }
 
   .acp-harness__slash-palette-name {
     flex: 0 0 auto;
-    color: color-mix(in oklab, #c77dff 80%, white 20%);
+    color: var(--krypton-fg, #d8e8d8);
     font-weight: 600;
+  }
+
+  .acp-harness__slash-palette-row--selected .acp-harness__slash-palette-name {
+    color: var(--mat-lit);
   }
 
   .acp-harness__slash-palette-hint {
     flex: 0 0 auto;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-style: italic;
   }
 
@@ -75,7 +81,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     max-width: 60ch;
   }
 
@@ -91,11 +97,5 @@
   .acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__slash-palette-meta,
   .acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__slash-palette-row {
     flex: 0 0 auto;
-  }
-}
-
-@layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-harness__slash-palette-row--selected {
-    color: var(--krypton-ink);
   }
 }

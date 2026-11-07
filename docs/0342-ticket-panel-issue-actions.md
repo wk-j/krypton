@@ -4,6 +4,7 @@
 > Date: 2026-10-29
 > Milestone: ACP Harness — working-ticket workflow
 > Amends: [0238](./0238-local-ticket-bundles.md) (the Ticket Panel stops being a read-only surface)
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): `DESIGN.console.md` merged into DESIGN.md; dock tokens are `--mat-*`.
 
 ## Problem
 
@@ -272,7 +273,7 @@ run in codex-1 · idle
 - **No GitHub reference:** the section shows only `Link a GitHub issue to run issue actions:
   #ticket link <ref>`.
 - The state is never shown by colour alone: a done key carries `✓`, and a running key is latched
-  down (DESIGN.console.md); the tooltip names the lane or time.
+  down (DESIGN.md); the tooltip names the lane or time.
 
 ## Edge Cases
 

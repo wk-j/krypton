@@ -1,5 +1,19 @@
 /* ─── Diff View ─── */
+/* Krypton Console parts (DESIGN.md 2.0.0, spec 366). The nav bar is a plate
+   strip of readouts; the diff2html table is content, flat on the window's
+   screen — one row per code line, so no row carries a shadow, a text-shadow
+   or a gradient. The priority panel is a plate column holding its list in a
+   well; the file list, comments and help are floating plates with wells; the
+   composer is a plate with an input well. Lane priority is a model finding:
+   ink and amber only (ADR-0004), and it never hides or reorders a hunk
+   (ADR-0009). Selection is a full-row `--mat-select` tint, never an edge
+   rail (ADR-0027). Additions, deletions and renames take the theme's lamp
+   colours; nothing else is coloured. */
+
 .krypton-diff {
+  --diff-ink: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb), 0.86));
+  --diff-ink-dim: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.62));
+  --diff-ink-faint: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb), 0.4));
   position: relative;
   display: flex;
   flex-direction: column;
@@ -8,31 +22,52 @@
   overflow: hidden;
   font-family: var(--krypton-font-family, 'Fira Code', monospace);
   font-size: var(--krypton-font-size);
-  color: var(--krypton-foreground, #c0c5ce);
+  color: var(--krypton-fg);
   background: transparent;
 }
+
+/* ─── Nav bar: a plate strip meeting the screen on its bottom edge ─── */
 
 .krypton-diff__nav {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 12px;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.08);
-  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.2);
+  gap: 10px;
+  padding: 5px 12px;
+  background: var(--mat-brush), var(--mat-plate);
+  border-bottom: 1px solid var(--mat-key-edge);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   flex-shrink: 0;
   font-size: var(--krypton-font-size);
   letter-spacing: 0.5px;
   text-transform: uppercase;
+  color: var(--diff-ink-dim);
+  white-space: nowrap;
+}
+
+/* Readouts: small wells holding tabular figures. */
+.krypton-diff__file-index,
+.krypton-diff__stats,
+.krypton-diff__focus,
+.krypton-diff__priority-summary {
+  padding: 1px 7px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .krypton-diff__file-index {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.7);
+  color: var(--diff-ink);
   font-weight: bold;
 }
 
+/* The file path: engraved in ink, natural case. */
 .krypton-diff__file-path {
-  color: var(--krypton-foreground, #c0c5ce);
+  color: var(--krypton-fg);
+  text-shadow: var(--mat-engrave);
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -40,33 +75,39 @@
 }
 
 .krypton-diff__adds {
-  color: #a3be8c;
+  color: rgb(var(--krypton-success-rgb));
 }
 
 .krypton-diff__dels {
-  color: #bf616a;
+  color: rgb(var(--krypton-danger-rgb));
 }
 
+/* SPLIT / UNIFIED: an engraved label. */
 .krypton-diff__mode {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
+  color: var(--mat-silk);
+  text-shadow: var(--mat-engrave);
   font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.13em;
 }
 
 /* spec 155: static freshness indicator — never blinks or pulses */
 .krypton-diff__sync {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
+  color: var(--diff-ink-faint);
+  text-shadow: var(--mat-engrave);
   font-size: var(--krypton-chrome-font-size, 11px);
   white-space: nowrap;
 }
 
 /* spec 155: untracked files skipped by the backend (binary / too large) —
-   name-only line; paths keep their real casing */
+   name-only line on the same plate; paths keep their real casing */
 .krypton-diff__skipped {
   flex-shrink: 0;
   padding: 4px 12px;
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.45);
-  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
+  color: var(--diff-ink-dim);
+  text-shadow: var(--mat-engrave);
+  background: var(--mat-brush), var(--mat-plate);
+  border-bottom: 1px solid var(--mat-key-edge);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -82,6 +123,7 @@
   min-width: 0;
 }
 
+/* The screen: the window's fill shows through; the diff sits on it flat. */
 .krypton-diff__content {
   flex: 1 1 0;
   overflow: auto;
@@ -122,12 +164,11 @@
   color: inherit;
 }
 
-/* Drop diff2html's opaque GitHub-dark slab (`#0d1117`) so the compositor
-   window backdrop — and the desktop behind it — show through, matching
-   terminals and the harness. Selector beats the later JS-imported
-   `diff2html.min.css` (0,1,0). Sticky line-number cells keep
-   `--d2h-dark-bg-color` so horizontally scrolled code does not bleed
-   under the gutter. Add/delete row tints are already rgba.
+/* Drop diff2html's opaque GitHub-dark slab so the window screen — and the
+   desktop behind it — show through, matching terminals and the harness.
+   Selector beats the later JS-imported `diff2html.min.css` (0,1,0). Sticky
+   line-number cells keep `--d2h-dark-bg-color` so horizontally scrolled code
+   does not bleed under the gutter. Add/delete row tints are already rgba.
    No backdrop-filter: blur() (macOS WKWebView freeze). */
 .krypton-diff .d2h-dark-color-scheme {
   background-color: transparent;
@@ -137,10 +178,11 @@
   background-color: transparent;
 }
 
-/* Light scheme still forces `d2h-dark-color-scheme` (light syntax). A
-   transparent frost field would make that text vanish; keep the slab. */
+/* Light scheme still forces `d2h-dark-color-scheme` (light syntax). On the
+   light screen that text would vanish, so the diff keeps diff2html's own
+   dark slab there (its variable, declared by diff2html.min.css). */
 html[data-theme-scheme='light'] .krypton-diff .d2h-dark-color-scheme {
-  background-color: var(--d2h-dark-bg-color, #0d1117);
+  background-color: var(--d2h-dark-bg-color);
 }
 
 /* Fix line numbers: absolute positioning breaks vertical scrolling.
@@ -166,66 +208,139 @@ html[data-theme-scheme='light'] .krypton-diff .d2h-dark-color-scheme {
   overflow: visible;
 }
 
-/* File-list quick-switcher — a centered popup over the diff; one flat surface,
-   no inner card, no backdrop-filter (macOS WKWebView freeze). */
-.krypton-diff__filelist {
+.krypton-diff__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--diff-ink-dim);
+  font-size: var(--krypton-font-size);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+/* ─── Floating plates: file list, comments, help ─── */
+/* A plate over a solid underlay (each covers the diff), one cast shadow, an
+   engraved head over a groove, the list in a well, a printed key-hint foot.
+   `display: flex` overrides the UA `[hidden] { display: none }`, so each sheet
+   has an explicit hide rule — there is no global `[hidden]` reset in this
+   app. No backdrop-filter (macOS WKWebView freeze). */
+
+.krypton-diff__filelist,
+.krypton-diff__comments,
+.krypton-diff__help {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(560px, 88%);
-  max-height: 70%;
   display: flex;
   flex-direction: column;
-  z-index: 5;
-  background: var(--krypton-background, #0b0e14);
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
+  padding-bottom: 2px;
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-brush), var(--mat-plate), var(--agent-surface-solid, rgb(var(--krypton-bg-rgb)));
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
   overflow: hidden;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
 }
 
-/* The `display: flex` above (and on the composer/comments overlays) overrides
-   the UA `[hidden] { display: none }`, so these sheets need an explicit hide
-   rule or they never close. There is no global `[hidden]` reset in this app. */
+.krypton-diff__filelist {
+  width: min(560px, 88%);
+  max-height: 70%;
+  z-index: 5;
+}
+
+.krypton-diff__comments {
+  width: min(640px, 90%);
+  max-height: 70%;
+  z-index: 6;
+}
+
+.krypton-diff__help {
+  width: min(440px, 88%);
+  max-height: 80%;
+  z-index: 7;
+}
+
 .krypton-diff__filelist[hidden],
 .krypton-diff__composer[hidden],
-.krypton-diff__comments[hidden] {
+.krypton-diff__comments[hidden],
+.krypton-diff__help[hidden] {
   display: none;
 }
 
-.krypton-diff__filelist-header {
+.krypton-diff__filelist-header,
+.krypton-diff__comments-header,
+.krypton-diff__help-header,
+.krypton-diff__priority-head {
   flex-shrink: 0;
-  padding: 6px 12px;
+  padding: 8px 12px 6px;
   font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.5px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.7);
-  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+  color: var(--mat-silk);
+  text-shadow: var(--mat-engrave);
 }
 
-.krypton-diff__filelist-items {
-  overflow-y: auto;
+/* The list wells. They scroll inside their recess. */
+.krypton-diff__filelist-items,
+.krypton-diff__comments-items,
+.krypton-diff__priority-items {
   min-height: 0;
+  overflow-y: auto;
+  margin: 0 8px 6px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
+
+/* Rows: flat slices of the well, split by grooves. */
+.krypton-diff__filelist-item,
+.krypton-diff__comments-item,
+.krypton-diff__priority-item {
+  border-bottom: 1px solid var(--mat-groove-lo);
+  cursor: pointer;
+}
+
+.krypton-diff__filelist-item:last-child,
+.krypton-diff__comments-item:last-child,
+.krypton-diff__priority-item:last-child {
+  border-bottom: 0;
+}
+
+/* Selection: the full-row tint inside the well (never a left accent rail). */
+.krypton-diff__filelist-item--selected,
+.krypton-diff__comments-item--selected,
+.krypton-diff__priority-item--selected {
+  background: var(--mat-select);
+}
+
+/* The printed key-hint foot of each plate, under a groove. */
+.krypton-diff__comments-footer,
+.krypton-diff__help-footer,
+.krypton-diff__priority-footer {
+  flex-shrink: 0;
+  padding: 6px 12px 5px;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  color: var(--diff-ink-dim);
+  text-shadow: var(--mat-print);
+  border-top: 1px solid var(--mat-groove-lo);
+  box-shadow: inset 0 1px 0 var(--mat-groove-hi);
+}
+
+/* ─── File-list quick-switcher ─── */
 
 .krypton-diff__filelist-item {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 4px 12px;
-  cursor: pointer;
   white-space: nowrap;
 }
 
-/* selection: full-row background tint (never a left accent rail) */
-.krypton-diff__filelist-item--selected {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
-}
-
-/* the file currently rendered behind the picker — accent the label only */
+/* the file currently rendered behind the picker — its label in silk */
 .krypton-diff__filelist-item--current .krypton-diff__filelist-path {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.9);
+  color: var(--mat-silk);
 }
 
 .krypton-diff__filelist-status {
@@ -236,10 +351,10 @@ html[data-theme-scheme='light'] .krypton-diff .d2h-dark-color-scheme {
   font-size: var(--krypton-chrome-font-size, 11px);
 }
 
-.krypton-diff__filelist-status--a { color: #a3be8c; }
-.krypton-diff__filelist-status--d { color: #bf616a; }
-.krypton-diff__filelist-status--r { color: #ebcb8b; }
-.krypton-diff__filelist-status--m { color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.8); }
+.krypton-diff__filelist-status--a { color: rgb(var(--krypton-success-rgb)); }
+.krypton-diff__filelist-status--d { color: rgb(var(--krypton-danger-rgb)); }
+.krypton-diff__filelist-status--r { color: rgb(var(--krypton-warning-rgb)); }
+.krypton-diff__filelist-status--m { color: var(--diff-ink); }
 
 .krypton-diff__filelist-path {
   flex: 1;
@@ -250,32 +365,23 @@ html[data-theme-scheme='light'] .krypton-diff .d2h-dark-color-scheme {
 .krypton-diff__filelist-stats {
   flex-shrink: 0;
   font-size: var(--krypton-chrome-font-size, 11px);
-}
-
-.krypton-diff__empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
-  font-size: var(--krypton-font-size);
-  letter-spacing: 2px;
-  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ─── Review comments (spec 158) ─── */
 
-/* Target-lane + pending-count indicator in the nav bar. Static chrome text,
-   no border rail — matches the sync indicator. */
+/* Target-lane + pending-count indicator in the nav bar: printed ink on the
+   plate, no border rail — matches the sync indicator. */
 .krypton-diff__review-target {
   margin-left: auto;
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.5px;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.75);
+  color: var(--diff-ink);
+  text-shadow: var(--mat-engrave);
   white-space: nowrap;
 }
 .krypton-diff__review-target--none {
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.45);
+  color: var(--diff-ink-faint);
 }
 /* If the sync indicator is also present it follows the target; don't double the
    auto-margin. */
@@ -283,137 +389,136 @@ html[data-theme-scheme='light'] .krypton-diff .d2h-dark-color-scheme {
   margin-left: 12px;
 }
 
-/* spec 160: static `N high · N routine` depth count — same philosophy as the
-   sync indicator (depth, never motion; no blink/pulse). Sits in the left nav
-   cluster after the mode label. */
+/* spec 160: static `N high · N routine` depth count — a readout (above), ink
+   only (ADR-0004); depth, never motion. */
 .krypton-diff__priority-summary {
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.5px;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.55);
-  white-space: nowrap;
+  color: var(--diff-ink);
 }
 
 /* spec 158 ext (B): focus-hunk readout in the nav bar — `hunk L120–145` for the
-   hunk `c` would anchor to. Static chrome text, no border rail. */
+   hunk `c` would anchor to. A readout (above). */
 .krypton-diff__focus {
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.5px;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.65);
-  white-space: nowrap;
+  color: var(--diff-ink);
 }
 
 /* spec 158 ext (A): the focus hunk (the one `c`/`n` act on). The marker class is
    on EVERY row of the hunk (both panels) so it stays visible wherever the human
    scrolls within it — not just on the `@@` header, which scrolls off when you are
-   deep in a long hunk. Gutter accent on the line numbers (no row-bg shift over
-   add/del lines, no left rail); the header also gets a tint + underline. */
+   deep in a long hunk. Silk line numbers (no row-bg shift over add/del lines,
+   no left rail); the header row also takes the selection tint. Colour and
+   background only: these are diff lines. */
 .krypton-diff__hunk-focus .line-num1,
 .krypton-diff__hunk-focus .line-num2,
 .krypton-diff__hunk-focus .d2h-code-side-linenumber {
-  color: var(--krypton-window-accent, #00ccff);
+  color: var(--mat-silk);
 }
-.krypton-diff__hunk-focus .d2h-info {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
-  box-shadow: inset 0 -1px 0 rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.55);
+/* Three classes: diff2html's `.d2h-dark-color-scheme .d2h-info` loads later.
+   The sticky gutter cell keeps its opaque fill so scrolled code never shows
+   through it. */
+.krypton-diff__content .krypton-diff__hunk-focus .d2h-info:not(.d2h-code-linenumber, .d2h-code-side-linenumber) {
+  background: var(--mat-select);
 }
-.krypton-diff__here {
+
+/* Chips: an embossed legend on a key face (DESIGN.md "Chips"). One per hunk
+   header, never per line. */
+.krypton-diff__here,
+.krypton-diff__high-badge,
+.krypton-diff__priority-badge {
   display: inline-block;
-  margin-left: 8px;
-  padding: 0 6px;
+  padding: 0 7px;
   font-size: var(--krypton-chrome-font-size, 11px);
+  font-family: var(--krypton-chrome-font, monospace);
   letter-spacing: 0.5px;
-  color: var(--krypton-window-accent, #00ccff);
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
-  border-radius: var(--krypton-border-radius, 8px);
+  line-height: 1.4;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: 999px;
+  background: var(--mat-key);
+  text-shadow: var(--mat-print);
   vertical-align: middle;
+}
+
+.krypton-diff__here,
+.krypton-diff__high-badge {
+  margin-left: 8px;
+  color: var(--mat-silk);
 }
 
 /* spec 160: a routine hunk collapsed in place — one muted, clickable summary
    row at the hunk's natural file-order position. Always one keystroke from full
-   (Enter / click). Flat surface, no left accent rail. */
+   (Enter / click). Flat, no left accent rail. */
 .krypton-diff__fold > .krypton-diff__fold-cell {
   padding: 2px 12px;
   font-size: var(--krypton-chrome-font-size, 11px);
   font-family: var(--krypton-chrome-font, monospace);
   letter-spacing: 0.5px;
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.5);
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.05);
+  color: var(--diff-ink-dim);
+  background: rgba(var(--krypton-fg-rgb), 0.04);
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
 }
 .krypton-diff__fold > .krypton-diff__fold-cell:hover {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.85);
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.1);
+  color: var(--diff-ink);
+  background: rgba(var(--krypton-fg-rgb), 0.08);
 }
 
-/* spec 160: high-priority hunk — full-cell gutter tint on its rows plus a
-   heading-colour badge on the block header. Never a left accent rail. */
-.krypton-diff__hl-high .d2h-code-side-linenumber,
-.krypton-diff__hl-high .d2h-code-linenumber {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.14);
-}
-.krypton-diff__high-badge {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 0 6px;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  font-family: var(--krypton-chrome-font, monospace);
-  letter-spacing: 0.5px;
-  color: var(--krypton-window-accent, #00ccff);
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
-  border-radius: var(--krypton-border-radius, 8px);
-  vertical-align: middle;
+/* spec 160: high-priority hunk — a full-cell amber gutter tint on its rows
+   (ADR-0004: amber, not a pass/fail colour) plus the chip on the block
+   header. Never a left accent rail. */
+.krypton-diff__content .krypton-diff__hl-high .d2h-code-side-linenumber,
+.krypton-diff__content .krypton-diff__hl-high .d2h-code-linenumber {
+  /* Mixed into diff2html's gutter fill, not laid over it: the sticky gutter
+     stays opaque so horizontally scrolled code never shows through. */
+  background-color: color-mix(in srgb, var(--mat-silk) 14%, var(--d2h-dark-bg-color));
 }
 
-/* spec 160 ext: the docked priority panel (variant B, live preview). Sits in
-   the content row right of the diff; `[hidden]` collapses it so the diff
-   reflows to full width. Flat surface, no left accent rail. */
+/* spec 160 ext: the docked priority panel (variant B, live preview). A plate
+   column in the content row right of the diff; `[hidden]` collapses it so the
+   diff reflows to full width. Its ranked list is a well; ranking never hides
+   or reorders a hunk in the diff (ADR-0009). */
 .krypton-diff__priority {
   flex-shrink: 0;
   width: 300px;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--krypton-background, #0b0e14);
-  border-left: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.25);
+  background: var(--mat-brush), var(--mat-plate);
+  border-left: 1px solid var(--mat-key-edge);
+  box-shadow: inset 1px 0 0 var(--mat-bevel-hi);
 }
 .krypton-diff__priority[hidden] {
   display: none;
 }
 .krypton-diff__priority-head {
-  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
-  padding: 6px 12px;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.7);
-  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+  align-items: baseline;
+  padding-top: 10px;
 }
 .krypton-diff__priority-counts {
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.5);
+  color: var(--diff-ink-dim);
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
 }
 .krypton-diff__priority-items {
   flex: 1;
-  min-height: 0;
-  overflow-y: auto;
 }
+/* Group labels inside the well: ink small caps (engraving stays on plates). */
 .krypton-diff__priority-group {
-  padding: 6px 12px 3px;
+  padding: 7px 12px 3px;
   font-size: 10px;
   letter-spacing: 1px;
   text-transform: uppercase;
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.35);
+  color: var(--diff-ink-faint);
 }
 .krypton-diff__priority-item {
-  padding: 4px 12px;
-  cursor: pointer;
-}
-/* selection: full-row background tint (never a left accent rail) */
-.krypton-diff__priority-item--selected {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+  padding: 5px 12px;
 }
 .krypton-diff__priority-item-top {
   display: flex;
@@ -425,31 +530,26 @@ html[data-theme-scheme='light'] .krypton-diff .d2h-dark-color-scheme {
   min-width: 62px;
   white-space: nowrap;
   text-align: center;
-  padding: 1px 8px;
-  border-radius: var(--krypton-border-radius, 8px);
   font-size: 10px;
-  letter-spacing: 0.5px;
-  border: 1px solid transparent;
 }
 .krypton-diff__priority-badge--high {
-  color: var(--krypton-window-accent, #00ccff);
-  border-color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
+  color: var(--mat-silk);
 }
 .krypton-diff__priority-badge--routine {
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.5);
-  border-color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.2);
+  color: var(--diff-ink-dim);
 }
 .krypton-diff__priority-lines {
   margin-left: auto;
   flex-shrink: 0;
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.45);
+  color: var(--diff-ink-faint);
+  font-variant-numeric: tabular-nums;
 }
 .krypton-diff__priority-path {
   display: block;
   margin-top: 2px;
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.6);
+  color: var(--diff-ink-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -457,41 +557,34 @@ html[data-theme-scheme='light'] .krypton-diff .d2h-dark-color-scheme {
   text-align: left;
 }
 .krypton-diff__priority-item--selected .krypton-diff__priority-path {
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.9);
+  color: var(--krypton-fg);
 }
 .krypton-diff__priority-reason {
   display: block;
   margin-top: 3px;
   font-size: var(--krypton-chrome-font-size, 11px);
   line-height: 1.35;
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.55);
+  color: var(--diff-ink-dim);
 }
 .krypton-diff__priority-item--selected .krypton-diff__priority-reason {
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.78);
-}
-.krypton-diff__priority-footer {
-  flex-shrink: 0;
-  padding: 5px 12px;
-  font-size: 10.5px;
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.4);
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
+  color: var(--diff-ink);
 }
 
-/* spec 160 ext: the hunk currently previewed by the panel — full-row tint so it
-   reads at a glance over the high-marker line-number tint. */
+/* spec 160 ext: the hunk currently previewed by the panel — the full-row
+   selection tint, so it reads at a glance over the high gutter tint. */
 .krypton-diff__preview-row,
 .krypton-diff__preview-row > td {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.10);
+  background: var(--mat-select);
 }
 /* A folded routine hunk's summary cell carries its own bg at higher specificity
    (`.krypton-diff__fold > .krypton-diff__fold-cell`, 0,2,0), so the preview tint
    on a folded row needs an equally-specific selector to land (0,3,0). */
 .krypton-diff__preview-row.krypton-diff__fold > .krypton-diff__fold-cell {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
+  background: var(--mat-select);
 }
 
-/* Inline composer — a small sheet at the bottom; one flat surface, no inner
-   card, no backdrop-filter (macOS WKWebView freeze). */
+/* Inline composer — a plate drawer along the bottom over a solid underlay:
+   an engraved label, the comment in an input well, a printed hint. */
 .krypton-diff__composer {
   position: absolute;
   left: 0;
@@ -500,16 +593,18 @@ html[data-theme-scheme='light'] .krypton-diff .d2h-dark-color-scheme {
   z-index: 6;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   padding: 8px 12px;
-  background: var(--krypton-background, #0b0e14);
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
+  background: var(--mat-brush), var(--mat-plate), var(--agent-surface-solid, rgb(var(--krypton-bg-rgb)));
+  border-top: 1px solid var(--mat-key-edge);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
 }
 .krypton-diff__composer-label {
   font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.5px;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.8);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--mat-silk);
+  text-shadow: var(--mat-engrave);
 }
 /* the typed comment is user content → user font, not chrome font */
 .krypton-diff__composer-input {
@@ -519,162 +614,104 @@ html[data-theme-scheme='light'] .krypton-diff .d2h-dark-color-scheme {
   padding: 6px 8px;
   font-family: var(--krypton-font-family, 'Fira Code', monospace);
   font-size: var(--krypton-font-size);
-  color: var(--krypton-foreground, #c0c5ce);
-  background: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.06);
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.3);
+  color: var(--krypton-fg);
+  caret-color: var(--krypton-cursor, currentColor);
+  background: var(--mat-well);
+  border: none;
   border-radius: var(--krypton-border-radius, 8px);
+  box-shadow: var(--mat-well-shadow);
   outline: none;
 }
-.krypton-diff__composer-input:focus {
-  border-color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.7);
+.krypton-diff__composer-input:focus-visible {
+  outline: 1px solid var(--mat-lit);
+  outline-offset: 2px;
 }
 .krypton-diff__composer-hint {
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.5);
+  color: var(--diff-ink-dim);
+  text-shadow: var(--mat-print);
 }
 
-/* Comments overlay — a top sheet, same construction as the file-list. */
-.krypton-diff__comments {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: min(640px, 90%);
-  max-height: 70%;
-  display: flex;
-  flex-direction: column;
-  z-index: 6;
-  background: var(--krypton-background, #0b0e14);
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
-  border-radius: var(--krypton-border-radius, 8px);
-  overflow: hidden;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
-}
-.krypton-diff__comments-header {
-  flex-shrink: 0;
-  padding: 6px 12px;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.7);
-  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
-}
+/* Comments overlay rows. */
 .krypton-diff__comments-notice {
   flex-shrink: 0;
-  padding: 4px 12px;
+  padding: 0 12px 6px;
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.85);
-}
-.krypton-diff__comments-items {
-  overflow-y: auto;
-  min-height: 0;
+  color: var(--mat-lit);
 }
 .krypton-diff__comments-item {
   display: flex;
   align-items: baseline;
   gap: 10px;
   padding: 4px 12px;
-  cursor: pointer;
   white-space: nowrap;
 }
-.krypton-diff__comments-item--selected {
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
-}
-.krypton-diff__comments-item--sent {
-  opacity: 0.55;
+/* A sent comment drops to the faint ink tier (never dimmed with opacity). */
+.krypton-diff__comments-item--sent .krypton-diff__comments-loc,
+.krypton-diff__comments-item--sent .krypton-diff__comments-note {
+  color: var(--diff-ink-faint);
 }
 .krypton-diff__comments-tag {
   flex-shrink: 0;
   font-size: var(--krypton-chrome-font-size, 11px);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #a3be8c;
+  color: rgb(var(--krypton-success-rgb));
 }
 .krypton-diff__comments-loc {
   flex-shrink: 0;
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.8);
+  color: var(--diff-ink-dim);
+  font-variant-numeric: tabular-nums;
 }
 /* the comment body is user content → user font */
 .krypton-diff__comments-note {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--krypton-foreground, #c0c5ce);
+  color: var(--krypton-fg);
 }
 .krypton-diff__comments-empty {
   padding: 8px 12px;
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.5);
-}
-.krypton-diff__comments-footer {
-  flex-shrink: 0;
-  padding: 6px 12px;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.5);
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+  color: var(--diff-ink-dim);
 }
 
-/* Pin marker on a commented line's number cell — a small accent glyph, no rail. */
+/* Pin marker on a commented line's number cell — a small silk glyph, no rail. */
 .krypton-diff__pin {
   margin-left: 4px;
   font-size: 0.7em;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.9);
+  color: var(--mat-silk);
   vertical-align: middle;
   cursor: default;
 }
 
 /* ─── Keybindings help overlay ─── */
 
-/* `? help` affordance at the end of the nav bar — static chrome text, no rail. */
+/* `? help` affordance at the end of the nav bar — printed legend, no rail. */
 .krypton-diff__help-hint {
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.5);
+  color: var(--diff-ink-dim);
+  text-shadow: var(--mat-print);
   white-space: nowrap;
   text-transform: none;
 }
 
-/* Centered popup over the diff — same flat-surface construction as the
-   file-list; no inner card, no backdrop-filter (macOS WKWebView freeze). */
-.krypton-diff__help {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: min(440px, 88%);
-  max-height: 80%;
-  display: flex;
-  flex-direction: column;
-  z-index: 7;
-  background: var(--krypton-background, #0b0e14);
-  border: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.4);
-  border-radius: var(--krypton-border-radius, 8px);
-  overflow: hidden;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
-}
-/* `display: flex` overrides the UA `[hidden]` hide, like the other sheets. */
-.krypton-diff__help[hidden] {
-  display: none;
-}
-.krypton-diff__help-header {
-  flex-shrink: 0;
-  padding: 6px 12px;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.7);
-  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
-}
+/* The key table sits in a well under the engraved head. */
 .krypton-diff__help-body {
   overflow-y: auto;
   min-height: 0;
-  padding: 8px 0;
+  margin: 0 8px 6px;
+  padding: 6px 0;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 .krypton-diff__help-section {
   padding: 6px 12px 2px;
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.5px;
   text-transform: uppercase;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.55);
+  color: var(--diff-ink);
 }
 .krypton-diff__help-row {
   display: flex;
@@ -686,16 +723,9 @@ html[data-theme-scheme='light'] .krypton-diff .d2h-dark-color-scheme {
   flex-shrink: 0;
   width: 5.5em;
   text-align: right;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.9);
+  color: var(--mat-silk);
 }
 .krypton-diff__help-desc {
   flex: 1;
-  color: var(--krypton-foreground, #c0c5ce);
-}
-.krypton-diff__help-footer {
-  flex-shrink: 0;
-  padding: 6px 12px;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--krypton-foreground-rgb, 192, 197, 206), 0.5);
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.15);
+  color: var(--diff-ink);
 }

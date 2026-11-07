@@ -5,6 +5,7 @@
 > Milestone: visual chrome
 > Related: [121](./0121-workspace-status-bar.md), [235](./0235-harness-tool-output-palette.md)
 > Spec 350 (2026-11-01): the footer hint is removed, with its `<kbd>` markup, `parseHint` / `fillHint` and the `__hint` CSS. The other colours stand.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): footer is a plate strip; segment glows removed.
 
 ## Problem
 

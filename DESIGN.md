@@ -1,66 +1,46 @@
 ---
-name: Krypton Dark
-version: 1.2.8
-description: Cyberpunk sci-fi terminal aesthetic — cyan neon on transparent blue-black, 8px bevel geometry, monospace typography, multi-layer glows
+name: Krypton Console
+version: 2.0.0
+description: Skeuomorphic instrument faceplate — brushed graphite (aluminium in the light scheme) with engraved labels, recessed display wells, raised keys and lit lamps, over a transparent desktop
+appliesTo: "Every surface in the Tauri webview and the live-assist webview. Materials: src/styles/materials.css (--mat-*)."
 colors:
-  primary: "#0cf"
-  foreground: "#b0c4d8"
-  background: "#060a12"
-  cursor: "#0cf"
-  danger: "#ff3a5c"
-  warning: "#e8c547"
-  success: "#39ff7f"
-  info: "#4a9eff"
-  special: "#c77dff"
-  selection: "#1a3a5c"
-  link: "#33ddff"
-backgroundAlpha: 0.5         # backdrop opacity over desktop
-selectionAlpha: 0.6
-ansi:
-  black: "#0a0a0f"
-  red: "#ff3a5c"
-  green: "#0cf"
-  yellow: "#e8c547"
-  blue: "#4a9eff"
-  magenta: "#c77dff"
-  cyan: "#0cf"
-  white: "#b0c4d8"
-  brightBlack: "#2a4a6c"
-  brightRed: "#ff5c7a"
-  brightGreen: "#33ddff"
-  brightYellow: "#ffd866"
-  brightBlue: "#6ab4ff"
-  brightMagenta: "#d9a0ff"
-  brightCyan: "#33ddff"
-  brightWhite: "#ffffff"
-accentOpacity:
-  ghost: 0.04        # background texture, gauge tracks, disabled fill
-  inactive: 0.15     # tab separators, idle borders, disabled text
-  hover: 0.4         # secondary borders, whichkey
-  active: 0.7        # active tab edge, primary borders
-  neon: 1.0          # status dots, full text accent
+  primary: "#ffb000"       # silk: engraved label fill, --mat-silk (light: #6e4700)
+  lit: "#ffd880"           # backlit legend, --mat-lit (light: #6e4700)
+  plateTop: "rgba(46, 49, 56, 0.9)"
+  plateBottom: "rgba(23, 25, 30, 0.9)"
+  wellFill: "rgba(9, 10, 14, 0.78)"
+  keyFace: "rgba(55, 58, 66, 0.95)"
+  select: "rgba(255, 176, 0, 0.16)"
+  foreground: "#b0c4d8"    # theme ink (krypton-dark), --krypton-fg
+  accent: "#0cf"           # theme accent (krypton-dark): cursor, links, window LEDs, window focus ring
+  screen: "rgba(6, 10, 18, 0.5)"   # --mat-screen = theme backdrop at [visual] opacity
+  lampPass: "rgb(57, 255, 127)"    # --krypton-success-rgb
+  lampFault: "rgb(255, 58, 92)"    # --krypton-danger-rgb
+  lampWarn: "rgb(232, 197, 71)"    # --krypton-warning-rgb
+  keyRunning: "#6dd0ff"
+  keyDone: "#a8ffbf"
 typography:
-  family: "Mononoki, JetBrains Mono, ui-monospace, monospace"
   label:
-    size: "11px"
-    weight: 600
-    letterSpacing: "0.08em"
-    transform: "uppercase"
+    fontFamily: "Mononoki, JetBrains Mono, ui-monospace, monospace"
+    fontSize: "11px"                 # --krypton-chrome-font-size; uppercase, engraved
+    fontWeight: 600
+    letterSpacing: "0.13em"
+  legend:
+    fontFamily: "Mononoki, JetBrains Mono, ui-monospace, monospace"
+    fontSize: "11px"                 # printed on a key
+    letterSpacing: "0.09em"
   body:
-    size: "13px"
-    weight: 400
+    fontFamily: "Mononoki, JetBrains Mono, ui-monospace, monospace"
+    fontSize: "13px"
     letterSpacing: "0em"
-  display:
-    size: "28px"
-    weight: 400
-    letterSpacing: "0.2em"
-    transform: "uppercase"
-  numeric:
-    fontVariant: "tabular-nums"   # mandatory for gauges, timers, counters
+  readout:
+    fontFamily: "Mononoki, JetBrains Mono, ui-monospace, monospace"
+    fontSize: "11px"                 # tabular-nums, mandatory on every changing digit
 rounded:
-  none: "0px"        # sibling aesthetics + harness interior panes (agent frame, vault diamond dots, composer, ticket dock)
-  container: "8px"   # default — every Krypton Dark rectangular container
-  subtle: "8px"      # alias of container; toasts and badges use the same bevel
+  part: "8px"        # windows, panels, wells, keys, lamp windows, readouts (--krypton-border-radius)
+  tab: "6px"         # selector keys inside an 8px channel
+  capsule: "999px"   # status lamps, tags, chips; LEDs stay 50% circles
+  flush: "0px"       # interior panes that meet an edge: the dock column, the harness composer
 spacing:
   hairline: "1px"
   xs: "4px"
@@ -68,410 +48,317 @@ spacing:
   md: "14px"
   lg: "20px"
   xl: "28px"
-chrome:
-  borderWidth: "1px"
-  cornerAccentSize: "14px"
-  cornerAccentThickness: "2px"
-  titlebarHeight: "28px"
-  headerAccentHeight: "6px"
-  statusDotSize: "6px"
-  minWindowWidth: "320px"     # below this, chrome degrades to titlebar-only
-  minWindowHeight: "120px"
-focus:
-  ringWidth: "1px"            # for non-window controls (inputs, buttons, rows)
-  ringOffset: "0px"
-  ringColor: "primary @ active (0.7)"
-  ringGlow: "0 0 6px primary @ 0.6, 0 0 12px primary @ 0.2"
-  outlineStyle: "solid"        # never dashed/dotted
-form:
-  controlHeight: "26px"
-  controlPaddingX: "10px"
-  buttonPrimary:
-    background: "primary @ hover (0.4)"
-    border: "1px solid primary @ active (0.7)"
-    text: "background"            # dark on neon
-  buttonSecondary:
-    background: "transparent"
-    border: "1px solid primary @ inactive (0.15)"
-    text: "foreground"
-  buttonGhost:
-    background: "transparent"
-    border: "none"
-    text: "primary @ active (0.7)"
-  input:
-    background: "rgba(6, 10, 18, 0.6)"
-    border: "1px solid primary @ inactive (0.15)"
-    borderFocus: "1px solid primary @ active (0.7)"
-    caret: "primary"
-  checkbox:
-    size: "12px"
-    border: "1px solid primary @ active (0.7)"
-    checkedFill: "primary @ neon"
-scrollbar:
-  width: "8px"
-  trackBackground: "transparent"
-  thumbBackground: "primary @ inactive (0.15)"
-  thumbHoverBackground: "primary @ hover (0.4)"
-  thumbBorderRadius: "8px"
-cursor:
-  terminal: "block"             # xterm.js cursor style
-  text: "text"
-  draggable: "grab"
-  resizable: "ew-resize / ns-resize"
-  disabled: "not-allowed"
-zIndex:
-  base: 0                       # workspace surface
-  window: 100                   # terminal windows
-  windowFocused: 110
-  edgeGlow: 200                 # top/bottom edge overlays
-  overlay: 1000                 # quick terminal, palette, whichkey
-  modal: 2000                   # dialogs, confirms
-  toast: 3000                   # transient notifications
-  hint: 4000                    # leader-key hints, debug overlays
-overlay:
-  palette:
-    width: "min(640px, 80vw)"
-    maxHeight: "60vh"
-    background: "rgba(6, 10, 18, 0.85)"
-    padding: "md"
-  whichkey:
-    background: "rgba(6, 10, 18, 0.85)"
-    padding: "sm"
-    keyChipBorder: "1px solid primary @ hover (0.4)"
-  toast:
-    width: "320px"
-    background: "rgba(6, 10, 18, 0.9)"
-    rounded: "container"
-    slideFrom: "right"
-gauge:
-  trackHeight: "4px"
-  trackBackground: "primary @ ghost (0.04)"
-  fillBackground: "primary @ active (0.7)"
-  fillGlow: "glowTight"
-  labelPosition: "above"
-edgeGlow:
-  topHeight: "5em"              # ~5 terminal rows; em so it scales with font
-  bottomHeight: "5em"
-  fadeDirection: "to interior"
-  intensity: 0.8
-effects:
-  glowTight:
-    blur: "6px"
-    opacity: 0.6
-  glowBloom:
-    blur: "20px"
-    opacity: 0.15
-  textGlowTight:
-    blur: "8px"
-    opacity: 0.4
-  textGlowBloom:
-    blur: "14px"
-    opacity: 0.15
-  rimLight: "inset 0 1px 0 rgba(255, 255, 255, 0.03)"
-  scanlineOpacity: 0.03
-  gridDotOpacity: 0.03
-  edgeGlowIntensity: 0.8
 motion:
-  breathingPulse: "3s ease-in-out infinite"
-  ambientPulse: "1.2s ease-in-out infinite"
-  dataStream: "1.8s linear infinite"
-  scanWipe: "4s linear infinite"
-  radarPing: "2.5s ease-in-out infinite"
-  easeOut: "cubic-bezier(0, 0, 0.2, 1)"
-  spring: "cubic-bezier(0.34, 1.56, 0.64, 1)"
-  entrance: "cubic-bezier(0.22, 0.61, 0.36, 1)"
-  reducedMotionPolicy: "drop all ambient infinite animations; keep entrance only, capped at 120ms"
-accessibility:
-  minContrastBodyOnBackdrop: 7.0    # foreground #b0c4d8 over rgba(6,10,18,0.5) on dark wallpaper
-  minContrastLabelOnBackdrop: 4.5
-  semanticColorOnDarkOnly: true     # red/amber/green/magenta tested only on dark wallpaper
-  focusVisibleRequired: true
-  hairlineOnHiDPI: "use box-shadow inset 0 0 0 1px when 1px border vanishes at @2x+"
+  press: "a held key sinks 1px with an inset shadow (:active); no transition"
+  layout: "WAAPI transform/opacity for window morph, workspace slide, entrance"
+  ambient: "none — lamps glow steadily; only text carets and terminal cursors blink"
 forbidden:
-  - "backdrop-filter: blur()"    # causes WKWebView freeze on macOS
-  - "fully opaque backgrounds"   # break the transparency hierarchy
-  - "radius other than 8px on rectangular containers"  # one bevel; 50% stays circles; 0px only for sibling aesthetics and harness interior panes (agent frame, vault diamond, composer, ticket dock)
-  - "single-layer shadow"        # glows must be tight + bloom
-  - "hard-coded hex in components" # all colors flow through CSS variables
-  - "dashed or dotted outlines"   # focus must be solid + glow
-  - "proportional (non-mono) fonts"
-  - "any animation longer than entrance under prefers-reduced-motion"
-  - "L-shaped corner brackets"   # two-side HUD ticks (border-top+border-left 10px ornaments, ┌┐└┘ chrome). Full 1px border or nothing. Banned on every surface including vault/agent/harness/toasts.
+  - "backdrop-filter: blur()"
+  - "fully opaque plate (max alpha 0.94; a narrow overlay adds a solid underlay)"
+  - "infinite or decorative animation: pulses, sweeps, shimmers, orbits, scanlines, vignettes"
+  - "glow on anything but a lamp, an LED lens or a backlit legend"
+  - "box-shadow, text-shadow or gradient on a repeated row (transcript row, diff line, list row)"
+  - "a button taller than one line: a key's state badge sits beside its label or is dropped"
+  - "left-edge accent rails for selection (ADR-0027)"
+  - "L-shaped corner brackets or screw-head ornaments"
+  - "colouring model findings as pass/fail (ADR-0004)"
+  - "declaring --mat-* anywhere but src/styles/materials.css"
+  - "raster textures; the brush is a CSS gradient"
 ---
+
+# Krypton Console
 
 ## Overview
 
-Krypton is a keyboard-driven terminal emulator dressed as a piece of fictional cyberpunk hardware — a thin neon HUD layered over deep blue-black void. The interface should feel like operating a salvaged military terminal: precise, instrumented, slightly luminous, and absolutely silent until you address it. Every visible element earns its presence; ornament is replaced with *signal*.
+Krypton is a keyboard-driven terminal emulator dressed as a piece of instrument hardware: every
+window is a brushed faceplate with a display set into it, labels engraved into the metal, what a
+surface *shows* behind recessed glass, what it *does* on keys you could press, and its state on lamps.
+The desktop still shows through the screens and, faintly, through the plates.
 
-The aesthetic is built on three tensions:
+The rule that keeps it readable: **material carries role, colour carries state.** Plate, well and key
+say what a thing is (label, display, control). Colour says only what the ADRs allow it to say.
 
-1. **Bevel geometry vs. soft light** — a uniform 8px manufactured bevel and 1px borders are softened only by multi-layer glows that bleed into the surrounding void.
-2. **Transparency vs. legibility** — backgrounds are never fully opaque (they sit between 40% and 92%), so the underlying desktop bleeds through, but text remains crisp via heavy contrast and selective glow.
-3. **Stillness vs. life** — most of the UI is motionless. The few elements that animate (active tabs, status dots, progress gauges) breathe on slow 1–3s cycles. Motion is reserved for *state*, never decoration.
+Content stays flat. The terminal grid, prose, code, diffs, canvases and documents sit in wells as plain
+text on the screen fill: texture there would cost legibility where the user reads most.
 
-## Colors
+## Materials
 
-The palette is monochromatic by intent. A single accent — **cyan `#0cf`** — drives every focus state, glow, border, and indicator. Other colors appear only as ANSI terminal output or semantic state (error, warning, special).
+Every part reads one set of `--mat-*` custom properties declared once, on the document root, in
+`src/styles/materials.css`: graphite in `krypton.base`, brushed aluminium in `krypton.scheme` under
+`html[data-theme-scheme='light']`. Component and view sheets read them and never declare them.
 
-- **Primary cyan `#0cf`** — focus, glow, active state. Used at every opacity from 0.02 (ghost grid) to 1.0 (status dot at full neon). Never replace with another hue without breaking brand.
-- **Foreground `#b0c4d8`** — cool slate text. Reads as "phosphor white" against the void without being aggressive.
-- **Background `rgba(6, 10, 18, 0.5)`** — translucent ink. The 50% alpha is load-bearing; full opacity flattens the depth hierarchy.
-- **Semantic state colors** (red `#ff3a5c`, amber `#e8c547`, green `#39ff7f`, magenta `#c77dff`) appear only on toast cards, error gauges, and AI/special indicators. They must not be used decoratively.
-- **Link cyan `#33ddff`** — used only for inline anchors in toast bodies and dialog text. Always underlined; never bolded.
+Gradient tokens are composed from colour-stop tokens on the root (`--mat-plate-hi/mid/lo` →
+`--mat-plate`), so a theme's `[tokens]` table (spec 303) can recolour any material: it is applied
+inline on `<html>`, beats the sheet, and the composed gradients re-resolve with its stops.
 
-### The Opacity Scale
+| Token | Role |
+|---|---|
+| `--mat-plate`, `--mat-brush` | The faceplate: top-lit graphite at 0.9 alpha under a 2–3% vertical brush |
+| `--mat-bevel-hi/lo` | The plate's lit inner edge and the dark seam where it meets what is next to it |
+| `--mat-well`, `--mat-well-fill` | A recessed display: gradient for a standalone well, flat fill for a well cut into rows |
+| `--mat-well-depth/wall/lip`, `--mat-well-shadow` | Inner top shadow, 1px wall, light lip under the bottom edge |
+| `--mat-groove-lo/hi` | An etched line: dark cut plus the light edge below it |
+| `--mat-key`, `--mat-key-hover`, `--mat-key-down` | Key faces: resting, hovered, held or latched |
+| `--mat-key-edge`, `--mat-key-raise`, `--mat-key-sunk` | Key outline, raised stack, pressed stack |
+| `--mat-engrave`, `--mat-print` | Text cut into the plate; legend printed on a key |
+| `--mat-silk`, `--mat-lit`, `--mat-lit-glow` | Amber label fill; backlit legend and its tight + bloom glow |
+| `--mat-lens-off/on`, `--mat-lens-glow`, `--mat-glint` | Amber LED unlit / lit, its glow, the specular glint every lens starts from |
+| `--mat-select` | The full-row selection tint |
+| `--mat-scrim`, `--mat-cast` | The dimmer behind a modal plate; the one shadow a floating plate casts |
+| `--mat-screen` | The display behind the bezel: the theme backdrop with `[visual] opacity` applied |
 
-A single accent color stretches across the entire UI via opacity layering. Use the named tier (ghost / inactive / hover / active / neon) rather than reaching for a new color. Higher opacity = more salience; the scale is the brightness ladder of the whole interface.
+A custom property that references another resolves where it is declared, so a component cannot
+re-tint a composed token by overriding one stop on its own element. A coloured lamp spells its own lens
+from `--mat-glint` and its state colour (see Lamps).
 
-| Tier | α | Where it shows up |
-|---|---|---|
-| ghost | 0.04 | Background grid dots, gauge tracks, disabled fills |
-| inactive | 0.15 | Idle borders, tab separators, disabled text, scrollbar thumb |
-| hover | 0.4 | Hovered borders, whichkey chips, secondary button border |
-| active | 0.7 | Focused borders, active tab edge, primary indicators |
-| neon | 1.0 | Status dots, gauge fill at full, text glow center |
+## Parts
+
+Every surface is assembled from these. The recipes are the contract; deviate only with a reason in a
+comment.
+
+- **Plate.** `background: var(--mat-brush), var(--mat-plate)`, a 1px `--mat-key-edge` border on
+  free-standing panels, and `inset 0 1px 0 var(--mat-bevel-hi)` on its lit edge. A plate strip that
+  meets the screen (titlebar, tab bar, footer, toolbar, status bar) takes a border on that one side
+  only. A floating plate (overlay, dialog, toast, picker) adds `var(--mat-cast)` and nothing else
+  outside it. Brush only on plates — never on a well, a screen or a repeated row.
+- **Engraving.** Headings, section and column labels, the window title: `--mat-silk` (or an ink tier
+  for secondary labels), uppercase, label typography, `text-shadow: var(--mat-engrave)`. Engraving
+  sits on the plate, never inside a well.
+- **Well.** `background: var(--mat-well); box-shadow: var(--mat-well-shadow); border-radius: 8px`,
+  inset at least 8px from the plate edge on panels. A run of sibling rows forms one well without a
+  wrapper: the first slice carries the top shadow and corners, the last the bottom wall and lip, the
+  rows between are split by grooves (`border-bottom: 1px solid var(--mat-groove-lo)`). A well inside
+  a row (an expanded detail, a tag) is a deeper recess. Inputs are wells; their caret is the theme
+  cursor colour.
+- **Screen.** The display a window or lane exists to show: `background: var(--mat-screen)` with the
+  well's inset depth drawn inside the existing box, so the terminal cell grid never shrinks.
+- **Key.** One line, `min-height` 28px (24px in dense rows), `border: 1px solid var(--mat-key-edge)`,
+  `border-radius: 8px`, `background: var(--mat-key)`, `box-shadow: var(--mat-key-raise)`, ink legend
+  with `text-shadow: var(--mat-print)`. Hover: `--mat-key-hover`. Held (`:active`) or latched
+  (`aria-pressed="true"`, `--active`): `--mat-key-down` + `--mat-key-sunk`, legend `--mat-lit` with
+  `--mat-lit-glow`. Running action: latched and backlit cyan (`#6dd0ff`); done: raised and backlit
+  green (`#a8ffbf`). Disabled: unpowered at 0.45 opacity, except a running key. A state badge sits
+  after the label behind an etched divider; it is cut first, and a key under 128px drops it.
+- **Selector keys.** Tabs: a recessed channel (a well with 3px padding) of 6px keys, each with a 6px
+  LED before its legend. The shown tab is latched down with its LED lit; a count is a small readout
+  window on the key.
+- **Lamps.** An LED is a 6px circle (8px in titlebars):
+  - unlit: `background: var(--mat-lens-off); box-shadow: inset 0 1px 1px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.08)`;
+  - lit amber: `background: var(--mat-lens-on); box-shadow: var(--mat-lens-glow)`;
+  - lit colour `--x-rgb`: `background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%,
+    rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), .55) 100%); box-shadow: 0 0 4px rgba(var(--x-rgb), .9),
+    0 0 10px rgba(var(--x-rgb), .4)`.
+
+  A status capsule is lit glass: `border: 1px solid rgba(var(--x-rgb), .5); border-radius: 999px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(var(--x-rgb), .3), rgba(var(--x-rgb), .07) 75%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 0 6px rgba(var(--x-rgb), .22)`, legend in the
+  state ink. An unlit capsule is a `--mat-well-fill` capsule in ink.
+- **Chips.** Verdicts and kinds are embossed labels on a key face, tinted by their colour.
+- **Readouts.** A small well holding a tabular-nums figure, with its label engraved beside or under it.
+- **Scrim.** Behind a modal plate: `background: var(--mat-scrim)`. Never blur.
+
+## Surfaces
+
+- **Terminal window.** A bezel around a screen. The titlebar (28px), tab bar and footer are plate
+  strips; the body is the screen. The window has a 1px `--mat-key-edge` border, the bevel on its top
+  edge and one `--mat-cast`. Focused: the titlebar LED lit in the window accent, the title backlit
+  `--mat-lit`, and a 1px window-accent ring at 0.55 alpha (`box-shadow: 0 0 0 1px`), no glow.
+  Unfocused: LED unlit, title engraved ink.
+- **Window accent** (`--krypton-window-accent`, lane accents, manual pick, signal states) colours the
+  window's LEDs — titlebar, its tabs, footer lane marks — and the window focus ring. Labels stay silk.
+- **Overlays and dialogs** (palette, which-key, hints, prompt dialog, quick overview, dashboards,
+  inline AI, toasts, harness pickers and dialogs): one floating plate over `--mat-scrim`; engraved
+  head; input well; the result list is one well with grooves and a full-row `--mat-select` tint;
+  actions are keys; the key-hint foot is printed legend. Which-key and hint labels are key caps.
+- **Quick Terminal.** A plate drawer around a screen.
+- **Harness.** The lane body is a screen (the window's screen shows through; a lane adds the well's
+  inset depth, not a second fill). The lane head is a plate strip with the name engraved and status as
+  a lamp; the zen rail is a plate column of selector keys with LEDs; the composer is a flush plate with
+  the draft line in a well; transcript rows are flat text on the screen under engraved labels; tool
+  rows are a kind chip, a status lamp and an output well; permission and question options are keys;
+  floating lane cards are small plates. The right dock column is a flush plate of wells, keys and lamps.
+- **Content views.** Toolbars, status bars, breadcrumbs and sidebars are plates, readouts and wells.
+  Markdown prose, diff tables, file previews, request/response bodies, the Excalidraw canvas, the
+  native webview and review-board documents stay flat.
+
+## Colour and state
+
+- Labels and lit legends are `--mat-silk` / `--mat-lit` everywhere: amber hardware ink.
+- Body text uses the theme ink: `--krypton-fg` with its alpha ladder in the dark scheme, the
+  `--krypton-ink-2/3/4` tiers in the light scheme (spec 321). Never dim text with `opacity`.
+- The theme accent keeps four jobs: the terminal cursor, links, window LEDs and the window focus
+  ring. Controls focus with a `--mat-lit` outline (see Focus).
+- Lamps take `--krypton-success-rgb` (pass), `--krypton-danger-rgb` (fault),
+  `--krypton-warning-rgb` (warning). Actions are cyan running, green done; those are not verdicts.
+- Model findings stay neutral evidence (ADR-0004): severities, tags and clean/findings verdicts use
+  ink and amber only. Colour appears only for a fault or something the human must act on (ADR-0017).
+- Selection is a full-row `--mat-select` tint inside its well, never an edge rail (ADR-0027).
+- All colours flow through tokens: `--krypton-*` (theme, written inline on `<html>` by `theme.ts`),
+  `--mat-*` (materials), `--agent-*` (the shared surface palette `theme.ts` emits), or a
+  component-local `--x-rgb` state variable set from one of those.
 
 ## Typography
 
-Monospace everywhere. The terminal nature of the product is the brand — proportional fonts would betray it. Default to **Mononoki** or **JetBrains Mono**.
-
-- **Labels** (titlebar, badges) are uppercase with `0.08em` letter-spacing. This is the "panel labeling" voice — feels engraved into the chrome. **Tab titles are the exception**: they keep their natural case (a tab title is a path, command, or document name the user reads).
-- **Body** is mixed case, normal spacing — reserved for content that the user actually reads (terminal output, prompts, dialog text).
-- **Display** (large numerics, mode indicators) is uppercase with `0.2em` letter-spacing — wide, instrumented, console-readout feel.
-- **Numerics in HUD** (gauges, timers, counters, byte sizes) **must** use `font-variant-numeric: tabular-nums`. Without it, digits jitter as values tick and the instrumented feel collapses.
-- **Inline code inside body text** (dialog descriptions, toast messages) sits inside `rgba(0, 200, 255, 0.08)` with 1px hairline border at `inactive` tier and 2px horizontal padding. No background change on hover.
+Monospace everywhere. Labels are uppercase engraving (11px, 600, `0.13em`); key legends 11px at
+`0.09em`; tab titles keep their natural case (a path or a command). Body is mixed case at normal
+spacing. Every digit that changes — timers, counts, gauges, sizes, percentages — uses
+`font-variant-numeric: tabular-nums`, and sits in a readout when it is a figure on its own.
 
 ## Geometry
 
-**8px corner radius is the default** on every rectangular Krypton Dark container: windows, panels, palettes, dialogs, toasts, chips, buttons, inputs. The curve is a manufactured bevel, not a pillow. True circles (`50%`) stay circles (status discs, remove buttons). Do not mix 0/2/3/4/12px on the same surface. The one deliberate exception is the **6px tab pill**: it sits inside the 28px titlebar rail, where 8px reads as a capsule. NASA Vault uses the same 8px token (diamond status dots stay 0), including its tab pills. Amber Agent frames stay 0px. The ACP harness composer and the docked ticket panel stay 0px (interior panes, not cards); the host window uses the 8px token.
-
-**Tabs are rounded pills in the titlebar row.** With 2+ tabs (or `always_show_tabbar`), the tab strip sits between the status dot and the end cluster, and the window label text hides (it would repeat the active tab). Inactive tabs are bare muted fg text; the active tab gets a soft neutral fill (`fg` @ 9%) with 6px radius. No underline, no chamfer, no glow. The tab's status dot keeps the window accent.
-
-**The harness Zen rail's active lane is a merged tab.** It takes the active lane body's surface and runs flush into the body, rounded (8px token) on the rail side and joined to the body by two concave 8px fillets. There is no seam, no tint and no glow. Inactive rail rows are 8px-rounded and inset from both rail edges. Do not stack a fill on the tab: it is the body's colour or it is not part of the body. The body, the tab and the composer read as one sheet: every corner of that sheet that faces the rail is rounded with the same token, and a first-row tab meets the titlebar flush, with no rail strip above it.
-
-No surface carries L-shaped corner ornament — not windows, not vault, not agent, not harness, not toasts. Two-side HUD ticks (`border-top` + `border-left` 10px arms, `┌┐└┘` glyphs) are banned. The chrome is the 1px accent-tinted border plus the multi-layer outer glow — the whole frame reads as a single luminous edge rather than discrete brackets.
-
-### Window Anatomy
+8px on every rectangular part: windows, panels, wells, keys, readouts, toasts. 6px only for selector
+keys inside an 8px channel. Capsules are `999px`; LEDs and status discs are circles. 0px only on an
+interior pane flush with an edge (the dock column, the harness composer). Titlebar and tab heights
+come from the theme (28px built in). Below `320 × 120` a window collapses to its titlebar plate; below
+200px wide it closes.
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│ ▌ TITLE · 28px · status dot 6px         session NN     │  ← ID fills the rail when focused
-│   (2+ tabs: ▌ [01 · tab] ( 02 · active ) [03 · tab]  NN) │  ← tab pills replace the title text
-├──────────────────────────────────────────────────────────┤
-│ ░░░ edge glow ░░░ (5em tall, fades into pane)            │
-│                                                          │
-│         terminal content (xterm.js viewport)             │
-│                                                          │
-│ ░░░ edge glow ░░░                                        │
-└──────────────────────────────────────────────────────────┘
-   ↑ 1px border @ tier (inactive→active depending on focus)
+┌─ plate ─────────────────────────────────────────────────────┐
+│ ● TITLE (engraved / backlit when focused)   [key] [key] NN │  ← titlebar strip, LED in window accent
+│ ╭ channel ─────────────────────────────╮                    │  ← tab bar: selector keys (2+ tabs)
+│ │ [● 01 tab] [● 02 active↓] [● 03 tab] │                    │
+├─────────────────────────────────────────────────────────────┤
+│▓ screen well (inset depth, --mat-screen, flat terminal grid) │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│ [readout] [readout]                         footer strip    │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## Glows
+## Focus
 
-Glow is the signature visual mechanic. **Never use a single shadow.** Stack a tight inner glow with a wide outer bloom — this is what gives the accent its phosphor/neon character rather than a generic CSS drop-shadow.
+Keyboard-first: every focusable element shows `:focus-visible`. Windows: lit LED, backlit title,
+1px accent ring. Controls: `outline: 1px solid var(--mat-lit); outline-offset: 2px`, solid, no glow.
+The active row of a list is the full-row `--mat-select` tint (plus its outline when it has focus).
 
-- **Border glows** combine `0 0 6px @ 0.6` (tight) with `0 0 20px @ 0.15` (bloom).
-- **Text glows** combine `0 0 8px @ 0.4` with `0 0 14px @ 0.15`.
-- **Inset rim lights** (`inset 0 1px 0 rgba(255,255,255,0.03)`) add a "top edge catches the light" highlight on panels — a subtle hint of 3D extrusion.
+## Form controls
 
-Edge glow overlays (5em tall — sized in `em` so they scale with terminal font size — fading to transparent toward the pane interior) sit at the top and bottom of every terminal pane. They imply that the content is *emitting* light rather than being drawn on a screen.
-
-## Focus States
-
-The interface is keyboard-first. **Every focusable element must show a visible focus state** — `outline: none` without a replacement is forbidden.
-
-- **Windows** step their border color and outer glow from `inactive` to `active` tier on focus — the whole frame brightens. (Window focus is the one place a border-tier change carries the signal on its own, now that there are no corner accents.)
-- **Inputs, buttons, list rows, palette items** use a 1px solid outline at `active` tier with the standard tight-bloom glow stack. Never dashed or dotted.
-- **Focus is keyboard-only** — use `:focus-visible`, not `:focus`. Mouse clicks should not draw rings on already-focused elements.
-- **Active row in a list** (palette suggestion, file picker entry) gets a 2px left bar at `active` tier rather than a full outline — it reads as a cursor mark, not a button.
-
-## Form Controls
-
-Form controls are rare in Krypton (the product is a terminal, not an admin panel) but must exist for config dialogs, palette inputs, and ACP harness prompts.
-
-- **Buttons** come in three flavors — primary (filled neon), secondary (bordered), ghost (text only). Use ghost for everything inside dense overlays; reserve primary for the single confirming action of a dialog.
-- **Text inputs** sit on `rgba(6, 10, 18, 0.6)` with an `inactive`-tier border that snaps to `active` on focus. The caret is primary cyan. No animation on focus — the border change must be instant.
-- **Checkboxes** are 12px squares with an `active`-tier border. When checked, fill with `primary @ neon` and a 1px inset rim light. There is no animation between states.
-- **Selects / dropdowns** open downward as palette-style overlays (`zIndex: overlay`) with the same chrome as the command palette — never as native OS menus.
-- **Disabled controls** drop to `inactive` tier text, `ghost` tier fill, and `cursor: not-allowed`. They keep their geometry — no greying out via desaturation.
+Buttons are keys; the single confirming action of a dialog is a key with a backlit legend. Text inputs
+and textareas are wells. Checkboxes are a 12px key that latches down with its LED lit. Selects open as
+palette-style overlays, never native menus. Disabled controls keep their geometry and drop to 0.45.
 
 ## Scrollbars
 
-Scrollbars must be visible but quiet. Terminal-style: thin, square, only the thumb is visible against transparent surfaces.
+8px, WebKit pseudo-elements only. The track is transparent (the well shows through); the thumb is
+`rgba(var(--krypton-fg-rgb), .18)` with the 8px radius, `.32` on hover. No buttons.
 
-- 8px wide on the vertical axis, 8px tall on the horizontal.
-- Track is fully transparent (the underlying surface shows through).
-- Thumb is `primary @ inactive (0.15)` with the container 8px radius. On hover, step up to `hover (0.4)`.
-- No buttons, no corners, no smooth scrolling beyond the OS default.
-- Use the WebKit pseudo-elements (`::-webkit-scrollbar-*`) — there are no other engines to support.
+## Gauges and progress
 
-## Selection & Cursor
+A gauge is a 4px well track with a flat fill in `--mat-silk` or the state colour and a 1px inset top
+highlight; no glow, no sweep. Its label is engraved above it, its value a readout at the right end.
+Indeterminate work shows a steady lit lamp and a label saying what is running.
 
-- **Text selection** uses `rgba(0, 200, 255, 0.6)` (the `selection` token at `selectionAlpha`). Selected foreground remains the same color — readability comes from the saturated wash, not a fg swap.
-- **Terminal cursor** is `block` style by default, primary cyan, no blink (the breathing motion of the chrome is enough liveness).
-- **Mouse cursors** follow the affordance: `text` over selectable content, `grab` over draggable titlebars (`grabbing` while dragging), `ew-resize` / `ns-resize` / `nwse-resize` on window edges, `not-allowed` on disabled controls. Default `cursor: default` everywhere else — never `pointer` on chrome; the keyboard is the pointer.
+## States
 
-## Numerics
+- **Disabled** — unpowered: 0.45 opacity, geometry kept, `cursor: not-allowed`.
+- **Loading** — a one-line label and a steady lamp. Spinner glyphs and ticking counters may change
+  content; nothing pulses.
+- **Empty** — an engraved headline and a body line, centred in the well.
 
-Any digit that *changes* (timers, counts, gauges, byte sizes, percentage readouts) lives in `font-variant-numeric: tabular-nums`. Any digit that is static (a label like "v1.1.0") is fine in proportional figures. The instrumented feel comes from columns of digits that don't dance — this rule is load-bearing for HUD-style panels.
+## Links and inline code
 
-## Gauges & Progress
-
-- Track: 4px tall, full width of its container, `primary @ ghost (0.04)`.
-- Fill: from `0%` to current value, `primary @ active (0.7)` with the tight glow stack applied.
-- Label sits *above* the gauge in label typography (11px / uppercase / 0.08em). Numeric readout sits at the right end of the label row, tabular-nums.
-- For semantic state (error / warning), swap the fill color to the matching state token; the track stays cyan-tier.
-- Indeterminate progress uses the `dataStream` animation sweeping across the fill (not the track) at `1.8s linear infinite`.
-
-## States: Disabled / Loading / Empty
-
-- **Disabled** — text drops to `inactive` (0.15), fills to `ghost` (0.04), cursor becomes `not-allowed`. Geometry is preserved; never collapse the element.
-- **Loading** — replace content with a 1-line label at body typography saying what's loading, and a single indeterminate gauge below it. No spinners — they're decorative motion.
-- **Empty** — display typography (28px uppercase) for the short headline, body typography for the secondary line. Center vertically in the container. No illustrations.
-
-## Links & Inline Code
-
-- **Links** in body text (toast messages, dialog descriptions, agent output) use the `link` token (`#33ddff`) with `text-decoration: underline` and `text-underline-offset: 2px`. No bold, no glow. Hover increases opacity to 1.0 but does not change color.
-- **Inline code** (`` `foo` ``) in body sits in a 2px-padded chip with hairline border at `inactive` tier and `rgba(0, 200, 255, 0.08)` background. Same monospace family as everything else.
-
-## Textures
-
-Three repeating patterns add machine-grade detail without becoming busy:
-
-- **Horizontal scanlines** (`rgba(0,0,0,0.03)` every 2px) on cards and panels — CRT artifact.
-- **Vertical stripes** (`rgba(0,200,255,0.02)` every 4px) on tab bars — tech-grid feel.
-- **Micro-dot grid** (radial gradient, 6px spacing, 3% opacity) on large background surfaces — instrumented field.
-
-All three sit at 2–3% opacity. If the user *notices* them, they're too strong.
+Links use the theme link colour, underlined with a 2px offset; no glow. Inline code sits in a small
+`--mat-well-fill` chip with a 1px groove border.
 
 ## Motion
 
-Almost everything is still. The interface is a *terminal*, not a website — it should not draw attention to itself. Motion is allocated by importance:
+- **None ambient.** No pulse, breathing, sweep, shimmer, orbit, scanline, radar ping or vignette.
+  Live state is a steady lit lamp.
+- **Blinks** — only text carets, the terminal cursor and the selection-mode cursor; they stop under
+  `prefers-reduced-motion`. A JS spinner glyph and ticking counters stay: they change content, not
+  light.
+- **Kept** — WAAPI layout transitions on transform and opacity (window morph, workspace slide,
+  entrance and exit), the 1px key press, one-shot event flashes up to 600ms drawn as a lamp flash,
+  the 220ms transcript row enter.
+- **Reduced motion** — entrances capped at 120ms; caret blinks stop; hover and focus changes are
+  instant.
+- **Config effects** keep their own behaviour and are not part of the chrome: `[shader]`, cursor
+  trail, `[fire]`, the `[music]` circuit trace, perspective tilt. The header oscilloscope (spec 188)
+  draws inside a display well.
 
-- **Breathing pulses** (3s ease-in-out) on active tabs and primary indicators — slow enough to feel like a heartbeat, fast enough to confirm the element is live.
-- **Data stream sweeps** (1.8s linear) on uplink bars and progress gradients — implies throughput.
-- **Scan wipes** (4s linear) horizontal highlight pass across active tabs — implies sensor scanning.
-- **Radar pings** (2.5s) on icon scale-pulses — implies acquisition.
-- **Entrance animations** use `cubic-bezier(0.22, 0.61, 0.36, 1)` — a deliberate "hardware deploying" curve, not a bouncy spring. Toasts slide in from the right; windows scale up from 0.96.
-
-All ambient animation must be `infinite` and `ease-in-out`. Linear is reserved for sweep effects where the constant velocity is the point.
-
-### Reduced Motion
-
-Under `@media (prefers-reduced-motion: reduce)`:
-
-- **Drop** all ambient `infinite` animations (breathing, scan wipe, data stream, radar ping). The status dot stays lit at neon; the active tab stays at its peak state.
-- **Keep** entrance animations but cap them at 120ms total — windows still appear with a brief scale, but no curve overshoot.
-- **Keep** hover/focus transitions (they're informational, not decorative), capped at 80ms.
-
-## Elevation / Z-Index
-
-The interface has a fixed elevation ladder. New components must pick from this scale rather than inventing numbers:
+## Elevation and z-index
 
 | Layer | z-index | What lives there |
 |---|---|---|
-| base | 0 | Workspace surface, background textures |
+| base | 0 | Workspace surface |
 | window | 100 | Terminal windows (unfocused) |
 | windowFocused | 110 | The focused window |
-| edgeGlow | 200 | Top/bottom emission overlays on panes |
-| overlay | 1000 | Quick Terminal, command palette, whichkey |
+| paneOverlay | 200 | Overlays drawn on a pane |
+| overlay | 1000 | Quick Terminal, command palette, which-key |
 | modal | 2000 | Confirmation dialogs, blocking forms |
 | toast | 3000 | Transient notifications |
 | hint | 4000 | Leader-key hints, hint-mode labels, debug overlays |
 
-Breaking the ladder (e.g. a toast at `z-index: 999`) is a bug class — it lets focused windows occlude their own status messages.
+## Transparency hierarchy
 
-## Transparency Hierarchy
+1. **Workspace** — fully transparent; the desktop shows through.
+2. **Screen** — `--mat-screen`: the theme backdrop at `[visual] opacity` (default 0.5; light themes
+   floor at 0.94).
+3. **Plates** — 0.9 (dark) / 0.94 (light), whatever `[visual] opacity` says, so chrome stays legible.
+4. **Floating plates** — the same plate over `--mat-scrim`.
 
-The interface is a stack of translucent surfaces over the user's desktop wallpaper. Maintain the order:
+Nothing is fully opaque. A narrow overlay that must hide what is under it adds a solid underlay
+(`--agent-surface-solid`) beneath the plate.
 
-1. **Workspace surface** — fully transparent (the user's desktop shows through).
-2. **Window backdrop** — `rgba(6, 10, 18, 0.5)` — 50% deep ink.
-3. **Overlays** (palette, whichkey, toasts) — `rgba(6, 10, 18, 0.85)` — denser ink that still shows depth.
-4. **Modal foreground** (input fields, active cells) — up to `0.92` — never fully `1.0`.
+## Performance
 
-Breaking this order — for example, an opaque modal over a translucent palette — collapses the depth model and the interface looks "broken."
-
-## Overlay Specs
-
-- **Command palette** — `min(640px, 80vw)` wide, `max-height: 60vh`, centered horizontally, anchored 15vh from the top. Background `rgba(6, 10, 18, 0.85)`. Internal padding `md`. Each row is `controlHeight` tall; active row gets the 2px left bar focus mark.
-- **Whichkey** — bottom-anchored strip, `rgba(6, 10, 18, 0.85)`, padding `sm`. Key chips have an `inactive`-tier hairline border and `hover`-tier text. Chord-in-progress chip gets `active`-tier border.
-- **Toast** — 320px wide, stacks bottom-right of workspace, slides in from right using `entrance` curve over 220ms. Auto-dismiss at 4s for info, 8s for warning, never for error (manual dismiss only).
-- **Quick Terminal** — slides down from top edge; same backdrop as windows (`0.5`), not the overlay tier. It *is* a window in costume.
+- Brush and stacked bevels only on plate strips and panels.
+- A repeated row (transcript row, diff line, tool output line, file row, palette result) gets no
+  box-shadow, text-shadow or gradient: at most one groove border and the selection tint.
+- One `--mat-cast` per floating plate; no outer glows on windows.
+- Budget: keypress-to-render under 16ms, layout animation at 60 FPS, idle CPU under 1%.
 
 ## Accessibility
 
-- **Contrast** — Foreground `#b0c4d8` over the 50% backdrop maintains ≥7:1 against typical dark wallpapers. Label text at the 0.7 tier maintains ≥4.5:1. Semantic colors are validated only on dark wallpapers; users on light wallpapers should switch to a higher backdrop alpha theme.
-- **Focus** — `:focus-visible` rings are mandatory on every focusable element. The keyboard-only product makes this non-negotiable.
-- **Reduced motion** — see Motion § Reduced Motion. The infinite ambient pulses *will* trigger vestibular sensitivity if left on; this is not optional.
-- **Hi-DPI hairlines** — pure 1px borders can vanish at @2x. Where a 1px border is critical (window chrome, palette edges), pair it with `box-shadow: inset 0 0 0 1px <color>` so it survives subpixel rounding.
-
-## CSS Variable Mapping
-
-Every token in this file's frontmatter maps to a `--krypton-*` CSS custom property on `:root`. The mapping rule is `kebab-case(path)`:
-
-| Token path | CSS variable |
-|---|---|
-| `colors.primary` | `--krypton-color-primary` |
-| `colors.foreground` | `--krypton-color-foreground` |
-| `accentOpacity.hover` | `--krypton-opacity-hover` |
-| `typography.label.size` | `--krypton-type-label-size` |
-| `chrome.titlebarHeight` | `--krypton-chrome-titlebar-height` |
-| `focus.ringColor` | `--krypton-focus-ring-color` |
-| `zIndex.overlay` | `--krypton-z-overlay` |
-| `motion.breathingPulse` | `--krypton-motion-breathing` |
-
-Hard-coded hex, px, or duration values in component CSS are a smell — themes won't reach them and `prefers-reduced-motion` overrides won't apply.
+- **Contrast.** Dark: `--mat-silk` on the plate is 9.0:1 over a black wallpaper and 6.4:1 over white;
+  `--krypton-fg` 9.2:1 / 6.5:1. Light: `#6e4700` on the 0.94 aluminium plate is 5.2:1 / 6.1:1.
+- **Real edges.** Every key keeps its 1px border, so it reads as a control without its shadows.
+- **Focus** is mandatory and keyboard-only (`:focus-visible`).
+- **Reduced motion** — see Motion.
 
 ## Theming
 
-A theme TOML at `~/.config/krypton/themes/<name>.toml` may override:
+A theme TOML at `~/.config/krypton/themes/<name>.toml` may set the `colors` palette, the `ansi` table,
+the backdrop and selection alphas, the accent, and the Quick Terminal screen fill. Panels, palettes
+and key caps take no theme colours: they are material. Its `[tokens]` table may recolour any
+`--mat-*` colour stop or shadow (values pass the spec 303 allowlist; gradients are composed in
+`materials.css`). A theme may not change geometry, motion, typography or focus: those are the
+identity, not the palette.
 
-- The full `colors` palette (including semantic and link).
-- The full `ansi` table.
-- `backgroundAlpha` and `selectionAlpha`.
-- The `accentOpacity` scale (rare — only do this for a deliberately calmer/louder theme).
+## Platform constraints
 
-A theme **may not** override geometry, motion, typography, or focus tokens — those are part of the Krypton Dark identity. If you need to change those, you are defining a new aesthetic, not a Krypton Dark theme (see below).
+- **`backdrop-filter: blur()` is banned.** It freezes the transparent WKWebView on macOS. Depth comes
+  from alpha, gradients and shadows.
+- **No CSS frameworks, no UI libraries.** Vanilla CSS, BEM naming, `krypton.*` cascade layers
+  (`src/styles/layers.css`).
+- **No images for materials.** Brush, bevels, wells and lenses are CSS gradients and shadows.
 
-## Platform Constraints
+## Sibling aesthetics
 
-- **`backdrop-filter: blur()` is banned.** On macOS WKWebView with transparent windows, it freezes rendering. Translucency must be achieved through plain alpha-blended backgrounds, not native blur. This shaped the entire aesthetic — what looks like a blurred panel is actually a stack of low-alpha layers and scanline textures.
-- **No CSS frameworks, no UI libraries.** All styling is vanilla CSS with BEM naming (`.krypton-window__titlebar--focused`). New components should match this convention.
-- **All colors flow through `--krypton-*` CSS custom properties.** Hard-coded hex in component CSS is a smell — themes won't reach it. The token table at the top of this file is the source of truth.
-- **Min window size** — below `320 × 120 px` the chrome collapses to titlebar-only (no corner accents, no edge glow). Below `200px` wide, the window snaps closed.
+Every surface in the app webview follows this file. The only sibling is **`DESIGN.binance.md`**: the
+loopback app opened in the OS browser (`src/loopback/`), a separate document with its own tokens. Its
+GenUI preview stage imports `materials.css`, so catalog components render as they do in the app.
 
-## When to Break the Rules
-
-The rules above describe the *core* Krypton Dark identity. They are intentionally tight because the product's brand depends on consistency across a long-running, always-on, full-screen surface that the user lives inside.
-
-If you are building something fundamentally different in character, do not bend Krypton Dark — define a new aesthetic in its own scoped per-view CSS file (e.g. `src/styles/vault-view.css`) and document it as a sibling `DESIGN.{name}.md` at the repo root. The codebase currently ships these alternatives:
-
-- **`DESIGN.nasa.md`** — NASA Mission Control retro-futurism (Vault Viewer, `.krypton-vault`)
-- **`DESIGN.amber.md`** — Warm amber phosphor / cassette futurism (Agent view, `.krypton-agent`)
-- **`DESIGN.console.md`** — Skeuomorphic instrument faceplate (ACP harness right dock, `.acp-harness__dock`)
-
-### Sibling DESIGN Contract
-
-Each sibling `DESIGN.<name>.md` must:
-
-1. Use the same frontmatter shape as this file (`name`, `version`, `description`, `colors`, `typography`, `motion`, `forbidden`).
-2. Declare a single root scoping selector (e.g. `.krypton-vault`) and confine *all* styles to descendants of that selector. The selector is part of the contract — global styles bleeding out of a sibling aesthetic is a bug.
-3. Bump its own `version` independently. The base `DESIGN.md` version does not gate siblings.
-
-What must *not* happen is partial drift inside Krypton Dark surfaces: a 12px card next to an 8px window, an opaque modal, a single-layer shadow. That reads as bugs, not style.
+A new sibling needs a reason that is not taste: a separate document, or a surface that is not Krypton
+chrome. It gets its own `DESIGN.<name>.md` with this frontmatter shape and a single root scoping
+selector, and nothing in it bleeds out of that selector.
 
 ## Changelog
 
-- **1.2.8** — The ACP harness right dock column (`.acp-harness__dock`) moves to the sibling `DESIGN.console.md` skeuomorphic faceplate; the column stays a flush 0px pane.
-- **1.2.7** — ACP harness Zen rail: the body, tab and composer read as one sheet. The rail colour ends in an 8px curve where the body meets the composer. The body's corner under the titlebar is rounded when the tab is not the first row. A first-row tab meets the titlebar flush (spec 325 rev 2).
-- **1.2.6** — ACP harness Zen rail: the active lane is a tab merged into the lane body (spec 325). Inactive rows are 8px-rounded and inset.
-- **1.2.5** — ACP harness docked ticket panel is a flush 0px interior pane (same exception as the composer). Host window stays 8px.
-- **1.2.4** — ACP harness host window uses the 8px token again. Only the composer stays 0px.
-- **1.2.3** — NASA Vault containers use the 8px token (`--vault-radius` → `--krypton-border-radius`). Diamond status dots stay 0. Amber Agent frames stay 0px.
-- **1.2.2** — Default container radius is 8px (`--krypton-border-radius` / `chrome.border.radius`). Same token as 1.2.0, larger bevel. Circles stay `50%`. NASA Vault and Amber Agent frames keep their sibling geometry.
-- **1.2.1** — L-shaped corner brackets are forbidden on every surface (windows, vault, agent, harness, toasts). Full 1px border or nothing.
-- **1.2.0** — Default container radius is 4px (`--krypton-border-radius` / `chrome.border.radius`). One bevel on every Krypton Dark rectangular container. Circles stay `50%`. NASA Vault and Amber Agent frames keep their sibling geometry.
-- **1.1.0** — Added focus, form, scrollbar, cursor, zIndex, overlay, gauge, edgeGlow, accessibility, and CSS-variable-mapping specs. Added link color, tabular-nums policy, reduced-motion policy, sibling DESIGN contract, window anatomy diagram, hi-DPI hairline rule.
-- **1.0.0** — Initial Krypton Dark spec: colors, typography, geometry, glows, textures, motion, transparency hierarchy, platform constraints.
+- **2.0.0** — Krypton Console replaces Krypton Dark as the base identity (spec 366). The dock's
+  faceplate becomes every surface's: `--mat-*` tokens at the root in `src/styles/materials.css`
+  (the dock-local `--dock-*` set is gone), plate / engraving / well / screen / key / lamp parts,
+  steady lamps instead of ambient motion, no neon glow outside lamps. `DESIGN.console.md`,
+  `DESIGN.amber.md` and `DESIGN.nasa.md` are absorbed and deleted. Light silk darkens from `#8a5a00`
+  to `#6e4700` and light plates rise to 0.94 alpha for 4.5:1 labels.
+- **1.2.8** — The ACP harness right dock column moves to the sibling `DESIGN.console.md` faceplate.
+- **1.2.7** — ACP harness Zen rail: body, tab and composer read as one sheet (spec 325 rev 2).
+- **1.2.6** — ACP harness Zen rail: the active lane is a tab merged into the lane body (spec 325).
+- **1.2.5** — ACP harness docked ticket panel is a flush 0px interior pane.
+- **1.2.4** — ACP harness host window uses the 8px token again; only the composer stays 0px.
+- **1.2.3** — NASA Vault containers use the 8px token.
+- **1.2.2** — Default container radius is 8px (`--krypton-border-radius`).
+- **1.2.1** — L-shaped corner brackets are forbidden on every surface.
+- **1.2.0** — Default container radius is 4px.
+- **1.1.0** — Focus, form, scrollbar, cursor, z-index, overlay, gauge, accessibility specs.
+- **1.0.0** — Initial Krypton Dark spec.

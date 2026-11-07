@@ -3,6 +3,7 @@
 > Status: Superseded by [234](./0234-eight-pixel-container-radius.md)
 > Date: 2026-08-20
 > Milestone: visual chrome
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): Amber Agent and NASA Vault looks retired; one bevel everywhere.
 
 ## Problem
 

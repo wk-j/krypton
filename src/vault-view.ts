@@ -467,12 +467,9 @@ export class VaultContentView implements ContentView {
         ageBar.className = 'krypton-vault__age-bar';
         const fill = document.createElement('span');
         fill.className = 'krypton-vault__age-fill';
+        // Recency is the gauge's fill width; its colour is the CSS silk fill
+        // (DESIGN.md "Gauges and progress").
         fill.style.width = `${15 + recency * 85}%`;
-        const hue = 200 - (1 - recency) * 40;
-        const sat = 70 + recency * 25;
-        const light = 40 + recency * 25;
-        fill.style.background = `hsl(${hue}, ${sat}%, ${light}%)`;
-        fill.style.opacity = `${0.4 + recency * 0.6}`;
         ageBar.appendChild(fill);
         el.appendChild(ageBar);
       }

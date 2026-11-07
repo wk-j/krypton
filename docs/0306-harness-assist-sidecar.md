@@ -4,6 +4,7 @@
 > Date: 2026-10-17
 > Milestone: ACP Harness — composer
 > Builds on: 0072 (harness view) · 0069 (ACP client) · 0275 (feature controllers) · 0301/0302 (component kernel) · 0285 (ghost text, the other composer suggestion) · 0136 (prompt queue) · 0126/0127 (`session/set_model`) · 0257 (TypeSafe suggestion discipline)
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): harness and agent share the faceplate; amber sibling retired.
 
 ## Problem
 
@@ -299,7 +300,7 @@ cmd+0 dismiss · cmd+/ again
 
 `readDeps()` returns `[state.kind, labels.join('\u0000')]`, derived in `update()` before `super.update()` — the `PeerStrip` pattern, so nothing clock-derived or identity-unstable reaches the dependency tuple. Plain `Component`, not `LiveComponent`: no streaming, no seal.
 
-Styling follows `DESIGN.md` (the harness is Krypton Dark; `DESIGN.amber.md` is the agent view, `DESIGN.binance.md` is browser surfaces): 0px interior pane, no corner brackets, and the muted-foreground treatment of `peer-strip.css`. It does **not** take that sheet's `0.74em`: the strip is read and acted on, so it is sized `var(--krypton-font-size, 13px)` — the user's `[font] size` — like `tool-row.css` and `permission-row.css`, and hierarchy is carried by colour alpha alone. `assist-strip.test.ts` holds that contract (no `N.NNem` font-size survives in the sheet) because jsdom applies no stylesheet. The sheet is one `@layer krypton.component` block plus `.acp-harness__assist[hidden] { display: none; }`, and declares only `acp-harness__assist*` selectors, as `styles-ownership.test.ts` requires.
+Styling follows `DESIGN.md` (the harness and the agent view are Krypton Console; `DESIGN.binance.md` is browser surfaces): 0px interior pane, no corner brackets, and the muted-foreground treatment of `peer-strip.css`. It does **not** take that sheet's `0.74em`: the strip is read and acted on, so it is sized `var(--krypton-font-size, 13px)` — the user's `[font] size` — like `tool-row.css` and `permission-row.css`, and hierarchy is carried by colour alpha alone. `assist-strip.test.ts` holds that contract (no `N.NNem` font-size survives in the sheet) because jsdom applies no stylesheet. The sheet is one `@layer krypton.component` block plus `.acp-harness__assist[hidden] { display: none; }`, and declares only `acp-harness__assist*` selectors, as `styles-ownership.test.ts` requires.
 
 ### Data flow
 

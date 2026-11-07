@@ -63,9 +63,9 @@ near-black canvas, a single warm-yellow accent, and trading green/red used
 authenticated loopback HTTP and the user opens in their *OS browser*, outside
 the Krypton window chrome.
 
-These pages are not terminal chrome, so they do not follow Krypton Dark
-(`DESIGN.md`), the Vault Viewer's NASA look (`DESIGN.nasa.md`), or the Agent
-view's amber phosphor (`DESIGN.amber.md`). They share one design system so that
+These pages are not terminal chrome, so they do not follow Krypton Console
+(`DESIGN.md`), the instrument faceplate every in-app surface uses. They share
+one design system so that
 a lane's generated artifact, the lane-monitor dashboard, the artifact gallery,
 and the docs browser all read as one product when the user flips between browser
 tabs.
@@ -312,15 +312,15 @@ full borders, no left rails, one accent.
 
 | Doc | Identity | Surface |
 | --- | --- | --- |
-| `DESIGN.md` | Krypton Dark — cyan neon cyberpunk | The terminal window chrome (in-app) |
-| `DESIGN.nasa.md` | NASA Mission Control — cyan phosphor | Vault Viewer (in-app) |
-| `DESIGN.amber.md` | Amber phosphor cassette-futurism | Agent view (in-app) |
+| `DESIGN.md` | Krypton Console — skeuomorphic instrument faceplate | Every in-app surface (windows, overlays, harness, views) |
 | `DESIGN.binance.md` | Binance dark exchange | **Loopback pages in the OS browser** |
 
-The first three are *in-app* identities rendered inside the single Krypton
-window. This one is the only identity that lives **outside** the app, in a real
+The first is the *in-app* identity rendered inside the single Krypton window.
+This one is the only identity that lives **outside** the app, in a real
 browser — which is why it is a self-contained, web-conventional system (system
 fonts as fallbacks, OS theme awareness, plain semantic HTML) rather than an
-extension of the in-app chrome. Keep that boundary: do not import Krypton Dark's
-neon, glows, or hard geometry into these pages, and do not push Binance yellow
-back into the terminal.
+extension of the in-app chrome. Keep that boundary: do not import the
+faceplate's materials (brushed plates, wells, raised keys) into these pages,
+and do not push Binance yellow back into the app. The one exception is the
+GenUI gallery stage, which reproduces a Krypton window and imports
+`src/styles/materials.css` so catalog components render as they do in-app.

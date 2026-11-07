@@ -1,15 +1,15 @@
 /* Spec 302 §7.1 — `LanePicker`.
    Carved verbatim from src/styles/acp-harness.css:6140-6238. The `acp-harness__picker`
    block is this directory's private styling surface: the overlay root, its panel, head,
-   list, rows and empty state. No scheme override exists for it in theme-scheme.css. */
+   list, rows and empty state.
+
+   Spec 366 / DESIGN.md "Overlays and dialogs": one floating plate over the
+   scrim, the head engraved on it, the backends one recessed well split by
+   grooves, the cursor row a full-row `--mat-select` tint. */
 
 @layer krypton.component {
-  /* ── Lane picker overlay ───────────────────────────────────
-     One 8px panel (same chrome as the command palette). Header and list
-     are not independently bordered — that used to sit them side-by-side
-     as two capsules, with the 1px stroke reading as wire. Modal tier (80,
-     as `ImageViewer`): paints over the dock column (5) and lane rail (4). */
-
+  /* Modal tier (80, as `ImageViewer`): paints over the dock column (5) and
+     lane rail (4). */
   .acp-harness__picker {
     position: absolute;
     inset: 0;
@@ -18,7 +18,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: var(--agent-surface-high, rgba(4, 8, 13, 0.72));
+    background: var(--mat-scrim);
   }
 
   .acp-harness__picker[hidden] {
@@ -30,40 +30,44 @@
     flex-direction: column;
     width: clamp(320px, 38vw, 480px);
     max-height: min(70vh, 100%);
-    background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
-    border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.32);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    box-shadow:
-      0 0 30px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.08),
-      0 8px 32px rgba(0, 0, 0, 0.5);
+    background: var(--mat-brush), var(--mat-plate);
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
     overflow: hidden;
   }
 
   .acp-harness__picker-head {
     display: flex;
     justify-content: space-between;
+    align-items: baseline;
     gap: 10px;
     flex: 0 0 auto;
-    padding: 7px 12px;
-    color: var(--krypton-window-accent, #0cf);
-    letter-spacing: 0.08em;
-    border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
-    text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
+    padding: 9px 12px 8px;
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    text-shadow: var(--mat-engrave);
   }
 
   .acp-harness__picker-head span:last-child {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
-    font-size: 0.84em;
-    text-shadow: none;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-weight: 400;
     letter-spacing: 0.04em;
+    text-transform: none;
   }
 
   .acp-harness__picker-list {
     list-style: none;
-    margin: 0;
-    padding: 6px 0;
+    margin: 0 8px 8px;
+    padding: 0;
     max-height: 50vh;
     overflow-y: auto;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-harness__picker-row {
@@ -71,15 +75,18 @@
     align-items: baseline;
     gap: 10px;
     padding: 6px 14px;
+    border-bottom: 1px solid var(--mat-groove-lo);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     cursor: default;
   }
 
+  .acp-harness__picker-row:last-child {
+    border-bottom: 0;
+  }
+
   .acp-harness__picker-row--active {
-    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
-    outline: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.5);
-    outline-offset: -1px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
+    background: var(--mat-select);
+    color: var(--krypton-fg, rgba(216, 232, 216, 0.98));
   }
 
   /* The backend mark, tinted like its rail logo (`rail-entry.css`). An svg's
@@ -119,13 +126,19 @@
 
   .acp-harness__picker-count {
     flex: 0 0 auto;
-    color: rgba(255, 210, 122, 0.78);
+    color: var(--mat-silk);
     font-size: 0.82em;
+    font-variant-numeric: tabular-nums;
     letter-spacing: 0.04em;
   }
 
   .acp-harness__picker-empty {
+    margin: 0 8px 8px;
     padding: 14px 16px;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    text-align: center;
   }
 }

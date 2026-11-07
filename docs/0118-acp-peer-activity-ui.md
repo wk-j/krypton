@@ -4,6 +4,7 @@
 > Date: 2026-05-23
 > Milestone: Post-M-current polish (ACP harness)
 > Related: `docs/0106-inter-lane-messaging.md`, `docs/0109-acp-contextual-lane-peek.md`, `docs/0111-harness-right-rail.md`, `docs/0116-soft-awaiting-peer.md`, `docs/0108-overall-ui-improvements.md`
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): awaiting-peer dot pulse removed; state is a steady lamp.
 
 ## Problem
 

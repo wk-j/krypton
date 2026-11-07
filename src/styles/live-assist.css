@@ -1,24 +1,11 @@
-:root {
-  --live-assist-bg: rgba(6, 10, 18, 0.72);
-  --live-assist-surface-raised: #11141b;
-  --live-assist-amber: #ffb000;
-  --live-assist-amber-bright: #ffd880;
-  --live-assist-text: #e8cfa4;
-  --live-assist-muted: #a68d68;
-  --live-assist-cyan: #4dd0e1;
-  --live-assist-blue: #64b5f6;
-  --live-assist-green: #8bc34a;
-  --live-assist-danger: #ff6e40;
-  --live-assist-magenta: #e091c0;
-  --live-assist-rule: rgba(255, 176, 0, 0.1);
-  --live-assist-font: var(
-    --krypton-font-family,
-    'Mononoki Nerd Font Mono',
-    'JetBrains Mono',
-    ui-monospace,
-    monospace
-  );
-}
+/* Live Assist — Krypton Console faceplate (DESIGN.md 2.0.0, spec 366).
+   A compact projection of one Harness lane in its own transparent webview:
+   the header, lane selector and composer are plate strips, the transcript is
+   the screen (flat text over the theme backdrop), the draft line is an input
+   well, hints are key caps and state is a steady lamp. Colours come only from
+   the theme (`--krypton-*`, `--agent-*`, written by FrontendThemeEngine) and
+   the root material set (`--mat-*`, materials.css), so the light scheme swaps
+   with `html[data-theme-scheme='light']`. */
 
 html,
 body,
@@ -31,8 +18,14 @@ body,
 }
 
 body {
-  color: var(--live-assist-text);
-  font-family: var(--live-assist-font);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88));
+  font-family: var(
+    --krypton-font-family,
+    'Mononoki Nerd Font Mono',
+    'JetBrains Mono',
+    ui-monospace,
+    monospace
+  );
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
@@ -47,6 +40,9 @@ textarea {
   padding: 0;
 }
 
+/* The faceplate's outer edge. The native window is transparent; the strips
+   below are the plate and the transcript is the screen, so the desktop still
+   reads through the display. */
 .live-assist {
   position: relative;
   width: 100%;
@@ -57,20 +53,11 @@ textarea {
   flex-direction: column;
   font-size: var(--krypton-font-size, 14px);
   overflow: hidden;
-  /* No drawn frame. The native window is transparent; this wash lets the
-     desktop show through, and AppKit's window shadow is the only edge. */
-  border: 0;
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
-  background:
-    repeating-linear-gradient(
-      to bottom,
-      transparent 0,
-      transparent 3px,
-      rgba(255, 176, 0, 0.012) 4px
-    ),
-    var(--live-assist-bg);
-  box-shadow: none;
 }
+
+/* ─── Header: plate strip ─── */
 
 .live-assist__header {
   position: relative;
@@ -82,34 +69,37 @@ textarea {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--live-assist-rule);
-  background: transparent;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--mat-groove-lo);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.09em;
 }
 
 .live-assist__brand {
-  color: var(--live-assist-amber);
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-shadow: 0 0 8px rgba(255, 176, 0, 0.35);
+  color: var(--mat-silk);
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-shadow: var(--mat-engrave);
+  text-transform: uppercase;
 }
 
 .live-assist__project {
   min-width: 0;
   overflow: hidden;
-  color: var(--live-assist-muted);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   text-overflow: ellipsis;
+  text-shadow: var(--mat-engrave);
   white-space: nowrap;
 }
 
 .live-assist__header-lane {
   min-width: 0;
   overflow: hidden;
-  color: var(--live-assist-amber);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88));
   text-overflow: ellipsis;
+  text-shadow: var(--mat-engrave);
   white-space: nowrap;
 }
 
@@ -121,63 +111,116 @@ textarea {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--live-assist-muted);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  text-shadow: var(--mat-engrave);
   white-space: nowrap;
 }
 
+/* Pinned above other windows: a lit amber LED. */
 .live-assist__topmost-dot {
   width: 6px;
   height: 6px;
+  flex: none;
   border-radius: 50%;
-  background: var(--live-assist-green);
-  box-shadow: 0 0 8px rgba(139, 195, 74, 0.56);
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
 }
 
+/* Lane status: an LED and its legend. Unlit at rest, steady amber while the
+   lane works, fault red when it needs the human or failed (ADR-0017). */
 .live-assist__status {
+  --live-assist-status-rgb: var(--krypton-danger-rgb, 255, 58, 92);
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--live-assist-muted);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-variant-numeric: tabular-nums;
+  text-shadow: var(--mat-engrave);
   white-space: nowrap;
 }
 
-.live-assist__status[data-status='busy']::before {
-  width: 5px;
-  height: 5px;
+.live-assist__status::before {
+  width: 6px;
+  height: 6px;
   flex: none;
   border-radius: 50%;
-  background: var(--live-assist-amber);
-  box-shadow: 0 0 7px rgba(255, 176, 0, 0.6);
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
   content: '';
-  animation: live-assist-processing 1.2s ease-in-out infinite;
 }
 
 .live-assist__status[data-status='busy'],
-.live-assist__status[data-status='needs_permission'] {
-  color: var(--live-assist-amber-bright);
+.live-assist__status[data-status='awaiting_peer'] {
+  color: var(--mat-lit);
 }
 
+.live-assist__status[data-status='busy']::before,
+.live-assist__status[data-status='awaiting_peer']::before {
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
+}
+
+.live-assist__status[data-status='needs_permission'],
 .live-assist__status[data-status='error'] {
-  color: var(--live-assist-danger);
+  color: color-mix(in srgb, rgb(var(--live-assist-status-rgb)) 75%, var(--krypton-fg));
 }
 
-.live-assist__hide {
-  color: var(--live-assist-muted);
-  letter-spacing: 0.08em;
+.live-assist__status[data-status='needs_permission']::before,
+.live-assist__status[data-status='error']::before {
+  background: radial-gradient(
+    circle at 35% 30%,
+    var(--mat-glint) 0 12%,
+    rgb(var(--live-assist-status-rgb)) 45%,
+    rgba(var(--live-assist-status-rgb), 0.55) 100%
+  );
+  box-shadow:
+    0 0 4px rgba(var(--live-assist-status-rgb), 0.9),
+    0 0 10px rgba(var(--live-assist-status-rgb), 0.4);
 }
+
+/* Hints (`esc`, `⌘.`) are key caps with a printed legend. */
+.live-assist__hide,
+.live-assist__cancel {
+  padding: 1px 6px;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: 6px;
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.09em;
+  line-height: 1.4;
+  text-shadow: var(--mat-print);
+  white-space: nowrap;
+}
+
+/* ─── Lane selector: a channel of selector keys on the plate ─── */
+/* The recessed channel is drawn by `::before` behind the keys, so the lane
+   buttons stay direct children of the tablist (live-assist-view.ts). */
 
 .live-assist__lanes {
   position: relative;
   z-index: 3;
+  isolation: isolate;
   flex: none;
-  min-height: 30px;
   display: flex;
   align-items: stretch;
+  gap: 3px;
+  padding: 6px 11px;
   overflow-x: auto;
   overflow-y: hidden;
-  border-bottom: 1px solid var(--live-assist-rule);
-  background: transparent;
+  border-bottom: 1px solid var(--mat-key-edge);
+  background: var(--mat-brush), var(--mat-plate);
+}
+
+.live-assist__lanes::before {
+  content: '';
+  position: absolute;
+  inset: 3px 8px;
+  z-index: -1;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .live-assist__lanes[hidden] {
@@ -186,61 +229,106 @@ textarea {
 
 .live-assist__lane {
   min-width: max-content;
+  min-height: 24px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 0 14px;
-  color: var(--live-assist-muted);
+  padding: 0 10px;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: 6px;
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 650;
+  text-shadow: var(--mat-print);
+  cursor: default;
 }
 
+.live-assist__lane:hover {
+  background: var(--mat-key-hover);
+  color: var(--mat-lit);
+}
+
+.live-assist__lane:active,
 .live-assist__lane[aria-selected='true'] {
-  color: var(--live-assist-amber-bright);
-  background: transparent;
-  box-shadow: inset 0 -1px 0 var(--live-assist-amber);
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
 .live-assist__lane-state {
-  color: var(--live-assist-muted);
-  font-weight: 500;
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+  text-shadow: var(--mat-print);
 }
 
+/* The lane's status LED: unlit idle, steady amber working, fault red when it
+   needs the human or failed. */
 .live-assist__lane-dot {
-  width: 5px;
-  height: 5px;
+  --live-assist-lane-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+  width: 6px;
+  height: 6px;
   flex: none;
   border-radius: 50%;
-  background: var(--live-assist-muted);
-}
-
-.live-assist__lane-dot--idle {
-  background: var(--live-assist-green);
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .live-assist__lane-dot--busy,
 .live-assist__lane-dot--awaiting_peer {
-  background: var(--live-assist-amber);
-  box-shadow: 0 0 7px rgba(255, 176, 0, 0.6);
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
 }
 
 .live-assist__lane-dot--needs_permission,
 .live-assist__lane-dot--error {
-  background: var(--live-assist-danger);
-  box-shadow: 0 0 7px rgba(255, 110, 64, 0.58);
+  background: radial-gradient(
+    circle at 35% 30%,
+    var(--mat-glint) 0 12%,
+    rgb(var(--live-assist-lane-rgb)) 45%,
+    rgba(var(--live-assist-lane-rgb), 0.55) 100%
+  );
+  box-shadow:
+    0 0 4px rgba(var(--live-assist-lane-rgb), 0.9),
+    0 0 10px rgba(var(--live-assist-lane-rgb), 0.4);
 }
+
+/* ─── Transcript: the screen ─── */
+/* The theme backdrop with the well's inset depth drawn inside the box; rows
+   are flat text (no shadow, gradient or glow on a repeated row). */
 
 .live-assist__transcript {
   flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 18px 22px 12px;
+  background: var(--mat-screen);
+  box-shadow: var(--mat-well-depth), inset 0 0 0 1px var(--mat-well-wall);
   user-select: text;
   overscroll-behavior: contain;
 }
 
 .live-assist__transcript[hidden] {
   display: none;
+}
+
+.live-assist__transcript::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.live-assist__transcript::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.live-assist__transcript::-webkit-scrollbar-thumb {
+  border-radius: var(--krypton-border-radius, 8px);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+}
+
+.live-assist__transcript::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.32);
 }
 
 .live-assist__message {
@@ -257,11 +345,11 @@ textarea {
 .live-assist__activity-summary {
   position: relative;
   padding: 8px 0 8px 20px;
-  color: var(--live-assist-muted);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   cursor: pointer;
   font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 750;
-  letter-spacing: 0.12em;
+  font-weight: 600;
+  letter-spacing: 0.13em;
   list-style: none;
 }
 
@@ -272,7 +360,7 @@ textarea {
 .live-assist__activity-summary::before {
   position: absolute;
   left: 2px;
-  color: var(--live-assist-blue);
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   content: '▸';
   transform-origin: center;
   transition: transform 120ms ease-out;
@@ -283,13 +371,12 @@ textarea {
 }
 
 .live-assist__activity-summary:hover {
-  color: var(--live-assist-text);
+  color: var(--krypton-fg);
 }
 
 .live-assist__activity-items {
   margin-bottom: 5px;
   padding: 0 0 3px 8px;
-  background: transparent;
 }
 
 .live-assist__activity-items .live-assist__message {
@@ -298,46 +385,47 @@ textarea {
   padding: 7px 0;
 }
 
+/* Row labels: silk for the assistant, the theme user ink for you, ink tiers
+   for tools and system mail, fault red only for errors (ADR-0017). */
 .live-assist__message-label {
   padding-top: 2px;
-  color: var(--live-assist-amber);
+  color: var(--mat-silk);
   font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 750;
-  letter-spacing: 0.12em;
+  font-weight: 600;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
 }
 
 .live-assist__message--user .live-assist__message-label {
-  color: var(--live-assist-cyan);
+  color: var(--agent-user, var(--krypton-ansi-6));
 }
 
 .live-assist__message--tool .live-assist__message-label,
 .live-assist__message--fs_activity .live-assist__message-label,
-.live-assist__message--fs_write .live-assist__message-label {
-  color: var(--live-assist-blue);
-}
-
+.live-assist__message--fs_write .live-assist__message-label,
 .live-assist__message--system .live-assist__message-label,
-.live-assist__message--inter_lane .live-assist__message-label {
-  color: var(--live-assist-magenta);
+.live-assist__message--inter_lane .live-assist__message-label,
+.live-assist__message--thought .live-assist__message-label {
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
 .live-assist__message--error .live-assist__message-label,
 .live-assist__message--provider_error .live-assist__message-label {
-  color: var(--live-assist-danger);
-}
-
-.live-assist__message--thought {
-  opacity: 0.76;
+  color: color-mix(in srgb, rgb(var(--krypton-danger-rgb, 255, 58, 92)) 75%, var(--krypton-fg));
 }
 
 .live-assist__message-body {
   min-width: 0;
   max-width: 74ch;
-  color: var(--live-assist-text);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88));
   line-height: 1.62;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+/* A thought is quieter by ink tier, not by opacity. */
+.live-assist__message--thought .live-assist__message-body {
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
 .live-assist__message-body--markdown {
@@ -364,7 +452,7 @@ textarea {
 .live-assist__message-body--markdown h5,
 .live-assist__message-body--markdown h6 {
   margin: 0.65em 0 0.3em;
-  color: var(--live-assist-amber-bright);
+  color: var(--krypton-fg);
   font-weight: 700;
   letter-spacing: 0.04em;
   line-height: 1.25;
@@ -377,17 +465,19 @@ textarea {
 
 .live-assist__message-body--markdown h2 {
   font-size: 1.1em;
-  color: var(--live-assist-amber);
+  color: var(--agent-cyan, var(--krypton-ansi-6));
 }
 
 .live-assist__message-body--markdown h3 {
   font-size: 1.02em;
+  color: var(--agent-accent, var(--krypton-ansi-2));
 }
 
 .live-assist__message-body--markdown h4,
 .live-assist__message-body--markdown h5,
 .live-assist__message-body--markdown h6 {
   font-size: 1em;
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88));
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -412,7 +502,7 @@ textarea {
 .live-assist__message-body--markdown ul > li::before {
   position: absolute;
   left: 0;
-  color: var(--live-assist-amber);
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   content: '•';
 }
 
@@ -423,36 +513,39 @@ textarea {
 .live-assist__message-body--markdown ol > li::before {
   position: absolute;
   left: 0;
-  color: var(--live-assist-cyan);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   content: counter(live-assist-ol) '.';
 }
 
 .live-assist__message-body--markdown strong {
-  color: var(--live-assist-amber-bright);
+  color: var(--krypton-fg);
   font-weight: 700;
 }
 
 .live-assist__message-body--markdown em {
-  color: var(--live-assist-magenta);
+  color: var(--krypton-ansi-13);
   font-style: italic;
 }
 
+/* Inline code: a small well-fill chip with a groove border. */
 .live-assist__message-body--markdown code {
-  padding: 0.05em 0.4ch;
+  padding: 0 0.4ch;
+  border: 1px solid var(--mat-groove-lo);
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(139, 195, 74, 0.12);
-  color: var(--live-assist-green);
-  font-family: var(--live-assist-font);
+  background: var(--mat-well-fill);
+  color: var(--agent-accent, var(--krypton-ansi-2));
+  font-family: inherit;
 }
 
 .live-assist__message-body--markdown pre {
   margin: 0.3em 0;
   padding: 8px 10px;
   overflow-x: auto;
-  border: 0;
+  border: 1px solid var(--mat-groove-lo);
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--mat-well-fill);
   line-height: 1.4;
   white-space: pre;
 }
@@ -460,28 +553,62 @@ textarea {
 .live-assist__message-body--markdown pre code,
 .live-assist__message-body--markdown pre code.hljs {
   padding: 0;
+  border: 0;
   background: transparent;
   color: inherit;
 }
 
+/* Syntax tokens route through the theme's ANSI palette, as the markdown
+   reader does (markdown-view.css), so the github-dark token colours imported
+   by harness-markdown.ts do not wash out on the light screen. Two classes
+   outrank that unlayered sheet. */
+.live-assist__message-body--markdown [class^='hljs'] { color: var(--krypton-fg); }
+.live-assist__message-body--markdown .hljs-comment,
+.live-assist__message-body--markdown .hljs-quote { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62)); font-style: italic; }
+.live-assist__message-body--markdown .hljs-keyword,
+.live-assist__message-body--markdown .hljs-selector-tag { color: var(--krypton-ansi-4); }
+.live-assist__message-body--markdown .hljs-string,
+.live-assist__message-body--markdown .hljs-addition,
+.live-assist__message-body--markdown .hljs-selector-class { color: var(--krypton-ansi-10); }
+.live-assist__message-body--markdown .hljs-number,
+.live-assist__message-body--markdown .hljs-literal,
+.live-assist__message-body--markdown .hljs-regexp { color: var(--krypton-ansi-9); }
+.live-assist__message-body--markdown .hljs-type,
+.live-assist__message-body--markdown .hljs-class { color: var(--krypton-ansi-5); }
+.live-assist__message-body--markdown .hljs-built_in,
+.live-assist__message-body--markdown .hljs-symbol,
+.live-assist__message-body--markdown .hljs-bullet { color: var(--krypton-ansi-14); }
+.live-assist__message-body--markdown .hljs-attr,
+.live-assist__message-body--markdown .hljs-attribute,
+.live-assist__message-body--markdown .hljs-property { color: var(--krypton-ansi-11); }
+.live-assist__message-body--markdown .hljs-tag,
+.live-assist__message-body--markdown .hljs-name { color: var(--krypton-ansi-13); }
+.live-assist__message-body--markdown .hljs-meta,
+.live-assist__message-body--markdown .hljs-doctag,
+.live-assist__message-body--markdown .hljs-selector-id { color: var(--krypton-ansi-3); }
+.live-assist__message-body--markdown .hljs-deletion { color: var(--krypton-ansi-1); }
+.live-assist__message-body--markdown .hljs-punctuation,
+.live-assist__message-body--markdown .hljs-operator { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62)); }
+
 .live-assist__message-body--markdown a {
-  color: var(--live-assist-cyan);
+  color: var(--agent-user, var(--krypton-ansi-6));
   text-decoration: underline;
-  text-decoration-color: rgba(77, 208, 225, 0.5);
-  text-underline-offset: 3px;
+  text-decoration-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.45);
+  text-underline-offset: 2px;
 }
 
 .live-assist__message-body--markdown a:hover {
-  color: var(--live-assist-amber-bright);
-  text-decoration-color: var(--live-assist-amber-bright);
+  text-decoration-color: currentColor;
 }
 
+/* A flat inset tint with a 1px full border, not an edge rail (ADR-0027). */
 .live-assist__message-body--markdown blockquote {
   margin: 0.2em 0;
   padding: 4px 8px;
+  border: 1px solid var(--mat-groove-lo);
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(224, 145, 192, 0.1);
-  color: #f0d0e4;
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88));
   font-style: italic;
 }
 
@@ -494,9 +621,11 @@ textarea {
 }
 
 .live-assist__message-body--markdown hr {
+  height: 0;
   margin: 0.7em 0;
   border: 0;
-  border-top: 1px dashed rgba(255, 176, 0, 0.32);
+  border-top: 1px solid var(--mat-groove-lo);
+  border-bottom: 1px solid var(--mat-groove-hi);
 }
 
 .live-assist__message-body--markdown table {
@@ -509,13 +638,13 @@ textarea {
 .live-assist__message-body--markdown td {
   padding: 4px 8px 4px 0;
   border: 0;
-  border-bottom: 1px solid var(--live-assist-rule);
+  border-bottom: 1px solid var(--mat-groove-lo);
   text-align: left;
 }
 
 .live-assist__message-body--markdown th {
-  background: rgba(255, 176, 0, 0.1);
-  color: var(--live-assist-amber-bright);
+  background: var(--mat-well-fill);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-weight: 700;
   letter-spacing: 0.04em;
 }
@@ -528,18 +657,22 @@ textarea {
   border: 0;
 }
 
+/* The stream caret: a text caret in the theme cursor colour. It is the one
+   thing here that blinks, and it stops under reduced motion. */
 .live-assist__stream-caret {
   display: inline-block;
   width: 6px;
   height: 12px;
   margin-left: 3px;
   vertical-align: -2px;
-  background: var(--live-assist-amber);
-  box-shadow: 0 0 7px rgba(255, 176, 0, 0.44);
+  background: var(--krypton-cursor);
   animation: live-assist-caret 820ms steps(1, end) infinite;
 }
 
+/* ─── Permission: a plate strip with a fault lamp ─── */
+
 .live-assist__permission {
+  --live-assist-permission-rgb: var(--krypton-danger-rgb, 255, 58, 92);
   position: relative;
   z-index: 3;
   flex: none;
@@ -547,10 +680,11 @@ textarea {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
-  padding: 10px 22px;
+  padding: 10px 16px 10px 22px;
   border: 0;
-  border-top: 1px solid rgba(255, 110, 64, 0.28);
-  background: rgba(255, 110, 64, 0.06);
+  border-top: 1px solid var(--mat-key-edge);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
 }
 
 .live-assist__permission[hidden] {
@@ -562,11 +696,32 @@ textarea {
 }
 
 .live-assist__permission-copy strong {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   margin-bottom: 3px;
-  color: #ffc2ad;
+  color: color-mix(in srgb, rgb(var(--live-assist-permission-rgb)) 75%, var(--krypton-fg));
   font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.1em;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-shadow: var(--mat-engrave);
+}
+
+.live-assist__permission-copy strong::before {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 30%,
+    var(--mat-glint) 0 12%,
+    rgb(var(--live-assist-permission-rgb)) 45%,
+    rgba(var(--live-assist-permission-rgb), 0.55) 100%
+  );
+  box-shadow:
+    0 0 4px rgba(var(--live-assist-permission-rgb), 0.9),
+    0 0 10px rgba(var(--live-assist-permission-rgb), 0.4);
+  content: '';
 }
 
 .live-assist__permission-copy span {
@@ -574,24 +729,32 @@ textarea {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
   overflow: hidden;
-  color: #d7b7a9;
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88));
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
+/* The answer keys, printed on one key cap. */
 .live-assist__permission-keys {
   margin: 0;
-  color: #ffc2ad;
+  padding: 3px 9px;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--mat-lit);
   font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 750;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
+  text-shadow: var(--mat-lit-glow);
   white-space: nowrap;
 }
 
 .live-assist__permission:focus-visible {
-  outline: 1px solid rgba(255, 194, 173, 0.7);
+  outline: 1px solid var(--mat-lit);
   outline-offset: -2px;
 }
+
+/* ─── Composer: a flush plate with the draft line in a well ─── */
 
 .live-assist__composer {
   position: relative;
@@ -601,20 +764,22 @@ textarea {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
   gap: 10px;
-  padding: 10px 16px 12px;
-  border-top: 1px solid var(--live-assist-rule);
-  background: transparent;
+  padding: 10px 12px 12px 16px;
+  border-top: 1px solid var(--mat-key-edge);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
 }
 
 .live-assist__prompt {
   padding-top: 8px;
-  color: var(--live-assist-amber);
-  text-shadow: 0 0 8px rgba(255, 176, 0, 0.4);
+  color: var(--mat-silk);
+  text-shadow: var(--mat-engrave);
   user-select: none;
 }
 
 .live-assist__composer:focus-within .live-assist__prompt {
-  color: var(--live-assist-amber-bright);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
 .live-assist__composer[hidden] {
@@ -627,44 +792,41 @@ textarea {
   max-height: 96px;
   box-sizing: border-box;
   resize: none;
-  padding: 8px 0;
+  padding: 8px 10px;
   border: 0;
-  border-bottom: 1px solid transparent;
   border-radius: var(--krypton-border-radius, 8px);
-  background: transparent;
-  color: var(--live-assist-text);
-  caret-color: var(--live-assist-amber);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  color: var(--krypton-fg);
+  caret-color: var(--krypton-cursor);
   line-height: 1.5;
   user-select: text;
 }
 
 .live-assist__input::placeholder {
-  color: var(--live-assist-muted);
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   opacity: 1;
 }
 
 .live-assist__input:focus-visible {
-  outline: none;
-  border-bottom-color: rgba(255, 176, 0, 0.42);
-  box-shadow: none;
+  outline: 1px solid var(--mat-lit);
+  outline-offset: 2px;
 }
 
 .live-assist__composer--sending .live-assist__prompt {
-  color: var(--live-assist-muted);
-  text-shadow: none;
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+  text-shadow: var(--mat-engrave);
 }
 
 .live-assist__cancel {
-  padding-top: 8px;
-  color: var(--live-assist-muted);
-  font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.06em;
-  white-space: nowrap;
+  margin-top: 8px;
 }
 
 .live-assist__cancel[hidden] {
   display: none;
 }
+
+/* ─── Empty: an engraved headline and a body line centred on the screen ─── */
 
 .live-assist__empty {
   position: absolute;
@@ -672,8 +834,10 @@ textarea {
   z-index: 2;
   display: grid;
   place-items: center;
+  align-content: center;
   padding: 32px;
-  background: var(--live-assist-bg);
+  background: var(--mat-screen);
+  box-shadow: var(--mat-well-depth), inset 0 0 0 1px var(--mat-well-wall);
   text-align: center;
 }
 
@@ -685,24 +849,26 @@ textarea {
   display: block;
   margin: 0 auto 14px;
   border: 0;
-  color: var(--live-assist-amber);
-  text-shadow: 0 0 10px rgba(255, 176, 0, 0.35);
+  color: var(--mat-silk);
   font-size: 20px;
 }
 
 .live-assist__empty h1 {
   margin: 0 0 8px;
-  color: var(--live-assist-amber-bright);
+  color: var(--mat-silk);
   font-size: calc(var(--krypton-font-size, 14px) + 3px);
+  font-weight: 600;
   letter-spacing: 0.15em;
 }
 
 .live-assist__empty p {
   max-width: 48ch;
   margin: 0;
-  color: var(--live-assist-muted);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   line-height: 1.65;
 }
+
+/* ─── Notice: a small floating plate ─── */
 
 .live-assist__notice {
   position: absolute;
@@ -712,11 +878,11 @@ textarea {
   max-width: min(380px, calc(100% - 24px));
   box-sizing: border-box;
   padding: 8px 10px;
-  border: 0;
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
-  background: var(--live-assist-surface-raised);
-  color: var(--live-assist-amber-bright);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88));
   line-height: 1.45;
 }
 
@@ -725,12 +891,12 @@ textarea {
 }
 
 .live-assist__notice--error {
-  color: #ffc2ad;
+  color: color-mix(in srgb, rgb(var(--krypton-danger-rgb, 255, 58, 92)) 75%, var(--krypton-fg));
 }
 
 .live-assist button:focus-visible,
 .live-assist summary:focus-visible {
-  outline: 1px solid rgba(255, 216, 128, 0.7);
+  outline: 1px solid var(--mat-lit);
   outline-offset: 2px;
   box-shadow: none;
 }
@@ -743,18 +909,6 @@ textarea {
   53%,
   100% {
     opacity: 0.2;
-  }
-}
-
-@keyframes live-assist-processing {
-  0%,
-  100% {
-    opacity: 0.42;
-    transform: scale(0.82);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1);
   }
 }
 
@@ -796,10 +950,6 @@ textarea {
 
 @media (prefers-reduced-motion: reduce) {
   .live-assist__stream-caret {
-    animation: none;
-  }
-
-  .live-assist__status[data-status='busy']::before {
     animation: none;
   }
 

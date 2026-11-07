@@ -8,6 +8,7 @@
 > Amended (rev 5, 2026-09-23): the active lane name gains a tinted tab surface without a border; its tail is brighter. The surface is absolutely positioned behind the existing text, preserving the shared baseline and footer layout; inactive marks remain flat.
 > Amended (rev 6, 2026-09-24): the active mark shows only its large two-letter initials and a small trailing lane number (`CL²`). The tab surface and name tail are removed; the full name remains in the tooltip and strip's accessible label. Inactive marks stay at rail size.
 > Milestone: M9 — harness observability
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): lane marks are silk initials beside an accent LED.
 
 ## Problem
 

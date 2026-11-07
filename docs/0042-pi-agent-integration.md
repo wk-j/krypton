@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-03-28
 > Milestone: M8 — Polish
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): agent HUD effects (scanlines, neon pulses, shimmer, glows) removed.
 
 ## Problem
 

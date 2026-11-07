@@ -1,3 +1,9 @@
+/* Connected Computers (SSH targets for local Harness lanes).
+   DESIGN.md (Krypton Console) / spec 366: the view is one faceplate. Headings
+   are engraved on the plate; the computer list and the connection details are
+   recessed wells; inputs are wells; actions are keys; connection state is an
+   LED. Colour only for a fault (ADR-0017): a disconnected computer is an
+   unlit lamp, its failure the danger-tinted error line. */
 @layer krypton.component {
   .krypton-computers {
     display: grid;
@@ -9,7 +15,8 @@
     padding: 22px;
     overflow: hidden;
     color: var(--krypton-fg, #b0c4d8);
-    background: rgba(6, 10, 18, 0.65);
+    background: var(--mat-brush), var(--mat-plate);
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
     font-family: var(--krypton-font-family, monospace);
     outline: none;
   }
@@ -23,23 +30,32 @@
 
   .krypton-computers__eyebrow,
   .krypton-computers__panel h2 {
-    color: var(--krypton-primary, #0cf);
-    font-size: 11px;
-    letter-spacing: 0.1em;
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-shadow: var(--mat-engrave);
+    text-transform: uppercase;
   }
 
   .krypton-computers__header h1 {
     margin: 5px 0;
+    color: var(--krypton-fg, #b0c4d8);
     font-size: 22px;
     font-weight: 500;
     letter-spacing: 0.08em;
+    text-shadow: var(--mat-engrave);
   }
 
   .krypton-computers__header p,
   .krypton-computers__detail p,
   .krypton-computers__list p {
     margin: 0;
-    color: var(--krypton-muted, #7390a7);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  }
+
+  .krypton-computers__header p {
+    text-shadow: var(--mat-engrave);
   }
 
   .krypton-computers__columns {
@@ -49,107 +65,234 @@
     min-height: 0;
   }
 
+  /* A panel is a column on the plate: engraved heading, then its wells. */
   .krypton-computers__panel {
+    display: flex;
+    flex-direction: column;
     min-width: 0;
-    overflow: auto;
-    padding: 14px;
-    border: 1px solid var(--krypton-border, rgba(0, 204, 255, 0.2));
-    border-radius: 8px;
-    background: rgba(8, 17, 29, 0.65);
+    min-height: 0;
+    overflow: hidden;
   }
 
   .krypton-computers__panel h2 {
-    margin: 0 0 13px;
-    font-weight: 600;
+    flex: 0 0 auto;
+    margin: 0 0 10px;
   }
 
+  /* Inputs are wells; the caret is the theme cursor. */
   .krypton-computers input {
     width: 100%;
     padding: 8px 10px;
-    border: 1px solid var(--krypton-border, rgba(0, 204, 255, 0.25));
-    border-radius: 8px;
+    border: 0;
+    border-radius: var(--krypton-border-radius, 8px);
     color: var(--krypton-fg, #b0c4d8);
-    background: rgba(6, 10, 18, 0.6);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    caret-color: var(--krypton-cursor, currentColor);
     font: inherit;
+  }
+
+  .krypton-computers input::placeholder {
+    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+  }
+
+  /* Checkbox: a 12px key that latches down with its LED lit. */
+  .krypton-computers input[type="checkbox"] {
+    flex: 0 0 auto;
+    width: 12px;
+    height: 12px;
+    margin: 0;
+    padding: 0;
+    appearance: none;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 3px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+  }
+
+  .krypton-computers input[type="checkbox"]:checked {
+    background:
+      radial-gradient(circle 3px at 50% 50%, var(--mat-lens-on-glint) 0 0.8px, var(--mat-lens-on-mid) 1.8px, var(--mat-lens-on-lo) 2.6px, transparent 3px),
+      var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
   }
 
   .krypton-computers button {
-    padding: 7px 11px;
-    border: 1px solid var(--krypton-border, rgba(0, 204, 255, 0.3));
-    border-radius: 8px;
-    color: var(--krypton-fg, #b0c4d8);
-    background: transparent;
+    min-height: 28px;
+    padding: 4px 11px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
     font: inherit;
+    letter-spacing: 0.04em;
+    text-shadow: var(--mat-print);
+    white-space: nowrap;
+    cursor: default;
   }
 
   .krypton-computers button:hover:not(:disabled) {
-    border-color: var(--krypton-primary, #0cf);
-    color: var(--krypton-primary, #0cf);
+    background: var(--mat-key-hover);
+    color: var(--mat-lit);
+  }
+
+  .krypton-computers button:active:not(:disabled) {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
+    transform: translateY(1px);
   }
 
   .krypton-computers button:focus-visible,
   .krypton-computers input:focus-visible {
-    outline: 1px solid var(--krypton-primary, #0cf);
-    box-shadow: 0 0 8px rgba(0, 204, 255, 0.35);
+    outline: 1px solid var(--mat-lit);
+    outline-offset: 2px;
   }
 
-  .krypton-computers button:disabled { opacity: 0.45; }
+  .krypton-computers button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
 
+  /* The computer list: one well of grooved rows. */
   .krypton-computers__list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
     display: grid;
-    gap: 6px;
     align-content: start;
-    margin-top: 12px;
+    margin-top: 10px;
+    padding: 4px 0;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
+  .krypton-computers__list > p {
+    padding: 10px 12px;
+  }
+
+  /* A repeated row: no shadow, no gradient — a groove and the selection tint. */
   .krypton-computers .krypton-computers__row {
     display: grid;
     grid-template-columns: 1fr auto;
     gap: 3px 8px;
     width: 100%;
+    min-height: 0;
+    padding: 7px 12px;
+    border: 0;
+    border-bottom: 1px solid var(--mat-groove-lo);
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--krypton-fg, #b0c4d8);
+    letter-spacing: 0;
     text-align: left;
+    text-shadow: none;
+    white-space: normal;
   }
 
-  .krypton-computers__row[aria-selected="true"] {
-    border-color: var(--krypton-primary, #0cf);
-    background: rgba(0, 204, 255, 0.09);
+  .krypton-computers .krypton-computers__row:last-child {
+    border-bottom: 0;
+  }
+
+  .krypton-computers .krypton-computers__row:hover:not(:disabled) {
+    background: none;
+    color: var(--krypton-fg, #b0c4d8);
+  }
+
+  .krypton-computers .krypton-computers__row:active:not(:disabled) {
+    background: var(--mat-select);
+    box-shadow: none;
+    text-shadow: none;
+    transform: none;
+  }
+
+  .krypton-computers .krypton-computers__row[aria-selected="true"] {
+    background: var(--mat-select);
+  }
+
+  .krypton-computers .krypton-computers__row:focus-visible {
+    outline-offset: -1px;
   }
 
   .krypton-computers__row small {
     grid-column: 1 / -1;
     overflow-wrap: anywhere;
-    color: var(--krypton-muted, #7390a7);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
+  .krypton-computers__row small:empty {
+    display: none;
+  }
+
+  /* Connection state: an LED before the word. Connected lights green,
+     connecting is live work (a steady amber lamp), disconnected is unlit. */
   .krypton-computers__state {
-    color: var(--krypton-muted, #7390a7);
-    font-size: 11px;
+    --computers-state-rgb: var(--krypton-success-rgb, 57, 255, 127);
+
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.09em;
     text-transform: uppercase;
   }
 
-  .krypton-computers__state--connected { color: var(--krypton-success, #39ff7f); }
-  .krypton-computers__state--connecting { color: var(--krypton-primary, #0cf); }
-  .krypton-computers__state--disconnected { color: var(--krypton-error, #ff3a5c); }
+  .krypton-computers__state::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .krypton-computers__state--connected::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--computers-state-rgb)) 45%, rgba(var(--computers-state-rgb), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--computers-state-rgb), 0.9), 0 0 10px rgba(var(--computers-state-rgb), 0.4);
+  }
+
+  .krypton-computers__state--connecting::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
+  }
+
+  .krypton-computers__detail {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: 14px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+  }
 
   .krypton-computers__detail h3 {
-    margin: 5px 0 12px;
+    margin: 0 0 8px;
     overflow-wrap: anywhere;
-    color: var(--krypton-primary, #0cf);
+    color: var(--krypton-fg, #b0c4d8);
     font-size: 17px;
     font-weight: 500;
   }
 
+  /* Facts between two etched grooves. */
   .krypton-computers__detail dl {
     display: grid;
     grid-template-columns: minmax(110px, 150px) minmax(0, 1fr);
     gap: 12px;
     margin: 18px 0;
     padding: 16px 0;
-    border-top: 1px solid var(--krypton-border, rgba(0, 204, 255, 0.2));
-    border-bottom: 1px solid var(--krypton-border, rgba(0, 204, 255, 0.2));
+    border-top: 1px solid var(--mat-groove-lo);
+    border-bottom: 1px solid var(--mat-groove-lo);
+    box-shadow: inset 0 1px 0 var(--mat-groove-hi), 0 1px 0 var(--mat-groove-hi);
   }
 
-  .krypton-computers__detail dt { color: var(--krypton-muted, #7390a7); }
+  .krypton-computers__detail dt { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62)); }
   .krypton-computers__detail dd { margin: 0; overflow-wrap: anywhere; }
 
   .krypton-computers__actions {
@@ -168,7 +311,7 @@
   .krypton-computers__form label {
     display: grid;
     gap: 5px;
-    color: var(--krypton-muted, #7390a7);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
   .krypton-computers__form label:has(input[name="defaultCwd"]),
@@ -186,23 +329,34 @@
 
   .krypton-computers__error {
     padding: 10px;
-    border: 1px solid var(--krypton-error, #ff3a5c);
-    border-radius: 8px;
+    border: 1px solid rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.5);
+    border-radius: var(--krypton-border-radius, 8px);
     overflow-wrap: anywhere;
-    color: var(--krypton-error, #ff3a5c) !important;
-    background: rgba(255, 58, 92, 0.08);
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92)) !important;
+    background: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.08);
   }
 
   .krypton-computers__notice,
   .krypton-computers__hint {
     min-height: 20px;
-    color: var(--krypton-muted, #7390a7);
-    font-size: 11px;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    text-shadow: var(--mat-engrave);
+  }
+
+  .krypton-computers__notice {
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+  }
+
+  .krypton-computers__hint {
+    letter-spacing: 0.09em;
   }
 
   @container (max-width: 650px) {
     .krypton-computers__columns { grid-template-columns: 1fr; overflow: auto; }
     .krypton-computers__panel { overflow: visible; }
+    .krypton-computers__list,
+    .krypton-computers__detail { flex: 0 0 auto; overflow: visible; }
     .krypton-computers__form { grid-template-columns: 1fr; }
     .krypton-computers__form label:has(input[name="defaultCwd"]),
     .krypton-computers__form p,

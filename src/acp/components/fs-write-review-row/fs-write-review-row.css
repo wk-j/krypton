@@ -1,14 +1,18 @@
 /* Spec 302 §3.9 — `FsWriteReviewRow`.
    Carved verbatim from src/styles/acp-harness.css:5994-6030 (the `Spec 89 —
    fs/write_text_file gated review card` comment and the eleven
-   `acp-harness__fs-review*` rules; delete :5994-6031 to take the trailing
-   blank line with them).
+   `acp-harness__fs-review*` rules).
+
+   Spec 366 (DESIGN.md "Key", "Lamps"): the pending card's three actions are
+   keys with their shortcut printed on them (visual keys — the keyboard drives
+   them). Reject is the destructive one, so its legend takes the fault ink.
+   A resolved card reads at the tertiary ink, never via opacity.
 
    The diff preview inside the card is `DiffBlock`'s `acp-harness__tool-diff` /
    `acp-harness__tool-body--diff` / `acp-harness__diff-line` markup, whose
-   rules belong to the tool-row sheet — they are NOT carved here.
-   theme-scheme.css declares nothing for this block, so there is no
-   `krypton.scheme` section. */
+   rules (one well, flat lines) belong to the tool-row sheet — they are NOT
+   carved here. theme-scheme.css declares nothing for this block, so there is
+   no `krypton.scheme` section. */
 
 @layer krypton.component {
   .acp-harness__fs-review {
@@ -32,19 +36,29 @@
   }
   .acp-harness__fs-review-actions {
     display: flex;
-    gap: 10px;
+    gap: 8px;
     margin-top: 4px;
     font-family: var(--agent-font, var(--krypton-font-family, monospace));
     font-size: 0.82em;
   }
-  .acp-harness__fs-review-action--accept { color: var(--agent-accent, #8effb0); }
-  .acp-harness__fs-review-action--reject { color: #ff8b8b; }
-  .acp-harness__fs-review-action--accept-all { color: rgba(142, 255, 176, 0.55); }
-  .acp-harness__fs-review--resolved { opacity: 0.6; }
+  .acp-harness__fs-review-action {
+    padding: 1px 8px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--mat-lit);
+    letter-spacing: 0.04em;
+    text-shadow: var(--mat-print);
+    white-space: nowrap;
+  }
+  .acp-harness__fs-review-action--reject { color: var(--agent-error, #ff6b8b); }
+  .acp-harness__fs-review-action--accept-all { color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72)); }
+  .acp-harness__fs-review--resolved .acp-harness__fs-review-head { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55)); }
   .acp-harness__fs-review-resolved {
     font-family: var(--agent-font, var(--krypton-font-family, monospace));
     font-size: 0.82em;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
   }
-  .acp-harness__fs-review-resolved--accepted { color: var(--agent-accent, #8effb0); }
-  .acp-harness__fs-review-resolved--rejected { color: #ff8b8b; }
+  .acp-harness__fs-review-resolved--rejected { color: var(--agent-error, #ff6b8b); }
 }

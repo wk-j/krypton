@@ -74,7 +74,6 @@ pub struct ThemeColors {
 pub struct ChromeConfig {
     pub style: String,
     pub border: ChromeBorder,
-    pub shadow: ChromeShadow,
     pub backdrop: ChromeBackdrop,
     pub titlebar: ChromeTitlebar,
     pub status_dot: ChromeStatusDot,
@@ -93,16 +92,6 @@ pub struct ChromeBorder {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct ChromeShadow {
-    pub color: String,
-    pub blur: u32,
-    pub spread: u32,
-    pub offset_x: i32,
-    pub offset_y: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
 pub struct ChromeBackdrop {
     pub color: String,
     pub blur: u32,
@@ -112,8 +101,6 @@ pub struct ChromeBackdrop {
 #[serde(default)]
 pub struct ChromeTitlebar {
     pub height: u32,
-    pub background: String,
-    pub text_color: String,
     pub font_size: u32,
     pub font_weight: u32,
     pub letter_spacing: f64,
@@ -125,7 +112,6 @@ pub struct ChromeTitlebar {
 #[serde(default)]
 pub struct ChromeStatusDot {
     pub size: u32,
-    pub color: String,
     pub shape: String,
 }
 
@@ -162,9 +148,6 @@ pub struct ChromeTabs {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FocusedConfig {
-    pub border_color: String,
-    pub shadow_color: String,
-    pub shadow_blur: u32,
     pub titlebar_text_color: String,
     pub status_dot_color: String,
     pub header_accent_color: String,
@@ -183,30 +166,9 @@ pub struct WorkspaceConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UiConfig {
-    pub command_palette: UiCommandPalette,
     pub search: UiSearch,
     pub mode_indicator: UiModeIndicator,
-    pub which_key: UiWhichKey,
     pub quick_terminal: UiQuickTerminal,
-    pub hints: UiHints,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UiHints {
-    pub background: String,
-    pub foreground: String,
-    pub matched_foreground: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UiCommandPalette {
-    pub background: String,
-    pub border: String,
-    pub text_color: String,
-    pub highlight_color: String,
-    pub input_background: String,
-    pub input_text_color: String,
-    pub backdrop_blur: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -226,22 +188,9 @@ pub struct UiModeIndicator {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UiWhichKey {
-    pub background: String,
-    pub border: String,
-    pub title_color: String,
-    pub key_color: String,
-    pub label_color: String,
-    pub separator_color: String,
-    pub backdrop_blur: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiQuickTerminal {
     pub backdrop_blur: u32,
     pub background: String,
-    pub shadow_color: String,
-    pub shadow_blur: u32,
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────
@@ -295,7 +244,6 @@ impl Default for ChromeConfig {
         Self {
             style: "cyberpunk".to_string(),
             border: ChromeBorder::default(),
-            shadow: ChromeShadow::default(),
             backdrop: ChromeBackdrop::default(),
             titlebar: ChromeTitlebar::default(),
             status_dot: ChromeStatusDot::default(),
@@ -316,18 +264,6 @@ impl Default for ChromeBorder {
     }
 }
 
-impl Default for ChromeShadow {
-    fn default() -> Self {
-        Self {
-            color: "rgba(0, 200, 255, 0.07)".to_string(),
-            blur: 15,
-            spread: 0,
-            offset_x: 0,
-            offset_y: 0,
-        }
-    }
-}
-
 impl Default for ChromeBackdrop {
     fn default() -> Self {
         Self {
@@ -341,8 +277,6 @@ impl Default for ChromeTitlebar {
     fn default() -> Self {
         Self {
             height: 28,
-            background: "transparent".to_string(),
-            text_color: "rgba(0, 200, 255, 0.3)".to_string(),
             font_size: 11,
             font_weight: 600,
             letter_spacing: 0.08,
@@ -356,7 +290,6 @@ impl Default for ChromeStatusDot {
     fn default() -> Self {
         Self {
             size: 6,
-            color: "rgba(0, 200, 255, 0.25)".to_string(),
             shape: "square".to_string(),
         }
     }
@@ -399,9 +332,6 @@ impl Default for ChromeTabs {
 impl Default for FocusedConfig {
     fn default() -> Self {
         Self {
-            border_color: "rgba(0, 200, 255, 0.5)".to_string(),
-            shadow_color: "rgba(0, 200, 255, 0.12)".to_string(),
-            shadow_blur: 20,
             titlebar_text_color: "#0cf".to_string(),
             status_dot_color: "#0cf".to_string(),
             header_accent_color: "rgba(0, 200, 255, 0.35)".to_string(),
@@ -417,20 +347,6 @@ impl Default for WorkspaceConfig {
         Self {
             background: "transparent".to_string(),
             blur: 0,
-        }
-    }
-}
-
-impl Default for UiCommandPalette {
-    fn default() -> Self {
-        Self {
-            background: "rgba(6, 10, 18, 0.85)".to_string(),
-            border: "rgba(0, 200, 255, 0.4)".to_string(),
-            text_color: "#c0c5ce".to_string(),
-            highlight_color: "#0cf".to_string(),
-            input_background: "transparent".to_string(),
-            input_text_color: "#c0c5ce".to_string(),
-            backdrop_blur: 16,
         }
     }
 }
@@ -457,37 +373,11 @@ impl Default for UiModeIndicator {
     }
 }
 
-impl Default for UiWhichKey {
-    fn default() -> Self {
-        Self {
-            background: "rgba(6, 10, 18, 0.85)".to_string(),
-            border: "rgba(0, 200, 255, 0.4)".to_string(),
-            title_color: "#0cf".to_string(),
-            key_color: "#0cf".to_string(),
-            label_color: "rgba(0, 200, 255, 0.4)".to_string(),
-            separator_color: "rgba(0, 200, 255, 0.2)".to_string(),
-            backdrop_blur: 16,
-        }
-    }
-}
-
 impl Default for UiQuickTerminal {
     fn default() -> Self {
         Self {
             backdrop_blur: 20,
             background: "rgba(6, 10, 18, 0.6)".to_string(),
-            shadow_color: "rgba(0, 200, 255, 0.1)".to_string(),
-            shadow_blur: 30,
-        }
-    }
-}
-
-impl Default for UiHints {
-    fn default() -> Self {
-        Self {
-            background: "#f4bf75".to_string(),
-            foreground: "#181818".to_string(),
-            matched_foreground: "#8a7444".to_string(),
         }
     }
 }
@@ -827,7 +717,6 @@ mod tests {
         assert_eq!(theme.meta.display_name, "Krypton Light");
         assert_eq!(theme.colors.foreground, "#1c2c3c");
         assert_eq!(theme.focused.corner_accent_color, "#007799");
-        assert_eq!(theme.chrome.titlebar.text_color, "#3a5568");
         assert!(theme.colors.background.contains("248, 251, 253"));
         assert!(theme.chrome.backdrop.color.contains("230, 239, 246"));
     }

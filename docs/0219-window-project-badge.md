@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-08-14
 > Milestone: M9 — harness observability
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): project initials are engraved silk, not neon accent.
 
 ## Problem
 

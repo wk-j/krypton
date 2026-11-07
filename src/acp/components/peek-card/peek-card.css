@@ -1,44 +1,44 @@
 /* Spec 302 §5.1 — `PeekCard`.
-   Carved VERBATIM from src/styles/acp-harness.css:1236-1327, :1336-1353 and
-   :1510-1527. Delete those three ranges when this directory is registered.
-
-   Two neighbouring spans are deliberately NOT here: :1329-1334 goes to
-   `review-loop-rows` and :1529-1707 goes to `heat-panel`. They share the
+   Carved from src/styles/acp-harness.css. Two neighbouring spans are
+   deliberately NOT here: `review-loop-rows` and `heat-panel` share the
    `acp-harness__lane-peek` prefix but are their own components, so the longer
    prefix wins when ownership is resolved.
 
-   theme-scheme.css declares no light-mode rule for any `lane-peek` selector,
-   so there is no `krypton.scheme` layer in this file. */
+   Spec 366 (DESIGN.md "Harness"): a floating lane card is a small plate over
+   the transcript — brushed plate on a solid underlay (the transcript must not
+   read through it), the key edge, the lit bevel and one cast shadow. The lane
+   name is engraved in its head; the lane's status is a capsule, lit in the
+   warning or fault colour when the peek's priority asks for the human. */
 
 @layer krypton.component {
   .acp-harness__lane-peek {
+    --acp-peek-rgb: var(--krypton-fg-rgb, 216, 232, 216);
     position: relative;
     width: 100%;
     display: grid;
     gap: 3px;
-    padding: 8px 12px 7px;
-    background:
-      var(--agent-surface-solid, rgba(8, 14, 22, 0.94));
-    border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.28);
+    padding: 8px 12px 8px;
+    background: var(--mat-brush), var(--mat-plate), var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
     font-family: var(--agent-font, var(--krypton-font-family, monospace));
     font-size: 0.95em;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
     pointer-events: auto;
   }
 
-  .acp-harness__lane-peek[data-priority="high"] { --acp-peek-accent: #ff8b8b; }
-  .acp-harness__lane-peek[data-priority="warn"] { --acp-peek-accent: #ffd27a; }
-  .acp-harness__lane-peek[data-priority="info"] { --acp-peek-accent: var(--agent-accent, #8effb0); }
+  .acp-harness__lane-peek[data-priority="high"] { --acp-peek-rgb: var(--krypton-danger-rgb, 255, 58, 92); }
+  .acp-harness__lane-peek[data-priority="warn"] { --acp-peek-rgb: var(--krypton-warning-rgb, 232, 197, 71); }
 
   .acp-harness__lane-peek-head {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
-    padding-bottom: 4px;
-    border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
+    padding-bottom: 5px;
     margin-bottom: 3px;
+    border-bottom: 1px solid var(--mat-groove-lo);
+    box-shadow: 0 1px 0 var(--mat-groove-hi);
   }
 
   .acp-harness__lane-peek-name {
@@ -46,20 +46,40 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--acp-lane-ink, var(--acp-lane-accent, #00ccff));
+    color: var(--mat-silk);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-shadow: var(--mat-engrave);
     flex: 1 1 auto;
   }
 
+  /* An unlit capsule in ink; lit by a high / warn priority. */
   .acp-harness__lane-peek-status {
-    color: var(--acp-peek-accent, var(--agent-accent, #8effb0));
-    font-size: 0.78em;
-    letter-spacing: 0.06em;
+    flex: 0 0 auto;
+    padding: 0 7px;
+    border: 1px solid var(--mat-groove-lo);
+    border-radius: 999px;
+    background: var(--mat-well-fill);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.09em;
+    line-height: 1.4;
     text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .acp-harness__lane-peek[data-priority="high"] .acp-harness__lane-peek-status,
+  .acp-harness__lane-peek[data-priority="warn"] .acp-harness__lane-peek-status {
+    border-color: rgba(var(--acp-peek-rgb), 0.5);
+    background: radial-gradient(ellipse at 50% 0%, rgba(var(--acp-peek-rgb), 0.3), rgba(var(--acp-peek-rgb), 0.07) 75%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--acp-peek-rgb), 0.22);
+    color: color-mix(in srgb, rgb(var(--acp-peek-rgb)) 60%, var(--krypton-fg, #d8e8d8));
   }
 
   .acp-harness__lane-peek-age {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.82em;
+    font-variant-numeric: tabular-nums;
     margin-left: auto;
   }
 
@@ -68,17 +88,23 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 8px;
     padding: 2px 0;
-    color: var(--acp-peek-accent, var(--agent-accent, #8effb0));
+    color: var(--krypton-fg, #d8e8d8);
     align-items: baseline;
   }
+
+  .acp-harness__lane-peek[data-priority="high"] .acp-harness__lane-peek-event,
+  .acp-harness__lane-peek[data-priority="warn"] .acp-harness__lane-peek-event {
+    color: color-mix(in srgb, rgb(var(--acp-peek-rgb)) 60%, var(--krypton-fg, #d8e8d8));
+  }
+
   .acp-harness__lane-peek-event-text {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .acp-harness__lane-peek-event-text b { font-weight: normal; color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92); }
+  .acp-harness__lane-peek-event-text b { font-weight: normal; color: var(--krypton-fg, #d8e8d8); }
   .acp-harness__lane-peek-event-meta {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.85em;
     white-space: nowrap;
   }
@@ -91,18 +117,24 @@
     font-size: 0.95em;
     min-width: 0;
   }
+
+  /* Row labels are engraved like every label on a plate. */
   .acp-harness__lane-peek-prefix {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
-    font-size: 0.85em;
+    color: var(--mat-silk);
+    font-size: 0.8em;
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-shadow: var(--mat-engrave);
+    text-transform: uppercase;
   }
   .acp-harness__lane-peek-value {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
+    color: var(--krypton-fg, #d8e8d8);
   }
-  .acp-harness__lane-peek-value b { color: #ffd27a; font-weight: normal; }
+  .acp-harness__lane-peek-value b { color: var(--mat-silk); font-weight: normal; }
 
   .acp-harness__lane-peek-plan {
     display: grid;
@@ -111,13 +143,19 @@
     align-items: center;
     min-width: 0;
   }
+
+  /* The step count is a readout window. */
   .acp-harness__lane-peek-plan-count {
-    color: var(--agent-accent, #8effb0);
+    padding: 0 5px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
     font-variant-numeric: tabular-nums;
     font-size: 0.85em;
   }
   .acp-harness__lane-peek-plan-text {
-    color: #ffd27a;
+    color: var(--krypton-fg, #d8e8d8);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -129,16 +167,34 @@
     gap: 4px 8px;
     margin-top: 5px;
     padding-top: 5px;
-    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
+    border-top: 1px solid var(--mat-groove-lo);
+    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
     font-size: 0.78em;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     letter-spacing: 0.03em;
+    text-shadow: var(--mat-print);
   }
   .acp-harness__lane-peek-chip b {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
     font-weight: normal;
+    font-variant-numeric: tabular-nums;
   }
   .acp-harness__lane-peek-chip--hot b {
-    color: #ff8b8b;
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+  }
+}
+
+/* Light scheme: plate and capsules swap at the root; lamp colours are too
+   pale as text on aluminium, so they cap to dark ink (spec 321). */
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__lane-peek[data-priority="warn"] .acp-harness__lane-peek-status,
+  html[data-theme-scheme='light'] .acp-harness__lane-peek[data-priority="warn"] .acp-harness__lane-peek-event {
+    color: #8a5a00;
+  }
+
+  html[data-theme-scheme='light'] .acp-harness__lane-peek[data-priority="high"] .acp-harness__lane-peek-status,
+  html[data-theme-scheme='light'] .acp-harness__lane-peek[data-priority="high"] .acp-harness__lane-peek-event,
+  html[data-theme-scheme='light'] .acp-harness__lane-peek-chip--hot b {
+    color: #b3261e;
   }
 }

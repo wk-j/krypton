@@ -38,7 +38,7 @@ cursor_trail = true          # rainbow flame particles following mouse + text cu
 [theme]
 name = "krypton-dark"        # built-in or custom theme name
 # Built-ins: krypton-dark, krypton-light, legacy-radiance.
-# krypton-light is slate ink on cool frost — not inverted neon. A file of the
+# krypton-light is slate ink on cool frost with an aluminium faceplate. A file of the
 # same name in ~/.config/krypton/themes/ shadows the bundled copy.
 # Custom themes: place .toml files in ~/.config/krypton/themes/
 # e.g., ~/.config/krypton/themes/my-custom.toml -> name = "my-custom"
@@ -130,23 +130,26 @@ perspective_tilt_x = 2.0       # X-axis tilt in degrees (top/bottom lean).
 perspective_tilt_y = 0.0       # Y-axis tilt in degrees (left/right lean).
                                # 0 = no tilt. Default: 0.0
                                # Recommended range: 1–6. Negative reverses direction.
-opacity = 0.5                  # Window backdrop opacity (0.0 = fully transparent,
-                               # 1.0 = fully opaque). Controls the alpha channel of
-                               # window backgrounds. Diff View (dark scheme) lets
-                               # this show through the code surface. A light-scheme
+opacity = 0.5                  # Screen opacity (0.0 = fully transparent, 1.0 =
+                               # fully opaque): the alpha of the terminal and
+                               # Quick Terminal screens behind the faceplate.
+                               # Plates (titlebar, tab bar, footers, panels,
+                               # overlays) keep their own 0.9 / 0.94 alpha
+                               # (spec 366). Diff View (dark scheme) lets this
+                               # show through the code surface. A light-scheme
                                # theme raises it to at least 0.94: without blur a
                                # translucent light surface takes the wallpaper's
                                # hue (spec 321). Default: 0.5
 glow_intensity = 0.8           # Top-line glow brightness boost (0.0 = off, 3.0 = max).
                                # Controls the brightness of the glow overlay on the
                                # first few terminal rows. Default: 0.8
-window_border = true           # Show the accent-colored outline around terminal
-                               # windows. false hides the border AND the accent
-                               # glow shadow (geometry unchanged). Default: true
+window_border = true           # Show the window's 1px bezel edge and, when
+                               # focused, its accent ring. false makes both
+                               # transparent (geometry unchanged). Default: true
 progress_gauge_working = true  # Show the centre progress ring while a program
                                # reports busy (OSC 9;4 state 3, label "working").
                                # false hides only that ring; percent, error and
-                               # paused rings and the titlebar sweep still show
+                               # paused rings and the titlebar progress lamp still show
                                # (spec 364). Default: true
 blur = 12                      # reserved: parsed, not applied
 
@@ -1109,10 +1112,10 @@ Shader presets can be cycled at runtime via `Leader g` (per-pane) or toggled glo
 | `[visual]` | `perspective_depth` | int | `800` | 3D perspective depth in pixels. Higher = subtler effect. 0 = disabled. Recommended: 400–1200 |
 | `[visual]` | `perspective_tilt_x` | float | `2.0` | X-axis (top/bottom) tilt in degrees for 3D layer separation. 0 = no tilt. Recommended: 1–6. The old name `perspective_tilt` is accepted as an alias |
 | `[visual]` | `perspective_tilt_y` | float | `0.0` | Y-axis (left/right) tilt in degrees. 0 = no tilt |
-| `[visual]` | `opacity` | float | `0.5` | Window backdrop opacity (0.0 = fully transparent, 1.0 = fully opaque). Overrides the theme's backdrop alpha. Under a light-scheme theme the effective value is at least 0.94 ([spec 321](./0321-light-scheme-legibility.md)). Diff View (dark scheme) lets this show through the code surface. |
+| `[visual]` | `opacity` | float | `0.5` | Screen opacity (0.0 = fully transparent, 1.0 = fully opaque): the alpha of the terminal and Quick Terminal screens. Overrides the theme's backdrop alpha. Plates (titlebar, tab bar, footers, panels, overlays) keep their own 0.9 / 0.94 alpha ([spec 366](./0366-console-faceplate-ui.md)). Under a light-scheme theme the effective value is at least 0.94 ([spec 321](./0321-light-scheme-legibility.md)). Diff View (dark scheme) lets this show through the code surface. |
 | `[visual]` | `glow_intensity` | float | `0.8` | Top-line glow brightness boost. 0.0 disables the glow, higher = stronger. Clamped to 0.0–3.0. |
-| `[visual]` | `window_border` | bool | `true` | Show the accent-colored outline around terminal windows. `false` hides the border and the accent glow shadow (border stays transparent, so window geometry is unchanged). The Quick Terminal overlay keeps its own chrome. |
-| `[visual]` | `progress_gauge_working` | bool | `true` | Show the centre progress ring while a program reports busy (OSC 9;4 state `3`, label `working`). `false` hides only that ring: percent, error and paused rings and the titlebar sweep still show. Hot-reloadable. See [spec 364](./0364-progress-gauge-hide-working.md) |
+| `[visual]` | `window_border` | bool | `true` | Show the window's 1px bezel edge and, when focused, its accent ring. `false` makes both transparent, so window geometry is unchanged; plates, screen and LEDs stay. The Quick Terminal overlay keeps its own chrome. |
+| `[visual]` | `progress_gauge_working` | bool | `true` | Show the centre progress ring while a program reports busy (OSC 9;4 state `3`, label `working`). `false` hides only that ring: percent, error and paused rings and the titlebar progress lamp still show. Hot-reloadable. See [spec 364](./0364-progress-gauge-hide-working.md) |
 | `[visual]` | `blur` | int | `12` | Reserved — parsed, not applied |
 
 ### SSH Configuration
@@ -1218,7 +1221,7 @@ The picker recursively lists `*.excalidraw` files under `dir`, sorted by modific
 
 ## [tokens] (theme files)
 
-Lives in a theme file under `~/.config/krypton/themes/*.toml`, not in `krypton.toml`. Each entry becomes a `--<key>` CSS custom property on `document.documentElement`, which is how a theme recolours one component (the `--acp-*` harness hooks, `--vault-*`, …) without shipping CSS.
+Lives in a theme file under `~/.config/krypton/themes/*.toml`, not in `krypton.toml`. Each entry becomes a `--<key>` CSS custom property on `document.documentElement`, which is how a theme recolours one component (the `--acp-*` harness hooks, the `--mat-*` material stops, …) without shipping CSS.
 
 ```toml
 # ~/.config/krypton/themes/amber-tools.toml

@@ -123,7 +123,6 @@ describe('composer input bloom', () => {
     expect(particle).toContain('pointer-events: none');
     expect(particle).toContain('font: inherit');
     expect(particle).toContain('text-shadow');
-    expect(particle).toContain('rgba(110, 231, 231');
     expect(particle).not.toContain('26px');
     expect(particle).not.toContain('22px');
     expect(particle).not.toContain('radial-gradient');
@@ -160,11 +159,10 @@ describe('lane picker chrome', () => {
     expect(panel).toMatch(/overflow:\s*hidden/);
   });
 
-  it('does not round or stroke the header and list as separate capsules', () => {
+  it('does not stroke the header and list as separate capsules', () => {
     const head = css.match(/\.acp-harness__picker-head\s*\{[^}]*\}/)?.[0] ?? '';
     const list = css.match(/\.acp-harness__picker-list\s*\{[^}]*\}/)?.[0] ?? '';
     expect(head).not.toMatch(/border-radius/);
-    expect(list).not.toMatch(/border-radius/);
     expect(head).not.toMatch(/^\s*border:/m);
     expect(list).not.toMatch(/^\s*border:/m);
   });

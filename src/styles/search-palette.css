@@ -1,4 +1,8 @@
-/* ─── Search Palette (spec 349): Commands | Files | Grep ─── */
+/* ─── Search Palette (spec 349): Commands | Files | Grep ───
+   Spec 366 / DESIGN.md (Krypton Console): one floating plate over the scrim.
+   The scopes are selector keys in a recessed channel, the query is an input
+   well, the results are one well of flat rows split by grooves with the
+   full-row selection tint (ADR-0027), and the key hints are printed legend. */
 
 .krypton-search-palette {
   position: fixed;
@@ -11,7 +15,7 @@
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.1s ease;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--mat-scrim);
 }
 
 .krypton-search-palette--visible {
@@ -24,67 +28,88 @@
   max-width: 92vw;
   display: flex;
   flex-direction: column;
-  background: var(--krypton-palette-bg, rgba(6, 10, 18, 0.94));
-  border: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.4));
+  background: var(--mat-brush), var(--mat-plate);
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
-  box-shadow:
-    0 0 30px rgba(0, 200, 255, 0.08),
-    0 8px 32px rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
   overflow: hidden;
 }
 
-.krypton-search-palette[data-scope="grep"] .krypton-search-palette__container {
-  border-color: var(--krypton-prompt-border, rgba(199, 125, 255, 0.45));
-}
-
-/* ─── Tabs ─── */
+/* ─── Tabs ─── a channel of selector keys; the shown scope is latched with
+   its LED lit. */
 
 .krypton-search-palette__tabs {
   display: flex;
-  gap: 2px;
-  padding: 6px 8px 0;
-  border-bottom: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.2));
+  gap: 4px;
+  margin: 10px 10px 0;
+  padding: 3px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-search-palette__tab {
+  flex: 1 1 0;
   display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 5px 12px 6px;
-  margin-bottom: -1px;
-  border-bottom: 2px solid transparent;
-  border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 26px;
+  padding: 3px 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: 6px;
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.09em;
+  line-height: 1;
   text-transform: uppercase;
-  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.45));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  text-shadow: var(--mat-print);
+  white-space: nowrap;
   cursor: pointer;
-  transition: color 0.06s ease, background 0.06s ease;
+}
+
+/* The indicator lamp. */
+.krypton-search-palette__tab::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .krypton-search-palette__tab:hover {
-  color: var(--krypton-palette-input-text, #c0c5ce);
+  background: var(--mat-key-hover);
+  color: var(--mat-lit);
 }
 
-.krypton-search-palette__tab--active {
-  color: var(--krypton-palette-highlight, #0cf);
-  background: rgba(0, 200, 255, 0.08);
-  border-bottom-color: var(--krypton-palette-highlight, #0cf);
+.krypton-search-palette__tab:active,
+.krypton-search-palette__tab--active,
+.krypton-search-palette__tab--active:hover {
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
-.krypton-search-palette[data-scope="grep"] .krypton-search-palette__tab--active {
-  color: var(--krypton-prompt-accent, #c77dff);
-  background: rgba(199, 125, 255, 0.08);
-  border-bottom-color: var(--krypton-prompt-accent, #c77dff);
+.krypton-search-palette__tab--active::before {
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
 }
 
 .krypton-search-palette__tab-key {
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: none;
-  opacity: 0.7;
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+  text-shadow: none;
 }
 
 /* ─── Input ─── */
@@ -93,31 +118,35 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.2));
+  margin: 8px 10px;
+  padding: 8px 12px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-search-palette__prompt {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size);
   font-weight: 700;
-  color: var(--krypton-palette-highlight, #0cf);
+  color: var(--mat-silk);
   flex-shrink: 0;
 }
 
 .krypton-search-palette__input {
   flex: 1;
-  background: var(--krypton-palette-input-bg, transparent);
+  min-width: 0;
+  background: transparent;
   border: none;
   outline: none;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size);
-  color: var(--krypton-palette-input-text, #c0c5ce);
-  caret-color: var(--krypton-palette-highlight, #0cf);
+  color: var(--krypton-fg, #b0c4d8);
+  caret-color: var(--krypton-cursor);
 }
 
 .krypton-search-palette__input::placeholder {
-  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.35));
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   font-style: italic;
 }
 
@@ -126,7 +155,7 @@
   flex-shrink: 0;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.45));
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   letter-spacing: 0.04em;
   max-width: 38%;
   overflow: hidden;
@@ -135,47 +164,80 @@
   text-align: right;
 }
 
-/* ─── Results ─── */
+/* ─── Results ─── one well; an empty list shows no well at all. */
 
 .krypton-search-palette__results {
   max-height: 50vh;
+  margin: 0 10px;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--krypton-palette-border, rgba(0, 200, 255, 0.2)) transparent;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
+.krypton-search-palette__results:empty {
+  display: none;
+}
+
+.krypton-search-palette__results::-webkit-scrollbar {
+  width: 8px;
+}
+
+.krypton-search-palette__results::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.krypton-search-palette__results::-webkit-scrollbar-thumb {
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+  border-radius: 8px;
+}
+
+.krypton-search-palette__results::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.32);
+}
+
+/* A section name inside the well: printed ink, not engraved. */
 .krypton-search-palette__section-header {
-  font-size: 0.7rem;
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--krypton-text-muted, rgba(192, 197, 206, 0.5));
-  padding: 0.25rem 0.75rem;
-  border-bottom: 1px solid var(--krypton-border-subtle, rgba(192, 197, 206, 0.1));
+  letter-spacing: 0.13em;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  padding: 6px 14px 4px;
+  border-bottom: 1px solid var(--mat-groove-lo);
 }
 
+/* A repeated row: no shadow, no gradient — one groove and the tint. */
 .krypton-search-palette__row {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 5px 14px;
+  border-bottom: 1px solid var(--mat-groove-lo);
   cursor: pointer;
-  transition: background 0.06s ease;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
 }
 
+.krypton-search-palette__row:last-child {
+  border-bottom: 0;
+}
+
 .krypton-search-palette__row:hover {
-  background: rgba(0, 200, 255, 0.04);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
 }
 
-.krypton-search-palette__row--selected {
-  background: rgba(0, 200, 255, 0.1);
+.krypton-search-palette__row--selected,
+.krypton-search-palette__row--selected:hover {
+  background: var(--mat-select);
 }
 
+/* Accept: an 80ms one-shot lamp flash on the selected row. */
 @keyframes krypton-search-palette-flash {
-  0%   { background: rgba(0, 200, 255, 0.1); }
-  50%  { background: rgba(0, 200, 255, 0.45); }
-  100% { background: rgba(0, 200, 255, 0.1); }
+  0%   { background: var(--mat-select); }
+  50%  { background: color-mix(in srgb, var(--mat-lit) 40%, transparent); }
+  100% { background: var(--mat-select); }
 }
 
 .krypton-search-palette__row--flashing {
@@ -185,8 +247,9 @@
 /* Commands rows */
 
 /* Leading glyph from `palette-icons.ts` (spec 358): a fixed column at the same
-   x on every row. Ink-coloured; the selected row lights it. Fill is set on the
-   svg only, so the few Lucide dots that fill themselves keep their fill. */
+   x on every row. Ink-coloured; the selected row lights it amber. Fill is set
+   on the svg only, so the few Lucide dots that fill themselves keep their
+   fill. */
 .krypton-search-palette__icon {
   flex: none;
   width: 1.3em;
@@ -196,33 +259,34 @@
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
-  color: var(--krypton-palette-text, #c0c5ce);
-  opacity: 0.7;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
 .krypton-search-palette__row--selected .krypton-search-palette__icon {
-  color: var(--krypton-palette-highlight, #0cf);
-  opacity: 1;
+  color: var(--mat-lit);
 }
 
+/* The category is a flat chip let into the row — fill and a groove edge,
+   no gradient or shadow, because it repeats on every row. */
 .krypton-search-palette__category {
   flex-shrink: 0;
+  min-width: 48px;
+  padding: 0 5px;
+  border: 1px solid var(--mat-groove-lo);
+  border-radius: 4px;
+  background: var(--mat-well-fill);
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--krypton-palette-highlight, #0cf);
-  background: rgba(0, 200, 255, 0.08);
-  padding: 1px 5px;
-  border-radius: var(--krypton-border-radius, 8px);
-  min-width: 48px;
   text-align: center;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
-/* A context action is marked on its category tag — accent ink and a full
-   inset ring (no layout shift) — never a left rail (ADR-0027). */
+/* A context action is marked on its category chip — lit amber legend and
+   edge (something to act on, ADR-0017) — never a left rail (ADR-0027). */
 .krypton-search-palette__row--context .krypton-search-palette__category {
-  color: var(--krypton-accent, #00ffd1);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--krypton-accent, #00ffd1) 45%, transparent);
+  color: var(--mat-lit);
+  border-color: color-mix(in srgb, var(--mat-lit) 55%, transparent);
 }
 
 /* Color swatch for the `Window Color` group (spec 304). */
@@ -230,19 +294,19 @@
   flex: none;
   width: 10px;
   height: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid var(--mat-key-edge);
 }
 
 .krypton-search-palette__label {
   flex: 1;
   font-weight: 500;
-  color: var(--krypton-palette-text, #c0c5ce);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
 }
 
 .krypton-search-palette__label mark,
 .krypton-search-palette__filename mark {
   background: none;
-  color: var(--krypton-palette-highlight, #0cf);
+  color: var(--mat-lit);
   font-weight: 700;
 }
 
@@ -250,7 +314,7 @@
   flex-shrink: 0;
   font-weight: 500;
   letter-spacing: 0.06em;
-  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.35));
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
 }
 
 /* Files rows */
@@ -262,7 +326,7 @@
 }
 
 .krypton-search-palette__filename {
-  color: var(--krypton-palette-input-text, #c0c5ce);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   font-weight: 500;
   flex-shrink: 0;
   overflow: hidden;
@@ -272,7 +336,7 @@
 }
 
 .krypton-search-palette__parent {
-  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.4));
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -291,8 +355,9 @@
 }
 
 .krypton-search-palette__grep-loc {
-  color: var(--krypton-prompt-accent, #c77dff);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -300,29 +365,30 @@
 }
 
 .krypton-search-palette__grep-snippet {
-  color: var(--krypton-palette-input-text, #c0c5ce);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   white-space: pre;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .krypton-search-palette__grep-snippet mark {
-  background: rgba(199, 125, 255, 0.18);
-  color: var(--krypton-prompt-accent, #c77dff);
+  background: var(--mat-select);
+  color: var(--mat-lit);
   font-weight: 700;
-  border-radius: var(--krypton-border-radius, 8px);
+  border-radius: 2px;
 }
 
-/* ─── Status + hints ─── */
+/* ─── Status + hints ─── engraved status line, printed key legend. */
 
 .krypton-search-palette__status {
-  padding: 5px 14px;
-  border-top: 1px solid var(--krypton-palette-border, rgba(0, 200, 255, 0.18));
+  padding: 6px 14px 2px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
-  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.55));
-  letter-spacing: 0.06em;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  text-shadow: var(--mat-engrave);
+  letter-spacing: 0.13em;
   text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
   min-height: 1.4em;
 }
 
@@ -330,15 +396,16 @@
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
-  padding: 5px 14px 7px;
+  padding: 2px 14px 9px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
-  color: var(--krypton-palette-text, rgba(192, 197, 206, 0.4));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  text-shadow: var(--mat-print);
   letter-spacing: 0.06em;
 }
 
 .krypton-search-palette__hint[data-flash="relative"] span[data-kind="relative"],
 .krypton-search-palette__hint[data-flash="absolute"] span[data-kind="absolute"],
 .krypton-search-palette__hint[data-flash="helix"] span[data-kind="helix"] {
-  color: var(--krypton-palette-highlight, #0cf);
+  color: var(--mat-lit);
 }

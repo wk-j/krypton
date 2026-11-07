@@ -42,7 +42,6 @@
     --krypton-border-width: 1px;
     --krypton-border-radius: 8px;
     --krypton-backdrop-color: rgba(6, 10, 18, 0.5);
-    --krypton-shadow-blur: 15px;
     --krypton-font-family: 'Mononoki Nerd Font Mono', 'Fira Code', 'Cascadia Code', monospace;
     --krypton-font-size: 14px;
     --krypton-line-height: 1.2;
@@ -88,18 +87,18 @@
   .lb-genui__view-summary { margin: 6px 0 0; color: var(--text); font-size: 13px; }
   .lb-genui__label { margin: 22px 0 10px; padding-bottom: 5px; border-bottom: 1px solid var(--border); }
   /* The one surface on this page that is NOT a loopback surface: it reproduces
-   * the Krypton window the component actually lives in. Border, radius, shadow
-   * and backdrop are `.krypton-window` (window.css) by value; the inner block
-   * copies the typography and alias declarations `.acp-harness`
-   * (harness-shared.css) puts around a seated panel. The opaque base under the
-   * translucent backdrop stands in for the user's desktop, which no browser
-   * page can see. */
+   * the Krypton window a component actually lives in (DESIGN.md "Terminal
+   * window", spec 366): the screen fill inside a 1px key-edge bezel, the
+   * bevel on its lit top edge and the one cast shadow. The inner block copies
+   * the typography and alias declarations `.acp-harness` (harness-shared.css)
+   * puts around a seated panel. The opaque base under the translucent screen
+   * stands in for the user's desktop, which no browser page can see. */
   .lb-genui__stage { padding: 14px 16px;
-    border: var(--krypton-border-width, 1px) solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    background: linear-gradient(var(--krypton-backdrop-color, rgba(6, 10, 18, .5)),
-      var(--krypton-backdrop-color, rgba(6, 10, 18, .5))), #0b0d12;
-    box-shadow: 0 0 var(--krypton-shadow-blur, 15px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12); }
+    background: linear-gradient(var(--mat-screen, rgba(6, 10, 18, .5)),
+      var(--mat-screen, rgba(6, 10, 18, .5))), #0b0d12;
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast); }
   .lb-genui__preview { min-height: 26px;
     font-family: var(--agent-font, var(--krypton-font-family, monospace));
     font-size: var(--krypton-font-size, 13px);

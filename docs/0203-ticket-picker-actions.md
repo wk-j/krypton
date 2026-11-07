@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-07-25
 > Milestone: ACP Harness - working-ticket workflow
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): `DESIGN.amber.md` retired; its reference now points to DESIGN.md.
 
 > Current behavior: [spec 238](./0238-local-ticket-bundles.md) ยังคง action ชุดนี้ไว้
 > แต่ทุก action จะ activate local ticket ก่อน และ Analyze/Fix จะ bind worker ผ่าน runtime ticket state
@@ -222,4 +223,4 @@ None for approval. The consequential choices in this draft are explicit:
 - [VS Code GitHub Pull Requests and Issues extension](https://github.com/microsoft/vscode-pull-request-github) - current issue command and setting surface
 - [Linear comments and reactions](https://linear.app/docs/comment-on-issues) - contextual comment action and explicit submit shortcut
 - `/Users/wk/Source/zed/crates/agent_servers/src/acp.rs` - prompt requests stay in the existing ACP session
-- Internal: specs 190, 191, and 194; ADR-0007; `DESIGN.amber.md`
+- Internal: specs 190, 191, and 194; ADR-0007; `DESIGN.md`

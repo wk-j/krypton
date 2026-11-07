@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-09-10
 > Milestone: M3 — Compositor & Windows
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): layered focus glow removed; one cast shadow and outline.
 
 ## Problem
 

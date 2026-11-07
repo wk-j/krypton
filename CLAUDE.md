@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Krypton is a keyboard-driven terminal emulator with a cyberpunk aesthetic built with **Rust + Tauri v2** (backend) and **TypeScript + xterm.js** (frontend). A single fullscreen, borderless, transparent Tauri window acts as an invisible shell. Terminal "windows" are DOM elements with custom chrome floating on transparent workspace surfaces.
+Krypton is a keyboard-driven terminal emulator with a skeuomorphic instrument-faceplate aesthetic (Krypton Console, `DESIGN.md`) built with **Rust + Tauri v2** (backend) and **TypeScript + xterm.js** (frontend). A single fullscreen, borderless, transparent Tauri window acts as an invisible shell. Terminal "windows" are DOM elements with custom chrome floating on transparent workspace surfaces.
 
 **Critical terminology:**
 - **Workspace** = virtual desktop (full-screen arrangement of terminal windows)
@@ -42,7 +42,7 @@ The app has two halves that communicate over Tauri IPC:
 
 **Rust backend** (`src-tauri/src/`) — manages PTY sessions (spawn, read, write, resize) via `portable-pty`, loads TOML config from `~/.config/krypton/krypton.toml`, and resolves themes (built-in + custom from `~/.config/krypton/themes/*.toml`). Config is read at startup; palette **Color Theme** (`set_theme`) and **Reload Config** apply without a restart. There is no filesystem watcher. State is shared through `Arc<RwLock<_>>` managed by Tauri.
 
-**TypeScript frontend** (`src/`) — renders terminal windows using xterm.js inside custom cyberpunk chrome. The major subsystems are:
+**TypeScript frontend** (`src/`) — renders terminal windows using xterm.js inside custom faceplate chrome. The major subsystems are:
 
 - **Compositor** (`compositor.ts`) — window lifecycle, layout management (Grid/Focus), Quick Terminal overlay, tab/pane management. Owns the `WindowState[]` array and the session routing map (`sessionMap: Map<SessionId, SessionLocation>` for O(1) routing of PTY output to the correct pane).
 - **Input Router** (`input-router.ts`) — modal keyboard system with modes: Normal, Compositor, Resize, Move, Swap, Selection, Hint, TabMove, SearchPalette, Dashboard. Leader key (`Cmd+P`) enters Compositor mode; Escape returns to Normal. Single-action compositor keys auto-return to Normal after execution. The `customKeyHandler` intercepts keys BEFORE xterm.js processes them — returning `false` prevents xterm.js from seeing the key.
@@ -71,6 +71,7 @@ Another standalone piece lives outside the app build: the **Raycast extension** 
 - A theme file may also carry a free-form `[tokens]` table; each entry becomes a `--<key>` property applied after the built-ins, so it can override one component without a schema change. Keys are validated and values pass a CSS-function allowlist at load — spec [303](docs/0303-themeable-component-tokens.md).
 - Palette **Color Theme** calls `set_theme` (no restart). File edits apply on **Reload Config** or the next launch — no filesystem watcher.
 - Cascade layer order is declared once in `src/styles/layers.css`: `krypton.base` (shell sheets) → `krypton.component` (a component's own block) → `krypton.scheme` (its light/dark overrides) → `krypton.theme`. **Unlayered rules outrank every layered rule**, so a component sheet must author inside a `krypton.*` layer; `src/acp/components/styles-ownership.test.ts` enforces that, and that a sheet only declares rules gated on a block its directory owns.
+- Every surface reads the `--mat-*` material tokens (plate, well, key, lamp — graphite dark, aluminium light), declared once on the root in `src/styles/materials.css`; no other sheet declares them. Gradient tokens are composed from colour-stop tokens there, so a theme's `[tokens]` can recolour the material through the allowlist. Spec [366](docs/0366-console-faceplate-ui.md).
 
 ## Architecture Constraints
 
@@ -85,10 +86,10 @@ Another standalone piece lives outside the app build: the **Raycast extension** 
 9. **No L-shaped corner brackets.** Two-side HUD ticks (`border-top`+`border-left` 10px arms, `┌┐└┘` chrome) are banned on every surface: windows, vault, agent, harness, toasts, overlays. Full 1px border or nothing. Window chrome already dropped them; do not reintroduce.
 10. **Harness transcript: no repaint after a turn ends.** A sealed transcript row must be visually static. Since spec 301 the rules are enforced by the component kernel (`src/ui/`) rather than by hand, and the ones that remain are about not going around it:
     - A row component's `readDeps()` is the whole diff. It is `abstract` on purpose: state the values `paint()` actually reads. A missing entry is a silently stale row; a value `paint()` itself writes makes every later update a forced repaint (dev builds assert deps are stable across `paint()`).
-    - `LiveComponent.seal()` is the ONLY live→static transition. It re-derives every wrapper class from state, so `acp-harness__msg--streaming` (whose label pulse is `infinite`) can never be left behind by name. Never remove that class by hand.
+    - `LiveComponent.seal()` is the ONLY live→static transition. It re-derives every wrapper class from state, so `acp-harness__msg--streaming` (whose label is a backlit live legend) can never be left behind by name. Never remove that class by hand.
     - Late async state (Git refs, images, usage, memory) calls `update()` on the owning sub-component. Never reach into a sealed row's DOM from outside it.
     - Turn-end and per-event paths (`stop`, `usage`, `finishTurn`, `sealStreaming`) seal rows and patch chrome; a seal invalidates no scheduler region, and they must not call `render()`.
-    - No `infinite` CSS animation on a row or chrome element that is not live.
+    - No `infinite` CSS animation anywhere except a text caret, the terminal cursor or the selection-mode cursor (DESIGN.md Motion); live state is a steady lit lamp.
     - The named inline-panel exception is GenUI (spec 310). `AcpHarnessView` owns the movable panel node; rows own only their cards/slots. Opening or using the panel never enters `AssistantRow.bodyDeps()` or repaints the sealed row. Re-seat the same node after every transcript commit; close without taking focus when its lane/row disappears. Do not give a row ownership of live controls or generalize this exception.
     - The Execution Inspector (spec 319) is a view-owned modal overlay, not a row slot: opening, updating or closing it never writes row DOM. Execution summary updates go through the owning `ExecutionCard`, not arbitrary DOM writes.
 
@@ -127,11 +128,9 @@ Skills in `.claude/skills/` define repeatable workflows. Load the appropriate sk
 
 ## Documentation
 
-- `DESIGN.md` — Visual identity spec for the default Krypton Dark cyberpunk aesthetic. Load when adding UI components, modifying chrome, or verifying visual consistency. Validate with `npx @google/design.md lint DESIGN.md`
-- `DESIGN.nasa.md` — Alt aesthetic spec for the Vault Viewer (`.krypton-vault`, `src/styles/vault-view.css`): NASA Mission Control retro-futurism
-- `DESIGN.amber.md` — Alt aesthetic spec for the Agent view (`.krypton-agent`, `src/styles/agent.css`): warm amber phosphor cassette futurism. The Agent view has a persistent per-lane permission mode cycled with `Shift+Tab` (`normal` → `acceptEdits` → `bypass`) that survives turn boundaries.
+- `DESIGN.md` — Visual identity spec for Krypton Console, the skeuomorphic instrument faceplate every app surface uses (materials, parts, colour and state, motion). Load when adding UI components, modifying chrome, or verifying visual consistency. Validate with `npx @google/design.md lint DESIGN.md`
 - `DESIGN.binance.md` — Shared visual identity and kit catalog for the **loopback app opened in the OS browser** (every `src/loopback/` surface plus the artifact scaffold): Binance-dark exchange aesthetic. Load when styling or adding any browser-served harness page.
-- `DESIGN.console.md` — Alt aesthetic spec for the ACP harness right dock column (`.acp-harness__dock`: tab strip, Ticket, Rails, Assistants, `DockActionButton`): skeuomorphic instrument faceplate. Its `--dock-*` material tokens are declared once on `.acp-harness__dock` in `harness-shared.css`. Load when styling anything in the right dock.
+- The Agent view (`.agent-view`, `src/agent/`) has a persistent per-lane permission mode cycled with `Shift+Tab` (`normal` → `acceptEdits` → `bypass`) that survives turn boundaries.
 - `docs/README.md` — Spec and ADR index
 - `docs/0004-architecture.md` — System architecture, DOM structure, module responsibilities
 - `docs/0005-data-flow.md` — How keystrokes, resize, and workspace switching flow through the system

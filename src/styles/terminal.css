@@ -8,7 +8,10 @@
   overflow: hidden;
 }
 
-/* ─── Selection Mode — virtual cursor overlay ─── */
+/* ─── Selection Mode — virtual cursor overlay ───
+   The selection-mode cursor is one of DESIGN.md's three blinking things (with
+   text carets and the terminal cursor); it stops under reduced motion. A
+   block in the theme accent, no glow. */
 .krypton-selection-cursor {
   position: absolute;
   top: 0;
@@ -17,16 +20,22 @@
   pointer-events: none;
   z-index: 10;
   transition: transform 50ms ease;
-  box-shadow: 0 0 6px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
-  animation: krypton-selection-cursor-pulse 1.2s ease-in-out infinite alternate;
+  opacity: 0.85;
+  animation: krypton-selection-cursor-blink 1.2s step-end infinite;
 }
 
-@keyframes krypton-selection-cursor-pulse {
-  from { opacity: 0.7; box-shadow: 0 0 6px 2px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5); }
-  to   { opacity: 0.9; box-shadow: 0 0 12px 4px rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.7); }
+@keyframes krypton-selection-cursor-blink {
+  50% { opacity: 0.35; }
 }
 
-/* ─── Selection Mode — glow overlay around selection region ─── */
+@media (prefers-reduced-motion: reduce) {
+  .krypton-selection-cursor {
+    animation: none;
+  }
+}
+
+/* ─── Selection Mode — selection region ───
+   A flat accent tint over the selected cells; no sweep. */
 .krypton-selection-glow {
   position: absolute;
   top: 0;
@@ -34,33 +43,9 @@
   pointer-events: none;
   z-index: 9;
   border: none;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.06);
+  background: rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.14);
   overflow: hidden;
   transition: transform 50ms ease, width 50ms ease, height 50ms ease;
-}
-
-/* Horizontal scan-line sweep inside the selection */
-.krypton-selection-glow::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 40%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.3) 50%,
-    rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.15) 60%,
-    transparent 100%
-  );
-  animation: krypton-selection-scan 3s linear infinite;
-}
-
-@keyframes krypton-selection-scan {
-  from { left: -100%; }
-  to   { left: 100%; }
 }
 
 .krypton-window__body .xterm,
@@ -80,6 +65,29 @@
 .krypton-window__body .xterm-screen,
 .krypton-pane__terminal .xterm-screen {
   background: transparent !important;
+}
+
+/* DESIGN.md "Scrollbars": xterm draws its own scrollbar (VS Code's scrollable
+   element) and injects the slider colour from the xterm theme. The track
+   stays transparent; the thumb is theme ink. The extra `.krypton-pane` /
+   `.krypton-window` ancestor outranks xterm's injected rule. */
+.krypton-pane .krypton-pane__terminal .xterm .xterm-scrollable-element > .scrollbar > .slider,
+.krypton-window .krypton-window__body .xterm .xterm-scrollable-element > .scrollbar > .slider {
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+  border-radius: 8px;
+}
+
+.krypton-pane .krypton-pane__terminal .xterm .xterm-scrollable-element > .scrollbar > .slider:hover,
+.krypton-pane .krypton-pane__terminal .xterm .xterm-scrollable-element > .scrollbar > .slider.active,
+.krypton-window .krypton-window__body .xterm .xterm-scrollable-element > .scrollbar > .slider:hover,
+.krypton-window .krypton-window__body .xterm .xterm-scrollable-element > .scrollbar > .slider.active {
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.32);
+}
+
+/* No VS Code inset shadow at the scrolled edge: the screen well draws depth. */
+.krypton-pane__terminal .xterm .xterm-scrollable-element > .shadow,
+.krypton-window__body .xterm .xterm-scrollable-element > .shadow {
+  display: none;
 }
 
 /* xterm.js sets inline style.backgroundColor on the scrollable-element DOM node

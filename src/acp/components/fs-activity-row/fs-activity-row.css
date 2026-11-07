@@ -10,7 +10,8 @@
        src/styles/acp-harness.css:5874-5915   (the identical second copy)
 
    theme-scheme.css declares nothing for this block, so there is no
-   `krypton.scheme` section. */
+   `krypton.scheme` section. Spec 366: a flat one-line row on the screen; only
+   a failed read/write takes colour, the theme's error ink. */
 
 @layer krypton.component {
   /* Spec 88 — fs activity chip */
@@ -24,7 +25,7 @@
   }
 
   .acp-harness__fs-activity--err {
-    color: #ff8b8b;
+    color: var(--agent-error, #ff6b8b);
   }
 
   .acp-harness__fs-activity-icon {
@@ -39,7 +40,7 @@
   }
 
   .acp-harness__fs-activity--err .acp-harness__fs-activity-verb {
-    color: #ff8b8b;
+    color: var(--agent-error, #ff6b8b);
   }
 
   .acp-harness__fs-activity-path {
@@ -51,7 +52,7 @@
 
   .acp-harness__fs-activity-error {
     flex: 0 0 auto;
-    color: #ff8b8b;
+    color: var(--agent-error, #ff6b8b);
     font-style: italic;
   }
 }

@@ -157,28 +157,7 @@ radius = 8                         # Border radius in pixels
 |-----|------|---------|-------------|
 | `width` | int | `1` | Border width (px) |
 | `color` | color | `"rgba(0, 200, 255, 0.3)"` | Border color for unfocused windows |
-| `radius` | int | `8` | Border corner radius (px). Default is the 8px manufactured bevel on every Krypton Dark container. Maps to `--krypton-border-radius`. |
-
-#### `[chrome.shadow]`
-
-Window drop shadow. Shadows are cast on the transparent desktop surface.
-
-```toml
-[chrome.shadow]
-color = "rgba(0, 200, 255, 0.07)"
-blur = 15                          # Blur radius in pixels
-spread = 0                         # Spread radius in pixels
-offset_x = 0                       # Horizontal offset in pixels
-offset_y = 0                       # Vertical offset in pixels
-```
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `color` | color | `"rgba(0, 200, 255, 0.07)"` | Shadow color |
-| `blur` | int | `15` | Blur radius (px) |
-| `spread` | int | `0` | Spread distance (px) |
-| `offset_x` | int | `0` | Horizontal offset (px) |
-| `offset_y` | int | `0` | Vertical offset (px) |
+| `radius` | int | `8` | Border corner radius (px). Default is the 8px radius on every Krypton Console part (DESIGN.md). Maps to `--krypton-border-radius`. |
 
 #### `[chrome.backdrop]`
 
@@ -202,8 +181,6 @@ The title bar at the top of each window.
 ```toml
 [chrome.titlebar]
 height = 28                         # Title bar height in pixels
-background = "transparent"          # Title bar background
-text_color = "rgba(0, 200, 255, 0.3)"
 font_size = 11                      # Font size in pixels
 font_weight = 600                   # CSS font-weight (100-900)
 letter_spacing = 0.08               # Letter spacing in em
@@ -214,8 +191,6 @@ alignment = "left"                  # "left", "center", "right"
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `height` | int | `28` | Title bar height (px) |
-| `background` | color | `"transparent"` | Title bar background color/gradient |
-| `text_color` | color | `"rgba(0, 200, 255, 0.3)"` | Label text color (unfocused) |
 | `font_size` | int | `11` | Font size (px) |
 | `font_weight` | int | `600` | CSS font weight |
 | `letter_spacing` | float | `0.08` | Letter spacing (em) |
@@ -229,14 +204,12 @@ The small indicator dot next to the window label.
 ```toml
 [chrome.status_dot]
 size = 6                            # Dot size in pixels (square)
-color = "rgba(0, 200, 255, 0.25)"   # Dot color (unfocused)
 shape = "square"                    # "square" or "circle"
 ```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `size` | int | `6` | Dot dimensions (px) |
-| `color` | color | `"rgba(0, 200, 255, 0.25)"` | Dot color (unfocused) |
 | `shape` | string | `"square"` | `"square"` or `"circle"` |
 
 #### `[chrome.header_accent]`
@@ -306,9 +279,6 @@ When a window receives focus, these values override the corresponding `[chrome]`
 
 ```toml
 [focused]
-border_color = "rgba(0, 200, 255, 0.5)"
-shadow_color = "rgba(0, 200, 255, 0.12)"
-shadow_blur = 20
 titlebar_text_color = "#0cf"
 status_dot_color = "#0cf"
 header_accent_color = "rgba(0, 200, 255, 0.35)"
@@ -319,9 +289,6 @@ label_color = "#0cf"
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `border_color` | color | Border color when focused |
-| `shadow_color` | color | Shadow color when focused |
-| `shadow_blur` | int | Shadow blur when focused |
 | `titlebar_text_color` | color | Title label color when focused |
 | `status_dot_color` | color | Status dot color when focused |
 | `header_accent_color` | color | Accent bar stripe color when focused |
@@ -354,30 +321,7 @@ blur = 0                             # Workspace-level vibrancy blur (px)
 
 ### `[ui]` — UI Element Styles
 
-Styles for overlay UI elements: command palette, search bar, mode indicator, and which-key popup.
-
-#### `[ui.command_palette]`
-
-```toml
-[ui.command_palette]
-background = "rgba(6, 10, 18, 0.85)"
-border = "rgba(0, 200, 255, 0.4)"
-text_color = "#c0c5ce"
-highlight_color = "#0cf"             # Selected item highlight
-input_background = "transparent"
-input_text_color = "#c0c5ce"
-backdrop_blur = 16                   # Blur behind the palette
-```
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `background` | color | `"rgba(6, 10, 18, 0.85)"` | Palette background |
-| `border` | color | `"rgba(0, 200, 255, 0.4)"` | Palette border |
-| `text_color` | color | `"#c0c5ce"` | Item text color |
-| `highlight_color` | color | `"#0cf"` | Selected/matched item color |
-| `input_background` | color | `"transparent"` | Search input background |
-| `input_text_color` | color | `"#c0c5ce"` | Search input text color |
-| `backdrop_blur` | int | `16` | Backdrop blur (px) |
+Styles for overlay UI elements: search bar, mode indicator, and the Quick Terminal. The command palette, which-key popup and hint labels are Krypton Console plates and key caps (`DESIGN.md`); since spec 366 they take no theme keys, and `[ui.command_palette]`, `[ui.which_key]` and `[ui.hints]` in an older theme file are ignored.
 
 #### `[ui.search]`
 
@@ -414,29 +358,6 @@ position = "bottom-center"           # "top-left", "top-center", "top-right",
 | `font_size` | int | `11` | Font size (px) |
 | `position` | string | `"bottom-center"` | Screen position for the indicator |
 
-#### `[ui.which_key]`
-
-```toml
-[ui.which_key]
-background = "rgba(6, 10, 18, 0.85)"
-border = "rgba(0, 200, 255, 0.4)"
-title_color = "#0cf"
-key_color = "#0cf"
-label_color = "rgba(0, 200, 255, 0.4)"
-separator_color = "rgba(0, 200, 255, 0.2)"
-backdrop_blur = 16
-```
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `background` | color | `"rgba(6, 10, 18, 0.85)"` | Popup background |
-| `border` | color | `"rgba(0, 200, 255, 0.4)"` | Popup border |
-| `title_color` | color | `"#0cf"` | Section title color |
-| `key_color` | color | `"#0cf"` | Keybinding text color |
-| `label_color` | color | `"rgba(0, 200, 255, 0.4)"` | Action label color |
-| `separator_color` | color | `"rgba(0, 200, 255, 0.2)"` | Divider line color |
-| `backdrop_blur` | int | `16` | Backdrop blur (px) |
-
 #### `[ui.quick_terminal]`
 
 Overrides specific to the Quick Terminal overlay. These are applied on top of the regular `[chrome]` styles.
@@ -445,22 +366,18 @@ Overrides specific to the Quick Terminal overlay. These are applied on top of th
 [ui.quick_terminal]
 backdrop_blur = 20
 background = "rgba(6, 10, 18, 0.6)"
-shadow_color = "rgba(0, 200, 255, 0.1)"
-shadow_blur = 30
 ```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `backdrop_blur` | int | `20` | Stronger blur for the overlay feel |
 | `background` | color | `"rgba(6, 10, 18, 0.6)"` | Background fill |
-| `shadow_color` | color | `"rgba(0, 200, 255, 0.1)"` | Box shadow color |
-| `shadow_blur` | int | `30` | Box shadow blur (px) |
 
 ---
 
 ### `[tokens]` — Component Tokens
 
-Optional free-form table. Each entry becomes a `--<key>` CSS custom property on `document.documentElement`, which lets a theme restyle a single component (the `--acp-*` harness hooks, `--vault-*`, …) without shipping CSS or selectors.
+Optional free-form table. Each entry becomes a `--<key>` CSS custom property on `document.documentElement`, which lets a theme restyle a single component (the `--acp-*` harness hooks, the `--mat-*` material stops, …) without shipping CSS or selectors.
 
 ```toml
 [tokens]
@@ -599,21 +516,12 @@ width = 1
 color = "rgba(255, 68, 204, 0.3)"
 radius = 8
 
-[chrome.shadow]
-color = "rgba(255, 68, 204, 0.07)"
-blur = 15
-spread = 0
-offset_x = 0
-offset_y = 0
-
 [chrome.backdrop]
 color = "rgba(10, 8, 18, 0.5)"
 blur = 12
 
 [chrome.titlebar]
 height = 28
-background = "transparent"
-text_color = "rgba(255, 68, 204, 0.3)"
 font_size = 11
 font_weight = 600
 letter_spacing = 0.08
@@ -622,7 +530,6 @@ alignment = "left"
 
 [chrome.status_dot]
 size = 6
-color = "rgba(255, 68, 204, 0.25)"
 shape = "square"
 
 [chrome.header_accent]
@@ -644,9 +551,6 @@ active_color = "#ff44cc"
 inactive_color = "rgba(255, 68, 204, 0.3)"
 
 [focused]
-border_color = "rgba(255, 68, 204, 0.5)"
-shadow_color = "rgba(255, 68, 204, 0.12)"
-shadow_blur = 20
 titlebar_text_color = "#ff44cc"
 status_dot_color = "#ff44cc"
 header_accent_color = "rgba(255, 68, 204, 0.35)"
@@ -657,13 +561,6 @@ label_color = "#ff44cc"
 [workspace]
 background = "transparent"
 blur = 0
-
-[ui.command_palette]
-background = "rgba(10, 8, 18, 0.9)"
-border = "rgba(255, 68, 204, 0.4)"
-text_color = "#e0e0e0"
-highlight_color = "#ff44cc"
-backdrop_blur = 16
 
 [ui.search]
 background = "rgba(10, 8, 18, 0.9)"
@@ -677,20 +574,9 @@ text_color = "#ff44cc"
 font_size = 11
 position = "bottom-center"
 
-[ui.which_key]
-background = "rgba(10, 8, 18, 0.9)"
-border = "rgba(255, 68, 204, 0.4)"
-title_color = "#ff44cc"
-key_color = "#ff44cc"
-label_color = "rgba(255, 68, 204, 0.4)"
-separator_color = "rgba(255, 68, 204, 0.2)"
-backdrop_blur = 16
-
 [ui.quick_terminal]
 backdrop_blur = 20
 background = "rgba(10, 8, 18, 0.65)"
-shadow_color = "rgba(255, 68, 204, 0.1)"
-shadow_blur = 30
 ```
 
 ---
@@ -721,20 +607,21 @@ There is no filesystem watcher on `krypton.toml` or `themes/*.toml`. File edits 
 
 The command palette lists every built-in and custom theme under **Color Theme**. Picking one calls `set_theme`, which writes `theme.name` and emits `theme-changed` so the UI updates without a restart. Inline `[theme.colors]` overrides are re-applied on **Reload Config**.
 
-At apply time the frontend also derives `--agent-*` and `--vault-*` from the color theme (accent, foreground, ANSI, chrome). Agent, ACP Harness, and Vault keep their own layout language (amber phosphor / NASA / etc.) but their colors follow the active theme, so switching `krypton-dark` → `legacy-radiance` is visible on those surfaces too.
+At apply time the frontend also derives `--agent-*` from the color theme (accent, foreground, ANSI, chrome). Every surface — window chrome, Agent, ACP Harness, Vault — is built from the Krypton Console material set (`--mat-*`, `src/styles/materials.css`, [spec 366](./0366-console-faceplate-ui.md)); the theme supplies the colours on and around that material, so switching `krypton-dark` → `legacy-radiance` is visible everywhere. A theme's `[tokens]` may recolour any `--mat-*` colour stop or shadow.
 
 Harness interiors consume those tokens (`--agent-text`, `--agent-surface-*`, `--krypton-fg-rgb`, `--krypton-accent-rgb`) rather than hardcoded krypton-dark navy/phosphor, so `krypton-light` keeps dark slate ink on frost instead of painting black slabs and `#eaf3ea` body text over a pale titlebar. `--agent-surface-solid` is opaque paper on light themes (never ANSI `colors.black` — light themes use a dark black for terminal output), because rail cards float over the transcript ([spec 321](./0321-light-scheme-legibility.md)).
 
 Light vs dark is not inverted paint. The frontend computes relative luminance of `chrome.backdrop` and sets `html[data-theme-scheme="light"|"dark"]` plus `--krypton-scheme`. Light scheme:
 
-- **Surfaces separate by luminance.** `--agent-surface-rail` is a cooler, ink-tinted panel; `--agent-surface-canvas` is paper-white. The zen lane rail and the transcript no longer share one frost.
+- **Surfaces separate by luminance.** The zen rail is an aluminium plate column (`--mat-*`) and `--agent-surface-canvas` is paper-white, so the rail and the transcript no longer share one frost.
 - **Secondary text is an opaque ink tier, not ink at an alpha** ([spec 321](./0321-light-scheme-legibility.md)). The engine solves `--krypton-ink-2` / `-3` / `-4` per light theme to 7 / 4.5 / 3:1 against the rail. A stylesheet writes `var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.42))`: the tiers exist only under a light scheme, so a dark theme keeps its alpha ladder through the fallback.
-- **An accent used as text is OKLCH-capped, never raw neon.** `oklch(from <accent> min(l, var(--krypton-accent-l-max)) c h)` with the cap at 0.44 keeps hue and chroma and clears 4.5:1 for every palette accent. It is declared once on the element that carries the accent — `--krypton-window-ink` on `.krypton-window`, `--acp-lane-ink` on each lane, rail entry, composer and queue-card root — because a `var()` inside a custom property resolves where it is declared. WebKit clips out-of-gamut channels, so warm hues land on rust and brown rather than amber.
+- **An accent used as text is OKLCH-capped, never raw neon.** `oklch(from <accent> min(l, var(--krypton-accent-l-max)) c h)` with the cap at 0.44 keeps hue and chroma and clears 4.5:1 for every palette accent. It is declared once on the element that carries the accent — `--acp-lane-ink` on each lane, rail entry, composer and queue-card root — because a `var()` inside a custom property resolves where it is declared. WebKit clips out-of-gamut channels, so warm hues land on rust and brown rather than amber.
 - **Surfaces stay near-opaque.** Blur is banned, so a translucent light surface takes the wallpaper's hue. Under a light scheme the window backdrop alpha is `max([visual] opacity, 0.94)`.
 - **Identity chips darken.** Backend and role palettes (spec 125) swap to ink-weight variants of the same hues so Codex `#d7e7f0` does not vanish on white.
 - **No glow type.** `text-shadow` blooms that read as phosphor on navy become mud on frost and are dropped.
+- **Materials swap to aluminium.** `materials.css` redeclares the `--mat-*` set under `html[data-theme-scheme='light']`: plates at 0.94 alpha, amber labels capped to `#6e4700`, engraving as a white highlight.
 
-Dark scheme keeps the existing neon-on-void recipe unchanged. Custom light themes (backdrop luminance ≥ 0.45) get the same scheme without opting in by name.
+The dark scheme uses the graphite material set. Custom light themes (backdrop luminance ≥ 0.45) get the same scheme without opting in by name.
 
 ---
 
@@ -745,18 +632,16 @@ Internally, the theme engine maps theme values to CSS custom properties prefixed
 ```
 --krypton-fg, --krypton-bg, --krypton-cursor, --krypton-selection
 --krypton-scheme                  # "light" or "dark" (from chrome-backdrop luminance)
---krypton-fg-dim
 --krypton-ink-2, --krypton-ink-3, --krypton-ink-4   # light scheme only (spec 321)
 --krypton-ink, --krypton-accent-l-max               # light scheme only, theme-scheme.css
---agent-surface-rail, --agent-surface-canvas
+--agent-surface-solid, --agent-surface-canvas
 --krypton-ansi-0 through --krypton-ansi-15
 --krypton-border-color, --krypton-border-width, --krypton-border-radius
---krypton-shadow-color, --krypton-shadow-blur
---krypton-titlebar-bg, --krypton-titlebar-height, --krypton-titlebar-text
+--mat-*                           # Krypton Console materials (src/styles/materials.css), not theme-derived
+--krypton-titlebar-height
 --krypton-backdrop-color, --krypton-backdrop-blur
 --krypton-accent-color, --krypton-corner-color
---krypton-focused-border, --krypton-focused-shadow, --krypton-focused-accent
---krypton-palette-bg, --krypton-palette-border, --krypton-palette-highlight
+--krypton-focused-accent
 --krypton-search-bg, --krypton-search-match
 --krypton-mode-bg, --krypton-mode-text
 ```

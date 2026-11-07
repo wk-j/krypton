@@ -5,6 +5,7 @@
 > Milestone: Inline AI
 > Builds on: 0050 (overlay) · 0333 (ACP backend) · 0334 (terminal context) · 0323 (harness follow-up pattern)
 > Amended by: [0336](./0336-inline-ai-verify-on-pane-host.md) — an accept arms a watch only when the terminal's latest OSC 133 event is a prompt (`A`). A local fish running `ssh` into a host that sends no OSC 133 has `C` last, so it is not armed; before this, logging out with `Ctrl+D` sent a bogus "rejected" fix request (reproduced with a nested `bash --norc`). The report's `shell:` is the pane's shell (the host's `$SHELL` in an SSH pane).
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): follow-up chip is a small plate; dot pulse removed.
 
 ## Problem
 

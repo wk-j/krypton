@@ -1,18 +1,19 @@
 /* ═══════════════════════════════════════════════════════════════
    LIGHT SCHEME
-   Neon-on-void recipes (0.15–0.45 accent alpha, glow type, frost-on-frost
-   panels) fail on a light field. Classify via html[data-theme-scheme],
-   set by the theme engine from chrome-backdrop luminance.
+   Classify via html[data-theme-scheme], set by the theme engine from
+   chrome-backdrop luminance. The window chrome is built from the `--mat-*`
+   parts (DESIGN.md 2.0.0, spec 366), and materials.css swaps those to
+   brushed aluminium on this attribute — so plates, wells, keys, lamps and the
+   silk / lit legends need no override, and base rules read the ink tiers
+   through their `var()` fallbacks. What stays is the light ink root below.
 
    Contract (spec 321):
    - Secondary text uses the opaque tiers --krypton-ink-2/3/4 (7 / 4.5 /
      3:1 on the rail, solved by theme.ts), never ink at an alpha. Base rules
      write `var(--krypton-ink-N, <dark value>)` so dark keeps its ladder.
    - An accent used as text is OKLCH-capped (--krypton-accent-l-max), never
-     raw neon: --krypton-window-ink / --acp-lane-ink on the accent's root.
+     raw neon (e.g. --acp-lane-ink on the accent's root).
    - No text dimmed with opacity < 1.
-   - Rail / canvas / overlays are distinct luminance steps.
-   - Identity chips (backend / role) use darkened inks of the same hue.
    - No L-shaped corner ticks. Full 1px border or nothing.
    ═══════════════════════════════════════════════════════════════ */
 
@@ -21,129 +22,6 @@ html[data-theme-scheme='light'] {
   /* Spec 321 — OKLCH lightness cap for an accent used as text. Keeps hue and
      chroma; L ≤ 0.44 clears 4.5:1 on the rail for every palette accent. */
   --krypton-accent-l-max: 0.44;
-}
-
-/* Mixes must live on the window (or a descendant), not on html — otherwise
-   `var(--krypton-window-accent)` resolves to the theme fallback and every
-   tab/title ignores the active-lane slot from spec 142. */
-
-html[data-theme-scheme='light'] .krypton-window {
-  --krypton-window-ink: oklch(from var(--krypton-window-accent, #007799) min(l, var(--krypton-accent-l-max)) c h);
-}
-
-/* ── Window chrome: tabs, title, usage ── */
-
-html[data-theme-scheme='light'] .krypton-tab__title {
-  color: var(--krypton-ink-3);
-}
-
-html[data-theme-scheme='light'] .krypton-tab--active .krypton-tab__title {
-  color: var(--krypton-ink);
-  font-weight: 600;
-}
-
-html[data-theme-scheme='light'] .krypton-tab__index {
-  color: var(--krypton-ink-3);
-}
-
-html[data-theme-scheme='light'] .krypton-tab--active .krypton-tab__index {
-  color: var(--krypton-ink-2);
-}
-
-html[data-theme-scheme='light'] .krypton-tab:not(.krypton-tab--active):hover .krypton-tab__title,
-html[data-theme-scheme='light'] .krypton-tab:not(.krypton-tab--active):hover .krypton-tab__index {
-  color: var(--krypton-ink-2);
-}
-
-html[data-theme-scheme='light'] .krypton-tab__dot {
-  background: color-mix(in srgb, var(--krypton-window-accent, #007799) 45%, var(--krypton-ink));
-}
-
-html[data-theme-scheme='light'] .krypton-window__label,
-html[data-theme-scheme='light'] .krypton-window__label-tail {
-  color: var(--krypton-window-ink);
-  text-shadow: none;
-}
-
-/* spec 320: Krypton Light's slate titlebar text sits too close to its teal
-   accent for on/off to read, so the off state is muted. */
-html[data-theme-scheme='light'] .krypton-window__view-toggle[aria-pressed='false'] {
-  color: color-mix(in srgb, var(--krypton-titlebar-text, #3a5568) 40%, transparent);
-}
-
-html[data-theme-scheme='light'] .krypton-window__pty-status {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 28%, var(--krypton-ink));
-}
-
-html[data-theme-scheme='light'] .krypton-window__usage-provider {
-  color: color-mix(in srgb, var(--krypton-window-accent, #007799) 28%, var(--krypton-ink));
-}
-
-html[data-theme-scheme='light'] .krypton-window__usage-provider + .krypton-window__usage-provider::before,
-html[data-theme-scheme='light'] .krypton-window__usage-quota + .krypton-window__usage-quota::before {
-  color: var(--krypton-ink-4);
-}
-
-html[data-theme-scheme='light'] .krypton-window__usage-name {
-  color: var(--krypton-window-ink);
-}
-
-html[data-theme-scheme='light'] .krypton-window__usage-quota {
-  color: var(--krypton-ink-2);
-}
-
-html[data-theme-scheme='light'] .krypton-window__lane-more {
-  color: var(--krypton-ink-3);
-}
-
-html[data-theme-scheme='light'] .krypton-window__project {
-  color: var(--krypton-window-ink);
-}
-
-html[data-theme-scheme='light'] .krypton-window__project-initials {
-  color: var(--krypton-window-ink);
-}
-
-html[data-theme-scheme='light'] .krypton-window__footer {
-  border-top: 1px solid color-mix(in srgb, var(--krypton-ink) 10%, transparent);
-  background: color-mix(in srgb, var(--krypton-ink) 5%, var(--krypton-backdrop-color, #e6eff6));
-}
-
-html[data-theme-scheme='light'] .krypton-window--pinned .krypton-window__label-group::after {
-  text-shadow: none;
-}
-
-/* The mark carries its lane's color inline, so the cap is applied on it. */
-html[data-theme-scheme='light'] .krypton-window__lane {
-  color: oklch(from var(--krypton-lane-accent, var(--krypton-window-accent, #007799)) min(l, var(--krypton-accent-l-max)) c h);
-  opacity: 1;
-}
-
-html[data-theme-scheme='light'] .krypton-window__lane--active .krypton-window__lane-initials {
-  color: oklch(from var(--krypton-lane-accent, var(--krypton-window-accent, #007799)) min(l, var(--krypton-accent-l-max)) c h);
-}
-
-/* ── Workspace footer: was a hardcoded navy slab ── */
-
-html[data-theme-scheme='light'] .krypton-workspace-footer {
-  background: transparent;
-  color: var(--krypton-ink);
-}
-
-html[data-theme-scheme='light'] .krypton-workspace-footer__segment--reviews,
-html[data-theme-scheme='light'] .krypton-workspace-footer__segment--priority,
-html[data-theme-scheme='light'] .krypton-workspace-footer__segment--link {
-  color: var(--krypton-ink-2);
-}
-
-html[data-theme-scheme='light'] .krypton-workspace-footer__reviews-glyph,
-html[data-theme-scheme='light'] .krypton-workspace-footer__priority-glyph,
-html[data-theme-scheme='light'] .krypton-workspace-footer__link-glyph {
-  color: var(--krypton-ink-3);
-}
-
-html[data-theme-scheme='light'] .krypton-workspace-footer__center > .krypton-workspace-footer__segment:not(:first-child)::before {
-  color: var(--krypton-ink-4);
 }
 
 /* ── ACP harness ──────────────────────────────────────────────

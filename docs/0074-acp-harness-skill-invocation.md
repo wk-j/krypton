@@ -3,6 +3,7 @@
 > Status: Draft
 > Date: 2026-05-02
 > Milestone: M5 — ACP Harness
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): picker is a floating plate; single-pixel glows removed.
 
 ## Problem
 

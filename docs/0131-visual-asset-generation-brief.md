@@ -3,6 +3,7 @@
 > Status: Brief (for image-generation agents)
 > Audience: an AI agent that can generate images (Nano Banana / DALL·E / Midjourney / Stable Diffusion / Flux, etc.)
 > Source of truth for style: [`DESIGN.md`](../DESIGN.md) (Krypton Dark). This brief translates that spec into ready-to-paste prompts.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): cyan neon HUD retired; the brand look is the faceplate.
 
 ## How to use this document
 

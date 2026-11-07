@@ -5,6 +5,7 @@
 > Milestone: ACP Harness visual polish
 > Related: `docs/0072-acp-harness-view.md`, `docs/0231-lane-peek-action-hud.md`
 > Prototype: `docs/prototypes/235-harness-tool-output.html`
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): label and line glows dropped; tool output sits in a well.
 
 ## Problem
 

@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-05-01
 > Milestone: M8 — Polish
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): status pulses and neon glows removed; live state is a steady lamp.
 
 ## Live Assist projection (spec 208)
 

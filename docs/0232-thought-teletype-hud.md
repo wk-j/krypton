@@ -4,6 +4,7 @@
 > Date: 2026-08-18
 > Milestone: ACP Harness polish
 > Related: `docs/0216-workspace-thought-field.md`, `docs/0093-acp-harness-text-animation.md`, `docs/0231-lane-peek-action-hud.md`
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): thought card is a small plate; teletype body unchanged.
 
 ## Problem
 

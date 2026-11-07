@@ -79,16 +79,10 @@
   --krypton-backend-antigravity: #ff7ad9;
   --krypton-backend-fx:       #c6f05a;
 
-  /* Transcript message-body accents. Carried as a background tint (no
-   * side-stripe) so the accent is themeable and the chrome stays flat. */
-  --acp-accent-shell:      var(--agent-gold, #ffd166);
+  /* Transcript accents read from theme tokens: the theme's error ink for a
+   * failed `!shell` command, the theme magenta for annotation quotes. */
   --acp-accent-shell-fail: var(--agent-error, #ff6b8b);
-  --acp-accent-quote:      #d6b8ff;
-  --acp-accent-danger:     #ff7878;
-
-  /* Spec 325: the active lane body's surface, read by both the body and the
-   * zen rail's merged tab so the two paint one identical colour. */
-  --acp-lane-canvas: var(--agent-surface-mid, rgba(6, 10, 18, 0.48));
+  --acp-accent-quote:      rgb(var(--krypton-special-rgb, 199, 125, 255));
 }
 
 /* Dock column · `harness-dock.ts` builds `.acp-harness__dock` (spec 337): the
@@ -104,43 +98,12 @@
   margin-right: 352px;
 }
 
-/* DESIGN.console.md — the column is an instrument faceplate: brushed
+/* DESIGN.md (Krypton Console) — the column is an instrument faceplate: brushed
    graphite (aluminium in the light scheme), labels engraved into it, content
-   in recessed wells, actions on raised keys, state on lamps. The `--dock-*`
-   material tokens are declared here, once, and read by every dock sheet
-   (tab strip, Ticket, Rails, Assistants, `DockActionButton`); the light
-   scheme swaps the whole set at the bottom of this file. */
+   in recessed wells, actions on raised keys, state on lamps. It reads the
+   root `--mat-*` material set (src/styles/materials.css) like every other
+   surface; the light scheme swaps that set at the root. */
 .acp-harness__dock {
-  --dock-plate:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 160px),
-    linear-gradient(180deg, rgba(46, 49, 56, 0.9) 0%, rgba(32, 34, 40, 0.9) 50%, rgba(23, 25, 30, 0.9) 100%);
-  --dock-brush: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 2px, rgba(0, 0, 0, 0.035) 2px 3px, transparent 3px 5px);
-  --dock-bevel-hi: rgba(255, 255, 255, 0.08);
-  --dock-bevel-lo: rgba(0, 0, 0, 0.6);
-  --dock-well: linear-gradient(180deg, rgba(6, 7, 10, 0.8), rgba(13, 14, 18, 0.74));
-  --dock-well-fill: rgba(9, 10, 14, 0.78);
-  --dock-well-depth: inset 0 2px 5px rgba(0, 0, 0, 0.6);
-  --dock-well-wall: rgba(0, 0, 0, 0.6);
-  --dock-well-lip: rgba(255, 255, 255, 0.07);
-  --dock-well-shadow: var(--dock-well-depth), inset 0 0 0 1px var(--dock-well-wall), 0 1px 0 var(--dock-well-lip);
-  --dock-groove-lo: rgba(0, 0, 0, 0.5);
-  --dock-groove-hi: rgba(255, 255, 255, 0.045);
-  --dock-key: linear-gradient(180deg, rgba(76, 80, 90, 0.95) 0%, rgba(55, 58, 66, 0.95) 52%, rgba(43, 46, 53, 0.95) 100%);
-  --dock-key-hover: linear-gradient(180deg, rgba(90, 94, 105, 0.95) 0%, rgba(64, 67, 76, 0.95) 52%, rgba(50, 53, 61, 0.95) 100%);
-  --dock-key-down: linear-gradient(180deg, rgba(28, 30, 35, 0.95), rgba(42, 45, 51, 0.95));
-  --dock-key-edge: rgba(0, 0, 0, 0.72);
-  --dock-key-raise: inset 0 1px 0 rgba(255, 255, 255, 0.15), inset 0 -1px 0 rgba(0, 0, 0, 0.28), 0 1px 0 rgba(0, 0, 0, 0.5), 0 2px 5px rgba(0, 0, 0, 0.38);
-  --dock-key-sunk: inset 0 2px 4px rgba(0, 0, 0, 0.62), inset 0 0 0 1px rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.06);
-  --dock-engrave: 0 1px 0 rgba(255, 255, 255, 0.07), 0 -1px 0 rgba(0, 0, 0, 0.7);
-  --dock-print: 0 -1px 0 rgba(0, 0, 0, 0.55);
-  --dock-silk: #ffb000;
-  --dock-lit: #ffd880;
-  --dock-lit-glow: 0 0 6px rgba(255, 176, 0, 0.45), 0 0 14px rgba(255, 176, 0, 0.15);
-  --dock-lens-off: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.2) 0 14%, rgba(62, 48, 20, 0.95) 46%, rgba(22, 17, 8, 0.98) 100%);
-  --dock-lens-on: radial-gradient(circle at 35% 30%, #fff4cc 0 14%, #ffb000 48%, #a86400 100%);
-  --dock-lens-glow: 0 0 4px rgba(255, 176, 0, 0.85), 0 0 10px rgba(255, 176, 0, 0.35);
-  --dock-select: rgba(255, 176, 0, 0.16);
-
   position: absolute;
   inset: 0 0 0 auto;
   z-index: 5;
@@ -152,11 +115,11 @@
   contain: layout paint;
   /* A 0.9 plate, not a solid slab: the backdrop still reads at the edges of
      the material, as DESIGN.md's transparency hierarchy asks. */
-  background: var(--dock-brush), var(--dock-plate);
+  background: var(--mat-brush), var(--mat-plate);
   box-shadow:
-    inset 1px 0 0 var(--dock-bevel-hi),
-    inset 0 1px 0 var(--dock-bevel-hi),
-    -1px 0 0 var(--dock-bevel-lo),
+    inset 1px 0 0 var(--mat-bevel-hi),
+    inset 0 1px 0 var(--mat-bevel-hi),
+    -1px 0 0 var(--mat-bevel-lo),
     -10px 0 24px rgba(0, 0, 0, 0.3);
 }
 
@@ -174,8 +137,8 @@
   margin: 10px 8px 4px;
   padding: 3px;
   border-radius: var(--krypton-border-radius, 8px);
-  background: var(--dock-well);
-  box-shadow: var(--dock-well-shadow);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .acp-dock__tabs[hidden] {
@@ -191,17 +154,17 @@
   min-width: 0;
   min-height: 26px;
   padding: 3px 8px;
-  border: 1px solid var(--dock-key-edge);
+  border: 1px solid var(--mat-key-edge);
   /* DESIGN.md's 6px tab pill: concentric with the 8px channel around it. */
   border-radius: 6px;
-  background: var(--dock-key);
-  box-shadow: var(--dock-key-raise);
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font: inherit;
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.09em;
   line-height: 1;
-  text-shadow: var(--dock-print);
+  text-shadow: var(--mat-print);
   white-space: nowrap;
   cursor: default;
 }
@@ -213,31 +176,31 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--dock-lens-off);
+  background: var(--mat-lens-off);
   box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .acp-dock__tab:hover {
-  background: var(--dock-key-hover);
-  color: var(--dock-lit);
+  background: var(--mat-key-hover);
+  color: var(--mat-lit);
 }
 
 .acp-dock__tab:active,
 .acp-dock__tab--active,
 .acp-dock__tab--active:hover {
-  background: var(--dock-key-down);
-  box-shadow: var(--dock-key-sunk);
-  color: var(--dock-lit);
-  text-shadow: var(--dock-lit-glow);
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
 .acp-dock__tab--active::before {
-  background: var(--dock-lens-on);
-  box-shadow: var(--dock-lens-glow);
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
 }
 
 .acp-dock__tab:focus-visible {
-  outline: 1px solid var(--dock-lit);
+  outline: 1px solid var(--mat-lit);
   outline-offset: 2px;
 }
 
@@ -246,8 +209,8 @@
   min-width: 2ch;
   padding: 2px 5px;
   border-radius: var(--krypton-border-radius, 8px);
-  background: var(--dock-well);
-  box-shadow: var(--dock-well-shadow);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   color: inherit;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
@@ -302,12 +265,12 @@
   display: flex;
   justify-content: space-between;
   margin: 0 4px 6px;
-  color: var(--dock-silk);
+  color: var(--mat-silk);
   font: inherit;
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   letter-spacing: 0.13em;
-  text-shadow: var(--dock-engrave);
+  text-shadow: var(--mat-engrave);
   text-transform: uppercase;
 }
 
@@ -320,8 +283,8 @@
   margin: 0;
   padding: 7px 10px;
   border-radius: var(--krypton-border-radius, 8px);
-  background: var(--dock-well);
-  box-shadow: var(--dock-well-shadow);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   overflow-wrap: anywhere;
 }
 
@@ -337,8 +300,8 @@
 }
 
 .acp-harness__ticket-dock li + li {
-  border-top: 1px solid var(--dock-groove-lo);
-  box-shadow: inset 0 1px 0 var(--dock-groove-hi);
+  border-top: 1px solid var(--mat-groove-lo);
+  box-shadow: inset 0 1px 0 var(--mat-groove-hi);
 }
 
 .acp-harness__ticket-dock li span {
@@ -367,11 +330,11 @@
      uses: transcript text must not show through the material. */
   .acp-harness--dock-active .acp-harness__dock {
     width: min(352px, 100%);
-    background: var(--dock-brush), var(--dock-plate), var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
+    background: var(--mat-brush), var(--mat-plate), var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
     box-shadow:
-      inset 1px 0 0 var(--dock-bevel-hi),
-      inset 0 1px 0 var(--dock-bevel-hi),
-      -1px 0 0 var(--dock-bevel-lo),
+      inset 1px 0 0 var(--mat-bevel-hi),
+      inset 0 1px 0 var(--mat-bevel-hi),
+      -1px 0 0 var(--mat-bevel-lo),
       -12px 0 28px rgba(0, 0, 0, 0.45);
   }
 }
@@ -384,16 +347,14 @@
   min-height: 0;
 }
 
+/* Spec 366: the dashboard is a layout box; the window's screen shows through
+   it. No texture (the old dot grid went with the neon look). */
 .acp-harness__dashboard {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  /* Top wash dropped — flat dashboard. Dot-grid texture follows the theme accent. */
-  background:
-    radial-gradient(circle at 12px 12px, rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.018) 1px, transparent 1px);
-  background-size: 10px 10px;
 }
 
 /* Lane box · `components/lane-shell/index.ts:96-97` writes
@@ -406,24 +367,20 @@
   position: relative;
 }
 
-/* spec 215: a collapsed lane is an identity band, not a log line — the lane's
-   own accent carries a 6% full-width tint, so the roster of switchable lanes
-   stays legible without reading the names. No separator line: adjacent bands
-   part ways by their own tints. */
+/* spec 215 / spec 366: a collapsed lane is a 28px band — its head is the plate
+   strip `lane-head.css` draws, with the lane's LED and engraved name. */
 .acp-harness__lane--collapsed {
   flex: 0 0 28px;
-  background: color-mix(in srgb, var(--acp-lane-accent, #0cf) 6%, var(--agent-surface-mid, rgba(6, 10, 18, 0.55)));
 }
 
-/* spec 215: the active lane announces itself at its head band (below), not
-   with a body wash — the old 3.5% fading gradient sat under the perceptual
-   threshold on the transparent backdrop. */
+/* Spec 366 (DESIGN.md "Harness"): the active lane's body is a SCREEN. The
+   window's screen fill shows through — the lane adds no second fill; the well
+   depth is drawn inside `.acp-harness__lane-body` below its plate head. */
 .acp-harness__lane--active {
   flex: 1 1 0;
   min-height: 120px;
   display: flex;
   flex-direction: column;
-  background: var(--acp-lane-canvas);
 }
 
 /* Icon glyphs · `harness-icons.ts:135` `harnessIcon(id, cls)`; the only
@@ -445,46 +402,20 @@
   height: 0.78em;
 }
 
-/* Reachable only through `acp-harness__lane--${lane.status}`
-   (`components/lane-shell/index.ts:97`). The `--error` and `--awaiting_peer`
-   twins of the first rule moved with the head they tint
-   (`components/lane-head/lane-head.css:29,35`); `--busy` and
-   `--needs_permission` have no counterpart there, so they stay. */
-.acp-harness__lane--busy .acp-harness__lane-head {
-  color: var(--krypton-window-accent, #0cf);
-  text-decoration: none;
-  text-shadow: 0 0 8px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.24);
-}
-
-.acp-harness__lane--needs_permission .acp-harness__lane-head {
-  color: var(--agent-gold, #ffd166);
-  text-decoration: none;
-  text-shadow: 0 0 8px rgba(255, 209, 102, 0.34);
-}
-
-.acp-harness__lane--needs_permission.acp-harness__lane--collapsed {
-  background: rgba(255, 209, 102, 0.1);
-  box-shadow:
-    inset 0 0 10px rgba(255, 209, 102, 0.08),
-    0 0 8px rgba(255, 209, 102, 0.12);
-}
+/* `acp-harness__lane--${lane.status}` (`components/lane-shell/index.ts:97`)
+   is composed at runtime. Status is drawn by the head's LED and status lamp
+   (`lane-symbol.css`, `lane-head.css`); the shell adds nothing per status. */
 
 /* Transcript rows · every `acp-harness__msg--*` below is composed by
    `components/transcript-row/shared.ts:79-80`
    (`acp-harness__msg--${item.kind}` and `--${item.status}`), so the kind and
    status sets are open and cannot be grepped. `__msg-label--steer`,
    `--steer-pending` and `--voice` come from `components/user-row/index.ts:63-66`. */
-/* Spec 120 — lane mail rows use the assistant markdown body; color tokens on label + meta only. */
-.acp-harness__msg--mail-in .acp-harness__msg-label {
-  color: rgba(184, 166, 255, 0.88);
-}
-
-.acp-harness__msg--mail-out .acp-harness__msg-label {
-  color: rgba(120, 200, 255, 0.88);
-}
-
+/* Spec 120 — lane mail rows use the assistant markdown body. Their labels are
+   the silk engraving every row label shares; a drained mail reads at the
+   secondary ink tier instead of being dimmed with opacity. */
 .acp-harness__msg--mail-done .acp-harness__msg-body {
-  opacity: 0.82;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
 /* Transcript scroll container · `components/lane-shell/index.ts`. Pinned by
@@ -506,6 +437,10 @@
      so `paint` containment is safe; combined with `layout` it lets the
      browser skip ancestor reflow when a long message reflows internally. */
   contain: layout paint;
+  /* Spec 366: the screen's recess under the head plate — the well's inset
+     depth, drawn inside the existing box. One shadow on the scroller, none on
+     its rows. */
+  box-shadow: var(--mat-well-depth);
 }
 
 /* Rail slot containers · `acp-harness-view.ts:6209` (`__lane-rail`), `:1097`
@@ -574,9 +509,9 @@
 }
 
 /* Row skeleton · `components/transcript-row/shared.ts:79-80`. The kind (user,
-   assistant, …) is carried by label and body colour, never a left rail
-   (ADR-0027); the 6px inset is the old 4px padding plus the 2px rail it
-   replaced, so row text does not move. */
+   assistant, …) is named by the engraved label and carried by body colour,
+   never a left rail (ADR-0027); the 6px inset is the old 4px padding plus the
+   2px rail it replaced, so row text does not move. */
 .acp-harness__msg {
   display: grid;
   grid-template-columns: 7.5ch minmax(0, 1fr);
@@ -585,10 +520,15 @@
   padding: 1px 0 1px 6px;
 }
 
+/* DESIGN.md "Engraving": the row label is silk in the label typography. A
+   transcript row is a repeated row (spec 366 performance budget), so the
+   engraving's text-shadow is left off here — the label is cut into the screen
+   by colour and tracking alone. */
 .acp-harness__msg-label {
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36));
-  letter-spacing: 0.08em;
+  color: var(--mat-silk);
   font-size: 0.64em;
+  font-weight: 600;
+  letter-spacing: 0.13em;
   line-height: 1.45;
   text-transform: uppercase;
   text-align: right;
@@ -623,9 +563,8 @@
   margin: 0;
   max-width: min(100%, 480px);
   padding: 3px;
-  border: 1px solid rgba(109, 208, 255, 0.26);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(109, 208, 255, 0.045);
   cursor: zoom-in;
 }
 
@@ -639,7 +578,7 @@
 .acp-harness__image-thumb figcaption {
   margin-top: 2px;
   overflow: hidden;
-  color: rgba(109, 208, 255, 0.72);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-size: 0.76em;
   letter-spacing: 0.03em;
   text-overflow: ellipsis;
@@ -647,21 +586,24 @@
 }
 
 .acp-harness__image-thumb--hinted {
-  border-color: var(--agent-user, #6dd0ff);
-  background: rgba(109, 208, 255, 0.16);
+  border-color: var(--mat-lit);
 }
 
+/* A hint label is a key cap (DESIGN.md "Overlays and dialogs"). */
 .acp-harness__image-hint {
   position: absolute;
   top: 6px;
   left: 6px;
   min-width: 1.5em;
-  padding: 1px 4px;
-  text-align: center;
-  font-weight: 800;
-  color: #071013;
-  background: var(--agent-user, #6dd0ff);
+  padding: 0 4px;
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--mat-lit);
+  font-weight: 700;
+  text-align: center;
+  text-shadow: var(--mat-print);
 }
 
 .acp-harness__image-tile {
@@ -671,9 +613,9 @@
   gap: 6px;
   width: fit-content;
   padding: 2px 6px;
-  border: 1px dashed rgba(109, 208, 255, 0.36);
+  border: 1px dashed rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.26);
   border-radius: var(--krypton-border-radius, 8px);
-  color: rgba(109, 208, 255, 0.72);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-size: 0.8em;
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -686,7 +628,7 @@
 .acp-harness__image-tile--missing,
 .acp-harness__image-tile--rejected {
   color: var(--agent-error, #ff6d8a);
-  border-color: rgba(255, 109, 138, 0.5);
+  border-color: color-mix(in srgb, var(--agent-error, #ff6d8a) 50%, transparent);
 }
 
 .acp-harness__image-tile--released[data-image-id] {
@@ -706,32 +648,28 @@
   font-size: 0.88em;
 }
 
-.acp-harness__msg--shell .acp-harness__msg-label {
-  color: var(--agent-gold, #ffd166);
-}
-
+/* `!shell` rows are repeated rows: flat output on the screen under the silk
+   label, no fill (spec 366 performance budget). Failure is the theme's error
+   ink; a pending command reads at the secondary ink tier, not via opacity. */
 .acp-harness__msg--shell .acp-harness__msg-body {
   white-space: pre-wrap;
   color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
-  background: color-mix(in srgb, var(--acp-accent-shell) 7%, transparent);
-  padding: 4px 8px;
-  border-radius: var(--krypton-border-radius, 8px);
 }
 
 .acp-harness__msg--shell.acp-harness__msg--failed .acp-harness__msg-body {
-  background: color-mix(in srgb, var(--acp-accent-shell-fail) 9%, transparent);
-  color: rgba(255, 200, 210, 0.92);
+  color: var(--acp-accent-shell-fail);
 }
 
 .acp-harness__msg--shell.acp-harness__msg--pending .acp-harness__msg-body {
-  opacity: 0.75;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
 /* Markdown output · the nodes `md.parse`/`smd` emit into a body carrying
    `acp-harness__msg-body--markdown` (`harness-markdown.ts:176`,
    `lane-peek.ts:1136-1168`) and `--stream-live`/`--stream-plain`
    (`harness-markdown.ts:165`). The parser names these elements, not us, so
-   no component owns them. */
+   no component owns them. Spec 366: this is CONTENT — flat text on the
+   screen in theme inks. Code sits on a flat well fill; nothing glows. */
 .acp-harness__msg-body--markdown {
   white-space: normal;
   color: var(--agent-text, #eaf3ea);
@@ -772,7 +710,7 @@
 .acp-harness__msg-body--markdown h1 {
   font-size: 1.35em;
   color: var(--agent-cyan, #b9f5ff);
-  border-bottom: 1px solid rgba(109, 208, 255, 0.35);
+  border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
   padding-bottom: 0.15em;
 }
 
@@ -835,19 +773,20 @@
 }
 
 .acp-harness__msg-body--markdown strong {
-  color: #fff7c2;
+  color: var(--agent-bright, var(--krypton-fg, #d8e8d8));
   font-weight: 700;
 }
 
 .acp-harness__msg-body--markdown em {
-  color: #d6b8ff;
   font-style: italic;
 }
 
+/* DESIGN.md "Links and inline code": a small well-fill chip, 1px groove. */
 .acp-harness__msg-body--markdown code {
   color: var(--agent-accent, #8effb0);
-  background: rgba(142, 255, 176, 0.1);
-  padding: 0.05em 0.4ch;
+  background: var(--mat-well-fill);
+  border: 1px solid var(--mat-groove-lo);
+  padding: 0 0.4ch;
   border-radius: var(--krypton-border-radius, 8px);
   font-family: var(--agent-font, monospace);
 }
@@ -857,12 +796,13 @@
   padding: 4px 8px;
   line-height: 1.28;
   overflow-x: auto;
-  background: rgba(0, 0, 0, 0.46);
+  background: var(--mat-well-fill);
   border-radius: var(--krypton-border-radius, 8px);
 }
 
 .acp-harness__msg-body--markdown pre code {
-  background: transparent;
+  background: none;
+  border: 0;
   padding: 0;
   color: inherit;
 }
@@ -870,8 +810,8 @@
 .acp-harness__msg-body--markdown a {
   color: var(--agent-user, #6dd0ff);
   text-decoration: underline;
-  text-decoration-color: rgba(109, 208, 255, 0.55);
-  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
+  text-underline-offset: 2px;
 }
 
 .acp-harness__msg-body--markdown a:hover {
@@ -884,7 +824,7 @@
   padding: 4px 8px;
   background: color-mix(in srgb, var(--acp-accent-quote) 9%, transparent);
   border-radius: var(--krypton-border-radius, 8px);
-  color: #e6dcff;
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
   font-style: italic;
 }
 
@@ -896,16 +836,18 @@
   margin-bottom: 0;
 }
 
+/* An etched line: the groove's dark cut over its light edge. */
 .acp-harness__msg-body--markdown hr {
   border: 0;
-  border-top: 1px dashed rgba(109, 208, 255, 0.4);
+  border-top: 1px solid var(--mat-groove-lo);
+  border-bottom: 1px solid var(--mat-groove-hi);
   margin: 0.8em 0;
 }
 
 .acp-harness__msg-body--markdown table {
   border-collapse: separate;
   border-spacing: 0;
-  border: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.25);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
   border-radius: var(--krypton-border-radius, 8px);
   margin: 0.5em 0;
   font-size: 0.95em;
@@ -915,8 +857,8 @@
 .acp-harness__msg-body--markdown td {
   padding: 4px 8px;
   border: 0;
-  border-right: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.25);
-  border-bottom: 1px solid rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.25);
+  border-right: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+  border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
   text-align: left;
 }
 
@@ -946,8 +888,8 @@
 }
 
 .acp-harness__msg-body--markdown th {
-  background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.12);
-  color: var(--agent-user, #6dd0ff);
+  background: var(--mat-well-fill);
+  color: var(--krypton-fg, #d8e8d8);
   font-weight: 700;
   letter-spacing: 0.04em;
 }
@@ -960,7 +902,7 @@
   max-width: 100%;
   height: auto;
   margin: 0.5em 0;
-  border: 1px solid rgba(109, 208, 255, 0.25);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
   border-radius: var(--krypton-border-radius, 8px);
 }
 
@@ -970,14 +912,16 @@
 /* spec 283: ```svg fence card — preview <img> with a Source/Copy toolbar.
    The card shrinks to the figure's own size (capped at Full HD in JS) and
    never exceeds the lane; Source/broken modes take the full lane width so
-   long source lines keep the room. */
+   long source lines keep the room. Spec 366: the figure sits on a flat well
+   fill; its toolbar is a small plate strip with an engraved kind and keys.
+   One card per fence, not a repeated row, so the toolbar may carry parts. */
 .acp-harness__svg-card {
   width: fit-content;
   max-width: 100%;
   margin: 0.5em 0;
-  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(0, 0, 0, 0.22);
+  background: var(--mat-well-fill);
   overflow: hidden;
 }
 
@@ -987,41 +931,54 @@
 }
 
 .acp-harness__svg-card--hinted {
-  border-color: rgba(109, 208, 255, 0.55);
+  border-color: var(--mat-lit);
 }
 
 .acp-harness__svg-card-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 8px;
+  padding: 3px 6px 3px 10px;
+  background: var(--mat-brush), var(--mat-plate);
+  border-bottom: 1px solid var(--mat-key-edge);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   font-family: var(--agent-font, monospace);
   font-size: 0.78em;
-  border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
 }
 
 .acp-harness__svg-card-kind {
-  letter-spacing: 0.08em;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
+  color: var(--mat-silk);
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-shadow: var(--mat-engrave);
+  text-transform: uppercase;
 }
 
+/* A hint label is a key cap. */
 .acp-harness__svg-card-hint {
   min-width: 1.5em;
   padding: 0 4px;
-  text-align: center;
-  font-weight: 800;
-  color: #071013;
-  background: var(--agent-user, #6dd0ff);
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--mat-lit);
+  font-weight: 700;
+  text-align: center;
+  text-shadow: var(--mat-print);
 }
 
 .acp-harness__svg-card-btn {
-  padding: 1px 6px;
-  font: inherit;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
-  background: transparent;
-  border: 1px solid transparent;
+  min-height: 22px;
+  padding: 1px 8px;
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
+  font: inherit;
+  letter-spacing: 0.09em;
+  text-shadow: var(--mat-print);
   cursor: pointer;
 }
 
@@ -1030,8 +987,19 @@
 }
 
 .acp-harness__svg-card-btn:hover {
-  color: var(--krypton-fg, #d8e8d8);
-  border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.2);
+  background: var(--mat-key-hover);
+  color: var(--mat-lit);
+}
+
+.acp-harness__svg-card-btn:active {
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
+  transform: translateY(1px);
+}
+
+.acp-harness__svg-card-btn:focus-visible {
+  outline: 1px solid var(--mat-lit);
+  outline-offset: 2px;
 }
 
 .acp-harness__svg-card-preview {
@@ -1076,16 +1044,17 @@
 /* spec 283: while an assistant row streams, a ```svg fence collapses to a
    one-line placeholder until its first live frame decodes (rev 2), then the
    live card drawn before it takes over. smd keeps writing into the hidden
-   <code>; display:none keeps that growth out of layout. Opacity-only pulse
-   (compositor-friendly). spec 294: a ```mermaid fence does the same; its live
-   card appears once the fence closes. */
+   <code>; display:none keeps that growth out of layout. spec 294: a
+   ```mermaid fence does the same; its live card appears once the fence
+   closes. Spec 366: "drawing…" is a steady backlit legend, not a pulse; both
+   selectors need the live stream class, which seal removes. */
 .acp-harness__msg-body--stream-live pre:has(> code.svg),
 .acp-harness__msg-body--stream-live pre:has(> code.mermaid) {
   max-width: 100%;
   margin: 0.5em 0;
   padding: 6px 10px;
-  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
-  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--mat-key-edge);
+  background: var(--mat-well-fill);
 }
 
 .acp-harness__msg-body--stream-live pre:has(> code.svg) > code,
@@ -1098,8 +1067,7 @@
   content: 'svg · drawing…';
   display: block;
   letter-spacing: 0.08em;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
-  animation: acp-harness-streaming-pulse 1.4s ease-in-out infinite;
+  color: var(--mat-lit);
 }
 
 .acp-harness__msg-body--stream-live pre:has(> code.mermaid)::before {
@@ -1110,20 +1078,13 @@
 .acp-harness__svg-card--live .acp-harness__svg-card-kind {
   padding: 1px 0;
   border: 1px solid transparent;
-  animation: acp-harness-streaming-pulse 1.4s ease-in-out infinite;
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
 .acp-harness__msg-body--stream-live .acp-harness__svg-card--live + pre:has(> code.svg),
 .acp-harness__msg-body--stream-live .acp-harness__svg-card--live + pre:has(> code.mermaid) {
   display: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .acp-harness__msg-body--stream-live pre:has(> code.svg)::before,
-  .acp-harness__msg-body--stream-live pre:has(> code.mermaid)::before,
-  .acp-harness__svg-card--live .acp-harness__svg-card-kind {
-    animation: none;
-  }
 }
 
 /* Shown in place of an <img> whose asset URL failed to load. */
@@ -1134,36 +1095,30 @@
   font-size: 0.85em;
   letter-spacing: 0.04em;
   color: var(--agent-error, #ff6d8a);
-  border: 1px dashed rgba(255, 109, 138, 0.5);
+  border: 1px dashed color-mix(in srgb, var(--agent-error, #ff6d8a) 50%, transparent);
   border-radius: var(--krypton-border-radius, 8px);
 }
 
-.acp-harness__msg--user .acp-harness__msg-label,
+/* The user's own words keep the theme's user ink in the body; every label is
+   the shared silk engraving (`.acp-harness__msg-label`). */
 .acp-harness__msg--user .acp-harness__msg-body {
   color: var(--agent-user, #6dd0ff);
 }
 
 /* spec 278 — a user message steered into the running turn. Text only: no
-   border, no rail. Dimmed until the adapter takes it. */
+   border, no rail. Read at the secondary ink tier until the adapter takes it
+   (never dimmed with opacity). */
 .acp-harness__msg--user .acp-harness__msg-label--steer {
-  color: var(--agent-user, #6dd0ff);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
 }
 
 .acp-harness__msg--user .acp-harness__msg-label--steer-pending {
-  opacity: 0.55;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
-.acp-harness__msg--assistant .acp-harness__msg-label {
-  color: var(--acp-lane-accent, var(--agent-accent, #8effb0));
-}
-
-.acp-harness__msg--user {
-  background: transparent;
-}
-
+/* A provider fault is a warning lamp's ink (ADR-0017: colour for a fault). */
 .acp-harness__msg--provider_error .acp-harness__msg-label {
-  color: rgba(255, 209, 102, 0.78);
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
 }
 
 .acp-harness__msg--thought .acp-harness__msg-body {
@@ -1186,17 +1141,14 @@
   gap: 3px;
 }
 
+/* Tool and plan bodies are evidence, not state (ADR-0017): theme ink. A
+   finished tool needs no colour of its own either; a failed one takes the
+   fault ink, and a permission body the warning lamp's ink — it waits on the
+   human. */
 .acp-harness__msg--tool .acp-harness__msg-body,
-.acp-harness__msg--plan .acp-harness__msg-body {
-  color: rgba(255, 209, 102, 0.86);
-}
-
-.acp-harness__msg--tool {
-  background: transparent;
-}
-
+.acp-harness__msg--plan .acp-harness__msg-body,
 .acp-harness__msg--completed .acp-harness__msg-body {
-  color: rgba(142, 255, 176, 0.82);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
 }
 
 .acp-harness__msg--failed .acp-harness__msg-body {
@@ -1204,27 +1156,34 @@
 }
 
 .acp-harness__msg--permission .acp-harness__msg-body {
-  color: var(--agent-gold, #ffd166);
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
 }
 
 .acp-harness__msg--memory .acp-harness__msg-body {
   color: var(--agent-accent, #8effb0);
 }
 
-/* Empty transcript · `components/transcript/index.ts:138`. */
+/* Empty transcript · `components/transcript/index.ts:138`. DESIGN.md
+   "States": the empty headline in label typography, centred on the screen. */
 .acp-harness__transcript-empty {
   margin: auto;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.38));
-  letter-spacing: 0.04em;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
 }
 
 /* Dashboard empty state · `acp-harness-view.ts:12181`. */
 .acp-harness__empty {
   padding: 16px;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  letter-spacing: 0.04em;
 }
 
-/* Command-centre strip · `acp-harness-view.ts:6248`. */
+/* Command-centre strip · `acp-harness-view.ts:6248`. Spec 366: a plate strip
+   meeting the screen above it — brushed plate, the dark seam on its top edge
+   and the lit bevel just under it. The composer inside draws no second fill. */
 .acp-harness__command-center {
   position: relative;
   flex: 0 0 auto;
@@ -1233,23 +1192,21 @@
   min-height: 0;
   max-height: 50%;
   overflow: hidden;
-  background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
+  background: var(--mat-brush), var(--mat-plate);
+  border-top: 1px solid var(--mat-key-edge);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
 }
 /* Spec 365: the window fire burns along the bottom of the window content,
    right under this strip. While it is lit (`data-fire-lit`, set by
-   `FireAnimation`), the strip takes the lane body's surface instead of the
-   solid one, so the flames show through as they do behind terminal text. */
+   `FireAnimation`), the strip drops its plate fill so the flames show through
+   as they do behind terminal text; the seam and bevel stay. */
 .krypton-window[data-fire-lit] .acp-harness__command-center {
-  background: var(--acp-lane-canvas);
+  background: none;
 }
 /* Drop target · `acp-harness-view.ts:6290-6297`. */
 .acp-harness--drag-over {
-  outline: 1px dashed var(--acp-lane-accent, rgba(142, 255, 176, 0.6));
+  outline: 1px dashed var(--mat-lit);
   outline-offset: -4px;
-}
-
-.acp-harness__msg--user .acp-harness__msg-label--voice {
-  color: var(--agent-user, #6dd0ff);
 }
 
 /* Composer bloom particles · `harness-composer-bloom.ts:14-15`
@@ -1275,10 +1232,10 @@
   font: inherit;
   line-height: inherit;
   letter-spacing: inherit;
-  color: rgba(110, 231, 231, 0.92);
-  text-shadow:
-    0 0 8px rgba(110, 231, 231, 0.4),
-    0 0 14px rgba(110, 231, 231, 0.15);
+  /* Spec 366: the one-shot afterimage is a backlit legend flash — lit amber
+     with the legend glow, gone within the bloom duration. */
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
   will-change: opacity, transform;
   animation: acp-harness-composer-bloom var(--acp-composer-bloom-duration, 320ms) cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
@@ -1338,42 +1295,14 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
   }
 }
 
+/* The live row's label is a steady backlit legend (spec 366: live state is a
+   lit lamp, not a pulse). `LiveComponent.seal()` re-derives the row's classes
+   and drops `--streaming`, so a sealed row returns to the engraved silk label
+   and never repaints (CLAUDE.md constraint 10). One row per lane streams at a
+   time, so this is the only label in a transcript that carries a glow. */
 .acp-harness__msg--streaming .acp-harness__msg-label {
-  animation: acp-harness-streaming-pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes acp-harness-streaming-pulse {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
-}
-
-@keyframes acp-harness-busy-pulse {
-  0%, 100% {
-    opacity: 0.62;
-    text-shadow: 0 0 6px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
-  }
-  50% {
-    opacity: 1;
-    text-shadow: 0 0 12px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.55), 0 0 20px rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.18);
-  }
-}
-
-.acp-harness__lane--needs_permission .acp-harness__lane-symbol,
-.acp-harness__lane--needs_permission.acp-harness__lane--collapsed {
-  animation: acp-harness-permission-pulse 1.1s ease-in-out infinite;
-}
-
-@keyframes acp-harness-permission-pulse {
-  0%, 100% { opacity: 0.72; }
-  50% { opacity: 1; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .acp-harness__lane--needs_permission .acp-harness__lane-symbol,
-  .acp-harness__lane--needs_permission.acp-harness__lane--collapsed {
-    animation: none;
-    opacity: 1;
-  }
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1411,72 +1340,23 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
    ZEN MODE — toggleable focused layout (spec 80)
    ═══════════════════════════════════════════════════════════════ */
 
-/* `R` is the zen corner radius: the rail tab's corners and fillets
-   (`rail-entry.css`) and the body corners below share it. `position` makes
-   the grid the containing block of the bottom fillet (spec 325 rev 2). */
+/* Spec 366: the rail is its own plate column (`lane-rail.css`) of selector
+   keys (`rail-entry.css`); the body beside it is the lane's screen. The two
+   meet at the rail's seam — no merged tab, no fillets. */
 .acp-harness--zen .acp-harness__dashboard {
-  --acp-rail-tab-r: min(var(--krypton-border-radius, 8px), 12px);
-  position: relative;
   display: grid;
   grid-template-columns: clamp(180px, 14vw, 240px) 1fr;
   gap: 0;
 }
 
-/* Spec 325: the rail does not paint its own surface while it has an active
-   entry. That entry's tab layer paints the rail colour everywhere around
-   itself (a cut-out box-shadow), so the tab and the body beside it are the
-   same single translucent layer with no rail tint underneath. `isolation`
-   makes the rail the stacking context that layer's `z-index: -1` sits in,
-   below every entry's tint and text.
-
-   Rev 2: no top padding, so a first-row tab meets the titlebar flush instead
-   of hanging below an 8px rail strip with a notch where it joins the body.
-   The bottom 8px still holds a last-row tab's lower fillet. The rounded
-   bottom-right corner also clips the tab layer's shadow, so the rail colour
-   ends in an R curve where the body meets the composer. */
+/* Layout of the rail column; its plate and keys live with their components. */
 .acp-harness__rail {
-  --acp-rail-surface: var(--agent-ghost, rgba(2, 5, 10, 0.18));
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 0 0 8px;
-  border-right: none;
-  border-bottom-right-radius: var(--acp-rail-tab-r, 8px);
-  isolation: isolate;
+  gap: 4px;
+  padding: 8px;
   overflow-y: auto;
   min-height: 0;
-}
-
-/* No active entry (no lanes yet): nothing paints the tab layer's shadow. */
-.acp-harness__rail:not(:has(> .acp-harness__rail-entry--active)) {
-  background: var(--acp-rail-surface);
-}
-
-/* Spec 325 rev 2: the body, the tab and the composer read as one sheet, so
-   every sheet corner that faces the rail is round. Where the rail's rounded
-   corner meets the body and the composer, this paints the body colour in the
-   sliver outside the curve, the same shape as the tab's fillets. It sits in
-   the rail's grid cell (all four lines: an absolutely positioned grid item
-   reads an `auto` line as the grid's padding edge) and paints above the rail;
-   the rail is clipped there, so a tab scrolled into that corner still shows
-   one body layer. */
-.acp-harness--zen:not(.acp-harness--left-panel-hidden) .acp-harness__dashboard:has(> .acp-harness__rail > .acp-harness__rail-entry--active)::after {
-  content: '';
-  position: absolute;
-  grid-area: 1 / 1 / 2 / 2;
-  right: 0;
-  bottom: 0;
-  width: var(--acp-rail-tab-r, 8px);
-  height: var(--acp-rail-tab-r, 8px);
-  pointer-events: none;
-  background: radial-gradient(circle at 0 0, transparent calc(var(--acp-rail-tab-r, 8px) - 0.5px), var(--acp-lane-canvas) var(--acp-rail-tab-r, 8px));
-}
-
-/* When the tab is not the first row, the body's own top-left corner faces the
-   titlebar and the rail: round it like the tab's rail-side corners. A
-   first-row tab joins the body at that corner, so it stays square there. */
-.acp-harness--zen:not(.acp-harness--left-panel-hidden) .acp-harness__dashboard:not(:has(> .acp-harness__rail > .acp-harness__rail-entry--active:first-child)) > .acp-harness__body-cell > .acp-harness__lane--active {
-  border-top-left-radius: var(--acp-rail-tab-r, 8px);
 }
 
 .acp-harness__body-cell {
@@ -1510,7 +1390,7 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
    `acp-harness-view.ts:6252-6264` and `:14085`. */
 /* spec 240 — transcript annotations */
 .acp-harness__anno-mark {
-  background: color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 32%, transparent);
+  background: color-mix(in srgb, var(--acp-accent-quote) 32%, transparent);
   color: inherit;
   border-radius: 2px;
   padding: 0 0.08em;
@@ -1521,32 +1401,38 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
 }
 
 .acp-harness__anno-mark--drained {
-  background: color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 14%, transparent);
+  background: color-mix(in srgb, var(--acp-accent-quote) 14%, transparent);
 }
 
+/* Spec 366: the annotation editor is a floating plate set over the command
+   centre — engraved head, the quote in secondary ink, the note in an input
+   well, the key hints as printed legend. */
 .acp-harness__anno-overlay {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 12px 10px;
-  border-top: 1px solid color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 45%, transparent);
-  background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96));
+  gap: 6px;
+  margin: 8px 8px 0;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
 }
 
 /* The annotation editor belongs to the active conversation, not the global
    command-center chrome. Keep its horizontal bounds aligned with the
    dashboard's conversation column in layouts that reserve side rails. */
 .acp-harness--zen .acp-harness__anno-overlay {
-  margin-left: clamp(180px, 14vw, 240px);
+  margin-left: calc(clamp(180px, 14vw, 240px) + 8px);
 }
 
 .acp-harness--dock-active .acp-harness__anno-overlay {
-  margin-right: 352px;
+  margin-right: calc(352px + 8px);
 }
 
 @container (max-width: 959px) {
   .acp-harness--dock-active .acp-harness__anno-overlay {
-    margin-right: 0;
+    margin-right: 8px;
   }
 }
 
@@ -1555,15 +1441,17 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
 }
 
 .acp-harness__anno-overlay-label {
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  color: var(--mat-silk);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-shadow: var(--mat-engrave);
   text-transform: uppercase;
-  color: var(--acp-accent-quote, #d6b8ff);
 }
 
 .acp-harness__anno-overlay-quote {
   font-size: 1em;
-  color: rgba(216, 232, 216, 0.62);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   max-height: 3.2em;
   overflow: hidden;
 }
@@ -1575,34 +1463,38 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
   min-height: 52px;
   font: inherit;
   font-size: 1em;
-  color: var(--agent-text, #eaf3ea);
-  background: rgba(216, 232, 216, 0.04);
-  border: 1px solid color-mix(in srgb, var(--acp-accent-quote, #d6b8ff) 35%, transparent);
+  color: var(--agent-text, var(--krypton-fg, #d8e8d8));
+  caret-color: var(--krypton-cursor, var(--krypton-accent, #0cf));
+  background: var(--mat-well);
+  border: 0;
   border-radius: var(--krypton-border-radius, 8px);
+  box-shadow: var(--mat-well-shadow);
   padding: 6px 8px;
   outline: none;
 }
 
-.acp-harness__anno-overlay-input:focus {
-  border-color: var(--acp-accent-quote, #d6b8ff);
+.acp-harness__anno-overlay-input:focus-visible {
+  outline: 1px solid var(--mat-lit);
+  outline-offset: 2px;
 }
 
 .acp-harness__anno-overlay-hint {
   font-size: 10px;
-  letter-spacing: 0.06em;
-  color: rgba(216, 232, 216, 0.42);
+  letter-spacing: 0.09em;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  text-shadow: var(--mat-print);
 }
 }
 
 /* ═══════════════════════════════════════════════════════════════
    LIGHT SCHEME — the shell's half
    Spec 301 phase 6: `theme-scheme.css`'s harness selectors moved into the
-   owning component's `krypton.scheme` block. These two have no component
-   owner — the harness root carries the backend/role palette every component
-   reads, and the dashboard is a layout box — so they stay here, in the same
-   layer the component sheets use.
+   owning component's `krypton.scheme` block. The root keeps the backend/role
+   palette every component reads, so its light inks stay here, in the same
+   layer the component sheets use. Materials swap at the root on their own
+   (materials.css); nothing here re-tints a part.
 
-   Root tokens · `acp-harness-view.ts:1482`.  Dashboard · `:6045`.
+   Root tokens · `acp-harness-view.ts:1482`.
    ═══════════════════════════════════════════════════════════════ */
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness {
@@ -1635,42 +1527,11 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
     --agent-error: var(--agent-red, #c42b4a);
   }
 
-  html[data-theme-scheme='light'] .acp-harness__dashboard {
-    background:
-      radial-gradient(circle at 12px 12px, rgba(var(--krypton-accent-rgb, 0, 119, 153), 0.07) 1px, transparent 1px);
-    background-size: 10px 10px;
-  }
-
-  /* DESIGN.console.md — brushed aluminium. Amber and lit text cap to the
-     legible `#8a5a00` ink (spec 321 §Accent ink); a backlight glow does not
-     read on a light plate, so lit text keeps the engraving instead. */
-  html[data-theme-scheme='light'] .acp-harness__dock {
-    --dock-plate:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.45), transparent 160px),
-      linear-gradient(180deg, rgba(234, 235, 238, 0.92) 0%, rgba(218, 220, 224, 0.92) 55%, rgba(204, 207, 212, 0.92) 100%);
-    --dock-brush: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.14) 0 1px, transparent 1px 2px, rgba(0, 0, 0, 0.018) 2px 3px, transparent 3px 5px);
-    --dock-bevel-hi: rgba(255, 255, 255, 0.85);
-    --dock-bevel-lo: rgba(0, 0, 0, 0.2);
-    --dock-well: linear-gradient(180deg, rgba(194, 197, 203, 0.72), rgba(222, 224, 228, 0.68));
-    --dock-well-fill: rgba(208, 211, 216, 0.7);
-    --dock-well-depth: inset 0 2px 4px rgba(0, 0, 0, 0.16);
-    --dock-well-wall: rgba(0, 0, 0, 0.14);
-    --dock-well-lip: rgba(255, 255, 255, 0.85);
-    --dock-groove-lo: rgba(0, 0, 0, 0.12);
-    --dock-groove-hi: rgba(255, 255, 255, 0.6);
-    --dock-key: linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(238, 239, 242, 0.97) 55%, rgba(223, 225, 229, 0.97) 100%);
-    --dock-key-hover: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(244, 245, 247, 0.98) 55%, rgba(231, 233, 236, 0.98) 100%);
-    --dock-key-down: linear-gradient(180deg, rgba(203, 206, 212, 0.97), rgba(223, 225, 229, 0.97));
-    --dock-key-edge: rgba(0, 0, 0, 0.22);
-    --dock-key-raise: inset 0 1px 0 rgba(255, 255, 255, 1), inset 0 -1px 0 rgba(0, 0, 0, 0.06), 0 1px 0 rgba(0, 0, 0, 0.14), 0 2px 4px rgba(0, 0, 0, 0.12);
-    --dock-key-sunk: inset 0 2px 3px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(0, 0, 0, 0.08), 0 1px 0 rgba(255, 255, 255, 0.8);
-    --dock-engrave: 0 1px 0 rgba(255, 255, 255, 0.85);
-    --dock-print: 0 1px 0 rgba(255, 255, 255, 0.9);
-    --dock-silk: #8a5a00;
-    --dock-lit: #8a5a00;
-    --dock-lit-glow: 0 1px 0 rgba(255, 255, 255, 0.85);
-    --dock-lens-off: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.9) 0 14%, rgba(176, 160, 130, 0.95) 50%, rgba(120, 104, 76, 0.98) 100%);
-    --dock-lens-glow: 0 0 3px rgba(255, 150, 0, 0.8), 0 0 8px rgba(255, 150, 0, 0.3);
-    --dock-select: rgba(255, 176, 0, 0.2);
+  /* Spec 321 — a lamp's warning colour is too pale to read as text on the
+     aluminium screen; cap the provider-fault label and the permission body to
+     a dark amber ink. */
+  html[data-theme-scheme='light'] .acp-harness__msg--provider_error .acp-harness__msg-label,
+  html[data-theme-scheme='light'] .acp-harness__msg--permission .acp-harness__msg-body {
+    color: #8a5a00;
   }
 }

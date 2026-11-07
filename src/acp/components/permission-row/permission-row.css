@@ -3,6 +3,11 @@
    block and its `acp-harness__perm-*` elements). Nothing else in the repo may
    declare these selectors.
 
+   Spec 366 (DESIGN.md "Parts"): a resolved row leads with a status LED and a
+   decision chip, like a tool row. A pending row is the one thing in the
+   transcript the human must act on (ADR-0017), so it lights an amber lamp
+   before its head; the key hint under it is printed legend.
+
    `.acp-harness__msg--permission .acp-harness__msg-body` (:3534-3536) stays
    behind: its subject is the `acp-harness__msg` block, which `TranscriptRow`
    owns. theme-scheme.css declares nothing for this block, so there is no
@@ -12,27 +17,15 @@
   /* Spec 120 pattern — flat perm body, no nested card container. No horizontal
      padding so the perm row's content lines up flush with the tool rows in the
      same body column; no background tint either, so the perm row reads like a
-     tool row (glyph + tag + subject carry the meaning, not a coloured band). */
+     tool row (lamp + chip + subject carry the meaning, not a coloured band). */
   .acp-harness__msg-body.acp-harness__perm {
     display: grid;
     gap: 2px;
     padding: 2px 0;
   }
 
-  /* The glyph (not the chip) carries the decision colour, mirroring the tool
-     row's status glyph. */
-  .acp-harness__msg-body.acp-harness__perm[data-decision='auto_allowed'] .acp-harness__perm-glyph,
-  .acp-harness__msg-body.acp-harness__perm[data-decision='accepted'] .acp-harness__perm-glyph {
-    color: var(--agent-accent, #8effb0);
-  }
-
-  .acp-harness__msg-body.acp-harness__perm[data-decision='rejected'] .acp-harness__perm-glyph,
-  .acp-harness__msg-body.acp-harness__perm[data-decision='failed'] .acp-harness__perm-glyph {
-    color: var(--agent-error, #ff6b8b);
-  }
-
   /* Mirrors .acp-harness__tool-head so permission and tool rows share the same
-     glyph + tag + inline-subject layout in the body column. */
+     lamp + chip + inline-subject layout in the body column. */
   .acp-harness__perm-row {
     display: flex;
     flex-wrap: wrap;
@@ -42,8 +35,23 @@
     font-size: var(--krypton-font-size, 13px);
   }
 
-  /* Mirrors .acp-harness__tool-glyph (1.4ch × 1em fixed cell). */
+  /* Pending: a lit amber lamp in the glyph's 1.4ch cell, so the subject sits
+     where the resolved row's LED + chip will put it. */
+  .acp-harness__msg-body.acp-harness__perm[data-decision='pending'] .acp-harness__perm-row::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    margin: 0 calc((1.4ch - 6px) / 2);
+    border-radius: 50%;
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
+  }
+
+  /* Mirrors .acp-harness__tool-glyph: the decision LED in a 1.4ch × 1em cell.
+     The ✓ / ✗ text stays in the DOM; the lens carries the decision. */
   .acp-harness__perm-glyph {
+    position: relative;
     display: inline-flex;
     flex: 0 0 1.4ch;
     align-items: center;
@@ -55,26 +63,53 @@
     overflow: hidden;
     line-height: 1;
     text-align: center;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    color: transparent;
   }
 
-  /* Mirrors .acp-harness__tool-kind — a compact neutral tag, not a coloured pill. */
+  .acp-harness__perm-glyph::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    margin: -3px 0 0 -3px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  /* Accepted: lit lens, no bloom — a sealed transcript holds many of these. */
+  .acp-harness__msg-body.acp-harness__perm[data-decision='auto_allowed'] .acp-harness__perm-glyph::before,
+  .acp-harness__msg-body.acp-harness__perm[data-decision='accepted'] .acp-harness__perm-glyph::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--krypton-success-rgb, 57, 255, 127)) 45%, rgba(var(--krypton-success-rgb, 57, 255, 127), 0.55) 100%);
+    box-shadow: none;
+  }
+
+  .acp-harness__msg-body.acp-harness__perm[data-decision='rejected'] .acp-harness__perm-glyph::before,
+  .acp-harness__msg-body.acp-harness__perm[data-decision='failed'] .acp-harness__perm-glyph::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--krypton-danger-rgb, 255, 58, 92)) 45%, rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.55) 100%);
+    box-shadow: none;
+  }
+
+  /* Mirrors .acp-harness__tool-kind — an ink legend on a key face. */
   .acp-harness__perm-decision {
     flex: none;
     white-space: nowrap;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.09em;
     font-size: 0.78em;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
     padding: 0 5px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
   }
 
   .acp-harness__perm-tool {
     flex: none;
     color: var(--agent-gold, #ffd166);
-    text-shadow: 0 0 8px rgba(255, 209, 102, 0.24);
   }
 
   /* Mirrors .acp-harness__tool-subject: flex so the command sits inline with a
@@ -100,9 +135,11 @@
     line-height: 1.25;
   }
 
+  /* The key hint: printed legend in the backlit amber the pending lamp uses. */
   .acp-harness__perm-actions {
-    color: rgba(255, 209, 102, 0.75);
+    color: var(--mat-lit);
     font-size: 0.95em;
+    letter-spacing: 0.04em;
     line-height: 1.3;
   }
 

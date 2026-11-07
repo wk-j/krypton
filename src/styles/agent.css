@@ -1,35 +1,31 @@
-/* ─── AI Agent View — Retro-Futurism (Warm Amber Phosphor) ─── */
-/* Cassette futurism meets mission control: amber CRT, scanlines, vignette */
+/* ─── AI Agent view + Context view — Krypton Console faceplate ───
+   DESIGN.md 2.0.0 / spec 366. Both views mount in a content tab, so the
+   window body is already the screen (`--mat-screen` plus the well's inset
+   depth, drawn by window.css): the transcript sits on it flat. Chrome is
+   built from the parts in DESIGN.md "Parts":
+   - status line, scroll hint, staging strip and input row: plate strips;
+     the draft line sits in a well; telemetry and the timer are readouts;
+     the armed auto-approval badge is a lit status capsule (steady);
+   - message labels: amber label type (no text-shadow: transcript rows are
+     repeated rows, DESIGN.md "Performance");
+   - tool rows: a status LED, the tool name in label type, output in a well;
+   - autocomplete and @-mention lists: a floating plate holding one well;
+   - Context view: a plate with an engraved header of readouts, the message
+     list as one well with grooves, the detail pane as a well.
+   Colour carries state only (ADR-0017); selection is a full-row tint
+   (ADR-0027). Nothing animates ambiently; an error flashes its lamp once. */
 
-/* ═══════════════════════════════════════════════════════════════
-   PALETTE — AMBER PHOSPHOR TERMINAL
-   ═══════════════════════════════════════════════════════════════ */
-
-/* Amber-phosphor palette. Kept at :root: content-tab views (agent/context)
-   are mounted via createContentTab, which does NOT set data-content-type on
-   the .krypton-window element (only createContentWindow does, compositor.ts).
-   A previous attempt scoped these to .krypton-window[data-content-type="agent"]
-   — a selector that never matches for tab-mounted views — which zeroed out the
-   entire palette and blanked the Agent view. --agent-font/--agent-text are also
-   inherited here by acp-harness.css via fallback'd var(). */
+/* Shared surface palette. theme.ts emits these (except `--agent-font`)
+   inline on <html> from the active theme, which beats these :root
+   fallbacks; stylesheets outside this one read them (the ACP harness
+   included), so the names stay. Kept at :root because both views mount via
+   createContentTab, which does not set data-content-type on the
+   .krypton-window element (only createContentWindow does, compositor.ts). */
 :root {
   --agent-font: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   --agent-text: #e8cfa4;
-  --agent-bg: rgba(6, 10, 18, 0.55);
-  --agent-panel: rgba(6, 10, 18, 0.82);
-  --agent-surface-low: rgba(6, 10, 18, 0.35);
-  --agent-surface-mid: rgba(6, 10, 18, 0.55);
-  --agent-surface-high: rgba(6, 10, 18, 0.85);
   --agent-surface-solid: rgba(8, 12, 22, 0.96);
-  --agent-border: rgba(255, 176, 0, 0.25);
-  --agent-border-active: rgba(255, 176, 0, 0.5);
-  --agent-primary: #ffb000;
-  --agent-primary-rgb: 255, 176, 0;
   --agent-bright: #ffd880;
-  --agent-dim: rgba(255, 176, 0, 0.35);
-  --agent-ghost: rgba(255, 176, 0, 0.08);
-  --agent-text-rgb: 232, 207, 164;
-  --agent-text-dim: #a68d68;
   --agent-green: #8bc34a;
   --agent-green-rgb: 139, 195, 74;
   --agent-red: #ff6e40;
@@ -40,95 +36,44 @@
   --agent-cyan: #4dd0e1;
   --agent-cyan-rgb: 77, 208, 225;
   --agent-blue: #64b5f6;
-  --agent-blue-rgb: 100, 181, 246;
-  --agent-scanline: rgba(0, 0, 0, 0.06);
+}
+
+/* Theme ink tiers (spec 321): the `--krypton-ink-*` tiers in the light
+   scheme, the `--krypton-fg` alpha ladder in the dark one. Text is never
+   dimmed with `opacity`. */
+.agent-view,
+.context-view {
+  --av-ink-1: var(--krypton-fg, #d8e8d8);
+  --av-ink-2: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+  --av-ink-3: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  --av-ink-4: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+}
+
+/* Scrollbars (DESIGN.md "Scrollbars"): 8px, transparent track, ink thumb. */
+.agent-view ::-webkit-scrollbar,
+.context-view ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.agent-view ::-webkit-scrollbar-track,
+.context-view ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.agent-view ::-webkit-scrollbar-thumb,
+.context-view ::-webkit-scrollbar-thumb {
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+  border-radius: var(--krypton-border-radius, 8px);
+}
+
+.agent-view ::-webkit-scrollbar-thumb:hover,
+.context-view ::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.32);
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   WINDOW CHROME OVERRIDES
-   Scoped via data-content-type="agent" on the .krypton-window
-   ═══════════════════════════════════════════════════════════════ */
-
-.krypton-window[data-content-type="agent"] {
-  background: var(--agent-panel) !important;
-  border: 1px solid var(--agent-border) !important;
-  border-radius: 0 !important;
-  box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.7),
-    0 0 1px rgba(var(--agent-primary-rgb), 0.2),
-    inset 0 0 60px rgba(var(--agent-primary-rgb), 0.02) !important;
-}
-
-.krypton-window[data-content-type="agent"].krypton-window--focused {
-  border-color: var(--agent-border-active) !important;
-  box-shadow:
-    0 4px 28px rgba(0, 0, 0, 0.8),
-    0 0 12px rgba(var(--agent-primary-rgb), 0.06),
-    inset 0 0 80px rgba(var(--agent-primary-rgb), 0.03) !important;
-}
-
-/* ─── Titlebar Chrome ─── */
-
-.krypton-window[data-content-type="agent"] .krypton-window__titlebar {
-  border-bottom: 1px solid rgba(var(--agent-primary-rgb), 0.15) !important;
-  background: rgba(var(--agent-primary-rgb), 0.03) !important;
-}
-
-.krypton-window[data-content-type="agent"] .krypton-window__label {
-  font-family: var(--agent-font) !important;
-  letter-spacing: 0.25em !important;
-  text-transform: uppercase !important;
-  color: var(--agent-text-dim) !important;
-  font-size: var(--krypton-chrome-font-size, 11px) !important;
-}
-
-.krypton-window[data-content-type="agent"].krypton-window--focused .krypton-window__label {
-  color: var(--agent-primary) !important;
-  text-shadow: 0 0 10px rgba(var(--agent-primary-rgb), 0.5) !important;
-}
-
-.krypton-window[data-content-type="agent"] .krypton-window__label-tail {
-  color: var(--agent-text-dim) !important;
-}
-
-.krypton-window[data-content-type="agent"].krypton-window--focused .krypton-window__label-tail {
-  color: var(--agent-primary) !important;
-  text-shadow: 0 0 10px rgba(var(--agent-primary-rgb), 0.5) !important;
-}
-
-.krypton-window[data-content-type="agent"] .krypton-window__status-dot {
-  background: var(--agent-primary) !important;
-  box-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.6) !important;
-}
-
-/* Amber gradient applies only to the static striped div. When the header accent
-   is the live oscilloscope canvas (--scope), leave it transparent so the trace —
-   which draws from the window's own accent color — is not painted over. See docs/189. */
-.krypton-window[data-content-type="agent"]
-  .krypton-window__header-accent:not(.krypton-window__header-accent--scope) {
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(var(--agent-primary-rgb), 0.3),
-    rgba(var(--agent-primary-rgb), 0.1),
-    transparent
-  ) !important;
-}
-
-.krypton-window[data-content-type="agent"] .krypton-window__tab {
-  color: var(--agent-text-dim) !important;
-  border: none !important;
-}
-
-.krypton-window[data-content-type="agent"] .krypton-window__tab--active {
-  color: var(--agent-primary) !important;
-  background: rgba(var(--agent-primary-rgb), 0.08) !important;
-  border-bottom: 2px solid rgba(var(--agent-primary-rgb), 0.6) !important;
-  text-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.3) !important;
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   AGENT VIEW — AMBER PHOSPHOR CRT
+   AGENT VIEW
    ═══════════════════════════════════════════════════════════════ */
 
 .agent-view {
@@ -139,43 +84,14 @@
   overflow: hidden;
   font-family: var(--agent-font);
   font-size: var(--krypton-font-size);
-  color: var(--agent-text);
+  color: var(--av-ink-1);
   outline: none;
   position: relative;
-  background: var(--agent-bg);
+  /* The window body is the screen; a second fill here would double it. */
+  background: transparent;
 }
 
-/* CRT scanline overlay */
-.agent-view::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    var(--agent-scanline) 0px,
-    var(--agent-scanline) 1px,
-    transparent 1px,
-    transparent 3px
-  );
-  pointer-events: none;
-  z-index: 10;
-}
-
-/* CRT vignette — darkened edges */
-.agent-view::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    ellipse at center,
-    transparent 55%,
-    rgba(0, 0, 0, 0.15) 100%
-  );
-  pointer-events: none;
-  z-index: 11;
-}
-
-/* ─── Logo / welcome header ─────────────────────────────────── */
+/* ─── Empty state: engraved headline over a key-cap command list ─── */
 
 /* Collapse via grid-template-rows (1fr → 0fr): content-agnostic, no brittle
    magic-number max-height. The inner wrapper carries the layout + clips. */
@@ -212,56 +128,55 @@
 .agent-view__logo-title {
   font-size: calc(var(--krypton-font-size) * 1.15);
   font-weight: 600;
-  letter-spacing: 0.48em;
+  letter-spacing: 0.32em;
   text-transform: uppercase;
-  color: rgba(var(--agent-text-rgb), 0.55);
-  padding-left: 0.48em;
-  animation: logo-text-reveal 0.5s ease-out both;
+  color: var(--mat-silk);
+  text-shadow: var(--mat-engrave);
+  padding-left: 0.32em;
 }
 
+/* "AI": a backlit legend. */
 .agent-view__logo-accent {
-  color: var(--agent-primary);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
 .agent-view__logo-sub {
   font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.35em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: rgba(var(--agent-primary-rgb), 0.35);
-  padding-left: 0.35em;
-  animation: logo-text-reveal 0.5s ease-out 0.15s both;
+  color: var(--av-ink-3);
+  padding-left: 0.13em;
 }
 
-@keyframes logo-text-reveal {
-  0%   { opacity: 0; transform: translateY(2px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-
-/* Starter command hints — flat two-column grid (command · description).
-   No card, border, or rail: one surface, typographic only. */
+/* Starter commands: key caps beside their printed description. */
 .agent-view__logo-hints {
-  margin-top: 6px;
+  margin-top: 10px;
   display: inline-grid;
   grid-template-columns: max-content 1fr;
-  column-gap: 16px;
-  row-gap: 5px;
-  align-items: baseline;
+  column-gap: 12px;
+  row-gap: 6px;
+  align-items: center;
   font-size: var(--krypton-chrome-font-size, 11px);
-  animation: logo-text-reveal 0.5s ease-out 0.3s both;
 }
 
 .agent-view__logo-cmd {
-  color: rgba(var(--agent-primary-rgb), 0.7);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  justify-self: end;
+  padding: 2px 8px;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--av-ink-2);
+  text-shadow: var(--mat-print);
+  letter-spacing: 0.09em;
 }
 
 .agent-view__logo-desc {
-  color: rgba(var(--agent-text-rgb), 0.45);
-  letter-spacing: 0.02em;
+  color: var(--av-ink-3);
 }
 
-/* ─── Messages list ─────────────────────────────────────────── */
+/* ─── Messages list (the screen) ─────────────────────────────── */
 
 .agent-view__messages {
   flex: 1;
@@ -287,7 +202,7 @@
   mask-image: linear-gradient(to bottom, transparent 0%, black 6%, black 94%, transparent 100%);
 }
 
-/* ═══ Message cards ═══════════════════════════════════════════ */
+/* ═══ Message rows — flat text on the screen ═══════════════════ */
 
 .agent-view__msg {
   display: grid;
@@ -304,31 +219,16 @@
   contain: strict;
 }
 
-/* Role badge — phosphor label */
+/* Role label: amber label type. No engraving shadow — a repeated row. */
 .agent-view__msg-label {
   font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.13em;
   padding: 3px 0 0;
   user-select: none;
   white-space: nowrap;
-}
-
-/* ─── User messages ──────────────────────────────────────────── */
-
-.agent-view__msg--user .agent-view__msg-label {
-  color: rgba(var(--agent-cyan-rgb), 0.9);
-  text-shadow:
-    0 0 6px rgba(var(--agent-cyan-rgb), 0.35),
-    0 0 16px rgba(var(--agent-cyan-rgb), 0.15);
-}
-
-.agent-view__msg--user .agent-view__msg-label::before {
-  content: '❯ ';
-  color: rgba(var(--agent-cyan-rgb), 0.6);
-  letter-spacing: 0;
-  margin-right: 2px;
+  color: var(--mat-silk);
 }
 
 .agent-view__msg-body {
@@ -336,66 +236,63 @@
   word-break: break-word;
 }
 
-.agent-view__msg--user .agent-view__msg-body {
-  color: rgba(var(--agent-cyan-rgb), 0.85);
-  text-shadow: 0 0 4px rgba(var(--agent-cyan-rgb), 0.1);
+/* ─── User messages ──────────────────────────────────────────── */
+
+.agent-view__msg--user .agent-view__msg-label {
+  color: var(--av-ink-3);
 }
 
-/* ─── Assistant messages — amber phosphor readout ────────────── */
+.agent-view__msg--user .agent-view__msg-label::before {
+  content: '❯ ';
+  letter-spacing: 0;
+  margin-right: 2px;
+}
+
+.agent-view__msg--user .agent-view__msg-body {
+  color: var(--av-ink-1);
+}
+
+/* ─── Assistant messages ─────────────────────────────────────── */
 
 .agent-view__msg--assistant {
-  padding: 4px 100px 4px 0;
+  padding: 4px 120px 4px 0;
   position: relative;
-  animation: msg-boot 0.4s ease-out;
   align-items: start;
-}
-
-@keyframes msg-boot {
-  0%   { opacity: 0; transform: translateY(4px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-
-.agent-view__msg--assistant .agent-view__msg-label {
-  color: var(--agent-primary);
-  text-shadow:
-    0 0 8px rgba(var(--agent-primary-rgb), 0.5),
-    0 0 20px rgba(var(--agent-primary-rgb), 0.15);
 }
 
 .agent-view__msg--assistant .agent-view__msg-label::before {
   content: '◆ ';
-  color: var(--agent-bright);
   letter-spacing: 0;
   font-size: 0.85em;
   margin-right: 2px;
 }
 
+/* Output-token / elapsed figure. */
 .agent-view__msg-tokens {
   position: absolute;
   top: 6px;
-  right: 16px;
+  right: 0;
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 400;
-  letter-spacing: 0.1em;
-  color: rgba(var(--agent-cyan-rgb), 0.35);
-  text-shadow: none;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--av-ink-4);
   padding: 1px 4px;
 }
 
 /* ─── System messages ────────────────────────────────────────── */
 
 .agent-view__msg--system .agent-view__msg-label {
-  color: var(--agent-magenta);
-  text-shadow: 0 0 6px rgba(224, 145, 192, 0.3);
+  color: var(--av-ink-4);
 }
 
 .agent-view__msg-body--system {
-  color: rgba(var(--agent-text-rgb), 0.4);
+  color: var(--av-ink-3);
   font-size: var(--krypton-font-size);
   font-style: italic;
 }
 
-/* ═══ Markdown rendering ═════════════════════════════════════ */
+/* ═══ Markdown rendering — flat prose; code blocks sit in wells ═══ */
 
 .agent-view__msg-body--markdown {
   white-space: normal;
@@ -409,43 +306,25 @@
 .agent-view__msg-body--markdown p:first-child { margin-top: 0; }
 .agent-view__msg-body--markdown p:last-child { margin-bottom: 0; }
 
+/* Inline code: a small well-fill chip with a 1px groove border. */
 .agent-view__msg-body--markdown code {
   font-family: var(--agent-font);
   font-size: 0.88em;
   padding: 0.15em 0.45em;
-  background: rgba(var(--agent-cyan-rgb), 0.06);
-  border: 1px solid rgba(var(--agent-cyan-rgb), 0.15);
+  background: var(--mat-well-fill);
+  border: 1px solid var(--mat-groove-lo);
   border-radius: var(--krypton-border-radius, 8px);
-  color: var(--agent-cyan);
-  text-shadow: 0 0 6px rgba(var(--agent-cyan-rgb), 0.2);
+  color: var(--av-ink-1);
 }
 
 .agent-view__msg-body--markdown pre {
   margin: 0.6em 0;
   padding: 10px 14px;
-  background: var(--agent-surface-mid);
-  border: 1px solid rgba(var(--agent-primary-rgb), 0.12);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   border-radius: var(--krypton-border-radius, 8px);
   overflow-x: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--agent-primary-rgb), 0.2) transparent;
   position: relative;
-}
-
-/* Top-edge ruled accent on code blocks */
-.agent-view__msg-body--markdown pre::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    rgba(var(--agent-primary-rgb), 0.4),
-    rgba(var(--agent-primary-rgb), 0.15) 50%,
-    rgba(var(--agent-primary-rgb), 0.4)
-  );
 }
 
 .agent-view__msg-body--markdown pre code {
@@ -454,23 +333,23 @@
   border: none;
   font-size: var(--krypton-font-size);
   line-height: var(--krypton-content-line-height, 1.5);
-  color: rgba(var(--agent-text-rgb), 0.85);
-  .hljs-comment { color: rgba(var(--agent-text-rgb), 0.4); font-style: italic; }
-  .hljs-keyword { color: #e091c0; text-shadow: 0 0 4px rgba(224, 145, 192, 0.15); }
-  .hljs-string { color: rgba(var(--agent-green-rgb), 0.9); }
-  .hljs-number { color: rgba(var(--agent-cyan-rgb), 0.9); }
-  .hljs-function { color: rgba(var(--agent-blue-rgb), 0.95); }
-  .hljs-title { color: rgba(var(--agent-blue-rgb), 0.9); text-shadow: 0 0 4px rgba(var(--agent-blue-rgb), 0.15); }
-  .hljs-params { color: rgba(var(--agent-text-rgb), 0.8); }
-  .hljs-built_in { color: rgba(var(--agent-cyan-rgb), 0.85); }
-  .hljs-type { color: #ffd54f; }
-  .hljs-literal { color: rgba(var(--agent-red-rgb), 0.9); }
-  .hljs-class { color: rgba(255, 213, 79, 0.85); }
-  .hljs-variable { color: rgba(var(--agent-text-rgb), 0.85); }
-  .hljs-attr { color: rgba(var(--agent-cyan-rgb), 0.85); }
-  .hljs-tag { color: rgba(var(--agent-red-rgb), 0.85); }
-  .hljs-name { color: rgba(var(--agent-blue-rgb), 0.85); }
-  .hljs-symbol { color: #e091c0; }
+  color: var(--av-ink-2);
+  .hljs-comment { color: var(--av-ink-4); font-style: italic; }
+  .hljs-keyword { color: var(--agent-magenta); }
+  .hljs-string { color: var(--agent-green); }
+  .hljs-number { color: var(--agent-cyan); }
+  .hljs-function { color: var(--agent-blue); }
+  .hljs-title { color: var(--agent-blue); }
+  .hljs-params { color: var(--av-ink-2); }
+  .hljs-built_in { color: var(--agent-cyan); }
+  .hljs-type { color: var(--agent-gold); }
+  .hljs-literal { color: var(--agent-red); }
+  .hljs-class { color: var(--agent-gold); }
+  .hljs-variable { color: var(--av-ink-2); }
+  .hljs-attr { color: var(--agent-cyan); }
+  .hljs-tag { color: var(--agent-red); }
+  .hljs-name { color: var(--agent-blue); }
+  .hljs-symbol { color: var(--agent-magenta); }
 }
 
 /* Spec 326: a fence on the cell grid keeps this pitch, rounded to the device
@@ -489,13 +368,11 @@
 .agent-view__msg-body--markdown ul { list-style: none; }
 .agent-view__msg-body--markdown ul > li { position: relative; }
 
-/* Chevron bullet >>>  */
 .agent-view__msg-body--markdown ul > li::before {
   content: '»';
   position: absolute;
   left: -1.3em;
-  color: rgba(var(--agent-cyan-rgb), 0.6);
-  text-shadow: 0 0 6px rgba(var(--agent-cyan-rgb), 0.3);
+  color: var(--av-ink-4);
   font-weight: 700;
 }
 
@@ -506,29 +383,14 @@
 .agent-view__msg-body--markdown h3,
 .agent-view__msg-body--markdown h4 {
   margin: 0.7em 0 0.25em;
-  color: var(--agent-primary);
-  text-shadow:
-    0 0 8px rgba(var(--agent-primary-rgb), 0.4),
-    0 0 25px rgba(var(--agent-primary-rgb), 0.12);
-  position: relative;
+  color: var(--av-ink-1);
+  font-weight: 700;
 }
 
 .agent-view__msg-body--markdown h1 {
   font-size: 1.25em;
   padding-bottom: 0.3em;
-  border-bottom: 1px solid rgba(var(--agent-primary-rgb), 0.2);
-}
-
-/* Decorative rule under h1 */
-.agent-view__msg-body--markdown h1::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 40px;
-  height: 2px;
-  background: rgba(var(--agent-primary-rgb), 0.5);
-  box-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.3);
+  border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
 }
 
 .agent-view__msg-body--markdown h2 { font-size: 1.1em; }
@@ -537,45 +399,34 @@
 .agent-view__msg-body--markdown blockquote {
   margin: 0.4em 0;
   padding: 0.3em 0.9em;
-  background: rgba(var(--agent-blue-rgb), 0.06);
-  color: rgba(var(--agent-blue-rgb), 0.65);
+  background: var(--mat-well-fill);
+  border-radius: var(--krypton-border-radius, 8px);
+  color: var(--av-ink-3);
   font-style: italic;
 }
 
 .agent-view__msg-body--markdown strong {
-  color: #fff;
-  text-shadow: 0 0 6px rgba(var(--agent-cyan-rgb), 0.15);
+  color: var(--av-ink-1);
+  font-weight: 700;
 }
 
 .agent-view__msg-body--markdown em {
-  color: rgba(var(--agent-cyan-rgb), 0.7);
+  color: var(--av-ink-2);
   font-style: italic;
 }
 
+/* Links: theme link colour, underlined 2px below; no glow. */
 .agent-view__msg-body--markdown a {
-  color: var(--agent-cyan);
-  text-decoration: none;
-  border-bottom: 1px solid rgba(var(--agent-cyan-rgb), 0.3);
-  text-shadow: 0 0 8px rgba(var(--agent-cyan-rgb), 0.2);
-  transition: text-shadow 0.2s ease, color 0.2s ease;
-}
-
-.agent-view__msg-body--markdown a:hover {
-  color: #80deea;
-  text-shadow: 0 0 14px rgba(var(--agent-cyan-rgb), 0.5);
-  border-bottom-color: rgba(var(--agent-cyan-rgb), 0.6);
+  color: var(--krypton-accent, var(--agent-cyan));
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .agent-view__msg-body--markdown hr {
   border: none;
   height: 1px;
   margin: 1em 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(var(--agent-primary-rgb), 0.3),
-    transparent
-  );
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
 }
 
 .agent-view__msg-body--markdown table {
@@ -587,21 +438,19 @@
 .agent-view__msg-body--markdown th,
 .agent-view__msg-body--markdown td {
   padding: 5px 12px;
-  border: 1px solid rgba(var(--agent-primary-rgb), 0.12);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
 }
 
 .agent-view__msg-body--markdown tr:hover td {
-  background: rgba(var(--agent-primary-rgb), 0.05);
+  background: var(--mat-select);
 }
 
 .agent-view__msg-body--markdown th {
-  background: rgba(var(--agent-primary-rgb), 0.08);
-  color: var(--agent-primary);
+  color: var(--av-ink-2);
   font-size: var(--krypton-chrome-font-size, 11px);
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.15em;
-  text-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.2);
-  border-bottom: 2px solid rgba(var(--agent-primary-rgb), 0.25);
+  letter-spacing: 0.13em;
 }
 
 /* ═══ Shell command output ═══════════════════════════════════ */
@@ -613,200 +462,205 @@
   margin: 2px 0;
 }
 
+/* Kind chip: an embossed label on a flat key face (no shadow — a repeated row). */
 .agent-view__msg--shell .agent-view__msg-label {
   display: inline-block;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  color: rgba(var(--agent-green-rgb), 0.95);
-  background: rgba(var(--agent-green-rgb), 0.08);
-  border: 1px solid rgba(var(--agent-green-rgb), 0.3);
-  border-radius: var(--krypton-border-radius, 8px);
-  text-shadow: 0 0 6px rgba(var(--agent-green-rgb), 0.3);
+  padding: 1px 8px;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: 999px;
+  background: var(--mat-key-mid);
+  color: var(--av-ink-2);
 }
 
 .agent-view__msg--shell .agent-view__msg-body {
   display: inline;
   margin-left: 8px;
   font-size: var(--krypton-font-size);
-  color: rgba(var(--agent-green-rgb), 0.85);
-  text-shadow: 0 0 6px rgba(var(--agent-green-rgb), 0.2);
+  color: var(--av-ink-1);
 }
 
+/* Command output: a well. */
 .agent-view__shell-result {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--agent-font);
   font-size: var(--krypton-font-size);
   line-height: var(--krypton-content-line-height, 1.5);
-  padding: 2px 0 4px 12px;
-  margin: 2px 0 4px 0;
-  color: rgba(var(--agent-text-rgb), 0.8);
+  padding: 6px 10px;
+  margin: 6px 0 4px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  color: var(--av-ink-2);
 }
 
 .agent-view__shell-result--error {
-  color: rgba(var(--agent-red-rgb), 0.95);
-  text-shadow: 0 0 6px rgba(var(--agent-red-rgb), 0.15);
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }
 
 .agent-view__shell-more {
-  color: rgba(var(--agent-text-rgb), 0.3);
+  color: var(--av-ink-4);
   font-style: italic;
   font-size: var(--krypton-chrome-font-size, 11px);
 }
 
-/* ═══ Inline diff preview ════════════════════════════════════ */
+/* ═══ Inline diff preview — an output well ═══════════════════ */
 
 .agent-view__tool-row--has-diff { cursor: default; }
 
 .agent-view__diff-preview {
-  width: 100%;
   margin-top: 6px;
   padding: 6px 0;
-  border-top: 1px solid rgba(var(--agent-primary-rgb), 0.1);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .agent-view__diff-line {
   font-family: var(--agent-font);
   font-size: var(--krypton-font-size);
   line-height: var(--krypton-content-line-height, 1.5);
-  padding: 1px 8px;
+  padding: 1px 10px;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .agent-view__diff-line--added {
-  color: rgba(var(--agent-green-rgb), 0.9);
-  background: rgba(var(--agent-green-rgb), 0.05);
+  color: rgb(var(--agent-green-rgb));
+  background: rgba(var(--agent-green-rgb), 0.08);
 }
 
 .agent-view__diff-line--removed {
-  color: rgba(var(--agent-red-rgb), 0.85);
-  background: rgba(var(--agent-red-rgb), 0.05);
+  color: rgb(var(--agent-red-rgb));
+  background: rgba(var(--agent-red-rgb), 0.08);
 }
 
 .agent-view__diff-line--context {
-  color: rgba(var(--agent-text-rgb), 0.3);
+  color: var(--av-ink-4);
 }
 
 .agent-view__diff-summary {
   font-size: var(--krypton-font-size);
-  padding: 4px 8px 0;
-  color: rgba(var(--agent-text-rgb), 0.3);
-  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  padding: 4px 10px 0;
+  color: var(--av-ink-4);
 }
 
-/* ═══ Write approval gate ════════════════════════════════════ */
+/* ═══ Write / command approval gate ══════════════════════════ */
 
-.agent-view__msg--review .agent-view__msg-label {
-  color: rgba(var(--agent-gold-rgb), 0.9);
+/* The label carries a lamp: lit warning while the gate waits on the human
+   (ADR-0017: something to act on), unlit once resolved. */
+.agent-view__msg--review .agent-view__msg-label::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  border-radius: 50%;
+  vertical-align: 0.1em;
+  --x-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
 }
 
-.agent-view__msg--review-accepted .agent-view__msg-label {
-  color: rgba(var(--agent-green-rgb), 0.85);
-}
-
-.agent-view__msg--review-rejected .agent-view__msg-label {
-  color: rgba(var(--agent-red-rgb), 0.85);
+.agent-view__msg--review-accepted .agent-view__msg-label::before,
+.agent-view__msg--review-rejected .agent-view__msg-label::before {
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .agent-view__msg-review-subject {
-  color: rgba(var(--agent-text-rgb), 0.85);
+  color: var(--av-ink-1);
 }
 
 .agent-view__msg-review-actions {
   margin-left: 12px;
   display: inline-flex;
-  gap: 10px;
+  gap: 8px;
   align-items: baseline;
 }
 
+/* [a]ccept / [r]eject: key caps with printed legends. */
 .agent-view__msg-review-key {
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  padding: 0 7px;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--av-ink-1);
+  text-shadow: var(--mat-print);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.09em;
   text-transform: lowercase;
 }
 
-.agent-view__msg-review-key--accept {
-  color: var(--agent-green);
-  text-shadow: 0 0 6px rgba(var(--agent-green-rgb), 0.4);
-}
-
-.agent-view__msg-review-key--reject {
-  color: var(--agent-red);
-  text-shadow: 0 0 6px rgba(var(--agent-red-rgb), 0.4);
-}
-
 .agent-view__msg-review-hint {
-  color: rgba(var(--agent-text-rgb), 0.4);
+  color: var(--av-ink-3);
   font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
 }
 
 .agent-view__msg-review-hint--highrisk {
-  color: rgba(var(--agent-red-rgb), 0.8);
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }
 
-/* Risk chip — worded severity, color + text (never color alone) */
+/* Risk chip — worded severity, colour + text (never colour alone). Low is an
+   unlit capsule in ink; high is a lit fault capsule. */
 .agent-view__msg-review-risk {
   display: inline-block;
   margin-right: 8px;
-  padding: 0 6px;
+  padding: 0 8px;
+  border-radius: 999px;
   font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
 }
 
 .agent-view__msg-review-risk--low {
-  color: var(--agent-gold);
-  background: rgba(255, 213, 79, 0.1);
-  border: 1px solid rgba(255, 213, 79, 0.35);
-  border-radius: var(--krypton-border-radius, 8px);
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+  background: var(--mat-well-fill);
+  color: var(--av-ink-2);
 }
 
 .agent-view__msg-review-risk--high {
-  color: var(--agent-red);
-  background: rgba(var(--agent-red-rgb), 0.1);
-  border: 1px solid rgba(var(--agent-red-rgb), 0.5);
-  border-radius: var(--krypton-border-radius, 8px);
-  text-shadow: 0 0 6px rgba(var(--agent-red-rgb), 0.25);
+  --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+  border: 1px solid rgba(var(--x-rgb), 0.5);
+  background: radial-gradient(ellipse at 50% 0%, rgba(var(--x-rgb), 0.3), rgba(var(--x-rgb), 0.07) 75%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--x-rgb), 0.22);
+  color: rgb(var(--x-rgb));
 }
 
-/* Whole-turn affordance — a distinct, separated control, not a faint hint.
-   Separated by spacing + a glyph (no side-stripe border). */
+/* Whole-turn affordance — separated by spacing + a glyph, printed legend. */
 .agent-view__msg-review-turn {
-  margin-left: 16px;
-  color: rgba(var(--agent-text-rgb), 0.5);
+  margin-left: 8px;
+  color: var(--av-ink-3);
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.06em;
 }
 
 .agent-view__msg-review-turn::before {
   content: '· ';
-  color: rgba(var(--agent-text-rgb), 0.3);
+  color: var(--av-ink-4);
 }
 
 .agent-view__msg-review-actions--accepted {
-  color: var(--agent-green);
-  text-shadow: 0 0 6px rgba(var(--agent-green-rgb), 0.4);
+  color: rgb(var(--krypton-success-rgb, 57, 255, 127));
   font-weight: 700;
 }
 
 .agent-view__msg-review-actions--rejected {
-  color: var(--agent-red);
-  text-shadow: 0 0 6px rgba(var(--agent-red-rgb), 0.4);
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
   font-weight: 700;
 }
 
 .agent-view__msg-review-command {
   margin-top: 2px;
-  color: rgba(var(--agent-text-rgb), 0.92);
+  color: var(--av-ink-1);
 }
 
+/* /check failure: a fault label and a key. */
 .agent-view__check-actions {
   display: flex;
   align-items: center;
@@ -815,34 +669,52 @@
 }
 
 .agent-view__check-actions-label {
-  color: rgba(var(--agent-red-rgb), 0.75);
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
   font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
 }
 
 .agent-view__check-actions-button {
-  border: 1px solid rgba(var(--agent-primary-rgb), 0.28);
+  min-height: 24px;
+  padding: 3px 10px;
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(var(--agent-primary-rgb), 0.055);
-  color: var(--agent-primary);
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--av-ink-2);
+  text-shadow: var(--mat-print);
   font-family: var(--agent-font);
   font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  padding: 4px 8px;
+  cursor: default;
 }
 
-/* ═══ Streaming cursor — static amber block ══════════════════ */
+.agent-view__check-actions-button:hover {
+  background: var(--mat-key-hover);
+}
+
+.agent-view__check-actions-button:active {
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
+}
+
+.agent-view__check-actions-button:focus-visible {
+  outline: 1px solid var(--mat-lit);
+  outline-offset: 2px;
+}
+
+/* ═══ Streaming cursor — static caret in the theme cursor colour ═══ */
 
 .agent-view__stream-cursor {
   display: inline;
-  color: var(--agent-primary);
-  text-shadow: 0 0 10px rgba(var(--agent-primary-rgb), 0.6);
+  color: var(--krypton-cursor, var(--av-ink-1));
 }
 
-/* ═══ Tool execution rows — telemetry readout ════════════════ */
+/* ═══ Tool rows — status LED, label-type name, output well ═════ */
 
 .agent-view__tool-row {
   display: flex;
@@ -851,7 +723,6 @@
   padding: 3px 0;
   font-size: var(--krypton-font-size);
   position: relative;
-  animation: msg-boot 0.35s ease-out;
 }
 
 .agent-view__tool-header {
@@ -860,10 +731,34 @@
   gap: 6px;
 }
 
+/* Status LED: lit amber while the tool runs (steady), unlit when done,
+   lit fault on error. */
+.agent-view__tool-header::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
+}
+
+.agent-view__tool-row--done .agent-view__tool-header::before {
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.agent-view__tool-row--error .agent-view__tool-header::before {
+  --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
+}
+
 .agent-view__tool-command {
   font-family: var(--agent-font);
   font-size: var(--krypton-font-size);
-  color: rgba(var(--agent-text-rgb), 0.8);
+  color: var(--av-ink-2);
   white-space: pre-wrap;
   word-break: break-all;
   margin-left: 22px;
@@ -871,60 +766,32 @@
 
 .agent-view__tool-command::before {
   content: '└ ';
-  color: rgba(var(--agent-primary-rgb), 0.35);
+  color: var(--av-ink-4);
 }
 
+/* Spinner / ✓ / ✗ glyph beside the LED — state in words as well as light. */
 .agent-view__tool-icon {
-  color: rgba(var(--agent-blue-rgb), 0.8);
+  color: var(--av-ink-3);
   width: 1.2ch;
   flex-shrink: 0;
   font-size: var(--krypton-chrome-font-size, 11px);
-  text-shadow: 0 0 6px rgba(var(--agent-blue-rgb), 0.3);
 }
 
-.agent-view__tool-row--done .agent-view__tool-icon {
-  color: var(--agent-green);
-  text-shadow: 0 0 8px rgba(var(--agent-green-rgb), 0.5);
-}
-
-.agent-view__tool-row--error .agent-view__tool-icon {
-  color: var(--agent-red);
-  text-shadow: 0 0 8px rgba(var(--agent-red-rgb), 0.5);
-}
-
+.agent-view__tool-row--error .agent-view__tool-icon,
 .agent-view__tool-row--error .agent-view__tool-name {
-  color: var(--agent-red);
-  text-shadow: 0 0 8px rgba(var(--agent-red-rgb), 0.4);
-}
-.agent-view__tool-row--error .agent-view__tool-name::before,
-.agent-view__tool-row--error .agent-view__tool-name::after {
-  color: rgba(var(--agent-red-rgb), 0.55);
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }
 
 .agent-view__tool-name {
-  color: var(--agent-blue);
+  color: var(--mat-silk);
   font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
-  text-shadow: 0 0 8px rgba(var(--agent-blue-rgb), 0.35);
-}
-
-.agent-view__tool-name::before {
-  content: '⟨ ';
-  color: rgba(var(--agent-blue-rgb), 0.55);
-  letter-spacing: 0;
-  font-weight: 400;
-}
-.agent-view__tool-name::after {
-  content: ' ⟩';
-  color: rgba(var(--agent-blue-rgb), 0.55);
-  letter-spacing: 0;
-  font-weight: 400;
+  letter-spacing: 0.13em;
 }
 
 .agent-view__tool-args {
-  color: rgba(var(--agent-cyan-rgb), 0.4);
+  color: var(--av-ink-4);
   font-size: var(--krypton-font-size);
   white-space: nowrap;
   overflow: hidden;
@@ -933,249 +800,279 @@
 }
 
 .agent-view__tool-result {
-  width: 100%;
   margin-top: 2px;
   margin-left: 22px;
+  padding: 6px 10px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   white-space: pre-wrap;
   word-break: break-word;
-  color: rgba(var(--agent-text-rgb), 0.45);
+  color: var(--av-ink-3);
   font-size: var(--krypton-font-size);
 }
 
 .agent-view__tool-more {
-  color: rgba(var(--agent-primary-rgb), 0.3);
+  color: var(--av-ink-4);
   font-style: italic;
 }
 
-/* ═══ Error messages — warning panel ═════════════════════════ */
+/* ═══ Error — a well with a fault lamp that flashes once ══════ */
 
 .agent-view__error {
-  color: var(--agent-red);
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
   padding: 8px 12px;
-  border: 1px solid rgba(var(--agent-red-rgb), 0.5);
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(var(--agent-red-rgb), 0.04);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   font-size: var(--krypton-font-size);
   white-space: pre-wrap;
-  text-shadow: 0 0 8px rgba(var(--agent-red-rgb), 0.2);
-  animation: error-flash 2s ease-in-out 3;
 }
 
-@keyframes error-flash {
-  0%, 100% { border-color: rgba(var(--agent-red-rgb), 0.5); }
-  50% { border-color: rgba(var(--agent-red-rgb), 0.9); background: rgba(var(--agent-red-rgb), 0.08); }
+.agent-view__error::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: 0.1em;
+  --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
+  animation: agent-view-lamp-flash 0.6s ease-out 1;
 }
 
-/* ═══ State hint bar ═════════════════════════════════════════ */
+/* One-shot event flash (DESIGN.md "Motion"): the lamp fires bright, then
+   settles to its steady glow. */
+@keyframes agent-view-lamp-flash {
+  0% { box-shadow: 0 0 6px rgba(var(--x-rgb), 1), 0 0 18px rgba(var(--x-rgb), 0.85); }
+  100% { box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4); }
+}
+
+/* ═══ Bottom stack — plate strips ════════════════════════════
+   State hint, status line, staging and input row are plate strips meeting
+   the screen on their top edge. A strip directly under another reads as the
+   same plate: a groove instead of the key-edge seam. */
+
+.agent-view__state-hint,
+.agent-view__status-line,
+.agent-view__staging,
+.agent-view__input-row {
+  background: var(--mat-brush), var(--mat-plate);
+  border-top: 1px solid var(--mat-key-edge);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
+}
+
+.agent-view__state-hint--visible ~ .agent-view__status-line,
+.agent-view__status-line--visible ~ .agent-view__staging,
+.agent-view__status-line--visible ~ .agent-view__input-row {
+  border-top-color: var(--mat-groove-lo);
+}
+
+/* ─── Scroll-mode key hint: engraved legend ─── */
 
 .agent-view__state-hint {
   display: none;
   padding: 5px 16px;
   font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: rgba(var(--agent-primary-rgb), 0.45);
-  text-shadow: 0 0 6px rgba(var(--agent-primary-rgb), 0.15);
+  letter-spacing: 0.13em;
+  color: var(--av-ink-3);
+  text-shadow: var(--mat-engrave);
   text-align: right;
-  border-top: 1px solid rgba(var(--agent-primary-rgb), 0.12);
-  background: rgba(var(--agent-primary-rgb), 0.02);
   user-select: none;
 }
 
 .agent-view__state-hint--visible { display: block; }
 
-/* ═══ Status line — mission telemetry ════════════════════════ */
+/* ─── Status line: lamps and readouts ─── */
 
 .agent-view__status-line {
   display: none;
-  padding: 8px 16px;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding: 7px 16px;
   font-size: var(--krypton-chrome-font-size, 11px);
   font-family: var(--agent-font);
-  letter-spacing: 0.1em;
-  color: rgba(var(--agent-primary-rgb), 0.55);
-  text-shadow: 0 0 4px rgba(var(--agent-primary-rgb), 0.15);
-  border-top: 1px solid rgba(var(--agent-primary-rgb), 0.2);
-  background: var(--agent-surface-high);
+  letter-spacing: 0.04em;
+  color: var(--av-ink-3);
   flex-shrink: 0;
   user-select: none;
   position: relative;
   z-index: 1;
 }
 
-.agent-view__status-line--visible { display: block; }
+.agent-view__status-line--visible { display: flex; }
 
-/* Armed auto-approval indicator — turns the telemetry strip into the safety surface */
-.agent-view__armed {
-  display: inline-block;
-  margin-right: 10px;
-  padding: 1px 7px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  font-variant-numeric: tabular-nums;
-  color: var(--agent-red);
-  background: rgba(var(--agent-red-rgb), 0.1);
-  border: 1px solid rgba(var(--agent-red-rgb), 0.5);
+/* Telemetry: a readout well. Its lamp lights warning at 70% context and
+   fault at 90% — steady. */
+.agent-view__telemetry {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 1px 8px;
   border-radius: var(--krypton-border-radius, 8px);
-  text-shadow: 0 0 6px rgba(var(--agent-red-rgb), 0.3);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  color: var(--av-ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* acceptEdits — gold, calmer than the red turn-armed default (spec 147) */
-.agent-view__armed--accept-edits {
-  color: var(--agent-gold);
-  background: rgba(var(--agent-gold-rgb), 0.1);
-  border-color: rgba(var(--agent-gold-rgb), 0.5);
-  text-shadow: 0 0 6px rgba(var(--agent-gold-rgb), 0.3);
+.agent-view__telemetry:empty { display: none; }
+
+.agent-view__status-line--warn .agent-view__telemetry,
+.agent-view__status-line--critical .agent-view__telemetry {
+  --x-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+  color: rgb(var(--x-rgb));
 }
 
-/* bypass — the no-safety state: loud, pulsing red so it is never missed (spec 147) */
-.agent-view__armed--bypass {
-  color: var(--agent-red);
-  background: rgba(var(--agent-red-rgb), 0.18);
-  border-color: rgba(var(--agent-red-rgb), 0.8);
-  text-shadow: 0 0 8px rgba(var(--agent-red-rgb), 0.5);
-  animation: status-alert 2s ease-in-out infinite;
+.agent-view__status-line--critical .agent-view__telemetry {
+  --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
 }
 
-.agent-view__status-line--warn {
-  color: var(--agent-gold);
-  text-shadow: 0 0 6px rgba(255, 213, 79, 0.2);
-  border-top-color: rgba(255, 213, 79, 0.15);
-}
-
-.agent-view__status-line--critical {
-  color: var(--agent-red);
-  text-shadow: 0 0 8px rgba(var(--agent-red-rgb), 0.3);
-  border-top-color: rgba(var(--agent-red-rgb), 0.2);
-  animation: status-alert 2s ease-in-out infinite;
-}
-
-@keyframes status-alert {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-
-.agent-view__status-spinner {
+.agent-view__status-line--warn .agent-view__telemetry::before,
+.agent-view__status-line--critical .agent-view__telemetry::before {
+  content: '';
   display: inline-block;
-  margin-right: 8px;
-  color: var(--agent-primary);
-  text-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.5);
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  border-radius: 50%;
+  vertical-align: 0.05em;
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
+}
+
+/* Armed auto-approval (spec 147): a lit status capsule with its own LED.
+   Turn-wide auto-run / auto-block and bypass are fault-lit (bypass brighter:
+   no safety at all); acceptEdits is warning-lit. All steady. */
+.agent-view__armed {
+  --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 9px 1px 7px;
+  border: 1px solid rgba(var(--x-rgb), 0.5);
+  border-radius: 999px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(var(--x-rgb), 0.3), rgba(var(--x-rgb), 0.07) 75%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--x-rgb), 0.22);
+  color: rgb(var(--x-rgb));
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.agent-view__armed::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
+}
+
+.agent-view__armed--accept-edits {
+  --x-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+}
+
+.agent-view__armed--bypass {
+  border-color: rgba(var(--x-rgb), 0.85);
+  background: radial-gradient(ellipse at 50% 0%, rgba(var(--x-rgb), 0.5), rgba(var(--x-rgb), 0.16) 75%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 0 8px rgba(var(--x-rgb), 0.35);
+}
+
+/* Working: a steady lit lamp beside the JS spinner glyph. */
+.agent-view__status-spinner {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--mat-lit);
   font-size: var(--krypton-font-size);
 }
 
+.agent-view__status-spinner::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
+}
+
+/* Elapsed time: a readout. */
 .agent-view__timer {
-  display: inline-block;
-  margin-right: 10px;
-  padding: 2px 8px;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  color: var(--agent-primary);
-  text-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.4);
-  background: rgba(var(--agent-primary-rgb), 0.06);
-  border: 1px solid rgba(var(--agent-primary-rgb), 0.2);
+  flex-shrink: 0;
+  padding: 1px 8px;
   border-radius: var(--krypton-border-radius, 8px);
-  animation: timer-pulse 1.5s ease-in-out infinite;
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--mat-lit);
 }
 
-@keyframes timer-pulse {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 1; }
-}
-
-/* ═══ Input row — command line terminal ══════════════════════ */
+/* ─── Input row: a plate strip holding the draft-line well ─── */
 
 .agent-view__input-row {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 16px 12px;
-  border-top: 1px solid rgba(var(--agent-primary-rgb), 0.2);
+  padding: 12px 20px;
   flex-shrink: 0;
   position: relative;
-  background: var(--agent-surface-low);
 }
 
-/* Ruled accent above input */
+/* The well, drawn behind the prompt glyph and the draft text. */
 .agent-view__input-row::before {
   content: '';
   position: absolute;
-  top: -1px;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(var(--agent-primary-rgb), 0.5),
-    rgba(var(--agent-primary-rgb), 0.15),
-    transparent
-  );
+  inset: 6px 10px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  pointer-events: none;
 }
 
-
-.agent-view__input-row--hidden {
-  height: 0;
-  overflow: hidden;
-  padding: 0;
-  border: none;
+.agent-view__input-row > * {
+  position: relative;
 }
 
-.agent-view__input-row--hidden::before { display: none; }
-
+.agent-view__input-row--hidden,
 .agent-view__input-row--busy {
   height: 0;
   overflow: hidden;
   padding: 0;
   border: none;
+}
+
+.agent-view__input-row--busy {
   pointer-events: none;
 }
 
+.agent-view__input-row--hidden::before,
 .agent-view__input-row--busy::before { display: none; }
 
-/* ─── Bash mode (! prefix) — green phosphor shell ─── */
-
-.agent-view__input-row--bash {
-  border-top-color: rgba(var(--agent-green-rgb), 0.3);
-  background: rgba(22, 34, 16, 0.35);
-}
-
-.agent-view__input-row--bash::before {
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(var(--agent-green-rgb), 0.5),
-    rgba(var(--agent-green-rgb), 0.15),
-    transparent
-  );
-}
-
-.agent-view__input-row--bash .agent-view__prompt-glyph {
-  color: rgba(var(--agent-green-rgb), 0.95);
-  text-shadow:
-    0 0 8px rgba(var(--agent-green-rgb), 0.6),
-    0 0 20px rgba(var(--agent-green-rgb), 0.2);
-}
-
-.agent-view__input-row--bash .agent-view__input-display {
-  color: rgba(var(--agent-green-rgb), 0.85);
-  text-shadow: 0 0 4px rgba(var(--agent-green-rgb), 0.15);
-}
-
-.agent-view__input-row--bash .agent-view__input-cursor {
-  color: rgba(var(--agent-green-rgb), 0.95);
-  text-shadow: 0 0 8px rgba(var(--agent-green-rgb), 0.6);
-}
-
 .agent-view__prompt-glyph {
-  color: var(--agent-primary);
-  text-shadow:
-    0 0 8px rgba(var(--agent-primary-rgb), 0.6),
-    0 0 20px rgba(var(--agent-primary-rgb), 0.2);
+  color: var(--mat-silk);
   flex-shrink: 0;
   padding-top: 1px;
   user-select: none;
-  transition: color 0.15s ease, text-shadow 0.15s ease;
+}
+
+/* Bash mode (`!` prefix): the `$` glyph takes the success colour. */
+.agent-view__input-row--bash .agent-view__prompt-glyph {
+  color: rgb(var(--krypton-success-rgb, 57, 255, 127));
 }
 
 .agent-view__input-display {
@@ -1186,95 +1083,89 @@
   line-height: var(--krypton-content-line-height, 1.5);
   min-height: 1.5em;
   outline: none;
+  color: var(--av-ink-1);
 }
 
-/* Input cursor — static amber phosphor block */
+/* Caret: the theme cursor colour, static. */
 .agent-view__input-cursor {
   display: inline;
-  color: var(--agent-primary);
-  text-shadow: 0 0 8px rgba(var(--agent-primary-rgb), 0.6);
+  color: var(--krypton-cursor, var(--av-ink-1));
 }
 
-/* ─── Autocomplete dropdown ──────────────────────────────────── */
+/* ─── Autocomplete + @-mention: a floating plate holding one well ─── */
 
-.agent-view__autocomplete {
+.agent-view__autocomplete,
+.agent-view__mention-popup {
   display: none;
   flex-direction: column;
-  padding: 4px 0;
-  margin: 0 16px;
-  border: 1px solid rgba(var(--agent-primary-rgb), 0.2);
+  padding: 5px;
+  margin: 0 16px 8px;
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
-  background: var(--agent-surface-solid);
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.5),
-    0 0 1px rgba(var(--agent-primary-rgb), 0.15);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
   max-height: 180px;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--agent-primary-rgb), 0.2) transparent;
 }
 
-.agent-view__autocomplete--visible { display: flex; }
+.agent-view__mention-popup { max-height: 220px; }
+
+.agent-view__autocomplete--visible,
+.agent-view__mention-popup--visible { display: flex; }
+
+/* Rows are slices of one well: flat fill, grooves between, full-row tint. */
+.agent-view__ac-row,
+.agent-view__mention-row {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  cursor: default;
+  background-color: var(--mat-well-fill);
+  border-bottom: 1px solid var(--mat-groove-lo);
+}
+
+.agent-view__ac-row:first-child,
+.agent-view__mention-row:first-child {
+  border-top-left-radius: var(--krypton-border-radius, 8px);
+  border-top-right-radius: var(--krypton-border-radius, 8px);
+}
+
+.agent-view__ac-row:last-child,
+.agent-view__mention-row:last-child {
+  border-bottom: 0;
+  border-bottom-left-radius: var(--krypton-border-radius, 8px);
+  border-bottom-right-radius: var(--krypton-border-radius, 8px);
+}
+
+.agent-view__ac-row--selected,
+.agent-view__mention-row--selected {
+  background-image: linear-gradient(var(--mat-select), var(--mat-select));
+}
 
 .agent-view__ac-row {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  padding: 5px 12px;
-  cursor: default;
-  flex-shrink: 0;
-}
-
-.agent-view__ac-row--selected {
-  background: rgba(var(--agent-primary-rgb), 0.12);
-  outline: 1px solid rgba(var(--agent-primary-rgb), 0.25);
-  outline-offset: -1px;
 }
 
 .agent-view__ac-cmd {
-  color: var(--agent-primary);
+  color: var(--mat-silk);
   font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
+  font-weight: 600;
   flex-shrink: 0;
   width: 10ch;
-  text-shadow: 0 0 6px rgba(var(--agent-primary-rgb), 0.15);
 }
 
 .agent-view__ac-desc {
-  color: rgba(var(--agent-text-rgb), 0.35);
+  color: var(--av-ink-3);
   font-size: var(--krypton-chrome-font-size, 11px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* ─── @ mention popup — fuzzy file search ──────────────────────── */
-
-.agent-view__mention-popup {
-  display: none;
-  flex-direction: column;
-  padding: 4px 0;
-  margin: 0 16px;
-  border: 1px solid rgba(var(--agent-primary-rgb), 0.2);
-  border-radius: var(--krypton-border-radius, 8px);
-  background: var(--agent-surface-solid);
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.5),
-    0 0 1px rgba(var(--agent-primary-rgb), 0.15);
-  max-height: 220px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--agent-primary-rgb), 0.2) transparent;
-}
-
-.agent-view__mention-popup--visible { display: flex; }
-
 .agent-view__mention-row {
   display: block;
-  padding: 5px 12px;
-  cursor: default;
-  flex-shrink: 0;
-  color: rgba(var(--agent-text-rgb), 0.7);
+  color: var(--av-ink-2);
   font-size: var(--krypton-chrome-font-size, 11px);
   white-space: nowrap;
   overflow: hidden;
@@ -1282,147 +1173,70 @@
 }
 
 .agent-view__mention-row--selected {
-  background: rgba(var(--agent-primary-rgb), 0.12);
-  outline: 1px solid rgba(var(--agent-primary-rgb), 0.25);
-  outline-offset: -1px;
-  color: var(--agent-text);
+  color: var(--av-ink-1);
 }
 
 .agent-view__mention-hl {
-  color: var(--agent-primary);
+  color: var(--mat-silk);
   font-weight: 700;
-  text-shadow: 0 0 6px rgba(var(--agent-primary-rgb), 0.25);
 }
 
-/* ─── Context inspector panel ────────────────────────────────── */
+/* ─── Image staging strip ─── */
 
-.agent-view__messages--hidden { display: none; }
-
-.agent-view__context-panel {
-  display: none;
-  flex-direction: column;
-  overflow-y: auto;
-  padding: 8px 14px;
-  gap: 2px;
-  font-size: var(--krypton-font-size);
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--agent-primary-rgb), 0.3) transparent;
-}
-
-.agent-view__context-panel--visible {
+.agent-view__staging {
   display: flex;
-  flex: 1;
-  min-height: 0;
-}
-
-.agent-view__ctx-header {
-  padding: 6px 4px 10px;
-  font-size: var(--krypton-font-size);
-  color: rgba(var(--agent-text-rgb), 0.45);
-  border-bottom: 1px solid rgba(var(--agent-primary-rgb), 0.12);
-  margin-bottom: 4px;
-}
-
-.agent-view__ctx-label {
-  color: rgba(var(--agent-primary-rgb), 0.55);
-  font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  margin-right: 4px;
-}
-
-.agent-view__ctx-row {
-  display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-  padding: 3px 4px;
-  cursor: default;
-  min-height: 20px;
-}
-
-.agent-view__ctx-row--selected {
-  background: rgba(var(--agent-primary-rgb), 0.1);
-  outline: 1px solid rgba(var(--agent-primary-rgb), 0.25);
-}
-
-.agent-view__ctx-row--error {
-  background: rgba(var(--agent-red-rgb), 0.08);
-}
-
-.agent-view__ctx-idx {
-  color: rgba(var(--agent-text-rgb), 0.25);
-  width: 2.5ch;
-  text-align: right;
+  padding: 6px 16px;
   flex-shrink: 0;
-  font-size: var(--krypton-font-size);
+  flex-wrap: wrap;
 }
 
-.agent-view__ctx-role {
-  width: 10ch;
-  flex-shrink: 0;
-  font-size: var(--krypton-font-size);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.agent-view__staged-thumb,
+.agent-view__msg-thumb {
+  max-height: 48px;
+  max-width: 96px;
+  object-fit: cover;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: var(--krypton-border-radius, 8px);
 }
 
-.agent-view__ctx-role--system { color: rgba(var(--agent-primary-rgb), 0.7); }
-.agent-view__ctx-role--user { color: rgba(var(--agent-cyan-rgb), 0.7); }
-.agent-view__ctx-role--assistant { color: var(--agent-primary); text-shadow: 0 0 6px rgba(var(--agent-primary-rgb), 0.2); }
-.agent-view__ctx-role--toolResult { color: var(--agent-gold); }
-.agent-view__ctx-role--tools { color: var(--agent-blue); }
-
-.agent-view__ctx-types {
-  color: rgba(var(--agent-text-rgb), 0.3);
-  font-size: var(--krypton-font-size);
-  width: 16ch;
-  flex-shrink: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agent-view__ctx-len {
-  color: rgba(var(--agent-text-rgb), 0.25);
-  font-size: var(--krypton-font-size);
-  width: 7ch;
-  text-align: right;
-  flex-shrink: 0;
-}
-
-.agent-view__ctx-summary {
-  color: rgba(var(--agent-text-rgb), 0.5);
-  font-size: var(--krypton-font-size);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-  min-width: 0;
-}
-
-.agent-view__ctx-badge {
+.agent-view__staging-hint {
   font-size: var(--krypton-chrome-font-size, 11px);
-  padding: 0 4px;
-  background: rgba(var(--agent-primary-rgb), 0.12);
-  color: rgba(var(--agent-primary-rgb), 0.7);
-  flex-shrink: 0;
+  color: var(--av-ink-3);
+  margin-left: auto;
 }
 
-.agent-view__ctx-expanded {
-  margin: 4px 0 4px 3ch;
-  padding: 8px 12px;
-  font-size: var(--krypton-font-size);
-  line-height: var(--krypton-content-line-height, 1.5);
-  color: rgba(var(--agent-text-rgb), 0.75);
-  background: rgba(14, 10, 4, 0.3);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 40vh;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--agent-primary-rgb), 0.2) transparent;
+.agent-view__msg-thumbs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
 }
 
-/* ─── Context View (dedicated agent context window) ──────────── */
+/* ─── Drag-over: a scrim with a backlit legend ─── */
+
+.agent-view--drag-over::after {
+  content: 'DROP IMAGE';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mat-scrim);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
+  font-size: 14px;
+  letter-spacing: 0.13em;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CONTEXT VIEW (dedicated agent context tab)
+   A plate: engraved header of readouts, the list as one well.
+   ═══════════════════════════════════════════════════════════════ */
 
 .context-view {
   display: flex;
@@ -1430,116 +1244,135 @@
   width: 100%;
   height: 100%;
   font-family: var(--agent-font);
-  color: rgba(var(--agent-text-rgb), 0.85);
-  background: transparent;
+  color: var(--av-ink-2);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   outline: none;
 }
 
 .context-view__header {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
-  padding: 8px 14px;
+  padding: 10px 14px 8px;
   font-size: var(--krypton-font-size);
-  color: rgba(var(--agent-text-rgb), 0.45);
-  border-bottom: 1px solid rgba(var(--agent-primary-rgb), 0.12);
+  color: var(--av-ink-3);
   flex-shrink: 0;
 }
 
+.context-view__stat {
+  color: var(--av-ink-3);
+  text-shadow: var(--mat-engrave);
+}
+
 .context-view__stat-label {
-  color: rgba(var(--agent-primary-rgb), 0.55);
+  color: var(--mat-silk);
   font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.12em;
+  font-weight: 600;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
+  text-shadow: var(--mat-engrave);
   margin-left: 10px;
 }
 
 .context-view__stat-label:first-of-type { margin-left: 0; }
 
+/* Each value is a readout window. */
 .context-view__stat-value {
-  color: rgba(var(--agent-text-rgb), 0.7);
+  padding: 1px 8px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  color: var(--av-ink-1);
   font-size: var(--krypton-font-size);
+  font-variant-numeric: tabular-nums;
   margin-right: 4px;
 }
 
+/* Streaming: a steady lit lamp. */
 .context-view__live-dot {
+  --x-rgb: var(--krypton-success-rgb, 57, 255, 127);
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--agent-green);
-  box-shadow: 0 0 8px rgba(var(--agent-green-rgb), 0.5);
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
   margin-right: 6px;
   flex-shrink: 0;
-  animation: live-dot-pulse 1s ease-in-out infinite;
-}
-
-@keyframes live-dot-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
 }
 
 .context-view__list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 14px;
+  margin: 0 8px;
+  padding: 4px 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--agent-primary-rgb), 0.3) transparent;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .context-view__list--hidden { display: none; }
 
 .context-view__placeholder {
-  padding: 20px 4px;
-  color: rgba(var(--agent-text-rgb), 0.35);
+  padding: 20px 12px;
+  color: var(--av-ink-3);
   font-size: var(--krypton-font-size);
+  text-align: center;
 }
 
+/* Rows: an etched groove between (dark cut, light edge below), full-row
+   tint when selected. No shadows — a repeated row. */
 .context-view__row {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 3px 4px;
+  padding: 3px 10px;
   cursor: default;
   min-height: 20px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--mat-groove-hi);
+  border-bottom: 1px solid var(--mat-groove-lo);
 }
 
+.context-view__row:first-child { border-top-color: transparent; }
+.context-view__row:last-child { border-bottom-color: transparent; }
+
 .context-view__row--selected {
-  background: rgba(var(--agent-primary-rgb), 0.1);
-  outline: 1px solid rgba(var(--agent-primary-rgb), 0.25);
+  background: var(--mat-select);
 }
 
 .context-view__row--error {
-  background: rgba(var(--agent-red-rgb), 0.08);
+  background: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.12);
 }
 
 .context-view__row-idx {
-  color: rgba(var(--agent-text-rgb), 0.25);
+  color: var(--av-ink-4);
   width: 2.5ch;
   text-align: right;
   flex-shrink: 0;
   font-size: var(--krypton-font-size);
+  font-variant-numeric: tabular-nums;
 }
 
 .context-view__row-role {
-  width: 10ch;
+  width: 11ch;
   flex-shrink: 0;
   font-size: var(--krypton-font-size);
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  color: var(--av-ink-3);
 }
 
-.context-view__row-role--system { color: rgba(var(--agent-primary-rgb), 0.7); }
-.context-view__row-role--user { color: rgba(var(--agent-cyan-rgb), 0.7); }
-.context-view__row-role--assistant { color: var(--agent-primary); text-shadow: 0 0 6px rgba(var(--agent-primary-rgb), 0.2); }
-.context-view__row-role--toolResult { color: var(--agent-gold); }
-.context-view__row-role--tools { color: var(--agent-blue); }
+.context-view__row-role--assistant { color: var(--mat-silk); }
+.context-view__row-role--user,
+.context-view__row-role--toolResult { color: var(--av-ink-2); }
 
 .context-view__row-types {
-  color: rgba(var(--agent-text-rgb), 0.3);
+  color: var(--av-ink-4);
   font-size: var(--krypton-font-size);
   width: 16ch;
   flex-shrink: 0;
@@ -1549,15 +1382,16 @@
 }
 
 .context-view__row-len {
-  color: rgba(var(--agent-text-rgb), 0.25);
+  color: var(--av-ink-4);
   font-size: var(--krypton-font-size);
+  font-variant-numeric: tabular-nums;
   width: 7ch;
   text-align: right;
   flex-shrink: 0;
 }
 
 .context-view__row-summary {
-  color: rgba(var(--agent-text-rgb), 0.5);
+  color: var(--av-ink-2);
   font-size: var(--krypton-font-size);
   white-space: nowrap;
   overflow: hidden;
@@ -1566,19 +1400,23 @@
   min-width: 0;
 }
 
+/* Stop reason: an unlit capsule in ink. */
 .context-view__row-badge {
   font-size: var(--krypton-chrome-font-size, 11px);
-  padding: 0 4px;
-  background: rgba(var(--agent-primary-rgb), 0.12);
-  color: rgba(var(--agent-primary-rgb), 0.7);
+  padding: 0 7px;
+  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+  border-radius: 999px;
+  color: var(--av-ink-3);
   flex-shrink: 0;
 }
 
 .context-view__detail {
   display: none;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--agent-primary-rgb), 0.2) transparent;
+  margin: 0 8px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .context-view__detail--visible {
@@ -1593,113 +1431,31 @@
   padding: 12px 14px;
   font-size: var(--krypton-font-size);
   line-height: var(--krypton-content-line-height, 1.5);
-  color: rgba(var(--agent-text-rgb), 0.65);
+  color: var(--av-ink-2);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
+/* Key-hint foot: printed legend on the plate. */
 .context-view__hint {
-  padding: 4px 14px;
+  padding: 7px 14px;
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--agent-text-rgb), 0.3);
-  border-top: 1px solid rgba(var(--agent-primary-rgb), 0.08);
+  letter-spacing: 0.04em;
+  color: var(--av-ink-3);
+  text-shadow: var(--mat-engrave);
   flex-shrink: 0;
-}
-
-/* ═══ Image staging area ═════════════════════════════════════ */
-
-.agent-view__staging {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 16px;
-  border-top: 1px solid rgba(var(--agent-primary-rgb), 0.15);
-  background: var(--agent-surface-low);
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
-
-.agent-view__staged-thumb {
-  max-height: 48px;
-  max-width: 96px;
-  object-fit: cover;
-  border: 1px solid rgba(var(--agent-primary-rgb), 0.4);
-  border-radius: var(--krypton-border-radius, 8px);
-  opacity: 0.9;
-}
-
-.agent-view__staging-hint {
-  font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(var(--agent-text-rgb), 0.3);
-  margin-left: auto;
-}
-
-/* ═══ User message image thumbnails ══════════════════════════ */
-
-.agent-view__msg-thumbs {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 6px;
-}
-
-.agent-view__msg-thumb {
-  max-height: 48px;
-  max-width: 96px;
-  object-fit: cover;
-  border: 1px solid rgba(var(--agent-primary-rgb), 0.3);
-  border-radius: var(--krypton-border-radius, 8px);
-  opacity: 0.85;
-}
-
-/* ═══ Drag-over overlay ═══════════════════════════════════════ */
-
-.agent-view--drag-over::after {
-  content: 'DROP IMAGE';
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(6, 10, 18, 0.75);
-  color: var(--agent-primary);
-  font-size: 14px;
-  letter-spacing: 0.2em;
-  font-weight: 600;
-  pointer-events: none;
-  z-index: 100;
-}
-
-.agent-view--drag-over {
-  position: relative;
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   REDUCED MOTION
-   Per DESIGN.md policy: drop ambient infinite animations, keep
-   entrance only (capped at ~120ms). Vestibular safety, not optional.
+   REDUCED MOTION — the error lamp holds steady; the logo collapse
+   is capped at 120ms.
    ═══════════════════════════════════════════════════════════════ */
 
 @media (prefers-reduced-motion: reduce) {
-  /* Ambient infinite pulses + the 3× error flash hold at rest (lit) */
-  .agent-view__status-line--critical,
-  .agent-view__timer,
-  .agent-view__error,
-  .context-view__live-dot {
+  .agent-view__error::before {
     animation: none;
   }
 
-  /* Entrance reveals stay, but capped — no slow boot under reduced motion */
-  .agent-view__logo-title,
-  .agent-view__logo-sub,
-  .agent-view__logo-hints,
-  .agent-view__msg--assistant,
-  .agent-view__tool-row {
-    animation-duration: 0.12s;
-    animation-delay: 0s;
-  }
-
-  /* Logo collapse: tame the grid-rows/opacity transition */
   .agent-view__logo {
     transition-duration: 0.12s;
   }

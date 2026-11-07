@@ -85,6 +85,8 @@ export class MusicPlayer {
   private miniVizCtx: CanvasRenderingContext2D | null = null;
   private miniVizBins: number[] = [];
   private miniVizRaf: number = 0;
+  /** Bar and cap colours: the material silk / lit legend, read when the loop starts. */
+  private miniVizInk = { bar: '#ffb000', cap: '#ffd880' };
 
   // Dashboard selection state
   private selectedIndex = 0;
@@ -392,6 +394,11 @@ export class MusicPlayer {
   private startMiniViz(): void {
     if (!this.workspaceFooter?.isVisible) return;
     if (this.miniVizRaf) return;
+    const css = getComputedStyle(document.documentElement);
+    this.miniVizInk = {
+      bar: css.getPropertyValue('--mat-silk').trim() || this.miniVizInk.bar,
+      cap: css.getPropertyValue('--mat-lit').trim() || this.miniVizInk.cap,
+    };
     const draw = (): void => {
       this.drawMiniViz();
       this.miniVizRaf = requestAnimationFrame(draw);
@@ -438,18 +445,18 @@ export class MusicPlayer {
       const x = i * (barWidth + gap);
       const y = h - barH;
 
-      // Brighter bars with cyan-to-white gradient based on intensity
-      const alpha = 0.6 + value * 0.4;
-      const green = Math.round(212 + value * 43);
-      ctx.fillStyle = `rgba(0, ${green}, 255, ${alpha})`;
+      // A level meter in the faceplate's silk, a lit cap on each live bar.
+      ctx.globalAlpha = 0.6 + value * 0.4;
+      ctx.fillStyle = this.miniVizInk.bar;
       ctx.fillRect(x, y, barWidth, barH);
 
-      // Bright cap on top of each bar for extra visibility
       if (value > 0.05) {
-        ctx.fillStyle = `rgba(180, 240, 255, ${0.7 + value * 0.3})`;
+        ctx.globalAlpha = 0.7 + value * 0.3;
+        ctx.fillStyle = this.miniVizInk.cap;
         ctx.fillRect(x, y, barWidth, Math.min(2, barH));
       }
     }
+    ctx.globalAlpha = 1;
   }
 
   // ─── Dashboard Definition ──────────────────────────────────
@@ -669,19 +676,6 @@ export class MusicPlayer {
           fill: 'forwards',
         });
         this.trackLineAnimations.push(anim);
-
-        // Glow pulse on each line after it appears
-        const glowAnim = lineEl.animate([
-          { textShadow: '0 0 0px transparent' },
-          { textShadow: '0 0 8px rgba(0, 212, 255, 0.6)', offset: 0.4 },
-          { textShadow: '0 0 2px rgba(0, 212, 255, 0.15)' },
-        ], {
-          duration: 600,
-          delay: delay + 200,
-          easing: 'ease-out',
-          fill: 'forwards',
-        });
-        this.trackLineAnimations.push(glowAnim);
       }
     }
   }

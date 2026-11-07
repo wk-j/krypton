@@ -1,7 +1,12 @@
-/* Spec 302 §7.8 — `ReviewMatrixOverlay`. Moved verbatim from
-   src/styles/review-quality.css:9-185, plus the rules that replace the
-   findings block's inline styles (`renderReviewFindingsDetail`) and the
-   selected row's inline `background`. */
+/* Spec 302 §7.8 — `ReviewMatrixOverlay`, dressed as a Krypton Console floating
+   plate (DESIGN.md "Overlays and dialogs", spec 366): a plate over the scrim,
+   an engraved head, the lane switcher as selector keys in a channel, the
+   history table as one well with groove rows, the foot as printed legend.
+   The findings block replaces the old builder's inline styles
+   (`renderReviewFindingsDetail`) and the selected row's inline `background`.
+
+   ADR-0004: the matrix is observation, not a score. Severities, counts and
+   their column labels stay neutral — ink tiers only, never pass/fail hues. */
 @layer krypton.component {
   .acp-harness__review-overlay {
     position: absolute;
@@ -11,7 +16,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: rgba(4, 8, 13, 0.78);
+    background: var(--mat-scrim);
   }
 
   .acp-harness__review-overlay[hidden] {
@@ -23,10 +28,10 @@
     flex-direction: column;
     width: clamp(520px, 72vw, 940px);
     max-height: 84vh;
-    background: rgba(8, 14, 18, 0.98);
-    border: 1px solid rgba(0, 204, 255, 0.32);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+    background: var(--mat-brush), var(--mat-plate);
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
     overflow: hidden;
   }
 
@@ -42,58 +47,106 @@
     justify-content: space-between;
     gap: 10px;
     padding: 8px 14px;
-    border-bottom: 1px solid rgba(0, 204, 255, 0.22);
-    color: var(--krypton-window-accent, #0cf);
-    letter-spacing: 0.08em;
-    text-shadow: 0 0 8px rgba(0, 204, 255, 0.18);
+    border-bottom: 1px solid var(--mat-groove-lo);
+    box-shadow: 0 1px 0 var(--mat-groove-hi);
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    text-shadow: var(--mat-engrave);
   }
 
   .acp-review__sub {
-    color: rgba(216, 232, 216, 0.5);
-    font-size: 0.8em;
-    text-shadow: none;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-weight: 400;
     letter-spacing: 0.04em;
+    text-transform: none;
   }
 
+  /* Empty state: one line, centred in its own well. */
   .acp-review__empty {
+    margin: 8px;
     padding: 28px 18px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
     text-align: center;
-    color: rgba(216, 232, 216, 0.55);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     letter-spacing: 0.03em;
   }
 
-  /* ── Lane switcher ────────────────────────────────────────── */
+  /* ── Lane switcher: selector keys in a recessed channel ─────
+     The `.acp-dock__tabs` recipe (harness-shared.css). The count rides in the
+     tab's own text (`codex-1 · 4`), so there is no readout window here. */
 
   .acp-review__lanes {
+    flex: 0 0 auto;
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    padding: 9px 14px;
-    border-bottom: 1px solid rgba(0, 204, 255, 0.14);
+    gap: 4px;
+    margin: 8px 8px 0;
+    padding: 3px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-review__lane {
-    font-size: 0.86em;
-    letter-spacing: 0.03em;
-    color: rgba(216, 232, 216, 0.55);
-    padding: 2px 8px;
-    border-radius: var(--krypton-border-radius, 8px);
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 24px;
+    padding: 3px 9px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 6px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.09em;
+    line-height: 1;
+    text-shadow: var(--mat-print);
+    white-space: nowrap;
+  }
+
+  /* The indicator lamp. */
+  .acp-review__lane::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   .acp-review__lane.is-active {
-    color: #04080d;
-    background: var(--krypton-window-accent, #0cf);
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
   }
 
-  /* ── History table ───────────────────────────────────────── */
+  .acp-review__lane.is-active::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
+  }
+
+  /* ── History table: one well, groove rows ─────────────────── */
 
   .acp-review__table {
-    width: 100%;
+    width: auto;
+    margin: 8px;
     border-collapse: collapse;
     flex: 1;
     min-height: 0;
     display: block;
     overflow-y: auto;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-review__table thead,
@@ -103,23 +156,24 @@
     table-layout: fixed;
   }
 
+  /* Column labels sit inside the well, so they are printed ink, not engraved. */
   .acp-review__table th {
     text-align: left;
     font-weight: normal;
     font-size: 0.72em;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: rgba(216, 232, 216, 0.45);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     padding: 7px 14px;
-    border-bottom: 1px solid rgba(0, 204, 255, 0.14);
+    border-bottom: 1px solid var(--mat-groove-lo);
   }
 
   .acp-review__table td {
     padding: 7px 14px;
     font-size: 0.9em;
     vertical-align: baseline;
-    border-bottom: 1px solid rgba(0, 204, 255, 0.08);
-    color: rgba(216, 232, 216, 0.86);
+    border-bottom: 1px solid var(--mat-groove-lo);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
   }
 
   .acp-review__table tbody tr:last-child td {
@@ -129,20 +183,13 @@
   .acp-review__col-when { width: 124px; }
   .acp-review__col-num { width: 84px; text-align: center; }
 
-  /* Header labels carry the same hue as their column's numbers (block red, warn
-     amber) so the colour cue reads without an emoji glyph — kept dim to stay in
-     the muted header register. Colour labels the KIND of finding, not a verdict
-     (ADR-0004). */
-  .acp-review__col-block { color: rgba(255, 93, 108, 0.66); }
-  .acp-review__col-warn { color: rgba(255, 180, 84, 0.66); }
-
   /* Body cells must repeat the header column widths: thead and tbody are separate
      `display: table` blocks under `table-layout: fixed`, so each derives its column
      widths from its own first row. Without these the numeric columns drift out from
      under their labels. */
   .acp-review__when {
     width: 124px;
-    color: rgba(216, 232, 216, 0.5);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     white-space: nowrap;
   }
 
@@ -152,24 +199,32 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Category colours label the KIND of finding (block vs warn), not a verdict on
-     the lane — the count itself is never graded (ADR-0004). Zero is dimmed. */
-  .acp-review__rev { color: rgba(216, 232, 216, 0.6); }
-  .acp-review__block { color: #ff5d6c; }
-  .acp-review__warn { color: #ffb454; }
-  .acp-review__num.is-zero { color: rgba(216, 232, 216, 0.3); }
+  /* Counts are evidence, never graded (ADR-0004): one ink for every column, and
+     a zero recedes to the faintest tier. */
+  .acp-review__rev { color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82)); }
 
-  /* Was `tr.style.background` in the builder. */
+  .acp-review__block,
+  .acp-review__warn {
+    color: var(--krypton-fg, #b0c4d8);
+  }
+
+  .acp-review__num.is-zero { color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46)); }
+
+  /* Was `tr.style.background` in the builder: the full-row selection tint. */
   .acp-review__row--selected {
-    background: rgba(0, 204, 255, 0.08);
+    background: var(--mat-select);
+  }
+
+  .acp-review__row--selected td {
+    color: var(--krypton-fg, #b0c4d8);
   }
 
   /* ── Findings detail ──────────────────────────────────────
-     Was eleven inline styles with three hardcoded severity colours. */
+     A deeper recess under its row; the findings are flat reading content. */
   .acp-review__detail-cell {
     padding: 0 14px 8px;
-    background: rgba(0, 204, 255, 0.05);
-    border-bottom: 1px solid rgba(0, 204, 255, 0.08);
+    background: var(--mat-well-fill);
+    border-bottom: 1px solid var(--mat-groove-lo);
   }
 
   .acp-review__findings {
@@ -196,38 +251,49 @@
     margin-top: 0;
   }
 
-  .acp-review__findings-group--blocking { color: #ff5d6c; }
-  .acp-review__findings-group--non-blocking { color: #ffb454; }
-  .acp-review__findings-group--suggestion { color: rgba(216, 232, 216, 0.72); }
+  /* Severity reads as an ink step, not a hue (ADR-0004). */
+  .acp-review__findings-group--blocking { color: var(--krypton-fg, #b0c4d8); }
+  .acp-review__findings-group--non-blocking { color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82)); }
+  .acp-review__findings-group--suggestion { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62)); }
 
   .acp-review__finding {
     padding: 2px 0;
-    color: rgba(216, 232, 216, 0.86);
+    color: var(--krypton-fg, #b0c4d8);
   }
 
-  /* ── Footer hint row ─────────────────────────────────────── */
+  /* ── Foot: printed legend on the plate ─────────────────────── */
 
   .acp-review__foot {
     display: flex;
-    gap: 16px;
+    flex-wrap: wrap;
+    gap: 4px 16px;
     padding: 8px 14px;
-    border-top: 1px solid rgba(0, 204, 255, 0.18);
-    color: rgba(216, 232, 216, 0.5);
+    border-top: 1px solid var(--mat-groove-lo);
+    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.8em;
     letter-spacing: 0.03em;
+    text-shadow: var(--mat-engrave);
   }
 
   .acp-review__foot-note {
     margin-left: auto;
-    color: rgba(216, 232, 216, 0.38);
+    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
   }
 
   .acp-review__foot kbd {
-    color: var(--krypton-window-accent, #0cf);
-    border: 1px solid rgba(0, 204, 255, 0.3);
-    border-radius: var(--krypton-border-radius, 8px);
-    padding: 0 5px;
-    font-family: inherit;
-    font-size: 0.92em;
+    padding: 0 4px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 4px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--mat-lit);
+    text-shadow: var(--mat-print);
+    font: inherit;
+  }
+
+  /* A hint never breaks between its keys and its words; the run wraps whole. */
+  .acp-review__foot > span {
+    white-space: nowrap;
   }
 }

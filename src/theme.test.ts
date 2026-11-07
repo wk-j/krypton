@@ -64,19 +64,16 @@ function theme(overrides: {
     chrome: {
       style: 'cyberpunk',
       border: { width: 1, color: 'rgba(0, 200, 255, 0.3)', radius: 8 },
-      shadow: { color: 'rgba(0, 200, 255, 0.07)', blur: 15, spread: 0, offset_x: 0, offset_y: 0 },
       backdrop: { color: 'rgba(6, 10, 18, 0.5)', blur: 12 },
       titlebar: {
         height: 28,
-        background: 'transparent',
-        text_color: 'rgba(0, 200, 255, 0.3)',
         font_size: 11,
         font_weight: 600,
         letter_spacing: 0.08,
         text_transform: 'uppercase',
         alignment: 'left',
       },
-      status_dot: { size: 6, color: 'rgba(0, 200, 255, 0.25)', shape: 'square' },
+      status_dot: { size: 6, shape: 'square' },
       header_accent: {
         enabled: true,
         height: 6,
@@ -93,9 +90,6 @@ function theme(overrides: {
       },
     },
     focused: {
-      border_color: 'rgba(0, 200, 255, 0.5)',
-      shadow_color: 'rgba(0, 200, 255, 0.12)',
-      shadow_blur: 20,
       titlebar_text_color: accent,
       status_dot_color: accent,
       header_accent_color: 'rgba(0, 200, 255, 0.35)',
@@ -105,15 +99,6 @@ function theme(overrides: {
     },
     workspace: { background: 'transparent', blur: 0 },
     ui: {
-      command_palette: {
-        background: 'rgba(6, 10, 18, 0.85)',
-        border: 'rgba(0, 200, 255, 0.4)',
-        text_color: foreground,
-        highlight_color: accent,
-        input_background: 'transparent',
-        input_text_color: foreground,
-        backdrop_blur: 16,
-      },
       search: {
         background: 'rgba(6, 10, 18, 0.85)',
         text_color: foreground,
@@ -126,25 +111,9 @@ function theme(overrides: {
         font_size: 11,
         position: 'bottom-center',
       },
-      which_key: {
-        background: 'rgba(6, 10, 18, 0.85)',
-        border: 'rgba(0, 200, 255, 0.4)',
-        title_color: accent,
-        key_color: accent,
-        label_color: 'rgba(0, 200, 255, 0.4)',
-        separator_color: 'rgba(0, 200, 255, 0.2)',
-        backdrop_blur: 16,
-      },
       quick_terminal: {
         backdrop_blur: 20,
         background: 'rgba(6, 10, 18, 0.6)',
-        shadow_color: 'rgba(0, 200, 255, 0.1)',
-        shadow_blur: 30,
-      },
-      hints: {
-        background: '#f4bf75',
-        foreground: '#181818',
-        matched_foreground: '#8a7444',
       },
     },
   };
@@ -190,12 +159,10 @@ describe('themeCssProperties', () => {
   it('does not collapse #0cf accent to 0,0,0', () => {
     const props = themeCssProperties(theme({ accent: '#0cf' }));
     expect(props['--krypton-accent-rgb']).toBe('0, 204, 255');
-    expect(props['--agent-primary-rgb']).toBe('0, 204, 255');
-    expect(props['--agent-primary']).toBe('#0cf');
     expect(props['--krypton-border-radius']).toBe('8px');
   });
 
-  it('drives agent and vault tokens from legacy-radiance green', () => {
+  it('drives agent tokens from legacy-radiance green', () => {
     const props = themeCssProperties(
       theme({
         accent: '#00C840',
@@ -205,11 +172,8 @@ describe('themeCssProperties', () => {
       }),
     );
     expect(props['--krypton-accent-rgb']).toBe('0, 200, 64');
-    expect(props['--agent-primary']).toBe('#00C840');
     expect(props['--agent-text']).toBe('#C8E0D0');
     expect(props['--agent-green']).toBe('#00C840');
-    expect(props['--vault-primary']).toBe('#00C840');
-    expect(props['--vault-primary-rgb']).toBe('0, 200, 64');
     expect(props['--krypton-window-accent']).toBe('#00C840');
     expect(props['--agent-accent']).toBe('#00C840');
     expect(props['--agent-user']).toBe('#00C840');
@@ -224,8 +188,6 @@ describe('themeCssProperties', () => {
     const props = themeCssProperties(t);
     expect(themeScheme(t)).toBe('dark');
     expect(props['--agent-surface-solid']).toBe('rgba(6, 10, 18, 0.96)');
-    expect(props['--agent-surface-mid']).toBe('rgba(6, 10, 18, 0.55)');
-    expect(props['--krypton-bg-elev']).toBe('rgba(6, 10, 18, 0.92)');
     expect(props['--agent-text']).toBe('#1c2c3c');
     expect(props['--agent-accent']).toBe('#0b7d6a');
     expect(props['--agent-user']).toBe('#007799');
@@ -239,19 +201,17 @@ describe('themeCssProperties', () => {
     expect(relativeLuminance(t.chrome.backdrop.color)).toBeGreaterThan(0.8);
   });
 
-  it('separates light rail from canvas and keeps ink contrast', () => {
+  it('keeps light surfaces opaque enough and ink at contrast', () => {
     const t = theme({ foreground: '#1c2c3c', accent: '#007799' });
     t.colors.black = '#1c2c3c';
     t.chrome.backdrop.color = 'rgba(230, 239, 246, 0.90)';
     t.focused.corner_accent_color = '#007799';
     const props = themeCssProperties(t);
     expect(props['--krypton-scheme']).toBe('light');
-    expect(props['--agent-surface-rail']).not.toBe(props['--agent-surface-canvas']);
     // Rail cards float over the transcript; any alpha lets its glyphs through.
     expect(props['--agent-surface-solid']).toMatch(/^rgba\(255, 255, 255, 1\)$/);
     expect(props['--agent-surface-canvas']).toBe('rgba(255, 255, 255, 0.78)');
     expect(props['--agent-text']).toBe('#1c2c3c');
-    expect(props['--agent-ghost']).toBe(props['--agent-surface-rail']);
     expect(contrastRatio(props['--agent-text'], '#ffffff')).toBeGreaterThanOrEqual(7);
   });
 });
@@ -388,18 +348,10 @@ describe('light scheme stylesheet', () => {
     expect(lastImport?.[1]).toBe('theme-scheme.css');
   });
 
-  it('rewrites window chrome on html[data-theme-scheme=light]', () => {
+  it('keeps harness selectors and edge rails out of theme-scheme.css', () => {
     const css = readFileSync(join(here, 'styles/theme-scheme.css'), 'utf8');
-    expect(css).toContain("html[data-theme-scheme='light'] .krypton-tab__title");
     // No harness selector is left: the whole half moved to its owners.
     expect(css.replace(/\/\*[\s\S]*?\*\//g, '')).not.toContain('.acp-');
-    expect(css).not.toMatch(/border-left:\s*[2-9]px/);
-  });
-
-  it('rewrites the harness rail from the component that owns it', () => {
-    const css = readFileSync(join(here, 'acp/components/lane-rail/lane-rail.css'), 'utf8');
-    expect(css).toContain("html[data-theme-scheme='light'] .acp-harness__rail");
-    expect(css).toContain('--agent-surface-rail');
     expect(css).not.toMatch(/border-left:\s*[2-9]px/);
   });
 
@@ -457,7 +409,7 @@ describe('component tokens (spec 303)', () => {
     t.tokens = { 'not-a-real-hook-yet': '420px' };
     const props = themeCssProperties(t);
     expect(props['--not-a-real-hook-yet']).toBe('420px');
-    expect(props['--agent-primary']).toBe('#0cf');
+    expect(props['--krypton-accent']).toBe('#0cf');
   });
 
   it('lets a user token beat the derived built-in of the same name', () => {
@@ -474,7 +426,7 @@ describe('component tokens (spec 303)', () => {
     new FrontendThemeEngine().apply(t);
     expect(applied['--acp-tool-head-fg']).toBe('#ffd27f');
     expect(applied['--not-a-real-hook-yet']).toBe('420px');
-    expect(applied['--agent-primary']).toBe('#0cf');
+    expect(applied['--krypton-accent']).toBe('#0cf');
   });
 
   it('removes a stale token when the next theme does not set it', () => {
@@ -491,7 +443,7 @@ describe('component tokens (spec 303)', () => {
     engine.apply(without);
     expect('--acp-tool-head-fg' in applied).toBe(false);
     expect(applied['--acp-peek-accent']).toBe('#00c840');
-    expect(applied['--agent-primary']).toBe('#0cf');
+    expect(applied['--krypton-accent']).toBe('#0cf');
 
     const none = theme({});
     engine.apply(none);
@@ -508,6 +460,6 @@ describe('component tokens (spec 303)', () => {
 
     engine.apply(theme({}));
     expect('--krypton-ink-3' in applied).toBe(false);
-    expect(applied['--agent-primary']).toBe('#0cf');
+    expect(applied['--krypton-accent']).toBe('#0cf');
   });
 });

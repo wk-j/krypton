@@ -4,6 +4,7 @@
 > Date: 2026-11-04
 > Milestone: ACP Harness — observability
 > Builds on: 0091 (resources), 0301/0302 (components), 0306 (Assist), 0333 (Inline AI), 0337 (Rails), 0347 (side panels)
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): `DESIGN.console.md` merged into DESIGN.md; dock tokens are `--mat-*`.
 
 ## Problem
 
@@ -119,7 +120,7 @@ Add props-only `AssistantInstances` under `src/acp/components/assistant-instance
 
 Updates invalidate only `rightRail` or call the owning component's `update()`. They never render transcript/composer regions or mutate sealed rows. Follow `DESIGN.md`, existing theme tokens, BEM, and `krypton.component` / `krypton.scheme` layers. Include an explicit block-scoped `[hidden]` rule where display is declared. No new ambient animations, left-edge accent rails, corner brackets, or blur.
 
-The panel uses the console faceplate of `DESIGN.console.md`, like the Ticket and Rails docks: engraved labels, the counts in readout windows, the list and the details in recessed wells split by etched grooves, lit capsules for state, ink tiers for values, and a full-row selection tint (ADR-0027); its text inherits the dock body size, as Rails and Ticket rows do. Glyphs are `<symbol>` defs in `harness-icons.ts` (`assistants`, `process`, `embedded`, `unknown`, `clock`, plus existing status/activity marks) and backend logos tinted by `--krypton-backend-*`. State chips reuse `Chip`. The selected-instance details are their own sub-component with a value dependency tuple, so an age tick that changes nothing they show leaves their DOM — and any text the user selected in it — untouched.
+The panel uses the console faceplate of `DESIGN.md`, like the Ticket and Rails docks: engraved labels, the counts in readout windows, the list and the details in recessed wells split by etched grooves, lit capsules for state, ink tiers for values, and a full-row selection tint (ADR-0027); its text inherits the dock body size, as Rails and Ticket rows do. Glyphs are `<symbol>` defs in `harness-icons.ts` (`assistants`, `process`, `embedded`, `unknown`, `clock`, plus existing status/activity marks) and backend logos tinted by `--krypton-backend-*`. State chips reuse `Chip`. The selected-instance details are their own sub-component with a value dependency tuple, so an age tick that changes nothing they show leaves their DOM — and any text the user selected in it — untouched.
 
 ## Affected Files
 

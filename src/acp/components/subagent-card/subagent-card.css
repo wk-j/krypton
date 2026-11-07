@@ -1,7 +1,11 @@
 /* Spec 302 §3.5 — `SubagentCard`.
    Carved VERBATIM from src/styles/acp-harness.css:2272-2406 (the spec-282
-   block, `.acp-harness__subagents` through `.acp-harness__subagent-detail-text`,
-   including the pulse keyframes and its reduced-motion guard).
+   block, `.acp-harness__subagents` through `.acp-harness__subagent-detail-text`).
+
+   Spec 366 (DESIGN.md "Parts"): the card is one well whose agent rows are
+   split by grooves; each row's status glyph is an LED. A running agent is a
+   steady lit lamp — the old glyph pulse is gone. Rows carry no shadow or
+   gradient; the hinted row is the full-row selection tint (ADR-0027).
 
    theme-scheme.css has no `__subagent*` selector, so there is no krypton.scheme
    layer here. `.acp-harness__subagent-summary` is NOT in this file: that span
@@ -13,26 +17,26 @@
   .acp-harness__subagents {
     display: flex;
     flex-direction: column;
-    gap: 2px;
     margin-top: 4px;
-    padding: 4px 8px;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
+    padding: 2px 8px;
     border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well-fill);
+    box-shadow: var(--mat-well-shadow);
     white-space: normal;
   }
 
   .acp-harness__subagent {
     min-width: 0;
-    padding: 2px 0;
+    padding: 3px 0;
     cursor: pointer;
   }
 
   .acp-harness__subagent + .acp-harness__subagent {
-    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.07);
+    border-top: 1px solid var(--mat-groove-lo);
   }
 
   .acp-harness__subagent--hinted {
-    background: rgba(109, 208, 255, 0.12);
+    background: var(--mat-select);
   }
 
   .acp-harness__subagent-line {
@@ -42,43 +46,53 @@
     min-width: 0;
   }
 
+  /* Hint-mode label: a key cap (DESIGN.md "Overlays": hint labels are caps). */
   .acp-harness__subagent-hint {
     min-width: 1.5em;
     padding: 0 4px;
     text-align: center;
-    font-weight: 800;
-    color: #071013;
-    background: var(--agent-user, #6dd0ff);
+    font-weight: 700;
+    color: var(--mat-lit);
+    background: var(--mat-key);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
   }
 
+  /* The status LED, in the glyph's cell; the glyph text stays in the DOM. */
   .acp-harness__subagent-glyph {
+    position: relative;
     flex: 0 0 auto;
     width: 1ch;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    color: transparent;
   }
 
-  .acp-harness__subagent--running .acp-harness__subagent-glyph {
-    color: var(--agent-warning, #ffb000);
-    animation: acp-harness-subagent-pulse 1.4s ease-in-out infinite;
+  .acp-harness__subagent-glyph::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    margin: -3px 0 0 -3px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
-  .acp-harness__subagent--completed .acp-harness__subagent-glyph {
-    color: var(--agent-accent, #8effb0);
+  .acp-harness__subagent--running .acp-harness__subagent-glyph::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
   }
 
-  .acp-harness__subagent--failed .acp-harness__subagent-glyph {
-    color: var(--agent-error, #ff6b8b);
+  /* Pass: lit lens, no bloom (ADR-0017). */
+  .acp-harness__subagent--completed .acp-harness__subagent-glyph::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--krypton-success-rgb, 57, 255, 127)) 45%, rgba(var(--krypton-success-rgb, 57, 255, 127), 0.55) 100%);
+    box-shadow: none;
   }
 
-  @keyframes acp-harness-subagent-pulse {
-    50% { opacity: 0.35; }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .acp-harness__subagent--running .acp-harness__subagent-glyph {
-      animation: none;
-    }
+  .acp-harness__subagent--failed .acp-harness__subagent-glyph::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--krypton-danger-rgb, 255, 58, 92)) 45%, rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.9), 0 0 10px rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.4);
   }
 
   .acp-harness__subagent-name {
@@ -110,6 +124,7 @@
     flex: 0 0 auto;
     font-size: 0.82em;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
 
@@ -120,18 +135,22 @@
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45));
   }
 
+  /* The expanded detail is a deeper recess inside the card's well. */
   .acp-harness__subagent-detail {
     margin: 4px 0 2px calc(1ch + 8px);
     padding: 4px 8px;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
     border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well-fill);
+    box-shadow: var(--mat-well-depth), inset 0 0 0 1px var(--mat-well-wall);
     cursor: auto;
   }
 
   .acp-harness__subagent-detail-label {
     display: block;
     font-size: 0.72em;
-    letter-spacing: 0.08em;
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
   }
 

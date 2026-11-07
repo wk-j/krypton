@@ -1,20 +1,21 @@
 /* Spec 302 — `LaneRail`.
 
-   Scheme half only: the rail column's base rules are shell layout and stay
-   in src/styles/harness-shared.css next to `.acp-harness__body` and
-   `.acp-harness__dashboard`. The rail's light-mode surface is this
-   component's, which is what spec 301 §Testing re-points `theme.test.ts:268`
-   at.
+   The rail column's layout (flex column, padding, scroll) is shell layout and
+   stays in src/styles/harness-shared.css next to `.acp-harness__body` and
+   `.acp-harness__dashboard`. Its material is this component's.
 
-   Moved verbatim from src/styles/theme-scheme.css:174-177.
+   Spec 366 (DESIGN.md "Harness"): the zen rail is a plate column of selector
+   keys (`rail-entry.css`). The plate meets the lane's screen on its right, so
+   that one side takes the seam; the lit bevel runs down its left edge and
+   along the top. The light scheme swaps the plate at the root (materials.css),
+   so no scheme rule is needed here. */
 
-   Spec 325: the surface is a token, not a `background` — the active entry's
-   tab layer paints it around itself. The old 1px `border-right` is gone: it
-   sits on the rail's border box and would cut across the tab's flush edge;
-   the rail and the body still part by luminance (spec 0010). */
-
-@layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-harness__rail {
-    --acp-rail-surface: var(--agent-surface-rail, rgba(212, 222, 229, 0.92));
+@layer krypton.component {
+  .acp-harness__rail {
+    background: var(--mat-brush), var(--mat-plate);
+    border-right: 1px solid var(--mat-key-edge);
+    box-shadow:
+      inset 1px 0 0 var(--mat-bevel-hi),
+      inset 0 1px 0 var(--mat-bevel-hi);
   }
 }

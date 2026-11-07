@@ -1,4 +1,9 @@
-/* ─── Dashboard Overlay ──────────────────────────────────────────── */
+/* ─── Dashboard Overlay ────────────────────────────────────────────
+   Spec 366 / DESIGN.md (Krypton Console): a floating plate over the scrim,
+   like every overlay. The head is engraved, the tabs are selector keys in a
+   recessed channel, close is a key, figures are readouts, lists are wells of
+   flat rows. The plate holds its own alpha; `[visual] opacity` only sets the
+   terminal screens. */
 
 .krypton-dashboard {
   position: fixed;
@@ -20,7 +25,7 @@
 .krypton-dashboard__backdrop {
   position: absolute;
   inset: 0;
-  background: var(--krypton-dashboard-backdrop, rgba(0, 0, 0, 0.5));
+  background: var(--mat-scrim);
 }
 
 .krypton-dashboard__panel {
@@ -29,13 +34,13 @@
   height: 80vh;
   max-width: 1200px;
   max-height: 900px;
-  background: var(--krypton-dashboard-panel-bg, var(--krypton-bg, rgba(6, 10, 18, 0.6)));
-  border: var(--krypton-border-width, 1px) solid rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.5);
+  background: var(--mat-brush), var(--mat-plate);
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
   display: flex;
   flex-direction: column;
   overflow: visible;
-  box-shadow: 0 0 var(--krypton-shadow-blur, 20px) rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.12);
   transform: scale(0.96);
   transition: transform 0.15s ease;
 }
@@ -48,82 +53,108 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 16px;
+  padding: 8px 10px 8px 16px;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid var(--mat-groove-lo);
+  box-shadow: 0 1px 0 var(--mat-groove-hi);
 }
 
 .krypton-dashboard__title {
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
-  color: var(--krypton-fg, #b0c4d8);
-  letter-spacing: 0.5px;
+  color: var(--mat-silk);
+  letter-spacing: 0.13em;
   text-transform: uppercase;
+  text-shadow: var(--mat-engrave);
   flex-shrink: 0;
 }
 
-/* Tab bar within the header */
+/* Tab bar within the header: a channel of selector keys. */
 .krypton-dashboard__tabbar {
   display: flex;
-  gap: 2px;
+  gap: 4px;
   margin-left: 8px;
+  padding: 3px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-dashboard__tab {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border: 1px solid transparent;
-  border-radius: var(--krypton-border-radius, 8px);
-  background: none;
-  color: rgba(255, 255, 255, 0.35);
+  gap: 7px;
+  min-height: 24px;
+  padding: 3px 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: 6px;
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.09em;
+  line-height: 1;
+  text-shadow: var(--mat-print);
   cursor: pointer;
-  transition: all 0.1s ease;
   white-space: nowrap;
 }
 
+/* The indicator lamp. */
+.krypton-dashboard__tab::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
 .krypton-dashboard__tab:hover {
-  color: rgba(255, 255, 255, 0.6);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--mat-key-hover);
+  color: var(--mat-lit);
 }
 
-.krypton-dashboard__tab--active {
-  color: var(--krypton-fg, #b0c4d8);
-  background: rgba(0, 200, 255, 0.08);
-  border-color: rgba(0, 200, 255, 0.15);
+.krypton-dashboard__tab:active,
+.krypton-dashboard__tab--active,
+.krypton-dashboard__tab--active:hover {
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
+.krypton-dashboard__tab--active::before {
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
+}
+
+.krypton-dashboard__tab:focus-visible {
+  outline: 1px solid var(--mat-lit);
+  outline-offset: 2px;
+}
+
+/* The tab's shortcut, printed fainter on the key. */
 .krypton-dashboard__tab-key {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(255, 255, 255, 0.06);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
-  line-height: 1;
-}
-
-.krypton-dashboard__tab--active .krypton-dashboard__tab-key {
-  background: rgba(0, 200, 255, 0.15);
-  color: var(--krypton-ansi-cyan, #0cf);
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+  text-shadow: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .krypton-dashboard__tab-label {
   font-weight: 500;
 }
 
-/* Header end section (shortcut hint + close button) */
+/* Header end section (shortcut hint + close key) */
 .krypton-dashboard__header-end {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin-left: auto;
   flex-shrink: 0;
 }
@@ -131,37 +162,51 @@
 .krypton-dashboard__shortcut-hint {
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  text-shadow: var(--mat-print);
 }
 
 .krypton-dashboard__close {
-  background: none;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
-  color: rgba(255, 255, 255, 0.4);
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+  text-shadow: var(--mat-print);
   font-size: var(--krypton-chrome-font-size, 11px);
   line-height: 1;
   width: 28px;
   height: 28px;
+  padding: 0;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.1s ease;
   flex-shrink: 0;
 }
 
 .krypton-dashboard__close:hover {
-  color: rgba(255, 255, 255, 0.8);
-  border-color: rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--mat-key-hover);
+  color: var(--mat-lit);
+}
+
+.krypton-dashboard__close:active {
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
+  transform: translateY(1px);
+}
+
+.krypton-dashboard__close:focus-visible {
+  outline: 1px solid var(--mat-lit);
+  outline-offset: 2px;
 }
 
 /* Content area: fills remaining space, no scroll */
 .krypton-dashboard__content {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
-  padding: 16px;
+  padding: 14px 16px 12px;
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size);
   color: var(--krypton-fg, #b0c4d8);
@@ -179,46 +224,66 @@
 .krypton-dashboard__section-title {
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--mat-silk);
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.13em;
+  text-shadow: var(--mat-engrave);
   margin-bottom: 8px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+/* Empty: a headline centred in a well (DESIGN.md "States"). */
 .krypton-dashboard__empty {
-  color: rgba(255, 255, 255, 0.3);
-  font-style: italic;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   text-align: center;
   padding: 40px 0;
-}
-
-.krypton-dashboard__loading {
-  color: rgba(255, 255, 255, 0.3);
-  text-align: center;
-  padding: 40px 0;
-}
-
-.krypton-dashboard__error {
-  color: var(--krypton-ansi-red, #ff3a5c);
-  padding: 12px;
-  border: 1px solid rgba(255, 58, 92, 0.2);
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(255, 58, 92, 0.05);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+}
+
+/* Loading: a steady lit lamp and a label (DESIGN.md "States"). */
+.krypton-dashboard__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  padding: 40px 0;
+}
+
+.krypton-dashboard__loading::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
+}
+
+/* A fault: a lit capsule-edged panel in the fault colour (ADR-0017). */
+.krypton-dashboard__error {
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+  padding: 12px;
+  border: 1px solid rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.5);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.07);
 }
 
 /* ─── Git Dashboard Specific ────────────────────────────────────── */
 
+/* The branch is a chip: a label on a key face. */
 .krypton-git__branch {
   display: inline-flex;
+  align-self: flex-start;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  padding: 3px 10px;
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(0, 200, 255, 0.08);
-  border: 1px solid rgba(0, 200, 255, 0.15);
-  color: var(--krypton-ansi-cyan, #0cf);
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+  text-shadow: var(--mat-print);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 500;
   margin-bottom: 16px;
@@ -231,14 +296,15 @@
   margin-bottom: 16px;
 }
 
+/* Each stat is a readout: a figure in a small well, its label beside it. */
 .krypton-git__stat {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-git__stat-count {
@@ -246,44 +312,54 @@
   font-weight: 700;
   min-width: 24px;
   text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--krypton-fg, #b0c4d8);
 }
 
 .krypton-git__stat-label {
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.13em;
 }
 
 .krypton-git__stat--staged .krypton-git__stat-count {
-  color: var(--krypton-ansi-green, #0cf);
+  color: rgb(var(--krypton-success-rgb, 57, 255, 127));
 }
 
 .krypton-git__stat--modified .krypton-git__stat-count {
-  color: var(--krypton-ansi-yellow, #e8c547);
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
 }
 
 .krypton-git__stat--untracked .krypton-git__stat-count {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
+/* The changed files: one well, flat rows split by grooves. */
 .krypton-git__file-list {
   list-style: none;
   padding: 0;
   margin: 0;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-git__file {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 8px;
-  border-radius: var(--krypton-border-radius, 8px);
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--mat-groove-lo);
   font-size: var(--krypton-chrome-font-size, 11px);
 }
 
+.krypton-git__file:last-child {
+  border-bottom: 0;
+}
+
 .krypton-git__file:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
 }
 
 .krypton-git__file-status {
@@ -295,49 +371,52 @@
 }
 
 .krypton-git__file-status--staged {
-  color: var(--krypton-ansi-green, #0cf);
+  color: rgb(var(--krypton-success-rgb, 57, 255, 127));
 }
 
 .krypton-git__file-status--modified {
-  color: var(--krypton-ansi-yellow, #e8c547);
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
 }
 
 .krypton-git__file-status--untracked {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
 }
 
 .krypton-git__file-status--deleted {
-  color: var(--krypton-ansi-red, #ff3a5c);
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }
 
 .krypton-git__file-status--renamed {
-  color: var(--krypton-ansi-blue, #4a9eff);
+  color: rgb(var(--krypton-info-rgb, 74, 158, 255));
 }
 
 .krypton-git__file-path {
-  color: var(--krypton-fg, #b0c4d8);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* Key-hint foot: printed legend. */
 .krypton-git__hint {
   margin-top: 16px;
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  text-shadow: var(--mat-print);
   text-align: center;
 }
 
 /* ─── OpenCode Dashboard ────────────────────────────────────────── */
 
+/* The project path: a readout window. */
 .krypton-oc__project-header {
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   margin-bottom: 12px;
   padding: 6px 10px;
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(0, 200, 255, 0.04);
-  border: 1px solid rgba(0, 200, 255, 0.08);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   font-family: var(--krypton-font-family, 'JetBrains Mono', monospace);
 }
 
@@ -348,77 +427,74 @@
   margin-bottom: 20px;
 }
 
+/* Stat cards are readouts: the figure in a well, its label under it. The
+   figures are neutral ink — none of them is a fault (ADR-0017). */
 .krypton-oc__stat {
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 12px 8px;
   border-radius: var(--krypton-border-radius, 8px);
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-oc__stat-value {
   font-size: calc(var(--krypton-font-size) * 1.571);
   font-weight: 700;
   line-height: 1.2;
-}
-
-.krypton-oc__stat--sessions .krypton-oc__stat-value {
-  color: var(--krypton-ansi-cyan, #0cf);
-}
-
-.krypton-oc__stat--messages .krypton-oc__stat-value {
-  color: var(--krypton-ansi-blue, #4a9eff);
-}
-
-.krypton-oc__stat--tokens .krypton-oc__stat-value {
-  color: var(--krypton-ansi-magenta, #c77dff);
-}
-
-.krypton-oc__stat--cache .krypton-oc__stat-value {
-  color: var(--krypton-ansi-green, #39ff7f);
-}
-
-.krypton-oc__stat--cost .krypton-oc__stat-value {
-  color: var(--krypton-ansi-yellow, #e8c547);
+  color: var(--krypton-fg, #b0c4d8);
+  font-variant-numeric: tabular-nums;
 }
 
 .krypton-oc__stat-label {
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.13em;
   margin-top: 4px;
 }
 
-/* Session table */
+/* Session table: column labels engraved on the plate, rows in one well. */
 .krypton-oc__sessions {
   display: flex;
   flex-direction: column;
   font-size: var(--krypton-chrome-font-size, 11px);
 }
 
+.krypton-oc__session-rows {
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+}
+
 .krypton-oc__session-row {
   display: grid;
   grid-template-columns: 2fr 1.2fr 50px 60px 70px 55px 60px;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 6px 10px;
   align-items: center;
-  border-radius: var(--krypton-border-radius, 8px);
+  border-bottom: 1px solid var(--mat-groove-lo);
+}
+
+.krypton-oc__session-row:last-child {
+  border-bottom: 0;
 }
 
 .krypton-oc__session-row:hover:not(.krypton-oc__session-row--header) {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
 }
 
 .krypton-oc__session-row--header {
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(255, 255, 255, 0.3);
+  font-weight: 600;
+  color: var(--mat-silk);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  margin-bottom: 2px;
+  /* Narrower than the 0.13em label spacing: the numeric columns are 50-70px. */
+  letter-spacing: 0.06em;
+  text-shadow: var(--mat-engrave);
+  border-bottom: 0;
+  margin-bottom: 4px;
 }
 
 .krypton-oc__session-cell {
@@ -434,7 +510,7 @@
 
 .krypton-oc__session-cell--agents {
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -442,26 +518,29 @@
 
 .krypton-oc__session-cell--num {
   text-align: right;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+  font-variant-numeric: tabular-nums;
 }
 
 .krypton-oc__session-cell--diff {
   text-align: right;
   font-size: var(--krypton-chrome-font-size, 11px);
+  font-variant-numeric: tabular-nums;
 }
 
 .krypton-oc__session-cell--time {
   text-align: right;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-size: var(--krypton-chrome-font-size, 11px);
+  font-variant-numeric: tabular-nums;
 }
 
 .krypton-oc__diff-add {
-  color: var(--krypton-ansi-green, #39ff7f);
+  color: rgb(var(--krypton-success-rgb, 57, 255, 127));
 }
 
 .krypton-oc__diff-del {
-  color: var(--krypton-ansi-red, #ff3a5c);
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }
 
 /* Usage breakdown two-column layout */
@@ -476,25 +555,33 @@
   min-width: 0;
 }
 
-/* Model/Tool usage list */
+/* Model / tool usage list: one well of flat rows. */
 .krypton-oc__usage-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-oc__usage-row {
   display: grid;
   grid-template-columns: 1fr auto auto auto;
   gap: 12px;
-  padding: 5px 8px;
+  padding: 5px 10px;
   align-items: center;
   font-size: var(--krypton-chrome-font-size, 11px);
-  border-radius: var(--krypton-border-radius, 8px);
+  border-bottom: 1px solid var(--mat-groove-lo);
+}
+
+.krypton-oc__usage-row:last-child {
+  border-bottom: 0;
 }
 
 .krypton-oc__usage-row:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
 }
 
 .krypton-oc__usage-name {
@@ -506,32 +593,39 @@
 }
 
 .krypton-oc__usage-provider {
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-size: var(--krypton-chrome-font-size, 11px);
 }
 
 .krypton-oc__usage-count {
-  color: var(--krypton-ansi-cyan, #0cf);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   font-size: var(--krypton-chrome-font-size, 11px);
   text-align: right;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .krypton-oc__usage-tokens {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-size: var(--krypton-chrome-font-size, 11px);
   text-align: right;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Tool usage with bars */
+/* Tool usage with gauges */
 .krypton-oc__tool-row {
   display: grid;
   grid-template-columns: 90px 1fr 50px;
   gap: 8px;
-  padding: 4px 8px;
+  padding: 5px 10px;
   align-items: center;
   font-size: var(--krypton-chrome-font-size, 11px);
+  border-bottom: 1px solid var(--mat-groove-lo);
+}
+
+.krypton-oc__tool-row:last-child {
+  border-bottom: 0;
 }
 
 .krypton-oc__tool-name {
@@ -542,49 +636,58 @@
   white-space: nowrap;
 }
 
+/* A gauge (DESIGN.md "Gauges"): a 4px well track with a flat silk fill and a
+   1px inset top highlight. */
 .krypton-oc__tool-bar-container {
-  height: 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: var(--krypton-border-radius, 8px);
+  height: 4px;
+  border-radius: 999px;
+  background: var(--mat-well-fill);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.5), 0 1px 0 var(--mat-well-lip);
   overflow: hidden;
 }
 
 .krypton-oc__tool-bar {
   height: 100%;
-  background: rgba(0, 200, 255, 0.25);
-  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-silk);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
   transition: width 0.3s ease;
 }
 
 .krypton-oc__tool-count {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   font-size: var(--krypton-chrome-font-size, 11px);
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .krypton-oc__hint {
   margin-top: 8px;
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  text-shadow: var(--mat-print);
   text-align: center;
   flex-shrink: 0;
 }
 
-/* Scrollbar for session rows within tab */
-.krypton-oc__session-rows::-webkit-scrollbar {
-  width: 5px;
+/* Scrollbars (DESIGN.md "Scrollbars"). */
+.krypton-oc__session-rows::-webkit-scrollbar,
+.krypton-oc__usage-list::-webkit-scrollbar {
+  width: 8px;
 }
 
-.krypton-oc__session-rows::-webkit-scrollbar-track {
+.krypton-oc__session-rows::-webkit-scrollbar-track,
+.krypton-oc__usage-list::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.krypton-oc__session-rows::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: var(--krypton-border-radius, 8px);
+.krypton-oc__session-rows::-webkit-scrollbar-thumb,
+.krypton-oc__usage-list::-webkit-scrollbar-thumb {
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+  border-radius: 8px;
 }
 
-.krypton-oc__session-rows::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.15);
+.krypton-oc__session-rows::-webkit-scrollbar-thumb:hover,
+.krypton-oc__usage-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.32);
 }
-

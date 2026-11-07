@@ -1,15 +1,18 @@
 /* Spec 305 §UI changes — `BackgroundTasks`.
    The lane's detached shell jobs, under its process tree in the Lane Metrics
    overlay. Column rhythm follows `.acp-harness__metrics-row` so the two blocks
-   read as one table; amber/red tinting is reserved for a failed or orphaned
-   job, since those are the only rows that need the user to do something. */
+   read as one table.
+
+   Spec 366 / DESIGN.md: the label is engraved on the overlay's plate and the
+   jobs sit in one recessed well split by grooves (a repeated row: no shadow,
+   no gradient). Colour is reserved for a failed or orphaned job, the only
+   rows that need the user to do something (ADR-0017); a running job's spinner
+   glyph is amber silk. */
 
 @layer krypton.component {
   .acp-harness__bg-tasks {
     display: block;
-    margin-top: 8px;
-    padding-top: 4px;
-    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
+    margin-top: 10px;
     font-family: var(--agent-font, var(--krypton-font-family, monospace));
     font-size: 0.94em;
     line-height: 1.35;
@@ -22,14 +25,22 @@
   }
 
   .acp-harness__bg-tasks-head {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.36));
-    font-size: 0.82em;
-    letter-spacing: 0.08em;
+    margin-bottom: 5px;
+    padding: 0 2px;
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-shadow: var(--mat-engrave);
     text-transform: uppercase;
   }
 
   .acp-harness__bg-tasks-rows {
     display: block;
+    padding: 0 10px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-harness__bg-task {
@@ -38,39 +49,43 @@
     gap: 8px;
     align-items: center;
     min-height: 24px;
-    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.045);
+    border-bottom: 1px solid var(--mat-groove-lo);
     font-variant-numeric: tabular-nums;
   }
 
+  .acp-harness__bg-task:last-child {
+    border-bottom: 0;
+  }
+
   .acp-harness__bg-task-glyph {
-    color: var(--krypton-window-accent, #0cf);
+    color: var(--mat-silk);
     text-align: center;
   }
 
   .acp-harness__bg-task-id {
     overflow: hidden;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .acp-harness__bg-task-cmd {
     overflow: hidden;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .acp-harness__bg-task-elapsed,
   .acp-harness__bg-task-bytes {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     text-align: right;
     white-space: nowrap;
   }
 
   .acp-harness__bg-task-status {
     overflow: hidden;
-    color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.8);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     text-align: right;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -78,36 +93,25 @@
 
   .acp-harness__bg-task-tail {
     overflow: hidden;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34));
+    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .acp-harness__bg-task--exited .acp-harness__bg-task-glyph,
   .acp-harness__bg-task--exited .acp-harness__bg-task-status {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
   .acp-harness__bg-task--failed .acp-harness__bg-task-glyph,
   .acp-harness__bg-task--failed .acp-harness__bg-task-status {
-    color: #ec5f67;
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
   }
 
   .acp-harness__bg-task--orphaned .acp-harness__bg-task-glyph,
   .acp-harness__bg-task--orphaned .acp-harness__bg-task-status,
   .acp-harness__bg-task--unknown .acp-harness__bg-task-glyph,
   .acp-harness__bg-task--unknown .acp-harness__bg-task-status {
-    color: var(--agent-gold, #ffd166);
-  }
-}
-
-@layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-harness__bg-task-cmd {
-    color: var(--krypton-ink-2);
-  }
-
-  html[data-theme-scheme='light'] .acp-harness__bg-task-id,
-  html[data-theme-scheme='light'] .acp-harness__bg-task-tail {
-    color: var(--krypton-ink-3);
+    color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
   }
 }

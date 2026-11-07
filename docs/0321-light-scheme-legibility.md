@@ -4,6 +4,7 @@
 > Date: 2026-10-21
 > Milestone: Themes — light scheme
 > Amends: [010](./0010-theme-specification.md) §Applying a theme (light-scheme rules) · [006](./0006-configuration.md) `[visual] opacity`
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): light scheme adds the aluminium material set and #6e4700 silk.
 
 ## Problem
 

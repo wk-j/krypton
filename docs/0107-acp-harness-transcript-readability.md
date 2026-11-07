@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-05-19
 > Milestone: ACP harness — UI readability polish
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): amber phosphor language retired; rows sit flat in the lane well.
 
 ## Problem
 

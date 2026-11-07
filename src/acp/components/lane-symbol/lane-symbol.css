@@ -1,38 +1,88 @@
 /* Spec 302 §4.3 — `LaneSymbol`.
-   Carved verbatim from src/styles/acp-harness.css (the `.acp-harness__lane-symbol`
-   rules at :494-497, :538-549, :989-991, :5225-5227) and
-   src/styles/theme-scheme.css:258-260. */
+   Carved from src/styles/acp-harness.css and theme-scheme.css; restyled by
+   spec 366 as the lane head's LED (DESIGN.md "Lamps"). The cell draws a 6px
+   lens in place of the static status icon the component mounts (the status
+   word beside it already names the state): unlit while idle, lit in the
+   lane's own accent while the lane is shown (as a focused window's titlebar
+   LED is lit in the window accent), amber while starting, and in the state
+   colour when the lane needs the human (warning), waits on a peer (theme
+   magenta) or failed (fault). Busy keeps the shared JS spinner glyph — it
+   changes content, not light — tinted in the lane accent. Every lit state is
+   steady. */
 
 @layer krypton.component {
   .acp-harness__lane-symbol {
     grid-column: 1;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--acp-lane-accent, var(--krypton-accent, #0cf));
   }
 
-  /* Status-glyph tints. busy renders the JS spinner glyph (tinted to the lane
-     accent by a `.acp-harness__lane--busy` rule below); awaiting_peer is already
-     purple via a `.acp-harness__lane--awaiting_peer` rule. Only permission + error
-     need a tint. */
-  .acp-harness__lane-symbol--needs_permission {
-    color: var(--agent-gold, #ffd166);
+  .acp-harness__lane-symbol > svg {
+    display: none;
+  }
+
+  .acp-harness__lane-symbol::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  /* Busy shows the spinner glyph instead of a lens. */
+  .acp-harness__lane-symbol.acp-harness__lane-symbol--busy::before {
+    content: none;
+  }
+
+  .acp-harness__lane--active .acp-harness__lane-symbol::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, var(--acp-lane-accent, var(--krypton-accent, #0cf)) 45%, color-mix(in srgb, var(--acp-lane-accent, var(--krypton-accent, #0cf)) 55%, transparent) 100%);
+    box-shadow:
+      0 0 4px color-mix(in srgb, var(--acp-lane-accent, var(--krypton-accent, #0cf)) 90%, transparent),
+      0 0 10px color-mix(in srgb, var(--acp-lane-accent, var(--krypton-accent, #0cf)) 40%, transparent);
+  }
+
+  .acp-harness__lane-symbol--starting::before,
+  .acp-harness__lane--active .acp-harness__lane-symbol--starting::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
+  }
+
+  .acp-harness__lane-symbol--needs_permission,
+  .acp-harness__lane-symbol--awaiting_peer,
+  .acp-harness__lane-symbol--error,
+  .acp-harness__lane-symbol--stopped {
+    --lane-led-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+  }
+
+  .acp-harness__lane-symbol--awaiting_peer {
+    --lane-led-rgb: var(--krypton-special-rgb, 184, 166, 255);
   }
 
   .acp-harness__lane-symbol--error,
   .acp-harness__lane-symbol--stopped {
-    color: #ec5f67;
+    --lane-led-rgb: var(--krypton-danger-rgb, 255, 58, 92);
   }
 
-  .acp-harness__lane--awaiting_peer .acp-harness__lane-symbol {
-    color: #b8a6ff;
-  }
-
-  .acp-harness__lane--busy .acp-harness__lane-symbol {
-    color: var(--acp-lane-accent, var(--agent-accent, #0cf));
+  .acp-harness__lane-symbol--needs_permission::before,
+  .acp-harness__lane-symbol--awaiting_peer::before,
+  .acp-harness__lane-symbol--error::before,
+  .acp-harness__lane-symbol--stopped::before,
+  .acp-harness__lane--active .acp-harness__lane-symbol--needs_permission::before,
+  .acp-harness__lane--active .acp-harness__lane-symbol--awaiting_peer::before,
+  .acp-harness__lane--active .acp-harness__lane-symbol--error::before,
+  .acp-harness__lane--active .acp-harness__lane-symbol--stopped::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--lane-led-rgb)) 45%, rgba(var(--lane-led-rgb), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--lane-led-rgb), 0.9), 0 0 10px rgba(var(--lane-led-rgb), 0.4);
   }
 }
 
+/* Spec 321: the spinner glyph is text; on aluminium it takes the lane's capped
+   ink (`lane-shell.css` declares `--acp-lane-ink`). LEDs keep their colour. */
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness__lane-symbol {
-    color: var(--krypton-ink-3);
+    color: var(--acp-lane-ink, var(--krypton-ink-2));
   }
 }

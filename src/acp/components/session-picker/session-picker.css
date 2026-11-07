@@ -1,8 +1,14 @@
 /* Spec 302 §7.4 — `SessionPicker`.
-   Carved verbatim from src/styles/acp-harness.css:6551-6670. The `>` child combinators in
-   the first rule are why the four phases paint head / list / empty / error as SIBLINGS of
-   the overlay root rather than inside a panel wrapper.
-   No scheme override exists for this block in theme-scheme.css. */
+   Carved verbatim from src/styles/acp-harness.css:6551-6670. The four phases paint
+   head / list / empty / error as SIBLINGS of the overlay root rather than inside a
+   panel wrapper.
+
+   Spec 366 / DESIGN.md "Overlays and dialogs": one floating plate over the
+   scrim. With no panel wrapper the root is a one-column grid; its `::before`
+   is the plate spanning every row, and the children are pinned to rows in
+   DOM order (an auto-placed child would skip the cells the plate occupies).
+   On the plate: the engraved head, the list as one recessed well split by
+   grooves, and the empty / error notes as wells of their own. */
 
 @layer krypton.component {
   /* ── Session picker overlay ───────────────────────────────── */
@@ -11,85 +17,99 @@
     position: absolute;
     inset: 0;
     z-index: 5;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: var(--agent-surface-high, rgba(4, 8, 13, 0.74));
+    display: grid;
+    grid-template-columns: min(clamp(420px, 48vw, 680px), calc(100% - 24px));
+    grid-template-rows: repeat(4, auto);
+    place-content: center;
+    background: var(--mat-scrim);
   }
 
   .acp-harness__session-picker[hidden] {
     display: none;
   }
 
-  .acp-harness__session-picker > header,
-  .acp-harness__session-picker > ul,
-  .acp-harness__session-picker > .acp-harness__session-empty,
-  .acp-harness__session-picker > .acp-harness__session-error {
-    width: clamp(420px, 48vw, 680px);
-    background: var(--agent-surface-solid, rgba(8, 14, 18, 0.98));
-    border: 1px solid rgba(142, 255, 176, 0.28);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
-    flex: 0 0 auto;
+  /* The plate behind every row. */
+  .acp-harness__session-picker::before {
+    content: '';
+    grid-area: 1 / 1 / 5 / 2;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-brush), var(--mat-plate);
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
   }
 
-  .acp-harness__session-picker > ul,
-  .acp-harness__session-picker > .acp-harness__session-empty,
-  .acp-harness__session-picker > .acp-harness__session-error {
-    border-top: none;
+  .acp-harness__session-picker > * {
+    grid-column: 1;
+    min-width: 0;
   }
+
+  .acp-harness__session-picker > :nth-child(1) { grid-row: 1; }
+  .acp-harness__session-picker > :nth-child(2) { grid-row: 2; }
+  .acp-harness__session-picker > :nth-child(3) { grid-row: 3; }
+  .acp-harness__session-picker > :nth-child(4) { grid-row: 4; }
 
   .acp-harness__session-head {
     display: flex;
     justify-content: space-between;
+    align-items: baseline;
     gap: 12px;
-    padding: 7px 12px;
-    color: var(--agent-accent, #8effb0);
-    letter-spacing: 0.08em;
-    border-bottom: 1px solid rgba(142, 255, 176, 0.14);
-    border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
-    text-shadow: 0 0 8px rgba(142, 255, 176, 0.16);
+    padding: 9px 13px 8px;
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    text-shadow: var(--mat-engrave);
   }
 
   .acp-harness__session-head span:last-child {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
-    font-size: 0.84em;
-    text-shadow: none;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-weight: 400;
     letter-spacing: 0.04em;
     text-align: right;
+    text-transform: none;
   }
 
   .acp-harness__session-list {
     list-style: none;
-    margin: 0;
-    padding: 6px 0;
-    border-top: none;
-    border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
+    margin: 0 9px 9px;
+    padding: 0;
     max-height: 56vh;
     overflow-y: auto;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
+  /* No sessions: the empty note below is the well, not a zero-height list. */
+  .acp-harness__session-list:empty {
+    display: none;
+  }
+
+  /* A repeated row: one groove, the selection tint, nothing else. */
   .acp-harness__session-row {
     display: grid;
     grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) 9ch;
     gap: 10px;
     align-items: baseline;
     padding: 6px 14px;
+    border-bottom: 1px solid var(--mat-groove-lo);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     cursor: default;
   }
 
-  /* Tint + full inset outline, as the lane / model pickers — never a left
-     rail (ADR-0027). */
+  .acp-harness__session-row:last-child {
+    border-bottom: 0;
+  }
+
+  /* Full-row tint inside the well — never a left rail (ADR-0027). */
   .acp-harness__session-row--active {
-    background: rgba(142, 255, 176, 0.09);
-    outline: 1px solid color-mix(in srgb, var(--agent-accent, #8effb0) 50%, transparent);
-    outline-offset: -1px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.98);
+    background: var(--mat-select);
+    color: var(--krypton-fg, rgba(216, 232, 216, 0.98));
   }
 
   .acp-harness__session-row--disabled {
-    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
   }
 
   .acp-harness__session-title,
@@ -105,26 +125,31 @@
   }
 
   .acp-harness__session-meta {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.84em;
   }
 
   .acp-harness__session-action {
-    color: rgba(255, 210, 122, 0.78);
+    color: var(--mat-silk);
     font-size: 0.82em;
+    font-variant-numeric: tabular-nums;
     letter-spacing: 0.04em;
     text-align: right;
   }
 
   .acp-harness__session-empty,
   .acp-harness__session-error {
+    margin: 0 9px 9px;
     padding: 14px 16px;
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
-    border-top: none;
-    border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    text-align: center;
   }
 
+  /* A failed load is a fault: danger ink. */
   .acp-harness__session-error {
-    color: rgba(255, 118, 118, 0.78);
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
   }
 }

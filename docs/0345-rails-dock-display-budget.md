@@ -5,6 +5,7 @@
 > Milestone: ACP Harness — architecture conformance
 > Builds on: 337 (Rails dock content) · 344 (Actions bar)
 > Amends: 337 §UI Content (head, checks, rules, runs)
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): `DESIGN.console.md` merged into DESIGN.md; dock tokens are `--mat-*`.
 
 ## Problem
 
@@ -146,8 +147,8 @@ No change. `Enter` on the head now expands it; `Enter` on `older` lists the olde
   which is what `paused` means there. An empty manifest shows the `#rails init` hint instead.
 - **Error and untrusted at once:** the error wins the state line; the argv lines still show.
 - **Narrow overlay (< 960 px):** same column width; nothing changes.
-- **Light scheme:** an amber state line keeps the `__progress` class, whose `--dock-lit` colour the
-  dock column's light-scheme tokens swap (DESIGN.console.md); an ink one uses `__hint`, whose ink
+- **Light scheme:** an amber state line keeps the `__progress` class, whose `--mat-lit` colour the
+  light-scheme material tokens swap (DESIGN.md); an ink one uses `__hint`, whose ink
   variable already follows the scheme.
 
 ## Open Questions
@@ -163,7 +164,7 @@ None. These choices are deliberate:
 
 ## Out of Scope
 
-- A sticky head. The dock plate is translucent (DESIGN.console.md), so a pinned row would need its
+- A sticky head. The dock plate is translucent (DESIGN.md), so a pinned row would need its
   own solid background.
 - Diffing the manifest against the trusted version (the trust store keeps only a hash).
 - Changes to the Actions bar, the key hints or the Ticket Panel.

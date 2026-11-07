@@ -1,54 +1,38 @@
 /* Spec 302 §4.4 — `LaneStats`.
-   Carved verbatim from src/styles/acp-harness.css (:477-479 minus its
-   `.acp-harness__lane-head` selector, :1709-1732) and
-   src/styles/theme-scheme.css:250-252 minus its `.acp-harness__lane-head`
-   selector. */
+   Carved from src/styles/acp-harness.css and theme-scheme.css; restyled by
+   spec 366. The stats row is the lower half of the shown lane's plate strip
+   (`lane-head.css` paints the upper half): it continues the plate gradient
+   from the middle colour stop to the bottom one and draws the strip's seam
+   over the screen. Each stat is a readout — a small well holding the figure
+   (DESIGN.md "Readouts"). */
 
 @layer krypton.component {
-  /* spec 215: the band covers the head AND its stats row — one two-line header
-     block. No closing hairline: the band's own tint parts ways with the
-     transcript below, matching the borderless collapsed rows. */
-  .acp-harness__lane--active > .acp-harness__lane-stats {
-    background: color-mix(in srgb, var(--acp-lane-accent, #0cf) 13%, var(--agent-surface-high, rgba(6, 10, 18, 0.6)));
-  }
-
-  /* spec 325: the zen body is one surface — see lane-head.css. */
-  .acp-harness--zen .acp-harness__lane--active > .acp-harness__lane-stats {
-    background: none;
-  }
-
   .acp-harness__lane-stats {
     flex: 0 0 auto;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0 6px;
+    gap: 4px;
     padding: 0 10px 6px calc(10px + 2ch + 6px);
+    background:
+      var(--mat-brush),
+      linear-gradient(180deg, var(--mat-plate-mid), var(--mat-plate-lo));
+    border-bottom: 1px solid var(--mat-key-edge);
   }
 
   .acp-harness__lane-stats span {
-    padding: 0;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
-    font-size: 0.78em;
-    letter-spacing: 0.02em;
-    text-decoration: none;
     display: inline-flex;
     align-items: center;
     gap: 4px;
-  }
-
-  .acp-harness__lane-stats span:not(:last-child)::after {
-    content: '·';
-    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.25));
-  }
-}
-
-@layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-harness__lane--active > .acp-harness__lane-stats {
-    background: color-mix(in srgb, var(--acp-lane-accent, #007799) 8%, var(--agent-surface-high, rgba(255, 255, 255, 0.92)));
-  }
-
-  html[data-theme-scheme='light'] .acp-harness--zen .acp-harness__lane--active > .acp-harness__lane-stats {
-    background: none;
+    padding: 0 6px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
+    font-size: 0.78em;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    line-height: 1.5;
+    text-decoration: none;
   }
 }

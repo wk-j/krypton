@@ -1,15 +1,17 @@
 /* Spec 309 §Catalog — the Inputs group.
  *
  * One grid for every control: a label line, then the control itself. The
- * saturated accent is spent only on what the eye must land on — the live
- * readout, the selected segment, a filled star, the primary button and the
- * focus ring. Structure is hairline `--krypton-fg-rgb`, the same scale the
- * panel's own sheet uses, so a card full of controls does not read as a stack
- * of neon rectangles. Every colour goes through a `--krypton-*` token, so the
- * light scheme needs no override beyond the two below.
+ * controls are Krypton Console parts (DESIGN.md "Parts" and "Form controls",
+ * spec 366): text fields, selects and readouts are wells; buttons, stepper
+ * buttons and the slider thumb are raised keys; Choice is a channel of
+ * selector keys; a Toggle, a checkbox and a radio are a 12px key that latches
+ * down with its LED lit; a filled star is a backlit legend. Colour is spent
+ * only on a destructive legend. Every colour is a `--mat-*` or `--krypton-*`
+ * token the light scheme swaps at the root, so there is no `krypton.scheme`
+ * layer in this file.
  *
  * `__label` and `__value` are catalog.css's; a readout carries both `__value`
- * and `__readout` so the accent and tabular figures stay defined in one place.
+ * and `__readout` so the lit ink and tabular figures stay defined in one place.
  * `__field` restates `display` because it lands on the same element as
  * catalog.css's `.acp-genui__slot { display: contents }`, which would
  * otherwise erase the control's own column. */
@@ -33,18 +35,45 @@
   }
 
   .acp-genui__option-detail {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.82em;
   }
 
   /* ── Slider ──────────────────────────────────────────────── */
 
+  /* A fader: a 4px well track and a raised key for the thumb. */
   .acp-genui__range {
+    -webkit-appearance: none;
+    appearance: none;
     width: 100%;
     height: 18px;
     margin: 0;
-    accent-color: var(--krypton-window-accent, #0cf);
-    background: transparent;
+    background: none;
+  }
+
+  .acp-genui__range::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 999px;
+    background: var(--mat-well-fill);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.55), 0 1px 0 var(--mat-well-lip);
+  }
+
+  .acp-genui__range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 16px;
+    margin-top: -6px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 4px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+  }
+
+  .acp-genui__range:hover::-webkit-slider-thumb { background: var(--mat-key-hover); }
+
+  .acp-genui__range:active::-webkit-slider-thumb {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
   }
 
   /* ── Stepper ─────────────────────────────────────────────── */
@@ -53,40 +82,49 @@
     display: inline-flex;
     align-items: stretch;
     align-self: flex-start;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
-    border-radius: var(--krypton-border-radius, 8px);
-    overflow: hidden;
+    gap: 4px;
   }
 
   .acp-genui__stepper-button {
-    padding: 4px 11px;
-    border: 0;
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.05);
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
-    cursor: pointer;
+    min-width: 28px;
+    padding: 4px 10px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    cursor: default;
     font: inherit;
     line-height: 1.4;
+    text-shadow: var(--mat-print);
   }
 
-  .acp-genui__stepper-button:hover:not([disabled]) {
-    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.14);
-    color: var(--krypton-window-accent, #0cf);
+  .acp-genui__stepper-button:hover:not([disabled]) { background: var(--mat-key-hover); }
+
+  .acp-genui__stepper-button:active:not([disabled]) {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    transform: translateY(1px);
   }
 
   .acp-genui__stepper-button[disabled] {
-    cursor: default;
-    opacity: 0.4;
+    cursor: not-allowed;
+    opacity: 0.45;
   }
 
   .acp-genui__stepper .acp-genui__readout {
     min-width: 3.5ch;
     padding: 4px 10px;
-    border-inline: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
     text-align: center;
   }
 
   /* ── Toggle ──────────────────────────────────────────────── */
 
+  /* The track is a 12px key and the knob its LED: on, the key latches down
+     and the LED lights. Nothing slides. */
   .acp-genui__switch {
     display: inline-flex;
     align-items: center;
@@ -95,75 +133,110 @@
     border: 0;
     background: none;
     color: inherit;
-    cursor: pointer;
+    cursor: default;
     font: inherit;
   }
 
   .acp-genui__switch-track {
     position: relative;
     flex: 0 0 auto;
-    width: 30px;
-    height: 16px;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.24);
-    border-radius: 999px;
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
-    transition: background 120ms ease, border-color 120ms ease;
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 4px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
   }
 
   .acp-genui__switch-knob {
     position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 10px;
-    height: 10px;
+    top: 50%;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    margin: -3px 0 0 -3px;
     border-radius: 50%;
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6);
-    transition: transform 120ms ease, background 120ms ease;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
-  .acp-genui__switch--on .acp-genui__switch-track {
-    border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.55);
-    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.22);
+  .acp-genui__switch:hover .acp-genui__switch-track { background: var(--mat-key-hover); }
+
+  .acp-genui__switch--on .acp-genui__switch-track,
+  .acp-genui__switch--on:hover .acp-genui__switch-track {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
   }
 
   .acp-genui__switch--on .acp-genui__switch-knob {
-    transform: translateX(14px);
-    background: var(--krypton-window-accent, #0cf);
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
   }
 
   .acp-genui__switch--on .acp-genui__label {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9);
+    color: var(--krypton-fg, #b0c4d8);
   }
 
   /* ── Choice ──────────────────────────────────────────────── */
 
+  /* Selector keys in a recessed channel, as `.acp-genui__tabs-strip`. */
   .acp-genui__segments {
     display: inline-flex;
     flex-wrap: wrap;
     align-self: flex-start;
-    gap: 1px;
-    padding: 1px;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+    gap: 4px;
+    max-width: 100%;
+    padding: 3px;
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-genui__segment {
-    padding: 4px 12px;
-    border: 0;
-    border-radius: calc(var(--krypton-border-radius, 8px) - 2px);
-    background: none;
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
-    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 26px;
+    padding: 3px 10px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 6px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    cursor: default;
     font: inherit;
     letter-spacing: 0.03em;
+    line-height: 1;
+    text-shadow: var(--mat-print);
   }
 
-  .acp-genui__segment:hover { color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92); }
+  .acp-genui__segment::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
 
-  .acp-genui__segment--on {
-    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.16);
-    color: var(--krypton-window-accent, #0cf);
+  .acp-genui__segment:hover {
+    background: var(--mat-key-hover);
+    color: var(--mat-lit);
+  }
+
+  .acp-genui__segment:active,
+  .acp-genui__segment--on,
+  .acp-genui__segment--on:hover {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
+  }
+
+  .acp-genui__segment--on::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
   }
 
   /* ── Radio / Checklist ───────────────────────────────────── */
@@ -179,18 +252,64 @@
   .acp-genui__radio,
   .acp-genui__check {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
     min-width: 0;
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
-    cursor: pointer;
+    cursor: default;
   }
 
+  /* The native box is replaced by a 12px key with an LED; checked, the key
+     latches down and the LED lights. A radio's key is round. The EditableTable
+     boolean cell is the same part. */
   .acp-genui__radio-input,
-  .acp-genui__check-input {
+  .acp-genui__check-input,
+  .acp-genui__cell[type='checkbox'] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: inline-grid;
+    place-content: center;
     flex: 0 0 auto;
+    width: 12px;
+    height: 12px;
     margin: 0;
-    accent-color: var(--krypton-window-accent, #0cf);
+    padding: 0;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 4px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    cursor: default;
+  }
+
+  .acp-genui__radio-input { border-radius: 50%; }
+
+  .acp-genui__radio-input::before,
+  .acp-genui__check-input::before,
+  .acp-genui__cell[type='checkbox']::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .acp-genui__radio-input:hover,
+  .acp-genui__check-input:hover,
+  .acp-genui__cell[type='checkbox']:hover { background: var(--mat-key-hover); }
+
+  .acp-genui__radio-input:checked,
+  .acp-genui__check-input:checked,
+  .acp-genui__cell[type='checkbox']:checked {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+  }
+
+  .acp-genui__radio-input:checked::before,
+  .acp-genui__check-input:checked::before,
+  .acp-genui__cell[type='checkbox']:checked::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
   }
 
   .acp-genui__radio-label,
@@ -198,13 +317,20 @@
 
   /* ── Select ──────────────────────────────────────────────── */
 
+  /* A well with a drawn chevron (two gradient triangles, no image). */
   .acp-genui__select {
+    -webkit-appearance: none;
+    appearance: none;
     width: 100%;
-    padding: 5px 8px;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+    padding: 5px 26px 5px 9px;
+    border: 0;
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.04);
-    color: inherit;
+    background:
+      linear-gradient(45deg, transparent 50%, var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62)) 50%) calc(100% - 14px) 55% / 5px 5px no-repeat,
+      linear-gradient(135deg, var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62)) 50%, transparent 50%) calc(100% - 9px) 55% / 5px 5px no-repeat,
+      var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    color: var(--krypton-fg, #b0c4d8);
     font: inherit;
   }
 
@@ -214,10 +340,12 @@
   .acp-genui__textarea {
     width: 100%;
     padding: 6px 9px;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
+    border: 0;
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.05);
-    color: var(--krypton-fg, #e6dfd0);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    color: var(--krypton-fg, #b0c4d8);
+    caret-color: var(--krypton-cursor, var(--krypton-accent));
     font: inherit;
   }
 
@@ -228,7 +356,7 @@
   }
 
   .acp-genui__text::placeholder,
-  .acp-genui__textarea::placeholder { color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34)); }
+  .acp-genui__textarea::placeholder { color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46)); }
 
   /* ── Rating ──────────────────────────────────────────────── */
 
@@ -236,39 +364,53 @@
     display: inline-flex;
     align-self: flex-start;
     gap: 3px;
-    cursor: pointer;
+    cursor: default;
     line-height: 1;
   }
 
   .acp-genui__star {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.22));
+    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font-size: 1.15em;
   }
 
-  .acp-genui__star--on { color: var(--krypton-window-accent, #0cf); }
+  /* A filled star is a backlit legend. */
+  .acp-genui__star--on {
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
+  }
 
   /* ── EditableTable ───────────────────────────────────────── */
 
+  /* Flat content: an engraved head row and rows split by one groove. The
+     rows carry no shadow, so a cell is a flat well-fill with a groove edge. */
   .acp-genui__grid {
     width: 100%;
+    border: 0;
     border-collapse: collapse;
     text-align: left;
   }
 
+  /* `border: 0` and `background: none` keep the transcript's markdown table
+     sheet (harness-shared.css) from showing through when the panel is seated
+     in a message body. */
   .acp-genui__grid th {
     padding: 0 10px 5px 0;
-    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45));
-    font-weight: 500;
-    font-size: 0.8em;
-    letter-spacing: 0.08em;
+    border: 0;
+    border-bottom: 1px solid var(--mat-groove-lo);
+    background: none;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-weight: 600;
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.13em;
     text-transform: uppercase;
+    text-shadow: var(--mat-engrave);
     white-space: nowrap;
   }
 
   .acp-genui__grid td {
     padding: 4px 10px 4px 0;
-    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.07);
+    border: 0;
+    border-bottom: 1px solid var(--mat-groove-lo);
     vertical-align: middle;
   }
 
@@ -282,16 +424,12 @@
   .acp-genui__cell {
     width: 100%;
     padding: 4px 7px;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
+    border: 1px solid var(--mat-groove-lo);
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
-    color: var(--krypton-fg, #e6dfd0);
+    background: var(--mat-well-fill);
+    color: var(--krypton-fg, #b0c4d8);
+    caret-color: var(--krypton-cursor, var(--krypton-accent));
     font: inherit;
-  }
-
-  .acp-genui__cell[type='checkbox'] {
-    width: auto;
-    accent-color: var(--krypton-window-accent, #0cf);
   }
 
   .acp-genui__grid-remove {
@@ -299,75 +437,49 @@
     border: 0;
     border-radius: var(--krypton-border-radius, 8px);
     background: none;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.45));
-    cursor: pointer;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    cursor: default;
     font: inherit;
   }
 
-  .acp-genui__grid-remove:hover { color: var(--krypton-danger, #ff6b6b); }
-
-  .acp-genui__grid-add {
-    align-self: flex-start;
-    padding: 4px 11px;
-    border: 1px dashed rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.22);
-    border-radius: var(--krypton-border-radius, 8px);
-    background: none;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
-    cursor: pointer;
-    font: inherit;
-  }
-
-  .acp-genui__grid-add:hover {
-    border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.45);
-    color: var(--krypton-window-accent, #0cf);
-  }
+  .acp-genui__grid-remove:hover { color: rgb(var(--krypton-danger-rgb, 255, 58, 92)); }
 
   /* ── Button ──────────────────────────────────────────────── */
 
+  .acp-genui__grid-add,
   .acp-genui__button {
     align-self: flex-start;
-    padding: 6px 14px;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+    min-height: 28px;
+    padding: 3px 14px;
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
-    cursor: pointer;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    cursor: default;
     font: inherit;
     letter-spacing: 0.04em;
+    text-shadow: var(--mat-print);
   }
 
-  .acp-genui__button:hover {
-    border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.4);
-    color: var(--krypton-window-accent, #0cf);
+  .acp-genui__grid-add:hover,
+  .acp-genui__button:hover { background: var(--mat-key-hover); }
+
+  .acp-genui__grid-add:active,
+  .acp-genui__button:active {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    transform: translateY(1px);
   }
 
+  /* The confirming action: raised, legend backlit. */
   .acp-genui__button--primary {
-    border-color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.45);
-    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.1);
-    color: var(--krypton-window-accent, #0cf);
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
   }
 
-  .acp-genui__button--secondary { background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.07); }
-
+  /* Destructive keeps the key face; only the legend warns, without a glow. */
   .acp-genui__button--destructive {
-    border-color: rgba(var(--krypton-danger-rgb, 255, 107, 107), 0.45);
-    color: var(--krypton-danger, #ff6b6b);
-  }
-
-  .acp-genui__button--destructive:hover {
-    border-color: var(--krypton-danger, #ff6b6b);
-    color: var(--krypton-danger, #ff6b6b);
-  }
-}
-
-/* The knob is the one surface that reads as "lit": on a light background the
- * same translucent foreground would vanish into the track. */
-@layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-genui__switch-knob {
-    background: rgba(var(--krypton-fg-rgb, 32, 40, 48), 0.5);
-  }
-
-  html[data-theme-scheme='light'] .acp-genui__segment--on {
-    background: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.22);
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
   }
 }

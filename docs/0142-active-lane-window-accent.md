@@ -7,6 +7,7 @@
 > Milestone: M-ACP — Harness Multi-Agent
 > Related: `docs/0105-view-protocol.md` (the `data-signal` window-accent override this layers under), window accent allocation in `src/compositor.ts`
 > Reviewed by: Codex-1 (pre-implementation). **Rev. 2 folds:** High 1 — drop the remove-inline plan (it leaks the wrong base accent when a harness pane is disposed but the host window survives & promotes a sibling, `compositor.ts:4008-4016`); use author `!important` on both the lane and signal custom-property declarations instead — beats the compositor's normal inline vars, no restore path. High 2 — `closeActiveLane()` bypasses `activateLane()` (direct `activeLaneId` writes at `acp-harness-view.ts:5014`/`:5022`); route both through the new helper. Med — removed vague "restore via compositor" (private API) wording. Low — tightened signal wording: signal retints only `-rgb`-driven surfaces (border, edge glow, corner *glow*); solid-hex surfaces (dot, accent bar, corner L-mark fill at `window.css:63`) keep lane identity. Low — derive slot from `lane.index`, never `lane.accent` (slot 1 is the self-referential var).
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): lane accent lights window LEDs and focus outline only, no glow.
 
 ## Problem
 

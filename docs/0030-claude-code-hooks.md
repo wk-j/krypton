@@ -5,6 +5,7 @@
 > event text is no longer surfaced anywhere)
 > Date: 2026-03-21
 > Milestone: N/A — New feature
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): sigil glow and uplink pulse removed.
 
 ## Problem
 

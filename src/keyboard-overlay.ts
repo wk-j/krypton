@@ -8,6 +8,7 @@
 import { invoke } from './profiler/ipc';
 import type { KeyboardOverlayConfig } from './config';
 import {
+  DEFAULT_OVERLAY_STYLE,
   KeyboardOverlayDriver,
   clamp,
   detectLayout,
@@ -16,6 +17,7 @@ import {
   resolveCode,
   type OverlayLayout,
   type OverlayMessage,
+  type OverlayStyle,
 } from './keyboard-overlay-model';
 
 /** How long a secure-input answer is reused before asking the backend again. */
@@ -170,18 +172,30 @@ export class KeyboardOverlay {
     });
   };
 
-  /** Re-read theme colors + terminal font; post only when they changed. */
+  /** Re-read theme ink, material stops + terminal font; post only when they changed.
+   *  The keys are caps on a plate (DESIGN.md), coloured from the root `--mat-*`
+   *  stops so the light scheme and theme `[tokens]` recolour them too. */
   private pushStyle(): void {
     const css = getComputedStyle(document.documentElement);
-    const ink = css.getPropertyValue('--krypton-fg').trim() || '#b0c4d8';
-    const accent = css.getPropertyValue('--krypton-accent').trim() || '#0cf';
-    const family = css.getPropertyValue('--krypton-font-family').trim() || 'monospace';
-    const font = `${family}, ${THAI_FONT_FALLBACK}`;
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const key = `${ink}|${accent}|${font}|${reducedMotion}`;
+    const read = (name: string, fallback: string): string => css.getPropertyValue(name).trim() || fallback;
+    const d = DEFAULT_OVERLAY_STYLE;
+    const family = read('--krypton-font-family', 'monospace');
+    const style: OverlayStyle = {
+      ink: read('--krypton-fg', d.ink),
+      lit: read('--mat-lit', d.lit),
+      plate: read('--mat-plate-mid', d.plate),
+      bevel: read('--mat-bevel-hi', d.bevel),
+      key: read('--mat-key-mid', d.key),
+      keyHi: read('--mat-key-hi', d.keyHi),
+      keyDown: read('--mat-key-down-hi', d.keyDown),
+      edge: read('--mat-key-edge', d.edge),
+      font: `${family}, ${THAI_FONT_FALLBACK}`,
+      reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    };
+    const key = JSON.stringify(style);
     if (key === this.styleKey) return;
     this.styleKey = key;
-    this.post({ type: 'style', style: { ink, accent, font, reducedMotion } });
+    this.post({ type: 'style', style });
   }
 
   // Passive observer: runs before every document listener, consumes nothing.

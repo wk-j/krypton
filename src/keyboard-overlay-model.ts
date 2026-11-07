@@ -168,12 +168,46 @@ const smooth = (t: number): number => t * t * (3 - 2 * t);
 
 // ─── Renderer ───────────────────────────────────────────────────
 
+/** Canvas colours, read from the theme ink and the `--mat-*` material stops at
+ *  runtime (keyboard-overlay.ts). Flat colours only: the keys are drawn as
+ *  faces with a lit top edge, not gradients, so a frame stays a few fills. */
 export interface OverlayStyle {
+  /** Key legends and the hand wireframe (theme ink). */
   ink: string;
-  accent: string;
+  /** A pressed key's backlit legend, lit fingertips and mouse buttons. */
+  lit: string;
+  /** The plate the keys sit on, and its lit top edge. */
+  plate: string;
+  bevel: string;
+  /** Key face at rest, its top highlight, and the face while held. */
+  key: string;
+  keyHi: string;
+  keyDown: string;
+  /** Key and plate outline. */
+  edge: string;
   font: string;
   reducedMotion: boolean;
 }
+
+/** Graphite defaults (materials.css dark set) until the first style message. */
+export const DEFAULT_OVERLAY_STYLE: OverlayStyle = {
+  ink: '#b0c4d8',
+  lit: '#ffd880',
+  plate: 'rgba(32, 34, 40, 0.9)',
+  bevel: 'rgba(255, 255, 255, 0.08)',
+  key: 'rgba(55, 58, 66, 0.95)',
+  keyHi: 'rgba(76, 80, 90, 0.95)',
+  keyDown: 'rgba(28, 30, 35, 0.95)',
+  edge: 'rgba(0, 0, 0, 0.72)',
+  font: 'monospace',
+  reducedMotion: false,
+};
+
+/** Key cap size and plate margin, in key units. */
+const CAP = 0.84;
+const PLATE_PAD = 0.13;
+const CAP_RADIUS = 4;
+const PLATE_RADIUS = 8;
 
 type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 export type MouseButton = 'left' | 'right';
@@ -212,9 +246,11 @@ function makeHand(side: Side): Hand {
 }
 
 /**
- * Draws the label-only keyboard and two 21-point wireframe hands (MediaPipe
- * landmark order). `frame()` returns false once every glow has faded and the
- * hands have settled, so the driver can stop its rAF loop (0 frames at idle).
+ * Draws the keyboard as key caps on a faceplate (DESIGN.md "Key") and two
+ * 21-point wireframe hands (MediaPipe landmark order). A pressed key sinks
+ * and its legend lights, then fades. `frame()` returns false once every key
+ * has gone out and the hands have settled, so the driver can stop its rAF
+ * loop (0 frames at idle).
  */
 export class KeyboardOverlayRenderer {
   private U = MIN_UNIT;
@@ -227,7 +263,7 @@ export class KeyboardOverlayRenderer {
   private readonly left = makeHand('L');
   private readonly right = makeHand('R');
   private readonly hands = [this.left, this.right];
-  private style: OverlayStyle = { ink: '#b0c4d8', accent: '#0cf', font: 'monospace', reducedMotion: false };
+  private style: OverlayStyle = DEFAULT_OVERLAY_STYLE;
   private layout: OverlayLayout = 'us';
   private ghostEnabled = false;
   private ghostOn = false;
@@ -567,50 +603,103 @@ export class KeyboardOverlayRenderer {
     return Math.max(moved, this.followPointer());
   }
 
-  /** Draw keys + hands; returns true while any key is still glowing. */
+  /** One rounded-rect path per cap, so faces and edges each take one fill / stroke. */
+  private capPath(x: Ctx2D, cx: number, cy: number, w: number, h: number): void {
+    x.roundRect(Math.round(cx - w / 2) + 0.5, Math.round(cy - h / 2) + 0.5, Math.round(w), Math.round(h), CAP_RADIUS);
+  }
+
+  /** The plate under the keys (and under the mouse pad when it is drawn). */
+  private drawPlate(x: Ctx2D): void {
+    const { plate, bevel, edge } = this.style;
+    const U = this.U;
+    const pad = (1 - CAP) / 2 - PLATE_PAD; // cap inset in its 1U cell, less the plate margin
+    const rects: [number, number, number, number][] = [
+      [this.OX + pad * U, this.OY + pad * U, (15 - 2 * pad) * U, (SPACE.row + 1 - 2 * pad) * U],
+    ];
+    if (this.mouseEnabled) {
+      rects.push([
+        this.OX + (PAD.x - PLATE_PAD) * U, this.OY + (PAD.y - PLATE_PAD) * U,
+        (PAD.w + 2 * PLATE_PAD) * U, (PAD.h + 2 * PLATE_PAD) * U,
+      ]);
+    }
+    x.globalAlpha = 1;
+    x.beginPath();
+    for (const [rx, ry, rw, rh] of rects) x.roundRect(Math.round(rx) + 0.5, Math.round(ry) + 0.5, Math.round(rw), Math.round(rh), PLATE_RADIUS);
+    x.fillStyle = plate;
+    x.fill();
+    x.strokeStyle = edge;
+    x.lineWidth = 1;
+    x.stroke();
+    // The lit top edge.
+    x.fillStyle = bevel;
+    for (const [rx, ry, rw] of rects) x.fillRect(Math.round(rx) + PLATE_RADIUS, Math.round(ry) + 1, Math.round(rw) - 2 * PLATE_RADIUS, 1);
+  }
+
+  /** Draw plate, keys + hands; returns true while any key is still lit. */
   private draw(x: Ctx2D, now: number, dt: number): boolean {
-    const { ink, accent, font } = this.style;
+    const { ink, lit, key, keyHi, keyDown, edge, font } = this.style;
     const U = this.U;
     const P = this.pos;
+    const cap = CAP * U;
     x.clearRect(0, 0, this.W, this.H);
     let glowing = false;
 
-    // Keys: labels only, lit by glow.
+    this.drawPlate(x);
+
+    // Caps at rest: faces, edges and the lit top edge, each in one pass.
+    const labels = LABELS[this.layout];
+    const spaceW = (SPACE.x1 - SPACE.x0) * U;
+    const sx = this.OX + ((SPACE.x0 + SPACE.x1) / 2) * U;
+    x.beginPath();
+    for (const code in labels) this.capPath(x, P[code].x, P[code].y, cap, cap);
+    this.capPath(x, sx, P.Space.y, spaceW, cap);
+    x.fillStyle = key;
+    x.fill();
+    x.strokeStyle = edge;
+    x.lineWidth = 1;
+    x.stroke();
+    x.fillStyle = keyHi;
+    for (const code in labels) x.fillRect(Math.round(P[code].x - cap / 2) + 2, Math.round(P[code].y - cap / 2) + 1, Math.round(cap) - 3, 1);
+    x.fillRect(Math.round(sx - spaceW / 2) + 2, Math.round(P.Space.y - cap / 2) + 1, Math.round(spaceW) - 3, 1);
+
+    // A pressed cap sinks: the held face fades in over it as it lights.
+    const sinkCap = (cx: number, cy: number, w: number, g: number): void => {
+      x.globalAlpha = g;
+      x.fillStyle = keyDown;
+      x.beginPath();
+      this.capPath(x, cx, cy, w, cap);
+      x.fill();
+    };
+
+    // Legends: printed ink at rest, backlit while the key is down.
     x.textAlign = 'center';
     x.textBaseline = 'middle';
-    const labels = LABELS[this.layout];
     for (const code in labels) {
       const p = P[code];
       const g = this.glow[code] ?? 0;
       const label = labels[code];
+      const down = g > 0.5 ? 1 : 0;
+      if (g > 0) sinkCap(p.x, p.y, cap, g);
       x.font = `${(label.length > 2 ? 0.32 : 0.44) * U}px ${font}`;
-      x.globalAlpha = 0.28 + 0.72 * g;
+      x.globalAlpha = 0.8;
       x.fillStyle = ink;
-      x.fillText(label, p.x, p.y);
+      if (g <= 0.25) x.fillText(label, p.x, p.y);
       if (g > 0.25) {
-        x.globalAlpha = g;
-        x.strokeStyle = accent;
-        x.lineWidth = 1;
-        x.strokeRect(
-          Math.round(p.x - 0.42 * U) + 0.5, Math.round(p.y - 0.42 * U) + 0.5,
-          Math.round(0.84 * U), Math.round(0.84 * U),
-        );
+        x.globalAlpha = 1;
+        x.fillStyle = lit;
+        x.fillText(label, p.x, p.y + down);
       }
       if (g > 0) glowing = true;
       this.glow[code] = Math.max(0, g - dt * 2.6);
     }
 
-    // Spacebar as a single rule.
+    // Spacebar: one long cap.
     const sg = this.glow.Space ?? 0;
-    if (sg > 0) glowing = true;
+    if (sg > 0) {
+      glowing = true;
+      sinkCap(sx, P.Space.y, spaceW, sg);
+    }
     this.glow.Space = Math.max(0, sg - dt * 2.6);
-    x.globalAlpha = 0.25 + 0.75 * sg;
-    x.strokeStyle = sg > 0.25 ? accent : ink;
-    x.lineWidth = 1 + sg * 1.5;
-    x.beginPath();
-    x.moveTo(this.OX + SPACE.x0 * U, P.Space.y);
-    x.lineTo(this.OX + SPACE.x1 * U, P.Space.y);
-    x.stroke();
 
     if (this.mouseEnabled) this.drawMouse(x);
 
@@ -633,7 +722,7 @@ export class KeyboardOverlayRenderer {
         const s = i === 0 ? 3 : 2.4;
         x.fillRect(p.x - s / 2, p.y - s / 2, s, s);
       });
-      x.fillStyle = accent;
+      x.fillStyle = lit;
       h.fingers.forEach((F, f) => {
         const clicking = h === this.right && this.grip > 0.6
           && ((f === 1 && this.mouse.left > 0.5) || (f === 2 && this.mouse.right > 0.5));
@@ -649,7 +738,7 @@ export class KeyboardOverlayRenderer {
 
   /** Mouse outline, button split, lit button halves and the scroll wheel. */
   private drawMouse(x: Ctx2D): void {
-    const { ink, accent } = this.style;
+    const { ink, lit } = this.style;
     const U = this.U;
     const c = this.mousePoint();
     const mw = MOUSE_W * U;
@@ -670,7 +759,7 @@ export class KeyboardOverlayRenderer {
     x.moveTo(mx, split);
     x.lineTo(mx + mw, split);
     x.stroke();
-    x.fillStyle = accent;
+    x.fillStyle = lit;
     if (this.mouse.left > 0.05) {
       x.globalAlpha = 0.35 * this.mouse.left;
       x.beginPath();

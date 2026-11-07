@@ -4,6 +4,7 @@
 > Superseded in structure by [317](./0317-file-manager-components.md) — the view now lives in `src/file-manager/` (components, keymap, preview registry). Behaviour below is unchanged.
 > Date: 2026-04-04
 > Milestone: M8 — Polish
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): breadcrumb, list and status become plate, well and readout.
 
 ## Problem
 

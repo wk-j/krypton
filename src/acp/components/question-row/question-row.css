@@ -2,6 +2,12 @@
    Carved verbatim from src/styles/acp-harness.css:5055-5161 (the
    `acp-harness__question` block and its `acp-harness__question-*` elements).
 
+   Spec 366 (DESIGN.md "Parts"): a pending question lights an amber lamp before
+   its head (the human must act, ADR-0017); its options are one well split by
+   grooves, the cursor row is the full-row selection tint (ADR-0027) and each
+   hotkey is a key cap that latches down when its option is picked. A resolved
+   row is a status LED + decision chip, like a tool row.
+
    `.acp-harness__permission-options` (:5046-5053) and the
    `@keyframes acp-harness-caret` block (:5163-5166, already carved into
    caret.css) sit next to it and are NOT part of this block.
@@ -12,10 +18,7 @@
   .acp-harness__msg-body.acp-harness__question {
     display: grid;
     gap: 4px;
-    padding: 4px 6px;
-    border: 1px solid rgba(255, 209, 102, 0.28);
-    border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(255, 209, 102, 0.06);
+    padding: 2px 0;
   }
 
   .acp-harness__question-row {
@@ -27,23 +30,69 @@
     font-size: var(--krypton-font-size, 13px);
   }
 
+  .acp-harness__msg-body.acp-harness__question[data-decision='pending'] .acp-harness__question-row::before {
+    content: '';
+    flex: 0 0 auto;
+    align-self: center;
+    width: 6px;
+    height: 6px;
+    margin: 0 calc((1.4ch - 6px) / 2);
+    border-radius: 50%;
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
+  }
+
+  /* The decision LED; the ✓ / ✗ text stays in the DOM. */
   .acp-harness__question-glyph {
+    position: relative;
     display: inline-block;
     width: 1.4ch;
     text-align: center;
+    color: transparent;
   }
 
-  .acp-harness__question-glyph--accepted { color: var(--agent-accent, #8effb0); }
-  .acp-harness__question-glyph--skipped,
-  .acp-harness__question-glyph--failed { color: var(--agent-error, #ff6b8b); }
+  .acp-harness__question-glyph::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    margin: -3px 0 0 -3px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
 
+  .acp-harness__question-glyph--accepted::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--krypton-success-rgb, 57, 255, 127)) 45%, rgba(var(--krypton-success-rgb, 57, 255, 127), 0.55) 100%);
+  }
+
+  .acp-harness__question-glyph--skipped::before,
+  .acp-harness__question-glyph--failed::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--krypton-danger-rgb, 255, 58, 92)) 45%, rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.55) 100%);
+  }
+
+  .acp-harness__question-glyph--accepted::before,
+  .acp-harness__question-glyph--skipped::before,
+  .acp-harness__question-glyph--failed::before {
+    box-shadow: none;
+  }
+
+  /* An ink legend on a key face, like the tool kind chip. */
   .acp-harness__question-decision {
     flex: none;
+    align-self: center;
     white-space: nowrap;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.09em;
     font-size: 0.78em;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    padding: 0 5px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
   }
 
   .acp-harness__question-subject {
@@ -56,6 +105,7 @@
     flex: none;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
     font-size: 0.82em;
+    font-variant-numeric: tabular-nums;
   }
 
   .acp-harness__question-detail {
@@ -68,13 +118,17 @@
   }
 
   /* spec 279: long pickers (branches, commits) scroll inside the card;
-     position:relative makes option offsetTop list-relative for focus tracking. */
+     position:relative makes option offsetTop list-relative for focus tracking.
+     The list is one well; its options are groove-split slices. */
   .acp-harness__question-options {
     position: relative;
     display: grid;
-    gap: 2px;
     max-height: 16em;
     overflow-y: auto;
+    padding: 2px 4px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well-fill);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-harness__question-option {
@@ -82,25 +136,42 @@
     flex-wrap: wrap;
     gap: 8px;
     align-items: baseline;
-    padding: 1px 4px;
-    border: 1px solid transparent;
-    border-radius: var(--krypton-border-radius, 8px);
+    padding: 3px 4px;
+    border-bottom: 1px solid var(--mat-groove-lo);
+  }
+
+  .acp-harness__question-option:last-child {
+    border-bottom: 0;
   }
 
   .acp-harness__question-option--focus {
-    border-color: rgba(255, 209, 102, 0.45);
-    background: rgba(255, 209, 102, 0.08);
+    background: var(--mat-select);
   }
 
   .acp-harness__question-option--on .acp-harness__question-label {
-    color: var(--agent-gold, #ffd166);
+    color: var(--mat-lit);
   }
 
+  /* The hotkey: a key cap with a printed legend. */
   .acp-harness__question-key {
     flex: none;
-    width: 1.6ch;
-    color: var(--agent-gold, #ffd166);
+    min-width: 1.6ch;
+    padding: 0 4px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
     font-weight: 700;
+    text-align: center;
+    text-shadow: var(--mat-print);
+  }
+
+  .acp-harness__question-option--on .acp-harness__question-key {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-harness__question-label {
@@ -112,8 +183,10 @@
     font-size: 0.86em;
   }
 
+  /* The key hint: printed legend. */
   .acp-harness__question-actions {
-    color: rgba(255, 209, 102, 0.75);
+    color: var(--mat-lit);
     font-size: 0.92em;
+    letter-spacing: 0.04em;
   }
 }

@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-07-06
 > Milestone: M-chrome — window chrome polish
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): amber agent look retired; band redrawn as a display well.
 
 ## Problem
 
@@ -148,7 +149,7 @@ active/foregrounded lane — is deferred (see Open Questions → resolved).
 - `agent.css` fix: change the `:95–103` amber-gradient rule so it applies to the static
   `.krypton-window__header-accent` only (not `--scope`), OR set the trace/accent color for
   the agent via `--krypton-window-accent-rgb` and drop the gradient. The band should read as
-  the amber trace, consistent with the agent aesthetic (DESIGN.amber.md), on a transparent
+  the amber trace, consistent with the agent aesthetic (DESIGN.md), on a transparent
   base — no solid gradient block behind it.
 - Reduced-motion + `header_accent.enabled=false` + `style="ticks"` all behave exactly as on
   terminal windows (already handled inside `buildHeaderAccent` / `HeaderScope`).

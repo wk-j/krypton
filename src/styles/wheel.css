@@ -1,6 +1,9 @@
 /* ─── Wheel layout rail (spec 272) ───
-   The arc navigation rail on the left of the Wheel layout. Colours come from
-   the theme accent; cards are borderless (no frame, no glow, no blur).
+   The arc navigation rail on the left of the Wheel layout. Spec 366 /
+   DESIGN.md (Krypton Console): each window card is a key — raised at rest,
+   latched down with a lit legend when it is the focused window — and each
+   label is a readout window. The arc and the activity dots are drawn by
+   WheelRail on its canvas from the theme ink and accent.
    Transforms are written per frame by WheelRail only while the wheel moves.
    The root sets no z-index on purpose: it must not form a stacking context, so
    live preview windows (z 2, spec 273) slot between the arc (z 1) and the
@@ -38,21 +41,48 @@
   padding: 0;
   border: none;
   border-radius: var(--krypton-border-radius, 8px);
-  /* --krypton-wheel-live: 0 = schematic, 1 = the live window shows through. */
-  background: rgba(var(--krypton-bg-rgb, 6, 10, 18), calc(0.86 * (1 - var(--krypton-wheel-live, 0))));
-  color: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.45);
+  background: none;
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font: inherit;
   cursor: pointer;
   transform-origin: 50% 50%;
   will-change: transform, opacity;
 }
 
+/* The key face. It sits on its own layer so it can fade out as the live
+   window shows through (--krypton-wheel-live: 0 = schematic, 1 = live):
+   a gradient cannot be faded by alpha arithmetic. `will-change` above makes
+   the card a stacking context, so z-index -1 stays inside it. */
+.krypton-wheel__card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: inherit;
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  opacity: calc(1 - var(--krypton-wheel-live, 0));
+  pointer-events: none;
+}
+
+.krypton-wheel__card:hover::before {
+  background: var(--mat-key-hover);
+}
+
+/* The focused window's card: latched down, legend backlit. */
 .krypton-wheel__card--active {
-  color: var(--krypton-accent, #0cf);
+  color: var(--mat-lit);
+}
+
+.krypton-wheel__card--active::before,
+.krypton-wheel__card:active::before {
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
 }
 
 .krypton-wheel__card:focus-visible {
-  outline: 1px solid var(--krypton-accent, #0cf);
+  outline: 1px solid var(--mat-lit);
   outline-offset: 2px;
 }
 
@@ -79,7 +109,7 @@
   pointer-events: none;
 }
 
-/* Split dividers; the card itself has no frame. */
+/* Split dividers, printed on the key face. */
 .krypton-wheel__divider {
   stroke: currentColor;
   stroke-width: 1;
@@ -89,7 +119,7 @@
 }
 
 .krypton-wheel__pane--focused {
-  fill: rgba(var(--krypton-accent-rgb, 0, 204, 255), 0.1);
+  fill: var(--mat-select);
 }
 
 /* Terminal silhouette: one bar per bucket of visible rows. */
@@ -115,9 +145,9 @@
 
 /* A label is the first two characters of the path or project name, set big so
    windows are told apart at a glance. Case is kept — never uppercased.
-   The rail is transparent over the wallpaper, so the label sits on a chip of
-   the card's own surface to stay legible on light and dark backdrops alike.
-   border-box keeps the rail-edge max-width covering the whole chip. */
+   The rail is transparent over the wallpaper, so the label is a readout: a
+   small well that keeps it legible on light and dark backdrops alike.
+   border-box keeps the rail-edge max-width covering the whole readout. */
 .krypton-wheel__label {
   position: absolute;
   left: 0;
@@ -132,8 +162,9 @@
   font-weight: 700;
   line-height: 1;
   color: var(--krypton-fg, #b0c4d8);
-  background: rgba(var(--krypton-bg-rgb, 6, 10, 18), 0.86);
-  border-radius: 4px;
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  border-radius: var(--krypton-border-radius, 8px);
   transform-origin: 0 0;
   pointer-events: none;
   z-index: 5;
@@ -143,6 +174,7 @@
 .krypton-wheel__label--active {
   max-width: 180px;
   font-size: 40px;
+  color: var(--mat-lit);
 }
 
 .krypton-wheel__caret {
@@ -151,20 +183,26 @@
   top: 0;
   width: 7px;
   height: 10px;
-  background: var(--krypton-accent, #0cf);
+  background: var(--mat-silk);
   clip-path: polygon(0 0, 100% 50%, 0 100%);
   transform-origin: 0 0;
   z-index: 5;
   pointer-events: none;
 }
 
+/* "03 / 07": a readout. */
 .krypton-wheel__hint {
   position: absolute;
   left: 12px;
   bottom: 10px;
   z-index: 5;
+  padding: 2px 6px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   font-size: 10px;
   letter-spacing: 0.1em;
-  color: var(--krypton-fg-dim, #4d6f8f);
+  font-variant-numeric: tabular-nums;
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   pointer-events: none;
 }

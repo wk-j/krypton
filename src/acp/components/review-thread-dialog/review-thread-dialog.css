@@ -1,13 +1,13 @@
-/* Spec 302 §7.16 — `ReviewThreadDialog`. Moved from src/styles/acp-harness.css
-   (search `.acp-review-thread-picker`), renamed onto the classes `OverlayShell`
-   emits:
-     * `.acp-review-thread-picker`        → `.acp-harness__review-thread-overlay`
-     * `.acp-review-thread-picker__panel` → `.acp-review-thread__panel`
-     * `… __panel h2`                     → `.acp-review-thread__head` (the
-       16px gap) + `.acp-review-thread__title` (the 1.1em step); the title is
-       the shell's `<span>`, a flex row so the review-thread glyph sits
-       beside the words.
-   Everything else keeps its declarations verbatim. */
+/* Spec 302 §7.16 — `ReviewThreadDialog`, dressed as a Krypton Console dialog
+   plate (DESIGN.md "Overlays and dialogs", "Form controls", spec 366): one
+   plate over the scrim, an engraved head, the two bases as keys whose radio
+   is the LED (the checked base latches down, lamp lit), the preview a well of
+   flat text, the actions keys with the confirming one backlit.
+
+   Classes are the ones `OverlayShell` emits (moved from the old
+   `.acp-review-thread-picker` in src/styles/acp-harness.css): the overlay
+   root, `__panel`, `__head` + `__title` (a flex row so the review-thread
+   glyph sits beside the words). */
 @layer krypton.component {
   .acp-harness__review-thread-overlay {
     position: absolute;
@@ -16,7 +16,7 @@
     display: grid;
     place-items: center;
     padding: 16px;
-    background: rgba(0, 0, 0, 0.72);
+    background: var(--mat-scrim);
   }
 
   .acp-harness__review-thread-overlay[hidden] {
@@ -29,10 +29,11 @@
     max-height: 90%;
     overflow: auto;
     padding: 18px;
-    border: 1px solid var(--agent-accent);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(var(--krypton-bg-rgb), 0.94);
-    color: var(--agent-text);
+    background: var(--mat-brush), var(--mat-plate);
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
+    color: var(--krypton-fg, #b0c4d8);
   }
 
   .acp-review-thread__body {
@@ -41,17 +42,25 @@
 
   .acp-review-thread__head {
     margin: 0 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--mat-groove-lo);
+    box-shadow: 0 1px 0 var(--mat-groove-hi);
   }
 
   .acp-review-thread__title {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 1.1em;
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    text-shadow: var(--mat-engrave);
   }
 
   .acp-review-thread__title .acp-harness__icon {
-    color: var(--agent-accent);
+    color: var(--mat-silk);
   }
 
   .acp-review-thread__bases {
@@ -66,35 +75,64 @@
   .acp-review-thread__bases legend {
     margin-bottom: 8px;
     padding: 0;
-    color: color-mix(in srgb, var(--agent-text) 65%, transparent);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.8em;
+    letter-spacing: 0.06em;
+    text-shadow: var(--mat-engrave);
   }
 
+  /* A base is a key; the checked one latches down. */
   .acp-review-thread__choice {
     display: flex;
     gap: 10px;
     align-items: flex-start;
     padding: 10px 12px;
-    border: 1px solid color-mix(in srgb, var(--agent-accent) 32%, transparent);
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(var(--krypton-bg-rgb), 0.5);
-    cursor: pointer;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    text-shadow: var(--mat-print);
+    cursor: default;
+  }
+
+  .acp-review-thread__choice:hover {
+    background: var(--mat-key-hover);
   }
 
   .acp-review-thread__choice:has(input:checked) {
-    border-color: var(--agent-accent);
-    background: color-mix(in srgb, var(--agent-accent) 8%, transparent);
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+  }
+
+  .acp-review-thread__choice:has(input:checked) strong {
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-review-thread__choice:focus-within {
-    outline: 2px solid var(--agent-accent);
+    outline: 1px solid var(--mat-lit);
     outline-offset: 2px;
   }
 
+  /* The radio is the key's LED: unlit, or lit amber when checked. It stays a
+     real radio input, so focus and arrow keys are unchanged. */
   .acp-review-thread__choice input {
     flex: none;
-    margin: 2px 0 0;
-    accent-color: var(--agent-accent);
+    width: 8px;
+    height: 8px;
+    margin: 4px 0 0;
+    border: 0;
+    border-radius: 50%;
+    appearance: none;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+    outline: none;
+  }
+
+  .acp-review-thread__choice input:checked {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
   }
 
   .acp-review-thread__choice strong,
@@ -102,9 +140,14 @@
     display: block;
   }
 
+  .acp-review-thread__choice strong {
+    color: var(--krypton-fg, #b0c4d8);
+    letter-spacing: 0.04em;
+  }
+
   .acp-review-thread__choice small {
     margin-top: 3px;
-    color: color-mix(in srgb, var(--agent-text) 65%, transparent);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.78em;
     line-height: 1.35;
   }
@@ -116,30 +159,57 @@
     gap: 8px;
   }
 
+  /* `ActionButton` hosts (unclassed): keys. */
   .acp-review-thread__panel button {
-    padding: 6px 10px;
-    font: inherit;
-    color: inherit;
-    background: rgb(var(--krypton-bg-rgb));
-    border: 1px solid color-mix(in srgb, var(--agent-accent) 40%, transparent);
+    min-height: 28px;
+    padding: 3px 10px;
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    font: inherit;
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.09em;
+    text-shadow: var(--mat-print);
+    cursor: default;
+  }
+
+  .acp-review-thread__panel button:hover:not(:disabled) {
+    background: var(--mat-key-hover);
+  }
+
+  .acp-review-thread__panel button:active:not(:disabled) {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    transform: translateY(1px);
+  }
+
+  /* The confirming action (Start Review, first in the row) is backlit. */
+  .acp-review-thread__actions > button:first-child {
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-review-thread__panel button:focus-visible {
-    outline: 2px solid var(--agent-accent);
+    outline: 1px solid var(--mat-lit);
     outline-offset: 2px;
   }
 
   .acp-review-thread__panel button:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 
+  /* The preview the human reads before Enter freezes it: flat text in a well. */
   .acp-review-thread__details {
     margin: 0 0 14px;
     padding: 10px 12px;
-    border: 1px solid color-mix(in srgb, var(--agent-accent) 24%, transparent);
+    border: 0;
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(var(--krypton-bg-rgb), 0.5);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    color: var(--krypton-fg, #b0c4d8);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     max-height: 30vh;

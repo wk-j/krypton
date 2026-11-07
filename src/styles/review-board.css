@@ -1,17 +1,24 @@
 /* Krypton — Review Board (spec 211, chapters 244, threads 270, redesign 354)
  *
- * A typeset document, not a stack of cards:
+ * Chrome is the Krypton Console faceplate (DESIGN.md 2.0.0, spec 366): the
+ * header and the thread nav are plate strips with the title engraved, the
+ * Review Map is a plate column around a well, the search bar, the comment /
+ * send panels and the picker are floating plates with inputs and lists in
+ * wells, thread controls are keys and key hints are key caps.
+ *
+ * The reading column is a typeset document, not a stack of cards, and stays
+ * flat on the window's screen:
  *   • Every typed block is kicker → title → body. Hierarchy comes from three
  *     sizes (chrome, reading, 1.25em headings), two weights (400 / 600), four
  *     ink tiers and the 4 / 8 / 14 / 20 / 28px spacing scale.
  *   • No region dividers, no block borders, no block fills. The only fills are
- *     the code well and inline code; the only edges are floating panels, inputs
- *     outside a panel, the primary button and table hairlines.
- *   • Colour carries structure, never decoration. Accent: kicker and section
- *     labels, jump targets (0.7), the active map row, the current step, the
- *     chosen option, the active tab, links, the chart series. Warning: open
- *     work. Severity hue sits on the kicker word only. Titles, headings, prose
- *     and inline code stay in the ink tiers.
+ *     the code well and inline code; the only edges are table hairlines.
+ *   • Colour carries structure, never decoration. Silk (`--mat-silk`): kicker
+ *     and section labels. Lit (`--mat-lit`): the block cursor, the current
+ *     step, the chosen option, the active map row. Theme accent: links, jump
+ *     targets (0.7), the chart series. Warning: open work. Severity stays
+ *     neutral ink / amber (ADR-0004). Titles, headings, prose and inline code
+ *     stay in the ink tiers.
  *   • Icons only as a leading mark: one per typed-block kicker label and one
  *     per Overview / Open items / Full document map row. Monoline, stroked in
  *     currentColor, so they never add a colour of their own. No left rails
@@ -29,12 +36,8 @@
   --krypton-review-ink-2: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb), 0.8));
   --krypton-review-ink-3: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.5));
   --krypton-review-ink-4: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb), 0.34));
-  --krypton-review-accent: rgb(var(--krypton-accent-rgb));
   --krypton-review-target: rgba(var(--krypton-accent-rgb), 0.7);
   --krypton-review-open: rgb(var(--krypton-warning-rgb));
-  --krypton-review-well: rgba(0, 0, 0, 0.32);
-  --krypton-review-panel: rgba(var(--krypton-bg-rgb), 0.98);
-  --krypton-review-edge: rgba(var(--krypton-fg-rgb), 0.12);
   --krypton-review-radius: var(--krypton-border-radius, 8px);
 }
 
@@ -42,10 +45,9 @@
 [data-theme-scheme='light'] .krypton-review-thread,
 [data-theme-scheme='light'] .krypton-review-picker {
   --krypton-review-ink-1: var(--krypton-fg);
-  --krypton-review-well: rgba(var(--krypton-fg-rgb), 0.05);
-  --krypton-review-panel: #ffffff;
 }
 
+/* The Board is the window's screen: no wash of its own. */
 .krypton-review {
   position: relative;
   display: flex;
@@ -54,7 +56,7 @@
   height: 100%;
   overflow: hidden;
   outline: none;
-  background: rgba(var(--krypton-bg-rgb), 0.72);
+  background: transparent;
   color: var(--krypton-review-ink-2);
   font-family: var(--krypton-font-family);
   font-size: var(--krypton-chrome-font-size, 11px);
@@ -77,7 +79,7 @@
 }
 
 .krypton-review__kicker-label {
-  color: var(--krypton-review-accent);
+  color: var(--mat-silk);
   font-size: var(--krypton-chrome-font-size, 11px);
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -102,12 +104,10 @@
   vertical-align: -0.15em;
 }
 
+/* Severity is neutral evidence (ADR-0004): amber only, the word carries the
+ * level. Blocking reads lit; the others keep the label silk. */
 .krypton-review__kicker-label--blocking {
-  color: rgb(var(--krypton-danger-rgb));
-}
-
-.krypton-review__kicker-label--non-blocking {
-  color: rgb(var(--krypton-warning-rgb));
+  color: var(--mat-lit);
 }
 
 .krypton-review__kicker-meta {
@@ -161,13 +161,26 @@
 }
 
 .krypton-review__hint {
-  color: var(--krypton-review-ink-4);
+  color: var(--krypton-review-ink-3);
   white-space: nowrap;
 }
 
+/* A key hint's key is a small key cap (DESIGN.md "Overlays": hint labels are
+ * key caps). 6px, not 8px: on a one-line cap 8px reads as a capsule. */
 .krypton-review__key {
-  color: var(--krypton-review-ink-3);
+  display: inline-block;
+  min-width: 2ch;
+  padding: 0 5px;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: 6px;
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--krypton-review-ink-2);
   font: inherit;
+  font-size: 0.92em;
+  line-height: 1.45;
+  text-align: center;
+  text-shadow: var(--mat-print);
 }
 
 .krypton-review__title {
@@ -178,16 +191,24 @@
   line-height: 1.35;
 }
 
-/* ── Header ──────────────────────────────────────────────────────────── */
+/* ── Header: a plate strip over the screen ───────────────────────────── */
 
 .krypton-review__header {
   flex-shrink: 0;
   display: flex;
   align-items: baseline;
   gap: 14px;
-  padding: 14px 28px 8px;
+  padding: 8px 28px 7px;
+  border-bottom: 1px solid var(--mat-key-edge);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   white-space: nowrap;
   overflow: hidden;
+}
+
+.krypton-review__header .krypton-review__seg,
+.krypton-review-thread__nav .krypton-review__seg {
+  text-shadow: var(--mat-engrave);
 }
 
 .krypton-review__seg {
@@ -195,13 +216,15 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The document title, engraved in silk; it keeps its natural case. */
 .krypton-review__seg--title {
   flex-shrink: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--krypton-review-ink-1);
+  color: var(--mat-silk);
   font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 .krypton-review__seg--chapter {
@@ -242,8 +265,9 @@
   color: rgb(var(--krypton-danger-rgb));
 }
 
+/* One-shot notice (2.2s): lit, like a lamp flash. */
 .krypton-review__seg--flash {
-  color: var(--krypton-review-accent);
+  color: var(--mat-lit);
 }
 
 /* ── Content: map beside the reading column ──────────────────────────── */
@@ -264,7 +288,7 @@
   overflow-x: hidden;
   padding: 20px 0 80px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(var(--krypton-fg-rgb), 0.16) transparent;
+  scrollbar-color: rgba(var(--krypton-fg-rgb), 0.18) transparent;
   font-size: var(--krypton-font-size);
   line-height: 1.6;
 }
@@ -295,7 +319,7 @@
   position: absolute;
   top: 0;
   left: 10px;
-  color: var(--krypton-review-accent);
+  color: var(--mat-lit);
   font-weight: 600;
 }
 
@@ -378,33 +402,38 @@
   color: var(--krypton-review-ink-4);
 }
 
+/* Links: the theme link colour, underlined with a 2px offset; no glow. */
 .krypton-review__md a {
-  color: var(--krypton-review-accent);
+  color: rgb(var(--krypton-accent-rgb));
   text-decoration: underline;
   text-decoration-color: rgba(var(--krypton-accent-rgb), 0.4);
   text-underline-offset: 2px;
 }
 
+/* Inline code: a small well-fill chip with a 1px groove border. */
 .krypton-review__md code {
   padding: 0.05em 0.4ch;
+  border: 1px solid var(--mat-groove-lo);
   border-radius: var(--krypton-review-radius);
-  background: rgba(var(--krypton-fg-rgb), 0.06);
+  background: var(--mat-well-fill);
   color: var(--krypton-review-ink-1);
   font-family: var(--krypton-font-family);
 }
 
+/* The code well: the well's flat fill, no depth — prose stays flat. */
 .krypton-review__md pre {
   margin: 0.8em 0;
   padding: 8px 14px;
   overflow-x: auto;
   border-radius: var(--krypton-review-radius);
-  background: var(--krypton-review-well);
+  background: var(--mat-well-fill);
   font-family: var(--krypton-font-family);
   line-height: 1.45;
 }
 
 .krypton-review__md pre code {
   padding: 0;
+  border: 0;
   background: none;
   color: var(--krypton-review-ink-2);
 }
@@ -496,7 +525,7 @@
 
 .krypton-review__step--current::before,
 .krypton-review__step--current .krypton-review__step-at {
-  color: var(--krypton-review-accent);
+  color: var(--mat-lit);
 }
 
 /* ── Finding ─────────────────────────────────────────────────────────── */
@@ -547,7 +576,7 @@
 
 .krypton-review__option--chosen .krypton-review__option-key,
 .krypton-review__option--chosen .krypton-review__option-text {
-  color: var(--krypton-review-accent);
+  color: var(--mat-lit);
   font-weight: 600;
 }
 
@@ -629,7 +658,7 @@
   padding: 8px 14px;
   overflow-x: auto;
   border-radius: var(--krypton-review-radius);
-  background: var(--krypton-review-well);
+  background: var(--mat-well-fill);
 }
 
 .krypton-review__svg {
@@ -641,7 +670,7 @@
   height: auto;
 }
 
-/* ── Review Map (spec 244) ───────────────────────────────────────────── */
+/* ── Review Map (spec 244): a plate column around one well of rows ─── */
 
 .krypton-review__map {
   flex: 0 0 240px;
@@ -649,40 +678,49 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 16px 0 14px 14px;
+  padding: 10px 8px;
+  border-right: 1px solid var(--mat-key-edge);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
 }
 
 .krypton-review__map[data-state='hidden'] {
   display: none;
 }
 
-/* Below the wide threshold the map floats over the reading column. Opaque,
- * never blurred — backdrop-filter freezes a transparent WKWebView on macOS. */
+/* Below the wide threshold the map floats over the reading column: a floating
+ * plate over a solid underlay so the document never reads through it. Never
+ * blurred — backdrop-filter freezes a transparent WKWebView on macOS. */
 .krypton-review:not([data-layout='wide']) .krypton-review__map {
   position: absolute;
   z-index: 5;
   inset: 0 auto 0 0;
   width: min(240px, 78%);
-  padding-right: 14px;
-  background: var(--krypton-review-panel);
+  background: var(--mat-brush), var(--mat-plate), var(--agent-surface-solid, rgb(var(--krypton-bg-rgb)));
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
 }
 
 .krypton-review__map-rows {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding: 4px 0;
+  border-radius: var(--krypton-review-radius);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   scrollbar-width: none;
 }
 
+/* A repeated row: no shadow, no gradient; the selection is a full-row tint. */
 .krypton-review__map-row {
   display: flex;
   align-items: baseline;
   gap: 8px;
   width: 100%;
   margin: 0;
-  padding: 4px 14px;
+  padding: 4px 10px;
   border: 0;
-  border-radius: var(--krypton-review-radius);
+  border-radius: 0;
   background: none;
   color: var(--krypton-review-ink-3);
   font: inherit;
@@ -700,7 +738,7 @@
 }
 
 .krypton-review__map-row[data-depth='2'] {
-  padding-left: calc(14px + 2ch);
+  padding-left: calc(10px + 2ch);
 }
 
 .krypton-review__map-row:hover {
@@ -709,22 +747,19 @@
 
 .krypton-review__map-row--active,
 .krypton-review__map-row--active:hover {
-  color: var(--krypton-review-accent);
+  color: var(--mat-lit);
   font-weight: 600;
 }
 
 /* Map cursor, only while the map holds the keyboard: a full-row tint. */
 .krypton-review__map-row--selected,
 .krypton-review__map-row--selected:hover {
-  background: rgba(var(--krypton-accent-rgb), 0.12);
+  background: var(--mat-select);
 }
 
 .krypton-review__map-row:focus-visible {
-  outline: 1px solid rgba(var(--krypton-accent-rgb), 0.7);
-  outline-offset: 0;
-  box-shadow:
-    0 0 6px rgba(var(--krypton-accent-rgb), 0.6),
-    0 0 12px rgba(var(--krypton-accent-rgb), 0.2);
+  outline: 1px solid var(--mat-lit);
+  outline-offset: -1px;
 }
 
 /* Smart rows lead with an icon in the chapter-number column, so every label
@@ -760,11 +795,12 @@
 
 .krypton-review__map-foot {
   flex-shrink: 0;
-  padding: 8px 14px 0;
+  padding: 8px 6px 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  color: var(--krypton-review-ink-4);
+  color: var(--krypton-review-ink-3);
+  text-shadow: var(--mat-engrave);
 }
 
 /* ── Overview (spec 244) ─────────────────────────────────────────────── */
@@ -839,16 +875,18 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Floating panels: search, comment, send, picker ──────────────────── *
- * One edge each; no tinted head band, no internal rule. */
+/* ── Floating plates: search, comment, send, picker ──────────────────── *
+ * One plate each with its one cast shadow, over a solid underlay so the
+ * document under it never reads through (DESIGN.md "Transparency
+ * hierarchy"). Inputs and lists are wells. */
 
 .krypton-review__search,
 .krypton-review__overlay,
 .krypton-review-picker {
-  border: 1px solid var(--krypton-review-edge);
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-review-radius);
-  background: var(--krypton-review-panel);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  background: var(--mat-brush), var(--mat-plate), var(--agent-surface-solid, rgb(var(--krypton-bg-rgb)));
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
 }
 
 .krypton-review__search {
@@ -859,35 +897,40 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 8px 14px;
+  padding: 7px 10px;
 }
 
 .krypton-review__search-prompt {
-  color: var(--krypton-review-ink-3);
+  color: var(--mat-silk);
+  text-shadow: var(--mat-engrave);
 }
 
 .krypton-review__search-input {
   width: 200px;
+  padding: 2px 8px;
   border: 0;
+  border-radius: var(--krypton-review-radius);
   outline: none;
-  background: transparent;
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   color: var(--krypton-review-ink-1);
-  caret-color: var(--krypton-review-accent);
+  caret-color: var(--krypton-cursor, currentColor);
   font: inherit;
 }
 
 .krypton-review__search-count {
   color: var(--krypton-review-ink-3);
   font-variant-numeric: tabular-nums;
+  text-shadow: var(--mat-engrave);
 }
 
 .krypton-review__match {
-  background: rgba(var(--krypton-accent-rgb), 0.24);
+  background: var(--mat-select);
   color: inherit;
 }
 
 .krypton-review__match--current {
-  background: var(--krypton-review-accent);
+  background: var(--mat-silk);
   color: rgb(var(--krypton-bg-rgb));
 }
 
@@ -905,9 +948,14 @@
   padding: 14px 20px;
 }
 
+/* The panel's head: engraved on the plate. */
 .krypton-review__overlay-head {
   flex-shrink: 0;
-  color: var(--krypton-review-ink-3);
+  color: var(--mat-silk);
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-shadow: var(--mat-engrave);
+  text-transform: uppercase;
 }
 
 .krypton-review__overlay-notice {
@@ -924,25 +972,33 @@
   line-height: 1.35;
 }
 
+/* The quoted text sits in a small well. */
 .krypton-review__comment-quote {
   flex-shrink: 0;
-  max-height: 4.5em;
+  max-height: calc(4.5em + 12px);
   overflow-y: auto;
+  padding: 6px 10px;
+  border-radius: var(--krypton-review-radius);
+  background: var(--mat-well-fill);
+  box-shadow: var(--mat-well-shadow);
   color: var(--krypton-review-ink-3);
   white-space: pre-wrap;
 }
 
+/* Text inputs are wells; the caret is the theme cursor. */
 .krypton-review__comment-input,
 .krypton-review__note-input {
   flex-shrink: 0;
   margin: 6px 0 0;
-  padding: 0;
+  padding: 8px 10px;
   border: 0;
+  border-radius: var(--krypton-review-radius);
   outline: none;
   resize: none;
-  background: transparent;
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   color: var(--krypton-review-ink-1);
-  caret-color: var(--krypton-review-accent);
+  caret-color: var(--krypton-cursor, currentColor);
   font-family: inherit;
   font-size: var(--krypton-font-size);
   line-height: 1.5;
@@ -964,6 +1020,10 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding: 6px 10px;
+  border-radius: var(--krypton-review-radius);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-review__send-row {
@@ -995,37 +1055,51 @@
   max-height: 66vh;
   overflow: hidden;
   outline: none;
-  padding: 14px 8px;
+  padding: 12px 8px 8px;
   color: var(--krypton-review-ink-2);
   font-family: var(--krypton-font-family);
   font-size: var(--krypton-chrome-font-size, 11px);
 }
 
+/* Natural case: the head carries key names (`j/k`, `Enter`), which
+ * uppercase engraving would misprint. */
 .krypton-review-picker__head {
   flex-shrink: 0;
-  padding: 0 14px 8px;
-  color: var(--krypton-review-ink-3);
+  padding: 0 6px 10px;
+  color: var(--mat-silk);
+  letter-spacing: 0.04em;
+  text-shadow: var(--mat-engrave);
 }
 
 .krypton-review-picker__filter {
   flex-shrink: 0;
-  padding: 0 14px 8px;
+  padding: 0 0 8px;
 }
 
 .krypton-review-picker__filter-input {
   width: 100%;
+  padding: 5px 10px;
   border: 0;
+  border-radius: var(--krypton-review-radius);
   outline: none;
-  background: transparent;
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   color: var(--krypton-review-ink-1);
-  caret-color: var(--krypton-review-accent);
+  caret-color: var(--krypton-cursor, currentColor);
   font: inherit;
 }
 
+/* The result list: one well of grooved rows. */
 .krypton-review-picker__list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding: 2px 0;
+  border-radius: var(--krypton-review-radius);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--krypton-fg-rgb), 0.18) transparent;
 }
 
 .krypton-review-picker__empty {
@@ -1034,17 +1108,22 @@
   color: var(--krypton-review-ink-3);
 }
 
+/* A repeated row: a groove and the selection tint, nothing else. */
 .krypton-review-picker__row {
   display: flex;
   align-items: baseline;
   gap: 14px;
-  padding: 4px 14px;
-  border-radius: var(--krypton-review-radius);
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--mat-groove-lo);
   cursor: default;
 }
 
+.krypton-review-picker__row:last-child {
+  border-bottom: 0;
+}
+
 .krypton-review-picker__row--selected {
-  background: rgba(var(--krypton-accent-rgb), 0.12);
+  background: var(--mat-select);
 }
 
 .krypton-review-picker__date {
@@ -1092,9 +1171,10 @@
 
 /* ── Review thread (spec 270) ────────────────────────────────────────── *
  *
- * One header row: title, text tabs, then the snapshot and the embedded
- * Board's status (written into the thread's `statusHost`). Comments and Submit
- * span the same full-width reading column as the Board.
+ * One header row, a plate strip: the title engraved, the mode tabs as keys
+ * with an LED (the shown mode latched, its LED lit), then the snapshot and
+ * the embedded Board's status (written into the thread's `statusHost`).
+ * Comments and Submit span the same full-width reading column as the Board.
  */
 
 .krypton-review-thread {
@@ -1105,24 +1185,22 @@
   min-height: 0;
   outline: none;
   color: var(--krypton-review-ink-2);
-  background: rgba(var(--krypton-bg-rgb), 0.72);
+  background: transparent;
   font-family: var(--krypton-font-family);
   font-size: var(--krypton-chrome-font-size, 11px);
   line-height: 1.4;
   contain: layout;
 }
 
-/* The embedded Board sits on the thread's backdrop, not a second wash. */
-.krypton-review-thread .krypton-review {
-  background: transparent;
-}
-
 .krypton-review-thread__nav {
   flex: 0 0 auto;
   display: flex;
-  align-items: baseline;
-  gap: 20px;
-  padding: 14px 28px 8px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 28px;
+  border-bottom: 1px solid var(--mat-key-edge);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   white-space: nowrap;
   overflow-x: auto;
   scrollbar-width: none;
@@ -1131,85 +1209,135 @@
 .krypton-review-thread__title {
   flex-shrink: 1;
   min-width: 0;
-  margin-right: 8px;
+  margin-right: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--krypton-review-ink-1);
+  color: var(--mat-silk);
   font-weight: 600;
+  letter-spacing: 0.04em;
+  text-shadow: var(--mat-engrave);
 }
 
 .krypton-review-thread__status {
   flex-shrink: 1;
   min-width: 0;
   margin-left: auto;
+  padding-left: 8px;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--krypton-review-ink-3);
+  text-shadow: var(--mat-engrave);
 }
 
 .krypton-review-thread__nav .krypton-review__status {
-  margin-left: 0;
+  margin-left: 8px;
 }
 
 .krypton-review-thread__warn {
   color: rgb(var(--krypton-warning-rgb));
 }
 
-/* Shared reset: text controls, fixed geometry so focus never shifts layout. */
+/* Every thread control is a key: one line, a real 1px edge, raised at rest,
+ * sinking 1px while held (DESIGN.md "Key"). */
 .krypton-review-thread__tab,
 .krypton-review-thread__button,
 .krypton-review-thread__choice,
 .krypton-review-thread__send {
   flex-shrink: 0;
   margin: 0;
-  padding: 0;
-  border: 0;
+  min-height: 24px;
+  padding: 3px 10px;
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-review-radius);
-  background: none;
-  color: inherit;
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--krypton-review-ink-2);
   font: inherit;
-  line-height: inherit;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  letter-spacing: 0.04em;
+  line-height: 1.4;
   text-align: left;
+  text-shadow: var(--mat-print);
+  white-space: nowrap;
   cursor: default;
 }
 
-.krypton-review-thread__tab {
-  color: var(--krypton-review-ink-3);
+.krypton-review-thread__tab:hover:not(:disabled),
+.krypton-review-thread__button:hover:not(:disabled),
+.krypton-review-thread__choice:hover:not(:disabled),
+.krypton-review-thread__send:hover:not(:disabled) {
+  background: var(--mat-key-hover);
+  color: var(--mat-lit);
 }
 
-.krypton-review-thread__tab:hover {
-  color: var(--krypton-review-ink-2);
+.krypton-review-thread__tab:active:not(:disabled),
+.krypton-review-thread__button:active:not(:disabled),
+.krypton-review-thread__choice:active:not(:disabled),
+.krypton-review-thread__send:active:not(:disabled) {
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
+  transform: translateY(1px);
+}
+
+.krypton-review-thread__tab:disabled,
+.krypton-review-thread__button:disabled,
+.krypton-review-thread__choice:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.krypton-review-thread__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The tab's indicator LED. */
+.krypton-review-thread__tab::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .krypton-review-thread__tab--active,
-.krypton-review-thread__tab--active:hover {
-  color: var(--krypton-review-accent);
-  font-weight: 600;
+.krypton-review-thread__tab--active:hover:not(:disabled) {
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
+.krypton-review-thread__tab--active::before {
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
+}
+
+/* The shortcut trailing a key's legend, in a dimmer ink. */
 .krypton-review-thread__key {
   margin-left: 0.6ch;
-  color: var(--krypton-review-ink-4);
+  color: var(--krypton-review-ink-3);
   font-weight: 400;
+  text-shadow: none;
+}
+
+.krypton-review-thread__tab .krypton-review-thread__key {
+  margin-left: 0;
 }
 
 .krypton-review-thread__tab--active .krypton-review-thread__key {
-  color: rgba(var(--krypton-accent-rgb), 0.6);
-}
-
-.krypton-review-thread__button {
-  color: var(--krypton-review-accent);
+  color: var(--mat-silk);
 }
 
 .krypton-review-thread__tab:focus-visible,
 .krypton-review-thread__button:focus-visible,
 .krypton-review-thread__choice:focus-visible,
 .krypton-review-thread__send:focus-visible {
-  outline: 1px solid rgba(var(--krypton-accent-rgb), 0.7);
+  outline: 1px solid var(--mat-lit);
   outline-offset: 2px;
-  box-shadow:
-    0 0 6px rgba(var(--krypton-accent-rgb), 0.6),
-    0 0 12px rgba(var(--krypton-accent-rgb), 0.2);
 }
 
 .krypton-review-thread__notice {
@@ -1223,7 +1351,7 @@
   min-height: 0;
   overflow: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(var(--krypton-fg-rgb), 0.16) transparent;
+  scrollbar-color: rgba(var(--krypton-fg-rgb), 0.18) transparent;
 }
 
 .krypton-review-thread__panel[hidden] {
@@ -1310,41 +1438,49 @@
   margin: 4px 0;
 }
 
-/* Verdict options read like decision options. */
+/* Verdict options read like decision options, on keys: number, label, and
+ * the reason a key is unpowered as a badge behind an etched divider. */
 .krypton-review-thread__choice {
   display: grid;
-  grid-template-columns: 3ch auto 1fr;
+  grid-template-columns: 2ch auto auto;
   column-gap: 8px;
-  align-items: baseline;
-  width: 100%;
-  padding: 2px 0;
+  align-items: center;
+  width: fit-content;
+  min-height: 28px;
+  margin: 4px 0;
+  padding: 4px 12px;
 }
 
 .krypton-review-thread__choice-key {
-  color: var(--krypton-review-ink-4);
+  color: var(--krypton-review-ink-3);
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
-.krypton-review-thread__choice-label {
-  color: var(--krypton-review-ink-2);
-}
-
 .krypton-review-thread__choice-reason {
+  padding-left: 8px;
+  border-left: 1px solid var(--mat-groove-lo);
+  box-shadow: inset 1px 0 0 var(--mat-groove-hi);
   color: var(--krypton-review-ink-3);
-  font-size: var(--krypton-chrome-font-size, 11px);
 }
 
-.krypton-review-thread__choice--active .krypton-review-thread__choice-key,
+.krypton-review-thread__choice--active,
+.krypton-review-thread__choice--active:hover:not(:disabled) {
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
+}
+
+.krypton-review-thread__choice--active .krypton-review-thread__choice-key {
+  color: var(--mat-silk);
+}
+
 .krypton-review-thread__choice--active .krypton-review-thread__choice-label {
-  color: var(--krypton-review-accent);
   font-weight: 600;
 }
 
-.krypton-review-thread__choice:disabled .krypton-review-thread__choice-key,
-.krypton-review-thread__choice:disabled .krypton-review-thread__choice-label {
-  color: var(--krypton-review-ink-4);
-}
-
+/* The summary is a well; its caret is the theme cursor. */
 .krypton-review-thread__summary {
   display: block;
   box-sizing: border-box;
@@ -1352,19 +1488,20 @@
   min-height: 7.5em;
   margin: 0;
   padding: 8px 14px;
-  border: 1px solid rgba(var(--krypton-fg-rgb), 0.14);
+  border: 0;
   border-radius: var(--krypton-review-radius);
   outline: none;
-  background: transparent;
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   color: var(--krypton-review-ink-1);
-  caret-color: var(--krypton-review-accent);
+  caret-color: var(--krypton-cursor, currentColor);
   font: inherit;
   resize: vertical;
 }
 
-/* Inputs show focus by snapping the border to the active tier — instantly. */
-.krypton-review-thread__summary:focus {
-  border-color: rgba(var(--krypton-accent-rgb), 0.7);
+.krypton-review-thread__summary:focus-visible {
+  outline: 1px solid var(--mat-lit);
+  outline-offset: 2px;
 }
 
 .krypton-review-thread__summary::placeholder {
@@ -1373,41 +1510,57 @@
 
 .krypton-review-thread__omitted {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   margin: 14px 0 20px;
   color: var(--krypton-review-ink-2);
 }
 
+/* Checkbox: a 12px key that latches down with its LED lit. */
 .krypton-review-thread__omitted input {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
   margin: 0;
-  accent-color: var(--krypton-review-accent);
+  appearance: none;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: 3px;
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+}
+
+.krypton-review-thread__omitted input:checked {
+  background:
+    radial-gradient(circle 3px at 50% 50%, var(--mat-lens-on-glint) 0 0.8px, var(--mat-lens-on-mid) 1.8px, var(--mat-lens-on-lo) 2.6px, transparent 3px),
+    var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
 }
 
 .krypton-review-thread__omitted input:focus-visible {
-  outline: 1px solid rgba(var(--krypton-accent-rgb), 0.7);
+  outline: 1px solid var(--mat-lit);
   outline-offset: 2px;
 }
 
-/* Primary: the one confirming action. */
+/* Primary: the one confirming action — a key with a backlit legend. */
 .krypton-review-thread__send {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 14px;
-  padding: 6px 14px;
-  background: var(--krypton-review-accent);
-  color: rgb(var(--krypton-bg-rgb));
-  font-size: var(--krypton-chrome-font-size, 11px);
+  min-height: 28px;
+  padding: 4px 14px;
+  color: var(--mat-lit);
   font-weight: 600;
+  text-shadow: var(--mat-lit-glow);
 }
 
-.krypton-review-thread__send .krypton-review__key {
-  color: inherit;
-  font-weight: 400;
-  opacity: 0.7;
+.krypton-review-thread__send .krypton-review-thread__key {
+  margin-left: 0;
+  color: var(--mat-silk);
 }
 
+/* Submitting: the action is running, so the key stays latched and lit
+ * instead of dropping to the unpowered 0.45. */
 .krypton-review-thread__send:disabled {
-  background: rgba(var(--krypton-fg-rgb), 0.08);
-  color: var(--krypton-review-ink-3);
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
 }

@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-04-19
 > Milestone: N/A — New feature
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): cyan/pink palette, scanline overlay and selection rails removed.
 
 ## Decision Log (from design review)
 

@@ -1,138 +1,136 @@
 /* ─── Hurl Client View ─────────────────────────────────────── */
-
-:root {
-  --hurl-bg: #070912;
-  --hurl-panel: rgba(10, 14, 28, 0.88);
-  --hurl-border: rgba(0, 229, 255, 0.2);
-  --hurl-border-active: rgba(0, 229, 255, 0.45);
-  --hurl-primary: #00e5ff;
-  --hurl-primary-rgb: 0, 229, 255;
-  --hurl-accent: #ff3d7f;
-  --hurl-accent-rgb: 255, 61, 127;
-  --hurl-amber: #ffb74d;
-  --hurl-green: #5cf5a0;
-  --hurl-text: #c8d8e6;
-  --hurl-text-dim: #6a8ea8;
-  --hurl-ghost: rgba(0, 229, 255, 0.07);
-  --hurl-font: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
-}
+/* Krypton Console parts (DESIGN.md 2.0.0, spec 366). The file tree is a plate
+   column with the tree cut into it as a well of groove-split rows; the path
+   line, the toolbar and the status bar are plate strips around the viewport,
+   which is the window's screen with the request source or the response flat
+   on it. The run state is a lamp (steady while running — no pulse), the env
+   file a chip, the pickers floating plates. Selection is a full-row
+   `--mat-select` tint, never an edge rail (ADR-0027). No private palette:
+   every colour is a theme or material token. */
 
 .krypton-hurl {
+  --hurl-ink: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb), 0.86));
+  --hurl-ink-dim: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.62));
+  --hurl-ink-faint: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb), 0.4));
   display: flex;
   width: 100%;
   height: 100%;
-  background: var(--hurl-bg);
-  color: var(--hurl-text);
-  font-family: var(--hurl-font);
+  background: transparent;
+  color: var(--krypton-fg);
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: var(--krypton-font-size);
   outline: none;
   position: relative;
   overflow: hidden;
 }
 
-/* ─── Sidebar ─── */
+/* ─── Sidebar: a plate column ─── */
 
 .krypton-hurl__sidebar {
   width: 260px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--hurl-border);
-  background: var(--hurl-panel);
+  background: var(--mat-brush), var(--mat-plate);
+  border-right: 1px solid var(--mat-key-edge);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), inset 1px 0 0 var(--mat-bevel-hi);
 }
 
 .krypton-hurl__sidebar-header {
   padding: 10px 12px 8px;
-  border-bottom: 1px solid var(--hurl-border);
 }
 
 .krypton-hurl__sidebar-title {
-  font-family: var(--hurl-font);
   font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  color: var(--hurl-primary);
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--mat-silk);
+  text-shadow: var(--mat-engrave);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .krypton-hurl__filter {
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--hurl-border);
+  padding: 0 8px 6px;
 }
 
+/* An input well; its caret is the theme cursor. */
 .krypton-hurl__filter-input {
+  box-sizing: border-box;
   width: 100%;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--hurl-border);
-  color: var(--hurl-primary);
-  font-family: var(--hurl-font);
-  font-size: var(--krypton-chrome-font-size, 11px);
-  padding: 4px 8px;
-  outline: none;
+  padding: 5px 8px;
+  background: var(--mat-well);
+  border: none;
   border-radius: var(--krypton-border-radius, 8px);
+  box-shadow: var(--mat-well-shadow);
+  color: var(--krypton-fg);
+  caret-color: var(--krypton-cursor, currentColor);
+  font-family: inherit;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  outline: none;
 }
 
-.krypton-hurl__filter-input:focus {
-  border-color: var(--hurl-border-active);
+.krypton-hurl__filter-input:focus-visible {
+  outline: 1px solid var(--mat-lit);
+  outline-offset: 2px;
 }
 
+/* The tree: one well inset into the plate; it scrolls inside its recess. */
 .krypton-hurl__tree {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 4px 0;
-}
-
-.krypton-hurl__tree::-webkit-scrollbar {
-  width: 3px;
-}
-
-.krypton-hurl__tree::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.krypton-hurl__tree::-webkit-scrollbar-thumb {
-  background: rgba(var(--hurl-primary-rgb), 0.15);
+  margin: 0 8px 8px;
   border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
+/* A flat slice of the tree well. `padding-left` is set inline by depth. */
 .krypton-hurl__tree-row {
   padding: 3px 8px;
-  font-family: var(--hurl-font);
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: var(--hurl-text-dim);
+  color: var(--hurl-ink-dim);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--mat-groove-lo);
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
+.krypton-hurl__tree-row:last-child {
+  border-bottom: 0;
+}
+
 .krypton-hurl__tree-row--dir {
-  color: var(--hurl-primary);
+  color: var(--hurl-ink);
   font-weight: 600;
 }
 
 .krypton-hurl__tree-row--file {
-  color: var(--hurl-text-dim);
+  color: var(--hurl-ink-dim);
 }
 
+/* Selection: the full-row tint inside the well (ADR-0027). */
 .krypton-hurl__tree-row--selected {
-  background: var(--hurl-ghost);
-  color: var(--hurl-text);
-  border-left-color: var(--hurl-primary);
+  background: var(--mat-select);
+  color: var(--krypton-fg);
 }
 
+/* The file being run: its legend lit, steady. */
 .krypton-hurl__tree-row--running {
-  color: var(--hurl-amber);
+  color: var(--mat-lit);
 }
 
 .krypton-hurl__chevron {
   width: 10px;
   flex-shrink: 0;
-  color: var(--hurl-primary);
-  opacity: 0.7;
+  color: var(--hurl-ink-faint);
 }
 
 .krypton-hurl__tree-label {
@@ -144,13 +142,13 @@
 
 .krypton-hurl__empty {
   padding: 16px;
-  color: var(--hurl-text-dim);
+  color: var(--hurl-ink-dim);
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.1em;
 }
 
 .krypton-hurl__empty--error {
-  color: var(--hurl-accent);
+  color: rgb(var(--krypton-danger-rgb));
 }
 
 /* ─── Main pane ─── */
@@ -163,49 +161,83 @@
   position: relative;
 }
 
+/* The path line: a plate strip, the path engraved in ink (natural case). */
 .krypton-hurl__breadcrumb {
-  padding: 8px 16px;
-  font-family: var(--hurl-font);
+  padding: 8px 16px 7px;
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.08em;
-  color: var(--hurl-text-dim);
-  border-bottom: 1px solid var(--hurl-border);
+  color: var(--hurl-ink-dim);
+  text-shadow: var(--mat-engrave);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   flex-shrink: 0;
 }
 
+/* The toolbar continues the same plate under a groove and meets the screen
+   on its bottom edge. The view mode is a latched key, the verbosity flags
+   lit lamps, the cache age a readout. */
 .krypton-hurl__toolbar {
-  padding: 4px 16px;
+  padding: 4px 16px 6px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  border-bottom: 1px solid var(--hurl-border);
+  gap: 8px;
+  background: var(--mat-brush), var(--mat-plate);
+  border-top: 1px solid var(--mat-groove-lo);
+  border-bottom: 1px solid var(--mat-key-edge);
+  box-shadow: inset 0 1px 0 var(--mat-groove-hi);
   flex-shrink: 0;
   font-size: var(--krypton-chrome-font-size, 11px);
-  color: var(--hurl-text-dim);
-  letter-spacing: 0.1em;
+  color: var(--hurl-ink-dim);
+  letter-spacing: 0.09em;
   min-height: 22px;
 }
 
 .krypton-hurl__toolbar-item {
-  color: var(--hurl-primary);
-  font-weight: 700;
-  letter-spacing: 0.15em;
+  padding: 2px 9px;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  white-space: nowrap;
 }
 
+/* A verbosity flag: a lit amber lamp beside its legend. */
 .krypton-hurl__toolbar-flag {
-  color: var(--hurl-amber);
-  font-family: var(--hurl-font);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--mat-lit);
+  text-shadow: var(--mat-lit-glow);
 }
 
-.krypton-hurl__toolbar-cached {
-  color: var(--hurl-text-dim);
+.krypton-hurl__toolbar-flag::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mat-lens-on);
+  box-shadow: var(--mat-lens-glow);
+}
+
+.krypton-hurl__toolbar-item.krypton-hurl__toolbar-cached {
+  border: none;
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  color: var(--hurl-ink-dim);
+  text-shadow: none;
   font-weight: 400;
   letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
 }
 
+/* The screen: request source or response, flat. */
 .krypton-hurl__viewport {
   flex: 1;
   overflow: auto;
@@ -213,221 +245,241 @@
   position: relative;
 }
 
-.krypton-hurl__viewport::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+.krypton-hurl ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
 
-.krypton-hurl__viewport::-webkit-scrollbar-track {
+.krypton-hurl ::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.krypton-hurl__viewport::-webkit-scrollbar-thumb {
-  background: rgba(var(--hurl-primary-rgb), 0.2);
+.krypton-hurl ::-webkit-scrollbar-thumb {
+  background: rgba(var(--krypton-fg-rgb), 0.18);
   border-radius: var(--krypton-border-radius, 8px);
+}
+
+.krypton-hurl ::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--krypton-fg-rgb), 0.32);
 }
 
 .krypton-hurl__source,
 .krypton-hurl__response {
   margin: 0;
-  font-family: var(--hurl-font);
+  font-family: inherit;
   font-size: var(--krypton-font-size);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--hurl-text);
+  color: var(--krypton-fg);
 }
 
-/* ─── Syntax tokens ─── */
+/* ─── Syntax tokens (content: the theme's ANSI palette) ─── */
 
 .hurl-token--method {
-  color: var(--hurl-primary);
+  color: var(--krypton-ansi-6);
   font-weight: 700;
 }
 
 .hurl-token--status {
-  color: var(--hurl-green);
+  color: var(--krypton-ansi-10);
   font-weight: 700;
 }
 
 .hurl-token--json {
-  color: var(--hurl-amber);
+  color: var(--krypton-ansi-3);
 }
 
 .hurl-token--var {
-  color: var(--hurl-accent);
+  color: var(--krypton-ansi-5);
 }
 
 .hurl-token--resolved {
-  color: var(--hurl-green);
-  border-bottom: 1px dotted var(--hurl-green);
+  color: var(--krypton-ansi-2);
+  border-bottom: 1px dotted currentColor;
   cursor: help;
 }
 
 .hurl-token--unresolved {
-  color: var(--hurl-pink, var(--hurl-accent));
+  color: rgb(var(--krypton-danger-rgb));
   text-decoration: line-through wavy;
-  text-decoration-color: var(--hurl-pink, var(--hurl-accent));
+  text-decoration-color: currentColor;
 }
 
 .hurl-token--comment {
-  color: var(--hurl-text-dim);
+  color: var(--hurl-ink-faint);
   font-style: italic;
 }
 
-/* ─── Status bar ─── */
+/* ─── Status bar: a plate strip meeting the screen on its top edge ─── */
 
 .krypton-hurl__statusbar {
-  padding: 6px 16px;
+  padding: 5px 16px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.15em;
-  color: var(--hurl-text-dim);
-  border-top: 1px solid var(--hurl-border);
-  font-family: var(--hurl-font);
+  letter-spacing: 0.09em;
+  color: var(--hurl-ink-dim);
+  background: var(--mat-brush), var(--mat-plate);
+  border-top: 1px solid var(--mat-key-edge);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   flex-shrink: 0;
   white-space: nowrap;
 }
 
+/* The run lamp: an unlit capsule while idle; lit glass in its state colour
+   after a run, and steadily lit while one runs (DESIGN.md "Lamps"). */
 .krypton-hurl__exit {
-  padding: 2px 8px;
-  border-radius: var(--krypton-border-radius, 8px);
+  --hurl-exit-rgb: var(--krypton-fg-rgb);
+  padding: 1px 9px;
+  border: 1px solid rgba(var(--krypton-fg-rgb), 0.18);
+  border-radius: 999px;
+  background: var(--mat-well-fill);
+  color: var(--hurl-ink-dim);
   font-weight: 700;
-  letter-spacing: 0.2em;
-  border: 1px solid transparent;
+  letter-spacing: 0.13em;
+}
+
+.krypton-hurl__exit--ok,
+.krypton-hurl__exit--failed,
+.krypton-hurl__exit--running {
+  border-color: rgba(var(--hurl-exit-rgb), 0.5);
+  background: radial-gradient(ellipse at 50% 0%, rgba(var(--hurl-exit-rgb), 0.3), rgba(var(--hurl-exit-rgb), 0.07) 75%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--hurl-exit-rgb), 0.22);
+  color: rgb(var(--hurl-exit-rgb));
 }
 
 .krypton-hurl__exit--ok {
-  color: var(--hurl-primary);
-  border-color: rgba(var(--hurl-primary-rgb), 0.4);
-  background: rgba(var(--hurl-primary-rgb), 0.08);
+  --hurl-exit-rgb: var(--krypton-success-rgb);
 }
 
 .krypton-hurl__exit--failed {
-  color: var(--hurl-accent);
-  border-color: rgba(var(--hurl-accent-rgb), 0.4);
-  background: rgba(var(--hurl-accent-rgb), 0.08);
+  --hurl-exit-rgb: var(--krypton-danger-rgb);
 }
 
+/* Running is an action state (cyan), not a verdict. */
 .krypton-hurl__exit--running {
-  color: var(--hurl-amber);
-  border-color: rgba(255, 183, 77, 0.4);
-  background: rgba(255, 183, 77, 0.08);
-  animation: krypton-hurl-pulse 1.2s ease-in-out infinite;
+  --hurl-exit-rgb: var(--agent-cyan-rgb, var(--krypton-accent-rgb));
 }
 
-@keyframes krypton-hurl-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
+/* The run time: a readout. */
 .krypton-hurl__stat {
-  color: var(--hurl-text);
-  letter-spacing: 0.12em;
+  padding: 1px 7px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  color: var(--hurl-ink);
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
 }
 
+/* The env file: a chip — an embossed legend on a key face. */
 .krypton-hurl__env-badge {
   margin-left: auto;
-  color: var(--hurl-primary);
-  letter-spacing: 0.12em;
-  padding: 2px 6px;
-  border: 1px solid var(--hurl-border);
-  border-radius: var(--krypton-border-radius, 8px);
+  padding: 1px 9px;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: 999px;
+  background: var(--mat-key);
+  box-shadow: var(--mat-key-raise);
+  color: var(--hurl-ink);
+  text-shadow: var(--mat-print);
+  letter-spacing: 0.09em;
 }
 
-/* ─── Env picker ─── */
-
-.krypton-hurl__picker {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  min-width: 320px;
-  max-width: 70%;
-  background: var(--hurl-panel);
-  border: 1px solid var(--hurl-border-active);
-  border-radius: var(--krypton-border-radius, 8px);
-  padding: 10px 0 8px;
-  z-index: 100;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-}
-
-.krypton-hurl__picker-title {
-  padding: 0 16px 8px;
-  border-bottom: 1px solid var(--hurl-border);
-  color: var(--hurl-primary);
-  letter-spacing: 0.2em;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
-}
-
-.krypton-hurl__picker-list {
-  padding: 6px 0;
-  max-height: 50vh;
-  overflow-y: auto;
-}
-
-.krypton-hurl__picker-item {
-  padding: 4px 16px;
-  color: var(--hurl-text-dim);
-  border-left: 2px solid transparent;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  cursor: pointer;
-}
-
-.krypton-hurl__picker-item--selected {
-  background: var(--hurl-ghost);
-  color: var(--hurl-text);
-  border-left-color: var(--hurl-primary);
-}
-
+/* `? for help`: printed legend. */
 .krypton-hurl__help-cue {
-  margin-left: auto;
-  color: var(--hurl-text-dim);
+  color: var(--hurl-ink-dim);
   font-size: 10px;
-  letter-spacing: 0.1em;
-  opacity: 0.7;
+  letter-spacing: 0.09em;
+  text-shadow: var(--mat-print);
 }
 
-/* ─── Help overlay ─── */
+/* ─── Floating plates: env picker and help ─── */
+/* A plate over a solid underlay (it covers the viewport), one cast shadow,
+   an engraved head over a groove, the content in a well, the key-hint foot
+   printed legend. */
 
+.krypton-hurl__picker,
 .krypton-hurl__help {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(640px, 80%);
-  max-height: 80%;
-  background: var(--hurl-panel);
-  border: 1px solid var(--hurl-border-active);
-  border-radius: var(--krypton-border-radius, 8px);
-  padding: 12px 0 8px;
-  z-index: 110;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--mat-key-edge);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-brush), var(--mat-plate), var(--agent-surface-solid, rgb(var(--krypton-bg-rgb)));
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
 }
 
+.krypton-hurl__picker {
+  min-width: 320px;
+  max-width: 70%;
+  padding: 10px 0 8px;
+  z-index: 100;
+}
+
+.krypton-hurl__picker-title,
 .krypton-hurl__help-title {
-  padding: 0 18px 10px;
-  border-bottom: 1px solid var(--hurl-border);
-  color: var(--hurl-primary);
-  letter-spacing: 0.24em;
+  padding: 0 14px 8px;
+  border-bottom: 1px solid var(--mat-groove-lo);
+  box-shadow: 0 1px 0 var(--mat-groove-hi);
+  color: var(--mat-silk);
+  text-shadow: var(--mat-engrave);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
   font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 700;
+  font-weight: 600;
+}
+
+.krypton-hurl__picker-list {
+  margin: 8px 8px 0;
+  max-height: 50vh;
+  overflow-y: auto;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+}
+
+.krypton-hurl__picker-item {
+  padding: 4px 12px;
+  color: var(--hurl-ink-dim);
+  border-bottom: 1px solid var(--mat-groove-lo);
+  font-size: var(--krypton-chrome-font-size, 11px);
+  cursor: pointer;
+}
+
+.krypton-hurl__picker-item:last-child {
+  border-bottom: 0;
+}
+
+.krypton-hurl__picker-item--selected {
+  background: var(--mat-select);
+  color: var(--krypton-fg);
+}
+
+.krypton-hurl__help {
+  width: min(640px, 80%);
+  max-height: 80%;
+  padding: 12px 0 8px;
+  z-index: 110;
 }
 
 .krypton-hurl__help-body {
-  padding: 10px 18px 6px;
+  margin: 8px 8px 0;
+  padding: 10px 12px 6px;
   overflow-y: auto;
   flex: 1;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-hurl__help-heading {
-  color: var(--hurl-accent, var(--hurl-primary));
-  letter-spacing: 0.18em;
+  color: var(--hurl-ink);
+  letter-spacing: 0.13em;
   font-size: 10px;
   font-weight: 700;
   margin: 8px 0 4px;
@@ -450,23 +502,23 @@
 }
 
 .krypton-hurl__help-key {
-  font-family: var(--krypton-mono-font, monospace);
-  color: var(--hurl-primary);
+  font-family: inherit;
+  color: var(--mat-silk);
   font-size: var(--krypton-chrome-font-size, 11px);
   padding: 2px 0;
 }
 
 .krypton-hurl__help-desc {
-  color: var(--hurl-text-dim);
+  color: var(--hurl-ink-dim);
   font-size: var(--krypton-chrome-font-size, 11px);
   padding: 2px 0;
 }
 
 .krypton-hurl__help-hint {
-  padding: 8px 18px 0;
-  border-top: 1px solid var(--hurl-border);
-  color: var(--hurl-text-dim);
+  padding: 8px 14px 0;
+  color: var(--hurl-ink-dim);
+  text-shadow: var(--mat-print);
   font-size: 10px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.09em;
   text-align: right;
 }

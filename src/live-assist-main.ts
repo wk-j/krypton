@@ -9,6 +9,8 @@ import {
 } from './acp/live-assist-client';
 import type { LiveAssistLaneSummary, LiveAssistStreamEvent } from './acp/live-assist-types';
 import { LiveAssistView } from './acp/live-assist-view';
+import './styles/layers.css';
+import './styles/materials.css';
 import './styles/live-assist.css';
 
 async function main(): Promise<void> {

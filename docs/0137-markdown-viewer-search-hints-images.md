@@ -4,6 +4,7 @@
 > Date: 2026-05-31
 > Milestone: M8 — Polish
 > Amended: 2026-11-05 — the viewer takes the ACP Harness look (spec 39 §UI Changes). Search highlights, the broken-image notice and the focused-panel cue below describe the current treatment; the original neon glow, scanline flash, dashed notice and 3px accent bars are gone.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): search HUD becomes a floating plate; the document stays flat.
 
 ## Problem
 

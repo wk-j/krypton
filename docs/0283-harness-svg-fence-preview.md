@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-10-09
 > Milestone: ACP Harness
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): label pulse removed; the drawing state is a steady lamp.
 
 ## Revision 3 — Configured Font Inside the `<img>`
 

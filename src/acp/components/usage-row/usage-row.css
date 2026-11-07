@@ -13,20 +13,18 @@
    `src/styles/acp-harness.css`; once the integrator deletes that span, the test
    must read THIS file instead.
 
-   No krypton.scheme layer: theme-scheme.css has no light-mode rule for any
-   `acp-harness__usage*` or `acp-harness__msg--usage` selector. */
+   Spec 366 (DESIGN.md "Readouts", "Gauges"): the card is one readout well; its
+   head, model table and foot are groove-split slices; every figure is a
+   tabular readout; the cache bar is a gauge with flat fills. Nothing glows —
+   the row label is the shared silk label.
+
+   No krypton.scheme layer: the light scheme swaps the materials at the root,
+   and every text colour here is a theme ink or token. */
 
 @layer krypton.component {
   .acp-harness__msg--usage {
     padding-top: 4px;
     padding-bottom: 4px;
-  }
-
-  .acp-harness__msg--usage .acp-harness__msg-label {
-    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
-    text-shadow:
-      0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 34%, transparent),
-      0 0 18px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 12%, transparent);
   }
 
   .acp-harness__msg--usage .acp-harness__msg-body {
@@ -38,18 +36,10 @@
     box-sizing: border-box;
     width: 100%;
     overflow: hidden;
-    border: 1px solid color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 30%, transparent);
+    border: 1px solid var(--mat-well-wall);
     border-radius: var(--krypton-border-radius, 8px);
-    background:
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 7%, transparent),
-        transparent 52%
-      ),
-      var(--agent-surface-low, rgba(6, 10, 18, 0.35));
-    box-shadow:
-      inset 0 0 34px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 3%, transparent),
-      0 0 14px rgba(0, 0, 0, 0.18);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-depth), 0 1px 0 var(--mat-well-lip);
     contain: content;
   }
 
@@ -59,7 +49,7 @@
     justify-content: space-between;
     gap: 12px;
     padding: 8px 10px;
-    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    border-bottom: 1px solid var(--mat-groove-lo);
   }
 
   .acp-harness__usage-date,
@@ -69,8 +59,8 @@
   .acp-harness__usage-model-head,
   .acp-harness__usage-model-stat-label {
     font-size: var(--krypton-chrome-font-size, 11px);
-    font-weight: 700;
-    letter-spacing: 0.16em;
+    font-weight: 600;
+    letter-spacing: 0.13em;
     text-transform: uppercase;
   }
 
@@ -95,25 +85,24 @@
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
   }
 
+  /* The headline figure: a backlit readout legend, no bloom. */
   .acp-harness__usage-cache-value {
     min-width: 4ch;
-    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
+    color: var(--mat-lit);
     font-size: 1.48em;
     font-variant-numeric: tabular-nums;
     line-height: 1;
-    text-shadow:
-      0 0 8px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 34%, transparent),
-      0 0 20px color-mix(in srgb, var(--acp-lane-accent, var(--agent-accent, #8effb0)) 12%, transparent);
   }
 
+  /* Gauge: a recessed track, flat fills. */
   .acp-harness__usage-cache-track {
     display: flex;
     min-width: 0;
     height: 7px;
     overflow: hidden;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.16);
     border-radius: 999px;
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.05);
+    background: var(--mat-well-fill);
+    box-shadow: var(--mat-well-depth), inset 0 0 0 1px var(--mat-well-wall), 0 1px 0 var(--mat-well-lip);
   }
 
   .acp-harness__usage-cache-segment {
@@ -122,11 +111,11 @@
   }
 
   .acp-harness__usage-cache-segment--cache-read {
-    background: var(--acp-lane-accent, var(--agent-accent, #8effb0));
+    background: var(--mat-silk);
   }
 
   .acp-harness__usage-cache-segment--cache-write {
-    background: var(--agent-gold, #ffd166);
+    background: rgb(var(--krypton-info-rgb, 74, 158, 255));
   }
 
   .acp-harness__usage-cache-segment--input {
@@ -145,12 +134,13 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  /* Each metric is a small readout: a deeper recess inside the card's well. */
   .acp-harness__usage-metric {
     min-width: 0;
     padding: 7px 8px;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
-    border-radius: max(2px, calc(var(--krypton-border-radius, 8px) - 4px));
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.025);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well-fill);
+    box-shadow: var(--mat-well-depth), inset 0 0 0 1px var(--mat-well-wall), 0 1px 0 var(--mat-well-lip);
   }
 
   .acp-harness__usage-metric dt,
@@ -177,11 +167,11 @@
   }
 
   .acp-harness__usage-metric--cache-read dd {
-    color: var(--acp-lane-ink, var(--acp-lane-accent, var(--agent-accent, #8effb0)));
+    color: var(--mat-lit);
   }
 
   .acp-harness__usage-metric--cache-write dd {
-    color: var(--agent-gold, #ffd166);
+    color: rgb(var(--krypton-info-rgb, 74, 158, 255));
   }
 
   .acp-harness__usage-models {
@@ -198,7 +188,7 @@
 
   .acp-harness__usage-model-head {
     padding: 5px 8px;
-    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
+    border-top: 1px solid var(--mat-groove-lo);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.34));
   }
 
@@ -209,7 +199,7 @@
 
   .acp-harness__usage-model {
     padding: 6px 8px;
-    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.06);
+    border-top: 1px solid var(--mat-groove-lo);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
     font-variant-numeric: tabular-nums;
   }
@@ -232,7 +222,7 @@
     flex-wrap: wrap;
     gap: 3px 12px;
     padding: 7px 10px;
-    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    border-top: 1px solid var(--mat-groove-lo);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
     font-size: 0.82em;
   }

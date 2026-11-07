@@ -396,13 +396,16 @@ export class OrchestratorConsole extends Component<OrchestratorConsoleProps> {
     this.seatPrompt.update({ ...next.seatPrompt, region: 'seat-prompt' });
     this.keys.textContent = next.keyLegend;
     this.seatEl.textContent = next.seatName ?? 'no seat';
+    // The seat capsule's lamp is lit while a seat is held; CSS cannot tell the
+    // `no seat` legend from a lane name, so the state is a class.
+    this.seatEl.classList.toggle('acp-orchestrator__seat--none', next.seatName === null);
     this.shell.update({
       open: next.open,
       name: 'orchestrator',
       block: 'acp-orchestrator',
       title: 'Orchestrator console',
-      // The seat keeps its own pill — folding it into `sub` turned the cyan
-      // chip into dim subtitle text, which spec 301 does not permit.
+      // The seat keeps its own capsule lamp — folding it into `sub` would turn
+      // it into dim subtitle text.
       headExtra: this.seatEl,
       sub: next.summary,
       body: this.body,

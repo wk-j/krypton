@@ -1,9 +1,9 @@
 /* ─── Subscription Credit Usage View (spec 151) ───
-   One flat widget per provider on a responsive grid. Each widget is a single
-   surface (full border + background tint, dashboard-panel vocabulary) — no
-   inner boxes, no accent rails. Gauges are one bar element with one fill
-   child. Status is never color-only: every dot state is restated in the
-   widget's foot line. */
+   DESIGN.md (Krypton Console) / spec 366: one faceplate panel per provider on
+   a responsive grid. The provider name is engraved, its state is an LED, each
+   quota is a gauge well with its percentage in a readout, and the key hints
+   are engraved on the foot plate. Status is never colour-only: every LED
+   state is restated in the widget's foot line. No accent rails. */
 
 .krypton-usage {
   display: flex;
@@ -11,9 +11,9 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  font-family: var(--krypton-font-family, 'Fira Code', monospace);
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-font-size);
-  color: var(--krypton-foreground, #c0c5ce);
+  color: var(--krypton-fg, #c0c5ce);
   background: transparent;
   outline: none;
 }
@@ -29,75 +29,88 @@
   align-content: start;
 }
 
-/* ── Provider widget ──────────────────────────────────────── */
+/* ── Provider widget: a free-standing plate ───────────────── */
 
 .krypton-usage__widget {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.05);
-  border: var(--krypton-border-width, 1px) solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.28);
+  border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
 }
 
+/* The head sits above an etched groove: the dark cut plus its light edge. */
 .krypton-usage__head {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.16);
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--mat-groove-lo);
+  box-shadow: 0 1px 0 var(--mat-groove-hi);
 }
 
-/* Provider mark — geometry shared with the harness lane rail (spec 125). */
+/* Provider mark — geometry shared with the harness lane rail (spec 125);
+   printed in the label ink. */
 .krypton-usage__logo {
   flex: none;
   width: 13px;
   height: 13px;
   align-self: center;
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.9);
+  color: var(--mat-silk);
 }
 
-/* Square dot — hard geometry; state always restated in the foot line. */
+/* State LED: unlit when off, lit in its state colour otherwise. The state is
+   always restated in the foot line. */
 .krypton-usage__dot {
+  --usage-dot-rgb: var(--krypton-success-rgb, 57, 255, 127);
+
   flex: none;
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   align-self: center;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.9);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--usage-dot-rgb)) 45%, rgba(var(--usage-dot-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--usage-dot-rgb), 0.9), 0 0 10px rgba(var(--usage-dot-rgb), 0.4);
 }
 
 .krypton-usage__dot--ok {
-  background: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.9);
+  --usage-dot-rgb: var(--krypton-success-rgb, 57, 255, 127);
 }
 
 .krypton-usage__dot--stale {
-  background: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.9);
+  --usage-dot-rgb: var(--krypton-warning-rgb, 232, 197, 71);
 }
 
 .krypton-usage__dot--off {
-  background: rgba(216, 232, 216, 0.3);
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .krypton-usage__name {
-  color: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.9);
+  color: var(--mat-silk);
   font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.12em;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-shadow: var(--mat-engrave);
   text-transform: uppercase;
 }
 
 .krypton-usage__meta {
   margin-left: auto;
-  color: rgba(216, 232, 216, 0.5);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.04em;
+  text-shadow: var(--mat-engrave);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   padding-right: 2px;
 }
 
-/* ── Gauges ───────────────────────────────────────────────── */
+/* ── Gauges: engraved label, 4px well track, readout ──────── */
 
 .krypton-usage__gauge {
   display: flex;
@@ -107,7 +120,8 @@
 
 .krypton-usage__label {
   flex: 0 0 104px;
-  color: rgba(216, 232, 216, 0.7);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.75));
+  text-shadow: var(--mat-engrave);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -115,110 +129,114 @@
 
 .krypton-usage__bar {
   flex: 1;
-  height: 8px;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.1);
+  height: 4px;
   border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well-fill);
+  box-shadow: var(--mat-well-shadow);
   overflow: hidden;
 }
 
+/* Flat fill with a 1px inset top highlight; no glow, no sweep. */
 .krypton-usage__fill {
   height: 100%;
-  background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.6);
+  background: var(--mat-silk);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
   transition: width 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .krypton-usage__fill--warn {
-  background: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.75);
+  background: rgb(var(--krypton-warning-rgb, 232, 197, 71));
 }
 
 .krypton-usage__fill--critical {
-  background: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.8);
+  background: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }
 
+/* The percentage: a small readout window, tabular figures. */
 .krypton-usage__pct {
-  flex: 0 0 4ch;
+  flex: 0 0 5ch;
+  box-sizing: content-box;
+  padding: 1px 5px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  color: var(--krypton-fg, #c0c5ce);
   text-align: right;
-  font-weight: bold;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .krypton-usage__pct--warn {
-  color: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.95);
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
 }
 
 .krypton-usage__pct--critical {
-  color: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.95);
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }
 
 .krypton-usage__reset {
   flex: 0 0 13ch;
-  color: rgba(216, 232, 216, 0.5);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   font-size: 0.92em;
   font-variant-numeric: tabular-nums;
+  text-shadow: var(--mat-engrave);
   white-space: nowrap;
 }
 
 .krypton-usage__note {
-  color: rgba(216, 232, 216, 0.6);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
   letter-spacing: 0.02em;
+  text-shadow: var(--mat-engrave);
 }
 
-/* ── Foot status line (pairs with the head dot) ───────────── */
+/* ── Foot status line (pairs with the head LED) ───────────── */
 
 .krypton-usage__foot {
   margin-top: 2px;
-  color: rgba(216, 232, 216, 0.45);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
+  text-shadow: var(--mat-engrave);
 }
 
 .krypton-usage__foot--stale {
-  color: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.85);
+  color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
 }
 
 .krypton-usage__foot--off {
-  color: rgba(216, 232, 216, 0.6);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
 }
 
-/* ── Skeleton (first fetch in flight) ─────────────────────── */
+/* ── Skeleton (first fetch in flight): an empty, static well ── */
 
 .krypton-usage__skeleton {
-  height: 8px;
   border-radius: var(--krypton-border-radius, 8px);
-  background: linear-gradient(
-    90deg,
-    rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.08) 25%,
-    rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.18) 50%,
-    rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.08) 75%
-  );
-  background-size: 200% 100%;
-  animation: krypton-usage-shimmer 1.4s ease-in-out infinite;
+  background: var(--mat-well-fill);
+  box-shadow: var(--mat-well-shadow);
 }
 
-@keyframes krypton-usage-shimmer {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
+.krypton-usage__label.krypton-usage__skeleton {
+  height: 8px;
 }
 
-/* ── Footer hints ─────────────────────────────────────────── */
+/* ── Footer hints: a plate strip under the grid ───────────── */
 
 .krypton-usage__hints {
   flex-shrink: 0;
   padding: 5px 16px;
-  border-top: 1px solid rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.14);
-  color: rgba(216, 232, 216, 0.4);
+  border-top: 1px solid var(--mat-key-edge);
+  background: var(--mat-brush), var(--mat-plate);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
+  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.09em;
+  text-shadow: var(--mat-engrave);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .krypton-usage__fill {
     transition: none;
-  }
-
-  .krypton-usage__skeleton {
-    animation: none;
-    background: rgba(var(--krypton-window-accent-rgb, 0, 204, 255), 0.12);
   }
 }

@@ -1,14 +1,21 @@
+/* Spec 366 (DESIGN.md "Parts") — the execution summary inside a tool row: the
+   status is an LED and a lamp capsule, `Inspector` is a key. A sealed card
+   (done, cancelled, background) shows unlit glass, so a long transcript of
+   finished runs casts no glow; only live work and faults light up. */
 @layer krypton.component {
   .acp-execution-card {
+    --exec-lamp-rgb: var(--agent-gold-rgb, 255, 209, 102);
+
     display: flex;
     flex-direction: column;
     gap: 4px;
     min-width: 0;
-    color: var(--acp-execution-fg, var(--krypton-fg));
+    color: var(--krypton-fg);
     font-family: var(--agent-font, monospace);
     font-size: var(--krypton-font-size, 13px);
   }
   .acp-execution-card [hidden] { display: none; }
+  .acp-execution-card[data-state='error'] { --exec-lamp-rgb: var(--krypton-danger-rgb, 255, 58, 92); }
   /* One type size across the head: language, title, state, timer, provenance
      and the Inspector action all read at the row's font size, so their
      centred boxes share one baseline. Ink colour, not a smaller size, carries
@@ -22,7 +29,10 @@
     line-height: 1.4;
     min-width: 0;
   }
+  /* The status LED in the spinner's fixed cell; the glyph text stays in the
+     DOM but the lens carries the state (a steady lamp, not a ticking glyph). */
   .acp-execution-card__glyph {
+    position: relative;
     display: inline-flex;
     flex: 0 0 1.4ch;
     justify-content: center;
@@ -30,6 +40,37 @@
     height: 1em;
     overflow: hidden;
     line-height: 1;
+    color: transparent;
+  }
+  /* The live glyph also wears `acp-harness__spinner` (`color: inherit`). */
+  .acp-execution-card__glyph.acp-harness__spinner {
+    color: transparent;
+  }
+  .acp-execution-card__glyph::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    margin: -3px 0 0 -3px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  .acp-execution-card[data-state='pending'] .acp-execution-card__glyph::before,
+  .acp-execution-card[data-state='running'] .acp-execution-card__glyph::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
+  }
+  /* Pass: lit lens, no bloom (ADR-0017 — nothing to act on). */
+  .acp-execution-card[data-state='complete'] .acp-execution-card__glyph::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--krypton-success-rgb, 57, 255, 127)) 45%, rgba(var(--krypton-success-rgb, 57, 255, 127), 0.55) 100%);
+    box-shadow: none;
+  }
+  .acp-execution-card[data-state='error'] .acp-execution-card__glyph::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--exec-lamp-rgb)) 45%, rgba(var(--exec-lamp-rgb), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--exec-lamp-rgb), 0.9), 0 0 10px rgba(var(--exec-lamp-rgb), 0.4);
   }
   .acp-execution-card__language {
     flex: none;
@@ -50,15 +91,25 @@
     min-width: 0;
     margin-left: auto;
   }
-  .acp-execution-card__state { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.55)); }
+  /* The state capsule: unlit glass at rest, lit while running or on a fault
+     (DESIGN.md "Lamps"). */
+  .acp-execution-card__state {
+    padding: 0 8px;
+    border: 1px solid var(--mat-well-wall);
+    border-radius: 999px;
+    background: var(--mat-well-fill);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.62));
+    line-height: 1.3;
+  }
   .acp-execution-card[data-state='pending'] .acp-execution-card__state,
-  .acp-execution-card[data-state='pending'] .acp-execution-card__glyph,
   .acp-execution-card[data-state='running'] .acp-execution-card__state,
-  .acp-execution-card[data-state='running'] .acp-execution-card__glyph { color: var(--agent-gold); }
-  .acp-execution-card[data-state='complete'] .acp-execution-card__state,
-  .acp-execution-card[data-state='complete'] .acp-execution-card__glyph { color: var(--agent-accent); }
-  .acp-execution-card[data-state='error'] .acp-execution-card__state,
-  .acp-execution-card[data-state='error'] .acp-execution-card__glyph { color: var(--agent-error); }
+  .acp-execution-card[data-state='error'] .acp-execution-card__state {
+    border-color: rgba(var(--exec-lamp-rgb), 0.5);
+    background: radial-gradient(ellipse at 50% 0%, rgba(var(--exec-lamp-rgb), 0.3), rgba(var(--exec-lamp-rgb), 0.07) 75%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--exec-lamp-rgb), 0.22);
+    color: var(--mat-lit);
+  }
+  .acp-execution-card[data-state='error'] .acp-execution-card__state { color: var(--agent-error); }
   /* The timer also carries `.acp-harness__tool-timer` (tool-row.css: 0.78em and
      0.04em tracking) so the shared ticker finds it. Two classes keep it at the
      head size whichever sheet loads last. */
@@ -71,26 +122,33 @@
     font-variant-numeric: tabular-nums;
   }
   .acp-execution-card__timing-source { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.45)); }
-  /* The lane head's action look (lane-shell.css): a faint pill, no border. Its
-     padding sits inside a visible fill, so the 8px head gap reads the same on
-     both sides instead of a wider blank before `Inspector`. Hover deepens the
-     tint. */
+  /* `Inspector` is a key (DESIGN.md "Key"). Dense: the padding keeps it inside
+     the head's line box instead of the 24px dense-key minimum, so the row does
+     not grow. */
   .acp-execution-card__button {
-    padding: 1px 6px;
-    border: 0;
+    padding: 0 8px;
+    border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(var(--krypton-fg-rgb), 0.06);
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb), 0.68));
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb), 0.72));
     cursor: pointer;
     font: inherit;
+    letter-spacing: 0.04em;
     white-space: nowrap;
   }
-  .acp-execution-card__button:hover { background: rgba(var(--krypton-fg-rgb), 0.12); color: var(--krypton-fg); }
+  .acp-execution-card__button:hover { background: var(--mat-key-hover); color: var(--mat-lit); }
+  .acp-execution-card__button:active {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    color: var(--mat-lit);
+    transform: translateY(1px);
+  }
   .acp-execution-card__button:focus-visible {
-    outline: 1px solid var(--acp-execution-accent, var(--krypton-window-accent));
+    outline: 1px solid var(--mat-lit);
     outline-offset: 2px;
   }
-  .acp-execution-card__hint { margin-left: 6px; color: var(--acp-execution-accent, var(--krypton-window-accent)); }
+  .acp-execution-card__hint { margin-left: 6px; color: var(--mat-lit); }
   .acp-execution-card__activity {
     padding-left: calc(1.4ch + 8px);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.55));

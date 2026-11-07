@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-05-28
 > Milestone: M8 — Polish
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): Zen rail entries become selector keys on a plate column.
 
 > Amended (2026-09-09): Codex and Grok no longer use the prototype monograms.
 > Their official monochrome path geometry is centralized in `src/code-agent-logos.ts`

@@ -1,6 +1,10 @@
 /* Spec 302 §7.6 — `RemotePicker`.
    Carved verbatim from src/styles/acp-harness.css:92-166.
-   No scheme override exists for this block in theme-scheme.css. */
+
+   Spec 366 / DESIGN.md "Overlays and dialogs": one floating plate over the
+   scrim; the head engraved on it, the targets one recessed well split by
+   grooves (the cursor row a full-row `--mat-select` tint), the path field a
+   well, the hint foot a printed legend. */
 
 @layer krypton.component {
   .remote-harness-picker {
@@ -9,7 +13,7 @@
     z-index: 10000;
     display: grid;
     place-items: center;
-    background: rgba(3, 8, 12, 0.72);
+    background: var(--mat-scrim);
     outline: none;
   }
 
@@ -25,65 +29,92 @@
     width: min(620px, calc(100vw - 48px));
     max-height: min(620px, calc(100vh - 48px));
     overflow: auto;
-    border: 1px solid rgba(109, 208, 255, 0.42);
-    background: #0a1118;
-    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-brush), var(--mat-plate);
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
   }
 
   .remote-harness-picker__head,
   .remote-harness-picker__hint {
     padding: 11px 14px;
-    color: var(--agent-user, #6dd0ff);
-    letter-spacing: 0.12em;
+    text-shadow: var(--mat-engrave);
   }
 
   .remote-harness-picker__head {
-    border-bottom: 1px solid rgba(109, 208, 255, 0.22);
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
   }
 
   .remote-harness-picker__hint {
-    border-top: 1px solid rgba(109, 208, 255, 0.16);
+    border-top: 1px solid var(--mat-groove-lo);
+    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.82em;
-    letter-spacing: 0;
   }
 
   .remote-harness-picker__list {
     display: grid;
-    gap: 4px;
-    padding: 8px;
+    margin: 0 8px 8px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    overflow: hidden;
   }
 
+  /* A repeated row: one groove, the selection tint, nothing else. */
   .remote-harness-picker__row {
     display: grid;
     gap: 3px;
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--agent-text, #d8e8d8);
+    border: 0;
+    border-bottom: 1px solid var(--mat-groove-lo);
+    background: none;
+    color: var(--krypton-fg, var(--agent-text, #d8e8d8));
     font: inherit;
     text-align: left;
   }
 
+  .remote-harness-picker__row:last-child {
+    border-bottom: 0;
+  }
+
+  .remote-harness-picker__row:focus-visible {
+    outline: 1px solid var(--mat-lit);
+    outline-offset: -2px;
+  }
+
   .remote-harness-picker__row span {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.85em;
   }
 
   .remote-harness-picker__row--active {
-    border-color: rgba(109, 208, 255, 0.54);
-    background: rgba(109, 208, 255, 0.1);
+    background: var(--mat-select);
   }
 
+  /* The project path field: an input well, caret in the theme cursor colour. */
   .remote-harness-picker__path {
     box-sizing: border-box;
     width: calc(100% - 16px);
     margin: 0 8px 8px;
     padding: 10px 12px;
-    border: 1px solid rgba(109, 208, 255, 0.5);
-    background: rgba(0, 0, 0, 0.28);
-    color: var(--agent-text, #d8e8d8);
+    border: 0;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    color: var(--krypton-fg, var(--agent-text, #d8e8d8));
+    caret-color: var(--krypton-cursor, var(--krypton-accent, currentColor));
     font: inherit;
     outline: none;
+  }
+
+  .remote-harness-picker__path:focus-visible {
+    outline: 1px solid var(--mat-lit);
+    outline-offset: 2px;
   }
 }

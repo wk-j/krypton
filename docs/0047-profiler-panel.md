@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-03-31
 > Milestone: M8 — Polish
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): HUD is a floating plate with engraved silk labels.
 
 ## Problem
 

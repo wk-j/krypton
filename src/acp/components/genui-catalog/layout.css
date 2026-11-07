@@ -5,28 +5,33 @@
    That is why every child selector here goes through the slot:
    `.acp-genui__row > .acp-genui__slot > *` is the row's actual item.
 
-   Structure is hairline `--krypton-fg-rgb`, the scale `genui-panel.css` and
-   `inputs.css` already use; saturated accent is spent on the selected tab and
-   on the focus ring (catalog.css) and nowhere else. Every colour goes through
-   a `--krypton-*` token that the light scheme retargets, so there is no
-   `krypton.scheme` layer in this file. No animation beyond the 120ms tab
-   underline, no backdrop-filter, and a full 1px border or none at all. */
+   Krypton Console parts (DESIGN.md "Parts", spec 366): a Card is a recessed
+   well under an engraved head, a Details a deeper recess; Tabs are selector keys in
+   a channel, copied from `.acp-dock__tabs` (harness-shared.css); a Divider is
+   an etched groove. Every colour is a `--mat-*` or `--krypton-*` token the
+   light scheme swaps at the root, so there is no `krypton.scheme` layer in
+   this file. No animation. */
 
 @layer krypton.component {
   .acp-genui__card {
     display: block;
     padding: 10px 12px;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.03);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-genui__card-title {
     margin-bottom: 8px;
     padding-bottom: 6px;
-    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.95);
+    border-bottom: 1px solid var(--mat-groove-lo);
+    box-shadow: 0 1px 0 var(--mat-groove-hi);
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
     font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    text-shadow: var(--mat-engrave);
   }
 
   .acp-genui__card-body,
@@ -69,31 +74,70 @@
     min-width: 0;
   }
 
+  /* The channel: a recessed well with 3px padding. It hugs its keys instead
+     of spanning the card, so a two-tab strip does not stretch into slabs. */
   .acp-genui__tabs-strip {
     display: flex;
     flex-wrap: wrap;
-    gap: 2px;
-    border-bottom: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.12);
+    align-self: flex-start;
+    gap: 4px;
+    max-width: 100%;
+    padding: 3px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-genui__tab {
-    padding: 4px 10px;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    background: transparent;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    min-height: 26px;
+    padding: 3px 10px;
+    border: 1px solid var(--mat-key-edge);
+    /* DESIGN.md's 6px selector key: concentric with the 8px channel. */
+    border-radius: 6px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font: inherit;
-    cursor: pointer;
-    transition: color 120ms ease, border-color 120ms ease;
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.09em;
+    line-height: 1;
+    text-shadow: var(--mat-print);
+    white-space: nowrap;
+    cursor: default;
+  }
+
+  /* The indicator lamp. */
+  .acp-genui__tab::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   .acp-genui__tab:hover {
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.9);
+    background: var(--mat-key-hover);
+    color: var(--mat-lit);
   }
 
-  .acp-genui__tab--on {
-    border-bottom-color: var(--krypton-window-accent, #0cf);
-    color: var(--krypton-window-accent, #0cf);
+  .acp-genui__tab:active,
+  .acp-genui__tab--on,
+  .acp-genui__tab--on:hover {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    color: var(--mat-lit);
+    text-shadow: var(--mat-lit-glow);
+  }
+
+  .acp-genui__tab--on::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
   }
 
   .acp-genui__tabs-pane {
@@ -103,17 +147,23 @@
     min-width: 0;
   }
 
+  /* A disclosure is a deeper recess with its summary as the head line. */
   .acp-genui__details {
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.12);
     border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well-fill);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-genui__details-summary {
     padding: 6px 10px;
-    color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.88);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     font-weight: 600;
     cursor: pointer;
     list-style-position: inside;
+  }
+
+  .acp-genui__details-summary:hover {
+    color: var(--mat-lit);
   }
 
   .acp-genui__details-body {
@@ -127,6 +177,7 @@
   .acp-genui__divider {
     margin: 4px 0;
     border: 0;
-    border-top: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
+    border-top: 1px solid var(--mat-groove-lo);
+    box-shadow: 0 1px 0 var(--mat-groove-hi);
   }
 }

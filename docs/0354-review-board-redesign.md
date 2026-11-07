@@ -5,6 +5,7 @@
 > Revised: 2026-11-02 — revision 1: leading icons on kickers and map rows; full-width reading column
 > Milestone: visual chrome
 > Related: [211](./0211-review-board.md), [244](./0244-review-board-chapters.md), [270](./0270-review-threads-without-worktrees.md), [350](./0350-minimal-workspace-footer.md), [ADR-0004](./adr/0004-review-matrix-observation-not-score.md), [ADR-0027](./adr/0027-no-left-edge-accent-rails.md)
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): floating panels and primary button become plates and keys; document stays flat.
 
 ## Problem
 
