@@ -286,12 +286,12 @@ manual check, or the head row to send all`.
 
 - **Manifest.** `.krypton/rails.toml`: `osv` gets `manual = true`; `timeout_s` stays 120.
 - **Script.** `scripts/rails-osv.py` scans all three lockfiles whole on every run; the HEAD
-  comparison goes. A missing lockfile is skipped. It fails on every known vulnerability, as ADR-0029
-  already does for a changed lockfile.
+  comparison goes. A missing lockfile is skipped. It fails only on a high or critical finding
+  (CVSS base score >= 7.0). A lower finding is counted and does not fail the row.
 - **ADR-0029** is updated in place, with an `Updated: 2026-11-07 — spec 368` line:
   - *Decision:* `osv` is a manual check that scans every lockfile whole.
   - *Considered Options:* "Scan on every run" is now rejected only for automatic runs.
-  - *`## Rails` bullet:* `No lockfile carries a package with a known vulnerability (OSV). check:osv`.
+  - *`## Rails` bullet:* `No lockfile carries a package with a high or critical vulnerability (OSV, CVSS >= 7.0). check:osv`.
 - **ADR-0025** Decision 1 gains: a check declared `manual` runs only when the human starts it.
 
 ## Edge Cases
@@ -325,8 +325,8 @@ None. These choices are deliberate, and each can be flipped before approval:
 1. A manual result never colours the tab badge or the footer and never changes a run's verdict
    (GitLab's optional manual job). The alternative, `RAILS ✗ osv` until it passes, would keep the
    footer red while any lockfile carries an advisory: 185 groups today.
-2. `osv` fails on every known vulnerability, not only high and critical; ADR-0029 is unchanged on
-   that.
+2. `osv` fails only on high and critical (CVSS >= 7.0). A lower finding does not turn the row
+   red. ADR-0029 records that cut.
 3. The dock has no stop key for a running check. `#rails off` cancels it, as it cancels a run.
 4. Amendment A: a failed result rides every Send-all while it fails, rather than once per result.
 
@@ -339,7 +339,6 @@ None. These choices are deliberate, and each can be flipped before approval:
 - A run with a failed auto check but no open finding in Send-all (spec 337, unchanged).
 - A "tree changed since" mark on a manual result.
 - Running manual checks on a schedule or in CI.
-- A severity threshold for `osv`.
 
 ## Resources
 

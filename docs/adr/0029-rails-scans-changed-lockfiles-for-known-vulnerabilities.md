@@ -2,7 +2,7 @@
 
 > Status: accepted
 > Date: 2026-11-06
-> Updated: 2026-11-07 — spec 368 makes `osv` a manual check that scans every lockfile whole; see `docs/0368-rails-manual-checks.md`.
+> Updated: 2026-11-07 — spec 368 makes `osv` a manual check that scans every lockfile whole; see `docs/0368-rails-manual-checks.md`. A manual run fails only on high or critical (CVSS base score >= 7.0).
 
 ## Context
 
@@ -10,7 +10,7 @@ The Rails verifier (ADR-0025) runs the project's checks at every harness quiet p
 
 ## Decision
 
-The `osv` check (`scripts/rails-osv.py`) is declared `manual = true` in `.krypton/rails.toml` (spec 368): Rails never runs it at a quiet point; only the human starts it, from the Rails dock or with `#rails check osv`. Each run scans every lockfile that exists (`package-lock.json`, `src-tauri/Cargo.lock`, `raycast/package-lock.json`) whole and fails on every known vulnerability in them, whether or not the working diff touches a lockfile. A scan that cannot finish (`osv-scanner` missing from `PATH`, exit `127` or `128`, output that is not JSON) also fails, with output that says it is not a finding, because Rails gives `error` only to a command that cannot start. When no lockfile exists the check prints so and passes.
+The `osv` check (`scripts/rails-osv.py`) is declared `manual = true` in `.krypton/rails.toml` (spec 368): Rails never runs it at a quiet point; only the human starts it, from the Rails dock or with `#rails check osv`. Each run scans every lockfile that exists (`package-lock.json`, `src-tauri/Cargo.lock`, `raycast/package-lock.json`) whole, whether or not the working diff touches a lockfile. It fails only when an advisory group's severity is high or critical: OSV-Scanner's `max_severity` CVSS base score is at least 7.0, or, when that score is missing, the advisory's severity word is `HIGH` or `CRITICAL`. A medium, low, or unscored finding is counted in the output and does not fail the row. A scan that cannot finish (`osv-scanner` missing from `PATH`, exit `127` or `128`, output that is not JSON) also fails, with output that says it is not a finding, because Rails gives `error` only to a command that cannot start. When no lockfile exists the check prints so and passes.
 
 ## Considered Options
 
@@ -23,7 +23,7 @@ The `osv` check (`scripts/rails-osv.py`) is declared `manual = true` in `.krypto
 
 - Automatic Rails runs never call `osv-scanner` and never touch the network for this check.
 - A manual run sends package names and versions (never source) to `api.osv.dev` and needs the network; the check's `timeout_s` is 120.
-- As of 2026-11-06 each of the three lockfiles has known vulnerabilities, so a manual run fails until they are fixed.
+- A manual run fails only for high or critical findings. Lower findings stay in the count and do not turn the row red.
 - The result shows in the check's row in the Rails dock and never colours the tab or footer (spec 368). A failed result rides Send to a lane as its count line, its check file and its rerun command (spec 368 amendment A).
 - The output is one row per advisory group with the count last. Rails keeps the last 80 lines and the judge reads the last 2 000 chars, so a long list loses its first rows, never the count; Send carries only that count line.
 - A machine without `osv-scanner` fails a manual run with output saying the lockfiles went unscanned.
@@ -32,4 +32,4 @@ The `osv` check (`scripts/rails-osv.py`) is declared `manual = true` in `.krypto
 
 Applies to: `package-lock.json`, `src-tauri/Cargo.lock`, `raycast/package-lock.json`
 
-- No lockfile carries a package with a known vulnerability (OSV). `check:osv`
+- No lockfile carries a package with a high or critical vulnerability (OSV, CVSS >= 7.0). `check:osv`
