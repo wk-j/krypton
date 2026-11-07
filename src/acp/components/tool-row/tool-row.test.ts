@@ -142,25 +142,50 @@ describe('ToolRow head', () => {
 });
 
 describe('ToolRow output', () => {
-  it('rides the exit badge on the first section label', () => {
-    const tool = payload({ exitCode: 0, sections: [{ label: 'stdout', text: '> tsc --noEmit' }] });
+  it('folds a single section name into the kind chip and rides the exit beside it', () => {
+    const tool = payload({ exitCode: 0, sections: [{ label: 'content', text: 'master -> master' }] });
     const row = new ToolRow(props(tool));
     row.update(props(tool));
 
-    const output = row.el.querySelector('.acp-harness__tool-output');
-    const section = output?.firstElementChild;
+    const chip = head(row).querySelector('.acp-harness__tool-kind');
+    expect(chip?.firstChild?.textContent).toBe('execute');
+    expect(chip?.querySelector('.acp-harness__tool-kind-section')?.textContent).toBe('content');
+    const exit = head(row).querySelector(':scope > .acp-harness__tool-exit');
+    expect(exit?.getAttribute('data-status')).toBe('ok');
+    expect(Array.from(exit?.children ?? []).map((node) => node.textContent)).toEqual(['exit', '0']);
+    expect(Array.from(head(row).children).map((node) => node.className.split(' ')[0])).toEqual([
+      'acp-harness__tool-glyph',
+      'acp-harness__tool-kind',
+      'acp-harness__tool-exit',
+      'acp-harness__tool-subject',
+    ]);
+
+    const section = row.el.querySelector('.acp-harness__tool-output')?.firstElementChild;
     expect(section?.getAttribute('class')).toBe(
       'acp-harness__tool-section acp-harness__tool-section--output',
     );
-    const label = section?.firstElementChild;
-    expect(label?.getAttribute('class')).toBe('acp-harness__tool-section-label');
-    expect(label?.firstChild?.textContent).toBe('stdout');
-    const exit = label?.querySelector('.acp-harness__tool-exit');
-    expect(exit?.getAttribute('data-status')).toBe('ok');
-    expect(Array.from(exit?.children ?? []).map((node) => node.textContent)).toEqual(['exit', '0']);
-    expect(section?.lastElementChild?.tagName).toBe('PRE');
-    expect(section?.lastElementChild?.getAttribute('class')).toBe('acp-harness__tool-section-text');
-    expect(section?.lastElementChild?.textContent).toBe('> tsc --noEmit');
+    expect(section?.querySelector('.acp-harness__tool-section-label')).toBeNull();
+    expect(section?.firstElementChild?.tagName).toBe('PRE');
+    expect(section?.firstElementChild?.textContent).toBe('master -> master');
+  });
+
+  it('keeps a label on each well when a call has more than one section, exit on the first', () => {
+    const tool = payload({
+      exitCode: 1,
+      sections: [
+        { label: 'stdout', text: 'ok' },
+        { label: 'stderr', text: 'no' },
+      ],
+    });
+    const row = new ToolRow(props(tool));
+    row.update(props(tool));
+
+    expect(head(row).querySelector('.acp-harness__tool-kind-section')).toBeNull();
+    expect(head(row).querySelector('.acp-harness__tool-exit')).toBeNull();
+    const labels = Array.from(row.el.querySelectorAll('.acp-harness__tool-section-label'));
+    expect(labels.map((node) => node.firstChild?.textContent)).toEqual(['stdout', 'stderr']);
+    expect(labels[0]?.querySelector('.acp-harness__tool-exit')?.getAttribute('data-status')).toBe('fail');
+    expect(labels[1]?.querySelector('.acp-harness__tool-exit')).toBeNull();
   });
 
   it('lays a column-laid-out section on the cell grid and leaves plain output as text (spec 326)', () => {
@@ -291,11 +316,14 @@ describe('ToolRow output', () => {
     expect(section?.getAttribute('class')).toBe(
       'acp-harness__tool-section acp-harness__tool-section--output',
     );
-    expect(section?.querySelector('.acp-harness__tool-section-label .acp-harness__tool-exit')).not.toBeNull();
+    // One section: the name folds into the chip and the exit rides the head,
+    // so the grep well itself has no label line.
+    expect(section?.querySelector('.acp-harness__tool-section-label')).toBeNull();
+    expect(head(row).querySelector('.acp-harness__tool-kind-section')?.textContent).toBe('stdout');
+    expect(head(row).querySelector(':scope > .acp-harness__tool-exit')).not.toBeNull();
     const rows = Array.from(section?.querySelectorAll('.acp-harness__grep-row') ?? []);
     expect(rows.length).toBe(2);
     expect(rows[0].querySelector('.acp-harness__tok-path')?.textContent).toBe('src/ui/list.ts');
-    // The exit badge was consumed by the grep label, so no trailing exit row.
     expect(row.el.querySelectorAll('.acp-harness__tool-exit').length).toBe(1);
   });
 

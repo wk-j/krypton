@@ -34,6 +34,20 @@ describe('Chip', () => {
     expect(icon?.firstElementChild?.getAttribute('href')).toBe('#krypton-icon-check');
   });
 
+  it('wraps trailing in the caller class when one is given', () => {
+    const chip = paint({
+      block: 'acp-harness__tool-kind',
+      text: 'execute',
+      trailing: 'content',
+      trailingClass: 'acp-harness__tool-kind-section',
+    });
+
+    const section = chip.el.querySelector('.acp-harness__tool-kind-section');
+    expect(section?.textContent).toBe('content');
+    expect(chip.el.firstChild?.textContent).toBe('execute');
+    expect(chip.el.childNodes.length).toBe(2);
+  });
+
   it('renders an icon-led chip with no leading text', () => {
     const chip = paint({
       block: 'acp-harness__lane-sandbox',

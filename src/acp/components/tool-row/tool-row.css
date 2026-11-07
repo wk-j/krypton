@@ -31,10 +31,11 @@
 
    Spec 366 (DESIGN.md "Parts", "Performance"): the head is a status LED, a
    kind chip (an embossed label on a key face) and the subject; every output
-   section is one well with flat lines inside; section labels are silk label
-   type. A tool row repeats hundreds of times, so no line, mark or header
-   inside a well carries a shadow or a gradient — the well itself is the only
-   shadowed part, once per section. */
+   section is one well with flat lines inside. A row with one labeled section
+   keeps that name in the kind chip (silk); further sections keep a silk label
+   above their own well. A tool row repeats hundreds of times, so no line,
+   mark or header inside a well carries a shadow or a gradient — the well
+   itself is the only shadowed part, once per section. */
 
 @layer krypton.component {
   .acp-harness__tool {
@@ -148,6 +149,14 @@
     --tool-kind-ink: rgb(var(--agent-cyan-rgb, 185, 245, 255));
   }
 
+  /* The folded section name: still the engraved indicator, now inside the key
+     instead of a line of its own above the well. */
+  .acp-harness__tool-kind-section {
+    margin-left: 0.7em;
+    color: var(--mat-silk);
+    font-weight: 600;
+  }
+
   .acp-harness__tool-subject {
     flex: 1 1 auto;
     min-width: 0;
@@ -204,7 +213,9 @@
   }
 
   /* spec 235 — Grok `exit: N` prefix becomes a quiet readout, not dump text.
-     Rides the first OUTPUT/TERMINAL label when one exists. */
+     It rides the first section label when several are shown. A single labeled
+     section folds its name into the kind chip, and the readout sits in the
+     tool head beside that chip. */
   .acp-harness__tool-exit {
     display: flex;
     align-items: baseline;

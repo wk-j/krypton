@@ -133,7 +133,10 @@ Grep rows are a five-column grid (path · sep · line · sep · text). The line 
 
 ### Exit status
 
-Grok Bash wraps every dump as `exit: N\n<body>` and also sends `rawOutput.exit_code`. Structured `exit_code` wins; the prefix is stripped **before** the 12-line cap so it does not steal a content line. Execute cards paint:
+Grok Bash wraps every dump as `exit: N\n<body>` and also sends `rawOutput.exit_code`. Structured `exit_code` wins; the prefix is stripped **before** the 12-line cap so it does not steal a content line. Execute cards paint the readout next to the section name:
+
+- **One labeled section** (plain text or grep): the name moves into the kind chip (`.acp-harness__tool-kind-section`, silk) and the exit readout sits in the tool head beside that chip. No label line above the well.
+- **Several labeled sections:** each keeps `.acp-harness__tool-section-label`, and the exit rides the first label so the name and `exit 0` share that line:
 
 ```
 .acp-harness__tool-section-label   → "output" | "terminal" | …
@@ -142,7 +145,7 @@ Grok Bash wraps every dump as `exit: N\n<body>` and also sends `rawOutput.exit_c
     span.tool-exit-code    → tabular-nums, no border, no weight jump
 ```
 
-Rides the first labeled section (`output` / `stdout` / `terminal` / grep) so `TERMINAL` and `exit 0` share one line. Git-rich dumps have no section label, so the readout stays a row above the files. A dump that is only `exit: 1` still shows that row. 0 → muted foreground. Non-zero → `--agent-error` on the number. Search/read never get the readout (`grep` miss is exit 1). Concise mode still hides the whole output group.
+- **Git-rich dumps** have no section label, so the readout stays a row above the files. A dump that is only `exit: 1` still shows that row. 0 → muted foreground. Non-zero → `--agent-error` on the number. Search/read never get the readout (`grep` miss is exit 1). Concise mode still hides the whole output group.
 
 ### Chrome
 

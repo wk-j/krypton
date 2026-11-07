@@ -30,6 +30,8 @@ export interface ChipProps {
   readonly text: string;
   readonly icon?: ChipIcon;
   readonly trailing?: string;
+  /** When set, `trailing` is a span with this class instead of a bare text node. */
+  readonly trailingClass?: string;
   /** Appends `${block}--${tone}`; `neutral` appends nothing. */
   readonly tone?: ChipTone;
   readonly title?: string;
@@ -50,6 +52,7 @@ export class Chip extends Component<ChipProps> {
       next.icon?.id,
       next.icon?.cls,
       next.trailing,
+      next.trailingClass,
       next.tone,
       next.title,
       next.modifiers?.join(' '),
@@ -74,7 +77,13 @@ export class Chip extends Component<ChipProps> {
     this.el.replaceChildren();
     if (next.text) this.el.append(next.text);
     if (next.icon) this.el.appendChild(harnessIconEl(next.icon.id, next.icon.cls));
-    if (next.trailing) this.el.append(next.trailing);
+    if (next.trailing) {
+      if (next.trailingClass) {
+        this.el.appendChild(el('span', { class: next.trailingClass, text: next.trailing }));
+      } else {
+        this.el.append(next.trailing);
+      }
+    }
   }
 }
 

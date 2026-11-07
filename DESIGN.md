@@ -179,7 +179,8 @@ comment.
   lane's head strip and the composer plate are one plate around the lane's screen, with no seam where
   plate meets plate (the screen draws its own edges); the composer is a flush plate with
   the draft line in a well; transcript rows are flat text on the screen under engraved labels; tool
-  rows are a kind chip, a status lamp and an output well; permission and question options are keys;
+  rows are a kind chip, a status lamp and an output well (one section's name sits in the chip, not
+  on its own line); permission and question options are keys;
   floating lane cards are small plates. The right dock column is a flush plate of wells, keys and lamps.
 - **Content views.** The file browser and the markdown reader are one plate: the path and the status
   are readout wells engraved into it; the list is a well and the preview a screen well, set side by

@@ -887,17 +887,23 @@ export function renderGrepSection(
   tool: Pick<ToolPayload, 'command' | 'subject'>,
   section: { label: string; text: string },
   exitCode: number | null = null,
+  /** False when the caller folded this section's name into the kind chip. The
+   *  exit readout must already live on the tool head — passing a code here
+   *  would drop it. */
+  showLabel = true,
 ): HTMLElement | null {
   const rows = parseGrepDump(section.text);
   if (!rows) return null;
   const needles = grepHitNeedles(extractGrepQuery(tool.command) || extractGrepQuery(tool.subject));
   const block = document.createElement('div');
   block.className = 'acp-harness__tool-section acp-harness__tool-section--output';
-  const label = document.createElement('div');
-  label.className = 'acp-harness__tool-section-label';
-  label.textContent = section.label;
-  appendExecuteExit(label, exitCode);
-  block.appendChild(label);
+  if (showLabel) {
+    const label = document.createElement('div');
+    label.className = 'acp-harness__tool-section-label';
+    label.textContent = section.label;
+    appendExecuteExit(label, exitCode);
+    block.appendChild(label);
+  }
   const rich = document.createElement('div');
   rich.className = 'acp-harness__tool-rich acp-harness__tool-rich--grep';
   const texts: HTMLElement[] = [];
