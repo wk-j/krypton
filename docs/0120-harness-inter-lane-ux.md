@@ -153,7 +153,9 @@ Visual identity: the body reads exactly like an assistant row; lane mail stays d
 
 ### UI — Harness event rows
 
-For `kind === 'system'` where `text.startsWith('[inter-lane]')` or `item.harnessEvent === true`:
+For `kind === 'system'` where `text.startsWith('[inter-lane]')` or `item.harnessEvent === true`
+(superseded by spec 371: the row is an `inter-lane` notice, `item.notice`; the text prefix is no
+longer parsed):
 
 - Label: `event`.
 - Classes: `.acp-harness__msg--harness-event`, `.acp-harness__harness-event-body`.

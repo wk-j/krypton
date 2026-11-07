@@ -399,6 +399,7 @@ import {
   JUNIE_MCP_CAPABILITIES,
 } from './mcp-bridge';
 import { FILE_TOUCH_WINDOW_MS } from './harness-view-types';
+import { noticeText, type HarnessNotice, type NoticeTone } from './harness-notice';
 import { matchesReviewThreadParent, reviewThreadGuidePrompt, reviewThreadVerdictPrompt } from './review-thread';
 import type { ReviewThread, ReviewThreadVerdict } from './review-thread';
 import type {
@@ -520,6 +521,7 @@ import {
   mergeHandoffs,
   parsePushCommand,
   parseResumeCommand,
+  pushTone,
   summarizePush,
   xenonProjectUrl,
   type MergedHandoff,
@@ -2029,7 +2031,7 @@ export class AcpHarnessView implements ContentView {
       appendSystemNotice: (id, text) => {
         const l = this.lanes.find((x) => x.id === id);
         if (!l) return;
-        this.appendTranscript(l, 'system', `[inter-lane] ${text}`);
+        this.appendNotice(l, { source: 'inter-lane', tone: 'info', subject: text });
         this.scheduleLaneRender(l);
       },
       onHarnessReply: (id, reply) => this.reviewLoopCtl.onHarnessReply(id, reply),
@@ -3308,11 +3310,8 @@ export class AcpHarnessView implements ContentView {
       warnings: Math.max(0, Math.trunc(outcome.warnings)),
       findings: outcome.findings,
     });
-    this.appendTranscript(
-      lane,
-      'system',
-      `[review] recorded: ${label} — ${outcome.blockers} blocker${outcome.blockers === 1 ? '' : 's'}, ${outcome.warnings} warning${outcome.warnings === 1 ? '' : 's'} across ${outcome.reviewerCount} reviewer${outcome.reviewerCount === 1 ? '' : 's'}`,
-    );
+    const counts = `${outcome.blockers} blocker${outcome.blockers === 1 ? '' : 's'}, ${outcome.warnings} warning${outcome.warnings === 1 ? '' : 's'} across ${outcome.reviewerCount} reviewer${outcome.reviewerCount === 1 ? '' : 's'}`;
+    this.appendNotice(lane, { source: 'review', action: 'recorded', tone: 'info', subject: `${label} — ${counts}` });
     this.scheduleLaneRender(lane);
   }
 
@@ -3358,7 +3357,7 @@ export class AcpHarnessView implements ContentView {
     };
     this.triageStore.insert(item);
     lane.flaggedThisTurn = true;
-    this.appendTranscript(lane, 'system', `[triage] flagged for review: ${item.question}`);
+    this.appendNotice(lane, { source: 'triage', action: 'flagged', tone: 'attention', subject: item.question });
     this.scheduleLaneRender(lane);
     // spec 212: an attention flag is the one resource with no on-disk form, so
     // it exists only in this process until something sends it. Publish it now
@@ -3639,7 +3638,12 @@ export class AcpHarnessView implements ContentView {
         dir: created.reviewDir, slug: created.reviewSlug,
         laneName: lane.displayName, cwd, threadId: created.threadId,
       });
-      this.appendTranscript(lane, 'system', `[review thread] ${created.threadId} · กำลังเตรียม Guide`);
+      this.appendNotice(lane, {
+        source: 'review',
+        action: 'thread',
+        tone: 'info',
+        subject: `${created.threadId} · กำลังเตรียม Guide`,
+      });
       const read = await invoke<{ thread: ReviewThread }>('review_thread_read', {
         cwd, threadId: created.threadId,
       });
@@ -5730,7 +5734,14 @@ export class AcpHarnessView implements ContentView {
     if (!result.delivered) {
       // Edge case: stopped/cancelled lane — item stays open, surface a notice.
       const lane = this.lanes.find((l) => l.id === item.laneId);
-      if (lane) this.appendTranscript(lane, 'system', `[triage] redirect failed: ${result.reason}`);
+      if (lane) {
+        this.appendNotice(lane, {
+          source: 'triage',
+          action: 'redirect failed',
+          tone: 'fault',
+          subject: result.reason ?? 'not delivered',
+        });
+      }
       this.flashChip(`redirect failed: ${result.reason}`);
       this.triageRedirect = null;
       this.renderTriageOverlayEl();
@@ -7202,7 +7213,7 @@ export class AcpHarnessView implements ContentView {
         handoffs,
       });
       this.flashChip(summarizePush(report));
-      this.appendTranscript(lane, 'system', `[xenon] ${describePush(report)}`);
+      this.appendNotice(lane, { source: 'xenon', action: 'push', tone: pushTone(report), subject: describePush(report) });
       this.scheduleLaneRender(lane);
       // spec 213: a completed push is better evidence about the link than a
       // probe, so the footer's backend-link segment is updated from it.
@@ -7210,7 +7221,7 @@ export class AcpHarnessView implements ContentView {
     } catch (e) {
       const message = errorText(e);
       this.flashChip(`push failed: ${message}`);
-      this.appendTranscript(lane, 'system', `[xenon] push failed: ${message}`);
+      this.appendNotice(lane, { source: 'xenon', action: 'push failed', tone: 'fault', subject: message });
       this.scheduleLaneRender(lane);
     }
   }
@@ -7420,7 +7431,7 @@ export class AcpHarnessView implements ContentView {
     }
     try {
       const rollup = await invoke<UsageRollup>('usage_today', { cwd, date });
-      const item = this.appendTranscript(lane, 'system', `[usage] ${describeUsage(rollup)}`);
+      const item = this.appendNotice(lane, { source: 'usage', tone: 'info', subject: describeUsage(rollup) });
       if (rollup.recording && rollup.turns > 0) item.usage = rollup;
       this.flashChip(
         rollup.recording
@@ -7465,13 +7476,12 @@ export class AcpHarnessView implements ContentView {
         // "clear" is a sentinel, not a token: an empty string deletes the entry.
         await invoke('xenon_set_token', { token: value === 'clear' ? '' : value });
         this.flashChip(value === 'clear' ? 'xenon token cleared' : 'xenon token stored');
-        this.appendTranscript(
-          lane,
-          'system',
-          value === 'clear'
-            ? '[xenon] token cleared from the credential vault'
-            : '[xenon] token stored in the credential vault',
-        );
+        this.appendNotice(lane, {
+          source: 'xenon',
+          action: 'token',
+          tone: 'info',
+          subject: value === 'clear' ? 'cleared from the credential vault' : 'stored in the credential vault',
+        });
         this.scheduleLaneRender(lane);
       } catch (e) {
         this.flashChip(`xenon token failed: ${errorText(e)}`);
@@ -7499,7 +7509,7 @@ export class AcpHarnessView implements ContentView {
       this.flashChip(
         status.configured ? `xenon ready - ${status.project}` : 'xenon not ready - see transcript',
       );
-      this.appendTranscript(lane, 'system', `[xenon]\n  ${lines.join('\n  ')}`);
+      this.appendNotice(lane, { source: 'xenon', action: 'status', tone: 'info', subject: lines.join('\n') });
       this.scheduleLaneRender(lane);
       return;
     }
@@ -9827,17 +9837,17 @@ export class AcpHarnessView implements ContentView {
     const cwd = this.projectDir;
     const entry = this.memoryEntries.find((candidate) => candidate.id === handoffId);
     if (!entry) return;
-    const reportToLane = (message: string): void => {
+    const reportToLane = (tone: NoticeTone, subject: string): void => {
       const lane = this.lanes.find((candidate) => candidate.displayName === entry.author);
       if (!lane) return;
-      this.appendTranscript(lane, 'system', `[xenon] handoff auto-push: ${message}`);
+      this.appendNotice(lane, { source: 'xenon', action: 'handoff auto-push', tone, subject });
       this.scheduleLaneRender(lane);
     };
     try {
       const status = await invoke<XenonStatus>('xenon_status', { cwd });
       if (!status.enabled || !status.autoPush.includes('handoff')) return;
       if (!status.configured) {
-        reportToLane('Xenon is not ready; run #xenon status');
+        reportToLane('attention', 'Xenon is not ready; run #xenon status');
         return;
       }
       const report = await invoke<PushReport>('xenon_push', {
@@ -9848,10 +9858,10 @@ export class AcpHarnessView implements ContentView {
         attention: [],
         handoffs: [entry],
       });
-      reportToLane(describePush(report));
+      reportToLane(pushTone(report), describePush(report));
       this.publishLinkFromPushReport(report);
     } catch (error) {
-      reportToLane(`failed: ${errorText(error)}`);
+      reportToLane('fault', `failed: ${errorText(error)}`);
     }
   }
 
@@ -9859,17 +9869,17 @@ export class AcpHarnessView implements ContentView {
   private async autoPushRegisteredReview(record: HarnessReviewRecord): Promise<void> {
     if (this.remoteRuntimeId || !this.projectDir || !record.slug) return;
     const cwd = this.projectDir;
-    const reportToLane = (message: string): void => {
+    const reportToLane = (tone: NoticeTone, subject: string): void => {
       const lane = this.lanes.find((candidate) => candidate.displayName === record.laneLabel);
       if (!lane) return;
-      this.appendTranscript(lane, 'system', `[xenon] review auto-push: ${message}`);
+      this.appendNotice(lane, { source: 'xenon', action: 'review auto-push', tone, subject });
       this.scheduleLaneRender(lane);
     };
     try {
       const status = await invoke<XenonStatus>('xenon_status', { cwd });
       if (!status.enabled || !status.autoPush.includes('review')) return;
       if (!status.configured) {
-        reportToLane('Xenon is not ready; run #xenon status');
+        reportToLane('attention', 'Xenon is not ready; run #xenon status');
         return;
       }
       const report = await invoke<PushReport>('xenon_push', {
@@ -9879,10 +9889,10 @@ export class AcpHarnessView implements ContentView {
         force: false,
         attention: [],
       });
-      reportToLane(describePush(report));
+      reportToLane(pushTone(report), describePush(report));
       this.publishLinkFromPushReport(report);
     } catch (error) {
-      reportToLane(`failed: ${errorText(error)}`);
+      reportToLane('fault', `failed: ${errorText(error)}`);
     }
   }
 
@@ -11869,7 +11879,7 @@ export class AcpHarnessView implements ContentView {
       reason = errorText(e);
     }
     if (reason) {
-      this.appendTranscript(lane, 'system', `xenon: ${reason} - local handoffs only`);
+      this.appendNotice(lane, { source: 'xenon', action: 'resume', tone: 'fault', subject: `${reason} — local handoffs only` });
       this.scheduleLaneRender(lane);
     }
     return { merged: mergeHandoffs(local, remote), remote, xenonCwd, reason };
@@ -14291,6 +14301,13 @@ export class AcpHarnessView implements ContentView {
     }
     if (SPEC114_DEV && dropped?.kind === 'tool') assertActiveToolCount(lane);
     if (kind === 'user') this.attachUserPromptImages(lane, item, stagedImages ?? []);
+    return item;
+  }
+
+  /** Spec 371: append a subsystem notice — its portable line as `text`, the payload for the row. */
+  private appendNotice(lane: HarnessLane, notice: HarnessNotice): HarnessTranscriptItem {
+    const item = this.appendTranscript(lane, 'system', noticeText(notice));
+    item.notice = notice;
     return item;
   }
 

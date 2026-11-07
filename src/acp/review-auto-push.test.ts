@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { AcpHarnessView } from './acp-harness-view';
 import type { ReviewEventPayload } from './harness-view-types';
@@ -42,10 +42,10 @@ function reviewEvent(overrides: Partial<ReviewEventPayload> = {}): ReviewEventPa
 
 function makeView(remoteRuntimeId: string | null = null): {
   receive: (payload: ReviewEventPayload) => void;
-  appendTranscript: ReturnType<typeof vi.fn>;
-  publishLinkFromPushReport: ReturnType<typeof vi.fn>;
+  appendNotice: Mock;
+  publishLinkFromPushReport: Mock;
 } {
-  const appendTranscript = vi.fn();
+  const appendNotice = vi.fn();
   const publishLinkFromPushReport = vi.fn();
   const view = Object.assign(Object.create(AcpHarnessView.prototype), {
     reviews: new Map(),
@@ -55,16 +55,26 @@ function makeView(remoteRuntimeId: string | null = null): {
     remoteRuntimeId,
     raiseReviewCard: vi.fn(),
     updateReviewCard: vi.fn(),
-    appendTranscript,
+    appendNotice,
     scheduleLaneRender: vi.fn(),
     publishLinkFromPushReport,
   }) as AcpHarnessView;
   return {
     receive: (payload) => (view as unknown as { handleReviewEvent: (event: ReviewEventPayload) => void })
       .handleReviewEvent(payload),
-    appendTranscript,
+    appendNotice,
     publishLinkFromPushReport,
   };
+}
+
+/** The spec 371 notice the lane gets for one auto-push outcome. */
+function pushNotice(tone: 'info' | 'attention' | 'fault', subject: string): unknown {
+  return expect.objectContaining({
+    source: 'xenon',
+    action: 'review auto-push',
+    tone,
+    subject: expect.stringContaining(subject),
+  });
 }
 
 describe('Review Board auto-push', () => {
@@ -80,8 +90,8 @@ describe('Review Board auto-push', () => {
     expect(invokeMock).toHaveBeenNthCalledWith(2, 'xenon_push', {
       cwd: '/repo', kind: 'review', slug: '2026-09-25-result', force: false, attention: [],
     });
-    await vi.waitFor(() => expect(view.appendTranscript).toHaveBeenCalledWith(
-      expect.anything(), 'system', expect.stringContaining(reviewUrl),
+    await vi.waitFor(() => expect(view.appendNotice).toHaveBeenCalledWith(
+      expect.anything(), pushNotice('info', reviewUrl),
     ));
     expect(view.publishLinkFromPushReport).toHaveBeenCalledWith(report);
   });
@@ -98,8 +108,8 @@ describe('Review Board auto-push', () => {
     invokeMock.mockResolvedValueOnce({ ...status, configured: false, token: 'missing' } as never);
     const view = makeView();
     view.receive(reviewEvent());
-    await vi.waitFor(() => expect(view.appendTranscript).toHaveBeenCalledWith(
-      expect.anything(), 'system', expect.stringContaining('not ready'),
+    await vi.waitFor(() => expect(view.appendNotice).toHaveBeenCalledWith(
+      expect.anything(), pushNotice('attention', 'not ready'),
     ));
     expect(invokeMock).toHaveBeenCalledTimes(1);
   });
@@ -109,7 +119,7 @@ describe('Review Board auto-push', () => {
     const view = makeView();
     view.receive(reviewEvent());
     await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
-    expect(view.appendTranscript).not.toHaveBeenCalled();
+    expect(view.appendNotice).not.toHaveBeenCalled();
   });
 
   it('reports a failed push without losing the local Board', async () => {
@@ -117,8 +127,8 @@ describe('Review Board auto-push', () => {
       .mockRejectedValueOnce(new Error('server offline'));
     const view = makeView();
     view.receive(reviewEvent());
-    await vi.waitFor(() => expect(view.appendTranscript).toHaveBeenCalledWith(
-      expect.anything(), 'system', expect.stringContaining('server offline'),
+    await vi.waitFor(() => expect(view.appendNotice).toHaveBeenCalledWith(
+      expect.anything(), pushNotice('fault', 'server offline'),
     ));
     expect(view.publishLinkFromPushReport).not.toHaveBeenCalled();
   });

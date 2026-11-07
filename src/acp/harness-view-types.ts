@@ -18,6 +18,7 @@ import type { AcpClient } from './client';
 import type { ComputerApprovalRequest } from './computer-approval';
 import type { QuestionTarget } from './elicitation';
 import type { UiFenceEntry } from './genui/types';
+import type { HarnessNotice } from './harness-notice';
 import type { TelemetryReviewLoop } from './harness-telemetry-schema';
 import type {
   AcpAgentMode,
@@ -145,6 +146,9 @@ export interface HarnessTranscriptItem {
   /** spec 250: structured payload for the visual #usage transcript summary.
    *  `text` remains the portable fallback for projections such as Live Assist. */
   usage?: UsageRollup;
+  /** spec 371: the subsystem notice this `system` row draws (label, action
+   *  legend, LED, subject). `text` is its portable `noticeText()` line. */
+  notice?: HarnessNotice;
   /** spec 120: first assistant row after coordinator drain. */
   replyingToLaneMail?: LaneMailProvenance;
   /** spec 133: hintable HTML artifact card. */

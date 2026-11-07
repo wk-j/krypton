@@ -1,9 +1,9 @@
 // Spec 301 phase 3 — the row dispatcher.
 //
 // Replaces `renderTranscriptItem`'s 18-branch `if/else if` chain. The branch
-// ORDER is load-bearing and reproduced exactly: a `system` item that carries
-// both an inter-lane prefix and a `diff` renders as an event today, because the
-// event branch ran first (`harness-transcript-render.ts:379` before `:395`).
+// ORDER is load-bearing: a `system` item that carries both a notice (spec 371)
+// and a `diff` renders as the notice, because the inter-lane event branch it
+// replaced ran first (`harness-transcript-render.ts:379` before `:395`).
 
 import { AssistantRow } from '../assistant-row';
 import { DirectiveDiffRow } from '../directive-diff-row';
@@ -32,7 +32,7 @@ type RowKind =
   | 'providerError'
   | 'interLane'
   | 'usage'
-  | 'event'
+  | 'notice'
   | 'docCard'
   | 'directiveDiff'
   | 'thought'
@@ -50,7 +50,7 @@ export function rowKindFor(item: HarnessTranscriptItem): RowKind {
   if (item.kind === 'provider_error' && item.providerError) return 'providerError';
   if (item.kind === 'inter_lane' && item.interLane) return 'interLane';
   if (item.kind === 'system' && item.usage) return 'usage';
-  if (item.kind === 'system' && systemRowVariant(item) === 'event') return 'event';
+  if (item.kind === 'system' && systemRowVariant(item) !== 'plain') return 'notice';
   if (item.kind === 'artifact' && item.artifact) return 'docCard';
   if (item.kind === 'review' && item.review) return 'docCard';
   if (item.kind === 'system' && item.diff) return 'directiveDiff';
@@ -87,7 +87,7 @@ export function createTranscriptRow(props: RowProps): TranscriptRow {
       return new ThoughtRow(props);
     case 'user':
       return new UserRow(props);
-    case 'event':
+    case 'notice':
     case 'text':
       return new SystemRow(props);
   }

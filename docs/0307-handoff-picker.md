@@ -157,8 +157,8 @@ resolves without a second list read.
 ```
 1. User types #resume list in lane L (guards unchanged: memory store present, L idle/awaiting_peer).
 2. collectHandoffs(L): refreshMemory() → local; xenon_handoff_list (≤5 s) → remote; merge by id.
-   A named Xenon failure still appends the existing "xenon: <reason> - local handoffs only"
-   system line AND becomes the picker's `note`.
+   A named Xenon failure still appends a system line (since spec 371 a `xenon` notice:
+   `resume` · fault · "<reason> — local handoffs only") AND becomes the picker's `note`.
 3. No rows → flashChip('no handoffs in this project'), nothing opens.
 4. handoffPicker = { laneId: L.id, rows, remote, xenonCwd, cursor: 0, note }; invalidate('overlay').
    OverlayShell's single-open registry closes the memory drawer if it was open.

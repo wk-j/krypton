@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { HIDDEN_INDICATOR_ID, SystemRow, hiddenRowsIndicatorItem, systemRowVariant } from './index';
+import { rowKindFor } from '../transcript/rows';
+import { noticeText, type HarnessNotice } from '../../harness-notice';
 import type { RowProps } from '../transcript-row';
 import type { HarnessTranscriptItem } from '../../harness-view-types';
 
@@ -10,6 +12,11 @@ function props(item: HarnessTranscriptItem, isNew = false): RowProps {
 
 function sys(text: string, id = 's1'): HarnessTranscriptItem {
   return { id, kind: 'system', text };
+}
+
+/** A notice row as `appendNotice` builds it. */
+function notice(n: HarnessNotice, id = 's1'): HarnessTranscriptItem {
+  return { id, kind: 'system', text: noticeText(n), notice: n };
 }
 
 function mount(item: HarnessTranscriptItem, isNew = false): SystemRow {
@@ -85,9 +92,56 @@ describe('SystemRow — hidden rows indicator', () => {
   });
 });
 
-describe('SystemRow — inter-lane harness event', () => {
-  it('relabels the row and strips the prefix from the body', () => {
-    const row = mount(sys('[inter-lane] reviewer-1 finished round 2'));
+describe('SystemRow — notice (spec 371)', () => {
+  it('labels the row with its source and draws the action legend before the subject', () => {
+    const row = mount(notice({ source: 'triage', action: 'flagged', tone: 'attention', subject: 'Green or amber?' }));
+
+    expect(row.el.className).toBe('acp-harness__msg acp-harness__msg--system');
+    expect(row.el.querySelector('.acp-harness__msg-label')?.textContent).toBe('triage');
+    const body = row.el.querySelector('.acp-harness__msg-body');
+    expect(body?.className).toBe('acp-harness__msg-body');
+    expect(body?.innerHTML).toBe(
+      '<span class="acp-harness__notice-action acp-harness__notice-action--attention">flagged</span>'
+        + '<span class="acp-harness__notice-subject">Green or amber?</span>',
+    );
+  });
+
+  it('carries the tone on the legend so only attention and fault light an LED', () => {
+    const fault = mount(notice({ source: 'xenon', action: 'push failed', tone: 'fault', subject: 'offline' }));
+    const info = mount(notice({ source: 'xenon', action: 'status', tone: 'info', subject: 'enabled: true' }));
+
+    expect(fault.el.querySelector('.acp-harness__notice-action')?.className)
+      .toBe('acp-harness__notice-action acp-harness__notice-action--fault');
+    expect(info.el.querySelector('.acp-harness__notice-action')?.className)
+      .toBe('acp-harness__notice-action acp-harness__notice-action--info');
+  });
+
+  it('draws the subject alone when the notice has no action', () => {
+    const row = mount(notice({ source: 'usage', tone: 'info', subject: 'No turns recorded for 2026-11-08.' }));
+
+    expect(row.el.querySelector('.acp-harness__msg-label')?.textContent).toBe('usage');
+    expect(row.el.querySelector('.acp-harness__notice-action')).toBeNull();
+    expect(row.el.querySelector('.acp-harness__msg-body')?.textContent).toBe('No turns recorded for 2026-11-08.');
+  });
+
+  it('never parses a bracket tag out of plain text', () => {
+    const row = mount(sys('[triage] flagged: Green or amber?'));
+
+    expect(row.el.querySelector('.acp-harness__msg-label')?.textContent).toBe('sys');
+    expect(row.el.querySelector('.acp-harness__msg-body')?.textContent).toBe('[triage] flagged: Green or amber?');
+  });
+
+  it('writes the portable line other readers get from item.text', () => {
+    expect(noticeText({ source: 'triage', action: 'flagged', tone: 'attention', subject: 'Q?' })).toBe('[triage] flagged: Q?');
+    expect(noticeText({ source: 'inter-lane', tone: 'info', subject: 'peer OMP-2 closed' })).toBe('[inter-lane] peer OMP-2 closed');
+  });
+});
+
+describe('SystemRow — inter-lane event', () => {
+  const event = (subject: string): HarnessTranscriptItem => notice({ source: 'inter-lane', tone: 'info', subject });
+
+  it('keeps the event label and the quieter event body', () => {
+    const row = mount(event('peer OMP-2 cancelled'));
 
     expect(row.el.className).toBe(
       'acp-harness__msg acp-harness__msg--system acp-harness__msg--harness-event',
@@ -95,11 +149,11 @@ describe('SystemRow — inter-lane harness event', () => {
     expect(row.el.querySelector('.acp-harness__msg-label')?.textContent).toBe('event');
     const body = row.el.querySelector('.acp-harness__msg-body');
     expect(body?.className).toBe('acp-harness__msg-body acp-harness__harness-event-body');
-    expect(body?.textContent).toBe('reviewer-1 finished round 2');
+    expect(body?.textContent).toBe('peer OMP-2 cancelled');
   });
 
-  it('re-derives the wrapper, the label and the body class when the text stops being an event', () => {
-    const row = mount(sys('[inter-lane] reviewer-1 finished round 2'));
+  it('re-derives the wrapper, the label and the body class when the item stops being an event', () => {
+    const row = mount(event('peer OMP-2 cancelled'));
 
     row.update(props(sys('lane restarted')));
     expect(row.el.className).toBe('acp-harness__msg acp-harness__msg--system');
@@ -107,10 +161,13 @@ describe('SystemRow — inter-lane harness event', () => {
     expect(row.el.querySelector('.acp-harness__msg-body')?.className).toBe('acp-harness__msg-body');
   });
 
-  it('classifies a system item for the dispatcher', () => {
-    expect(systemRowVariant(sys('[inter-lane] x'))).toBe('event');
+  it('classifies a system item for the dispatcher, a notice winning over a diff', () => {
+    const diff = { title: 't', unified: '+a' };
+    expect(systemRowVariant(event('x'))).toBe('event');
+    expect(systemRowVariant(notice({ source: 'review', action: 'recorded', tone: 'info', subject: 'x' }))).toBe('notice');
     expect(systemRowVariant(sys('plain'))).toBe('plain');
-    expect(systemRowVariant({ ...sys('[inter-lane] x'), diff: { title: 't', unified: '+a' } })).toBe('event');
+    expect(rowKindFor({ ...event('x'), diff })).toBe('notice');
+    expect(rowKindFor({ ...sys('directive'), diff })).toBe('directiveDiff');
   });
 });
 
@@ -128,7 +185,7 @@ describe('SystemRow — lifecycle', () => {
     const label = row.el.querySelector('.acp-harness__msg-label');
     const body = row.el.querySelector('.acp-harness__msg-body');
 
-    row.update(props(sys('[inter-lane] peer replied')));
+    row.update(props(notice({ source: 'inter-lane', tone: 'info', subject: 'peer replied' })));
     expect(row.el.querySelector('.acp-harness__msg-label')).toBe(label);
     expect(row.el.querySelector('.acp-harness__msg-body')).toBe(body);
   });

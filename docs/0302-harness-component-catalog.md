@@ -774,13 +774,17 @@ usage  2026-10-15                                                 14 turns
 **Example UI**
 
 ```
-sys    lane restarted — session 4f2a9c
-sys    ↑ 142 earlier rows hidden — Ctrl+H show 60 more
-event  reviewer-1 finished round 2
+   sys  lane restarted — session 4f2a9c
+   sys  ↑ 142 earlier rows hidden — Ctrl+H show 60 more
+triage  ● FLAGGED  Should the CLEAN lamp be green like PASS?
+ event  peer OMP-2 cancelled
 ```
 
 **Emits** `.acp-harness__msg--system`, indicator variant adds `--hidden-indicator`,
-event variant adds `--harness-event` + `.acp-harness__harness-event-body`.
+event variant adds `--harness-event` + `.acp-harness__harness-event-body`. A notice
+(`item.notice`, spec 371) labels the row with its source and paints
+`.acp-harness__notice-action--{info|attention|fault}` + `.acp-harness__notice-subject`;
+an `inter-lane` notice is the event variant. The row never parses `item.text`.
 **Replaces** `harness-transcript-render.ts:383-387` · `acp-harness-view.ts:12120-12129`.
 
 ## 3.15 `ImageStrip` · 3.16 `ResourceRail`

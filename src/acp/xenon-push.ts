@@ -4,6 +4,7 @@
 // Kept free of Tauri and DOM so the command grammar and the summary line are
 // testable without a running harness.
 
+import type { NoticeTone } from './harness-notice';
 import type { HandoffEntry } from './types';
 
 // Mirrors `xenon::KINDS` (Rust). Both lists validate, so both must be extended
@@ -181,6 +182,11 @@ export function describePush(report: PushReport): string {
   }
 
   return lines.join('\n');
+}
+
+/** Spec 371: a push that blocked or failed an item lights the notice's fault LED. */
+export function pushTone(report: PushReport): NoticeTone {
+  return report.failed + report.blocked > 0 ? 'fault' : 'info';
 }
 
 // ─── spec 293: global handoff resume ─────────────────────────────────────────

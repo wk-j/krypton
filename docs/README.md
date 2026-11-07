@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (356)
+## Specs (357)
 
 | # | Spec |
 |---|------|
@@ -373,6 +373,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 368 | [Rails Manual Checks](./0368-rails-manual-checks.md) |
 | 369 | [Keycap Shortcuts](./0369-keycap-shortcuts.md) |
 | 370 | [OMP Background Subagent Jobs](./0370-harness-omp-background-jobs.md) |
+| 371 | [Harness Notice Rows](./0371-harness-notice-rows.md) |
 
 ## ADRs (30)
 

@@ -1,6 +1,6 @@
 ---
 name: Krypton Console
-version: 2.1.0
+version: 2.2.0
 description: Skeuomorphic instrument faceplate — brushed graphite (aluminium in the light scheme) with engraved labels, recessed display wells, raised keys and lit lamps, over a transparent desktop
 appliesTo: "Every surface in the Tauri webview and the live-assist webview. Materials: src/styles/materials.css (--mat-*)."
 colors:
@@ -167,8 +167,9 @@ comment.
   chip or capsule sits inside it, before the legend, never beside it.
 - **Chips.** Verdicts and kinds outside the transcript are embossed labels on a key face, tinted by
   their colour, with the status LED first on the key face, 5px before the legend. Every label in the
-  transcript (tool kind, permission and question decision, execution state, provider-error meta) is
-  flat ink: no key face, capsule, border, or shadow; its LED, when it has one, sits before the legend.
+  transcript (tool kind, permission and question decision, execution state, provider-error meta,
+  notice action) is flat ink: no key face, capsule, border, or shadow; its LED, when it has one, sits
+  before the legend.
 - **Readouts.** A small well holding a tabular-nums figure, with its label engraved beside or under it.
 - **Scrim.** Behind a modal plate: `background: var(--mat-scrim)`. Never blur.
 
@@ -384,6 +385,10 @@ selector, and nothing in it bleeds out of that selector.
 
 ## Changelog
 
+- **2.2.0** — A system row raised by a harness subsystem is a notice (spec 371): the source is the
+  row label (`triage`, `xenon`, `review`, `usage`, `event`), the action a flat-ink legend with an
+  amber or fault LED before it when the human should look, then the subject. The bracket tag no
+  longer prints in the body.
 - **2.1.0** — Every keyboard shortcut drawn in text is a key cap (spec 369): a `<kbd>` from
   `src/ui/kbd.ts` with one shared rule, followed by its action as legend. Bracket notation
   (`[a] accept`) and plain-text hint lines (`j/k move · esc cancel`) are gone; the key-hint foot
