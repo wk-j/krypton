@@ -124,7 +124,6 @@
 
   /* Done: the green of `.acp-ticket-dock__pill--done`, backlit in a raised key. */
   .acp-dock-action--done {
-    border-color: rgba(142, 255, 176, 0.45);
     background:
       radial-gradient(ellipse at 50% 0%, rgba(142, 255, 176, 0.2), transparent 75%),
       var(--mat-key);
@@ -132,7 +131,6 @@
   }
 
   .acp-dock-action--done:hover:not(:disabled) {
-    border-color: rgba(168, 255, 191, 0.7);
     background:
       radial-gradient(ellipse at 50% 0%, rgba(142, 255, 176, 0.28), transparent 75%),
       var(--mat-key-hover);
