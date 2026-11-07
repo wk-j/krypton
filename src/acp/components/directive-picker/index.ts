@@ -19,13 +19,20 @@ import './directive-picker.css';
 import type { HarnessDirective } from '../../../config';
 import { Component } from '../../../ui/component';
 import { el, frag } from '../../../ui/dom';
+import type { KeyHint } from '../../../ui/kbd';
 import { ListPicker } from '../list-picker';
 import { OverlayShell, type OverlayShellParts } from '../overlay-shell';
 import type { ComponentDef } from '../types';
 
 const BLOCK = 'acp-harness__directive';
 
-const HINTS = 'j/k move · enter switch · shift+enter new lane · backspace clear · esc cancel';
+const HINTS: readonly KeyHint[] = [
+  { keys: ['j', 'k'], label: 'move', keySeparator: '/' },
+  { keys: ['Enter'], label: 'switch' },
+  { keys: ['⇧Enter'], label: 'new lane' },
+  { keys: ['Backspace'], label: 'clear' },
+  { keys: ['Esc'], label: 'cancel' },
+];
 
 /** spec 130: legacy triage metadata, a glyph only; the full label is the title. */
 const TRIAGE_TITLE = 'legacy triage metadata; attention tools are default-on';

@@ -385,7 +385,7 @@
   letter-spacing: 0.09em;
 }
 
-/* `? for help`: printed legend. */
+/* `? for help`: a key cap and its printed legend. */
 .krypton-hurl__help-cue {
   color: var(--hurl-ink-dim);
   font-size: 10px;

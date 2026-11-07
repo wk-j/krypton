@@ -2,6 +2,7 @@ import type { ContentView, PaneContentType } from './types';
 import type { VaultIndex, VaultFile } from './vault-parser';
 import { buildVaultIndex, parseHeadingsForFile, readVaultFile } from './vault-parser';
 import { openExternalUrl } from './external-url';
+import { keyHintNodes } from './ui/kbd';
 
 type SidebarMode = 'files' | 'backlinks' | 'outline' | 'tags';
 type FileSortField = 'title' | 'updated' | 'modified' | 'name' | 'type';
@@ -1250,7 +1251,16 @@ export class VaultContentView implements ContentView {
 
     const hint = document.createElement('div');
     hint.className = 'krypton-vault-picker__hint';
-    hint.textContent = 'j/k  select    Enter  open    Esc  cancel';
+    hint.append(
+      ...keyHintNodes(
+        [
+          { keys: ['j', 'k'], keySeparator: '/', label: 'select' },
+          { keys: ['Enter'], label: 'open' },
+          { keys: ['Esc'], label: 'cancel' },
+        ],
+        '    ',
+      ),
+    );
     panel.appendChild(hint);
 
     overlay.appendChild(panel);

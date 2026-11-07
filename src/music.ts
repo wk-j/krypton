@@ -536,7 +536,7 @@ export class MusicPlayer {
   private renderTrackList(container: HTMLElement): void {
     container.innerHTML = '';
     if (this.state.playlist.length === 0) {
-      container.innerHTML = '<div class="krypton-music-dashboard__empty">No MP3 files loaded. Press [o] to open a directory.</div>';
+      container.innerHTML = '<div class="krypton-music-dashboard__empty">No MP3 files loaded. Press <kbd>o</kbd> to open a directory.</div>';
       return;
     }
 
@@ -610,7 +610,7 @@ export class MusicPlayer {
       </div>
       <div class="krypton-music-dashboard__np-help">
         <div><kbd>Space</kbd> Play/Pause  <kbd>s</kbd> Stop  <kbd>n</kbd> Next  <kbd>p</kbd> Prev</div>
-        <div><kbd>Enter</kbd> Play selected  <kbd>o</kbd> Open dir  <kbd>+/-</kbd> Vol</div>
+        <div><kbd>Enter</kbd> Play selected  <kbd>o</kbd> Open dir  <kbd>+</kbd>/<kbd>-</kbd> Vol</div>
         <div><kbd>r</kbd> Repeat  <kbd>z</kbd> Shuffle  <kbd>v</kbd> Visualizer  <kbd>Esc</kbd> Close</div>
       </div>
     `;

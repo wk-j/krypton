@@ -2,12 +2,15 @@
 
 import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
+import { keyHintNodes, keyHintsSignature, type KeyHint } from '../../../ui/kbd';
 import type { StatusTone } from '../../types';
 
 export interface StatusBarProps {
   text: string;
   /** `null` leaves `className` untouched (quirk P7). */
   tone: StatusTone;
+  /** Key caps after the text, e.g. the delete confirm's `y`/`N`. */
+  hints?: readonly KeyHint[];
 }
 
 const BLOCK = 'krypton-file-manager__status';
@@ -22,11 +25,12 @@ export class StatusBar extends Component<StatusBarProps> {
   }
 
   protected readDeps(p: StatusBarProps): readonly unknown[] {
-    return [p.text, p.tone];
+    return [p.text, p.tone, keyHintsSignature(p.hints ?? [])];
   }
 
   protected paint(p: StatusBarProps): void {
     this.el.textContent = p.text;
+    if (p.hints?.length) this.el.append(' ', ...keyHintNodes(p.hints));
     this.syncClasses(p);
   }
 

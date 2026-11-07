@@ -60,7 +60,11 @@ describe('ModelPicker', () => {
       '<aside class="acp-harness__model-picker">' +
         '<header class="acp-harness__model-head">' +
         '<span>// model · claude-1</span>' +
-        '<span>j/k move · enter switch · esc cancel</span>' +
+        '<span>' +
+        '<span class="krypton-key-hint"><kbd>j</kbd>/<kbd>k</kbd> move</span> · ' +
+        '<span class="krypton-key-hint"><kbd>Enter</kbd> switch</span> · ' +
+        '<span class="krypton-key-hint"><kbd>Esc</kbd> cancel</span>' +
+        '</span>' +
         '</header>' +
         '<ul class="acp-harness__model-list">' +
         '<li class="acp-harness__model-row" data-model-index="0">' +

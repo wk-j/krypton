@@ -56,9 +56,9 @@ describe('SystemRow — hidden rows indicator', () => {
     expect(hiddenRowsIndicatorItem(142, 60)).toEqual({
       id: HIDDEN_INDICATOR_ID,
       kind: 'system',
-      text: '↑ 142 earlier rows hidden — Ctrl+H show 60 more',
+      text: '↑ 142 earlier rows hidden — ⌃H show 60 more',
     });
-    expect(hiddenRowsIndicatorItem(1, 60).text).toBe('↑ 1 earlier row hidden — Ctrl+H show 60 more');
+    expect(hiddenRowsIndicatorItem(1, 60).text).toBe('↑ 1 earlier row hidden — ⌃H show 60 more');
   });
 
   it('carries its modifier and never the entrance class, even when the caller says it is new', () => {
@@ -67,8 +67,8 @@ describe('SystemRow — hidden rows indicator', () => {
     expect(row.el.className).toBe(
       'acp-harness__msg acp-harness__msg--system acp-harness__msg--hidden-indicator',
     );
-    expect(row.el.querySelector('.acp-harness__msg-body')?.textContent).toBe(
-      '↑ 142 earlier rows hidden — Ctrl+H show 60 more',
+    expect(row.el.querySelector('.acp-harness__msg-body')?.innerHTML).toBe(
+      '↑ 142 earlier rows hidden — <kbd>⌃H</kbd> show 60 more',
     );
   });
 
@@ -81,7 +81,7 @@ describe('SystemRow — hidden rows indicator', () => {
       'acp-harness__msg acp-harness__msg--system acp-harness__msg--hidden-indicator',
     );
     expect(row.el.querySelector('.acp-harness__msg-body')).toBe(body);
-    expect(body?.textContent).toBe('↑ 82 earlier rows hidden — Ctrl+H show 60 more');
+    expect(body?.textContent).toBe('↑ 82 earlier rows hidden — ⌃H show 60 more');
   });
 });
 

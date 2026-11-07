@@ -14,7 +14,8 @@ import { Component } from '../../../ui/component';
 import { el, setAttr } from '../../../ui/dom';
 import { formatReviewRoundTime } from '../../harness-format';
 import type { ReviewFinding, ReviewOutcome } from '../../types';
-import { KeyHintBar, type KeyHint, type KeyHintBarProps } from '../key-hint-bar';
+import type { KeyHint } from '../../../ui/kbd';
+import { KeyHintBar, type KeyHintBarProps } from '../key-hint-bar';
 import { OverlayShell } from '../overlay-shell';
 import { TabStrip } from '../tab-strip';
 import type { ComponentDef } from '../types';
@@ -168,19 +169,19 @@ export class ReviewMatrixOverlay extends Component<ReviewMatrixOverlayProps> {
 
   private hints(next: ReviewMatrixOverlayProps): KeyHintBarProps {
     const hints: KeyHint[] = [];
-    if (next.lanes.length > 1) hints.push({ keys: ['h', 'l'], label: 'switch lane' });
+    if (next.lanes.length > 1) hints.push({ keys: ['h', 'l'], label: 'switch lane', keySeparator: '/' });
     if (next.rows.length > 0) {
-      hints.push({ keys: ['j', 'k'], label: 'select round' });
+      hints.push({ keys: ['j', 'k'], label: 'select round', keySeparator: '/' });
       if (next.rows.some((row) => (row.findings?.length ?? 0) > 0)) {
-        hints.push({ keys: ['enter', 'space'], label: 'expand findings' });
+        hints.push({ keys: ['Enter', 'Space'], label: 'expand findings', keySeparator: '/' });
       }
     }
-    hints.push({ keys: ['esc'], label: 'close' });
+    hints.push({ keys: ['Esc'], label: 'close' });
     return {
       hints,
       note: 'read-only — observation, not a score',
       noteClass: 'acp-review__foot-note',
-      style: 'kbd',
+      layout: 'spans',
       block: 'acp-review__foot',
     };
   }

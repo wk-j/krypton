@@ -15,6 +15,7 @@ import type { RailsTabBadge } from './harness-dock';
 import type { RailsFooterSignal } from './rails/types';
 import type { ContentBlock, LaneBusEvent, ReviewFinding, StopReason } from './types';
 import type { LiveDelivery } from './live-voice';
+import type { LiveVoiceStripProps } from './components/live-voice-strip';
 
 /**
  * Spec 301 — the repaint regions a controller may dirty.
@@ -60,7 +61,8 @@ export interface HarnessDictationHost extends HarnessViewHost {
 
 /** Spec 280 live voice controller host. */
 export interface HarnessLiveVoiceHost extends HarnessViewHost {
-  readonly composerEl: HTMLElement;
+  /** Hand the composer's live-voice strip new props without a composer pass. */
+  patchLiveVoice(props: LiveVoiceStripProps): void;
   invalidate(region: HarnessRegion): void;
   /** An idle lane starts the turn; a busy lane is steered (spec 278), else the
    *  prompt queues (spec 136; full queue → 'rejected'). The prompt carries

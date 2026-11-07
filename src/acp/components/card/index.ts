@@ -38,6 +38,7 @@ import './review-card.css';
 
 import { Component } from '../../../ui/component';
 import { classes, el, setAttr } from '../../../ui/dom';
+import { keyHintNodes, keyHintsSignature, type KeyHint } from '../../../ui/kbd';
 import { ActionButton, type ActionButtonProps } from '../action-button';
 import type { ComponentDef } from '../types';
 
@@ -55,7 +56,9 @@ export interface CardProps {
   readonly head: CardHead;
   /** Owned by the caller: the card mounts it, and never writes into it. */
   readonly body?: Node;
-  readonly action?: string;
+  /** The action row: plain text, or a hint run whose keys print as caps
+   *  (`<kbd>q</kbd> to open in browser`, spec 369). */
+  readonly action?: string | readonly KeyHint[];
   /** The BEM block the caller owns, e.g. `acp-harness__artifact`. */
   readonly block: string;
   /** Extra full class names, already namespaced by the caller. */
@@ -102,7 +105,7 @@ export class Card extends Component<CardProps> {
       next.head.meta,
       next.head.toolbar,
       next.body,
-      next.action,
+      typeof next.action === 'string' || next.action === undefined ? next.action : keyHintsSignature(next.action),
       next.modifiers?.join(' '),
     ];
   }
@@ -184,14 +187,15 @@ export class Card extends Component<CardProps> {
     return node;
   }
 
-  private syncAction(action: string | undefined, block: string): HTMLElement | null {
+  private syncAction(action: string | readonly KeyHint[] | undefined, block: string): HTMLElement | null {
     if (action === undefined) {
       this.actionEl = null;
       return null;
     }
     const node = this.actionEl ?? el('div');
     node.className = `${block}-action`;
-    node.textContent = action;
+    if (typeof action === 'string') node.textContent = action;
+    else node.replaceChildren(...keyHintNodes(action));
     this.actionEl = node;
     return node;
   }

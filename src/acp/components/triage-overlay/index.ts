@@ -12,6 +12,7 @@
 
 import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
+import type { KeyHint } from '../../../ui/kbd';
 import type { JudgementItem, LaneTriageStats, Reversibility, ReviewDiffstatEntry } from '../../types';
 import { Caret } from '../caret';
 import { KeyHintBar } from '../key-hint-bar';
@@ -26,13 +27,19 @@ const REVERSIBILITY_LABEL: Record<Reversibility, string> = {
 };
 
 /** The keys the queue answers to while no redirect input is open. */
-const QUEUE_HINTS = [
+const QUEUE_HINTS: readonly KeyHint[] = [
   { keys: ['a'], label: 'acknowledge (tells lane)' },
   { keys: ['r'], label: 'redirect' },
   { keys: ['o'], label: 'dig (open lane)' },
   { keys: ['j', 'k'], label: 'prev/next', keySeparator: '/' },
   { keys: ['Esc'], label: 'close' },
-] as const;
+];
+
+/** The keys the redirect input answers to. */
+const REDIRECT_HINTS: readonly KeyHint[] = [
+  { keys: ['Enter'], label: 'send' },
+  { keys: ['Esc'], label: 'cancel' },
+];
 
 export interface TriageOverlayProps {
   readonly open: boolean;
@@ -153,18 +160,16 @@ class JudgementCard extends Component<JudgementCardProps> {
         el('span', { class: 'acp-triage__redirect-input' }, next.redirect.draft, this.caret.el),
       ]);
       this.hintBar.update({
-        hints: [{ keys: [], label: 'Enter send · Esc cancel' }],
+        hints: REDIRECT_HINTS,
         note: 'delivered on the lane’s next idle',
         noteJoin: ' — ',
-        style: 'plain',
         block: 'acp-triage__action-hint',
       });
       actions.append(input, this.hintBar.el);
       return actions;
     }
     this.hintBar.update({
-      hints: [...QUEUE_HINTS],
-      style: 'kbd',
+      hints: QUEUE_HINTS,
       block: 'acp-triage__action-hint',
       layout: 'bare',
     });

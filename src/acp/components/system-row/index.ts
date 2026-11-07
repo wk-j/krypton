@@ -4,7 +4,7 @@
 // item rather than three kinds:
 //
 //   plain       `sys    lane restarted — session 4f2a9c`
-//   indicator   `       ↑ 142 earlier rows hidden — Ctrl+H show 60 more`
+//   indicator   `       ↑ 142 earlier rows hidden — [⌃H] show 60 more`  (key cap)
 //   event       `event  reviewer-1 finished round 2`   (inter-lane harness event)
 //
 // Ported from `harness-transcript-render.ts:379-383` (the event branch) and its
@@ -21,6 +21,7 @@
 
 import './system-row.css';
 
+import { keyCap } from '../../../ui/kbd';
 import { TranscriptRow, type RowProps } from '../transcript-row';
 import { gridifyText } from '../../cell-grid';
 import type { HarnessTranscriptItem } from '../../harness-view-types';
@@ -30,6 +31,8 @@ import type { ComponentDef } from '../types';
 export const HIDDEN_INDICATOR_ID = '__hidden_indicator__';
 
 const EVENT_PREFIX = '[inter-lane]';
+/** The indicator's key, painted as a `<kbd>` cap (spec 369). */
+const SHOW_MORE_KEY = '⌃H';
 const EVENT_PREFIX_RE = /^\[inter-lane\]\s*/u;
 
 export type SystemRowVariant = 'plain' | 'event';
@@ -50,7 +53,7 @@ export function hiddenRowsIndicatorItem(hidden: number, step: number): HarnessTr
   return {
     id: HIDDEN_INDICATOR_ID,
     kind: 'system',
-    text: `↑ ${hidden} earlier row${hidden === 1 ? '' : 's'} hidden — Ctrl+H show ${step} more`,
+    text: `↑ ${hidden} earlier row${hidden === 1 ? '' : 's'} hidden — ${SHOW_MORE_KEY} show ${step} more`,
   };
 }
 
@@ -84,6 +87,14 @@ export class SystemRow extends TranscriptRow {
 
   protected paintBody(body: HTMLElement, next: RowProps): void {
     const text = next.item.text;
+    if (this.indicator) {
+      // The text is built by `hiddenRowsIndicatorItem` above; its key becomes a cap.
+      const at = text.indexOf(SHOW_MORE_KEY);
+      if (at >= 0) {
+        body.replaceChildren(text.slice(0, at), keyCap(SHOW_MORE_KEY), text.slice(at + SHOW_MORE_KEY.length));
+        return;
+      }
+    }
     body.textContent = systemRowVariant(next.item) === 'event' ? text.replace(EVENT_PREFIX_RE, '') : text;
     // Spec 326: `!shell` output laid out by columns sits on the cell grid. Other
     // system text is prose and keeps wrapping.

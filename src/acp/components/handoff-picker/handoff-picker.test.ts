@@ -96,7 +96,11 @@ describe('HandoffPicker', () => {
       '<aside class="acp-harness__handoff-picker">' +
         '<header class="acp-harness__handoff-head">' +
         '<span>// handoff · claude-1</span>' +
-        '<span>3 handoffs · j/k move · enter resume · esc cancel</span>' +
+        '<span>3 handoffs · ' +
+        '<span class="krypton-key-hint"><kbd>j</kbd>/<kbd>k</kbd> move</span> · ' +
+        '<span class="krypton-key-hint"><kbd>Enter</kbd> resume</span> · ' +
+        '<span class="krypton-key-hint"><kbd>Esc</kbd> cancel</span>' +
+        '</span>' +
         '</header>' +
         '<ul class="acp-harness__handoff-list">' +
         '<li class="acp-harness__handoff-row acp-harness__handoff-row--active" data-handoff-index="0">' +
@@ -207,7 +211,7 @@ describe('HandoffPicker', () => {
     const picker = mount(base({ note: 'xenon unreachable - local handoffs only' }));
 
     expect(picker.el.querySelector('header')?.lastElementChild?.textContent).toBe(
-      '3 handoffs · xenon unreachable - local handoffs only · j/k move · enter resume · esc cancel',
+      '3 handoffs · xenon unreachable - local handoffs only · j/k move · Enter resume · Esc cancel',
     );
   });
 

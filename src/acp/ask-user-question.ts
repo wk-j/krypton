@@ -2,6 +2,8 @@
 // spec 279 — the same card answers ACP form elicitations (`elicitation.ts`).
 // Pure functions so the card can be tested without the harness view.
 
+import type { KeyHint } from '../ui/kbd';
+
 export interface AskUserOption {
   label: string;
   description: string;
@@ -373,15 +375,24 @@ export function payloadFromCard(
   };
 }
 
-/** Footer hint for a pending question card. */
-export function questionActionsHint(question: AskUserQuestion | undefined, wire: QuestionWire, otherFocused: boolean): string {
-  const skip = wire === 'elicitation' ? 'x decline' : 'x skip';
+/** Footer hint for a pending question card, as key caps (spec 369). */
+export function questionActionsHint(
+  question: AskUserQuestion | undefined,
+  wire: QuestionWire,
+  otherFocused: boolean,
+): readonly KeyHint[] {
+  const skipLabel = wire === 'elicitation' ? 'decline' : 'skip';
+  const skip: KeyHint = { keys: ['x'], label: skipLabel };
   if (otherFocused) {
+    const typing: KeyHint[] = [{ keys: [], label: 'type' }, { keys: ['Enter'], label: 'submit' }];
+    // A text-only card parks the draft on Esc; `x` after it skips (a sequence).
     return question?.textOnly
-      ? `type · Enter submit · Esc park · then ${skip}`
-      : 'type · Enter submit · Esc back';
+      ? [...typing, { keys: ['Esc'], label: 'park' }, { keys: ['Esc', 'x'], label: skipLabel }]
+      : [...typing, { keys: ['Esc'], label: 'back' }];
   }
-  if (question?.textOnly) return `z type · ${skip}`;
-  const pick = question?.multiSelect ? '1–9 toggle · Enter commit' : '1–9 pick · Enter';
-  return question?.allowOther === false ? `${pick} · ${skip}` : `${pick} · ${skip} · z other`;
+  if (question?.textOnly) return [{ keys: ['z'], label: 'type' }, skip];
+  const pick: KeyHint[] = question?.multiSelect
+    ? [{ keys: ['1–9'], label: 'toggle' }, { keys: ['Enter'], label: 'commit' }]
+    : [{ keys: ['1–9'], label: 'pick' }, { keys: ['Enter'], label: '' }];
+  return question?.allowOther === false ? [...pick, skip] : [...pick, skip, { keys: ['z'], label: 'other' }];
 }

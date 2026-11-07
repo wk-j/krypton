@@ -18,15 +18,18 @@ function fixRow(fix: string): HTMLElement {
 }
 
 function hintRow(): HTMLElement {
-  const key = (k: string): HTMLElement => el('kbd', { class: `${BLOCK}-key`, text: k });
-  return el('div', { class: `${BLOCK}-hint` }, key('cmd+g'), ' use · ', key('cmd+0'), ' dismiss');
+  return el(
+    'div',
+    { class: `${BLOCK}-hint` },
+    ...keyHintNodes([{ keys: ['⌘G'], label: 'use' }, { keys: ['⌘0'], label: 'dismiss' }]),
+  );
 }
 
 //   claude-1                                          GRAMMAR · 2 FIXES
 //   curent → current
 //   What → What are
 //   What are the current changes in git?
-//   cmd+g use · cmd+0 dismiss
+//   ⌘G use · ⌘0 dismiss
 //
 // `pending` shows the checked prompt dimmed under a CHECKING label; a clean
 // review shows one confirming line and the controller unmounts it shortly
@@ -36,6 +39,7 @@ import './grammar-panel.css';
 
 import { Component } from '../../../ui/component';
 import { el, setAttr, setChildren } from '../../../ui/dom';
+import { keyHintNodes } from '../../../ui/kbd';
 import type { AssistPanelState } from '../../assist/types';
 import type { ComponentDef } from '../types';
 

@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import type { ContentView, PaneContentType } from './types';
+import { keyHintNodes } from './ui/kbd';
 
 interface TelegramBotIdentity {
   id: string;
@@ -85,7 +86,14 @@ export class TelegramSettingsContentView implements ContentView {
 
     const hints = document.createElement('div');
     hints.className = 'krypton-telegram__hints';
-    hints.textContent = 'r refresh · m rich messages · j/k scroll · q close';
+    hints.append(
+      ...keyHintNodes([
+        { keys: ['r'], label: 'refresh' },
+        { keys: ['m'], label: 'rich messages' },
+        { keys: ['j', 'k'], keySeparator: '/', label: 'scroll' },
+        { keys: ['q'], label: 'close' },
+      ]),
+    );
     this.element.appendChild(hints);
 
     this.render();

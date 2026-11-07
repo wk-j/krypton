@@ -375,9 +375,3 @@
   box-shadow: inset 0 1px 0 var(--mat-groove-hi);
   padding-top: 10px;
 }
-
-.krypton-music-dashboard__np-help kbd {
-  color: var(--mat-silk);
-  font-family: inherit;
-  font-size: inherit;
-}

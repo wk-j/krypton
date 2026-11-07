@@ -56,8 +56,9 @@ describe('LanePicker', () => {
   it('emits the head and one row per backend: logo, label, id, running count', () => {
     const picker = mount(base({ cursor: 1 }));
 
-    expect([...picker.el.querySelectorAll('header span')].map((span) => span.textContent))
-      .toStrictEqual(['// add lane', 'j/k move · enter spawn · esc cancel']);
+    expect([...picker.el.querySelectorAll('header > span')].map((span) => span.textContent))
+      .toStrictEqual(['// add lane', 'j/k move · Enter spawn · Esc cancel']);
+    expect(picker.el.querySelector('header > span:last-child kbd')?.textContent).toBe('j');
     expect([...picker.el.querySelectorAll('li')].map((row) => ({
       logo: row.querySelector('use')?.getAttribute('href'),
       label: row.querySelector('.acp-harness__picker-label')?.textContent,

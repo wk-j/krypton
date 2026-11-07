@@ -266,7 +266,7 @@
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
 
-/* ── Hint Bar ── printed legend. */
+/* ── Hint Bar ── key caps and their printed legend. */
 .krypton-inline-ai__hint {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
@@ -345,10 +345,9 @@
   color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
 }
 
+/* The `⌘K` cap that resumes the overlay; it never shrinks under a long text. */
 .krypton-inline-followup__key {
   flex-shrink: 0;
-  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
-  text-shadow: var(--mat-print);
 }
 
 .krypton-inline-followup--none .krypton-inline-followup__text {

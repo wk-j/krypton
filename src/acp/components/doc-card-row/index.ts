@@ -23,6 +23,7 @@
 import './doc-card-row.css';
 
 import { setChildren } from '../../../ui/dom';
+import type { KeyHint } from '../../../ui/kbd';
 import { Card, type CardProps } from '../card';
 import { TranscriptRow, type RowProps } from '../transcript-row';
 import { formatArtifactBytes } from '../../harness-tool-render';
@@ -32,6 +33,12 @@ import type { ComponentDef } from '../types';
 /** `◫` for a rendered HTML document, `▤` for a Review Board bundle. */
 const ARTIFACT_GLYPH = '\u25eb';
 const REVIEW_GLYPH = '\u25a4';
+/** No hint label assigned yet: `f` opens hint mode, then the card's label. */
+const ARTIFACT_OPEN_HINT: readonly KeyHint[] = [{ keys: ['f'], label: 'then label to open in browser' }];
+const REVIEW_OPEN_HINT: readonly KeyHint[] = [
+  { keys: ['f'], label: 'then label to open' },
+  { keys: ['Leader', '⇧R'], label: 'to reopen later' },
+];
 
 /**
  * The Board's meta line. Step count sits next to the block count: on a
@@ -121,8 +128,8 @@ export class DocCardRow extends TranscriptRow {
         },
         action: artifact.available
           ? artifact.hintLabel
-            ? `press ${artifact.hintLabel} to open in browser`
-            : 'f then label to open in browser'
+            ? [{ keys: [artifact.hintLabel], label: 'to open in browser' }]
+            : ARTIFACT_OPEN_HINT
           : 'reopen unavailable',
       };
     }
@@ -136,8 +143,8 @@ export class DocCardRow extends TranscriptRow {
           meta: reviewMetaText(review),
         },
         action: review.hintLabel
-          ? `press ${review.hintLabel} to open the review`
-          : 'f then label to open \u00b7 Leader Shift+R to reopen later',
+          ? [{ keys: [review.hintLabel], label: 'to open the review' }]
+          : REVIEW_OPEN_HINT,
       };
     }
     return null;

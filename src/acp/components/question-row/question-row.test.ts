@@ -77,7 +77,12 @@ describe('QuestionRow', () => {
           '<span class="acp-harness__question-label">Other</span>' +
         '</div>' +
       '</div>' +
-      '<div class="acp-harness__question-actions">1–9 pick · Enter · x skip · z other</div>',
+      '<div class="acp-harness__question-actions">' +
+        '<span class="krypton-key-hint"><kbd>1–9</kbd> pick</span> · ' +
+        '<span class="krypton-key-hint"><kbd>Enter</kbd></span> · ' +
+        '<span class="krypton-key-hint"><kbd>x</kbd> skip</span> · ' +
+        '<span class="krypton-key-hint"><kbd>z</kbd> other</span>' +
+      '</div>',
     );
     row.dispose();
   });

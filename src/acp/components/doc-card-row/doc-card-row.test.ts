@@ -61,7 +61,8 @@ describe('DocCardRow — artifact', () => {
         '<span class="acp-harness__artifact-title">Report</span>' +
         '</div>' +
         '<div class="acp-harness__artifact-meta">2.0 KB · abcdef1</div>' +
-        '<div class="acp-harness__artifact-action">f then label to open in browser</div>',
+        '<div class="acp-harness__artifact-action">' +
+        '<span class="krypton-key-hint"><kbd>f</kbd> then label to open in browser</span></div>',
     );
   });
 
@@ -86,7 +87,7 @@ describe('DocCardRow — artifact', () => {
     );
     expect(row.el.querySelector('.acp-harness__artifact-hint')?.textContent).toBe('q');
     expect(row.el.querySelector('.acp-harness__artifact-action')?.textContent).toBe(
-      'press q to open in browser',
+      'q to open in browser',
     );
 
     row.update(props(artifact({ hintLabel: null })));
@@ -111,7 +112,8 @@ describe('DocCardRow — review', () => {
         '</div>' +
         '<div class="acp-harness__review-card-meta">4 blocks · 2 steps · 1 finding</div>' +
         '<div class="acp-harness__review-card-action">' +
-        'f then label to open · Leader Shift+R to reopen later</div>',
+        '<span class="krypton-key-hint"><kbd>f</kbd> then label to open</span> · ' +
+        '<span class="krypton-key-hint"><kbd>Leader</kbd> <kbd>⇧R</kbd> to reopen later</span></div>',
     );
     expect(row.el.querySelector('[class*="acp-harness__artifact"]')).toBeNull();
   });

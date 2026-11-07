@@ -47,8 +47,8 @@ describe('ReviewThreadDialog', () => {
     expect(details?.tagName).toBe('PRE');
     expect(details?.getAttribute('aria-live')).toBe('polite');
     expect(details?.textContent).toBe('กำลังเก็บ preview…');
-    expect([...dialog.el.querySelectorAll('.acp-review-thread__actions button')].map((b) => b.textContent))
-      .toEqual(['Start Review · Enter', 'Cancel · Esc']);
+    expect([...dialog.el.querySelectorAll('.acp-review-thread__actions button')].map((b) => b.innerHTML))
+      .toEqual(['Start Review <kbd>Enter</kbd>', 'Cancel <kbd>Esc</kbd>']);
   });
 
   it('checks the base the props name, and follows a change back', () => {

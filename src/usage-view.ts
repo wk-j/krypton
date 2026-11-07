@@ -10,6 +10,7 @@
 import { CODEX_LOGO_MARK, GROK_LOGO_MARK, codeAgentLogoSvg } from './code-agent-logos';
 import type { ContentView, PaneContentType } from './types';
 import type { PaletteAction } from './palette-types';
+import { keyHintNodes } from './ui/kbd';
 import {
   codexAccountWindows,
   codexWindowLabel,
@@ -132,7 +133,13 @@ export class UsageContentView implements ContentView {
 
     const hints = document.createElement('div');
     hints.className = 'krypton-usage__hints';
-    hints.textContent = 'r refresh · j/k scroll · q close';
+    hints.append(
+      ...keyHintNodes([
+        { keys: ['r'], label: 'refresh' },
+        { keys: ['j', 'k'], keySeparator: '/', label: 'scroll' },
+        { keys: ['q'], label: 'close' },
+      ]),
+    );
     this.element.appendChild(hints);
 
     this.unsubscribe = usageStore.subscribe(this.providers, () => this.render());

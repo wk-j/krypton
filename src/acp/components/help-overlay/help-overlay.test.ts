@@ -21,7 +21,9 @@ describe('HelpOverlay', () => {
     const overlay = mount(true);
     expect(overlay.el.className).toBe('acp-harness__help-overlay');
     expect(overlay.el.querySelector('.acp-harness__help__title')?.textContent).toBe('ACP Harness Help');
-    expect(overlay.el.querySelector('.acp-harness__help__sub')?.textContent).toBe('Esc / ? / q closes');
+    expect(overlay.el.querySelector('.acp-harness__help__sub')?.textContent).toBe('Esc/?/q closes');
+    expect([...overlay.el.querySelectorAll('.acp-harness__help__sub kbd')].map((k) => k.textContent))
+      .toEqual(['Esc', '?', 'q']);
     const titles = [...overlay.el.querySelectorAll('.acp-harness__help-section h3')].map((h) => h.textContent);
     expect(titles).toEqual([
       'Lane Control',
@@ -47,7 +49,7 @@ describe('HelpOverlay', () => {
   it('pairs every term with its description, and keeps the kbd run in the Esc line', () => {
     const overlay = mount(true);
     const perms = [...overlay.el.querySelectorAll('.acp-harness__help-section')][2];
-    expect([...perms.querySelectorAll('dt')].map((dt) => dt.textContent))
+    expect([...perms.querySelectorAll('dt > kbd')].map((dt) => dt.textContent))
       .toEqual(['a', 'A', 'r', 'R', 'Esc']);
     const esc = [...perms.querySelectorAll('dd')][4];
     expect([...esc.querySelectorAll('kbd')].map((k) => k.textContent)).toEqual(['r', 'R']);

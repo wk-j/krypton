@@ -6,13 +6,11 @@
 // emits the live-voice strip above this row; that strip is its own component
 // and the composer root places it, so this one is the decision row alone.
 //
-// The hint run IS a `KeyHintBar` (`plain` style, `bare` layout, ` · `
-// separator): the block it paints into is the caller's, so
-// `.acp-harness__permission-options` comes out character-identical. The props
-// take the run EITHER as structured hints or as a ready string, because the two
-// call sites differ: the permission hint is a fixed four-key run and can be
-// described, while the question hint arrives pre-joined from
-// `questionActionsHint()` with its own conditional parts.
+// The hint run IS a `KeyHintBar` (`bare` layout, ` · ` separator): every key
+// is a `<kbd>` cap (spec 369). The block it paints into is the caller's
+// (`.acp-harness__permission-options`). Every caller passes structured hints:
+// the fixed permission and remote-command runs, and the question run that
+// `questionActionsHint()` builds from its conditional parts.
 //
 // The row's label reuses `.acp-harness__composer-meta`, which `composer-meta`
 // owns — including the `--permission` context rules that style it here. This
@@ -22,13 +20,14 @@ import './decision-composer.css';
 
 import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
-import { KeyHintBar, type KeyHint } from '../key-hint-bar';
+import { keyHintsSignature, type KeyHint } from '../../../ui/kbd';
+import { KeyHintBar } from '../key-hint-bar';
 import type { ComponentDef } from '../types';
 
 export interface DecisionComposerProps {
   /** `perm` / `ask`. */
   readonly label: string;
-  readonly hint: string | readonly KeyHint[];
+  readonly hint: readonly KeyHint[];
 }
 
 export class DecisionComposer extends Component<DecisionComposerProps> {
@@ -42,12 +41,7 @@ export class DecisionComposer extends Component<DecisionComposerProps> {
   }
 
   protected readDeps(next: DecisionComposerProps): readonly unknown[] {
-    return [
-      next.label,
-      typeof next.hint === 'string'
-        ? next.hint
-        : next.hint.map((hint) => `${hint.keys.join('\u0000')}\u0001${hint.label}`).join('\u0002'),
-    ];
+    return [next.label, keyHintsSignature(next.hint)];
   }
 
   protected syncClasses(): void {
@@ -59,8 +53,7 @@ export class DecisionComposer extends Component<DecisionComposerProps> {
     this.syncClasses();
     this.labelEl.textContent = next.label;
     this.hints.update({
-      hints: typeof next.hint === 'string' ? [{ keys: [], label: next.hint }] : next.hint,
-      style: 'plain',
+      hints: next.hint,
       layout: 'bare',
       separator: ' · ',
       block: 'acp-harness__permission-options',

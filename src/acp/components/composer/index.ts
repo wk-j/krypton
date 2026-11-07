@@ -29,6 +29,7 @@ import './composer.css';
 
 import { Component } from '../../../ui/component';
 import { classes, el, setChildren } from '../../../ui/dom';
+import type { KeyHint } from '../../../ui/kbd';
 import { syncOrder } from '../../../ui/list';
 import { ComposerMeta, type ComposerMetaProps } from '../composer-meta';
 import { DecisionComposer, type DecisionComposerProps } from '../decision-composer';
@@ -58,9 +59,9 @@ export interface ComposerPaletteProps {
   readonly rows: readonly InlinePaletteRow[];
   readonly cursor: number;
   /** The meta line above the rows — the key legend, which differs per variant. */
-  readonly hint: string;
+  readonly hint: readonly KeyHint[];
   /** Meta line when `rows` is empty. Only the mention palette has one. */
-  readonly zeroState?: string;
+  readonly zeroState?: readonly KeyHint[];
   /** Insert row `index`. Invoked by `commitPalette()` and by a row press. */
   commit?(index: number): void;
 }
@@ -201,6 +202,12 @@ export class Composer extends Component<ComposerProps> {
       this.palettes.verb.el,
       this.draft.el,
     ]);
+  }
+
+  /** Spec 280/369: the live controller's level ticks reach the strip here,
+   *  without a composer pass. The strip compares its own deps. */
+  patchLiveVoice(props: LiveVoiceStripProps): void {
+    this.liveVoice.update(props);
   }
 
   /**

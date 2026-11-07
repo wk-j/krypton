@@ -53,12 +53,12 @@
     text-shadow: var(--mat-engrave);
   }
 
-  .acp-harness__directive-head span:first-child {
+  .acp-harness__directive-head > span:first-child {
     flex: 0 0 auto;
     white-space: nowrap;
   }
 
-  .acp-harness__directive-head span:last-child {
+  .acp-harness__directive-head > span:last-child {
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-weight: 400;
     letter-spacing: 0.04em;

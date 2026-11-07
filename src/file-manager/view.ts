@@ -8,6 +8,7 @@
 import type { ContentView, PaneContentType } from '../types';
 import type { FileManagerAI } from '../file-manager-ai';
 import { el } from '../ui/dom';
+import type { KeyHint } from '../ui/kbd';
 import { Breadcrumb } from './components/breadcrumb';
 import { FileList } from './components/file-list';
 import { PreviewPane } from './components/preview-pane';
@@ -548,7 +549,7 @@ export class FileManagerView implements ContentView {
     const names = paths.map((p) => p.split('/').pop()).join(', ');
     const label = paths.length === 1 ? `Delete ${names}?` : `Delete ${paths.length} items?`;
 
-    this.flashStatus(`${label} [y/N]`, 'confirm');
+    this.flashStatus(label, 'confirm', undefined, [{ keys: ['y', 'N'], label: '', keySeparator: '/' }]);
     s.confirmAction = async () => {
       for (const p of paths) {
         try {
@@ -685,9 +686,10 @@ export class FileManagerView implements ContentView {
     this.preview.update({ hidden: this.state.previewHidden, output: this.previewOutput });
   }
 
-  /** Write a transient status; `resetMs` schedules a normal re-render. */
-  private flashStatus(text: string, tone: StatusTone, resetMs?: number): void {
-    this.status.update({ text, tone });
+  /** Write a transient status; `resetMs` schedules a normal re-render. `hints`
+   *  draw as key caps after the text. */
+  private flashStatus(text: string, tone: StatusTone, resetMs?: number, hints?: readonly KeyHint[]): void {
+    this.status.update({ text, tone, hints });
     if (resetMs !== undefined) this.scheduleStatusReset(resetMs);
   }
 

@@ -10,7 +10,7 @@
 //   Assist · /Users/wk/Source/krypton
 //   Instance      acp:3
 //   Conversation  fb1176f1-…      one label column for every group
-//   j/k · Home/End · [ ] tab · esc
+//   j/k · Home/End · [ ] tab · Esc   each key a cap
 //
 // Compact by layout, not by type: every line is the dock's body size. Two
 // lines per row, a third only while lifecycle or liveness is unsettled or an
@@ -27,6 +27,7 @@ import './assistant-instances.css';
 import type { AssistantInstance, AssistantInventoryState } from '../../../assistant-instance-store';
 import { Component } from '../../../ui/component';
 import { el, setAttr } from '../../../ui/dom';
+import { keyHintNodes, type KeyHint } from '../../../ui/kbd';
 import { disposeList, reconcile } from '../../../ui/list';
 import { formatCpu, formatRss } from '../../harness-format';
 import { harnessIconEl, harnessSymbolEl } from '../../harness-icons';
@@ -42,7 +43,12 @@ export interface AssistantInstancesProps {
 
 const B = 'acp-assistant-instances';
 const STALE_AFTER_MS = 6000;
-const KEY_HINTS = 'j/k · Home/End · [ ] tab · esc';
+const KEY_HINTS: readonly KeyHint[] = [
+  { keys: ['j', 'k'], label: '', keySeparator: '/' },
+  { keys: ['Home', 'End'], label: '', keySeparator: '/' },
+  { keys: ['[', ']'], label: 'tab' },
+  { keys: ['Esc'], label: '' },
+];
 const LOGO_PREFIX = 'krypton-logo-';
 const ROLE_LABELS: Record<AssistantInstance['owner']['role'], string> = {
   harness_lane: 'Harness lane', session_probe: 'Session probe', assist: 'Assist',
@@ -474,7 +480,7 @@ export class AssistantInstances extends Component<AssistantInstancesProps> {
       summary,
       el('div', { class: `${B}__body` }, this.emptyEl, this.rowsEl),
       this.details.el,
-      el('footer', { class: `${B}__keys`, text: KEY_HINTS }),
+      el('footer', { class: `${B}__keys`, children: keyHintNodes(KEY_HINTS) }),
     );
   }
 

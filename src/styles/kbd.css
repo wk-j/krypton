@@ -1,0 +1,35 @@
+/* Spec 369 — the one rule that draws a key cap (DESIGN.md "Key cap").
+
+   Every keyboard shortcut drawn in DOM text is a `<kbd>` built by
+   src/ui/kbd.ts. Caps take no theme colours: they are material, read from the
+   `--mat-*` tokens in materials.css, which swap to aluminium in the light
+   scheme. A component may resize a cap in a dense row; it never recolours one.
+
+   `line-height: 1.1` keeps the cap inside its host's line box, so a row that
+   gains a cap does not grow. Imported by index.css and live-assist-main.ts
+   (Live Assist does not load index.css). */
+
+@layer krypton.base {
+  kbd {
+    display: inline-block;
+    padding: 0 4px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 4px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--mat-lit);
+    font: inherit;
+    font-size: 0.92em;
+    font-style: normal;
+    line-height: 1.1;
+    letter-spacing: normal;
+    text-transform: none;
+    text-shadow: var(--mat-print);
+    white-space: nowrap;
+  }
+
+  /* One hint: its caps and its legend never wrap apart. */
+  .krypton-key-hint {
+    white-space: nowrap;
+  }
+}

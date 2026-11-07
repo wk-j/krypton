@@ -25,7 +25,7 @@ const BASE: ComposerMetaProps = {
     },
   ],
   branch: { ref: 'main', title: '/Users/wk/Source/krypton on main' },
-  helpHint: '? help',
+  helpHint: [{ keys: ['?'], label: 'help' }],
 };
 
 const writes = (el: HTMLElement, run: () => void): number => {
@@ -64,7 +64,7 @@ describe('ComposerMeta', () => {
         '<span class="acp-harness__project-branch">main</span></span>' +
         '</div>' +
         '<div class="acp-harness__composer-tools">' +
-        '<span class="acp-harness__help-hint">? help</span>' +
+        '<span class="acp-harness__help-hint"><span class="krypton-key-hint"><kbd>?</kbd> help</span></span>' +
         '</div>' +
         '</div>',
     );
@@ -183,9 +183,9 @@ describe('ComposerMeta', () => {
     const mic = document.createElement('button');
     meta.toolsEl.appendChild(mic);
 
-    meta.update({ ...BASE, helpHint: '? help · esc' });
+    meta.update({ ...BASE, helpHint: [{ keys: ['?'], label: 'help' }, { keys: ['Esc'], label: '' }] });
 
     expect(mic.parentElement).toBe(meta.toolsEl);
-    expect(meta.toolsEl.firstElementChild?.textContent).toBe('? help · esc');
+    expect(meta.toolsEl.firstElementChild?.textContent).toBe('? help · Esc');
   });
 });

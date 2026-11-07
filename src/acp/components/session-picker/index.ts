@@ -21,6 +21,7 @@ import './session-picker.css';
 
 import { Component } from '../../../ui/component';
 import { el, frag } from '../../../ui/dom';
+import type { KeyHint } from '../../../ui/kbd';
 import { formatSessionUpdatedAt, normalizePathForCompare, shortId } from '../../harness-format';
 import { backendLabel } from '../../harness-lane-identity';
 import type { AcpBackendDescriptor, AcpSessionCapabilities, AcpSessionInfo } from '../../types';
@@ -39,8 +40,16 @@ const PARTS: OverlayShellParts = {
   empty: `${BLOCK}-empty`,
 };
 
-const BACKEND_HINTS = 'j/k move · enter list · esc cancel';
-const ERROR_HINTS = 'b switch backend · n fresh · esc cancel';
+const BACKEND_HINTS: readonly KeyHint[] = [
+  { keys: ['j', 'k'], label: 'move', keySeparator: '/' },
+  { keys: ['Enter'], label: 'list' },
+  { keys: ['Esc'], label: 'cancel' },
+];
+const ERROR_HINTS: readonly KeyHint[] = [
+  { keys: ['b'], label: 'switch backend' },
+  { keys: ['n'], label: 'fresh' },
+  { keys: ['Esc'], label: 'cancel' },
+];
 const LOADING_HINTS = 'initializing...';
 const LOADING_TEXT = 'loading sessions';
 const ERROR_FALLBACK = 'session list unavailable';
@@ -76,7 +85,7 @@ export interface SessionPickerProps {
   readonly sessionCursor: number;
   /** Decides the per-row action word and whether rows read as disabled. */
   readonly capabilities: AcpSessionCapabilities | null;
-  /** A further page exists — adds `· PageDown more` to the head hints. */
+  /** A further page exists — adds `· PgDn more` to the head hints. */
   readonly nextCursor: string | null;
   readonly error: string | null;
   /** A session whose cwd differs from this shows its cwd in the row meta. */
@@ -175,11 +184,17 @@ export class SessionPicker extends Component<SessionPickerProps> {
       indexAttr: false,
       listClass: `${BLOCK}-list`,
     });
-    const page = next.nextCursor === null ? '' : ' · PageDown more';
+    const sub: KeyHint[] = [
+      { keys: ['Enter'], label: action },
+      { keys: ['b'], label: 'backend' },
+      { keys: ['n'], label: 'fresh' },
+    ];
+    if (next.nextCursor !== null) sub.push({ keys: ['PgDn'], label: 'more' });
+    sub.push({ keys: ['Esc'], label: 'cancel' });
     this.shell.update({
       ...this.frame(next),
       title: `// ${backendName} sessions`,
-      sub: `enter ${action} · b backend · n fresh${page} · esc cancel`,
+      sub,
       body: this.sessionList.el,
       extras: this.extrasFor(next),
     });

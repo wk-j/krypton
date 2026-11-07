@@ -22,6 +22,7 @@
 
 import { Component } from '../../../ui/component';
 import { classes, el } from '../../../ui/dom';
+import { keyHintNodes, keyHintsSignature } from '../../../ui/kbd';
 import { disposeList, reconcile, syncOrder } from '../../../ui/list';
 import {
   optionHotkey,
@@ -178,6 +179,7 @@ export class QuestionRow extends TranscriptRow {
   private readonly head = new QuestionHead();
   private readonly list = el('div', { class: 'acp-harness__question-options' });
   private readonly actions = el('div', { class: 'acp-harness__question-actions' });
+  private actionsSignature: string | null = null;
   private detail: HTMLElement | null = null;
   private followFrame: number | null = null;
 
@@ -266,7 +268,12 @@ export class QuestionRow extends TranscriptRow {
     });
     nodes.push(this.list);
 
-    this.actions.textContent = questionActionsHint(current, payload.wire, payload.otherFocused);
+    const hints = questionActionsHint(current, payload.wire, payload.otherFocused);
+    const signature = keyHintsSignature(hints);
+    if (signature !== this.actionsSignature) {
+      this.actionsSignature = signature;
+      this.actions.replaceChildren(...keyHintNodes(hints));
+    }
     nodes.push(this.actions);
     syncOrder(body, nodes);
     this.followCursor();

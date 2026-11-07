@@ -11,6 +11,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { invoke } from './profiler/ipc';
 import { openExternalUrl } from './external-url';
 import { getHome } from './file-manager/ops';
+import { keyHintNodes } from './ui/kbd';
 
 import type { ContentView, LeaderKeyBinding, LeaderKeySpec, PaneContentType } from './types';
 import type { MarkdownViewAI } from './markdown-view-ai';
@@ -952,7 +953,12 @@ export class MarkdownContentView implements ContentView {
   private updateSelectIndicator(): void {
     if (!this.selectIndicator) return;
     const count = Math.abs(this.selectCursor - this.selectAnchor) + 1;
-    this.selectIndicator.textContent = `SELECT · ${count} block${count > 1 ? 's' : ''} · y:yank md  Y:yank context  Esc:cancel`;
+    this.selectIndicator.replaceChildren(...keyHintNodes([
+      { keys: [], label: `SELECT · ${count} block${count > 1 ? 's' : ''}` },
+      { keys: ['y'], label: 'yank md' },
+      { keys: ['Y'], label: 'yank context' },
+      { keys: ['Esc'], label: 'cancel' },
+    ]));
   }
 
   private hideSelectIndicator(): void {

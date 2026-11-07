@@ -103,14 +103,6 @@
   box-shadow: var(--mat-lens-glow);
 }
 
-.krypton-search-palette__tab-key {
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: none;
-  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
-  text-shadow: none;
-}
-
 /* ─── Input ─── */
 
 .krypton-search-palette__input-row {
@@ -310,10 +302,9 @@
 }
 
 .krypton-search-palette__key {
+  display: inline-flex;
   flex-shrink: 0;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+  gap: 3px;
 }
 
 /* Files rows */

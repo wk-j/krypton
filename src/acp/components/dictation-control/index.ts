@@ -95,7 +95,7 @@ export class DictationControl extends Component<DictationControlProps> {
     setAttr(
       this.el,
       'title',
-      next.active ? 'Stop dictation (Cmd+D)' : 'English: Cmd+D · Thai: Cmd+Shift+D',
+      next.active ? 'Stop dictation (⌘D)' : 'English: ⌘D · Thai: ⌘⇧D',
     );
     this.labelEl.textContent = labelFor(next);
     // A running session has one chord left (stop); an idle one advertises both

@@ -88,6 +88,8 @@ describe('TriageOverlay', () => {
     expect(overlay.el.querySelector('.acp-triage__caret')).toBeNull();
     expect(overlay.el.querySelector('.acp-triage__action-hint')?.textContent)
       .toBe('Enter send · Esc cancel — delivered on the lane’s next idle');
+    expect([...overlay.el.querySelectorAll('.acp-triage__action-hint kbd')].map((k) => k.textContent))
+      .toEqual(['Enter', 'Esc']);
   });
 
   it('shows the empty state with the silent pile count and drops the card', () => {

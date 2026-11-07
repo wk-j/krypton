@@ -27,7 +27,7 @@ describe('DictationControl', () => {
     expect(control.el.outerHTML).toBe(
       '<button class="acp-harness__dictation acp-harness__dictation--idle" type="button" ' +
         'data-dictation-toggle="" aria-label="Start English dictation" aria-pressed="false" ' +
-        'title="English: Cmd+D · Thai: Cmd+Shift+D">' +
+        'title="English: ⌘D · Thai: ⌘⇧D">' +
         '<span class="acp-harness__dictation-dot" aria-hidden="true">●</span>' +
         '<span data-dictation-label="" aria-live="polite">MIC</span>' +
         '<span class="acp-harness__dictation-key">⌘D</span>' +
@@ -62,7 +62,7 @@ describe('DictationControl', () => {
     expect(control.el.querySelectorAll('.acp-harness__dictation-key')).toHaveLength(1);
     expect(control.el.getAttribute('aria-label')).toBe('Stop dictation');
     expect(control.el.getAttribute('aria-pressed')).toBe('true');
-    expect(control.el.getAttribute('title')).toBe('Stop dictation (Cmd+D)');
+    expect(control.el.getAttribute('title')).toBe('Stop dictation (⌘D)');
 
     control.update(IDLE);
     expect(control.el.querySelectorAll('.acp-harness__dictation-key')).toHaveLength(2);

@@ -15,6 +15,7 @@ import './rail-entry.css';
 
 import { Component } from '../../../ui/component';
 import { classes, el } from '../../../ui/dom';
+import { keyHintNodes, keyHintsSignature, type KeyHint } from '../../../ui/kbd';
 import { syncOrder } from '../../../ui/list';
 import { formatCount } from '../../harness-format';
 import type { CommandRunView } from '../../harness-command-runs';
@@ -74,9 +75,9 @@ export class RailEntry extends Component<RailEntryProps> {
   private readonly chipPool = new Map<string, Chip>();
   private logoId: string | null = null;
   private accent: string | null = null;
-  /** Derived in `readDeps()` so the string the meta line shows is itself the
-   *  dependency — `pendingPermissions[0]` is mutated in place. */
-  private nextHint = '';
+  /** Derived in `readDeps()` so the hint the meta line shows is itself the
+   *  dependency (by its signature) — `pendingPermissions[0]` is mutated in place. */
+  private nextHint: readonly KeyHint[] = [];
   /** spec 343: the run text the meta line shows; '' when none or a decision wins. */
   private nextRun = '';
 
@@ -87,7 +88,7 @@ export class RailEntry extends Component<RailEntryProps> {
 
   protected readDeps(next: RailEntryProps): readonly unknown[] {
     const lane = next.lane;
-    this.nextHint = next.directive ? '' : railStatusHint(lane);
+    this.nextHint = next.directive ? [] : railStatusHint(lane);
     this.nextRun = railRunText(next);
     return [
       lane.status,
@@ -108,7 +109,7 @@ export class RailEntry extends Component<RailEntryProps> {
       next.directive?.directive.task,
       next.directive?.pending,
       next.reviewCount,
-      this.nextHint,
+      keyHintsSignature(this.nextHint),
       this.nextRun,
       next.runs.map((run) => run.text).join('\n'),
     ];
@@ -237,7 +238,7 @@ export class RailEntry extends Component<RailEntryProps> {
         syncOrder(this.metaEl, [this.metaRunEl]);
         return;
       }
-      this.metaHintEl.textContent = this.nextHint;
+      this.metaHintEl.replaceChildren(...keyHintNodes(this.nextHint));
       syncOrder(this.metaEl, [this.metaHintEl]);
       return;
     }
@@ -295,14 +296,19 @@ function railRunText(next: RailEntryProps): string {
   return rest.length > 0 ? `${first.text} +${rest.length}` : first.text;
 }
 
-/** The meta hint for a lane with no directive bound. */
-function railStatusHint(lane: HarnessLane): string {
-  if (lane.status !== 'needs_permission') return statusLabel(lane.status);
+/** The meta hint for a lane with no directive bound; a decision's keys are caps. */
+function railStatusHint(lane: HarnessLane): readonly KeyHint[] {
+  const status: readonly KeyHint[] = [{ keys: [], label: statusLabel(lane.status) }];
+  if (lane.status !== 'needs_permission') return status;
   if (lane.pendingPermissions.length > 0) return compactPermissionMeta(lane.pendingPermissions[0]);
   if (lane.pendingQuestions.length > 0) {
-    return `ask · 1–9/Enter · x ${lane.pendingQuestions[0]?.wire === 'elicitation' ? 'decline' : 'skip'}`;
+    return [
+      { keys: [], label: 'ask' },
+      { keys: ['1–9', 'Enter'], label: '', keySeparator: '/' },
+      { keys: ['x'], label: lane.pendingQuestions[0]?.wire === 'elicitation' ? 'decline' : 'skip' },
+    ];
   }
-  return statusLabel(lane.status);
+  return status;
 }
 
 export const def: ComponentDef = {

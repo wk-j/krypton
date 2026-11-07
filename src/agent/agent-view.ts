@@ -19,6 +19,7 @@ import type { ContentView, PaneContentType } from '../types';
 import { contentRootIsInFocusedWindow } from '../content-focus';
 import { invoke } from '../profiler/ipc';
 import { STREAMING_GRID_MAX_LINES, gridifyCodeBlocks, gridifyText } from '../acp/cell-grid';
+import { keyCap, keyHint, keyHintNodes, type KeyHint } from '../ui/kbd';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -252,7 +253,19 @@ export class AgentView implements ContentView {
     // State hint (scroll mode indicator)
     this.stateHintEl = document.createElement('div');
     this.stateHintEl.className = 'agent-view__state-hint';
-    this.stateHintEl.textContent = 'SCROLL  g/G top/bot  j/k lines  y yank  c context  i insert';
+    this.stateHintEl.replaceChildren(
+      'SCROLL  ',
+      ...keyHintNodes(
+        [
+          { keys: ['g', 'G'], keySeparator: '/', label: 'top/bot' },
+          { keys: ['j', 'k'], keySeparator: '/', label: 'lines' },
+          { keys: ['y'], label: 'yank' },
+          { keys: ['c'], label: 'context' },
+          { keys: ['i'], label: 'insert' },
+        ],
+        '  ',
+      ),
+    );
 
     // Input row
     this.inputRowEl = document.createElement('div');
@@ -329,7 +342,7 @@ export class AgentView implements ContentView {
     this.logoEl.innerHTML =
       '<div class="agent-view__logo-inner">' +
       '<div class="agent-view__logo-title">KRYPTON <span class="agent-view__logo-accent">AI</span></div>' +
-      '<div class="agent-view__logo-sub">type a prompt · ↵ send · ⇧↵ newline · esc scroll</div>' +
+      '<div class="agent-view__logo-sub"></div>' +
       '<div class="agent-view__logo-hints">' +
       '<span class="agent-view__logo-cmd">/skills</span><span class="agent-view__logo-desc">list available skills</span>' +
       '<span class="agent-view__logo-cmd">/check</span><span class="agent-view__logo-desc">run the project check command</span>' +
@@ -337,6 +350,14 @@ export class AgentView implements ContentView {
       '<span class="agent-view__logo-cmd">/model</span><span class="agent-view__logo-desc">show or switch the model</span>' +
       '</div>' +
       '</div>';
+    this.logoEl.querySelector('.agent-view__logo-sub')?.replaceChildren(
+      ...keyHintNodes([
+        { keys: [], label: 'type a prompt' },
+        { keys: ['Enter'], label: 'send' },
+        { keys: ['⇧Enter'], label: 'newline' },
+        { keys: ['Esc'], label: 'scroll' },
+      ]),
+    );
 
     this.element.appendChild(this.logoEl);
     this.element.appendChild(this.messagesEl);
@@ -444,7 +465,7 @@ export class AgentView implements ContentView {
 
     const hint = document.createElement('span');
     hint.className = 'agent-view__staging-hint';
-    hint.textContent = 'Ctrl+C to clear';
+    hint.replaceChildren(keyHint({ keys: ['⌃C'], label: 'to clear' }));
     this.stagingAreaEl.appendChild(hint);
   }
 
@@ -725,10 +746,11 @@ export class AgentView implements ContentView {
     const summary = document.createElement('div');
     summary.className = 'agent-view__diff-summary';
     const stats = `+${additions} -${deletions}`;
+    const fullDiff = keyHint({ keys: ['Enter'], label: '→ full diff' });
     if (remaining > 0) {
-      summary.textContent = `${stats}  … ${remaining} more lines  Enter → full diff`;
+      summary.replaceChildren(`${stats}  … ${remaining} more lines  `, fullDiff);
     } else {
-      summary.textContent = `${stats}  Enter → full diff`;
+      summary.replaceChildren(`${stats}  `, fullDiff);
     }
     preview.appendChild(summary);
 
@@ -971,14 +993,14 @@ export class AgentView implements ContentView {
       wrap.textContent = `→ ${resolved}${auto ? ' (turn)' : ''}`;
       return wrap;
     }
-    const accept = kind === 'write' ? '[a]ccept' : '[a]run';
-    const reject = kind === 'write' ? '[r]eject' : '[r]block';
-    const a = document.createElement('span');
-    a.className = 'agent-view__msg-review-key agent-view__msg-review-key--accept';
-    a.textContent = accept;
-    const r = document.createElement('span');
-    r.className = 'agent-view__msg-review-key agent-view__msg-review-key--reject';
-    r.textContent = reject;
+    const a = keyHint(
+      { keys: ['a'], label: kind === 'write' ? 'accept' : 'run' },
+      'agent-view__msg-review-key agent-view__msg-review-key--accept',
+    );
+    const r = keyHint(
+      { keys: ['r'], label: kind === 'write' ? 'reject' : 'block' },
+      'agent-view__msg-review-key agent-view__msg-review-key--reject',
+    );
     wrap.appendChild(a);
     wrap.appendChild(r);
     if (kind === 'command' && highRisk) {
@@ -991,7 +1013,12 @@ export class AgentView implements ContentView {
       // Distinct turn-wide affordance (not a faint inline hint).
       const turn = document.createElement('span');
       turn.className = 'agent-view__msg-review-turn';
-      turn.textContent = '[A]all  [R]all';
+      turn.replaceChildren(
+        ...keyHintNodes([
+          { keys: ['A'], label: 'all' },
+          { keys: ['R'], label: 'all' },
+        ]),
+      );
       wrap.appendChild(turn);
     }
     return wrap;
@@ -1525,7 +1552,7 @@ export class AgentView implements ContentView {
     const button = document.createElement('button');
     button.className = 'agent-view__check-actions-button';
     button.type = 'button';
-    button.textContent = 'f send to agent';
+    button.replaceChildren(keyCap('f'), ' send to agent');
     button.addEventListener('click', () => {
       void this.sendLastCheckFailureToAgent();
     });
@@ -1766,7 +1793,7 @@ export class AgentView implements ContentView {
     return true;
   }
 
-  private formatHelp(): string {
+  private formatHelp(): Node[] {
     const lines: string[] = ['Available commands:'];
     for (const [cmd, info] of Object.entries(AgentView.COMMANDS)) {
       lines.push(`  ${cmd.padEnd(12)} ${info.description}`);
@@ -1787,17 +1814,25 @@ export class AgentView implements ContentView {
     lines.push('  !<command>    Execute shell command directly');
     lines.push('                 Example: !ls -la, !git status');
     lines.push('');
-    lines.push('Keyboard shortcuts (scroll mode — Escape with empty input):');
-    lines.push('  j/k          Scroll lines');
-    lines.push('  g/G          Top/bottom');
-    lines.push('  y/Y          Yank last/all');
-    lines.push('  c            Context inspector');
-    lines.push('  q            Close tab');
-    lines.push('  i/Escape     Back to input');
-    return lines.join('\n');
+    lines.push('Keyboard shortcuts (scroll mode — Esc with empty input):');
+    const bindings: readonly KeyHint[] = [
+      { keys: ['j', 'k'], keySeparator: '/', label: 'Scroll lines' },
+      { keys: ['g', 'G'], keySeparator: '/', label: 'Top/bottom' },
+      { keys: ['y', 'Y'], keySeparator: '/', label: 'Yank last/all' },
+      { keys: ['c'], label: 'Context inspector' },
+      { keys: ['q'], label: 'Close tab' },
+      { keys: ['i', 'Esc'], keySeparator: '/', label: 'Back to input' },
+    ];
+    // One block per binding: caps vary in width, so no space-padded column.
+    const rows = bindings.map((binding) => {
+      const row = document.createElement('div');
+      row.append('  ', keyHint(binding));
+      return row;
+    });
+    return [document.createTextNode(lines.join('\n')), ...rows];
   }
 
-  private showSystemMessage(text: string): void {
+  private showSystemMessage(content: string | readonly Node[]): void {
     const msg = document.createElement('div');
     msg.className = 'agent-view__msg agent-view__msg--system';
 
@@ -1807,7 +1842,8 @@ export class AgentView implements ContentView {
 
     const body = document.createElement('div');
     body.className = 'agent-view__msg-body agent-view__msg-body--system';
-    body.textContent = text;
+    if (typeof content === 'string') body.textContent = content;
+    else body.replaceChildren(...content);
 
     msg.appendChild(label);
     msg.appendChild(body);
@@ -2485,17 +2521,24 @@ export class AgentView implements ContentView {
     const autoCmds = this.acceptAllCommandsForTurn;
     const blocking = this.rejectAllWritesForTurn || this.rejectAllCommandsForTurn;
     let label = '';
+    let keys: KeyHint | null = null;
     let variant: 'bypass' | 'accept-edits' | '' = '';
+    const shiftTabOrEsc: KeyHint = { keys: ['⇧Tab', 'Esc'], keySeparator: '/', label: '' };
+    const esc: KeyHint = { keys: ['Esc'], label: '' };
     if (this.permissionMode === 'bypass') {
-      label = '⚠ BYPASS · ⇧⇥/esc';
+      label = '⚠ BYPASS · ';
+      keys = shiftTabOrEsc;
       variant = 'bypass';
     } else if (autoFiles || autoCmds) {
       const what = autoFiles && autoCmds ? 'FILES+CMDS' : autoFiles ? 'FILES' : 'CMDS';
-      label = `⚠ AUTO-RUN ${what} · esc`;
+      label = `⚠ AUTO-RUN ${what} · `;
+      keys = esc;
     } else if (blocking) {
-      label = '⚠ AUTO-BLOCK · esc';
+      label = '⚠ AUTO-BLOCK · ';
+      keys = esc;
     } else if (this.permissionMode === 'acceptEdits') {
-      label = '◆ auto-edit · ⇧⇥/esc';
+      label = '◆ auto-edit · ';
+      keys = shiftTabOrEsc;
       variant = 'accept-edits';
     }
     this.statusArmedEl.classList.toggle('agent-view__armed--bypass', variant === 'bypass');
@@ -2503,8 +2546,8 @@ export class AgentView implements ContentView {
       'agent-view__armed--accept-edits',
       variant === 'accept-edits',
     );
-    if (label) {
-      this.statusArmedEl.textContent = label;
+    if (label && keys) {
+      this.statusArmedEl.replaceChildren(label, keyHint(keys));
       this.statusArmedEl.style.display = '';
     } else {
       this.statusArmedEl.textContent = '';

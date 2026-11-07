@@ -25,7 +25,7 @@ describe('GrammarPanel', () => {
     expect(text(panel, 'label')).toEqual(['grammar · 2 fixes']);
     expect(text(panel, 'fix')).toEqual(['curent → current', 'What → What are']);
     expect(text(panel, 'corrected')).toEqual(['What are the current changes in git?']);
-    expect(text(panel, 'hint')).toEqual(['cmd+g use · cmd+0 dismiss']);
+    expect(text(panel, 'hint')).toEqual(['⌘G use · ⌘0 dismiss']);
   });
 
   it('shows the checked prompt while pending', () => {
@@ -54,11 +54,11 @@ describe('GrammarPanel', () => {
 });
 
 describe('GrammarPanel — colour hooks', () => {
-  it('splits each fix into wrong / right spans and the keys into kbd chips', () => {
+  it('splits each fix into wrong / right spans and the keys into key caps', () => {
     const panel = new GrammarPanel();
     panel.update(FIXES);
     expect(text(panel, 'wrong')).toEqual(['curent', 'What']);
     expect(text(panel, 'right')).toEqual(['current', 'What are']);
-    expect(text(panel, 'key')).toEqual(['cmd+g', 'cmd+0']);
+    expect([...panel.el.querySelectorAll('.acp-harness__grammar-hint kbd')].map((node) => node.textContent)).toEqual(['⌘G', '⌘0']);
   });
 });

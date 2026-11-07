@@ -13,18 +13,32 @@
 // plus its dispatcher branch at `:362-365`. Markup is unchanged — `DiffBlock`
 // in `paired` mode emits exactly what `renderDiffPreview()` wrote as a string.
 
-import { el } from '../../../ui/dom';
+import { el, type ElChild } from '../../../ui/dom';
+import { keyHint, type KeyHint } from '../../../ui/kbd';
 import { syncOrder } from '../../../ui/list';
 import { DiffBlock, pairedDiffRows, type DiffRow } from '../diff-block';
 import { TranscriptRow, type RowProps } from '../transcript-row';
 import type { ComponentDef } from '../types';
 import './fs-write-review-row.css';
 
-const ACTIONS: readonly { readonly modifier: string; readonly text: string }[] = [
-  { modifier: 'accept', text: '[a] accept' },
-  { modifier: 'reject', text: '[r] reject' },
-  { modifier: 'accept-all', text: '[A] accept all' },
+// Spec 369 rule 3: the actions are hint runs (cap + legend), not fake keys.
+// The modifier colours the legend; the cap stays material.
+const ACTIONS: readonly { readonly modifier: string; readonly hint: KeyHint }[] = [
+  { modifier: 'accept', hint: { keys: ['a'], label: 'accept' } },
+  { modifier: 'reject', hint: { keys: ['r'], label: 'reject' } },
+  { modifier: 'accept-all', hint: { keys: ['A'], label: 'accept all' } },
 ];
+
+function actionNodes(): ElChild[] {
+  const nodes: ElChild[] = [];
+  ACTIONS.forEach((action, index) => {
+    if (index > 0) nodes.push(' · ');
+    nodes.push(
+      keyHint(action.hint, `acp-harness__fs-review-action acp-harness__fs-review-action--${action.modifier}`),
+    );
+  });
+  return nodes;
+}
 
 export class FsWriteReviewRow extends TranscriptRow {
   private readonly head = el('div', { class: 'acp-harness__fs-review-head' });
@@ -83,16 +97,7 @@ export class FsWriteReviewRow extends TranscriptRow {
       );
     } else {
       nodes.push(
-        el(
-          'div',
-          { class: 'acp-harness__fs-review-actions' },
-          ...ACTIONS.map((action) =>
-            el('span', {
-              class: `acp-harness__fs-review-action acp-harness__fs-review-action--${action.modifier}`,
-              text: action.text,
-            }),
-          ),
-        ),
+        el('div', { class: 'acp-harness__fs-review-actions' }, ...actionNodes()),
       );
     }
     syncOrder(body, nodes);

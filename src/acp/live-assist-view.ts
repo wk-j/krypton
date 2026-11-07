@@ -1,6 +1,7 @@
 import type { Parser as MarkdownParser } from 'streaming-markdown';
 
 import { openExternalUrl } from '../external-url';
+import { keyHintNodes, type KeyHint } from '../ui/kbd';
 
 import {
   agentLinkOpenAction,
@@ -16,6 +17,11 @@ import type {
   LiveAssistSnapshot,
   LiveAssistTranscriptItem,
 } from './live-assist-types';
+
+const PERMISSION_HINTS: readonly KeyHint[] = [
+  { keys: ['A'], label: 'accept' },
+  { keys: ['R'], label: 'reject' },
+];
 
 const TRANSCRIPT_TAIL = 120;
 const BUSY_STATUSES = new Set(['busy', 'needs_permission', 'awaiting_peer']);
@@ -140,7 +146,7 @@ export class LiveAssistView {
     permissionCopy.append(permissionTitle, this.permissionToolEl);
     const permissionKeys = document.createElement('p');
     permissionKeys.className = 'live-assist__permission-keys';
-    permissionKeys.textContent = 'A accept · R reject';
+    permissionKeys.replaceChildren(...keyHintNodes(PERMISSION_HINTS));
     this.permissionEl.append(permissionCopy, permissionKeys);
 
     this.composer = document.createElement('form');
@@ -700,7 +706,7 @@ export class LiveAssistView {
       this.permissionToolEl.textContent = permission
         ? `Allow ${permission.tool}? Only the oldest request can be resolved.`
         : '';
-      if (keys) keys.textContent = 'A accept · R reject';
+      if (keys) keys.replaceChildren(...keyHintNodes(PERMISSION_HINTS));
       this.permissionEl.setAttribute('aria-label', 'Permission required. A accept, R reject.');
     }
     if (focusTarget === 'permission') {

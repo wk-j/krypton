@@ -120,7 +120,7 @@ describe('ReviewMatrixOverlay', () => {
     const overlay = mount();
     const foot = overlay.el.querySelector<HTMLElement>('.acp-review__foot');
     expect([...(foot?.querySelectorAll('span:not(.acp-review__foot-note)') ?? [])].map((s) => s.textContent))
-      .toEqual(['j k select round', 'esc close']);
+      .toEqual(['j/k select round', 'Esc close']);
     expect(foot?.querySelector('.acp-review__foot-note')?.textContent)
       .toBe('read-only — observation, not a score');
   });

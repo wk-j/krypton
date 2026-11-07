@@ -6,6 +6,7 @@
 
 import type { PaletteIconName } from './palette-icons';
 import type { PaneContentType } from './types';
+import type { KeyHint } from './ui/kbd';
 
 export type PaletteSection = 'context' | 'static';
 
@@ -53,9 +54,8 @@ export interface ScopeQueryResult {
 }
 
 /** A hint-bar entry. `kind` lets AcceptControl.flash light it up. */
-export interface ScopeHint {
-  text: string;
-  kind?: string;
+export interface ScopeHint extends KeyHint {
+  readonly kind?: string;
 }
 
 /** What a scope may do to the palette while it accepts a row. */

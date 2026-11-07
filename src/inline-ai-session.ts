@@ -96,7 +96,7 @@ export class InlineAcpSession {
     if (conversation.closed) throw new InlineAiError('inline AI: closed');
     const { backend } = conversation.cfg;
     if (this.client !== client) {
-      throw new InlineAiError(`inline AI: "${backend}" exited — press Cmd+K again`);
+      throw new InlineAiError(`inline AI: "${backend}" exited — press ⌘K again`);
     }
     const off = client.onEvent((event: AcpEvent) => {
       if (conversation.closed) return;

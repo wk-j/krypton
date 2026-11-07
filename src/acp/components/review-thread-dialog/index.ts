@@ -123,11 +123,12 @@ export class ReviewThreadDialog extends Component<ReviewThreadDialogProps> {
     this.details.textContent = next.preview;
     this.confirm.update({
       block: '',
-      label: 'Start Review · Enter',
+      label: 'Start Review',
+      shortcut: 'Enter',
       disabled: next.confirmDisabled,
       onClick: () => next.onConfirm(),
     });
-    this.cancel.update({ block: '', label: 'Cancel · Esc', onClick: () => next.onCancel() });
+    this.cancel.update({ block: '', label: 'Cancel', shortcut: 'Esc', onClick: () => next.onCancel() });
     setAttr(this.el, 'tabindex', -1);
     this.shell.update({
       open: next.open,

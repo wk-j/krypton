@@ -25,6 +25,7 @@ import type {
 import { gridifyCodeBlocks, gridifyText } from '../acp/cell-grid';
 import { reviewIcon, type ReviewIconName } from './icons';
 import { parseWalkthroughAnchor } from './parse';
+import { keyCap, keyHint, type KeyHint } from '../ui/kbd';
 
 /** The Markdown Viewer's stack (spec 39/137), configured identically so a review
  *  renders exactly like a doc. A separate instance rather than an import, so the
@@ -333,16 +334,6 @@ const el = (tag: string, className?: string, text?: string): HTMLElement => {
   return node;
 };
 
-/** `[key, label]` — one shortcut hint, e.g. `['a', 'accept']`. */
-export type KeyHint = readonly [key: string, label: string];
-
-/** `a accept`: the key in ink-3, its action in ink-4. */
-export function keyHint([key, label]: KeyHint): HTMLElement {
-  const hint = el('span', 'krypton-review__hint');
-  hint.append(el('kbd', 'krypton-review__key', key), ` ${label}`);
-  return hint;
-}
-
 export interface KickerMeta {
   text: string;
   /** A location `Enter` opens — rendered in the dimmed link colour. */
@@ -386,7 +377,7 @@ export function renderKicker(spec: KickerSpec, tag = 'div'): HTMLElement {
   if (spec.comments) end.appendChild(el('span', 'krypton-review__kicker-meta', commentCountLabel(spec.comments)));
   if (spec.hints && spec.hints.length > 0) {
     const hints = el('span', 'krypton-review__kicker-hints');
-    for (const hint of spec.hints) hints.appendChild(keyHint(hint));
+    for (const hint of spec.hints) hints.appendChild(keyHint(hint, 'krypton-review__hint'));
     end.appendChild(hints);
   }
   if (end.childElementCount > 0) kicker.appendChild(end);
@@ -479,7 +470,7 @@ function renderWalkthrough(
         { text: '', className: 'krypton-review__step-pos' },
       ],
       comments,
-      hints: [['Tab', 'next step'], ['↵', 'open']],
+      hints: [{ keys: ['Tab'], label: 'next step' }, { keys: ['Enter'], label: 'open' }],
     }),
     el('div', 'krypton-review__title', block.data.title ?? 'Read it in this order'),
   );
@@ -511,11 +502,13 @@ function renderDiff(
       icon: 'diff',
       meta: [{ text: `${lines} lines` }],
       comments,
-      hints: folds ? [['↵', expanded ? 'collapse' : 'expand']] : [],
+      hints: folds ? [{ keys: ['Enter'], label: expanded ? 'collapse' : 'expand' }] : [],
     }),
   );
   if (folds && !expanded) {
-    host.appendChild(el('div', 'krypton-review__diff-summary', 'Enter to expand'));
+    const summary = el('div', 'krypton-review__diff-summary');
+    summary.append(keyCap('Enter'), ' to expand');
+    host.appendChild(summary);
     return host;
   }
   try {
@@ -548,8 +541,12 @@ function renderFinding(
   if (answer.findingState) host.classList.add(`krypton-review__finding--${answer.findingState}`);
 
   const anchor = findingAnchorLabel(block.data);
-  const hints: KeyHint[] = [['a', 'accept'], ['x', 'dismiss'], ['c', 'comment']];
-  if (anchor) hints.push(['↵', 'open']);
+  const hints: KeyHint[] = [
+    { keys: ['a'], label: 'accept' },
+    { keys: ['x'], label: 'dismiss' },
+    { keys: ['c'], label: 'comment' },
+  ];
+  if (anchor) hints.push({ keys: ['Enter'], label: 'open' });
   host.append(
     renderKicker({
       label: severity.label,
@@ -585,7 +582,7 @@ function renderDecision(
       icon: 'decision',
       state: answer.chosen !== null ? { text: 'Answered', tone: 'answered' } : null,
       comments: answer.commentCount,
-      hints: [['1–9', 'choose'], ['c', 'comment']],
+      hints: [{ keys: ['1–9'], label: 'choose' }, { keys: ['c'], label: 'comment' }],
     }),
     el('div', 'krypton-review__title', block.data.question),
   );
@@ -609,7 +606,7 @@ function renderDecision(
 function renderChart(block: Extract<ReviewBlock, { kind: 'chart' }>, comments: number): HTMLElement {
   const host = el('div', 'krypton-review__chart');
   // Single series: the title names it, so there is no legend box.
-  host.appendChild(renderKicker({ label: 'Chart', icon: 'chart', comments, hints: [['c', 'comment']] }));
+  host.appendChild(renderKicker({ label: 'Chart', icon: 'chart', comments, hints: [{ keys: ['c'], label: 'comment' }] }));
   if (block.data.title) host.appendChild(el('div', 'krypton-review__title', block.data.title));
 
   const geom = chartGeometry(block.data);
@@ -702,7 +699,7 @@ function renderMetrics(
   comments: number,
 ): HTMLElement {
   const host = el('div', 'krypton-review__metrics-block');
-  host.appendChild(renderKicker({ label: 'Metrics', icon: 'metrics', comments, hints: [['c', 'comment']] }));
+  host.appendChild(renderKicker({ label: 'Metrics', icon: 'metrics', comments, hints: [{ keys: ['c'], label: 'comment' }] }));
   const list = el('dl', 'krypton-review__metrics');
   for (const row of block.data.rows) {
     list.appendChild(el('dt', 'krypton-review__metric-label', row.label));

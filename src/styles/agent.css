@@ -579,18 +579,16 @@
   align-items: baseline;
 }
 
-/* [a]ccept / [r]eject: key caps with printed legends. */
+/* a accept / r reject: shared key cap (src/styles/kbd.css) + printed legend.
+   Only the legend takes state ink; reject keeps fault ink. */
 .agent-view__msg-review-key {
-  padding: 0 7px;
-  border: 1px solid var(--mat-key-edge);
-  border-radius: var(--krypton-border-radius, 8px);
-  background: var(--mat-key);
-  box-shadow: var(--mat-key-raise);
   color: var(--av-ink-1);
-  text-shadow: var(--mat-print);
   font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.09em;
-  text-transform: lowercase;
+  letter-spacing: 0.06em;
+}
+
+.agent-view__msg-review-key--reject {
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }
 
 .agent-view__msg-review-hint {

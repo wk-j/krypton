@@ -16,6 +16,7 @@ import 'highlight.js/styles/github-dark.css';
 
 import type { Compositor } from './compositor';
 import { previewMarked } from './file-preview';
+import { keyHint, type KeyHint } from './ui/kbd';
 
 // ─── Source contract ──────────────────────────────────────────────
 
@@ -48,11 +49,11 @@ export interface OverviewAction {
 }
 
 /** Built-in footer hints, always shown after the source's own actions. */
-const BUILTIN_HINTS: Array<[string, string]> = [
-  ['esc', 'close'],
-  ['j/k', 'scroll'],
-  ['^d/^u', 'half page'],
-  ['g/G', 'top/bottom'],
+const BUILTIN_HINTS: readonly KeyHint[] = [
+  { keys: ['Esc'], label: 'close' },
+  { keys: ['j', 'k'], label: 'scroll', keySeparator: '/' },
+  { keys: ['⌃d', '⌃u'], label: 'half page', keySeparator: '/' },
+  { keys: ['g', 'G'], label: 'top/bottom', keySeparator: '/' },
 ];
 
 const FALLBACK_LINE_HEIGHT = 18;
@@ -231,19 +232,10 @@ export class QuickOverview {
   private renderFooter(truncated = false): void {
     this.footerEl.replaceChildren();
 
-    const hints: Array<[string, string, boolean]> = [];
-    for (const [key, label] of BUILTIN_HINTS) hints.push([key, label, false]);
+    for (const hint of BUILTIN_HINTS) this.footerEl.appendChild(keyHint(hint));
+    // Source actions are the primary keys: their legend is backlit.
     for (const action of this.source?.actions ?? []) {
-      hints.push([action.key === 'Enter' ? '⏎' : action.key, action.label, true]);
-    }
-
-    for (const [key, label, primary] of hints) {
-      const span = document.createElement('span');
-      if (primary) span.className = 'krypton-overview__key--primary';
-      const b = document.createElement('b');
-      b.textContent = key;
-      span.append(b, ` ${label}`);
-      this.footerEl.appendChild(span);
+      this.footerEl.appendChild(keyHint({ keys: [action.key], label: action.label }, 'krypton-overview__key--primary'));
     }
 
     if (truncated) {

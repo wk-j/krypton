@@ -21,6 +21,7 @@ import './lane-picker.css';
 import type { HarnessDirective } from '../../../config';
 import { Component } from '../../../ui/component';
 import { el, frag } from '../../../ui/dom';
+import type { KeyHint } from '../../../ui/kbd';
 import { harnessSymbolEl } from '../../harness-icons';
 import { backendLabel, backendLogoId } from '../../harness-lane-identity';
 import type { AcpBackendDescriptor } from '../../types';
@@ -31,7 +32,11 @@ import type { ComponentDef } from '../types';
 const BLOCK = 'acp-harness__picker';
 
 /** The head's second span, `.acp-harness__picker-head span:last-child`. */
-const HINTS = 'j/k move · enter spawn · esc cancel';
+const HINTS: readonly KeyHint[] = [
+  { keys: ['j', 'k'], label: 'move', keySeparator: '/' },
+  { keys: ['Enter'], label: 'spawn' },
+  { keys: ['Esc'], label: 'cancel' },
+];
 
 const EMPTY = 'no ACP backends installed';
 

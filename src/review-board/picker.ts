@@ -11,6 +11,7 @@
 import { invoke } from '../profiler/ipc';
 
 import type { ReviewBundle } from '../acp/types';
+import { keyHintNodes } from '../ui/kbd';
 
 /** Result of a pick: the bundle to open, or null when the human dismissed it. */
 export type ReviewPickResult = ReviewBundle | null;
@@ -123,9 +124,15 @@ export function pickReview(
     const scopeLabel = scope.kind === 'project' ? scope.label : 'all projects';
 
     const render = (): void => {
-      head.textContent =
-        `reviews · ${scopeLabel} · ${filtered.length}/${bundles.length}` +
-        ' · j/k move · Enter open · / filter · Esc close';
+      head.replaceChildren(
+        ...keyHintNodes([
+          { keys: [], label: `reviews · ${scopeLabel} · ${filtered.length}/${bundles.length}` },
+          { keys: ['j', 'k'], keySeparator: '/', label: 'move' },
+          { keys: ['Enter'], label: 'open' },
+          { keys: ['/'], label: 'filter' },
+          { keys: ['Esc'], label: 'close' },
+        ]),
+      );
       list.innerHTML = '';
       if (filtered.length === 0) {
         const empty = document.createElement('div');

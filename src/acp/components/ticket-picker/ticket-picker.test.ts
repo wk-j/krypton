@@ -129,7 +129,7 @@ describe('TicketPicker', () => {
 
     expect(picker.el.querySelector('.acp-ticket__sub')?.textContent).toBe('target: no active lane');
     expect(picker.el.querySelector('.acp-ticket__foot')?.textContent).toBe(
-      'Tab open/closed · ↑↓ / ⌃n⌃p select · Esc dismissshared with all 3 lanes · work runs in no lane',
+      'Tab open/closed · ↑↓/⌃n/⌃p select · Esc dismissshared with all 3 lanes · work runs in no lane',
     );
   });
 

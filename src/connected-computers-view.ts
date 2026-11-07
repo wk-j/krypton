@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import type { ContentView, PaneContentType } from './types';
+import { keyCap, keyHintNodes } from './ui/kbd';
 import './styles/connected-computers.css';
 
 export interface ComputerProfile {
@@ -99,7 +100,19 @@ export class ConnectedComputersContentView implements ContentView {
     this.noticeEl.setAttribute('aria-live', 'polite');
     const hint = document.createElement('footer');
     hint.className = 'krypton-computers__hint';
-    hint.textContent = 'j/k select · / search · n new · e edit · Enter connect · x disconnect · t SSH terminal · r refresh · q close';
+    hint.append(
+      ...keyHintNodes([
+        { keys: ['j', 'k'], keySeparator: '/', label: 'select' },
+        { keys: ['/'], label: 'search' },
+        { keys: ['n'], label: 'new' },
+        { keys: ['e'], label: 'edit' },
+        { keys: ['Enter'], label: 'connect' },
+        { keys: ['x'], label: 'disconnect' },
+        { keys: ['t'], label: 'SSH terminal' },
+        { keys: ['r'], label: 'refresh' },
+        { keys: ['q'], label: 'close' },
+      ]),
+    );
     this.element.append(header, columns, this.noticeEl, hint);
     this.element.addEventListener('click', (event) => this.handleClick(event), { signal: this.events.signal });
     this.element.addEventListener('submit', (event) => void this.handleSubmit(event), { signal: this.events.signal });
@@ -229,7 +242,8 @@ export class ConnectedComputersContentView implements ContentView {
     });
     if (!rows.length) {
       const empty = document.createElement('p');
-      empty.textContent = this.statuses.length ? 'No computers match.' : 'No saved computers. Press n to add one.';
+      if (this.statuses.length) empty.textContent = 'No computers match.';
+      else empty.append('No saved computers. Press ', keyCap('n'), ' to add one.');
       this.listEl.replaceChildren(empty);
     } else {
       if (matches.length > 100) {
@@ -344,9 +358,12 @@ export class ConnectedComputersContentView implements ContentView {
     hint.textContent = 'Keys and jump hosts stay in OpenSSH config. No credentials are stored here.';
     const actions = document.createElement('div');
     actions.className = 'krypton-computers__actions';
-    const save = this.button('Save profile · Cmd+Enter', 'save');
+    const save = this.button('Save profile ', 'save');
+    save.appendChild(keyCap('⌘Enter'));
     save.type = 'submit';
-    actions.append(save, this.button('Cancel · Esc', 'cancel'));
+    const cancel = this.button('Cancel ', 'cancel');
+    cancel.appendChild(keyCap('Esc'));
+    actions.append(save, cancel);
     form.append(hint, actions);
     this.detailEl.appendChild(form);
     form.querySelector<HTMLInputElement>('input:not([readonly])')?.focus();

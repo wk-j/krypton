@@ -1,6 +1,6 @@
 // Spec 337 §UI Content — `RailsDock`; display budget per spec 345.
 //
-//   RAILS  [3 findings]  14:02  ▸           ▸ = an error or warnings behind ↵
+//   RAILS  [3 findings]  14:02  ▸           ▸ = an error or warnings behind Enter
 //   check 2/3 typecheck                     the one state line
 //   auto · codex-1 · mode auto
 //   checks ─────────────────────────── [2]
@@ -20,7 +20,7 @@
 //   ACTIONS                          lane codex-1 · idle
 //   [ Run ]  [ Send ✓ 14:02 ]
 //   [ Trust ✓ trusted ]  [ Update ]
-//   j/k · ↵ · 1–5 · s send · r run · [ ] tab · esc
+//   j/k · Enter · 1–5 · s send · r run · [ ] tab · Esc   each key a cap
 //
 // **Props only.** The row list is `railsDockRows(model)` — the same list the
 // controller moves the selection over — so the painted order and the `j`/`k`
@@ -49,6 +49,7 @@ import './rails-dock.css';
 
 import { Component } from '../../../ui/component';
 import { classes, el, setAttr } from '../../../ui/dom';
+import { keyCap, keyHintNodes, type KeyHint } from '../../../ui/kbd';
 import { disposeList, listComponent, reconcile } from '../../../ui/list';
 import { formatActionTime, fullActionTime } from '../../harness-ticket-helpers';
 import {
@@ -87,7 +88,15 @@ export interface RailsDockProps {
   readonly onRunCheck?: (name: string) => void;
 }
 
-export const RAILS_DOCK_KEY_HINTS = 'j/k · ↵ · 1–5 · s send · r run · [ ] tab · esc';
+export const RAILS_DOCK_KEY_HINTS: readonly KeyHint[] = [
+  { keys: ['j', 'k'], label: '', keySeparator: '/' },
+  { keys: ['Enter'], label: '' },
+  { keys: ['1–5'], label: '' },
+  { keys: ['s'], label: 'send' },
+  { keys: ['r'], label: 'run' },
+  { keys: ['[', ']'], label: 'tab' },
+  { keys: ['Esc'], label: '' },
+];
 
 const B = 'acp-rails-dock';
 
@@ -601,8 +610,8 @@ class SectionHead extends Component<Exclude<RailsDockSection, 1>> {
 
   protected paint(next: Exclude<RailsDockSection, 1>): void {
     this.syncClasses(next);
-    // `[n]` is the jump key for this section, not a count.
-    this.el.replaceChildren(span(`${B}__section-label`, SECTION_LABEL[next]), span(`${B}__section-key`, `[${next}]`));
+    // The cap is the jump key for this section, not a count.
+    this.el.replaceChildren(span(`${B}__section-label`, SECTION_LABEL[next]), keyCap(String(next)));
   }
 }
 
@@ -685,7 +694,7 @@ export class RailsDock extends Component<RailsDockProps> {
     class: `${B}__rows`,
     attrs: { role: 'listbox', 'aria-label': 'Rails' },
   });
-  private readonly keysEl = el('footer', { class: `${B}__keys`, text: RAILS_DOCK_KEY_HINTS });
+  private readonly keysEl = el('footer', { class: `${B}__keys`, children: keyHintNodes(RAILS_DOCK_KEY_HINTS) });
   private readonly actionsBar = new ActionsBar();
   private selectRow: ((key: string) => void) | undefined;
   private runAction: ((action: RailsDockAction) => void) | undefined;

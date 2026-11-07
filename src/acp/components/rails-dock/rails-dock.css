@@ -140,10 +140,6 @@
     text-transform: uppercase;
   }
 
-  .acp-rails-dock__section-key {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
-  }
-
   /* ── Head: the status window ───────────────────────────────────────── */
 
   .acp-rails-dock__eyebrow {

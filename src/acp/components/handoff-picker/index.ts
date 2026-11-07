@@ -20,6 +20,7 @@ import './handoff-picker.css';
 
 import { Component } from '../../../ui/component';
 import { el, frag } from '../../../ui/dom';
+import type { KeyHint } from '../../../ui/kbd';
 import { formatHandoffAge, type MergedHandoff } from '../../xenon-push';
 import { ListPicker } from '../list-picker';
 import { OverlayShell, type OverlayShellParts } from '../overlay-shell';
@@ -27,7 +28,11 @@ import type { ComponentDef } from '../types';
 
 const BLOCK = 'acp-harness__handoff';
 
-const HINTS = 'j/k move · enter resume · esc cancel';
+const HINTS: readonly KeyHint[] = [
+  { keys: ['j', 'k'], label: 'move', keySeparator: '/' },
+  { keys: ['Enter'], label: 'resume' },
+  { keys: ['Esc'], label: 'cancel' },
+];
 
 /** Spec 307 edge case: nothing to pick from. The shell drops the preview with it. */
 const EMPTY = 'no handoffs in this project';
@@ -209,11 +214,11 @@ export class HandoffPicker extends Component<HandoffPickerProps> {
   };
 
   /** Row count, the Xenon note when there is one, then the key hints. */
-  private subFor(next: HandoffPickerProps, total: number): string {
-    const parts = [`${total} handoffs`];
-    if (next.note !== null) parts.push(next.note);
-    parts.push(HINTS);
-    return parts.join(' · ');
+  private subFor(next: HandoffPickerProps, total: number): readonly KeyHint[] {
+    const parts: KeyHint[] = [{ keys: [], label: `${total} handoffs` }];
+    if (next.note !== null) parts.push({ keys: [], label: next.note });
+    parts.push(...HINTS);
+    return parts;
   }
 
   private readonly emitAutoClose = (): void => {

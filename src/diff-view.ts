@@ -16,6 +16,7 @@ import type {
   ReviewPriorityRange,
   ReviewPrioritySnapshot,
 } from './acp/types';
+import { keyCap, keyHint, keyHintNodes, type KeyHint } from './ui/kbd';
 
 /** Untracked file whose content the backend declined to render (spec 155). */
 export interface SkippedFile {
@@ -222,7 +223,9 @@ export class DiffContentView implements ContentView {
   private commentsOverlay: HTMLElement | null = null;
   private commentsOverlayOpen = false;
   private commentsSelectedIndex = 0;
-  private reviewNotice = '';
+  /** Status line under the comments header (and after the nav target). A hint
+   *  array when the sentence names keys, so they draw as caps. */
+  private reviewNotice: string | readonly KeyHint[] = '';
   private sending = false;
 
   // Review priority (spec 160) — lane-reported reading-order hints. The window
@@ -476,7 +479,10 @@ export class DiffContentView implements ContentView {
     el.className = 'krypton-diff__help-hint';
     // Advertise the priority panel only when there is something to jump to.
     const hasPriority = !!this.reviewPriority && this.priorityRanges.length > 0;
-    el.textContent = hasPriority ? 'p priority · ? help' : '? help';
+    const hints: KeyHint[] = hasPriority
+      ? [{ keys: ['p'], label: 'priority' }, { keys: ['?'], label: 'help' }]
+      : [{ keys: ['?'], label: 'help' }];
+    el.replaceChildren(...keyHintNodes(hints));
     this.navEl.appendChild(el);
   }
 
@@ -490,11 +496,17 @@ export class DiffContentView implements ContentView {
     el.className = 'krypton-diff__review-target';
     const pending = this.comments.filter((c) => !c.sent).length;
     const target = this.reviewTarget ? `→ ${this.reviewTarget}` : '→ (no lane)';
-    let text = pending > 0 ? `${target} · ${pending} comment${pending === 1 ? '' : 's'}` : target;
-    if (this.reviewNotice) text += ` · ${this.reviewNotice}`;
+    const text = pending > 0 ? `${target} · ${pending} comment${pending === 1 ? '' : 's'}` : target;
     el.textContent = text;
+    if (this.reviewNotice) el.append(' · ', ...this.reviewNoticeNodes());
     if (!this.reviewTarget) el.classList.add('krypton-diff__review-target--none');
     this.navEl.appendChild(el);
+  }
+
+  /** The notice as nodes: plain text, or prose with key caps. */
+  private reviewNoticeNodes(): Node[] {
+    const notice = this.reviewNotice;
+    return typeof notice === 'string' ? [document.createTextNode(notice)] : keyHintNodes(notice, '');
   }
 
   /** Pull the current lane roster + default target on demand (no broadcast). */
@@ -747,7 +759,7 @@ export class DiffContentView implements ContentView {
 
     const area = document.createElement('textarea');
     area.className = 'krypton-diff__composer-input';
-    area.placeholder = 'comment — Enter to add, Shift+Enter newline, Esc cancel';
+    area.placeholder = 'comment — Enter to add, ⇧Enter newline, Esc cancel';
     area.rows = 2;
 
     const hint = document.createElement('div');
@@ -919,7 +931,13 @@ export class DiffContentView implements ContentView {
       return;
     }
     if (!this.reviewTarget) {
-      this.reviewNotice = 'pick a target lane first ([ ] / Tab)';
+      this.reviewNotice = [
+        { keys: [], label: 'pick a target lane first (' },
+        { keys: ['[', ']'], label: '' },
+        { keys: [], label: ' / ' },
+        { keys: ['Tab'], label: '' },
+        { keys: [], label: ')' },
+      ];
       this.renderCommentsOverlay();
       return;
     }
@@ -972,15 +990,16 @@ export class DiffContentView implements ContentView {
 
     const header = document.createElement('div');
     header.className = 'krypton-diff__comments-header';
-    const target = this.reviewTarget ? `→ ${this.reviewTarget}` : '→ (no lane — [ ] to pick)';
     header.textContent =
-      `${this.comments.length} comment${this.comments.length === 1 ? '' : 's'} · ${target}`;
+      `${this.comments.length} comment${this.comments.length === 1 ? '' : 's'} · `;
+    if (this.reviewTarget) header.append(`→ ${this.reviewTarget}`);
+    else header.append('→ (no lane — ', keyCap('['), ' ', keyCap(']'), ' to pick)');
     root.appendChild(header);
 
     if (this.reviewNotice) {
       const notice = document.createElement('div');
       notice.className = 'krypton-diff__comments-notice';
-      notice.textContent = this.reviewNotice;
+      notice.replaceChildren(...this.reviewNoticeNodes());
       root.appendChild(notice);
     }
 
@@ -991,7 +1010,7 @@ export class DiffContentView implements ContentView {
     if (this.comments.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'krypton-diff__comments-empty';
-      empty.textContent = 'No comments — press c on a hunk to add one';
+      empty.append('No comments — press ', keyCap('c'), ' on a hunk to add one');
       items.appendChild(empty);
     }
 
@@ -1027,7 +1046,14 @@ export class DiffContentView implements ContentView {
 
     const footer = document.createElement('div');
     footer.className = 'krypton-diff__comments-footer';
-    footer.textContent = 'j/k move · Enter jump · d delete · [ ] target · s send · Esc close';
+    footer.replaceChildren(...keyHintNodes([
+      { keys: ['j', 'k'], label: 'move', keySeparator: '/' },
+      { keys: ['Enter'], label: 'jump' },
+      { keys: ['d'], label: 'delete' },
+      { keys: ['[', ']'], label: 'target' },
+      { keys: ['s'], label: 'send' },
+      { keys: ['Esc'], label: 'close' },
+    ]));
     root.appendChild(footer);
 
     (items.children[this.commentsSelectedIndex] as HTMLElement | undefined)
@@ -1130,7 +1156,14 @@ export class DiffContentView implements ContentView {
     this.setFocusReadout(null);
     const msg = document.createElement('div');
     msg.className = 'krypton-diff__empty';
-    msg.textContent = `Large diff (${totalLines.toLocaleString()} changed lines) not rendered — press Enter to render it`;
+    // One span: `__empty` is a flex box, which would trim the spaces around the cap.
+    const line = document.createElement('span');
+    line.append(
+      `Large diff (${totalLines.toLocaleString()} changed lines) not rendered — press `,
+      keyCap('Enter'),
+      ' to render it',
+    );
+    msg.appendChild(line);
     this.fileContainer.appendChild(msg);
   }
 
@@ -1258,7 +1291,7 @@ export class DiffContentView implements ContentView {
     cell.className = 'krypton-diff__fold-cell';
     if (withLabel) {
       const n = hunk.rows.length;
-      cell.textContent = `▸ ${n} routine line${n === 1 ? '' : 's'} — Enter to expand`;
+      cell.append(`▸ ${n} routine line${n === 1 ? '' : 's'} — `, keyCap('Enter'), ' to expand');
     } else {
       cell.innerHTML = '&nbsp;';
     }
@@ -1583,7 +1616,12 @@ export class DiffContentView implements ContentView {
 
     const footer = document.createElement('div');
     footer.className = 'krypton-diff__priority-footer';
-    footer.textContent = 'j/k preview · Enter keep · Esc back · q close';
+    footer.replaceChildren(...keyHintNodes([
+      { keys: ['j', 'k'], label: 'preview', keySeparator: '/' },
+      { keys: ['Enter'], label: 'keep' },
+      { keys: ['Esc'], label: 'back' },
+      { keys: ['q'], label: 'close' },
+    ]));
     root.appendChild(footer);
 
     (items.querySelectorAll('.krypton-diff__priority-item')[this.prioritySelectedIndex] as HTMLElement | undefined)
@@ -2021,30 +2059,30 @@ export class DiffContentView implements ContentView {
     body.className = 'krypton-diff__help-body';
     this.helpEl.appendChild(body);
 
-    const sections: { title: string; rows: [string, string][] }[] = [
+    const sections: { title: string; rows: [readonly string[], string][] }[] = [
       {
         title: 'Scroll',
         rows: [
-          ['j / k', 'down / up'],
-          ['h / l', 'left / right'],
-          ['f / b', 'page down / up'],
-          ['g / G', 'top / bottom'],
+          [['j', 'k'], 'down / up'],
+          [['h', 'l'], 'left / right'],
+          [['f', 'b'], 'page down / up'],
+          [['g', 'G'], 'top / bottom'],
         ],
       },
       {
         title: 'Navigate',
         rows: [
-          ['n / N', 'next / previous hunk'],
-          ['] / [', 'next / previous file'],
-          ['t', 'file switcher'],
+          [['n', 'N'], 'next / previous hunk'],
+          [[']', '['], 'next / previous file'],
+          [['t'], 'file switcher'],
         ],
       },
       {
         title: 'View',
         rows: [
-          ['s', 'toggle split / unified'],
-          ['Enter', 'render a large diff held back'],
-          ...(this.refreshProvider ? ([['r', 'refresh diff']] as [string, string][]) : []),
+          [['s'], 'toggle split / unified'],
+          [['Enter'], 'render a large diff held back'],
+          ...(this.refreshProvider ? ([[['r'], 'refresh diff']] as [readonly string[], string][]) : []),
         ],
       },
     ];
@@ -2053,8 +2091,8 @@ export class DiffContentView implements ContentView {
       sections.push({
         title: 'Review',
         rows: [
-          ['c', 'comment on hunk / selection'],
-          ['C', 'open comments'],
+          [['c'], 'comment on hunk / selection'],
+          [['C'], 'open comments'],
         ],
       });
     }
@@ -2063,9 +2101,9 @@ export class DiffContentView implements ContentView {
       sections.push({
         title: 'Priority',
         rows: [
-          ['p', 'priority panel (cross-file, live preview)'],
-          ['} / {', 'next / prev high hunk'],
-          ['Enter', 'expand folded routine hunk'],
+          [['p'], 'priority panel (cross-file, live preview)'],
+          [['}', '{'], 'next / prev high hunk'],
+          [['Enter'], 'expand folded routine hunk'],
         ],
       });
     }
@@ -2073,8 +2111,8 @@ export class DiffContentView implements ContentView {
     sections.push({
       title: 'General',
       rows: [
-        ['?', 'this help'],
-        ['q / Esc', 'close diff'],
+        [['?'], 'this help'],
+        [['q', 'Esc'], 'close diff'],
       ],
     });
 
@@ -2090,7 +2128,7 @@ export class DiffContentView implements ContentView {
 
         const k = document.createElement('span');
         k.className = 'krypton-diff__help-keys';
-        k.textContent = keys;
+        k.appendChild(keyHint({ keys, label: '', keySeparator: '/' }));
 
         const d = document.createElement('span');
         d.className = 'krypton-diff__help-desc';
@@ -2104,7 +2142,7 @@ export class DiffContentView implements ContentView {
 
     const footer = document.createElement('div');
     footer.className = 'krypton-diff__help-footer';
-    footer.textContent = '? or Esc to close';
+    footer.append(keyCap('?'), ' or ', keyCap('Esc'), ' to close');
     this.helpEl.appendChild(footer);
   }
 

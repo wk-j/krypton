@@ -18,6 +18,7 @@ import type {
 } from './types';
 import type { AcpLaneProcMetric } from '../types';
 import type { LaneModelConfig } from '../config';
+import type { KeyHint } from '../ui/kbd';
 import type { PendingPeerSummary } from './inter-lane';
 import type {
   HarnessLane,
@@ -262,8 +263,12 @@ export function compactPermissionLabel(permission: HarnessPermission): string {
   return truncateInline(subject ? `${tool} ${subject}` : tool, 48);
 }
 
-export function compactPermissionMeta(permission: HarnessPermission): string {
-  return `${compactPermissionLabel(permission)} · a/r/Esc`;
+/** `Bash git push · a/r/Esc`, the keys as caps (spec 369). */
+export function compactPermissionMeta(permission: HarnessPermission): readonly KeyHint[] {
+  return [
+    { keys: [], label: compactPermissionLabel(permission) },
+    { keys: ['a', 'r', 'Esc'], label: '', keySeparator: '/' },
+  ];
 }
 
 function compactPermissionTool(permission: HarnessPermission): string {

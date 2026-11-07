@@ -22,9 +22,10 @@
 // dep-stable, and the formatting (`formatElapsed`) is the view's, next to the
 // turn's start stamp.
 //
-// The status segments and the lane chips are both `Chip`s: a segment is
-// `<span class="acp-harness__meta-seg" data-seg="verb">`, which is exactly the
-// block + text + `data` that `Chip` paints. `StatList` does not fit either run —
+// The lane chips are `Chip`s. A status segment is
+// `<span class="acp-harness__meta-seg" data-seg="verb">` painted by the local
+// `MetaSegmentChip`, because a segment may hold key caps (spec 369) and `Chip`
+// paints text only. `StatList` does not fit either run —
 // its row model is label+value and its `inline` rows are deliberately unclassed,
 // so it cannot emit a per-row class or a `data-seg` attribute.
 //
@@ -41,11 +42,22 @@ import './composer-meta.css';
 
 import { Component } from '../../../ui/component';
 import { classes, el, setAttr } from '../../../ui/dom';
+import { keyHintNodes, keyHintsSignature, type KeyHint } from '../../../ui/kbd';
 import { disposeList, reconcile, syncOrder } from '../../../ui/list';
 import { Chip, type ChipProps } from '../chip';
 import { harnessSymbolEl } from '../../harness-icons';
 import type { MetaSegment } from '../../harness-composer-meta';
 import type { ComponentDef } from '../types';
+
+/**
+ * A status segment. `hints` carries a readout that names keys (`svg viewer ·
+ * =/- zoom · Esc close`, `lane idle · Enter to send`): the span then holds
+ * `keyHintNodes(hints)` — each key a `<kbd>` cap (spec 369) — and `text` is
+ * not painted. Without `hints` the span holds `text`.
+ */
+export interface ComposerMetaSegment extends MetaSegment {
+  readonly hints?: readonly KeyHint[];
+}
 
 /** The directive chip's nested `◆ <source>` triage marker — the one chip in
  *  this row with an element inside it (`acp-harness-view.ts:13378`). */
@@ -75,20 +87,47 @@ export interface ComposerMetaBranch {
 }
 
 export interface ComposerMetaProps {
-  /** The status chip's segments, from `buildBusySegments` / `textSegments`. */
-  readonly segments: readonly MetaSegment[];
+  /** The status chip's segments, from `buildBusySegments` / `textSegments`,
+   *  or a hint segment the view builds. */
+  readonly segments: readonly ComposerMetaSegment[];
   /** Busy lane with no flash override — `acp-harness__memory-chip--running`. */
   readonly running: boolean;
   /** Sandbox / permission-mode / directive, in paint order. */
   readonly chips: readonly ComposerMetaChipProps[];
   readonly branch: ComposerMetaBranch | null;
-  /** `? help`. */
-  readonly helpHint: string;
+  /** `? help`, as a key cap and its legend. */
+  readonly helpHint: readonly KeyHint[];
   /** Click on `[data-open-directive-picker]`. Not a dependency. */
   readonly onOpenDirective?: () => void;
 }
 
 const SEGMENT_BLOCK = 'acp-harness__meta-seg';
+
+function segmentSignature(seg: ComposerMetaSegment): string {
+  return `${seg.id}\u0001${seg.text}\u0001${seg.hints ? keyHintsSignature(seg.hints) : ''}`;
+}
+
+/** `<span class="acp-harness__meta-seg" data-seg="…">` holding text or hint caps. */
+class MetaSegmentChip extends Component<ComposerMetaSegment> {
+  constructor() {
+    super(el('span'));
+  }
+
+  protected readDeps(next: ComposerMetaSegment): readonly unknown[] {
+    return [segmentSignature(next)];
+  }
+
+  protected syncClasses(): void {
+    this.el.className = SEGMENT_BLOCK;
+  }
+
+  protected paint(next: ComposerMetaSegment): void {
+    this.syncClasses();
+    this.el.dataset.seg = next.id;
+    if (next.hints) this.el.replaceChildren(...keyHintNodes(next.hints));
+    else this.el.textContent = next.text;
+  }
+}
 
 function chipSignature(chip: ComposerMetaChipProps): string {
   return [
@@ -124,6 +163,7 @@ export class ComposerMeta extends Component<ComposerMetaProps> {
   readonly toolsEl: HTMLElement;
   private readonly statusEl: HTMLElement;
   private readonly helpEl: HTMLElement;
+  private helpSignature: string | null = null;
   private readonly projectEl: HTMLElement;
   private readonly branchEl: HTMLElement;
   private readonly chips = new Map<string, ChipEntry>();
@@ -164,12 +204,12 @@ export class ComposerMeta extends Component<ComposerMetaProps> {
 
   protected readDeps(next: ComposerMetaProps): readonly unknown[] {
     return [
-      next.segments.map((seg) => `${seg.id}\u0001${seg.text}`).join('\u0002'),
+      next.segments.map(segmentSignature).join('\u0002'),
       next.running,
       next.chips.map(chipSignature).join('\u0002'),
       next.branch?.ref ?? null,
       next.branch?.title ?? null,
-      next.helpHint,
+      keyHintsSignature(next.helpHint),
     ];
   }
 
@@ -184,15 +224,13 @@ export class ComposerMeta extends Component<ComposerMetaProps> {
   protected paint(next: ComposerMetaProps): void {
     this.syncClasses(next);
     reconcile(this.statusEl, next.segments, {
-      key: (seg: MetaSegment): string => seg.id,
-      create: (seg: MetaSegment): Chip => {
-        const chip = new Chip();
-        chip.update({ block: SEGMENT_BLOCK, text: seg.text, data: { seg: seg.id } });
+      key: (seg: ComposerMetaSegment): string => seg.id,
+      create: (seg: ComposerMetaSegment): MetaSegmentChip => {
+        const chip = new MetaSegmentChip();
+        chip.update(seg);
         return chip;
       },
-      update: (chip: Chip, seg: MetaSegment): void => {
-        chip.update({ block: SEGMENT_BLOCK, text: seg.text, data: { seg: seg.id } });
-      },
+      update: (chip: MetaSegmentChip, seg: ComposerMetaSegment): void => chip.update(seg),
     });
 
     const nodes: HTMLElement[] = [this.statusEl];
@@ -214,7 +252,11 @@ export class ComposerMeta extends Component<ComposerMetaProps> {
     }
     if (this.trailing) nodes.push(this.trailing);
     syncOrder(this.metaEl, nodes);
-    this.helpEl.textContent = next.helpHint;
+    const help = keyHintsSignature(next.helpHint);
+    if (help !== this.helpSignature) {
+      this.helpSignature = help;
+      this.helpEl.replaceChildren(...keyHintNodes(next.helpHint));
+    }
   }
 
   /** Paint one chip and its optional marker, returning the node to place. */

@@ -236,19 +236,22 @@ those are no longer call sites or style owners.
 ## 1.7 `KeyHintBar`
 
 ```ts
-interface KeyHintBarProps { hints: readonly { keys: readonly string[]; label: string }[]; note?: string; style: 'kbd' | 'plain'; block: string }
+interface KeyHintBarProps { hints: readonly KeyHint[]; note?: string; block: string; layout?: 'spans' | 'run' | 'bare'; separator?: string; noteClass?: string; noteJoin?: string }
+// KeyHint = { keys: readonly string[]; label: string; keySeparator?: string } from src/ui/kbd.ts
 ```
 
-**Example UI**
+**Example UI** (`[x]` = a `<kbd>` key cap)
 
 ```
-kbd     [h] [l] switch lane   [j] [k] select round   [enter] [space] expand findings   [esc] close   read-only — observation, not a score
-plain   j/k move · enter spawn · esc cancel
-plain   ↑↓ / ⌃n⌃p select · Enter/Tab insert · Esc dismiss
+spans   [h] [l] switch lane   [j] [k] select round   [Enter] [Space] expand findings   [Esc] close   read-only — observation, not a score
+bare    [j]/[k] move · [Enter] spawn · [Esc] cancel
+bare    [↑↓] / [⌃n]/[⌃p] select · [Enter]/[Tab] insert · [Esc] dismiss
 ```
 
-**Emits** `kbd` → `<span><kbd>h</kbd> <kbd>l</kbd> switch lane</span>` inside `.${block}__foot`;
-`plain` → one `<span>` of `·`-joined text inside the picker header.
+**Emits** every key as a `<kbd>` cap (spec 369; there is no plain style). `spans` →
+`<span class="krypton-key-hint"><kbd>h</kbd> <kbd>l</kbd> switch lane</span>` per hint inside
+`.${block}__foot`; `bare` (default) → the `·`-joined run of hint spans written into the root; `run` →
+that run inside one `<span>`. A hint with no keys is bare text (a legend-only `<span>` in `spans`).
 
 **Replaces** `acp-harness-view.ts:5412-5429,12705-12710,12770-12774,12807-12811,12838-12892,15081-15084` ·
 `review-priority-overlay.ts:121-127` · `attention-overlay.ts:122-131` ·
@@ -375,7 +378,7 @@ reuses `acp-harness__artifact-head` with different strings — the duplication i
 ## 2.2 `OverlayShell`
 
 ```ts
-interface OverlayShellProps { open: boolean; title: string; sub?: string; body: Node; hints?: KeyHintBarProps; empty?: string; block: string }
+interface OverlayShellProps { open: boolean; title: string; sub?: string | readonly KeyHint[]; body: Node; hints?: KeyHintBarProps; empty?: string; block: string }
 ```
 
 **Example UI**
@@ -869,9 +872,9 @@ cursor math, its own shell, or its own empty state.
 | 7.11 | `MemoryDrawer` | Shell + ListPicker | `Memory` | `acp-harness-view.ts:13143-13188` |
 | 7.12 | `HelpOverlay` | Shell + KeyHintBar grid | `// help` | `acp-harness-view.ts:13625+` |
 | 7.13 | `MetricsOverlay` | Shell + per-lane `Meter` rows (process tree) | `Process  PID  CPU  Mem` | `acp-harness-view.ts:13573-13612` + `harness-lane-chrome.ts:146-303` |
-| 7.14 | `ImageViewer` | Shell (full-bleed) | `image viewer · n/p next · =/- zoom · 0 fit · 1 100% · o open · Esc close` | `harness-image-viewer.ts:53-71+` |
+| 7.14 | `ImageViewer` | Shell (full-bleed) | `image viewer · n/p next · =/- zoom · 0 fit · 1 100% · o open · Esc close` (each key a cap, spec 369) | `harness-image-viewer.ts:53-71+` |
 | 7.15 | **Retired — TimelineCapture** | Removed by [0316](./0316-llm-managed-timeline.md) | No runtime/catalog form, registration, or form styles | Historical number reserved; no replacement overlay |
-| 7.16 | `ReviewThreadDialog` | Shell + preview `<pre>` + ActionButton row | `Start Review · Enter` / `Cancel · Esc` | `acp-harness-view.ts:3110-3170` |
+| 7.16 | `ReviewThreadDialog` | Shell + preview `<pre>` + ActionButton row | `Start Review` + `Enter` cap / `Cancel` + `Esc` cap | `acp-harness-view.ts:3110-3170` |
 | 7.17 | `HandoffPicker` | Shell + ListPicker + preview | `// handoff · <lane>` | `acp-harness-view.ts` `#resume list` branch (replaces `formatHandoffList`, `xenon-push.ts:347-363`) |
 
 ---

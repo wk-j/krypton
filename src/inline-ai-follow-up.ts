@@ -22,6 +22,7 @@ import {
   type CommandRecord,
   type Osc133,
 } from './terminal-context';
+import { keyCap } from './ui/kbd';
 
 export type WatchOutcome =
   | { kind: 'drop' }
@@ -258,9 +259,8 @@ export class InlineFollowUp<O extends FollowUpOverlay> {
       tag.textContent = 'AI FIX';
       const body = document.createElement('span');
       body.className = `${BLOCK}__text`;
-      const key = document.createElement('span');
-      key.className = `${BLOCK}__key`;
-      key.textContent = '\u2318K';
+      const key = keyCap('\u2318K');
+      key.classList.add(`${BLOCK}__key`);
       chip.append(tag, body, key);
       chip.addEventListener('click', () => this.options.onResume());
       this.pane.element.appendChild(chip);

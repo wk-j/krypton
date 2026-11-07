@@ -8,10 +8,31 @@ import {
   type InlinePaletteProps,
   type InlinePaletteRow,
 } from './index';
+import type { KeyHint } from '../../../ui/kbd';
 
-const SELECT_INSERT = '↑↓ / ⌃n⌃p select · Enter/Tab insert · Esc dismiss';
-const SELECT_COMPLETE = '↑↓ / ⌃n⌃p select · Tab complete · Esc dismiss';
-const INJECT_VERB = 'inject verb · ↑↓ / ⌃n⌃p select · Tab insert · Esc dismiss';
+const SELECT: KeyHint = { keys: ['↑↓', '⌃n⌃p'], label: 'select', keySeparator: '/' };
+const DISMISS: KeyHint = { keys: ['Esc'], label: 'dismiss' };
+const SELECT_INSERT: readonly KeyHint[] = [
+  SELECT,
+  { keys: ['Enter', 'Tab'], label: 'insert', keySeparator: '/' },
+  DISMISS,
+];
+const SELECT_COMPLETE: readonly KeyHint[] = [SELECT, { keys: ['Tab'], label: 'complete' }, DISMISS];
+const INJECT_VERB: readonly KeyHint[] = [
+  { keys: [], label: 'inject verb' },
+  SELECT,
+  { keys: ['Tab'], label: 'insert' },
+  DISMISS,
+];
+
+const SELECT_HTML = '<span class="krypton-key-hint"><kbd>↑↓</kbd>/<kbd>⌃n⌃p</kbd> select</span>';
+const DISMISS_HTML = '<span class="krypton-key-hint"><kbd>Esc</kbd> dismiss</span>';
+const SELECT_INSERT_HTML =
+  `${SELECT_HTML} · <span class="krypton-key-hint"><kbd>Enter</kbd>/<kbd>Tab</kbd> insert</span> · ${DISMISS_HTML}`;
+const SELECT_COMPLETE_HTML =
+  `${SELECT_HTML} · <span class="krypton-key-hint"><kbd>Tab</kbd> complete</span> · ${DISMISS_HTML}`;
+const INJECT_VERB_HTML =
+  `inject verb · ${SELECT_HTML} · <span class="krypton-key-hint"><kbd>Tab</kbd> insert</span> · ${DISMISS_HTML}`;
 
 const ROW = '.acp-harness__slash-palette-row';
 const SELECTED = 'acp-harness__slash-palette-row acp-harness__slash-palette-row--selected';
@@ -56,7 +77,7 @@ describe('InlinePalette markup', () => {
 
     expect(palette.el.outerHTML).toBe(
       '<div class="acp-harness__slash-palette" data-count="2" data-palette="slash">' +
-        `<div class="acp-harness__slash-palette-meta">${SELECT_INSERT}</div>` +
+        `<div class="acp-harness__slash-palette-meta">${SELECT_INSERT_HTML}</div>` +
         `<div class="${SELECTED}">` +
         '<span class="acp-harness__slash-palette-name">/resume</span>' +
         '<span class="acp-harness__slash-palette-hint">&lt;session&gt;</span>' +
@@ -81,7 +102,7 @@ describe('InlinePalette markup', () => {
 
     expect(palette.el.outerHTML).toBe(
       '<div class="acp-harness__slash-palette" data-count="2" data-palette="mention">' +
-        `<div class="acp-harness__slash-palette-meta">${SELECT_INSERT}</div>` +
+        `<div class="acp-harness__slash-palette-meta">${SELECT_INSERT_HTML}</div>` +
         '<div class="acp-harness__slash-palette-row">' +
         '<span class="acp-harness__slash-palette-name">@scout</span>' +
         '</div>' +
@@ -110,7 +131,7 @@ describe('InlinePalette markup', () => {
 
     expect(palette.el.outerHTML).toBe(
       '<div class="acp-harness__slash-palette" data-count="2" data-palette="hash">' +
-        `<div class="acp-harness__slash-palette-meta">${SELECT_COMPLETE}</div>` +
+        `<div class="acp-harness__slash-palette-meta">${SELECT_COMPLETE_HTML}</div>` +
         `<div class="${SELECTED}">` +
         '<span class="acp-harness__slash-palette-name">#cancel</span>' +
         '<span class="acp-harness__slash-palette-desc">cancel the current turn</span>' +
@@ -138,7 +159,7 @@ describe('InlinePalette markup', () => {
 
     expect(palette.el.outerHTML).toBe(
       '<div class="acp-harness__slash-palette" data-count="1" data-palette="verb">' +
-        `<div class="acp-harness__slash-palette-meta">${INJECT_VERB}</div>` +
+        `<div class="acp-harness__slash-palette-meta">${INJECT_VERB_HTML}</div>` +
         `<div class="${SELECTED}">` +
         '<span class="acp-harness__slash-palette-name">{{#review}}</span>' +
         '<span class="acp-harness__slash-palette-desc">fan the diff out to reviewer lanes</span>' +
@@ -216,13 +237,13 @@ describe('InlinePalette empty list', () => {
       cursor: 0,
       hint: SELECT_INSERT,
       row: (name: string): InlinePaletteRow => ({ name }),
-      zeroState: 'no matching lanes · Esc dismiss',
+      zeroState: [{ keys: [], label: 'no matching lanes' }, DISMISS],
     });
 
     expect(palette.el.hidden).toBe(false);
     expect(palette.el.outerHTML).toBe(
       '<div class="acp-harness__slash-palette" data-count="0" data-palette="mention">' +
-        '<div class="acp-harness__slash-palette-meta">no matching lanes · Esc dismiss</div>' +
+        `<div class="acp-harness__slash-palette-meta">no matching lanes · ${DISMISS_HTML}</div>` +
         '</div>',
     );
   });

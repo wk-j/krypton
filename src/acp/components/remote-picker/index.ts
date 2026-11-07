@@ -21,7 +21,8 @@ import './remote-picker.css';
 
 import { Component } from '../../../ui/component';
 import { el, frag } from '../../../ui/dom';
-import { KeyHintBar, type KeyHint } from '../key-hint-bar';
+import type { KeyHint } from '../../../ui/kbd';
+import { KeyHintBar } from '../key-hint-bar';
 import { ListPicker } from '../list-picker';
 import type { ComponentDef } from '../types';
 
@@ -32,7 +33,7 @@ const HEAD = 'REMOTE ACP HARNESS';
 const PATH_PLACEHOLDER = '/absolute/remote/project/path';
 
 const LIST_HINTS: readonly KeyHint[] = [
-  { keys: ['j/k'], label: 'select' },
+  { keys: ['j', 'k'], label: 'select', keySeparator: '/' },
   { keys: ['Enter'], label: 'connect' },
   { keys: ['Esc'], label: 'cancel' },
 ];
@@ -134,7 +135,7 @@ export class RemotePicker extends Component<RemotePickerProps> {
       rowClass: `${BLOCK}__row`,
     });
     this.path.hidden = !next.pathMode;
-    this.hint.update({ hints: hintsFor(next), style: 'plain', block: `${BLOCK}__hint` });
+    this.hint.update({ hints: hintsFor(next), block: `${BLOCK}__hint` });
   }
 
   private readonly renderRow = (row: RemotePickerRow): Node =>

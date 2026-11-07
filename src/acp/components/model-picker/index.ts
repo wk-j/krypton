@@ -16,6 +16,7 @@ import './model-picker.css';
 
 import { Component } from '../../../ui/component';
 import { el, frag } from '../../../ui/dom';
+import type { KeyHint } from '../../../ui/kbd';
 import type { ModelInfo } from '../../types';
 import { ListPicker } from '../list-picker';
 import { OverlayShell, type OverlayShellParts } from '../overlay-shell';
@@ -23,7 +24,11 @@ import type { ComponentDef } from '../types';
 
 const BLOCK = 'acp-harness__model';
 
-const HINTS = 'j/k move · enter switch · esc cancel';
+const HINTS: readonly KeyHint[] = [
+  { keys: ['j', 'k'], label: 'move', keySeparator: '/' },
+  { keys: ['Enter'], label: 'switch' },
+  { keys: ['Esc'], label: 'cancel' },
+];
 
 const PARTS: OverlayShellParts = {
   panel: null,

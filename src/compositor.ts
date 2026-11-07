@@ -171,6 +171,7 @@ import type {
   ReviewResponseSendResult,
 } from './acp/types';
 import type { ReviewThread, ReviewThreadVerdict } from './acp/review-thread';
+import { keyHintNodes } from './ui/kbd';
 import {
   WORKSPACE_SNAPSHOT_VERSION,
   planWorkspaceRecovery,
@@ -4478,9 +4479,11 @@ export class Compositor {
 
       const hint = document.createElement('div');
       hint.className = 'krypton-vault-picker__hint';
-      hint.textContent = rows.length === 0
-        ? 'No drawings found    Esc  cancel'
-        : 'j/k  select    Enter  open    r  rename    Esc  cancel';
+      hint.replaceChildren(
+        ...(rows.length === 0
+          ? keyHintNodes([{ keys: [], label: 'No drawings found' }, { keys: ['Esc'], label: 'cancel' }], '    ')
+          : keyHintNodes([{ keys: ['j', 'k'], keySeparator: '/', label: 'select' }, { keys: ['Enter'], label: 'open' }, { keys: ['r'], label: 'rename' }, { keys: ['Esc'], label: 'cancel' }], '    ')),
+      );
       panel.appendChild(hint);
 
       overlay.appendChild(panel);
@@ -4509,7 +4512,7 @@ export class Compositor {
         inputWrap.appendChild(input);
         list.appendChild(inputWrap);
         title.textContent = 'NEW DRAWING';
-        hint.textContent = 'Enter  create    Esc  back';
+        hint.replaceChildren(...keyHintNodes([{ keys: ['Enter'], label: 'create' }, { keys: ['Esc'], label: 'back' }], '    '));
         document.removeEventListener('keydown', onKey, true);
         input.addEventListener('keydown', (ev) => {
           ev.stopPropagation();
@@ -4549,14 +4552,14 @@ export class Compositor {
         inputWrap.appendChild(input);
         list.appendChild(inputWrap);
         title.textContent = 'RENAME DRAWING';
-        hint.textContent = 'Enter  rename    Esc  back';
+        hint.replaceChildren(...keyHintNodes([{ keys: ['Enter'], label: 'rename' }, { keys: ['Esc'], label: 'back' }], '    '));
         document.removeEventListener('keydown', onKey, true);
         input.addEventListener('keydown', (ev) => {
           ev.stopPropagation();
           if (ev.key === 'Escape') {
             ev.preventDefault();
             title.textContent = options.allowNew === false ? 'OPEN DRAWING HERE' : 'OPEN .EXCALIDRAW';
-            hint.textContent = 'j/k  select    Enter  open    r  rename    Esc  cancel';
+            hint.replaceChildren(...keyHintNodes([{ keys: ['j', 'k'], keySeparator: '/', label: 'select' }, { keys: ['Enter'], label: 'open' }, { keys: ['r'], label: 'rename' }, { keys: ['Esc'], label: 'cancel' }], '    '));
             render();
             document.addEventListener('keydown', onKey, true);
             return;
@@ -4569,7 +4572,7 @@ export class Compositor {
           const nextPath = `${this.dirname(r.path)}/${safe}`;
           if (nextPath === r.path) {
             title.textContent = options.allowNew === false ? 'OPEN DRAWING HERE' : 'OPEN .EXCALIDRAW';
-            hint.textContent = 'j/k  select    Enter  open    r  rename    Esc  cancel';
+            hint.replaceChildren(...keyHintNodes([{ keys: ['j', 'k'], keySeparator: '/', label: 'select' }, { keys: ['Enter'], label: 'open' }, { keys: ['r'], label: 'rename' }, { keys: ['Esc'], label: 'cancel' }], '    '));
             render();
             document.addEventListener('keydown', onKey, true);
             return;
@@ -4580,14 +4583,14 @@ export class Compositor {
               r.rel = stripPrefix(nextPath);
               r.mtime = Date.now();
               title.textContent = options.allowNew === false ? 'OPEN DRAWING HERE' : 'OPEN .EXCALIDRAW';
-              hint.textContent = 'j/k  select    Enter  open    r  rename    Esc  cancel';
+              hint.replaceChildren(...keyHintNodes([{ keys: ['j', 'k'], keySeparator: '/', label: 'select' }, { keys: ['Enter'], label: 'open' }, { keys: ['r'], label: 'rename' }, { keys: ['Esc'], label: 'cancel' }], '    '));
               render();
               document.addEventListener('keydown', onKey, true);
             })
             .catch((e: unknown) => {
               this.showNotification(`Pencil: rename failed — ${e}`);
               title.textContent = options.allowNew === false ? 'OPEN DRAWING HERE' : 'OPEN .EXCALIDRAW';
-              hint.textContent = 'j/k  select    Enter  open    r  rename    Esc  cancel';
+              hint.replaceChildren(...keyHintNodes([{ keys: ['j', 'k'], keySeparator: '/', label: 'select' }, { keys: ['Enter'], label: 'open' }, { keys: ['r'], label: 'rename' }, { keys: ['Esc'], label: 'cancel' }], '    '));
               render();
               document.addEventListener('keydown', onKey, true);
             });
@@ -4682,7 +4685,7 @@ export class Compositor {
 
       const hint = document.createElement('div');
       hint.className = 'krypton-vault-picker__hint';
-      hint.textContent = 'Enter  create    Esc  cancel';
+      hint.replaceChildren(...keyHintNodes([{ keys: ['Enter'], label: 'create' }, { keys: ['Esc'], label: 'cancel' }], '    '));
       panel.appendChild(hint);
 
       overlay.appendChild(panel);
@@ -4941,7 +4944,7 @@ export class Compositor {
 
       const hint = document.createElement('div');
       hint.className = 'krypton-vault-picker__hint';
-      hint.textContent = 'j/k  select    Enter  open    Esc  cancel';
+      hint.replaceChildren(...keyHintNodes([{ keys: ['j', 'k'], keySeparator: '/', label: 'select' }, { keys: ['Enter'], label: 'open' }, { keys: ['Esc'], label: 'cancel' }], '    '));
       panel.appendChild(hint);
 
       overlay.appendChild(panel);

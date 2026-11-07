@@ -15,7 +15,7 @@ import { Composer, type ComposerDraftProps, type ComposerPaletteProps } from './
 // It did not for the palettes, and four empty bordered bars stacked up above
 // the input line on every idle composer.
 
-const EMPTY_PALETTE: ComposerPaletteProps = { rows: [], cursor: 0, hint: '' };
+const EMPTY_PALETTE: ComposerPaletteProps = { rows: [], cursor: 0, hint: [] };
 
 function idleProps(): ComposerDraftProps {
   return {
@@ -29,7 +29,7 @@ function idleProps(): ComposerDraftProps {
       running: false,
       chips: [],
       branch: null,
-      helpHint: '? help',
+      helpHint: [{ keys: ['?'], label: 'help' }],
     },
     dictation: null,
     peer: { laneStatus: 'idle', pendingPeers: [], inboxDepth: 0 },
@@ -110,7 +110,7 @@ describe('Composer', () => {
       kind: 'decision',
       accent: '#c77dff',
       liveVoice: { kind: 'hidden' },
-      decision: { label: 'perm', hint: 'a accept · A all · r reject · R all' },
+      decision: { label: 'perm', hint: [{ keys: ['a'], label: 'accept' }, { keys: ['r'], label: 'reject' }] },
     });
 
     expect(composer.el.className).toContain('acp-harness__composer--permission');

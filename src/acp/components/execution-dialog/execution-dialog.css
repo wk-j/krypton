@@ -146,8 +146,9 @@
     letter-spacing: 0.09em;
     text-shadow: var(--mat-print);
   }
-  /* A key: one line, 24px in the dense bars. */
+  /* A key: one line, 24px in the dense bars. A shortcut cap sits after the label. */
   .acp-execution-dialog__button {
+    gap: 6px;
     min-height: 24px;
     padding: 2px 10px;
     border-radius: var(--krypton-border-radius, 8px);
@@ -185,10 +186,6 @@
   .acp-execution-dialog__tab[aria-selected='true']::before {
     background: var(--mat-lens-on);
     box-shadow: var(--mat-lens-glow);
-  }
-  .acp-execution-dialog__tab-key {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
-    font-variant-numeric: tabular-nums;
   }
   /* The count is a small readout window let into the key. */
   .acp-execution-dialog__tab-count {
@@ -303,18 +300,6 @@
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: 0.82em;
     text-shadow: var(--mat-engrave);
-  }
-  .acp-execution-dialog__foot kbd {
-    display: inline-block;
-    padding: 0 4px;
-    border: 1px solid var(--mat-key-edge);
-    border-radius: 4px;
-    background: var(--mat-key);
-    box-shadow: var(--mat-key-raise);
-    color: var(--mat-lit);
-    font: inherit;
-    line-height: 1.35;
-    text-shadow: var(--mat-print);
   }
 
   .acp-execution-dialog__syntax-comment,

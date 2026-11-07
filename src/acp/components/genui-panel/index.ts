@@ -20,6 +20,7 @@ import './genui-panel.css';
 
 import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
+import { keyHintNodes } from '../../../ui/kbd';
 import { disposeList } from '../../../ui/list';
 import { evaluate } from '../../genui/evaluate';
 import type { UiAction, UiFenceEntry, UiNode, UiState, UiStateValue } from '../../genui/types';
@@ -71,10 +72,14 @@ const NO_STATE: UiState = {};
 
 export class GenUiPanel extends Component<GenUiPanelProps> {
   /** The card above already names the spec; this line is the key legend. */
-  private readonly legend = el('span', {
-    class: 'acp-genui-panel__legend',
-    text: 'Tab moves between controls · Esc closes',
-  });
+  private readonly legend = el(
+    'span',
+    { class: 'acp-genui-panel__legend' },
+    ...keyHintNodes([
+      { keys: ['Tab'], label: 'moves between controls' },
+      { keys: ['Esc'], label: 'closes' },
+    ]),
+  );
   /** Carries `acp-genui` too: catalog sheets scope their shared rules to that block. */
   private readonly content = el('div', { class: 'acp-genui-panel__body acp-genui' });
   private readonly feedback = el('div', { class: 'acp-genui-panel__feedback', attrs: { role: 'status' } });

@@ -687,7 +687,7 @@ html[data-theme-scheme='light'] .krypton-diff .d2h-dark-color-scheme {
 
 /* ─── Keybindings help overlay ─── */
 
-/* `? help` affordance at the end of the nav bar — printed legend, no rail. */
+/* `? help` affordance at the end of the nav bar — key cap + printed legend, no rail. */
 .krypton-diff__help-hint {
   font-size: var(--krypton-chrome-font-size, 11px);
   color: var(--diff-ink-dim);

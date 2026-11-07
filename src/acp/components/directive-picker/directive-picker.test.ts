@@ -63,7 +63,13 @@ describe('DirectivePicker', () => {
     expect(picker.el.querySelector('header')?.outerHTML).toBe(
       '<header class="acp-harness__directive-head">' +
         '<span>// directive · claude-1</span>' +
-        '<span>j/k move · enter switch · shift+enter new lane · backspace clear · esc cancel</span>' +
+        '<span>' +
+        '<span class="krypton-key-hint"><kbd>j</kbd>/<kbd>k</kbd> move</span> · ' +
+        '<span class="krypton-key-hint"><kbd>Enter</kbd> switch</span> · ' +
+        '<span class="krypton-key-hint"><kbd>⇧Enter</kbd> new lane</span> · ' +
+        '<span class="krypton-key-hint"><kbd>Backspace</kbd> clear</span> · ' +
+        '<span class="krypton-key-hint"><kbd>Esc</kbd> cancel</span>' +
+        '</span>' +
         '</header>',
     );
   });

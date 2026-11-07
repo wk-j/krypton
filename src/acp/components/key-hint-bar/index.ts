@@ -1,23 +1,18 @@
 // Spec 302 §1.7 — `KeyHintBar`.
 //
-// The "what can I press here" strip. Eight call sites paint it four different
-// ways today, and the differences are real markup, not noise:
+// The "what can I press here" strip. Its call sites wrap the run three ways,
+// and the differences are real markup, not noise:
 //
-//   * review / priority overlay foot  — one `<span>` per hint, no separator,
-//     trailing `<span class="…__foot-note">` (acp-harness-view.ts:5412-5429,
-//     review-priority-overlay.ts:121-127);
-//   * triage action hint — `<kbd>` runs written straight into the container,
-//     joined by ` · ` (attention-overlay.ts:127-130) — and the redirect
-//     variant of that same container is plain text with the note joined by
-//     ` — ` (attention-overlay.ts:124);
-//   * picker / palette headers — one `<span>` of `·`-joined plain text
-//     (acp-harness-view.ts:12705-12710,12770-12774,12807-12811,12838-12892,
-//     harness-lane-chrome.ts:463);
+//   * overlay feet (review, priority, execution dialog) — one `<span>` per
+//     hint, no separator, trailing `<span class="…__foot-note">` (`spans`);
+//   * triage hint, picker and palette heads, composer rows — the run written
+//     straight into the container, joined by ` · ` (`bare`);
 //   * ticket footer — the whole run inside one bare `<span>`, with a second
-//     bare `<span>` for the note (harness-ticket-controller.ts:780-783).
+//     bare `<span>` for the note (`run`).
 //
-// So `style` picks how a key is drawn and `layout` picks how the run is
-// wrapped; neither is derived from the other. The component's root IS the
+// `layout` picks how the run is wrapped. Every key is a `<kbd>` cap (spec 369):
+// the caps and hint runs come from `src/ui/kbd.ts`, so this bar and every
+// hand-built hint line draw the same cap. The component's root IS the
 // container the caller used to build by hand (`.acp-review__foot`,
 // `.acp-triage__action-hint`, the header's `<span>`), so nothing wraps it and
 // the existing CSS keeps matching. It owns no block: `block` is the root's
@@ -25,16 +20,8 @@
 
 import { Component } from '../../../ui/component';
 import { classes, el, setChildren, type ElChild } from '../../../ui/dom';
+import { keyHint, keyHintNodes, keyHintsSignature, type KeyHint } from '../../../ui/kbd';
 import type { ComponentDef } from '../types';
-
-export interface KeyHint {
-  /** Rendered as `<kbd>` each (`kbd`) or as text (`plain`). May be empty. */
-  readonly keys: readonly string[];
-  /** Follows the keys after a single space. May be empty. */
-  readonly label: string;
-  /** Joins this hint's keys. Default `' '`; the triage bar uses `'/'`. */
-  readonly keySeparator?: string;
-}
 
 /**
  * `spans` — one `<span>` per hint (the overlay feet).
@@ -47,10 +34,9 @@ export interface KeyHintBarProps {
   readonly hints: readonly KeyHint[];
   /** Trailing aside. Absent or empty emits no node and no text. */
   readonly note?: string;
-  readonly style: 'kbd' | 'plain';
   /** The root's full class name. `''` leaves the root unclassed. */
   readonly block: string;
-  /** Default: `spans` for `kbd`, `bare` for `plain`. */
+  /** Default: `bare`. */
   readonly layout?: KeyHintLayout;
   /** Between hints. Default `''` for `spans`, `' · '` otherwise. */
   readonly separator?: string;
@@ -60,23 +46,9 @@ export interface KeyHintBarProps {
   readonly noteJoin?: string;
 }
 
-/** `['j','k']` + `select round` → `j k select round` with the caller's key joiner. */
-function hintText(hint: KeyHint): string {
-  const keys = hint.keys.join(hint.keySeparator ?? ' ');
-  if (!keys) return hint.label;
-  return hint.label ? `${keys} ${hint.label}` : keys;
-}
-
-/** `<kbd>j</kbd> <kbd>k</kbd> select round` as nodes, never as a string. */
-function kbdChildren(hint: KeyHint): ElChild[] {
-  const separator = hint.keySeparator ?? ' ';
-  const out: ElChild[] = [];
-  hint.keys.forEach((key, index) => {
-    if (index > 0 && separator) out.push(separator);
-    out.push(el('kbd', { text: key }));
-  });
-  if (hint.label) out.push(out.length > 0 ? ` ${hint.label}` : hint.label);
-  return out;
+/** One hint as a `<span>`, even a legend-only one: the overlay feet style `> span`. */
+function hintSpan(hint: KeyHint): Node {
+  return hint.keys.length > 0 ? keyHint(hint) : el('span', { text: hint.label });
 }
 
 export class KeyHintBar extends Component<KeyHintBarProps> {
@@ -86,11 +58,8 @@ export class KeyHintBar extends Component<KeyHintBarProps> {
 
   protected readDeps(next: KeyHintBarProps): readonly unknown[] {
     return [
-      next.hints
-        .map((hint) => `${hint.keys.join('\u0000')}\u0001${hint.label}\u0001${hint.keySeparator ?? ''}`)
-        .join('\u0002'),
+      keyHintsSignature(next.hints),
       next.note,
-      next.style,
       next.block,
       next.layout,
       next.separator,
@@ -108,7 +77,7 @@ export class KeyHintBar extends Component<KeyHintBarProps> {
   protected paint(next: KeyHintBarProps): void {
     this.syncClasses(next);
 
-    const layout = next.layout ?? (next.style === 'kbd' ? 'spans' : 'bare');
+    const layout = next.layout ?? 'bare';
     const separator = next.separator ?? (layout === 'spans' ? '' : ' · ');
     const joinedNote = next.note && next.noteJoin !== undefined ? `${next.noteJoin}${next.note}` : null;
 
@@ -116,19 +85,13 @@ export class KeyHintBar extends Component<KeyHintBarProps> {
     if (layout === 'spans') {
       next.hints.forEach((hint, index) => {
         if (index > 0 && separator) children.push(separator);
-        const content = next.style === 'kbd' ? kbdChildren(hint) : [hintText(hint)];
-        children.push(el('span', { children: content }));
+        children.push(hintSpan(hint));
       });
       if (joinedNote) children.push(joinedNote);
     } else {
-      const run = this.runChildren(next, separator);
-      if (joinedNote) {
-        // The note continues the sentence, so it continues the text node too:
-        // `Enter send · Esc cancel — delivered on the lane’s next idle`.
-        const last = run.length > 0 ? run[run.length - 1] : null;
-        if (typeof last === 'string') run[run.length - 1] = `${last}${joinedNote}`;
-        else run.push(joinedNote);
-      }
+      // The note continues the sentence: `Enter send · Esc cancel — delivered on the lane’s next idle`.
+      const run: ElChild[] = [...keyHintNodes(next.hints, separator)];
+      if (joinedNote) run.push(joinedNote);
       if (layout === 'run') children.push(el('span', { children: run }));
       else children.push(...run);
     }
@@ -137,17 +100,6 @@ export class KeyHintBar extends Component<KeyHintBarProps> {
       children.push(el('span', { class: next.noteClass, text: next.note }));
     }
     setChildren(this.el, children);
-  }
-
-  /** One text node for a plain run; `<kbd>`-bearing nodes otherwise. */
-  private runChildren(next: KeyHintBarProps, separator: string): ElChild[] {
-    if (next.style === 'plain') return [next.hints.map(hintText).join(separator)];
-    const out: ElChild[] = [];
-    next.hints.forEach((hint, index) => {
-      if (index > 0 && separator) out.push(separator);
-      out.push(...kbdChildren(hint));
-    });
-    return out;
   }
 }
 

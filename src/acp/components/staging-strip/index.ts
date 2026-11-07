@@ -20,6 +20,7 @@ import './staging-strip.css';
 
 import { Component } from '../../../ui/component';
 import { el, setAttr } from '../../../ui/dom';
+import { keyHintNodes } from '../../../ui/kbd';
 import { syncOrder } from '../../../ui/list';
 import { basename } from '../../harness-format';
 import type { StagedImage } from '../../harness-view-types';
@@ -144,7 +145,12 @@ export class StagingStrip extends Component<StagingStripProps> {
       this.tiles.delete(key);
     }
     const count = next.images.length;
-    this.hintEl.textContent = `${count} image${count === 1 ? '' : 's'} · Esc to clear`;
+    this.hintEl.replaceChildren(
+      ...keyHintNodes([
+        { keys: [], label: `${count} image${count === 1 ? '' : 's'}` },
+        { keys: ['Esc'], label: 'to clear' },
+      ]),
+    );
     nodes.push(this.hintEl);
     syncOrder(this.el, nodes);
   }

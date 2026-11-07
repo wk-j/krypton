@@ -12,14 +12,33 @@
 
 import { Component } from '../../../ui/component';
 import { el, type ElChild } from '../../../ui/dom';
+import { keyCap, type KeyHint } from '../../../ui/kbd';
 import { OverlayShell } from '../overlay-shell';
 import type { ComponentDef } from '../types';
 import './help-overlay.css';
 
 interface HelpEntry {
-  readonly term: string;
-  /** Plain text, or the parts of a line that carries `<kbd>` runs. */
+  /** A command as text, or a binding whose every key is a `<kbd>` cap (spec 369). */
+  readonly term: string | readonly ElChild[];
+  /** Plain text, or the parts of a line that carries `<kbd>` caps. */
   readonly desc: string | readonly ElChild[];
+}
+
+const SUB: readonly KeyHint[] = [{ keys: ['Esc', '?', 'q'], label: 'closes', keySeparator: '/' }];
+
+/** Alternatives: one cap per key, joined by `/`. */
+function alt(...keys: readonly string[]): ElChild[] {
+  const out: ElChild[] = [];
+  keys.forEach((key, index) => {
+    if (index > 0) out.push('/');
+    out.push(keyCap(key));
+  });
+  return out;
+}
+
+/** A sequence: `first`, then `second`. */
+function then(first: string, second: string): ElChild[] {
+  return [keyCap(first), ' then ', keyCap(second)];
 }
 
 interface HelpSection {
@@ -32,84 +51,83 @@ interface HelpSection {
 }
 
 /**
- * Built lazily on first construction, not at module scope: `el()` touches
- * `document`, and this module is reachable from `acp-harness-view.ts`, which
- * the node-environment test suite imports.
+ * Built per overlay, not at module scope: `el()` touches `document`, and this
+ * module is reachable from `acp-harness-view.ts`, which the node-environment
+ * test suite imports. Not cached either: the entries hold cap nodes, and a
+ * node can sit in one overlay only.
  */
-let sections: readonly HelpSection[] | null = null;
-
-function helpSections(): readonly HelpSection[] {
-  if (sections) return sections;
-  sections = buildSections();
-  return sections;
-}
-
 function buildSections(): readonly HelpSection[] {
   return [
   {
     title: 'Lane Control',
     entries: [
-      { term: 'Cmd+P then +', desc: 'Add lane (open backend picker)' },
-      { term: 'Cmd+P then _', desc: 'Close active lane' },
-      { term: 'Cmd+P then =', desc: 'Toggle lane metrics overlay' },
-      { term: 'Cmd+P then 0', desc: 'Resume/load a project session for the active backend' },
-      { term: 'Ctrl+N / Ctrl+P', desc: 'Next / previous lane' },
-      { term: 'Esc, then 1-9', desc: 'Switch lane in transcript mode' },
-      { term: 'Esc, then r', desc: 'Refresh Git branch and file-reference line counts' },
-      { term: 'Esc, then ?', desc: 'Open help' },
+      { term: then('⌘P', '+'), desc: 'Add lane (open backend picker)' },
+      { term: then('⌘P', '_'), desc: 'Close active lane' },
+      { term: then('⌘P', '='), desc: 'Toggle lane metrics overlay' },
+      { term: then('⌘P', '0'), desc: 'Resume/load a project session for the active backend' },
+      { term: alt('⌃N', '⌃P'), desc: 'Next / previous lane' },
+      { term: then('Esc', '1–9'), desc: 'Switch lane in transcript mode' },
+      { term: then('Esc', 'r'), desc: 'Refresh Git branch and file-reference line counts' },
+      { term: then('Esc', '?'), desc: 'Open help' },
       { term: 'Tab buttons', desc: 'Click a lane directly' },
       {
-        term: 'Enter',
+        term: alt('Enter'),
         desc: 'Send prompt to active lane only (busy lane: steer the running turn when the agent supports it, else queue)',
       },
-      { term: 'Cmd+Enter', desc: 'Busy lane: queue as a follow-up for the next turn' },
+      { term: alt('⌘Enter'), desc: 'Busy lane: queue as a follow-up for the next turn' },
       {
-        term: 'Shift+Tab',
+        term: alt('⇧Tab'),
         desc: 'Cycle the lane\'s permission mode: normal → auto-edit (file edits auto-accepted) → bypass (everything auto-accepted, including high-risk)',
       },
-      { term: 'Shift+Enter', desc: 'Insert newline' },
-      { term: 'Ctrl+C', desc: 'Cancel active busy lane' },
-      { term: 'Ctrl+Shift+J / Ctrl+Shift+K', desc: 'Scroll transcript down / up (works in composer)' },
-      { term: 'Cmd+W', desc: 'Close harness tab' },
-      { term: 'Cmd+.', desc: 'Toggle Zen Mode' },
-      { term: 'Cmd+Shift+.', desc: 'Toggle Concise Mode (tool cards collapse to one line)' },
+      { term: alt('⇧Enter'), desc: 'Insert newline' },
+      { term: alt('⌃C'), desc: 'Cancel active busy lane' },
+      { term: alt('⌃⇧J', '⌃⇧K'), desc: 'Scroll transcript down / up (works in composer)' },
+      { term: alt('⌘W'), desc: 'Close harness tab' },
+      { term: alt('⌘.'), desc: 'Toggle Zen Mode' },
+      { term: alt('⇧⌘.'), desc: 'Toggle Concise Mode (tool cards collapse to one line)' },
     ],
   },
   {
     title: 'Composer (readline)',
     entries: [
-      { term: 'Ctrl+A / Ctrl+E', desc: 'Begin / end of line' },
-      { term: 'Ctrl+B / Ctrl+F', desc: 'Char back / forward' },
-      { term: 'Ctrl+Left / Ctrl+Right', desc: 'Word back / forward' },
-      { term: 'Ctrl+H', desc: 'Backspace' },
-      { term: 'Ctrl+D', desc: 'Delete char forward' },
-      { term: 'Cmd+D', desc: 'Start / stop English dictation (when available)' },
-      { term: 'Cmd+Shift+D', desc: 'Start / stop Thai dictation (when available)' },
-      { term: 'Ctrl+W', desc: 'Delete word backward (kill)' },
-      { term: 'Ctrl+U', desc: 'Kill to start of line' },
-      { term: 'Ctrl+K', desc: 'Kill to end of line' },
-      { term: 'Ctrl+Y', desc: 'Yank last killed text' },
-      { term: 'Ctrl+T', desc: 'Transpose chars around cursor' },
+      { term: alt('⌃A', '⌃E'), desc: 'Begin / end of line' },
+      { term: alt('⌃B', '⌃F'), desc: 'Char back / forward' },
+      { term: alt('⌃←', '⌃→'), desc: 'Word back / forward' },
+      { term: alt('⌃H'), desc: 'Backspace' },
+      { term: alt('⌃D'), desc: 'Delete char forward' },
+      { term: alt('⌘D'), desc: 'Start / stop English dictation (when available)' },
+      { term: alt('⇧⌘D'), desc: 'Start / stop Thai dictation (when available)' },
+      { term: alt('⌃W'), desc: 'Delete word backward (kill)' },
+      { term: alt('⌃U'), desc: 'Kill to start of line' },
+      { term: alt('⌃K'), desc: 'Kill to end of line' },
+      { term: alt('⌃Y'), desc: 'Yank last killed text' },
+      { term: alt('⌃T'), desc: 'Transpose chars around cursor' },
       {
-        term: '# / @ / /',
-        desc: 'Type at line start to autocomplete built-in #commands / @lanes / agent /commands · ↑↓ select, Tab completes',
+        term: alt('#', '@', '/'),
+        desc: [
+          'Type at line start to autocomplete built-in #commands / @lanes / agent /commands · ',
+          keyCap('↑↓'),
+          ' select, ',
+          keyCap('Tab'),
+          ' completes',
+        ],
       },
     ],
   },
   {
     title: 'Permissions',
     entries: [
-      { term: 'a', desc: 'Accept current request once' },
-      { term: 'A', desc: 'Accept all for current turn' },
-      { term: 'r', desc: 'Reject current request once' },
-      { term: 'R', desc: 'Reject all for current turn' },
+      { term: alt('a'), desc: 'Accept current request once' },
+      { term: alt('A'), desc: 'Accept all for current turn' },
+      { term: alt('r'), desc: 'Reject current request once' },
+      { term: alt('R'), desc: 'Reject all for current turn' },
       {
-        term: 'Esc',
+        term: alt('Esc'),
         desc: [
           'Never answers a request — only ',
-          el('kbd', { text: 'r' }),
+          keyCap('r'),
           ' / ',
-          el('kbd', { text: 'R' }),
+          keyCap('R'),
           ' reject',
         ],
       },
@@ -118,10 +136,10 @@ function buildSections(): readonly HelpSection[] {
   {
     title: 'Memory',
     entries: [
-      { term: 'Ctrl+M', desc: 'Toggle memory drawer' },
-      { term: 'q / Esc', desc: 'Close memory drawer' },
-      { term: 'j / k', desc: 'Move memory cursor' },
-      { term: 'g / G', desc: 'Top / bottom of memory list' },
+      { term: alt('⌃M'), desc: 'Toggle memory drawer' },
+      { term: alt('q', 'Esc'), desc: 'Close memory drawer' },
+      { term: alt('j', 'k'), desc: 'Move memory cursor' },
+      { term: alt('g', 'G'), desc: 'Top / bottom of memory list' },
       { term: 'Agents', desc: 'Create, update, delete, search, and fetch detail through MCP tools' },
       { term: '#resume list', desc: 'Open the handoff picker (merged local + Xenon; the only surface that resumes)' },
     ],
@@ -129,23 +147,23 @@ function buildSections(): readonly HelpSection[] {
   {
     title: 'Transcript',
     entries: [
-      { term: 'Esc', desc: 'Focus active transcript scrolling' },
-      { term: 'i / Esc', desc: 'Return to input composer' },
-      { term: '1-9', desc: 'Switch lane' },
-      { term: 'j / k', desc: 'Scroll line by line' },
-      { term: 'Ctrl+d / Ctrl+u', desc: 'Page down / up' },
-      { term: 'g / G', desc: 'Top / bottom' },
-      { term: 'c', desc: 'Annotate selection (or nearest block)' },
-      { term: 's', desc: 'Send unsent annotations as one turn' },
-      { term: 'd', desc: 'Delete last unsent annotation' },
-      { term: 'q', desc: 'Close harness tab' },
+      { term: alt('Esc'), desc: 'Focus active transcript scrolling' },
+      { term: alt('i', 'Esc'), desc: 'Return to input composer' },
+      { term: alt('1–9'), desc: 'Switch lane' },
+      { term: alt('j', 'k'), desc: 'Scroll line by line' },
+      { term: alt('⌃D', '⌃U'), desc: 'Page down / up' },
+      { term: alt('g', 'G'), desc: 'Top / bottom' },
+      { term: alt('c'), desc: 'Annotate selection (or nearest block)' },
+      { term: alt('s'), desc: 'Send unsent annotations as one turn' },
+      { term: alt('d'), desc: 'Delete last unsent annotation' },
+      { term: alt('q'), desc: 'Close harness tab' },
     ],
   },
   {
     title: 'Commands',
     wide: true,
     entries: [
-      { term: '#cancel', desc: 'Cancel active lane, same as Ctrl+C' },
+      { term: '#cancel', desc: ['Cancel active lane, same as ', keyCap('⌃C')] },
       { term: '#new', desc: 'Start fresh active lane, keep handoffs (the next #handoff starts a new thread)' },
       { term: '#new!', desc: 'Start fresh active lane and delete the handoff it is bound to' },
       {
@@ -177,7 +195,18 @@ function buildSections(): readonly HelpSection[] {
       { term: '#mem clear', desc: 'Delete the handoff bound to the active lane' },
       { term: '#handoff', desc: 'Ask active lane to write or refresh the handoff for its current work' },
       { term: '#resume', desc: 'Resume the newest handoff in the project (local and Xenon), from any lane or machine' },
-      { term: '#resume list', desc: 'Open the handoff picker: j/k move, enter resumes, esc closes' },
+      {
+        term: '#resume list',
+        desc: [
+          'Open the handoff picker: ',
+          ...alt('j', 'k'),
+          ' move, ',
+          keyCap('Enter'),
+          ' resumes, ',
+          keyCap('Esc'),
+          ' closes',
+        ],
+      },
       { term: '#resume <id>', desc: 'Resume one handoff by id or a unique prefix of 4+ characters after ho-' },
       { term: '#push handoff [<id>]', desc: 'Publish handoffs (or one by id) to the Xenon server' },
       { term: '#wiki [hint]', desc: 'Compound this session into the project wiki (docs/wiki/)' },
@@ -231,7 +260,7 @@ export class HelpOverlay extends Component<HelpOverlayProps> {
     this.shell = shell;
     // The reference is static: build it once, here, and never again. The only
     // render state the overlay has is `open`.
-    this.grid = el('div', { class: 'acp-harness__help-grid' }, ...helpSections().map(renderSection));
+    this.grid = el('div', { class: 'acp-harness__help-grid' }, ...buildSections().map(renderSection));
   }
 
   get isOpen(): boolean {
@@ -252,7 +281,7 @@ export class HelpOverlay extends Component<HelpOverlayProps> {
       name: 'help',
       block: 'acp-harness__help',
       title: 'ACP Harness Help',
-      sub: 'Esc / ? / q closes',
+      sub: SUB,
       body: this.grid,
       onAutoClose: next.onAutoClose,
     });
@@ -274,7 +303,9 @@ function renderSection(section: HelpSection): HTMLElement {
   }
   const list = el('dl');
   for (const entry of section.entries ?? []) {
-    list.appendChild(el('dt', { text: entry.term }));
+    list.appendChild(typeof entry.term === 'string'
+      ? el('dt', { text: entry.term })
+      : el('dt', { children: entry.term }));
     list.appendChild(typeof entry.desc === 'string'
       ? el('dd', { text: entry.desc })
       : el('dd', { children: entry.desc }));

@@ -10,7 +10,7 @@ const ARTIFACT: CardProps = {
     title: 'Render path comparison',
     meta: '184.2 KB · a91f3c2',
   },
-  action: 'press f to open in browser',
+  action: [{ keys: ['f'], label: 'to open in browser' }],
 };
 
 const REVIEW: CardProps = {
@@ -21,7 +21,7 @@ const REVIEW: CardProps = {
     title: 'Review Board — spec 301',
     meta: '4 blocks · 2 steps · reference',
   },
-  action: 'press g to open the review',
+  action: [{ keys: ['g'], label: 'to open the review' }],
 };
 
 const fence = (): CardProps => ({
@@ -63,7 +63,8 @@ describe('Card artifact variant', () => {
         '<span class="acp-harness__artifact-title">Render path comparison</span>' +
         '</div>' +
         '<div class="acp-harness__artifact-meta">184.2 KB · a91f3c2</div>' +
-        '<div class="acp-harness__artifact-action">press f to open in browser</div>',
+        '<div class="acp-harness__artifact-action">' +
+        '<span class="krypton-key-hint"><kbd>f</kbd> to open in browser</span></div>',
     );
   });
 
@@ -125,7 +126,8 @@ describe('Card review variant', () => {
         '<span class="acp-harness__review-card-title">Review Board — spec 301</span>' +
         '</div>' +
         '<div class="acp-harness__review-card-meta">4 blocks · 2 steps · reference</div>' +
-        '<div class="acp-harness__review-card-action">press g to open the review</div>',
+        '<div class="acp-harness__review-card-action">' +
+        '<span class="krypton-key-hint"><kbd>g</kbd> to open the review</span></div>',
     );
     expect(card.el.querySelectorAll('[class*="acp-harness__artifact"]').length).toBe(0);
   });

@@ -733,14 +733,9 @@ textarea {
   overflow-wrap: anywhere;
 }
 
-/* The answer keys, printed on one key cap. */
+/* The answer keys: shared caps (src/styles/kbd.css) with printed legends. */
 .live-assist__permission-keys {
   margin: 0;
-  padding: 3px 9px;
-  border: 1px solid var(--mat-key-edge);
-  border-radius: var(--krypton-border-radius, 8px);
-  background: var(--mat-key);
-  box-shadow: var(--mat-key-raise);
   color: var(--mat-lit);
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.09em;

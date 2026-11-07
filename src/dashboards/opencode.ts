@@ -7,6 +7,20 @@
 import { invoke } from '../profiler/ipc';
 import type { DashboardDefinition, DashboardTab } from '../types';
 import type { Compositor } from '../compositor';
+import { keyHint } from '../ui/kbd';
+
+/** `r refresh · [/] or 1–3 switch tabs · Esc close`: the tab-switch alternatives share one hint. */
+function ocHintNodes(): Node[] {
+  return [
+    keyHint({ keys: ['r'], label: 'refresh' }),
+    document.createTextNode(' \u00b7 '),
+    keyHint({ keys: ['[', ']'], keySeparator: '/', label: 'or' }),
+    document.createTextNode(' '),
+    keyHint({ keys: ['1\u20133'], label: 'switch tabs' }),
+    document.createTextNode(' \u00b7 '),
+    keyHint({ keys: ['Esc'], label: 'close' }),
+  ];
+}
 
 /** Cached resolved path to the OpenCode SQLite database */
 let resolvedDbPath: string | null = null;
@@ -237,7 +251,7 @@ function renderOverviewTab(container: HTMLElement, data: OcData): void {
   // Bottom hint
   const hint = document.createElement('div');
   hint.className = 'krypton-oc__hint';
-  hint.textContent = 'r refresh \u00b7 [/] or 1-3 switch tabs \u00b7 Esc close';
+  hint.append(...ocHintNodes());
   container.appendChild(hint);
 }
 
@@ -339,7 +353,7 @@ function renderSessionsTab(container: HTMLElement, data: OcData): void {
 
   const hint = document.createElement('div');
   hint.className = 'krypton-oc__hint';
-  hint.textContent = 'r refresh \u00b7 [/] or 1-3 switch tabs \u00b7 Esc close';
+  hint.append(...ocHintNodes());
   container.appendChild(hint);
 }
 
@@ -395,7 +409,7 @@ function renderToolsTab(container: HTMLElement, data: OcData): void {
 
   const hint = document.createElement('div');
   hint.className = 'krypton-oc__hint';
-  hint.textContent = 'r refresh \u00b7 [/] or 1-3 switch tabs \u00b7 Esc close';
+  hint.append(...ocHintNodes());
   container.appendChild(hint);
 }
 

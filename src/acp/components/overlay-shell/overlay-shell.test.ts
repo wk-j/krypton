@@ -72,11 +72,11 @@ describe('OverlayShell', () => {
   it('mounts the key-hint bar as the foot, unwrapped, with the caller markup', () => {
     const shell = mount(review({
       hints: {
-        style: 'kbd',
+        layout: 'spans',
         block: 'acp-review__foot',
         hints: [
           { keys: ['h', 'l'], label: 'switch lane' },
-          { keys: ['esc'], label: 'close' },
+          { keys: ['Esc'], label: 'close' },
         ],
         note: 'read-only — observation, not a score',
         noteClass: 'acp-review__foot-note',
@@ -87,15 +87,15 @@ describe('OverlayShell', () => {
     const foot = panel?.lastElementChild;
     expect(foot?.className).toBe('acp-review__foot');
     expect(foot?.innerHTML).toBe(
-      '<span><kbd>h</kbd> <kbd>l</kbd> switch lane</span>' +
-        '<span><kbd>esc</kbd> close</span>' +
+      '<span class="krypton-key-hint"><kbd>h</kbd> <kbd>l</kbd> switch lane</span>' +
+        '<span class="krypton-key-hint"><kbd>Esc</kbd> close</span>' +
         '<span class="acp-review__foot-note">read-only — observation, not a score</span>',
     );
   });
 
   it('keeps the head and the foot nodes across a body swap', () => {
     const shell = mount(review({
-      hints: { style: 'kbd', block: 'acp-review__foot', hints: [{ keys: ['esc'], label: 'close' }] },
+      hints: { layout: 'spans', block: 'acp-review__foot', hints: [{ keys: ['Esc'], label: 'close' }] },
     }));
     const panel = shell.el.firstElementChild as HTMLElement;
     const head = panel.firstElementChild;
@@ -104,7 +104,7 @@ describe('OverlayShell', () => {
 
     shell.update(review({
       body: body('other rows'),
-      hints: { style: 'kbd', block: 'acp-review__foot', hints: [{ keys: ['esc'], label: 'close' }] },
+      hints: { layout: 'spans', block: 'acp-review__foot', hints: [{ keys: ['Esc'], label: 'close' }] },
     }));
 
     expect(panel.firstElementChild).toBe(head);
@@ -118,7 +118,7 @@ describe('OverlayShell', () => {
   it('shows the empty state instead of the body, and drops the foot with it', () => {
     const shell = mount(review({
       empty: 'No reviews recorded.',
-      hints: { style: 'kbd', block: 'acp-review__foot', hints: [{ keys: ['esc'], label: 'close' }] },
+      hints: { layout: 'spans', block: 'acp-review__foot', hints: [{ keys: ['Esc'], label: 'close' }] },
     }));
     const panel = shell.el.firstElementChild as HTMLElement;
 
@@ -126,7 +126,7 @@ describe('OverlayShell', () => {
     expect(panel.children[1].outerHTML).toBe('<div class="acp-review__empty">No reviews recorded.</div>');
 
     shell.update(review({
-      hints: { style: 'kbd', block: 'acp-review__foot', hints: [{ keys: ['esc'], label: 'close' }] },
+      hints: { layout: 'spans', block: 'acp-review__foot', hints: [{ keys: ['Esc'], label: 'close' }] },
     }));
     expect(panel.children.length).toBe(3);
     expect(panel.querySelector('.acp-review__empty')).toBeNull();
@@ -230,7 +230,11 @@ describe('OverlayShell', () => {
       rootClass: 'acp-harness__model-picker',
       block: 'acp-harness__model',
       title: '// model · claude-1',
-      sub: 'j/k move · enter switch · esc cancel',
+      sub: [
+        { keys: ['j', 'k'], label: 'move', keySeparator: '/' },
+        { keys: ['Enter'], label: 'switch' },
+        { keys: ['Esc'], label: 'cancel' },
+      ],
       body: list,
       parts: { panel: null, head: 'acp-harness__model-head', title: null, sub: null },
     });
@@ -239,7 +243,11 @@ describe('OverlayShell', () => {
       '<aside class="acp-harness__model-picker">' +
         '<header class="acp-harness__model-head">' +
         '<span>// model · claude-1</span>' +
-        '<span>j/k move · enter switch · esc cancel</span>' +
+        '<span>' +
+        '<span class="krypton-key-hint"><kbd>j</kbd>/<kbd>k</kbd> move</span> · ' +
+        '<span class="krypton-key-hint"><kbd>Enter</kbd> switch</span> · ' +
+        '<span class="krypton-key-hint"><kbd>Esc</kbd> cancel</span>' +
+        '</span>' +
         '</header>' +
         '<ul class="acp-harness__model-list"></ul>' +
         '</aside>',
@@ -271,9 +279,9 @@ describe('OverlayShell', () => {
     note.className = 'acp-harness__session-empty';
     note.textContent = 'no sessions for this project';
     const foot: OverlayShellProps['hints'] = {
-      style: 'kbd',
+      layout: 'spans',
       block: 'acp-review__foot',
-      hints: [{ keys: ['esc'], label: 'close' }],
+      hints: [{ keys: ['Esc'], label: 'close' }],
     };
     const shell = mount(review({ extras: [note], hints: foot }));
     const panel = shell.el.firstElementChild as HTMLElement;

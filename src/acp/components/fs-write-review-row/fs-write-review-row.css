@@ -3,9 +3,9 @@
    fs/write_text_file gated review card` comment and the eleven
    `acp-harness__fs-review*` rules).
 
-   Spec 366 (DESIGN.md "Key", "Lamps"): the pending card's three actions are
-   keys with their shortcut printed on them (visual keys — the keyboard drives
-   them). Reject is the destructive one, so its legend takes the fault ink.
+   Spec 369 rule 3: the pending card's three actions are hint runs — a key cap
+   (the shared `kbd` rule) and its printed legend. Reject is the destructive
+   one, so its legend takes the fault ink; the cap stays material.
    A resolved card reads at the tertiary ink, never via opacity.
 
    The diff preview inside the card is `DiffBlock`'s `acp-harness__tool-diff` /
@@ -42,15 +42,8 @@
     font-size: 0.82em;
   }
   .acp-harness__fs-review-action {
-    padding: 1px 8px;
-    border: 1px solid var(--mat-key-edge);
-    border-radius: var(--krypton-border-radius, 8px);
-    background: var(--mat-key);
-    box-shadow: var(--mat-key-raise);
     color: var(--mat-lit);
     letter-spacing: 0.04em;
-    text-shadow: var(--mat-print);
-    white-space: nowrap;
   }
   .acp-harness__fs-review-action--reject { color: var(--agent-error, #ff6b8b); }
   .acp-harness__fs-review-action--accept-all { color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72)); }

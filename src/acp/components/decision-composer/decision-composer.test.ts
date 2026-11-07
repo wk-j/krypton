@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { KeyHint } from '../key-hint-bar';
+import type { KeyHint } from '../../../ui/kbd';
 import { DecisionComposer, type DecisionComposerProps } from './index';
 
 const PERM_HINTS: readonly KeyHint[] = [
@@ -34,32 +34,28 @@ describe('DecisionComposer', () => {
     expect(row.el.outerHTML).toBe(
       '<div class="acp-harness__permission-row">' +
         '<div class="acp-harness__composer-meta">perm</div>' +
-        '<div class="acp-harness__permission-options">a accept · A all · r reject · R all</div>' +
-        '</div>',
-    );
-  });
-
-  it('takes the question hint as the pre-joined string it already is', () => {
-    const row = mount({ label: 'ask', hint: '1-3 select · Enter send · Tab other · Esc cancel' });
-
-    expect(row.el.outerHTML).toBe(
-      '<div class="acp-harness__permission-row">' +
-        '<div class="acp-harness__composer-meta">ask</div>' +
-        '<div class="acp-harness__permission-options">1-3 select · Enter send · Tab other · Esc cancel</div>' +
+        '<div class="acp-harness__permission-options">' +
+          '<span class="krypton-key-hint"><kbd>a</kbd> accept</span> · ' +
+          '<span class="krypton-key-hint"><kbd>A</kbd> all</span> · ' +
+          '<span class="krypton-key-hint"><kbd>r</kbd> reject</span> · ' +
+          '<span class="krypton-key-hint"><kbd>R</kbd> all</span>' +
+        '</div>' +
         '</div>',
     );
   });
 
   it('keeps both nodes when only the hint changes', () => {
-    const row = mount({ label: 'ask', hint: '1-3 select · Esc cancel' });
+    const select: KeyHint = { keys: ['1–9'], label: 'pick' };
+    const cancel: KeyHint = { keys: ['Esc'], label: 'cancel' };
+    const row = mount({ label: 'ask', hint: [select, cancel] });
     const label = row.el.querySelector('.acp-harness__composer-meta');
     const options = row.el.querySelector('.acp-harness__permission-options');
 
-    row.update({ label: 'ask', hint: '1-3 select · Tab other · Esc cancel' });
+    row.update({ label: 'ask', hint: [select, { keys: ['z'], label: 'other' }, cancel] });
 
     expect(row.el.querySelector('.acp-harness__composer-meta')).toBe(label);
     expect(row.el.querySelector('.acp-harness__permission-options')).toBe(options);
-    expect(options?.textContent).toBe('1-3 select · Tab other · Esc cancel');
+    expect(options?.textContent).toBe('1–9 pick · z other · Esc cancel');
     expect(label?.textContent).toBe('ask');
   });
 

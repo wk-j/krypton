@@ -1,6 +1,6 @@
 ---
 name: Krypton Console
-version: 2.0.2
+version: 2.1.0
 description: Skeuomorphic instrument faceplate — brushed graphite (aluminium in the light scheme) with engraved labels, recessed display wells, raised keys and lit lamps, over a transparent desktop
 appliesTo: "Every surface in the Tauri webview and the live-assist webview. Materials: src/styles/materials.css (--mat-*)."
 colors:
@@ -61,6 +61,7 @@ forbidden:
   - "a button taller than one line: a key's state badge sits beside its label or is dropped"
   - "left-edge accent rails for selection (ADR-0027)"
   - "L-shaped corner brackets or screw-head ornaments"
+  - "a keyboard shortcut written as text (`[a] accept`, `esc close`) where a key cap can be drawn"
   - "colouring model findings as pass/fail (ADR-0004)"
   - "declaring --mat-* anywhere but src/styles/materials.css"
   - "raster textures; the brush is a CSS gradient"
@@ -140,6 +141,15 @@ comment.
   (`#a8ffbf`) — the key face is lit, the legend takes the colour without a glow. Disabled: unpowered
   at 0.45 opacity, except a running key. A state badge sits
   after the label behind an etched divider; it is cut first, and a key under 128px drops it.
+- **Key cap.** A keyboard shortcut drawn in text is a `<kbd>` built by `src/ui/kbd.ts`, styled by the
+  one rule in `src/styles/kbd.css`: inline, `padding: 0 4px`, `border: 1px solid var(--mat-key-edge)`,
+  `border-radius: 4px`, `background: var(--mat-key)`, `box-shadow: var(--mat-key-raise)`, legend
+  `--mat-lit` with `text-shadow: var(--mat-print)` at 0.92em, `line-height: 1.1` so a cap never grows
+  its row. The action follows as printed legend in the host's ink (`a accept` reads as a cap, then
+  `accept`); a cap and its legend never wrap apart. Legends print what is pressed: letters as typed
+  (`a`, `A`), named keys as words (`Esc`, `Enter`, `Tab`), modifiers as macOS symbols inside the cap
+  (`⌘Enter`, `⌃C`). A cap is never recoloured: a state colour goes on the legend. Text that cannot
+  hold markup (tooltips, `aria-label`, input placeholders) keeps the same spelling as plain text.
 - **Selector keys.** Tabs: a recessed channel (a well with 3px padding) of 6px keys, each with a 6px
   LED before its legend. The shown tab is latched down with its LED lit; a count is a small readout
   window on the key.
@@ -176,7 +186,8 @@ comment.
 - **Overlays and dialogs** (palette, which-key, hints, prompt dialog, quick overview, dashboards,
   inline AI, toasts, harness pickers and dialogs): one floating plate over `--mat-scrim`; engraved
   head; input well; the result list is one well with grooves and a full-row `--mat-select` tint;
-  actions are keys; the key-hint foot is printed legend. Which-key and hint labels are key caps.
+  actions are keys; the key-hint foot prints each key as a key cap and its action as legend. Which-key
+  and hint labels are key caps.
 - **Quick Terminal.** A plate drawer around a screen.
 - **Harness.** The lane body is a screen (the window's screen shows through; a lane adds the well's
   inset depth, not a second fill). The lane head is a plate strip with the name engraved and status as
@@ -188,7 +199,7 @@ comment.
   plain output well has no label; only a label that says something, like `stderr`, is engraved);
   resolved permission and question rows carry their LED inside the decision chip; a decision
   composer's `PERM` / `ASK` label is a readout like the composer's mode readout, at the same 0.72em,
-  its amber LED lit; permission and question options are keys;
+  its amber LED lit; permission and question options print their keys as key caps;
   floating lane cards are small plates. The right dock column is a flush plate of wells, keys and lamps,
   and it is one plate with the shown lane's head strip beside it: no seam, bevel or cast shadow where
   they meet; the screen draws its own right edge.
@@ -371,6 +382,11 @@ selector, and nothing in it bleeds out of that selector.
 
 ## Changelog
 
+- **2.1.0** — Every keyboard shortcut drawn in text is a key cap (spec 369): a `<kbd>` from
+  `src/ui/kbd.ts` with one shared rule, followed by its action as legend. Bracket notation
+  (`[a] accept`) and plain-text hint lines (`j/k move · esc cancel`) are gone; the key-hint foot
+  prints caps. The fs write-review and agent-view accept/reject actions drop their key face and read
+  like the permission row. The per-surface `kbd` rules are gone.
 - **2.0.2** — The terminal progress ring glows: its arc is lit with a soft halo in the state colour
   over a dim ring of the same colour and width. The dark well track under it is gone, and with it the
   black edge on both sides of the arc. The readout and label stay unlit.

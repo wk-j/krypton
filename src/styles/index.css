@@ -1,6 +1,7 @@
 @import './layers.css';
 @import './base.css';
 @import './materials.css';
+@import './kbd.css';
 @import './window.css';
 @import './terminal.css';
 @import './overlays.css';

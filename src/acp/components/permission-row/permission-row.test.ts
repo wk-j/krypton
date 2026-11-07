@@ -56,7 +56,10 @@ describe('PermissionRow', () => {
         '<span class="acp-harness__perm-tool">Bash</span>' +
         '<span class="acp-harness__perm-subject" title="git push origin main">git push origin main</span>' +
       '</div>' +
-      '<div class="acp-harness__perm-actions">a accept · r reject</div>',
+      '<div class="acp-harness__perm-actions">' +
+        '<span class="krypton-key-hint"><kbd>a</kbd> accept</span> · ' +
+        '<span class="krypton-key-hint"><kbd>r</kbd> reject</span>' +
+      '</div>',
     );
   });
 
@@ -169,8 +172,11 @@ describe('PermissionRow', () => {
   });
 
   it('dedupes the actions hint across accept variants and keeps accept before reject', () => {
-    expect(permissionActionsHint(permission().options)).toBe('a accept · r reject');
-    expect(permissionActionsHint([{ optionId: 'o', name: 'Other', action: 'other' }])).toBe('');
+    expect(permissionActionsHint(permission().options)).toEqual([
+      { keys: ['a'], label: 'accept' },
+      { keys: ['r'], label: 'reject' },
+    ]);
+    expect(permissionActionsHint([{ optionId: 'o', name: 'Other', action: 'other' }])).toEqual([]);
   });
 
   it('spells the decision label the payload does not supply', () => {

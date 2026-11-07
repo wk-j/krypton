@@ -5,6 +5,7 @@
 import { invoke } from '../profiler/ipc';
 import type { DashboardDefinition } from '../types';
 import type { Compositor } from '../compositor';
+import { keyHintNodes } from '../ui/kbd';
 
 /** Parsed git file entry from `git status --porcelain=v1` */
 interface GitFileEntry {
@@ -154,7 +155,7 @@ function renderStatus(container: HTMLElement, status: GitStatus): void {
   // Bottom hint
   const hint = document.createElement('div');
   hint.className = 'krypton-git__hint';
-  hint.textContent = 'r refresh \u00b7 Esc close';
+  hint.append(...keyHintNodes([{ keys: ['r'], label: 'refresh' }, { keys: ['Esc'], label: 'close' }]));
   container.appendChild(hint);
 }
 

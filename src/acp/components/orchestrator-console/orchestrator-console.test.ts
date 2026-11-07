@@ -25,9 +25,13 @@ const line = (over: Partial<OrchestratorInputLine> = {}): OrchestratorInputLine 
   label: 'dispatch → codex-1',
   active: false,
   draft: '',
-  placeholder: 'type a task · Enter send · Esc cancel',
+  placeholder: [
+    { keys: [], label: 'type a task' },
+    { keys: ['Enter'], label: 'send' },
+    { keys: ['Esc'], label: 'cancel' },
+  ],
   disabledReason: null,
-  hint: 'press d to dispatch to codex-1',
+  hint: [{ keys: ['d'], label: 'dispatch to codex-1' }],
   ...over,
 });
 
@@ -37,12 +41,17 @@ const props = (over: Partial<OrchestratorConsoleProps> = {}): OrchestratorConsol
   summary: '2 lanes · 1 busy · 0 awaiting · 0 flags',
   cards: [card({ id: 'claude-1', isSeat: true }), card({ id: 'codex-1', isSelected: true })],
   permissions: [],
-  permStepHint: '',
+  permStepHint: [],
   feed: [{ who: '→ codex-1', text: 'check the deps tuple' }],
   feedEmpty: null,
   dispatch: line(),
-  seatPrompt: line({ label: 'prompt → claude-1', hint: 'press i to prompt claude-1' }),
-  keyLegend: 'j/k select · Enter jump · d dispatch · Esc close',
+  seatPrompt: line({ label: 'prompt → claude-1', hint: [{ keys: ['i'], label: 'prompt claude-1' }] }),
+  keyLegend: [
+    { keys: ['j', 'k'], label: 'select', keySeparator: '/' },
+    { keys: ['Enter'], label: 'jump' },
+    { keys: ['d'], label: 'dispatch' },
+    { keys: ['Esc'], label: 'close' },
+  ],
   ...over,
 });
 
@@ -122,7 +131,7 @@ describe('OrchestratorConsole', () => {
     expect(dispatch?.querySelector('.acp-orchestrator__dispatch-label')?.textContent)
       .toBe('dispatch → codex-1');
     expect(dispatch?.querySelector('.acp-orchestrator__dispatch-hint')?.textContent)
-      .toBe('press d to dispatch to codex-1');
+      .toBe('d dispatch to codex-1');
 
     node.update(props({ dispatch: line({ disabledReason: 'cannot dispatch to the seat' }) }));
     expect(dispatch?.querySelector('.acp-orchestrator__dispatch-disabled')?.textContent)
@@ -150,14 +159,14 @@ describe('OrchestratorConsole', () => {
     expect(prompt?.querySelector('.acp-orchestrator__dispatch-label')?.textContent)
       .toBe('prompt → claude-1');
     expect(prompt?.querySelector('.acp-orchestrator__dispatch-hint')?.textContent)
-      .toBe('press i to prompt claude-1');
+      .toBe('i prompt claude-1');
   });
 
   it('shows the permission band only while a lane is paused, focus row ringed', () => {
     const node = mount();
     expect(node.el.querySelector('.acp-orchestrator__permq')).toBeNull();
     node.update(props({
-      permStepHint: ' · Tab next',
+      permStepHint: [{ keys: ['Tab'], label: 'next' }],
       permissions: [
         {
           laneId: 'codex-1',

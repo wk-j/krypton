@@ -23,11 +23,11 @@ import type { QuickGrepHit, QuickGrepResponse, QuickSearchHit, QuickSearchRespon
 const RESULT_LIMIT = 50;
 
 const HINTS: readonly ScopeHint[] = [
-  { text: '↵ open in hx', kind: 'helix' },
-  { text: '^E copy', kind: 'relative' },
-  { text: '⌘↵ copy absolute', kind: 'absolute' },
-  { text: '⇥ next tab' },
-  { text: '⎋ close' },
+  { keys: ['Enter'], label: 'open in hx', kind: 'helix' },
+  { keys: ['⌃E'], label: 'copy', kind: 'relative' },
+  { keys: ['⌘Enter'], label: 'copy absolute', kind: 'absolute' },
+  { keys: ['Tab'], label: 'next tab' },
+  { keys: ['Esc'], label: 'close' },
 ];
 
 /**

@@ -17,6 +17,7 @@
 // mode toggle run commands as the user's SSH identity with no prompt at all.
 // `lane.pendingComputerCommands` is resolved by an explicit keystroke only.
 
+import type { KeyHint } from '../ui/kbd';
 import type { PermissionPayload } from './harness-view-types';
 
 /** Payload of the `computer-command-approval` event emitted by Rust. */
@@ -33,7 +34,10 @@ export interface ComputerApprovalRequest {
 
 /** The composer prompt. No `A`/`R` blanket variants: spec 311 §90 approves one
  *  command, once — a remote command never inherits a previous answer. */
-export const COMPUTER_APPROVAL_HINT = 'a approve once · r decline';
+export const COMPUTER_APPROVAL_HINT: readonly KeyHint[] = [
+  { keys: ['a'], label: 'approve once' },
+  { keys: ['r'], label: 'decline' },
+];
 
 /** Spec 311 §90 display contract: resolved SSH identity, remote directory and
  *  the exact command, in the requesting lane's own transcript.

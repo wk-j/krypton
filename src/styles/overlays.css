@@ -512,11 +512,10 @@
   background: var(--mat-select);
 }
 
+/* Holds the digit's key cap (spec 369); the cap draws itself. */
 .krypton-prompt-dialog__picker-hotkey {
   flex-shrink: 0;
   min-width: 20px;
-  color: var(--mat-silk);
-  font-weight: 700;
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -689,7 +688,7 @@
   border-color: var(--mat-lit);
 }
 
-/* ─── Footer ─── the key hints are printed legend on the plate. */
+/* ─── Footer ─── key caps, each followed by its action as printed legend. */
 .krypton-prompt-dialog__footer {
   display: flex;
   gap: 14px;

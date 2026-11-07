@@ -152,8 +152,12 @@ describe('RailsDock', () => {
     expect(rowEls(dock).map((node) => node.dataset.railsKey)).toEqual(railsDockRows(m).map((row) => row.key));
     expect([...dock.el.querySelectorAll('.acp-rails-dock__section-label')].map((node) => node.textContent))
       .toEqual(['checks', 'findings', 'rules', 'runs']);
-    expect(dock.el.querySelector('.acp-rails-dock__keys')?.textContent)
-      .toBe('j/k · ↵ · 1–5 · s send · r run · [ ] tab · esc');
+    expect([...dock.el.querySelectorAll('.acp-rails-dock__section > kbd')].map((node) => node.textContent))
+      .toEqual(['2', '3', '4', '5']);
+    const keys = dock.el.querySelector('.acp-rails-dock__keys');
+    expect([...(keys?.querySelectorAll('kbd') ?? [])].map((node) => node.textContent))
+      .toEqual(['j', 'k', 'Enter', '1–5', 's', 'r', '[', ']', 'Esc']);
+    expect(keys?.textContent).toBe('j/k · Enter · 1–5 · s send · r run · [ ] tab · Esc');
   });
 
   it('paints the head, check, finding, rules and run rows from their data', () => {

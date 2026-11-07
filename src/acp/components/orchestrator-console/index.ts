@@ -13,6 +13,7 @@
 
 import { Component } from '../../../ui/component';
 import { el, setAttr } from '../../../ui/dom';
+import { keyHintNodes, keyHintsSignature, type KeyHint } from '../../../ui/kbd';
 import { disposeList, reconcile } from '../../../ui/list';
 import { OverlayShell } from '../overlay-shell';
 import type { ComponentDef } from '../types';
@@ -63,11 +64,12 @@ export interface OrchestratorInputLine {
   readonly label: string;
   readonly active: boolean;
   readonly draft: string;
-  readonly placeholder: string;
+  /** `type a task · Enter send · Esc cancel`, keys as caps. */
+  readonly placeholder: readonly KeyHint[];
   /** Shown instead of the hint when the line cannot be used. */
   readonly disabledReason: string | null;
-  /** `press d to dispatch to codex-1`. */
-  readonly hint: string;
+  /** `d dispatch to codex-1`, keys as caps. */
+  readonly hint: readonly KeyHint[];
   /** Dispatch only: the purpose chips. */
   readonly purposes?: readonly string[];
   readonly activePurpose?: string;
@@ -80,14 +82,15 @@ export interface OrchestratorConsoleProps {
   readonly summary: string;
   readonly cards: readonly OrchestratorSeatCard[];
   readonly permissions: readonly OrchestratorPermRow[];
-  /** `· Tab next` when more than one lane is queued. */
-  readonly permStepHint: string;
+  /** `Tab next` when more than one lane is queued; empty otherwise. */
+  readonly permStepHint: readonly KeyHint[];
   readonly feed: readonly OrchestratorFeedRow[];
   /** Replaces the feed rows when there is nothing to show. */
   readonly feedEmpty: string | null;
   readonly dispatch: OrchestratorInputLine;
   readonly seatPrompt: OrchestratorInputLine;
-  readonly keyLegend: string;
+  /** The footer legend, keys as caps (spec 369). */
+  readonly keyLegend: readonly KeyHint[];
   onAutoClose?(): void;
 }
 
@@ -190,16 +193,26 @@ class PermRow extends Component<OrchestratorPermRow> {
   }
 }
 
+const PERM_ANSWER: readonly KeyHint[] = [
+  { keys: ['a'], label: 'accept' },
+  { keys: ['A'], label: 'all' },
+  { keys: ['r'], label: 'reject' },
+  { keys: ['R'], label: 'all' },
+];
+
 /** The focused row owns the a/r legend; an unfocused high-risk row still warns. */
 function permHint(next: OrchestratorPermRow): HTMLElement | null {
-  const answer = 'a accept · A all · r reject · R all';
   if (next.focus) {
-    return el('span', {
-      class: next.highRisk
-        ? 'acp-orchestrator__perm-hint acp-orchestrator__perm-hint--highrisk'
-        : 'acp-orchestrator__perm-hint',
-      text: next.highRisk ? `⚠ high-risk · ${answer}` : answer,
-    });
+    return el(
+      'span',
+      {
+        class: next.highRisk
+          ? 'acp-orchestrator__perm-hint acp-orchestrator__perm-hint--highrisk'
+          : 'acp-orchestrator__perm-hint',
+      },
+      next.highRisk ? '⚠ high-risk · ' : null,
+      ...keyHintNodes(PERM_ANSWER),
+    );
   }
   if (next.highRisk) {
     return el('span', {
@@ -245,9 +258,9 @@ class InputLine extends Component<InputLineProps> {
       next.label,
       next.active,
       next.draft,
-      next.placeholder,
+      keyHintsSignature(next.placeholder),
       next.disabledReason,
-      next.hint,
+      keyHintsSignature(next.hint),
       next.purposes?.join('\u0001') ?? null,
       next.activePurpose ?? null,
     ];
@@ -264,18 +277,18 @@ class InputLine extends Component<InputLineProps> {
     this.label.textContent = next.label;
 
     if (!next.active) {
-      this.el.replaceChildren(this.label, el('span', {
-        class: next.disabledReason !== null
-          ? 'acp-orchestrator__dispatch-disabled'
-          : 'acp-orchestrator__dispatch-hint',
-        text: next.disabledReason ?? next.hint,
-      }));
+      this.el.replaceChildren(
+        this.label,
+        next.disabledReason !== null
+          ? el('span', { class: 'acp-orchestrator__dispatch-disabled', text: next.disabledReason })
+          : el('span', { class: 'acp-orchestrator__dispatch-hint' }, ...keyHintNodes(next.hint)),
+      );
       return;
     }
 
     // The caret sits after the draft, or before the placeholder when empty.
     this.draft.data = next.draft;
-    this.placeholder.textContent = next.placeholder;
+    this.placeholder.replaceChildren(...keyHintNodes(next.placeholder));
     this.input.replaceChildren(...(next.draft
       ? [this.draft, this.caret]
       : [this.caret, this.placeholder]));
@@ -375,12 +388,12 @@ export class OrchestratorConsole extends Component<OrchestratorConsoleProps> {
       next.cards.length,
       next.permissions,
       next.permissions.length,
-      next.permStepHint,
+      keyHintsSignature(next.permStepHint),
       next.feed,
       next.feedEmpty,
       next.dispatch,
       next.seatPrompt,
-      next.keyLegend,
+      keyHintsSignature(next.keyLegend),
     ];
   }
 
@@ -394,7 +407,7 @@ export class OrchestratorConsole extends Component<OrchestratorConsoleProps> {
     this.paintFeed(next);
     this.dispatch.update({ ...next.dispatch, region: 'dispatch' });
     this.seatPrompt.update({ ...next.seatPrompt, region: 'seat-prompt' });
-    this.keys.textContent = next.keyLegend;
+    this.keys.replaceChildren(...keyHintNodes(next.keyLegend));
     this.seatEl.textContent = next.seatName ?? 'no seat';
     // The seat capsule's lamp is lit while a seat is held; CSS cannot tell the
     // `no seat` legend from a lane name, so the state is a class.
@@ -436,7 +449,10 @@ export class OrchestratorConsole extends Component<OrchestratorConsoleProps> {
       this.permq.remove();
       return;
     }
-    this.permTitle.textContent = `Pending permissions${next.permStepHint}`;
+    this.permTitle.replaceChildren(
+      'Pending permissions',
+      ...(next.permStepHint.length > 0 ? [' · ', ...keyHintNodes(next.permStepHint)] : []),
+    );
     reconcile<OrchestratorPermRow, PermRow>(this.permRows, next.permissions, {
       key: (row) => row.laneId,
       create: (row) => {

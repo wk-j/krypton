@@ -50,9 +50,12 @@ describe('FsWriteReviewRow', () => {
       .toBe('acp-harness__tool-body acp-harness__tool-body--diff');
     expect(body.children[2].outerHTML).toBe(
       '<div class="acp-harness__fs-review-actions">' +
-        '<span class="acp-harness__fs-review-action acp-harness__fs-review-action--accept">[a] accept</span>' +
-        '<span class="acp-harness__fs-review-action acp-harness__fs-review-action--reject">[r] reject</span>' +
-        '<span class="acp-harness__fs-review-action acp-harness__fs-review-action--accept-all">[A] accept all</span>' +
+        '<span class="krypton-key-hint acp-harness__fs-review-action acp-harness__fs-review-action--accept">' +
+          '<kbd>a</kbd> accept</span> · ' +
+        '<span class="krypton-key-hint acp-harness__fs-review-action acp-harness__fs-review-action--reject">' +
+          '<kbd>r</kbd> reject</span> · ' +
+        '<span class="krypton-key-hint acp-harness__fs-review-action acp-harness__fs-review-action--accept-all">' +
+          '<kbd>A</kbd> accept all</span>' +
       '</div>',
     );
     row.dispose();

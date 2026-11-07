@@ -9,6 +9,7 @@ import { ansiToHtml, stripAnsi } from './hurl-ansi';
 import { gridifyText } from './acp/cell-grid';
 import { highlightHurl } from './hurl-highlight';
 import { collapsedCover, revealDir, revealFile } from './hurl-tree';
+import { keyCap, keyHint, keyHintNodes } from './ui/kbd';
 
 function escapeHtmlText(s: string): string {
   return s
@@ -505,7 +506,7 @@ export class HurlContentView implements ContentView {
 
     const help = document.createElement('span');
     help.className = 'krypton-hurl__help-cue';
-    help.textContent = '? for help';
+    help.replaceChildren(...keyHintNodes([{ keys: ['?'], label: 'for help' }]));
     this.statusBarEl.appendChild(help);
   }
 
@@ -678,7 +679,7 @@ export class HurlContentView implements ContentView {
           status: cached.exit_code === 0 ? 'ok' : 'failed',
         };
       } else {
-        this.viewportEl.innerHTML = '<div class="krypton-hurl__empty">No response cached — press Enter to run.</div>';
+        this.viewportEl.innerHTML = '<div class="krypton-hurl__empty">No response cached — press <kbd>Enter</kbd> to run.</div>';
         this.cachedBadge = '';
       }
     } catch (e) {
@@ -1140,53 +1141,53 @@ export class HurlContentView implements ContentView {
     title.textContent = 'HURL CLIENT — HELP';
     overlay.appendChild(title);
 
-    const sections: Array<{ heading: string; rows: Array<[string, string]> }> = [
+    const sections: Array<{ heading: string; rows: Array<[readonly string[], string]> }> = [
       {
         heading: 'Navigation',
         rows: [
-          ['j / k', 'Move selection down / up'],
-          ['h / l', 'Collapse / expand folder'],
-          ['Enter', 'Toggle folder, or run selected file'],
-          ['/', 'Filter files'],
-          ['Esc', 'Clear filter (or close view)'],
-          ['.', 'Refresh file list'],
+          [['j', 'k'], 'Move selection down / up'],
+          [['h', 'l'], 'Collapse / expand folder'],
+          [['Enter'], 'Toggle folder, or run selected file'],
+          [['/'], 'Filter files'],
+          [['Esc'], 'Clear filter (or close view)'],
+          [['.'], 'Refresh file list'],
         ],
       },
       {
         heading: 'Running requests',
         rows: [
-          ['r', 'Run selected file'],
-          ['R', 'Re-run last file'],
-          ['x', 'Cancel active run'],
-          ['v', 'Toggle --verbose'],
-          ['V', 'Toggle --very-verbose'],
+          [['r'], 'Run selected file'],
+          [['R'], 'Re-run last file'],
+          [['x'], 'Cancel active run'],
+          [['v'], 'Toggle --verbose'],
+          [['V'], 'Toggle --very-verbose'],
         ],
       },
       {
         heading: 'Output',
         rows: [
-          ['o', 'Toggle source / response view'],
-          ['i', 'Inspect: show resolved env values in source'],
-          ['g / G', 'Scroll top / bottom'],
-          ['J / K', 'Page down / up'],
-          ['y', 'Copy full response to clipboard'],
-          ['Y', 'Copy hurl source (resolved if inspect on)'],
-          ['p', 'Copy absolute path of selected file'],
-          ['C', 'Copy source + response as AI context'],
+          [['o'], 'Toggle source / response view'],
+          [['i'], 'Inspect: show resolved env values in source'],
+          [['g', 'G'], 'Scroll top / bottom'],
+          [['J', 'K'], 'Page down / up'],
+          [['y'], 'Copy full response to clipboard'],
+          [['Y'], 'Copy hurl source (resolved if inspect on)'],
+          [['p'], 'Copy absolute path of selected file'],
+          [['C'], 'Copy source + response as AI context'],
         ],
       },
       {
         heading: 'Environment & editing',
         rows: [
-          ['E', 'Pick *.env file for --variables-file'],
-          ['e', 'Open selected .hurl in $EDITOR'],
+          [['E'], 'Pick *.env file for --variables-file'],
+          [['e'], 'Open selected .hurl in $EDITOR'],
         ],
       },
       {
         heading: 'This dialog',
         rows: [
-          ['?  /  F1', 'Show this help'],
-          ['Esc  /  Enter  /  ?', 'Close help'],
+          [['?', 'F1'], 'Show this help'],
+          [['Esc', 'Enter', '?'], 'Close help'],
         ],
       },
     ];
@@ -1202,12 +1203,12 @@ export class HurlContentView implements ContentView {
 
       const table = document.createElement('div');
       table.className = 'krypton-hurl__help-table';
-      for (const [keyLabel, desc] of section.rows) {
+      for (const [keys, desc] of section.rows) {
         const row = document.createElement('div');
         row.className = 'krypton-hurl__help-row';
         const k = document.createElement('span');
         k.className = 'krypton-hurl__help-key';
-        k.textContent = keyLabel;
+        k.appendChild(keyHint({ keys, label: '', keySeparator: '/' }));
         const d = document.createElement('span');
         d.className = 'krypton-hurl__help-desc';
         d.textContent = desc;
@@ -1222,7 +1223,7 @@ export class HurlContentView implements ContentView {
 
     const hint = document.createElement('div');
     hint.className = 'krypton-hurl__help-hint';
-    hint.textContent = 'Press Esc to close';
+    hint.append('Press ', keyCap('Esc'), ' to close');
     overlay.appendChild(hint);
 
     this.element.appendChild(overlay);

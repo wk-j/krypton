@@ -291,7 +291,7 @@
 
 .krypton-overview__markdown img { max-width: 100%; }
 
-/* ─── Footer ─── printed key legend on the plate. */
+/* ─── Footer ─── key caps and their printed legend on the plate. */
 
 .krypton-overview__footer {
   display: flex;
@@ -305,13 +305,8 @@
   text-shadow: var(--mat-print);
 }
 
-.krypton-overview__footer b {
-  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
-  font-weight: 600;
-}
-
-/* The primary action's key is backlit. */
-.krypton-overview__key--primary b {
+/* A source action's legend is backlit; its cap stays material. */
+.krypton-overview__key--primary {
   color: var(--mat-lit);
 }
 

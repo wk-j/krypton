@@ -148,17 +148,4 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  /* A shortcut is a key cap. */
-  .acp-harness__grammar-key {
-    padding: 0 4px;
-    border: 1px solid var(--mat-key-edge);
-    border-radius: 4px;
-    background: var(--mat-key);
-    box-shadow: var(--mat-key-raise);
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
-    font-family: inherit;
-    font-size: inherit;
-    text-shadow: var(--mat-print);
-  }
 }

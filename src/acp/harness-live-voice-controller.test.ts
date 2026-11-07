@@ -44,16 +44,14 @@ function setup(laneName = 'OMP-2') {
   const other = { id: `other-${laneName}`, displayName: `${laneName}-other`, client: {}, status: 'idle' } as HarnessLane;
   let activeLaneId = lane.id;
   const element = document.createElement('div');
-  const composerEl = document.createElement('div');
-  element.appendChild(composerEl);
   document.body.appendChild(element);
   const flashChip = vi.fn();
   const host: HarnessLiveVoiceHost = {
     element,
-    composerEl,
     lanes: [lane, other],
     get activeLaneId() { return activeLaneId; },
     flashChip,
+    patchLiveVoice: vi.fn(),
     invalidate: vi.fn(),
     deliverLivePrompt: async () => 'started',
   };

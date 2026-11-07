@@ -15,11 +15,24 @@
 
 import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
+import { keyHintNodes, type KeyHint } from '../../../ui/kbd';
 import { formatImageBytes, isOpenableImage } from '../../harness-images';
 import type { HarnessImage } from '../../harness-view-types';
 import { OverlayShell } from '../overlay-shell';
 import type { ComponentDef } from '../types';
 import './image-viewer.css';
+
+// Spec 369: the meta line's keys are `<kbd>` caps.
+const ZOOM_PAN_HINTS: readonly KeyHint[] = [
+  { keys: ['=', '-'], label: 'zoom', keySeparator: '/' },
+  { keys: ['0'], label: 'fit' },
+  { keys: ['1'], label: '100%' },
+  { keys: ['h', 'j', 'k', 'l'], label: 'pan', keySeparator: '/' },
+];
+const NEXT_HINT: KeyHint = { keys: ['n', 'p'], label: 'next', keySeparator: '/' };
+const OPEN_HINT: KeyHint = { keys: ['o'], label: 'open' };
+const SOURCE_HINT: KeyHint = { keys: ['s'], label: 'source' };
+const CLOSE_HINT: KeyHint = { keys: ['Esc'], label: 'close' };
 
 const ZOOM_STEP = 1.25;
 const ZOOM_MIN = 0.1;
@@ -273,14 +286,17 @@ export class ImageViewer extends Component<ImageViewerProps> {
       parts.push(`${Math.round(this.effectiveScale() * 100)}%`);
     }
     if (image.bytes > 0) parts.push(formatImageBytes(image.bytes));
-    this.meta.textContent = `${parts.join(' · ')}   n/p next · =/- zoom · 0 fit · 1 100% · hjkl pan`
-      + `${image.path ? ' · o open' : ''} · Esc close`;
+    const hints = [NEXT_HINT, ...ZOOM_PAN_HINTS, ...(image.path ? [OPEN_HINT] : []), CLOSE_HINT];
+    this.meta.replaceChildren(`${parts.join(' · ')}   `, ...keyHintNodes(hints));
   }
 
   private renderSvgMeta(svg: SvgViewerItem): void {
     const size = `${Math.round(svg.width)}×${Math.round(svg.height)}`;
     const zoom = `${Math.round(this.effectiveScale() * 100)}%`;
-    this.meta.textContent = `${svg.label} · ${size} · ${zoom}   =/- zoom · 0 fit · 1 100% · hjkl pan · s source · Esc close`;
+    this.meta.replaceChildren(
+      `${svg.label} · ${size} · ${zoom}   `,
+      ...keyHintNodes([...ZOOM_PAN_HINTS, SOURCE_HINT, CLOSE_HINT]),
+    );
   }
 
   private resetView(): void {

@@ -3,6 +3,7 @@
 // show/hide transitions, tabbed content, and keyboard routing for overlay dashboards.
 
 import type { DashboardDefinition, DashboardShortcut } from './types';
+import { keyCap, keyHint } from './ui/kbd';
 
 /** Callback to enter/exit Dashboard mode in the InputRouter */
 type ModeCallback = (active: boolean) => void;
@@ -302,15 +303,12 @@ export class DashboardManager {
         btn.className = 'krypton-dashboard__tab';
         if (i === 0) btn.classList.add('krypton-dashboard__tab--active');
 
-        const keyHint = document.createElement('span');
-        keyHint.className = 'krypton-dashboard__tab-key';
-        keyHint.textContent = tab.key ?? String(i + 1);
 
         const label = document.createElement('span');
         label.className = 'krypton-dashboard__tab-label';
         label.textContent = tab.label;
 
-        btn.appendChild(keyHint);
+        btn.appendChild(keyCap(tab.key ?? String(i + 1)));
         btn.appendChild(label);
 
         btn.addEventListener('mousedown', (e) => {
@@ -331,9 +329,9 @@ export class DashboardManager {
 
     const shortcutHint = document.createElement('span');
     shortcutHint.className = 'krypton-dashboard__shortcut-hint';
-    shortcutHint.textContent = definition.shortcut
-      ? this.formatShortcut(definition.shortcut)
-      : 'Esc to close';
+    shortcutHint.appendChild(
+      keyHint({ keys: [definition.shortcut ? this.formatShortcut(definition.shortcut) : 'Esc'], label: 'to close' }),
+    );
 
     const closeBtn = document.createElement('button');
     closeBtn.className = 'krypton-dashboard__close';
@@ -377,15 +375,13 @@ export class DashboardManager {
     );
   }
 
-  /** Format a shortcut for display */
+  /** Format a shortcut as one cap legend (spec 369): `⌃⇧G`. */
   private formatShortcut(shortcut: DashboardShortcut): string {
-    const parts: string[] = [];
-    if (shortcut.ctrl) parts.push('Ctrl');
-    if (shortcut.alt) parts.push('Alt');
-    if (shortcut.shift) parts.push('Shift');
-    if (shortcut.meta) parts.push('Cmd');
-    const keyName = shortcut.key.replace('Key', '').replace('Digit', '');
-    parts.push(keyName);
-    return parts.join('+');
+    let mods = '';
+    if (shortcut.ctrl) mods += '\u2303';
+    if (shortcut.alt) mods += '\u2325';
+    if (shortcut.shift) mods += '\u21e7';
+    if (shortcut.meta) mods += '\u2318';
+    return mods + shortcut.key.replace('Key', '').replace('Digit', '');
   }
 }

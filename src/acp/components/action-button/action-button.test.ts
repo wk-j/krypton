@@ -56,10 +56,10 @@ describe('ActionButton', () => {
 
   it('writes no class attribute when the caller owns no block', () => {
     const button = new ActionButton();
-    button.update({ block: '', label: 'Cancel · Esc' });
+    button.update({ block: '', label: 'Cancel', shortcut: 'Esc' });
 
     expect(button.el.hasAttribute('class')).toBe(false);
-    expect(button.el.outerHTML).toBe('<button type="button">Cancel · Esc</button>');
+    expect(button.el.outerHTML).toBe('<button type="button">Cancel <kbd>Esc</kbd></button>');
   });
 
   it('renders the real disabled attribute with its reason, and removes both on re-enable', () => {

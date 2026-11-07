@@ -26,7 +26,8 @@
 // and its own sheet.
 
 import { Component } from '../../../ui/component';
-import { el, setAttr } from '../../../ui/dom';
+import { el, setAttr, setChildren } from '../../../ui/dom';
+import { keyHintNodes, keyHintsSignature, type KeyHint } from '../../../ui/kbd';
 import { KeyHintBar, type KeyHintBarProps } from '../key-hint-bar';
 import type { ComponentDef } from '../types';
 
@@ -79,7 +80,11 @@ export interface OverlayShellProps {
   /** Panel/head/title/sub/empty prefix, e.g. `acp-review`. */
   readonly block: string;
   readonly title: string;
-  readonly sub?: string;
+  /**
+   * The sub line. A string is printed as text; hints draw each key as a cap
+   * (spec 369), joined by ` · `.
+   */
+  readonly sub?: string | readonly KeyHint[];
   /**
    * A caller-owned node between the title and the sub line.
    *
@@ -162,7 +167,8 @@ export class OverlayShell extends Component<OverlayShellProps> {
       next.rootClass,
       next.block,
       next.title,
-      next.sub,
+      typeof next.sub === 'string' || next.sub === undefined ? next.sub : keyHintsSignature(next.sub),
+      typeof next.sub,
       next.headExtra,
       next.body,
       next.extras,
@@ -231,7 +237,8 @@ export class OverlayShell extends Component<OverlayShellProps> {
     const headChildren: Node[] = [titleNode];
     if (next.headExtra) headChildren.push(next.headExtra);
     if (next.sub !== undefined) {
-      this.subEl.textContent = next.sub;
+      if (typeof next.sub === 'string') this.subEl.textContent = next.sub;
+      else setChildren(this.subEl, keyHintNodes(next.sub));
       headChildren.push(this.subEl);
     }
     this.place(this.head, headChildren);

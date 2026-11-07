@@ -257,7 +257,7 @@ describe('InlineFollowUp', () => {
     const error = harness({ lines: FAILED_ROWS, records: [failedRecord()] });
     error.followUp.osc133(command(CMD));
     error.followUp.osc133(end(101));
-    await error.overlay.finish({ kind: 'error', message: 'inline AI: "claude" exited — press Cmd+K again' });
+    await error.overlay.finish({ kind: 'error', message: 'inline AI: "claude" exited — press ⌘K again' });
     expect(chip(error.host)?.className).toContain('--error');
   });
 

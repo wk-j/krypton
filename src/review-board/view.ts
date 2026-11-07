@@ -38,8 +38,8 @@ import {
   sectionIndexOfBlock,
 } from './parse';
 import { reviewIcon } from './icons';
+import { keyCap, keyHint, keyHintNodes, type KeyHint } from '../ui/kbd';
 import {
-  keyHint,
   renderBlock,
   renderKicker,
   type BlockAnswerState,
@@ -758,7 +758,21 @@ export class ReviewBoardView implements ContentView {
 
     const foot = document.createElement('div');
     foot.className = 'krypton-review__map-foot';
-    foot.textContent = this.mapFocused ? 'j k move  ↵ open  Esc back' : 'o map  [ ] chapters';
+    foot.append(
+      ...keyHintNodes(
+        this.mapFocused
+          ? [
+              { keys: ['j', 'k'], keySeparator: '/', label: 'move' },
+              { keys: ['Enter'], label: 'open' },
+              { keys: ['Esc'], label: 'back' },
+            ]
+          : [
+              { keys: ['o'], label: 'map' },
+              { keys: ['[', ']'], keySeparator: '/', label: 'chapters' },
+            ],
+        '  ',
+      ),
+    );
     this.map.appendChild(foot);
 
     list
@@ -840,9 +854,16 @@ export class ReviewBoardView implements ContentView {
       root.appendChild(this.overviewSection('chapters', rows));
     }
 
-    const tail: [string, string][] = [];
+    const tail: [string, string | readonly Node[]][] = [];
     if (this.steps.length > 0) {
-      tail.push(['walkthrough', `${this.steps.length} steps · Tab to start the guided read`]);
+      tail.push([
+        'walkthrough',
+        [
+          document.createTextNode(`${this.steps.length} steps · Press `),
+          keyCap('Tab'),
+          document.createTextNode(' to start the guided read'),
+        ],
+      ]);
     }
     const at = this.doc.blocks[this.cursor];
     if (at) {
@@ -859,17 +880,19 @@ export class ReviewBoardView implements ContentView {
     this.body.appendChild(root);
   }
 
-  private overviewSection(title: string, rows: readonly (readonly [string, string])[]): HTMLElement {
+  private overviewSection(
+    title: string,
+    rows: readonly (readonly [string, string | readonly Node[]])[],
+  ): HTMLElement {
     const el = document.createElement('section');
     el.className = 'krypton-review__overview-group';
     el.appendChild(renderKicker({ label: title }));
     for (const [label, value] of rows) {
       const row = document.createElement('div');
       row.className = 'krypton-review__overview-row';
-      row.append(
-        span('krypton-review__overview-label', label),
-        span('krypton-review__overview-value', value),
-      );
+      const valueEl = span('krypton-review__overview-value', typeof value === 'string' ? value : '');
+      if (typeof value !== 'string') valueEl.append(...value);
+      row.append(span('krypton-review__overview-label', label), valueEl);
       el.appendChild(row);
     }
     return el;
@@ -1449,7 +1472,7 @@ export class ReviewBoardView implements ContentView {
     this.commentInput.rows = 4;
     this.commentInput.placeholder = 'what should the lane do about this?';
     this.commentInput.addEventListener('keydown', (e) => this.onComposerKey(e));
-    root.append(this.commentInput, overlayFoot([['⌘↵', 'save'], ['Esc', 'cancel']]));
+    root.append(this.commentInput, overlayFoot([{ keys: ['⌘Enter'], label: 'save' }, { keys: ['Esc'], label: 'cancel' }]));
   }
 
   private onComposerKey(e: KeyboardEvent): void {
@@ -1540,7 +1563,7 @@ export class ReviewBoardView implements ContentView {
         void this.confirmSend();
       }
     });
-    root.append(this.noteInput, overlayFoot([['⌘↵', 'send'], ['Esc', 'cancel']]));
+    root.append(this.noteInput, overlayFoot([{ keys: ['⌘Enter'], label: 'send' }, { keys: ['Esc'], label: 'cancel' }]));
   }
 
   private async confirmSend(): Promise<void> {
@@ -1989,10 +2012,10 @@ function seg(modifier: string, text: string): HTMLElement {
 }
 
 /** Key hints along the bottom of a floating panel. */
-function overlayFoot(hints: readonly (readonly [string, string])[]): HTMLElement {
+function overlayFoot(hints: readonly KeyHint[]): HTMLElement {
   const foot = document.createElement('div');
   foot.className = 'krypton-review__overlay-foot';
-  for (const hint of hints) foot.appendChild(keyHint(hint));
+  for (const hint of hints) foot.appendChild(keyHint(hint, 'krypton-review__hint'));
   return foot;
 }
 

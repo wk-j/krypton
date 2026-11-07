@@ -165,24 +165,6 @@
   white-space: nowrap;
 }
 
-/* A key hint's key is a small key cap (DESIGN.md "Overlays": hint labels are
- * key caps). 6px, not 8px: on a one-line cap 8px reads as a capsule. */
-.krypton-review__key {
-  display: inline-block;
-  min-width: 2ch;
-  padding: 0 5px;
-  border: 1px solid var(--mat-key-edge);
-  border-radius: 6px;
-  background: var(--mat-key);
-  box-shadow: var(--mat-key-raise);
-  color: var(--krypton-review-ink-2);
-  font: inherit;
-  font-size: 0.92em;
-  line-height: 1.45;
-  text-align: center;
-  text-shadow: var(--mat-print);
-}
-
 .krypton-review__title {
   margin-top: 4px;
   color: var(--krypton-review-ink-1);
@@ -1318,17 +1300,10 @@
 /* The shortcut trailing a key's legend, in a dimmer ink. */
 .krypton-review-thread__key {
   margin-left: 0.6ch;
-  color: var(--krypton-review-ink-3);
-  font-weight: 400;
-  text-shadow: none;
 }
 
 .krypton-review-thread__tab .krypton-review-thread__key {
   margin-left: 0;
-}
-
-.krypton-review-thread__tab--active .krypton-review-thread__key {
-  color: var(--mat-silk);
 }
 
 .krypton-review-thread__tab:focus-visible,
@@ -1451,8 +1426,6 @@
 }
 
 .krypton-review-thread__choice-key {
-  color: var(--krypton-review-ink-3);
-  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
@@ -1468,10 +1441,6 @@
   background: var(--mat-key-down);
   box-shadow: var(--mat-key-sunk);
   color: var(--mat-lit);
-}
-
-.krypton-review-thread__choice--active .krypton-review-thread__choice-key {
-  color: var(--mat-silk);
 }
 
 .krypton-review-thread__choice--active .krypton-review-thread__choice-label {
@@ -1552,7 +1521,6 @@
 
 .krypton-review-thread__send .krypton-review-thread__key {
   margin-left: 0;
-  color: var(--mat-silk);
 }
 
 /* Submitting: the action is running, so the key stays latched and lit

@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (354)
+## Specs (355)
 
 | # | Spec |
 |---|------|
@@ -371,6 +371,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 366 | [Console Faceplate UI](./0366-console-faceplate-ui.md) |
 | 367 | [Light Scheme Redesign](./0367-light-scheme-redesign.md) (Draft) |
 | 368 | [Rails Manual Checks](./0368-rails-manual-checks.md) |
+| 369 | [Keycap Shortcuts](./0369-keycap-shortcuts.md) |
 
 ## ADRs (30)
 

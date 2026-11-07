@@ -169,7 +169,6 @@ export class QueueCard extends Component<QueueCardProps> {
     });
     this.hint.update({
       hints: QUEUE_HINTS,
-      style: 'plain',
       block: 'acp-harness__lane-queue-hint',
     });
   }

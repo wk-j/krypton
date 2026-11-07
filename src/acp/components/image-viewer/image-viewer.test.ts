@@ -56,7 +56,7 @@ describe('ImageViewer', () => {
     expect(img?.getAttribute('src')).toBe('blob:a');
     expect(img?.alt).toBe('a.png');
     expect(viewer.el.querySelector('.acp-harness__image-viewer-meta')?.textContent)
-      .toBe('1/2 · a.png · 2 KB   n/p next · =/- zoom · 0 fit · 1 100% · hjkl pan · Esc close');
+      .toBe('1/2 · a.png · 2 KB   n/p next · =/- zoom · 0 fit · 1 100% · h/j/k/l pan · Esc close');
   });
 
   it('stays hidden while nothing is open', () => {
@@ -126,7 +126,7 @@ describe('ImageViewer', () => {
     expect(img?.style.width).toBe('200px');
     expect(img?.style.transform).not.toContain('scale(');
     expect(viewer.el.querySelector('.acp-harness__image-viewer-meta')?.textContent)
-      .toBe('flow.svg · 200×100 · 100%   =/- zoom · 0 fit · 1 100% · hjkl pan · s source · Esc close');
+      .toBe('flow.svg · 200×100 · 100%   =/- zoom · 0 fit · 1 100% · h/j/k/l pan · s source · Esc close');
   });
 
   it('closes before handing the fence back for its Source flip', () => {

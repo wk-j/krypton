@@ -75,9 +75,9 @@ export class WebviewContentView implements ContentView {
     const chrome = document.createElement('div');
     chrome.className = 'krypton-webview-chrome';
 
-    this.backBtn = this.makeChromeButton('◀', 'Back (Cmd+[)', () => this.back());
-    this.fwdBtn = this.makeChromeButton('▶', 'Forward (Cmd+])', () => this.forward());
-    this.reloadBtn = this.makeChromeButton('↻', 'Reload (Cmd+R)', () => this.reload());
+    this.backBtn = this.makeChromeButton('◀', 'Back (⌘[)', () => this.back());
+    this.fwdBtn = this.makeChromeButton('▶', 'Forward (⌘])', () => this.forward());
+    this.reloadBtn = this.makeChromeButton('↻', 'Reload (⌘R)', () => this.reload());
 
     const nav = document.createElement('div');
     nav.className = 'krypton-webview-nav';

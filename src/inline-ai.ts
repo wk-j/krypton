@@ -14,6 +14,7 @@ import type { InlineAcpConversation, InlineTurnEvent } from './inline-ai-session
 import { collapseSpace, type TerminalContextSnapshot } from './terminal-context';
 import { remoteHostBlock, remoteLabel, type InlineRemote } from './inline-ai-remote';
 import { STREAMING_GRID_MAX_LINES, gridifyCodeBlocks } from './acp/cell-grid';
+import { keyHintNodes, type KeyHint } from './ui/kbd';
 import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 
 // Markdown renderer for ask-mode answers (shared instance)
@@ -212,7 +213,7 @@ export class InlineAIOverlay {
 
     this.modeEl = document.createElement('span');
     this.modeEl.className = 'krypton-inline-ai__mode';
-    this.modeEl.textContent = this.askMode ? '\u21e5 cmd' : '\u21e5 ask';
+    this.paintModeLabel();
 
     this.inputEl = document.createElement('input');
     this.inputEl.className = 'krypton-inline-ai__input';
@@ -262,9 +263,7 @@ export class InlineAIOverlay {
     // Hint bar
     this.hintEl = document.createElement('div');
     this.hintEl.className = 'krypton-inline-ai__hint';
-    this.hintEl.textContent = this.askMode
-      ? '\u21b5 submit \u00b7 \u21e5 cmd \u00b7 \u238b dismiss'
-      : '\u21b5 submit \u00b7 \u21e5 ask \u00b7 \u238b dismiss';
+    this.updateInputHint();
     this.el.appendChild(this.hintEl);
   }
 
@@ -432,22 +431,33 @@ export class InlineAIOverlay {
     if (this.askMode) {
       this.promptEl.textContent = 'ASK \u25b8';
       this.promptEl.classList.add('krypton-inline-ai__prompt--ask');
-      this.modeEl.textContent = '\u21e5 cmd';
+      this.paintModeLabel();
       this.inputEl.placeholder = 'Ask a question...';
     } else {
       this.promptEl.textContent = 'CMD \u25b8';
       this.promptEl.classList.remove('krypton-inline-ai__prompt--ask');
-      this.modeEl.textContent = '\u21e5 ask';
+      this.paintModeLabel();
       this.inputEl.placeholder = 'Describe a command...';
     }
     this.updateInputHint();
     this.inputEl.focus();
   }
 
+  /** The mode toggle beside the input: `Tab` and the mode it switches to. */
+  private paintModeLabel(): void {
+    this.modeEl.replaceChildren(...keyHintNodes([{ keys: ['Tab'], label: this.askMode ? 'cmd' : 'ask' }]));
+  }
+
+  private paintHint(hints: readonly KeyHint[]): void {
+    this.hintEl.replaceChildren(...keyHintNodes(hints));
+  }
+
   private updateInputHint(): void {
-    this.hintEl.textContent = this.askMode
-      ? '\u21b5 submit \u00b7 \u21e5 cmd \u00b7 \u238b dismiss'
-      : '\u21b5 submit \u00b7 \u21e5 ask \u00b7 \u238b dismiss';
+    this.paintHint([
+      { keys: ['Enter'], label: 'submit' },
+      { keys: ['Tab'], label: this.askMode ? 'cmd' : 'ask' },
+      { keys: ['Esc'], label: 'dismiss' },
+    ]);
   }
 
   private async submit(query: string): Promise<void> {
@@ -476,7 +486,7 @@ export class InlineAIOverlay {
     this.inputEl.readOnly = true;
     this.spinnerEl.hidden = false;
     this.resultEl.hidden = true;
-    this.hintEl.textContent = '\u238b cancel';
+    this.paintHint([{ keys: ['Esc'], label: 'cancel' }]);
     // A fix turn starts from an earlier result; clear what it painted.
     this.commandEl.textContent = '';
     this.commandEl.classList.remove('krypton-inline-ai__command--ready');
@@ -664,7 +674,11 @@ export class InlineAIOverlay {
         this.commandEl.innerHTML = md.parse(this.answer, { gfm: true, breaks: true }) as string;
         gridifyCodeBlocks(this.commandEl); // spec 326
       }
-      this.hintEl.textContent = '\u2318C copy \u00b7 \u21b5 ask another \u00b7 \u238b dismiss';
+      this.paintHint([
+        { keys: ['⌘C'], label: 'copy' },
+        { keys: ['Enter'], label: 'ask another' },
+        { keys: ['Esc'], label: 'dismiss' },
+      ]);
     } else {
       // Command mode — reveal command
       if (this.command) {
@@ -679,9 +693,15 @@ export class InlineAIOverlay {
         this.explainEl.textContent = this.explanation;
       }
       // Spec 335: a NO_FIX answer has nothing to accept or copy.
-      this.hintEl.textContent = this.command
-        ? '\u21b5 accept \u00b7 \u21e7\u21b5 run \u00b7 \u21e5 edit \u00b7 \u2318C copy \u00b7 \u238b dismiss'
-        : '\u21e5 edit \u00b7 \u238b dismiss';
+      this.paintHint(this.command
+        ? [
+          { keys: ['Enter'], label: 'accept' },
+          { keys: ['⇧Enter'], label: 'run' },
+          { keys: ['Tab'], label: 'edit' },
+          { keys: ['⌘C'], label: 'copy' },
+          { keys: ['Esc'], label: 'dismiss' },
+        ]
+        : [{ keys: ['Tab'], label: 'edit' }, { keys: ['Esc'], label: 'dismiss' }]);
     }
   }
 
@@ -693,6 +713,6 @@ export class InlineAIOverlay {
     this.commandEl.textContent = '';
     this.explainEl.textContent = message;
     this.explainEl.classList.add('krypton-inline-ai__explain--error');
-    this.hintEl.textContent = '\u238b dismiss';
+    this.paintHint([{ keys: ['Esc'], label: 'dismiss' }]);
   }
 }

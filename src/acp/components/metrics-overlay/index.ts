@@ -343,7 +343,10 @@ export class MetricsOverlay extends Component<MetricsOverlayProps> {
       name: 'metrics',
       block: 'acp-harness__metrics',
       title: 'Lane Resource Usage',
-      sub: `Esc to close · refreshes every ${(next.pollMs / 1000).toFixed(0)}s`,
+      sub: [
+        { keys: ['Esc'], label: 'to close' },
+        { keys: [], label: `refreshes every ${(next.pollMs / 1000).toFixed(0)}s` },
+      ],
       body: this.body,
       onAutoClose: next.onAutoClose,
     });

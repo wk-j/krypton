@@ -40,7 +40,8 @@ describe('StagingStrip', () => {
         '<button class="acp-harness__staged-remove" title="Remove image" type="button" ' +
         'data-remove-staged-image="1">x</button>' +
         '</div>' +
-        '<span class="acp-harness__staging-hint">2 images · Esc to clear</span>' +
+        '<span class="acp-harness__staging-hint">2 images · ' +
+          '<span class="krypton-key-hint"><kbd>Esc</kbd> to clear</span></span>' +
         '</div>',
     );
   });

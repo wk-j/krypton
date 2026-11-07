@@ -7,6 +7,7 @@
 // quick-file-search.ts); this class owns the DOM, selection, keys and the one
 // close path that tells the InputRouter to leave the palette mode.
 
+import { keyCap, keyHint } from './ui/kbd';
 import type { SoundEngine } from './sound';
 import type {
   AcceptControl,
@@ -75,10 +76,7 @@ export class SearchPalette {
       label.textContent = scope.label;
       tab.appendChild(label);
       if (scope.shortcut) {
-        const key = document.createElement('span');
-        key.className = 'krypton-search-palette__tab-key';
-        key.textContent = scope.shortcut;
-        tab.appendChild(key);
+        tab.appendChild(keyCap(scope.shortcut));
       }
       tab.addEventListener('mousedown', (e) => {
         e.preventDefault();
@@ -358,7 +356,7 @@ export class SearchPalette {
     delete this.hintEl.dataset.flash;
     for (const hint of scope.hints) {
       const span = document.createElement('span');
-      span.textContent = hint.text;
+      span.appendChild(keyHint(hint));
       if (hint.kind) span.dataset.kind = hint.kind;
       this.hintEl.appendChild(span);
     }

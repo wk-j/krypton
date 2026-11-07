@@ -66,6 +66,7 @@ describe('MetricsOverlay', () => {
       .toBe('Lane Resource Usage');
     expect(overlay.el.querySelector('.acp-harness__metrics__sub')?.textContent)
       .toBe('Esc to close · refreshes every 2s');
+    expect(overlay.el.querySelector('.acp-harness__metrics__sub kbd')?.textContent).toBe('Esc');
     expect(overlay.el.querySelector('.acp-harness__metrics-lane-name')?.textContent).toBe('claude-1');
     expect([...overlay.el.querySelectorAll('.acp-harness__metrics-total')].map((t) => t.textContent))
       .toEqual(['CPU 18%', 'MEM 512M', '2 procs']);

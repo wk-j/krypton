@@ -19,6 +19,47 @@ import type {
 } from './palette-types';
 import { paletteIcon } from './palette-icons';
 import type { WorkspaceFooter } from './workspace-footer';
+import { keyCap } from './ui/kbd';
+
+const MODIFIER_SYMBOLS: Readonly<Record<string, string>> = {
+  cmd: '⌘',
+  meta: '⌘',
+  ctrl: '⌃',
+  alt: '⌥',
+  opt: '⌥',
+  option: '⌥',
+  shift: '⇧',
+};
+
+/**
+ * A keybinding string as caps (spec 369): spaces separate sequence steps
+ * (`Leader n` → `Leader` `n`), `Mod+Key` chords fold into one cap with macOS
+ * symbols (`Cmd+Shift+>` → `⌘⇧>`), and a bare modifier step modifies the next
+ * step (`Leader Shift y` → `Leader` `⇧y`).
+ */
+export function bindingCaps(binding: string): HTMLElement[] {
+  const caps: HTMLElement[] = [];
+  let pending = '';
+  for (const step of binding.trim().split(/\s+/)) {
+    const parts = step.length > 1 ? step.split(/\+(?=.)/) : [step];
+    const last = parts.length - 1;
+    let mods = '';
+    let key = '';
+    parts.forEach((part, index) => {
+      const symbol = MODIFIER_SYMBOLS[part.toLowerCase()];
+      if (symbol && (index < last || parts.length === 1)) mods += symbol;
+      else key = part;
+    });
+    if (!key) {
+      pending += mods;
+      continue;
+    }
+    caps.push(keyCap(`${pending}${mods}${key}`));
+    pending = '';
+  }
+  if (pending) caps.push(keyCap(pending));
+  return caps;
+}
 
 /**
  * Fuzzy subsequence match.
@@ -116,7 +157,7 @@ class ActionRow implements ScopeRow {
 
     const key = document.createElement('span');
     key.className = 'krypton-search-palette__key';
-    key.textContent = this.action.keybinding ?? '';
+    if (this.action.keybinding) key.append(...bindingCaps(this.action.keybinding));
     el.appendChild(key);
   }
 }
@@ -128,10 +169,10 @@ export class CommandScope implements SearchScope {
   readonly prompt = '>';
   readonly placeholder = 'Type a command…';
   readonly hints: readonly ScopeHint[] = [
-    { text: '↵ run' },
-    { text: '⌥1–9 pick' },
-    { text: '⇥ next tab' },
-    { text: '⎋ close' },
+    { keys: ['Enter'], label: 'run' },
+    { keys: ['⌥1–9'], label: 'pick' },
+    { keys: ['Tab'], label: 'next tab' },
+    { keys: ['Esc'], label: 'close' },
   ];
 
   private compositor: Compositor;

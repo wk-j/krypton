@@ -38,7 +38,6 @@ import type { HarnessLaneStatus, StopReason } from './types';
 /** Output RMS above which the model counts as speaking (OMP `OUTPUT_ACTIVE_LEVEL`). */
 const SPEAKING_LEVEL = 0.015;
 const LEVEL_INTERVAL_MS = 100;
-const METER_SEGMENTS = 8;
 const DATA_CHANNEL_TIMEOUT_MS = 20_000;
 const END_NOTE_MS = 4_000;
 
@@ -80,17 +79,6 @@ function rms(analyser: AnalyserNode | null, buffer: Float32Array<ArrayBuffer>): 
   for (const sample of buffer) sum += sample * sample;
   return Math.sqrt(sum / buffer.length);
 }
-
-function meter(level: number): string {
-  const on = Math.min(METER_SEGMENTS, Math.round(level * 40));
-  return '█'.repeat(on) + '░'.repeat(METER_SEGMENTS - on);
-}
-
-/** Hints name the hold/release action, never a latched microphone toggle. */
-const LIVE_KEYS = {
-  mute: '⌘⇧L stop · release left ⌥ to mute',
-  unmute: '⌘⇧L stop · hold left ⌥ to talk',
-} as const;
 
 export class HarnessLiveVoiceController {
   /**
@@ -516,9 +504,9 @@ export class HarnessLiveVoiceController {
   /**
    * The composer's `LiveVoiceStrip` props for `lane` — `hidden` when there is
    * nothing to show. Spec 301: the strip is a component the composer places,
-   * so this hands over state instead of markup. `patchStrip()` below still
-   * writes the same `data-live-*` nodes in place, because a level sample ten
-   * times a second must not go through a composer pass.
+   * so this hands over state instead of markup. `patchStrip()` below hands
+   * the same props straight to the strip component, because a level sample
+   * ten times a second must not go through a composer pass.
    */
   stripProps(lane: HarnessLane): LiveVoiceStripProps {
     const s = this.session;
@@ -546,19 +534,13 @@ export class HarnessLiveVoiceController {
     return `${line.role === 'user' ? 'you' : 'live'}: ${line.text}`;
   }
 
-  /** Update the strip in place — level ticks must not re-render the composer. */
+  /** Update the strip through its component — level ticks must not re-render
+   *  the composer, and a tick that moves no meter segment writes nothing. The
+   *  composer shows the strip only for the active lane, so another lane's
+   *  session has nothing to patch. */
   private patchStrip(s: LiveSession): void {
-    const strip = this.host.composerEl.querySelector<HTMLElement>('[data-live-strip]');
-    if (!strip || this.session !== s) return;
-    strip.className = `acp-harness__live acp-harness__live--${s.phase}`;
-    const set = (selector: string, text: string): void => {
-      const el = strip.querySelector<HTMLElement>(selector);
-      if (el && el.textContent !== text) el.textContent = text;
-    };
-    set('[data-live-phase]', s.phase);
-    set('[data-live-in]', meter(s.inputLevel));
-    set('[data-live-out]', meter(s.outputLevel));
-    set('[data-live-line]', this.lineText(s));
-    set('[data-live-keys]', LIVE_KEYS[s.muted ? 'unmute' : 'mute']);
+    if (this.session !== s || this.host.activeLaneId !== s.laneId) return;
+    const lane = this.host.lanes.find((l) => l.id === s.laneId);
+    if (lane) this.host.patchLiveVoice(this.stripProps(lane));
   }
 }

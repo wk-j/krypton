@@ -83,7 +83,7 @@ describe('ReviewPriorityOverlay', () => {
     const overlay = mount();
     expect(overlay.el.querySelector('.acp-priority__lanes')).toBeNull();
     expect([...overlay.el.querySelectorAll('.acp-priority__foot span:not(.acp-priority__foot-note)')]
-      .map((s) => s.textContent)).toEqual(['esc close']);
+      .map((s) => s.textContent)).toEqual(['Esc close']);
     overlay.update(props({
       lanes: [
         { id: 'lane-1', label: 'codex-1', highCount: 4 },
@@ -93,7 +93,7 @@ describe('ReviewPriorityOverlay', () => {
     expect([...overlay.el.querySelectorAll('.acp-priority__lane')].map((t) => t.textContent))
       .toEqual(['codex-1 · 4', 'grok-1 · 2']);
     expect([...overlay.el.querySelectorAll('.acp-priority__foot span:not(.acp-priority__foot-note)')]
-      .map((s) => s.textContent)).toEqual(['j k switch lane', 'esc close']);
+      .map((s) => s.textContent)).toEqual(['j/k switch lane', 'Esc close']);
     expect(overlay.el.querySelector('.acp-priority__foot-note')?.textContent)
       .toBe('read-only — advisory reading hint');
   });

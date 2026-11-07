@@ -11,6 +11,7 @@ import type { LiveAssistLaneSummary, LiveAssistStreamEvent } from './acp/live-as
 import { LiveAssistView } from './acp/live-assist-view';
 import './styles/layers.css';
 import './styles/materials.css';
+import './styles/kbd.css';
 import './styles/live-assist.css';
 
 async function main(): Promise<void> {

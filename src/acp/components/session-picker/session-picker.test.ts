@@ -66,7 +66,11 @@ describe('SessionPicker', () => {
       '<aside class="acp-harness__session-picker">' +
         '<header class="acp-harness__session-head">' +
         '<span>// resume session</span>' +
-        '<span>j/k move · enter list · esc cancel</span>' +
+        '<span>' +
+        '<span class="krypton-key-hint"><kbd>j</kbd>/<kbd>k</kbd> move</span> · ' +
+        '<span class="krypton-key-hint"><kbd>Enter</kbd> list</span> · ' +
+        '<span class="krypton-key-hint"><kbd>Esc</kbd> cancel</span>' +
+        '</span>' +
         '</header>' +
         '<ul class="acp-harness__session-list">' +
         '<li class="acp-harness__session-row acp-harness__session-row--active" data-session-backend="claude">' +
@@ -99,7 +103,7 @@ describe('SessionPicker', () => {
 
     expect(headSpans(picker)).toStrictEqual([
       '// Claude sessions',
-      'b switch backend · n fresh · esc cancel',
+      'b switch backend · n fresh · Esc cancel',
     ]);
     expect(picker.el.querySelector('.acp-harness__session-empty')?.textContent).toBe(
       'probe exited 1',
@@ -126,7 +130,7 @@ describe('SessionPicker', () => {
 
     expect(headSpans(picker)).toStrictEqual([
       '// Claude sessions',
-      'enter resume · b backend · n fresh · esc cancel',
+      'Enter resume · b backend · n fresh · Esc cancel',
     ]);
     expect(rows[0].outerHTML).toBe(
       '<li class="acp-harness__session-row acp-harness__session-row--active">' +
@@ -146,7 +150,7 @@ describe('SessionPicker', () => {
   it('offers load, then list only, as the capabilities shrink', () => {
     const picker = mount(base({ capabilities: { canList: true, canResume: false, canLoad: true } }));
     expect(picker.el.querySelector('.acp-harness__session-action')?.textContent).toBe('load');
-    expect(headSpans(picker)[1]).toBe('enter load · b backend · n fresh · esc cancel');
+    expect(headSpans(picker)[1]).toBe('Enter load · b backend · n fresh · Esc cancel');
 
     picker.update(base({ capabilities: { canList: true, canResume: false, canLoad: false } }));
     expect(picker.el.querySelector('.acp-harness__session-action')?.textContent).toBe('list only');
@@ -159,7 +163,7 @@ describe('SessionPicker', () => {
     const picker = mount(base({ nextCursor: 'page-2' }));
 
     expect(headSpans(picker)[1]).toBe(
-      'enter resume · b backend · n fresh · PageDown more · esc cancel',
+      'Enter resume · b backend · n fresh · PgDn more · Esc cancel',
     );
   });
 

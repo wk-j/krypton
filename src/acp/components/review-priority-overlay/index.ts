@@ -13,7 +13,8 @@ import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
 import type { ReviewPriorityRange, ReviewPriorityReport } from '../../types';
 import { Chip } from '../chip';
-import { KeyHintBar, type KeyHint, type KeyHintBarProps } from '../key-hint-bar';
+import type { KeyHint } from '../../../ui/kbd';
+import { KeyHintBar, type KeyHintBarProps } from '../key-hint-bar';
 import { OverlayShell } from '../overlay-shell';
 import { TabStrip } from '../tab-strip';
 import type { ComponentDef } from '../types';
@@ -150,13 +151,13 @@ export class ReviewPriorityOverlay extends Component<ReviewPriorityOverlayProps>
 
   private hints(next: ReviewPriorityOverlayProps): KeyHintBarProps {
     const hints: KeyHint[] = [];
-    if (next.lanes.length > 1) hints.push({ keys: ['j', 'k'], label: 'switch lane' });
-    hints.push({ keys: ['esc'], label: 'close' });
+    if (next.lanes.length > 1) hints.push({ keys: ['j', 'k'], label: 'switch lane', keySeparator: '/' });
+    hints.push({ keys: ['Esc'], label: 'close' });
     return {
       hints,
       note: 'read-only — advisory reading hint',
       noteClass: 'acp-priority__foot-note',
-      style: 'kbd',
+      layout: 'spans',
       block: 'acp-priority__foot',
     };
   }

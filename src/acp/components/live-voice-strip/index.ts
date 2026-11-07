@@ -4,14 +4,15 @@
 // `composerEl.querySelector('[data-live-strip]')` on every sample and writes
 // five `textContent`s. Here the levels arrive as props, and the METER TEXT —
 // not the raw level — is the dependency, so the nine samples out of ten that
-// do not cross a segment boundary write nothing at all. The `data-live-*`
-// attributes stay in the markup; they are the controller's handle until it
-// holds the component instead.
+// do not cross a segment boundary write nothing at all. The live controller
+// patches level ticks through `Composer.patchLiveVoice()`, i.e. through this
+// component's `update()`; the `data-live-*` attributes stay in the markup.
 
 import './live-voice-strip.css';
 
 import { Component } from '../../../ui/component';
 import { classes, el, setAttr } from '../../../ui/dom';
+import { keyHintNodes, type KeyHint } from '../../../ui/kbd';
 import { syncOrder } from '../../../ui/list';
 import type { LivePhase } from '../../live-voice';
 import type { ComponentDef } from '../types';
@@ -19,10 +20,12 @@ import type { ComponentDef } from '../types';
 /** OMP parity: eight cells, full scale at RMS 0.2. */
 const METER_SEGMENTS = 8;
 
-/** The strip's key hint follows the microphone's push-to-talk state. */
-const LIVE_KEYS: Record<'muted' | 'unmuted', string> = {
-  muted: '⌘⇧L stop · hold left ⌥ to talk',
-  unmuted: '⌘⇧L stop · release left ⌥ to mute',
+/** The strip's key hint follows the microphone's push-to-talk state; it names
+ *  the hold/release action, never a latched microphone toggle. */
+const LIVE_STOP: KeyHint = { keys: ['⌘⇧L'], label: 'stop' };
+const LIVE_KEYS: Record<'muted' | 'unmuted', readonly KeyHint[]> = {
+  muted: [LIVE_STOP, { keys: ['left ⌥'], label: 'hold to talk' }],
+  unmuted: [LIVE_STOP, { keys: ['left ⌥'], label: 'release to mute' }],
 };
 
 export interface LiveVoiceSessionProps {
@@ -64,6 +67,8 @@ export class LiveVoiceStrip extends Component<LiveVoiceStripProps> {
   private readonly outMeterEl: HTMLElement;
   private readonly lineEl: HTMLElement;
   private readonly keysEl: HTMLElement;
+  /** The muted state the key caps were last built for; level ticks skip them. */
+  private keysMuted: boolean | null = null;
 
   constructor() {
     super(el('div', { class: 'acp-harness__live' }));
@@ -131,7 +136,10 @@ export class LiveVoiceStrip extends Component<LiveVoiceStripProps> {
     this.inMeterEl.textContent = liveVoiceMeter(next.inputLevel);
     this.outMeterEl.textContent = liveVoiceMeter(next.outputLevel);
     this.lineEl.textContent = next.line;
-    this.keysEl.textContent = LIVE_KEYS[next.muted ? 'muted' : 'unmuted'];
+    if (this.keysMuted !== next.muted) {
+      this.keysMuted = next.muted;
+      this.keysEl.replaceChildren(...keyHintNodes(LIVE_KEYS[next.muted ? 'muted' : 'unmuted']));
+    }
     syncOrder(this.el, [
       this.labelEl,
       this.phaseEl,

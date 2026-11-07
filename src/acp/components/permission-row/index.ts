@@ -15,6 +15,7 @@
 
 import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
+import { keyHintNodes, keyHintsSignature, type KeyHint } from '../../../ui/kbd';
 import type { PermissionPayload } from '../../harness-view-types';
 import { TranscriptRow, type RowProps } from '../transcript-row';
 import type { ComponentDef } from '../types';
@@ -31,14 +32,17 @@ export function permissionDecisionLabel(perm: PermissionPayload): string {
   }
 }
 
-/** `a accept · r reject` — the hint line on a pending row. */
-export function permissionActionsHint(options: PermissionPayload['options']): string {
-  const labels: string[] = [];
+const ACCEPT_HINT: KeyHint = { keys: ['a'], label: 'accept' };
+const REJECT_HINT: KeyHint = { keys: ['r'], label: 'reject' };
+
+/** `a accept · r reject` — the hint line on a pending row, as key caps. */
+export function permissionActionsHint(options: PermissionPayload['options']): readonly KeyHint[] {
+  const hints: KeyHint[] = [];
   for (const option of options) {
-    if (option.action === 'accept') labels.push('a accept');
-    else if (option.action === 'reject') labels.push('r reject');
+    const hint = option.action === 'accept' ? ACCEPT_HINT : option.action === 'reject' ? REJECT_HINT : null;
+    if (hint && !hints.includes(hint)) hints.push(hint);
   }
-  return [...new Set(labels)].join(' · ');
+  return hints;
 }
 
 /** The head line: decision chip with its LED (resolved only), tool tag, subject. */
@@ -113,7 +117,7 @@ export class PermissionRow extends TranscriptRow {
       perm.suffix,
       perm.autoReason,
       perm.argsPreview,
-      permissionActionsHint(perm.options),
+      keyHintsSignature(permissionActionsHint(perm.options)),
     ];
   }
 
@@ -142,7 +146,7 @@ export class PermissionRow extends TranscriptRow {
     }
     if (pending) {
       nodes.push(
-        el('div', { class: 'acp-harness__perm-actions', text: permissionActionsHint(perm.options) }),
+        el('div', { class: 'acp-harness__perm-actions' }, ...keyHintNodes(permissionActionsHint(perm.options))),
       );
     }
     body.replaceChildren(...nodes);

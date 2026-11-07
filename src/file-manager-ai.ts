@@ -10,6 +10,7 @@ import hljs from 'highlight.js';
 import { AgentController } from './agent/agent';
 import type { AgentEventCallback } from './agent/agent';
 import { STREAMING_GRID_MAX_LINES, gridifyCodeBlocks } from './acp/cell-grid';
+import { keyHintNodes } from './ui/kbd';
 
 const md = new Marked(
   markedHighlight({
@@ -257,7 +258,7 @@ export class FileManagerAI {
   }
 
   private updateModeLabel(): void {
-    this.modeEl.textContent = this.askMode ? '\u21e5 act' : '\u21e5 ask';
+    this.modeEl.replaceChildren(...keyHintNodes([{ keys: ['Tab'], label: this.askMode ? 'act' : 'ask' }]));
   }
 
   private updatePlaceholder(): void {
@@ -268,16 +269,22 @@ export class FileManagerAI {
 
   private updateHint(): void {
     if (this.phase === 'loading') {
-      this.hintEl.textContent = '\u238b cancel';
+      this.hintEl.replaceChildren(...keyHintNodes([{ keys: ['Esc'], label: 'cancel' }]));
       return;
     }
     if (this.phase === 'result') {
-      this.hintEl.textContent = '\u21b5 again \u00b7 \u2318C copy \u00b7 \u238b dismiss';
+      this.hintEl.replaceChildren(...keyHintNodes([
+        { keys: ['Enter'], label: 'again' },
+        { keys: ['⌘C'], label: 'copy' },
+        { keys: ['Esc'], label: 'dismiss' },
+      ]));
       return;
     }
-    this.hintEl.textContent = this.askMode
-      ? '\u21b5 submit \u00b7 \u21e5 act \u00b7 \u238b dismiss'
-      : '\u21b5 submit \u00b7 \u21e5 ask \u00b7 \u238b dismiss';
+    this.hintEl.replaceChildren(...keyHintNodes([
+      { keys: ['Enter'], label: 'submit' },
+      { keys: ['Tab'], label: this.askMode ? 'act' : 'ask' },
+      { keys: ['Esc'], label: 'dismiss' },
+    ]));
   }
 
   private resetToInput(): void {
@@ -417,7 +424,7 @@ export class FileManagerAI {
     this.inputEl.readOnly = false;
     this.responseEl.textContent = '';
     this.responseEl.innerHTML = `<span class="krypton-file-manager-ai__error">${this.escapeHtml(message)}</span>`;
-    this.hintEl.textContent = '\u238b dismiss';
+    this.hintEl.replaceChildren(...keyHintNodes([{ keys: ['Esc'], label: 'dismiss' }]));
   }
 
   private escapeHtml(s: string): string {

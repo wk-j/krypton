@@ -264,17 +264,6 @@
     color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
   }
 
-  .acp-priority__foot kbd {
-    padding: 0 4px;
-    border: 1px solid var(--mat-key-edge);
-    border-radius: 4px;
-    background: var(--mat-key);
-    box-shadow: var(--mat-key-raise);
-    color: var(--mat-lit);
-    text-shadow: var(--mat-print);
-    font: inherit;
-  }
-
   /* A hint never breaks between its keys and its words; the run wraps whole. */
   .acp-priority__foot > span {
     white-space: nowrap;

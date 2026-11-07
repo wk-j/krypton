@@ -4,6 +4,23 @@
 
 import { AgentController, type AgentContextSnapshot, type ContextMessage } from './agent';
 import type { ContentView, PaneContentType } from '../types';
+import { keyHintNodes, type KeyHint } from '../ui/kbd';
+
+const BROWSE_HINTS: readonly KeyHint[] = [
+  { keys: ['j', 'k'], keySeparator: '/', label: 'navigate' },
+  { keys: ['Enter'], label: 'expand' },
+  { keys: ['y'], label: 'yank' },
+  { keys: ['Y'], label: 'yank all' },
+  { keys: ['g', 'G'], keySeparator: '/', label: 'top/bot' },
+  { keys: ['q'], label: 'close' },
+];
+
+const DETAIL_HINTS: readonly KeyHint[] = [
+  { keys: ['j', 'k'], keySeparator: '/', label: 'scroll' },
+  { keys: ['y'], label: 'yank' },
+  { keys: ['Esc'], label: 'back' },
+  { keys: ['q'], label: 'close' },
+];
 
 function escHtml(s: string): string {
   return s
@@ -66,7 +83,7 @@ export class ContextView implements ContentView {
     // Bottom hint bar
     this.hintEl = document.createElement('div');
     this.hintEl.className = 'context-view__hint';
-    this.hintEl.textContent = 'j/k navigate  Enter expand  y yank  Y yank all  g/G top/bot  q close';
+    this.hintEl.replaceChildren(...keyHintNodes(BROWSE_HINTS));
 
     this.element.appendChild(this.headerEl);
     this.element.appendChild(this.listEl);
@@ -254,7 +271,7 @@ export class ContextView implements ContentView {
     this.state = 'detail';
     this.listEl.classList.add('context-view__list--hidden');
     this.detailEl.classList.add('context-view__detail--visible');
-    this.hintEl.textContent = 'j/k scroll  y yank  Escape back  q close';
+    this.hintEl.replaceChildren(...keyHintNodes(DETAIL_HINTS));
 
     const content = document.createElement('pre');
     content.className = 'context-view__detail-content';
@@ -270,7 +287,7 @@ export class ContextView implements ContentView {
     this.listEl.classList.remove('context-view__list--hidden');
     this.detailEl.classList.remove('context-view__detail--visible');
     this.detailEl.innerHTML = '';
-    this.hintEl.textContent = 'j/k navigate  Enter expand  y yank  Y yank all  g/G top/bot  q close';
+    this.hintEl.replaceChildren(...keyHintNodes(BROWSE_HINTS));
     this.render();
   }
 

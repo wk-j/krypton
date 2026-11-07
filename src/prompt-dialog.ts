@@ -15,6 +15,7 @@ import type {
   WindowId,
 } from './types';
 import { getCaretCoordinates } from './caret-position';
+import { keyCap, keyHint, type KeyHint } from './ui/kbd';
 
 const TARGET_PROCESS = 'claude';
 const FILE_INDEX_TTL_MS = 10_000;
@@ -356,7 +357,7 @@ export class PromptDialog {
         const cwd = t.cwd ?? '…';
         return `
           <div class="krypton-prompt-dialog__picker-row${isSel ? ' is-selected' : ''}" data-idx="${i}">
-            <span class="krypton-prompt-dialog__picker-hotkey">${i < 9 ? i + 1 : ' '}</span>
+            <span class="krypton-prompt-dialog__picker-hotkey"></span>
             <span class="krypton-prompt-dialog__picker-proc">claude</span>
             <span class="krypton-prompt-dialog__picker-cwd">${escapeHtml(abbreviatePath(cwd))}</span>
             <span class="krypton-prompt-dialog__picker-pid">pid ${t.pid}</span>
@@ -368,8 +369,11 @@ export class PromptDialog {
     this.pickerEl.innerHTML = header + rows;
 
     this.pickerEl.querySelectorAll<HTMLElement>('.krypton-prompt-dialog__picker-row').forEach((row) => {
+      const idx = parseInt(row.dataset.idx ?? '-1', 10);
+      if (idx >= 0 && idx < 9) {
+        row.querySelector('.krypton-prompt-dialog__picker-hotkey')?.appendChild(keyCap(String(idx + 1)));
+      }
       row.addEventListener('click', () => {
-        const idx = parseInt(row.dataset.idx ?? '-1', 10);
         if (idx >= 0) {
           this.selectedTargetIdx = idx;
           this.closePicker();
@@ -428,7 +432,7 @@ export class PromptDialog {
         <span class="krypton-prompt-dialog__chip-warn">⚠</span>
         <span class="krypton-prompt-dialog__chip-label">no Claude session</span>
         <span class="krypton-prompt-dialog__chip-spacer"></span>
-        <button class="krypton-prompt-dialog__chip-switch" title="Switch target (Cmd+,)">⇅</button>
+        <button class="krypton-prompt-dialog__chip-switch" title="Switch target (⌘,)">⇅</button>
       `;
     } else {
       const cwd = t.cwd ?? '…';
@@ -441,7 +445,7 @@ export class PromptDialog {
         <span class="krypton-prompt-dialog__chip-pid">pid ${t.pid}</span>
         ${badge}
         <span class="krypton-prompt-dialog__chip-spacer"></span>
-        <button class="krypton-prompt-dialog__chip-switch" title="Switch target (Cmd+,)">⇅</button>
+        <button class="krypton-prompt-dialog__chip-switch" title="Switch target (⌘,)">⇅</button>
       `;
     }
     const btn = this.chipEl.querySelector<HTMLButtonElement>('.krypton-prompt-dialog__chip-switch');
@@ -453,13 +457,19 @@ export class PromptDialog {
 
   private renderFooter(): void {
     const t = this.currentTarget();
-    if (this.pickerOpen) {
-      this.footerEl.innerHTML = `<span>↑↓ nav</span><span>1–9 jump</span><span>⏎ select</span><span>esc close</span>`;
-    } else if (!t) {
-      this.footerEl.innerHTML = `<span>⌘, switch target</span><span>esc close</span>`;
-    } else {
-      this.footerEl.innerHTML = `<span>⏎ send</span><span>⇧⏎ newline</span><span>⌘, switch target</span><span>esc close</span>`;
-    }
+    const close: KeyHint = { keys: ['Esc'], label: 'close' };
+    const switchTarget: KeyHint = { keys: ['⌘,'], label: 'switch target' };
+    const hints: readonly KeyHint[] = this.pickerOpen
+      ? [
+        { keys: ['↑↓'], label: 'nav' },
+        { keys: ['1–9'], label: 'jump' },
+        { keys: ['Enter'], label: 'select' },
+        close,
+      ]
+      : !t
+        ? [switchTarget, close]
+        : [{ keys: ['Enter'], label: 'send' }, { keys: ['⇧Enter'], label: 'newline' }, switchTarget, close];
+    this.footerEl.replaceChildren(...hints.map((hint) => keyHint(hint)));
   }
 
   // ─── Textarea & mention handling ───────────────────────────────

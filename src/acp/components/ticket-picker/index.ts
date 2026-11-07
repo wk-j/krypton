@@ -23,6 +23,7 @@ import './ticket-picker.css';
 
 import { Component } from '../../../ui/component';
 import { el, frag, setChildren } from '../../../ui/dom';
+import type { KeyHint } from '../../../ui/kbd';
 import { formatAge } from '../../harness-format';
 import { harnessIconEl } from '../../harness-icons';
 import type { TicketPickerAction, TicketPickerTab } from '../../harness-ticket-helpers';
@@ -65,11 +66,11 @@ const ICON_ID: Readonly<Record<TicketIcon, string>> = {
   unavailable: 'warn',
 };
 
-const FOOT_HINTS = [
+const FOOT_HINTS: readonly KeyHint[] = [
   { keys: ['Tab'], label: 'open/closed' },
-  { keys: ['↑↓', '⌃n⌃p'], label: 'select', keySeparator: ' / ' },
+  { keys: ['↑↓', '⌃n', '⌃p'], label: 'select', keySeparator: '/' },
   { keys: ['Esc'], label: 'dismiss' },
-] as const;
+];
 
 /** One row, with every string it prints already resolved. */
 interface TicketEntry {
@@ -239,7 +240,6 @@ export class TicketPicker extends Component<TicketPickerProps> {
     this.paintActions(next, selected);
     this.foot.update({
       hints: FOOT_HINTS,
-      style: 'plain',
       layout: 'run',
       block: `${BLOCK}__foot`,
       note: `shared with all ${next.laneCount} lanes · work runs in ${next.laneName ?? 'no lane'}`,

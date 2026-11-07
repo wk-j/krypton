@@ -9,12 +9,13 @@ import type { ContentView, LeaderKeyBinding, PaneContentType } from '../types';
 import type { ReviewLineComment, ReviewThread, ReviewThreadRead, ReviewThreadVerdict } from '../acp/review-thread';
 import { DiffContentView } from '../diff-view';
 import { renderKicker } from './render';
+import { keyCap } from '../ui/kbd';
 import { ReviewBoardView } from './view';
 
 type Mode = 'guide' | 'diff' | 'comments' | 'submit';
 type VerdictKind = 'approve' | 'request_changes';
 
-/** `label key`: a text control with its shortcut trailing in a dimmer ink. */
+/** `label key`: a text control with its shortcut trailing as a cap. */
 function keyButton(className: string, key: string | null, label: string): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
@@ -23,10 +24,18 @@ function keyButton(className: string, key: string | null, label: string): HTMLBu
   if (key) {
     const hint = document.createElement('span');
     hint.className = 'krypton-review-thread__key';
-    hint.textContent = key;
+    hint.appendChild(keyCap(key));
     button.appendChild(hint);
   }
   return button;
+}
+
+/** A layout slot holding one cap. */
+function keyCapSlot(className: string, key: string): HTMLElement {
+  const slot = document.createElement('span');
+  slot.className = className;
+  slot.appendChild(keyCap(key));
+  return slot;
 }
 
 function textEl(tag: string, className: string, text: string): HTMLElement {
@@ -391,7 +400,7 @@ export class ReviewThreadView implements ContentView {
       button.type = 'button';
       button.className = 'krypton-review-thread__choice';
       button.append(
-        textEl('span', 'krypton-review-thread__choice-key', key),
+        keyCapSlot('krypton-review-thread__choice-key', key),
         textEl('span', 'krypton-review-thread__choice-label', label),
       );
       if (kind === 'approve' && (this.stale || this.thread?.phase !== 'ready')) {
@@ -418,7 +427,7 @@ export class ReviewThreadView implements ContentView {
     }
     const send = this.submitting
       ? keyButton('krypton-review-thread__send', null, 'กำลังส่ง…')
-      : keyButton('krypton-review-thread__send', '⌘↵', 'Submit review');
+      : keyButton('krypton-review-thread__send', '⌘Enter', 'Submit review');
     send.disabled = this.submitting;
     send.addEventListener('click', () => { void this.submit(); });
     this.submitHost.appendChild(send);

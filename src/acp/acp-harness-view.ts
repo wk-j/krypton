@@ -65,6 +65,7 @@ import { HARNESS_REGION_ORDER } from './harness-view-host';
 import { RenderScheduler } from '../ui/scheduler';
 import { disposeList, listComponent, reconcile } from '../ui/list';
 import { el } from '../ui/dom';
+import { keyCap, keyHintNodes, type KeyHint } from '../ui/kbd';
 import { clampCursor, nextCursor, prevCursor } from './components/list-picker';
 import { LayoutHost, type Mountable } from '../ui/layout';
 import { HARNESS_LAYOUT_DEFAULT, type HarnessSlot } from './harness-layout';
@@ -137,7 +138,7 @@ import {
   Composer,
   type ComposerPaletteProps,
 } from './components/composer';
-import type { ComposerMetaChipProps, ComposerMetaProps } from './components/composer-meta';
+import type { ComposerMetaChipProps, ComposerMetaProps, ComposerMetaSegment } from './components/composer-meta';
 import type { DictationControlProps } from './components/dictation-control';
 import {
   nextPaletteCursor,
@@ -536,11 +537,7 @@ import {
   type UsageRollup,
 } from './usage-log';
 import { publishLinkFromPush } from '../backend-link';
-import {
-  buildBusySegments,
-  textSegments,
-  type MetaSegment,
-} from './harness-composer-meta';
+import { buildBusySegments, textSegments } from './harness-composer-meta';
 import {
   awaitingPeerText,
   compactPermissionLabel,
@@ -1212,7 +1209,121 @@ class RailPanel implements Mountable {
  * keeps its node and hides it, which is the same thing on screen and is what
  * lets a palette reappear without rebuilding its rows.
  */
-const HIDDEN_PALETTE: ComposerPaletteProps = { rows: [], cursor: 0, hint: '' };
+const HIDDEN_PALETTE: ComposerPaletteProps = { rows: [], cursor: 0, hint: [] };
+
+// Spec 369: every key the harness prints is a `<kbd>` cap. These are the fixed
+// hint runs; a constant array keeps a component's deps stable by content.
+const KEY_ESC_DISMISS: KeyHint = { keys: ['Esc'], label: 'dismiss' };
+const KEY_PALETTE_SELECT: KeyHint = { keys: ['↑↓', '⌃n⌃p'], label: 'select', keySeparator: '/' };
+const SELECT_INSERT_HINT: readonly KeyHint[] = [
+  KEY_PALETTE_SELECT,
+  { keys: ['Enter', 'Tab'], label: 'insert', keySeparator: '/' },
+  KEY_ESC_DISMISS,
+];
+const SELECT_COMPLETE_HINT: readonly KeyHint[] = [
+  KEY_PALETTE_SELECT,
+  { keys: ['Tab'], label: 'complete' },
+  KEY_ESC_DISMISS,
+];
+const INJECT_VERB_HINT: readonly KeyHint[] = [
+  { keys: [], label: 'inject verb' },
+  KEY_PALETTE_SELECT,
+  { keys: ['Tab'], label: 'insert' },
+  KEY_ESC_DISMISS,
+];
+const MENTION_ZERO_STATE: readonly KeyHint[] = [{ keys: [], label: 'no matching lanes' }, KEY_ESC_DISMISS];
+const PERMISSION_DECISION_HINT: readonly KeyHint[] = [
+  { keys: ['a'], label: 'accept' },
+  { keys: ['A'], label: 'all' },
+  { keys: ['r'], label: 'reject' },
+  { keys: ['R'], label: 'all' },
+];
+const HELP_HINT: readonly KeyHint[] = [{ keys: ['?'], label: 'help' }];
+const ANNOTATION_OVERLAY_HINT: readonly KeyHint[] = [
+  { keys: ['Enter'], label: 'add' },
+  { keys: ['⇧Enter'], label: 'newline' },
+  { keys: ['Esc'], label: 'cancel' },
+];
+const ORCHESTRATOR_PERM_STEP_HINT: readonly KeyHint[] = [{ keys: ['Tab'], label: 'next' }];
+const ORCHESTRATOR_DISPATCH_PLACEHOLDER: readonly KeyHint[] = [
+  { keys: [], label: 'type a task' },
+  { keys: ['Enter'], label: 'send' },
+  { keys: ['Esc'], label: 'cancel' },
+];
+const ORCHESTRATOR_PROMPT_PLACEHOLDER: readonly KeyHint[] = [
+  { keys: [], label: 'type a prompt' },
+  { keys: ['Enter'], label: 'send' },
+  { keys: ['Esc'], label: 'cancel' },
+];
+const ORCHESTRATOR_SELECT: KeyHint = { keys: ['j', 'k'], label: 'select', keySeparator: '/' };
+const ORCHESTRATOR_PERM_LEGEND: readonly KeyHint[] = [
+  { keys: ['a'], label: 'accept' },
+  { keys: ['r'], label: 'reject' },
+  { keys: ['A', 'R'], label: 'all', keySeparator: '/' },
+  { keys: ['Tab'], label: 'next perm' },
+  ORCHESTRATOR_SELECT,
+  { keys: ['c'], label: 'interrupt' },
+  { keys: ['x'], label: 'kill' },
+  { keys: ['Esc'], label: 'close' },
+];
+const ORCHESTRATOR_KEY_LEGEND: readonly KeyHint[] = [
+  ORCHESTRATOR_SELECT,
+  { keys: ['Enter'], label: 'jump' },
+  { keys: ['d'], label: 'dispatch' },
+  { keys: ['i'], label: 'prompt seat' },
+  { keys: ['c'], label: 'interrupt' },
+  { keys: ['x'], label: 'kill' },
+  { keys: ['r'], label: 'restart' },
+  { keys: ['o'], label: 'set seat' },
+  { keys: ['Esc'], label: 'close' },
+];
+const ZOOM_FIT_HINTS: readonly KeyHint[] = [
+  { keys: ['=', '-'], label: 'zoom', keySeparator: '/' },
+  { keys: ['0'], label: 'fit' },
+  { keys: ['1'], label: '100%' },
+];
+const SVG_VIEWER_STATUS_HINT: readonly KeyHint[] = [
+  { keys: [], label: 'svg viewer' },
+  ...ZOOM_FIT_HINTS,
+  { keys: ['h', 'j', 'k', 'l'], label: 'pan', keySeparator: '/' },
+  { keys: ['s'], label: 'source' },
+  { keys: ['Esc'], label: 'close' },
+];
+const IMAGE_VIEWER_STATUS_HINT: readonly KeyHint[] = [
+  { keys: [], label: 'image viewer' },
+  { keys: ['n', 'p'], label: 'next', keySeparator: '/' },
+  ...ZOOM_FIT_HINTS,
+  { keys: ['o'], label: 'open' },
+  { keys: ['Esc'], label: 'close' },
+];
+const OPEN_HINT_STATUS_HINT: readonly KeyHint[] = [
+  { keys: [], label: 'open reference: press label' },
+  { keys: ['Esc'], label: 'cancel' },
+];
+const ANNOTATION_ARMED_STATUS_HINT: readonly KeyHint[] = [
+  { keys: [], label: 'selection armed' },
+  { keys: ['c'], label: 'annotate' },
+  { keys: ['Esc'], label: 'dismiss' },
+];
+
+/** Prose naming keys (spec 369 rule 2): text runs, and `{ cap }` for a key. */
+type ProsePart = string | { readonly cap: string };
+
+const ADD_LANE_PROSE: readonly ProsePart[] = ['press ', { cap: '⌘P' }, ' then ', { cap: '+' }, ' to add a lane'];
+
+function proseNodes(parts: readonly ProsePart[]): (string | HTMLElement)[] {
+  return parts.map((part) => (typeof part === 'string' ? part : keyCap(part.cap)));
+}
+
+/** A whole-chip readout that names keys: the `text` segment, painted as caps. */
+function hintSegments(hints: readonly KeyHint[]): ComposerMetaSegment[] {
+  return [{ id: 'text', text: '', hints }];
+}
+
+const PENDING_ACCEPT_REJECT: readonly KeyHint[] = [
+  { keys: ['a'], label: 'accept' },
+  { keys: ['r'], label: 'reject' },
+];
 
 interface UiGeneration {
   readonly spawnEpoch: number;
@@ -1459,7 +1570,7 @@ export class AcpHarnessView implements ContentView {
   /** spec 285: word-autocomplete ghost; valid only while its draft/cursor still match. */
   private ghost: GhostSuggestion | null = null;
   private ghostSeq = 0;
-  private chip: string | null = null;
+  private chip: string | readonly KeyHint[] | null = null;
   private chipTimer: number | null = null;
   private readonly dictationCtl = new HarnessDictationController(this.dictationHost());
   /** spec 280: realtime voice session bound to one lane. */
@@ -1503,7 +1614,7 @@ export class AcpHarnessView implements ContentView {
     error: null,
   };
   private nextLaneIndex = 1;
-  private systemRows: string[] = ['loading ACP backends...'];
+  private systemRows: (string | readonly ProsePart[])[] = ['loading ACP backends...'];
   private laneModels: Record<string, LaneModelConfig> = {};
   /** spec 124: reusable directives loaded from acp-harness.toml. */
   private directives: HarnessDirective[] = [];
@@ -5992,7 +6103,7 @@ export class AcpHarnessView implements ContentView {
         (permLanes.length > 0 ? ` · ${permLanes.length} perm` : ''),
       cards: cards.map((l): OrchestratorSeatCard => this.orchestratorCardProps(l, seatId)),
       permissions: this.orchestratorPermRows(permLanes),
-      permStepHint: permLanes.length > 1 ? ' · Tab next' : '',
+      permStepHint: permLanes.length > 1 ? ORCHESTRATOR_PERM_STEP_HINT : [],
       feed: this.orchestratorFeedRows(seatLane),
       feedEmpty: this.orchestratorFeedEmpty(seatLane),
       dispatch: this.orchestratorDispatchLine(selected, seatId),
@@ -6085,13 +6196,13 @@ export class AcpHarnessView implements ContentView {
       label: `dispatch → ${target}`,
       active: this.orchestratorDispatch !== null,
       draft: this.orchestratorDispatch?.draft ?? '',
-      placeholder: 'type a task · Enter send · Esc cancel',
+      placeholder: ORCHESTRATOR_DISPATCH_PLACEHOLDER,
       disabledReason: dispatchDisabledReason({
         seatId,
         targetId: selected?.id ?? null,
         laneCount: this.orchestratorCards().length,
       }),
-      hint: `press d to dispatch to ${target}`,
+      hint: [{ keys: ['d'], label: `dispatch to ${target}` }],
       purposes: DISPATCH_PURPOSES,
       activePurpose: this.orchestratorDispatch?.purpose,
     };
@@ -6106,21 +6217,20 @@ export class AcpHarnessView implements ContentView {
       label: `prompt → ${target}`,
       active: this.orchestratorSeatPrompt !== null,
       draft: this.orchestratorSeatPrompt?.draft ?? '',
-      placeholder: 'type a prompt · Enter send · Esc cancel',
+      placeholder: ORCHESTRATOR_PROMPT_PLACEHOLDER,
       disabledReason: seatPromptDisabledReason(seat),
-      hint: `press i to prompt ${target}`,
+      hint: [{ keys: ['i'], label: `prompt ${target}` }],
     };
   }
 
   /** Footer legend. While any lane has a pending permission, a/r answer it
    *  (r shadows restart, per spec 181); otherwise the standard action keys. */
-  private orchestratorKeyLegend(): string {
-    if (this.pendingPermissionLanes().length > 0) {
-      // spec 184: a/r answer the FOCUSED queue item (global, no lane switch); Tab
-      // steps the focus; j/k still select cards beneath the queue.
-      return 'a accept · r reject (A/R all) · Tab next perm · j/k select · c interrupt · x kill · Esc close';
-    }
-    return 'j/k select · Enter jump · d dispatch · i prompt seat · c interrupt · x kill · r restart · o set seat · Esc close';
+  private orchestratorKeyLegend(): readonly KeyHint[] {
+    // spec 184: a/r answer the FOCUSED queue item (global, no lane switch); Tab
+    // steps the focus; j/k still select cards beneath the queue.
+    return this.pendingPermissionLanes().length > 0
+      ? ORCHESTRATOR_PERM_LEGEND
+      : ORCHESTRATOR_KEY_LEGEND;
   }
 
   /** j/k card selection. The console overlay (`orchestratorConsoleEl`) is a
@@ -6654,7 +6764,7 @@ export class AcpHarnessView implements ContentView {
     this.annotationInputEl.setAttribute('placeholder', 'your note to the lane');
     const annoHint = document.createElement('div');
     annoHint.className = 'acp-harness__anno-overlay-hint';
-    annoHint.textContent = 'Enter add · Shift+Enter newline · Esc cancel';
+    annoHint.append(...keyHintNodes(ANNOTATION_OVERLAY_HINT));
     this.annotationOverlayEl.append(annoLabel, this.annotationQuoteEl, this.annotationInputEl, annoHint);
     commandCenter.appendChild(this.annotationOverlayEl);
 
@@ -6817,7 +6927,7 @@ export class AcpHarnessView implements ContentView {
           ? ['remote mode: local editors, tickets, docs, artifacts, daily and Xenon are unavailable']
           : []),
         'no lanes running',
-        'press Cmd+P then + to add a lane',
+        ADD_LANE_PROSE,
       ];
     } catch (e) {
       this.systemRows = [
@@ -9064,7 +9174,7 @@ export class AcpHarnessView implements ContentView {
     }
     this.patchLaneTurnChrome(lane);
     if (repairPrompt === null && lane.draft.trim() && lane.queuedPrompts.length === 0) {
-      this.flashChip('lane idle - Enter to send');
+      this.flashChip([{ keys: [], label: 'lane idle' }, { keys: ['Enter'], label: 'to send' }]);
     }
     // spec 136: drain one queued prompt on idle — deferred to a microtask so it
     // reads the settled status (a synchronous peer-mail drain above wins if any).
@@ -11251,7 +11361,7 @@ export class AcpHarnessView implements ContentView {
       this.systemRows = [
         ...(this.harnessMemoryWarning ? [`memory warning: ${this.harnessMemoryWarning}`] : []),
         'no lanes running',
-        'press Cmd+P then + to add a lane',
+        ADD_LANE_PROSE,
       ];
     } else {
       const next = this.lanes[Math.min(index, this.lanes.length - 1)] ?? this.lanes[0];
@@ -11859,7 +11969,7 @@ export class AcpHarnessView implements ContentView {
         this.render();
         return;
       }
-      this.flashChip('memory commands: #mem clear, #mcp, Ctrl+M drawer');
+      this.flashChip([{ keys: [], label: 'memory commands: #mem clear, #mcp' }, { keys: ['⌃M'], label: 'drawer' }]);
       return;
     }
     if (parts[0] === '#mcp') {
@@ -13340,7 +13450,11 @@ export class AcpHarnessView implements ContentView {
       this.teardownLaneShells();
       const empty = document.createElement('div');
       empty.className = 'acp-harness__empty';
-      empty.textContent = this.systemRows.join('\n') || 'no ACP lanes';
+      if (this.systemRows.length === 0) empty.textContent = 'no ACP lanes';
+      this.systemRows.forEach((row, index) => {
+        if (index > 0) empty.append('\n');
+        empty.append(...(typeof row === 'string' ? [row] : proseNodes(row)));
+      });
       this.dashboardEl.replaceChildren(empty);
       return;
     }
@@ -13496,7 +13610,7 @@ export class AcpHarnessView implements ContentView {
       // permission row directly above; repeating it here just prints the command
       // twice. The composer is the decision surface, so it carries only the
       // "perm" prompt label and the action buttons.
-      this.renderDecisionComposer(lane, 'perm', 'a accept · A all · r reject · R all');
+      this.renderDecisionComposer(lane, 'perm', PERMISSION_DECISION_HINT);
       return;
     }
     const ask = lane.pendingQuestions[0];
@@ -13551,7 +13665,11 @@ export class AcpHarnessView implements ContentView {
   private composerMetaProps(lane: HarnessLane): ComposerMetaProps {
     const branch = gitBranchDisplay(this.gitBranch, this.gitBranchLoading);
     return {
-      segments: this.chip !== null ? textSegments(this.chip) : this.composerStatusChip(lane),
+      segments: this.chip === null
+        ? this.composerStatusChip(lane)
+        : typeof this.chip === 'string'
+          ? textSegments(this.chip)
+          : hintSegments(this.chip),
       running: !this.chip && lane.status === 'busy',
       chips: this.composerChips(lane),
       branch: branch
@@ -13562,7 +13680,7 @@ export class AcpHarnessView implements ContentView {
               : '',
           }
         : null,
-      helpHint: '? help',
+      helpHint: HELP_HINT,
       onOpenDirective: (): void => {
         void this.openDirectivePicker();
       },
@@ -13598,8 +13716,8 @@ export class AcpHarnessView implements ContentView {
         text: bypass ? 'bypass' : 'auto-edit',
         tone: bypass ? 'warn' : undefined,
         title: bypass
-          ? 'Bypass — every tool permission is auto-accepted, including high-risk commands. Shift+Tab to change.'
-          : 'Auto-edit — file edits are auto-accepted; commands still ask. Shift+Tab to change.',
+          ? 'Bypass — every tool permission is auto-accepted, including high-risk commands. ⇧Tab to change.'
+          : 'Auto-edit — file edits are auto-accepted; commands still ask. ⇧Tab to change.',
       });
     }
     const directive = this.directiveChipProps(lane);
@@ -13629,7 +13747,7 @@ export class AcpHarnessView implements ContentView {
       key: 'directive',
       block: 'acp-harness__directive-chip',
       text: `directive ${directive ? directive.id : 'none'}${pending ? ' (next send)' : ''}`,
-      title: 'Cmd+P then . to change',
+      title: '⌘P then . to change',
       data: { 'open-directive-picker': '1' },
       modifiers: [
         ...(directive ? ['acp-harness__directive-chip--set'] : []),
@@ -13667,12 +13785,12 @@ export class AcpHarnessView implements ContentView {
     if (!this.mentionPaletteVisibleFor(lane)) return HIDDEN_PALETTE;
     const matches = this.filteredMentionPaletteTargets(lane);
     if (matches.length === 0) {
-      return { rows: [], cursor: 0, hint: '', zeroState: 'no matching lanes · Esc dismiss' };
+      return { rows: [], cursor: 0, hint: [], zeroState: MENTION_ZERO_STATE };
     }
     return {
       rows: matches.map((name): InlinePaletteRow => ({ name: `@${name}` })),
       cursor: lane.mentionPaletteIndex,
-      hint: '↑↓ / ⌃n⌃p select · Enter/Tab insert · Esc dismiss',
+      hint: SELECT_INSERT_HINT,
       commit: (index: number): void => {
         const next = applyMentionSelection(lane.draft, lane.cursor, matches[index]);
         lane.mentionPaletteDismissed = false;
@@ -13692,7 +13810,7 @@ export class AcpHarnessView implements ContentView {
         desc: cmd.description || undefined,
       })),
       cursor: lane.slashPaletteIndex,
-      hint: '↑↓ / ⌃n⌃p select · Enter/Tab insert · Esc dismiss',
+      hint: SELECT_INSERT_HINT,
       commit: (index: number): void => {
         const cmd = matches[index];
         this.setDraft(lane, `/${cmd.name} `, cmd.name.length + 2);
@@ -13713,7 +13831,7 @@ export class AcpHarnessView implements ContentView {
         desc: cmd.description,
       })),
       cursor: lane.hashPaletteIndex,
-      hint: '↑↓ / ⌃n⌃p select · Tab complete · Esc dismiss',
+      hint: SELECT_COMPLETE_HINT,
       commit: (index: number): void => {
         const cmd = matches[index];
         this.setDraft(lane, `#${cmd.name} `, cmd.name.length + 2);
@@ -13731,7 +13849,7 @@ export class AcpHarnessView implements ContentView {
         desc: entry.description || undefined,
       })),
       cursor: lane.verbPaletteIndex,
-      hint: 'inject verb · ↑↓ / ⌃n⌃p select · Tab insert · Esc dismiss',
+      hint: INJECT_VERB_HINT,
       commit: (index: number): void => {
         const next = applyVerbSelection(lane.draft, lane.cursor, matches[index].name);
         this.setDraft(lane, next.draft, next.cursor);
@@ -13741,7 +13859,7 @@ export class AcpHarnessView implements ContentView {
 
   /** Permission / ask composer. A live voice session can answer the same
    *  request by voice, so its strip stays mounted above the decision row. */
-  private renderDecisionComposer(lane: HarnessLane, label: string, hint: string): void {
+  private renderDecisionComposer(lane: HarnessLane, label: string, hint: readonly KeyHint[]): void {
     this.composer.update({
       kind: 'decision',
       accent: lane.accent,
@@ -13774,19 +13892,23 @@ export class AcpHarnessView implements ContentView {
    *  row below repeats it, and the lane stats row already shows `in N out N`.
    *  Cancel is Ctrl+C / #cancel (workspace footer `#cancel running`); there is
    *  no lane-head chip. */
-  private composerStatusChip(lane: HarnessLane): MetaSegment[] {
-    if (this.imageViewer?.isSvg) {
-      return textSegments('svg viewer · =/- zoom · 0 fit · 1 100% · hjkl pan · s source · Esc close');
-    }
-    if (this.imageViewer?.isOpen) {
-      return textSegments('image viewer · n/p next · =/- zoom · 0 fit · 1 100% · o open · Esc close');
-    }
-    if (this.openHintMode) return textSegments('open reference: press label · Esc cancel');
-    if (this.annotationArmed) return [{ id: 'armed', text: 'selection armed · c annotate · Esc dismiss' }];
+  private composerStatusChip(lane: HarnessLane): ComposerMetaSegment[] {
+    if (this.imageViewer?.isSvg) return hintSegments(SVG_VIEWER_STATUS_HINT);
+    if (this.imageViewer?.isOpen) return hintSegments(IMAGE_VIEWER_STATUS_HINT);
+    if (this.openHintMode) return hintSegments(OPEN_HINT_STATUS_HINT);
+    if (this.annotationArmed) return [{ id: 'armed', text: '', hints: ANNOTATION_ARMED_STATUS_HINT }];
     if (this.focus === 'transcript') {
       const unsent = collectUnsent(lane.transcript).length;
-      const send = unsent > 0 ? ` · s send ${unsent}` : '';
-      return textSegments(`command mode: 1-9 lanes · c annotate${send} · f open reference · r refresh Git · ? help · i/Esc input`);
+      return hintSegments([
+        { keys: [], label: 'command mode:' },
+        { keys: ['1–9'], label: 'lanes' },
+        { keys: ['c'], label: 'annotate' },
+        ...(unsent > 0 ? [{ keys: ['s'], label: `send ${unsent}` }] : []),
+        { keys: ['f'], label: 'open reference' },
+        { keys: ['r'], label: 'refresh Git' },
+        { keys: ['?'], label: 'help' },
+        { keys: ['i', 'Esc'], label: 'input', keySeparator: '/' },
+      ]);
     }
     if (lane.status === 'busy') {
       return buildBusySegments({
@@ -15040,7 +15162,7 @@ export class AcpHarnessView implements ContentView {
     // must not throw away a write or tool call the user meant to accept.
     if (e.key === 'Escape') {
       e.preventDefault();
-      this.flashChip('write review pending — a accept · r reject');
+      this.flashChip([{ keys: [], label: 'write review pending' }, ...PENDING_ACCEPT_REJECT]);
       return true;
     }
     if (e.key === 'a' || e.key === 'A' || e.key === 'r' || e.key === 'R') {
@@ -15084,7 +15206,7 @@ export class AcpHarnessView implements ContentView {
     // Esc never rejects (see handleFsReviewKey).
     if (e.key === 'Escape') {
       e.preventDefault();
-      this.flashChip('permission pending — a accept · r reject');
+      this.flashChip([{ keys: [], label: 'permission pending' }, ...PENDING_ACCEPT_REJECT]);
       return true;
     }
     if (e.key === 'a' || e.key === 'A' || e.key === 'r' || e.key === 'R') {
@@ -15103,7 +15225,7 @@ export class AcpHarnessView implements ContentView {
   private handleComputerApprovalKey(e: KeyboardEvent, lane: HarnessLane): boolean {
     if (e.key === 'Escape') {
       e.preventDefault();
-      this.flashChip(`remote command pending — ${COMPUTER_APPROVAL_HINT}`);
+      this.flashChip([{ keys: [], label: 'remote command pending' }, ...COMPUTER_APPROVAL_HINT]);
       return true;
     }
     if (e.key === 'a' || e.key === 'A' || e.key === 'r' || e.key === 'R') {
@@ -15312,7 +15434,10 @@ export class AcpHarnessView implements ContentView {
     window.getSelection()?.removeAllRanges();
     this.renderActiveTranscript(lane);
     this.flushRegion('composer');
-    this.flashChip(`added · s to send ${collectUnsent(lane.transcript).length}`);
+    this.flashChip([
+      { keys: [], label: 'added' },
+      { keys: ['s'], label: `to send ${collectUnsent(lane.transcript).length}` },
+    ]);
   }
 
   private sendAnnotationBatch(): void {
@@ -16130,7 +16255,9 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
-  private flashChip(text: string): void {
+  /** A transient status-chip message: plain text, or a hint run whose keys
+   *  print as caps (spec 369) when the message names a key. */
+  private flashChip(text: string | readonly KeyHint[]): void {
     this.chip = text;
     if (this.chipTimer !== null) window.clearTimeout(this.chipTimer);
     this.chipTimer = window.setTimeout(() => {
@@ -16679,10 +16806,10 @@ export class AcpHarnessView implements ContentView {
     const view = this;
     return {
       get element() { return view.element; },
-      get composerEl() { return view.composerEl; },
       get lanes() { return view.lanes; },
       get activeLaneId() { return view.activeLaneId; },
       flashChip: (text) => view.flashChip(text),
+      patchLiveVoice: (props) => view.composer.patchLiveVoice(props),
       invalidate: (region) => view.invalidate(region),
       deliverLivePrompt: (lane, text, delegationId) => view.deliverLivePrompt(lane, text, delegationId),
     };

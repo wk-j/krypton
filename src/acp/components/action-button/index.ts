@@ -13,6 +13,7 @@
 
 import { Component } from '../../../ui/component';
 import { classes, el, setAttr, setChildren } from '../../../ui/dom';
+import { keyCap } from '../../../ui/kbd';
 import type { ComponentDef } from '../types';
 
 export interface ActionButtonProps {
@@ -22,6 +23,8 @@ export interface ActionButtonProps {
   readonly label: string;
   /** Rendered as `<span class="${block}-key">`; omitted entirely when absent. */
   readonly keyHint?: string;
+  /** Spec 369: the shortcut, printed as a `<kbd>` cap after the label (`Cancel <kbd>Esc</kbd>`). */
+  readonly shortcut?: string;
   /** A full extra class name, already namespaced, e.g. `acp-ticket__action--fix`. */
   readonly modifier?: string;
   readonly disabled?: boolean;
@@ -74,6 +77,7 @@ export class ActionButton extends Component<ActionButtonProps> {
       next.block,
       next.label,
       next.keyHint,
+      next.shortcut,
       next.modifier,
       disabled,
       disabled ? next.disabledReason : undefined,
@@ -98,7 +102,12 @@ export class ActionButton extends Component<ActionButtonProps> {
     setAttr(this.el, 'title', disabled ? next.disabledReason : undefined);
     this.syncData(next.data);
     const key = next.keyHint ? el('span', { class: `${next.block}-key`, text: next.keyHint }) : null;
-    setChildren(this.el, [key, key ? ` ${next.label}` : next.label]);
+    setChildren(this.el, [
+      key,
+      key ? ` ${next.label}` : next.label,
+      next.shortcut ? ' ' : null,
+      next.shortcut ? keyCap(next.shortcut) : null,
+    ]);
   }
 
   /** Writes the current `data-*` set and drops the keys that fell out of it. */

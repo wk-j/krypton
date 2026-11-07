@@ -19,6 +19,7 @@ import './inline-palette.css';
 
 import { Component } from '../../../ui/component';
 import { classes, el, setAttr, setChildren } from '../../../ui/dom';
+import { keyHintNodes, keyHintsSignature, type KeyHint } from '../../../ui/kbd';
 import { disposeList, reconcile } from '../../../ui/list';
 import type { ComponentDef } from '../types';
 
@@ -45,15 +46,16 @@ export interface InlinePaletteProps<T> {
   readonly matches: readonly T[];
   /** Caller-owned cursor; clamped here exactly as every renderer clamps today. */
   readonly cursor: number;
-  /** The meta line above the rows — the key legend, which differs per variant. */
-  readonly hint: string;
+  /** The meta line above the rows — the key legend, which differs per variant.
+   *  Each key is a `<kbd>` cap (spec 369). */
+  readonly hint: readonly KeyHint[];
   row(item: T): InlinePaletteRow;
   /**
    * Meta line to show when `matches` is empty. Supplied only by the mention
    * palette (`no matching lanes · Esc dismiss`); the other three render
    * nothing at all when they have no matches.
    */
-  readonly zeroState?: string;
+  readonly zeroState?: readonly KeyHint[];
   /**
    * Insert the selected item. Called by `commitSelected()` — which the
    * caller's key table invokes on its own commit key (`Enter|Tab` for `/` and
@@ -90,7 +92,7 @@ const DESC = `${BLOCK}-desc`;
 
 interface MetaLineItem {
   readonly kind: 'meta';
-  readonly text: string;
+  readonly hints: readonly KeyHint[];
 }
 
 interface RowLineItem {
@@ -108,7 +110,7 @@ class PaletteMeta extends Component<MetaLineItem> {
   }
 
   protected readDeps(next: MetaLineItem): readonly unknown[] {
-    return [next.text];
+    return [keyHintsSignature(next.hints)];
   }
 
   protected syncClasses(_next: MetaLineItem): void {
@@ -117,7 +119,7 @@ class PaletteMeta extends Component<MetaLineItem> {
 
   protected paint(next: MetaLineItem): void {
     this.syncClasses(next);
-    this.el.textContent = next.text;
+    this.el.replaceChildren(...keyHintNodes(next.hints));
   }
 }
 
@@ -201,10 +203,14 @@ export class InlinePalette<T> extends Component<InlinePaletteProps<T>> {
   }
 
   protected readDeps(next: InlinePaletteProps<T>): readonly unknown[] {
-    const deps: unknown[] = [next.variant, next.zeroState, next.matches.length];
+    const deps: unknown[] = [
+      next.variant,
+      next.zeroState === undefined ? undefined : keyHintsSignature(next.zeroState),
+      next.matches.length,
+    ];
     for (const line of this.lines) {
       if (line.kind === 'meta') {
-        deps.push(line.text);
+        deps.push(keyHintsSignature(line.hints));
         continue;
       }
       deps.push(line.row.name, line.row.hint, line.row.desc, line.selected);
@@ -257,10 +263,10 @@ export class InlinePalette<T> extends Component<InlinePaletteProps<T>> {
   private buildLines(next: InlinePaletteProps<T>): readonly PaletteLine[] {
     const count = next.matches.length;
     if (count === 0) {
-      return next.zeroState === undefined ? [] : [{ kind: 'meta', text: next.zeroState }];
+      return next.zeroState === undefined ? [] : [{ kind: 'meta', hints: next.zeroState }];
     }
     const cursor = clampPaletteCursor(next.cursor, count);
-    const lines: PaletteLine[] = [{ kind: 'meta', text: next.hint }];
+    const lines: PaletteLine[] = [{ kind: 'meta', hints: next.hint }];
     for (let i = 0; i < count; i++) {
       lines.push({ kind: 'row', row: next.row(next.matches[i]), selected: i === cursor });
     }

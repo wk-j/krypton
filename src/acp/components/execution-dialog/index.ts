@@ -16,6 +16,7 @@ import './execution-dialog.css';
 import hljs from 'highlight.js';
 import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
+import { keyCap, type KeyHint } from '../../../ui/kbd';
 import { syncOrder } from '../../../ui/list';
 import { CellGridText, gridifyText } from '../../cell-grid';
 import {
@@ -69,19 +70,19 @@ interface SectionNodes {
 const SECTIONS: readonly ExecutionSection[] = ['code', 'output', 'activity'];
 const SECTION_LABEL: Readonly<Record<ExecutionSection, string>> = { code: 'Code', output: 'Output', activity: 'Activity' };
 const SCROLL_STEP = 60;
-const FOOT_HINTS = [
+const FOOT_HINTS: readonly KeyHint[] = [
   { keys: ['1–3'], label: 'section' },
-  { keys: ['j/k'], label: 'scroll' },
-  { keys: ['g/G'], label: 'top/bottom' },
+  { keys: ['j', 'k'], label: 'scroll', keySeparator: '/' },
+  { keys: ['g', 'G'], label: 'top/bottom', keySeparator: '/' },
   { keys: ['c'], label: 'copy code' },
-] as const;
+];
 // Two constant props objects: the shell compares `hints` by reference.
 const FOOT: KeyHintBarProps = {
-  hints: [...FOOT_HINTS, { keys: ['Esc'], label: 'close' }], style: 'kbd', block: 'acp-execution-dialog__foot',
+  hints: [...FOOT_HINTS, { keys: ['Esc'], label: 'close' }], layout: 'spans', block: 'acp-execution-dialog__foot',
 };
 const FOOT_WITH_VIEWS: KeyHintBarProps = {
   hints: [...FOOT_HINTS, { keys: ['r'], label: 'raw/formatted' }, { keys: ['Esc'], label: 'close' }],
-  style: 'kbd', block: 'acp-execution-dialog__foot',
+  layout: 'spans', block: 'acp-execution-dialog__foot',
 };
 
 let instances = 0;
@@ -133,8 +134,8 @@ export class ExecutionDialog extends Component<ExecutionDialogProps> {
   private readonly language = el('span', { class: 'acp-execution-dialog__language' });
   private readonly title = el('h2', { class: 'acp-execution-dialog__title', attrs: { id: `${this.ids}-title` } });
   private readonly closeButton = el('button', {
-    class: 'acp-execution-dialog__button', text: 'Close · Esc', attrs: { type: 'button', 'aria-label': 'Close execution inspector' },
-  });
+    class: 'acp-execution-dialog__button', attrs: { type: 'button', 'aria-label': 'Close execution inspector' },
+  }, 'Close ', keyCap('Esc'));
   private readonly status = el('span', { class: 'acp-execution-dialog__status' });
   private readonly timer = el('span', { class: 'acp-execution-dialog__timer acp-harness__tool-timer' });
   private readonly timingSource = el('span', { class: 'acp-execution-dialog__timing-source' });
@@ -211,7 +212,7 @@ export class ExecutionDialog extends Component<ExecutionDialogProps> {
       const tab = el('button', {
         class: 'acp-execution-dialog__tab',
         attrs: { type: 'button', role: 'tab', id: `${this.ids}-tab-${section}`, 'aria-controls': `${this.ids}-panel-${section}` },
-      }, el('span', { class: 'acp-execution-dialog__tab-key', text: String(index + 1) }), ' ',
+      }, keyCap(String(index + 1)), ' ',
       harnessIconEl(`exec-${section}`, 'acp-execution-dialog__tab-icon'), SECTION_LABEL[section], count);
       const panel = el('section', {
         class: 'acp-execution-dialog__section',
