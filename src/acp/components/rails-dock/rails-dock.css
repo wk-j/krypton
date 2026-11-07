@@ -11,14 +11,16 @@
    recess without a wrapper node. The head row is a well of its own.
 
    Colour rule: model findings are neutral evidence (ADR-0004) — severities,
-   tags and rule statuses use ink tiers and amber only. Check outcomes are
-   lamps: success for PASS, fault for FAIL/TIMEOUT, warning for ERROR. Run
-   badges are embossed chips that keep model-derived clean/findings neutral; a
-   run error is warning and a failed check is fault (ADR-0017). Selection is a
-   full-row tint inside the well, never a left-edge rail (ADR-0027). The
-   Actions bar's buttons (spec 344) are `DockActionButton` keys: their running
-   / done colours are action states shared with the Ticket Panel, never
-   verdicts. Lamps glow steadily — no animation. */
+   tags and rule statuses use ink tiers and amber only. The head's verdict and
+   each check's outcome are one lamp window: amber for the model-derived
+   clean/findings, fault for CHECK FAILED; success for PASS, fault for
+   FAIL/TIMEOUT, warning for ERROR. Run badges are embossed chips that keep
+   model-derived clean/findings neutral; a run error is warning and a failed
+   check is fault (ADR-0017). Selection is a full-row tint inside the well,
+   never a left-edge rail (ADR-0027). The Actions bar's buttons (spec 344) are
+   `DockActionButton` keys: their running / done colours are action states
+   shared with the Ticket Panel, never verdicts. Lamps glow steadily — no
+   animation. */
 
 @layer krypton.component {
   .acp-rails-dock {
@@ -149,39 +151,6 @@
     text-transform: uppercase;
   }
 
-  /* The verdict lamp: a lit capsule behind glass. */
-  .acp-rails-dock__pill {
-    --rails-pill-rgb: 255, 176, 0;
-
-    flex: 0 0 auto;
-    padding: 1px 9px;
-    border: 1px solid rgba(var(--rails-pill-rgb), 0.5);
-    border-radius: 999px;
-    background: radial-gradient(ellipse at 50% 0%, rgba(var(--rails-pill-rgb), 0.3), rgba(var(--rails-pill-rgb), 0.07) 75%);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.14),
-      0 0 6px rgba(var(--rails-pill-rgb), 0.22),
-      0 0 16px rgba(var(--rails-pill-rgb), 0.08);
-    color: var(--mat-lit);
-    letter-spacing: 0.04em;
-  }
-
-  /* An unlit lamp: nothing to report yet, or the run errored. */
-  .acp-rails-dock__pill--none,
-  .acp-rails-dock__pill--error {
-    border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
-    background: var(--mat-well);
-    box-shadow: var(--mat-well-shadow);
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
-    text-shadow: none;
-  }
-
-  .acp-rails-dock__pill--check_failed {
-    --rails-pill-rgb: 255, 109, 138;
-
-    color: #ff9caf;
-  }
-
   .acp-rails-dock__time {
     margin-left: auto;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
@@ -268,6 +237,7 @@
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
   }
 
+  .acp-rails-dock__row--head .acp-rails-dock__line,
   .acp-rails-dock__row--check .acp-rails-dock__line,
   .acp-rails-dock__row--run .acp-rails-dock__line {
     align-items: center;
@@ -311,6 +281,7 @@
     text-align: right;
   }
 
+  .acp-rails-dock__pill,
   .acp-rails-dock__outcome,
   .acp-rails-dock__status,
   .acp-rails-dock__severity {
@@ -327,44 +298,56 @@
     color: #ff9caf;
   }
 
-  /* ── Check lamps ───────────────────────────────────────────────────── */
+  /* ── Lamps: the head's verdict, each check's outcome ───────────────── */
 
-  .acp-rails-dock__outcome--pass {
-    --rails-outcome-rgb: var(--krypton-success-rgb, 57, 255, 127);
+  .acp-rails-dock__pill--clean,
+  .acp-rails-dock__pill--findings {
+    --rails-lamp-rgb: 255, 176, 0;
   }
 
+  .acp-rails-dock__outcome--pass {
+    --rails-lamp-rgb: var(--krypton-success-rgb, 57, 255, 127);
+  }
+
+  .acp-rails-dock__pill--check_failed,
   .acp-rails-dock__outcome--fail,
   .acp-rails-dock__outcome--timeout {
-    --rails-outcome-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+    --rails-lamp-rgb: var(--krypton-danger-rgb, 255, 58, 92);
   }
 
   .acp-rails-dock__outcome--error {
-    --rails-outcome-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+    --rails-lamp-rgb: var(--krypton-warning-rgb, 232, 197, 71);
   }
 
-  /* A lamp window: the LED, then its legend, behind tinted glass. */
+  /* A lamp window: the LED, then its legend, behind tinted glass. An unlit
+     lamp (no run yet, the run errored, a check not run) is the dark LED and
+     its legend in ink, with no window. */
+  .acp-rails-dock__pill,
   .acp-rails-dock__outcome {
     display: inline-flex;
     align-items: center;
     gap: 6px;
   }
 
+  .acp-rails-dock__pill:not(.acp-rails-dock__pill--none, .acp-rails-dock__pill--error),
   .acp-rails-dock__outcome:not(.acp-rails-dock__outcome--none) {
     padding: 2px 8px 2px 6px;
-    border: 1px solid rgba(var(--rails-outcome-rgb), 0.45);
+    border: 1px solid rgba(var(--rails-lamp-rgb), 0.45);
     border-radius: var(--krypton-border-radius, 8px);
-    background: linear-gradient(180deg, rgba(var(--rails-outcome-rgb), 0.2), rgba(var(--rails-outcome-rgb), 0.06));
+    background: linear-gradient(180deg, rgba(var(--rails-lamp-rgb), 0.2), rgba(var(--rails-lamp-rgb), 0.06));
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.08),
       inset 0 -1px 2px rgba(0, 0, 0, 0.35),
-      0 0 6px rgba(var(--rails-outcome-rgb), 0.16),
-      0 0 14px rgba(var(--rails-outcome-rgb), 0.06);
-    color: rgb(var(--rails-outcome-rgb));
+      0 0 6px rgba(var(--rails-lamp-rgb), 0.16),
+      0 0 14px rgba(var(--rails-lamp-rgb), 0.06);
+    color: rgb(var(--rails-lamp-rgb));
     font-size: var(--krypton-chrome-font-size, 11px);
     font-weight: 700;
     line-height: 1.2;
+    text-transform: uppercase;
   }
 
+  .acp-rails-dock__pill::before,
   .acp-rails-dock__outcome::before {
     content: '';
     flex: 0 0 auto;
@@ -376,10 +359,22 @@
     filter: grayscale(1);
   }
 
+  .acp-rails-dock__pill:not(.acp-rails-dock__pill--none, .acp-rails-dock__pill--error)::before,
   .acp-rails-dock__outcome:not(.acp-rails-dock__outcome--none)::before {
-    background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.9) 0 12%, rgb(var(--rails-outcome-rgb)) 45%, rgba(var(--rails-outcome-rgb), 0.55) 100%);
-    box-shadow: 0 0 4px rgba(var(--rails-outcome-rgb), 0.9), 0 0 10px rgba(var(--rails-outcome-rgb), 0.4);
+    background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.9) 0 12%, rgb(var(--rails-lamp-rgb)) 45%, rgba(var(--rails-lamp-rgb), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--rails-lamp-rgb), 0.9), 0 0 10px rgba(var(--rails-lamp-rgb), 0.4);
     filter: none;
+  }
+
+  /* Amber is the faceplate's own lit lamp: the amber lens and the lit legend,
+     which the light scheme re-inks through the material tokens. */
+  .acp-rails-dock__pill:is(.acp-rails-dock__pill--clean, .acp-rails-dock__pill--findings) {
+    color: var(--mat-lit);
+  }
+
+  .acp-rails-dock__pill:is(.acp-rails-dock__pill--clean, .acp-rails-dock__pill--findings)::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
   }
 
   /* Spec 368: a manual check's RUN key — a small dense key (DESIGN.md "Key")
@@ -599,22 +594,22 @@
    the fault and outcome accents are neon values tuned for a dark ground, so
    cap them to legible ink (spec 321 §Accent ink). */
 @layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-rails-dock__pill--check_failed,
   html[data-theme-scheme='light'] .acp-rails-dock__status--fail {
     color: #b3261e;
   }
 
   html[data-theme-scheme='light'] .acp-rails-dock__outcome--pass {
-    --rails-outcome-rgb: 19, 107, 59;
+    --rails-lamp-rgb: 19, 107, 59;
   }
 
+  html[data-theme-scheme='light'] .acp-rails-dock__pill--check_failed,
   html[data-theme-scheme='light'] .acp-rails-dock__outcome--fail,
   html[data-theme-scheme='light'] .acp-rails-dock__outcome--timeout {
-    --rails-outcome-rgb: 179, 38, 30;
+    --rails-lamp-rgb: 179, 38, 30;
   }
 
   html[data-theme-scheme='light'] .acp-rails-dock__outcome--error {
-    --rails-outcome-rgb: 138, 90, 0;
+    --rails-lamp-rgb: 138, 90, 0;
   }
 
   html[data-theme-scheme='light'] .acp-rails-dock__verdict--check_failed {
