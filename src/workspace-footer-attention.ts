@@ -31,9 +31,10 @@ export class FooterAttention {
   }
 
   /** spec 128/138: render the open attention-triage gauge — count summed across
-   * sources, coloured by the heaviest open reversibility tier, with the count
-   * encoded as a pip strip (`6+` past the cap). Static (no motion). Hidden at
-   * zero so the footer stays quiet when nothing needs the human. */
+   * sources, the count meter (the chip's lamp, so it leads the legend) lit in
+   * the heaviest open reversibility tier's colour, `6+` past the cap. Static
+   * (no motion). Hidden at zero so the footer stays quiet when nothing needs
+   * the human. */
   render(): void {
     let n = 0;
     let tierWeight = -1;
@@ -66,7 +67,7 @@ export class FooterAttention {
       if (i >= lit) pip.className = 'is-off';
       pips.appendChild(pip);
     }
-    this.el.replaceChildren(label, pips);
+    this.el.replaceChildren(pips, label);
     this.el.title =
       `${n} open attention item${n === 1 ? '' : 's'} awaiting your judgement — heaviest: ${tier}`;
   }

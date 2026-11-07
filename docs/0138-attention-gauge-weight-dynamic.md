@@ -102,14 +102,19 @@ const TIER_WEIGHT: Record<AttentionTier, number> = { reversible: 0, costly: 1, i
 
 ### UI Changes
 
-- `--attention` gains one of three tier modifier classes driving colour
-  (cyan / amber / red) of text, border, and background tint — reusing the
-  triage-overlay palette so the footer chip and the overlay cards agree on what
-  each colour means.
+- `--attention` gains one of three tier modifier classes setting the chip's
+  `--x-rgb` (cyan / amber / red), reusing the triage-overlay palette so the
+  footer chip and the overlay cards agree on what each colour means.
 - A `.krypton-workspace-footer__attention-pips` strip of up to 6 `<i>` bars
-  (`currentColor`, lit vs `opacity:0.18` dim) follows the count text. Caps at 6;
-  the label reads `6+` past that. No transition longer than the existing colour
-  fade; no keyframes.
+  encodes the count. Caps at 6; the label reads `6+` past that. No transition,
+  no keyframes.
+- **Console restyle (DESIGN.md 2.x).** The chip is the mode lamp's sibling: an
+  unlit `--mat-well-fill` capsule with an uppercase key legend (`0.09em`) in
+  `--krypton-fg`. The pip strip is the chip's lamp, so it leads the legend: lit
+  pips are LED segments in `--x-rgb` (the DESIGN.md coloured-lamp recipe, drawn
+  as 3×8px capsules), the remaining capacity unlit `--mat-lens-off` lenses. The
+  tier colour lives only in the lit pips; the old lit-glass capsule (tinted
+  border, background and legend) is gone.
 - Chip keeps `flex:0 0 auto` + `overflow:visible` (spec for the no-clip fix) so
   the wider colour+pips chip still never ellipsises.
 

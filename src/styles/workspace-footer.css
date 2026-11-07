@@ -271,14 +271,14 @@
   color: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.92);
 }
 
-/* spec 128/138: attention-triage gauge — a lamp that only shows when the ACP
-   harness has items awaiting the human's judgement. As the single ambient
-   pull, it must never be clipped: it keeps its intrinsic width and opts out of
-   the base segment's shrink/ellipsis so it always reads in full. spec 138
-   makes it weight-dynamic: a reversibility tier modifier (--rev-*) sets the
-   lamp colour, and a pip strip encodes the count — both STATIC encodings (no
-   blink, no pulse), per the spec-128 static-by-design rule. A lit status
-   capsule (DESIGN.md "Lamps") in `--x-rgb`. */
+/* spec 128/138: attention-triage gauge — shows only when the ACP harness has
+   items awaiting the human's judgement. As the single ambient pull it must
+   never be clipped: it keeps its intrinsic width and opts out of the base
+   segment's shrink/ellipsis. It is the mode lamp's sibling (DESIGN.md
+   "Lamps"): an unlit `--mat-well-fill` capsule with its lamp inside, before an
+   uppercase key legend in ink. The lamp is the count meter below, lit in the
+   heaviest reversibility tier's colour (`--rev-*` sets `--x-rgb`). Static: no
+   blink, no pulse (spec 128). */
 .krypton-workspace-footer__segment--attention {
   --x-rgb: var(--krypton-info-rgb, 0, 200, 255);
   flex: 0 0 auto;
@@ -289,12 +289,12 @@
   padding: 0 8px;
   overflow: visible;
   text-overflow: clip;
-  border: 1px solid rgba(var(--x-rgb), 0.5);
   border-radius: 999px;
-  background: radial-gradient(ellipse at 50% 0%, rgba(var(--x-rgb), 0.3), rgba(var(--x-rgb), 0.07) 75%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--x-rgb), 0.22);
-  color: rgb(var(--x-rgb));
-  letter-spacing: 0.04em;
+  background: var(--mat-well-fill);
+  box-shadow: var(--mat-well-shadow);
+  color: var(--krypton-fg, #b0c4d8);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
 }
 
 /* spec 146: review-count depth indicator — a quiet neutral chip that only shows
@@ -411,8 +411,9 @@
   --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
 }
 
-/* Count pip strip — discrete bars in the chip's own colour; dim for the
-   remaining capacity up to the cap. No animation. */
+/* Count meter — a row of LED segments, one lit per open item up to the cap,
+   unlit lenses for the remaining capacity. Each segment is the DESIGN.md lamp
+   recipe drawn as a capsule instead of a disc so six fit in the chip. */
 .krypton-workspace-footer__attention-pips {
   display: inline-flex;
   gap: 2px;
@@ -420,14 +421,15 @@
 
 .krypton-workspace-footer__attention-pips i {
   width: 3px;
-  height: 9px;
-  border-radius: var(--krypton-border-radius, 8px);
-  background: currentColor;
-  opacity: 0.85;
+  height: 8px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
 }
 
 .krypton-workspace-footer__attention-pips i.is-off {
-  opacity: 0.18;
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .krypton-workspace-footer:not([data-music="on"]) .krypton-workspace-footer__music {
