@@ -59,11 +59,17 @@
   },
   "dependencies": {
     "@raycast/api": "^1.88.0",
-    "@raycast/utils": "^1.18.0"
+    "@raycast/utils": "^2.3.3"
   },
   "devDependencies": {
     "@types/node": "^22.19.17",
     "@types/react": "^19.0.10",
     "typescript": "^5.4.5"
+  },
+  "overrides": {
+    "@oclif/core": {
+      "minimatch": "^11.0.1"
+    },
+    "esbuild": "^0.28.1"
   }
 }

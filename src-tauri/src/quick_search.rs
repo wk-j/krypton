@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use fff_search::{
     FFFMode, FileItem, FilePicker, FilePickerOptions, FileSearchConfig, FuzzySearchOptions,
-    GrepConfig, GrepSearchOptions, PaginationArgs, QueryParser, SharedFrecency, SharedPicker,
+    GrepConfig, GrepSearchOptions, PaginationArgs, QueryParser, SharedFilePicker, SharedFrecency,
     SharedQueryTracker,
 };
 
@@ -28,7 +28,7 @@ const FIRST_SCAN_WAIT: Duration = Duration::from_millis(10);
 pub struct QuickSearchState {
     /// LRU order (head = most-recent) + map of root → picker.
     /// Held under one mutex so order/map stay in sync.
-    pickers: Mutex<(VecDeque<PathBuf>, HashMap<PathBuf, SharedPicker>)>,
+    pickers: Mutex<(VecDeque<PathBuf>, HashMap<PathBuf, SharedFilePicker>)>,
     frecency: SharedFrecency,
     queries: SharedQueryTracker,
     parser: QueryParser<FileSearchConfig>,
@@ -63,7 +63,7 @@ impl QuickSearchState {
                 if let Err(e) = std::fs::create_dir_all(&frecency_dir) {
                     log::warn!("quick_search: create frecency dir failed: {e}");
                 } else {
-                    match fff_search::FrecencyTracker::new(&frecency_dir, false) {
+                    match fff_search::FrecencyTracker::open(&frecency_dir) {
                         Ok(tracker) => {
                             if let Err(e) = frecency.init(tracker) {
                                 log::warn!("quick_search: frecency init failed: {e}");
@@ -77,7 +77,7 @@ impl QuickSearchState {
 
                 let queries_dir = dir.join("krypton").join("queries");
                 if std::fs::create_dir_all(&queries_dir).is_ok() {
-                    if let Ok(tracker) = fff_search::QueryTracker::new(&queries_dir, false) {
+                    if let Ok(tracker) = fff_search::QueryTracker::open(&queries_dir) {
                         let _ = queries.init(tracker);
                     }
                 }
@@ -96,7 +96,7 @@ impl QuickSearchState {
 
     /// Resolve or construct the picker for `root`. Promotes to LRU head and
     /// evicts the tail when capacity is exceeded.
-    fn picker_for(&self, root: &Path) -> Result<SharedPicker, String> {
+    fn picker_for(&self, root: &Path) -> Result<SharedFilePicker, String> {
         let mut guard = self.pickers.lock().map_err(|_| "picker lock poisoned")?;
         let (order, map) = &mut *guard;
 
@@ -109,7 +109,7 @@ impl QuickSearchState {
             return Ok(p);
         }
 
-        let shared = SharedPicker::default();
+        let shared = SharedFilePicker::default();
         let opts = FilePickerOptions {
             base_path: root.to_string_lossy().into_owned(),
             mode: FFFMode::default(),
@@ -205,9 +205,7 @@ pub async fn quick_search_query(
     let q_tracker = q_tracker_guard.as_ref();
 
     let result = picker.fuzzy_search(&parsed, q_tracker, opts);
-    let indexing = picker
-        .is_scanning
-        .load(std::sync::atomic::Ordering::Relaxed);
+    let indexing = picker.is_scan_active();
     let indexed_count = picker.get_files().len();
 
     let hits: Vec<QuickSearchHit> = result
@@ -271,9 +269,7 @@ pub async fn quick_grep_query(
         let picker = guard.as_ref().ok_or("picker not initialized")?;
         return Ok(QuickGrepResponse {
             hits: Vec::new(),
-            indexing: picker
-                .is_scanning
-                .load(std::sync::atomic::Ordering::Relaxed),
+            indexing: picker.is_scan_active(),
             indexed_count: picker.get_files().len(),
             root,
             regex_fallback_error: None,
@@ -291,9 +287,7 @@ pub async fn quick_grep_query(
     let picker = guard.as_ref().ok_or("picker not initialized")?;
 
     let result = picker.grep(&parsed, &opts);
-    let indexing = picker
-        .is_scanning
-        .load(std::sync::atomic::Ordering::Relaxed);
+    let indexing = picker.is_scan_active();
     let indexed_count = picker.get_files().len();
 
     let hits: Vec<QuickGrepHit> = result
