@@ -536,12 +536,39 @@
   justify-self: end;
 }
 
+/* The label is smaller than the body, so on its own line box its baseline
+   rode about a third of an em above the body's first line. This invisible
+   strut has the body's size and line height, so the label's first line box is
+   a body text line and the small legend sits on that line's baseline, whatever
+   the font's metrics. It is a strut and not grid baseline alignment because an
+   assistant body has layout containment (no baseline to align to) and other
+   bodies can open with a scroll container. */
+.acp-harness__msg-label::before {
+  content: '\200b' / '';
+  font-size: calc(100% / 0.64);
+  line-height: 1.36;
+  letter-spacing: 0;
+}
+
 .acp-harness__msg-body {
   min-width: 0;
   white-space: pre-wrap;
   line-height: 1.36;
   color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
   overflow-wrap: anywhere;
+}
+
+/* A tool, permission or question body opens with a head line (lamp, chip,
+   subject) taller than a text line, so the strut alone would leave the label
+   high there. Those heads are plain flex rows with a text baseline, so the
+   label and body align on it. */
+.acp-harness__msg--tool > .acp-harness__msg-label,
+.acp-harness__msg--tool > .acp-harness__msg-body,
+.acp-harness__msg--permission > .acp-harness__msg-label,
+.acp-harness__msg--permission > .acp-harness__msg-body,
+.acp-harness__msg--question > .acp-harness__msg-label,
+.acp-harness__msg--question > .acp-harness__msg-body {
+  align-self: baseline;
 }
 
 /* Image strip · `components/image-strip/index.ts:52,65,78` and `:102`, which
@@ -1129,18 +1156,6 @@
   color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.68));
 }
 
-/* Effort meter: a mono glyph gauge under the thought label, filled by
-   reasoning length. It stays as a quick depth cue even though the full thought
-   is visible.
-   The label column is a fixed 7.5ch gutter (sized for the word "thought"), so
-   the meter STACKS below the label — never inline — to avoid overflowing it. */
-.acp-harness__msg-label--thought {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
-}
-
 /* Tool and plan bodies are evidence, not state (ADR-0017): theme ink. A
    finished tool needs no colour of its own either; a failed one takes the
    fault ink, and a permission body the warning lamp's ink — it waits on the
@@ -1183,7 +1198,9 @@
 
 /* Command-centre strip · `acp-harness-view.ts:6248`. Spec 366: a plate strip
    meeting the screen above it — brushed plate, the dark seam on its top edge
-   and the lit bevel just under it. The composer inside draws no second fill. */
+   and the lit bevel just under it. The composer inside draws no second fill.
+   The fill goes through `--acp-command-center-plate` so a layout (plated foot,
+   zen) can re-cut the plate without outranking the fire rule below. */
 .acp-harness__command-center {
   position: relative;
   flex: 0 0 auto;
@@ -1192,7 +1209,7 @@
   min-height: 0;
   max-height: 50%;
   overflow: hidden;
-  background: var(--mat-brush), var(--mat-plate);
+  background: var(--acp-command-center-plate, var(--mat-brush), var(--mat-plate));
   border-top: 1px solid var(--mat-key-edge);
   box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
 }
@@ -1201,10 +1218,32 @@
    fades its sheen out at 160px, which leaves a lighter bottom edge on a short
    strip; here the sheen spans the strip's own height instead. */
 .krypton-window--plated-foot .acp-harness__command-center {
-  background:
+  --acp-command-center-plate:
     var(--mat-brush),
     linear-gradient(180deg, var(--mat-plate-sheen), transparent),
     linear-gradient(180deg, var(--mat-plate-hi) 0%, var(--mat-plate-mid) 50%, var(--mat-plate-lo) 100%);
+}
+/* Spec 366, zen with the rail shown: the rail (`lane-rail.css`), the lane's
+   head strip and this strip are one plate around the lane's screen. The rail's
+   gradient ends on `--mat-plate-lo`, so this strip holds that stop (and the
+   plated foot carries it on). Plate meets plate under the rail, so the seam
+   and its lit lip run only along the screen's bottom edge, from the rail's
+   width on (`::before`); the rail's left bevel carries on down this strip. */
+.acp-harness:not(.acp-harness--left-panel-hidden) > .acp-harness__body:has(> .acp-harness__dashboard > .acp-harness__rail) + .acp-harness__command-center {
+  --acp-command-center-plate: var(--mat-brush), var(--mat-plate-lo);
+  border-top: 0;
+  box-shadow: inset 1px 0 0 var(--mat-bevel-hi);
+}
+.acp-harness:not(.acp-harness--left-panel-hidden) > .acp-harness__body:has(> .acp-harness__dashboard > .acp-harness__rail) + .acp-harness__command-center::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--acp-zen-rail-width);
+  right: 0;
+  height: 1px;
+  background: var(--mat-key-edge);
+  box-shadow: 0 1px 0 var(--mat-bevel-hi);
+  pointer-events: none;
 }
 /* Spec 365: the window fire burns along the bottom of the window content,
    right under this strip. While it is lit (`data-fire-lit`, set by
@@ -1351,12 +1390,24 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
    ═══════════════════════════════════════════════════════════════ */
 
 /* Spec 366: the rail is its own plate column (`lane-rail.css`) of selector
-   keys (`rail-entry.css`); the body beside it is the lane's screen. The two
-   meet at the rail's seam — no merged tab, no fillets. */
+   keys (`rail-entry.css`); the body beside it is the lane's screen. The rail,
+   the lane's head strip and the command centre are one plate around that
+   screen: where plate meets plate there is no seam, and the screen draws its
+   own edges — the left one here, the top one under the stats row, the bottom
+   one on the command centre from the rail's width on. No merged tab, no
+   fillets. */
+.acp-harness--zen {
+  --acp-zen-rail-width: clamp(180px, 14vw, 240px);
+}
+
 .acp-harness--zen .acp-harness__dashboard {
   display: grid;
-  grid-template-columns: clamp(180px, 14vw, 240px) 1fr;
+  grid-template-columns: var(--acp-zen-rail-width) 1fr;
   gap: 0;
+}
+
+.acp-harness--zen:not(.acp-harness--left-panel-hidden) .acp-harness__lane-body {
+  box-shadow: inset 1px 0 0 var(--mat-key-edge), var(--mat-well-depth);
 }
 
 /* Layout of the rail column; its plate and keys live with their components. */
@@ -1433,7 +1484,7 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
    command-center chrome. Keep its horizontal bounds aligned with the
    dashboard's conversation column in layouts that reserve side rails. */
 .acp-harness--zen .acp-harness__anno-overlay {
-  margin-left: calc(clamp(180px, 14vw, 240px) + 8px);
+  margin-left: calc(var(--acp-zen-rail-width) + 8px);
 }
 
 .acp-harness--dock-active .acp-harness__anno-overlay {

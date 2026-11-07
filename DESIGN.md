@@ -175,7 +175,9 @@ comment.
 - **Quick Terminal.** A plate drawer around a screen.
 - **Harness.** The lane body is a screen (the window's screen shows through; a lane adds the well's
   inset depth, not a second fill). The lane head is a plate strip with the name engraved and status as
-  a lamp; the zen rail is a plate column of selector keys with LEDs; the composer is a flush plate with
+  a lamp; the zen rail is a plate column of selector keys with LEDs; in Zen the rail, the shown
+  lane's head strip and the composer plate are one plate around the lane's screen, with no seam where
+  plate meets plate (the screen draws its own edges); the composer is a flush plate with
   the draft line in a well; transcript rows are flat text on the screen under engraved labels; tool
   rows are a kind chip, a status lamp and an output well; permission and question options are keys;
   floating lane cards are small plates. The right dock column is a flush plate of wells, keys and lamps.

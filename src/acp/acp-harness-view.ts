@@ -13584,8 +13584,9 @@ export class AcpHarnessView implements ContentView {
     if (salty) {
       chips.push({
         key: 'salty-bypass',
-        block: 'acp-harness__lane-sandbox',
+        block: 'acp-harness__composer-mode',
         text: 'salty-bypass',
+        tone: 'warn',
         title:
           'Salty executor — all tool permissions auto-accepted for this lane until the Salty role clears (#salty clear)',
       });
@@ -13594,10 +13595,9 @@ export class AcpHarnessView implements ContentView {
       const bypass = lane.permissionMode === 'bypass';
       chips.push({
         key: 'permission-mode',
-        block: 'acp-harness__lane-sandbox',
-        text: bypass ? '' : 'auto-edit',
-        icon: bypass ? { id: 'warn', cls: 'acp-harness__icon--dot' } : undefined,
-        trailing: bypass ? ' bypass' : undefined,
+        block: 'acp-harness__composer-mode',
+        text: bypass ? 'bypass' : 'auto-edit',
+        tone: bypass ? 'warn' : undefined,
         title: bypass
           ? 'Bypass — every tool permission is auto-accepted, including high-risk commands. Shift+Tab to change.'
           : 'Auto-edit — file edits are auto-accepted; commands still ask. Shift+Tab to change.',

@@ -5,10 +5,11 @@
    composer modifiers style this row, not the composer.
 
    Spec 366 (DESIGN.md "Readouts", "Lamps", "Key"): the chrome row sits on the
-   composer plate. The status run is a readout window with an LED that lights
-   while the lane works; the lane chips are capsules (`lane-head.css`); the
-   directive is a small key; the branch and `? help` are printed legend. A
-   decision row's label is a lit warning capsule — it waits on the human. */
+   composer plate. The status run and the lane's permission mode are readout
+   windows with an LED: the status LED lights while the lane works, the mode
+   LED is lit while the mode is on. The directive is a small key; the branch
+   and `? help` are printed legend. A decision row's label is a lit warning
+   capsule — it waits on the human. */
 
 @layer krypton.component {
   .acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__composer-chrome {
@@ -78,18 +79,9 @@
     text-transform: uppercase;
   }
 
-  /* The lane pill's own size is set for the lane head; here it would compound
-     on the bar's size and print smaller than its neighbours. */
-  .acp-harness__composer-meta .acp-harness__lane-sandbox {
-    font-size: inherit;
-  }
-
-  /* The status run: a readout window with an LED. spec 221: shrinkable, so the
-     row's spring (the activity segment inside it) can actually give. An empty
-     run takes no slot in the row. */
-  .acp-harness__memory-chip {
-    flex: 0 1 auto;
-    min-width: 0;
+  /* The status run and the permission mode: readout windows with an LED. */
+  .acp-harness__memory-chip,
+  .acp-harness__composer-mode {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -97,16 +89,11 @@
     border-radius: var(--krypton-border-radius, 8px);
     background: var(--mat-well);
     box-shadow: var(--mat-well-shadow);
-    overflow: hidden;
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
-    font-variant-numeric: tabular-nums;
   }
 
-  .acp-harness__memory-chip:empty {
-    display: none;
-  }
-
-  .acp-harness__memory-chip::before {
+  .acp-harness__memory-chip::before,
+  .acp-harness__composer-mode::before {
     content: '';
     flex: 0 0 auto;
     width: 6px;
@@ -114,6 +101,19 @@
     border-radius: 50%;
     background: var(--mat-lens-off);
     box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  /* spec 221: the status run is shrinkable, so the row's spring (the activity
+     segment inside it) can actually give. An empty run takes no slot. */
+  .acp-harness__memory-chip {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .acp-harness__memory-chip:empty {
+    display: none;
   }
 
   /* Busy lane: the LED is lit and steady; the clock in the text ticks. */
@@ -124,6 +124,25 @@
   .acp-harness__memory-chip--running::before {
     background: var(--mat-lens-on);
     box-shadow: var(--mat-lens-glow);
+  }
+
+  /* A non-normal permission mode is a warning the lane carries until
+     `Shift+Tab` clears it, so its lamp is lit in the warning colour. */
+  .acp-harness__composer-mode {
+    --x-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .acp-harness__composer-mode::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
+  }
+
+  /* Bypass (and the Salty executor's bypass) accepts high-risk commands too:
+     the legend reads in the warning ink as well. */
+  .acp-harness__composer-mode--warn {
+    color: color-mix(in srgb, rgb(var(--x-rgb)) 70%, var(--krypton-fg, #d8e8d8));
   }
 
   /* spec 221 — status-line segments. */
@@ -244,6 +263,7 @@
 
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness__composer--permission .acp-harness__composer-meta,
+  html[data-theme-scheme='light'] .acp-harness__composer-mode--warn,
   html[data-theme-scheme='light'] .acp-harness__directive-chip--pending {
     color: #8a5a00;
   }

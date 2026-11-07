@@ -5,15 +5,24 @@
    `.acp-harness__dashboard`. Its material is this component's.
 
    Spec 366 (DESIGN.md "Harness"): the zen rail is a plate column of selector
-   keys (`rail-entry.css`). The plate meets the lane's screen on its right, so
-   that one side takes the seam; the lit bevel runs down its left edge and
-   along the top. The light scheme swaps the plate at the root (materials.css),
-   so no scheme rule is needed here. */
+   keys (`rail-entry.css`). With the shown lane's head strip above the screen
+   and the command centre below it, the rail is one plate around the lane's
+   screen: plate meets plate with no seam, so the rail draws no right border —
+   the screen draws its own left edge (`.acp-harness__lane-body`,
+   harness-shared.css). The lit bevel runs down its left edge and along the
+   top. The light scheme swaps the plate at the root (materials.css), so no
+   scheme rule is needed here. */
 
 @layer krypton.component {
+  /* The top stop holds for the height of the head strip beside it (the 28px
+     head plus one stats row), which holds that stop too, so the two plates
+     match where they meet; below it the rail runs down to the bottom stop the
+     command centre continues. */
   .acp-harness__rail {
-    background: var(--mat-brush), var(--mat-plate);
-    border-right: 1px solid var(--mat-key-edge);
+    background:
+      var(--mat-brush),
+      linear-gradient(180deg, var(--mat-plate-sheen), transparent 160px),
+      linear-gradient(180deg, var(--mat-plate-hi) 0 56px, var(--mat-plate-mid) 50%, var(--mat-plate-lo) 100%);
     box-shadow:
       inset 1px 0 0 var(--mat-bevel-hi),
       inset 0 1px 0 var(--mat-bevel-hi);

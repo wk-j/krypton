@@ -217,7 +217,9 @@ export class GenUiPanel extends Component<GenUiPanelProps> {
     // the viewport). The browser's focus-scroll is unbounded, and it lands
     // inside the host's programmatic-scroll suppression window, so it would
     // move the lane body without the host ever recording where.
-    if (next.takeFocus) (focusables[0] ?? this.sourceButton).focus({ preventScroll: true });
+    // `focusVisible: false`: opening is not navigation, so no ring on the first
+    // control until the user moves (`moveFocus` below shows it as usual).
+    if (next.takeFocus) (focusables[0] ?? this.sourceButton).focus({ preventScroll: true, focusVisible: false });
   }
 
   protected onDispose(): void {

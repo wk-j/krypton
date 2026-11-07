@@ -297,6 +297,26 @@ Deviations found while implementing, each with its reason:
   seam and bevel and fills with flat `--mat-plate-lo`. The command centre is shorter than the
   plate's 160px sheen, so under a plated foot it spreads the sheen over its own height and ends
   exactly on `--mat-plate-lo`.
+- **Zen frame.** In Zen the rail column, the shown lane's head strip and the command centre read
+  as three parts: the rail drew a seam down its whole right edge (beside the head strip too), the
+  command centre's seam and lit lip ran under the rail, and the head strip shaded down to the bottom
+  colour stop beside a rail still at the top one. With the rail shown they are now one plate around
+  the lane's screen. The rail takes no right border; the screen draws its own left edge
+  (`.acp-harness__lane-body`), the stats row's seam its top edge, and the command centre's
+  `::before` its bottom edge from the rail's width (`--acp-zen-rail-width`) on. The head strip holds
+  the top colour stop and the sheen, the rail holds that stop for the strip's 56px and then runs to
+  the bottom stop, and the command centre holds the bottom stop (through
+  `--acp-command-center-plate`, so the spec-365 fire rule still clears it), which a plated foot
+  carries on.
+- **Row labels sit on the body's first baseline.** The engraved row label is 0.64em on its own
+  line box, so with the row grid aligned to the top it rode about a third of an em above the
+  body's first line (5–6px at a 16px font; a user screenshot of `PERM` / `TOOL` rows). The label
+  now opens with an invisible strut at the body's size and line height (`::before`, `'\200b' /
+  ''`), so its first line box is a body text line; tool, permission and question rows, whose head
+  line is taller than a text line, align label and body on the head's baseline. Grid baseline
+  alignment is not used for every row: an assistant body has layout containment (no baseline to
+  align to), and a body can open with a scroll container. The thought label is a plain block so
+  the strut stays on its first line, with the effort meter 3px below.
 
 ## Out of Scope
 

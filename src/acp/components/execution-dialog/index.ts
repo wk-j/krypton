@@ -263,7 +263,10 @@ export class ExecutionDialog extends Component<ExecutionDialogProps> {
     }
     this.props = next.open ? next : null;
     super.update(next);
-    if (focus && this.isOpen) this.sections[this.section].tab.focus({ preventScroll: true });
+    // Opening moves focus here so the keys work at once, but the user has not
+    // navigated yet: no ring until they do (`focusVisible: false`; a later
+    // keyboard move shows it as usual).
+    if (focus && this.isOpen) this.sections[this.section].tab.focus({ preventScroll: true, focusVisible: false });
   }
 
   close(restoreFocus = true): void {

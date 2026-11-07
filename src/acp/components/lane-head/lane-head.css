@@ -37,6 +37,18 @@
     border-bottom: 0;
   }
 
+  /* Zen with the rail shown: the strip continues the rail's plate beside it
+     (`lane-rail.css`), which is still at its top stop and its sheen here, so
+     the strip holds that stop instead of running its own gradient down to the
+     bottom stop. The seam under the stats row stays: that edge meets the
+     screen. */
+  .acp-harness--zen:not(.acp-harness--left-panel-hidden) .acp-harness__lane--active > .acp-harness__lane-head {
+    background:
+      var(--mat-brush),
+      linear-gradient(180deg, var(--mat-plate-sheen), transparent 160px),
+      var(--mat-plate-hi);
+  }
+
   .acp-harness__lane-name {
     grid-column: 2;
     max-width: 20ch; /* spec 215: +2ch for the inline backend logo */

@@ -121,7 +121,7 @@ export interface ExecutionDialogProps {
 
 | Key | Context | Action |
 |-----|---------|--------|
-| `f` + label / click `Inspector` | Transcript | Open the dialog for that item and focus the selected tab |
+| `f` + label / click `Inspector` | Transcript | Open the dialog for that item and focus the selected tab, without a focus ring (`focusVisible: false`); the ring shows once the user moves focus |
 | `1` / `2` / `3` | Dialog | Select Code / Output / Activity |
 | `←` / `→` | Tab focused | Previous / next tab (wraps, automatic activation) |
 | `j` / `k`, `g` / `G` | Dialog | Scroll the section 60px down/up; top/bottom |

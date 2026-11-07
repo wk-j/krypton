@@ -8,12 +8,16 @@
      reasoning length. It stays as a quick depth cue even though the full thought
      is visible.
      The label column is a fixed 7.5ch gutter (sized for the word "thought"), so
-     the meter STACKS below the label — never inline — to avoid overflowing it. */
+     the meter STACKS below the label — never inline — to avoid overflowing it.
+     The label stays a plain block (its first line keeps the row label's
+     baseline strut, harness-shared.css), so the meter is the block below the
+     word, 3px down. */
   .acp-harness__thought-effort {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
     gap: 1px;
+    margin-top: 3px;
     line-height: 1.1;
     /* opt out of the label's uppercase/tracking — the meter is not a word */
     text-transform: none;

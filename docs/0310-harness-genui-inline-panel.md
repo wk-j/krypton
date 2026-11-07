@@ -95,7 +95,8 @@ div.acp-genui-card[.acp-genui-card--open]
 3. Resolve/create the LRU entry, capture the transcript anchor
 4. Seat the node FIRST (`mountGenUiPanel`), then `update({ open: true, takeFocus })`:
    a `user` open focuses the first control with `preventScroll` — the reveal below is
-   the only scroll the panel is allowed to cause — and focus() on a detached node
+   the only scroll the panel is allowed to cause — and `focusVisible: false`, so no
+   focus ring shows until the user moves; focus() on a detached node
    is a no-op. No card claimed the fence ⇒ drop the open target and do nothing
 5. Restore the anchor, then reveal (a `user` open only): if the card's bottom is
    below the lane body,

@@ -1,8 +1,9 @@
 // Spec 302 §6.2 — `ComposerMeta`.
 //
 // The composer's chrome row: the status chip on the left
-// (`reviewing · 2:14 · 3 queued`), the lane's chips after it
-// (`auto-edit`, `directive 0301-impl`), the git branch (icon + `main`), and on
+// (`reviewing · 2:14 · 3 queued`), the lane's permission mode after it
+// (`auto-edit`, `bypass`) and the directive (`directive 0301-impl`), the git
+// branch (icon + `main`), and on
 // the right the `? help` hint plus whatever the composer mounts beside it (the
 // dictation control). Built today by `acp-harness-view.ts:13289-13304` out of
 // `harness-composer-meta.ts:48-68` (`renderStatusSegments`), `composerStatusChip`
@@ -251,6 +252,7 @@ export const def: ComponentDef = {
     'acp-harness__composer-tools',
     'acp-harness__composer-meta',
     'acp-harness__memory-chip',
+    'acp-harness__composer-mode',
     'acp-harness__meta-seg',
     'acp-harness__help-hint',
     'acp-harness__project-status',
