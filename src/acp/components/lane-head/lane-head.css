@@ -148,11 +148,14 @@
     white-space: nowrap;
   }
 
+  /* The model id is the chip. Do not cap or ellipsize it — a 24ch max
+     cut `anthropic/claude-opus-…` while the activity track still had room.
+     `white-space: nowrap` on the shared capsule keeps it on one line; the
+     1fr activity cell gives way first. */
   .acp-harness__lane-model {
-    min-width: 0;
-    max-width: 24ch;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    flex: 0 0 auto;
+    max-width: none;
+    overflow: visible;
   }
 
   .acp-harness__lane-mode {
