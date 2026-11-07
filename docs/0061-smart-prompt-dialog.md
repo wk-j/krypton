@@ -9,6 +9,7 @@ type: spec
 > Status: Implemented
 > Date: 2026-04-15
 > Milestone: Post-M2 — productivity layer
+> Amended by: [0372](./0372-prompt-dialog-harness-lanes.md) — live ACP Harness lanes are targets too, sent through `lane.send` with caller `prompt_dialog` (images as ACP image blocks, text literal, busy lanes queue). Opening from a Harness targets its active lane without the picker; the picker header reads `Select target`, the empty chip `no target`, and a failed lane send shows its message in the footer.
 
 ## Problem
 

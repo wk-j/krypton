@@ -169,6 +169,15 @@ caller-controlled params. `AcpHarnessView` uses it only to derive Telegram
 prompt provenance and a one-turn bypass policy; CLI and browser calls retain
 their existing permission behavior. See spec 200.
 
+The in-app Smart Prompt Dialog calls `entry.control('lane.send', …)` in-process
+with caller `{ source: 'prompt_dialog' }`; Rust never constructs that source, so
+no HTTP or Telegram request can carry it. For that caller only, `lane.send`
+accepts `images` (array of `{ data, mimeType, path }`, at most 4, 5 MB each,
+refused on a remote Harness), allows empty text when images are present, and
+treats the text as literal: no lane-mention fan-out, now or when a queued item
+drains. Any other caller sending `images` gets `invalid_request`. `lane.list`
+rows carry `remote: boolean`. See spec 372.
+
 ## Concurrency And Idempotency
 
 UI and CLI operations serialize through the frontend authority.

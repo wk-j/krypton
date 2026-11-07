@@ -2143,6 +2143,26 @@ Sessions live in a shared pool. Windows reference sessions by ID. When a workspa
 
 The CLI never simulates keys, submits hash commands, or registers as a lane.
 
+## Smart Prompt Dialog → Harness Lane Flow (spec 372)
+
+```text
+1. Cmd+Shift+K → PromptDialog.open() snapshots the terminal selection and the
+   Harness whose element holds DOM focus (HarnessEntry.isFocused).
+2. Targets: claude PTYs (findSessionsByProcess) plus every non-stopped lane from
+   entry.control('lane.list') across listHarnessEntries(). Default: the focused
+   Harness's active lane (no picker), else the last-used target, else the first.
+3. Enter on a lane target: expand @selection; staged images whose `@<tmp path>`
+   token is still in the text become { data, mimeType, path } and the tokens leave
+   the text.
+4. resolveDisplayName → harnessEntry → control('lane.send', { lane, text, images },
+   { source: 'prompt_dialog' }) — in-process, no Rust round trip.
+5. lane.send (prompt_dialog): images allowed (not on a remote Harness), empty text
+   allowed with images, text literal — sendUserPrompt({ literal: true }) skips
+   mention fan-out; a queued item keeps literal: true for the drain.
+6. started | queued → flash the window findWindowIdForLane returns, close. Any
+   error → the footer shows the message, the dialog keeps the text.
+```
+
 ## Telegram Harness Controller Flow
 
 ```text

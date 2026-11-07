@@ -1,25 +1,50 @@
 // Krypton — Smart Prompt Dialog
-// Global modal (Cmd+Shift+K) that composes a prompt and dispatches it to
-// the active Claude Code tab via write_to_pty. Supports @path autocomplete
-// (passed through for Claude to expand) and @selection (expanded inline to
-// the xterm selection from the source tab before send).
-// See docs/0061-smart-prompt-dialog.md for the full spec.
+// Global modal (Cmd+Shift+K) that composes a prompt and dispatches it to a
+// Claude Code terminal tab (write_to_pty) or, since spec 372, to an ACP Harness
+// lane (control op `lane.send`). Supports @path autocomplete (passed through as
+// text) and @selection (expanded inline to the xterm selection from the source
+// tab before send).
+// See docs/0061-smart-prompt-dialog.md and docs/0372-prompt-dialog-harness-lanes.md.
 
 import { invoke } from './profiler/ipc';
 import { listen } from '@tauri-apps/api/event';
 import { Compositor } from './compositor';
 import type {
-  ProcessCandidate,
   ProcessChangedEvent,
   SessionId,
   WindowId,
 } from './types';
+import {
+  harnessEntry,
+  listHarnessEntries,
+  resolveDisplayName,
+  type HarnessEntry,
+} from './acp/harness-directory';
+import type { HarnessLaneStatus } from './acp/types';
 import { getCaretCoordinates } from './caret-position';
 import { keyCap, keyHint, type KeyHint } from './ui/kbd';
 
 const TARGET_PROCESS = 'claude';
 const FILE_INDEX_TTL_MS = 10_000;
 const MAX_MENTION_RESULTS = 8;
+
+/** Every lane status, so `isLaneStatus` breaks the build when the union grows. */
+const LANE_STATUSES: Record<HarnessLaneStatus, true> = {
+  starting: true,
+  idle: true,
+  busy: true,
+  needs_permission: true,
+  awaiting_peer: true,
+  error: true,
+  stopped: true,
+};
+
+/** Lane statuses where `lane.send` queues the prompt instead of starting a turn. */
+const QUEUEING_STATUSES: Partial<Record<HarnessLaneStatus, true>> = {
+  busy: true,
+  needs_permission: true,
+  awaiting_peer: true,
+};
 
 interface CaptureResult {
   path: string;
@@ -102,8 +127,35 @@ async function loadFileIndex(cwd: string): Promise<string[]> {
 
 // ─── Dialog types ─────────────────────────────────────────────────
 
-interface TargetEntry extends ProcessCandidate {
+interface PtyTarget {
+  kind: 'pty';
+  key: `pty:${SessionId}`;
+  sessionId: SessionId;
+  windowId: WindowId;
+  pid: number;
   cwd: string | null;
+}
+
+/** spec 372: one live ACP Harness lane, addressed by its globally unique display name. */
+interface LaneTarget {
+  kind: 'lane';
+  key: `lane:${string}`;
+  harnessId: string;
+  displayName: string;
+  backendId: string;
+  status: HarnessLaneStatus;
+  cwd: string | null;
+  remote: boolean;
+  queueDepth: number;
+  active: boolean;
+}
+
+type DialogTarget = PtyTarget | LaneTarget;
+
+interface DialogImage {
+  data: string;
+  mimeType: string;
+  path: string;
 }
 
 interface MentionItem {
@@ -122,7 +174,7 @@ interface MentionState {
 }
 
 // Session-scoped memory — persists across dialog opens within the app run.
-let lastUsedSessionId: SessionId | null = null;
+let lastUsedTargetKey: string | null = null;
 
 // ─── PromptDialog ─────────────────────────────────────────────────
 
@@ -139,9 +191,15 @@ export class PromptDialog {
   private footerEl: HTMLElement;
   private stagingEl: HTMLElement;
 
-  private targets: TargetEntry[] = [];
+  private targets: DialogTarget[] = [];
   private selectedTargetIdx = 0;
   private pickerOpen = false;
+  // spec 372: the Harness that held focus when the dialog opened; its active
+  // lane is the default target. Frozen like selectionSnapshot.
+  private focusedHarnessId: string | null = null;
+  // spec 372: why the last lane send failed. Replaces the footer hints until the
+  // next input or target change.
+  private errorText: string | null = null;
   // Maps temp file path → base64 data URL for thumbnail rendering.
   // Entries are added when images are pasted/dropped and the @path is inserted inline.
   private imageThumbs = new Map<string, string>();
@@ -187,6 +245,7 @@ export class PromptDialog {
     if (this.visible) return;
     this.visible = true;
     this.textareaEl.value = '';
+    this.errorText = null;
     this.imageThumbs.clear();
     // Drain any captures queued while the dialog was closed.
     const queued = this.captureQueue.splice(0, 4);
@@ -199,18 +258,22 @@ export class PromptDialog {
     this.renderStaging();
     this.mention.active = false;
     this.mentionPopupEl.classList.remove('krypton-prompt-dialog__mention-popup--visible');
-    // Capture the terminal selection NOW, before the dialog's overlay steals any
-    // focus and before the user can change what's highlighted.
+    // Capture the terminal selection and the focused Harness NOW, before the
+    // dialog's overlay steals any focus and before the user can change them.
     this.selectionSnapshot = this.compositor.getFocusedSelection();
+    this.focusedHarnessId = listHarnessEntries().find((entry) => entry.isFocused?.() === true)?.harnessId ?? null;
     this.overlay.classList.add('krypton-prompt-dialog--visible');
 
     await this.refreshTargets();
+    const pickedFocusedLane = this.pickInitialTarget();
     this.subscribeToProcessChanges();
 
-    if (this.targets.length >= 2) {
-      this.openPicker();
+    if (this.targets.length >= 2 && !pickedFocusedLane) {
+      this.openPicker(false);
     } else {
       this.pickerOpen = false;
+      this.pickerEl.style.display = 'none';
+      this.chipEl.style.display = '';
       this.renderChip();
       this.renderFooter();
       requestAnimationFrame(() => this.textareaEl.focus());
@@ -228,6 +291,7 @@ export class PromptDialog {
     this.mentionPopupEl.classList.remove('krypton-prompt-dialog__mention-popup--visible');
     this.pickerOpen = false;
     this.selectionSnapshot = null;
+    this.focusedHarnessId = null;
     if (this.processUnlisten) {
       this.processUnlisten();
       this.processUnlisten = null;
@@ -253,56 +317,81 @@ export class PromptDialog {
 
   // ─── Target handling ──────────────────────────────────────────
 
+  /** Re-list targets, keeping the selected one while it is still present. */
   private async refreshTargets(): Promise<void> {
-    const candidates = this.compositor.findSessionsByProcess(TARGET_PROCESS);
-    const prevTargets = new Map(this.targets.map((t) => [t.sessionId, t]));
-    this.targets = candidates.map((c) => ({
-      ...c,
-      cwd: prevTargets.get(c.sessionId)?.cwd ?? null,
+    const prevKey = this.currentTarget()?.key ?? null;
+    const prevCwd = new Map<SessionId, string | null>();
+    for (const t of this.targets) {
+      if (t.kind === 'pty') prevCwd.set(t.sessionId, t.cwd);
+    }
+    const ptyTargets: PtyTarget[] = this.compositor.findSessionsByProcess(TARGET_PROCESS).map((c) => ({
+      kind: 'pty',
+      key: `pty:${c.sessionId}`,
+      sessionId: c.sessionId,
+      windowId: c.windowId,
+      pid: c.pid,
+      cwd: prevCwd.get(c.sessionId) ?? null,
     }));
 
-    // Resolve CWDs in parallel (cached on the target entry)
-    await Promise.all(
-      this.targets.map(async (t) => {
-        if (t.cwd !== null) return;
-        try {
-          t.cwd = await invoke<string | null>('get_pty_cwd', { sessionId: t.sessionId });
-        } catch {
-          t.cwd = null;
-        }
-      }),
-    );
+    // Resolve PTY CWDs (cached on the target entry) while the Harnesses list lanes.
+    const [, laneTargets] = await Promise.all([
+      Promise.all(
+        ptyTargets.map(async (t) => {
+          if (t.cwd !== null) return;
+          try {
+            t.cwd = await invoke<string | null>('get_pty_cwd', { sessionId: t.sessionId });
+          } catch {
+            t.cwd = null;
+          }
+        }),
+      ),
+      listLaneTargets(),
+    ]);
 
-    // Pick initial target
-    if (this.targets.length === 0) {
-      this.selectedTargetIdx = -1;
-    } else {
-      const lastIdx = this.targets.findIndex((t) => t.sessionId === lastUsedSessionId);
-      this.selectedTargetIdx = lastIdx >= 0 ? lastIdx : 0;
-    }
+    this.targets = [...ptyTargets, ...laneTargets];
+    const kept = prevKey === null ? -1 : this.targets.findIndex((t) => t.key === prevKey);
+    if (kept >= 0) this.selectedTargetIdx = kept;
+    else this.pickInitialTarget();
   }
 
-  private currentTarget(): TargetEntry | null {
+  /** spec 372: the focused Harness's active lane, then the last-used target,
+   *  then the first row. Returns true only when the first rule picked. */
+  private pickInitialTarget(): boolean {
+    if (this.targets.length === 0) {
+      this.selectedTargetIdx = -1;
+      return false;
+    }
+    const focused = this.focusedHarnessId === null
+      ? -1
+      : this.targets.findIndex((t) => t.kind === 'lane' && t.active && t.harnessId === this.focusedHarnessId);
+    if (focused >= 0) {
+      this.selectedTargetIdx = focused;
+      return true;
+    }
+    const last = this.targets.findIndex((t) => t.key === lastUsedTargetKey);
+    this.selectedTargetIdx = last >= 0 ? last : 0;
+    return false;
+  }
+
+  private currentTarget(): DialogTarget | null {
     if (this.selectedTargetIdx < 0 || this.selectedTargetIdx >= this.targets.length) {
       return null;
     }
     return this.targets[this.selectedTargetIdx];
   }
 
+  private renderTargets(): void {
+    if (this.pickerOpen) this.renderPicker();
+    else this.renderChip();
+    this.renderFooter();
+  }
+
   private subscribeToProcessChanges(): void {
     if (this.processUnlisten) return;
     void listen<ProcessChangedEvent>('process-changed', async () => {
       if (!this.visible) return;
-      const prevTargetId = this.currentTarget()?.sessionId ?? null;
       await this.refreshTargets();
-      // Preserve user's explicit target if it's still alive
-      if (prevTargetId !== null) {
-        const stillThere = this.targets.findIndex((t) => t.sessionId === prevTargetId);
-        if (stillThere >= 0) this.selectedTargetIdx = stillThere;
-      }
-      if (this.pickerOpen) this.renderPicker();
-      else this.renderChip();
-      this.renderFooter();
+      if (this.visible) this.renderTargets();
     }).then((fn) => {
       this.processUnlisten = fn;
     });
@@ -310,7 +399,9 @@ export class PromptDialog {
 
   private async loadFilesForCurrentTarget(): Promise<void> {
     const t = this.currentTarget();
-    if (!t || !t.cwd) {
+    // A remote Harness cwd is a path on another host; indexing it locally would
+    // list the wrong files (spec 372).
+    if (!t || !t.cwd || (t.kind === 'lane' && t.remote)) {
       this.files = [];
       return;
     }
@@ -319,17 +410,24 @@ export class PromptDialog {
 
   // ─── Picker ────────────────────────────────────────────────────
 
-  private openPicker(): void {
+  private openPicker(refresh = true): void {
     this.pickerOpen = true;
     this.chipEl.style.display = 'none';
     this.pickerEl.style.display = '';
     this.renderPicker();
     this.renderFooter();
     this.textareaEl.blur();
+    // Lane status is not evented to the dialog, so re-list whenever the picker opens.
+    if (refresh) {
+      void this.refreshTargets().then(() => {
+        if (this.visible && this.pickerOpen) this.renderTargets();
+      });
+    }
   }
 
   private closePicker(): void {
     this.pickerOpen = false;
+    this.errorText = null;
     this.pickerEl.style.display = 'none';
     this.chipEl.style.display = '';
     this.renderChip();
@@ -342,26 +440,40 @@ export class PromptDialog {
   private renderPicker(): void {
     if (this.targets.length === 0) {
       this.pickerEl.innerHTML = `
-        <div class="krypton-prompt-dialog__picker-header">No Claude sessions found</div>
+        <div class="krypton-prompt-dialog__picker-header">No targets found</div>
         <div class="krypton-prompt-dialog__picker-empty">
-          Start <code>claude</code> in a tab, then reopen this dialog.
+          Start <code>claude</code> in a tab or open an ACP Harness, then reopen this dialog.
         </div>
       `;
       return;
     }
-    const header = `<div class="krypton-prompt-dialog__picker-header">Select target Claude session</div>`;
+    const header = `<div class="krypton-prompt-dialog__picker-header">Select target</div>`;
     const rows = this.targets
       .map((t, i) => {
-        const isSel = i === this.selectedTargetIdx;
-        const isLast = lastUsedSessionId === t.sessionId;
-        const cwd = t.cwd ?? '…';
+        const selected = i === this.selectedTargetIdx ? ' is-selected' : '';
+        const last = lastUsedTargetKey === t.key
+          ? '<span class="krypton-prompt-dialog__picker-last">(last)</span>'
+          : '';
+        const cwd = escapeHtml(abbreviatePath(t.cwd ?? '…'));
+        if (t.kind === 'lane') {
+          return `
+          <div class="krypton-prompt-dialog__picker-row krypton-prompt-dialog__picker-row--lane${selected}" data-idx="${i}">
+            <span class="krypton-prompt-dialog__picker-hotkey"></span>
+            <span class="krypton-prompt-dialog__picker-proc">${escapeHtml(t.displayName)}</span>
+            <span class="krypton-prompt-dialog__picker-meta">${escapeHtml(t.backendId)}</span>
+            <span class="krypton-prompt-dialog__picker-cwd">${cwd}</span>
+            <span class="krypton-prompt-dialog__picker-meta">${escapeHtml(laneStatusLabel(t))}</span>
+            ${last}
+          </div>
+        `;
+        }
         return `
-          <div class="krypton-prompt-dialog__picker-row${isSel ? ' is-selected' : ''}" data-idx="${i}">
+          <div class="krypton-prompt-dialog__picker-row${selected}" data-idx="${i}">
             <span class="krypton-prompt-dialog__picker-hotkey"></span>
             <span class="krypton-prompt-dialog__picker-proc">claude</span>
-            <span class="krypton-prompt-dialog__picker-cwd">${escapeHtml(abbreviatePath(cwd))}</span>
+            <span class="krypton-prompt-dialog__picker-cwd">${cwd}</span>
             <span class="krypton-prompt-dialog__picker-pid">pid ${t.pid}</span>
-            ${isLast ? '<span class="krypton-prompt-dialog__picker-last">(last)</span>' : ''}
+            ${last}
           </div>
         `;
       })
@@ -426,18 +538,32 @@ export class PromptDialog {
       'krypton-prompt-dialog__target-chip--empty',
       'krypton-prompt-dialog__target-chip--loading',
     );
+    const badge = this.targets.length > 1
+      ? `<span class="krypton-prompt-dialog__chip-count">${this.targets.length} avail</span>`
+      : '';
+    const switchButton = '<button class="krypton-prompt-dialog__chip-switch" title="Switch target (⌘,)">⇅</button>';
     if (!t) {
       this.chipEl.classList.add('krypton-prompt-dialog__target-chip--empty');
       this.chipEl.innerHTML = `
         <span class="krypton-prompt-dialog__chip-warn">⚠</span>
-        <span class="krypton-prompt-dialog__chip-label">no Claude session</span>
+        <span class="krypton-prompt-dialog__chip-label">no target</span>
         <span class="krypton-prompt-dialog__chip-spacer"></span>
-        <button class="krypton-prompt-dialog__chip-switch" title="Switch target (⌘,)">⇅</button>
+        ${switchButton}
+      `;
+    } else if (t.kind === 'lane') {
+      this.chipEl.innerHTML = `
+        <span class="krypton-prompt-dialog__chip-arrow">→</span>
+        <span class="krypton-prompt-dialog__chip-label">${escapeHtml(t.displayName)}</span>
+        <span class="krypton-prompt-dialog__chip-meta">${escapeHtml(t.backendId)}</span>
+        <span class="krypton-prompt-dialog__chip-cwd">${escapeHtml(abbreviatePath(t.cwd ?? '…'))}</span>
+        <span class="krypton-prompt-dialog__chip-meta">${escapeHtml(laneStatusLabel(t))}</span>
+        ${badge}
+        <span class="krypton-prompt-dialog__chip-spacer"></span>
+        ${switchButton}
       `;
     } else {
       const cwd = t.cwd ?? '…';
       if (!t.cwd) this.chipEl.classList.add('krypton-prompt-dialog__target-chip--loading');
-      const badge = this.targets.length > 1 ? `<span class="krypton-prompt-dialog__chip-count">${this.targets.length} avail</span>` : '';
       this.chipEl.innerHTML = `
         <span class="krypton-prompt-dialog__chip-arrow">→</span>
         <span class="krypton-prompt-dialog__chip-label">Claude</span>
@@ -445,7 +571,7 @@ export class PromptDialog {
         <span class="krypton-prompt-dialog__chip-pid">pid ${t.pid}</span>
         ${badge}
         <span class="krypton-prompt-dialog__chip-spacer"></span>
-        <button class="krypton-prompt-dialog__chip-switch" title="Switch target (⌘,)">⇅</button>
+        ${switchButton}
       `;
     }
     const btn = this.chipEl.querySelector<HTMLButtonElement>('.krypton-prompt-dialog__chip-switch');
@@ -456,9 +582,21 @@ export class PromptDialog {
   }
 
   private renderFooter(): void {
+    if (this.errorText !== null && !this.pickerOpen) {
+      const error = document.createElement('span');
+      error.className = 'krypton-prompt-dialog__error';
+      error.textContent = this.errorText;
+      this.footerEl.replaceChildren(error);
+      return;
+    }
     const t = this.currentTarget();
     const close: KeyHint = { keys: ['Esc'], label: 'close' };
     const switchTarget: KeyHint = { keys: ['⌘,'], label: 'switch target' };
+    // spec 372: a busy lane queues the prompt; say so on the Enter cap.
+    const send: KeyHint = {
+      keys: ['Enter'],
+      label: t?.kind === 'lane' && QUEUEING_STATUSES[t.status] === true ? 'queue' : 'send',
+    };
     const hints: readonly KeyHint[] = this.pickerOpen
       ? [
         { keys: ['↑↓'], label: 'nav' },
@@ -468,7 +606,7 @@ export class PromptDialog {
       ]
       : !t
         ? [switchTarget, close]
-        : [{ keys: ['Enter'], label: 'send' }, { keys: ['⇧Enter'], label: 'newline' }, switchTarget, close];
+        : [send, { keys: ['⇧Enter'], label: 'newline' }, switchTarget, close];
     this.footerEl.replaceChildren(...hints.map((hint) => keyHint(hint)));
   }
 
@@ -533,6 +671,10 @@ export class PromptDialog {
     this.autoGrow();
     this.updateMentionState();
     if (this.imageThumbs.size > 0) this.renderStaging();
+    if (this.errorText !== null) {
+      this.errorText = null;
+      this.renderFooter();
+    }
   }
 
   private autoGrow(): void {
@@ -709,6 +851,11 @@ export class PromptDialog {
       prompt = prompt.replace(/(^|\s)@selection\b/g, (_m, lead) => `${lead}${block}`);
     }
 
+    if (target.kind === 'lane') {
+      await this.submitToLane(target, prompt);
+      return;
+    }
+
     // Wrap in bracketed paste so embedded newlines land as a single paste event
     // in Claude's input buffer instead of submitting each line as its own message.
     // Strip any literal end-marker to prevent prompt content from escaping the paste.
@@ -722,13 +869,54 @@ export class PromptDialog {
       await invoke('write_to_pty', { sessionId: target.sessionId, data: pasteBytes });
       await new Promise((r) => setTimeout(r, 30));
       await invoke('write_to_pty', { sessionId: target.sessionId, data: submitBytes });
-      lastUsedSessionId = target.sessionId;
-      this.compositor.flashWindow(target.windowId as WindowId);
+      lastUsedTargetKey = target.key;
+      this.compositor.flashWindow(target.windowId);
       this.close();
     } catch (e) {
       console.error('[PromptDialog] write_to_pty failed:', e);
       this.shakePanel();
     }
+  }
+
+  /** spec 372: deliver to a Harness lane through `lane.send`. Images travel as
+   *  ACP image blocks, so their `@path` tokens leave the text; the rest of the
+   *  text is literal (a leading `@path` is never read as a lane mention). */
+  private async submitToLane(target: LaneTarget, prompt: string): Promise<void> {
+    const { text, images } = this.extractImages(prompt);
+    const resolved = resolveDisplayName(target.displayName);
+    const entry = resolved ? harnessEntry(resolved.harnessId) : null;
+    try {
+      if (!entry?.control) throw new Error(`${target.displayName} is no longer open`);
+      await entry.control(
+        'lane.send',
+        { lane: target.displayName, text, images },
+        { source: 'prompt_dialog' },
+      );
+    } catch (e) {
+      this.errorText = e instanceof Error ? e.message : String(e);
+      this.shakePanel();
+      await this.refreshTargets();
+      if (this.visible) this.renderTargets();
+      return;
+    }
+    lastUsedTargetKey = target.key;
+    const windowId = this.compositor.findWindowIdForLane(target.displayName);
+    if (windowId) this.compositor.flashWindow(windowId);
+    this.close();
+  }
+
+  /** Staged images whose `@path` token is still in the text, with the tokens removed. */
+  private extractImages(prompt: string): { text: string; images: DialogImage[] } {
+    let text = prompt;
+    const images: DialogImage[] = [];
+    for (const [path, dataUrl] of this.imageThumbs) {
+      const token = `@${path}`;
+      if (!text.includes(token)) continue;
+      text = text.split(`${token} `).join('').split(token).join('');
+      const parsed = parseBase64DataUrl(dataUrl);
+      if (parsed) images.push({ ...parsed, path });
+    }
+    return { text: text.trim(), images };
   }
 
   private shakePanel(): void {
@@ -934,4 +1122,62 @@ function abbreviatePath(p: string): string {
   if (home) s = '~' + p.slice(home[1].length);
   if (s.length > 48) s = '…' + s.slice(s.length - 45);
   return s;
+}
+
+function isLaneStatus(value: unknown): value is HarnessLaneStatus {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(LANE_STATUSES, value);
+}
+
+/** One `lane.list` row as a dialog target; null for a malformed or stopped lane. */
+function laneTargetFromRow(row: unknown, entry: HarnessEntry): LaneTarget | null {
+  if (typeof row !== 'object' || row === null) return null;
+  const displayName = 'displayName' in row ? row.displayName : undefined;
+  const status = 'status' in row ? row.status : undefined;
+  if (typeof displayName !== 'string' || !isLaneStatus(status) || status === 'stopped') return null;
+  return {
+    kind: 'lane',
+    key: `lane:${displayName}`,
+    harnessId: entry.harnessId,
+    displayName,
+    backendId: 'backendId' in row && typeof row.backendId === 'string' ? row.backendId : '',
+    status,
+    cwd: entry.cwd,
+    remote: 'remote' in row && row.remote === true,
+    queueDepth: 'queueDepth' in row && typeof row.queueDepth === 'number' ? row.queueDepth : 0,
+    active: 'active' in row && row.active === true,
+  };
+}
+
+/** spec 372: every non-stopped lane of every live Harness, in registration order. */
+async function listLaneTargets(): Promise<LaneTarget[]> {
+  const out: LaneTarget[] = [];
+  for (const entry of listHarnessEntries()) {
+    if (!entry.control) continue;
+    let rows: unknown;
+    try {
+      rows = await entry.control('lane.list', {});
+    } catch (e) {
+      console.warn('[PromptDialog] lane.list failed:', e);
+      continue;
+    }
+    if (!Array.isArray(rows)) continue;
+    for (const row of rows) {
+      const target = laneTargetFromRow(row, entry);
+      if (target) out.push(target);
+    }
+  }
+  return out;
+}
+
+/** `idle`, `needs permission · queue 2 · remote`. */
+function laneStatusLabel(t: LaneTarget): string {
+  const parts = [t.status.replace(/_/g, ' ')];
+  if (t.queueDepth > 0) parts.push(`queue ${t.queueDepth}`);
+  if (t.remote) parts.push('remote');
+  return parts.join(' · ');
+}
+
+function parseBase64DataUrl(url: string): { data: string; mimeType: string } | null {
+  const match = /^data:([^;,]+);base64,(.+)$/.exec(url);
+  return match ? { mimeType: match[1], data: match[2] } : null;
 }

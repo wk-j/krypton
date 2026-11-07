@@ -6005,6 +6005,20 @@ export class Compositor {
     return results;
   }
 
+  /** spec 372: the window hosting the Harness pane that owns lane `displayName`
+   *  (globally unique), so the prompt dialog can flash it after a send. */
+  findWindowIdForLane(displayName: string): WindowId | null {
+    for (const win of this.windows.values()) {
+      for (const tab of win.tabs) {
+        for (const pane of this.collectPanes(tab.paneTree)) {
+          const marks = pane.contentView?.getLaneMarks?.();
+          if (marks?.some((mark) => mark.displayName === displayName)) return win.id;
+        }
+      }
+    }
+    return null;
+  }
+
   /** Briefly flash a window's chrome to confirm a prompt was delivered to it. */
   flashWindow(windowId: WindowId): void {
     const win = this.windows.get(windowId);

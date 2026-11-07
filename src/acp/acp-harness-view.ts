@@ -746,6 +746,31 @@ function optionalString(params: Record<string, unknown>, key: string): string | 
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+/** spec 372: `lane.send` images. Only the in-app prompt dialog may attach them,
+ *  so the public control API contract stays text-only. */
+function controlImages(params: Record<string, unknown>, fromDialog: boolean): StagedImage[] {
+  const raw = params.images;
+  if (raw === undefined) return [];
+  if (!fromDialog) throw controlError('invalid_request', 'images are accepted only from the prompt dialog');
+  if (!Array.isArray(raw)) throw controlError('invalid_request', 'images must be an array');
+  if (raw.length > MAX_STAGED_IMAGES) {
+    throw controlError('invalid_request', `max ${MAX_STAGED_IMAGES} images per message`);
+  }
+  return raw.map((item): StagedImage => {
+    if (typeof item !== 'object' || item === null) throw controlError('invalid_request', 'image must be an object');
+    const data = 'data' in item ? item.data : undefined;
+    const mimeType = 'mimeType' in item ? item.mimeType : undefined;
+    const path = 'path' in item ? item.path : null;
+    if (typeof data !== 'string' || data.length === 0) throw controlError('invalid_request', 'image data must be base64');
+    if (typeof mimeType !== 'string' || !mimeType.startsWith('image/')) {
+      throw controlError('invalid_request', 'image mimeType must be image/*');
+    }
+    if (path !== null && typeof path !== 'string') throw controlError('invalid_request', 'image path must be a string');
+    if (data.length > MAX_IMAGE_BYTES * 1.34) throw controlError('invalid_request', 'image too large (max 5MB)');
+    return { data, mimeType, path };
+  });
+}
+
 function requiredNumber(params: Record<string, unknown>, key: string): number {
   const value = params[key];
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -2428,14 +2453,26 @@ export class AcpHarnessView implements ContentView {
           })),
         };
       case 'lane.send': {
-        const text = requiredString(params, 'text').trim();
+        // spec 372: the prompt dialog may send images with empty text, and its
+        // text is literal — a leading `@` is a file path, never a lane mention.
+        const fromDialog = caller?.source === 'prompt_dialog';
+        const text = fromDialog && typeof params.text === 'string'
+          ? params.text.trim()
+          : requiredString(params, 'text').trim();
+        const images = controlImages(params, fromDialog);
         const telegramCaller = caller?.source === 'telegram' ? caller.telegram : undefined;
         if (caller?.source === 'telegram' && !telegramCaller) {
           throw controlError('invalid_request', 'trusted Telegram caller metadata is missing');
         }
-        if (!text) throw controlError('invalid_request', 'text must not be empty');
+        if (!text && images.length === 0) throw controlError('invalid_request', 'text must not be empty');
+        if (images.length > 0 && this.remoteRuntimeId) {
+          throw controlError('invalid_request', 'local images are unavailable in a remote Harness');
+        }
         if (!lane.client || lane.status === 'starting' || lane.status === 'error' || lane.status === 'stopped') {
           throw controlError('lane_not_ready', `${lane.displayName} is ${lane.status}`);
+        }
+        if (images.length > 0 && !lane.supportsImages) {
+          this.flashChip(`${lane.displayName} did not advertise image support; sending anyway`);
         }
         if (lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer') {
           if (lane.queuedPrompts.length >= PROMPT_QUEUE_MAX) {
@@ -2443,16 +2480,18 @@ export class AcpHarnessView implements ContentView {
           }
           lane.queuedPrompts.push({
             text,
-            images: [],
+            images,
             mentionTargets: [],
             ...(telegramCaller ? { telegramCaller } : {}),
+            ...(fromDialog ? { literal: true as const } : {}),
           });
           this.render();
           return { status: 'queued', lane: lane.displayName, queueDepth: lane.queuedPrompts.length };
         }
-        void this.sendUserPrompt(lane, text, [], {
+        void this.sendUserPrompt(lane, text, images, {
           clearDraft: false,
           telegramCaller,
+          literal: fromDialog,
         });
         return { status: 'started', lane: lane.displayName };
       }
@@ -2554,6 +2593,7 @@ export class AcpHarnessView implements ContentView {
       pendingPermissions: lane.pendingPermissions.length,
       permissionMode: lane.permissionMode,
       active: lane.id === this.activeLaneId,
+      remote: this.remoteRuntimeId !== null,
     }));
   }
 
@@ -8763,13 +8803,17 @@ export class AcpHarnessView implements ContentView {
       clearDraft?: boolean;
       telegramCaller?: TelegramControlCaller;
       liveDelegationId?: string;
+      /** spec 372: prompt-dialog text — skip lane-mention fan-out. */
+      literal?: boolean;
     },
   ): Promise<{ handled: boolean; delivered: boolean }> {
     if (!lane.client) return { handled: false, delivered: false };
-    const mention = this.tryMentionFanOut(lane, text, images.length > 0, {
-      clearDraftOnDeliver: opts?.clearDraft === true,
-    });
-    if (mention.handled) return mention;
+    if (!opts?.literal) {
+      const mention = this.tryMentionFanOut(lane, text, images.length > 0, {
+        clearDraftOnDeliver: opts?.clearDraft === true,
+      });
+      if (mention.handled) return mention;
+    }
     lane.activeTelegramTurn = opts?.telegramCaller ?? null;
     const userItem = this.appendTranscript(lane, 'user', text, {
       stagedImages: images,
@@ -8886,6 +8930,7 @@ export class AcpHarnessView implements ContentView {
       clearDraft: false,
       telegramCaller: next.telegramCaller,
       liveDelegationId: next.liveDelegationId,
+      literal: next.literal === true,
     })
       .then((r) => {
         if (r.delivered) return; // a turn started; the next finishTurn drains the rest

@@ -399,7 +399,8 @@
   color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
 }
 
-.krypton-prompt-dialog__chip-pid {
+.krypton-prompt-dialog__chip-pid,
+.krypton-prompt-dialog__chip-meta {
   color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
   font-variant-numeric: tabular-nums;
@@ -535,7 +536,8 @@
   white-space: nowrap;
 }
 
-.krypton-prompt-dialog__picker-pid {
+.krypton-prompt-dialog__picker-pid,
+.krypton-prompt-dialog__picker-meta {
   color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   font-variant-numeric: tabular-nums;
 }
@@ -698,6 +700,15 @@
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   text-shadow: var(--mat-print);
   letter-spacing: 0.06em;
+}
+
+/* spec 372: why a lane send failed — fault ink (ADR-0017), one line in the foot. */
+.krypton-prompt-dialog__error {
+  color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Scrollbars (DESIGN.md "Scrollbars"): 8px, transparent track, ink thumb. */

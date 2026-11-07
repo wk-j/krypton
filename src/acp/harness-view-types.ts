@@ -1050,6 +1050,9 @@ export interface QueuedPrompt {
   /** spec 280: the live voice delegation this prompt answers; the turn that
    *  consumes it reports its progress and final text back to that delegation. */
   liveDelegationId?: string;
+  /** spec 372: prompt-dialog text — a leading `@` is a file path, so the drain
+   *  skips lane-mention fan-out. */
+  literal?: true;
 }
 
 export interface TranscriptScrollAnchor {
