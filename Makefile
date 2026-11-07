@@ -1,13 +1,17 @@
 .PHONY: dev build install uninstall clean extension remote-runtime
 
 APP_NAME := Krypton
-BUNDLE_PATH := src-tauri/target/release/bundle/macos/$(APP_NAME).app
+# Honour CARGO_TARGET_DIR and build.target-dir instead of assuming src-tauri/target.
+TARGET_DIR := $(shell cargo metadata --format-version 1 --no-deps --manifest-path src-tauri/Cargo.toml | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
+# Recursive so a missing target directory only fails targets that need it.
+RELEASE_DIR = $(or $(TARGET_DIR),$(error could not detect the Cargo target directory))/release
+BUNDLE_PATH = $(RELEASE_DIR)/bundle/macos/$(APP_NAME).app
 INSTALL_DIR := /Applications
 CLI_NAME := kryptonctl
-CLI_PATH := src-tauri/target/release/$(CLI_NAME)
+CLI_PATH = $(RELEASE_DIR)/$(CLI_NAME)
 BRIDGE_NAME := krypton-bridge
-BRIDGE_PATH := src-tauri/target/release/$(BRIDGE_NAME)
-REMOTE_RUNTIME_PATH := src-tauri/target/release/krypton-remote
+BRIDGE_PATH = $(RELEASE_DIR)/$(BRIDGE_NAME)
+REMOTE_RUNTIME_PATH = $(RELEASE_DIR)/krypton-remote
 CLI_INSTALL_DIR ?= $(HOME)/.local/bin
 
 # Start development server with hot-reload
@@ -18,9 +22,9 @@ dev:
 # Pre-clean stale DMGs: hdiutil convert refuses to overwrite, so a previous
 # failed bundle leaves Krypton_*.dmg / rw.*.dmg that break the next run.
 build:
-	rm -f src-tauri/target/release/bundle/macos/Krypton_*.dmg \
-	      src-tauri/target/release/bundle/macos/rw.*.dmg \
-	      src-tauri/target/release/bundle/dmg/Krypton_*.dmg
+	rm -f "$(RELEASE_DIR)"/bundle/macos/Krypton_*.dmg \
+	      "$(RELEASE_DIR)"/bundle/macos/rw.*.dmg \
+	      "$(RELEASE_DIR)"/bundle/dmg/Krypton_*.dmg
 	npx tauri build
 	cargo build --release --manifest-path src-tauri/Cargo.toml --bin $(CLI_NAME)
 	cargo build --release --manifest-path src-tauri/Cargo.toml --bin $(BRIDGE_NAME)

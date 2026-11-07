@@ -35,9 +35,15 @@ cargo build $cargo_flags --manifest-path src-tauri/Cargo.toml -p krypton-remote
 # shellcheck disable=SC2086 # An empty flag is intentional for debug builds.
 cargo build $cargo_flags --manifest-path src-tauri/Cargo.toml -p app --bin kryptonctl
 
-source_path="src-tauri/target/$profile/krypton-remote"
+# Honour CARGO_TARGET_DIR and build.target-dir instead of assuming src-tauri/target.
+target_dir="$(cargo metadata --format-version 1 --no-deps --manifest-path src-tauri/Cargo.toml | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
+if [ -z "$target_dir" ]; then
+  echo "could not detect the Cargo target directory" >&2
+  exit 1
+fi
+source_path="$target_dir/$profile/krypton-remote"
 destination_dir="src-tauri/remote-binaries/$host_target"
 mkdir -p "$destination_dir"
 install -m 755 "$source_path" "$destination_dir/krypton-remote"
-install -m 755 "src-tauri/target/$profile/kryptonctl" "$destination_dir/kryptonctl"
+install -m 755 "$target_dir/$profile/kryptonctl" "$destination_dir/kryptonctl"
 echo "Staged krypton-remote for $host_target"
