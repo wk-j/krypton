@@ -8,9 +8,10 @@
 //
 //   1. the root's modifiers — `--command`, `--memory`, `--dictating`,
 //      `--permission` — and `--acp-lane-accent`;
-//   2. the child ORDER, which is the order `renderComposer` concatenated its
-//      fragments in: chrome, peer strip, live-voice strip, staging strip, the
-//      four inline palettes, the input line;
+//   2. the child ORDER: chrome, live-voice strip, staging strip, the four
+//      inline palettes, the input line. The peer readout is not a root
+//      child: it sits at the end of the chrome row's left run, so a queued
+//      lane mail or a pending wait costs no line of its own;
 //   3. the three shapes the root takes: `no lanes`, the decision row (a
 //      pending permission or question owns the keyboard), and the draft.
 //
@@ -106,9 +107,9 @@ export interface ComposerDraftProps {
 export type ComposerProps = ComposerEmptyProps | ComposerDecisionProps | ComposerDraftProps;
 
 export class Composer extends Component<ComposerProps> {
-  private readonly meta = new ComposerMeta();
-  private readonly dictation = new DictationControl();
   private readonly peer = new PeerStrip();
+  private readonly meta = new ComposerMeta(this.peer.el);
+  private readonly dictation = new DictationControl();
   private readonly liveVoice = new LiveVoiceStrip();
   private readonly staging = new StagingStrip();
   private readonly palettes: Record<InlinePaletteVariant, InlinePalette<InlinePaletteRow>> = {
@@ -192,7 +193,6 @@ export class Composer extends Component<ComposerProps> {
     }
     syncOrder(this.el, [
       this.meta.el,
-      this.peer.el,
       this.liveVoice.el,
       this.staging.el,
       this.palettes.mention.el,

@@ -17,7 +17,7 @@ The active lane header shows `awaiting peer` and activity text in non-zen collap
 Add a **peer activity surface** on three existing UI layers — no new panels, no global mixed-lane dashboard:
 
 1. **Zen rail hints** — extend `renderRailEntry()` so every lane row exposes status + peer relation in ≤2 compact glyphs (dot + optional suffix).
-2. **Composer peer strip** — persistent one-line hint above the composer when the active lane has outstanding peer sends (`pendingPeersFor`), queued inbound peer mail (`inboxDepth > 0`), or `awaiting_peer` with no pending summary (e.g. in-flight review wait).
+2. **Composer peer strip** — persistent one-line hint in the composer chrome row, after the branch, when the active lane has outstanding peer sends (`pendingPeersFor`), queued inbound peer mail (`inboxDepth > 0`), or `awaiting_peer` with no pending summary (e.g. in-flight review wait).
 3. **Peek peer preempt** — when a direct peer candidate appears (priority ≤30), clear peek dismissal and show the peek even if the user hid it earlier in the session.
 
 All data comes from existing coordinator + transcript helpers (`pendingPeersFor`, `inboxDepth`, `latestInterLaneForPeek`). No Rust changes. No new MCP tools.
@@ -136,11 +136,14 @@ Show when the **active** lane has any of:
 
 **Not in v1:** generic “recent outbound/inbound” strip without pending/inbox/awaiting_peer (rail traffic suffix covers scan-only cases on non-active lanes).
 
-Insert before composer input:
+Placed last in the composer chrome row's left run (`.acp-harness__composer-meta`, after the status readout, mode and directive chips and the branch), so it costs no line of its own. It is a readout well with its LED inside, lit in the theme magenta; it keeps its own case and ellipsizes, giving up width before the status readout does:
 
 ```html
-<div class="acp-harness__composer-peer" role="status">
-  ⇆ awaiting Claude-1 · 1m · #cancel drops pending peer wait
+<div class="acp-harness__composer-meta">
+  … status · mode · directive · branch …
+  <div class="acp-harness__composer-peer" role="status">
+    ⇆ awaiting Claude-1 · 1m · #cancel drops pending peer wait
+  </div>
 </div>
 ```
 
@@ -193,7 +196,7 @@ No new keybindings. Existing: `#cancel`, peek palette actions, lane switch.
 ### UI Changes
 
 - Zen rail: peer suffix column between name and metrics.
-- Composer: optional `acp-harness__composer-peer` status strip.
+- Composer: optional `acp-harness__composer-peer` readout at the end of the chrome row.
 - Non-zen collapsed lane heads: **no change** (already have inbox + activity).
 - Peek: auto-reopen on peer events; user can still hide with palette until next peer preempt.
 

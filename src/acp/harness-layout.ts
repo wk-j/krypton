@@ -44,7 +44,6 @@ export const HARNESS_LAYOUT_DEFAULT = {
   // spec 337: the Rails dock is the dock column's second tab.
   rails: { slot: 'dock.right', order: 20 },
   assistants: { slot: 'dock.right', order: 30 },
-  peerStrip: { slot: 'composer.above', order: 10 },
 } as const satisfies HarnessLayout;
 
 /**

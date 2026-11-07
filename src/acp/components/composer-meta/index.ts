@@ -3,7 +3,8 @@
 // The composer's chrome row: the status chip on the left
 // (`reviewing · 2:14 · 3 queued`), the lane's permission mode after it
 // (`auto-edit`, `bypass`) and the directive (`directive 0301-impl`), the git
-// branch (icon + `main`), and on
+// branch (icon + `main`), the node the composer hands the constructor (the
+// peer readout, `▼1 lane mail queued`), and on
 // the right the `? help` hint plus whatever the composer mounts beside it (the
 // dictation control). Built today by `acp-harness-view.ts:13289-13304` out of
 // `harness-composer-meta.ts:48-68` (`renderStatusSegments`), `composerStatusChip`
@@ -31,7 +32,10 @@
 // that container also holds the status chip and the project status, and
 // `reconcile()` owns every child of its container. The chip set is keyed here
 // and placed with `syncOrder()` instead, which is the same node-identity
-// contract over a container the component shares with itself.
+// contract over a container the component shares with itself. That same
+// `syncOrder()` removes any child it was not handed, so the composer's peer
+// readout is placed here as the run's last node rather than appended from
+// outside; it hides itself when it has nothing to say.
 
 import './composer-meta.css';
 
@@ -125,7 +129,11 @@ export class ComposerMeta extends Component<ComposerMetaProps> {
   private readonly chips = new Map<string, ChipEntry>();
   private openDirective: (() => void) | undefined;
 
-  constructor() {
+  /**
+   * @param trailing A node the caller owns and updates, placed last in the
+   *   left run (the composer passes its peer readout).
+   */
+  constructor(private readonly trailing: HTMLElement | null = null) {
     super(el('div'));
     this.statusEl = el('span');
     this.branchEl = el('span', { class: 'acp-harness__project-branch' });
@@ -204,6 +212,7 @@ export class ComposerMeta extends Component<ComposerMetaProps> {
       this.branchEl.textContent = next.branch.ref;
       nodes.push(this.projectEl);
     }
+    if (this.trailing) nodes.push(this.trailing);
     syncOrder(this.metaEl, nodes);
     this.helpEl.textContent = next.helpHint;
   }

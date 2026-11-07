@@ -78,10 +78,10 @@ interface Slot { readonly el: HTMLElement; mount(id: string, c: Component<unknow
 │                                          ╭─ rail.bottom ────────────╮ │   │ KR-301  open │
 │                                          │ omp-1     ⏎ QUEUE 3      │ │
 │                                          ╰──────────────────────────╯ │
-├─ composer.above ─────────────────────────────────────────────────────┤
-│ ⇆ awaiting codex · 5m+ · #cancel drops pending lane-mail wait        │
+├─ composer.above ─────────────────────────────────────────── (empty) ─┤
+│ ● 0:26  master  ● ▼1 lane mail queued                         ? help │
 │ claude-1  ⠋  convert the UI into reusable comp_onents                │
-╰─ composer.below ──────────────────────────────────────────── (empty) ─╯
+╰─ composer.below ─────────────────────────────────────────── (empty) ─╯
 ```
 
 **Switching a position** is one type-checked line, no CSS and no renderer edit:
@@ -832,7 +832,7 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 | 6.2 | `ComposerMeta` | `reviewing · 2:14 · 3 queued      auto-edit   directive 0301-impl   ⟨branch icon⟩ main        ? help` (the branch mark is the `krypton-icon-branch` symbol, geometry shared with the workspace footer — `src/chrome-icons.ts`) | `harness-composer-meta.ts:48-68` + `composerStatusChip` `:13410-13460` (`Chip` + `StatList`) |
 | 6.3 | `DraftLine` | `claude-1  ⠋  convert the UI into reusable comp_onents` (underline caret over the next cell, ghost text inline) | `acp-harness-view.ts:13246-13293,15417-15420` |
 | 6.4 | `StagingStrip` | `[▣ screenshot.png  x] [▣ diagram.png  x]   2 images · Esc to clear` | `acp-harness-view.ts:13228-13245` |
-| 6.5 | `PeerStrip` | `⇆ awaiting codex · 5m+ · #cancel drops pending lane-mail wait` / `▼3 lane mails queued` | `lane-peek.ts:731-779` |
+| 6.5 | `PeerStrip` | `⇆ awaiting codex · 5m+ · #cancel drops pending lane-mail wait` / `▼3 lane mails queued` — a lit readout at the end of `ComposerMeta`'s left run, not a line of its own | `lane-peek.ts:731-779` |
 | 6.6 | `DictationControl` | `[● REC th  ⌘D]` (phases `MIC · MIC en · REC th · FINALIZING…`) | `harness-dictation-controller.ts:37-82` |
 | 6.7 | `LiveVoiceStrip` | `LIVE  muted  alloy  ░░░░░░░░ ██░░░░░░  you: refactor the composer   ⌘⇧L stop · hold left ⌥ to talk` | `harness-live-voice-controller.ts:461-499` |
 | 6.8 | `DecisionComposer` | `perm      a accept · A all · r reject · R all` | `acp-harness-view.ts:13299-13313` |

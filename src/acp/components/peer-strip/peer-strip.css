@@ -6,16 +6,31 @@
    rather than left to the UA sheet because the block's own padding is what
    would show through if a later rule ever gave it a `display`.
 
-   Spec 366: the hint is printed on the composer plate in ink, after a steady
-   LED lit in the theme magenta that peer activity uses everywhere. */
+   Spec 366 (DESIGN.md "Lamps"): the node is the last part of the composer
+   chrome row's left run (`.acp-harness__composer-meta`, composer-meta.css), a
+   readout window like the mode readout beside it, with its LED inside, lit in
+   the theme magenta that peer activity uses everywhere. It inherits the row's
+   one type size and letter-spacing. It keeps its own case: it names lanes and
+   the `#cancel` command, which the row's uppercase would misprint.
+
+   It is a block, not the row's inline-flex readout, so `text-overflow` reaches
+   its text: the row clips, and this is the longest legend in it
+   (`⇆ awaiting codex-1 · 5m+ · #cancel drops pending lane-mail wait`), so it
+   shrinks with an ellipsis rather than pushing past the window edge. Its
+   shrink weight makes it give up its width before the status readout does: at
+   an equal weight the two shrink in proportion and the clock is cut to `0:`. */
 
 @layer krypton.component {
   /* spec 118 — peer activity hint (informational; does not block input) */
   .acp-harness__composer-peer {
-    padding: 2px 0 4px;
+    flex: 0 1000 auto;
+    min-width: 0;
+    padding: 1px 7px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
-    font-size: 0.74em;
-    letter-spacing: 0.04em;
+    text-transform: none;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -26,8 +41,8 @@
     display: inline-block;
     width: 6px;
     height: 6px;
-    margin-right: 7px;
-    vertical-align: 0.05em;
+    margin-right: 6px;
+    vertical-align: middle;
     border-radius: 50%;
     background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--krypton-special-rgb, 184, 166, 255)) 45%, rgba(var(--krypton-special-rgb, 184, 166, 255), 0.55) 100%);
     box-shadow: 0 0 4px rgba(var(--krypton-special-rgb, 184, 166, 255), 0.9), 0 0 10px rgba(var(--krypton-special-rgb, 184, 166, 255), 0.4);

@@ -66,10 +66,27 @@ describe('Composer', () => {
     const composer = new Composer();
     composer.update(idleProps());
 
-    // Four palettes, peer strip, live-voice strip, staging strip: present but
-    // hidden.
+    // Four palettes, live-voice strip, staging strip: present but hidden.
     const hidden = [...composer.el.children].filter((child) => (child as HTMLElement).hidden);
-    expect(hidden).toHaveLength(7);
+    expect(hidden).toHaveLength(6);
+  });
+
+  it('prints the peer readout last in the chrome row, and keeps it there when the row repaints', () => {
+    const composer = new Composer();
+    const props = idleProps();
+    composer.update({ ...props, peer: { ...props.peer, inboxDepth: 1 } });
+    composer.update({
+      ...props,
+      meta: { ...props.meta, branch: { ref: 'master', title: '' } },
+      peer: { ...props.peer, inboxDepth: 1 },
+    });
+
+    const run = composer.el.querySelector('.acp-harness__composer-meta');
+    const last = run?.lastElementChild as HTMLElement | null | undefined;
+    expect(last?.className).toBe('acp-harness__composer-peer');
+    expect(last?.hidden).toBe(false);
+    expect(last?.textContent).toBe('▼1 lane mail queued');
+    expect(composer.el.querySelectorAll('.acp-harness__composer-peer')).toHaveLength(1);
   });
 
   it('gives every optional child a stylesheet rule that honours `hidden`', () => {
