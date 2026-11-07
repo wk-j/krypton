@@ -1,16 +1,23 @@
-/* Spec 337 §UI Content — `RailsDock`.
-   The ticket-dock family: amber eyebrow, 1px borders, pills. The root
-   `.acp-harness__rails-dock` (position, width, background, `hidden`) is the
-   dock column's placement and lives with the harness layout; this sheet
-   declares only the `acp-rails-dock` content block.
+/* Spec 337 §UI Content — `RailsDock`, in the console faceplate of
+   DESIGN.console.md. The root `.acp-harness__rails-dock` (position, width,
+   `hidden`) is the dock column's placement and lives with the harness layout,
+   which also declares the `--dock-*` material tokens this sheet reads; this
+   sheet declares only the `acp-rails-dock` content block.
+
+   Faceplate: section headings are engraved into the plate. The rows between
+   two headings are slices of one recessed well — the first slice carries the
+   well's top shadow and corners, the last its bottom, so the run reads as one
+   recess without a wrapper node. The head row is a well of its own.
 
    Colour rule: model findings are neutral evidence (ADR-0004) — severities,
    tags and rule statuses use ink tiers and amber only. Check outcomes are
-   distinct badges: success for PASS, fault for FAIL/TIMEOUT, warning for
-   ERROR. Run badges keep model-derived clean/findings neutral; a run error is
-   warning and a failed check is fault (ADR-0017). The Actions bar's
-   buttons (spec 344) are `DockActionButton`s: their running / done colours are
-   action states shared with the Ticket Panel, never verdicts. No animation. */
+   lamps: success for PASS, fault for FAIL/TIMEOUT, warning for ERROR. Run
+   badges are embossed chips that keep model-derived clean/findings neutral; a
+   run error is warning and a failed check is fault (ADR-0017). Selection is a
+   full-row tint inside the well, never a left-edge rail (ADR-0027). The
+   Actions bar's buttons (spec 344) are `DockActionButton` keys: their running
+   / done colours are action states shared with the Ticket Panel, never
+   verdicts. Lamps glow steadily — no animation. */
 
 @layer krypton.component {
   .acp-rails-dock {
@@ -27,26 +34,67 @@
   .acp-rails-dock__rows {
     flex: 1 1 auto;
     min-height: 0;
+    padding: 0 0 10px;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
 
+  /* ── Wells ─────────────────────────────────────────────────────────── */
+
   .acp-rails-dock__row {
-    padding: 5px 14px;
-    border-bottom: 1px solid rgba(255, 176, 0, 0.07);
+    margin: 0 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--dock-groove-lo);
+    background-color: var(--dock-well-fill);
+    box-shadow:
+      inset 1px 0 0 var(--dock-well-wall),
+      inset -1px 0 0 var(--dock-well-wall),
+      inset 0 1px 0 var(--dock-groove-hi);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     cursor: default;
   }
 
-  /* Selection is a full-row tint, as the Ticket Panel's
-     `.acp-ticket__row--selected` — never a left-edge accent rail (ADR-0027). */
-  .acp-rails-dock__row--selected {
-    background: rgba(255, 176, 0, 0.16);
+  .acp-rails-dock__section + .acp-rails-dock__row {
+    border-top-left-radius: var(--krypton-border-radius, 8px);
+    border-top-right-radius: var(--krypton-border-radius, 8px);
+    box-shadow:
+      var(--dock-well-depth),
+      inset 1px 0 0 var(--dock-well-wall),
+      inset -1px 0 0 var(--dock-well-wall),
+      inset 0 1px 0 var(--dock-well-wall);
   }
 
-  .acp-rails-dock__row--head {
-    padding: 13px 14px 11px;
-    border-bottom: 1px solid rgba(255, 176, 0, 0.22);
+  .acp-rails-dock__row:has(+ .acp-rails-dock__section),
+  .acp-rails-dock__row:last-child {
+    border-bottom: 0;
+    border-bottom-left-radius: var(--krypton-border-radius, 8px);
+    border-bottom-right-radius: var(--krypton-border-radius, 8px);
+    box-shadow:
+      inset 1px 0 0 var(--dock-well-wall),
+      inset -1px 0 0 var(--dock-well-wall),
+      inset 0 -1px 0 var(--dock-well-wall),
+      inset 0 1px 0 var(--dock-groove-hi),
+      0 1px 0 var(--dock-well-lip);
+  }
+
+  /* A section with one row, and the head: the whole well in one slice. */
+  .acp-rails-dock__section + .acp-rails-dock__row:is(:has(+ .acp-rails-dock__section), :last-child),
+  .acp-rails-dock__rows > .acp-rails-dock__row--head {
+    border-bottom: 0;
+    border-radius: var(--krypton-border-radius, 8px);
+    box-shadow: var(--dock-well-shadow);
+  }
+
+  .acp-rails-dock__rows > .acp-rails-dock__row--head {
+    margin: 10px 8px 2px;
+    padding: 11px 10px 10px;
+    background-image: var(--dock-well);
+  }
+
+  /* Selection backlights the slice: a full-row tint over the well fill. */
+  .acp-rails-dock__row--selected,
+  .acp-rails-dock__rows > .acp-rails-dock__row--head.acp-rails-dock__row--selected {
+    background-image: linear-gradient(var(--dock-select), var(--dock-select));
   }
 
   .acp-rails-dock__line {
@@ -56,32 +104,67 @@
     min-width: 0;
   }
 
-  .acp-rails-dock__eyebrow {
-    color: #ffb000;
+  /* ── Engraved labels ───────────────────────────────────────────────── */
+
+  .acp-rails-dock__section {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 12px 12px 6px;
+    color: var(--dock-silk);
     font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.13em;
+    text-shadow: var(--dock-engrave);
     text-transform: uppercase;
   }
 
-  .acp-rails-dock__pill {
-    flex: 0 0 auto;
-    padding: 1px 7px;
-    border: 1px solid rgba(255, 176, 0, 0.32);
-    border-radius: 999px;
-    color: #ffd880;
-    letter-spacing: 0.04em;
+  .acp-rails-dock__section-key {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
   }
 
+  /* ── Head: the status window ───────────────────────────────────────── */
+
+  .acp-rails-dock__eyebrow {
+    color: var(--dock-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.13em;
+    text-shadow: var(--dock-lit-glow);
+    text-transform: uppercase;
+  }
+
+  /* The verdict lamp: a lit capsule behind glass. */
+  .acp-rails-dock__pill {
+    --rails-pill-rgb: 255, 176, 0;
+
+    flex: 0 0 auto;
+    padding: 1px 9px;
+    border: 1px solid rgba(var(--rails-pill-rgb), 0.5);
+    border-radius: 999px;
+    background: radial-gradient(ellipse at 50% 0%, rgba(var(--rails-pill-rgb), 0.3), rgba(var(--rails-pill-rgb), 0.07) 75%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      0 0 6px rgba(var(--rails-pill-rgb), 0.22),
+      0 0 16px rgba(var(--rails-pill-rgb), 0.08);
+    color: var(--dock-lit);
+    letter-spacing: 0.04em;
+    text-shadow: var(--dock-lit-glow);
+  }
+
+  /* An unlit lamp: nothing to report yet, or the run errored. */
   .acp-rails-dock__pill--none,
   .acp-rails-dock__pill--error {
-    border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.22);
+    border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+    background: var(--dock-well);
+    box-shadow: var(--dock-well-shadow);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    text-shadow: none;
   }
 
   .acp-rails-dock__pill--check_failed {
-    border-color: rgba(255, 109, 138, 0.48);
+    --rails-pill-rgb: 255, 109, 138;
+
     color: #ff9caf;
-    background: rgba(255, 109, 138, 0.08);
+    text-shadow: 0 0 6px rgba(255, 109, 138, 0.5), 0 0 14px rgba(255, 109, 138, 0.18);
   }
 
   .acp-rails-dock__time {
@@ -116,7 +199,8 @@
   }
 
   .acp-rails-dock__progress {
-    color: #ffd880;
+    color: var(--dock-lit);
+    text-shadow: var(--dock-lit-glow);
   }
 
   .acp-rails-dock__hint,
@@ -162,19 +246,7 @@
     overflow-wrap: anywhere;
   }
 
-  .acp-rails-dock__section {
-    display: flex;
-    justify-content: space-between;
-    padding: 9px 14px 3px;
-    color: #ffb000;
-    font-size: var(--krypton-chrome-font-size, 11px);
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
-  }
-
-  .acp-rails-dock__section-key {
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.4));
-  }
+  /* ── Row content ───────────────────────────────────────────────────── */
 
   .acp-rails-dock__name,
   .acp-rails-dock__rule {
@@ -220,6 +292,11 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .acp-rails-dock__duration {
+    min-width: 5ch;
+    text-align: right;
+  }
+
   .acp-rails-dock__outcome,
   .acp-rails-dock__status,
   .acp-rails-dock__severity {
@@ -236,6 +313,8 @@
     color: #ff9caf;
   }
 
+  /* ── Check lamps ───────────────────────────────────────────────────── */
+
   .acp-rails-dock__outcome--pass {
     --rails-outcome-rgb: var(--krypton-success-rgb, 57, 255, 127);
   }
@@ -249,50 +328,80 @@
     --rails-outcome-rgb: var(--krypton-warning-rgb, 232, 197, 71);
   }
 
-  .acp-rails-dock__outcome:not(.acp-rails-dock__outcome--none) {
+  /* A lamp window: the LED, then its legend, behind tinted glass. */
+  .acp-rails-dock__outcome {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 7px;
-    border: 1px solid rgba(var(--rails-outcome-rgb), 0.65);
-    border-radius: 8px;
-    background: rgba(var(--rails-outcome-rgb), 0.16);
+    gap: 6px;
+  }
+
+  .acp-rails-dock__outcome:not(.acp-rails-dock__outcome--none) {
+    padding: 2px 8px 2px 6px;
+    border: 1px solid rgba(var(--rails-outcome-rgb), 0.45);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: linear-gradient(180deg, rgba(var(--rails-outcome-rgb), 0.2), rgba(var(--rails-outcome-rgb), 0.06));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 -1px 2px rgba(0, 0, 0, 0.35),
+      0 0 6px rgba(var(--rails-outcome-rgb), 0.16),
+      0 0 14px rgba(var(--rails-outcome-rgb), 0.06);
     color: rgb(var(--rails-outcome-rgb));
     font-size: var(--krypton-chrome-font-size, 11px);
     font-weight: 700;
     line-height: 1.2;
+    text-shadow: 0 0 6px rgba(var(--rails-outcome-rgb), 0.45), 0 0 12px rgba(var(--rails-outcome-rgb), 0.15);
   }
 
-  .acp-rails-dock__outcome--pass::before { content: '✓'; }
-  .acp-rails-dock__outcome--fail::before { content: '✕'; }
-  .acp-rails-dock__outcome--timeout::before,
-  .acp-rails-dock__outcome--error::before { content: '!'; }
+  .acp-rails-dock__outcome::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--dock-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+    filter: grayscale(1);
+  }
+
+  .acp-rails-dock__outcome:not(.acp-rails-dock__outcome--none)::before {
+    background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.9) 0 12%, rgb(var(--rails-outcome-rgb)) 45%, rgba(var(--rails-outcome-rgb), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--rails-outcome-rgb), 0.9), 0 0 10px rgba(var(--rails-outcome-rgb), 0.4);
+    filter: none;
+  }
 
   .acp-rails-dock__severity {
-    color: #ffd880;
+    color: var(--dock-lit);
   }
 
   .acp-rails-dock__tag {
-    padding: 0 6px;
-    border: 1px solid rgba(255, 176, 0, 0.28);
+    padding: 0 7px;
     border-radius: 999px;
+    background: var(--dock-well);
+    box-shadow: var(--dock-well-shadow);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.56));
   }
 
   .acp-rails-dock__tag--new {
-    color: #ffd880;
+    color: var(--dock-lit);
+    text-shadow: var(--dock-lit-glow);
   }
+
+  /* ── Run chips: embossed labels ────────────────────────────────────── */
 
   .acp-rails-dock__verdict {
     flex: 0 0 auto;
-    padding: 2px 6px;
-    border: 1px solid rgba(var(--rails-verdict-rgb), 0.65);
-    border-radius: 8px;
-    background: rgba(var(--rails-verdict-rgb), 0.16);
+    padding: 2px 7px;
+    border: 1px solid var(--dock-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background:
+      linear-gradient(180deg, rgba(var(--rails-verdict-rgb), 0.18), rgba(var(--rails-verdict-rgb), 0.04)),
+      var(--dock-key);
+    box-shadow: var(--dock-key-raise);
     color: rgb(var(--rails-verdict-rgb));
     font-size: var(--krypton-chrome-font-size, 11px);
     font-weight: 700;
     line-height: 1.2;
+    text-shadow: var(--dock-print);
     white-space: nowrap;
   }
 
@@ -326,11 +435,14 @@
     white-space: normal;
   }
 
+  /* ── Detail: a deeper recess inside the row ────────────────────────── */
+
   .acp-rails-dock__detail {
-    margin: 5px 0 2px;
-    padding: 6px 8px;
-    border: 1px solid rgba(255, 176, 0, 0.14);
+    margin: 6px 0 2px;
+    padding: 7px 9px;
     border-radius: var(--krypton-border-radius, 8px);
+    background: var(--dock-well);
+    box-shadow: var(--dock-well-shadow);
   }
 
   .acp-rails-dock__detail-line {
@@ -359,24 +471,29 @@
     overflow-wrap: anywhere;
   }
 
+  /* ── Bottom of the plate: actions, then the key legend ─────────────── */
+
   .acp-rails-dock__keys {
     flex: 0 0 auto;
-    padding: 6px 14px;
-    border-top: 1px solid rgba(255, 176, 0, 0.12);
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+    padding: 7px 12px 9px;
+    border-top: 1px solid var(--dock-groove-lo);
+    box-shadow: inset 0 1px 0 var(--dock-groove-hi);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font-size: var(--krypton-chrome-font-size, 11px);
+    text-shadow: var(--dock-engrave);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   /* Spec 344 — the Actions bar: fixed between the scrolling rows and the key
-     hints. The heading takes the section style; the lane line on its right
-     names where Send and Update go. */
+     hints. The heading is engraved like a section; the lane line on its
+     right names where Send and Update go. */
   .acp-rails-dock__actions {
     flex: 0 0 auto;
-    padding: 8px 14px 10px;
-    border-top: 1px solid rgba(255, 176, 0, 0.12);
+    padding: 10px 8px 12px;
+    border-top: 1px solid var(--dock-groove-lo);
+    box-shadow: inset 0 1px 0 var(--dock-groove-hi);
   }
 
   .acp-rails-dock__actions-head {
@@ -384,14 +501,15 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 8px;
-    margin-bottom: 6px;
+    margin: 0 4px 8px;
   }
 
   .acp-rails-dock__actions-label {
     flex: 0 0 auto;
-    color: #ffb000;
+    color: var(--dock-silk);
     font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.13em;
+    text-shadow: var(--dock-engrave);
     text-transform: uppercase;
   }
 
@@ -401,40 +519,32 @@
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font-size: var(--krypton-chrome-font-size, 11px);
     text-overflow: ellipsis;
+    text-shadow: var(--dock-engrave);
     white-space: nowrap;
   }
 
-  /* Two columns, so a badge such as `check 2/3 typecheck` fits; rows share one
-     height, so a button without a badge centres its label. */
+  /* Two columns of one-line keys: wide enough that a running or done key keeps
+     its badge (`check 2/3 typecheck`, `✓ trusted`) beside the label. */
   .acp-rails-dock__action-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: minmax(36px, auto);
+    grid-auto-rows: minmax(28px, auto);
     gap: 6px;
   }
 }
 
-/* Light scheme: the amber and fault accents are neon values tuned for a dark
-   ground; cap them to legible ink (spec 321 §Accent ink). */
+/* Light scheme: the faceplate tokens swap to aluminium in harness-shared.css;
+   the fault and outcome accents are neon values tuned for a dark ground, so
+   cap them to legible ink (spec 321 §Accent ink). */
 @layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-rails-dock__eyebrow,
-  html[data-theme-scheme='light'] .acp-rails-dock__section,
-  html[data-theme-scheme='light'] .acp-rails-dock__actions-label,
-  html[data-theme-scheme='light'] .acp-rails-dock__pill,
-  html[data-theme-scheme='light'] .acp-rails-dock__progress,
-  html[data-theme-scheme='light'] .acp-rails-dock__severity,
-  html[data-theme-scheme='light'] .acp-rails-dock__tag--new {
-    color: #8a5a00;
-  }
-
-  html[data-theme-scheme='light'] .acp-rails-dock__pill--none,
-  html[data-theme-scheme='light'] .acp-rails-dock__pill--error {
-    color: var(--krypton-ink-3);
-  }
-
   html[data-theme-scheme='light'] .acp-rails-dock__pill--check_failed,
   html[data-theme-scheme='light'] .acp-rails-dock__status--fail {
     color: #b3261e;
+    text-shadow: none;
+  }
+
+  html[data-theme-scheme='light'] .acp-rails-dock__outcome:not(.acp-rails-dock__outcome--none) {
+    text-shadow: none;
   }
 
   html[data-theme-scheme='light'] .acp-rails-dock__outcome--pass {

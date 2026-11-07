@@ -121,7 +121,7 @@ export class DockActionButton extends Component<DockActionProps> {
   constructor(spec: { label: string; icon: string; data: Readonly<Record<string, string>> });
 }
 export function dockActionKey(state: DockActionState): string; // one stable string per state
-// Tooltip: disabledReason ?? detail ?? none. Badge line only when running or done.
+// Tooltip: disabledReason ?? detail ?? none. Badge, on the label's line, only when running or done.
 
 // rails/actions.ts
 export const RAILS_DOCK_ACTIONS = [
@@ -224,25 +224,25 @@ The bar sits between the scrolling rows and the key hints, so it never scrolls a
 ```text
   …rows (scroll)…
 ACTIONS                         lane codex-1 · idle
-[ ▷ Run              ] [ ➚ Send              ]
-[  check 2/3 tsc     ] [  ✓ 14:02            ]
-[ ◇ Trust            ] [ ✎ Update            ]
-[  ✓ trusted         ] [                     ]
+[ ▷ Run │ check 2/3 tsc ] [ ➚ Send │ ✓ 14:02    ]
+[ ◇ Trust │ ✓ trusted   ] [ ✎ Update            ]
 j/k · ↵ · 1–5 · s send · r run · [ ] tab · esc
 ```
 
 - `.acp-rails-dock__actions` is the bar: `flex: 0 0 auto`, a top border like `__keys`, padding
   `8px 14px`. Its head line holds `actions` in the `__section` style on the left and
-  `.acp-rails-dock__lane-line` on the right. `.acp-rails-dock__action-grid` has two columns with
-  `minmax(36px, auto)` rows and a 6 px gap: the ticket grid's rows, two columns wide, so a badge
-  such as `check 2/3 typecheck` or `running · claude-1` fits.
+  `.acp-rails-dock__lane-line` on the right. `.acp-rails-dock__action-grid` has two columns of
+  one-line keys (`minmax(28px, auto)` rows, a 6 px gap), wide enough that a badge such as
+  `check 2/3 typecheck` stays beside its label, cut with an ellipsis when it runs long.
 - The bar is a `role="group"` (`aria-label="Rails actions"`) outside the `listbox`. `j`/`k` never
   land on it, and the listbox keeps only options and presentation rows.
 - Each button is a `DockActionButton` with `data-rails-action="<verb>"`. The ticket buttons keep
-  `data-ticket-dock-action`. The look of the `acp-dock-action` block is the ticket look moved over
-  unchanged: amber idle, cyan running, green done, 0.45 opacity when disabled, and full opacity for
-  a running button that is disabled. There is no animation.
-- The light scheme adds the bar heading to the rails sheet's `#8a5a00` accent list.
+  `data-ticket-dock-action`. The `acp-dock-action` block keeps the ticket states: amber idle, cyan
+  running, green done, 0.45 opacity when disabled, and full opacity for a running button that is
+  disabled. There is no animation. Since `DESIGN.console.md` the button is a raised key (pressed
+  while held; latched down and backlit while running; backlit and still raised when done).
+- The light scheme swaps the dock column's `--dock-*` tokens (DESIGN.console.md), which the bar
+  heading reads.
 - Icons, 16×16, stroke 1.35, round caps and joins, `currentColor`: Run is a play triangle, Send a
   paper plane, Trust a shield holding a check, Update a pencil.
 - Colour and ADR-0025 item 5: the button colours are action states shared with the Ticket Panel,

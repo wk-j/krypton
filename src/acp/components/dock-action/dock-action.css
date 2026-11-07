@@ -1,31 +1,52 @@
-/* Spec 302 §1.10 — `DockActionButton` (spec 344).
-   The spec 342 issue-action button rules, moved from ticket-dock.css unchanged
-   so the Ticket Panel and the Rails dock draw one button. The grid a dock lays
-   its buttons out in stays with that dock. No animation. */
+/* Spec 302 §1.10 — `DockActionButton` (spec 344), a key on the console
+   faceplate of DESIGN.console.md. The Ticket Panel and the Rails dock draw
+   one button; the grid a dock lays its buttons out in stays with that dock.
+   The `--dock-*` material tokens come from the dock column
+   (harness-shared.css), the only place this button is mounted.
+
+   idle     a raised key, amber legend
+   pressed  sinks while held (`:active`)
+   running  latched down and backlit cyan — the action is engaged
+   done     raised, backlit green; still enabled: the colour warns, it never blocks
+   disabled an unpowered key at 0.45, except a running one, which stays lit
+
+   One line, always: the badge follows the label behind an etched divider and
+   gives way first. A key too narrow for any of it (the Ticket Panel's
+   three-column grid) drops the badge — the lit key still says running or done,
+   a done key keeps a `✓`, and the tooltip carries the detail.
+
+   No animation: a lit key is a steady lamp. */
 
 @layer krypton.component {
   .acp-dock-action {
+    container: dock-action / inline-size;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
+    gap: 6px;
     min-width: 0;
-    /* 3px sides: `running · claude-1` needs ~92px of the ticket grid's 104px button. */
-    padding: 4px 3px;
-    border: 1px solid rgba(255, 176, 0, 0.38);
+    padding: 3px 8px;
+    border: 1px solid var(--dock-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(255, 176, 0, 0.04);
-    color: #ffd880;
+    background: var(--dock-key);
+    box-shadow: var(--dock-key-raise);
+    color: var(--dock-lit);
     font: inherit;
     font-size: 0.92em;
     line-height: 1.2;
+    text-shadow: var(--dock-print);
+    white-space: nowrap;
     cursor: default;
   }
 
   .acp-dock-action:hover:not(:disabled) {
-    border-color: rgba(255, 216, 128, 0.66);
-    background: rgba(255, 176, 0, 0.10);
+    background: var(--dock-key-hover);
+  }
+
+  .acp-dock-action:active:not(:disabled) {
+    background: var(--dock-key-down);
+    box-shadow: var(--dock-key-sunk);
+    transform: translateY(1px);
   }
 
   .acp-dock-action:focus-visible {
@@ -37,11 +58,14 @@
     opacity: 0.45;
   }
 
+  /* The label never gives way to the badge; only a key too narrow for the
+     badge (below) lets the label itself cut with an ellipsis. */
   .acp-dock-action__head {
     display: inline-flex;
+    flex: 0 0 auto;
     align-items: center;
     gap: 5px;
-    max-width: 100%;
+    min-width: 0;
   }
 
   /* Outranks the base-layer 1em `.acp-harness__icon` box `harnessIconEl` adds. */
@@ -60,33 +84,75 @@
   }
 
   .acp-dock-action__state {
-    max-width: 100%;
-    font-size: 0.76em;
+    flex: 0 100 auto;
+    padding-left: 6px;
+    border-left: 1px solid var(--dock-groove-lo);
+    box-shadow: inset 1px 0 0 var(--dock-groove-hi);
+    font-size: 0.82em;
     opacity: 0.9;
   }
 
-  /* Running: static accent, no animation. It keeps full opacity while it is
+  @container dock-action (max-width: 127px) {
+    .acp-dock-action__head {
+      flex-shrink: 1;
+    }
+
+    .acp-dock-action__state {
+      display: none;
+    }
+
+    .acp-dock-action--done .acp-dock-action__head::after {
+      content: '✓';
+    }
+  }
+
+  /* Running: latched down, lit from behind. It keeps full opacity while it is
      disabled, so the running action stays readable among the disabled ones. */
-  .acp-dock-action--running {
-    border-color: rgba(109, 208, 255, 0.7);
-    background: rgba(109, 208, 255, 0.08);
+  .acp-dock-action--running,
+  .acp-dock-action--running:hover:not(:disabled) {
+    border-color: rgba(109, 208, 255, 0.55);
+    background:
+      radial-gradient(ellipse at 50% 100%, rgba(109, 208, 255, 0.26), transparent 70%),
+      var(--dock-key-down);
+    box-shadow: var(--dock-key-sunk), inset 0 0 10px rgba(109, 208, 255, 0.18);
     color: var(--agent-user, #6dd0ff);
+    text-shadow: 0 0 6px rgba(109, 208, 255, 0.5), 0 0 14px rgba(109, 208, 255, 0.18);
   }
 
   .acp-dock-action--running:disabled {
     opacity: 1;
   }
 
-  /* Done: the green of `.acp-ticket-dock__pill--done`. Still enabled — the
-     colour warns against a second run, it never blocks one. */
+  /* Done: the green of `.acp-ticket-dock__pill--done`, backlit in a raised key. */
   .acp-dock-action--done {
-    border-color: rgba(142, 255, 176, 0.5);
-    background: rgba(142, 255, 176, 0.06);
+    border-color: rgba(142, 255, 176, 0.45);
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(142, 255, 176, 0.2), transparent 75%),
+      var(--dock-key);
     color: #a8ffbf;
+    text-shadow: 0 0 6px rgba(142, 255, 176, 0.4), 0 0 14px rgba(142, 255, 176, 0.14);
   }
 
   .acp-dock-action--done:hover:not(:disabled) {
-    border-color: rgba(168, 255, 191, 0.8);
-    background: rgba(142, 255, 176, 0.12);
+    border-color: rgba(168, 255, 191, 0.7);
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(142, 255, 176, 0.28), transparent 75%),
+      var(--dock-key-hover);
+  }
+}
+
+/* Light scheme: the faceplate tokens swap to aluminium in harness-shared.css;
+   the cyan and green backlights are tuned for a dark key, so their legends
+   cap to legible ink and drop the glow (spec 321 §Accent ink). */
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-dock-action--running,
+  html[data-theme-scheme='light'] .acp-dock-action--running:hover:not(:disabled) {
+    color: var(--agent-user, #007799);
+    text-shadow: var(--dock-print);
+  }
+
+  html[data-theme-scheme='light'] .acp-dock-action--done {
+    color: #136b3b;
+    text-shadow: var(--dock-print);
   }
 }

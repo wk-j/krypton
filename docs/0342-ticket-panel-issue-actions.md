@@ -237,10 +237,8 @@ A new `<section>` sits between `Worker` and `Context`:
 ```text
 ISSUE ACTIONS
 run in codex-1 · idle
-[ ◇ Analyze ] [ ◇ Fix here ] [ ◇ Handle ]
-[  ✓ 10-27  ] [    ✓ PR    ] [          ]
-[ ◇ Comment ] [ ◇ Label    ] [ ◇ Attach ]
-[  ✓ 14:02  ] [            ] [          ]
+[ ◇ Analyze ✓ ] [ ◇ Fix here ✓ ] [ ◇ Handle ]
+[ ◇ Comment ✓ ] [ ◇ Label     ] [ ◇ Attach ]
 ```
 
 `◇` marks where each action's icon sits in this text sketch; the icons are listed below.
@@ -255,24 +253,26 @@ run in codex-1 · idle
 | Attach | `krypton-icon-issue-attach` | A paperclip |
 
 - Each button is a `DockActionButton` (spec 344; `IssueActionButton` until then):
-  `<button type="button" class="acp-dock-action" data-ticket-dock-action="<verb>">`. Inside it,
-  the first line holds the icon (`harnessIconEl(icon, 'acp-dock-action__icon')`, `aria-hidden`,
-  13px) and the label. The second line is the badge `.acp-dock-action__state`. The button's
+  `<button type="button" class="acp-dock-action" data-ticket-dock-action="<verb>">`. It is one
+  line: the icon (`harnessIconEl(icon, 'acp-dock-action__icon')`, `aria-hidden`, 13px), the label,
+  then the badge `.acp-dock-action__state`. In this three-column grid the key is too narrow for the
+  badge, so it is dropped (a done key keeps a `✓`) and the tooltip carries it. The button's
   accessible name stays the label text. It has no click listener of its own, because the
-  controller's delegated handler stays the only click path, as it is for `›`. Grid rows share one
-  height, so a button without a badge centres its icon and label.
+  controller's delegated handler stays the only click path, as it is for `›`.
 - **idle:** the amber secondary style of the dock's `›` button.
-- **running:** `acp-dock-action--running`. It has the accent (cyan) border and text and the
-  badge `running · <lane>`. It stays static, with no animation. A long lane name is cut with an
-  ellipsis, and the full name is in the tooltip.
+- **running:** `acp-dock-action--running`. It has the accent (cyan) border and text and is
+  latched down; its badge `running · <lane>` is in the tooltip, since the key is too narrow to show
+  it. It stays static, with no animation.
 - **done:** `acp-dock-action--done`. It uses the green of the dock's existing
-  `pill--done` (`#a8ffbf`) for border and text, with the `✓` badge. It is **not** disabled.
+  `pill--done` (`#a8ffbf`) for border and text, with a `✓` after the label; the time is in the
+  tooltip. It is **not** disabled.
 - **Lane not runnable** (busy, stopped, not connected): every button gets `disabled` and the reason
   as its tooltip, and the target line shows the reason as text. A running button keeps full opacity
   and its colour, so you can still see what is running.
 - **No GitHub reference:** the section shows only `Link a GitHub issue to run issue actions:
   #ticket link <ref>`.
-- The state is never shown by colour alone: the `✓` / `running` badge text carries it too.
+- The state is never shown by colour alone: a done key carries `✓`, and a running key is latched
+  down (DESIGN.console.md); the tooltip names the lane or time.
 
 ## Edge Cases
 

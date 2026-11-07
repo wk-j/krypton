@@ -1,7 +1,7 @@
 // Spec 302 §1.10 — `DockActionButton` (spec 344).
 //
-//   [ ◇ Comment ]     an icon and a label
-//   [  ✓ 14:02  ]     the state badge, only while running or done
+//   [ ◇ Comment ]              an icon and a label, on one line
+//   [ ◇ Send │ ✓ 14:02 ]       the state badge after it, only while running or done
 //
 // One action button of a right-dock panel. The Ticket Panel's issue actions
 // (spec 342) and the Rails dock's actions (spec 344) both use it, so the two
@@ -14,8 +14,8 @@
 //
 // The button has no click listener of its own. Each dock routes clicks through
 // one delegated handler that reads the `data-*` attribute passed in here.
-// `ActionButton` (§1.6) cannot hold this button: it has no icon slot, no badge
-// line, and a tooltip only while disabled.
+// `ActionButton` (§1.6) cannot hold this button: it has no icon slot, no state
+// badge, and a tooltip only while disabled.
 
 import './dock-action.css';
 

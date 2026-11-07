@@ -314,11 +314,13 @@ new DockActionButton({ label, icon, data })   // label, icon and data-* fixed fo
 **Example UI**
 
 ```
-[ ◇ Analyze ] [ ◇ Fix here ] [ ◇ Comment ]     ← Ticket Panel issue actions (spec 342), 3 columns
-[  ✓ 10-27  ] [    ✓ PR    ] [  ✓ 14:02  ]
-[ ▷ Run              ] [ ➚ Send              ]  ← Rails dock Actions bar (spec 344), 2 columns
-[  check 2/3 tsc     ] [  ✓ 14:02            ]
+[ ◇ Analyze ✓ ] [ ◇ Fix here ] [ ◇ Comment ✓ ]   ← Ticket Panel issue actions (spec 342), 3 columns
+[ ▷ Run │ check 2/3 tsc ] [ ➚ Send │ ✓ 14:02 ]   ← Rails dock Actions bar (spec 344), 2 columns
 ```
+
+One line, always: the badge follows the label and is cut first. A key narrower than 128 px (the
+Ticket Panel's three columns) drops the badge; a done key keeps a `✓`, a running key stays latched
+down, and the tooltip carries the detail.
 
 **Emits** `<button type="button" class="acp-dock-action[ acp-dock-action--running|--done]" ${data} ${disabled} title="${disabledReason ?? detail}">`
 holding `<span class="acp-dock-action__head">` (icon + `__label`) and, while running or done, the

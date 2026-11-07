@@ -146,8 +146,9 @@ No change. `Enter` on the head now expands it; `Enter` on `older` lists the olde
   which is what `paused` means there. An empty manifest shows the `#rails init` hint instead.
 - **Error and untrusted at once:** the error wins the state line; the argv lines still show.
 - **Narrow overlay (< 960 px):** same column width; nothing changes.
-- **Light scheme:** an amber state line keeps the `__progress` class, which has a light-scheme
-  rule; an ink one uses `__hint`, whose ink variable already follows the scheme.
+- **Light scheme:** an amber state line keeps the `__progress` class, whose `--dock-lit` colour the
+  dock column's light-scheme tokens swap (DESIGN.console.md); an ink one uses `__hint`, whose ink
+  variable already follows the scheme.
 
 ## Open Questions
 
@@ -162,8 +163,8 @@ None. These choices are deliberate:
 
 ## Out of Scope
 
-- A sticky head. The dock is transparent over the window backdrop (spec 238), so a pinned row
-  would need its own solid background.
+- A sticky head. The dock plate is translucent (DESIGN.console.md), so a pinned row would need its
+  own solid background.
 - Diffing the manifest against the trusted version (the trust store keeps only a hash).
 - Changes to the Actions bar, the key hints or the Ticket Panel.
 

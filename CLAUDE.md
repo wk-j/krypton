@@ -131,6 +131,7 @@ Skills in `.claude/skills/` define repeatable workflows. Load the appropriate sk
 - `DESIGN.nasa.md` — Alt aesthetic spec for the Vault Viewer (`.krypton-vault`, `src/styles/vault-view.css`): NASA Mission Control retro-futurism
 - `DESIGN.amber.md` — Alt aesthetic spec for the Agent view (`.krypton-agent`, `src/styles/agent.css`): warm amber phosphor cassette futurism. The Agent view has a persistent per-lane permission mode cycled with `Shift+Tab` (`normal` → `acceptEdits` → `bypass`) that survives turn boundaries.
 - `DESIGN.binance.md` — Shared visual identity and kit catalog for the **loopback app opened in the OS browser** (every `src/loopback/` surface plus the artifact scaffold): Binance-dark exchange aesthetic. Load when styling or adding any browser-served harness page.
+- `DESIGN.console.md` — Alt aesthetic spec for the ACP harness right dock column (`.acp-harness__dock`: tab strip, Ticket, Rails, Assistants, `DockActionButton`): skeuomorphic instrument faceplate. Its `--dock-*` material tokens are declared once on `.acp-harness__dock` in `harness-shared.css`. Load when styling anything in the right dock.
 - `docs/README.md` — Spec and ADR index
 - `docs/0004-architecture.md` — System architecture, DOM structure, module responsibilities
 - `docs/0005-data-flow.md` — How keystrokes, resize, and workspace switching flow through the system

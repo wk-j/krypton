@@ -114,8 +114,9 @@ than sitting beside it, and it was `background: transparent` like the docked
 pane, so transcript text showed through its head (seen in a 700px smoke page:
 lane text over `ACTIVE TICKET`). The 959px container rule now sets
 `background: var(--agent-surface-solid, rgba(2, 5, 10, 0.96))`, the surface the
-annotation overlay already uses; it follows the theme's chrome backdrop. The
-docked pane at 960px and above stays transparent (spec 238).
+annotation overlay already uses; it follows the theme's chrome backdrop. Since
+`DESIGN.console.md` the docked pane is a 0.9-alpha faceplate rather than
+transparent, and this rule lays the same plate over that solid surface.
 
 No IPC, config or backend change.
 

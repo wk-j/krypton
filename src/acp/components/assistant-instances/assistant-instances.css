@@ -1,9 +1,11 @@
-/* Spec 357 — `AssistantInstances`, the right dock's Assistants tab.
-   The ticket-dock family, like `RailsDock`: amber hairlines, ink tiers for
-   values, pills, and a full-row selection tint — never a left-edge accent
-   rail (ADR-0027). The root IS the dock host (`.acp-harness__assistants-dock`:
-   placement, scroll fallback and `hidden` live in harness-shared.css); this
-   sheet only lays out its content.
+/* Spec 357 — `AssistantInstances`, the right dock's Assistants tab, in the
+   console faceplate of DESIGN.console.md, like `RailsDock`: labels engraved on
+   the plate, counts in readout windows, the list and the details in recessed
+   wells split by etched grooves, lit capsules for state, and a full-row
+   selection tint — never a left-edge accent rail (ADR-0027). The root IS the
+   dock host (`.acp-harness__assistants-dock`: placement, scroll fallback,
+   `hidden` and the `--dock-*` material tokens live in harness-shared.css);
+   this sheet only lays out its content.
 
    One type size: everything inherits the dock's body size, as the Rails and
    Ticket rows do. Hierarchy comes from weight and ink tier, never a smaller
@@ -52,7 +54,7 @@
     align-items: center;
     column-gap: 1ch;
     row-gap: 6px;
-    padding: 10px 14px 8px;
+    padding: 10px 12px 8px;
   }
 
   .acp-assistant-instances__title {
@@ -60,7 +62,8 @@
     align-items: center;
     gap: 10px;
     min-width: 0;
-    color: #ffb000;
+    color: var(--dock-silk);
+    text-shadow: var(--dock-engrave);
   }
 
   .acp-assistant-instances__title .acp-harness__icon {
@@ -84,18 +87,25 @@
     gap: 0.5ch;
     margin: 0;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    text-shadow: var(--dock-engrave);
     white-space: nowrap;
   }
 
+  /* A warning lamp plate: lit from behind, not a hairline box. */
   .acp-assistant-instances__status[data-stale="true"] {
     grid-column: 1 / -1;
     grid-row: 2;
     align-items: flex-start;
-    padding: 4px 8px;
-    border: 1px solid rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.4);
+    padding: 5px 9px;
+    border: 1px solid rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.45);
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.08);
+    background: radial-gradient(ellipse at 50% 0%, rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.2), rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.06) 80%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.1),
+      0 0 6px rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.16),
+      0 0 14px rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.06);
     color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+    text-shadow: none;
     white-space: normal;
     overflow-wrap: anywhere;
   }
@@ -114,14 +124,13 @@
     height: 1em;
   }
 
-  /* ── Counts: four equal columns, figure over label, no boxes. */
+  /* ── Counts: four readout windows let into the plate, figure over label. */
   .acp-assistant-instances__summary {
     grid-row: 2;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    column-gap: 8px;
-    padding: 0 14px 10px;
-    border-bottom: 1px solid rgba(255, 176, 0, 0.14);
+    column-gap: 6px;
+    padding: 0 8px 10px;
   }
 
   .acp-assistant-instances__stat {
@@ -133,11 +142,16 @@
     align-items: center;
     column-gap: 0.6ch;
     min-width: 0;
+    padding: 5px 8px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--dock-well);
+    box-shadow: var(--dock-well-shadow);
   }
 
   .acp-assistant-instances__stat .acp-harness__icon {
     grid-area: icon;
-    color: rgba(255, 176, 0, 0.72);
+    color: var(--dock-silk);
+    opacity: 0.72;
   }
 
   .acp-assistant-instances__stat-value {
@@ -157,26 +171,34 @@
 
   .acp-assistant-instances__stat[data-tone="live"] .acp-harness__icon,
   .acp-assistant-instances__stat[data-tone="live"] .acp-assistant-instances__stat-value {
-    color: #ffd880;
+    color: var(--dock-lit);
+    opacity: 1;
+    text-shadow: var(--dock-lit-glow);
   }
 
   .acp-assistant-instances__stat[data-tone="warn"] .acp-harness__icon,
   .acp-assistant-instances__stat[data-tone="warn"] .acp-assistant-instances__stat-value {
     color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+    opacity: 1;
+    text-shadow: 0 0 6px rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.4), 0 0 14px rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.14);
   }
 
-  /* ── Rows scroll in their own track; the details sit pinned under them
-     (track sizing on the root). */
+  /* ── Rows scroll in their own track — one recessed well — and the details
+     sit pinned under them (track sizing on the root). */
   .acp-assistant-instances__body {
     grid-row: 3;
     min-height: 0;
+    margin: 0 8px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--dock-well);
+    box-shadow: var(--dock-well-shadow);
     overflow-y: auto;
     overscroll-behavior: contain;
   }
 
   .acp-assistant-instances__empty {
     margin: 0;
-    padding: 10px 14px;
+    padding: 10px;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   }
 
@@ -193,15 +215,25 @@
     align-items: center;
     column-gap: 10px;
     row-gap: 2px;
-    padding: 8px 14px;
-    border-bottom: 1px solid rgba(255, 176, 0, 0.08);
+    padding: 8px;
+    border-bottom: 1px solid var(--dock-groove-lo);
+    box-shadow: inset 0 1px 0 var(--dock-groove-hi);
     min-width: 0;
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     cursor: default;
   }
 
+  .acp-assistant-instances__row:first-child {
+    box-shadow: none;
+  }
+
+  .acp-assistant-instances__row:last-child {
+    border-bottom: 0;
+  }
+
+  /* Selection backlights the slice: a full-row tint, never an edge rail. */
   .acp-assistant-instances__row--selected {
-    background: rgba(255, 176, 0, 0.16);
+    background: var(--dock-select);
   }
 
   .acp-assistant-instances__logo {
@@ -329,13 +361,17 @@
     padding-top: 2px;
   }
 
+  /* Chips are small capsules let into the well; a live, warning or fault
+     chip is a lit lamp. */
   .acp-assistant-instances__chip {
     display: inline-flex;
     align-items: center;
     gap: 0.5ch;
-    padding: 0 0.7ch;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+    padding: 0 0.8ch;
+    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
     border-radius: 999px;
+    background: var(--dock-well);
+    box-shadow: var(--dock-well-shadow);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     line-height: 1.3;
     white-space: nowrap;
@@ -347,43 +383,58 @@
   }
 
   .acp-assistant-instances__chip--muted {
-    border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.1);
+    border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   }
 
   .acp-assistant-instances__chip--pending {
     border-color: rgba(255, 176, 0, 0.32);
-    color: #ffd880;
+    color: var(--dock-lit);
+  }
+
+  .acp-assistant-instances__chip--live,
+  .acp-assistant-instances__chip--warn,
+  .acp-assistant-instances__chip--fault {
+    border-color: rgba(var(--assistant-chip-rgb), 0.5);
+    background: radial-gradient(ellipse at 50% 0%, rgba(var(--assistant-chip-rgb), 0.26), rgba(var(--assistant-chip-rgb), 0.06) 80%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 0 5px rgba(var(--assistant-chip-rgb), 0.18),
+      0 0 12px rgba(var(--assistant-chip-rgb), 0.06);
+    text-shadow: 0 0 6px rgba(var(--assistant-chip-rgb), 0.45), 0 0 12px rgba(var(--assistant-chip-rgb), 0.15);
   }
 
   .acp-assistant-instances__chip--live {
-    border-color: rgba(255, 176, 0, 0.5);
-    background: rgba(255, 176, 0, 0.12);
-    color: #ffd880;
+    --assistant-chip-rgb: 255, 176, 0;
+
+    color: var(--dock-lit);
   }
 
   .acp-assistant-instances__chip--warn {
-    border-color: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.5);
-    background: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.08);
+    --assistant-chip-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+
     color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
   }
 
   .acp-assistant-instances__chip--fault {
-    border-color: rgba(255, 109, 138, 0.48);
-    background: rgba(255, 109, 138, 0.08);
+    --assistant-chip-rgb: 255, 109, 138;
+
     color: #ff9caf;
   }
 
-  /* ── Selected instance: every value whole. One grid holds every group, so
-     all values start on one column; groups are subgrid bands split by a
-     hairline rather than boxes or headings. */
+  /* ── Selected instance: every value whole, in a second well. One grid holds
+     every group, so all values start on one column; groups are subgrid bands
+     split by an etched groove rather than boxes or headings. */
   .acp-assistant-instances__details {
     grid-row: 4;
     min-height: 0;
+    margin: 10px 8px 0;
+    padding: 10px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--dock-well);
+    box-shadow: var(--dock-well-shadow);
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 10px 14px;
-    border-top: 1px solid rgba(255, 176, 0, 0.22);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     user-select: text;
   }
@@ -416,7 +467,8 @@
   }
 
   .acp-assistant-instances__group + .acp-assistant-instances__group {
-    border-top: 1px solid rgba(255, 176, 0, 0.1);
+    border-top: 1px solid var(--dock-groove-lo);
+    box-shadow: inset 0 1px 0 var(--dock-groove-hi);
   }
 
   .acp-assistant-instances__fields dt {
@@ -432,30 +484,37 @@
 
   .acp-assistant-instances__keys {
     grid-row: 6;
-    padding: 6px 14px;
-    border-top: 1px solid rgba(255, 176, 0, 0.12);
+    margin-top: 10px;
+    padding: 7px 12px 9px;
+    border-top: 1px solid var(--dock-groove-lo);
+    box-shadow: inset 0 1px 0 var(--dock-groove-hi);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    text-shadow: var(--dock-engrave);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 }
 
-/* Light scheme: amber, warning and fault are neon values tuned for a dark
-   ground; cap them to legible ink (spec 321 §Accent ink), as `RailsDock`. */
+/* Light scheme: the faceplate tokens swap to aluminium in harness-shared.css
+   (amber legends follow `--dock-silk` / `--dock-lit`); warning and fault are
+   neon values tuned for a dark ground, so cap them to legible ink and drop the
+   backlight glow (spec 321 §Accent ink), as `RailsDock`. */
 @layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-assistant-instances__title,
-  html[data-theme-scheme='light'] .acp-assistant-instances__stat .acp-harness__icon,
-  html[data-theme-scheme='light'] .acp-assistant-instances__stat[data-tone="live"] .acp-assistant-instances__stat-value,
+  html[data-theme-scheme='light'] .acp-assistant-instances__stat[data-tone="warn"] .acp-harness__icon,
   html[data-theme-scheme='light'] .acp-assistant-instances__stat[data-tone="warn"] .acp-assistant-instances__stat-value,
-  html[data-theme-scheme='light'] .acp-assistant-instances__chip--pending,
-  html[data-theme-scheme='light'] .acp-assistant-instances__chip--live,
   html[data-theme-scheme='light'] .acp-assistant-instances__chip--warn,
   html[data-theme-scheme='light'] .acp-assistant-instances__status[data-stale="true"] {
     color: #8a5a00;
+    text-shadow: none;
+  }
+
+  html[data-theme-scheme='light'] .acp-assistant-instances__chip--live {
+    text-shadow: none;
   }
 
   html[data-theme-scheme='light'] .acp-assistant-instances__chip--fault {
     color: #b3261e;
+    text-shadow: none;
   }
 }

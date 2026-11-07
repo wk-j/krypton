@@ -15,17 +15,20 @@
    :350-394): those are left alone so that this directory declares only the
    `acp-ticket-dock` block it owns.
 
-   theme-scheme.css declares no light-mode rule for any ticket-dock selector,
-   so there is no `krypton.scheme` layer in this file. */
+   The light scheme's material comes from the dock column's tokens; this file's
+   `krypton.scheme` layer only caps the status lamps' neon legends. */
 
 @layer krypton.component {
+  /* DESIGN.console.md: the head is engraved on the plate; the status row and
+     the GitHub / Worker lines are one recessed well (the first slice carries
+     its top, the last meta its bottom); `›` is a raised key. The `--dock-*`
+     tokens come from the dock column in harness-shared.css. */
   .acp-ticket-dock__head {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-    padding: 13px 14px 11px;
-    border-bottom: 1px solid rgba(255, 176, 0, 0.22);
+    padding: 13px 12px 10px;
   }
 
   .acp-ticket-dock__head > div {
@@ -43,9 +46,10 @@
   }
 
   .acp-ticket-dock__eyebrow {
-    color: #ffb000;
+    color: var(--dock-silk);
     font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.13em;
+    text-shadow: var(--dock-engrave);
     text-transform: uppercase;
   }
 
@@ -53,13 +57,15 @@
     flex: 0 0 28px;
     width: 28px;
     height: 28px;
-    border: 1px solid rgba(255, 176, 0, 0.35);
+    border: 1px solid var(--dock-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    background: rgba(255, 176, 0, 0.05);
-    color: #ffd880;
+    background: var(--dock-key);
+    box-shadow: var(--dock-key-raise);
+    color: var(--dock-lit);
     font: inherit;
     font-size: 1em;
     line-height: 1;
+    text-shadow: var(--dock-print);
     cursor: default;
   }
 
@@ -67,8 +73,16 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 9px 14px;
-    border-bottom: 1px solid rgba(255, 176, 0, 0.12);
+    margin: 0 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--dock-groove-lo);
+    border-radius: var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px) 0 0;
+    background-color: var(--dock-well-fill);
+    box-shadow:
+      var(--dock-well-depth),
+      inset 1px 0 0 var(--dock-well-wall),
+      inset -1px 0 0 var(--dock-well-wall),
+      inset 0 1px 0 var(--dock-well-wall);
   }
 
   .acp-ticket-dock__status-row code {
@@ -81,25 +95,36 @@
     white-space: nowrap;
   }
 
+  /* The ticket status lamp: a lit capsule behind glass. */
   .acp-ticket-dock__pill {
+    --ticket-pill-rgb: 255, 176, 0;
+
     flex: 0 0 auto;
-    padding: 2px 7px;
-    border: 1px solid rgba(255, 176, 0, 0.32);
+    padding: 2px 8px;
+    border: 1px solid rgba(var(--ticket-pill-rgb), 0.5);
     border-radius: 999px;
-    color: #ffd880;
+    background: radial-gradient(ellipse at 50% 0%, rgba(var(--ticket-pill-rgb), 0.28), rgba(var(--ticket-pill-rgb), 0.06) 75%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      0 0 6px rgba(var(--ticket-pill-rgb), 0.2),
+      0 0 16px rgba(var(--ticket-pill-rgb), 0.07);
+    color: var(--dock-lit);
     letter-spacing: 0.04em;
+    text-shadow: var(--dock-lit-glow);
   }
 
   .acp-ticket-dock__pill--blocked {
-    border-color: rgba(255, 109, 138, 0.48);
+    --ticket-pill-rgb: 255, 109, 138;
+
     color: #ff9caf;
-    background: rgba(255, 109, 138, 0.08);
+    text-shadow: 0 0 6px rgba(255, 109, 138, 0.5), 0 0 14px rgba(255, 109, 138, 0.18);
   }
 
   .acp-ticket-dock__pill--done {
-    border-color: rgba(142, 255, 176, 0.42);
+    --ticket-pill-rgb: 142, 255, 176;
+
     color: #a8ffbf;
-    background: rgba(142, 255, 176, 0.07);
+    text-shadow: 0 0 6px rgba(142, 255, 176, 0.4), 0 0 14px rgba(142, 255, 176, 0.14);
   }
 
   .acp-ticket-dock__meta {
@@ -107,8 +132,26 @@
     grid-template-columns: 62px minmax(0, 1fr) auto;
     gap: 8px;
     align-items: baseline;
-    padding: 6px 14px;
-    border-bottom: 1px solid rgba(255, 176, 0, 0.09);
+    margin: 0 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--dock-groove-lo);
+    background-color: var(--dock-well-fill);
+    box-shadow:
+      inset 1px 0 0 var(--dock-well-wall),
+      inset -1px 0 0 var(--dock-well-wall),
+      inset 0 1px 0 var(--dock-groove-hi);
+  }
+
+  .acp-ticket-dock__meta:not(:has(+ .acp-ticket-dock__meta)) {
+    margin-bottom: 2px;
+    border-bottom: 0;
+    border-radius: 0 0 var(--krypton-border-radius, 8px) var(--krypton-border-radius, 8px);
+    box-shadow:
+      inset 1px 0 0 var(--dock-well-wall),
+      inset -1px 0 0 var(--dock-well-wall),
+      inset 0 -1px 0 var(--dock-well-wall),
+      inset 0 1px 0 var(--dock-groove-hi),
+      0 1px 0 var(--dock-well-lip);
   }
 
   .acp-ticket-dock__meta > span,
@@ -152,34 +195,60 @@
   }
 
   .acp-ticket-dock__head button:hover {
-    border-color: rgba(255, 216, 128, 0.66);
-    background: rgba(255, 176, 0, 0.10);
-    color: #ffd880;
+    background: var(--dock-key-hover);
+  }
+
+  .acp-ticket-dock__head button:active {
+    background: var(--dock-key-down);
+    box-shadow: var(--dock-key-sunk);
+    transform: translateY(1px);
   }
 
   .acp-ticket-dock__head button:focus-visible {
-    outline: 1px solid #ffd880;
+    outline: 1px solid var(--dock-lit);
     outline-offset: -3px;
   }
 
   /* Spec 342 — Issue actions. The target line names the lane every action runs
-     in, or why it cannot take one. */
+     in, or why it cannot take one. It is engraved on the plate above the keys,
+     so it opts out of the slot's `section p` well. */
   .acp-ticket-dock__target {
-    margin: 0 0 8px;
+    margin: 0 4px 8px;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    text-shadow: var(--dock-engrave);
   }
 
   .acp-ticket-dock__target--blocked {
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
   }
 
-  /* Rows share one height, so a button without a badge centres its label. The
-     buttons are `DockActionButton`s (spec 344); their rules live in
-     dock-action.css. */
+  /* Three columns of one-line keys. At this width a key drops its badge
+     (dock-action.css); the target line above names the lane. The buttons are
+     `DockActionButton`s (spec 344); their rules live in dock-action.css. */
   .acp-ticket-dock__actions {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-auto-rows: minmax(36px, auto);
+    grid-auto-rows: minmax(28px, auto);
     gap: 6px;
+    padding-bottom: 6px;
+  }
+}
+
+/* Light scheme: the faceplate tokens swap to aluminium in harness-shared.css;
+   the blocked and done lamps are neon values tuned for a dark ground, so their
+   legends cap to legible ink (spec 321 §Accent ink). */
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-ticket-dock__pill--blocked {
+    color: #b3261e;
+    text-shadow: none;
+  }
+
+  html[data-theme-scheme='light'] .acp-ticket-dock__pill--done {
+    color: #136b3b;
+    text-shadow: none;
   }
 }

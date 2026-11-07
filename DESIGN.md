@@ -1,6 +1,6 @@
 ---
 name: Krypton Dark
-version: 1.2.7
+version: 1.2.8
 description: Cyberpunk sci-fi terminal aesthetic — cyan neon on transparent blue-black, 8px bevel geometry, monospace typography, multi-layer glows
 colors:
   primary: "#0cf"
@@ -446,10 +446,11 @@ A theme **may not** override geometry, motion, typography, or focus tokens — t
 
 The rules above describe the *core* Krypton Dark identity. They are intentionally tight because the product's brand depends on consistency across a long-running, always-on, full-screen surface that the user lives inside.
 
-If you are building something fundamentally different in character, do not bend Krypton Dark — define a new aesthetic in its own scoped per-view CSS file (e.g. `src/styles/vault-view.css`) and document it as a sibling `DESIGN.{name}.md` at the repo root. The codebase currently ships two alternatives:
+If you are building something fundamentally different in character, do not bend Krypton Dark — define a new aesthetic in its own scoped per-view CSS file (e.g. `src/styles/vault-view.css`) and document it as a sibling `DESIGN.{name}.md` at the repo root. The codebase currently ships these alternatives:
 
 - **`DESIGN.nasa.md`** — NASA Mission Control retro-futurism (Vault Viewer, `.krypton-vault`)
 - **`DESIGN.amber.md`** — Warm amber phosphor / cassette futurism (Agent view, `.krypton-agent`)
+- **`DESIGN.console.md`** — Skeuomorphic instrument faceplate (ACP harness right dock, `.acp-harness__dock`)
 
 ### Sibling DESIGN Contract
 
@@ -463,6 +464,7 @@ What must *not* happen is partial drift inside Krypton Dark surfaces: a 12px car
 
 ## Changelog
 
+- **1.2.8** — The ACP harness right dock column (`.acp-harness__dock`) moves to the sibling `DESIGN.console.md` skeuomorphic faceplate; the column stays a flush 0px pane.
 - **1.2.7** — ACP harness Zen rail: the body, tab and composer read as one sheet. The rail colour ends in an 8px curve where the body meets the composer. The body's corner under the titlebar is rounded when the tab is not the first row. A first-row tab meets the titlebar flush (spec 325 rev 2).
 - **1.2.6** — ACP harness Zen rail: the active lane is a tab merged into the lane body (spec 325). Inactive rows are 8px-rounded and inset.
 - **1.2.5** — ACP harness docked ticket panel is a flush 0px interior pane (same exception as the composer). Host window stays 8px.
