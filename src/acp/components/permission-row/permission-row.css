@@ -3,8 +3,8 @@
    block and its `acp-harness__perm-*` elements). Nothing else in the repo may
    declare these selectors.
 
-   Spec 366 (DESIGN.md "Parts"): a resolved row leads with a decision chip
-   whose status LED sits inside it, like a tool row. A pending row is the one
+   Spec 366 (DESIGN.md "Parts"): a resolved row leads with a flat decision
+   label whose status LED sits before it, like a tool row. A pending row is the one
    thing in the transcript the human must act on (ADR-0017), so it lights an
    amber lamp before its head; the key hint under it is printed legend.
 
@@ -92,8 +92,8 @@
     box-shadow: none;
   }
 
-  /* Mirrors .acp-harness__tool-kind — an ink legend on a key face, with the
-     decision LED inside it. */
+  /* Mirrors .acp-harness__tool-kind — a flat ink legend, with the decision
+     LED before it. No key face on a repeated transcript row. */
   .acp-harness__perm-decision {
     display: inline-flex;
     flex: none;
@@ -104,11 +104,6 @@
     letter-spacing: 0.09em;
     font-size: 0.78em;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
-    border: 1px solid var(--mat-key-edge);
-    border-radius: var(--krypton-border-radius, 8px);
-    padding: 0 5px;
-    background: var(--mat-key);
-    box-shadow: var(--mat-key-raise);
   }
 
   .acp-harness__perm-tool {

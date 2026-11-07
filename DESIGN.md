@@ -165,8 +165,10 @@ comment.
   box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 0 6px rgba(var(--x-rgb), .22)`, legend in the
   state ink. An unlit capsule is a `--mat-well-fill` capsule in ink. A status lamp that belongs to a
   chip or capsule sits inside it, before the legend, never beside it.
-- **Chips.** Verdicts and kinds are embossed labels on a key face, tinted by their colour. A row's
-  status LED is part of its chip: the first thing on the key face, 5px before the legend.
+- **Chips.** Verdicts and kinds outside the transcript are embossed labels on a key face, tinted by
+  their colour, with the status LED first on the key face, 5px before the legend. Every label in the
+  transcript (tool kind, permission and question decision, execution state, provider-error meta) is
+  flat ink: no key face, capsule, border, or shadow; its LED, when it has one, sits before the legend.
 - **Readouts.** A small well holding a tabular-nums figure, with its label engraved beside or under it.
 - **Scrim.** Behind a modal plate: `background: var(--mat-scrim)`. Never blur.
 
@@ -195,9 +197,9 @@ comment.
   lane's head strip and the composer plate are one plate around the lane's screen, with no seam where
   plate meets plate (the screen draws its own edges); the composer is a flush plate with
   the draft line in a well; transcript rows are flat text on the screen under engraved labels; tool
-  rows are a kind chip with the status LED inside it and an output well aligned with the chip (a
+  rows are a flat kind label with the status LED before it and an output well aligned with the label (a
   plain output well has no label; only a label that says something, like `stderr`, is engraved);
-  resolved permission and question rows carry their LED inside the decision chip; a decision
+  resolved permission and question rows carry their LED before a flat decision label; a decision
   composer's `PERM` / `ASK` label is a readout like the composer's mode readout, at the same 0.72em,
   its amber LED lit; permission and question options print their keys as key caps;
   floating lane cards are small plates. The right dock column is a flush plate of wells, keys and lamps,
@@ -387,6 +389,10 @@ selector, and nothing in it bleeds out of that selector.
   (`[a] accept`) and plain-text hint lines (`j/k move · esc cancel`) are gone; the key-hint foot
   prints caps. The fs write-review and agent-view accept/reject actions drop their key face and read
   like the permission row. The per-surface `kbd` rules are gone.
+- **2.0.3** — Every transcript label is flat ink. The tool kind, the permission and question
+  decision, and the provider-error chips no longer sit on a key face, and an execution card's state
+  is no longer a capsule. Their status LED stays before the legend. Pressable keys and hint caps are
+  unchanged.
 - **2.0.2** — The terminal progress ring glows: its arc is lit with a soft halo in the state colour
   over a dim ring of the same colour and width. The dark well track under it is gone, and with it the
   black edge on both sides of the arc. The readout and label stay unlit.

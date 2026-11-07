@@ -29,10 +29,10 @@
    (`harness-tool-render.ts:1264-1303`, which the cutover keeps) paints
    `__grep-row*` + `__tok-*` inside this row's output.
 
-   Spec 366 (DESIGN.md "Parts", "Performance"): the head is a kind chip (an
-   embossed label on a key face) with the status LED inside it before the
-   legend, then the subject; every output section is one well with flat lines
-   inside, aligned with the chip. A plain output section (`content`, `output`,
+   Spec 366 (DESIGN.md "Parts", "Performance"): the head is a flat kind label
+   with the status LED before the legend, then the subject; every output
+   section is one well with flat lines inside, aligned with the label. A plain
+   output section (`content`, `output`,
    `stdout`, `text`) has no label; any other section label is silk label type. A tool
    row repeats hundreds of times, so no line, mark or header inside a well
    carries a shadow or a gradient — the well itself is the only shadowed part,
@@ -55,7 +55,7 @@
     font-size: var(--krypton-font-size, 13px);
   }
 
-  /* The status LED, seated inside the kind chip before its legend. A fixed
+  /* The status LED, seated before the kind label. A fixed
      6px cell, so a status change never jumps the legend or the subject. The
      glyph text (braille spinner, ✓/✗) stays in the DOM (copy, assistive
      tech) but is clipped and not painted: the lens carries the state, and
@@ -112,9 +112,10 @@
     box-shadow: var(--mat-lens-glow);
   }
 
-  /* The kind chip: an embossed legend on a key face, tinted by its kind
-     (spec 235 palette, now through tokens), with the status LED inside it.
-     Unknown kinds keep ink. */
+  /* The kind label: flat ink on the screen, tinted by its kind (spec 235
+     palette, now through tokens), with the status LED before the legend.
+     No key face — a transcript row repeats this hundreds of times. Unknown
+     kinds keep ink. */
   .acp-harness__tool-kind {
     --tool-kind-ink: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
 
@@ -127,11 +128,6 @@
     letter-spacing: 0.09em;
     font-size: 0.78em;
     color: var(--tool-kind-ink);
-    border: 1px solid var(--mat-key-edge);
-    border-radius: var(--krypton-border-radius, 8px);
-    padding: 0 5px;
-    background: var(--mat-key);
-    box-shadow: var(--mat-key-raise);
   }
 
   .acp-harness__tool-kind[data-kind="edit"] {
@@ -686,9 +682,9 @@
   }
 }
 
-/* Light scheme: the chip legends are tuned for a dark key face; on the
-   aluminium key they mix toward the theme ink to stay legible. Everything
-   else follows the material swap in materials.css. */
+/* Light scheme: the kind colours are tuned for a dark screen; on the light
+   scheme they mix toward the theme ink to stay legible. Everything else
+   follows the material swap in materials.css. */
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness__tool-kind {
     color: color-mix(in srgb, var(--tool-kind-ink) 55%, var(--krypton-fg));

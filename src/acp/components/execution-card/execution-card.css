@@ -1,7 +1,7 @@
 /* Spec 366 (DESIGN.md "Parts") — the execution summary inside a tool row: the
-   status is an LED and a lamp capsule, `Inspector` is a key. A sealed card
-   (done, cancelled, background) shows unlit glass, so a long transcript of
-   finished runs casts no glow; only live work and faults light up. */
+   status is an LED before a flat state label, `Inspector` is a key. A sealed
+   card (done, cancelled, background) labels its state in plain ink, so a long
+   transcript of finished runs casts no glow; only live work and faults light up. */
 @layer krypton.component {
   .acp-execution-card {
     --exec-lamp-rgb: var(--agent-gold-rgb, 255, 209, 102);
@@ -91,22 +91,14 @@
     min-width: 0;
     margin-left: auto;
   }
-  /* The state capsule: unlit glass at rest, lit while running or on a fault
-     (DESIGN.md "Lamps"). */
+  /* The state label: flat ink like every transcript label, lit only while
+     running or on a fault. The LED before the title carries the lamp. */
   .acp-execution-card__state {
-    padding: 0 8px;
-    border: 1px solid var(--mat-well-wall);
-    border-radius: 999px;
-    background: var(--mat-well-fill);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.62));
     line-height: 1.3;
   }
   .acp-execution-card[data-state='pending'] .acp-execution-card__state,
-  .acp-execution-card[data-state='running'] .acp-execution-card__state,
-  .acp-execution-card[data-state='error'] .acp-execution-card__state {
-    border-color: rgba(var(--exec-lamp-rgb), 0.5);
-    background: radial-gradient(ellipse at 50% 0%, rgba(var(--exec-lamp-rgb), 0.3), rgba(var(--exec-lamp-rgb), 0.07) 75%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--exec-lamp-rgb), 0.22);
+  .acp-execution-card[data-state='running'] .acp-execution-card__state {
     color: var(--mat-lit);
   }
   .acp-execution-card[data-state='error'] .acp-execution-card__state { color: var(--agent-error); }

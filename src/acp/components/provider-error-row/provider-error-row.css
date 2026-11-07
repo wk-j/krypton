@@ -7,8 +7,8 @@
    lamp colour, with a lit LED before the kicker. Auth and quota failures are
    faults (`--krypton-danger-rgb`); the other kinds are warnings
    (`--krypton-warning-rgb`); a full context window is information
-   (`--krypton-info-rgb`). The raw details are a deeper recess; meta chips are
-   embossed labels on a key face.
+   (`--krypton-info-rgb`). The raw details are a deeper recess; meta labels are
+   flat ink, like every other transcript label.
 
    theme-scheme.css declares nothing for this block, so there is no
    `krypton.scheme` section. */
@@ -80,12 +80,7 @@
   }
 
   .acp-harness__provider-error-chip {
-    border: 1px solid var(--mat-key-edge);
-    border-radius: var(--krypton-border-radius, 8px);
-    background: var(--mat-key);
-    box-shadow: var(--mat-key-raise);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
-    padding: 1px 6px;
     font-family: var(--agent-font, var(--krypton-font-family, monospace));
     font-size: 0.72em;
     letter-spacing: 0.09em;

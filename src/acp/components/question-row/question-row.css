@@ -83,7 +83,7 @@
     box-shadow: none;
   }
 
-  /* An ink legend on a key face with its decision LED, like the tool kind chip. */
+  /* A flat ink legend with its decision LED, like the tool kind label. */
   .acp-harness__question-decision {
     display: inline-flex;
     flex: none;
@@ -95,11 +95,6 @@
     letter-spacing: 0.09em;
     font-size: 0.78em;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
-    border: 1px solid var(--mat-key-edge);
-    border-radius: var(--krypton-border-radius, 8px);
-    padding: 0 5px;
-    background: var(--mat-key);
-    box-shadow: var(--mat-key-raise);
   }
 
   .acp-harness__question-subject {

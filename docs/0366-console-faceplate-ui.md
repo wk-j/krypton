@@ -152,8 +152,9 @@ same element. The light set is the dock's aluminium set with the plate stops at 
 - **Harness.** Lane body = screen well (the window's screen fill shows through; a lane adds the
   well's inset shadow, not a second fill); lane head = plate strip with the name engraved and status as
   a lamp; zen rail = plate column of selector keys with LEDs; composer = plate with the draft line in
-  a well; transcript rows are flat text in the lane well with engraved labels; tool rows keep kind
-  chip (status LED inside it, before the legend) + output well; permission and question options are keys; floating lane cards
+  a well; transcript rows are flat text in the lane well with engraved labels; every transcript
+  label (tool kind, permission and question decision, execution state) is flat ink with its status LED
+  before the legend; tool rows add an output well; permission and question options are keys; floating lane cards
   (peek, queue, plan, thought, grammar, heat) are small plates. The right dock column and the shown
   lane's head strip are one plate as well: the column holds its top stop for the strip's height, and
   the screen draws its own right edge.
