@@ -20,9 +20,6 @@ export interface HarnessLaneMark {
   displayName: string;
   /** Backend id — tooltip / identity only. The strip no longer paints a logo. */
   backendId: string;
-  /** Lane accent CSS value (`lane.accent`, picked at random per lane by
-   *  `pickLaneAccent`), applied inline as `--krypton-lane-accent`. */
-  accent: string;
   /** The lane this window's harness is currently driving. At most one. */
   active: boolean;
 }
@@ -48,7 +45,7 @@ export function capLaneMarks(
  *  changes, so a re-sync that shifts nothing repaints nothing. */
 export function laneStripKey(marks: readonly HarnessLaneMark[], overflow: number): string {
   const parts = marks.map((m) =>
-    [m.id, m.backendId, m.displayName, m.accent, m.active ? '1' : '0'].join(':'),
+    [m.id, m.backendId, m.displayName, m.active ? '1' : '0'].join(':'),
   );
   return `${parts.join('|')}#${overflow}`;
 }

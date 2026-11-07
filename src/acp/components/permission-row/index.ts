@@ -41,7 +41,7 @@ export function permissionActionsHint(options: PermissionPayload['options']): st
   return [...new Set(labels)].join(' · ');
 }
 
-/** The head line: glyph + decision chip (resolved only), tool tag, subject. */
+/** The head line: decision chip with its LED (resolved only), tool tag, subject. */
 class PermissionHead extends Component<PermissionPayload> {
   private readonly subject = el('span', { class: 'acp-harness__perm-subject' });
 
@@ -65,16 +65,18 @@ class PermissionHead extends Component<PermissionPayload> {
     if (next.decision !== 'pending') {
       // `auto_allowed` reads as an accept; only a reject or a failure is ✗.
       const glyph = next.decision === 'rejected' || next.decision === 'failed' ? '✗' : '✓';
+      // The decision LED sits inside the chip, before its legend. The glyph
+      // carries the ✓/✗, so strip it from the chip text.
       nodes.push(
-        el('span', {
-          class: `acp-harness__perm-glyph acp-harness__perm-glyph--${next.decision}`,
-          text: glyph,
-        }),
-        // The glyph carries the ✓/✗, so strip it from the chip text.
-        el('span', {
-          class: 'acp-harness__perm-decision',
-          text: permissionDecisionLabel(next).replace(/^[✓✗]\s*/u, ''),
-        }),
+        el(
+          'span',
+          { class: 'acp-harness__perm-decision' },
+          el('span', {
+            class: `acp-harness__perm-glyph acp-harness__perm-glyph--${next.decision}`,
+            text: glyph,
+          }),
+          permissionDecisionLabel(next).replace(/^[✓✗]\s*/u, ''),
+        ),
       );
     }
     // For execute permissions the toolName IS the subject, so printing both

@@ -107,7 +107,6 @@
 
   .acp-review-thread__choice:has(input:checked) strong {
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-review-thread__choice:focus-within {
@@ -188,7 +187,6 @@
   /* The confirming action (Start Review, first in the row) is backlit. */
   .acp-review-thread__actions > button:first-child {
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-review-thread__panel button:focus-visible {

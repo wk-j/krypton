@@ -97,20 +97,27 @@ function toolExit(code: number): HTMLElement {
   );
 }
 
-/** `harness-tool-render.ts:843-860`. The exit badge rides the section label when
- *  the label is painted. A single labeled section folds its name into the kind
- *  chip instead (`showLabel` false); the caller then rides the exit on the tool
- *  head, so this function must not paint a second one. Output laid out by
- *  columns (a frame, a table around Thai) sits on the cell grid (spec 326); it
- *  is built inside the deps-gated rebuild, so it adds no deps. */
-function plainSection(section: ToolSection, exitCode: number | null, showLabel = true): HTMLElement {
+/** `harness-tool-render.ts:843-860`. A label that only names the payload slot
+ *  (`content`, `output`, `stdout`, `text` — the `output` tone) says nothing the
+ *  well does not, so it paints no label line. Any other label (stderr, error,
+ *  summary, diff, terminal, …) stays, and the exit readout rides it.
+ *  Output laid out by columns (a frame, a table around Thai) sits on the cell
+ *  grid (spec 326); it is built inside the deps-gated rebuild, so it adds no deps. */
+function plainSection(section: ToolSection, exitCode: number | null): HTMLElement {
+  const tone = toolSectionTone(section.label);
+  let label: HTMLElement | null = null;
+  if (tone !== 'output') {
+    label = el('div', { class: `${PREFIX}__tool-section-label`, text: section.label });
+    if (exitCode !== null) label.appendChild(toolExit(exitCode));
+  }
   const text = el('pre', { class: `${PREFIX}__tool-section-text`, text: section.text });
   gridifyText(text);
-  const tone = classes(`${PREFIX}__tool-section`, `${PREFIX}__tool-section--${toolSectionTone(section.label)}`);
-  if (!showLabel) return el('div', { class: tone }, text);
-  const label = el('div', { class: `${PREFIX}__tool-section-label`, text: section.label });
-  if (exitCode !== null) label.appendChild(toolExit(exitCode));
-  return el('div', { class: tone }, label, text);
+  return el(
+    'div',
+    { class: classes(`${PREFIX}__tool-section`, `${PREFIX}__tool-section--${tone}`) },
+    label,
+    text,
+  );
 }
 
 /** `harness-tool-render.ts:1003-1019`. */
@@ -157,9 +164,6 @@ export class ToolRow extends TranscriptRow {
   /** `Chip` compares `data` by reference; a new literal per paint would make
    *  every head repaint rebuild the chip's children for nothing. */
   private kindData: Readonly<Record<string, string>> = { kind: '' };
-  /** Exit readout parked on the tool head when the only section name folds into the chip. */
-  private headExit: HTMLElement | null = null;
-  private headExitCode: number | null = null;
   private card: SubagentCard | null = null;
   private executionCard: ExecutionCard | null = null;
   private unidiff: DiffBlock | null = null;
@@ -173,7 +177,6 @@ export class ToolRow extends TranscriptRow {
 
   constructor(props: RowProps) {
     super(props, props.item.tool ? !isTerminalToolStatus(props.item.tool.status) : false);
-    this.head.appendChild(this.glyph.el);
     this.head.appendChild(this.kind.el);
   }
 
@@ -332,19 +335,15 @@ export class ToolRow extends TranscriptRow {
 
     const chipKind = toolChipKind(tool.kind);
     if (this.kindData.kind !== chipKind) this.kindData = { kind: chipKind };
-    const folded = this.foldedSection(tool);
+    // The status LED sits inside the kind chip, before its legend.
     this.kind.update({
       block: `${PREFIX}__tool-kind`,
       text: tool.kind,
-      trailing: folded?.label,
-      trailingClass: folded ? `${PREFIX}__tool-kind-section` : undefined,
+      leading: this.glyph.el,
       data: this.kindData,
     });
 
-    const nodes: HTMLElement[] = [this.glyph.el, this.kind.el];
-    if (folded && folded.exitCode !== null && chipKind === 'execute') {
-      nodes.push(this.exitInHead(folded.exitCode));
-    }
+    const nodes: HTMLElement[] = [this.kind.el];
     if (tool.subject) {
       setText(this.subject, tool.subject);
       nodes.push(this.subject);
@@ -375,43 +374,6 @@ export class ToolRow extends TranscriptRow {
     setText(this.timer, formatToolElapsed(elapsed));
   }
 
-  /** One labeled section (plain text or grep) gives its name to the kind chip.
-   *  A rich git block never had a label, so it does not grow one, and two or
-   *  more sections keep a label each so the wells stay distinguishable. */
-  private foldedSection(tool: ToolPayload): { label: string; exitCode: number | null } | null {
-    if (tool.subagents || tool.artifactRedaction) return null;
-    const { sections, exitCode } = this.outputModel(tool);
-    if (sections.length !== 1) return null;
-    const only = sections[0];
-    if (!only || only.label.trim() === '' || this.richKind(tool, only) !== null) return null;
-    return { label: only.label, exitCode };
-  }
-
-  private exitInHead(code: number): HTMLElement {
-    if (this.headExit && this.headExitCode === code) return this.headExit;
-    this.headExit = toolExit(code);
-    this.headExitCode = code;
-    return this.headExit;
-  }
-
-  /** Sections that actually paint, with a Grok `exit: N` prefix peeled off stdout. */
-  private outputModel(tool: ToolPayload): { sections: ToolSection[]; exitCode: number | null } {
-    let exitCode = tool.exitCode ?? null;
-    const sections: ToolSection[] = [];
-    for (const raw of tool.sections) {
-      let text = normalizeToolDump(raw.text, tool.kind);
-      if (/^(stdout|output)$/i.test(raw.label)) {
-        const peeled = peelExitPrefix(text);
-        if (peeled) {
-          if (exitCode === null) exitCode = peeled.code;
-          text = peeled.rest;
-        }
-      }
-      if (text.trim()) sections.push({ label: raw.label, text });
-    }
-    return { sections, exitCode };
-  }
-
   /** `harness-tool-render.ts:791-836`, deduped on the deps the block reads. */
   private paintOutput(tool: ToolPayload): void {
     const deps = [tool.sections, tool.exitCode ?? null, tool.kind, tool.command, tool.subject];
@@ -422,59 +384,61 @@ export class ToolRow extends TranscriptRow {
 
   private outputNodes(tool: ToolPayload): HTMLElement[] {
     this.statCursor = 0;
-    const { sections, exitCode } = this.outputModel(tool);
-    const fold = this.foldedSection(tool) !== null;
-    const nodes: HTMLElement[] = [];
-    let pendingExit = !fold && exitCode !== null && toolChipKind(tool.kind) === 'execute' ? exitCode : null;
-    for (const section of sections) {
-      const git = this.richKind(tool, section) !== null ? this.richExecuteSection(tool, section) : null;
-      if (git) {
-        if (pendingExit !== null) {
-          nodes.push(toolExit(pendingExit));
-          pendingExit = null;
+    let exitCode = tool.exitCode ?? null;
+    const painted: ToolSection[] = [];
+    for (const raw of tool.sections) {
+      let text = normalizeToolDump(raw.text, tool.kind);
+      if (/^(stdout|output)$/i.test(raw.label)) {
+        const peeled = peelExitPrefix(text);
+        if (peeled) {
+          if (exitCode === null) exitCode = peeled.code;
+          text = peeled.rest;
         }
-        nodes.push(git);
-        continue;
       }
-      const grep = isGrepLikeOutput(tool, section) ? renderGrepSection(tool, section, pendingExit, !fold) : null;
-      if (grep) {
+      if (text.trim()) painted.push({ label: raw.label, text });
+    }
+
+    const nodes: HTMLElement[] = [];
+    let pendingExit = exitCode !== null && toolChipKind(tool.kind) === 'execute' ? exitCode : null;
+    for (const section of painted) {
+      const rich =
+        (tool.kind === 'execute' ? this.richExecuteSection(tool, section) : null) ??
+        (isGrepLikeOutput(tool, section) ? renderGrepSection(tool, section) : null);
+      // Only a labelled plain section can carry the exit readout; ahead of a
+      // git, grep or unlabelled output well it is a row of its own.
+      const carriesExit = rich === null && toolSectionTone(section.label) !== 'output';
+      if (pendingExit !== null && !carriesExit) {
+        nodes.push(toolExit(pendingExit));
         pendingExit = null;
-        nodes.push(grep);
+      }
+      if (rich) {
+        nodes.push(rich);
         continue;
       }
-      const code = pendingExit;
+      nodes.push(plainSection(section, pendingExit));
       pendingExit = null;
-      nodes.push(plainSection(section, code, !fold));
     }
     if (pendingExit !== null) nodes.push(toolExit(pendingExit));
     return nodes;
   }
 
-  /** Pure twin of `richExecuteSection`: which git rendering this section is, or
-   *  null when it paints as a labeled section. Used to decide the fold without
-   *  building the block twice. */
-  private richKind(tool: ToolPayload, section: ToolSection): 'diffstat' | 'unidiff' | 'gitstatus' | null {
-    if (tool.kind !== 'execute') return null;
-    const label = section.label.toLowerCase();
-    if (label !== 'stdout' && label !== 'output') return null;
-    if (/\bgit\s+diff\s+--stat\b/.test(tool.command) && parseGitDiffStat(section.text).length > 0) return 'diffstat';
-    if (isGitDiffCommand(tool.command) && section.text.includes('diff --git')) return 'unidiff';
-    if (/\bgit\s+status\s+--short\b/.test(tool.command) && parseGitStatusShort(section.text).length > 0) {
-      return 'gitstatus';
-    }
-    return null;
-  }
-
   /** `harness-tool-render.ts:862-877` — diffstat, unified diff, short status. */
   private richExecuteSection(tool: ToolPayload, section: ToolSection): HTMLElement | null {
-    const kind = this.richKind(tool, section);
-    if (kind === 'diffstat') return this.diffStatBlock(parseGitDiffStat(section.text), section.text);
-    if (kind === 'unidiff') {
+    const label = section.label.toLowerCase();
+    if (label !== 'stdout' && label !== 'output') return null;
+    if (/\bgit\s+diff\s+--stat\b/.test(tool.command)) {
+      const rows = parseGitDiffStat(section.text);
+      if (rows.length > 0) return this.diffStatBlock(rows, section.text);
+    }
+    if (isGitDiffCommand(tool.command) && section.text.includes('diff --git')) {
       this.unidiff ??= new DiffBlock('unified');
       this.unidiff.update({ mode: 'unified', rows: unifiedDiffRows(section.text), prefix: PREFIX });
       return this.unidiff.el;
     }
-    if (kind === 'gitstatus') return gitStatusBlock(parseGitStatusShort(section.text));
+    if (/\bgit\s+status\s+--short\b/.test(tool.command)) {
+      const rows = parseGitStatusShort(section.text);
+      if (rows.length > 0) return gitStatusBlock(rows);
+    }
     return null;
   }
 
@@ -586,7 +550,6 @@ export const def: ComponentDef = {
     'acp-harness__tool-head',
     'acp-harness__tool-glyph',
     'acp-harness__tool-kind',
-    'acp-harness__tool-kind-section',
     'acp-harness__tool-subject',
     'acp-harness__tool-result',
     'acp-harness__tool-timer',

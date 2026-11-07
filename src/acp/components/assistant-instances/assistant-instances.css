@@ -173,14 +173,12 @@
   .acp-assistant-instances__stat[data-tone="live"] .acp-assistant-instances__stat-value {
     color: var(--mat-lit);
     opacity: 1;
-    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-assistant-instances__stat[data-tone="warn"] .acp-harness__icon,
   .acp-assistant-instances__stat[data-tone="warn"] .acp-assistant-instances__stat-value {
     color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
     opacity: 1;
-    text-shadow: 0 0 6px rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.4), 0 0 14px rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.14);
   }
 
   /* ── Rows scroll in their own track — one recessed well — and the details
@@ -234,6 +232,19 @@
   /* Selection backlights the slice: a full-row tint, never an edge rail. */
   .acp-assistant-instances__row--selected {
     background: var(--mat-select);
+  }
+
+  /* While the dock holds the keyboard, the selected row's text is lit amber:
+     that, not an outline around the dock, says where the keys go. The backend
+     logo keeps its colour and the chips keep their state colours. */
+  .acp-harness__assistants-dock:focus-within .acp-assistant-instances__row--selected,
+  .acp-harness__assistants-dock:focus-within .acp-assistant-instances__row--selected .acp-assistant-instances__name,
+  .acp-harness__assistants-dock:focus-within .acp-assistant-instances__row--selected .acp-assistant-instances__role,
+  .acp-harness__assistants-dock:focus-within .acp-assistant-instances__row--selected .acp-assistant-instances__metric,
+  .acp-harness__assistants-dock:focus-within .acp-assistant-instances__row--selected .acp-assistant-instances__note,
+  .acp-harness__assistants-dock:focus-within .acp-assistant-instances__row--selected .acp-assistant-instances__facts,
+  .acp-harness__assistants-dock:focus-within .acp-assistant-instances__row--selected .acp-assistant-instances__age-cell {
+    color: var(--mat-lit);
   }
 
   .acp-assistant-instances__logo {
@@ -401,7 +412,6 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.12),
       0 0 5px rgba(var(--assistant-chip-rgb), 0.18),
       0 0 12px rgba(var(--assistant-chip-rgb), 0.06);
-    text-shadow: 0 0 6px rgba(var(--assistant-chip-rgb), 0.45), 0 0 12px rgba(var(--assistant-chip-rgb), 0.15);
   }
 
   .acp-assistant-instances__chip--live {
@@ -498,23 +508,17 @@
 
 /* Light scheme: the faceplate tokens swap to aluminium in materials.css
    (amber legends follow `--mat-silk` / `--mat-lit`); warning and fault are
-   neon values tuned for a dark ground, so cap them to legible ink and drop the
-   backlight glow (spec 321 §Accent ink), as `RailsDock`. */
+   neon values tuned for a dark ground, so cap them to legible ink (spec 321
+   §Accent ink), as `RailsDock`. */
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-assistant-instances__stat[data-tone="warn"] .acp-harness__icon,
   html[data-theme-scheme='light'] .acp-assistant-instances__stat[data-tone="warn"] .acp-assistant-instances__stat-value,
   html[data-theme-scheme='light'] .acp-assistant-instances__chip--warn,
   html[data-theme-scheme='light'] .acp-assistant-instances__status[data-stale="true"] {
     color: #8a5a00;
-    text-shadow: none;
-  }
-
-  html[data-theme-scheme='light'] .acp-assistant-instances__chip--live {
-    text-shadow: none;
   }
 
   html[data-theme-scheme='light'] .acp-assistant-instances__chip--fault {
     color: #b3261e;
-    text-shadow: none;
   }
 }

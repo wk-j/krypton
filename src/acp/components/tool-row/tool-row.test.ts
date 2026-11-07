@@ -67,6 +67,13 @@ function head(row: ToolRow): HTMLElement {
   return node;
 }
 
+/** The status LED, which sits inside the kind chip before its legend. */
+function glyphOf(row: ToolRow): HTMLElement {
+  const node = head(row).querySelector<HTMLElement>(':scope > .acp-harness__tool-kind > .acp-harness__tool-glyph');
+  if (!node) throw new Error('no glyph in the kind chip');
+  return node;
+}
+
 function agent(over: Partial<SubagentEntry> = {}): SubagentEntry {
   return {
     id: 'scout-1',
@@ -85,7 +92,7 @@ function agent(over: Partial<SubagentEntry> = {}): SubagentEntry {
 }
 
 describe('ToolRow head', () => {
-  it('emits glyph, kind chip, subject and timer in order', () => {
+  it('emits the kind chip with its LED inside, then subject and timer, in order', () => {
     const tool = payload({ startedAt: 1000, endedAt: 1400, status: 'completed', glyph: '\u2713' });
     const row = new ToolRow(props(tool));
     row.update(props(tool));
@@ -99,18 +106,31 @@ describe('ToolRow head', () => {
 
     const cells = Array.from(head(row).children);
     expect(cells.map((cell) => cell.getAttribute('class'))).toEqual([
-      'acp-harness__tool-glyph acp-harness__tool-glyph--completed',
       'acp-harness__tool-kind',
       'acp-harness__tool-subject',
       'acp-harness__tool-timer acp-harness__tool-timer--completed',
     ]);
-    expect(cells[0].textContent).toBe('\u2713');
-    expect(cells[1].getAttribute('data-kind')).toBe('execute');
-    expect(cells[1].textContent).toBe('execute');
-    expect(cells[2].textContent).toBe('npm run check');
-    expect(cells[3].getAttribute('data-started-at')).toBe('1000');
-    expect(cells[3].getAttribute('data-ended-at')).toBe('1400');
-    expect(cells[3].textContent).toBe('400ms');
+    const chip = cells[0];
+    expect(chip.firstChild).toBe(glyphOf(row));
+    expect(glyphOf(row).getAttribute('class')).toBe('acp-harness__tool-glyph acp-harness__tool-glyph--completed');
+    expect(glyphOf(row).textContent).toBe('\u2713');
+    expect(chip.getAttribute('data-kind')).toBe('execute');
+    expect(chip.lastChild?.textContent).toBe('execute');
+    expect(cells[1].textContent).toBe('npm run check');
+    expect(cells[2].getAttribute('data-started-at')).toBe('1000');
+    expect(cells[2].getAttribute('data-ended-at')).toBe('1400');
+    expect(cells[2].textContent).toBe('400ms');
+  });
+
+  it('keeps the same LED node inside the chip when the kind changes', () => {
+    const row = new ToolRow(props(payload()));
+    row.update(props(payload()));
+    const glyph = glyphOf(row);
+
+    row.update(props(payload({ kind: 'search' })));
+    expect(glyphOf(row)).toBe(glyph);
+    expect(head(row).querySelector('.acp-harness__tool-kind')?.lastChild?.textContent).toBe('search');
+    row.dispose();
   });
 
   it('keeps the spinner class while the call is in flight and ticks in place', () => {
@@ -118,14 +138,14 @@ describe('ToolRow head', () => {
     const row = new ToolRow(props(tool));
     row.update(props(tool));
 
-    const glyph = head(row).children[0];
+    const glyph = glyphOf(row);
     expect(glyph.getAttribute('class')).toBe(
       'acp-harness__tool-glyph acp-harness__tool-glyph--in_progress acp-harness__spinner',
     );
     const frame = glyph.textContent;
     tickAllSpinners();
     expect(glyph.textContent).not.toBe(frame);
-    expect(head(row).children[0]).toBe(glyph);
+    expect(glyphOf(row)).toBe(glyph);
     row.dispose();
   });
 
@@ -142,50 +162,39 @@ describe('ToolRow head', () => {
 });
 
 describe('ToolRow output', () => {
-  it('folds a single section name into the kind chip and rides the exit beside it', () => {
-    const tool = payload({ exitCode: 0, sections: [{ label: 'content', text: 'master -> master' }] });
+  it('paints no label for a plain output section and sets the exit above its well', () => {
+    const tool = payload({ exitCode: 0, sections: [{ label: 'content', text: '> tsc --noEmit' }] });
     const row = new ToolRow(props(tool));
     row.update(props(tool));
 
-    const chip = head(row).querySelector('.acp-harness__tool-kind');
-    expect(chip?.firstChild?.textContent).toBe('execute');
-    expect(chip?.querySelector('.acp-harness__tool-kind-section')?.textContent).toBe('content');
-    const exit = head(row).querySelector(':scope > .acp-harness__tool-exit');
+    const output = row.el.querySelector('.acp-harness__tool-output');
+    const [exit, section] = Array.from(output?.children ?? []);
+    expect(exit?.getAttribute('class')).toBe('acp-harness__tool-exit');
     expect(exit?.getAttribute('data-status')).toBe('ok');
     expect(Array.from(exit?.children ?? []).map((node) => node.textContent)).toEqual(['exit', '0']);
-    expect(Array.from(head(row).children).map((node) => node.className.split(' ')[0])).toEqual([
-      'acp-harness__tool-glyph',
-      'acp-harness__tool-kind',
-      'acp-harness__tool-exit',
-      'acp-harness__tool-subject',
-    ]);
-
-    const section = row.el.querySelector('.acp-harness__tool-output')?.firstElementChild;
     expect(section?.getAttribute('class')).toBe(
       'acp-harness__tool-section acp-harness__tool-section--output',
     );
     expect(section?.querySelector('.acp-harness__tool-section-label')).toBeNull();
-    expect(section?.firstElementChild?.tagName).toBe('PRE');
-    expect(section?.firstElementChild?.textContent).toBe('master -> master');
+    expect(section?.children.length).toBe(1);
+    expect(section?.firstElementChild?.getAttribute('class')).toBe('acp-harness__tool-section-text');
+    expect(section?.firstElementChild?.textContent).toBe('> tsc --noEmit');
   });
 
-  it('keeps a label on each well when a call has more than one section, exit on the first', () => {
+  it('keeps a label that says something and rides the exit on it', () => {
     const tool = payload({
       exitCode: 1,
-      sections: [
-        { label: 'stdout', text: 'ok' },
-        { label: 'stderr', text: 'no' },
-      ],
+      sections: [{ label: 'stderr', text: 'error TS2304' }, { label: 'stdout', text: 'done' }],
     });
     const row = new ToolRow(props(tool));
     row.update(props(tool));
 
-    expect(head(row).querySelector('.acp-harness__tool-kind-section')).toBeNull();
-    expect(head(row).querySelector('.acp-harness__tool-exit')).toBeNull();
-    const labels = Array.from(row.el.querySelectorAll('.acp-harness__tool-section-label'));
-    expect(labels.map((node) => node.firstChild?.textContent)).toEqual(['stdout', 'stderr']);
-    expect(labels[0]?.querySelector('.acp-harness__tool-exit')?.getAttribute('data-status')).toBe('fail');
-    expect(labels[1]?.querySelector('.acp-harness__tool-exit')).toBeNull();
+    const [stderr, stdout] = Array.from(row.el.querySelector('.acp-harness__tool-output')?.children ?? []);
+    const label = stderr?.querySelector('.acp-harness__tool-section-label');
+    expect(label?.firstChild?.textContent).toBe('stderr');
+    expect(label?.querySelector('.acp-harness__tool-exit')?.getAttribute('data-status')).toBe('fail');
+    expect(stdout?.querySelector('.acp-harness__tool-section-label')).toBeNull();
+    expect(row.el.querySelectorAll('.acp-harness__tool-exit').length).toBe(1);
   });
 
   it('lays a column-laid-out section on the cell grid and leaves plain output as text (spec 326)', () => {
@@ -302,7 +311,7 @@ describe('ToolRow output', () => {
     );
   });
 
-  it('hands a grep-like dump to the structured grep renderer and eats the exit', () => {
+  it('hands a grep-like dump to the structured grep renderer with the exit above it', () => {
     const tool = payload({
       command: 'rg --line-number reconcile src/ui',
       subject: 'rg reconcile',
@@ -312,15 +321,12 @@ describe('ToolRow output', () => {
     const row = new ToolRow(props(tool));
     row.update(props(tool));
 
-    const section = row.el.querySelector('.acp-harness__tool-output')?.firstElementChild;
+    const [exit, section] = Array.from(row.el.querySelector('.acp-harness__tool-output')?.children ?? []);
+    expect(exit?.getAttribute('class')).toBe('acp-harness__tool-exit');
     expect(section?.getAttribute('class')).toBe(
       'acp-harness__tool-section acp-harness__tool-section--output',
     );
-    // One section: the name folds into the chip and the exit rides the head,
-    // so the grep well itself has no label line.
     expect(section?.querySelector('.acp-harness__tool-section-label')).toBeNull();
-    expect(head(row).querySelector('.acp-harness__tool-kind-section')?.textContent).toBe('stdout');
-    expect(head(row).querySelector(':scope > .acp-harness__tool-exit')).not.toBeNull();
     const rows = Array.from(section?.querySelectorAll('.acp-harness__grep-row') ?? []);
     expect(rows.length).toBe(2);
     expect(rows[0].querySelector('.acp-harness__tok-path')?.textContent).toBe('src/ui/list.ts');
@@ -412,14 +418,14 @@ describe('ToolRow live contract', () => {
 
     expect(row.isLive).toBe(true);
     expect(row.el.className).toContain('acp-harness__msg--streaming');
-    const glyph = head(row).children[0];
+    const glyph = glyphOf(row);
 
     const done = props(payload({ status: 'completed', glyph: '\u2713', sections }), { streaming: true });
     row.update(done);
 
     expect(row.isLive).toBe(false);
     expect(row.el.className).toBe('acp-harness__msg acp-harness__msg--tool acp-harness__msg--completed');
-    expect(head(row).children[0]).toBe(glyph);
+    expect(glyphOf(row)).toBe(glyph);
     expect(glyph.getAttribute('class')).toBe(
       'acp-harness__tool-glyph acp-harness__tool-glyph--completed',
     );
@@ -538,7 +544,7 @@ describe('ToolRow lifecycle', () => {
     row.update(props(tool, { isNew: true }));
     expect(row.el.className).toContain('acp-harness__msg--enter');
 
-    const glyph = head(row).children[0];
+    const glyph = glyphOf(row);
     const frame = glyph.textContent;
     row.dispose();
 

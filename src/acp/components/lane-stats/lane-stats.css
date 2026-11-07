@@ -20,10 +20,12 @@
     border-bottom: 1px solid var(--mat-key-edge);
   }
 
-  /* Zen with the rail shown: the strip holds the rail's top stop
-     (`lane-head.css`), and the sheen continues from the 28px head above, so it
-     is offset by the head's height rather than restarting here. */
-  .acp-harness--zen:not(.acp-harness--left-panel-hidden) .acp-harness__lane-stats {
+  /* Beside a plate column (the zen rail or the right dock column): the strip
+     holds the column's top stop (`lane-head.css`), and the sheen continues
+     from the 28px head above, so it is offset by the head's height rather
+     than restarting here. */
+  .acp-harness--zen:not(.acp-harness--left-panel-hidden) .acp-harness__lane-stats,
+  .acp-harness--dock-active .acp-harness__lane-stats {
     background:
       var(--mat-brush),
       linear-gradient(180deg, var(--mat-plate-sheen), transparent) 0 -28px / 100% 160px no-repeat,

@@ -17,8 +17,8 @@ Keep chrome cyan. Stop using cyan as the dump body color.
 
 1. **Kind chip** reuses the spec 231 HUD accent (chip text + 1px border only, not a filled pill).
 2. **Section body** is foreground phosphor. Labels keep semantic color (error red, summary green, diff gold). `output` / `stdout` / `content` / `text` drop the cyan mapping.
-3. **Recognized dumps** get the same cheap structure git already has: path, line number, separator, text. Grep/rg (and execute wrapping them) split `path:line:text` and `line:text`. Execute dumps that start with `exit: N` (Grok Bash `output_for_prompt`) peel that line and paint a quiet **exit readout** on the first OUTPUT/TERMINAL label — muted tabular number for 0, danger color for non-zero, no kind-chip frame — instead of leaving `exit: 0` as dump text. Unknown output stays a plain `<pre>`.
-4. **Drop the 2px left rail.** Indent stays (`margin-left: calc(1.4ch + 8px)`). No inner card, no background glow.
+3. **Recognized dumps** get the same cheap structure git already has: path, line number, separator, text. Grep/rg (and execute wrapping them) split `path:line:text` and `line:text`. Execute dumps that start with `exit: N` (Grok Bash `output_for_prompt`) peel that line and paint a quiet **exit readout** — on the first labelled section, else as a row above the output — muted tabular number for 0, danger color for non-zero, no kind-chip frame — instead of leaving `exit: 0` as dump text. Unknown output stays a plain `<pre>`.
+4. **Drop the 2px left rail.** No inner card, no background glow. The status LED sits inside the kind chip (DESIGN.md 2.0.1), so the head starts with the chip and the output well needs no indent to line up with it.
 
 Generic dump rendering uses no highlight.js or language grammar: line-oriented regex only, with the same budget as `parseGitDiffStat`. [Spec 315](./0315-harness-execution-inspector.md) adds a separate, read-only source pane for validated OMP code cells; only that explicit source pane uses language highlighting. Its output remains foreground text or validated backend table/JSON data.
 
@@ -74,7 +74,7 @@ Generic dump rendering uses no highlight.js or language grammar: line-oriented r
 | summary | `summary` | success (unchanged) |
 | diff | `diff` | warning (unchanged) |
 | terminal | `terminal` | special (unchanged) |
-| stdout / output / text / content | `output` | **foreground**, not cyan |
+| stdout / output / text / content | `output` | **foreground**, not cyan; **no label line** — the name only says "this is the output slot", so the well stands alone |
 | other | `default` | lane accent at low mix into foreground |
 
 Body `color` is `var(--krypton-fg)` (or `--agent-text`). Glow on the body is dropped. Label glow stays at the section color, including a muted foreground for `output`.
@@ -133,32 +133,28 @@ Grep rows are a five-column grid (path · sep · line · sep · text). The line 
 
 ### Exit status
 
-Grok Bash wraps every dump as `exit: N\n<body>` and also sends `rawOutput.exit_code`. Structured `exit_code` wins; the prefix is stripped **before** the 12-line cap so it does not steal a content line. Execute cards paint the readout next to the section name:
-
-- **One labeled section** (plain text or grep): the name moves into the kind chip (`.acp-harness__tool-kind-section`, silk) and the exit readout sits in the tool head beside that chip. No label line above the well.
-- **Several labeled sections:** each keeps `.acp-harness__tool-section-label`, and the exit rides the first label so the name and `exit 0` share that line:
+Grok Bash wraps every dump as `exit: N\n<body>` and also sends `rawOutput.exit_code`. Structured `exit_code` wins; the prefix is stripped **before** the 12-line cap so it does not steal a content line. Execute cards paint:
 
 ```
-.acp-harness__tool-section-label   → "output" | "terminal" | …
+.acp-harness__tool-section-label   → "terminal" | "stderr" | …   (labelled sections only)
   .acp-harness__tool-exit[data-status=ok|fail]
     span.tool-exit-label   → "exit"
     span.tool-exit-code    → tabular-nums, no border, no weight jump
 ```
 
-- **Git-rich dumps** have no section label, so the readout stays a row above the files. A dump that is only `exit: 1` still shows that row. 0 → muted foreground. Non-zero → `--agent-error` on the number. Search/read never get the readout (`grep` miss is exit 1). Concise mode still hides the whole output group.
+Rides the first section when that section has a label (`terminal`, `stderr`, …), so `TERMINAL` and `exit 0` share one line. A plain output section (`output` / `stdout` / `content` / `text`, grep included) and a git-rich dump have no label, so ahead of them the readout is a row of its own above the well. A dump that is only `exit: 1` still shows that row. 0 → muted foreground. Non-zero → `--agent-error` on the number. Search/read never get the readout (`grep` miss is exit 1). Concise mode still hides the whole output group.
 
 ### Chrome
 
 ```
 .acp-harness__tool-output {
-  margin-left: calc(1.4ch + 8px);
-  padding: 3px 0 3px 0;   /* no 8px + 2px rail */
+  padding: 3px 0 3px 0;   /* no 8px + 2px rail; no indent: the LED is inside the chip */
   border-left: none;
   font-size: var(--krypton-font-size, 13px);  /* same as conversation */
 }
 ```
 
-Dump body (plain `<pre>`, grep rows, git-rich) inherits that size. Kind chips, `OUTPUT`/`exit` labels, and timers stay chrome-scale (`0.7em` / `0.78em`). The execution card (spec 315) is the exception: its head, timer included, is one size. The tool-card `0.88em` shrink does not apply to the payload.
+Dump body (plain `<pre>`, grep rows, git-rich) inherits that size. Kind chips, section labels, the `exit` readout and timers stay chrome-scale (`0.7em` / `0.78em`). The execution card (spec 315) is the exception: its head, timer included, is one size. The tool-card `0.88em` shrink does not apply to the payload.
 
 ## Edge Cases
 

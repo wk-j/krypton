@@ -18,7 +18,6 @@ function lane(id: string, over: Partial<HarnessLaneMark> = {}): HarnessLaneMark 
     id,
     displayName: id,
     backendId: 'claude',
-    accent: '#0cf',
     active: false,
     ...over,
   };
@@ -63,15 +62,12 @@ describe('laneStripKey', () => {
     expect(laneStripKey(before, 0)).not.toBe(laneStripKey(after, 0));
   });
 
-  it('changes when a lane is renamed, re-backed, recoloured, or overflows', () => {
+  it('changes when a lane is renamed, re-backed, or overflows', () => {
     const base = [lane('Claude-1')];
     expect(laneStripKey([lane('Claude-1', { displayName: 'Renamed' })], 0)).not.toBe(
       laneStripKey(base, 0),
     );
     expect(laneStripKey([lane('Claude-1', { backendId: 'codex' })], 0)).not.toBe(
-      laneStripKey(base, 0),
-    );
-    expect(laneStripKey([lane('Claude-1', { accent: '#f0c' })], 0)).not.toBe(
       laneStripKey(base, 0),
     );
     expect(laneStripKey(base, 1)).not.toBe(laneStripKey(base, 0));

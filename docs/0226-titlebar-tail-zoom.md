@@ -3,7 +3,7 @@
 > Status: Implemented
 > Date: 2026-08-17
 > Milestone: M9 — chrome scanability
-> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): focused mark is backlit silk in a well; titlebar scanline removed.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.1 (Krypton Console): focused mark is lit (`--mat-lit`, no glow) in a well; titlebar scanline removed.
 
 ## Problem
 
@@ -113,7 +113,7 @@ title replace the left-hand label without erasing the mark already on the tile.
 - `.krypton-window__header-accent` — independent of the mark; symmetric 20px start/end margin
 - `.krypton-window__titlebar-end` — flex cluster, right side; `height: 100%` so zoomed type cannot grow it
 - `.krypton-window__label-tail` — 11px, 0.45 opacity when unfocused
-- `.krypton-window--focused .krypton-window__label-tail` — `min(11px × 2.9, 28px)`, full accent, still in the titlebar
+- `.krypton-window--focused .krypton-window__label-tail` — `min(11px × 2.9, 28px)`, lit `--mat-lit` with no glow, still in the titlebar
 - Titles that are not `session_NN` never produce a tail of their own
 
 ## Edge Cases

@@ -29,13 +29,14 @@
    (`harness-tool-render.ts:1264-1303`, which the cutover keeps) paints
    `__grep-row*` + `__tok-*` inside this row's output.
 
-   Spec 366 (DESIGN.md "Parts", "Performance"): the head is a status LED, a
-   kind chip (an embossed label on a key face) and the subject; every output
-   section is one well with flat lines inside. A row with one labeled section
-   keeps that name in the kind chip (silk); further sections keep a silk label
-   above their own well. A tool row repeats hundreds of times, so no line,
-   mark or header inside a well carries a shadow or a gradient — the well
-   itself is the only shadowed part, once per section. */
+   Spec 366 (DESIGN.md "Parts", "Performance"): the head is a kind chip (an
+   embossed label on a key face) with the status LED inside it before the
+   legend, then the subject; every output section is one well with flat lines
+   inside, aligned with the chip. A plain output section (`content`, `output`,
+   `stdout`, `text`) has no label; any other section label is silk label type. A tool
+   row repeats hundreds of times, so no line, mark or header inside a well
+   carries a shadow or a gradient — the well itself is the only shadowed part,
+   once per section. */
 
 @layer krypton.component {
   .acp-harness__tool {
@@ -54,19 +55,19 @@
     font-size: var(--krypton-font-size, 13px);
   }
 
-  /* Fixed cell: the status LED sits in the 1.4ch box the braille spinner and
-     ✓/✗ used, so a status change never jumps the kind chip + subject. The
-     glyph text stays in the DOM (copy, assistive tech) but is not painted: the
-     lens carries the state, and live work is a steady lit lamp, not a ticking
-     glyph (DESIGN.md "Motion"). */
+  /* The status LED, seated inside the kind chip before its legend. A fixed
+     6px cell, so a status change never jumps the legend or the subject. The
+     glyph text (braille spinner, ✓/✗) stays in the DOM (copy, assistive
+     tech) but is clipped and not painted: the lens carries the state, and
+     live work is a steady lit lamp, not a ticking glyph (DESIGN.md "Motion"). */
   .acp-harness__tool-glyph {
     position: relative;
     display: inline-flex;
-    flex: 0 0 1.4ch;
+    flex: 0 0 6px;
     align-items: center;
     justify-content: center;
-    width: 1.4ch;
-    min-width: 1.4ch;
+    width: 6px;
+    min-width: 6px;
     height: 1em;
     min-height: 1em;
     overflow: hidden;
@@ -112,11 +113,15 @@
   }
 
   /* The kind chip: an embossed legend on a key face, tinted by its kind
-     (spec 235 palette, now through tokens). Unknown kinds keep ink. */
+     (spec 235 palette, now through tokens), with the status LED inside it.
+     Unknown kinds keep ink. */
   .acp-harness__tool-kind {
     --tool-kind-ink: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
 
+    display: inline-flex;
     flex: none;
+    align-items: center;
+    gap: 5px;
     white-space: nowrap;
     text-transform: uppercase;
     letter-spacing: 0.09em;
@@ -147,14 +152,6 @@
   }
   .acp-harness__tool-kind[data-kind="fetch"] {
     --tool-kind-ink: rgb(var(--agent-cyan-rgb, 185, 245, 255));
-  }
-
-  /* The folded section name: still the engraved indicator, now inside the key
-     instead of a line of its own above the well. */
-  .acp-harness__tool-kind-section {
-    margin-left: 0.7em;
-    color: var(--mat-silk);
-    font-weight: 600;
   }
 
   .acp-harness__tool-subject {
@@ -206,16 +203,15 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    margin-left: calc(1.4ch + 8px);
     padding: 3px 0;
     /* Bypass the 0.88em tool-card shrink so dump body matches conversation. */
     font-size: var(--krypton-font-size, 13px);
   }
 
   /* spec 235 — Grok `exit: N` prefix becomes a quiet readout, not dump text.
-     It rides the first section label when several are shown. A single labeled
-     section folds its name into the kind chip, and the readout sits in the
-     tool head beside that chip. */
+     Rides the first labelled section (stderr, terminal, …) when one comes
+     first; ahead of a plain output well, a git or a grep block it is a row of
+     its own. */
   .acp-harness__tool-exit {
     display: flex;
     align-items: baseline;

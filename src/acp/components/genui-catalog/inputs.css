@@ -231,7 +231,6 @@
     background: var(--mat-key-down);
     box-shadow: var(--mat-key-sunk);
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-genui__segment--on::before {
@@ -376,7 +375,6 @@
   /* A filled star is a backlit legend. */
   .acp-genui__star--on {
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
   }
 
   /* ── EditableTable ───────────────────────────────────────── */
@@ -475,7 +473,6 @@
   /* The confirming action: raised, legend backlit. */
   .acp-genui__button--primary {
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
   }
 
   /* Destructive keeps the key face; only the legend warns, without a glow. */

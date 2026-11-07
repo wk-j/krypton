@@ -1,11 +1,11 @@
 ---
 name: Krypton Console
-version: 2.0.0
+version: 2.0.1
 description: Skeuomorphic instrument faceplate — brushed graphite (aluminium in the light scheme) with engraved labels, recessed display wells, raised keys and lit lamps, over a transparent desktop
 appliesTo: "Every surface in the Tauri webview and the live-assist webview. Materials: src/styles/materials.css (--mat-*)."
 colors:
   primary: "#ffb000"       # silk: engraved label fill, --mat-silk (light: #6e4700)
-  lit: "#ffd880"           # backlit legend, --mat-lit (light: #6e4700)
+  lit: "#ffd880"           # lit legend (colour only, no glow), --mat-lit (light: #6e4700)
   plateTop: "rgba(46, 49, 56, 0.9)"
   plateBottom: "rgba(23, 25, 30, 0.9)"
   wellFill: "rgba(9, 10, 14, 0.78)"
@@ -56,7 +56,7 @@ forbidden:
   - "backdrop-filter: blur()"
   - "fully opaque plate (max alpha 0.94; a narrow overlay adds a solid underlay)"
   - "infinite or decorative animation: pulses, sweeps, shimmers, orbits, scanlines, vignettes"
-  - "glow on anything but a lamp, an LED lens or a backlit legend"
+  - "glow on anything but a lamp or an LED lens: legends, labels and titles never glow (the one exception is the composer bloom's one-shot afterimage flash)"
   - "box-shadow, text-shadow or gradient on a repeated row (transcript row, diff line, list row)"
   - "a button taller than one line: a key's state badge sits beside its label or is dropped"
   - "left-edge accent rails for selection (ADR-0027)"
@@ -101,7 +101,7 @@ inline on `<html>`, beats the sheet, and the composed gradients re-resolve with 
 | `--mat-key`, `--mat-key-hover`, `--mat-key-down` | Key faces: resting, hovered, held or latched |
 | `--mat-key-edge`, `--mat-key-raise`, `--mat-key-sunk` | Key outline, raised stack, pressed stack |
 | `--mat-engrave`, `--mat-print` | Text cut into the plate; legend printed on a key |
-| `--mat-silk`, `--mat-lit`, `--mat-lit-glow` | Amber label fill; backlit legend and its tight + bloom glow |
+| `--mat-silk`, `--mat-lit`, `--mat-lit-glow` | Amber label fill; lit legend (colour only, no glow); `--mat-lit-glow` is kept for one effect only, the composer bloom's one-shot afterimage flash |
 | `--mat-lens-off/on`, `--mat-lens-glow`, `--mat-glint` | Amber LED unlit / lit, its glow, the specular glint every lens starts from |
 | `--mat-select` | The full-row selection tint |
 | `--mat-scrim`, `--mat-cast` | The dimmer behind a modal plate; the one shadow a floating plate casts |
@@ -135,9 +135,10 @@ comment.
 - **Key.** One line, `min-height` 28px (24px in dense rows), `border: 1px solid var(--mat-key-edge)`,
   `border-radius: 8px`, `background: var(--mat-key)`, `box-shadow: var(--mat-key-raise)`, ink legend
   with `text-shadow: var(--mat-print)`. Hover: `--mat-key-hover`. Held (`:active`) or latched
-  (`aria-pressed="true"`, `--active`): `--mat-key-down` + `--mat-key-sunk`, legend `--mat-lit` with
-  `--mat-lit-glow`. Running action: latched and backlit cyan (`#6dd0ff`); done: raised and backlit
-  green (`#a8ffbf`). Disabled: unpowered at 0.45 opacity, except a running key. A state badge sits
+  (`aria-pressed="true"`, `--active`): `--mat-key-down` + `--mat-key-sunk`, legend `--mat-lit` with no
+  glow. Running action: latched and backlit cyan (`#6dd0ff`); done: raised and backlit green
+  (`#a8ffbf`) — the key face is lit, the legend takes the colour without a glow. Disabled: unpowered
+  at 0.45 opacity, except a running key. A state badge sits
   after the label behind an etched divider; it is cut first, and a key under 128px drops it.
 - **Selector keys.** Tabs: a recessed channel (a well with 3px padding) of 6px keys, each with a 6px
   LED before its legend. The shown tab is latched down with its LED lit; a count is a small readout
@@ -152,8 +153,10 @@ comment.
   A status capsule is lit glass: `border: 1px solid rgba(var(--x-rgb), .5); border-radius: 999px;
   background: radial-gradient(ellipse at 50% 0%, rgba(var(--x-rgb), .3), rgba(var(--x-rgb), .07) 75%);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 0 6px rgba(var(--x-rgb), .22)`, legend in the
-  state ink. An unlit capsule is a `--mat-well-fill` capsule in ink.
-- **Chips.** Verdicts and kinds are embossed labels on a key face, tinted by their colour.
+  state ink. An unlit capsule is a `--mat-well-fill` capsule in ink. A status lamp that belongs to a
+  chip or capsule sits inside it, before the legend, never beside it.
+- **Chips.** Verdicts and kinds are embossed labels on a key face, tinted by their colour. A row's
+  status LED is part of its chip: the first thing on the key face, 5px before the legend.
 - **Readouts.** A small well holding a tabular-nums figure, with its label engraved beside or under it.
 - **Scrim.** Behind a modal plate: `background: var(--mat-scrim)`. Never blur.
 
@@ -161,13 +164,15 @@ comment.
 
 - **Terminal window.** A bezel around a screen. The titlebar (36px), tab bar and footer are plate
   strips; the body is the screen. The window has a 1px `--mat-key-edge` border, the bevel on its top
-  edge and one `--mat-cast`. Focused: the titlebar LED lit in the window accent, the title backlit
-  `--mat-lit`, and a 1px window-accent ring at 0.55 alpha (`box-shadow: 0 0 0 1px`), no glow.
+  edge and one `--mat-cast`. Focused: the titlebar LED lit in the window accent, the title in
+  `--mat-lit` with no glow (the title clips, so a bloom would read as a box), and a 1px window-accent
+  ring at 0.55 alpha (`box-shadow: 0 0 0 1px`), no glow. The shown tab's title is lit the same way.
   Unfocused: LED unlit, title engraved ink. When the shown tab is one view whose bottom edge is a
   plate (the harness command centre, a content view's status readout), the footer continues that
   plate: no seam, no bevel, flat `--mat-plate-lo`, which is where the view's plate ends.
 - **Window accent** (`--krypton-window-accent`, lane accents, manual pick, signal states) colours the
-  window's LEDs — titlebar, its tabs, footer lane marks — and the window focus ring. Labels stay silk.
+  window's LEDs — titlebar and its tabs — and the window focus ring. Labels stay silk. Footer lane
+  marks carry no LED: the initials alone name the lanes.
 - **Overlays and dialogs** (palette, which-key, hints, prompt dialog, quick overview, dashboards,
   inline AI, toasts, harness pickers and dialogs): one floating plate over `--mat-scrim`; engraved
   head; input well; the result list is one well with grooves and a full-row `--mat-select` tint;
@@ -179,9 +184,14 @@ comment.
   lane's head strip and the composer plate are one plate around the lane's screen, with no seam where
   plate meets plate (the screen draws its own edges); the composer is a flush plate with
   the draft line in a well; transcript rows are flat text on the screen under engraved labels; tool
-  rows are a kind chip, a status lamp and an output well (one section's name sits in the chip, not
-  on its own line); permission and question options are keys;
-  floating lane cards are small plates. The right dock column is a flush plate of wells, keys and lamps.
+  rows are a kind chip with the status LED inside it and an output well aligned with the chip (a
+  plain output well has no label; only a label that says something, like `stderr`, is engraved);
+  resolved permission and question rows carry their LED inside the decision chip; a decision
+  composer's `PERM` / `ASK` label is a readout like the composer's mode readout, at the same 0.72em,
+  its amber LED lit; permission and question options are keys;
+  floating lane cards are small plates. The right dock column is a flush plate of wells, keys and lamps,
+  and it is one plate with the shown lane's head strip beside it: no seam, bevel or cast shadow where
+  they meet; the screen draws its own right edge.
 - **Content views.** The file browser and the markdown reader are one plate: the path and the status
   are readout wells engraved into it; the list is a well and the preview a screen well, set side by
   side 8px apart. Other views' toolbars, status bars, breadcrumbs and sidebars are plates, readouts
@@ -221,7 +231,7 @@ come from the theme (36px built in, so the selector keys are 26px and the titleb
 
 ```
 ┌─ plate ─────────────────────────────────────────────────────┐
-│ ● TITLE (engraved / backlit when focused)   [key] [key] NN │  ← titlebar strip, LED in window accent
+│ ● TITLE (engraved / lit when focused)        [key] [key] NN │  ← titlebar strip, LED in window accent
 │ ╭ channel ─────────────────────────────╮                    │  ← tab bar: selector keys (2+ tabs)
 │ │ [● 01 tab] [● 02 active↓] [● 03 tab] │                    │
 ├─────────────────────────────────────────────────────────────┤
@@ -234,13 +244,17 @@ come from the theme (36px built in, so the selector keys are 26px and the titleb
 
 ## Focus
 
-Keyboard-first: every focusable element shows `:focus-visible`. Windows: lit LED, backlit title,
+Keyboard-first: every focusable element shows `:focus-visible`. Windows: lit LED, lit title,
 1px accent ring. Controls: `outline: 1px solid var(--mat-lit); outline-offset: 2px`, solid, no glow.
 The active row of a list is the full-row `--mat-select` tint (plus its outline when it has focus).
+A panel that holds the keyboard (the dock's Rails, Ticket and Assistants panes) draws no border or
+outline around itself. A list panel says it holds the keys through its selected row instead: while
+focus is inside, that row's text is lit `--mat-lit`; state colours (pills, outcomes, chips) and
+backend logos keep their own. Off focus the row keeps only the `--mat-select` tint.
 
 ## Form controls
 
-Buttons are keys; the single confirming action of a dialog is a key with a backlit legend. Text inputs
+Buttons are keys; the single confirming action of a dialog is a key with a lit legend. Text inputs
 and textareas are wells. Checkboxes are a 12px key that latches down with its LED lit. Selects open as
 palette-style overlays, never native menus. Disabled controls keep their geometry and drop to 0.45.
 
@@ -352,6 +366,16 @@ selector, and nothing in it bleeds out of that selector.
 
 ## Changelog
 
+- **2.0.1** — A status LED that belongs to a chip or readout sits inside it, before the legend: the
+  tool kind chip, the permission and question decision chips and the decision composer's `PERM` /
+  `ASK` label, which is now a chrome-size readout instead of a full-size lit capsule. The tool output
+  well aligns with the chip. The right dock column and the shown
+  lane's head strip are one plate: the seam and cast shadow between them are gone. Footer lane marks
+  drop their LED. No legend, label or title glows anywhere any more: `--mat-lit-glow` left every latched
+  key, selector tab, live row label, focused title and readout, and the cyan / green / fault / outcome
+  text glows went with it; it stays only on the composer bloom's afterimage flash. The dock's Rails,
+  Ticket and Assistants panes lose the amber outline they drew while holding the keyboard; in Rails
+  and Assistants the selected row's text lights amber while the pane holds the keys.
 - **2.0.0** — Krypton Console replaces Krypton Dark as the base identity (spec 366). The dock's
   faceplate becomes every surface's: `--mat-*` tokens at the root in `src/styles/materials.css`
   (the dock-local `--dock-*` set is gone), plate / engraving / well / screen / key / lamp parts,

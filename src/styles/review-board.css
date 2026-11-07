@@ -1308,7 +1308,6 @@
   background: var(--mat-key-down);
   box-shadow: var(--mat-key-sunk);
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .krypton-review-thread__tab--active::before {
@@ -1469,7 +1468,6 @@
   background: var(--mat-key-down);
   box-shadow: var(--mat-key-sunk);
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .krypton-review-thread__choice--active .krypton-review-thread__choice-key {
@@ -1550,7 +1548,6 @@
   padding: 4px 14px;
   color: var(--mat-lit);
   font-weight: 600;
-  text-shadow: var(--mat-lit-glow);
 }
 
 .krypton-review-thread__send .krypton-review-thread__key {

@@ -6,7 +6,7 @@
    its head (the human must act, ADR-0017); its options are one well split by
    grooves, the cursor row is the full-row selection tint (ADR-0027) and each
    hotkey is a key cap that latches down when its option is picked. A resolved
-   row is a status LED + decision chip, like a tool row.
+   row is a decision chip with its status LED inside, like a tool row.
 
    `.acp-harness__permission-options` (:5046-5053) and the
    `@keyframes acp-harness-caret` block (:5163-5166, already carved into
@@ -30,24 +30,28 @@
     font-size: var(--krypton-font-size, 13px);
   }
 
+  /* Pending: the amber lamp stands on its own at the head's start; there is
+     no chip yet to seat it in. */
   .acp-harness__msg-body.acp-harness__question[data-decision='pending'] .acp-harness__question-row::before {
     content: '';
     flex: 0 0 auto;
     align-self: center;
     width: 6px;
     height: 6px;
-    margin: 0 calc((1.4ch - 6px) / 2);
     border-radius: 50%;
     background: var(--mat-lens-on);
     box-shadow: var(--mat-lens-glow);
   }
 
-  /* The decision LED; the ✓ / ✗ text stays in the DOM. */
+  /* The decision LED, inside the chip before its legend; the ✓ / ✗ text stays
+     in the DOM but is clipped and not painted. */
   .acp-harness__question-glyph {
     position: relative;
     display: inline-block;
-    width: 1.4ch;
-    text-align: center;
+    flex: 0 0 6px;
+    width: 6px;
+    height: 1em;
+    overflow: hidden;
     color: transparent;
   }
 
@@ -79,10 +83,13 @@
     box-shadow: none;
   }
 
-  /* An ink legend on a key face, like the tool kind chip. */
+  /* An ink legend on a key face with its decision LED, like the tool kind chip. */
   .acp-harness__question-decision {
+    display: inline-flex;
     flex: none;
     align-self: center;
+    align-items: center;
+    gap: 5px;
     white-space: nowrap;
     text-transform: uppercase;
     letter-spacing: 0.09em;
@@ -171,7 +178,6 @@
     background: var(--mat-key-down);
     box-shadow: var(--mat-key-sunk);
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-harness__question-label {

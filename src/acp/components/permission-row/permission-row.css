@@ -3,10 +3,10 @@
    block and its `acp-harness__perm-*` elements). Nothing else in the repo may
    declare these selectors.
 
-   Spec 366 (DESIGN.md "Parts"): a resolved row leads with a status LED and a
-   decision chip, like a tool row. A pending row is the one thing in the
-   transcript the human must act on (ADR-0017), so it lights an amber lamp
-   before its head; the key hint under it is printed legend.
+   Spec 366 (DESIGN.md "Parts"): a resolved row leads with a decision chip
+   whose status LED sits inside it, like a tool row. A pending row is the one
+   thing in the transcript the human must act on (ADR-0017), so it lights an
+   amber lamp before its head; the key hint under it is printed legend.
 
    `.acp-harness__msg--permission .acp-harness__msg-body` (:3534-3536) stays
    behind: its subject is the `acp-harness__msg` block, which `TranscriptRow`
@@ -25,7 +25,7 @@
   }
 
   /* Mirrors .acp-harness__tool-head so permission and tool rows share the same
-     lamp + chip + inline-subject layout in the body column. */
+     chip (with its LED) + inline-subject layout in the body column. */
   .acp-harness__perm-row {
     display: flex;
     flex-wrap: wrap;
@@ -35,29 +35,29 @@
     font-size: var(--krypton-font-size, 13px);
   }
 
-  /* Pending: a lit amber lamp in the glyph's 1.4ch cell, so the subject sits
-     where the resolved row's LED + chip will put it. */
+  /* Pending: a lit amber lamp before the subject. There is no chip yet, so the
+     lamp stands on its own at the head's start, where the resolved chip goes. */
   .acp-harness__msg-body.acp-harness__perm[data-decision='pending'] .acp-harness__perm-row::before {
     content: '';
     flex: 0 0 auto;
     width: 6px;
     height: 6px;
-    margin: 0 calc((1.4ch - 6px) / 2);
     border-radius: 50%;
     background: var(--mat-lens-on);
     box-shadow: var(--mat-lens-glow);
   }
 
-  /* Mirrors .acp-harness__tool-glyph: the decision LED in a 1.4ch × 1em cell.
-     The ✓ / ✗ text stays in the DOM; the lens carries the decision. */
+  /* Mirrors .acp-harness__tool-glyph: the decision LED in a 6px × 1em cell
+     inside the chip. The ✓ / ✗ text stays in the DOM; the lens carries the
+     decision. */
   .acp-harness__perm-glyph {
     position: relative;
     display: inline-flex;
-    flex: 0 0 1.4ch;
+    flex: 0 0 6px;
     align-items: center;
     justify-content: center;
-    width: 1.4ch;
-    min-width: 1.4ch;
+    width: 6px;
+    min-width: 6px;
     height: 1em;
     min-height: 1em;
     overflow: hidden;
@@ -92,9 +92,13 @@
     box-shadow: none;
   }
 
-  /* Mirrors .acp-harness__tool-kind — an ink legend on a key face. */
+  /* Mirrors .acp-harness__tool-kind — an ink legend on a key face, with the
+     decision LED inside it. */
   .acp-harness__perm-decision {
+    display: inline-flex;
     flex: none;
+    align-items: center;
+    gap: 5px;
     white-space: nowrap;
     text-transform: uppercase;
     letter-spacing: 0.09em;

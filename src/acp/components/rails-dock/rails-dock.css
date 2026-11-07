@@ -98,6 +98,27 @@
     background-image: linear-gradient(var(--mat-select), var(--mat-select));
   }
 
+  /* While the dock holds the keyboard, the selected row's text is lit amber:
+     that, not an outline around the dock, says where the keys go. State
+     colours (verdict pill, outcome, status, severity, tags) keep theirs. */
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected,
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected .acp-rails-dock__name,
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected .acp-rails-dock__rule,
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected .acp-rails-dock__loc,
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected .acp-rails-dock__lane,
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected .acp-rails-dock__count,
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected .acp-rails-dock__duration,
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected .acp-rails-dock__time,
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected .acp-rails-dock__meta,
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected .acp-rails-dock__hint,
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected .acp-rails-dock__note,
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected .acp-rails-dock__cmd,
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected .acp-rails-dock__label,
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected .acp-rails-dock__value,
+  .acp-harness__rails-dock:focus-within .acp-rails-dock__row--selected .acp-rails-dock__disclosure {
+    color: var(--mat-lit);
+  }
+
   .acp-rails-dock__line {
     display: flex;
     align-items: baseline;
@@ -129,7 +150,6 @@
     color: var(--mat-silk);
     font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.13em;
-    text-shadow: var(--mat-lit-glow);
     text-transform: uppercase;
   }
 
@@ -148,7 +168,6 @@
       0 0 16px rgba(var(--rails-pill-rgb), 0.08);
     color: var(--mat-lit);
     letter-spacing: 0.04em;
-    text-shadow: var(--mat-lit-glow);
   }
 
   /* An unlit lamp: nothing to report yet, or the run errored. */
@@ -165,7 +184,6 @@
     --rails-pill-rgb: 255, 109, 138;
 
     color: #ff9caf;
-    text-shadow: 0 0 6px rgba(255, 109, 138, 0.5), 0 0 14px rgba(255, 109, 138, 0.18);
   }
 
   .acp-rails-dock__time {
@@ -201,7 +219,6 @@
 
   .acp-rails-dock__progress {
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-rails-dock__hint,
@@ -350,7 +367,6 @@
     font-size: var(--krypton-chrome-font-size, 11px);
     font-weight: 700;
     line-height: 1.2;
-    text-shadow: 0 0 6px rgba(var(--rails-outcome-rgb), 0.45), 0 0 12px rgba(var(--rails-outcome-rgb), 0.15);
   }
 
   .acp-rails-dock__outcome::before {
@@ -384,7 +400,6 @@
 
   .acp-rails-dock__tag--new {
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
   }
 
   /* ── Run chips: embossed labels ────────────────────────────────────── */
@@ -541,11 +556,6 @@
   html[data-theme-scheme='light'] .acp-rails-dock__pill--check_failed,
   html[data-theme-scheme='light'] .acp-rails-dock__status--fail {
     color: #b3261e;
-    text-shadow: none;
-  }
-
-  html[data-theme-scheme='light'] .acp-rails-dock__outcome:not(.acp-rails-dock__outcome--none) {
-    text-shadow: none;
   }
 
   html[data-theme-scheme='light'] .acp-rails-dock__outcome--pass {

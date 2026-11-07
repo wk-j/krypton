@@ -14,7 +14,7 @@
    opacity` — and the titlebar, tab bar and footer are plate strips laid on it.
    A 1px key-edge border, the bevel on the top edge and one `--mat-cast`; no
    accent glow (a 20px blurred shadow was a paint cost while WAAPI moved the
-   window). Focus is the lit titlebar LED, the backlit title and a 1px accent
+   window). Focus is the lit titlebar LED, the lit title and a 1px accent
    ring below. */
 .krypton-window {
   position: absolute;
@@ -271,8 +271,10 @@
   }
 }
 
-/* The window title: engraved ink on an unfocused window, backlit amber on
-   the focused one. Labels stay silk; the accent is only the LED and ring. */
+/* The window title: engraved ink on an unfocused window, lit amber on the
+   focused one. Lit type only, no glow: the label clips its overflow, so a
+   bloom would show as a box around the text. Labels stay silk; the accent is
+   only the LED and ring. */
 .krypton-window__label {
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
@@ -289,15 +291,16 @@
 
 .krypton-window--focused .krypton-window__label {
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
+  text-shadow: none;
 }
 
 /* spec 226: session identity (`01`) on the titlebar's right edge.
    A readout: the figure in a small well. Quiet 11px on every tile; zoomed and
-   backlit only on the focused window, capped inside the titlebar rail so the
-   ID stays at the top of the window and never collides with the oscilloscope.
-   `font-size` (not a transform) so the box carries its painted width. The end
-   cluster is locked to the titlebar height so the type cannot grow the rail. */
+   lit (no glow) only on the focused window, capped inside the titlebar rail so
+   the ID stays at the top of the window and never collides with the
+   oscilloscope. `font-size` (not a transform) so the box carries its painted
+   width. The end cluster is locked to the titlebar height so the type cannot
+   grow the rail. */
 .krypton-window__titlebar-end {
   display: flex;
   align-items: center;
@@ -336,7 +339,6 @@
   );
   letter-spacing: -0.02em;
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .krypton-window__label-tail[hidden] {
@@ -695,11 +697,10 @@
    pane, so "what is running here, and which lane am I driving" is legible from
    the window's own rail — with the harness scrolled, zen-collapsed, or
    unfocused. Pinned to the rail's right edge.
-   Each lane carries an LED in its identity colour (DESIGN.md: lane marks are
-   window LEDs): lit on the active lane, a dim tinted lens on the others so
-   de-emphasis never drops the hue (spec 215). The active lane magnifies its
-   first two letters the same way the project badge magnifies `KR` and adds a
-   small lane number; the letters are silk/ink type, not accent. No motion. */
+   Marks carry no LED: the letters alone name the lanes, and the active lane
+   magnifies its first two letters the same way the project badge magnifies
+   `KR` and adds a small lane number; the letters are silk/ink type, not
+   accent. No motion. */
 
 .krypton-window__lane-strip {
   display: flex;
@@ -742,32 +743,14 @@
 }
 
 .krypton-window__lane {
-  /* The lens is resolved here, where the inline `--krypton-lane-accent` lives. */
-  --krypton-lane-led-colour: var(--krypton-lane-accent, var(--krypton-window-accent, #00c8ff));
-  --krypton-lane-led: radial-gradient(circle at 35% 30%, var(--mat-lens-off-glint) 0 14%, color-mix(in srgb, var(--krypton-lane-led-colour) 45%, var(--mat-lens-off-lo)) 50%, color-mix(in srgb, var(--krypton-lane-led-colour) 20%, var(--mat-lens-off-lo)) 100%);
-  --krypton-lane-led-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
   display: inline-flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 2px;
   flex: none;
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
 }
 
-.krypton-window__lane::before {
-  content: '';
-  flex: none;
-  width: 6px;
-  height: 6px;
-  margin-right: 1px;
-  border-radius: 50%;
-  background: var(--krypton-lane-led);
-  box-shadow: var(--krypton-lane-led-shadow);
-}
-
 .krypton-window__lane--active {
-  --krypton-lane-led: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, var(--krypton-lane-led-colour) 45%, color-mix(in srgb, var(--krypton-lane-led-colour) 55%, transparent) 100%);
-  --krypton-lane-led-shadow: 0 0 4px color-mix(in srgb, var(--krypton-lane-led-colour) 90%, transparent), 0 0 10px color-mix(in srgb, var(--krypton-lane-led-colour) 40%, transparent);
-  gap: 2px;
   color: var(--mat-silk);
 }
 
@@ -1028,9 +1011,10 @@
   color: var(--mat-lit);
 }
 
+/* Lit type without a glow, like the focused window title: the title clips its
+   overflow, so a bloom would show as a box around the text. */
 .krypton-tab--active .krypton-tab__title {
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 /* ─── Window content area (body + sidebar) ─── */

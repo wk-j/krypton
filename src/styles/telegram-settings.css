@@ -224,7 +224,6 @@
   background: var(--mat-key-down);
   box-shadow: var(--mat-key-sunk);
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
   transform: translateY(1px);
 }
 
@@ -236,7 +235,6 @@
 /* A confirming action: a key with a backlit legend. */
 .krypton-telegram__button--primary {
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .krypton-telegram__button:disabled,

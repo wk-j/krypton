@@ -1997,7 +1997,6 @@ export class Compositor {
     const el = document.createElement('span');
     el.className =
       'krypton-window__lane' + (mark.active ? ' krypton-window__lane--active' : '');
-    el.style.setProperty('--krypton-lane-accent', mark.accent);
     const { initials } = laneDropCap(mark.displayName);
     const head = document.createElement('span');
     head.className = 'krypton-window__lane-initials';

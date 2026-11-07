@@ -119,7 +119,6 @@
     background: var(--mat-key-down);
     box-shadow: var(--mat-key-sunk);
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-ticket__tab--active::before {
@@ -353,7 +352,6 @@
   .acp-ticket__action--fix {
     margin-left: auto;
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-ticket__foot {

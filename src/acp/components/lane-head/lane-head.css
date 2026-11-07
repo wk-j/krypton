@@ -1,8 +1,8 @@
 /* Spec 302 §4.2 — `LaneHead`.
    Carved from src/styles/acp-harness.css, orchestrator-console.css and
    theme-scheme.css; restyled by spec 366 (DESIGN.md "Harness"): the lane head
-   is a plate strip. The name is engraved (backlit while the lane is shown, like
-   a focused window title), status is a lamp — the LED in column 1
+   is a plate strip. The name is engraved (lit, without a glow, while the lane
+   is shown, like a focused window title), status is a lamp — the LED in column 1
    (`lane-symbol.css`) plus a lit capsule when the state asks for the human —
    and the chips are capsules and readouts on the plate. */
 
@@ -37,12 +37,13 @@
     border-bottom: 0;
   }
 
-  /* Zen with the rail shown: the strip continues the rail's plate beside it
-     (`lane-rail.css`), which is still at its top stop and its sheen here, so
-     the strip holds that stop instead of running its own gradient down to the
-     bottom stop. The seam under the stats row stays: that edge meets the
-     screen. */
-  .acp-harness--zen:not(.acp-harness--left-panel-hidden) .acp-harness__lane--active > .acp-harness__lane-head {
+  /* A plate column beside the strip — the zen rail (`lane-rail.css`) or the
+     right dock column (harness-shared.css) — is still at its top stop and its
+     sheen here, so the strip holds that stop instead of running its own
+     gradient down to the bottom stop: plate meets plate with no seam. The
+     seam under the stats row stays: that edge meets the screen. */
+  .acp-harness--zen:not(.acp-harness--left-panel-hidden) .acp-harness__lane--active > .acp-harness__lane-head,
+  .acp-harness--dock-active .acp-harness__lane--active > .acp-harness__lane-head {
     background:
       var(--mat-brush),
       linear-gradient(180deg, var(--mat-plate-sheen), transparent 160px),
@@ -67,10 +68,11 @@
     margin-right: 5px;
   }
 
-  /* The shown lane's name is backlit, as a focused window's title is. */
+  /* The shown lane's name is lit, as a focused window's title is: lit type
+     with no glow, since the name clips and a bloom would show as a box. */
   .acp-harness__lane--active .acp-harness__lane-name {
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
+    text-shadow: none;
   }
 
   /* The status word is engraved beside the LED. A state that needs the human

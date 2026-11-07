@@ -59,7 +59,6 @@
 
   .acp-genui__form-submit {
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-genui__form-submit:hover:not([disabled]),

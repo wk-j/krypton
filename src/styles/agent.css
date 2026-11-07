@@ -138,7 +138,6 @@
 /* "AI": a backlit legend. */
 .agent-view__logo-accent {
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .agent-view__logo-sub {
@@ -699,7 +698,6 @@
   background: var(--mat-key-down);
   box-shadow: var(--mat-key-sunk);
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .agent-view__check-actions-button:focus-visible {
@@ -1225,7 +1223,6 @@
   justify-content: center;
   background: var(--mat-scrim);
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
   font-size: 14px;
   letter-spacing: 0.13em;
   font-weight: 600;

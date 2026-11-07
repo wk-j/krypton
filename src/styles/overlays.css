@@ -168,7 +168,6 @@
    amber. No row tint or gradient — the cap carries it. */
 .krypton-whichkey__entry--important .krypton-whichkey__key {
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .krypton-whichkey__entry--important .krypton-whichkey__label,

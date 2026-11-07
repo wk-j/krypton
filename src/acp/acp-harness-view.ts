@@ -4957,7 +4957,6 @@ export class AcpHarnessView implements ContentView {
       id: lane.id,
       displayName: lane.displayName,
       backendId: lane.backendId,
-      accent: lane.accent,
       active: lane.id === this.activeLaneId,
     }));
   }
@@ -5040,7 +5039,7 @@ export class AcpHarnessView implements ContentView {
    * repaint the window rail. */
   private notifyLaneMarksChanged(): void {
     const key = this.getLaneMarks()
-      .map((l) => [l.id, l.backendId, l.displayName, l.accent, l.active ? '1' : '0'].join(':'))
+      .map((l) => [l.id, l.backendId, l.displayName, l.active ? '1' : '0'].join(':'))
       .join('|');
     if (key === this.lastLaneMarksKey) return;
     this.lastLaneMarksKey = key;

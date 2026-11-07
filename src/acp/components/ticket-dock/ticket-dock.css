@@ -110,21 +110,18 @@
       0 0 16px rgba(var(--ticket-pill-rgb), 0.07);
     color: var(--mat-lit);
     letter-spacing: 0.04em;
-    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-ticket-dock__pill--blocked {
     --ticket-pill-rgb: 255, 109, 138;
 
     color: #ff9caf;
-    text-shadow: 0 0 6px rgba(255, 109, 138, 0.5), 0 0 14px rgba(255, 109, 138, 0.18);
   }
 
   .acp-ticket-dock__pill--done {
     --ticket-pill-rgb: 142, 255, 176;
 
     color: #a8ffbf;
-    text-shadow: 0 0 6px rgba(142, 255, 176, 0.4), 0 0 14px rgba(142, 255, 176, 0.14);
   }
 
   .acp-ticket-dock__meta {
@@ -244,11 +241,9 @@
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-ticket-dock__pill--blocked {
     color: #b3261e;
-    text-shadow: none;
   }
 
   html[data-theme-scheme='light'] .acp-ticket-dock__pill--done {
     color: #136b3b;
-    text-shadow: none;
   }
 }

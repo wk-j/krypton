@@ -76,8 +76,9 @@ describe('PermissionRow', () => {
     expect(body?.dataset.decision).toBe('accepted');
     expect(body?.innerHTML).toBe(
       '<div class="acp-harness__perm-row">' +
-        '<span class="acp-harness__perm-glyph acp-harness__perm-glyph--accepted">✓</span>' +
-        '<span class="acp-harness__perm-decision">accepted</span>' +
+        '<span class="acp-harness__perm-decision">' +
+          '<span class="acp-harness__perm-glyph acp-harness__perm-glyph--accepted">✓</span>accepted' +
+        '</span>' +
         '<span class="acp-harness__perm-tool">Bash</span>' +
         '<span class="acp-harness__perm-subject" title="git push origin main">git push origin main</span>' +
       '</div>',
@@ -102,9 +103,10 @@ describe('PermissionRow', () => {
     expect(row.el.querySelector('.acp-harness__perm-suffix')).toBeNull();
     expect(row.el.querySelector('.acp-harness__perm-reason')).toBeNull();
     expect(row.el.querySelector('.acp-harness__perm-preview')).toBeNull();
-    expect(row.el.querySelector('.acp-harness__perm-glyph')?.className)
+    const decision = row.el.querySelector('.acp-harness__perm-decision');
+    expect(decision?.firstElementChild?.className)
       .toBe('acp-harness__perm-glyph acp-harness__perm-glyph--auto_allowed');
-    expect(row.el.querySelector('.acp-harness__perm-decision')?.textContent).toBe('auto-allowed');
+    expect(decision?.lastChild?.textContent).toBe('auto-allowed');
 
     perm.decision = 'pending';
     row.update(props(perm));
@@ -122,8 +124,9 @@ describe('PermissionRow', () => {
     const perm = permission({ decision: 'rejected', decisionLabel: '✗ rejected by policy' });
     const row = new PermissionRow(props(perm));
     row.update(props(perm));
-    expect(row.el.querySelector('.acp-harness__perm-decision')?.textContent).toBe('rejected by policy');
-    expect(row.el.querySelector('.acp-harness__perm-glyph')?.textContent).toBe('✗');
+    const decision = row.el.querySelector('.acp-harness__perm-decision');
+    expect(decision?.lastChild?.textContent).toBe('rejected by policy');
+    expect(decision?.querySelector('.acp-harness__perm-glyph')?.textContent).toBe('✗');
   });
 
   it('re-derives the wrapper class when the row status goes back to unset', () => {

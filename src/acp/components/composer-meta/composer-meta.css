@@ -8,32 +8,45 @@
    composer plate. The status run and the lane's permission mode are readout
    windows with an LED: the status LED lights while the lane works, the mode
    LED is lit while the mode is on. The directive is a small key; the branch
-   and `? help` are printed legend. A decision row's label is a lit warning
-   capsule — it waits on the human. */
+   and `? help` are printed legend. A decision row's label is the same readout
+   at the same type size, its amber LED lit — it waits on the human. */
 
 @layer krypton.component {
   .acp-harness__composer:not(.acp-harness__composer--permission) .acp-harness__composer-chrome {
     flex: 0 0 auto;
   }
 
+  /* The decision row's label (`perm` / `ask`). It is not inside the chrome
+     row, so it does not inherit that row's type size: it sets the same 0.72em
+     itself and reads as the mode readout does, a well with its LED — lit amber,
+     the one thing waiting on the human. Don't grow: keep the label and the key
+     run grouped on the left rather than pushing the keys to the far right
+     edge. The base rule's inline-size containment would size this non-growing
+     label to 0 and clip it, so it is opted out here. */
   .acp-harness__composer--permission .acp-harness__composer-meta {
-    /* Don't grow: keep the "perm" label and the action buttons grouped together
-       on the left rather than pushing the buttons to the far right edge. The base
-       rule's inline-size containment would size this non-growing label to 0 and
-       clip it, so it is opted out here. */
     container-type: normal;
     flex: 0 0 auto;
+    gap: 6px;
     min-width: 0;
-    padding: 0 8px;
-    border: 1px solid rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.5);
-    border-radius: 999px;
-    background: radial-gradient(ellipse at 50% 0%, rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.3), rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.07) 75%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.22);
-    color: color-mix(in srgb, rgb(var(--krypton-warning-rgb, 232, 197, 71)) 60%, var(--krypton-fg, #d8e8d8));
-    font-weight: 700;
-    overflow: hidden;
+    min-height: 0;
+    padding: 1px 7px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
+    font-size: 0.72em;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .acp-harness__composer--permission .acp-harness__composer-meta::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
   }
 
   /* Status chips on the left, help + MIC on the right. The tools sit on this
@@ -244,7 +257,6 @@
   /* A bound directive backlights the legend. */
   .acp-harness__directive-chip--set {
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
   }
 
   /* A swap/clear queued for the next send: warning ink. */
@@ -262,7 +274,6 @@
 }
 
 @layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-harness__composer--permission .acp-harness__composer-meta,
   html[data-theme-scheme='light'] .acp-harness__composer-mode--warn,
   html[data-theme-scheme='light'] .acp-harness__directive-chip--pending {
     color: #8a5a00;

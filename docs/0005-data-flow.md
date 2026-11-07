@@ -952,9 +952,9 @@ reached the page falls back to the built-in krypton-dark values, scoped to
    +N tail, compares laneStripKey against the window's rendered key, and rebuilds
    the nodes only when it differs.
 5. Each mark is a two-letter drop cap of the display name (`laneDropCap`, same
-   split as spec 219), coloured by an inline --krypton-lane-accent. The active
-   mark adds a small trailing number when its name ends in `-N`; it has no tab
-   background or name tail. No footer logo.
+   split as spec 219) in ink, silk on the active mark, with no LED or lane
+   colour. The active mark adds a small trailing number when its name ends in
+   `-N`; it has no tab background or name tail. No footer logo.
 6. Tab visibility changes, window creation, and pane focus changes all call
    syncWindowChrome(win), which re-runs the AI credit sync (spec 153) and
    syncWindowLaneStrip() together — the strip resubscribes to the newly focused

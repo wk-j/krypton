@@ -40,7 +40,6 @@
     color: var(--mat-lit);
     font-weight: 600;
     letter-spacing: 0.14em;
-    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-harness__live-label::before {

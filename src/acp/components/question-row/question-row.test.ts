@@ -177,8 +177,9 @@ describe('QuestionRow', () => {
     expect(body.dataset.decision).toBe('accepted');
     expect(body.innerHTML).toBe(
       '<div class="acp-harness__question-row">' +
-        '<span class="acp-harness__question-glyph acp-harness__question-glyph--accepted">✓</span>' +
-        '<span class="acp-harness__question-decision">keyed reconcile</span>' +
+        '<span class="acp-harness__question-decision">' +
+          '<span class="acp-harness__question-glyph acp-harness__question-glyph--accepted">✓</span>keyed reconcile' +
+        '</span>' +
         '<span class="acp-harness__question-subject" title="Which reconciler should phase 3 use?">' +
           'Which reconciler should phase 3 use?' +
         '</span>' +

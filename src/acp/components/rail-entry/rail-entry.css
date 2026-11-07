@@ -2,7 +2,8 @@
    Carved from src/styles/acp-harness.css and theme-scheme.css; restyled by
    spec 366 (DESIGN.md "Harness", "Selector keys"). Each lane is a key on the
    rail's plate column (`lane-rail.css`) with a 6px LED before its legend. The
-   shown lane's key is latched down with its LED lit and its name backlit; the
+   shown lane's key is latched down with its LED lit and its name lit (no
+   glow: the name clips, so a bloom would show as a box); the
    others stand raised. A lane that needs the human, waits on a peer or failed
    lights its LED in that state's colour — steadily: no pulse anywhere. The
    key must stay one line of legend plus the spec 125 meta line, so row height
@@ -35,7 +36,7 @@
     background: var(--mat-key-hover);
   }
 
-  /* The shown lane: latched down, legend backlit. */
+  /* The shown lane: latched down, legend lit. */
   .acp-harness__rail-entry--active,
   .acp-harness__rail-entry--active:hover {
     background: var(--mat-key-down);
@@ -44,7 +45,6 @@
 
   .acp-harness__rail-entry--active .acp-harness__rail-name {
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-harness__rail-head {

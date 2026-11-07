@@ -202,7 +202,6 @@
   background: var(--mat-key-down);
   box-shadow: var(--mat-key-sunk);
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
   font-weight: 600;
   letter-spacing: 0.09em;
   white-space: nowrap;
@@ -214,7 +213,6 @@
   align-items: center;
   gap: 5px;
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .krypton-hurl__toolbar-flag::before {

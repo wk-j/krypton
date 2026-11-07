@@ -116,7 +116,6 @@
       var(--mat-key-down);
     box-shadow: var(--mat-key-sunk), inset 0 0 10px rgba(109, 208, 255, 0.18);
     color: var(--agent-user, #6dd0ff);
-    text-shadow: 0 0 6px rgba(109, 208, 255, 0.5), 0 0 14px rgba(109, 208, 255, 0.18);
   }
 
   .acp-dock-action--running:disabled {
@@ -130,7 +129,6 @@
       radial-gradient(ellipse at 50% 0%, rgba(142, 255, 176, 0.2), transparent 75%),
       var(--mat-key);
     color: #a8ffbf;
-    text-shadow: 0 0 6px rgba(142, 255, 176, 0.4), 0 0 14px rgba(142, 255, 176, 0.14);
   }
 
   .acp-dock-action--done:hover:not(:disabled) {
@@ -143,16 +141,14 @@
 
 /* Light scheme: the faceplate tokens swap to aluminium in materials.css;
    the cyan and green backlights are tuned for a dark key, so their legends
-   cap to legible ink and drop the glow (spec 321 §Accent ink). */
+   cap to legible ink (spec 321 §Accent ink). */
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-dock-action--running,
   html[data-theme-scheme='light'] .acp-dock-action--running:hover:not(:disabled) {
     color: var(--agent-user, #007799);
-    text-shadow: var(--mat-print);
   }
 
   html[data-theme-scheme='light'] .acp-dock-action--done {
     color: #136b3b;
-    text-shadow: var(--mat-print);
   }
 }

@@ -583,26 +583,6 @@ export function shouldRenderExecuteExit(tool: Pick<ToolPayload, 'kind' | 'exitCo
   return tool.exitCode != null && toolChipKind(tool.kind) === 'execute';
 }
 
-function renderToolExit(code: number): HTMLElement {
-  const row = document.createElement('div');
-  row.className = 'acp-harness__tool-exit';
-  row.dataset.status = code === 0 ? 'ok' : 'fail';
-  const label = document.createElement('span');
-  label.className = 'acp-harness__tool-exit-label';
-  label.textContent = 'exit';
-  const badge = document.createElement('span');
-  badge.className = 'acp-harness__tool-exit-code';
-  badge.textContent = String(code);
-  row.appendChild(label);
-  row.appendChild(badge);
-  return row;
-}
-
-function appendExecuteExit(label: HTMLElement, exitCode: number | null): void {
-  if (exitCode === null) return;
-  label.appendChild(renderToolExit(exitCode));
-}
-
 export function isGitDiffCommand(command: string): boolean {
   return /\bgit\s+diff\b/.test(command);
 }
@@ -883,27 +863,18 @@ function tok(kind: string, value: string): HTMLElement {
   return el;
 }
 
+/** A grep dump is always an output-slot section (`stdout` / `output` /
+ *  `content` / `text`), so it paints no label line: the well is the output.
+ *  The caller places an exit readout above it. */
 export function renderGrepSection(
   tool: Pick<ToolPayload, 'command' | 'subject'>,
   section: { label: string; text: string },
-  exitCode: number | null = null,
-  /** False when the caller folded this section's name into the kind chip. The
-   *  exit readout must already live on the tool head — passing a code here
-   *  would drop it. */
-  showLabel = true,
 ): HTMLElement | null {
   const rows = parseGrepDump(section.text);
   if (!rows) return null;
   const needles = grepHitNeedles(extractGrepQuery(tool.command) || extractGrepQuery(tool.subject));
   const block = document.createElement('div');
   block.className = 'acp-harness__tool-section acp-harness__tool-section--output';
-  if (showLabel) {
-    const label = document.createElement('div');
-    label.className = 'acp-harness__tool-section-label';
-    label.textContent = section.label;
-    appendExecuteExit(label, exitCode);
-    block.appendChild(label);
-  }
   const rich = document.createElement('div');
   rich.className = 'acp-harness__tool-rich acp-harness__tool-rich--grep';
   const texts: HTMLElement[] = [];

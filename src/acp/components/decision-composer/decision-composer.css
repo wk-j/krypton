@@ -1,9 +1,11 @@
 /* Spec 302 §6.8 — `DecisionComposer`.
    Carved verbatim from src/styles/acp-harness.css:3980-3985 and :5046-5053.
 
-   Spec 366 (DESIGN.md "Lamps", "Overlays"): while a decision owns the
-   keyboard the row lights an amber lamp (the human must act, ADR-0017) and
-   the key run is printed legend in the backlit amber.
+   Spec 366 (DESIGN.md "Lamps", "Readouts"): while a decision owns the
+   keyboard the row's label is a readout at the composer chrome's type size
+   with its amber LED lit (the human must act, ADR-0017; the readout is
+   composer-meta's, which owns the label block), and the key run is printed
+   legend in the backlit amber.
 
    `.acp-harness__composer--permission` itself (:3971-3978) belongs to the
    composer root, which owns the modifier; the `--permission` rules whose
@@ -16,17 +18,6 @@
     align-items: center;
     gap: 12px;
     min-width: 0;
-  }
-
-  .acp-harness__permission-row::before {
-    content: '';
-    flex: 0 0 auto;
-    width: 6px;
-    height: 6px;
-    margin-right: -4px;
-    border-radius: 50%;
-    background: var(--mat-lens-on);
-    box-shadow: var(--mat-lens-glow);
   }
 
   .acp-harness__permission-options {

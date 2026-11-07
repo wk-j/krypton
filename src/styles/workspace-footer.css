@@ -120,7 +120,6 @@
   color: var(--mat-lit);
   background: var(--mat-well-fill);
   box-shadow: var(--mat-well-shadow);
-  text-shadow: var(--mat-lit-glow);
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }

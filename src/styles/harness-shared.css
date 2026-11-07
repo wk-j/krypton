@@ -102,7 +102,13 @@
    graphite (aluminium in the light scheme), labels engraved into it, content
    in recessed wells, actions on raised keys, state on lamps. It reads the
    root `--mat-*` material set (src/styles/materials.css) like every other
-   surface; the light scheme swaps that set at the root. */
+   surface; the light scheme swaps that set at the root.
+   Spec 366: the column and the shown lane's head strip beside it are one
+   plate, like the zen rail on the left (`lane-rail.css`): the column holds its
+   top stop for the strip's height (the 28px head plus one stats row), the
+   strip holds it too (`lane-head.css`, `lane-stats.css`), and where plate
+   meets plate there is no seam, bevel or cast shadow. The screen draws its
+   own right edge below the strip (`.acp-harness__lane-body` below). */
 .acp-harness__dock {
   position: absolute;
   inset: 0 0 0 auto;
@@ -115,12 +121,21 @@
   contain: layout paint;
   /* A 0.9 plate, not a solid slab: the backdrop still reads at the edges of
      the material, as DESIGN.md's transparency hierarchy asks. */
-  background: var(--mat-brush), var(--mat-plate);
-  box-shadow:
-    inset 1px 0 0 var(--mat-bevel-hi),
-    inset 0 1px 0 var(--mat-bevel-hi),
-    -1px 0 0 var(--mat-bevel-lo),
-    -10px 0 24px rgba(0, 0, 0, 0.3);
+  background:
+    var(--mat-brush),
+    linear-gradient(180deg, var(--mat-plate-sheen), transparent 160px),
+    linear-gradient(180deg, var(--mat-plate-hi) 0 56px, var(--mat-plate-mid) 50%, var(--mat-plate-lo) 100%);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
+}
+
+/* The screen beside the column draws its own right edge; with the zen rail
+   shown it draws its left one too (ZEN MODE below). */
+.acp-harness--dock-active .acp-harness__lane-body {
+  box-shadow: inset -1px 0 0 var(--mat-key-edge), var(--mat-well-depth);
+}
+
+.acp-harness--zen.acp-harness--dock-active:not(.acp-harness--left-panel-hidden) .acp-harness__lane-body {
+  box-shadow: inset 1px 0 0 var(--mat-key-edge), inset -1px 0 0 var(--mat-key-edge), var(--mat-well-depth);
 }
 
 .acp-harness__dock[hidden] {
@@ -191,7 +206,6 @@
   background: var(--mat-key-down);
   box-shadow: var(--mat-key-sunk);
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .acp-dock__tab--active::before {
@@ -239,19 +253,13 @@
 }
 
 /* Focused by bare `#rails` or a tab switch (tabindex -1) so its list keys
-   apply. The selected row looks the same focused or not, so the dock itself
-   shows whether it holds the keyboard: a 1px inset outline, no animation. */
+   apply. The dock draws no border while it holds the keyboard; instead the
+   selected row's text is lit amber (`rails-dock.css`,
+   `assistant-instances.css`). */
 .acp-harness__rails-dock:focus,
 .acp-harness__ticket-dock:focus,
 .acp-harness__assistants-dock:focus {
   outline: none;
-}
-
-.acp-harness__rails-dock:focus-within,
-.acp-harness__ticket-dock:focus-within,
-.acp-harness__assistants-dock:focus-within {
-  outline: 1px solid rgba(255, 176, 0, 0.42);
-  outline-offset: -1px;
 }
 
 /* A section's heading is engraved into the plate; what it shows sits in a
@@ -1106,7 +1114,6 @@
   padding: 1px 0;
   border: 1px solid transparent;
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .acp-harness__msg-body--stream-live .acp-harness__svg-card--live + pre:has(> code.svg),
@@ -1281,8 +1288,9 @@
   font: inherit;
   line-height: inherit;
   letter-spacing: inherit;
-  /* Spec 366: the one-shot afterimage is a backlit legend flash — lit amber
-     with the legend glow, gone within the bloom duration. */
+  /* Spec 366: the one-shot afterimage is a lamp flash (DESIGN.md "Motion"),
+     not a label — lit amber with `--mat-lit-glow`, gone within the bloom
+     duration. Legends themselves carry no glow. */
   color: var(--mat-lit);
   text-shadow: var(--mat-lit-glow);
   will-change: opacity, transform;
@@ -1344,14 +1352,13 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
   }
 }
 
-/* The live row's label is a steady backlit legend (spec 366: live state is a
-   lit lamp, not a pulse). `LiveComponent.seal()` re-derives the row's classes
-   and drops `--streaming`, so a sealed row returns to the engraved silk label
-   and never repaints (CLAUDE.md constraint 10). One row per lane streams at a
-   time, so this is the only label in a transcript that carries a glow. */
+/* The live row's label is a steady lit legend (spec 366: live state is a lit
+   lamp, not a pulse), lit amber with no glow. `LiveComponent.seal()`
+   re-derives the row's classes and drops `--streaming`, so a sealed row
+   returns to the engraved silk label and never repaints (CLAUDE.md
+   constraint 10). */
 .acp-harness__msg--streaming .acp-harness__msg-label {
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 /* ═══════════════════════════════════════════════════════════════

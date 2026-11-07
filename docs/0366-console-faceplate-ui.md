@@ -139,10 +139,11 @@ same element. The light set is the dock's aluminium set with the plate stops at 
   well: `--mat-screen` fill plus the well's inset shadow, drawn inside the existing box, so titlebar
   28px, tab 28px, radius 8px and the terminal cell grid do not change. The window keeps one
   `--mat-cast` shadow; the 20px accent glow goes. Focused: titlebar LED lit in the window accent,
-  label backlit `--mat-lit`, a 1px accent outline at 0.55 alpha (no glow). Unfocused: LED unlit,
-  label engraved ink.
+  label lit `--mat-lit` with no glow (the label clips, so a bloom reads as a box), a 1px accent
+  outline at 0.55 alpha (no glow). Unfocused: LED unlit, label engraved ink.
 - **Window accent** (`--krypton-window-accent`, lane accents, manual pick, signal states) colours the
-  window's LEDs (titlebar, its tabs, footer lane marks) and the focus outline only. Labels stay silk.
+  window's LEDs (titlebar, its tabs) and the focus outline only. Labels stay silk. Footer lane marks
+  carry no LED.
 - **Overlays and dialogs** (palette, which-key, hints, prompt dialog, quick overview, dashboards,
   inline AI, toasts, harness pickers and dialogs): one floating plate with `--mat-cast` over
   `--mat-scrim`; engraved head; input well; result list as one well with grooves and a full-row
@@ -152,8 +153,10 @@ same element. The light set is the dock's aluminium set with the plate stops at 
   well's inset shadow, not a second fill); lane head = plate strip with the name engraved and status as
   a lamp; zen rail = plate column of selector keys with LEDs; composer = plate with the draft line in
   a well; transcript rows are flat text in the lane well with engraved labels; tool rows keep kind
-  chip + status lamp + output well; permission and question options are keys; floating lane cards
-  (peek, queue, plan, thought, grammar, heat) are small plates.
+  chip (status LED inside it, before the legend) + output well; permission and question options are keys; floating lane cards
+  (peek, queue, plan, thought, grammar, heat) are small plates. The right dock column and the shown
+  lane's head strip are one plate as well: the column holds its top stop for the strip's height, and
+  the screen draws its own right edge.
 - **Content views.** Toolbars, status bars, breadcrumbs and sidebars become plates, readouts and
   wells; markdown prose, diff2html tables, file previews, hurl source/response, the Excalidraw canvas,
   the native webview and the review-board document stay flat.

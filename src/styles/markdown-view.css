@@ -203,7 +203,6 @@
 
 .krypton-md__status--filter {
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .krypton-md__status-text {
@@ -693,7 +692,6 @@
 /* Ask mode: the same label, backlit. */
 .krypton-md-ai__prompt--ask {
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .krypton-md-ai__mode {
@@ -809,7 +807,6 @@
   font-family: inherit;
   font-size: var(--krypton-chrome-font-size, 11px);
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .krypton-md-ai__dots::before {

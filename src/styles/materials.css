@@ -65,7 +65,9 @@
     --mat-key-sunk: inset 0 2px 4px rgba(0, 0, 0, 0.62), inset 0 0 0 1px rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.06);
 
     /* Text: engraved into the plate; printed on a key; amber silk labels and
-       the backlit legend with its tight + bloom glow. */
+       the lit legend (colour only — legends carry no glow). `--mat-lit-glow`
+       is kept for one effect, not a label: the composer bloom's one-shot
+       afterimage flash (harness-shared.css). */
     --mat-engrave: 0 1px 0 rgba(255, 255, 255, 0.07), 0 -1px 0 rgba(0, 0, 0, 0.7);
     --mat-print: 0 -1px 0 rgba(0, 0, 0, 0.55);
     --mat-silk: #ffb000;

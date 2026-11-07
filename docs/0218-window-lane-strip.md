@@ -8,7 +8,7 @@
 > Amended (rev 5, 2026-09-23): the active lane name gains a tinted tab surface without a border; its tail is brighter. The surface is absolutely positioned behind the existing text, preserving the shared baseline and footer layout; inactive marks remain flat.
 > Amended (rev 6, 2026-09-24): the active mark shows only its large two-letter initials and a small trailing lane number (`CL²`). The tab surface and name tail are removed; the full name remains in the tooltip and strip's accessible label. Inactive marks stay at rail size.
 > Milestone: M9 — harness observability
-> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): lane marks are silk initials beside an accent LED.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.1 (Krypton Console): lane marks are initials only, silk on the active lane and ink on the others, with no LED and no lane colour.
 
 ## Problem
 
@@ -125,9 +125,6 @@ export interface HarnessLaneMark {
   displayName: string;
   /** Backend id — tooltip / identity only. The strip does not paint a logo. */
   backendId: string;
-  /** Lane accent CSS value (`lane.accent`, picked at random per lane by
-   *  `pickLaneAccent`), applied inline as `--krypton-lane-accent`. */
-  accent: string;
   active: boolean;
 }
 
@@ -173,13 +170,13 @@ at the other end of the same rail).
 1. Harness lane roster changes (lane added/removed/renamed, ⌃1..9 or ⌘P moves the
    active lane)
 2. The harness's RAF render() calls notifyLaneMarksChanged()
-3. That serializes id/backend/name/accent/active into a key and returns early when
+3. That serializes id/backend/name/active into a key and returns early when
    unchanged — status is NOT in the key, so a busy→idle churn never repaints
 4. On change it invokes the compositor's per-window listener
 5. renderWindowLaneStrip() caps the roster at 8, compares laneStripKey against the
    window's rendered key, and rebuilds the ≤9 nodes only when it differs
-6. Each mark is a two-letter drop cap (`laneDropCap`) coloured by an inline
-   --krypton-lane-accent; only the active mark renders a small trailing number
+6. Each mark is a two-letter drop cap (`laneDropCap`) in ink (silk when active), with
+   no LED or lane colour; only the active mark renders a small trailing number
 7. Focus moving to another pane, a tab switch, or a window create calls
    syncWindowFooter(win) → syncWindowLaneStrip(win), which resubscribes to the
    newly focused view and re-renders (a terminal reports no lanes → strip removed)
@@ -211,12 +208,11 @@ space: it cannot appear without the badge, so the pushing arrangement below is u
   <div class="krypton-window__lane-strip"
        aria-label="harness lanes: Claude-1 (active), Grok-1">
     <span class="krypton-window__lane krypton-window__lane--active"
-          style="--krypton-lane-accent: #8effb0" title="Claude-1 · claude · active lane">
+          title="Claude-1 · claude · active lane">
       <span class="krypton-window__lane-initials">Cl</span>
       <sup class="krypton-window__lane-number">1</sup>
     </span>
-    <span class="krypton-window__lane" style="--krypton-lane-accent: #5ce6a8"
-          title="Grok-1 · grok">
+    <span class="krypton-window__lane" title="Grok-1 · grok">
       <span class="krypton-window__lane-initials">Gr</span>
     </span>
   </div>
@@ -233,14 +229,14 @@ and the rest trail it with a fixed gap, so the strip stays against the edge in e
 | strip alone (unfocused window, terminal pane) | the strip | `auto` |
 | badge + strip | the badge | `10px` — `:has(.krypton-window__project)` |
 
-**Three cues mark the one active lane** — so identification never rests on colour alone (every
-lane already *has* a colour, and lane hues repeat past 13 lanes):
+**Three cues mark the one active lane**, and none of them is colour: the marks carry no lane
+colour at all.
 
 | Cue | Active lane | Every other lane |
 |-----|-------------|------------------|
 | **Size** | first two letters magnified `2.9×` — the same drop cap as `KR` | two letters at the rail's 11px |
 | **Number** | small trailing lane number when the name ends in `-N` | none |
-| **Weight** | full-strength accent | `opacity: .45` |
+| **Ink** | silk | the dim ink tier |
 
 The active mark has no background, border, or motion. Its tooltip and the strip's accessible
 label retain the full lane name, including when a custom name has no numeric suffix.
@@ -289,7 +285,6 @@ None.
 | Harness pane closed | `closePaneInTab` → `updatePaneFocusIndicator` → `syncWindowFooter` re-renders from the newly focused pane |
 | Window closed | `closeWindow()` fires the lane unsubscribe and drops the cached key |
 | Focus moves to a background tab's harness | Only the *active* tab's focused pane is read, so a hidden tab's lanes never show |
-| More than 13 lanes | Lane accents repeat (`pickLaneAccent` falls back to the whole palette) — which is exactly why the name cue exists and colour is not load-bearing |
 | More than 8 lanes | First 8 marks plus `+N`; the active lane can therefore be inside the `+N` tail — acceptable, since the harness view itself is the full roster and 8 lanes in one harness is already far past normal |
 | Unknown/new backend id | The strip no longer paints a logo; the display name's two-letter head is the mark |
 | Rapid status churn (busy → idle → busy) | The dedupe key excludes status, so nothing notifies and the strip never churns |

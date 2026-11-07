@@ -41,7 +41,6 @@
     width: 1ch;
     text-align: center;
     color: var(--mat-lit);
-    text-shadow: var(--mat-lit-glow);
   }
 
   .acp-harness__input {

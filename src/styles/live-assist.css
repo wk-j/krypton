@@ -255,7 +255,6 @@ textarea {
   background: var(--mat-key-down);
   box-shadow: var(--mat-key-sunk);
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .live-assist__lane-state {
@@ -745,7 +744,6 @@ textarea {
   color: var(--mat-lit);
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.09em;
-  text-shadow: var(--mat-lit-glow);
   white-space: nowrap;
 }
 
@@ -779,7 +777,6 @@ textarea {
 
 .live-assist__composer:focus-within .live-assist__prompt {
   color: var(--mat-lit);
-  text-shadow: var(--mat-lit-glow);
 }
 
 .live-assist__composer[hidden] {

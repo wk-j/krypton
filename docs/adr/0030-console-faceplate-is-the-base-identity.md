@@ -45,6 +45,8 @@ Applies to: `src/**/*.css`
 - No rule adds an `infinite` animation except on a text caret, the terminal cursor or the
   selection-mode cursor.
 - No rule adds a glow (`box-shadow` / `text-shadow` / `filter: drop-shadow` with blur in an accent or
-  state colour) to anything but a lamp, an LED lens or a backlit legend (`--mat-lit-glow`).
+  state colour) to anything but a lamp or an LED lens. Legends, labels and titles carry none (amended
+  2026-11-07, DESIGN.md 2.0.1); the one exception is the composer bloom's one-shot afterimage flash,
+  which keeps `--mat-lit-glow`.
 - No rule puts a `box-shadow`, `text-shadow` or gradient on a repeated row (transcript row, diff line,
   tool output line, list or palette row); a groove border and the selection tint are the most it gets.

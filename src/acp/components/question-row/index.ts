@@ -140,15 +140,17 @@ class QuestionHead extends Component<QuestionPayload> {
     const pending = next.decision === 'pending';
     const nodes: Node[] = [];
     if (!pending) {
+      // The decision LED sits inside the chip, before its legend.
       nodes.push(
-        el('span', {
-          class: `acp-harness__question-glyph acp-harness__question-glyph--${next.decision}`,
-          text: next.decision === 'accepted' ? '✓' : '✗',
-        }),
-        el('span', {
-          class: 'acp-harness__question-decision',
-          text: next.decisionLabel ?? next.decision,
-        }),
+        el(
+          'span',
+          { class: 'acp-harness__question-decision' },
+          el('span', {
+            class: `acp-harness__question-glyph acp-harness__question-glyph--${next.decision}`,
+            text: next.decision === 'accepted' ? '✓' : '✗',
+          }),
+          next.decisionLabel ?? next.decision,
+        ),
       );
     }
     // A resolved card drops back to the first question's text: the cursor it

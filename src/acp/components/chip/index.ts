@@ -5,10 +5,10 @@
 // kind, ticket badge, priority tag. It owns no block — `block` is a prop, so
 // the existing CSS is untouched and each caller keeps its own class.
 //
-// Content order is always [text, icon, trailing]; that covers every chip the
-// harness emits today, including `mcp ✓ 14` (text `mcp `, icon `check`,
-// trailing ` 14`) and `⚠ unsandboxed` (no text, icon `warn`, trailing
-// ` unsandboxed`).
+// Content order is always [leading, text, icon, trailing]; that covers every
+// chip the harness emits today, including `mcp ✓ 14` (text `mcp `, icon
+// `check`, trailing ` 14`), `⚠ unsandboxed` (no text, icon `warn`, trailing
+// ` unsandboxed`) and the tool kind chip with its status LED (leading).
 
 import { Component } from '../../../ui/component';
 import { classes, el, setAttr } from '../../../ui/dom';
@@ -30,8 +30,10 @@ export interface ChipProps {
   readonly text: string;
   readonly icon?: ChipIcon;
   readonly trailing?: string;
-  /** When set, `trailing` is a span with this class instead of a bare text node. */
-  readonly trailingClass?: string;
+  /** A node the caller owns and keeps updating itself (the tool row's status
+   *  LED), placed before the text. Compared by reference: pass the same node
+   *  every time, and a repaint re-seats it instead of rebuilding it. */
+  readonly leading?: Node;
   /** Appends `${block}--${tone}`; `neutral` appends nothing. */
   readonly tone?: ChipTone;
   readonly title?: string;
@@ -52,7 +54,7 @@ export class Chip extends Component<ChipProps> {
       next.icon?.id,
       next.icon?.cls,
       next.trailing,
-      next.trailingClass,
+      next.leading,
       next.tone,
       next.title,
       next.modifiers?.join(' '),
@@ -75,15 +77,10 @@ export class Chip extends Component<ChipProps> {
       for (const [key, value] of Object.entries(next.data)) setAttr(this.el, `data-${key}`, value);
     }
     this.el.replaceChildren();
+    if (next.leading) this.el.appendChild(next.leading);
     if (next.text) this.el.append(next.text);
     if (next.icon) this.el.appendChild(harnessIconEl(next.icon.id, next.icon.cls));
-    if (next.trailing) {
-      if (next.trailingClass) {
-        this.el.appendChild(el('span', { class: next.trailingClass, text: next.trailing }));
-      } else {
-        this.el.append(next.trailing);
-      }
-    }
+    if (next.trailing) this.el.append(next.trailing);
   }
 }
 
