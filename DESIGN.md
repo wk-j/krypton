@@ -93,7 +93,7 @@ inline on `<html>`, beats the sheet, and the composed gradients re-resolve with 
 
 | Token | Role |
 |---|---|
-| `--mat-plate`, `--mat-brush` | The faceplate: top-lit graphite at 0.9 alpha under a 2–3% vertical brush |
+| `--mat-plate`, `--mat-brush` | The faceplate: top-lit graphite at 0.9 alpha under a faint (under 1%) vertical brush |
 | `--mat-bevel-hi/lo` | The plate's lit inner edge and the dark seam where it meets what is next to it |
 | `--mat-well`, `--mat-well-fill` | A recessed display: gradient for a standalone well, flat fill for a well cut into rows |
 | `--mat-well-depth/wall/lip`, `--mat-well-shadow` | Inner top shadow, 1px wall, light lip under the bottom edge |
@@ -159,11 +159,13 @@ comment.
 
 ## Surfaces
 
-- **Terminal window.** A bezel around a screen. The titlebar (28px), tab bar and footer are plate
+- **Terminal window.** A bezel around a screen. The titlebar (36px), tab bar and footer are plate
   strips; the body is the screen. The window has a 1px `--mat-key-edge` border, the bevel on its top
   edge and one `--mat-cast`. Focused: the titlebar LED lit in the window accent, the title backlit
   `--mat-lit`, and a 1px window-accent ring at 0.55 alpha (`box-shadow: 0 0 0 1px`), no glow.
-  Unfocused: LED unlit, title engraved ink.
+  Unfocused: LED unlit, title engraved ink. When the shown tab is one view whose bottom edge is a
+  plate (the harness command centre, a content view's status readout), the footer continues that
+  plate: no seam, no bevel, flat `--mat-plate-lo`, which is where the view's plate ends.
 - **Window accent** (`--krypton-window-accent`, lane accents, manual pick, signal states) colours the
   window's LEDs — titlebar, its tabs, footer lane marks — and the window focus ring. Labels stay silk.
 - **Overlays and dialogs** (palette, which-key, hints, prompt dialog, quick overview, dashboards,
@@ -177,9 +179,11 @@ comment.
   the draft line in a well; transcript rows are flat text on the screen under engraved labels; tool
   rows are a kind chip, a status lamp and an output well; permission and question options are keys;
   floating lane cards are small plates. The right dock column is a flush plate of wells, keys and lamps.
-- **Content views.** Toolbars, status bars, breadcrumbs and sidebars are plates, readouts and wells.
-  Markdown prose, diff tables, file previews, request/response bodies, the Excalidraw canvas, the
-  native webview and review-board documents stay flat.
+- **Content views.** The file browser and the markdown reader are one plate: the path and the status
+  are readout wells engraved into it; the list is a well and the preview a screen well, set side by
+  side 8px apart. Other views' toolbars, status bars, breadcrumbs and sidebars are plates, readouts
+  and wells. Markdown prose, diff tables, file previews, request/response bodies, the Excalidraw
+  canvas, the native webview and review-board documents stay flat.
 
 ## Colour and state
 
@@ -209,8 +213,8 @@ spacing. Every digit that changes — timers, counts, gauges, sizes, percentages
 8px on every rectangular part: windows, panels, wells, keys, readouts, toasts. 6px only for selector
 keys inside an 8px channel. Capsules are `999px`; LEDs and status discs are circles. 0px only on an
 interior pane flush with an edge (the dock column, the harness composer). Titlebar and tab heights
-come from the theme (28px built in). Below `320 × 120` a window collapses to its titlebar plate; below
-200px wide it closes.
+come from the theme (36px built in, so the selector keys are 26px and the titlebar keys 24px). Below
+`320 × 120` a window collapses to its titlebar plate; below 200px wide it closes.
 
 ```
 ┌─ plate ─────────────────────────────────────────────────────┐

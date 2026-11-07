@@ -19,7 +19,7 @@
 @layer krypton.base {
   :root {
     /* Plate: the faceplate. A top-lit graphite gradient at 0.9 alpha under a
-       2-3% vertical brush; never fully opaque (the backdrop still reads). */
+       faint (under 1%) vertical brush; never fully opaque (the backdrop still reads). */
     --mat-plate-sheen: rgba(255, 255, 255, 0.035);
     --mat-plate-hi: rgba(46, 49, 56, 0.9);
     --mat-plate-mid: rgba(32, 34, 40, 0.9);
@@ -27,8 +27,8 @@
     --mat-plate:
       linear-gradient(180deg, var(--mat-plate-sheen), transparent 160px),
       linear-gradient(180deg, var(--mat-plate-hi) 0%, var(--mat-plate-mid) 50%, var(--mat-plate-lo) 100%);
-    --mat-brush-hi: rgba(255, 255, 255, 0.018);
-    --mat-brush-lo: rgba(0, 0, 0, 0.035);
+    --mat-brush-hi: rgba(255, 255, 255, 0.0045);
+    --mat-brush-lo: rgba(0, 0, 0, 0.009);
     --mat-brush: repeating-linear-gradient(90deg, var(--mat-brush-hi) 0 1px, transparent 1px 2px, var(--mat-brush-lo) 2px 3px, transparent 3px 5px);
     --mat-bevel-hi: rgba(255, 255, 255, 0.08);
     --mat-bevel-lo: rgba(0, 0, 0, 0.6);
@@ -111,8 +111,8 @@
     --mat-plate-hi: rgba(234, 235, 238, 0.94);
     --mat-plate-mid: rgba(218, 220, 224, 0.94);
     --mat-plate-lo: rgba(204, 207, 212, 0.94);
-    --mat-brush-hi: rgba(255, 255, 255, 0.14);
-    --mat-brush-lo: rgba(0, 0, 0, 0.018);
+    --mat-brush-hi: rgba(255, 255, 255, 0.035);
+    --mat-brush-lo: rgba(0, 0, 0, 0.0045);
     --mat-bevel-hi: rgba(255, 255, 255, 0.85);
     --mat-bevel-lo: rgba(0, 0, 0, 0.2);
     --mat-well-hi: rgba(194, 197, 203, 0.72);

@@ -126,7 +126,7 @@
    lights `.krypton-window__titlebar--progress .krypton-window__status-dot`);
    error and paused re-colour it. Do not set overflow on
    `.krypton-window__titlebar` here: window.css owns `overflow: hidden` so the
-   session mark stays in the 28px rail (spec 226). */
+   session mark stays in the titlebar rail (spec 226). */
 .krypton-window__titlebar--progress-error .krypton-window__status-dot {
   --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
 }

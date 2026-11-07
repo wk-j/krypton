@@ -283,6 +283,11 @@ export interface ContentView {
    *  calls it with the char length of each streamed output delta to drive the
    *  band's amplitude (analogous to PTY byte throughput). See docs/189. */
   onOutputPump?: (chars: number) => void;
+  /** Spec 366: the view's bottom edge is a plate strip (the harness command
+   *  centre, a status bar) whose plate ends at `--mat-plate-lo`. While it is
+   *  the only pane of its window's shown tab, the window footer continues that
+   *  plate instead of drawing a seam, so the two read as one faceplate. */
+  readonly platedFoot?: boolean;
   /** Optional working directory associated with this content view */
   getWorkingDirectory?(): string | null;
   /** Authoritative workspace identity for target-aware project operations. */

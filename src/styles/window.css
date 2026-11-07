@@ -203,7 +203,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  height: var(--krypton-titlebar-height, 28px);
+  height: var(--krypton-titlebar-height, 36px);
   padding: 0 12px;
   -webkit-user-select: none;
   user-select: none;
@@ -294,8 +294,8 @@
 
 /* spec 226: session identity (`01`) on the titlebar's right edge.
    A readout: the figure in a small well. Quiet 11px on every tile; zoomed and
-   backlit only on the focused window, capped inside the 28px rail so the ID
-   stays at the top of the window and never collides with the oscilloscope.
+   backlit only on the focused window, capped inside the titlebar rail so the
+   ID stays at the top of the window and never collides with the oscilloscope.
    `font-size` (not a transform) so the box carries its painted width. The end
    cluster is locked to the titlebar height so the type cannot grow the rail. */
 .krypton-window__titlebar-end {
@@ -332,7 +332,7 @@
 .krypton-window--focused .krypton-window__label-tail {
   font-size: min(
     calc(var(--krypton-chrome-font-size, 11px) * var(--krypton-title-tail-zoom, 2.9)),
-    calc(var(--krypton-titlebar-height, 28px) - 8px)
+    calc(var(--krypton-titlebar-height, 36px) - 8px)
   );
   letter-spacing: -0.02em;
   color: var(--mat-lit);
@@ -356,8 +356,8 @@
 /* ─── Titlebar view toggles (spec 320) ───
    Keys a content view contributes to its host window's titlebar.
    First child of `-end`; tabindex -1 so a click never steals the composer.
-   Dense keys: the 28px rail holds a 20px key, under DESIGN.md's 24px dense
-   minimum, because the titlebar height is the theme's, not the part's. */
+   Dense keys (DESIGN.md "Key", 24px), shrunk to keep 4px of plate above and
+   below them when a theme sets a rail under 32px. */
 .krypton-window__view-toggles {
   display: flex;
   align-items: center;
@@ -374,8 +374,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 20px;
+  width: 26px;
+  height: min(24px, calc(var(--krypton-titlebar-height, 36px) - 8px));
   padding: 0;
   margin: 0;
   border: 1px solid var(--mat-key-edge);
@@ -539,6 +539,17 @@
      lane strip all pin to this line so KR / +N −N / GR sit on one baseline.
      Declared on the footer so the three agree in one place. */
   --krypton-lane-chip-height: 18px;
+}
+
+/* Spec 366: under a plated foot (compositor `syncWindowPlatedFoot`) the view's
+   last strip — the harness command centre, a content view's status bar — ends
+   at `--mat-plate-lo`, and the footer carries on from it: no seam, no bevel,
+   no restarted top-lit gradient, so prompt, status and footer read as one
+   faceplate. */
+.krypton-window--plated-foot .krypton-window__footer {
+  border-top: 0;
+  box-shadow: none;
+  background: var(--mat-brush), var(--mat-plate-lo);
 }
 
 /* ─── Window footer project badge (spec 219) ───
@@ -887,7 +898,7 @@
   flex: 0 1 auto;
   min-width: 0;
   /* `[chrome.tabs] height` sizes the channel; it never outgrows the rail. */
-  height: calc(min(var(--krypton-tab-height, 28px), var(--krypton-titlebar-height, 28px)) - 4px);
+  height: calc(min(var(--krypton-tab-height, 36px), var(--krypton-titlebar-height, 36px)) - 4px);
   margin-right: auto;
   padding: 3px;
   gap: 3px;

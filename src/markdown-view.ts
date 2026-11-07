@@ -64,6 +64,8 @@ const md = new Marked(
 export class MarkdownContentView implements ContentView {
   readonly type: PaneContentType = 'markdown';
   readonly element: HTMLElement;
+  /** Spec 366: the view is one plate down to its status readout. */
+  readonly platedFoot = true;
 
   private files: string[] = [];
   private filteredFiles: string[] = [];
@@ -158,7 +160,7 @@ export class MarkdownContentView implements ContentView {
 
     // ── File list ──
     this.sidebar = document.createElement('div');
-    this.sidebar.className = 'krypton-md__sidebar krypton-md__panel--focused';
+    this.sidebar.className = 'krypton-md__sidebar';
     this.fileListEl = document.createElement('div');
     this.fileListEl.className = 'krypton-md__file-list';
     this.sidebar.appendChild(this.fileListEl);
@@ -566,13 +568,6 @@ export class MarkdownContentView implements ContentView {
 
   private setFocus(panel: 'sidebar' | 'preview' | 'select'): void {
     this.focusPanel = panel;
-    if (panel === 'sidebar') {
-      this.sidebar.classList.add('krypton-md__panel--focused');
-      this.previewContent.parentElement?.classList.remove('krypton-md__panel--focused');
-    } else {
-      this.sidebar.classList.remove('krypton-md__panel--focused');
-      this.previewContent.parentElement?.classList.add('krypton-md__panel--focused');
-    }
     this.breadcrumb.classList.toggle('krypton-md__breadcrumb--focused', panel !== 'sidebar');
   }
 

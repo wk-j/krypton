@@ -1,10 +1,11 @@
 /* ─── Markdown Viewer ─── */
 /* The File Manager's design (file-manager.css) applied to a document reader,
-   built from the Krypton Console parts (DESIGN.md 2.0.0, spec 366): the path
-   line and the status readout are plate strips, the file list is a recessed
-   well cut into groove-split rows, the preview is the window's screen with
-   the prose flat on it. Selection is a full-row `--mat-select` tint, never an
-   edge rail (ADR-0027). Colours come from theme and material tokens.
+   built from the Krypton Console parts (DESIGN.md 2.0.0, spec 366): the whole
+   view is one faceplate; the path and the status are readout wells engraved
+   into it; the file list is a recessed well cut into groove-split rows and
+   the preview a screen well with the prose flat on it, set side by side.
+   Selection is a full-row `--mat-select` tint, never an edge rail
+   (ADR-0027). Colours come from theme and material tokens.
    Ink tiers fall back to the foreground at reduced alpha — never
    `--krypton-fg-dim` and never ANSI bright-black for text. */
 
@@ -19,7 +20,9 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: transparent;
+  /* One plate behind every part, ending on `--mat-plate-lo` so the window
+     footer can carry on from it (`platedFoot`, window.css). */
+  background: var(--mat-brush), var(--mat-plate);
   color: var(--krypton-fg);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: var(--krypton-font-size, 14px);
@@ -27,52 +30,63 @@
 }
 
 /* ── Path line ── */
-/* A plate strip meeting the screen on its bottom edge, the shown document's
-   path engraved in ink (natural case: it is a path). It lights to silk while
-   the preview has focus; with the list focused the cursor row's outline marks
-   focus instead. */
+/* The path readout: a well (`::before`, so the view keeps writing plain
+   `textContent`) engraved into the plate, the shown document's path in ink
+   (natural case: it is a path). It lights to silk while the preview has
+   focus and stays ink with the list focused: the only focus mark. */
 .krypton-md__breadcrumb {
+  position: relative;
+  isolation: isolate;
   flex-shrink: 0;
-  height: 24px;
-  line-height: 24px;
-  padding: 0 12px;
+  height: 30px;
+  line-height: 34px;
+  padding: 0 18px;
   font-size: 12px;
   color: var(--md-ink-dim);
   letter-spacing: 0.02em;
-  text-shadow: var(--mat-engrave);
-  background: var(--mat-brush), var(--mat-plate);
-  border-bottom: 1px solid var(--mat-key-edge);
-  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.krypton-md__breadcrumb::before {
+  content: '';
+  position: absolute;
+  inset: 6px 8px 2px;
+  z-index: -1;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-md__breadcrumb--focused {
   color: var(--mat-silk);
 }
 
+/* The plate around the two displays: 8px from its edges and between them. */
 .krypton-md__body {
   flex: 1;
   display: flex;
+  gap: 8px;
   min-height: 0;
+  padding: 8px;
   overflow: hidden;
 }
 
 /* ── File list ── */
-/* The File Manager list column: a recessed well pane flush with the strips
-   above and below. The scroll container carries the recess (fill, inner top
-   shadow, wall); the rows are flat slices split by grooves at the terminal
-   cell height (the groove sits inside that height), the name in the File
-   Manager's document hue. No shadow or gradient on a row. */
+/* The File Manager list well. The scroll container sits inside the recess
+   (fill, inner top shadow, wall); the rows are flat slices split by grooves
+   at the terminal cell height (the groove sits inside that height), the name
+   in the File Manager's document hue. No shadow or gradient on a row. */
 .krypton-md__sidebar {
   flex: 0 0 333px;
   display: flex;
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
-  background: var(--mat-well-fill);
-  box-shadow: var(--mat-well-depth), inset -1px 0 0 var(--mat-well-wall);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-md__file-list {
@@ -111,17 +125,11 @@
   color: color-mix(in srgb, var(--krypton-ansi-10) 70%, var(--krypton-fg));
 }
 
-/* Selected file — the full-row selection tint; while the list has focus it
-   adds the 1px focus outline inside the row (DESIGN.md "Focus"). With the
-   preview focused the tint stays and the outline drops, so the cursor reads
-   as parked. The row keeps its own text colour. */
+/* Selected file — the full-row selection tint only, no outline, in either
+   panel focus; the path line's accent marks which panel has focus. The row
+   keeps its own text colour. */
 .krypton-md__file--selected {
   background: var(--mat-select);
-}
-
-.krypton-md__panel--focused .krypton-md__file--selected {
-  outline: 1px solid var(--mat-lit);
-  outline-offset: -1px;
 }
 
 .krypton-md__list-empty {
@@ -131,8 +139,8 @@
 }
 
 /* ── Preview ── */
-/* The window's screen shows through: the prose sits flat on it. The left
-   border is the lip where the list well meets the screen. */
+/* The screen well (DESIGN.md "Screen"): the theme backdrop recessed into the
+   plate, the prose flat on it. */
 .krypton-md__preview {
   flex: 1 1 0;
   display: flex;
@@ -140,7 +148,9 @@
   min-width: 0;
   overflow: hidden;
   position: relative;
-  border-left: 1px solid var(--mat-groove-hi);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-screen);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-md__preview-content {
@@ -161,27 +171,21 @@
 }
 
 /* ── Status bar ── */
-/* A plate strip meeting the screen on its top edge, holding one readout
-   window (the `::before` well, drawn inside the strip so its 22px height —
-   which the File Manager twin reads back for its row count — never moves).
-   `/` in the list turns it into the filter prompt: the legend lights and the
-   query field reads as text in it — no box, the line's own type. */
+/* The status readout: a well (`::before`) engraved into the plate's bottom
+   edge. `/` in the list turns it into the filter prompt: the legend lights
+   and the query field reads as text in it — no box, the line's own type. */
 .krypton-md__status {
   position: relative;
   isolation: isolate;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  height: 22px;
-  line-height: 22px;
-  padding: 0 12px;
+  height: 28px;
+  padding: 0 18px 4px;
   font-size: 11px;
   color: var(--md-ink-dim);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  background: var(--mat-brush), var(--mat-plate);
-  border-top: 1px solid var(--mat-key-edge);
-  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   white-space: nowrap;
   overflow: hidden;
   font-variant-numeric: tabular-nums;
@@ -190,7 +194,7 @@
 .krypton-md__status::before {
   content: '';
   position: absolute;
-  inset: 3px 6px;
+  inset: 2px 8px 6px;
   z-index: -1;
   border-radius: var(--krypton-border-radius, 8px);
   background: var(--mat-well);
@@ -488,11 +492,9 @@
 }
 
 /* ── Select Mode ── */
-/* The selected blocks: the full-row selection tint plus the focus outline. */
+/* The selected blocks: the full-row selection tint only, no outline. */
 .krypton-md__block--selected {
   background: var(--mat-select);
-  outline: 1px solid var(--mat-lit);
-  outline-offset: 2px;
   border-radius: var(--krypton-border-radius, 8px);
 }
 

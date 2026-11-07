@@ -89,7 +89,7 @@ Add a dedicated markdown viewer window with a two-panel layout: a **file browser
   <div class="krypton-md__breadcrumb">~/proj/docs/architecture.md</div>
   <div class="krypton-md__body">
     <!-- Left: file list -->
-    <div class="krypton-md__sidebar krypton-md__panel--focused">
+    <div class="krypton-md__sidebar">
       <div class="krypton-md__file-list">
         <div class="krypton-md__file krypton-md__file--selected">
           <span class="krypton-md__file-icon"></span>
@@ -120,7 +120,7 @@ The surface follows the File Manager design (restyle 2026-11-06; it took the ACP
 
 - **Lines and text.** Hairline rules at accent@0.18. Ink tiers are the foreground at 0.86 / 0.56 / 0.4 (`--md-ink*`, via `--krypton-ink-2/3/4` on light themes). No text glow, no edge rails (ADR 0027), no hard-coded colours.
 - **Path line.** The File Manager breadcrumb: 12px, ink-dim, the shown document's path with the home directory as `~` (the cwd before a document loads). It takes the window accent while the preview has focus.
-- **File list.** The File Manager's search rows: terminal cell height and font size, an icon column, then the repo-relative path in the File Manager's document hue. The selected file is the harness picker's active row — accent@0.12 tint plus a 1px accent@0.5 inset outline — while the list has focus; with the preview focused only the tint stays. A filter with no hits shows `No matches`.
+- **File list.** The File Manager's search rows: terminal cell height and font size, an icon column, then the repo-relative path in the File Manager's document hue. The selected file is the full-row `--mat-select` tint with no outline, whichever panel has focus; the path line's accent shows when the preview has focus. Select mode marks its selected blocks the same way: tint only. A filter with no hits shows `No matches`.
 - **Status bar.** The File Manager status readout: 11px uppercase, tracked, ink-dim — `N docs │ filter: <query> │ i/N` (the filter part only while a kept filter is applied).
 - **Filter.** `/` in the list turns the status bar into the File Manager's filter prompt: the line takes the accent and reads `/<query>  (N matches)`; the query field has no box and the line's own type. `Enter` keeps the filtered list, `Escape` clears it.
 

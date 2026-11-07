@@ -50,6 +50,8 @@ const INITIAL_PREVIEW: PreviewOutput = { kind: 'text', text: '' };
 export class FileManagerView implements ContentView {
   readonly type: PaneContentType = 'file_manager';
   readonly element: HTMLElement;
+  /** Spec 366: the view is one plate down to its status readout. */
+  readonly platedFoot = true;
 
   private readonly state: FileManagerState;
   private readonly chord = new KeyChord();
@@ -168,8 +170,11 @@ export class FileManagerView implements ContentView {
   onResize(_width: number, height: number): void {
     const s = this.state;
     s.cellHeight = this.getCellHeight();
+    // The list well is inset into the plate (file-manager.css), so the rows
+    // fit its own box. Before layout (or under a DOM without it) fall back to
+    // the pane height less the two readout strips.
     const chromeH = this.breadcrumb.el.offsetHeight + this.status.el.offsetHeight;
-    const available = height - chromeH;
+    const available = this.listEl.clientHeight || height - chromeH;
     s.visibleRows = Math.max(1, Math.floor(available / s.cellHeight));
     s.scrollOffset = clampScroll(s.cursor, s.scrollOffset, s.visibleRows);
     this.renderList();

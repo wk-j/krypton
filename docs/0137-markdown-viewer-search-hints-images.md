@@ -23,7 +23,7 @@ Three independent, keyboard-first additions that reuse existing viewer subsystem
 1. **In-doc search HUD** — `/` while focus=preview opens a transient bottom HUD (vim-style). Live tinted highlight on matches, `n`/`N` cycle with the current match filled in the accent, `Esc` clears.
 2. **`H` heading-hint overlay** — reuses `enterLinkHintMode`'s label engine over `h1`–`h6`; type a label to jump+scroll. Transient overlay only (no persistent TOC panel — respects spec 39's out-of-scope).
 3. **Image src rewrite + onerror** — after render, walk `img[src]`, resolve relative paths against the current file's directory, convert to a webview-loadable URL via `convertFileSrc()`, and attach an `onerror` that swaps in a styled `IMG BREACH // <path>` notice.
-4. **Strong focused-panel indicator** — the sidebar's selected row carries the harness cursor outline only while the sidebar has focus, and the path line turns accent while the preview has focus (since the 2026-11-06 File Manager restyle; before it, each panel's header turned accent). `setFocus` toggles `krypton-md__panel--focused` on both panels and `krypton-md__breadcrumb--focused` on the path line.
+4. **Strong focused-panel indicator** — the path line turns accent while the preview has focus (since the 2026-11-06 File Manager restyle; before it, each panel's header turned accent). The sidebar's selected row carried a cursor outline while the sidebar had focus until 2026-11-07, when the outline was dropped; the row is now tint only. `setFocus` toggles `krypton-md__breadcrumb--focused` on the path line.
 5. **No-op re-selection guard** — `loadFile` early-returns when the requested file is already loaded (unless `force`), so re-selecting the current file just moves focus to the preview without re-fetch/re-animate/scroll-reset. `r` (reload) passes `force: true`.
 
 ## Research
@@ -127,10 +127,10 @@ private searchIndex = -1;
 
 ### Focused-panel indicator
 
-`setFocus` toggles `.krypton-md__panel--focused` on both the sidebar and the preview. Revised 2026-11-05 to drop the accent bars (ADR 0027 bans edge rails), and 2026-11-06 when the viewer took the File Manager layout (`docs/0039-markdown-viewer.md`), which has no panel headers:
+`setFocus` toggles `.krypton-md__breadcrumb--focused` on the path line. Revised 2026-11-05 to drop the accent bars (ADR 0027 bans edge rails), 2026-11-06 when the viewer took the File Manager layout (`docs/0039-markdown-viewer.md`), which has no panel headers, and 2026-11-07 to drop the cursor-row outline and the `.krypton-md__panel--focused` class it hung on:
 
 - **Path line ink** — while the preview has focus, the path line (`.krypton-md__breadcrumb--focused`) is the window accent; with the list focused it is the File Manager breadcrumb's ink-dim. No glow.
-- **Cursor row** — the sidebar's selected file is the harness picker's active row (accent tint plus a 1px inset outline) while the sidebar has focus. With the preview focused the tint stays and the outline drops, so the cursor reads as parked.
+- **Cursor row** — the sidebar's selected file is the full-row `--mat-select` tint with no outline in either focus state, so the path line ink is the only focus mark.
 - The column divider between the panels is a neutral full-height hairline: layout, not a focus mark. No transition.
 
 ### No-op re-selection guard (in `loadFile`)

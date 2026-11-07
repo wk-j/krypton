@@ -274,9 +274,29 @@ Deviations found while implementing, each with its reason:
   into a dark well.
 - **Provider errors keep per-kind lamp colours** (auth / quota fault, context info, others warning),
   as before, rather than all-fault.
-- **Titlebar view toggles are 22 × 20 keys**, under the 24px dense minimum, so they fit the 28px rail.
+- **The built-in titlebar and tab rows are 36px, not 28px.** At 28px the selector keys were 18px
+  tall around a 13px legend (`[font] size = 16`), and the bar read as thin against the terminal
+  text. The three built-in themes and the `theme.rs` defaults now set `[chrome.titlebar] height`
+  and `[chrome.tabs] height` to 36: a 32px channel of 26px selector keys, the titlebar view toggles
+  at the 24px dense key size (they shrink to keep 4px of plate on a rail under 32px), and the
+  focused session mark at 28px. A custom theme keeps whatever height it sets. The footer stays
+  28px.
 - **Model findings in the review board and review matrix are amber / ink only** (ADR-0004), so
   blocking and non-blocking differ by word and brightness, not red / yellow.
+- **The file browser and the markdown reader are one faceplate.** Drawn as plate strips around a
+  flush list well and a bare screen, they read as the old flat look with amber labels. The whole
+  view is now the plate (`--mat-plate`), the path and status are readout wells (`::before`, so the
+  components still write plain `textContent`), and the list (`--mat-well`) and the preview
+  (`--mat-screen`) are wells inset 8px. The File Manager's visible row count is measured from the
+  list well's own height (`view.ts` `onResize`), not the pane height less the strips.
+- **Plated foot.** A plate strip ending above the window footer showed a seam, a bevel and the
+  footer's top-lit gradient starting over: the harness prompt and the status rail read as two
+  parts. A view whose bottom edge is a plate sets `ContentView.platedFoot` (harness, File Manager,
+  markdown reader); while it is the only pane of the shown tab the compositor puts
+  `krypton-window--plated-foot` on the window (`syncWindowPlatedFoot`), and the footer drops its
+  seam and bevel and fills with flat `--mat-plate-lo`. The command centre is shorter than the
+  plate's 160px sheen, so under a plated foot it spreads the sheen over its own height and ends
+  exactly on `--mat-plate-lo`.
 
 ## Out of Scope
 

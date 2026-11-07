@@ -1760,6 +1760,17 @@ export class Compositor {
     this.syncWindowProjectBadge(win);
     this.syncStageProjectInitials(win);
     this.syncWheelItem(win);
+    this.syncWindowPlatedFoot(win);
+  }
+
+  /** Spec 366: when the shown tab is one pane whose view ends in a plate strip
+   *  (`ContentView.platedFoot`), the footer continues that plate with no seam.
+   *  One pane only: beside a split, the footer also runs under the other pane. */
+  private syncWindowPlatedFoot(win: KryptonWindow): void {
+    const tab = win.tabs[win.activeTabIndex];
+    const panes = tab ? this.collectPanes(tab.paneTree) : [];
+    const plated = panes.length === 1 && panes[0].contentView?.platedFoot === true;
+    win.element.classList.toggle('krypton-window--plated-foot', plated);
   }
 
   /** The window's project path: the focused content view's working directory,

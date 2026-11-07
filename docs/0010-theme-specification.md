@@ -180,7 +180,7 @@ The title bar at the top of each window.
 
 ```toml
 [chrome.titlebar]
-height = 28                         # Title bar height in pixels
+height = 36                         # Title bar height in pixels
 font_size = 11                      # Font size in pixels
 font_weight = 600                   # CSS font-weight (100-900)
 letter_spacing = 0.08               # Letter spacing in em
@@ -190,7 +190,7 @@ alignment = "left"                  # "left", "center", "right"
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `height` | int | `28` | Title bar height (px) |
+| `height` | int | `36` | Title bar height (px) |
 | `font_size` | int | `11` | Font size (px) |
 | `font_weight` | int | `600` | CSS font weight |
 | `letter_spacing` | float | `0.08` | Letter spacing (em) |
@@ -258,7 +258,7 @@ Tab strip styling (when tabs are enabled within a window). The strip lives insid
 
 ```toml
 [chrome.tabs]
-height = 28                         # Tab row height; pill = height − 6px, capped by the titlebar
+height = 36                         # Tab row height; channel = min(height, titlebar height) − 4px
 background = "transparent"          # Tab bar background
 active_color = "#0cf"               # Active tab text/indicator color
 inactive_color = "rgba(0, 200, 255, 0.3)"
@@ -266,7 +266,7 @@ inactive_color = "rgba(0, 200, 255, 0.3)"
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `height` | int | `28` | Tab row height (px); the pill is `height − 6px`, never taller than `titlebar height − 6px` |
+| `height` | int | `36` | Tab row height (px); the selector-key channel is `min(height, titlebar height) − 4px`, its keys 6px shorter |
 | `background` | color | `"transparent"` | Tab bar background |
 | `active_color` | color | `"#0cf"` | Active tab text/indicator |
 | `inactive_color` | color | `"rgba(0, 200, 255, 0.3)"` | Inactive tab text |

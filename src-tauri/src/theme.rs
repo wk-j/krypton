@@ -276,7 +276,7 @@ impl Default for ChromeBackdrop {
 impl Default for ChromeTitlebar {
     fn default() -> Self {
         Self {
-            height: 28,
+            height: 36,
             font_size: 11,
             font_weight: 600,
             letter_spacing: 0.08,
@@ -321,7 +321,7 @@ impl Default for ChromeCornerAccents {
 impl Default for ChromeTabs {
     fn default() -> Self {
         Self {
-            height: 28,
+            height: 36,
             background: "transparent".to_string(),
             active_color: "#0cf".to_string(),
             inactive_color: "rgba(0, 200, 255, 0.3)".to_string(),

@@ -215,7 +215,7 @@ All colors via theme custom properties. BEM naming with `.krypton-file-manager` 
 
 - **Lines and text.** Hairline rules at accent@0.18. Ink tiers are the foreground at 0.86 / 0.56 / 0.4 (`--fm-ink*`, via `--krypton-ink-2/3/4` on light themes), never `--krypton-fg-dim` or ANSI bright-black for text.
 - **No decoration.** No text glow and no CRT scanline texture.
-- **Cursor row.** It is the harness picker's active row: accent@0.12 tint plus a 1px accent@0.5 outline inside a rounded row. The row keeps its own text colours: no inverted fill and no cursor-specific type-colour overrides.
+- **Cursor row.** The full-row `--mat-select` tint, no outline. The row keeps its own text colours: no inverted fill and no cursor-specific type-colour overrides.
 - **List colours.** Directories render in the window accent. File-type hues are mixed 70% toward the foreground. Marked files get a distinct marker glyph.
 - **Preview.** Prose follows the harness markdown: graded cyan/green headings, a rule under h1 only, borderless code chip and `pre`, and no left-edge rails (ADR 0027).
 - **Frontmatter card.** It is the harness rail-panel card.

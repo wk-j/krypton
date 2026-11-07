@@ -1,10 +1,10 @@
 /* ─── File Manager ─── */
-/* Krypton Console parts (DESIGN.md 2.0.0, spec 366): the path line and the
-   status readout are plate strips, the list is a recessed well pane of flat
-   groove-split rows, the preview is the window's screen with the file flat
-   on it. Rows are virtualized and translated (smooth-scroll.ts): they keep
-   the terminal cell height and carry no shadow or gradient — the recess is
-   drawn once, on the list. Selection is a full-row `--mat-select` tint,
+/* Krypton Console parts (DESIGN.md 2.0.0, spec 366): the whole view is one
+   faceplate. The path and the status are readout wells engraved into it; the
+   list is a recessed well and the preview a screen well, set into the plate
+   side by side. Rows are virtualized and translated (smooth-scroll.ts): they
+   keep the terminal cell height and carry no shadow or gradient — the recess
+   is drawn once, on the list. Selection is a full-row `--mat-select` tint,
    never an edge rail (ADR-0027). All colours flow through theme and material
    tokens; no hard-coded hex.
    Ink tiers fall back to the foreground at reduced alpha — never
@@ -21,7 +21,10 @@
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background: transparent;
+  /* One plate behind every part. It is taller than the 160px sheen, so it
+     ends on `--mat-plate-lo` and the window footer can carry on from it
+     (`platedFoot`, window.css). */
+  background: var(--mat-brush), var(--mat-plate);
   color: var(--krypton-fg);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', monospace);
   font-size: var(--krypton-font-size, 14px);
@@ -31,25 +34,33 @@
   user-select: text;
 }
 
-/* A plate strip meeting the screen on its bottom edge: the path engraved in
-   ink (natural case), or the search prompt lit. Its height is read back for
-   the visible row count (view.ts `onResize`) — keep it. */
+/* The path readout: a well (`::before`, so the component keeps writing plain
+   `textContent`) engraved into the plate, the path in ink (natural case), or
+   the search prompt lit. */
 .krypton-file-manager__breadcrumb {
+  position: relative;
+  isolation: isolate;
   flex-shrink: 0;
   font-family: var(--krypton-font-family, monospace);
   font-size: 12px;
-  height: 24px;
-  line-height: 24px;
-  padding: 0 12px;
+  height: 30px;
+  line-height: 34px;
+  padding: 0 18px;
   color: var(--fm-ink-dim);
   letter-spacing: 0.02em;
-  text-shadow: var(--mat-engrave);
-  background: var(--mat-brush), var(--mat-plate);
-  border-bottom: 1px solid var(--mat-key-edge);
-  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.krypton-file-manager__breadcrumb::before {
+  content: '';
+  position: absolute;
+  inset: 6px 8px 2px;
+  z-index: -1;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-file-manager__breadcrumb--search {
@@ -57,10 +68,13 @@
   text-shadow: var(--mat-lit-glow);
 }
 
+/* The plate around the two displays: 8px from its edges and between them. */
 .krypton-file-manager__body {
   flex: 1;
   display: flex;
+  gap: 8px;
   min-height: 0;
+  padding: 8px;
   overflow: hidden;
 }
 
@@ -69,15 +83,16 @@
   font-family: var(--krypton-font-family, monospace);
 }
 
-/* The well pane, flush with the strips: no vertical inset, because the row
-   count is computed from the body height. */
+/* The list well. Its row count is measured from this box (view.ts
+   `onResize`), so its inset never hides a row. */
 .krypton-file-manager__list {
   flex: 0 0 333px;
   overflow: hidden;
   min-width: 0;
   contain: layout;
-  background: var(--mat-well-fill);
-  box-shadow: var(--mat-well-depth), inset -1px 0 0 var(--mat-well-wall);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
 }
 
 /* Overscanned row window; JS translates it for smooth scrolling (smooth-scroll.ts). */
@@ -85,13 +100,15 @@
   will-change: transform;
 }
 
-/* The screen: the window's own fill shows through. The left border is the
-   lip where the list well meets it. */
+/* The screen well (DESIGN.md "Screen"): the theme backdrop recessed into the
+   plate, the file flat on it. */
 .krypton-file-manager__preview {
   flex: 1 1 0;
   overflow: hidden;
-  border-left: 1px solid var(--mat-groove-hi);
   min-width: 0;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-screen);
+  box-shadow: var(--mat-well-shadow);
 }
 
 .krypton-file-manager__preview--hidden {
@@ -402,13 +419,11 @@
   letter-spacing: 0.02em;
 }
 
-/* Cursor row — the full-row selection tint plus the 1px focus outline inside
-   the row; the row keeps its own colours (spec 0052: plain subtle
-   background, no cursor-specific type-colour overrides). */
+/* Cursor row — the full-row selection tint only, no outline; the row keeps
+   its own colours (spec 0052: plain subtle background, no cursor-specific
+   type-colour overrides). */
 .krypton-file-manager__item.krypton-file-manager__item--cursor {
   background: var(--mat-select);
-  outline: 1px solid var(--mat-lit);
-  outline-offset: -1px;
 }
 
 /* ── Directory styling ── */
@@ -529,10 +544,9 @@
 }
 
 /* ─── Status Bar ─── */
-/* A plate strip meeting the screen on its top edge, holding one readout
-   window (the `::before` well) — drawn inside the strip so its 22px height,
-   read back for the visible row count, never moves. Prompts light the
-   legend; an error or a confirmation takes its lamp colour. */
+/* The status readout: a well (`::before`) engraved into the plate's bottom
+   edge. Prompts light the legend; an error or a confirmation takes its lamp
+   colour. */
 
 .krypton-file-manager__status {
   position: relative;
@@ -540,15 +554,12 @@
   flex-shrink: 0;
   font-family: var(--krypton-font-family, monospace);
   font-size: 11px;
-  height: 22px;
-  line-height: 22px;
-  padding: 0 12px;
+  height: 28px;
+  line-height: 24px;
+  padding: 0 18px;
   color: var(--fm-ink-dim);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  background: var(--mat-brush), var(--mat-plate);
-  border-top: 1px solid var(--mat-key-edge);
-  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -558,7 +569,7 @@
 .krypton-file-manager__status::before {
   content: '';
   position: absolute;
-  inset: 3px 6px;
+  inset: 2px 8px 6px;
   z-index: -1;
   border-radius: var(--krypton-border-radius, 8px);
   background: var(--mat-well);

@@ -72,7 +72,7 @@ color = "rgba(8, 8, 8, 0.65)"
 blur = 10
 
 [chrome.titlebar]
-height = 28
+height = 36
 font_size = 11
 font_weight = 600
 letter_spacing = 0.08
@@ -96,7 +96,7 @@ thickness = 2
 color = "rgba(0, 200, 72, 0.25)"
 
 [chrome.tabs]
-height = 28
+height = 36
 background = "transparent"
 active_color = "#00C840"
 inactive_color = "#304838"

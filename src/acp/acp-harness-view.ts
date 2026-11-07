@@ -1228,6 +1228,8 @@ interface UiGeneration {
 export class AcpHarnessView implements ContentView {
   readonly type: PaneContentType = 'acp_harness';
   readonly element: HTMLElement;
+  /** Spec 366: the command centre is the root's last child, a plate strip. */
+  readonly platedFoot = true;
 
   /** Set by the compositor to drive the window's oscilloscope band. Pumped by any
    *  lane's streamed output — the band reads aggregate window activity. See docs/189. */
