@@ -3,6 +3,7 @@ import type { VaultIndex, VaultFile } from './vault-parser';
 import { buildVaultIndex, parseHeadingsForFile, readVaultFile } from './vault-parser';
 import { openExternalUrl } from './external-url';
 import { keyHintNodes } from './ui/kbd';
+import { mountModalInActiveWindow } from './ui/modal-host';
 
 type SidebarMode = 'files' | 'backlinks' | 'outline' | 'tags';
 type FileSortField = 'title' | 'updated' | 'modified' | 'name' | 'type';
@@ -1264,7 +1265,7 @@ export class VaultContentView implements ContentView {
     panel.appendChild(hint);
 
     overlay.appendChild(panel);
-    document.body.appendChild(overlay);
+    mountModalInActiveWindow(overlay, this.element);
     this.pickerOverlay = overlay;
 
     const close = (): void => {

@@ -17,6 +17,7 @@ import 'highlight.js/styles/github-dark.css';
 import type { Compositor } from './compositor';
 import { previewMarked } from './file-preview';
 import { keyHint, type KeyHint } from './ui/kbd';
+import { mountModalInActiveWindow } from './ui/modal-host';
 
 // ─── Source contract ──────────────────────────────────────────────
 
@@ -98,6 +99,7 @@ export class QuickOverview {
    * once it resolves. Opening while already open replaces the content.
    */
   open(source: OverviewSource): void {
+    mountModalInActiveWindow(this.overlay);
     this.abort?.abort();
     this.abort = new AbortController();
     const signal = this.abort.signal;

@@ -203,7 +203,7 @@ comment.
   marks carry no LED: the initials alone name the lanes.
 - **Overlays and dialogs** (palette, which-key, hints, quick overview, dashboards, inline AI,
   toasts, harness pickers and dialogs; the prompt dialog is the paper sheet below): one floating
-  plate over `--mat-scrim`; engraved
+  plate over `--mat-scrim`; modal plates are centred in the active terminal window; engraved
   head; input well; the result list is one well with grooves and a full-row `--mat-select` tint;
   actions are keys; the key-hint foot prints each key as a key cap and its action as legend. Which-key
   and hint labels are key caps.

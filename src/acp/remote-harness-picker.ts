@@ -1,6 +1,7 @@
 import { nextCursor, prevCursor } from './components/list-picker';
 import { RemotePicker } from './components/remote-picker';
 import type { RemoteHarnessProfile } from '../config';
+import { mountModalInActiveWindow } from '../ui/modal-host';
 
 export interface FocusedSshCandidate {
   terminalSessionId: number;
@@ -186,7 +187,7 @@ export function showRemoteHarnessPicker(
       }
     };
 
-    host.appendChild(picker.el);
+    mountModalInActiveWindow(picker.el, host);
     render();
     document.addEventListener('keydown', onKeyDown, true);
     picker.el.focus();

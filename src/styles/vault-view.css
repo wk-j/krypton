@@ -656,7 +656,7 @@
 /* ─── Vault Picker: a floating plate over the scrim ─── */
 
 .krypton-vault-picker-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 10000;
   display: flex;
@@ -666,8 +666,10 @@
 }
 
 .krypton-vault-picker {
-  min-width: 420px;
-  max-width: 70vw;
+  display: flex;
+  flex-direction: column;
+  width: min(420px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
   overflow: hidden;
   padding: 12px 0 10px;
   border: 1px solid var(--mat-key-edge);
@@ -690,6 +692,7 @@
 }
 
 .krypton-vault-picker__list {
+  min-height: 0;
   max-height: 60vh;
   margin: 0 12px;
   overflow-y: auto;

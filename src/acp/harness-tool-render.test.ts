@@ -182,6 +182,47 @@ describe('toolSectionTone', () => {
   });
 });
 
+describe('terminal-only ACP tool content', () => {
+  it('does not show an opaque terminal handle as command output', () => {
+    const tool = buildToolPayload({
+      toolCallId: 'call-1',
+      kind: 'execute',
+      title: 'Execute rg -n modal src',
+      content: [{ type: 'terminal', terminalId: 'exec-415bef9a-7d5c-44ad-85e7-e7112f1873ce' }],
+    }, 'completed');
+
+    expect(tool.sections).toEqual([]);
+    expect(tool.result).toBe('output unavailable');
+  });
+
+  it('keeps real stdout when a terminal handle accompanies it', () => {
+    const tool = buildToolPayload({
+      toolCallId: 'call-2',
+      kind: 'execute',
+      title: 'Execute rg -n modal src',
+      content: [{ type: 'terminal', terminalId: 'exec-opaque' }],
+      rawOutput: { stdout: 'src/modal.ts:7:modal' },
+    }, 'completed');
+
+    expect(tool.sections).toEqual([{ label: 'stdout', text: 'src/modal.ts:7:modal' }]);
+    expect(tool.result).toBe('');
+  });
+
+  it('keeps a diff without claiming all output is unavailable', () => {
+    const tool = buildToolPayload({
+      toolCallId: 'call-3',
+      kind: 'edit',
+      content: [
+        { type: 'terminal', terminalId: 'exec-opaque' },
+        { type: 'diff', path: 'src/a.ts', oldText: 'old', newText: 'new' },
+      ],
+    }, 'completed');
+
+    expect(tool.diffs).toHaveLength(1);
+    expect(tool.result).toBe('');
+  });
+});
+
 describe('extractGrepQuery / grepHitNeedles', () => {
   it('reads the first quoted arg after grep flags', () => {
     expect(extractGrepQuery('grep -n "class \\|public"')).toBe('class \\|public');

@@ -4,6 +4,7 @@
 
 import type { DashboardDefinition, DashboardShortcut } from './types';
 import { keyCap, keyHint } from './ui/kbd';
+import { mountModalInActiveWindow } from './ui/modal-host';
 
 /** Callback to enter/exit Dashboard mode in the InputRouter */
 type ModeCallback = (active: boolean) => void;
@@ -86,7 +87,7 @@ export class DashboardManager {
 
     // Build DOM
     this.overlay = this.buildOverlay(definition);
-    document.body.appendChild(this.overlay);
+    mountModalInActiveWindow(this.overlay);
 
     this.activeId = id;
     this.activeTab = 0;

@@ -8,6 +8,7 @@
 // close path that tells the InputRouter to leave the palette mode.
 
 import { keyCap, keyHint } from './ui/kbd';
+import { mountModalInActiveWindow } from './ui/modal-host';
 import type { SoundEngine } from './sound';
 import type {
   AcceptControl,
@@ -133,6 +134,7 @@ export class SearchPalette {
   /** Show the palette on `scope` with an empty query. No-op while visible. */
   open(scope: ScopeId): void {
     if (this.visible) return;
+    mountModalInActiveWindow(this.overlay);
     this.visible = true;
     this.input.value = '';
     for (const id of SCOPE_ORDER) this.scopes[id].reset();

@@ -8,7 +8,7 @@
 
 @layer krypton.component {
   .remote-harness-picker {
-    position: fixed;
+    position: absolute;
     inset: 0;
     z-index: 10000;
     display: grid;
@@ -26,8 +26,8 @@
   }
 
   .remote-harness-picker__panel {
-    width: min(620px, calc(100vw - 48px));
-    max-height: min(620px, calc(100vh - 48px));
+    width: min(620px, calc(100% - 48px));
+    max-height: min(620px, calc(100% - 48px));
     overflow: auto;
     border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);

@@ -235,7 +235,8 @@ export function contentOutputSections(content: ToolCall['content']): Array<{ lab
   const sections: Array<{ label: string; text: string }> = [];
   for (const item of content ?? []) {
     // 'diff' items go through extractToolDiffs and are painted by DiffBlock.
-    if (item.type === 'terminal' && item.terminalId) sections.push({ label: 'terminal', text: item.terminalId });
+    // ACP terminalId is an opaque handle, not command output. Krypton does not
+    // advertise the terminal capability, so it cannot read the handle here.
     if (item.type === 'content' && item.content) {
       const text = contentBlockText(item.content);
       if (text) sections.push({ label: 'content', text });
@@ -483,14 +484,18 @@ export function buildToolPayload(
   const command = kind === 'execute' ? extractCommandLine(call.rawInput) : '';
   const subject = command || path || cleanToolTitle(call.title, kind) || '';
   const raw = rawOutputSections(call.rawOutput);
+  const content = contentOutputSections(call.content);
   const peeled = peelSectionExit(
-    raw.length > 0 ? raw : contentOutputSections(call.content),
+    raw.length > 0 ? raw : content,
     extractToolExitCode(call.rawOutput),
   );
   const exitCode = peeled.exitCode;
+  const diffs = extractToolDiffs(call.content);
+  const terminalOnly = raw.length === 0 && content.length === 0 && diffs.length === 0 &&
+    (call.content ?? []).some((item) => item.type === 'terminal' && !!item.terminalId);
   const result = (exitCode !== null && exitCode !== 0)
     ? `exit ${exitCode}`
-    : (status === 'failed' ? 'failed' : '');
+    : (status === 'failed' ? 'failed' : status === 'completed' && terminalOnly ? 'output unavailable' : '');
   const sectionLineLimit = kind === 'execute' && isGitDiffCommand(command) ? 80 : kind === 'execute' ? 12 : 6;
   const trimmed = peeled.sections
     .map((s) => ({
@@ -499,7 +504,6 @@ export function buildToolPayload(
     }))
     .filter((s) => s.text)
     .slice(0, 4);
-  const diffs = extractToolDiffs(call.content);
   return {
     glyph: statusGlyph(status),
     status,

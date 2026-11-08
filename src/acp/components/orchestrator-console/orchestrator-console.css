@@ -25,8 +25,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: flex-start;
-    padding-top: 5vh;
+    justify-content: center;
     background: var(--mat-scrim);
   }
 
@@ -37,8 +36,10 @@
   .acp-orchestrator__panel {
     display: flex;
     flex-direction: column;
+    min-height: 0;
     width: clamp(640px, 86vw, 1180px);
-    max-height: 88vh;
+    max-width: calc(100% - 24px);
+    max-height: calc(100% - 24px);
     border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
     background: var(--mat-brush), var(--mat-plate);

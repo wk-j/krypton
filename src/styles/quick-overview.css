@@ -7,13 +7,14 @@
    accent rails anywhere (ADR-0027). */
 
 .krypton-overview {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 10003;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6vh 4vw;
+  padding: 24px;
+  box-sizing: border-box;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.1s ease;
@@ -30,7 +31,7 @@
   flex-direction: column;
   width: clamp(720px, 78vw, 1100px);
   max-width: 100%;
-  max-height: 78vh;
+  max-height: 100%;
   background: var(--mat-brush), var(--mat-plate);
   border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);

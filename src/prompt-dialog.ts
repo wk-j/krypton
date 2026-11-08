@@ -25,6 +25,7 @@ import { getCaretCoordinates } from './caret-position';
 import { CARRIAGE_CLEARANCE, Typewriter } from './prompt-dialog-typewriter';
 import { applyReadlineKey, type KillBuffer } from './textarea-readline';
 import { keyHint, type KeyHint } from './ui/kbd';
+import { mountModalInActiveWindow } from './ui/modal-host';
 
 const TARGET_PROCESS = 'claude';
 const FILE_INDEX_TTL_MS = 10_000;
@@ -259,6 +260,7 @@ export class PromptDialog {
 
   async open(): Promise<void> {
     if (this.visible) return;
+    mountModalInActiveWindow(this.overlay);
     this.visible = true;
     this.textareaEl.value = '';
     this.errorText = null;

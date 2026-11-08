@@ -12,6 +12,7 @@ import { invoke } from '../profiler/ipc';
 
 import type { ReviewBundle } from '../acp/types';
 import { keyHintNodes } from '../ui/kbd';
+import { mountModalInActiveWindow } from '../ui/modal-host';
 
 /** Result of a pick: the bundle to open, or null when the human dismissed it. */
 export type ReviewPickResult = ReviewBundle | null;
@@ -114,7 +115,7 @@ export function pickReview(
     list.className = 'krypton-review-picker__list';
     root.appendChild(list);
 
-    document.body.appendChild(root);
+    mountModalInActiveWindow(root);
 
     let filtering = false;
     let filtered = [...bundles];

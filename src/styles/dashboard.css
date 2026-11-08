@@ -6,7 +6,7 @@
    terminal screens. */
 
 .krypton-dashboard {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 9500;
   pointer-events: none;
@@ -30,8 +30,8 @@
 
 .krypton-dashboard__panel {
   position: relative;
-  width: 80vw;
-  height: 80vh;
+  width: 80%;
+  height: 80%;
   max-width: 1200px;
   max-height: 900px;
   background: var(--mat-brush), var(--mat-plate);
