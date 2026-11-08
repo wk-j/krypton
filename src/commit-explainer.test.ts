@@ -326,9 +326,6 @@ describe('resolveExplainConfig', () => {
   it('clamps parallel to 1–4 and keeps an empty model as the backend default', () => {
     expect(resolveExplainConfig({ parallel: 0 }).parallel).toBe(1);
     expect(resolveExplainConfig({ parallel: 9 }).parallel).toBe(4);
-    expect(resolveExplainConfig(undefined)).toEqual({
-      backend: 'codex', model: 'gpt-6.1-sol[high]', mode: 'workspace-write', language: 'English', parallel: 2,
-    });
     expect(resolveExplainConfig({ model: '' }).model).toBe('');
   });
 });

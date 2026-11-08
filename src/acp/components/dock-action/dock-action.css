@@ -110,11 +110,10 @@
      disabled, so the running action stays readable among the disabled ones. */
   .acp-dock-action--running,
   .acp-dock-action--running:hover:not(:disabled) {
-    border-color: rgba(109, 208, 255, 0.55);
     background:
       radial-gradient(ellipse at 50% 100%, rgba(109, 208, 255, 0.26), transparent 70%),
       var(--mat-key-down);
-    box-shadow: var(--mat-key-sunk), inset 0 0 10px rgba(109, 208, 255, 0.18);
+    box-shadow: var(--mat-key-sunk);
     color: var(--agent-user, #6dd0ff);
   }
 

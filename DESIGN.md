@@ -1,6 +1,6 @@
 ---
 name: Krypton Console
-version: 2.3.1
+version: 2.3.2
 description: Skeuomorphic instrument faceplate — brushed graphite (aluminium in the light scheme) with engraved labels, recessed display wells, raised keys and lit lamps, over a transparent desktop
 appliesTo: "Every surface in the Tauri webview and the live-assist webview. Materials: src/styles/materials.css (--mat-*)."
 colors:
@@ -57,6 +57,7 @@ forbidden:
   - "fully opaque plate (max alpha 0.94; a narrow overlay adds a solid underlay)"
   - "infinite or decorative animation: pulses, sweeps, shimmers, orbits, scanlines, vignettes"
   - "glow on anything but a lamp, an LED lens or the terminal progress ring's arc: legends, labels and titles never glow (the one exception is the composer bloom's one-shot afterimage flash)"
+  - "coloured outlines or frame glows on status labels, tags and badges; state colour belongs to their ink, tint and LED, never their border"
   - "box-shadow, text-shadow or gradient on a repeated row (transcript row, diff line, list row)"
   - "a button taller than one line: a key's state badge sits beside its label or is dropped"
   - "left-edge accent rails for selection (ADR-0027)"
@@ -138,8 +139,10 @@ comment.
   with `text-shadow: var(--mat-print)`. Hover: `--mat-key-hover`. Held (`:active`) or latched
   (`aria-pressed="true"`, `--active`): `--mat-key-down` + `--mat-key-sunk`, legend `--mat-lit` with no
   glow. Running action: latched and backlit cyan (`#6dd0ff`); done: raised and backlit green
-  (`#a8ffbf`) — the key face is lit, the legend takes the colour without a glow. Disabled: unpowered
-  at 0.45 opacity, except a running key. A state badge sits
+  (`#a8ffbf`) — the key face is lit, the legend takes the colour without a glow. Every action
+  state keeps the neutral `--mat-key-edge` border and material shadow; no state-coloured outline
+  or inset frame glow, including running, done, disabled and hover. Keyboard focus remains distinct.
+  Disabled: unpowered at 0.45 opacity, except a running key. A state badge sits
   after the label behind an etched divider; it is cut first, and a key under 128px drops it.
 - **Key cap.** A keyboard shortcut drawn in text is a `<kbd>` built by `src/ui/kbd.ts`, styled by the
   one rule in `src/styles/kbd.css`: inline, `padding: 0 4px`, `border: 1px solid var(--mat-key-edge)`,
@@ -164,10 +167,10 @@ comment.
   save or run state, a controller's health, the titlebar program status `CLAUDE-CODE · DONE` — is a
   lamp window, never a capsule. Lit: the LED and its legend behind lit glass — an `inline-flex` row,
   the 7px lit LED 6px before an 11px/700 legend at `0.04em` (uppercase for a state word) in the
-  state ink, `padding: 2px 8px 2px 6px; border: 1px solid rgba(var(--x-rgb), .45);
+  state ink, `padding: 2px 8px 2px 6px; border: 1px solid transparent;
   border-radius: 8px; background: linear-gradient(180deg, rgba(var(--x-rgb), .2),
-  rgba(var(--x-rgb), .06)); box-shadow: inset 0 1px 0 rgba(255,255,255,.08),
-  inset 0 -1px 2px rgba(0,0,0,.35), 0 0 6px rgba(var(--x-rgb), .16), 0 0 14px rgba(var(--x-rgb), .06)`.
+  rgba(var(--x-rgb), .06)); box-shadow: none`. The transparent border preserves geometry;
+  there is no visible outline, bevel or halo around the label. Only its LED glows.
   An amber lamp window takes the amber lens and the `--mat-lit` legend (the footer's mode, a held
   orchestrator seat, work in progress). Unlit: the dark LED and the legend in ink, with no glass,
   border or padding. A healthy link that only needs to stay visible (the titlebar SSH badge) keeps a
@@ -176,9 +179,9 @@ comment.
   than standing next to one.
 
   A capsule is for a tag, a counter or a chip that is not a status word. Lit, it is glass:
-  `border: 1px solid rgba(var(--x-rgb), .5); border-radius: 999px; background: radial-gradient(ellipse
-  at 50% 0%, rgba(var(--x-rgb), .3), rgba(var(--x-rgb), .07) 75%); box-shadow: inset 0 1px 0
-  rgba(255,255,255,.14), 0 0 6px rgba(var(--x-rgb), .22)`, legend in the state ink. Unlit, it is a
+  `border: 1px solid transparent; border-radius: 999px; background: radial-gradient(ellipse
+  at 50% 0%, rgba(var(--x-rgb), .3), rgba(var(--x-rgb), .07) 75%); box-shadow: none`,
+  legend in the state ink, with no coloured outline or frame glow. Unlit, it is a
   `--mat-well-fill` capsule in ink.
 - **Chips.** Verdicts and kinds outside the transcript are embossed labels on a key face, tinted by
   their colour, with the status LED first on the key face, 5px before the legend. Every label in the
@@ -413,6 +416,12 @@ selector, and nothing in it bleeds out of that selector.
 
 ## Changelog
 
+- **2.3.2** — Status labels and lit tags lose their coloured outline and wrapper shadow.
+  Transparent borders retain their dimensions; text colour, background tint and the LED remain,
+  with glow confined to the LED. Applies across Rails, harness badges and content-view status
+  labels; controls, panels and focus rings keep their own borders.
+  Action keys likewise keep their neutral border and material shadow in every state; cyan/green
+  belong to their face and legend, not a coloured outline or inset frame glow.
 - **2.3.1** — The prompt dialog is one sheet of paper edge to edge (spec 373 amendment B): the
   faceplate frame around the slip is gone, the target chip and key-hint foot are print on the paper,
   and the dark scheme's lamplight falls across the whole sheet. Key caps and the target lamp stay

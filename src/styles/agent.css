@@ -616,16 +616,16 @@
 }
 
 .agent-view__msg-review-risk--low {
-  border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
+  border: 1px solid transparent;
   background: var(--mat-well-fill);
   color: var(--av-ink-2);
 }
 
 .agent-view__msg-review-risk--high {
   --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
-  border: 1px solid rgba(var(--x-rgb), 0.5);
+  border: 1px solid transparent;
   background: radial-gradient(ellipse at 50% 0%, rgba(var(--x-rgb), 0.3), rgba(var(--x-rgb), 0.07) 75%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--x-rgb), 0.22);
+  box-shadow: none;
   color: rgb(var(--x-rgb));
 }
 
@@ -955,14 +955,10 @@
   align-items: center;
   gap: 6px;
   padding: 2px 8px 2px 6px;
-  border: 1px solid rgba(var(--x-rgb), 0.45);
+  border: 1px solid transparent;
   border-radius: var(--krypton-border-radius, 8px);
   background: linear-gradient(180deg, rgba(var(--x-rgb), 0.2), rgba(var(--x-rgb), 0.06));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -1px 2px rgba(0, 0, 0, 0.35),
-    0 0 6px rgba(var(--x-rgb), 0.16),
-    0 0 14px rgba(var(--x-rgb), 0.06);
+  box-shadow: none;
   color: rgb(var(--x-rgb));
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -986,13 +982,7 @@
 }
 
 .agent-view__armed--bypass {
-  border-color: rgba(var(--x-rgb), 0.85);
   background: linear-gradient(180deg, rgba(var(--x-rgb), 0.4), rgba(var(--x-rgb), 0.14));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 -1px 2px rgba(0, 0, 0, 0.35),
-    0 0 8px rgba(var(--x-rgb), 0.3),
-    0 0 16px rgba(var(--x-rgb), 0.1);
 }
 
 /* Working: a steady lit lamp beside the JS spinner glyph. */

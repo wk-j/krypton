@@ -147,7 +147,7 @@
     font-size: 0.72em;
     line-height: 1.5;
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
-    border: 1px solid var(--mat-groove-lo);
+    border: 1px solid transparent;
     border-radius: 999px;
     background: var(--mat-well-fill);
     padding: 0 6px;

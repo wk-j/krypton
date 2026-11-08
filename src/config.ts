@@ -331,11 +331,10 @@ export interface KryptonConfig {
   knowledge?: KnowledgeConfig;
 }
 
-/** spec 0375/0376: where explainers are stored, their prose language, and the
- *  background ACP job that writes them for the Commit Browser. */
+/** spec 0375/0376: where Thai explainers are stored and the background ACP job
+ *  that writes them for the Commit Browser. */
 export interface KnowledgeConfig {
   dir: string;
-  language: string;
   /** ACP backend id of an explainer job. */
   backend: string;
   /** An id the backend advertises; empty keeps the backend default. */

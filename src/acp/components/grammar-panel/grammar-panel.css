@@ -79,14 +79,10 @@
   .acp-harness__grammar[data-phase="pending"] .acp-harness__grammar-label,
   .acp-harness__grammar[data-phase="fixes"] .acp-harness__grammar-label {
     padding: 2px 8px 2px 6px;
-    border: 1px solid rgba(255, 176, 0, 0.45);
+    border: 1px solid transparent;
     border-radius: var(--krypton-border-radius, 8px);
     background: linear-gradient(180deg, rgba(255, 176, 0, 0.2), rgba(255, 176, 0, 0.06));
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.08),
-      inset 0 -1px 2px rgba(0, 0, 0, 0.35),
-      0 0 6px rgba(255, 176, 0, 0.16),
-      0 0 14px rgba(255, 176, 0, 0.06);
+    box-shadow: none;
     color: var(--mat-lit);
   }
 

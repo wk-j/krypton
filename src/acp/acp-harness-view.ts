@@ -2718,12 +2718,6 @@ export class AcpHarnessView implements ContentView {
     } catch (err) {
       throw bail('invalid_request', err instanceof Error ? err.message : String(err));
     }
-    let language = 'English';
-    try {
-      language = (await loadConfig()).knowledge?.language || 'English';
-    } catch {
-      language = 'English';
-    }
     if (!laneUnchanged() || !lane.client) throw bail('lane_not_ready', `${lane.displayName} restarted`);
     // Repo name and sha7 come from Rust's file name `<repo>-<sha7>.md` so the
     // front matter `source` matches the stored file.
@@ -2732,7 +2726,7 @@ export class AcpHarnessView implements ContentView {
     const repo = match ? match[1] : fileName.replace(/\.md$/i, '');
     // Not awaited: the prompt resolves only when the turn ends; the reserved
     // lane shows the work.
-    void this.dispatchTurn(lane, learnCommitPrompt({ sha, path, language, repo }));
+    void this.dispatchTurn(lane, learnCommitPrompt({ sha, path, repo }));
   }
 
   /** Inject a programmatic user-turn (no UI composer involved). */

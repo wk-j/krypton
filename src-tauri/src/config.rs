@@ -681,9 +681,6 @@ pub struct KnowledgeConfig {
     /// Where commit explainers (`<repo>-<sha7>.md`) are written. Absolute or
     /// `~/`; may point into an Obsidian vault. Shared by every repo.
     pub dir: String,
-    /// Prose language of explainers; code, identifiers and commands stay
-    /// English.
-    pub language: String,
     /// ACP backend that runs the background Commit Browser explainer (spec 376).
     pub backend: String,
     /// Model id for the explainer agent.
@@ -698,7 +695,6 @@ impl Default for KnowledgeConfig {
     fn default() -> Self {
         Self {
             dir: "~/.config/krypton/knowledge".to_string(),
-            language: "English".to_string(),
             backend: "codex".to_string(),
             model: "gpt-6.1-sol[high]".to_string(),
             mode: "workspace-write".to_string(),
@@ -1627,15 +1623,6 @@ min_confidence = 0.65
     fn knowledge_section_defaults_and_parses() {
         let cfg: KryptonConfig = toml::from_str("").unwrap();
         assert_eq!(cfg.knowledge.dir, "~/.config/krypton/knowledge");
-        assert_eq!(cfg.knowledge.language, "English");
-
-        let cfg: KryptonConfig = toml::from_str("[knowledge]\nlanguage = \"Thai\"\n").unwrap();
-        assert_eq!(cfg.knowledge.language, "Thai");
-        assert_eq!(cfg.knowledge.dir, "~/.config/krypton/knowledge");
-        assert_eq!(cfg.knowledge.backend, "codex");
-        assert_eq!(cfg.knowledge.model, "gpt-6.1-sol[high]");
-        assert_eq!(cfg.knowledge.mode, "workspace-write");
-        assert_eq!(cfg.knowledge.parallel, 2);
 
         let cfg: KryptonConfig = toml::from_str(
             "[knowledge]\nbackend = \"claude\"\nmodel = \"opus\"\nmode = \"default\"\nparallel = 3\n",
@@ -1645,6 +1632,5 @@ min_confidence = 0.65
         assert_eq!(cfg.knowledge.model, "opus");
         assert_eq!(cfg.knowledge.mode, "default");
         assert_eq!(cfg.knowledge.parallel, 3);
-        assert_eq!(cfg.knowledge.language, "English");
     }
 }

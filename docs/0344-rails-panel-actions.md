@@ -166,6 +166,9 @@ Counts use the singular for one (`1 open finding`, `1 finding sent`).
 
 `<time>` is `formatActionTime` from spec 342: `HH:MM` today, `MM-DD` otherwise, so the dock needs no
 timer. A done button stays enabled. A running button keeps its colour when disabled.
+The shared action keys and each manual check's RUN key keep their neutral border in every state,
+including hover and disabled running. State colour belongs to the face and legend, not the border
+or an inset frame glow; keyboard focus keeps its own visible outline.
 
 ### Controller
 

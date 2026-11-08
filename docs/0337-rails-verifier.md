@@ -281,6 +281,8 @@ The prompt tells the current lane to:
 
 1. **Head**, at most three lines: `RAILS`, the verdict pill and the run time (`▸` when an error or warnings are behind `Enter`); one state line (a run in progress such as `check 2/3 typecheck`, an error, the trust state such as `changed since trust · 4 checks wait`, the other progress lines, the empty-manifest hint or a warning count, the first that applies); and the trigger, lane and mode. `Enter` on the head shows the full state line, the manifest path, the full error and the warnings.
 2. **Checks**: `name  PASS|FAIL|TIMEOUT|ERROR  1.2s`, with a labelled outcome badge (success, fault or warning), or muted `skipped` / `not run`. While trust is pending, each check's argv follows on one line. A manual check row (spec 368) reads its newest manual result instead of the run: `name  RUN  FAIL  14:02`, with a `RUN` key, the outcome badge (muted `manual` when never run) and the finish time; the duration moves into the expanded detail.
+   The head's verdict and each check's outcome keep their state ink, tinted background and LED but no coloured
+   outline or wrapper shadow; their transparent 1px border preserves dimensions (DESIGN.md 2.3.2).
 3. **Findings**: each open finding as `violation|suspect  0008#2  file:line`, with the note on a second line and a tag `new` or `since 14:02`. A collapsed `resolved N` row follows.
 4. **Rules**: one line such as `24 rules · 9 enforced`, then `3 sources without rails`. It expands to every rule with its latest status.
 5. **Runs**: the newest 5 of the last 20, each with time, a labelled verdict badge (`✓ CLEAN`, `✗ CHECK FAILED`, `• FINDINGS` or `! ERROR`), findings count, trigger lane and a `stale` mark; `N older runs ▸` expands to the rest.

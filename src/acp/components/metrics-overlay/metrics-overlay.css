@@ -198,12 +198,12 @@
     white-space: pre;
   }
 
-  /* The adapter mark on the root row: a small chip with a groove edge (no
-     shadow — it sits in a repeated row). */
+  /* The adapter mark on the root row: a small borderless chip with no
+     shadow — it sits in a repeated row. */
   .acp-harness__metrics-role {
     flex: 0 0 auto;
     padding: 0 5px;
-    border: 1px solid var(--mat-groove-lo);
+    border: 1px solid transparent;
     border-radius: 999px;
     background: var(--mat-well-fill);
     color: var(--mat-silk);

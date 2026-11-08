@@ -106,14 +106,10 @@
     align-items: center;
     gap: 6px;
     padding: 2px 8px 2px 6px;
-    border: 1px solid rgba(var(--ticket-pill-rgb), 0.45);
+    border: 1px solid transparent;
     border-radius: var(--krypton-border-radius, 8px);
     background: linear-gradient(180deg, rgba(var(--ticket-pill-rgb), 0.2), rgba(var(--ticket-pill-rgb), 0.06));
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.08),
-      inset 0 -1px 2px rgba(0, 0, 0, 0.35),
-      0 0 6px rgba(var(--ticket-pill-rgb), 0.16),
-      0 0 14px rgba(var(--ticket-pill-rgb), 0.06);
+    box-shadow: none;
     color: var(--mat-lit);
     font-weight: 700;
     letter-spacing: 0.04em;

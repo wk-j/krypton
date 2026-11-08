@@ -24,9 +24,9 @@ Two parts:
 - **`#learn <sha>`** is a new Harness composer command, following the same one-shot injection
   pattern as `#wiki`, `#lesson` and `#daily`. The lane reads the commit with its own tools, checks
   the claims outside the project (a small repro or a documentation check), and writes one markdown
-  explainer to a path that Rust resolves. The explainer is a blog post: an opening that tells the
-  whole story, the story itself with each concept explained where it first matters, inline SVG
-  figures, general lessons, then how the claims were checked and the source.
+  explainer to a path that Rust resolves. The explainer is a blog post: a visible main title, an
+  opening that tells the whole story, the story itself with each concept explained where it first
+  matters, inline SVG figures, general lessons, then how the claims were checked and the source.
 
 Originally the work ran on a Harness lane, because the headless fence (`headless-fence.ts`) refuses
 tool permissions and file writes. *Superseded by spec 0376:* the browser's `e` now runs an
@@ -88,13 +88,13 @@ app-level background job with its own ACP process and scratch dir; only `#learn`
 | `src-tauri/src/git.rs` | `git_log_page`, `git_commit_diff` helpers (parse, cap) + unit tests |
 | `src-tauri/src/knowledge.rs` (new) | knowledge dir resolution, `knowledge_write_path`, `knowledge_list` + tests |
 | `src-tauri/src/commands.rs`, `lib.rs` | four commands (`spawn_blocking`), registration |
-| `src-tauri/src/config.rs` | `[knowledge]` section (`dir`, `language`) |
+| `src-tauri/src/config.rs` | `[knowledge]` storage and background-job settings |
 | `src/commit-browser-view.ts` (new) + `.test.ts` | the view |
 | `src/styles/commit-browser.css` (new), `src/styles/index.css` | view sheet (BEM, `--mat-*` tokens) |
 | `src/types.ts` | `'commit_browser'` in `PaneContentType` |
 | `src/compositor.ts` | `openCommitBrowser()`, `openMarkdownAt(root, file?)`. `buildMarkdownView` gains a `root` option for the library. |
 | `src/input-router.ts`, `src/which-key.ts`, `src/command-palette.ts` | `Leader E`, which-key row, palette `git.commit-browser` |
-| `src/config.ts` | `knowledge?: { dir, language }` on the TS `KryptonConfig` |
+| `src/config.ts` | `knowledge?: KnowledgeConfig` on the TS `KryptonConfig` |
 | `src/acp/harness-prompts.ts` | `learnCommitPrompt()` |
 | `src/acp/acp-harness-view.ts` | `#learn` command |
 | `src/acp/hash-commands.ts` | `learn` row and its command metadata (the composer palette's source of truth) |
@@ -160,25 +160,36 @@ The Commit Browser no longer reaches the Harness; see spec 0376 for the backgrou
 The prompt is the schema, the same way `#wiki`'s prompt is. It tells the agent (a `#learn` lane, or
 the background job's own process — spec 0376):
 
+The emitted prompt stays compact: one set of instructions shared by the lane and background
+variants, with only the background sandbox details added for a job. It retains the title,
+conciseness, document shape, verification, SVG safety and write boundaries without repeating
+examples or explaining the formatting rules at length.
+
 1. Read the commit with `git show --stat <sha>`, then only the hunks it needs. Read a referenced
    spec or doc only when the message points to it.
 2. Keep the hunks that carry transferable knowledge (a workaround, defensive code, a "why"
    comment, a negative test). Skip wiring, renames, styling and docs.
-3. Write in `[knowledge] language` (code, identifiers and commands stay English) for a reader who
+3. Write in Thai (fixed, not configurable; technical terms, code and commands stay English) for a reader who
    uses a computer every day (files, folders, apps, a terminal, git) but has **no systems
    background**, as a **blog post**: connected prose where each paragraph follows from the one
-   before. The lane composes in that language from the start, like a native technical writer, not
+   before. The lane composes in Thai from the start, like a native technical writer, not
    by translating English sentences: native rhythm, no carried-over English idioms or sentence
    shapes, and technical terms left in English rather than invented local words or parenthetical
    glosses. Paragraphs, not bullet lists, except in the last two sections. Earlier parts are
    referred to by what happened, never by number, and no sentence exists only to point at other
-   parts. In this order:
+   parts. Be as concise as possible while preserving the essential explanation, evidence and
+   required sections: use the fewest words that make the idea clear, cut filler, repeated summaries,
+   redundant examples and unnecessary background, and never pad sections. In this order:
    - Front matter: `title` (a headline stating one general principle, no project names),
      `source: <repo>@<sha7>`, `subject`, `created`, `tags`.
+   - **Main title**: exactly one visible Markdown H1 (`# <title>`) immediately after the closing
+     front matter and before the opening paragraph, matching the front-matter `title`. Every post
+     includes it, even a short post with no transferable knowledge. Later headings use H2/H3;
+     the front-matter title alone is not enough.
    - **Opening**: one paragraph with the whole story in brief (what the software needed, what went
      wrong or changed, how the commit dealt with it).
    - **The story** in the order it happened, under headings the lane chooses. Each concept the
-     reader needs (3–7 at most) is explained in plain words with an everyday analogy where the story
+     reader needs (at most 7, no minimum) is explained in plain words where the story
      first needs it, not in a glossary up front. Everyday computing words (file, folder, path, code,
      function, program, git, commit, sha, diff, build) are never explained. Project parts are called
      by their role ("the terminal app"), not their name.
@@ -239,6 +250,12 @@ the key legend).
   (`--krypton-success-rgb`) and a candidate a steady blue lamp (`--krypton-info-rgb`). A row shows
   one lamp: pending, then ready, then candidate. No `infinite` animation.
 - Paths and subjects keep their case. Chrome labels use the label typography.
+- All badges (mode, commit kind, explainer state and candidate) share one geometry and typography:
+  chrome font size, weight 700, `0.04em` tracking, `1.2` line height, `2px 8px` padding, a transparent 1px border
+  and the theme's 8px part radius. They stay uppercase and on one line. In this view, tags use the
+  same window shape as status labels rather than capsules; lit badges share the same glass and
+  LED recipe, with colour identifying their meaning. They have no visible outline or wrapper shadow;
+  only the LED glows. Unlit badges retain their dimensions.
 - Rows are rendered once per page with `reconcile()`. Filtering toggles row `hidden`, so rows are
   not rebuilt.
 
@@ -247,7 +264,6 @@ the key legend).
 ```toml
 [knowledge]
 dir = "~/.config/krypton/knowledge"  # absolute or ~/ path; may point into an Obsidian vault
-language = "English"                 # prose language of explainers; code stays English
 ```
 
 Read at startup; **Reload Config** applies.
@@ -272,7 +288,7 @@ Read at startup; **Reload Config** applies.
 ## Open Questions
 
 None. Decisions taken: the explainer runs as a background job (spec 0376; originally a lane, which
-needed an open Harness), explainers are stored in a global dir, prose language is English by config,
+needed an open Harness), explainers are stored in a global dir, prose is fixed to Thai,
 and the view opens with `Leader E`.
 
 ## Out of Scope

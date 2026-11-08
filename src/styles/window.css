@@ -84,14 +84,10 @@
   text-transform: uppercase;
   white-space: nowrap;
   color: rgb(var(--x-rgb));
-  border: 1px solid rgba(var(--x-rgb), 0.45);
+  border: 1px solid transparent;
   border-radius: var(--krypton-border-radius, 8px);
   background: linear-gradient(180deg, rgba(var(--x-rgb), 0.2), rgba(var(--x-rgb), 0.06));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -1px 2px rgba(0, 0, 0, 0.35),
-    0 0 6px rgba(var(--x-rgb), 0.16),
-    0 0 14px rgba(var(--x-rgb), 0.06);
+  box-shadow: none;
 }
 
 .krypton-window__program-status::before {
@@ -471,7 +467,7 @@
   border: 1px solid transparent;
   border-radius: var(--krypton-border-radius, 8px);
   background: var(--mat-well-fill);
-  box-shadow: var(--mat-well-shadow);
+  box-shadow: none;
   color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
@@ -502,13 +498,7 @@
 
 .krypton-window__view-status[data-tone='error'] {
   --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
-  border-color: rgba(var(--x-rgb), 0.45);
   background: linear-gradient(180deg, rgba(var(--x-rgb), 0.2), rgba(var(--x-rgb), 0.06));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -1px 2px rgba(0, 0, 0, 0.35),
-    0 0 6px rgba(var(--x-rgb), 0.16),
-    0 0 14px rgba(var(--x-rgb), 0.06);
   color: rgb(var(--x-rgb));
   font-weight: 700;
 }
@@ -522,7 +512,6 @@
 }
 
 .krypton-window__view-status[data-tone='error'][aria-disabled='false']:hover {
-  border-color: rgba(var(--x-rgb), 0.8);
   color: rgb(var(--x-rgb));
 }
 

@@ -326,8 +326,7 @@ extra_projects = []
 # Where explainers go. Absolute or ~/ only (no project-relative path: the notes
 # are personal and global). May point into an Obsidian vault.
 dir = "~/.config/krypton/knowledge"
-# Prose language of an explainer. Code, identifiers and commands stay English.
-language = "English"
+# Explainers are always written in Thai; technical terms, code and commands stay English.
 # Background job only (#learn uses the lane's own backend).
 backend = "codex"            # ACP backend id that runs each job
 model = "gpt-6.1-sol[high]"  # "" = backend default
@@ -1065,7 +1064,6 @@ browser surface and the hurl/termctrl/acp-wire viewers.
 | `[daily_note]` | `extra_projects` | string[] | `[]` | Absolute paths to other projects also covered by the day. No machine-wide scan |
 
 | `[knowledge]` | `dir` | string | `"~/.config/krypton/knowledge"` | Where commit explainers (`<repo>-<sha7>.md`) are written and listed. Absolute or `~/`. See spec 375 |
-| `[knowledge]` | `language` | string | `"English"` | Prose language explainers are written in; code and identifiers stay English |
 | `[knowledge]` | `backend` | string | `"codex"` | ACP backend id each Commit Browser explainer job spawns (spec 376). `#learn` uses its lane instead |
 | `[knowledge]` | `model` | string | `"gpt-6.1-sol[high]"` | Model set on the job's session; `""` keeps the backend default |
 | `[knowledge]` | `mode` | string | `"workspace-write"` | Session mode forced on the job; `""` keeps the backend default. Writes stay inside the job's scratch dir only with codex `workspace-write` — another backend or mode gives no sandbox guarantee |

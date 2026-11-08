@@ -423,7 +423,7 @@
 /* "2/4", the target's place in the Tab cycle, is a small box ruled on the sheet. */
 .krypton-prompt-dialog__chip-count {
   padding: 0 6px;
-  border: 1px solid var(--prompt-rule);
+  border: 1px solid transparent;
   border-radius: var(--krypton-border-radius, 8px);
   color: var(--prompt-print-strong, var(--prompt-ink));
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);

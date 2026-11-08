@@ -372,7 +372,6 @@ export function commandMeta(): Record<string, CommandMeta> {
       prompt: learnCommitPrompt({
         sha: '<sha>',
         path: '<knowledge dir>/<repo>-<sha7>.md',
-        language: '<language>',
         repo: '<repo>',
       }),
     },

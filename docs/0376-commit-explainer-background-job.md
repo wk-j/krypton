@@ -157,7 +157,7 @@ pub struct KnowledgeJob { pub scratch: String, pub draft: String, pub path: Stri
    → model ≠ "" → setLaneModel(model); a rejection fails the job and lists the advertised ids
      that share the part before `[`
    → setSessionMode(mode); a rejection fails the job: never run in the backend's default mode
-5. prompt(learnCommitPrompt({sha, repo, language, path: draft, scratch, repoRoot: root}))
+5. prompt(learnCommitPrompt({sha, repo, path: draft, scratch, repoRoot: root}))
    each tool_call / tool_call_update → a step; thought / message chunks → the phase (spec 0377) → 'update'
 6. stop must be end_turn → invoke knowledge_store(root, sha) → 'ready' {path}
    any failure → 'failed' {message}; the client is always disposed; the next queued job takes
@@ -209,12 +209,14 @@ its process is disposed after 5 s (`CANCEL_GRACE_MS`). Either way the job ends `
 ```toml
 [knowledge]
 dir = "~/.config/krypton/knowledge"
-language = "English"
 backend = "codex"            # ACP backend that runs explainer jobs
 model = "gpt-6.1-sol[high]"  # an id the backend advertises; "" keeps the backend default
 mode = "workspace-write"     # agent-side mode; it must sandbox writes to the working dir
 parallel = 2                 # jobs that run at once, clamped to 1–4; the rest queue
 ```
+
+Explainers are always written in Thai; technical terms, code and commands stay English.
+There is no language setting.
 
 Read when each job starts, so **Reload Config** applies to the next job. The sandbox guarantee holds
 only for codex `workspace-write`. Another backend or mode is the user's call. Under Claude's

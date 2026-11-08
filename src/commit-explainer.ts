@@ -81,7 +81,6 @@ export interface ExplainConfig {
   backend: string;
   model: string;
   mode: string;
-  language: string;
   parallel: number;
 }
 
@@ -176,7 +175,6 @@ export function resolveExplainConfig(k: Partial<KnowledgeConfig> | undefined): E
     // An empty model keeps the backend default; only a missing key falls back.
     model: k?.model ?? 'gpt-6.1-sol[high]',
     mode: k?.mode ?? 'workspace-write',
-    language: k?.language || 'English',
     parallel: Number.isFinite(parallel) ? Math.min(EXPLAIN_MAX_PARALLEL, Math.max(1, parallel)) : 2,
   };
 }
@@ -387,7 +385,6 @@ export class CommitExplainer {
     let text = learnCommitPrompt({
       sha: job.sha,
       path: prepared.draft,
-      language: cfg.language,
       repo: prepared.repo,
       repoRoot: job.root,
       scratch: prepared.scratch,

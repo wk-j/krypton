@@ -489,7 +489,7 @@
     justify-self: start;
     min-width: 2.6ch;
     padding: 0 4px;
-    border: 1px solid currentColor;
+    border: 1px solid transparent;
     border-radius: var(--krypton-border-radius, 8px);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.58));
     font-size: 0.78em;
