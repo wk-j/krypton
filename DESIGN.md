@@ -195,7 +195,7 @@ comment.
   draft is a typewriter sheet (cream paper, ink in the configured `[font] family`, margin rule, steel
   rail and a carriage with three LEDs riding under the caret line, a one-shot typebar strike and ink
   afterimage per key, lamplight under the dark scheme). It is the document being written, not chrome
-  (ADR-0030); the plate around it — target chip, picker, image strip, key-cap foot — stays faceplate.
+  (ADR-0030); the plate around it — target chip, image strip, key-cap foot — stays faceplate.
   It moves only when the caret moves; no ambient motion.
 - **Quick Terminal.** A plate drawer around a screen.
 - **Harness.** The lane body is a screen (the window's screen shows through; a lane adds the well's

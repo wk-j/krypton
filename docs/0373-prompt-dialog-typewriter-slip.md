@@ -5,6 +5,7 @@
 > Milestone: ACP Harness — input
 > Builds on: 0061 (Smart Prompt Dialog) · 0372 (harness lane targets) · 0366 / ADR-0030 (console faceplate) · 0369 (key caps)
 > Design source: `/Users/wk/Design/Ribbon TTY.html` (the "slip" sheet, rail and carriage)
+> Amended 2026-11-08: no target picker. `Tab` / `⇧Tab` step the target chip ([0061](./0061-smart-prompt-dialog.md)); the foot reads `⌘Enter send` · `Enter newline` · `Tab/⇧Tab target` · `Esc close`.
 
 ## Problem
 
@@ -22,7 +23,7 @@ TTY rail and carriage riding under the caret's line. Each typed key strikes the 
 one-shot ink afterimage at the typed cell and plays the user's configured key sound; crossing 86% of
 the line rings the margin bell. The editor stays a native `<textarea>`, so Thai input, selection,
 undo, paste and `@` completion keep working unchanged. As on the design's slip, Return feeds a line
-and `⌘Enter` sends. Everything else on the plate — target chip, picker, image strip, key-cap foot —
+and `⌘Enter` sends. Everything else on the plate — target chip, image strip, key-cap foot —
 stays faceplate chrome.
 
 ## Research
@@ -142,9 +143,10 @@ export class Typewriter {
 | `⌘Enter` | Slip | Send (queue on a busy lane) |
 | `Enter` / `Shift+Enter` | Slip | Feed a line (newline) |
 | `Enter` / `Tab` | `@` popup open | Accept completion (unchanged) |
-| `Esc`, `⌘,`, picker keys | — | Unchanged |
+| `Tab` / `⇧Tab` | Slip, no `@` completion showing | Step the target chip (0061); the caret stays |
+| `Esc` | — | Unchanged |
 
-Foot: `⌘Enter send` (or `queue`) · `Enter newline` · `⌘, switch target` · `Esc close`, as key caps.
+Foot: `⌘Enter send` (or `queue`) · `Enter newline` · `Tab/⇧Tab target` (two or more targets) · `Esc close`, as key caps.
 
 ### UI Changes
 
@@ -177,7 +179,6 @@ Foot: `⌘Enter send` (or `queue`) · `Enter newline` · `⌘, switch target` ·
 - **`@` popup open**: the popup keeps Enter/Tab; the carriage keeps tracking.
 - **`[sound] enabled = false` or `keyboard_type = "none"`**: silent; the Rust engine decides.
 - **Narrow window**: `92vw` wins; the carriage centres on the caret and is clipped by the slip.
-- **Picker open**: the carriage parks (`still`); keys go to the picker as today.
 - **Short screen**: the textarea's max height follows the plate's `86vh`, so the foot never leaves the
   screen.
 

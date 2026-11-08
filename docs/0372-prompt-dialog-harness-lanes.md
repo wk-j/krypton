@@ -5,6 +5,7 @@
 > Milestone: ACP Harness — input
 > Builds on: 0061 (Smart Prompt Dialog) · 0063 (screen capture routing) · 0136 (prompt queue) · 0175 (control API) · 0247 (remote Harness)
 > Amended by: [0373](./0373-prompt-dialog-typewriter-slip.md) — the draft is a typewriter slip; `⌘Enter` sends (or queues) and Enter feeds a line, so the lane footer reads `⌘Enter send` / `⌘Enter queue`.
+> Amended 2026-11-08: no target list. Lane and PTY targets share one Tab cycle in the chip (`Tab` / `⇧Tab`, position `2/4`); the picker, its auto-open at ≥2 targets, `⌘,` and the `1–9` hotkeys are removed. See [0061](./0061-smart-prompt-dialog.md) Target Selection.
 
 ## Problem
 
@@ -90,7 +91,7 @@ opens from a Harness, it targets that Harness's active lane and goes straight to
 | tmux | `send-keys -t <target-pane>` types text into a named pane | The PTY path the dialog already uses |
 
 **Krypton delta**: like Claude Desktop and VS Code, the composer is separate from the
-conversation. Unlike them, it targets an existing live lane chosen from one keyboard picker that
+conversation. Unlike them, it targets an existing live lane chosen from one keyboard Tab cycle that
 also lists `claude` terminals, it never starts a new chat, and it does not move focus. The lane
 flashes its window and the queue rail shows a queued prompt.
 
@@ -156,14 +157,14 @@ window whose pane's `getLaneMarks?.()` contains `displayName`.
 1. Cmd+Shift+K → PromptDialog.open().
 2. Before the overlay takes focus, open() snapshots the terminal selection (existing) and
    focusedHarnessId = listHarnessEntries().find((e) => e.isFocused?.())?.harnessId ?? null.
-3. refreshTargets() (on open, on process-changed, on picker open):
+3. refreshTargets() (on open, on process-changed, after each Tab step):
    a. PTY rows: findSessionsByProcess('claude'), unchanged.
    b. Lane rows: for each listHarnessEntries() entry, await entry.control('lane.list', {});
       narrow each row, drop status 'stopped'.
    c. Order: PTY rows, then lanes in Harness registration order, lane order within.
 4. Initial target, first match wins: the active lane of focusedHarnessId; lastUsedTargetKey;
-   the first row. When the first rule picked the target, focus goes straight to the textarea.
-   Otherwise the picker auto-opens at ≥2 targets, as in 0061.
+   the first row. Focus goes straight to the textarea; Tab / ⇧Tab step the chip through the
+   other rows (0061).
 5. File index for a lane target: loadFileIndex(cwd) when !remote; remote → [] (the @ popup
    offers only @selection).
 6. ⌘Enter on a lane target (Enter before spec 373):
@@ -187,17 +188,16 @@ The PTY send path (bracketed paste, `\r`, `flashWindow`) is unchanged.
 ### Keybindings
 
 No new keys. With a lane target the footer reads `⌘Enter send` (idle) or `⌘Enter queue`
-(`busy`/`needs_permission`/`awaiting_peer`), then `Enter newline · ⌘, switch target · Esc close`
-(spec 373; before it, Enter sent and `⇧Enter` fed a line).
+(`busy`/`needs_permission`/`awaiting_peer`), then `Enter newline · Tab/⇧Tab target · Esc close`
+(spec 373; before it, Enter sent and `⇧Enter` fed a line). `Tab/⇧Tab target` shows only with two
+or more targets.
 
 ### UI Changes
 
 - Chip, lane target: lit lamp, display name, backend, abbreviated cwd, status label
-  (`idle`, `needs permission · queue 2 · remote`). Empty state: `⚠ no target`. Picker empty
-  text: "Start `claude` in a tab or open an ACP Harness, then reopen this dialog."
-- Picker header: `Select target`. Lane row (`.krypton-prompt-dialog__picker-row--lane`): hotkey,
-  display name, backend, abbreviated cwd, the same status label. PTY rows are
-  unchanged. Hotkeys `1–9` run across the combined list.
+  (`idle`, `needs permission · queue 2 · remote`), then the position in the Tab cycle (`3/4`).
+  Empty state: `⚠ no target` and "start claude in a tab or open an ACP Harness, then reopen this
+  dialog". Lane and PTY targets share one cycle, in the order of step 3c.
 - `.krypton-prompt-dialog__error`: one line in the foot, fault tone (DESIGN.md: colour only for a
   fault). It replaces the hints until the next input or target change.
 
@@ -218,7 +218,7 @@ No new keys. With a lane target the footer reads `⌘Enter send` (idle) or `⌘E
 - **`images` from the control API, Telegram or Live Assist**: `invalid_request`. Covered by a
   permanent test.
 - **Dialog opened from a Harness with no live lanes**: step 4 falls through to
-  `lastUsedTargetKey`, then the first row, and the picker rule applies.
+  `lastUsedTargetKey`, then the first row; Tab steps to the others.
 - **Opened from a terminal or other view**: `@selection` works as today. A Harness transcript
   selection is not captured (`getFocusedSelection` reads terminals only).
 - **Harness still initializing**: not registered in the directory yet → no rows from it.

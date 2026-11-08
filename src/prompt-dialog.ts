@@ -23,7 +23,7 @@ import {
 import type { HarnessLaneStatus } from './acp/types';
 import { getCaretCoordinates } from './caret-position';
 import { Typewriter } from './prompt-dialog-typewriter';
-import { keyCap, keyHint, type KeyHint } from './ui/kbd';
+import { keyHint, type KeyHint } from './ui/kbd';
 
 const TARGET_PROCESS = 'claude';
 const FILE_INDEX_TTL_MS = 10_000;
@@ -186,7 +186,6 @@ export class PromptDialog {
   private overlay: HTMLElement;
   private panel: HTMLElement;
   private chipEl: HTMLElement;
-  private pickerEl: HTMLElement;
   private textareaEl: HTMLTextAreaElement;
   private mentionPopupEl: HTMLElement;
   private footerEl: HTMLElement;
@@ -198,7 +197,9 @@ export class PromptDialog {
 
   private targets: DialogTarget[] = [];
   private selectedTargetIdx = 0;
-  private pickerOpen = false;
+  // Tab is ignored until open() has listed this open's targets, so it never
+  // steps through the previous open's rows.
+  private targetsLoaded = false;
   // spec 372: the Harness that held focus when the dialog opened; its active
   // lane is the default target. Frozen like selectionSnapshot.
   private focusedHarnessId: string | null = null;
@@ -233,7 +234,6 @@ export class PromptDialog {
     this.overlay = this.buildDom();
     this.panel = this.overlay.querySelector('.krypton-prompt-dialog__panel')!;
     this.chipEl = this.overlay.querySelector('.krypton-prompt-dialog__target-chip')!;
-    this.pickerEl = this.overlay.querySelector('.krypton-prompt-dialog__picker')!;
     this.textareaEl = this.overlay.querySelector('.krypton-prompt-dialog__textarea')!;
     this.mentionPopupEl = this.overlay.querySelector('.krypton-prompt-dialog__mention-popup')!;
     this.footerEl = this.overlay.querySelector('.krypton-prompt-dialog__footer')!;
@@ -278,20 +278,13 @@ export class PromptDialog {
     this.typewriter.show();
     this.refitDraft();
 
+    this.targetsLoaded = false;
     await this.refreshTargets();
-    const pickedFocusedLane = this.pickInitialTarget();
+    this.pickInitialTarget();
+    this.targetsLoaded = true;
     this.subscribeToProcessChanges();
-
-    if (this.targets.length >= 2 && !pickedFocusedLane) {
-      this.openPicker(false);
-    } else {
-      this.pickerOpen = false;
-      this.pickerEl.style.display = 'none';
-      this.chipEl.style.display = '';
-      this.renderChip();
-      this.renderFooter();
-      requestAnimationFrame(() => this.textareaEl.focus());
-    }
+    this.renderTargets();
+    requestAnimationFrame(() => this.textareaEl.focus());
 
     if (this.currentTarget()) {
       void this.loadFilesForCurrentTarget();
@@ -303,7 +296,7 @@ export class PromptDialog {
     this.visible = false;
     this.overlay.classList.remove('krypton-prompt-dialog--visible');
     this.mentionPopupEl.classList.remove('krypton-prompt-dialog__mention-popup--visible');
-    this.pickerOpen = false;
+    this.targetsLoaded = false;
     this.selectionSnapshot = null;
     this.typewriter.hide();
     this.focusedHarnessId = null;
@@ -316,16 +309,6 @@ export class PromptDialog {
 
   onKeyDown(e: KeyboardEvent): boolean {
     if (!this.visible) return false;
-
-    // Cmd+, toggles picker in any state
-    if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.code === 'Comma') {
-      e.preventDefault();
-      if (this.pickerOpen) this.closePicker();
-      else this.openPicker();
-      return true;
-    }
-
-    if (this.pickerOpen) return this.handlePickerKey(e);
     if (this.mention.active) return this.handleMentionKey(e);
     return this.handleTextareaKey(e);
   }
@@ -334,7 +317,6 @@ export class PromptDialog {
 
   /** Re-list targets, keeping the selected one while it is still present. */
   private async refreshTargets(): Promise<void> {
-    const prevKey = this.currentTarget()?.key ?? null;
     const prevCwd = new Map<SessionId, string | null>();
     for (const t of this.targets) {
       if (t.kind === 'pty') prevCwd.set(t.sessionId, t.cwd);
@@ -363,6 +345,8 @@ export class PromptDialog {
       listLaneTargets(),
     ]);
 
+    // Read the selection only now: a Tab during the awaits above moved it.
+    const prevKey = this.currentTarget()?.key ?? null;
     this.targets = [...ptyTargets, ...laneTargets];
     const kept = prevKey === null ? -1 : this.targets.findIndex((t) => t.key === prevKey);
     if (kept >= 0) this.selectedTargetIdx = kept;
@@ -370,22 +354,21 @@ export class PromptDialog {
   }
 
   /** spec 372: the focused Harness's active lane, then the last-used target,
-   *  then the first row. Returns true only when the first rule picked. */
-  private pickInitialTarget(): boolean {
+   *  then the first row. */
+  private pickInitialTarget(): void {
     if (this.targets.length === 0) {
       this.selectedTargetIdx = -1;
-      return false;
+      return;
     }
     const focused = this.focusedHarnessId === null
       ? -1
       : this.targets.findIndex((t) => t.kind === 'lane' && t.active && t.harnessId === this.focusedHarnessId);
     if (focused >= 0) {
       this.selectedTargetIdx = focused;
-      return true;
+      return;
     }
     const last = this.targets.findIndex((t) => t.key === lastUsedTargetKey);
     this.selectedTargetIdx = last >= 0 ? last : 0;
-    return false;
   }
 
   private currentTarget(): DialogTarget | null {
@@ -396,9 +379,25 @@ export class PromptDialog {
   }
 
   private renderTargets(): void {
-    if (this.pickerOpen) this.renderPicker();
-    else this.renderChip();
+    this.renderChip();
     this.renderFooter();
+  }
+
+  /** Tab / ⇧Tab step the chip to the next / previous target, wrapping; the
+   *  draft and caret stay. Lane status is not evented to the dialog, so every
+   *  step also re-lists the targets. */
+  private cycleTarget(delta: 1 | -1): void {
+    if (!this.targetsLoaded) return;
+    if (this.targets.length > 1) {
+      this.selectedTargetIdx =
+        (this.selectedTargetIdx + delta + this.targets.length) % this.targets.length;
+      this.errorText = null;
+      this.renderTargets();
+      void this.loadFilesForCurrentTarget();
+    }
+    void this.refreshTargets().then(() => {
+      if (this.visible) this.renderTargets();
+    });
   }
 
   private subscribeToProcessChanges(): void {
@@ -420,133 +419,14 @@ export class PromptDialog {
       this.files = [];
       return;
     }
-    this.files = await loadFileIndex(t.cwd);
-  }
-
-  // ─── Picker ────────────────────────────────────────────────────
-
-  private openPicker(refresh = true): void {
-    this.pickerOpen = true;
-    this.chipEl.style.display = 'none';
-    this.pickerEl.style.display = '';
-    this.renderPicker();
-    this.renderFooter();
-    this.textareaEl.blur();
-    // Lane status is not evented to the dialog, so re-list whenever the picker opens.
-    if (refresh) {
-      void this.refreshTargets().then(() => {
-        if (this.visible && this.pickerOpen) this.renderTargets();
-      });
-    }
-  }
-
-  private closePicker(): void {
-    this.pickerOpen = false;
-    this.errorText = null;
-    this.pickerEl.style.display = 'none';
-    this.chipEl.style.display = '';
-    this.renderChip();
-    this.renderFooter();
-    requestAnimationFrame(() => this.textareaEl.focus());
-    // Re-load files in case target changed
-    void this.loadFilesForCurrentTarget();
-  }
-
-  private renderPicker(): void {
-    if (this.targets.length === 0) {
-      this.pickerEl.innerHTML = `
-        <div class="krypton-prompt-dialog__picker-header">No targets found</div>
-        <div class="krypton-prompt-dialog__picker-empty">
-          Start <code>claude</code> in a tab or open an ACP Harness, then reopen this dialog.
-        </div>
-      `;
-      return;
-    }
-    const header = `<div class="krypton-prompt-dialog__picker-header">Select target</div>`;
-    const rows = this.targets
-      .map((t, i) => {
-        const selected = i === this.selectedTargetIdx ? ' is-selected' : '';
-        const last = lastUsedTargetKey === t.key
-          ? '<span class="krypton-prompt-dialog__picker-last">(last)</span>'
-          : '';
-        const cwd = escapeHtml(abbreviatePath(t.cwd ?? '…'));
-        if (t.kind === 'lane') {
-          return `
-          <div class="krypton-prompt-dialog__picker-row krypton-prompt-dialog__picker-row--lane${selected}" data-idx="${i}">
-            <span class="krypton-prompt-dialog__picker-hotkey"></span>
-            <span class="krypton-prompt-dialog__picker-proc">${escapeHtml(t.displayName)}</span>
-            <span class="krypton-prompt-dialog__picker-meta">${escapeHtml(t.backendId)}</span>
-            <span class="krypton-prompt-dialog__picker-cwd">${cwd}</span>
-            <span class="krypton-prompt-dialog__picker-meta">${escapeHtml(laneStatusLabel(t))}</span>
-            ${last}
-          </div>
-        `;
-        }
-        return `
-          <div class="krypton-prompt-dialog__picker-row${selected}" data-idx="${i}">
-            <span class="krypton-prompt-dialog__picker-hotkey"></span>
-            <span class="krypton-prompt-dialog__picker-proc">claude</span>
-            <span class="krypton-prompt-dialog__picker-cwd">${cwd}</span>
-            <span class="krypton-prompt-dialog__picker-pid">pid ${t.pid}</span>
-            ${last}
-          </div>
-        `;
-      })
-      .join('');
-    this.pickerEl.innerHTML = header + rows;
-
-    this.pickerEl.querySelectorAll<HTMLElement>('.krypton-prompt-dialog__picker-row').forEach((row) => {
-      const idx = parseInt(row.dataset.idx ?? '-1', 10);
-      if (idx >= 0 && idx < 9) {
-        row.querySelector('.krypton-prompt-dialog__picker-hotkey')?.appendChild(keyCap(String(idx + 1)));
-      }
-      row.addEventListener('click', () => {
-        if (idx >= 0) {
-          this.selectedTargetIdx = idx;
-          this.closePicker();
-        }
-      });
-    });
-  }
-
-  private handlePickerKey(e: KeyboardEvent): boolean {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      if (this.targets.length === 0) {
-        this.close();
-      } else {
-        this.closePicker();
-      }
-      return true;
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (this.targets.length > 0) this.closePicker();
-      return true;
-    }
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (this.targets.length === 0) return true;
-      const delta = e.key === 'ArrowDown' ? 1 : -1;
-      this.selectedTargetIdx =
-        (this.selectedTargetIdx + delta + this.targets.length) % this.targets.length;
-      this.renderPicker();
-      return true;
-    }
-    if (/^[1-9]$/.test(e.key)) {
-      const idx = parseInt(e.key, 10) - 1;
-      if (idx < this.targets.length) {
-        e.preventDefault();
-        this.selectedTargetIdx = idx;
-        this.closePicker();
-        return true;
-      }
-    }
-    return true;
+    const files = await loadFileIndex(t.cwd);
+    // A later Tab may have moved on while this index loaded.
+    if (this.currentTarget()?.key === t.key) this.files = files;
   }
 
   // ─── Chip rendering ────────────────────────────────────────────
 
+  /** The plate's head: lamp, target, and its place in the Tab cycle. */
   private renderChip(): void {
     const t = this.currentTarget();
     this.renderKicker();
@@ -554,17 +434,17 @@ export class PromptDialog {
       'krypton-prompt-dialog__target-chip--empty',
       'krypton-prompt-dialog__target-chip--loading',
     );
-    const badge = this.targets.length > 1
-      ? `<span class="krypton-prompt-dialog__chip-count">${this.targets.length} avail</span>`
+    const cycles = this.targets.length > 1;
+    this.chipEl.classList.toggle('krypton-prompt-dialog__target-chip--cycles', cycles);
+    const position = cycles
+      ? `<span class="krypton-prompt-dialog__chip-count">${this.selectedTargetIdx + 1}/${this.targets.length}</span>`
       : '';
-    const switchButton = '<button class="krypton-prompt-dialog__chip-switch" title="Switch target (⌘,)">⇅</button>';
     if (!t) {
       this.chipEl.classList.add('krypton-prompt-dialog__target-chip--empty');
       this.chipEl.innerHTML = `
         <span class="krypton-prompt-dialog__chip-warn">⚠</span>
         <span class="krypton-prompt-dialog__chip-label">no target</span>
-        <span class="krypton-prompt-dialog__chip-spacer"></span>
-        ${switchButton}
+        <span class="krypton-prompt-dialog__chip-meta">start claude in a tab or open an ACP Harness, then reopen this dialog</span>
       `;
     } else if (t.kind === 'lane') {
       this.chipEl.innerHTML = `
@@ -573,9 +453,8 @@ export class PromptDialog {
         <span class="krypton-prompt-dialog__chip-meta">${escapeHtml(t.backendId)}</span>
         <span class="krypton-prompt-dialog__chip-cwd">${escapeHtml(abbreviatePath(t.cwd ?? '…'))}</span>
         <span class="krypton-prompt-dialog__chip-meta">${escapeHtml(laneStatusLabel(t))}</span>
-        ${badge}
         <span class="krypton-prompt-dialog__chip-spacer"></span>
-        ${switchButton}
+        ${position}
       `;
     } else {
       const cwd = t.cwd ?? '…';
@@ -585,16 +464,10 @@ export class PromptDialog {
         <span class="krypton-prompt-dialog__chip-label">Claude</span>
         <span class="krypton-prompt-dialog__chip-cwd">${escapeHtml(abbreviatePath(cwd))}</span>
         <span class="krypton-prompt-dialog__chip-pid">pid ${t.pid}</span>
-        ${badge}
         <span class="krypton-prompt-dialog__chip-spacer"></span>
-        ${switchButton}
+        ${position}
       `;
     }
-    const btn = this.chipEl.querySelector<HTMLButtonElement>('.krypton-prompt-dialog__chip-switch');
-    btn?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.openPicker();
-    });
   }
 
   private renderFooter(): void {
@@ -602,27 +475,19 @@ export class PromptDialog {
     const queues = t?.kind === 'lane' && QUEUEING_STATUSES[t.status] === true;
     // spec 373: the carriage LEDs read the same state the foot prints.
     this.typewriter.setLeds({ queue: queues, error: this.errorText !== null });
-    if (this.errorText !== null && !this.pickerOpen) {
+    if (this.errorText !== null) {
       const error = document.createElement('span');
       error.className = 'krypton-prompt-dialog__error';
       error.textContent = this.errorText;
       this.footerEl.replaceChildren(error);
       return;
     }
-    const close: KeyHint = { keys: ['Esc'], label: 'close' };
-    const switchTarget: KeyHint = { keys: ['⌘,'], label: 'switch target' };
     // spec 372: a busy lane queues the prompt; spec 373: ⌘Enter sends, Enter feeds a line.
-    const send: KeyHint = { keys: ['⌘Enter'], label: queues ? 'queue' : 'send' };
-    const hints: readonly KeyHint[] = this.pickerOpen
-      ? [
-        { keys: ['↑↓'], label: 'nav' },
-        { keys: ['1–9'], label: 'jump' },
-        { keys: ['Enter'], label: 'select' },
-        close,
-      ]
-      : !t
-        ? [switchTarget, close]
-        : [send, { keys: ['Enter'], label: 'newline' }, switchTarget, close];
+    const hints: KeyHint[] = t
+      ? [{ keys: ['⌘Enter'], label: queues ? 'queue' : 'send' }, { keys: ['Enter'], label: 'newline' }]
+      : [];
+    if (this.targets.length > 1) hints.push({ keys: ['Tab', '⇧Tab'], label: 'target', keySeparator: '/' });
+    hints.push({ keys: ['Esc'], label: 'close' });
     this.footerEl.replaceChildren(...hints.map((hint) => keyHint(hint)));
   }
 
@@ -639,6 +504,13 @@ export class PromptDialog {
     if (e.key === 'Escape') {
       e.preventDefault();
       this.close();
+      return true;
+    }
+    // Tab / ⇧Tab step the target; the textarea keeps focus. An IME composing
+    // text keeps its own Tab.
+    if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing) {
+      e.preventDefault();
+      this.cycleTarget(e.shiftKey ? -1 : 1);
       return true;
     }
     return false;
@@ -674,6 +546,8 @@ export class PromptDialog {
       this.acceptMention();
       return true;
     }
+    // No completion to accept (the popup is hidden): Tab still steps the target.
+    if (e.key === 'Tab') return this.handleTextareaKey(e);
     // All other keys fall through to the textarea for typing
     return false;
   }
@@ -983,7 +857,6 @@ export class PromptDialog {
     overlay.innerHTML = `
       <div class="krypton-prompt-dialog__panel">
         <div class="krypton-prompt-dialog__target-chip"></div>
-        <div class="krypton-prompt-dialog__picker" style="display: none"></div>
         <div class="krypton-prompt-dialog__slip">
           <div class="krypton-prompt-dialog__slip-kicker">
             <span>prompt</span>
@@ -1018,6 +891,12 @@ export class PromptDialog {
       }
     });
     this.textareaEl.addEventListener('scroll', () => this.typewriter.sync('still'));
+    // Mouse is secondary: a press on the chip steps it like Tab, and the
+    // textarea keeps focus and caret.
+    this.chipEl.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      this.cycleTarget(1);
+    });
     this.overlay.addEventListener('mousedown', (e) => {
       if (e.target === this.overlay) {
         this.close();

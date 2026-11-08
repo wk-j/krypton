@@ -2150,7 +2150,8 @@ The CLI never simulates keys, submits hash commands, or registers as a lane.
    Harness whose element holds DOM focus (HarnessEntry.isFocused).
 2. Targets: claude PTYs (findSessionsByProcess) plus every non-stopped lane from
    entry.control('lane.list') across listHarnessEntries(). Default: the focused
-   Harness's active lane (no picker), else the last-used target, else the first.
+   Harness's active lane, else the last-used target, else the first. No list
+   opens: Tab / ⇧Tab step the chip through the targets and re-list them.
 3. ⌘Enter on a lane target (Enter feeds a line, spec 373): expand @selection; staged images whose `@<tmp path>`
    token is still in the text become { data, mimeType, path } and the tokens leave
    the text.

@@ -488,7 +488,7 @@ export class InputRouter {
         } else if (this.mode === Mode.QuickOverview) {
           this.quickOverview?.close();
         } else if (this.mode === Mode.PromptDialog) {
-          // Dialog owns Escape semantics (close popup → close picker → close dialog).
+          // Dialog owns Escape semantics (close popup → close dialog).
           // Delegate, but if it returns false (unexpected), force-close.
           if (!this.promptDialog?.onKeyDown(e)) {
             this.promptDialog?.close();
@@ -666,7 +666,7 @@ export class InputRouter {
 
       // Prompt Dialog mode: delegate to the dialog's own handler.
       // The <textarea> receives typing naturally; the dialog intercepts
-      // Enter/Shift+Enter/Tab/Esc/Arrow keys for submit, mention popup, picker.
+      // ⌘Enter/Tab/Esc/Arrow keys for submit, target, mention popup.
       if (this.mode === Mode.PromptDialog) {
         if (this.promptDialog?.onKeyDown(e)) {
           e.preventDefault();

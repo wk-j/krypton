@@ -336,7 +336,7 @@
 /* ─── Target chip ───
    The head of the plate: the target is a lamp — lit amber while a Claude
    session is attached, lit warning when there is none — then its name
-   engraved and the switch key at the end. */
+   engraved and, with several targets, its place in the Tab cycle at the end. */
 .krypton-prompt-dialog__target-chip {
   --prompt-lamp-rgb: 255, 176, 0;
 
@@ -353,6 +353,11 @@
 
 .krypton-prompt-dialog__target-chip--empty {
   --prompt-lamp-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+}
+
+/* Several targets: a press on the chip steps it like Tab. */
+.krypton-prompt-dialog__target-chip--cycles {
+  cursor: pointer;
 }
 
 /* The arrow / warning glyph sits on a small LED: the glyph is dropped, the
@@ -404,7 +409,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* "N avail" is a small readout let into the plate. */
+/* "2/4", the target's place in the Tab cycle, is a small readout let into the plate. */
 .krypton-prompt-dialog__chip-count {
   padding: 1px 6px;
   border-radius: var(--krypton-border-radius, 8px);
@@ -417,132 +422,6 @@
 
 .krypton-prompt-dialog__chip-spacer {
   flex: 1;
-}
-
-.krypton-prompt-dialog__chip-switch {
-  min-height: 24px;
-  padding: 2px 10px;
-  border: 1px solid var(--mat-key-edge);
-  border-radius: var(--krypton-border-radius, 8px);
-  background: var(--mat-key);
-  box-shadow: var(--mat-key-raise);
-  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
-  text-shadow: var(--mat-print);
-  font-family: inherit;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  cursor: pointer;
-}
-
-.krypton-prompt-dialog__chip-switch:hover {
-  background: var(--mat-key-hover);
-}
-
-.krypton-prompt-dialog__chip-switch:active {
-  background: var(--mat-key-down);
-  box-shadow: var(--mat-key-sunk);
-  color: var(--mat-lit);
-  transform: translateY(1px);
-}
-
-.krypton-prompt-dialog__chip-switch:focus-visible {
-  outline: 1px solid var(--mat-lit);
-  outline-offset: 2px;
-}
-
-/* ─── Picker ───
-   The session list is one well: its heading is printed inside in ink (an
-   engraving belongs on the plate, not in a well), the rows are flat and split
-   by grooves, the selected row takes the full-row tint (ADR-0027). */
-.krypton-prompt-dialog__picker {
-  max-height: 260px;
-  overflow-y: auto;
-  border-radius: var(--krypton-border-radius, 8px);
-  background: var(--mat-well);
-  box-shadow: var(--mat-well-shadow);
-}
-
-.krypton-prompt-dialog__picker-header {
-  padding: 7px 12px 5px;
-  border-bottom: 1px solid var(--mat-groove-lo);
-  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 600;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
-}
-
-.krypton-prompt-dialog__picker-empty {
-  padding: 12px 14px 16px;
-  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-chrome-font-size, 11px);
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
-}
-
-.krypton-prompt-dialog__picker-empty code {
-  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
-  background: var(--mat-well-fill);
-  border: 1px solid var(--mat-groove-lo);
-  border-radius: 4px;
-  padding: 0 4px;
-}
-
-/* A repeated row: no shadow, no gradient — one groove and the tint. */
-.krypton-prompt-dialog__picker-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 5px 12px;
-  cursor: pointer;
-  border-bottom: 1px solid var(--mat-groove-lo);
-  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-chrome-font-size, 11px);
-}
-
-.krypton-prompt-dialog__picker-row:last-child {
-  border-bottom: 0;
-}
-
-.krypton-prompt-dialog__picker-row:hover {
-  background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.04);
-}
-
-.krypton-prompt-dialog__picker-row.is-selected {
-  background: var(--mat-select);
-}
-
-/* Holds the digit's key cap (spec 369); the cap draws itself. */
-.krypton-prompt-dialog__picker-hotkey {
-  flex-shrink: 0;
-  min-width: 20px;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-
-.krypton-prompt-dialog__picker-proc {
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.krypton-prompt-dialog__picker-cwd {
-  flex: 1;
-  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.krypton-prompt-dialog__picker-pid,
-.krypton-prompt-dialog__picker-meta {
-  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
-  font-variant-numeric: tabular-nums;
-}
-
-.krypton-prompt-dialog__picker-last {
-  color: var(--mat-silk);
-  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
 }
 
 /* ─── Typewriter slip (spec 373) ───
@@ -997,24 +876,20 @@ html[data-theme-scheme='dark'] .krypton-prompt-dialog__slip-kicker {
 }
 
 /* Scrollbars (DESIGN.md "Scrollbars"): 8px, transparent track, ink thumb. */
-.krypton-prompt-dialog__picker::-webkit-scrollbar,
 .krypton-prompt-dialog__mention-popup::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-.krypton-prompt-dialog__picker::-webkit-scrollbar-track,
 .krypton-prompt-dialog__mention-popup::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.krypton-prompt-dialog__picker::-webkit-scrollbar-thumb,
 .krypton-prompt-dialog__mention-popup::-webkit-scrollbar-thumb {
   background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
   border-radius: 8px;
 }
 
-.krypton-prompt-dialog__picker::-webkit-scrollbar-thumb:hover,
 .krypton-prompt-dialog__mention-popup::-webkit-scrollbar-thumb:hover {
   background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.32);
 }

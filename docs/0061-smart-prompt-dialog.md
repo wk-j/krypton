@@ -9,8 +9,9 @@ type: spec
 > Status: Implemented
 > Date: 2026-04-15
 > Milestone: Post-M2 — productivity layer
-> Amended by: [0372](./0372-prompt-dialog-harness-lanes.md) — live ACP Harness lanes are targets too, sent through `lane.send` with caller `prompt_dialog` (images as ACP image blocks, text literal, busy lanes queue). Opening from a Harness targets its active lane without the picker; the picker header reads `Select target`, the empty chip `no target`, and a failed lane send shows its message in the footer.
+> Amended by: [0372](./0372-prompt-dialog-harness-lanes.md) — live ACP Harness lanes are targets too, sent through `lane.send` with caller `prompt_dialog` (images as ACP image blocks, text literal, busy lanes queue). Opening from a Harness targets its active lane; the empty chip reads `no target`, and a failed lane send shows its message in the footer.
 > Amended by: [0373](./0373-prompt-dialog-typewriter-slip.md) — the plate grows to `min(1040px, 92vw)` and the textarea is a typewriter slip (paper, rail, carriage, typebar strike, configured key sounds, margin bell), 10 lines growing to 18. Keys: `⌘Enter` sends, Enter and `⇧Enter` feed a line; the Enter / `⇧Enter` rows of the keybinding table and the 3–12 line textarea below are superseded.
+> Amended 2026-11-08: the target picker list is gone. The chip is the only target display; `Tab` / `⇧Tab` step it to the next / previous target and a click on the chip steps like `Tab`. `Cmd+,`, the `1`–`9` / `↑↓` picker keys, the `[⇅]` button and the auto-opening picker are removed; the sections below describe the current behaviour.
 
 ## Problem
 
@@ -18,7 +19,7 @@ Users running `claude` in a Krypton terminal tab often want to dispatch a prompt
 
 ## Solution
 
-A global modal invoked by `Cmd+Shift+K` from any tab or mode. The dialog has a **persistent target chip** at the top (always visible, always switchable via `Cmd+,`) plus a textarea with inline `@`-mention autocomplete for files (`@path`) and a special `@selection` placeholder for the current xterm selection. Krypton enumerates every tab whose foreground process is `claude`; the chip shows the active target, and the user can switch targets at any time without losing typed text. On submit, the prompt is written to the target's PTY with a trailing `\r` and that window flashes to confirm delivery.
+A global modal invoked by `Cmd+Shift+K` from any tab or mode. The dialog has a **persistent target chip** at the top (always visible, stepped with `Tab` / `Shift+Tab`) plus a textarea with inline `@`-mention autocomplete for files (`@path`) and a special `@selection` placeholder for the current xterm selection. Krypton enumerates every tab whose foreground process is `claude`; the chip shows the active target, and the user can switch targets at any time without losing typed text. On submit, the prompt is written to the target's PTY with a trailing `\r` and that window flashes to confirm delivery.
 
 - **`@path`** is passed through verbatim — Claude Code natively resolves `@file` references, so the dialog only assists autocomplete.
 - **`@selection`** is expanded inline to the literal selected text (wrapped in a fenced block) before the prompt is sent. The selection is snapshotted when the dialog *opens*, not when it submits, so focus changes or terminal clicks between open and submit can't swap the payload out from under the user. The token is also pinned as a special top entry in the `@` mention popup (labeled with a line count) so new users discover it without needing to memorize the keyword.
@@ -104,8 +105,7 @@ interface ClaudeTarget {
 
 interface TargetState {
   candidates: ClaudeTarget[];        // all live claude sessions
-  selectedIndex: number;             // which candidate is active
-  pickerOpen: boolean;               // picker row expanded
+  selectedIndex: number;             // which candidate is active; Tab / Shift+Tab step it
 }
 
 // Module-level (persists across dialog opens within a session)
@@ -152,11 +152,12 @@ No new IPC events.
 4. Pick initial target:
    - 0 candidates → chip renders in empty/error state, textarea still focusable but submit disabled.
    - 1 candidate → auto-select, chip populated, focus → textarea.
-   - N candidates → auto-select lastUsedSessionId if still present, else first; picker opens
-     automatically so the user sees the choice. Focus → picker (not textarea).
+   - N candidates → auto-select lastUsedSessionId if still present, else first; focus → textarea.
+     No list opens: the chip shows the selected candidate and its place (`1/3`).
 5. Once a target is selected, kick off list_cwd_files(target.cwd) and cache for the dialog lifetime.
-6. User may press Cmd+, at any time to re-open the picker without losing typed text.
-   Picker navigation: 1-9 hotkey, Up/Down+Enter, Esc to dismiss picker (keeps last target).
+6. User may press Tab / Shift+Tab at any time to step the chip to the next / previous candidate
+   (wrapping) without losing typed text or moving the caret. Each step re-lists the candidates.
+   With the @ popup showing completions, Tab accepts the completion instead.
 7. User types in textarea. On each keystroke:
    a. If current char is '@' AND preceded by whitespace or start — enter mention mode, record start index.
    b. In mention mode: query = value.slice(start+1, caret). Run fuzzyMatch against cached file list, render popup under caret. If a non-empty selection snapshot exists and the query is empty or fuzzy-matches "selection", prepend `@selection` as a pinned top entry with a `N lines`/`N chars` hint so the placeholder is discoverable without prior knowledge.
@@ -186,9 +187,9 @@ No new IPC events.
 Target is a first-class, always-visible element — **not** a fallback that only appears on ambiguity.
 
 - **Persistent chip** at the top of the dialog renders the current target (window title, CWD, PID). Visible even when there's only one Claude session.
-- **Picker** opens by `Cmd+,`, clicking the chip's `[⇅]` affordance, or automatically when the dialog opens with N≥2 candidates.
+- **Switching**: `Tab` / `Shift+Tab` step the chip to the next / previous candidate, wrapping. The chip prints the position (`2/4`) at its end whenever there are two or more candidates, and a click on the chip steps like `Tab`. There is no candidate list.
 - **Enumeration** comes from `Compositor.findSessionsByProcess('claude')`, which reads a per-session `ProcessInfo` cache populated by the existing `process-changed` event. No polling.
-- **Last-used** session id is kept in a module-level variable (`lastUsedSessionId`), scoped to the app session — cleared on quit. It's used only to pre-select a row in the picker; it never overrides an explicit user choice.
+- **Last-used** session id is kept in a module-level variable (`lastUsedSessionId`), scoped to the app session — cleared on quit. It's used only to pre-select the initial target; it never overrides an explicit user choice.
 - **Live updates:** while the dialog is open, the dialog subscribes to `process-changed`. New Claude sessions join the candidate list; the current target disappearing marks the chip `--stale` but preserves the typed prompt so the user can re-pick.
 - **Empty state:** when there are no Claude candidates, the chip shows `⚠ no Claude session` and submit is disabled. Typing is still permitted (so the prompt isn't lost) — a Claude spawn hint is shown in the footer.
 
@@ -197,13 +198,10 @@ Target is a first-class, always-visible element — **not** a fallback that only
 | Key | Context | Action |
 |-----|---------|--------|
 | `Cmd+Shift+K` | Any mode | Open Smart Prompt Dialog |
-| `Cmd+,` | PromptDialog (any state) | Open/close target picker |
-| `1`–`9` | PromptDialog (picker open) | Jump to candidate N |
-| `Up` / `Down` | PromptDialog (picker open) | Navigate candidates |
-| `Enter` | PromptDialog (picker open) | Confirm target, focus textarea |
-| `Esc` | PromptDialog (picker open) | Close picker, keep last target |
+| `Tab` | PromptDialog (textarea, no completion showing) | Step to the next target |
+| `Shift+Tab` | PromptDialog (textarea, no completion showing) | Step to the previous target |
 | `Esc` | PromptDialog (mention popup open) | Close popup, keep text |
-| `Esc` | PromptDialog (no popup/picker) | Close dialog |
+| `Esc` | PromptDialog (no popup) | Close dialog |
 | `Enter` | PromptDialog (textarea) | Submit prompt |
 | `Shift+Enter` | PromptDialog (textarea) | Insert newline |
 | `Enter` / `Tab` | PromptDialog (mention popup open) | Commit selected completion |
@@ -214,33 +212,21 @@ Target is a first-class, always-visible element — **not** a fallback that only
 
 ```
 ┌───────────────────────────────────────────────────┐
-│ → Claude · ~/Source/krypton · pid 4321        [⇅] │  ← target chip (always visible)
+│ → Claude · ~/Source/krypton · pid 4321        2/3 │  ← target chip (always visible)
 ├───────────────────────────────────────────────────┤
 │ [textarea — 3 lines min, grows to 12]             │
 │                                                   │
 │                                                   │
 ├───────────────────────────────────────────────────┤
-│ ⏎ send   ⇧⏎ newline   ⌘, switch target   esc      │  ← footer hints
+│ ⏎ send   ⇧⏎ newline   ⇥/⇧⇥ target   esc           │  ← footer hints
 └───────────────────────────────────────────────────┘
 ```
 
-When the picker is open, it replaces the chip and expands above the textarea:
-
-```
-┌───────────────────────────────────────────────────┐
-│ Select target Claude session                      │
-│ › 1  claude  ~/Source/krypton    pid 4321  (last) │
-│   2  claude  ~/Source/pi-mono    pid 4388         │
-│   3  claude  ~/projects/app      pid 4502         │
-├───────────────────────────────────────────────────┤
-│ [textarea]                                        │
-└───────────────────────────────────────────────────┘
-```
+`Tab` replaces the chip's content with the next candidate in place; no list opens.
 
 - `.krypton-prompt-dialog` — centered overlay, 640px wide, max-height 480px. Mirrors palette chrome with a distinct accent color (`--krypton-accent-alt`) to signal "dispatch" vs "search."
-- `.krypton-prompt-dialog__target-chip` — persistent row showing target window name, CWD, PID, and `[⇅]` affordance. Modifier classes: `--empty` (no target), `--loading` (cwd resolving), `--stale` (target process exited mid-dialog).
-- `.krypton-prompt-dialog__picker` — list row rendered in place of the chip when `pickerOpen`. Rows have hotkey digit, process name, CWD, PID, and `(last)` badge.
-- `.krypton-prompt-dialog__textarea` — 3-line minimum, auto-grows to 12 lines. Dimmed + disabled while picker is open or chip is empty.
+- `.krypton-prompt-dialog__target-chip` — persistent row showing target window name, CWD, PID, and its place in the Tab cycle (`2/3`, only with two or more candidates). Modifier classes: `--empty` (no target), `--loading` (cwd resolving), `--cycles` (two or more candidates: the chip is clickable), `--stale` (target process exited mid-dialog).
+- `.krypton-prompt-dialog__textarea` — 3-line minimum, auto-grows to 12 lines. Dimmed + disabled while the chip is empty.
 - `.krypton-prompt-dialog__mention-popup` — absolutely positioned below caret, max 8 items, fuzzy-match highlights via `<span class="hl">`.
 - `.krypton-prompt-dialog__footer` — small monospace hint row listing the 3–4 most relevant keybindings for the current state.
 - Target window flash: adds `.krypton-window--flash` for 400ms (keyframe glow pulse on the existing accent outline).
@@ -259,11 +245,11 @@ file_index_limit = 5000          # max files per CWD in autocomplete
 ## Edge Cases
 
 - **No Claude tab at open:** chip renders in `--empty` state, submit disabled, textarea still writable so the user can draft. Footer shows "Press `c` to spawn Claude in a new tab."
-- **Multiple Claude tabs at open:** picker auto-opens with last-used pre-selected (or first candidate if last-used is gone). Picker is the same UI the user gets via `Cmd+,`.
+- **Multiple Claude tabs at open:** the chip shows the last-used candidate (or the first if last-used is gone); `Tab` / `Shift+Tab` step through the rest.
 - **Target process exits while dialog is open:** chip flips to `--stale` (visual: dim + strikethrough), submit is disabled, prompt text preserved. If other candidates exist, a "Switch target" hint appears; otherwise `--empty` state.
-- **New Claude tab spawned while dialog is open:** `process-changed` subscription adds it to `candidates`; the chip does not auto-switch (never surprise the user), but a subtle `(N available)` badge appears next to the chip.
+- **New Claude tab spawned while dialog is open:** `process-changed` subscription adds it to `candidates`; the chip does not auto-switch (never surprise the user), but its position readout counts it (`1/3`).
 - **Claude tab CWD changes mid-session:** CWD is re-read on every dialog open; file index cache keyed by CWD so it invalidates naturally.
-- **User opens picker with Cmd+, and Escapes:** picker closes, last selected target retained, focus returns to textarea with caret preserved.
+- **`Tab` with the `@` popup open:** accepts the highlighted completion; the target does not change. With the popup empty (no completions), `Tab` steps the target.
 - **`@` mid-word (e.g. `foo@bar.com`):** do not trigger popup. Guard: only activate when char at `start-1` is whitespace or `start === 0`.
 - **Typing `@` then space with empty query:** dismiss popup, keep the `@ ` as literal text.
 - **Backspace past the `@`:** dismiss popup, resume normal typing.
