@@ -4,13 +4,14 @@
 > Date: 2026-11-08
 > Milestone: Git — learning from history
 > Builds on: 0038 (Diff View, `openDiffFromString`) · 0039 (Markdown Viewer) · 0144 (`#wiki` one-shot prompt injection) · 0372 (in-process `lane.send` caller) · ADR 0003 (lanes write the document with their own tools)
+> Updated: 2026-11-08 — the explainer is a blog post with inline SVG figures, replacing the Terms / Story / cards sections
 
 ## Problem
 
 Krypton has no way to look through a repository's commit history, and nothing that turns a commit
 into knowledge someone can learn from. The user wants to pick a commit and get an explainer that a
-reader with no systems background can follow (terms first, then the story), written as general
-technical knowledge that does not depend on the project's own details.
+reader with no systems background can follow: a blog post that tells one connected story, with
+pictures, written as general technical knowledge that does not depend on the project's own details.
 
 ## Solution
 
@@ -22,8 +23,9 @@ Two parts:
 - **`#learn <sha>`** is a new Harness composer command, following the same one-shot injection
   pattern as `#wiki`, `#lesson` and `#daily`. The lane reads the commit with its own tools, checks
   the claims outside the project (a small repro or a documentation check), and writes one markdown
-  explainer to a path that Rust resolves. The explainer follows a fixed shape: Terms → Story →
-  General knowledge cards → Verification → Source.
+  explainer to a path that Rust resolves. The explainer is a blog post: an opening that tells the
+  whole story, the story itself with each concept explained where it first matters, inline SVG
+  figures, general lessons, then how the claims were checked and the source.
 
 The work runs on a lane, not a headless one-shot session. The verification step has to run code,
 and the headless fence (`headless-fence.ts`) refuses tool permissions and file writes. The user also
@@ -71,9 +73,10 @@ watches the lane work and can approve its repro commands.
 - *Matches convention:* the list/preview layout and keys (`j`/`k`, `/`, `Enter` → diff) follow
   lazygit and tig.
 - *Diverges:* the existing tools all **summarize the commit for this project** in a chat answer
-  that disappears. Krypton writes a **stored, project-independent learning document**: terms defined
-  with analogies, the general principle with its limits, and claims checked outside the repo. No
-  market tool verifies a commit's claims or strips project detail. That part is novel.
+  that disappears. Krypton writes a **stored, project-independent blog post**: concepts explained
+  with everyday analogies where the story needs them, SVG figures, the general lessons with their
+  limits, and claims checked outside the repo. No market tool verifies a commit's claims or strips
+  project detail. That part is novel.
 
 ## Affected Files
 
@@ -174,25 +177,46 @@ The prompt is the schema, the same way `#wiki`'s prompt is. It tells the lane:
    comment, a negative test). Skip wiring, renames, styling and docs.
 3. Write in `[knowledge] language` (code, identifiers and commands stay English) for a reader who
    uses a computer every day (files, folders, apps, a terminal, git) but has **no systems
-   background**. Use exactly these sections:
-   - Front matter: `title` (one general principle, no project names), `source: <repo>@<sha7>`,
-     `subject`, `created`, `tags`.
-   - **Terms**: only the 3–7 terms the reader needs to follow this commit's knowledge (the concepts
-     the Story and the cards rest on), as `term — plain meaning — everyday analogy`, ordered so
-     each builds on the previous one. Everyday computing words (file, folder, path, code, function,
-     program, git, commit, sha, diff, build) are never listed; any other unfamiliar word is
-     explained in a few words where it first appears.
-   - **Story**: numbered steps of what went wrong or what changed, with one ASCII before/after
-     diagram. Project parts are called by their role ("the terminal app"), not their name.
-   - **General knowledge**: 2–5 cards, each with Principle · Problem it solves · Where it does not
-     apply · Generic example (≤ 8 lines, no project identifiers) · Verified by · Review question.
-   - **Verification**: a table of claim → how it was checked → result. Repros run only under
-     `$TMPDIR/krypton-learn/<sha7>/`. List every commit claim that could not be confirmed or was
-     contradicted.
+   background**, as a **blog post**: connected prose where each paragraph follows from the one
+   before. The lane composes in that language from the start, like a native technical writer, not
+   by translating English sentences: native rhythm, no carried-over English idioms or sentence
+   shapes, and technical terms left in English rather than invented local words or parenthetical
+   glosses. Paragraphs, not bullet lists, except in the last two sections. Earlier parts are
+   referred to by what happened, never by number, and no sentence exists only to point at other
+   parts. In this order:
+   - Front matter: `title` (a headline stating one general principle, no project names),
+     `source: <repo>@<sha7>`, `subject`, `created`, `tags`.
+   - **Opening**: one paragraph with the whole story in brief (what the software needed, what went
+     wrong or changed, how the commit dealt with it).
+   - **The story** in the order it happened, under headings the lane chooses. Each concept the
+     reader needs (3–7 at most) is explained in plain words with an everyday analogy where the story
+     first needs it, not in a glossary up front. Everyday computing words (file, folder, path, code,
+     function, program, git, commit, sha, diff, build) are never explained. Project parts are called
+     by their role ("the terminal app"), not their name.
+   - **Lessons**: 2–5 general lessons, each a short headed section of prose: the principle, the
+     moment in the story that shows it, the evidence checked, where it does not apply, a generic
+     example (≤ 8 lines, no project identifiers) and one closing self-check question.
+   - **How this was checked**: a table of claim → how it was checked → result. Repros run only under
+     `$TMPDIR/krypton-learn/<sha7>/`. Every commit claim that could not be confirmed or was
+     contradicted is listed.
    - **Source**: sha, subject, files touched.
-4. Never modify the repository, commit, or write anywhere except `<path>` and the scratch dir.
-5. If the commit carries no transferable knowledge, write a short document that says so and has
-   zero cards. Never invent knowledge to fill the template.
+4. Explain with pictures: at least one SVG figure (the before/after of the problem and the fix), at
+   most 3, each placed where the story reaches it after a sentence saying what to compare. A figure
+   is raw HTML in the markdown, not a code fence: `<p><svg viewBox width style="max-width:100%;
+   height:auto" role="img" aria-label>…</svg></p>` with no blank line inside, since a blank line
+   ends a markdown HTML block. `<p>` is a CommonMark block tag, so marked passes the whole figure
+   through as one raw HTML block that renders as a `<p>`. A bare `<svg>` breaks the Markdown Viewer
+   one of two ways: alone on its first line it is an HTML token with no `p, pre, h1…` element, so
+   `annotateBlocksWithRaw` pairs every later block with the wrong source; with content after the
+   open tag it is a paragraph, and `breaks: true` inserts `<br>` tags that end the SVG early. The
+   figure is self-contained and inert: no `<script>`, `on*` attribute, `<foreignObject>`, or
+   external link, image or font. Text and lines use `currentColor`, plus at most two accent colours
+   as strokes or fills at opacity ≤ 0.25, so it reads on dark and light themes. Every id carries a
+   per-figure prefix (`f1-arrow`), because all figures of a post share one page and a repeated id
+   resolves to the first figure's.
+5. Never modify the repository, commit, or write anywhere except `<path>` and the scratch dir.
+6. If the commit carries no transferable knowledge, write a short post that says so, with no
+   Lessons section. Never invent knowledge to fill the template.
 
 ### Keybindings
 
@@ -250,6 +274,8 @@ Read at startup; **Reload Config** applies.
   same name and the same sha7, which is accepted as negligible.
 - **WebContent reload:** the browser is not restored (absent from `workspace-recovery.ts`
   `CONTENT_TYPES`). Reopen it with `Leader E`.
+- **Figures outside the Markdown Viewer:** the figures are raw HTML, so a renderer that drops raw
+  HTML shows none and a plain-text reader sees SVG source.
 
 ## Open Questions
 

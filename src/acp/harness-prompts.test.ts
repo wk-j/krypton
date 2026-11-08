@@ -31,12 +31,6 @@ describe('learnCommitPrompt (spec 0375)', () => {
     expect(p).toContain(JSON.stringify('abcdef1234'));
   });
 
-  it('names every section of the explainer contract', () => {
-    for (const section of ['Front matter', 'Terms', 'Story', 'General knowledge', 'Verification', 'Source']) {
-      expect(p).toContain(section);
-    }
-  });
-
   it('confines repros to the scratch dir and forbids repo writes', () => {
     expect(p).toContain('$TMPDIR/krypton-learn/abcdef1/');
     expect(p).toContain('Never modify the repository, never commit');
