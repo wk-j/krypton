@@ -32,8 +32,10 @@
       var(--mat-plate-hi);
   }
 
-  /* spec 157: concise mode hides the row; the head above draws the seam
+  /* spec 374 / 157: hidden by the stats toggle (`⌥⌘.`, a click on the shown
+     lane's name) or by concise mode; the head above draws the seam
      (`lane-head.css`). The row stays in the DOM and keeps updating. */
+  .acp-harness--lane-stats-hidden .acp-harness__lane-stats,
   .acp-harness--concise .acp-harness__lane-stats {
     display: none;
   }

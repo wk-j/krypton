@@ -37,10 +37,12 @@
     border-bottom: 0;
   }
 
-  /* spec 157: concise mode hides the stats row, so the shown head is the whole
-     strip — the full plate and the seam, like a collapsed band. Beside a plate
-     column the rule below (same or higher specificity, later) still holds the
-     top stop, so there the head gains only the seam. */
+  /* spec 374 / 157: with the stats row hidden (the stats toggle or concise
+     mode) the shown head is the whole strip — the full plate and the seam,
+     like a collapsed band. Beside a plate column the rule below (same or
+     higher specificity, later) still holds the top stop, so there the head
+     gains only the seam. */
+  .acp-harness--lane-stats-hidden .acp-harness__lane--active > .acp-harness__lane-head,
   .acp-harness--concise .acp-harness__lane--active > .acp-harness__lane-head {
     background: var(--mat-brush), var(--mat-plate);
     border-bottom: 1px solid var(--mat-key-edge);
@@ -82,6 +84,7 @@
   .acp-harness__lane--active .acp-harness__lane-name {
     color: var(--mat-lit);
     text-shadow: none;
+    cursor: pointer; /* spec 374: a click shows / hides the stats row */
   }
 
   /* The status word is engraved beside the LED. A state that needs the human

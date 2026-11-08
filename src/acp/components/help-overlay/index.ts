@@ -85,6 +85,7 @@ function buildSections(): readonly HelpSection[] {
       { term: alt('⌘W'), desc: 'Close harness tab' },
       { term: alt('⌘.'), desc: 'Toggle Zen Mode' },
       { term: alt('⇧⌘.'), desc: 'Toggle Concise Mode (tool cards collapse to one line, lane stats hide)' },
+      { term: alt('⌥⌘.'), desc: 'Show / hide the lane stats row (or click the shown lane\'s name)' },
     ],
   },
   {

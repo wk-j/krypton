@@ -46,6 +46,8 @@ export interface LaneShellProps {
   /** Review-thread action in the head; null when the lane cannot start one. */
   readonly reviewThread: { readonly count: number; readonly enabled: boolean } | null;
   readonly onStartReview: () => void;
+  /** spec 374: a click on the shown lane's name shows / hides the stats row. */
+  readonly onToggleStats: () => void;
 }
 
 /** Reconcile key. Active-ness is part of it: the two states are different DOM. */
@@ -67,6 +69,7 @@ export class LaneShell extends Component<LaneShellProps> {
   /** The button's label; a text node so relabelling never drops the icon. */
   private reviewLabel: Text | null = null;
   private onStartReview: (() => void) | null = null;
+  private onToggleStats: (() => void) | null = null;
   private readonly active: boolean;
 
   constructor(props: LaneShellProps, rail: HTMLElement | null) {
@@ -78,6 +81,7 @@ export class LaneShell extends Component<LaneShellProps> {
       this.stats = new LaneStats();
       this.body = el('div', { class: 'acp-harness__lane-body', data: { laneId: props.lane.id } });
       this.el.append(this.stats.el, this.body);
+      this.bag.listen(this.head.nameEl, 'click', () => this.onToggleStats?.());
       if (rail) this.el.appendChild(rail);
     } else {
       this.stats = null;
@@ -119,6 +123,7 @@ export class LaneShell extends Component<LaneShellProps> {
    */
   update(next: LaneShellProps): void {
     super.update(next);
+    this.onToggleStats = next.onToggleStats;
     this.head.update({
       lane: next.lane,
       active: next.active,

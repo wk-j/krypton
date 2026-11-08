@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (359)
+## Specs (360)
 
 | # | Spec |
 |---|------|
@@ -376,6 +376,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 371 | [Harness Notice Rows](./0371-harness-notice-rows.md) |
 | 372 | [Prompt Dialog → Harness Lanes](./0372-prompt-dialog-harness-lanes.md) |
 | 373 | [Prompt Dialog Typewriter Slip](./0373-prompt-dialog-typewriter-slip.md) |
+| 374 | [Harness Lane Stats Toggle](./0374-harness-lane-stats-toggle.md) |
 
 ## ADRs (30)
 

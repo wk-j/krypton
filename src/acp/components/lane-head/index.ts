@@ -298,7 +298,8 @@ function runChips(runs: readonly CommandRunView[]): HeadChip[] {
 
 export class LaneHead extends Component<LaneHeadProps> {
   private readonly symbol = new LaneSymbol();
-  private readonly nameEl = el('span', { class: 'acp-harness__lane-name' });
+  /** spec 374: the shown lane's shell listens here for the stats toggle. */
+  readonly nameEl = el('span', { class: 'acp-harness__lane-name' });
   private readonly statusEl = el('span', { class: 'acp-harness__lane-status' });
   private readonly chipsEl = el('span', { class: 'acp-harness__lane-chips' });
   private readonly activityEl = el('span', { class: 'acp-harness__lane-activity' });
@@ -367,6 +368,9 @@ export class LaneHead extends Component<LaneHeadProps> {
       this.nameEl.replaceChildren(harnessSymbolEl(logoId), this.nameText);
     }
     this.nameText.data = lane.displayName;
+    // spec 374: only the shown lane's name toggles the stats row.
+    if (next.active) this.nameEl.title = 'Show / hide lane stats (⌥⌘.)';
+    else this.nameEl.removeAttribute('title');
 
     this.statusEl.textContent = !next.active && lane.status === 'needs_permission'
       ? 'perm'

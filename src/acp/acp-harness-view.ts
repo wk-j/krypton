@@ -1585,6 +1585,8 @@ export class AcpHarnessView implements ContentView {
   private zenMode = false;
   /** spec 157: collapse tool cards to their head line, hide side-channel rows. */
   private conciseMode = false;
+  /** spec 374: hide the shown lane's stats row (view-wide, every lane). */
+  private laneStatsHidden = false;
   /** spec 347: the left panel — the Zen lane rail. */
   private leftPanelHidden = false;
   /** spec 347: the right panel — the dock column (the `ticket` and `rails` tabs). */
@@ -1805,6 +1807,7 @@ export class AcpHarnessView implements ContentView {
     this.backendUpdatesUnsubscribe = onBackendUpdatesChange(() => this.notifyTitlebarTogglesChanged());
     this.zenMode = readZenModePreference(projectDir);
     this.conciseMode = readConciseModePreference(projectDir);
+    this.laneStatsHidden = readLaneStatsHiddenPreference(projectDir);
     this.leftPanelHidden = readSideHidden(projectDir, 'left');
     this.rightPanelHidden = readSideHidden(projectDir, 'right');
     this.hiddenPanels = readHiddenPanels(projectDir);
@@ -4584,6 +4587,12 @@ export class AcpHarnessView implements ContentView {
     if ((e.key === '.' || e.key === '>') && (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey) {
       e.preventDefault();
       this.toggleConciseMode();
+      return true;
+    }
+    // spec 374: Cmd+Option+. — Option turns `e.key` into `≥`, so match the code.
+    if (e.code === 'Period' && (e.metaKey || e.ctrlKey) && e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      this.toggleLaneStats();
       return true;
     }
     if (this.helpOpen) {
@@ -12866,6 +12875,7 @@ export class AcpHarnessView implements ContentView {
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
     this.element.classList.toggle('acp-harness--zen', this.zenMode);
     this.element.classList.toggle('acp-harness--concise', this.conciseMode);
+    this.element.classList.toggle('acp-harness--lane-stats-hidden', this.laneStatsHidden);
     this.element.classList.toggle('acp-harness--left-panel-hidden', this.leftPanelHidden);
     this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
   }
@@ -13612,6 +13622,7 @@ export class AcpHarnessView implements ContentView {
       onStartReview: () => {
         void this.startReviewThread(lane);
       },
+      onToggleStats: () => this.toggleLaneStats(),
     };
   }
 
@@ -16272,6 +16283,12 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
+  private toggleLaneStats(): void {
+    this.laneStatsHidden = !this.laneStatsHidden;
+    writeLaneStatsHiddenPreference(this.projectDir, this.laneStatsHidden);
+    this.render();
+  }
+
   /** spec 347: one side panel's flag. Writes nothing else — no panel flag, not the other side. */
   private setSideHidden(side: HarnessSide, hidden: boolean): void {
     if (side === 'left') this.leftPanelHidden = hidden;
@@ -17062,6 +17079,27 @@ function writeConciseModePreference(projectDir: string | null, value: boolean): 
   try {
     if (value) localStorage.setItem(conciseModeStorageKey(projectDir), '1');
     else localStorage.removeItem(conciseModeStorageKey(projectDir));
+  } catch {
+    // localStorage unavailable — preference simply won't persist
+  }
+}
+
+function laneStatsHiddenStorageKey(projectDir: string | null): string {
+  return `krypton:acp-harness:lane-stats-hidden:${projectDir ?? ''}`;
+}
+
+function readLaneStatsHiddenPreference(projectDir: string | null): boolean {
+  try {
+    return localStorage.getItem(laneStatsHiddenStorageKey(projectDir)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeLaneStatsHiddenPreference(projectDir: string | null, value: boolean): void {
+  try {
+    if (value) localStorage.setItem(laneStatsHiddenStorageKey(projectDir), '1');
+    else localStorage.removeItem(laneStatsHiddenStorageKey(projectDir));
   } catch {
     // localStorage unavailable — preference simply won't persist
   }
