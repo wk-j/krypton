@@ -10,6 +10,7 @@ type: spec
 > Date: 2026-04-15
 > Milestone: Post-M2 — productivity layer
 > Amended by: [0372](./0372-prompt-dialog-harness-lanes.md) — live ACP Harness lanes are targets too, sent through `lane.send` with caller `prompt_dialog` (images as ACP image blocks, text literal, busy lanes queue). Opening from a Harness targets its active lane without the picker; the picker header reads `Select target`, the empty chip `no target`, and a failed lane send shows its message in the footer.
+> Amended by: [0373](./0373-prompt-dialog-typewriter-slip.md) — the plate grows to `min(1040px, 92vw)` and the textarea is a typewriter slip (paper, rail, carriage, typebar strike, configured key sounds, margin bell), 10 lines growing to 18. Keys: `⌘Enter` sends, Enter and `⇧Enter` feed a line; the Enter / `⇧Enter` rows of the keybinding table and the 3–12 line textarea below are superseded.
 
 ## Problem
 

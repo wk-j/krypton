@@ -4,6 +4,7 @@
 > Date: 2026-11-08
 > Milestone: ACP Harness — input
 > Builds on: 0061 (Smart Prompt Dialog) · 0063 (screen capture routing) · 0136 (prompt queue) · 0175 (control API) · 0247 (remote Harness)
+> Amended by: [0373](./0373-prompt-dialog-typewriter-slip.md) — the draft is a typewriter slip; `⌘Enter` sends (or queues) and Enter feeds a line, so the lane footer reads `⌘Enter send` / `⌘Enter queue`.
 
 ## Problem
 
@@ -165,7 +166,7 @@ window whose pane's `getLaneMarks?.()` contains `displayName`.
    Otherwise the picker auto-opens at ≥2 targets, as in 0061.
 5. File index for a lane target: loadFileIndex(cwd) when !remote; remote → [] (the @ popup
    offers only @selection).
-6. Enter on a lane target:
+6. ⌘Enter on a lane target (Enter before spec 373):
    a. Expand @selection (0061, unchanged).
    b. images = imageThumbs whose `@<path>` token is still in the text, as {data, mimeType, path}
       with data taken from the data URL; remove each token and its trailing space.
@@ -185,8 +186,9 @@ The PTY send path (bracketed paste, `\r`, `flashWindow`) is unchanged.
 
 ### Keybindings
 
-No new keys. With a lane target the footer reads `Enter send` (idle) or `Enter queue`
-(`busy`/`needs_permission`/`awaiting_peer`), then `⇧Enter newline · ⌘, switch target · Esc close`.
+No new keys. With a lane target the footer reads `⌘Enter send` (idle) or `⌘Enter queue`
+(`busy`/`needs_permission`/`awaiting_peer`), then `Enter newline · ⌘, switch target · Esc close`
+(spec 373; before it, Enter sent and `⇧Enter` fed a line).
 
 ### UI Changes
 

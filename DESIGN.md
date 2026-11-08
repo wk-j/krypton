@@ -191,6 +191,12 @@ comment.
   head; input well; the result list is one well with grooves and a full-row `--mat-select` tint;
   actions are keys; the key-hint foot prints each key as a key cap and its action as legend. Which-key
   and hint labels are key caps.
+- **Prompt dialog slip** (spec 373) — the one paper surface in the app. The Smart Prompt Dialog's
+  draft is a typewriter sheet (cream paper, ink in the configured `[font] family`, margin rule, steel
+  rail and a carriage with three LEDs riding under the caret line, a one-shot typebar strike and ink
+  afterimage per key, lamplight under the dark scheme). It is the document being written, not chrome
+  (ADR-0030); the plate around it — target chip, picker, image strip, key-cap foot — stays faceplate.
+  It moves only when the caret moves; no ambient motion.
 - **Quick Terminal.** A plate drawer around a screen.
 - **Harness.** The lane body is a screen (the window's screen shows through; a lane adds the well's
   inset depth, not a second fill). The lane head is a plate strip with the name engraved and status as

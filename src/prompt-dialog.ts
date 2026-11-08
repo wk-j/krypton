@@ -22,6 +22,7 @@ import {
 } from './acp/harness-directory';
 import type { HarnessLaneStatus } from './acp/types';
 import { getCaretCoordinates } from './caret-position';
+import { Typewriter } from './prompt-dialog-typewriter';
 import { keyCap, keyHint, type KeyHint } from './ui/kbd';
 
 const TARGET_PROCESS = 'claude';
@@ -190,6 +191,10 @@ export class PromptDialog {
   private mentionPopupEl: HTMLElement;
   private footerEl: HTMLElement;
   private stagingEl: HTMLElement;
+  // spec 373: the draft is a typewriter slip — kicker readouts and the machine.
+  private slipNameEl: HTMLElement;
+  private slipLinesEl: HTMLElement;
+  private typewriter: Typewriter;
 
   private targets: DialogTarget[] = [];
   private selectedTargetIdx = 0;
@@ -233,6 +238,13 @@ export class PromptDialog {
     this.mentionPopupEl = this.overlay.querySelector('.krypton-prompt-dialog__mention-popup')!;
     this.footerEl = this.overlay.querySelector('.krypton-prompt-dialog__footer')!;
     this.stagingEl = this.overlay.querySelector('.krypton-prompt-dialog__staging')!;
+    this.slipNameEl = this.overlay.querySelector('.krypton-prompt-dialog__slip-name')!;
+    this.slipLinesEl = this.overlay.querySelector('.krypton-prompt-dialog__slip-lines')!;
+    this.typewriter = new Typewriter(
+      this.overlay.querySelector('.krypton-prompt-dialog__slip')!,
+      this.textareaEl,
+      () => this.compositor.soundEngine.play('terminal.bell'),
+    );
     this.wireEvents();
     document.body.appendChild(this.overlay);
   }
@@ -263,6 +275,8 @@ export class PromptDialog {
     this.selectionSnapshot = this.compositor.getFocusedSelection();
     this.focusedHarnessId = listHarnessEntries().find((entry) => entry.isFocused?.() === true)?.harnessId ?? null;
     this.overlay.classList.add('krypton-prompt-dialog--visible');
+    this.typewriter.show();
+    this.refitDraft();
 
     await this.refreshTargets();
     const pickedFocusedLane = this.pickInitialTarget();
@@ -291,6 +305,7 @@ export class PromptDialog {
     this.mentionPopupEl.classList.remove('krypton-prompt-dialog__mention-popup--visible');
     this.pickerOpen = false;
     this.selectionSnapshot = null;
+    this.typewriter.hide();
     this.focusedHarnessId = null;
     if (this.processUnlisten) {
       this.processUnlisten();
@@ -534,6 +549,7 @@ export class PromptDialog {
 
   private renderChip(): void {
     const t = this.currentTarget();
+    this.renderKicker();
     this.chipEl.classList.remove(
       'krypton-prompt-dialog__target-chip--empty',
       'krypton-prompt-dialog__target-chip--loading',
@@ -582,6 +598,10 @@ export class PromptDialog {
   }
 
   private renderFooter(): void {
+    const t = this.currentTarget();
+    const queues = t?.kind === 'lane' && QUEUEING_STATUSES[t.status] === true;
+    // spec 373: the carriage LEDs read the same state the foot prints.
+    this.typewriter.setLeds({ queue: queues, error: this.errorText !== null });
     if (this.errorText !== null && !this.pickerOpen) {
       const error = document.createElement('span');
       error.className = 'krypton-prompt-dialog__error';
@@ -589,14 +609,10 @@ export class PromptDialog {
       this.footerEl.replaceChildren(error);
       return;
     }
-    const t = this.currentTarget();
     const close: KeyHint = { keys: ['Esc'], label: 'close' };
     const switchTarget: KeyHint = { keys: ['⌘,'], label: 'switch target' };
-    // spec 372: a busy lane queues the prompt; say so on the Enter cap.
-    const send: KeyHint = {
-      keys: ['Enter'],
-      label: t?.kind === 'lane' && QUEUEING_STATUSES[t.status] === true ? 'queue' : 'send',
-    };
+    // spec 372: a busy lane queues the prompt; spec 373: ⌘Enter sends, Enter feeds a line.
+    const send: KeyHint = { keys: ['⌘Enter'], label: queues ? 'queue' : 'send' };
     const hints: readonly KeyHint[] = this.pickerOpen
       ? [
         { keys: ['↑↓'], label: 'nav' },
@@ -606,14 +622,15 @@ export class PromptDialog {
       ]
       : !t
         ? [switchTarget, close]
-        : [send, { keys: ['⇧Enter'], label: 'newline' }, switchTarget, close];
+        : [send, { keys: ['Enter'], label: 'newline' }, switchTarget, close];
     this.footerEl.replaceChildren(...hints.map((hint) => keyHint(hint)));
   }
 
   // ─── Textarea & mention handling ───────────────────────────────
 
   private handleTextareaKey(e: KeyboardEvent): boolean {
-    // Cmd+Enter: force-submit regardless of mention popup
+    // spec 373: ⌘Enter sends; Return and Shift+Return feed a line (the
+    // textarea's own newline), as on a typewriter slip.
     if (e.metaKey && e.key === 'Enter') {
       e.preventDefault();
       void this.submit();
@@ -624,12 +641,6 @@ export class PromptDialog {
       this.close();
       return true;
     }
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      void this.submit();
-      return true;
-    }
-    // Let textarea handle all other keys (including Shift+Enter for newline)
     return false;
   }
 
@@ -667,27 +678,63 @@ export class PromptDialog {
     return false;
   }
 
-  private onInput(): void {
-    this.autoGrow();
+  private onInput(e: Event): void {
+    this.refitDraft();
     this.updateMentionState();
     if (this.imageThumbs.size > 0) this.renderStaging();
     if (this.errorText !== null) {
       this.errorText = null;
       this.renderFooter();
     }
+    this.typeFeedback(e);
   }
 
-  private autoGrow(): void {
+  /** spec 373: a typed key strikes the typebar and sounds; Return is a carriage
+   *  return; a deletion steps back. Pastes and token inserts only move the
+   *  carriage — no strike per pasted character. */
+  private typeFeedback(e: Event): void {
+    const inputType = e instanceof InputEvent ? e.inputType : '';
+    const data = e instanceof InputEvent ? e.data : null;
+    const sound = this.compositor.soundEngine;
+    if (inputType === 'insertText' && data && data.length <= 2) {
+      this.typewriter.strike(this.textareaEl.selectionStart - data.length, data);
+      sound.playKeypress('press', data);
+      this.typewriter.sync('type');
+    } else if (inputType === 'insertLineBreak') {
+      sound.playKeypress('press', 'Enter');
+      this.typewriter.sync('cr');
+    } else if (inputType.startsWith('delete')) {
+      sound.playKeypress('press', 'Backspace');
+      this.typewriter.sync('back');
+    }
+  }
+
+  /** The draft changed: fit the sheet to it, update the kicker, move the carriage. */
+  private refitDraft(): void {
     const ta = this.textareaEl;
     ta.style.height = 'auto';
     const cs = window.getComputedStyle(ta);
     const lineH = parseFloat(cs.lineHeight);
     const paddingV =
       parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-    const min = lineH * 3 + paddingV;
-    const max = lineH * 12 + paddingV;
+    // spec 373: a sheet of 10 lines that grows to 18, or to what keeps the plate
+    // inside 86vh (everything on the plate but the textarea is `chrome`).
+    const min = lineH * 10 + paddingV;
+    const chrome = this.panel.offsetHeight - ta.offsetHeight;
+    const fit = window.innerHeight * 0.86 - chrome;
+    const max = Math.max(min, Math.min(lineH * 18 + paddingV, fit));
     const h = Math.max(min, Math.min(max, ta.scrollHeight));
     ta.style.height = `${h}px`;
+    this.renderKicker();
+    this.typewriter.sync();
+  }
+
+  /** Slip kicker: `prompt · <target> · N lines`. */
+  private renderKicker(): void {
+    const t = this.currentTarget();
+    this.slipNameEl.textContent = !t ? 'untitled' : t.kind === 'lane' ? t.displayName : 'claude';
+    const lines = this.textareaEl.value.split('\n').length;
+    this.slipLinesEl.textContent = `${lines} ${lines === 1 ? 'line' : 'lines'}`;
   }
 
   private updateMentionState(): void {
@@ -819,7 +866,7 @@ export class PromptDialog {
     const newCaret = before.length + insert.length;
     ta.setSelectionRange(newCaret, newCaret);
     this.closeMention();
-    this.autoGrow();
+    this.refitDraft();
   }
 
   private closeMention(): void {
@@ -937,10 +984,17 @@ export class PromptDialog {
       <div class="krypton-prompt-dialog__panel">
         <div class="krypton-prompt-dialog__target-chip"></div>
         <div class="krypton-prompt-dialog__picker" style="display: none"></div>
-        <textarea class="krypton-prompt-dialog__textarea"
-                  rows="3"
-                  spellcheck="false"
-                  placeholder="Type your prompt. Use @path for files, @selection for current terminal selection."></textarea>
+        <div class="krypton-prompt-dialog__slip">
+          <div class="krypton-prompt-dialog__slip-kicker">
+            <span>prompt</span>
+            <span class="krypton-prompt-dialog__slip-name">untitled</span>
+            <span class="krypton-prompt-dialog__slip-lines">1 line</span>
+          </div>
+          <textarea class="krypton-prompt-dialog__textarea"
+                    rows="10"
+                    spellcheck="false"
+                    placeholder="Type your prompt. Use @path for files, @selection for current terminal selection."></textarea>
+        </div>
         <div class="krypton-prompt-dialog__mention-popup"></div>
         <div class="krypton-prompt-dialog__staging"></div>
         <div class="krypton-prompt-dialog__footer"></div>
@@ -950,13 +1004,20 @@ export class PromptDialog {
   }
 
   private wireEvents(): void {
-    this.textareaEl.addEventListener('input', () => this.onInput());
-    this.textareaEl.addEventListener('click', () => this.updateMentionState());
+    this.textareaEl.addEventListener('input', (e) => this.onInput(e));
+    this.textareaEl.addEventListener('click', () => {
+      this.updateMentionState();
+      this.typewriter.sync('still');
+    });
     this.textareaEl.addEventListener('keyup', (e) => {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         this.updateMentionState();
       }
+      if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End' || e.key.startsWith('Page')) {
+        this.typewriter.sync();
+      }
     });
+    this.textareaEl.addEventListener('scroll', () => this.typewriter.sync('still'));
     this.overlay.addEventListener('mousedown', (e) => {
       if (e.target === this.overlay) {
         this.close();
@@ -1023,7 +1084,7 @@ export class PromptDialog {
         this.imageThumbs.set(path, `data:${file.type};base64,${base64}`);
         this.insertAtCursor(`@${path} `);
         this.renderStaging();
-        this.autoGrow();
+        this.refitDraft();
       } catch (e) {
         console.error('[PromptDialog] save_temp_image failed:', e);
       }
@@ -1041,7 +1102,7 @@ export class PromptDialog {
       if (this.visible) {
         this.stageDiskImage(result.path, dataUrl);
         this.renderStaging();
-        this.autoGrow();
+        this.refitDraft();
       } else if (this.captureQueue.length < 4) {
         this.captureQueue.push({ path: result.path, dataUrl });
       }
@@ -1103,7 +1164,7 @@ export class PromptDialog {
         this.textareaEl.value = this.textareaEl.value.replace(`@${path} `, '').replace(`@${path}`, '');
         this.imageThumbs.delete(path);
         this.renderStaging();
-        this.autoGrow();
+        this.refitDraft();
         this.textareaEl.focus();
       });
 

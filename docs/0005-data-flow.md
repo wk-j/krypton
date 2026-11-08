@@ -2151,7 +2151,7 @@ The CLI never simulates keys, submits hash commands, or registers as a lane.
 2. Targets: claude PTYs (findSessionsByProcess) plus every non-stopped lane from
    entry.control('lane.list') across listHarnessEntries(). Default: the focused
    Harness's active lane (no picker), else the last-used target, else the first.
-3. Enter on a lane target: expand @selection; staged images whose `@<tmp path>`
+3. ⌘Enter on a lane target (Enter feeds a line, spec 373): expand @selection; staged images whose `@<tmp path>`
    token is still in the text become { data, mimeType, path } and the tokens leave
    the text.
 4. resolveDisplayName → harnessEntry → control('lane.send', { lane, text, images },

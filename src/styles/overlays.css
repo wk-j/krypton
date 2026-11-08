@@ -290,9 +290,8 @@
   inset: 0;
   z-index: 10002;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding-top: 14vh;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.1s ease;
@@ -306,9 +305,8 @@
 
 .krypton-prompt-dialog__panel {
   position: relative;
-  width: 640px;
-  max-width: 92vw;
-  max-height: 72vh;
+  width: min(1040px, 92vw);
+  max-height: 86vh;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -547,28 +545,315 @@
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
 }
 
-/* ─── Textarea ─── the draft is an input well. */
+/* ─── Typewriter slip (spec 373) ───
+   The draft is a sheet of paper in the plate: the document being written is the
+   one surface off the faceplate (ADR-0030). Rail, carriage, typebar and ink are
+   the Ribbon TTY design's parts; they move only when a key, click or scroll
+   moves the caret. The paper colours are tokens so a theme can override them. */
+.krypton-prompt-dialog__slip {
+  --prompt-paper: #f1ecdf;
+  --prompt-ink: #24211d;
+  --prompt-paper-ink: #6b6358;
+  --prompt-charw: 10px;
+  --prompt-stalk-h: 20px;
+
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 18px 60px 32px;
+  box-sizing: border-box;
+  color: var(--prompt-ink);
+  background: var(--prompt-grain, none) 0 0 / 384px 384px, var(--prompt-paper);
+  background-blend-mode: multiply;
+  border-radius: 2px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 1px 0 rgba(36, 33, 29, 0.16),
+    0 16px 28px -18px rgba(40, 30, 20, 0.5);
+  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+}
+
+/* The margin rule. */
+.krypton-prompt-dialog__slip::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: rgba(162, 39, 30, 0.45);
+}
+
+.krypton-prompt-dialog__slip-kicker {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(36, 33, 29, 0.14);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--prompt-paper-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.krypton-prompt-dialog__slip-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
 .krypton-prompt-dialog__textarea {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   resize: none;
   border: none;
   outline: none;
-  border-radius: var(--krypton-border-radius, 8px);
-  background: var(--mat-well);
-  box-shadow: var(--mat-well-shadow);
-  color: var(--krypton-fg, #b0c4d8);
-  caret-color: var(--krypton-cursor);
-  font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-font-size);
-  line-height: 1.5;
-  padding: 10px 12px;
+  margin: 0;
+  padding: 0 0 4px;
   box-sizing: border-box;
+  background: transparent;
+  color: var(--prompt-ink);
+  /* No text caret, as on the design: the typebar head marks the next cell. */
+  caret-color: transparent;
+  font-family: inherit;
+  font-size: 17px;
+  line-height: 1.45;
+  text-shadow: 0 0 0.5px currentColor;
+  scrollbar-width: none;
+}
+
+.krypton-prompt-dialog__textarea::-webkit-scrollbar {
+  display: none;
 }
 
 .krypton-prompt-dialog__textarea::placeholder {
-  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
-  font-style: italic;
+  color: rgba(107, 99, 88, 0.55);
+  letter-spacing: 0.02em;
+  text-shadow: none;
+}
+
+/* Ink afterimages: one per typed key, gone in 210ms. */
+.krypton-prompt-dialog__slip-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.krypton-prompt-dialog__ink {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  font-family: inherit;
+  font-size: 17px;
+  color: var(--prompt-ink);
+  background: var(--prompt-paper);
+  animation: krypton-prompt-ink 210ms cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+@keyframes krypton-prompt-ink {
+  0% { color: transparent; text-shadow: 0 0 5px var(--prompt-ink); transform: translateY(-0.16em); }
+  45% { color: var(--prompt-ink); text-shadow: 0 0 0.6px var(--prompt-ink); transform: translateY(0.03em); }
+  80% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+/* Rail and carriage. `data-move` on the slip picks the travel: a keystroke
+   steps, a return sweeps back, a deletion snaps back, a click or scroll jumps. */
+.krypton-prompt-dialog__rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 3;
+  height: 12px;
+  pointer-events: none;
+  background: linear-gradient(180deg, #23272a 0%, #747b81 28%, #aeb4b8 40%, #50565b 62%, #1b1e20 100%);
+  box-shadow: 0 7px 10px -3px rgba(40, 30, 20, 0.28);
+  transition: transform 200ms cubic-bezier(0.3, 0.75, 0.25, 1);
+}
+
+.krypton-prompt-dialog__rail-cap {
+  position: absolute;
+  top: -4px;
+  width: 11px;
+  height: 20px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #15181a, #5c6267 45%, #1d2023);
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3);
+}
+
+.krypton-prompt-dialog__rail-cap--l { left: 10px; }
+.krypton-prompt-dialog__rail-cap--r { right: 10px; }
+
+.krypton-prompt-dialog__carriage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 4;
+  width: 108px;
+  height: 34px;
+  pointer-events: none;
+  will-change: transform;
+  transition: transform 90ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.krypton-prompt-dialog__slip[data-move='cr'] .krypton-prompt-dialog__carriage {
+  transition: transform 320ms cubic-bezier(0.22, 0.8, 0.2, 1);
+}
+
+.krypton-prompt-dialog__slip[data-move='back'] .krypton-prompt-dialog__carriage {
+  transition: transform 70ms ease-out;
+}
+
+.krypton-prompt-dialog__slip[data-move='still'] .krypton-prompt-dialog__carriage,
+.krypton-prompt-dialog__slip[data-move='still'] .krypton-prompt-dialog__rail,
+.krypton-prompt-dialog__slip[data-move='still'] .krypton-prompt-dialog__lamp-light,
+.krypton-prompt-dialog__slip[data-move='still'] .krypton-prompt-dialog__lamp-flare {
+  transition: none;
+}
+
+.krypton-prompt-dialog__carriage-stalk {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - 3px);
+  width: 3px;
+  height: var(--prompt-stalk-h);
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, #9da1a5, #eceef0 50%, #8c9094);
+  border-radius: 1px;
+}
+
+.krypton-prompt-dialog__carriage-head {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  width: calc(var(--prompt-charw) * 1.15);
+  height: 5px;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, #e3e5e7, #9a9ea2 55%, #6f7377);
+  border-radius: 1px;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.28);
+}
+
+.krypton-prompt-dialog__carriage--strike .krypton-prompt-dialog__carriage-stalk {
+  animation: krypton-prompt-strike 110ms cubic-bezier(0.3, 0.9, 0.4, 1);
+}
+
+.krypton-prompt-dialog__carriage--strike .krypton-prompt-dialog__carriage-head {
+  animation: krypton-prompt-strike-head 110ms linear;
+}
+
+@keyframes krypton-prompt-strike {
+  0% { height: var(--prompt-stalk-h); }
+  38% { height: calc(var(--prompt-stalk-h) + 17px); }
+  100% { height: var(--prompt-stalk-h); }
+}
+
+@keyframes krypton-prompt-strike-head {
+  0%, 100% { filter: none; }
+  38% { filter: blur(0.9px); height: 9px; }
+}
+
+.krypton-prompt-dialog__carriage-pill {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #78a5ea 0%, #4475c9 45%, #2a56a6 100%);
+  box-shadow:
+    inset 0 -4px 7px rgba(0, 0, 0, 0.3),
+    inset 0 2px 2px rgba(255, 255, 255, 0.3),
+    0 7px 11px -3px rgba(30, 20, 10, 0.42),
+    0 2px 3px rgba(30, 20, 10, 0.22);
+}
+
+.krypton-prompt-dialog__carriage-pill::after {
+  content: '';
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 3px;
+  height: 38%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0));
+}
+
+/* LEDs: green flashes per strike, amber while ⌘Enter would queue, red while
+   the last send's error shows. Only a lit lens glows. */
+.krypton-prompt-dialog__carriage-leds {
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  z-index: 1;
+  display: flex;
+  gap: 5px;
+  transform: translateY(-50%);
+}
+
+.krypton-prompt-dialog__led {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #1a1918;
+  box-shadow: inset 0 1px 1.5px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.28);
+  transition: background 0.12s, box-shadow 0.12s;
+}
+
+.krypton-prompt-dialog__led--g.krypton-prompt-dialog__led--on { background: #63f37e; box-shadow: 0 0 7px #63f37e; }
+.krypton-prompt-dialog__led--a.krypton-prompt-dialog__led--on { background: #ffb24a; box-shadow: 0 0 7px #ffb24a; }
+.krypton-prompt-dialog__led--r.krypton-prompt-dialog__led--on { background: #ff5747; box-shadow: 0 0 7px #ff5747; }
+
+/* Lamplight (dark scheme): a desk lamp over the sheet, following the carriage. */
+.krypton-prompt-dialog__lamp,
+.krypton-prompt-dialog__flare {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: none;
+  pointer-events: none;
+}
+
+.krypton-prompt-dialog__lamp { mix-blend-mode: multiply; }
+.krypton-prompt-dialog__flare { mix-blend-mode: screen; }
+
+html[data-theme-scheme='dark'] .krypton-prompt-dialog__lamp,
+html[data-theme-scheme='dark'] .krypton-prompt-dialog__flare {
+  display: block;
+}
+
+html[data-theme-scheme='dark'] .krypton-prompt-dialog__slip-kicker {
+  color: #cdb58f;
+}
+
+.krypton-prompt-dialog__lamp-light {
+  position: absolute;
+  left: -1200px;
+  top: -1200px;
+  width: 2400px;
+  height: 2400px;
+  background: radial-gradient(ellipse 520px 360px at 50% 50%, #fff6e3 0%, #f4d3a0 26%, #a27a4d 55%, #3e2c1d 80%, #261a11 100%);
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.krypton-prompt-dialog__lamp-flare {
+  position: absolute;
+  left: -160px;
+  top: -90px;
+  width: 320px;
+  height: 180px;
+  background: radial-gradient(ellipse 50% 50% at 50% 60%, rgba(255, 205, 140, 0.5), rgba(255, 205, 140, 0) 70%);
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 /* ─── Mention popup ───
@@ -713,27 +998,23 @@
 
 /* Scrollbars (DESIGN.md "Scrollbars"): 8px, transparent track, ink thumb. */
 .krypton-prompt-dialog__picker::-webkit-scrollbar,
-.krypton-prompt-dialog__textarea::-webkit-scrollbar,
 .krypton-prompt-dialog__mention-popup::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 .krypton-prompt-dialog__picker::-webkit-scrollbar-track,
-.krypton-prompt-dialog__textarea::-webkit-scrollbar-track,
 .krypton-prompt-dialog__mention-popup::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .krypton-prompt-dialog__picker::-webkit-scrollbar-thumb,
-.krypton-prompt-dialog__textarea::-webkit-scrollbar-thumb,
 .krypton-prompt-dialog__mention-popup::-webkit-scrollbar-thumb {
   background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.18);
   border-radius: 8px;
 }
 
 .krypton-prompt-dialog__picker::-webkit-scrollbar-thumb:hover,
-.krypton-prompt-dialog__textarea::-webkit-scrollbar-thumb:hover,
 .krypton-prompt-dialog__mention-popup::-webkit-scrollbar-thumb:hover {
   background: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.32);
 }
@@ -766,5 +1047,21 @@
 @media (prefers-reduced-motion: reduce) {
   .krypton-prompt-dialog__panel--shake {
     animation: none;
+  }
+
+  .krypton-prompt-dialog__ink {
+    display: none;
+  }
+
+  .krypton-prompt-dialog__carriage--strike .krypton-prompt-dialog__carriage-stalk,
+  .krypton-prompt-dialog__carriage--strike .krypton-prompt-dialog__carriage-head {
+    animation: none;
+  }
+
+  .krypton-prompt-dialog__carriage,
+  .krypton-prompt-dialog__rail,
+  .krypton-prompt-dialog__lamp-light,
+  .krypton-prompt-dialog__lamp-flare {
+    transition-duration: 0ms;
   }
 }
