@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ExplainChange, ExplainJob } from './commit-explainer';
+import type { ExplainChange, ExplainJob, ExplainStep } from './commit-explainer';
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
@@ -22,7 +22,10 @@ class FakeExplainer implements ExplainerPort {
   private readonly listeners = new Set<(change: ExplainChange) => void>();
 
   start(root: string, repoName: string, sha: string): ExplainJob {
-    const job: ExplainJob = { root, repoName, sha, state: 'queued', startedAt: null, activity: null, backend: null, model: null };
+    const job: ExplainJob = {
+      root, repoName, sha, state: 'queued', startedAt: null, backend: null, model: null,
+      phase: null, steps: [], stepCount: 0, continuations: 0,
+    };
     this.jobs.set(sha, job);
     this.started.push(sha);
     this.emit({ kind: 'update', job });
@@ -114,6 +117,25 @@ async function settle(): Promise<void> {
 async function knowledgeLoaded(): Promise<void> {
   await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('knowledge_list'));
   await settle();
+}
+
+/** Move a job into the running state the way the runner reports it. */
+function running(job: ExplainJob, over: Partial<ExplainJob> = {}): void {
+  Object.assign(job, {
+    state: 'running', startedAt: Date.now(), backend: 'codex', model: 'gpt-6.1-sol[high]', phase: 'thinking', ...over,
+  });
+  explainer.emit({ kind: 'update', job });
+}
+
+function strip(v: CommitBrowserView): { now: string; trail: string[]; meta: string } {
+  const text = (node: Element | null): string => node?.textContent ?? '';
+  const now = v.element.querySelector('.commit-browser__step--now');
+  return {
+    now: [...(now?.children ?? [])].map(text).filter(Boolean).join(' '),
+    trail: [...v.element.querySelectorAll('.commit-browser__step:not(.commit-browser__step--now)')]
+      .map((node) => [...node.children].map(text).filter(Boolean).join(' ')),
+    meta: text(v.element.querySelector('.commit-browser__job-meta')),
+  };
 }
 
 beforeEach(() => {
@@ -221,6 +243,7 @@ describe('CommitBrowserView', () => {
     expect(explainer.started).toEqual([c.sha]);
     expect(row(v, c).dataset.lamp).toBe('pending');
     expect(v.element.querySelector('.commit-browser__status')?.textContent).toBe('queued');
+    expect(strip(v).now).toBe('waiting for a free slot · next in line');
   });
 
   it('e on a row that is already explaining starts nothing new', async () => {
@@ -240,16 +263,54 @@ describe('CommitBrowserView', () => {
     expect(row(v, c).dataset.lamp).toBe('pending');
   });
 
-  it('previews what a running job is doing', async () => {
+  it('keeps the lamp window to the state word and shows the newest running step first, case kept', async () => {
     const c = commit(1);
     const v = mount(page([c]));
     await knowledgeLoaded();
     press(v, 'e');
+    const steps: ExplainStep[] = [
+      { id: 'a', kind: 'read', subject: 'src/App.ts', state: 'done' },
+      { id: 'b', kind: 'search', subject: 'rg -n Done src', state: 'failed' },
+      { id: 'c', kind: 'read', subject: '~/.agents/skills/X/SKILL.md', state: 'running' },
+      { id: 'd', kind: 'execute', subject: 'git show --stat', state: 'done' },
+    ];
+    running(explainer.jobs.get(c.sha)!, { steps, stepCount: 9 });
+
+    expect(v.element.querySelector('.commit-browser__status')?.textContent).toBe('explaining');
+    expect(strip(v)).toEqual({
+      now: 'read ~/.agents/skills/X/SKILL.md',
+      trail: ['execute git show --stat', 'search rg -n Done src', 'read src/App.ts'],
+      meta: expect.stringMatching(/^codex · gpt-6\.1-sol\[high\] · since \d\d:\d\d · 9 steps$/),
+    });
+    const failed = v.element.querySelector('.commit-browser__step--failed .commit-browser__lamp');
+    expect(failed?.classList.contains('commit-browser__lamp--fault')).toBe(true);
+  });
+
+  it('shows the phase on the now line while no tool runs', async () => {
+    const c = commit(1);
+    const v = mount(page([c]));
+    await knowledgeLoaded();
+    press(v, 'e');
+    running(explainer.jobs.get(c.sha)!, { phase: 'continuing', continuations: 1 });
+    expect(strip(v).now).toBe('approval declined · continuing (1 of 3)');
+  });
+
+  it('repaints only the strip when a running job reports a step', async () => {
+    const c = commit(1, { body: 'why it changed' });
+    const v = mount(page([c]));
+    await knowledgeLoaded();
+    press(v, 'e');
     const job = explainer.jobs.get(c.sha)!;
-    Object.assign(job, { state: 'running', startedAt: Date.now(), backend: 'codex', model: 'gpt-6.1-sol[high]', activity: 'git show --stat' });
+    running(job);
+    const subject = v.element.querySelector('.commit-browser__preview-subject');
+    const body = v.element.querySelector('.commit-browser__preview-body');
+
+    job.steps = [{ id: 'a', kind: 'read', subject: 'src/App.ts', state: 'running' }];
     explainer.emit({ kind: 'update', job });
-    const status = v.element.querySelector('.commit-browser__status')?.textContent ?? '';
-    expect(status).toMatch(/^explaining · codex · gpt-6\.1-sol\[high\] · since \d\d:\d\d · git show --stat$/);
+
+    expect(strip(v).now).toBe('read src/App.ts');
+    expect(v.element.querySelector('.commit-browser__preview-subject')).toBe(subject);
+    expect(v.element.querySelector('.commit-browser__preview-body')).toBe(body);
   });
 
   it('a ready job re-reads the index and turns the lamp green', async () => {

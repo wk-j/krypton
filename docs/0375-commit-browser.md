@@ -230,8 +230,9 @@ trailers, `added + removed ≤ 200`, and not a merge. This is a hint lamp, not a
 
 One plate, split into list and preview (no nested panels):
 `.commit-browser` › `__head` (repo · branch · count · filter readout) · `__list` › `__row`
-(`__lamp`, `__sha`, `__age`, `__type` chip, `__subject`, `__stat`) · `__preview` (message, file stat,
-key legend).
+(`__lamp`, `__sha`, `__age`, `__type` chip, `__subject`, `__stat`) · `__preview` (`__preview-scroll`
+with the message and file stat; the explainer strip `__job` while the commit has a job, spec 0377;
+the key legend).
 - The selection is the row background. The `pending` / `ready` / candidate states light only the
   row's lamp, never the whole row.
 - `pending` is a steady amber lamp (`--mat-lens-on`), `ready` a steady green lamp
@@ -246,7 +247,7 @@ key legend).
 ```toml
 [knowledge]
 dir = "~/.config/krypton/knowledge"  # absolute or ~/ path; may point into an Obsidian vault
-language = "Thai"                    # prose language of explainers; code stays English
+language = "English"                 # prose language of explainers; code stays English
 ```
 
 Read at startup; **Reload Config** applies.
@@ -271,7 +272,7 @@ Read at startup; **Reload Config** applies.
 ## Open Questions
 
 None. Decisions taken: the explainer runs as a background job (spec 0376; originally a lane, which
-needed an open Harness), explainers are stored in a global dir, prose language is Thai by config,
+needed an open Harness), explainers are stored in a global dir, prose language is English by config,
 and the view opens with `Leader E`.
 
 ## Out of Scope

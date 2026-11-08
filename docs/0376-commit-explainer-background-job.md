@@ -4,6 +4,7 @@
 > Date: 2026-11-08
 > Milestone: Git — learning from history
 > Builds on: 0375 (Commit Browser, `learnCommitPrompt`) · 0333 (Inline AI headless session) · 0357 (Assistant instances)
+> Amended by: [0377](./0377-commit-explainer-job-strip.md) — `ExplainJob.activity` is replaced by `phase`, `steps` (the last four tool calls), `stepCount` and `continuations`, and the preview's status text by a state word plus the explainer strip.
 
 ## Problem
 
@@ -113,7 +114,8 @@ interface ExplainJob {
   readonly root: string; readonly repoName: string; readonly sha: string;
   state: ExplainState;
   startedAt: number | null;   // ms; set when running starts
-  activity: string | null;    // latest tool_call title
+  phase: ExplainPhase | null; // spec 0377: what the agent does between tools
+  steps: readonly ExplainStep[]; stepCount: number; continuations: number;
 }
 type ExplainChange =
   | { kind: 'update'; job: ExplainJob }
@@ -156,7 +158,7 @@ pub struct KnowledgeJob { pub scratch: String, pub draft: String, pub path: Stri
      that share the part before `[`
    → setSessionMode(mode); a rejection fails the job: never run in the backend's default mode
 5. prompt(learnCommitPrompt({sha, repo, language, path: draft, scratch, repoRoot: root}))
-   each tool_call → job.activity = title → 'update'
+   each tool_call / tool_call_update → a step; thought / message chunks → the phase (spec 0377) → 'update'
 6. stop must be end_turn → invoke knowledge_store(root, sha) → 'ready' {path}
    any failure → 'failed' {message}; the client is always disposed; the next queued job takes
    the freed slot
@@ -196,9 +198,9 @@ its process is disposed after 5 s (`CANCEL_GRACE_MS`). Either way the job ends `
 ### UI Changes
 
 - Lamp: `pending` (amber) while queued or running; there is no new lamp state.
-- Preview of a pending row: `explain · queued (N ahead)`, or `explain · codex · <model> · since
-  14:02 · <activity>`. It shows a start time rather than a ticking timer, so nothing repaints on its
-  own.
+- Preview of a pending row: the state word `queued` / `explaining`, and the explainer strip of
+  spec 0377 (backend, model, start time, step count, the now line and the last steps). It shows a
+  start time rather than a ticking timer, so nothing repaints on its own.
 - Help row `e` reads "explain in the background", plus a new `x` row. The lane picker DOM is removed.
 - Assistants dock: one `commit_explainer` row per running job.
 
@@ -207,7 +209,7 @@ its process is disposed after 5 s (`CANCEL_GRACE_MS`). Either way the job ends `
 ```toml
 [knowledge]
 dir = "~/.config/krypton/knowledge"
-language = "Thai"
+language = "English"
 backend = "codex"            # ACP backend that runs explainer jobs
 model = "gpt-6.1-sol[high]"  # an id the backend advertises; "" keeps the backend default
 mode = "workspace-write"     # agent-side mode; it must sandbox writes to the working dir
@@ -224,7 +226,7 @@ asking mode, for example, `git show` is declined.
   shows the lamp from `explainer.job()`.
 - **`e` on a pending row:** flash `<sha7> is already explaining`. **`e` on a ready row:** unchanged
   (`NOTIFY_ALREADY_EXPLAINED`).
-- **codex missing, logged out, or the first npx download (≤ 300 s):** the preview shows `starting
+- **codex missing, logged out, or the first npx download (≤ 300 s):** the strip's now line shows `starting
   codex`. A spawn or `session/new` error fails the job with the adapter's message.
 - **Agent tries to write the repo or use the network:** the sandbox blocks it, the request is
   declined, and the job sends a continuation turn when codex's `cancel` ended the turn.

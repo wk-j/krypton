@@ -10,16 +10,37 @@
 // agent writes `explainer.md` in the scratch dir; after `end_turn`,
 // `knowledge_store` copies it into the knowledge dir. Up to `parallel` jobs run
 // at once, the rest queue FIFO. Jobs live as long as the app, not the browser.
+//
+// Progress (spec 377): the fence records each tool call as a step (the last
+// `EXPLAIN_STEPS_KEPT`, plus a count) and the thought / message chunks as the
+// phase between tools. The Commit Browser's explainer strip paints them.
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 
 import { AcpClient } from './acp/client';
+import { loadHomeDir, truncate } from './acp/harness-format';
 import { answerFencedRequest } from './acp/headless-fence';
 import { learnCommitPrompt } from './acp/harness-prompts';
-import type { AcpEvent, AcpInstanceOwner, AgentSessionInfo, StopReason } from './acp/types';
+import { mergeToolCall, toolChipKind, toolSubject } from './acp/harness-tool-render';
+import type {
+  AcpEvent, AcpInstanceOwner, AgentSessionInfo, StopReason, ToolCall, ToolCallUpdate, ToolStatus,
+} from './acp/types';
 import { loadConfig, type KnowledgeConfig } from './config';
 
 export type ExplainState = 'queued' | 'running';
+/** What a running job does between tools. */
+export type ExplainPhase = 'starting' | 'thinking' | 'replying' | 'continuing';
+export type ExplainStepState = 'running' | 'done' | 'failed';
+
+/** One tool call of a running job, as the explainer strip shows it. */
+export interface ExplainStep {
+  readonly id: string;
+  /** `toolChipKind`: read · edit · search · execute · fetch · move · delete · other. */
+  readonly kind: string;
+  /** Command, path or title: its first line, shortened by `jobSubject`, case kept. */
+  readonly subject: string;
+  readonly state: ExplainStepState;
+}
 
 export interface ExplainJob {
   readonly root: string;
@@ -28,11 +49,17 @@ export interface ExplainJob {
   state: ExplainState;
   /** Epoch ms the job started running; null while queued. */
   startedAt: number | null;
-  /** What the job is doing now: `starting codex`, `thinking`, or the latest tool title. */
-  activity: string | null;
   /** Backend and model of a running job (from the config read at its start). */
   backend: string | null;
   model: string | null;
+  /** What the agent does between tools; null while queued. */
+  phase: ExplainPhase | null;
+  /** The last `EXPLAIN_STEPS_KEPT` tool calls, oldest first. Replaced on change, never mutated. */
+  steps: readonly ExplainStep[];
+  /** Every tool call since the job started. */
+  stepCount: number;
+  /** Continuation turns sent after a declined approval. */
+  continuations: number;
 }
 
 export type ExplainChange =
@@ -65,8 +92,16 @@ export interface CommitExplainerDeps {
   config?: () => Promise<Partial<KnowledgeConfig> | undefined>;
   invoke?: ExplainInvoke;
   spawn?: ExplainSpawn;
+  home?: () => Promise<string | null>;
   now?: () => number;
   graceMs?: number;
+}
+
+/** The dirs a job's step subjects are shortened against. */
+export interface JobPlaces {
+  root: string;
+  scratch: string;
+  home: string | null;
 }
 
 /** How long a cancelled turn may take to honour `session/cancel` before its
@@ -75,6 +110,9 @@ export const EXPLAIN_CANCEL_GRACE_MS = 5_000;
 export const EXPLAIN_MAX_PARALLEL = 4;
 /** Follow-up turns after a declined approval ended the turn, before the job fails. */
 export const EXPLAIN_MAX_CONTINUATIONS = 3;
+/** Steps a job keeps for the strip: the now line and the three before it. */
+export const EXPLAIN_STEPS_KEPT = 4;
+const SUBJECT_MAX = 200;
 
 /** Sent after a declined approval stopped the turn: codex offers no "decline
  *  and go on" for a sandbox escalation, only `cancel`, which ends the turn. */
@@ -92,6 +130,10 @@ interface RunHandle {
   asked: boolean;
   /** The fence declined an approval since the current turn started. */
   declined: boolean;
+  /** Set once the scratch dir exists; tool calls are recorded only after. */
+  places: JobPlaces | null;
+  /** The merged tool call behind each kept step, by toolCallId. */
+  calls: Map<string, ToolCall | ToolCallUpdate>;
   abandoned: Promise<typeof ABANDONED>;
   abandon: () => void;
 }
@@ -104,6 +146,29 @@ function key(root: string, sha: string): string {
   return `${root}\u0000${sha}`;
 }
 
+function stepState(status: ToolStatus | undefined): ExplainStepState {
+  if (status === 'completed') return 'done';
+  if (status === 'failed') return 'failed';
+  return 'running';
+}
+
+function under(dir: string, path: string): string | null {
+  const base = dir.replace(/\/+$/, '');
+  return base && path.startsWith(`${base}/`) ? path.slice(base.length + 1) : null;
+}
+
+/** A step subject for display: its first line; a path in the scratch dir or
+ *  the repo becomes relative to it, and HOME becomes `~` in anything else.
+ *  Case is kept: paths are case-sensitive. */
+export function jobSubject(text: string, places: JobPlaces): string {
+  const line = (text.split('\n', 1)[0] ?? '').trim();
+  // macOS reports the temp dir as /var/… and by its real path /private/var/….
+  const relative = under(places.scratch, line) ?? under(`/private${places.scratch}`, line) ?? under(places.root, line);
+  if (relative !== null) return truncate(relative, SUBJECT_MAX);
+  const home = places.home?.replace(/\/+$/, '');
+  return truncate(home ? line.split(`${home}/`).join('~/') : line, SUBJECT_MAX);
+}
+
 export function resolveExplainConfig(k: Partial<KnowledgeConfig> | undefined): ExplainConfig {
   const parallel = Math.floor(Number(k?.parallel ?? 2));
   return {
@@ -111,7 +176,7 @@ export function resolveExplainConfig(k: Partial<KnowledgeConfig> | undefined): E
     // An empty model keeps the backend default; only a missing key falls back.
     model: k?.model ?? 'gpt-6.1-sol[high]',
     mode: k?.mode ?? 'workspace-write',
-    language: k?.language || 'Thai',
+    language: k?.language || 'English',
     parallel: Number.isFinite(parallel) ? Math.min(EXPLAIN_MAX_PARALLEL, Math.max(1, parallel)) : 2,
   };
 }
@@ -120,6 +185,7 @@ export class CommitExplainer {
   private readonly loadKnowledge: () => Promise<Partial<KnowledgeConfig> | undefined>;
   private readonly invoke: ExplainInvoke;
   private readonly spawn: ExplainSpawn;
+  private readonly home: () => Promise<string | null>;
   private readonly now: () => number;
   private readonly graceMs: number;
   /** Every live job (queued or running), by `root\0sha`. */
@@ -135,6 +201,7 @@ export class CommitExplainer {
     this.loadKnowledge = deps.config ?? (async () => (await loadConfig()).knowledge);
     this.invoke = deps.invoke ?? (<T>(cmd: string, args: Record<string, unknown>) => tauriInvoke<T>(cmd, args));
     this.spawn = deps.spawn ?? ((backendId, cwd, owner) => AcpClient.spawn(backendId, cwd, owner, []));
+    this.home = deps.home ?? loadHomeDir;
     this.now = deps.now ?? Date.now;
     this.graceMs = deps.graceMs ?? EXPLAIN_CANCEL_GRACE_MS;
   }
@@ -144,7 +211,8 @@ export class CommitExplainer {
     const existing = this.jobs.get(key(root, sha));
     if (existing) return existing;
     const job: ExplainJob = {
-      root, repoName, sha, state: 'queued', startedAt: null, activity: null, backend: null, model: null,
+      root, repoName, sha, state: 'queued', startedAt: null, backend: null, model: null,
+      phase: null, steps: [], stepCount: 0, continuations: 0,
     };
     this.jobs.set(key(root, sha), job);
     this.queue.push(job);
@@ -228,13 +296,15 @@ export class CommitExplainer {
     let abandon!: () => void;
     // Executor form: tsconfig's ES2021 lib has no `Promise.withResolvers`.
     const abandoned = new Promise<typeof ABANDONED>((resolve) => { abandon = () => resolve(ABANDONED); });
-    const handle: RunHandle = { client: null, cancelled: false, asked: false, declined: false, abandoned, abandon };
+    const handle: RunHandle = {
+      client: null, cancelled: false, asked: false, declined: false, places: null, calls: new Map(), abandoned, abandon,
+    };
     this.running.set(k, handle);
     job.state = 'running';
     job.startedAt = this.now();
     job.backend = cfg.backend;
     job.model = cfg.model || null;
-    job.activity = `starting ${cfg.backend}`;
+    job.phase = 'starting';
     this.emit({ kind: 'update', job });
 
     let change: ExplainChange;
@@ -262,6 +332,7 @@ export class CommitExplainer {
       if (handle.cancelled) throw new Error('cancelled');
     };
     const prepared = await this.invoke<KnowledgeJob>('knowledge_job_prepare', { cwd: job.root, sha: job.sha });
+    handle.places = { root: job.root, scratch: prepared.scratch, home: await this.home() };
     live();
     let client: AcpClient;
     try {
@@ -311,7 +382,7 @@ export class CommitExplainer {
     }
     live();
 
-    job.activity = 'thinking';
+    job.phase = 'thinking';
     this.emit({ kind: 'update', job });
     let text = learnCommitPrompt({
       sha: job.sha,
@@ -339,7 +410,8 @@ export class CommitExplainer {
       if (continued === EXPLAIN_MAX_CONTINUATIONS) {
         throw new Error(`"${backend}" kept asking for approval — a background job declines every request`);
       }
-      job.activity = 'continuing after a declined approval';
+      job.continuations += 1;
+      job.phase = 'continuing';
       this.emit({ kind: 'update', job });
       text = DECLINED_CONTINUE_PROMPT;
     }
@@ -358,9 +430,60 @@ export class CommitExplainer {
     }
     if (event.type === 'ask_user_question' || event.type === 'elicitation_request') handle.asked = true;
     if (answerFencedRequest(client, event)) return;
-    if (event.type === 'tool_call' && !handle.cancelled) {
-      job.activity = event.call.title || 'tool';
-      this.emit({ kind: 'update', job });
+    if (handle.cancelled) return;
+    switch (event.type) {
+      case 'tool_call':
+        if (this.recordStep(job, handle, event.call, true)) this.emit({ kind: 'update', job });
+        return;
+      case 'tool_call_update':
+        if (this.recordStep(job, handle, event.update, false)) this.emit({ kind: 'update', job });
+        return;
+      // Chunks stamped with a parent tool belong to a subagent, not this agent's phase.
+      case 'thought_chunk':
+        if (!event.parentToolUseId) this.setPhase(job, 'thinking');
+        return;
+      case 'message_chunk':
+        if (!event.parentToolUseId) this.setPhase(job, 'replying');
     }
+  }
+
+  /** Record a tool call (`isNew`) or an update as a step; true when a step
+   *  changed. An update for a step no longer kept is dropped. */
+  private recordStep(job: ExplainJob, handle: RunHandle, call: ToolCall | ToolCallUpdate, isNew: boolean): boolean {
+    const places = handle.places;
+    const previous = handle.calls.get(call.toolCallId);
+    if (!places || (!previous && !isNew)) return false;
+    const merged = mergeToolCall(previous, call);
+    handle.calls.set(call.toolCallId, merged);
+    const { kind, subject } = toolSubject(merged);
+    const step: ExplainStep = {
+      id: call.toolCallId,
+      kind: toolChipKind(kind),
+      subject: jobSubject(subject, places),
+      state: stepState(merged.status),
+    };
+    if (previous) {
+      const at = job.steps.findIndex((s) => s.id === step.id);
+      const old = job.steps[at];
+      if (!old || (old.kind === step.kind && old.subject === step.subject && old.state === step.state)) return false;
+      job.steps = job.steps.map((s, i) => (i === at ? step : s));
+      return true;
+    }
+    job.stepCount += 1;
+    // Once this tool ends, the agent is thinking until a chunk says otherwise.
+    job.phase = 'thinking';
+    const steps = [...job.steps, step];
+    while (steps.length > EXPLAIN_STEPS_KEPT) {
+      const dropped = steps.shift();
+      if (dropped) handle.calls.delete(dropped.id);
+    }
+    job.steps = steps;
+    return true;
+  }
+
+  private setPhase(job: ExplainJob, phase: ExplainPhase): void {
+    if (job.phase === phase) return;
+    job.phase = phase;
+    this.emit({ kind: 'update', job });
   }
 }

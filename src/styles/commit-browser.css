@@ -218,8 +218,14 @@
     --commit-lamp-rgb: var(--krypton-info-rgb, 0, 200, 255);
   }
 
+  /* A failed explainer step (spec 377). */
+  .commit-browser__lamp--fault {
+    --commit-lamp-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+  }
+
   .commit-browser__lamp--ready,
-  .commit-browser__lamp--candidate {
+  .commit-browser__lamp--candidate,
+  .commit-browser__lamp--fault {
     background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--commit-lamp-rgb)) 45%, rgba(var(--commit-lamp-rgb), 0.55) 100%);
     box-shadow: 0 0 4px rgba(var(--commit-lamp-rgb), 0.9), 0 0 10px rgba(var(--commit-lamp-rgb), 0.4);
   }
@@ -268,9 +274,18 @@
     color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
   }
 
-  /* ─── Preview ─── */
+  /* ─── Preview: the message scrolls; the explainer strip and the foot under it do not ─── */
 
   .commit-browser__preview {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .commit-browser__preview-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -384,8 +399,8 @@
   }
 
   .commit-browser__preview-foot {
-    margin-top: auto;
-    padding-top: 10px;
+    flex: none;
+    padding: 10px 14px 14px;
     border-top: 1px solid var(--mat-groove-lo);
     box-shadow: inset 0 1px 0 var(--mat-groove-hi);
   }
@@ -400,6 +415,75 @@
     margin-bottom: 6px;
     font-size: var(--krypton-font-size, 14px);
     overflow-wrap: anywhere;
+  }
+
+  /* ─── Explainer strip (spec 377): set off by a groove, no panel of its own ─── */
+
+  .commit-browser__job {
+    flex: none;
+    padding: 8px 14px 10px;
+    border-top: 1px solid var(--mat-groove-lo);
+    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
+  }
+
+  .commit-browser__job-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    min-width: 0;
+    margin-bottom: 4px;
+    font-size: var(--krypton-chrome-font-size, 11px);
+    white-space: nowrap;
+  }
+
+  .commit-browser__job-label {
+    flex: none;
+    color: var(--mat-silk);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-shadow: var(--mat-engrave);
+    text-transform: uppercase;
+  }
+
+  .commit-browser__job-meta {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A repeated row: no shadow, no gradient. Only its LED glows. */
+  .commit-browser__step {
+    display: grid;
+    grid-template-columns: 6px 8ch minmax(0, 1fr);
+    align-items: center;
+    column-gap: 8px;
+    line-height: 1.6;
+    white-space: nowrap;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  }
+
+  .commit-browser__step-subject {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .commit-browser__step--phase .commit-browser__step-subject {
+    grid-column: 2 / -1;
+  }
+
+  .commit-browser__step--now .commit-browser__step-kind {
+    color: var(--mat-lit);
+  }
+
+  .commit-browser__step--now .commit-browser__step-subject {
+    color: var(--krypton-fg, #b0c4d8);
+  }
+
+  .commit-browser__step--failed .commit-browser__step-kind {
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
   }
 
   /* ─── Foot: the printed key legend on the plate strip ─── */

@@ -2718,11 +2718,11 @@ export class AcpHarnessView implements ContentView {
     } catch (err) {
       throw bail('invalid_request', err instanceof Error ? err.message : String(err));
     }
-    let language = 'Thai';
+    let language = 'English';
     try {
-      language = (await loadConfig()).knowledge?.language || 'Thai';
+      language = (await loadConfig()).knowledge?.language || 'English';
     } catch {
-      language = 'Thai';
+      language = 'English';
     }
     if (!laneUnchanged() || !lane.client) throw bail('lane_not_ready', `${lane.displayName} restarted`);
     // Repo name and sha7 come from Rust's file name `<repo>-<sha7>.md` so the

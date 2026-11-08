@@ -379,6 +379,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 374 | [Harness Lane Stats Toggle](./0374-harness-lane-stats-toggle.md) |
 | 375 | [Commit Browser](./0375-commit-browser.md) |
 | 376 | [Commit Explainer Background Job](./0376-commit-explainer-background-job.md) |
+| 377 | [Commit Explainer Job Strip](./0377-commit-explainer-job-strip.md) |
 
 ## ADRs (30)
 

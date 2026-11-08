@@ -698,7 +698,7 @@ impl Default for KnowledgeConfig {
     fn default() -> Self {
         Self {
             dir: "~/.config/krypton/knowledge".to_string(),
-            language: "Thai".to_string(),
+            language: "English".to_string(),
             backend: "codex".to_string(),
             model: "gpt-6.1-sol[high]".to_string(),
             mode: "workspace-write".to_string(),
@@ -1627,10 +1627,10 @@ min_confidence = 0.65
     fn knowledge_section_defaults_and_parses() {
         let cfg: KryptonConfig = toml::from_str("").unwrap();
         assert_eq!(cfg.knowledge.dir, "~/.config/krypton/knowledge");
-        assert_eq!(cfg.knowledge.language, "Thai");
-
-        let cfg: KryptonConfig = toml::from_str("[knowledge]\nlanguage = \"English\"\n").unwrap();
         assert_eq!(cfg.knowledge.language, "English");
+
+        let cfg: KryptonConfig = toml::from_str("[knowledge]\nlanguage = \"Thai\"\n").unwrap();
+        assert_eq!(cfg.knowledge.language, "Thai");
         assert_eq!(cfg.knowledge.dir, "~/.config/krypton/knowledge");
         assert_eq!(cfg.knowledge.backend, "codex");
         assert_eq!(cfg.knowledge.model, "gpt-6.1-sol[high]");
@@ -1645,6 +1645,6 @@ min_confidence = 0.65
         assert_eq!(cfg.knowledge.model, "opus");
         assert_eq!(cfg.knowledge.mode, "default");
         assert_eq!(cfg.knowledge.parallel, 3);
-        assert_eq!(cfg.knowledge.language, "Thai");
+        assert_eq!(cfg.knowledge.language, "English");
     }
 }

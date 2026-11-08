@@ -3,14 +3,22 @@
 // A keyboard-driven list of the focused repo's commits with a preview pane.
 // `d` hands a commit's diff to the Diff View; `e` queues a background
 // explainer job on the app's `CommitExplainer` (spec 376), whose state the
-// row's lamp shows: pending (amber) → ready (green). Explainers are found by
+// row's lamp shows: pending (amber) → ready (green). A pending commit's
+// preview carries the explainer strip (spec 377). Explainers are found by
 // `(repoName, sha7)` in the knowledge index (`knowledge_list`).
 
 import { invoke } from '@tauri-apps/api/core';
 
-import type { ExplainChange, ExplainJob } from './commit-explainer';
+import {
+  EXPLAIN_MAX_CONTINUATIONS,
+  EXPLAIN_STEPS_KEPT,
+  type ExplainChange,
+  type ExplainJob,
+  type ExplainState,
+  type ExplainStepState,
+} from './commit-explainer';
 import type { ContentView, PaneContentType } from './types';
-import { el } from './ui/dom';
+import { el, setChildren, type ClassSpec } from './ui/dom';
 import { keyCap, keyHint, keyHintNodes, type KeyHint } from './ui/kbd';
 import { reconcile, type ListNode } from './ui/list';
 
@@ -126,6 +134,46 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** A step's LED: lit amber while it runs, unlit once done, a fault lens when it failed. */
+const STEP_LAMP: Readonly<Record<ExplainStepState, string | null>> = {
+  running: 'commit-browser__lamp--pending',
+  done: null,
+  failed: 'commit-browser__lamp--fault',
+};
+const NOW_PHASE = 'commit-browser__step--now commit-browser__step--phase';
+
+/** One strip line: its LED, the flat-ink kind (a phase line has none), and
+ *  the subject, whole in the tooltip. */
+function stripRow(lamp: string | null, kind: string | null, subject: string, mods: ClassSpec): HTMLElement {
+  return el(
+    'div',
+    { class: ['commit-browser__step', mods] },
+    el('span', { class: ['commit-browser__lamp', lamp] }),
+    kind === null ? null : el('span', { class: 'commit-browser__step-kind', text: kind }),
+    el('span', { class: 'commit-browser__step-subject', text: subject, title: subject }),
+  );
+}
+
+function phaseText(job: ExplainJob): string {
+  switch (job.phase) {
+    case 'starting':
+      return `starting ${job.backend ?? 'the agent'}`;
+    case 'replying':
+      return 'writing the reply';
+    case 'continuing':
+      return `approval declined · continuing (${job.continuations} of ${EXPLAIN_MAX_CONTINUATIONS})`;
+    default:
+      return 'thinking';
+  }
+}
+
+/** A running job's meta: a start time, not a timer, so nothing repaints on its own. */
+function jobMeta(job: ExplainJob): string {
+  const since = job.startedAt === null ? null : `since ${formatStamp(job.startedAt / 1000).slice(11)}`;
+  const steps = `${job.stepCount} step${job.stepCount === 1 ? '' : 's'}`;
+  return [job.backend, job.model, since, steps].filter(Boolean).join(' · ');
+}
+
 const FOOT_HINTS: readonly KeyHint[] = [
   { keys: ['j', 'k'], keySeparator: '/', label: 'select' },
   { keys: ['/'], label: 'filter' },
@@ -208,6 +256,10 @@ export class CommitBrowserView implements ContentView {
   private readonly listEl: HTMLElement;
   private readonly emptyEl: HTMLElement;
   private readonly previewEl: HTMLElement;
+  /** The shown preview's explainer strip, while its commit has a job. */
+  private stripEl: HTMLElement | null = null;
+  /** What the shown preview was painted for: its commit and that commit's job state. */
+  private shown: { sha: string; job: ExplainState | null } | null = null;
   private readonly helpEl: HTMLElement;
   private readonly events = new AbortController();
 
@@ -301,12 +353,24 @@ export class CommitBrowserView implements ContentView {
       const node = this.rows.get(change.job.sha);
       if (node) this.paintLamp(node);
       // Any change can move the selected job's queue position.
-      this.renderPreview();
+      this.refreshPreviewJob();
       return;
     }
     void this.loadKnowledge().then(() => {
       if (!this.disposed) this.paintLamps();
     });
+  }
+
+  /** Repaint only the strip while the shown commit's job keeps its state; a
+   *  job that appears, changes state or ends re-renders the whole preview. */
+  private refreshPreviewJob(): void {
+    const c = this.selected();
+    const job = c ? this.explainer.job(this.root, c.sha) : null;
+    if (c && this.shown?.sha === c.sha && this.shown.job === (job?.state ?? null)) {
+      if (job && this.stripEl) this.paintStrip(this.stripEl, job);
+      return;
+    }
+    this.renderPreview();
   }
 
   dispose(): void {
@@ -744,15 +808,31 @@ export class CommitBrowserView implements ContentView {
       : `No explainer running for ${sha7(c.sha)}`);
   }
 
-  /** Preview status of a pending row: queue position, or what the job is doing. */
-  private jobStatus(job: ExplainJob): string {
+  /** The explainer strip (spec 377): label and meta, the now line, then the
+   *  earlier steps, newest first. */
+  private paintStrip(strip: HTMLElement, job: ExplainJob): void {
+    const head = el(
+      'div',
+      { class: 'commit-browser__job-head' },
+      el('span', { class: 'commit-browser__job-label', text: 'explainer' }),
+      job.state === 'running' ? el('span', { class: 'commit-browser__job-meta', text: jobMeta(job) }) : null,
+    );
     if (job.state === 'queued') {
       const ahead = this.explainer.queuedAhead(job);
-      return ahead > 0 ? `queued · ${ahead} ahead` : 'queued';
+      const queue = `waiting for a free slot · ${ahead > 0 ? `${ahead} ahead` : 'next in line'}`;
+      setChildren(strip, [head, stripRow(null, null, queue, NOW_PHASE)]);
+      return;
     }
-    const since = job.startedAt === null ? '' : ` · since ${formatStamp(job.startedAt / 1000).slice(11)}`;
-    const via = [job.backend, job.model].filter(Boolean).join(' · ');
-    return `explaining · ${via}${since}${job.activity ? ` · ${job.activity}` : ''}`;
+    const newest = [...job.steps].reverse();
+    const now = newest.find((step) => step.state === 'running') ?? null;
+    const trail = newest.filter((step) => step !== now).slice(0, EXPLAIN_STEPS_KEPT - 1);
+    setChildren(strip, [
+      head,
+      now
+        ? stripRow(STEP_LAMP.running, now.kind, now.subject, 'commit-browser__step--now commit-browser__step--running')
+        : stripRow(STEP_LAMP.running, null, phaseText(job), NOW_PHASE),
+      ...trail.map((step) => stripRow(STEP_LAMP[step.state], step.kind, step.subject, `commit-browser__step--${step.state}`)),
+    ]);
   }
 
   // ─── Help ───
@@ -788,13 +868,21 @@ export class CommitBrowserView implements ContentView {
 
   private renderPreview(): void {
     const c = this.selected();
+    this.stripEl = null;
     if (!c) {
-      this.previewEl.replaceChildren(el('p', { class: 'commit-browser__preview-empty', text: 'No commit selected.' }));
+      this.shown = null;
+      this.previewEl.replaceChildren(el(
+        'div',
+        { class: 'commit-browser__preview-scroll' },
+        el('p', { class: 'commit-browser__preview-empty', text: 'No commit selected.' }),
+      ));
       return;
     }
     const lamp = this.rowLamp(c.sha);
     const job = this.explainer.job(this.root, c.sha);
-    const status = job ? this.jobStatus(job) : lamp === 'ready' ? 'explained' : 'not explained';
+    this.shown = { sha: c.sha, job: job?.state ?? null };
+    // The lamp window holds the state word only; the strip says the rest.
+    const status = job ? (job.state === 'running' ? 'explaining' : 'queued') : lamp === 'ready' ? 'explained' : 'not explained';
     const path = this.docPath(c.sha);
     const actions: KeyHint[] = job
       ? [{ keys: ['x'], label: 'cancel' }, { keys: ['d'], label: 'diff' }, { keys: ['y'], label: 'copy sha' }]
@@ -802,28 +890,38 @@ export class CommitBrowserView implements ContentView {
         ? [{ keys: ['o'], label: 'open' }, { keys: ['E'], label: 'regenerate' }, { keys: ['d'], label: 'diff' }]
         : [{ keys: ['e'], label: 'explain' }, { keys: ['d'], label: 'diff' }, { keys: ['y'], label: 'copy sha' }];
     const files = `${c.files} file${c.files === 1 ? '' : 's'}`;
+    if (job) {
+      this.stripEl = el('div', { class: 'commit-browser__job' });
+      this.paintStrip(this.stripEl, job);
+    }
 
-    this.previewEl.replaceChildren(
+    // Only the message scrolls: the strip and the foot stay put under it.
+    setChildren(this.previewEl, [
       el(
         'div',
-        { class: 'commit-browser__preview-top' },
-        el('span', { class: 'commit-browser__preview-sha', text: c.sha }),
-        el('span', { class: `commit-browser__status commit-browser__status--${lamp}`, text: status }),
-        this.candidates.get(c.sha) ? el('span', { class: 'commit-browser__tag', text: 'candidate' }) : null,
+        { class: 'commit-browser__preview-scroll' },
+        el(
+          'div',
+          { class: 'commit-browser__preview-top' },
+          el('span', { class: 'commit-browser__preview-sha', text: c.sha }),
+          el('span', { class: `commit-browser__status commit-browser__status--${lamp}`, text: status }),
+          this.candidates.get(c.sha) ? el('span', { class: 'commit-browser__tag', text: 'candidate' }) : null,
+        ),
+        el('h2', { class: 'commit-browser__preview-subject', text: c.subject }),
+        el('p', {
+          class: 'commit-browser__preview-meta',
+          text: `${c.author} · ${formatStamp(c.at)} · ${files} · +${c.added} −${c.removed}`,
+        }),
+        c.body.trim() ? el('div', { class: 'commit-browser__preview-body', text: c.body.trim() }) : null,
       ),
-      el('h2', { class: 'commit-browser__preview-subject', text: c.subject }),
-      el('p', {
-        class: 'commit-browser__preview-meta',
-        text: `${c.author} · ${formatStamp(c.at)} · ${files} · +${c.added} −${c.removed}`,
-      }),
-      ...(c.body.trim() ? [el('div', { class: 'commit-browser__preview-body', text: c.body.trim() })] : []),
+      this.stripEl,
       el(
         'div',
         { class: 'commit-browser__preview-foot' },
         path && lamp !== 'none' ? el('p', { class: 'commit-browser__preview-path', text: path }) : null,
         el('p', { class: 'commit-browser__preview-keys' }, ...keyHintNodes(actions)),
       ),
-    );
+    ]);
   }
 
   private notify(message: string): void {

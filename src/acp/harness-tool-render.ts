@@ -473,16 +473,22 @@ export function boundedOutputLines(value: string, maxLines: number): string {
     .join('\n');
 }
 
+/** A tool call's label kind, its command line (execute only), and its
+ *  subject: the command, the path it touches, or its cleaned title. */
+export function toolSubject(call: ToolCall | ToolCallUpdate): { kind: string; command: string; subject: string } {
+  const kind = inferToolLabel(call);
+  const command = kind === 'execute' ? extractCommandLine(call.rawInput) : '';
+  const subject = command || extractModifiedPath(call) || cleanToolTitle(call.title, kind) || '';
+  return { kind, command, subject };
+}
+
 export function buildToolPayload(
   call: ToolCall | ToolCallUpdate,
   status: string,
   startedAt?: number,
   endedAt?: number,
 ): ToolPayload {
-  const kind = inferToolLabel(call);
-  const path = extractModifiedPath(call);
-  const command = kind === 'execute' ? extractCommandLine(call.rawInput) : '';
-  const subject = command || path || cleanToolTitle(call.title, kind) || '';
+  const { kind, command, subject } = toolSubject(call);
   const raw = rawOutputSections(call.rawOutput);
   const content = contentOutputSections(call.content);
   const peeled = peelSectionExit(

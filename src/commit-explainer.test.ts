@@ -6,6 +6,7 @@ import {
   CommitExplainer,
   DECLINED_CONTINUE_PROMPT,
   EXPLAIN_MAX_CONTINUATIONS,
+  jobSubject,
   resolveExplainConfig,
   type ExplainChange,
   type KnowledgeJob,
@@ -84,6 +85,7 @@ function rig(knowledge: Partial<KnowledgeConfig> = {}, opts: { rejectMode?: bool
       clients.push(client);
       return client as unknown as AcpClient;
     },
+    home: async () => '/Users/me',
     graceMs: 0,
   });
   explainer.subscribe((change) => changes.push(change));
@@ -179,6 +181,7 @@ describe('CommitExplainer (spec 0376)', () => {
     });
     client.end('cancelled');
     await vi.waitFor(() => expect(client.prompts).toHaveLength(2));
+    expect(r.explainer.job(ROOT, 'abcdef1234')).toMatchObject({ phase: 'continuing', continuations: 1 });
     client.end('end_turn');
     await vi.waitFor(() => expect(r.settled()).toHaveLength(1));
     expect(r.settled()[0]).toMatchObject({ kind: 'ready', path: '/k/repo-abcdef1.md' });
@@ -271,6 +274,52 @@ describe('CommitExplainer (spec 0376)', () => {
     await vi.waitFor(() => expect(r.clients).toHaveLength(2));
     expect(r.clients[0].disposed).toBe(true);
   });
+
+  it('keeps the last four tool calls as steps, counts every call, and merges updates by id', async () => {
+    const r = rig();
+    const job = r.explainer.start(ROOT, 'repo', 'abcdef1234');
+    await vi.waitFor(() => expect(r.clients[0]?.prompts).toHaveLength(1));
+    const client = r.clients[0];
+    for (let n = 1; n <= 5; n += 1) {
+      client.emit({
+        type: 'tool_call',
+        call: { toolCallId: `t${n}`, kind: 'read', status: 'in_progress', locations: [{ path: `${ROOT}/src/F${n}.ts` }] },
+      });
+    }
+    client.emit({ type: 'tool_call_update', update: { toolCallId: 't4', status: 'failed' } });
+    client.emit({ type: 'tool_call_update', update: { toolCallId: 't5', status: 'completed' } });
+    const before = r.changes.length;
+    // t1 fell out of the kept steps: its update changes nothing.
+    client.emit({ type: 'tool_call_update', update: { toolCallId: 't1', status: 'completed' } });
+
+    expect(r.changes).toHaveLength(before);
+    expect(job.stepCount).toBe(5);
+    expect(job.steps.map((s) => [s.id, s.kind, s.subject, s.state])).toEqual([
+      ['t2', 'read', 'src/F2.ts', 'running'],
+      ['t3', 'read', 'src/F3.ts', 'running'],
+      ['t4', 'read', 'src/F4.ts', 'failed'],
+      ['t5', 'read', 'src/F5.ts', 'done'],
+    ]);
+  });
+
+  it('follows the agent between tools: chunks set the phase once per change, subagent chunks never', async () => {
+    const r = rig();
+    const job = r.explainer.start(ROOT, 'repo', 'abcdef1234');
+    await vi.waitFor(() => expect(r.clients[0]?.prompts).toHaveLength(1));
+    const client = r.clients[0];
+    expect(job.phase).toBe('thinking');
+    const before = r.changes.length;
+
+    client.emit({ type: 'message_chunk', text: 'a', content: { type: 'text', text: 'a' } });
+    client.emit({ type: 'message_chunk', text: 'b', content: { type: 'text', text: 'b' } });
+    expect(job.phase).toBe('replying');
+    expect(r.changes).toHaveLength(before + 1);
+
+    client.emit({ type: 'thought_chunk', text: 'sub', parentToolUseId: 'task-1' });
+    expect(job.phase).toBe('replying');
+    client.emit({ type: 'thought_chunk', text: 'hm' });
+    expect(job.phase).toBe('thinking');
+  });
 });
 
 describe('resolveExplainConfig', () => {
@@ -278,8 +327,28 @@ describe('resolveExplainConfig', () => {
     expect(resolveExplainConfig({ parallel: 0 }).parallel).toBe(1);
     expect(resolveExplainConfig({ parallel: 9 }).parallel).toBe(4);
     expect(resolveExplainConfig(undefined)).toEqual({
-      backend: 'codex', model: 'gpt-6.1-sol[high]', mode: 'workspace-write', language: 'Thai', parallel: 2,
+      backend: 'codex', model: 'gpt-6.1-sol[high]', mode: 'workspace-write', language: 'English', parallel: 2,
     });
     expect(resolveExplainConfig({ model: '' }).model).toBe('');
+  });
+});
+
+describe('jobSubject', () => {
+  const places = { root: '/Users/me/src/Repo', scratch: '/var/folders/x/T/krypton-learn/repo-abc', home: '/Users/me' };
+
+  it('makes scratch and repo paths relative and HOME `~`, keeping case', () => {
+    expect(jobSubject('/var/folders/x/T/krypton-learn/repo-abc/explainer.md', places)).toBe('explainer.md');
+    expect(jobSubject('/private/var/folders/x/T/krypton-learn/repo-abc/explainer.md', places)).toBe('explainer.md');
+    expect(jobSubject('/Users/me/src/Repo/src/App.ts', places)).toBe('src/App.ts');
+    expect(jobSubject("Read file '/Users/me/.agents/skills/X/SKILL.md'", places))
+      .toBe("Read file '~/.agents/skills/X/SKILL.md'");
+    expect(jobSubject('git -C /Users/me/src/Repo show HEAD', places)).toBe('git -C ~/src/Repo show HEAD');
+  });
+
+  it('keeps the first line and caps it at 200 characters', () => {
+    expect(jobSubject("cat <<'EOF' > x\nsecond line", places)).toBe("cat <<'EOF' > x");
+    const long = jobSubject(`echo ${'x'.repeat(300)}`, places);
+    expect(long).toHaveLength(200);
+    expect(long.endsWith('…')).toBe(true);
   });
 });
