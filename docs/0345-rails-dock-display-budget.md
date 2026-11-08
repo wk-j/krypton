@@ -90,7 +90,7 @@ check already is, instead of dropping it as direnv does.
 | Findings, resolved | 2 lines / 1 line | Same |
 | Rules summary | `12 rules · 4 enforced · 8 judge-only ▸` (cut) | `12 rules · 4 enforced ▸`; judge-only is the rest, and the expanded list shows each rule |
 | Sources without rails | 1 line | Same |
-| Runs | Up to 20 rows | Newest 5 with labelled verdict badges, then `15 older runs ▸`, which expands to the rest |
+| Runs | Up to 20 rows | Newest 5 with flat verdict labels (no background, border, padding or shadow), then `15 older runs ▸`, which expands to the rest |
 | Actions bar, key hints | Fixed | Same |
 
 ### The state line

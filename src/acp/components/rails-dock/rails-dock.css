@@ -14,7 +14,7 @@
    tags and rule statuses use ink tiers and amber only. The head's verdict and
    each check's outcome are one lamp window: amber for the model-derived
    clean/findings, fault for CHECK FAILED; success for PASS, fault for
-   FAIL/TIMEOUT, warning for ERROR. Run badges are embossed chips that keep
+   FAIL/TIMEOUT, warning for ERROR. Run verdicts are flat ink that keeps
    model-derived clean/findings neutral; a run error is warning and a failed
    check is fault (ADR-0017). Selection is a full-row tint inside the well,
    never a left-edge rail (ADR-0027). The Actions bar's buttons (spec 344) are
@@ -438,22 +438,15 @@
     color: var(--mat-lit);
   }
 
-  /* ── Run chips: embossed labels ────────────────────────────────────── */
+  /* ── Run verdicts: flat labels ─────────────────────────────────────── */
 
   .acp-rails-dock__verdict {
     flex: 0 0 auto;
-    padding: 2px 7px;
-    border: 1px solid var(--mat-key-edge);
-    border-radius: var(--krypton-border-radius, 8px);
-    background:
-      linear-gradient(180deg, rgba(var(--rails-verdict-rgb), 0.18), rgba(var(--rails-verdict-rgb), 0.04)),
-      var(--mat-key);
-    box-shadow: var(--mat-key-raise);
     color: rgb(var(--rails-verdict-rgb));
     font-size: var(--krypton-chrome-font-size, 11px);
     font-weight: 700;
     line-height: 1.2;
-    text-shadow: var(--mat-print);
+    text-shadow: none;
     white-space: nowrap;
   }
 

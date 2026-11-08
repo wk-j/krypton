@@ -187,7 +187,8 @@ comment.
   their colour, with the status LED first on the key face, 5px before the legend. Every label in the
   transcript (tool kind, permission and question decision, execution state, provider-error meta,
   notice action) is flat ink: no key face, capsule, border, or shadow; its LED, when it has one, sits
-  before the legend.
+  before the legend. Rails run-history verdicts are also flat ink: their existing glyph and state
+  colour remain, with no background, border, padding or shadow.
 - **Readouts.** A small well holding a tabular-nums figure, with its label engraved beside or under it.
 - **Scrim.** Behind a modal plate: `background: var(--mat-scrim)`. Never blur.
 
@@ -422,6 +423,8 @@ selector, and nothing in it bleeds out of that selector.
   labels; controls, panels and focus rings keep their own borders.
   Action keys likewise keep their neutral border and material shadow in every state; cyan/green
   belong to their face and legend, not a coloured outline or inset frame glow.
+  Rails run-history verdicts drop their embossed key face entirely and become flat-ink labels;
+  their glyphs, state colours and typography stay unchanged.
 - **2.3.1** — The prompt dialog is one sheet of paper edge to edge (spec 373 amendment B): the
   faceplate frame around the slip is gone, the target chip and key-hint foot are print on the paper,
   and the dark scheme's lamplight falls across the whole sheet. Key caps and the target lamp stay

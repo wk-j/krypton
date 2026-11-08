@@ -285,7 +285,7 @@ The prompt tells the current lane to:
    outline or wrapper shadow; their transparent 1px border preserves dimensions (DESIGN.md 2.3.2).
 3. **Findings**: each open finding as `violation|suspect  0008#2  file:line`, with the note on a second line and a tag `new` or `since 14:02`. A collapsed `resolved N` row follows.
 4. **Rules**: one line such as `24 rules · 9 enforced`, then `3 sources without rails`. It expands to every rule with its latest status.
-5. **Runs**: the newest 5 of the last 20, each with time, a labelled verdict badge (`✓ CLEAN`, `✗ CHECK FAILED`, `• FINDINGS` or `! ERROR`), findings count, trigger lane and a `stale` mark; `N older runs ▸` expands to the rest.
+5. **Runs**: the newest 5 of the last 20, each with time, a flat verdict label (`✓ CLEAN`, `✗ CHECK FAILED`, `• FINDINGS` or `! ERROR`), findings count, trigger lane and a `stale` mark; `N older runs ▸` expands to the rest. Verdict labels keep their state ink and typography, with no background, border, padding or shadow.
 
 Below the rows, outside the list, a fixed **Actions** bar (spec 344) holds four buttons: Run (`#rails now`), Send (`#rails send`), Trust (`#rails trust`) and Update (bare `#rails update`). A click takes the same path as the typed sub-command. Each button shows its state the way the Ticket Panel's issue actions do, through the shared `DockActionButton`; the bar's head line names the active lane that Send and Update go to.
 
