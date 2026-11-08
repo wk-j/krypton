@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-06-13
 > Milestone: M6 — ACP Harness
+> Amended: 2026-11-08 — concise mode also hides the shown lane's stats row (`LaneStats`); the head draws the full plate and the seam.
 
 ## Problem
 
@@ -60,6 +61,8 @@ Add a view-wide **concise mode** toggled with `Cmd+Shift+.` (sibling of Zen Mode
 | `inter_lane` | Peer mail is conversation, not machinery |
 | `artifact` | Deliverable the user opens (`f` hint mode keeps working) |
 | `system`, `restart`, `shell` | Structural markers + user-initiated shell rows |
+
+**Lane stats row.** The shown lane's stats row (`sess · project · context · cache · in/out · cost · tools · rows`, spec 302 §4.4) hides too, so the strip is the 28px head alone: `lane-stats.css` hides `.acp-harness__lane-stats` and `lane-head.css` paints the shown head with the full `--mat-plate` and the `--mat-key-edge` seam (beside the Zen rail or the dock column the head keeps its held top stop and gains only the seam). Stats-only cells (`perm`, `ask`, `accept-all`, `reject-all`, `peer-auto`, `polly-bypass`, `err: …`) hide with the row; the head's status (`needs_permission`, `error`) and the transcript's permission and question rows still show that state. The row stays in the DOM and keeps updating.
 
 ### State & persistence
 
@@ -121,7 +124,7 @@ Discoverability: no composer token. The mode used to append a muted `concise` ta
 2. onKeyDown matches, calls toggleConciseMode()
 3. Flag flips, writeConciseModePreference persists it, this.render() runs
 4. Render sites toggle .acp-harness--concise on the root element
-5. CSS collapses tool cards to their head line and hides side-channel rows; streaming/dedupe logic untouched (all rows and detail nodes stay in DOM)
+5. CSS collapses tool cards to their head line, hides side-channel rows and the shown lane's stats row; streaming/dedupe logic untouched (all rows and detail nodes stay in DOM)
 6. No composer readout changes — the collapsed cards are the only cue
 ```
 

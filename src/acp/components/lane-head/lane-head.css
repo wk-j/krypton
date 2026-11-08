@@ -37,6 +37,15 @@
     border-bottom: 0;
   }
 
+  /* spec 157: concise mode hides the stats row, so the shown head is the whole
+     strip — the full plate and the seam, like a collapsed band. Beside a plate
+     column the rule below (same or higher specificity, later) still holds the
+     top stop, so there the head gains only the seam. */
+  .acp-harness--concise .acp-harness__lane--active > .acp-harness__lane-head {
+    background: var(--mat-brush), var(--mat-plate);
+    border-bottom: 1px solid var(--mat-key-edge);
+  }
+
   /* A plate column beside the strip — the zen rail (`lane-rail.css`) or the
      right dock column (harness-shared.css) — is still at its top stop and its
      sheen here, so the strip holds that stop instead of running its own

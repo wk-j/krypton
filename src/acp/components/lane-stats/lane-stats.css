@@ -32,6 +32,12 @@
       var(--mat-plate-hi);
   }
 
+  /* spec 157: concise mode hides the row; the head above draws the seam
+     (`lane-head.css`). The row stays in the DOM and keeps updating. */
+  .acp-harness--concise .acp-harness__lane-stats {
+    display: none;
+  }
+
   .acp-harness__lane-stats span {
     display: inline-flex;
     align-items: center;

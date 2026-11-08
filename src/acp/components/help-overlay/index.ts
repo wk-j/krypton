@@ -84,7 +84,7 @@ function buildSections(): readonly HelpSection[] {
       { term: alt('⌃⇧J', '⌃⇧K'), desc: 'Scroll transcript down / up (works in composer)' },
       { term: alt('⌘W'), desc: 'Close harness tab' },
       { term: alt('⌘.'), desc: 'Toggle Zen Mode' },
-      { term: alt('⇧⌘.'), desc: 'Toggle Concise Mode (tool cards collapse to one line)' },
+      { term: alt('⇧⌘.'), desc: 'Toggle Concise Mode (tool cards collapse to one line, lane stats hide)' },
     ],
   },
   {
