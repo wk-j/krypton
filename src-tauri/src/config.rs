@@ -59,6 +59,7 @@ pub struct KryptonConfig {
     pub usage_log: UsageLogConfig,
     pub daily_note: DailyNoteConfig,
     pub keyboard_overlay: KeyboardOverlayConfig,
+    pub knowledge: KnowledgeConfig,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -668,6 +669,28 @@ impl Default for DailyNoteConfig {
             retain_days: 400,
             output_dir: ".krypton/journal".to_string(),
             extra_projects: Vec::new(),
+        }
+    }
+}
+
+// ─── Knowledge explainers (spec 375) ───────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct KnowledgeConfig {
+    /// Where commit explainers (`<repo>-<sha7>.md`) are written. Absolute or
+    /// `~/`; may point into an Obsidian vault. Shared by every repo.
+    pub dir: String,
+    /// Prose language of explainers; code, identifiers and commands stay
+    /// English.
+    pub language: String,
+}
+
+impl Default for KnowledgeConfig {
+    fn default() -> Self {
+        Self {
+            dir: "~/.config/krypton/knowledge".to_string(),
+            language: "Thai".to_string(),
         }
     }
 }
@@ -1586,5 +1609,16 @@ min_confidence = 0.65
                 "blocked": { "speed": 1.5, "hot": "var(--krypton-fire-hot)" },
             })
         );
+    }
+
+    #[test]
+    fn knowledge_section_defaults_and_parses() {
+        let cfg: KryptonConfig = toml::from_str("").unwrap();
+        assert_eq!(cfg.knowledge.dir, "~/.config/krypton/knowledge");
+        assert_eq!(cfg.knowledge.language, "Thai");
+
+        let cfg: KryptonConfig = toml::from_str("[knowledge]\nlanguage = \"English\"\n").unwrap();
+        assert_eq!(cfg.knowledge.language, "English");
+        assert_eq!(cfg.knowledge.dir, "~/.config/krypton/knowledge");
     }
 }

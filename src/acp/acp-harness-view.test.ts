@@ -4152,6 +4152,89 @@ describe('#draw dispatch', () => {
   });
 });
 
+describe('#learn dispatch (spec 0375)', () => {
+  type TestLane = { status: string; client?: unknown; displayName: string; spawnEpoch: number };
+  type Runner = { runHashCommand(lane: TestLane, text: string): Promise<void> };
+  const proto = AcpHarnessView.prototype as unknown as Runner & { startLearnCommit: unknown };
+  const runHashCommand = proto.runHashCommand;
+
+  function harnessDouble(projectDir: string | null, laneUnderTest: TestLane): {
+    target: Record<string, unknown>;
+    flashes: string[];
+    reserved: string[];
+    released: number;
+    dispatched: string[];
+  } {
+    const h = {
+      flashes: [] as string[],
+      reserved: [] as string[],
+      released: 0,
+      dispatched: [] as string[],
+      target: {} as Record<string, unknown>,
+    };
+    h.target = {
+      projectDir,
+      remoteRuntimeId: null,
+      lanes: [laneUnderTest],
+      startLearnCommit: proto.startLearnCommit,
+      setDraft: () => undefined,
+      flashChip: (value: string) => h.flashes.push(value),
+      reserveCommandTurn: (_lane: TestLane, label: string) => h.reserved.push(label),
+      releaseReservedTurn: () => {
+        h.released += 1;
+      },
+      dispatchTurn: async (_lane: TestLane, prompt: string) => {
+        h.dispatched.push(prompt);
+      },
+    };
+    return h;
+  }
+  const lane = (): TestLane => ({ status: 'idle', client: {}, displayName: 'Claude-1', spawnEpoch: 1 });
+
+  it('flashes without a project dir', async () => {
+    const l = lane();
+    const h = harnessDouble(null, l);
+    await runHashCommand.call(h.target, l, '#learn abcdef1');
+    expect(h.flashes).toEqual(['no project dir - cannot learn a commit']);
+    expect(h.reserved).toEqual([]);
+    expect(h.dispatched).toEqual([]);
+  });
+
+  it('flashes on a bad sha and dispatches nothing', async () => {
+    const l = lane();
+    const h = harnessDouble('/tmp/proj', l);
+    await runHashCommand.call(h.target, l, '#learn not-a-sha');
+    expect(h.flashes).toEqual(['invalid commit id: not-a-sha']);
+    await runHashCommand.call(h.target, l, '#learn');
+    expect(h.flashes[1]).toBe('#learn <sha>');
+    expect(h.dispatched).toEqual([]);
+  });
+
+  it('releases the reserved lane when the knowledge path is refused', async () => {
+    invokeMock.mockRejectedValueOnce('unknown commit abcdef1');
+    const l = lane();
+    const h = harnessDouble('/tmp/proj', l);
+    await runHashCommand.call(h.target, l, '#learn abcdef1');
+    expect(h.flashes).toEqual(['unknown commit abcdef1']);
+    expect(h.released).toBe(1);
+    expect(h.dispatched).toEqual([]);
+  });
+
+  it('reserves the lane and dispatches one turn for the knowledge path', async () => {
+    invokeMock.mockResolvedValueOnce('/k/krypton-abcdef1.md');
+    const l = lane();
+    const h = harnessDouble('/tmp/proj', l);
+    await runHashCommand.call(h.target, l, '#learn abcdef1234');
+    expect(invokeMock).toHaveBeenCalledWith('knowledge_write_path', { cwd: '/tmp/proj', sha: 'abcdef1234' });
+    expect(h.flashes).toEqual([]);
+    expect(h.reserved).toEqual(['learning abcdef1']);
+    expect(h.released).toBe(0);
+    expect(h.dispatched).toHaveLength(1);
+    expect(h.dispatched[0]).toContain('"/k/krypton-abcdef1.md"');
+    expect(h.dispatched[0]).toContain('source: krypton@abcdef1');
+  });
+});
+
 describe('#timeline dispatch (spec 253)', () => {
   type TestLane = { status: string };
   const runCommand = HarnessTimelineController.prototype.runCommand;

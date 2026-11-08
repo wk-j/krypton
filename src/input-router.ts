@@ -1000,10 +1000,10 @@ export class InputRouter {
         }
         break;
 
-      // e — open Pencil (Excalidraw). Shift+e is unbound.
+      // e — open Pencil (Excalidraw). E — open Commit Browser (spec 375).
       case 'e':
         if (e.shiftKey) {
-          this.toNormal();
+          void this.compositor.openCommitBrowser().then(() => this.toNormal());
         } else {
           // Exit Compositor before openPencil shows its file-picker overlay:
           // the picker's document-capture keydown listener is shadowed by the

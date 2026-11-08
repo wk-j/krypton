@@ -1,0 +1,535 @@
+/* Commit Browser (spec 375). DESIGN.md (Krypton Console): the view is one
+   plate. The head is engraved on it with a filter readout; the commit list and
+   the preview are recessed wells; the foot is a printed key legend on the plate
+   strip the window footer continues (`platedFoot`). A row's state lights only
+   its lamp — pending is a steady amber lens, ready a green lens, a candidate a
+   blue lens — never the row. The selection is the row tint. */
+@layer krypton.component {
+  .commit-browser {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    container-type: inline-size;
+    overflow: hidden;
+    color: var(--krypton-fg, #b0c4d8);
+    background: var(--mat-brush), var(--mat-plate);
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
+    font-family: var(--krypton-font-family, monospace);
+    font-size: var(--krypton-font-size, 14px);
+    outline: none;
+  }
+
+  /* ─── Head ─── */
+
+  .commit-browser__head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 12px 14px 10px;
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .commit-browser__repo {
+    color: var(--mat-silk);
+    text-shadow: var(--mat-engrave);
+  }
+
+  .commit-browser__branch {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    text-shadow: var(--mat-engrave);
+    text-transform: none;
+    letter-spacing: 0.04em;
+  }
+
+  /* Readouts: small wells holding a figure or the filter query. */
+  .commit-browser__count,
+  .commit-browser__filter {
+    padding: 2px 8px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    font-weight: 400;
+    letter-spacing: 0.04em;
+  }
+
+  .commit-browser__count {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .commit-browser__filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-width: 120px;
+    max-width: 360px;
+    margin-left: auto;
+    text-transform: none;
+  }
+
+  .commit-browser__filter-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    outline: none;
+    color: var(--krypton-fg, #b0c4d8);
+    background: transparent;
+    caret-color: var(--krypton-cursor, currentColor);
+    font: inherit;
+    font-size: var(--krypton-font-size, 14px);
+  }
+
+  .commit-browser__filter-input::placeholder {
+    color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+  }
+
+  /* `c` on: an amber lamp window (work-mode state), the lit legend. */
+  .commit-browser__mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px 2px 6px;
+    border: 1px solid rgba(255, 176, 0, 0.45);
+    border-radius: var(--krypton-border-radius, 8px);
+    color: var(--mat-lit);
+    background: linear-gradient(180deg, rgba(255, 176, 0, 0.2), rgba(255, 176, 0, 0.06));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 -1px 2px rgba(0, 0, 0, 0.35),
+      0 0 6px rgba(255, 176, 0, 0.16),
+      0 0 14px rgba(255, 176, 0, 0.06);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+
+  .commit-browser__mode::before {
+    content: '';
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
+  }
+
+  .commit-browser__mode[hidden] {
+    display: none;
+  }
+
+  /* ─── Body: list well beside preview well ─── */
+
+  .commit-browser__body {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(260px, 2fr);
+    gap: 12px;
+    min-height: 0;
+    padding: 0 14px;
+  }
+
+  .commit-browser__column {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .commit-browser__list,
+  .commit-browser__preview {
+    min-height: 0;
+    overflow: auto;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+  }
+
+  .commit-browser__list {
+    flex: 1 1 auto;
+    padding: 3px 0;
+  }
+
+  .commit-browser__list[hidden],
+  .commit-browser__empty[hidden] {
+    display: none;
+  }
+
+  .commit-browser__empty {
+    margin: 0;
+    padding: 10px 2px;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  }
+
+  /* A repeated row: no shadow, no gradient — a groove and the selection tint. */
+  .commit-browser__row {
+    display: grid;
+    grid-template-columns: 6px 7ch 4ch auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 12px;
+    border-bottom: 1px solid var(--mat-groove-lo);
+    white-space: nowrap;
+    cursor: default;
+  }
+
+  .commit-browser__row:last-child {
+    border-bottom: 0;
+  }
+
+  .commit-browser__row[hidden] {
+    display: none;
+  }
+
+  .commit-browser__row[aria-selected="true"] {
+    background: var(--mat-select);
+  }
+
+  /* The row lamp: the one lit part of a row. */
+  .commit-browser__lamp {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .commit-browser__lamp--pending {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
+  }
+
+  .commit-browser__lamp--ready {
+    --commit-lamp-rgb: var(--krypton-success-rgb, 57, 255, 127);
+  }
+
+  .commit-browser__lamp--candidate {
+    --commit-lamp-rgb: var(--krypton-info-rgb, 0, 200, 255);
+  }
+
+  .commit-browser__lamp--ready,
+  .commit-browser__lamp--candidate {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--commit-lamp-rgb)) 45%, rgba(var(--commit-lamp-rgb), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--commit-lamp-rgb), 0.9), 0 0 10px rgba(var(--commit-lamp-rgb), 0.4);
+  }
+
+  .commit-browser__sha,
+  .commit-browser__age,
+  .commit-browser__stat {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-variant-numeric: tabular-nums;
+  }
+
+  .commit-browser__age {
+    text-align: right;
+  }
+
+  /* The kind chip: an unlit capsule (a tag, not a status word). */
+  .commit-browser__type {
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--mat-well-fill);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.04em;
+    line-height: 1.5;
+  }
+
+  .commit-browser__type--empty {
+    visibility: hidden;
+  }
+
+  .commit-browser__subject {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .commit-browser__scope {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  }
+
+  .commit-browser__added {
+    color: rgb(var(--krypton-success-rgb, 57, 255, 127));
+  }
+
+  .commit-browser__removed {
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+  }
+
+  /* ─── Preview ─── */
+
+  .commit-browser__preview {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .commit-browser__preview-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .commit-browser__preview-sha {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    overflow-wrap: anywhere;
+  }
+
+  /* Explainer state: a lamp window (DESIGN.md 2.3.0). Explained is green
+     glass, learning is amber glass with the lit legend, not explained is the
+     dark LED and the legend in ink with no glass. */
+  .commit-browser__status {
+    --commit-status-rgb: var(--krypton-success-rgb, 57, 255, 127);
+
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px 2px 6px;
+    border: 1px solid rgba(var(--commit-status-rgb), 0.45);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: linear-gradient(180deg, rgba(var(--commit-status-rgb), 0.2), rgba(var(--commit-status-rgb), 0.06));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 -1px 2px rgba(0, 0, 0, 0.35),
+      0 0 6px rgba(var(--commit-status-rgb), 0.16),
+      0 0 14px rgba(var(--commit-status-rgb), 0.06);
+    color: rgb(var(--commit-status-rgb));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .commit-browser__status::before {
+    content: '';
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--commit-status-rgb)) 45%, rgba(var(--commit-status-rgb), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--commit-status-rgb), 0.9), 0 0 10px rgba(var(--commit-status-rgb), 0.4);
+  }
+
+  .commit-browser__status--pending {
+    --commit-status-rgb: 255, 176, 0;
+
+    color: var(--mat-lit);
+  }
+
+  .commit-browser__status--pending::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
+  }
+
+  .commit-browser__status--none {
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  }
+
+  .commit-browser__status--none::before {
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  /* Candidate: an info-blue glass capsule (a tag, not a status word). */
+  .commit-browser__tag {
+    padding: 0 7px;
+    border: 1px solid rgba(var(--krypton-info-rgb, 0, 200, 255), 0.5);
+    border-radius: 999px;
+    background: radial-gradient(ellipse at 50% 0%, rgba(var(--krypton-info-rgb, 0, 200, 255), 0.3), rgba(var(--krypton-info-rgb, 0, 200, 255), 0.07) 75%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--krypton-info-rgb, 0, 200, 255), 0.22);
+    color: rgb(var(--krypton-info-rgb, 0, 200, 255));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.04em;
+    line-height: 1.5;
+  }
+
+  .commit-browser__preview-subject {
+    margin: 0;
+    color: var(--krypton-fg, #b0c4d8);
+    font-size: 1.1em;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+
+  .commit-browser__preview-meta,
+  .commit-browser__preview-empty {
+    margin: 0;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-variant-numeric: tabular-nums;
+  }
+
+  .commit-browser__preview-body {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+  }
+
+  .commit-browser__preview-foot {
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid var(--mat-groove-lo);
+    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
+  }
+
+  .commit-browser__preview-foot p {
+    margin: 0;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-size: var(--krypton-chrome-font-size, 11px);
+  }
+
+  .commit-browser__preview-foot .commit-browser__preview-path {
+    margin-bottom: 6px;
+    font-size: var(--krypton-font-size, 14px);
+    overflow-wrap: anywhere;
+  }
+
+  /* ─── Foot: the printed key legend on the plate strip ─── */
+
+  .commit-browser__foot {
+    flex: 0 0 auto;
+    padding: 10px 14px 6px;
+    overflow: hidden;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.09em;
+    text-shadow: var(--mat-print);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  /* ─── Floating plates: lane picker and help ─── */
+  /* `display: flex` overrides the UA `[hidden]`, so each has a hide rule. */
+
+  .commit-browser__picker,
+  .commit-browser__help {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    max-height: 80%;
+    padding-bottom: 2px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-brush), var(--mat-plate), rgb(var(--krypton-bg-rgb, 10, 14, 20));
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
+    overflow: hidden;
+    z-index: 5;
+  }
+
+  .commit-browser__picker {
+    width: min(420px, 88%);
+  }
+
+  .commit-browser__help {
+    width: min(460px, 88%);
+    z-index: 6;
+  }
+
+  .commit-browser__picker[hidden],
+  .commit-browser__help[hidden] {
+    display: none;
+  }
+
+  .commit-browser__overlay-head,
+  .commit-browser__help-section {
+    flex-shrink: 0;
+    padding: 8px 12px 6px;
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-shadow: var(--mat-engrave);
+    text-transform: uppercase;
+  }
+
+  .commit-browser__overlay-foot {
+    flex-shrink: 0;
+    padding: 6px 12px 5px;
+    border-top: 1px solid var(--mat-groove-lo);
+    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    text-shadow: var(--mat-print);
+  }
+
+  .commit-browser__picker-list,
+  .commit-browser__help-body {
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0 8px 6px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+  }
+
+  .commit-browser__picker-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 5px 12px;
+    border-bottom: 1px solid var(--mat-groove-lo);
+  }
+
+  .commit-browser__picker-row:last-child {
+    border-bottom: 0;
+  }
+
+  .commit-browser__picker-row--selected {
+    background: var(--mat-select);
+  }
+
+  .commit-browser__picker-meta {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  }
+
+  /* The help well holds its section labels in ink, not engraved silk. */
+  .commit-browser__help-body .commit-browser__help-section {
+    padding: 8px 12px 2px;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+    text-shadow: none;
+  }
+
+  .commit-browser__help-row {
+    display: grid;
+    grid-template-columns: 9ch minmax(0, 1fr);
+    gap: 10px;
+    padding: 3px 12px;
+  }
+
+  .commit-browser__help-desc {
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+  }
+
+  @container (max-width: 640px) {
+    .commit-browser__body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); }
+    .commit-browser__age,
+    .commit-browser__stat { display: none; }
+    .commit-browser__row { grid-template-columns: 6px 7ch auto minmax(0, 1fr); }
+  }
+}

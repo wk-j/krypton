@@ -517,6 +517,64 @@ pub async fn native_git_status(
         .map_err(|e| format!("Task join error: {e}"))?
 }
 
+/// spec 375: one page of history for the Commit Browser. The git process can
+/// take up to 5 s, so it runs on the blocking pool.
+#[tauri::command]
+pub async fn git_log_page(
+    cwd: String,
+    skip: u32,
+    limit: u32,
+) -> Result<crate::git::GitLogPage, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::git::git_log_page(&cwd, skip, limit))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
+}
+
+/// spec 375: the first-parent diff of one commit for the Commit Browser's `d`.
+#[tauri::command]
+pub async fn git_commit_diff(cwd: String, sha: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::git::git_commit_diff(&cwd, &sha))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
+}
+
+/// spec 375: where a lane writes the explainer of commit `sha`. The knowledge
+/// dir is read from config on every call so Reload Config applies.
+#[tauri::command]
+pub async fn knowledge_write_path(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    cwd: String,
+    sha: String,
+) -> Result<String, String> {
+    let raw_dir = {
+        let cfg = lock_read(&config, "Config")?;
+        cfg.knowledge.dir.clone()
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = crate::knowledge::resolve_dir(&raw_dir)?;
+        crate::knowledge::write_path(&dir, &cwd, &sha)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
+}
+
+/// spec 375: every explainer in the knowledge dir, for the Commit Browser's
+/// row lamps. A missing dir is an empty list.
+#[tauri::command]
+pub async fn knowledge_list(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+) -> Result<crate::knowledge::KnowledgeIndex, String> {
+    let raw_dir = {
+        let cfg = lock_read(&config, "Config")?;
+        cfg.knowledge.dir.clone()
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::knowledge::resolve_dir(&raw_dir).map(|dir| crate::knowledge::list(&dir))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
+}
+
 /// spec 270: preview and freeze one review round without a worktree.
 #[tauri::command]
 pub fn review_thread_preview(cwd: String, base: String) -> Result<serde_json::Value, String> {

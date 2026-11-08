@@ -131,7 +131,7 @@ describe('buildCommandManifest', () => {
 
   it('carries the real prompt template on every prompt-backed command', () => {
     const promptBacked = [
-      'handoff', 'resume', 'wiki', 'recall',
+      'handoff', 'resume', 'wiki', 'recall', 'learn',
       'directive', 'draw', 'review', 'polly', 'debby', 'dispatch-github-issue',
       'analyze-github-issue', 'fix-github-issue', 'tag-github-issue',
       'post-github-comment', 'attach-issue-artifact', 'handle-github-issue', 'rails',
@@ -145,6 +145,7 @@ describe('buildCommandManifest', () => {
     expect(byName.get('debby')?.prompt).toContain('<question>');
     expect(byName.get('draw')?.prompt).toContain('<drawing request>');
     expect(byName.get('dispatch-github-issue')?.prompt).toContain('<owner/repo#123>');
+    expect(byName.get('learn')?.prompt).toContain('<sha>');
     // The composed verb's manifest prompt has its tokens resolved (spec 191).
     expect(byName.get('handle-github-issue')?.prompt).not.toContain('{{#');
     expect(byName.get('handle-github-issue')?.prompt).toContain('issue_progress');

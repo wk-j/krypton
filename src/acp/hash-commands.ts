@@ -20,6 +20,7 @@ import {
   dailyBriefPrompt,
   directivePrompt,
   e2eInitPrompt,
+  learnCommitPrompt,
   railsInitPrompt,
   fixGithubIssuePrompt,
   handleGithubIssuePrompt,
@@ -128,6 +129,7 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
       'resume the newest handoff in the project (local and Xenon); `list` opens the handoff picker; `<id>` (or a 4+ char prefix) picks one',
   },
   { name: 'wiki', args: '[<hint>]', description: 'ingest this conversation into the repo wiki' },
+  { name: 'learn', args: '<sha>', description: 'explain a commit as a stored learning note' },
   { name: 'recall', args: '<question>', description: 'answer a question from the repo wiki' },
   {
     name: 'lesson',
@@ -361,6 +363,18 @@ export function commandMeta(): Record<string, CommandMeta> {
       anatomy: 'read conversation → distill durable knowledge → write wiki pages',
       lanes: 'same lane',
       prompt: wikiIngestPrompt('<hint>'),
+    },
+    learn: {
+      category: 'agent',
+      badges: ['workflow'],
+      anatomy: 'read commit → keep transferable hunks → write knowledge note',
+      lanes: 'same lane',
+      prompt: learnCommitPrompt({
+        sha: '<sha>',
+        path: '<knowledge dir>/<repo>-<sha7>.md',
+        language: '<language>',
+        repo: '<repo>',
+      }),
     },
     recall: {
       category: 'agent',

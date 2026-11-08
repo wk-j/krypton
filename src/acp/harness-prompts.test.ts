@@ -11,6 +11,7 @@ import {
   dailyBriefPrompt,
   genUiPrompt,
   genUiRepairPrompt,
+  learnCommitPrompt,
   lessonDistillPrompt,
   postGithubCommentPrompt,
   renderActiveTicketPin,
@@ -18,6 +19,30 @@ import {
   timelineConflictsPrompt,
   timelineTracePrompt,
 } from './harness-prompts';
+
+describe('learnCommitPrompt (spec 0375)', () => {
+  const path = '/Users/me/.config/krypton/knowledge/krypton-abcdef1.md';
+  const p = learnCommitPrompt({ sha: 'abcdef1234', path, language: 'Thai', repo: 'krypton' });
+
+  it('writes to the JSON-quoted path in the configured language', () => {
+    expect(p).toContain(JSON.stringify(path));
+    expect(p).toContain('Write in Thai');
+    expect(p).toContain('source: krypton@abcdef1');
+    expect(p).toContain(JSON.stringify('abcdef1234'));
+  });
+
+  it('names every section of the explainer contract', () => {
+    for (const section of ['Front matter', 'Terms', 'Story', 'General knowledge', 'Verification', 'Source']) {
+      expect(p).toContain(section);
+    }
+  });
+
+  it('confines repros to the scratch dir and forbids repo writes', () => {
+    expect(p).toContain('$TMPDIR/krypton-learn/abcdef1/');
+    expect(p).toContain('Never modify the repository, never commit');
+    expect(p).toContain('Never invent knowledge');
+  });
+});
 
 describe('timelineConflictsPrompt', () => {
   it('hands the whole review to the agent and stays incremental', () => {

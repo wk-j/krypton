@@ -1,6 +1,6 @@
 # Commit Browser — Implementation Spec
 
-> Status: Draft
+> Status: Implemented
 > Date: 2026-11-08
 > Milestone: Git — learning from history
 > Builds on: 0038 (Diff View, `openDiffFromString`) · 0039 (Markdown Viewer) · 0144 (`#wiki` one-shot prompt injection) · 0372 (in-process `lane.send` caller) · ADR 0003 (lanes write the document with their own tools)
@@ -86,10 +86,12 @@ watches the lane work and can approve its repro commands.
 | `src/commit-browser-view.ts` (new) + `.test.ts` | the view |
 | `src/styles/commit-browser.css` (new), `src/styles/index.css` | view sheet (BEM, `--mat-*` tokens) |
 | `src/types.ts` | `'commit_browser'` in `PaneContentType` |
-| `src/compositor.ts` | `openCommitBrowser()`. `buildMarkdownView` gains a `root` option for the library. |
+| `src/compositor.ts` | `openCommitBrowser()`, `openMarkdownAt(root, file?)`. `buildMarkdownView` gains a `root` option for the library. |
 | `src/input-router.ts`, `src/which-key.ts`, `src/command-palette.ts` | `Leader E`, which-key row, palette `git.commit-browser` |
+| `src/config.ts` | `knowledge?: { dir, language }` on the TS `KryptonConfig` |
 | `src/acp/harness-prompts.ts` | `learnCommitPrompt()` |
 | `src/acp/acp-harness-view.ts` | `#learn` command; `lane.learn` control op |
+| `src/acp/hash-commands.ts` | `learn` row and its command metadata (the composer palette's source of truth) |
 | `src/acp/control-types.ts` | `ControlCaller.source` += `'commit_browser'` |
 | `src/acp/components/help-overlay/index.ts` | `#learn <sha>` row |
 | `docs/0004-architecture.md`, `docs/0006-configuration.md`, `docs/0072-acp-harness-view.md`, `docs/README.md` | view, commands, config, command, index |
@@ -120,34 +122,46 @@ interface CommitRow { summary: CommitSummary; candidate: boolean; lamp: RowLamp 
 
 | Command | Signature | Notes |
 |---|---|---|
-| `git_log_page` | `(cwd, skip: u32, limit: u32) -> GitLogPage` | `log --numstat --format=%x1e%H%x1f%P%x1f%an%x1f%ct%x1f%s%x1f%b%x1d --skip --max-count`, via `run_git_capped`. `limit` clamped to 1..=500. |
-| `git_commit_diff` | `(cwd, sha) -> String` | `show --format= -M --no-ext-diff --no-color --diff-merges=first-parent <sha>`. Over the 2 MiB cap → `Err("commit diff too large")`. |
+| `git_log_page` | `(cwd, skip: u32, limit: u32) -> GitLogPage` | `log --numstat --diff-merges=first-parent --format=%x1e%H%x1f%P%x1f%an%x1f%ct%x1f%s%x1f%b%x1d --skip --max-count`, via `run_git_capped`. `limit` clamped to 1..=500; git is asked for `limit + 1` rows so `has_more` needs no second call. A merge's stat is against its first parent. An unborn `HEAD` is an error, so an empty repo never opens. |
+| `git_commit_diff` | `(cwd, sha) -> String` | `show --format= -M --no-ext-diff --no-color --diff-merges=first-parent <sha>`. Over the 2 MiB cap → `Err("commit diff too large")`. `sha` must be 4–40 hex characters, so it can never be read as a git option. |
 | `knowledge_write_path` | `(cwd, sha) -> String` | Verifies `<sha>^{commit}` and returns `<dir>/<repo_name>-<sha7>.md`, creating `dir`. |
 | `knowledge_list` | `() -> KnowledgeIndex` | Scans `dir` for `*-<7 hex>.md`. A missing dir gives an empty list. |
 
-**Control op `lane.learn`** `{lane, sha}` → `{status:'started', path}`. Accepted only from the
+**Control op `lane.learn`** `{lane, sha}` → `{status:'started', lane, path}`. Accepted only from the
 in-process caller `{source:'commit_browser'}`; the `/control/v1` API, Telegram and Live Assist get
-`invalid_request`. A lane that is not idle gets `lane_busy`. The op runs the same code path as
-typing `#learn <sha>`.
+`invalid_request`. The source is checked before the lane is resolved, and it is the only gate:
+Rust forwards any op name on `/control/v1`, so `lane.learn` is never added to
+`ADVERTISED_OPERATIONS`. A lane that is not free gets `lane_busy`, a new control error code. The op
+runs the same code path as typing `#learn <sha>`.
 
 ### Data Flow
 
 ```
 1. Leader E → compositor.openCommitBrowser(): local workspace only, focused cwd must be a repo;
-   an existing browser for the same repo root is focused instead of opened again
-2. view → invoke git_log_page(cwd, 0, 200) ‖ invoke knowledge_list() → rows; lamp 'ready' when a doc
-   matches (repo_name, short_sha); preview = selected row's message + stat (no IPC)
+   an existing browser for the same repo root is focused instead of opened again; the compositor
+   fetches git_log_page(root, 0, 200) first, so a non-repo or an empty repo never opens a view
+2. view → invoke knowledge_list() → lamp 'ready' when a doc matches (repo_name, first 7 of the
+   sha); preview = selected row's message + stat (no IPC)
 3. d / Enter → invoke git_commit_diff → compositor.openDiffFromString(diff, `COMMIT // <sha7>`)
-4. e → candidate lanes = listHarnessEntries() whose cwd is inside repo_root → listLanes() idle
-   0 → notify "Open an ACP Harness in this repo (Leader Y), then press e"
+4. e → candidate lanes = listHarnessEntries() that are local and whose cwd is inside repo_root
+   → listLanes() with status 'idle'
+   no such Harness → notify "Open an ACP Harness in this repo (Leader Y), then press e"
+   Harness open, no idle lane → notify "No idle lane in this repo's Harness — wait for one or #cancel"
    1 → send · >1 → lane picker overlay (j/k, Enter, Esc)
 5. entry.control('lane.learn', {lane, sha}, {source:'commit_browser'})
-   → harness: knowledge_write_path(projectDir, sha)
-   → enqueueSystemPrompt(lane, learnCommitPrompt({sha, path, language}), undefined, `learning <sha7>`)
-6. row lamp → 'pending'. On every `harness:lane-idle` signal the view re-runs knowledge_list:
-   doc present → 'ready' + notification "Explainer ready — o to open";
-   still absent after that lane went idle → 'none' + notice "lane finished without writing <file>"
-7. o → compositor.openMarkdownView(path) · L → Markdown Viewer rooted at the knowledge dir
+   → harness reserves the lane (busy, label `learning <sha7>`) before any await
+   → knowledge_write_path(projectDir, sha); a refusal releases the lane
+   → dispatches learnCommitPrompt({sha, path, language, repo}) WITHOUT awaiting the turn, and
+     returns {status:'started'} at once, so the lamp turns pending before the lane can go idle
+6. row lamp → 'pending'. `harness:lane-idle` carries the cwd but no lane identity, so on every
+   signal for this repo root the view re-runs knowledge_list and checks each pending lane itself:
+   lane still not idle → the lamp stays 'pending', even when the file exists (`E` overwrites one);
+   lane idle, doc present → 'ready' + notification "Explainer ready — o to open";
+   lane idle, doc absent → 'none' + notice "<lane> finished without writing <file>";
+   Harness closed → 'pending' until `r`, which settles it from the index alone
+7. o → Markdown Viewer rooted at the knowledge dir, on this commit's file
+   L → the same viewer with no file selected
+   o on a row without an explainer → notify "No explainer for <sha7> yet — e explain"
 ```
 
 ### The explainer contract (`learnCommitPrompt`)
@@ -158,13 +172,16 @@ The prompt is the schema, the same way `#wiki`'s prompt is. It tells the lane:
    spec or doc only when the message points to it.
 2. Keep the hunks that carry transferable knowledge (a workaround, defensive code, a "why"
    comment, a negative test). Skip wiring, renames, styling and docs.
-3. Write in `[knowledge] language` (code, identifiers and commands stay English) for a reader with
-   **no systems background**. Use exactly these sections:
+3. Write in `[knowledge] language` (code, identifiers and commands stay English) for a reader who
+   uses a computer every day (files, folders, apps, a terminal, git) but has **no systems
+   background**. Use exactly these sections:
    - Front matter: `title` (one general principle, no project names), `source: <repo>@<sha7>`,
      `subject`, `created`, `tags`.
-   - **Terms**: every technical term used anywhere in the document, as `term — plain meaning —
-     everyday analogy`, ordered so each term builds on the previous one. No term may appear before
-     it is defined.
+   - **Terms**: only the 3–7 terms the reader needs to follow this commit's knowledge (the concepts
+     the Story and the cards rest on), as `term — plain meaning — everyday analogy`, ordered so
+     each builds on the previous one. Everyday computing words (file, folder, path, code, function,
+     program, git, commit, sha, diff, build) are never listed; any other unfamiliar word is
+     explained in a few words where it first appears.
    - **Story**: numbered steps of what went wrong or what changed, with one ASCII before/after
      diagram. Project parts are called by their role ("the terminal app"), not their name.
    - **General knowledge**: 2–5 cards, each with Principle · Problem it solves · Where it does not
@@ -188,7 +205,7 @@ The prompt is the schema, the same way `#wiki`'s prompt is. It tells the lane:
 | `d` / `Enter` | Commit Browser | Open the commit's diff in a Diff View tab |
 | `e` | Commit Browser | Explain. On a `ready` row it flashes "already explained — o open · E regenerate". |
 | `E` | Commit Browser | Regenerate (overwrites the doc) |
-| `o` / `L` | Commit Browser | Open this commit's explainer / open the knowledge library |
+| `o` / `L` | Commit Browser | Open this commit's explainer / open the knowledge library (both in a Markdown Viewer rooted at the knowledge dir) |
 | `y` / `r` / `?` / `q` `Esc` | Commit Browser | Copy sha / reload / help / close |
 | `#learn <sha>` | Harness composer | Explain a commit from the lane directly (idle lane, project dir required) |
 
@@ -203,7 +220,9 @@ One plate, split into list and preview (no nested panels):
 key legend) · `__picker` (lane overlay).
 - The selection is the row background. The `pending` / `ready` / candidate states light only the
   row's lamp, never the whole row.
-- `pending` is a steady amber lamp and `ready` is a steady green lamp. No `infinite` animation.
+- `pending` is a steady amber lamp (`--mat-lens-on`), `ready` a steady green lamp
+  (`--krypton-success-rgb`) and a candidate a steady blue lamp (`--krypton-info-rgb`). A row shows
+  one lamp: pending, then ready, then candidate. No `infinite` animation.
 - Paths and subjects keep their case. Chrome labels use the label typography.
 - Rows are rendered once per page with `reconcile()`. Filtering toggles row `hidden`, so rows are
   not rebuilt.

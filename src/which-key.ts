@@ -118,6 +118,8 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
     { key: 'b', label: 'File Manager', icon: 'folder-tree', effect: 'important' },
     { key: 'u', label: 'Vault Viewer', icon: 'vault', effect: 'important' },
     { key: 'e', label: 'Pencil', icon: 'pencil', effect: 'important' },
+    // spec 375. Shift-only: bare `e` is Pencil.
+    { key: 'E', label: 'Commit Browser', icon: 'rotate-ccw-clock', effect: 'important' },
     { key: 'q', label: 'Hurl Client', icon: 'arrow-right-left', effect: 'important' },
     { key: '$', label: 'Credit Usage', icon: 'chart-column', effect: 'important' },
     { key: 'M', label: 'Music Dashboard', icon: 'eighth-notes', effect: 'important' },

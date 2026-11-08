@@ -328,6 +328,13 @@ export interface KryptonConfig {
   native_output: NativeOutputConfig;
   xenon: XenonConfig;
   keyboard_overlay?: KeyboardOverlayConfig;
+  knowledge?: KnowledgeConfig;
+}
+
+/** spec 0375: where `#learn` / the Commit Browser store explainers, and their prose language. */
+export interface KnowledgeConfig {
+  dir: string;
+  language: string;
 }
 
 /** Load configuration from the Rust backend */

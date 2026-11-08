@@ -289,6 +289,7 @@ import {
   tldrawDrawPrompt,
   genUiPrompt,
   genUiRepairPrompt,
+  learnCommitPrompt,
   wikiIngestPrompt,
   wikiRecallPrompt,
 } from './harness-prompts';
@@ -923,6 +924,7 @@ const REMOTE_UNSUPPORTED_HASH_COMMANDS = new Set([
   '#xenon', '#termctrl', '#hurl', '#draw', '#ticket', '#review', '#review-thread', '#directive', '#e2e',
   '#analyze-github-issue', '#create-github-issue', '#dispatch-github-issue',
   '#fix-github-issue', '#handle-github-issue', '#post-github-comment', '#tag-github-issue', '#attach-issue-artifact',
+  '#learn',
 ]);
 
 /** spec 337: composer editing chords a focused Rails dock swallows (Ctrl+U/K/W/H/D/A/E). */
@@ -2430,6 +2432,20 @@ export class AcpHarnessView implements ContentView {
       if (had) this.persistIssueBindings();
       return { ok: had };
     }
+    if (operation === 'lane.learn') {
+      // spec 0375: in-process only — the HTTP/Telegram transports do not filter
+      // op names, so this source gate is the only gate.
+      if (caller?.source !== 'commit_browser') {
+        throw controlError('invalid_request', 'lane.learn is internal to the Commit Browser');
+      }
+      const learnLane = this.controlLane(params);
+      const sha = requiredString(params, 'sha').trim();
+      let path = '';
+      await this.trackCommandRun(learnLane, `#learn ${sha}`, async () => {
+        path = await this.startLearnCommit(learnLane, sha);
+      });
+      return { status: 'started', lane: learnLane.displayName, path };
+    }
     const lane = this.controlLane(params);
     switch (operation) {
       case 'lane.commands':
@@ -2681,6 +2697,58 @@ export class AcpHarnessView implements ContentView {
     if (!text.trimStart().startsWith('@')) return [];
     const parsed = parseMentionFanOut(text, lane.displayName, this.lanes.map((l) => l.displayName));
     return 'kind' in parsed ? [] : parsed.targets;
+  }
+
+  /** spec 0375: shared by `#learn <sha>` and the `lane.learn` op. Returns the
+   *  knowledge doc path; throws controlError on every refusal. */
+  private async startLearnCommit(lane: HarnessLane, sha: string): Promise<string> {
+    if (!/^[0-9a-f]{4,40}$/i.test(sha)) {
+      throw controlError('invalid_request', `invalid commit id: ${sha}`);
+    }
+    if (this.remoteRuntimeId) {
+      throw controlError('invalid_request', '#learn is unavailable in a remote Harness');
+    }
+    const cwd = this.projectDir;
+    if (!cwd) throw controlError('invalid_request', 'no project dir - cannot learn a commit');
+    if (!lane.client || lane.status === 'starting' || lane.status === 'error' || lane.status === 'stopped') {
+      throw controlError('lane_not_ready', `${lane.displayName} is ${lane.status}`);
+    }
+    if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
+      throw controlError('lane_busy', 'lane busy - #cancel first');
+    }
+    // Reserve the lane before the awaits below so peer mail or a user prompt
+    // cannot claim it in between (the #review / resume pattern).
+    const priorStatus: 'idle' | 'awaiting_peer' = lane.status === 'awaiting_peer' ? 'awaiting_peer' : 'idle';
+    this.reserveCommandTurn(lane, `learning ${sha.slice(0, 7).toLowerCase()}`);
+    const epoch = lane.spawnEpoch;
+    const laneUnchanged = (): boolean => this.lanes.includes(lane) && lane.spawnEpoch === epoch;
+    const bail = (code: string, message: string): Error => {
+      if (laneUnchanged()) this.releaseReservedTurn(lane, priorStatus);
+      return controlError(code, message);
+    };
+    let path: string;
+    try {
+      path = await invoke<string>('knowledge_write_path', { cwd, sha });
+    } catch (err) {
+      throw bail('invalid_request', err instanceof Error ? err.message : String(err));
+    }
+    let language = 'Thai';
+    try {
+      language = (await loadConfig()).knowledge?.language || 'Thai';
+    } catch {
+      language = 'Thai';
+    }
+    if (!laneUnchanged() || !lane.client) throw bail('lane_not_ready', `${lane.displayName} restarted`);
+    // Repo name and sha7 come from Rust's file name `<repo>-<sha7>.md` so the
+    // front matter `source` matches the stored file.
+    const fileName = path.split(/[\\/]/).pop() ?? '';
+    const match = /^(.*)-([0-9a-f]{7})\.md$/i.exec(fileName);
+    const repo = match ? match[1] : fileName.replace(/\.md$/i, '');
+    // Not awaited: the prompt resolves only when the turn ends, and the Commit
+    // Browser must see `started` (and light its pending lamp) before the lane's
+    // idle signal can arrive.
+    void this.dispatchTurn(lane, learnCommitPrompt({ sha, path, language, repo }));
+    return path;
   }
 
   /** Inject a programmatic user-turn (no UI composer involved). */
@@ -12283,6 +12351,19 @@ export class AcpHarnessView implements ContentView {
       }
       const hint = text.trim().slice('#wiki'.length).trim();
       await this.enqueueSystemPrompt(lane, wikiIngestPrompt(hint), undefined, 'saving to wiki');
+      return;
+    }
+    if (parts[0] === '#learn') {
+      this.setDraft(lane, '', 0);
+      if (parts.length !== 2) {
+        this.flashChip('#learn <sha>');
+        return;
+      }
+      try {
+        await this.startLearnCommit(lane, parts[1]);
+      } catch (err) {
+        this.flashChip(err instanceof Error ? err.message : String(err));
+      }
       return;
     }
     if (parts[0] === '#recall') {

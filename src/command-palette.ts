@@ -646,6 +646,14 @@ export class CommandScope implements SearchScope {
       execute: () => c.openDiffView({ staged: true }),
     });
     this.register({
+      id: 'git.commit-browser',
+      label: 'Open Commit Browser',
+      category: 'Window',
+      icon: 'rotate-ccw-clock',
+      keybinding: 'Leader E',
+      execute: () => c.openCommitBrowser(),
+    });
+    this.register({
       id: 'terminal.native-output.toggle',
       label: 'Toggle Native / Raw Command Output',
       category: 'Terminal',

@@ -96,6 +96,7 @@ import { WheelRail } from './wheel-rail';
 import { applySplitFlex, mountPaneTree } from './pane-tree-dom';
 import { clampSplitRatio, findResizableSplit, findSplitByElement, nearestSplit, ratioFromPointer } from './pane-split';
 import type { MarkdownContentView } from './markdown-view';
+import type { CommitBrowserView, GitLogPage } from './commit-browser-view';
 import { AnimationEngine, BoundsSnapshot, type StageTransitionLayer } from './animation';
 import { SoundEngine } from './sound';
 import { ShaderEngine } from './shaders';
@@ -3944,23 +3945,99 @@ export class Compositor {
     built.view.onClose(() => this.closeContentViewHost(built.view));
   }
 
+  /** A markdown viewer rooted at `root` (not the focused cwd), e.g. the spec 375
+   *  knowledge library. No git gate: the root is any directory. */
+  async openMarkdownAt(root: string, initialFile?: string): Promise<void> {
+    const built = await this.buildMarkdownView(initialFile, root);
+    if (!built) return;
+    await this.createContentTab(built.title, built.view);
+    built.view.onClose(() => this.closeContentViewHost(built.view));
+  }
+
+  /**
+   * Spec 375: open the Commit Browser for the focused view's repo, or focus the
+   * one already open on that repo root. The first page is fetched here so a
+   * non-repo or an empty repo never opens a view.
+   */
+  async openCommitBrowser(): Promise<void> {
+    if (this.blockLocalViewForRemote('Commit browser')) return;
+    const cwd = await this.getFocusedCwd();
+    const repoRoot = cwd ? await this.resolveRepoRoot(cwd) : null;
+    if (!repoRoot) {
+      this.showNotification('Commit browser: not a git repository');
+      return;
+    }
+
+    for (const [windowId, win] of this.windows) {
+      for (let tabIndex = 0; tabIndex < win.tabs.length; tabIndex++) {
+        if (!this.collectPanes(win.tabs[tabIndex].paneTree).some((pane) => {
+          // `type` names the class; the module is lazy-loaded, so no instanceof.
+          const browser = pane.contentView?.type === 'commit_browser' ? pane.contentView as CommitBrowserView : null;
+          return browser?.repoRoot() === repoRoot;
+        })) continue;
+        await this.focusWindow(windowId);
+        if (win.activeTabIndex !== tabIndex) {
+          win.activeTabIndex = tabIndex;
+          this.showActiveTab(win);
+          this.updateTabBar(win);
+        }
+        this.showNotification('commit browser already open');
+        return;
+      }
+    }
+
+    let page: GitLogPage;
+    try {
+      page = await invoke<GitLogPage>('git_log_page', { cwd: repoRoot, skip: 0, limit: 200 });
+    } catch (e) {
+      this.showNotification(`Commit browser: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+
+    // Lazy chunk, like every content view opened here.
+    const { CommitBrowserView } = await import('./commit-browser-view');
+    const container = document.createElement('div');
+    container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
+    const view = new CommitBrowserView(page, container);
+    view.setNotifier((message) => this.showNotification(message));
+    view.onOpenDiff((diff, title) => this.openDiffFromString(diff, title));
+    view.onOpenKnowledge((dir, file) => this.openMarkdownAt(dir, file ?? undefined));
+    await this.createContentTab(`COMMITS // ${page.repoName}`, view);
+
+    // Settle pending explainers at lane quiet points in this repo (as openDiffView).
+    if (this.bus) {
+      const unsub = this.bus.onSignal({ kind: 'harness:lane-idle' }, (sig) => {
+        void this.resolveRepoRoot(sig.value.cwd).then((root) => {
+          if (root !== null && root === repoRoot) void view.onHarnessLaneIdle();
+        });
+      });
+      view.addDisposeListener(unsub);
+    }
+
+    view.onClose(() => this.closeContentViewHost(view));
+  }
+
   /** A markdown viewer over the focused cwd, for a new tab or a side pane.
    *  The git-repo gate is skipped when the caller targets a specific file (e.g.
-   *  a .md opened from hint mode outside a git repo). Null after notifying
-   *  when the gate refuses. */
+   *  a .md opened from hint mode outside a git repo) or passes `root`, which
+   *  replaces the focused cwd for the file list and the view. Null after
+   *  notifying when the gate refuses. */
   private async buildMarkdownView(
     initialFile?: string,
+    root?: string,
   ): Promise<{ view: MarkdownContentView; title: string } | null> {
-    const cwd = await this.getFocusedCwd() ?? undefined;
-    if (!initialFile && !await this.isGitRepo(cwd ?? null)) {
+    const cwd = root ?? (await this.getFocusedCwd()) ?? undefined;
+    if (!root && !initialFile && !await this.isGitRepo(cwd ?? null)) {
       this.showNotification('Not a git repository — markdown viewer unavailable');
       return null;
     }
 
     const { listMarkdownFiles, MarkdownContentView } = await import('./markdown-view');
-    const files = initialFile && !(await this.isGitRepo(cwd ?? null))
-      ? []
-      : await listMarkdownFiles(cwd ?? '.');
+    const files = root
+      ? await listMarkdownFiles(root)
+      : initialFile && !(await this.isGitRepo(cwd ?? null))
+        ? []
+        : await listMarkdownFiles(cwd ?? '.');
     if (!initialFile && files.length === 0) {
       console.error('No markdown files found');
     }

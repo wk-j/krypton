@@ -316,6 +316,18 @@ output_dir = ".krypton/journal"
 # disk.
 extra_projects = []
 
+# --- Commit explainers (spec 375) ---
+# The Commit Browser (Leader E) and the Harness command `#learn <sha>` ask a lane
+# to explain one commit as a project-independent learning note. The lane writes
+# <dir>/<repo>-<sha7>.md itself; Krypton only resolves the path.
+
+[knowledge]
+# Where explainers go. Absolute or ~/ only (no project-relative path: the notes
+# are personal and global). May point into an Obsidian vault.
+dir = "~/.config/krypton/knowledge"
+# Prose language of an explainer. Code, identifiers and commands stay English.
+language = "Thai"
+
 # Timeline automatic recording is a per-project runtime setting, not TOML.
 # Use #timeline auto [on|off]; see "Timeline Automatic Recording" below.
 # Retired [typesafe] / [typesafe.timeline_topics] keys are ignored.
@@ -1045,6 +1057,9 @@ browser surface and the hurl/termctrl/acp-wire viewers.
 | `[daily_note]` | `retain_days` | integer | `400` | Journal `.jsonl` files older than this are deleted on the first capture of a run. `0` disables pruning; written `.md` days are never pruned |
 | `[daily_note]` | `output_dir` | string | `".krypton/journal"` | Where written days go. Project-relative unless absolute — point it at a vault to write days there directly |
 | `[daily_note]` | `extra_projects` | string[] | `[]` | Absolute paths to other projects also covered by the day. No machine-wide scan |
+
+| `[knowledge]` | `dir` | string | `"~/.config/krypton/knowledge"` | Where commit explainers (`<repo>-<sha7>.md`) are written and listed. Absolute or `~/`. See spec 375 |
+| `[knowledge]` | `language` | string | `"Thai"` | Prose language a lane writes explainers in; code and identifiers stay English |
 
 **Usage rows never contain text.** A row carries counts and identifiers only —
 no prompt, no response, no file paths, no tool arguments. That is the property

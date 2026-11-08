@@ -16,6 +16,7 @@ pub mod hook_server;
 pub mod hurl;
 mod inline_remote;
 pub mod journal;
+pub mod knowledge;
 pub mod lessons;
 pub mod live_assist;
 mod live_voice;
@@ -270,6 +271,10 @@ pub fn run() {
             commands::collect_working_diff,
             commands::native_git_diff,
             commands::native_git_status,
+            commands::git_log_page,
+            commands::git_commit_diff,
+            commands::knowledge_write_path,
+            commands::knowledge_list,
             commands::review_thread_preview,
             commands::review_thread_create,
             commands::review_thread_reissue_guide,

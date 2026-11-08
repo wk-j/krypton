@@ -65,6 +65,37 @@ pub struct ReferenceGitChange {
     pub count_kind: String,
 }
 
+/// One row of the Commit Browser (spec 375).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitSummary {
+    pub sha: String,
+    pub short_sha: String,
+    pub author: String,
+    /// Committer date, unix seconds.
+    pub at: i64,
+    pub subject: String,
+    /// Message body with a trailing trailer block (`Co-Authored-By:` …) removed.
+    pub body: String,
+    pub is_merge: bool,
+    /// Numstat against the first parent; binary files count as touched, 0 lines.
+    pub files: u32,
+    pub added: u32,
+    pub removed: u32,
+}
+
+/// One page of `git log` for the Commit Browser (spec 375).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitLogPage {
+    pub repo_root: String,
+    pub repo_name: String,
+    /// Current branch; `None` when HEAD is detached.
+    pub branch: Option<String>,
+    pub commits: Vec<CommitSummary>,
+    pub has_more: bool,
+}
+
 /// Run a git command in `cwd`, returning stdout on success and `None` on
 /// spawn failure or non-zero exit. Pager/external-diff machinery is the
 /// caller's responsibility (pass `--no-pager` / `--no-ext-diff` in `args`).
@@ -300,8 +331,183 @@ pub fn native_git_status(cwd: &str, cmdline: &str) -> Result<NativeGitStatus, St
     })
 }
 
+/// Most commits one `git_log_page` call returns (spec 375).
+const LOG_PAGE_MAX: u32 = 500;
+
+/// spec 375: whether `id` can only be a commit id — 4..=40 ASCII hex. This is
+/// the gate that keeps a caller-supplied id from reaching git as an option.
+pub fn is_commit_id(id: &str) -> bool {
+    (4..=40).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// spec 375: the display name of a repo — its root directory's name.
+pub fn repo_name(root: &str) -> String {
+    Path::new(root)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "repo".to_string())
+}
+
+/// spec 375: one page of history from HEAD for the Commit Browser, newest
+/// first. `limit` is clamped to 1..=500 and `has_more` says whether a commit
+/// exists past this page. Merge commits are measured against their first
+/// parent. Runs from the repo root under the 5 s / 2 MiB cap.
+pub fn git_log_page(cwd: &str, skip: u32, limit: u32) -> Result<GitLogPage, String> {
+    if cwd.is_empty() {
+        return Err("no working directory".to_string());
+    }
+    let root = repo_root(Path::new(cwd)).ok_or_else(|| "not a git repository".to_string())?;
+    let root_path = Path::new(&root);
+    if run_git(root_path, &["rev-parse", "--verify", "--quiet", "HEAD"]).is_none() {
+        return Err("repository has no commits".to_string());
+    }
+    let limit = limit.clamp(1, LOG_PAGE_MAX) as usize;
+    let args = vec![
+        "log".to_string(),
+        "--numstat".to_string(),
+        // Measure the root commit even under `log.showRoot = false`.
+        "--root".to_string(),
+        "--diff-merges=first-parent".to_string(),
+        "--no-show-signature".to_string(),
+        "--format=%x1e%H%x1f%P%x1f%an%x1f%ct%x1f%s%x1f%b%x1d".to_string(),
+        format!("--skip={skip}"),
+        // One past the page: its presence is `has_more`.
+        format!("--max-count={}", limit + 1),
+    ];
+    let stdout = match run_git_capped(&root, &args)? {
+        (Some(0), stdout) => stdout,
+        (Some(code), _) => return Err(format!("git log exited with status {code}")),
+        (None, _) => return Err("git log was terminated by a signal".to_string()),
+    };
+    let mut commits = parse_log_page(&stdout);
+    let has_more = commits.len() > limit;
+    commits.truncate(limit);
+    let branch = run_git(root_path, &["symbolic-ref", "--short", "-q", "HEAD"])
+        .map(|branch| branch.trim().to_string())
+        .filter(|branch| !branch.is_empty());
+    let name = repo_name(&root);
+    Ok(GitLogPage {
+        repo_root: root,
+        repo_name: name,
+        branch,
+        commits,
+        has_more,
+    })
+}
+
+/// Parse `git log --numstat` written with `git_log_page`'s format: each record
+/// is `\x1e`, the header fields split by `\x1f` and closed by `\x1d` (the body
+/// spans lines), then that commit's numstat lines.
+fn parse_log_page(stdout: &str) -> Vec<CommitSummary> {
+    let mut commits = Vec::new();
+    for record in stdout.split('\u{1e}').skip(1) {
+        let Some((header, numstat)) = record.split_once('\u{1d}') else {
+            continue;
+        };
+        let fields: Vec<&str> = header.splitn(6, '\u{1f}').collect();
+        let [sha, parents, author, at, subject, body] = fields.as_slice() else {
+            continue;
+        };
+        let mut commit = CommitSummary {
+            sha: sha.to_string(),
+            short_sha: sha.chars().take(7).collect(),
+            author: author.to_string(),
+            at: at.trim().parse().unwrap_or(0),
+            subject: subject.to_string(),
+            body: strip_trailer_block(body),
+            is_merge: parents.split_whitespace().count() > 1,
+            files: 0,
+            added: 0,
+            removed: 0,
+        };
+        for line in numstat.lines() {
+            let mut cols = line.splitn(3, '\t');
+            let (Some(add), Some(del), Some(_path)) = (cols.next(), cols.next(), cols.next())
+            else {
+                continue;
+            };
+            commit.files = commit.files.saturating_add(1);
+            // "-" is git's marker for a binary file: touched, but no lines.
+            commit.added = commit.added.saturating_add(add.parse().unwrap_or(0));
+            commit.removed = commit.removed.saturating_add(del.parse().unwrap_or(0));
+        }
+        commits.push(commit);
+    }
+    commits
+}
+
+/// Trim a commit body and drop its final paragraph when every line of it is a
+/// git trailer (`Co-Authored-By: …`, `Signed-off-by: …`). Everything else,
+/// including trailer-shaped lines inside the prose, is kept verbatim.
+fn strip_trailer_block(body: &str) -> String {
+    let body = body.trim();
+    let mut last_paragraph = 0;
+    let mut offset = 0;
+    for line in body.split_inclusive('\n') {
+        offset += line.len();
+        if line.trim().is_empty() {
+            last_paragraph = offset;
+        }
+    }
+    if body[last_paragraph..].lines().all(is_trailer_line) {
+        body[..last_paragraph].trim_end().to_string()
+    } else {
+        body.to_string()
+    }
+}
+
+/// `Token: value` where the token is `[A-Za-z][A-Za-z0-9-]*`.
+fn is_trailer_line(line: &str) -> bool {
+    let Some((token, value)) = line.split_once(':') else {
+        return false;
+    };
+    let mut chars = token.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '-')
+        && value.starts_with(' ')
+        && !value.trim().is_empty()
+}
+
+/// spec 375: the diff of commit `sha` against its first parent, for the
+/// Commit Browser's `d`. `sha` must be 4..=40 hex so it can never be read as
+/// an option. Output over the 2 MiB cap is `Err("commit diff too large")`.
+pub fn git_commit_diff(cwd: &str, sha: &str) -> Result<String, String> {
+    if !is_commit_id(sha) {
+        return Err("invalid commit id".to_string());
+    }
+    if cwd.is_empty() {
+        return Err("no working directory".to_string());
+    }
+    let mut args = owned_args(&[
+        "show",
+        "--format=",
+        "-M",
+        "--no-ext-diff",
+        "--no-color",
+        "--no-textconv",
+        "--no-show-signature",
+        "--diff-merges=first-parent",
+    ]);
+    args.push(sha.to_string());
+    args.push("--".to_string());
+    match run_git_capped_raw(cwd, &args) {
+        Ok((Some(0), stdout)) => Ok(stdout),
+        Ok((Some(code), _)) => Err(format!("git show exited with status {code}")),
+        Ok((None, _)) => Err("git show was terminated by a signal".to_string()),
+        Err(CappedRunError::TooLarge) => Err("commit diff too large".to_string()),
+        Err(CappedRunError::Failed(message)) => Err(message),
+    }
+}
+
 fn owned_args(args: &[&str]) -> Vec<String> {
     args.iter().map(|arg| arg.to_string()).collect()
+}
+
+/// Why a `run_git_capped_raw` call failed. Over-cap output is its own case so
+/// a caller can word it for its surface (spec 375 `commit diff too large`).
+enum CappedRunError {
+    TooLarge,
+    Failed(String),
 }
 
 /// Run `git --no-pager <args>` in `cwd` for a native re-run (specs
@@ -309,6 +515,17 @@ fn owned_args(args: &[&str]) -> Vec<String> {
 /// stdout over 2 MiB is an `Err`. `args[0]` is the subcommand. Returns the
 /// exit code (`None` when terminated by a signal) and stdout.
 fn run_git_capped(cwd: &str, args: &[String]) -> Result<(Option<i32>, String), String> {
+    run_git_capped_raw(cwd, args).map_err(|e| match e {
+        CappedRunError::TooLarge => format!(
+            "git {} output exceeded 2 MiB",
+            args.first().map_or("", String::as_str)
+        ),
+        CappedRunError::Failed(message) => message,
+    })
+}
+
+/// `run_git_capped` with the over-cap case kept distinguishable.
+fn run_git_capped_raw(cwd: &str, args: &[String]) -> Result<(Option<i32>, String), CappedRunError> {
     let what = format!("git {}", args.first().map_or("", String::as_str));
     let mut child = Command::new("git")
         .arg("--no-pager")
@@ -319,12 +536,12 @@ fn run_git_capped(cwd: &str, args: &[String]) -> Result<(Option<i32>, String), S
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| format!("failed to run git: {e}"))?;
+        .map_err(|e| CappedRunError::Failed(format!("failed to run git: {e}")))?;
     let deadline = Instant::now() + NATIVE_GIT_TIMEOUT;
 
     let Some(stdout) = child.stdout.take() else {
         kill_child(&mut child);
-        return Err("git stdout unavailable".to_string());
+        return Err(CappedRunError::Failed("git stdout unavailable".to_string()));
     };
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -342,17 +559,19 @@ fn run_git_capped(cwd: &str, args: &[String]) -> Result<(Option<i32>, String), S
         Ok(Ok(bytes)) => bytes,
         Ok(Err(e)) => {
             kill_child(&mut child);
-            return Err(format!("failed to read git output: {e}"));
+            return Err(CappedRunError::Failed(format!(
+                "failed to read git output: {e}"
+            )));
         }
         Err(_) => {
             kill_child(&mut child);
             log::warn!("native {what}: `{}` timed out in {cwd}", args.join(" "));
-            return Err(format!("{what} timed out"));
+            return Err(CappedRunError::Failed(format!("{what} timed out")));
         }
     };
     if bytes.len() > NATIVE_GIT_MAX_BYTES {
         kill_child(&mut child);
-        return Err(format!("{what} output exceeded 2 MiB"));
+        return Err(CappedRunError::TooLarge);
     }
 
     let status = loop {
@@ -361,12 +580,14 @@ fn run_git_capped(cwd: &str, args: &[String]) -> Result<(Option<i32>, String), S
             Ok(None) if Instant::now() >= deadline => {
                 kill_child(&mut child);
                 log::warn!("native {what}: `{}` timed out in {cwd}", args.join(" "));
-                return Err(format!("{what} timed out"));
+                return Err(CappedRunError::Failed(format!("{what} timed out")));
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(10)),
             Err(e) => {
                 kill_child(&mut child);
-                return Err(format!("failed to wait for git: {e}"));
+                return Err(CappedRunError::Failed(format!(
+                    "failed to wait for git: {e}"
+                )));
             }
         }
     };
@@ -1360,6 +1581,189 @@ mod tests {
         assert_eq!(snapshot.changes[0].status, "?");
         assert_eq!(snapshot.changes[0].count_kind, "unavailable");
         assert_eq!(snapshot.changes[0].added, None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn commit_file(dir: &Path, name: &str, content: &[u8], message: &str) {
+        std::fs::write(dir.join(name), content).expect("write file");
+        git_ok(dir, &["add", name]);
+        git_ok(dir, &["commit", "-qm", message]);
+    }
+
+    fn subjects(page: &GitLogPage) -> Vec<&str> {
+        page.commits.iter().map(|c| c.subject.as_str()).collect()
+    }
+
+    #[test]
+    fn log_page_keeps_prose_drops_trailers_and_sums_numstat() {
+        let dir = test_repo("log-body");
+        std::fs::write(dir.join("a.txt"), "one\ntwo\n").expect("seed text");
+        std::fs::write(dir.join("blob.bin"), [0u8, 1, 2, 0, 255]).expect("seed binary");
+        git_ok(&dir, &["add", "."]);
+        git_ok(
+            &dir,
+            &[
+                "commit",
+                "-q",
+                "-m",
+                "Add capsule",
+                "-m",
+                "Intro line.\ncapsule: the LED blinks on idle\nLast line.",
+                "-m",
+                "Co-Authored-By: Bot <bot@example.com>\nSigned-off-by: t <t@t>",
+            ],
+        );
+        let page = git_log_page(dir.to_str().expect("utf8"), 0, 10).expect("log page");
+        assert_eq!(page.commits.len(), 1);
+        assert!(!page.has_more);
+        assert!(page.branch.is_some());
+        assert_eq!(page.repo_name, repo_name(&page.repo_root));
+        let commit = &page.commits[0];
+        let head = run_git(&dir, &["rev-parse", "HEAD"]).expect("rev-parse");
+        assert_eq!(commit.sha, head.trim());
+        assert_eq!(commit.short_sha, &commit.sha[..7]);
+        assert_eq!(commit.author, "t");
+        assert!(commit.at > 0);
+        assert_eq!(commit.subject, "Add capsule");
+        assert_eq!(
+            commit.body,
+            "Intro line.\ncapsule: the LED blinks on idle\nLast line."
+        );
+        assert!(!commit.is_merge);
+        // The binary file counts as touched with 0 lines.
+        assert_eq!((commit.files, commit.added, commit.removed), (2, 2, 0));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn trailer_block_only_drops_a_final_all_trailer_paragraph() {
+        assert_eq!(strip_trailer_block("Co-Authored-By: a <a@b>\n"), "");
+        assert_eq!(
+            strip_trailer_block("capsule: the LED\n\nmore prose\n"),
+            "capsule: the LED\n\nmore prose"
+        );
+        assert_eq!(
+            strip_trailer_block("prose\n\nSigned-off-by: t <t@t>\nnot a trailer"),
+            "prose\n\nSigned-off-by: t <t@t>\nnot a trailer"
+        );
+        assert_eq!(
+            strip_trailer_block("prose\n\nsee https://example.com"),
+            "prose\n\nsee https://example.com"
+        );
+        assert_eq!(strip_trailer_block("  \n"), "");
+    }
+
+    #[test]
+    fn log_page_reports_has_more_at_the_boundary_and_honours_skip() {
+        let dir = test_repo("log-pages");
+        commit_file(&dir, "one.txt", b"1\n", "c1");
+        git_ok(&dir, &["commit", "-q", "--allow-empty", "-m", "c2"]);
+        commit_file(&dir, "three.txt", b"3\n", "c3");
+        let cwd = dir.to_str().expect("utf8");
+
+        let all = git_log_page(cwd, 0, 3).expect("full page");
+        assert_eq!(subjects(&all), ["c3", "c2", "c1"]);
+        assert!(!all.has_more);
+        assert_eq!(all.commits[1].files, 0);
+
+        let first = git_log_page(cwd, 0, 2).expect("first page");
+        assert_eq!(subjects(&first), ["c3", "c2"]);
+        assert!(first.has_more);
+
+        let rest = git_log_page(cwd, 2, 2).expect("second page");
+        assert_eq!(subjects(&rest), ["c1"]);
+        assert!(!rest.has_more);
+        assert_eq!(rest.commits[0].files, 1);
+
+        let clamped = git_log_page(cwd, 0, 0).expect("clamped page");
+        assert_eq!(subjects(&clamped), ["c3"]);
+        assert!(clamped.has_more);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn log_page_measures_a_merge_against_its_first_parent() {
+        let dir = test_repo("log-merge");
+        commit_file(&dir, "base.txt", b"base\n", "base");
+        git_ok(&dir, &["checkout", "-qb", "feature"]);
+        commit_file(&dir, "f.txt", b"1\n2\n3\n", "feature work");
+        git_ok(&dir, &["checkout", "-q", "-"]);
+        commit_file(&dir, "m.txt", b"main\n", "main work");
+        git_ok(
+            &dir,
+            &[
+                "merge",
+                "-q",
+                "--no-ff",
+                "--no-edit",
+                "-m",
+                "merge feature",
+                "feature",
+            ],
+        );
+        let cwd = dir.to_str().expect("utf8");
+
+        let page = git_log_page(cwd, 0, 10).expect("log page");
+        let merge = &page.commits[0];
+        assert_eq!(merge.subject, "merge feature");
+        assert!(merge.is_merge);
+        assert_eq!((merge.files, merge.added, merge.removed), (1, 3, 0));
+        assert!(page.commits[1..].iter().all(|c| !c.is_merge));
+
+        git_ok(&dir, &["checkout", "-q", "--detach"]);
+        assert_eq!(git_log_page(cwd, 0, 1).expect("detached").branch, None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn log_page_rejects_unborn_and_non_repositories() {
+        let dir = test_repo("log-unborn");
+        assert_eq!(
+            git_log_page(dir.to_str().expect("utf8"), 0, 10),
+            Err("repository has no commits".to_string())
+        );
+        std::fs::remove_dir_all(&dir).ok();
+
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let plain =
+            std::env::temp_dir().join(format!("krypton-log-plain-{}-{suffix}", std::process::id()));
+        std::fs::create_dir_all(&plain).expect("create plain dir");
+        assert_eq!(
+            git_log_page(plain.to_str().expect("utf8"), 0, 10),
+            Err("not a git repository".to_string())
+        );
+        std::fs::remove_dir_all(&plain).ok();
+
+        assert_eq!(
+            git_log_page("", 0, 10),
+            Err("no working directory".to_string())
+        );
+    }
+
+    #[test]
+    fn commit_diff_rejects_non_hex_ids_and_shows_the_commit() {
+        let dir = test_repo("commit-diff");
+        commit_file(&dir, "hello.txt", b"hello\n", "hello");
+        commit_file(&dir, "other.txt", b"other\n", "other");
+        let cwd = dir.to_str().expect("utf8");
+
+        let too_long = "a".repeat(41);
+        for bad in ["--output=x", "zzzz", "abc", "HEAD", too_long.as_str()] {
+            assert_eq!(
+                git_commit_diff(cwd, bad),
+                Err("invalid commit id".to_string()),
+                "{bad}"
+            );
+        }
+
+        let first = run_git(&dir, &["rev-parse", "HEAD~1"]).expect("rev-parse");
+        let diff = git_commit_diff(cwd, first.trim()).expect("commit diff");
+        assert!(diff.contains("b/hello.txt"), "{diff}");
+        assert!(diff.contains("+hello"), "{diff}");
+        assert!(!diff.contains("other.txt"), "{diff}");
         std::fs::remove_dir_all(&dir).ok();
     }
 }
