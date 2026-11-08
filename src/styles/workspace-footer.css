@@ -107,28 +107,34 @@
   color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.88));
 }
 
-/* Mode lamp: an unlit capsule with a lit amber LED and a backlit legend. */
+/* Mode lamp: an amber lamp window (DESIGN.md "Lamps") — the amber lens, then
+   the lit legend, behind amber glass. Normal mode drops the window. */
 .krypton-workspace-footer__segment--mode {
   flex: 0 0 auto;
   height: 18px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 999px;
+  padding: 0 8px 0 6px;
+  border: 1px solid rgba(255, 176, 0, 0.45);
+  border-radius: var(--krypton-border-radius, 8px);
   color: var(--mat-lit);
-  background: var(--mat-well-fill);
-  box-shadow: var(--mat-well-shadow);
-  letter-spacing: 0.09em;
+  background: linear-gradient(180deg, rgba(255, 176, 0, 0.2), rgba(255, 176, 0, 0.06));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.35),
+    0 0 6px rgba(255, 176, 0, 0.16),
+    0 0 14px rgba(255, 176, 0, 0.06);
+  font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .krypton-workspace-footer__segment--mode::before {
   content: '';
   flex: none;
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--mat-lens-on);
   box-shadow: var(--mat-lens-glow);

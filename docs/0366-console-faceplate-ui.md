@@ -133,7 +133,7 @@ same element. The light set is the dock's aluminium set with the plate stops at 
 | Engraving | `--mat-silk` or ink + `--mat-engrave` text-shadow, uppercase chrome size | Titles, section and column headings, key legends on the plate |
 | Well | `--mat-well` / `--mat-well-fill` + `--mat-well-shadow` | Terminal and lane screens, inputs, lists, readouts, code blocks in chrome |
 | Key | `--mat-key` + `--mat-key-raise`; `:active` / latched `--mat-key-down` + `--mat-key-sunk` | Buttons, view toggles, which-key and hint caps, tabs (selector keys) |
-| Lamp | Lit capsule or LED (`--mat-lens-*`), colour from state tokens | Status dots, verdicts, mode / attention chips, live indicators |
+| Lamp | LED (`--mat-lens-*`), or a lamp window (the LED before its legend, behind glass when lit; DESIGN.md 2.3.0), colour from state tokens | Status dots, status words, verdicts, mode / attention chips, live indicators |
 
 - **Terminal window.** The titlebar, tab bar and footer are plate strips. The body is the screen
   well: `--mat-screen` fill plus the well's inset shadow, drawn inside the existing box, so titlebar

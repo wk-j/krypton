@@ -88,7 +88,8 @@
   }
 
   /* The status word is engraved beside the LED. A state that needs the human
-     (permission, peer wait, a fault) lights it as a capsule. */
+     (permission, peer wait, a fault) lights it as a lamp window (DESIGN.md
+     "Lamps"): its LED, then the word, behind glass in the state colour. */
   .acp-harness__lane-status {
     grid-column: 3;
     justify-self: start;
@@ -107,14 +108,36 @@
   .acp-harness__lane--error .acp-harness__lane-status,
   .acp-harness__lane--stopped .acp-harness__lane-status {
     --lane-status-rgb: var(--krypton-warning-rgb, 232, 197, 71);
-    padding: 0 7px;
-    border: 1px solid rgba(var(--lane-status-rgb), 0.5);
-    border-radius: 999px;
-    background: radial-gradient(ellipse at 50% 0%, rgba(var(--lane-status-rgb), 0.3), rgba(var(--lane-status-rgb), 0.07) 75%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--lane-status-rgb), 0.22);
-    color: color-mix(in srgb, rgb(var(--lane-status-rgb)) 60%, var(--krypton-fg, #d8e8d8));
-    letter-spacing: 0.09em;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px 2px 6px;
+    border: 1px solid rgba(var(--lane-status-rgb), 0.45);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: linear-gradient(180deg, rgba(var(--lane-status-rgb), 0.2), rgba(var(--lane-status-rgb), 0.06));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 -1px 2px rgba(0, 0, 0, 0.35),
+      0 0 6px rgba(var(--lane-status-rgb), 0.16),
+      0 0 14px rgba(var(--lane-status-rgb), 0.06);
+    color: rgb(var(--lane-status-rgb));
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
     text-shadow: none;
+  }
+
+  .acp-harness__lane--needs_permission .acp-harness__lane-status::before,
+  .acp-harness__lane--awaiting_peer .acp-harness__lane-status::before,
+  .acp-harness__lane--error .acp-harness__lane-status::before,
+  .acp-harness__lane--stopped .acp-harness__lane-status::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--lane-status-rgb)) 45%, rgba(var(--lane-status-rgb), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--lane-status-rgb), 0.9), 0 0 10px rgba(var(--lane-status-rgb), 0.4);
   }
 
   .acp-harness__lane--awaiting_peer .acp-harness__lane-status {

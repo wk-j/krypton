@@ -1,6 +1,6 @@
 ---
 name: Krypton Console
-version: 2.2.0
+version: 2.3.0
 description: Skeuomorphic instrument faceplate — brushed graphite (aluminium in the light scheme) with engraved labels, recessed display wells, raised keys and lit lamps, over a transparent desktop
 appliesTo: "Every surface in the Tauri webview and the live-assist webview. Materials: src/styles/materials.css (--mat-*)."
 colors:
@@ -39,7 +39,7 @@ typography:
 rounded:
   part: "8px"        # windows, panels, wells, keys, lamp windows, readouts (--krypton-border-radius)
   tab: "6px"         # selector keys inside an 8px channel
-  capsule: "999px"   # status lamps, tags, chips; LEDs stay 50% circles
+  capsule: "999px"   # tags, counters, chips (never a status word); LEDs stay 50% circles
   flush: "0px"       # interior panes that meet an edge: the dock column, the harness composer
 spacing:
   hairline: "1px"
@@ -153,18 +153,33 @@ comment.
 - **Selector keys.** Tabs: a recessed channel (a well with 3px padding) of 6px keys, each with a 6px
   LED before its legend. The shown tab is latched down with its LED lit; a count is a small readout
   window on the key.
-- **Lamps.** An LED is a 6px circle (8px in titlebars):
+- **Lamps.** An LED is a 6px circle (8px for the window's own LED in the titlebar):
   - unlit: `background: var(--mat-lens-off); box-shadow: inset 0 1px 1px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.08)`;
   - lit amber: `background: var(--mat-lens-on); box-shadow: var(--mat-lens-glow)`;
   - lit colour `--x-rgb`: `background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%,
     rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), .55) 100%); box-shadow: 0 0 4px rgba(var(--x-rgb), .9),
     0 0 10px rgba(var(--x-rgb), .4)`.
 
-  A status capsule is lit glass: `border: 1px solid rgba(var(--x-rgb), .5); border-radius: 999px;
-  background: radial-gradient(ellipse at 50% 0%, rgba(var(--x-rgb), .3), rgba(var(--x-rgb), .07) 75%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 0 6px rgba(var(--x-rgb), .22)`, legend in the
-  state ink. An unlit capsule is a `--mat-well-fill` capsule in ink. A status lamp that belongs to a
-  chip or capsule sits inside it, before the legend, never beside it.
+  A status word — a lane's `NEEDS PERMISSION` or `ERROR`, a check's `PASS`, a ticket's status, a
+  save or run state, a controller's health, the titlebar program status `CLAUDE-CODE · DONE` — is a
+  lamp window, never a capsule. Lit: the LED and its legend behind lit glass — an `inline-flex` row,
+  the 7px lit LED 6px before an 11px/700 legend at `0.04em` (uppercase for a state word) in the
+  state ink, `padding: 2px 8px 2px 6px; border: 1px solid rgba(var(--x-rgb), .45);
+  border-radius: 8px; background: linear-gradient(180deg, rgba(var(--x-rgb), .2),
+  rgba(var(--x-rgb), .06)); box-shadow: inset 0 1px 0 rgba(255,255,255,.08),
+  inset 0 -1px 2px rgba(0,0,0,.35), 0 0 6px rgba(var(--x-rgb), .16), 0 0 14px rgba(var(--x-rgb), .06)`.
+  An amber lamp window takes the amber lens and the `--mat-lit` legend (the footer's mode, a held
+  orchestrator seat, work in progress). Unlit: the dark LED and the legend in ink, with no glass,
+  border or padding. A healthy link that only needs to stay visible (the titlebar SSH badge) keeps a
+  well-fill window at 8px with its LED lit; glass is for a state that asks to be seen. A status lamp
+  sits inside its window, before the legend, never beside it, and replaces a status glyph rather
+  than standing next to one.
+
+  A capsule is for a tag, a counter or a chip that is not a status word. Lit, it is glass:
+  `border: 1px solid rgba(var(--x-rgb), .5); border-radius: 999px; background: radial-gradient(ellipse
+  at 50% 0%, rgba(var(--x-rgb), .3), rgba(var(--x-rgb), .07) 75%); box-shadow: inset 0 1px 0
+  rgba(255,255,255,.14), 0 0 6px rgba(var(--x-rgb), .22)`, legend in the state ink. Unlit, it is a
+  `--mat-well-fill` capsule in ink.
 - **Chips.** Verdicts and kinds outside the transcript are embossed labels on a key face, tinted by
   their colour, with the status LED first on the key face, 5px before the legend. Every label in the
   transcript (tool kind, permission and question decision, execution state, provider-error meta,
@@ -244,7 +259,8 @@ spacing. Every digit that changes — timers, counts, gauges, sizes, percentages
 ## Geometry
 
 8px on every rectangular part: windows, panels, wells, keys, readouts, toasts. 6px only for selector
-keys inside an 8px channel. Capsules are `999px`; LEDs and status discs are circles. 0px only on an
+keys inside an 8px channel. Capsules are `999px` (tags, counters, chips); a status word is an 8px lamp
+window. LEDs and status discs are circles. 0px only on an
 interior pane flush with an edge (the dock column, the harness composer). Titlebar and tab heights
 come from the theme (36px built in, so the selector keys are 26px and the titlebar keys 24px). Below
 `320 × 120` a window collapses to its titlebar plate; below 200px wide it closes.
@@ -391,6 +407,15 @@ selector, and nothing in it bleeds out of that selector.
 
 ## Changelog
 
+- **2.3.0** — A status word is a lamp window like a Rails check's `PASS`, never a capsule: its LED
+  inside before the legend, 8px corners, linear glass with an inner shade, an 11px/700 legend at
+  `0.04em`; unlit, a dark LED and the legend in ink with no glass. Moved from capsules: the titlebar
+  program status (`CLAUDE-CODE · DONE`) and the SSH badge (8px; glass only when it faults), the
+  lane head's status (`NEEDS PERMISSION`, `AWAITING PEER`, `ERROR`, `STOPPED`), the peek, thought and
+  grammar card status, the Assistants inventory's state chips (their status glyphs give way to the
+  LED), the ticket status, the footer's mode, the orchestrator seat, the Telegram controller health,
+  the Pencil save state, the Hurl run lamp, the inline AI `AI FIX` lamp and the Agent view's armed
+  auto-approval. Capsules stay for tags, counters and chips.
 - **2.2.0** — A system row raised by a harness subsystem is a notice (spec 371): the source is the
   row label (`triage`, `xenon`, `review`, `usage`, `event`), the action a flat-ink legend with an
   amber or fault LED before it when the human should look, then the subject. The bracket tag no

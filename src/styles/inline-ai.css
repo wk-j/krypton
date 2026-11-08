@@ -316,25 +316,50 @@
   --followup-rgb: var(--krypton-danger-rgb, 255, 58, 92);
 }
 
-/* The "AI FIX" tag is the lamp: a lit capsule in the state colour. */
+/* The "AI FIX" tag is the lamp: a lamp window in the state colour (DESIGN.md
+   "Lamps") — its LED, then the legend, behind glass. */
 .krypton-inline-followup__tag {
   flex-shrink: 0;
-  padding: 0 7px;
-  border: 1px solid rgba(var(--followup-rgb), 0.5);
-  border-radius: 999px;
-  background: radial-gradient(ellipse at 50% 0%, rgba(var(--followup-rgb), 0.3), rgba(var(--followup-rgb), 0.07) 75%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--followup-rgb), 0.22);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 2px 6px;
+  border: 1px solid rgba(var(--followup-rgb), 0.45);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: linear-gradient(180deg, rgba(var(--followup-rgb), 0.2), rgba(var(--followup-rgb), 0.06));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.35),
+    0 0 6px rgba(var(--followup-rgb), 0.16),
+    0 0 14px rgba(var(--followup-rgb), 0.06);
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
   color: rgb(var(--followup-rgb));
 }
 
-/* Nothing to offer: an unlit capsule. */
+.krypton-inline-followup__tag::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--followup-rgb)) 45%, rgba(var(--followup-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--followup-rgb), 0.9), 0 0 10px rgba(var(--followup-rgb), 0.4);
+}
+
+/* Nothing to offer: an unlit lamp — a dark LED and the legend in ink. */
 .krypton-inline-followup--none .krypton-inline-followup__tag {
-  border-color: var(--mat-groove-lo);
-  background: var(--mat-well-fill);
+  padding: 0;
+  border: 0;
+  background: none;
   box-shadow: none;
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+}
+
+.krypton-inline-followup--none .krypton-inline-followup__tag::before {
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .krypton-inline-followup__text {

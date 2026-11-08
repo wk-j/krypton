@@ -57,21 +57,18 @@ const ROLE_LABELS: Record<AssistantInstance['owner']['role'], string> = {
 };
 
 /** State colour: ink for settled values, amber for work in progress, warning
- *  for a human wait or unconfirmed liveness, fault for an error. */
+ *  for a human wait or unconfirmed liveness, fault for an error. Each state
+ *  chip is a lamp (DESIGN.md "Lamps"): its LED says the tone, its word the state. */
 type Tone = 'neutral' | 'muted' | 'pending' | 'live' | 'warn' | 'fault';
 
 const LIFECYCLE_TONE: Record<AssistantInstance['lifecycle'], Tone> = {
   initializing: 'pending', ready: 'neutral', terminating: 'pending', disconnected: 'muted',
 };
-const ACTIVITY: Record<AssistantInstance['activity'], { readonly tone: Tone; readonly icon: string }> = {
-  idle: { tone: 'neutral', icon: 'status-idle' },
-  running: { tone: 'live', icon: 'status-busy' },
-  waiting: { tone: 'warn', icon: 'status-perm' },
+const ACTIVITY_TONE: Record<AssistantInstance['activity'], Tone> = {
+  idle: 'neutral', running: 'live', waiting: 'warn',
 };
-const LIVENESS: Record<AssistantInstance['liveness'], { readonly tone: Tone; readonly icon: string | null }> = {
-  alive: { tone: 'neutral', icon: null },
-  exited: { tone: 'muted', icon: null },
-  unknown: { tone: 'warn', icon: 'unknown' },
+const LIVENESS_TONE: Record<AssistantInstance['liveness'], Tone> = {
+  alive: 'neutral', exited: 'muted', unknown: 'warn',
 };
 
 /** `tone` tints a non-zero count: work in progress, or liveness nobody
@@ -231,9 +228,9 @@ class IconSlot {
 }
 
 /** Two lines beside the logo, a third only for an unsettled state:
- *    name · role                    ( ○ idle )   0.3%   318M
+ *    name · role                     ○ IDLE   0.3%   318M
  *    project · host · model                          ◷ 38s
- *    ( initializing )( ? unknown )( ✕ error )
+ *    [● INITIALIZING] [● UNKNOWN] [● ERROR]
  *  Left text clips; the right cluster stays whole and its cells keep fixed
  *  widths, so figures and ages line up from row to row. */
 class InstanceRow extends Component<InstanceRowProps> {
@@ -287,8 +284,8 @@ class InstanceRow extends Component<InstanceRowProps> {
     this.nameEl.title = next.name;
     setText(this.roleEl, next.role);
     this.roleEl.hidden = next.role === '';
-    const activity = ACTIVITY[next.activity];
-    this.activityChip.update({ block: `${B}__chip`, text: '', icon: { id: activity.icon }, trailing: next.activity, modifiers: chipClass(activity.tone), title: `activity ${next.activity}` });
+    const activityTone = ACTIVITY_TONE[next.activity];
+    this.activityChip.update({ block: `${B}__chip`, text: next.activity, modifiers: chipClass(activityTone), title: `activity ${next.activity}` });
     // A stale sample dims its figures instead of adding a tag: the head
     // already says the inventory is stale, and the row keeps its width.
     this.liveEl.dataset.stale = String(next.stale);
@@ -307,14 +304,11 @@ class InstanceRow extends Component<InstanceRowProps> {
     setText(this.ageEl, next.age);
     // Lifecycle and liveness show only once they leave their settled value;
     // the details always carry all three.
-    const liveness = LIVENESS[next.liveness];
     this.lifecycleChip.update({ block: `${B}__chip`, text: next.lifecycle, modifiers: chipClass(LIFECYCLE_TONE[next.lifecycle]), title: `lifecycle ${next.lifecycle}` });
     this.lifecycleChip.el.hidden = next.lifecycle === 'ready';
-    this.livenessChip.update(liveness.icon
-      ? { block: `${B}__chip`, text: '', icon: { id: liveness.icon }, trailing: next.liveness, modifiers: chipClass(liveness.tone), title: `liveness ${next.liveness}` }
-      : { block: `${B}__chip`, text: next.liveness, modifiers: chipClass(liveness.tone), title: `liveness ${next.liveness}` });
+    this.livenessChip.update({ block: `${B}__chip`, text: next.liveness, modifiers: chipClass(LIVENESS_TONE[next.liveness]), title: `liveness ${next.liveness}` });
     this.livenessChip.el.hidden = next.liveness === 'alive';
-    this.errorChip.update({ block: `${B}__chip`, text: '', icon: { id: 'status-error' }, trailing: 'error', modifiers: chipClass('fault'), title: 'the agent reported an error' });
+    this.errorChip.update({ block: `${B}__chip`, text: 'error', modifiers: chipClass('fault'), title: 'the agent reported an error' });
     this.errorChip.el.hidden = !next.error;
     this.alertsEl.hidden = next.lifecycle === 'ready' && next.liveness === 'alive' && !next.error;
   }

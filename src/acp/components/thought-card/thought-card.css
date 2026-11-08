@@ -48,27 +48,50 @@
     text-shadow: var(--mat-engrave);
   }
 
-  /* Status: an unlit capsule … */
+  /* Status: an unlit lamp — a dark LED and the legend in ink … */
   .acp-harness__lane-thought-label {
-    padding: 0 7px;
-    border: 1px solid var(--mat-groove-lo);
-    border-radius: 999px;
-    background: var(--mat-well-fill);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
     font-size: var(--krypton-chrome-font-size, 11px);
-    letter-spacing: 0.09em;
-    line-height: 1.4;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
     text-transform: uppercase;
     white-space: nowrap;
   }
 
-  /* … lit amber, steadily, while the lane is thinking. */
+  .acp-harness__lane-thought-label::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  /* … an amber lamp window (DESIGN.md "Lamps"), steadily, while the lane is
+     thinking: the amber lens and the lit legend behind amber glass. */
   .acp-harness__lane-thought[data-phase="delta"] .acp-harness__lane-thought-label,
   .acp-harness__lane-thought[data-phase="veil"] .acp-harness__lane-thought-label {
-    border-color: rgba(255, 176, 0, 0.5);
-    background: radial-gradient(ellipse at 50% 0%, rgba(255, 176, 0, 0.3), rgba(255, 176, 0, 0.07) 75%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(255, 176, 0, 0.22);
+    padding: 2px 8px 2px 6px;
+    border: 1px solid rgba(255, 176, 0, 0.45);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: linear-gradient(180deg, rgba(255, 176, 0, 0.2), rgba(255, 176, 0, 0.06));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 -1px 2px rgba(0, 0, 0, 0.35),
+      0 0 6px rgba(255, 176, 0, 0.16),
+      0 0 14px rgba(255, 176, 0, 0.06);
     color: var(--mat-lit);
+  }
+
+  .acp-harness__lane-thought[data-phase="delta"] .acp-harness__lane-thought-label::before,
+  .acp-harness__lane-thought[data-phase="veil"] .acp-harness__lane-thought-label::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
   }
 
   /* The reasoning sits in a well. */

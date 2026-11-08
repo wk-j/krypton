@@ -326,26 +326,48 @@
   white-space: nowrap;
 }
 
-/* The run lamp: an unlit capsule while idle; lit glass in its state colour
-   after a run, and steadily lit while one runs (DESIGN.md "Lamps"). */
+/* The run lamp (DESIGN.md "Lamps"): unlit while idle — a dark LED and the
+   legend in ink; after a run, and steadily while one runs, a lamp window — the
+   LED and the legend behind glass in its state colour. */
 .krypton-hurl__exit {
   --hurl-exit-rgb: var(--krypton-fg-rgb);
-  padding: 1px 9px;
-  border: 1px solid rgba(var(--krypton-fg-rgb), 0.18);
-  border-radius: 999px;
-  background: var(--mat-well-fill);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--hurl-ink-dim);
   font-weight: 700;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+.krypton-hurl__exit::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mat-lens-off);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .krypton-hurl__exit--ok,
 .krypton-hurl__exit--failed,
 .krypton-hurl__exit--running {
-  border-color: rgba(var(--hurl-exit-rgb), 0.5);
-  background: radial-gradient(ellipse at 50% 0%, rgba(var(--hurl-exit-rgb), 0.3), rgba(var(--hurl-exit-rgb), 0.07) 75%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--hurl-exit-rgb), 0.22);
+  padding: 2px 8px 2px 6px;
+  border: 1px solid rgba(var(--hurl-exit-rgb), 0.45);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: linear-gradient(180deg, rgba(var(--hurl-exit-rgb), 0.2), rgba(var(--hurl-exit-rgb), 0.06));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.35),
+    0 0 6px rgba(var(--hurl-exit-rgb), 0.16),
+    0 0 14px rgba(var(--hurl-exit-rgb), 0.06);
   color: rgb(var(--hurl-exit-rgb));
+}
+
+:is(.krypton-hurl__exit--ok, .krypton-hurl__exit--failed, .krypton-hurl__exit--running)::before {
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--hurl-exit-rgb)) 45%, rgba(var(--hurl-exit-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--hurl-exit-rgb), 0.9), 0 0 10px rgba(var(--hurl-exit-rgb), 0.4);
 }
 
 .krypton-hurl__exit--ok {

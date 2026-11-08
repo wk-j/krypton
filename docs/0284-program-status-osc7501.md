@@ -141,7 +141,7 @@ class ProgramStatusStore {
 
 - `.krypton-tab[data-program-status]`: the `.krypton-tab__dot` turns warning (`blocked`), danger (`error`) or success (`done`), and pulses for `working`. The value aggregates every pane in that tab.
 - `.krypton-window[data-program-status]`: aggregates across the window's tabs. `blocked`/`error`/`done` set `--krypton-program-status-rgb`, which colours the border, glow and status dot. A dedicated variable is used rather than `--krypton-window-accent-rgb`, so other tabs' dots keep the window accent. `working` only pulses the status dot. `[visual] window_border = false` still hides the border.
-- `.krypton-window__program-status`: a titlebar-end chip before `pty-status` showing the window's top summary: `40%`/`···` (working), `PERMISSION`/`QUESTION`/`AUTH`/`BLOCKED`, `DONE`, `ERROR`, prefixed with `app` when present. Hidden for `idle` or no records.
+- `.krypton-window__program-status`: a titlebar-end lamp window before `pty-status` — its LED, then the legend, as a Rails check's `PASS` (DESIGN.md "Lamps") — showing the window's top summary: `40%`/`···` (working), `PERMISSION`/`QUESTION`/`AUTH`/`BLOCKED`, `DONE`, `ERROR`, prefixed with `app` when present. Hidden for `idle` or no records.
 - Footer: a segment `▲2 ✕1 ✓3` (counts of views, not records), shown only when non-zero. In detail density the focused pane's `app: msg` is also shown.
 - Any `msg`/`title` shown outside the grid goes through `textContent` with bidi and invisible formatting characters stripped (U+200E/F, U+061C, U+202A–202E, U+2066–2069).
 

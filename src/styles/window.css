@@ -63,26 +63,45 @@
     var(--mat-cast);
 }
 
-/* Titlebar chip — window's top summary: `CARGO · 62%`, `TERRAFORM · PERMISSION`.
-   A lit status capsule (DESIGN.md "Lamps") in the program-status colour, or
-   the window accent while working. */
+/* Titlebar lamp window — window's top summary: `CARGO · 62%`, `TERRAFORM · PERMISSION`.
+   The same lamp window as a Rails check's PASS (DESIGN.md "Lamps"): the LED,
+   then its legend, behind glass tinted in the program-status colour, or the
+   window accent while working. */
 .krypton-window__program-status {
   --x-rgb: var(--krypton-program-status-rgb, var(--krypton-window-accent-rgb, 0, 200, 255));
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin-right: 8px;
-  padding: 0 8px;
+  padding: 2px 8px 2px 6px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
-  font-weight: 600;
+  font-size: var(--krypton-chrome-font-size, 11px);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  line-height: 16px;
-  letter-spacing: 0.09em;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   white-space: nowrap;
   color: rgb(var(--x-rgb));
-  border: 1px solid rgba(var(--x-rgb), 0.5);
-  border-radius: 999px;
-  background: radial-gradient(ellipse at 50% 0%, rgba(var(--x-rgb), 0.3), rgba(var(--x-rgb), 0.07) 75%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--x-rgb), 0.22);
+  border: 1px solid rgba(var(--x-rgb), 0.45);
+  border-radius: var(--krypton-border-radius, 8px);
+  background: linear-gradient(180deg, rgba(var(--x-rgb), 0.2), rgba(var(--x-rgb), 0.06));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.35),
+    0 0 6px rgba(var(--x-rgb), 0.16),
+    0 0 14px rgba(var(--x-rgb), 0.06);
+}
+
+.krypton-window__program-status::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
 }
 
 .krypton-window__program-status[hidden] {
@@ -436,20 +455,21 @@
 
 /* ─── Titlebar view status (spec 247) ───
    One badge a content view shows right after its toggles: the remote
-   Harness's SSH host. A status capsule: unlit (a well-fill capsule in ink)
-   with an LED for its tone while healthy or pending; lit danger glass when it
-   faults (ADR-0017). tabindex -1, like the toggles. */
+   Harness's SSH host. A lamp (DESIGN.md "Lamps") with the 8px corners of a
+   lamp window: while healthy or pending, a well-fill readout in ink with an
+   LED for its tone; when it faults, a lit lamp window in danger glass
+   (ADR-0017). tabindex -1, like the toggles. */
 .krypton-window__view-status {
   --x-rgb: var(--krypton-success-rgb, 57, 255, 127);
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   flex: none;
   height: 18px;
-  padding: 0 8px;
+  padding: 0 8px 0 6px;
   margin: 0;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--krypton-border-radius, 8px);
   background: var(--mat-well-fill);
   box-shadow: var(--mat-well-shadow);
   color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
@@ -468,8 +488,8 @@
 }
 
 .krypton-window__view-status-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   flex: none;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
@@ -482,10 +502,15 @@
 
 .krypton-window__view-status[data-tone='error'] {
   --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
-  border-color: rgba(var(--x-rgb), 0.5);
-  background: radial-gradient(ellipse at 50% 0%, rgba(var(--x-rgb), 0.3), rgba(var(--x-rgb), 0.07) 75%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 6px rgba(var(--x-rgb), 0.22);
+  border-color: rgba(var(--x-rgb), 0.45);
+  background: linear-gradient(180deg, rgba(var(--x-rgb), 0.2), rgba(var(--x-rgb), 0.06));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.35),
+    0 0 6px rgba(var(--x-rgb), 0.16),
+    0 0 14px rgba(var(--x-rgb), 0.06);
   color: rgb(var(--x-rgb));
+  font-weight: 700;
 }
 
 .krypton-window__view-status[aria-disabled='false'] {

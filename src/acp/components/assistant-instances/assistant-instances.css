@@ -372,52 +372,61 @@
     padding-top: 2px;
   }
 
-  /* Chips are small capsules let into the well; a live, warning or fault
-     chip is a lit lamp. */
+  /* State chips are lamps (DESIGN.md "Lamps"): a settled or ended state is
+     unlit — a dark LED and the word in ink; work in progress, a human wait or
+     a fault lights a lamp window — the LED and the word behind glass. */
   .acp-assistant-instances__chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.5ch;
-    padding: 0 0.8ch;
-    border: 1px solid rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.14);
-    border-radius: 999px;
-    background: var(--mat-well);
-    box-shadow: var(--mat-well-shadow);
+    gap: 6px;
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
-    line-height: 1.3;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    text-transform: uppercase;
     white-space: nowrap;
   }
 
-  .acp-assistant-instances__chip .acp-harness__icon {
-    width: 0.8em;
-    height: 0.8em;
+  .acp-assistant-instances__chip::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   .acp-assistant-instances__chip--muted {
-    border-color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.08);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   }
 
-  .acp-assistant-instances__chip--pending {
-    border-color: rgba(255, 176, 0, 0.32);
-    color: var(--mat-lit);
-  }
-
+  .acp-assistant-instances__chip--pending,
   .acp-assistant-instances__chip--live,
   .acp-assistant-instances__chip--warn,
   .acp-assistant-instances__chip--fault {
-    border-color: rgba(var(--assistant-chip-rgb), 0.5);
-    background: radial-gradient(ellipse at 50% 0%, rgba(var(--assistant-chip-rgb), 0.26), rgba(var(--assistant-chip-rgb), 0.06) 80%);
+    padding: 2px 8px 2px 6px;
+    border: 1px solid rgba(var(--assistant-chip-rgb), 0.45);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: linear-gradient(180deg, rgba(var(--assistant-chip-rgb), 0.2), rgba(var(--assistant-chip-rgb), 0.06));
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.12),
-      0 0 5px rgba(var(--assistant-chip-rgb), 0.18),
-      0 0 12px rgba(var(--assistant-chip-rgb), 0.06);
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 -1px 2px rgba(0, 0, 0, 0.35),
+      0 0 6px rgba(var(--assistant-chip-rgb), 0.16),
+      0 0 14px rgba(var(--assistant-chip-rgb), 0.06);
   }
 
+  /* Amber is the faceplate's own lit lamp: the amber lens and the lit legend. */
+  .acp-assistant-instances__chip--pending,
   .acp-assistant-instances__chip--live {
     --assistant-chip-rgb: 255, 176, 0;
 
     color: var(--mat-lit);
+  }
+
+  .acp-assistant-instances__chip:is(.acp-assistant-instances__chip--pending, .acp-assistant-instances__chip--live)::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
   }
 
   .acp-assistant-instances__chip--warn {
@@ -430,6 +439,11 @@
     --assistant-chip-rgb: 255, 109, 138;
 
     color: #ff9caf;
+  }
+
+  .acp-assistant-instances__chip:is(.acp-assistant-instances__chip--warn, .acp-assistant-instances__chip--fault)::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--assistant-chip-rgb)) 45%, rgba(var(--assistant-chip-rgb), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--assistant-chip-rgb), 0.9), 0 0 10px rgba(var(--assistant-chip-rgb), 0.4);
   }
 
   /* ── Selected instance: every value whole, in a second well. One grid holds
