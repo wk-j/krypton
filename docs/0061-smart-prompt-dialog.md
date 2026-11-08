@@ -12,6 +12,7 @@ type: spec
 > Amended by: [0372](./0372-prompt-dialog-harness-lanes.md) — live ACP Harness lanes are targets too, sent through `lane.send` with caller `prompt_dialog` (images as ACP image blocks, text literal, busy lanes queue). Opening from a Harness targets its active lane; the empty chip reads `no target`, and a failed lane send shows its message in the footer.
 > Amended by: [0373](./0373-prompt-dialog-typewriter-slip.md) — the plate grows to `min(1040px, 92vw)` and the textarea is a typewriter slip (paper, rail, carriage, typebar strike, configured key sounds, margin bell), 10 lines growing to 18. Keys: `⌘Enter` sends, Enter and `⇧Enter` feed a line; the Enter / `⇧Enter` rows of the keybinding table and the 3–12 line textarea below are superseded. Its amendment B makes the whole dialog the paper sheet: the target chip and foot are print on it, and the `@` popup opens below the carriage (or above the caret's line when there is no room below) instead of directly under the caret.
 > Amended 2026-11-08: the target picker list is gone. The chip is the only target display; `Tab` / `⇧Tab` step it to the next / previous target and a click on the chip steps like `Tab`. `Cmd+,`, the `1`–`9` / `↑↓` picker keys, the `[⇅]` button and the auto-opening picker are removed; the sections below describe the current behaviour.
+> Amended 2026-11-08 (bash keys): the textarea takes the ACP Harness composer's readline keys (`Ctrl+A` `Ctrl+E` `Ctrl+B` `Ctrl+F` `Ctrl+←/→` `Ctrl+H` `Ctrl+D` `Ctrl+W` `Ctrl+U` `Ctrl+K` `Ctrl+Y` `Ctrl+T`), run by `src/textarea-readline.ts` from `PromptDialog.onKeyDown`. Without them macOS left `Ctrl+W`, `Ctrl+U` and `Ctrl+Y` (after a `Ctrl+W`/`Ctrl+U`) dead, `Ctrl+←/→` jumped to the line ends, and `Ctrl+A/E/B/F` moved the caret without moving the typewriter carriage. The draft holds many lines, so a line is the caret's line, and, as in zsh, `Ctrl+U` at a line start and `Ctrl+K` at a line end kill the newline. Words come from `Intl.Segmenter`, so `Ctrl+W` and `Ctrl+←/→` take one Thai word, not the whole unspaced run. Edits go through `execCommand`, so they fire the textarea's `input` event (key sound, carriage) and sit on its undo stack like native edits. See the keybinding table.
 
 ## Problem
 
@@ -207,6 +208,14 @@ Target is a first-class, always-visible element — **not** a fallback that only
 | `Enter` / `Tab` | PromptDialog (mention popup open) | Commit selected completion |
 | `Up` / `Down` | PromptDialog (mention popup open) | Navigate completions |
 | `Cmd+Enter` | PromptDialog (textarea) | Force-submit (ignore mention popup) |
+| `Ctrl+A` / `Ctrl+E` | PromptDialog (textarea) | Caret to the start / end of its line |
+| `Ctrl+B` / `Ctrl+F` | PromptDialog (textarea) | Caret back / forward one character (a whole Thai cluster) |
+| `Ctrl+Left` / `Ctrl+Right` | PromptDialog (textarea) | Caret back / forward one word |
+| `Ctrl+H` / `Ctrl+D` | PromptDialog (textarea) | Delete the character before (as Backspace) / after the caret |
+| `Ctrl+W` | PromptDialog (textarea) | Kill the word before the caret |
+| `Ctrl+U` / `Ctrl+K` | PromptDialog (textarea) | Kill to the start / end of the line; at that edge, kill the newline |
+| `Ctrl+Y` | PromptDialog (textarea) | Yank the last kill at the caret |
+| `Ctrl+T` | PromptDialog (textarea) | Swap the characters around the caret (the last two at a line end) |
 
 ### UI Changes
 

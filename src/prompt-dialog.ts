@@ -23,6 +23,7 @@ import {
 import type { HarnessLaneStatus } from './acp/types';
 import { getCaretCoordinates } from './caret-position';
 import { CARRIAGE_CLEARANCE, Typewriter } from './prompt-dialog-typewriter';
+import { applyReadlineKey, type KillBuffer } from './textarea-readline';
 import { keyHint, type KeyHint } from './ui/kbd';
 
 const TARGET_PROCESS = 'claude';
@@ -194,6 +195,8 @@ export class PromptDialog {
   private slipNameEl: HTMLElement;
   private slipLinesEl: HTMLElement;
   private typewriter: Typewriter;
+  /** ⌃W ⌃U ⌃K fill it, ⌃Y yanks it; it outlives a close, as a shell's does. */
+  private readonly killBuffer: KillBuffer = { text: '' };
 
   private targets: DialogTarget[] = [];
   private selectedTargetIdx = 0;
@@ -517,7 +520,20 @@ export class PromptDialog {
       this.cycleTarget(e.shiftKey ? -1 : 1);
       return true;
     }
-    return false;
+    return this.handleReadlineKey(e);
+  }
+
+  /** The harness composer's bash keys on the textarea. An edit fires the
+   *  textarea's `input` event, which plays the sound and moves the carriage;
+   *  a caret move does not, so it moves the carriage here. */
+  private handleReadlineKey(e: KeyboardEvent): boolean {
+    const action = applyReadlineKey(e, this.textareaEl, this.killBuffer);
+    if (!action) return false;
+    if (action.kind === 'move') {
+      this.updateMentionState();
+      this.typewriter.sync();
+    }
+    return true;
   }
 
   private handleMentionKey(e: KeyboardEvent): boolean {
@@ -552,8 +568,8 @@ export class PromptDialog {
     }
     // No completion to accept (the popup is hidden): Tab still steps the target.
     if (e.key === 'Tab') return this.handleTextareaKey(e);
-    // All other keys fall through to the textarea for typing
-    return false;
+    // All other keys: the bash keys, else the textarea's own typing
+    return this.handleReadlineKey(e);
   }
 
   private onInput(e: Event): void {
