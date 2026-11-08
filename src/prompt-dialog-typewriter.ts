@@ -2,9 +2,11 @@
 // The rail, carriage, ink afterimages and lamplight from the Ribbon TTY design,
 // drawn around the dialog's <textarea>. The textarea stays the editor (IME,
 // selection, undo, @ completion); this module only reads its caret position.
-// Nothing here moves unless a key, click or scroll moves the caret.
+// Nothing here moves unless a key, click or scroll moves the caret. The sheet
+// is the whole dialog panel: it carries the paper grain, the lamplight and
+// `data-move`; the slip is the typing area on it.
 
-import { getCaretCoordinates } from './caret-position';
+import { getCaretCoordinates, getTextRangeBox } from './caret-position';
 
 export type CarriageMove = 'type' | 'cr' | 'back' | 'still';
 
@@ -13,14 +15,35 @@ const RAIL_GAP = 40;
 const CARRIAGE_W = 108;
 const CARRIAGE_H = 34;
 const RAIL_H = 12;
-const STRIKE_MS = 110;
+/** From the bottom of the caret's line to the bottom of the carriage: what a
+ *  popup opening under the caret must clear so it never covers the typewriter. */
+export const CARRIAGE_CLEARANCE = RAIL_GAP + CARRIAGE_H / 2;
+/** The typebar strike and the green LED flash (overlays.css `krypton-prompt-strike`). */
+const STRIKE_MS = 70;
 /** A held key repeats faster than the typebar can travel; strike at most this often. */
 const STRIKE_MIN_GAP_MS = 60;
 /** Fraction of the line where the margin bell rings, once per row (design: 0.86). */
 const MARGIN_BELL = 0.86;
 const GRAIN_PX = 384;
+/** The lamplight ellipse's radii (`.krypton-prompt-dialog__lamp-light`). */
+const LAMP_RX = 520;
+const LAMP_RY = 360;
+/** The lamp hangs this far above the rail; the flare this far (design). */
+const LAMP_ABOVE_RAIL = 90;
+const FLARE_ABOVE_RAIL = 26;
+/** Inside this share of the lamp's reach the sheet is light enough for dark
+ *  ink; outside it pale ink reads better. The two inks' contrasts on the
+ *  multiplied paper cross near 0.6. */
+export const LIT_REACH = 0.6;
 
 const CLS = 'krypton-prompt-dialog';
+/** The head and foot print that sits above the lamplight and is inked for it. */
+const PRINT_SELECTOR = `.${CLS}__target-chip > span, .${CLS}__footer > span`;
+
+/** How far a point is from the lamp's centre, in lamp radii: 0 under it, 1 at its edge. */
+export function lampReach(dx: number, dy: number): number {
+  return Math.hypot(dx / LAMP_RX, dy / LAMP_RY);
+}
 
 /** One paper grain texture per app run, generated on first open. */
 let grainUrl: string | null | undefined;
@@ -67,8 +90,39 @@ function paperGrain(): string | null {
   return grainUrl;
 }
 
-/** CJK, Hangul, fullwidth forms and emoji take two cells (design `gw`). */
-const WIDE_GRAPHEME = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]|[\u{1F300}-\u{1FAFF}]/u;
+interface GraphemeSegments {
+  containing(index: number): { segment: string; index: number } | undefined;
+}
+
+interface GraphemeSegmenter {
+  segment(input: string): GraphemeSegments;
+}
+
+// lib is ES2021; Intl.Segmenter typings arrive with ES2022.
+const graphemeSegmenter: GraphemeSegmenter | null = (() => {
+  const Ctor = (Intl as typeof Intl & {
+    Segmenter?: new (locale: string | undefined, options: { granularity: 'grapheme' }) => GraphemeSegmenter;
+  }).Segmenter;
+  return Ctor ? new Ctor(undefined, { granularity: 'grapheme' }) : null;
+})();
+
+/** No typed grapheme cluster is longer than this (a ZWJ family emoji is 11). */
+const CLUSTER_REACH = 16;
+
+/** The text an ink copies when `length` units were typed at `index`: the whole
+ *  grapheme clusters they belong to. A Thai mark (สระบน, วรรณยุกต์) joins the
+ *  consonant before it, so its ink lands on that consonant's cell, where the
+ *  textarea draws the mark, and never on the empty cell after it. */
+export function inkRange(text: string, index: number, length: number): [number, number] {
+  const end = index + length;
+  if (!graphemeSegmenter || length <= 0) return [index, end];
+  const from = Math.max(0, index - CLUSTER_REACH);
+  const segments = graphemeSegmenter.segment(text.slice(from, end + CLUSTER_REACH));
+  const first = segments.containing(index - from);
+  const last = segments.containing(end - 1 - from);
+  if (!first || !last) return [index, end];
+  return [from + first.index, from + last.index + last.segment.length];
+}
 
 function part(className: string, parent: HTMLElement, tag = 'div'): HTMLElement {
   const node = document.createElement(tag);
@@ -78,12 +132,14 @@ function part(className: string, parent: HTMLElement, tag = 'div'): HTMLElement 
 }
 
 export class Typewriter {
+  private readonly sheet: HTMLElement;
   private readonly slip: HTMLElement;
   private readonly textarea: HTMLTextAreaElement;
   private readonly onBell: () => void;
   private readonly fx: HTMLElement;
   private readonly rail: HTMLElement;
   private readonly carriage: HTMLElement;
+  private readonly lamp: HTMLElement;
   private readonly lampLight: HTMLElement;
   private readonly lampFlare: HTMLElement;
   private readonly ledStrike: HTMLElement;
@@ -92,6 +148,9 @@ export class Typewriter {
   private readonly reducedMotion: MediaQueryList | null;
   private active = false;
   private raf = 0;
+  private inkRaf = 0;
+  /** The lamp's centre in sheet coordinates, once placed. */
+  private lampAt: { x: number; y: number } | null = null;
   private pendingMove: CarriageMove | null = null;
   /** Set by strike(); the next placement checks the margin bell. */
   private typed = false;
@@ -104,7 +163,8 @@ export class Typewriter {
   private strikeAt = 0;
   private strikeTimer = 0;
 
-  constructor(slip: HTMLElement, textarea: HTMLTextAreaElement, onBell: () => void) {
+  constructor(sheet: HTMLElement, slip: HTMLElement, textarea: HTMLTextAreaElement, onBell: () => void) {
+    this.sheet = sheet;
     this.slip = slip;
     this.textarea = textarea;
     this.onBell = onBell;
@@ -120,9 +180,10 @@ export class Typewriter {
     this.ledStrike = part(`${CLS}__led ${CLS}__led--g`, leds, 'i');
     this.ledQueue = part(`${CLS}__led ${CLS}__led--a`, leds, 'i');
     this.ledError = part(`${CLS}__led ${CLS}__led--r`, leds, 'i');
-    this.lampLight = part(`${CLS}__lamp-light`, part(`${CLS}__lamp`, slip));
-    this.lampFlare = part(`${CLS}__lamp-flare`, part(`${CLS}__flare`, slip));
-    this.slip.dataset.move = 'still';
+    this.lamp = part(`${CLS}__lamp`, sheet);
+    this.lampLight = part(`${CLS}__lamp-light`, this.lamp);
+    this.lampFlare = part(`${CLS}__lamp-flare`, part(`${CLS}__flare`, sheet));
+    this.sheet.dataset.move = 'still';
     this.reducedMotion = typeof window.matchMedia === 'function'
       ? window.matchMedia('(prefers-reduced-motion: reduce)')
       : null;
@@ -137,7 +198,7 @@ export class Typewriter {
   show(): void {
     this.active = true;
     const grain = paperGrain();
-    if (grain) this.slip.style.setProperty('--prompt-grain', `url(${grain})`);
+    if (grain) this.sheet.style.setProperty('--prompt-grain', `url(${grain})`);
     this.measure();
     this.prev = null;
     this.bellRowTop = null;
@@ -147,7 +208,18 @@ export class Typewriter {
   hide(): void {
     this.active = false;
     cancelAnimationFrame(this.raf);
+    cancelAnimationFrame(this.inkRaf);
+    this.lampAt = null;
     this.fx.replaceChildren();
+  }
+
+  /** The head or foot was re-rendered: ink its new print for where the lamp is. */
+  relight(): void {
+    if (!this.active || !this.lampAt) return;
+    cancelAnimationFrame(this.inkRaf);
+    this.inkRaf = requestAnimationFrame(() => {
+      if (this.lampAt) this.writeInks(this.readInks(this.lampAt.x, this.lampAt.y));
+    });
   }
 
   /** Move rail and carriage under the caret's line on the next frame. Without
@@ -159,7 +231,8 @@ export class Typewriter {
     this.raf = requestAnimationFrame(() => this.place());
   }
 
-  /** Typebar strike and the ink afterimage of `grapheme`, which starts at `index`. */
+  /** Typebar strike and the ink afterimage of the grapheme cluster that
+   *  `grapheme`, typed at `index`, belongs to. */
   strike(index: number, grapheme: string): void {
     if (!this.active) return;
     this.typed = true;
@@ -176,16 +249,36 @@ export class Typewriter {
     }
     if (this.reducedMotion?.matches) return;
     const ta = this.textarea;
-    const cell = getCaretCoordinates(ta, index);
-    if (cell.top < 0 || cell.top >= ta.clientHeight) return;
+    // Unrounded boxes: the copy has to sit on the textarea's glyphs to the
+    // fraction of a pixel, or it shows as a second letter beside the first.
+    const sheetBox = this.sheet.getBoundingClientRect();
+    const fxBox = this.fx.getBoundingClientRect();
+    const taBox = ta.getBoundingClientRect();
+    const [start, end] = inkRange(ta.value, index, grapheme.length);
+    const type = getTextRangeBox(ta, start, end);
+    if (type.top < 0 || type.top >= ta.clientHeight) return;
+    // The type's line box in sheet coordinates: with the textarea's
+    // line-height on the copy, its baseline is the textarea's.
+    const x = taBox.left - sheetBox.left - this.sheet.clientLeft + type.left;
+    const y = taBox.top - sheetBox.top - this.sheet.clientTop + type.top - (this.lineH - type.height) / 2;
+    // Paper cut from the sheet: the patch starts on a whole sheet pixel and
+    // its grain is the sheet's grain at that pixel, so the two never resample
+    // apart; the type sits the remaining fraction in.
+    const px = Math.floor(x);
+    const py = Math.floor(y);
     const ink = document.createElement('span');
     ink.className = `${CLS}__ink`;
-    ink.textContent = grapheme;
-    ink.style.left = `${ta.offsetLeft + cell.left}px`;
-    ink.style.top = `${ta.offsetTop + cell.top}px`;
-    ink.style.width = `${this.charW * (WIDE_GRAPHEME.test(grapheme) ? 2 : 1)}px`;
-    ink.style.height = `${this.lineH}px`;
-    ink.addEventListener('animationend', () => ink.remove(), { once: true });
+    ink.style.left = `${sheetBox.left + this.sheet.clientLeft + px - fxBox.left}px`;
+    ink.style.top = `${sheetBox.top + this.sheet.clientTop + py - fxBox.top}px`;
+    ink.style.width = `${Math.ceil(x + type.width) - px}px`;
+    ink.style.height = `${Math.ceil(y + this.lineH) - py}px`;
+    ink.style.backgroundPosition = `${-px}px ${-py}px`;
+    const copy = part(`${CLS}__ink-type`, ink, 'span');
+    copy.style.padding = `${y - py}px 0 0 ${x - px}px`;
+    copy.textContent = ta.value.slice(start, end);
+    ink.addEventListener('animationend', (e) => {
+      if (e.target === ink) ink.remove();
+    });
     this.fx.appendChild(ink);
   }
 
@@ -219,6 +312,10 @@ export class Typewriter {
     const x = ta.offsetLeft + caret.left + this.charW / 2;
     const railY = ta.offsetTop + visibleTop + this.lineH + RAIL_GAP;
     const rowTop = caret.top + ta.scrollTop;
+    // The lamp hangs over the whole sheet, so it is placed in sheet coordinates.
+    const lampX = this.slip.offsetLeft + x;
+    const lampY = this.slip.offsetTop + railY - LAMP_ABOVE_RAIL;
+    const inks = this.readInks(lampX, lampY);
     const prev = this.prev;
     let move = this.pendingMove;
     if (!move) {
@@ -228,12 +325,15 @@ export class Typewriter {
       else move = 'type';
     }
     this.pendingMove = null;
-    this.slip.dataset.move = move;
+    this.sheet.dataset.move = move;
     this.rail.style.transform = `translate3d(0, ${(railY - RAIL_H / 2).toFixed(1)}px, 0)`;
     this.carriage.style.transform =
       `translate3d(${(x - CARRIAGE_W / 2).toFixed(1)}px, ${(railY - CARRIAGE_H / 2).toFixed(1)}px, 0)`;
-    this.lampLight.style.transform = `translate3d(${x.toFixed(1)}px, ${(railY - 90).toFixed(1)}px, 0)`;
-    this.lampFlare.style.transform = `translate3d(${x.toFixed(1)}px, ${(railY - 26).toFixed(1)}px, 0)`;
+    this.lampLight.style.transform = `translate3d(${lampX.toFixed(1)}px, ${lampY.toFixed(1)}px, 0)`;
+    const flareY = lampY + LAMP_ABOVE_RAIL - FLARE_ABOVE_RAIL;
+    this.lampFlare.style.transform = `translate3d(${lampX.toFixed(1)}px, ${flareY.toFixed(1)}px, 0)`;
+    this.lampAt = { x: lampX, y: lampY };
+    this.writeInks(inks);
     if (this.typed) {
       this.typed = false;
       const lineWidth = ta.clientWidth - this.padLeft - this.padRight;
@@ -244,5 +344,24 @@ export class Typewriter {
       }
     }
     this.prev = { rowTop, left: caret.left };
+  }
+
+  /** Each head and foot part and whether the lamp lights the sheet under it.
+   *  Empty when the lamp is off (light scheme): the print keeps its dark ink. */
+  private readInks(lampX: number, lampY: number): Array<[HTMLElement, boolean]> {
+    if (this.lamp.offsetParent === null) return [];
+    const sheet = this.sheet.getBoundingClientRect();
+    const left = sheet.left + this.sheet.clientLeft;
+    const top = sheet.top + this.sheet.clientTop;
+    return Array.from(this.sheet.querySelectorAll<HTMLElement>(PRINT_SELECTOR), (node) => {
+      const box = node.getBoundingClientRect();
+      const dx = box.left + box.width / 2 - left - lampX;
+      const dy = box.top + box.height / 2 - top - lampY;
+      return [node, lampReach(dx, dy) < LIT_REACH];
+    });
+  }
+
+  private writeInks(inks: ReadonlyArray<[HTMLElement, boolean]>): void {
+    for (const [node, lit] of inks) node.classList.toggle(`${CLS}__lit`, lit);
   }
 }

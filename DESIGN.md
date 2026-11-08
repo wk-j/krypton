@@ -1,6 +1,6 @@
 ---
 name: Krypton Console
-version: 2.3.0
+version: 2.3.1
 description: Skeuomorphic instrument faceplate — brushed graphite (aluminium in the light scheme) with engraved labels, recessed display wells, raised keys and lit lamps, over a transparent desktop
 appliesTo: "Every surface in the Tauri webview and the live-assist webview. Materials: src/styles/materials.css (--mat-*)."
 colors:
@@ -201,17 +201,23 @@ comment.
 - **Window accent** (`--krypton-window-accent`, lane accents, manual pick, signal states) colours the
   window's LEDs — titlebar and its tabs — and the window focus ring. Labels stay silk. Footer lane
   marks carry no LED: the initials alone name the lanes.
-- **Overlays and dialogs** (palette, which-key, hints, prompt dialog, quick overview, dashboards,
-  inline AI, toasts, harness pickers and dialogs): one floating plate over `--mat-scrim`; engraved
+- **Overlays and dialogs** (palette, which-key, hints, quick overview, dashboards, inline AI,
+  toasts, harness pickers and dialogs; the prompt dialog is the paper sheet below): one floating
+  plate over `--mat-scrim`; engraved
   head; input well; the result list is one well with grooves and a full-row `--mat-select` tint;
   actions are keys; the key-hint foot prints each key as a key cap and its action as legend. Which-key
   and hint labels are key caps.
-- **Prompt dialog slip** (spec 373) — the one paper surface in the app. The Smart Prompt Dialog's
-  draft is a typewriter sheet (cream paper, ink in the configured `[font] family`, margin rule, steel
-  rail and a carriage with three LEDs riding under the caret line, a one-shot typebar strike and ink
-  afterimage per key, lamplight under the dark scheme). It is the document being written, not chrome
-  (ADR-0030); the plate around it — target chip, image strip, key-cap foot — stays faceplate.
-  It moves only when the caret moves; no ambient motion.
+- **Prompt dialog sheet** (spec 373) — the one paper surface in the app. The whole Smart Prompt
+  Dialog is a typewriter sheet floating over `--mat-scrim` (cream paper edge to edge, ink in the
+  configured `[font] family`, margin rule, steel rail and a carriage with three LEDs riding under the
+  caret line, a one-shot typebar strike and ink afterimage per key, lamplight across the whole sheet
+  under the dark scheme). It is the document being written (ADR-0030), and the dialog is that
+  document: the target chip and the foot are print on the paper, ruled with a thin ink line instead
+  of a groove. The rail and carriage always show whole: they sit above the lamplight, the carriage
+  above everything on the dialog, and at a margin it overhangs the sheet's edge instead of being cut.
+  Key caps and the target lamp stay faceplate parts and sit above the lamplight; in the
+  dark scheme the head and foot print is dark where the lamp lights it and pale where the sheet is in
+  the dark. It moves only when the caret moves; no ambient motion.
 - **Quick Terminal.** A plate drawer around a screen.
 - **Harness.** The lane body is a screen (the window's screen shows through; a lane adds the well's
   inset depth, not a second fill). The lane head is a plate strip with the name engraved and status as
@@ -407,6 +413,10 @@ selector, and nothing in it bleeds out of that selector.
 
 ## Changelog
 
+- **2.3.1** — The prompt dialog is one sheet of paper edge to edge (spec 373 amendment B): the
+  faceplate frame around the slip is gone, the target chip and key-hint foot are print on the paper,
+  and the dark scheme's lamplight falls across the whole sheet. Key caps and the target lamp stay
+  faceplate parts.
 - **2.3.0** — A status word is a lamp window like a Rails check's `PASS`, never a capsule: its LED
   inside before the legend, 8px corners, linear glass with an inner shade, an 11px/700 legend at
   `0.04em`; unlit, a dark LED and the legend in ink with no glass. Moved from capsules: the titlebar

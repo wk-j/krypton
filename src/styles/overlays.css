@@ -304,7 +304,13 @@
 }
 
 .krypton-prompt-dialog__panel {
+  --prompt-paper: #f1ecdf;
+  --prompt-ink: #24211d;
+  --prompt-paper-ink: #6b6358;
+  --prompt-rule: rgba(36, 33, 29, 0.14);
+
   position: relative;
+  isolation: isolate;
   width: min(1040px, 92vw);
   max-height: 86vh;
   display: flex;
@@ -312,10 +318,12 @@
   gap: 8px;
   padding: 10px;
   box-sizing: border-box;
-  background: var(--mat-brush), var(--mat-plate);
+  color: var(--prompt-ink);
+  background: var(--prompt-grain, none) 0 0 / 384px 384px, var(--prompt-paper);
+  background-blend-mode: multiply;
   border: 1px solid var(--mat-key-edge);
   border-radius: var(--krypton-border-radius, 8px);
-  box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), var(--mat-cast);
   overflow: visible;
 }
 
@@ -334,18 +342,20 @@
 }
 
 /* ─── Target chip ───
-   The head of the plate: the target is a lamp — lit amber while a Claude
+   The head of the sheet: the target is a lamp — lit amber while a Claude
    session is attached, lit warning when there is none — then its name
-   engraved and, with several targets, its place in the Tab cycle at the end. */
+   printed and, with several targets, its place in the Tab cycle at the end.
+   It sits above the lamplight, so the target lamp stays lit in the dark. */
 .krypton-prompt-dialog__target-chip {
   --prompt-lamp-rgb: 255, 176, 0;
 
+  position: relative;
+  z-index: 6;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 0 2px 8px;
-  border-bottom: 1px solid var(--mat-groove-lo);
-  box-shadow: 0 1px 0 var(--mat-groove-hi);
+  border-bottom: 1px solid var(--prompt-rule);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.06em;
@@ -383,39 +393,38 @@
 }
 
 .krypton-prompt-dialog__chip-label {
-  color: var(--mat-silk);
+  color: var(--prompt-print-strong, var(--prompt-ink));
   font-weight: 600;
   letter-spacing: 0.13em;
   text-transform: uppercase;
-  text-shadow: var(--mat-engrave);
 }
 
 .krypton-prompt-dialog__chip-cwd {
-  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+  color: var(--prompt-print-strong, var(--prompt-ink));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 280px;
 }
 
-.krypton-prompt-dialog__target-chip--loading .krypton-prompt-dialog__chip-cwd {
-  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
+.krypton-prompt-dialog__target-chip--loading .krypton-prompt-dialog__chip-cwd,
+.krypton-prompt-dialog__chip-pid,
+.krypton-prompt-dialog__chip-meta {
+  color: var(--prompt-print, var(--prompt-paper-ink));
 }
 
 .krypton-prompt-dialog__chip-pid,
 .krypton-prompt-dialog__chip-meta {
-  color: var(--krypton-ink-4, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
   font-variant-numeric: tabular-nums;
 }
 
-/* "2/4", the target's place in the Tab cycle, is a small readout let into the plate. */
+/* "2/4", the target's place in the Tab cycle, is a small box ruled on the sheet. */
 .krypton-prompt-dialog__chip-count {
-  padding: 1px 6px;
+  padding: 0 6px;
+  border: 1px solid var(--prompt-rule);
   border-radius: var(--krypton-border-radius, 8px);
-  background: var(--mat-well);
-  box-shadow: var(--mat-well-shadow);
-  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
+  color: var(--prompt-print-strong, var(--prompt-ink));
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
   font-variant-numeric: tabular-nums;
 }
@@ -425,20 +434,20 @@
 }
 
 /* ─── Typewriter slip (spec 373) ───
-   The draft is a sheet of paper in the plate: the document being written is the
-   one surface off the faceplate (ADR-0030). Rail, carriage, typebar and ink are
-   the Ribbon TTY design's parts; they move only when a key, click or scroll
-   moves the caret. The paper colours are tokens so a theme can override them. */
+   The whole dialog is one sheet of paper (the panel above, spec 373 amendment
+   B): the document being written is the one surface off the faceplate
+   (ADR-0030). The slip is the typing area on that sheet. Rail, carriage,
+   typebar and ink are the Ribbon TTY design's parts; they move only when a
+   key, click or scroll moves the caret. The paper colours are tokens on the
+   panel so a theme can override them. */
 .krypton-prompt-dialog__slip {
-  --prompt-paper: #f1ecdf;
-  --prompt-ink: #24211d;
-  --prompt-paper-ink: #6b6358;
   --prompt-charw: 10px;
   --prompt-stalk-h: 20px;
 
+  /* Never clipped: the typewriter always shows whole, overhanging the sheet's
+     edges, border included, when the caret is near a margin. No stacking
+     context of its own, so the carriage can rise above the lamplight. */
   position: relative;
-  isolation: isolate;
-  overflow: hidden;
   flex: 0 1 auto;
   min-height: 0;
   display: flex;
@@ -446,13 +455,6 @@
   padding: 12px 18px 60px 32px;
   box-sizing: border-box;
   color: var(--prompt-ink);
-  background: var(--prompt-grain, none) 0 0 / 384px 384px, var(--prompt-paper);
-  background-blend-mode: multiply;
-  border-radius: 2px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    0 1px 0 rgba(36, 33, 29, 0.16),
-    0 16px 28px -18px rgba(40, 30, 20, 0.5);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
 }
 
@@ -473,7 +475,7 @@
   gap: 12px;
   margin: 0 0 8px;
   padding-bottom: 6px;
-  border-bottom: 1px solid rgba(36, 33, 29, 0.14);
+  border-bottom: 1px solid var(--prompt-rule);
   font-size: 12px;
   letter-spacing: 0.12em;
   color: var(--prompt-paper-ink);
@@ -521,7 +523,14 @@
   text-shadow: none;
 }
 
-/* Ink afterimages: one per typed key, gone in 210ms. */
+/* Ink afterimages: one per typed key, over the whole grapheme cluster the key
+   belongs to (a Thai mark inks its consonant's cell). The letter lands solid
+   at the typebar's peak (about 26ms, spec 373 amendment C) and the afterimage
+   is gone at 120ms; until then a patch of paper covers the textarea's own
+   letter, so a late landing reads as input lag. The patch is cut from the
+   sheet: the panel's paper and grain, the grain registered to the sheet's by
+   Typewriter.strike(), so it never shows as a box. The type copies the
+   textarea's line exactly and only the type drops; the patch stays still. */
 .krypton-prompt-dialog__slip-fx {
   position: absolute;
   inset: 0;
@@ -531,30 +540,42 @@
 
 .krypton-prompt-dialog__ink {
   position: absolute;
-  display: grid;
-  place-items: center;
+  background: var(--prompt-grain, none) 0 0 / 384px 384px, var(--prompt-paper);
+  background-blend-mode: multiply;
+  animation: krypton-prompt-ink-paper 120ms cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+.krypton-prompt-dialog__ink-type {
+  display: block;
   font-family: inherit;
   font-size: 17px;
+  line-height: 1.45;
+  white-space: pre;
   color: var(--prompt-ink);
-  background: var(--prompt-paper);
-  animation: krypton-prompt-ink 210ms cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+  text-shadow: 0 0 0.5px currentColor;
+  animation: krypton-prompt-ink 120ms cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+@keyframes krypton-prompt-ink-paper {
+  70% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 @keyframes krypton-prompt-ink {
   0% { color: transparent; text-shadow: 0 0 5px var(--prompt-ink); transform: translateY(-0.16em); }
-  45% { color: var(--prompt-ink); text-shadow: 0 0 0.6px var(--prompt-ink); transform: translateY(0.03em); }
-  80% { opacity: 1; transform: none; }
-  100% { opacity: 0; transform: none; }
+  22% { color: var(--prompt-ink); text-shadow: 0 0 0.6px var(--prompt-ink); transform: translateY(0.03em); }
+  70%, 100% { transform: none; }
 }
 
-/* Rail and carriage. `data-move` on the slip picks the travel: a keystroke
-   steps, a return sweeps back, a deletion snaps back, a click or scroll jumps. */
+/* Rail and carriage. `data-move` on the sheet picks the travel: a keystroke
+   steps, a return sweeps back, a deletion snaps back, a click or scroll jumps.
+   Both sit above the lamplight, so the typewriter shows whole in the dark. */
 .krypton-prompt-dialog__rail {
   position: absolute;
   left: 0;
   right: 0;
   top: 0;
-  z-index: 3;
+  z-index: 6;
   height: 12px;
   pointer-events: none;
   background: linear-gradient(180deg, #23272a 0%, #747b81 28%, #aeb4b8 40%, #50565b 62%, #1b1e20 100%);
@@ -575,11 +596,14 @@
 .krypton-prompt-dialog__rail-cap--l { left: 10px; }
 .krypton-prompt-dialog__rail-cap--r { right: 10px; }
 
+/* The carriage is the topmost part of the dialog: above the lamplight, the
+   head, the foot and the @ popup, and over the dialog's border when it
+   overhangs. Nothing covers any part of it. */
 .krypton-prompt-dialog__carriage {
   position: absolute;
   left: 0;
   top: 0;
-  z-index: 4;
+  z-index: 8;
   width: 108px;
   height: 34px;
   pointer-events: none;
@@ -587,18 +611,18 @@
   transition: transform 90ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.krypton-prompt-dialog__slip[data-move='cr'] .krypton-prompt-dialog__carriage {
+.krypton-prompt-dialog__panel[data-move='cr'] .krypton-prompt-dialog__carriage {
   transition: transform 320ms cubic-bezier(0.22, 0.8, 0.2, 1);
 }
 
-.krypton-prompt-dialog__slip[data-move='back'] .krypton-prompt-dialog__carriage {
+.krypton-prompt-dialog__panel[data-move='back'] .krypton-prompt-dialog__carriage {
   transition: transform 70ms ease-out;
 }
 
-.krypton-prompt-dialog__slip[data-move='still'] .krypton-prompt-dialog__carriage,
-.krypton-prompt-dialog__slip[data-move='still'] .krypton-prompt-dialog__rail,
-.krypton-prompt-dialog__slip[data-move='still'] .krypton-prompt-dialog__lamp-light,
-.krypton-prompt-dialog__slip[data-move='still'] .krypton-prompt-dialog__lamp-flare {
+.krypton-prompt-dialog__panel[data-move='still'] .krypton-prompt-dialog__carriage,
+.krypton-prompt-dialog__panel[data-move='still'] .krypton-prompt-dialog__rail,
+.krypton-prompt-dialog__panel[data-move='still'] .krypton-prompt-dialog__lamp-light,
+.krypton-prompt-dialog__panel[data-move='still'] .krypton-prompt-dialog__lamp-flare {
   transition: none;
 }
 
@@ -626,11 +650,11 @@
 }
 
 .krypton-prompt-dialog__carriage--strike .krypton-prompt-dialog__carriage-stalk {
-  animation: krypton-prompt-strike 110ms cubic-bezier(0.3, 0.9, 0.4, 1);
+  animation: krypton-prompt-strike 70ms cubic-bezier(0.3, 0.9, 0.4, 1);
 }
 
 .krypton-prompt-dialog__carriage--strike .krypton-prompt-dialog__carriage-head {
-  animation: krypton-prompt-strike-head 110ms linear;
+  animation: krypton-prompt-strike-head 70ms linear;
 }
 
 @keyframes krypton-prompt-strike {
@@ -693,13 +717,16 @@
 .krypton-prompt-dialog__led--a.krypton-prompt-dialog__led--on { background: #ffb24a; box-shadow: 0 0 7px #ffb24a; }
 .krypton-prompt-dialog__led--r.krypton-prompt-dialog__led--on { background: #ff5747; box-shadow: 0 0 7px #ff5747; }
 
-/* Lamplight (dark scheme): a desk lamp over the sheet, following the carriage. */
+/* Lamplight (dark scheme): a desk lamp over the whole sheet, following the
+   carriage. The head, foot, image strip and @ popup sit above it. */
 .krypton-prompt-dialog__lamp,
 .krypton-prompt-dialog__flare {
   position: absolute;
   inset: 0;
   z-index: 5;
   display: none;
+  overflow: hidden;
+  border-radius: inherit;
   pointer-events: none;
 }
 
@@ -713,6 +740,19 @@ html[data-theme-scheme='dark'] .krypton-prompt-dialog__flare {
 
 html[data-theme-scheme='dark'] .krypton-prompt-dialog__slip-kicker {
   color: #cdb58f;
+}
+
+/* The head and foot sit above the light, so their print is inked for it: pale
+   where the sheet lies in the dark, dark where the lamp lights it (Typewriter
+   marks those parts `__lit` when the carriage moves). */
+html[data-theme-scheme='dark'] .krypton-prompt-dialog__panel {
+  --prompt-print-strong: #e3cfa9;
+  --prompt-print: #cdb58f;
+}
+
+html[data-theme-scheme='dark'] .krypton-prompt-dialog__lit {
+  --prompt-print-strong: var(--prompt-ink);
+  --prompt-print: #3a342c;
 }
 
 .krypton-prompt-dialog__lamp-light {
@@ -741,7 +781,7 @@ html[data-theme-scheme='dark'] .krypton-prompt-dialog__slip-kicker {
    it, DESIGN.md "Transparency hierarchy") with the one cast shadow. */
 .krypton-prompt-dialog__mention-popup {
   position: absolute;
-  z-index: 1;
+  z-index: 7;
   min-width: 280px;
   max-width: 520px;
   max-height: 240px;
@@ -806,6 +846,8 @@ html[data-theme-scheme='dark'] .krypton-prompt-dialog__slip-kicker {
 
 /* ─── Image staging ─── */
 .krypton-prompt-dialog__staging {
+  position: relative;
+  z-index: 6;
   display: none;
   align-items: center;
   gap: 6px;
@@ -854,16 +896,23 @@ html[data-theme-scheme='dark'] .krypton-prompt-dialog__slip-kicker {
   border-color: var(--mat-lit);
 }
 
-/* ─── Footer ─── key caps, each followed by its action as printed legend. */
+/* ─── Footer ─── key caps, each followed by its action printed on the sheet.
+   Above the lamplight, like the head. */
 .krypton-prompt-dialog__footer {
+  position: relative;
+  z-index: 6;
   display: flex;
   gap: 14px;
   padding: 0 2px;
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
   font-size: calc(var(--krypton-chrome-font-size, 11px) - 1px);
-  color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
-  text-shadow: var(--mat-print);
+  color: var(--prompt-print, var(--prompt-paper-ink));
   letter-spacing: 0.06em;
+}
+
+/* Each hint resolves its own ink, so the lamplight can mark it lit. */
+.krypton-prompt-dialog__footer > .krypton-key-hint {
+  color: var(--prompt-print, var(--prompt-paper-ink));
 }
 
 /* spec 372: why a lane send failed — fault ink (ADR-0017), one line in the foot. */

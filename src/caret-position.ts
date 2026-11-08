@@ -43,17 +43,31 @@ export interface CaretCoordinates {
   height: number;
 }
 
-export function getCaretCoordinates(
+/** Where a run of the textarea's text is drawn: its inline box (the glyphs'
+ *  content area, not the line box), unrounded, relative to the textarea's
+ *  border box, scroll subtracted. */
+export interface TextRangeBox {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** A hidden div laid out like `element`, holding its text split around a span
+ *  that starts at `start`. The span holds `element.value.slice(start, end)`
+ *  and the rest of the text follows it, so the span wraps where the textarea
+ *  wraps. Without `end` the span holds everything from `start` on. */
+function mirror(
   element: HTMLTextAreaElement,
-  position: number,
-): CaretCoordinates {
+  computed: CSSStyleDeclaration,
+  start: number,
+  end?: number,
+): { div: HTMLDivElement; span: HTMLSpanElement } {
   const div = document.createElement('div');
   div.id = 'krypton-caret-mirror';
   document.body.appendChild(div);
 
   const style = div.style;
-  const computed = window.getComputedStyle(element);
-
   style.whiteSpace = 'pre-wrap';
   style.overflowWrap = 'break-word';
   style.position = 'absolute';
@@ -67,11 +81,25 @@ export function getCaretCoordinates(
     styleBag[prop] = computedBag[prop];
   }
 
-  div.textContent = element.value.substring(0, position);
-
+  const value = element.value;
+  div.textContent = value.substring(0, start);
   const span = document.createElement('span');
-  span.textContent = element.value.substring(position) || '.';
   div.appendChild(span);
+  if (end === undefined) {
+    span.textContent = value.substring(start) || '.';
+  } else {
+    span.textContent = value.substring(start, end);
+    div.appendChild(document.createTextNode(value.substring(end)));
+  }
+  return { div, span };
+}
+
+export function getCaretCoordinates(
+  element: HTMLTextAreaElement,
+  position: number,
+): CaretCoordinates {
+  const computed = window.getComputedStyle(element);
+  const { div, span } = mirror(element, computed, position);
 
   const coordinates: CaretCoordinates = {
     top:
@@ -87,4 +115,25 @@ export function getCaretCoordinates(
 
   document.body.removeChild(div);
   return coordinates;
+}
+
+/** The box of `element.value.slice(start, end)`, which must not wrap. Unlike
+ *  `getCaretCoordinates` nothing is rounded, so a copy of the text placed at
+ *  this box covers the textarea's own glyphs exactly. */
+export function getTextRangeBox(
+  element: HTMLTextAreaElement,
+  start: number,
+  end: number,
+): TextRangeBox {
+  const computed = window.getComputedStyle(element);
+  const { div, span } = mirror(element, computed, start, end);
+  const outer = div.getBoundingClientRect();
+  const inner = span.getBoundingClientRect();
+  document.body.removeChild(div);
+  return {
+    left: inner.left - outer.left - element.scrollLeft,
+    top: inner.top - outer.top - element.scrollTop,
+    width: inner.width,
+    height: inner.height,
+  };
 }

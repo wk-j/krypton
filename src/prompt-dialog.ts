@@ -22,7 +22,7 @@ import {
 } from './acp/harness-directory';
 import type { HarnessLaneStatus } from './acp/types';
 import { getCaretCoordinates } from './caret-position';
-import { Typewriter } from './prompt-dialog-typewriter';
+import { CARRIAGE_CLEARANCE, Typewriter } from './prompt-dialog-typewriter';
 import { keyHint, type KeyHint } from './ui/kbd';
 
 const TARGET_PROCESS = 'claude';
@@ -241,6 +241,7 @@ export class PromptDialog {
     this.slipNameEl = this.overlay.querySelector('.krypton-prompt-dialog__slip-name')!;
     this.slipLinesEl = this.overlay.querySelector('.krypton-prompt-dialog__slip-lines')!;
     this.typewriter = new Typewriter(
+      this.panel,
       this.overlay.querySelector('.krypton-prompt-dialog__slip')!,
       this.textareaEl,
       () => this.compositor.soundEngine.play('terminal.bell'),
@@ -468,13 +469,16 @@ export class PromptDialog {
         ${position}
       `;
     }
+    this.typewriter.relight();
   }
 
   private renderFooter(): void {
     const t = this.currentTarget();
     const queues = t?.kind === 'lane' && QUEUEING_STATUSES[t.status] === true;
-    // spec 373: the carriage LEDs read the same state the foot prints.
+    // spec 373: the carriage LEDs read the same state the foot prints, and
+    // the foot's new print is inked for the lamplight.
     this.typewriter.setLeds({ queue: queues, error: this.errorText !== null });
+    this.typewriter.relight();
     if (this.errorText !== null) {
       const error = document.createElement('span');
       error.className = 'krypton-prompt-dialog__error';
@@ -718,11 +722,17 @@ export class PromptDialog {
     });
   }
 
+  /** spec 373 B: the popup opens below the carriage, or above the caret's line
+   *  when the screen has no room below, so it never covers the typewriter. */
   private positionMentionPopup(): void {
     const coords = getCaretCoordinates(this.textareaEl, this.mention.start);
     const taRect = this.textareaEl.getBoundingClientRect();
     const panelRect = this.panel.getBoundingClientRect();
-    const topOffset = taRect.top - panelRect.top + coords.top + coords.height + 4;
+    const lineTop = taRect.top - panelRect.top + coords.top;
+    const below = lineTop + coords.height + CARRIAGE_CLEARANCE + 4;
+    const popupH = this.mentionPopupEl.offsetHeight;
+    const fitsBelow = panelRect.top + below + popupH <= window.innerHeight;
+    const topOffset = fitsBelow ? below : lineTop - popupH - 4;
     const leftOffset = taRect.left - panelRect.left + coords.left;
     this.mentionPopupEl.style.top = `${topOffset}px`;
     this.mentionPopupEl.style.left = `${leftOffset}px`;
