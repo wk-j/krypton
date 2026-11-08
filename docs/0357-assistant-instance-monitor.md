@@ -45,6 +45,7 @@ Use the Rust `AcpRegistry` as the authoritative inventory of spawned local/remot
 | Assist | Its lazy ACP launch succeeds. | One warm process per owning Assist session, not one per task or lane. |
 | Rails judge | Its separate lazy ACP launch succeeds. | Distinct from Assist; check-command subprocesses are not assistants. |
 | Inline AI | Cmd+K setup actually launches its ACP client. | Reused conversations do not increase the process count. |
+| Commit explainer | A Commit Browser explainer job spawns its ACP process (spec 0376). | One per running job, labelled `explain <repo>@<sha7>`; gone when the job ends. |
 | Embedded AgentView / File Manager AI / Markdown AI | `AgentController` creates the underlying Pi Agent. | One embedded instance; no dedicated PID, CPU, or RSS. |
 
 “All” means every assistant managed by these Krypton lifecycles, not arbitrary agent CLIs the user starts in a terminal or provider-internal workers. MCP servers, shell tools, SSH runtimes, dictation, quota-probe utilities, and configured-but-unstarted wrappers are not additional assistants. Agent-reported subagents are not independently managed ACP transports; the panel must not count their reported names or every OS descendant as another initialized instance. Existing execution/subagent surfaces remain their source of detail.
@@ -69,7 +70,7 @@ Add `assistants` to `HarnessDockTab`, `HarnessPanelId`, `#panels` parsing/help, 
 New types live beside ACP types and mirror Rust serialization using snake_case:
 
 ```ts
-type AcpInstanceRole = 'harness_lane' | 'session_probe' | 'assist' | 'rails_judge' | 'inline_ai';
+type AcpInstanceRole = 'harness_lane' | 'session_probe' | 'assist' | 'rails_judge' | 'inline_ai' | 'commit_explainer';
 interface AcpInstanceOwner {
   role: AcpInstanceRole;
   label: string;

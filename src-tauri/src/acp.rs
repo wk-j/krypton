@@ -44,6 +44,7 @@ pub enum AcpInstanceRole {
     Assist,
     RailsJudge,
     InlineAi,
+    CommitExplainer,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]

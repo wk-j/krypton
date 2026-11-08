@@ -36,6 +36,20 @@ describe('learnCommitPrompt (spec 0375)', () => {
     expect(p).toContain('Never modify the repository, never commit');
     expect(p).toContain('Never invent knowledge');
   });
+
+  it('background variant (spec 0376) points at the repo by path and confines writes to the scratch dir', () => {
+    const scratch = '/private/var/folders/x/T/krypton-learn/krypton-abcdef1';
+    const bg = learnCommitPrompt({
+      sha: 'abcdef1234', path: `${scratch}/explainer.md`, language: 'Thai', repo: 'krypton',
+      repoRoot: '/Users/me/src/krypton', scratch,
+    });
+    expect(bg).toContain(`Repository path (data): ${JSON.stringify('/Users/me/src/krypton')}`);
+    expect(bg).toContain('git -C <repository path>');
+    expect(bg).toContain(`Repros run only under \`${scratch}\``);
+    expect(bg).not.toContain('$TMPDIR/krypton-learn/abcdef1/');
+    expect(bg).toContain('never ask a question');
+    expect(p).not.toContain('git -C');
+  });
 });
 
 describe('timelineConflictsPrompt', () => {

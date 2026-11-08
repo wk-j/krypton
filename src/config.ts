@@ -331,10 +331,19 @@ export interface KryptonConfig {
   knowledge?: KnowledgeConfig;
 }
 
-/** spec 0375: where `#learn` / the Commit Browser store explainers, and their prose language. */
+/** spec 0375/0376: where explainers are stored, their prose language, and the
+ *  background ACP job that writes them for the Commit Browser. */
 export interface KnowledgeConfig {
   dir: string;
   language: string;
+  /** ACP backend id of an explainer job. */
+  backend: string;
+  /** An id the backend advertises; empty keeps the backend default. */
+  model: string;
+  /** Agent-side session mode; must sandbox writes to the job's working dir. */
+  mode: string;
+  /** Jobs that run at once (clamped 1–4 by the runner). */
+  parallel: number;
 }
 
 /** Load configuration from the Rust backend */

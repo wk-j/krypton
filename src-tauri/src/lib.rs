@@ -274,6 +274,8 @@ pub fn run() {
             commands::git_log_page,
             commands::git_commit_diff,
             commands::knowledge_write_path,
+            commands::knowledge_job_prepare,
+            commands::knowledge_store,
             commands::knowledge_list,
             commands::review_thread_preview,
             commands::review_thread_create,

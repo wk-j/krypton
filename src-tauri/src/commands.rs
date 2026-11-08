@@ -558,6 +558,45 @@ pub async fn knowledge_write_path(
     .map_err(|e| format!("Task join error: {e}"))?
 }
 
+/// spec 376: validate the commit and hand out a fresh scratch dir for the
+/// background explainer agent.
+#[tauri::command]
+pub async fn knowledge_job_prepare(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    cwd: String,
+    sha: String,
+) -> Result<crate::knowledge::KnowledgeJob, String> {
+    let raw_dir = {
+        let cfg = lock_read(&config, "Config")?;
+        cfg.knowledge.dir.clone()
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = crate::knowledge::resolve_dir(&raw_dir)?;
+        crate::knowledge::job_prepare(&dir, &cwd, &sha)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
+}
+
+/// spec 376: copy the agent's `explainer.md` into the knowledge dir.
+#[tauri::command]
+pub async fn knowledge_store(
+    config: State<'_, Arc<RwLock<KryptonConfig>>>,
+    cwd: String,
+    sha: String,
+) -> Result<String, String> {
+    let raw_dir = {
+        let cfg = lock_read(&config, "Config")?;
+        cfg.knowledge.dir.clone()
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = crate::knowledge::resolve_dir(&raw_dir)?;
+        crate::knowledge::store(&dir, &cwd, &sha)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
+}
+
 /// spec 375: every explainer in the knowledge dir, for the Commit Browser's
 /// row lamps. A missing dir is an empty list.
 #[tauri::command]

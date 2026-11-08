@@ -684,6 +684,14 @@ pub struct KnowledgeConfig {
     /// Prose language of explainers; code, identifiers and commands stay
     /// English.
     pub language: String,
+    /// ACP backend that runs the background Commit Browser explainer (spec 376).
+    pub backend: String,
+    /// Model id for the explainer agent.
+    pub model: String,
+    /// Session mode for the explainer agent.
+    pub mode: String,
+    /// Max concurrent explainer jobs (clamped to 1–4 by the frontend).
+    pub parallel: u32,
 }
 
 impl Default for KnowledgeConfig {
@@ -691,6 +699,10 @@ impl Default for KnowledgeConfig {
         Self {
             dir: "~/.config/krypton/knowledge".to_string(),
             language: "Thai".to_string(),
+            backend: "codex".to_string(),
+            model: "gpt-6.1-sol[high]".to_string(),
+            mode: "workspace-write".to_string(),
+            parallel: 2,
         }
     }
 }
@@ -1620,5 +1632,19 @@ min_confidence = 0.65
         let cfg: KryptonConfig = toml::from_str("[knowledge]\nlanguage = \"English\"\n").unwrap();
         assert_eq!(cfg.knowledge.language, "English");
         assert_eq!(cfg.knowledge.dir, "~/.config/krypton/knowledge");
+        assert_eq!(cfg.knowledge.backend, "codex");
+        assert_eq!(cfg.knowledge.model, "gpt-6.1-sol[high]");
+        assert_eq!(cfg.knowledge.mode, "workspace-write");
+        assert_eq!(cfg.knowledge.parallel, 2);
+
+        let cfg: KryptonConfig = toml::from_str(
+            "[knowledge]\nbackend = \"claude\"\nmodel = \"opus\"\nmode = \"default\"\nparallel = 3\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.knowledge.backend, "claude");
+        assert_eq!(cfg.knowledge.model, "opus");
+        assert_eq!(cfg.knowledge.mode, "default");
+        assert_eq!(cfg.knowledge.parallel, 3);
+        assert_eq!(cfg.knowledge.language, "Thai");
     }
 }

@@ -5,6 +5,7 @@
 > Milestone: Git — learning from history
 > Builds on: 0038 (Diff View, `openDiffFromString`) · 0039 (Markdown Viewer) · 0144 (`#wiki` one-shot prompt injection) · 0372 (in-process `lane.send` caller) · ADR 0003 (lanes write the document with their own tools)
 > Updated: 2026-11-08 — the explainer is a blog post with inline SVG figures, replacing the Terms / Story / cards sections
+> Updated: 2026-11-08 — the explainer runs as a background job, spec 0376
 
 ## Problem
 
@@ -18,8 +19,8 @@ pictures, written as general technical knowledge that does not depend on the pro
 Two parts:
 
 - **Commit Browser** is a new keyboard-driven content view (`Leader E`). It lists the focused repo's
-  commits with a preview pane. `d` opens a commit's diff in the existing Diff View. `e` asks an ACP
-  Harness lane to explain the commit.
+  commits with a preview pane. `d` opens a commit's diff in the existing Diff View. `e` queues a
+  background job that explains the commit; no Harness is needed ([spec 0376](0376-commit-explainer-background-job.md)).
 - **`#learn <sha>`** is a new Harness composer command, following the same one-shot injection
   pattern as `#wiki`, `#lesson` and `#daily`. The lane reads the commit with its own tools, checks
   the claims outside the project (a small repro or a documentation check), and writes one markdown
@@ -27,9 +28,9 @@ Two parts:
   whole story, the story itself with each concept explained where it first matters, inline SVG
   figures, general lessons, then how the claims were checked and the source.
 
-The work runs on a lane, not a headless one-shot session. The verification step has to run code,
-and the headless fence (`headless-fence.ts`) refuses tool permissions and file writes. The user also
-watches the lane work and can approve its repro commands.
+Originally the work ran on a Harness lane, because the headless fence (`headless-fence.ts`) refuses
+tool permissions and file writes. *Superseded by spec 0376:* the browser's `e` now runs an
+app-level background job with its own ACP process and scratch dir; only `#learn` still uses a lane.
 
 ## Research
 
@@ -45,12 +46,14 @@ watches the lane work and can approve its repro commands.
   the harness supplies discipline, not storage.
 - **Cross-view in-process calls go through the directory.** The prompt dialog calls
   `harnessEntry(id).control('lane.send', …, {source:'prompt_dialog'})` (spec 372). `lane.send` sends
-  the text as a literal user prompt and does not dispatch `#` commands, so this spec adds a dedicated
-  op instead of sending `#learn` through it.
+  the text as a literal user prompt and does not dispatch `#` commands, so this spec first added a
+  dedicated op instead of sending `#learn` through it (superseded by spec 0376: the op is removed and
+  the browser no longer calls the Harness).
 - **Showing a runtime file.** `openMarkdownView(absPath)` already opens files produced at runtime
   (lessons index, daily note). Its file list always comes from the focused cwd, so the library view
   needs a root override.
-- **Rejected alternatives:**
+- **Rejected alternatives** (at the time; superseded by spec 0376, which runs a dedicated ACP
+  process per job):
   - *Headless `InlineAcpSession`* streams and needs no Harness, but the fence blocks verification.
   - *`AcpAssistSession`* keeps one session forever, so context leaks across commits, and caps a run
     at 20 s.
@@ -93,9 +96,8 @@ watches the lane work and can approve its repro commands.
 | `src/input-router.ts`, `src/which-key.ts`, `src/command-palette.ts` | `Leader E`, which-key row, palette `git.commit-browser` |
 | `src/config.ts` | `knowledge?: { dir, language }` on the TS `KryptonConfig` |
 | `src/acp/harness-prompts.ts` | `learnCommitPrompt()` |
-| `src/acp/acp-harness-view.ts` | `#learn` command; `lane.learn` control op |
+| `src/acp/acp-harness-view.ts` | `#learn` command |
 | `src/acp/hash-commands.ts` | `learn` row and its command metadata (the composer palette's source of truth) |
-| `src/acp/control-types.ts` | `ControlCaller.source` += `'commit_browser'` |
 | `src/acp/components/help-overlay/index.ts` | `#learn <sha>` row |
 | `docs/0004-architecture.md`, `docs/0006-configuration.md`, `docs/0072-acp-harness-view.md`, `docs/README.md` | view, commands, config, command, index |
 
@@ -130,12 +132,9 @@ interface CommitRow { summary: CommitSummary; candidate: boolean; lamp: RowLamp 
 | `knowledge_write_path` | `(cwd, sha) -> String` | Verifies `<sha>^{commit}` and returns `<dir>/<repo_name>-<sha7>.md`, creating `dir`. |
 | `knowledge_list` | `() -> KnowledgeIndex` | Scans `dir` for `*-<7 hex>.md`. A missing dir gives an empty list. |
 
-**Control op `lane.learn`** `{lane, sha}` → `{status:'started', lane, path}`. Accepted only from the
-in-process caller `{source:'commit_browser'}`; the `/control/v1` API, Telegram and Live Assist get
-`invalid_request`. The source is checked before the lane is resolved, and it is the only gate:
-Rust forwards any op name on `/control/v1`, so `lane.learn` is never added to
-`ADVERTISED_OPERATIONS`. A lane that is not free gets `lane_busy`, a new control error code. The op
-runs the same code path as typing `#learn <sha>`.
+`#learn <sha>` reserves the lane (`lane_busy`, a control error code, when it is not free).
+The Commit Browser no longer reaches the Harness; see spec 0376 for the background job
+(`knowledge_job_prepare`, `knowledge_store`).
 
 ### Data Flow
 
@@ -146,22 +145,11 @@ runs the same code path as typing `#learn <sha>`.
 2. view → invoke knowledge_list() → lamp 'ready' when a doc matches (repo_name, first 7 of the
    sha); preview = selected row's message + stat (no IPC)
 3. d / Enter → invoke git_commit_diff → compositor.openDiffFromString(diff, `COMMIT // <sha7>`)
-4. e → candidate lanes = listHarnessEntries() that are local and whose cwd is inside repo_root
-   → listLanes() with status 'idle'
-   no such Harness → notify "Open an ACP Harness in this repo (Leader Y), then press e"
-   Harness open, no idle lane → notify "No idle lane in this repo's Harness — wait for one or #cancel"
-   1 → send · >1 → lane picker overlay (j/k, Enter, Esc)
-5. entry.control('lane.learn', {lane, sha}, {source:'commit_browser'})
-   → harness reserves the lane (busy, label `learning <sha7>`) before any await
-   → knowledge_write_path(projectDir, sha); a refusal releases the lane
-   → dispatches learnCommitPrompt({sha, path, language, repo}) WITHOUT awaiting the turn, and
-     returns {status:'started'} at once, so the lamp turns pending before the lane can go idle
-6. row lamp → 'pending'. `harness:lane-idle` carries the cwd but no lane identity, so on every
-   signal for this repo root the view re-runs knowledge_list and checks each pending lane itself:
-   lane still not idle → the lamp stays 'pending', even when the file exists (`E` overwrites one);
-   lane idle, doc present → 'ready' + notification "Explainer ready — o to open";
-   lane idle, doc absent → 'none' + notice "<lane> finished without writing <file>";
-   Harness closed → 'pending' until `r`, which settles it from the index alone
+4. e / E → CommitExplainer.enqueue (spec 0376): the job runs in its own ACP process, outlives the
+   browser, and stores `<dir>/<repo>-<sha7>.md` via knowledge_store
+5. row lamp → 'pending' while queued or running; x cancels it
+6. job done → lamp 'ready' + toast "Explainer ready — <repo>@<sha7>"; failure → lamp 'none' +
+   toast "Explain <repo>@<sha7> failed — <message>"
 7. o → Markdown Viewer rooted at the knowledge dir, on this commit's file
    L → the same viewer with no file selected
    o on a row without an explainer → notify "No explainer for <sha7> yet — e explain"
@@ -169,7 +157,8 @@ runs the same code path as typing `#learn <sha>`.
 
 ### The explainer contract (`learnCommitPrompt`)
 
-The prompt is the schema, the same way `#wiki`'s prompt is. It tells the lane:
+The prompt is the schema, the same way `#wiki`'s prompt is. It tells the agent (a `#learn` lane, or
+the background job's own process — spec 0376):
 
 1. Read the commit with `git show --stat <sha>`, then only the hunks it needs. Read a referenced
    spec or doc only when the message points to it.
@@ -227,8 +216,9 @@ The prompt is the schema, the same way `#wiki`'s prompt is. It tells the lane:
 | `/` | Commit Browser | Filter by subject, author or sha (client-side on loaded rows). `Esc` clears. |
 | `c` | Commit Browser | Show only candidates |
 | `d` / `Enter` | Commit Browser | Open the commit's diff in a Diff View tab |
-| `e` | Commit Browser | Explain. On a `ready` row it flashes "already explained — o open · E regenerate". |
+| `e` | Commit Browser | Explain in the background (spec 0376). On a `ready` row it flashes "already explained — o open · E regenerate". |
 | `E` | Commit Browser | Regenerate (overwrites the doc) |
+| `x` | Commit Browser | Cancel a queued or running explainer |
 | `o` / `L` | Commit Browser | Open this commit's explainer / open the knowledge library (both in a Markdown Viewer rooted at the knowledge dir) |
 | `y` / `r` / `?` / `q` `Esc` | Commit Browser | Copy sha / reload / help / close |
 | `#learn <sha>` | Harness composer | Explain a commit from the lane directly (idle lane, project dir required) |
@@ -241,7 +231,7 @@ trailers, `added + removed ≤ 200`, and not a merge. This is a hint lamp, not a
 One plate, split into list and preview (no nested panels):
 `.commit-browser` › `__head` (repo · branch · count · filter readout) · `__list` › `__row`
 (`__lamp`, `__sha`, `__age`, `__type` chip, `__subject`, `__stat`) · `__preview` (message, file stat,
-key legend) · `__picker` (lane overlay).
+key legend).
 - The selection is the row background. The `pending` / `ready` / candidate states light only the
   row's lamp, never the whole row.
 - `pending` is a steady amber lamp (`--mat-lens-on`), `ready` a steady green lamp
@@ -265,11 +255,12 @@ Read at startup; **Reload Config** applies.
 
 - **Not a repo, empty repo, or SSH workspace:** notify and do not open (`blockLocalViewForRemote`).
 - **Merge commit:** diff against the first parent, `merge` chip, never a candidate.
-- **Diff over 2 MiB:** `d` notifies "commit diff too large". `e` still works because the lane reads
+- **Diff over 2 MiB:** `d` notifies "commit diff too large". `e` still works because the agent reads
   the commit itself.
-- **Lane becomes busy between pick and send:** `lane_busy` flash; lamp stays `none`.
-- **Harness closes while pending:** the lamp stays `pending` until `r` re-reads the index.
-- **Knowledge dir unwritable:** `knowledge_write_path` error is shown in the flash.
+- **Explain while one is already queued or running:** notice "`<sha7>` is already explaining — x cancel".
+- **Browser closes while pending:** the job keeps running; the toast still fires.
+- **Knowledge dir unwritable:** the `knowledge_job_prepare` / `knowledge_store` (or, for `#learn`,
+  `knowledge_write_path`) error is shown (job failure toast or flash).
 - **Same repo name in two places:** docs share the `<repo>-<sha7>` namespace. A collision needs the
   same name and the same sha7, which is accepted as negligible.
 - **WebContent reload:** the browser is not restored (absent from `workspace-recovery.ts`
@@ -279,14 +270,14 @@ Read at startup; **Reload Config** applies.
 
 ## Open Questions
 
-None. Decisions taken: the work runs on a lane (needs an open Harness), explainers are stored in a
-global dir, prose language is Thai by config, and the view opens with `Leader E`.
+None. Decisions taken: the explainer runs as a background job (spec 0376; originally a lane, which
+needed an open Harness), explainers are stored in a global dir, prose language is Thai by config,
+and the view opens with `Leader E`.
 
 ## Out of Scope
 
 Explaining several commits at once, a branch graph, file/author history, any write to git
-(checkout, revert, rebase), a headless no-Harness mode, exposing `lane.learn` on `/control/v1` or
-Raycast, spaced-repetition export, SSH/remote repos.
+(checkout, revert, rebase), spaced-repetition export, SSH/remote repos.
 
 ## Resources
 

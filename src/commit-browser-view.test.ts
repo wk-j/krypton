@@ -1,43 +1,57 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-interface FakeLane {
-  laneId: string;
-  displayName: string;
-  backendId: string;
-  status: string;
-}
+import type { ExplainChange, ExplainJob } from './commit-explainer';
 
-interface FakeHarness {
-  harnessId: string;
-  cwd: string | null;
-  workspaceKey?: string;
-  alive: boolean;
-  lanes: FakeLane[];
-  listLanes(): FakeLane[];
-  control: Mock;
-}
-
-const mocks = vi.hoisted(() => ({
-  invoke: vi.fn(),
-  harnesses: [] as FakeHarness[],
-}));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('./acp/harness-directory', () => ({
-  listHarnessEntries: () => mocks.harnesses,
-  harnessEntry: (id: string) => mocks.harnesses.find((h) => h.harnessId === id) ?? null,
-}));
 
 import {
   CommitBrowserView,
-  NOTIFY_EXPLAINER_READY,
-  NOTIFY_NO_IDLE_LANE,
-  NOTIFY_OPEN_HARNESS,
   isCandidate,
   type CommitSummary,
+  type ExplainerPort,
   type GitLogPage,
   type KnowledgeIndex,
 } from './commit-browser-view';
+
+/** In-memory jobs keyed by sha; the test settles them by hand. */
+class FakeExplainer implements ExplainerPort {
+  readonly jobs = new Map<string, ExplainJob>();
+  readonly started: string[] = [];
+  private readonly listeners = new Set<(change: ExplainChange) => void>();
+
+  start(root: string, repoName: string, sha: string): ExplainJob {
+    const job: ExplainJob = { root, repoName, sha, state: 'queued', startedAt: null, activity: null, backend: null, model: null };
+    this.jobs.set(sha, job);
+    this.started.push(sha);
+    this.emit({ kind: 'update', job });
+    return job;
+  }
+  cancel(_root: string, sha: string): boolean {
+    const job = this.jobs.get(sha);
+    if (!job) return false;
+    this.jobs.delete(sha);
+    this.emit({ kind: 'cancelled', job });
+    return true;
+  }
+  job(_root: string, sha: string): ExplainJob | null { return this.jobs.get(sha) ?? null; }
+  queuedAhead(): number { return 0; }
+  subscribe(listener: (change: ExplainChange) => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+  emit(change: ExplainChange): void {
+    for (const listener of this.listeners) listener(change);
+  }
+  /** End a job the way the runner does: drop it, then report. */
+  settle(sha: string, outcome: { kind: 'ready'; path: string } | { kind: 'failed'; message: string }): void {
+    const job = this.jobs.get(sha);
+    if (!job) throw new Error(`no job for ${sha}`);
+    this.jobs.delete(sha);
+    this.emit({ ...outcome, job });
+  }
+}
 
 function commit(n: number, over: Partial<CommitSummary> = {}): CommitSummary {
   const sha = String(n).padStart(7, '0') + 'f'.repeat(33);
@@ -60,19 +74,6 @@ function page(commits: CommitSummary[], hasMore = false): GitLogPage {
   return { repoRoot: '/repo', repoName: 'repo', branch: 'main', commits, hasMore };
 }
 
-function harness(id: string, cwd: string, lanes: Array<[string, string]>, workspaceKey?: string): FakeHarness {
-  const fake: FakeHarness = {
-    harnessId: id,
-    cwd,
-    workspaceKey,
-    alive: true,
-    lanes: lanes.map(([displayName, status], i) => ({ laneId: `${id}-${i}`, displayName, backendId: 'claude', status })),
-    listLanes: () => fake.lanes,
-    control: vi.fn(),
-  };
-  return fake;
-}
-
 const state: { knowledge: KnowledgeIndex; pages: GitLogPage[]; diff: string } = {
   knowledge: { dir: '/k', docs: [] },
   pages: [],
@@ -81,11 +82,12 @@ const state: { knowledge: KnowledgeIndex; pages: GitLogPage[]; diff: string } = 
 
 let view: CommitBrowserView | null = null;
 let notes: string[] = [];
+let explainer: FakeExplainer;
 
 function mount(first: GitLogPage): CommitBrowserView {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  view = new CommitBrowserView(first, container);
+  view = new CommitBrowserView(first, container, explainer);
   view.setNotifier((message) => notes.push(message));
   return view;
 }
@@ -116,10 +118,10 @@ async function knowledgeLoaded(): Promise<void> {
 
 beforeEach(() => {
   notes = [];
+  explainer = new FakeExplainer();
   state.knowledge = { dir: '/k', docs: [] };
   state.pages = [];
   state.diff = '';
-  mocks.harnesses = [];
   mocks.invoke.mockImplementation(async (cmd: string) => {
     if (cmd === 'knowledge_list') return state.knowledge;
     if (cmd === 'git_commit_diff') return state.diff;
@@ -211,125 +213,74 @@ describe('CommitBrowserView', () => {
     after.forEach((node, i) => expect(node).toBe(before[i]));
   });
 
-  it('e with no local Harness in the repo asks to open one', async () => {
-    mocks.harnesses = [
-      harness('hm-1', '/repo2', [['claude-1', 'idle']]),
-      harness('hm-2', '/repo', [['claude-2', 'idle']], 'ssh:me@host:22:/repo'),
-    ];
-    const v = mount(page([commit(1)]));
-    await knowledgeLoaded();
-    press(v, 'e');
-    expect(notes).toEqual([NOTIFY_OPEN_HARNESS]);
-    expect(mocks.harnesses[0].control).not.toHaveBeenCalled();
-    expect(mocks.harnesses[1].control).not.toHaveBeenCalled();
-  });
-
-  it('e with a Harness but no idle lane says so', async () => {
-    mocks.harnesses = [harness('hm-1', '/repo', [['claude-1', 'busy']])];
-    const v = mount(page([commit(1)]));
-    await knowledgeLoaded();
-    press(v, 'e');
-    expect(notes).toEqual([NOTIFY_NO_IDLE_LANE]);
-  });
-
-  it('e with one idle lane sends lane.learn directly and lights pending', async () => {
+  it('e queues a background job for the selected commit and lights pending, no Harness needed', async () => {
     const c = commit(1);
-    const h = harness('hm-1', '/repo/sub', [['claude-1', 'idle'], ['claude-2', 'busy']], 'local:/repo/sub');
-    h.control.mockResolvedValue({ status: 'started', lane: 'claude-1', path: '/k/repo-0000001.md' });
-    mocks.harnesses = [h];
     const v = mount(page([c]));
     await knowledgeLoaded();
     press(v, 'e');
-    expect(h.control).toHaveBeenCalledWith('lane.learn', { lane: 'claude-1', sha: c.sha }, { source: 'commit_browser' });
-    await vi.waitFor(() => expect(row(v, c).dataset.lamp).toBe('pending'));
-    expect(v.element.querySelector('.commit-browser__picker')?.hasAttribute('hidden')).toBe(true);
+    expect(explainer.started).toEqual([c.sha]);
+    expect(row(v, c).dataset.lamp).toBe('pending');
+    expect(v.element.querySelector('.commit-browser__status')?.textContent).toBe('queued');
   });
 
-  it('e with two idle lanes opens the picker and Enter sends the selected lane', async () => {
+  it('e on a row that is already explaining starts nothing new', async () => {
     const c = commit(1);
-    const h = harness('hm-1', '/repo', [['claude-1', 'idle'], ['codex-1', 'idle']]);
-    h.control.mockResolvedValue({ status: 'started', lane: 'codex-1', path: '/k/repo-0000001.md' });
-    mocks.harnesses = [h];
     const v = mount(page([c]));
     await knowledgeLoaded();
     press(v, 'e');
-    const picker = v.element.querySelector<HTMLElement>('.commit-browser__picker')!;
-    expect(picker.hidden).toBe(false);
-    expect(h.control).not.toHaveBeenCalled();
-    press(v, 'j');
-    press(v, 'Enter');
-    expect(picker.hidden).toBe(true);
-    expect(h.control).toHaveBeenCalledTimes(1);
-    expect(h.control).toHaveBeenCalledWith('lane.learn', { lane: 'codex-1', sha: c.sha }, { source: 'commit_browser' });
+    press(v, 'e');
+    expect(explainer.started).toEqual([c.sha]);
+    expect(notes).toEqual(['0000001 is already explaining — x cancel']);
   });
 
-  it('a control error notifies its message and leaves the lamp unlit', async () => {
+  it('shows a job that started before the browser opened', async () => {
     const c = commit(1);
-    const h = harness('hm-1', '/repo', [['claude-1', 'idle']]);
-    h.control.mockRejectedValue(Object.assign(new Error('claude-1 is busy'), { code: 'lane_busy' }));
-    mocks.harnesses = [h];
+    explainer.start('/repo', 'repo', c.sha);
+    const v = mount(page([c]));
+    expect(row(v, c).dataset.lamp).toBe('pending');
+  });
+
+  it('previews what a running job is doing', async () => {
+    const c = commit(1);
     const v = mount(page([c]));
     await knowledgeLoaded();
     press(v, 'e');
-    await vi.waitFor(() => expect(notes).toEqual(['claude-1 is busy']));
+    const job = explainer.jobs.get(c.sha)!;
+    Object.assign(job, { state: 'running', startedAt: Date.now(), backend: 'codex', model: 'gpt-6.1-sol[high]', activity: 'git show --stat' });
+    explainer.emit({ kind: 'update', job });
+    const status = v.element.querySelector('.commit-browser__status')?.textContent ?? '';
+    expect(status).toMatch(/^explaining · codex · gpt-6\.1-sol\[high\] · since \d\d:\d\d · git show --stat$/);
+  });
+
+  it('a ready job re-reads the index and turns the lamp green', async () => {
+    const c = commit(1);
+    const v = mount(page([c]));
+    await knowledgeLoaded();
+    press(v, 'e');
+    state.knowledge = { dir: '/k', docs: [{ repo: 'repo', shortSha: c.sha.slice(0, 7), path: '/k/repo-0000001.md' }] };
+    explainer.settle(c.sha, { kind: 'ready', path: '/k/repo-0000001.md' });
+    await vi.waitFor(() => expect(row(v, c).dataset.lamp).toBe('ready'));
+  });
+
+  it('a failed job turns the lamp back off', async () => {
+    const c = commit(1);
+    const v = mount(page([c]));
+    await knowledgeLoaded();
+    press(v, 'e');
+    explainer.settle(c.sha, { kind: 'failed', message: 'codex did not start' });
     expect(row(v, c).dataset.lamp).toBe('none');
   });
 
-  describe('onHarnessLaneIdle', () => {
-    async function pendingView(): Promise<{ v: CommitBrowserView; c: CommitSummary; h: FakeHarness }> {
-      const c = commit(1);
-      const h = harness('hm-1', '/repo', [['claude-1', 'idle']]);
-      h.control.mockImplementation(async () => {
-        h.lanes[0].status = 'busy';
-        return { status: 'started', lane: 'claude-1', path: '/k/repo-0000001.md' };
-      });
-      mocks.harnesses = [h];
-      const v = mount(page([c]));
-      await knowledgeLoaded();
-      press(v, 'e');
-      await vi.waitFor(() => expect(row(v, c).dataset.lamp).toBe('pending'));
-      return { v, c, h };
-    }
-
-    it('turns pending into ready when its lane is idle and the doc exists', async () => {
-      const { v, c, h } = await pendingView();
-      state.knowledge = { dir: '/k', docs: [{ repo: 'repo', shortSha: c.sha.slice(0, 7), path: '/k/repo-0000001.md' }] };
-      h.lanes[0].status = 'idle';
-      void v.onHarnessLaneIdle();
-      await vi.waitFor(() => expect(row(v, c).dataset.lamp).toBe('ready'));
-      expect(notes).toEqual([NOTIFY_EXPLAINER_READY]);
-    });
-
-    it('keeps pending while its lane still works, even when the doc already exists', async () => {
-      // A regenerate overwrites an existing doc; another lane's idle signal must
-      // not report it ready while the explaining lane is still writing.
-      const { v, c } = await pendingView();
-      state.knowledge = { dir: '/k', docs: [{ repo: 'repo', shortSha: c.sha.slice(0, 7), path: '/k/repo-0000001.md' }] };
-      const calls = mocks.invoke.mock.calls.length;
-      void v.onHarnessLaneIdle();
-      await vi.waitFor(() => expect(mocks.invoke.mock.calls.length).toBe(calls + 1));
-      await settle();
-      expect(row(v, c).dataset.lamp).toBe('pending');
-      expect(notes).toEqual([]);
-    });
-
-    it('turns pending into none when the lane went idle without a doc', async () => {
-      const { v, c, h } = await pendingView();
-      h.lanes[0].status = 'idle';
-      void v.onHarnessLaneIdle();
-      await vi.waitFor(() => expect(row(v, c).dataset.lamp).toBe('none'));
-      expect(notes).toEqual(['claude-1 finished without writing repo-0000001.md']);
-    });
-
-    it('keeps pending while the lane is still busy', async () => {
-      const { v, c } = await pendingView();
-      const calls = mocks.invoke.mock.calls.length;
-      void v.onHarnessLaneIdle();
-      await vi.waitFor(() => expect(mocks.invoke.mock.calls.length).toBe(calls + 1));
-      await settle();
-      expect(row(v, c).dataset.lamp).toBe('pending');
-      expect(notes).toEqual([]);
-    });
+  it('x cancels the selected row\'s job', async () => {
+    const c = commit(1);
+    const v = mount(page([c]));
+    await knowledgeLoaded();
+    press(v, 'x');
+    press(v, 'e');
+    press(v, 'x');
+    expect(explainer.jobs.size).toBe(0);
+    expect(row(v, c).dataset.lamp).toBe('none');
+    expect(notes).toEqual(['No explainer running for 0000001', 'Cancelled explainer for 0000001']);
   });
 
   it('G at the end appends the next page when hasMore', async () => {

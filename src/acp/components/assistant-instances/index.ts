@@ -52,7 +52,7 @@ const KEY_HINTS: readonly KeyHint[] = [
 const LOGO_PREFIX = 'krypton-logo-';
 const ROLE_LABELS: Record<AssistantInstance['owner']['role'], string> = {
   harness_lane: 'Harness lane', session_probe: 'Session probe', assist: 'Assist',
-  rails_judge: 'Rails judge', inline_ai: 'Inline AI', agent_view: 'Agent view',
+  rails_judge: 'Rails judge', inline_ai: 'Inline AI', commit_explainer: 'Commit explainer', agent_view: 'Agent view',
   file_manager_ai: 'File Manager AI', markdown_ai: 'Markdown AI',
 };
 

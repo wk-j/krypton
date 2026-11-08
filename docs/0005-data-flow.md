@@ -1893,7 +1893,7 @@ See `docs/0337-rails-verifier.md` and `docs/0344-rails-panel-actions.md`.
    show right side → unhide assistants → select dock tab → focus monitor.
    Opening only observes state; it never spawns, initializes or prompts an agent.
 2. Every successful ACP spawn records an explicit owner in AcpRegistry:
-   harness_lane / session_probe / assist / rails_judge / inline_ai.
+   harness_lane / session_probe / assist / rails_judge / inline_ai / commit_explainer.
    A numeric transport epoch is one instance. Probe promotion and reused
    Inline AI conversations update its owner without adding a process.
 3. acp_list_instances snapshots registry lifecycle/activity/model/liveness.

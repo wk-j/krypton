@@ -2432,20 +2432,6 @@ export class AcpHarnessView implements ContentView {
       if (had) this.persistIssueBindings();
       return { ok: had };
     }
-    if (operation === 'lane.learn') {
-      // spec 0375: in-process only — the HTTP/Telegram transports do not filter
-      // op names, so this source gate is the only gate.
-      if (caller?.source !== 'commit_browser') {
-        throw controlError('invalid_request', 'lane.learn is internal to the Commit Browser');
-      }
-      const learnLane = this.controlLane(params);
-      const sha = requiredString(params, 'sha').trim();
-      let path = '';
-      await this.trackCommandRun(learnLane, `#learn ${sha}`, async () => {
-        path = await this.startLearnCommit(learnLane, sha);
-      });
-      return { status: 'started', lane: learnLane.displayName, path };
-    }
     const lane = this.controlLane(params);
     switch (operation) {
       case 'lane.commands':
@@ -2699,9 +2685,9 @@ export class AcpHarnessView implements ContentView {
     return 'kind' in parsed ? [] : parsed.targets;
   }
 
-  /** spec 0375: shared by `#learn <sha>` and the `lane.learn` op. Returns the
-   *  knowledge doc path; throws controlError on every refusal. */
-  private async startLearnCommit(lane: HarnessLane, sha: string): Promise<string> {
+  /** spec 0375: `#learn <sha>` on this lane (the Commit Browser runs its own
+   *  background jobs since spec 0376). Throws controlError on every refusal. */
+  private async startLearnCommit(lane: HarnessLane, sha: string): Promise<void> {
     if (!/^[0-9a-f]{4,40}$/i.test(sha)) {
       throw controlError('invalid_request', `invalid commit id: ${sha}`);
     }
@@ -2744,11 +2730,9 @@ export class AcpHarnessView implements ContentView {
     const fileName = path.split(/[\\/]/).pop() ?? '';
     const match = /^(.*)-([0-9a-f]{7})\.md$/i.exec(fileName);
     const repo = match ? match[1] : fileName.replace(/\.md$/i, '');
-    // Not awaited: the prompt resolves only when the turn ends, and the Commit
-    // Browser must see `started` (and light its pending lamp) before the lane's
-    // idle signal can arrive.
+    // Not awaited: the prompt resolves only when the turn ends; the reserved
+    // lane shows the work.
     void this.dispatchTurn(lane, learnCommitPrompt({ sha, path, language, repo }));
-    return path;
   }
 
   /** Inject a programmatic user-turn (no UI composer involved). */

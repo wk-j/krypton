@@ -103,6 +103,7 @@ import { ShaderEngine } from './shaders';
 import type { ShaderPreset } from './shaders';
 import type { KryptonConfig, TabsConfig, ShaderConfig, KeyboardOverlayConfig, InlineAiConfig, NativeOutputConfig } from './config';
 import type { InlineAcpConversation, InlineAcpSession } from './inline-ai-session';
+import type { CommitExplainer } from './commit-explainer';
 import type { InlineAIOverlay } from './inline-ai';
 import { InlineFollowUp } from './inline-ai-follow-up';
 import { closeInlineRemote, inlineRemoteMcpServers, openInlineRemote, type InlineRemote, type Osc7Report } from './inline-ai-remote';
@@ -550,6 +551,9 @@ export class Compositor {
   /** spec 333: the warm ACP backend behind Inline AI, created on first Cmd+K
    *  and kept for the app's lifetime (Rust kills it on exit). */
   private inlineAcp: InlineAcpSession | null = null;
+  /** Spec 376: Commit Browser explainer jobs, created on first open and kept
+   *  for the app's lifetime so jobs outlive the browser. */
+  private explainer: CommitExplainer | null = null;
   /** `[inline_ai]` from the last applied config; read at every Cmd+K. Set by
    *  `applyConfig`, which runs before any terminal pane exists. */
   private inlineAiConfig!: InlineAiConfig;
@@ -3994,27 +3998,36 @@ export class Compositor {
       return;
     }
 
-    // Lazy chunk, like every content view opened here.
+    // Lazy chunks, like every content view opened here. The explainer outlives
+    // every browser: its jobs keep running and toast when one closes.
     const { CommitBrowserView } = await import('./commit-browser-view');
+    const explainer = await this.commitExplainer();
     const container = document.createElement('div');
     container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
-    const view = new CommitBrowserView(page, container);
+    const view = new CommitBrowserView(page, container, explainer);
     view.setNotifier((message) => this.showNotification(message));
     view.onOpenDiff((diff, title) => this.openDiffFromString(diff, title));
     view.onOpenKnowledge((dir, file) => this.openMarkdownAt(dir, file ?? undefined));
     await this.createContentTab(`COMMITS // ${page.repoName}`, view);
 
-    // Settle pending explainers at lane quiet points in this repo (as openDiffView).
-    if (this.bus) {
-      const unsub = this.bus.onSignal({ kind: 'harness:lane-idle' }, (sig) => {
-        void this.resolveRepoRoot(sig.value.cwd).then((root) => {
-          if (root !== null && root === repoRoot) void view.onHarnessLaneIdle();
-        });
-      });
-      view.addDisposeListener(unsub);
-    }
-
     view.onClose(() => this.closeContentViewHost(view));
+  }
+
+  /** Spec 376: the app's one explainer-job runner, created on first use. */
+  private async commitExplainer(): Promise<CommitExplainer> {
+    if (!this.explainer) {
+      const { CommitExplainer } = await import('./commit-explainer');
+      if (!this.explainer) {
+        const explainer = new CommitExplainer();
+        explainer.subscribe((change) => {
+          const at = `${change.job.repoName}@${change.job.sha.slice(0, 7)}`;
+          if (change.kind === 'ready') this.showNotification(`Explainer ready — ${at}`);
+          else if (change.kind === 'failed') this.showNotification(`Explain ${at} failed — ${change.message}`);
+        });
+        this.explainer = explainer;
+      }
+    }
+    return this.explainer;
   }
 
   /** A markdown viewer over the focused cwd, for a new tab or a side pane.

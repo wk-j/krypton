@@ -1,14 +1,14 @@
 // Spec 375 — Commit Browser.
 //
 // A keyboard-driven list of the focused repo's commits with a preview pane.
-// `d` hands a commit's diff to the Diff View; `e` asks an idle lane of a local
-// Harness in this repo to write a learning explainer (`lane.learn`), whose
-// state the row's lamp shows: pending (amber) → ready (green). Explainers are
-// found by `(repoName, sha7)` in the knowledge index (`knowledge_list`).
+// `d` hands a commit's diff to the Diff View; `e` queues a background
+// explainer job on the app's `CommitExplainer` (spec 376), whose state the
+// row's lamp shows: pending (amber) → ready (green). Explainers are found by
+// `(repoName, sha7)` in the knowledge index (`knowledge_list`).
 
 import { invoke } from '@tauri-apps/api/core';
 
-import { harnessEntry, listHarnessEntries, type HarnessEntry } from './acp/harness-directory';
+import type { ExplainChange, ExplainJob } from './commit-explainer';
 import type { ContentView, PaneContentType } from './types';
 import { el } from './ui/dom';
 import { keyCap, keyHint, keyHintNodes, type KeyHint } from './ui/kbd';
@@ -53,25 +53,6 @@ type RowLamp = 'none' | 'pending' | 'ready';
 /** What a row's one lamp shows: pending > ready > candidate > none. */
 type LampState = RowLamp | 'candidate';
 
-interface PendingLearn {
-  harnessId: string;
-  lane: string;
-  path: string;
-}
-
-interface LaneChoice {
-  harnessId: string;
-  lane: string;
-  backendId: string;
-  cwd: string | null;
-}
-
-interface PickerState {
-  sha: string;
-  choices: LaneChoice[];
-  index: number;
-}
-
 interface RowNode extends ListNode {
   readonly sha: string;
   readonly lamp: HTMLElement;
@@ -90,10 +71,16 @@ const PAGE_SIZE = 200;
 const MAX_PAGE = 500;
 const CANDIDATE_MAX_LINES = 200;
 
-export const NOTIFY_OPEN_HARNESS = 'Open an ACP Harness in this repo (Leader Y), then press e';
-export const NOTIFY_NO_IDLE_LANE = "No idle lane in this repo's Harness — wait for one or #cancel";
+/** The slice of `CommitExplainer` the view drives; jobs outlive the view. */
+export interface ExplainerPort {
+  start(root: string, repoName: string, sha: string): ExplainJob;
+  cancel(root: string, sha: string): boolean;
+  job(root: string, sha: string): ExplainJob | null;
+  queuedAhead(job: ExplainJob): number;
+  subscribe(listener: (change: ExplainChange) => void): () => void;
+}
+
 export const NOTIFY_ALREADY_EXPLAINED = 'already explained — o open · E regenerate';
-export const NOTIFY_EXPLAINER_READY = 'Explainer ready — o to open';
 
 const CONVENTIONAL_SUBJECT = /^([A-Za-z]+)(?:\(([^)]*)\))?(!)?:\s*(.*)$/;
 
@@ -175,8 +162,9 @@ const HELP_SECTIONS: readonly { title: string; rows: readonly [readonly string[]
   {
     title: 'Explain',
     rows: [
-      [['e'], 'explain on an idle lane'],
+      [['e'], 'explain in the background'],
       [['E'], 'regenerate the explainer'],
+      [['x'], 'cancel a queued or running explainer'],
       [['o'], 'open the explainer'],
       [['L'], 'open the knowledge library'],
     ],
@@ -204,12 +192,11 @@ export class CommitBrowserView implements ContentView {
   private hasMore: boolean;
   private readonly candidates = new Map<string, boolean>();
   private readonly rows = new Map<string, RowNode>();
-  private readonly pending = new Map<string, PendingLearn>();
+  private readonly explainer: ExplainerPort;
   private knowledge: KnowledgeIndex | null = null;
   private docs = new Map<string, string>();
   private selectedSha: string | null = null;
   private candidatesOnly = false;
-  private picker: PickerState | null = null;
   private helpOpen = false;
   private loading = false;
   private disposed = false;
@@ -221,7 +208,6 @@ export class CommitBrowserView implements ContentView {
   private readonly listEl: HTMLElement;
   private readonly emptyEl: HTMLElement;
   private readonly previewEl: HTMLElement;
-  private readonly pickerEl: HTMLElement;
   private readonly helpEl: HTMLElement;
   private readonly events = new AbortController();
 
@@ -231,7 +217,8 @@ export class CommitBrowserView implements ContentView {
   private notifyCallback: ((message: string) => void) | null = null;
   private readonly disposeListeners: (() => void)[] = [];
 
-  constructor(page: GitLogPage, container: HTMLElement) {
+  constructor(page: GitLogPage, container: HTMLElement, explainer: ExplainerPort) {
+    this.explainer = explainer;
     this.root = page.repoRoot;
     this.repoName = page.repoName;
     this.branch = page.branch;
@@ -273,12 +260,10 @@ export class CommitBrowserView implements ContentView {
 
     const foot = el('footer', { class: 'commit-browser__foot' }, ...keyHintNodes(FOOT_HINTS));
 
-    this.pickerEl = el('div', { class: 'commit-browser__picker', attrs: { role: 'dialog' } });
-    this.pickerEl.hidden = true;
     this.helpEl = el('div', { class: 'commit-browser__help', attrs: { role: 'dialog' } });
     this.helpEl.hidden = true;
 
-    this.element.append(head, body, foot, this.pickerEl, this.helpEl);
+    this.element.append(head, body, foot, this.helpEl);
 
     const signal = this.events.signal;
     this.filterEl.addEventListener('input', () => this.applyVisibility(), { signal });
@@ -291,6 +276,7 @@ export class CommitBrowserView implements ContentView {
     this.renderHead();
     this.renderRows();
     this.applyVisibility();
+    this.disposeListeners.push(explainer.subscribe((change) => this.onExplainChange(change)));
     void this.loadKnowledge();
   }
 
@@ -302,19 +288,25 @@ export class CommitBrowserView implements ContentView {
     this.openKnowledgeCallback = callback;
   }
   setNotifier(callback: (message: string) => void): void { this.notifyCallback = callback; }
-  /** Cleanup hook run from dispose() — e.g. the compositor's bus unsubscribe. */
-  addDisposeListener(callback: () => void): void { this.disposeListeners.push(callback); }
 
   repoRoot(): string { return this.root; }
   getWorkingDirectory(): string | null { return this.root; }
   focusView(): void { this.element.focus(); }
 
-  /** A Harness lane in this repo went idle: re-read the index and settle pending lamps. */
-  async onHarnessLaneIdle(): Promise<void> {
-    const index = await this.fetchKnowledge();
-    if (this.disposed || !index) return;
-    this.setKnowledge(index);
-    this.settlePending(false);
+  /** A job changed. Only this repo's jobs matter; `ready` re-reads the index
+   *  so the lamp turns green from the stored doc, not from the event. */
+  private onExplainChange(change: ExplainChange): void {
+    if (this.disposed || change.job.root !== this.root) return;
+    if (change.kind !== 'ready') {
+      const node = this.rows.get(change.job.sha);
+      if (node) this.paintLamp(node);
+      // Any change can move the selected job's queue position.
+      this.renderPreview();
+      return;
+    }
+    void this.loadKnowledge().then(() => {
+      if (!this.disposed) this.paintLamps();
+    });
   }
 
   dispose(): void {
@@ -323,7 +315,6 @@ export class CommitBrowserView implements ContentView {
     this.events.abort();
     for (const listener of this.disposeListeners.splice(0)) listener();
     this.rows.clear();
-    this.pending.clear();
     this.closeCallback = null;
     this.openDiffCallback = null;
     this.openKnowledgeCallback = null;
@@ -338,7 +329,6 @@ export class CommitBrowserView implements ContentView {
       if (event.key === '?' || event.key === 'q' || event.key === 'Escape') this.closeHelp();
       return true;
     }
-    if (this.picker) return this.onPickerKey(event);
     if (event.target === this.filterEl || document.activeElement === this.filterEl) return this.onFilterKey(event);
     if (event.metaKey || event.ctrlKey || event.altKey) return false;
 
@@ -385,6 +375,9 @@ export class CommitBrowserView implements ContentView {
         return true;
       case 'E':
         this.explain(true);
+        return true;
+      case 'x':
+        this.cancelExplain();
         return true;
       case 'o':
         this.openExplainer();
@@ -479,7 +472,7 @@ export class CommitBrowserView implements ContentView {
   }
 
   private rowLamp(sha: string): RowLamp {
-    if (this.pending.has(sha)) return 'pending';
+    if (this.explainer.job(this.root, sha)) return 'pending';
     if (this.docPath(sha)) return 'ready';
     return 'none';
   }
@@ -654,7 +647,7 @@ export class CommitBrowserView implements ContentView {
     const index = await knowledge;
     if (this.disposed || !index) return;
     this.setKnowledge(index);
-    this.settlePending(true);
+    this.paintLamps();
   }
 
   // ─── Knowledge ───
@@ -684,30 +677,11 @@ export class CommitBrowserView implements ContentView {
     return this.docs.get(`${this.repoName}\u0000${sha7(sha)}`) ?? null;
   }
 
-  /** Settle each pending explainer whose lane is done with it. A lane still
-   *  working keeps its lamp amber even when the file already exists (a
-   *  regenerate overwrites an existing doc). A closed Harness is settled only
-   *  by `r` (`manual`), from whatever the index holds then. */
-  private settlePending(manual: boolean): void {
-    for (const [sha, learn] of [...this.pending]) {
-      const lane = harnessEntry(learn.harnessId)?.listLanes().find((l) => l.displayName === learn.lane);
-      if (lane ? lane.status !== 'idle' : !manual) continue;
-      this.pending.delete(sha);
-      if (this.docPath(sha)) {
-        this.notify(NOTIFY_EXPLAINER_READY);
-      } else if (lane) {
-        const file = learn.path.split('/').pop() || `${this.repoName}-${sha7(sha)}.md`;
-        this.notify(`${learn.lane} finished without writing ${file}`);
-      }
-    }
-    this.paintLamps();
-  }
-
   private openExplainer(): void {
     const c = this.selected();
     if (!c) return;
     const path = this.docPath(c.sha);
-    if (!path || !this.knowledge || this.pending.has(c.sha)) {
+    if (!path || !this.knowledge || this.explainer.job(this.root, c.sha)) {
       this.notify(`No explainer for ${sha7(c.sha)} yet — e explain`);
       return;
     }
@@ -747,133 +721,38 @@ export class CommitBrowserView implements ContentView {
 
   // ─── Explain ───
 
-  /** Live local Harnesses whose project dir is this repo or inside it. */
-  private repoHarnesses(): HarnessEntry[] {
-    const root = this.root.replace(/\/+$/, '');
-    return listHarnessEntries().filter((entry) => {
-      if (entry.workspaceKey && !entry.workspaceKey.startsWith('local:')) return false;
-      if (!entry.control || !entry.cwd) return false;
-      const cwd = entry.cwd.replace(/\/+$/, '');
-      return cwd === root || cwd.startsWith(root + '/');
-    });
-  }
-
   private explain(regenerate: boolean): void {
     const c = this.selected();
     if (!c) return;
-    const learning = this.pending.get(c.sha);
-    if (learning) {
-      this.notify(`${sha7(c.sha)} is already learning on ${learning.lane}`);
+    if (this.explainer.job(this.root, c.sha)) {
+      this.notify(`${sha7(c.sha)} is already explaining — x cancel`);
       return;
     }
     if (!regenerate && this.docPath(c.sha)) {
       this.notify(NOTIFY_ALREADY_EXPLAINED);
       return;
     }
-    const harnesses = this.repoHarnesses();
-    if (!harnesses.length) {
-      this.notify(NOTIFY_OPEN_HARNESS);
-      return;
-    }
-    const choices: LaneChoice[] = harnesses.flatMap((entry) =>
-      entry.listLanes()
-        .filter((lane) => lane.status === 'idle')
-        .map((lane) => ({ harnessId: entry.harnessId, lane: lane.displayName, backendId: lane.backendId, cwd: entry.cwd })));
-    if (!choices.length) {
-      this.notify(NOTIFY_NO_IDLE_LANE);
-      return;
-    }
-    if (choices.length === 1) {
-      void this.sendLearn(c.sha, choices[0]);
-      return;
-    }
-    this.openPicker(c.sha, choices);
+    // The lamp turns pending from the job's own `update` event.
+    this.explainer.start(this.root, this.repoName, c.sha);
   }
 
-  private async sendLearn(sha: string, choice: LaneChoice): Promise<void> {
-    const entry = harnessEntry(choice.harnessId);
-    if (!entry?.control) {
-      this.notify(NOTIFY_OPEN_HARNESS);
-      return;
+  private cancelExplain(): void {
+    const c = this.selected();
+    if (!c) return;
+    this.notify(this.explainer.cancel(this.root, c.sha)
+      ? `Cancelled explainer for ${sha7(c.sha)}`
+      : `No explainer running for ${sha7(c.sha)}`);
+  }
+
+  /** Preview status of a pending row: queue position, or what the job is doing. */
+  private jobStatus(job: ExplainJob): string {
+    if (job.state === 'queued') {
+      const ahead = this.explainer.queuedAhead(job);
+      return ahead > 0 ? `queued · ${ahead} ahead` : 'queued';
     }
-    try {
-      const result = await entry.control('lane.learn', { lane: choice.lane, sha }, { source: 'commit_browser' });
-      if (this.disposed) return;
-      const started = (result ?? {}) as { lane?: unknown; path?: unknown };
-      this.pending.set(sha, {
-        harnessId: choice.harnessId,
-        lane: typeof started.lane === 'string' ? started.lane : choice.lane,
-        path: typeof started.path === 'string' ? started.path : '',
-      });
-      this.paintLamps();
-    } catch (error) {
-      if (!this.disposed) this.notify(errorMessage(error));
-    }
-  }
-
-  // ─── Lane picker ───
-
-  private openPicker(sha: string, choices: LaneChoice[]): void {
-    this.picker = { sha, choices, index: 0 };
-    this.pickerEl.hidden = false;
-    this.renderPicker();
-  }
-
-  private closePicker(): void {
-    this.picker = null;
-    this.pickerEl.hidden = true;
-    this.pickerEl.replaceChildren();
-  }
-
-  /** Keys while the picker is open: swallowed so the list underneath never moves. */
-  private onPickerKey(event: KeyboardEvent): boolean {
-    const picker = this.picker;
-    if (!picker) return false;
-    if (event.key === 'Escape' || event.key === 'q') {
-      this.closePicker();
-    } else if (event.key === 'j' || event.key === 'ArrowDown') {
-      picker.index = Math.min(picker.choices.length - 1, picker.index + 1);
-      this.renderPicker();
-    } else if (event.key === 'k' || event.key === 'ArrowUp') {
-      picker.index = Math.max(0, picker.index - 1);
-      this.renderPicker();
-    } else if (event.key === 'Enter') {
-      const choice = picker.choices[picker.index];
-      this.closePicker();
-      void this.sendLearn(picker.sha, choice);
-    }
-    return true;
-  }
-
-  private renderPicker(): void {
-    const picker = this.picker;
-    if (!picker) return;
-    const manyHarnesses = new Set(picker.choices.map((choice) => choice.harnessId)).size > 1;
-    const rows = picker.choices.map((choice, index) => el(
-      'div',
-      {
-        class: ['commit-browser__picker-row', index === picker.index && 'commit-browser__picker-row--selected'],
-        attrs: { role: 'option', 'aria-selected': String(index === picker.index) },
-      },
-      el('span', { class: 'commit-browser__picker-lane', text: choice.lane }),
-      el('span', {
-        class: 'commit-browser__picker-meta',
-        text: manyHarnesses && choice.cwd ? `${choice.backendId} · ${choice.cwd}` : choice.backendId,
-      }),
-    ));
-    this.pickerEl.replaceChildren(
-      el('div', { class: 'commit-browser__overlay-head', text: `Explain ${sha7(picker.sha)} on` }),
-      el('div', { class: 'commit-browser__picker-list', attrs: { role: 'listbox' } }, ...rows),
-      el(
-        'div',
-        { class: 'commit-browser__overlay-foot' },
-        ...keyHintNodes([
-          { keys: ['j', 'k'], keySeparator: '/', label: 'select' },
-          { keys: ['Enter'], label: 'send' },
-          { keys: ['Esc'], label: 'cancel' },
-        ]),
-      ),
-    );
+    const since = job.startedAt === null ? '' : ` · since ${formatStamp(job.startedAt / 1000).slice(11)}`;
+    const via = [job.backend, job.model].filter(Boolean).join(' · ');
+    return `explaining · ${via}${since}${job.activity ? ` · ${job.activity}` : ''}`;
   }
 
   // ─── Help ───
@@ -914,15 +793,13 @@ export class CommitBrowserView implements ContentView {
       return;
     }
     const lamp = this.rowLamp(c.sha);
-    const learning = this.pending.get(c.sha);
-    const status = lamp === 'pending'
-      ? `learning · ${learning?.lane ?? ''}`
-      : lamp === 'ready' ? 'explained' : 'not explained';
-    const path = learning?.path || this.docPath(c.sha);
-    const actions: KeyHint[] = lamp === 'ready'
-      ? [{ keys: ['o'], label: 'open' }, { keys: ['E'], label: 'regenerate' }, { keys: ['d'], label: 'diff' }]
-      : lamp === 'pending'
-        ? [{ keys: ['d'], label: 'diff' }, { keys: ['y'], label: 'copy sha' }]
+    const job = this.explainer.job(this.root, c.sha);
+    const status = job ? this.jobStatus(job) : lamp === 'ready' ? 'explained' : 'not explained';
+    const path = this.docPath(c.sha);
+    const actions: KeyHint[] = job
+      ? [{ keys: ['x'], label: 'cancel' }, { keys: ['d'], label: 'diff' }, { keys: ['y'], label: 'copy sha' }]
+      : lamp === 'ready'
+        ? [{ keys: ['o'], label: 'open' }, { keys: ['E'], label: 'regenerate' }, { keys: ['d'], label: 'diff' }]
         : [{ keys: ['e'], label: 'explain' }, { keys: ['d'], label: 'diff' }, { keys: ['y'], label: 'copy sha' }];
     const files = `${c.files} file${c.files === 1 ? '' : 's'}`;
 

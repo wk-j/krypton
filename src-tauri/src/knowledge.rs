@@ -53,6 +53,18 @@ pub fn resolve_dir(raw: &str) -> Result<PathBuf, String> {
 /// `cwd`: `<dir>/<repo_name>-<sha7>.md`. Verifies the commit exists and
 /// creates `dir`; the lane writes the file itself.
 pub fn write_path(dir: &Path, cwd: &str, sha: &str) -> Result<String, String> {
+    resolve_target(dir, cwd, sha).map(|t| t.path.to_string_lossy().into_owned())
+}
+
+/// Validated destination of one commit's explainer.
+struct Target {
+    repo: String,
+    sha7: String,
+    path: PathBuf,
+}
+
+/// Shared validation: commit id shape, repo root, commit exists; creates `dir`.
+fn resolve_target(dir: &Path, cwd: &str, sha: &str) -> Result<Target, String> {
     if !git::is_commit_id(sha) {
         return Err("invalid commit id".to_string());
     }
@@ -70,8 +82,95 @@ pub fn write_path(dir: &Path, cwd: &str, sha: &str) -> Result<String, String> {
     .ok_or_else(|| format!("unknown commit {sha}"))?;
     let sha7: String = full.chars().take(7).collect();
     std::fs::create_dir_all(dir).map_err(|e| format!("create knowledge directory: {e}"))?;
-    let name = format!("{}-{sha7}.md", git::repo_name(&root));
-    Ok(dir.join(name).to_string_lossy().into_owned())
+    let repo = git::repo_name(&root).to_string();
+    let path = dir.join(format!("{repo}-{sha7}.md"));
+    Ok(Target { repo, sha7, path })
+}
+
+/// Paths for one background explainer job (spec 376).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeJob {
+    pub scratch: String,
+    pub draft: String,
+    pub path: String,
+    pub repo: String,
+}
+
+const DRAFT_NAME: &str = "explainer.md";
+const MAX_DRAFT_BYTES: u64 = 1_048_576;
+
+fn scratch_dir(temp_root: &Path, t: &Target) -> PathBuf {
+    temp_root
+        .join("krypton-learn")
+        .join(format!("{}-{}", t.repo, t.sha7))
+}
+
+/// Validate the commit and hand out a fresh, empty scratch dir for the agent.
+pub fn job_prepare(dir: &Path, cwd: &str, sha: &str) -> Result<KnowledgeJob, String> {
+    job_prepare_in(&std::env::temp_dir(), dir, cwd, sha)
+}
+
+fn job_prepare_in(
+    temp_root: &Path,
+    dir: &Path,
+    cwd: &str,
+    sha: &str,
+) -> Result<KnowledgeJob, String> {
+    let t = resolve_target(dir, cwd, sha)?;
+    let scratch = scratch_dir(temp_root, &t);
+    if scratch.exists() {
+        std::fs::remove_dir_all(&scratch).map_err(|e| format!("clear scratch directory: {e}"))?;
+    }
+    std::fs::create_dir_all(&scratch).map_err(|e| format!("create scratch directory: {e}"))?;
+    let scratch = scratch
+        .canonicalize()
+        .map_err(|e| format!("resolve scratch directory: {e}"))?;
+    Ok(KnowledgeJob {
+        draft: scratch.join(DRAFT_NAME).to_string_lossy().into_owned(),
+        scratch: scratch.to_string_lossy().into_owned(),
+        path: t.path.to_string_lossy().into_owned(),
+        repo: t.repo,
+    })
+}
+
+/// Copy the agent's `explainer.md` into the knowledge dir, then drop the
+/// scratch dir. On error the scratch dir and the existing doc are untouched.
+pub fn store(dir: &Path, cwd: &str, sha: &str) -> Result<String, String> {
+    store_in(&std::env::temp_dir(), dir, cwd, sha)
+}
+
+fn store_in(temp_root: &Path, dir: &Path, cwd: &str, sha: &str) -> Result<String, String> {
+    let t = resolve_target(dir, cwd, sha)?;
+    let scratch = scratch_dir(temp_root, &t);
+    let draft = scratch.join(DRAFT_NAME);
+    let meta = match std::fs::metadata(&draft) {
+        Ok(m) if m.is_file() => m,
+        _ => return Err("finished without writing explainer.md".to_string()),
+    };
+    if meta.len() == 0 {
+        return Err("explainer.md is empty".to_string());
+    }
+    if meta.len() > MAX_DRAFT_BYTES {
+        return Err("explainer.md is over 1 MiB".to_string());
+    }
+    let bytes = std::fs::read(&draft).map_err(|e| format!("read explainer.md: {e}"))?;
+    let text = String::from_utf8(bytes).map_err(|_| "explainer.md is not UTF-8".to_string())?;
+    if text.is_empty() {
+        return Err("explainer.md is empty".to_string());
+    }
+    let mut tmp = t.path.clone().into_os_string();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    std::fs::write(&tmp, text.as_bytes()).map_err(|e| format!("write explainer: {e}"))?;
+    if let Err(e) = std::fs::rename(&tmp, &t.path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("store explainer: {e}"));
+    }
+    if let Err(e) = std::fs::remove_dir_all(&scratch) {
+        log::warn!("remove scratch {}: {e}", scratch.display());
+    }
+    Ok(t.path.to_string_lossy().into_owned())
 }
 
 /// Every `<repo>-<7 lowercase hex>.md` regular file in `dir`. A missing
@@ -290,5 +389,110 @@ mod tests {
                 "{relative}"
             );
         }
+    }
+
+    #[test]
+    fn job_prepare_makes_a_fresh_scratch_dir() {
+        let scratch = Scratch::new("prepare");
+        let (repo, sha) = repo_with_commit(&scratch);
+        let dir = scratch.path().join("knowledge");
+        let tmp = scratch.path().join("tmp");
+        let cwd = repo.to_str().expect("utf8");
+        let sha7 = &sha[..7];
+
+        let stale = tmp.join("krypton-learn").join(format!("my-repo-{sha7}"));
+        std::fs::create_dir_all(&stale).expect("stale dir");
+        std::fs::write(stale.join("explainer.md"), "old").expect("stale draft");
+
+        let job = job_prepare_in(&tmp, &dir, cwd, &sha[..10]).expect("prepare");
+        let canon = stale.canonicalize().expect("canon");
+        assert_eq!(job.scratch, canon.to_string_lossy());
+        assert_eq!(job.draft, canon.join("explainer.md").to_string_lossy());
+        assert_eq!(
+            job.path,
+            dir.join(format!("my-repo-{sha7}.md")).to_string_lossy()
+        );
+        assert_eq!(job.repo, "my-repo");
+        assert_eq!(std::fs::read_dir(&canon).expect("read").count(), 0);
+        assert!(dir.is_dir());
+    }
+
+    #[test]
+    fn store_copies_the_draft_and_removes_the_scratch() {
+        let scratch = Scratch::new("store");
+        let (repo, sha) = repo_with_commit(&scratch);
+        let dir = scratch.path().join("knowledge");
+        let tmp = scratch.path().join("tmp");
+        let cwd = repo.to_str().expect("utf8");
+
+        let job = job_prepare_in(&tmp, &dir, cwd, &sha).expect("prepare");
+        std::fs::write(&job.path, "old doc").expect("existing doc");
+        std::fs::write(&job.draft, "# new\n").expect("draft");
+
+        let path = store_in(&tmp, &dir, cwd, &sha).expect("store");
+        assert_eq!(path, job.path);
+        assert_eq!(std::fs::read_to_string(&path).expect("doc"), "# new\n");
+        assert!(!Path::new(&job.scratch).exists());
+        assert!(!Path::new(&format!("{path}.tmp")).exists());
+    }
+
+    #[test]
+    fn store_rejects_bad_drafts_and_keeps_the_doc() {
+        let scratch = Scratch::new("store-bad");
+        let (repo, sha) = repo_with_commit(&scratch);
+        let dir = scratch.path().join("knowledge");
+        let tmp = scratch.path().join("tmp");
+        let cwd = repo.to_str().expect("utf8");
+
+        let job = job_prepare_in(&tmp, &dir, cwd, &sha).expect("prepare");
+        std::fs::write(&job.path, "old doc").expect("existing doc");
+
+        assert_eq!(
+            store_in(&tmp, &dir, cwd, &sha),
+            Err("finished without writing explainer.md".to_string())
+        );
+        std::fs::write(&job.draft, "").expect("empty");
+        assert_eq!(
+            store_in(&tmp, &dir, cwd, &sha),
+            Err("explainer.md is empty".to_string())
+        );
+        std::fs::write(&job.draft, vec![b'a'; 1_048_577]).expect("big");
+        assert_eq!(
+            store_in(&tmp, &dir, cwd, &sha),
+            Err("explainer.md is over 1 MiB".to_string())
+        );
+        std::fs::write(&job.draft, [0xff, 0xfe, 0x00]).expect("binary");
+        assert_eq!(
+            store_in(&tmp, &dir, cwd, &sha),
+            Err("explainer.md is not UTF-8".to_string())
+        );
+        assert_eq!(std::fs::read_to_string(&job.path).expect("doc"), "old doc");
+        assert!(Path::new(&job.scratch).is_dir());
+    }
+
+    #[test]
+    fn job_rejects_bad_sha_and_unknown_commit() {
+        let scratch = Scratch::new("job-bad");
+        let (repo, _) = repo_with_commit(&scratch);
+        let dir = scratch.path().join("knowledge");
+        let tmp = scratch.path().join("tmp");
+        let cwd = repo.to_str().expect("utf8");
+
+        assert_eq!(
+            job_prepare_in(&tmp, &dir, cwd, "not-a-sha"),
+            Err("invalid commit id".to_string())
+        );
+        assert_eq!(
+            store_in(&tmp, &dir, cwd, "not-a-sha"),
+            Err("invalid commit id".to_string())
+        );
+        assert_eq!(
+            job_prepare_in(&tmp, &dir, cwd, "deadbeef"),
+            Err("unknown commit deadbeef".to_string())
+        );
+        assert_eq!(
+            store_in(&tmp, &dir, cwd, "deadbeef"),
+            Err("unknown commit deadbeef".to_string())
+        );
     }
 }

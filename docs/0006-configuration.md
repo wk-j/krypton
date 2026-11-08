@@ -316,10 +316,11 @@ output_dir = ".krypton/journal"
 # disk.
 extra_projects = []
 
-# --- Commit explainers (spec 375) ---
-# The Commit Browser (Leader E) and the Harness command `#learn <sha>` ask a lane
-# to explain one commit as a project-independent learning note. The lane writes
-# <dir>/<repo>-<sha7>.md itself; Krypton only resolves the path.
+# --- Commit explainers (specs 375, 376) ---
+# The Commit Browser (Leader E) `e` queues a background job: its own ACP process
+# explains one commit as a project-independent learning note, drafted in a
+# scratch dir and copied to <dir>/<repo>-<sha7>.md by Krypton. The Harness
+# command `#learn <sha>` does the same on a lane instead.
 
 [knowledge]
 # Where explainers go. Absolute or ~/ only (no project-relative path: the notes
@@ -327,6 +328,11 @@ extra_projects = []
 dir = "~/.config/krypton/knowledge"
 # Prose language of an explainer. Code, identifiers and commands stay English.
 language = "Thai"
+# Background job only (#learn uses the lane's own backend).
+backend = "codex"            # ACP backend id that runs each job
+model = "gpt-6.1-sol[high]"  # "" = backend default
+mode = "workspace-write"     # session mode forced on the job; "" = backend default
+parallel = 2                 # jobs at once (1–4); the rest wait FIFO
 
 # Timeline automatic recording is a per-project runtime setting, not TOML.
 # Use #timeline auto [on|off]; see "Timeline Automatic Recording" below.
@@ -1059,7 +1065,11 @@ browser surface and the hurl/termctrl/acp-wire viewers.
 | `[daily_note]` | `extra_projects` | string[] | `[]` | Absolute paths to other projects also covered by the day. No machine-wide scan |
 
 | `[knowledge]` | `dir` | string | `"~/.config/krypton/knowledge"` | Where commit explainers (`<repo>-<sha7>.md`) are written and listed. Absolute or `~/`. See spec 375 |
-| `[knowledge]` | `language` | string | `"Thai"` | Prose language a lane writes explainers in; code and identifiers stay English |
+| `[knowledge]` | `language` | string | `"Thai"` | Prose language explainers are written in; code and identifiers stay English |
+| `[knowledge]` | `backend` | string | `"codex"` | ACP backend id each Commit Browser explainer job spawns (spec 376). `#learn` uses its lane instead |
+| `[knowledge]` | `model` | string | `"gpt-6.1-sol[high]"` | Model set on the job's session; `""` keeps the backend default |
+| `[knowledge]` | `mode` | string | `"workspace-write"` | Session mode forced on the job; `""` keeps the backend default. Writes stay inside the job's scratch dir only with codex `workspace-write` — another backend or mode gives no sandbox guarantee |
+| `[knowledge]` | `parallel` | integer | `2` | Explainer jobs running at once, clamped 1–4; the rest wait FIFO |
 
 **Usage rows never contain text.** A row carries counts and identifiers only —
 no prompt, no response, no file paths, no tool arguments. That is the property

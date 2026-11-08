@@ -4,7 +4,7 @@
 export type StopReason = 'end_turn' | 'max_tokens' | 'max_turn_requests' | 'refusal' | 'cancelled';
 
 /** Spec 357: explicit attribution for one spawned ACP transport. */
-export type AcpInstanceRole = 'harness_lane' | 'session_probe' | 'assist' | 'rails_judge' | 'inline_ai';
+export type AcpInstanceRole = 'harness_lane' | 'session_probe' | 'assist' | 'rails_judge' | 'inline_ai' | 'commit_explainer';
 
 export interface AcpInstanceOwner {
   role: AcpInstanceRole;
