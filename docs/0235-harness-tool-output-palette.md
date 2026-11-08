@@ -142,7 +142,7 @@ Grok Bash wraps every dump as `exit: N\n<body>` and also sends `rawOutput.exit_c
     span.tool-exit-code    → tabular-nums, no border, no weight jump
 ```
 
-Rides the first section when that section has a label (`stderr`, `summary`, …). A plain output section (`output` / `stdout` / `content` / `text`, grep included) and a git-rich dump have no label, so ahead of them the readout is a row of its own above the well. A dump that is only `exit: 1` still shows that row. 0 → muted foreground. Non-zero → `--agent-error` on the number. Search/read never get the readout (`grep` miss is exit 1). Concise mode still hides the whole output group. An ACP `terminalId` is an opaque handle, so it is never painted as a terminal output section. If the handle is the only output a completed tool reports, the head reads `output unavailable`.
+Rides the first section when that section has a label (`stderr`, `summary`, …). A plain output section (`output` / `stdout` / `content` / `text`, grep included) and a git-rich dump have no label, so ahead of them the readout is a row of its own above the well. A dump that is only `exit: 1` still shows that row. 0 → muted foreground. Non-zero → `--agent-error` on the number. Search/read never get the readout (`grep` miss is exit 1). Concise mode still hides the whole output group. An ACP `terminalId` is an opaque handle, so it is never painted as a terminal output section. If the handle is the only output a completed tool reports, the head has no result label.
 
 ### Chrome
 

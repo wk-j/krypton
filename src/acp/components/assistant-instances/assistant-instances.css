@@ -7,9 +7,9 @@
    fallback and `hidden` live in harness-shared.css; the `--mat-*` material
    tokens in src/styles/materials.css); this sheet only lays out its content.
 
-   One type size: everything inherits the dock's body size, as the Rails and
-   Ticket rows do. Hierarchy comes from weight and ink tier, never a smaller
-   font. Alignment comes from three fixed edges — the 14px inset, the text
+   Rows inherit the dock's body size, as the Rails and Ticket rows do; state
+   chips use the standard chrome size from DESIGN.md. Alignment comes from
+   three fixed edges — the 14px inset, the text
    column after the 16px logo, and the right edge — plus fixed-width figure
    cells and one shared label column in the details.
 
@@ -380,6 +380,7 @@
     align-items: center;
     gap: 6px;
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    font-size: var(--krypton-chrome-font-size, 11px);
     font-weight: 700;
     letter-spacing: 0.04em;
     line-height: 1.2;

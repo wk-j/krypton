@@ -12,7 +12,7 @@
 //   Conversation  fb1176f1-…      one label column for every group
 //   j/k · Home/End · [ ] tab · Esc   each key a cap
 //
-// Compact by layout, not by type: every line is the dock's body size. Two
+// Rows use the dock's body size; state chips use the standard chrome size. Two
 // lines per row, a third only while lifecycle or liveness is unsettled or an
 // error is reported; the right-hand figures sit in fixed-width cells so they
 // line up down the list, and the details share one label column.

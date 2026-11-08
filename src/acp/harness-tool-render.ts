@@ -497,11 +497,9 @@ export function buildToolPayload(
   );
   const exitCode = peeled.exitCode;
   const diffs = extractToolDiffs(call.content);
-  const terminalOnly = raw.length === 0 && content.length === 0 && diffs.length === 0 &&
-    (call.content ?? []).some((item) => item.type === 'terminal' && !!item.terminalId);
   const result = (exitCode !== null && exitCode !== 0)
     ? `exit ${exitCode}`
-    : (status === 'failed' ? 'failed' : status === 'completed' && terminalOnly ? 'output unavailable' : '');
+    : (status === 'failed' ? 'failed' : '');
   const sectionLineLimit = kind === 'execute' && isGitDiffCommand(command) ? 80 : kind === 'execute' ? 12 : 6;
   const trimmed = peeled.sections
     .map((s) => ({

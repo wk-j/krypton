@@ -192,7 +192,7 @@ describe('terminal-only ACP tool content', () => {
     }, 'completed');
 
     expect(tool.sections).toEqual([]);
-    expect(tool.result).toBe('output unavailable');
+    expect(tool.result).toBe('');
   });
 
   it('keeps real stdout when a terminal handle accompanies it', () => {
@@ -208,7 +208,7 @@ describe('terminal-only ACP tool content', () => {
     expect(tool.result).toBe('');
   });
 
-  it('keeps a diff without claiming all output is unavailable', () => {
+  it('keeps a diff without adding a result label', () => {
     const tool = buildToolPayload({
       toolCallId: 'call-3',
       kind: 'edit',
