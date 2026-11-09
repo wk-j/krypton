@@ -10,6 +10,7 @@ import { DirectiveDiffRow } from '../directive-diff-row';
 import { DocCardRow } from '../doc-card-row';
 import { FsActivityRow } from '../fs-activity-row';
 import { FsWriteReviewRow } from '../fs-write-review-row';
+import { GuardianReviewRow } from '../guardian-review-row';
 import { InterLaneRow } from '../inter-lane-row';
 import { PermissionRow } from '../permission-row';
 import { ProviderErrorRow } from '../provider-error-row';
@@ -25,6 +26,7 @@ import type { HarnessTranscriptItem } from '../../harness-view-types';
 type RowKind =
   | 'assistant'
   | 'tool'
+  | 'guardianReview'
   | 'permission'
   | 'question'
   | 'fsActivity'
@@ -42,6 +44,7 @@ type RowKind =
 /** The branch `renderTranscriptItem` would have taken, in its original order. */
 export function rowKindFor(item: HarnessTranscriptItem): RowKind {
   if (item.kind === 'assistant') return 'assistant';
+  if (item.kind === 'tool' && item.tool?.guardianReview) return 'guardianReview';
   if (item.kind === 'tool' && item.tool) return 'tool';
   if (item.kind === 'permission' && item.permission) return 'permission';
   if (item.kind === 'question' && item.question) return 'question';
@@ -65,6 +68,8 @@ export function createTranscriptRow(props: RowProps): TranscriptRow {
       return new AssistantRow(props);
     case 'tool':
       return new ToolRow(props);
+    case 'guardianReview':
+      return new GuardianReviewRow(props);
     case 'permission':
       return new PermissionRow(props);
     case 'question':

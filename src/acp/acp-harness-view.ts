@@ -500,6 +500,7 @@ import {
   isTerminalToolStatus,
   mergeToolCall,
 } from './harness-tool-render';
+import { isCodexGuardianReview, parseGuardianReview } from './harness-guardian-review';
 import {
   appendBoundedTranscriptItem,
   clearToolTranscriptRetention,
@@ -15235,6 +15236,13 @@ export class AcpHarnessView implements ContentView {
       buildToolPayload(merged, status, target.toolStartedAt, target.toolEndedAt),
       call,
     );
+    if (isCodexGuardianReview(lane.backendId, merged)) {
+      tool.guardianReview = parseGuardianReview(merged, target.tool?.guardianReview, status);
+      // The dedicated row owns the bounded assessment. Do not retain the
+      // generic six-line output copy in the transcript as well.
+      tool.sections = [];
+      tool.diffs = [];
+    }
     // spec 133: redact write/edit cards on an artifact path to path + bytes +
     // hash — HTML must never reach the transcript model under the write tool
     // (the real spec-103 fix). Match the registry when known, but ALSO redact on
@@ -15290,7 +15298,9 @@ export class AcpHarnessView implements ContentView {
     } else {
       delete target.executionTarget;
     }
-    const text = tool.subject ? `${tool.glyph} ${tool.kind} ${tool.subject}` : `${tool.glyph} ${tool.kind}`;
+    const text = tool.guardianReview
+      ? `Guardian review: ${tool.guardianReview.outcome} — ${tool.guardianReview.action}`
+      : tool.subject ? `${tool.glyph} ${tool.kind} ${tool.subject}` : `${tool.glyph} ${tool.kind}`;
     target.text = text;
     target.status = status;
     target.tool = tool;

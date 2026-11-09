@@ -653,6 +653,32 @@ use existing `--agent-*` / `--krypton-*` properties. No private palette or unlay
 
 **Replaces** no execution/runtime API; this is a new read-only presentation of retained tool data.
 
+## 3.4c `GuardianReviewRow` L (spec 378)
+
+**Props** the shared `RowProps`; **Deps** the Guardian outcome, action, risk,
+authorization, rationale, and truncation flag, alongside the base row's status
+and wrapper dependencies. A Codex `guardian_assessment:<reviewId>` call with
+`kind: think` and title `Guardian Review` selects this row from its first frame.
+The outcome is decoded before the generic tool section's six-line limit.
+
+**Example UI**
+
+```text
+guard  APPROVED  MCP lesson_record on krypton-harness-memory
+       risk medium · authorization high
+       The user correction authorizes this update.
+guard  ● DENIED  exec outside workspace
+       risk high · authorization unknown
+       The requested path is outside the authorized workspace.
+```
+
+**Emits** `.acp-harness__guardian > -head > -outcome + -action`, then optional
+`-meta` and `-rationale`. Its transcript label and outcome are flat ink; only
+reviewing, denied, timed out, and failed states have a status LED. It has no
+permission control. The same row updates while the ACP call is live and seals
+on its terminal status; later reports do not repaint a sealed row. A malformed
+terminal result reads `REVIEW OUTCOME UNAVAILABLE`, never `APPROVED`.
+
 ## 3.5 `SubagentCard` L
 
 **Example UI**

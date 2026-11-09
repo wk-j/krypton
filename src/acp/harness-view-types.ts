@@ -254,6 +254,15 @@ export interface PermissionPayload {
   autoReason?: string;
 }
 
+export interface GuardianReviewPayload {
+  readonly outcome: 'reviewing' | 'approved' | 'denied' | 'timed_out' | 'aborted' | 'failed' | 'unavailable';
+  readonly action: string;
+  readonly risk: string | null;
+  readonly authorization: string | null;
+  readonly rationale: string | null;
+  readonly rationaleTruncated: boolean;
+}
+
 export interface ToolPayload {
   glyph: string;
   status: string;
@@ -277,6 +286,8 @@ export interface ToolPayload {
   execution?: ExecutionPayload;
   /** spec 370: OMP background-job snapshot (`wait`); renders the job list. */
   jobs?: JobsPayload;
+  /** spec 378: Codex Guardian assessment, derived before generic output trim. */
+  guardianReview?: GuardianReviewPayload;
 }
 
 export interface ExecutionActivity {

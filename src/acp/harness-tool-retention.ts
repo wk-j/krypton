@@ -155,6 +155,7 @@ export function mergeToolPayloadForUpdate(
     sections: hasOutputUpdate ? next.sections : previous.sections,
     diffs: hasContentUpdate ? next.diffs : previous.diffs,
     artifactRedaction: previous.artifactRedaction,
+    guardianReview: next.guardianReview ?? previous.guardianReview,
   };
 }
 

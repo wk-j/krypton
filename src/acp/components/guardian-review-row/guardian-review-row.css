@@ -1,0 +1,94 @@
+/* Spec 378 — flat transcript ink; only the reviewing/fault LED has a glow. */
+@layer krypton.component {
+  .acp-harness__guardian {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    white-space: normal;
+  }
+
+  .acp-harness__guardian-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 8px;
+    row-gap: 2px;
+    line-height: 1.4;
+    font-size: var(--krypton-font-size, 13px);
+  }
+
+  .acp-harness__guardian-outcome {
+    flex: none;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
+    font-size: 0.78em;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .acp-harness__guardian-outcome--reviewing {
+    color: var(--mat-lit);
+  }
+
+  .acp-harness__guardian-outcome--denied,
+  .acp-harness__guardian-outcome--timed_out,
+  .acp-harness__guardian-outcome--failed {
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+  }
+
+  .acp-harness__guardian-outcome--reviewing::before,
+  .acp-harness__guardian-outcome--denied::before,
+  .acp-harness__guardian-outcome--timed_out::before,
+  .acp-harness__guardian-outcome--failed::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 5px;
+    border-radius: 50%;
+    vertical-align: middle;
+  }
+
+  .acp-harness__guardian-outcome--reviewing::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
+  }
+
+  .acp-harness__guardian-outcome--denied::before,
+  .acp-harness__guardian-outcome--timed_out::before,
+  .acp-harness__guardian-outcome--failed::before {
+    background: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+    box-shadow: 0 0 4px rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.9);
+  }
+
+  .acp-harness__guardian-action {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84));
+  }
+
+  .acp-harness__guardian-meta {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.6));
+    font-size: 0.78em;
+    letter-spacing: 0.03em;
+  }
+
+  .acp-harness__guardian-rationale {
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.84));
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .acp-harness__guardian-meta[hidden],
+  .acp-harness__guardian-rationale[hidden] {
+    display: none;
+  }
+}
+
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__guardian-outcome--denied,
+  html[data-theme-scheme='light'] .acp-harness__guardian-outcome--timed_out,
+  html[data-theme-scheme='light'] .acp-harness__guardian-outcome--failed {
+    color: color-mix(in srgb, rgb(var(--krypton-danger-rgb, 255, 58, 92)) 55%, var(--krypton-fg));
+  }
+}

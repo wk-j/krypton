@@ -36,6 +36,7 @@ import { def as executionDialog } from './execution-dialog';
 import { def as followUpRail } from './follow-up-rail';
 import { def as fsActivityRow } from './fs-activity-row';
 import { def as fsWriteReviewRow } from './fs-write-review-row';
+import { def as guardianReviewRow } from './guardian-review-row';
 import { def as genuiCard } from './genui-card';
 import { def as genuiCatalog } from './genui-catalog';
 import { def as genuiPanel } from './genui-panel';
@@ -123,6 +124,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   thoughtRow,
   userRow,
   toolRow,
+  guardianReviewRow,
   executionCard,
   subagentCard,
   jobList,

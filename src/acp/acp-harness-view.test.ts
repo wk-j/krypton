@@ -795,6 +795,41 @@ describe('composer git branch refresh', () => {
     expect(scheduled).toEqual(['branch']);
   });
 
+  it('renders a Codex Guardian update as one bounded assessment row', () => {
+    const item = { id: 'guardian-1', kind: 'tool', text: '' } as HarnessTranscriptItem;
+    const lane = {
+      id: 'lane-1', backendId: 'codex', transcript: [item],
+      toolCalls: new Map(), toolTranscriptIds: new Map(), codexAgentNames: new Map(),
+      activeToolCount: 0,
+    } as unknown as HarnessLane;
+    const target = {
+      appendTranscript: (): HarnessTranscriptItem => item,
+      matchArtifactWrite: (): null => null,
+      scheduleGitBranchRefresh: (): void => {},
+      updateToolTick: (): void => {},
+    };
+    proto.renderTool.call(target, lane, {
+      toolCallId: 'guardian_assessment:g1', kind: 'think', title: 'Guardian Review',
+      status: 'in_progress',
+      content: [{ type: 'content', content: { type: 'text', text: 'Status: In progress\nAction: MCP lesson_record' } }],
+      rawInput: { review: { status: 'inProgress' } },
+    }, false);
+    expect(item.tool?.guardianReview?.outcome).toBe('reviewing');
+
+    proto.renderTool.call(target, lane, {
+      toolCallId: 'guardian_assessment:g1', status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text: 'Status: Denied\nAction: MCP lesson_record\nRisk: high\nAuthorization: low\nRationale: Request not authorized.' } }],
+      rawOutput: { review: { status: 'denied', riskLevel: 'high', userAuthorization: 'low', rationale: 'Request not authorized.' } },
+    }, true);
+    expect(lane.transcript).toHaveLength(1);
+    expect(item.tool?.guardianReview).toMatchObject({
+      outcome: 'denied', action: 'MCP lesson_record', risk: 'high',
+      authorization: 'low', rationale: 'Request not authorized.',
+    });
+    expect(item.tool?.sections).toEqual([]);
+    expect(item.text).toBe('Guardian review: denied — MCP lesson_record');
+  });
+
   it('re-probes when a lane goes idle', () => {
     const scheduled: string[] = [];
     const lane = { id: 'lane-1', status: 'busy' } as unknown as HarnessLane;

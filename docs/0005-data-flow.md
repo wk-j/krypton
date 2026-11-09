@@ -1378,11 +1378,17 @@ PUBLISH
        created once and never reparented, so no scroll offset is discarded and
        the old capture/restore dance around the rebuild is gone.
     f. tool_call / tool_call_update dirty 'transcript' only. Row components
-       hold their own dependency tuples, so pending and in_progress collapse
-       into one status bucket and a status-only tick writes nothing. Generic
-       streaming output swaps `.acp-harness__tool-output` alone and never the head;
+       hold their own dependency tuples; generic tool rows collapse pending
+       and in_progress into one status bucket, so a status-only tick writes
+       nothing. Generic streaming output swaps `.acp-harness__tool-output`
+       alone and never the head;
        recognized OMP execution snapshots update their owning ExecutionCard and,
        when open, the view-owned ExecutionDialog instead (specs 315/319).
+       Codex `guardian_assessment:` calls with the adapter's exact `think` /
+       `Guardian Review` identity become GuardianReviewRow payloads before
+       generic output trimming (spec 378). The review outcome is distinct from
+       ACP tool completion: a completed call can report a denied action. The
+       row shows the result without participating in the approval decision.
        Sticky follow on that pass (rev 15) idles or pins when the transcript
        bottom did not grow, so a bounded execute-output tail does not replay a
        glide over already-visible rows.
