@@ -514,12 +514,23 @@ perm     <body>
 **Emits** `<div class="acp-harness__msg acp-harness__msg--${kind}[--${status}][--enter][--streaming]" data-msg-id>` >
 `.acp-harness__msg-label` + `.acp-harness__msg-body` + optional image strip.
 
+Spec 379 adds `data-source-connector` (`tool`, `guard`, `agent`, `user`, or `fs`) on eligible rows.
+The first row in a consecutive same-source run keeps its label. CSS makes later labels transparent
+and draws a neutral 1px line in their existing label gutter; label text and row nodes remain intact.
+Thought, permission, question, lane-mail, failed file activity, provider-error and other special rows
+break a run. At a clipped tail boundary the first visible row shows its label without repainting it.
+
 Owns: the `--enter` class and its `animationend` release (replacing the rescue at `acp-harness-view.ts:12219-12221`),
 and **`data-render-signature` disappears entirely** — deps live on each subclass.
 
 Label vocabulary (`harness-lane-chrome.ts:536-551`), unchanged:
 `sys · user · agent · thought · tool · perm · ask · mem · sh · fs · write · mail · html · review · restart`,
 plus the in-renderer overrides `usage` and `event`.
+
+Source-label ink (DESIGN.md 2.3.3): user cyan; agent, permission, question, artifact and review
+amber; tool, shell and file activity blue; Guardian magenta; thought, system, memory, restart and
+lane mail secondary ink. A live thought uses the amber live legend. Provider errors keep warning ink.
+The label hue identifies provenance; outcome and decision ink is independent.
 
 ## 3.1 `AssistantRow` L
 

@@ -90,3 +90,18 @@ export function wrapperClasses(
 export function rowLabel(item: HarnessTranscriptItem): string {
   return transcriptLabel(item.kind);
 }
+
+/** Spec 379: only passive rows with a stable source label join a connector. */
+export type SourceConnectorKey = 'tool' | 'guard' | 'agent' | 'user' | 'fs';
+
+export function sourceConnectorKey(item: HarnessTranscriptItem): SourceConnectorKey | null {
+  switch (item.kind) {
+    case 'tool':
+      if (!item.tool) return null;
+      return item.tool.guardianReview ? 'guard' : 'tool';
+    case 'assistant': return item.replyingToLaneMail ? null : 'agent';
+    case 'user': return item.steer || item.voice ? null : 'user';
+    case 'fs_activity': return item.fsActivity?.ok ? 'fs' : null;
+    default: return null;
+  }
+}

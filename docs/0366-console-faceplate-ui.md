@@ -18,8 +18,10 @@ Make the faceplate Krypton's base identity in one clean cutover. Lift the dock's
 the document root as `--mat-*` in a new `src/styles/materials.css` (graphite for dark, aluminium for
 light, keyed on `data-theme-scheme`). Restyle every surface in the Tauri webview from the same five
 parts: plate, engraving, well, key, lamp. Content (terminal grid, prose, code, diffs, canvases) stays
-flat inside wells. Neon glows, scanlines, vignettes and ambient loops go; colour still means state
-only. `DESIGN.md` becomes Krypton Console 2.0.0 and absorbs `DESIGN.console.md`, `DESIGN.amber.md`
+flat inside wells. Neon glows, scanlines, vignettes and ambient loops go; colour marks state at the
+2.0.0 cutover. The later DESIGN.md 2.3.3 amendment gives Harness transcript source labels distinct
+theme ink to identify origin. `DESIGN.md` becomes Krypton Console 2.0.0 and absorbs
+`DESIGN.console.md`, `DESIGN.amber.md`
 and `DESIGN.nasa.md`, which are deleted. An opt-in `chrome.style = "console"` switch that keeps both
 looks was rejected: two full aesthetics across 147 stylesheets doubles the cost of every UI change.
 
@@ -152,9 +154,11 @@ same element. The light set is the dock's aluminium set with the plate stops at 
 - **Harness.** Lane body = screen well (the window's screen fill shows through; a lane adds the
   well's inset shadow, not a second fill); lane head = plate strip with the name engraved and status as
   a lamp; zen rail = plate column of selector keys with LEDs; composer = plate with the draft line in
-  a well; transcript rows are flat text in the lane well with engraved labels; every transcript
-  label (tool kind, permission and question decision, execution state) is flat ink with its status LED
-  before the legend; tool rows add an output well; permission and question options are keys; floating lane cards
+  a well; transcript rows are flat text in the lane well with engraved labels; status legends
+  (tool kind, permission and question decision, execution state) are flat ink with their status LED
+  before the legend. Adjacent passive rows of the same source show one source label and a neutral
+  connector in later label gutters (spec 379); tool rows add an output well; permission and question
+  options are keys; floating lane cards
   (peek, queue, plan, thought, grammar, heat) are small plates. The right dock column and the shown
   lane's head strip are one plate as well: the column holds its top stop for the strip's height, and
   the screen draws its own right edge.
@@ -168,7 +172,10 @@ same element. The light set is the dock's aluminium set with the plate stops at 
 
 ### Colour and state
 
-- Labels and lit legends are `--mat-silk` / `--mat-lit` (amber hardware ink) everywhere.
+- Plate labels and lit legends use `--mat-silk` / `--mat-lit` (amber hardware ink). Harness
+  transcript source labels use the theme identity palette in DESIGN.md 2.3.3: user cyan, agent and
+  action prompts amber, machine work blue, Guardian magenta, and system provenance secondary ink.
+  Outcome ink stays separate.
 - The theme accent keeps its jobs: cursor, links, window LEDs, focus outline.
 - Lamps take `--krypton-success/danger/warning-rgb`; actions are cyan running, green done.
 - ADR-0004, 0017 and 0027 are unchanged. Hard-coded literals found by the research (cyan

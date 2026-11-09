@@ -21,6 +21,7 @@ import {
   buildRowChrome,
   installEntranceAnimation,
   rowLabel,
+  sourceConnectorKey,
   wrapperClasses,
   type RowProps,
 } from './shared';
@@ -76,6 +77,10 @@ export abstract class TranscriptRow extends LiveComponent<RowProps> {
   protected paint(next: RowProps): void {
     this.syncClasses(next);
     this.paintBody(this.body, next);
+    // Assistant body paint may stamp coordinator mail provenance on the item.
+    const source = sourceConnectorKey(next.item);
+    if (source && this.el.dataset.sourceConnector !== source) this.el.dataset.sourceConnector = source;
+    if (!source && this.el.dataset.sourceConnector) delete this.el.dataset.sourceConnector;
     this.syncImages(next);
   }
 

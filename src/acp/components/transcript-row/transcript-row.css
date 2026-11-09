@@ -7,9 +7,9 @@
    modifiers in the named shared sheet rather than pretending a directory
    declares them.
 
-   Spec 366 (DESIGN.md "Colour and state"): row labels are silk engraving
-   from the shared skeleton in both schemes, so no label override lives here;
-   only the body text takes the light scheme's ink tiers. */
+   Spec 366 / DESIGN.md 2.3.3: row source ink lives with the shared skeleton,
+   so no label override lives here; only the body text takes the light scheme's
+   ink tiers. */
 
 @layer krypton.scheme {
   html[data-theme-scheme='light'] .acp-harness__msg-body {

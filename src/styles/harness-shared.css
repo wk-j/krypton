@@ -419,9 +419,9 @@
    (`acp-harness__msg--${item.kind}` and `--${item.status}`), so the kind and
    status sets are open and cannot be grepped. `__msg-label--steer`,
    `--steer-pending` and `--voice` come from `components/user-row/index.ts:63-66`. */
-/* Spec 120 — lane mail rows use the assistant markdown body. Their labels are
-   the silk engraving every row label shares; a drained mail reads at the
-   secondary ink tier instead of being dimmed with opacity. */
+/* Spec 120 — lane mail rows use the assistant markdown body. Their labels
+   follow the transcript source palette; a drained mail reads at the secondary
+   ink tier instead of being dimmed with opacity. */
 .acp-harness__msg--mail-done .acp-harness__msg-body {
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
 }
@@ -517,7 +517,7 @@
 }
 
 /* Row skeleton · `components/transcript-row/shared.ts:79-80`. The kind (user,
-   assistant, …) is named by the engraved label and carried by body colour,
+   assistant, …) is named by the flat source label and may tint the body,
    never a left rail (ADR-0027); the 6px inset is the old 4px padding plus the
    2px rail it replaced, so row text does not move. */
 .acp-harness__msg {
@@ -528,10 +528,10 @@
   padding: 1px 0 1px 6px;
 }
 
-/* DESIGN.md "Engraving": the row label is silk in the label typography. A
+/* DESIGN.md "Engraving": the row label uses label typography. A
    transcript row is a repeated row (spec 366 performance budget), so the
    engraving's text-shadow is left off here — the label is cut into the screen
-   by colour and tracking alone. */
+   by colour and tracking alone. Source-specific ink is below. */
 .acp-harness__msg-label {
   color: var(--mat-silk);
   font-size: 0.64em;
@@ -1133,8 +1133,8 @@
   border-radius: var(--krypton-border-radius, 8px);
 }
 
-/* The user's own words keep the theme's user ink in the body; every label is
-   the shared silk engraving (`.acp-harness__msg-label`). */
+/* The user's own words keep the theme's user ink in the body; the source label
+   takes the same ink in the palette below. */
 .acp-harness__msg--user .acp-harness__msg-body {
   color: var(--agent-user, #6dd0ff);
 }
@@ -1354,11 +1354,79 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
 
 /* The live row's label is a steady lit legend (spec 366: live state is a lit
    lamp, not a pulse), lit amber with no glow. `LiveComponent.seal()`
-   re-derives the row's classes and drops `--streaming`, so a sealed row
-   returns to the engraved silk label and never repaints (CLAUDE.md
-   constraint 10). */
+   re-derives the row's classes and drops `--streaming` without repainting.
+   Source ink below stays visible while live except for thought's amber live
+   legend (CLAUDE.md constraint 10). */
 .acp-harness__msg--streaming .acp-harness__msg-label {
   color: var(--mat-lit);
+}
+
+/* Source identity is carried by label ink, separate from status and verdict
+   ink. Related machine activity shares blue; quieter system provenance uses
+   secondary ink. Permission/question prompts retain the amber default and
+   provider faults retain their warning override. */
+.acp-harness__msg--user > .acp-harness__msg-label:not(.acp-harness__msg-label--steer-pending) {
+  color: var(--agent-user, #6dd0ff);
+}
+
+.acp-harness__msg--tool > .acp-harness__msg-label,
+.acp-harness__msg--shell > .acp-harness__msg-label,
+.acp-harness__msg--fs_activity > .acp-harness__msg-label,
+.acp-harness__msg--fs_write_review > .acp-harness__msg-label {
+  color: var(--agent-blue, #64b5f6);
+}
+
+/* Guardian is a tool item, so its explicit wrapper modifier wins over blue. */
+.acp-harness__msg--guardian-review > .acp-harness__msg-label {
+  color: var(--agent-magenta, #e091c0);
+}
+
+.acp-harness__msg--system > .acp-harness__msg-label,
+.acp-harness__msg--memory > .acp-harness__msg-label,
+.acp-harness__msg--restart > .acp-harness__msg-label,
+.acp-harness__msg--inter_lane > .acp-harness__msg-label,
+.acp-harness__msg--thought:not(.acp-harness__msg--streaming) > .acp-harness__msg-label {
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
+}
+
+/* Spec 379 — repeated passive sources share one visible label. Only the new
+   continuation row changes: the earlier sealed row is never repainted. The
+   hairline sits inside the label gutter, not on the row edge. */
+:is(
+  .acp-harness__msg[data-source-connector='tool'] + .acp-harness__msg[data-source-connector='tool'],
+  .acp-harness__msg[data-source-connector='guard'] + .acp-harness__msg[data-source-connector='guard'],
+  .acp-harness__msg[data-source-connector='agent'] + .acp-harness__msg[data-source-connector='agent'],
+  .acp-harness__msg[data-source-connector='user'] + .acp-harness__msg[data-source-connector='user'],
+  .acp-harness__msg[data-source-connector='fs'] + .acp-harness__msg[data-source-connector='fs']
+) {
+  position: relative;
+}
+
+:is(
+  .acp-harness__msg[data-source-connector='tool'] + .acp-harness__msg[data-source-connector='tool'],
+  .acp-harness__msg[data-source-connector='guard'] + .acp-harness__msg[data-source-connector='guard'],
+  .acp-harness__msg[data-source-connector='agent'] + .acp-harness__msg[data-source-connector='agent'],
+  .acp-harness__msg[data-source-connector='user'] + .acp-harness__msg[data-source-connector='user'],
+  .acp-harness__msg[data-source-connector='fs'] + .acp-harness__msg[data-source-connector='fs']
+) > .acp-harness__msg-label {
+  color: transparent;
+}
+
+:is(
+  .acp-harness__msg[data-source-connector='tool'] + .acp-harness__msg[data-source-connector='tool'],
+  .acp-harness__msg[data-source-connector='guard'] + .acp-harness__msg[data-source-connector='guard'],
+  .acp-harness__msg[data-source-connector='agent'] + .acp-harness__msg[data-source-connector='agent'],
+  .acp-harness__msg[data-source-connector='user'] + .acp-harness__msg[data-source-connector='user'],
+  .acp-harness__msg[data-source-connector='fs'] + .acp-harness__msg[data-source-connector='fs']
+)::before {
+  content: '';
+  position: absolute;
+  top: -3px; /* bridge the lane body's 3px row gap */
+  bottom: 0;
+  left: calc(6px + 5.25ch);
+  width: 1px;
+  background: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
+  pointer-events: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════

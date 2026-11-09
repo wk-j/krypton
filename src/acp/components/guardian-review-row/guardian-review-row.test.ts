@@ -30,6 +30,7 @@ describe('GuardianReviewRow', () => {
     const row = new GuardianReviewRow(props(reviewing));
     row.update(props(reviewing));
     expect(rowKindFor(props(reviewing).item)).toBe('guardianReview');
+    expect(row.el.classList.contains('acp-harness__msg--guardian-review')).toBe(true);
     expect(row.el.querySelector('.acp-harness__msg-label')?.textContent).toBe('guard');
     expect(row.el.querySelector('.acp-harness__tool-output')).toBeNull();
     expect(row.el.querySelector('.acp-harness__guardian-outcome')?.textContent).toBe('reviewing');

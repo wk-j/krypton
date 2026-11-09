@@ -1,6 +1,6 @@
 ---
 name: Krypton Console
-version: 2.3.2
+version: 2.3.4
 description: Skeuomorphic instrument faceplate — brushed graphite (aluminium in the light scheme) with engraved labels, recessed display wells, raised keys and lit lamps, over a transparent desktop
 appliesTo: "Every surface in the Tauri webview and the live-assist webview. Materials: src/styles/materials.css (--mat-*)."
 colors:
@@ -78,7 +78,8 @@ surface *shows* behind recessed glass, what it *does* on keys you could press, a
 The desktop still shows through the screens and, faintly, through the plates.
 
 The rule that keeps it readable: **material carries role, colour carries state.** Plate, well and key
-say what a thing is (label, display, control). Colour says only what the ADRs allow it to say.
+say what a thing is (label, display, control). Harness transcript source labels also use distinct
+ink to identify who produced a row; assessment and permission outcomes retain their own state ink.
 
 Content stays flat. The terminal grid, prose, code, diffs, canvases and documents sit in wells as plain
 text on the screen fill: texture there would cost legibility where the user reads most.
@@ -231,6 +232,9 @@ comment.
   the draft line in a well; transcript rows are flat text on the screen under engraved labels; tool
   rows are a flat kind label with the status LED before it and an output well aligned with the label (a
   plain output well has no label; only a label that says something, like `stderr`, is engraved);
+  consecutive TOOL, GUARD, AGENT, plain USER, or successful FS rows show their source label once,
+  then a neutral 1px connector inside the label gutter for each later row of the same source;
+  a different source or an action row starts a new label, and every action remains visible;
   resolved permission and question rows carry their LED before a flat decision label; a decision
   composer's `PERM` / `ASK` label is a readout like the composer's mode readout, at the same 0.72em,
   its amber LED lit; permission and question options print their keys as key caps;
@@ -245,7 +249,11 @@ comment.
 
 ## Colour and state
 
-- Labels and lit legends are `--mat-silk` / `--mat-lit` everywhere: amber hardware ink.
+- Plate labels and lit legends use `--mat-silk` / `--mat-lit`: amber hardware ink. Harness transcript
+  source labels use a small identity palette: `USER` uses `--agent-user`; `AGENT`, `PERM`, and `ASK`
+  keep amber; `TOOL`, `SH`, `FS`, and `WRITE` use `--agent-blue`; `GUARD` uses `--agent-magenta`;
+  `THOUGHT`, system, memory, restart, and lane mail use secondary ink. A live thought retains its
+  amber live legend. Provider faults retain warning ink. Source colour does not encode a verdict.
 - Body text uses the theme ink: `--krypton-fg` with its alpha ladder in the dark scheme, the
   `--krypton-ink-2/3/4` tiers in the light scheme (spec 321). Never dim text with `opacity`.
 - The theme accent keeps four jobs: the terminal cursor, links, window LEDs and the window focus
@@ -417,6 +425,11 @@ selector, and nothing in it bleeds out of that selector.
 
 ## Changelog
 
+- **2.3.4** — Adjacent transcript rows from the same passive source share one visible source label.
+  Later rows carry a neutral hairline in the label gutter; each row stays independently navigable.
+- **2.3.3** — Harness transcript source labels use a small identity palette: user cyan, agent and
+  action prompts amber, machine work blue, Guardian magenta, and system provenance secondary ink.
+  Their typography and flat row treatment stay shared; outcomes keep separate state ink.
 - **2.3.2** — Status labels and lit tags lose their coloured outline and wrapper shadow.
   Transparent borders retain their dimensions; text colour, background tint and the LED remain,
   with glow confined to the LED. Applies across Rails, harness badges and content-view status

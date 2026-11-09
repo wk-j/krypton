@@ -24,6 +24,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 import { assistantInstanceStore } from '../../assistant-instance-store';
 import { AcpHarnessView } from '../acp-harness-view';
+import { sourceConnectorKey } from './transcript-row/shared';
 import type { HarnessLane, HarnessTranscriptItem } from '../harness-view-types';
 import type { TranscriptAnnotation } from '../types';
 
@@ -80,6 +81,86 @@ afterEach(() => {
 });
 
 describe('harness view integration (spec 301)', () => {
+  it('connects only adjacent matching sources without touching a sealed predecessor (spec 379)', () => {
+    const lane = call<HarnessLane>(view, 'createLane', 'claude', 'claude-1');
+    lanes(view).push(lane);
+    activate(view, lane.id);
+    const tool = (id: string, guardian = false): HarnessTranscriptItem => ({
+      id, kind: 'tool', text: '', status: 'completed',
+      tool: {
+        glyph: '✓', status: 'completed', kind: 'execute', subject: id, command: id,
+        result: '', sections: [], diffs: [],
+        ...(guardian ? { guardianReview: {
+          outcome: 'approved' as const, action: id, risk: null, authorization: null,
+          rationale: null, rationaleTruncated: false,
+        } } : {}),
+      },
+    });
+    const row = (id: string): HTMLElement => {
+      const found = view.element.querySelector<HTMLElement>(`.acp-harness__msg[data-msg-id="${id}"]`);
+      if (!found) throw new Error(`missing transcript row ${id}`);
+      return found;
+    };
+    const continuation = (key: string): string =>
+      `.acp-harness__msg[data-source-connector="${key}"] + .acp-harness__msg[data-source-connector="${key}"]`;
+
+    lane.transcript.push(tool('t1'));
+    call(view, 'renderDashboard');
+    const first = row('t1');
+    expect(first.dataset.sourceConnector).toBe('tool');
+    const observer = new MutationObserver(() => undefined);
+    observer.observe(first, { subtree: true, childList: true, attributes: true, characterData: true });
+
+    lane.transcript.push(tool('t2'));
+    call(view, 'renderDashboard');
+    expect(row('t1')).toBe(first);
+    expect(observer.takeRecords()).toEqual([]);
+    observer.disconnect();
+    expect(row('t2').matches(continuation('tool'))).toBe(true);
+    expect(row('t2').querySelector('.acp-harness__msg-label')?.textContent).toBe('tool');
+
+    lane.transcript.push(tool('g1', true), tool('g2', true), { id: 'a1', kind: 'assistant', text: 'Done.' });
+    call(view, 'renderDashboard');
+    expect(row('g1').dataset.sourceConnector).toBe('guard');
+    expect(row('g1').matches(continuation('tool'))).toBe(false);
+    expect(row('g2').matches(continuation('guard'))).toBe(true);
+    expect(row('a1').dataset.sourceConnector).toBe('agent');
+    expect(row('a1').matches(continuation('guard'))).toBe(false);
+
+    lane.transcriptWindow = 4;
+    call(view, 'renderDashboard');
+    expect(row('t2').matches(continuation('tool'))).toBe(false);
+    expect(row('g2').matches(continuation('guard'))).toBe(true);
+
+    lane.pendingCoordinatorDrain = {
+      envelopeIds: ['mail-1'], primaryPeerDisplayName: 'Peer', envelopeCount: 1,
+    };
+    lane.transcript.push({ id: 'mail', kind: 'assistant', text: 'Reply to peer.' });
+    call(view, 'renderDashboard');
+    expect(row('mail').dataset.sourceConnector).toBeUndefined();
+    expect(row('mail').querySelector('.acp-harness__msg-label')?.textContent).toBe('agent');
+    expect(row('mail').matches(continuation('agent'))).toBe(false);
+  });
+
+  it('keeps special labels as source boundaries (spec 379)', () => {
+    const base: HarnessTranscriptItem = { id: 'x', kind: 'assistant', text: '' };
+    expect(sourceConnectorKey(base)).toBe('agent');
+    expect(sourceConnectorKey({ ...base, replyingToLaneMail: {
+      envelopeId: 'e1', peerDisplayName: 'Peer', envelopeCount: 1,
+    } })).toBeNull();
+    expect(sourceConnectorKey({ ...base, kind: 'user' })).toBe('user');
+    expect(sourceConnectorKey({ ...base, kind: 'user', steer: 'injected' })).toBeNull();
+    expect(sourceConnectorKey({ ...base, kind: 'user', voice: true })).toBeNull();
+    expect(sourceConnectorKey({ ...base, kind: 'fs_activity', fsActivity: {
+      method: 'read', path: 'file', ok: true,
+    } })).toBe('fs');
+    expect(sourceConnectorKey({ ...base, kind: 'fs_activity', fsActivity: {
+      method: 'read', path: 'file', ok: false,
+    } })).toBeNull();
+    expect(sourceConnectorKey({ ...base, kind: 'permission' })).toBeNull();
+    expect(sourceConnectorKey({ ...base, kind: 'provider_error' })).toBeNull();
+  });
+
   it('opens a tool image while the lane turn is still busy', () => {
     const lane = call<HarnessLane>(view, 'createLane', 'claude', 'claude-1');
     lanes(view).push(lane);

@@ -1389,6 +1389,10 @@ PUBLISH
        generic output trimming (spec 378). The review outcome is distinct from
        ACP tool completion: a completed call can report a denied action. The
        row shows the result without participating in the approval decision.
+       On each row's normal paint, TranscriptRow stamps a source connector key
+       after body paint (which may attach lane-mail provenance). Adjacent rows
+       with the same eligible key connect through CSS in the label gutter;
+       the next row never repaints its sealed predecessor (spec 379).
        Sticky follow on that pass (rev 15) idles or pins when the transcript
        bottom did not grow, so a bounded execute-output tail does not replay a
        glide over already-visible rows.

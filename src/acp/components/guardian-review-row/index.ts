@@ -46,6 +46,10 @@ export class GuardianReviewRow extends TranscriptRow {
     return 'guard';
   }
 
+  protected wrapperModifiers(): readonly string[] {
+    return ['acp-harness__msg--guardian-review'];
+  }
+
   protected bodyClasses(): readonly string[] {
     return ['acp-harness__guardian'];
   }
